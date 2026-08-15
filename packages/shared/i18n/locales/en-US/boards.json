@@ -1,36 +1,8 @@
 {
   "discovery": {
-    "section": {
-      "nearby": "Boards near you"
-    },
     "popular": {
       "title": "Popular boards",
       "meta": "{{boards}} boards · {{sends}} sends"
-    },
-    "findNearby": {
-      "loading": "Finding boards…",
-      "geoDenied": "Location unavailable",
-      "error": "Failed to load nearby boards",
-      "noResults": "No nearby boards found",
-      "idle": "Find nearby"
-    },
-    "search": {
-      "ariaLabel": "Search for a board",
-      "label": "Search"
-    },
-    "custom": {
-      "ariaLabel": "Build a custom board",
-      "label": "Custom board"
-    },
-    "create": {
-      "defaultLabel": "New Board"
-    },
-    "bluetooth": {
-      "scanning": "Scanning…",
-      "boardsFound": "Boards found",
-      "noBoardsFound": "No boards found",
-      "unavailable": "Bluetooth unavailable",
-      "idle": "Quick start"
     }
   },
   "mobile": {
@@ -400,19 +372,8 @@
   },
   "boardForm": {
     "create": {
-      "submit": "Create Board",
-      "authRequired": "You must be signed in to create a board",
-      "errorMessage": "Failed to create board. It may already exist for this configuration.",
       "limitReached": "You've reached the maximum number of boards for one account. Delete a board you no longer use to add another.",
-      "goToExisting": "Go to your board",
-      "nameRequired": "Board name is required",
-      "createdNamed": "Board \"{{name}}\" created!",
-      "namePlaceholder": "e.g., Home Board, Gym Name",
-      "locationPlaceholder": "e.g., City, Gym Name",
-      "duplicateTitle": "You already have this setup",
-      "duplicateBody": "You already have \"{{name}}\" with the same layout, size and hold sets. Add another only if it’s a different wall.",
-      "addAnyway": "Add it anyway",
-      "keepEditing": "Cancel"
+      "nameRequired": "Board name is required"
     },
     "fields": {
       "name": "Board Name",
@@ -502,36 +463,8 @@
     "holdSets": "Hold Sets",
     "angle": "Angle"
   },
-  "boardFilterStrip": {
-    "all": "All",
-    "allBoards": "All Boards"
-  },
   "boardPill": {
     "switchHint": "Opens the board switcher"
-  },
-  "boardSwitchConfirm": {
-    "session": {
-      "title": "Leave your session?",
-      "body": "You're in a session on {{lockedLabel}}. Switching to {{targetLabel}} disconnects your board but keeps the session running."
-    },
-    "connection": {
-      "title": "Disconnect your board?",
-      "body": "Your {{lockedLabel}} is still connected. Switching to {{targetLabel}} disconnects it."
-    },
-    "stay": "Stay",
-    "switch": "Switch boards"
-  },
-  "boardSearchDrawer": {
-    "title": "Find a board",
-    "searchPlaceholder": "Search boards by name or location",
-    "clear": "Clear",
-    "radiusInfo": "Showing boards within {{radiusKm}} km of map center",
-    "empty": "No boards in this area. Pan or zoom out to find more.",
-    "emptyWithQuery": "No boards match \"{{query}}\" here. Try zooming out or searching elsewhere.",
-    "open": "Open"
-  },
-  "boardSearchMap": {
-    "myLocation": "My location"
   },
   "zoomableBoard": {
     "reset": "Reset"
@@ -595,17 +528,6 @@
     "viewGym": "See the gym",
     "claim": "This is my gym — claim it",
     "createAnyway": "None of these? Add your gym with the button below."
-  },
-  "selectorDrawer": {
-    "customTitle": "Custom Board",
-    "createTitle": "Create Board",
-    "createButton": "Create board",
-    "quickSession": "Quick session",
-    "configSection": {
-      "label": "Board config",
-      "title": "Board config",
-      "defaultSummary": "Select a board"
-    }
   },
   "gymEntity": {
     "notFound": "Gym not found",

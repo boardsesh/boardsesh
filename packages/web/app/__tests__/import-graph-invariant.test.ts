@@ -100,13 +100,22 @@ const DELETED_COMPONENT_DIRS = [
 ];
 
 /**
- * `components/climb-card` survives in part. Only these three modules go — the
- * rest of the directory (climb-icons, climb-title, climb-thumbnail, …) is used
- * by the surviving feed and detail surfaces. Matched on the file stem, so
- * `climb-list-item.module.css` goes with `climb-list-item.tsx`, while
- * `climb-card-cover.tsx` is a different stem and stays.
+ * `components/climb-card` survives in part. Only these modules go — the rest of
+ * the directory (climb-icons, climb-title, climb-thumbnail, ascent-status,
+ * marquee-text) is used by the surviving feed and list surfaces. Matched on the
+ * file stem, so `climb-list-item.module.css` goes with `climb-list-item.tsx`.
+ *
+ * `climb-card-cover` and `heart-animation-overlay` joined the list in W-16:
+ * their only importers were `climb-card.tsx`, `climb-list-item.tsx` and the
+ * play view, all of which this teardown deletes.
  */
-const DELETED_CLIMB_CARD_STEMS = ['climb-card', 'climb-list-item', 'drawer-climb-header'];
+const DELETED_CLIMB_CARD_STEMS = [
+  'climb-card',
+  'climb-card-cover',
+  'climb-list-item',
+  'drawer-climb-header',
+  'heart-animation-overlay',
+];
 
 /** Hooks that only exist to serve the classic client climbing UI. */
 const DELETED_HOOK_STEMS = [
@@ -119,10 +128,16 @@ const DELETED_HOOK_STEMS = [
 ];
 
 /**
- * `app/lib/ble` goes with the board-control UI, except `capacitor-utils.ts`,
- * which the Capacitor retirement notice on the surviving web shell still reads.
+ * `app/lib/ble` goes with the board-control UI, except two files:
+ *  - `capacitor-utils.ts`, which the Capacitor retirement notice on the
+ *    surviving web shell still reads.
+ *  - `capacitor-types.d.ts`, the ambient `window.Capacitor` declaration that
+ *    ~25 surviving modules type against (open-external-url, dev-url,
+ *    in-app-review, worker-manager, use-wake-lock, use-geolocation,
+ *    home-page-content, capacitor-retirement/*). Deleting it reds the whole
+ *    typecheck in files that have nothing to do with Bluetooth.
  */
-const KEPT_BLE_FILES = new Set(['app/lib/ble/capacitor-utils.ts']);
+const KEPT_BLE_FILES = new Set(['app/lib/ble/capacitor-utils.ts', 'app/lib/ble/capacitor-types.d.ts']);
 
 /**
  * `components/settings` is deliberately absent: a later PR keeps two of its
@@ -221,7 +236,7 @@ const KEPT_COMPONENT_DIRS = [
   'stats-filter-bridge',
   'profile-header-bridge',
   'capacitor-retirement',
-  'dev-url-dialog',
+  'site-chrome',
 ];
 
 /**
@@ -534,7 +549,7 @@ describe('import-graph invariant: kept surfaces do not reach into the delete set
   it('does not treat the surviving parts of components/climb-card as deleted', () => {
     // The activity feed imports climb-icons on four surfaces. That module stays,
     // so the delete set must not swallow the whole climb-card directory.
-    for (const survivor of ['climb-icons', 'climb-title', 'climb-thumbnail', 'climb-card-cover', 'marquee-text']) {
+    for (const survivor of ['climb-icons', 'climb-title', 'climb-thumbnail', 'ascent-status', 'marquee-text']) {
       expect(
         deleteSetLabel(`app/components/climb-card/${survivor}.tsx`),
         `components/climb-card/${survivor} must survive the teardown`,

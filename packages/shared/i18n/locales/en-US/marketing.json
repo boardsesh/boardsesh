@@ -11,7 +11,7 @@
     },
     "help": {
       "title": "Help",
-      "description": "Learn about Boardsesh features including heatmaps, party mode, playlist generator, and more."
+      "description": "What you can do on boardsesh.com, what happens in the app, and where to ask for help."
     },
     "docs": {
       "title": "API Documentation",
@@ -192,233 +192,43 @@
     "footer": "This document is provided for informational purposes and does not constitute legal advice. Last updated: 08-02-2026"
   },
   "help": {
-    "headerTitle": "Help",
     "hero": {
-      "title": "How can we help?",
-      "subtitle": "Learn about Boardsesh features and get the most out of your climbing sessions"
+      "title": "Help",
+      "subtitle": "This site is where climbs live on the web. The app is where you climb them. Here's what each one does."
     },
-    "sections": {
-      "visualization": {
-        "label": "Visualization & Analysis"
-      },
-      "collaboration": {
-        "label": "Session & Collaboration"
-      },
-      "training": {
-        "label": "Training & Workouts"
-      },
-      "search": {
-        "label": "Search & Discovery"
-      },
-      "connectivity": {
-        "label": "Sync & Connectivity"
-      }
+    "web": {
+      "title": "On this site",
+      "intro": "Everything here is a link you can send to someone. No install, no sign-in.",
+      "item1": "Look up a climb and read its grade, setter and ascents.",
+      "item2": "Browse a board's full catalogue by layout, size and angle.",
+      "item3": "Share a climb, a playlist or your profile with a plain URL.",
+      "item4": "Find a gym and see what's on its wall from the gym's kiosk screen.",
+      "playlistsLink": "Browse playlists",
+      "aboutLink": "About Boardsesh"
     },
-    "heatmap": {
-      "q": "How do I use the heatmap feature?",
-      "imgAlt": "Heatmap visualization",
-      "intro": "The heatmap shows hold usage patterns across all climbs, helping you identify popular holds and training opportunities.",
-      "accessLabel": "To access the heatmap:",
-      "access1": "Open the search drawer and expand the \"Holds\" section",
-      "access2": "Click the \"Show Heatmap\" button",
-      "access3": "The board will display a color overlay from green (low usage) to red (high usage)",
-      "modesLabel": "Available color modes:",
-      "modes": {
-        "ascentsLabel": "Ascents:",
-        "ascentsBody": "Overall popularity based on total completions",
-        "startLabel": "Starting Holds:",
-        "startBody": "Common start positions",
-        "handFootLabel": "Hand/Foot Holds:",
-        "handFootBody": "Usage by limb type",
-        "finishLabel": "Finish Holds:",
-        "finishBody": "Common top-out positions"
-      },
-      "outro": "Use the toggle switches to show/hide hold numbers and include/exclude foot holds."
+    "app": {
+      "title": "In the app",
+      "intro": "Anything that talks to the wall happens in the app.",
+      "item1": "Build a queue and work through it with your crew.",
+      "item2": "Run a party session so everyone's phone drives the same queue.",
+      "item3": "Light up holds over Bluetooth on Kilter, Tension and MoonBoard walls.",
+      "item4": "Log your sends and keep your logbook in one place.",
+      "cta": "Open the app",
+      "ctaAriaLabel": "Open the Boardsesh app"
     },
-    "holdClassification": {
-      "q": "How do I classify holds on my board?",
-      "imgAlt": "Hold classification wizard",
-      "intro": "Hold classification lets you create personal ratings for each hold on your board, helping you understand your strengths and find suitable climbs.",
-      "attrsLabel": "Classification attributes:",
-      "attrs": {
-        "holdTypeLabel": "Hold Type:",
-        "holdTypeBody": "Jug, Sloper, Pinch, Crimp, or Pocket",
-        "handRatingLabel": "Hand Rating:",
-        "handRatingBody": "1-5 difficulty scale for hand use",
-        "footRatingLabel": "Foot Rating:",
-        "footRatingBody": "1-5 difficulty scale for foot use",
-        "pullDirectionLabel": "Pull Direction:",
-        "pullDirectionBody": "0-360 optimal pulling angle"
-      },
-      "outro": "Classifications are personal and stored in your account, allowing you to build a customized understanding of your board over time."
+    "aurora": {
+      "title": "Coming from the Aurora apps",
+      "intro": "Boardsesh reads your existing account, so your sends come with you.",
+      "item1": "Sign in with your Kilter or Tension login and your logbook syncs across.",
+      "item2": "Your ascents stay yours. We never write back anything you didn't log.",
+      "link": "Read the migration guide"
     },
-    "partyMode": {
-      "q": "How do I start a collaborative session?",
-      "imgAlt": "Active party mode session",
-      "intro": "Party Mode allows multiple climbers to share a queue and take turns on the board in real-time.",
-      "startLabel": "To start a session:",
-      "start1": "Tap the lightbulb icon in the queue bar at the bottom",
-      "start2": "Go to the \"Start Session\" tab and sign in if not already logged in",
-      "start3": "Click \"Start Party Mode\" to create a new session",
-      "start4": "Share the session with friends using QR code or link",
-      "joinLabel": "To join a session:",
-      "join": {
-        "qrLabel": "Scan QR Code:",
-        "qrBody": "The session host can show a QR code that others can scan with their phone camera",
-        "shareLabel": "Share Link:",
-        "shareBody": "Copy and share the session URL - anyone with the link can join",
-        "idLabel": "Enter Session ID:",
-        "idBody": "Go to the \"Join Session\" tab and paste either the full URL or just the session ID"
-      },
-      "featuresLabel": "Session features:",
-      "feature1": "Real-time queue synchronization across all devices",
-      "feature2": "Multiple users can add/remove climbs",
-      "feature3": "Session leader controls the board display",
-      "feature4": "Automatic leader handoff if the current leader disconnects",
-      "feature5": "Session persists across page refreshes and reconnections"
-    },
-    "queueManagement": {
-      "q": "How do I manage the climb queue?",
-      "imgAlt": "Queue management",
-      "intro": "The queue lets you organize climbs for your session, whether climbing solo or with others.",
-      "actionsLabel": "Queue actions:",
-      "actions": {
-        "addLabel": "Add climbs:",
-        "addBody": "Double-tap any climb in the list to add it to your queue",
-        "reorderLabel": "Reorder:",
-        "reorderBody": "Drag and drop climbs to change order",
-        "currentLabel": "Set current:",
-        "currentBody": "Click a climb to make it the active climb",
-        "removeLabel": "Remove:",
-        "removeBody": "Click the X on any queued climb",
-        "mirrorLabel": "Mirror:",
-        "mirrorBody": "Toggle mirror mode for bilateral training"
-      },
-      "outro": "The queue syncs automatically with party members and persists offline for uninterrupted sessions."
-    },
-    "playlistGenerator": {
-      "q": "How do I generate a workout playlist?",
-      "intro": "The Playlist Generator creates structured workouts tailored to your training goals.",
-      "typesLabel": "Workout types:",
-      "types": {
-        "volumeLabel": "Volume:",
-        "volumeBody": "High repetitions at a consistent grade for endurance",
-        "pyramidLabel": "Pyramid:",
-        "pyramidBody": "Ramp up to a peak grade, then back down",
-        "ladderLabel": "Ladder:",
-        "ladderBody": "Step progression through increasing grades",
-        "gradeFocusLabel": "Grade Focus:",
-        "gradeFocusBody": "Concentrated work at a single target grade"
-      },
-      "optionsLabel": "Configuration options:",
-      "option1": "Warm-up style (Standard, Extended, or None)",
-      "option2": "Target grade selection",
-      "option3": "Climb bias (Unfamiliar, Attempted, or Any)",
-      "option4": "Minimum ascent/rating filters",
-      "option5": "Number of climbs per section"
-    },
-    "mirroring": {
-      "q": "How do I mirror a climb?",
-      "intro": "Climb mirroring flips all holds to the opposite side of the board, perfect for bilateral strength training.",
-      "howLabel": "To mirror a climb:",
-      "step1": "Find the climb you want to mirror",
-      "step2": "Look for the mirror toggle icon in the climb actions",
-      "step3": "Toggle it on to flip the climb horizontally",
-      "outro": "When connected via Bluetooth, the LED board will automatically display the mirrored pattern. This feature is available on supported boards like Kilter Homewall."
-    },
-    "searchFilters": {
-      "q": "What search filters are available?",
-      "imgAlt": "Search filters",
-      "basicLabel": "Basic Search filters:",
-      "basic": {
-        "nameLabel": "Climb Name:",
-        "nameBody": "Search by climb title",
-        "gradeLabel": "Grade Range:",
-        "gradeBody": "Set minimum and maximum grades",
-        "setterLabel": "Setter:",
-        "setterBody": "Filter by climb creator",
-        "minAscentsLabel": "Min Ascents:",
-        "minAscentsBody": "Only show popular climbs",
-        "minRatingLabel": "Min Rating:",
-        "minRatingBody": "Filter by quality rating",
-        "classicsLabel": "Classics Only:",
-        "classicsBody": "Show only classic-rated climbs"
-      },
-      "personalLabel": "Personal Progress filters",
-      "personalRequires": "(requires login):",
-      "personalImgAlt": "Personal progress filters",
-      "personal1": "Hide completed climbs",
-      "personal2": "Hide attempted climbs",
-      "personal3": "Show only attempted climbs",
-      "personal4": "Show only completed climbs"
-    },
-    "searchByHold": {
-      "q": "How do I search by specific holds?",
-      "imgAlt": "Search by hold",
-      "intro": "Search by Hold lets you find climbs that use (or avoid) specific holds on the board.",
-      "howLabel": "To search by holds:",
-      "step1": "Open the search drawer and expand the \"Holds\" section",
-      "step2": "Select \"Include\" or \"Exclude\" mode from the dropdown",
-      "step3": "Tap holds on the board to select them",
-      "step4": "Results update automatically as you select holds",
-      "includeLabel": "Include mode:",
-      "includeBody": "Climbs must use the selected holds",
-      "excludeLabel": "Exclude mode:",
-      "excludeBody": "Climbs must not use the selected holds"
-    },
-    "bluetooth": {
-      "q": "How do I connect my board's LEDs?",
-      "intro": "Boardsesh uses Web Bluetooth to control your board's LED system directly from the browser.",
-      "requirementsLabel": "Requirements:",
-      "req1": "Chrome browser (recommended) or other Web Bluetooth-compatible browser",
-      "req2": "iOS users: Use the Boardsesh app (Safari doesn't support Web Bluetooth)",
-      "req3": "Bluetooth enabled on your device",
-      "req4": "Board powered on and in range",
-      "connectLabel": "To connect:",
-      "connect1": "Tap the lightbulb icon in the queue bar",
-      "connect2": "Select your board from the device list",
-      "connect3": "Once connected, LEDs automatically show the current climb",
-      "outro": "The connection supports mirrored patterns and will automatically update when you change climbs."
-    },
-    "userSync": {
-      "q": "How do I sync with my Kilter/Tension account?",
-      "imgAlt": "Aurora account settings",
-      "intro": "Link your Aurora account (Kilter or Tension) to sync your climb history and progress.",
-      "linkLabel": "To link your account:",
-      "link1": "Open the menu (tap your avatar) and go to Settings",
-      "link2": "Find the \"Aurora Accounts\" section",
-      "link3": "Enter your Kilter or Tension credentials",
-      "link4": "Click \"Link Account\"",
-      "syncsLabel": "What syncs:",
-      "syncs1": "Ascent history (completed climbs)",
-      "syncs2": "Attempts/bids",
-      "syncs3": "Circuits/playlists",
-      "outro": "Changes sync bidirectionally, so ascents logged in Boardsesh will appear in the official apps."
-    },
-    "logbook": {
-      "q": "How do I track my climbs?",
-      "imgAlt": "Climb detail with actions",
-      "intro": "Track your climbing progress by logging ascents and attempts.",
-      "fromLabel": "From any climb:",
-      "actions": {
-        "tickLabel": "Tick:",
-        "tickBody": "Record an attempt on the climb",
-        "logLabel": "Log Ascent:",
-        "logBody": "Mark the climb as completed (sends)",
-        "favoriteLabel": "Favorite:",
-        "favoriteBody": "Save climbs for quick access"
-      },
-      "outro": "Your logbook syncs with linked Aurora accounts and can be filtered in search results to find new challenges or revisit old projects."
-    },
-    "offline": {
-      "q": "Does Boardsesh work offline?",
-      "intro": "Yes! Boardsesh is designed to work reliably even with intermittent connectivity.",
-      "worksLabel": "What works offline:",
-      "works1": "Your queue persists locally via IndexedDB",
-      "works2": "Session tokens are cached for quick reconnection",
-      "works3": "Profile data is stored locally",
-      "works4": "Bluetooth LED control works independently",
-      "outro": "When connectivity is restored, any pending changes sync automatically in the background."
+    "ask": {
+      "title": "Still stuck?",
+      "intro": "Ask us. We read all three.",
+      "discord": "Ask on Discord",
+      "github": "Report a bug on GitHub",
+      "docs": "Read the developer docs"
     }
   },
   "docs": {

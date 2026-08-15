@@ -71,12 +71,7 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
       // `production/` runs against a deployed host under its own config
       // (playwright.production.config.ts) — never against the local dev server.
-      testIgnore: [
-        '**/layout-screenshots.spec.ts',
-        '**/help-screenshots.spec.ts',
-        '**/expo-web/**',
-        '**/production/**',
-      ],
+      testIgnore: ['**/layout-screenshots.spec.ts', '**/expo-web/**', '**/production/**'],
     },
 
     // Expo-web smoke — drives the mobile app compiled for the browser at /app.
@@ -107,16 +102,6 @@ export default defineConfig({
       // headroom over COLD_LOAD_TIMEOUT_MS.
       timeout: 240_000,
       testMatch: ['**/expo-web/*.spec.ts'],
-    },
-
-    // Help page screenshots - mobile viewport (390×844, iPhone 14 logical size).
-    // Run in CI via the `screenshots` job; locally with:
-    //   TEST_USER_EMAIL=test@boardsesh.com TEST_USER_PASSWORD=test \
-    //     cd packages/web && bunx playwright test --project=help-screenshots
-    {
-      name: 'help-screenshots',
-      use: { viewport: { width: 390, height: 844 } },
-      testMatch: ['**/help-screenshots.spec.ts'],
     },
 
     // Board-layout screenshots - iPhone 16 Pro Max viewport.

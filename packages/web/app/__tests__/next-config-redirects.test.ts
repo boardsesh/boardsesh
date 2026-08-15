@@ -129,6 +129,13 @@ describe('next.config redirects', () => {
     expect(expectedSources.filter((source) => !sources.has(source))).toEqual([]);
   });
 
+  it('collapses the deleted /you logbook tab back onto /you', () => {
+    const rule = baseRedirects.find((redirect) => redirect.source === '/you/logbook');
+    expect(rule).toBeDefined();
+    expect(rule?.destination).toBe('/you');
+    expect(rule?.permanent).toBe(true);
+  });
+
   it('points every create rule at the app, temporarily', () => {
     const createRules = baseRedirects.filter((redirect) => redirect.source.endsWith('/create'));
 

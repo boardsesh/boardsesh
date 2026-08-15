@@ -27,26 +27,6 @@
   },
   "list": {
     "noMore": "Keine weiteren Boulder",
-    "viewMode": {
-      "list": "Listenansicht",
-      "grid": "Rasteransicht"
-    },
-    "biggerBoard": {
-      "title": "Passt nicht auf dein Board",
-      "description": "Der geht über den Rand deiner Wand hinaus. Für den brauchst du eine größere Größe."
-    },
-    "sort": {
-      "ascents": "Begehungen",
-      "popular": "Beliebt",
-      "difficulty": "Schwierigkeit",
-      "name": "Name",
-      "quality": "Qualität",
-      "creation": "Erstellt",
-      "random": "Zufall",
-      "reshuffle": "Neu mischen",
-      "ascending": "Auf",
-      "descending": "Ab"
-    },
     "frontDoor": {
       "heading": "{{boardName}}-Boulder bei {{angle}}°",
       "intro": "Alle Boulder auf dieser {{boardName}}-Konfiguration bei {{angle}}°, die meistgekletterten zuerst. Öffne einen davon für das Board-Rendering, den Grad bei jedem Winkel und die Beta.",
@@ -62,171 +42,22 @@
   },
   "header": {},
   "share": {
-    "actionLabel": "Teilen",
-    "actionText": "Schau dir „{{climbName}}“ ({{difficulty}}) auf Boardsesh an",
-    "linkCopied": "Link kopiert",
-    "shareFailed": "Teilen fehlgeschlagen"
+    "actionLabel": "Teilen"
   },
   "angleSelector": {
-    "selectAngle": "Winkel wählen",
-    "loadingStats": "Statistiken werden geladen…",
-    "noData": "Keine Daten",
-    "sends_one": "{{count}} Begehung",
-    "sends_other": "{{count}} Begehungen"
+    "selectAngle": "Winkel wählen"
   },
   "search": {
-    "categories": {
-      "climbs": "Boulder",
-      "boards": "Boards",
-      "gyms": "Hallen",
-      "users": "Kletterer*innen",
-      "playlists": "Playlists"
-    },
     "placeholders": {
-      "boards": "Boards suchen…",
-      "gyms": "Hallen suchen…",
-      "users": "Kletterer*innen suchen…",
-      "playlists": "Playlists suchen…",
-      "climbs": "Boulder suchen…",
-      "setters": "Routenbauer*innen suchen…"
-    },
-    "fields": {
-      "climbName": "Boulder-Name",
-      "gradeRange": "Grad-Bereich",
-      "gradeRangeBetween": "{{min}} bis {{max}}",
-      "gradeRangeOnly": "nur {{grade}}",
-      "gradeRangeAndUp": "{{grade}} und höher",
-      "gradeRangeUpTo": "Bis {{grade}}",
-      "setter": "Routenbauer*in",
-      "boulder": "Boulder",
-      "route": "Route",
-      "minAscents": "Min. Begehungen",
-      "minRating": "Min. Bewertung",
-      "any": "Beliebig",
-      "minAscentsOption": "{{value}}+",
-      "minRatingOption_one": "ab {{count}} Stern",
-      "minRatingOption_other": "ab {{count}} Sternen",
-      "tallClimbsOnly": "Nur hohe Boulder",
-      "tallClimbsTooltip": "Zeigt nur Boulder, die Griffe in den unteren 8 Reihen nutzen (nur auf 8x12- und 10x12-Boards verfügbar)",
-      "wideClimbsOnly": "Nur breite Boulder",
-      "wideClimbsTooltip": "Zeigt nur Boulder, die die Griffe der 10x10-Seitenerweiterung nutzen",
-      "betaVideosOnly": "Nur mit Beta-Video",
-      "betaVideosTooltip": "Zeigt nur Boulder mit Beta-Video",
-      "gradeAccuracy": "Grad-Genauigkeit",
-      "somewhatAccurate": "Ziemlich genau (<0,2)",
-      "veryAccurate": "Sehr genau (<0,1)",
-      "extremelyAccurate": "Extrem genau (<0,05)",
-      "classicsOnly": "Nur Klassiker",
-      "setterPromptOpen": "Liste öffnen, um Routenbauer*innen zu sehen",
-      "setterNoResults": "Keine Routenbauer*innen gefunden"
-    },
-    "panels": {
-      "quality": "Qualität",
-      "status": "Begehungs-Status",
-      "progress": "Fortschritt",
-      "allClimbs": "Alle Boulder",
-      "zone": "Zone",
-      "holdsAndZone": "Griffe & Zone",
-      "anyDefault": "Beliebig"
-    },
-    "quality": {
-      "tallClimbsOnly": "Hoch",
-      "wideClimbsOnly": "Breit",
-      "betaVideosOnly": "Beta"
+      "climbs": "Boulder suchen…"
     },
     "summary": {
-      "default": "Was willst du klettern?",
-      "gradeFallback": "Grad {{gradeId}}",
-      "upToGrade": "Bis {{grade}}",
-      "setterCount_one": "{{count}} Routenbauer*in",
-      "setterCount_other": "{{count}} Routenbauer*innen",
-      "ascents_one": "{{count}}+ Begehung",
-      "ascents_other": "{{count}}+ Begehungen",
-      "rating": "{{rating}}+ Sterne",
-      "classics": "Klassiker",
-      "gradeAccuracy": "Grad-Genauigkeit",
-      "drafts": "Entwürfe",
-      "attempted": "versucht",
-      "completed": "getoppt",
-      "hide": "{{filters}} ausblenden",
-      "only": "Nur {{filters}}",
-      "holds_one": "{{count}} Griff",
-      "holds_other": "{{count}} Griffe",
       "routesOnly": "Nur Routen",
-      "bouldersAndRoutes": "Boulder & Routen",
-      "more": "+{{count}} weitere"
-    },
-    "status": {
-      "any": "Beliebig",
-      "established": "Etabliert",
-      "establishedTooltip": "Boulder mit 2 oder mehr Begehungen",
-      "projects": "Projekte",
-      "projectsTooltip": "Boulder ohne eingetragene Begehung",
-      "myDrafts": "Meine Entwürfe",
-      "myDraftsSignedOut": "Meine Entwürfe (anmelden)",
-      "signInToFilterDrafts": "Melde dich an, um nach deinen Entwürfen zu filtern.",
-      "signInModalTitle": "Bei Boardsesh anmelden",
-      "signInModalDescription": "Melde dich an, um deine Boulder-Entwürfe zu durchstöbern."
-    },
-    "progress": {
-      "signInTitle": "Melde dich an, um nach deinen Daten zu filtern",
-      "signInBody": "Melde dich an, um Boulder nach deinen Versuchen und Begehungen zu filtern.",
-      "signInModalTitle": "Bei Boardsesh anmelden",
-      "signInModalDescription": "Leg einen Account an, um nach deinem Fortschritt zu filtern und Favoriten zu speichern.",
-      "hideAttempted": "Versuchte ausblenden",
-      "hideCompleted": "Getoppte ausblenden",
-      "onlyAttempted": "Nur versuchte",
-      "onlyCompleted": "Nur getoppte"
-    },
-    "actions": {
-      "clearAll": "Alles zurücksetzen",
-      "signIn": "Anmelden"
-    },
-    "results": {
-      "count": "Ergebnisse"
+      "bouldersAndRoutes": "Boulder & Routen"
     },
     "holds": {
       "include": "Einschließen",
-      "exclude": "Ausschließen",
-      "included": "{{count}} eingeschlossen",
-      "excluded": "{{count}} ausgeschlossen",
-      "showHeatmap": "Heatmap zeigen",
-      "hideHeatmap": "Heatmap ausblenden"
-    },
-    "zone": {
-      "draw": "Zone zeichnen",
-      "clear": "Zone löschen",
-      "modeLabel": "Zonen-Typ",
-      "allHolds": "Alle Griffe drin",
-      "anyHold": "Mindestens 1 Griff"
-    },
-    "holdsAndZone": {
-      "description": "Tipp Griffe an, um zu filtern, oder zeichne eine Zone, um die Ergebnisse auf einen Teil des Boards zu beschränken."
-    },
-    "sortToggle": "Sortieren"
-  },
-  "create": {
-    "auth": {
-      "signInTitle": "Melde dich an, um deinen Boulder zu speichern",
-      "signInDescription": "Leg einen Account an oder melde dich an, um deinen Boulder auf dem Board zu speichern.",
-      "signInAria": "Zum Speichern anmelden",
-      "logInTitle": "Melde dich an, um deinen Boulder zu speichern",
-      "logInAria": "Zum Speichern anmelden",
-      "editLockedTitle": "Veröffentlichte Boulder lassen sich nur 24 Stunden nach der Veröffentlichung bearbeiten.",
-      "editLockedAria": "Bearbeitungsfenster geschlossen",
-      "savedTitle": "Gespeichert",
-      "savedAria": "Gespeichert"
-    },
-    "clear": {
-      "title": "Boulder leeren",
-      "description": "Das entfernt alle Griffe und setzt das Formular zurück. Sicher?",
-      "tooltip": "Alle Griffe entfernen"
-    },
-    "frames": {
-      "duplicateTooltip": "Bild duplizieren",
-      "deleteTooltip": "Bild löschen",
-      "deleteTitle": "Bild löschen",
-      "deleteDescription": "Das aktuelle Bild wird gelöscht. Sicher?"
+      "exclude": "Ausschließen"
     }
   },
   "actions": {
@@ -238,94 +69,20 @@
         "removeFailed": "Entfernen aus der Playlist fehlgeschlagen",
         "addFailedNamed": "Konnte nicht zu „{{playlist}}“ hinzugefügt werden",
         "removeFailedNamed": "Konnte nicht aus „{{playlist}}“ entfernt werden",
-        "createdNamed": "Playlist „{{name}}“ erstellt",
         "createFailed": "Playlist konnte nicht erstellt werden"
       },
       "validation": {
-        "nameRequired": "Gib einen Playlist-Namen ein",
-        "nameTooLong": "Name zu lang",
-        "descriptionTooLong": "Beschreibung zu lang"
-      },
-      "auth": {
-        "title": "Melde dich an, um Playlists zu erstellen",
-        "description": "Melde dich an, um deine Boulder in eigene Playlists zu sortieren."
+        "nameRequired": "Gib einen Playlist-Namen ein"
       },
       "popover": {
         "title": "Zur Playlist hinzufügen",
         "empty": "Noch keine Playlists",
-        "createFirst": "Erstelle deine erste Playlist",
         "createNew": "Neue Playlist erstellen",
         "signInBlurb": "Melde dich an, um Playlists zu erstellen und zu verwalten"
       },
       "create": {
-        "nameLabel": "Playlist-Name",
         "namePlaceholder": "z. B. Harte Crimps",
-        "descriptionLabel": "Beschreibung (optional)",
-        "descriptionPlaceholder": "Optionale Beschreibung…",
-        "colorLabel": "Farbe (optional)",
         "submit": "Erstellen"
-      },
-      "row": {
-        "removeAria": "Aus Playlist {{name}} entfernen",
-        "addAria": "Zu Playlist {{name}} hinzufügen",
-        "climbCount_one": "{{count}} Boulder",
-        "climbCount_other": "{{count}} Boulder"
-      }
-    },
-    "sendToBoard": {
-      "label": "Board beleuchten",
-      "active": "An der Wand",
-      "tooltip": "Boulder am Board beleuchten",
-      "activeTooltip": "Gerade an der Wand"
-    },
-    "tick": {
-      "drawer": {
-        "signInRequired": "Anmeldung nötig",
-        "selectBoard": "Board wählen",
-        "logAscent": "Begehung eintragen",
-        "signInToRecord": "Melde dich an, um Einträge zu speichern",
-        "createAccountBlurb": "Leg einen Boardsesh-Account an, um deine Boulder einzutragen und deinen Fortschritt zu verfolgen.",
-        "signIn": "Anmelden",
-        "orLogInOfficialApp": "Oder trag es in der offiziellen App ein:",
-        "openInApp": "In der App öffnen",
-        "alwaysOpenInApp": "Immer in der App öffnen",
-        "authModalTitle": "Melde dich an, um Einträge zu speichern",
-        "authModalDescription": "Leg einen Account an, um deine Boulder einzutragen und deinen Fortschritt zu verfolgen.",
-        "mirroredTooltip": "Tipp das Tag an, um festzulegen, ob du den Boulder auf der gespiegelten Seite getoppt hast",
-        "whichBoard": "An welchem Board hast du geklettert?"
-      }
-    },
-    "navigation": {
-      "nextClimb": "Nächster Boulder an der Wand",
-      "previousClimb": "Vorheriger Boulder an der Wand"
-    },
-    "mirror": {
-      "label": {
-        "mirrored": "Gespiegelt",
-        "mirror": "Spiegeln"
-      },
-      "tooltip": {
-        "mirrored": "Gespiegelt (klicken zum Zurücksetzen)",
-        "mirror": "Boulder spiegeln"
-      }
-    },
-    "favorite": {
-      "label": {
-        "favorited": "Favorit",
-        "favorite": "Favorisieren"
-      },
-      "tooltip": {
-        "add": "Zu Favoriten hinzufügen",
-        "remove": "Aus Favoriten entfernen"
-      },
-      "auth": {
-        "title": "Melde dich an, um Favoriten zu speichern",
-        "descriptionWithName": "Melde dich an, um „{{climbName}}“ in deinen Favoriten zu speichern.",
-        "description": "Melde dich an, um Boulder in deinen Favoriten zu speichern."
-      },
-      "toast": {
-        "updateFailed": "Favorit konnte nicht aktualisiert werden. Versuch es nochmal.",
-        "saveFailed": "Favorit konnte nicht gespeichert werden. Versuch es nochmal."
       }
     }
   },
@@ -335,41 +92,14 @@
       "project": "Projekt",
       "projectAtAngle": "Projekt @ {{angle}}°"
     },
-    "list": {
-      "moreActions": "Mehr Aktionen",
-      "tickError": "Dein Eintrag konnte nicht gespeichert werden — er liegt als Entwurf bereit"
-    },
-    "detailHeader": {
-      "project": "Projekt"
-    },
     "method": {
       "footless": "Ohne Füße",
       "footlessKickboard": "Ohne Füße + KB",
       "noKickboard": "Ohne KB"
     }
   },
-  "detail": {
-    "sections": {
-      "beta": "Beta",
-      "similarClimbs": "Ähnliche Boulder",
-      "similarClimbsSummary": "Boulder mit mindestens 50 % der gleichen Griffe"
-    }
-  },
   "boardseshGrade": {
-    "label": "Boardsesh-Grad",
     "title": "Boardsesh-Grad",
-    "summary": "Wie schwer er wirklich ist",
-    "universalLabel": "Boardsesh-Grad",
-    "localLabel": "Auf diesem Board",
-    "localScopeNote": "Auf der Skala dieses Boards — noch nicht zwischen Boards vergleichbar",
-    "universalComparison": "Tension-Skala: {{grade}}",
-    "geometryEstimate": "Aus den Griffen: {{grade}}",
-    "confirmedSubline_one": "Bestätigt durch {{count}} Begehung",
-    "confirmedSubline_other": "Bestätigt durch {{count}} Begehungen",
-    "provisionalSubline_one": "Setzt sich noch — {{count}} Begehung bisher",
-    "provisionalSubline_other": "Setzt sich noch — {{count}} Begehungen bisher",
-    "setterOnly": "Einschätzung der Routenbauer*in — noch zu wenige Begehungen.",
-    "moonboardTitle": "Noch nicht standardisiert",
     "moonboardBody": "Für MoonBoard haben wir noch keine Grad-Daten aus der Community. Trag deine Moon-Begehungen auf Boardsesh ein, damit es losgehen kann.",
     "loadError": "Der Grad konnte gerade nicht geladen werden.",
     "byAngle": "Wie er sich je Winkel klettert",
@@ -415,7 +145,6 @@
     "loadError": "Ähnliche Boulder konnten nicht geladen werden.",
     "emptyDefault": "Noch keine ähnlichen Boulder.",
     "emptyOnLayout": "Keine ähnlichen Boulder auf diesem Layout.",
-    "emptyIdentical": "Gerade keine identischen Boulder gefunden.",
     "untitledClimb": "Boulder ohne Namen"
   },
   "multiboardList": {
@@ -425,62 +154,21 @@
     "count_one": "{{count}} Boulder",
     "count_other": "{{count}} Boulder"
   },
-  "tick": {
-    "controls": {
-      "selectGrade": "Eingetragenen Grad wählen",
-      "userByline": "eigen",
-      "starsLabel": "Sterne",
-      "triesLabel": "Versuche",
-      "starRating": "Sterne-Bewertung",
-      "noRating": "Keine Bewertung",
-      "starOption_one": "{{count}} Stern",
-      "starOption_other": "{{count}} Sterne",
-      "gradeOverride": "Grad überschreiben",
-      "clearGradeOverride": "Grad-Überschreibung löschen",
-      "consensusSuffix": "Konsens",
-      "attemptCount": "Anzahl Versuche"
-    },
-    "bar": {
-      "logAscent": "Begehung eintragen",
-      "logAttempt": "Versuch eintragen",
-      "cancel": "Abbrechen"
-    }
-  },
   "createClimbForm": {
     "draftBadge": "Entwurf",
     "namePlaceholder": "Boulder-Name",
     "descriptionPlaceholder": "Beta oder Notizen zu deinem Boulder…",
-    "openDrafts": "Entwürfe öffnen",
-    "processing": "Wird verarbeitet…",
-    "importFromScreenshot": "Aus Screenshot importieren",
-    "bulkImport": "Sammel-Import",
     "dismiss": "Ausblenden",
     "alerts": {
-      "importFailed": "Import fehlgeschlagen: {{error}}",
-      "importWarnings": "Import-Warnungen:",
-      "checkingMoonBoardDuplicate": "Wird geprüft, ob dieser MoonBoard-Boulder schon existiert…",
       "publishDuplicateNamed": "Dieses Griff-Muster passt zu „{{name}}“. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
       "publishDuplicateUnnamed": "Dieses Griff-Muster passt zu einem bestehenden Boulder. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
       "viewMatchingClimb": "Passenden Boulder ansehen",
-      "identicalClimbDrawerTitle": "Identischer Boulder",
       "saveFailedFallback": "Boulder konnte nicht gespeichert werden. Versuch es nochmal."
     },
-    "settings": {
-      "tooltip": "Boulder-Einstellungen",
-      "title": "Boulder-Einstellungen"
-    },
     "fields": {
-      "name": "Name",
-      "holds": "Griffe",
-      "angle": "Winkel",
-      "grade": "Grad",
-      "gradeNone": "Keiner",
-      "benchmark": "Benchmark",
-      "method": "Methode",
       "description": "Beschreibung (optional)"
     },
     "holds": {
-      "starting": "Startgriffe",
       "start": "Start",
       "hand": "Hand",
       "finish": "Top",
@@ -488,22 +176,14 @@
     },
     "validation": {
       "needsStartFinish": "Ein gültiger Boulder braucht mindestens 1 Startgriff und 1 Topgriff"
-    },
-    "methodOptions": {
-      "feetFollowHands": "Füße folgen den Händen",
-      "footless": "Ohne Füße",
-      "footlessKickboard": "Ohne Füße + Kickboard",
-      "noKickboard": "Ohne Kickboard"
     }
   },
   "draftsDrawer": {
-    "title": "Entwürfe",
     "count_one": "{{count}} Entwurf",
     "count_other": "{{count}} Entwürfe",
     "loadError": "Deine Entwürfe konnten nicht geladen werden. Versuch es nochmal.",
     "empty": {
-      "title": "Noch keine Entwürfe",
-      "subtitle": "Speicher einen Boulder als Entwurf, um später weiterzumachen."
+      "title": "Noch keine Entwürfe"
     },
     "delete": {
       "tooltip": "Entwurf löschen",
@@ -527,39 +207,6 @@
       "finish": "Top",
       "foot": "Fuß",
       "any": "Beliebig"
-    }
-  },
-  "directionPicker": {
-    "down": "Unten"
-  },
-  "holdClassification": {
-    "drawerTitle": "Griff-Klassifizierung",
-    "classifyHoldTitle": "Griff klassifizieren",
-    "loadingHolds": "Griffe werden geladen…",
-    "emptyState": "Für diese Board-Konfiguration wurden keine Griffe gefunden.",
-    "progress": "Griff {{current}} von {{total}} ({{classified}} klassifiziert)",
-    "complete": {
-      "title": "Klassifizierung fertig!",
-      "subtitle": "Du hast {{classified}} von {{total}} Griffen klassifiziert. Du kannst den Assistenten jederzeit nochmal durchlaufen, um deine Bewertungen zu ändern."
-    },
-    "fields": {
-      "holdType": "Grifftyp",
-      "handRating": "Hand-Bewertung (1-5)",
-      "footRating": "Fuß-Bewertung (1-5)",
-      "pullDirection": "Zugrichtung"
-    },
-    "hints": {
-      "handRating": "5 = leicht zu greifen, 1 = sehr schwer",
-      "footRating": "5 = leicht zu stehen, 1 = sehr schwer",
-      "pullDirection": "Klicken oder ziehen, um die beste Zugrichtung festzulegen"
-    },
-    "actions": {
-      "previous": "Zurück",
-      "skip": "Überspringen",
-      "finish": "Fertig"
-    },
-    "toast": {
-      "saveFailed": "Klassifizierung konnte nicht gespeichert werden"
     }
   },
   "moonboardImport": {

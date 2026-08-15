@@ -20,7 +20,7 @@ type SetterClimbListProps = {
 };
 
 export default function SetterClimbList({ username, boardTypes, authToken }: SetterClimbListProps) {
-  const [selectedBoard, setSelectedBoard] = useState<UserBoard | null>(null);
+  const [selectedBoard] = useState<UserBoard | null>(null);
   const [sortBy, setSortBy] = useState<SortBy>('popular');
 
   const { data, fetchNextPage, hasNextPage, isFetching, isLoading } = useInfiniteQuery({
@@ -67,10 +67,6 @@ export default function SetterClimbList({ username, boardTypes, authToken }: Set
     }
   }, [hasNextPage, fetchNextPage]);
 
-  const handleBoardSelect = useCallback((board: UserBoard | null) => {
-    setSelectedBoard(board);
-  }, []);
-
   return (
     <MultiboardClimbList
       climbs={climbs}
@@ -78,10 +74,7 @@ export default function SetterClimbList({ username, boardTypes, authToken }: Set
       isLoading={isLoading}
       hasMore={hasNextPage ?? false}
       onLoadMore={handleLoadMore}
-      showBoardFilter
-      boardTypes={boardTypes}
       selectedBoard={selectedBoard}
-      onBoardSelect={handleBoardSelect}
       showSortToggle
       sortBy={sortBy}
       onSortChange={setSortBy}

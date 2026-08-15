@@ -158,18 +158,11 @@
   --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
   --safe-area-inset-left: env(safe-area-inset-left, 0px);
 
-  /* Layout */
+  /* Layout. The fixed MarketingHeader still needs its height reserved; the
+     bottom bar that --bottom-bar-height reserved space for came out with the
+     climbing UI (W-16), and the SiteFooter that replaced it sits in normal
+     flow, so nothing pads for it. */
   --global-header-height: calc(max(8dvh, 48px) + var(--safe-area-inset-top));
-  /* Reserved height for the fixed bottom bar (queue control + tab bar).
-     Layouts pad pages by this much so content isn't occluded.
-     The default reserves space matching the queue-shell + tab-bar render;
-     JS in persistent-session-wrapper publishes a measured value into
-     --bottom-bar-height-measured. CSS max() picks whichever is larger,
-     so the reserved height never *shrinks* after hydration (the dominant
-     CLS source on mobile p75). */
-  --bottom-bar-height-default: calc(145px + var(--safe-area-inset-bottom));
-  --bottom-bar-height-measured: 0px;
-  --bottom-bar-height: max(var(--bottom-bar-height-default), var(--bottom-bar-height-measured));
 
   /* Tap highlight (Android/mobile browsers) */
   --tap-highlight: transparent;

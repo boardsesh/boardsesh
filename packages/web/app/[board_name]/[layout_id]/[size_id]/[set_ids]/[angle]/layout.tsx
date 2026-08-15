@@ -11,7 +11,6 @@ import { PATHNAME_HEADER } from '@/app/lib/request-pathname-header';
 import { permanentRedirect } from 'next/navigation';
 import { getBoardDetailsForBoard, generateBoardTitle } from '@/app/lib/board-utils';
 import type { Metadata } from 'next';
-import LastUsedBoardTracker from '@/app/components/board-page/last-used-board-tracker';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -41,7 +40,7 @@ type BoardLayoutProps = {
 };
 
 /**
- * The board shell. Server-only apart from `LastUsedBoardTracker`: the session,
+ * The board shell. Server-only: the session,
  * connection, queue and search providers came out with the sibling routes that
  * consumed them (#4433), and the pages left under it — the climb list and climb
  * view front doors — render server-side.
@@ -128,15 +127,6 @@ export default async function BoardLayout(props: PropsWithChildren<BoardLayoutPr
           background: 'var(--semantic-surface)',
         }}
       >
-        <LastUsedBoardTracker
-          url={listUrl}
-          boardName={boardDetails.board_name}
-          layoutName={boardDetails.layout_name || ''}
-          sizeName={boardDetails.size_name || ''}
-          sizeDescription={boardDetails.size_description}
-          setNames={boardDetails.set_names || []}
-          angle={angle}
-        />
         <main
           id="content-for-scrollable"
           style={{
@@ -144,7 +134,6 @@ export default async function BoardLayout(props: PropsWithChildren<BoardLayoutPr
             paddingLeft: `${themeTokens.spacing[2]}px`,
             paddingRight: `${themeTokens.spacing[2]}px`,
             paddingTop: 'var(--global-header-height)',
-            paddingBottom: 'var(--bottom-bar-height)',
           }}
         >
           {children}

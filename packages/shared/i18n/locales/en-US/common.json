@@ -358,42 +358,15 @@
     }
   },
   "lightControl": {
-    "title": "Lights",
     "turnOffAll": "Turn off all lights",
-    "partyMode": "Party mode",
-    "stopParty": "Stop party",
-    "partyUnsupported": "Party mode isn't available on this board",
-    "discoMode": "Disco the climb",
-    "stopDisco": "Stop disco",
-    "discoNeedsClimb": "Load a climb to start the disco",
-    "clearFailed": "Couldn't clear the board",
-    "lightShowFailed": "Lost the board mid-show. Reconnect and try again.",
-    "customizeColors": "Customize LED colors",
-    "customizeColorsUnsupported": "Custom colors aren't available on this board",
-    "customizeColorsTitle": "LED colors",
-    "customizeColorsHelp": "Pick the colors your board lights up for hands, feet, and the finish hold. Start holds keep their default green.",
-    "resetColors": "Reset",
-    "disconnect": "Disconnect board",
-    "role": {
-      "HAND": "Hands",
-      "FOOT": "Feet",
-      "FINISH": "Finish"
-    }
+    "disconnect": "Disconnect board"
   },
   "bluetooth": {
-    "boardTaken": "Lost the board — another phone or app connected to it.",
-    "takeItBack": "Take it back",
     "boardNotFound": "Couldn't find your board. Make sure it's on and nearby — and if another phone is connected to it, disconnect there first.",
     "connectFailed": "Couldn't connect. Move closer to the board and try again.",
     "serviceMissing": "Connected, but the board didn't respond. Power-cycle it and try again.",
     "unavailable": "Bluetooth is off. Turn it on to connect to your board.",
-    "unknownError": "Couldn't connect to your board. Try again.",
-    "incompatibleClimb": "This climb is for a different board, so it wasn't lit.",
-    "unrecognisedHoldData": "This climb has unrecognised hold data and cannot be sent to the board.",
-    "ledDataMissing": "Could not send to board — LED data missing for this board configuration.",
-    "partialHoldsSkipped_one": "{{count}} hold couldn't be lit — your board may be a different size than this climb was set for.",
-    "partialHoldsSkipped_other": "{{count}} holds couldn't be lit — your board may be a different size than this climb was set for.",
-    "allHoldsSkipped": "None of this climb's holds could be lit — it may be set for a different board."
+    "unknownError": "Couldn't connect to your board. Try again."
   },
   "actions": {
     "yes": "Yes",
@@ -403,27 +376,21 @@
     "edit": "Edit",
     "close": "Close",
     "back": "Back",
-    "next": "Next",
     "done": "Done",
     "retry": "Try again",
-    "loading": "Loading...",
-    "clear": "Clear"
+    "loading": "Loading..."
   },
   "ariaLabels": {
     "close": "Close",
     "back": "Back",
-    "openQueue": "Open up next",
     "openStatsFilters": "Open stats filters",
     "shareProfile": "Share profile",
     "settings": "Settings",
     "notifications": "Notifications",
-    "searchClimbsByName": "Search climbs by name",
     "userMenu": "User menu",
-    "toggleDarkMode": "Toggle dark mode",
-    "startClimbing": "Start climbing in the app"
-  },
-  "boardSelector": {
-    "title": "Pick a board"
+    "startClimbing": "Start climbing in the app",
+    "home": "Boardsesh home",
+    "yourProfile": "Your profile"
   },
   "header": {
     "you": "You",
@@ -432,8 +399,8 @@
     "sessions": "Sessions",
     "createdClimbs": "Created Climbs",
     "auroraMigration": "Aurora Migration",
-    "searchPlaceholder": "What do you want to climb?",
-    "startClimbing": "Start climbing"
+    "startClimbing": "Start climbing",
+    "signIn": "Sign in"
   },
   "share": {
     "profileTitle": "{{name}}'s climbing profile",
@@ -444,50 +411,25 @@
     "shareFailed": "Failed to share"
   },
   "myBoards": {
-    "title": "My Boards",
-    "findBoard": "Find a Board",
-    "boardDetail": "Board",
-    "searchPlaceholder": "Search by name or location...",
-    "ariaFindBoard": "Find a board",
-    "ariaCreateBoard": "Create a board",
-    "empty": "No boards yet. Create one from the board selector to get started."
+    "title": "My Boards"
   },
   "myGyms": {
-    "title": "My Gyms",
-    "empty": "Your gym might already be on Boardsesh. Find it to manage your boards and crew.",
-    "findGym": "Find your gym",
-    "ariaFindGym": "Find your gym",
     "roleOwner": "Owner",
     "roleAdmin": "Admin",
     "roleEditor": "Editor",
-    "roleMember": "Member",
-    "manage": "Manage",
-    "view": "View",
-    "loadError": "We couldn't load your gyms. Give it another go."
+    "roleMember": "Member"
   },
   "userDrawer": {
     "signIn": "Sign in",
-    "signInModalTitle": "Sign in to Boardsesh",
-    "signInModalDescription": "Sign in to save favorites, log ascents, and more.",
     "changeBoard": "Change board",
-    "devUrl": "Dev URL",
-    "development": "Development",
-    "devBuild": "Dev build",
-    "branch": "Branch",
-    "qaNotes": "QA notes",
-    "qaNotesEmpty": "No QA notes file",
-    "classifyHolds": "Classify holds",
     "myPlaylists": "My playlists",
-    "recentSessions": "Recent sessions",
-    "help": "Help",
     "about": "About",
     "whatsNew": "What's New",
     "newBadge": "New",
     "rateBoardsesh": "Rate Boardsesh",
     "reportBug": "Report a bug",
     "joinDiscord": "Join Discord",
-    "logout": "Log out",
-    "logoutError": "We couldn't log you out. Check your connection and try again."
+    "logout": "Log out"
   },
   "loading": {
     "messages": [
@@ -510,7 +452,6 @@
     "placeholder": "Add a comment...",
     "replyPlaceholder": "Write a reply...",
     "thoughtsPlaceholder": "Share your thoughts...",
-    "shortPlaceholder": "Comment...",
     "submit": "Post",
     "save": "Save",
     "cancel": "Cancel",
@@ -597,9 +538,6 @@
     "following": "Following",
     "unfollow": "Unfollow"
   },
-  "feedback": {
-    "title": "Enjoying Boardsesh?"
-  },
   "betaVideos": {
     "empty": "No beta videos yet"
   },
@@ -621,20 +559,6 @@
   },
   "board": {
     "resetZoom": "Reset zoom"
-  },
-  "playback": {
-    "play": "Play",
-    "pause": "Pause",
-    "replay": "Replay",
-    "controls": "Playback controls",
-    "speed": "Speed",
-    "frameOfTotal": "Frame {{index}} of {{total}}",
-    "prevFrame": "Previous frame",
-    "nextFrame": "Next frame",
-    "speedHalf": "0.5×",
-    "speedNormal": "1×",
-    "speedCustom": "{{value}}×",
-    "speedCustomLabel": "Custom speed"
   },
   "capacitorRetirement": {
     "title": "Boardsesh has a new app",
@@ -659,5 +583,20 @@
     "noteNative": "If this pull request changed native code there's no preview to load — that one needs a fresh TestFlight or Play build.",
     "noteManual": "Doing it by hand: What's New → Try a preview → <code>{{channel}}</code>.",
     "viewPullRequest": "Read pull request #{{number}} on GitHub"
+  },
+  "footer": {
+    "tagline": "Find climbs, share them, and see what's on your gym's wall. The climbing happens in the app.",
+    "navLabel": "Footer",
+    "trademarkNote": "Works with Kilter, Tension and MoonBoard. Not affiliated with Aurora Climbing or Moon Climbing.",
+    "links": {
+      "home": "Home",
+      "about": "About",
+      "help": "Help",
+      "docs": "Developer docs",
+      "playlists": "Playlists",
+      "auroraMigration": "Aurora migration",
+      "legal": "Legal",
+      "privacy": "Privacy"
+    }
   }
 }

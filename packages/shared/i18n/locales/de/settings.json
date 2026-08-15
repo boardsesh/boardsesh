@@ -53,11 +53,6 @@
       "label": "Format der Gradangabe",
       "vGrade": "V-Grade (V3, V6, ...)",
       "font": "Font (6A, 7C+, ...)"
-    },
-    "appleHealth": {
-      "label": "Apple Health",
-      "switchLabel": "Sessions automatisch in Apple Health speichern",
-      "subtitle": "Schalt das aus, um Sessions nur zu speichern, wenn du auf „In Apple Health speichern“ tippst."
     }
   },
   "logbook": {
@@ -368,12 +363,6 @@
       "passwordHelp": "Deine Zugangsdaten werden vor dem Speichern verschlüsselt."
     }
   },
-  "healthkit": {
-    "save": "In Apple Health speichern",
-    "saving": "Wird in Apple Health gespeichert…",
-    "saved": "In Apple Health gespeichert",
-    "retry": "In Apple Health speichern (nochmal)"
-  },
   "feedbackDialog": {
     "titleRating": "Boardsesh bewerten",
     "titleBug": "Fehler melden",
@@ -386,12 +375,6 @@
     "joinDiscord": "Discord beitreten"
   },
   "feedbackForm": {
-    "missingHeading": "Was fehlt dir?",
-    "compactPlaceholder": "Sag uns, was helfen würde",
-    "skip": "Überspringen",
-    "sendAria": "Senden",
-    "cancel": "Abbrechen",
-    "saveDefault": "Speichern",
     "bugPlaceholder": "Was hast du gemacht? Was hast du erwartet, was kam stattdessen?",
     "ratingPlaceholder": "Was geht dir durch den Kopf?",
     "remainingChars": "Noch {{count}} Zeichen",
@@ -402,50 +385,10 @@
     "contactConsentLabel": "Dürfen wir dich dazu anschreiben?",
     "contactConsentDescription": "So können wir dir den Link zum Issue mailen und nachfragen, wenn uns Details fehlen.",
     "starRating_one": "{{count}} Stern",
-    "starRating_other": "{{count}} Sterne",
-    "nextAria": "Weiter"
-  },
-  "feedbackBanner": {
-    "successToast": "Danke — ist notiert.",
-    "errorToast": "Ging nicht raus — wir heben deine Bewertung auf.",
-    "dismissAria": "Ausblenden"
-  },
-  "storeReview": {
-    "title": "Hilf anderen, Boardsesh zu finden",
-    "body": "Danke für die Bewertung. Magst du auch kurz eine Rezension in deinem App-Store dalassen? Nichts hilft anderen Kletterer*innen mehr, uns zu finden.",
-    "notNow": "Jetzt nicht",
-    "leaveReview": "Rezension schreiben"
-  },
-  "sessionProvider": {
-    "deepLinkError": "Die Anmeldung mit Google, Apple oder Facebook klappt gerade vielleicht nicht. Starte die App neu."
-  },
-  "onboarding": {
-    "skipTour": "Tour überspringen",
-    "finish": "Fertig",
-    "next": "Weiter"
-  },
-  "devUrlDialog": {
-    "title": "Dev-URL",
-    "intro": "Richte die WebView auf eine andere Origin. Die App startet nach dem Speichern neu.",
-    "urlLabel": "Server-URL",
-    "useProduction": "Produktion verwenden",
-    "currentlyOverriding": "Wird gerade überschrieben mit: {{url}}",
-    "cancel": "Abbrechen",
-    "clearOverride": "Überschreibung aufheben",
-    "save": "Speichern & neu starten",
-    "restarting": "Startet neu…",
-    "validation": {
-      "enterUrl": "Gib eine URL ein",
-      "mustBeHttp": "Die URL muss mit http:// oder https:// beginnen",
-      "invalid": "Keine gültige URL",
-      "generic": "Da ist was schiefgelaufen"
-    }
+    "starRating_other": "{{count}} Sterne"
   },
   "boardConfigMismatch": {
     "title": "Board-Konfiguration passt nicht",
-    "intro": "Bei uns steht für dieses Board eine andere Konfiguration als die, die du eingestellt hast.",
-    "currentLabel": "<strong>Du bist eingestellt auf:</strong>",
-    "recordedLabel": "<strong>Für diesen Controller hinterlegt:</strong>",
     "mobileCurrentLabel": "Du bist eingestellt auf: {{config}}",
     "mobileRecordedLabel": "Für diesen Controller hinterlegt: {{config}}",
     "mobileConfigValue": "{{board}} Layout {{layoutId}}, Größe {{sizeId}}, Sets {{setIds}}",
@@ -454,24 +397,15 @@
     "skippedSpillToast_other": "{{count}} Boulder übersprungen, die zu einem anderen Board gehören",
     "mobileSwitchFailed": "Konnte nicht auf die Konfiguration dieses Boards wechseln. Probier „Trotzdem verbinden“.",
     "cancel": "Abbrechen",
-    "connectAnyway": "Trotzdem verbinden",
-    "switchToCorrect": "Auf die richtige Konfiguration wechseln",
     "mobileConnectAnyway": "Trotzdem verbinden",
     "mobileConnectAnywayWarning": "Bei uns gehört dieser Controller zu einem anderen Board-Setup. Wenn du trotzdem verbindest, werden Boulder womöglich falsch beleuchtet.",
     "mobileSwitchSetup": "Board-Setup wechseln",
     "mobileUseRecordedSetup": "Hinterlegtes Setup verwenden"
   },
   "devicePicker": {
-    "title": "Wähl dein Board",
-    "scanning": "Suche nach Boards in der Nähe…",
     "lastConnected": "Zuletzt verbundenes Board",
     "unknownDevice": "Unbekanntes Gerät",
-    "lastConnectedAt": "Zuletzt verbunden {{time}}",
-    "cancel": "Abbrechen"
-  },
-  "bluetoothMismatch": {
-    "switchNoAngleToast": "Wechsel geht nicht — öffne zuerst einen Boulder bei einem bestimmten Winkel.",
-    "switchUrlFailedToast": "Konnte nicht auf die Konfiguration dieses Boards wechseln. Probier „Trotzdem verbinden“."
+    "lastConnectedAt": "Zuletzt verbunden {{time}}"
   },
   "auroraImport": {
     "unlinkSuccessToast": "Konto getrennt",

@@ -358,42 +358,15 @@
     }
   },
   "lightControl": {
-    "title": "Lumières",
     "turnOffAll": "Tout éteindre",
-    "partyMode": "Mode soirée",
-    "stopParty": "Arrêter la soirée",
-    "partyUnsupported": "Le mode soirée n'est pas dispo sur cette board",
-    "discoMode": "Disco sur le bloc",
-    "stopDisco": "Arrêter le disco",
-    "discoNeedsClimb": "Chargez un bloc pour lancer le disco",
-    "clearFailed": "Impossible d'éteindre la board",
-    "lightShowFailed": "Board perdue en plein show. Reconnectez-vous et réessayez.",
-    "customizeColors": "Personnaliser les couleurs LED",
-    "customizeColorsUnsupported": "Couleurs personnalisées indisponibles sur cette board",
-    "customizeColorsTitle": "Couleurs des LED",
-    "customizeColorsHelp": "Choisissez les couleurs des prises pour les mains, les pieds et l'arrivée. Les prises de départ gardent leur vert par défaut.",
-    "resetColors": "Réinitialiser",
-    "disconnect": "Déconnecter la board",
-    "role": {
-      "HAND": "Mains",
-      "FOOT": "Pieds",
-      "FINISH": "Arrivée"
-    }
+    "disconnect": "Déconnecter la board"
   },
   "bluetooth": {
-    "boardTaken": "Board perdue : un autre téléphone ou une autre app s'y est connecté.",
-    "takeItBack": "La reprendre",
     "boardNotFound": "Board introuvable. Vérifiez qu'elle est allumée et à proximité ; et si un autre téléphone y est connecté, déconnectez-le d'abord.",
     "connectFailed": "Connexion impossible. Rapprochez-vous de la board et réessayez.",
     "serviceMissing": "Connecté, mais la board n'a pas répondu. Redémarrez-la et réessayez.",
     "unavailable": "Le Bluetooth est éteint. Activez-le pour vous connecter à votre board.",
-    "unknownError": "Connexion à la board impossible. Réessayez.",
-    "incompatibleClimb": "Ce bloc est prévu pour une autre board, il n'a donc pas été allumé.",
-    "unrecognisedHoldData": "Ce bloc contient des données de prises non reconnues et ne peut pas être allumé sur la board.",
-    "ledDataMissing": "Impossible d'allumer la board — les données LED de cette configuration sont manquantes.",
-    "partialHoldsSkipped_one": "{{count}} prise n'a pas pu être allumée — votre board est peut-être d'une taille différente de celle prévue pour ce bloc.",
-    "partialHoldsSkipped_other": "{{count}} prises n'ont pas pu être allumées — votre board est peut-être d'une taille différente de celle prévue pour ce bloc.",
-    "allHoldsSkipped": "Aucune prise de ce bloc n'a pu être allumée — il est peut-être prévu pour une autre board."
+    "unknownError": "Connexion à la board impossible. Réessayez."
   },
   "actions": {
     "yes": "Oui",
@@ -403,27 +376,21 @@
     "edit": "Modifier",
     "close": "Fermer",
     "back": "Retour",
-    "next": "Suivant",
     "done": "Terminé",
     "retry": "Réessayer",
-    "loading": "Chargement...",
-    "clear": "Effacer"
+    "loading": "Chargement..."
   },
   "ariaLabels": {
     "close": "Fermer",
     "back": "Retour",
-    "openQueue": "Ouvrir la file d'attente",
     "openStatsFilters": "Ouvrir les filtres de statistiques",
     "shareProfile": "Partager le profil",
     "settings": "Paramètres",
     "notifications": "Notifications",
-    "searchClimbsByName": "Rechercher des blocs par nom",
     "userMenu": "Menu utilisateur",
-    "toggleDarkMode": "Activer/désactiver le mode sombre",
-    "startClimbing": "Commencer à grimper dans l'appli"
-  },
-  "boardSelector": {
-    "title": "Choisir une board"
+    "startClimbing": "Commencer à grimper dans l'appli",
+    "home": "Accueil Boardsesh",
+    "yourProfile": "Votre profil"
   },
   "header": {
     "you": "Vous",
@@ -432,8 +399,8 @@
     "sessions": "Sessions",
     "createdClimbs": "Blocs créés",
     "auroraMigration": "Migration Aurora",
-    "searchPlaceholder": "Qu'est-ce qu'on grimpe ?",
-    "startClimbing": "Commencer à grimper"
+    "startClimbing": "Commencer à grimper",
+    "signIn": "Se connecter"
   },
   "share": {
     "profileTitle": "Profil de grimpeur de {{name}}",
@@ -444,50 +411,25 @@
     "shareFailed": "Échec du partage"
   },
   "myBoards": {
-    "title": "Mes boards",
-    "findBoard": "Trouver une board",
-    "boardDetail": "Board",
-    "searchPlaceholder": "Rechercher par nom ou emplacement...",
-    "ariaFindBoard": "Trouver une board",
-    "ariaCreateBoard": "Créer une board",
-    "empty": "Aucune board pour le moment. Créez-en une depuis le sélecteur."
+    "title": "Mes boards"
   },
   "myGyms": {
-    "title": "Mes salles",
-    "empty": "Ta salle est peut-être déjà sur Boardsesh. Trouve-la pour gérer tes boards et ta crew.",
-    "findGym": "Trouve ta salle",
-    "ariaFindGym": "Trouve ta salle",
     "roleOwner": "Propriétaire",
     "roleAdmin": "Admin",
     "roleEditor": "Éditeur",
-    "roleMember": "Membre",
-    "manage": "Gérer",
-    "view": "Voir",
-    "loadError": "Impossible de charger tes salles. Réessaie."
+    "roleMember": "Membre"
   },
   "userDrawer": {
     "signIn": "Se connecter",
-    "signInModalTitle": "Se connecter à Boardsesh",
-    "signInModalDescription": "Connectez-vous pour suivre vos favoris, vos ascensions et bien plus.",
     "changeBoard": "Changer de board",
-    "devUrl": "URL de dev",
-    "development": "Développement",
-    "devBuild": "Build de dev",
-    "branch": "Branche",
-    "qaNotes": "Notes QA",
-    "qaNotesEmpty": "Aucun fichier de notes QA",
-    "classifyHolds": "Classer les prises",
     "myPlaylists": "Mes playlists",
-    "recentSessions": "Sessions récentes",
-    "help": "Aide",
     "about": "À propos",
     "whatsNew": "Nouveautés",
     "newBadge": "Nouveau",
     "rateBoardsesh": "Noter Boardsesh",
     "reportBug": "Signaler un bug",
     "joinDiscord": "Rejoindre Discord",
-    "logout": "Se déconnecter",
-    "logoutError": "Impossible de te déconnecter. Vérifie ta connexion et réessaie."
+    "logout": "Se déconnecter"
   },
   "loading": {
     "messages": [
@@ -510,7 +452,6 @@
     "placeholder": "Ajouter un commentaire...",
     "replyPlaceholder": "Écrire une réponse...",
     "thoughtsPlaceholder": "Partagez votre avis...",
-    "shortPlaceholder": "Commentaire...",
     "submit": "Publier",
     "save": "Enregistrer",
     "cancel": "Annuler",
@@ -597,9 +538,6 @@
     "following": "Abonnement",
     "unfollow": "Se désabonner"
   },
-  "feedback": {
-    "title": "Boardsesh vous plaît ?"
-  },
   "betaVideos": {
     "empty": "Pas encore de vidéo de beta"
   },
@@ -621,20 +559,6 @@
   },
   "board": {
     "resetZoom": "Réinitialiser le zoom"
-  },
-  "playback": {
-    "play": "Lire",
-    "pause": "Pause",
-    "replay": "Rejouer",
-    "controls": "Commandes de lecture",
-    "speed": "Vitesse",
-    "frameOfTotal": "Image {{index}} sur {{total}}",
-    "prevFrame": "Image précédente",
-    "nextFrame": "Image suivante",
-    "speedHalf": "0.5×",
-    "speedNormal": "1×",
-    "speedCustom": "{{value}}×",
-    "speedCustomLabel": "Vitesse personnalisée"
   },
   "capacitorRetirement": {
     "title": "Boardsesh a une nouvelle app",
@@ -659,5 +583,20 @@
     "noteNative": "Si cette pull request a touché au code natif, il n’y a pas de version d’essai à charger : celle-là demande une nouvelle build TestFlight ou Play.",
     "noteManual": "À la main : Nouveautés → Essayer une préversion → <code>{{channel}}</code>.",
     "viewPullRequest": "Lire la pull request #{{number}} sur GitHub"
+  },
+  "footer": {
+    "tagline": "Trouvez des blocs, partagez-les et voyez ce qu'il y a sur le mur de votre salle. On grimpe dans l'app.",
+    "navLabel": "Pied de page",
+    "trademarkNote": "Compatible Kilter, Tension et MoonBoard. Sans lien avec Aurora Climbing ni Moon Climbing.",
+    "links": {
+      "home": "Accueil",
+      "about": "À propos",
+      "help": "Aide",
+      "docs": "Doc développeur",
+      "playlists": "Playlists",
+      "auroraMigration": "Migration Aurora",
+      "legal": "Mentions légales",
+      "privacy": "Confidentialité"
+    }
   }
 }

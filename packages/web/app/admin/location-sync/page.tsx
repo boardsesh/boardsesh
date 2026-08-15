@@ -43,10 +43,7 @@ export default async function AdminLocationSyncPage() {
 
   return (
     <I18nProvider locale={locale} namespaces={['common', 'admin']}>
-      <Container
-        maxWidth="lg"
-        sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)', pb: 'var(--bottom-bar-height)' }}
-      >
+      <Container maxWidth="lg" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
         <Typography variant="h5" sx={{ fontWeight: 700, mb: 1, color: themeTokens.neutral[800] }}>
           {t('locationSync.title')}
         </Typography>

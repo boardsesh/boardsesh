@@ -9,10 +9,8 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import ToggleButton from '@mui/material/ToggleButton';
 import { useMyBoards } from '@/app/hooks/use-my-boards';
 import { useBoardDetailsMap } from '@/app/hooks/use-board-details-map';
-import BoardFilterStrip from '@/app/components/board-scroll/board-filter-strip';
 import StaticClimbList from '@/app/components/climb-list/static-climb-list';
 import type { SessionBoardConfig } from '@/app/lib/board-config-for-playlist';
-import { usePersistentSessionState } from '@/app/components/persistent-session/persistent-session-context';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { Climb } from '@/app/lib/types';
@@ -25,12 +23,7 @@ type MultiboardClimbListProps = {
   isLoading: boolean;
   hasMore: boolean;
   onLoadMore: () => void;
-  // Board filter
-  showBoardFilter?: boolean;
-  /** Board types present in the climbs (used for disabling filter cards) */
-  boardTypes?: string[];
   selectedBoard: UserBoard | null;
-  onBoardSelect: (board: UserBoard | null) => void;
   // Sort toggle
   showSortToggle?: boolean;
   sortBy?: SortBy;
@@ -42,7 +35,7 @@ type MultiboardClimbListProps = {
   showBottomSpacer?: boolean;
   /** Fallback board types for default board details resolution */
   fallbackBoardTypes?: string[];
-  /** SSR-fetched user boards, forwarded to useMyBoards so the filter strip renders without a flash. */
+  /** SSR-fetched user boards, forwarded to useMyBoards so board art resolves without a flash. */
   initialBoards?: UserBoard[] | null;
   /**
    * Pre-fetched boards to use instead of the internal `useMyBoards` call.
@@ -50,8 +43,6 @@ type MultiboardClimbListProps = {
    * callers that already hold the list (e.g. playlist detail view).
    */
   boards?: UserBoard[];
-  /** Loading flag matching `boards` when it's passed in externally. */
-  boardsLoading?: boolean;
 };
 
 export default function MultiboardClimbList({
@@ -60,10 +51,7 @@ export default function MultiboardClimbList({
   isLoading,
   hasMore,
   onLoadMore,
-  showBoardFilter = true,
-  boardTypes,
   selectedBoard,
-  onBoardSelect,
   showSortToggle = false,
   sortBy = 'popular',
   onSortChange,
@@ -74,34 +62,17 @@ export default function MultiboardClimbList({
   fallbackBoardTypes,
   initialBoards,
   boards: externalBoards,
-  boardsLoading: externalBoardsLoading,
 }: MultiboardClimbListProps) {
   const { t } = useTranslation('climbs');
   // Only fetch boards internally when the caller hasn't supplied them.
   // Passing `enabled={false}` short-circuits useMyBoards so we don't fire a
   // duplicate GraphQL request against the same endpoint.
-  const { boards: fetchedBoards, isLoading: fetchedBoardsLoading } = useMyBoards(
-    externalBoards === undefined,
-    50,
-    initialBoards,
-  );
+  const { boards: fetchedBoards } = useMyBoards(externalBoards === undefined, 50, initialBoards);
   const myBoards = externalBoards ?? fetchedBoards;
-  const isLoadingBoards = externalBoards !== undefined ? (externalBoardsLoading ?? false) : fetchedBoardsLoading;
 
-  // Prefer the user's active session (the board they are actually climbing on)
-  // so playlist previews match the physical wall. Falls back to the list's
-  // selected board when there is no session.
-  const { activeSession } = usePersistentSessionState();
-  const sessionBoard: SessionBoardConfig | null = useMemo(() => {
-    if (!activeSession?.parsedParams) return null;
-    const { board_name, layout_id, size_id, set_ids } = activeSession.parsedParams;
-    return {
-      boardType: board_name,
-      layoutId: layout_id,
-      sizeId: size_id,
-      setIds: set_ids,
-    };
-  }, [activeSession]);
+  // www no longer knows which board you're physically on — party sessions live
+  // in the app — so board details resolve from the list's selected board alone.
+  const sessionBoard: SessionBoardConfig | null = null;
 
   // `unsupportedClimbs` / `upsizedClimbs` are intentionally not destructured:
   // the static rows carry no "needs a bigger board" affordance. The hook call
@@ -185,21 +156,5 @@ export default function MultiboardClimbList({
     climbListContent = null;
   }
 
-  return (
-    <Box>
-      {/* Board filter - thumbnail scroll cards */}
-      {showBoardFilter && (
-        <BoardFilterStrip
-          boards={myBoards}
-          loading={isLoadingBoards}
-          selectedBoard={selectedBoard}
-          onBoardSelect={onBoardSelect}
-          boardTypes={boardTypes}
-          disabledText="No climbs"
-        />
-      )}
-
-      {climbListContent}
-    </Box>
-  );
+  return <Box>{climbListContent}</Box>;
 }

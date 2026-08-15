@@ -1,8 +1,8 @@
 import React from 'react';
 import { getServerAuthToken } from '../lib/auth/server-auth';
 import FeedPageContent from './feed-page-content';
-import { cachedSessionGroupedFeed, serverMyBoards } from '../lib/graphql/server-cached-client';
-import type { SessionFeedResult, UserBoard } from '@boardsesh/shared-schema';
+import { cachedSessionGroupedFeed } from '../lib/graphql/server-cached-client';
+import type { SessionFeedResult } from '@boardsesh/shared-schema';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
@@ -37,26 +37,18 @@ export default async function FeedPage({ searchParams }: FeedProps) {
   const authToken = await getServerAuthToken();
   const isAuthenticatedSSR = !!authToken;
 
-  // SSR: fetch boards + feed in parallel
+  // SSR: fetch the feed. The board filter strip that consumed `myBoards` came
+  // out with the climbing UI, so there's nothing left to fetch alongside it.
   let initialFeedResult: SessionFeedResult | null = null;
-  let initialMyBoards: UserBoard[] | null = null;
 
   if (authToken) {
-    const feedPromise =
+    initialFeedResult =
       tab === 'sessions'
-        ? withSsrTimeout(
+        ? await withSsrTimeout(
             cachedSessionGroupedFeed(boardUuid, true).catch(() => null),
             null,
           )
-        : Promise.resolve(null);
-    const boardsPromise = withSsrTimeout(
-      serverMyBoards(authToken).catch(() => null),
-      null,
-    );
-
-    const [feedResult, boardsResult] = await Promise.all([feedPromise, boardsPromise]);
-    initialFeedResult = feedResult;
-    initialMyBoards = boardsResult;
+        : null;
   } else if (tab === 'sessions') {
     initialFeedResult = await withSsrTimeout(
       cachedSessionGroupedFeed(boardUuid, false).catch(() => null),
@@ -73,7 +65,6 @@ export default async function FeedPage({ searchParams }: FeedProps) {
         initialBoardUuid={boardUuid}
         initialFeedResult={initialFeedResult}
         isAuthenticatedSSR={isAuthenticatedSSR}
-        initialMyBoards={initialMyBoards}
       />
     </I18nProvider>
   );

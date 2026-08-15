@@ -24,29 +24,10 @@
     }
   },
   "boardPresence": {
-    "title": "Now on the wall",
     "open": "On the wall",
     "railDark": "Nothing lit right now",
     "openAria": "See what's on the wall",
-    "openAriaWithClimb": "See what's on the wall: {{name}}",
-    "nowOnWallAnnouncement": "Now on the wall: {{name}}",
-    "close": "Close",
-    "switchBoard": "Switch board",
-    "switchBoardAria": "Switch to a different board",
-    "setByLine": "Set by {{setter}}",
-    "litByLine": "Lit by {{name}}",
-    "emptyTitle": "Nobody's on this wall yet",
-    "emptyBody": "Connect and send a climb to kick off the history.",
-    "historyHeader": "Lit on this wall",
-    "statsHeader": "This wall",
-    "statSent": "sends",
-    "statClimbers": "climbers",
-    "statHardest": "hardest",
-    "statTopGrade": "most sent",
-    "wallChanged": "You changed the wall",
-    "undo": "Undo",
-    "loadMore": "Load more",
-    "loadingMore": "Loading…"
+    "openAriaWithClimb": "See what's on the wall: {{name}}"
   },
   "detail": {
     "subtitleSends_one": "{{count}} send",
@@ -129,75 +110,17 @@
   "join": {
     "joining": "Joining session..."
   },
-  "settings": {
-    "fallbackTitle": "Session",
-    "stopSession": "Stop session",
-    "dismiss": "Dismiss",
-    "loadFailed": "Couldn't load full session details. Live stats will continue when available.",
-    "share": {
-      "shareTitle": "Join my climbing session",
-      "shareText": "Jump in and climb with me on Boardsesh",
-      "shareLink": "Share session link",
-      "shareLinkPreview": "Share session link (preview)",
-      "linkCopied": "Link copied!",
-      "shareError": "Failed to share",
-      "showQr": "Show QR code",
-      "hideQr": "Hide QR code",
-      "showQrPreview": "Show QR code (preview)",
-      "inviteCopy": "Get your crew in by sharing this link or scanning the QR code",
-      "inviteCopyPreview": "Share this link or QR code with your crew and they'll show up live."
-    }
-  },
   "creation": {
-    "drawerTitle": "Start session",
-    "submitDefault": "Sesh",
-    "dialogTitle": "Create Session",
-    "dialogSubmit": "Create Session",
-    "started": "Session started!",
-    "selectBoardWarning": "Please select a board first",
-    "boardsNearYou": "Boards near you",
-    "loggedInBlurb": "Track your climbs and invite others to join.",
-    "anonymousBlurb": "Jump in without an account. Sign in later to save your progress.",
-    "signInForMore": "Sign in for more features",
-    "signInModalTitle": "Sign in to save your session",
-    "signInModalDescription": "Your sends won't disappear when you close the tab.",
     "form": {
-      "sessionNameLabel": "Session name",
-      "sessionNamePlaceholder": "e.g., Tuesday Projecting",
-      "sessionGoalLabel": "Session goal",
-      "sessionGoalPlaceholder": "e.g., Send V5 today",
-      "sessionGoalHelper": "{{count}}/500",
-      "sessionColor": "Session color",
-      "discoverableLabel": "Discoverable by nearby climbers",
-      "discoverableDescription": "Others nearby can find and join your session",
-      "permanentLabel": "Permanent session (won't auto-end)"
-    },
-    "errors": {
-      "createFailed": "Failed to start session"
-    },
-    "generateQueue": {
-      "button": "Generate workout queue",
-      "buttonHint": "Pick a board first",
-      "regenerate": "Regenerate",
-      "clear": "Clear",
-      "summary_one": "{{count}} climb queued",
-      "summary_other": "{{count}} climbs queued",
-      "addedAll_one": "{{count}} climb queued for your session",
-      "addedAll_other": "{{count}} climbs queued for your session",
-      "addedPartial": "Queued {{added}} climbs. {{failed}} slots couldn't be filled.",
-      "failed": "Couldn't generate a queue. No matching climbs found."
+      "sessionNamePlaceholder": "e.g., Tuesday Projecting"
     }
   },
   "summary": {
     "dialogTitle": "Session Summary",
-    "autoFinishedDialogTitle": "Session Finished",
     "sends": "Sends",
     "attempts": "Attempts",
-    "duration": "Duration",
-    "hardestSend": "Hardest send:",
     "goal": "Goal:",
     "gradeDistribution": "Grade Distribution",
-    "participants": "Participants",
     "done": "Done",
     "saveToAppleHealth": "Save to Apple Health",
     "savingToAppleHealth": "Saving to Apple Health…",
@@ -233,48 +156,14 @@
     "recapSaveError": "Couldn't save your recap. Try again.",
     "commentLabel": "Recap",
     "commentPlaceholder": "How was the sesh? Add a few words…",
-    "commentHelper": "{{count}}/{{max}}",
-    "commentSaveFailed": "Couldn't save your notes. Try again."
+    "commentHelper": "{{count}}/{{max}}"
   },
   "overview": {
     "goal": "Goal: {{goal}}"
   },
   "queueBar": {
-    "cancelReconnectConfirm": "Cancelling will leave the session. Is that what you want?",
-    "startSesh": "Start sesh",
-    "linkCopied": "Link copied!",
-    "shareFailed": "Failed to share",
-    "leaveFailed": "Unable to leave session. Please try again.",
-    "cancelReconnect": "Cancel",
-    "tickError": "Couldn't save your tick. Give it another go.",
-    "tickCommentPlaceholder": "Comment...",
-    "tickAttemptLabel": "attempt",
-    "reconnect": {
-      "connectionError": "Connection error – retrying…",
-      "reconnecting": "Reconnecting…"
-    },
-    "tickBar": {
-      "collapse": "Collapse",
-      "expand": "Expand",
-      "expandAria": "Expand tick bar",
-      "collapseAria": "Collapse tick bar",
-      "commentAria": "Tick comment"
-    },
     "ariaLabels": {
-      "leaveSession": "Leave session",
-      "keepReconnecting": "Keep reconnecting",
-      "dismissOfflineNotice": "Dismiss offline notice",
-      "shareSessionLink": "Share session link",
-      "closeTickBar": "Close tick bar",
-      "logAttempt": "Log attempt",
-      "showParticipants": "Show participants",
-      "hideParticipants": "Hide participants",
-      "openPlayDrawer": "Open the wall climb"
-    },
-    "offline": {
-      "idle": "Offline",
-      "party": "Offline. Queued climbs will still sync.",
-      "solo": "Offline. Changes will sync when you reconnect."
+      "leaveSession": "Leave session"
     }
   },
   "queueDrawer": {
@@ -284,19 +173,10 @@
     "removeItems_other": "Remove {{count}} items"
   },
   "queueList": {
-    "editClimb": "Edit this climb",
-    "addedViaBluetooth": "Added via Bluetooth",
-    "nextUpHeader": "Next up",
-    "endMessage": "That's all for now",
     "showFullHistory_one": "Show full history ({{count}} more)",
     "showFullHistory_other": "Show full history ({{count}} more)",
     "showFullHistoryAria_one": "Show {{count}} more item from history",
-    "showFullHistoryAria_other": "Show {{count}} more items from history",
-    "tickHistoryClimb": "Log a tick for {{name}}"
-  },
-  "queueProvider": {
-    "offlineLimitReached": "You've hit the offline up-next limit. Reconnect to sync your climbs.",
-    "rateLimitCatchUp": "Catching up on your changes…"
+    "showFullHistoryAria_other": "Show {{count}} more items from history"
   },
   "mobile": {
     "logbook": {
@@ -610,13 +490,6 @@
     "replay": "Replay",
     "speed": "Playback speed",
     "peerFrameMismatch": "Playing on your own. Someone in the session is on a different app version that reads this route's frames differently.",
-    "audienceCount_one": "{{count}} other watching",
-    "audienceCount_other": "{{count}} others watching",
-    "yourAscents_one": "Your Ascent ({{count}})",
-    "yourAscents_other": "Your Ascents ({{count}})",
-    "triesCount_one": "{{count}} try",
-    "triesCount_other": "{{count}} tries",
-    "tickError": "Couldn't save your tick — it's saved as a draft",
     "shareError": "Couldn't share — try again",
     "favoriteError": "Couldn't update your favorites — try again",
     "closeAria": "Close",
@@ -628,29 +501,13 @@
       "addFavoriteAria": "Add favorite",
       "removeFavoriteAria": "Remove favorite",
       "climbActionsAria": "Climb actions",
-      "openQueueAria": "Open up next",
-      "queueCountAria": "Queue, {{count}} climbs",
-      "lightbulb": {
-        "turnOff": "Turn off the board",
-        "sendNamed": "Send “{{name}}” to the wall",
-        "send": "Send the climb to the wall",
-        "coachmark": "Send to the wall"
-      }
+      "queueCountAria": "Queue, {{count}} climbs"
     },
     "tickFab": {
       "logAscentAria": "Log ascent"
     },
     "tickBar": {
-      "commentPlaceholder": "Comment...",
-      "commentAria": "Tick comment",
-      "closeAria": "Close tick bar",
-      "collapseAria": "Collapse tick bar",
-      "expandAria": "Expand tick bar",
       "attemptLabel": "attempt",
-      "flashLabel": "flash",
-      "tickLabel": "tick",
-      "logAttemptAria": "Log attempt",
-      "saveTickAria": "Save tick",
       "flashSaveLabel": "Flash",
       "sendSaveLabel": "Send",
       "starRating_one": "{{count}} star",

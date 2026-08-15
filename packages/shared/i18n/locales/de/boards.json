@@ -1,36 +1,8 @@
 {
   "discovery": {
-    "section": {
-      "nearby": "Boards in deiner Nähe"
-    },
     "popular": {
       "title": "Beliebte Boards",
       "meta": "{{boards}} Boards · {{sends}} Begehungen"
-    },
-    "findNearby": {
-      "loading": "Boards werden gesucht…",
-      "geoDenied": "Standort nicht verfügbar",
-      "error": "Boards in der Nähe konnten nicht geladen werden",
-      "noResults": "Keine Boards in der Nähe gefunden",
-      "idle": "In der Nähe suchen"
-    },
-    "search": {
-      "ariaLabel": "Nach einem Board suchen",
-      "label": "Suchen"
-    },
-    "custom": {
-      "ariaLabel": "Eigenes Board bauen",
-      "label": "Eigenes Board"
-    },
-    "create": {
-      "defaultLabel": "Neues Board"
-    },
-    "bluetooth": {
-      "scanning": "Wird gesucht…",
-      "boardsFound": "Boards gefunden",
-      "noBoardsFound": "Keine Boards gefunden",
-      "unavailable": "Bluetooth nicht verfügbar",
-      "idle": "Schnellstart"
     }
   },
   "mobile": {
@@ -400,19 +372,8 @@
   },
   "boardForm": {
     "create": {
-      "submit": "Board anlegen",
-      "authRequired": "Du musst angemeldet sein, um ein Board anzulegen",
-      "errorMessage": "Board konnte nicht angelegt werden. Vielleicht gibt es für diese Konfiguration schon eins.",
       "limitReached": "Du hast die maximale Anzahl Boards für ein Konto erreicht. Lösch ein Board, das du nicht mehr nutzt, um ein neues anzulegen.",
-      "goToExisting": "Zu deinem Board",
-      "nameRequired": "Board-Name ist Pflicht",
-      "createdNamed": "Board „{{name}}“ angelegt!",
-      "namePlaceholder": "z. B. Home Board, Hallenname",
-      "locationPlaceholder": "z. B. Stadt, Hallenname",
-      "duplicateTitle": "Dieses Setup hast du schon",
-      "duplicateBody": "Du hast „{{name}}“ schon — gleiches Layout, gleiche Größe, gleiche Hold-Sets. Leg nur dann noch eins an, wenn es eine andere Wand ist.",
-      "addAnyway": "Trotzdem anlegen",
-      "keepEditing": "Abbrechen"
+      "nameRequired": "Board-Name ist Pflicht"
     },
     "fields": {
       "name": "Board-Name",
@@ -502,36 +463,8 @@
     "holdSets": "Hold-Sets",
     "angle": "Winkel"
   },
-  "boardFilterStrip": {
-    "all": "Alle",
-    "allBoards": "Alle Boards"
-  },
   "boardPill": {
     "switchHint": "Öffnet die Board-Auswahl"
-  },
-  "boardSwitchConfirm": {
-    "session": {
-      "title": "Session verlassen?",
-      "body": "Du bist in einer Session auf {{lockedLabel}}. Der Wechsel zu {{targetLabel}} trennt dein Board, die Session läuft aber weiter."
-    },
-    "connection": {
-      "title": "Board trennen?",
-      "body": "Deine {{lockedLabel}} ist noch verbunden. Der Wechsel zu {{targetLabel}} trennt sie."
-    },
-    "stay": "Bleiben",
-    "switch": "Board wechseln"
-  },
-  "boardSearchDrawer": {
-    "title": "Board finden",
-    "searchPlaceholder": "Boards nach Name oder Ort suchen",
-    "clear": "Leeren",
-    "radiusInfo": "Zeigt Boards im Umkreis von {{radiusKm}} km um die Kartenmitte",
-    "empty": "Keine Boards in diesem Bereich. Verschieb die Karte oder zoom raus.",
-    "emptyWithQuery": "Hier passt kein Board zu „{{query}}“. Zoom raus oder such woanders.",
-    "open": "Öffnen"
-  },
-  "boardSearchMap": {
-    "myLocation": "Mein Standort"
   },
   "zoomableBoard": {
     "reset": "Zurücksetzen"
@@ -595,17 +528,6 @@
     "viewGym": "Halle ansehen",
     "claim": "Das ist meine Halle — beanspruchen",
     "createAnyway": "Nichts dabei? Leg deine Halle mit dem Button unten an."
-  },
-  "selectorDrawer": {
-    "customTitle": "Eigenes Board",
-    "createTitle": "Board anlegen",
-    "createButton": "Board anlegen",
-    "quickSession": "Schnelle Session",
-    "configSection": {
-      "label": "Board-Konfiguration",
-      "title": "Board-Konfiguration",
-      "defaultSummary": "Board auswählen"
-    }
   },
   "gymEntity": {
     "notFound": "Halle nicht gefunden",

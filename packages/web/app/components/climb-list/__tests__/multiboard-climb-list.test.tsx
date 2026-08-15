@@ -11,10 +11,11 @@ import MultiboardClimbList from '../multiboard-climb-list';
  * `/playlists/[uuid]`, `/setter/[username]` and `/profile/{id}/climbs`, and its
  * rows are now crawlable links rather than click handlers.
  *
- * There is deliberately no `vi.mock` for `climb-actions/*`, `graphql-queue` or
- * `board-page/climbs-list` here: the file no longer imports any of them, and
- * vitest throws on a mock whose path the module graph never reaches. The
- * absence of those mocks is the signal.
+ * There is deliberately no `vi.mock` for `climb-actions/*`, `graphql-queue`,
+ * `board-page/climbs-list`, `board-scroll/board-filter-strip` or
+ * `persistent-session` here: the file no longer imports any of them, and vitest
+ * throws on a mock whose path the module graph never reaches. The absence of
+ * those mocks is the signal.
  */
 vi.mock('next/navigation', () => ({
   usePathname: () => '/playlists/some-uuid',
@@ -31,14 +32,6 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
 vi.mock('@/app/components/board-renderer/board-image-layers', () => ({ default: () => null }));
 vi.mock('@/app/components/board-renderer/board-canvas-renderer', () => ({ default: () => null }));
 vi.mock('@/app/lib/board-render-worker/worker-manager', () => ({ useCanvasRendererReady: () => false }));
-
-vi.mock('@/app/components/board-scroll/board-filter-strip', () => ({
-  default: () => <div data-testid="board-filter-strip" />,
-}));
-
-vi.mock('@/app/components/persistent-session/persistent-session-context', () => ({
-  usePersistentSessionState: () => ({ activeSession: null }),
-}));
 
 vi.mock('@/app/hooks/use-my-boards', () => ({
   useMyBoards: () => ({ boards: [], isLoading: false }),
@@ -122,7 +115,6 @@ function renderList(overrides: Partial<React.ComponentProps<typeof MultiboardCli
     hasMore: false,
     onLoadMore: vi.fn(),
     selectedBoard: null,
-    onBoardSelect: vi.fn(),
     ...overrides,
   };
   return render(<MultiboardClimbList {...props} />);

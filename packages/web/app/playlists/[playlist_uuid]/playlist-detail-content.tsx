@@ -15,7 +15,6 @@ import {
   SentimentDissatisfiedOutlined,
   MoreVertOutlined,
   ElectricBoltOutlined,
-  EditOutlined,
   DeleteOutlined,
   PeopleOutlined,
   IosShare,
@@ -59,7 +58,6 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
 import BackButton from '@/app/components/back-button';
-import PlaylistEditDrawer from '@/app/components/library/playlist-edit-drawer';
 import CommentSection from '@/app/components/social/comment-section';
 import MultiboardClimbList from '@/app/components/climb-list/multiboard-climb-list';
 import { usePlaylistClimbs, type PlaylistClimbsBoardInput } from '@boardsesh/playlists-react';
@@ -116,7 +114,6 @@ export default function PlaylistDetailContent({
   const [playlist, setPlaylist] = useState<Playlist | null>(initialPlaylist ?? null);
   const [loading, setLoading] = useState(!initialPlaylist);
   const [error, setError] = useState<string | null>(null);
-  const [editDrawerOpen, setEditDrawerOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   // Initialize selectedBoard from SSR data immediately (avoids flash from "All" to selected board)
   const [selectedBoard, setSelectedBoard] = useState<UserBoard | null>(() =>
@@ -282,26 +279,11 @@ export default function PlaylistDetailContent({
   // climbs, so cast once here.
   const allClimbs = sharedAllClimbs as unknown as Climb[];
 
-  // Collect unique board types for the filter
-  const boardTypes = useMemo(() => {
-    const types = new Set<string>();
-    for (const climb of allClimbs) {
-      if (climb.boardType) types.add(climb.boardType);
-    }
-    // Also include the playlist's own board type
-    if (playlist?.boardType) types.add(playlist.boardType);
-    return Array.from(types);
-  }, [allClimbs, playlist?.boardType]);
-
   const handleLoadMore = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) {
       void fetchNextPage();
     }
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
-
-  const handleEditSuccess = useCallback((updatedPlaylist: Playlist) => {
-    setPlaylist(updatedPlaylist);
-  }, []);
 
   const handleDelete = useCallback(async () => {
     if (!token || !playlist) return;
@@ -321,10 +303,6 @@ export default function PlaylistDetailContent({
       showMessage(t('detail.deleteFailed'), 'error');
     }
   }, [token, playlist, playlistUuid, router, showMessage, playlistsBasePath, t]);
-
-  const handleBoardSelect = useCallback((board: UserBoard | null) => {
-    setSelectedBoard(board);
-  }, []);
 
   const handleShare = useCallback(async () => {
     const shareUrl = `${window.location.origin}/playlists/${playlistUuid}`;
@@ -413,13 +391,9 @@ export default function PlaylistDetailContent({
       isLoading={isClimbsLoading}
       hasMore={hasNextPage ?? false}
       onLoadMore={handleLoadMore}
-      showBoardFilter
-      boardTypes={boardTypes}
       selectedBoard={selectedBoard}
-      onBoardSelect={handleBoardSelect}
       fallbackBoardTypes={[playlist.boardType]}
       boards={myBoards}
-      boardsLoading={boardsLoading}
     />
   );
 
@@ -551,19 +525,6 @@ export default function PlaylistDetailContent({
 
           <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
             {isOwner && (
-              <MenuItem
-                onClick={() => {
-                  setMenuAnchor(null);
-                  setEditDrawerOpen(true);
-                }}
-              >
-                <ListItemIcon>
-                  <EditOutlined />
-                </ListItemIcon>
-                <ListItemText>{t('detail.menu.edit')}</ListItemText>
-              </MenuItem>
-            )}
-            {isOwner && (
               <MenuItem onClick={handleDelete} sx={{ color: 'var(--color-error)' }}>
                 <ListItemIcon>
                   <DeleteOutlined sx={{ color: 'var(--color-error)' }} />
@@ -594,16 +555,6 @@ export default function PlaylistDetailContent({
           </div>
         )}
       </div>
-
-      {/* Edit Drawer */}
-      {playlist && (
-        <PlaylistEditDrawer
-          open={editDrawerOpen}
-          playlist={playlist}
-          onClose={() => setEditDrawerOpen(false)}
-          onSuccess={handleEditSuccess}
-        />
-      )}
     </>
   );
 }

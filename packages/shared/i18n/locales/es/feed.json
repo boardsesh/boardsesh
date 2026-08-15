@@ -52,10 +52,7 @@
     "empty": "Aún no hay ascensos"
   },
   "betaVideos": {
-    "shareBetaFor": "Comparte beta para {{name}}",
-    "shareBetaVideo": "Comparte un vídeo de beta",
     "shareBeta": "Compartir beta",
-    "dialogHelper": "Pega un enlace de reel o post para que otros vean tu beta.",
     "addedToast": "Vídeo añadido al beta",
     "addError": "No se pudo añadir el vídeo. Inténtalo de nuevo.",
     "urlPlaceholder": "URL de Instagram o TikTok",
@@ -72,8 +69,7 @@
     "copyAndOpenInstagram": "Copiar y abrir Instagram",
     "instagramCopyFailed": "No se pudo copiar la descripción. Inténtalo de nuevo.",
     "instagramCopiedAndOpened": "Descripción copiada — pégala en Instagram.",
-    "instagramCopiedOnly": "Descripción copiada al portapapeles.",
-    "addSubmit": "Añadir"
+    "instagramCopiedOnly": "Descripción copiada al portapapeles."
   },
   "importBeta": {
     "title": "Importa beta desde Instagram",
@@ -177,11 +173,6 @@
     "frozen": "Este bloque está congelado y no acepta nuevas propuestas.",
     "reasonPrefix": "Motivo: {{reason}}"
   },
-  "newClimbFeed": {
-    "title": "Nuevos bloques",
-    "errorLoad": "No se pudieron cargar los bloques. Inténtalo de nuevo.",
-    "empty": "Aún no hay bloques en este layout. ¡Sé el primero!"
-  },
   "proposalCard": {
     "quotedReason": "“{{reason}}”",
     "support": "Apoyar",
@@ -207,15 +198,6 @@
     "votesNeeded": "{{current}} / {{required}} votos necesarios",
     "opposed": "{{count}} en contra"
   },
-  "search": {
-    "minCharsHint": "Escribe al menos 2 caracteres para buscar",
-    "noBoards": "No hay plafones para \"{{query}}\"",
-    "noGyms": "No hay gimnasios para \"{{query}}\"",
-    "noPlaylists": "No hay listas para \"{{query}}\"",
-    "noUsers": "No hay usuarios ni setters para \"{{query}}\"",
-    "climbCount_one": "{{count}} bloque",
-    "climbCount_other": "{{count}} bloques"
-  },
   "sessionFeedCard": {
     "climbCount_one": "{{count}} bloque",
     "climbCount_other": "{{count}} bloques",
@@ -239,9 +221,6 @@
     "openHint": "Abre la sesión",
     "openHardestClimb": "Abrir {{climb}}"
   },
-  "sessionSummary": {
-    "completed": "Sesión completada"
-  },
   "socialActions": {
     "upvoteWithCount_one": "Me gusta, {{count}} me gusta",
     "upvoteWithCount_other": "Me gusta, {{count}} me gusta",
@@ -252,19 +231,6 @@
   },
   "socialFeedItem": {
     "climbed": "escaló"
-  },
-  "subscribeButton": {
-    "signInPrompt": "Inicia sesión para gestionar las suscripciones",
-    "subscribed": "Suscrito a nuevos bloques",
-    "unsubscribed": "Suscripción cancelada",
-    "updateFailed": "No se pudo actualizar la suscripción"
-  },
-  "userSearch": {
-    "ascentsThisMonth": "{{count}} ascensos este mes",
-    "climbsSet_one": "{{count}} bloque creado",
-    "climbsSet_other": "{{count}} bloques creados",
-    "climbCount_one": "{{count}} bloque",
-    "climbCount_other": "{{count}} bloques"
   },
   "userSmartCard": {
     "follower_one": "{{count}} seguidor",

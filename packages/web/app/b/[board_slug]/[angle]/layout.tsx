@@ -3,7 +3,6 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { resolveBoardBySlug, boardToRouteParams } from '@/app/lib/board-slug-utils';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
-import LastUsedBoardTracker from '@/app/components/board-page/last-used-board-tracker';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 
@@ -33,7 +32,7 @@ export async function generateMetadata(props: { params: Promise<BoardSlugRoutePa
 }
 
 /**
- * The named-board shell. Server-only apart from `LastUsedBoardTracker`: the
+ * The named-board shell. Server-only: the
  * board, session, connection, queue and search providers came out with the
  * sibling routes that consumed them (#4433), and the pages left under it — the
  * climb list and climb view front doors — render server-side.
@@ -66,16 +65,6 @@ export default async function BoardSlugLayout(props: PropsWithChildren<{ params:
           background: 'var(--semantic-surface)',
         }}
       >
-        <LastUsedBoardTracker
-          url={listUrl}
-          boardName={boardDetails.board_name}
-          layoutName={boardDetails.layout_name || ''}
-          sizeName={boardDetails.size_name || ''}
-          sizeDescription={boardDetails.size_description}
-          setNames={boardDetails.set_names || []}
-          angle={angle}
-          boardSlug={board.slug}
-        />
         <main
           id="content-for-scrollable"
           style={{
@@ -83,7 +72,6 @@ export default async function BoardSlugLayout(props: PropsWithChildren<{ params:
             paddingLeft: `${themeTokens.spacing[2]}px`,
             paddingRight: `${themeTokens.spacing[2]}px`,
             paddingTop: 'var(--global-header-height)',
-            paddingBottom: 'var(--bottom-bar-height)',
           }}
         >
           {children}

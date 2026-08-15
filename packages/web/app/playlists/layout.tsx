@@ -6,7 +6,6 @@ export default function MyLibraryLayout({ children }: { children: React.ReactNod
       style={{
         minHeight: '100dvh',
         paddingTop: 'var(--global-header-height)',
-        paddingBottom: 'var(--bottom-bar-height)',
       }}
     >
       {children}

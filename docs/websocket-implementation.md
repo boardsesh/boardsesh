@@ -408,7 +408,7 @@ This ensures `BoardSessionBridge` only calls `activateSession()` when the actual
 
 Board presence powers the mobile "now on the wall" feed, board sheet history, and board sheet stats. It is independent of party-session join: the mobile app resolves a board id for the wall feed before subscribing to `boardNowPlaying` or fetching board-presence history/stats.
 
-The web gym kiosk (`/kiosk/{gym-slug}`, `packages/web/app/components/kiosk/presence/kiosk-presence-hub.tsx`) is a second consumer of the same feed: one graphql-ws client per TV (`connectionName: 'kiosk'`, anonymous-capable — the token from `useWsAuthToken` is simply `null` for a logged-out TV) multiplexes one `boardNowPlaying` subscription per kiosk board through one `BoardPresenceProvider` each. It never resolves board ids itself — the `gymKiosk` query returns each board's presence-channel `boardId` pre-resolved (public boards only for anonymous viewers). Kiosk reliability (5-minute manual catch-ups, config-poll reload) sits on top of the same reconnect/catch-up machinery described below.
+The web gym kiosk (`/kiosk/{gym-slug}`, `packages/web/app/components/kiosk/presence/kiosk-presence-hub.tsx`) is a second consumer of the same feed: one graphql-ws client per TV (`connectionName: 'kiosk'`, anonymous-capable — the token from `useWsAuthToken` is simply `null` for a logged-out TV) multiplexes one `boardNowPlaying` subscription per kiosk board through one `BoardPresenceProvider` each. It never resolves board ids itself — the `gymKiosk` query returns each board's presence-channel `boardId` pre-resolved (public boards only for anonymous viewers). Kiosk reliability (5-minute manual catch-ups, config-poll reload) sits on top of the same reconnect/catch-up machinery described below. Since W-16 (#4435) the kiosk client is the only web graphql-ws consumer besides `social/comment-section.tsx` and `hooks/use-notification-subscription.ts` — the root `'session'` client that used to open a second socket on every route, kiosk TVs included, came out with `PersistentSessionWrapper`, so a kiosk now holds exactly one socket and an `/embed/…` page holds none.
 
 Mobile resolves the feed board id in this order:
 
@@ -2128,16 +2128,22 @@ All except `/api/watch/pair` take `Authorization: Bearer <mobile JWT>`. `navigat
 
 - `packages/web/app/lib/backend-url.ts` - Runtime backend URL resolver (preview deploys, dev overrides)
 - `packages/shared/graphql-client/` - Platform-agnostic `graphql-ws` helpers (`execute`, `subscribe`, `createGraphQLClient`, `GraphQLOperationError`). Web and the React Native mobile app both consume this; web passes its `SafeWebSocket` wrapper + `connectionManager` registration via the `webSocketImpl` / `onClientCreated` hooks.
-- `packages/web/app/lib/realtime/graphql-client.ts` - Thin web wrapper around `@boardsesh/graphql-client` that adds the `SafeWebSocket` DOM-error suppression and `connectionManager` registration. Also re-exports the shared primitives for legacy relative imports.
+- `packages/web/app/lib/realtime/graphql-client.ts` - Thin web wrapper around `@boardsesh/graphql-client` that adds the `SafeWebSocket` DOM-error suppression and `connectionManager` registration. Also re-exports the shared primitives.
 - `packages/web/app/lib/realtime/websocket-connection-manager.ts` - Connection state tracking
-- `packages/shared/queue-runtime/src/session-connection.ts` - `createSessionConnectionController`: the pure-TS connect/join/subscribe/reconnect/retry state machine (Workstream W4)
-- `packages/web/app/components/persistent-session/hooks/use-session-lifecycle.ts` - Session lifecycle: React binding around the controller (state, activate/deactivate, IndexedDB persistence, auto-finish pre-flight)
-- `packages/web/app/components/persistent-session/hooks/session-connection-ports.ts` - Web's `SessionConnectionDeps` port implementations (GraphQL operations, `applySessionEvent` roster application)
-- `packages/web/app/components/persistent-session/hooks/use-queue-mutations.ts` - Queue mutations
-- `packages/web/app/components/graphql-queue/use-queue-session.ts` - Session hook
-- `packages/web/app/components/persistent-session/persistent-session-context.tsx` - Root-level session management (split into ActionsContext + StateContext for render performance)
-- `packages/web/app/components/graphql-queue/QueueContext.tsx` - Queue state context (split into ActionsContext + DataContext; actions use `latestRef` pattern for stable callback identity)
-- `packages/web/app/components/queue-control/queue-actions-core.ts` - Single queue-actions factory (`createQueueActionsCore`) wired by both `QueueContext.tsx` and `queue-bridge-context.tsx`; per-surface differences are injected deps
+- `packages/shared/queue-runtime/src/session-connection.ts` - `createSessionConnectionController`: the pure-TS connect/join/subscribe/reconnect/retry state machine (Workstream W4). Consumed by the mobile app; web no longer binds it.
+
+> **Status (W-16, #4435): the web party-session client is gone.** `components/persistent-session/`,
+> `components/graphql-queue/`, `components/queue-control/` and the root
+> `PersistentSessionWrapper` were deleted when climbing moved to the Expo app, and
+> with them every web binding listed in this section's earlier revisions
+> (`use-session-lifecycle.ts`, `session-connection-ports.ts`, `use-queue-mutations.ts`,
+> `use-queue-session.ts`, `persistent-session-context.tsx`, `QueueContext.tsx`,
+> `queue-actions-core.ts`) and `packages/web/app/lib/live-activity/use-live-activity.ts`.
+> The protocol, the backend resolvers and the mobile client are unchanged — read
+> the flows below as the contract the **mobile** app and the kiosk implement.
+> On www the only remaining `graphql-ws` consumers are
+> `components/kiosk/presence/kiosk-presence-hub.tsx`, `social/comment-section.tsx`
+> and `hooks/use-notification-subscription.ts`.
 
 ### Native iOS
 
@@ -2152,7 +2158,6 @@ All except `/api/watch/pair` take `Authorization: Bearer <mobile JWT>`. `navigat
 - `mobile/ios/App/BoardseshWidgets/NextClimbIntent.swift` - Widget Next button App Intent
 - `mobile/ios/App/BoardseshWidgets/PreviousClimbIntent.swift` - Widget Previous button App Intent
 - `mobile/ios/App/BoardseshWidgets/WidgetNetworking.swift` - HTTP client that calls `/api/widget/navigate` from the widget extension
-- `packages/web/app/lib/live-activity/use-live-activity.ts` - React hook bridging queue state to the native Live Activity plugin
 
 ### Shared
 
@@ -2161,16 +2166,9 @@ All except `/api/watch/pair` take `Authorization: Bearer <mobile JWT>`. `navigat
 
 ## Onboarding tour integration points
 
-The onboarding tour (see `packages/web/app/components/onboarding/`) drives the real session UI with mock data so a new user can see what a populated party session looks like without creating one. A few escape hatches in the session-related components exist solely for the tour — do not remove them thinking they are dead code:
-
-- **`SeshSettingsDrawer` — `tourMockSession?: SessionDetail` prop.** When set, the drawer skips its GraphQL `sessionDetail` query, bypasses the `activeSession` guard, hides the Stop-session button, and swaps the real invite link / QR for a non-URL preview string (`boardsesh:onboarding-tour-preview`). It renders entirely from the mock object generated by `packages/web/app/components/onboarding/mock-session-detail.ts`.
-- **`SeshSettingsDrawer` / `SessionDetailContent` — `tourActiveSection?: 'invite' | 'activity' | 'analytics' | null` prop.** Threads down to `CollapsibleSection`'s `forcedActiveKey`, which forces a specific section open and disables the user's collapse/expand interaction while the tour is driving it.
-- **`CollapsibleSection` — `forcedActiveKey?: string | null` prop.** Controlled-mode override used by the tour to walk the user through Invite → Activity → Analytics in sequence. When unset, the section is uncontrolled (existing behaviour).
-- **`QueueControlBar` — `TOUR_CLOSE_PLAY_VIEW_EVENT` window event (`onboarding:close-play-view`).** The bar closes the play drawer on demand so the session overview can be shown without stacking.
-- **`QueueControlBar` session mini-bar — `data-tour-anchor="session-mini-bar"`.** Placed on the always-rendered `.sessionHeaderInner` wrapper so the anchor resolves whether or not a real `activeSession` exists. The "Open your session" step anchors here.
-- **`ClimbsList` — `TOUR_CLIMB_LIST_PICK_EVENT` window event (`onboarding:climb-list-pick`).** Dispatched when the user explicitly taps a climb card while the tour is on the `climb-list` step. The provider advances on this signal rather than on `currentClimb` observation, so async queue hydration into a newly-created session can't falsely skip the step.
-- **`PlayViewDrawer` — `TOUR_OPEN_PLAY_QUEUE_EVENT` + `TOUR_CLOSE_PLAY_QUEUE_EVENT` window events.** Let the tour open/close the nested queue drawer inside the play view. On tour-driven open, the nested `QueueDrawer` is mounted with `initialShowHistory=true` so every queued climb is visible regardless of which one is currently active.
-
-All of the above are cheap conditional paths — they only branch when the matching prop/event is present. They do not affect the WebSocket flow or any real-session behaviour.
-
-The event constants live in `packages/web/app/components/onboarding/onboarding-tour-events.ts`. The state machine and side-effect dispatcher live in `packages/web/app/components/onboarding/onboarding-tour-provider.tsx`.
+**Removed in W-16 (#4435).** The web onboarding tour (`components/onboarding/`) drove
+the real session UI with mock data, and every escape hatch it needed —
+`SeshSettingsDrawer`'s `tourMockSession` / `tourActiveSection` props,
+`CollapsibleSection`'s `forcedActiveKey`, and the `TOUR_*` window events on
+`QueueControlBar`, `ClimbsList` and `PlayViewDrawer` — went with the components
+that carried them. Nothing in the surviving web tree branches on a tour.
