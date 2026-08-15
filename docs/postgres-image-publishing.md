@@ -38,9 +38,12 @@ Also keep these repository controls in place:
 - Allow this repository's `GITHUB_TOKEN` to read and write the two linked GHCR
   packages. The packages may remain private.
 - Define `RETIRED_DB_IMAGE_DIGESTS` as a repository or
-  `postgres-image-publisher` environment variable. Each non-empty line must be
-  one lowercase `sha256:<64 hex>` digest. Invalid or duplicate entries fail the
-  run. An empty value means that no digest has been retired yet.
+  `postgres-image-publisher` environment variable. Set it to the exact sentinel
+  `none` when no digest has been retired. Otherwise, each non-empty line must be
+  one lowercase `sha256:<64 hex>` digest. Missing, empty, whitespace-only,
+  invalid, duplicate, or mixed `none`/digest values fail before image build
+  setup. The complete policy is checked again against the built digests before
+  registry login.
 - Do not grant package deletion to this workflow.
 
 These settings are external to the repository and cannot be created safely by
@@ -136,7 +139,10 @@ Use three changes with a quiet `main` window around the dispatch:
 
 1. Merge the publisher prerequisite PR and configure the dedicated environment.
 2. Merge producer-only PR A containing the reviewed PostgreSQL 18 image source
-   and its validation contracts. Do not add consumer digest pins in A.
+   and its validation contracts, including the `test:postgres18-contract`
+   Vite+ target. Do not add consumer digest pins in A. An accidental dispatch
+   before this target reaches `main` fails immediately after checkout, before
+   dependency installation.
 3. Record A's merge SHA and immediately dispatch **Publish Current Main
    PostgreSQL Images** from `main` with that exact SHA. Do not merge another PR
    until the entire run, including artifact upload, finishes. Any overlapping

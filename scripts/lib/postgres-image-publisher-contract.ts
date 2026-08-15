@@ -33,6 +33,7 @@ const PUBLISHER_STEPS: Record<string, ExpectedStep[]> = {
   ],
   'publish-images': [
     { name: 'Checkout exact current main commit', uses: ACTIONS.checkout },
+    { name: 'Validate retired-digest configuration before build setup' },
     { name: 'Enable multi-architecture emulation', uses: ACTIONS.setupQemu },
     { name: 'Create temporary tool and credential boundary' },
     { name: 'Set up Docker Buildx inside the temporary boundary', uses: ACTIONS.setupBuildx },
@@ -138,15 +139,17 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
     'Bind workflow and audit publisher environment': 'ddec8fd3b70bbbce3f6ece43dcf76d6511a390e13dde2a3a4646c34ae46570ac',
   },
   'validate-main': {
-    'Validate checkout and Docker inputs': '37e705a3d4372ebcff8c1e582b7c688c8a58e31aba0283b311e47c9946bd1dc9',
+    'Validate checkout and Docker inputs': 'd93f8b5c79e732dfa0d06bb5469b9437d690374d7f92441f128f64053ba08245',
     'Install locked dependencies': 'ed6ae2ba19763eb56c4691c7113c556bc1dc78a2b5868187f418bcb53ecd3ffd',
     'Run PostgreSQL 18 contracts': '66196ae8703cb101dc49952e602bd24ee2a6e03d7f2902c738bcccafb1b0edf9',
   },
   'publish-images': {
+    'Validate retired-digest configuration before build setup':
+      '8fa475f67e0d460703ef73b4870570790369d676cd6711209a1416234d54f7f4',
     'Create temporary tool and credential boundary': '84bf5fb7b5ff5e70be8e8684099d2f87727cefde54b3a70b92b20220e3d1fea3',
     'Revalidate offline build inputs': '8f00867154930447c27a7f0a29d03f3e282134badd158b69aef0c3d9ddb3132d',
     'Validate offline layouts and retired digest policy':
-      '1a38c1da2aa9243eddf617c72f0fc143fe4f6fb850586e2527481c13d27287c6',
+      '110821eff07459d4dc1299e88bc9e71da20b0a3ce23cb89b0162cef0159b421d',
     'Recheck exact current main and environment immediately before registry authentication':
       '1dd7ee111026f09c11a161be8e486d09e453ac724467238b87d7761a8a1d56b7',
     'Authenticate ORAS to GHCR': '2409cc90e42b7448aba3c40d18a741735d513a6fdc0f2212544407fb09f3a4ce',
@@ -209,8 +212,8 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
 // this makes the whole publisher an exact structural allowlist.
 const PRIVILEGED_JOB_SHA256: Record<string, string> = {
   'authorize-current-main': 'de925dca4eba05dc42accdb6fe0ed3c996fe37079d620da7fc35166900e70c29',
-  'validate-main': '9a21ccff5d48d74b0572de66a40c848bd1cc85af6ac971ef96b9ed285f3b75ea',
-  'publish-images': '66739d6d03d37613e016dbc53e1e59eeb3a0fb409030521f8e030886eb2dfac7',
+  'validate-main': '310908b62a52c0ea058602e33fcac04bc7578c89d10a743fa0363d5f4fda7f70',
+  'publish-images': 'ca9d253928f2c8132fa71dfa7c6b49c085390bffab88da15604e1ad058c20f17',
   'verify-published-images': '05f165fb989b0c7c920b470b19bf4f14b5f3dd1f0c2880bd79e3f2b79228e1c8',
   'smoke-portable': '8cc80c28ec97ce85250334f77759f314f16ce651e1535409e4373af5db25e2db',
   'smoke-seeded': 'fb6924c0722692a094e776ba8386e4802797219e9602aee6e8a5226ec758a1dd',
@@ -610,6 +613,13 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
     failures,
     validateMain,
     'Validate checkout and Docker inputs',
+    /grep -Fq "'test:postgres18-contract': \{" source\/vite\.config\.ts/,
+    'exact-main validation must fail early when the PostgreSQL 18 contract target is unavailable',
+  );
+  requireRunPattern(
+    failures,
+    validateMain,
+    'Validate checkout and Docker inputs',
     /s\/\^\\xEF\\xBB\\xBF\/\/ if \$\. == 1;/,
     'Docker input validation must strip a UTF-8 BOM before checking parser directives',
   );
@@ -630,6 +640,22 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
 
   const publish = recordAt(jobs, 'publish-images') ?? {};
   validateCheckout(failures, 'publish-images', stepByName(publish, 'Checkout exact current main commit'), 'source');
+  for (const [pattern, message] of [
+    [
+      /\[\[ "\$RETIRED_DIGESTS" =~ \[\^\[:space:\]\] \]\]/,
+      'retired digest configuration must reject missing or blank values before build setup',
+    ],
+    [
+      /\[\[ "\$RETIRED_DIGESTS" == 'none' \]\]/,
+      'retired digest configuration must require the explicit none sentinel for an empty set',
+    ],
+    [
+      /\[\[ "\$retired_digest" =~ \^sha256:\[0-9a-f\]\{64\}\$ \]\]/,
+      'retired digest policy must reject malformed entries before build setup',
+    ],
+  ] as const) {
+    requireRunPattern(failures, publish, 'Validate retired-digest configuration before build setup', pattern, message);
+  }
   validateOrasSetup(failures, 'publish-images', publish);
   const buildx = stepByName(publish, 'Set up Docker Buildx inside the temporary boundary');
   const buildxInputs = buildx ? recordAt(buildx, 'with') : undefined;
@@ -660,7 +686,7 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
   validateBuildStep(failures, stepByName(publish, 'Build seeded OCI layout without registry credentials'), 'seeded');
   for (const [pattern, message] of [
     [
-      /RETIRED_DB_IMAGE_DIGESTS must contain one lowercase sha256 digest per non-empty line/,
+      /RETIRED_DB_IMAGE_DIGESTS must be none or contain one lowercase sha256 digest per non-empty line/,
       'retired digest policy must reject malformed entries',
     ],
     [
@@ -732,6 +758,14 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
     );
   }
   const smokePortable = recordAt(jobs, 'smoke-portable') ?? {};
+  if (
+    !recordsEqual(recordAt(smokePortable, 'strategy'), {
+      'fail-fast': false,
+      matrix: { platform: ['linux/amd64', 'linux/arm64'] },
+    })
+  ) {
+    failures.push('portable smoke matrix must contain exactly linux/amd64 and linux/arm64');
+  }
   const smokeQemu = stepByName(smokePortable, 'Enable multi-architecture emulation');
   const smokeQemuInputs = smokeQemu ? recordAt(smokeQemu, 'with') : undefined;
   if (

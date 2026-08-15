@@ -145,6 +145,10 @@ jobs:
 
           [[ "$(git -C source rev-parse HEAD)" == "$EXPECTED_MAIN_SHA" ]] ||
             fail 'checkout does not match expected_main_sha'
+          [[ -f source/vite.config.ts && ! -L source/vite.config.ts ]] ||
+            fail 'vite.config.ts must be a regular file'
+          grep -Fq "'test:postgres18-contract': {" source/vite.config.ts ||
+            fail 'producer prerequisite missing: merge the PostgreSQL 18 contract target before dispatching this publisher'
           for dockerfile in \
             source/packages/db/docker/Dockerfile.postgres \
             source/packages/db/docker/Dockerfile.dev-db; do
@@ -199,6 +203,31 @@ jobs:
           path: source
           persist-credentials: false
           fetch-depth: 1
+
+      - name: Validate retired-digest configuration before build setup
+        env:
+          RETIRED_DIGESTS: ${{ vars.RETIRED_DB_IMAGE_DIGESTS }}
+        run: |
+          set -Eeuo pipefail
+
+          fail() {
+            printf 'Retired-digest configuration failed: %s\n' "$*" >&2
+            exit 1
+          }
+
+          [[ "$RETIRED_DIGESTS" =~ [^[:space:]] ]] ||
+            fail 'set RETIRED_DB_IMAGE_DIGESTS to none or one lowercase sha256 digest per non-empty line'
+          [[ "$RETIRED_DIGESTS" == 'none' ]] && exit 0
+
+          declare -A seen_retired_digests=()
+          while IFS= read -r retired_digest || [[ -n "$retired_digest" ]]; do
+            [[ -n "$retired_digest" ]] || continue
+            [[ "$retired_digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+              fail 'RETIRED_DB_IMAGE_DIGESTS must be none or contain one lowercase sha256 digest per non-empty line'
+            [[ -z "${seen_retired_digests[$retired_digest]:-}" ]] ||
+              fail "RETIRED_DB_IMAGE_DIGESTS contains a duplicate: $retired_digest"
+            seen_retired_digests["$retired_digest"]=1
+          done <<<"$RETIRED_DIGESTS"
 
       - name: Enable multi-architecture emulation
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
@@ -348,15 +377,19 @@ jobs:
           [[ "$(platform_list "$SEEDED_LAYOUT" "$seeded_digest")" == '["linux/amd64"]' ]] ||
             fail 'seeded OCI layout does not contain exactly linux/amd64'
 
+          [[ "$RETIRED_DIGESTS" =~ [^[:space:]] ]] ||
+            fail 'RETIRED_DB_IMAGE_DIGESTS must be explicitly set to none or lowercase sha256 digests'
           declare -A seen_retired_digests=()
-          while IFS= read -r retired_digest || [[ -n "$retired_digest" ]]; do
-            [[ -n "$retired_digest" ]] || continue
-            [[ "$retired_digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
-              fail 'RETIRED_DB_IMAGE_DIGESTS must contain one lowercase sha256 digest per non-empty line'
-            [[ -z "${seen_retired_digests[$retired_digest]:-}" ]] ||
-              fail "RETIRED_DB_IMAGE_DIGESTS contains a duplicate: $retired_digest"
-            seen_retired_digests["$retired_digest"]=1
-          done <<<"$RETIRED_DIGESTS"
+          if [[ "$RETIRED_DIGESTS" != 'none' ]]; then
+            while IFS= read -r retired_digest || [[ -n "$retired_digest" ]]; do
+              [[ -n "$retired_digest" ]] || continue
+              [[ "$retired_digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+                fail 'RETIRED_DB_IMAGE_DIGESTS must be none or contain one lowercase sha256 digest per non-empty line'
+              [[ -z "${seen_retired_digests[$retired_digest]:-}" ]] ||
+                fail "RETIRED_DB_IMAGE_DIGESTS contains a duplicate: $retired_digest"
+              seen_retired_digests["$retired_digest"]=1
+            done <<<"$RETIRED_DIGESTS"
+          fi
 
           for proposed_digest in "$portable_digest" "$seeded_digest"; do
             [[ -z "${seen_retired_digests[$proposed_digest]:-}" ]] ||

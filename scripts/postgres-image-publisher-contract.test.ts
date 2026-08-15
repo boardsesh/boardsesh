@@ -151,6 +151,16 @@ describe('trusted PostgreSQL image publisher contract', () => {
       expected: /checkout must use only expected_main_sha/,
     },
     {
+      name: 'missing early PostgreSQL 18 contract prerequisite',
+      mutate: (workflow: string) =>
+        replaceRequired(
+          workflow,
+          `grep -Fq "'test:postgres18-contract': {" source/vite.config.ts`,
+          `grep -Fq "'different-target': {" source/vite.config.ts`,
+        ),
+      expected: /must fail early when the PostgreSQL 18 contract target is unavailable/,
+    },
+    {
       name: 'extra privileged publish step',
       mutate: (workflow: string) =>
         replaceRequired(
@@ -228,6 +238,12 @@ describe('trusted PostgreSQL image publisher contract', () => {
       expected: /digest-pinned ARM64 helper/,
     },
     {
+      name: 'ARM64 removed from portable smoke matrix',
+      mutate: (workflow: string) =>
+        replaceRequired(workflow, '        platform: [linux/amd64, linux/arm64]', '        platform: [linux/amd64]'),
+      expected: /portable smoke matrix must contain exactly linux\/amd64 and linux\/arm64/,
+    },
+    {
       name: 'unpinned ORAS action',
       mutate: (workflow: string) =>
         replaceRequired(
@@ -278,7 +294,22 @@ describe('trusted PostgreSQL image publisher contract', () => {
           '      - name: Validate offline layouts and retired digest policy',
           '      - name: Validate layouts after registry login',
         ),
-      expected: /publish-images step 9 must be Validate offline layouts and retired digest policy/,
+      expected: /publish-images step 10 must be Validate offline layouts and retired digest policy/,
+    },
+    {
+      name: 'missing or blank retired-digest configuration accepted before build',
+      mutate: (workflow: string) => replaceRequired(workflow, '[[ "$RETIRED_DIGESTS" =~ [^[:space:]] ]] ||', 'true ||'),
+      expected: /retired digest configuration must reject missing or blank values before build setup/,
+    },
+    {
+      name: 'explicit none sentinel no longer recognized',
+      mutate: (workflow: string) =>
+        replaceRequired(
+          workflow,
+          '[[ "$RETIRED_DIGESTS" == \'none\' ]] && exit 0',
+          '[[ -z "$RETIRED_DIGESTS" ]] && exit 0',
+        ),
+      expected: /retired digest configuration must require the explicit none sentinel/,
     },
     {
       name: 'retired digest format accepted loosely',
