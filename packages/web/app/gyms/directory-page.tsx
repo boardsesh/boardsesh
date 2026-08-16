@@ -211,6 +211,9 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
             stays first in the DOM either way. */}
         <GymDirectoryNearMe
           boardTypes={query.boardTypes}
+          // Threaded through, not dropped: the search box keeps rendering what
+          // was typed, so near-me has to keep applying it.
+          searchQuery={query.query}
           locale={locale}
           viewerState={viewerState}
           browsePins={toMapPins(pageResult.gyms)}

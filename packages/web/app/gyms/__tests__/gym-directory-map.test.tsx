@@ -302,4 +302,21 @@ describe('pinned-count pill', () => {
     );
     expect(container.textContent).toContain('15 of 24 gyms here have a map pin');
   });
+
+  it('stays out of the zoom control corner and never intercepts a click', () => {
+    const { container } = render(
+      <GymDirectoryMap pins={[pin(1, 51, -2)]} pinnedCount={15} shownCount={24} locale="en-US" />,
+    );
+    const pill = container.querySelector('.MuiChip-root');
+    if (!(pill instanceof HTMLElement)) throw new Error('no pill rendered');
+
+    const style = getComputedStyle(pill);
+    // Leaflet's zoom control is TOP-left at the same z-index and neither
+    // wrapper opens a stacking context, so a top-left pill wins on DOM order
+    // and swallows the click on `+` — with scroll-wheel zoom off, that is no
+    // zoom at all.
+    expect(style.top).not.toBe('8px');
+    expect(style.bottom).toBe('8px');
+    expect(style.pointerEvents).toBe('none');
+  });
 });

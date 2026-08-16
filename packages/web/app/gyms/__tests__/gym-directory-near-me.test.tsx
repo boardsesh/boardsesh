@@ -83,10 +83,11 @@ function setGeolocation(state: {
   });
 }
 
-function renderNearMe() {
+function renderNearMe(searchQuery = '') {
   return render(
     <GymDirectoryNearMe
       boardTypes={['kilter']}
+      searchQuery={searchQuery}
       locale="en-US"
       viewerState="signed-out"
       browsePins={[]}
@@ -150,10 +151,12 @@ describe('browse mode', () => {
     expect(map.getAttribute('data-shown')).toBe('24');
   });
 
-  it('offers the map behind a toggle for narrow viewports, with no matchMedia read', () => {
+  it('puts the map behind a toggle at every width, with no matchMedia read', () => {
     renderNearMe();
-    // The toggle exists at every width; CSS decides where it shows. Nothing in
-    // this component asks the window how wide it is.
+    // Live at every width, not just below the breakpoint: the tiles are this
+    // page's only third-party request, so a map nobody asked for should not be
+    // handing the visitor's IP to tile.openstreetmap.org. And nothing in this
+    // component asks the window how wide it is.
     expect(screen.getByRole('button', { name: 'Show map' })).toBeTruthy();
   });
 });
@@ -252,8 +255,43 @@ describe('near-me results', () => {
     renderNearMe();
     fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
     fireEvent.click(screen.getByTestId('map-stub'));
+    fireEvent.click(screen.getByRole('button', { name: 'Show map' }));
 
     expect(analytics.trackGymFunnelEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a radius change once, and not again when the climber flips back', () => {
+    renderNearMe();
+    fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+    expect(analytics.trackGymFunnelEvent).toHaveBeenCalledTimes(1);
+
+    // A different radius IS a different search.
+    fireEvent.click(screen.getByRole('button', { name: '100 km' }));
+    expect(analytics.trackGymFunnelEvent).toHaveBeenCalledTimes(2);
+
+    // Flipping back replays a cached result set. It is not a third search.
+    fireEvent.click(screen.getByRole('button', { name: '25 km' }));
+    expect(analytics.trackGymFunnelEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports the length of the text search it actually applied', () => {
+    renderNearMe('bristol');
+    fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+
+    expect(analytics.trackGymFunnelEvent.mock.calls[0][0].properties.queryLength).toBe(7);
+  });
+
+  it('names the cap when more gyms are in range than one request returns', () => {
+    queryResult = {
+      data: { gyms: [gym(), gym({ uuid: 'gym-2', slug: 'redpoint', name: 'Redpoint' })], totalCount: 137 },
+      isPending: false,
+      isError: false,
+    };
+    renderNearMe();
+    fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+
+    // Near-me has no pagination, so "2 gyms within 25 km" would be false.
+    expect(screen.getByText('Showing the 2 closest of 137 gyms within 25 km')).toBeTruthy();
   });
 
   it('draws the near-me pin coverage on the map instead of the browse page numbers', () => {
@@ -266,10 +304,60 @@ describe('near-me results', () => {
   });
 });
 
+describe('while the proximity query is in flight', () => {
+  beforeEach(() => {
+    setGeolocation({ coordinates: { latitude: 51.4545092, longitude: -2.5879431, accuracy: 10 } });
+    queryResult = { data: undefined, isPending: true, isError: false };
+  });
+
+  it('keeps the list and the map on the same answer', () => {
+    renderNearMe();
+    fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+
+    // One flag drives both. Before this, the list spun while the map still
+    // showed the browse page's pins under a pill describing them.
+    expect(screen.getByTestId('browse-list')).toBeTruthy();
+    const map = screen.getByTestId('map-stub');
+    expect(map.getAttribute('data-pinned')).toBe('15');
+    expect(map.getAttribute('data-shown')).toBe('24');
+  });
+
+  it('says it is working, next to the control that started it', () => {
+    renderNearMe();
+    fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+
+    expect(screen.getByText('Looking for gyms near you…')).toBeTruthy();
+  });
+});
+
 describe('the proximity query itself', () => {
   beforeEach(() => {
     setGeolocation({ coordinates: { latitude: 51.4545092, longitude: -2.5879431, accuracy: 10 } });
     queryResult = { data: { gyms: [], totalCount: 0 }, isPending: false, isError: false };
+  });
+
+  it('carries the visitor text search into the proximity query', async () => {
+    renderNearMe('bristol');
+    fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+
+    await lastQueryOptions?.queryFn();
+
+    // The search box keeps rendering "bristol", so near-me has to keep
+    // applying it — dropping it would leave the UI asserting a filter that is
+    // not applied.
+    const [, variables] = graphql.request.mock.calls[0];
+    expect(variables.input.query).toBe('bristol');
+    expect(lastQueryOptions?.queryKey).toContain('bristol');
+  });
+
+  it('sends no query key at all when the box is empty', async () => {
+    renderNearMe();
+    fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+
+    await lastQueryOptions?.queryFn();
+
+    const [, variables] = graphql.request.mock.calls[0];
+    expect('query' in variables.input).toBe(false);
   });
 
   it('rounds the coordinates and caps the limit at what the backend zod allows', async () => {
@@ -295,7 +383,7 @@ describe('the proximity query itself', () => {
     renderNearMe();
     fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
 
-    expect(lastQueryOptions?.queryKey).toEqual(['gym-directory-near-me', 'kilter', 51.455, -2.588, 25]);
+    expect(lastQueryOptions?.queryKey).toEqual(['gym-directory-near-me', 'kilter', '', 51.455, -2.588, 25]);
   });
 
   it('re-queries at the radius the climber picked', () => {

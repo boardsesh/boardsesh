@@ -87,6 +87,8 @@
     "empty": "Aucune salle avec un repère sur la carte dans ce rayon. Élargis-le, ou cherche par ville.",
     "resultsHeading_one": "{{formattedCount}} salle à moins de {{radius}} km",
     "resultsHeading_other": "{{formattedCount}} salles à moins de {{radius}} km",
+    "resultsHeadingCapped_one": "La plus proche des {{formattedCount}} salle à moins de {{radius}} km",
+    "resultsHeadingCapped_other": "Les {{shown}} plus proches des {{formattedCount}} salles à moins de {{radius}} km",
     "pinlessNotice": "« Près de moi » n'affiche que les salles qui ont posé un repère sur la carte, et un tiers ne l'a pas fait. Reviens à toutes les salles pour retrouver la liste complète.",
     "deniedBody": "Ton navigateur garde ta position pour lui. Tape une ville dans la recherche : ça marche partout.",
     "unsupportedBody": "Ce navigateur ne gère pas la géolocalisation. Tape une ville dans la recherche : ça marche partout.",

@@ -87,6 +87,8 @@
     "empty": "In dem Umkreis hat keine Halle eine Markierung auf der Karte. Mach den Umkreis größer oder such nach einem Ort.",
     "resultsHeading_one": "{{formattedCount}} Halle im Umkreis von {{radius}} km",
     "resultsHeading_other": "{{formattedCount}} Hallen im Umkreis von {{radius}} km",
+    "resultsHeadingCapped_one": "Die nächste von {{formattedCount}} Halle im Umkreis von {{radius}} km",
+    "resultsHeadingCapped_other": "Die {{shown}} nächsten von {{formattedCount}} Hallen im Umkreis von {{radius}} km",
     "pinlessNotice": "„In der Nähe“ zeigt nur Hallen mit Markierung auf der Karte, rund einem Drittel fehlt sie. Mit „Alle Hallen zeigen“ hast du wieder die komplette Liste.",
     "deniedBody": "Dein Browser gibt deinen Standort nicht raus. Tipp stattdessen einen Ort ins Suchfeld, das geht überall.",
     "unsupportedBody": "Dieser Browser kann keine Standortabfrage. Tipp stattdessen einen Ort ins Suchfeld, das geht überall.",

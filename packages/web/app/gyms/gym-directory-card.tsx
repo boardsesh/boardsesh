@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
@@ -14,7 +14,7 @@ import type { GymClaimViewerState } from '@boardsesh/analytics';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import type { Locale } from '@/app/lib/i18n/config';
 import { themeTokens } from '@/app/theme/theme-config';
-import { boardChips, cardLocation, distanceChipKm, roundDistanceKm } from './directory-card-model';
+import { boardChips, cardLocation, distanceChipKm, numberFormatFor, roundDistanceKm } from './directory-card-model';
 import GymDirectoryClaimLink from './gym-directory-claim-link';
 
 type GymDirectoryCardProps = {
@@ -46,7 +46,8 @@ type GymDirectoryCardProps = {
  */
 export default function GymDirectoryCard({ gym, origin, viewerState, locale }: GymDirectoryCardProps) {
   const { t } = useTranslation('gyms');
-  const formatNumber = useMemo(() => new Intl.NumberFormat(locale), [locale]);
+  // Shared across the 24 cards on the page rather than constructed per card.
+  const formatNumber = numberFormatFor(locale);
   const chips = boardChips(gym.boardSummaries);
   const location = cardLocation(gym, origin);
   const distanceKm = distanceChipKm(gym, origin, location);

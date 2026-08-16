@@ -134,19 +134,25 @@ function bucketPins(pins: readonly MapPin[], cellDegrees: number): PinCluster[] 
     }
   }
 
-  return [...buckets.entries()]
-    .map(([key, members]) => {
-      const latitude = members.reduce((sum, member) => sum + member.latitude, 0) / members.length;
-      const longitude = members.reduce((sum, member) => sum + member.longitude, 0) / members.length;
-      return {
-        key: `cluster-${cellDegrees}-${key}`,
-        latitude,
-        longitude,
-        count: members.length,
-        pin: members.length === 1 ? members[0] : null,
-      };
-    })
-    .sort((left, right) => left.key.localeCompare(right.key));
+  return (
+    [...buckets.entries()]
+      .map(([key, members]) => {
+        const latitude = members.reduce((sum, member) => sum + member.latitude, 0) / members.length;
+        const longitude = members.reduce((sum, member) => sum + member.longitude, 0) / members.length;
+        return {
+          key: `cluster-${cellDegrees}-${key}`,
+          latitude,
+          longitude,
+          count: members.length,
+          pin: members.length === 1 ? members[0] : null,
+        };
+      })
+      // Plain code-unit comparison, NOT `localeCompare`: ICU collation treats
+      // punctuation differently across environments, so identical pins could
+      // bucket into a different marker order on a server, in a browser and in
+      // CI. Comparing two calls inside one process cannot catch that.
+      .sort((left, right) => (left.key < right.key ? -1 : left.key > right.key ? 1 : 0))
+  );
 }
 
 /**

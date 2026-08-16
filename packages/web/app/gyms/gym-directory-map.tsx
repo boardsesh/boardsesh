@@ -168,15 +168,25 @@ export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale 
         }}
       />
       {/* The honest pill: partial pin coverage stated on the surface that has
-          the gap, not buried in a footnote. */}
+          the gap, not buried in a footnote.
+
+          BOTTOM-left, and click-through. Leaflet's zoom control sits top-left
+          at the same z-index, and neither this wrapper nor the map container
+          opens a stacking context — so an overlapping pill wins on DOM order
+          and swallows the click on `+`. With scroll-wheel zoom deliberately
+          off, that left a desktop visitor unable to zoom at all. Bottom-right
+          is the attribution, so bottom-left is the one free corner, and
+          `pointerEvents: 'none'` is the belt to that braces: a label is not a
+          control and must never intercept one. */}
       <Chip
         size="small"
         label={t('map.pinnedPill', { pinned: pinnedCount, total: shownCount, count: shownCount })}
         sx={{
           position: 'absolute',
-          top: themeTokens.spacing[2],
+          bottom: themeTokens.spacing[2],
           left: themeTokens.spacing[2],
           zIndex: themeTokens.zIndex.dropdown,
+          pointerEvents: 'none',
           backgroundColor: 'var(--semantic-surface)',
           borderRadius: `${themeTokens.borderRadius.full}px`,
         }}

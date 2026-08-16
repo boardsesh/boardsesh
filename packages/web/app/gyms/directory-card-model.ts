@@ -112,3 +112,21 @@ export function distanceChipKm(
 export function roundDistanceKm(km: number): number {
   return km < 10 ? Math.round(km * 10) / 10 : Math.round(km);
 }
+
+/**
+ * One `Intl.NumberFormat` per locale, shared by every card on the page.
+ *
+ * A page renders 24 cards and each one wants a formatter. Constructing one per
+ * card is 24 ICU lookups, and ~76% of them are dead work because the card shows
+ * an address rather than a distance. Four locales ship, so this map is bounded
+ * at four entries and never needs eviction.
+ */
+const numberFormatCache = new Map<string, Intl.NumberFormat>();
+
+export function numberFormatFor(locale: string): Intl.NumberFormat {
+  const cached = numberFormatCache.get(locale);
+  if (cached) return cached;
+  const created = new Intl.NumberFormat(locale);
+  numberFormatCache.set(locale, created);
+  return created;
+}
