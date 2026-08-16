@@ -610,7 +610,8 @@
     "switchToAdmin": "Don't have a work email? Request a review",
     "switchToDomain": "Verify with a work email instead",
     "errors": {
-      "generic": "Something went wrong. Try again."
+      "generic": "Something went wrong. Try again.",
+      "tokenUnavailable": "We couldn't confirm you're logged in. Reload the page and try again."
     },
     "domain": {
       "description": "Manage {{gym}}? Enter your email at {{domain}} and we'll send a link to confirm.",

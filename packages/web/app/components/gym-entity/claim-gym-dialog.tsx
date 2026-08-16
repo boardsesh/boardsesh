@@ -50,7 +50,7 @@ function graphqlErrorMessage(error: unknown): string | null {
 
 export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClose }: ClaimGymDialogProps) {
   const { t } = useTranslation('boards');
-  const { token } = useWsAuthToken();
+  const { token, isLoading: tokenLoading } = useWsAuthToken();
   const router = useRouter();
   const queryClient = useQueryClient();
   const domain = extractDomain(website);
@@ -147,6 +147,12 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
 
   const succeeded = sentTo !== null || adminSent || approved;
 
+  // The submit buttons below are disabled without a token, and `useWsAuthToken`
+  // gives up after three retries — so a dead /api/internal/ws-auth would leave
+  // a permanently dead button with nothing on screen to explain it. Say so.
+  const tokenUnavailable = !token && !tokenLoading;
+  const blockingError = error ?? (tokenUnavailable ? t('claimGym.errors.tokenUnavailable') : null);
+
   let body: React.ReactNode;
   if (approved) {
     body = (
@@ -182,7 +188,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
     body = (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <DialogContentText>{t('claimGym.domain.description', { gym: gymName, domain })}</DialogContentText>
-        {error && <Alert severity="error">{error}</Alert>}
+        {blockingError && <Alert severity="error">{blockingError}</Alert>}
         <TextField
           label={t('claimGym.domain.emailLabel')}
           value={email}
@@ -208,7 +214,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
     body = (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <DialogContentText>{t('claimGym.admin.description', { gym: gymName })}</DialogContentText>
-        {error && <Alert severity="error">{error}</Alert>}
+        {blockingError && <Alert severity="error">{blockingError}</Alert>}
         <TextField
           label={t('claimGym.admin.messageLabel')}
           value={message}
@@ -243,7 +249,11 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
         <MuiButton
           variant="contained"
           onClick={submitDomainClaim}
-          disabled={submitting || !email.trim()}
+          // `!token` matters here: `submit()` bails on a missing token, and
+          // useWsAuthToken's query key includes the session status, so right
+          // after signing in through the auth modal the token is still in
+          // flight. Without this the first tap is a silent no-op.
+          disabled={submitting || !token || !email.trim()}
           sx={{ textTransform: 'none' }}
         >
           {submitting ? <CircularProgress size={18} color="inherit" /> : t('claimGym.domain.submit')}
@@ -254,7 +264,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
         <MuiButton
           variant="contained"
           onClick={() => submit({ input: { gymUuid, message: message.trim() || undefined } })}
-          disabled={submitting}
+          disabled={submitting || !token}
           sx={{ textTransform: 'none' }}
         >
           {submitting ? <CircularProgress size={18} color="inherit" /> : t('claimGym.admin.submit')}

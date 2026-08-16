@@ -610,7 +610,8 @@
     "switchToAdmin": "Keine Arbeits-E-Mail? Prüfung anfragen",
     "switchToDomain": "Stattdessen mit Arbeits-E-Mail bestätigen",
     "errors": {
-      "generic": "Da ging etwas schief. Versuch es nochmal."
+      "generic": "Da ging etwas schief. Versuch es nochmal.",
+      "tokenUnavailable": "Wir konnten deine Anmeldung nicht bestätigen. Lade die Seite neu und versuch es nochmal."
     },
     "domain": {
       "description": "Du verwaltest {{gym}}? Gib deine E-Mail-Adresse bei {{domain}} ein und wir schicken dir einen Bestätigungslink.",

@@ -71,7 +71,7 @@ no mobile counterpart. They live in their own module.
 | Property       | Values                                                                                   |
 | -------------- | ---------------------------------------------------------------------------------------- |
 | `placement`    | `gym-page`, `preview-sheet`, `directory-card`, `similar-gyms`                            |
-| `viewerState`  | `signed-in`, `signed-out` — `signed-out` is 0 by construction today, see below           |
+| `viewerState`  | `signed-in`, `signed-out` — only the gym page can fire `signed-out`, see below           |
 | `method`       | `domain`, `admin` — mirrors the `GymClaimMethod` GraphQL enum                            |
 | `status`       | `email_sent`, `approved`, `admin_review`, `error`                                        |
 | `medium`       | `poster`, `kiosk`, `board` — only `poster` can fire today, see below                     |
@@ -88,26 +88,51 @@ no mobile counterpart. They live in their own module.
 imported because a shared package must never depend on `packages/web`; adding a
 tab there without adding it here is a compile error at the call site.
 
-### `viewerState: signed-out` is 0 by construction — do not read it as an answer
+### `viewerState: signed-out` is gym-page-only AND unclaimed-gym-only
 
 **Read this before using `Gym Claim CTA Clicked` to answer H4** ("does a visible
-self-serve claim CTA convert unclaimed gyms"). Every claim entry point that
-exists today is gated on an authenticated viewer, so a signed-out climber is
-never shown a claim CTA and can never fire the event:
+self-serve claim CTA convert unclaimed gyms"). Since #3672 the gym page shows
+the claim call-out to anonymous visitors, so `signed-out` is real data there —
+but on a narrower population than "public gyms":
 
-- `app/gym/[gym_slug]/page.tsx` renders the call-out only when `gym.canClaim`,
-  and the resolver computes `canClaim = !!authenticatedUserId && …`
+- `app/gym/[gym_slug]/page.tsx` renders it whenever the gym is public and
+  `resolveClaimCtaVariant` (`app/gym/[gym_slug]/gym-claim-cta-logic.ts`) doesn't
+  return `hidden`. `hidden` covers the signed-in viewer who already covers the
+  gym — the resolver's `canClaim = !!authenticatedUserId && …` is false for
+  owners, gym admins/editors and covering community leaders
   (`packages/backend/src/graphql/resolvers/social/gyms.ts`).
-- `app/components/gym-entity/gym-detail.tsx` gates on the same `canClaim`.
+- **The anonymous arm additionally requires `gym.isClaimed === false`.** An
+  anonymous visitor to a gym that already has a real owner sees nothing, so a
+  claimed gym contributes zero `signed-out` events no matter how much anonymous
+  traffic it takes. The signed-in arm is not gated this way: asking for a gym
+  someone else owns is a deliberate path that routes to admin review.
+- The anonymous arm sends the owner through the auth modal with a
+  `callbackUrl` back to `/gym/<slug>?claim=1`, so the claim intent survives an
+  OAuth round-trip and the dialog re-opens on return.
+
+**The `signed-out` denominator is anonymous pageviews of _unclaimed_ public
+gyms, not of all gym pages.** Dividing `signed-out` claim clicks by total gym
+pageviews understates the conversion rate by whatever share of traffic lands on
+claimed gyms — which is the well-run, heavily-visited end of the directory.
+Restrict both sides of the ratio to unclaimed gyms before quoting a number.
+
+The other two entry points won't fire it, so an unsplit `signed-out` share
+under-reads:
+
+- `app/components/gym-entity/gym-detail.tsx` gates on `canClaim` directly.
 - `app/components/gym-entity/similar-gym-suggestions.tsx` gates on
   `gym.isClaimable`, which `computeClaimableFlags` only computes for an
   authenticated viewer (`…/social/gym-matching.ts`).
 
-So the property is a constant `signed-in` in production. A `signed-out` split of
-0% is the gate working, **not** evidence about how signed-out climbers behave —
-H4 cannot be answered from this event until #3672 ships a CTA anonymous visitors
-can see. The property is wired end to end anyway so that PR is a server-side
-one-line change rather than a re-instrumentation.
+Both of those read `viewerState` off `useWsAuthToken().isAuthenticated`, which
+is `false` while the token is in flight — their render gates make that race
+unreachable in practice, so treat their `signed-out` count as noise if one ever
+appears rather than as a signal.
+
+**Filter on `placement = 'gym-page'` before reading the `viewerState` split.**
+Across all placements the denominator includes two surfaces that effectively
+never report `signed-out`, which drags the anonymous share toward 0 for reasons
+that have nothing to do with how signed-out climbers behave.
 
 ## Two rules that are easy to break
 

@@ -39,9 +39,11 @@ type AuthModalProps = {
   onSuccess?: () => void;
   title?: string;
   description?: string;
+  /** Forwarded to the OAuth buttons; they default to '/' when it's absent. */
+  callbackUrl?: string;
 };
 
-export default function AuthModal({ open, onClose, onSuccess, title, description }: AuthModalProps) {
+export default function AuthModal({ open, onClose, onSuccess, title, description, callbackUrl }: AuthModalProps) {
   const { t } = useTranslation('auth');
   const resolvedTitle = title ?? t('modal.title');
   const resolvedDescription = description ?? t('modal.description');
@@ -480,7 +482,7 @@ export default function AuthModal({ open, onClose, onSuccess, title, description
             </Typography>
           </MuiDivider>
 
-          <SocialLoginButtons />
+          <SocialLoginButtons callbackUrl={callbackUrl} />
         </Stack>
       </DialogContent>
     </Dialog>

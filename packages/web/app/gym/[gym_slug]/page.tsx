@@ -39,6 +39,8 @@ import CommentSection from '@/app/components/social/comment-section';
 import GymPageManageButton from './gym-page-manage-button';
 import GymFollowButton from './gym-follow-button';
 import GymClaimCta from './gym-claim-cta';
+import GymClaimParamCleanup from './gym-claim-param-cleanup';
+import { CLAIM_PARAM, resolveClaimCtaVariant } from './gym-claim-cta-logic';
 import GymOwnerPrompts from './gym-owner-prompts';
 import GymReportDuplicateCta from './gym-report-duplicate-cta';
 import { formatHoursConfirmedDate } from './gym-hours-display';
@@ -155,6 +157,19 @@ export default async function GymPage(props: GymRouteProps) {
   // A printed code carries `?src=qr&medium=…`. Anything else — a bare visit, a
   // hand-edited param, a crawler-mangled URL — parses to null and mounts nothing.
   const qrLanding = parseGymQrLanding(searchParams);
+
+  // Which arm of the claim call-out to render — `hidden` for a signed-in viewer
+  // who already covers this gym (owner, admin/editor, community leader), the
+  // anonymous arm for everyone with no session.
+  // One derivation, on the server: the island is handed the answer as
+  // `viewerState` and never recomputes it.
+  const claimCtaVariant = resolveClaimCtaVariant({
+    serverCanClaim: gym.canClaim,
+    serverHasSession: Boolean(token),
+    gymIsClaimed: gym.isClaimed,
+  });
+  const claimParam = searchParams[CLAIM_PARAM];
+  const showsClaimCta = gym.isPublic && claimCtaVariant !== 'hidden';
 
   const jsonLd = gym.isPublic
     ? {
@@ -293,19 +308,27 @@ export default async function GymPage(props: GymRouteProps) {
         />
 
         {/* `viewerState` is the server's answer, taken from the request cookie
-            above. Reading it in the island with useSession() would report the
+            above — reading it in the island with useSession() would report the
             pre-hydration `loading` state as signed-out on exactly the taps this
-            event cares about. Today `canClaim` is itself false for a signed-out
-            viewer (the resolver requires an authenticated user), so this is
-            `signed-in` by construction — until #3672 shows the CTA anonymously,
-            at which point this prop is already carrying the truth. */}
-        {gym.canClaim && (
+            event cares about. The `isPublic` clause is spelled out rather than
+            leaning on `isGymViewable`: a private gym reaches this line only via
+            its own editors, and the anonymous arm has to stay impossible there
+            even if the viewability rule is loosened later. */}
+        {showsClaimCta ? (
           <GymClaimCta
             gymUuid={gym.uuid}
             gymName={gym.name}
+            gymSlug={gym_slug}
             website={gym.website}
-            viewerState={token ? 'signed-in' : 'signed-out'}
+            viewerState={claimCtaVariant}
+            claimParam={claimParam}
           />
+        ) : (
+          /* No call-out to clear the return-from-auth param, so clear it here:
+             an owner or community leader who signed in and turned out to
+             already cover this gym — or an anonymous visitor on a gym someone
+             already runs — would otherwise sit on a live `?claim=1`. */
+          <GymClaimParamCleanup claimParam={claimParam} />
         )}
 
         <GymReportDuplicateCta

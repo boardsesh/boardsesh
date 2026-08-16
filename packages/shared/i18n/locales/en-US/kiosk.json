@@ -89,6 +89,9 @@
     "claimTitle": "Is this your gym?",
     "claimBody": "Claim it to run the boards, the branding, and what shows up on the wall.",
     "claimCta": "Claim this gym",
+    "claimCtaSignedOut": "Log in and claim it",
+    "claimAuthTitle": "Claim your gym",
+    "claimAuthBody": "Log in and we'll drop you straight back here to claim it.",
     "owner": {
       "linkBoards": {
         "title": "Link your boards",

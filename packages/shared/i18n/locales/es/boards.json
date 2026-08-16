@@ -610,7 +610,8 @@
     "switchToAdmin": "¿No tienes un correo de trabajo? Solicita una revisión",
     "switchToDomain": "Verificar con un correo de trabajo",
     "errors": {
-      "generic": "Algo salió mal. Inténtalo de nuevo."
+      "generic": "Algo salió mal. Inténtalo de nuevo.",
+      "tokenUnavailable": "No hemos podido confirmar tu sesión. Recarga la página e inténtalo de nuevo."
     },
     "domain": {
       "description": "¿Gestionas {{gym}}? Introduce tu correo en {{domain}} y te enviaremos un enlace para confirmar.",
