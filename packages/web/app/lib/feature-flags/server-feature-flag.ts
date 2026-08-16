@@ -243,13 +243,28 @@ function readFlagResolution(payload: PosthogFlagsResponse, key: string): ServerF
   return { enabled: false, reason: 'flag-missing', detail: null };
 }
 
+/**
+ * `report: false` for the diagnostic probe. The Sentry guard is once per
+ * process per key, so a reporting probe would spend that budget and silence the
+ * warning the next genuinely broken PAGE request in the same worker would have
+ * sent — an observability endpoint quietly costing observability. The probe's
+ * caller reads the reason off the return value and needs no side effect.
+ */
 async function evaluateFlagFromPosthog(
   key: string,
   distinctId: string,
   apiKey: string,
+  { report }: { report: boolean },
 ): Promise<ServerFeatureFlagResolution> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FLAG_REQUEST_TIMEOUT_MS);
+
+  const finish = (resolution: ServerFeatureFlagResolution): ServerFeatureFlagResolution => {
+    if (report) {
+      reportUnevaluableFlag(key, resolution);
+    }
+    return resolution;
+  };
 
   try {
     const response = await fetch(`${resolvePosthogHost()}/flags/?v=2`, {
@@ -261,22 +276,17 @@ async function evaluateFlagFromPosthog(
     });
 
     if (!response.ok) {
-      return withReport(key, { enabled: false, reason: 'http-error', detail: String(response.status) });
+      return finish({ enabled: false, reason: 'http-error', detail: String(response.status) });
     }
 
     const payload = (await response.json()) as PosthogFlagsResponse;
-    return withReport(key, readFlagResolution(payload, key));
+    return finish(readFlagResolution(payload, key));
   } catch (error) {
     const detail = error instanceof Error ? error.name : 'unknown error';
-    return withReport(key, { enabled: false, reason: 'request-failed', detail });
+    return finish({ enabled: false, reason: 'request-failed', detail });
   } finally {
     clearTimeout(timer);
   }
-}
-
-function withReport(key: string, resolution: ServerFeatureFlagResolution): ServerFeatureFlagResolution {
-  reportUnevaluableFlag(key, resolution);
-  return resolution;
 }
 
 /**
@@ -370,7 +380,7 @@ export async function getServerFeatureFlagResolution(
   // everyone — the highest-severity failure this module has, and the reason
   // there is a test asserting the key parts rather than only the return value.
   const cached = unstable_cache(
-    () => evaluateFlagFromPosthog(key, distinctId, apiKey),
+    () => evaluateFlagFromPosthog(key, distinctId, apiKey, { report: true }),
     ['posthog-flag', key, distinctId],
     {
       revalidate: FLAG_CACHE_REVALIDATE_SECONDS,
@@ -396,6 +406,8 @@ export async function getServerFeatureFlag(key: string, options: ServerFeatureFl
  * dashboard — so `/api/internal/feature-flags` reports the cached answer and
  * this one side by side. Never call it from a page: it is an uncached network
  * round trip in front of a render.
+ *
+ * Deliberately does not report to Sentry — see `evaluateFlagFromPosthog`.
  */
 export async function probeServerFeatureFlag(
   key: string,
@@ -405,7 +417,7 @@ export async function probeServerFeatureFlag(
   if ('resolution' in early) {
     return early.resolution;
   }
-  return evaluateFlagFromPosthog(key, early.distinctId, early.apiKey);
+  return evaluateFlagFromPosthog(key, early.distinctId, early.apiKey, { report: false });
 }
 
 export type ServerFeatureFlagConfig = {

@@ -16,6 +16,7 @@ vi.mock('@/app/lib/feature-flags/server-feature-flag', () => ({
   probeServerFeatureFlag,
 }));
 
+import { SERVER_FEATURE_FLAG_KEYS } from '@/app/flags';
 import { GET } from '../route';
 
 const ADMIN = { authenticated: true as const, userId: 'admin-1', isAdmin: true, boardScopedOnly: false };
@@ -109,8 +110,11 @@ describe('GET /api/internal/feature-flags', () => {
     const response = await GET(request());
     const body = await response.json();
 
-    expect(body.flags.map((flag: { key: string }) => flag.key)).toEqual(['gyms-directory']);
-    expect(body.flags[0].registered).toBe(true);
+    // Derived from the registry rather than hardcoded: the behaviour under test
+    // is "covers every registered server flag", which a second flag must extend
+    // rather than break.
+    expect(body.flags.map((flag: { key: string }) => flag.key)).toEqual([...SERVER_FEATURE_FLAG_KEYS]);
+    expect(body.flags.every((flag: { registered: boolean }) => flag.registered)).toBe(true);
     expect(body.config).toMatchObject({
       apiKeySource: 'NEXT_PUBLIC_POSTHOG_KEY',
       anonymousDistinctId: 'anonymous-web-visitor',
@@ -137,8 +141,8 @@ describe('GET /api/internal/feature-flags', () => {
     expect(body.flags[0].cached.viewer).toBeNull();
     expect(body.flags[0].live.viewer).toBeNull();
     expect(body.viewerDistinctId).toBeNull();
-    expect(probeServerFeatureFlag).toHaveBeenCalledTimes(1);
-    expect(getServerFeatureFlagResolution).toHaveBeenCalledTimes(1);
+    expect(probeServerFeatureFlag).toHaveBeenCalledTimes(SERVER_FEATURE_FLAG_KEYS.length);
+    expect(getServerFeatureFlagResolution).toHaveBeenCalledTimes(SERVER_FEATURE_FLAG_KEYS.length);
   });
 
   it('rejects a key that is not a flag key', async () => {

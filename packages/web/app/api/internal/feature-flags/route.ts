@@ -104,7 +104,9 @@ export async function GET(request: Request) {
           ? getServerFeatureFlagResolution(key, { distinctId: viewerDistinctId, allowAnonymous: true })
           : Promise.resolve(null),
         probeServerFeatureFlag(key, { distinctId: null, allowAnonymous: true }),
-        viewerDistinctId ? probeServerFeatureFlag(key, { distinctId: viewerDistinctId }) : Promise.resolve(null),
+        viewerDistinctId
+          ? probeServerFeatureFlag(key, { distinctId: viewerDistinctId, allowAnonymous: true })
+          : Promise.resolve(null),
       ]);
       return {
         key,

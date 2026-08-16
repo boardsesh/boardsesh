@@ -429,6 +429,24 @@ describe('probeServerFeatureFlag', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('never spends the once-per-process Sentry budget', async () => {
+    process.env.NEXT_PUBLIC_POSTHOG_KEY = 'phc_test';
+    mockFetchOnce({ ok: true, body: { flags: {} } });
+
+    const { probeServerFeatureFlag, getServerFeatureFlag } = await loadModule();
+
+    // An admin opening the diagnostics endpoint while a flag is broken must not
+    // mark the key as already-reported: the next genuinely broken PAGE request
+    // in this worker would then fail silently, so the observability endpoint
+    // would be costing observability.
+    await probeServerFeatureFlag(FLAG, { distinctId: 'admin-1' });
+    expect(captureMessage).not.toHaveBeenCalled();
+
+    await getServerFeatureFlag(FLAG, { distinctId: null, allowAnonymous: true });
+    expect(captureMessage).toHaveBeenCalledTimes(1);
+    expect(String(captureMessage.mock.calls[0][0])).toContain('flag-missing');
+  });
+
   it('honours the override and the missing-key short circuits too', async () => {
     process.env.FEATURE_FLAG_OVERRIDES = FLAG;
     const fetchMock = mockFetchOnce({ ok: true, body: { flags: {} } });
