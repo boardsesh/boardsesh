@@ -37,6 +37,8 @@ vi.mock('react-native', () => ({
       },
       children,
     ),
+  ActivityIndicator: () => createElement('span', { 'data-spinner': 'true' }),
+  Platform: { OS: 'android' },
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {}, hairlineWidth: 1 },
 }));
 

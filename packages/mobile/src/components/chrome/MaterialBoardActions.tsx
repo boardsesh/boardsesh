@@ -18,6 +18,8 @@ import { useTheme } from '../../providers/theme-provider';
 import { hapticLight } from '../../lib/haptics';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { useBleControlSheet } from '../../providers/ble-control-sheet-provider';
+import { useBluetoothWriteInProgress } from '../../providers/bluetooth-write-activity';
+import { ActivityIndicator } from '../ActivityIndicator';
 import { Text } from '../Text';
 import { iconMap } from '../icon-map';
 import { AngleSelectorSheet } from '../play-drawer/AngleSelectorSheet';
@@ -62,11 +64,21 @@ export function MaterialLightbulbAction() {
   const { bluetooth, lit, localConnected, onPress, onLongPress } = useLightbulbControl({
     onOpenControls: openControls,
   });
+  // Re-lighting the wall (a "Re-light board" tap in the BLE controls sheet, or
+  // any other write) leaves this icon as the only feedback in the app bar —
+  // the controls sheet closes immediately on tap. Swap in a spinner so the
+  // write isn't silent.
+  const isWriting = useBluetoothWriteInProgress();
 
   const handlePress = useCallback(() => {
     hapticLight();
     onPress();
   }, [onPress]);
+
+  const writingIcon = useCallback(
+    () => <ActivityIndicator size="small" color={brandColors.warning} />,
+    [brandColors.warning],
+  );
 
   if (!bluetooth) return null;
 
@@ -75,7 +87,7 @@ export function MaterialLightbulbAction() {
 
   return (
     <Appbar.Action
-      icon={iconName}
+      icon={isWriting ? writingIcon : iconName}
       color={iconColor as string}
       onPress={handlePress}
       // Short press connects/disconnects; long press (connected) opens the
@@ -84,6 +96,7 @@ export function MaterialLightbulbAction() {
       // The label reflects what tapping does (this device's link), not the fill —
       // the bulb can read lit because a session peer holds the wall.
       accessibilityLabel={localConnected ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard')}
+      accessibilityState={{ busy: isWriting }}
     />
   );
 }
