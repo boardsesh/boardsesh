@@ -49,6 +49,8 @@ const GYM_FIELDS = `
   ownerAvatarUrl
   name
   description
+  hours
+  hoursUpdatedAt
   address
   website
   contactEmail

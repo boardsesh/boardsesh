@@ -571,6 +571,7 @@
       "name": "Gym Name",
       "slug": "URL Slug",
       "description": "Description",
+      "hours": "Opening hours",
       "address": "Address",
       "contactEmail": "Contact Email",
       "contactPhone": "Contact Phone",
@@ -580,6 +581,7 @@
     "placeholders": {
       "name": "e.g., Boulder World, The Climbing Factory",
       "description": "Optional description",
+      "hours": "e.g., Mon-Fri 7am-11pm, Sat-Sun 9am-8pm",
       "address": "e.g., 123 Main St, City",
       "contactEmail": "Optional contact email",
       "contactPhone": "Optional contact phone",
@@ -597,7 +599,8 @@
       "createdNamed": "Gym \"{{name}}\" created!"
     },
     "helpers": {
-      "website": "Used to verify ownership when someone claims this gym"
+      "website": "Used to verify ownership when someone claims this gym",
+      "hours": "One line, however you write it. Your gym page shows the date you last confirmed it."
     }
   },
   "claimGym": {

@@ -14,6 +14,7 @@ import FitnessCenterOutlined from '@mui/icons-material/FitnessCenterOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import PeopleOutlined from '@mui/icons-material/PeopleOutlined';
 import ChatBubbleOutlined from '@mui/icons-material/ChatBubbleOutlineOutlined';
+import ScheduleOutlined from '@mui/icons-material/ScheduleOutlined';
 import type { Gym, UserBoard } from '@boardsesh/shared-schema';
 import {
   GET_GYM_BY_SLUG,
@@ -42,6 +43,7 @@ import GymFollowButton from './gym-follow-button';
 import GymClaimCta from './gym-claim-cta';
 import GymOwnerPrompts from './gym-owner-prompts';
 import GymReportDuplicateCta from './gym-report-duplicate-cta';
+import { formatHoursConfirmedDate } from './gym-hours-display';
 import { getPublicBackendHttpUrl } from '@/app/lib/backend-url';
 import { resolveGymLogoDisplayUrl } from '@/app/lib/gym-logo-display-url';
 
@@ -134,6 +136,12 @@ export default async function GymPage(props: GymRouteProps) {
   // predate the backend's GymWebsiteSchema scheme check).
   const websiteHref = safeExternalHref(gym.website);
 
+  // Free-text hours, so nothing structured goes into the JSON-LD below —
+  // schema.org's openingHoursSpecification wants a machine-readable model and
+  // would be invalid fed a hand-typed line.
+  const hoursText = gym.hours?.trim() || null;
+  const hoursConfirmedDate = formatHoursConfirmedDate(gym.hoursUpdatedAt, locale);
+
   const jsonLd = gym.isPublic
     ? {
         '@context': 'https://schema.org',
@@ -185,6 +193,31 @@ export default async function GymPage(props: GymRouteProps) {
           <Typography variant="body1" sx={{ mb: 3, color: themeTokens.neutral[700] }}>
             {gym.description}
           </Typography>
+        )}
+
+        {hoursText && (
+          <Box sx={{ mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+              <ScheduleOutlined sx={{ fontSize: 18, color: themeTokens.neutral[400] }} />
+              <Typography
+                variant="subtitle1"
+                component="h2"
+                sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}
+              >
+                {t('gymPage.hoursHeading')}
+              </Typography>
+            </Box>
+            {/* The gym types its own line breaks; keep them instead of collapsing
+                a week of hours into one run-on paragraph. */}
+            <Typography variant="body1" sx={{ whiteSpace: 'pre-line', color: themeTokens.neutral[700] }}>
+              {hoursText}
+            </Typography>
+            {hoursConfirmedDate && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                {t('gymPage.hoursConfirmed', { date: hoursConfirmedDate })}
+              </Typography>
+            )}
+          </Box>
         )}
 
         <Box sx={{ display: 'flex', gap: 2.5, flexWrap: 'wrap', mb: 3 }}>
@@ -245,6 +278,8 @@ export default async function GymPage(props: GymRouteProps) {
           gymSlug={gym_slug}
           canEdit={gym.canEdit}
           hasBoards={boards.length > 0}
+          hasHours={Boolean(hoursText)}
+          hasDescription={Boolean(gym.description?.trim())}
           hasKiosk={kiosk !== null}
           hasBranding={Boolean(
             gym.logoUrl || gym.brandPrimaryColor || gym.brandAccentColor || gym.brandBackgroundColor,

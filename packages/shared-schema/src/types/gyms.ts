@@ -1,5 +1,13 @@
 // Gym entity types
 
+/**
+ * Max length of the free-text opening-hours line, shared by the backend
+ * validator and every client that renders the field. A client capping below the
+ * backend limit silently truncates; one capping above it lets the owner type
+ * hours the mutation then rejects with no inline explanation.
+ */
+export const GYM_HOURS_MAX_LENGTH = 500;
+
 export type GymMemberRole = 'admin' | 'editor' | 'member';
 
 export type GymClaimMethod = 'domain' | 'admin';
@@ -18,6 +26,10 @@ export type Gym = {
   ownerAvatarUrl?: string | null;
   name: string;
   description?: string | null;
+  /** Opening hours as one free-text line the gym maintains itself (no structured per-day model). */
+  hours?: string | null;
+  /** ISO timestamp of the last time someone with edit access confirmed `hours` — shown publicly so a stale schedule reads as stale. */
+  hoursUpdatedAt?: string | null;
   address?: string | null;
   website?: string | null;
   contactEmail?: string | null;
@@ -143,6 +155,8 @@ export type UpdateGymInput = {
   name?: string;
   slug?: string;
   description?: string | null;
+  /** Free-text opening hours. Writing this stamps `hoursUpdatedAt`; explicit null clears both. */
+  hours?: string | null;
   address?: string | null;
   website?: string | null;
   contactEmail?: string | null;

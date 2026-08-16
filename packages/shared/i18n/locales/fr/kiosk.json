@@ -81,6 +81,8 @@
     "boardsHeading": "Boards",
     "boardCount_one": "{{count}} board",
     "boardCount_other": "{{count}} boards",
+    "hoursHeading": "Horaires d'ouverture",
+    "hoursConfirmed": "Confirmé le {{date}}",
     "visitWebsite": "Visiter le site web",
     "noBoardsYet": "Aucune board ici pour l'instant.",
     "explorePlaylists": "Découvre les playlists des grimpeurs",
@@ -91,6 +93,14 @@
       "linkBoards": {
         "title": "Relie tes boards",
         "body": "Les grimpeurs ne voient encore aucun mur ici."
+      },
+      "addHours": {
+        "title": "Ajoute tes horaires",
+        "body": "Les grimpeurs qui veulent savoir s'ils peuvent venir ce soir n'en savent rien."
+      },
+      "addDescription": {
+        "title": "Raconte comment on grimpe ici",
+        "body": "Deux lignes sur les murs, l'ouverture et l'ambiance."
       },
       "putOnTv": {
         "title": "Mets ce mur sur une TV",

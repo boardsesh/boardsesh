@@ -571,6 +571,7 @@
       "name": "Nombre del rocódromo",
       "slug": "URL personalizada",
       "description": "Descripción",
+      "hours": "Horario",
       "address": "Dirección",
       "contactEmail": "Correo de contacto",
       "contactPhone": "Teléfono de contacto",
@@ -580,6 +581,7 @@
     "placeholders": {
       "name": "p. ej., Boulder World, The Climbing Factory",
       "description": "Descripción opcional",
+      "hours": "p. ej., lun-vie 7:00-23:00, sáb-dom 9:00-20:00",
       "address": "p. ej., Calle Mayor 123, Ciudad",
       "contactEmail": "Correo de contacto opcional",
       "contactPhone": "Teléfono de contacto opcional",
@@ -597,7 +599,8 @@
       "createdNamed": "¡Rocódromo \"{{name}}\" creado!"
     },
     "helpers": {
-      "website": "Se usa para verificar la propiedad cuando alguien reclama este rocódromo"
+      "website": "Se usa para verificar la propiedad cuando alguien reclama este rocódromo",
+      "hours": "Una línea, como tú la escribas. Tu página muestra la fecha en que lo confirmaste por última vez."
     }
   },
   "claimGym": {

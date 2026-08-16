@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { sql, eq, is, SQL } from 'drizzle-orm';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { GYM_HOURS_MAX_LENGTH, type ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
-import { socialGymQueries, socialGymMutations } from '../graphql/resolvers/social/gyms';
+import { socialGymQueries, socialGymMutations, mapRawGymRow, enrichGym } from '../graphql/resolvers/social/gyms';
 import {
   socialGymClaimMutations,
   socialGymClaimQueries,
@@ -688,6 +688,140 @@ describe('website field round-trips', () => {
 
     const readBack = await socialGymQueries.gym(null, { gymUuid }, authCtx(OWNER));
     expect(readBack?.website).toBe('https://www.bonsist.bg');
+  });
+});
+
+describe('gym hours', () => {
+  // Read the two columns straight from the row so a test names the stored state
+  // rather than only its rendered form.
+  const storedHours = async (id: number): Promise<{ hours: string | null; hours_updated_at: string | Date | null }> => {
+    const result = await db.execute(sql`SELECT hours, hours_updated_at FROM gyms WHERE id = ${id} LIMIT 1`);
+    return Array.from(result as Iterable<{ hours: string | null; hours_updated_at: string | Date | null }>)[0];
+  };
+
+  const seedHours = (id: number, hours: string, confirmedAt: string) =>
+    db.execute(sql`UPDATE gyms SET hours = ${hours}, hours_updated_at = ${confirmedAt} WHERE id = ${id}`);
+
+  const A_YEAR_AGO = '2025-01-02T09:00:00.000Z';
+
+  it('stamps the confirmation date when the hours are written', async () => {
+    const before = Date.now();
+
+    const result = await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid, hours: 'Mon-Fri 7-22, Sat-Sun 9-20' } },
+      authCtx(OWNER),
+    );
+
+    expect(result.hours).toBe('Mon-Fri 7-22, Sat-Sun 9-20');
+    // The stamp is a String field on the GraphQL type; the public page parses it
+    // as an ISO timestamp, so it must not come back as a Date or a PG string.
+    expect(typeof result.hoursUpdatedAt).toBe('string');
+    expect(new Date(result.hoursUpdatedAt!).getTime()).toBeGreaterThanOrEqual(before);
+  });
+
+  it('re-dates a stale stamp when the owner confirms the same hours again', async () => {
+    await seedHours(gymId, 'Mon-Fri 7-22', A_YEAR_AGO);
+
+    await socialGymMutations.updateGym(null, { input: { gymUuid, hours: 'Mon-Fri 7-22' } }, authCtx(OWNER));
+
+    const row = await storedHours(gymId);
+    expect(row.hours).toBe('Mon-Fri 7-22');
+    expect(new Date(row.hours_updated_at!).getTime()).toBeGreaterThan(new Date(A_YEAR_AGO).getTime());
+  });
+
+  it('leaves both columns untouched when the input omits hours', async () => {
+    await seedHours(gymId, 'Mon-Fri 7-22', A_YEAR_AGO);
+    const seeded = await storedHours(gymId);
+
+    // A save from a form that never showed the field must not silently
+    // re-confirm a schedule nobody looked at.
+    await socialGymMutations.updateGym(null, { input: { gymUuid, name: 'Bonsist Centre' } }, authCtx(OWNER));
+
+    const row = await storedHours(gymId);
+    expect(row.hours).toBe('Mon-Fri 7-22');
+    // Compare the read-back value against the same value read the same way, not
+    // against a UTC literal: hours_updated_at is `timestamp` WITHOUT time zone,
+    // so the driver hands back a Date built in the host's zone and a literal
+    // comparison would only hold on a UTC machine.
+    expect(new Date(row.hours_updated_at!).getTime()).toBe(new Date(seeded.hours_updated_at!).getTime());
+  });
+
+  it('clears the stamp along with the hours when null is sent', async () => {
+    await seedHours(gymId, 'Mon-Fri 7-22', A_YEAR_AGO);
+
+    const result = await socialGymMutations.updateGym(null, { input: { gymUuid, hours: null } }, authCtx(OWNER));
+
+    expect(result.hours).toBeNull();
+    expect(result.hoursUpdatedAt).toBeNull();
+    const row = await storedHours(gymId);
+    expect(row.hours).toBeNull();
+    expect(row.hours_updated_at).toBeNull();
+  });
+
+  it('treats a whitespace-only value as a clear, not as hours with a fresh stamp', async () => {
+    await seedHours(gymId, 'Mon-Fri 7-22', A_YEAR_AGO);
+
+    // The web form can't send this; the GraphQL API can. Storing "   " plus a
+    // new confirmation date would leave a stamp vouching for hours the page
+    // renders as absent.
+    const result = await socialGymMutations.updateGym(null, { input: { gymUuid, hours: '   ' } }, authCtx(OWNER));
+
+    expect(result.hours).toBeNull();
+    expect(result.hoursUpdatedAt).toBeNull();
+    const row = await storedHours(gymId);
+    expect(row.hours).toBeNull();
+    expect(row.hours_updated_at).toBeNull();
+  });
+
+  it('stores hours trimmed', async () => {
+    const result = await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid, hours: '  Mon-Fri 7-22  ' } },
+      authCtx(OWNER),
+    );
+    expect(result.hours).toBe('Mon-Fri 7-22');
+  });
+
+  it('rejects hours longer than the cap', async () => {
+    await expect(
+      socialGymMutations.updateGym(
+        null,
+        { input: { gymUuid, hours: 'x'.repeat(GYM_HOURS_MAX_LENGTH + 1) } },
+        authCtx(OWNER),
+      ),
+    ).rejects.toThrow();
+
+    expect((await storedHours(gymId)).hours).toBeNull();
+  });
+
+  it('accepts hours exactly at the cap', async () => {
+    const atCap = 'x'.repeat(GYM_HOURS_MAX_LENGTH);
+    const result = await socialGymMutations.updateGym(null, { input: { gymUuid, hours: atCap } }, authCtx(OWNER));
+    expect(result.hours).toBe(atCap);
+  });
+
+  it('maps hours off a raw snake_case row, the way the proximity search path does', async () => {
+    await seedHours(gymId, 'Mon-Fri 7-22', A_YEAR_AGO);
+
+    // The PostGIS proximity branch of searchGyms is a raw `SELECT *`, so it hands
+    // mapRawGymRow snake_case keys. A camelCase read there type-checks and then
+    // returns null forever while the Drizzle path looks healthy — this is the guard.
+    const rawResult = await db.execute(sql`SELECT * FROM gyms WHERE id = ${gymId}`);
+    const rawRow = Array.from(rawResult as Iterable<Record<string, unknown>>)[0];
+    expect(Object.keys(rawRow)).toContain('hours_updated_at');
+
+    const mapped = mapRawGymRow(rawRow);
+    expect(mapped.hours).toBe('Mon-Fri 7-22');
+    expect(mapped.hoursUpdatedAt).toBeInstanceOf(Date);
+
+    const enriched = await enrichGym(mapped, OWNER);
+    expect(enriched.hours).toBe('Mon-Fri 7-22');
+    // Assert the ISO string round-trips the mapped Date rather than a UTC
+    // literal — the column is `timestamp` WITHOUT time zone, so a literal would
+    // only match on a UTC host.
+    expect(enriched.hoursUpdatedAt).toBe(mapped.hoursUpdatedAt!.toISOString());
+    expect(new Date(enriched.hoursUpdatedAt!).getTime()).toBe(mapped.hoursUpdatedAt!.getTime());
   });
 });
 
