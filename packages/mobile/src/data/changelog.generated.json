@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-16T02:41:24.143Z",
+  "generatedAt": "2026-08-16T04:24:18.045Z",
   "entries": [
+    {
+      "prNumber": 4509,
+      "category": "new",
+      "title": "Owners can put a real photo of their wall on their gym page — upload it from the manage console and it becomes the header image and the preview when someone shares the link.",
+      "mergedAt": "2026-08-16T04:23:10Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4509"
+    },
     {
       "prNumber": 4506,
       "category": "new",
