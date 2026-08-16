@@ -213,7 +213,7 @@ describe('getServerFeatureFlag — failure modes', () => {
     await expect(getServerFeatureFlag(FLAG, { distinctId: 'user-1' })).resolves.toBe(false);
 
     expect(captureMessage).toHaveBeenCalledTimes(1);
-    expect(String(captureMessage.mock.calls[0][0])).toContain('HTTP 503');
+    expect(String(captureMessage.mock.calls[0][0])).toContain('http-error: 503');
   });
 
   it('fails closed when the request is aborted past its deadline', async () => {
@@ -292,6 +292,185 @@ describe('getServerFeatureFlag — anonymous visitors', () => {
 
     const { getServerFeatureFlag } = await loadModule();
     await expect(getServerFeatureFlag(FLAG, { distinctId: null, allowAnonymous: true })).resolves.toBe(false);
+  });
+});
+
+describe('resolution reasons', () => {
+  it('names the override branch', async () => {
+    process.env.FEATURE_FLAG_OVERRIDES = `${FLAG}=false`;
+    const { getServerFeatureFlagResolution } = await loadModule();
+
+    await expect(getServerFeatureFlagResolution(FLAG, { distinctId: 'user-1' })).resolves.toEqual({
+      enabled: false,
+      reason: 'override',
+      detail: null,
+    });
+  });
+
+  it('separates a missing key from a missing person', async () => {
+    const { getServerFeatureFlagResolution } = await loadModule();
+    await expect(getServerFeatureFlagResolution(FLAG, { distinctId: 'user-1' })).resolves.toMatchObject({
+      reason: 'no-api-key',
+    });
+
+    process.env.NEXT_PUBLIC_POSTHOG_KEY = 'phc_test';
+    const { getServerFeatureFlagResolution: resolveWithKey } = await loadModule();
+    await expect(resolveWithKey(FLAG, { distinctId: null })).resolves.toMatchObject({ reason: 'no-distinct-id' });
+  });
+
+  it('separates PostHog saying no from PostHog never having heard of the flag', async () => {
+    process.env.NEXT_PUBLIC_POSTHOG_KEY = 'phc_test';
+    mockFetchOnce({ ok: true, body: { flags: { [FLAG]: { enabled: false } } } });
+    const { getServerFeatureFlagResolution } = await loadModule();
+    await expect(getServerFeatureFlagResolution(FLAG, { distinctId: 'user-1' })).resolves.toMatchObject({
+      enabled: false,
+      reason: 'posthog-disabled',
+    });
+
+    // The distinction this whole type exists for: `posthog-disabled` is the flag
+    // working, `flag-missing` is the key pointing at the wrong project (or a
+    // renamed flag) — same `false`, completely different fix.
+    mockFetchOnce({ ok: true, body: { flags: { 'some-other-flag': { enabled: true } } } });
+    const { getServerFeatureFlagResolution: resolveMissing } = await loadModule();
+    await expect(resolveMissing(FLAG, { distinctId: 'user-1' })).resolves.toMatchObject({
+      enabled: false,
+      reason: 'flag-missing',
+    });
+  });
+
+  it('reads a quota-limited project as broken, not as off', async () => {
+    process.env.NEXT_PUBLIC_POSTHOG_KEY = 'phc_test';
+    // PostHog answers 200 with an EMPTY flags map when the project is over its
+    // feature-flag quota, which is otherwise identical to a deleted flag.
+    mockFetchOnce({ ok: true, body: { flags: {}, quotaLimited: ['feature_flags'] } });
+
+    const { getServerFeatureFlagResolution } = await loadModule();
+    await expect(getServerFeatureFlagResolution(FLAG, { distinctId: 'user-1' })).resolves.toMatchObject({
+      enabled: false,
+      reason: 'quota-limited',
+    });
+  });
+
+  it('carries the HTTP status and the error name as detail', async () => {
+    process.env.NEXT_PUBLIC_POSTHOG_KEY = 'phc_test';
+    mockFetchOnce({ ok: false, status: 401 });
+    const { getServerFeatureFlagResolution } = await loadModule();
+    await expect(getServerFeatureFlagResolution(FLAG, { distinctId: 'user-1' })).resolves.toEqual({
+      enabled: false,
+      reason: 'http-error',
+      detail: '401',
+    });
+
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+    const { getServerFeatureFlagResolution: resolveAborted } = await loadModule();
+    await expect(resolveAborted(FLAG, { distinctId: 'user-1' })).resolves.toEqual({
+      enabled: false,
+      reason: 'request-failed',
+      detail: 'AbortError',
+    });
+  });
+});
+
+describe('reporting', () => {
+  it('reports a flag PostHog has never heard of', async () => {
+    process.env.NEXT_PUBLIC_POSTHOG_KEY = 'phc_test';
+    mockFetchOnce({ ok: true, body: { flags: {} } });
+
+    const { getServerFeatureFlag } = await loadModule();
+    await getServerFeatureFlag(FLAG, { distinctId: 'user-1' });
+
+    // Used to be the silent branch: a 200 that simply didn't mention the flag
+    // returned false with nothing in Sentry, so a key pointing at the wrong
+    // project 404'd the page and left no trace anywhere.
+    expect(captureMessage).toHaveBeenCalledTimes(1);
+    expect(String(captureMessage.mock.calls[0][0])).toContain('flag-missing');
+  });
+
+  it('reports a quota-limited project', async () => {
+    process.env.NEXT_PUBLIC_POSTHOG_KEY = 'phc_test';
+    mockFetchOnce({ ok: true, body: { flags: {}, quotaLimited: ['feature_flags'] } });
+
+    const { getServerFeatureFlag } = await loadModule();
+    await getServerFeatureFlag(FLAG, { distinctId: 'user-1' });
+
+    expect(captureMessage).toHaveBeenCalledTimes(1);
+    expect(String(captureMessage.mock.calls[0][0])).toContain('quota-limited');
+  });
+
+  it('stays quiet when the flag simply says no', async () => {
+    process.env.NEXT_PUBLIC_POSTHOG_KEY = 'phc_test';
+    mockFetchOnce({ ok: true, body: { flags: { [FLAG]: { enabled: false } } } });
+
+    const { getServerFeatureFlag } = await loadModule();
+    await getServerFeatureFlag(FLAG, { distinctId: 'user-1' });
+
+    // A closed gate is the point of a flag. Reporting it would bury the four
+    // reasons above in noise from every anonymous pageview.
+    expect(captureMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('probeServerFeatureFlag', () => {
+  it('asks PostHog without going through the data cache', async () => {
+    process.env.NEXT_PUBLIC_POSTHOG_KEY = 'phc_test';
+    const fetchMock = mockFetchOnce({ ok: true, body: { flags: { [FLAG]: { enabled: true } } } });
+
+    const { probeServerFeatureFlag } = await loadModule();
+    await expect(probeServerFeatureFlag(FLAG, { distinctId: 'user-1' })).resolves.toMatchObject({
+      enabled: true,
+      reason: 'posthog-enabled',
+    });
+
+    // The whole point of the probe: a cached stale `false` and a live `false`
+    // are different problems, so it must not read (or write) the cache.
+    expect(cacheKeyParts).toHaveLength(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('honours the override and the missing-key short circuits too', async () => {
+    process.env.FEATURE_FLAG_OVERRIDES = FLAG;
+    const fetchMock = mockFetchOnce({ ok: true, body: { flags: {} } });
+
+    const { probeServerFeatureFlag } = await loadModule();
+    await expect(probeServerFeatureFlag(FLAG, { distinctId: null, allowAnonymous: true })).resolves.toMatchObject({
+      enabled: true,
+      reason: 'override',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('describeServerFeatureFlagConfig', () => {
+  it('names the env var holding the key, never the key itself', async () => {
+    process.env.NEXT_PUBLIC_POSTHOG_KEY = 'phc_browser';
+    const { describeServerFeatureFlagConfig } = await loadModule();
+
+    const config = describeServerFeatureFlagConfig();
+    expect(config.apiKeySource).toBe('NEXT_PUBLIC_POSTHOG_KEY');
+    expect(JSON.stringify(config)).not.toContain('phc_browser');
+    expect(config.host).toBe('https://us.i.posthog.com');
+  });
+
+  it('reports the server key, the host override and the parsed overrides', async () => {
+    process.env.POSTHOG_PROJECT_KEY = 'phc_server';
+    process.env.NEXT_PUBLIC_POSTHOG_KEY = 'phc_browser';
+    process.env.POSTHOG_HOST = 'https://eu.i.posthog.com/';
+    process.env.FEATURE_FLAG_OVERRIDES = `${FLAG}=false`;
+    const { describeServerFeatureFlagConfig } = await loadModule();
+
+    expect(describeServerFeatureFlagConfig()).toEqual({
+      apiKeySource: 'POSTHOG_PROJECT_KEY',
+      // Trailing slash stripped, matching the URL the evaluation builds.
+      host: 'https://eu.i.posthog.com',
+      overrides: { [FLAG]: false },
+    });
+  });
+
+  it('reports no key when the environment has none', async () => {
+    const { describeServerFeatureFlagConfig } = await loadModule();
+    expect(describeServerFeatureFlagConfig().apiKeySource).toBeNull();
   });
 });
 
