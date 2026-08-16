@@ -23,6 +23,8 @@ import {
   type FindSimilarGymsQueryVariables,
 } from '@boardsesh/graphql/operations';
 import type { SimilarGym } from '@boardsesh/shared-schema';
+import { gymClaimCtaClicked } from '@boardsesh/analytics';
+import { trackGymFunnelEvent, viewerStateFrom } from '@/app/lib/gym-funnel-analytics';
 import { themeTokens } from '@/app/theme/theme-config';
 import ClaimGymDialog from './claim-gym-dialog';
 
@@ -40,7 +42,10 @@ function capitalize(value: string): string {
 
 export default function SimilarGymSuggestions({ name, latitude, longitude }: SimilarGymSuggestionsProps) {
   const { t } = useTranslation('boards');
-  const { token } = useWsAuthToken();
+  // `isAuthenticated` rather than useSession().status — the suggestion query
+  // this list renders from is itself gated on the token, so by the time a claim
+  // button exists the session has settled.
+  const { token, isAuthenticated } = useWsAuthToken();
   const [claimTarget, setClaimTarget] = useState<SimilarGym | null>(null);
 
   // Debounce the whole lookup input so typing a name (and nudging the map) fires
@@ -172,7 +177,16 @@ export default function SimilarGymSuggestions({ name, latitude, longitude }: Sim
                     <MuiButton
                       size="small"
                       variant="contained"
-                      onClick={() => setClaimTarget(gym)}
+                      onClick={() => {
+                        trackGymFunnelEvent(
+                          gymClaimCtaClicked({
+                            placement: 'similar-gyms',
+                            viewerState: viewerStateFrom(isAuthenticated),
+                            gymUuid: gym.uuid,
+                          }),
+                        );
+                        setClaimTarget(gym);
+                      }}
                       sx={{ textTransform: 'none' }}
                     >
                       {t('similarGyms.claim')}

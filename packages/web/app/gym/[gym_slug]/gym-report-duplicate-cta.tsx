@@ -6,7 +6,9 @@ import { useSession } from 'next-auth/react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import FlagOutlined from '@mui/icons-material/FlagOutlined';
+import { gymPageCtaClicked } from '@boardsesh/analytics';
 import ReportDuplicateDialog from '@/app/components/gym-entity/report-duplicate-dialog';
+import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
 
 type GymReportDuplicateCtaProps = {
   gymUuid: string;
@@ -33,7 +35,10 @@ export default function GymReportDuplicateCta({ gymUuid, gymName, latitude, long
         variant="text"
         size="small"
         startIcon={<FlagOutlined sx={{ fontSize: 16 }} />}
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          trackGymFunnelEvent(gymPageCtaClicked({ cta: 'report-duplicate', gymUuid }));
+          setOpen(true);
+        }}
         sx={{ textTransform: 'none', color: 'text.secondary' }}
       >
         {t('reportDuplicate.cta')}

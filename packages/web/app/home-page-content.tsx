@@ -31,6 +31,7 @@ import HomeRecentBetaSection from '@/app/components/beta-videos/home-recent-beta
 import HomeGymCard from '@/app/components/home-gym-card/home-gym-card';
 import StartClimbingButton from '@/app/components/start-climbing-button';
 import { track } from '@/app/lib/analytics';
+import { APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties } from '@/app/lib/app-install-event';
 
 const DISCORD_INVITE_URL = 'https://discord.gg/YXA8GsXfQK';
 
@@ -253,7 +254,10 @@ function InstallAppCard({ platform }: { platform: InstallPlatform }) {
         title={t('home.install.androidLiveTitle')}
         description={t('home.install.androidLiveDescription')}
         onClick={() => {
-          track('App Install Click', { platform: 'android', source: 'google-play' });
+          track(
+            APP_INSTALL_CLICK_EVENT,
+            buildAppInstallClickProperties({ platform: 'android', source: 'google-play' }),
+          );
           window.open(ANDROID_PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
         }}
       />
@@ -275,7 +279,7 @@ function InstallAppCard({ platform }: { platform: InstallPlatform }) {
       description={t('home.install.iosDescription')}
       accent="none"
       onClick={() => {
-        track('App Install Click', { platform: 'ios', source: 'app-store' });
+        track(APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties({ platform: 'ios', source: 'app-store' }));
         window.open(IOS_APP_STORE_URL, '_blank', 'noopener,noreferrer');
       }}
     />
@@ -419,12 +423,15 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             size="large"
             startIcon={<HeroInstallIcon />}
             onClick={() => {
-              track('App Install Click', {
-                platform: heroInstall.store,
-                source: heroInstall.store === 'android' ? 'google-play' : 'app-store',
-                placement: 'hero',
-                mode: heroInstall.mode,
-              });
+              track(
+                APP_INSTALL_CLICK_EVENT,
+                buildAppInstallClickProperties({
+                  platform: heroInstall.store,
+                  source: heroInstall.store === 'android' ? 'google-play' : 'app-store',
+                  placement: 'hero',
+                  mode: heroInstall.mode,
+                }),
+              );
               window.open(heroInstallUrl, '_blank', 'noopener,noreferrer');
             }}
             sx={HERO_CTA_SX}

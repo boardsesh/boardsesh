@@ -3,13 +3,10 @@ import type { Metadata } from 'next';
 import { notFound, permanentRedirect } from 'next/navigation';
 import Container from '@mui/material/Container';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import Divider from '@mui/material/Divider';
 import LocationOnOutlined from '@mui/icons-material/LocationOnOutlined';
-import LanguageOutlined from '@mui/icons-material/LanguageOutlined';
-import TvOutlined from '@mui/icons-material/TvOutlined';
 import FitnessCenterOutlined from '@mui/icons-material/FitnessCenterOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import PeopleOutlined from '@mui/icons-material/PeopleOutlined';
@@ -26,6 +23,7 @@ import {
   type GymKioskOperationResult,
 } from '@boardsesh/graphql/operations';
 import { boardTypeLabel } from '@boardsesh/board-constants';
+import { parseGymQrLanding } from '@boardsesh/analytics';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import { getLocale } from '@/app/lib/i18n/get-locale';
@@ -44,11 +42,17 @@ import GymClaimCta from './gym-claim-cta';
 import GymOwnerPrompts from './gym-owner-prompts';
 import GymReportDuplicateCta from './gym-report-duplicate-cta';
 import { formatHoursConfirmedDate } from './gym-hours-display';
+import GymPageCtaLink from './gym-page-cta-link';
+import GymQrLandingTracker from './gym-qr-landing-tracker';
 import { getPublicBackendHttpUrl } from '@/app/lib/backend-url';
 import { resolveGymLogoDisplayUrl } from '@/app/lib/gym-logo-display-url';
 
 type GymRouteProps = {
   params: Promise<{ gym_slug: string }>;
+  // Same shape the manage route declares. Read for the QR-landing params a
+  // printed poster carries (`?src=qr&medium=poster`); several later PRs of this
+  // epic read their own params from it.
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 };
 
 const fetchGymBySlug = cache(async (slug: string, token: string | undefined): Promise<Gym | null> => {
@@ -105,12 +109,18 @@ export async function generateMetadata(props: GymRouteProps): Promise<Metadata> 
 
   const title = t('gymPage.metaTitle', { gymName: gym.name });
   const description = gym.description?.trim() || t('gymPage.metaDescription', { gymName: gym.name });
+  // `path` is the SLUG PATH ONLY — never concatenate anything from
+  // `searchParams` into it. Every canonical and every hreflang alternate is
+  // built from this string, so a query string here would give
+  // `/gym/x?src=qr&medium=poster` its own canonical and split the page's
+  // ranking signals across as many URLs as there are param combinations. Filter,
+  // sort and attribution params all canonicalise to the clean base URL.
   const options = { title, description, path: `/gym/${gym_slug}`, locale };
   return gym.isPublic ? createPageMetadata(options) : createNoIndexMetadata(options);
 }
 
 export default async function GymPage(props: GymRouteProps) {
-  const { gym_slug } = await props.params;
+  const [{ gym_slug }, searchParams] = await Promise.all([props.params, props.searchParams]);
   const token = await getServerAuthToken();
   const gym = await fetchGymBySlug(gym_slug, token);
 
@@ -142,6 +152,10 @@ export default async function GymPage(props: GymRouteProps) {
   const hoursText = gym.hours?.trim() || null;
   const hoursConfirmedDate = formatHoursConfirmedDate(gym.hoursUpdatedAt, locale);
 
+  // A printed code carries `?src=qr&medium=…`. Anything else — a bare visit, a
+  // hand-edited param, a crawler-mangled URL — parses to null and mounts nothing.
+  const qrLanding = parseGymQrLanding(searchParams);
+
   const jsonLd = gym.isPublic
     ? {
         '@context': 'https://schema.org',
@@ -157,6 +171,7 @@ export default async function GymPage(props: GymRouteProps) {
 
   return (
     <I18nProvider locale={locale} namespaces={['common', 'boards', 'kiosk']}>
+      {qrLanding && <GymQrLandingTracker gymSlug={gym_slug} medium={qrLanding.medium} />}
       {jsonLd && <JsonLd data={jsonLd} />}
       <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
         <Box sx={{ mb: 2 }}>
@@ -245,28 +260,19 @@ export default async function GymPage(props: GymRouteProps) {
 
         <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mb: 3 }}>
           <GymFollowButton gymUuid={gym.uuid} ownerId={gym.ownerId} isFollowedByMe={gym.isFollowedByMe} />
+          {/* Both CTAs render through a client island purely so the click is
+              counted. The island keeps the same anchor and the same real href;
+              the label is translated here on the server, so no i18n key moves. */}
           {kiosk && (
-            <Button
-              component={LocaleLink}
+            <GymPageCtaLink
+              cta="kiosk"
+              gymUuid={gym.uuid}
               href={`/kiosk/${gym_slug}`}
-              variant="contained"
-              startIcon={<TvOutlined />}
-              sx={{ textTransform: 'none' }}
-            >
-              {t('gymPage.seeOnTheWall')}
-            </Button>
+              label={t('gymPage.seeOnTheWall')}
+            />
           )}
           {websiteHref && (
-            <MuiLink
-              href={websiteHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              underline="hover"
-              sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, color: 'var(--color-primary)' }}
-            >
-              <LanguageOutlined sx={{ fontSize: 18 }} />
-              {t('gymPage.visitWebsite')}
-            </MuiLink>
+            <GymPageCtaLink cta="website" gymUuid={gym.uuid} href={websiteHref} label={t('gymPage.visitWebsite')} />
           )}
           {gym.canEdit && <GymPageManageButton gymSlug={gym_slug} />}
         </Box>
@@ -286,7 +292,21 @@ export default async function GymPage(props: GymRouteProps) {
           )}
         />
 
-        {gym.canClaim && <GymClaimCta gymUuid={gym.uuid} gymName={gym.name} website={gym.website} />}
+        {/* `viewerState` is the server's answer, taken from the request cookie
+            above. Reading it in the island with useSession() would report the
+            pre-hydration `loading` state as signed-out on exactly the taps this
+            event cares about. Today `canClaim` is itself false for a signed-out
+            viewer (the resolver requires an authenticated user), so this is
+            `signed-in` by construction — until #3672 shows the CTA anonymously,
+            at which point this prop is already carrying the truth. */}
+        {gym.canClaim && (
+          <GymClaimCta
+            gymUuid={gym.uuid}
+            gymName={gym.name}
+            website={gym.website}
+            viewerState={token ? 'signed-in' : 'signed-out'}
+          />
+        )}
 
         <GymReportDuplicateCta
           gymUuid={gym.uuid}

@@ -9,25 +9,43 @@ Source of truth: `packages/shared/analytics/src/gym-funnel.ts`, re-exported from
 
 ## How to fire an event
 
-Never write the event name as a string literal. Import the builder, hand its
-return value to `track`:
+Never write the event name as a string literal, and never destructure the
+builder. Hand its whole return value to `trackGymFunnelEvent`:
 
 ```ts
 import { gymClaimCtaClicked } from '@boardsesh/analytics';
-import { track } from '@/app/lib/analytics';
+import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
 
-const { name, properties } = gymClaimCtaClicked({
-  placement: 'gym-page',
-  viewerState: 'signed-out',
-  gymUuid: gym.uuid,
-});
-track(name, properties);
+trackGymFunnelEvent(
+  gymClaimCtaClicked({
+    placement: 'gym-page',
+    viewerState,
+    gymUuid: gym.uuid,
+  }),
+);
 ```
 
 Builders return the name and its properties **together** so a caller cannot pair
 one event's props with another event's name. That is the failure a bare name
 constant still allows, and it is invisible in PostHog until someone reads the
-funnel.
+funnel. `trackGymFunnelEvent` (`packages/web/app/lib/gym-funnel-analytics.ts`)
+is the only web call path that keeps the pairing intact end to end — pulling
+`{ name, properties }` apart and calling `track()` yourself splits them back
+into two arguments, which is the exact thing the builder exists to prevent.
+
+### `viewerState` must come from a settled session
+
+Pass a value that has already resolved: a server-read auth token, or
+`useWsAuthToken().isAuthenticated`, whose query is gated on
+`status !== 'loading'`. **Never** derive it from `useSession().status` in a
+client island. `SessionProviderWrapper` mounts `<SessionProvider>` with no
+`session` prop, so next-auth starts every page load at `loading` and settles
+only after a round-trip to `/api/auth/session`. A server-rendered page paints
+and hydrates first, so a tap that beats the round-trip — a QR poster scanned on
+a phone is precisely that — would report a signed-in climber as `signed-out`.
+`GymClaimViewerState` has no `loading` member on purpose, and one must not be
+added: it would encode the hydration race as vocabulary instead of keeping it
+out of the data.
 
 ## Why this is not in `SHARED_EVENTS`
 
@@ -53,7 +71,7 @@ no mobile counterpart. They live in their own module.
 | Property       | Values                                                                                   |
 | -------------- | ---------------------------------------------------------------------------------------- |
 | `placement`    | `gym-page`, `preview-sheet`, `directory-card`, `similar-gyms`                            |
-| `viewerState`  | `signed-in`, `signed-out`                                                                |
+| `viewerState`  | `signed-in`, `signed-out` — `signed-out` is 0 by construction today, see below           |
 | `method`       | `domain`, `admin` — mirrors the `GymClaimMethod` GraphQL enum                            |
 | `status`       | `email_sent`, `approved`, `admin_review`, `error`                                        |
 | `medium`       | `poster`, `kiosk`, `board` — only `poster` can fire today, see below                     |
@@ -69,6 +87,27 @@ no mobile counterpart. They live in their own module.
 `app/gym/[gym_slug]/manage/manage-gym-content.tsx`. It is restated rather than
 imported because a shared package must never depend on `packages/web`; adding a
 tab there without adding it here is a compile error at the call site.
+
+### `viewerState: signed-out` is 0 by construction — do not read it as an answer
+
+**Read this before using `Gym Claim CTA Clicked` to answer H4** ("does a visible
+self-serve claim CTA convert unclaimed gyms"). Every claim entry point that
+exists today is gated on an authenticated viewer, so a signed-out climber is
+never shown a claim CTA and can never fire the event:
+
+- `app/gym/[gym_slug]/page.tsx` renders the call-out only when `gym.canClaim`,
+  and the resolver computes `canClaim = !!authenticatedUserId && …`
+  (`packages/backend/src/graphql/resolvers/social/gyms.ts`).
+- `app/components/gym-entity/gym-detail.tsx` gates on the same `canClaim`.
+- `app/components/gym-entity/similar-gym-suggestions.tsx` gates on
+  `gym.isClaimable`, which `computeClaimableFlags` only computes for an
+  authenticated viewer (`…/social/gym-matching.ts`).
+
+So the property is a constant `signed-in` in production. A `signed-out` split of
+0% is the gate working, **not** evidence about how signed-out climbers behave —
+H4 cannot be answered from this event until #3672 ships a CTA anonymous visitors
+can see. The property is wired end to end anyway so that PR is a server-side
+one-line change rather than a re-instrumentation.
 
 ## Two rules that are easy to break
 
