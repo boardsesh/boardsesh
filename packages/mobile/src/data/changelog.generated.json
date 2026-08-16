@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-08-16T05:04:33.233Z",
+  "generatedAt": "2026-08-16T07:54:13.463Z",
   "entries": [
+    {
+      "prNumber": 4517,
+      "category": "new",
+      "title": "Find the boards near you — the gym directory now has a map and a \"use my location\" search, with a city search to fall back on if you'd rather not share it.",
+      "mergedAt": "2026-08-16T07:53:34Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4517"
+    },
+    {
+      "prNumber": 4515,
+      "category": "new",
+      "title": "Claimed a gym? Your page now says it's under review, and we email you either way once we've looked at it — approved or not.",
+      "mergedAt": "2026-08-16T07:53:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4515"
+    },
     {
       "prNumber": 4512,
       "category": "new",

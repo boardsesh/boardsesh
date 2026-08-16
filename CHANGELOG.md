@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Find the boards near you — the gym directory now has a map and a "use my location" search, with a city search to fall back on if you'd rather not share it. ([#4517](https://github.com/boardsesh/boardsesh/pull/4517))
+- Claimed a gym? Your page now says it's under review, and we email you either way once we've looked at it — approved or not. ([#4515](https://github.com/boardsesh/boardsesh/pull/4515))
 - Flag-gated and noindex; Tier 2 launches it publicly. ([#4512](https://github.com/boardsesh/boardsesh/pull/4512))
 - Scan a gym's QR code and the app knows which poster or kiosk sent you — so gyms can finally see what their signage is actually doing. ([#4510](https://github.com/boardsesh/boardsesh/pull/4510))
 - Owners can put a real photo of their wall on their gym page — upload it from the manage console and it becomes the header image and the preview when someone shares the link. ([#4509](https://github.com/boardsesh/boardsesh/pull/4509))
