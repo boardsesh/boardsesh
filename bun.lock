@@ -29,6 +29,7 @@
         "vite": "^8.2.0",
         "vite-plus": "^0.1.24",
         "vitest": "^4.1.10",
+        "yaml": "^2.9.0",
       },
     },
     "packages/aurora-sync": {
