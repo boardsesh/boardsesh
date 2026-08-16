@@ -9,6 +9,7 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import MuiButton from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import MuiTypography from '@mui/material/Typography';
+import { GYM_HOURS_MAX_LENGTH } from '@boardsesh/shared-schema';
 import MapLocationPicker from '@/app/components/board-entity/map-location-picker';
 
 export type GymFormFieldValues = {
@@ -173,8 +174,8 @@ export default function GymForm({
           maxRows={6}
           placeholder={t('gymForm.placeholders.hours')}
           helperText={t('gymForm.helpers.hours')}
-          // Mirrors GYM_HOURS_MAX_LENGTH on the backend, which is the real gate.
-          slotProps={{ htmlInput: { maxLength: 500 } }}
+          // Same constant the backend validator enforces, so the two can't drift.
+          slotProps={{ htmlInput: { maxLength: GYM_HOURS_MAX_LENGTH } }}
         />
       )}
 

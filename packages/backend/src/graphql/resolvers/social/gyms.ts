@@ -1030,10 +1030,18 @@ export const socialGymMutations = {
     // (the public page renders "Confirmed <date>"), and clearing the line clears
     // the stamp with it so no date outlives the hours it vouched for. An omitted
     // key leaves both columns alone — a save from a form that doesn't show the
-    // field must not silently re-confirm a schedule nobody looked at.
+    // field, or whose hours are unchanged, must not silently re-confirm a
+    // schedule nobody looked at. Callers are expected to send this key only on
+    // an actual change (see EditGymForm).
+    //
+    // Blank normalises to null, so `hours: ""` or `"   "` clears both columns
+    // instead of storing an empty value under a fresh confirmation date. The web
+    // form can't send that; the API can, and a date vouching for hours that
+    // don't exist is exactly the lie this field exists to prevent.
     if (validatedInput.hours !== undefined) {
-      updateValues.hours = validatedInput.hours;
-      updateValues.hoursUpdatedAt = validatedInput.hours === null ? null : new Date();
+      const nextHours = validatedInput.hours?.trim() || null;
+      updateValues.hours = nextHours;
+      updateValues.hoursUpdatedAt = nextHours === null ? null : new Date();
     }
     if (validatedInput.address !== undefined) updateValues.address = validatedInput.address;
     if (validatedInput.website !== undefined) {

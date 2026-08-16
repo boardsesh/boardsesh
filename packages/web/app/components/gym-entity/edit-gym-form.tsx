@@ -36,16 +36,24 @@ export default function EditGymForm({ gym, onSuccess, onCancel, onDirtyChange }:
         return;
       }
 
+      // Writing `hours` re-dates the public "Confirmed <date>" stamp, so the key
+      // goes out only when the line actually changed. Posting it on every save
+      // would make the stamp mean "last profile save" — a gym that fixed its
+      // phone number in March would advertise March-confirmed hours it last
+      // touched a year ago, which is the silent lie the date exists to expose.
+      //
+      // When it did change, an emptied field sends `null` (not `undefined`,
+      // updateGym's leave-untouched sentinel) so clearing actually clears.
+      const nextHours = values.hours?.trim() || null;
+      const currentHours = gym.hours?.trim() || null;
+
       const data = await execute({
         input: {
           gymUuid: gym.uuid,
           name: values.name,
           slug: values.slug || undefined,
           description: values.description || undefined,
-          // `null`, not `undefined`: updateGym treats an omitted key as "leave the
-          // hours (and their confirmed date) alone", so an owner who empties the
-          // field could never clear it if this sent undefined.
-          hours: values.hours?.trim() || null,
+          ...(nextHours !== currentHours ? { hours: nextHours } : {}),
           address: values.address || undefined,
           website: values.website || null,
           contactEmail: values.contactEmail || undefined,
@@ -60,7 +68,7 @@ export default function EditGymForm({ gym, onSuccess, onCancel, onDirtyChange }:
         onSuccess?.(data.updateGym);
       }
     },
-    [execute, gym.uuid, showMessage, onSuccess, t],
+    [execute, gym.uuid, gym.hours, showMessage, onSuccess, t],
   );
 
   return (

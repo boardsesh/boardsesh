@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { GYM_CLAIM_MESSAGE_MAX_LENGTH } from '@boardsesh/gym-claim';
+import { GYM_HOURS_MAX_LENGTH } from '@boardsesh/shared-schema';
 import { UUIDSchema, LatitudeSchema, LongitudeSchema, SlugSchema, BoardNameSchema } from './primitives';
 
 /**
@@ -60,10 +61,13 @@ export const GymLogoUrlSchema = z
 /**
  * Opening hours are one free-text line the gym writes itself, so the only server
  * rule is a length cap — enough room for a week of hours plus a holiday note,
- * short enough that the public gym page can't be used as a text dump.
+ * short enough that the public gym page can't be used as a text dump. The cap
+ * lives in @boardsesh/shared-schema so the form's maxLength and this validator
+ * can't drift apart.
+ *
+ * Blank-vs-null is NOT decided here: updateGym normalises a whitespace-only
+ * value to null so it clears the hours and their confirmation stamp together.
  */
-export const GYM_HOURS_MAX_LENGTH = 500;
-
 export const GymHoursSchema = z.string().max(GYM_HOURS_MAX_LENGTH, 'Opening hours too long');
 
 /**

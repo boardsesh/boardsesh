@@ -112,6 +112,54 @@ describe('ProfileTab', () => {
     expect('hours' in input).toBe(true);
   });
 
+  it('omits hours entirely when only another field was edited', async () => {
+    mockExecute.mockResolvedValue({ updateGym: makeGym() });
+
+    render(<ProfileTab gym={makeGym({ hours: 'Mon-Fri 7-22' })} onGymChange={vi.fn()} />);
+
+    fireEvent.change(screen.getByDisplayValue('Test Gym'), { target: { value: 'Test Gym 2' } });
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(mockExecute).toHaveBeenCalledTimes(1);
+    });
+    // Sending the key would re-date the public "Confirmed <date>" stamp, turning
+    // it into "last profile save" on hours nobody touched.
+    const { input } = mockExecute.mock.calls[0][0];
+    expect('hours' in input).toBe(false);
+    expect(input.name).toBe('Test Gym 2');
+  });
+
+  it('omits hours when the field is edited back to its original value', async () => {
+    mockExecute.mockResolvedValue({ updateGym: makeGym() });
+
+    render(<ProfileTab gym={makeGym({ hours: 'Mon-Fri 7-22' })} onGymChange={vi.fn()} />);
+
+    const hoursField = screen.getByDisplayValue('Mon-Fri 7-22');
+    fireEvent.change(hoursField, { target: { value: 'Mon-Fri 7-23' } });
+    fireEvent.change(hoursField, { target: { value: 'Mon-Fri 7-22' } });
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(mockExecute).toHaveBeenCalledTimes(1);
+    });
+    expect('hours' in mockExecute.mock.calls[0][0].input).toBe(false);
+  });
+
+  it('omits hours when a gym without any keeps the field empty', async () => {
+    mockExecute.mockResolvedValue({ updateGym: makeGym() });
+
+    render(<ProfileTab gym={makeGym({ hours: null })} onGymChange={vi.fn()} />);
+
+    fireEvent.change(screen.getByDisplayValue('Test Gym'), { target: { value: 'Test Gym 2' } });
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(mockExecute).toHaveBeenCalledTimes(1);
+    });
+    expect('hours' in mockExecute.mock.calls[0][0].input).toBe(false);
+  });
+
   it('bubbles the form dirty state so the shell can guard tab switches', async () => {
     const onDirtyChange = vi.fn();
     render(<ProfileTab gym={makeGym()} onGymChange={vi.fn()} onDirtyChange={onDirtyChange} />);

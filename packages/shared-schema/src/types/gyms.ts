@@ -1,5 +1,13 @@
 // Gym entity types
 
+/**
+ * Max length of the free-text opening-hours line, shared by the backend
+ * validator and every client that renders the field. A client capping below the
+ * backend limit silently truncates; one capping above it lets the owner type
+ * hours the mutation then rejects with no inline explanation.
+ */
+export const GYM_HOURS_MAX_LENGTH = 500;
+
 export type GymMemberRole = 'admin' | 'editor' | 'member';
 
 export type GymClaimMethod = 'domain' | 'admin';

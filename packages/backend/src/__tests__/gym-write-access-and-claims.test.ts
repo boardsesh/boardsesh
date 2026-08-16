@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { sql, eq, is, SQL } from 'drizzle-orm';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { GYM_HOURS_MAX_LENGTH, type ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { socialGymQueries, socialGymMutations, mapRawGymRow, enrichGym } from '../graphql/resolvers/social/gyms';
@@ -732,6 +732,7 @@ describe('gym hours', () => {
 
   it('leaves both columns untouched when the input omits hours', async () => {
     await seedHours(gymId, 'Mon-Fri 7-22', A_YEAR_AGO);
+    const seeded = await storedHours(gymId);
 
     // A save from a form that never showed the field must not silently
     // re-confirm a schedule nobody looked at.
@@ -739,7 +740,11 @@ describe('gym hours', () => {
 
     const row = await storedHours(gymId);
     expect(row.hours).toBe('Mon-Fri 7-22');
-    expect(new Date(row.hours_updated_at!).toISOString()).toBe(new Date(A_YEAR_AGO).toISOString());
+    // Compare the read-back value against the same value read the same way, not
+    // against a UTC literal: hours_updated_at is `timestamp` WITHOUT time zone,
+    // so the driver hands back a Date built in the host's zone and a literal
+    // comparison would only hold on a UTC machine.
+    expect(new Date(row.hours_updated_at!).getTime()).toBe(new Date(seeded.hours_updated_at!).getTime());
   });
 
   it('clears the stamp along with the hours when null is sent', async () => {
@@ -754,16 +759,44 @@ describe('gym hours', () => {
     expect(row.hours_updated_at).toBeNull();
   });
 
-  it('rejects hours longer than the 500-character cap', async () => {
+  it('treats a whitespace-only value as a clear, not as hours with a fresh stamp', async () => {
+    await seedHours(gymId, 'Mon-Fri 7-22', A_YEAR_AGO);
+
+    // The web form can't send this; the GraphQL API can. Storing "   " plus a
+    // new confirmation date would leave a stamp vouching for hours the page
+    // renders as absent.
+    const result = await socialGymMutations.updateGym(null, { input: { gymUuid, hours: '   ' } }, authCtx(OWNER));
+
+    expect(result.hours).toBeNull();
+    expect(result.hoursUpdatedAt).toBeNull();
+    const row = await storedHours(gymId);
+    expect(row.hours).toBeNull();
+    expect(row.hours_updated_at).toBeNull();
+  });
+
+  it('stores hours trimmed', async () => {
+    const result = await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid, hours: '  Mon-Fri 7-22  ' } },
+      authCtx(OWNER),
+    );
+    expect(result.hours).toBe('Mon-Fri 7-22');
+  });
+
+  it('rejects hours longer than the cap', async () => {
     await expect(
-      socialGymMutations.updateGym(null, { input: { gymUuid, hours: 'x'.repeat(501) } }, authCtx(OWNER)),
+      socialGymMutations.updateGym(
+        null,
+        { input: { gymUuid, hours: 'x'.repeat(GYM_HOURS_MAX_LENGTH + 1) } },
+        authCtx(OWNER),
+      ),
     ).rejects.toThrow();
 
     expect((await storedHours(gymId)).hours).toBeNull();
   });
 
   it('accepts hours exactly at the cap', async () => {
-    const atCap = 'x'.repeat(500);
+    const atCap = 'x'.repeat(GYM_HOURS_MAX_LENGTH);
     const result = await socialGymMutations.updateGym(null, { input: { gymUuid, hours: atCap } }, authCtx(OWNER));
     expect(result.hours).toBe(atCap);
   });
@@ -784,7 +817,11 @@ describe('gym hours', () => {
 
     const enriched = await enrichGym(mapped, OWNER);
     expect(enriched.hours).toBe('Mon-Fri 7-22');
-    expect(enriched.hoursUpdatedAt).toBe(new Date(A_YEAR_AGO).toISOString());
+    // Assert the ISO string round-trips the mapped Date rather than a UTC
+    // literal — the column is `timestamp` WITHOUT time zone, so a literal would
+    // only match on a UTC host.
+    expect(enriched.hoursUpdatedAt).toBe(mapped.hoursUpdatedAt!.toISOString());
+    expect(new Date(enriched.hoursUpdatedAt!).getTime()).toBe(mapped.hoursUpdatedAt!.getTime());
   });
 });
 
