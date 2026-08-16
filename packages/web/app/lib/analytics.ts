@@ -63,9 +63,11 @@ function getPosthog(): PostHog | null {
     autocapture: false,
     captureHistoryEvents: false,
     // Persist distinct_id in localStorage so anonymous → authed merges and
-    // cross-session retention cohorts work. The IndexedDB party-profile UUID
-    // is still the canonical anon id; PartyProfileProvider calls identify()
-    // on hydration to reconcile if storage was cleared.
+    // cross-session retention cohorts work. This persisted id IS the canonical
+    // anonymous id on web — every pre-login event carries it — and
+    // `AnalyticsIdentity` (components/providers/analytics-identity.tsx) reads it
+    // back through getAnalyticsDistinctId() to alias it onto session.user.id
+    // once authentication resolves.
     //
     // CLAUDE.md mandates IndexedDB for client persistence (the no-restricted-globals
     // lint rule enforces it on bare globals, which is why this config string
@@ -167,6 +169,24 @@ export function capturePosthog(name: string, properties?: PosthogProperties): bo
 
 export function identify(distinctId: string, properties?: PosthogProperties): boolean {
   return core.identify(distinctId, properties);
+}
+
+/**
+ * The distinct id the PostHog client currently believes it is, or `null` when
+ * there is no client at all — server render, dev, preview deploys, or a
+ * production host whose build lost NEXT_PUBLIC_POSTHOG_KEY. Callers use the
+ * `null` to skip identity work entirely rather than bookkeeping transitions
+ * that were never sent.
+ *
+ * While the visitor is anonymous this is the localStorage-persisted anonymous
+ * id every pre-login event on this browser carries, which is what makes it the
+ * right thing to alias onto the authenticated user id. After identify() it is
+ * that user id.
+ */
+export function getAnalyticsDistinctId(): string | null {
+  const posthog = getPosthog();
+  if (!posthog) return null;
+  return posthog.getDistinctId() || null;
 }
 
 // Sets person properties on the current distinct_id. `setOnce` properties are
