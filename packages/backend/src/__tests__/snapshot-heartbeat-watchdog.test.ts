@@ -124,6 +124,64 @@ describe('snapshot heartbeat watchdog', () => {
     expect(decision.full).toEqual({ stale: false, ageSeconds: 300, reason: 'fresh' });
   });
 
+  it('fails closed when a new manifest lands before the watchdog reads the old heartbeat', async () => {
+    const nextManifestGeneratedAt = '2026-08-15T11:59:00.000Z';
+    let manifestFetchCount = 0;
+    const decision = await snapshotHeartbeatDecision({
+      publicBaseUrl: 'https://example.test/',
+      expectedImageDigest: IMAGE_DIGEST,
+      nowMs: NOW_MS,
+      fetchHeartbeat: async (url) => {
+        if (url.includes('/manifest.json')) {
+          manifestFetchCount += 1;
+          return {
+            formatVersion: 1,
+            generatedAt: manifestFetchCount === 1 ? MANIFEST_GENERATED_AT : nextManifestGeneratedAt,
+            entries: [],
+          };
+        }
+        return url.includes('/refresh.json') ? heartbeat('refresh') : heartbeat('full');
+      },
+    });
+
+    expect(manifestFetchCount).toBe(2);
+    expect(decision.refresh).toMatchObject({ stale: true, reason: expect.stringContaining('manifest changed') });
+    expect(decision.full).toMatchObject({ stale: true, reason: expect.stringContaining('manifest changed') });
+  });
+
+  it('fails closed when a new manifest and heartbeat land during the watchdog sample', async () => {
+    const nextManifestGeneratedAt = '2026-08-15T11:59:00.000Z';
+    const nextHeartbeat = (runKind: 'refresh' | 'full') => ({
+      ...(heartbeat(runKind) as Record<string, unknown>),
+      manifestGeneratedAt: nextManifestGeneratedAt,
+    });
+    let manifestFetchCount = 0;
+    const fetchedUrls: string[] = [];
+    const decision = await snapshotHeartbeatDecision({
+      publicBaseUrl: 'https://example.test/',
+      expectedImageDigest: IMAGE_DIGEST,
+      nowMs: NOW_MS,
+      fetchHeartbeat: async (url) => {
+        fetchedUrls.push(url);
+        if (url.includes('/manifest.json')) {
+          manifestFetchCount += 1;
+          return {
+            formatVersion: 1,
+            generatedAt: manifestFetchCount === 1 ? MANIFEST_GENERATED_AT : nextManifestGeneratedAt,
+            entries: [],
+          };
+        }
+        return url.includes('/refresh.json') ? nextHeartbeat('refresh') : nextHeartbeat('full');
+      },
+    });
+
+    expect(decision.refresh).toMatchObject({ stale: true, reason: expect.stringContaining('manifest changed') });
+    expect(decision.full).toMatchObject({ stale: true, reason: expect.stringContaining('manifest changed') });
+    const manifestUrls = fetchedUrls.filter((url) => url.includes('/manifest.json'));
+    expect(manifestUrls).toHaveLength(2);
+    expect(manifestUrls[0]).not.toBe(manifestUrls[1]);
+  });
+
   it('requires HTTPS outside explicit loopback development URLs', async () => {
     await expect(
       snapshotHeartbeatDecision({
@@ -149,7 +207,7 @@ describe('snapshot heartbeat watchdog', () => {
       },
     });
     expect(decision.refresh.stale).toBe(false);
-    expect(fetchedUrls).toHaveLength(3);
+    expect(fetchedUrls).toHaveLength(4);
     expect(fetchedUrls.every((url) => url.startsWith('http://127.0.0.1:3000/'))).toBe(true);
   });
 

@@ -42,7 +42,10 @@ Both schedulers use the global database advisory fence, preventing normal overla
 homelab run, and automatic fallback. The exporter checks the session immediately before and after the
 manifest PUT; a connection loss in that small cross-system interval cannot be made transactional, so S3
 and PostgreSQL may briefly disagree. Each heartbeat therefore names the manifest's exact `generatedAt`;
-the watchdog validates the live manifest and requires the **refresh** heartbeat to match it. A full run
+the watchdog reads the live manifest both before and after the mutable heartbeat objects with different
+cache busters, and requires both its generation and parsed content to remain identical. Any overlapping
+publish fails closed to the primary fallback instead of accepting a heartbeat/manifest pair sampled from
+different generations. It then requires the **refresh** heartbeat to match that stable manifest. A full run
 writes `full.json` first and a matching `refresh.json` last, so refresh is the completed pair's manifest and
 PostgreSQL-lineage anchor. The full heartbeat remains an independent 30-hour clock because a later legitimate
 threshold refresh advances the manifest, but it is accepted only when its system identifier and timeline
@@ -196,6 +199,19 @@ disabled until the final PG18 physical standby has been seeded after the upgrade
 The adversarial integration test holds an old transaction open, attempts to backdate all four cursor
 families, lets a newer transaction commit, and proves the fixed cutoff cannot publish a watermark past
 the late row.
+
+Migration `0201` is deliberately ordered after the PostgreSQL 18 cutover. Its first statement rejects
+PostgreSQL 16/17 and rejects a missing or incorrectly provisioned fence-owner role before changing the
+schema. Do not merge/deploy the replica-snapshot migration while Railway still runs PostgreSQL 16. The
+major-upgrade PR, production PG18 cutover, and target-role preflight must complete first; only then deploy
+`0201` and start the homelab rollout.
+
+This change is stacked on the PostgreSQL 18 upgrade PR. Until that PR publishes and pins its verified PG18
+PostGIS/dev-database images, the location-sync integration job and the current published development-image
+digest remain PostgreSQL 17 and are an external rollout blocker. Do not guess or pre-pin an unpublished
+artifact in this change: rebase after the PG18 image is published, take its attested digest, rerun the exact
+`0201` smoke and location-sync integration, and only then deploy. For the same reason, this branch's
+`scripts/dev-db-up.sh` bootstrap intentionally requires the PG18 image supplied by the prerequisite PR.
 
 The proof also assumes the primary wall clock does not step backward by more than the stability window
 between the activity scan and a later transaction start. PostgreSQL transaction timestamps follow the host
@@ -1068,11 +1084,70 @@ session. Treat it as a statement-level assertion: never compose it with `release
 one SQL statement. Only the owning session can release its session advisory lock, and every production call
 site checks it before publishing.
 
-The migration deliberately revokes every `ops` function from `PUBLIC`. Create a narrow login outside the
-schema migration (password from 1Password), then grant only:
+The target admin must create the non-login function owner before migration `0201`; the restricted Drizzle
+migrator cannot create roles or grant itself predefined monitoring privileges. Substitute the application
+owner role if it is named differently:
 
 ```sql
-GRANT CONNECT ON DATABASE railway TO boardsesh_snapshot_coordinator;
+CREATE ROLE boardsesh_snapshot_fence_owner
+  NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION NOBYPASSRLS;
+GRANT pg_read_all_stats TO boardsesh_snapshot_fence_owner
+  WITH ADMIN FALSE, INHERIT TRUE, SET FALSE;
+GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system()
+  TO boardsesh_snapshot_fence_owner;
+GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_checkpoint()
+  TO boardsesh_snapshot_fence_owner;
+GRANT boardsesh_snapshot_fence_owner TO boardsesh_owner
+  WITH ADMIN FALSE, INHERIT FALSE, SET TRUE;
+```
+
+Migration `0201` fails closed unless that role is narrow, has exactly the direct `pg_read_all_stats` and
+application-owner membership rows (including the PG18 `ADMIN`, `INHERIT`, and `SET` options above), and has
+direct non-grantable `EXECUTE` ACLs on the two control-identity functions. Effective access through another
+role is intentionally insufficient, and any extra direct role edge is drift. The migration grants the owner
+direct non-grantable `USAGE, CREATE` on `ops` (PostgreSQL requires `CREATE` for
+`ALTER FUNCTION ... OWNER`) and transfers only the two `SECURITY DEFINER` functions,
+`board_snapshot_cluster_identity()` and `acquire_board_snapshot_fence(integer)`, to it.
+
+The PG18 development image and `scripts/dev-db-up.sh` run
+`packages/db/docker/bootstrap-pg18-development-roles.sql` before pending migrations. That bootstrap is
+idempotent but deliberately requires PostgreSQL 18, a superuser, and the explicit
+`boardsesh_dev_role_bootstrap=true` psql variable. It is only a disposable development/test convenience;
+production must provision and audit the roles through the PG18 cutover runbook, never auto-create them from
+the application or Drizzle migration path.
+
+Creating the roles is not enough on its own. Production reaches `0201` after
+`scripts/postgres18-production-role-transition.sh transfer-ownership` has already handed `public`, `drizzle`,
+and everything in them to `boardsesh_owner`, so `SET LOCAL ROLE boardsesh_owner` lands on objects the owner
+may replace. Development and CI have no cutover: both the image build and `dev-db-up.sh` apply the whole
+journal as the bootstrap superuser, which leaves every pre-`0201` object owned by that superuser and would
+make the role switch fail on `CREATE OR REPLACE FUNCTION`, `CREATE TRIGGER`, and the drizzle ledger writes.
+`0201` therefore opens with a superuser-only block that mirrors the cutover for exactly the objects that one
+transaction replaces, attaches a trigger to, or records itself in — the two `public` cursor functions, the
+four cursor-stamped tables, both `__drizzle_migrations` ledgers, and the `public`/`drizzle` schemas. The
+production migrator is verified `NOSUPERUSER` before it is handed the deploy secret, so that block never runs
+there and the runbook stays the only thing that moves the rest.
+`scripts/board-snapshot-migration-pg18.test.sh` covers both apply paths; its development scenario also seeds
+`snapshot_smoke_bystander_*` objects the block must leave alone, so a preamble that ever grows into a
+schema-wide sweep fails the test instead of passing it.
+
+The block narrates itself at `NOTICE` level: one line naming `session_user` and each
+`ALTER SCHEMA`/`ALTER TABLE`/`ALTER FUNCTION` it runs, or one line saying it skipped because `session_user` is
+not a superuser. Grep a `0201` deploy log for `migration 0201 superuser preamble` — on the production migrator
+the only line is the skip. If a real PG18 database is ever migrated with a platform superuser credential
+(Railway hands one out by default), those `ALTER` lines are the trace of a half-cutover database: `public`,
+`drizzle`, six tables and two functions moved to `boardsesh_owner` while every other `public` table stayed on
+the superuser. Finish it with `scripts/postgres18-production-role-transition.sh transfer-ownership`.
+
+The migration revokes every `ops` function from `PUBLIC`. Create the separate narrow coordinator login
+outside the schema migration (password from 1Password). It must have no direct role memberships in either
+direction; grant only:
+
+```sql
+SELECT format(
+  'GRANT CONNECT ON DATABASE %I TO boardsesh_snapshot_coordinator',
+  current_database()
+) \gexec
 GRANT USAGE ON SCHEMA ops TO boardsesh_snapshot_coordinator;
 GRANT EXECUTE ON FUNCTION ops.acquire_board_snapshot_fence(integer)
   TO boardsesh_snapshot_coordinator;
@@ -1084,13 +1159,20 @@ GRANT EXECUTE ON FUNCTION ops.board_snapshot_cluster_identity()
   TO boardsesh_snapshot_coordinator;
 ```
 
-The `SECURITY DEFINER` fence owner must be a superuser or have effective `USAGE` of `pg_read_all_stats`;
-membership granted with inheritance disabled is rejected because it leaves other sessions' transaction
-timestamps masked. The function deliberately checks `current_user`, which is the owner while a
+The `SECURITY DEFINER` fence owner must have effective `USAGE` of `pg_read_all_stats`; membership granted
+with inheritance disabled is rejected because it leaves other sessions' transaction timestamps masked.
+The function deliberately checks `current_user`, which is the owner while a
 `SECURITY DEFINER` body runs: that is the identity PostgreSQL uses to read `pg_stat_activity`. Checking
 `session_user` instead would test the narrow caller and force it to receive the broad stats role. Caller
-authorization remains the separately revoked-and-granted `EXECUTE` privilege. Audit the owner and grants
-after every logical restore. The coordinator
+authorization remains the separately revoked-and-granted `EXECUTE` privilege. Every fenced export runs an
+owner/grant audit before taking the lock: the fence owner owns exactly the two intended functions while the
+coordinator owns no `ops` functions, narrow owner attributes, exact direct
+membership options, exactly the owner's two control plus two owned-function direct non-grantable ACLs,
+direct non-grantable owner schema ACLs, and exactly one direct non-grantable
+coordinator schema `USAGE` plus the four listed function `EXECUTE` ACLs. Inherited grants, grant options,
+additional effective `ops` function access (including implicit owner access), any coordinator membership edge, caller stats/owner
+membership/schema creation, and any `PUBLIC` execution all fail closed. It therefore also catches ownership
+or ACL drift after a logical restore. The coordinator
 needs no table DML. Also grant `USAGE` on `ops` and `EXECUTE` on
 `ops.board_snapshot_cluster_identity()` to the read-only role embedded in `DATABASE_URL`; each fenced
 primary export proves that the read pool is writable and belongs to the coordinator's exact system and
@@ -1322,30 +1404,34 @@ page — that's the trigger to prioritize the fix.
 
 This cutover is independently reversible and does not require promoting the standby:
 
-1. Deploy migration `0201_board_snapshot_replica_fence`, audit the function owner, create the narrow
-   coordinator/standby roles, and set `DATABASE_DIRECT_URL`. Keep both repository flags unset.
-2. Set `SNAPSHOT_PRIMARY_FENCE_ENABLED=true`; run one unfiltered manual identity+gzip export. Confirm the
+1. Complete the PostgreSQL 18 cutover and verify Railway reports PG18. As the target admin, pre-provision
+   `boardsesh_snapshot_fence_owner` and its grants above, plus the narrow coordinator/standby roles. Do not
+   attempt migration `0201` on PG16/17; it intentionally blocks the deploy.
+2. Run migrations under the documented restricted migrator/application-owner boundary. Deploy
+   `0201_board_snapshot_replica_fence`, set `DATABASE_DIRECT_URL`, and run the automated owner/grant audit.
+   Keep both repository flags unset.
+3. Set `SNAPSHOT_PRIMARY_FENCE_ENABLED=true`; run one unfiltered manual identity+gzip export. Confirm the
    direct session retains the advisory lock through publish and a simultaneous second exporter exits with
    SQLSTATE `55P03` without changing the manifest.
-3. Remove the one-way PG16→PG18 logical-upgrade subscription after its rollback window, then seed the final
+4. Remove the one-way PG16→PG18 logical-upgrade subscription after its rollback window, then seed the final
    PG18 physical standby. Do not reuse a standby which observed logical apply. Confirm streaming/replay
    alerts, then run replica exports under a shadow key prefix for seven days **without `--heartbeat`**.
    This is the required end-to-end `createReplicaSnapshotContext()` acceptance because CI has no physical
    streaming standby. Pause catalog/grade writers for one controlled comparison and compare the primary
    and standby row sets and watermarks at the same fixed cutoff. Also exercise the held-old-transaction
    test against the candidate environment.
-4. Install the digest-pinned systemd timers but leave them disabled. Manually exercise full, threshold
+5. Install the digest-pinned systemd timers but leave them disabled. Manually exercise full, threshold
    no-op, lag-too-high, replay-paused, lost-primary-session, and S3-failure paths. Only successful live
    gzip runs may update the public heartbeat. Every failure must emit no new success heartbeat; failures
    before the manifest PUT keep the old manifest, while a simulated post-PUT fence loss verifies that the
    watchdog repairs the manifest without treating the failed run as healthy.
-5. Set `SNAPSHOT_EXPORTER_IMAGE_DIGEST`, enable the homelab timers, and then set
+6. Set `SNAPSHOT_EXPORTER_IMAGE_DIGEST`, enable the homelab timers, and then set
    `SNAPSHOT_HOMELAB_EXPORT_ENABLED=true`. Confirm GitHub's next watchdog sees both fresh heartbeats and
    performs no primary export.
-6. Stop the homelab timer long enough for the 45-minute gate. Confirm GitHub alerts and performs one
+7. Stop the homelab timer long enough for the 45-minute gate. Confirm GitHub alerts and performs one
    pinned-image primary threshold fallback. Exercise the 30-hour full decision with an isolated test
    heartbeat/base URL rather than withholding production full exports for a day.
-7. Roll back by clearing `SNAPSHOT_HOMELAB_EXPORT_ENABLED`; the original GitHub schedules resume. Leave
+8. Roll back by clearing `SNAPSHOT_HOMELAB_EXPORT_ENABLED`; the original GitHub schedules resume. Leave
    `SNAPSHOT_PRIMARY_FENCE_ENABLED=true` unless the coordinator itself is broken. Do not route mobile
    reads to a shadow prefix and do not automatically fall back from a failing replica run inside the
    homelab timer; the public watchdog is the single fallback authority.

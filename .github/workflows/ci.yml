@@ -61,6 +61,10 @@ jobs:
       # selected ZERO specs under `vp test run --project web --changed`. Gates
       # the `rest-surface` job (see below).
       restSurface: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.restSurface }}
+      # Filesystem-reading guard for the snapshot publisher workflow. A YAML-only
+      # diff is invisible to Vitest's --changed module graph, so it has a small
+      # explicit job below.
+      snapshotWatchdogWorkflow: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.snapshotWatchdogWorkflow }}
       # PR-only guard signal: did this PR edit the OTA-owned changelog data file?
       # Defaults false off PRs (the OTA bot legitimately rewrites it on push).
       changelogData: ${{ github.event_name == 'pull_request' && steps.filter.outputs.changelogData || 'false' }}
@@ -196,6 +200,9 @@ jobs:
               - 'packages/web/app/lib/api-docs/**'
               - 'packages/web/app/__tests__/rest-surface-inventory.test.ts'
               - 'scripts/__tests__/ci-rest-surface-workflow.test.ts'
+            snapshotWatchdogWorkflow:
+              - '.github/workflows/export-board-snapshots.yml'
+              - 'scripts/__tests__/snapshot-watchdog-workflow.test.ts'
             rootCi:
               - '.github/workflows/ci.yml'
               - 'vite.config.ts'
@@ -206,8 +213,11 @@ jobs:
               - 'CHANGELOG.md'
             dbMigrations:
               - 'packages/db/drizzle/**'
+              - 'packages/db/docker/bootstrap-pg18-development-roles.sql'
               - 'packages/db/src/schema/**'
               - 'scripts/check-db-migrations.ts'
+              - 'scripts/board-snapshot-migration-pg18.test.sh'
+              - 'scripts/dev-db-up.sh'
               - 'scripts/lib/drizzle-migrations.ts'
               # The journal<->ledger verification that gates the production
               # deploy (#2933) and its real-database test.
@@ -399,7 +409,7 @@ jobs:
     # never pulls the (large) boardsesh-dev-db image.
     services:
       postgres:
-        image: postgres:17
+        image: postgres:18.4
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -432,6 +442,11 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin main
           vp run check:db-migrations -- --base origin/main
+      - name: Run migration 0200 through the superuser and restricted PG18 apply paths
+        env:
+          SNAPSHOT_MIGRATION_PG18_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
+          SNAPSHOT_MIGRATION_PG18_ALLOW_LOCAL_ADMIN: '1'
+        run: bash scripts/board-snapshot-migration-pg18.test.sh
       # Guards the failure mode check:db-migrations cannot see: a migration
       # whose `when` lands below drizzle's created_at high-water mark is skipped
       # forever and silently (#2933). Drives drizzle's real migrate() against a
@@ -592,6 +607,24 @@ jobs:
       # It is what stops the gate above from being quietly reverted.
       - name: Validate this job's own gate
         run: vp test run --project scripts scripts/__tests__/ci-rest-surface-workflow.test.ts
+  snapshot-watchdog-guards:
+    needs: [changes]
+    # The test reads export-board-snapshots.yml through fs, so --changed cannot
+    # relate a workflow-only edit to it. Run the exact suite unfiltered.
+    if: needs.changes.outputs.snapshotWatchdogWorkflow == 'true' || needs.changes.outputs.rootCi == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Validate snapshot watchdog workflow contracts
+        run: vp test run --project scripts scripts/__tests__/snapshot-watchdog-workflow.test.ts --reporter=agent
 
   test-default:
     needs: [changes]
@@ -1145,6 +1178,7 @@ jobs:
       - deploy-config
       - listing-guards
       - rest-surface
+      - snapshot-watchdog-guards
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2

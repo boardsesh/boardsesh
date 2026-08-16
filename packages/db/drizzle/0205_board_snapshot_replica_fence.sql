@@ -7,9 +7,212 @@
 -- production runbook creates a narrow snapshot coordinator role and grants it
 -- USAGE/EXECUTE explicitly.  PUBLIC must never be able to inspect activity or
 -- hold the global exporter lock through this SECURITY DEFINER function.
+--
+-- This migration is intentionally post-cutover-only. The PG18 target admin
+-- must pre-provision the dedicated NOLOGIN owner and its narrowly scoped
+-- monitoring privileges; Drizzle runs as the restricted application owner and
+-- must never create cluster roles or grant itself predefined roles.
+DO $$
+BEGIN
+  IF current_setting('server_version_num')::integer < 180000 THEN
+    RAISE EXCEPTION '0201_board_snapshot_replica_fence requires PostgreSQL 18 or newer; complete the PG18 cutover first';
+  END IF;
+END;
+$$;
+--> statement-breakpoint
+
+-- Production reaches this migration through the PG18 cutover runbook, which has
+-- already moved public, drizzle, and everything in them to boardsesh_owner, so
+-- the role switch below lands on objects the owner may replace.  Development and
+-- CI have no cutover: the dev-db image and dev-db-up apply the whole journal as
+-- the bootstrap superuser, which leaves every pre-0201 object owned by that
+-- superuser.  SET ROLE drops the superuser bypass, so without this the CREATE OR
+-- REPLACE FUNCTION, CREATE TRIGGER, and drizzle ledger writes below all fail on
+-- objects postgres owns.  Mirror the cutover for exactly the objects this
+-- transaction replaces, attaches a trigger to, or records itself in — the broad
+-- sweep stays in scripts/postgres18-production-role-transition.sh, which is the
+-- only thing allowed to move the rest.  The production migrator is verified
+-- NOSUPERUSER before it is handed the deploy secret, so this block cannot run
+-- there and cannot be used to move ownership behind the runbook's back.
+--
+-- Every branch below announces itself at NOTICE level.  A deploy log is the
+-- only thing that separates "dev or CI, as designed" from "someone pointed the
+-- journal at a real PG18 database using the platform superuser credential" —
+-- the latter leaves public, drizzle, six tables and two functions on
+-- boardsesh_owner while every other table stays on the superuser, and no
+-- runbook step looks for that half-cutover state.  NOTICE cannot fail a deploy,
+-- so this only ever adds a trace.
+DO $$
+DECLARE
+  v_alter_statement text;
+BEGIN
+  IF NOT COALESCE(
+    (SELECT role.rolsuper FROM pg_roles AS role WHERE role.rolname = session_user),
+    false
+  ) THEN
+    RAISE NOTICE 'migration 0201 superuser preamble: skipped, session_user % is not a superuser', session_user;
+    RETURN;
+  END IF;
+
+  RAISE NOTICE 'migration 0201 superuser preamble: session_user % is a superuser, re-owning the objects this migration replaces', session_user;
+
+  FOR v_alter_statement IN
+    SELECT format('ALTER SCHEMA %I OWNER TO boardsesh_owner', namespace.nspname)
+    FROM pg_namespace AS namespace
+    WHERE namespace.nspname IN ('public', 'drizzle')
+      AND namespace.nspowner <> 'boardsesh_owner'::regrole
+    ORDER BY namespace.nspname
+  LOOP
+    RAISE NOTICE 'migration 0201 superuser preamble: %', v_alter_statement;
+    EXECUTE v_alter_statement;
+  END LOOP;
+
+  -- Owned indexes and serial sequences follow the table, so the ledger inserts
+  -- drizzle appends to this same transaction keep working after the switch.
+  FOR v_alter_statement IN
+    SELECT format('ALTER TABLE %s OWNER TO boardsesh_owner', relation.oid::regclass)
+    FROM pg_class AS relation
+    WHERE relation.oid IN (
+        to_regclass('public.board_climbs'),
+        to_regclass('public.board_climb_stats'),
+        to_regclass('public.board_climb_grades'),
+        to_regclass('public.sync_deletions'),
+        to_regclass('public.__drizzle_migrations'),
+        to_regclass('drizzle.__drizzle_migrations')
+      )
+      AND relation.relowner <> 'boardsesh_owner'::regrole
+    ORDER BY relation.oid::regclass::text
+  LOOP
+    RAISE NOTICE 'migration 0201 superuser preamble: %', v_alter_statement;
+    EXECUTE v_alter_statement;
+  END LOOP;
+
+  FOR v_alter_statement IN
+    SELECT format('ALTER FUNCTION %s OWNER TO boardsesh_owner', procedure.oid::regprocedure)
+    FROM pg_proc AS procedure
+    WHERE procedure.oid IN (
+        to_regprocedure('public.set_board_climbs_sync_fields()'),
+        to_regprocedure('public.set_board_climb_stats_sync_fields()')
+      )
+      AND procedure.proowner <> 'boardsesh_owner'::regrole
+    ORDER BY procedure.oid::regprocedure::text
+  LOOP
+    RAISE NOTICE 'migration 0201 superuser preamble: %', v_alter_statement;
+    EXECUTE v_alter_statement;
+  END LOOP;
+END;
+$$;
+--> statement-breakpoint
+
+-- The production credential is boardsesh_migrator: LOGIN, no direct DDL, and
+-- only SET membership in the NOLOGIN application owner. Drizzle wraps each
+-- migration run in a transaction, so SET LOCAL both enables this migration and
+-- resets automatically on success or rollback.
+SET LOCAL ROLE boardsesh_owner;
+--> statement-breakpoint
+
+DO $$
+DECLARE
+  v_fence_owner pg_roles%ROWTYPE;
+  v_application_owner_oid oid;
+  v_stats_role_oid oid;
+BEGIN
+  IF current_user <> 'boardsesh_owner' THEN
+    RAISE EXCEPTION 'migration 0201 must run as the NOLOGIN boardsesh_owner role';
+  END IF;
+  SELECT * INTO v_fence_owner
+  FROM pg_roles
+  WHERE rolname = 'boardsesh_snapshot_fence_owner';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'pre-provision NOLOGIN role boardsesh_snapshot_fence_owner before migration 0201';
+  END IF;
+  IF v_fence_owner.rolcanlogin
+      OR v_fence_owner.rolsuper
+      OR v_fence_owner.rolcreatedb
+      OR v_fence_owner.rolcreaterole
+      OR NOT v_fence_owner.rolinherit
+      OR v_fence_owner.rolreplication
+      OR v_fence_owner.rolbypassrls THEN
+    RAISE EXCEPTION 'boardsesh_snapshot_fence_owner must be NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, INHERIT, NOREPLICATION, and NOBYPASSRLS';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_proc AS procedure
+    WHERE procedure.proowner = v_fence_owner.oid
+  ) THEN
+    RAISE EXCEPTION 'boardsesh_snapshot_fence_owner must not own functions before migration 0201';
+  END IF;
+
+  SELECT oid INTO STRICT v_application_owner_oid
+  FROM pg_roles WHERE rolname = current_user;
+  SELECT oid INTO STRICT v_stats_role_oid
+  FROM pg_roles WHERE rolname = 'pg_read_all_stats';
+
+  IF (
+    SELECT count(*)
+    FROM pg_auth_members AS membership
+    WHERE membership.member = v_fence_owner.oid
+      AND membership.roleid = v_stats_role_oid
+      AND NOT membership.admin_option
+      AND membership.inherit_option
+      AND NOT membership.set_option
+  ) <> 1 THEN
+    RAISE EXCEPTION 'boardsesh_snapshot_fence_owner needs one exact direct inherited pg_read_all_stats membership without ADMIN or SET OPTION';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_auth_members AS membership
+    WHERE membership.member = v_application_owner_oid
+      AND membership.roleid = v_fence_owner.oid
+      AND NOT membership.admin_option
+      AND NOT membership.inherit_option
+      AND membership.set_option
+  ) <> 1 THEN
+    RAISE EXCEPTION 'boardsesh_owner needs one exact direct SET-only membership in boardsesh_snapshot_fence_owner';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_auth_members AS membership
+    WHERE membership.member = v_fence_owner.oid
+       OR membership.roleid = v_fence_owner.oid
+  ) <> 2 THEN
+    RAISE EXCEPTION 'boardsesh_snapshot_fence_owner has an unexpected direct role membership';
+  END IF;
+  IF (
+    SELECT count(*) = 2
+    FROM (
+      VALUES
+        ('pg_catalog.pg_control_system()'::regprocedure),
+        ('pg_catalog.pg_control_checkpoint()'::regprocedure)
+    ) AS expected(function_oid)
+    WHERE (
+      SELECT count(*) = 1 AND bool_and(NOT privilege.is_grantable)
+      FROM pg_proc AS procedure
+      CROSS JOIN LATERAL aclexplode(procedure.proacl) AS privilege
+      WHERE procedure.oid = expected.function_oid
+        AND privilege.grantee = v_fence_owner.oid
+        AND privilege.privilege_type = 'EXECUTE'
+    ) IS true
+  ) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'boardsesh_snapshot_fence_owner needs exact direct non-grantable EXECUTE ACLs on the two pg_control identity functions';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_proc AS procedure
+    CROSS JOIN LATERAL aclexplode(procedure.proacl) AS privilege
+    WHERE privilege.grantee = v_fence_owner.oid
+      AND privilege.privilege_type = 'EXECUTE'
+  ) <> 2 THEN
+    RAISE EXCEPTION 'boardsesh_snapshot_fence_owner has an unexpected direct function EXECUTE ACL';
+  END IF;
+END;
+$$;
+--> statement-breakpoint
+
 CREATE SCHEMA IF NOT EXISTS ops;
 --> statement-breakpoint
 REVOKE ALL ON SCHEMA ops FROM PUBLIC;
+--> statement-breakpoint
+GRANT USAGE, CREATE ON SCHEMA ops TO boardsesh_snapshot_fence_owner;
 --> statement-breakpoint
 
 -- Cursor safety must be a database invariant, not a convention in the current
@@ -157,6 +360,8 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION ops.board_snapshot_cluster_identity() FROM PUBLIC;
 --> statement-breakpoint
+ALTER FUNCTION ops.board_snapshot_cluster_identity() OWNER TO boardsesh_snapshot_fence_owner;
+--> statement-breakpoint
 
 CREATE OR REPLACE FUNCTION ops.acquire_board_snapshot_fence(
   p_stability_window_seconds integer DEFAULT 30
@@ -178,6 +383,13 @@ DECLARE
 BEGIN
   IF p_stability_window_seconds < 0 OR p_stability_window_seconds > 3600 THEN
     RAISE EXCEPTION 'snapshot stability window must be between 0 and 3600 seconds';
+  END IF;
+
+  -- An advisory lock is local to one PostgreSQL cluster. Taking it on a
+  -- standby would not fence writers on the real primary, so reject recovery
+  -- connections before acquiring any lock or sampling a WAL boundary.
+  IF pg_is_in_recovery() THEN
+    RAISE EXCEPTION 'board snapshot fence must be acquired on the writable primary';
   END IF;
 
   -- The cutoff is only sound when the function owner can see every writer's
@@ -274,11 +486,13 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION ops.acquire_board_snapshot_fence(integer) FROM PUBLIC;
 --> statement-breakpoint
+ALTER FUNCTION ops.acquire_board_snapshot_fence(integer) OWNER TO boardsesh_snapshot_fence_owner;
+--> statement-breakpoint
 
 CREATE OR REPLACE FUNCTION ops.board_snapshot_fence_held()
 RETURNS boolean
 LANGUAGE sql
-STABLE
+VOLATILE
 SECURITY INVOKER
 SET search_path = pg_catalog
 AS $$

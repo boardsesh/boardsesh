@@ -694,6 +694,216 @@ type PrimaryFenceHandle = {
   close: () => Promise<void>;
 };
 
+type PrimaryFenceContractRow = {
+  owners_match: unknown;
+  owner_is_narrow: unknown;
+  owner_memberships_exact: unknown;
+  owner_function_acls_exact: unknown;
+  owner_ops_schema_acl_exact: unknown;
+  caller_is_narrow: unknown;
+  caller_memberships_exact: unknown;
+  caller_ops_schema_acl_exact: unknown;
+  caller_owns_no_ops_functions: unknown;
+  caller_has_no_unexpected_ops_execute: unknown;
+  caller_function_acls_exact: unknown;
+  public_execute_revoked: unknown;
+};
+
+async function assertPrimaryFenceContract(coordinator: ReservedSql): Promise<void> {
+  const rows = await coordinator.unsafe(`
+    WITH fence_owner AS (
+      SELECT * FROM pg_roles WHERE rolname = 'boardsesh_snapshot_fence_owner'
+    ), application_owner AS (
+      SELECT oid FROM pg_roles WHERE rolname = 'boardsesh_owner'
+    ), stats_role AS (
+      SELECT oid FROM pg_roles WHERE rolname = 'pg_read_all_stats'
+    ), caller AS (
+      SELECT * FROM pg_roles WHERE rolname = current_user
+    ), expected_coordinator_function(function_oid) AS (
+      VALUES
+        ('ops.board_snapshot_cluster_identity()'::regprocedure),
+        ('ops.acquire_board_snapshot_fence(integer)'::regprocedure),
+        ('ops.board_snapshot_fence_held()'::regprocedure),
+        ('ops.release_board_snapshot_fence()'::regprocedure)
+    ), expected_owner_function(function_oid) AS (
+      VALUES
+        ('pg_catalog.pg_control_system()'::regprocedure),
+        ('pg_catalog.pg_control_checkpoint()'::regprocedure),
+        ('ops.board_snapshot_cluster_identity()'::regprocedure),
+        ('ops.acquire_board_snapshot_fence(integer)'::regprocedure)
+    )
+    SELECT
+      (SELECT count(*) = 2
+       FROM pg_proc AS procedure
+       CROSS JOIN fence_owner
+       WHERE procedure.proowner = fence_owner.oid
+         AND procedure.oid = ANY (ARRAY[
+           'ops.board_snapshot_cluster_identity()'::regprocedure,
+           'ops.acquire_board_snapshot_fence(integer)'::regprocedure
+         ]))
+        AND (SELECT count(*) = 2
+             FROM pg_proc AS procedure
+             CROSS JOIN fence_owner
+             WHERE procedure.proowner = fence_owner.oid) AS owners_match,
+      (SELECT NOT rolcanlogin
+              AND NOT rolsuper
+              AND NOT rolcreatedb
+              AND NOT rolcreaterole
+              AND rolinherit
+              AND NOT rolreplication
+              AND NOT rolbypassrls
+       FROM fence_owner) AS owner_is_narrow,
+      (SELECT count(*) = 1
+       FROM pg_auth_members AS membership, fence_owner, stats_role
+       WHERE membership.member = fence_owner.oid
+         AND membership.roleid = stats_role.oid
+         AND NOT membership.admin_option
+         AND CASE
+           WHEN current_setting('server_version_num')::integer >= 160000
+             THEN (to_jsonb(membership)->>'inherit_option')::boolean
+                  AND NOT (to_jsonb(membership)->>'set_option')::boolean
+           ELSE true
+         END)
+        AND
+      (SELECT count(*) = 1
+       FROM pg_auth_members AS membership, fence_owner, application_owner
+       WHERE membership.member = application_owner.oid
+         AND membership.roleid = fence_owner.oid
+         AND NOT membership.admin_option
+         AND CASE
+           WHEN current_setting('server_version_num')::integer >= 160000
+             THEN NOT (to_jsonb(membership)->>'inherit_option')::boolean
+                  AND (to_jsonb(membership)->>'set_option')::boolean
+           ELSE true
+         END)
+        AND
+      (SELECT count(*) = 2
+       FROM pg_auth_members AS membership, fence_owner
+       WHERE membership.member = fence_owner.oid
+          OR membership.roleid = fence_owner.oid) AS owner_memberships_exact,
+      (SELECT count(*) = 4
+       FROM expected_owner_function AS expected
+       WHERE (
+         SELECT count(*) = 1 AND bool_and(NOT privilege.is_grantable)
+         FROM pg_proc AS procedure
+         CROSS JOIN fence_owner
+         CROSS JOIN LATERAL aclexplode(procedure.proacl) AS privilege
+         WHERE procedure.oid = expected.function_oid
+           AND privilege.grantee = fence_owner.oid
+           AND privilege.privilege_type = 'EXECUTE'
+       ) IS true)
+        AND (SELECT count(*) = 4
+             FROM pg_proc AS procedure
+             CROSS JOIN fence_owner
+             CROSS JOIN LATERAL aclexplode(procedure.proacl) AS privilege
+             WHERE privilege.grantee = fence_owner.oid
+               AND privilege.privilege_type = 'EXECUTE') AS owner_function_acls_exact,
+      (SELECT count(*) = 1 AND bool_and(NOT privilege.is_grantable)
+       FROM pg_namespace AS namespace
+       CROSS JOIN fence_owner
+       CROSS JOIN LATERAL aclexplode(namespace.nspacl) AS privilege
+       WHERE namespace.nspname = 'ops'
+         AND privilege.grantee = fence_owner.oid
+         AND privilege.privilege_type = 'USAGE')
+        AND (SELECT count(*) = 1 AND bool_and(NOT privilege.is_grantable)
+             FROM pg_namespace AS namespace
+             CROSS JOIN fence_owner
+             CROSS JOIN LATERAL aclexplode(namespace.nspacl) AS privilege
+             WHERE namespace.nspname = 'ops'
+               AND privilege.grantee = fence_owner.oid
+               AND privilege.privilege_type = 'CREATE')
+        AND (SELECT count(*) = 2
+             FROM pg_namespace AS namespace
+             CROSS JOIN fence_owner
+             CROSS JOIN LATERAL aclexplode(namespace.nspacl) AS privilege
+             WHERE namespace.nspname = 'ops'
+               AND privilege.grantee = fence_owner.oid) AS owner_ops_schema_acl_exact,
+      (SELECT rolcanlogin
+              AND NOT rolsuper
+              AND NOT rolcreatedb
+              AND NOT rolcreaterole
+              AND NOT rolreplication
+              AND NOT rolbypassrls
+       FROM caller)
+        AND NOT pg_has_role(current_user, 'pg_read_all_stats', 'USAGE')
+        AND NOT pg_has_role(current_user, 'boardsesh_snapshot_fence_owner', 'MEMBER')
+        AND NOT has_schema_privilege(current_user, 'ops', 'CREATE') AS caller_is_narrow,
+      (SELECT count(*) = 0
+       FROM pg_auth_members AS membership, caller
+       WHERE membership.member = caller.oid
+          OR membership.roleid = caller.oid) AS caller_memberships_exact,
+      has_schema_privilege(current_user, 'ops', 'USAGE')
+        AND (SELECT count(*) = 1
+                    AND bool_and(privilege.privilege_type = 'USAGE')
+                    AND bool_and(NOT privilege.is_grantable)
+             FROM pg_namespace AS namespace
+             CROSS JOIN caller
+             CROSS JOIN LATERAL aclexplode(namespace.nspacl) AS privilege
+             WHERE namespace.nspname = 'ops'
+               AND privilege.grantee = caller.oid) AS caller_ops_schema_acl_exact,
+      NOT EXISTS (
+        SELECT 1
+        FROM pg_proc AS procedure
+        JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+        CROSS JOIN caller
+        WHERE namespace.nspname = 'ops'
+          AND procedure.proowner = caller.oid
+      ) AS caller_owns_no_ops_functions,
+      NOT EXISTS (
+        SELECT 1
+        FROM pg_proc AS procedure
+        JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+        WHERE namespace.nspname = 'ops'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM expected_coordinator_function AS expected
+            WHERE expected.function_oid = procedure.oid
+          )
+          AND has_function_privilege(current_user, procedure.oid, 'EXECUTE')
+      ) AS caller_has_no_unexpected_ops_execute,
+      (SELECT bool_and(has_function_privilege(current_user, expected.function_oid, 'EXECUTE'))
+       FROM expected_coordinator_function AS expected)
+        AND (SELECT count(*) = 4
+             FROM expected_coordinator_function AS expected
+             WHERE (
+               SELECT count(*) = 1 AND bool_and(NOT privilege.is_grantable)
+               FROM pg_proc AS procedure
+               CROSS JOIN caller
+               CROSS JOIN LATERAL aclexplode(procedure.proacl) AS privilege
+               WHERE procedure.oid = expected.function_oid
+                 AND privilege.grantee = caller.oid
+                 AND privilege.privilege_type = 'EXECUTE'
+             ) IS true)
+        AND (SELECT count(*) = 4
+             FROM pg_proc AS procedure
+             JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+             CROSS JOIN caller
+             CROSS JOIN LATERAL aclexplode(procedure.proacl) AS privilege
+             WHERE namespace.nspname = 'ops'
+               AND privilege.grantee = caller.oid
+               AND privilege.privilege_type = 'EXECUTE')
+        AS caller_function_acls_exact,
+      NOT EXISTS (
+        SELECT 1
+        FROM pg_proc AS function
+        JOIN pg_namespace AS namespace ON namespace.oid = function.pronamespace
+        CROSS JOIN LATERAL aclexplode(COALESCE(function.proacl, acldefault('f', function.proowner))) AS acl
+        WHERE namespace.nspname = 'ops'
+          AND acl.grantee = 0
+          AND acl.privilege_type = 'EXECUTE'
+      ) AS public_execute_revoked
+  `);
+  const contract = rows[0] as unknown as PrimaryFenceContractRow | undefined;
+  const failedChecks = contract
+    ? Object.entries(contract)
+        .filter(([, passed]) => passed !== true)
+        .map(([name]) => name)
+    : ['missing_contract_row'];
+  if (failedChecks.length > 0) {
+    throw new Error(`primary snapshot fence role/grant audit failed: ${failedChecks.join(', ')}`);
+  }
+}
+
 async function releasePrimaryFence(params: {
   coordinator: ReservedSql | null;
   coordinatorPool: Sql;
@@ -721,6 +931,7 @@ async function acquirePrimaryFence(): Promise<PrimaryFenceHandle> {
   let lockMayBeHeld = false;
   try {
     coordinator = await coordinatorPool.reserve();
+    await assertPrimaryFenceContract(coordinator);
     const fenceRows = await coordinator.unsafe(
       `SELECT stable_before, target_lsn::text, primary_system_identifier, primary_timeline_id
        FROM ops.acquire_board_snapshot_fence($1)`,

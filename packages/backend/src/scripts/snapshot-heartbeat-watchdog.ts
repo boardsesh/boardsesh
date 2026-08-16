@@ -41,6 +41,7 @@ type HeartbeatPayload = {
 
 type FetchHeartbeat = (url: string) => Promise<unknown>;
 type FetchedHeartbeat = { ok: true; payload: unknown } | { ok: false; reason: string };
+type LiveManifestAnchor = { generatedAt: string; content: string };
 
 function positiveSeconds(raw: string | undefined, fallback: number, name: string): number {
   if (!raw?.trim()) return fallback;
@@ -201,6 +202,12 @@ async function fetchOne(url: string, fetchHeartbeat: FetchHeartbeat): Promise<Fe
   }
 }
 
+function liveManifestAnchor(payload: unknown): LiveManifestAnchor {
+  const manifest = parseSnapshotManifest(payload);
+  if (!manifest) throw new Error('live snapshot manifest failed schema validation');
+  return { generatedAt: manifest.generatedAt, content: JSON.stringify(manifest) };
+}
+
 function evaluateFetched(params: {
   fetched: FetchedHeartbeat;
   runKind: SnapshotRunKind;
@@ -240,14 +247,12 @@ export async function snapshotHeartbeatDecision(params: {
   const nowMs = params.nowMs ?? Date.now();
   const cacheBuster = encodeURIComponent(String(nowMs));
   const fetchHeartbeat = params.fetchHeartbeat ?? fetchHeartbeatJson;
-  let manifestGeneratedAt: string;
+  let initialManifest: LiveManifestAnchor;
   try {
     const manifestPayload = await fetchHeartbeat(
-      `${publicBaseUrl}/${LIVE_KEY_PREFIX}/manifest.json?watchdog=${cacheBuster}`,
+      `${publicBaseUrl}/${LIVE_KEY_PREFIX}/manifest.json?watchdog=${cacheBuster}-manifest-before`,
     );
-    const manifest = parseSnapshotManifest(manifestPayload);
-    if (!manifest) throw new Error('live snapshot manifest failed schema validation');
-    manifestGeneratedAt = manifest.generatedAt;
+    initialManifest = liveManifestAnchor(manifestPayload);
   } catch (error) {
     const reason = `live manifest unavailable: ${error instanceof Error ? error.message : String(error)}`;
     const stale = { stale: true, ageSeconds: null, reason };
@@ -257,9 +262,29 @@ export async function snapshotHeartbeatDecision(params: {
   const fullMaxAgeSeconds = params.fullMaxAgeSeconds ?? DEFAULT_FULL_MAX_AGE_SECONDS;
   const maxCutoffAgeSeconds = params.maxCutoffAgeSeconds ?? DEFAULT_SNAPSHOT_MAX_CUTOFF_AGE_SECONDS;
   const [refreshFetched, fullFetched] = await Promise.all([
-    fetchOne(`${publicBaseUrl}/board-snapshots/ops/refresh.json?watchdog=${cacheBuster}`, fetchHeartbeat),
-    fetchOne(`${publicBaseUrl}/board-snapshots/ops/full.json?watchdog=${cacheBuster}`, fetchHeartbeat),
+    fetchOne(`${publicBaseUrl}/board-snapshots/ops/refresh.json?watchdog=${cacheBuster}-heartbeats`, fetchHeartbeat),
+    fetchOne(`${publicBaseUrl}/board-snapshots/ops/full.json?watchdog=${cacheBuster}-heartbeats`, fetchHeartbeat),
   ]);
+  let finalManifest: LiveManifestAnchor;
+  try {
+    const manifestPayload = await fetchHeartbeat(
+      `${publicBaseUrl}/${LIVE_KEY_PREFIX}/manifest.json?watchdog=${cacheBuster}-manifest-after`,
+    );
+    finalManifest = liveManifestAnchor(manifestPayload);
+  } catch (error) {
+    const reason = `live manifest recheck unavailable: ${error instanceof Error ? error.message : String(error)}`;
+    const stale = { stale: true, ageSeconds: null, reason };
+    return { checkedAt: new Date(nowMs).toISOString(), refresh: stale, full: stale };
+  }
+  if (finalManifest.generatedAt !== initialManifest.generatedAt || finalManifest.content !== initialManifest.content) {
+    const stale = {
+      stale: true,
+      ageSeconds: null,
+      reason: 'live manifest changed while snapshot heartbeats were read',
+    };
+    return { checkedAt: new Date(nowMs).toISOString(), refresh: stale, full: stale };
+  }
+  const manifestGeneratedAt = initialManifest.generatedAt;
   const refreshHeartbeat = evaluateFetched({
     fetched: refreshFetched,
     runKind: 'refresh',
