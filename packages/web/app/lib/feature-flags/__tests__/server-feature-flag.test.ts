@@ -399,6 +399,30 @@ describe('reporting', () => {
     expect(String(captureMessage.mock.calls[0][0])).toContain('quota-limited');
   });
 
+  it('re-arms after a recovery, so a second outage is not swallowed', async () => {
+    process.env.NEXT_PUBLIC_POSTHOG_KEY = 'phc_test';
+    const responses = [
+      { ok: false, status: 503, json: async () => ({}) },
+      { ok: true, status: 200, json: async () => ({ flags: { [FLAG]: { enabled: true } } }) },
+      { ok: false, status: 503, json: async () => ({}) },
+    ];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => Promise.resolve(responses.shift())),
+    );
+
+    const { getServerFeatureFlag } = await loadModule();
+
+    await getServerFeatureFlag(FLAG, { distinctId: 'user-1' });
+    expect(captureMessage).toHaveBeenCalledTimes(1);
+
+    // PostHog answered, so the outage is over and the key re-arms. Latching for
+    // the life of the process would make this second outage silent.
+    await expect(getServerFeatureFlag(FLAG, { distinctId: 'user-1' })).resolves.toBe(true);
+    await getServerFeatureFlag(FLAG, { distinctId: 'user-1' });
+    expect(captureMessage).toHaveBeenCalledTimes(2);
+  });
+
   it('stays quiet when the flag simply says no', async () => {
     process.env.NEXT_PUBLIC_POSTHOG_KEY = 'phc_test';
     mockFetchOnce({ ok: true, body: { flags: { [FLAG]: { enabled: false } } } });

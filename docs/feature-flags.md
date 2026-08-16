@@ -30,7 +30,7 @@ Every step returns a `reason` alongside the boolean, because failing closed and 
 | `quota-limited`                        | PostHog has stopped serving flags for the project                                                                                                                          |
 | `http-error` / `request-failed`        | non-2xx, timeout, or unparseable body                                                                                                                                      |
 
-The bottom four are "the gate is broken", not "the gate is closed", and each sends one Sentry warning per process per key.
+The bottom four are "the gate is broken", not "the gate is closed", and each sends one Sentry warning per key per outage — a flag that starts failing fails on every request, so the key latches after the first message and re-arms as soon as PostHog answers again. Repeated warnings for one key therefore mean it recovered and broke again, not that it is noisy.
 
 ## The dashboard says 100% and the page still 404s
 

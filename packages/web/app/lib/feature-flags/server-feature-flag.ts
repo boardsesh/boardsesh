@@ -189,12 +189,21 @@ const BROKEN_REASONS: ReadonlySet<ServerFeatureFlagReason> = new Set([
   'request-failed',
 ]);
 
-// Once per process, per flag key. A flag call that starts failing fails on
-// every request; one Sentry message says the same thing as ten thousand.
+// Once per flag key per OUTAGE, not per process. A flag call that starts
+// failing fails on every request, so one Sentry message says the same thing as
+// ten thousand — but a key that stays latched for the life of the process turns
+// a broken → recovered → broken again cycle into a silent second outage, which
+// is the failure this module exists to make visible. A successful evaluation
+// re-arms the key, so each distinct outage costs exactly one message.
 const reportedFailures = new Set<string>();
 
 function reportUnevaluableFlag(key: string, resolution: ServerFeatureFlagResolution): void {
-  if (!BROKEN_REASONS.has(resolution.reason) || reportedFailures.has(key)) {
+  if (!BROKEN_REASONS.has(resolution.reason)) {
+    // PostHog answered, so whatever was wrong is over. Re-arm.
+    reportedFailures.delete(key);
+    return;
+  }
+  if (reportedFailures.has(key)) {
     return;
   }
   reportedFailures.add(key);
