@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-16T04:39:50.068Z",
+  "generatedAt": "2026-08-16T05:04:33.233Z",
   "entries": [
+    {
+      "prNumber": 4512,
+      "category": "new",
+      "title": "Flag-gated and noindex; Tier 2 launches it publicly.",
+      "mergedAt": "2026-08-16T05:03:29Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4512"
+    },
     {
       "prNumber": 4510,
       "category": "new",
