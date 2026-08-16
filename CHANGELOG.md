@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Pure instrumentation: no UI, copy, or behaviour changes. ([#4503](https://github.com/boardsesh/boardsesh/pull/4503))
 - Gyms can post their opening hours, and the page shows the date the owner last confirmed them — so you know the hours are current before you drive over. ([#4502](https://github.com/boardsesh/boardsesh/pull/4502))
 
 ## 2026-08-15

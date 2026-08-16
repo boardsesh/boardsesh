@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-16T00:23:15.722Z",
+  "generatedAt": "2026-08-16T02:04:46.652Z",
   "entries": [
+    {
+      "prNumber": 4503,
+      "category": "new",
+      "title": "Pure instrumentation: no UI, copy, or behaviour changes.",
+      "mergedAt": "2026-08-16T00:33:57Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4503"
+    },
     {
       "prNumber": 4502,
       "category": "new",
