@@ -137,8 +137,15 @@ describe('sentry-cli upload output', () => {
   });
 });
 
+// The repo's Next global.d.ts augments NodeJS.ProcessEnv to require NODE_ENV, so
+// the partial env fixtures below need the assertion to be assignable.
+function processEnv(values: Record<string, string | undefined>): NodeJS.ProcessEnv {
+  return values as NodeJS.ProcessEnv;
+}
+
 describe('uploadArchiveDsyms', () => {
-  const environment = { SENTRY_AUTH_TOKEN: 'test-token' };
+  const environment = processEnv({ SENTRY_AUTH_TOKEN: 'test-token' });
+  const emptyEnvironment = processEnv({});
 
   it('invokes sentry-cli against the archive dSYMs with the boardsesh Sentry env', () => {
     const fixture = createArchiveFixture(['Boardsesh.app.dSYM', 'BoardseshBeta.appex.dSYM']);
@@ -285,14 +292,22 @@ describe('uploadArchiveDsyms', () => {
   it('validates the archive before requiring an auth token', () => {
     const fixture = createArchiveFixture(['BoardseshWidgets.appex.dSYM']);
     expect(() =>
-      uploadArchiveDsyms({ archivePath: fixture.archivePath, mobileDir: fixture.mobileDir, environment: {} }),
+      uploadArchiveDsyms({
+        archivePath: fixture.archivePath,
+        mobileDir: fixture.mobileDir,
+        environment: emptyEnvironment,
+      }),
     ).toThrow('No *.app.dSYM');
   });
 
   it('requires an auth token once the archive checks out', () => {
     const fixture = createArchiveFixture();
     expect(() =>
-      uploadArchiveDsyms({ archivePath: fixture.archivePath, mobileDir: fixture.mobileDir, environment: {} }),
+      uploadArchiveDsyms({
+        archivePath: fixture.archivePath,
+        mobileDir: fixture.mobileDir,
+        environment: emptyEnvironment,
+      }),
     ).toThrow('SENTRY_AUTH_TOKEN is required');
   });
 });

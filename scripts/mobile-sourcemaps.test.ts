@@ -28,6 +28,12 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const VALID_DEBUG_ID = '12345678-1234-4abc-9def-1234567890ab';
 const createdDirectories: string[] = [];
 
+// The repo's Next global.d.ts augments NodeJS.ProcessEnv to require NODE_ENV, so
+// the partial env fixtures below need the assertion to be assignable.
+function processEnv(values: Record<string, string | undefined>): NodeJS.ProcessEnv {
+  return values as NodeJS.ProcessEnv;
+}
+
 interface MobileFixture {
   mobileDir: string;
   outputDir: string;
@@ -436,15 +442,17 @@ describe('official Sentry uploader invocation', () => {
   });
 
   it('fixes org/project/url and removes release, dist, and CLI overrides', () => {
-    const environment = createSentryUploadEnvironment({
-      SENTRY_AUTH_TOKEN: ' token ',
-      SENTRY_ORG: 'wrong',
-      SENTRY_PROJECT: 'wrong',
-      SENTRY_URL: 'https://wrong.invalid/',
-      SENTRY_RELEASE: 'synthetic-release',
-      SENTRY_DIST: 'synthetic-dist',
-      SENTRY_CLI_EXECUTABLE: '/tmp/untrusted-cli',
-    });
+    const environment = createSentryUploadEnvironment(
+      processEnv({
+        SENTRY_AUTH_TOKEN: ' token ',
+        SENTRY_ORG: 'wrong',
+        SENTRY_PROJECT: 'wrong',
+        SENTRY_URL: 'https://wrong.invalid/',
+        SENTRY_RELEASE: 'synthetic-release',
+        SENTRY_DIST: 'synthetic-dist',
+        SENTRY_CLI_EXECUTABLE: '/tmp/untrusted-cli',
+      }),
+    );
     expect(environment).toMatchObject({
       SENTRY_AUTH_TOKEN: 'token',
       SENTRY_ORG: 'boardsesh',
@@ -457,7 +465,7 @@ describe('official Sentry uploader invocation', () => {
   });
 
   it('requires the auth token before starting the uploader', () => {
-    expect(() => createSentryUploadEnvironment({})).toThrow('SENTRY_AUTH_TOKEN is required');
+    expect(() => createSentryUploadEnvironment(processEnv({}))).toThrow('SENTRY_AUTH_TOKEN is required');
   });
 
   it('fails validation before resolving or starting the official uploader', () => {
@@ -472,7 +480,7 @@ describe('official Sentry uploader invocation', () => {
           platform: 'ios',
           mobileDir: fixture.mobileDir,
           outputDir: fixture.outputDir,
-          environment: { SENTRY_AUTH_TOKEN: 'secret-token' },
+          environment: processEnv({ SENTRY_AUTH_TOKEN: 'secret-token' }),
         },
         {
           resolveUploader: () => {
@@ -501,7 +509,7 @@ describe('official Sentry uploader invocation', () => {
           platform: 'ios',
           mobileDir: fixture.mobileDir,
           outputDir: fixture.outputDir,
-          environment: { SENTRY_AUTH_TOKEN: 'secret-token' },
+          environment: processEnv({ SENTRY_AUTH_TOKEN: 'secret-token' }),
         },
         {
           resolveUploader: () => join(fixture.mobileDir, 'fake-uploader.js'),
@@ -528,7 +536,7 @@ describe('official Sentry uploader invocation', () => {
           platform: 'android',
           mobileDir: fixture.mobileDir,
           outputDir: fixture.outputDir,
-          environment: { SENTRY_AUTH_TOKEN: 'secret-token' },
+          environment: processEnv({ SENTRY_AUTH_TOKEN: 'secret-token' }),
         },
         {
           resolveUploader: () => join(fixture.mobileDir, 'fake-uploader.js'),
@@ -581,11 +589,11 @@ describe('official Sentry uploader invocation', () => {
         platform: 'android',
         mobileDir: fixture.mobileDir,
         outputDir: fixture.outputDir,
-        environment: {
+        environment: processEnv({
           SENTRY_AUTH_TOKEN: 'secret-token',
           SENTRY_RELEASE: 'remove-me',
           SENTRY_DIST: 'remove-me-too',
-        },
+        }),
       },
       {
         resolveUploader: () => fakeUploaderPath,

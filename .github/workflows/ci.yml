@@ -226,10 +226,13 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Install Expo web lint dependencies
-        # Widened alongside the job gate above: lint now also runs for
-        # sharedDeps-only changes, and the expo-web runtime has to be present
-        # whenever we lint mobile sources.
-        if: needs.changes.outputs.mobile == 'true' || needs.changes.outputs.sharedDeps == 'true'
+        # Unconditional: the push-to-main step below lints the WHOLE repo, so
+        # packages/mobile/src/web-shims/bottom-sheet.tsx is always in scope and
+        # its `@gorhom/bottom-sheet` types only resolve through the isolated
+        # web-runtime install (packages/mobile/tsconfig.json maps the path
+        # there). Gating this on the mobile/sharedDeps change filters made every
+        # main push that touched neither fail with two TS2307s that no PR run
+        # could reproduce. ~0.5s to install, so there is nothing to gate on.
         run: vp run mobile:web-runtime:install
       # The nine `check:mobile-*` guards below used to run in mobile-bundle, in
       # front of Metro — ~24s of the critical path (18s of it the fingerprint
