@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Own a gym? You can start a claim straight from its page now, without signing in first — log in when prompted and you'll land right back where you were, ready to claim it. ([#4506](https://github.com/boardsesh/boardsesh/pull/4506))
 - Backend fields only; the directory that consumes them ships flag-gated and noindex in a later PR. ([#4505](https://github.com/boardsesh/boardsesh/pull/4505))
 - Pure instrumentation: no UI, copy, or behaviour changes. ([#4503](https://github.com/boardsesh/boardsesh/pull/4503))
 - Gyms can post their opening hours, and the page shows the date the owner last confirmed them — so you know the hours are current before you drive over. ([#4502](https://github.com/boardsesh/boardsesh/pull/4502))
