@@ -401,10 +401,10 @@
         "remove": "Retirer",
         "currentAlt": "Photo de {{gymName}}",
         "emptyPlaceholder": "Pas encore de photo",
-        "formatsHint": "JPG, PNG ou WebP, jusqu'à 20 Mo. Redimensionnée à 1920 px. Prends une vraie photo de ton mur ou de la zone des boards, rien de généré par IA.",
+        "formatsHint": "JPG, PNG ou WebP, jusqu'à {{maxMb}} Mo. Redimensionnée à {{maxDimension}} px. Prends une vraie photo de ton mur ou de la zone des boards, rien de généré par IA.",
         "unsupportedType": "Utilise une image JPG, PNG ou WebP.",
-        "tooLarge": "Ce fichier dépasse 20 Mo. Choisis une image plus légère.",
-        "uploadTooLarge": "Cette photo dépasse encore 5 Mo après redimensionnement. Choisis-en une autre.",
+        "tooLarge": "Ce fichier dépasse {{maxMb}} Mo. Choisis une image plus légère.",
+        "uploadTooLarge": "Cette photo dépasse encore {{maxMb}} Mo après redimensionnement. Choisis-en une autre.",
         "uploadFailed": "Impossible d'importer la photo.",
         "saveFailed": "Impossible d'enregistrer la photo."
       }

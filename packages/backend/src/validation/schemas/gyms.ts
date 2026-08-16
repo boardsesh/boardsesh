@@ -59,25 +59,31 @@ export const GymLogoUrlSchema = z
   );
 
 /**
- * Gym photo URL (`gyms.image_url`): the same contract as GymLogoUrlSchema, one
- * directory over — exactly `/static/gym-photos/<uuid>.<ext>[?v=...]` as written
- * by POST /api/gym-photos, or a well-formed https URL.
+ * Gym photo URL (`gyms.image_url`): exactly `/static/gym-photos/<uuid>.<ext>
+ * [?v=...]`, as written by POST /api/gym-photos. Nothing else — deliberately
+ * stricter than GymLogoUrlSchema, which also accepts an https URL.
+ *
+ * No off-site branch, because the photo renders as an `<img src>`, as
+ * `openGraph.images` and as the JSON-LD `image` on a PUBLIC page. An arbitrary
+ * https URL there makes every visitor's browser — plus the Slack, X and Facebook
+ * scrapers following a boardsesh.com link — fetch a third party's server and
+ * hand it their IP, and image moderation is explicitly out of scope for this
+ * feature. The column is NULL on all 4,740 live rows, so unlike the logo there
+ * is no legacy off-site data to preserve: an https branch would protect nothing
+ * and only widen what the column can hold.
  *
  * This replaced a plain `z.string().url()`, which was wrong in both directions:
- * it ACCEPTED `javascript:` and `data:` URLs — and the value lands in an
- * `<img src>` and the JSON-LD `image` on the public gym page — while REJECTING
- * our own relative upload path, so every console upload would have 400'd on the
- * follow-up updateGym and orphaned the object it had just stored.
+ * it ACCEPTED `javascript:` and `data:` URLs — which reach that same `<img src>`
+ * and JSON-LD — while REJECTING our own relative upload path, so every console
+ * upload would have 400'd on the follow-up updateGym and orphaned the object it
+ * had just stored.
  */
 const STATIC_GYM_PHOTO_PATH_REGEX = /^\/static\/gym-photos\/[0-9a-f-]{36}\.(jpg|jpeg|png|gif|webp)(\?v=[\w-]+)?$/i;
 
 export const GymPhotoUrlSchema = z
   .string()
   .max(500)
-  .refine(
-    (value) => STATIC_GYM_PHOTO_PATH_REGEX.test(value) || isValidHttpsUrl(value),
-    'Photo URL must be an https URL or a Boardsesh static gym-photo path',
-  );
+  .refine((value) => STATIC_GYM_PHOTO_PATH_REGEX.test(value), 'Photo URL must be a Boardsesh static gym-photo path');
 
 /**
  * Opening hours are one free-text line the gym writes itself, so the only server

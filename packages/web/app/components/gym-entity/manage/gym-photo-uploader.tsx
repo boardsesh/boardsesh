@@ -34,7 +34,9 @@ import {
   GYM_PHOTO_ACCEPTED_MIME_TYPES,
   GYM_PHOTO_MAX_DIMENSION,
   GYM_PHOTO_MAX_INPUT_BYTES,
+  GYM_PHOTO_MAX_INPUT_MB,
   GYM_PHOTO_MAX_UPLOAD_BYTES,
+  GYM_PHOTO_MAX_UPLOAD_MB,
   resolvePhotoEncodingPlan,
   scaleToFit,
   type GymPhotoEncodingPlan,
@@ -134,7 +136,7 @@ export default function GymPhotoUploader({ gym, onGymChange }: GymPhotoUploaderP
       return;
     }
     if (file.size > GYM_PHOTO_MAX_INPUT_BYTES) {
-      setErrorText(t('manage.profile.photo.tooLarge'));
+      setErrorText(t('manage.profile.photo.tooLarge', { maxMb: GYM_PHOTO_MAX_INPUT_MB }));
       return;
     }
 
@@ -142,7 +144,7 @@ export default function GymPhotoUploader({ gym, onGymChange }: GymPhotoUploaderP
     try {
       const uploadFile = await encodePhotoThroughCanvas(file, plan);
       if (uploadFile.size > GYM_PHOTO_MAX_UPLOAD_BYTES) {
-        setErrorText(t('manage.profile.photo.uploadTooLarge'));
+        setErrorText(t('manage.profile.photo.uploadTooLarge', { maxMb: GYM_PHOTO_MAX_UPLOAD_MB }));
         return;
       }
 
@@ -288,7 +290,10 @@ export default function GymPhotoUploader({ gym, onGymChange }: GymPhotoUploaderP
       </Box>
 
       <Typography variant="caption" color="text.secondary">
-        {t('manage.profile.photo.formatsHint')}
+        {t('manage.profile.photo.formatsHint', {
+          maxMb: GYM_PHOTO_MAX_INPUT_MB,
+          maxDimension: GYM_PHOTO_MAX_DIMENSION,
+        })}
       </Typography>
 
       <Box

@@ -32,6 +32,49 @@ const MIME_TO_EXT: Record<string, string> = {
 /** Extensions a gym image can have been stored under, for stale-file cleanup. */
 export const GYM_IMAGE_EXTENSIONS = ['jpg', 'png', 'gif', 'webp'];
 
+/**
+ * Sniff the real image type from the file's magic bytes.
+ *
+ * The multipart `Content-Type` is whatever the CLIENT declared, and until this
+ * check existed nothing ever read the bytes — so any payload labelled
+ * `image/jpeg` was stored under our key and re-served from our origin with that
+ * Content-Type. `nosniff` plus the raster-only allowlist keeps that from being
+ * XSS, but it still let an authenticated gym editor host arbitrary bytes on
+ * boardsesh.com. Returns null when the bytes match no supported format.
+ */
+export function detectImageMimeType(buffer: Buffer): string | null {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (
+    buffer.length >= 8 &&
+    buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  ) {
+    return 'image/png';
+  }
+  if (buffer.length >= 6) {
+    const header = buffer.subarray(0, 6).toString('latin1');
+    if (header === 'GIF87a' || header === 'GIF89a') {
+      return 'image/gif';
+    }
+  }
+  // RIFF....WEBP — the four-byte file size sits between the two tags.
+  if (
+    buffer.length >= 12 &&
+    buffer.subarray(0, 4).toString('latin1') === 'RIFF' &&
+    buffer.subarray(8, 12).toString('latin1') === 'WEBP'
+  ) {
+    return 'image/webp';
+  }
+  return null;
+}
+
+/** "5MB" / "2MB" — used in the size-cap error so the number is never restated. */
+function formatByteCapForMessage(maxFileSizeBytes: number): string {
+  const megabytes = maxFileSizeBytes / (1024 * 1024);
+  return `${Number.isInteger(megabytes) ? megabytes : megabytes.toFixed(1)}MB`;
+}
+
 // UUID validation regex for path traversal prevention (the uuid becomes the S3
 // key / local filename).
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -56,10 +99,13 @@ export type GymImageUploadConfig = {
   buildStaticUrl: (fileName: string, version: string) => string;
   /** Best-effort stale-extension cleanup in S3 (write-first, clean-after). */
   deleteStaleObjectsFromS3: (gymUuid: string, keepExt?: string) => Promise<void>;
-  /** Client-facing (English) error strings; the web layer localizes its own. */
+  /**
+   * Client-facing (English) error strings; the web layer localizes its own.
+   * The size-cap message is NOT here — it is derived from maxFileSizeBytes so
+   * raising the cap can't leave a stale number in the copy.
+   */
   messages: {
     notConfigured: string;
-    fileTooLarge: string;
     saveFailed: string;
     authorizeFailed: string;
   };
@@ -234,7 +280,11 @@ export function createGymImageUploadHandler(
         // Validate file size
         if (fileTruncated) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: config.messages.fileTooLarge }));
+          res.end(
+            JSON.stringify({
+              error: `File size must be less than ${formatByteCapForMessage(config.maxFileSizeBytes)}`,
+            }),
+          );
           resolve();
           return;
         }
@@ -274,6 +324,19 @@ export function createGymImageUploadHandler(
         if (fileBuffer.length === 0) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Uploaded file is empty' }));
+          resolve();
+          return;
+        }
+
+        // The declared Content-Type got us past the allowlist; the BYTES decide
+        // what we actually store. Without this, any 5MB payload labelled
+        // image/jpeg is written under our key and re-served from our origin as
+        // a JPEG — arbitrary file hosting on boardsesh.com for anyone with edit
+        // access to a gym. Checked before the DB round-trip so a junk upload
+        // costs us nothing.
+        if (detectImageMimeType(fileBuffer) !== mimeType) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'File contents do not match the declared image type' }));
           resolve();
           return;
         }
@@ -346,6 +409,14 @@ export function createGymImageUploadHandler(
         // Best-effort stale-extension cleanup (the helpers keep the new file and
         // log real failures). A leftover stale-ext file is unreferenced — the
         // stored URL points at the new key — so failure here is non-fatal.
+        //
+        // Known gap on a CROSS-EXTENSION replace: this drops the old object
+        // before the client has repointed the row, so if the caller's follow-up
+        // updateGym never lands, the row is left pointing at a deleted object.
+        // Unreachable through either console — the logo canvas emits png/jpeg
+        // per input type and the photo canvas always emits jpeg, so a re-upload
+        // overwrites its own key in place — but reachable by a direct API caller
+        // that switches extension and then drops the mutation.
         if (useS3) {
           await config.deleteStaleObjectsFromS3(gymUuid, ext);
         } else {

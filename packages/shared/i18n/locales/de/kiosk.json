@@ -401,10 +401,10 @@
         "remove": "Entfernen",
         "currentAlt": "Foto von {{gymName}}",
         "emptyPlaceholder": "Noch kein Foto",
-        "formatsHint": "JPG, PNG oder WebP, bis 20 MB. Wird auf 1920 px skaliert. Nimm ein echtes Foto deiner Wand oder des Board-Bereichs, nichts KI-Generiertes.",
+        "formatsHint": "JPG, PNG oder WebP, bis {{maxMb}} MB. Wird auf {{maxDimension}} px skaliert. Nimm ein echtes Foto deiner Wand oder des Board-Bereichs, nichts KI-Generiertes.",
         "unsupportedType": "Nimm ein JPG-, PNG- oder WebP-Bild.",
-        "tooLarge": "Die Datei ist größer als 20 MB. Nimm ein kleineres Bild.",
-        "uploadTooLarge": "Das Foto ist auch nach dem Skalieren größer als 5 MB. Nimm ein anderes.",
+        "tooLarge": "Die Datei ist größer als {{maxMb}} MB. Nimm ein kleineres Bild.",
+        "uploadTooLarge": "Das Foto ist auch nach dem Skalieren größer als {{maxMb}} MB. Nimm ein anderes.",
         "uploadFailed": "Das Foto ließ sich nicht hochladen.",
         "saveFailed": "Das Foto ließ sich nicht speichern."
       }

@@ -23,6 +23,15 @@ export const GYM_PHOTO_MAX_UPLOAD_BYTES = SHARED_GYM_PHOTO_MAX_UPLOAD_BYTES;
 /** Longest side of the uploaded photo after the canvas downscale. */
 export const GYM_PHOTO_MAX_DIMENSION = 1920;
 
+/**
+ * The two caps in megabytes, for interpolation into the localized copy. Each
+ * limit exists exactly once (as a byte constant) and every user-facing string
+ * that quotes a size reads it from here, so raising a cap can't leave four
+ * catalogs stating the old figure.
+ */
+export const GYM_PHOTO_MAX_INPUT_MB = Math.round(GYM_PHOTO_MAX_INPUT_BYTES / (1024 * 1024));
+export const GYM_PHOTO_MAX_UPLOAD_MB = Math.round(GYM_PHOTO_MAX_UPLOAD_BYTES / (1024 * 1024));
+
 /** Mirror of the backend's mime allowlist, minus GIF (a photo isn't animated). */
 export const GYM_PHOTO_ACCEPTED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 

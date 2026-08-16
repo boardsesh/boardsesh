@@ -18,10 +18,12 @@ const uploadHandler = createGymImageUploadHandler({
   maxFileSizeBytes: MAX_FILE_SIZE,
   responseUrlKey: 'logoUrl',
   buildStaticUrl: buildStaticGymLogoUrl,
-  deleteStaleObjectsFromS3: deleteGymLogosFromS3,
+  // Called through, not captured: binding the import here would freeze the
+  // module-init reference and make a later vi.spyOn on the storage module a
+  // no-op for this handler.
+  deleteStaleObjectsFromS3: (gymUuid, keepExt) => deleteGymLogosFromS3(gymUuid, keepExt),
   messages: {
     notConfigured: 'Gym logo uploads are not configured. Please contact the administrator.',
-    fileTooLarge: 'File size must be less than 2MB',
     saveFailed: 'Failed to save gym logo',
     authorizeFailed: 'Failed to authorize gym logo upload',
   },

@@ -63,7 +63,10 @@ const COMMUNITY_ADMIN = 'gl-community-admin';
 const RANDOM = 'gl-random';
 const ALL_USERS = [OWNER, ADMIN_MEMBER, EDITOR_MEMBER, COMMUNITY_ADMIN, RANDOM];
 
+// Real magic bytes for each format: the handler sniffs the payload and rejects
+// anything whose header contradicts the declared multipart Content-Type.
 const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0xff, 0xd9]);
+const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
 
 let gymUuid: string;
 
@@ -364,6 +367,27 @@ describe('POST /api/gym-logos', () => {
     }
   });
 
+  it('rejects a payload whose bytes contradict the declared image type (400)', async () => {
+    // The multipart Content-Type is client-declared. Without a magic-byte check
+    // any payload labelled image/png is stored under our key and re-served from
+    // our origin as a PNG — arbitrary file hosting for anyone with edit access.
+    validateTokenMock.mockResolvedValue({ userId: OWNER });
+    const { baseUrl, server } = await startLogoServer();
+    try {
+      const response = await uploadLogo(baseUrl, {
+        token: 'owner',
+        gymUuid,
+        blob: new Blob([Buffer.from('<!doctype html><script>alert(1)</script>', 'latin1')], { type: 'image/png' }),
+        fileName: 'logo.png',
+      });
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error?: string };
+      expect(body.error).toBe('File contents do not match the declared image type');
+    } finally {
+      await closeServer(server);
+    }
+  });
+
   it('rejects a zero-byte file (400)', async () => {
     validateTokenMock.mockResolvedValue({ userId: OWNER });
     const { baseUrl, server } = await startLogoServer();
@@ -394,7 +418,7 @@ describe('POST /api/gym-logos', () => {
       const pngResponse = await uploadLogo(baseUrl, {
         token: 'owner',
         gymUuid,
-        blob: new Blob([JPEG_BYTES], { type: 'image/png' }),
+        blob: new Blob([PNG_BYTES], { type: 'image/png' }),
         fileName: 'logo.png',
       });
       expect(pngResponse.status).toBe(200);

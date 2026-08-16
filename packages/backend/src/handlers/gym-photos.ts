@@ -32,10 +32,12 @@ export const GYM_PHOTO_UPLOAD_CONFIG: GymImageUploadConfig = {
   maxFileSizeBytes: GYM_PHOTO_MAX_UPLOAD_BYTES,
   responseUrlKey: 'photoUrl',
   buildStaticUrl: buildStaticGymPhotoUrl,
-  deleteStaleObjectsFromS3: deleteGymPhotosFromS3,
+  // Called through, not captured: binding the import here would freeze the
+  // module-init reference and make a later vi.spyOn on the storage module a
+  // no-op for this handler.
+  deleteStaleObjectsFromS3: (gymUuid, keepExt) => deleteGymPhotosFromS3(gymUuid, keepExt),
   messages: {
     notConfigured: 'Gym photo uploads are not configured. Please contact the administrator.',
-    fileTooLarge: 'File size must be less than 5MB',
     saveFailed: 'Failed to save gym photo',
     authorizeFailed: 'Failed to authorize gym photo upload',
   },
@@ -64,11 +66,16 @@ export function handleGymPhotoUpload(req: IncomingMessage, res: ServerResponse):
  * Gym photo delete handler
  * DELETE /api/gym-photos?gymUuid=<uuid>
  *
- * Drops every stored extension for the gym. Called by the manage console AFTER
- * updateGym has already nulled gyms.image_url — that order is deliberate: an
- * orphaned object costs a few hundred KB and can be swept later, while a row
- * still pointing at a deleted object is a broken image on the public page.
- * Failures here are therefore non-fatal to the owner's "remove photo" action.
+ * Removes the gym's photo: nulls gyms.image_url FIRST, then drops every stored
+ * extension. That order is the whole point — an orphaned object costs a few
+ * hundred KB and can be swept later, while a row still pointing at a deleted
+ * object is a broken image on the public page.
+ *
+ * The column clear happens HERE rather than being left to the caller. The
+ * manage console does call updateGym first, but a direct API call in the wrong
+ * order (or one that never sends the mutation) would otherwise strand exactly
+ * the dangling URL this ordering exists to prevent. Nulling an already-null
+ * column is a no-op, so the console's belt-and-braces sequence still works.
  */
 export async function handleGymPhotoDelete(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
@@ -121,7 +128,24 @@ export async function handleGymPhotoDelete(req: IncomingMessage, res: ServerResp
     return;
   }
 
-  // No keepExt — every extension goes.
+  // Clear the column before touching storage, and fail the request if it
+  // doesn't land — deleting the object while the row still references it is
+  // the one outcome worth returning an error for.
+  try {
+    await db
+      .update(dbSchema.gyms)
+      .set({ imageUrl: null, updatedAt: new Date() })
+      .where(eq(dbSchema.gyms.uuid, gymUuid));
+  } catch (clearErr) {
+    logger.error('Failed to clear gym photo URL:', clearErr);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Failed to remove gym photo' }));
+    return;
+  }
+
+  // No keepExt — every extension goes. Best-effort from here: the photo is
+  // already gone from every surface, so a storage failure leaves nothing worse
+  // than an unreferenced object.
   if (isS3Configured()) {
     await deleteGymPhotosFromS3(gymUuid);
   } else {
