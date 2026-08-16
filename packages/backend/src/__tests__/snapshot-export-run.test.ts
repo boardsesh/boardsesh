@@ -32,15 +32,66 @@ import { getWorkerDatabaseUrl } from './worker-db';
 
 const MANIFEST_KEY = 'board-snapshots/v1/manifest.json';
 const TEST_EXPORTER_IMAGE_DIGEST = `sha256:${'a'.repeat(64)}`;
+let heartbeatCoordinatorSequence = 0;
 
 function quoteIdentifier(identifier: string): string {
   return `"${identifier.replaceAll('"', '""')}"`;
 }
 
-async function runHeartbeatExport(args: string[]): Promise<void> {
+type CoordinatorContractDrift =
+  | 'none'
+  | 'indirect'
+  | 'grant-option'
+  | 'extra-execute'
+  | 'inherited-extra-execute'
+  | 'owned-extra-execute';
+
+async function runHeartbeatExport(args: string[], contractDrift: CoordinatorContractDrift = 'none'): Promise<void> {
   const previousDirectUrl = process.env.DATABASE_DIRECT_URL;
   const previousImageDigest = process.env.SNAPSHOT_EXPORTER_IMAGE_DIGEST;
-  process.env.DATABASE_DIRECT_URL = getWorkerDatabaseUrl();
+  const testSuffix = `w${process.env.VITEST_POOL_ID ?? '0'}_p${process.pid}`;
+  heartbeatCoordinatorSequence += 1;
+  const roleName = `snapshot_coordinator_${testSuffix}_${heartbeatCoordinatorSequence}`;
+  const rolePassword = 'snapshot-coordinator-test';
+  const quotedRole = quoteIdentifier(roleName);
+  const grantRoleName = `snapshot_coordinator_grant_${testSuffix}_${heartbeatCoordinatorSequence}`;
+  const quotedGrantRole = quoteIdentifier(grantRoleName);
+  const adminPool = createPool();
+  await adminPool.unsafe(`CREATE ROLE ${quotedRole} LOGIN PASSWORD '${rolePassword}'`);
+  const needsGrantRole = contractDrift === 'indirect' || contractDrift === 'inherited-extra-execute';
+  const privilegeRole = contractDrift === 'indirect' ? quotedGrantRole : quotedRole;
+  if (needsGrantRole) await adminPool.unsafe(`CREATE ROLE ${quotedGrantRole} NOLOGIN`);
+  await adminPool.unsafe(`GRANT USAGE ON SCHEMA ops TO ${privilegeRole}`);
+  await adminPool.unsafe(`GRANT EXECUTE ON FUNCTION ops.board_snapshot_cluster_identity() TO ${privilegeRole}`);
+  await adminPool.unsafe(`GRANT EXECUTE ON FUNCTION ops.acquire_board_snapshot_fence(integer) TO ${privilegeRole}`);
+  await adminPool.unsafe(`GRANT EXECUTE ON FUNCTION ops.board_snapshot_fence_held() TO ${privilegeRole}`);
+  await adminPool.unsafe(`GRANT EXECUTE ON FUNCTION ops.release_board_snapshot_fence() TO ${privilegeRole}`);
+  if (contractDrift === 'indirect') await adminPool.unsafe(`GRANT ${quotedGrantRole} TO ${quotedRole}`);
+  if (contractDrift === 'grant-option') {
+    await adminPool.unsafe(
+      `GRANT EXECUTE ON FUNCTION ops.acquire_board_snapshot_fence(integer) TO ${quotedRole} WITH GRANT OPTION`,
+    );
+  }
+  if (contractDrift === 'extra-execute') {
+    await adminPool.unsafe(`GRANT EXECUTE ON FUNCTION ops.set_sync_deletion_cursor() TO ${quotedRole}`);
+  }
+  if (contractDrift === 'inherited-extra-execute') {
+    await adminPool.unsafe(`GRANT EXECUTE ON FUNCTION ops.set_sync_deletion_cursor() TO ${quotedGrantRole}`);
+    await adminPool.unsafe(`GRANT ${quotedGrantRole} TO ${quotedRole}`);
+  }
+  if (contractDrift === 'owned-extra-execute') {
+    const functionName = `snapshot_coordinator_owned_${testSuffix}_${heartbeatCoordinatorSequence}`;
+    const quotedFunction = quoteIdentifier(functionName);
+    await adminPool.unsafe(`CREATE FUNCTION ops.${quotedFunction}() RETURNS integer LANGUAGE sql AS 'SELECT 1'`);
+    await adminPool.unsafe(`GRANT CREATE ON SCHEMA ops TO ${quotedRole}`);
+    await adminPool.unsafe(`ALTER FUNCTION ops.${quotedFunction}() OWNER TO ${quotedRole}`);
+    await adminPool.unsafe(`REVOKE CREATE ON SCHEMA ops FROM ${quotedRole}`);
+  }
+  const coordinatorUrl = new URL(getWorkerDatabaseUrl());
+  coordinatorUrl.username = roleName;
+  coordinatorUrl.password = rolePassword;
+  coordinatorUrl.searchParams.delete('options');
+  process.env.DATABASE_DIRECT_URL = coordinatorUrl.toString();
   process.env.SNAPSHOT_EXPORTER_IMAGE_DIGEST = TEST_EXPORTER_IMAGE_DIGEST;
   try {
     await runExport([...args, '--heartbeat']);
@@ -49,6 +100,12 @@ async function runHeartbeatExport(args: string[]): Promise<void> {
     else process.env.DATABASE_DIRECT_URL = previousDirectUrl;
     if (previousImageDigest === undefined) delete process.env.SNAPSHOT_EXPORTER_IMAGE_DIGEST;
     else process.env.SNAPSHOT_EXPORTER_IMAGE_DIGEST = previousImageDigest;
+    await adminPool.unsafe(`DROP OWNED BY ${quotedRole}`).catch(() => {});
+    await adminPool.unsafe(`DROP ROLE IF EXISTS ${quotedRole}`).catch(() => {});
+    if (needsGrantRole) {
+      await adminPool.unsafe(`DROP OWNED BY ${quotedGrantRole}`).catch(() => {});
+      await adminPool.unsafe(`DROP ROLE IF EXISTS ${quotedGrantRole}`).catch(() => {});
+    }
   }
 }
 
@@ -294,6 +351,37 @@ describe('runExport — threshold refresh', () => {
       refreshedLayouts: 0,
     });
     expect(listS3Objects).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when coordinator privileges are inherited instead of directly granted', async () => {
+    await expect(runHeartbeatExport(thresholdArgs, 'indirect')).rejects.toThrow(
+      'caller_memberships_exact, caller_ops_schema_acl_exact, caller_function_acls_exact',
+    );
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a coordinator function ACL carries grant option', async () => {
+    await expect(runHeartbeatExport(thresholdArgs, 'grant-option')).rejects.toThrow('caller_function_acls_exact');
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the coordinator can execute an extra ops function', async () => {
+    await expect(runHeartbeatExport(thresholdArgs, 'extra-execute')).rejects.toThrow('caller_function_acls_exact');
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when an inherited role adds extra ops execution', async () => {
+    await expect(runHeartbeatExport(thresholdArgs, 'inherited-extra-execute')).rejects.toThrow(
+      'caller_memberships_exact',
+    );
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on implicit execution from coordinator function ownership', async () => {
+    await expect(runHeartbeatExport(thresholdArgs, 'owned-extra-execute')).rejects.toThrow(
+      'caller_owns_no_ops_functions, caller_has_no_unexpected_ops_execute',
+    );
+    expect(uploadToS3).not.toHaveBeenCalled();
   });
 
   it('rebuilds only the layout at the exact 500-row threshold and preserves every other entry', async () => {
