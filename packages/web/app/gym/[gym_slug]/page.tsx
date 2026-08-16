@@ -161,9 +161,12 @@ export default async function GymPage(props: GymRouteProps) {
   // Which arm of the claim call-out to render — `hidden` for a signed-in viewer
   // who already covers this gym (owner, admin/editor, community leader), the
   // anonymous arm for everyone with no session.
+  // One derivation, on the server: the island is handed the answer as
+  // `viewerState` and never recomputes it.
   const claimCtaVariant = resolveClaimCtaVariant({
     serverCanClaim: gym.canClaim,
     serverHasSession: Boolean(token),
+    gymIsClaimed: gym.isClaimed,
   });
   const claimParam = searchParams[CLAIM_PARAM];
   const showsClaimCta = gym.isPublic && claimCtaVariant !== 'hidden';
@@ -323,7 +326,8 @@ export default async function GymPage(props: GymRouteProps) {
         ) : (
           /* No call-out to clear the return-from-auth param, so clear it here:
              an owner or community leader who signed in and turned out to
-             already cover this gym would otherwise sit on a live `?claim=1`. */
+             already cover this gym — or an anonymous visitor on a gym someone
+             already runs — would otherwise sit on a live `?claim=1`. */
           <GymClaimParamCleanup claimParam={claimParam} />
         )}
 

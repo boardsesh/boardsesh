@@ -259,12 +259,18 @@ function GatedClaimCta({
   isPublic,
   canClaim,
   hasSession,
+  isClaimed = false,
 }: {
   isPublic: boolean;
   canClaim: boolean;
   hasSession: boolean;
+  isClaimed?: boolean;
 }) {
-  const variant = resolveClaimCtaVariant({ serverCanClaim: canClaim, serverHasSession: hasSession });
+  const variant = resolveClaimCtaVariant({
+    serverCanClaim: canClaim,
+    serverHasSession: hasSession,
+    gymIsClaimed: isClaimed,
+  });
   if (!isPublic || variant === 'hidden') return null;
   return (
     <GymClaimCta gymUuid="gym-1" gymName="Boulderwelt" gymSlug="boulderwelt" website={null} viewerState={variant} />
@@ -285,9 +291,23 @@ describe('claim CTA visibility gating', () => {
     expect(screen.getByRole('button', { name: 'Claim this gym' })).toBeTruthy();
   });
 
-  it('renders the anonymous arm on a public gym', () => {
+  it('renders the anonymous arm on a public gym nobody has claimed', () => {
     render(<GatedClaimCta isPublic canClaim={false} hasSession={false} />);
     expect(screen.getByRole('button', { name: 'Log in and claim it' })).toBeTruthy();
+  });
+
+  it('never renders the anonymous arm on a gym that already has an owner', () => {
+    // The owner's name is displayed directly above where the box would sit.
+    const { container } = render(<GatedClaimCta isPublic canClaim={false} hasSession={false} isClaimed />);
+
+    expect(container.innerHTML).toBe('');
+    expect(trackGymFunnelEvent).not.toHaveBeenCalled();
+  });
+
+  it('still renders the signed-in arm on a claimed gym', () => {
+    // Asking for a gym someone else owns is an existing, deliberate path.
+    render(<GatedClaimCta isPublic canClaim hasSession isClaimed />);
+    expect(screen.getByRole('button', { name: 'Claim this gym' })).toBeTruthy();
   });
 
   it('never renders the anonymous arm on a private gym', () => {

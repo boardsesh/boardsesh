@@ -8,27 +8,60 @@ import {
 } from '../gym-claim-cta-logic';
 
 describe('resolveClaimCtaVariant', () => {
-  it('offers the claim to a signed-in viewer the backend says may claim', () => {
-    expect(resolveClaimCtaVariant({ serverCanClaim: true, serverHasSession: true })).toBe('signed-in');
+  describe('signed in', () => {
+    it('offers the claim to a viewer the backend says may claim an unclaimed gym', () => {
+      expect(resolveClaimCtaVariant({ serverCanClaim: true, serverHasSession: true, gymIsClaimed: false })).toBe(
+        'signed-in',
+      );
+    });
+
+    it('still offers it on a gym someone else already owns', () => {
+      // A signed-in non-member asking for a claimed gym is a deliberate path —
+      // the backend routes it to admin review. `isClaimed` narrows the
+      // anonymous arm only.
+      expect(resolveClaimCtaVariant({ serverCanClaim: true, serverHasSession: true, gymIsClaimed: true })).toBe(
+        'signed-in',
+      );
+    });
+
+    it.each([true, false])('hides it from a viewer who already covers the gym (claimed: %s)', (gymIsClaimed) => {
+      // Owners, gym admins/editors and covering community leaders all come back
+      // `canClaim: false` from the resolver — the gating this PR must not widen.
+      expect(resolveClaimCtaVariant({ serverCanClaim: false, serverHasSession: true, gymIsClaimed })).toBe('hidden');
+    });
   });
 
-  it('hides the call-out from a signed-in viewer who already covers the gym', () => {
-    // Owners, gym admins/editors and covering community leaders all come back
-    // `canClaim: false` from the resolver — the gating this PR must not widen.
-    expect(resolveClaimCtaVariant({ serverCanClaim: false, serverHasSession: true })).toBe('hidden');
-  });
+  describe('signed out', () => {
+    it('shows the anonymous arm on an unclaimed gym', () => {
+      // The whole point: `canClaim` is false for every anonymous request, so
+      // reading it alone would hide the CTA from the gym owner who just googled
+      // their own gym.
+      expect(resolveClaimCtaVariant({ serverCanClaim: false, serverHasSession: false, gymIsClaimed: false })).toBe(
+        'signed-out',
+      );
+    });
 
-  it('shows the anonymous arm to a visitor with no session', () => {
-    // The whole point: `canClaim` is false for every anonymous request, so
-    // reading it alone would hide the CTA from the gym owner who just googled
-    // their own gym.
-    expect(resolveClaimCtaVariant({ serverCanClaim: false, serverHasSession: false })).toBe('signed-out');
-  });
+    it('hides the anonymous arm once the gym has a real owner', () => {
+      // "Is this your gym?" directly under the displayed name of the person who
+      // already runs it reads as a mistake.
+      expect(resolveClaimCtaVariant({ serverCanClaim: false, serverHasSession: false, gymIsClaimed: true })).toBe(
+        'hidden',
+      );
+    });
 
-  it('still takes the anonymous arm if canClaim ever arrives without a session', () => {
-    // Unreachable through the resolver, but with no session there is no
-    // signed-in viewer whose dialog could be opened.
-    expect(resolveClaimCtaVariant({ serverCanClaim: true, serverHasSession: false })).toBe('signed-out');
+    it('still takes the anonymous arm if canClaim ever arrives without a session', () => {
+      // Unreachable through the resolver, but with no session there is no
+      // signed-in viewer whose dialog could be opened.
+      expect(resolveClaimCtaVariant({ serverCanClaim: true, serverHasSession: false, gymIsClaimed: false })).toBe(
+        'signed-out',
+      );
+    });
+
+    it('keeps the claimed gate ahead of that, too', () => {
+      expect(resolveClaimCtaVariant({ serverCanClaim: true, serverHasSession: false, gymIsClaimed: true })).toBe(
+        'hidden',
+      );
+    });
   });
 });
 

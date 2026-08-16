@@ -88,21 +88,33 @@ no mobile counterpart. They live in their own module.
 imported because a shared package must never depend on `packages/web`; adding a
 tab there without adding it here is a compile error at the call site.
 
-### `viewerState: signed-out` only exists on the gym page — split by `placement`
+### `viewerState: signed-out` is gym-page-only AND unclaimed-gym-only
 
 **Read this before using `Gym Claim CTA Clicked` to answer H4** ("does a visible
 self-serve claim CTA convert unclaimed gyms"). Since #3672 the gym page shows
-the claim call-out to anonymous visitors, so `signed-out` is real data there:
+the claim call-out to anonymous visitors, so `signed-out` is real data there —
+but on a narrower population than "public gyms":
 
 - `app/gym/[gym_slug]/page.tsx` renders it whenever the gym is public and
   `resolveClaimCtaVariant` (`app/gym/[gym_slug]/gym-claim-cta-logic.ts`) doesn't
-  return `hidden`. `hidden` is the signed-in viewer who already covers the gym —
-  the resolver's `canClaim = !!authenticatedUserId && …` is false for owners,
-  gym admins/editors and covering community leaders
+  return `hidden`. `hidden` covers the signed-in viewer who already covers the
+  gym — the resolver's `canClaim = !!authenticatedUserId && …` is false for
+  owners, gym admins/editors and covering community leaders
   (`packages/backend/src/graphql/resolvers/social/gyms.ts`).
+- **The anonymous arm additionally requires `gym.isClaimed === false`.** An
+  anonymous visitor to a gym that already has a real owner sees nothing, so a
+  claimed gym contributes zero `signed-out` events no matter how much anonymous
+  traffic it takes. The signed-in arm is not gated this way: asking for a gym
+  someone else owns is a deliberate path that routes to admin review.
 - The anonymous arm sends the owner through the auth modal with a
   `callbackUrl` back to `/gym/<slug>?claim=1`, so the claim intent survives an
   OAuth round-trip and the dialog re-opens on return.
+
+**The `signed-out` denominator is anonymous pageviews of _unclaimed_ public
+gyms, not of all gym pages.** Dividing `signed-out` claim clicks by total gym
+pageviews understates the conversion rate by whatever share of traffic lands on
+claimed gyms — which is the well-run, heavily-visited end of the directory.
+Restrict both sides of the ratio to unclaimed gyms before quoting a number.
 
 The other two entry points won't fire it, so an unsplit `signed-out` share
 under-reads:
