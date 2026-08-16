@@ -292,7 +292,21 @@ export default async function GymPage(props: GymRouteProps) {
           )}
         />
 
-        {gym.canClaim && <GymClaimCta gymUuid={gym.uuid} gymName={gym.name} website={gym.website} />}
+        {/* `viewerState` is the server's answer, taken from the request cookie
+            above. Reading it in the island with useSession() would report the
+            pre-hydration `loading` state as signed-out on exactly the taps this
+            event cares about. Today `canClaim` is itself false for a signed-out
+            viewer (the resolver requires an authenticated user), so this is
+            `signed-in` by construction — until #3672 shows the CTA anonymously,
+            at which point this prop is already carrying the truth. */}
+        {gym.canClaim && (
+          <GymClaimCta
+            gymUuid={gym.uuid}
+            gymName={gym.name}
+            website={gym.website}
+            viewerState={token ? 'signed-in' : 'signed-out'}
+          />
+        )}
 
         <GymReportDuplicateCta
           gymUuid={gym.uuid}

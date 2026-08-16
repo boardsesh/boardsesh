@@ -4,7 +4,7 @@ import { gymClaimResult, gymQrScanned, GYM_FUNNEL_EVENTS } from '@boardsesh/anal
 const trackMock = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/analytics', () => ({ track: trackMock }));
 
-const { trackGymFunnelEvent, viewerStateFromSessionStatus } = await import('../gym-funnel-analytics');
+const { trackGymFunnelEvent, viewerStateFrom } = await import('../gym-funnel-analytics');
 
 beforeEach(() => {
   trackMock.mockReset();
@@ -30,18 +30,20 @@ describe('trackGymFunnelEvent', () => {
   });
 });
 
-describe('viewerStateFromSessionStatus', () => {
-  it('reports an authenticated session as signed-in', () => {
-    expect(viewerStateFromSessionStatus('authenticated')).toBe('signed-in');
+describe('viewerStateFrom', () => {
+  it('maps a settled authenticated answer to signed-in', () => {
+    expect(viewerStateFrom(true)).toBe('signed-in');
   });
 
-  it('reports an unauthenticated session as signed-out', () => {
-    expect(viewerStateFromSessionStatus('unauthenticated')).toBe('signed-out');
+  it('maps a settled anonymous answer to signed-out', () => {
+    expect(viewerStateFrom(false)).toBe('signed-out');
   });
 
-  it('reports a still-resolving session as signed-out rather than a third bucket', () => {
-    // A click that beats hydration is the same funnel step as a signed-out one:
-    // both are about to meet the auth wall.
-    expect(viewerStateFromSessionStatus('loading')).toBe('signed-out');
+  it('takes a boolean, so a pre-hydration session status cannot reach it', () => {
+    // The signature is the guard. Callers must resolve `loading` before they get
+    // here — a helper that accepted next-auth's status would silently bucket
+    // every not-yet-settled click as signed-out.
+    const acceptsBooleanOnly: (isAuthenticated: boolean) => string = viewerStateFrom;
+    expect(acceptsBooleanOnly(true)).toBe('signed-in');
   });
 });

@@ -24,17 +24,23 @@ export function trackGymFunnelEvent(event: {
 }
 
 /**
- * NextAuth's `useSession().status` in the contract's vocabulary.
+ * A SETTLED authentication answer in the contract's vocabulary.
  *
- * `loading` maps to `signed-out` deliberately. The alternative is a third
- * bucket that means "the click happened before the session resolved", which is
- * a fact about our hydration timing rather than about the climber, and it would
- * split the one breakdown this property exists for. A signed-in climber whose
- * session is still resolving is the same funnel step as a signed-out one: both
- * are about to meet the auth wall.
+ * Takes a boolean, not NextAuth's `useSession().status`, and that is the whole
+ * point. `SessionProviderWrapper` mounts `<SessionProvider>` with no `session`
+ * prop, so next-auth starts every page load at `status: 'loading'` and settles
+ * only after a round-trip to `/api/auth/session`. A server-rendered page paints
+ * and hydrates before that lands, so a click that beats it — a QR poster
+ * scanned on a phone is exactly that case — would read `loading` and report a
+ * signed-in climber as `signed-out`.
+ *
+ * Callers must pass a value that has already settled: a server-read auth token,
+ * or `useWsAuthToken().isAuthenticated`, whose own query is gated on
+ * `status !== 'loading'` — so holding a gym fetched through it means the
+ * session resolved. `GymClaimViewerState` deliberately has no `loading` member:
+ * a third bucket would encode the hydration race as vocabulary instead of
+ * keeping it out of the data.
  */
-export function viewerStateFromSessionStatus(
-  status: 'authenticated' | 'unauthenticated' | 'loading',
-): GymClaimViewerState {
-  return status === 'authenticated' ? 'signed-in' : 'signed-out';
+export function viewerStateFrom(isAuthenticated: boolean): GymClaimViewerState {
+  return isAuthenticated ? 'signed-in' : 'signed-out';
 }

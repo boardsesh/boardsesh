@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSession } from 'next-auth/react';
 import { FOLLOW_GYM, UNFOLLOW_GYM } from '@boardsesh/graphql/operations';
@@ -14,6 +14,11 @@ type GymFollowButtonProps = {
   isFollowedByMe: boolean;
 };
 
+// Hoisted: a pure function of its argument, so it has no reason to be rebuilt
+// per render. `useFollowToggle` lists it in `handleToggle`'s deps, and a fresh
+// identity there gives every consumer a new callback on every render.
+const gymFollowVariables = (gymUuid: string) => ({ input: { gymUuid } });
+
 /**
  * Client island: the Follow control on the public gym page. Reuses the same
  * FollowButton the preview sheet mounts, so the state, optimistic toggle, and
@@ -24,6 +29,12 @@ export default function GymFollowButton({ gymUuid, ownerId, isFollowedByMe }: Gy
   const { t } = useTranslation('boards');
   const { data: session } = useSession();
   const currentUserId = session?.user?.id ?? null;
+
+  // One event per accepted click. NOT onFollowChange — that fires again on
+  // rollback, so a failed follow would also report an unfollow.
+  const reportFollowClick = useCallback(() => {
+    trackGymFunnelEvent(gymPageCtaClicked({ cta: 'follow', gymUuid }));
+  }, [gymUuid]);
 
   if (currentUserId && currentUserId === ownerId) {
     return null;
@@ -36,10 +47,8 @@ export default function GymFollowButton({ gymUuid, ownerId, isFollowedByMe }: Gy
       followMutation={FOLLOW_GYM}
       unfollowMutation={UNFOLLOW_GYM}
       entityLabel={t('gymEntity.follow.entityLabel')}
-      getFollowVariables={(id) => ({ input: { gymUuid: id } })}
-      // One event per accepted click. NOT onFollowChange — that fires again on
-      // rollback, so a failed follow would also report an unfollow.
-      onToggleClick={() => trackGymFunnelEvent(gymPageCtaClicked({ cta: 'follow', gymUuid }))}
+      getFollowVariables={gymFollowVariables}
+      onToggleClick={reportFollowClick}
     />
   );
 }

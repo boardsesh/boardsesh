@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import type { Gym } from '@boardsesh/shared-schema';
@@ -49,6 +49,12 @@ vi.mock('@/app/lib/graphql/client', () => ({
   createGraphQLHttpClient: () => ({ request: mockRequest }),
 }));
 
+const trackGymFunnelEvent = vi.hoisted(() => vi.fn());
+vi.mock('@/app/lib/gym-funnel-analytics', () => ({
+  trackGymFunnelEvent,
+  viewerStateFrom: (isAuthenticated: boolean) => (isAuthenticated ? 'signed-in' : 'signed-out'),
+}));
+
 function makeGym(overrides: Partial<Gym> = {}): Gym {
   return {
     uuid: 'gym-uuid-1',
@@ -87,5 +93,29 @@ describe('GymDetail header link', () => {
 
     expect(await screen.findByText('Test Gym')).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Test Gym' })).toBeNull();
+  });
+});
+
+describe('GymDetail claim CTA analytics', () => {
+  it('reports the claim CTA click under the preview-sheet placement', async () => {
+    mockRequest.mockResolvedValue({ gym: makeGym({ canClaim: true }) });
+    render(<GymDetail gymUuid="gym-uuid-1" open onClose={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Claim' }));
+
+    expect(trackGymFunnelEvent).toHaveBeenCalledTimes(1);
+    expect(trackGymFunnelEvent).toHaveBeenCalledWith({
+      name: 'Gym Claim CTA Clicked',
+      properties: { placement: 'preview-sheet', viewerState: 'signed-in', gymUuid: 'gym-uuid-1' },
+    });
+  });
+
+  it('reports nothing when the gym cannot be claimed and the CTA is absent', async () => {
+    mockRequest.mockResolvedValue({ gym: makeGym({ canClaim: false }) });
+    render(<GymDetail gymUuid="gym-uuid-1" open onClose={vi.fn()} />);
+
+    await screen.findByText('Test Gym');
+    expect(screen.queryByRole('button', { name: 'Claim' })).toBeNull();
+    expect(trackGymFunnelEvent).not.toHaveBeenCalled();
   });
 });
