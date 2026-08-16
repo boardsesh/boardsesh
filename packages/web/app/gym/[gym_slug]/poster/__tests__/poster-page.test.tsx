@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import React from 'react';
 import type { Gym } from '@boardsesh/shared-schema';
 
 vi.mock('server-only', () => ({}));
@@ -106,6 +107,78 @@ describe('gym poster route', () => {
       return;
     }
     throw new Error('expected a redirect');
+  });
+});
+
+describe('poster sheet structure', () => {
+  // The single-page guarantee is a per-block height budget (see the comment on
+  // `.sheet`), and that budget is verified by a static print harness that
+  // mirrors this markup. Pin the block sequence so the two cannot drift apart
+  // silently — and so the block that spills first, the trademark disclaimer,
+  // stays visibly last.
+  function sheetChildren(tree: React.ReactElement): React.ReactElement[] {
+    const found: React.ReactElement[] = [];
+    const walk = (node: React.ReactNode): void => {
+      if (!React.isValidElement(node)) return;
+      const props = node.props as { children?: React.ReactNode };
+      if (node.type === 'main') {
+        React.Children.forEach(props.children, (child) => {
+          if (React.isValidElement(child)) found.push(child);
+        });
+        return;
+      }
+      React.Children.forEach(props.children, walk);
+    };
+    walk(tree);
+    return found;
+  }
+
+  it('renders the blocks in the order the print budget assumes, disclaimer last', async () => {
+    executeAuthenticatedGraphQL.mockResolvedValue({ gymBySlug: gymFixture({ slug: 'poster-structure' }) });
+    const tree = (await renderPoster('poster-structure')) as React.ReactElement;
+
+    const kinds = sheetChildren(tree).map((child) =>
+      typeof child.type === 'string' ? child.type : ((child.type as { name?: string }).name ?? 'component'),
+    );
+    // The fixture has no logo, so: name, heading, pitch, QR, typed-URL block,
+    // footer block. A gym with a logo adds an <img> in front — the harness
+    // measures that case too, since the logo is 18 mm of the height budget.
+    expect(kinds).toEqual(['h1', 'p', 'p', 'GymPosterQr', 'div', 'div']);
+  });
+
+  it('prints a clean, percent-encoded typed URL — no attribution params on the human line', async () => {
+    executeAuthenticatedGraphQL.mockResolvedValue({ gymBySlug: gymFixture({ slug: 'boulder#1' }) });
+    const tree = (await renderPoster('boulder#1')) as React.ReactElement;
+
+    const typedBlock = sheetChildren(tree).at(-2) as React.ReactElement;
+    const lines: string[] = [];
+    React.Children.forEach((typedBlock.props as { children?: React.ReactNode }).children, (child) => {
+      if (!React.isValidElement(child)) return;
+      const text = (child.props as { children?: unknown }).children;
+      if (typeof text === 'string') lines.push(text);
+    });
+
+    // Encoded the same way `gymQrUrl` encodes: the code and the line are
+    // printed centimetres apart and must not disagree. Scheme stripped, and no
+    // `?src=qr&medium=poster` — someone typing a URL off a wall is not a scan.
+    expect(lines).toContain('www.boardsesh.com/gym/boulder%231');
+    expect(lines.some((line) => line.includes('src=qr'))).toBe(false);
+  });
+
+  it('keeps the compatibility line and the non-affiliation line inside the last block', async () => {
+    executeAuthenticatedGraphQL.mockResolvedValue({ gymBySlug: gymFixture({ slug: 'poster-footer' }) });
+    const tree = (await renderPoster('poster-footer')) as React.ReactElement;
+
+    const lastBlock = sheetChildren(tree).at(-1) as React.ReactElement;
+    const lines: string[] = [];
+    React.Children.forEach((lastBlock.props as { children?: React.ReactNode }).children, (child) => {
+      if (!React.isValidElement(child)) return;
+      const text = (child.props as { children?: unknown }).children;
+      if (typeof text === 'string') lines.push(text);
+    });
+    // The i18n mock echoes keys, so these are the catalog paths.
+    expect(lines).toContain('gymPage.poster.compatibility');
+    expect(lines).toContain('gymPage.poster.independence');
   });
 });
 

@@ -36,9 +36,20 @@ type GymPosterRouteProps = {
  * Built from `absoluteUrl` so the host tracks the canonical site URL, then
  * stripped of its scheme: `https://` is noise on a printed line, and every
  * browser and phone keyboard adds it back.
+ *
+ * The slug is percent-encoded because `gymQrUrl` percent-encodes it, and these
+ * two strings are printed centimetres apart on the same sheet. No slug the
+ * backend generates today can differ between the two forms — but "the printed
+ * code and the printed line are built by two code paths that could disagree"
+ * is the exact failure this file exists to prevent, and the fix is one call.
  */
 function typedFallbackUrl(gymSlug: string): string {
-  return absoluteUrl(`/gym/${gymSlug}`).replace(/^https?:\/\//, '');
+  return absoluteUrl(gymPosterPath(gymSlug)).replace(/^https?:\/\//, '');
+}
+
+/** The gym's own page, encoded the same way — the back link and the typed line. */
+function gymPosterPath(gymSlug: string): string {
+  return `/gym/${encodeURIComponent(gymSlug)}`;
 }
 
 export async function generateMetadata(props: GymPosterRouteProps): Promise<Metadata> {
@@ -100,7 +111,11 @@ export default async function GymPosterPage(props: GymPosterRouteProps) {
   return (
     <div className={styles.page}>
       <main className={styles.sheet}>
-        {logoSrc && <img className={styles.logo} src={logoSrc} alt={gym.name} />}
+        {/* `alt=""`, deliberately: the gym's name is the <h1> immediately below,
+            so a described logo makes a screen reader announce the name twice.
+            Decorative here, in the strict sense — it carries no information the
+            next element doesn't. */}
+        {logoSrc && <img className={styles.logo} src={logoSrc} alt="" />}
         <h1 className={styles.gymName}>{gym.name}</h1>
         <p className={styles.heading}>{t('gymPage.poster.heading')}</p>
         <p className={styles.pitch}>{t('gymPage.poster.pitch')}</p>
@@ -124,7 +139,7 @@ export default async function GymPosterPage(props: GymPosterRouteProps) {
       </main>
 
       <GymPosterPrintBar
-        gymHref={`/gym/${posterSlug}`}
+        gymHref={gymPosterPath(posterSlug)}
         printLabel={t('gymPage.poster.printAction')}
         backLabel={t('gymPage.poster.backToGym')}
       />

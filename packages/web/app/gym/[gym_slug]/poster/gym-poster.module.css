@@ -34,8 +34,23 @@
 .sheet {
   /* A4 is the narrower paper (210 mm) and US Letter the shorter (279.4 mm), so
    * the printable box common to both, at the 12 mm @page margin above, is
-   * 186 mm × 255.4 mm. Bounding the sheet to that is what makes "one sheet"
-   * true on both without a second, paper-specific layout. */
+   * 186 mm × 255.4 mm.
+   *
+   * WIDTH is enforced here by `max-width`. HEIGHT cannot be — a `max-height`
+   * would clip, and clipping the last block is worse than a second page: the
+   * last block is the trademark footer, so a laminated poster would lose its
+   * disclaimer while the QR above it still scanned, and nobody would notice.
+   * The height is instead held by BOUNDING EVERY BLOCK, so the worst case is
+   * computable rather than hoped for. With every element at its maximum wrap:
+   *
+   *   logo 18 + name 29.7 (3 lines, clamped) + heading 13.2 (2 lines)
+   *   + pitch 23.5 (4 lines) + QR 76 + typed URL 23.7 (3 lines)
+   *   + footer 30 (6 lines) + 6 gaps at 6 = 36        →  250.1 mm
+   *
+   * That leaves ~5 mm against the 255.4 mm ceiling. Any new block, or any
+   * loosened clamp, has to be subtracted from that budget — and checked with
+   * the 100-character-name fixture, which is what a `gyms.name` at its
+   * server-side cap actually produces. */
   box-sizing: border-box;
   width: 100%;
   max-width: 186mm;
@@ -43,7 +58,7 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 8mm;
+  gap: 6mm;
   padding: 10mm;
   background: #ffffff;
   color: #111111;
@@ -53,23 +68,33 @@
 
 .logo {
   max-width: 40mm;
-  max-height: 22mm;
+  max-height: 18mm;
   object-fit: contain;
 }
 
 .gymName {
   margin: 0;
-  font-size: 11mm;
-  line-height: 1.15;
+  font-size: 9mm;
+  line-height: 1.1;
   font-weight: 700;
   /* Long gym names wrap rather than run off the sheet; a 30-character German
    * compound gets broken instead of clipped. */
   overflow-wrap: anywhere;
+  /* HARD LINE CLAMP, and it is load-bearing. `gyms.name` is capped at 100
+   * characters server-side, which is four-plus lines here — enough to push the
+   * trademark footer onto a second sheet that nobody prints. Three lines fits
+   * every real gym name; the rare 100-character outlier is ellipsised, which
+   * is the right trade against silently dropping the disclaimer. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
 }
 
 .heading {
   margin: 0;
-  font-size: 6mm;
+  font-size: 5.5mm;
   line-height: 1.2;
   font-weight: 700;
 }
@@ -77,7 +102,7 @@
 .pitch {
   margin: 0;
   max-width: 140mm;
-  font-size: 4.4mm;
+  font-size: 4.2mm;
   line-height: 1.4;
 }
 
@@ -161,8 +186,10 @@
      * ~6 mm wider than the A4-derived bound the layout is built to. */
     margin: 0 auto;
     padding: 0;
-    /* Guarantees the single sheet even if a locale's copy runs long: nothing
-     * inside is allowed to split across a page. */
+    /* Keeps the sheet from being split mid-block when it fits. It is NOT the
+     * single-page guarantee — a box taller than the page fragments regardless
+     * of this property. The guarantee is the per-block height budget on
+     * `.sheet` above. */
     break-inside: avoid;
     page-break-inside: avoid;
   }
