@@ -104,7 +104,11 @@ describe('getAllBoardConfigsOrThrow', () => {
     }
   });
 
-  it('does not cache a failure — a poisoned hour of empty sitemaps is worse than a retry', async () => {
+  it('stores nothing in the in-process layer on a failure, so the next call retries', async () => {
+    // Scoped to the in-process layer deliberately: `unstable_cache` is a
+    // pass-through in this file, so this proves nothing about whether the Data
+    // Cache memoises a rejection. A poisoned hour of empty sitemaps would be far
+    // worse than a retry, and this is the half we own and can pin.
     backend.hasMore = true;
     await expect(getAllBoardConfigsOrThrow()).rejects.toThrow(/truncated/);
 

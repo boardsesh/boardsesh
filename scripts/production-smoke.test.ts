@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import { describe, expect, it } from 'vitest';
-import { FIXTURE_PATHS, WWW_CHECKS, parseBaseUrl, type SmokeResponse } from './production-smoke';
+import { FIXTURE_PATHS, WWW_CHECKS, finalVerdict, parseBaseUrl, type SmokeResponse } from './production-smoke';
 
 // The assertions are the whole product here: the runner is a retry loop, but
 // the check table is what decides whether a broken deploy is caught. These
@@ -37,8 +37,28 @@ describe('www production smoke checks', () => {
   it('covers the surfaces other systems depend on', () => {
     const paths = WWW_CHECKS.filter((check) => !check.fixtureEnvVar).map((check) => check.path);
     expect(paths).toEqual(
-      expect.arrayContaining(['/', '/robots.txt', '/sitemap.xml', '/api/auth/session', '/api/internal/ws-auth']),
+      expect.arrayContaining([
+        '/',
+        '/robots.txt',
+        '/sitemap.xml',
+        // Both `expectsUrls` shard routes get a check of their own. `boards.xml`
+        // in particular is the only hard signal left on the boards surface once
+        // the index check can excuse a declared degradation.
+        '/sitemaps/static.xml',
+        '/sitemaps/boards.xml',
+        '/api/auth/session',
+        '/api/internal/ws-auth',
+      ]),
     );
+  });
+
+  it('keeps the warning channel on the index alone', () => {
+    // `degradation` is the only thing in this file that can end a run green on a
+    // response that is not fully healthy. It is safe exactly where the server
+    // declares the degradation on the response, and nowhere else — a check that
+    // grew one by copy-paste would be silently unable to go red.
+    const withDegradation = WWW_CHECKS.filter((check) => check.degradation).map((check) => check.path);
+    expect(withDegradation).toEqual(['/sitemap.xml']);
   });
 
   it('rejects a homepage that 200s with a spinner-only shell', () => {
@@ -114,7 +134,7 @@ describe('www production smoke checks', () => {
     // Names the shards, so the annotation is actionable without opening the site.
     expect(check.degradation?.(withoutBoards)).toMatch(/boards/);
     expect(check.degradation?.(withoutBoards)).toMatch(/playlists/);
-    expect(check.degradation?.(withoutBoards)).toMatch(/mandatory boards/);
+    expect(check.degradation?.(withoutBoards)).toMatch(/required boards/);
 
     // A shard the header does NOT name is still missing silently — the header
     // must not become a blanket amnesty for anything absent from the body.
@@ -137,7 +157,7 @@ describe('www production smoke checks', () => {
     });
     expect(check.assert(optionalOnly)).toBeNull();
     expect(check.degradation?.(optionalOnly)).toMatch(/playlists, climbs/);
-    expect(check.degradation?.(optionalOnly)).not.toMatch(/mandatory/);
+    expect(check.degradation?.(optionalOnly)).not.toMatch(/required/);
 
     // The header can never rescue a genuinely broken index: a non-200, a body
     // that is not a `<sitemapindex>`, or one that resolved nothing at all.
@@ -154,9 +174,16 @@ describe('www production smoke checks', () => {
         }),
       ),
     ).toMatch(/sitemapindex/);
-    expect(check.assert(response({ contentType: 'application/xml', body: '<sitemapindex></sitemapindex>' }))).toMatch(
-      /shard/,
-    );
+    // The one that would otherwise slip through: an index that resolved NOTHING,
+    // with a header naming every shard, is structurally a `<sitemapindex>` and has
+    // an excuse for everything in it. `static` is deliberately not excusable so
+    // this stays red — `buildStaticEntries` is hardcoded and pure, so its absence
+    // is never a transient degradation.
+    expect(
+      check.assert(
+        response({ contentType: 'application/xml', body: '<sitemapindex></sitemapindex>', headers: degradedHeader }),
+      ),
+    ).toMatch(/static/);
 
     // A healthy index carries no header and must not warn.
     const healthy = response({
@@ -176,6 +203,28 @@ describe('www production smoke checks', () => {
       check.assert(response({ contentType: 'application/xml', body: '<urlset><url><loc>x</loc></url></urlset>' })),
     ).toBeNull();
     expect(check.assert(response({ contentType: 'application/xml', body: '<urlset></urlset>' }))).toMatch(/loc/);
+  });
+
+  it('keeps a hard signal on the boards shard, which the index check can no longer give', () => {
+    // Every way boards drops out of the index puts its id in `degradedShards`, so
+    // the index check now WARNs on all of them. Without this check the suite could
+    // never go red on boards again while `/sitemaps/boards.xml` 503s — and the
+    // `hasMore` truncation throw is a permanent, not transient, way to get there
+    // once the catalogue passes the 100-config API cap.
+    const check = checkNamed('boards sitemap shard');
+    expect(
+      check.assert(response({ contentType: 'application/xml', body: '<urlset><url><loc>x</loc></url></urlset>' })),
+    ).toBeNull();
+    // The shard route's own failure mode: fail-closed 503, no body worth parsing.
+    expect(check.assert(response({ status: 503, contentType: 'text/plain', body: 'unavailable' }))).toMatch(/503/);
+    expect(check.assert(response({ contentType: 'application/xml', body: '<urlset></urlset>' }))).toMatch(/loc/);
+    // No degradation channel: a shard route is fail-closed and declares nothing,
+    // so a header on this response must not buy it a green.
+    expect(
+      check.degradation?.(
+        response({ status: 503, contentType: 'text/plain', body: '', headers: { 'x-sitemap-degraded': 'boards' } }),
+      ) ?? null,
+    ).toBeNull();
   });
 
   it('rejects a session endpoint that 200s with an error payload', () => {
@@ -233,6 +282,29 @@ describe('www production smoke checks', () => {
   it('builds fixture paths from the configured value', () => {
     expect(FIXTURE_PATHS.SMOKE_KIOSK_GYM_SLUG('movement-lu')).toBe('/kiosk/movement-lu');
     expect(FIXTURE_PATHS.SMOKE_EMBED_BOARD_UUID('abc-123')).toBe('/embed/board/abc-123');
+  });
+});
+
+describe('finalVerdict', () => {
+  it('warns only when every attempt was a clean, self-declared degradation', () => {
+    expect(finalVerdict(['degraded'])).toBe('warn');
+    expect(finalVerdict(['degraded', 'degraded', 'degraded'])).toBe('warn');
+  });
+
+  it('fails a run that flapped, even when it recovered into a degradation', () => {
+    // The trap a "last attempt wins" rule falls into: two 503s and a degraded
+    // third is a real outage that happened to recover, and reporting it green
+    // hides the outage behind its own recovery.
+    expect(finalVerdict(['fail', 'fail', 'degraded'])).toBe('fail');
+    expect(finalVerdict(['degraded', 'fail', 'degraded'])).toBe('fail');
+    expect(finalVerdict(['degraded', 'degraded', 'fail'])).toBe('fail');
+    expect(finalVerdict(['fail'])).toBe('fail');
+  });
+
+  it('never warns on an empty run', () => {
+    // Unreachable today (ATTEMPTS is 3), but "no evidence" must not read as
+    // "warning" if the loop ever changes shape.
+    expect(finalVerdict([])).toBe('fail');
   });
 });
 

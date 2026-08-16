@@ -45,13 +45,20 @@ const SITEMAP_LIMIT = 100;
 const SITEMAP_FETCH_TIMEOUT_MS = 10_000;
 
 /**
- * One hour, matching the `s-maxage=3600` the boards shard route serves under, so
- * the Data Cache and the CDN expire on the same clock rather than one of them
- * pinning stale entries the other already dropped. The board catalogue moves on
- * the order of a merge — a new layout or vendor — never on the order of minutes,
- * so an hour is generous freshness for a file crawlers refetch in days.
+ * One hour — the same number as the `s-maxage=3600` the boards shard route serves
+ * under, but not a claim that the two expire together: that route's header
+ * carries a day of `stale-while-revalidate` on top, so the CDN can hand out a body
+ * up to 25 hours old whatever this entry does. It is one window picked for one
+ * reason on both layers. The board catalogue moves on the order of a merge — a new
+ * layout or vendor — never on the order of minutes, so an hour is generous
+ * freshness for a file crawlers refetch in days.
  */
 const SITEMAP_REVALIDATE_SECONDS = 3_600;
+/**
+ * Decorative today: nothing calls `revalidateTag` on it, so the entry only ever
+ * expires on the clock above. Named anyway so a future catalogue write has one
+ * thing to invalidate instead of inventing a key.
+ */
 const SITEMAP_CACHE_TAG = 'sitemap-board-configs';
 /** Same window in front of the Data Cache (which does not dedupe misses). */
 const SITEMAP_TTL_MS = SITEMAP_REVALIDATE_SECONDS * 1_000;
@@ -62,8 +69,11 @@ const SITEMAP_TTL_MS = SITEMAP_REVALIDATE_SECONDS * 1_000;
  * Deliberately **not** the swallow-and-return-`[]` wrapper above: a sitemap that
  * silently loses its URLs tells Google those pages were deleted. The shard route
  * turns a throw into a 503 so the crawler retries and keeps the last good copy.
- * `unstable_cache` does not memoise a rejection, so a failing fetch stays a
- * failing fetch rather than a poisoned hour of empty sitemaps.
+ * The in-process layer below stores nothing on a rejection, so a failing fetch
+ * stays a failing fetch rather than a poisoned hour of empty sitemaps — that is
+ * the half a test pins. Whether the Data Cache also declines to memoise the
+ * rejection is unverified here (the test mocks `unstable_cache` to a
+ * pass-through), so do not lean on it.
  *
  * `hasMore` is the same rule applied to the API cap. The listed-config count grows
  * with the board catalogue — a new vendor is one merge away — and 100 is the
