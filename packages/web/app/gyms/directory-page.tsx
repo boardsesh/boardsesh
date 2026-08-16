@@ -245,9 +245,13 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
               component="ul"
               sx={{
                 display: 'grid',
-                // Two columns, not three: the map takes the third one back at
-                // the wide breakpoint.
-                gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' },
+                // Three at wide widths, same as before the map existed. This is
+                // the surface whose whole job is surfacing gyms, so more of
+                // them above the fold wins over a grid that never reflows —
+                // the one-off shift when somebody opens the map on a narrow
+                // screen is the cheaper cost. The near-me grid stays at two,
+                // because it genuinely renders beside an open map.
+                gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
                 gap: 2,
                 m: 0,
                 p: 0,

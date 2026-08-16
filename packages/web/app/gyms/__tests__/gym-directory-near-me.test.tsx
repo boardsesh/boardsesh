@@ -151,12 +151,11 @@ describe('browse mode', () => {
     expect(map.getAttribute('data-shown')).toBe('24');
   });
 
-  it('puts the map behind a toggle at every width, with no matchMedia read', () => {
+  it('offers a map toggle for the narrow layout, with no matchMedia read', () => {
     renderNearMe();
-    // Live at every width, not just below the breakpoint: the tiles are this
-    // page's only third-party request, so a map nobody asked for should not be
-    // handing the visitor's IP to tile.openstreetmap.org. And nothing in this
-    // component asks the window how wide it is.
+    // The toggle is in the DOM at every width and CSS hides it at 960px and
+    // up, where the map is the wireframe's sticky second column and renders
+    // with the page. Nothing here asks the window how wide it is.
     expect(screen.getByRole('button', { name: 'Show map' })).toBeTruthy();
   });
 });

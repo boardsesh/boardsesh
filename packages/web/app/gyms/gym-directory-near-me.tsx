@@ -330,24 +330,26 @@ export default function GymDirectoryNearMe({
         </Box>
 
         <Box sx={{ [WIDE_LAYOUT]: { position: 'sticky', top: 'calc(var(--global-header-height) + 16px)' } }}>
-          {/* The toggle is live at EVERY width, not just below the breakpoint.
-              The tiles are this page's only third-party request, and a map that
-              renders itself on every wide-screen view hands the visitor's IP to
-              tile.openstreetmap.org without them asking for a map — on a page
-              that goes public when #4382 drops the noindex. So it is a click,
-              and the column below is sticky once it is open. */}
+          {/* Toggle BELOW the breakpoint only. At 960px and up the map is the
+              wireframe's sticky second column and renders with the page.
+              ACCEPTED COST, stated rather than mitigated: every wide-screen
+              view therefore requests OSM tiles before anyone asks for a map.
+              That is the page's only third-party request, it carries the
+              visitor's IP, and it becomes public traffic when #4382 drops the
+              noindex. */}
           <Button
             variant="outlined"
             startIcon={<MapOutlined />}
             onClick={() => setMapOpen((open) => !open)}
-            sx={{ textTransform: 'none', mb: 1.5 }}
+            sx={{ textTransform: 'none', mb: 1.5, [WIDE_LAYOUT]: { display: 'none' } }}
           >
             {mapOpen ? t('map.hideMap') : t('map.showMap')}
           </Button>
-          {/* Hidden with `display: none`, which is what keeps the Leaflet
-              bundle undownloaded until then: the map's effect waits for its
-              container to report a non-zero size. */}
-          <Box sx={{ display: mapOpen ? 'block' : 'none' }}>
+          {/* `display: none` is what keeps the Leaflet bundle undownloaded and
+              the tiles unrequested on a narrow screen with the map collapsed:
+              the map's effect waits for its container to report a non-zero
+              size. Above the breakpoint the container has one from the start. */}
+          <Box sx={{ display: mapOpen ? 'block' : 'none', [WIDE_LAYOUT]: { display: 'block' } }}>
             <GymDirectoryMap pins={pins} pinnedCount={pinnedCount} shownCount={shownCount} locale={locale} />
           </Box>
         </Box>
