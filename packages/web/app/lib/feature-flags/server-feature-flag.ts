@@ -30,6 +30,14 @@ import * as Sentry from '@sentry/nextjs';
  *  5. Anything that throws, times out, or comes back unparseable -> `false`.
  *     Fails CLOSED: a flag exists because the surface is not ready for
  *     everyone, so an unreachable PostHog must not open the gate.
+ *
+ * Every step resolves to a {@link ServerFeatureFlagResolution} — a value AND
+ * the reason for it — because failing closed and failing silently are not the
+ * same thing. "PostHog says this person is not in the flag" and "PostHog has
+ * never heard of this flag key" are the same `false` to a caller and completely
+ * different problems to whoever flipped the flag in the dashboard and is
+ * staring at a 404. The reason is what `/api/internal/feature-flags` reports
+ * and what decides whether a resolution is worth a Sentry message.
  */
 
 /** PostHog's own default US host. Mirrors the backend's `POSTHOG_HOST` default. */
@@ -101,11 +109,21 @@ export function parseFeatureFlagOverrides(raw: string | undefined): Record<strin
   return overrides;
 }
 
-function resolvePosthogApiKey(): string | null {
+/** Env var names holding the PostHog project key, in resolution order. */
+const API_KEY_ENV_NAMES = ['POSTHOG_PROJECT_KEY', 'NEXT_PUBLIC_POSTHOG_KEY'] as const;
+
+export type PosthogApiKeySource = (typeof API_KEY_ENV_NAMES)[number];
+
+function resolvePosthogApiKey(): { key: string; source: PosthogApiKeySource } | null {
   // `POSTHOG_PROJECT_KEY` first, `NEXT_PUBLIC_POSTHOG_KEY` as the fallback —
   // the same pair, in the same order, that the backend's posthog service uses.
-  const key = process.env.POSTHOG_PROJECT_KEY?.trim() || process.env.NEXT_PUBLIC_POSTHOG_KEY?.trim();
-  return key ? key : null;
+  for (const source of API_KEY_ENV_NAMES) {
+    const key = process.env[source]?.trim();
+    if (key) {
+      return { key, source };
+    }
+  }
+  return null;
 }
 
 function resolvePosthogHost(): string {
@@ -115,15 +133,81 @@ function resolvePosthogHost(): string {
   return (host || DEFAULT_POSTHOG_HOST).replace(/\/+$/, '');
 }
 
-// Once per process, per flag key. A flag call that starts failing fails on
-// every request; one Sentry message says the same thing as ten thousand.
+/**
+ * Why a flag resolved the way it did.
+ *
+ * The ones that mean "the gate is broken, not closed" — `flag-missing`,
+ * `quota-limited`, `http-error`, `request-failed` — are each a `false` that has
+ * nothing to do with the rollout the dashboard is showing. See BROKEN_REASONS.
+ */
+export type ServerFeatureFlagReason =
+  /** `FEATURE_FLAG_OVERRIDES` decided it, ON or OFF. PostHog was not asked. */
+  | 'override'
+  /** No project key in the environment — preview and CI builds by design. */
+  | 'no-api-key'
+  /** Nobody signed in and the caller did not pass `allowAnonymous`. */
+  | 'no-distinct-id'
+  /** PostHog evaluated the flag and this person is in it. */
+  | 'posthog-enabled'
+  /** PostHog evaluated the flag and this person is NOT in it. */
+  | 'posthog-disabled'
+  /**
+   * PostHog answered 200 without mentioning the flag at all. NOT "you're not in
+   * the rollout" — PostHog returns those with `enabled: false`. It means the key
+   * does not exist in the project the api key belongs to: a typo, a flag deleted
+   * or renamed in the dashboard, or a key pointing at the wrong project.
+   */
+  | 'flag-missing'
+  /** PostHog stopped serving flags for the project (billing/quota). */
+  | 'quota-limited'
+  /** PostHog answered non-2xx. */
+  | 'http-error'
+  /** The request threw, timed out, or came back unparseable. */
+  | 'request-failed';
+
+export type ServerFeatureFlagResolution = {
+  enabled: boolean;
+  reason: ServerFeatureFlagReason;
+  /** HTTP status for `http-error`, the error name for `request-failed`. */
+  detail: string | null;
+};
+
+/**
+ * Reasons that mean the gate could not be evaluated, rather than that it
+ * evaluated to closed. Only these are worth a Sentry message — a healthy
+ * `posthog-disabled` is the entire point of a flag and must stay quiet.
+ *
+ * `flag-missing` and `quota-limited` are in here deliberately: both are 200 OK
+ * responses that used to fall through to a bare `false`, so a key pointing at
+ * the wrong PostHog project produced a 404'd page and not one line of telemetry
+ * anywhere.
+ */
+const BROKEN_REASONS: ReadonlySet<ServerFeatureFlagReason> = new Set([
+  'flag-missing',
+  'quota-limited',
+  'http-error',
+  'request-failed',
+]);
+
+// Once per flag key per OUTAGE, not per process. A flag call that starts
+// failing fails on every request, so one Sentry message says the same thing as
+// ten thousand — but a key that stays latched for the life of the process turns
+// a broken → recovered → broken again cycle into a silent second outage, which
+// is the failure this module exists to make visible. A successful evaluation
+// re-arms the key, so each distinct outage costs exactly one message.
 const reportedFailures = new Set<string>();
 
-function reportFlagFailure(key: string, detail: string): void {
+function reportUnevaluableFlag(key: string, resolution: ServerFeatureFlagResolution): void {
+  if (!BROKEN_REASONS.has(resolution.reason)) {
+    // PostHog answered, so whatever was wrong is over. Re-arm.
+    reportedFailures.delete(key);
+    return;
+  }
   if (reportedFailures.has(key)) {
     return;
   }
   reportedFailures.add(key);
+  const detail = resolution.detail ? `${resolution.reason}: ${resolution.detail}` : resolution.reason;
   Sentry.captureMessage(
     `Server feature flag "${key}" could not be evaluated (${detail}); treating it as off`,
     'warning',
@@ -134,30 +218,72 @@ function reportFlagFailure(key: string, detail: string): void {
  * Shape of the response from PostHog's `/flags/?v=2` endpoint. `flags` is the
  * v2 shape; `featureFlags` is the older `/decide` shape PostHog still returns
  * alongside it, kept as a fallback so a version skew degrades to a working
- * answer instead of a silent `false`.
+ * answer instead of a silent `false`. `quotaLimited` names the products PostHog
+ * has stopped serving for the project.
  */
 type PosthogFlagsResponse = {
   flags?: Record<string, { enabled?: boolean } | undefined>;
   featureFlags?: Record<string, boolean | string | undefined>;
+  quotaLimited?: string[];
 };
 
-function readFlagValue(payload: PosthogFlagsResponse, key: string): boolean {
+function readFlagResolution(payload: PosthogFlagsResponse, key: string): ServerFeatureFlagResolution {
   const v2 = payload.flags?.[key];
   if (v2 && typeof v2.enabled === 'boolean') {
-    return v2.enabled;
+    return { enabled: v2.enabled, reason: v2.enabled ? 'posthog-enabled' : 'posthog-disabled', detail: null };
   }
+
   const legacy = payload.featureFlags?.[key];
   if (typeof legacy === 'boolean') {
-    return legacy;
+    return { enabled: legacy, reason: legacy ? 'posthog-enabled' : 'posthog-disabled', detail: null };
   }
   // A string is a multivariate variant; the caller asked a boolean question,
   // and any variant means the person is in the flag.
-  return typeof legacy === 'string' && legacy.length > 0;
+  if (typeof legacy === 'string' && legacy.length > 0) {
+    return { enabled: true, reason: 'posthog-enabled', detail: null };
+  }
+
+  // The flag is absent, which needs explaining. A quota-limited project answers
+  // 200 with an EMPTY `flags` map, so that is one explanation and a deleted or
+  // renamed flag is the other.
+  //
+  // Tested AFTER the lookup and on ANY quota limitation rather than on the
+  // `feature_flags` product string: checking a hardcoded product name first
+  // would call a project that is only quota-limited on, say, recordings
+  // `quota-limited` while its flags resolve perfectly, and would silently
+  // degrade to `flag-missing` the day PostHog renames the string — sending
+  // whoever is debugging to look for a renamed flag during a billing outage,
+  // which is exactly the confusion this reason vocabulary exists to prevent.
+  const quotaLimited = payload.quotaLimited?.filter((product) => product.trim().length > 0) ?? [];
+  if (quotaLimited.length > 0) {
+    return { enabled: false, reason: 'quota-limited', detail: quotaLimited.join(', ') };
+  }
+
+  return { enabled: false, reason: 'flag-missing', detail: null };
 }
 
-async function evaluateFlagFromPosthog(key: string, distinctId: string, apiKey: string): Promise<boolean> {
+/**
+ * `report: false` for the diagnostic probe. The Sentry guard is once per
+ * process per key, so a reporting probe would spend that budget and silence the
+ * warning the next genuinely broken PAGE request in the same worker would have
+ * sent — an observability endpoint quietly costing observability. The probe's
+ * caller reads the reason off the return value and needs no side effect.
+ */
+async function evaluateFlagFromPosthog(
+  key: string,
+  distinctId: string,
+  apiKey: string,
+  { report }: { report: boolean },
+): Promise<ServerFeatureFlagResolution> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FLAG_REQUEST_TIMEOUT_MS);
+
+  const finish = (resolution: ServerFeatureFlagResolution): ServerFeatureFlagResolution => {
+    if (report) {
+      reportUnevaluableFlag(key, resolution);
+    }
+    return resolution;
+  };
 
   try {
     const response = await fetch(`${resolvePosthogHost()}/flags/?v=2`, {
@@ -169,15 +295,14 @@ async function evaluateFlagFromPosthog(key: string, distinctId: string, apiKey: 
     });
 
     if (!response.ok) {
-      reportFlagFailure(key, `HTTP ${response.status}`);
-      return false;
+      return finish({ enabled: false, reason: 'http-error', detail: String(response.status) });
     }
 
     const payload = (await response.json()) as PosthogFlagsResponse;
-    return readFlagValue(payload, key);
+    return finish(readFlagResolution(payload, key));
   } catch (error) {
-    reportFlagFailure(key, error instanceof Error ? error.name : 'unknown error');
-    return false;
+    const detail = error instanceof Error ? error.name : 'unknown error';
+    return finish({ enabled: false, reason: 'request-failed', detail });
   } finally {
     clearTimeout(timer);
   }
@@ -230,29 +355,51 @@ export type ServerFeatureFlagOptions = {
   allowAnonymous?: boolean;
 };
 
-/** Resolve one feature flag on the server. */
-export async function getServerFeatureFlag(key: string, options: ServerFeatureFlagOptions): Promise<boolean> {
+/** The steps that resolve without asking PostHog, shared by cached and probe. */
+function resolveWithoutPosthog(
+  key: string,
+  options: ServerFeatureFlagOptions,
+): { resolution: ServerFeatureFlagResolution } | { apiKey: string; distinctId: string } {
   const override = parseFeatureFlagOverrides(process.env[FEATURE_FLAG_OVERRIDES_ENV])[key];
   if (override !== undefined) {
-    return override;
+    return { resolution: { enabled: override, reason: 'override', detail: null } };
   }
 
   const apiKey = resolvePosthogApiKey();
   if (!apiKey) {
-    return false;
+    return { resolution: { enabled: false, reason: 'no-api-key', detail: null } };
   }
 
   const distinctId = options.distinctId ?? (options.allowAnonymous ? ANONYMOUS_DISTINCT_ID : null);
   if (!distinctId) {
-    return false;
+    return { resolution: { enabled: false, reason: 'no-distinct-id', detail: null } };
   }
+
+  return { apiKey: apiKey.key, distinctId };
+}
+
+/**
+ * Resolve one feature flag on the server, with the reason behind the answer.
+ *
+ * This is what a page gate should call when it wants to log or expose WHY it
+ * closed; {@link getServerFeatureFlag} is the boolean-only wrapper.
+ */
+export async function getServerFeatureFlagResolution(
+  key: string,
+  options: ServerFeatureFlagOptions,
+): Promise<ServerFeatureFlagResolution> {
+  const early = resolveWithoutPosthog(key, options);
+  if ('resolution' in early) {
+    return early.resolution;
+  }
+  const { apiKey, distinctId } = early;
 
   // Keyed on the flag AND the person: two climbers must never share an answer.
   // If this key ever loses `distinctId`, one person's flag value is served to
   // everyone — the highest-severity failure this module has, and the reason
   // there is a test asserting the key parts rather than only the return value.
   const cached = unstable_cache(
-    () => evaluateFlagFromPosthog(key, distinctId, apiKey),
+    () => evaluateFlagFromPosthog(key, distinctId, apiKey, { report: true }),
     ['posthog-flag', key, distinctId],
     {
       revalidate: FLAG_CACHE_REVALIDATE_SECONDS,
@@ -261,4 +408,54 @@ export async function getServerFeatureFlag(key: string, options: ServerFeatureFl
   );
 
   return cached();
+}
+
+/** Resolve one feature flag on the server. */
+export async function getServerFeatureFlag(key: string, options: ServerFeatureFlagOptions): Promise<boolean> {
+  const { enabled } = await getServerFeatureFlagResolution(key, options);
+  return enabled;
+}
+
+/**
+ * The same resolution, skipping the data cache.
+ *
+ * For diagnostics ONLY. A gate that is 404ing because a stale `false` is still
+ * inside its 60s window looks identical to one that is 404ing because PostHog
+ * says no, and the difference decides whether you wait a minute or go fix the
+ * dashboard — so `/api/internal/feature-flags` reports the cached answer and
+ * this one side by side. Never call it from a page: it is an uncached network
+ * round trip in front of a render.
+ *
+ * Deliberately does not report to Sentry — see `evaluateFlagFromPosthog`.
+ */
+export async function probeServerFeatureFlag(
+  key: string,
+  options: ServerFeatureFlagOptions,
+): Promise<ServerFeatureFlagResolution> {
+  const early = resolveWithoutPosthog(key, options);
+  if ('resolution' in early) {
+    return early.resolution;
+  }
+  return evaluateFlagFromPosthog(key, early.distinctId, early.apiKey, { report: false });
+}
+
+export type ServerFeatureFlagConfig = {
+  /** Which env var supplied the project key, or null when none is set. */
+  apiKeySource: PosthogApiKeySource | null;
+  /** The PostHog host being asked. Not a secret; a wrong one is a real cause. */
+  host: string;
+  /** Parsed `FEATURE_FLAG_OVERRIDES`, which silently outranks the dashboard. */
+  overrides: Record<string, boolean>;
+};
+
+/**
+ * The environment this module is resolving flags against — never the key
+ * itself, only which variable it came from.
+ */
+export function describeServerFeatureFlagConfig(): ServerFeatureFlagConfig {
+  return {
+    apiKeySource: resolvePosthogApiKey()?.source ?? null,
+    host: resolvePosthogHost(),
+    overrides: parseFeatureFlagOverrides(process.env[FEATURE_FLAG_OVERRIDES_ENV]),
+  };
 }
