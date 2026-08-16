@@ -74,7 +74,18 @@
     "gradeDistributionAria": "Grade distribution across boards",
     "weeklyAttemptsAria": "Weekly attempts by difficulty",
     "flashRedpointAria": "Flash vs redpoint by grade",
-    "layoutTooltip": "{{name}}: {{count}} problems ({{percentage}}%)"
+    "layoutTooltip": "{{name}}: {{count}} problems ({{percentage}}%)",
+    "periodComparison": {
+      "controlLabel": "Comparison period",
+      "trailing": "Previous period",
+      "yearOverYear": "Last year",
+      "sends": "Sends",
+      "percentChange": "{{value}}%",
+      "vsTrailing": "vs. previous period",
+      "vsYearOverYear": "vs. same period last year",
+      "firstPeriod": "First period tracked",
+      "noComparisonData": "No sends yet"
+    }
   },
   "empty": {
     "userNotFound": "User not found",

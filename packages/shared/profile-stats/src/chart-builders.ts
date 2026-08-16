@@ -1,6 +1,5 @@
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
-import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
 import { type GradeDisplayFormat } from '@boardsesh/play-view';
 import { parseTickTime, tickTimeMs } from './format-tick-time';
@@ -19,10 +18,12 @@ import type {
   RawLayoutPercentage,
   RawActivityDay,
   RawActivityHeatmap,
+  PeriodComparisonMode,
+  RawPeriodSnapshot,
+  RawPeriodComparison,
 } from './types';
 
 dayjs.extend(isoWeek);
-dayjs.extend(isSameOrAfter);
 dayjs.extend(isSameOrBefore);
 
 /**
@@ -505,5 +506,117 @@ export function buildActivityHeatmap(
     maxCount,
     startDate: gridStart.format('YYYY-MM-DD'),
     endDate: gridEnd.format('YYYY-MM-DD'),
+  };
+}
+
+// ── Period-over-period comparison (Progress tab headline) ───────────
+
+type ComparisonTimeframe = 'lastWeek' | 'lastMonth' | 'lastYear';
+
+function comparisonUnit(timeframe: ComparisonTimeframe): 'week' | 'month' | 'year' {
+  switch (timeframe) {
+    case 'lastWeek':
+      return 'week';
+    case 'lastMonth':
+      return 'month';
+    case 'lastYear':
+      return 'year';
+  }
+}
+
+/**
+ * Pure date math for the two windows a comparison card needs. `current`'s
+ * lower bound is `now - 1 unit`, the same cutoff `filterLogbookByTimeframe`
+ * uses for the same timeframe — and `periodSnapshot` below treats it exactly
+ * as strictly-after too, matching `filterLogbookByTimeframe`'s comparator, so
+ * the headline count for e.g. "this week" always agrees with what the rest of
+ * the page shows, including for a tick landing on the exact cutoff instant.
+ * `previous` is either the immediately preceding window (`trailing`) or the
+ * same window one year back (`yearOverYear`).
+ *
+ * `now` is an injectable param (not a default-only arg) so tests stay
+ * deterministic, matching `buildActivityHeatmap`'s `today` param.
+ */
+export function getComparisonWindows(
+  timeframe: ComparisonTimeframe,
+  mode: PeriodComparisonMode,
+  now: dayjs.Dayjs = dayjs(),
+): {
+  current: { start: dayjs.Dayjs; end: dayjs.Dayjs };
+  previous: { start: dayjs.Dayjs; end: dayjs.Dayjs };
+} {
+  const unit = comparisonUnit(timeframe);
+  const current = { start: now.subtract(1, unit), end: now };
+  const previous =
+    mode === 'trailing'
+      ? { start: now.subtract(2, unit), end: now.subtract(1, unit) }
+      : { start: now.subtract(1, unit).subtract(1, 'year'), end: now.subtract(1, 'year') };
+  return { current, previous };
+}
+
+/**
+ * Every window is a half-open `(start, end]` interval — start strictly-after,
+ * end inclusive — for both `current` and `previous`, in both modes. Two
+ * properties fall out of that uniform rule without any mode-specific
+ * carve-out:
+ *
+ * - `start` matches `filterLogbookByTimeframe`'s lower-bound comparator
+ *   exactly, so a tick timestamped to `current`'s precise cutoff instant is
+ *   excluded the same way here as everywhere else on the page.
+ * - Adjacent windows never double-count a shared boundary. In trailing mode,
+ *   `previous.end` and `current.start` are the same instant (`now - 1 unit`):
+ *   `previous.end` is inclusive so a tick exactly there lands in `previous`,
+ *   and `current.start` is exclusive so that same tick is excluded from
+ *   `current` — one bucket, not both, not neither. Year-over-year's windows
+ *   don't share a boundary at all, so this same rule just applies without
+ *   needing a separate justification.
+ */
+function periodSnapshot(entries: LogbookEntry[], start: dayjs.Dayjs, end: dayjs.Dayjs): RawPeriodSnapshot {
+  const sends = new Set<string>();
+  for (const entry of entries) {
+    // Mirrors buildAggregatedStackedBars's exclusion: attempts and entries
+    // without a climbUuid don't count toward a distinct-climb tally.
+    if (entry.status === 'attempt' || !entry.climbUuid) continue;
+    const climbedAt = parseTickTime(entry.climbed_at);
+    if (!climbedAt.isAfter(start)) continue;
+    if (!climbedAt.isSameOrBefore(end)) continue;
+    sends.add(entry.climbUuid);
+  }
+  return {
+    sends: sends.size,
+    startDate: start.format('YYYY-MM-DD'),
+    endDate: end.format('YYYY-MM-DD'),
+  };
+}
+
+/**
+ * Sends for the current period vs. a comparison period (trailing or
+ * year-over-year), for the Progress tab's headline comparison card. Returns
+ * null for any timeframe other than week/month/year (mirrors every other
+ * builder's null-for-not-applicable convention) — the caller doesn't need a
+ * separate "is this timeframe eligible" check.
+ */
+export function buildPeriodComparison(
+  allBoardsTicks: Record<string, LogbookEntry[]>,
+  timeframe: UnifiedTimeframeType,
+  mode: PeriodComparisonMode,
+  now: dayjs.Dayjs = dayjs(),
+): RawPeriodComparison | null {
+  if (timeframe !== 'lastWeek' && timeframe !== 'lastMonth' && timeframe !== 'lastYear') return null;
+
+  const allEntries = Object.values(allBoardsTicks).flat();
+  const { current, previous } = getComparisonWindows(timeframe, mode, now);
+
+  const currentSnapshot = periodSnapshot(allEntries, current.start, current.end);
+  const previousSnapshot = periodSnapshot(allEntries, previous.start, previous.end);
+  const sendsDelta = currentSnapshot.sends - previousSnapshot.sends;
+  const sendsPercentChange = previousSnapshot.sends === 0 ? null : (sendsDelta / previousSnapshot.sends) * 100;
+
+  return {
+    mode,
+    current: currentSnapshot,
+    previous: previousSnapshot,
+    sendsDelta,
+    sendsPercentChange,
   };
 }

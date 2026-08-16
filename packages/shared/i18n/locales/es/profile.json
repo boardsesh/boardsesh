@@ -74,7 +74,18 @@
     "gradeDistributionAria": "Distribución por grados en todos los plafones",
     "weeklyAttemptsAria": "Intentos semanales por dificultad",
     "flashRedpointAria": "Flash vs trabajado por grado",
-    "layoutTooltip": "{{name}}: {{count}} bloques ({{percentage}}%)"
+    "layoutTooltip": "{{name}}: {{count}} bloques ({{percentage}}%)",
+    "periodComparison": {
+      "controlLabel": "Periodo de comparación",
+      "trailing": "Periodo anterior",
+      "yearOverYear": "Año pasado",
+      "sends": "Encadenes",
+      "percentChange": "{{value}}%",
+      "vsTrailing": "vs. periodo anterior",
+      "vsYearOverYear": "vs. mismo periodo del año pasado",
+      "firstPeriod": "Primer periodo registrado",
+      "noComparisonData": "Aún sin encadenes"
+    }
   },
   "empty": {
     "userNotFound": "Usuario no encontrado",
