@@ -1,4 +1,4 @@
-import React, { cache } from 'react';
+import React from 'react';
 import type { Metadata } from 'next';
 import { notFound, permanentRedirect } from 'next/navigation';
 import Container from '@mui/material/Container';
@@ -14,11 +14,9 @@ import ChatBubbleOutlined from '@mui/icons-material/ChatBubbleOutlineOutlined';
 import ScheduleOutlined from '@mui/icons-material/ScheduleOutlined';
 import type { Gym, MyGymClaim, UserBoard } from '@boardsesh/shared-schema';
 import {
-  GET_GYM_BY_SLUG,
   GET_GYM_PENDING_CLAIM,
   GET_GYM_BOARDS,
   GET_GYM_KIOSK,
-  type GetGymBySlugQueryResponse,
   type GetGymPendingClaimQueryResponse,
   type GetGymBoardsQueryResponse,
   type GetGymKioskQueryResponse,
@@ -51,6 +49,7 @@ import { formatHoursConfirmedDate } from './gym-hours-display';
 import GymPageCtaLink from './gym-page-cta-link';
 import GymInstallCta from './gym-install-cta';
 import GymQrLandingTracker from './gym-qr-landing-tracker';
+import { fetchGymBySlug, isGymViewable } from './fetch-gym-by-slug';
 import { getPublicBackendHttpUrl } from '@/app/lib/backend-url';
 import { resolveGymLogoDisplayUrl, resolveGymPhotoDisplayUrl } from '@/app/lib/gym-logo-display-url';
 
@@ -61,16 +60,6 @@ type GymRouteProps = {
   // epic read their own params from it.
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 };
-
-const fetchGymBySlug = cache(async (slug: string, token: string | undefined): Promise<Gym | null> => {
-  try {
-    const response = await executeAuthenticatedGraphQL<GetGymBySlugQueryResponse>(GET_GYM_BY_SLUG, { slug }, token);
-    return response.gymBySlug ?? null;
-  } catch (error) {
-    console.error('fetchGymBySlug failed:', error);
-    return null;
-  }
-});
 
 /**
  * The viewer's own claim in flight, fetched on its own so a failure degrades to
@@ -117,11 +106,6 @@ async function fetchGymBoards(gymUuid: string, token: string | undefined): Promi
     console.error('fetchGymBoards failed:', error);
     return [];
   }
-}
-
-/** A gym is viewable when it's public, or the viewer can edit it (private preview). */
-function isGymViewable(gym: Gym | null): gym is Gym {
-  return gym !== null && (gym.isPublic || gym.canEdit);
 }
 
 /**

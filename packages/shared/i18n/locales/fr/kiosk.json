@@ -124,7 +124,18 @@
         "body": "Ajoute ton logo et tes couleurs pour que la page te ressemble."
       }
     },
-    "photoAlt": "Le mur d'escalade de {{gymName}}"
+    "photoAlt": "Le mur d'escalade de {{gymName}}",
+    "poster": {
+      "metaTitle": "Affiche QR pour {{gymName}}",
+      "metaDescription": "Un code prêt à imprimer que les grimpeurs scannent au pied du mur.",
+      "heading": "Scanne le code, allume le mur",
+      "pitch": "Prends Boardsesh, choisis un bloc et les prises s'allument sur la board devant toi. Et fais la croix dans la foulée.",
+      "typedUrlLabel": "Pas d'appareil photo ? Tape ceci :",
+      "compatibility": "Compatible avec Kilter, Tension et MoonBoard.",
+      "independence": "Boardsesh est une appli indépendante. Elle n'est ni affiliée à Aurora Climbing, à Moon Climbing ou à un fabricant de boards, ni approuvée par eux.",
+      "printAction": "Imprimer cette affiche",
+      "backToGym": "Retour à la salle"
+    }
   },
   "manage": {
     "welcome": {
@@ -367,6 +378,7 @@
       "quickLinksHeading": "Gère ta salle",
       "viewPublicPage": "Voir la page publique",
       "embedAction": "Intégrer à ton site web",
+      "printPoster": "Imprime ton affiche",
       "stats": {
         "boards": "boards",
         "members": "membres",

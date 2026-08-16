@@ -13,6 +13,16 @@ describe('isChromeLessPath', () => {
     expect(isChromeLessPath('/embed/board/abc-123')).toBe(true);
   });
 
+  it('matches the printable gym poster, and only that leaf', () => {
+    // The fixed header prints on top of the sheet and the footer pushes it onto
+    // page two, so this one is functional rather than cosmetic (#4379).
+    expect(isChromeLessPath('/gym/boulderwelt-ost/poster')).toBe(true);
+    expect(isChromeLessPath('/gym/boulderwelt-ost')).toBe(false);
+    expect(isChromeLessPath('/gym/boulderwelt-ost/manage')).toBe(false);
+    expect(isChromeLessPath('/gym/boulderwelt-ost/poster/extra')).toBe(false);
+    expect(isChromeLessPath('/gym/poster')).toBe(false);
+  });
+
   it('does not match lookalike prefixes', () => {
     expect(isChromeLessPath('/kiosks')).toBe(false);
     expect(isChromeLessPath('/embedded')).toBe(false);

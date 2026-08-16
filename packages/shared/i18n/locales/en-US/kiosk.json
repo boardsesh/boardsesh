@@ -124,7 +124,18 @@
         "body": "Add your logo and colors so your page looks like you."
       }
     },
-    "photoAlt": "The climbing wall at {{gymName}}"
+    "photoAlt": "The climbing wall at {{gymName}}",
+    "poster": {
+      "metaTitle": "QR poster for {{gymName}}",
+      "metaDescription": "A print-ready code climbers can scan at the wall.",
+      "heading": "Scan the code, light up the wall",
+      "pitch": "Get Boardsesh, pick a climb, and the holds light up on the board in front of you. Log every send while you're at it.",
+      "typedUrlLabel": "No camera? Type this in:",
+      "compatibility": "Works with Kilter, Tension and MoonBoard.",
+      "independence": "Boardsesh is an independent app. It is not affiliated with or endorsed by Aurora Climbing, Moon Climbing, or any board manufacturer.",
+      "printAction": "Print this poster",
+      "backToGym": "Back to the gym page"
+    }
   },
   "manage": {
     "welcome": {
@@ -367,6 +378,7 @@
       "quickLinksHeading": "Run your gym",
       "viewPublicPage": "View public page",
       "embedAction": "Embed on your website",
+      "printPoster": "Print your poster",
       "stats": {
         "boards": "boards",
         "members": "members",
