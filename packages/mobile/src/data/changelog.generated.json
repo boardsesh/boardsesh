@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-08-16T07:54:13.463Z",
+  "generatedAt": "2026-08-16T09:57:43.158Z",
   "entries": [
+    {
+      "prNumber": 4516,
+      "category": "new",
+      "title": "Print a QR poster for your gym straight from the manage console — one page, A4 or Letter, in English, Spanish, French or German.",
+      "mergedAt": "2026-08-16T09:56:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4516"
+    },
+    {
+      "prNumber": 4521,
+      "category": "fixed",
+      "title": "CI and test-fixture typing only.",
+      "mergedAt": "2026-08-16T09:20:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4521"
+    },
     {
       "prNumber": 4517,
       "category": "new",

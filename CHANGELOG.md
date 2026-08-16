@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Print a QR poster for your gym straight from the manage console — one page, A4 or Letter, in English, Spanish, French or German. ([#4516](https://github.com/boardsesh/boardsesh/pull/4516))
 - Find the boards near you — the gym directory now has a map and a "use my location" search, with a city search to fall back on if you'd rather not share it. ([#4517](https://github.com/boardsesh/boardsesh/pull/4517))
 - Claimed a gym? Your page now says it's under review, and we email you either way once we've looked at it — approved or not. ([#4515](https://github.com/boardsesh/boardsesh/pull/4515))
 - Flag-gated and noindex; Tier 2 launches it publicly. ([#4512](https://github.com/boardsesh/boardsesh/pull/4512))
@@ -17,6 +18,10 @@ manual changes). See docs/mobile-ota-updates.md.
 - Backend fields only; the directory that consumes them ships flag-gated and noindex in a later PR. ([#4505](https://github.com/boardsesh/boardsesh/pull/4505))
 - Pure instrumentation: no UI, copy, or behaviour changes. ([#4503](https://github.com/boardsesh/boardsesh/pull/4503))
 - Gyms can post their opening hours, and the page shows the date the owner last confirmed them — so you know the hours are current before you drive over. ([#4502](https://github.com/boardsesh/boardsesh/pull/4502))
+
+### Fixed
+
+- CI and test-fixture typing only. ([#4521](https://github.com/boardsesh/boardsesh/pull/4521))
 
 ## 2026-08-15
 
