@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
@@ -13,6 +13,7 @@ import {
   reservedSnapshotClient,
   waitForReplicaReplay,
 } from '../scripts/export-board-snapshots';
+import { snapshotFenceMembershipSql } from './global-setup';
 import { getWorkerDatabaseUrl } from './worker-db';
 
 type Deferred = {
@@ -75,6 +76,112 @@ afterEach(() => {
 });
 
 describe('replica snapshot fence', () => {
+  it('uses exact PG16+ membership options and a PG15 NOINHERIT fallback', () => {
+    const pg18Memberships = snapshotFenceMembershipSql(180000);
+    expect(pg18Memberships).toContain('WITH ADMIN FALSE, INHERIT TRUE, SET FALSE');
+    expect(pg18Memberships).toContain('WITH ADMIN FALSE, INHERIT FALSE, SET TRUE');
+    expect(pg18Memberships).toContain('boardsesh_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT');
+
+    const pg15Memberships = snapshotFenceMembershipSql(150000);
+    expect(pg15Memberships).toContain('boardsesh_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT');
+    expect(pg15Memberships).not.toContain('WITH ADMIN FALSE');
+  });
+
+  it('runs the exact migration version guard and rejects pre-PG18 databases', async () => {
+    const pool = createPool();
+    const migrationSource = readFileSync(
+      new URL('../../../db/drizzle/0200_board_snapshot_replica_fence.sql', import.meta.url),
+      'utf8',
+    );
+    const [versionGuard] = migrationSource.split('--> statement-breakpoint');
+    const versionRows = await pool.unsafe(`SELECT current_setting('server_version_num')::integer AS version_num`);
+    const serverVersionNum = Number((versionRows[0] as unknown as { version_num: unknown }).version_num);
+
+    if (serverVersionNum < 180000) {
+      await expect(pool.unsafe(versionGuard)).rejects.toThrow('requires PostgreSQL 18 or newer');
+    } else {
+      await expect(pool.unsafe(versionGuard)).resolves.toBeDefined();
+    }
+  });
+
+  it('applies the fence ownership transition through a SET-only migrator chain', async () => {
+    const pool = createPool();
+    const testSuffix = `w${process.env.VITEST_POOL_ID ?? '0'}_p${process.pid}`;
+    const schemaName = `snapshot_migration_${testSuffix}`;
+    const appOwnerName = `snapshot_app_owner_${testSuffix}`;
+    const fenceOwnerName = `snapshot_fence_owner_${testSuffix}`;
+    const migratorName = `snapshot_migrator_${testSuffix}`;
+    const quotedSchema = quoteIdentifier(schemaName);
+    const quotedAppOwner = quoteIdentifier(appOwnerName);
+    const quotedFenceOwner = quoteIdentifier(fenceOwnerName);
+    const quotedMigrator = quoteIdentifier(migratorName);
+    const databaseRows = await pool.unsafe('SELECT current_database() AS name');
+    const databaseName = String((databaseRows[0] as unknown as { name: unknown }).name);
+    const versionRows = await pool.unsafe(`SELECT current_setting('server_version_num')::integer AS version_num`);
+    const serverVersionNum = Number((versionRows[0] as unknown as { version_num: unknown }).version_num);
+    const quotedDatabase = quoteIdentifier(databaseName);
+    const migrationConnection = await pool.reserve();
+    let transactionOpen = false;
+    try {
+      await pool.unsafe(`CREATE ROLE ${quotedAppOwner} NOLOGIN NOINHERIT NOSUPERUSER NOREPLICATION NOBYPASSRLS`);
+      await pool.unsafe(`CREATE ROLE ${quotedFenceOwner} NOLOGIN NOINHERIT NOSUPERUSER NOREPLICATION NOBYPASSRLS`);
+      await pool.unsafe(`CREATE ROLE ${quotedMigrator} LOGIN NOINHERIT NOSUPERUSER NOREPLICATION NOBYPASSRLS`);
+      await pool.unsafe(`GRANT CREATE ON DATABASE ${quotedDatabase} TO ${quotedAppOwner}`);
+      if (serverVersionNum >= 160000) {
+        await pool.unsafe(`GRANT ${quotedAppOwner} TO ${quotedMigrator} WITH INHERIT FALSE, SET TRUE`);
+        await pool.unsafe(`GRANT ${quotedFenceOwner} TO ${quotedAppOwner} WITH INHERIT FALSE, SET TRUE`);
+      } else {
+        // PostgreSQL 15 has role-level NOINHERIT but not per-membership
+        // INHERIT/SET options. It still proves the same explicit SET ROLE path;
+        // PG18 CI exercises the production membership syntax above.
+        await pool.unsafe(`GRANT ${quotedAppOwner} TO ${quotedMigrator}`);
+        await pool.unsafe(`GRANT ${quotedFenceOwner} TO ${quotedAppOwner}`);
+      }
+
+      const directPrivileges = await pool.unsafe(
+        `SELECT has_database_privilege($1, current_database(), 'CREATE') AS can_create`,
+        [migratorName],
+      );
+      expect(directPrivileges).toMatchObject([{ can_create: false }]);
+
+      await migrationConnection.unsafe(`SET SESSION AUTHORIZATION ${quotedMigrator}`);
+      await migrationConnection.unsafe('BEGIN');
+      transactionOpen = true;
+      await migrationConnection.unsafe(`SET LOCAL ROLE ${quotedAppOwner}`);
+      await migrationConnection.unsafe(`CREATE SCHEMA ${quotedSchema}`);
+      await migrationConnection.unsafe(`GRANT USAGE, CREATE ON SCHEMA ${quotedSchema} TO ${quotedFenceOwner}`);
+      await migrationConnection.unsafe(
+        `CREATE FUNCTION ${quotedSchema}.identity_probe() RETURNS text
+         LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog
+         AS 'SELECT current_user::text'`,
+      );
+      await migrationConnection.unsafe(`ALTER FUNCTION ${quotedSchema}.identity_probe() OWNER TO ${quotedFenceOwner}`);
+      await migrationConnection.unsafe('COMMIT');
+      transactionOpen = false;
+      await migrationConnection.unsafe('RESET SESSION AUTHORIZATION');
+
+      const ownerRows = await pool.unsafe(
+        `SELECT pg_get_userbyid(proowner) AS owner
+         FROM pg_proc
+         WHERE oid = $1::regprocedure`,
+        [`${schemaName}.identity_probe()`],
+      );
+      expect(ownerRows).toMatchObject([{ owner: fenceOwnerName }]);
+    } finally {
+      if (transactionOpen) await migrationConnection.unsafe('ROLLBACK').catch(() => {});
+      await migrationConnection.unsafe('RESET SESSION AUTHORIZATION').catch(() => {});
+      migrationConnection.release();
+      await pool.unsafe(`DROP SCHEMA IF EXISTS ${quotedSchema} CASCADE`).catch(() => {});
+      await pool.unsafe(`REVOKE CREATE ON DATABASE ${quotedDatabase} FROM ${quotedAppOwner}`).catch(() => {});
+      await pool.unsafe(`DROP OWNED BY ${quotedMigrator}`).catch(() => {});
+      await pool.unsafe(`DROP OWNED BY ${quotedAppOwner}`).catch(() => {});
+      await pool.unsafe(`DROP OWNED BY ${quotedFenceOwner}`).catch(() => {});
+      await pool.unsafe(`DROP ROLE IF EXISTS ${quotedMigrator}`).catch(() => {});
+      await pool.unsafe(`DROP ROLE IF EXISTS ${quotedAppOwner}`).catch(() => {});
+      await pool.unsafe(`DROP ROLE IF EXISTS ${quotedFenceOwner}`).catch(() => {});
+    }
+  });
+
   it('keeps timestamp microseconds and wall-clock values on an isolated replica pool', async () => {
     const replicaPool = createIsolatedSnapshotPool(getWorkerDatabaseUrl(), 1);
     const replicaConnection = await replicaPool.reserve();
@@ -236,6 +343,40 @@ describe('replica snapshot fence', () => {
       await pool.unsafe(`DROP FUNCTION IF EXISTS ops.${quotedFunction}(integer)`).catch(() => {});
       await pool.unsafe(`REVOKE pg_read_all_stats FROM ${quotedRole}`).catch(() => {});
       await pool.unsafe(`DROP ROLE IF EXISTS ${quotedRole}`).catch(() => {});
+    }
+  });
+
+  it('rejects a standby coordinator before taking the primary advisory lock', async () => {
+    const pool = createPool();
+    const testSuffix = `w${process.env.VITEST_POOL_ID ?? '0'}_p${process.pid}`;
+    const functionName = `acquire_board_snapshot_fence_standby_${testSuffix}`;
+    const quotedFunction = quoteIdentifier(functionName);
+    await pool.unsafe(`DROP FUNCTION IF EXISTS ops.${quotedFunction}(integer)`);
+    try {
+      const definitionRows = await pool.unsafe(
+        `SELECT pg_get_functiondef('ops.acquire_board_snapshot_fence(integer)'::regprocedure) AS definition`,
+      );
+      const productionDefinition = String((definitionRows[0] as unknown as { definition: unknown }).definition);
+      const standbyDefinition = productionDefinition
+        .replace('FUNCTION ops.acquire_board_snapshot_fence(', `FUNCTION ops.${quotedFunction}(`)
+        .replace('IF pg_is_in_recovery() THEN', 'IF true THEN');
+      expect(standbyDefinition).not.toBe(productionDefinition);
+      expect(standbyDefinition).toContain('IF true THEN');
+      await pool.unsafe(standbyDefinition);
+
+      const standbyCoordinator = await pool.reserve();
+      try {
+        await expect(standbyCoordinator.unsafe(`SELECT * FROM ops.${quotedFunction}(0)`)).rejects.toThrow(
+          'must be acquired on the writable primary',
+        );
+        await expect(
+          standbyCoordinator.unsafe('SELECT ops.board_snapshot_fence_held() AS held'),
+        ).resolves.toMatchObject([{ held: false }]);
+      } finally {
+        standbyCoordinator.release();
+      }
+    } finally {
+      await pool.unsafe(`DROP FUNCTION IF EXISTS ops.${quotedFunction}(integer)`).catch(() => {});
     }
   });
 

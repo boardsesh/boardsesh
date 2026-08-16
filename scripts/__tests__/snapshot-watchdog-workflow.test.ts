@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 const WORKFLOW_PATH = '.github/workflows/export-board-snapshots.yml';
 const workflowSource = readFileSync(WORKFLOW_PATH, 'utf8');
+const ciWorkflowSource = readFileSync('.github/workflows/ci.yml', 'utf8');
 
 function indentation(line: string): number {
   return line.length - line.trimStart().length;
@@ -80,6 +81,23 @@ function runBash(script: string, environment: NodeJS.ProcessEnv) {
 }
 
 describe('snapshot watchdog workflow shell boundaries', () => {
+  it('runs this filesystem-reading suite for an exporter-workflow-only pull request', () => {
+    expect(ciWorkflowSource).toContain(
+      "snapshotWatchdogWorkflow: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.snapshotWatchdogWorkflow }}",
+    );
+    expect(ciWorkflowSource).toContain("- '.github/workflows/export-board-snapshots.yml'");
+    const guardJob = mappingBlock(ciWorkflowSource, 'snapshot-watchdog-guards');
+    expect(guardJob).toContain("needs.changes.outputs.snapshotWatchdogWorkflow == 'true'");
+    expect(guardJob).toContain('bun install --frozen-lockfile');
+    expect(guardJob).toContain(
+      'vp test run --project scripts scripts/__tests__/snapshot-watchdog-workflow.test.ts --reporter=agent',
+    );
+    expect(mappingBlock(ciWorkflowSource, 'dbMigrations')).toContain(
+      "'packages/db/docker/bootstrap-pg18-development-roles.sql'",
+    );
+    expect(mappingBlock(ciWorkflowSource, 'ci-status')).toContain('- snapshot-watchdog-guards');
+  });
+
   it('finds run blocks independently of their absolute YAML indentation', () => {
     const reindentedWorkflow = workflowSource
       .split('\n')

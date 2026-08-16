@@ -2148,10 +2148,13 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${sprayWallDeletionSchema}
   ${sessionBoardsSchema}
   ${privacySchema}
-  -- Replica-safe board snapshot coordinator (migration 0200). Backend tests do
+  -- Replica-safe board snapshot coordinator (replica fence migration). Backend tests do
   -- not apply Drizzle migrations, so mirror the operational functions here.
   CREATE SCHEMA IF NOT EXISTS ops;
   REVOKE ALL ON SCHEMA ops FROM PUBLIC;
+  GRANT USAGE, CREATE ON SCHEMA ops TO boardsesh_snapshot_fence_owner;
+  GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system() TO boardsesh_snapshot_fence_owner;
+  GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_checkpoint() TO boardsesh_snapshot_fence_owner;
 
   CREATE OR REPLACE FUNCTION public.set_board_climbs_sync_fields() RETURNS TRIGGER AS $$
   BEGIN
@@ -2270,6 +2273,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     CROSS JOIN pg_control_checkpoint() AS checkpoint_control;
   $$;
   REVOKE ALL ON FUNCTION ops.board_snapshot_cluster_identity() FROM PUBLIC;
+  ALTER FUNCTION ops.board_snapshot_cluster_identity() OWNER TO boardsesh_snapshot_fence_owner;
 
   CREATE OR REPLACE FUNCTION ops.acquire_board_snapshot_fence(
     p_stability_window_seconds integer DEFAULT 30
@@ -2291,6 +2295,9 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   BEGIN
     IF p_stability_window_seconds < 0 OR p_stability_window_seconds > 3600 THEN
       RAISE EXCEPTION 'snapshot stability window must be between 0 and 3600 seconds';
+    END IF;
+    IF pg_is_in_recovery() THEN
+      RAISE EXCEPTION 'board snapshot fence must be acquired on the writable primary';
     END IF;
     SELECT role.rolsuper OR pg_has_role(current_user, 'pg_read_all_stats', 'USAGE')
       INTO v_has_activity_visibility
@@ -2350,11 +2357,12 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   END;
   $$;
   REVOKE ALL ON FUNCTION ops.acquire_board_snapshot_fence(integer) FROM PUBLIC;
+  ALTER FUNCTION ops.acquire_board_snapshot_fence(integer) OWNER TO boardsesh_snapshot_fence_owner;
 
   CREATE OR REPLACE FUNCTION ops.board_snapshot_fence_held()
   RETURNS boolean
   LANGUAGE sql
-  STABLE
+  VOLATILE
   SECURITY INVOKER
   SET search_path = pg_catalog
   AS $$
