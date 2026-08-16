@@ -11,6 +11,16 @@ readonly REPORT_FILE
 
 BLOCKER_PID=''
 
+# A bare `grep -Fq` on the report exits 1 with no output, so an assertion that
+# does not match looks identical to the script dying for an unrelated reason.
+assert_report_contains() {
+  local expected_message="$1"
+  if ! grep -Fq "$expected_message" "$REPORT_FILE"; then
+    cat "$REPORT_FILE" >&2
+    printf 'Expected the report to contain: %s\n' "$expected_message" >&2
+    exit 1
+  fi
+}
 cleanup() {
   if [[ -n "$BLOCKER_PID" ]]; then
     kill "$BLOCKER_PID" >/dev/null 2>&1 || true
@@ -99,7 +109,7 @@ if env "${transition_env[@]}" \
   printf 'Expected a missing PG16 transition schema to fail before mutation\n' >&2
   exit 1
 fi
-grep -Fq 'every INCLUDE_SCHEMAS entry must exist exactly once before role transition' "$REPORT_FILE"
+assert_report_contains 'every INCLUDE_SCHEMAS entry must exist exactly once before role transition'
 [[ "$(PGPASSWORD=postgres psql -X -Atq \
   -h 127.0.0.1 -p "$host_port" -U postgres -d railway -c \
   "SELECT to_regrole('pg16_transition_fence_owner') IS NULL;")" == 't' ]]
@@ -112,7 +122,7 @@ if env "${transition_env[@]}" \
   printf 'Expected the injected PG16 prepare-source-acls failure\n' >&2
   exit 1
 fi
-grep -Fq 'injected late prepare-source-acls failure' "$REPORT_FILE"
+assert_report_contains 'injected late prepare-source-acls failure'
 rollback_contract="$(PGPASSWORD=postgres psql -X -Atq -F '|' \
   -h 127.0.0.1 -p "$host_port" -U postgres -d railway -c "
 SELECT (to_regrole('pg16_transition_fence_owner') IS NULL)::text || '|' ||
@@ -192,8 +202,7 @@ if env "${transition_env[@]}" \
   printf 'Expected a privileged URL using startup SET ROLE to fail runtime validation\n' >&2
   exit 1
 fi
-grep -Fq 'runtime URL must authenticate directly as the exact runtime LOGIN; startup SET ROLE is forbidden' \
-  "$REPORT_FILE"
+assert_report_contains 'runtime URL must authenticate directly as the exact runtime LOGIN; startup SET ROLE is forbidden'
 
 env "${transition_env[@]}" \
   RUNTIME_DATABASE_URL="$runtime_url" \
@@ -219,7 +228,7 @@ if env "${transition_env[@]}" \
   printf 'Expected the injected PG16 transfer-ownership failure\n' >&2
   exit 1
 fi
-grep -Fq 'injected late transfer-ownership failure' "$REPORT_FILE"
+assert_report_contains 'injected late transfer-ownership failure'
 [[ "$(PGPASSWORD=postgres psql -X -Atq -F '|' \
   -h 127.0.0.1 -p "$host_port" -U postgres -d railway -c "
 SELECT pg_get_userbyid(namespace.nspowner) || '|' || pg_get_userbyid(relation.relowner)
@@ -280,7 +289,7 @@ if env "${transition_env[@]}" \
   printf 'Expected an open client transaction to block transfer-ownership before any DDL\n' >&2
   exit 1
 fi
-grep -Fq 'run it in a low-traffic window after clearing long-running transactions' "$REPORT_FILE"
+assert_report_contains 'run it in a low-traffic window after clearing long-running transactions'
 
 # With the pre-flight satisfied, the same reader must turn into a bounded
 # lock_timeout that rolls back and gives up instead of parking the lock queue.
@@ -299,9 +308,9 @@ if env "${transition_env[@]}" \
   printf 'Expected a held ACCESS SHARE lock to bound and fail transfer-ownership\n' >&2
   exit 1
 fi
-grep -Fq 'transfer-ownership attempt 1 of 2 timed out on a lock and rolled back' "$REPORT_FILE"
-grep -Fq 'gave up after 2 attempts blocked on locks' "$REPORT_FILE"
-grep -Fq 'every attempt rolled back in full, so the database is untouched' "$REPORT_FILE"
+assert_report_contains 'transfer-ownership attempt 1 of 2 timed out on a lock and rolled back'
+assert_report_contains 'gave up after 2 attempts blocked on locks'
+assert_report_contains 'every attempt rolled back in full, so the database is untouched'
 [[ "$(PGPASSWORD=postgres psql -X -Atq -F '|' \
   -h 127.0.0.1 -p "$host_port" -U postgres -d railway -c "$owner_pair_query")" == 'postgres|postgres' ]]
 
@@ -326,10 +335,9 @@ if env "${transition_env[@]}" \
   printf 'Expected the wall-clock lock-hold ceiling to end transfer-ownership\n' >&2
   exit 1
 fi
-grep -Fq 'transfer-ownership attempt 1 of 2 held its locks past the 3s ceiling and was cancelled and rolled back' \
-  "$REPORT_FILE"
-grep -Fq 'hold ceiling 3s' "$REPORT_FILE"
-grep -Fq 'every attempt rolled back in full, so the database is untouched' "$REPORT_FILE"
+assert_report_contains 'transfer-ownership attempt 1 of 2 held its locks past the 3s ceiling and was cancelled and rolled back'
+assert_report_contains 'hold ceiling 3s'
+assert_report_contains 'every attempt rolled back in full, so the database is untouched'
 [[ "$(PGPASSWORD=postgres psql -X -Atq -F '|' \
   -h 127.0.0.1 -p "$host_port" -U postgres -d railway -c "$owner_pair_query")" == 'postgres|postgres' ]]
 # The cancel must not leave the DDL session or its locks behind.
