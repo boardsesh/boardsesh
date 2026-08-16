@@ -16,7 +16,7 @@ docker-compose up -d
 ### Prerequisites
 
 - Node.js 22+
-- PostgreSQL 18.4
+- PostgreSQL 16+
 
 ### Installation
 
@@ -121,13 +121,12 @@ services:
       - internal
 
   db:
-    image: postgres:18.4-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382
+    image: postgres:16-alpine
     environment:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=boardsesh_backend
-      - PGDATA=/var/lib/postgresql/18/docker
     volumes:
-      - backend_data_pg18:/var/lib/postgresql
+      - backend_data:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres']
       interval: 5s
@@ -144,7 +143,7 @@ networks:
     driver: bridge
 
 volumes:
-  backend_data_pg18:
+  backend_data:
 ```
 
 ### Usage

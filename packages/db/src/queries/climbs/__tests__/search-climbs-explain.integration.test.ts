@@ -12,10 +12,10 @@ import type { BoardRouteParams, ClimbSearchParams } from '../types';
 /**
  * EXPLAIN-based plan-shape regression harness for the hottest query in the app.
  *
- * Opt-in: only runs when EXPLAIN_DB_URL points at a realistic dev DB (PostgreSQL 18.4
+ * Opt-in: only runs when EXPLAIN_DB_URL points at a realistic dev DB (postgres:17
  * with full Kilter/Tension/MoonBoard data — `vp run db:up`, then read the URL from
  * .boardsesh/dev-db.env). Without it the suite self-skips so CI and dataless
- * machines stay green. NEVER point this at the backend test DB (empty PostgreSQL 18,
+ * machines stay green. NEVER point this at the backend test DB (empty postgres:15,
  * no covering indexes) — empty-table plans are seq scans regardless of indexes.
  *
  *   vp run db:up

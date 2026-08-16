@@ -5,8 +5,8 @@
 # a test user, and social seed data
 # pre-loaded with drizzle migrations applied. Developers just pull & run.
 #
-# Build context: packages/db/ (not packages/db/docker/) so we can access
-# both docker/ scripts and drizzle/ migrations.
+# Build context: repository root so we can access packages/db/docker scripts,
+# packages/db/drizzle migrations, and shared package sources.
 #
 # PostgreSQL 18 declares /var/lib/postgresql as its VOLUME and defaults PGDATA
 # to /var/lib/postgresql/18/docker. The builder therefore creates the seed
@@ -67,6 +67,8 @@ COPY packages/db/docker/cleanup_sqlite_db_problems.sh \
      /db/
 COPY packages/db/docker/apply-drizzle-migrations.sh \
      /usr/local/bin/boardsesh-apply-drizzle-migrations
+COPY packages/db/docker/bootstrap-pg18-development-roles.sql \
+     /db/bootstrap-pg18-development-roles.sql
 RUN chmod +x /db/cleanup_sqlite_db_problems.sh \
              /usr/local/bin/boardsesh-apply-drizzle-migrations
 
@@ -249,6 +251,9 @@ RUN set -e && \
     # The helper applies each migration and both exact-time ledger rows in one \
     # transaction. Its contracts cover SQL and second-ledger rollback. \
     echo ">>> Applying drizzle migrations..." && \
+    gosu postgres psql -X -v ON_ERROR_STOP=1 -h /var/run/postgresql -d main \
+      -v boardsesh_dev_role_bootstrap=true \
+      -f /db/bootstrap-pg18-development-roles.sql && \
     PGHOST=/var/run/postgresql PGDATABASE=main \
       gosu postgres boardsesh-apply-drizzle-migrations && \
     migration_count=$(jq '.entries | length' /drizzle/meta/_journal.json) && \

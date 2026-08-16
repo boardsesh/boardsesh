@@ -50,7 +50,7 @@ WHERE sequence_class.relkind = 'S'
   AND sequence_class.relpersistence = 'p'
   AND owner_class.relkind IN ('r', 'p')
   AND sequence_namespace.nspname NOT IN ('pg_catalog', 'information_schema')
-  AND sequence_namespace.nspname NOT LIKE 'pg_toast%'
+  AND sequence_namespace.nspname !~ '^pg_toast'
   AND sequence_namespace.nspname = ANY (
     pg_catalog.string_to_array(:'included_schemas', ',')
   )

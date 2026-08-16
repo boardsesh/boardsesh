@@ -82,8 +82,16 @@ Create or use a dedicated Neon role that has `REPLICATION`. Neon roles created t
 The Railway connection used for `setup` must be a **superuser** (`CREATE SUBSCRIPTION` requires it). Verify before running:
 
 ```bash
-psql "$RAILWAY_DATABASE_URL" -c "SELECT current_user, usesuper FROM pg_user WHERE usename = current_user;"
+set +x
+PGPASSFILE="$TARGET_PGPASS_FILE" psql -X \
+  -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_ADMIN_USER" -d railway \
+  -c "SELECT current_user, usesuper FROM pg_user WHERE usename = current_user;"
 ```
+
+`TARGET_PGPASS_FILE` must be mode `0600`, populated directly by the secret
+manager, and contain the exact host, port, database, and user fields (no `*`
+wildcards). Do not put a password-bearing URL after `psql`, `pg_dump`, or
+`pg_restore`; command arguments are visible to other local processes.
 
 If `usesuper` is `f`, use the Railway `postgres` superuser connection string for the setup script and switch back to the app role after teardown.
 
@@ -91,7 +99,7 @@ Create a publication for application tables. Do not use `FOR ALL TABLES` here: P
 
 ```sql
 -- Example shape only; use the operator script to generate the complete list.
-CREATE PUBLICATION boardsesh_migration FOR TABLE
+CREATE PUBLICATION boardsesh_pg18_migration FOR TABLE
   public.boardsesh_ticks,
   public.board_user_syncs;
 ```
@@ -106,16 +114,20 @@ make `TARGET_OWNER_ROLE` their owner before filtering their `SCHEMA` entries
 from the restore list; the guarded helper below performs that ownership step.
 
 ```bash
-pg_dump --schema-only --no-owner --no-acl --schema=public --schema=drizzle \
+set +x
+PGPASSFILE="$SOURCE_PGPASS_FILE" pg_dump -h "$SOURCE_HOST" -p "$SOURCE_PORT" \
+  -U "$SOURCE_ADMIN_USER" -d railway \
+  --schema-only --no-owner --no-acl --schema=public --schema=drizzle \
   --no-publications --no-subscriptions --format=custom \
-  --file boardsesh-schema.dump "$NEON_DATABASE_URL"
+  --file boardsesh-schema.dump
 pg_restore --list boardsesh-schema.dump >boardsesh-schema.list
 awk '$0 !~ / SCHEMA - / && $0 !~ / EXTENSION - / && $0 !~ / COMMENT - EXTENSION / { print }' \
   boardsesh-schema.list >boardsesh-schema.filtered.list
-pg_restore --exit-on-error --schema-only --no-owner --no-acl \
+PGPASSFILE="$TARGET_PGPASS_FILE" pg_restore -h "$TARGET_HOST" -p "$TARGET_PORT" \
+  -U "$TARGET_ADMIN_USER" -d railway --exit-on-error --schema-only --no-owner --no-acl \
   --role "$TARGET_OWNER_ROLE" \
   --use-list boardsesh-schema.filtered.list \
-  --dbname "$RAILWAY_DATABASE_URL" boardsesh-schema.dump
+  boardsesh-schema.dump
 ```
 
 `TARGET_OWNER_ROLE` must be a pre-created `NOLOGIN`, non-superuser application
@@ -123,34 +135,56 @@ owner with `CREATE` on the target database and ownership of pre-existing app
 schemas such as `public`. Reapply and audit runtime grants/default privileges
 separately; `--no-acl` intentionally does not preserve them.
 
-Create a subscription pointing back at Neon. Use the Neon replication role connection string for `CONNECTION`:
-
-```sql
-CREATE SUBSCRIPTION boardsesh_neon_sub
-  CONNECTION 'postgresql://user:pass@neon-host/dbname?sslmode=require'
-  PUBLICATION boardsesh_migration
-  WITH (copy_data = true);
-```
+Create the subscription only through the guarded operator helper below. It
+builds the password-bearing `CONNECTION` clause in a mode `0600` temporary SQL
+file, enables `standard_conforming_strings`, verifies the password-redacted
+canonical conninfo, and removes the file on every exit. Do not paste a
+replication URL into interactive SQL or shell history.
 
 ### 4.2 Operator Script
 
 The repo includes a guarded helper for the setup and verification flow:
 
 ```bash
-export NEON_DATABASE_URL='postgresql://...'
-export RAILWAY_DATABASE_URL='postgresql://...'
-export NEON_REPLICATION_DATABASE_URL='postgresql://replication-user:...'
+set +x
+: "${NEON_DATABASE_URL:?inject from the secret manager}"
+: "${RAILWAY_DATABASE_URL:?inject from the secret manager}"
+: "${NEON_REPLICATION_DATABASE_URL:?inject from the secret manager}"
 export TARGET_OWNER_ROLE='boardsesh_owner'
+export TARGET_MIGRATOR_ROLE='boardsesh_migrator'
 export TARGET_SUBSCRIBER_ROLE='boardsesh_pg18_subscriber'
+export TARGET_RUNTIME_ROLE='boardsesh_runtime'
+export TARGET_RUNTIME_SCHEMAS='public drizzle'
+export TARGET_SNAPSHOT_FENCE_OWNER_ROLE='boardsesh_snapshot_fence_owner'
+export SOURCE_DATABASE_NAME='railway'
+export TARGET_DATABASE_NAME='railway'
+export PUBLICATION_NAME='boardsesh_pg18_migration'
+export SUBSCRIPTION_NAME='boardsesh_pg18_sub'
+export SLOT_NAME='boardsesh_pg18_migration'
+export INCLUDE_SCHEMAS='public drizzle'
 
 scripts/neon-to-railway-replication.sh setup
 scripts/neon-to-railway-replication.sh status
 ```
 
-The `setup` command verifies `wal_level = logical`, creates Railway extensions, loads Neon schema only, verifies target app tables are empty, creates/updates the Neon publication with app tables only, and creates the Railway subscription with `copy_data = true`. It does not update application environment variables.
+The `setup` command verifies `wal_level = logical`, creates the required Railway
+extensions plus HypoPG only when it exists in the source extension manifest,
+fails closed on source column ACLs that `--no-acl` cannot preserve, loads Neon
+schema only, reconstructs the exact runtime ACL policy, verifies target app
+tables are empty, creates/updates the Neon publication with app tables only,
+and creates the Railway subscription with `copy_data = true`. It does not update
+application environment variables.
 
-Both target role variables remain required for `status` and `sync-sequences`,
-because those commands revalidate the exact subscription ownership contract.
+`NEON_REPLICATION_DATABASE_URL` stays required for `status`, `sync-sequences`,
+and `teardown`, because every command revalidates the password-redacted canonical
+connection, exact publication, subscription owner/options/table set, and slot
+contract before acting. `TARGET_OWNER_ROLE` and `TARGET_SUBSCRIBER_ROLE` are
+required for `status` and `sync-sequences`; `teardown` demands them only for the
+two steps that compare a role name against the catalog — dropping a live
+subscription and dropping the temporary subscriber role — so the WAL-emergency
+slot and publication cleanup in section 6.2 runs without them. `TARGET_RUNTIME_ROLE`, `TARGET_RUNTIME_SCHEMAS`, and
+`TARGET_MIGRATOR_ROLE` are required for `setup`, where the helper reconstructs ACLs omitted by the
+schema-only restore and verifies the exact two-direction role graph.
 
 ### 4.3 Verify Replication Is Streaming
 
@@ -177,7 +211,7 @@ Leave both databases running for a few hours to a day. Any writes to Neon (user 
 -- On Railway
 SELECT now() - latest_end_time AS replication_lag
 FROM pg_stat_subscription
-WHERE subname = 'boardsesh_neon_sub';
+WHERE subname = 'boardsesh_pg18_sub';
 ```
 
 Lag should be under a few seconds for our write volume.
@@ -226,28 +260,28 @@ FENCED_WRITER_ROLES='boardsesh_runtime boardsesh_sync boardsesh_migrator' \
      - **TODO before cutover:** record the Vercel project / function-filter URL here.
    - **Railway PostgreSQL metrics** — connection count, CPU, query throughput, pgbouncer wait time.
      - **TODO before cutover:** record the Railway metrics dashboard URL here.
-9. Only after that 72-hour acceptance window and successful restore drill, drop
-   the subscription on Railway and publication on Neon. The manual SQL and the
-   helper are equivalent destructive paths; neither bypasses the acceptance gate.
-
-   On Railway:
-
-   ```sql
-   ALTER SUBSCRIPTION boardsesh_neon_sub DISABLE;
-   DROP SUBSCRIPTION boardsesh_neon_sub;
-   ```
-
-   On Neon:
-
-   ```sql
-   DROP PUBLICATION boardsesh_migration;
-   ```
-
-   Or use:
+9. Only after that 72-hour acceptance window and successful restore drill, use
+   the guarded helper to drop the Railway subscription, exact orphan source
+   slot if necessary, and Neon publication. Do not substitute unchecked manual
+   `DROP` statements: same-name objects are not sufficient proof that they
+   belong to this migration. With every connection, role, database, schema,
+   publication, subscription, and slot variable from section 4.2 still
+   exported, run:
 
    ```bash
-   TEARDOWN_CONFIRMED=true scripts/neon-to-railway-replication.sh teardown
+   set +x
+   TEARDOWN_CONFIRMED=true \
+   TARGET_OWNER_ROLE=boardsesh_owner \
+   TARGET_SUBSCRIBER_ROLE=boardsesh_pg18_subscriber \
+   PUBLICATION_NAME=boardsesh_pg18_migration \
+   SUBSCRIPTION_NAME=boardsesh_pg18_sub \
+   SLOT_NAME=boardsesh_pg18_migration \
+     scripts/neon-to-railway-replication.sh teardown
    ```
+
+   The two role names are repeated here because the normal path still has a live
+   subscription and the temporary subscriber role to drop; section 6.2 covers the
+   emergency case where only the slot and publication are left.
 
 ## 6. Rollback Procedure
 
@@ -274,19 +308,97 @@ Or rotate the Neon password and replace it nowhere — accidental connections wi
 
 ### 6.2 Aborted Setup: Manual Cleanup
 
-If `setup` is interrupted after `CREATE SUBSCRIPTION` but before normal teardown completes, Neon retains the logical-replication slot and accumulates WAL until disk fills. Drop the subscription on Railway (this auto-drops the corresponding slot on Neon):
+If `setup` is interrupted after `CREATE SUBSCRIPTION` but before normal teardown
+completes, Neon retains the logical-replication slot and accumulates WAL until
+disk fills. Use the guarded teardown; it validates the exact subscription,
+publication, remote slot, owner, options, tables, and password-redacted conninfo
+before the first drop.
+
+How far it gets depends on whether the Railway subscription is still there, and
+the two outcomes are not interchangeable. Start with the block below either way:
+it never mutates anything it has not first proven is ours, and its output names
+the path you are on. Clearing an orphaned slot and publication needs nothing but
+the three connection URLs, so this runs from a bare shell; every other name is
+already the helper's default:
 
 ```bash
-psql "$RAILWAY_DATABASE_URL" -c "DROP SUBSCRIPTION IF EXISTS boardsesh_neon_sub;"
-# Verify the slot is gone on Neon:
-psql "$NEON_DATABASE_URL" -c "SELECT slot_name, slot_type FROM pg_replication_slots;"
+set +x
+: "${NEON_DATABASE_URL:?inject from the secret manager}"
+: "${RAILWAY_DATABASE_URL:?inject from the secret manager}"
+: "${NEON_REPLICATION_DATABASE_URL:?inject from the secret manager}"
+TEARDOWN_CONFIRMED=true \
+PUBLICATION_NAME=boardsesh_pg18_migration \
+SUBSCRIPTION_NAME=boardsesh_pg18_sub \
+SLOT_NAME=boardsesh_pg18_migration \
+  scripts/neon-to-railway-replication.sh teardown
 ```
 
-If the slot persists on Neon (subscription was disconnected before drop), drop it manually:
+**If the subscription was already gone**, that command drops the WAL retention.
+The helper independently validates and drops only the exact inactive orphan slot,
+then the publication, and only then exits non-zero with:
+
+```
+error: the replication objects are gone; export TARGET_OWNER_ROLE and TARGET_SUBSCRIBER_ROLE and re-run teardown to remove the temporary subscriber role
+```
+
+Neon has stopped accumulating WAL by the time you read that. The disk emergency
+is over; re-run with both names set to finish the role cleanup. A same-name
+object with different owner/options/publication/table/slot/connection metadata is
+left untouched instead and requires manual investigation through a secret-safe
+admin session.
+
+**If the subscription is still present**, the same command mutates nothing at
+all. Proving a live subscription belongs to this migration means comparing its
+owner against `TARGET_SUBSCRIBER_ROLE`, so teardown stops before the first drop,
+with the catalog — slot and publication included — exactly as it found it:
+
+```
+error: subscription boardsesh_pg18_sub still exists, and proving it belongs to this migration needs TARGET_OWNER_ROLE and TARGET_SUBSCRIBER_ROLE exported; slot- and publication-only cleanup does not
+```
+
+That is the fail-closed answer, not a partial cleanup: Neon is still retaining
+WAL, and re-running without the two names changes nothing. Two steps need
+`TARGET_OWNER_ROLE` and `TARGET_SUBSCRIBER_ROLE` exported for the same reason,
+because both compare a role name against the catalog — dropping a subscription
+that is still present, and dropping the temporary subscriber role at the end.
+Supply both and one pass clears everything:
 
 ```bash
-psql "$NEON_DATABASE_URL" -c "SELECT pg_drop_replication_slot('boardsesh_neon_sub');"
+set +x
+TEARDOWN_CONFIRMED=true \
+TARGET_OWNER_ROLE=boardsesh_owner \
+TARGET_SUBSCRIBER_ROLE=boardsesh_pg18_subscriber \
+PUBLICATION_NAME=boardsesh_pg18_migration \
+SUBSCRIPTION_NAME=boardsesh_pg18_sub \
+SLOT_NAME=boardsesh_pg18_migration \
+  scripts/neon-to-railway-replication.sh teardown
 ```
+
+If the names went with the shell that ran `setup`, Railway still holds both. The
+subscription's owner is `TARGET_SUBSCRIBER_ROLE`, and the single membership that
+role carries with `SET`-only semantics names `TARGET_OWNER_ROLE` (its other
+membership is `pg_create_subscription`). Read them through the same
+`TARGET_PGPASS_FILE` admin connection section 4.1 set up, never a URL in argv:
+
+```bash
+set +x
+PGPASSFILE="$TARGET_PGPASS_FILE" psql -X \
+  -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_ADMIN_USER" -d railway <<'SQL'
+SELECT subscriber.rolname AS target_subscriber_role,
+       granted.rolname    AS target_owner_role
+FROM pg_subscription AS subscription
+JOIN pg_roles AS subscriber ON subscriber.oid = subscription.subowner
+JOIN pg_auth_members AS membership ON membership.member = subscriber.oid
+JOIN pg_roles AS granted ON granted.oid = membership.roleid
+WHERE subscription.subname = 'boardsesh_pg18_sub'
+  AND membership.set_option
+  AND NOT membership.inherit_option;
+SQL
+```
+
+Feed those two values back into the block above. Do not reach for a hand-written
+`DROP SUBSCRIPTION` instead — the helper's owner comparison is the only check
+standing between this teardown and someone else's same-name object.
 
 ## 7. Homelab Read Replica Setup
 
@@ -301,17 +413,12 @@ requires a new base backup; it is never an in-place mount of the old volume.
 
 ### 7.2 Replication User on Railway
 
-Connect to Railway's PostgreSQL and create a replication role:
-
-```sql
-CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD 'secure-password-here';
-```
-
-Create a replication slot for the homelab replica:
-
-```sql
-SELECT pg_create_physical_replication_slot('homelab_replica');
-```
+Do not create another generic `replicator` identity from this runbook. Reuse the
+audited, pre-provisioned `boardsesh_standby` LOGIN REPLICATION role from the PG18
+role contract. Its password and the capped physical slot are created only by the
+later guarded homelab/Ansible stage, after PG18 has passed the 72-hour acceptance
+and restore gates. Record that stage's exact slot name and retention cap before
+taking the base backup; never create an uncapped ad-hoc slot interactively.
 
 ### 7.3 Network Connectivity
 
@@ -334,8 +441,8 @@ rehearsals. `-R` writes `standby.signal` and the replication connection settings
 Verify or adjust the following in `postgresql.conf` on the homelab:
 
 ```
-primary_conninfo = 'host=railway-host port=5432 user=replicator sslmode=verify-full passfile=/run/credentials/postgres-replication.pgpass'
-primary_slot_name = 'homelab_replica'
+primary_conninfo = 'host=railway-host port=5432 user=boardsesh_standby sslmode=verify-full passfile=/run/credentials/postgres-replication.pgpass'
+primary_slot_name = '<exact Ansible-managed capped physical slot>'
 hot_standby = on
 ```
 

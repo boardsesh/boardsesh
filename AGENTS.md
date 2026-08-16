@@ -158,7 +158,7 @@ Common commands:
 
 ### Database hosting (Railway)
 
-We host Postgres on Railway but treat it as portable. The database contract is PostgreSQL 18.4 with stable PostGIS 3.6.4; SQL that does not use declared extensions must run on the pinned official `postgres:18.4-bookworm` image. No Railway-specific addons, env vars, build steps, or schema mutations via dashboard. `pg_dump`/`pg_restore` must be sufficient to lift-and-shift. Same rule for object storage / video / analytics: prefer S3-compatible APIs, OpenTelemetry exporters, standard connection strings. Upgrade and exit runbook: `docs/postgres-18-migration.md`.
+We host Postgres on Railway but treat it as portable — anything we write should run on a `docker run postgres:17`. No Railway-specific addons, env vars, build steps, or schema mutations via dashboard. `pg_dump`/`pg_restore` must be sufficient to lift-and-shift. Same rule for object storage / video / analytics: prefer S3-compatible APIs, OpenTelemetry exporters, standard connection strings. Exit runbook: `docs/neon-migration.md`.
 
 ## GitHub Issue Fix Workflow
 
