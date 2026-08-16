@@ -1445,9 +1445,21 @@ ORDER BY extension.extname;")"
 assert_subscription_contract() {
   # Validate the role boundary independently first. The exact catalog query
   # below is the single authority for whether the expected subscription is
-  # present, enabled, and owned by that role; keeping those checks together
-  # also gives teardown one unambiguous pre-mutation contract failure.
-  validate_target_subscriber_role optional
+  # present, enabled, and owned by that role.
+  #
+  # Teardown passes skip-subscriber-role-shape. Dropping a subscription, slot
+  # and publication never touches the role, so the role's ACL shape cannot make
+  # that unsafe -- and gating on it would strand the WAL-emergency path exactly
+  # when the slot is filling the source disk. Identity is still proven, by the
+  # subowner/name/slot/publication equality in the query below. The full role
+  # contract is still enforced where it decides a DROP ROLE, in
+  # drop_target_subscriber_role.
+  local subscriber_role_check="${1:-validate-subscriber-role}"
+  [[ "$subscriber_role_check" =~ ^(validate-subscriber-role|skip-subscriber-role-shape)$ ]] ||
+    fail "internal subscriber role check must be validate-subscriber-role or skip-subscriber-role-shape"
+  if [[ "$subscriber_role_check" == 'validate-subscriber-role' ]]; then
+    validate_target_subscriber_role optional
+  fi
 
   [[ "$PUBLISHER_CONNINFO_DIGEST" =~ ^[0-9a-f]{32}$ &&
     "$PUBLISHER_REDACTED_CONNINFO_DIGEST" =~ ^[0-9a-f]{32}$ ]] ||
@@ -2150,7 +2162,7 @@ SQL
       fail "subscription $SUBSCRIPTION_NAME exists without source slot $SLOT_NAME; refusing teardown"
     [[ -n "${TARGET_OWNER_ROLE:-}" && -n "${TARGET_SUBSCRIBER_ROLE:-}" ]] ||
       fail "subscription $SUBSCRIPTION_NAME still exists, and proving it belongs to this migration needs TARGET_OWNER_ROLE and TARGET_SUBSCRIBER_ROLE exported; slot- and publication-only cleanup does not"
-    assert_subscription_contract
+    assert_subscription_contract skip-subscriber-role-shape
   fi
   if [[ "$publication_exists" == '1' ]]; then
     assert_publication_contract
