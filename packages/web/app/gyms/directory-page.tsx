@@ -19,8 +19,11 @@ import { themeTokens } from '@/app/theme/theme-config';
 import {
   BOARD_FACETS,
   DIRECTORY_FACETS,
+  DIRECTORY_MAX_PAGE,
+  DIRECTORY_PAGE_SIZE,
   FACET_BASE_PATHS,
-  hasActiveFilters,
+  buildFacetSwitchHref,
+  isSearchApplication,
   parseDirectoryQuery,
   type DirectoryFacet,
   type DirectorySearchParams,
@@ -80,14 +83,57 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
   // plain 404. Shipping only the `noindex` would leave a publicly reachable
   // directory of gyms the dedup pass hasn't finished merging yet.
   const distinctId = await getPosthogDistinctId();
-  if (!(await getServerFeatureFlag(GYMS_DIRECTORY_FLAG, distinctId))) {
+  // `allowAnonymous` is what makes this launchable. Without it a null distinct
+  // id short-circuits to false, so the directory would be signed-in-only
+  // forever and #4382's "flip the flag" would change nothing for the public or
+  // for a crawler. The flag's condition has to move from person-targeting to a
+  // percentage rollout at flip time; a rollout needs *a* distinct id, not a
+  // *known* one.
+  if (!(await getServerFeatureFlag(GYMS_DIRECTORY_FLAG, { distinctId, allowAnonymous: true }))) {
     notFound();
   }
 
   const searchParams = await props.searchParams;
   const query = parseDirectoryQuery(facet, searchParams);
+
+  // Past the crawl-trap ceiling, before spending a query on it. A 404 rather
+  // than a clamp: clamping serves a 200 whose URL and highlighted page disagree.
+  if (query.page > DIRECTORY_MAX_PAGE) {
+    notFound();
+  }
+
   const { t, locale } = await getServerTranslation('gyms');
-  const [page, facetCounts] = await Promise.all([fetchDirectoryPage(query), fetchFacetCounts()]);
+  const [pageResult, facetCountsResult] = await Promise.all([fetchDirectoryPage(query), fetchFacetCounts()]);
+
+  // Either fetch failing means we cannot state the counts the body copy is
+  // built around. Render the outage instead of a confident "0 gyms".
+  if (!pageResult.ok || !facetCountsResult.ok) {
+    return (
+      <I18nProvider locale={locale} namespaces={['common', 'gyms']}>
+        <Container maxWidth="lg" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
+          <Typography variant="h3" component="h1" sx={{ fontWeight: themeTokens.typography.fontWeight.bold, mb: 2 }}>
+            {facetHeading(t, facet)}
+          </Typography>
+          <Typography variant="subtitle1" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
+            {t('error.title')}
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5, maxWidth: '68ch' }}>
+            {t('error.body')}
+          </Typography>
+        </Container>
+      </I18nProvider>
+    );
+  }
+
+  const facetCounts = facetCountsResult.counts;
+  const totalPages = Math.ceil(pageResult.totalCount / DIRECTORY_PAGE_SIZE);
+
+  // A page past the real end is a 404, not an empty 200. Page one of an empty
+  // result set is a legitimate 200 with the empty state — "no gyms match that
+  // search" is an answer; "page 40 of 2" is not a page.
+  if (query.page > 1 && query.page > totalPages) {
+    notFound();
+  }
 
   const numberFormat = new Intl.NumberFormat(locale);
   const formatNumber = (value: number) => numberFormat.format(value);
@@ -104,12 +150,12 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
 
   return (
     <I18nProvider locale={locale} namespaces={['common', 'gyms']}>
-      {hasActiveFilters(facet, query) && (
+      {isSearchApplication(facet, query) && (
         <GymDirectorySearchTracker
           queryLength={query.query.length}
           boardTypesKey={query.boardTypes.join(',')}
           hasGeo={origin !== null}
-          resultsCount={page.totalCount}
+          resultsCount={pageResult.totalCount}
         />
       )}
 
@@ -141,7 +187,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
                 key={candidate}
                 clickable
                 component={LocaleLink}
-                href={FACET_BASE_PATHS[candidate]}
+                href={buildFacetSwitchHref(candidate, query)}
                 label={facetChipLabel(t, candidate, facetCounts, formatNumber)}
                 color={candidate === facet ? 'primary' : 'default'}
                 variant={candidate === facet ? 'filled' : 'outlined'}
@@ -161,10 +207,10 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
           component="h2"
           sx={{ fontWeight: themeTokens.typography.fontWeight.semibold, mb: 1.5 }}
         >
-          {t('results.heading', { count: page.totalCount, formattedCount: formatNumber(page.totalCount) })}
+          {t('results.heading', { count: pageResult.totalCount, formattedCount: formatNumber(pageResult.totalCount) })}
         </Typography>
 
-        {page.gyms.length === 0 ? (
+        {pageResult.gyms.length === 0 ? (
           <Box sx={{ py: 4 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
               {t('results.emptyTitle')}
@@ -184,7 +230,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
               p: 0,
             }}
           >
-            {page.gyms.map((gym) => (
+            {pageResult.gyms.map((gym) => (
               <GymDirectoryCard
                 key={gym.uuid}
                 gym={gym}
@@ -196,7 +242,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
           </Box>
         )}
 
-        <GymDirectoryPagination facet={facet} query={query} totalCount={page.totalCount} />
+        <GymDirectoryPagination facet={facet} query={query} totalCount={pageResult.totalCount} />
 
         <Box component="section" sx={{ mt: 5 }}>
           <Typography

@@ -6,7 +6,6 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { themeTokens } from '@/app/theme/theme-config';
 import {
-  DIRECTORY_MAX_PAGE,
   DIRECTORY_PAGE_SIZE,
   buildDirectoryHref,
   paginationWindow,
@@ -32,12 +31,15 @@ type GymDirectoryPaginationProps = {
 export default async function GymDirectoryPagination({ facet, query, totalCount }: GymDirectoryPaginationProps) {
   const { t } = await getServerTranslation('gyms');
 
-  const totalPages = Math.min(Math.ceil(totalCount / DIRECTORY_PAGE_SIZE), DIRECTORY_MAX_PAGE);
+  const totalPages = Math.ceil(totalCount / DIRECTORY_PAGE_SIZE);
   if (totalPages <= 1) {
     return null;
   }
 
-  const currentPage = Math.min(query.page, totalPages);
+  // Not clamped. The renderer 404s any `?page` past the end, so `query.page` is
+  // always a real page by the time this renders — and clamping here was what
+  // let the URL say 40 while `aria-current` said 2.
+  const currentPage = query.page;
   const pages = paginationWindow(currentPage, totalPages);
 
   return (

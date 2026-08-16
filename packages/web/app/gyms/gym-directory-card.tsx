@@ -65,7 +65,7 @@ export default async function GymDirectoryCard({ gym, origin, viewerState, forma
 
       {location && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <LocationOnOutlined sx={{ fontSize: 16, color: 'var(--neutral-500)' }} />
+          <LocationOnOutlined sx={{ fontSize: themeTokens.typography.fontSize.base, color: 'var(--neutral-500)' }} />
           <Typography variant="body2" color="text.secondary">
             {location.kind === 'address'
               ? location.address

@@ -135,6 +135,11 @@ export const SEARCH_GYMS = gql`
  * particular stays out of the shared GYM_FIELDS — it's a list, and mobile's
  * useNearbyGyms rides that fragment at limit 50 for a picker that never draws
  * board chips.
+ *
+ * It selects nothing the card doesn't draw, and that is a rule rather than an
+ * accident: `boardCount` is redundant next to `boardSummaries`, and `hasMore`
+ * is unused because paging is driven by `totalCount` and the page size. Add a
+ * field here only when something renders it.
  */
 export const SEARCH_GYMS_DIRECTORY = gql`
   query SearchGymsDirectory($input: SearchGymsInput!) {
@@ -146,7 +151,6 @@ export const SEARCH_GYMS_DIRECTORY = gql`
         address
         latitude
         longitude
-        boardCount
         isClaimed
         boardSummaries {
           boardType
@@ -154,7 +158,6 @@ export const SEARCH_GYMS_DIRECTORY = gql`
         }
       }
       totalCount
-      hasMore
     }
   }
 `;
@@ -540,7 +543,7 @@ export type SearchGymsQueryResponse = {
  */
 export type GymDirectoryCard = Pick<
   Gym,
-  'uuid' | 'slug' | 'name' | 'address' | 'latitude' | 'longitude' | 'boardCount' | 'isClaimed'
+  'uuid' | 'slug' | 'name' | 'address' | 'latitude' | 'longitude' | 'isClaimed'
 > & {
   boardSummaries: GymBoardSummary[];
 };
@@ -553,7 +556,6 @@ export type SearchGymsDirectoryQueryResponse = {
   searchGyms: {
     gyms: GymDirectoryCard[];
     totalCount: number;
-    hasMore: boolean;
   };
 };
 

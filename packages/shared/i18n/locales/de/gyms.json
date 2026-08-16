@@ -62,6 +62,10 @@
     "emptyTitle": "Dazu passt noch nichts",
     "emptyBody": "Versuch eine kürzere Suche oder nimm den Board-Filter raus und stöber durch alle Hallen."
   },
+  "error": {
+    "title": "Wir kommen gerade nicht an die Hallenliste ran",
+    "body": "Bei uns hakt gerade was. Warte kurz und lad neu, oder geh direkt auf die Seite einer Halle, die du schon kennst."
+  },
   "card": {
     "boardChip": "{{board}} {{angle}}°",
     "distance": "{{distance}} km entfernt",

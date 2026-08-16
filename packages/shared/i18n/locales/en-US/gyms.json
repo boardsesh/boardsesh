@@ -62,6 +62,10 @@
     "emptyTitle": "Nothing matches that yet",
     "emptyBody": "Try a shorter search, or drop the board filter and browse every gym."
   },
+  "error": {
+    "title": "We can't reach the gym list right now",
+    "body": "Something on our end is down. Give it a minute and reload, or head to a gym page you already know."
+  },
   "card": {
     "boardChip": "{{board}} {{angle}}°",
     "distance": "{{distance}} km away",

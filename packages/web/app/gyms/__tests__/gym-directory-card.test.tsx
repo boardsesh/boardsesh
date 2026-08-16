@@ -33,7 +33,6 @@ function gym(overrides: Partial<GymDirectoryCardData> = {}): GymDirectoryCardDat
     address: null,
     latitude: null,
     longitude: null,
-    boardCount: 1,
     isClaimed: false,
     boardSummaries: [],
     ...overrides,

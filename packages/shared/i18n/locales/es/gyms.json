@@ -62,6 +62,10 @@
     "emptyTitle": "Todavía no hay nada que encaje",
     "emptyBody": "Prueba con una búsqueda más corta o quita el filtro de plafón y explora todos los rocódromos."
   },
+  "error": {
+    "title": "Ahora mismo no podemos cargar la lista de rocódromos",
+    "body": "Algo falla por nuestra parte. Espera un momento y recarga, o ve a la ficha de un rocódromo que ya conozcas."
+  },
   "card": {
     "boardChip": "{{board}} {{angle}}°",
     "distance": "a {{distance}} km",

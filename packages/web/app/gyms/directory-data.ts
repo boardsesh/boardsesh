@@ -1,4 +1,5 @@
 import 'server-only';
+import * as Sentry from '@sentry/nextjs';
 import {
   SEARCH_GYMS_DIRECTORY,
   type GymDirectoryCard,
@@ -22,13 +23,19 @@ const FACET_COUNT_REVALIDATE_SECONDS = 900;
 /** A wedged backend must cost a degraded page, not a hung request. */
 const DIRECTORY_TIMEOUT_MS = 4_000;
 
-export type DirectoryPage = {
-  gyms: GymDirectoryCard[];
-  totalCount: number;
-  hasMore: boolean;
-};
-
-const EMPTY_PAGE: DirectoryPage = { gyms: [], totalCount: 0, hasMore: false };
+/**
+ * A page of results, or an explicit failure.
+ *
+ * `ok: false` is a distinct outcome from an empty page, and keeping them apart
+ * is the whole point of this type. Collapsing a timeout into `totalCount: 0`
+ * rendered a fully-formed, confident directory whose lead paragraph read "0
+ * gyms have a board listed on Boardsesh" — a false statement about the
+ * catalogue, delivered with no hint anything went wrong. It also made a real
+ * empty page indistinguishable from an outage, so the out-of-range `?page`
+ * check could not tell "past the end" from "backend down" and would have 404ed
+ * every page during an incident.
+ */
+export type DirectoryPageResult = { ok: true; gyms: GymDirectoryCard[]; totalCount: number } | { ok: false };
 
 const runDirectoryQuery = createCachedGraphQLQuery<SearchGymsDirectoryQueryResponse, { input: SearchGymsInput }>(
   SEARCH_GYMS_DIRECTORY,
@@ -69,49 +76,57 @@ export function toSearchGymsInput(query: DirectoryQuery, offset: number, limit: 
   };
 }
 
+function reportDirectoryFailure(operation: string, error: unknown): void {
+  console.error(`${operation} failed:`, error);
+  // The flag module reports its own failures; so does this one. A directory
+  // that quietly serves "0 gyms" during an outage is exactly the class of bug
+  // nobody files, because the page looks fine.
+  Sentry.captureException(error, { tags: { surface: 'gym-directory', operation } });
+}
+
 /**
  * One page of directory results. One request per page view — no drain-until-
- * `hasMore` loop, here or in the client.
+ * done loop, here or in the client.
  */
-export async function fetchDirectoryPage(query: DirectoryQuery): Promise<DirectoryPage> {
+export async function fetchDirectoryPage(query: DirectoryQuery): Promise<DirectoryPageResult> {
   const offset = (query.page - 1) * DIRECTORY_PAGE_SIZE;
 
   try {
     const response = await runDirectoryQuery({ input: toSearchGymsInput(query, offset, DIRECTORY_PAGE_SIZE) });
     const connection = response.searchGyms;
     return {
+      ok: true,
       // A slugless gym cannot be linked. `requireSlug` should already have
       // excluded it; this is the render-side belt to that braces.
       gyms: connection.gyms.filter((gym) => Boolean(gym.slug)),
       totalCount: connection.totalCount,
-      hasMore: connection.hasMore,
     };
   } catch (error) {
-    console.error('fetchDirectoryPage failed:', error);
-    return EMPTY_PAGE;
+    reportDirectoryFailure('fetchDirectoryPage', error);
+    return { ok: false };
   }
 }
 
 export type FacetCounts = Record<DirectoryFacet, number>;
+export type FacetCountsResult = { ok: true; counts: FacetCounts } | { ok: false };
 
-const EMPTY_FACET_COUNTS: FacetCounts = { all: 0, kilter: 0, moonboard: 0, tension: 0 };
-
-async function fetchFacetTotal(boardTypes: string[]): Promise<number> {
+async function fetchFacetTotal(boardTypes: string[]): Promise<number | null> {
   try {
     const response = await runFacetCountQuery({
       input: {
         ...(boardTypes.length > 0 ? { boardTypes } : {}),
         requireSlug: true,
-        // `totalCount` is what we're after; one row is the cheapest non-zero
-        // page the connection will hand back.
+        // `totalCount` is what we're after; one row is the cheapest page the
+        // connection will hand back. It is still a full enriched row that gets
+        // thrown away — see the note on `fetchFacetCounts`.
         limit: 1,
         offset: 0,
       },
     });
     return response.searchGyms.totalCount;
   } catch (error) {
-    console.error('fetchFacetTotal failed:', error);
-    return 0;
+    reportDirectoryFailure('fetchFacetTotal', error);
+    return null;
   }
 }
 
@@ -123,8 +138,17 @@ async function fetchFacetTotal(boardTypes: string[]): Promise<number> {
  * BOARDS and will not match what renders here; that is expected and the two are
  * not meant to be reconciled. The `countHint` string on the page says so to
  * readers as well.
+ *
+ * COST, known and accepted for now: four `searchGyms` calls that each enrich a
+ * row they discard, purely to read `totalCount`. Cached for 15 minutes and
+ * shared across every visitor and every page, so it is four queries per cold
+ * render, not per request. A count-only backend path would remove them; it is
+ * not worth a GraphQL addition in this PR.
+ *
+ * A single failed total fails the whole set rather than showing three real
+ * numbers next to a fabricated zero.
  */
-export async function fetchFacetCounts(): Promise<FacetCounts> {
+export async function fetchFacetCounts(): Promise<FacetCountsResult> {
   // Spelled out rather than mapped over BOARD_FACETS so the destructuring is a
   // real tuple and a renamed facet is a compile error, not a silent zero.
   const [all, kilter, moonboard, tension] = await Promise.all([
@@ -134,5 +158,9 @@ export async function fetchFacetCounts(): Promise<FacetCounts> {
     fetchFacetTotal(['tension']),
   ]);
 
-  return { ...EMPTY_FACET_COUNTS, all, kilter, moonboard, tension };
+  if (all === null || kilter === null || moonboard === null || tension === null) {
+    return { ok: false };
+  }
+
+  return { ok: true, counts: { all, kilter, moonboard, tension } };
 }

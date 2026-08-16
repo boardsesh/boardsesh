@@ -30,8 +30,17 @@ export const DIRECTORY_PAGE_SIZE = 24;
 
 /**
  * Hard ceiling on `?page`. Deep pagination is a crawl trap and, past a few
- * hundred gyms, nobody is paging by hand — they search. Out-of-range values
- * clamp rather than 404 so a stale link still lands on something.
+ * hundred gyms, nobody pages by hand — they search.
+ *
+ * Anything above it is a `notFound()`, NOT a clamp. Clamping produced a 200
+ * that contradicted itself: `?page=40` against a two-page list rendered the
+ * empty state while the nav highlighted page 2, i.e. an unbounded supply of
+ * 200-status empty URLs on a page we intend to make indexable.
+ *
+ * 40 x 24 = 960 gyms reachable by paging, against ~4,740 listed. That is a
+ * deliberate cap on the crawl path, not on the catalog: the long tail is meant
+ * to be reached through search and through #4381's sitemap, which enumerates
+ * every gym directly.
  */
 export const DIRECTORY_MAX_PAGE = 40;
 
@@ -118,8 +127,12 @@ export function parseDirectoryQuery(facet: DirectoryFacet, searchParams: Directo
   const radiusKm =
     hasValidOrigin && rawRadius !== null ? Math.min(Math.max(rawRadius, MIN_RADIUS_KM), MAX_RADIUS_KM) : null;
 
+  // Floored and floored-at-one only. Deliberately NOT clamped at the top: a
+  // page past the end has to reach the renderer so it can 404, because a clamp
+  // serves a 200 whose URL and highlighted page number disagree. `?page=0`,
+  // negatives and non-numeric all mean "page one" and are not errors.
   const rawPage = parseFiniteNumber(firstValue(searchParams.page));
-  const page = rawPage === null ? 1 : Math.min(Math.max(Math.floor(rawPage), 1), DIRECTORY_MAX_PAGE);
+  const page = rawPage === null ? 1 : Math.max(Math.floor(rawPage), 1);
 
   return {
     query,
@@ -166,9 +179,45 @@ export function buildDirectoryHref(facet: DirectoryFacet, query: DirectoryQuery,
   return search ? `${FACET_BASE_PATHS[facet]}?${search}` : FACET_BASE_PATHS[facet];
 }
 
-/** Whether the request applied a search, a board filter or a location. */
-export function hasActiveFilters(facet: DirectoryFacet, query: DirectoryQuery): boolean {
-  return query.query.length > 0 || query.boardTypes.length > 0 || query.latitude !== null || facet !== 'all';
+/**
+ * The URL a facet chip points at.
+ *
+ * Keeps the free text and the location, drops the board filter and the page.
+ * Clicking "Kilter" from `/gyms?q=bristol` has to stay a search for Bristol —
+ * silently throwing the search away turns a filter into a reset. Page resets
+ * because page 3 of one filter has nothing to do with page 3 of another, and
+ * the board filter is replaced rather than merged because that is what the chip
+ * means: "All gyms" clears it, a board chip becomes it.
+ */
+export function buildFacetSwitchHref(target: DirectoryFacet, query: DirectoryQuery): string {
+  return buildDirectoryHref(target, { ...query, boardTypes: target === 'all' ? [] : [target], page: 1 }, 1);
+}
+
+/**
+ * Whether this request is a SEARCH, in the sense `Gym Directory Searched`
+ * means it (#4374: "on search/filter application").
+ *
+ * Three things it deliberately excludes, each of which would inflate the event
+ * past usefulness:
+ *
+ *  - **A facet pageview.** On `/gyms/kilter` the board type IS the route, not a
+ *    filter the visitor applied. Counting it made every facet pageview a search
+ *    with `queryLength: 0`, which is most of the events on the page.
+ *  - **Pagination.** `?page=N` is a full navigation, so the tracker remounts
+ *    and fires again; page 2 of one search is not a second search.
+ *  - **A bare `/gyms` visit.**
+ *
+ * What counts: free text, a location, or an explicit `?boardType=` on the
+ * unfaceted route — the three things a visitor actually does to the list.
+ */
+export function isSearchApplication(facet: DirectoryFacet, query: DirectoryQuery): boolean {
+  if (query.page !== 1) {
+    return false;
+  }
+  if (query.query.length > 0 || query.latitude !== null) {
+    return true;
+  }
+  return facet === 'all' && query.boardTypes.length > 0;
 }
 
 const EARTH_RADIUS_KM = 6371;

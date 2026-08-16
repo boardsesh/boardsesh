@@ -184,19 +184,54 @@ async function evaluateFlagFromPosthog(key: string, distinctId: string, apiKey: 
 }
 
 /**
- * Resolve one feature flag on the server.
+ * The distinct id used for signed-out visitors when a caller opts in with
+ * `allowAnonymous`.
  *
- * `distinctId` MUST be the same identifier PostHog knows the person by —
- * `session.user.id`, which is what `reconcileAnalyticsIdentity` passes to
- * `identify()`. This is the failure mode worth spelling out: a flag targeted at
- * a PERSON PROPERTY (an email, a cohort) only matches when the evaluation call
- * names a person PostHog has those properties for. Send an anonymous or
- * freshly-generated id and PostHog answers `false` for a perfectly configured
- * flag, with nothing erroring anywhere and the dashboard showing the flag
- * active. Signed-out visitors therefore have no person to match and correctly
- * resolve to `false` without a network call at all.
+ * ONE constant shared by every anonymous request, deliberately, and the
+ * trade-off is worth stating: a percentage rollout buckets on the distinct id,
+ * so every signed-out visitor lands in the same bucket and a partial rollout is
+ * all-or-nothing for the public. For an INDEXABLE surface that is the desired
+ * behaviour — a 50% rollout that 404s half of Googlebot's crawls would put
+ * soft-404s in the index, which is far worse than shipping to nobody or
+ * everybody. It also means one cache entry serves the whole anonymous
+ * population instead of one per visitor.
+ *
+ * A caller that genuinely needs per-visitor bucketing of anonymous traffic
+ * should pass its own stable id rather than loosening this.
  */
-export async function getServerFeatureFlag(key: string, distinctId: string | null): Promise<boolean> {
+export const ANONYMOUS_DISTINCT_ID = 'anonymous-web-visitor';
+
+export type ServerFeatureFlagOptions = {
+  /**
+   * The identifier PostHog knows the person by — `session.user.id`, the same
+   * value `identify()` is called with. This is the failure mode worth spelling
+   * out: a flag targeted at a PERSON PROPERTY (an email, a cohort) only matches
+   * when the evaluation names a person PostHog holds those properties for. Send
+   * a freshly-generated id and PostHog answers `false` for a perfectly
+   * configured flag, with nothing erroring anywhere and the dashboard showing
+   * the flag active.
+   */
+  distinctId: string | null;
+  /**
+   * Evaluate for signed-out visitors too, using {@link ANONYMOUS_DISTINCT_ID}.
+   *
+   * Default `false`, which short-circuits a null `distinctId` to `false`
+   * without a network call. That default is right for a flag gating a
+   * signed-in-only control targeted at a person property: no person, no match,
+   * and the round trip is wasted.
+   *
+   * It is WRONG for anything that must eventually be public. A flag's condition
+   * changes shape over its life — it starts as "this one person's email" and
+   * ends as "100% of everyone" — and a percentage rollout needs *a* distinct
+   * id, not a *known* one. Without this opt-in the surface stays signed-in-only
+   * however the dashboard is configured, and flipping the rollout to 100%
+   * changes nothing for anonymous visitors or crawlers.
+   */
+  allowAnonymous?: boolean;
+};
+
+/** Resolve one feature flag on the server. */
+export async function getServerFeatureFlag(key: string, options: ServerFeatureFlagOptions): Promise<boolean> {
   const override = parseFeatureFlagOverrides(process.env[FEATURE_FLAG_OVERRIDES_ENV])[key];
   if (override !== undefined) {
     return override;
@@ -207,11 +242,15 @@ export async function getServerFeatureFlag(key: string, distinctId: string | nul
     return false;
   }
 
+  const distinctId = options.distinctId ?? (options.allowAnonymous ? ANONYMOUS_DISTINCT_ID : null);
   if (!distinctId) {
     return false;
   }
 
   // Keyed on the flag AND the person: two climbers must never share an answer.
+  // If this key ever loses `distinctId`, one person's flag value is served to
+  // everyone — the highest-severity failure this module has, and the reason
+  // there is a test asserting the key parts rather than only the return value.
   const cached = unstable_cache(
     () => evaluateFlagFromPosthog(key, distinctId, apiKey),
     ['posthog-flag', key, distinctId],

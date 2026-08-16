@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import type { BoardFacet, DirectoryFacet } from './directory-facets';
+import type { DirectoryFacet } from './directory-facets';
 
 /**
  * Every piece of per-facet copy, resolved through LITERAL `t()` call sites.
@@ -139,9 +139,4 @@ export function facetLinkLabel(t: TFunction<'gyms'>, facet: DirectoryFacet): str
     default:
       return t('links.all');
   }
-}
-
-/** The board facets other than the one currently rendered. */
-export function otherBoardFacets(facet: DirectoryFacet, boardFacets: readonly BoardFacet[]): BoardFacet[] {
-  return boardFacets.filter((candidate) => candidate !== facet);
 }

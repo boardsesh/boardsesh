@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vite-plus/test';
 import {
   DIRECTORY_FACETS,
-  DIRECTORY_MAX_PAGE,
   FACET_BASE_PATHS,
   buildDirectoryHref,
+  buildFacetSwitchHref,
   distanceKm,
-  hasActiveFilters,
+  isSearchApplication,
   paginationWindow,
   parseDirectoryQuery,
 } from '../directory-facets';
@@ -73,12 +73,16 @@ describe('parseDirectoryQuery', () => {
     expect(parseDirectoryQuery('all', { radius: '25' }).radiusKm).toBeNull();
   });
 
-  it('clamps page into range instead of 404ing a stale link', () => {
+  it('floors page at one but never clamps the top', () => {
     expect(parseDirectoryQuery('all', { page: '3' }).page).toBe(3);
     expect(parseDirectoryQuery('all', { page: '-4' }).page).toBe(1);
+    expect(parseDirectoryQuery('all', { page: '0' }).page).toBe(1);
     expect(parseDirectoryQuery('all', { page: '2.7' }).page).toBe(2);
-    expect(parseDirectoryQuery('all', { page: '9999' }).page).toBe(DIRECTORY_MAX_PAGE);
     expect(parseDirectoryQuery('all', { page: 'next' }).page).toBe(1);
+    // Deliberately NOT clamped: an out-of-range page has to reach the renderer
+    // so it can 404. Clamping served a 200 whose URL and highlighted page
+    // number disagreed.
+    expect(parseDirectoryQuery('all', { page: '9999' }).page).toBe(9999);
   });
 });
 
@@ -115,18 +119,61 @@ describe('buildDirectoryHref', () => {
   });
 });
 
-describe('hasActiveFilters', () => {
+describe('isSearchApplication', () => {
   it('is false for a bare /gyms visit', () => {
-    expect(hasActiveFilters('all', parseDirectoryQuery('all', {}))).toBe(false);
+    expect(isSearchApplication('all', parseDirectoryQuery('all', {}))).toBe(false);
   });
 
-  it('is true on a facet route, which is itself a filter', () => {
-    expect(hasActiveFilters('tension', parseDirectoryQuery('tension', {}))).toBe(true);
+  it('is false for a plain facet pageview', () => {
+    // The board type is the ROUTE, not a filter the visitor applied. Counting
+    // it made every /gyms/kilter pageview a search with queryLength 0.
+    for (const facet of ['kilter', 'moonboard', 'tension'] as const) {
+      expect(isSearchApplication(facet, parseDirectoryQuery(facet, {}))).toBe(false);
+    }
   });
 
-  it('is true once a search or a location is applied', () => {
-    expect(hasActiveFilters('all', parseDirectoryQuery('all', { q: 'bristol' }))).toBe(true);
-    expect(hasActiveFilters('all', parseDirectoryQuery('all', { lat: '51.45', lng: '-2.58' }))).toBe(true);
+  it('is false on page two and beyond, on every route', () => {
+    // ?page=N is a full navigation, so the tracker remounts. Page 2 of one
+    // search is not a second search.
+    expect(isSearchApplication('all', parseDirectoryQuery('all', { q: 'bristol', page: '2' }))).toBe(false);
+    expect(isSearchApplication('kilter', parseDirectoryQuery('kilter', { q: 'bristol', page: '3' }))).toBe(false);
+  });
+
+  it('is true for free text, on the flat route and on a facet', () => {
+    expect(isSearchApplication('all', parseDirectoryQuery('all', { q: 'bristol' }))).toBe(true);
+    expect(isSearchApplication('kilter', parseDirectoryQuery('kilter', { q: 'bristol' }))).toBe(true);
+  });
+
+  it('is true for a location', () => {
+    expect(isSearchApplication('all', parseDirectoryQuery('all', { lat: '51.45', lng: '-2.58' }))).toBe(true);
+  });
+
+  it('is true for an explicit ?boardType on the unfaceted route only', () => {
+    expect(isSearchApplication('all', parseDirectoryQuery('all', { boardType: 'soill' }))).toBe(true);
+    expect(isSearchApplication('kilter', parseDirectoryQuery('kilter', { boardType: 'soill' }))).toBe(false);
+  });
+});
+
+describe('buildFacetSwitchHref', () => {
+  it('keeps an active search when switching board', () => {
+    const query = parseDirectoryQuery('all', { q: 'bristol' });
+    expect(buildFacetSwitchHref('kilter', query)).toBe('/gyms/kilter?q=bristol');
+  });
+
+  it('keeps an active search when clearing the board filter', () => {
+    const query = parseDirectoryQuery('kilter', { q: 'bristol' });
+    expect(buildFacetSwitchHref('all', query)).toBe('/gyms?q=bristol');
+  });
+
+  it('replaces the board filter rather than merging it', () => {
+    const query = parseDirectoryQuery('kilter', {});
+    expect(buildFacetSwitchHref('tension', query)).toBe('/gyms/tension');
+    expect(buildFacetSwitchHref('all', parseDirectoryQuery('all', { boardType: 'soill' }))).toBe('/gyms');
+  });
+
+  it('keeps the location and drops the page', () => {
+    const query = parseDirectoryQuery('all', { lat: '51.45', lng: '-2.58', radius: '25', page: '4' });
+    expect(buildFacetSwitchHref('moonboard', query)).toBe('/gyms/moonboard?lat=51.45&lng=-2.58&radius=25');
   });
 });
 

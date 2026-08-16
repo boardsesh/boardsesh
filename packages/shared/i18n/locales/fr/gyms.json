@@ -62,6 +62,10 @@
     "emptyTitle": "Rien ne correspond pour l'instant",
     "emptyBody": "Essaie une recherche plus courte, ou enlève le filtre de board et parcours toutes les salles."
   },
+  "error": {
+    "title": "On n'arrive pas à charger la liste des salles pour le moment",
+    "body": "Quelque chose cloche de notre côté. Attends une minute et recharge, ou va directement sur la fiche d'une salle que tu connais."
+  },
   "card": {
     "boardChip": "{{board}} {{angle}}°",
     "distance": "à {{distance}} km",
