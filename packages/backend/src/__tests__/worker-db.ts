@@ -32,7 +32,7 @@ function buildWorkerDatabaseUrl(): string {
   const raw = process.env.DATABASE_URL || `postgresql://postgres:postgres@localhost:${PG_PORT}/${WORKER_DB_PREFIX}`;
   const workerUrl = new URL(raw);
   workerUrl.pathname = `/${name}`;
-  // Migration 0200 makes catalog INSERT cursors database-owned. Existing tests
+  // Migration 0201 makes catalog INSERT cursors database-owned. Existing tests
   // deliberately seed historical cursor values, so their superuser-only
   // restore escape hatch is enabled only for this disposable worker pool. Any
   // trigger-contract test must explicitly turn it off on its writer session;
