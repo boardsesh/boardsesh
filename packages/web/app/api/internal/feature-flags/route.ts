@@ -23,25 +23,50 @@ import {
  * of those fail closed, by design — and used to fail closed identically, with no
  * way to tell them apart short of a Sentry message that four of them never sent.
  *
- * Reported per flag:
- *   `page`   — the cached resolution, exactly what a gated route sees right now
- *   `public` — an uncached probe as a signed-out visitor (what a crawler gets)
- *   `viewer` — an uncached probe as the calling admin, when signed in
+ * Reported per flag, as a 2x2 — cached vs live, signed-out visitor vs the
+ * calling admin:
+ *   `cached.public` — the entry an anonymous request to the gated route used
+ *   `cached.viewer` — the entry the admin's own request to that route used
+ *   `live.public`   — an uncached probe as a signed-out visitor (crawler's view)
+ *   `live.viewer`   — an uncached probe as the calling admin
  *
- * `page` disagreeing with `public` means the answer is cached and will catch up;
- * `public.reason` explains everything else. No secret is returned: the config
- * block names which env var held the key, never its value.
+ * Both halves of each pair matter because the data cache is keyed per flag AND
+ * per person: the admin's cached answer says nothing about the entry that 404'd
+ * a visitor. Split this way each comparison means exactly one thing —
+ * `cached.public` vs `live.public` is cache staleness, `live.public` vs
+ * `live.viewer` is a rollout still targeted at people rather than a percentage.
+ * Collapsing them into one "what the page sees" row makes those two
+ * indistinguishable, which is the confusion this endpoint exists to remove.
+ *
+ * No secret is returned: the config block names which env var held the project
+ * key, never its value.
  */
 export const dynamic = 'force-dynamic';
 
-/** Guards the free-text `?key=`, which is forwarded to PostHog verbatim. */
+/**
+ * Guards the free-text `?key=`, which is forwarded to PostHog verbatim.
+ *
+ * Deliberately a shape check rather than a `SERVER_FEATURE_FLAG_KEYS`
+ * membership check: an unregistered key is a legitimate question here, because
+ * `flag-missing` is precisely the answer to "did the dashboard rename it?" or
+ * "does this project know that key at all?", and a membership check could only
+ * ever answer keys we already know are fine.
+ */
 const FLAG_KEY_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
+
+/** One resolution per (cached | live) x (public | viewer). */
+export type FeatureFlagAudience = {
+  public: ServerFeatureFlagResolution;
+  /** Null when nobody is signed in — never probed as if a person existed. */
+  viewer: ServerFeatureFlagResolution | null;
+};
 
 export type FeatureFlagDiagnostic = {
   key: string;
-  page: ServerFeatureFlagResolution;
-  public: ServerFeatureFlagResolution;
-  viewer: ServerFeatureFlagResolution | null;
+  /** Registered in `SERVER_FEATURE_FLAG_KEYS`, vs asked for ad hoc via `?key=`. */
+  registered: boolean;
+  cached: FeatureFlagAudience;
+  live: FeatureFlagAudience;
 };
 
 export type FeatureFlagDiagnosticsResponse = {
@@ -64,19 +89,29 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Invalid flag key' }, { status: 400 });
   }
 
-  const keys: string[] = requestedKey ? [requestedKey] : [...SERVER_FEATURE_FLAG_KEYS];
+  const registeredKeys: string[] = [...SERVER_FEATURE_FLAG_KEYS];
+  const keys = requestedKey ? [requestedKey] : registeredKeys;
   const viewerDistinctId = await getPosthogDistinctId();
 
   const flags = await Promise.all(
     keys.map(async (key): Promise<FeatureFlagDiagnostic> => {
-      const [page, publicResolution, viewer] = await Promise.all([
-        // Same arguments the gated routes pass, so this is their answer and not
-        // a re-derivation of it.
-        getServerFeatureFlagResolution(key, { distinctId: viewerDistinctId, allowAnonymous: true }),
+      const [cachedPublic, cachedViewer, livePublic, liveViewer] = await Promise.all([
+        // The arguments an ANONYMOUS request to a gated route passes, so this
+        // reads the very cache entry that served the visitor their 404 — not a
+        // re-derivation of it, and not the admin's separate entry.
+        getServerFeatureFlagResolution(key, { distinctId: null, allowAnonymous: true }),
+        viewerDistinctId
+          ? getServerFeatureFlagResolution(key, { distinctId: viewerDistinctId, allowAnonymous: true })
+          : Promise.resolve(null),
         probeServerFeatureFlag(key, { distinctId: null, allowAnonymous: true }),
         viewerDistinctId ? probeServerFeatureFlag(key, { distinctId: viewerDistinctId }) : Promise.resolve(null),
       ]);
-      return { key, page, public: publicResolution, viewer };
+      return {
+        key,
+        registered: registeredKeys.includes(key),
+        cached: { public: cachedPublic, viewer: cachedViewer },
+        live: { public: livePublic, viewer: liveViewer },
+      };
     }),
   );
 

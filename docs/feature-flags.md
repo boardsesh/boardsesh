@@ -40,18 +40,21 @@ Ask production. Signed in as a global admin, open:
 https://www.boardsesh.com/api/internal/feature-flags
 ```
 
-It is a normal session-cookie-authenticated GET, so the browser you are already signed in with is enough. `?key=<flag>` narrows it to one flag; with no key it covers every server flag. Per flag it reports three answers:
+It is a normal session-cookie-authenticated GET, so the browser you are already signed in with is enough. `?key=<flag>` narrows it to one flag (any key, not only the registered ones — that is how you check whether the dashboard renamed it); with no key it covers every server flag.
 
-- `page` — the cached resolution, exactly what a gated route sees right now
-- `public` — an uncached probe as a signed-out visitor (what a crawler gets)
-- `viewer` — an uncached probe as you
+Per flag it reports a 2x2 — cached vs live, signed-out visitor vs you:
 
-Read it like this:
+- `cached.public` — the entry an anonymous request to the gated route used. **This is the one that 404'd the visitor.**
+- `cached.viewer` — the entry your own request to that route used
+- `live.public` — an uncached probe as a signed-out visitor (what a crawler gets)
+- `live.viewer` — an uncached probe as you
 
-- `page` off but `public` on → the 60s data cache has not caught up. Wait a minute and reload twice; the first request after expiry still serves the stale answer while it revalidates.
-- `public.reason` is `posthog-disabled` → PostHog really is saying no. The rollout is probably still person-targeted: a condition matching an email or a cohort cannot match `anonymous-web-visitor`, which is the single distinct id every signed-out visitor shares. A public launch needs the condition to be a plain percentage rollout, not 100% of a filtered set.
-- `public.reason` is `flag-missing` → the flag key and the project key disagree. Check `config.apiKeySource` and that the flag exists in PostHog project 412845 under exactly that name.
-- `public.reason` is `no-api-key` → the Vercel runtime env has no PostHog key. Every server flag is off, whatever the dashboard says.
+Both halves matter because the cache is keyed per flag **and** per person, so your answer says nothing about theirs. Read it like this:
+
+- `cached.public` off but `live.public` on → the 60s data cache has not caught up. Wait a minute and reload twice; the first request after expiry still serves the stale answer while it revalidates.
+- `live.public` off but `live.viewer` on → the rollout is still person-targeted. A condition matching an email or a cohort cannot match `anonymous-web-visitor`, the single distinct id every signed-out visitor shares. A public launch needs a plain percentage rollout, not 100% of a filtered set.
+- `live.public.reason` is `flag-missing` → the flag key and the project key disagree. Check `config.apiKeySource` and that the flag exists in PostHog project 412845 under exactly that name.
+- `live.public.reason` is `no-api-key` → the Vercel runtime env has no PostHog key. Every server flag is off, whatever the dashboard says.
 - `config.overrides` names the flag → an env override is deciding it, and the dashboard is not being consulted at all.
 
 ## The override lever

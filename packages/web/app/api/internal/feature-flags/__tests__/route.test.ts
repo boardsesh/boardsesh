@@ -51,7 +51,7 @@ describe('GET /api/internal/feature-flags', () => {
     expect(probeServerFeatureFlag).not.toHaveBeenCalled();
   });
 
-  it('reports the cached page answer alongside live public and viewer probes', async () => {
+  it('reports cached and live answers for both the visitor and the admin', async () => {
     const response = await GET(request('https://www.boardsesh.com/api/internal/feature-flags?key=gyms-directory'));
     expect(response.status).toBe(200);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
@@ -60,14 +60,30 @@ describe('GET /api/internal/feature-flags', () => {
     expect(body.flags).toHaveLength(1);
     expect(body.flags[0]).toEqual({
       key: 'gyms-directory',
-      page: { enabled: false, reason: 'override', detail: null },
-      public: { enabled: true, reason: 'posthog-enabled', detail: null },
-      viewer: { enabled: true, reason: 'posthog-enabled', detail: null },
+      registered: true,
+      cached: {
+        public: { enabled: false, reason: 'override', detail: null },
+        viewer: { enabled: false, reason: 'override', detail: null },
+      },
+      live: {
+        public: { enabled: true, reason: 'posthog-enabled', detail: null },
+        viewer: { enabled: true, reason: 'posthog-enabled', detail: null },
+      },
     });
+  });
 
-    // The page answer has to be the gated route's own call — same distinct id,
-    // same allowAnonymous — or the diagnostic describes a different question
-    // than the one that 404'd.
+  it('reads the ANONYMOUS cache entry, which is the one that 404s a visitor', async () => {
+    await GET(request('https://www.boardsesh.com/api/internal/feature-flags?key=gyms-directory'));
+
+    // The data cache is keyed per flag AND per person, so the admin's entry says
+    // nothing about the entry a signed-out visitor's request used. Reading only
+    // the admin's would make "cached off, live on" mean either staleness or the
+    // admin being in a person-targeted rollout — the exact ambiguity this
+    // endpoint exists to remove.
+    expect(getServerFeatureFlagResolution).toHaveBeenCalledWith('gyms-directory', {
+      distinctId: null,
+      allowAnonymous: true,
+    });
     expect(getServerFeatureFlagResolution).toHaveBeenCalledWith('gyms-directory', {
       distinctId: 'admin-1',
       allowAnonymous: true,
@@ -78,11 +94,23 @@ describe('GET /api/internal/feature-flags', () => {
     });
   });
 
+  it('marks a key that is not a registered server flag', async () => {
+    const body = await (
+      await GET(request('https://www.boardsesh.com/api/internal/feature-flags?key=renamed-in-the-dashboard'))
+    ).json();
+
+    // Allowed on purpose: `flag-missing` is the answer to "did someone rename
+    // it?", which a membership check could never ask.
+    expect(body.flags[0].registered).toBe(false);
+    expect(body.flags[0].live.public).toMatchObject({ reason: 'posthog-enabled' });
+  });
+
   it('covers every server flag when no key is given', async () => {
     const response = await GET(request());
     const body = await response.json();
 
     expect(body.flags.map((flag: { key: string }) => flag.key)).toEqual(['gyms-directory']);
+    expect(body.flags[0].registered).toBe(true);
     expect(body.config).toMatchObject({
       apiKeySource: 'NEXT_PUBLIC_POSTHOG_KEY',
       anonymousDistinctId: 'anonymous-web-visitor',
@@ -100,15 +128,17 @@ describe('GET /api/internal/feature-flags', () => {
     expect(body).not.toContain('phc_');
   });
 
-  it('skips the viewer probe for a flag check with no signed-in person', async () => {
+  it('skips the viewer columns when there is no signed-in person', async () => {
     // checkAdmin can only pass with a session, so this is belt-and-braces —
     // but a null distinct id must never be probed as if it were a person.
     getPosthogDistinctId.mockResolvedValue(null);
 
     const body = await (await GET(request())).json();
-    expect(body.flags[0].viewer).toBeNull();
+    expect(body.flags[0].cached.viewer).toBeNull();
+    expect(body.flags[0].live.viewer).toBeNull();
     expect(body.viewerDistinctId).toBeNull();
     expect(probeServerFeatureFlag).toHaveBeenCalledTimes(1);
+    expect(getServerFeatureFlagResolution).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a key that is not a flag key', async () => {
