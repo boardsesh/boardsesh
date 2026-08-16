@@ -71,6 +71,38 @@
     "distance": "a {{distance}} km",
     "claimCta": "¿Es tuyo este rocódromo?"
   },
+  "nearMe": {
+    "cta": "Usar mi ubicación",
+    "locating": "Buscándote…",
+    "showAll": "Ver todos los rocódromos",
+    "radiusLabel": "En un radio de",
+    "radius": {
+      "10": "10 km",
+      "25": "25 km",
+      "50": "50 km",
+      "100": "100 km"
+    },
+    "loading": "Buscando rocódromos cerca de ti…",
+    "error": "No hemos podido hacer esa búsqueda. Espera un momento y vuelve a intentarlo.",
+    "empty": "Ningún rocódromo con chincheta en el mapa en ese radio. Amplíalo o busca por ciudad.",
+    "resultsHeading_one": "{{formattedCount}} rocódromo a menos de {{radius}} km",
+    "resultsHeading_other": "{{formattedCount}} rocódromos a menos de {{radius}} km",
+    "resultsHeadingCapped_one": "Mostrando el más cercano de {{formattedCount}} rocódromo a menos de {{radius}} km",
+    "resultsHeadingCapped_other": "Mostrando los {{shown}} más cercanos de {{formattedCount}} rocódromos a menos de {{radius}} km",
+    "pinlessNotice": "«Cerca de mí» solo muestra rocódromos con chincheta en el mapa, y a un tercio le falta. Pulsa «Ver todos los rocódromos» para recuperar la lista completa.",
+    "deniedBody": "Tu navegador no comparte tu ubicación. Escribe una ciudad en el buscador: eso funciona siempre.",
+    "unsupportedBody": "Este navegador no maneja la ubicación. Escribe una ciudad en el buscador: eso funciona siempre.",
+    "unavailableBody": "No hemos podido localizarte. Vuelve a intentarlo o escribe una ciudad en el buscador."
+  },
+  "map": {
+    "showMap": "Ver el mapa",
+    "hideMap": "Ocultar el mapa",
+    "regionLabel": "Mapa de los rocódromos de esta lista",
+    "pinnedPill_one": "{{pinned}} de {{total}} rocódromo con chincheta en el mapa",
+    "pinnedPill_other": "{{pinned}} de {{total}} rocódromos con chincheta en el mapa",
+    "clusterLabel_one": "{{count}} rocódromo",
+    "clusterLabel_other": "{{count}} rocódromos"
+  },
   "pagination": {
     "label": "Páginas del directorio",
     "previous": "Anterior",

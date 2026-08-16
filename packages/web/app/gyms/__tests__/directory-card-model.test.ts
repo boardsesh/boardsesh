@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { boardChips, cardLocation, roundDistanceKm } from '../directory-card-model';
+import { boardChips, cardLocation, distanceChipKm, roundDistanceKm } from '../directory-card-model';
 
 describe('boardChips', () => {
   it('is empty when the gym reported no boards', () => {
@@ -84,5 +84,28 @@ describe('roundDistanceKm', () => {
 
   it('drops to whole km once the decimal is noise', () => {
     expect(roundDistanceKm(42.6)).toBe(43);
+  });
+});
+
+describe('distanceChipKm', () => {
+  const bristol = { latitude: 51.4545, longitude: -2.5879 };
+  const withAddress = { address: 'Hansastr. 15', latitude: 51.3811, longitude: -2.359 };
+
+  it('adds a distance next to an address once a location is shared', () => {
+    const location = cardLocation(withAddress, bristol);
+    const km = distanceChipKm(withAddress, bristol, location);
+    expect(km).not.toBeNull();
+    expect(km).toBeGreaterThan(0);
+  });
+
+  it('stays null when the location line is already the distance', () => {
+    const pinOnly = { address: null, latitude: 51.3811, longitude: -2.359 };
+    expect(distanceChipKm(pinOnly, bristol, cardLocation(pinOnly, bristol))).toBeNull();
+  });
+
+  it('stays null with no origin, and null for a gym with no pin', () => {
+    expect(distanceChipKm(withAddress, null, cardLocation(withAddress, null))).toBeNull();
+    const noPin = { address: 'Hansastr. 15', latitude: null, longitude: null };
+    expect(distanceChipKm(noPin, bristol, cardLocation(noPin, bristol))).toBeNull();
   });
 });

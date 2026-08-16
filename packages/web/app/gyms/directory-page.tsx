@@ -39,10 +39,11 @@ import {
 } from './directory-copy';
 import { fetchDirectoryPage, fetchFacetCounts } from './directory-data';
 import GymDirectoryCard from './gym-directory-card';
-import GymDirectoryMapMount from './gym-directory-map-mount';
+import GymDirectoryNearMe from './gym-directory-near-me';
 import GymDirectoryPagination from './gym-directory-pagination';
 import GymDirectorySearchForm from './gym-directory-search-form';
 import GymDirectorySearchTracker from './gym-directory-search-tracker';
+import { pinCoverage, toMapPins } from './near-me-model';
 
 export type DirectoryRouteProps = {
   searchParams: Promise<DirectorySearchParams>;
@@ -146,6 +147,10 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
   // `viewerStateFrom` so this server module doesn't pull the browser analytics
   // client into its import graph — same call the gym page makes off its cookie.
   const viewerState: GymClaimViewerState = distinctId !== null ? 'signed-in' : 'signed-out';
+  // The map's pill numbers, computed from the page the server actually
+  // rendered — not from the catalog total, which would claim coverage for gyms
+  // nobody on this page can see.
+  const browseCoverage = pinCoverage(pageResult.gyms);
   const crossLinks: DirectoryFacet[] = DIRECTORY_FACETS.filter((candidate) => candidate !== facet);
 
   return (
@@ -200,49 +205,66 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
           </Typography>
         </Box>
 
-        <GymDirectoryMapMount />
-
-        <Typography
-          variant="subtitle1"
-          component="h2"
-          sx={{ fontWeight: themeTokens.typography.fontWeight.semibold, mb: 1.5 }}
+        {/* The map column and near-me mode wrap the results block rather than
+            sitting above it: the map is a second COLUMN beside this list at
+            960px and up, and near-me swaps the list out for its own. The list
+            stays first in the DOM either way. */}
+        <GymDirectoryNearMe
+          boardTypes={query.boardTypes}
+          // Threaded through, not dropped: the search box keeps rendering what
+          // was typed, so near-me has to keep applying it.
+          searchQuery={query.query}
+          locale={locale}
+          viewerState={viewerState}
+          browsePins={toMapPins(pageResult.gyms)}
+          browsePinnedCount={browseCoverage.pinned}
+          browseShownCount={browseCoverage.total}
         >
-          {t('results.heading', { count: pageResult.totalCount, formattedCount: formatNumber(pageResult.totalCount) })}
-        </Typography>
-
-        {pageResult.gyms.length === 0 ? (
-          <Box sx={{ py: 4 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
-              {t('results.emptyTitle')}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              {t('results.emptyBody')}
-            </Typography>
-          </Box>
-        ) : (
-          <Box
-            component="ul"
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
-              gap: 2,
-              m: 0,
-              p: 0,
-            }}
+          <Typography
+            variant="subtitle1"
+            component="h2"
+            sx={{ fontWeight: themeTokens.typography.fontWeight.semibold, mb: 1.5 }}
           >
-            {pageResult.gyms.map((gym) => (
-              <GymDirectoryCard
-                key={gym.uuid}
-                gym={gym}
-                origin={origin}
-                viewerState={viewerState}
-                formatNumber={formatNumber}
-              />
-            ))}
-          </Box>
-        )}
+            {t('results.heading', {
+              count: pageResult.totalCount,
+              formattedCount: formatNumber(pageResult.totalCount),
+            })}
+          </Typography>
 
-        <GymDirectoryPagination facet={facet} query={query} totalCount={pageResult.totalCount} />
+          {pageResult.gyms.length === 0 ? (
+            <Box sx={{ py: 4 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
+                {t('results.emptyTitle')}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                {t('results.emptyBody')}
+              </Typography>
+            </Box>
+          ) : (
+            <Box
+              component="ul"
+              sx={{
+                display: 'grid',
+                // Three at wide widths, same as before the map existed. This is
+                // the surface whose whole job is surfacing gyms, so more of
+                // them above the fold wins over a grid that never reflows —
+                // the one-off shift when somebody opens the map on a narrow
+                // screen is the cheaper cost. The near-me grid stays at two,
+                // because it genuinely renders beside an open map.
+                gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
+                gap: 2,
+                m: 0,
+                p: 0,
+              }}
+            >
+              {pageResult.gyms.map((gym) => (
+                <GymDirectoryCard key={gym.uuid} gym={gym} origin={origin} viewerState={viewerState} locale={locale} />
+              ))}
+            </Box>
+          )}
+
+          <GymDirectoryPagination facet={facet} query={query} totalCount={pageResult.totalCount} />
+        </GymDirectoryNearMe>
 
         <Box component="section" sx={{ mt: 5 }}>
           <Typography

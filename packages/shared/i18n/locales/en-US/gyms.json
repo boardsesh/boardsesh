@@ -71,6 +71,38 @@
     "distance": "{{distance}} km away",
     "claimCta": "Is this your gym?"
   },
+  "nearMe": {
+    "cta": "Use my location",
+    "locating": "Finding you…",
+    "showAll": "Show all gyms",
+    "radiusLabel": "Within",
+    "radius": {
+      "10": "10 km",
+      "25": "25 km",
+      "50": "50 km",
+      "100": "100 km"
+    },
+    "loading": "Looking for gyms near you…",
+    "error": "We couldn't run that search. Give it a moment and try again.",
+    "empty": "No gyms with a map pin in that radius. Widen it, or search by town.",
+    "resultsHeading_one": "{{formattedCount}} gym within {{radius}} km",
+    "resultsHeading_other": "{{formattedCount}} gyms within {{radius}} km",
+    "resultsHeadingCapped_one": "Showing the closest of {{formattedCount}} gym within {{radius}} km",
+    "resultsHeadingCapped_other": "Showing the {{shown}} closest of {{formattedCount}} gyms within {{radius}} km",
+    "pinlessNotice": "Near me only shows gyms that dropped a map pin, and about a third of them haven't. Show all gyms to get the full list back.",
+    "deniedBody": "Your browser is keeping your location to itself. Type a town in the search box instead — that works everywhere.",
+    "unsupportedBody": "This browser doesn't do location. Type a town in the search box instead — that works everywhere.",
+    "unavailableBody": "We couldn't get a fix on where you are. Try again, or type a town in the search box."
+  },
+  "map": {
+    "showMap": "Show map",
+    "hideMap": "Hide map",
+    "regionLabel": "Map of the gyms in this list",
+    "pinnedPill_one": "{{pinned}} of {{total}} gym here has a map pin",
+    "pinnedPill_other": "{{pinned}} of {{total}} gyms here have a map pin",
+    "clusterLabel_one": "{{count}} gym",
+    "clusterLabel_other": "{{count}} gyms"
+  },
   "pagination": {
     "label": "Directory pages",
     "previous": "Previous",

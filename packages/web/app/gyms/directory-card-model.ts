@@ -86,9 +86,47 @@ export function cardLocation(
 }
 
 /**
+ * The distance to show ALONGSIDE the location line, or null.
+ *
+ * Additive to `cardLocation` rather than a change to it: an address is the more
+ * useful line and keeps winning it, but once somebody has shared a location
+ * "how far is that" is the question the whole near-me mode exists to answer,
+ * and a card that answers it for pinned-but-addressless gyms only would look
+ * arbitrary. Returns null when the location line is ALREADY the distance, so
+ * the same fact never renders twice.
+ */
+export function distanceChipKm(
+  gym: CardLocationInput,
+  origin: { latitude: number; longitude: number } | null,
+  location: CardLocation,
+): number | null {
+  if (!origin || location?.kind !== 'address') return null;
+  if (typeof gym.latitude !== 'number' || typeof gym.longitude !== 'number') return null;
+  return distanceKm(origin, { latitude: gym.latitude, longitude: gym.longitude });
+}
+
+/**
  * Round a distance for display: whole km once you're far enough away that a
  * decimal is noise, one decimal when you're close enough to walk.
  */
 export function roundDistanceKm(km: number): number {
   return km < 10 ? Math.round(km * 10) / 10 : Math.round(km);
+}
+
+/**
+ * One `Intl.NumberFormat` per locale, shared by every card on the page.
+ *
+ * A page renders 24 cards and each one wants a formatter. Constructing one per
+ * card is 24 ICU lookups, and ~76% of them are dead work because the card shows
+ * an address rather than a distance. Four locales ship, so this map is bounded
+ * at four entries and never needs eviction.
+ */
+const numberFormatCache = new Map<string, Intl.NumberFormat>();
+
+export function numberFormatFor(locale: string): Intl.NumberFormat {
+  const cached = numberFormatCache.get(locale);
+  if (cached) return cached;
+  const created = new Intl.NumberFormat(locale);
+  numberFormatCache.set(locale, created);
+  return created;
 }

@@ -71,6 +71,38 @@
     "distance": "{{distance}} km entfernt",
     "claimCta": "Ist das deine Halle?"
   },
+  "nearMe": {
+    "cta": "Meinen Standort nutzen",
+    "locating": "Wir suchen dich…",
+    "showAll": "Alle Hallen zeigen",
+    "radiusLabel": "Im Umkreis von",
+    "radius": {
+      "10": "10 km",
+      "25": "25 km",
+      "50": "50 km",
+      "100": "100 km"
+    },
+    "loading": "Wir suchen Hallen in deiner Nähe…",
+    "error": "Die Suche hat nicht geklappt. Warte kurz und probier es nochmal.",
+    "empty": "In dem Umkreis hat keine Halle eine Markierung auf der Karte. Mach den Umkreis größer oder such nach einem Ort.",
+    "resultsHeading_one": "{{formattedCount}} Halle im Umkreis von {{radius}} km",
+    "resultsHeading_other": "{{formattedCount}} Hallen im Umkreis von {{radius}} km",
+    "resultsHeadingCapped_one": "Die nächste von {{formattedCount}} Halle im Umkreis von {{radius}} km",
+    "resultsHeadingCapped_other": "Die {{shown}} nächsten von {{formattedCount}} Hallen im Umkreis von {{radius}} km",
+    "pinlessNotice": "„In der Nähe“ zeigt nur Hallen mit Markierung auf der Karte, rund einem Drittel fehlt sie. Mit „Alle Hallen zeigen“ hast du wieder die komplette Liste.",
+    "deniedBody": "Dein Browser gibt deinen Standort nicht raus. Tipp stattdessen einen Ort ins Suchfeld, das geht überall.",
+    "unsupportedBody": "Dieser Browser kann keine Standortabfrage. Tipp stattdessen einen Ort ins Suchfeld, das geht überall.",
+    "unavailableBody": "Wir konnten dich nicht orten. Probier es nochmal oder tipp einen Ort ins Suchfeld."
+  },
+  "map": {
+    "showMap": "Karte zeigen",
+    "hideMap": "Karte ausblenden",
+    "regionLabel": "Karte der Hallen aus dieser Liste",
+    "pinnedPill_one": "{{pinned}} von {{total}} Halle hier hat eine Markierung auf der Karte",
+    "pinnedPill_other": "{{pinned}} von {{total}} Hallen hier haben eine Markierung auf der Karte",
+    "clusterLabel_one": "{{count}} Halle",
+    "clusterLabel_other": "{{count}} Hallen"
+  },
   "pagination": {
     "label": "Seiten des Verzeichnisses",
     "previous": "Zurück",
