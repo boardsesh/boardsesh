@@ -143,6 +143,13 @@ cancel_stalled_ddl_session() {
   local cancel_attempt=0 cancelled
   sleep "$DDL_MAX_LOCK_HOLD_SECONDS"
   while [[ "$cancel_attempt" -lt 30 ]]; do
+    # Claim the marker before cancelling, not after. pg_cancel_backend makes the
+    # DDL psql exit immediately, so the caller resumes and kills this watchdog;
+    # a marker written after the cancel can lose that race and the attempt is
+    # then misreported as an ordinary lock timeout. Retract it if this round
+    # cancelled nothing, which leaves the marker set only while a cancel is
+    # genuinely in flight.
+    : >"$marker_file"
     cancelled="$(run_connection ADMIN -Atq -v ddl_application_name="$ddl_application_name" <<'SQL' 2>/dev/null || true
 SELECT pg_catalog.pg_cancel_backend(activity.pid)
 FROM pg_catalog.pg_stat_activity AS activity
@@ -152,9 +159,9 @@ WHERE activity.datname = current_database()
 SQL
 )"
     if [[ -n "$cancelled" ]]; then
-      : >"$marker_file"
       return 0
     fi
+    rm -f "$marker_file"
     cancel_attempt=$((cancel_attempt + 1))
     sleep 1
   done
