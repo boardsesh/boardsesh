@@ -23,8 +23,6 @@ vi.mock('@/app/lib/gym-funnel-analytics', () => ({
 
 const GymDirectoryCard = (await import('../gym-directory-card')).default;
 
-const formatNumber = (value: number) => new Intl.NumberFormat('en-US').format(value);
-
 function gym(overrides: Partial<GymDirectoryCardData> = {}): GymDirectoryCardData {
   return {
     uuid: 'gym-1',
@@ -39,18 +37,21 @@ function gym(overrides: Partial<GymDirectoryCardData> = {}): GymDirectoryCardDat
   };
 }
 
+// A client component now (near-me results are fetched in the browser and
+// render the same card), so it is rendered rather than awaited.
 async function renderCard(props: {
   gym?: Partial<GymDirectoryCardData>;
   origin?: { latitude: number; longitude: number } | null;
   viewerState?: 'signed-in' | 'signed-out';
 }) {
-  const element = await GymDirectoryCard({
-    gym: gym(props.gym),
-    origin: props.origin ?? null,
-    viewerState: props.viewerState ?? 'signed-out',
-    formatNumber,
-  });
-  return render(element);
+  return render(
+    <GymDirectoryCard
+      gym={gym(props.gym)}
+      origin={props.origin ?? null}
+      viewerState={props.viewerState ?? 'signed-out'}
+      locale="en-US"
+    />,
+  );
 }
 
 beforeEach(() => {
@@ -91,6 +92,16 @@ describe('GymDirectoryCard', () => {
     const { container } = await renderCard({ gym: { latitude: 51.3811, longitude: -2.359 } });
     expect(container.textContent).not.toContain('km away');
     expect(screen.queryByTestId('LocationOnOutlinedIcon')).toBeNull();
+  });
+
+  it('adds a distance line next to an address once a location is shared', async () => {
+    await renderCard({
+      gym: { address: 'Hansastraße 15, München', latitude: 51.3811, longitude: -2.359 },
+      origin: { latitude: 51.4545, longitude: -2.5879 },
+    });
+    // The address still wins the location line; the distance is additive.
+    expect(screen.getByText('Hansastraße 15, München')).toBeTruthy();
+    expect(screen.getByText(/km away$/)).toBeTruthy();
   });
 
   it('renders one chip per distinct board and angle', async () => {

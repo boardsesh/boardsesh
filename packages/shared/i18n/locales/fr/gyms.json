@@ -71,6 +71,36 @@
     "distance": "à {{distance}} km",
     "claimCta": "C'est ta salle ?"
   },
+  "nearMe": {
+    "cta": "Utiliser ma position",
+    "locating": "On te localise…",
+    "showAll": "Voir toutes les salles",
+    "radiusLabel": "Dans un rayon de",
+    "radius": {
+      "10": "10 km",
+      "25": "25 km",
+      "50": "50 km",
+      "100": "100 km"
+    },
+    "loading": "Recherche des salles près de toi…",
+    "error": "On n'a pas pu lancer cette recherche. Attends un instant et réessaie.",
+    "empty": "Aucune salle avec un repère sur la carte dans ce rayon. Élargis-le, ou cherche par ville.",
+    "resultsHeading_one": "{{formattedCount}} salle à moins de {{radius}} km",
+    "resultsHeading_other": "{{formattedCount}} salles à moins de {{radius}} km",
+    "pinlessNotice": "« Près de moi » n'affiche que les salles qui ont posé un repère sur la carte, et un tiers ne l'a pas fait. Reviens à toutes les salles pour retrouver la liste complète.",
+    "deniedBody": "Ton navigateur garde ta position pour lui. Tape une ville dans la recherche : ça marche partout.",
+    "unsupportedBody": "Ce navigateur ne gère pas la géolocalisation. Tape une ville dans la recherche : ça marche partout.",
+    "unavailableBody": "On n'a pas réussi à te localiser. Réessaie, ou tape une ville dans la recherche."
+  },
+  "map": {
+    "showMap": "Voir la carte",
+    "hideMap": "Masquer la carte",
+    "regionLabel": "Carte des salles de cette liste",
+    "pinnedPill_one": "{{pinned}} salle sur {{total}} a un repère sur la carte",
+    "pinnedPill_other": "{{pinned}} salles sur {{total}} ont un repère sur la carte",
+    "clusterLabel_one": "{{count}} salle",
+    "clusterLabel_other": "{{count}} salles"
+  },
   "pagination": {
     "label": "Pages du répertoire",
     "previous": "Précédent",
