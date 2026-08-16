@@ -33,7 +33,7 @@ for inherited_name in PGREQUIRESSL PGDATESTYLE PGTZ PGGEQO PGGSSDELEGATION \
   [[ -z "${!inherited_name+x}" ]]
 done
 [[ -f "$PGPASSFILE" ]]
-[[ "$(stat -f '%Lp' "$PGPASSFILE" 2>/dev/null || stat -c '%a' "$PGPASSFILE")" == '600' ]]
+[[ "$(stat -c '%a' "$PGPASSFILE" 2>/dev/null || stat -f '%Lp' "$PGPASSFILE")" == '600' ]]
 grep -Fxq '2001\:db8\:\:1:5432:main\:db:source\:user:source\:sec\\ret' "$PGPASSFILE"
 printf '%s\n' "${PGPASSFILE%/*}" >"$CREDENTIAL_DIRECTORY_LOG"
 if [[ " $* " == *'to_regnamespace'* ]]; then
@@ -131,7 +131,7 @@ expected_full="host='2001:db8::2' port='5432' dbname='rail:way' user='user\'name
 expected_redacted="host='2001:db8::2' port='5432' dbname='rail:way' user='user\'name' application_name='canonical-test' sslcertmode='require' sslmode='verify-full' "
 [[ "$(<"$canonical_directory/full")" == "$expected_full" ]]
 [[ "$(<"$canonical_directory/redacted")" == "$expected_redacted" ]]
-[[ "$(stat -f '%Lp' "$canonical_directory/full" 2>/dev/null || stat -c '%a' "$canonical_directory/full")" == '600' ]]
+[[ "$(stat -c '%a' "$canonical_directory/full" 2>/dev/null || stat -f '%Lp' "$canonical_directory/full")" == '600' ]]
 boardsesh_md5_conninfo_file "$canonical_directory/full"
 [[ "$REPLY" =~ ^[0-9a-f]{32}$ ]]
 if grep -Fq 'password=' "$canonical_directory/redacted"; then

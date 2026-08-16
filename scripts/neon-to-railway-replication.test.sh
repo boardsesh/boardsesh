@@ -47,7 +47,7 @@ assert_absent() {
 assert_fake_libpq_environment() {
   local expected_role="$1"
   [[ -f "${PGPASSFILE:-}" ]]
-  [[ "$(stat -f '%Lp' "$PGPASSFILE" 2>/dev/null || stat -c '%a' "$PGPASSFILE")" == '600' ]]
+  [[ "$(stat -c '%a' "$PGPASSFILE" 2>/dev/null || stat -f '%Lp' "$PGPASSFILE")" == '600' ]]
   [[ -z "${PGHOSTADDR:-}" ]]
   [[ -z "${PGSERVICE:-}" ]]
   [[ -z "${PGSERVICEFILE:-}" ]]
@@ -114,7 +114,7 @@ for argument in "$@"; do
   fi
   if [[ "$previous_argument" == '--file' || "$previous_argument" == '-f' ]]; then
     [[ -f "$argument" ]]
-    [[ "$(stat -f '%Lp' "$argument" 2>/dev/null || stat -c '%a' "$argument")" == '600' ]]
+    [[ "$(stat -c '%a' "$argument" 2>/dev/null || stat -f '%Lp' "$argument")" == '600' ]]
     if grep -Fq 'CREATE SUBSCRIPTION' "$argument"; then
       [[ "$(head -n 1 "$argument")" == 'SET standard_conforming_strings = on;' ]]
       grep -Fq "CONNECTION 'host=''source.example'' port=''5432'' dbname=''main'' user=''publisher'' password=''publisher-secret'' application_name=''boardsesh_pg18_sub'' sslmode=''verify-full'' '" "$argument"
