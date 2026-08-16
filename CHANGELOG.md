@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Scan a gym's QR code and the app knows which poster or kiosk sent you — so gyms can finally see what their signage is actually doing. ([#4510](https://github.com/boardsesh/boardsesh/pull/4510))
 - Owners can put a real photo of their wall on their gym page — upload it from the manage console and it becomes the header image and the preview when someone shares the link. ([#4509](https://github.com/boardsesh/boardsesh/pull/4509))
 - Own a gym? You can start a claim straight from its page now, without signing in first — log in when prompted and you'll land right back where you were, ready to claim it. ([#4506](https://github.com/boardsesh/boardsesh/pull/4506))
 - Backend fields only; the directory that consumes them ships flag-gated and noindex in a later PR. ([#4505](https://github.com/boardsesh/boardsesh/pull/4505))
