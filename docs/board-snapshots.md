@@ -182,7 +182,7 @@ less likely; neither proves the absent transaction has finished.
    immediately after the manifest PUT cannot roll that PUT back, but it emits no success heartbeat; failed
    layouts retain their previous manifest entries while successful layout updates remain valid.
 
-Migration `0200_board_snapshot_replica_fence` makes the cursor contract a database invariant. INSERT and
+Migration `0201_board_snapshot_replica_fence` makes the cursor contract a database invariant. INSERT and
 UPDATE triggers stamp `board_climbs.updated_at`, `board_climb_stats.updated_at`, and
 `board_climb_grades.computed_at` from the transaction timestamp converted to UTC; INSERTs into
 `sync_deletions` receive the same UTC transaction-time stamp. Caller-supplied/backdated values are ignored.
@@ -1322,7 +1322,7 @@ page — that's the trigger to prioritize the fix.
 
 This cutover is independently reversible and does not require promoting the standby:
 
-1. Deploy migration `0200_board_snapshot_replica_fence`, audit the function owner, create the narrow
+1. Deploy migration `0201_board_snapshot_replica_fence`, audit the function owner, create the narrow
    coordinator/standby roles, and set `DATABASE_DIRECT_URL`. Keep both repository flags unset.
 2. Set `SNAPSHOT_PRIMARY_FENCE_ENABLED=true`; run one unfiltered manual identity+gzip export. Confirm the
    direct session retains the advisory lock through publish and a simultaneous second exporter exits with
