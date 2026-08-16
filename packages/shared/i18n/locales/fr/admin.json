@@ -305,6 +305,11 @@
     "snackbar": {
       "moved": "{{gym}} a un nouveau propriétaire",
       "failed": "Impossible de transférer la propriété. Vérifiez la salle et réessayez.",
+      "ownerChanged": "Cette salle a changé de mains pendant que la confirmation était ouverte. Relancez la recherche pour voir à qui elle appartient maintenant.",
+      "newOwnerGone": "Ce compte n’existe plus. Cherchez-en un autre.",
+      "merged": "Cette fiche a été fusionnée avec une autre salle. Transférez plutôt la fiche conservée.",
+      "gymGone": "Cette salle ne peut plus être transférée.",
+      "ownerUnchanged": "Ce compte est déjà propriétaire de cette salle.",
       "lookupFailed": "Impossible de faire cette recherche. Réessayez."
     }
   },

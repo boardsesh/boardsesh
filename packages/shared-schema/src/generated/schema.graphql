@@ -5085,12 +5085,13 @@ type GymOwnershipSummary {
   gymUuid: ID!
   slug: String
   name: String!
+  "Echoed back so the mutation can be sent with the exact owner the admin saw."
   currentOwnerId: ID!
   "Display name / account email of the current owner, or null when the account row is gone."
   currentOwnerLabel: String
   "True when the listing is still parked on the import account and has no real owner yet."
   currentOwnerIsSystem: Boolean!
-  "Echoed back so the mutation can be sent with the exact owner the admin saw."
+  "The listing's human-curation marker. A handover leaves it exactly as it is."
   syncFrozenAt: String
   isDeleted: Boolean!
   isMerged: Boolean!

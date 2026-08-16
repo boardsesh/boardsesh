@@ -2773,6 +2773,7 @@ export type GymOwnershipLookupResult = {
 /** A gym resolved for the admin ownership-handover surface, with the state the confirm step must name. */
 export type GymOwnershipSummary = {
   __typename?: 'GymOwnershipSummary';
+  /** Echoed back so the mutation can be sent with the exact owner the admin saw. */
   currentOwnerId: Scalars['ID']['output'];
   /** True when the listing is still parked on the import account and has no real owner yet. */
   currentOwnerIsSystem: Scalars['Boolean']['output'];
@@ -2783,7 +2784,7 @@ export type GymOwnershipSummary = {
   isMerged: Scalars['Boolean']['output'];
   name: Scalars['String']['output'];
   slug?: Maybe<Scalars['String']['output']>;
-  /** Echoed back so the mutation can be sent with the exact owner the admin saw. */
+  /** The listing's human-curation marker. A handover leaves it exactly as it is. */
   syncFrozenAt?: Maybe<Scalars['String']['output']>;
 };
 

@@ -305,6 +305,11 @@
     "snackbar": {
       "moved": "{{gym}} hat jetzt neue Besitzer*innen",
       "failed": "Der Besitz ließ sich nicht übertragen. Prüf die Halle und versuch's nochmal.",
+      "ownerChanged": "Diese Halle hat den Besitzer gewechselt, während die Bestätigung offen war. Such sie nochmal, um zu sehen, wem sie jetzt gehört.",
+      "newOwnerGone": "Dieses Konto gibt es nicht mehr. Such ein anderes.",
+      "merged": "Dieser Eintrag wurde mit einer anderen Halle zusammengeführt. Übertrage stattdessen den verbliebenen Eintrag.",
+      "gymGone": "Diese Halle lässt sich nicht mehr übertragen.",
+      "ownerUnchanged": "Diesem Konto gehört die Halle bereits.",
       "lookupFailed": "Die Suche hat nicht geklappt. Versuch's nochmal."
     }
   },

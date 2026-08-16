@@ -13,6 +13,7 @@ import { logger } from '../../../utils/logger';
 import { GymOwnershipLookupInputSchema, ReassignGymOwnerInputSchema } from '../../../validation/schemas';
 import { applyRateLimit, validateInput } from '../shared/helpers';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
+import { createGymManageAccessNotification } from './gym-notifications';
 import { requireAdmin } from './roles';
 
 const OWNERSHIP_LOOKUP_QUERY_LIMIT = 30;
@@ -33,6 +34,20 @@ export const GYM_REASSIGN_CODES = {
 
 function nullableIsoString(timestamp: Date | string | null): string | null {
   return timestamp === null ? null : new Date(timestamp).toISOString();
+}
+
+/**
+ * Neutralise LIKE/ILIKE metacharacters in operator-typed text.
+ *
+ * Without this, a `newOwnerQuery` of `%` or `%@gmail.com` turns the intended
+ * exact-email match into a wildcard and resolves to whichever account Postgres
+ * happens to return first — a silent wrong-target on a mutation that moves
+ * ownership permanently. Postgres treats backslash as the default LIKE escape
+ * character, so prefixing it is enough; the backslash itself goes first so the
+ * escapes we add are not themselves re-escaped.
+ */
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
 }
 
 /** Display label for an account: profile display name, then account name, then email. */
@@ -58,9 +73,18 @@ async function loadUserLabels(userIds: string[]): Promise<Map<string, { label: s
 /**
  * Resolve the gym half of a handover. An exact UUID or slug wins; otherwise the
  * first case-insensitive name match, so an admin can paste either.
+ *
+ * The two branches filter differently on purpose. An exact UUID/slug names one
+ * specific listing, so a deleted or merged row is still returned — the panel
+ * surfaces that state as a diagnostic and blocks the handover. A name search
+ * excludes both, because merged twins in this catalog usually carry the SAME
+ * name as their survivor: `ORDER BY name` ties, Postgres picks arbitrarily, and
+ * the admin gets "move the surviving listing instead" with no way to reach the
+ * survivor by name at all.
  */
 async function lookupGym(gymQuery: string): Promise<GymOwnershipSummary | null> {
   const gymColumns = {
+    id: dbSchema.gyms.id,
     uuid: dbSchema.gyms.uuid,
     slug: dbSchema.gyms.slug,
     name: dbSchema.gyms.name,
@@ -74,14 +98,23 @@ async function lookupGym(gymQuery: string): Promise<GymOwnershipSummary | null> 
     .select(gymColumns)
     .from(dbSchema.gyms)
     .where(or(eq(dbSchema.gyms.uuid, gymQuery), eq(dbSchema.gyms.slug, gymQuery)))
+    .orderBy(dbSchema.gyms.id)
     .limit(1);
   const [gym] = exact
     ? [exact]
     : await db
         .select(gymColumns)
         .from(dbSchema.gyms)
-        .where(ilike(dbSchema.gyms.name, `%${gymQuery}%`))
-        .orderBy(dbSchema.gyms.name)
+        .where(
+          and(
+            ilike(dbSchema.gyms.name, `%${escapeLikePattern(gymQuery)}%`),
+            isNull(dbSchema.gyms.deletedAt),
+            isNull(dbSchema.gyms.mergedIntoGymId),
+          ),
+        )
+        // `id` breaks the tie so repeated lookups of the same name resolve to
+        // the same listing rather than whatever Postgres returns first.
+        .orderBy(dbSchema.gyms.name, dbSchema.gyms.id)
         .limit(1);
   if (!gym) return null;
 
@@ -99,7 +132,10 @@ async function lookupGym(gymQuery: string): Promise<GymOwnershipSummary | null> 
   };
 }
 
-/** Resolve the incoming owner from an account email (case-insensitive) or a user id. */
+/**
+ * Resolve the incoming owner from an account email (case-insensitive, whole
+ * address — never a pattern) or a user id.
+ */
 async function lookupUser(newOwnerQuery: string): Promise<GymOwnershipUserSummary | null> {
   const [row] = await db
     .select({
@@ -110,7 +146,10 @@ async function lookupUser(newOwnerQuery: string): Promise<GymOwnershipUserSummar
     })
     .from(dbSchema.users)
     .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
-    .where(or(eq(dbSchema.users.id, newOwnerQuery), ilike(dbSchema.users.email, newOwnerQuery)))
+    .where(or(eq(dbSchema.users.id, newOwnerQuery), ilike(dbSchema.users.email, escapeLikePattern(newOwnerQuery))))
+    // Emails are not uniquely indexed, so pin the winner rather than letting the
+    // planner choose which account a handover targets.
+    .orderBy(dbSchema.users.id)
     .limit(1);
   if (!row) return null;
   return { userId: row.id, label: row.displayName || row.name || row.email, email: row.email };
@@ -263,6 +302,22 @@ export const socialGymOwnerReassignMutations = {
       newOwnerId: result.newOwnerId,
       performedBy,
     });
+
+    // Tell the incoming owner they now manage this gym — the same in-app
+    // notification the claim path fires, whose copy ("you now have manage
+    // access") is true however the handover was decided. A claimant at least
+    // filed something; someone handed a sold gym gets it with no signal at all
+    // otherwise. Best-effort and post-commit, matching notifyClaimApplied:
+    // ownership has already moved, so a failure here must not hand the admin an
+    // error for a handover that in fact went through.
+    try {
+      await createGymManageAccessNotification(result.newOwnerId, result.gymUuid, result.gymName);
+    } catch (error) {
+      logger.warn(
+        `[GymOwnerReassign] Gym ${result.gymUuid} moved to ${result.newOwnerId}, but notifying them failed:`,
+        error,
+      );
+    }
     return result;
   },
 };

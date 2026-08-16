@@ -305,6 +305,11 @@
     "snackbar": {
       "moved": "{{gym}} ya tiene nuevo propietario",
       "failed": "No se pudo traspasar la propiedad. Revisa el rocódromo e inténtalo de nuevo.",
+      "ownerChanged": "Este rocódromo cambió de manos mientras la confirmación estaba abierta. Búscalo otra vez para ver de quién es ahora.",
+      "newOwnerGone": "Esa cuenta ya no existe. Busca otra.",
+      "merged": "Esta ficha se fusionó con otro rocódromo. Cambia la propiedad de la ficha que sobrevive.",
+      "gymGone": "Este rocódromo ya no está disponible para traspasar.",
+      "ownerUnchanged": "Esa cuenta ya es la propietaria de este rocódromo.",
       "lookupFailed": "No se pudo hacer la búsqueda. Inténtalo de nuevo."
     }
   },

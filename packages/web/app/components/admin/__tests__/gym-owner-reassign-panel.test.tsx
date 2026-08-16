@@ -139,6 +139,42 @@ describe('GymOwnerReassignPanel', () => {
     expect(mockRequest).toHaveBeenCalledTimes(2);
   });
 
+  it('names the stale-confirmation rejection and keeps the typed reason for the retry', async () => {
+    const staleConfirmation = Object.assign(new Error('stale'), {
+      response: { errors: [{ extensions: { code: 'GYM_REASSIGN_OWNER_CHANGED' } }] },
+    });
+    mockRequest.mockResolvedValueOnce(lookupResponse()).mockRejectedValueOnce(staleConfirmation);
+
+    await lookUp();
+    fireEvent.click(screen.getByRole('button', { name: 'Move ownership' }));
+    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'The club elected a new chair.' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Move ownership' }).at(-1)!);
+
+    // The code-specific line, not the generic "check the gym and try again":
+    // the fix for this one is to re-run the lookup.
+    expect(
+      await screen.findByText(
+        'This gym changed hands while the confirmation was open. Look it up again to see who owns it now.',
+      ),
+    ).toBeTruthy();
+
+    // Reopening the confirm step still has the justification in it — a failed
+    // handover must not cost the admin a retype.
+    fireEvent.click(screen.getByRole('button', { name: 'Move ownership' }));
+    expect((screen.getByLabelText('Reason') as HTMLTextAreaElement).value).toBe('The club elected a new chair.');
+  });
+
+  it('falls back to the generic failure line when a rejection carries no code', async () => {
+    mockRequest.mockResolvedValueOnce(lookupResponse()).mockRejectedValueOnce(new Error('network down'));
+
+    await lookUp();
+    fireEvent.click(screen.getByRole('button', { name: 'Move ownership' }));
+    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'The club elected a new chair.' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Move ownership' }).at(-1)!);
+
+    expect(await screen.findByText("Couldn't move ownership. Check the gym and try again.")).toBeTruthy();
+  });
+
   it('reports an unmatched gym or account instead of offering a handover', async () => {
     mockRequest.mockResolvedValueOnce(lookupResponse({ gym: null, newOwner: null }));
 

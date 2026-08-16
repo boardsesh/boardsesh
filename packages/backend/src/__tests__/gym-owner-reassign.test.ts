@@ -85,11 +85,18 @@ async function memberRoles(gymId: number): Promise<Array<{ user_id: string; role
   return Array.from(result as Iterable<{ user_id: string; role: string }>);
 }
 
+async function notificationRows(): Promise<Array<{ recipient_id: string; type: string; entity_id: string }>> {
+  const result = await db.execute(sql`
+    SELECT recipient_id, type, entity_id FROM notifications ORDER BY id
+  `);
+  return Array.from(result as Iterable<{ recipient_id: string; type: string; entity_id: string }>);
+}
+
 beforeEach(async () => {
   resetAllRateLimits();
   await db.execute(sql`
     TRUNCATE TABLE
-      gym_owner_reassignments, gym_members, gym_claims, community_roles, gyms
+      gym_owner_reassignments, gym_members, gym_claims, community_roles, notifications, gyms
     RESTART IDENTITY CASCADE
   `);
   await Promise.all(
@@ -184,6 +191,52 @@ describe('gymOwnershipLookup', () => {
     );
     expect(result.gym).toMatchObject({ currentOwnerIsSystem: true, syncFrozenAt: null });
   });
+
+  it('reaches the survivor by name while an exact uuid still surfaces a merged or deleted listing', async () => {
+    // Merged twins in this catalog usually carry the survivor's name, so a name
+    // search that did not filter them would tie on ORDER BY name and could
+    // resolve to the twin — leaving the survivor unreachable by name entirely.
+    const survivor = await insertGym({ name: 'Twin Wall' });
+    const merged = await insertGym({ name: 'Twin Wall' });
+    await db.execute(sql`UPDATE gyms SET merged_into_gym_id = ${survivor.id} WHERE id = ${merged.id}`);
+    await insertGym({ name: 'Twin Wall', deletedAt: '2026-08-02T00:00:00.000Z' });
+
+    const byName = await socialGymOwnerReassignQueries.gymOwnershipLookup(
+      null,
+      { input: { gymQuery: 'Twin Wall', newOwnerQuery: INCOMING_OWNER } },
+      authCtx(GLOBAL_ADMIN),
+    );
+    expect(byName.gym?.gymUuid).toBe(survivor.uuid);
+
+    // The exact-uuid branch keeps both states visible: the panel needs to say
+    // WHY a specific listing cannot be moved.
+    const byUuid = await socialGymOwnerReassignQueries.gymOwnershipLookup(
+      null,
+      { input: { gymQuery: merged.uuid, newOwnerQuery: INCOMING_OWNER } },
+      authCtx(GLOBAL_ADMIN),
+    );
+    expect(byUuid.gym).toMatchObject({ gymUuid: merged.uuid, isMerged: true });
+  });
+
+  it('treats ILIKE metacharacters as literal text in both halves of the lookup', async () => {
+    await insertGym({ name: 'Percent Wall' });
+
+    // A bare `%` used to wildcard-match and resolve to an arbitrary account /
+    // gym — a silent wrong target on a mutation that moves ownership for good.
+    const wildcard = await socialGymOwnerReassignQueries.gymOwnershipLookup(
+      null,
+      { input: { gymQuery: '%', newOwnerQuery: '%' } },
+      authCtx(GLOBAL_ADMIN),
+    );
+    expect(wildcard).toEqual({ gym: null, newOwner: null });
+
+    const domainWildcard = await socialGymOwnerReassignQueries.gymOwnershipLookup(
+      null,
+      { input: { gymQuery: '_', newOwnerQuery: '%@test.com' } },
+      authCtx(GLOBAL_ADMIN),
+    );
+    expect(domainWildcard).toEqual({ gym: null, newOwner: null });
+  });
 });
 
 describe('reassignGymOwner', () => {
@@ -229,6 +282,72 @@ describe('reassignGymOwner', () => {
     });
     expect(timestampIso(audit[0].sync_frozen_at_before!)).toBe('2026-08-01T01:02:03.000Z');
     expect(timestampIso(audit[0].sync_frozen_at_after!)).toBe('2026-08-01T01:02:03.000Z');
+
+    // The incoming owner hears about it. In a claim they at least filed one;
+    // handed a sold gym they would otherwise get ownership with no signal.
+    expect(await notificationRows()).toEqual([
+      { recipient_id: INCOMING_OWNER, type: 'gym_claim_approved', entity_id: gym.uuid },
+    ]);
+  });
+
+  it('completes the handover even when notifying the incoming owner is impossible', async () => {
+    const gym = await insertGym();
+    // A recipient with no `users` row makes the notification insert fail on its
+    // FK. Ownership has already committed by then, so the admin must still get
+    // a success rather than an error for a handover that did happen.
+    await db.execute(sql`UPDATE gyms SET owner_id = ${OUTGOING_OWNER} WHERE id = ${gym.id}`);
+    await db.execute(sql`
+      INSERT INTO users (id, email, name, created_at, updated_at)
+      VALUES ('gor-vanishing', 'gor-vanishing@test.com', 'Vanishing', now(), now())
+    `);
+
+    const result = await socialGymOwnerReassignMutations.reassignGymOwner(
+      null,
+      {
+        input: {
+          gymUuid: gym.uuid,
+          expectedCurrentOwnerId: OUTGOING_OWNER,
+          newOwnerId: 'gor-vanishing',
+          reason: REASON,
+        },
+      },
+      authCtx(GLOBAL_ADMIN),
+    );
+
+    expect(result.newOwnerId).toBe('gor-vanishing');
+    expect((await gymRow(gym.uuid)).owner_id).toBe('gor-vanishing');
+    expect(await auditRows()).toHaveLength(1);
+  });
+
+  it('allows parking a listing back on the system account, which leaves any freeze in place', async () => {
+    // Pinning current behaviour rather than asserting it is ideal: reverting a
+    // bad claim this way hands the listing back to the import account WITHOUT
+    // clearing `syncFrozenAt`, so location sync will not maintain it again
+    // until an admin also runs clearLocationSyncFreeze. That is recoverable and
+    // deliberate (the freeze rule has no exceptions), but it is a real edge —
+    // if we ever decide to reject the system account as an incoming owner, this
+    // is the test that should flip.
+    const gym = await insertGym();
+
+    const result = await socialGymOwnerReassignMutations.reassignGymOwner(
+      null,
+      {
+        input: {
+          gymUuid: gym.uuid,
+          expectedCurrentOwnerId: OUTGOING_OWNER,
+          newOwnerId: SYSTEM_OWNER,
+          reason: 'Reverting a claim that was approved to the wrong person.',
+        },
+      },
+      authCtx(GLOBAL_ADMIN),
+    );
+
+    expect(result.newOwnerId).toBe(SYSTEM_OWNER);
+    const row = await gymRow(gym.uuid);
+    expect(row.owner_id).toBe(SYSTEM_OWNER);
+    expect(timestampIso(row.sync_frozen_at!)).toBe('2026-08-01T01:02:03.000Z');
+    // The outgoing human keeps gym-admin access, same as any other handover.
+    expect(await memberRoles(gym.id)).toEqual([{ user_id: OUTGOING_OWNER, role: 'admin' }]);
   });
 
   it('leaves an unfrozen gym unfrozen — a handover never creates a freeze', async () => {

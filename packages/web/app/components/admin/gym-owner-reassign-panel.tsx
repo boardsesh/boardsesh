@@ -36,6 +36,25 @@ type Resolved = {
   newOwner: GymOwnershipUserSummary | null;
 };
 
+type GraphqlErrorLike = { extensions?: { code?: unknown } | null };
+
+/**
+ * The `extensions.code` the backend tags every handover rejection with. Reading
+ * it is what makes the optimistic-concurrency design usable: the common failure
+ * is a stale confirmation (`OWNER_CHANGED`), whose fix is "re-run the lookup",
+ * and a generic "try again" tells the admin nothing about that.
+ */
+function failureCode(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null;
+  const response = (error as { response?: { errors?: GraphqlErrorLike[] } }).response;
+  const graphqlErrors = Array.isArray(response?.errors) ? response.errors : [];
+  for (const graphqlError of graphqlErrors) {
+    const code = graphqlError.extensions?.code;
+    if (typeof code === 'string') return code;
+  }
+  return null;
+}
+
 /**
  * Admin-only ownership handover, mounted next to the claim review queue because
  * that is where a mis-approved claim gets noticed. Nothing here is reachable
@@ -86,8 +105,32 @@ export default function GymOwnerReassignPanel() {
     gym !== null && newOwner !== null && !gym.isDeleted && !gym.isMerged && !ownersAreSame && !submitting;
   const outgoingLabel = gym?.currentOwnerLabel ?? gym?.currentOwnerId ?? '';
 
+  // Each rejection gets its own line so the admin knows whether to re-run the
+  // lookup, pick another account, or stop. Keys are literals — the i18n linter
+  // rejects `t(variable)`.
+  const failureMessage = useCallback(
+    (error: unknown): string => {
+      switch (failureCode(error)) {
+        case 'GYM_REASSIGN_OWNER_CHANGED':
+          return t('gymOwnerReassign.snackbar.ownerChanged');
+        case 'GYM_REASSIGN_NEW_OWNER_NOT_FOUND':
+          return t('gymOwnerReassign.snackbar.newOwnerGone');
+        case 'GYM_REASSIGN_TARGET_MERGED':
+          return t('gymOwnerReassign.snackbar.merged');
+        case 'GYM_REASSIGN_TARGET_NOT_FOUND':
+          return t('gymOwnerReassign.snackbar.gymGone');
+        case 'GYM_REASSIGN_OWNER_UNCHANGED':
+          return t('gymOwnerReassign.snackbar.ownerUnchanged');
+        default:
+          return t('gymOwnerReassign.snackbar.failed');
+      }
+    },
+    [t],
+  );
+
+  // Does not reset `reason`: a rejected handover closes the dialog but keeps the
+  // justification, so reopening after a fresh lookup is one click, not a retype.
   const openConfirm = useCallback(() => {
-    setReason('');
     setConfirmOpen(true);
   }, []);
 
@@ -119,13 +162,16 @@ export default function GymOwnerReassignPanel() {
       setResolved(null);
     } catch (mutationError) {
       console.error('[GymOwnerReassignPanel] Ownership handover failed:', mutationError);
-      setSnackbar(t('gymOwnerReassign.snackbar.failed'));
+      setSnackbar(failureMessage(mutationError));
       setConfirmOpen(false);
-      setReason('');
+      // Deliberately NOT clearing `reason`: the common rejection is a stale
+      // confirmation, whose fix is to re-run the lookup and confirm again.
+      // Wiping the justification would make the admin retype 10+ characters
+      // for a retry that is otherwise one click away.
     } finally {
       setSubmitting(false);
     }
-  }, [gym, newOwner, reason, t, token]);
+  }, [failureMessage, gym, newOwner, reason, t, token]);
 
   return (
     <Box sx={{ mt: 5 }}>

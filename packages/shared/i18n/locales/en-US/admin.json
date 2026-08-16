@@ -305,6 +305,11 @@
     "snackbar": {
       "moved": "{{gym}} moved to its new owner",
       "failed": "Couldn't move ownership. Check the gym and try again.",
+      "ownerChanged": "This gym changed hands while the confirmation was open. Look it up again to see who owns it now.",
+      "newOwnerGone": "That account no longer exists. Look up a different one.",
+      "merged": "This listing was merged into another gym. Move the surviving listing instead.",
+      "gymGone": "This gym is no longer available to move.",
+      "ownerUnchanged": "That account already owns this gym.",
       "lookupFailed": "Couldn't look that up. Try again."
     }
   },
