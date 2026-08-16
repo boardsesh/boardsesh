@@ -153,7 +153,7 @@ export default defineConfig({
     tasks: {
       // --- Database ---
       'db:up': {
-        command: 'sh scripts/dev-db-up.sh',
+        command: 'bash scripts/dev-db-up.sh',
         cache: false,
       },
       'db:migrate': {
@@ -230,12 +230,33 @@ export default defineConfig({
         command: 'bun run --filter=@boardsesh/db test',
       },
       // The one packages/db node:test file CI runs (from ci.yml's db-migrations
-      // job, against a stock postgres:17 service). It builds its own throwaway
+      // job, against its current PostgreSQL service). It builds its own throwaway
       // migrations folder and database, so it needs no board data and no db:up.
       // Locally it skips unless DATABASE_URL/MIGRATION_JOURNAL_DB_URL points at
       // a local Postgres.
       'test:db:migration-journal': {
         command: 'bun run --filter=@boardsesh/db test:migration-journal',
+        cache: false,
+      },
+      'test:postgres18-contract': {
+        command:
+          'node --import tsx --test packages/db/scripts/migration-owner-role.test.ts && bash packages/db/docker/dev-db-entrypoint.test.sh && bash packages/db/docker/apply-drizzle-migrations.test.sh && bash scripts/postgres-credentials.test.sh && bash scripts/neon-to-railway-replication.test.sh && bash scripts/postgres18-workflow-contract.test.sh && bash -n packages/db/docker/dev-db-entrypoint.sh packages/db/docker/apply-drizzle-migrations.sh scripts/dev-db-up.sh scripts/dev-db-image-smoke.sh scripts/lib/postgres-credentials.sh scripts/postgres16-role-transition-smoke.sh scripts/postgres18-image-smoke.sh scripts/postgres18-architecture-smoke.sh scripts/postgres18-production-role-transition.sh scripts/postgres18-workflow-contract.test.sh scripts/postgres-migration-audit.sh scripts/postgres-migration-verify-data.sh scripts/neon-to-railway-replication.sh scripts/neon-to-railway-replication.test.sh scripts/postgres-credentials.test.sh packages/db/docker/setup-development-db.sh packages/web/db/setup-development-db.sh',
+        cache: false,
+      },
+      'test:postgres16-role-transition': {
+        command: 'bash scripts/postgres16-role-transition-smoke.sh',
+        cache: false,
+      },
+      'test:postgres18-image': {
+        command: 'bash scripts/postgres18-image-smoke.sh',
+        cache: false,
+      },
+      'test:postgres18-architecture-image': {
+        command: 'bash scripts/postgres18-architecture-smoke.sh',
+        cache: false,
+      },
+      'test:postgres18-dev-db-image': {
+        command: 'bash scripts/dev-db-image-smoke.sh',
         cache: false,
       },
       'locations:aurora': {
