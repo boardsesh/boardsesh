@@ -2417,6 +2417,8 @@ export type Gym = {
   address?: Maybe<Scalars['String']['output']>;
   /** Number of linked boards */
   boardCount: Scalars['Int']['output'];
+  /** Distinct board-type + angle pairs at this gym, for directory board chips. Ordered by board type then angle and capped, so a gym with a wall of boards returns a bounded list. */
+  boardSummaries: Array<GymBoardSummary>;
   /** Distinct board types at this gym (kilter, tension, ...) — for filtering and badges */
   boardTypes: Array<Scalars['String']['output']>;
   /** Kiosk/embed brand accent colour as #RRGGBB (null when unset). */
@@ -2449,6 +2451,8 @@ export type Gym = {
   hoursUpdatedAt?: Maybe<Scalars['String']['output']>;
   /** Image URL */
   imageUrl?: Maybe<Scalars['String']['output']>;
+  /** Whether a real person owns this gym, as opposed to the system import user. Viewer-independent — unlike canClaim, which is false for every signed-out viewer. */
+  isClaimed: Scalars['Boolean']['output'];
   /** Whether the current user follows this gym */
   isFollowedByMe: Scalars['Boolean']['output'];
   /** Whether the current user is a member */
@@ -2479,6 +2483,19 @@ export type Gym = {
   uuid: Scalars['ID']['output'];
   /** Website URL (used for domain-verified ownership claims) */
   website?: Maybe<Scalars['String']['output']>;
+};
+
+/**
+ * One board-type + angle pair present at a gym, for the directory's board chips.
+ * Deliberately minimal: a card renders "Kilter 40°", nothing else. Distinct pairs
+ * only, so two Kilter boards both at 40° collapse into one summary.
+ */
+export type GymBoardSummary = {
+  __typename?: 'GymBoardSummary';
+  /** Board angle in degrees */
+  angle: Scalars['Int']['output'];
+  /** Board type (kilter, tension, moonboard, ...) */
+  boardType: Scalars['String']['output'];
 };
 
 /** A pending or resolved gym ownership claim (admin queue). */
@@ -6346,6 +6363,8 @@ export type SearchGymsInput = {
   query?: InputMaybe<Scalars['String']['input']>;
   /** Radius in km for proximity search (default 50) */
   radiusKm?: InputMaybe<Scalars['Float']['input']>;
+  /** Only gyms that have a URL slug, i.e. that can be linked to at /gym/[slug]. Opt-in: omitting it leaves the emitted SQL untouched for existing callers. */
+  requireSlug?: InputMaybe<Scalars['Boolean']['input']>;
   /** Filter to gyms that have a board with one of these size ids (OR). Combined with boardTypes/layoutIds, all must match the same board. */
   sizeIds?: InputMaybe<Array<Scalars['Int']['input']>>;
 };
@@ -8292,6 +8311,7 @@ export type ResolversTypes = ResolversObject<{
   GroupedNotificationActor: ResolverTypeWrapper<GroupedNotificationActor>;
   GroupedNotificationConnection: ResolverTypeWrapper<GroupedNotificationConnection>;
   Gym: ResolverTypeWrapper<Gym>;
+  GymBoardSummary: ResolverTypeWrapper<GymBoardSummary>;
   GymClaim: ResolverTypeWrapper<GymClaim>;
   GymClaimConnection: ResolverTypeWrapper<GymClaimConnection>;
   GymClaimDecision: GymClaimDecision;
@@ -8660,6 +8680,7 @@ export type ResolversParentTypes = ResolversObject<{
   GroupedNotificationActor: GroupedNotificationActor;
   GroupedNotificationConnection: GroupedNotificationConnection;
   Gym: Gym;
+  GymBoardSummary: GymBoardSummary;
   GymClaim: GymClaim;
   GymClaimConnection: GymClaimConnection;
   GymConnection: GymConnection;
@@ -10034,6 +10055,7 @@ export type GymResolvers<
 > = ResolversObject<{
   address?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   boardCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardSummaries?: Resolver<Array<ResolversTypes['GymBoardSummary']>, ParentType, ContextType>;
   boardTypes?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
   brandAccentColor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   brandBackgroundColor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -10050,6 +10072,7 @@ export type GymResolvers<
   hours?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   hoursUpdatedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   imageUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  isClaimed?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isFollowedByMe?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isMember?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isPublic?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
@@ -10065,6 +10088,15 @@ export type GymResolvers<
   slug?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   website?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymBoardSummaryResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymBoardSummary'] = ResolversParentTypes['GymBoardSummary'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -13237,6 +13269,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GroupedNotificationActor?: GroupedNotificationActorResolvers<ContextType>;
   GroupedNotificationConnection?: GroupedNotificationConnectionResolvers<ContextType>;
   Gym?: GymResolvers<ContextType>;
+  GymBoardSummary?: GymBoardSummaryResolvers<ContextType>;
   GymClaim?: GymClaimResolvers<ContextType>;
   GymClaimConnection?: GymClaimConnectionResolvers<ContextType>;
   GymConnection?: GymConnectionResolvers<ContextType>;

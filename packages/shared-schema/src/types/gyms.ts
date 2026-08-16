@@ -18,6 +18,15 @@ export type GymClaimRequestStatus = 'email_sent' | 'admin_review' | 'approved';
 
 export type GymClaimDecision = 'approve' | 'deny';
 
+/**
+ * One board-type + angle pair present at a gym, for the directory's board chips.
+ * Distinct pairs only — two Kilter boards both at 40° collapse into one summary.
+ */
+export type GymBoardSummary = {
+  boardType: string;
+  angle: number;
+};
+
 export type Gym = {
   uuid: string;
   slug?: string | null;
@@ -49,6 +58,14 @@ export type Gym = {
   createdAt: string;
   boardCount: number;
   boardTypes: string[];
+  /**
+   * Distinct board-type + angle pairs at this gym, ordered by type then angle
+   * and capped per board type. Non-null on the server, but OPTIONAL here because
+   * only SEARCH_GYMS_DIRECTORY selects it — the shared GYM_FIELDS selection set
+   * deliberately leaves it out, so a required type would promise a value that
+   * GET_GYM / GET_GYM_BY_SLUG / GET_MY_GYMS / SEARCH_GYMS never return.
+   */
+  boardSummaries?: GymBoardSummary[];
   memberCount: number;
   followerCount: number;
   commentCount: number;
@@ -61,6 +78,12 @@ export type Gym = {
   canGrantAccess: boolean;
   /** Whether the current viewer may start an ownership claim for this gym. */
   canClaim: boolean;
+  /**
+   * Whether a real person owns this gym rather than the system import user.
+   * Viewer-independent, and required here because GYM_FIELDS selects it — every
+   * document typed `Gym` genuinely returns it.
+   */
+  isClaimed: boolean;
 };
 
 export type GymConnection = {
@@ -251,6 +274,8 @@ export type SearchGymsInput = {
   latitude?: number;
   longitude?: number;
   radiusKm?: number;
+  /** Only gyms with a slug, i.e. linkable at /gym/[slug]. Opt-in; omitting it leaves the emitted SQL unchanged. */
+  requireSlug?: boolean;
   limit?: number;
   offset?: number;
 };

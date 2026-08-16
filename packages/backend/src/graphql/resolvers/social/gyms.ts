@@ -25,6 +25,7 @@ import { distanceMeters } from '@boardsesh/db/queries';
 import { logger } from '../../../utils/logger';
 import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
 import { syncLocationGeography } from './location-geography';
+import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 
 // ============================================
 // Helpers
@@ -210,6 +211,19 @@ export async function resolveCanonicalGymBySlug(slug: string): Promise<GymRow | 
 }
 
 /**
+ * Cap on `Gym.boardSummaries`, applied PER BOARD TYPE rather than to the flat
+ * list. A gym with a wall of boards must not ship a summary per board for a card
+ * that visually truncates after a handful, but a flat cap over a list ordered
+ * `board_type, angle` silently drops whole board types off the end: twelve
+ * `(kilter, angle)` pairs plus one MoonBoard would render twelve Kilter chips
+ * and no MoonBoard chip. `SEARCH_GYMS_DIRECTORY` selects `boardSummaries` and
+ * not `boardTypes`, so on `/gyms/moonboard` a gym matched BY the moonboard
+ * filter would then show zero MoonBoard chips. Capping after grouping keeps
+ * every board type represented; `boardCount` remains the honest total.
+ */
+export const GYM_BOARD_SUMMARY_ANGLES_PER_TYPE = 6;
+
+/**
  * Enrich a gym row with computed fields (counts, follow status, membership).
  * Exported so the kiosk resolvers can attach the same branding-carrying `Gym`
  * payload (logo + colours) to a public kiosk without duplicating the enrichment.
@@ -218,7 +232,7 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
   const [
     ownerResult,
     boardCountResult,
-    boardTypesResult,
+    boardVariantsResult,
     memberCountResult,
     followerCountResult,
     commentCountResult,
@@ -245,11 +259,18 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
       .from(dbSchema.userBoards)
       .where(and(eq(dbSchema.userBoards.gymId, gym.id), isNull(dbSchema.userBoards.deletedAt))),
 
-    // Distinct board types at this gym (for filtering + badges)
+    // Distinct (board type, angle) pairs at this gym. ONE query feeds both
+    // `boardTypes` (filtering + badges) and `boardSummaries` (directory board
+    // chips) — deliberately widened rather than joined by a second query, because
+    // enrichGym already fires nine round trips per gym and searchGyms runs it per
+    // row (limit up to 50), so a 24-card directory page costs ~216 queries; a
+    // tenth per gym would make it 240. Ordered so the summary cap below slices a
+    // stable prefix.
     db
-      .selectDistinct({ boardType: dbSchema.userBoards.boardType })
+      .selectDistinct({ boardType: dbSchema.userBoards.boardType, angle: dbSchema.userBoards.angle })
       .from(dbSchema.userBoards)
-      .where(and(eq(dbSchema.userBoards.gymId, gym.id), isNull(dbSchema.userBoards.deletedAt))),
+      .where(and(eq(dbSchema.userBoards.gymId, gym.id), isNull(dbSchema.userBoards.deletedAt)))
+      .orderBy(dbSchema.userBoards.boardType, dbSchema.userBoards.angle),
 
     // Count members
     db.select({ count: count() }).from(dbSchema.gymMembers).where(eq(dbSchema.gymMembers.gymId, gym.id)),
@@ -293,7 +314,24 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
 
   const ownerInfo = ownerResult[0];
   const boardCount = Number(boardCountResult[0]?.count || 0);
-  const boardTypes = boardTypesResult.map((row) => row.boardType);
+  // Both derived from the single widened distinct query above. Grouping first
+  // means the per-type angle cap can never drop a board type from the chips, and
+  // `boardTypes` still comes off EVERY row (the map keys), so it stays the
+  // uncapped set the filters and badges have always used. Insertion order is the
+  // query's `ORDER BY board_type, angle`, so the output is deterministic.
+  const anglesByBoardType = new Map<string, number[]>();
+  for (const row of boardVariantsResult) {
+    const anglesForType = anglesByBoardType.get(row.boardType);
+    if (!anglesForType) {
+      anglesByBoardType.set(row.boardType, [Number(row.angle)]);
+    } else if (anglesForType.length < GYM_BOARD_SUMMARY_ANGLES_PER_TYPE) {
+      anglesForType.push(Number(row.angle));
+    }
+  }
+  const boardSummaries = [...anglesByBoardType].flatMap(([boardType, angles]) =>
+    angles.map((angle) => ({ boardType, angle })),
+  );
+  const boardTypes = [...anglesByBoardType.keys()];
   const memberCount = Number(memberCountResult[0]?.count || 0);
   const followerCount = Number(followerCountResult[0]?.count || 0);
   const commentCount = Number(commentCountResult[0]?.count || 0);
@@ -328,6 +366,16 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
     memberRow?.role !== 'editor' &&
     !hasCommunityAccess;
 
+  // Whether a real person owns this gym. Gyms created by the location sync are
+  // parked on the system import user, so ownership by anyone else means someone
+  // claimed it. This reads `gym.ownerId` ONLY — never `authenticatedUserId` — so
+  // the value is identical for every viewer and is therefore safe to cache for
+  // anonymous SSR. That is the whole point of the field: `canClaim` is false for
+  // every signed-out viewer, and signed-out viewers are the public directory's
+  // entire audience, so a card gated on `canClaim` would render nothing for them
+  // while looking correct in a logged-in dev session.
+  const isClaimed = gym.ownerId !== SYSTEM_BOARD_OWNER_ID;
+
   return {
     uuid: gym.uuid,
     slug: gym.slug,
@@ -353,6 +401,7 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
     createdAt: gym.createdAt.toISOString(),
     boardCount,
     boardTypes,
+    boardSummaries,
     memberCount,
     followerCount,
     commentCount,
@@ -362,7 +411,28 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
     canEdit,
     canGrantAccess,
     canClaim,
+    isClaimed,
   };
+}
+
+/**
+ * `SearchGymsInput.requireSlug` predicate: keep only gyms that can produce a
+ * `/gym/[slug]` URL. A slugless gym renders as `/gym/null` in the public
+ * directory, so the directory opts in; every other caller omits the flag and
+ * gets `null` back, leaving its emitted SQL byte-identical.
+ *
+ * ONE exported function, parameterised by the slug expression, because
+ * searchGyms has two code paths and the proximity path issues its count and its
+ * rows as two SEPARATE `db.execute` calls that only agree because both
+ * interpolate the same filter clause. A predicate added to the rows query but
+ * not the count makes `totalCount`/`hasMore` disagree with the rows returned —
+ * broken pagination that no test catches unless it asserts on both statements.
+ * Callers pass `gyms.slug` (raw PostGIS path) or the Drizzle column (text path).
+ */
+export function slugPresentFilter(requireSlug: boolean | undefined, slugColumn: SQL): SQL | null {
+  // Empty string is excluded alongside NULL: `/gym/` is as broken a link as
+  // `/gym/null`, and the column has no NOT NULL / non-empty constraint.
+  return requireSlug ? sql`${slugColumn} IS NOT NULL AND ${slugColumn} <> ''` : null;
 }
 
 type GymMemberRole = 'admin' | 'editor' | 'member';
@@ -750,7 +820,8 @@ export const socialGymQueries = {
 
   searchGyms: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     const validatedInput = validateInput(SearchGymsInputSchema, input, 'input');
-    const { query, boardTypes, layoutIds, sizeIds, multiBoardTypeOnly, latitude, longitude, radiusKm } = validatedInput;
+    const { query, boardTypes, layoutIds, sizeIds, multiBoardTypeOnly, requireSlug, latitude, longitude, radiusKm } =
+      validatedInput;
     const limit = validatedInput.limit ?? 20;
     const offset = validatedInput.offset ?? 0;
     const useProximity = latitude !== undefined && longitude !== undefined;
@@ -807,9 +878,14 @@ export const socialGymQueries = {
 
       // Board/gym filters appended to the raw PostGIS WHERE. `gyms.id` is the
       // bare column in this raw query's FROM.
-      const proximityFilters = [boardMatchExists(sql`gyms.id`), multiBoardTypeExists(sql`gyms.id`)].filter(
-        (clause): clause is SQL => clause !== null,
-      );
+      const proximityFilters = [
+        boardMatchExists(sql`gyms.id`),
+        multiBoardTypeExists(sql`gyms.id`),
+        // Shared by the count and the rows statements below — both interpolate
+        // `proximityFilterClause`, so they can never disagree about which gyms
+        // are in the result set.
+        slugPresentFilter(requireSlug, sql`gyms.slug`),
+      ].filter((clause): clause is SQL => clause !== null);
       const proximityFilterClause =
         proximityFilters.length > 0 ? sql` AND ${sql.join(proximityFilters, sql` AND `)}` : sql.empty();
 
@@ -823,10 +899,15 @@ export const socialGymQueries = {
       );
       const totalCount = Number(rowsFromResult<Record<string, unknown>>(countRows)[0]?.count || 0);
 
+      // `gyms.id` is the tiebreaker, not decoration: the directory pages this
+      // query with OFFSET, and two gyms at an identical distance (a bulk sync
+      // import can place several at the same coordinates) have no defined order
+      // without it — Postgres is free to return them in a different order per
+      // page, duplicating one row and skipping another across the boundary.
       const gymRows = await db.execute(
         likePattern
-          ? sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters}) AND (name ILIKE ${likePattern} OR address ILIKE ${likePattern})${proximityFilterClause} ORDER BY distance_meters ASC LIMIT ${limit} OFFSET ${offset}`
-          : sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters})${proximityFilterClause} ORDER BY distance_meters ASC LIMIT ${limit} OFFSET ${offset}`,
+          ? sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters}) AND (name ILIKE ${likePattern} OR address ILIKE ${likePattern})${proximityFilterClause} ORDER BY distance_meters ASC, gyms.id ASC LIMIT ${limit} OFFSET ${offset}`
+          : sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters})${proximityFilterClause} ORDER BY distance_meters ASC, gyms.id ASC LIMIT ${limit} OFFSET ${offset}`,
       );
       const rows = rowsFromResult<Record<string, unknown>>(gymRows);
 
@@ -857,6 +938,10 @@ export const socialGymQueries = {
     if (textBoardMatch) conditions.push(textBoardMatch);
     const textMultiBoardType = multiBoardTypeExists(sql`${dbSchema.gyms.id}`);
     if (textMultiBoardType) conditions.push(textMultiBoardType);
+    // Pushed into the shared conditions array, so the count and the rows query
+    // below both derive from the same `whereClause`.
+    const textSlugPresent = slugPresentFilter(requireSlug, sql`${dbSchema.gyms.slug}`);
+    if (textSlugPresent) conditions.push(textSlugPresent);
 
     const whereClause = and(...conditions);
 
@@ -864,11 +949,15 @@ export const socialGymQueries = {
 
     const totalCount = Number(countResult?.count || 0);
 
+    // `gyms.id` breaks `created_at` ties. The directory pages this query with
+    // OFFSET, and bulk sync imports write many rows sharing a `created_at`, so
+    // without a unique tiebreaker tied rows have no defined order and can
+    // duplicate or vanish across a page boundary.
     const gymRows = await db
       .select()
       .from(dbSchema.gyms)
       .where(whereClause)
-      .orderBy(desc(dbSchema.gyms.createdAt))
+      .orderBy(desc(dbSchema.gyms.createdAt), dbSchema.gyms.id)
       .limit(limit)
       .offset(offset);
 

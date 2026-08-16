@@ -1,6 +1,7 @@
 import { gql } from 'graphql-request';
 import type {
   Gym,
+  GymBoardSummary,
   GymConnection,
   GymMemberConnection,
   CreateGymInput,
@@ -41,6 +42,15 @@ import type {
 // Gym Queries
 // ============================================
 
+/**
+ * Shared by GET_GYM, GET_GYM_BY_SLUG, GET_MY_GYMS and SEARCH_GYMS, all typed
+ * `Gym`/`GymConnection` — so every field the `Gym` type declares as REQUIRED has
+ * to be selected here, or consumers read `undefined` while TypeScript promises a
+ * value. `isClaimed` is in for exactly that reason (and it's one boolean off
+ * `gym.ownerId`, already loaded, no extra query). `boardSummaries` stays out and
+ * is optional on the type instead: it's a list, only the directory renders it,
+ * and mobile's gym picker rides this fragment at limit 50.
+ */
 const GYM_FIELDS = `
   uuid
   slug
@@ -75,6 +85,7 @@ const GYM_FIELDS = `
   canEdit
   canGrantAccess
   canClaim
+  isClaimed
 `;
 
 export const GET_GYM = gql`
@@ -110,6 +121,37 @@ export const SEARCH_GYMS = gql`
     searchGyms(input: $input) {
       gyms {
         ${GYM_FIELDS}
+      }
+      totalCount
+      hasMore
+    }
+  }
+`;
+
+/**
+ * The public `/gyms` directory list. A separate document from SEARCH_GYMS on
+ * purpose: it selects only what a directory card renders, so the card's cost
+ * doesn't ride along on GET_GYM / GET_MY_GYMS / SEARCH_GYMS. `boardSummaries` in
+ * particular stays out of the shared GYM_FIELDS — it's a list, and mobile's
+ * useNearbyGyms rides that fragment at limit 50 for a picker that never draws
+ * board chips.
+ */
+export const SEARCH_GYMS_DIRECTORY = gql`
+  query SearchGymsDirectory($input: SearchGymsInput!) {
+    searchGyms(input: $input) {
+      gyms {
+        uuid
+        slug
+        name
+        address
+        latitude
+        longitude
+        boardCount
+        isClaimed
+        boardSummaries {
+          boardType
+          angle
+        }
       }
       totalCount
       hasMore
@@ -488,6 +530,31 @@ export type SearchGymsQueryVariables = {
 
 export type SearchGymsQueryResponse = {
   searchGyms: GymConnection;
+};
+
+/**
+ * Exactly the fields SEARCH_GYMS_DIRECTORY selects — the directory card
+ * contract. `boardSummaries` is re-declared as required: it's optional on the
+ * shared `Gym` because the GYM_FIELDS documents don't select it, but this
+ * document does, so a card consumer shouldn't have to null-check it.
+ */
+export type GymDirectoryCard = Pick<
+  Gym,
+  'uuid' | 'slug' | 'name' | 'address' | 'latitude' | 'longitude' | 'boardCount' | 'isClaimed'
+> & {
+  boardSummaries: GymBoardSummary[];
+};
+
+export type SearchGymsDirectoryQueryVariables = {
+  input: SearchGymsInput;
+};
+
+export type SearchGymsDirectoryQueryResponse = {
+  searchGyms: {
+    gyms: GymDirectoryCard[];
+    totalCount: number;
+    hasMore: boolean;
+  };
 };
 
 export type FindSimilarGymsQueryVariables = {

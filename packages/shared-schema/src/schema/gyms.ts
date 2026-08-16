@@ -37,6 +37,18 @@ export const gymsTypeDefs = /* GraphQL */ `
   }
 
   """
+  One board-type + angle pair present at a gym, for the directory's board chips.
+  Deliberately minimal: a card renders "Kilter 40°", nothing else. Distinct pairs
+  only, so two Kilter boards both at 40° collapse into one summary.
+  """
+  type GymBoardSummary {
+    "Board type (kilter, tension, moonboard, ...)"
+    boardType: String!
+    "Board angle in degrees"
+    angle: Int!
+  }
+
+  """
   A physical gym location that can contain multiple boards.
   """
   type Gym {
@@ -88,6 +100,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     boardCount: Int!
     "Distinct board types at this gym (kilter, tension, ...) — for filtering and badges"
     boardTypes: [String!]!
+    "Distinct board-type + angle pairs at this gym, for directory board chips. Ordered by board type then angle and capped, so a gym with a wall of boards returns a bounded list."
+    boardSummaries: [GymBoardSummary!]!
     "Number of members"
     memberCount: Int!
     "Number of followers"
@@ -106,6 +120,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     canGrantAccess: Boolean!
     "Whether the current viewer may start an ownership claim for this gym (signed-in and not already the owner/gym admin)"
     canClaim: Boolean!
+    "Whether a real person owns this gym, as opposed to the system import user. Viewer-independent — unlike canClaim, which is false for every signed-out viewer."
+    isClaimed: Boolean!
   }
 
   """
@@ -337,6 +353,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     sizeIds: [Int!]
     "Only gyms with two or more distinct board types"
     multiBoardTypeOnly: Boolean
+    "Only gyms that have a URL slug, i.e. that can be linked to at /gym/[slug]. Opt-in: omitting it leaves the emitted SQL untouched for existing callers."
+    requireSlug: Boolean
     "Latitude for proximity search"
     latitude: Float
     "Longitude for proximity search"
