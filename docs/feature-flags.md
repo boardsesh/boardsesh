@@ -49,7 +49,9 @@ Per flag it reports a 2x2 — cached vs live, signed-out visitor vs you:
 - `live.public` — an uncached probe as a signed-out visitor (what a crawler gets)
 - `live.viewer` — an uncached probe as you
 
-Both halves matter because the cache is keyed per flag **and** per person, so your answer says nothing about theirs. Read it like this:
+Both halves matter because the cache is keyed per flag **and** per person, so your answer says nothing about theirs. The two `live` probes are uncached, so one request costs 2 PostHog calls per flag (each capped at 1.5s) — negligible for today's single server flag, worth a thought before `SERVER_FEATURE_FLAG_KEYS` grows long enough that an admin page load fans out dozens.
+
+Read it like this:
 
 - `cached.public` off but `live.public` on → the 60s data cache has not caught up. Wait a minute and reload twice; the first request after expiry still serves the stale answer while it revalidates.
 - `live.public` off but `live.viewer` on → the rollout is still person-targeted. A condition matching an email or a cohort cannot match `anonymous-web-visitor`, the single distinct id every signed-out visitor shares. A public launch needs a plain percentage rollout, not 100% of a filtered set.

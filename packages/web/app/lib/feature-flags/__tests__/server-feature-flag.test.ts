@@ -345,10 +345,39 @@ describe('resolution reasons', () => {
     mockFetchOnce({ ok: true, body: { flags: {}, quotaLimited: ['feature_flags'] } });
 
     const { getServerFeatureFlagResolution } = await loadModule();
-    await expect(getServerFeatureFlagResolution(FLAG, { distinctId: 'user-1' })).resolves.toMatchObject({
+    await expect(getServerFeatureFlagResolution(FLAG, { distinctId: 'user-1' })).resolves.toEqual({
       enabled: false,
       reason: 'quota-limited',
+      detail: 'feature_flags',
     });
+  });
+
+  it('still reads quota-limited if PostHog renames the product string', async () => {
+    process.env.NEXT_PUBLIC_POSTHOG_KEY = 'phc_test';
+    mockFetchOnce({ ok: true, body: { flags: {}, quotaLimited: ['feature-flags-v2'] } });
+
+    const { getServerFeatureFlagResolution } = await loadModule();
+
+    // Matching a hardcoded product name would degrade this to `flag-missing`,
+    // sending whoever is debugging to hunt a renamed flag during a billing
+    // outage. The names PostHog did send land in `detail`.
+    await expect(getServerFeatureFlagResolution(FLAG, { distinctId: 'user-1' })).resolves.toEqual({
+      enabled: false,
+      reason: 'quota-limited',
+      detail: 'feature-flags-v2',
+    });
+  });
+
+  it('ignores a quota limit on some other product when the flag resolved fine', async () => {
+    process.env.NEXT_PUBLIC_POSTHOG_KEY = 'phc_test';
+    mockFetchOnce({ ok: true, body: { flags: { [FLAG]: { enabled: true } }, quotaLimited: ['recordings'] } });
+
+    const { getServerFeatureFlagResolution } = await loadModule();
+    await expect(getServerFeatureFlagResolution(FLAG, { distinctId: 'user-1' })).resolves.toMatchObject({
+      enabled: true,
+      reason: 'posthog-enabled',
+    });
+    expect(captureMessage).not.toHaveBeenCalled();
   });
 
   it('carries the HTTP status and the error name as detail', async () => {

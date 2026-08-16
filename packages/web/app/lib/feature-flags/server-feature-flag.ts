@@ -228,12 +228,6 @@ type PosthogFlagsResponse = {
 };
 
 function readFlagResolution(payload: PosthogFlagsResponse, key: string): ServerFeatureFlagResolution {
-  // Checked before the flag maps: a quota-limited project answers 200 with an
-  // EMPTY `flags`, which is otherwise indistinguishable from a deleted flag.
-  if (payload.quotaLimited?.includes('feature_flags')) {
-    return { enabled: false, reason: 'quota-limited', detail: null };
-  }
-
   const v2 = payload.flags?.[key];
   if (v2 && typeof v2.enabled === 'boolean') {
     return { enabled: v2.enabled, reason: v2.enabled ? 'posthog-enabled' : 'posthog-disabled', detail: null };
@@ -247,6 +241,22 @@ function readFlagResolution(payload: PosthogFlagsResponse, key: string): ServerF
   // and any variant means the person is in the flag.
   if (typeof legacy === 'string' && legacy.length > 0) {
     return { enabled: true, reason: 'posthog-enabled', detail: null };
+  }
+
+  // The flag is absent, which needs explaining. A quota-limited project answers
+  // 200 with an EMPTY `flags` map, so that is one explanation and a deleted or
+  // renamed flag is the other.
+  //
+  // Tested AFTER the lookup and on ANY quota limitation rather than on the
+  // `feature_flags` product string: checking a hardcoded product name first
+  // would call a project that is only quota-limited on, say, recordings
+  // `quota-limited` while its flags resolve perfectly, and would silently
+  // degrade to `flag-missing` the day PostHog renames the string — sending
+  // whoever is debugging to look for a renamed flag during a billing outage,
+  // which is exactly the confusion this reason vocabulary exists to prevent.
+  const quotaLimited = payload.quotaLimited?.filter((product) => product.trim().length > 0) ?? [];
+  if (quotaLimited.length > 0) {
+    return { enabled: false, reason: 'quota-limited', detail: quotaLimited.join(', ') };
   }
 
   return { enabled: false, reason: 'flag-missing', detail: null };
