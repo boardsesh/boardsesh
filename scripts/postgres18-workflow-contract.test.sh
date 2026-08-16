@@ -13,32 +13,33 @@ fail() {
 
 # Candidate-controlled pull-request and branch workflows are structurally
 # incapable of registry/package/OIDC mutation.
-[[ "$(rg -c '^  (test-postgres-postgis|test-dev-db|test-db-setup):$' "$VALIDATION_WORKFLOW")" == '3' ]] ||
+[[ "$(grep -cE '^  (test-postgres-postgis|test-dev-db|test-db-setup):$' "$VALIDATION_WORKFLOW")" == '3' ]] ||
   fail 'the three read-only image validation jobs must remain explicit'
-rg -Fq 'permissions:' "$VALIDATION_WORKFLOW"
-rg -Fq '  contents: read' "$VALIDATION_WORKFLOW"
-if rg -q 'workflow_dispatch|packages: write|id-token: write|docker/login-action|attest-build-provenance|environment:' \
+grep -Fq 'permissions:' "$VALIDATION_WORKFLOW"
+grep -Fq '  contents: read' "$VALIDATION_WORKFLOW"
+if grep -qE 'workflow_dispatch|packages: write|id-token: write|docker/login-action|attest-build-provenance|environment:' \
   "$VALIDATION_WORKFLOW"; then
   fail 'candidate-controlled validation must not dispatch or contain registry/OIDC/environment mutation capability'
 fi
-if rg -q 'cache-to:|actions/cache|actions/upload-artifact|DOCKER_BUILD_RECORD_UPLOAD: .true.' \
+if grep -qE 'cache-to:|actions/cache|actions/upload-artifact|DOCKER_BUILD_RECORD_UPLOAD: .true.' \
   "$VALIDATION_WORKFLOW"; then
   fail 'candidate-controlled validation must not write Actions caches or artifacts'
 fi
-[[ "$(rg -c "DOCKER_BUILD_RECORD_UPLOAD: 'false'" "$VALIDATION_WORKFLOW")" == '3' ]] ||
+[[ "$(grep -cF "DOCKER_BUILD_RECORD_UPLOAD: 'false'" "$VALIDATION_WORKFLOW")" == '3' ]] ||
   fail 'every branch-controlled image build must disable build-record uploads'
-! rg -q '^  pull_request_target:' "$VALIDATION_WORKFLOW" || fail 'pull_request_target is forbidden'
+! grep -qE '^  pull_request_target:' "$VALIDATION_WORKFLOW" || fail 'pull_request_target is forbidden'
 
 # `- uses:` is the ordinary list-item form, so anchoring on `uses:` alone would
 # exempt every step written that way from the SHA pin.
-if rg '^\s*-?\s*uses:' "$VALIDATION_WORKFLOW" | rg -v 'uses: [^@]+@[0-9a-f]{40} # ' >/dev/null; then
+if grep -E '^[[:space:]]*-?[[:space:]]*uses:' "$VALIDATION_WORKFLOW" |
+  grep -vE 'uses: [^@]+@[0-9a-f]{40} # ' >/dev/null; then
   fail 'every third-party action in branch-controlled validation must use a reviewed full commit SHA with its tag comment'
 fi
 
 # Every branch-controlled validation job that builds or boots ARM64 installs
 # QEMU. Published-digest smoke and publisher trust are enforced by the separate
 # prerequisite workflow after it lands on protected main.
-[[ "$(rg -c 'docker/setup-qemu-action@[0-9a-f]{40}' "$VALIDATION_WORKFLOW")" == '2' ]] ||
+[[ "$(grep -cE 'docker/setup-qemu-action@[0-9a-f]{40}' "$VALIDATION_WORKFLOW")" == '2' ]] ||
   fail 'both validation jobs that cover ARM64 must install QEMU'
 
 # `vp run test:postgres18-contract` runs on a pull request from exactly one

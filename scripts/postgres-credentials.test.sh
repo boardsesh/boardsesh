@@ -89,7 +89,7 @@ done
 
 # Both the audit and digest helper must use the shared non-argv launcher. This
 # guards against a future call site bypassing the tested transport.
-if rg -n 'psql[[:space:]]+"\$(SOURCE|TARGET|SOURCE_REPLICATION)_DATABASE_URL"|psql[[:space:]]+"\$connection_(url|uri)"' \
+if grep -nE 'psql[[:space:]]+"\$(SOURCE|TARGET|SOURCE_REPLICATION)_DATABASE_URL"|psql[[:space:]]+"\$connection_(url|uri)"' \
   "$PWD/scripts/postgres-migration-audit.sh" \
   "$PWD/scripts/postgres-migration-verify-data.sh" >"$ERROR_LOG"; then
   cat "$ERROR_LOG" >&2
