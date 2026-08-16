@@ -51,8 +51,13 @@ export const dynamic = 'force-dynamic';
  * `flag-missing` is precisely the answer to "did the dashboard rename it?" or
  * "does this project know that key at all?", and a membership check could only
  * ever answer keys we already know are fine.
+ *
+ * Dots are allowed because PostHog accepts dot-separated keys; `/` is not, so a
+ * traversal-shaped string is still rejected. The key never reaches a URL or a
+ * path — it is a JSON lookup and a cache-key part — so the shape check is about
+ * keeping the input recognisably a flag key, not about escaping.
  */
-const FLAG_KEY_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
+const FLAG_KEY_PATTERN = /^[a-zA-Z0-9._-]{1,64}$/;
 
 /** One resolution per (cached | live) x (public | viewer). */
 export type FeatureFlagAudience = {

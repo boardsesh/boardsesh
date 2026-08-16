@@ -145,8 +145,14 @@ describe('GET /api/internal/feature-flags', () => {
     expect(getServerFeatureFlagResolution).toHaveBeenCalledTimes(SERVER_FEATURE_FLAG_KEYS.length);
   });
 
+  it('accepts a dot-separated key, which PostHog allows', async () => {
+    const response = await GET(request('https://www.boardsesh.com/api/internal/feature-flags?key=gyms.directory.v2'));
+    expect(response.status).toBe(200);
+  });
+
   // Shape, not membership: an unregistered key is answerable on purpose (see
-  // the `registered: false` test above), a path-traversal string is not.
+  // the `registered: false` test above), a path-traversal string is not — the
+  // slashes are what disqualify it, dots on their own are fine.
   it('rejects a key that is not shaped like a flag key', async () => {
     const response = await GET(
       request('https://www.boardsesh.com/api/internal/feature-flags?key=' + encodeURIComponent('../../etc/passwd')),
