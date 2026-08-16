@@ -19,11 +19,13 @@ vi.mock('qrcode.react', () => ({
 }));
 
 describe('BoardInstallQr', () => {
-  it('encodes /b/{slug} against the canonical site URL', () => {
+  it('encodes /b/{slug} with the kiosk attribution params against the canonical site URL', () => {
     render(<BoardInstallQr slug="main-kilter" />);
     // Derived from SITE_URL rather than a hardcoded domain, so the assertion
-    // tracks the base URL instead of pinning the production host.
-    expect(screen.getByTestId('qr').getAttribute('data-value')).toBe(`${SITE_URL}/b/main-kilter`);
+    // tracks the base URL instead of pinning the production host. The params are
+    // spelled out: this string gets printed onto a kiosk screen, and a scan that
+    // loses `medium=kiosk` is indistinguishable from someone typing the URL.
+    expect(screen.getByTestId('qr').getAttribute('data-value')).toBe(`${SITE_URL}/b/main-kilter?src=qr&medium=kiosk`);
   });
 
   it('renders the install caption from the kiosk catalog', () => {

@@ -195,16 +195,37 @@ Printed QR codes point at a normal Boardsesh URL carrying two extra params:
 The member list reads as three live mediums. It is one. `Gym QR Scanned` fires
 from the QR landing tracker, which mounts on `/gym/[gym_slug]` and nowhere else.
 The kiosk's per-board QR (`app/components/kiosk/board-slot/board-install-qr.tsx`)
-encodes `/b/{slug}`, and `app/b/[board_slug]/page.tsx` is a bare
-`redirect('/b/{slug}/{angle}/list')` — it renders no tracker, and the redirect
-target is a literal path, so the `?src=qr&medium=` params do not even survive the
-hop.
+encodes `/b/{slug}`, which renders no tracker. #4379 gave that code its
+`?src=qr&medium=kiosk` params and stopped `app/b/[board_slug]/page.tsx` dropping
+the query on the way to `/b/{slug}/{angle}/list`, so a kiosk scan is now
+attributable from a server log — but the destination still has no tracker, so it
+still fires no `Gym QR Scanned`. The poster is the only scan count there is.
 
 `kiosk` and `board` stay in `GYM_QR_MEDIUMS` anyway: the parser has to accept all
 three so that pointing a future kiosk or board QR at a gym page is a call-site
 change rather than a vocabulary change that invalidates codes already printed on
 walls. Until then, expect `medium: 'poster'` and only `poster` in PostHog — a
 `kiosk` or `board` row appearing means someone shipped a new producer.
+
+`/b/...` is itself a www climbing surface that #4358 is deleting. When it goes,
+the kiosk QR needs a new target; the params and the builders in
+`app/lib/gym-attribution.ts` survive that move unchanged.
+
+### Carrying the params through a redirect
+
+Two redirects would otherwise silently unattribute a scan, and both now re-emit
+the pair through `gymQrAttributionQuery` (`app/lib/gym-attribution.ts`):
+
+- `app/b/[board_slug]/page.tsx` → `/b/{slug}/{angle}/list`
+- the merged-twin 308 in `app/gym/[gym_slug]/page.tsx` → `/gym/{canonical}`
+
+The second is the one that matters: a poster is laminated and stuck to a wall,
+and the gym it names can be merged into another listing a year later. The helper
+is a strict allowlist — it re-serialises `src` and `medium` from the contract's
+own constants after `parseGymQrLanding` has accepted them, so nothing a crafted
+link carries (`?medium=evil`, someone else's `utm_campaign`, a `?next=` URL)
+rides through a redirect into a URL we publish. It returns `''`, not `'?'`, so an
+ordinary visit still redirects to a clean URL.
 
 ## Amendments to issue #4374
 
@@ -290,6 +311,28 @@ the wiring PR. It is deliberately not in `@boardsesh/analytics`: `App Install
 Click` is web-only with no mobile counterpart, and a shared package should not
 own an event neither platform shares — that is the same rule that keeps the
 seven gym events out of `SHARED_EVENTS`.
+
+The CTA itself is **`app/gym/[gym_slug]/gym-install-cta.tsx`** (#4379). It
+renders both stores as real anchors — no platform sniffing, because an effect
+that picks one store leaves the server HTML with no install link at all — and
+uses the canonical slug (`gym.slug ?? gym_slug`), so a scan that 308s off a
+merged twin's URL still reports one campaign rather than two.
+
+### Why the Play link carries `referrer`, not just `utm_*`
+
+`playStoreUrlForGym` (`app/lib/gym-attribution.ts`) sets
+`utm_source=boardsesh&utm_medium=qr&utm_campaign=gym-<slug>` **and** a `referrer`
+param holding a percent-encoded copy of the same three. The `referrer` is the
+one that does the work: Play populates the Install Referrer API from that query
+parameter, and `packages/mobile/src/lib/install-referrer.ts` reads the string
+back with `new URLSearchParams(raw)` to pull the three `utm_*` values into
+`Install Attributed`. A link with only the bare `utm_*` params reads correctly to
+a human, matches #4379's literal wording, and attributes **zero** installs,
+because the app never sees them. The bare params stay because the Play console's
+own acquisition reports read those.
+
+iOS carries none of this. The App Store URL is unchanged — Apple has no
+equivalent to read a referrer back, and iOS attribution is out of scope (#3402).
 
 ## Properties deliberately not carried
 

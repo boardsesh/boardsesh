@@ -84,6 +84,12 @@
     "hoursHeading": "Horaires d'ouverture",
     "hoursConfirmed": "Confirmé le {{date}}",
     "visitWebsite": "Visiter le site web",
+    "install": {
+      "heading": "Prends l'appli pour ce mur",
+      "body": "Allume les boards de {{gymName}} depuis ton téléphone et fais la croix sur chaque bloc.",
+      "googlePlay": "Disponible sur Google Play",
+      "appStore": "Télécharger dans l'App Store"
+    },
     "noBoardsYet": "Aucune board ici pour l'instant.",
     "explorePlaylists": "Découvre les playlists des grimpeurs",
     "claimTitle": "C'est ta salle ?",

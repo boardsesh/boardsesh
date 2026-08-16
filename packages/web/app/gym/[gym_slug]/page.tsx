@@ -24,6 +24,7 @@ import {
 } from '@boardsesh/graphql/operations';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import { parseGymQrLanding } from '@boardsesh/analytics';
+import { gymQrAttributionQuery } from '@/app/lib/gym-attribution';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import { getLocale } from '@/app/lib/i18n/get-locale';
@@ -45,6 +46,7 @@ import GymOwnerPrompts from './gym-owner-prompts';
 import GymReportDuplicateCta from './gym-report-duplicate-cta';
 import { formatHoursConfirmedDate } from './gym-hours-display';
 import GymPageCtaLink from './gym-page-cta-link';
+import GymInstallCta from './gym-install-cta';
 import GymQrLandingTracker from './gym-qr-landing-tracker';
 import { getPublicBackendHttpUrl } from '@/app/lib/backend-url';
 import { resolveGymLogoDisplayUrl } from '@/app/lib/gym-logo-display-url';
@@ -133,8 +135,16 @@ export default async function GymPage(props: GymRouteProps) {
   // The requested slug belonged to a merged twin: the backend resolved it to the
   // canonical gym, whose slug differs. Send the old URL (e.g. a printed kiosk QR)
   // to the canonical one with a 308 rather than serving the gym under a dead slug.
+  //
+  // The attribution params ride along, the same way the manage route carries
+  // `?tab=`. A poster is laminated and stuck to a wall; the gym it names can be
+  // merged into another listing a year later, and without this the 308 dropped
+  // the query and every scan of that poster landed unattributed and fired no
+  // `Gym QR Scanned`. Only `src` and `medium` are re-emitted, and only after the
+  // contract's parser has accepted them, so a crafted `?medium=evil` cannot ride
+  // through a redirect to a URL we publish.
   if (gym.slug && gym.slug !== gym_slug) {
-    permanentRedirect(`/gym/${gym.slug}`);
+    permanentRedirect(`/gym/${gym.slug}${gymQrAttributionQuery(searchParams)}`);
   }
 
   const locale = await getLocale();
@@ -290,6 +300,28 @@ export default async function GymPage(props: GymRouteProps) {
             <GymPageCtaLink cta="website" gymUuid={gym.uuid} href={websiteHref} label={t('gymPage.visitWebsite')} />
           )}
           {gym.canEdit && <GymPageManageButton gymSlug={gym_slug} />}
+        </Box>
+
+        {/* The install CTA a poster scan lands on. `gym.slug ?? gym_slug` is the
+            canonical slug: a merged twin's URL 308s onto `gym.slug` above, and a
+            slug-less legacy gym has no canonical to fall back to, so the two
+            paths have to agree on one campaign string per gym. */}
+        <Box sx={{ mb: 3 }}>
+          <Typography
+            variant="subtitle1"
+            component="h2"
+            sx={{ fontWeight: themeTokens.typography.fontWeight.semibold, mb: 0.5 }}
+          >
+            {t('gymPage.install.heading')}
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1.5, color: themeTokens.neutral[700] }}>
+            {t('gymPage.install.body', { gymName: gym.name })}
+          </Typography>
+          <GymInstallCta
+            gymSlug={gym.slug ?? gym_slug}
+            googlePlayLabel={t('gymPage.install.googlePlay')}
+            appStoreLabel={t('gymPage.install.appStore')}
+          />
         </Box>
 
         {/* Self-gating: GymOwnerPrompts renders nothing for a non-editor (or a
