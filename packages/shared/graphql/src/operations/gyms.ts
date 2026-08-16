@@ -117,6 +117,36 @@ export const SEARCH_GYMS = gql`
   }
 `;
 
+/**
+ * The public `/gyms` directory list. A separate document from SEARCH_GYMS on
+ * purpose: it selects only what a directory card renders, and GYM_FIELDS is
+ * shared with GET_GYM / GET_MY_GYMS / SEARCH_GYMS — mobile's useNearbyGyms rides
+ * that fragment at limit 50, so widening it would make every gym-picker query
+ * fetch board summaries and a claim flag it never draws.
+ */
+export const SEARCH_GYMS_DIRECTORY = gql`
+  query SearchGymsDirectory($input: SearchGymsInput!) {
+    searchGyms(input: $input) {
+      gyms {
+        uuid
+        slug
+        name
+        address
+        latitude
+        longitude
+        boardCount
+        isClaimed
+        boardSummaries {
+          boardType
+          angle
+        }
+      }
+      totalCount
+      hasMore
+    }
+  }
+`;
+
 export const FIND_SIMILAR_GYMS = gql`
   query FindSimilarGyms($input: FindSimilarGymsInput!) {
     findSimilarGyms(input: $input) {
@@ -488,6 +518,24 @@ export type SearchGymsQueryVariables = {
 
 export type SearchGymsQueryResponse = {
   searchGyms: GymConnection;
+};
+
+/** Exactly the fields SEARCH_GYMS_DIRECTORY selects — the directory card contract. */
+export type GymDirectoryCard = Pick<
+  Gym,
+  'uuid' | 'slug' | 'name' | 'address' | 'latitude' | 'longitude' | 'boardCount' | 'isClaimed' | 'boardSummaries'
+>;
+
+export type SearchGymsDirectoryQueryVariables = {
+  input: SearchGymsInput;
+};
+
+export type SearchGymsDirectoryQueryResponse = {
+  searchGyms: {
+    gyms: GymDirectoryCard[];
+    totalCount: number;
+    hasMore: boolean;
+  };
 };
 
 export type FindSimilarGymsQueryVariables = {

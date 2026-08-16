@@ -25,6 +25,7 @@ import { distanceMeters } from '@boardsesh/db/queries';
 import { logger } from '../../../utils/logger';
 import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
 import { syncLocationGeography } from './location-geography';
+import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 
 // ============================================
 // Helpers
@@ -210,6 +211,16 @@ export async function resolveCanonicalGymBySlug(slug: string): Promise<GymRow | 
 }
 
 /**
+ * Cap on `Gym.boardSummaries`. The directory card shows a row of board chips; a
+ * gym with 40 boards must not ship 40 summaries down the wire for a card that
+ * visually truncates after a handful. Distinct (type, angle) pairs are already
+ * far fewer than boards — 12 covers every real gym in the data — and the list is
+ * ordered before slicing, so the cut is deterministic rather than "whichever 12
+ * Postgres felt like". `boardCount` remains the honest total.
+ */
+export const GYM_BOARD_SUMMARY_LIMIT = 12;
+
+/**
  * Enrich a gym row with computed fields (counts, follow status, membership).
  * Exported so the kiosk resolvers can attach the same branding-carrying `Gym`
  * payload (logo + colours) to a public kiosk without duplicating the enrichment.
@@ -218,7 +229,7 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
   const [
     ownerResult,
     boardCountResult,
-    boardTypesResult,
+    boardVariantsResult,
     memberCountResult,
     followerCountResult,
     commentCountResult,
@@ -245,11 +256,18 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
       .from(dbSchema.userBoards)
       .where(and(eq(dbSchema.userBoards.gymId, gym.id), isNull(dbSchema.userBoards.deletedAt))),
 
-    // Distinct board types at this gym (for filtering + badges)
+    // Distinct (board type, angle) pairs at this gym. ONE query feeds both
+    // `boardTypes` (filtering + badges) and `boardSummaries` (directory board
+    // chips) — deliberately widened rather than joined by a second query, because
+    // enrichGym already fires nine round trips per gym and searchGyms runs it per
+    // row (limit up to 50), so a 24-card directory page costs ~216 queries; a
+    // tenth per gym would make it 240. Ordered so the summary cap below slices a
+    // stable prefix.
     db
-      .selectDistinct({ boardType: dbSchema.userBoards.boardType })
+      .selectDistinct({ boardType: dbSchema.userBoards.boardType, angle: dbSchema.userBoards.angle })
       .from(dbSchema.userBoards)
-      .where(and(eq(dbSchema.userBoards.gymId, gym.id), isNull(dbSchema.userBoards.deletedAt))),
+      .where(and(eq(dbSchema.userBoards.gymId, gym.id), isNull(dbSchema.userBoards.deletedAt)))
+      .orderBy(dbSchema.userBoards.boardType, dbSchema.userBoards.angle),
 
     // Count members
     db.select({ count: count() }).from(dbSchema.gymMembers).where(eq(dbSchema.gymMembers.gymId, gym.id)),
@@ -293,7 +311,13 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
 
   const ownerInfo = ownerResult[0];
   const boardCount = Number(boardCountResult[0]?.count || 0);
-  const boardTypes = boardTypesResult.map((row) => row.boardType);
+  // Both derived from the single widened distinct query above: the summaries are
+  // the (type, angle) pairs capped for the wire, `boardTypes` collapses them back
+  // to the distinct types the filters and badges have always used.
+  const boardSummaries = boardVariantsResult
+    .slice(0, GYM_BOARD_SUMMARY_LIMIT)
+    .map((row) => ({ boardType: row.boardType, angle: Number(row.angle) }));
+  const boardTypes = [...new Set(boardVariantsResult.map((row) => row.boardType))];
   const memberCount = Number(memberCountResult[0]?.count || 0);
   const followerCount = Number(followerCountResult[0]?.count || 0);
   const commentCount = Number(commentCountResult[0]?.count || 0);
@@ -328,6 +352,16 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
     memberRow?.role !== 'editor' &&
     !hasCommunityAccess;
 
+  // Whether a real person owns this gym. Gyms created by the location sync are
+  // parked on the system import user, so ownership by anyone else means someone
+  // claimed it. This reads `gym.ownerId` ONLY — never `authenticatedUserId` — so
+  // the value is identical for every viewer and is therefore safe to cache for
+  // anonymous SSR. That is the whole point of the field: `canClaim` is false for
+  // every signed-out viewer, and signed-out viewers are the public directory's
+  // entire audience, so a card gated on `canClaim` would render nothing for them
+  // while looking correct in a logged-in dev session.
+  const isClaimed = gym.ownerId !== SYSTEM_BOARD_OWNER_ID;
+
   return {
     uuid: gym.uuid,
     slug: gym.slug,
@@ -353,6 +387,7 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
     createdAt: gym.createdAt.toISOString(),
     boardCount,
     boardTypes,
+    boardSummaries,
     memberCount,
     followerCount,
     commentCount,
@@ -362,7 +397,28 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
     canEdit,
     canGrantAccess,
     canClaim,
+    isClaimed,
   };
+}
+
+/**
+ * `SearchGymsInput.requireSlug` predicate: keep only gyms that can produce a
+ * `/gym/[slug]` URL. A slugless gym renders as `/gym/null` in the public
+ * directory, so the directory opts in; every other caller omits the flag and
+ * gets `null` back, leaving its emitted SQL byte-identical.
+ *
+ * ONE exported function, parameterised by the slug expression, because
+ * searchGyms has two code paths and the proximity path issues its count and its
+ * rows as two SEPARATE `db.execute` calls that only agree because both
+ * interpolate the same filter clause. A predicate added to the rows query but
+ * not the count makes `totalCount`/`hasMore` disagree with the rows returned —
+ * broken pagination that no test catches unless it asserts on both statements.
+ * Callers pass `gyms.slug` (raw PostGIS path) or the Drizzle column (text path).
+ */
+export function slugPresentFilter(requireSlug: boolean | undefined, slugColumn: SQL): SQL | null {
+  // Empty string is excluded alongside NULL: `/gym/` is as broken a link as
+  // `/gym/null`, and the column has no NOT NULL / non-empty constraint.
+  return requireSlug ? sql`${slugColumn} IS NOT NULL AND ${slugColumn} <> ''` : null;
 }
 
 type GymMemberRole = 'admin' | 'editor' | 'member';
@@ -750,7 +806,8 @@ export const socialGymQueries = {
 
   searchGyms: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     const validatedInput = validateInput(SearchGymsInputSchema, input, 'input');
-    const { query, boardTypes, layoutIds, sizeIds, multiBoardTypeOnly, latitude, longitude, radiusKm } = validatedInput;
+    const { query, boardTypes, layoutIds, sizeIds, multiBoardTypeOnly, requireSlug, latitude, longitude, radiusKm } =
+      validatedInput;
     const limit = validatedInput.limit ?? 20;
     const offset = validatedInput.offset ?? 0;
     const useProximity = latitude !== undefined && longitude !== undefined;
@@ -807,9 +864,14 @@ export const socialGymQueries = {
 
       // Board/gym filters appended to the raw PostGIS WHERE. `gyms.id` is the
       // bare column in this raw query's FROM.
-      const proximityFilters = [boardMatchExists(sql`gyms.id`), multiBoardTypeExists(sql`gyms.id`)].filter(
-        (clause): clause is SQL => clause !== null,
-      );
+      const proximityFilters = [
+        boardMatchExists(sql`gyms.id`),
+        multiBoardTypeExists(sql`gyms.id`),
+        // Shared by the count and the rows statements below — both interpolate
+        // `proximityFilterClause`, so they can never disagree about which gyms
+        // are in the result set.
+        slugPresentFilter(requireSlug, sql`gyms.slug`),
+      ].filter((clause): clause is SQL => clause !== null);
       const proximityFilterClause =
         proximityFilters.length > 0 ? sql` AND ${sql.join(proximityFilters, sql` AND `)}` : sql.empty();
 
@@ -857,6 +919,10 @@ export const socialGymQueries = {
     if (textBoardMatch) conditions.push(textBoardMatch);
     const textMultiBoardType = multiBoardTypeExists(sql`${dbSchema.gyms.id}`);
     if (textMultiBoardType) conditions.push(textMultiBoardType);
+    // Pushed into the shared conditions array, so the count and the rows query
+    // below both derive from the same `whereClause`.
+    const textSlugPresent = slugPresentFilter(requireSlug, sql`${dbSchema.gyms.slug}`);
+    if (textSlugPresent) conditions.push(textSlugPresent);
 
     const whereClause = and(...conditions);
 
