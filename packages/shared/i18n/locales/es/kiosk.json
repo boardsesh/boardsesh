@@ -84,6 +84,12 @@
     "hoursHeading": "Horario",
     "hoursConfirmed": "Confirmado el {{date}}",
     "visitWebsite": "Visitar el sitio web",
+    "install": {
+      "heading": "Consigue la app para este muro",
+      "body": "Enciende los plafones de {{gymName}} desde el móvil y registra cada encadene.",
+      "googlePlay": "Disponible en Google Play",
+      "appStore": "Descárgala en el App Store"
+    },
     "noBoardsYet": "Aún no hay plafones aquí.",
     "explorePlaylists": "Mira las playlists que monta la gente",
     "claimTitle": "¿Es tuyo este rocódromo?",

@@ -18,12 +18,18 @@
 import React from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useTranslation } from 'react-i18next';
-import { absoluteUrl } from '@/app/lib/seo/base-url';
+import { boardQrUrl } from '@/app/lib/gym-attribution';
 import styles from './board-install-qr.module.css';
 
 export default function BoardInstallQr({ slug }: { slug: string }) {
   const { t } = useTranslation('kiosk');
-  const installUrl = absoluteUrl(`/b/${slug}`);
+  // Carries `?src=qr&medium=kiosk` (#4379). It cannot fire `Gym QR Scanned` —
+  // that tracker only mounts on `/gym/[gym_slug]` and this code points at
+  // `/b/{slug}` — but the params now survive `/b/[board_slug]`'s redirect
+  // instead of being dropped, so the scan is attributable from server logs and
+  // to the first-party counters in #4387, and re-aiming this code at a gym page
+  // later is a code change rather than a reprint.
+  const installUrl = boardQrUrl(slug, 'kiosk');
 
   return (
     <div className={styles.tile}>

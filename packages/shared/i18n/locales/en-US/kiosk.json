@@ -84,6 +84,12 @@
     "hoursHeading": "Opening hours",
     "hoursConfirmed": "Confirmed {{date}}",
     "visitWebsite": "Visit website",
+    "install": {
+      "heading": "Get the app for this wall",
+      "body": "Light up the boards at {{gymName}} from your phone and log every send.",
+      "googlePlay": "Get it on Google Play",
+      "appStore": "Download on the App Store"
+    },
     "noBoardsYet": "No boards listed here yet.",
     "explorePlaylists": "See what people are building",
     "claimTitle": "Is this your gym?",

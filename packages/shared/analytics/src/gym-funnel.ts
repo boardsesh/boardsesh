@@ -110,11 +110,14 @@ export type GymClaimResultStatus = 'email_sent' | 'approved' | 'admin_review' | 
  * currently has a producer that can reach a gym page. `Gym QR Scanned` fires
  * from the QR landing tracker, which mounts on `/gym/[gym_slug]` and nowhere
  * else. The kiosk's per-board QR (`components/kiosk/board-slot/board-install-qr.tsx`)
- * encodes `/b/{slug}`, and `app/b/[board_slug]/page.tsx` is a bare
- * `redirect('/b/{slug}/{angle}/list')` — it renders no tracker AND the redirect
- * is built from a literal path, so the `?src=qr&medium=` params do not even
- * survive the hop. A `kiosk` or `board` scan therefore cannot fire this event
- * today.
+ * encodes `/b/{slug}`, and `app/b/[board_slug]/page.tsx` redirects to
+ * `/b/{slug}/{angle}/list`, which renders no tracker. A `kiosk` or `board` scan
+ * therefore cannot fire this event today.
+ *
+ * The params themselves DO survive that hop as of #4379 — the redirect carries
+ * them through `gymQrAttributionQuery` (`packages/web/app/lib/gym-attribution.ts`),
+ * so a kiosk scan is attributable from a server log. It is the missing tracker
+ * at the destination, and only that, which keeps the event unfireable.
  *
  * Both members are kept anyway: the param contract has to parse all three so a
  * future gym-page-targeted kiosk or board QR is a call-site change, not a

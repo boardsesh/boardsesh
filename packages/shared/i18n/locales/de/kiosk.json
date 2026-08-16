@@ -84,6 +84,12 @@
     "hoursHeading": "Öffnungszeiten",
     "hoursConfirmed": "Bestätigt am {{date}}",
     "visitWebsite": "Website besuchen",
+    "install": {
+      "heading": "Hol dir die App für diese Wand",
+      "body": "Beleuchte die Boards in {{gymName}} vom Handy aus und logg jede Begehung.",
+      "googlePlay": "Jetzt bei Google Play",
+      "appStore": "Laden im App Store"
+    },
     "noBoardsYet": "Hier sind noch keine Boards gelistet.",
     "explorePlaylists": "Sieh, was Kletterer*innen zusammenstellen",
     "claimTitle": "Ist das deine Halle?",
