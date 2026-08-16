@@ -47,7 +47,7 @@ import { formatHoursConfirmedDate } from './gym-hours-display';
 import GymPageCtaLink from './gym-page-cta-link';
 import GymQrLandingTracker from './gym-qr-landing-tracker';
 import { getPublicBackendHttpUrl } from '@/app/lib/backend-url';
-import { resolveGymLogoDisplayUrl } from '@/app/lib/gym-logo-display-url';
+import { resolveGymLogoDisplayUrl, resolveGymPhotoDisplayUrl } from '@/app/lib/gym-logo-display-url';
 
 type GymRouteProps = {
   params: Promise<{ gym_slug: string }>;
@@ -96,6 +96,20 @@ function isGymViewable(gym: Gym | null): gym is Gym {
   return gym !== null && (gym.isPublic || gym.canEdit);
 }
 
+/**
+ * Absolute, http(s)-only URL for the owner-uploaded gym photo, or null.
+ *
+ * Two guards, both load-bearing. safeExternalHref keeps a legacy row holding a
+ * `javascript:`/`data:` value out of the `<img src>`, the JSON-LD `image` and
+ * the share card — `imageUrl` was validated with a bare `z.string().url()`
+ * until this feature landed, and that accepted both. And because it only
+ * returns absolute URLs, a bare `/static/...` path (which would resolve
+ * against www and 404 for a scraper) can never escape into metadata.
+ */
+function resolveGymPhotoSrc(gym: Gym): string | null {
+  return safeExternalHref(resolveGymPhotoDisplayUrl(gym.imageUrl ?? null, getPublicBackendHttpUrl()));
+}
+
 export async function generateMetadata(props: GymRouteProps): Promise<Metadata> {
   const { gym_slug } = await props.params;
   const token = await getServerAuthToken();
@@ -117,7 +131,25 @@ export async function generateMetadata(props: GymRouteProps): Promise<Metadata> 
   // `/gym/x?src=qr&medium=poster` its own canonical and split the page's
   // ranking signals across as many URLs as there are param combinations. Filter,
   // sort and attribution params all canonicalise to the clean base URL.
-  const options = { title, description, path: `/gym/${gym_slug}`, locale };
+  // An owner-uploaded photo becomes the share card; gyms without one keep the
+  // generic Boardsesh card (createPageMetadata's default). No imageWidth /
+  // imageHeight for a user photo — we don't know its aspect ratio, and a wrong
+  // one makes scrapers crop it.
+  const photoSrc = resolveGymPhotoSrc(gym);
+  const options = {
+    title,
+    description,
+    path: `/gym/${gym_slug}`,
+    locale,
+    ...(photoSrc
+      ? {
+          imagePath: photoSrc,
+          imageAlt: t('gymPage.photoAlt', { gymName: gym.name }),
+          imageWidth: null,
+          imageHeight: null,
+        }
+      : {}),
+  };
   return gym.isPublic ? createPageMetadata(options) : createNoIndexMetadata(options);
 }
 
@@ -141,9 +173,13 @@ export default async function GymPage(props: GymRouteProps) {
   const [{ t }, { t: tBoards }] = await Promise.all([getServerTranslation('kiosk'), getServerTranslation('boards')]);
   const [kiosk, boards] = await Promise.all([fetchDefaultKiosk(gym_slug, token), fetchGymBoards(gym.uuid, token)]);
 
-  // Stored logo paths are backend-relative; resolve for the browser (also
-  // keeps the JSON-LD image absolute, as schema.org expects).
-  const logoSrc = resolveGymLogoDisplayUrl(gym.logoUrl ?? null, getPublicBackendHttpUrl()) ?? gym.imageUrl ?? null;
+  // Stored logo/photo paths are backend-relative; resolve for the browser (also
+  // keeps the JSON-LD image absolute, as schema.org expects). The logo has NO
+  // imageUrl fallback: a gym photo squashed into the 72×72 contain-fitted logo
+  // slot is not a logo, it's a broken-looking thumbnail — the photo has its own
+  // 16:9 hero below.
+  const logoSrc = resolveGymLogoDisplayUrl(gym.logoUrl ?? null, getPublicBackendHttpUrl());
+  const photoSrc = resolveGymPhotoSrc(gym);
   // Render-side XSS guard: only http(s) URLs become clickable (legacy rows may
   // predate the backend's GymWebsiteSchema scheme check).
   const websiteHref = safeExternalHref(gym.website);
@@ -171,6 +207,9 @@ export default async function GymPage(props: GymRouteProps) {
   const claimParam = searchParams[CLAIM_PARAM];
   const showsClaimCta = gym.isPublic && claimCtaVariant !== 'hidden';
 
+  // Prefer the real photo for search-result thumbnails; fall back to the logo.
+  const structuredDataImage = photoSrc ?? logoSrc;
+
   const jsonLd = gym.isPublic
     ? {
         '@context': 'https://schema.org',
@@ -180,7 +219,7 @@ export default async function GymPage(props: GymRouteProps) {
         ...(gym.description ? { description: gym.description } : {}),
         ...(gym.address ? { address: gym.address } : {}),
         ...(websiteHref ? { sameAs: websiteHref } : {}),
-        ...(logoSrc ? { image: logoSrc } : {}),
+        ...(structuredDataImage ? { image: structuredDataImage } : {}),
       }
     : null;
 
@@ -194,6 +233,25 @@ export default async function GymPage(props: GymRouteProps) {
             {t('gymPage.breadcrumbHome')}
           </MuiLink>
         </Box>
+
+        {/* Owner-uploaded wall/board shot. Gyms without one simply don't render
+            this — no placeholder art, and no effect on ranking or visibility
+            anywhere; most of the long tail will never upload a photo. */}
+        {photoSrc && (
+          <Box
+            component="img"
+            src={photoSrc}
+            alt={t('gymPage.photoAlt', { gymName: gym.name })}
+            sx={{
+              width: '100%',
+              aspectRatio: '16 / 9',
+              objectFit: 'cover',
+              borderRadius: 2,
+              display: 'block',
+              mb: 3,
+            }}
+          />
+        )}
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 2 }}>
           {logoSrc && (

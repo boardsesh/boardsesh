@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveGymLogoDisplayUrl } from '../gym-logo-display-url';
+import { resolveGymLogoDisplayUrl, resolveGymPhotoDisplayUrl } from '../gym-logo-display-url';
 
 describe('resolveGymLogoDisplayUrl', () => {
   const storedPath = '/static/gym-logos/abc.png?v=123';
@@ -31,6 +31,23 @@ describe('resolveGymLogoDisplayUrl', () => {
   it('treats protocol-relative URLs as already absolute', () => {
     expect(resolveGymLogoDisplayUrl('//cdn.example.com/logo.png', 'https://ws.boardsesh.com')).toBe(
       '//cdn.example.com/logo.png',
+    );
+  });
+});
+
+describe('resolveGymPhotoDisplayUrl', () => {
+  const storedPath = '/static/gym-photos/abc.jpg?v=123';
+
+  it('resolves the stored backend-relative path against the backend origin', () => {
+    expect(resolveGymPhotoDisplayUrl(storedPath, 'https://ws.boardsesh.com')).toBe(
+      `https://ws.boardsesh.com${storedPath}`,
+    );
+  });
+
+  it('passes through null and absolute URLs untouched', () => {
+    expect(resolveGymPhotoDisplayUrl(null, 'https://ws.boardsesh.com')).toBeNull();
+    expect(resolveGymPhotoDisplayUrl('https://cdn.example.com/gym.jpg', 'https://ws.boardsesh.com')).toBe(
+      'https://cdn.example.com/gym.jpg',
     );
   });
 });

@@ -8,6 +8,15 @@
  */
 export const GYM_HOURS_MAX_LENGTH = 500;
 
+/**
+ * Hard byte cap on the gym PHOTO (`image_url`) upload, shared by the backend's
+ * Busboy limit and the manage-console uploader that pre-checks before POSTing.
+ * One number, one import: a client cap below the server's would reject photos
+ * the server would have taken, and a client cap above it lets an owner sit
+ * through a full upload only to get a 400 back.
+ */
+export const GYM_PHOTO_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+
 export type GymMemberRole = 'admin' | 'editor' | 'member';
 
 export type GymClaimMethod = 'domain' | 'admin';
@@ -187,7 +196,8 @@ export type UpdateGymInput = {
   latitude?: number | null;
   longitude?: number | null;
   isPublic?: boolean;
-  imageUrl?: string;
+  /** Gym photo. `undefined` leaves the column untouched; explicit `null` clears it. */
+  imageUrl?: string | null;
   // Branding: `undefined` leaves the column untouched; explicit `null` clears it
   // (reset-to-default in the manage UI).
   logoUrl?: string | null;

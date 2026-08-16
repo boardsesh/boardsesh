@@ -113,7 +113,8 @@
         "title": "Bring dein Branding rein",
         "body": "Füg Logo und Farben hinzu, damit die Seite nach dir aussieht."
       }
-    }
+    },
+    "photoAlt": "Die Kletterwand von {{gymName}}"
   },
   "manage": {
     "welcome": {
@@ -391,7 +392,22 @@
     },
     "profile": {
       "heading": "Hallenprofil",
-      "description": "Name und Adresse deiner Halle und das, was Kletterer*innen auf der öffentlichen Seite sehen."
+      "description": "Name und Adresse deiner Halle und das, was Kletterer*innen auf der öffentlichen Seite sehen.",
+      "photo": {
+        "heading": "Hallenfoto",
+        "description": "Ein Foto von deiner Wand oder dem Board-Bereich. Es eröffnet deine öffentliche Seite und reist mit, wenn jemand den Link teilt.",
+        "upload": "Foto hochladen",
+        "replace": "Foto ersetzen",
+        "remove": "Entfernen",
+        "currentAlt": "Foto von {{gymName}}",
+        "emptyPlaceholder": "Noch kein Foto",
+        "formatsHint": "JPG, PNG oder WebP, bis {{maxMb}} MB. Wird auf {{maxDimension}} px skaliert. Nimm ein echtes Foto deiner Wand oder des Board-Bereichs, nichts KI-Generiertes.",
+        "unsupportedType": "Nimm ein JPG-, PNG- oder WebP-Bild.",
+        "tooLarge": "Die Datei ist größer als {{maxMb}} MB. Nimm ein kleineres Bild.",
+        "uploadTooLarge": "Das Foto ist auch nach dem Skalieren größer als {{maxMb}} MB. Nimm ein anderes.",
+        "uploadFailed": "Das Foto ließ sich nicht hochladen.",
+        "saveFailed": "Das Foto ließ sich nicht speichern."
+      }
     },
     "comments": {
       "intro": "Antworte im Kommentar-Thread deiner Halle, ohne die Konsole zu verlassen.",

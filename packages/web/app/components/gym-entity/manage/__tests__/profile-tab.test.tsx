@@ -30,6 +30,11 @@ vi.mock('@/app/hooks/use-entity-mutation', () => ({
   useEntityMutation: () => ({ execute: mockExecute, token: 'test-token' }),
 }));
 
+// The gym-photo uploader on this tab reads the upload token off the session.
+vi.mock('@/app/hooks/use-ws-auth-token', () => ({
+  useWsAuthToken: () => ({ token: 'test-token', isLoading: false, error: null }),
+}));
+
 function makeGym(overrides: Partial<Gym> = {}): Gym {
   return {
     uuid: 'gym-uuid-1',
@@ -55,6 +60,15 @@ describe('ProfileTab', () => {
     expect(screen.getByText('Gym profile')).toBeTruthy();
     // The shared EditGymForm's name field, prefilled from the gym.
     expect(screen.getByDisplayValue('Test Gym')).toBeTruthy();
+  });
+
+  it('mounts the gym-photo uploader here, not on the kiosk-only Branding tab', () => {
+    render(<ProfileTab gym={makeGym()} onGymChange={vi.fn()} />);
+
+    // image_url is public-profile content — the hero on /gym/<slug> and its
+    // share card — while Branding is strictly the kiosk/embed surface.
+    expect(screen.getByText('Gym photo')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /upload photo/i })).toBeTruthy();
   });
 
   it('saves through the same mutation and pushes the result to the shell', async () => {
