@@ -260,6 +260,10 @@
         "sent": "{{gym}} ya es tuyo.",
         "manageCta": "Configura tu rocódromo",
         "manageError": "No se pudo abrir la configuración del rocódromo. Ábrela en un navegador."
+      },
+      "protections": {
+        "syncFreeze": "Cuando sea tuyo, tus cambios se quedan: la sincronización de ubicaciones nunca sobrescribe lo que pone quien lo gestiona.",
+        "transfer": "¿Más adelante pasas el rocódromo a otra persona? Escríbenos a {{email}} y trasladamos la propiedad."
       }
     },
     "offline": {

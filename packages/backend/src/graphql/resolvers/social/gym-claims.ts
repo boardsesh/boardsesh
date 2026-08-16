@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { eq, ne, and, isNull, desc, count } from 'drizzle-orm';
+import { eq, ne, gt, or, and, isNull, desc, count } from 'drizzle-orm';
+import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { isClaimableDomain, emailDomainMatchesWebsite } from '@boardsesh/gym-claim';
 import { db } from '../../../db/client';
@@ -35,6 +36,27 @@ const CLAIM_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
  * stays reviewable.
  */
 export const MAX_PENDING_CLAIMS_PER_USER = 10;
+
+/** `extensions.code` on the cap rejection, so clients can branch without scraping the message. */
+export const GYM_CLAIM_LIMIT_CODE = 'GYM_CLAIM_LIMIT_REACHED';
+
+/**
+ * A claim that is genuinely still live: `pending` AND not past its expiry.
+ *
+ * The status column alone is not enough. A domain claim's token dies after 24h,
+ * but the row is only flipped to `expired` when someone clicks the dead link —
+ * there is no sweeper and no cron — so a row can sit `pending` forever holding a
+ * token that can never work again. Anything that asks "does this user have a
+ * claim in flight?" has to read the clock too, or a dead claim keeps the
+ * claimant's slot AND makes the gym page tell them to check an inbox for a link
+ * that is already useless.
+ */
+function claimIsLive() {
+  return and(
+    eq(dbSchema.gymClaims.status, 'pending'),
+    or(isNull(dbSchema.gymClaims.expiresAt), gt(dbSchema.gymClaims.expiresAt, new Date())),
+  );
+}
 
 /** Hash a raw verification token for storage. The raw token only ever lives in the email link. */
 export function hashClaimToken(token: string): string {
@@ -156,18 +178,31 @@ async function loadUserEmail(userId: string): Promise<string | null> {
  * ~99.9% of them, since almost no gym has a verifiable website on file — the
  * approval email used to go nowhere at all. Fall back to the claimant's account
  * email so an approval is actually delivered.
+ *
+ * Every caller runs this AFTER `applyGymClaim` has committed the transfer, so
+ * nothing in here may throw: the gym has already changed hands, and a Postgres
+ * hiccup on the address lookup would otherwise hand the admin a GraphQL error
+ * for an approval that in fact went through. Telling someone about a transfer
+ * is strictly less important than the transfer itself.
  */
 async function notifyClaimApplied(result: ClaimApplied): Promise<void> {
-  await createGymManageAccessNotification(result.claimantUserId, result.gymUuid, result.gymName);
-  const claimantEmail = result.claimEmail ?? (await loadUserEmail(result.claimantUserId));
-  if (claimantEmail) {
-    void sendGymClaimApprovedEmail(claimantEmail, result.gymName);
-  }
-  if (result.priorOwnerId) {
-    const priorOwnerEmail = await loadUserEmail(result.priorOwnerId);
-    if (priorOwnerEmail) {
-      void sendGymClaimOwnershipLostEmail(priorOwnerEmail, result.gymName);
+  try {
+    await createGymManageAccessNotification(result.claimantUserId, result.gymUuid, result.gymName);
+    const claimantEmail = result.claimEmail ?? (await loadUserEmail(result.claimantUserId));
+    if (claimantEmail) {
+      void sendGymClaimApprovedEmail(claimantEmail, result.gymName);
     }
+    if (result.priorOwnerId) {
+      const priorOwnerEmail = await loadUserEmail(result.priorOwnerId);
+      if (priorOwnerEmail) {
+        void sendGymClaimOwnershipLostEmail(priorOwnerEmail, result.gymName);
+      }
+    }
+  } catch (error) {
+    logger.warn(
+      `[GymClaim] Ownership of gym ${result.gymUuid} transferred to ${result.claimantUserId}, but notifying them failed:`,
+      error,
+    );
   }
 }
 
@@ -311,73 +346,77 @@ async function replacePendingClaim(
 }
 
 /**
- * Refuse a new claim once this account is already sitting on
- * MAX_PENDING_CLAIMS_PER_USER unresolved ones elsewhere. Counted excluding the
- * gym being claimed, so re-submitting on a gym they already have queued (which
- * replaces the row rather than adding one) never trips the cap.
+ * How many live claims this account is already sitting on, ignoring the gym
+ * being claimed now (re-submitting there replaces the row rather than adding
+ * one, so it must not count against the claimant).
+ *
+ * Expired-but-unswept domain rows are excluded via `claimIsLive`: nothing in the
+ * product flips them, so counting them would let a dead claim occupy a slot
+ * forever with no user-reachable way to clear it.
  */
-async function assertPendingClaimBudget(claimantUserId: string, excludedGymId: number): Promise<void> {
+async function countOtherLivePendingClaims(claimantUserId: string, excludedGymId: number): Promise<number> {
   const [pending] = await db
     .select({ count: count() })
     .from(dbSchema.gymClaims)
     .where(
       and(
         eq(dbSchema.gymClaims.claimantUserId, claimantUserId),
-        eq(dbSchema.gymClaims.status, 'pending'),
+        claimIsLive(),
         ne(dbSchema.gymClaims.gymId, excludedGymId),
       ),
     );
-  if (Number(pending?.count ?? 0) >= MAX_PENDING_CLAIMS_PER_USER) {
-    throw new Error(
-      `You already have ${MAX_PENDING_CLAIMS_PER_USER} gym claims waiting on review. Wait for those to be decided before claiming another gym.`,
-    );
-  }
+  return Number(pending?.count ?? 0);
 }
 
 /**
- * Tell the admin inbox about a queued claim — once per claimant backlog, not
- * once per claim. Ten pending claims used to mean ten separate emails; the
- * queue at /admin/gym-claims lists every one of them, so the follow-ups added
- * inbox noise and no information. The first claim of a backlog still mails
- * immediately, and a claimant whose queue has been cleared mails again.
+ * Refuse a new claim once this account already holds MAX_PENDING_CLAIMS_PER_USER
+ * live ones elsewhere.
  *
- * Best-effort throughout: the claim row is already committed and visible in the
- * queue, so a dead SMTP must not turn a successfully queued claim into a
- * GraphQL error (the dedup check would then suppress the re-notify on retry and
- * silently strand the admin).
+ * A soft flood cap, not a guarantee: it is a check-then-insert, so concurrent
+ * submissions can both pass it. `requestGymClaim`'s own rate limit (10 per
+ * window) bounds how far past the cap that can go — roughly 20 rows, not
+ * unbounded — which is all this needs to do.
+ *
+ * Returns the backlog it counted, so a caller that also wants to report it
+ * doesn't run the same query twice.
+ */
+async function assertPendingClaimBudget(claimantUserId: string, excludedGymId: number): Promise<number> {
+  const otherPending = await countOtherLivePendingClaims(claimantUserId, excludedGymId);
+  if (otherPending >= MAX_PENDING_CLAIMS_PER_USER) {
+    throw new GraphQLError(
+      `You already have ${MAX_PENDING_CLAIMS_PER_USER} gym claims waiting on review. Wait for those to be decided before claiming another gym.`,
+      { extensions: { code: GYM_CLAIM_LIMIT_CODE, limit: MAX_PENDING_CLAIMS_PER_USER } },
+    );
+  }
+  return otherPending;
+}
+
+/**
+ * Tell the admin inbox about a queued claim. EVERY queued claim mails — the
+ * batching is in the content, not in the delivery.
+ *
+ * Suppressing the send for a claimant who already has a backlog looks tempting
+ * and is a trap: the send is deliberately best-effort (the row is already
+ * committed and visible in /admin/gym-claims, so a dead SMTP must not turn a
+ * successfully queued claim into a GraphQL error), so one swallowed failure
+ * would silently mute every later claim that account ever files — the exact
+ * outcome batching was meant to prevent. Two concurrent submissions would both
+ * see a backlog and both stay quiet, too.
+ *
+ * So instead, a claim filed on top of a backlog carries the backlog with it:
+ * the mail leads with how many that claimant now has waiting, and points at the
+ * queue that lists them. The admin still acts once; nothing can go unheard.
  */
 async function notifyAdminOfQueuedClaim(details: {
-  claimantUserId: string;
   gymName: string;
   gymUuid: string;
   claimantName: string;
   message: string | null;
+  /** This claimant's live pending claims INCLUDING the one just queued. */
+  pendingClaimCount: number;
 }): Promise<void> {
   try {
-    const [pending] = await db
-      .select({ count: count() })
-      .from(dbSchema.gymClaims)
-      .where(
-        and(
-          eq(dbSchema.gymClaims.claimantUserId, details.claimantUserId),
-          eq(dbSchema.gymClaims.status, 'pending'),
-          eq(dbSchema.gymClaims.method, 'admin'),
-        ),
-      );
-    const pendingForClaimant = Number(pending?.count ?? 0);
-    if (pendingForClaimant > 1) {
-      logger.info(
-        `[GymClaim] Claimant ${details.claimantUserId} now has ${pendingForClaimant} pending claims (gym ${details.gymUuid}); batching under the first notification instead of mailing again`,
-      );
-      return;
-    }
-
-    await sendGymClaimAdminNotification({
-      gymName: details.gymName,
-      gymUuid: details.gymUuid,
-      claimantName: details.claimantName,
-      message: details.message,
-    });
+    await sendGymClaimAdminNotification(details);
   } catch (error) {
     logger.warn(
       '[GymClaim] Failed to send admin notification for queued claim:',
@@ -388,9 +427,15 @@ async function notifyAdminOfQueuedClaim(details: {
 
 /**
  * `Gym.myPendingClaim` — a lazy field resolver, so the extra query only runs for
- * the one document that selects it (the web gym page). enrichGym already fires
- * ~9 round trips per gym and runs per row for up to 50 rows in searchGyms, so
- * this deliberately does NOT live there.
+ * the one document that selects it (GET_GYM_PENDING_CLAIM, on the web gym
+ * page). enrichGym already fires ~9 round trips per gym and runs per row for up
+ * to 50 rows in searchGyms, so this deliberately does NOT live there.
+ *
+ * `claimIsLive` and not just `status = 'pending'`: an expired domain claim is
+ * never swept, and returning one would replace the claim call-out with "check
+ * your inbox" for a link that can no longer work — a dead end the claimant
+ * cannot get out of, since that notice is the gym page's only route to the
+ * claim dialog.
  */
 export const gymClaimFieldResolvers = {
   myPendingClaim: async (gym: { uuid: string }, _args: unknown, ctx: ConnectionContext) => {
@@ -403,13 +448,7 @@ export const gymClaimFieldResolvers = {
       })
       .from(dbSchema.gymClaims)
       .innerJoin(dbSchema.gyms, eq(dbSchema.gymClaims.gymId, dbSchema.gyms.id))
-      .where(
-        and(
-          eq(dbSchema.gyms.uuid, gym.uuid),
-          eq(dbSchema.gymClaims.claimantUserId, ctx.userId),
-          eq(dbSchema.gymClaims.status, 'pending'),
-        ),
-      )
+      .where(and(eq(dbSchema.gyms.uuid, gym.uuid), eq(dbSchema.gymClaims.claimantUserId, ctx.userId), claimIsLive()))
       .orderBy(desc(dbSchema.gymClaims.createdAt))
       .limit(1);
     if (!claim) return null;
@@ -591,7 +630,10 @@ export const socialGymClaimMutations = {
       return { status: 'admin_review' };
     }
 
-    await assertPendingClaimBudget(userId, gym.id);
+    // Read the backlog BEFORE the insert, and use that one number for both the
+    // cap and the notification's "N waiting" line — so the count the mail
+    // reports can't drift from the count the cap enforced.
+    const otherPendingClaims = await assertPendingClaimBudget(userId, gym.id);
 
     const queuedClaim = await replacePendingClaim({
       gymId: gym.id,
@@ -608,11 +650,11 @@ export const socialGymClaimMutations = {
     }
 
     await notifyAdminOfQueuedClaim({
-      claimantUserId: userId,
       gymName: gym.name,
       gymUuid: gym.uuid,
       claimantName,
       message: validatedInput.message ?? null,
+      pendingClaimCount: otherPendingClaims + 1,
     });
 
     return { status: 'admin_review' };

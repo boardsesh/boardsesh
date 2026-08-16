@@ -260,6 +260,10 @@
         "sent": "{{gym}} est à toi.",
         "manageCta": "Configurer ta salle",
         "manageError": "Impossible d'ouvrir la configuration de la salle. Ouvre-la dans un navigateur."
+      },
+      "protections": {
+        "syncFreeze": "Une fois la salle à toi, tes modifications restent : la synchronisation des lieux n'écrase jamais ce que le gestionnaire a saisi.",
+        "transfer": "Tu passeras la main un jour ? Écris à {{email}} et on transfère la propriété."
       }
     },
     "offline": {

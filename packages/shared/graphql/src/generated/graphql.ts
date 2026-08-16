@@ -2553,7 +2553,7 @@ export type GymClaimMethod =
 
 /** Outcome of a requestGymClaim call, so clients can show the right next step. */
 export type GymClaimRequestStatus =
-  /** The claim was queued for admin review and our team was notified. */
+  /** The claim is queued for a Boardsesh admin to review, and the claimant gets emailed the outcome either way. Mailing the team is best-effort on top of that queue, not a guarantee, so don't promise the claimant a reply. */
   | 'admin_review'
   /** The claim was approved on the spot — the gym was an unclaimed listing and auto-approval is on. The claimant already manages the gym. */
   | 'approved'

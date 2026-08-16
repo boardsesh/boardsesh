@@ -3,7 +3,12 @@ import { StyleSheet, View } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { Gym } from '@boardsesh/shared-schema';
-import { extractDomain, isClaimableDomain, GYM_CLAIM_MESSAGE_MAX_LENGTH } from '@boardsesh/gym-claim';
+import {
+  extractDomain,
+  isClaimableDomain,
+  GYM_CLAIM_MESSAGE_MAX_LENGTH,
+  GYM_CLAIM_SUPPORT_EMAIL,
+} from '@boardsesh/gym-claim';
 import { ModalSheet } from '../ModalSheet';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -115,6 +120,20 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
     }
   }, [gym.slug, gym.uuid, dismiss, t]);
 
+  // The same two promises the web dialog makes, in the same place: what taking
+  // the listing protects, and where an ownership handover goes. Both form modes
+  // show them; the confirmation doesn't — by then the terms are agreed.
+  const protections = (
+    <View style={styles.protections}>
+      <Text variant="footnote" color={systemColors.secondaryLabel}>
+        {t('mobile.gymClaim.protections.syncFreeze')}
+      </Text>
+      <Text variant="footnote" color={systemColors.secondaryLabel}>
+        {t('mobile.gymClaim.protections.transfer', { email: GYM_CLAIM_SUPPORT_EMAIL })}
+      </Text>
+    </View>
+  );
+
   return (
     <ModalSheet
       ref={sheetRef}
@@ -215,6 +234,7 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
             size="medium"
             tintColor={brandColors.primary}
           />
+          {protections}
         </>
       ) : (
         <>
@@ -264,6 +284,7 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
               tintColor={brandColors.primary}
             />
           ) : null}
+          {protections}
         </>
       )}
     </ModalSheet>
@@ -313,6 +334,10 @@ const styles = StyleSheet.create({
     marginTop: -spacing[1],
   },
   submitButton: {
+    marginTop: spacing[1],
+  },
+  protections: {
+    gap: spacing[2],
     marginTop: spacing[1],
   },
   confirmation: {

@@ -22,6 +22,7 @@ import {
   isClaimableDomain,
   emailDomainMatchesWebsite,
   GYM_CLAIM_MESSAGE_MAX_LENGTH,
+  GYM_CLAIM_SUPPORT_EMAIL,
 } from '@boardsesh/gym-claim';
 import { gymClaimResult, gymClaimSubmitted } from '@boardsesh/analytics';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
@@ -43,14 +44,6 @@ type ClaimGymDialogProps = {
 };
 
 type Mode = 'domain' | 'admin';
-
-/**
- * Where an owner writes about a claim or an ownership handover. There is no
- * in-product owner-reassignment action yet (#4378 builds one), so the copy has
- * to name the channel that actually processes these — the same admin-reviewed
- * inbox the claim queue mails.
- */
-const CLAIM_SUPPORT_EMAIL = 'admin@boardsesh.com';
 
 function graphqlErrorMessage(error: unknown): string | null {
   const response = (error as { response?: { errors?: Array<{ message?: string }> } })?.response;
@@ -298,7 +291,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
               {t('claimGym.protections.syncFreeze')}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {t('claimGym.protections.transfer', { email: CLAIM_SUPPORT_EMAIL })}
+              {t('claimGym.protections.transfer', { email: GYM_CLAIM_SUPPORT_EMAIL })}
             </Typography>
           </Box>
         )}

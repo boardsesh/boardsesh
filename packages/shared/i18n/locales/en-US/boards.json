@@ -260,6 +260,10 @@
         "sent": "{{gym}} is yours to manage.",
         "manageCta": "Set up your gym",
         "manageError": "Couldn't open gym setup. Try it in a browser."
+      },
+      "protections": {
+        "syncFreeze": "Once it's yours, your edits stay put — location sync never overwrites what an owner sets.",
+        "transfer": "Handing the gym to someone else later? Email {{email}} and we'll move ownership across."
       }
     },
     "offline": {

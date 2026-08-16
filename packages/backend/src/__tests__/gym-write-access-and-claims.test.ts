@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { sql, eq, is, SQL } from 'drizzle-orm';
+import type { GraphQLError } from 'graphql';
 import { GYM_HOURS_MAX_LENGTH, type ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
@@ -13,6 +14,7 @@ import {
   verifyGymClaimByToken,
   hashClaimToken,
   MAX_PENDING_CLAIMS_PER_USER,
+  GYM_CLAIM_LIMIT_CODE,
 } from '../graphql/resolvers/social/gym-claims';
 import {
   socialCommunitySettingsMutations,
@@ -2039,7 +2041,7 @@ describe('requestGymClaim — auto-approval', () => {
 // ============================================================================
 
 describe('approving a claim lands the same way whichever path approves it', () => {
-  it('auto-approval and admin approval agree on owner + sync freeze, differing only in reviewed_by', async () => {
+  it('auto-approval, admin approval and applyGymClaim itself agree, differing only in reviewed_by', async () => {
     // Same starting shape for both: an unclaimed catalog listing, one claimant.
     // Auto-approval is the only path that ever runs unattended, so if the two
     // ever drift, an admin-approved gym silently stops being sync-frozen and
@@ -2072,12 +2074,25 @@ describe('approving a claim lands the same way whichever path approves it', () =
       ),
     ).resolves.toBe(true);
 
+    // Third arm: applyGymClaim itself — the one function both paths are
+    // supposed to delegate to, and the only reason the two above can be
+    // expected to agree at all. If either mutation ever grows its own transfer
+    // logic, its end state drifts from this one and this test fails, which is
+    // the drift it exists to catch.
+    const directGym = await insertGym({ ownerId: SYSTEM_OWNER, name: 'Parity Direct' });
+    const directClaimId = await insertClaim({ gymId: directGym.id, claimantUserId: CLAIMANT, method: 'admin' });
+    const [directClaim] = await db.select().from(dbSchema.gymClaims).where(eq(dbSchema.gymClaims.id, directClaimId));
+    expect(await applyGymClaim(directClaim, { requireCurrentOwnerId: SYSTEM_OWNER })).not.toBeNull();
+
     // Identical end state...
     expect(await gymOwnerId(autoGym.uuid)).toBe(CLAIMANT);
     expect(await gymOwnerId(reviewedGym.uuid)).toBe(CLAIMANT);
+    expect(await gymOwnerId(directGym.uuid)).toBe(CLAIMANT);
     expect(await gymSyncFrozenAt(autoGym.uuid)).not.toBeNull();
     expect(await gymSyncFrozenAt(reviewedGym.uuid)).not.toBeNull();
+    expect(await gymSyncFrozenAt(directGym.uuid)).not.toBeNull();
     expect(await claimStatus(queued.id)).toBe('approved');
+    expect(await claimStatus(directClaimId)).toBe('approved');
 
     // ...except for who is on record as having decided it.
     expect(await claimRows(autoGym.id)).toEqual([expect.objectContaining({ status: 'approved', reviewed_by: null })]);
@@ -2160,13 +2175,16 @@ describe('pending claims are capped per user, and the admin inbox is not flooded
     }
 
     const oneTooMany = await insertGym({ ownerId: PRIOR_OWNER, name: 'One Too Many' });
-    await expect(
-      socialGymClaimMutations.requestGymClaim(
-        null,
-        { input: { gymUuid: oneTooMany.uuid, message: 'this one as well' } },
-        authCtx(hoarder),
-      ),
-    ).rejects.toThrow(/waiting on review/);
+    const rejection = await socialGymClaimMutations
+      .requestGymClaim(null, { input: { gymUuid: oneTooMany.uuid, message: 'this one as well' } }, authCtx(hoarder))
+      .catch((error: unknown) => error);
+    expect(String((rejection as Error).message)).toMatch(/waiting on review/);
+    // Carries a machine-readable code, like the rate limiter, so a client can
+    // branch on the cap instead of matching English.
+    expect((rejection as GraphQLError).extensions).toMatchObject({
+      code: GYM_CLAIM_LIMIT_CODE,
+      limit: MAX_PENDING_CLAIMS_PER_USER,
+    });
     expect(await claimRowCount(oneTooMany.id)).toBe(0);
 
     // Re-submitting on a gym they already have queued replaces that row rather
@@ -2180,7 +2198,7 @@ describe('pending claims are capped per user, and the admin inbox is not flooded
     ).resolves.toEqual({ status: 'admin_review' });
   });
 
-  it('mails the admin inbox once per claimant backlog, not once per claim', async () => {
+  it('carries the backlog in the mail rather than going quiet on the second claim', async () => {
     const serialClaimer = `gw-serial-${uuidv4()}`;
     await insertUser(serialClaimer);
     const first = await insertGym({ ownerId: PRIOR_OWNER, name: 'Backlog One' });
@@ -2192,11 +2210,70 @@ describe('pending claims are capped per user, and the admin inbox is not flooded
       ).resolves.toEqual({ status: 'admin_review' });
     }
 
-    // Both are queued and reviewable; only the first one mailed.
+    // EVERY queued claim mails. Skipping the later ones would mean one swallowed
+    // SMTP failure mutes an account's whole queue — the batching is in the
+    // content (the "N waiting" count), not in the delivery.
+    expect(sendGymClaimAdminNotification).toHaveBeenCalledTimes(2);
+    expect(sendGymClaimAdminNotification).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ gymName: 'Backlog One', pendingClaimCount: 1 }),
+    );
+    expect(sendGymClaimAdminNotification).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ gymName: 'Backlog Two', pendingClaimCount: 2 }),
+    );
+  });
+
+  it('keeps mailing after a send fails, instead of muting the account for good', async () => {
+    // The regression this guards: a post-insert "do they already have claims?"
+    // check paired with a deliberately swallowed send meant one SMTP blip
+    // silenced every claim that account would ever file.
+    const unluckyClaimer = `gw-smtp-blip-${uuidv4()}`;
+    await insertUser(unluckyClaimer);
+    const first = await insertGym({ ownerId: PRIOR_OWNER, name: 'Blip One' });
+    const second = await insertGym({ ownerId: PRIOR_OWNER, name: 'Blip Two' });
+
+    vi.mocked(sendGymClaimAdminNotification).mockRejectedValueOnce(new Error('SMTP down'));
+
+    await expect(
+      socialGymClaimMutations.requestGymClaim(null, { input: { gymUuid: first.uuid } }, authCtx(unluckyClaimer)),
+    ).resolves.toEqual({ status: 'admin_review' });
+    await expect(
+      socialGymClaimMutations.requestGymClaim(null, { input: { gymUuid: second.uuid } }, authCtx(unluckyClaimer)),
+    ).resolves.toEqual({ status: 'admin_review' });
+
+    expect(sendGymClaimAdminNotification).toHaveBeenCalledTimes(2);
     expect(await claimRowCount(first.id)).toBe(1);
     expect(await claimRowCount(second.id)).toBe(1);
-    expect(sendGymClaimAdminNotification).toHaveBeenCalledTimes(1);
-    expect(sendGymClaimAdminNotification).toHaveBeenCalledWith(expect.objectContaining({ gymName: 'Backlog One' }));
+  });
+
+  it('does not let an expired domain claim hold a slot forever', async () => {
+    // Nothing sweeps expired rows — the only flip to `expired` happens when
+    // someone clicks the dead link — so a cap that counted them would strand
+    // the claimant with no way to free the slot.
+    const stuckClaimer = `gw-stuck-${uuidv4()}`;
+    await insertUser(stuckClaimer);
+
+    const seeded = await Promise.all(
+      Array.from({ length: MAX_PENDING_CLAIMS_PER_USER }, (_, index) =>
+        insertGym({ ownerId: PRIOR_OWNER, name: `Stale ${index}` }),
+      ),
+    );
+    for (const gym of seeded) {
+      await insertClaim({
+        gymId: gym.id,
+        claimantUserId: stuckClaimer,
+        method: 'domain',
+        claimEmail: 'boss@stale.com',
+        tokenHash: hashClaimToken(`stale-${gym.id}`),
+        expiresAt: new Date(Date.now() - 60 * 1000),
+      });
+    }
+
+    const freshGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Fresh Claim' });
+    await expect(
+      socialGymClaimMutations.requestGymClaim(null, { input: { gymUuid: freshGym.uuid } }, authCtx(stuckClaimer)),
+    ).resolves.toEqual({ status: 'admin_review' });
   });
 });
 
@@ -2222,6 +2299,26 @@ describe('Gym.myPendingClaim (viewer-scoped)', () => {
     const claimId = await insertClaim({ gymId: claimGym.id, claimantUserId: CLAIMANT, method: 'admin' });
 
     await socialGymClaimMutations.reviewGymClaim(null, { input: { claimId, decision: 'deny' } }, authCtx(GLOBAL_ADMIN));
+
+    await expect(
+      gymClaimFieldResolvers.myPendingClaim({ uuid: claimGym.uuid }, {}, authCtx(CLAIMANT)),
+    ).resolves.toBeNull();
+  });
+
+  it('stops reporting an expired domain claim, so the claimant is not trapped', async () => {
+    // The gym page swaps the claim CTA for "check your inbox" while this is
+    // non-null. Nothing sweeps expired rows, so if the resolver kept returning
+    // one, the page would point at a dead link forever with no way back to the
+    // dialog — strictly worse than showing no notice at all.
+    const claimGym = await insertGym({ ownerId: OWNER, name: 'Lapsed Link Gym', website: 'https://www.lapsed.com' });
+    await insertClaim({
+      gymId: claimGym.id,
+      claimantUserId: CLAIMANT,
+      method: 'domain',
+      claimEmail: 'boss@lapsed.com',
+      tokenHash: hashClaimToken('lapsed-token'),
+      expiresAt: new Date(Date.now() - 60 * 1000),
+    });
 
     await expect(
       gymClaimFieldResolvers.myPendingClaim({ uuid: claimGym.uuid }, {}, authCtx(CLAIMANT)),
