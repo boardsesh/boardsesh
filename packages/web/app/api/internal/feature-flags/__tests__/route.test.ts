@@ -145,7 +145,9 @@ describe('GET /api/internal/feature-flags', () => {
     expect(getServerFeatureFlagResolution).toHaveBeenCalledTimes(SERVER_FEATURE_FLAG_KEYS.length);
   });
 
-  it('rejects a key that is not a flag key', async () => {
+  // Shape, not membership: an unregistered key is answerable on purpose (see
+  // the `registered: false` test above), a path-traversal string is not.
+  it('rejects a key that is not shaped like a flag key', async () => {
     const response = await GET(
       request('https://www.boardsesh.com/api/internal/feature-flags?key=' + encodeURIComponent('../../etc/passwd')),
     );
