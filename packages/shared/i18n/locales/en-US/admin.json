@@ -262,6 +262,57 @@
     },
     "loadMore": "Load more"
   },
+  "gymOwnerReassign": {
+    "title": "Move gym ownership",
+    "intro": "Hand a gym to another account when it changes hands — a sold gym, a departed committee member, a claim approved to the wrong person. The listing's sync freeze is left exactly as it is, and the outgoing owner stays on as a gym admin.",
+    "form": {
+      "gymLabel": "Gym",
+      "gymPlaceholder": "UUID, slug, or name",
+      "ownerLabel": "New owner",
+      "ownerPlaceholder": "Account email or user id",
+      "submit": "Look up",
+      "searching": "Looking up…"
+    },
+    "result": {
+      "gymHeading": "Gym",
+      "ownerHeading": "New owner",
+      "noGym": "No gym matched that search.",
+      "noOwner": "No account matched that email or id.",
+      "currentOwner": "Owned by {{owner}}",
+      "unknownOwner": "an account that no longer exists",
+      "systemOwned": "Unclaimed listing",
+      "frozen": "Sync frozen",
+      "notFrozen": "Sync not frozen",
+      "deleted": "This listing is deleted, so there is no ownership to move.",
+      "merged": "This listing was merged into another gym. Move the surviving listing instead.",
+      "sameOwner": "That account already owns this gym."
+    },
+    "actions": {
+      "reassign": "Move ownership"
+    },
+    "confirm": {
+      "title": "Move this gym to a new owner?",
+      "body": "{{gym}} moves from {{from}} to {{to}}. The outgoing owner keeps gym-admin access; the new owner gets full control.",
+      "freezeNote": "The listing's sync freeze stays exactly as it is — this hand-over neither freezes nor unfreezes it.",
+      "reasonLabel": "Reason",
+      "reasonPlaceholder": "Why is this gym changing hands?",
+      "reasonRemaining": "Characters still needed: {{count}}",
+      "reasonStored": "This reason is kept in the audit trail.",
+      "cancel": "Cancel",
+      "submit": "Move ownership",
+      "submitting": "Moving…"
+    },
+    "snackbar": {
+      "moved": "{{gym}} moved to its new owner",
+      "failed": "Couldn't move ownership. Check the gym and try again.",
+      "ownerChanged": "This gym changed hands while the confirmation was open. Look it up again to see who owns it now.",
+      "newOwnerGone": "That account no longer exists. Look up a different one.",
+      "merged": "This listing was merged into another gym. Move the surviving listing instead.",
+      "gymGone": "This gym is no longer available to move.",
+      "ownerUnchanged": "That account already owns this gym.",
+      "lookupFailed": "Couldn't look that up. Try again."
+    }
+  },
   "locationSync": {
     "title": "Location sync freezes",
     "backToAdmin": "Back to admin",

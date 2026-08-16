@@ -2753,6 +2753,46 @@ export type GymOwnerType =
   /** Created by a Boardsesh user. */
   | 'USER';
 
+export type GymOwnershipLookupInput = {
+  /** Gym UUID, slug, or a case-insensitive name fragment. */
+  gymQuery: Scalars['String']['input'];
+  /** Account email or user id of the person the gym should move to. */
+  newOwnerQuery: Scalars['String']['input'];
+};
+
+/** Both sides of a proposed handover. Either half is null when nothing matched. */
+export type GymOwnershipLookupResult = {
+  __typename?: 'GymOwnershipLookupResult';
+  gym?: Maybe<GymOwnershipSummary>;
+  newOwner?: Maybe<GymOwnershipUserSummary>;
+};
+
+/** A gym resolved for the admin ownership-handover surface, with the state the confirm step must name. */
+export type GymOwnershipSummary = {
+  __typename?: 'GymOwnershipSummary';
+  /** Echoed back so the mutation can be sent with the exact owner the admin saw. */
+  currentOwnerId: Scalars['ID']['output'];
+  /** True when the listing is still parked on the import account and has no real owner yet. */
+  currentOwnerIsSystem: Scalars['Boolean']['output'];
+  /** Display name / account email of the current owner, or null when the account row is gone. */
+  currentOwnerLabel?: Maybe<Scalars['String']['output']>;
+  gymUuid: Scalars['ID']['output'];
+  isDeleted: Scalars['Boolean']['output'];
+  isMerged: Scalars['Boolean']['output'];
+  name: Scalars['String']['output'];
+  slug?: Maybe<Scalars['String']['output']>;
+  /** The listing's human-curation marker. A handover leaves it exactly as it is. */
+  syncFrozenAt?: Maybe<Scalars['String']['output']>;
+};
+
+/** The incoming owner resolved from an account email or user id. */
+export type GymOwnershipUserSummary = {
+  __typename?: 'GymOwnershipUserSummary';
+  email?: Maybe<Scalars['String']['output']>;
+  label: Scalars['String']['output'];
+  userId: Scalars['ID']['output'];
+};
+
 /**
  * A gym owner's activity snapshot for the current window and the window
  * immediately before it (same length), for week-over-week deltas. Every
@@ -3301,6 +3341,14 @@ export type Mutation = {
    */
   publishPlaybackState: Scalars['Boolean']['output'];
   /**
+   * Move a gym's ownership to another account (global admin only) — a sold gym,
+   * a departed committee member, a claim approved to the wrong person. The
+   * listing's human-curation freeze is left exactly as it was, the outgoing
+   * owner is kept on as a gym admin, and the handover is written to a durable
+   * audit trail. No self-serve entry point exists.
+   */
+  reassignGymOwner: ReassignGymOwnerResult;
+  /**
    * Record the board configuration seen when connecting to a controller over
    * BLE, keyed by serial. Upserts the current user's serial→config recording.
    * Returns null when a saved board already matches the connect (nothing to record).
@@ -3842,6 +3890,11 @@ export type MutationPinPlaylistArgs = {
 /** Root mutation type for all write operations. */
 export type MutationPublishPlaybackStateArgs = {
   input: PlaybackStateInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationReassignGymOwnerArgs = {
+  input: ReassignGymOwnerInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4991,6 +5044,12 @@ export type Query = {
   /** Get members of a gym. */
   gymMembers: GymMemberConnection;
   /**
+   * Resolve both halves of a proposed gym ownership handover — the gym and the
+   * incoming owner — so the confirm step can name them (global admin only).
+   * Read-only; nothing moves until reassignGymOwner is called.
+   */
+  gymOwnershipLookup: GymOwnershipLookupResult;
+  /**
    * A gym owner's activity snapshot: unique climbers, ascents, top climbs, and
    * busiest weekdays for the current window plus the equally-long window before
    * it (for week-over-week deltas). Requires gym edit access (owner, gym
@@ -5589,6 +5648,11 @@ export type QueryGymMembersArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryGymOwnershipLookupArgs = {
+  input: GymOwnershipLookupInput;
+};
+
+/** Root query type for all read operations. */
 export type QueryGymStatsArgs = {
   input: GymStatsInput;
 };
@@ -6052,6 +6116,25 @@ export type QueueState = {
   stateHash: Scalars['String']['output'];
   /** Order-SENSITIVE hash (v2) of the current state (UUIDs in queue order). Optional during the dual-hash rollout: old clients ignore it; new clients prefer it when present so a reorder that diverges is detectable. */
   stateHashOrdered?: Maybe<Scalars['String']['output']>;
+};
+
+export type ReassignGymOwnerInput = {
+  /** Owner the admin saw in the confirm step; a moved owner rejects the write. */
+  expectedCurrentOwnerId: Scalars['ID']['input'];
+  gymUuid: Scalars['ID']['input'];
+  newOwnerId: Scalars['ID']['input'];
+  /** Required operator explanation stored in the durable audit trail. */
+  reason: Scalars['String']['input'];
+};
+
+export type ReassignGymOwnerResult = {
+  __typename?: 'ReassignGymOwnerResult';
+  gymName: Scalars['String']['output'];
+  gymUuid: Scalars['ID']['output'];
+  newOwnerId: Scalars['ID']['output'];
+  previousOwnerId: Scalars['ID']['output'];
+  /** The human-curation marker after the write. A handover never changes it. */
+  syncFrozenAt?: Maybe<Scalars['String']['output']>;
 };
 
 /**
@@ -8721,6 +8804,46 @@ export type UpdateAppFeedbackStatusMutation = {
       url?: string | null;
       userAgent?: string | null;
     } | null;
+  };
+};
+
+export type GymOwnershipLookupQueryVariables = Exact<{
+  input: GymOwnershipLookupInput;
+}>;
+
+export type GymOwnershipLookupQuery = {
+  __typename?: 'Query';
+  gymOwnershipLookup: {
+    __typename?: 'GymOwnershipLookupResult';
+    gym?: {
+      __typename?: 'GymOwnershipSummary';
+      gymUuid: string;
+      slug?: string | null;
+      name: string;
+      currentOwnerId: string;
+      currentOwnerLabel?: string | null;
+      currentOwnerIsSystem: boolean;
+      syncFrozenAt?: string | null;
+      isDeleted: boolean;
+      isMerged: boolean;
+    } | null;
+    newOwner?: { __typename?: 'GymOwnershipUserSummary'; userId: string; label: string; email?: string | null } | null;
+  };
+};
+
+export type ReassignGymOwnerMutationVariables = Exact<{
+  input: ReassignGymOwnerInput;
+}>;
+
+export type ReassignGymOwnerMutation = {
+  __typename?: 'Mutation';
+  reassignGymOwner: {
+    __typename?: 'ReassignGymOwnerResult';
+    gymUuid: string;
+    gymName: string;
+    previousOwnerId: string;
+    newOwnerId: string;
+    syncFrozenAt?: string | null;
   };
 };
 
@@ -12479,6 +12602,123 @@ export const UpdateAppFeedbackStatusDocument = {
     },
   ],
 } as unknown as DocumentNode<UpdateAppFeedbackStatusMutation, UpdateAppFeedbackStatusMutationVariables>;
+export const GymOwnershipLookupDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GymOwnershipLookup' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'GymOwnershipLookupInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'gymOwnershipLookup' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'gym' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'gymUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'slug' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'currentOwnerId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'currentOwnerLabel' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'currentOwnerIsSystem' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'syncFrozenAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isDeleted' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isMerged' } },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'newOwner' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'label' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'email' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GymOwnershipLookupQuery, GymOwnershipLookupQueryVariables>;
+export const ReassignGymOwnerDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'ReassignGymOwner' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'ReassignGymOwnerInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'reassignGymOwner' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'gymUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'gymName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'previousOwnerId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'newOwnerId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'syncFrozenAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ReassignGymOwnerMutation, ReassignGymOwnerMutationVariables>;
 export const FrozenLocationSyncEntitiesDocument = {
   kind: 'Document',
   definitions: [

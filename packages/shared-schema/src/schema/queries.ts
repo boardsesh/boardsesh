@@ -662,6 +662,13 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     frozenLocationSyncEntities(input: FrozenLocationSyncEntitiesInput!): FrozenLocationSyncEntityConnection!
 
+    """
+    Resolve both halves of a proposed gym ownership handover — the gym and the
+    incoming owner — so the confirm step can name them (global admin only).
+    Read-only; nothing moves until reassignGymOwner is called.
+    """
+    gymOwnershipLookup(input: GymOwnershipLookupInput!): GymOwnershipLookupResult!
+
     # ============================================
     # Gym Kiosk Queries
     # ============================================

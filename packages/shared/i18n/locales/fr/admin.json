@@ -262,6 +262,57 @@
     },
     "loadMore": "Charger plus"
   },
+  "gymOwnerReassign": {
+    "title": "Changer le propriétaire d’une salle",
+    "intro": "Confiez une salle à un autre compte quand elle change de mains : une salle vendue, un membre du bureau qui part, une revendication approuvée à la mauvaise personne. Le gel de synchronisation de la fiche reste exactement tel quel, et l’ancien propriétaire garde son accès d’administrateur.",
+    "form": {
+      "gymLabel": "Salle",
+      "gymPlaceholder": "UUID, slug ou nom",
+      "ownerLabel": "Nouveau propriétaire",
+      "ownerPlaceholder": "E-mail du compte ou id utilisateur",
+      "submit": "Rechercher",
+      "searching": "Recherche…"
+    },
+    "result": {
+      "gymHeading": "Salle",
+      "ownerHeading": "Nouveau propriétaire",
+      "noGym": "Aucune salle ne correspond à cette recherche.",
+      "noOwner": "Aucun compte ne correspond à cet e-mail ou à cet id.",
+      "currentOwner": "Appartient à {{owner}}",
+      "unknownOwner": "un compte qui n’existe plus",
+      "systemOwned": "Fiche non revendiquée",
+      "frozen": "Synchronisation gelée",
+      "notFrozen": "Synchronisation non gelée",
+      "deleted": "Cette fiche est supprimée : il n’y a pas de propriété à transférer.",
+      "merged": "Cette fiche a été fusionnée avec une autre salle. Transférez plutôt la fiche conservée.",
+      "sameOwner": "Ce compte est déjà propriétaire de cette salle."
+    },
+    "actions": {
+      "reassign": "Transférer la propriété"
+    },
+    "confirm": {
+      "title": "Transférer cette salle à un nouveau propriétaire ?",
+      "body": "{{gym}} passe de {{from}} à {{to}}. L’ancien propriétaire garde son accès d’administrateur ; le nouveau obtient le contrôle complet.",
+      "freezeNote": "Le gel de synchronisation de la fiche reste exactement tel quel : ce transfert ne le pose pas et ne le libère pas.",
+      "reasonLabel": "Motif",
+      "reasonPlaceholder": "Pourquoi cette salle change-t-elle de mains ?",
+      "reasonRemaining": "Caractères encore nécessaires : {{count}}",
+      "reasonStored": "Ce motif sera conservé dans le journal d’audit.",
+      "cancel": "Annuler",
+      "submit": "Transférer la propriété",
+      "submitting": "Transfert…"
+    },
+    "snackbar": {
+      "moved": "{{gym}} a un nouveau propriétaire",
+      "failed": "Impossible de transférer la propriété. Vérifiez la salle et réessayez.",
+      "ownerChanged": "Cette salle a changé de mains pendant que la confirmation était ouverte. Relancez la recherche pour voir à qui elle appartient maintenant.",
+      "newOwnerGone": "Ce compte n’existe plus. Cherchez-en un autre.",
+      "merged": "Cette fiche a été fusionnée avec une autre salle. Transférez plutôt la fiche conservée.",
+      "gymGone": "Cette salle ne peut plus être transférée.",
+      "ownerUnchanged": "Ce compte est déjà propriétaire de cette salle.",
+      "lookupFailed": "Impossible de faire cette recherche. Réessayez."
+    }
+  },
   "locationSync": {
     "title": "Gels de synchronisation des lieux",
     "backToAdmin": "Retour à l’administration",

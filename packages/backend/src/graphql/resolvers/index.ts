@@ -45,6 +45,7 @@ import { socialGymInsightsQueries } from './social/gym-insights';
 import { socialGymClaimQueries, socialGymClaimMutations, gymClaimFieldResolvers } from './social/gym-claims';
 import { socialGymDuplicateQueries, socialGymDuplicateMutations } from './social/gym-duplicates';
 import { socialLocationSyncFreezeQueries, socialLocationSyncFreezeMutations } from './social/location-sync-freezes';
+import { socialGymOwnerReassignQueries, socialGymOwnerReassignMutations } from './social/gym-owner-reassign';
 import { socialGymReportMutations } from './social/gym-reports';
 import {
   socialNotificationQueries,
@@ -98,6 +99,7 @@ export const resolvers = {
     ...socialGymClaimQueries,
     ...socialGymDuplicateQueries,
     ...socialLocationSyncFreezeQueries,
+    ...socialGymOwnerReassignQueries,
     ...activityFeedQueries,
     ...sessionFeedQueries,
     ...socialNotificationQueries,
@@ -135,6 +137,7 @@ export const resolvers = {
     ...socialGymClaimMutations,
     ...socialGymDuplicateMutations,
     ...socialLocationSyncFreezeMutations,
+    ...socialGymOwnerReassignMutations,
     ...socialGymReportMutations,
     ...socialNotificationMutations,
     ...socialProposalMutations,

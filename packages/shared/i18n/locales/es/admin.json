@@ -262,6 +262,57 @@
     },
     "loadMore": "Cargar más"
   },
+  "gymOwnerReassign": {
+    "title": "Cambiar la propiedad de un rocódromo",
+    "intro": "Pasa un rocódromo a otra cuenta cuando cambia de manos: una venta, alguien que deja la junta o una reclamación aprobada a la persona equivocada. El bloqueo de sincronización de la ficha se queda tal cual y quien lo entrega sigue como administrador del rocódromo.",
+    "form": {
+      "gymLabel": "Rocódromo",
+      "gymPlaceholder": "UUID, slug o nombre",
+      "ownerLabel": "Nuevo propietario",
+      "ownerPlaceholder": "Correo de la cuenta o id de usuario",
+      "submit": "Buscar",
+      "searching": "Buscando…"
+    },
+    "result": {
+      "gymHeading": "Rocódromo",
+      "ownerHeading": "Nuevo propietario",
+      "noGym": "Ningún rocódromo coincide con esa búsqueda.",
+      "noOwner": "Ninguna cuenta coincide con ese correo o id.",
+      "currentOwner": "Propiedad de {{owner}}",
+      "unknownOwner": "una cuenta que ya no existe",
+      "systemOwned": "Ficha sin reclamar",
+      "frozen": "Sincronización bloqueada",
+      "notFrozen": "Sincronización sin bloquear",
+      "deleted": "Esta ficha está eliminada, así que no hay propiedad que traspasar.",
+      "merged": "Esta ficha se fusionó con otro rocódromo. Cambia la propiedad de la ficha que sobrevive.",
+      "sameOwner": "Esa cuenta ya es la propietaria de este rocódromo."
+    },
+    "actions": {
+      "reassign": "Traspasar la propiedad"
+    },
+    "confirm": {
+      "title": "¿Traspasar este rocódromo a otra persona?",
+      "body": "{{gym}} pasa de {{from}} a {{to}}. Quien lo entrega conserva el acceso de administrador; quien lo recibe obtiene el control completo.",
+      "freezeNote": "El bloqueo de sincronización de la ficha se queda igual: este traspaso no lo activa ni lo libera.",
+      "reasonLabel": "Motivo",
+      "reasonPlaceholder": "¿Por qué cambia de manos este rocódromo?",
+      "reasonRemaining": "Caracteres que faltan: {{count}}",
+      "reasonStored": "Este motivo se guardará en el registro de auditoría.",
+      "cancel": "Cancelar",
+      "submit": "Traspasar la propiedad",
+      "submitting": "Traspasando…"
+    },
+    "snackbar": {
+      "moved": "{{gym}} ya tiene nuevo propietario",
+      "failed": "No se pudo traspasar la propiedad. Revisa el rocódromo e inténtalo de nuevo.",
+      "ownerChanged": "Este rocódromo cambió de manos mientras la confirmación estaba abierta. Búscalo otra vez para ver de quién es ahora.",
+      "newOwnerGone": "Esa cuenta ya no existe. Busca otra.",
+      "merged": "Esta ficha se fusionó con otro rocódromo. Cambia la propiedad de la ficha que sobrevive.",
+      "gymGone": "Este rocódromo ya no está disponible para traspasar.",
+      "ownerUnchanged": "Esa cuenta ya es la propietaria de este rocódromo.",
+      "lookupFailed": "No se pudo hacer la búsqueda. Inténtalo de nuevo."
+    }
+  },
   "locationSync": {
     "title": "Bloqueos de sincronización de ubicaciones",
     "backToAdmin": "Volver al panel",

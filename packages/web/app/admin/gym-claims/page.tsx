@@ -10,6 +10,7 @@ import I18nProvider from '@/app/components/providers/i18n-provider';
 import { checkAdmin } from '@/app/lib/admin/check-admin';
 import { themeTokens } from '@/app/theme/theme-config';
 import GymClaimsPanel from '@/app/components/admin/gym-claims-panel';
+import GymOwnerReassignPanel from '@/app/components/admin/gym-owner-reassign-panel';
 import LocaleLink from '@/app/components/i18n/locale-link';
 
 // Server-rendered so admin access is enforced before any markup ships — matching
@@ -54,6 +55,7 @@ export default async function AdminGymClaimsPage() {
           </MuiLink>
         </Box>
         <GymClaimsPanel />
+        <GymOwnerReassignPanel />
       </Container>
     </I18nProvider>
   );

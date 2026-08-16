@@ -577,6 +577,15 @@ export const mutationsTypeDefs = /* GraphQL */ `
     clearLocationSyncFreeze(input: ClearLocationSyncFreezeInput!): ClearLocationSyncFreezeResult!
 
     """
+    Move a gym's ownership to another account (global admin only) — a sold gym,
+    a departed committee member, a claim approved to the wrong person. The
+    listing's human-curation freeze is left exactly as it was, the outgoing
+    owner is kept on as a gym admin, and the handover is written to a durable
+    audit trail. No self-serve entry point exists.
+    """
+    reassignGymOwner(input: ReassignGymOwnerInput!): ReassignGymOwnerResult!
+
+    """
     Report that two gym listings are the same gym (any signed-in user). Surfaces the
     pair to admins for review in the merge queue. Rate-limited and de-duplicated per
     pair so repeated reports don't spam the team.

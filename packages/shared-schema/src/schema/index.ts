@@ -28,6 +28,7 @@ import { integrationsTypeDefs } from './integrations';
 import { otaTypeDefs } from './ota';
 import { syncTypeDefs } from './sync';
 import { locationSyncAdminTypeDefs } from './location-sync-admin';
+import { gymOwnerReassignTypeDefs } from './gym-owner-reassign';
 
 export const typeDefs = [
   scalarTypeDefs,
@@ -53,6 +54,7 @@ export const typeDefs = [
   otaTypeDefs,
   syncTypeDefs,
   locationSyncAdminTypeDefs,
+  gymOwnerReassignTypeDefs,
   queriesTypeDefs,
   mutationsTypeDefs,
   subscriptionsTypeDefs,
