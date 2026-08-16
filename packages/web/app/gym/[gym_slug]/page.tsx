@@ -143,8 +143,12 @@ export default async function GymPage(props: GymRouteProps) {
   // `Gym QR Scanned`. Only `src` and `medium` are re-emitted, and only after the
   // contract's parser has accepted them, so a crafted `?medium=evil` cannot ride
   // through a redirect to a URL we publish.
+  //
+  // The slug is percent-encoded now that a query rides behind it: a `#` in one
+  // would open a fragment and swallow the params, the same case `gymQrUrl`
+  // already guards when it builds the printed URL.
   if (gym.slug && gym.slug !== gym_slug) {
-    permanentRedirect(`/gym/${gym.slug}${gymQrAttributionQuery(searchParams)}`);
+    permanentRedirect(`/gym/${encodeURIComponent(gym.slug)}${gymQrAttributionQuery(searchParams)}`);
   }
 
   const locale = await getLocale();
@@ -302,10 +306,14 @@ export default async function GymPage(props: GymRouteProps) {
           {gym.canEdit && <GymPageManageButton gymSlug={gym_slug} />}
         </Box>
 
-        {/* The install CTA a poster scan lands on. `gym.slug ?? gym_slug` is the
+        {/* The install CTA a poster scan lands on. `gym.slug || gym_slug` is the
             canonical slug: a merged twin's URL 308s onto `gym.slug` above, and a
             slug-less legacy gym has no canonical to fall back to, so the two
-            paths have to agree on one campaign string per gym. */}
+            paths have to agree on one campaign string per gym.
+            `||`, not `??` — `slug` is nullable AND the redirect guard above is a
+            truthiness check, so an empty-string slug reaches here having skipped
+            the 308. `??` would pass it straight through and name the campaign
+            `gym-`, collecting every such gym's installs in one bucket. */}
         <Box sx={{ mb: 3 }}>
           <Typography
             variant="subtitle1"
@@ -318,7 +326,7 @@ export default async function GymPage(props: GymRouteProps) {
             {t('gymPage.install.body', { gymName: gym.name })}
           </Typography>
           <GymInstallCta
-            gymSlug={gym.slug ?? gym_slug}
+            gymSlug={gym.slug || gym_slug}
             googlePlayLabel={t('gymPage.install.googlePlay')}
             appStoreLabel={t('gymPage.install.appStore')}
           />

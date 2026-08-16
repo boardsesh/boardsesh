@@ -43,6 +43,20 @@ describe('GymInstallCta', () => {
     }
   });
 
+  it('gives both stores the same button weight', () => {
+    // `App Install Click` exists to be broken down by platform (PH-13). A filled
+    // Play button beside an outlined App Store one would tilt the very split
+    // this CTA was built to measure, so the variants have to match.
+    renderCta();
+
+    const playClasses = anchorFor('Get it on Google Play')?.className ?? '';
+    const appStoreClasses = anchorFor('Get it on the App Store')?.className ?? '';
+    expect(playClasses).toContain('MuiButton-contained');
+    expect(appStoreClasses).toContain('MuiButton-contained');
+    expect(playClasses).not.toContain('MuiButton-outlined');
+    expect(appStoreClasses).not.toContain('MuiButton-outlined');
+  });
+
   it('fires App Install Click with the gym-page placement and slug for Play', () => {
     renderCta();
 

@@ -23,6 +23,11 @@ type BoardSlugPageProps = {
  * contract's parser has accepted both, so nothing else a crafted link carries
  * rides through the hop. It returns `''` for an ordinary visit, so the clean
  * URL stays clean.
+ *
+ * The slug is percent-encoded for the same reason `gymQrUrl` encodes it: now
+ * that a query rides behind the slug, a `#` in one would open a fragment and
+ * swallow the params. Board slugs are generated, so this is a guard rather than
+ * a fix — but the printed URL and the redirect that carries it must agree.
  */
 export default async function BoardSlugPage(props: BoardSlugPageProps) {
   const [params, searchParams] = await Promise.all([props.params, props.searchParams]);
@@ -32,5 +37,6 @@ export default async function BoardSlugPage(props: BoardSlugPageProps) {
     return notFound();
   }
 
-  redirect(`/b/${board.slug}/${board.angle}/list${gymQrAttributionQuery(searchParams)}`);
+  const listPath = `/b/${encodeURIComponent(board.slug)}/${board.angle}/list`;
+  redirect(`${listPath}${gymQrAttributionQuery(searchParams)}`);
 }

@@ -77,6 +77,17 @@ describe('/b/[board_slug] redirect', () => {
     ).resolves.toBe('/b/main-kilter/40/list?src=qr&medium=board');
   });
 
+  it('percent-encodes the slug so a "#" cannot swallow the params', async () => {
+    // The printed URL already guards this (`gymQrUrl`, pinned by its own test);
+    // the redirect that carries it has to agree, or the shape guarded on the
+    // poster re-breaks on the hop.
+    resolveBoardBySlug.mockResolvedValue({ slug: 'kilter#1', angle: 40 });
+
+    await expect(redirectTargetFor('kilter#1', { src: 'qr', medium: 'kiosk' })).resolves.toBe(
+      '/b/kilter%231/40/list?src=qr&medium=kiosk',
+    );
+  });
+
   it('404s an unknown board without redirecting anywhere', async () => {
     resolveBoardBySlug.mockResolvedValue(null);
 

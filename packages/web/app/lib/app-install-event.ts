@@ -27,7 +27,8 @@ export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retireme
  * install card or the Capacitor dead-end screen, neither of which has ever
  * carried a placement — adding one would change their existing payloads.
  *
- * `gym-page` has no producer yet; the gym-page install CTA is #4379.
+ * `gym-page` is produced by `app/gym/[gym_slug]/gym-install-cta.tsx` (#4379),
+ * and is the only placement that also sets `gymSlug`.
  */
 export type AppInstallPlacement = 'hero' | 'gym-page';
 

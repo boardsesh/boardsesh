@@ -224,8 +224,16 @@ and the gym it names can be merged into another listing a year later. The helper
 is a strict allowlist — it re-serialises `src` and `medium` from the contract's
 own constants after `parseGymQrLanding` has accepted them, so nothing a crafted
 link carries (`?medium=evil`, someone else's `utm_campaign`, a `?next=` URL)
-rides through a redirect into a URL we publish. It returns `''`, not `'?'`, so an
-ordinary visit still redirects to a clean URL.
+rides through a redirect into a URL we publish. Its entire reachable output is
+three fixed strings plus the empty one, and it returns `''` rather than `'?'`, so
+an ordinary visit still redirects to a clean URL.
+
+Known gap, worth knowing before anyone reads a kiosk number: the board list
+(`/b/{slug}/{angle}/list`) has no equivalent of `stripGymQrParams`, so the params
+stay in the address bar after a kiosk scan. A climber who then shares that URL
+passes the attribution on, and every recipient looks like another kiosk scan.
+The gym page does strip them; the board list should too if `medium: 'kiosk'` ever
+gets a real counter.
 
 ## Amendments to issue #4374
 
@@ -328,8 +336,13 @@ parameter, and `packages/mobile/src/lib/install-referrer.ts` reads the string
 back with `new URLSearchParams(raw)` to pull the three `utm_*` values into
 `Install Attributed`. A link with only the bare `utm_*` params reads correctly to
 a human, matches #4379's literal wording, and attributes **zero** installs,
-because the app never sees them. The bare params stay because the Play console's
-own acquisition reports read those.
+because the app never sees them.
+
+The bare `utm_*` params stay on the link anyway, but do not assume a consumer
+for them: they are kept because they are harmless and make the link readable at a
+glance (and greppable in a log) without decoding the nested `referrer`. Whether
+Play's own acquisition reporting reads them has not been verified here — the
+mechanism this section documents is `referrer`, and that is the one to rely on.
 
 iOS carries none of this. The App Store URL is unchanged — Apple has no
 equivalent to read a referrer back, and iOS attribution is out of scope (#3402).

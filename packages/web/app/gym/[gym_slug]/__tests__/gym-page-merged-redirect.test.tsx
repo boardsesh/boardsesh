@@ -105,6 +105,16 @@ describe('merged-gym 308 redirect', () => {
     await expect(redirectTargetFor('old-nord', { src: 'qr', medium: 'evil' })).resolves.toBe('/gym/boulderwelt-nord');
   });
 
+  it('percent-encodes the canonical slug so a "#" cannot swallow the params', async () => {
+    // `gymQrUrl` encodes the printed URL for exactly this reason; the redirect
+    // that carries it has to agree.
+    executeAuthenticatedGraphQL.mockResolvedValue({ gymBySlug: mergedGym('boulder#1') });
+
+    await expect(redirectTargetFor('old-hash', { src: 'qr', medium: 'poster' })).resolves.toBe(
+      '/gym/boulder%231?src=qr&medium=poster',
+    );
+  });
+
   it('does not echo any other param a crafted link carries', async () => {
     executeAuthenticatedGraphQL.mockResolvedValue({ gymBySlug: mergedGym('boulderwelt-city') });
 
