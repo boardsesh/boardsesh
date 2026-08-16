@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-15T23:47:11.176Z",
+  "generatedAt": "2026-08-16T00:23:15.722Z",
   "entries": [
+    {
+      "prNumber": 4502,
+      "category": "new",
+      "title": "Gyms can post their opening hours, and the page shows the date the owner last confirmed them — so you know the hours are current before you drive over.",
+      "mergedAt": "2026-08-16T00:22:12Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4502"
+    },
     {
       "prNumber": 4501,
       "category": "new",
