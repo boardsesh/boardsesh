@@ -3,6 +3,7 @@ import type {
   Gym,
   GymBoardSummary,
   GymConnection,
+  MyGymClaim,
   GymMemberConnection,
   CreateGymInput,
   UpdateGymInput,
@@ -100,6 +101,35 @@ export const GET_GYM_BY_SLUG = gql`
   query GetGymBySlug($slug: String!) {
     gymBySlug(slug: $slug) {
       ${GYM_FIELDS}
+    }
+  }
+`;
+
+/**
+ * The viewer's own in-flight claim on a gym. A SEPARATE document from
+ * GET_GYM_BY_SLUG on purpose — this is a deploy-ordering firewall, not a style
+ * choice.
+ *
+ * A field is only answerable once the backend declaring it is live, and an
+ * unknown field fails validation for the WHOLE document. Folded into
+ * GET_GYM_BY_SLUG, a web-deploys-first ordering would therefore take the gym
+ * page and the manage console down together — both treat a failed fetch as
+ * "gym not found" and render a 404 — until the backend caught up. Split out,
+ * the same failure costs exactly one notice on one page.
+ *
+ * The mirror-image constraint is why it is not in GYM_FIELDS either: GET_GYM
+ * ships inside the mobile app, whose production OTA auto-publishes on every
+ * push to main and can reach devices BEFORE the backend deploy.
+ */
+export const GET_GYM_PENDING_CLAIM = gql`
+  query GetGymPendingClaim($slug: String!) {
+    gymBySlug(slug: $slug) {
+      uuid
+      myPendingClaim {
+        id
+        method
+        createdAt
+      }
     }
   }
 `;
@@ -517,6 +547,19 @@ export type GetGymBySlugQueryVariables = {
 
 export type GetGymBySlugQueryResponse = {
   gymBySlug: Gym | null;
+};
+
+export type GetGymPendingClaimQueryVariables = {
+  slug: string;
+};
+
+/**
+ * Exactly what GET_GYM_PENDING_CLAIM selects. Deliberately not typed `Gym`: the
+ * document fetches two fields, and a consumer that reads more than that from it
+ * would be reading `undefined` behind a type that promises a value.
+ */
+export type GetGymPendingClaimQueryResponse = {
+  gymBySlug: { uuid: string; myPendingClaim: MyGymClaim | null } | null;
 };
 
 export type GetMyGymsQueryVariables = {

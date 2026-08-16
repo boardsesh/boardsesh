@@ -254,12 +254,16 @@
         "messageLabel": "Message (optional)",
         "messagePlaceholder": "Anything that helps us verify you run this gym",
         "submit": "Request review",
-        "sent": "We've emailed our team. They'll be in touch soon."
+        "sent": "Your claim is in the review queue. We'll email you as soon as it's decided."
       },
       "approved": {
         "sent": "{{gym}} is yours to manage.",
         "manageCta": "Set up your gym",
         "manageError": "Couldn't open gym setup. Try it in a browser."
+      },
+      "protections": {
+        "syncFreeze": "Once it's yours, your edits stay put — location sync never overwrites what an owner sets.",
+        "transfer": "Handing the gym to someone else later? Email {{email}} and we'll move ownership across."
       }
     },
     "offline": {
@@ -626,11 +630,15 @@
       "messageLabel": "Message (optional)",
       "messagePlaceholder": "Anything that helps us verify you run this gym",
       "submit": "Request review",
-      "sent": "We've emailed our team. They'll be in touch soon."
+      "sent": "Your claim is in the review queue. We'll email you as soon as it's decided."
     },
     "approved": {
       "body": "{{gym}} is yours. Set it up whenever you're ready.",
       "manageCta": "Set up your gym"
+    },
+    "protections": {
+      "syncFreeze": "Once it's yours, your edits stay put — location sync never overwrites what an owner sets.",
+      "transfer": "Handing the gym to someone else later? Email {{email}} and we'll move ownership across."
     }
   },
   "claimLanding": {

@@ -2467,6 +2467,15 @@ export type Gym = {
   longitude?: Maybe<Scalars['Float']['output']>;
   /** Number of members */
   memberCount: Scalars['Int']['output'];
+  /**
+   * The viewer's own unresolved claim on this gym, so a claimant who already
+   * filed sees "under review" instead of the claim call-out. A lazy field
+   * resolver with its own query — deliberately NOT part of enrichGym, which
+   * already fires ~9 round trips per gym and runs per row for up to 50 rows.
+   * Only the web gym page selects it; GYM_FIELDS leaves it out, which is why it
+   * is nullable.
+   */
+  myPendingClaim?: Maybe<MyGymClaim>;
   /** Current user's role (null if not a member/owner) */
   myRole?: Maybe<GymMemberRole>;
   /** Gym name */
@@ -2547,7 +2556,7 @@ export type GymClaimMethod =
 
 /** Outcome of a requestGymClaim call, so clients can show the right next step. */
 export type GymClaimRequestStatus =
-  /** The claim was queued for admin review and our team was notified. */
+  /** The claim is queued for a Boardsesh admin to review, and the claimant gets emailed the outcome either way. Mailing the team is best-effort on top of that queue, not a guarantee, so don't promise the claimant a reply. */
   | 'admin_review'
   /** The claim was approved on the spot — the gym was an unclaimed listing and auto-approval is on. The claimant already manages the gym. */
   | 'approved'
@@ -4182,6 +4191,20 @@ export type MyBoardsInput = {
   limit?: InputMaybe<Scalars['Int']['input']>;
   /** Offset for pagination */
   offset?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/**
+ * The viewer's own ownership claim on a gym that hasn't been resolved yet.
+ * Viewer-scoped: null for signed-out viewers and for anyone with no live claim.
+ */
+export type MyGymClaim = {
+  __typename?: 'MyGymClaim';
+  /** ISO timestamp of when the claim was filed. */
+  createdAt: Scalars['String']['output'];
+  /** Claim row id. */
+  id: Scalars['ID']['output'];
+  /** How it gets verified: an emailed domain link, or a Boardsesh admin's review. */
+  method: GymClaimMethod;
 };
 
 /** Input for listing current user's gyms. */
@@ -8365,6 +8388,7 @@ export type ResolversTypes = ResolversObject<{
   MoonBoardMethod: MoonBoardMethod;
   Mutation: ResolverTypeWrapper<{}>;
   MyBoardsInput: MyBoardsInput;
+  MyGymClaim: ResolverTypeWrapper<MyGymClaim>;
   MyGymsInput: MyGymsInput;
   NewClimbCreatedEvent: ResolverTypeWrapper<NewClimbCreatedEvent>;
   NewClimbFeedInput: NewClimbFeedInput;
@@ -8723,6 +8747,7 @@ export type ResolversParentTypes = ResolversObject<{
   MoonBoardHoldsInput: MoonBoardHoldsInput;
   Mutation: {};
   MyBoardsInput: MyBoardsInput;
+  MyGymClaim: MyGymClaim;
   MyGymsInput: MyGymsInput;
   NewClimbCreatedEvent: NewClimbCreatedEvent;
   NewClimbFeedInput: NewClimbFeedInput;
@@ -10080,6 +10105,7 @@ export type GymResolvers<
   logoUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   longitude?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   memberCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  myPendingClaim?: Resolver<Maybe<ResolversTypes['MyGymClaim']>, ParentType, ContextType>;
   myRole?: Resolver<Maybe<ResolversTypes['GymMemberRole']>, ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   ownerAvatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -11107,6 +11133,16 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationVoteOnProposalArgs, 'input'>
   >;
+}>;
+
+export type MyGymClaimResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['MyGymClaim'] = ResolversParentTypes['MyGymClaim'],
+> = ResolversObject<{
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  method?: Resolver<ResolversTypes['GymClaimMethod'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
 export type NewClimbCreatedEventResolvers<
@@ -13299,6 +13335,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   MergeGymsResult?: MergeGymsResultResolvers<ContextType>;
   MoonBoardClimbDuplicateMatch?: MoonBoardClimbDuplicateMatchResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
+  MyGymClaim?: MyGymClaimResolvers<ContextType>;
   NewClimbCreatedEvent?: NewClimbCreatedEventResolvers<ContextType>;
   NewClimbFeedItem?: NewClimbFeedItemResolvers<ContextType>;
   NewClimbFeedResult?: NewClimbFeedResultResolvers<ContextType>;

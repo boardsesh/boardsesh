@@ -254,12 +254,16 @@
         "messageLabel": "Nachricht (optional)",
         "messagePlaceholder": "Alles, was uns hilft zu prüfen, dass du diese Halle leitest",
         "submit": "Prüfung anfragen",
-        "sent": "Wir haben unser Team benachrichtigt. Wir melden uns bald."
+        "sent": "Dein Anspruch liegt in der Prüf-Warteschlange. Wir schreiben dir, sobald entschieden ist."
       },
       "approved": {
         "sent": "{{gym}} gehört jetzt dir.",
         "manageCta": "Halle einrichten",
         "manageError": "Die Halle-Einrichtung ließ sich nicht öffnen. Probier es im Browser."
+      },
+      "protections": {
+        "syncFreeze": "Sobald sie dir gehört, bleiben deine Angaben stehen — die Standort-Synchronisierung überschreibt nie das, was du als Inhaber*in einträgst.",
+        "transfer": "Gibst du die Halle später ab? Schreib an {{email}}, wir übertragen sie."
       }
     },
     "offline": {
@@ -626,11 +630,15 @@
       "messageLabel": "Nachricht (optional)",
       "messagePlaceholder": "Alles, was uns hilft zu prüfen, dass du diese Halle leitest",
       "submit": "Prüfung anfragen",
-      "sent": "Wir haben unser Team benachrichtigt. Wir melden uns bald."
+      "sent": "Dein Anspruch liegt in der Prüf-Warteschlange. Wir schreiben dir, sobald entschieden ist."
     },
     "approved": {
       "body": "{{gym}} gehört jetzt dir. Richte sie ein, wann du willst.",
       "manageCta": "Halle einrichten"
+    },
+    "protections": {
+      "syncFreeze": "Sobald sie dir gehört, bleiben deine Angaben stehen — die Standort-Synchronisierung überschreibt nie das, was du als Inhaber*in einträgst.",
+      "transfer": "Gibst du die Halle später ab? Schreib an {{email}}, wir übertragen sie."
     }
   },
   "claimLanding": {

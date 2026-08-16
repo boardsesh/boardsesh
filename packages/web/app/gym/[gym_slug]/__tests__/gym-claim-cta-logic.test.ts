@@ -4,6 +4,7 @@ import {
   CLAIM_PARAM_VALUE,
   buildClaimReturnPath,
   resolveClaimCtaVariant,
+  resolveClaimSurface,
   shouldAutoOpenClaimDialog,
 } from '../gym-claim-cta-logic';
 
@@ -61,6 +62,42 @@ describe('resolveClaimCtaVariant', () => {
       expect(resolveClaimCtaVariant({ serverCanClaim: true, serverHasSession: false, gymIsClaimed: true })).toBe(
         'hidden',
       );
+    });
+  });
+});
+
+describe('resolveClaimSurface', () => {
+  it('swaps the call-out for the review notice once the viewer has a claim in flight', () => {
+    // `canClaim` stays true while a claim sits in the queue, so without this the
+    // claimant is invited to submit the same claim again, forever.
+    expect(resolveClaimSurface({ variant: 'signed-in', gymIsPublic: true, hasPendingClaim: true })).toEqual({
+      kind: 'pending',
+    });
+  });
+
+  it('shows the call-out to a signed-in viewer with no claim of their own', () => {
+    expect(resolveClaimSurface({ variant: 'signed-in', gymIsPublic: true, hasPendingClaim: false })).toEqual({
+      kind: 'cta',
+      viewerState: 'signed-in',
+    });
+  });
+
+  it('keeps the anonymous arm a call-out — a signed-out viewer has no claim to be pending', () => {
+    expect(resolveClaimSurface({ variant: 'signed-out', gymIsPublic: true, hasPendingClaim: true })).toEqual({
+      kind: 'cta',
+      viewerState: 'signed-out',
+    });
+  });
+
+  it.each([true, false])('renders nothing for a viewer who already covers the gym (pending: %s)', (hasPendingClaim) => {
+    // They were granted access while the claim sat in the queue: a "under
+    // review" notice above a gym they can already edit is stale.
+    expect(resolveClaimSurface({ variant: 'hidden', gymIsPublic: true, hasPendingClaim })).toEqual({ kind: 'none' });
+  });
+
+  it('renders nothing on a private gym, which the backend refuses to let anyone claim', () => {
+    expect(resolveClaimSurface({ variant: 'signed-in', gymIsPublic: false, hasPendingClaim: false })).toEqual({
+      kind: 'none',
     });
   });
 });

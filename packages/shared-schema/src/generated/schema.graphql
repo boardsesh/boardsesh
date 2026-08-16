@@ -2739,7 +2739,7 @@ enum GymClaimStatus {
 enum GymClaimRequestStatus {
   "A verification email was sent to the claimant's work address."
   email_sent
-  "The claim was queued for admin review and our team was notified."
+  "The claim is queued for a Boardsesh admin to review, and the claimant gets emailed the outcome either way. Mailing the team is best-effort on top of that queue, not a guarantee, so don't promise the claimant a reply."
   admin_review
   "The claim was approved on the spot — the gym was an unclaimed listing and auto-approval is on. The claimant already manages the gym."
   approved
@@ -2755,6 +2755,19 @@ type GymBoardSummary {
   boardType: String!
   "Board angle in degrees"
   angle: Int!
+}
+
+"""
+The viewer's own ownership claim on a gym that hasn't been resolved yet.
+Viewer-scoped: null for signed-out viewers and for anyone with no live claim.
+"""
+type MyGymClaim {
+  "Claim row id."
+  id: ID!
+  "How it gets verified: an emailed domain link, or a Boardsesh admin's review."
+  method: GymClaimMethod!
+  "ISO timestamp of when the claim was filed."
+  createdAt: String!
 }
 
 """
@@ -2831,6 +2844,15 @@ type Gym {
   canClaim: Boolean!
   "Whether a real person owns this gym, as opposed to the system import user. Viewer-independent — unlike canClaim, which is false for every signed-out viewer."
   isClaimed: Boolean!
+  """
+  The viewer's own unresolved claim on this gym, so a claimant who already
+  filed sees "under review" instead of the claim call-out. A lazy field
+  resolver with its own query — deliberately NOT part of enrichGym, which
+  already fires ~9 round trips per gym and runs per row for up to 50 rows.
+  Only the web gym page selects it; GYM_FIELDS leaves it out, which is why it
+  is nullable.
+  """
+  myPendingClaim: MyGymClaim
 }
 
 """

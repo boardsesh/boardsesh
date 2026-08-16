@@ -12,12 +12,14 @@ import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import PeopleOutlined from '@mui/icons-material/PeopleOutlined';
 import ChatBubbleOutlined from '@mui/icons-material/ChatBubbleOutlineOutlined';
 import ScheduleOutlined from '@mui/icons-material/ScheduleOutlined';
-import type { Gym, UserBoard } from '@boardsesh/shared-schema';
+import type { Gym, MyGymClaim, UserBoard } from '@boardsesh/shared-schema';
 import {
   GET_GYM_BY_SLUG,
+  GET_GYM_PENDING_CLAIM,
   GET_GYM_BOARDS,
   GET_GYM_KIOSK,
   type GetGymBySlugQueryResponse,
+  type GetGymPendingClaimQueryResponse,
   type GetGymBoardsQueryResponse,
   type GetGymKioskQueryResponse,
   type GymKioskOperationResult,
@@ -41,7 +43,8 @@ import GymPageManageButton from './gym-page-manage-button';
 import GymFollowButton from './gym-follow-button';
 import GymClaimCta from './gym-claim-cta';
 import GymClaimParamCleanup from './gym-claim-param-cleanup';
-import { CLAIM_PARAM, resolveClaimCtaVariant } from './gym-claim-cta-logic';
+import GymClaimPendingNotice from './gym-claim-pending-notice';
+import { CLAIM_PARAM, resolveClaimCtaVariant, resolveClaimSurface } from './gym-claim-cta-logic';
 import GymOwnerPrompts from './gym-owner-prompts';
 import GymReportDuplicateCta from './gym-report-duplicate-cta';
 import { formatHoursConfirmedDate } from './gym-hours-display';
@@ -68,6 +71,29 @@ const fetchGymBySlug = cache(async (slug: string, token: string | undefined): Pr
     return null;
   }
 });
+
+/**
+ * The viewer's own claim in flight, fetched on its own so a failure degrades to
+ * "no notice" instead of "no gym". `fetchGymBySlug` returning null means
+ * `notFound()`, so folding this selection into that document would 404 the whole
+ * page — for every gym at once — if web ever deploys ahead of the backend that
+ * answers `myPendingClaim`. Only ever called for a signed-in viewer who could
+ * actually hold a claim, so anonymous readers (the page's whole audience) pay
+ * nothing.
+ */
+async function fetchMyPendingClaim(slug: string, token: string): Promise<MyGymClaim | null> {
+  try {
+    const response = await executeAuthenticatedGraphQL<GetGymPendingClaimQueryResponse>(
+      GET_GYM_PENDING_CLAIM,
+      { slug },
+      token,
+    );
+    return response.gymBySlug?.myPendingClaim ?? null;
+  } catch (error) {
+    console.error('fetchMyPendingClaim failed:', error);
+    return null;
+  }
+}
 
 async function fetchDefaultKiosk(gymSlug: string, token: string | undefined): Promise<GymKioskOperationResult | null> {
   try {
@@ -219,7 +245,16 @@ export default async function GymPage(props: GymRouteProps) {
     gymIsClaimed: gym.isClaimed,
   });
   const claimParam = searchParams[CLAIM_PARAM];
-  const showsClaimCta = gym.isPublic && claimCtaVariant !== 'hidden';
+  // A viewer with a claim already in flight gets the review notice instead of
+  // the call-out — `canClaim` is a permission bit and stays true while their
+  // claim sits in the queue. Only the signed-in arm can have one, so this is the
+  // only case worth a second round trip.
+  const pendingClaim = claimCtaVariant === 'signed-in' && token ? await fetchMyPendingClaim(gym_slug, token) : null;
+  const claimSurface = resolveClaimSurface({
+    variant: claimCtaVariant,
+    gymIsPublic: gym.isPublic,
+    hasPendingClaim: pendingClaim !== null,
+  });
 
   // Prefer the real photo for search-result thumbnails; fall back to the logo.
   const structuredDataImage = photoSrc ?? logoSrc;
@@ -412,21 +447,26 @@ export default async function GymPage(props: GymRouteProps) {
             leaning on `isGymViewable`: a private gym reaches this line only via
             its own editors, and the anonymous arm has to stay impossible there
             even if the viewability rule is loosened later. */}
-        {showsClaimCta ? (
+        {claimSurface.kind === 'cta' ? (
           <GymClaimCta
             gymUuid={gym.uuid}
             gymName={gym.name}
             gymSlug={gym_slug}
             website={gym.website}
-            viewerState={claimCtaVariant}
+            viewerState={claimSurface.viewerState}
             claimParam={claimParam}
           />
         ) : (
           /* No call-out to clear the return-from-auth param, so clear it here:
              an owner or community leader who signed in and turned out to
              already cover this gym — or an anonymous visitor on a gym someone
-             already runs — would otherwise sit on a live `?claim=1`. */
-          <GymClaimParamCleanup claimParam={claimParam} />
+             already runs — would otherwise sit on a live `?claim=1`. A returning
+             claimant whose claim is already queued lands here too: the notice
+             replaces the dialog `?claim=1` would have re-opened. */
+          <>
+            {claimSurface.kind === 'pending' && pendingClaim && <GymClaimPendingNotice method={pendingClaim.method} />}
+            <GymClaimParamCleanup claimParam={claimParam} />
+          </>
         )}
 
         <GymReportDuplicateCta

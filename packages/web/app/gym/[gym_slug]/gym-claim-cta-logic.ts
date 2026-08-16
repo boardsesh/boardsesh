@@ -83,6 +83,47 @@ export function resolveClaimCtaVariant({
 }
 
 /**
+ * What the gym page puts where the claim call-out goes: the call-out itself, an
+ * "under review" notice for a claimant who already filed, or nothing.
+ *
+ * The `cta` arm carries the viewer state the island needs, so the page renders
+ * one decision instead of re-deriving (and possibly contradicting) it — and so
+ * `hidden`, which is not a viewer state, can't reach the island at all.
+ */
+export type GymClaimSurface =
+  | { kind: 'cta'; viewerState: GymClaimViewerState }
+  | { kind: 'pending' }
+  | { kind: 'none' };
+
+/**
+ * A claimant who already submitted must not be shown the CTA again — `canClaim`
+ * is a pure permission bit and knows nothing about claims in flight, so before
+ * `myPendingClaim` existed the same person could keep re-submitting into a
+ * queue they were already in, with nothing on the page acknowledging it.
+ *
+ * The pending claim only matters on the `signed-in` arm: a pending claim needs a
+ * claimant, and `hidden` means the viewer now covers the gym anyway (an admin
+ * granted them access while the claim sat in the queue), where a review notice
+ * would be stale.
+ */
+export function resolveClaimSurface({
+  variant,
+  gymIsPublic,
+  hasPendingClaim,
+}: {
+  variant: GymClaimCtaVariant;
+  /** Claims are for public listings only — the backend rejects the rest. */
+  gymIsPublic: boolean;
+  /** Whether `gym.myPendingClaim` came back non-null for this viewer. */
+  hasPendingClaim: boolean;
+}): GymClaimSurface {
+  if (!gymIsPublic) return { kind: 'none' };
+  if (variant === 'hidden') return { kind: 'none' };
+  if (variant === 'signed-in' && hasPendingClaim) return { kind: 'pending' };
+  return { kind: 'cta', viewerState: variant };
+}
+
+/**
  * True only for the exact scalar `'1'`. Next hands a repeated param
  * (`?claim=1&claim=1`, which a crawler or a double-appended redirect produces)
  * as an array, and an array must not auto-open a dialog.

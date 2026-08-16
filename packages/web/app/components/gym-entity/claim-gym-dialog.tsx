@@ -13,6 +13,7 @@ import TextField from '@mui/material/TextField';
 import MuiButton from '@mui/material/Button';
 import MuiLink from '@mui/material/Link';
 import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
 import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutline';
@@ -21,6 +22,7 @@ import {
   isClaimableDomain,
   emailDomainMatchesWebsite,
   GYM_CLAIM_MESSAGE_MAX_LENGTH,
+  GYM_CLAIM_SUPPORT_EMAIL,
 } from '@boardsesh/gym-claim';
 import { gymClaimResult, gymClaimSubmitted } from '@boardsesh/analytics';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
@@ -276,7 +278,24 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
       <DialogTitle>{t('claimGym.title', { gym: gymName })}</DialogTitle>
-      <DialogContent>{body}</DialogContent>
+      <DialogContent>
+        {body}
+        {/* Two things every claimant asks before they commit, so they sit under
+            both forms rather than in a confirmation nobody reads twice: what
+            taking the listing protects, and what happens when the gym changes
+            hands. Hidden once submitted — the confirmation is about what comes
+            next, not about the terms. */}
+        {!succeeded && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, mt: 2.5 }}>
+            <Typography variant="caption" color="text.secondary">
+              {t('claimGym.protections.syncFreeze')}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {t('claimGym.protections.transfer', { email: GYM_CLAIM_SUPPORT_EMAIL })}
+            </Typography>
+          </Box>
+        )}
+      </DialogContent>
       <DialogActions>
         <MuiButton onClick={handleClose} sx={{ textTransform: 'none' }}>
           {succeeded ? t('claimGym.done') : t('claimGym.cancel')}

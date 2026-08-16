@@ -142,36 +142,50 @@ export async function sendGymClaimVerificationEmail(
 /**
  * Notify the Boardsesh team that a user requested a gym claim that needs manual
  * review (no usable domain on file).
+ *
+ * `pendingClaimCount` is how many claims that same account now has waiting. Past
+ * the first, the mail leads with the backlog so a claimant working through
+ * several gyms reads as one job rather than N unrelated pings. Every claim still
+ * mails: suppressing the later ones would let one failed send mute an account's
+ * entire queue.
  */
 export async function sendGymClaimAdminNotification(details: {
   gymName: string;
   gymUuid: string;
   claimantName: string;
   message?: string | null;
+  pendingClaimCount?: number;
 }): Promise<void> {
   // Static path, no user input — used raw in the href (see the verify email note).
   const reviewUrl = `${webPublicUrl()}/admin/gym-claims`;
   const safeGym = escapeHtml(details.gymName);
   const safeClaimant = escapeHtml(details.claimantName);
   const safeMessage = details.message ? escapeHtml(details.message) : null;
+  const backlog = details.pendingClaimCount && details.pendingClaimCount > 1 ? details.pendingClaimCount : null;
+  const backlogLine = backlog ? `${details.claimantName} now has ${backlog} claims waiting on review.` : null;
 
   await getTransporter().sendMail({
     from: fromAddress(),
     to: ADMIN_NOTIFICATION_EMAIL,
-    subject: headerSafe(`Gym claim to review: ${details.gymName}`),
+    subject: headerSafe(
+      backlog
+        ? `Gym claim to review: ${details.gymName} (${backlog} from this claimant)`
+        : `Gym claim to review: ${details.gymName}`,
+    ),
     html: shell(
       'New gym claim',
       `
       <p style="color: ${colors.textPrimary}; font-size: 16px; line-height: 1.5;">
         <strong>${safeClaimant}</strong> wants to claim <strong>${safeGym}</strong>.
       </p>
+      ${backlogLine ? `<p style="color: ${colors.textSecondary}; font-size: 15px; line-height: 1.5;">${escapeHtml(backlogLine)} Review them together below.</p>` : ''}
       ${safeMessage ? `<p style="color: ${colors.textSecondary}; font-size: 15px; line-height: 1.5;">"${safeMessage}"</p>` : ''}
       ${button(reviewUrl, 'Review claims')}
       <hr style="border: none; border-top: 1px solid ${colors.border}; margin: 32px 0;" />
       <p style="color: ${colors.textMuted}; font-size: 12px;">Gym UUID: ${escapeHtml(details.gymUuid)}</p>
     `,
     ),
-    text: `${details.claimantName} wants to claim ${details.gymName}.${details.message ? `\n\nMessage: ${details.message}` : ''}\n\nReview: ${reviewUrl}\n\nGym UUID: ${details.gymUuid}`,
+    text: `${details.claimantName} wants to claim ${details.gymName}.${backlogLine ? `\n\n${backlogLine}` : ''}${details.message ? `\n\nMessage: ${details.message}` : ''}\n\nReview: ${reviewUrl}\n\nGym UUID: ${details.gymUuid}`,
   });
 }
 
@@ -241,6 +255,39 @@ export async function sendGymClaimApprovedEmail(email: string, gymName: string):
     });
   } catch (error) {
     logger.warn('[GymClaim] Failed to send approval email:', error instanceof Error ? error.message : error);
+  }
+}
+
+/**
+ * Tell a claimant their claim was turned down, and how to get it looked at
+ * again. Best-effort — a dead SMTP must not undo the review decision, which is
+ * already committed by the time this runs.
+ */
+export async function sendGymClaimDeniedEmail(email: string, gymName: string): Promise<void> {
+  try {
+    const validatedEmail = emailSchema.parse(email);
+    const safeGym = escapeHtml(gymName);
+    await getTransporter().sendMail({
+      from: fromAddress(),
+      to: validatedEmail,
+      subject: headerSafe(`Your claim for ${gymName} wasn't approved`),
+      html: shell(
+        'We couldn’t approve this claim',
+        `
+        <p style="color: ${colors.textPrimary}; font-size: 16px; line-height: 1.5;">
+          We reviewed your claim for <strong>${safeGym}</strong> and couldn't confirm you run it,
+          so the listing stays where it is.
+        </p>
+        <p style="color: ${colors.textSecondary}; font-size: 15px; line-height: 1.5;">
+          If this is your gym, reply to this email with something that shows you manage it — a work
+          email address, your role, anything on the gym's own site — and we'll take another look.
+        </p>
+      `,
+      ),
+      text: `We reviewed your claim for ${gymName} and couldn't confirm you run it, so the listing stays where it is. If this is your gym, reply with something that shows you manage it and we'll take another look.`,
+    });
+  } catch (error) {
+    logger.warn('[GymClaim] Failed to send denial email:', error instanceof Error ? error.message : error);
   }
 }
 

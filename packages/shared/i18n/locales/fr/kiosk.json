@@ -96,6 +96,10 @@
     "claimBody": "Revendique-la pour gérer les boards, l'identité visuelle et ce qui s'affiche sur le mur.",
     "claimCta": "Revendiquer cette salle",
     "claimCtaSignedOut": "Connecte-toi et revendique-la",
+    "claimPendingTitle": "Ta demande est en cours d'examen",
+    "claimPendingBody": "On vérifie que tu gères cette salle. On te répond par e-mail dans tous les cas, en général sous quelques jours.",
+    "claimPendingDomainTitle": "Regarde ta boîte mail",
+    "claimPendingDomainBody": "On a envoyé un lien à ton e-mail professionnel. Clique dessus et la salle est à toi.",
     "claimAuthTitle": "Revendique ta salle",
     "claimAuthBody": "Connecte-toi, on te ramène ici pour la revendiquer.",
     "owner": {
