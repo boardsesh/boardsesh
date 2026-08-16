@@ -353,14 +353,16 @@ owner against `TARGET_SUBSCRIBER_ROLE`, so teardown stops before the first drop,
 with the catalog — slot and publication included — exactly as it found it:
 
 ```
-error: subscription boardsesh_pg18_sub still exists, and proving it belongs to this migration needs TARGET_OWNER_ROLE and TARGET_SUBSCRIBER_ROLE exported; slot- and publication-only cleanup does not
+error: subscription boardsesh_pg18_sub still exists; proving it belongs to this migration needs TARGET_SUBSCRIBER_ROLE, and finishing the run needs TARGET_OWNER_ROLE for the role cleanup. Export both. Slot- and publication-only cleanup needs neither
 ```
 
 That is the fail-closed answer, not a partial cleanup: Neon is still retaining
-WAL, and re-running without the two names changes nothing. Two steps need
-`TARGET_OWNER_ROLE` and `TARGET_SUBSCRIBER_ROLE` exported for the same reason,
-because both compare a role name against the catalog — dropping a subscription
-that is still present, and dropping the temporary subscriber role at the end.
+WAL, and re-running without the two names changes nothing. A subscription that
+is still present is proved to belong to this migration by its owner, so that
+step needs `TARGET_SUBSCRIBER_ROLE`; dropping the temporary subscriber role at
+the end needs both names. A drifted subscriber role does not block any of it —
+its privileges have no bearing on whether dropping the replication objects is
+safe, so those go and the role is left for you to inspect.
 Supply both and one pass clears everything:
 
 ```bash

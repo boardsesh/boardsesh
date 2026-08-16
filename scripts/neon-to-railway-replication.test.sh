@@ -631,7 +631,7 @@ if FAKE_PUBLICATION_EXISTS=1 FAKE_SLOT_EXISTS=1 FAKE_SUBSCRIPTION_EXISTS=1 \
   printf 'Expected a live subscription to require the role variables.\n' >&2
   exit 1
 fi
-grep -Fq 'slot- and publication-only cleanup does not' "$ERROR_LOG" || {
+grep -Fq 'Slot- and publication-only cleanup needs neither' "$ERROR_LOG" || {
   cat "$ERROR_LOG" >&2
   exit 1
 }

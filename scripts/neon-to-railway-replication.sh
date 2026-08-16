@@ -2161,7 +2161,7 @@ SQL
     [[ "$source_slot_exists" == '1' ]] ||
       fail "subscription $SUBSCRIPTION_NAME exists without source slot $SLOT_NAME; refusing teardown"
     [[ -n "${TARGET_OWNER_ROLE:-}" && -n "${TARGET_SUBSCRIBER_ROLE:-}" ]] ||
-      fail "subscription $SUBSCRIPTION_NAME still exists, and proving it belongs to this migration needs TARGET_OWNER_ROLE and TARGET_SUBSCRIBER_ROLE exported; slot- and publication-only cleanup does not"
+      fail "subscription $SUBSCRIPTION_NAME still exists; proving it belongs to this migration needs TARGET_SUBSCRIBER_ROLE, and finishing the run needs TARGET_OWNER_ROLE for the role cleanup. Export both. Slot- and publication-only cleanup needs neither"
     assert_subscription_contract skip-subscriber-role-shape
   fi
   if [[ "$publication_exists" == '1' ]]; then
