@@ -4,6 +4,7 @@ import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
 import ColorModeProvider from './components/providers/color-mode-provider';
 import { VercelAnalytics, VercelSpeedInsights } from './components/providers/vercel-telemetry';
 import AnalyticsClient from './components/analytics-client';
+import AnalyticsIdentity from './components/providers/analytics-identity';
 import SessionProviderWrapper from './components/providers/session-provider';
 import QueryClientProvider from './components/providers/query-client-provider';
 import SiteChrome from './components/providers/site-chrome';
@@ -84,6 +85,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {/* QueryClientProvider sits inside SessionProviderWrapper so its
             PersistQueryClientProvider can read useSession() — do not reorder. */}
         <SessionProviderWrapper enableExpoAuthBridge={process.env.BOARDSESH_WEB === '1'}>
+          {/* Reads useSession() to tell PostHog which person this browser is,
+              so it has to sit inside SessionProviderWrapper — AnalyticsClient
+              above cannot host it. Renders nothing. */}
+          <AnalyticsIdentity />
           <QueryClientProvider>
             <AppRouterCacheProvider>
               <ColorModeProvider>

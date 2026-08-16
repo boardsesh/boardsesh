@@ -63,9 +63,13 @@ function getPosthog(): PostHog | null {
     autocapture: false,
     captureHistoryEvents: false,
     // Persist distinct_id in localStorage so anonymous → authed merges and
-    // cross-session retention cohorts work. The IndexedDB party-profile UUID
-    // is still the canonical anon id; PartyProfileProvider calls identify()
-    // on hydration to reconcile if storage was cleared.
+    // cross-session retention cohorts work. This blob holds BOTH the distinct id
+    // and the anonymous id, and `AnalyticsIdentity`
+    // (components/providers/analytics-identity.tsx) reads the pair back to
+    // decide whether this browser is anonymous or already pinned to a person.
+    // Keeping that decision inside the SDK's own storage is deliberate: a
+    // second store of ours would start empty on every existing browser and
+    // disagree with this one.
     //
     // CLAUDE.md mandates IndexedDB for client persistence (the no-restricted-globals
     // lint rule enforces it on bare globals, which is why this config string
@@ -167,6 +171,46 @@ export function capturePosthog(name: string, properties?: PosthogProperties): bo
 
 export function identify(distinctId: string, properties?: PosthogProperties): boolean {
   return core.identify(distinctId, properties);
+}
+
+/**
+ * The distinct id the PostHog client currently believes it is, or `null` when
+ * there is no client at all (server render, dev, preview deploys, a production
+ * host whose build lost NEXT_PUBLIC_POSTHOG_KEY) or the SDK has not finished
+ * initialising — @posthog/core returns `''` in that window. Callers use the
+ * `null` to skip identity work entirely rather than acting on a half-known id.
+ *
+ * Every event this browser sends carries this id. After identify() it is the
+ * authenticated user id; before it, the anonymous one.
+ */
+export function getAnalyticsDistinctId(): string | null {
+  const posthog = getPosthog();
+  if (!posthog) return null;
+  return posthog.getDistinctId() || null;
+}
+
+/**
+ * The anonymous id the PostHog client keeps alongside the distinct id, or
+ * `null` under the same conditions as getAnalyticsDistinctId().
+ *
+ * Both live in the SAME localStorage blob (`persistence: 'localStorage'`
+ * above), which is what makes the pair trustworthy: they cannot drift apart the
+ * way a second store of our own would. `distinctId !== anonymousId` is
+ * therefore the exact test for "this browser is already pinned to an identified
+ * person" — @posthog/core's own `_isIdentified()` falls back to that same
+ * comparison for clients identified before it started writing `PersonMode`,
+ * which is most of the existing fleet.
+ *
+ * Do not read this to decide what to merge FROM: `identify()` overwrites the
+ * stored anonymous id with the previous distinct id, so after a second
+ * identify() without an intervening reset() it would hold a user id.
+ * `AnalyticsIdentity` resets before identifying a different person precisely so
+ * that never happens.
+ */
+export function getAnalyticsAnonymousId(): string | null {
+  const posthog = getPosthog();
+  if (!posthog) return null;
+  return posthog.getAnonymousId() || null;
 }
 
 // Sets person properties on the current distinct_id. `setOnce` properties are
