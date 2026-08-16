@@ -2758,6 +2758,19 @@ type GymBoardSummary {
 }
 
 """
+The viewer's own ownership claim on a gym that hasn't been resolved yet.
+Viewer-scoped: null for signed-out viewers and for anyone with no live claim.
+"""
+type MyGymClaim {
+  "Claim row id."
+  id: ID!
+  "How it gets verified: an emailed domain link, or a Boardsesh admin's review."
+  method: GymClaimMethod!
+  "ISO timestamp of when the claim was filed."
+  createdAt: String!
+}
+
+"""
 A physical gym location that can contain multiple boards.
 """
 type Gym {
@@ -2831,6 +2844,15 @@ type Gym {
   canClaim: Boolean!
   "Whether a real person owns this gym, as opposed to the system import user. Viewer-independent — unlike canClaim, which is false for every signed-out viewer."
   isClaimed: Boolean!
+  """
+  The viewer's own unresolved claim on this gym, so a claimant who already
+  filed sees "under review" instead of the claim call-out. A lazy field
+  resolver with its own query — deliberately NOT part of enrichGym, which
+  already fires ~9 round trips per gym and runs per row for up to 50 rows.
+  Only the web gym page selects it; GYM_FIELDS leaves it out, which is why it
+  is nullable.
+  """
+  myPendingClaim: MyGymClaim
 }
 
 """

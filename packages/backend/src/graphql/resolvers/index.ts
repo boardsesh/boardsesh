@@ -42,7 +42,7 @@ import { socialGymMatchQueries } from './social/gym-matching';
 import { socialGymStrayBoardQueries, socialGymStrayBoardMutations } from './social/gym-stray-boards';
 import { socialGymKioskQueries, socialGymKioskMutations } from './social/gym-kiosks';
 import { socialGymInsightsQueries } from './social/gym-insights';
-import { socialGymClaimQueries, socialGymClaimMutations } from './social/gym-claims';
+import { socialGymClaimQueries, socialGymClaimMutations, gymClaimFieldResolvers } from './social/gym-claims';
 import { socialGymDuplicateQueries, socialGymDuplicateMutations } from './social/gym-duplicates';
 import { socialLocationSyncFreezeQueries, socialLocationSyncFreezeMutations } from './social/location-sync-freezes';
 import { socialGymReportMutations } from './social/gym-reports';
@@ -160,6 +160,10 @@ export const resolvers = {
 
   // Field-level resolvers
   ClimbSearchResult: climbFieldResolvers,
+
+  // `Gym.myPendingClaim` only — every other Gym field comes off the enriched
+  // object the queries return, via the default resolver.
+  Gym: gymClaimFieldResolvers,
 
   // Climb type resolvers (derived fields)
   Climb: {

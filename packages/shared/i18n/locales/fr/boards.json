@@ -254,7 +254,7 @@
         "messageLabel": "Message (facultatif)",
         "messagePlaceholder": "Tout ce qui nous aide à vérifier que tu gères cette salle",
         "submit": "Demander une vérification",
-        "sent": "Nous avons prévenu notre équipe. Elle te contactera bientôt."
+        "sent": "Ta demande est dans la file d'examen. On t'écrit dès qu'elle est tranchée."
       },
       "approved": {
         "sent": "{{gym}} est à toi.",
@@ -626,11 +626,15 @@
       "messageLabel": "Message (facultatif)",
       "messagePlaceholder": "Tout ce qui nous aide à vérifier que vous gérez cette salle",
       "submit": "Demander une vérification",
-      "sent": "Nous avons prévenu notre équipe. Elle vous contactera bientôt."
+      "sent": "Votre demande est dans la file d'examen. Nous vous écrirons dès qu'elle sera tranchée."
     },
     "approved": {
       "body": "{{gym}} est à vous. Configurez-la quand vous voulez.",
       "manageCta": "Configurer votre salle"
+    },
+    "protections": {
+      "syncFreeze": "Une fois la salle à vous, vos modifications restent : la synchronisation des lieux n'écrase jamais ce que le gestionnaire a saisi.",
+      "transfer": "Vous passerez la main un jour ? Écrivez à {{email}} et nous transférons la propriété."
     }
   },
   "claimLanding": {

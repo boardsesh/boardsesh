@@ -245,6 +245,39 @@ export async function sendGymClaimApprovedEmail(email: string, gymName: string):
 }
 
 /**
+ * Tell a claimant their claim was turned down, and how to get it looked at
+ * again. Best-effort — a dead SMTP must not undo the review decision, which is
+ * already committed by the time this runs.
+ */
+export async function sendGymClaimDeniedEmail(email: string, gymName: string): Promise<void> {
+  try {
+    const validatedEmail = emailSchema.parse(email);
+    const safeGym = escapeHtml(gymName);
+    await getTransporter().sendMail({
+      from: fromAddress(),
+      to: validatedEmail,
+      subject: headerSafe(`Your claim for ${gymName} wasn't approved`),
+      html: shell(
+        'We couldn’t approve this claim',
+        `
+        <p style="color: ${colors.textPrimary}; font-size: 16px; line-height: 1.5;">
+          We reviewed your claim for <strong>${safeGym}</strong> and couldn't confirm you run it,
+          so the listing stays where it is.
+        </p>
+        <p style="color: ${colors.textSecondary}; font-size: 15px; line-height: 1.5;">
+          If this is your gym, reply to this email with something that shows you manage it — a work
+          email address, your role, anything on the gym's own site — and we'll take another look.
+        </p>
+      `,
+      ),
+      text: `We reviewed your claim for ${gymName} and couldn't confirm you run it, so the listing stays where it is. If this is your gym, reply with something that shows you manage it and we'll take another look.`,
+    });
+  } catch (error) {
+    logger.warn('[GymClaim] Failed to send denial email:', error instanceof Error ? error.message : error);
+  }
+}
+
+/**
  * Heads-up to a previous owner whose gym was claimed by someone who verified
  * control of the gym's domain (or was approved by an admin). They're kept on as
  * a gym admin, so this is transparency, not a lockout. Best-effort.

@@ -2464,6 +2464,15 @@ export type Gym = {
   longitude?: Maybe<Scalars['Float']['output']>;
   /** Number of members */
   memberCount: Scalars['Int']['output'];
+  /**
+   * The viewer's own unresolved claim on this gym, so a claimant who already
+   * filed sees "under review" instead of the claim call-out. A lazy field
+   * resolver with its own query — deliberately NOT part of enrichGym, which
+   * already fires ~9 round trips per gym and runs per row for up to 50 rows.
+   * Only the web gym page selects it; GYM_FIELDS leaves it out, which is why it
+   * is nullable.
+   */
+  myPendingClaim?: Maybe<MyGymClaim>;
   /** Current user's role (null if not a member/owner) */
   myRole?: Maybe<GymMemberRole>;
   /** Gym name */
@@ -4179,6 +4188,20 @@ export type MyBoardsInput = {
   limit?: InputMaybe<Scalars['Int']['input']>;
   /** Offset for pagination */
   offset?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/**
+ * The viewer's own ownership claim on a gym that hasn't been resolved yet.
+ * Viewer-scoped: null for signed-out viewers and for anyone with no live claim.
+ */
+export type MyGymClaim = {
+  __typename?: 'MyGymClaim';
+  /** ISO timestamp of when the claim was filed. */
+  createdAt: Scalars['String']['output'];
+  /** Claim row id. */
+  id: Scalars['ID']['output'];
+  /** How it gets verified: an emailed domain link, or a Boardsesh admin's review. */
+  method: GymClaimMethod;
 };
 
 /** Input for listing current user's gyms. */

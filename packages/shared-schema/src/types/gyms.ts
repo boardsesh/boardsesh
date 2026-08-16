@@ -36,6 +36,16 @@ export type GymBoardSummary = {
   angle: number;
 };
 
+/**
+ * The viewer's own claim on a gym that is still waiting on an outcome — the
+ * emailed domain link or a Boardsesh admin's decision.
+ */
+export type MyGymClaim = {
+  id: string;
+  method: GymClaimMethod;
+  createdAt: string;
+};
+
 export type Gym = {
   uuid: string;
   slug?: string | null;
@@ -93,6 +103,14 @@ export type Gym = {
    * document typed `Gym` genuinely returns it.
    */
   isClaimed: boolean;
+  /**
+   * The viewer's unresolved claim on this gym, or null when they have none.
+   * OPTIONAL on purpose: only GET_GYM_BY_SLUG selects it. Adding it to the
+   * shared GYM_FIELDS would put it in documents the mobile app ships, where a
+   * production OTA can reach devices before the backend deploy that answers the
+   * field — and every mobile gym view would then fail GraphQL validation.
+   */
+  myPendingClaim?: MyGymClaim | null;
 };
 
 export type GymConnection = {

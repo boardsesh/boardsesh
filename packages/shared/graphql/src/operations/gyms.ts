@@ -96,10 +96,22 @@ export const GET_GYM = gql`
   }
 `;
 
+/**
+ * The web gym page (and its manage console). `myPendingClaim` is selected HERE
+ * and nowhere else: it must stay out of GYM_FIELDS, which GET_GYM carries into
+ * the mobile app, because a production OTA auto-publishes on every push to main
+ * and can reach devices before the backend deploy that answers the field — at
+ * which point every mobile gym view fails GraphQL validation.
+ */
 export const GET_GYM_BY_SLUG = gql`
   query GetGymBySlug($slug: String!) {
     gymBySlug(slug: $slug) {
       ${GYM_FIELDS}
+      myPendingClaim {
+        id
+        method
+        createdAt
+      }
     }
   }
 `;

@@ -254,7 +254,7 @@
         "messageLabel": "Mensaje (opcional)",
         "messagePlaceholder": "Cualquier cosa que nos ayude a verificar que gestionas este rocódromo",
         "submit": "Solicitar revisión",
-        "sent": "Hemos avisado a nuestro equipo. Se pondrán en contacto pronto."
+        "sent": "Tu solicitud está en la cola de revisión. Te escribiremos en cuanto se decida."
       },
       "approved": {
         "sent": "{{gym}} ya es tuyo.",
@@ -626,11 +626,15 @@
       "messageLabel": "Mensaje (opcional)",
       "messagePlaceholder": "Cualquier cosa que nos ayude a verificar que gestionas este rocódromo",
       "submit": "Solicitar revisión",
-      "sent": "Hemos avisado a nuestro equipo. Se pondrán en contacto pronto."
+      "sent": "Tu solicitud está en la cola de revisión. Te escribiremos en cuanto se decida."
     },
     "approved": {
       "body": "{{gym}} es tuyo. Configúralo cuando quieras.",
       "manageCta": "Configura tu rocódromo"
+    },
+    "protections": {
+      "syncFreeze": "Cuando sea tuyo, tus cambios se quedan: la sincronización de ubicaciones nunca sobrescribe lo que pone quien lo gestiona.",
+      "transfer": "¿Más adelante pasas el rocódromo a otra persona? Escríbenos a {{email}} y trasladamos la propiedad."
     }
   },
   "claimLanding": {
