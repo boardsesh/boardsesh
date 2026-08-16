@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-16T11:34:46.985Z",
+  "generatedAt": "2026-08-16T11:44:10.398Z",
   "entries": [
+    {
+      "prNumber": 4520,
+      "category": "new",
+      "title": "Admin-only tooling; no user-facing surface.",
+      "mergedAt": "2026-08-16T11:43:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4520"
+    },
     {
       "prNumber": 4482,
       "category": "new",

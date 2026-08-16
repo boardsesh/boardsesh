@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Admin-only tooling; no user-facing surface. ([#4520](https://github.com/boardsesh/boardsesh/pull/4520))
 - Your Progress tab now shows how this period's sends stack up against the last one — flip between "vs. last period" and "vs. same time last year" to see your trend. ([#4482](https://github.com/boardsesh/boardsesh/pull/4482))
 - Print a QR poster for your gym straight from the manage console — one page, A4 or Letter, in English, Spanish, French or German. ([#4516](https://github.com/boardsesh/boardsesh/pull/4516))
 - Find the boards near you — the gym directory now has a map and a "use my location" search, with a city search to fall back on if you'd rather not share it. ([#4517](https://github.com/boardsesh/boardsesh/pull/4517))
