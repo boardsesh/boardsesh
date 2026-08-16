@@ -18,6 +18,19 @@ readonly SYNC_REPORT_FILE
 MIGRATION_CONTRACT_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/boardsesh-pg18-migrations.XXXXXX")"
 readonly MIGRATION_CONTRACT_ROOT
 
+# A bare `grep -Fq` on a report exits 1 with no output, so a guard that does not
+# fire looks identical to the script dying for an unrelated reason. Always show
+# the report the assertion was made against.
+assert_report_contains() {
+  local expected_message="$1"
+  local report="${2:-$AUDIT_REPORT_FILE}"
+  if ! grep -Fq "$expected_message" "$report"; then
+    cat "$report" >&2
+    printf 'Expected the report to contain: %s\n' "$expected_message" >&2
+    exit 1
+  fi
+}
+
 cleanup() {
   docker rm --force "$TARGET_CONTAINER_NAME" >/dev/null 2>&1 || true
   docker rm --force "$CONTAINER_NAME" >/dev/null 2>&1 || true
@@ -71,8 +84,7 @@ verify_development_role_bootstrap() {
     printf 'Expected development role bootstrap without explicit opt-in to fail\n' >&2
     exit 1
   fi
-  grep -Fq 'development role bootstrap requires boardsesh_dev_role_bootstrap=true' \
-    "$AUDIT_REPORT_FILE"
+  assert_report_contains 'development role bootstrap requires boardsesh_dev_role_bootstrap=true'
 
   # A second successful run proves the bootstrap repairs/reasserts the same
   # direct catalog contract without relying on one-time CREATE ROLE behavior.
@@ -219,7 +231,7 @@ SQL
     printf 'Expected the second-ledger contract migration to fail\n' >&2
     exit 1
   fi
-  grep -Fq 'schema and ledger changes were rolled back' "$AUDIT_REPORT_FILE"
+  assert_report_contains 'schema and ledger changes were rolled back'
 
   rollback_state="$(docker exec "$CONTAINER_NAME" \
     psql -X -Atq -F '|' -U postgres -d "$contract_database" -c "
@@ -270,7 +282,7 @@ SQL
     printf 'Expected injected prepare-source-acls failure\n' >&2
     exit 1
   fi
-  grep -Fq 'injected late prepare-source-acls failure' "$AUDIT_REPORT_FILE"
+  assert_report_contains 'injected late prepare-source-acls failure'
   [[ "$(docker exec "$CONTAINER_NAME" psql -X -Atq -U postgres -d main -c "
 SELECT (to_regrole('pg18_transition_fence_owner') IS NULL)::text || '|' ||
        (SELECT count(*) FROM pg_auth_members AS membership
@@ -332,7 +344,7 @@ SQL
     printf 'Expected injected transfer-ownership failure\n' >&2
     exit 1
   fi
-  grep -Fq 'injected late transfer-ownership failure' "$AUDIT_REPORT_FILE"
+  assert_report_contains 'injected late transfer-ownership failure'
   [[ "$(docker exec "$CONTAINER_NAME" psql -X -Atq -U postgres -d main -c "
 SELECT pg_get_userbyid(namespace.nspowner) || '|' || pg_get_userbyid(relation.relowner)
 FROM pg_namespace AS namespace
@@ -701,7 +713,7 @@ SOURCE_DATABASE_URL="$smoke_database_url" \
   MIGRATION_SCHEMAS='public drizzle pg18_extension_mixed pg18_empty_app' \
   MIGRATION_RUNTIME_SCHEMAS='public drizzle pg18_extension_mixed pg18_empty_app' \
   "$REPOSITORY_ROOT/scripts/postgres-migration-audit.sh" >"$AUDIT_REPORT_FILE"
-grep -Fq 'Audit result: 0 blocker(s).' "$AUDIT_REPORT_FILE"
+assert_report_contains 'Audit result: 0 blocker(s).'
 
 # A schema with no table can still carry DDL which pg_dump must include. Prove
 # each catalog family is classified rather than letting the explicit schema
@@ -736,8 +748,7 @@ if SOURCE_DATABASE_URL="$smoke_database_url" \
   printf 'Expected unclassified schema-only objects to block the audit\n' >&2
   exit 1
 fi
-grep -Fq 'pg18_unknown_composite, pg18_unknown_empty, pg18_unknown_function, pg18_unknown_type, pg18_unknown_view' \
-  "$AUDIT_REPORT_FILE"
+assert_report_contains 'pg18_unknown_composite, pg18_unknown_empty, pg18_unknown_function, pg18_unknown_type, pg18_unknown_view'
 docker exec -i "$CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main <<'SQL'
 DROP SCHEMA pg18_unknown_view CASCADE;
 DROP SCHEMA pg18_unknown_composite CASCADE;
@@ -888,7 +899,7 @@ expect_catalog_drift() {
     printf 'Expected %s to fail the catalog audit\n' "$label" >&2
     exit 1
   fi
-  grep -Fq 'catalog DDL manifest differs' "$AUDIT_REPORT_FILE"
+  assert_report_contains 'catalog DDL manifest differs'
 }
 
 expect_audit_blocker() {
@@ -912,7 +923,7 @@ assert_audit_clean() {
     printf 'Expected the source/target migration audit to be clean\n' >&2
     exit 1
   fi
-  grep -Fq 'Audit result: 0 blocker(s).' "$AUDIT_REPORT_FILE"
+  assert_report_contains 'Audit result: 0 blocker(s).'
 }
 
 run_sequence_sync() {
@@ -1069,8 +1080,7 @@ if run_replication_setup_validation "$set_role_publisher_url" >"$AUDIT_REPORT_FI
   printf 'Expected privileged publisher URL using startup SET ROLE to fail\n' >&2
   exit 1
 fi
-grep -Fq 'publisher URL must authenticate directly as its restricted role; startup SET ROLE is forbidden' \
-  "$AUDIT_REPORT_FILE"
+assert_report_contains 'publisher URL must authenticate directly as its restricted role; startup SET ROLE is forbidden'
 
 if run_replication_setup_validation >"$AUDIT_REPORT_FILE" 2>&1; then
   printf 'Expected LOAD_SCHEMA=false with a missing target manifest to fail before publication mutation\n' >&2
@@ -1145,8 +1155,7 @@ if run_two_host_audit "$set_role_publisher_url" >"$AUDIT_REPORT_FILE" 2>&1; then
   printf 'Expected audit to reject privileged publisher URL using startup SET ROLE\n' >&2
   exit 1
 fi
-grep -Fq 'publisher URL must authenticate directly as its restricted role; startup SET ROLE is forbidden' \
-  "$AUDIT_REPORT_FILE"
+assert_report_contains 'publisher URL must authenticate directly as its restricted role; startup SET ROLE is forbidden'
 
 MIGRATION_OWNER_TEST_DATABASE_URL="postgresql://pg18_smoke_migrator:migration-owner-contract@127.0.0.1:${target_host_port}/main" \
 MIGRATION_OWNER_TEST_ADMIN_DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:${target_host_port}/main" \
@@ -1585,8 +1594,7 @@ if run_replication_setup_validation >"$AUDIT_REPORT_FILE" 2>&1; then
   printf 'Expected a target owner that owns the database to fail setup validation\n' >&2
   exit 1
 fi
-grep -Fq 'TARGET_OWNER_ROLE must match the exact restricted NOLOGIN/database-CREATE contract' \
-  "$AUDIT_REPORT_FILE"
+assert_report_contains 'TARGET_OWNER_ROLE must match the exact restricted NOLOGIN/database-CREATE contract'
 docker exec "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres \
   -c 'ALTER DATABASE main OWNER TO postgres;' >/dev/null
 docker exec "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
@@ -1797,7 +1805,7 @@ if run_two_host_audit >"$AUDIT_REPORT_FILE" 2>&1; then
   printf 'Expected the audit to reject a publication column list\n' >&2
   exit 1
 fi
-grep -Fq 'publication table(s) use a row filter or omit columns' "$AUDIT_REPORT_FILE"
+assert_report_contains 'publication table(s) use a row filter or omit columns'
 
 docker exec -i "$CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main <<'SQL'
 ALTER PUBLICATION pg18_smoke_publication SET TABLE
@@ -1822,7 +1830,7 @@ if run_two_host_audit >"$AUDIT_REPORT_FILE" 2>&1; then
   printf 'Expected the audit to reject target DDL drift\n' >&2
   exit 1
 fi
-grep -Fq 'catalog DDL manifest differs' "$AUDIT_REPORT_FILE"
+assert_report_contains 'catalog DDL manifest differs'
 docker exec "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
   -c 'DROP INDEX public.pg18_smoke_unexpected_idx;' >/dev/null
 
@@ -1841,7 +1849,7 @@ if docker run --rm \
   printf 'Expected teardown without TEARDOWN_CONFIRMED=true to be rejected\n' >&2
   exit 1
 fi
-grep -Fq 'teardown requires TEARDOWN_CONFIRMED=true' "$AUDIT_REPORT_FILE"
+assert_report_contains 'teardown requires TEARDOWN_CONFIRMED=true'
 
 # Deliberately diverge every target sequence, then exercise the real guarded
 # source-to-subscriber sequence copy, including the never-called state.
@@ -1887,7 +1895,7 @@ if run_data_verification >"$AUDIT_REPORT_FILE" 2>&1; then
   printf 'Expected partition row drift to fail data verification\n' >&2
   exit 1
 fi
-grep -Fq 'Table data verification failed' "$AUDIT_REPORT_FILE"
+assert_report_contains 'Table data verification failed'
 docker exec "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
   -c "UPDATE public.pg18_smoke_partitioned SET marker = 'partition-survives-copy' WHERE id = 1;" >/dev/null
 
@@ -1924,9 +1932,8 @@ if run_confirmed_teardown >"$AUDIT_REPORT_FILE" 2>&1; then
   printf 'Expected teardown to refuse a contract-violating subscriber role\n' >&2
   exit 1
 fi
-grep -Fq 'teardown refuses to drop any other role' "$AUDIT_REPORT_FILE"
-grep -Fq 'TARGET_SUBSCRIBER_ROLE must be a passwordless ownership-free exact LOGIN' \
-  "$AUDIT_REPORT_FILE"
+assert_report_contains 'teardown refuses to drop any other role'
+assert_report_contains 'TARGET_SUBSCRIBER_ROLE must be a passwordless ownership-free exact LOGIN'
 assert_subscriber_role_count() {
   local expected="$1" actual
   actual="$(docker exec "$TARGET_CONTAINER_NAME" psql -X -Atq -U postgres -d main \
@@ -1951,8 +1958,7 @@ if run_confirmed_teardown >"$AUDIT_REPORT_FILE" 2>&1; then
   printf 'Expected teardown to refuse a subscriber role that owns an object\n' >&2
   exit 1
 fi
-grep -Fq 'TARGET_SUBSCRIBER_ROLE must be a passwordless ownership-free exact LOGIN' \
-  "$AUDIT_REPORT_FILE"
+assert_report_contains 'TARGET_SUBSCRIBER_ROLE must be a passwordless ownership-free exact LOGIN'
 assert_subscriber_role_count 1
 docker exec "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
   -c 'DROP SCHEMA pg18_subscriber_teardown_rogue CASCADE;' >/dev/null
@@ -1965,7 +1971,7 @@ if ! run_confirmed_teardown >"$AUDIT_REPORT_FILE" 2>&1; then
   printf 'Expected teardown to drop the contract-matching subscriber role\n' >&2
   exit 1
 fi
-grep -Fq "Temporary subscriber role 'pg18_smoke_subscriber' removed" "$AUDIT_REPORT_FILE"
+assert_report_contains "Temporary subscriber role 'pg18_smoke_subscriber' removed"
 assert_subscriber_role_count 0
 subscriber_residue="$(docker exec "$TARGET_CONTAINER_NAME" psql -X -Atq -U postgres -d main -c "
 SELECT count(*) FROM pg_shdepend AS dependency
@@ -2029,7 +2035,7 @@ if ! run_confirmed_teardown >"$AUDIT_REPORT_FILE" 2>&1; then
   printf 'Expected the orphan-slot teardown re-run to succeed\n' >&2
   exit 1
 fi
-grep -Fq "Temporary subscriber role 'pg18_smoke_subscriber' does not exist" "$AUDIT_REPORT_FILE"
+assert_report_contains "Temporary subscriber role 'pg18_smoke_subscriber' does not exist"
 orphan_slot_count="$(docker exec "$CONTAINER_NAME" psql -X -Atq -U postgres -d main \
   -c "SELECT count(*) FROM pg_replication_slots WHERE slot_name = 'pg18_smoke_subscription';")"
 [[ "$orphan_slot_count" == '0' ]]
@@ -2056,6 +2062,6 @@ if ! run_two_host_audit_without_publication >"$AUDIT_REPORT_FILE" 2>&1; then
   printf 'Expected the default post-teardown audit and role graph to be clean\n' >&2
   exit 1
 fi
-grep -Fq 'Audit result: 0 blocker(s).' "$AUDIT_REPORT_FILE"
+assert_report_contains 'Audit result: 0 blocker(s).'
 
 printf 'PostgreSQL 18.4 image, audit, and two-host logical-migration smoke test passed.\n'
