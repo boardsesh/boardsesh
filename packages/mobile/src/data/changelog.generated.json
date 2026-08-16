@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-08-16T09:57:43.158Z",
+  "generatedAt": "2026-08-16T11:34:46.985Z",
   "entries": [
+    {
+      "prNumber": 4482,
+      "category": "new",
+      "title": "Your Progress tab now shows how this period's sends stack up against the last one — flip between \"vs. last period\" and \"vs. same time last year\" to see your trend.",
+      "mergedAt": "2026-08-16T11:33:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4482"
+    },
+    {
+      "prNumber": 4522,
+      "category": "fixed",
+      "title": "Sitemap caching and post-deploy smoke; no user-facing change.",
+      "mergedAt": "2026-08-16T11:29:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4522"
+    },
     {
       "prNumber": 4516,
       "category": "new",

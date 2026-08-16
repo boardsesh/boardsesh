@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Your Progress tab now shows how this period's sends stack up against the last one — flip between "vs. last period" and "vs. same time last year" to see your trend. ([#4482](https://github.com/boardsesh/boardsesh/pull/4482))
 - Print a QR poster for your gym straight from the manage console — one page, A4 or Letter, in English, Spanish, French or German. ([#4516](https://github.com/boardsesh/boardsesh/pull/4516))
 - Find the boards near you — the gym directory now has a map and a "use my location" search, with a city search to fall back on if you'd rather not share it. ([#4517](https://github.com/boardsesh/boardsesh/pull/4517))
 - Claimed a gym? Your page now says it's under review, and we email you either way once we've looked at it — approved or not. ([#4515](https://github.com/boardsesh/boardsesh/pull/4515))
@@ -21,6 +22,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Sitemap caching and post-deploy smoke; no user-facing change. ([#4522](https://github.com/boardsesh/boardsesh/pull/4522))
 - CI and test-fixture typing only. ([#4521](https://github.com/boardsesh/boardsesh/pull/4521))
 
 ## 2026-08-15
