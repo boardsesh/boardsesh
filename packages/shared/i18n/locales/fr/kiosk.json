@@ -89,6 +89,9 @@
     "claimTitle": "C'est ta salle ?",
     "claimBody": "Revendique-la pour gérer les boards, l'identité visuelle et ce qui s'affiche sur le mur.",
     "claimCta": "Revendiquer cette salle",
+    "claimCtaSignedOut": "Connecte-toi et revendique-la",
+    "claimAuthTitle": "Revendique ta salle",
+    "claimAuthBody": "Connecte-toi, on te ramène ici pour la revendiquer.",
     "owner": {
       "linkBoards": {
         "title": "Relie tes boards",

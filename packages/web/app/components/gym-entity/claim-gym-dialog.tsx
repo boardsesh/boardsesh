@@ -243,7 +243,11 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
         <MuiButton
           variant="contained"
           onClick={submitDomainClaim}
-          disabled={submitting || !email.trim()}
+          // `!token` matters here: `submit()` bails on a missing token, and
+          // useWsAuthToken's query key includes the session status, so right
+          // after signing in through the auth modal the token is still in
+          // flight. Without this the first tap is a silent no-op.
+          disabled={submitting || !token || !email.trim()}
           sx={{ textTransform: 'none' }}
         >
           {submitting ? <CircularProgress size={18} color="inherit" /> : t('claimGym.domain.submit')}
@@ -254,7 +258,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
         <MuiButton
           variant="contained"
           onClick={() => submit({ input: { gymUuid, message: message.trim() || undefined } })}
-          disabled={submitting}
+          disabled={submitting || !token}
           sx={{ textTransform: 'none' }}
         >
           {submitting ? <CircularProgress size={18} color="inherit" /> : t('claimGym.admin.submit')}

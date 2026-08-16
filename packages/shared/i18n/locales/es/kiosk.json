@@ -89,6 +89,9 @@
     "claimTitle": "¿Es tuyo este rocódromo?",
     "claimBody": "Reclámalo para gestionar los plafones, la marca y lo que se ve en el muro.",
     "claimCta": "Reclamar este rocódromo",
+    "claimCtaSignedOut": "Inicia sesión y reclámalo",
+    "claimAuthTitle": "Reclama tu rocódromo",
+    "claimAuthBody": "Inicia sesión y te devolvemos aquí mismo para reclamarlo.",
     "owner": {
       "linkBoards": {
         "title": "Vincula tus plafones",

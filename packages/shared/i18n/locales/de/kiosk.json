@@ -89,6 +89,9 @@
     "claimTitle": "Ist das deine Halle?",
     "claimBody": "Übernimm sie und steuere die Boards, den Auftritt und das, was an der Wand läuft.",
     "claimCta": "Diese Halle übernehmen",
+    "claimCtaSignedOut": "Anmelden und übernehmen",
+    "claimAuthTitle": "Übernimm deine Halle",
+    "claimAuthBody": "Melde dich an, wir bringen dich direkt hierher zurück, um sie zu übernehmen.",
     "owner": {
       "linkBoards": {
         "title": "Verknüpf deine Boards",
