@@ -113,7 +113,8 @@
         "title": "Ajoute ton identité",
         "body": "Ajoute ton logo et tes couleurs pour que la page te ressemble."
       }
-    }
+    },
+    "photoAlt": "Le mur d'escalade de {{gymName}}"
   },
   "manage": {
     "welcome": {
@@ -391,7 +392,22 @@
     },
     "profile": {
       "heading": "Profil de la salle",
-      "description": "Le nom, l'adresse et ce que les grimpeurs voient sur la page publique."
+      "description": "Le nom, l'adresse et ce que les grimpeurs voient sur la page publique.",
+      "photo": {
+        "heading": "Photo de la salle",
+        "description": "Une photo de ton mur ou de la zone des boards. Elle ouvre ta page publique et suit le lien quand quelqu'un le partage.",
+        "upload": "Importer une photo",
+        "replace": "Changer la photo",
+        "remove": "Retirer",
+        "currentAlt": "Photo de {{gymName}}",
+        "emptyPlaceholder": "Pas encore de photo",
+        "formatsHint": "JPG, PNG ou WebP, jusqu'à 20 Mo. Redimensionnée à 1920 px. Prends une vraie photo de ton mur ou de la zone des boards, rien de généré par IA.",
+        "unsupportedType": "Utilise une image JPG, PNG ou WebP.",
+        "tooLarge": "Ce fichier dépasse 20 Mo. Choisis une image plus légère.",
+        "uploadTooLarge": "Cette photo dépasse encore 5 Mo après redimensionnement. Choisis-en une autre.",
+        "uploadFailed": "Impossible d'importer la photo.",
+        "saveFailed": "Impossible d'enregistrer la photo."
+      }
     },
     "comments": {
       "intro": "Réponds au fil de commentaires de ta salle sans quitter la console.",

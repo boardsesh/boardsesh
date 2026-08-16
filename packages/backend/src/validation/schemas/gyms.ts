@@ -59,6 +59,27 @@ export const GymLogoUrlSchema = z
   );
 
 /**
+ * Gym photo URL (`gyms.image_url`): the same contract as GymLogoUrlSchema, one
+ * directory over — exactly `/static/gym-photos/<uuid>.<ext>[?v=...]` as written
+ * by POST /api/gym-photos, or a well-formed https URL.
+ *
+ * This replaced a plain `z.string().url()`, which was wrong in both directions:
+ * it ACCEPTED `javascript:` and `data:` URLs — and the value lands in an
+ * `<img src>` and the JSON-LD `image` on the public gym page — while REJECTING
+ * our own relative upload path, so every console upload would have 400'd on the
+ * follow-up updateGym and orphaned the object it had just stored.
+ */
+const STATIC_GYM_PHOTO_PATH_REGEX = /^\/static\/gym-photos\/[0-9a-f-]{36}\.(jpg|jpeg|png|gif|webp)(\?v=[\w-]+)?$/i;
+
+export const GymPhotoUrlSchema = z
+  .string()
+  .max(500)
+  .refine(
+    (value) => STATIC_GYM_PHOTO_PATH_REGEX.test(value) || isValidHttpsUrl(value),
+    'Photo URL must be an https URL or a Boardsesh static gym-photo path',
+  );
+
+/**
  * Opening hours are one free-text line the gym writes itself, so the only server
  * rule is a length cap — enough room for a week of hours plus a holiday note,
  * short enough that the public gym page can't be used as a text dump. The cap
@@ -83,7 +104,7 @@ export const CreateGymInputSchema = z.object({
   latitude: LatitudeSchema.optional(),
   longitude: LongitudeSchema.optional(),
   isPublic: z.boolean().optional(),
-  imageUrl: z.string().url().max(500).optional(),
+  imageUrl: GymPhotoUrlSchema.optional(),
   boardUuid: UUIDSchema.optional(),
 });
 
@@ -103,7 +124,7 @@ export const UpdateGymInputSchema = z.object({
   latitude: LatitudeSchema.optional().nullable(),
   longitude: LongitudeSchema.optional().nullable(),
   isPublic: z.boolean().optional(),
-  imageUrl: z.string().url().max(500).optional().nullable(),
+  imageUrl: GymPhotoUrlSchema.optional().nullable(),
   logoUrl: GymLogoUrlSchema.optional().nullable(),
   brandPrimaryColor: HexColorSchema.optional().nullable(),
   brandAccentColor: HexColorSchema.optional().nullable(),

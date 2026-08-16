@@ -14,8 +14,10 @@ type PageMetadataOptions = {
   path?: string;
   imagePath?: string | null;
   imageAlt?: string;
-  imageWidth?: number;
-  imageHeight?: number;
+  // `null` means "emit no dimension": correct for a user-uploaded image whose
+  // aspect ratio we don't know. Lying about it makes the scraper crop or letterbox.
+  imageWidth?: number | null;
+  imageHeight?: number | null;
   robots?: Metadata['robots'];
   keywords?: string[];
   openGraphType?: 'website' | 'article' | 'profile';
@@ -118,8 +120,8 @@ export function createPageMetadata({
             {
               url: normalizedImagePath,
               alt: imageAlt ?? fullTitle,
-              width: imageWidth,
-              height: imageHeight,
+              ...(imageWidth === null ? {} : { width: imageWidth }),
+              ...(imageHeight === null ? {} : { height: imageHeight }),
             },
           ]
         : undefined,

@@ -113,7 +113,8 @@
         "title": "Añade tu marca",
         "body": "Añade tu logo y tus colores para que la página sea tuya."
       }
-    }
+    },
+    "photoAlt": "El muro de escalada de {{gymName}}"
   },
   "manage": {
     "welcome": {
@@ -391,7 +392,22 @@
     },
     "profile": {
       "heading": "Perfil del rocódromo",
-      "description": "El nombre, la dirección y lo que ven los escaladores en la página pública."
+      "description": "El nombre, la dirección y lo que ven los escaladores en la página pública.",
+      "photo": {
+        "heading": "Foto del rocódromo",
+        "description": "Una foto de tu muro o de la zona de plafones. Encabeza tu página pública y acompaña al enlace cuando alguien lo comparte.",
+        "upload": "Subir foto",
+        "replace": "Cambiar foto",
+        "remove": "Quitar",
+        "currentAlt": "Foto de {{gymName}}",
+        "emptyPlaceholder": "Todavía sin foto",
+        "formatsHint": "JPG, PNG o WebP, hasta 20 MB. Se redimensiona a 1920 px. Usa una foto real de tu muro o de la zona de plafones: nada generado con IA.",
+        "unsupportedType": "Usa una imagen JPG, PNG o WebP.",
+        "tooLarge": "Ese archivo supera los 20 MB. Elige una imagen más pequeña.",
+        "uploadTooLarge": "Esa foto sigue superando los 5 MB después de redimensionarla. Elige otra.",
+        "uploadFailed": "No se pudo subir la foto.",
+        "saveFailed": "No se pudo guardar la foto."
+      }
     },
     "comments": {
       "intro": "Responde al hilo de comentarios de tu rocódromo sin salir de la consola.",

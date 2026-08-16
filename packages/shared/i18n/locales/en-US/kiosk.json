@@ -113,7 +113,8 @@
         "title": "Add your branding",
         "body": "Add your logo and colors so your page looks like you."
       }
-    }
+    },
+    "photoAlt": "The climbing wall at {{gymName}}"
   },
   "manage": {
     "welcome": {
@@ -391,7 +392,22 @@
     },
     "profile": {
       "heading": "Gym profile",
-      "description": "Your gym's name, address, and what climbers see on the public page."
+      "description": "Your gym's name, address, and what climbers see on the public page.",
+      "photo": {
+        "heading": "Gym photo",
+        "description": "One shot of your wall or board area. It leads your public page and rides along when someone shares the link.",
+        "upload": "Upload photo",
+        "replace": "Replace photo",
+        "remove": "Remove",
+        "currentAlt": "Photo of {{gymName}}",
+        "emptyPlaceholder": "No photo yet",
+        "formatsHint": "JPG, PNG, or WebP, up to 20MB. Resized to 1920px. Use a real photo of your wall or board area, not an AI-generated one.",
+        "unsupportedType": "Use a JPG, PNG, or WebP image.",
+        "tooLarge": "That file is over 20MB. Pick a smaller image.",
+        "uploadTooLarge": "That photo is still over 5MB after resizing. Pick a different one.",
+        "uploadFailed": "Couldn't upload the photo.",
+        "saveFailed": "Couldn't save the photo."
+      }
     },
     "comments": {
       "intro": "Reply to your gym's comment thread without leaving the console.",
