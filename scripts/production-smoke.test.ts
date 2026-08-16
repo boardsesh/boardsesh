@@ -10,7 +10,13 @@ import { FIXTURE_PATHS, WWW_CHECKS, parseBaseUrl, type SmokeResponse } from './p
 // healthy response.
 
 function response(overrides: Partial<SmokeResponse> = {}): SmokeResponse {
-  return { status: 200, contentType: 'text/html; charset=utf-8', body: '<h1>Boardsesh</h1>', ...overrides };
+  return {
+    status: 200,
+    contentType: 'text/html; charset=utf-8',
+    body: '<h1>Boardsesh</h1>',
+    headers: {},
+    ...overrides,
+  };
 }
 
 /**
@@ -71,6 +77,9 @@ describe('www production smoke checks', () => {
     // ships a 200 that quietly lost ~2,600 URLs. `static` is hardcoded and cannot
     // fail, so an "any one shard <loc>" assertion would be green on every
     // possible outage — the detector that found the bug would never fire again.
+    //
+    // Silent is the operative word: with no `X-Sitemap-Degraded` header there is
+    // nothing to say the omission was deliberate, so it stays a hard failure.
     const degradedIndex =
       '<sitemapindex><sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap></sitemapindex>';
     expect(check.assert(response({ contentType: 'application/xml', body: degradedIndex }))).toMatch(/boards/);
@@ -87,6 +96,78 @@ describe('www production smoke checks', () => {
     expect(check.assert(response({ contentType: 'application/xml', body: '<sitemapindex></sitemapindex>' }))).toMatch(
       /shard/,
     );
+  });
+
+  it('warns instead of failing when the index declares which shard it dropped', () => {
+    // #4519: `/sitemap.xml` is force-dynamic, so the first request after a deploy
+    // rebuilds every shard live and the boards builder can miss the index's 3s
+    // deadline. The handler publishes without it under a 60s window and names it
+    // in `X-Sitemap-Degraded` — a self-healing state, not a broken deploy. The
+    // smoke ran in exactly that window and went red on every single deploy.
+    const check = checkNamed('sitemap index');
+    const withoutBoards = response({
+      contentType: 'application/xml',
+      body: '<sitemapindex><sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap></sitemapindex>',
+      headers: { 'x-sitemap-degraded': 'boards,playlists' },
+    });
+    expect(check.assert(withoutBoards)).toBeNull();
+    // Names the shards, so the annotation is actionable without opening the site.
+    expect(check.degradation?.(withoutBoards)).toMatch(/boards/);
+    expect(check.degradation?.(withoutBoards)).toMatch(/playlists/);
+    expect(check.degradation?.(withoutBoards)).toMatch(/mandatory boards/);
+
+    // A shard the header does NOT name is still missing silently — the header
+    // must not become a blanket amnesty for anything absent from the body.
+    const wrongShardDeclared = response({
+      contentType: 'application/xml',
+      body: '<sitemapindex><sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap></sitemapindex>',
+      headers: { 'x-sitemap-degraded': 'playlists' },
+    });
+    expect(check.assert(wrongShardDeclared)).toMatch(/boards/);
+
+    // Optional shards degrading is worth a warning but is not a missing mandatory.
+    const optionalOnly = response({
+      contentType: 'application/xml',
+      body:
+        '<sitemapindex>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
+        '</sitemapindex>',
+      headers: { 'x-sitemap-degraded': 'playlists,climbs' },
+    });
+    expect(check.assert(optionalOnly)).toBeNull();
+    expect(check.degradation?.(optionalOnly)).toMatch(/playlists, climbs/);
+    expect(check.degradation?.(optionalOnly)).not.toMatch(/mandatory/);
+
+    // The header can never rescue a genuinely broken index: a non-200, a body
+    // that is not a `<sitemapindex>`, or one that resolved nothing at all.
+    const degradedHeader = { 'x-sitemap-degraded': 'boards,playlists,climbs' };
+    expect(
+      check.assert(response({ status: 503, contentType: 'application/xml', body: '', headers: degradedHeader })),
+    ).toMatch(/503/);
+    expect(
+      check.assert(
+        response({
+          contentType: 'application/xml',
+          body: '<urlset><url><loc>https://x/</loc></url></urlset>',
+          headers: degradedHeader,
+        }),
+      ),
+    ).toMatch(/sitemapindex/);
+    expect(check.assert(response({ contentType: 'application/xml', body: '<sitemapindex></sitemapindex>' }))).toMatch(
+      /shard/,
+    );
+
+    // A healthy index carries no header and must not warn.
+    const healthy = response({
+      contentType: 'application/xml',
+      body:
+        '<sitemapindex>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
+        '</sitemapindex>',
+    });
+    expect(check.degradation?.(healthy) ?? null).toBeNull();
   });
 
   it('rejects an empty static sitemap shard', () => {

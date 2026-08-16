@@ -15,6 +15,11 @@
  * a session, a mutation, or seeded data belongs in e2e, not here — this runs
  * against production and must stay read-only.
  *
+ * Outcomes are pass / WARN / FAIL / skip. WARN exists for a surface that answers
+ * correctly but tells us, on the response itself, that it served less than it
+ * should have — today only the degrading sitemap index. It annotates the job and
+ * leaves it green; only FAIL exits non-zero.
+ *
  *   vp run smoke:production                    # www.boardsesh.com
  *   vp run smoke:production -- --base <url>    # a preview deployment
  *
@@ -40,6 +45,8 @@ export type SmokeResponse = {
   status: number;
   contentType: string;
   body: string;
+  /** Response headers, keys lowercased. Only read by checks that need one. */
+  headers: Record<string, string>;
 };
 
 export type SmokeCheck = {
@@ -56,6 +63,18 @@ export type SmokeCheck = {
    * rather than an assertion failure, which reads very differently on-call.
    */
   assert: (response: SmokeResponse) => string | null;
+  /**
+   * Optional second channel for "served, but the server told us it served less
+   * than it should have". Returns null when the response is fully healthy, or a
+   * reason string describing the degradation.
+   *
+   * A degradation is retried like a failure — the retry is what gives a cold
+   * cache time to warm — but on the last attempt it reports as a WARNING and
+   * leaves the job green, where `assert` reports as a failure and turns it red.
+   * The distinction only belongs on a surface whose degradation is *declared*
+   * by the server; anything we merely infer from the body is an assertion.
+   */
+  degradation?: (response: SmokeResponse) => string | null;
   /**
    * Env var holding the fixture this check needs. When set on the check and
    * absent from the environment, the check is skipped rather than failed.
@@ -113,6 +132,44 @@ function firstFailure(...reasons: (string | null)[]): string | null {
  */
 const MIN_RENDERED_PAGE_CHARS = 4_000;
 
+/**
+ * The header `sitemapIndexRouteHandler` sets when it published an index without
+ * one of its shards. It exists precisely so the degradation is legible from the
+ * outside instead of only in a `console.error` nobody reads, and reading it here
+ * is what lets this check tell "the index dropped a shard and said so" apart
+ * from "the shard vanished silently", which are the same body and very
+ * different bugs.
+ */
+const SITEMAP_DEGRADED_HEADER = 'x-sitemap-degraded';
+
+/**
+ * Shards the index must always list. Both are the ones the registry marks
+ * `expectsUrls`; `gyms`, `setters` and `playlists` are legitimately empty and a
+ * missing entry there proves nothing.
+ *
+ * The `<loc>` values are absolute and hardcoded on purpose: the index renders
+ * them from the configured site base, not from the request host, so they stay
+ * `www.boardsesh.com` even when the smoke runs against a preview `--base`.
+ */
+const MANDATORY_SITEMAP_SHARDS = [
+  { id: 'static', loc: 'https://www.boardsesh.com/sitemaps/static.xml' },
+  { id: 'boards', loc: 'https://www.boardsesh.com/sitemaps/boards.xml' },
+] as const;
+
+/** Shard ids the response declared it dropped, in header order. */
+function declaredDegradedShards(response: SmokeResponse): string[] {
+  return (response.headers[SITEMAP_DEGRADED_HEADER] ?? '')
+    .split(',')
+    .map((shard) => shard.trim())
+    .filter((shard) => shard.length > 0);
+}
+
+function missingMandatoryShards(response: SmokeResponse): string[] {
+  return MANDATORY_SITEMAP_SHARDS.filter((shard) => !response.body.includes(`<loc>${shard.loc}`)).map(
+    (shard) => shard.id,
+  );
+}
+
 function renderedHtmlPage(response: SmokeResponse): string | null {
   return firstFailure(
     expectStatus(response, 200),
@@ -155,19 +212,39 @@ export const WWW_CHECKS: SmokeCheck[] = [
     // That is the right behaviour for crawlers and the wrong behaviour for a
     // detector — the original wording passes on an index that lost everything but
     // `static.xml`, which is a pure hardcoded builder that cannot fail, so this
-    // check could never have gone red again. `static` and `boards` are exactly
-    // the shards the registry marks `expectsUrls`, so both must always be there;
-    // `gyms`, `setters` and `playlists` are legitimately empty and stay out of it.
+    // check could never have gone red again.
+    //
+    // What splits fail from warn is `X-Sitemap-Degraded`, not the body. A shard
+    // that is missing AND named in that header is the subsystem working as
+    // designed: the handler logged it, dropped the CDN window to sixty seconds so
+    // it self-heals, and told us which shard it was. That is a warning. A shard
+    // missing WITHOUT the header is the silent loss this check exists to catch,
+    // and stays a failure — as do a non-200, a non-XML body, and anything that
+    // is not a `<sitemapindex>`. Degradation is not free: this deploy is serving
+    // an incomplete sitemap and somebody should look at why.
     name: 'sitemap.xml serves a sitemap index pointing at shards',
     path: '/sitemap.xml',
-    assert: (response) =>
-      firstFailure(
+    assert: (response) => {
+      const structural = firstFailure(
         expectStatus(response, 200),
         expectContentType(response, 'xml'),
         expectBodyContains(response, '<sitemapindex', '<sitemapindex> root element'),
-        expectBodyContains(response, '<loc>https://www.boardsesh.com/sitemaps/static.xml', 'static shard <loc> entry'),
-        expectBodyContains(response, '<loc>https://www.boardsesh.com/sitemaps/boards.xml', 'boards shard <loc> entry'),
-      ),
+      );
+      if (structural) return structural;
+
+      const declared = declaredDegradedShards(response);
+      const silentlyMissing = missingMandatoryShards(response).filter((shard) => !declared.includes(shard));
+      return silentlyMissing.length === 0
+        ? null
+        : `response body has no ${silentlyMissing.join(', ')} shard <loc> entry, and no ${SITEMAP_DEGRADED_HEADER} header declaring it`;
+    },
+    degradation: (response) => {
+      const declared = declaredDegradedShards(response);
+      if (declared.length === 0) return null;
+      const missing = missingMandatoryShards(response);
+      const mandatoryNote = missing.length > 0 ? ` — including the mandatory ${missing.join(', ')}` : '';
+      return `index published WITHOUT ${declared.join(', ')}${mandatoryNote} (${SITEMAP_DEGRADED_HEADER}: ${declared.join(',')})`;
+    },
   },
   {
     name: 'the static sitemap shard serves URLs',
@@ -252,10 +329,15 @@ async function fetchOnce(url: string): Promise<SmokeResponse> {
         'Cache-Control': 'no-cache',
       },
     });
+    const headers: Record<string, string> = {};
+    response.headers.forEach((value, name) => {
+      headers[name.toLowerCase()] = value;
+    });
     return {
       status: response.status,
       contentType: response.headers.get('content-type') ?? '',
       body: await response.text(),
+      headers,
     };
   } finally {
     clearTimeout(timer);
@@ -264,7 +346,7 @@ async function fetchOnce(url: string): Promise<SmokeResponse> {
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-type CheckOutcome = { name: string; state: 'pass' | 'fail' | 'skip'; detail: string };
+type CheckOutcome = { name: string; state: 'pass' | 'warn' | 'fail' | 'skip'; detail: string };
 
 async function runCheck(check: SmokeCheck, baseUrl: string, env: NodeJS.ProcessEnv): Promise<CheckOutcome> {
   const path = resolvePath(check, env);
@@ -274,23 +356,38 @@ async function runCheck(check: SmokeCheck, baseUrl: string, env: NodeJS.ProcessE
 
   const url = `${baseUrl}${path}`;
   let lastDetail = '';
+  // Set only when every assertion passed and the response merely declared itself
+  // degraded, so a later attempt that fails outright cannot be reported as a warning.
+  let degraded = false;
 
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
     try {
       const response = await fetchOnce(url);
       const failure = check.assert(response);
-      if (failure === null) return { name: check.name, state: 'pass', detail: path };
-      lastDetail = failure;
+      if (failure === null) {
+        const degradation = check.degradation?.(response) ?? null;
+        if (degradation === null) return { name: check.name, state: 'pass', detail: path };
+        // Retried like a failure: the whole point of the retry loop here is to
+        // give a cold cache the two extra requests it needs to warm up, which
+        // turns a transient post-deploy degradation into a clean pass.
+        lastDetail = degradation;
+        degraded = true;
+      } else {
+        lastDetail = failure;
+        degraded = false;
+      }
     } catch (error) {
       lastDetail = `request failed: ${error instanceof Error ? error.message : String(error)}`;
+      degraded = false;
     }
     if (attempt < ATTEMPTS) {
-      console.log(`  ${check.name}: attempt ${attempt} failed (${lastDetail}); retrying in 5s...`);
+      const label = degraded ? 'degraded' : 'failed';
+      console.log(`  ${check.name}: attempt ${attempt} ${label} (${lastDetail}); retrying in 5s...`);
       await delay(RETRY_DELAY_MS);
     }
   }
 
-  return { name: check.name, state: 'fail', detail: `${path} — ${lastDetail}` };
+  return { name: check.name, state: degraded ? 'warn' : 'fail', detail: `${path} — ${lastDetail}` };
 }
 
 /** `--base` is the only override — one documented way to point this elsewhere. */
@@ -313,20 +410,31 @@ async function main(): Promise<void> {
   const baseUrl = parseBaseUrl(process.argv.slice(2));
   console.log(`Production smoke against ${baseUrl}\n`);
 
+  const MARKERS: Record<CheckOutcome['state'], string> = { pass: 'ok', warn: 'WARN', fail: 'FAIL', skip: '--' };
+
   const outcomes: CheckOutcome[] = [];
   for (const check of WWW_CHECKS) {
     const outcome = await runCheck(check, baseUrl, process.env);
     outcomes.push(outcome);
-    const marker = outcome.state === 'pass' ? 'ok' : outcome.state === 'skip' ? '--' : 'FAIL';
-    console.log(`${marker.padEnd(4)} ${outcome.name}${outcome.state === 'pass' ? '' : ` (${outcome.detail})`}`);
+    console.log(
+      `${MARKERS[outcome.state].padEnd(4)} ${outcome.name}${outcome.state === 'pass' ? '' : ` (${outcome.detail})`}`,
+    );
   }
 
   const failures = outcomes.filter((outcome) => outcome.state === 'fail');
+  const warnings = outcomes.filter((outcome) => outcome.state === 'warn');
   const skipped = outcomes.filter((outcome) => outcome.state === 'skip');
   console.log(
-    `\n${outcomes.length - failures.length - skipped.length} passed, ${failures.length} failed, ${skipped.length} skipped`,
+    `\n${outcomes.length - failures.length - warnings.length - skipped.length} passed, ${failures.length} failed, ${warnings.length} degraded, ${skipped.length} skipped`,
   );
 
+  // A degraded surface is real news, so it gets a GitHub annotation of its own —
+  // but not a red deploy: the server declared the degradation, serves it under a
+  // sixty-second window, and self-heals. Only a silent or structural break is a
+  // failure.
+  for (const warning of warnings) {
+    console.log(`::warning::production smoke degraded: ${warning.name} — ${warning.detail}`);
+  }
   for (const failure of failures) {
     console.log(`::error::production smoke failed: ${failure.name} — ${failure.detail}`);
   }
