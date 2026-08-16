@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-16T02:04:46.652Z",
+  "generatedAt": "2026-08-16T02:23:13.443Z",
   "entries": [
+    {
+      "prNumber": 4505,
+      "category": "new",
+      "title": "Backend fields only; the directory that consumes them ships flag-gated and noindex in a later PR.",
+      "mergedAt": "2026-08-16T02:21:38Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4505"
+    },
     {
       "prNumber": 4503,
       "category": "new",
