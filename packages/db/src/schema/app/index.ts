@@ -1,6 +1,7 @@
 export * from './gyms';
 export * from './gym-kiosks';
 export * from './gym-merge-audit';
+export * from './gym-owner-reassignments';
 export * from './boards';
 export * from './board-serials';
 export * from './sessions';

@@ -5080,6 +5080,60 @@ type ClearLocationSyncFreezeResult {
   previousSyncFrozenAt: String
 }
 
+"A gym resolved for the admin ownership-handover surface, with the state the confirm step must name."
+type GymOwnershipSummary {
+  gymUuid: ID!
+  slug: String
+  name: String!
+  currentOwnerId: ID!
+  "Display name / account email of the current owner, or null when the account row is gone."
+  currentOwnerLabel: String
+  "True when the listing is still parked on the import account and has no real owner yet."
+  currentOwnerIsSystem: Boolean!
+  "Echoed back so the mutation can be sent with the exact owner the admin saw."
+  syncFrozenAt: String
+  isDeleted: Boolean!
+  isMerged: Boolean!
+}
+
+"The incoming owner resolved from an account email or user id."
+type GymOwnershipUserSummary {
+  userId: ID!
+  label: String!
+  email: String
+}
+
+input GymOwnershipLookupInput {
+  "Gym UUID, slug, or a case-insensitive name fragment."
+  gymQuery: String!
+  "Account email or user id of the person the gym should move to."
+  newOwnerQuery: String!
+}
+
+"Both sides of a proposed handover. Either half is null when nothing matched."
+type GymOwnershipLookupResult {
+  gym: GymOwnershipSummary
+  newOwner: GymOwnershipUserSummary
+}
+
+input ReassignGymOwnerInput {
+  gymUuid: ID!
+  "Owner the admin saw in the confirm step; a moved owner rejects the write."
+  expectedCurrentOwnerId: ID!
+  newOwnerId: ID!
+  "Required operator explanation stored in the durable audit trail."
+  reason: String!
+}
+
+type ReassignGymOwnerResult {
+  gymUuid: ID!
+  gymName: String!
+  previousOwnerId: ID!
+  newOwnerId: ID!
+  "The human-curation marker after the write. A handover never changes it."
+  syncFrozenAt: String
+}
+
 """
 Root query type for all read operations.
 """
@@ -5742,6 +5796,13 @@ type Query {
   deliberately resurrect them. Merged gyms are excluded.
   """
   frozenLocationSyncEntities(input: FrozenLocationSyncEntitiesInput!): FrozenLocationSyncEntityConnection!
+
+  """
+  Resolve both halves of a proposed gym ownership handover — the gym and the
+  incoming owner — so the confirm step can name them (global admin only).
+  Read-only; nothing moves until reassignGymOwner is called.
+  """
+  gymOwnershipLookup(input: GymOwnershipLookupInput!): GymOwnershipLookupResult!
 
   # ============================================
   # Gym Kiosk Queries
@@ -6557,6 +6618,15 @@ type Mutation {
   only permits a later matching source refresh and writes an audit record.
   """
   clearLocationSyncFreeze(input: ClearLocationSyncFreezeInput!): ClearLocationSyncFreezeResult!
+
+  """
+  Move a gym's ownership to another account (global admin only) — a sold gym,
+  a departed committee member, a claim approved to the wrong person. The
+  listing's human-curation freeze is left exactly as it was, the outgoing
+  owner is kept on as a gym admin, and the handover is written to a durable
+  audit trail. No self-serve entry point exists.
+  """
+  reassignGymOwner(input: ReassignGymOwnerInput!): ReassignGymOwnerResult!
 
   """
   Report that two gym listings are the same gym (any signed-in user). Surfaces the

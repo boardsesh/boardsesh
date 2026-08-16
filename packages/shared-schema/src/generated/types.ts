@@ -2756,6 +2756,45 @@ export type GymOwnerType =
   /** Created by a Boardsesh user. */
   | 'USER';
 
+export type GymOwnershipLookupInput = {
+  /** Gym UUID, slug, or a case-insensitive name fragment. */
+  gymQuery: Scalars['String']['input'];
+  /** Account email or user id of the person the gym should move to. */
+  newOwnerQuery: Scalars['String']['input'];
+};
+
+/** Both sides of a proposed handover. Either half is null when nothing matched. */
+export type GymOwnershipLookupResult = {
+  __typename?: 'GymOwnershipLookupResult';
+  gym?: Maybe<GymOwnershipSummary>;
+  newOwner?: Maybe<GymOwnershipUserSummary>;
+};
+
+/** A gym resolved for the admin ownership-handover surface, with the state the confirm step must name. */
+export type GymOwnershipSummary = {
+  __typename?: 'GymOwnershipSummary';
+  currentOwnerId: Scalars['ID']['output'];
+  /** True when the listing is still parked on the import account and has no real owner yet. */
+  currentOwnerIsSystem: Scalars['Boolean']['output'];
+  /** Display name / account email of the current owner, or null when the account row is gone. */
+  currentOwnerLabel?: Maybe<Scalars['String']['output']>;
+  gymUuid: Scalars['ID']['output'];
+  isDeleted: Scalars['Boolean']['output'];
+  isMerged: Scalars['Boolean']['output'];
+  name: Scalars['String']['output'];
+  slug?: Maybe<Scalars['String']['output']>;
+  /** Echoed back so the mutation can be sent with the exact owner the admin saw. */
+  syncFrozenAt?: Maybe<Scalars['String']['output']>;
+};
+
+/** The incoming owner resolved from an account email or user id. */
+export type GymOwnershipUserSummary = {
+  __typename?: 'GymOwnershipUserSummary';
+  email?: Maybe<Scalars['String']['output']>;
+  label: Scalars['String']['output'];
+  userId: Scalars['ID']['output'];
+};
+
 /**
  * A gym owner's activity snapshot for the current window and the window
  * immediately before it (same length), for week-over-week deltas. Every
@@ -3304,6 +3343,14 @@ export type Mutation = {
    */
   publishPlaybackState: Scalars['Boolean']['output'];
   /**
+   * Move a gym's ownership to another account (global admin only) — a sold gym,
+   * a departed committee member, a claim approved to the wrong person. The
+   * listing's human-curation freeze is left exactly as it was, the outgoing
+   * owner is kept on as a gym admin, and the handover is written to a durable
+   * audit trail. No self-serve entry point exists.
+   */
+  reassignGymOwner: ReassignGymOwnerResult;
+  /**
    * Record the board configuration seen when connecting to a controller over
    * BLE, keyed by serial. Upserts the current user's serial→config recording.
    * Returns null when a saved board already matches the connect (nothing to record).
@@ -3845,6 +3892,11 @@ export type MutationPinPlaylistArgs = {
 /** Root mutation type for all write operations. */
 export type MutationPublishPlaybackStateArgs = {
   input: PlaybackStateInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationReassignGymOwnerArgs = {
+  input: ReassignGymOwnerInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4994,6 +5046,12 @@ export type Query = {
   /** Get members of a gym. */
   gymMembers: GymMemberConnection;
   /**
+   * Resolve both halves of a proposed gym ownership handover — the gym and the
+   * incoming owner — so the confirm step can name them (global admin only).
+   * Read-only; nothing moves until reassignGymOwner is called.
+   */
+  gymOwnershipLookup: GymOwnershipLookupResult;
+  /**
    * A gym owner's activity snapshot: unique climbers, ascents, top climbs, and
    * busiest weekdays for the current window plus the equally-long window before
    * it (for week-over-week deltas). Requires gym edit access (owner, gym
@@ -5592,6 +5650,11 @@ export type QueryGymMembersArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryGymOwnershipLookupArgs = {
+  input: GymOwnershipLookupInput;
+};
+
+/** Root query type for all read operations. */
 export type QueryGymStatsArgs = {
   input: GymStatsInput;
 };
@@ -6055,6 +6118,25 @@ export type QueueState = {
   stateHash: Scalars['String']['output'];
   /** Order-SENSITIVE hash (v2) of the current state (UUIDs in queue order). Optional during the dual-hash rollout: old clients ignore it; new clients prefer it when present so a reorder that diverges is detectable. */
   stateHashOrdered?: Maybe<Scalars['String']['output']>;
+};
+
+export type ReassignGymOwnerInput = {
+  /** Owner the admin saw in the confirm step; a moved owner rejects the write. */
+  expectedCurrentOwnerId: Scalars['ID']['input'];
+  gymUuid: Scalars['ID']['input'];
+  newOwnerId: Scalars['ID']['input'];
+  /** Required operator explanation stored in the durable audit trail. */
+  reason: Scalars['String']['input'];
+};
+
+export type ReassignGymOwnerResult = {
+  __typename?: 'ReassignGymOwnerResult';
+  gymName: Scalars['String']['output'];
+  gymUuid: Scalars['ID']['output'];
+  newOwnerId: Scalars['ID']['output'];
+  previousOwnerId: Scalars['ID']['output'];
+  /** The human-curation marker after the write. A handover never changes it. */
+  syncFrozenAt?: Maybe<Scalars['String']['output']>;
 };
 
 /**
@@ -8353,6 +8435,10 @@ export type ResolversTypes = ResolversObject<{
   GymMergeCounts: ResolverTypeWrapper<GymMergeCounts>;
   GymMergeDuplicateResult: ResolverTypeWrapper<GymMergeDuplicateResult>;
   GymOwnerType: GymOwnerType;
+  GymOwnershipLookupInput: GymOwnershipLookupInput;
+  GymOwnershipLookupResult: ResolverTypeWrapper<GymOwnershipLookupResult>;
+  GymOwnershipSummary: ResolverTypeWrapper<GymOwnershipSummary>;
+  GymOwnershipUserSummary: ResolverTypeWrapper<GymOwnershipUserSummary>;
   GymStats: ResolverTypeWrapper<GymStats>;
   GymStatsInput: GymStatsInput;
   GymStatsPeriod: GymStatsPeriod;
@@ -8433,6 +8519,8 @@ export type ResolversTypes = ResolversObject<{
   QueueNavigationItem: ResolverTypeWrapper<QueueNavigationItem>;
   QueueReordered: ResolverTypeWrapper<QueueReordered>;
   QueueState: ResolverTypeWrapper<QueueState>;
+  ReassignGymOwnerInput: ReassignGymOwnerInput;
+  ReassignGymOwnerResult: ResolverTypeWrapper<ReassignGymOwnerResult>;
   RecentBetaLink: ResolverTypeWrapper<RecentBetaLink>;
   RecordBoardSerialInput: RecordBoardSerialInput;
   RegisterControllerInput: RegisterControllerInput;
@@ -8716,6 +8804,10 @@ export type ResolversParentTypes = ResolversObject<{
   GymMembersInput: GymMembersInput;
   GymMergeCounts: GymMergeCounts;
   GymMergeDuplicateResult: GymMergeDuplicateResult;
+  GymOwnershipLookupInput: GymOwnershipLookupInput;
+  GymOwnershipLookupResult: GymOwnershipLookupResult;
+  GymOwnershipSummary: GymOwnershipSummary;
+  GymOwnershipUserSummary: GymOwnershipUserSummary;
   GymStats: GymStats;
   GymStatsInput: GymStatsInput;
   GymStatsWindow: GymStatsWindow;
@@ -8789,6 +8881,8 @@ export type ResolversParentTypes = ResolversObject<{
   QueueNavigationItem: QueueNavigationItem;
   QueueReordered: QueueReordered;
   QueueState: QueueState;
+  ReassignGymOwnerInput: ReassignGymOwnerInput;
+  ReassignGymOwnerResult: ReassignGymOwnerResult;
   RecentBetaLink: RecentBetaLink;
   RecordBoardSerialInput: RecordBoardSerialInput;
   RegisterControllerInput: RegisterControllerInput;
@@ -10250,6 +10344,42 @@ export type GymMergeDuplicateResultResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type GymOwnershipLookupResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymOwnershipLookupResult'] =
+    ResolversParentTypes['GymOwnershipLookupResult'],
+> = ResolversObject<{
+  gym?: Resolver<Maybe<ResolversTypes['GymOwnershipSummary']>, ParentType, ContextType>;
+  newOwner?: Resolver<Maybe<ResolversTypes['GymOwnershipUserSummary']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymOwnershipSummaryResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymOwnershipSummary'] = ResolversParentTypes['GymOwnershipSummary'],
+> = ResolversObject<{
+  currentOwnerId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  currentOwnerIsSystem?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  currentOwnerLabel?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  gymUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  isDeleted?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isMerged?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  slug?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  syncFrozenAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymOwnershipUserSummaryResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymOwnershipUserSummary'] = ResolversParentTypes['GymOwnershipUserSummary'],
+> = ResolversObject<{
+  email?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  label?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type GymStatsResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['GymStats'] = ResolversParentTypes['GymStats'],
@@ -10771,6 +10901,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationPublishPlaybackStateArgs, 'input'>
+  >;
+  reassignGymOwner?: Resolver<
+    ResolversTypes['ReassignGymOwnerResult'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationReassignGymOwnerArgs, 'input'>
   >;
   recordBoardSerial?: Resolver<
     Maybe<ResolversTypes['BoardSerialConfig']>,
@@ -11780,6 +11916,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryGymMembersArgs, 'input'>
   >;
+  gymOwnershipLookup?: Resolver<
+    ResolversTypes['GymOwnershipLookupResult'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryGymOwnershipLookupArgs, 'input'>
+  >;
   gymStats?: Resolver<ResolversTypes['GymStats'], ParentType, ContextType, RequireFields<QueryGymStatsArgs, 'input'>>;
   instagramBetaScan?: Resolver<
     ResolversTypes['InstagramBetaScanResult'],
@@ -12247,6 +12389,18 @@ export type QueueStateResolvers<
   sequence?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   stateHash?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   stateHashOrdered?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ReassignGymOwnerResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ReassignGymOwnerResult'] = ResolversParentTypes['ReassignGymOwnerResult'],
+> = ResolversObject<{
+  gymName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  gymUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  newOwnerId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  previousOwnerId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  syncFrozenAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -13316,6 +13470,9 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GymMemberConnection?: GymMemberConnectionResolvers<ContextType>;
   GymMergeCounts?: GymMergeCountsResolvers<ContextType>;
   GymMergeDuplicateResult?: GymMergeDuplicateResultResolvers<ContextType>;
+  GymOwnershipLookupResult?: GymOwnershipLookupResultResolvers<ContextType>;
+  GymOwnershipSummary?: GymOwnershipSummaryResolvers<ContextType>;
+  GymOwnershipUserSummary?: GymOwnershipUserSummaryResolvers<ContextType>;
   GymStats?: GymStatsResolvers<ContextType>;
   GymStatsWindow?: GymStatsWindowResolvers<ContextType>;
   GymTopClimb?: GymTopClimbResolvers<ContextType>;
@@ -13368,6 +13525,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   QueueNavigationItem?: QueueNavigationItemResolvers<ContextType>;
   QueueReordered?: QueueReorderedResolvers<ContextType>;
   QueueState?: QueueStateResolvers<ContextType>;
+  ReassignGymOwnerResult?: ReassignGymOwnerResultResolvers<ContextType>;
   RecentBetaLink?: RecentBetaLinkResolvers<ContextType>;
   RenderBoardConfig?: RenderBoardConfigResolvers<ContextType>;
   ReportGymDuplicateResult?: ReportGymDuplicateResultResolvers<ContextType>;

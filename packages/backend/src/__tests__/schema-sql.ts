@@ -1180,6 +1180,25 @@ export const schemaSQL = `
   CREATE INDEX IF NOT EXISTS "location_sync_unfreeze_audit_performed_by_idx"
     ON "location_sync_unfreeze_audit" ("performed_by");
 
+  -- Durable audit for the global-admin gym ownership handover (migration 0201).
+  -- No foreign keys anywhere: the record must outlive the gym and both accounts.
+  DROP TABLE IF EXISTS "gym_owner_reassignments" CASCADE;
+  CREATE TABLE IF NOT EXISTS "gym_owner_reassignments" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "gym_uuid" text NOT NULL,
+    "previous_owner_id" text NOT NULL,
+    "new_owner_id" text NOT NULL,
+    "sync_frozen_at_before" timestamp,
+    "sync_frozen_at_after" timestamp,
+    "reason" text NOT NULL,
+    "performed_by" text NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS "gym_owner_reassignments_gym_history_idx"
+    ON "gym_owner_reassignments" ("gym_uuid", "created_at");
+  CREATE INDEX IF NOT EXISTS "gym_owner_reassignments_performed_by_idx"
+    ON "gym_owner_reassignments" ("performed_by");
+
   -- Board followers (enrichBoard counts these per board).
   DROP TABLE IF EXISTS "board_follows" CASCADE;
   CREATE TABLE IF NOT EXISTS "board_follows" (
