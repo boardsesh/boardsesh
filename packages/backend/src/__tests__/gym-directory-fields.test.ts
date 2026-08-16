@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
-import { socialGymQueries, GYM_BOARD_SUMMARY_LIMIT } from '../graphql/resolvers/social/gyms';
+import { socialGymQueries, GYM_BOARD_SUMMARY_ANGLES_PER_TYPE } from '../graphql/resolvers/social/gyms';
 
 /**
  * Real-DB coverage for the three additions the public /gyms directory needs:
@@ -38,13 +38,16 @@ const insertGym = async (opts: {
   name: string;
   slug?: string | null;
   isPublic?: boolean;
+  /** ISO string; pass the SAME value for several gyms to force a created_at tie. */
+  createdAt?: string;
 }): Promise<{ id: number; uuid: string }> => {
-  const { ownerId, name, isPublic = true } = opts;
+  const { ownerId, name, isPublic = true, createdAt } = opts;
   const uuid = uuidv4();
   const slug = opts.slug === undefined ? uuid : opts.slug;
   const result = await db.execute(sql`
     INSERT INTO gyms (uuid, name, slug, owner_id, is_public, created_at, updated_at)
-    VALUES (${uuid}, ${name}, ${slug}, ${ownerId}, ${isPublic}, now(), now())
+    VALUES (${uuid}, ${name}, ${slug}, ${ownerId}, ${isPublic},
+            ${createdAt ? sql`${createdAt}::timestamp` : sql`now()`}, now())
     RETURNING id
   `);
   return { id: Number(Array.from(result as Iterable<{ id: number }>)[0].id), uuid };
@@ -136,6 +139,41 @@ describe('searchGyms requireSlug', () => {
     expect(secondPage.gyms).toHaveLength(1);
     expect(secondPage.hasMore).toBe(false);
   });
+
+  it('pages cleanly over gyms sharing one created_at — no duplicates, no skips', async () => {
+    // A bulk sync import writes many rows with the same created_at. Ordering by
+    // created_at alone leaves those rows unordered relative to each other, so
+    // Postgres may return them in a different order per OFFSET page: one gym
+    // appears twice and another never appears. `gyms.id` is the tiebreaker that
+    // makes the sequence total.
+    const sharedCreatedAt = '2026-01-01T00:00:00.000Z';
+    for (let index = 0; index < 6; index++) {
+      await insertGym({
+        ownerId: REAL_OWNER,
+        name: `Tied Gym ${index}`,
+        slug: `tied-gym-${index}`,
+        createdAt: sharedCreatedAt,
+      });
+    }
+
+    const pagedUuids: string[] = [];
+    for (let offset = 0; offset < 6; offset += 2) {
+      const page = await searchDirectory({ limit: 2, offset, requireSlug: true });
+      expect(page.totalCount).toBe(6);
+      pagedUuids.push(...page.gyms.map((gym) => gym.uuid));
+    }
+
+    expect(pagedUuids).toHaveLength(6);
+    expect(new Set(pagedUuids).size).toBe(6);
+
+    // And the order is the same on a repeat walk — stable, not merely unique.
+    const secondWalk: string[] = [];
+    for (let offset = 0; offset < 6; offset += 2) {
+      const page = await searchDirectory({ limit: 2, offset, requireSlug: true });
+      secondWalk.push(...page.gyms.map((gym) => gym.uuid));
+    }
+    expect(secondWalk).toEqual(pagedUuids);
+  });
 });
 
 describe('Gym.isClaimed', () => {
@@ -220,19 +258,44 @@ describe('Gym.boardSummaries', () => {
     expect(enriched.boardTypes).toEqual([]);
   });
 
-  it('caps the list at GYM_BOARD_SUMMARY_LIMIT while boardCount stays honest', async () => {
+  it('caps angles per board type while boardCount stays honest', async () => {
     const gym = await insertGym({ ownerId: REAL_OWNER, name: 'Board Farm' });
-    const distinctAngleCount = GYM_BOARD_SUMMARY_LIMIT + 4;
+    const distinctAngleCount = GYM_BOARD_SUMMARY_ANGLES_PER_TYPE + 4;
     for (let index = 0; index < distinctAngleCount; index++) {
       await insertBoard({ gymId: gym.id, boardType: 'kilter', angle: 10 + index });
     }
 
     const enriched = await gymByUuid(gym.uuid);
-    expect(enriched.boardSummaries).toHaveLength(GYM_BOARD_SUMMARY_LIMIT);
-    // Ordered before slicing, so the cut is the lowest angles, not an arbitrary
-    // subset Postgres happened to return.
+    expect(enriched.boardSummaries).toHaveLength(GYM_BOARD_SUMMARY_ANGLES_PER_TYPE);
+    // Ordered before capping, so the cut keeps the lowest angles rather than an
+    // arbitrary subset Postgres happened to return.
     expect(enriched.boardSummaries[0]).toEqual({ boardType: 'kilter', angle: 10 });
     expect(enriched.boardCount).toBe(distinctAngleCount);
     expect(enriched.boardTypes).toEqual(['kilter']);
+  });
+
+  it('never drops a board type off the end of the cap, even behind a type with many angles', async () => {
+    // The regression this guards: a flat cap over a list ordered
+    // `board_type, angle` spends the whole budget on `kilter` and returns zero
+    // moonboard summaries — so on /gyms/moonboard a gym matched BY the moonboard
+    // filter renders with no MoonBoard chip. SEARCH_GYMS_DIRECTORY selects
+    // boardSummaries and not boardTypes, so nothing else would cover for it.
+    const gym = await insertGym({ ownerId: REAL_OWNER, name: 'Kilter Wall Plus One Moonboard' });
+    for (let index = 0; index < GYM_BOARD_SUMMARY_ANGLES_PER_TYPE + 6; index++) {
+      await insertBoard({ gymId: gym.id, boardType: 'kilter', angle: 10 + index });
+    }
+    await insertBoard({ gymId: gym.id, boardType: 'moonboard', angle: 40 });
+
+    const enriched = await gymByUuid(gym.uuid);
+    const summarisedTypes = [...new Set(enriched.boardSummaries.map((summary) => summary.boardType))];
+    expect(summarisedTypes).toEqual(['kilter', 'moonboard']);
+    expect(enriched.boardSummaries).toContainEqual({ boardType: 'moonboard', angle: 40 });
+    // Every type in boardTypes has at least one chip — the invariant that makes
+    // the facet pages safe.
+    expect(summarisedTypes).toEqual(enriched.boardTypes);
+    // ...and the per-type cap still bounds the kilter run.
+    expect(enriched.boardSummaries.filter((summary) => summary.boardType === 'kilter')).toHaveLength(
+      GYM_BOARD_SUMMARY_ANGLES_PER_TYPE,
+    );
   });
 });

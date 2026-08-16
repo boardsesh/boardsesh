@@ -211,14 +211,17 @@ export async function resolveCanonicalGymBySlug(slug: string): Promise<GymRow | 
 }
 
 /**
- * Cap on `Gym.boardSummaries`. The directory card shows a row of board chips; a
- * gym with 40 boards must not ship 40 summaries down the wire for a card that
- * visually truncates after a handful. Distinct (type, angle) pairs are already
- * far fewer than boards — 12 covers every real gym in the data — and the list is
- * ordered before slicing, so the cut is deterministic rather than "whichever 12
- * Postgres felt like". `boardCount` remains the honest total.
+ * Cap on `Gym.boardSummaries`, applied PER BOARD TYPE rather than to the flat
+ * list. A gym with a wall of boards must not ship a summary per board for a card
+ * that visually truncates after a handful, but a flat cap over a list ordered
+ * `board_type, angle` silently drops whole board types off the end: twelve
+ * `(kilter, angle)` pairs plus one MoonBoard would render twelve Kilter chips
+ * and no MoonBoard chip. `SEARCH_GYMS_DIRECTORY` selects `boardSummaries` and
+ * not `boardTypes`, so on `/gyms/moonboard` a gym matched BY the moonboard
+ * filter would then show zero MoonBoard chips. Capping after grouping keeps
+ * every board type represented; `boardCount` remains the honest total.
  */
-export const GYM_BOARD_SUMMARY_LIMIT = 12;
+export const GYM_BOARD_SUMMARY_ANGLES_PER_TYPE = 6;
 
 /**
  * Enrich a gym row with computed fields (counts, follow status, membership).
@@ -311,13 +314,24 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
 
   const ownerInfo = ownerResult[0];
   const boardCount = Number(boardCountResult[0]?.count || 0);
-  // Both derived from the single widened distinct query above: the summaries are
-  // the (type, angle) pairs capped for the wire, `boardTypes` collapses them back
-  // to the distinct types the filters and badges have always used.
-  const boardSummaries = boardVariantsResult
-    .slice(0, GYM_BOARD_SUMMARY_LIMIT)
-    .map((row) => ({ boardType: row.boardType, angle: Number(row.angle) }));
-  const boardTypes = [...new Set(boardVariantsResult.map((row) => row.boardType))];
+  // Both derived from the single widened distinct query above. Grouping first
+  // means the per-type angle cap can never drop a board type from the chips, and
+  // `boardTypes` still comes off EVERY row (the map keys), so it stays the
+  // uncapped set the filters and badges have always used. Insertion order is the
+  // query's `ORDER BY board_type, angle`, so the output is deterministic.
+  const anglesByBoardType = new Map<string, number[]>();
+  for (const row of boardVariantsResult) {
+    const anglesForType = anglesByBoardType.get(row.boardType);
+    if (!anglesForType) {
+      anglesByBoardType.set(row.boardType, [Number(row.angle)]);
+    } else if (anglesForType.length < GYM_BOARD_SUMMARY_ANGLES_PER_TYPE) {
+      anglesForType.push(Number(row.angle));
+    }
+  }
+  const boardSummaries = [...anglesByBoardType].flatMap(([boardType, angles]) =>
+    angles.map((angle) => ({ boardType, angle })),
+  );
+  const boardTypes = [...anglesByBoardType.keys()];
   const memberCount = Number(memberCountResult[0]?.count || 0);
   const followerCount = Number(followerCountResult[0]?.count || 0);
   const commentCount = Number(commentCountResult[0]?.count || 0);
@@ -885,10 +899,15 @@ export const socialGymQueries = {
       );
       const totalCount = Number(rowsFromResult<Record<string, unknown>>(countRows)[0]?.count || 0);
 
+      // `gyms.id` is the tiebreaker, not decoration: the directory pages this
+      // query with OFFSET, and two gyms at an identical distance (a bulk sync
+      // import can place several at the same coordinates) have no defined order
+      // without it — Postgres is free to return them in a different order per
+      // page, duplicating one row and skipping another across the boundary.
       const gymRows = await db.execute(
         likePattern
-          ? sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters}) AND (name ILIKE ${likePattern} OR address ILIKE ${likePattern})${proximityFilterClause} ORDER BY distance_meters ASC LIMIT ${limit} OFFSET ${offset}`
-          : sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters})${proximityFilterClause} ORDER BY distance_meters ASC LIMIT ${limit} OFFSET ${offset}`,
+          ? sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters}) AND (name ILIKE ${likePattern} OR address ILIKE ${likePattern})${proximityFilterClause} ORDER BY distance_meters ASC, gyms.id ASC LIMIT ${limit} OFFSET ${offset}`
+          : sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters})${proximityFilterClause} ORDER BY distance_meters ASC, gyms.id ASC LIMIT ${limit} OFFSET ${offset}`,
       );
       const rows = rowsFromResult<Record<string, unknown>>(gymRows);
 
@@ -930,11 +949,15 @@ export const socialGymQueries = {
 
     const totalCount = Number(countResult?.count || 0);
 
+    // `gyms.id` breaks `created_at` ties. The directory pages this query with
+    // OFFSET, and bulk sync imports write many rows sharing a `created_at`, so
+    // without a unique tiebreaker tied rows have no defined order and can
+    // duplicate or vanish across a page boundary.
     const gymRows = await db
       .select()
       .from(dbSchema.gyms)
       .where(whereClause)
-      .orderBy(desc(dbSchema.gyms.createdAt))
+      .orderBy(desc(dbSchema.gyms.createdAt), dbSchema.gyms.id)
       .limit(limit)
       .offset(offset);
 
