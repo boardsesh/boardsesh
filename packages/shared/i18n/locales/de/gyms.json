@@ -1,0 +1,88 @@
+{
+  "metadata": {
+    "all": {
+      "title": "Kletterhallen mit Trainingsboards",
+      "description": "Finde Kletterhallen mit einem Kilter Board, MoonBoard oder Tension Board an der Wand, samt dem Winkel, auf den jedes Board eingestellt ist."
+    },
+    "kilter": {
+      "title": "Hallen mit einem Kilter Board",
+      "description": "Du suchst ein Kilter Board in deiner Nähe? Hier sind die Kletterhallen mit einem Kilter Board an der Wand, samt dem Winkel, auf den es eingestellt ist."
+    },
+    "moonboard": {
+      "title": "Hallen mit einem MoonBoard",
+      "description": "Du suchst ein MoonBoard in deiner Nähe? Hier sind die Kletterhallen mit einem MoonBoard an der Wand, samt dem Winkel, auf den es eingestellt ist."
+    },
+    "tension": {
+      "title": "Hallen mit einem Tension Board",
+      "description": "Du suchst ein Tension Board in deiner Nähe? Hier sind die Kletterhallen mit einem Tension Board an der Wand, samt dem Winkel, auf den es eingestellt ist."
+    }
+  },
+  "directory": {
+    "all": {
+      "h1": "Kletterhallen mit Trainingsboards",
+      "lead_one": "{{formattedCount}} Halle hat ein Board auf Boardsesh eingetragen. Der Eintrag zeigt die Boards an der Wand und den Winkel, auf den sie eingestellt sind, damit du weißt, was dich erwartet, bevor du losfährst.",
+      "lead_other": "{{formattedCount}} Hallen haben ein Board auf Boardsesh eingetragen. Jeder Eintrag zeigt die Boards an der Wand und den Winkel, auf den sie eingestellt sind, damit du weißt, was dich erwartet, bevor du losfährst.",
+      "detail": "{{kilterCount}} davon haben ein Kilter Board, {{moonboardCount}} ein MoonBoard und {{tensionCount}} ein Tension Board, viele sogar mehrere. Wähl unten ein Board oder such nach dem Namen."
+    },
+    "kilter": {
+      "h1": "Hallen mit einem Kilter Board",
+      "lead_one": "{{formattedCount}} Halle auf Boardsesh hat ein Kilter Board an der Wand. Der Eintrag zeigt den Winkel, auf den es eingestellt ist, damit du siehst, ob es zu deinem Projekt passt.",
+      "lead_other": "{{formattedCount}} Hallen auf Boardsesh haben ein Kilter Board an der Wand. Jeder Eintrag zeigt den Winkel, auf den es eingestellt ist, damit du die Halle findest, die zu deinem Projekt passt.",
+      "detail": "Diese Hallen tragen Kletterer*innen selbst ein, und Boardsesh gehört zu keinem Board-Hersteller. Betreibst du eine dieser Wände? Übernimm den Eintrag und halt die Angaben aktuell."
+    },
+    "moonboard": {
+      "h1": "Hallen mit einem MoonBoard",
+      "lead_one": "{{formattedCount}} Halle auf Boardsesh hat ein MoonBoard an der Wand. Der Eintrag zeigt den Winkel, auf den es eingestellt ist, damit du siehst, ob es zu deinem Projekt passt.",
+      "lead_other": "{{formattedCount}} Hallen auf Boardsesh haben ein MoonBoard an der Wand. Jeder Eintrag zeigt den Winkel, auf den es eingestellt ist, damit du die Halle findest, die zu deinem Projekt passt.",
+      "detail": "Diese Hallen tragen Kletterer*innen selbst ein, und Boardsesh gehört zu keinem Board-Hersteller. Betreibst du eine dieser Wände? Übernimm den Eintrag und halt die Angaben aktuell."
+    },
+    "tension": {
+      "h1": "Hallen mit einem Tension Board",
+      "lead_one": "{{formattedCount}} Halle auf Boardsesh hat ein Tension Board an der Wand. Der Eintrag zeigt den Winkel, auf den es eingestellt ist, damit du siehst, ob es zu deinem Projekt passt.",
+      "lead_other": "{{formattedCount}} Hallen auf Boardsesh haben ein Tension Board an der Wand. Jeder Eintrag zeigt den Winkel, auf den es eingestellt ist, damit du die Halle findest, die zu deinem Projekt passt.",
+      "detail": "Diese Hallen tragen Kletterer*innen selbst ein, und Boardsesh gehört zu keinem Board-Hersteller. Betreibst du eine dieser Wände? Übernimm den Eintrag und halt die Angaben aktuell."
+    }
+  },
+  "facets": {
+    "heading": "Nach Board stöbern",
+    "all": "Alle Hallen · {{formattedCount}}",
+    "kilter": "Kilter · {{formattedCount}}",
+    "moonboard": "MoonBoard · {{formattedCount}}",
+    "tension": "Tension · {{formattedCount}}",
+    "countHint": "Die Zahlen zählen Hallen, nicht Boards: Eine Halle mit drei Kilter-Wänden zählt einmal."
+  },
+  "search": {
+    "label": "Hallen suchen",
+    "placeholder": "Name der Halle oder Ort",
+    "submit": "Suchen"
+  },
+  "results": {
+    "heading_one": "{{formattedCount}} Halle",
+    "heading_other": "{{formattedCount}} Hallen",
+    "emptyTitle": "Dazu passt noch nichts",
+    "emptyBody": "Versuch eine kürzere Suche oder nimm den Board-Filter raus und stöber durch alle Hallen."
+  },
+  "error": {
+    "title": "Wir kommen gerade nicht an die Hallenliste ran",
+    "body": "Bei uns hakt gerade was. Warte kurz und lad neu, oder geh direkt auf die Seite einer Halle, die du schon kennst."
+  },
+  "card": {
+    "boardChip": "{{board}} {{angle}}°",
+    "distance": "{{distance}} km entfernt",
+    "claimCta": "Ist das deine Halle?"
+  },
+  "pagination": {
+    "label": "Seiten des Verzeichnisses",
+    "previous": "Zurück",
+    "next": "Weiter",
+    "page": "Seite {{page}}",
+    "current": "Seite {{page}}, aktuelle Seite"
+  },
+  "links": {
+    "heading": "Weiter stöbern",
+    "all": "Alle Hallen auf Boardsesh",
+    "kilter": "Hallen mit einem Kilter Board",
+    "moonboard": "Hallen mit einem MoonBoard",
+    "tension": "Hallen mit einem Tension Board"
+  }
+}

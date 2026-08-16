@@ -1,0 +1,88 @@
+{
+  "metadata": {
+    "all": {
+      "title": "Climbing gyms with training boards",
+      "description": "Browse climbing gyms that have a Kilter, MoonBoard or Tension board on the wall, with the angle each board is set at."
+    },
+    "kilter": {
+      "title": "Gyms with a Kilter board",
+      "description": "Looking for a Kilter board near you? Browse the climbing gyms with a Kilter board on the wall and the angle each one is set at."
+    },
+    "moonboard": {
+      "title": "Gyms with a MoonBoard",
+      "description": "Looking for a MoonBoard near you? Browse the climbing gyms with a MoonBoard on the wall and the angle each one is set at."
+    },
+    "tension": {
+      "title": "Gyms with a Tension board",
+      "description": "Looking for a Tension board near you? Browse the climbing gyms with a Tension board on the wall and the angle each one is set at."
+    }
+  },
+  "directory": {
+    "all": {
+      "h1": "Climbing gyms with training boards",
+      "lead_one": "{{formattedCount}} gym has a board listed on Boardsesh. The listing shows the boards on its wall and the angle they are set at, so you know what you are walking into before you drive across town.",
+      "lead_other": "{{formattedCount}} gyms have a board listed on Boardsesh. Every listing shows the boards on the wall and the angle they are set at, so you know what you are walking into before you drive across town.",
+      "detail": "{{kilterCount}} of them run a Kilter board, {{moonboardCount}} a MoonBoard and {{tensionCount}} a Tension board, and plenty run more than one. Pick a board below, or search by name."
+    },
+    "kilter": {
+      "h1": "Gyms with a Kilter board",
+      "lead_one": "{{formattedCount}} gym on Boardsesh has a Kilter board on the wall. The listing shows the angle it is set at, so you can tell whether it matches the project you are on.",
+      "lead_other": "{{formattedCount}} gyms on Boardsesh have a Kilter board on the wall. Every listing shows the angle it is set at, so you can tell which one matches the project you are on.",
+      "detail": "Climbers list these gyms themselves, and Boardsesh is not affiliated with the people who make the boards. Run one of these walls? Claim the listing and keep the details straight."
+    },
+    "moonboard": {
+      "h1": "Gyms with a MoonBoard",
+      "lead_one": "{{formattedCount}} gym on Boardsesh has a MoonBoard on the wall. The listing shows the angle it is set at, so you can tell whether it matches the project you are on.",
+      "lead_other": "{{formattedCount}} gyms on Boardsesh have a MoonBoard on the wall. Every listing shows the angle it is set at, so you can tell which one matches the project you are on.",
+      "detail": "Climbers list these gyms themselves, and Boardsesh is not affiliated with the people who make the boards. Run one of these walls? Claim the listing and keep the details straight."
+    },
+    "tension": {
+      "h1": "Gyms with a Tension board",
+      "lead_one": "{{formattedCount}} gym on Boardsesh has a Tension board on the wall. The listing shows the angle it is set at, so you can tell whether it matches the project you are on.",
+      "lead_other": "{{formattedCount}} gyms on Boardsesh have a Tension board on the wall. Every listing shows the angle it is set at, so you can tell which one matches the project you are on.",
+      "detail": "Climbers list these gyms themselves, and Boardsesh is not affiliated with the people who make the boards. Run one of these walls? Claim the listing and keep the details straight."
+    }
+  },
+  "facets": {
+    "heading": "Browse by board",
+    "all": "All gyms · {{formattedCount}}",
+    "kilter": "Kilter · {{formattedCount}}",
+    "moonboard": "MoonBoard · {{formattedCount}}",
+    "tension": "Tension · {{formattedCount}}",
+    "countHint": "The numbers count gyms, not boards: a gym with three Kilter walls counts once."
+  },
+  "search": {
+    "label": "Search gyms",
+    "placeholder": "Gym name or town",
+    "submit": "Search"
+  },
+  "results": {
+    "heading_one": "{{formattedCount}} gym",
+    "heading_other": "{{formattedCount}} gyms",
+    "emptyTitle": "Nothing matches that yet",
+    "emptyBody": "Try a shorter search, or drop the board filter and browse every gym."
+  },
+  "error": {
+    "title": "We can't reach the gym list right now",
+    "body": "Something on our end is down. Give it a minute and reload, or head to a gym page you already know."
+  },
+  "card": {
+    "boardChip": "{{board}} {{angle}}°",
+    "distance": "{{distance}} km away",
+    "claimCta": "Is this your gym?"
+  },
+  "pagination": {
+    "label": "Directory pages",
+    "previous": "Previous",
+    "next": "Next",
+    "page": "Page {{page}}",
+    "current": "Page {{page}}, current page"
+  },
+  "links": {
+    "heading": "More ways to browse",
+    "all": "Every gym on Boardsesh",
+    "kilter": "Gyms with a Kilter board",
+    "moonboard": "Gyms with a MoonBoard",
+    "tension": "Gyms with a Tension board"
+  }
+}

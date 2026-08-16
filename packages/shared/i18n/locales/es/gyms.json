@@ -1,0 +1,88 @@
+{
+  "metadata": {
+    "all": {
+      "title": "Rocódromos con plafones de entrenamiento",
+      "description": "Explora los rocódromos que tienen un plafón Kilter, un MoonBoard o un plafón Tension en la pared, con el ángulo al que está montado cada uno."
+    },
+    "kilter": {
+      "title": "Rocódromos con un plafón Kilter",
+      "description": "¿Buscas un plafón Kilter cerca de ti? Explora los rocódromos que tienen un plafón Kilter en la pared y el ángulo al que está montado cada uno."
+    },
+    "moonboard": {
+      "title": "Rocódromos con un MoonBoard",
+      "description": "¿Buscas un MoonBoard cerca de ti? Explora los rocódromos que tienen un MoonBoard en la pared y el ángulo al que está montado cada uno."
+    },
+    "tension": {
+      "title": "Rocódromos con un plafón Tension",
+      "description": "¿Buscas un plafón Tension cerca de ti? Explora los rocódromos que tienen un plafón Tension en la pared y el ángulo al que está montado cada uno."
+    }
+  },
+  "directory": {
+    "all": {
+      "h1": "Rocódromos con plafones de entrenamiento",
+      "lead_one": "{{formattedCount}} rocódromo tiene un plafón listado en Boardsesh. La ficha muestra los plafones de su pared y el ángulo al que están montados, así sabes qué te vas a encontrar antes de cruzar la ciudad.",
+      "lead_other": "{{formattedCount}} rocódromos tienen un plafón listado en Boardsesh. Cada ficha muestra los plafones de la pared y el ángulo al que están montados, así sabes qué te vas a encontrar antes de cruzar la ciudad.",
+      "detail": "{{kilterCount}} tienen un plafón Kilter, {{moonboardCount}} un MoonBoard y {{tensionCount}} un plafón Tension, y muchos tienen más de uno. Elige un plafón abajo o busca por nombre."
+    },
+    "kilter": {
+      "h1": "Rocódromos con un plafón Kilter",
+      "lead_one": "{{formattedCount}} rocódromo de Boardsesh tiene un plafón Kilter en la pared. La ficha muestra el ángulo al que está montado, así ves si encaja con tu proyecto.",
+      "lead_other": "{{formattedCount}} rocódromos de Boardsesh tienen un plafón Kilter en la pared. Cada ficha muestra el ángulo al que está montado, así ves cuál encaja con tu proyecto.",
+      "detail": "Son los propios escaladores quienes listan estos rocódromos, y Boardsesh no tiene relación con quienes fabrican los plafones. ¿Llevas uno de estos muros? Reclama la ficha y mantén los datos al día."
+    },
+    "moonboard": {
+      "h1": "Rocódromos con un MoonBoard",
+      "lead_one": "{{formattedCount}} rocódromo de Boardsesh tiene un MoonBoard en la pared. La ficha muestra el ángulo al que está montado, así ves si encaja con tu proyecto.",
+      "lead_other": "{{formattedCount}} rocódromos de Boardsesh tienen un MoonBoard en la pared. Cada ficha muestra el ángulo al que está montado, así ves cuál encaja con tu proyecto.",
+      "detail": "Son los propios escaladores quienes listan estos rocódromos, y Boardsesh no tiene relación con quienes fabrican los plafones. ¿Llevas uno de estos muros? Reclama la ficha y mantén los datos al día."
+    },
+    "tension": {
+      "h1": "Rocódromos con un plafón Tension",
+      "lead_one": "{{formattedCount}} rocódromo de Boardsesh tiene un plafón Tension en la pared. La ficha muestra el ángulo al que está montado, así ves si encaja con tu proyecto.",
+      "lead_other": "{{formattedCount}} rocódromos de Boardsesh tienen un plafón Tension en la pared. Cada ficha muestra el ángulo al que está montado, así ves cuál encaja con tu proyecto.",
+      "detail": "Son los propios escaladores quienes listan estos rocódromos, y Boardsesh no tiene relación con quienes fabrican los plafones. ¿Llevas uno de estos muros? Reclama la ficha y mantén los datos al día."
+    }
+  },
+  "facets": {
+    "heading": "Explora por plafón",
+    "all": "Todos los rocódromos · {{formattedCount}}",
+    "kilter": "Kilter · {{formattedCount}}",
+    "moonboard": "MoonBoard · {{formattedCount}}",
+    "tension": "Tension · {{formattedCount}}",
+    "countHint": "Los números cuentan rocódromos, no plafones: un rocódromo con tres muros Kilter cuenta una vez."
+  },
+  "search": {
+    "label": "Buscar rocódromos",
+    "placeholder": "Nombre del rocódromo o ciudad",
+    "submit": "Buscar"
+  },
+  "results": {
+    "heading_one": "{{formattedCount}} rocódromo",
+    "heading_other": "{{formattedCount}} rocódromos",
+    "emptyTitle": "Todavía no hay nada que encaje",
+    "emptyBody": "Prueba con una búsqueda más corta o quita el filtro de plafón y explora todos los rocódromos."
+  },
+  "error": {
+    "title": "Ahora mismo no podemos cargar la lista de rocódromos",
+    "body": "Algo falla por nuestra parte. Espera un momento y recarga, o ve a la ficha de un rocódromo que ya conozcas."
+  },
+  "card": {
+    "boardChip": "{{board}} {{angle}}°",
+    "distance": "a {{distance}} km",
+    "claimCta": "¿Es tuyo este rocódromo?"
+  },
+  "pagination": {
+    "label": "Páginas del directorio",
+    "previous": "Anterior",
+    "next": "Siguiente",
+    "page": "Página {{page}}",
+    "current": "Página {{page}}, página actual"
+  },
+  "links": {
+    "heading": "Más formas de explorar",
+    "all": "Todos los rocódromos en Boardsesh",
+    "kilter": "Rocódromos con un plafón Kilter",
+    "moonboard": "Rocódromos con un MoonBoard",
+    "tension": "Rocódromos con un plafón Tension"
+  }
+}

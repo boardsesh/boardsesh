@@ -1,0 +1,88 @@
+{
+  "metadata": {
+    "all": {
+      "title": "Salles d'escalade avec des boards d'entraînement",
+      "description": "Parcours les salles d'escalade qui ont une board Kilter, un MoonBoard ou une board Tension au mur, avec l'angle auquel chacune est réglée."
+    },
+    "kilter": {
+      "title": "Salles avec une board Kilter",
+      "description": "Tu cherches une board Kilter près de chez toi ? Parcours les salles d'escalade qui ont une board Kilter au mur et l'angle auquel elle est réglée."
+    },
+    "moonboard": {
+      "title": "Salles avec un MoonBoard",
+      "description": "Tu cherches un MoonBoard près de chez toi ? Parcours les salles d'escalade qui ont un MoonBoard au mur et l'angle auquel il est réglé."
+    },
+    "tension": {
+      "title": "Salles avec une board Tension",
+      "description": "Tu cherches une board Tension près de chez toi ? Parcours les salles d'escalade qui ont une board Tension au mur et l'angle auquel elle est réglée."
+    }
+  },
+  "directory": {
+    "all": {
+      "h1": "Salles d'escalade avec des boards d'entraînement",
+      "lead_one": "{{formattedCount}} salle a une board référencée sur Boardsesh. La fiche montre les boards du mur et l'angle auquel elles sont réglées, pour savoir ce qui t'attend avant de traverser la ville.",
+      "lead_other": "{{formattedCount}} salles ont une board référencée sur Boardsesh. Chaque fiche montre les boards du mur et l'angle auquel elles sont réglées, pour savoir ce qui t'attend avant de traverser la ville.",
+      "detail": "{{kilterCount}} ont une board Kilter, {{moonboardCount}} un MoonBoard et {{tensionCount}} une board Tension, et beaucoup en ont plusieurs. Choisis une board ci-dessous ou cherche par nom."
+    },
+    "kilter": {
+      "h1": "Salles avec une board Kilter",
+      "lead_one": "{{formattedCount}} salle sur Boardsesh a une board Kilter au mur. La fiche indique l'angle auquel elle est réglée, pour voir si elle colle à ton projet.",
+      "lead_other": "{{formattedCount}} salles sur Boardsesh ont une board Kilter au mur. Chaque fiche indique l'angle auquel elle est réglée, pour trouver celle qui colle à ton projet.",
+      "detail": "Ce sont les grimpeurs qui référencent ces salles, et Boardsesh n'est lié à aucun fabricant de boards. Tu gères l'un de ces murs ? Revendique la fiche et garde les infos à jour."
+    },
+    "moonboard": {
+      "h1": "Salles avec un MoonBoard",
+      "lead_one": "{{formattedCount}} salle sur Boardsesh a un MoonBoard au mur. La fiche indique l'angle auquel il est réglé, pour voir s'il colle à ton projet.",
+      "lead_other": "{{formattedCount}} salles sur Boardsesh ont un MoonBoard au mur. Chaque fiche indique l'angle auquel il est réglé, pour trouver celle qui colle à ton projet.",
+      "detail": "Ce sont les grimpeurs qui référencent ces salles, et Boardsesh n'est lié à aucun fabricant de boards. Tu gères l'un de ces murs ? Revendique la fiche et garde les infos à jour."
+    },
+    "tension": {
+      "h1": "Salles avec une board Tension",
+      "lead_one": "{{formattedCount}} salle sur Boardsesh a une board Tension au mur. La fiche indique l'angle auquel elle est réglée, pour voir si elle colle à ton projet.",
+      "lead_other": "{{formattedCount}} salles sur Boardsesh ont une board Tension au mur. Chaque fiche indique l'angle auquel elle est réglée, pour trouver celle qui colle à ton projet.",
+      "detail": "Ce sont les grimpeurs qui référencent ces salles, et Boardsesh n'est lié à aucun fabricant de boards. Tu gères l'un de ces murs ? Revendique la fiche et garde les infos à jour."
+    }
+  },
+  "facets": {
+    "heading": "Parcourir par board",
+    "all": "Toutes les salles · {{formattedCount}}",
+    "kilter": "Kilter · {{formattedCount}}",
+    "moonboard": "MoonBoard · {{formattedCount}}",
+    "tension": "Tension · {{formattedCount}}",
+    "countHint": "Les chiffres comptent des salles, pas des boards : une salle avec trois murs Kilter compte une fois."
+  },
+  "search": {
+    "label": "Rechercher une salle",
+    "placeholder": "Nom de la salle ou ville",
+    "submit": "Rechercher"
+  },
+  "results": {
+    "heading_one": "{{formattedCount}} salle",
+    "heading_other": "{{formattedCount}} salles",
+    "emptyTitle": "Rien ne correspond pour l'instant",
+    "emptyBody": "Essaie une recherche plus courte, ou enlève le filtre de board et parcours toutes les salles."
+  },
+  "error": {
+    "title": "On n'arrive pas à charger la liste des salles pour le moment",
+    "body": "Quelque chose cloche de notre côté. Attends une minute et recharge, ou va directement sur la fiche d'une salle que tu connais."
+  },
+  "card": {
+    "boardChip": "{{board}} {{angle}}°",
+    "distance": "à {{distance}} km",
+    "claimCta": "C'est ta salle ?"
+  },
+  "pagination": {
+    "label": "Pages du répertoire",
+    "previous": "Précédent",
+    "next": "Suivant",
+    "page": "Page {{page}}",
+    "current": "Page {{page}}, page actuelle"
+  },
+  "links": {
+    "heading": "D'autres façons de parcourir",
+    "all": "Toutes les salles sur Boardsesh",
+    "kilter": "Salles avec une board Kilter",
+    "moonboard": "Salles avec un MoonBoard",
+    "tension": "Salles avec une board Tension"
+  }
+}
