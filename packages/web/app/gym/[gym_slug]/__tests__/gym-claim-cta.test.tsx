@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
@@ -31,6 +31,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 const GymClaimCta = (await import('../gym-claim-cta')).default;
+const GymClaimParamCleanup = (await import('../gym-claim-param-cleanup')).default;
 
 type AuthModalConfig = {
   title?: string;
@@ -132,28 +133,120 @@ describe('GymClaimCta — signed-out arm', () => {
 });
 
 describe('GymClaimCta — returning from auth on ?claim=1', () => {
-  it('auto-opens the dialog and strips the param without a router navigation', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Let the deferred URL cleanup run. */
+  const flushStrip = () => act(() => void vi.runAllTimers());
+
+  it('opens the dialog immediately and strips the param without a router navigation', () => {
     window.history.replaceState(null, '', '/gym/boulderwelt?claim=1&src=qr');
 
     renderCta({ claimParam: '1' });
 
+    // Immediate: a dialog that waits a tick to appear reads as a dropped tap.
     expect(screen.getByTestId('claim-dialog')).toBeTruthy();
+
+    flushStrip();
+
     expect(window.location.search).toBe('?src=qr');
     // `router.replace` refetches the RSC payload and would remount this island,
     // closing the dialog it just opened.
     expect(routerReplace).not.toHaveBeenCalled();
   });
 
-  it('does not auto-open on the signed-out arm, which has no session to claim with', () => {
-    renderCta({ viewerState: 'signed-out', claimParam: '1' });
+  it('defers the strip so a replaceState patch installed after mount still handles it', () => {
+    // Next patches `history.replaceState` in the root Router's own mount
+    // effect, and React flushes passive effects child-first — so at the moment
+    // this island's effect runs, the patch is not installed yet. Stripping
+    // through the unpatched function leaves the router's canonicalUrl on
+    // `?claim=1`, and the next commit writes the param back.
+    window.history.replaceState(null, '', '/gym/boulderwelt?claim=1');
+    const nativeReplaceState = window.history.replaceState.bind(window.history);
 
-    expect(screen.queryByTestId('claim-dialog')).toBeNull();
+    renderCta({ claimParam: '1' });
+
+    // Stands in for the patch, installed the way Next installs it: after this
+    // island's effect has already run.
+    const patchedReplaceState = vi.fn(nativeReplaceState);
+    window.history.replaceState = patchedReplaceState;
+    try {
+      expect(window.location.search).toBe('?claim=1');
+
+      flushStrip();
+
+      expect(patchedReplaceState).toHaveBeenCalledTimes(1);
+      expect(window.location.search).toBe('');
+    } finally {
+      window.history.replaceState = nativeReplaceState;
+    }
   });
 
-  it('does not auto-open for a repeated param', () => {
-    renderCta({ claimParam: ['1', '1'] });
+  it('strips the param on the signed-out arm too, without opening anything', () => {
+    // Someone opened a shared `?claim=1` link while logged out. The param is
+    // just as stale for them, and there is no session to claim with.
+    window.history.replaceState(null, '', '/gym/boulderwelt?claim=1');
+
+    renderCta({ viewerState: 'signed-out', claimParam: '1' });
+    flushStrip();
 
     expect(screen.queryByTestId('claim-dialog')).toBeNull();
+    expect(window.location.search).toBe('');
+  });
+
+  it('does not auto-open or strip for a repeated param', () => {
+    window.history.replaceState(null, '', '/gym/boulderwelt?claim=1&claim=1');
+
+    renderCta({ claimParam: ['1', '1'] });
+    flushStrip();
+
+    expect(screen.queryByTestId('claim-dialog')).toBeNull();
+    expect(window.location.search).toBe('?claim=1&claim=1');
+  });
+
+  it('cancels the pending strip when the island unmounts first', () => {
+    window.history.replaceState(null, '', '/gym/boulderwelt?claim=1');
+
+    const { unmount } = renderCta({ claimParam: '1' });
+    unmount();
+    flushStrip();
+
+    expect(window.location.search).toBe('?claim=1');
+  });
+});
+
+describe('GymClaimParamCleanup', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('clears a stale claim param on the pages where no call-out renders', () => {
+    // An owner or covering community leader who came back from auth: their
+    // variant is `hidden`, so nothing would otherwise clear the param.
+    window.history.replaceState(null, '', '/gym/boulderwelt?claim=1&src=qr');
+
+    render(<GymClaimParamCleanup claimParam="1" />);
+    act(() => void vi.runAllTimers());
+
+    expect(window.location.search).toBe('?src=qr');
+  });
+
+  it('leaves an untouched URL alone', () => {
+    window.history.replaceState(null, '', '/gym/boulderwelt?src=qr');
+
+    render(<GymClaimParamCleanup />);
+    act(() => void vi.runAllTimers());
+
+    expect(window.location.search).toBe('?src=qr');
   });
 });
 

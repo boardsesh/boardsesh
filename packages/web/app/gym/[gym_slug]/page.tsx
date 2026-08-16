@@ -39,6 +39,7 @@ import CommentSection from '@/app/components/social/comment-section';
 import GymPageManageButton from './gym-page-manage-button';
 import GymFollowButton from './gym-follow-button';
 import GymClaimCta from './gym-claim-cta';
+import GymClaimParamCleanup from './gym-claim-param-cleanup';
 import { CLAIM_PARAM, resolveClaimCtaVariant } from './gym-claim-cta-logic';
 import GymOwnerPrompts from './gym-owner-prompts';
 import GymReportDuplicateCta from './gym-report-duplicate-cta';
@@ -164,6 +165,8 @@ export default async function GymPage(props: GymRouteProps) {
     serverCanClaim: gym.canClaim,
     serverHasSession: Boolean(token),
   });
+  const claimParam = searchParams[CLAIM_PARAM];
+  const showsClaimCta = gym.isPublic && claimCtaVariant !== 'hidden';
 
   const jsonLd = gym.isPublic
     ? {
@@ -308,15 +311,20 @@ export default async function GymPage(props: GymRouteProps) {
             leaning on `isGymViewable`: a private gym reaches this line only via
             its own editors, and the anonymous arm has to stay impossible there
             even if the viewability rule is loosened later. */}
-        {gym.isPublic && claimCtaVariant !== 'hidden' && (
+        {showsClaimCta ? (
           <GymClaimCta
             gymUuid={gym.uuid}
             gymName={gym.name}
             gymSlug={gym_slug}
             website={gym.website}
             viewerState={claimCtaVariant}
-            claimParam={searchParams[CLAIM_PARAM]}
+            claimParam={claimParam}
           />
+        ) : (
+          /* No call-out to clear the return-from-auth param, so clear it here:
+             an owner or community leader who signed in and turned out to
+             already cover this gym would otherwise sit on a live `?claim=1`. */
+          <GymClaimParamCleanup claimParam={claimParam} />
         )}
 
         <GymReportDuplicateCta

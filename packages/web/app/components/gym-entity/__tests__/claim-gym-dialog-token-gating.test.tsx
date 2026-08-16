@@ -22,13 +22,17 @@ vi.mock('react-i18next', () => ({
   Trans: ({ children }: { children?: React.ReactNode }) => children ?? null,
 }));
 
-const authTokenState = vi.hoisted(() => ({ token: null as string | null }));
+const authTokenState = vi.hoisted(() => ({
+  token: null as string | null,
+  isLoading: false,
+  error: null as string | null,
+}));
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({
   useWsAuthToken: () => ({
     token: authTokenState.token,
     isAuthenticated: authTokenState.token !== null,
-    isLoading: false,
-    error: null,
+    isLoading: authTokenState.isLoading,
+    error: authTokenState.error,
   }),
 }));
 
@@ -57,7 +61,11 @@ const renderDialog = (website: string | null) =>
 
 beforeEach(() => {
   authTokenState.token = null;
+  authTokenState.isLoading = false;
+  authTokenState.error = null;
 });
+
+const TOKEN_FAILURE_COPY = "We couldn't confirm you're logged in. Reload the page and try again.";
 
 describe('ClaimGymDialog — submit gating on the ws auth token', () => {
   it('disables the admin-review submit while the token is still null', () => {
@@ -72,6 +80,35 @@ describe('ClaimGymDialog — submit gating on the ws auth token', () => {
     renderDialog(null);
 
     expect(isDisabled('Request review')).toBe(false);
+  });
+
+  it('explains the dead button once the token request has given up', () => {
+    // useWsAuthToken retries three times and then stops. Without this the
+    // button is permanently disabled with nothing on screen to explain it —
+    // strictly worse than the silent no-op the disabled state replaced.
+    authTokenState.error = 'Failed to fetch auth token: 500';
+
+    renderDialog(null);
+
+    expect(screen.getByText(TOKEN_FAILURE_COPY)).toBeTruthy();
+    expect(isDisabled('Request review')).toBe(true);
+  });
+
+  it('stays quiet while the token is still in flight', () => {
+    authTokenState.isLoading = true;
+
+    renderDialog(null);
+
+    expect(screen.queryByText(TOKEN_FAILURE_COPY)).toBeNull();
+    expect(isDisabled('Request review')).toBe(true);
+  });
+
+  it('shows no failure copy once the token lands', () => {
+    authTokenState.token = 'test-token';
+
+    renderDialog(null);
+
+    expect(screen.queryByText(TOKEN_FAILURE_COPY)).toBeNull();
   });
 
   it('disables the domain submit with a null token even when the email is filled in', () => {

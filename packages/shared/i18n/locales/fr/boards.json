@@ -610,7 +610,8 @@
     "switchToAdmin": "Pas d’e-mail professionnel ? Demandez une vérification",
     "switchToDomain": "Vérifier plutôt avec un e-mail professionnel",
     "errors": {
-      "generic": "Une erreur est survenue. Réessayez."
+      "generic": "Une erreur est survenue. Réessayez.",
+      "tokenUnavailable": "On n'arrive pas à confirmer ta connexion. Recharge la page et réessaie."
     },
     "domain": {
       "description": "Vous gérez {{gym}} ? Saisissez votre e-mail chez {{domain}} et nous enverrons un lien de confirmation.",

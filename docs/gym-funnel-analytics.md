@@ -104,7 +104,7 @@ the claim call-out to anonymous visitors, so `signed-out` is real data there:
   `callbackUrl` back to `/gym/<slug>?claim=1`, so the claim intent survives an
   OAuth round-trip and the dialog re-opens on return.
 
-The other two entry points still can't fire it, so an unsplit `signed-out` share
+The other two entry points won't fire it, so an unsplit `signed-out` share
 under-reads:
 
 - `app/components/gym-entity/gym-detail.tsx` gates on `canClaim` directly.
@@ -112,9 +112,14 @@ under-reads:
   `gym.isClaimable`, which `computeClaimableFlags` only computes for an
   authenticated viewer (`…/social/gym-matching.ts`).
 
+Both of those read `viewerState` off `useWsAuthToken().isAuthenticated`, which
+is `false` while the token is in flight — their render gates make that race
+unreachable in practice, so treat their `signed-out` count as noise if one ever
+appears rather than as a signal.
+
 **Filter on `placement = 'gym-page'` before reading the `viewerState` split.**
-Across all placements the denominator includes two surfaces where `signed-out`
-is still 0 by construction, which drags the anonymous share toward 0 for reasons
+Across all placements the denominator includes two surfaces that effectively
+never report `signed-out`, which drags the anonymous share toward 0 for reasons
 that have nothing to do with how signed-out climbers behave.
 
 ## Two rules that are easy to break

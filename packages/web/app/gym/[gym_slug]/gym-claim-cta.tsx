@@ -12,7 +12,8 @@ import ClaimGymDialog from '@/app/components/gym-entity/claim-gym-dialog';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
 import { themeTokens } from '@/app/theme/theme-config';
-import { CLAIM_PARAM, buildClaimReturnPath, shouldAutoOpenClaimDialog } from './gym-claim-cta-logic';
+import { buildClaimReturnPath, shouldAutoOpenClaimDialog } from './gym-claim-cta-logic';
+import { useClaimParamStrip } from './use-claim-param-strip';
 
 type GymClaimCtaProps = {
   gymUuid: string;
@@ -46,18 +47,20 @@ export default function GymClaimCta({ gymUuid, gymName, gymSlug, website, viewer
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
-  // The owner came back from OAuth on `?claim=1`. Re-open the dialog they were
-  // heading for, then drop the param with a plain history swap: `router.replace`
-  // refetches the RSC payload and remounts this island, closing the dialog it
-  // was just called to open. Deps are server props, which a client-side history
-  // swap doesn't change, so this settles after one run.
+  const returningFromAuth = shouldAutoOpenClaimDialog(claimParam);
+
+  // The owner came back from OAuth on `?claim=1`: re-open the dialog they were
+  // heading for. Immediate, unlike the URL cleanup below — a dialog that waits
+  // a tick to appear reads as a dropped tap. Deps are server props, which the
+  // cleanup's history swap doesn't change, so this settles after one run.
   useEffect(() => {
-    if (viewerState !== 'signed-in' || !shouldAutoOpenClaimDialog(claimParam)) return;
+    if (viewerState !== 'signed-in' || !returningFromAuth) return;
     setOpen(true);
-    const currentUrl = new URL(window.location.href);
-    currentUrl.searchParams.delete(CLAIM_PARAM);
-    window.history.replaceState(null, '', `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`);
-  }, [viewerState, claimParam]);
+  }, [viewerState, returningFromAuth]);
+
+  // Runs on both arms: the signed-out one lands here when someone opens a
+  // shared `?claim=1` link, and the param is just as stale for them.
+  useClaimParamStrip(returningFromAuth);
 
   const handleClick = () => {
     trackGymFunnelEvent(gymClaimCtaClicked({ placement: 'gym-page', viewerState, gymUuid }));
