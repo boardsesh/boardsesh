@@ -385,13 +385,15 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
  * Cheap to be wrong, so be impatient. W-23 (#4483) settled on the same value for
  * its paged summary, so fixed and paged work intentionally share one constant.
  *
- * Not a claim that the builders are cached: `getAllBoardConfigsOrThrow` is a bare
- * `executeGraphQLInternal` call (the `unstable_cache` wrapper in that file is
- * `fetchPopularBoardConfigs`, the limit=12 homepage variant), and `/sitemap.xml`
- * is `force-dynamic`, so every CDN miss re-runs it live. Caching the per-shard
- * summaries is the follow-up; the short degraded window is what makes missing it
- * survivable in the meantime. The climb summary is already cached at two levels,
- * but the scan behind a cold miss is still expensive enough to need this bound.
+ * Two of the three data-backed builders are now cached at two levels — a Next
+ * Data Cache entry plus an in-process TTL and single-flight
+ * (`getAllBoardConfigsOrThrow`, `fetchTier2Summary`) — because `/sitemap.xml` is
+ * `force-dynamic` and every CDN miss otherwise re-ran them live: the uncached
+ * boards fetch took ~10 s cold and deterministically lost its shard on the first
+ * request after a deploy (#4519). Caching does not make the deadline redundant.
+ * It makes it *reachable*: the first miss after a cold start still pays full
+ * price, and the scan behind a cold climbs summary is expensive enough to need
+ * the bound regardless. `fetchPlaylistSitemapRows` remains uncached.
  */
 export const SHARD_DEADLINE_MS = 3_000;
 
