@@ -509,7 +509,8 @@
       "total": "Total"
     },
     "validation": {
-      "needsStartFinish": "Un bloc valide nécessite au moins 1 prise de départ et 1 prise d'arrivée"
+      "needsStartFinish": "Un bloc valide nécessite au moins 1 prise de départ et 1 prise d'arrivée",
+      "emptyFrame": "Chaque image a besoin d'une prise. Remplis l'image vide ou supprime-la"
     },
     "methodOptions": {
       "feetFollowHands": "Pieds suivent les mains",

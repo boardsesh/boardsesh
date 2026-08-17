@@ -117,16 +117,6 @@ export function encodeMoonBoardHoldsToFrames(holds: MoonBoardHoldsInput): string
     .join('');
 }
 
-export function buildMoonBoardClimbHoldRows(climbUuid: string, holds: MoonBoardHoldsInput) {
-  return normalizeMoonBoardHolds(holds).map(({ holdId, holdState }) => ({
-    boardType: 'moonboard' as const,
-    climbUuid,
-    holdId,
-    frameNumber: 0,
-    holdState,
-  })) satisfies Array<typeof dbSchema.boardClimbHolds.$inferInsert>;
-}
-
 type DuplicateMatchRow = {
   uuid: string;
   name: string | null;

@@ -7,7 +7,6 @@ import { MOONBOARD_WIDE_ANGLES_FLAG } from '@/app/flags';
 import CreateClimbForm from '../create-climb-form';
 import { useBoardProvider } from '../../board-provider/board-provider-context';
 import { useCreateClimb } from '@boardsesh/create-climb-react';
-import { useMoonBoardCreateClimb } from '../use-moonboard-create-climb';
 import { useOptionalBluetoothContext } from '../../board-bluetooth-control/bluetooth-context';
 import type { BoardDetails, Climb } from '@/app/lib/types';
 import type { LitUpHoldsMap } from '@boardsesh/shared-schema';
@@ -31,11 +30,16 @@ const mockSetAuroraHoldState = vi.fn();
 const mockSetMoonboardHoldState = vi.fn();
 const mockSendFramesToBoard = vi.fn();
 const mockGenerateAuroraFramesString = vi.fn(() => 'test-frames');
+const mockGenerateMoonboardFramesString = vi.fn(() => 'p1r42p13r43p25r44');
 const mockCurrentFrameBleString = vi.fn(() => 'test-ble-frame');
 const mockDuplicateFrame = vi.fn();
 const mockDeleteFrame = vi.fn();
 const mockNextFrame = vi.fn();
 const mockPrevFrame = vi.fn();
+const mockMoonboardDuplicateFrame = vi.fn();
+const mockMoonboardDeleteFrame = vi.fn();
+const mockMoonboardNextFrame = vi.fn();
+const mockMoonboardPrevFrame = vi.fn();
 const mockBuildInitialFrames = vi.hoisted(() => vi.fn(() => [{} as LitUpHoldsMap]));
 let mockQueueActions: Record<string, unknown> | null = null;
 let mockCurrentClimbData: Record<string, unknown> | null = null;
@@ -48,6 +52,90 @@ let mockAuroraCreateState: {
   totalHolds: 0,
   litUpHoldsMap: {},
 };
+
+const MOONBOARD_DEFAULT_HOLDS: LitUpHoldsMap = {
+  1: { state: 'STARTING', color: '#00FF00', displayColor: '#44FF44' },
+  13: { state: 'HAND', color: '#0000FF', displayColor: '#4444FF' },
+  25: { state: 'FINISH', color: '#FF0000', displayColor: '#FF3333' },
+};
+
+// The form now drives both board types through the one shared editor hook, so
+// the mock branches on the board name it is handed rather than on which hook
+// was imported.
+let mockMoonboardCreateState: {
+  isValid: boolean;
+  totalHolds: number;
+  litUpHoldsMap: LitUpHoldsMap;
+  frameCount: number;
+  currentFrameIndex: number;
+} = {
+  isValid: true,
+  totalHolds: 3,
+  litUpHoldsMap: MOONBOARD_DEFAULT_HOLDS,
+  frameCount: 1,
+  currentFrameIndex: 0,
+};
+
+function buildMoonboardEditor() {
+  const holdsByState = Object.values(mockMoonboardCreateState.litUpHoldsMap);
+  return {
+    litUpHoldsMap: mockMoonboardCreateState.litUpHoldsMap,
+    frames: [mockMoonboardCreateState.litUpHoldsMap],
+    unionHolds: mockMoonboardCreateState.litUpHoldsMap,
+    frameCount: mockMoonboardCreateState.frameCount,
+    currentFrameIndex: mockMoonboardCreateState.currentFrameIndex,
+    setHoldState: mockSetMoonboardHoldState,
+    startingCount: holdsByState.filter((hold) => hold.state === 'STARTING').length,
+    finishCount: holdsByState.filter((hold) => hold.state === 'FINISH').length,
+    totalHolds: mockMoonboardCreateState.totalHolds,
+    isValid: mockMoonboardCreateState.isValid,
+    hasEmptyFrame: false,
+    resetHolds: mockResetMoonboardHolds,
+    generateFramesString: mockGenerateMoonboardFramesString,
+    currentFrameBleString: mockCurrentFrameBleString,
+    loadHolds: vi.fn(),
+    loadFrames: vi.fn(),
+    duplicateFrame: mockMoonboardDuplicateFrame,
+    deleteFrame: mockMoonboardDeleteFrame,
+    goToFrame: vi.fn(),
+    nextFrame: mockMoonboardNextFrame,
+    prevFrame: mockMoonboardPrevFrame,
+    undo: vi.fn(),
+    redo: vi.fn(),
+    canUndo: false,
+    canRedo: false,
+  };
+}
+
+function buildAuroraEditor() {
+  return {
+    litUpHoldsMap: mockAuroraCreateState.litUpHoldsMap,
+    frames: [mockAuroraCreateState.litUpHoldsMap],
+    unionHolds: mockAuroraCreateState.litUpHoldsMap,
+    frameCount: 1,
+    currentFrameIndex: 0,
+    setHoldState: mockSetAuroraHoldState,
+    startingCount: 0,
+    finishCount: 0,
+    totalHolds: mockAuroraCreateState.totalHolds,
+    isValid: mockAuroraCreateState.isValid,
+    hasEmptyFrame: false,
+    resetHolds: mockResetAuroraHolds,
+    generateFramesString: mockGenerateAuroraFramesString,
+    currentFrameBleString: mockCurrentFrameBleString,
+    loadHolds: mockLoadAuroraHolds,
+    loadFrames: mockLoadAuroraFrames,
+    duplicateFrame: mockDuplicateFrame,
+    deleteFrame: mockDeleteFrame,
+    goToFrame: vi.fn(),
+    nextFrame: mockNextFrame,
+    prevFrame: mockPrevFrame,
+    undo: vi.fn(),
+    redo: vi.fn(),
+    canUndo: false,
+    canRedo: false,
+  };
+}
 
 type DraftsDrawerTestProps = {
   open: boolean;
@@ -79,44 +167,10 @@ vi.mock('../../board-bluetooth-control/bluetooth-context', () => ({
 }));
 
 vi.mock('@boardsesh/create-climb-react', () => ({
-  useCreateClimb: vi.fn(() => ({
-    litUpHoldsMap: mockAuroraCreateState.litUpHoldsMap,
-    frameCount: 1,
-    currentFrameIndex: 0,
-    setHoldState: mockSetAuroraHoldState,
-    startingCount: 0,
-    finishCount: 0,
-    totalHolds: mockAuroraCreateState.totalHolds,
-    isValid: mockAuroraCreateState.isValid,
-    resetHolds: mockResetAuroraHolds,
-    generateFramesString: mockGenerateAuroraFramesString,
-    currentFrameBleString: mockCurrentFrameBleString,
-    loadHolds: mockLoadAuroraHolds,
-    loadFrames: mockLoadAuroraFrames,
-    duplicateFrame: mockDuplicateFrame,
-    deleteFrame: mockDeleteFrame,
-    nextFrame: mockNextFrame,
-    prevFrame: mockPrevFrame,
-  })),
+  useCreateClimb: vi.fn((boardName: string) =>
+    boardName === 'moonboard' ? buildMoonboardEditor() : buildAuroraEditor(),
+  ),
   buildInitialFrames: mockBuildInitialFrames,
-}));
-
-vi.mock('../use-moonboard-create-climb', () => ({
-  useMoonBoardCreateClimb: vi.fn(() => ({
-    litUpHoldsMap: {
-      1: { state: 'STARTING', color: '#00FF00', displayColor: '#44FF44' },
-      13: { state: 'HAND', color: '#0000FF', displayColor: '#4444FF' },
-      25: { state: 'FINISH', color: '#FF0000', displayColor: '#FF3333' },
-    },
-    setLitUpHoldsMap: vi.fn(),
-    setHoldState: mockSetMoonboardHoldState,
-    startingCount: 1,
-    finishCount: 1,
-    handCount: 1,
-    totalHolds: 3,
-    isValid: true,
-    resetHolds: mockResetMoonboardHolds,
-  })),
 }));
 
 vi.mock('@/app/components/graphql-queue', () => ({
@@ -280,6 +334,13 @@ describe('CreateClimbForm', () => {
     mockQueueActions = null;
     mockCurrentClimbData = null;
     mockDraftsDrawerProps = null;
+    mockMoonboardCreateState = {
+      isValid: true,
+      totalHolds: 3,
+      litUpHoldsMap: MOONBOARD_DEFAULT_HOLDS,
+      frameCount: 1,
+      currentFrameIndex: 0,
+    };
     mockAuroraCreateState = {
       isValid: false,
       totalHolds: 0,
@@ -377,10 +438,12 @@ describe('CreateClimbForm', () => {
         expect(mockSetCurrentClimb).toHaveBeenCalledTimes(1);
       });
 
+      // MoonBoard now composes a real frames string like every other board, so
+      // the queue item peers see carries the lit holds instead of an empty blob.
       const climb = mockSetCurrentClimb.mock.calls[0][0];
       expect(climb).toMatchObject({
         angle: 40,
-        frames: '',
+        frames: 'p1r42p13r43p25r44',
       });
       expect(climb.uuid).toBeTruthy();
     });
@@ -485,6 +548,13 @@ describe('CreateClimbForm — MoonBoard rendering', () => {
     mockQueueActions = null;
     mockCurrentClimbData = null;
     mockDraftsDrawerProps = null;
+    mockMoonboardCreateState = {
+      isValid: true,
+      totalHolds: 3,
+      litUpHoldsMap: MOONBOARD_DEFAULT_HOLDS,
+      frameCount: 1,
+      currentFrameIndex: 0,
+    };
     // myRoles: [] = no admin role by default (benchmark toggle hidden for regular users)
     mockRequest.mockResolvedValue({ checkMoonBoardClimbDuplicates: [], myRoles: [] });
   });
@@ -550,33 +620,13 @@ describe('CreateClimbForm — MoonBoard rendering', () => {
   });
 
   it('does not show checking alert when climb is not valid', () => {
-    vi.mocked(useMoonBoardCreateClimb).mockReturnValueOnce({
-      litUpHoldsMap: {},
-      setLitUpHoldsMap: vi.fn(),
-      setHoldState: mockSetMoonboardHoldState,
-      startingCount: 0,
-      finishCount: 0,
-      handCount: 0,
-      totalHolds: 0,
-      isValid: false,
-      resetHolds: mockResetMoonboardHolds,
-    });
+    mockMoonboardCreateState = { ...mockMoonboardCreateState, litUpHoldsMap: {}, totalHolds: 0, isValid: false };
     renderMoonboard();
     expect(screen.queryByText('createClimbForm.alerts.checkingMoonBoardDuplicate')).toBeNull();
   });
 
   it('clear button is disabled when totalHolds is 0', () => {
-    vi.mocked(useMoonBoardCreateClimb).mockReturnValueOnce({
-      litUpHoldsMap: {},
-      setLitUpHoldsMap: vi.fn(),
-      setHoldState: mockSetMoonboardHoldState,
-      startingCount: 0,
-      finishCount: 0,
-      handCount: 0,
-      totalHolds: 0,
-      isValid: false,
-      resetHolds: mockResetMoonboardHolds,
-    });
+    mockMoonboardCreateState = { ...mockMoonboardCreateState, litUpHoldsMap: {}, totalHolds: 0, isValid: false };
     renderMoonboard();
     const deleteIcon = document.querySelector('[data-testid="DeleteOutlinedIcon"]');
     const clearBtn = deleteIcon?.closest('button');
@@ -600,6 +650,97 @@ describe('CreateClimbForm — MoonBoard rendering', () => {
     const confirmBtn = screen.getByRole('button', { name: /actions\.clear/i });
     fireEvent.click(confirmBtn);
     expect(mockResetMoonboardHolds).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers the duplicate-frame button so MoonBoard can build a route', () => {
+    renderMoonboard();
+    const duplicateButton = screen.getByRole('button', { name: 'create.frames.duplicateTooltip' });
+    fireEvent.click(duplicateButton);
+    expect(mockMoonboardDuplicateFrame).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the frame stepper while the climb is a single frame', () => {
+    renderMoonboard();
+    expect(screen.queryByLabelText('playback.nextFrame')).toBeNull();
+    expect(screen.queryByLabelText('create.frames.deleteTooltip')).toBeNull();
+  });
+
+  it('shows the frame counter, stepper and delete-frame control on a multi-frame route', () => {
+    mockMoonboardCreateState = { ...mockMoonboardCreateState, frameCount: 3, currentFrameIndex: 1 };
+    renderMoonboard();
+
+    expect(screen.getByText('playback.frameOfTotal')).toBeTruthy();
+
+    const prevButton = screen.getByLabelText('playback.prevFrame').closest('button') as HTMLButtonElement;
+    const nextButton = screen.getByLabelText('playback.nextFrame').closest('button') as HTMLButtonElement;
+    expect(prevButton.disabled).toBe(false);
+    expect(nextButton.disabled).toBe(false);
+
+    fireEvent.click(nextButton);
+    expect(mockMoonboardNextFrame).toHaveBeenCalledTimes(1);
+    fireEvent.click(prevButton);
+    expect(mockMoonboardPrevFrame).toHaveBeenCalledTimes(1);
+
+    // Delete lives behind a confirm popover, same as Aurora's.
+    fireEvent.click(screen.getByLabelText('create.frames.deleteTooltip'));
+    fireEvent.click(screen.getByRole('button', { name: /actions\.delete/i }));
+    expect(mockMoonboardDeleteFrame).toHaveBeenCalledTimes(1);
+  });
+
+  it('clamps the stepper at the ends of the route', () => {
+    mockMoonboardCreateState = { ...mockMoonboardCreateState, frameCount: 2, currentFrameIndex: 0 };
+    renderMoonboard();
+
+    expect((screen.getByLabelText('playback.prevFrame').closest('button') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText('playback.nextFrame').closest('button') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('skips the live duplicate check for a multi-frame route', async () => {
+    mockMoonboardCreateState = { ...mockMoonboardCreateState, frameCount: 2, currentFrameIndex: 0 };
+    mockRequest.mockImplementation(() => new Promise(() => {}));
+
+    renderMoonboard();
+
+    // A single-frame climb parks on the "checking..." alert here; a route never
+    // fires the query, because the match is on a hold set, not an order.
+    await waitFor(() => {
+      expect(screen.getByTestId('moonboard-renderer')).toBeTruthy();
+    });
+    expect(screen.queryByText('createClimbForm.alerts.checkingMoonBoardDuplicate')).toBeNull();
+  });
+
+  it('saves a multi-frame route with its absolute frames string and real frame count', async () => {
+    const { execute } = await import('@/app/lib/realtime/graphql-client');
+    vi.mocked(execute).mockResolvedValue({
+      saveMoonBoardClimb: { uuid: 'moon-1', synced: false, createdAt: '2026-01-01T00:00:00.000Z', publishedAt: null },
+    } as never);
+    mockMoonboardCreateState = { ...mockMoonboardCreateState, frameCount: 3, currentFrameIndex: 2 };
+    mockGenerateMoonboardFramesString.mockReturnValue('p1r42,p1r42p13r43,p13r43p25r44');
+
+    renderMoonboard({ forkName: 'Circuit' });
+
+    const saveButton = await waitFor(() => {
+      const button = getSaveButton();
+      expect(button?.disabled).toBe(false);
+      return button!;
+    });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    const { variables } = vi.mocked(execute).mock.calls[0][1] as {
+      variables: { input: { frames: string; holds: { start: string[] } } };
+    };
+    expect(variables.input.frames).toBe('p1r42,p1r42p13r43,p13r43p25r44');
+    // Absolute snapshots only — no Aurora delta markers.
+    expect(variables.input.frames).not.toContain('"');
+    // holds still rides along as the union, for the hold rows + duplicate check.
+    expect(variables.input.holds.start).toEqual(['A1']);
+
+    // The queue item gets the same route string the save did.
+    expect(mockGenerateMoonboardFramesString).toHaveBeenCalled();
   });
 
   it('does not show heatmap button for MoonBoard', () => {
@@ -756,6 +897,13 @@ describe('CreateClimbForm — Aurora rendering', () => {
     mockQueueActions = null;
     mockCurrentClimbData = null;
     mockDraftsDrawerProps = null;
+    mockMoonboardCreateState = {
+      isValid: true,
+      totalHolds: 3,
+      litUpHoldsMap: MOONBOARD_DEFAULT_HOLDS,
+      frameCount: 1,
+      currentFrameIndex: 0,
+    };
     mockAuroraCreateState = {
       isValid: false,
       totalHolds: 0,
@@ -879,6 +1027,7 @@ describe('CreateClimbForm — Aurora rendering', () => {
     vi.mocked(useCreateClimb).mockReturnValue({
       litUpHoldsMap: mockAuroraCreateState.litUpHoldsMap,
       frames: [mockAuroraCreateState.litUpHoldsMap],
+      unionHolds: mockAuroraCreateState.litUpHoldsMap,
       frameCount: 1,
       currentFrameIndex: 0,
       setHoldState: mockSetAuroraHoldState,
@@ -886,6 +1035,7 @@ describe('CreateClimbForm — Aurora rendering', () => {
       finishCount: 0,
       totalHolds: 1,
       isValid: true,
+      hasEmptyFrame: false,
       resetHolds: mockResetAuroraHolds,
       generateFramesString: mockGenerateAuroraFramesString,
       currentFrameBleString: mockCurrentFrameBleString,
@@ -934,6 +1084,7 @@ describe('CreateClimbForm — Aurora rendering', () => {
     vi.mocked(useCreateClimb).mockReturnValue({
       litUpHoldsMap: mockAuroraCreateState.litUpHoldsMap,
       frames: [mockAuroraCreateState.litUpHoldsMap],
+      unionHolds: mockAuroraCreateState.litUpHoldsMap,
       frameCount: 1,
       currentFrameIndex: 0,
       setHoldState: mockSetAuroraHoldState,
@@ -941,6 +1092,7 @@ describe('CreateClimbForm — Aurora rendering', () => {
       finishCount: 0,
       totalHolds: 1,
       isValid: true,
+      hasEmptyFrame: false,
       resetHolds: mockResetAuroraHolds,
       generateFramesString: mockGenerateAuroraFramesString,
       currentFrameBleString: mockCurrentFrameBleString,
@@ -984,6 +1136,13 @@ describe('CreateClimbForm — Save button state', () => {
     mockQueueActions = null;
     mockCurrentClimbData = null;
     mockDraftsDrawerProps = null;
+    mockMoonboardCreateState = {
+      isValid: true,
+      totalHolds: 3,
+      litUpHoldsMap: MOONBOARD_DEFAULT_HOLDS,
+      frameCount: 1,
+      currentFrameIndex: 0,
+    };
     mockRequest.mockResolvedValue({ checkMoonBoardClimbDuplicates: [] });
   });
 
@@ -1047,6 +1206,13 @@ describe('CreateClimbForm — forkName prop', () => {
     mockQueueActions = null;
     mockCurrentClimbData = null;
     mockDraftsDrawerProps = null;
+    mockMoonboardCreateState = {
+      isValid: true,
+      totalHolds: 3,
+      litUpHoldsMap: MOONBOARD_DEFAULT_HOLDS,
+      frameCount: 1,
+      currentFrameIndex: 0,
+    };
     mockRequest.mockResolvedValue({ checkMoonBoardClimbDuplicates: [] });
   });
 

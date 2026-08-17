@@ -126,7 +126,9 @@ export function useCreateClimbScreen({
     currentFrameBleString,
     startingCount,
     finishCount,
+    totalHolds,
     isValid,
+    hasEmptyFrame,
     resetHolds,
     loadFrames,
     duplicateFrame,
@@ -497,7 +499,16 @@ export function useCreateClimbScreen({
       return;
     }
     if (editLocked) return;
-    if (!isValid) return;
+    if (!isValid) {
+      // An empty board explains itself; anything else looks finished, so say
+      // what's missing instead of letting the tap do nothing.
+      if (hasEmptyFrame) {
+        showToast(t('createClimbForm.validation.emptyFrame'), 'error');
+      } else if (totalHolds > 0) {
+        showToast(t('createClimbForm.validation.needsStartFinish'), 'error');
+      }
+      return;
+    }
     if (name.trim() === '') {
       requestFocusName();
       return;
@@ -607,6 +618,8 @@ export function useCreateClimbScreen({
     router,
     editLocked,
     isValid,
+    hasEmptyFrame,
+    totalHolds,
     name,
     canUpdate,
     savedClimb,

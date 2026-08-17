@@ -272,6 +272,11 @@ export const SaveMoonBoardClimbInputSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(2000).optional().default(''),
   holds: MoonBoardHoldsInputSchema,
+  // Multi-frame route/circuit: the comma-separated frames string the editor
+  // composed, every frame an absolute snapshot. Omitted by single-frame callers
+  // (and every pre-route client), in which case the resolver encodes `holds`
+  // itself exactly as it always did.
+  frames: z.string().min(1).max(10000).optional(),
   angle: z.number().int().min(0).max(90),
   isDraft: z.boolean().optional(),
   userGrade: z.string().max(20).optional(),

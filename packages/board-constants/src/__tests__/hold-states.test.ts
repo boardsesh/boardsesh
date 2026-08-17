@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vite-plus/test';
 import {
   HOLD_STATE_MAP,
   STATE_TO_PRIMARY_CODE,
+  FRAME_ENCODING,
   BOARD_RENDER_DEFAULTS,
   getBoardStrokeWidthMultiplier,
   convertLitUpHoldsStringToMap,
@@ -13,7 +14,7 @@ import {
   isSentinelHoldState,
   toFlatFrames,
 } from '../hold-states';
-import type { BoardName } from '@boardsesh/shared-schema';
+import type { BoardName, LitUpHoldsMap } from '@boardsesh/shared-schema';
 import oracle from './__fixtures__/aurora-frames-oracle.json';
 
 describe('HOLD_STATE_MAP', () => {
@@ -317,6 +318,39 @@ describe('accumulatedMapsToFrameStrings', () => {
     ];
     const [string0] = accumulatedMapsToFrameStrings(maps, 'moonboard');
     expect(string0).toBe('p100r42');
+  });
+});
+
+describe('FRAME_ENCODING', () => {
+  it('covers every board, and only MoonBoard writes absolute frames', () => {
+    for (const board of Object.keys(HOLD_STATE_MAP) as Array<keyof typeof HOLD_STATE_MAP>) {
+      expect(FRAME_ENCODING[board]).toBe(board === 'moonboard' ? 'absolute' : 'delta');
+    }
+  });
+
+  it('round-trips a 3-frame MoonBoard route with no delta markers anywhere', () => {
+    const maps: LitUpHoldsMap[] = [
+      {
+        100: { state: 'STARTING' as const, color: '#00FF00', displayColor: '#44FF44' },
+      },
+      {
+        100: { state: 'STARTING' as const, color: '#00FF00', displayColor: '#44FF44' },
+        200: { state: 'HAND' as const, color: '#0000FF', displayColor: '#4444FF' },
+      },
+      {
+        200: { state: 'HAND' as const, color: '#0000FF', displayColor: '#4444FF' },
+        300: { state: 'FINISH' as const, color: '#FF0000', displayColor: '#FF3333' },
+      },
+    ];
+
+    const frames = accumulatedMapsToFrameStrings(maps, 'moonboard').join(',');
+
+    expect(frames).toBe('p100r42,p100r42p200r43,p200r43p300r44');
+    expect(frames).not.toContain('"');
+    expect(frames.split(',')).toHaveLength(3);
+    // Each frame restates the whole lit set, so decoding gives back exactly the
+    // three snapshots — including frame 3 dropping hold 100 without an `x` token.
+    expect(accumulateFramesToMaps(frames, 'moonboard')).toEqual(maps);
   });
 });
 

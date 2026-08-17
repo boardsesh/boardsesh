@@ -40,6 +40,7 @@
 - **Center section:** Name input, description input (when settings open)
 - **Right section:**
   - Heatmap toggle (fire icon, Aurora only)
+  - Duplicate-frame button, plus a frame counter, prev/next stepper and delete-frame button once the climb has more than one frame (every board)
   - Settings gear (opens settings drawer)
   - Clear/delete button (resets all holds)
   - Save button (context-dependent icon):
@@ -57,7 +58,9 @@
 - Draft toggle (`Switch`): When ON, climb is saved as draft (not publicly visible). Default ON.
 - MoonBoard-specific: Grade select, Benchmark toggle, Angle select
 
-**Autosave:** Form state (holds, name, description, isDraft) is debounced (500ms) and persisted to IndexedDB via `saveAutosave()`. Restored on mount if not forking. Cleared on successful save or manual clear.
+**Autosave:** Form state (the whole frame sequence, name, description, isDraft) is debounced (500ms) and persisted to IndexedDB via `saveAutosave()`. Restored on mount if not forking. Cleared on successful save or manual clear.
+
+**Multi-frame routes/circuits:** Any board can build a climb out of a sequence of frames. How that sequence is written to `frames` is per-board (`FRAME_ENCODING` in `@boardsesh/board-constants`): Aurora delta-encodes (frame 0 absolute, later frames a `"`-prefixed diff), MoonBoard writes every frame as a full absolute snapshot joined by commas. Both decode through the same parser. MoonBoard saves send the frames string alongside `holds`, which carries the union of every frame for the hold rows and the duplicate check; the duplicate check itself is skipped for multi-frame climbs on both boards.
 
 **Save flow:**
 
@@ -95,8 +98,7 @@
 - `SAVE_MOONBOARD_CLIMB_MUTATION` GraphQL mutation (MoonBoard)
 - `CHECK_MOONBOARD_CLIMB_DUPLICATES_QUERY` for MoonBoard duplicate detection
 - `SEARCH_CLIMBS_COUNT` for drafts count badge
-- `useCreateClimb()` hook managing hold state, frame string generation
-- `useMoonBoardCreateClimb()` hook for MoonBoard-specific hold management
+- `useCreateClimb()` hook managing hold state, the frame sequence, and frame string generation — one hook for every board, including MoonBoard
 - `useBoardBluetooth()` for BLE connection and frame sending
 
 **User actions:**

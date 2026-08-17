@@ -509,7 +509,8 @@
       "total": "Total"
     },
     "validation": {
-      "needsStartFinish": "A valid climb needs at least 1 start hold and 1 finish hold"
+      "needsStartFinish": "A valid climb needs at least 1 start hold and 1 finish hold",
+      "emptyFrame": "Every frame needs a hold. Paint the empty one or delete it"
     },
     "methodOptions": {
       "feetFollowHands": "Feet follow hands",

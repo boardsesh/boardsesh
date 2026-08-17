@@ -500,7 +500,8 @@
       "total": "Total"
     },
     "validation": {
-      "needsStartFinish": "Un bloque válido necesita al menos 1 presa de salida y 1 de final"
+      "needsStartFinish": "Un bloque válido necesita al menos 1 presa de salida y 1 de final",
+      "emptyFrame": "Cada cuadro necesita una presa. Pinta el cuadro vacío o elimínalo"
     },
     "methodOptions": {
       "feetFollowHands": "Los pies siguen a las manos",

@@ -509,7 +509,8 @@
       "total": "Gesamt"
     },
     "validation": {
-      "needsStartFinish": "Ein gültiger Boulder braucht mindestens 1 Startgriff und 1 Topgriff"
+      "needsStartFinish": "Ein gültiger Boulder braucht mindestens 1 Startgriff und 1 Topgriff",
+      "emptyFrame": "Jedes Bild braucht einen Griff. Setz einen ins leere Bild oder lösch es"
     },
     "methodOptions": {
       "feetFollowHands": "Füße folgen den Händen",

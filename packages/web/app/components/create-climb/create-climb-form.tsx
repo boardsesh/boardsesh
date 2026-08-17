@@ -45,7 +45,6 @@ import ZoomableBoard from '../board-renderer/zoomable-board';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
 import { useBoardProvider } from '../board-provider/board-provider-context';
 import { useCreateClimb, buildInitialFrames } from '@boardsesh/create-climb-react';
-import { useMoonBoardCreateClimb } from './use-moonboard-create-climb';
 import { useOptionalBluetoothContext } from '../board-bluetooth-control/bluetooth-context';
 import type { MoonBoardClimbDuplicateMatch, UpdateClimbInput } from '@boardsesh/shared-schema';
 import { CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
@@ -187,21 +186,24 @@ export default function CreateClimbForm({
         (r.role === 'admin' || r.role === 'community_leader') && (r.boardType === null || r.boardType === 'moonboard'),
     );
 
+  // The board the editor is painting for. Aurora reads it off boardDetails;
+  // MoonBoard is its own board name. Both drive the one shared editor hook.
+  const editorBoardName: BoardName = boardType === 'aurora' ? boardDetails?.board_name || 'kilter' : 'moonboard';
+
   // Convert fork frames to the editor's initial frame sequence if provided
-  // (Aurora only). Preserves every frame of a multi-frame source climb —
-  // previously this took only frame 0, silently dropping the rest of a route.
+  // (Aurora only — MoonBoard has no fork-by-frames entry point). Preserves every
+  // frame of a multi-frame source climb — previously this took only frame 0,
+  // silently dropping the rest of a route.
   const initialFrames = useMemo(() => {
     if (boardType !== 'aurora' || !forkFrames || !boardDetails) return undefined;
     return buildInitialFrames(forkFrames, boardDetails.board_name);
   }, [boardType, forkFrames, boardDetails]);
 
-  // Aurora hold management
-  const auroraClimb = useCreateClimb(boardDetails?.board_name || 'kilter', { initialFrames });
-
-  // MoonBoard hold management
-  const moonboardClimb = useMoonBoardCreateClimb();
-
-  // Use the appropriate hook values based on board type
+  // One editor for every board. The hook already knows each board's rules: which
+  // hold states it can paint (MoonBoard has no FOOT), what makes a climb valid
+  // (MoonBoard needs a start and a finish), and how to serialise a multi-frame
+  // route (Aurora delta-encodes, MoonBoard writes a full snapshot per frame).
+  const climbEditor = useCreateClimb(editorBoardName, { initialFrames });
   const {
     litUpHoldsMap,
     setHoldState,
@@ -209,14 +211,23 @@ export default function CreateClimbForm({
     finishCount,
     totalHolds,
     isValid,
+    generateFramesString,
+    currentFrameBleString,
+    loadFrames,
+    loadHolds,
     resetHolds: baseResetHolds,
-  } = boardType === 'aurora' ? auroraClimb : moonboardClimb;
+  } = climbEditor;
 
-  const handCount = boardType === 'moonboard' ? moonboardClimb.handCount : 0;
-  const generateFramesString = boardType === 'aurora' ? auroraClimb.generateFramesString : undefined;
-  const currentFrameBleString = boardType === 'aurora' ? auroraClimb.currentFrameBleString : undefined;
-  const setLitUpHoldsMap = boardType === 'moonboard' ? moonboardClimb.setLitUpHoldsMap : undefined;
-  const loadAuroraFrames = boardType === 'aurora' ? auroraClimb.loadFrames : undefined;
+  // MoonBoard's settings drawer breaks its holds out by role, so it wants a hand
+  // count Aurora's three indicators never ask for. Computed over the whole route
+  // (like the hook's own counts) rather than the frame currently on screen.
+  const handCount = useMemo(
+    () =>
+      boardType === 'moonboard'
+        ? Object.values(climbEditor.unionHolds).filter((hold) => hold.state === 'HAND').length
+        : 0,
+    [boardType, climbEditor.unionHolds],
+  );
 
   // Bluetooth for Aurora boards. Share the single root-level connection (the
   // one the lightbulb actually drives) instead of spinning up a second adapter
@@ -422,12 +433,7 @@ export default function CreateClimbForm({
       if (cancelled) return;
       if (saved) {
         try {
-          if (boardType === 'aurora' && loadAuroraFrames) {
-            const frames = saved.framesJson ? JSON.parse(saved.framesJson) : [JSON.parse(saved.holdsJson)];
-            loadAuroraFrames(frames);
-          } else if (boardType === 'moonboard' && setLitUpHoldsMap) {
-            setLitUpHoldsMap(JSON.parse(saved.holdsJson));
-          }
+          loadFrames(saved.framesJson ? JSON.parse(saved.framesJson) : [JSON.parse(saved.holdsJson)]);
           if (saved.climbName) setClimbName(saved.climbName);
           if (saved.description) setDescription(saved.description);
           setIsDraft(saved.isDraft);
@@ -444,19 +450,19 @@ export default function CreateClimbForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Debounced autosave on changes. `framesJson` (the full route) is aurora-only;
-  // `holdsJson` covers moonboard and doubles as a backward-compatible fallback
-  // for aurora restores of an autosave written before this field existed.
+  // Debounced autosave on changes. `framesJson` is the full route, on every
+  // board; `holdsJson` (the active frame) stays as the backward-compatible
+  // fallback for autosaves written before that field existed.
   const autosaveData = useMemo(
     () => ({
       holdsJson: JSON.stringify(litUpHoldsMap),
-      framesJson: boardType === 'aurora' ? JSON.stringify(auroraClimb.frames) : undefined,
+      framesJson: JSON.stringify(climbEditor.frames),
       climbName,
       description,
       isDraft,
       boardKey: autosaveBoardKey,
     }),
-    [litUpHoldsMap, boardType, auroraClimb.frames, climbName, description, isDraft, autosaveBoardKey],
+    [litUpHoldsMap, climbEditor.frames, climbName, description, isDraft, autosaveBoardKey],
   );
   const debouncedAutosave = useDebouncedValue(autosaveData, 500);
   const debouncedTotalHolds = useDebouncedValue(totalHolds, 500);
@@ -474,9 +480,12 @@ export default function CreateClimbForm({
     void saveAutosave(debouncedAutosave);
   }, [debouncedAutosave, debouncedTotalHolds]);
 
+  // The structured holds the MoonBoard save mutation and duplicate check read.
+  // For a route this is the union of every frame — the whole set of holds the
+  // climb uses — while the frames string carries the sequence itself.
   const moonBoardHolds = useMemo(
-    () => (boardType === 'moonboard' ? convertLitUpHoldsMapToMoonBoardHolds(litUpHoldsMap) : null),
-    [boardType, litUpHoldsMap],
+    () => (boardType === 'moonboard' ? convertLitUpHoldsMapToMoonBoardHolds(climbEditor.unionHolds) : null),
+    [boardType, climbEditor.unionHolds],
   );
 
   const moonBoardDuplicateError = useMemo(() => {
@@ -492,9 +501,12 @@ export default function CreateClimbForm({
   // replaceQueueItem → BluetoothAutoSender path owns the wall, so sending here
   // too would double-write. Local-only (no WS broadcast), matching the pivot's
   // "building doesn't broadcast" rule.
+  // Still Aurora-only: the web Bluetooth adapter speaks the Aurora packet
+  // format. MoonBoard walls light up over their own protocol, which this form
+  // doesn't drive.
   useEffect(() => {
     if (queueItemUuid != null) return;
-    if (boardType === 'aurora' && isConnected && currentFrameBleString) {
+    if (boardType === 'aurora' && isConnected) {
       // The active frame only — the wall mirrors whatever you're painting right
       // now, not multi-frame route syntax the BLE packet builder can't parse.
       void sendFramesToBoard?.(currentFrameBleString());
@@ -587,7 +599,7 @@ export default function CreateClimbForm({
   // MoonBoard OCR import
   const handleOcrImport = useCallback(
     async (file: File) => {
-      if (boardType !== 'moonboard' || !setLitUpHoldsMap) return;
+      if (boardType !== 'moonboard') return;
 
       setIsOcrProcessing(true);
       setOcrError(null);
@@ -611,9 +623,9 @@ export default function CreateClimbForm({
 
         setOcrWarnings(warnings);
 
-        // Convert OCR holds to form state
-        const newHoldsMap = convertOcrHoldsToMap(climb.holds);
-        setLitUpHoldsMap(newHoldsMap);
+        // A screenshot is one static shape, so it replaces the whole route
+        // with a single frame.
+        loadHolds(convertOcrHoldsToMap(climb.holds));
 
         // Populate fields from OCR
         if (climb.name) setClimbName(climb.name);
@@ -626,7 +638,7 @@ export default function CreateClimbForm({
         setIsOcrProcessing(false);
       }
     },
-    [boardType, angle, setLitUpHoldsMap],
+    [boardType, angle, loadHolds],
   );
 
   const runMoonBoardDuplicateCheck = useCallback(
@@ -681,7 +693,10 @@ export default function CreateClimbForm({
       return;
     }
 
-    if (!layoutId || !moonBoardHolds || !isValid) {
+    // Routes skip the check, the same way the server-side gate does: the match
+    // is on a hold *set*, so two routes through the same holds in a different
+    // order would read as identical when they aren't.
+    if (!layoutId || !moonBoardHolds || !isValid || climbEditor.frameCount > 1) {
       duplicateCheckRequestIdRef.current += 1;
       setMoonBoardDuplicateMatch(null);
       setIsCheckingMoonBoardDuplicate(false);
@@ -695,7 +710,7 @@ export default function CreateClimbForm({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [boardType, isValid, layoutId, moonBoardHolds, runMoonBoardDuplicateCheck, selectedAngle]);
+  }, [boardType, isValid, layoutId, moonBoardHolds, climbEditor.frameCount, runMoonBoardDuplicateCheck, selectedAngle]);
 
   // Builds a Climb object from the form's current state + a freshly-issued
   // uuid. Used to push the in-progress climb into the live queue so party
@@ -785,9 +800,7 @@ export default function CreateClimbForm({
     if (!queueActions) return;
 
     const uuid = savedClimb?.uuid ?? getPreviewUuid();
-    const frames = boardType === 'aurora' && generateFramesString ? generateFramesString() : '';
-
-    const climb = buildClimbFromFormState(uuid, frames);
+    const climb = buildClimbFromFormState(uuid, generateFramesString());
 
     if (queueItemUuid) {
       queueActions.replaceQueueItem(queueItemUuid, climb);
@@ -828,18 +841,9 @@ export default function CreateClimbForm({
     const uuid = savedClimb?.uuid ?? previewUuidRef.current;
     if (!uuid) return;
 
-    const frames = boardType === 'aurora' && generateFramesString ? generateFramesString() : '';
-    const climb = buildClimbFromFormState(uuid, frames);
+    const climb = buildClimbFromFormState(uuid, generateFramesString());
     queueActions.replaceQueueItem(queueItemUuid, climb);
-  }, [
-    litUpHoldsMap,
-    queueActions,
-    queueItemUuid,
-    savedClimb?.uuid,
-    boardType,
-    generateFramesString,
-    buildClimbFromFormState,
-  ]);
+  }, [litUpHoldsMap, queueActions, queueItemUuid, savedClimb?.uuid, generateFramesString, buildClimbFromFormState]);
 
   // Save climb - Aurora
   //
@@ -854,7 +858,7 @@ export default function CreateClimbForm({
   // state. Clearing the form (via Clear) detaches savedClimb so the next
   // save starts a fresh row.
   const doSaveAuroraClimb = useCallback(async () => {
-    if (!boardDetails || !generateFramesString) return;
+    if (!boardDetails) return;
 
     setIsSaving(true);
 
@@ -892,7 +896,7 @@ export default function CreateClimbForm({
           description: description || '',
           frames,
           angle,
-          framesCount: auroraClimb.frameCount,
+          framesCount: climbEditor.frameCount,
           framesPace: 0,
           isDraft,
         };
@@ -941,7 +945,7 @@ export default function CreateClimbForm({
         description: description || '',
         is_draft: isDraft,
         frames,
-        frames_count: auroraClimb.frameCount,
+        frames_count: climbEditor.frameCount,
         frames_pace: 0,
         angle,
       });
@@ -1001,7 +1005,7 @@ export default function CreateClimbForm({
   }, [
     boardDetails,
     generateFramesString,
-    auroraClimb.frameCount,
+    climbEditor.frameCount,
     saveClimb,
     updateClimb,
     climbName,
@@ -1023,10 +1027,11 @@ export default function CreateClimbForm({
   // update the tracked row in place (within the 24h post-publish window for
   // non-drafts). The form never navigates away on save.
   //
-  // Note: MoonBoard hold re-encoding on update isn't supported by updateClimb,
-  // so updates only touch name/description/angle/isDraft. If the user changes
-  // holds after a save we intentionally skip the update and create a new row,
-  // which the duplicate check will catch if the new holds collide.
+  // The frames string is what carries a route/circuit: comma-separated absolute
+  // snapshots, one per frame. A single-frame MoonBoard climb encodes to the same
+  // flat `p<id>r<code>` string the holds array has always produced. `holds` still
+  // rides along as the union of every frame — the server reads it for the hold
+  // rows and the duplicate check.
   const doSaveMoonBoardClimb = useCallback(async () => {
     const userId = session?.user?.id;
     if (!layoutId || !userId || !moonBoardHolds) return;
@@ -1037,6 +1042,12 @@ export default function CreateClimbForm({
     }
 
     setIsSaving(true);
+    const moonBoardFrames = generateFramesString();
+    // A named draft with nothing painted yet is a legitimate save, and it
+    // encodes to ''. The mutations take `frames` as optional-but-non-empty, so
+    // send nothing rather than an empty string and let the server encode
+    // `holds` itself.
+    const framesInput = moonBoardFrames || undefined;
 
     try {
       if (!wsAuthToken) {
@@ -1066,6 +1077,8 @@ export default function CreateClimbForm({
           boardType: 'moonboard',
           name: climbName,
           description: description || '',
+          frames: framesInput,
+          framesCount: climbEditor.frameCount,
           angle: selectedAngle,
           isDraft,
         };
@@ -1090,11 +1103,7 @@ export default function CreateClimbForm({
           });
         }
 
-        // MoonBoard doesn't regenerate a frames string on update (updateClimb
-        // only touches metadata), so reuse whatever the existing queue item
-        // already has via an empty frames string — the queue renderer won't
-        // use it for MoonBoard and the form's own hold map is authoritative.
-        await syncSavedClimbToQueue(updateResult.uuid, '');
+        await syncSavedClimbToQueue(updateResult.uuid, moonBoardFrames);
 
         markJustSaved();
         return;
@@ -1114,6 +1123,7 @@ export default function CreateClimbForm({
           name: climbName,
           description: description || '',
           holds: moonBoardHolds,
+          frames: framesInput,
           angle: selectedAngle,
           isDraft: isDraft,
           userGrade,
@@ -1149,7 +1159,7 @@ export default function CreateClimbForm({
         });
       }
 
-      await syncSavedClimbToQueue(moonBoardResult.saveMoonBoardClimb.uuid, '');
+      await syncSavedClimbToQueue(moonBoardResult.saveMoonBoardClimb.uuid, moonBoardFrames);
 
       markJustSaved();
     } catch (error) {
@@ -1174,6 +1184,8 @@ export default function CreateClimbForm({
     session,
     moonBoardHolds,
     moonBoardDuplicateError,
+    generateFramesString,
+    climbEditor.frameCount,
     climbName,
     description,
     userGrade,
@@ -1201,6 +1213,14 @@ export default function CreateClimbForm({
 
   const handlePublish = useCallback(async () => {
     if (!climbName.trim()) {
+      return;
+    }
+
+    // A blank frame in the middle of a MoonBoard route can't survive the round
+    // trip (see `hasEmptyFrame` in useCreateClimb), so block drafts too — the
+    // frame would be gone the next time the route is opened.
+    if (climbEditor.hasEmptyFrame) {
+      showMessage(t('createClimbForm.validation.emptyFrame'), 'warning');
       return;
     }
 
@@ -1243,6 +1263,7 @@ export default function CreateClimbForm({
   }, [
     boardType,
     isValid,
+    climbEditor.hasEmptyFrame,
     climbName,
     isLoggedIn,
     description,
@@ -1326,9 +1347,9 @@ export default function CreateClimbForm({
   // silently collapsing a route/circuit into a single static snapshot on load.
   const handleLoadDraft = useCallback(
     (climb: Climb) => {
-      if (boardType !== 'aurora' || !boardDetails || !loadAuroraFrames) return;
+      if (boardType !== 'aurora' || !boardDetails) return;
 
-      loadAuroraFrames(buildInitialFrames(climb.frames, boardDetails.board_name));
+      loadFrames(buildInitialFrames(climb.frames, boardDetails.board_name));
       setClimbName(climb.name || '');
       setDescription(climb.description || '');
       setSavedClimb({
@@ -1351,7 +1372,7 @@ export default function CreateClimbForm({
       // The litUpHoldsMap effect at the top of this component pushes new frames
       // to a connected Bluetooth board automatically.
     },
-    [boardType, boardDetails, loadAuroraFrames, clearJustSaved, queueActions],
+    [boardType, boardDetails, loadFrames, clearJustSaved, queueActions],
   );
 
   const handleDraftDeleted = useCallback(
@@ -1372,11 +1393,11 @@ export default function CreateClimbForm({
   // saves update savedClimb in place and must not trigger another reload.
   const seededEditClimbUuidRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!editClimb || boardType !== 'aurora' || !boardDetails || !loadAuroraFrames) return;
+    if (!editClimb || boardType !== 'aurora' || !boardDetails) return;
     if (seededEditClimbUuidRef.current === editClimb.uuid) return;
     seededEditClimbUuidRef.current = editClimb.uuid;
     handleLoadDraft(editClimb);
-  }, [editClimb, boardType, boardDetails, loadAuroraFrames, handleLoadDraft]);
+  }, [editClimb, boardType, boardDetails, handleLoadDraft]);
 
   // Surface a lookup failure from the create page (expired link, wrong
   // board, deleted row) exactly once per error value so the user knows why
@@ -1696,57 +1717,55 @@ export default function CreateClimbForm({
             </IconButton>
           </MuiTooltip>
         )}
-        {boardType === 'aurora' && (
-          <>
-            <MuiTooltip title={t('create.frames.duplicateTooltip')}>
-              <IconButton
-                size="small"
-                onClick={auroraClimb.duplicateFrame}
-                aria-label={t('create.frames.duplicateTooltip')}
-              >
-                <ContentCopyOutlined fontSize="small" />
-              </IconButton>
-            </MuiTooltip>
-            {auroraClimb.frameCount > 1 && (
-              <Stack direction="row" alignItems="center" spacing={0.5}>
-                <IconButton
-                  size="small"
-                  onClick={auroraClimb.prevFrame}
-                  disabled={auroraClimb.currentFrameIndex === 0}
-                  aria-label={tCommon('playback.prevFrame')}
-                >
-                  <SkipPreviousOutlined fontSize="small" />
+        {/* Route / circuit controls — every board with LEDs can play a sequence
+            of frames, MoonBoard included. */}
+        <MuiTooltip title={t('create.frames.duplicateTooltip')}>
+          <IconButton
+            size="small"
+            onClick={climbEditor.duplicateFrame}
+            aria-label={t('create.frames.duplicateTooltip')}
+          >
+            <ContentCopyOutlined fontSize="small" />
+          </IconButton>
+        </MuiTooltip>
+        {climbEditor.frameCount > 1 && (
+          <Stack direction="row" alignItems="center" spacing={0.5}>
+            <IconButton
+              size="small"
+              onClick={climbEditor.prevFrame}
+              disabled={climbEditor.currentFrameIndex === 0}
+              aria-label={tCommon('playback.prevFrame')}
+            >
+              <SkipPreviousOutlined fontSize="small" />
+            </IconButton>
+            <Typography variant="caption" sx={{ whiteSpace: 'nowrap', color: 'text.secondary' }}>
+              {tCommon('playback.frameOfTotal', {
+                index: climbEditor.currentFrameIndex + 1,
+                total: climbEditor.frameCount,
+              })}
+            </Typography>
+            <IconButton
+              size="small"
+              onClick={climbEditor.nextFrame}
+              disabled={climbEditor.currentFrameIndex >= climbEditor.frameCount - 1}
+              aria-label={tCommon('playback.nextFrame')}
+            >
+              <SkipNextOutlined fontSize="small" />
+            </IconButton>
+            <ConfirmPopover
+              title={t('create.frames.deleteTitle')}
+              description={t('create.frames.deleteDescription')}
+              onConfirm={climbEditor.deleteFrame}
+              okText={tCommon('actions.delete')}
+              cancelText={tCommon('actions.cancel')}
+            >
+              <MuiTooltip title={t('create.frames.deleteTooltip')}>
+                <IconButton size="small" aria-label={t('create.frames.deleteTooltip')}>
+                  <RemoveCircleOutline fontSize="small" />
                 </IconButton>
-                <Typography variant="caption" sx={{ whiteSpace: 'nowrap', color: 'text.secondary' }}>
-                  {tCommon('playback.frameOfTotal', {
-                    index: auroraClimb.currentFrameIndex + 1,
-                    total: auroraClimb.frameCount,
-                  })}
-                </Typography>
-                <IconButton
-                  size="small"
-                  onClick={auroraClimb.nextFrame}
-                  disabled={auroraClimb.currentFrameIndex >= auroraClimb.frameCount - 1}
-                  aria-label={tCommon('playback.nextFrame')}
-                >
-                  <SkipNextOutlined fontSize="small" />
-                </IconButton>
-                <ConfirmPopover
-                  title={t('create.frames.deleteTitle')}
-                  description={t('create.frames.deleteDescription')}
-                  onConfirm={auroraClimb.deleteFrame}
-                  okText={tCommon('actions.delete')}
-                  cancelText={tCommon('actions.cancel')}
-                >
-                  <MuiTooltip title={t('create.frames.deleteTooltip')}>
-                    <IconButton size="small" aria-label={t('create.frames.deleteTooltip')}>
-                      <RemoveCircleOutline fontSize="small" />
-                    </IconButton>
-                  </MuiTooltip>
-                </ConfirmPopover>
-              </Stack>
-            )}
-          </>
+              </MuiTooltip>
+            </ConfirmPopover>
+          </Stack>
         )}
         <ConfirmPopover
           title={t('create.clear.title')}

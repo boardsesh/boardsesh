@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useReducer } from 'react';
 import {
+  FRAME_ENCODING,
   HOLD_STATE_MAP,
   STATE_TO_PRIMARY_CODE,
   accumulatedMapsToFrameStrings,
@@ -186,12 +187,18 @@ function initHistory(boardName: BoardName, initialFrames: LitUpHoldsMap[] | unde
 }
 
 /**
- * Aurora (Kilter/Tension/etc) hold-state machine for the create-climb editor.
- * Pure React + board-constants — shared verbatim by the web form and the
- * React Native editor. Keys holds by numeric id; enforces the max-2
- * STARTING/FINISH rule (per frame); serialises the whole frame sequence to
- * the Aurora frames string (delta-encoded past frame 0). Tracks in-memory
- * undo/redo history for the current editing session.
+ * Hold-state machine for the create-climb editor, for every board we support
+ * (Kilter/Tension/etc and MoonBoard). Pure React + board-constants — shared
+ * verbatim by the web form and the React Native editor. Keys holds by numeric
+ * id; enforces the max-2 STARTING/FINISH rule (per frame); serialises the whole
+ * frame sequence to a frames string using the board's own encoding (Aurora
+ * delta-encodes past frame 0, MoonBoard writes a full snapshot per frame).
+ * Tracks in-memory undo/redo history for the current editing session.
+ *
+ * Board-specific rules the hook already handles without a caller branch: a
+ * state the board has no role code for is unpaintable (MoonBoard has no FOOT),
+ * MoonBoard additionally requires a start and a finish hold to be valid, and a
+ * board that writes absolute frames can't carry a blank frame mid-route.
  *
  * `litUpHoldsMap` is always the *active* frame — every existing single-frame
  * consumer (board renderers, the hold-type picker, paint handlers) keeps
@@ -223,7 +230,23 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
 
   const totalHolds = useMemo(() => Object.values(unionHolds).filter((h) => h.state !== 'OFF').length, [unionHolds]);
 
-  const isValid = totalHolds > 0;
+  // A board that writes absolute frames has no way to spell "this frame is
+  // deliberately dark": the frame encodes as an empty segment between two
+  // commas, and `parseFramesSegments` drops that as comma noise, so the route
+  // would come back one frame shorter than it was drawn. Block the save until
+  // the user paints in the blank frame or deletes it. Delta boards write the
+  // same frame as a bare `"` and round-trip it fine.
+  const hasEmptyFrame =
+    FRAME_ENCODING[boardName] === 'absolute' && frameCount > 1 && history.present.some(isEmptyFrame);
+
+  // MoonBoard is the one board whose climbs are meaningless without a start and
+  // a finish — its own editor has always required both, and the MoonBoard app
+  // won't render a problem that's missing either. Every Aurora board is happy
+  // with any lit hold. One board, one conditional; a config table here would be
+  // six identical rows and one exception.
+  const isValid =
+    !hasEmptyFrame &&
+    (boardName === 'moonboard' ? totalHolds > 0 && startingCount >= 1 && finishCount >= 1 : totalHolds > 0);
 
   const setHoldState = useCallback(
     (holdId: number, nextState: HoldState | 'OFF') => {
@@ -281,10 +304,15 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
     [boardName],
   );
 
-  // Encode the whole route: frame 0 absolute, later frames delta-encoded.
-  // Single-frame climbs produce the same flat string they always have.
+  // Encode the whole route. Aurora boards delta-encode (frame 0 absolute, later
+  // frames a `"`-prefixed diff); MoonBoard writes every frame as a full snapshot
+  // — see FRAME_ENCODING. Either way a single-frame climb produces the same flat
+  // string it always has.
   const generateFramesString = useCallback(
-    () => encodeMapsToFramesString(history.present, boardName),
+    () =>
+      FRAME_ENCODING[boardName] === 'absolute'
+        ? accumulatedMapsToFrameStrings(history.present, boardName).join(',')
+        : encodeMapsToFramesString(history.present, boardName),
     [history.present, boardName],
   );
 
@@ -333,10 +361,12 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
     setHoldState,
     generateFramesString,
     currentFrameBleString,
+    unionHolds,
     startingCount,
     finishCount,
     totalHolds,
     isValid,
+    hasEmptyFrame,
     resetHolds,
     loadHolds,
     loadFrames,

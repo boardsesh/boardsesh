@@ -12,6 +12,7 @@ import {
   withNoMatch,
 } from '@boardsesh/shared-schema';
 import type { BoardName } from '@boardsesh/board-constants';
+import { parseFramesSegments } from '@boardsesh/board-constants/hold-states';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { UNIFIED_TABLES, isValidBoardName } from '../../../db/queries/util/table-select';
@@ -21,7 +22,6 @@ import { notifyClimbRevalidated } from '../../../lib/web-revalidate';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { requireAdminOrLeader } from '../social/roles';
 import {
-  buildMoonBoardClimbHoldRows,
   buildMoonBoardDuplicateError,
   encodeMoonBoardHoldsToFrames,
   findMoonBoardDuplicateMatch,
@@ -291,13 +291,24 @@ export const climbMutations = {
     const { displayName, name, avatarUrl } = await getUserProfile(ctx.userId!);
     const preferredSetter = validated.setter || displayName || name || null;
 
+    // A route/circuit ships its own frames string (absolute snapshot per frame);
+    // a plain single-frame climb doesn't send one and we encode `holds` exactly
+    // as we always did. framesCount is derived from the string rather than taken
+    // from the client so the stored count can never disagree with the content.
+    const frames = validated.frames ?? encodeMoonBoardHoldsToFrames(validated.holds);
+    const framesCount = Math.max(parseFramesSegments(frames).length, 1);
+
     // The legacy MoonBoard-specific lookup also covers climbs that have no
     // rows in board_climb_holds and live only as a `frames` text blob (Aurora
     // imports from before the holds table was the authoritative store), so
     // keep it as the gate for this board. Wrap the result in a GraphQLError
     // with the unified CLIMB_IS_DUPLICATE extension so the frontend's
     // duplicate-UX handler can react the same way across boards.
-    if (!isDraft) {
+    //
+    // Multi-frame routes skip the gate, matching updateClimb's `framesCount === 1`
+    // rule: the signature is a hold *set*, so two routes that visit the same holds
+    // in a different order would read as identical when they aren't.
+    if (!isDraft && framesCount === 1) {
       const duplicateMatch = await findMoonBoardDuplicateMatch(validated.layoutId, validated.angle, validated.holds);
       if (duplicateMatch) {
         throw new GraphQLError(buildMoonBoardDuplicateError(duplicateMatch.existingClimbName), {
@@ -310,8 +321,6 @@ export const climbMutations = {
       }
     }
 
-    const frames = encodeMoonBoardHoldsToFrames(validated.holds);
-
     await db.insert(UNIFIED_TABLES.climbs).values({
       boardType: validated.boardType,
       uuid,
@@ -322,7 +331,7 @@ export const climbMutations = {
       name: validated.name,
       description: validated.description ?? '',
       angle: validated.angle,
-      framesCount: 1,
+      framesCount,
       framesPace: 0,
       frames,
       isDraft,
@@ -334,9 +343,27 @@ export const climbMutations = {
       characteristics,
     });
 
-    const holdRows = buildMoonBoardClimbHoldRows(uuid, validated.holds);
+    // Derive the hold rows from the frames string, not from the `holds` union
+    // the client sends: updateClimb's refresh does exactly this, and the two
+    // have to agree. The union collapses a hold that appears in several frames
+    // to its LAST role, while the frames walk keeps every frame occurrence and
+    // the PK (board_type, climb_uuid, hold_id) + onConflictDoNothing keeps the
+    // FIRST. Seeding from the union would make a hold's stored state depend on
+    // whether the climb had been edited since it was created.
+    const holdRows = parseFramesToHoldEntries(validated.boardType, frames);
     if (holdRows.length > 0) {
-      await db.insert(dbSchema.boardClimbHolds).values(holdRows).onConflictDoNothing();
+      await db
+        .insert(dbSchema.boardClimbHolds)
+        .values(
+          holdRows.map((entry) => ({
+            boardType: validated.boardType,
+            climbUuid: uuid,
+            holdId: entry.holdId,
+            frameNumber: entry.frameNumber,
+            holdState: entry.holdState,
+          })),
+        )
+        .onConflictDoNothing();
     }
 
     // Seed a stats row so the climb is visible to the global search, which

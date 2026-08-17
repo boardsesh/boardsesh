@@ -121,6 +121,32 @@ export const STATE_TO_PRIMARY_CODE: Record<BoardName, Partial<Record<HoldState, 
   soill: { STARTING: 1, HAND: 2, FINISH: 3, FOOT: 4 },
 };
 
+/**
+ * How each board's multi-frame `frames` string is *written*.
+ *
+ * `'delta'` — frame 0 absolute, every later frame a `"`-prefixed diff against
+ * the previous frame. This is what the Aurora API and the legacy catalog use,
+ * and what `encodeMapsToFramesString` emits.
+ *
+ * `'absolute'` — every frame restates the whole lit set (`accumulatedMapsToFrameStrings`
+ * joined with commas, no `"` anywhere). MoonBoard writes this way: delta encoding
+ * exists to save bytes on the wire, and MoonBoard's LED changes are instant, so a
+ * full snapshot per tick is simpler to read and impossible to desync.
+ *
+ * Only the *write* side cares. `parseFramesSegments` / `accumulateFramesToMaps`
+ * already decode either shape (a later frame without the `"` marker is treated
+ * as a snapshot), so nothing on the read path branches on this.
+ */
+export const FRAME_ENCODING: Record<BoardName, 'delta' | 'absolute'> = {
+  kilter: 'delta',
+  tension: 'delta',
+  moonboard: 'absolute',
+  decoy: 'delta',
+  touchstone: 'delta',
+  grasshopper: 'delta',
+  soill: 'delta',
+};
+
 export type BoardRenderDefaults = {
   /**
    * Multiplies the Rust/native renderer's base hold-outline stroke width

@@ -23,10 +23,13 @@ vi.mock('@boardsesh/board-constants/hold-states', async () => {
         3: { name: 'FINISH', color: '#FF00FF', displayColor: '#FF00FF' },
         4: { name: 'FOOT', color: '#FFA500', displayColor: '#FFA500' },
       },
+      // Keyed by MoonBoard's real saved-climb role codes so this mock stays
+      // consistent with the STATE_TO_PRIMARY_CODE mock below — the hook looks a
+      // painted state's code up in one table and then reads the other.
       moonboard: {
-        1: { name: 'STARTING', color: '#00FF00', displayColor: '#00FF00' },
-        2: { name: 'HAND', color: '#00FFFF', displayColor: '#00FFFF' },
-        3: { name: 'FINISH', color: '#FF00FF', displayColor: '#FF00FF' },
+        42: { name: 'STARTING', color: '#00FF00', displayColor: '#00FF00' },
+        43: { name: 'HAND', color: '#00FFFF', displayColor: '#00FFFF' },
+        44: { name: 'FINISH', color: '#FF00FF', displayColor: '#FF00FF' },
       },
     },
     STATE_TO_PRIMARY_CODE: {
@@ -376,6 +379,30 @@ describe('useCreateClimb', () => {
       expect(result.current.isValid).toBe(true);
     });
 
+    it('a blank frame is fine on a delta-encoded board — it writes as a hold frame', () => {
+      const { result } = renderHook(() => useCreateClimb('kilter'));
+
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.duplicateFrame();
+      });
+      act(() => {
+        result.current.setHoldState(100, 'OFF');
+      });
+      act(() => {
+        result.current.duplicateFrame();
+      });
+      act(() => {
+        result.current.setHoldState(200, 'FINISH');
+      });
+
+      expect(result.current.hasEmptyFrame).toBe(false);
+      expect(result.current.isValid).toBe(true);
+      expect(result.current.generateFramesString()).toBe('p100r42,"x100,"p200r44');
+    });
+
     it('are computed over the union of every frame, not just the active one', () => {
       const { result } = renderHook(() => useCreateClimb('kilter'));
 
@@ -543,6 +570,161 @@ describe('useCreateClimb', () => {
 
       const frames = result.current.generateFramesString();
       expect(frames).toBe('p100r1');
+    });
+  });
+
+  describe('moonboard board', () => {
+    it('writes every frame of a route as a full snapshot, never a delta', () => {
+      const { result } = renderHook(() => useCreateClimb('moonboard'));
+
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.duplicateFrame();
+      });
+      act(() => {
+        result.current.setHoldState(200, 'HAND');
+      });
+      act(() => {
+        result.current.duplicateFrame();
+      });
+      act(() => {
+        result.current.setHoldState(100, 'OFF');
+      });
+      act(() => {
+        result.current.setHoldState(300, 'FINISH');
+      });
+
+      const frames = result.current.generateFramesString();
+
+      // Frame 2 drops hold 100 by simply not listing it — no `x` token, and no
+      // `"` marker anywhere, because MoonBoard sends the whole frame each tick.
+      expect(frames).toBe('p100r42,p100r42p200r43,p200r43p300r44');
+      expect(frames).not.toContain('"');
+    });
+
+    it('a single-frame climb still encodes to the same flat string', () => {
+      const { result } = renderHook(() => useCreateClimb('moonboard'));
+
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.setHoldState(200, 'FINISH');
+      });
+
+      expect(result.current.generateFramesString()).toBe('p100r42p200r44');
+    });
+
+    it('is invalid until the route has both a start and a finish hold', () => {
+      const { result } = renderHook(() => useCreateClimb('moonboard'));
+
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.setHoldState(200, 'HAND');
+      });
+
+      // Kilter would already be valid here; MoonBoard wants a finish too.
+      expect(result.current.totalHolds).toBe(2);
+      expect(result.current.isValid).toBe(false);
+
+      act(() => {
+        result.current.setHoldState(300, 'FINISH');
+      });
+
+      expect(result.current.isValid).toBe(true);
+    });
+
+    it('counts a start and a finish spread across different frames as valid', () => {
+      const { result } = renderHook(() => useCreateClimb('moonboard'));
+
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.duplicateFrame();
+      });
+      act(() => {
+        result.current.setHoldState(100, 'OFF');
+      });
+      act(() => {
+        result.current.setHoldState(300, 'FINISH');
+      });
+
+      expect(result.current.frameCount).toBe(2);
+      expect(result.current.isValid).toBe(true);
+    });
+
+    it('is invalid while a middle frame is blank, and valid again once it is filled or deleted', () => {
+      const { result } = renderHook(() => useCreateClimb('moonboard'));
+
+      // Frame 0: start + finish (a valid single-frame climb).
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.setHoldState(300, 'FINISH');
+      });
+      act(() => {
+        result.current.duplicateFrame();
+      });
+      // Frame 1 erased down to nothing: MoonBoard writes absolute frames, so it
+      // would serialise as an empty segment and be dropped on the way back in.
+      act(() => {
+        result.current.setHoldState(100, 'OFF');
+      });
+      act(() => {
+        result.current.setHoldState(300, 'OFF');
+      });
+
+      expect(result.current.frameCount).toBe(2);
+      expect(result.current.hasEmptyFrame).toBe(true);
+      expect(result.current.isValid).toBe(false);
+
+      // Painting the blank frame fixes it...
+      act(() => {
+        result.current.setHoldState(200, 'HAND');
+      });
+      expect(result.current.hasEmptyFrame).toBe(false);
+      expect(result.current.isValid).toBe(true);
+
+      // ...and so does deleting it.
+      act(() => {
+        result.current.setHoldState(200, 'OFF');
+      });
+      expect(result.current.isValid).toBe(false);
+      act(() => {
+        result.current.deleteFrame();
+      });
+      expect(result.current.frameCount).toBe(1);
+      expect(result.current.hasEmptyFrame).toBe(false);
+      expect(result.current.isValid).toBe(true);
+    });
+
+    it('never paints a FOOT hold, on any frame of a route', () => {
+      const { result } = renderHook(() => useCreateClimb('moonboard'));
+
+      act(() => {
+        result.current.setHoldState(100, 'STARTING');
+      });
+      act(() => {
+        result.current.setHoldState(200, 'FOOT');
+      });
+      act(() => {
+        result.current.duplicateFrame();
+      });
+      act(() => {
+        result.current.setHoldState(300, 'FOOT');
+      });
+
+      expect(result.current.frameCount).toBe(2);
+      expect(result.current.totalHolds).toBe(1);
+      expect(result.current.litUpHoldsMap[200]).toBeUndefined();
+      expect(result.current.litUpHoldsMap[300]).toBeUndefined();
+      expect(result.current.generateFramesString()).toBe('p100r42,p100r42');
     });
   });
 

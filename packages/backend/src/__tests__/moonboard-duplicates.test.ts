@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
-  buildMoonBoardClimbHoldRows,
   buildMoonBoardDuplicateError,
   encodeMoonBoardHoldsToFrames,
   findMoonBoardDuplicateMatches,
+  normalizeMoonBoardHolds,
 } from '../graphql/resolvers/climbs/moonboard-duplicates';
 
 const { mockDb } = vi.hoisted(() => ({
@@ -91,35 +91,17 @@ describe('moonboard duplicate helpers', () => {
     });
   });
 
-  it('normalizes hold rows and duplicate error text', () => {
+  it('normalizes holds and duplicate error text', () => {
     expect(
-      buildMoonBoardClimbHoldRows('new-climb', {
+      normalizeMoonBoardHolds({
         start: ['A1'],
         hand: ['C3', 'B2'],
         finish: ['C3'],
       }),
     ).toEqual([
-      {
-        boardType: 'moonboard',
-        climbUuid: 'new-climb',
-        holdId: 1,
-        frameNumber: 0,
-        holdState: 'STARTING',
-      },
-      {
-        boardType: 'moonboard',
-        climbUuid: 'new-climb',
-        holdId: 13,
-        frameNumber: 0,
-        holdState: 'HAND',
-      },
-      {
-        boardType: 'moonboard',
-        climbUuid: 'new-climb',
-        holdId: 25,
-        frameNumber: 0,
-        holdState: 'FINISH',
-      },
+      { holdId: 1, holdState: 'STARTING' },
+      { holdId: 13, holdState: 'HAND' },
+      { holdId: 25, holdState: 'FINISH' },
     ]);
 
     expect(buildMoonBoardDuplicateError('Existing Climb')).toBe(

@@ -303,6 +303,122 @@ describe('climb mutations', () => {
     });
   });
 
+  it('stores a MoonBoard route with its own absolute frames string and real frame count', async () => {
+    mockDb.execute.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    mockDb.select
+      .mockReturnValueOnce(
+        createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
+      )
+      .mockReturnValueOnce(createMockChain([{ difficulty: 17 }]));
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.saveMoonBoardClimb(
+      {},
+      {
+        input: {
+          boardType: 'moonboard',
+          layoutId: 3,
+          name: 'MoonBoard Circuit',
+          description: '',
+          // The union of every frame — what the hold rows and the dedupe read.
+          holds: { start: ['A1'], hand: ['B2'], finish: ['C3'] },
+          // Three absolute snapshots, no delta markers.
+          frames: 'p1r42,p1r42p13r43,p13r43p25r44',
+          angle: 40,
+          isDraft: false,
+          userGrade: '6A+',
+          isBenchmark: false,
+        },
+      },
+      makeCtx(),
+    );
+
+    expect(insertCalls[0].values).toMatchObject({
+      frames: 'p1r42,p1r42p13r43,p13r43p25r44',
+      framesCount: 3,
+    });
+  });
+
+  it('writes MoonBoard hold rows from the frames string, matching what an edit would rewrite', async () => {
+    mockDb.execute.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    mockDb.select
+      .mockReturnValueOnce(
+        createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
+      )
+      .mockReturnValueOnce(createMockChain([{ difficulty: 17 }]));
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    // Hold 1 (A1) is the start in frames 0-1 and a hand in frame 2. The `holds`
+    // union the client also sends collapses it to HAND (last frame wins), so a
+    // seed built from `holds` would disagree with the rows updateClimb writes
+    // the next time this route is edited (first frame wins, via the hold-id PK).
+    await climbMutations.saveMoonBoardClimb(
+      {},
+      {
+        input: {
+          boardType: 'moonboard',
+          layoutId: 3,
+          name: 'MoonBoard Circuit',
+          description: '',
+          holds: { start: [], hand: ['A1', 'B2'], finish: ['C3'] },
+          frames: 'p1r42,p1r42p13r43,p1r43p25r44',
+          angle: 40,
+          isDraft: false,
+          userGrade: '6A+',
+          isBenchmark: false,
+        },
+      },
+      makeCtx(),
+    );
+
+    expect(insertCalls[1].values).toEqual([
+      expect.objectContaining({ holdId: 1, frameNumber: 0, holdState: 'STARTING' }),
+      expect.objectContaining({ holdId: 1, frameNumber: 1, holdState: 'STARTING' }),
+      expect.objectContaining({ holdId: 13, frameNumber: 1, holdState: 'HAND' }),
+      expect.objectContaining({ holdId: 1, frameNumber: 2, holdState: 'HAND' }),
+      expect.objectContaining({ holdId: 25, frameNumber: 2, holdState: 'FINISH' }),
+    ]);
+  });
+
+  it('encodes holds itself when a MoonBoard save sends no frames string', async () => {
+    mockDb.execute.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    mockDb.select
+      .mockReturnValueOnce(
+        createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
+      )
+      .mockReturnValueOnce(createMockChain([{ difficulty: 17 }]));
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.saveMoonBoardClimb(
+      {},
+      {
+        input: {
+          boardType: 'moonboard',
+          layoutId: 3,
+          name: 'MoonBoard Climb',
+          description: '',
+          holds: { start: ['A1'], hand: ['B2'], finish: ['C3'] },
+          angle: 40,
+          isDraft: false,
+          userGrade: '6A+',
+          isBenchmark: false,
+        },
+      },
+      makeCtx(),
+    );
+
+    expect(insertCalls[0].values).toMatchObject({
+      frames: 'p1r42p13r43p25r44',
+      framesCount: 1,
+    });
+  });
+
   it('rejects isBenchmark for a user without an admin/leader role', async () => {
     // requireAdminOrLeader's community_roles lookup returns nothing → the gate
     // throws before any climb/stats row is written.
@@ -1055,6 +1171,49 @@ describe('climb mutations', () => {
 
     expect(insertCalls).toHaveLength(0);
     expect(mockPublishSocialEvent).not.toHaveBeenCalled();
+  });
+
+  it('skips the MoonBoard duplicate gate for a multi-frame route', async () => {
+    // The gate matches on a hold *set*, so two routes visiting the same holds in
+    // a different order would read as identical. updateClimb already restricts
+    // its gate to framesCount === 1; saveMoonBoardClimb matches that.
+    mockDb.execute
+      .mockResolvedValueOnce([
+        {
+          uuid: 'existing-uuid',
+          name: 'Already There',
+          ascensionist_count: 12,
+          signature: '1:STARTING,13:HAND,25:FINISH',
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    mockDb.select
+      .mockReturnValueOnce(
+        createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
+      )
+      .mockReturnValueOnce(createMockChain([]));
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.saveMoonBoardClimb(
+      {},
+      {
+        input: {
+          boardType: 'moonboard',
+          layoutId: 3,
+          name: 'MoonBoard Circuit',
+          description: '',
+          holds: { start: ['A1'], hand: ['B2'], finish: ['C3'] },
+          frames: 'p1r42,p1r42p13r43,p13r43p25r44',
+          angle: 40,
+          isDraft: false,
+        },
+      },
+      makeCtx(),
+    );
+
+    expect(insertCalls[0].values).toMatchObject({ framesCount: 3 });
   });
 
   it('deletes an owned draft climb', async () => {

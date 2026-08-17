@@ -3,9 +3,9 @@ import { sql } from 'drizzle-orm';
 import type { MoonBoardHoldsInput } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import {
-  buildMoonBoardClimbHoldRows,
   encodeMoonBoardHoldsToFrames,
   findMoonBoardDuplicateMatches,
+  normalizeMoonBoardHolds,
 } from '../graphql/resolvers/climbs/moonboard-duplicates';
 
 // The catalog importer writes ONE angle-agnostic climb row per MoonBoard
@@ -36,10 +36,10 @@ async function insertClimb(args: { uuid: string; angle: number | null; name: str
 }
 
 async function insertHoldRows(uuid: string, holds: MoonBoardHoldsInput) {
-  for (const row of buildMoonBoardClimbHoldRows(uuid, holds)) {
+  for (const { holdId, holdState } of normalizeMoonBoardHolds(holds)) {
     await db.execute(sql`
       INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, frame_number, hold_state)
-      VALUES ('moonboard', ${row.climbUuid}, ${row.holdId}, ${row.frameNumber}, ${row.holdState})
+      VALUES ('moonboard', ${uuid}, ${holdId}, 0, ${holdState})
     `);
   }
 }

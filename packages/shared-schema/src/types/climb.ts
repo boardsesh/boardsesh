@@ -244,6 +244,12 @@ export type SaveMoonBoardClimbInput = {
   name: string;
   description?: string | null;
   holds: MoonBoardHoldsInput;
+  /**
+   * Multi-frame route/circuit: the comma-separated frames string, every frame an
+   * absolute snapshot. Omit for a single-frame climb — the server then encodes
+   * `holds` itself. `holds` always carries the union of every frame.
+   */
+  frames?: string | null;
   angle: number;
   isDraft?: boolean | null;
   userGrade?: string | null;

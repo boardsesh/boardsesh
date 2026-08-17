@@ -6131,6 +6131,14 @@ export type SaveMoonBoardClimbInput = {
   angle: Scalars['Int']['input'];
   boardType: Scalars['String']['input'];
   description?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * Multi-frame route/circuit: the comma-separated frames string, every frame an
+   * absolute snapshot with no delta markers — MoonBoard sends the whole frame each
+   * tick. Omit for a single-frame climb; the server then encodes holds itself.
+   * holds always carries the union of every frame, and is what the duplicate
+   * check and the hold rows read.
+   */
+  frames?: InputMaybe<Scalars['String']['input']>;
   holds: MoonBoardHoldsInput;
   isBenchmark?: InputMaybe<Scalars['Boolean']['input']>;
   isDraft?: InputMaybe<Scalars['Boolean']['input']>;

@@ -103,6 +103,14 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     name: String!
     description: String
     holds: MoonBoardHoldsInput!
+    """
+    Multi-frame route/circuit: the comma-separated frames string, every frame an
+    absolute snapshot with no delta markers — MoonBoard sends the whole frame each
+    tick. Omit for a single-frame climb; the server then encodes holds itself.
+    holds always carries the union of every frame, and is what the duplicate
+    check and the hold rows read.
+    """
+    frames: String
     angle: Int!
     isDraft: Boolean
     userGrade: String
