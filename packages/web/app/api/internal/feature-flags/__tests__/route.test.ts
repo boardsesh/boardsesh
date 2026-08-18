@@ -9,6 +9,13 @@ vi.mock('@/app/lib/feature-flags/server-distinct-id', () => ({ getPosthogDistinc
 const getServerFeatureFlagResolution = vi.hoisted(() => vi.fn());
 const probeServerFeatureFlag = vi.hoisted(() => vi.fn());
 const describeServerFeatureFlagConfig = vi.hoisted(() => vi.fn());
+
+// A stand-in registry rather than the real one, which is empty today: with an
+// empty array every assertion about the no-key path passes vacuously, including
+// one against a route that had stopped reading the registry at all.
+const REGISTERED_KEYS = vi.hoisted(() => ['registry-flag-a', 'registry-flag-b']);
+vi.mock('@/app/flags', () => ({ SERVER_FEATURE_FLAG_KEYS: REGISTERED_KEYS }));
+
 vi.mock('@/app/lib/feature-flags/server-feature-flag', () => ({
   ANONYMOUS_DISTINCT_ID: 'anonymous-web-visitor',
   describeServerFeatureFlagConfig,
@@ -16,7 +23,6 @@ vi.mock('@/app/lib/feature-flags/server-feature-flag', () => ({
   probeServerFeatureFlag,
 }));
 
-import { SERVER_FEATURE_FLAG_KEYS } from '@/app/flags';
 import { GET } from '../route';
 
 const ADMIN = { authenticated: true as const, userId: 'admin-1', isAdmin: true, boardScopedOnly: false };
@@ -61,9 +67,8 @@ describe('GET /api/internal/feature-flags', () => {
     expect(body.flags).toHaveLength(1);
     expect(body.flags[0]).toEqual({
       key: 'some-server-flag',
-      // `registered` is false because the registry is empty today, not because
-      // an ad-hoc key is second class — an ad-hoc `?key=` is answered with the
-      // same 2x2 either way.
+      // Not in the registry, which is not a lesser answer — an ad-hoc `?key=`
+      // gets the same 2x2 as a registered one.
       registered: false,
       cached: {
         public: { enabled: false, reason: 'override', detail: null },
@@ -115,12 +120,12 @@ describe('GET /api/internal/feature-flags', () => {
 
     // Derived from the registry rather than hardcoded: the behaviour under test
     // is "covers every registered server flag", which the next server flag must
-    // extend rather than break. The registry is empty today — `/gyms` was the
-    // last server-gated route and it now ships unconditionally — so this asks
-    // for nothing and, importantly, spends no PostHog calls doing it.
-    expect(body.flags.map((flag: { key: string }) => flag.key)).toEqual([...SERVER_FEATURE_FLAG_KEYS]);
+    // extend rather than break.
+    expect(body.flags.map((flag: { key: string }) => flag.key)).toEqual(REGISTERED_KEYS);
     expect(body.flags.every((flag: { registered: boolean }) => flag.registered)).toBe(true);
-    expect(probeServerFeatureFlag).toHaveBeenCalledTimes(SERVER_FEATURE_FLAG_KEYS.length);
+    // Two audiences per key, so the fan-out grows with the registry — the cost
+    // the docs warn about before it is long.
+    expect(probeServerFeatureFlag).toHaveBeenCalledTimes(REGISTERED_KEYS.length * 2);
     expect(body.config).toMatchObject({
       apiKeySource: 'NEXT_PUBLIC_POSTHOG_KEY',
       anonymousDistinctId: 'anonymous-web-visitor',

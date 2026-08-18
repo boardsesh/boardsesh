@@ -10,6 +10,9 @@ const notFound = vi.hoisted(() =>
 );
 vi.mock('next/navigation', () => ({ notFound }));
 
+const getPosthogDistinctId = vi.hoisted(() => vi.fn());
+vi.mock('@/app/lib/feature-flags/server-distinct-id', () => ({ getPosthogDistinctId }));
+
 const fetchDirectoryPage = vi.hoisted(() => vi.fn());
 const fetchFacetCounts = vi.hoisted(() => vi.fn());
 vi.mock('../directory-data', () => ({ fetchDirectoryPage, fetchFacetCounts }));
@@ -28,6 +31,7 @@ const props = { searchParams: Promise.resolve({}) };
 
 beforeEach(() => {
   notFound.mockClear();
+  getPosthogDistinctId.mockReset().mockResolvedValue('user-uuid-1');
   fetchDirectoryPage.mockReset().mockResolvedValue({ ok: true, gyms: [], totalCount: 0 });
   fetchFacetCounts
     .mockReset()
@@ -54,6 +58,17 @@ describe('reachability', () => {
       await expect(renderGymDirectory(facet, { searchParams: Promise.resolve({}) })).resolves.toBeTruthy();
     }
     expect(notFound).not.toHaveBeenCalled();
+  });
+
+  it('reads the session for the claim call-out, not for a gate', async () => {
+    // The only thing left that needs a person: `viewerState` on the claim CTA.
+    // A signed-out visitor gets the page either way — that is the whole point of
+    // dropping the flag — so the read must never decide reachability.
+    getPosthogDistinctId.mockResolvedValue(null);
+
+    await expect(renderGymDirectory('all', props)).resolves.toBeTruthy();
+    expect(notFound).not.toHaveBeenCalled();
+    expect(getPosthogDistinctId).toHaveBeenCalledTimes(1);
   });
 
   it('asks for one page of results per request, never a drain loop', async () => {
