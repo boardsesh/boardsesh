@@ -8,6 +8,7 @@ import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import type { GymClaimViewerState } from '@boardsesh/analytics';
+import { getPosthogDistinctId } from '@/app/lib/feature-flags/server-distinct-id';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import I18nProvider from '@/app/components/providers/i18n-provider';
@@ -90,7 +91,14 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
   }
 
   const { t, locale } = await getServerTranslation('gyms');
-  const [pageResult, facetCountsResult] = await Promise.all([fetchDirectoryPage(query), fetchFacetCounts()]);
+  // The distinct id rides along with the two fetches rather than gating them:
+  // it is only needed for the claim call-out's `viewerState`, and a session read
+  // in series would add a round trip in front of every render.
+  const [pageResult, facetCountsResult, distinctId] = await Promise.all([
+    fetchDirectoryPage(query),
+    fetchFacetCounts(),
+    getPosthogDistinctId(),
+  ]);
 
   // Either fetch failing means we cannot state the counts the body copy is
   // built around. Render the outage instead of a confident "0 gyms".
@@ -132,6 +140,8 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
   // hydration still reports the truth. Derived inline rather than through
   // `viewerStateFrom` so this server module doesn't pull the browser analytics
   // client into its import graph — same call the gym page makes off its cookie.
+  // `getPosthogDistinctId` is the session read: it returns `users.id` or null,
+  // which is both "is anyone signed in" and the person the funnel events land on.
   const viewerState: GymClaimViewerState = distinctId !== null ? 'signed-in' : 'signed-out';
   // The map's pill numbers, computed from the page the server actually
   // rendered — not from the catalog total, which would claim coverage for gyms

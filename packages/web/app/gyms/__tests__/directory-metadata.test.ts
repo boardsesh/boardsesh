@@ -10,6 +10,10 @@ vi.mock('@/app/lib/graphql/server-cached-client', () => ({
   createCachedGraphQLQuery: () => vi.fn(),
 }));
 
+// The route modules pull in the page renderer, which reaches next-auth (and
+// through it the db client) for the claim call-out's viewer state. Metadata
+// never needs a session, so stub the module rather than standing up a database.
+vi.mock('@/app/lib/feature-flags/server-distinct-id', () => ({ getPosthogDistinctId: vi.fn() }));
 vi.mock('@/app/lib/gym-funnel-analytics', () => ({
   trackGymFunnelEvent: vi.fn(),
   viewerStateFrom: (isAuthenticated: boolean) => (isAuthenticated ? 'signed-in' : 'signed-out'),

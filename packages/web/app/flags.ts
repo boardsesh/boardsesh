@@ -37,7 +37,7 @@ export const FEATURE_FLAG_KEYS = [BOARDSESH_GRADE_FLAG, GYM_KIOSK_FLAG, MOONBOAR
 // machinery stays because that is a different gate from the client keys above
 // (see docs/feature-flags.md). Deliberately kept out of FEATURE_FLAG_KEYS: the
 // browser provider would fetch a flag no client component reads.
-export const SERVER_FEATURE_FLAG_KEYS: readonly string[] = [];
+export const SERVER_FEATURE_FLAG_KEYS = [] as const;
 
 // Vercel's flags discovery endpoint expects an allFlags export.
 export const allFlags: Array<{ key: string }> = [...FEATURE_FLAG_KEYS, ...SERVER_FEATURE_FLAG_KEYS].map((key) => ({

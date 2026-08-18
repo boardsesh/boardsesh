@@ -82,8 +82,10 @@ When the surface launches for everyone, delete the gate rather than pinning the
 dashboard to 100%: a flag left at 100% is still a PostHog round trip in front of
 every render, and still fails closed when PostHog does.
 
-1. Drop the `getServerFeatureFlag` call and the `notFound()` it guarded, plus the
-   `getPosthogDistinctId` read feeding it.
+1. Drop the `getServerFeatureFlag` call and the `notFound()` it guarded. Check
+   what else used the `getPosthogDistinctId` read feeding it before deleting
+   that too — on the directory it also settled the claim call-out's viewer
+   state, so it stayed and only moved into the page's existing `Promise.all`.
 2. Remove the key from `packages/web/app/flags.ts` and `SERVER_FEATURE_FLAG_KEYS`.
 3. Rewrite the gate's tests as "this route renders" rather than deleting them —
    an unconditional surface still has to be reachable on every facet it claims.
