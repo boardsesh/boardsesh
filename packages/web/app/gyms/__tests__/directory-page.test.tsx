@@ -10,12 +10,6 @@ const notFound = vi.hoisted(() =>
 );
 vi.mock('next/navigation', () => ({ notFound }));
 
-const getServerFeatureFlag = vi.hoisted(() => vi.fn());
-vi.mock('@/app/lib/feature-flags/server-feature-flag', () => ({ getServerFeatureFlag }));
-
-const getPosthogDistinctId = vi.hoisted(() => vi.fn());
-vi.mock('@/app/lib/feature-flags/server-distinct-id', () => ({ getPosthogDistinctId }));
-
 const fetchDirectoryPage = vi.hoisted(() => vi.fn());
 const fetchFacetCounts = vi.hoisted(() => vi.fn());
 vi.mock('../directory-data', () => ({ fetchDirectoryPage, fetchFacetCounts }));
@@ -34,8 +28,6 @@ const props = { searchParams: Promise.resolve({}) };
 
 beforeEach(() => {
   notFound.mockClear();
-  getServerFeatureFlag.mockReset();
-  getPosthogDistinctId.mockReset().mockResolvedValue('user-uuid-1');
   fetchDirectoryPage.mockReset().mockResolvedValue({ ok: true, gyms: [], totalCount: 0 });
   fetchFacetCounts
     .mockReset()
@@ -47,61 +39,8 @@ beforeEach(() => {
   });
 });
 
-describe('feature-flag gate', () => {
-  it('404s the route when the flag is off, rather than only noindexing it', async () => {
-    getServerFeatureFlag.mockResolvedValue(false);
-
-    await expect(renderGymDirectory('all', props)).rejects.toThrow('NEXT_NOT_FOUND');
-    expect(notFound).toHaveBeenCalledTimes(1);
-    // The gate fires before any data is fetched.
-    expect(fetchDirectoryPage).not.toHaveBeenCalled();
-  });
-
-  it('gates every facet route, not just /gyms', async () => {
-    getServerFeatureFlag.mockResolvedValue(false);
-
-    for (const facet of ['kilter', 'moonboard', 'tension'] as const) {
-      await expect(renderGymDirectory(facet, { searchParams: Promise.resolve({}) })).rejects.toThrow('NEXT_NOT_FOUND');
-    }
-    expect(notFound).toHaveBeenCalledTimes(3);
-  });
-
-  it('asks PostHog about the authenticated person, not an anonymous id', async () => {
-    getServerFeatureFlag.mockResolvedValue(true);
-
-    await renderGymDirectory('kilter', props);
-
-    // Person-property targeting only resolves when the evaluation names a
-    // person PostHog holds those properties for. Anything else returns false
-    // for a perfectly configured flag with nothing erroring anywhere.
-    expect(getServerFeatureFlag).toHaveBeenCalledWith('gyms-directory', {
-      distinctId: 'user-uuid-1',
-      allowAnonymous: true,
-    });
-  });
-
-  it('asks for a signed-out visitor too, instead of short-circuiting them to a 404', async () => {
-    getPosthogDistinctId.mockResolvedValue(null);
-    getServerFeatureFlag.mockResolvedValue(true);
-
-    await renderGymDirectory('all', props);
-
-    // `allowAnonymous` is what makes #4382's flag flip able to launch this
-    // page. Without it the directory is signed-in-only however the PostHog
-    // rollout is configured, and every crawler gets a 404.
-    expect(getServerFeatureFlag).toHaveBeenCalledWith('gyms-directory', { distinctId: null, allowAnonymous: true });
-  });
-
-  it('still 404s a signed-out visitor when the flag says no', async () => {
-    getPosthogDistinctId.mockResolvedValue(null);
-    getServerFeatureFlag.mockResolvedValue(false);
-
-    await expect(renderGymDirectory('all', props)).rejects.toThrow('NEXT_NOT_FOUND');
-  });
-
-  it('renders once the flag is on', async () => {
-    getServerFeatureFlag.mockResolvedValue(true);
-
+describe('reachability', () => {
+  it('renders /gyms for anyone who asks, with no flag in the way', async () => {
     const element = await renderGymDirectory('all', props);
 
     expect(element).toBeTruthy();
@@ -110,8 +49,14 @@ describe('feature-flag gate', () => {
     expect(fetchFacetCounts).toHaveBeenCalledTimes(1);
   });
 
+  it('renders every facet route, not just /gyms', async () => {
+    for (const facet of ['kilter', 'moonboard', 'tension'] as const) {
+      await expect(renderGymDirectory(facet, { searchParams: Promise.resolve({}) })).resolves.toBeTruthy();
+    }
+    expect(notFound).not.toHaveBeenCalled();
+  });
+
   it('asks for one page of results per request, never a drain loop', async () => {
-    getServerFeatureFlag.mockResolvedValue(true);
     fetchDirectoryPage.mockResolvedValue({ ok: true, gyms: [], totalCount: 500 });
 
     await renderGymDirectory('all', { searchParams: Promise.resolve({ page: '3' }) });
@@ -122,10 +67,6 @@ describe('feature-flag gate', () => {
 });
 
 describe('out-of-range pages', () => {
-  beforeEach(() => {
-    getServerFeatureFlag.mockResolvedValue(true);
-  });
-
   it('404s a page past the real last page instead of serving an empty 200', async () => {
     // 30 gyms is two pages of 24. Page 3 is not a page.
     fetchDirectoryPage.mockResolvedValue({ ok: true, gyms: [], totalCount: 30 });
@@ -167,10 +108,6 @@ describe('out-of-range pages', () => {
 });
 
 describe('backend failure', () => {
-  beforeEach(() => {
-    getServerFeatureFlag.mockResolvedValue(true);
-  });
-
   it('renders the error state rather than a confident "0 gyms" when the list fails', async () => {
     fetchDirectoryPage.mockResolvedValue({ ok: false });
 

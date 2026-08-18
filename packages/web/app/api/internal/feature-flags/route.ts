@@ -13,7 +13,9 @@ import {
 
 /**
  * Admin-only diagnostics for the SERVER-side feature flags — the ones that gate
- * whether a route renders at all (`gyms-directory` today).
+ * whether a route renders at all. `SERVER_FEATURE_FLAG_KEYS` is empty since
+ * `/gyms` launched unconditionally, so today every question comes in through
+ * `?key=`; a registered flag is covered automatically once one exists again.
  *
  * It exists because "the dashboard says 100% and the page still 404s" has half a
  * dozen causes that look identical from outside: no project key in the runtime
@@ -47,7 +49,8 @@ export const dynamic = 'force-dynamic';
  * Guards the free-text `?key=`, which is forwarded to PostHog verbatim.
  *
  * Deliberately a shape check rather than a `SERVER_FEATURE_FLAG_KEYS`
- * membership check: an unregistered key is a legitimate question here, because
+ * membership check: an unregistered key is a legitimate question here — the
+ * only kind there is while the registry is empty — because
  * `flag-missing` is precisely the answer to "did the dashboard rename it?" or
  * "does this project know that key at all?", and a membership check could only
  * ever answer keys we already know are fine.

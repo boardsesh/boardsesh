@@ -4,7 +4,9 @@ Two kinds, and they fail in different ways.
 
 **Client flags** (`FEATURE_FLAG_KEYS` in `packages/web/app/flags.ts`) resolve in the browser via `FeatureFlagsProvider`. They hide a control. If PostHog is slow or unreachable the control stays hidden and nothing else happens.
 
-**Server flags** (`SERVER_FEATURE_FLAG_KEYS`) resolve during SSR via `getServerFeatureFlag` and decide whether a route renders at all. `gyms-directory` is the only one today: with it off, `/gyms` and its three facet routes are a plain `notFound()`. A client-resolved flag could not do this — by the time the browser knows the answer the HTML has already shipped.
+**Server flags** (`SERVER_FEATURE_FLAG_KEYS`) resolve during SSR via `getServerFeatureFlag` and decide whether a route renders at all — with one off, its route is a plain `notFound()`. A client-resolved flag could not do this: by the time the browser knows the answer the HTML has already shipped.
+
+The registry is **empty today**. `gyms-directory` was the only server flag; `/gyms` and its three facet routes now render for everyone and the flag is gone. The machinery below stays for the next route that needs it — and the diagnostics endpoint still answers any key you name.
 
 ## How a server flag resolves
 
@@ -40,7 +42,7 @@ Ask production. Signed in as a global admin, open:
 https://www.boardsesh.com/api/internal/feature-flags
 ```
 
-It is a normal session-cookie-authenticated GET, so the browser you are already signed in with is enough. `?key=<flag>` narrows it to one flag (any key, not only the registered ones — that is how you check whether the dashboard renamed it); with no key it covers every server flag.
+It is a normal session-cookie-authenticated GET, so the browser you are already signed in with is enough. `?key=<flag>` asks about one flag — any key, not only the registered ones, which is how you check whether the dashboard renamed it. With no key it covers every registered server flag, which while `SERVER_FEATURE_FLAG_KEYS` is empty means `?key=` is the only useful form.
 
 Per flag it reports a 2x2 — cached vs live, signed-out visitor vs you:
 
@@ -49,7 +51,7 @@ Per flag it reports a 2x2 — cached vs live, signed-out visitor vs you:
 - `live.public` — an uncached probe as a signed-out visitor (what a crawler gets)
 - `live.viewer` — an uncached probe as you
 
-Both halves matter because the cache is keyed per flag **and** per person, so your answer says nothing about theirs. The two `live` probes are uncached, so one request costs 2 PostHog calls per flag (each capped at 1.5s) — negligible for today's single server flag, worth a thought before `SERVER_FEATURE_FLAG_KEYS` grows long enough that an admin page load fans out dozens.
+Both halves matter because the cache is keyed per flag **and** per person, so your answer says nothing about theirs. The two `live` probes are uncached, so one request costs 2 PostHog calls per flag (each capped at 1.5s) — negligible at today's handful of keys, worth a thought before `SERVER_FEATURE_FLAG_KEYS` grows long enough that an admin page load fans out dozens.
 
 Read it like this:
 
@@ -61,7 +63,7 @@ Read it like this:
 
 ## The override lever
 
-`FEATURE_FLAG_OVERRIDES` is a comma-separated list, `gyms-directory` (forces ON) or `gyms-directory=false` (forces OFF).
+`FEATURE_FLAG_OVERRIDES` is a comma-separated list, `some-flag` (forces ON) or `some-flag=false` (forces OFF).
 
 Locally it is the only way in: the browser PostHog client refuses to initialise off a production hostname, so on localhost there is no person and nothing to evaluate against.
 
@@ -73,3 +75,19 @@ In production it is the kill switch and the "I need this reachable now" lever �
 2. Gate the route with `getServerFeatureFlag(KEY, { distinctId, allowAnonymous })`.
 3. Pass `allowAnonymous: true` for anything that must eventually be public. Without it a null distinct id short-circuits to off, so the surface stays signed-in-only however the dashboard is configured, and flipping the rollout to 100% changes nothing for visitors or crawlers.
 4. Ship `noindex` while the flag is on: a surface that 404s for half its visitors must not be in the index.
+
+## Retiring a server flag
+
+When the surface launches for everyone, delete the gate rather than pinning the
+dashboard to 100%: a flag left at 100% is still a PostHog round trip in front of
+every render, and still fails closed when PostHog does.
+
+1. Drop the `getServerFeatureFlag` call and the `notFound()` it guarded, plus the
+   `getPosthogDistinctId` read feeding it.
+2. Remove the key from `packages/web/app/flags.ts` and `SERVER_FEATURE_FLAG_KEYS`.
+3. Rewrite the gate's tests as "this route renders" rather than deleting them —
+   an unconditional surface still has to be reachable on every facet it claims.
+4. Archive the flag in the PostHog dashboard; nothing reads it any more.
+5. Revisit the `noindex` from step 4 above, but only on its own merits. The
+   directory kept its `noindex` past its launch because the reason for it was the
+   duplicate-gym queue, not the flag.

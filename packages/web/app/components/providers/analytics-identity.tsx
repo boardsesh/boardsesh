@@ -20,9 +20,9 @@ let hasReportedIdentityFailure = false;
  * `identify()` at all: `PartyProfileProvider` owned the identity effect and was
  * deleted with the climbing UI, so no PostHog person existed for
  * `session.user.id`. That is invisible until something reads a person — a
- * server-side flag keyed on a person property (the `/gyms` directory gate),
- * person-level segmentation, an anonymous → authenticated funnel — at which
- * point it silently resolves to nothing while every dashboard looks healthy.
+ * server-side flag keyed on a person property, person-level segmentation, an
+ * anonymous → authenticated funnel — at which point it silently resolves to
+ * nothing while every dashboard looks healthy.
  *
  * Mounted directly under `SessionProviderWrapper` in `app/layout.tsx`: it needs
  * `useSession()` and nothing else, it must run on every route (a person can be

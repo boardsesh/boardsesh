@@ -28,21 +28,16 @@ export const GYM_KIOSK_FLAG = 'gym-kiosk';
 // here — matching the documented "flags gate the UI entry point only" pattern.
 export const MOONBOARD_WIDE_ANGLES_FLAG = 'moonboard-wide-angles';
 
-// Gates reachability of the public `/gyms` directory and its three board-type
-// facet routes. Unlike every other key here it is resolved on the SERVER
-// (`getServerFeatureFlag`) and decides whether the route renders at all rather
-// than whether a control is visible: the directory only goes public once the
-// duplicate-gym cleanup gate clears (#4382), and a client-resolved flag lands
-// after the HTML has already shipped, so it would gate nothing.
-export const GYMS_DIRECTORY_FLAG = 'gyms-directory';
-
 // Keys read from PostHog by FeatureFlagsProvider. Each must have a matching
 // PostHog feature flag; values stay `undefined` (OFF) until that flag resolves.
 export const FEATURE_FLAG_KEYS = [BOARDSESH_GRADE_FLAG, GYM_KIOSK_FLAG, MOONBOARD_WIDE_ANGLES_FLAG] as const;
 
-// Keys resolved server-side. Deliberately not in FEATURE_FLAG_KEYS: the browser
-// provider would fetch a flag no client component reads.
-export const SERVER_FEATURE_FLAG_KEYS = [GYMS_DIRECTORY_FLAG] as const;
+// Keys resolved server-side by `getServerFeatureFlag`, which gate whether a
+// route renders at all. Empty since `/gyms` launched unconditionally; the
+// machinery stays because that is a different gate from the client keys above
+// (see docs/feature-flags.md). Deliberately kept out of FEATURE_FLAG_KEYS: the
+// browser provider would fetch a flag no client component reads.
+export const SERVER_FEATURE_FLAG_KEYS: readonly string[] = [];
 
 // Vercel's flags discovery endpoint expects an allFlags export.
 export const allFlags: Array<{ key: string }> = [...FEATURE_FLAG_KEYS, ...SERVER_FEATURE_FLAG_KEYS].map((key) => ({
