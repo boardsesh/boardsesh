@@ -18,7 +18,7 @@ vi.mock('next/cache', () => ({
 const captureMessage = vi.hoisted(() => vi.fn());
 vi.mock('@sentry/nextjs', () => ({ captureMessage }));
 
-const FLAG = 'gyms-directory';
+const FLAG = 'some-server-flag';
 
 type FeatureFlagModule = typeof import('../server-feature-flag');
 
@@ -58,21 +58,21 @@ afterEach(() => {
 describe('parseFeatureFlagOverrides', () => {
   it('reads the bare-key form as ON', async () => {
     const { parseFeatureFlagOverrides } = await loadModule();
-    expect(parseFeatureFlagOverrides('gyms-directory')).toEqual({ 'gyms-directory': true });
+    expect(parseFeatureFlagOverrides('some-server-flag')).toEqual({ 'some-server-flag': true });
   });
 
   it('reads the key=value form in both directions', async () => {
     const { parseFeatureFlagOverrides } = await loadModule();
-    expect(parseFeatureFlagOverrides('gyms-directory=true,gym-kiosk=false')).toEqual({
-      'gyms-directory': true,
+    expect(parseFeatureFlagOverrides('some-server-flag=true,gym-kiosk=false')).toEqual({
+      'some-server-flag': true,
       'gym-kiosk': false,
     });
   });
 
   it('ignores blank entries and unparseable values instead of throwing', async () => {
     const { parseFeatureFlagOverrides } = await loadModule();
-    expect(parseFeatureFlagOverrides(' , gyms-directory = ON ,broken=maybe,=true')).toEqual({
-      'gyms-directory': true,
+    expect(parseFeatureFlagOverrides(' , some-server-flag = ON ,broken=maybe,=true')).toEqual({
+      'some-server-flag': true,
     });
   });
 

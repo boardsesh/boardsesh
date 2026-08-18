@@ -53,15 +53,18 @@ describe('GET /api/internal/feature-flags', () => {
   });
 
   it('reports cached and live answers for both the visitor and the admin', async () => {
-    const response = await GET(request('https://www.boardsesh.com/api/internal/feature-flags?key=gyms-directory'));
+    const response = await GET(request('https://www.boardsesh.com/api/internal/feature-flags?key=some-server-flag'));
     expect(response.status).toBe(200);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
 
     const body = await response.json();
     expect(body.flags).toHaveLength(1);
     expect(body.flags[0]).toEqual({
-      key: 'gyms-directory',
-      registered: true,
+      key: 'some-server-flag',
+      // `registered` is false because the registry is empty today, not because
+      // an ad-hoc key is second class — an ad-hoc `?key=` is answered with the
+      // same 2x2 either way.
+      registered: false,
       cached: {
         public: { enabled: false, reason: 'override', detail: null },
         viewer: { enabled: false, reason: 'override', detail: null },
@@ -74,22 +77,22 @@ describe('GET /api/internal/feature-flags', () => {
   });
 
   it('reads the ANONYMOUS cache entry, which is the one that 404s a visitor', async () => {
-    await GET(request('https://www.boardsesh.com/api/internal/feature-flags?key=gyms-directory'));
+    await GET(request('https://www.boardsesh.com/api/internal/feature-flags?key=some-server-flag'));
 
     // The data cache is keyed per flag AND per person, so the admin's entry says
     // nothing about the entry a signed-out visitor's request used. Reading only
     // the admin's would make "cached off, live on" mean either staleness or the
     // admin being in a person-targeted rollout — the exact ambiguity this
     // endpoint exists to remove.
-    expect(getServerFeatureFlagResolution).toHaveBeenCalledWith('gyms-directory', {
+    expect(getServerFeatureFlagResolution).toHaveBeenCalledWith('some-server-flag', {
       distinctId: null,
       allowAnonymous: true,
     });
-    expect(getServerFeatureFlagResolution).toHaveBeenCalledWith('gyms-directory', {
+    expect(getServerFeatureFlagResolution).toHaveBeenCalledWith('some-server-flag', {
       distinctId: 'admin-1',
       allowAnonymous: true,
     });
-    expect(probeServerFeatureFlag).toHaveBeenCalledWith('gyms-directory', {
+    expect(probeServerFeatureFlag).toHaveBeenCalledWith('some-server-flag', {
       distinctId: null,
       allowAnonymous: true,
     });
@@ -106,15 +109,18 @@ describe('GET /api/internal/feature-flags', () => {
     expect(body.flags[0].live.public).toMatchObject({ reason: 'posthog-enabled' });
   });
 
-  it('covers every server flag when no key is given', async () => {
+  it('covers every registered server flag when no key is given', async () => {
     const response = await GET(request());
     const body = await response.json();
 
     // Derived from the registry rather than hardcoded: the behaviour under test
-    // is "covers every registered server flag", which a second flag must extend
-    // rather than break.
+    // is "covers every registered server flag", which the next server flag must
+    // extend rather than break. The registry is empty today — `/gyms` was the
+    // last server-gated route and it now ships unconditionally — so this asks
+    // for nothing and, importantly, spends no PostHog calls doing it.
     expect(body.flags.map((flag: { key: string }) => flag.key)).toEqual([...SERVER_FEATURE_FLAG_KEYS]);
     expect(body.flags.every((flag: { registered: boolean }) => flag.registered)).toBe(true);
+    expect(probeServerFeatureFlag).toHaveBeenCalledTimes(SERVER_FEATURE_FLAG_KEYS.length);
     expect(body.config).toMatchObject({
       apiKeySource: 'NEXT_PUBLIC_POSTHOG_KEY',
       anonymousDistinctId: 'anonymous-web-visitor',
@@ -125,7 +131,7 @@ describe('GET /api/internal/feature-flags', () => {
     describeServerFeatureFlagConfig.mockReturnValue({
       apiKeySource: 'POSTHOG_PROJECT_KEY',
       host: 'https://us.i.posthog.com',
-      overrides: { 'gyms-directory': true },
+      overrides: { 'some-server-flag': true },
     });
 
     const body = await (await GET(request())).text();
@@ -137,16 +143,20 @@ describe('GET /api/internal/feature-flags', () => {
     // but a null distinct id must never be probed as if it were a person.
     getPosthogDistinctId.mockResolvedValue(null);
 
-    const body = await (await GET(request())).json();
+    const body = await (
+      await GET(request('https://www.boardsesh.com/api/internal/feature-flags?key=some-server-flag'))
+    ).json();
     expect(body.flags[0].cached.viewer).toBeNull();
     expect(body.flags[0].live.viewer).toBeNull();
     expect(body.viewerDistinctId).toBeNull();
-    expect(probeServerFeatureFlag).toHaveBeenCalledTimes(SERVER_FEATURE_FLAG_KEYS.length);
-    expect(getServerFeatureFlagResolution).toHaveBeenCalledTimes(SERVER_FEATURE_FLAG_KEYS.length);
+    // One probe and one cached read for the public column, and nothing for the
+    // viewer one.
+    expect(probeServerFeatureFlag).toHaveBeenCalledTimes(1);
+    expect(getServerFeatureFlagResolution).toHaveBeenCalledTimes(1);
   });
 
   it('accepts a dot-separated key, which PostHog allows', async () => {
-    const response = await GET(request('https://www.boardsesh.com/api/internal/feature-flags?key=gyms.directory.v2'));
+    const response = await GET(request('https://www.boardsesh.com/api/internal/feature-flags?key=some.server.flag.v2'));
     expect(response.status).toBe(200);
   });
 

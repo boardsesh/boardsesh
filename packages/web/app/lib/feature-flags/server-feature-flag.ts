@@ -10,8 +10,9 @@ import * as Sentry from '@sentry/nextjs';
  * the browser knows the answer the server has already rendered and sent the
  * page. A surface that must 404 when its flag is off has to ask PostHog before
  * it renders, which is what this module does. It is deliberately generic — the
- * gym directory is the first caller, every later flag-gated SSR surface reuses
- * it.
+ * gym directory was the first caller and has since launched unconditionally,
+ * so nothing gates a route on it today; every later flag-gated SSR surface
+ * reuses it rather than reinventing the fail-closed path.
  *
  * Resolution order, and the reasoning behind each step:
  *
@@ -69,8 +70,8 @@ const FALSY_OVERRIDE_VALUES = new Set(['0', 'false', 'off', 'no']);
  * Parse `FEATURE_FLAG_OVERRIDES` into a key -> boolean map.
  *
  * Two forms, comma separated:
- *   `gyms-directory`        — bare key, forces ON
- *   `gyms-directory=false`  — explicit value, forces ON or OFF
+ *   `some-flag`        — bare key, forces ON
+ *   `some-flag=false`  — explicit value, forces ON or OFF
  *
  * An explicit OFF matters as much as an ON: it is how you check the 404 branch
  * without editing the PostHog dashboard. Entries that parse to neither are

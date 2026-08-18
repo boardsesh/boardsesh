@@ -8,9 +8,6 @@ import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import type { GymClaimViewerState } from '@boardsesh/analytics';
-import { GYMS_DIRECTORY_FLAG } from '@/app/flags';
-import { getServerFeatureFlag } from '@/app/lib/feature-flags/server-feature-flag';
-import { getPosthogDistinctId } from '@/app/lib/feature-flags/server-distinct-id';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import I18nProvider from '@/app/components/providers/i18n-provider';
@@ -61,8 +58,11 @@ export type DirectoryRouteProps = {
  * this issue exists to build. `/gyms?boardType=grasshopper` canonicalises to
  * `/gyms` for the mirror-image reason: the long tail gets no page of its own.
  *
- * Every route is `noindex, follow` while the directory is flag-gated. Launch
- * (#4382) removes the noindex; nothing else here has to change.
+ * Every route is `noindex, follow`. The routes themselves are public and
+ * unconditional, but the listings stay out of the index until the duplicate-gym
+ * queue is drained and the gyms sitemap shard can enumerate them (#4372,
+ * #4381) — indexed duplicates outlive their merges in Google's cache. Removing
+ * the noindex is a one-line change here once that lands.
  */
 export async function generateGymDirectoryMetadata(facet: DirectoryFacet): Promise<Metadata> {
   const { t, locale } = await getServerTranslation('gyms');
@@ -80,20 +80,6 @@ export async function generateGymDirectoryMetadata(facet: DirectoryFacet): Promi
  * `/gyms/tension`. Each route file is a four-line delegate to this.
  */
 export async function renderGymDirectory(facet: DirectoryFacet, props: DirectoryRouteProps) {
-  // Reachability gate, not a display gate: with the flag off the route is a
-  // plain 404. Shipping only the `noindex` would leave a publicly reachable
-  // directory of gyms the dedup pass hasn't finished merging yet.
-  const distinctId = await getPosthogDistinctId();
-  // `allowAnonymous` is what makes this launchable. Without it a null distinct
-  // id short-circuits to false, so the directory would be signed-in-only
-  // forever and #4382's "flip the flag" would change nothing for the public or
-  // for a crawler. The flag's condition has to move from person-targeting to a
-  // percentage rollout at flip time; a rollout needs *a* distinct id, not a
-  // *known* one.
-  if (!(await getServerFeatureFlag(GYMS_DIRECTORY_FLAG, { distinctId, allowAnonymous: true }))) {
-    notFound();
-  }
-
   const searchParams = await props.searchParams;
   const query = parseDirectoryQuery(facet, searchParams);
 
