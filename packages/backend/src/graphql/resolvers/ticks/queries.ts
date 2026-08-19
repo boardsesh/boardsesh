@@ -384,50 +384,59 @@ export const tickQueries = {
     // `effectiveDifficulty` that COALESCEs with the climb's consensus grade
     // for chart-bucket / aggregation consumers. NULL difficulty means "use
     // consensus" — see docs/ascents-and-attempts.md.
-    const results = await db
-      .select({
-        tick: dbSchema.boardseshTicks,
-        layoutId: dbSchema.boardClimbs.layoutId,
-        effectiveDifficulty: sql<
-          number | null
-        >`COALESCE(${dbSchema.boardseshTicks.difficulty}, ${consensusDifficultyExpr})`,
-        boardseshDifficulty: boardseshDifficultyExpr,
-        boardseshConfidence: boardseshConfidenceExpr,
-        effectiveQuality: effectiveQualityExpr,
-      })
-      .from(dbSchema.boardseshTicks)
-      // Resolve dedup-merged climbs to their canonical UUID before joining
-      // board_climbs / board_climb_stats — both live on the canonical. See the
-      // `ticks` resolver for the COALESCE-fallback rationale.
-      .leftJoin(
-        dbSchema.boardClimbAliases,
-        and(
-          eq(dbSchema.boardseshTicks.climbUuid, dbSchema.boardClimbAliases.aliasUuid),
-          eq(dbSchema.boardClimbAliases.boardType, boardType),
-        ),
-      )
-      .leftJoin(
-        dbSchema.boardClimbs,
-        and(
-          sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
-          eq(dbSchema.boardClimbs.boardType, boardType),
-        ),
-      )
-      .leftJoin(
-        dbSchema.boardClimbStats,
-        and(
-          sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbStats.climbUuid}`,
-          eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbStats.boardType),
-          eq(dbSchema.boardseshTicks.angle, dbSchema.boardClimbStats.angle),
-        ),
-      )
-      // Boardsesh grade at the tick's OWN angle (aliases resolved above). LEFT JOIN
-      // so an ungraded climb still returns; the grade fields come back NULL.
-      .leftJoin(dbSchema.boardClimbGrades, BOARDSESH_GRADE_TICK_JOIN)
-      // Synced-rating fallback for quality — see boardClimbRatingsJoinCondition.
-      .leftJoin(dbSchema.boardClimbRatings, boardClimbRatingsJoinCondition)
-      .where(and(...conditions))
-      .orderBy(desc(dbSchema.boardseshTicks.climbedAt));
+    // Unbounded (no LIMIT) over one user's whole logbook, fanning out through
+    // five LEFT JOINs — board_climbs and board_climb_stats are the big ones.
+    // Production picks a parallel hash join for that shape, and enough
+    // concurrent profile loads exhaust Postgres's DSM on Railway's small
+    // /dev/shm (Sentry BOARDSESH-AK, pgCode 53100 — the largest remaining
+    // source of it, #4528). Same guard the You-page fan-out below uses; a
+    // serial plan only costs latency, it can't change the rows.
+    const results = await withSerialPlan(db, (transactionDb) =>
+      transactionDb
+        .select({
+          tick: dbSchema.boardseshTicks,
+          layoutId: dbSchema.boardClimbs.layoutId,
+          effectiveDifficulty: sql<
+            number | null
+          >`COALESCE(${dbSchema.boardseshTicks.difficulty}, ${consensusDifficultyExpr})`,
+          boardseshDifficulty: boardseshDifficultyExpr,
+          boardseshConfidence: boardseshConfidenceExpr,
+          effectiveQuality: effectiveQualityExpr,
+        })
+        .from(dbSchema.boardseshTicks)
+        // Resolve dedup-merged climbs to their canonical UUID before joining
+        // board_climbs / board_climb_stats — both live on the canonical. See the
+        // `ticks` resolver for the COALESCE-fallback rationale.
+        .leftJoin(
+          dbSchema.boardClimbAliases,
+          and(
+            eq(dbSchema.boardseshTicks.climbUuid, dbSchema.boardClimbAliases.aliasUuid),
+            eq(dbSchema.boardClimbAliases.boardType, boardType),
+          ),
+        )
+        .leftJoin(
+          dbSchema.boardClimbs,
+          and(
+            sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
+            eq(dbSchema.boardClimbs.boardType, boardType),
+          ),
+        )
+        .leftJoin(
+          dbSchema.boardClimbStats,
+          and(
+            sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbStats.climbUuid}`,
+            eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbStats.boardType),
+            eq(dbSchema.boardseshTicks.angle, dbSchema.boardClimbStats.angle),
+          ),
+        )
+        // Boardsesh grade at the tick's OWN angle (aliases resolved above). LEFT JOIN
+        // so an ungraded climb still returns; the grade fields come back NULL.
+        .leftJoin(dbSchema.boardClimbGrades, BOARDSESH_GRADE_TICK_JOIN)
+        // Synced-rating fallback for quality — see boardClimbRatingsJoinCondition.
+        .leftJoin(dbSchema.boardClimbRatings, boardClimbRatingsJoinCondition)
+        .where(and(...conditions))
+        .orderBy(desc(dbSchema.boardseshTicks.climbedAt)),
+    );
 
     return results.map(
       ({ tick, layoutId, effectiveDifficulty, boardseshDifficulty, boardseshConfidence, effectiveQuality }) => ({
