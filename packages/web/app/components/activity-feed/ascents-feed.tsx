@@ -152,6 +152,9 @@ const GroupedFeedItem: React.FC<{
   isDeleting?: boolean;
 }> = ({ group, isOwnProfile = false, onDeleteTick, isDeleting = false }) => {
   const { t } = useTranslation('common');
+  // The card's chips and setter line live in the `feed` catalog, not `common` —
+  // reading them off the `common` binding rendered the raw keys.
+  const { t: tFeed } = useTranslation('feed');
   const latestItem = group.items.reduce((latest, item) =>
     tickTimeMs(item.climbedAt) > tickTimeMs(latest.climbedAt) ? item : latest,
   );
@@ -216,8 +219,8 @@ const GroupedFeedItem: React.FC<{
               <MuiTypography variant="body2" component="span" color="text.secondary" className={styles.boardType}>
                 {boardDisplay}
               </MuiTypography>
-              {group.isMirror && <Chip label={t('ascentsFeed.mirrored')} size="small" color="secondary" />}
-              {group.isBenchmark && <Chip label={t('ascentsFeed.benchmark')} size="small" />}
+              {group.isMirror && <Chip label={tFeed('ascentsFeed.mirrored')} size="small" color="secondary" />}
+              {group.isBenchmark && <Chip label={tFeed('ascentsFeed.benchmark')} size="small" />}
             </Box>
 
             {hasSuccess && group.bestQuality && (
@@ -226,7 +229,7 @@ const GroupedFeedItem: React.FC<{
 
             {group.setterUsername && (
               <MuiTypography variant="body2" component="span" color="text.secondary" className={styles.setter}>
-                {t('ascentsFeed.setBy', { name: group.setterUsername })}
+                {tFeed('ascentsFeed.setBy', { name: group.setterUsername })}
               </MuiTypography>
             )}
 

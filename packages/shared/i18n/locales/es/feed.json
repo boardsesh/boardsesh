@@ -31,6 +31,7 @@
   },
   "ascentsFeed": {
     "mirrored": "Espejo",
+    "setBy": "Creado por {{name}}",
     "benchmark": "Referencia",
     "empty": "Aún no hay ascensos"
   },

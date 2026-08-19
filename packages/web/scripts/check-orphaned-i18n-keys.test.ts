@@ -1,11 +1,43 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeFile, computeOrphans } from './check-orphaned-i18n-keys';
+import {
+  analyzeFile,
+  computeForeignMobileNamespaces,
+  computeMissingKeys,
+  computeOrphans,
+  formatReport,
+} from './check-orphaned-i18n-keys';
 
 const fakePath = '/tmp/fake-component.tsx';
 const fakeTsPath = '/tmp/fake-helper.ts';
 
 function analyze(source: string, path: string = fakePath) {
   return analyzeFile(path, source);
+}
+
+const mobilePath = '/repo/packages/mobile/src/components/Fake.tsx';
+const webPath = '/repo/packages/web/app/components/Fake.tsx';
+
+function toCatalogMap(catalog: Record<string, string[]>) {
+  const catalogMap = new Map<string, Set<string>>();
+  for (const [namespace, keys] of Object.entries(catalog)) {
+    catalogMap.set(namespace, new Set(keys));
+  }
+  return catalogMap;
+}
+
+function missingKeys(catalog: Record<string, string[]>, analyses: ReturnType<typeof analyzeFile>[]) {
+  return computeMissingKeys(
+    toCatalogMap(catalog),
+    analyses.flatMap((analysis) => analysis.references),
+  );
+}
+
+function foreignMobileNamespaces(analysesByFile: Record<string, ReturnType<typeof analyzeFile>>) {
+  const namespacesByFile = new Map<string, ReadonlySet<string>>();
+  for (const [file, analysis] of Object.entries(analysesByFile)) {
+    namespacesByFile.set(file, analysis.referencedNamespaces);
+  }
+  return computeForeignMobileNamespaces(namespacesByFile);
 }
 
 function namespaceOrphans(
@@ -392,5 +424,256 @@ describe('*I18nKey property convention', () => {
       }
     `);
     expect(analysis.unanalyzable).toHaveLength(0);
+  });
+});
+
+describe('missing keys (the inverse direction)', () => {
+  it('reports the #4416 shape: a session-bound t() reading a key no catalog defines', () => {
+    const analysis = analyze(
+      `
+      import { useTranslation } from 'react-i18next';
+      export default function SwipeBoardCarousel() {
+        const { t } = useTranslation('session');
+        return <button aria-label={t('playView.resetZoom')}>{t('playView.resetZoom')}</button>;
+      }
+    `,
+      mobilePath,
+    );
+    const missing = missingKeys({ session: ['playView.play', 'playView.pause'], common: ['board.resetZoom'] }, [
+      analysis,
+    ]);
+    expect(missing).toHaveLength(2);
+    expect(missing[0].key).toBe('playView.resetZoom');
+    expect(missing[0].namespaces).toEqual(['session']);
+    expect(missing[0].file).toBe(mobilePath);
+    expect(missing[0].line).toBe(5);
+  });
+
+  it('reports nothing once the call points at the key that exists', () => {
+    const analysis = analyze(
+      `
+      import { useTranslation } from 'react-i18next';
+      export default function SwipeBoardCarousel() {
+        const { t } = useTranslation('session');
+        const { t: tCommon } = useTranslation('common');
+        return <button aria-label={tCommon('board.resetZoom')}>{t('playView.play')}</button>;
+      }
+    `,
+      mobilePath,
+    );
+    expect(missingKeys({ session: ['playView.play'], common: ['board.resetZoom'] }, [analysis])).toEqual([]);
+  });
+
+  it('counts a base key as defined when only its plural variants are in the catalog', () => {
+    const analysis = analyze(`
+      import { useTranslation } from 'react-i18next';
+      export default function Foo({ count }: { count: number }) {
+        const { t } = useTranslation('common');
+        return <span>{t('ascents.sent', { count })}</span>;
+      }
+    `);
+    expect(missingKeys({ common: ['ascents.sent_one', 'ascents.sent_other'] }, [analysis])).toEqual([]);
+  });
+
+  it('counts ordinal plural variants too', () => {
+    const analysis = analyze(`
+      import { useTranslation } from 'react-i18next';
+      export default function Foo({ count }: { count: number }) {
+        const { t } = useTranslation('common');
+        return <span>{t('place', { count, ordinal: true })}</span>;
+      }
+    `);
+    expect(missingKeys({ common: ['place_ordinal_one', 'place_ordinal_other'] }, [analysis])).toEqual([]);
+  });
+
+  it('is lenient about a t() it could not bind: defined in any namespace counts', () => {
+    const analysis = analyze(
+      `
+      import type { TFunction } from 'i18next';
+      export function format(t: TFunction) {
+        return t('ascents.statusFlash');
+      }
+    `,
+      fakeTsPath,
+    );
+    expect(missingKeys({ common: ['unrelated'], feed: ['ascents.statusFlash'] }, [analysis])).toEqual([]);
+  });
+
+  it('still reports an unbindable t() whose key exists in no namespace at all', () => {
+    const analysis = analyze(
+      `
+      import type { TFunction } from 'i18next';
+      export function format(t: TFunction) {
+        return t('ascents.statusFlash');
+      }
+    `,
+      fakeTsPath,
+    );
+    const missing = missingKeys({ common: ['unrelated'], feed: ['other'] }, [analysis]);
+    expect(missing).toHaveLength(1);
+    expect(missing[0].key).toBe('ascents.statusFlash');
+  });
+
+  it('skips template-literal keys entirely — a glob cannot be verified in this direction', () => {
+    const analysis = analyze(`
+      import { useTranslation } from 'react-i18next';
+      export default function Foo({ kind }: { kind: string }) {
+        const { t } = useTranslation('admin');
+        return <span>{t(\`settings.rows.\${kind}.label\`)}</span>;
+      }
+    `);
+    expect(missingKeys({ admin: ['unrelated'] }, [analysis])).toEqual([]);
+  });
+
+  it('accepts a key defined in any one of several bound namespaces', () => {
+    const analysis = analyze(`
+      import { useTranslation } from 'react-i18next';
+      export default function Foo() {
+        const { t } = useTranslation(['climbs', 'session']);
+        return <span>{t('shared.label')}</span>;
+      }
+    `);
+    expect(missingKeys({ climbs: ['other'], session: ['shared.label'] }, [analysis])).toEqual([]);
+  });
+
+  it('resolves an explicit ns:key prefix against that namespace', () => {
+    const analysis = analyze(`
+      import { useTranslation } from 'react-i18next';
+      export default function Foo() {
+        const { t } = useTranslation('common');
+        return <span>{t('feed:ascentsFeed.setBy', { name: 'sam' })}</span>;
+      }
+    `);
+    expect(missingKeys({ common: [], feed: ['ascentsFeed.setBy'] }, [analysis])).toEqual([]);
+    const missing = missingKeys({ common: ['ascentsFeed.setBy'], feed: [] }, [analysis]);
+    expect(missing).toHaveLength(1);
+    expect(missing[0].namespaces).toEqual(['feed']);
+  });
+
+  it('does not flag a <Trans> whose i18nKey exists, and does flag one whose key does not', () => {
+    const good = analyze(`
+      import { useTranslation, Trans } from 'react-i18next';
+      export default function Foo() {
+        const { t } = useTranslation('settings');
+        return <Trans i18nKey="account.delete.body" t={t} components={{ strong: <strong /> }} />;
+      }
+    `);
+    expect(missingKeys({ settings: ['account.delete.body'] }, [good])).toEqual([]);
+
+    const bad = analyze(`
+      import { useTranslation, Trans } from 'react-i18next';
+      export default function Foo() {
+        const { t } = useTranslation('settings');
+        return <Trans i18nKey="account.delete.missing" t={t} />;
+      }
+    `);
+    const missing = missingKeys({ settings: ['account.delete.body'] }, [bad]);
+    expect(missing).toHaveLength(1);
+    expect(missing[0].key).toBe('account.delete.missing');
+  });
+
+  it('does not flag the *I18nKey property convention when the key exists somewhere', () => {
+    const analysis = analyze(
+      `
+      export const PRESETS = [{ slug: 'a', titleI18nKey: 'library.smart.fiveStars.title' }];
+    `,
+      fakeTsPath,
+    );
+    expect(missingKeys({ playlists: ['library.smart.fiveStars.title'], common: [] }, [analysis])).toEqual([]);
+  });
+
+  it('reports each distinct call site, not one entry per duplicate key', () => {
+    const analysis = analyze(`
+      import { useTranslation } from 'react-i18next';
+      export default function Foo() {
+        const { t } = useTranslation('common');
+        return <span>{t('nope.one')}{t('nope.one')}</span>;
+      }
+    `);
+    const missing = missingKeys({ common: ['yes'] }, [analysis]);
+    expect(missing).toHaveLength(2);
+    expect(missing.map((entry) => entry.column)).toEqual([...new Set(missing.map((entry) => entry.column))]);
+  });
+});
+
+describe('mobile namespace guard', () => {
+  it('flags a file under packages/mobile reading a namespace Metro never bundles', () => {
+    const analysis = analyze(
+      `
+      import { useTranslation } from 'react-i18next';
+      export default function Foo() {
+        const { t } = useTranslation('marketing');
+        return <span>{t('home.hero.title')}</span>;
+      }
+    `,
+      mobilePath,
+    );
+    const foreign = foreignMobileNamespaces({ [mobilePath]: analysis });
+    expect(foreign).toEqual([{ namespace: 'marketing', file: mobilePath }]);
+  });
+
+  it('leaves the same namespace alone in a web file', () => {
+    const analysis = analyze(
+      `
+      import { useTranslation } from 'react-i18next';
+      export default function Foo() {
+        const { t } = useTranslation('marketing');
+        return <span>{t('home.hero.title')}</span>;
+      }
+    `,
+      webPath,
+    );
+    expect(foreignMobileNamespaces({ [webPath]: analysis })).toEqual([]);
+  });
+
+  it('accepts the namespaces that are in the mobile bundle', () => {
+    const analysis = analyze(
+      `
+      import { useTranslation } from 'react-i18next';
+      export default function Foo() {
+        const { t } = useTranslation('common');
+        const { t: tSession } = useTranslation('session');
+        return <span>{t('board.resetZoom')}{tSession('playView.play')}</span>;
+      }
+    `,
+      mobilePath,
+    );
+    expect(foreignMobileNamespaces({ [mobilePath]: analysis })).toEqual([]);
+  });
+});
+
+describe('formatReport exit codes', () => {
+  const emptyReport = {
+    totalFiles: 1,
+    totalKeys: 1,
+    totalReferences: 1,
+    orphans: [],
+    missing: [],
+    foreignMobileNamespaces: [],
+    unanalyzable: [],
+  };
+
+  it('exits 0 and says both directions passed when everything resolves', () => {
+    const formatted = formatReport(emptyReport);
+    expect(formatted.exitCode).toBe(0);
+    expect(formatted.lines.join('\n')).toContain('static key reference(s) resolve to a catalog entry');
+  });
+
+  it('exits 1 when a referenced key is missing from every catalog', () => {
+    const formatted = formatReport({
+      ...emptyReport,
+      missing: [{ namespaces: ['session'], key: 'playView.resetZoom', file: mobilePath, line: 5, column: 7 }],
+    });
+    expect(formatted.exitCode).toBe(1);
+    expect(formatted.lines.join('\n')).toContain('session -> playView.resetZoom');
+  });
+
+  it('exits 1 when a mobile file reads an unbundled namespace', () => {
+    const formatted = formatReport({
+      ...emptyReport,
+      foreignMobileNamespaces: [{ namespace: 'marketing', file: mobilePath }],
+    });
+    expect(formatted.exitCode).toBe(1);
+    expect(formatted.lines.join('\n')).toContain('not bundled on mobile');
   });
 });

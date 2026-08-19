@@ -95,6 +95,10 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   swipeIsAnimating,
 }: SwipeBoardCarouselProps) {
   const { t } = useTranslation('session');
+  // The reset-zoom pill reuses the already-translated `common:board.resetZoom`
+  // that the other two zoomable boards render (InteractiveFilterBoard,
+  // InteractiveCreateBoard) instead of a `session`-local duplicate.
+  const { t: tCommon } = useTranslation('common');
   const { width: screenWidth } = useWindowDimensions();
   // Measured box the board is laid out into. The board is sized to *fit* this
   // box (contain) so the play drawer's full-screen first view can keep the
@@ -351,11 +355,11 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
             onPress={resetZoom}
             style={styles.resetZoomButton}
             accessibilityRole="button"
-            accessibilityLabel={t('playView.resetZoom')}
+            accessibilityLabel={tCommon('board.resetZoom')}
             hitSlop={8}
           >
             <Icon name="crop.free" size={14} color={overlays.onScrim} />
-            <Text style={styles.resetZoomLabel}>{t('playView.resetZoom')}</Text>
+            <Text style={styles.resetZoomLabel}>{tCommon('board.resetZoom')}</Text>
           </Pressable>
         </Animated.View>
       </View>

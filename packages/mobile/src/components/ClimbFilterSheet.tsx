@@ -790,7 +790,7 @@ export function ClimbFilterSheet({
                     onPress={handleClearNameField}
                     hitSlop={8}
                     accessibilityRole="button"
-                    accessibilityLabel={tCommon('clear')}
+                    accessibilityLabel={tCommon('actions.clear')}
                   >
                     <Icon name="close" size={14} color={systemColors.tertiaryLabel} />
                   </Pressable>
