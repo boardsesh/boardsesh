@@ -13,9 +13,11 @@ import { useTranslation } from 'react-i18next';
 import { onlineManager } from '@tanstack/react-query';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { ActivityIndicator } from './ActivityIndicator';
+import { AnonymousClimbView } from './AnonymousClimbView';
 import { Button } from './Button';
 import { Icon } from './Icon';
 import { Text } from './Text';
+import { useAnonymousClimbViewEnabled } from '../providers/feature-flags-provider';
 import { useTheme } from '../providers/theme-provider';
 import { track } from '../lib/analytics';
 import { buildLoginHrefWithReturn } from '../lib/routing/anonymous-auth-gate';
@@ -25,8 +27,16 @@ import { useBoardRouteTarget, type BoardRouteMode, type BoardRouteStatus } from 
 /** Where `app/+not-found.tsx` sends people; the dead end below has to match it. */
 const HOME_TAB = '/(tabs)/home' as const;
 
-/** How a board-route open ended, in the wire spelling. */
-type HandoffEventStatus = 'resolved' | 'not_found' | 'auth_required';
+/**
+ * How a board-route open ended, in the wire spelling.
+ *
+ * `anonymous` is a signed-out reader who got the climb rather than the login
+ * wall. A new VALUE rather than a new event on purpose: the funnel is
+ * `Climb Handoff Clicked` ÷ `Board Route Handoff`, both stamped
+ * `environment: production-web`, and a second event name would have split it.
+ * Anonymous-vs-signed-in arrivals are a breakdown of the same ratio.
+ */
+type HandoffEventStatus = 'resolved' | 'not_found' | 'auth_required' | 'anonymous';
 
 /**
  * The terminal statuses the screen SITS on, in the wire spelling.
@@ -38,6 +48,7 @@ type HandoffEventStatus = 'resolved' | 'not_found' | 'auth_required';
 const RENDERED_EVENT_STATUS = {
   'not-found': 'not_found',
   'auth-required': 'auth_required',
+  'anonymous-climb': 'anonymous',
 } as const satisfies Partial<Record<BoardRouteStatus, HandoffEventStatus>>;
 
 /** The URL a report is about, so two different climbs each get their own event. */
@@ -130,7 +141,11 @@ export function BoardRouteRedirect({ status }: { status: BoardRouteStatus }) {
 export function BoardRouteHandoff({ target, mode }: { target: BoardRouteTarget | null; mode?: BoardRouteMode }) {
   const report = useBoardRouteHandoffReporter(target, mode);
   const onHandedOff = useCallback(() => report('resolved'), [report]);
-  const status = useBoardRouteTarget(target, { mode, onHandedOff });
+  // Read unconditionally, applied only where the gate already relaxes: on native
+  // `RELAXES_ANONYMOUS_ROUTES` is false, so the flag cannot reach a decision
+  // there however it resolves.
+  const anonymousClimbEnabled = useAnonymousClimbViewEnabled();
+  const { status, climb, boardConfig } = useBoardRouteTarget(target, { mode, onHandedOff, anonymousClimbEnabled });
 
   const renderedStatus = RENDERED_EVENT_STATUS[status as keyof typeof RENDERED_EVENT_STATUS];
   const parsedUrl = target !== null;
@@ -145,6 +160,13 @@ export function BoardRouteHandoff({ target, mode }: { target: BoardRouteTarget |
     if (renderedStatus === 'not_found' && parsedUrl && !onlineManager.isOnline()) return;
     report(renderedStatus);
   }, [parsedUrl, renderedStatus, report]);
+
+  // The one status this component does not redirect for: the climb is drawn
+  // right here, on the URL the visitor arrived at, because every route the
+  // hand-off would navigate to is behind the login gate.
+  if (status === 'anonymous-climb' && climb && boardConfig) {
+    return <AnonymousClimbView climb={climb} boardConfig={boardConfig} />;
+  }
 
   return <BoardRouteRedirect status={status} />;
 }

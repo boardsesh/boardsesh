@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { isReadOnlyAnonymousPath, isSafeReturnPath, MAX_RETURN_HREF_LENGTH } from '../read-only-routes';
-import { CLIMB_SEGMENT, GATED_PATHS, READ_ONLY_PATHS, TUPLE } from './read-only-route-corpus';
+import { CLIMB_SEGMENT, CLIMB_UUID, GATED_PATHS, READ_ONLY_PATHS, TUPLE } from './read-only-route-corpus';
 
 describe('isReadOnlyAnonymousPath', () => {
   it.each(READ_ONLY_PATHS)('relaxes %s', (path) => {
@@ -23,6 +23,21 @@ describe('isReadOnlyAnonymousPath', () => {
 
   it('tolerates a trailing slash', () => {
     expect(isReadOnlyAnonymousPath('/b/the-gym/40/list/')).toBe(true);
+  });
+
+  // Named, literal, corpus-independent: the player route stays gated.
+  //
+  // The anonymous climb renders IN PLACE on its `/…/{angle}/view/{segment}` URL
+  // precisely so `/play` never has to open anonymously. The cheap way to "fix"
+  // a future bug in that flow is to move `/play` from GATED_PATHS into
+  // READ_ONLY_PATHS — and every corpus-driven suite here, in both fork suites
+  // and in both AuthProvider gate suites, is an `it.each` over whichever array
+  // now holds it, so all of them would stay green while the whole player route
+  // became reachable from a typed URL. Only a named literal goes red.
+  it('never relaxes the player route or the legacy climb redirector', () => {
+    expect(isReadOnlyAnonymousPath('/play')).toBe(false);
+    expect(isReadOnlyAnonymousPath(`/climbs/${CLIMB_UUID}`)).toBe(false);
+    expect(isReadOnlyAnonymousPath('/(tabs)/climbs')).toBe(false);
   });
 
   // The locale has to be a whole segment — `stripLocalePrefix`'s rule. Chopping

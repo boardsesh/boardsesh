@@ -152,16 +152,34 @@ function Harness({
   target,
   mode,
   onHandedOff,
+  anonymousClimbEnabled,
 }: {
   target: BoardRouteTarget | null;
   mode?: 'deep-link' | 'in-app';
   onHandedOff?: () => void;
+  anonymousClimbEnabled?: boolean;
 }) {
-  return createElement('span', { 'data-status': useBoardRouteTarget(target, { mode, onHandedOff }) });
+  const { status, climb, boardConfig } = useBoardRouteTarget(target, { mode, onHandedOff, anonymousClimbEnabled });
+  return createElement('span', {
+    'data-status': status,
+    'data-climb': climb?.uuid ?? '',
+    'data-board-config': boardConfig ? JSON.stringify(boardConfig) : '',
+  });
 }
 
 function statusOf(container: HTMLElement): string | null {
   return container.querySelector('span')?.getAttribute('data-status') ?? null;
+}
+
+/** The climb the hook hands the route to draw — only ever set anonymously. */
+function climbOf(container: HTMLElement): string | null {
+  return container.querySelector('span')?.getAttribute('data-climb') ?? null;
+}
+
+/** The board config it draws against, parsed back from the harness. */
+function boardConfigOf(container: HTMLElement): unknown {
+  const serialised = container.querySelector('span')?.getAttribute('data-board-config');
+  return serialised ? JSON.parse(serialised) : null;
 }
 
 beforeEach(() => {
@@ -786,11 +804,14 @@ describe('useBoardRouteTarget signed-out on web', () => {
     expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
   });
 
-  // The tuple form is the half that carries its whole board config in the URL,
-  // so nothing has to resolve before the climb query could arm itself. Leaving
-  // it armed would have a signed-out visitor pulling a climb from the server on
-  // the way to a login redirect.
-  it('asks the server for nothing on a tuple climb URL either', async () => {
+  // A tuple climb URL is the one shape that renders with no account: it carries
+  // the whole board config, so the climb query can arm without resolving
+  // anything, and the board it would have adopted is not a render input.
+  //
+  // The positive assertions are the point. `status !== 'auth-required'` would
+  // stay green for a silently blank render, which is the failure this branch is
+  // most likely to produce.
+  it('renders a tuple climb URL in place for a signed-out reader, adopting nothing', async () => {
     gateState.relaxesRoutes = true;
     authState.current = { isAuthenticated: false, isLoading: false };
     climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
@@ -801,10 +822,95 @@ describe('useBoardRouteTarget signed-out on web', () => {
       }),
     );
 
+    await waitFor(() => expect(statusOf(container)).toBe('anonymous-climb'));
+    // The climb the route hands the drawer, and the config it draws it against —
+    // both straight off the URL.
+    expect(climbOf(container)).toBe(CLIMB_UUID);
+    expect(boardConfigOf(container)).toEqual(KILTER_BOARD);
+    expect(climbQueryVariables.current).toContainEqual({ ...KILTER_BOARD, climbUuid: CLIMB_UUID });
+    // Nothing was minted, walked, stored or navigated on their behalf.
+    expect(resolveBoardForSession).not.toHaveBeenCalled();
+    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+    expect(createBoardMutateAsync).not.toHaveBeenCalled();
+    expect(setActiveBoard).not.toHaveBeenCalled();
+    // `/climbs` and `/play` are both behind the login gate, and AuthProvider
+    // re-reads the location on every navigation — so a hand-off here IS the
+    // bounce back to login.
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  // THE FLEET-SAFETY ORACLE. Every merge to main touching packages/mobile
+  // auto-publishes a production OTA, and a JS-only diff keeps the fingerprint,
+  // so this lands on every installed binary within hours. One constant stands
+  // between the store fleet and an anonymous route tree.
+  //
+  // Phrased positively on purpose: the pre-existing `not.toBe('auth-required')`
+  // assertion stays GREEN under exactly the mutation it looks like it catches,
+  // because the anonymous branch is not 'auth-required' either.
+  it('still adopts and hands off on the native fork, byte for byte', async () => {
+    gateState.relaxesRoutes = false;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(RESOLVED_BOARD));
+    await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
+    expect(statusOf(container)).not.toBe('anonymous-climb');
+  });
+
+  // The kill switch. Flipping it in PostHog restores the login wall without a
+  // new binary or a new OTA.
+  it('falls back to the login wall when the anonymous view is killed', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+        anonymousClimbEnabled: false,
+      }),
+    );
+
     await waitFor(() => expect(statusOf(container)).toBe('auth-required'));
     expect(climbQueryVariables.current.every((variables) => variables === null)).toBe(true);
-    expect(resolveBoardForSession).not.toHaveBeenCalled();
     expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+  });
+
+  // A climb URL relaxes; a list URL does not. The list surface needs a board,
+  // and minting one is `requireAuthenticated`.
+  it('still hands a list URL to login', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+
+    const { container } = render(
+      createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('auth-required'));
+    expect(resolveBoardForSession).not.toHaveBeenCalled();
+  });
+
+  // A dead climb uuid is a dead link for a signed-out reader too — the anonymous
+  // branch must not paper over it with a permanent spinner.
+  it('reports a missing climb as not-found rather than spinning anonymously', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: undefined, isError: false, isSuccess: true };
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
   });
 
   // The same URL signed IN still loads its climb — the gate above must not be a
