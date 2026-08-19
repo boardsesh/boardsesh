@@ -61,11 +61,13 @@ export type CrossLinkedPlaylist = {
  * What the script will do with a playlist.
  *
  * - `revoke-adopter`: delete the later ownership row (Marco's Option A). The
- *   only action that writes.
+ *   only action the apply path writes by default.
  * - `defer-to-account-merge`: the two owners are the same person's duplicate
  *   accounts (case-variant emails). `merge-accounts.ts` from PR #3278 collapses
  *   these correctly as a side effect of merging the accounts, and also moves the
- *   ticks and credentials this script deliberately never touches.
+ *   ticks and credentials this script deliberately never touches. Skipped unless
+ *   `--include-merge-candidates` opts in, which routes it through the same
+ *   revoke path as above.
  * - `refuse`: not safe to decide automatically. Reported, never written.
  */
 export type CrossLinkRepairAction = 'revoke-adopter' | 'defer-to-account-merge' | 'refuse';

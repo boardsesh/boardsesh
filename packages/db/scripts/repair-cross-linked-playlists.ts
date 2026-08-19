@@ -544,6 +544,13 @@ export async function applyRepairPlans(
   for (const plan of plans) {
     const { adopter } = plan;
     if (!adopter) {
+      // Unreachable: selectApplyablePlans only passes revoke-adopter and
+      // defer-to-account-merge plans, and classifyCrossLinkedPlaylist always
+      // sets an adopter on both. Warn rather than fold it into the drift count
+      // so an unexpected shape is visible instead of looking like a lost race.
+      console.warn(
+        `${LOG_TAG} playlist #${plan.playlist.playlistId}: plan has no adopter — skipping (this should not happen).`,
+      );
       counts.skippedByDrift.push(plan.playlist.playlistId);
       continue;
     }
