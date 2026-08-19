@@ -280,6 +280,26 @@ describe('refreshing the stored summary', () => {
     expect(live.computeCalls).toBe(1);
     expect(first).toBe(second);
   });
+
+  it('does not let a forced caller piggyback on an unforced scan', async () => {
+    // Otherwise `?force=1` landing on an in-flight cron refresh would silently keep
+    // the shrink guard and answer 409 — the escape hatch looking broken at exactly
+    // the moment someone reached for it. Callers that disagree get their own scan.
+    store.row = storedRow({ itemCount: 52_000 });
+    live.computed = { itemCount: 1_000, lastModifiedIso: '2026-05-04T11:22:33.000Z' };
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const [unforced, forced] = await Promise.all([
+      refreshStoredClimbSummary(),
+      refreshStoredClimbSummary({ force: true }),
+    ]);
+
+    expect(unforced.skipped).toBe('shrank');
+    expect(forced.skipped).toBeNull();
+    expect(live.computeCalls).toBe(2);
+    expect(store.writes).toEqual([{ itemCount: 1_000, lastModified: new Date('2026-05-04T11:22:33.000Z') }]);
+    errors.mockRestore();
+  });
 });
 
 describe('the after() self-heal', () => {

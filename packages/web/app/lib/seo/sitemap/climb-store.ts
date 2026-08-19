@@ -140,7 +140,7 @@ export type ClimbSummaryRefreshResult = {
   durationMs: number;
 };
 
-let refreshInFlight: Promise<ClimbSummaryRefreshResult> | null = null;
+let refreshInFlight: { force: boolean; run: Promise<ClimbSummaryRefreshResult> } | null = null;
 
 /**
  * Recompute the tier-2 summary and store it.
@@ -165,18 +165,37 @@ let refreshInFlight: Promise<ClimbSummaryRefreshResult> | null = null;
  * lets a zero-item answer be stored — a stored zero makes the index throw
  * "expects URLs but its summary reports 0" and drop the shard, which is the exact
  * bug this table exists to prevent.
+ *
+ * The single-flight below shares a scan only between callers that want the SAME
+ * thing. A `?force=1` that piggybacked on a cron's in-flight refresh would silently
+ * keep the shrink guard and hand the operator back a 409 telling them to do the
+ * thing they just did — which would make the escape hatch look broken exactly when
+ * it is needed. So a caller whose `force` disagrees waits for the in-flight scan to
+ * settle and then runs its own.
  */
 export async function refreshStoredClimbSummary(options: { force?: boolean } = {}): Promise<ClimbSummaryRefreshResult> {
-  if (refreshInFlight) {
-    return refreshInFlight;
+  const force = options.force === true;
+
+  const inFlight = refreshInFlight;
+  if (inFlight) {
+    if (inFlight.force === force) {
+      return inFlight.run;
+    }
+    // Its outcome is not ours to report, and a rejection there must not become a
+    // rejection here — this caller has its own scan to run either way.
+    await inFlight.run.catch(() => {});
   }
 
-  const run = runRefresh(options.force === true);
-  refreshInFlight = run;
+  const run = runRefresh(force);
+  refreshInFlight = { force, run };
   try {
     return await run;
   } finally {
-    refreshInFlight = null;
+    // Only clear the slot if it is still OURS: a caller that overlapped on a
+    // different `force` may already have replaced it.
+    if (refreshInFlight?.run === run) {
+      refreshInFlight = null;
+    }
   }
 }
 
