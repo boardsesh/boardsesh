@@ -215,6 +215,33 @@ describe('kiosk wall recovery', () => {
     expect(wallByBoardId[8].climb).toBe('Test Problem');
   });
 
+  it('forgets a dead board the editor removed from the layout', async () => {
+    // The gym-manage preview edits its slot list live. A removed board's
+    // provider unmounts without publishing a final snapshot, so its last known
+    // "dead" would otherwise keep forcing rebuilds for a slot that is gone.
+    permanentlyRejectedBoardIds.add(8);
+    const { rerender } = render(
+      <KioskPresenceHub boardIds={[7, 8]}>
+        <div>preview</div>
+      </KioskPresenceHub>,
+    );
+    await settle();
+    act(() => createdClients[0].emit('connected'));
+    await settle();
+    expect(wallByBoardId[8].isLive).toBe(false);
+
+    rerender(
+      <KioskPresenceHub boardIds={[7]}>
+        <div>preview</div>
+      </KioskPresenceHub>,
+    );
+    await settle();
+
+    await advancePastRebuildWindow();
+
+    expect(createdClients).toHaveLength(1);
+  });
+
   it('stops rebuilding for a board the backend will never serve again', async () => {
     // A board flipped private mid-session: every re-subscribe is rejected. Left
     // unbounded this would churn the whole client — blanking every other board
