@@ -503,7 +503,7 @@ export default function PlaylistDetail() {
   // does not, the switch-board banner owns that prompt.
   const canAddClimbs = isOwner && !boardBanner;
   const emptyAction = useMemo(
-    () => (canAddClimbs ? { label: t('detail.menu.addClimbs'), onPress: goToClimbs } : undefined),
+    () => (canAddClimbs ? { label: t('detail.menu.addClimbs'), icon: 'add' as const, onPress: goToClimbs } : undefined),
     [canAddClimbs, goToClimbs, t],
   );
 

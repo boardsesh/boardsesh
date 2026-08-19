@@ -84,6 +84,8 @@ export type PlaylistDetailEmptyState = {
 export type PlaylistDetailEmptyAction = {
   /** Already-translated button label. */
   label: string;
+  /** Leading icon on the button. */
+  icon?: IconName;
   onPress: () => void;
 };
 
@@ -410,7 +412,7 @@ export function PlaylistDetailView({
           title={emptyAction.label}
           onPress={emptyAction.onPress}
           size="medium"
-          icon="add"
+          icon={emptyAction.icon}
           style={styles.emptyActionButton}
         />
       ) : null}
@@ -725,7 +727,7 @@ function MaterialEmptyState({
           title={action.label}
           onPress={action.onPress}
           size="medium"
-          icon="add"
+          icon={action.icon}
           style={styles.emptyActionButton}
         />
       ) : null}
