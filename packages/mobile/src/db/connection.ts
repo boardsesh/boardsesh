@@ -14,6 +14,7 @@ import {
   applyBusyTimeout,
   beginImmediateWrite,
   classifySqliteLockError,
+  OFFLINE_DB_BUSY_TIMEOUT_MS,
   configureMainConnection,
   vacuumDatabase,
   BOARD_DATA_TABLES,
@@ -495,7 +496,7 @@ export async function purgeLocalDataForSignOut(db: SQLiteDatabase): Promise<Sign
     // upgrading a read transaction to a write. A contended sign-out would fail in
     // about a millisecond and leave the previous account's rows on disk, which is
     // the exact hazard the owner stamp exists to defend against.
-    await beginImmediateWrite(txn);
+    await beginImmediateWrite(txn, OFFLINE_DB_BUSY_TIMEOUT_MS);
     // Counted here, inside the transaction and immediately before the DELETE, because
     // this is the only place the number is both post-drain and exact. The count the
     // confirmation dialog showed was taken before sign-out's bounded 3s drain, so it

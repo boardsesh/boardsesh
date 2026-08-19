@@ -103,6 +103,12 @@ export async function applyBusyTimeout(db: SqlExecutor, timeoutMs = OFFLINE_DB_B
  * `busy_timeout` armed. Call it as the task's first statement instead of
  * `applyBusyTimeout` whenever the task writes — always, if the task reads first.
  *
+ * `timeoutMs` is REQUIRED rather than defaulted: this helper serves both a
+ * foreground write somebody is watching (OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS)
+ * and a background one nobody is (OFFLINE_DB_BUSY_TIMEOUT_MS), and there is no
+ * default that is right for both. Whichever it defaulted to, half the future call
+ * sites would silently get the wrong wait.
+ *
  * Why this exists (#4332). expo's wrapper opens a plain deferred `BEGIN`, and a
  * deferred transaction picks its lock from whatever statement runs first. When
  * that is a SELECT — every tick and favorite write starts with a `sync_meta` read
@@ -126,7 +132,7 @@ export async function applyBusyTimeout(db: SqlExecutor, timeoutMs = OFFLINE_DB_B
  * retry helper goes out of its way to keep intact. Restoring a deferred `BEGIN`
  * first gives the wrapper something to roll back so the original error survives.
  */
-export async function beginImmediateWrite(db: SqlExecutor, timeoutMs = OFFLINE_DB_BUSY_TIMEOUT_MS): Promise<void> {
+export async function beginImmediateWrite(db: SqlExecutor, timeoutMs: number): Promise<void> {
   // Connection-local, takes no lock, cannot fail — safe inside the empty transaction.
   await applyBusyTimeout(db, timeoutMs);
 

@@ -244,11 +244,13 @@ describe('ephemeral transaction connection', () => {
 // checked "the contended write throws" passes in both worlds, which is exactly how
 // this shipped.
 describe('beginImmediateWrite', () => {
-  // Short enough to keep the suite fast, long enough that "failed instantly" and
-  // "waited out the timeout" cannot be confused on a loaded CI box.
-  const CONTENDED_TIMEOUT_MS = 400;
-  const FAILED_INSTANTLY_MS = 200;
-  const WAITED_MS = 300;
+  // Short enough to keep the suite fast, wide enough that "failed instantly" and
+  // "waited out the timeout" cannot be confused on a loaded CI box: a failure has
+  // 400ms of scheduling jitter to spend before it reads as a wait, and a wait has
+  // 200ms of slack under the timeout it is supposed to sit out.
+  const CONTENDED_TIMEOUT_MS = 1000;
+  const FAILED_INSTANTLY_MS = 400;
+  const WAITED_MS = 800;
 
   /** Runs a transaction task and hands back what escaped, or null if it committed. */
   async function captureFailure(task: (txn: TestSqliteDb) => Promise<void>): Promise<unknown> {
@@ -334,7 +336,7 @@ describe('beginImmediateWrite', () => {
 
   it('commits the write when nothing contends', async () => {
     await db.withExclusiveTransactionAsync(async (txn) => {
-      await beginImmediateWrite(txn);
+      await beginImmediateWrite(txn, OFFLINE_DB_BUSY_TIMEOUT_MS);
       await txn.getFirstAsync('SELECT id FROM probe LIMIT 1');
       await txn.runAsync('INSERT INTO probe (id, note) VALUES (?, ?)', [4, 'landed']);
     });
@@ -367,7 +369,7 @@ describe('beginImmediateWrite', () => {
       expect(Date.now() - startedAt).toBeLessThan(FAILED_INSTANTLY_MS);
 
       await db.withExclusiveTransactionAsync(async (txn) => {
-        await beginImmediateWrite(txn);
+        await beginImmediateWrite(txn, OFFLINE_DB_BUSY_TIMEOUT_MS);
         await txn.getFirstAsync('SELECT id FROM probe LIMIT 1');
         // Same interleaving, opposite outcome: the interloper is the one that loses.
         await expect(
