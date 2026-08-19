@@ -94,6 +94,11 @@ export const PlayDrawerPlaylistChips = memo(function PlayDrawerPlaylistChips({
   // VoiceOver user nothing. The list variant stays hidden from the accessibility
   // tree (it would triple the length of every row); on a detail surface this is
   // the only place membership is announced at all.
+  //
+  // This resolves the same names the chips row resolves for itself. Handing it
+  // pre-resolved chips instead would push that work onto every caller — including
+  // the FlashList rows, where it currently sits behind their own memo — to save a
+  // handful of Map lookups on a header that renders twice. Not worth the trade.
   const accessibilityLabel = useMemo(() => {
     const names = resolvePlaylistChips(members, playlistsById).map((chip) => chip.name);
     if (names.length === 0) return undefined;
