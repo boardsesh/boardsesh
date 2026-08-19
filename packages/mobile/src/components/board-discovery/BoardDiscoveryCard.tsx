@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { View, Pressable, StyleSheet, Platform } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -60,7 +60,17 @@ type BoardDiscoveryCardProps = {
   downloadLabel?: string;
 };
 
-export function BoardDiscoveryCard({ item, onPress, onDownload, downloadLabel }: BoardDiscoveryCardProps) {
+/**
+ * One board in a carousel. Memoized: three carousels stacked on the Boards tab
+ * re-render together whenever any of their queries settle, and each card resolves
+ * board art.
+ */
+export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
+  item,
+  onPress,
+  onDownload,
+  downloadLabel,
+}: BoardDiscoveryCardProps) {
   const { systemColors, brandColors } = useTheme();
   const scale = useSharedValue(1);
 
@@ -165,7 +175,10 @@ export function BoardDiscoveryCard({ item, onPress, onDownload, downloadLabel }:
         ) : null}
       </View>
 
-      <Text variant="subheadline" numberOfLines={1} style={styles.title}>
+      {/* Two lines: board names routinely run past the 168pt card ("Bergen
+          Klatresenter Danmarksplass"), and one line ellipsised two same-gym
+          boards into the same string. */}
+      <Text variant="subheadline" numberOfLines={2} style={styles.title}>
         {item.title}
       </Text>
       {item.subtitle ? (
@@ -175,7 +188,7 @@ export function BoardDiscoveryCard({ item, onPress, onDownload, downloadLabel }:
       ) : null}
     </AnimatedPressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -243,5 +256,8 @@ const styles = StyleSheet.create({
   },
   title: {
     fontWeight: '600',
+    // Reserve both lines (subheadline lineHeight is 20) so a one-line card and a
+    // two-line card keep their subtitles on the same baseline across the row.
+    minHeight: 40,
   },
 });

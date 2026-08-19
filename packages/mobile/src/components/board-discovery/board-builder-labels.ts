@@ -5,19 +5,16 @@
 // (packages/backend/src/graphql/resolvers/social/boards.ts) — minus the
 // abbreviations, since a builder wants readable names, not compact ones.
 
-// Trademark-correct board type names (CLAUDE.md).
-const BOARD_LABELS: Record<string, string> = {
-  kilter: 'Kilter',
-  tension: 'Tension',
-  moonboard: 'MoonBoard',
-  decoy: 'Decoy',
-  touchstone: 'Touchstone',
-  grasshopper: 'Grasshopper',
-  soill: 'So iLL',
-};
+import { BOARD_TYPE_LABELS } from '@boardsesh/board-constants';
 
+/**
+ * Trademark-correct board type name. Shares the brand map with web
+ * (@boardsesh/board-constants) but keeps mobile's title-case fallback: the
+ * builder can be pointed at a board type the shared map has not learned yet,
+ * and "Kilter" reads better than "kilter" in a suggested board name.
+ */
 export function boardTypeLabel(boardName: string): string {
-  return BOARD_LABELS[boardName] ?? boardName.charAt(0).toUpperCase() + boardName.slice(1);
+  return BOARD_TYPE_LABELS[boardName] ?? boardName.charAt(0).toUpperCase() + boardName.slice(1);
 }
 
 /**

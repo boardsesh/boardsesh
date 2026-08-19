@@ -5,6 +5,8 @@
 import type { BoardName, UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
 import { toBoardName, normaliseSetIds } from '@boardsesh/board-config';
 import type { DiscoveryBoardItem } from './BoardDiscoveryCard';
+import { boardTypeLabel } from './board-builder-labels';
+import { boardRowSubtitle, disambiguateBoardSubtitles } from './board-labels';
 import type { BoardDownloadState } from './board-offline-state';
 
 export function userBoardToItem(
@@ -27,11 +29,33 @@ export function userBoardToItem(
     sizeId: board.sizeId,
     setIds: board.setIds,
     title: board.name,
-    subtitle: board.sizeName ?? board.boardType,
+    subtitle: boardRowSubtitle(board),
     distanceMeters: board.distanceMeters ?? undefined,
     isActive: activeUuid != null && board.uuid === activeUuid,
     offlineState,
   };
+}
+
+/**
+ * The whole carousel's items in one pass, with same-subtitle boards pulled apart
+ * (see `disambiguateBoardSubtitles`). Disambiguation is scoped to the one list
+ * the user is looking at, and runs here — at the list level — never per row.
+ */
+export function userBoardsToItems(
+  boards: UserBoard[],
+  activeUuid?: string | null,
+  offlineStateFor?: (board: UserBoard) => BoardDownloadState,
+): DiscoveryBoardItem[] {
+  // Only boards that actually render take part: a board dropped for an
+  // unsupported type must not push its neighbour into a disambiguation the user
+  // can see no reason for.
+  const rendered: { item: DiscoveryBoardItem; board: UserBoard }[] = [];
+  for (const board of boards) {
+    const item = userBoardToItem(board, activeUuid, offlineStateFor?.(board));
+    if (item !== null) rendered.push({ item, board });
+  }
+  const subtitles = disambiguateBoardSubtitles(rendered.map((entry) => entry.board));
+  return rendered.map((entry, index) => ({ ...entry.item, subtitle: subtitles[index] }));
 }
 
 export function popularConfigToItem(config: PopularBoardConfig): DiscoveryBoardItem | null {
@@ -45,7 +69,7 @@ export function popularConfigToItem(config: PopularBoardConfig): DiscoveryBoardI
     sizeId: config.sizeId,
     setIds: config.setIds.join(','),
     title: config.displayName,
-    subtitle: config.sizeName ?? config.layoutName ?? config.boardType,
+    subtitle: config.sizeName ?? config.layoutName ?? boardTypeLabel(config.boardType),
   };
 }
 

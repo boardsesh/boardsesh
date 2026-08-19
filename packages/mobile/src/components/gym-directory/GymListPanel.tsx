@@ -11,6 +11,8 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { PressableSurface } from '../PressableSurface';
+import { boardTypeLabel } from '../board-discovery/board-builder-labels';
+import { boardConfigLabel } from '../board-discovery/board-labels';
 import { useTheme } from '../../providers/theme-provider';
 import { applySectionCaption } from '../../theme/variants/variant-tokens';
 import { spacing, borderRadius, shadows } from '../../theme/tokens';
@@ -352,7 +354,9 @@ const BoardRow = memo(function BoardRow({
       <View style={styles.rowText}>
         <Text variant="subheadline">{board.name}</Text>
         <Text variant="caption1" color={systemColors.tertiaryLabel}>
-          {board.boardType}
+          {/* Inside an expanded gym the place is redundant — show what the board
+              is instead, never the raw lowercase type. */}
+          {boardConfigLabel(board) ?? boardTypeLabel(board.boardType)}
         </Text>
       </View>
       {board.canEdit ? <EditButton onPress={handleEdit} label={t('mobile.gyms.editBoard')} /> : null}

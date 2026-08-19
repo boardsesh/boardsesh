@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
-import { userBoardToItem, popularConfigToItem, findOwnedBoardForConfig } from '../board-items';
+import { userBoardToItem, userBoardsToItems, popularConfigToItem, findOwnedBoardForConfig } from '../board-items';
 
 const board = {
   uuid: 'b-1',
@@ -38,7 +38,7 @@ describe('userBoardToItem', () => {
       sizeId: 2,
       setIds: '3,4',
       title: 'My Kilter',
-      subtitle: '12x12',
+      subtitle: 'Original',
       distanceMeters: 250,
     });
   });
@@ -51,6 +51,40 @@ describe('userBoardToItem', () => {
   it('drops a board whose type is not a supported BoardName', () => {
     const bad = { ...board, boardType: 'not-a-board' } as unknown as UserBoard;
     expect(userBoardToItem(bad)).toBeNull();
+  });
+});
+
+describe('userBoardsToItems', () => {
+  const bergen = {
+    uuid: 'bergen-1',
+    boardType: 'kilter',
+    layoutId: 1,
+    sizeId: 7,
+    setIds: '1,20',
+    name: 'Bergen Klatresenter Danmarksplass',
+    gymName: 'Bergen Klatresenter',
+    angle: 40,
+  } as unknown as UserBoard;
+
+  it('gives two boards run by the same gym different subtitles', () => {
+    const items = userBoardsToItems([bergen, { ...bergen, uuid: 'bergen-2', sizeId: 8 } as UserBoard]);
+    expect(items.map((item) => item.subtitle)).toEqual(['Bergen Klatresenter · 12×14', 'Bergen Klatresenter · 8×12']);
+  });
+
+  it('leaves a lone board with a plain subtitle', () => {
+    expect(userBoardsToItems([bergen])[0].subtitle).toBe('Bergen Klatresenter');
+  });
+
+  it('ignores a dropped board when deciding what needs disambiguating', () => {
+    const bad = { ...bergen, uuid: 'nope', boardType: 'not-a-board' } as UserBoard;
+    const items = userBoardsToItems([bad, bergen]);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ key: 'bergen-1', subtitle: 'Bergen Klatresenter' });
+  });
+
+  it('passes each board its own offline state', () => {
+    const items = userBoardsToItems([bergen], 'bergen-1', () => 'downloaded');
+    expect(items[0]).toMatchObject({ isActive: true, offlineState: 'downloaded' });
   });
 });
 
@@ -68,6 +102,11 @@ describe('popularConfigToItem', () => {
 
   it('builds a stable key from the config tuple (configs have no uuid)', () => {
     expect(popularConfigToItem(config)?.key).toBe('popular:tension:9:8:7-6');
+  });
+
+  it('falls back to the brand name, never the raw lowercase board type', () => {
+    const bare = { ...config, sizeName: null, layoutName: null, boardType: 'kilter' } as unknown as PopularBoardConfig;
+    expect(popularConfigToItem(bare)?.subtitle).toBe('Kilter');
   });
 
   it('drops a config whose board type is unsupported', () => {

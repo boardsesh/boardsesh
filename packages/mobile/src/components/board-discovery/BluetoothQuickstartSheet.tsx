@@ -8,6 +8,7 @@ import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-locat
 import { useBoardsBySerialNumbers } from '../../lib/graphql/hooks';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
+import { boardRowSubtitle } from './board-labels';
 import { Sheet } from '../Sheet';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -95,7 +96,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
                 <View style={styles.rowText}>
                   <Text variant="headline">{board.name}</Text>
                   <Text variant="subheadline" color={systemColors.secondaryLabel}>
-                    {board.boardType} · {board.sizeName ?? ''}
+                    {boardRowSubtitle(board)}
                   </Text>
                 </View>
                 <Icon name="add" size={20} color={systemColors.tertiaryLabel} />

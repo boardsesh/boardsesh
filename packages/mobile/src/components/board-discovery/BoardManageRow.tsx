@@ -5,7 +5,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { toBoardName } from '@boardsesh/board-config';
 import { SwipeableRow } from '../SwipeableRow';
 import { BoardImageNative } from '../BoardImageNative';
-import { boardTypeLabel } from './board-builder-labels';
+import { boardRowSubtitle } from './board-labels';
 import { BoardOfflineToggle } from './BoardOfflineToggle';
 import type { BoardDownloadNotice, BoardDownloadProgress, BoardDownloadState } from './board-offline-state';
 import { OfflineDownloadProgressBar } from './OfflineDownloadProgressBar';
@@ -124,12 +124,9 @@ function BoardManageRowComponent({
       : { width: THUMB_SIZE * aspect, height: THUMB_SIZE };
   }, [renderData]);
 
-  // Proper-cased board name for trademark correctness when used as a fallback.
-  const boardTypeText = boardName ? boardTypeLabel(boardName) : board.boardType;
-  // Owned: size / location tells one of your walls apart. Followed: whose board it is.
-  const subtitle = isOwned
-    ? (board.sizeName ?? board.locationName ?? boardTypeText)
-    : (board.ownerDisplayName ?? boardTypeText);
+  // Owned: where the board is (or what it is) tells one of your walls apart.
+  // Followed: whose board it is.
+  const subtitle = isOwned ? boardRowSubtitle(board) : (board.ownerDisplayName ?? boardRowSubtitle(board));
 
   // Live bootstrap always wins over persisted history: the engine may retry a
   // scope whose previous run selected a paged fallback, and showing both would
