@@ -408,6 +408,39 @@ export default function PlaylistDetail() {
     [queryClient, playlistUuid],
   );
 
+  // The playlist as it looked when the edit sheet was opened, kept in a ref
+  // rather than read off the live query at submit time (#1934).
+  //
+  // The detail query refetches on app foreground and on reconnect — the query
+  // provider bridges React Query's focusManager to AppState and onlineManager to
+  // NetInfo, and the global staleTime is five minutes. So a sheet left open
+  // while the climber gets interrupted can have another device's rename land in
+  // the cache underneath it. PlaylistFormSheet seeds its fields only on the
+  // visible false→true edge, so the typed name survives that refetch — and a
+  // snapshot read at submit time would not. It would arrive at the server
+  // already matching the stored row, the compare-and-swap would see nothing to
+  // decide, and the other device's rename would be overwritten with no prompt:
+  // the exact silent loss this change exists to stop.
+  //
+  // Capturing at open can't invent a false conflict either. A bump this device
+  // caused itself (adding a climb) moves updated_at without moving the metadata,
+  // and the server's field comparison still applies the edit.
+  const editBasedOnRef = useRef<PlaylistRevision | null>(null);
+
+  const capturePlaylistRevision = useCallback((source: Playlist | null | undefined): PlaylistRevision | null => {
+    // A cached row from before `updatedAt` shipped in the fragment has nothing to
+    // compare against, so it falls back to last-write-wins.
+    if (!source?.updatedAt) return null;
+    return {
+      updatedAt: source.updatedAt,
+      name: source.name,
+      description: source.description ?? null,
+      isPublic: source.isPublic,
+      color: source.color ?? null,
+      icon: source.icon ?? null,
+    };
+  }, []);
+
   const handleEditSubmit = useCallback(
     async (values: PlaylistFormValues) => {
       if (!playlist) return;
@@ -432,22 +465,12 @@ export default function PlaylistDetail() {
       };
 
       try {
-        // What this edit is based on. The server compares it against the stored
-        // row and refuses rather than silently overwriting a rename made on
-        // another device (#1934). A cached row from before this field shipped
-        // has no updatedAt, and falls back to last-write-wins.
-        await saveEdit(
-          playlist.updatedAt
-            ? {
-                updatedAt: playlist.updatedAt,
-                name: playlist.name,
-                description: playlist.description ?? null,
-                isPublic: playlist.isPublic,
-                color: playlist.color ?? null,
-                icon: playlist.icon ?? null,
-              }
-            : undefined,
-        );
+        // What this edit is based on: the version the sheet was opened on. The
+        // server compares it against the stored row and refuses rather than
+        // silently overwriting a rename made on another device (#1934). The
+        // fallback covers a sheet that somehow became visible without going
+        // through openEditDetails — blind last-write-wins, as before.
+        await saveEdit(editBasedOnRef.current ?? capturePlaylistRevision(playlist) ?? undefined);
       } catch (err) {
         // Checked BEFORE reporting: a conflict is an expected outcome the
         // climber resolves, not a fault (same treatment as the beta-link
@@ -542,7 +565,7 @@ export default function PlaylistDetail() {
         setSavingEdit(false);
       }
     },
-    [playlist, updatePlaylist, cacheUpdatedPlaylist, queryClient, playlistUuid, showToast, t],
+    [playlist, updatePlaylist, cacheUpdatedPlaylist, capturePlaylistRevision, queryClient, playlistUuid, showToast, t],
   );
 
   const handleDelete = useCallback(() => {
@@ -572,8 +595,10 @@ export default function PlaylistDetail() {
   // involved, so no sheet-handoff dance is needed.
   const openEditDetails = useCallback(() => {
     setEditError(null);
+    // Snapshot now, not at submit — see editBasedOnRef.
+    editBasedOnRef.current = capturePlaylistRevision(playlist);
     setEditVisible(true);
-  }, []);
+  }, [playlist, capturePlaylistRevision]);
 
   // Collapsed overflow menu (owner): Pin toggles in place; Delete confirms; Edit
   // enters the climbs edit mode once the menu sheet has dismissed (deferred via

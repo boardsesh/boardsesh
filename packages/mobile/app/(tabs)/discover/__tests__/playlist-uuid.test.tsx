@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { render, fireEvent, waitFor, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Climb } from '@boardsesh/queue';
@@ -180,11 +180,22 @@ vi.mock('../../../../src/components/playlist', () => ({
     hero,
     headerSlot,
     actions,
+    onEditDetails,
   }: {
     hero: { name: string };
     headerSlot?: ReactNode;
     actions?: (collapsed: boolean) => ReactNode;
-  }) => createElement('div', { 'data-detail-view': 'true', 'data-hero-name': hero.name }, actions?.(false), headerSlot),
+    onEditDetails?: () => void;
+  }) =>
+    createElement(
+      'div',
+      { 'data-detail-view': 'true', 'data-hero-name': hero.name },
+      actions?.(false),
+      headerSlot,
+      // The cog that opens the details sheet. Driving it matters: that press is
+      // where the basedOn snapshot is taken (#1934).
+      createElement('button', { 'data-open-edit-details': 'true', onClick: onEditDetails }, 'open-edit-details'),
+    ),
   PlaylistDiscussionRow: ({ commentCount, onPress }: { commentCount: number; onPress: () => void }) =>
     createElement(
       'button',
@@ -513,6 +524,7 @@ describe('PlaylistDetail edit conflict (#1934)', () => {
     updatePlaylistMock.mockResolvedValue({ ...cachedPlaylist, name: 'Bad climbs' });
 
     const { findByText } = renderDetail();
+    fireEvent.click(await findByText('open-edit-details'));
     fireEvent.click(await findByText('form-submit'));
 
     await waitFor(() => expect(updatePlaylistMock).toHaveBeenCalledTimes(1));
@@ -535,6 +547,7 @@ describe('PlaylistDetail edit conflict (#1934)', () => {
     updatePlaylistMock.mockRejectedValue(conflictError);
 
     const { findByText, container } = renderDetail();
+    fireEvent.click(await findByText('open-edit-details'));
     fireEvent.click(await findByText('form-submit'));
 
     await waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
@@ -550,6 +563,7 @@ describe('PlaylistDetail edit conflict (#1934)', () => {
     updatePlaylistMock.mockResolvedValueOnce({ ...cachedPlaylist, name: 'Bad climbs' });
 
     const { findByText } = renderDetail();
+    fireEvent.click(await findByText('open-edit-details'));
     fireEvent.click(await findByText('form-submit'));
 
     await waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
@@ -578,6 +592,7 @@ describe('PlaylistDetail edit conflict (#1934)', () => {
     updatePlaylistMock.mockRejectedValue(conflictError);
 
     const { queryClient, findByText } = renderDetail();
+    fireEvent.click(await findByText('open-edit-details'));
     fireEvent.click(await findByText('form-submit'));
 
     await waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
@@ -614,6 +629,7 @@ describe('PlaylistDetail edit conflict (#1934)', () => {
     });
 
     const { findByText } = renderDetail();
+    fireEvent.click(await findByText('open-edit-details'));
     fireEvent.click(await findByText('form-submit'));
 
     await waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
@@ -633,6 +649,7 @@ describe('PlaylistDetail edit conflict (#1934)', () => {
     updatePlaylistMock.mockRejectedValue(conflictError);
 
     const { findByText, container } = renderDetail();
+    fireEvent.click(await findByText('open-edit-details'));
     fireEvent.click(await findByText('form-submit'));
 
     await waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
@@ -657,6 +674,7 @@ describe('PlaylistDetail edit conflict (#1934)', () => {
     queryClient.setQueryData(['userPlaylists'], [{ uuid: 'p-1', id: 'p-1', name: 'Old name', color: '#6D28D9' }]);
 
     const { findByText } = renderDetail(queryClient);
+    fireEvent.click(await findByText('open-edit-details'));
     fireEvent.click(await findByText('form-submit'));
 
     await waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
@@ -684,6 +702,7 @@ describe('PlaylistDetail edit conflict (#1934)', () => {
     const { findByText, container } = renderDetail();
     const submitting = () => container.querySelector('[data-form-sheet]')?.getAttribute('data-submitting');
 
+    fireEvent.click(await findByText('open-edit-details'));
     fireEvent.click(await findByText('form-submit'));
     // In flight: the sheet's submit button spins.
     await waitFor(() => expect(submitting()).toBe('true'));
@@ -700,5 +719,40 @@ describe('PlaylistDetail edit conflict (#1934)', () => {
     await waitFor(() => expect(submitting()).toBe('false'));
     expect(container.querySelector('[data-edit-error="true"]')).toBeNull();
     expect(updatePlaylistMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the snapshot the sheet was opened on when the playlist refetches underneath it', async () => {
+    requestMock.mockResolvedValue({ playlist: cachedPlaylist });
+    updatePlaylistMock.mockResolvedValue({ ...cachedPlaylist, name: 'Bad climbs' });
+
+    const { queryClient, findByText } = renderDetail();
+    fireEvent.click(await findByText('open-edit-details'));
+
+    // Mid-edit, the app comes back to the foreground and the detail query
+    // refetches, picking up the other phone's rename. The form keeps the typed
+    // name (it seeds only on the open edge), so the snapshot has to keep the
+    // version the sheet was opened on too. Send the refreshed row instead and
+    // the server sees a basedOn that already matches what it has stored, decides
+    // there is nothing to arbitrate, and overwrites the other rename in silence.
+    await act(async () => {
+      queryClient.setQueryData(['playlist', 'p-1'], {
+        ...cachedPlaylist,
+        name: 'Renamed on the other phone',
+        updatedAt: '2026-08-10T12:30:00.000Z',
+      });
+    });
+
+    fireEvent.click(await findByText('form-submit'));
+
+    await waitFor(() => expect(updatePlaylistMock).toHaveBeenCalledTimes(1));
+    const sent = updatePlaylistMock.mock.calls[0][0] as { basedOn?: Record<string, unknown> };
+    expect(sent.basedOn).toEqual({
+      updatedAt: '2026-08-10T11:00:00.000Z',
+      name: 'Old name',
+      description: '',
+      isPublic: false,
+      color: '#6D28D9',
+      icon: '🔥',
+    });
   });
 });
