@@ -592,6 +592,9 @@
       "switchBoard": "Switch to {{board}}",
       "switchFailed": "Couldn't switch to {{board}}. Try again.",
       "cancel": "Cancel"
+    },
+    "setterNotes": {
+      "title": "Setter's notes"
     }
   },
   "frontDoor": {
@@ -616,6 +619,9 @@
       "angleValue": "{{angle}}°",
       "qualityValue": "{{quality}} out of 5",
       "firstAscentValue": "{{setter}}, {{date}}"
+    },
+    "setterNotes": {
+      "heading": "Setter's notes"
     },
     "angles": {
       "heading": "Same climb, other angles",

@@ -592,6 +592,9 @@
       "switchBoard": "Passer sur {{board}}",
       "switchFailed": "Impossible de passer sur {{board}}. Réessaie.",
       "cancel": "Annuler"
+    },
+    "setterNotes": {
+      "title": "Notes de l’ouvreur"
     }
   },
   "frontDoor": {
@@ -616,6 +619,9 @@
       "angleValue": "{{angle}}°",
       "qualityValue": "{{quality}} sur 5",
       "firstAscentValue": "{{setter}}, {{date}}"
+    },
+    "setterNotes": {
+      "heading": "Notes de l’ouvreur"
     },
     "angles": {
       "heading": "Le même bloc à d’autres inclinaisons",

@@ -44,5 +44,7 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
   if (!row) return null;
 
   const climb = mapRowToClimb(row, boardName, layoutId, angle);
-  return { ...climb, description: row.description ?? '', mirrored: false };
+  // `description` now comes straight out of mapRowToClimb (the search read
+  // carries it too since #4494), so only `mirrored` is patched on here.
+  return { ...climb, mirrored: false };
 }

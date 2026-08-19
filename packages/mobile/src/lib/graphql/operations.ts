@@ -80,6 +80,7 @@ const CLIMB_SEARCH_FIELDS = `
   setter_username
   userId
   name
+  description
   frames
   angle
   ascensionist_count

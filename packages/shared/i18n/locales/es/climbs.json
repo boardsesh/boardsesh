@@ -592,6 +592,9 @@
       "switchBoard": "Cambiar a {{board}}",
       "switchFailed": "No se pudo cambiar a {{board}}. Inténtalo de nuevo.",
       "cancel": "Cancelar"
+    },
+    "setterNotes": {
+      "title": "Notas del setter"
     }
   },
   "frontDoor": {
@@ -616,6 +619,9 @@
       "angleValue": "{{angle}}°",
       "qualityValue": "{{quality}} de 5",
       "firstAscentValue": "{{setter}}, {{date}}"
+    },
+    "setterNotes": {
+      "heading": "Notas del setter"
     },
     "angles": {
       "heading": "El mismo bloque en otros ángulos",

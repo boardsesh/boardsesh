@@ -592,6 +592,9 @@
       "switchBoard": "Zu {{board}} wechseln",
       "switchFailed": "Wechsel zu {{board}} hat nicht geklappt. Versuch es nochmal.",
       "cancel": "Abbrechen"
+    },
+    "setterNotes": {
+      "title": "Notizen vom Routenbau"
     }
   },
   "frontDoor": {
@@ -616,6 +619,9 @@
       "angleValue": "{{angle}}°",
       "qualityValue": "{{quality}} von 5",
       "firstAscentValue": "{{setter}}, {{date}}"
+    },
+    "setterNotes": {
+      "heading": "Notizen vom Routenbau"
     },
     "angles": {
       "heading": "Derselbe Boulder bei anderen Winkeln",
