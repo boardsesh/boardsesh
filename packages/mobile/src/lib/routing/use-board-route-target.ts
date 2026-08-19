@@ -30,15 +30,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { onlineManager } from '@tanstack/react-query';
 import { isNetworkError } from '@boardsesh/offline-sync/error-classification';
-import type { Climb, CreateBoardInput, UserBoard } from '@boardsesh/shared-schema';
+import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 import { toBoardPath, type BoardRouteTarget } from './board-route-target';
 // The platform switch is this constant, not `Platform.OS` — the hook then needs
 // no `react-native` import, whose RN 0.86 Flow entry the vitest node env cannot
 // parse (see the config's `hooks-dual-write` exclusion note).
 import { RELAXES_ANONYMOUS_ROUTES } from './anonymous-auth-gate';
 import { useClimb } from '../graphql/hooks';
-import { fetchAllMyBoards, fetchBoardBySlug, fetchBoardByUuid, useCreateBoard } from '../graphql/hooks';
-import { readDuplicateBoardError } from '../graphql/extract-error-message';
+import { fetchAllMyBoards, fetchBoardBySlug, useCreateBoard } from '../graphql/hooks';
+import { createBoardOrAdoptDuplicate } from '../graphql/create-board-or-adopt-duplicate';
 import { useSetActiveBoard } from '../graphql/use-active-board';
 import { getStoredActiveBoard } from '../active-board-store';
 import { getOfflineBoards } from '../../settings/offline-boards';
@@ -173,40 +173,6 @@ async function resolveBoardSlugLocalFirst(slug: string): Promise<UserBoard | nul
     const downloadedBoard = await findLocalBoardForSlug(slug, true);
     if (!downloadedBoard) throw slugError;
     return downloadedBoard;
-  }
-}
-
-/**
- * `createBoard`, with the server's duplicate rejection recovered into the board
- * it names.
- *
- * Walking the owned list first closes the common case but not the race: a board
- * with this config created on another device between that walk and this create
- * still comes back as BOARD_DUPLICATE_CONFIG. The rejection carries the existing
- * board's uuid precisely so a client needn't search a paginated list for it — so
- * a URL that would otherwise dead-end as not-found adopts the board the user
- * already has. The angle comes off the create input, which is the URL's.
- */
-async function createBoardOrAdoptDuplicate(
-  input: CreateBoardInput,
-  createBoard: (input: CreateBoardInput) => Promise<UserBoard>,
-): Promise<UserBoard> {
-  try {
-    return await createBoard(input);
-  } catch (createError) {
-    const duplicate = readDuplicateBoardError(createError);
-    if (!duplicate) throw createError;
-    // A duplicate naming a board we then can't read is a dead end, not a
-    // fallback — and the create rejection is the failure that describes what
-    // happened, so the lookup's own rejection is swallowed rather than replacing
-    // it. Hence `.catch(() => null)`: a rejected lookup and a null board are the
-    // same outcome here.
-    const existing = await fetchBoardByUuid(duplicate.boardUuid).catch(() => null);
-    if (!existing) throw createError;
-    // `CreateBoardInput.angle` is optional on the wire; `buildCreateBoardInput`
-    // always fills it from the URL, and the board's own angle is the fallback.
-    const angle = input.angle ?? existing.angle;
-    return existing.angle === angle ? existing : { ...existing, angle };
   }
 }
 
@@ -362,7 +328,10 @@ function useAdoptedBoard(
         const resolved =
           localBoard ??
           (await resolveBoardForSession(boardPath, {
-            ownedBoards,
+            // Already walked above (or deliberately left empty for a signed-out
+            // visitor), so the loader hands the list straight back rather than
+            // fetching it twice.
+            loadOwnedBoards: async () => ownedBoards,
             createBoard: (input) =>
               createBoardOrAdoptDuplicate(input, (createInput) => createBoardMutation.mutateAsync(createInput)),
             // Local first here too, so a named board already on the device opens

@@ -152,7 +152,7 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
     const fetchBoardBySlug = vi.fn(async () => hostBoard);
     const joinedBoard = await resolveBoardForSession(boardPath, {
       // A matching owned LED board must not replace the host's physical wall.
-      ownedBoards: [{ ...homeBoard(), uuid: 'joiners-own-board', hasLeds: true }],
+      loadOwnedBoards: async () => [{ ...homeBoard(), uuid: 'joiners-own-board', hasLeds: true }],
       createBoard,
       fetchBoardBySlug,
     });
