@@ -37,6 +37,12 @@ const METRES_PER_DEGREE_LATITUDE = 111_276;
 /** Latitude that sits `metres` due north of the search point. */
 const latitudeNorthOf = (metres: number) => SEARCH_LAT + metres / METRES_PER_DEGREE_LATITUDE;
 
+// `gyms.hours_updated_at` is `timestamp` WITHOUT time zone, so the driver hands
+// back a wall-clock reading carrying no offset and `new Date(...)` resolves it in
+// the process's zone. Written and asserted in that same zone-free form, so the
+// assertion below does not quietly depend on the host running UTC.
+const HOURS_UPDATED_AT = '2026-02-03 10:30:00';
+
 const anonCtx = (): ConnectionContext => ({ connectionId: 'conn-anon', isAuthenticated: false }) as ConnectionContext;
 
 type SearchResult = {
@@ -63,6 +69,18 @@ const searchNearby = (input: Record<string, unknown>) =>
     { input: { latitude: SEARCH_LAT, longitude: SEARCH_LON, ...input } },
     anonCtx(),
   ) as Promise<SearchResult>;
+
+/** The Drizzle branch — no coordinates, so `useProximity` is false. */
+const searchText = (input: Record<string, unknown>) =>
+  socialGymQueries.searchGyms(null, { input }, anonCtx()) as Promise<SearchResult>;
+
+/** Drop the two `timestamp` (no time zone) fields the branches disagree on — see #4588. */
+const withoutTimestamps = (gym: SearchResult['gyms'][number]) => {
+  const comparable: Record<string, unknown> = { ...gym };
+  delete comparable.hoursUpdatedAt;
+  delete comparable.createdAt;
+  return comparable;
+};
 
 const insertGym = async (opts: {
   name: string;
@@ -142,7 +160,7 @@ describe('searchGyms proximity', () => {
   // Unconditional, so the whole file can never go quietly dark: if the CI
   // database ever loses PostGIS, every other test here would report a tidy
   // "skipped" and the job would stay green with zero proximity coverage.
-  it('runs against a PostGIS database in CI', () => {
+  it('asserts PostGIS is present when running in CI', () => {
     if (!process.env.CI) return;
     expect(hasPostGis).toBe(true);
   });
@@ -360,10 +378,11 @@ describe('searchGyms proximity', () => {
       address: 'Jan Rebelstraat 20',
       website: 'https://example.com',
       hours: 'Mon-Fri 09:00-23:00',
-      hoursUpdatedAt: '2026-02-03T10:30:00.000Z',
+      hoursUpdatedAt: HOURS_UPDATED_AT,
     });
 
     const [mapped] = (await searchNearby({ radiusKm: 10, limit: 50 })).gyms;
+    const [viaTextPath] = (await searchText({ limit: 50 })).gyms;
 
     expect(mapped.uuid).toBe(gym.uuid);
     expect(mapped.slug).toBe('fully-populated');
@@ -371,12 +390,27 @@ describe('searchGyms proximity', () => {
     expect(mapped.address).toBe('Jan Rebelstraat 20');
     expect(mapped.website).toBe('https://example.com');
     expect(mapped.hours).toBe('Mon-Fri 09:00-23:00');
-    expect(mapped.hoursUpdatedAt).toBe('2026-02-03T10:30:00.000Z');
     expect(mapped.latitude).toBeCloseTo(latitudeNorthOf(1_000), 6);
     expect(mapped.longitude).toBeCloseTo(SEARCH_LON, 6);
-    // `db.execute` hands back timestamps as strings while the Drizzle path
+
+    // Every non-timestamp field must match the Drizzle branch exactly, so a
+    // column added to `gyms` later has to be carried by both or this fails
+    // rather than going quietly null on the proximity path only.
+    expect(withoutTimestamps(mapped)).toEqual(withoutTimestamps(viaTextPath));
+
+    // The timestamps do NOT match off UTC, and that is a real defect rather than
+    // a test artefact: `hours_updated_at` is `timestamp` WITHOUT time zone, and
+    // mapRawGymRow's `new Date(string)` resolves the offset-less reading in the
+    // process's zone while Drizzle reads the same column as UTC. Identical on a
+    // UTC host (Railway, CI), which is why nobody has hit it. Tracked in #4588 —
+    // both branches are pinned exactly, so the fix collapses these two into one
+    // equality instead of having to re-derive what changed.
+    expect(mapped.hoursUpdatedAt).toBe(new Date(HOURS_UPDATED_AT).toISOString());
+    expect(viaTextPath.hoursUpdatedAt).toBe(`${HOURS_UPDATED_AT.replace(' ', 'T')}.000Z`);
+
+    // `db.execute` hands back timestamps as strings while the Drizzle branch
     // hydrates them to Date, and the response calls `.toISOString()` on this —
-    // an uncoerced string would 500 the whole query, not merely drop a field.
+    // an uncoerced string would 500 the whole query, not merely skew a field.
     expect(() => new Date(mapped.createdAt).toISOString()).not.toThrow();
     expect(Number.isNaN(Date.parse(mapped.createdAt))).toBe(false);
   });
@@ -391,7 +425,7 @@ describe('searchGyms proximity', () => {
     await insertGym({ name: 'Gamma', metresNorth: 200_000 });
 
     const proximity = await searchNearby({ radiusKm: 500, limit: 50 });
-    const textOnly = (await socialGymQueries.searchGyms(null, { input: { limit: 50 } }, anonCtx())) as SearchResult;
+    const textOnly = await searchText({ limit: 50 });
 
     expect(proximity.totalCount).toBe(textOnly.totalCount);
     expect(proximity.gyms.map((gym) => gym.uuid).sort()).toEqual(textOnly.gyms.map((gym) => gym.uuid).sort());

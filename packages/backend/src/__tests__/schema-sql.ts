@@ -20,17 +20,27 @@
  * Guarded because worker-db.ts applies schemaSQL through postgres.js `unsafe()`
  * — one simple query, so one implicit transaction. A bare CREATE EXTENSION
  * against a server without PostGIS aborts that transaction and rolls back all
- * 70-odd tables, taking every backend test with it. The EXCEPTION handler opens
- * a subtransaction so the failure stays local and the proximity tests self-skip
- * instead. Every statement is idempotent: worker DBs outlive a run, so a stale
- * one heals on the next apply.
+ * 70-odd tables, taking every backend test with it. So the extension gets its
+ * own DO block: a `pg_available_extensions` precheck first, then a broad handler
+ * behind it as the last resort. The handler covers exactly ONE statement we did
+ * not write, so it cannot mask a mistake in the DDL below — that lives in the
+ * second block, which has no handler at all and fails the whole apply loudly.
+ * Every statement is idempotent: worker DBs outlive a run, so a stale one heals
+ * on the next apply.
  */
 export const POSTGIS_SCHEMA_SQL = `
   DO $$
   BEGIN
-    EXECUTE 'CREATE EXTENSION IF NOT EXISTS postgis';
+    IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'postgis') THEN
+      EXECUTE 'CREATE EXTENSION IF NOT EXISTS postgis';
+    ELSE
+      RAISE NOTICE 'postgis is not installed on this server: proximity coverage self-skips';
+    END IF;
   EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'postgis unavailable (%): proximity coverage self-skips', SQLERRM;
+    -- Reached only if the precheck said yes and CREATE still failed (no
+    -- privilege to create extensions, a half-installed package). Still not worth
+    -- taking all 70 tables down for. SQLSTATE 0A000 is the plain "not available".
+    RAISE NOTICE 'postgis unavailable (% %): proximity coverage self-skips', SQLSTATE, SQLERRM;
   END $$;
 
   DO $$
