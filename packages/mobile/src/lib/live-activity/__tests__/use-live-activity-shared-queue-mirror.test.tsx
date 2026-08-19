@@ -169,6 +169,25 @@ describe('useLiveActivity shared queue-state mirror (iOS)', () => {
     });
   });
 
+  it('does not churn the App Group on re-renders that change nothing', async () => {
+    // The mirror now runs for every iOS climber rather than only during a
+    // session, so its cadence has to be one write per real queue/navigation
+    // change — not one per render.
+    const { rerender } = render(<Harness {...soloProps()} />);
+
+    await waitFor(() => {
+      expect(plugin.updateLiveActivity).toHaveBeenCalledTimes(1);
+    });
+
+    for (let renderPass = 0; renderPass < 5; renderPass += 1) {
+      rerender(<Harness {...soloProps()} />);
+    }
+    await waitFor(() => {
+      expect(plugin.updateLiveActivity).toHaveBeenCalledTimes(1);
+    });
+    expect(plugin.updateLiveActivityClimb).not.toHaveBeenCalled();
+  });
+
   it('re-publishes after a session ends, because endSession wipes the shared keys', async () => {
     const inSession = soloProps({ sessionId: 'session-1', isSessionActive: true });
     const { rerender } = render(<Harness {...inSession} />);
