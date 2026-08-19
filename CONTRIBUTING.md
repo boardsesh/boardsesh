@@ -187,7 +187,7 @@ The backend is `packages/backend/`: a GraphQL-WS server on port 8080, backed by 
 
 Run it with `vp run dev:backend` (it starts the database first). Use the structured Winston logger, not `console.*` (a lint rule blocks `console` in backend source). See [docs/logging.md](./docs/logging.md).
 
-Tests run with `vp test run --project backend`. Vitest auto-starts Postgres and Redis from `packages/backend/docker-compose.test.yml`. The Postgres image carries PostGIS, because `gyms` and `user_boards` have a `location` geography that the proximity search queries. Set `SKIP_TEST_INFRA=1` to skip the Docker spin-up, `CI=1` when the caller already provides those services, or `BOARDSESH_TEST_DATABASE_URL` to run the suite against a Postgres of your own.
+Tests run with `vp test run --project backend`. Vitest auto-starts Postgres and Redis from `packages/backend/docker-compose.test.yml`. The Postgres image carries PostGIS, because `gyms` and `user_boards` have a `location` geography that the proximity search queries. Set `SKIP_TEST_INFRA=1` to skip the Docker spin-up, `CI=1` when the caller already provides those services, or `BOARDSESH_TEST_DATABASE_URL` to run the suite against a Postgres of your own — point that one at a throwaway server, because whatever it names inherits the whole harness, including the sweep that drops every `boardsesh_backend_test_w*` database it finds.
 
 ## Environment variables
 
