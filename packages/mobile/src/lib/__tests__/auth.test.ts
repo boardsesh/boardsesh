@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifyNativeAuthFailureReason,
+  isAppleSignInCancellation,
   isRecoverableAndroidGoogleSignInError,
   nativeSignInErrorCode,
 } from '../native-auth-analytics';
@@ -129,5 +130,28 @@ describe('isRecoverableAndroidGoogleSignInError', () => {
     expect(isRecoverableAndroidGoogleSignInError(undefined)).toBe(false);
     expect(isRecoverableAndroidGoogleSignInError(null)).toBe(false);
     expect(isRecoverableAndroidGoogleSignInError('DEVELOPER_ERROR')).toBe(false);
+  });
+});
+
+describe('isAppleSignInCancellation', () => {
+  it('treats the coded cancel and the message-only cancel as the same intent', () => {
+    expect(isAppleSignInCancellation({ code: 'ERR_REQUEST_CANCELED' })).toBe(true);
+    // Some builds reject with no usable `.code` — 49 events / 44 users in 30
+    // days reached the sign-in hook's outer catch this way and bounced the
+    // climber into the browser OAuth fallback (#3088).
+    expect(isAppleSignInCancellation(new Error('The user canceled the authorization attempt'))).toBe(true);
+    expect(isAppleSignInCancellation(new Error('The user cancelled the authorization attempt'))).toBe(true);
+  });
+
+  it('keeps real Apple failures classified as failures', () => {
+    expect(isAppleSignInCancellation(new Error('The authorization attempt failed for an unknown reason'))).toBe(false);
+    expect(isAppleSignInCancellation({ code: 'ERR_REQUEST_UNKNOWN' })).toBe(false);
+    expect(isAppleSignInCancellation(new Error('The user canceled a different thing entirely'))).toBe(false);
+  });
+
+  it('handles non-object throws without blowing up', () => {
+    expect(isAppleSignInCancellation(null)).toBe(false);
+    expect(isAppleSignInCancellation(undefined)).toBe(false);
+    expect(isAppleSignInCancellation('The user canceled the authorization attempt')).toBe(false);
   });
 });

@@ -311,7 +311,7 @@ describe('useBoardBluetooth', () => {
     expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.unknownError');
   });
 
-  it('stays silent when the user dismisses the device picker', async () => {
+  it('stays silent when the user dismisses the device picker, and counts it as a cancel not a failure', async () => {
     const fakeAdapter = makeFakeAdapter({
       requestAndConnect: vi.fn().mockRejectedValue(new Error('Device selection cancelled')),
     });
@@ -326,6 +326,13 @@ describe('useBoardBluetooth', () => {
     });
 
     expect(Alert.alert).not.toHaveBeenCalled();
+    // #3088: a dismissal used to fire 'Bluetooth Connection Failed', which was
+    // 70% of that event's volume and inflated the reported connect-failure rate.
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Failed')).toBeUndefined();
+    const cancelled = mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Cancelled');
+    expect(cancelled?.[1]).toMatchObject({ boardName: 'kilter', layoutId: 1, sizeId: 1 });
+    // A dismissal has no failure cause to report.
+    expect(cancelled?.[1]).not.toHaveProperty('failureReason');
   });
 
   it('maps a connect timeout to the connect-failed copy', async () => {
@@ -343,6 +350,27 @@ describe('useBoardBluetooth', () => {
     });
 
     expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.connectFailed');
+  });
+
+  // Guards the #3088 cancel/failure split from over-matching: a real
+  // environmental failure must keep landing on 'Bluetooth Connection Failed'.
+  it('still reports an environmental connect failure as a failure', async () => {
+    const fakeAdapter = makeFakeAdapter({
+      requestAndConnect: vi.fn().mockRejectedValue(new Error('Connection timed out — board may be powered off')),
+    });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Cancelled')).toBeUndefined();
+    const failure = mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Failed');
+    expect(failure?.[1]).toMatchObject({ failureReason: 'connect_failed' });
   });
 
   it('tags a service_missing failure with the services the board exposed (#3480)', async () => {

@@ -1596,16 +1596,35 @@ export function useBoardBluetooth({
             Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.unknownError'));
         }
 
-        track(SHARED_EVENTS.BluetoothConnectionFailed, {
-          boardName,
-          layoutId,
-          sizeId,
-          failureReason: failureCategory === 'unknown' ? classifyBleFailureReason(error) : failureCategory,
-          // Raw ble-plx codes (Android) so the real connect-failure cause and the
-          // low-level GATT status are visible for re-measurement (#3608). Empty on
-          // web / native iOS.
-          ...blePlxErrorCodes(error),
-        });
+        // A dismissed picker gets its own event rather than being counted as a
+        // connect failure (#3088) — it used to be 2,478 of 3,467 'Bluetooth
+        // Connection Failed' events, so the reported failure rate read 15.5%
+        // against a real 5.0%. Branch on `failureCategory`, matching the alert
+        // switch above; deliberately NOT on `reportLevel === null`, since that
+        // knob governs error tracking, not analytics. No failureReason and no
+        // ble-plx codes here: a dismissal has neither.
+        // Known fidelity gap: the unmount cleanup also rejects the picker with
+        // 'Device selection cancelled' (to keep the alert suppressed), so a
+        // provider teardown mid-picker lands here too. That's app teardown, not
+        // a dismissal, and it's rare enough not to warrant a source prop.
+        if (failureCategory === 'user_cancelled') {
+          track(SHARED_EVENTS.BluetoothConnectionCancelled, {
+            boardName,
+            layoutId,
+            sizeId,
+          });
+        } else {
+          track(SHARED_EVENTS.BluetoothConnectionFailed, {
+            boardName,
+            layoutId,
+            sizeId,
+            failureReason: failureCategory === 'unknown' ? classifyBleFailureReason(error) : failureCategory,
+            // Raw ble-plx codes (Android) so the real connect-failure cause and the
+            // low-level GATT status are visible for re-measurement (#3608). Empty on
+            // web / native iOS.
+            ...blePlxErrorCodes(error),
+          });
+        }
       } finally {
         connectInFlightRef.current = false;
         setLoading(false);

@@ -191,6 +191,13 @@ export const SHARED_EVENTS = {
   // Bluetooth / hardware
   BluetoothConnectionSuccess: 'Bluetooth Connection Success',
   BluetoothConnectionFailed: 'Bluetooth Connection Failed',
+  // A climber dismissing the device picker is intent, not a failure. Kept
+  // distinct from BluetoothConnectionFailed so the failure metric isn't inflated
+  // by cancels: over 30 days 2,478 of 3,467 'Bluetooth Connection Failed' events
+  // carried failureReason 'user_cancelled' (#3088), which read as a 15.5%
+  // connect-failure rate where the real one is 5.0%. Same split as
+  // LoginCancelled / LoginFailed above. Props: { boardName, layoutId, sizeId }.
+  BluetoothConnectionCancelled: 'Bluetooth Connection Cancelled',
   BluetoothDisconnected: 'Bluetooth Disconnected',
   // BLE lifecycle telemetry — added so a session recording (and PostHog) shows
   // what the radio actually did. BluetoothConnectionStolen is the tug-of-war
