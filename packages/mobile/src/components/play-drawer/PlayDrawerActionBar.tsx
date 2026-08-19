@@ -36,7 +36,11 @@ type PlayDrawerActionBarProps = {
   lightbulbAccessibilityLabel?: string;
   lightbulbLongPressAccessibilityHint?: string;
   lightbulbLongPressEnabled?: boolean;
-  /** Hide the BLE action when the host platform has no Bluetooth provider. */
+  /**
+   * Whether the host platform has a Bluetooth provider at all. Only that — an
+   * anonymous viewer never gets the bulb regardless, and that rule lives here
+   * rather than at the call site (see `viewer`).
+   */
   showLightbulb?: boolean;
   /** Show the holder avatar pip on the lightbulb. Suppressed when the on-wall
    *  banner already carries the driver's face in the header, so the same face
