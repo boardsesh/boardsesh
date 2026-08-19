@@ -46,9 +46,7 @@ vi.mock('@/app/lib/db/db', () => {
   builder.orderBy = () => builder;
   builder.limit = () => runSelect();
   builder.execute = async (statement: { queryChunks?: { value?: string[] }[] }) => {
-    reads.statements.push(
-      (statement.queryChunks ?? []).map((chunk) => (chunk.value ?? []).join('')).join(''),
-    );
+    reads.statements.push((statement.queryChunks ?? []).map((chunk) => (chunk.value ?? []).join('')).join(''));
   };
 
   return {
@@ -68,10 +66,7 @@ vi.mock('@/app/lib/db/db', () => {
  * first two tests below go red — a pass-through mock would let that ship.
  */
 vi.mock('next/cache', () => ({
-  unstable_cache:
-    (fn: () => Promise<unknown>) =>
-    async (): Promise<unknown> =>
-      JSON.parse(JSON.stringify(await fn())),
+  unstable_cache: (fn: () => Promise<unknown>) => async (): Promise<unknown> => JSON.parse(JSON.stringify(await fn())),
 }));
 
 const { fetchPlaylistSitemapRows, resetPlaylistSitemapCacheForTests, warmPlaylistSitemapCache } =
@@ -139,11 +134,7 @@ describe('fetchPlaylistSitemapRows', () => {
       release = resolve;
     });
 
-    const inFlight = Promise.all([
-      fetchPlaylistSitemapRows(),
-      fetchPlaylistSitemapRows(),
-      fetchPlaylistSitemapRows(),
-    ]);
+    const inFlight = Promise.all([fetchPlaylistSitemapRows(), fetchPlaylistSitemapRows(), fetchPlaylistSitemapRows()]);
     release();
     const [first, second, third] = await inFlight;
 
