@@ -214,6 +214,28 @@ describe('mobile plain-string subscription documents validate against the execut
   }
 });
 
+// Regression guard for #4494. `CLIMB_SEARCH_FIELDS` — the selection set behind
+// SEARCH_CLIMBS, which is how every climb reaches the Climbs list and, through
+// it, the play drawer — deliberately omitted `description` on the premise that
+// "no list UI renders them". The play drawer DOES render it now (setter notes),
+// so re-slimming the list would silently blank that section for every climb
+// opened from search while leaving deep-linked climbs fine. Same technique as
+// queue-climb-field-contract.test.ts: read the hand-maintained template out of
+// mobile's source and assert on the parsed field set.
+describe('mobile CLIMB_SEARCH_FIELDS carries the fields the play drawer renders', () => {
+  const searchFields = climbFieldNames(
+    `{ climb { ${extractTemplateConst(readMobileOperationsSource(), 'CLIMB_SEARCH_FIELDS')} } }`,
+  );
+
+  it('selects a non-empty field set', () => {
+    expect(searchFields.size).toBeGreaterThan(0);
+  });
+
+  it('selects description, so the play drawer can show the setter notes (#4494)', () => {
+    expect(searchFields.has('description')).toBe(true);
+  });
+});
+
 describe('native iOS queue subscription drift guard', () => {
   it('matches the shared-schema native queue operation exactly after whitespace normalization', () => {
     const nativeOperation = readNativeIosQueueUpdatesOperation();

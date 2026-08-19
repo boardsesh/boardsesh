@@ -53,6 +53,12 @@ vi.mock('../../CollapsibleSection', () => ({
   },
 }));
 
+// SetterNotesSection renders through the real component (its suppression rules
+// are what these tests assert), so only the leaf Text needs a DOM stand-in.
+vi.mock('../../Text', () => ({
+  Text: ({ children }: { children?: ReactNode }) => createElement('p', { 'data-testid': 'text' }, children),
+}));
+
 vi.mock('../BetaVideosSection', () => ({
   BetaVideosSection: () => createElement('div', { 'data-testid': 'beta-videos' }),
 }));
@@ -99,10 +105,10 @@ const climb = {
   ascensionist_count: 0,
 } as Climb;
 
-function renderSections(options: { enabled?: boolean; contentEnabled?: boolean } = {}) {
+function renderSections(options: { enabled?: boolean; contentEnabled?: boolean; description?: string | null } = {}) {
   return render(
     <DeferredSections
-      climb={climb}
+      climb={options.description === undefined ? climb : ({ ...climb, description: options.description } as Climb)}
       boardName="kilter"
       layoutId={1}
       sizeId={10}
@@ -166,6 +172,63 @@ describe('DeferredSections', () => {
     renderSections({ contentEnabled: true });
 
     expect(screen.getByTestId('boardsesh-grade')).not.toBeNull();
+  });
+
+  // #4494. The notes sit BELOW the Logbook on purpose: PlayDrawer's
+  // `firstScreenReserve` / `computeLogbookScrollTarget` both assume the Logbook
+  // is the first section rendered here, so anything inserted above it silently
+  // breaks the fold math and the expand-into-view scroll.
+  describe("the setter's notes", () => {
+    function sectionTitles(container: HTMLElement): string[] {
+      return [...container.querySelectorAll('section')].map((node) => node.getAttribute('data-title') ?? '');
+    }
+
+    it('renders the notes for a climb with real prose', () => {
+      deferred.ready = true;
+      const { container } = renderSections({ contentEnabled: true, description: 'Match the rail, then send.' });
+
+      expect(container.textContent).toContain('Match the rail, then send.');
+      expect(sectionTitles(container)).toContain('mobile.setterNotes.title');
+    });
+
+    it('keeps the Logbook first and puts the notes directly after it', () => {
+      deferred.ready = true;
+      const { container } = renderSections({ contentEnabled: true, description: 'Match the rail, then send.' });
+
+      expect(sectionTitles(container).slice(0, 2)).toEqual(['mobile.logbook.title', 'mobile.setterNotes.title']);
+    });
+
+    it('leaves the Logbook first when there are no notes to show', () => {
+      deferred.ready = true;
+      const { container } = renderSections({ contentEnabled: true, description: '' });
+
+      expect(sectionTitles(container)[0]).toBe('mobile.logbook.title');
+    });
+
+    it('renders no section at all for an empty or bare no-match description', () => {
+      for (const description of ['', 'No match', 'No match\n', 'No matching.', 'no matching']) {
+        deferred.ready = true;
+        const { container, unmount } = renderSections({ contentEnabled: true, description });
+
+        expect(sectionTitles(container)).not.toContain('mobile.setterNotes.title');
+        unmount();
+      }
+    });
+
+    it('never eats setter beta that merely mentions matching', () => {
+      deferred.ready = true;
+      const prose = 'No Houdini swap, spin around pls:). No matching.';
+      const { container } = renderSections({ contentEnabled: true, description: prose });
+
+      expect(container.textContent).toContain(prose);
+    });
+
+    it('waits for the interaction defer like the other below-fold sections', () => {
+      deferred.ready = false;
+      const { container } = renderSections({ contentEnabled: true, description: 'Match the rail, then send.' });
+
+      expect(container.textContent).not.toContain('Match the rail, then send.');
+    });
   });
 
   it('renders nothing while disabled', () => {
