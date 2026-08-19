@@ -1774,6 +1774,112 @@ describe('useBoardBluetooth native connection adoption', () => {
     });
   });
 
+  // #4499, JS half. Native keeps the wall dark on an off-screen wake, but the
+  // auto-sender mounts the moment `isConnected` flips and would push the
+  // restored queue's current climb over the same link. The gate is what the
+  // auto-sender asks before every write.
+  it('arms the off-screen-adopt send gate when native reports a suppressed re-light', async () => {
+    const adapter = makeAdoptableAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({
+      deviceId: 'native-dev',
+      name: 'Kilter Board#9@3',
+      connectOrigin: 'restored',
+      implicitRelightSuppressed: true,
+    });
+    mockAppState.currentState = 'background';
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      connectedListener?.({ deviceId: 'native-dev', deviceName: 'Kilter Board#9@3' });
+    });
+
+    await waitFor(() => {
+      expect(result.current.isConnected).toBe(true);
+    });
+    expect(result.current.consumeBackgroundAdoptSendGate()).toBe(true);
+    await waitFor(() => {
+      expect(mockTrack).toHaveBeenCalledWith(
+        'BLE Implicit Relight Suppressed',
+        expect.objectContaining({ surface: 'native_connect', connectOrigin: 'restored' }),
+      );
+    });
+  });
+
+  it('releases the send gate once the app is back on screen', async () => {
+    const adapter = makeAdoptableAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    mockAppState.currentState = 'background';
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      connectedListener?.({ deviceId: 'native-dev', deviceName: 'Kilter Board#9@3' });
+    });
+
+    await waitFor(() => {
+      expect(result.current.isConnected).toBe(true);
+    });
+    expect(result.current.consumeBackgroundAdoptSendGate()).toBe(true);
+
+    mockAppState.currentState = 'active';
+    expect(result.current.consumeBackgroundAdoptSendGate()).toBe(false);
+    // One-way: the gate is spent, so a later trip to the background doesn't
+    // re-arm it and strand a session the user is actually driving.
+    mockAppState.currentState = 'background';
+    expect(result.current.consumeBackgroundAdoptSendGate()).toBe(false);
+  });
+
+  // A lightbulb reconnect or a #3181 write-stall recovery IS an authorised
+  // connection: native re-lit the wall itself, and a phone in a pocket must keep
+  // driving it for a party peer. Only the unauthorised wake stays silent.
+  it('leaves the send gate open when native authorised the re-light', async () => {
+    const adapter = makeAdoptableAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({
+      deviceId: 'native-dev',
+      name: 'Kilter Board#9@3',
+      connectOrigin: 'liveActivityIntent',
+      implicitRelightSuppressed: false,
+    });
+    mockAppState.currentState = 'background';
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      connectedListener?.({ deviceId: 'native-dev', deviceName: 'Kilter Board#9@3' });
+    });
+
+    await waitFor(() => {
+      expect(result.current.consumeBackgroundAdoptSendGate()).toBe(false);
+    });
+    expect(mockTrack).not.toHaveBeenCalledWith('BLE Implicit Relight Suppressed', expect.anything());
+  });
+
+  it('never arms the send gate for an adopt that happens on screen', async () => {
+    const adapter = makeAdoptableAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({
+      deviceId: 'native-dev',
+      name: 'Kilter Board#9@3',
+      connectOrigin: 'restored',
+      implicitRelightSuppressed: true,
+    });
+    mockAppState.currentState = 'active';
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      connectedListener?.({ deviceId: 'native-dev', deviceName: 'Kilter Board#9@3' });
+    });
+
+    await waitFor(() => {
+      expect(result.current.isConnected).toBe(true);
+    });
+    expect(result.current.consumeBackgroundAdoptSendGate()).toBe(false);
+  });
+
   it('adopts a natively-connected board matching the active config', async () => {
     const adapter = makeAdoptableAdapter();
     vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);

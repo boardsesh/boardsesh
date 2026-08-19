@@ -54,6 +54,9 @@ const bluetooth = vi.hoisted(() => {
           encodingSignature: string;
         } | null,
       },
+      // #4499 off-screen-adopt gate. `false` = let the write through, which is
+      // what every test here that isn't specifically about the gate wants.
+      consumeBackgroundAdoptSendGate: vi.fn(() => false),
     },
     useBoardBluetooth: vi.fn((options: BluetoothHookOptions) => {
       mock.options = options;
@@ -356,6 +359,8 @@ describe('BluetoothProvider mismatch switch', () => {
     bluetooth.state.sendFramesToBoard.mockClear();
     bluetooth.state.sendFramesToBoard.mockResolvedValue(true);
     bluetooth.state.connectInitialSendRef.current = null;
+    bluetooth.state.consumeBackgroundAdoptSendGate.mockReset();
+    bluetooth.state.consumeBackgroundAdoptSendGate.mockReturnValue(false);
     bluetooth.useBoardBluetooth.mockClear();
     presence.enabled = false;
     presence.boardId = null;

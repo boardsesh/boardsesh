@@ -258,6 +258,19 @@ export const SHARED_EVENTS = {
   // 'switch_setup' | 'switch_failed'.
   BleBoardConfigMismatchShown: 'BLE Board Config Mismatch Shown',
   BleBoardConfigMismatchResolved: 'BLE Board Config Mismatch Resolved',
+  // The implicit "re-light the wall from the persisted queue" write was refused
+  // because nobody in this process asked for the connection, or the request that
+  // produced it was too old to still mean anything (#4499). Two surfaces report:
+  //  - 'native_connect' — the iOS connect gate's verdict, read off
+  //    getConnectedDevice when JS adopts the link. Carries connectOrigin
+  //    ('userConnect' | 'liveActivityIntent' | 'writeStallRecovery' | 'restored').
+  //  - 'js_auto_send' — the auto-sender's first drain after adopting a link while
+  //    the app was off screen and native had not authorised a re-light.
+  // This is the field signal for tuning the native gate's freshness bound: the
+  // ble_relight_suppressed Sentry tag only ever rides a captured error, so it
+  // covers the sessions that also crashed rather than the ones that fired.
+  // Props: surface, connectOrigin (native only), boardName, layoutId, sizeId.
+  BleImplicitRelightSuppressed: 'BLE Implicit Relight Suppressed',
   // Search
   // Fired once per resolved search/filter result set, keyed on the search text +
   // filter signature (not per keystroke, not per page). Carries hasQuery,

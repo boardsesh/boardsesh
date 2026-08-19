@@ -601,7 +601,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // authorised (a lightbulb reconnect, a write-stall recovery).
             guard appActive || self.implicitRelightAuthorizedForConnection else {
                 self.implicitRelightSuppressions += 1
-                self.logger.error("Suppressed configureBoard re-light while backgrounded on an unauthorised connection (#4499)")
+                // .info, not .error: this is the gate working as designed, and on a
+                // restored link every background adopt would otherwise write an
+                // error line into the error-rate signal.
+                self.logger.info("Suppressed configureBoard re-light while backgrounded on an unauthorised connection (#4499)")
                 return
             }
             self.implicitRelightAttempts += 1
@@ -1669,6 +1672,16 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         failQueuedWrites(error ?? BoardBleError.notConnected)
         onDisconnect?(deviceId, BoardBleEncoding.disconnectReasonBody(from: error))
 
+        // The link this request produced is gone, so the request stops being
+        // ours to honour: forget it, exactly as a deliberate disconnect does
+        // (#4499). Keeps "provenance describes the CURRENT connection" true for
+        // the window between an unexpected drop and the next connect, so a
+        // `configure(appActive: false)` arriving in that window cannot pass the
+        // authorisation latch against a dead link. Write-stall recovery is
+        // unaffected: its didDisconnect is consumed by the cancellation barrier
+        // above and returns long before here, re-stamping on its own reconnect.
+        clearConnectProvenanceOnBleQueue()
+
         // No auto-reconnect. These boards are last-connection-wins, so silently
         // re-grabbing the link would steal the wall back from whoever took it — a
         // ping-pong that flickers the LEDs. Reconnection is user-initiated only:
@@ -1871,7 +1884,9 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         guard authorized else {
             implicitRelightSuppressions += 1
             let ageSeconds = requestedAt.map { Date().timeIntervalSince($0) } ?? -1
-            logger.error("Suppressed implicit BLE re-light for \(deviceId, privacy: .public): origin=\(origin?.rawValue ?? "none", privacy: .public) ageSeconds=\(ageSeconds, privacy: .public)")
+            // .info: a refused re-light is the designed outcome of the gate, not a
+            // fault. The verdict still needs to be readable in Console.app.
+            logger.info("Suppressed implicit BLE re-light for \(deviceId, privacy: .public): origin=\(origin?.rawValue ?? "none", privacy: .public) ageSeconds=\(ageSeconds, privacy: .public)")
             return false
         }
         implicitRelightAttempts += 1
@@ -2046,7 +2061,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // Log the verdict anyway so Console.app still shows what the gate
             // decided for this connection.
             if !authorized {
-                logger.error("Implicit BLE re-light unauthorised for \(connectedDeviceId, privacy: .public) (origin=\(self.connectRequestOrigin?.rawValue ?? "none", privacy: .public)); an awaiting intent owns this write")
+                logger.info("Implicit BLE re-light unauthorised for \(connectedDeviceId, privacy: .public) (origin=\(self.connectRequestOrigin?.rawValue ?? "none", privacy: .public)); an awaiting intent owns this write")
             }
         } else {
             performImplicitRelightIfAuthorizedOnBleQueue(deviceId: connectedDeviceId)

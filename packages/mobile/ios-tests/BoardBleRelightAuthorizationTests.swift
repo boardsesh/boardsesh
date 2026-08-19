@@ -403,6 +403,37 @@ final class BoardBleRelightAuthorizationTests: XCTestCase {
         XCTAssertEqual(suppressions, 1)
     }
 
+    func testUnexpectedDropForgetsWhoAskedSoAConfigureCannotUseADeadLinksAuthorization() {
+        let peripheral = FakeWritablePeripheral()
+        installConnection(peripheral: peripheral)
+        manager.testHooks.sync {
+            manager.testHooks.setConnectRequest(origin: .userConnect, requestedAt: Date())
+        }
+        manager.testHooks.fireConnectionReady(
+            peripheral: peripheral,
+            characteristic: makeWriteCharacteristic()
+        )
+        XCTAssertEqual(attempts, 1)
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.implicitRelightAuthorizedForConnection })
+
+        // The board drops on its own: out of range, powered off at the wall. No
+        // disconnect() call and no write stall, so this reaches the tail of
+        // handleDidDisconnectOnBleQueue rather than the cancellation barrier.
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+
+        XCTAssertNil(manager.testHooks.sync { manager.testHooks.connectRequestOrigin })
+        XCTAssertNil(manager.testHooks.sync { manager.testHooks.connectRequestedAt })
+        XCTAssertFalse(manager.testHooks.sync { manager.testHooks.implicitRelightAuthorizedForConnection })
+
+        // A background configureBoard landing in the window between the drop and
+        // the next connect must not inherit the dead link's authorization.
+        manager.testHooks.sync {
+            manager.testHooks.configure(moonboardConfiguration(), appActive: false)
+        }
+        XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(suppressions, 1)
+    }
+
     func testBluetoothTurningOffForgetsWhoAsked() {
         let peripheral = FakeWritablePeripheral()
         installConnection(peripheral: peripheral)
