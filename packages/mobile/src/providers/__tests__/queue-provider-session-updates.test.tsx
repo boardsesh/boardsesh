@@ -121,7 +121,9 @@ const partyProfile = vi.hoisted(() => ({
 }));
 
 const queueMutations = vi.hoisted(() => ({
-  addQueueItem: vi.fn(async () => {}),
+  // Typed args so a test can model the shared factory's removal ledger, where an
+  // add retracts an earlier drop of the same uuid (#4009).
+  addQueueItem: vi.fn(async (_item: { uuid: string }, _position?: number) => {}),
   // Typed arg so a test can model the shared factory's removal ledger, which
   // records here before any session guard (#4009).
   removeQueueItem: vi.fn(async (_uuid: string) => {}),
@@ -1677,10 +1679,18 @@ describe('QueueProvider mutation-failure resync', () => {
   // packages/shared/queue-react/src/__tests__/create-queue-mutations.test.ts;
   // what these tests pin is how the provider BRANCHES on its verdict. Absence
   // with no ledger hit means a wholesale server sync, not climber intent.
+  // It tracks the climber's LATEST intent, so `addQueueItem` retracts an earlier
+  // drop just as the real factory does. A test that stubs `addQueueItem` with
+  // `mockReturnValueOnce` bypasses this, which is fine — none of them assert on
+  // the retraction, and the retraction itself is covered against the real
+  // factory in the file above.
   function installRemovalLedger() {
     const explicitlyRemoved = new Set<string>();
     queueMutations.removeQueueItem.mockImplementation(async (uuid: string) => {
       explicitlyRemoved.add(uuid);
+    });
+    queueMutations.addQueueItem.mockImplementation(async (queueItem: { uuid: string }) => {
+      explicitlyRemoved.delete(queueItem.uuid);
     });
     queueMutations.wasUuidExplicitlyRemoved.mockImplementation((uuid: string) => explicitlyRemoved.has(uuid));
   }
@@ -2950,6 +2960,11 @@ describe('QueueProvider always-live wall control', () => {
       mutation.mockReset();
       mutation.mockResolvedValue(undefined);
     }
+    // Same correction the other two harnesses make: the blanket loop above hands
+    // this SYNCHRONOUS boolean action a resolved Promise, which is truthy and so
+    // reads as "the climber removed it" for every uuid (#4009).
+    queueMutations.wasUuidExplicitlyRemoved.mockReset();
+    queueMutations.wasUuidExplicitlyRemoved.mockReturnValue(false);
     sessionStore.getStoredSessionId.mockReset();
     sessionStore.getStoredSessionId.mockResolvedValue('session-1');
     sessionStore.clearStoredSessionId.mockClear();

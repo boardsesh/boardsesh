@@ -175,8 +175,10 @@ export type QueueMutationsActions<TItem> = {
   reorderQueueItem: (uuid: string, oldIndex: number, newIndex: number) => Promise<void>;
   setCurrentClimb: (item: TItem | null, shouldAddToQueue?: boolean, correlationId?: string) => Promise<void>;
   /**
-   * Did the CLIMBER drop `uuid` — via a per-item `removeQueueItem`, or a
-   * wholesale `setQueue` replace that discarded a remembered add-candidate?
+   * Is the climber's LATEST intent for `uuid` "drop it" — set by a per-item
+   * `removeQueueItem` or by a wholesale `setQueue` replace that discarded a
+   * remembered add-candidate, and retracted by any later `addQueueItem`,
+   * queue-adding activation, or `setQueue` payload that contains it?
    *
    * Read-only, synchronous, side-effect free. It exists so a caller-side
    * recovery can classify a LOCAL ABSENCE the same way `sendDeferredQueueAdd`
@@ -194,6 +196,11 @@ export type QueueMutationsActions<TItem> = {
    * Also false for an item a PEER removed mid-flight: that arrives as a server
    * delta, indistinguishable at this layer from a wholesale sync, so it takes
    * the send branch. Same deliberate gap `sendDeferredQueueAdd` documents.
+   *
+   * Latest-intent rather than ever-dropped matters because the ledger outlives
+   * any one session: the factory is memoised for the QueueProvider's lifetime,
+   * so an append-only answer would suppress the recovery for every climb the
+   * climber cleared earlier in the app process.
    */
   wasUuidExplicitlyRemoved: (uuid: string) => boolean;
   mirrorCurrentClimb: (mirrored: boolean) => Promise<void>;
@@ -268,6 +275,16 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
   // their OWN recovery against the same fork (mobile's recoverThrottledQueueAdd,
   // #4009) consult this ledger instead of re-deriving the heuristic.
   //
+  // It records the climber's LATEST intent for a uuid, not "ever dropped": every
+  // path that puts the climb back — `addQueueItem`, an activation carrying a
+  // queue-add, or a `setQueue` payload that contains it — forgets the entry. An
+  // append-only ledger keeps answering "dropped" for the rest of the app process
+  // (`useQueueMutations` memoises the factory for the QueueProvider's whole
+  // lifetime, and nothing but the cap below ever deletes), so a climber who
+  // cleared their queue and later re-picked one of those climbs would hit the
+  // very #4009 bail this exists to prevent. Re-queueing a project you cleared is
+  // ordinary, and mobile's clear-queue puts EVERY queued uuid in here at once.
+  //
   // Backed by an insertion-ordered Set rather than a small ring: mobile's
   // `clearQueue` fires one `removeQueueItem` per queued item in a single burst,
   // so a 50-entry ring evicted its own earliest entries on any queue longer than
@@ -282,6 +299,14 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       const oldest = removedUuids.values().next();
       if (!oldest.done) removedUuids.delete(oldest.value);
     }
+  }
+  // The climber put it back, so the earlier drop no longer describes what they
+  // want. Called from every add path BEFORE that path's own awaits, so a remove
+  // that races in afterwards still records and still wins — which is what keeps
+  // the #3934 undo leg alive (recovery's add forgets, the swipe during its
+  // back-off re-records, the undo check reads the swipe).
+  function forgetRemovedUuid(uuid: string): void {
+    removedUuids.delete(uuid);
   }
 
   // uuids of recent activations that carried a queue-add — the only uuids a
@@ -428,6 +453,9 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
 
   return {
     addQueueItem: async (item, position) => {
+      // Putting it back retracts any earlier drop, and before the session guards
+      // for the same reason `removeQueueItem` records before them.
+      forgetRemovedUuid(toQueueItemInput(item).uuid);
       const ready = await resolveCore({ allowCreate: true });
       if (!ready) return;
       await runMutation(ready.client, {
@@ -455,7 +483,15 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     setCurrentClimb: async (item, shouldAddToQueue, correlationId) => {
       // Only an activation that carries a queue-add can ever produce a deferred
       // ADD, so only those uuids need tracking for the wholesale-replace diff.
-      if (item !== null && shouldAddToQueue) rememberAddCandidate(toQueueItemInput(item).uuid);
+      // Such an activation is also the climber asking for the climb back, so it
+      // retracts any earlier drop of the same uuid — otherwise a climb they
+      // cleared an hour ago is still "dropped" when this activation's own
+      // recovery asks (#4009).
+      if (item !== null && shouldAddToQueue) {
+        const activatedUuid = toQueueItemInput(item).uuid;
+        rememberAddCandidate(activatedUuid);
+        forgetRemovedUuid(activatedUuid);
+      }
       // Web throws upfront when disconnected (no ensureReady); mobile enqueues
       // and lets the coalescer's sendArgs resolve / create the session.
       if (!ensureReady && (!getClient() || !getSessionId())) {
@@ -509,6 +545,13 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       // placeholder reads as discarded — harmless, since the ledger is
       // consulted only once the item has also left the local queue, and an
       // activation is always a resolved climb.)
+      // The mirror image of the same intent: a uuid the payload DOES contain is
+      // one the climber just asserted belongs in their queue, so it retracts any
+      // earlier drop (#4009). Runs first, so a uuid that is both a stale
+      // add-candidate and absent from the payload still ends up recorded.
+      for (const queueInput of queueInputs) {
+        forgetRemovedUuid(queueInput.uuid);
+      }
       if (addCandidateUuids.length > 0) {
         const nextUuids = new Set(queueInputs.map((queueInput) => queueInput.uuid));
         for (const candidate of addCandidateUuids) {
