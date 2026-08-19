@@ -298,8 +298,8 @@ export function useOfflineFollowUser(db: OfflineDatabase, graphqlFetch: GraphQLF
 
       reportSuppressedEnqueue('user_follows', 'create', enqueueOutcome);
 
-      queryClient.invalidateQueries({ queryKey: ['followers'] });
-      queryClient.invalidateQueries({ queryKey: ['following'] });
+      void queryClient.invalidateQueries({ queryKey: ['followers'] });
+      void queryClient.invalidateQueries({ queryKey: ['following'] });
 
       scheduleDrain(db, queryClient, graphqlFetch);
     },
@@ -329,8 +329,8 @@ export function useOfflineUnfollowUser(db: OfflineDatabase, graphqlFetch: GraphQ
 
       reportSuppressedEnqueue('user_follows', 'delete', enqueueOutcome);
 
-      queryClient.invalidateQueries({ queryKey: ['followers'] });
-      queryClient.invalidateQueries({ queryKey: ['following'] });
+      void queryClient.invalidateQueries({ queryKey: ['followers'] });
+      void queryClient.invalidateQueries({ queryKey: ['following'] });
 
       scheduleDrain(db, queryClient, graphqlFetch);
     },

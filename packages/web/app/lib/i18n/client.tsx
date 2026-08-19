@@ -50,7 +50,7 @@ let clientInstance: i18n | undefined;
 
 function createConfiguredInstance(locale: Locale, resources: Record<string, Record<string, unknown>>): i18n {
   const instance = i18next.createInstance();
-  instance
+  void instance
     .use(resourcesToBackend((lng: string, ns: string) => loadCatalog(lng, ns)))
     .use(initReactI18next)
     .init({

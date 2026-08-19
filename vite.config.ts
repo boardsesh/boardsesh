@@ -28,7 +28,16 @@ export default defineConfig({
     ignore: ['design/**', '**/generated/**', '**/board-controller/**', 'CHANGELOG.md'],
   },
   lint: {
-    ignorePatterns: ['**/board-controller/**'],
+    // Keep this list in lock-step with `ignorePatterns` in .oxlintrc.json.
+    // `vp check` — the pre-commit hook and CI's only linter — reads THIS block,
+    // not .oxlintrc.json (see issue #4548), so the two drifted: main's full-repo
+    // pass was type-aware-linting embedded firmware scripts and design/ that
+    // .oxlintrc.json excludes and that no PR ever linted. board-controller is a
+    // vendored minified bundle; embedded/ is ESP firmware helper scripts;
+    // design/, **/generated/** and the drizzle SQL journal are generated or
+    // hand-off artefacts nobody edits to satisfy a linter. Matches the fmt
+    // ignore list above.
+    ignorePatterns: ['**/board-controller/**', 'embedded/**', 'design/**', '**/generated/**', 'packages/db/drizzle/**'],
     options: {
       typeAware: true,
       typeCheck: true,
