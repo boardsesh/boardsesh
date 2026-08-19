@@ -24,8 +24,21 @@ const DISPLAY_NAME_MAX = 100;
 const MAX_DIMENSION = 1024;
 const COMPRESSION_QUALITY = 0.85;
 
-/** A picked image that has been read off disk and proven to have bytes in it. */
-type CompressedAvatar = { uri: string; bytes: Uint8Array };
+/**
+ * Filenames for the image types the backend accepts (`ALLOWED_MIME_TYPES` in
+ * `packages/backend/src/handlers/avatars.ts`, which derives the stored file's
+ * extension from the declared type). Only consulted for the fallback: the
+ * compressed path re-encodes to JPEG, so it knows what it produced. A pick the
+ * picker reports as anything else — HEIC, most often, straight off an Android
+ * camera roll — can't be uploaded honestly without the manipulator, so the
+ * fallback refuses it rather than mislabelling the bytes as JPEG.
+ */
+const FALLBACK_FILE_NAMES: Record<string, string> = {
+  'image/jpeg': 'avatar.jpg',
+  'image/png': 'avatar.png',
+  'image/gif': 'avatar.gif',
+  'image/webp': 'avatar.webp',
+};
 
 /**
  * Resize (if needed) and re-encode a picked image to a small JPEG, returning the
@@ -81,14 +94,14 @@ class AvatarCompressionError extends Error {
  * resize/re-encode. `expo-image-picker`'s Android exporter drops the same
  * `Boolean`, so the fallback gets its own length check instead of being trusted.
  */
-async function compressAvatar(asset: ImagePicker.ImagePickerAsset): Promise<CompressedAvatar> {
+async function compressAvatar(asset: ImagePicker.ImagePickerAsset): Promise<AvatarUploadFile> {
   let compressedBytes = new Uint8Array();
   let failure: unknown = null;
   try {
     const compressedUri = await renderCompressedJpeg(asset);
     compressedBytes = await new File(compressedUri).bytes();
     if (compressedBytes.length > 0) {
-      return { uri: compressedUri, bytes: compressedBytes };
+      return { uri: compressedUri, bytes: compressedBytes, name: 'avatar.jpg', type: 'image/jpeg' };
     }
   } catch (error) {
     failure = error;
@@ -103,18 +116,26 @@ async function compressAvatar(asset: ImagePicker.ImagePickerAsset): Promise<Comp
     failure ??= error;
   }
 
+  // The fallback skips the re-encode, so these bytes are whatever the picker
+  // handed us — on Android that is routinely PNG or HEIC, not JPEG. Send them
+  // under their real type, and give up when it isn't one the backend takes.
+  const fallbackType = asset.mimeType;
+  const fallbackName = fallbackType ? FALLBACK_FILE_NAMES[fallbackType] : undefined;
+  const canUseOriginal =
+    fallbackName !== undefined && originalBytes.length > 0 && originalBytes.length <= MAX_AVATAR_BYTES;
+
   // There is no telemetry on this path today (zero avatar/manipulator/picker
   // events in 90 days), which is exactly why the failure went unnoticed for so
-  // long. Sizes and platform only — no URIs, no user identifiers. Reported once,
-  // here, at the severity the climber actually experiences: a warning when the
-  // fallback rescues the save, an error when they lose the pick.
-  const canUseOriginal = originalBytes.length > 0 && originalBytes.length <= MAX_AVATAR_BYTES;
+  // long. Sizes, MIME type and platform only — no URIs, no user identifiers.
+  // Reported once, here, at the severity the climber actually experiences: a
+  // warning when the fallback rescues the save, an error when they lose the pick.
   reportHandledError(failure ?? new Error('Avatar compression produced an empty file'), {
     level: canUseOriginal ? 'warning' : 'error',
     tags: { source: 'avatar-compress' },
     extra: {
       compressedBytes: compressedBytes.length,
       originalBytes: originalBytes.length,
+      originalType: fallbackType ?? 'unknown',
       platform: Platform.OS,
     },
   });
@@ -122,7 +143,7 @@ async function compressAvatar(asset: ImagePicker.ImagePickerAsset): Promise<Comp
   if (!canUseOriginal) {
     throw new AvatarCompressionError('Avatar compression produced an unusable file');
   }
-  return { uri: asset.uri, bytes: originalBytes };
+  return { uri: asset.uri, bytes: originalBytes, name: fallbackName, type: fallbackType };
 }
 
 export function EditProfileScreen() {
@@ -178,9 +199,7 @@ export function EditProfileScreen() {
         quality: 1,
       });
       if (result.canceled) return;
-      const asset = result.assets[0];
-      const { uri, bytes } = await compressAvatar(asset);
-      setPickedAvatar({ uri, bytes, name: 'avatar.jpg', type: 'image/jpeg' });
+      setPickedAvatar(await compressAvatar(result.assets[0]));
     } catch (error) {
       // `compressAvatar` already reported this one with the byte counts attached.
       if (!(error instanceof AvatarCompressionError)) {

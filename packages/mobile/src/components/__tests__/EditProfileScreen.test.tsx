@@ -167,7 +167,7 @@ beforeEach(() => {
   requestMediaLibraryPermissionsMock.mockResolvedValue({ granted: true });
   launchImageLibraryMock.mockResolvedValue({
     canceled: false,
-    assets: [{ uri: 'file://picked-avatar.jpg', width: 2400, height: 1600 }],
+    assets: [{ uri: 'file://picked-avatar.jpg', width: 2400, height: 1600, mimeType: 'image/jpeg' }],
   });
   saveAsyncMock.mockResolvedValue({ uri: 'file://compressed-avatar.jpg' });
   renderAsyncMock.mockResolvedValue({ saveAsync: saveAsyncMock, release: releaseMock });
@@ -250,8 +250,61 @@ describe('EditProfileScreen', () => {
     expect(context).toMatchObject({
       level: 'warning',
       tags: { source: 'avatar-compress' },
-      extra: { compressedBytes: 0, originalBytes: 4 },
+      extra: { compressedBytes: 0, originalBytes: 4, originalType: 'image/jpeg' },
     });
+  });
+
+  // The fallback skips the JPEG re-encode, so the bytes are whatever the picker
+  // produced. Declaring them `image/jpeg` regardless would store a PNG under a
+  // .jpg key with a lying content-type.
+  it("sends the fallback crop under the picker's own MIME type", async () => {
+    launchImageLibraryMock.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file://picked-avatar.png', width: 2400, height: 1600, mimeType: 'image/png' }],
+    });
+    fileBytesByUri.set('file://picked-avatar.png', new Uint8Array([7, 7]));
+    fileBytesByUri.set('file://compressed-avatar.jpg', new Uint8Array());
+
+    render(createElement(EditProfileScreen));
+
+    fireEvent.click(screen.getByRole('button', { name: 'profile.avatar.upload' }));
+    await waitFor(() => {
+      expect(screen.getByTestId('avatar').getAttribute('data-uri')).toBe('file://picked-avatar.png');
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'profile.save' }));
+
+    await waitFor(() => {
+      expect(uploadAvatarMock).toHaveBeenCalledWith(
+        {
+          uri: 'file://picked-avatar.png',
+          bytes: new Uint8Array([7, 7]),
+          name: 'avatar.png',
+          type: 'image/png',
+        },
+        '11111111-1111-4111-8111-111111111111',
+      );
+    });
+  });
+
+  it('refuses a fallback crop the backend would not accept, rather than mislabelling it', async () => {
+    launchImageLibraryMock.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file://picked-avatar.heic', width: 2400, height: 1600, mimeType: 'image/heic' }],
+    });
+    fileBytesByUri.set('file://picked-avatar.heic', new Uint8Array([5, 5, 5]));
+    fileBytesByUri.set('file://compressed-avatar.jpg', new Uint8Array());
+
+    render(createElement(EditProfileScreen));
+
+    fireEvent.click(screen.getByRole('button', { name: 'profile.avatar.upload' }));
+
+    await waitFor(() => {
+      expect(showToastMock).toHaveBeenCalledWith('profile.validation.compressionFailed', 'error');
+    });
+    expect(uploadAvatarMock).not.toHaveBeenCalled();
+
+    const [, context] = reportHandledErrorMock.mock.calls[0] as [Error, Record<string, unknown>];
+    expect(context).toMatchObject({ level: 'error', extra: { originalType: 'image/heic' } });
   });
 
   it('falls back to the picker crop when the manipulator throws outright', async () => {
@@ -289,7 +342,7 @@ describe('EditProfileScreen', () => {
     expect(context).toMatchObject({
       level: 'warning',
       tags: { source: 'avatar-compress' },
-      extra: { compressedBytes: 0, originalBytes: 4 },
+      extra: { compressedBytes: 0, originalBytes: 4, originalType: 'image/jpeg' },
     });
   });
 
@@ -332,7 +385,7 @@ describe('EditProfileScreen', () => {
     expect(context).toMatchObject({
       level: 'error',
       tags: { source: 'avatar-compress' },
-      extra: { compressedBytes: 0, originalBytes: MAX_AVATAR_BYTES + 1 },
+      extra: { compressedBytes: 0, originalBytes: MAX_AVATAR_BYTES + 1, originalType: 'image/jpeg' },
     });
   });
 });
