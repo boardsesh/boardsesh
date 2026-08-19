@@ -8,20 +8,36 @@
 // Deliberately NOT wrapped in React.StrictMode: StrictMode double-invokes
 // effects, which would make every call-count oracle below meaningless.
 
-import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { render, act } from '@testing-library/react';
 import React, { type ReactNode } from 'react';
+
+type SocketEvent = 'connected' | 'closed';
 
 type FakeClient = {
   on: ReturnType<typeof vi.fn>;
   dispose: ReturnType<typeof vi.fn>;
+  /** Fire what graphql-ws would have fired, so the supervisor can be driven. */
+  emit: (event: SocketEvent) => void;
 };
 
 const createdClients: FakeClient[] = [];
 const createGraphQLClientSpy = vi.fn(() => {
+  const handlers: Record<SocketEvent, Array<() => void>> = { connected: [], closed: [] };
   const client: FakeClient = {
-    on: vi.fn(() => () => {}),
+    on: vi.fn((event: SocketEvent, handler: () => void) => {
+      handlers[event].push(handler);
+      return () => {
+        handlers[event] = handlers[event].filter((registered) => registered !== handler);
+      };
+    }),
     dispose: vi.fn(async () => {}),
+    emit: (event: SocketEvent) => {
+      // Hold the array reference: unsubscribing REPLACES handlers[event], so
+      // an off() during dispatch can't mutate what we're iterating.
+      const registered = handlers[event];
+      for (const handler of registered) handler();
+    },
   };
   createdClients.push(client);
   return client;
@@ -63,7 +79,7 @@ vi.mock('@/app/hooks/use-ws-auth-token', () => ({
   useWsAuthToken: () => useWsAuthTokenSpy(),
 }));
 
-import KioskPresenceHub from '../kiosk-presence-hub';
+import KioskPresenceHub, { PRESENCE_REBUILD_AFTER_MS } from '../kiosk-presence-hub';
 import { ViewerKioskPresenceHub } from '../viewer-kiosk-presence-hub';
 
 function optionsOfCall(callIndex: number): { authToken?: string | null; connectionName?: string } {
@@ -175,5 +191,66 @@ describe('read-only kiosk presence client', () => {
     // The viewer client keeps the write path: it hits the transport, not a guard.
     const full = createWebBoardPresenceClient(getClient as never);
     await expect(full.reportClimb(1, { uuid: 'c1' } as never, 40)).rejects.toThrow('transport should not be reached');
+  });
+});
+
+// The kiosk is unattended by definition: graphql-ws spends a finite retry
+// budget (~90-180s) and never resets it, and `useBoardPresence` never
+// re-subscribes — so without a supervisor a backend outage longer than that
+// budget leaves a dark wall until the 04:00 reload. These two cases pull in
+// opposite directions on purpose: no stub can satisfy both.
+describe('KioskPresenceHub reconnect supervisor', () => {
+  beforeEach(() => {
+    createdClients.length = 0;
+    createGraphQLClientSpy.mockClear();
+    useWsAuthTokenSpy.mockReturnValue({ token: null, isLoading: false });
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('rebuilds the client when the socket stays down past the window', () => {
+    render(
+      <KioskPresenceHub boardIds={[7]}>
+        <div>kiosk</div>
+      </KioskPresenceHub>,
+    );
+    expect(createGraphQLClientSpy).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      createdClients[0].emit('closed');
+    });
+    act(() => {
+      vi.advanceTimersByTime(PRESENCE_REBUILD_AFTER_MS + 1_000);
+    });
+
+    expect(createdClients[0].dispose).toHaveBeenCalledTimes(1);
+    expect(createGraphQLClientSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves an ordinary blip alone once the socket comes back', () => {
+    render(
+      <KioskPresenceHub boardIds={[7]}>
+        <div>kiosk</div>
+      </KioskPresenceHub>,
+    );
+
+    act(() => {
+      createdClients[0].emit('closed');
+    });
+    act(() => {
+      vi.advanceTimersByTime(PRESENCE_REBUILD_AFTER_MS / 2);
+    });
+    act(() => {
+      createdClients[0].emit('connected');
+    });
+    act(() => {
+      vi.advanceTimersByTime(PRESENCE_REBUILD_AFTER_MS * 2);
+    });
+
+    expect(createGraphQLClientSpy).toHaveBeenCalledTimes(1);
+    expect(createdClients[0].dispose).not.toHaveBeenCalled();
   });
 });

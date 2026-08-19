@@ -19,7 +19,13 @@
 // mounts `ViewerKioskPresenceHub` from ./viewer-kiosk-presence-hub instead.
 //
 // Reconnect/backoff lives inside the shared createGraphQLClient (exponential
-// retryWait, 10 attempts) — NOT duplicated here. Longer outages are covered by
+// retryWait, 10 attempts) — NOT duplicated here. What IS here is the layer
+// above it: graphql-ws's retry budget is finite and its counter only resets on
+// a successful connect, so once the budget is spent the client is dead for
+// good and `useBoardPresence` never re-subscribes. On a desk that's a reload;
+// on an unattended wall it's a frozen screen until the 04:00 reload. So the hub
+// supervises: a socket that stays down past PRESENCE_REBUILD_AFTER_MS gets the
+// whole client rebuilt from scratch. Longer/other outages are still covered by
 // kiosk-reliability.tsx (periodic manual catch-up + daily reload).
 
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -38,6 +44,14 @@ import {
   type KioskBoardSnapshot,
   type KioskConnectionStatus,
 } from './use-kiosk-board-presence';
+
+/**
+ * How long the socket may stay down before the hub throws the client away and
+ * builds a new one. One notch above graphql-ws's own full retry budget (10
+ * attempts of capped-exponential backoff, ~90-180s) so an ordinary blip is
+ * healed by the library and never reaches this path.
+ */
+export const PRESENCE_REBUILD_AFTER_MS = 5 * 60_000;
 
 export type KioskPresenceHubProps = { boardIds: number[]; children: ReactNode };
 
@@ -76,6 +90,12 @@ export function KioskPresenceHubInner({
   // event notifies only its own subscribers — one wall going live doesn't
   // re-render every other board's art. Created once for the hub's lifetime.
   const [store] = useState(createKioskPresenceStore);
+  // Bumped when the supervisor gives up on a client. It is an effect dep, so a
+  // bump tears the old client down and builds a fresh one — with graphql-ws's
+  // retry counter back at zero and every BoardPresenceProvider re-subscribing
+  // and re-backfilling underneath it.
+  const [clientGeneration, setClientGeneration] = useState(0);
+  const rebuildTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!hasBoards) return;
@@ -83,16 +103,36 @@ export function KioskPresenceHubInner({
     const wsUrl = getBackendWsUrl();
     if (!wsUrl) return;
 
+    const clearRebuildTimer = () => {
+      if (rebuildTimerRef.current === null) return;
+      clearTimeout(rebuildTimerRef.current);
+      rebuildTimerRef.current = null;
+    };
+
     const client = createGraphQLClient({ url: wsUrl, authToken, connectionName: 'kiosk' });
     // Drive the header's reconnect chip off the socket lifecycle. graphql-ws
     // retries with backoff internally; we only surface the state.
-    const offConnected = client.on('connected', () => setConnectionStatus('connected'));
-    const offClosed = client.on('closed', () => setConnectionStatus('reconnecting'));
+    const offConnected = client.on('connected', () => {
+      clearRebuildTimer();
+      setConnectionStatus('connected');
+    });
+    const offClosed = client.on('closed', () => {
+      setConnectionStatus('reconnecting');
+      // graphql-ws emits `closed` once per failed retry, so keep the FIRST
+      // countdown running: the window measures time since the wall went dark,
+      // not time since the latest attempt.
+      if (rebuildTimerRef.current !== null) return;
+      rebuildTimerRef.current = setTimeout(() => {
+        rebuildTimerRef.current = null;
+        setClientGeneration((generation) => generation + 1);
+      }, PRESENCE_REBUILD_AFTER_MS);
+    });
 
     clientRef.current = client;
     setActiveWsClient(client);
 
     return () => {
+      clearRebuildTimer();
       offConnected();
       offClosed();
       void client.dispose();
@@ -103,7 +143,7 @@ export function KioskPresenceHubInner({
     };
     // Deps are primitives on purpose — `boardIds` is a fresh array identity on
     // every render, so listing it here would rebuild the socket per render.
-  }, [authToken, hasBoards, isAuthResolving]);
+  }, [authToken, hasBoards, isAuthResolving, clientGeneration]);
 
   const presenceClient = useMemo<WebBoardPresenceClient | null>(() => {
     if (activeWsClient === null) return null;
