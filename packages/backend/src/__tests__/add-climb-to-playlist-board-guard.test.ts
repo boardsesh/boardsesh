@@ -33,6 +33,11 @@ const UNKNOWN_CLIMB = `bg4015-cunk-${FIXTURE_RUN_ID}`;
 const ALIAS_UUID = `bg4015-calias-${FIXTURE_RUN_ID}`;
 const ALIAS_CANONICAL_KILTER_L8 = KILTER_L8_CLIMB;
 
+// One alias uuid carrying a row under BOTH boards — the alias PK is
+// (board_type, alias_uuid), so this is representable and each row can point at
+// a different canonical climb.
+const AMBIGUOUS_ALIAS_UUID = `bg4015-camb-${FIXTURE_RUN_ID}`;
+
 function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext {
   return {
     connectionId: `bg4015-${FIXTURE_RUN_ID}`,
@@ -81,7 +86,10 @@ describe('addClimbToPlaylist — board-compatibility guard (#4015)', () => {
     // same board — this is what board_climb_aliases dedup rows look like.
     await db.execute(sql`
       INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source)
-      VALUES ('kilter', ${ALIAS_UUID}, ${ALIAS_CANONICAL_KILTER_L8}, 'kilter')
+      VALUES
+        ('kilter', ${ALIAS_UUID}, ${ALIAS_CANONICAL_KILTER_L8}, 'kilter'),
+        ('kilter', ${AMBIGUOUS_ALIAS_UUID}, ${KILTER_L8_CLIMB}, 'kilter'),
+        ('tension', ${AMBIGUOUS_ALIAS_UUID}, ${TENSION_L8_CLIMB}, 'aurora')
       ON CONFLICT (board_type, alias_uuid) DO NOTHING
     `);
 
@@ -102,10 +110,13 @@ describe('addClimbToPlaylist — board-compatibility guard (#4015)', () => {
   });
 
   afterAll(async () => {
+    // playlist_climbs.playlist_id is declared `onDelete: 'cascade'`
+    // (packages/db/src/schema/app/playlists.ts), so dropping the playlists
+    // takes every membership row these tests added with them.
     await db.execute(
       sql`DELETE FROM playlists WHERE uuid IN (${KILTER_LAYOUT_8_PLAYLIST}, ${KILTER_NULL_LAYOUT_PLAYLIST})`,
     );
-    await db.execute(sql`DELETE FROM board_climb_aliases WHERE alias_uuid = ${ALIAS_UUID} AND board_type = 'kilter'`);
+    await db.execute(sql`DELETE FROM board_climb_aliases WHERE alias_uuid IN (${ALIAS_UUID}, ${AMBIGUOUS_ALIAS_UUID})`);
     await db.execute(
       sql`DELETE FROM board_climbs WHERE uuid IN (${KILTER_L8_CLIMB}, ${KILTER_L9_CLIMB}, ${TENSION_L8_CLIMB})`,
     );
@@ -124,13 +135,19 @@ describe('addClimbToPlaylist — board-compatibility guard (#4015)', () => {
   });
 
   it('rejects a cross-board add (different boardType)', async () => {
+    // The code matters as much as the message: clients branch on
+    // BAD_USER_INPUT to tell "you picked the wrong playlist" apart from a
+    // server failure they should retry.
     await expect(
       playlistMutations.addClimbToPlaylist(
         null,
         { input: { playlistId: KILTER_LAYOUT_8_PLAYLIST, climbUuid: TENSION_L8_CLIMB, angle: 40 } },
         makeCtx(),
       ),
-    ).rejects.toThrow('This playlist is for a different board');
+    ).rejects.toMatchObject({
+      message: 'This playlist is for a different board',
+      extensions: { code: 'BAD_USER_INPUT' },
+    });
 
     expect(await climbUuidsInPlaylist(KILTER_LAYOUT_8_PLAYLIST)).not.toContain(TENSION_L8_CLIMB);
   });
@@ -232,6 +249,49 @@ describe('addClimbToPlaylist — board-compatibility guard (#4015)', () => {
       expect(await climbUuidsInPlaylist(specificLayoutPlaylist)).not.toContain(ALIAS_UUID);
     } finally {
       await db.execute(sql`DELETE FROM playlists WHERE uuid = ${specificLayoutPlaylist}`);
+    }
+  });
+
+  // An alias uuid with a row under two boards resolves to two candidate
+  // scopes. The guard accepts when ANY of them fits, so the verdict can't flip
+  // with whichever row Postgres returns first — this test would be a coin flip
+  // against an unordered LIMIT 1 lookup.
+  it('accepts an alias uuid that resolves under two boards when one of them fits the playlist', async () => {
+    const result = (await playlistMutations.addClimbToPlaylist(
+      null,
+      { input: { playlistId: KILTER_LAYOUT_8_PLAYLIST, climbUuid: AMBIGUOUS_ALIAS_UUID, angle: 40 } },
+      makeCtx(),
+    )) as { climbUuid: string };
+
+    expect(result.climbUuid).toBe(AMBIGUOUS_ALIAS_UUID);
+    expect(await climbUuidsInPlaylist(KILTER_LAYOUT_8_PLAYLIST)).toContain(AMBIGUOUS_ALIAS_UUID);
+  });
+
+  it('rejects an alias uuid whose every resolved board disagrees with the playlist', async () => {
+    // Both of AMBIGUOUS_ALIAS_UUID's canonical climbs sit on layout 8, so a
+    // Kilter layout-9 playlist matches neither.
+    const layout9Playlist = `bg4015-amb-l9-${FIXTURE_RUN_ID}`;
+    await db.execute(sql`
+      INSERT INTO playlists (uuid, board_type, layout_id, name, is_public)
+      VALUES (${layout9Playlist}, 'kilter', 9, 'Kilter layout 9 playlist', false)
+    `);
+    await db.execute(sql`
+      INSERT INTO playlist_ownership (playlist_id, user_id, role)
+      SELECT id, ${OWNER_ID}, 'owner' FROM playlists WHERE uuid = ${layout9Playlist}
+    `);
+
+    try {
+      await expect(
+        playlistMutations.addClimbToPlaylist(
+          null,
+          { input: { playlistId: layout9Playlist, climbUuid: AMBIGUOUS_ALIAS_UUID, angle: 40 } },
+          makeCtx(),
+        ),
+      ).rejects.toThrow('This playlist is for a different board');
+
+      expect(await climbUuidsInPlaylist(layout9Playlist)).not.toContain(AMBIGUOUS_ALIAS_UUID);
+    } finally {
+      await db.execute(sql`DELETE FROM playlists WHERE uuid = ${layout9Playlist}`);
     }
   });
 });
