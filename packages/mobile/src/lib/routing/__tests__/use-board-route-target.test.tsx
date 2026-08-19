@@ -868,6 +868,27 @@ describe('useBoardRouteTarget signed-out on web', () => {
     await waitFor(() => expect(statusOf(container)).toBe('not-found'));
   });
 
+  // A transport failure and a board that isn't there resolve to the SAME
+  // not-found, on purpose: there is no offline healing on this path (it only
+  // exists on the web export, where a reload is the retry). Pinned because it is
+  // a deliberate dead end rather than an oversight — anyone adding a retry here
+  // should have to change a test that says so.
+  it('treats a failed slug lookup as not-found rather than spinning', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    fetchBoardBySlug.mockRejectedValue(new Error('network down'));
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'the-gym', angle: 40, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    expect(climbOf(container)).toBe('');
+  });
+
   // A slug LIST URL still needs a board it can adopt, so it keeps the login wall.
   it('still hands a slug list URL to login', async () => {
     gateState.relaxesRoutes = true;
