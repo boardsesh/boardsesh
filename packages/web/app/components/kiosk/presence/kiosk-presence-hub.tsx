@@ -24,12 +24,43 @@
 // a successful connect, so once the budget is spent the client is dead for
 // good and `useBoardPresence` never re-subscribes. On a desk that's a reload;
 // on an unattended wall it's a frozen screen until the 04:00 reload. So the hub
-// supervises: a socket that stays down past PRESENCE_REBUILD_AFTER_MS gets the
-// whole client rebuilt from scratch. Longer/other outages are still covered by
-// kiosk-reliability.tsx (periodic manual catch-up + daily reload).
+// supervises two failure shapes the library cannot see:
+//
+//  a) THE SOCKET IS DOWN past PRESENCE_REBUILD_AFTER_MS (retry budget spent).
+//  b) THE SOCKET IS UP but ONE BOARD's subscription is dead. graphql-ws does
+//     not retry an operation the server rejected with a GraphQL error (its
+//     subscribe loop treats `Error` as terminal), and a multi-board TV keeps
+//     the socket alive on its other boards — so no `closed` ever fires. That
+//     slot then shows whatever it last saw forever, including a climb the wall
+//     has since cleared (a clear only ever arrives over the live stream).
+//
+// Both end in the same move: dispose the client and build a fresh one, which
+// re-subscribes every board. Rebuilding costs the wall its state — the shared
+// `useBoardPresence` RESETs when the client identity changes — so the hub
+// tells every board to catch up on the rebuilt client's first connect (see
+// `catchUpNonce`). Without that the screen comes back permanently blank,
+// because the rebuild happens BY CONSTRUCTION while the backend is
+// unreachable, so the providers' own backfill seeds fail.
+//
+// Costs, stated plainly: each generation gets a fresh 10-attempt budget, so a
+// long outage roughly triples a TV's connect attempts against a backend that
+// is already down (measured: 31 attempts vs 11 over 12 minutes, one board).
+// That is inside `boardNowPlaying`'s 60/min anon bucket, and the rebuild
+// countdown carries the same jitter the transport's own backoff uses so a
+// fleet that dropped together does not rebuild in lockstep. Case (b) is capped
+// at MAX_STALE_SUBSCRIPTION_REBUILDS because a board the backend will never
+// serve again (flipped private mid-session) would otherwise churn the whole
+// client every 5 minutes for the rest of the day.
+//
+// Longer/other outages are covered by kiosk-reliability.tsx — but only on the
+// kiosk routes: `/embed/**` mounts this hub WITHOUT `KioskReliability`, so an
+// embed gets layer 1 (the per-board catch-up that ships inside
+// `KioskBoardFeedBridge`) and this supervisor, and neither the config-poll nor
+// the 04:00 reload.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { BoardPresenceProvider } from '@boardsesh/board-presence-react';
+import { RECONNECT_JITTER_RATIO } from '@boardsesh/graphql-client';
 import { createGraphQLClient, type Client } from '@/app/lib/realtime/graphql-client';
 import {
   createReadOnlyWebBoardPresenceClient,
@@ -52,6 +83,31 @@ import {
  * healed by the library and never reaches this path.
  */
 export const PRESENCE_REBUILD_AFTER_MS = 5 * 60_000;
+
+/**
+ * How many times in a row a still-dead board subscription may force a client
+ * rebuild before the hub stops trying. A transient rejection (the shared anon
+ * `ip:` rate bucket every TV in the gym shares) clears in one; a board flipped
+ * private mid-session never will, and without this cap that slot would rebuild
+ * the whole client — blanking every OTHER board for a round trip — every five
+ * minutes until the 04:00 reload. The counter resets the moment every board is
+ * live again.
+ */
+export const MAX_STALE_SUBSCRIPTION_REBUILDS = 3;
+
+/**
+ * The rebuild countdown, jittered. A backend restart takes every TV in the
+ * fleet down at the same instant, so an un-jittered constant would have them
+ * all rebuild — and, because a freshly built graphql-ws client does not wait
+ * before its FIRST attempt, all reconnect — in one synchronized burst every
+ * five minutes for as long as the outage lasts. Same ratio the transport's own
+ * `retryWait` uses (#2655), so the two backoff layers stay consistent:
+ * `randomFraction` of 0 keeps the full window, 1 halves it.
+ */
+export function presenceRebuildDelayMs(randomFraction: number): number {
+  const clamped = Math.min(Math.max(randomFraction, 0), 1);
+  return Math.round(PRESENCE_REBUILD_AFTER_MS * (1 - clamped * RECONNECT_JITTER_RATIO));
+}
 
 export type KioskPresenceHubProps = { boardIds: number[]; children: ReactNode };
 
@@ -90,12 +146,101 @@ export function KioskPresenceHubInner({
   // event notifies only its own subscribers — one wall going live doesn't
   // re-render every other board's art. Created once for the hub's lifetime.
   const [store] = useState(createKioskPresenceStore);
-  // Bumped when the supervisor gives up on a client. It is an effect dep, so a
-  // bump tears the old client down and builds a fresh one — with graphql-ws's
-  // retry counter back at zero and every BoardPresenceProvider re-subscribing
-  // and re-backfilling underneath it.
+  // Bumped when either supervisor gives up on a client. It is an effect dep, so
+  // a bump tears the old client down and builds a fresh one — graphql-ws's
+  // retry counter back at zero, and every BoardPresenceProvider re-subscribing.
+  // Re-subscribing is NOT re-backfilling: the providers also RESET, and their
+  // own seeds run against a backend that is still down. `catchUpNonce` below is
+  // what actually refills the screen.
   const [clientGeneration, setClientGeneration] = useState(0);
   const rebuildTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Whether the socket is up right now, readable from a cleanup closure and
+  // from the liveness supervisor (both run outside render).
+  const socketOpenRef = useRef(false);
+  // Boards whose own subscription is dead while the socket is fine (case (b)
+  // in the header), the countdown that acts on them, and how many rebuilds
+  // that countdown has already spent.
+  const deadBoardsRef = useRef<Set<number>>(new Set());
+  const staleSubscriptionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const staleSubscriptionRebuildsRef = useRef(0);
+  // When every board was last simultaneously live. Drives the budget reset — a
+  // healthy stretch is what makes the NEXT dead board a new incident rather
+  // than the same one still failing.
+  const allBoardsLiveSinceRef = useRef(Number.NEGATIVE_INFINITY);
+  // Bumped when a REBUILT client first connects. `KioskBoardFeedBridge` reads
+  // it and re-runs its board's catch-up, which is the only thing that refills a
+  // wall the rebuild reset — see the `connected` handler below for why the
+  // providers' own backfill seeds cannot.
+  const [catchUpNonce, setCatchUpNonce] = useState(0);
+
+  const clearStaleSubscriptionTimer = useCallback(() => {
+    if (staleSubscriptionTimerRef.current === null) return;
+    clearTimeout(staleSubscriptionTimerRef.current);
+    staleSubscriptionTimerRef.current = null;
+  }, []);
+
+  /**
+   * Start (or stand down) the countdown on case (b). Called both when a board's
+   * liveness changes and when the SOCKET connects — a board can go dead before
+   * the socket is up (its first subscribe is rejected), and that ordering would
+   * otherwise leave the countdown permanently unarmed.
+   */
+  const evaluateStaleSubscriptions = useCallback(() => {
+    if (deadBoardsRef.current.size === 0) {
+      clearStaleSubscriptionTimer();
+      return;
+    }
+    // A dead SOCKET takes every board down with it; that is the other
+    // countdown's job, and arming both would rebuild twice.
+    if (!socketOpenRef.current) {
+      clearStaleSubscriptionTimer();
+      return;
+    }
+    if (staleSubscriptionRebuildsRef.current >= MAX_STALE_SUBSCRIPTION_REBUILDS) return;
+    if (staleSubscriptionTimerRef.current !== null) return;
+    staleSubscriptionTimerRef.current = setTimeout(() => {
+      staleSubscriptionTimerRef.current = null;
+      if (deadBoardsRef.current.size === 0 || !socketOpenRef.current) return;
+      staleSubscriptionRebuildsRef.current += 1;
+      setClientGeneration((generation) => generation + 1);
+    }, presenceRebuildDelayMs(Math.random()));
+  }, [clearStaleSubscriptionTimer]);
+
+  /**
+   * Called for every snapshot a board publishes. `isLive` is false exactly when
+   * that board has no working subscription, so a board that stays false while
+   * the socket is connected is case (b): a per-operation rejection graphql-ws
+   * will never retry.
+   */
+  const noteBoardLiveness = useCallback(
+    (boardId: number, isLive: boolean) => {
+      const deadBoards = deadBoardsRef.current;
+      const wasAllLive = deadBoards.size === 0;
+      if (isLive) {
+        deadBoards.delete(boardId);
+      } else {
+        deadBoards.add(boardId);
+      }
+      const isAllLive = deadBoards.size === 0;
+
+      if (isAllLive && !wasAllLive) {
+        allBoardsLiveSinceRef.current = Date.now();
+      } else if (!isAllLive && wasAllLive) {
+        // A board just went dead. If the TV had been fully healthy for longer
+        // than a rebuild window, this is a NEW incident and gets a fresh
+        // budget. Deliberately NOT "reset whenever every board is live": a
+        // rebuilt client reports every board live for the microtask before its
+        // rejection lands, so that rule would hand a permanently-rejected board
+        // an unlimited budget one tick at a time.
+        if (Date.now() - allBoardsLiveSinceRef.current >= PRESENCE_REBUILD_AFTER_MS) {
+          staleSubscriptionRebuildsRef.current = 0;
+        }
+      }
+
+      evaluateStaleSubscriptions();
+    },
+    [evaluateStaleSubscriptions],
+  );
 
   useEffect(() => {
     if (!hasBoards) return;
@@ -110,14 +255,34 @@ export function KioskPresenceHubInner({
     };
 
     const client = createGraphQLClient({ url: wsUrl, authToken, connectionName: 'kiosk' });
+    // Whether this generation has already asked its boards to catch up. Only
+    // the first connect needs it; every later reconnect on the same client is
+    // already covered by the presence client's own `onReconnect` catch-up.
+    let hasRequestedRebuildCatchUp = false;
     // Drive the header's reconnect chip off the socket lifecycle. graphql-ws
     // retries with backoff internally; we only surface the state.
     const offConnected = client.on('connected', () => {
       clearRebuildTimer();
+      socketOpenRef.current = true;
       setConnectionStatus('connected');
+      // A rebuilt client is a NEW client identity, so every provider RESET its
+      // wall and re-ran its backfill seeds — while the backend was still
+      // unreachable, which is the only reason the rebuild fired. Those seeds
+      // are best-effort and swallow their failure, and nothing refills them
+      // afterwards: the presence factory treats a fresh client's first
+      // `connected` as the initial connect and skips its reconnect catch-up,
+      // and `boardNowPlaying` publishes no snapshot on subscribe. So the wall
+      // would come back permanently blank. Ask each board to catch up.
+      if (clientGeneration > 0 && !hasRequestedRebuildCatchUp) {
+        hasRequestedRebuildCatchUp = true;
+        setCatchUpNonce((nonce) => nonce + 1);
+      }
+      evaluateStaleSubscriptions();
     });
     const offClosed = client.on('closed', () => {
+      socketOpenRef.current = false;
       setConnectionStatus('reconnecting');
+      clearStaleSubscriptionTimer();
       // graphql-ws emits `closed` once per failed retry, so keep the FIRST
       // countdown running: the window measures time since the wall went dark,
       // not time since the latest attempt.
@@ -125,7 +290,7 @@ export function KioskPresenceHubInner({
       rebuildTimerRef.current = setTimeout(() => {
         rebuildTimerRef.current = null;
         setClientGeneration((generation) => generation + 1);
-      }, PRESENCE_REBUILD_AFTER_MS);
+      }, presenceRebuildDelayMs(Math.random()));
     });
 
     clientRef.current = client;
@@ -133,8 +298,27 @@ export function KioskPresenceHubInner({
 
     return () => {
       clearRebuildTimer();
+      clearStaleSubscriptionTimer();
       offConnected();
       offClosed();
+      // graphql-ws's `dispose()` awaits the pending `connecting` promise before
+      // it closes the socket, and that promise only settles on a
+      // `connection_ack` — which `connectionAckWaitTimeout: 0` (the library
+      // default the shared factory keeps) never times out. A proxy that accepts
+      // the upgrade while the app behind it is restarting therefore leaves a
+      // disposed client's socket OPEN for the life of the page, and the rebuild
+      // path disposes mid-connect by construction. `terminate()` settles that
+      // promise and closes the socket. Skipped while the socket is up so an
+      // ordinary teardown still closes cleanly with 1000.
+      if (!socketOpenRef.current) {
+        client.terminate();
+      }
+      socketOpenRef.current = false;
+      // The next generation's providers re-report from scratch. Stamp the
+      // healthy-since clock too, so the budget reset above measures a real
+      // healthy stretch rather than treating this bookkeeping as one.
+      deadBoardsRef.current.clear();
+      allBoardsLiveSinceRef.current = Date.now();
       void client.dispose();
       if (clientRef.current === client) {
         clientRef.current = null;
@@ -143,7 +327,14 @@ export function KioskPresenceHubInner({
     };
     // Deps are primitives on purpose — `boardIds` is a fresh array identity on
     // every render, so listing it here would rebuild the socket per render.
-  }, [authToken, hasBoards, isAuthResolving, clientGeneration]);
+  }, [
+    authToken,
+    hasBoards,
+    isAuthResolving,
+    clientGeneration,
+    clearStaleSubscriptionTimer,
+    evaluateStaleSubscriptions,
+  ]);
 
   const presenceClient = useMemo<WebBoardPresenceClient | null>(() => {
     if (activeWsClient === null) return null;
@@ -159,8 +350,9 @@ export function KioskPresenceHubInner({
   const publishSnapshot = useCallback(
     (boardId: number, snapshot: KioskBoardSnapshot) => {
       store.publish(boardId, snapshot);
+      noteBoardLiveness(boardId, snapshot.isLive);
     },
-    [store],
+    [store, noteBoardLiveness],
   );
 
   return (
@@ -172,7 +364,7 @@ export function KioskPresenceHubInner({
             boardId={presenceClient === null ? null : boardId}
             client={presenceClient}
           >
-            <KioskBoardFeedBridge boardId={boardId} onSnapshot={publishSnapshot} />
+            <KioskBoardFeedBridge boardId={boardId} onSnapshot={publishSnapshot} catchUpNonce={catchUpNonce} />
           </BoardPresenceProvider>
         ))}
         {children}
