@@ -437,6 +437,13 @@ export const boardClimbAliases = pgTable(
   (table) => ({
     pk: primaryKey({ columns: [table.boardType, table.aliasUuid] }),
     canonicalIdx: index('board_climb_aliases_canonical_idx').on(table.boardType, table.canonicalUuid),
+    // Board-less alias lookup. alias_uuid is the PK's TRAILING column, so the PK
+    // cannot serve `WHERE alias_uuid = $1` on its own: on the 345k-row catalog
+    // snapshot that predicate plans as a parallel seq scan over the whole 44 MB
+    // heap (~44 ms across 3 backends) every call. `addClimbToPlaylist`'s board
+    // guard runs exactly that query for any uuid missing from board_climbs, so
+    // an authenticated caller posting unknown uuids drove one full scan each.
+    aliasUuidIdx: index('board_climb_aliases_alias_uuid_idx').on(table.aliasUuid),
     canonicalFk: foreignKey({
       columns: [table.canonicalUuid],
       foreignColumns: [boardClimbs.uuid],

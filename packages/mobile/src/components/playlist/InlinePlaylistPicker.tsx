@@ -14,6 +14,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
+import { resolveClimbBoardScope, toBoardName } from '@boardsesh/board-config';
 import {
   GET_PLAYLISTS_FOR_CLIMB,
   type GetPlaylistsForClimbQueryResponse,
@@ -133,6 +134,29 @@ export function InlinePlaylistPicker({
   const { playlists, addToPlaylist, removeFromPlaylist, createPlaylist, isLoading, isAuthenticated } =
     usePlaylistsContext();
 
+  // The board scope every playlist decision in this picker is judged against.
+  //
+  // `boardName`/`layoutId` are the board the HOST is rendering the climb on.
+  // That is the climb's own board on every single-board surface, but not on a
+  // cross-board preview: `PlayDrawer.handleOpenActions` opens the reaction menu
+  // with no board override, so a Tension climb previewed from the logbook while
+  // the stored active board is Kilter arrives here tagged "kilter". The server
+  // guards the add on the climb's real `board_climbs` row (#4015), so a picker
+  // keyed on the host would list Kilter playlists and then hard-fail the add.
+  // Prefer what the climb itself carries; fall back to the host for payloads
+  // that don't populate it. `Climb.boardType` is a free-form string off the
+  // wire, so narrow it back to a `BoardName` and keep the host board when this
+  // build doesn't recognise the value — an unknown board must not become a
+  // filter that matches no playlist at all.
+  const { boardType: climbBoardType, layoutId: climbLayoutId } = climb;
+  const climbBoardScope = useMemo(() => {
+    const resolved = resolveClimbBoardScope(
+      { boardType: climbBoardType, layoutId: climbLayoutId },
+      { boardType: boardName, layoutId },
+    );
+    return { boardType: toBoardName(resolved.boardType) ?? boardName, layoutId: resolved.layoutId };
+  }, [climbBoardType, climbLayoutId, boardName, layoutId]);
+
   // This climb's current memberships. The provider's membership map is empty
   // (see use-mobile-climb-actions-data) and the shared chip store is only
   // populated behind an opt-in setting, so fetch the single climb's memberships
@@ -140,14 +164,18 @@ export function InlinePlaylistPicker({
   // through `setQueryData` on this key so they survive the host unmounting and
   // re-mounting the picker (the reaction overlay does exactly that on back).
   const membershipKey = useMemo(
-    () => ['playlistsForClimb', boardName, layoutId, climb.uuid] as const,
-    [boardName, layoutId, climb.uuid],
+    () => ['playlistsForClimb', climbBoardScope.boardType, climbBoardScope.layoutId, climb.uuid] as const,
+    [climbBoardScope, climb.uuid],
   );
   const { data: memberUuids } = useQuery({
     queryKey: membershipKey,
     queryFn: async (): Promise<string[]> => {
       const response = await getHttpClient().request<GetPlaylistsForClimbQueryResponse>(GET_PLAYLISTS_FOR_CLIMB, {
-        input: { boardType: boardName, layoutId, climbUuid: climb.uuid },
+        input: {
+          boardType: climbBoardScope.boardType,
+          layoutId: climbBoardScope.layoutId,
+          climbUuid: climb.uuid,
+        },
       });
       return response.playlistsForClimb;
     },
@@ -207,11 +235,12 @@ export function InlinePlaylistPicker({
   );
 
   // Scope the "add to playlist" list to the climb's own board+layout — the
-  // provider's `playlists` spans every board the user has playlists on, and
-  // adding a climb to a wrong-board playlist isn't guarded server-side (#4224).
+  // provider's `playlists` spans every board the user has playlists on, and the
+  // server rejects an add whose climb doesn't fit the playlist's board (#4015).
+  // Same predicate on both sides, so nothing offered here can fail that guard.
   const sortedPlaylists = useMemo(
-    () => sortPlaylistsByName(filterPlaylistsByBoard(playlists, boardName, layoutId)),
-    [playlists, boardName, layoutId],
+    () => sortPlaylistsByName(filterPlaylistsByBoard(playlists, climbBoardScope.boardType, climbBoardScope.layoutId)),
+    [playlists, climbBoardScope],
   );
 
   // Write a membership set to the cache and mirror it into the shared chip store
@@ -359,7 +388,13 @@ export function InlinePlaylistPicker({
     // failed" and leave the name in the form, or a retry creates a duplicate.
     let created;
     try {
-      created = await createPlaylist(trimmed, undefined, color, icon, { boardType: boardName, layoutId });
+      // The climb's board, not the host's: creating on the host board and then
+      // adding a cross-board climb to it would fail the server's board guard
+      // straight after the create, leaving an empty playlist behind.
+      created = await createPlaylist(trimmed, undefined, color, icon, {
+        boardType: climbBoardScope.boardType,
+        layoutId: climbBoardScope.layoutId,
+      });
     } catch (submitError) {
       // Inline, not a toast — the picker (and its host overlay/sheet) stays up.
       if (isCurrent()) {
@@ -369,8 +404,8 @@ export function InlinePlaylistPicker({
       if (__DEV__) {
         console.warn('[playlist] inline create failed', {
           climbUuid: climb.uuid,
-          boardName,
-          layoutId,
+          boardType: climbBoardScope.boardType,
+          layoutId: climbBoardScope.layoutId,
           error: submitError,
         });
       }
@@ -419,8 +454,7 @@ export function InlinePlaylistPicker({
     color,
     icon,
     createPlaylist,
-    boardName,
-    layoutId,
+    climbBoardScope,
     addToPlaylist,
     climb.uuid,
     angle,
