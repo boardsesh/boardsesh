@@ -60,7 +60,7 @@ vi.mock('@/app/lib/i18n/get-locale', () => ({ getLocale: async () => 'en-US' }))
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: async () => ({
     locale: 'en-US',
-    t: (key: string, options?: Record<string, unknown>) => (options?.name ? `${key}:${String(options.name)}` : key),
+    t: (key: string, options?: { name?: string }) => (options?.name ? `${key}:${options.name}` : key),
   }),
 }));
 vi.mock('@/app/components/providers/i18n-provider', () => ({
@@ -180,6 +180,34 @@ describe('the setter front door, server-rendered', () => {
     const climbAnchors = html.match(/href="\/kilter\/[^"]*\/view\/[^"]*"/g) ?? [];
     expect(climbAnchors).toHaveLength(3);
     expect(html).not.toContain('loading-spinner');
+  });
+
+  it('advertises exactly the climb URLs it links to in the JSON-LD', () => {
+    // Structured data that names a URL the page does not link to is worse than
+    // no structured data. Both sides are read out of the rendered HTML, so this
+    // cannot pass by both halves drifting together.
+    return (async () => {
+      setterData.value = pageData([
+        { uuid: 'a'.repeat(32), name: 'First Climb' },
+        { uuid: 'b'.repeat(32), name: 'Second Climb' },
+      ]);
+
+      const html = await render();
+      // `[\s\S]` rather than the `s` flag: this file lints against a target
+      // where `dotAll` is not available.
+      const block = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html);
+      expect(block).not.toBeNull();
+
+      const graph = JSON.parse(block![1].replace(/\\u003c/g, '<')) as {
+        '@graph': { '@type': string; itemListElement?: { url: string }[] }[];
+      };
+      const itemList = graph['@graph'].find((node) => node['@type'] === 'ItemList');
+      const listPaths = (itemList?.itemListElement ?? []).map((item) => new URL(item.url).pathname);
+      const anchorPaths = [...html.matchAll(/href="(\/kilter\/[^"]*\/view\/[^"]*)"/g)].map((match) => match[1]);
+
+      expect(listPaths).toHaveLength(2);
+      expect(listPaths).toEqual(anchorPaths);
+    })();
   });
 
   it('404s instead of serving a 200 shell when the setter has no visible climb', async () => {

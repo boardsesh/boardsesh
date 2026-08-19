@@ -58,20 +58,37 @@ export default function SetterJsonLd({
     ];
   });
 
+  // A `@graph` rather than nesting the list under the ProfilePage: `ItemList`
+  // is not a valid value for `mainEntity` (that is the Person) nor for
+  // `mainEntityOfPage` (that expects the page itself). Two sibling nodes, the
+  // list pointing back at the page through `mainEntityOfPage`, is the shape
+  // Google's own examples use.
   return (
     <JsonLd
       data={{
         '@context': 'https://schema.org',
-        '@type': 'ProfilePage',
-        url,
-        mainEntity: {
-          '@type': 'Person',
-          name: displayName,
-          url,
-        },
-        ...(listItems.length > 0
-          ? { mainEntityOfPage: { '@type': 'ItemList', numberOfItems: listItems.length, itemListElement: listItems } }
-          : {}),
+        '@graph': [
+          {
+            '@type': 'ProfilePage',
+            '@id': url,
+            url,
+            mainEntity: {
+              '@type': 'Person',
+              name: displayName,
+              url,
+            },
+          },
+          ...(listItems.length > 0
+            ? [
+                {
+                  '@type': 'ItemList',
+                  mainEntityOfPage: { '@id': url },
+                  numberOfItems: listItems.length,
+                  itemListElement: listItems,
+                },
+              ]
+            : []),
+        ],
       }}
     />
   );
