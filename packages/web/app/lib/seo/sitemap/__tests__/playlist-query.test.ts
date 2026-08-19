@@ -181,7 +181,7 @@ describe('fetchPlaylistSitemapRows', () => {
 
 describe('warmPlaylistSitemapCache', () => {
   it('populates the cache so the next request costs nothing', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'info').mockImplementation(() => {});
     reads.rows = SOURCE_ROWS;
 
     await warmPlaylistSitemapCache();
@@ -191,7 +191,7 @@ describe('warmPlaylistSitemapCache', () => {
   });
 
   it('no-ops on a fresh cache', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'info').mockImplementation(() => {});
     reads.rows = SOURCE_ROWS;
     await fetchPlaylistSitemapRows();
 
