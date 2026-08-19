@@ -1547,4 +1547,55 @@ export const schemaSQL = `
             'aurora_type','aurora_id','aurora_synced_at','aurora_sync_error',
             'kilter_type','kilter_id','kilter_synced_at','kilter_sync_error']))
     EXECUTE FUNCTION set_updated_at();
+
+  -- PostGIS. Production carries a \`location\` geography on gyms and user_boards
+  -- (drizzle/0052, 0054, 0127) that the proximity branches of searchGyms and
+  -- searchBoards query with ST_DWithin / ST_Distance. The column lives OUTSIDE
+  -- the Drizzle schema, so nothing generates it — it only reaches this database
+  -- by being written here. Must stay at the very END of schemaSQL: "user_boards"
+  -- is dropped and recreated above, which would take the column and its trigger
+  -- with it.
+  --
+  -- Guarded because worker-db.ts applies this whole string through postgres.js
+  -- \`unsafe()\` — one simple query, so one implicit transaction. A bare
+  -- CREATE EXTENSION against a server without PostGIS aborts the transaction and
+  -- rolls back all 70-odd tables, taking every backend test with it. The
+  -- EXCEPTION handler opens a subtransaction so the failure stays local, and the
+  -- proximity tests self-skip instead. Every statement is idempotent: worker DBs
+  -- outlive a run, so a stale one heals on the next apply.
+  DO $$
+  BEGIN
+    EXECUTE 'CREATE EXTENSION IF NOT EXISTS postgis';
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'postgis unavailable (%): proximity coverage self-skips', SQLERRM;
+  END $$;
+
+  DO $$
+  BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'postgis') THEN
+      EXECUTE 'ALTER TABLE "gyms" ADD COLUMN IF NOT EXISTS "location" geography(Point, 4326)';
+      EXECUTE 'ALTER TABLE "user_boards" ADD COLUMN IF NOT EXISTS "location" geography(Point, 4326)';
+      -- Index predicates mirror production (0054 and 0052) so a query that the
+      -- planner can only satisfy via the GIST index here also can there.
+      EXECUTE 'CREATE INDEX IF NOT EXISTS "gyms_location_idx" ON "gyms" USING GIST ("location") WHERE deleted_at IS NULL AND is_public = true';
+      EXECUTE 'CREATE INDEX IF NOT EXISTS "user_boards_location_gist_idx" ON "user_boards" USING GIST ("location") WHERE is_public = true AND deleted_at IS NULL';
+      -- Verbatim from 0127. This is what lets a test seed plain lat/lng and get
+      -- a geography for free — and it means the tests exercise the same
+      -- derivation production relies on rather than a hand-written one.
+      EXECUTE $fn$
+        CREATE OR REPLACE FUNCTION set_location_from_coordinates() RETURNS trigger AS $body$
+        BEGIN
+          IF NEW.latitude IS NOT NULL AND NEW.longitude IS NOT NULL THEN
+            NEW.location := ST_MakePoint(NEW.longitude, NEW.latitude)::geography;
+          ELSE
+            NEW.location := NULL;
+          END IF;
+          RETURN NEW;
+        END;
+        $body$ LANGUAGE plpgsql
+      $fn$;
+      EXECUTE 'CREATE OR REPLACE TRIGGER gyms_set_location BEFORE INSERT OR UPDATE OF latitude, longitude ON gyms FOR EACH ROW EXECUTE FUNCTION set_location_from_coordinates()';
+      EXECUTE 'CREATE OR REPLACE TRIGGER user_boards_set_location BEFORE INSERT OR UPDATE OF latitude, longitude ON user_boards FOR EACH ROW EXECUTE FUNCTION set_location_from_coordinates()';
+    END IF;
+  END $$;
 `;

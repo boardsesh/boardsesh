@@ -15,10 +15,11 @@ import { getUserCommunityRoles, rolesGrantAdminOrLeader } from './roles';
 //
 // Both the createBoard auto-gym guard and the findSimilarGyms read resolver need
 // to answer "is there already a live gym at these coordinates with (roughly) this
-// name?". The production `gyms` table carries a PostGIS `location` geography, but
-// the backend test DB is plain postgres (no PostGIS / pg_trgm), so everything
-// here stays portable: a cheap lat/lng bounding-box prefilter in SQL, then an
-// exact Haversine refine in JS (`distanceMeters` from @boardsesh/db/queries). The
+// name?". The production `gyms` table carries a PostGIS `location` geography,
+// but nothing here depends on the extension being installed — a self-hosted
+// deployment can be missing it, and the test DB has no pg_trgm — so everything
+// stays portable: a cheap lat/lng bounding-box prefilter in SQL, then an exact
+// Haversine refine in JS (`distanceMeters` from @boardsesh/db/queries). The
 // bounding box is padded (BOUNDING_BOX_SAFETY_FACTOR) so it stays a superset of
 // the true circle even where a metre-per-degree of latitude runs short of the
 // 111_320 average (~0.7% at the equator) — otherwise the prefilter could drop a

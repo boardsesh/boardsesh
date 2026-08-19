@@ -217,7 +217,7 @@ Web types in `packages/web/app/lib/types.ts`; shared types in `packages/shared-s
 
 ### Testing
 
-Vitest via `vp test`. Backend tests auto-start postgres+redis via `packages/backend/docker-compose.test.yml`; set `SKIP_TEST_INFRA=1` to skip, `CI=1` for caller-provided services. `packages/db` uses Node's native test runner (`tsx --test`).
+Vitest via `vp test`. Backend tests auto-start postgres+redis via `packages/backend/docker-compose.test.yml` (a PostGIS image — `gyms`/`user_boards` carry a `location` geography and the proximity queries are tested against it); set `SKIP_TEST_INFRA=1` to skip, `CI=1` for caller-provided services, `BOARDSESH_TEST_DATABASE_URL` to point the suite at your own Postgres. `packages/db` uses Node's native test runner (`tsx --test`).
 
 ## Development Guidelines
 
