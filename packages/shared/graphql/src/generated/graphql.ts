@@ -4770,6 +4770,15 @@ export type PopularBoardConfig = {
   climbCount: Scalars['Int']['output'];
   /** Pre-formatted display name for UI (e.g. 'OG 12x12 Full Ride') */
   displayName: Scalars['String']['output'];
+  /**
+   * ISO-8601 UTC timestamp of the newest listed climb in this config, or null.
+   * Nullable by design, not merely absent data: a legacy cached row written
+   * before this field existed has no value for it, and this field must resolve
+   * to null rather than error the whole config (which sits inside
+   * [PopularBoardConfig!]! — a non-null field here would null the entire row
+   * and error the whole query for every caller reading a stale cache entry).
+   */
+  lastClimbAt?: Maybe<Scalars['String']['output']>;
   /** Layout ID */
   layoutId: Scalars['Int']['output'];
   /** Human-readable layout name */

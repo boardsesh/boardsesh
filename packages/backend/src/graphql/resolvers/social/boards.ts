@@ -683,7 +683,47 @@ export type CachedPopularConfig = {
   totalAscents: number;
   boardCount: number;
   displayName: string;
+  lastClimbAt: string | null;
 };
+
+/**
+ * Normalise a `board_climbs.created_at` value into a proper ISO-8601 UTC
+ * timestamp string.
+ *
+ * The column is `text`, not `timestamptz`, and carries at least two naive
+ * (zone-less) formats depending on the importer: Aurora/PowerSync writes a
+ * space-separated form (`'2024-03-11 09:00:00.123456'`) and MoonBoard writes
+ * ISO-T (`'2023-11-23T18:00:15.227'`). Neither carries a timezone offset, so
+ * a plain `new Date(raw)` would read both as *local* time — timezone-dependent
+ * and wrong. This is a pure string transform (not a `Date` round-trip) so the
+ * behaviour is identical in every runner timezone: parse the pieces, rebuild
+ * with an explicit `Z`, then validate.
+ *
+ * Returns `null` for anything unparseable, and for a timestamp in the future
+ * (a corrupt row must never leak a fabricated future `<lastmod>`).
+ */
+export function normalizeCatalogTimestamp(raw: unknown): string | null {
+  if (typeof raw !== 'string' || raw.length === 0) {
+    return null;
+  }
+
+  const match = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/.exec(raw);
+  if (!match) {
+    return null;
+  }
+
+  const [, datePart, timePart, fractionPart, zonePart] = match;
+  const rebuilt = `${datePart}T${timePart}${fractionPart ?? ''}${zonePart ?? 'Z'}`;
+  const parsedMs = Date.parse(rebuilt);
+  if (!Number.isFinite(parsedMs)) {
+    return null;
+  }
+  if (parsedMs > Date.now()) {
+    return null;
+  }
+
+  return new Date(parsedMs).toISOString();
+}
 
 const BOARD_TYPE_LABELS: Record<string, string> = {
   kilter: 'Kilter',
@@ -739,7 +779,11 @@ function formatDisplayName(
   return `${shortLayout} ${shortSize}${setLabel}`.trim();
 }
 
-const REDIS_CACHE_KEY = 'boardsesh:popular-board-configs';
+// v2: added `lastClimbAt`. Bump this suffix whenever the cached payload shape
+// changes so new code can never read a pre-shape row back out of Redis — the
+// old key is simply orphaned and expires under its own TTL. Do NOT bump this
+// per deploy, only per payload-shape change.
+const REDIS_CACHE_KEY = 'boardsesh:popular-board-configs:v2';
 const REDIS_CACHE_TTL_SECONDS = 365 * 24 * 60 * 60; // 1 year
 const REDIS_LOCK_KEY = 'boardsesh:popular-board-configs:lock';
 const REDIS_LOCK_TTL_SECONDS = 120; // 2 min lock to prevent duplicate queries across nodes
@@ -784,7 +828,7 @@ export function dropPopularConfigsFallback(): void {
   fallbackGeneration += 1;
 }
 
-async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
+export async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
   // Try Redis cache first
   if (redisClientManager.isRedisConnected()) {
     try {
@@ -837,7 +881,8 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
       configs.set_names,
       COALESCE(cc.climb_count, 0) AS climb_count,
       COALESCE(cc.total_ascents, 0) AS total_ascents,
-      COALESCE(ub_counts.board_count, 0) AS board_count
+      COALESCE(ub_counts.board_count, 0) AS board_count,
+      cc.last_climb_at
     FROM (
       SELECT
         psls.board_type,
@@ -868,7 +913,17 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
     LEFT JOIN LATERAL (
       SELECT
         COUNT(DISTINCT bc.uuid)::int AS climb_count,
-        COALESCE(SUM(bcs.ascensionist_count), 0)::int AS total_ascents
+        COALESCE(SUM(bcs.ascensionist_count), 0)::int AS total_ascents,
+        -- created_at is text, not timestamptz, and carries two naive-UTC
+        -- separator styles (Aurora writes a space, MoonBoard writes 'T').
+        -- REPLACE canonicalises the separator before the text MAX so the
+        -- comparison is chronological rather than lexicographic (raw 'T'
+        -- (0x54) sorts after ' ' (0x20), which would silently pick the wrong
+        -- row on a shared calendar day). The LIKE mask drops anything that
+        -- doesn't start with a YYYY-MM-DD date -- Postgres has no try_cast,
+        -- so this must stay a text filter, never a ::timestamp cast, or one
+        -- unparseable legacy row would 500 the whole query.
+        MAX(REPLACE(bc.created_at, ' ', 'T')) FILTER (WHERE bc.created_at LIKE '____-__-__%') AS last_climb_at
       FROM board_climbs bc
       LEFT JOIN board_climb_stats bcs
         ON bcs.board_type = bc.board_type AND bcs.climb_uuid = bc.uuid
@@ -918,6 +973,7 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
       totalAscents: Number(row.total_ascents),
       boardCount: Number(row.board_count),
       displayName: formatDisplayName(boardType, layoutName, sizeName, setNames),
+      lastClimbAt: normalizeCatalogTimestamp(row.last_climb_at),
     };
   });
 

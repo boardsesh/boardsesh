@@ -169,6 +169,7 @@ export type PopularBoardConfig = {
   totalAscents: number;
   boardCount: number;
   displayName: string;
+  lastClimbAt?: string | null;
 };
 
 export type PopularBoardConfigConnection = {

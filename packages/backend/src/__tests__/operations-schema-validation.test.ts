@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vite-plus/test';
 import { readFileSync } from 'fs';
-import { buildSchema, parse, validate, visit, type DocumentNode, type GraphQLSchema } from 'graphql';
+import { buildSchema, parse, validate, visit, GraphQLObjectType, type DocumentNode, type GraphQLSchema } from 'graphql';
 import { typeDefs } from '@boardsesh/shared-schema';
 import * as publicOperations from '@boardsesh/graphql/operations';
 import * as accountOperations from '@boardsesh/graphql/operations/account';
@@ -471,4 +471,29 @@ describe('previous-release driver operations: reduced-B7 validation split', () =
       expect(unknownMutationErrors.length).toBeGreaterThan(0);
     });
   }
+});
+
+// Issue #4466: `PopularBoardConfig.lastClimbAt` MUST stay nullable (`String`,
+// not `String!`). The Redis cache is keyed with a 1-year TTL and warmed only
+// by the node that wins a deploy-time lock — a node that loses the lock, or
+// an old-version node restarting after a deploy, can serve a legacy cached
+// row that has no `lastClimbAt` key at all. A non-null field over that
+// missing key would null the whole `PopularBoardConfig`, which sits inside
+// `configs: [PopularBoardConfig!]!` — erroring the entire query and taking
+// down the boards sitemap shard, the paged climbs shard's config groups, and
+// the homepage rail all at once. Every other test in this campaign runs
+// against a freshly-built cache, so only an explicit SDL assertion catches
+// this regression.
+describe('PopularBoardConfig.lastClimbAt stays nullable', () => {
+  it('is declared as `String`, not `String!`, on the executable schema', () => {
+    const popularBoardConfigType = schema.getType('PopularBoardConfig');
+    if (!(popularBoardConfigType instanceof GraphQLObjectType)) {
+      throw new Error('PopularBoardConfig type not found (or not an object type) on the built schema');
+    }
+    const lastClimbAtField = popularBoardConfigType.getFields().lastClimbAt;
+    if (!lastClimbAtField) {
+      throw new Error('PopularBoardConfig.lastClimbAt field not found on the built schema');
+    }
+    expect(String(lastClimbAtField.type)).toBe('String');
+  });
 });
