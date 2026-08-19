@@ -42,6 +42,8 @@ vi.mock('../../lib/error-reporting', () => ({
 const markerOverrides = vi.hoisted(() => ({
   colors: { HAND: '#ff0000' } as Record<string, string>,
   shapes: { HAND: 'square' } as Record<string, string>,
+  brushThickness: 2,
+  shapeSize: 1.5,
 }));
 
 vi.mock('../../lib/hold-color-overrides', async (importOriginal) => {
@@ -49,13 +51,13 @@ vi.mock('../../lib/hold-color-overrides', async (importOriginal) => {
   const stableOverrides = {
     overrides: markerOverrides.colors,
     shapes: markerOverrides.shapes,
-    brushThickness: original.DEFAULT_HOLD_BRUSH_THICKNESS,
-    shapeSize: original.DEFAULT_HOLD_SHAPE_SIZE,
+    brushThickness: markerOverrides.brushThickness,
+    shapeSize: markerOverrides.shapeSize,
     renderSignature: original.buildHoldRenderOverrideSignature({
       colors: markerOverrides.colors,
       shapes: markerOverrides.shapes,
-      brushThickness: original.DEFAULT_HOLD_BRUSH_THICKNESS,
-      shapeSize: original.DEFAULT_HOLD_SHAPE_SIZE,
+      brushThickness: markerOverrides.brushThickness,
+      shapeSize: markerOverrides.shapeSize,
     } as Parameters<typeof original.buildHoldRenderOverrideSignature>[0]),
   };
   return { ...original, useHoldColorOverrides: () => stableOverrides };
@@ -68,6 +70,7 @@ const {
   buildHoldColorOverrideSignature,
   buildHoldRenderOverrideSignature,
 } = await import('../../lib/hold-color-overrides');
+const { getBoardStrokeWidthMultiplier } = await import('@boardsesh/board-constants/hold-states');
 
 const {
   useNativeClimbRender,
@@ -94,8 +97,8 @@ const FRAMES = 'p1100r12p1200r13';
 const FULL_SIGNATURE = buildHoldRenderOverrideSignature({
   colors: markerOverrides.colors,
   shapes: markerOverrides.shapes,
-  brushThickness: DEFAULT_HOLD_BRUSH_THICKNESS,
-  shapeSize: DEFAULT_HOLD_SHAPE_SIZE,
+  brushThickness: markerOverrides.brushThickness,
+  shapeSize: markerOverrides.shapeSize,
 } as Parameters<typeof buildHoldRenderOverrideSignature>[0]);
 const COLOR_ONLY_SIGNATURE = buildHoldColorOverrideSignature(markerOverrides.colors);
 
@@ -226,6 +229,12 @@ describe('useNativeClimbRender marker-capability fallback', () => {
     };
 
     expect(fallbackConfig.shape_size_multiplier).toBe(DEFAULT_HOLD_SHAPE_SIZE);
+    // Brush thickness is the third field an older renderer cannot honour, and it
+    // is the one that reaches the config as a product with the board's own
+    // default — so assert the resolved number, not just "not 2".
+    expect(fallbackConfig.stroke_width_multiplier).toBe(
+      DEFAULT_HOLD_BRUSH_THICKNESS * getBoardStrokeWidthMultiplier('kilter'),
+    );
     expect(Object.values(fallbackConfig.hold_state_map).some((state) => state.shape !== undefined)).toBe(false);
     // Colours survive — they are what every renderer has always honoured.
     expect(Object.values(fallbackConfig.hold_state_map).some((state) => state.color === '#ff0000')).toBe(true);
