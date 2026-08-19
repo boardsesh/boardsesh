@@ -285,6 +285,9 @@ export default function ShareBetaScreen() {
             data={listItems}
             renderItem={renderItem}
             keyExtractor={shareBetaListKey}
+            // Separate recycler pools for the section headers and the ascent
+            // rows. No `estimatedItemSize` — FlashList v2 self-measures and
+            // removed the prop; mixed row heights are its normal case.
             getItemType={shareBetaListItemType}
             keyboardShouldPersistTaps="handled"
             onEndReached={handleEndReached}
