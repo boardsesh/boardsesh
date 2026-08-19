@@ -16,6 +16,11 @@ vi.mock('next/headers', () => ({
   headers: async () => new Headers(requestLocale.value ? { 'x-boardsesh-locale': requestLocale.value } : {}),
 }));
 
+// The setter page now imports its own Drizzle data layer, which constructs a
+// pool at module scope. Metadata never reads it — stub the module so importing
+// the page does not need DATABASE_URL.
+vi.mock('@/app/lib/db/db', () => ({ dbz: {}, dbzRead: {}, sql: {}, executeRows: async () => [] }));
+
 vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
   getSetterOgSummary: async () => ({ displayName: 'Marco', avatarUrl: null, version: 'v1' }),
   getProfileOgSummary: async () => ({
@@ -54,7 +59,6 @@ vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
 vi.mock('@/app/components/providers/i18n-provider', () => ({
   default: ({ children }: { children: unknown }) => children,
 }));
-vi.mock('../setter/[setter_username]/setter-profile-content', () => ({ default: () => null }));
 vi.mock('../session/[sessionId]/session-detail-content', () => ({ default: () => null }));
 
 const setterPage = await import('../setter/[setter_username]/page');
@@ -137,7 +141,12 @@ describe('board content cross-canonicalises instead', () => {
   it('setter profile points every locale at the English URL and advertises no alternates', async () => {
     const basePath = '/setter/marco';
     const load = (locale: 'en-US' | 'es') =>
-      withLocale(locale, () => setterPage.generateMetadata({ params: Promise.resolve({ setter_username: 'marco' }) }));
+      withLocale(locale, () =>
+        setterPage.generateMetadata({
+          params: Promise.resolve({ setter_username: 'marco' }),
+          searchParams: Promise.resolve({}),
+        }),
+      );
 
     const english = await load('en-US');
     expect(english.alternates?.canonical).toBe(basePath);

@@ -22,6 +22,24 @@ import { logger } from '../../../utils/logger';
 /** Default angle fallback when no angle specified or no stats exist. 40 is the most common training angle. */
 const DEFAULT_ANGLE = 40;
 
+/**
+ * A setter's *publicly visible* climbs.
+ *
+ * Every setter query below reads `board_climbs` filtered on `setter_username`
+ * alone, which handed anyone who asked the setter's drafts and unlisted climbs
+ * — `setterProfile.climbCount` counted them, and `setterClimbs` /
+ * `setterClimbsFull` listed them. None of these resolvers is authenticated
+ * against the setter, so there is no "it's your own draft" case to preserve:
+ * the caller is always someone else looking at someone else's work.
+ */
+function visibleSetterClimbConditions(username: string) {
+  return [
+    eq(dbSchema.boardClimbs.setterUsername, username),
+    eq(dbSchema.boardClimbs.isListed, true),
+    eq(dbSchema.boardClimbs.isDraft, false),
+  ];
+}
+
 export const setterFollowQueries = {
   /**
    * Get a setter profile by username
@@ -37,7 +55,7 @@ export const setterFollowQueries = {
         climbCount: count(),
       })
       .from(dbSchema.boardClimbs)
-      .where(eq(dbSchema.boardClimbs.setterUsername, username))
+      .where(and(...visibleSetterClimbConditions(username)))
       .groupBy(dbSchema.boardClimbs.boardType);
 
     if (boardTypeResults.length === 0) {
@@ -119,7 +137,7 @@ export const setterFollowQueries = {
     const { username, boardType, layoutId, sortBy, limit, offset } = validatedInput;
 
     // Build conditions
-    const conditions = [eq(dbSchema.boardClimbs.setterUsername, username)];
+    const conditions = visibleSetterClimbConditions(username);
     if (boardType) {
       conditions.push(eq(dbSchema.boardClimbs.boardType, boardType));
     }
@@ -232,6 +250,8 @@ export const setterFollowQueries = {
       // Build WHERE conditions for board filter
       const filterConditions: ReturnType<typeof eq>[] = [
         eq(tables.climbs.setterUsername, username),
+        eq(tables.climbs.isListed, true),
+        eq(tables.climbs.isDraft, false),
         eq(tables.climbs.boardType, boardName),
       ];
 
@@ -344,7 +364,7 @@ export const setterFollowQueries = {
           boardType: dbSchema.boardClimbs.boardType,
         })
         .from(dbSchema.boardClimbs)
-        .where(eq(dbSchema.boardClimbs.setterUsername, username))
+        .where(and(...visibleSetterClimbConditions(username)))
         .groupBy(dbSchema.boardClimbs.boardType);
 
       const setterBoardTypes = boardTypeResults
@@ -359,7 +379,7 @@ export const setterFollowQueries = {
       const [countResult] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(dbSchema.boardClimbs)
-        .where(eq(dbSchema.boardClimbs.setterUsername, username));
+        .where(and(...visibleSetterClimbConditions(username)));
 
       const totalCount = Number(countResult?.count ?? 0);
 
@@ -416,7 +436,13 @@ export const setterFollowQueries = {
             eq(dbSchema.boardClimbGrades.angle, tables.climbStats.angle),
           ),
         )
-        .where(eq(tables.climbs.setterUsername, username))
+        .where(
+          and(
+            eq(tables.climbs.setterUsername, username),
+            eq(tables.climbs.isListed, true),
+            eq(tables.climbs.isDraft, false),
+          ),
+        )
         .orderBy(
           sortBy === 'popular'
             ? sql`COALESCE(${tables.climbStats.ascensionistCount}, 0) DESC`

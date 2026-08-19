@@ -113,8 +113,6 @@
     "signOut": "Se déconnecter"
   },
   "setter": {
-    "notFoundTitle": "Ouvreur introuvable",
-    "notFoundMessage": "Ce profil d'ouvreur n'existe pas ou a été supprimé.",
     "shareAriaLabel": "Partager le profil d'ouvreur",
     "shareTitle": "{{name}} - Ouvreur",
     "shareText": "Va voir les blocs de {{name}} sur Boardsesh",
@@ -123,6 +121,19 @@
     "follower_one": "abonné",
     "follower_other": "abonnés",
     "climb_one": "bloc",
-    "climb_other": "blocs"
+    "climb_other": "blocs",
+    "seoHeading": "Blocs ouverts par {{name}}",
+    "seoSummary_one": "{{name}} a un bloc sur Boardsesh, sur {{boards}}.",
+    "seoSummary_other": "{{name}} a {{count}} blocs sur Boardsesh, sur {{boards}}.",
+    "climbsHeading": "Tous les blocs de {{name}}",
+    "empty": "Aucun bloc sur cette page.",
+    "browseBoard": "Voir tous les blocs de la board {{boardName}}",
+    "browsePlaylists": "Compose une liste avec ces blocs",
+    "pagination": {
+      "aria": "Pages de blocs",
+      "previous": "Blocs précédents",
+      "next": "Plus de blocs",
+      "pageLabel": "Page {{page}}"
+    }
   }
 }

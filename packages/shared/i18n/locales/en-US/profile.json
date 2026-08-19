@@ -113,8 +113,6 @@
     "signOut": "Sign out"
   },
   "setter": {
-    "notFoundTitle": "Setter Not Found",
-    "notFoundMessage": "This setter profile may not exist or may have been removed.",
     "shareAriaLabel": "Share setter profile",
     "shareTitle": "{{name}} - Setter",
     "shareText": "Check out {{name}}'s climbs on Boardsesh",
@@ -123,6 +121,19 @@
     "follower_one": "follower",
     "follower_other": "followers",
     "climb_one": "climb",
-    "climb_other": "climbs"
+    "climb_other": "climbs",
+    "seoHeading": "Climbs set by {{name}}",
+    "seoSummary_one": "{{name}} has one climb up on Boardsesh, on {{boards}}.",
+    "seoSummary_other": "{{name}} has {{count}} climbs up on Boardsesh, on {{boards}}.",
+    "climbsHeading": "Every climb by {{name}}",
+    "empty": "No climbs on this page.",
+    "browseBoard": "See every climb on {{boardName}}",
+    "browsePlaylists": "Build a playlist from these climbs",
+    "pagination": {
+      "aria": "Climb pages",
+      "previous": "Previous climbs",
+      "next": "More climbs",
+      "pageLabel": "Page {{page}}"
+    }
   }
 }

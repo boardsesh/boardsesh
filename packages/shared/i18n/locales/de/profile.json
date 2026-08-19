@@ -113,8 +113,6 @@
     "signOut": "Abmelden"
   },
   "setter": {
-    "notFoundTitle": "Routenbauer*in nicht gefunden",
-    "notFoundMessage": "Dieses Profil gibt es vielleicht nicht mehr oder es wurde entfernt.",
     "shareAriaLabel": "Routenbauer*in-Profil teilen",
     "shareTitle": "{{name}} - Routenbauer*in",
     "shareText": "Schau dir die Boulder von {{name}} auf Boardsesh an",
@@ -123,6 +121,19 @@
     "follower_one": "Follower",
     "follower_other": "Follower",
     "climb_one": "Boulder",
-    "climb_other": "Boulder"
+    "climb_other": "Boulder",
+    "seoHeading": "Boulder von {{name}}",
+    "seoSummary_one": "{{name}} hat einen Boulder auf Boardsesh, am {{boards}}.",
+    "seoSummary_other": "{{name}} hat {{count}} Boulder auf Boardsesh, am {{boards}}.",
+    "climbsHeading": "Alle Boulder von {{name}}",
+    "empty": "Keine Boulder auf dieser Seite.",
+    "browseBoard": "Alle Boulder am {{boardName}} Board ansehen",
+    "browsePlaylists": "Bau eine Playlist aus diesen Bouldern",
+    "pagination": {
+      "aria": "Boulder-Seiten",
+      "previous": "Vorherige Boulder",
+      "next": "Mehr Boulder",
+      "pageLabel": "Seite {{page}}"
+    }
   }
 }
