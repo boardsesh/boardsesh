@@ -9,19 +9,27 @@
 // a Map context that widgets (board slots, session leaderboard) read from —
 // see use-kiosk-board-presence.ts.
 //
-// Wiring mirrors WebBoardPresenceProvider (board-presence-context.tsx): the
-// client is rebuilt when the ws auth token loads (anonymous is fine — kiosk
-// boards are public), and reconnect/backoff lives inside the shared
-// createGraphQLClient (exponential retryWait, 10 attempts) — NOT duplicated
-// here. Longer outages are covered by kiosk-reliability.tsx (periodic manual
-// catch-up + daily reload).
+// The default export is the LOGIN-LESS hub the display routes (/kiosk/**,
+// /embed/**) mount: it connects anonymously and never touches
+// `/api/internal/ws-auth`, so a TV boots straight into its socket instead of
+// waiting on a session check it has no use for. Every read it makes is already
+// anon-tolerant server-side (`requireAnonReadableBoard`), and its presence
+// client is structurally read-only. The gym-manage live preview is the one
+// consumer that DOES need a viewer — it renders private gym boards — and
+// mounts `ViewerKioskPresenceHub` from ./viewer-kiosk-presence-hub instead.
+//
+// Reconnect/backoff lives inside the shared createGraphQLClient (exponential
+// retryWait, 10 attempts) — NOT duplicated here. Longer outages are covered by
+// kiosk-reliability.tsx (periodic manual catch-up + daily reload).
 
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { BoardPresenceProvider } from '@boardsesh/board-presence-react';
 import { createGraphQLClient, type Client } from '@/app/lib/realtime/graphql-client';
-import { createWebBoardPresenceClient, type WebBoardPresenceClient } from '@/app/lib/realtime/board-presence-client';
+import {
+  createReadOnlyWebBoardPresenceClient,
+  type WebBoardPresenceClient,
+} from '@/app/lib/realtime/board-presence-client';
 import { getBackendWsUrl } from '@/app/lib/backend-url';
-import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { KioskBoardFeedBridge } from '../kiosk-reliability';
 import {
   createKioskPresenceStore,
@@ -31,8 +39,29 @@ import {
   type KioskConnectionStatus,
 } from './use-kiosk-board-presence';
 
-export default function KioskPresenceHub({ boardIds, children }: { boardIds: number[]; children: ReactNode }) {
-  const { token, isLoading: isTokenLoading } = useWsAuthToken();
+export type KioskPresenceHubProps = { boardIds: number[]; children: ReactNode };
+
+export type KioskPresenceHubInnerProps = KioskPresenceHubProps & {
+  /** Token for the ws connection. `null` connects anonymously. */
+  authToken: string | null;
+  /**
+   * True while an auth lookup is still in flight. The client build is held
+   * until it settles so a viewer hub does not build an anonymous client and
+   * immediately dispose it for an authenticated one. The anonymous hub passes
+   * `false` — it has nothing to wait for.
+   */
+  isAuthResolving: boolean;
+  /** How to wrap the ws client: read-only for displays, full for a viewer. */
+  createPresenceClient: (getClient: () => Client) => WebBoardPresenceClient;
+};
+
+export function KioskPresenceHubInner({
+  boardIds,
+  authToken,
+  isAuthResolving,
+  createPresenceClient,
+  children,
+}: KioskPresenceHubInnerProps) {
   const hasBoards = boardIds.length > 0;
 
   const [activeWsClient, setActiveWsClient] = useState<Client | null>(null);
@@ -45,15 +74,11 @@ export default function KioskPresenceHub({ boardIds, children }: { boardIds: num
 
   useEffect(() => {
     if (!hasBoards) return;
-    // Wait for the ws-auth query to settle before building the client. For an
-    // anonymous TV the token resolves to null with no state change afterwards,
-    // so gating here avoids a build→dispose churn of an extra ws connection on
-    // every boot (token would otherwise flip loading→settled once).
-    if (isTokenLoading) return;
+    if (isAuthResolving) return;
     const wsUrl = getBackendWsUrl();
     if (!wsUrl) return;
 
-    const client = createGraphQLClient({ url: wsUrl, authToken: token, connectionName: 'kiosk' });
+    const client = createGraphQLClient({ url: wsUrl, authToken, connectionName: 'kiosk' });
     // Drive the header's reconnect chip off the socket lifecycle. graphql-ws
     // retries with backoff internally; we only surface the state.
     const offConnected = client.on('connected', () => setConnectionStatus('connected'));
@@ -71,18 +96,20 @@ export default function KioskPresenceHub({ boardIds, children }: { boardIds: num
       }
       setActiveWsClient((currentClient) => (currentClient === client ? null : currentClient));
     };
-  }, [token, hasBoards, isTokenLoading]);
+    // Deps are primitives on purpose — `boardIds` is a fresh array identity on
+    // every render, so listing it here would rebuild the socket per render.
+  }, [authToken, hasBoards, isAuthResolving]);
 
   const presenceClient = useMemo<WebBoardPresenceClient | null>(() => {
     if (activeWsClient === null) return null;
-    return createWebBoardPresenceClient(() => {
+    return createPresenceClient(() => {
       const client = clientRef.current;
       if (!client) {
         throw new Error('Kiosk presence WS client is not connected yet');
       }
       return client;
     });
-  }, [activeWsClient]);
+  }, [activeWsClient, createPresenceClient]);
 
   const publishSnapshot = useCallback(
     (boardId: number, snapshot: KioskBoardSnapshot) => {
@@ -106,5 +133,22 @@ export default function KioskPresenceHub({ boardIds, children }: { boardIds: num
         {children}
       </KioskPresenceStoreContext.Provider>
     </KioskConnectionStatusContext.Provider>
+  );
+}
+
+/**
+ * The login-less hub the public display routes mount. No session, no
+ * `/api/internal/ws-auth` round trip, and a read-only presence client.
+ */
+export default function KioskPresenceHub({ boardIds, children }: KioskPresenceHubProps) {
+  return (
+    <KioskPresenceHubInner
+      boardIds={boardIds}
+      authToken={null}
+      isAuthResolving={false}
+      createPresenceClient={createReadOnlyWebBoardPresenceClient}
+    >
+      {children}
+    </KioskPresenceHubInner>
   );
 }
