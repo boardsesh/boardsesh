@@ -107,8 +107,15 @@ export type Gym = {
    * Whether this gym's website can drive the self-service email claim: a real
    * (non-free-provider) domain that the gym's OWNER put on the listing. Mirrors
    * the two refusals in requestGymClaim, so a claim UI can open the form that
-   * can succeed. Viewer-independent, and required here because GYM_FIELDS
-   * selects it — every document typed `Gym` genuinely returns it.
+   * can succeed. Viewer-independent — it describes the listing, not the viewer.
+   *
+   * Required rather than optional even though NO document selects it yet:
+   * enrichGym always returns it, and requiring it is what forces every `Gym`
+   * fixture — and the client PR that follows — to acknowledge the field instead
+   * of silently reading `undefined` and routing a claimable gym to admin
+   * review. GYM_FIELDS starts selecting it one PR later, on purpose: a field
+   * the deployed backend cannot answer fails validation for the WHOLE document
+   * (same hazard as `myPendingClaim` below).
    */
   canClaimByDomain: boolean;
   /**
