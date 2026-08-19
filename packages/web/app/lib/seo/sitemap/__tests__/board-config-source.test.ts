@@ -37,7 +37,11 @@ vi.mock('@/app/lib/server-popular-configs', () => ({
 }));
 
 /** Stands in for the grouped count query — one row per MoonBoard layout id. */
-const climbCounts = vi.hoisted(() => ({ rows: [] as { layoutId: number | null; climbCount: number }[], calls: 0 }));
+const climbCounts = vi.hoisted(() => ({
+  rows: [] as { layoutId: number | null; climbCount: number }[],
+  calls: 0,
+  throws: false,
+}));
 vi.mock('@/app/lib/db/db', () => ({
   dbzRead: {
     select: () => ({
@@ -45,6 +49,7 @@ vi.mock('@/app/lib/db/db', () => ({
         where: () => ({
           groupBy: async () => {
             climbCounts.calls += 1;
+            if (climbCounts.throws) throw new Error('read pool exhausted');
             return climbCounts.rows;
           },
         }),
@@ -66,6 +71,7 @@ beforeEach(() => {
   listed.throws = false;
   climbCounts.rows = ALL_LAYOUTS;
   climbCounts.calls = 0;
+  climbCounts.throws = false;
 });
 
 describe('getSitemapBoardConfigsOrThrow', () => {
@@ -149,6 +155,36 @@ describe('getSitemapBoardConfigsOrThrow', () => {
     expect(climbCounts.calls).toBe(1);
 
     resetSitemapBoardConfigCacheForTests();
+    await getSitemapBoardConfigsOrThrow();
+    expect(climbCounts.calls).toBe(2);
+  });
+
+  it('does not memoise a failed count, so a transient DB error is not an hour of missing MoonBoard', async () => {
+    // The in-process layer stores nothing on a rejection: `cachedCounts` is only
+    // assigned inside the `.then`. Without that, one unlucky read would pin an
+    // empty MoonBoard catalogue for the whole TTL and the sitemap would quietly
+    // lose 44k URLs while answering 200.
+    climbCounts.throws = true;
+    await expect(getSitemapBoardConfigsOrThrow()).rejects.toThrow('read pool exhausted');
+    expect(climbCounts.calls).toBe(1);
+
+    climbCounts.throws = false;
+    const moonboard = (await getSitemapBoardConfigsOrThrow()).filter((config) => config.boardType === 'moonboard');
+    expect(moonboard).toHaveLength(7);
+    expect(climbCounts.calls).toBe(2);
+  });
+
+  it('shares one rejection across concurrent callers, then lets the next one retry', async () => {
+    climbCounts.throws = true;
+    const inFlight = [
+      getSitemapBoardConfigsOrThrow(),
+      getSitemapBoardConfigsOrThrow(),
+      getSitemapBoardConfigsOrThrow(),
+    ];
+    await Promise.all(inFlight.map((pending) => expect(pending).rejects.toThrow('read pool exhausted')));
+    expect(climbCounts.calls).toBe(1);
+
+    climbCounts.throws = false;
     await getSitemapBoardConfigsOrThrow();
     expect(climbCounts.calls).toBe(2);
   });

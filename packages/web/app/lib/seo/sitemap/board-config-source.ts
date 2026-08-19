@@ -36,6 +36,15 @@ const MOONBOARD_REVALIDATE_SECONDS = 3_600;
 const MOONBOARD_TTL_MS = MOONBOARD_REVALIDATE_SECONDS * 1_000;
 const MOONBOARD_CACHE_TAG = 'sitemap-moonboard-climb-counts';
 
+/**
+ * MoonBoard's catalogue is code, not data: adding a layout or a hold set means
+ * editing `MOONBOARD_LAYOUTS` / `MOONBOARD_SETS` in
+ * `@boardsesh/board-config`, and until that lands the new layout has no sitemap
+ * entry and no board art. Two test files pin the tuples as literals so the edit
+ * cannot be half-done — `__tests__/board-config-source.test.ts` and
+ * `__tests__/moonboard-canonical-identity.test.ts`. Both go red on a new layout
+ * and both want updating in the same change.
+ */
 const MOONBOARD_LAYOUT_KEYS = Object.keys(MOONBOARD_LAYOUTS) as MoonBoardLayoutKey[];
 
 /**
