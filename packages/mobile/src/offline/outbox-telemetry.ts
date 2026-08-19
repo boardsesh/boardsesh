@@ -54,7 +54,7 @@ let hasReportedOutboxBacklog = false;
  * A ceiling on the launch sweep, not a real limit: production devices carry
  * single-digit dead letters. It only stops a pathologically large outbox from
  * turning app launch into hundreds of UPDATEs; anything past it is picked up by
- * the next launch.
+ * the next launch. Applied as the SQL LIMIT, so it also bounds the read.
  */
 const MAX_DEAD_LETTERS_REVIVED_PER_LAUNCH = 50;
 
@@ -77,10 +77,11 @@ const MAX_DEAD_LETTERS_REVIVED_PER_LAUNCH = 50;
  * no-op.
  */
 async function reviveLockedDeadLetters(db: SqlExecutor): Promise<number> {
-  const deadLetters = await getDeadLetters(db);
+  // The ceiling rides the query, so a pathological outbox is never materialised
+  // just to be trimmed by the loop below.
+  const deadLetters = await getDeadLetters(db, MAX_DEAD_LETTERS_REVIVED_PER_LAUNCH);
   let revived = 0;
   for (const row of deadLetters) {
-    if (revived >= MAX_DEAD_LETTERS_REVIVED_PER_LAUNCH) break;
     // `last_error` is the raw driver message markDeadLetter stored; the
     // predicate takes a string as readily as an Error.
     if (!isDatabaseLockedError(row.last_error)) continue;
