@@ -145,6 +145,17 @@ export function classifyCrossLinkedPlaylist(
     );
   }
 
+  // `unique_playlist_ownership` on (playlist_id, user_id) makes this
+  // impossible, but the two-row shape below is the whole basis for calling one
+  // row the creator — keep the invariant local rather than resting it on a
+  // constraint the reader has to go and look up.
+  if (playlist.owners.length > distinctUserIds.size) {
+    return refusal(
+      playlist,
+      `${playlist.owners.length} ownership rows for ${distinctUserIds.size} users — a duplicate row makes creator vs adopter ambiguous`,
+    );
+  }
+
   const nonOwnerRoles = playlist.owners.filter((owner) => owner.role !== 'owner');
   if (nonOwnerRoles.length > 0) {
     const roleList = [...new Set(nonOwnerRoles.map((owner) => owner.role))].sort().join(', ');
