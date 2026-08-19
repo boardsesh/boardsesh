@@ -27,6 +27,9 @@ function Probe() {
 
 afterEach(() => {
   cleanup();
+  // Module scope, so it would otherwise carry entries into a watch-mode re-run
+  // or into a second `it` in this describe.
+  mountedInstances.length = 0;
 });
 
 describe('I18nProvider in the browser', () => {

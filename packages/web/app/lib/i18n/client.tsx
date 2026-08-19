@@ -79,6 +79,11 @@ function getClientInstance(
     // Seed from the enclosing provider so nested providers still resolve each
     // other's namespaces. The language guard stops a parent sitting on another
     // locale from seeding the wrong strings.
+    //
+    // `getDataByLanguage` hands back every namespace the parent holds for this
+    // locale, not just the ones it was mounted with — that breadth is the
+    // point. It is what the old shared instance gave the inner subtree, so
+    // don't narrow the spread.
     const inherited =
       (parentInstance?.language === locale ? parentInstance.getDataByLanguage(locale) : undefined) ?? {};
     return createConfiguredInstance(locale, { ...inherited, ...resources });
