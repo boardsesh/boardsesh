@@ -54,13 +54,14 @@ async function renderCompressedJpeg(asset: ImagePicker.ImagePickerAsset): Promis
   }
 }
 
-/** Read a local file, treating an unreadable one as empty rather than throwing. */
-async function readBytesOrEmpty(uri: string): Promise<Uint8Array> {
-  try {
-    return await new File(uri).bytes();
-  } catch {
-    return new Uint8Array();
-  }
+/**
+ * Thrown when neither the compressed image nor the picker's own crop is usable.
+ * Named so `handlePickAvatar` can tell it apart: `compressAvatar` has already
+ * reported it with the byte counts attached, and reporting again there would
+ * file the same failure twice.
+ */
+class AvatarCompressionError extends Error {
+  override name = 'AvatarCompressionError';
 }
 
 /**
@@ -82,7 +83,7 @@ async function readBytesOrEmpty(uri: string): Promise<Uint8Array> {
  */
 async function compressAvatar(asset: ImagePicker.ImagePickerAsset): Promise<CompressedAvatar> {
   let compressedBytes = new Uint8Array();
-  let compressionError: unknown = null;
+  let failure: unknown = null;
   try {
     const compressedUri = await renderCompressedJpeg(asset);
     compressedBytes = await new File(compressedUri).bytes();
@@ -90,15 +91,26 @@ async function compressAvatar(asset: ImagePicker.ImagePickerAsset): Promise<Comp
       return { uri: compressedUri, bytes: compressedBytes };
     }
   } catch (error) {
-    compressionError = error;
+    failure = error;
   }
 
-  const originalBytes = await readBytesOrEmpty(asset.uri);
+  let originalBytes = new Uint8Array();
+  try {
+    originalBytes = await new File(asset.uri).bytes();
+  } catch (error) {
+    // Keep the manipulator's failure if there already is one — it explains more
+    // than "the picker's file wouldn't read either".
+    failure ??= error;
+  }
+
   // There is no telemetry on this path today (zero avatar/manipulator/picker
   // events in 90 days), which is exactly why the failure went unnoticed for so
-  // long. Sizes and platform only — no URIs, no user identifiers.
-  reportHandledError(compressionError ?? new Error('Avatar compression produced an empty file'), {
-    level: 'warning',
+  // long. Sizes and platform only — no URIs, no user identifiers. Reported once,
+  // here, at the severity the climber actually experiences: a warning when the
+  // fallback rescues the save, an error when they lose the pick.
+  const canUseOriginal = originalBytes.length > 0 && originalBytes.length <= MAX_AVATAR_BYTES;
+  reportHandledError(failure ?? new Error('Avatar compression produced an empty file'), {
+    level: canUseOriginal ? 'warning' : 'error',
     tags: { source: 'avatar-compress' },
     extra: {
       compressedBytes: compressedBytes.length,
@@ -107,8 +119,8 @@ async function compressAvatar(asset: ImagePicker.ImagePickerAsset): Promise<Comp
     },
   });
 
-  if (originalBytes.length === 0 || originalBytes.length > MAX_AVATAR_BYTES) {
-    throw new Error('Avatar compression produced an unusable file');
+  if (!canUseOriginal) {
+    throw new AvatarCompressionError('Avatar compression produced an unusable file');
   }
   return { uri: asset.uri, bytes: originalBytes };
 }
@@ -170,7 +182,10 @@ export function EditProfileScreen() {
       const { uri, bytes } = await compressAvatar(asset);
       setPickedAvatar({ uri, bytes, name: 'avatar.jpg', type: 'image/jpeg' });
     } catch (error) {
-      reportError(error);
+      // `compressAvatar` already reported this one with the byte counts attached.
+      if (!(error instanceof AvatarCompressionError)) {
+        reportError(error);
+      }
       showToast(t('profile.validation.compressionFailed'), 'error');
     }
   };

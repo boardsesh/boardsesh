@@ -83,11 +83,17 @@ vi.mock('../../lib/graphql/hooks', () => ({
   useUpdateProfile: () => ({ mutateAsync: mutateAsyncMock }),
 }));
 
-vi.mock('../../lib/avatar-upload', () => ({
+// `authenticatedFetch` drags in auth-store → expo-secure-store, which doesn't
+// load under jsdom. Stubbing it is what lets the avatar-upload mock below be a
+// *partial* one, so `MAX_AVATAR_BYTES` is the real constant and the over-cap
+// test can't drift away from the boundary it's meant to exercise.
+vi.mock('../../lib/auth-interceptor', () => ({
+  authenticatedFetch: vi.fn(),
+}));
+
+vi.mock('../../lib/avatar-upload', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/avatar-upload')>()),
   uploadAvatar: uploadAvatarMock,
-  // Kept in step with the real module deliberately: the fallback crop is
-  // rejected against this cap, so a drift here would silently stop testing it.
-  MAX_AVATAR_BYTES: 2 * 1024 * 1024,
 }));
 
 vi.mock('../../lib/error-reporting', () => ({
@@ -137,6 +143,7 @@ vi.mock('../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 
+import { MAX_AVATAR_BYTES } from '../../lib/avatar-upload';
 import { EditProfileScreen } from '../EditProfileScreen';
 
 beforeEach(() => {
@@ -289,11 +296,12 @@ describe('EditProfileScreen', () => {
     expect(screen.getByRole('button', { name: 'profile.save' })).toHaveProperty('disabled', true);
     expect(uploadAvatarMock).not.toHaveBeenCalled();
     expect(routerBackMock).not.toHaveBeenCalled();
+    expect(reportHandledErrorMock).toHaveBeenCalledOnce();
   });
 
   it('refuses a fallback crop that is over the backend cap rather than uploading it', async () => {
     fileBytesByUri.set('file://compressed-avatar.jpg', new Uint8Array());
-    fileBytesByUri.set('file://picked-avatar.jpg', new Uint8Array(2 * 1024 * 1024 + 1));
+    fileBytesByUri.set('file://picked-avatar.jpg', new Uint8Array(MAX_AVATAR_BYTES + 1));
 
     render(createElement(EditProfileScreen));
 
@@ -303,5 +311,16 @@ describe('EditProfileScreen', () => {
       expect(showToastMock).toHaveBeenCalledWith('profile.validation.compressionFailed', 'error');
     });
     expect(uploadAvatarMock).not.toHaveBeenCalled();
+
+    // Losing the pick outright is reported at `error`, not the `warning` the
+    // rescued-by-fallback path uses — and only once, not once here and again
+    // from the screen's catch block.
+    expect(reportHandledErrorMock).toHaveBeenCalledOnce();
+    const [, context] = reportHandledErrorMock.mock.calls[0] as [Error, Record<string, unknown>];
+    expect(context).toMatchObject({
+      level: 'error',
+      tags: { source: 'avatar-compress' },
+      extra: { compressedBytes: 0, originalBytes: MAX_AVATAR_BYTES + 1 },
+    });
   });
 });
