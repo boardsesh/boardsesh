@@ -10,6 +10,7 @@ import { Text } from '../Text';
 import { MarqueeText } from '../MarqueeText';
 import { DrawerHeader } from '../DrawerHeader';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
+import { PlayDrawerPlaylistChips } from './PlayDrawerPlaylistChips';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { WALL_STATE_PILL_TOUCH_HEIGHT } from '../../theme/layout';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
@@ -45,6 +46,11 @@ type PlayDrawerHeaderProps = {
   /** Long-press handler on the name (copies it to the clipboard). When omitted the
    *  name is a plain, non-interactive label — used for the swipe "peek" header. */
   onLongPressName?: () => void;
+  /** Playlist-membership tags, rendered under the subtitle. Must occupy a
+   *  constant height per climb (see `PlayDrawerPlaylistChips`) — the board art
+   *  below is `flex: 1` in a fixed-height first screen, so a header that grew for
+   *  one climb and shrank for the next would resize the board on every swipe. */
+  playlistChips?: ReactNode;
 };
 
 export const PlayDrawerHeader = memo(function PlayDrawerHeader({
@@ -60,6 +66,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   boardName,
   leading,
   onLongPressName,
+  playlistChips,
 }: PlayDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
   const resolvedGradeColor = useMemo(
@@ -142,6 +149,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
               {ruleLabels.parts.join(' · ')}
             </Text>
           ) : null}
+          {playlistChips}
         </>
       }
       trailing={
@@ -160,6 +168,9 @@ type LivePlayDrawerHeaderProps = {
   angle: number;
   leading?: ReactNode;
   onLongPressName?: () => void;
+  /** Whether this header may fetch the climb's playlist membership. True for the
+   *  climb on screen, false for the swipe "peek" (see `PlayDrawerPlaylistChips`). */
+  fetchPlaylistMembership?: boolean;
 };
 
 /** The only play-header child subscribed to the exact live-stat key. */
@@ -170,6 +181,7 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
   angle,
   leading,
   onLongPressName,
+  fetchPlaylistMembership = false,
 }: LivePlayDrawerHeaderProps) {
   const { resolveGrade } = useDisplayGrade();
   const liveStats = useEffectiveClimbStats(boardName, layoutId, climb.uuid, angle, {
@@ -196,6 +208,14 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
       boardName={boardName}
       leading={leading}
       onLongPressName={onLongPressName}
+      playlistChips={
+        <PlayDrawerPlaylistChips
+          climbUuid={climb.uuid}
+          boardName={boardName}
+          layoutId={layoutId}
+          fetchMembership={fetchPlaylistMembership}
+        />
+      }
     />
   );
 });

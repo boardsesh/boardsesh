@@ -294,7 +294,8 @@
     },
     "detail": {
       "notFound": "Bloc introuvable",
-      "backToHome": "Retour à l'accueil"
+      "backToHome": "Retour à l'accueil",
+      "inPlaylists": "Dans les playlists : {{playlists}}"
     },
     "logAscent": {
       "errorMessage": "Impossible de sauvegarder votre ascension. Veuillez réessayer.",

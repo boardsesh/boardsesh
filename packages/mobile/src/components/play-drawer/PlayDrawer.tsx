@@ -1207,6 +1207,11 @@ export function PlayDrawer({
                                 ) : undefined
                               }
                               onLongPressName={handleCopyName}
+                              // Only the climb on screen fetches its playlist membership.
+                              // The peek below changes with every climb a fling passes,
+                              // so it renders from cache alone rather than firing a
+                              // request per climb flown past.
+                              fetchPlaylistMembership
                             />
                           }
                           peek={

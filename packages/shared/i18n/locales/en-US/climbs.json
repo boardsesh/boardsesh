@@ -294,7 +294,8 @@
     },
     "detail": {
       "notFound": "Climb not found",
-      "backToHome": "Back to Home"
+      "backToHome": "Back to Home",
+      "inPlaylists": "In playlists: {{playlists}}"
     },
     "logAscent": {
       "errorMessage": "Could not save your ascent. Please try again.",

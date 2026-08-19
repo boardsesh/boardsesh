@@ -294,7 +294,8 @@
     },
     "detail": {
       "notFound": "Bloque no encontrado",
-      "backToHome": "Volver al inicio"
+      "backToHome": "Volver al inicio",
+      "inPlaylists": "En playlists: {{playlists}}"
     },
     "logAscent": {
       "errorMessage": "No se pudo guardar tu ascenso. Inténtalo de nuevo.",

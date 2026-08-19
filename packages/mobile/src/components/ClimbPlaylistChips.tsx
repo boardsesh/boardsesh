@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
+import type { Playlist } from '@boardsesh/graphql/operations/playlists';
 import { Text } from './Text';
 import { useTheme } from '../providers/theme-provider';
 import { usePlaylistsContextOptional } from '../providers/playlists-provider';
@@ -20,49 +21,76 @@ const MAX_VISIBLE_CHIPS = 2;
 // sizes rather than letting it push the row taller than the board thumbnail.
 const CHIP_MAX_FONT_SCALE = 1.3;
 
-type ResolvedChip = { key: string; name: string; dotColor: string; emoji: string | null };
+export type ResolvedPlaylistChip = { key: string; name: string; dotColor: string; emoji: string | null };
 
 /**
- * Third row of a climb list item: small playlist-membership tags. Isolated and
- * `React.memo`'d over the primitive `climbUuid` (mirrors `AscentStatusGlyph`) so
- * a membership change re-renders only this strip — never the thumbnail, name, or
- * grade. Subscribes to its own climb's membership via `useClimbPlaylistMemberships`
- * and resolves names/colours from the playlists provider's `playlistsById` map.
- *
- * Renders nothing when: the user setting is off, no provider is mounted (e.g. a
- * preview/test host), the climb is in no playlists, or memberships haven't loaded
- * yet. Display-only — hidden from the accessibility tree and `pointerEvents="none"`
- * so the whole row stays one clean target (membership management lives in the
- * actions sheet).
+ * Turn a climb's playlist UUIDs into renderable chips against the playlists
+ * provider's `uuid → Playlist` index — O(membership), never a scan of the whole
+ * playlist array. UUIDs with no matching playlist (a stale membership, another
+ * board's list) are dropped. Exported so a caller that also needs the names in
+ * text form (the play drawer builds a VoiceOver label from them) resolves them
+ * the same way.
  */
-export const ClimbPlaylistChips = React.memo(function ClimbPlaylistChips({ climbUuid }: { climbUuid: string }) {
-  const { enabled } = useShowPlaylistTagsPreference();
-  const membership = useClimbPlaylistMemberships(climbUuid);
+export function resolvePlaylistChips(
+  playlistUuids: Iterable<string>,
+  playlistsById: Map<string, Playlist> | undefined,
+): ResolvedPlaylistChip[] {
+  if (!playlistsById) return [];
+  const resolved: ResolvedPlaylistChip[] = [];
+  let index = 0;
+  for (const playlistUuid of playlistUuids) {
+    const playlist = playlistsById.get(playlistUuid);
+    if (!playlist) continue;
+    const dotColor = normalizePlaylistColor(playlist.color) ?? PLAYLIST_COLORS[index % PLAYLIST_COLORS.length];
+    resolved.push({
+      key: playlistUuid,
+      name: playlist.name,
+      dotColor,
+      emoji: resolvePlaylistEmojiIcon(playlist.icon),
+    });
+    index += 1;
+  }
+  return resolved;
+}
+
+type PlaylistChipsRowProps = {
+  /** The playlist UUIDs to show. Pass a reference-stable value (the membership
+   *  store's `Set`, or a React Query cache array) — it is a memo dependency. */
+  playlistUuids: Iterable<string>;
+  /** `start` for a left-aligned list row, `center` for a centered detail header. */
+  align?: 'start' | 'center';
+  /**
+   * VoiceOver label for the whole strip. Omit (the list-row default) to hide the
+   * chips from the accessibility tree, keeping the row one clean target. Pass one
+   * on a detail surface, where membership is information the climber would
+   * otherwise never hear.
+   */
+  accessibilityLabel?: string;
+};
+
+/**
+ * The chips themselves: up to two playlist tags plus a "+N" token. Presentational
+ * and membership-source-agnostic, so the climb list (fed by the shared external
+ * store) and the play drawer (fed by a per-climb React Query fetch) render
+ * identical strips.
+ *
+ * Renders nothing when no playlists provider is mounted (e.g. a preview/test
+ * host), the climb is in no playlists, or memberships haven't loaded yet.
+ * Display-only: `pointerEvents="none"` so it never steals a tap from its host.
+ */
+export const PlaylistChipsRow = React.memo(function PlaylistChipsRow({
+  playlistUuids,
+  align = 'start',
+  accessibilityLabel,
+}: PlaylistChipsRowProps) {
   const playlistsContext = usePlaylistsContextOptional();
   const { variant, systemColors, m3 } = useTheme();
 
   const playlistsById = playlistsContext?.playlistsById;
 
-  const chips = useMemo<ResolvedChip[]>(() => {
-    if (!playlistsById || membership.size === 0) return [];
-    const resolved: ResolvedChip[] = [];
-    let index = 0;
-    for (const playlistUuid of membership) {
-      const playlist = playlistsById.get(playlistUuid);
-      if (!playlist) continue;
-      const dotColor = normalizePlaylistColor(playlist.color) ?? PLAYLIST_COLORS[index % PLAYLIST_COLORS.length];
-      resolved.push({
-        key: playlistUuid,
-        name: playlist.name,
-        dotColor,
-        emoji: resolvePlaylistEmojiIcon(playlist.icon),
-      });
-      index += 1;
-    }
-    return resolved;
-  }, [membership, playlistsById]);
+  const chips = useMemo(() => resolvePlaylistChips(playlistUuids, playlistsById), [playlistUuids, playlistsById]);
 
-  if (!enabled || chips.length === 0) return null;
+  if (chips.length === 0) return null;
 
   const visibleChips = chips.slice(0, MAX_VISIBLE_CHIPS);
   const overflowCount = chips.length - visibleChips.length;
@@ -85,10 +113,12 @@ export const ClimbPlaylistChips = React.memo(function ClimbPlaylistChips({ climb
   // no reflow — matches `AscentStatusGlyph`, which also just appears.
   return (
     <View
-      style={styles.row}
+      style={[styles.row, align === 'center' ? styles.rowCentered : null]}
       pointerEvents="none"
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
+      accessible={accessibilityLabel != null}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityElementsHidden={accessibilityLabel == null}
+      importantForAccessibility={accessibilityLabel == null ? 'no-hide-descendants' : 'yes'}
     >
       {visibleChips.map((chip) => (
         <View key={chip.key} style={[styles.chip, { backgroundColor: containerColor, borderRadius: chipRadius }]}>
@@ -121,6 +151,27 @@ export const ClimbPlaylistChips = React.memo(function ClimbPlaylistChips({ climb
   );
 });
 
+/**
+ * Third row of a climb list item: small playlist-membership tags. Isolated and
+ * `React.memo`'d over the primitive `climbUuid` (mirrors `AscentStatusGlyph`) so
+ * a membership change re-renders only this strip — never the thumbnail, name, or
+ * grade. Subscribes to its own climb's membership via `useClimbPlaylistMemberships`,
+ * which the Climbs tab feeds in bulk through `useClimbListPlaylistMemberships`.
+ *
+ * Gated on the opt-in "Show playlist tags" setting. That gate is list-scoped by
+ * design: chips add a third line to every row, a density cost a detail header
+ * doesn't carry — the play drawer shows its chips unconditionally, via
+ * `PlayDrawerPlaylistChips`.
+ */
+export const ClimbPlaylistChips = React.memo(function ClimbPlaylistChips({ climbUuid }: { climbUuid: string }) {
+  const { enabled } = useShowPlaylistTagsPreference();
+  const membership = useClimbPlaylistMemberships(climbUuid);
+
+  if (!enabled) return null;
+
+  return <PlaylistChipsRow playlistUuids={membership} />;
+});
+
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
@@ -128,6 +179,11 @@ const styles = StyleSheet.create({
     gap: spacing[1],
     marginTop: spacing[1],
     overflow: 'hidden',
+  },
+  // Detail surfaces (the play-drawer header) centre their column; list rows keep
+  // the default leading alignment.
+  rowCentered: {
+    justifyContent: 'center',
   },
   chip: {
     flexDirection: 'row',

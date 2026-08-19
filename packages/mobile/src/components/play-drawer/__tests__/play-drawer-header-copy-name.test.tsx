@@ -50,6 +50,9 @@ vi.mock('../../DrawerHeader', () => ({
   DrawerHeader: ({ center }: { center?: ReactNode }) => createElement('div', null, center),
 }));
 vi.mock('../../ClimbAttributeIcons', () => ({ ClimbAttributeIcons: () => createElement('i', null) }));
+// The playlist chips have their own test; here they would only drag React Query
+// and the playlists provider into a presentational header test.
+vi.mock('../PlayDrawerPlaylistChips', () => ({ PlayDrawerPlaylistChips: () => null }));
 
 import { PlayDrawerHeader } from '../PlayDrawerHeader';
 
