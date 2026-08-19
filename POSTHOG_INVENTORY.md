@@ -153,12 +153,13 @@ Boardsesh has comprehensive PostHog instrumentation across both web (Next.js) an
 | Onboarding Tour Skipped       | onboarding-tour-provider.tsx:260                  | `skippedAtStep`, `durationSeconds`                         | User closed tour early             |
 | Favorite Toggle (via button)  | favorite-button.tsx:59,83                         | `climbUuid`, `isFavorited`                                 | Quick favorite button              |
 
-### 2.8 Bluetooth / Hardware (10 events)
+### 2.8 Bluetooth / Hardware (11 events)
 
 | Event Name                      | File:Line                              | Properties                                                        | Context                                             |
 | ------------------------------- | -------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------- |
 | Bluetooth Connection Success    | use-board-bluetooth.ts:390             | `boardLayout`                                                     | Device paired and connected                         |
 | Bluetooth Connection Failed     | use-board-bluetooth.ts:415             | `boardLayout`                                                     | BLE connection attempt failed                       |
+| Bluetooth Connection Cancelled  | use-board-bluetooth.ts:1406            | `boardName`, `layoutId`, `sizeId`                                 | Climber dismissed the device picker (not a failure) |
 | Bluetooth Disconnected          | use-board-bluetooth.ts:181,371,455,480 | `boardLayout`, `reason`                                           | Device lost connection                              |
 | Climb Sent to Board Success     | bluetooth-context.tsx:106              | `climbUuid`, `boardLayout`                                        | LED frames transmitted                              |
 | Climb Sent to Board Failure     | bluetooth-context.tsx:111,119          | `climbUuid`, `boardLayout`, `error_reason`                        | Frame transmission failed                           |

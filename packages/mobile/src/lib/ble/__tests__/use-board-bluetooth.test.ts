@@ -352,11 +352,18 @@ describe('useBoardBluetooth', () => {
     expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.connectFailed');
   });
 
-  // Guards the #3088 cancel/failure split from over-matching: a real
-  // environmental failure must keep landing on 'Bluetooth Connection Failed'.
-  it('still reports an environmental connect failure as a failure', async () => {
+  // The #3088 split has to send every connect rejection to exactly one of the
+  // two events. The dismissal row is the one that discriminates — before the
+  // split it fired 'Bluetooth Connection Failed' like every other shape. The
+  // rest guard the split from over-matching: ble-plx's "Operation was
+  // cancelled" is our own connect-timeout abort, not a climber backing out.
+  it.each([
+    ['Device selection cancelled', 'Bluetooth Connection Cancelled', undefined],
+    ['Operation was cancelled', 'Bluetooth Connection Failed', 'write_failed'],
+    ['Connection timed out — board may be powered off', 'Bluetooth Connection Failed', 'connect_failed'],
+  ] as const)('routes a "%s" connect rejection to %s', async (message, expectedEvent, expectedFailureReason) => {
     const fakeAdapter = makeFakeAdapter({
-      requestAndConnect: vi.fn().mockRejectedValue(new Error('Connection timed out — board may be powered off')),
+      requestAndConnect: vi.fn().mockRejectedValue(new Error(message)),
     });
     vi.mocked(createBluetoothAdapter).mockReturnValue(
       fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
@@ -368,9 +375,11 @@ describe('useBoardBluetooth', () => {
       await result.current.connect();
     });
 
-    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Cancelled')).toBeUndefined();
-    const failure = mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Failed');
-    expect(failure?.[1]).toMatchObject({ failureReason: 'connect_failed' });
+    const outcomes = mockTrack.mock.calls.filter(
+      ([name]) => name === 'Bluetooth Connection Cancelled' || name === 'Bluetooth Connection Failed',
+    );
+    expect(outcomes.map(([name]) => name)).toEqual([expectedEvent]);
+    expect((outcomes[0]?.[1] as { failureReason?: unknown } | undefined)?.failureReason).toBe(expectedFailureReason);
   });
 
   it('tags a service_missing failure with the services the board exposed (#3480)', async () => {
