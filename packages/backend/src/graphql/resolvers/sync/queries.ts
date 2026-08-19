@@ -189,6 +189,70 @@ function boardClimbsScope(boardType: string, layoutId: number | null, sizeId: nu
   );
 }
 
+/**
+ * Run one page of a per-board reference table that has no layout_id of its own
+ * (board_climb_stats, board_climb_grades) — building the correlated-EXISTS scope
+ * AND running the page under the serial-plan guard, together, in one call.
+ *
+ * Both belong to the same function on purpose. Such a pull walks the reference
+ * table in cursor order and probes 375k-row board_climbs through the EXISTS
+ * filter; production chooses a Gather Merge for that shape, which has exhausted
+ * Postgres's DSM during sync bursts (Sentry BOARDSESH-AK, pgCode 53100). The
+ * guard's load-bearing part is `executor: transactionDb` — `runSyncPage`
+ * silently defaults to the bare pool, so a caller that builds the scope itself
+ * and forgets the executor gets no guard and no error. That is exactly how
+ * syncClimbGrades shipped unguarded (#4528) after the scope was copy-pasted from
+ * syncClimbStats (#4468). Keeping them in one helper makes the omission
+ * unrepresentable; `SET LOCAL` and the page SELECT stay on the same transaction
+ * handle.
+ *
+ * The guard is unconditional, including for the unscoped `board_type`-only pull:
+ * a full-table walk of either reference table can pick a parallel plan too, and
+ * a serial plan can only change latency, never results.
+ */
+async function runScopedBoardRefSyncPage(params: {
+  table: SQL;
+  climbUuidColumn: SQL;
+  selectList: SQL;
+  updatedAtColumn: SQL;
+  seqColumn: SQL;
+  boardType: string;
+  layoutId: number | null;
+  sizeId: number | null;
+  cursor: SyncCursorInput | null | undefined;
+  limit: number;
+}): Promise<SyncResult> {
+  const { table, climbUuidColumn, selectList, updatedAtColumn, seqColumn, boardType, layoutId, sizeId, cursor, limit } =
+    params;
+
+  // The reference row has no layout_id, so scope it to the climbs of that
+  // (layout, size) via a correlated EXISTS on board_climbs, reusing the same
+  // shared conditions syncClimbs uses (bc.-qualified here). No scope → plain
+  // board_type filter.
+  const scopeConditions = boardClimbsLayoutSizeConditions(boardType, layoutId, sizeId, sql`bc.`);
+  let scope: SQL = sql`board_type = ${boardType}`;
+  if (scopeConditions.length > 0) {
+    const sub = sql.join(
+      [sql`bc.uuid = ${climbUuidColumn}`, sql`bc.board_type = ${boardType}`, ...scopeConditions],
+      sql` AND `,
+    );
+    scope = sql`board_type = ${boardType} AND EXISTS (SELECT 1 FROM board_climbs bc WHERE ${sub})`;
+  }
+
+  return withSerialPlan(db, (transactionDb) =>
+    runSyncPage({
+      executor: transactionDb,
+      selectList,
+      fromClause: table,
+      scope,
+      updatedAtColumn,
+      seqColumn,
+      cursor,
+      limit,
+    }),
+  );
+}
+
 export const syncQueries = {
   /**
    * Pull the authenticated user's ticks. Local PK = uuid (the idempotency key).
@@ -422,37 +486,19 @@ export const syncQueries = {
       sizeId: sid,
     } = prepareBoardSync(ctx, cursor, limit, boardType, layoutId, sizeId);
 
-    // Stats have no layout_id, so scope them to the climbs of that (layout, size)
-    // via a correlated EXISTS on board_climbs, reusing the same shared conditions
-    // syncClimbs uses (bc.-qualified here). No scope → plain board_type filter.
-    const scopeConditions = boardClimbsLayoutSizeConditions(validBoardType, lid, sid, sql`bc.`);
-    let scope: SQL = sql`board_type = ${validBoardType}`;
-    if (scopeConditions.length > 0) {
-      const sub = sql.join(
-        [sql`bc.uuid = board_climb_stats.climb_uuid`, sql`bc.board_type = ${validBoardType}`, ...scopeConditions],
-        sql` AND `,
-      );
-      scope = sql`board_type = ${validBoardType} AND EXISTS (SELECT 1 FROM board_climbs bc WHERE ${sub})`;
-    }
-
-    // A scoped stats pull walks board_climb_stats in cursor order and probes
-    // board_climbs through the EXISTS filter. Production chooses a Gather
-    // Merge for that shape, which has exhausted Postgres's DSM during sync
-    // bursts (Sentry BOARDSESH-AK, pgCode 53100). Keep SET LOCAL and the page
-    // SELECT on the exact same transaction handle.
-    return withSerialPlan(db, (transactionDb) =>
-      runSyncPage({
-        executor: transactionDb,
-        selectList: sql`board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty,
-          ascensionist_count, difficulty_average, quality_average, fa_username, fa_at, updated_at, sync_seq`,
-        fromClause: sql`board_climb_stats`,
-        scope,
-        updatedAtColumn: sql`board_climb_stats.updated_at`,
-        seqColumn: sql`board_climb_stats.sync_seq`,
-        cursor,
-        limit: lim,
-      }),
-    );
+    return runScopedBoardRefSyncPage({
+      table: sql`board_climb_stats`,
+      climbUuidColumn: sql`board_climb_stats.climb_uuid`,
+      selectList: sql`board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty,
+        ascensionist_count, difficulty_average, quality_average, fa_username, fa_at, updated_at, sync_seq`,
+      updatedAtColumn: sql`board_climb_stats.updated_at`,
+      seqColumn: sql`board_climb_stats.sync_seq`,
+      boardType: validBoardType,
+      layoutId: lid,
+      sizeId: sid,
+      cursor,
+      limit: lim,
+    });
   },
 
   /**
@@ -488,26 +534,16 @@ export const syncQueries = {
       sizeId: sid,
     } = prepareBoardSync(ctx, cursor, limit, boardType, layoutId, sizeId);
 
-    // Grades have no layout_id, so scope them to the climbs of that (layout, size)
-    // via a correlated EXISTS on board_climbs, reusing the same shared conditions
-    // syncClimbs uses (bc.-qualified here). No scope → plain board_type filter.
-    const scopeConditions = boardClimbsLayoutSizeConditions(validBoardType, lid, sid, sql`bc.`);
-    let scope: SQL = sql`board_type = ${validBoardType}`;
-    if (scopeConditions.length > 0) {
-      const sub = sql.join(
-        [sql`bc.uuid = board_climb_grades.climb_uuid`, sql`bc.board_type = ${validBoardType}`, ...scopeConditions],
-        sql` AND `,
-      );
-      scope = sql`board_type = ${validBoardType} AND EXISTS (SELECT 1 FROM board_climbs bc WHERE ${sub})`;
-    }
-
-    return runSyncPage({
+    return runScopedBoardRefSyncPage({
+      table: sql`board_climb_grades`,
+      climbUuidColumn: sql`board_climb_grades.climb_uuid`,
       selectList: sql`board_type, climb_uuid, angle, local_grade, universal_grade, grade_low, grade_high,
         confidence, ascensionist_count, computed_at, sync_seq`,
-      fromClause: sql`board_climb_grades`,
-      scope,
       updatedAtColumn: sql`board_climb_grades.computed_at`,
       seqColumn: sql`board_climb_grades.sync_seq`,
+      boardType: validBoardType,
+      layoutId: lid,
+      sizeId: sid,
       cursor,
       limit: lim,
     });
