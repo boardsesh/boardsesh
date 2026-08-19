@@ -5,7 +5,7 @@ import { PlaylistChipsRow } from '../ClimbPlaylistChips';
 import { useClimbPlaylistMemberships } from '../../hooks/use-climb-playlist-memberships';
 import { useClimbPlaylistMembershipQuery } from '../../hooks/use-climb-playlist-membership-query';
 import { usePlaylistsContextOptional } from '../../providers/playlists-provider';
-import { filterPlaylistsByBoard } from '../../lib/sort-filter-playlists';
+import { hasPlaylistForBoard } from '../../lib/sort-filter-playlists';
 
 /**
  * Height of the reserved chips slot, in points.
@@ -77,7 +77,7 @@ export const PlayDrawerPlaylistChips = memo(function PlayDrawerPlaylistChips({
   // no playlists — the majority — instead of only to playlist owners inside a
   // one-or-two-second window at cold start. This is the cheaper side of the trade.
   const hasBoardPlaylists = useMemo(
-    () => (playlists ? filterPlaylistsByBoard(playlists, boardName, layoutId).length > 0 : false),
+    () => (playlists ? hasPlaylistForBoard(playlists, boardName, layoutId) : false),
     [playlists, boardName, layoutId],
   );
 
@@ -94,7 +94,9 @@ export const PlayDrawerPlaylistChips = memo(function PlayDrawerPlaylistChips({
   // every board/auth/preference change and would wipe them. React Query is the
   // durable cache here.
   const seededMembers = useClimbPlaylistMemberships(climbUuid);
-  const members = useMemo<Iterable<string>>(() => memberUuids ?? seededMembers, [memberUuids, seededMembers]);
+  // No memo needed: both sides are already reference-stable (a React Query cache
+  // array, the store's cached `Set`), so the coalesce is stable on its own.
+  const members: Iterable<string> = memberUuids ?? seededMembers;
 
   // Every playlist by name, not just the two that fit — a "+2" token tells a
   // VoiceOver user nothing. The list variant stays hidden from the accessibility
