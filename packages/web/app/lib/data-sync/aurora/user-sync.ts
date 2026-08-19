@@ -350,6 +350,7 @@ export async function upsertTableData(
               angle: number | null;
               position: number;
             }> = [];
+            let droppedDuplicateClimbs = 0;
             for (let i = 0; i < item.climbs.length; i++) {
               const climb = item.climbs[i];
               // Handle different possible structures of climb data
@@ -357,15 +358,26 @@ export async function upsertTableData(
               const climbAngle = climb.angle ?? null;
               const climbPosition = climb.position ?? i;
 
-              if (typeof climbUuid === 'string' && !seenClimbUuids.has(climbUuid)) {
-                seenClimbUuids.add(climbUuid);
-                climbRows.push({
-                  playlistId: playlist.id,
-                  climbUuid,
-                  angle: climbAngle,
-                  position: climbPosition,
-                });
+              if (typeof climbUuid !== 'string') continue;
+              if (seenClimbUuids.has(climbUuid)) {
+                droppedDuplicateClimbs++;
+                continue;
               }
+              seenClimbUuids.add(climbUuid);
+              climbRows.push({
+                playlistId: playlist.id,
+                climbUuid,
+                angle: climbAngle,
+                position: climbPosition,
+              });
+            }
+
+            // Data loss the climber never asked for, so say so out loud — see
+            // the same log line in the aurora-sync daemon for why.
+            if (droppedDuplicateClimbs > 0) {
+              console.warn(
+                `Circuit ${item.uuid}: dropped ${droppedDuplicateClimbs} repeated climb_uuid row(s) — unique_playlist_climb is (playlist_id, climb_uuid) and ignores angle`,
+              );
             }
 
             if (climbRows.length > 0) {

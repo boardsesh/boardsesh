@@ -11,6 +11,7 @@ import {
   isExportAscentActuallyAttempt,
   publishedClimbKey,
   readExportBool,
+  resolveCircuitClimbUuids,
   type AuroraExportAscent,
 } from './json-import';
 
@@ -360,5 +361,45 @@ describe('generateJsonImportCircuitAuroraId (#3526 / #3541)', () => {
     expect(generateJsonImportCircuitAuroraId('user-a', 'kilter', CIRCUIT, CREATED_AT)).toMatch(
       /^json-import-circuit-[0-9a-f]{32}$/,
     );
+  });
+});
+
+/**
+ * #4023: `unique_playlist_climb` is (playlist_id, climb_uuid). The JSON import
+ * resolves a circuit's climbs by NAME, so two entries collapsing onto one uuid
+ * used to produce duplicate insert rows, a raw 23505, and a rolled-back circuit
+ * that the climber only ever saw as a bumped `failed` count.
+ */
+describe('resolveCircuitClimbUuids (#4023)', () => {
+  const nameToUuid = new Map([
+    ['Crimp Ladder', 'uuid-a'],
+    ['Crimp Ladder ', 'uuid-a'],
+    ['Sloper Hell', 'uuid-b'],
+  ]);
+
+  it('collapses a climb listed twice under the same name to one row', () => {
+    expect(resolveCircuitClimbUuids(['Crimp Ladder', 'Sloper Hell', 'Crimp Ladder'], nameToUuid)).toEqual([
+      'uuid-a',
+      'uuid-b',
+    ]);
+  });
+
+  it('collapses two different names that resolve to the same uuid', () => {
+    expect(resolveCircuitClimbUuids(['Crimp Ladder', 'Crimp Ladder '], nameToUuid)).toEqual(['uuid-a']);
+  });
+
+  it('keeps the first occurrence, so circuit order survives the dedupe', () => {
+    expect(resolveCircuitClimbUuids(['Sloper Hell', 'Crimp Ladder', 'Sloper Hell'], nameToUuid)).toEqual([
+      'uuid-b',
+      'uuid-a',
+    ]);
+  });
+
+  it('drops names that resolve to nothing without disturbing the rest', () => {
+    expect(resolveCircuitClimbUuids(['Unknown Climb', 'Sloper Hell'], nameToUuid)).toEqual(['uuid-b']);
+  });
+
+  it('returns an empty list when nothing resolves, so the caller skips the delete', () => {
+    expect(resolveCircuitClimbUuids(['Unknown Climb'], nameToUuid)).toEqual([]);
   });
 });
