@@ -213,11 +213,6 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 50
-      - name: Fetch base ref
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: git fetch --depth=50 origin "$BASE_REF":"refs/remotes/origin/$BASE_REF"
       - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
@@ -226,7 +221,7 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Install Expo web lint dependencies
-        # Unconditional: the push-to-main step below lints the WHOLE repo, so
+        # Unconditional: the lint step below lints the WHOLE repo, so
         # packages/mobile/src/web-shims/bottom-sheet.tsx is always in scope and
         # its `@gorhom/bottom-sheet` types only resolve through the isolated
         # web-runtime install (packages/mobile/tsconfig.json maps the path
@@ -294,34 +289,19 @@ jobs:
       # `vp check`, so this grep guard is the real backstop.
       - name: Check offline-sync adapter boundary
         run: vp run check:mobile-offline-sync-imports
-      - name: Lint changed files (PR)
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          # Match the staged-hook scope in root vite.config.ts: TS/JS files,
-          # excluding generated/, board-controller, and embedded firmware sources.
-          # xargs -r ensures no-op on empty input.
-          git diff --name-only --diff-filter=ACMR \
-            "origin/$BASE_REF...HEAD" \
-            -- '*.ts' '*.tsx' '*.js' '*.mjs' '*.cjs' \
-            | grep -vE '(/node_modules/|/generated/|^packages/board-controller/|^embedded/)' \
-            > changed-lintable.txt || true
-          if [ -s changed-lintable.txt ]; then
-            # Same stdout redirect as the full-repo step below, and for the same
-            # reason: vp panics on EAGAIN when it flushes a long warning list to the
-            # runner's non-blocking stdout, and xargs reports that crash as 123 with
-            # the diagnostics cut off mid-line. A PR touching one warning-heavy file
-            # is enough to hit it. Writing to a regular file never EAGAINs; vp's real
-            # exit code is preserved so lint errors still fail the job.
-            xargs -r vp check < changed-lintable.txt > vp-check.log 2>&1 && status=0 || status=$?
-            cat vp-check.log || true
-            exit $status
-          else
-            echo "No lintable files changed."
-          fi
-      - name: Lint full repo (main)
-        if: github.event_name != 'pull_request'
+      # PRs and main lint the SAME thing: the whole repo. This job used to lint
+      # only a PR's changed files and reserve the full-repo pass for push-to-main,
+      # which meant an error in a file no PR happened to touch could not be caught
+      # until it was already on main. 33 of them accumulated that way and broke
+      # every main run for days (issue #4488, fixed by #4521) while every PR that
+      # introduced them stayed green. Measured cost of closing that gap: ~26s per
+      # PR (step timings, job 96193441921), against a 109s job dominated by
+      # setup-vp. Scope is now identical on both sides by construction, so the
+      # only way to land a lint error is to be the PR that shows it.
+      #
+      # Effective config is the `lint` block in root vite.config.ts, NOT
+      # .oxlintrc.json — see issue #4548 and the comment on that block.
+      - name: Lint full repo
         # vp/Vite+ panics with "failed printing to stdout: Resource temporarily
         # unavailable (os error 11)" when it flushes the full-repo warning list to the
         # runner's non-blocking stdout. Write to a regular file (never EAGAIN), then
