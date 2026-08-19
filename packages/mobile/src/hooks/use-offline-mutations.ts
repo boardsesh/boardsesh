@@ -1,11 +1,11 @@
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  applyBusyTimeout,
+  beginImmediateWrite,
   enqueue,
   getLocalUserId,
   runLocalWriteWithRetry,
-  OFFLINE_DB_BUSY_TIMEOUT_MS,
+  OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS,
   OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
   OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS,
   type EnqueueResult,
@@ -45,8 +45,16 @@ function scheduleDrain(
  * Every write in this file is a single `withExclusiveTransactionAsync` task, so
  * losing the single-writer lock rolls back both the data row and the outbox row
  * it would have queued — the whole write vanishes and, for a tick, the send is
- * gone. Attempt 1 keeps the shipped 5s `busy_timeout`; a retry gets the shorter
- * one, because a first-attempt failure already means a five-second holder.
+ * gone.
+ *
+ * The task opens IMMEDIATE rather than just arming `busy_timeout` (#4332). These
+ * tasks read before they write — `getLocalUserId` for the owner stamp — and a
+ * deferred transaction that reads first never reaches SQLite's busy handler when
+ * it upgrades to a write, so the timeout was set and then ignored and a contended
+ * tick died in about a millisecond. `beginImmediateWrite` takes the write lock up
+ * front, which is the only way the wait below is real. Keep using it even in a
+ * task that happens to write first today: the next person to add a read above the
+ * INSERT would silently bring the bug back.
  *
  * Every statement inside `task` MUST be safe to re-run: a `SQLITE_BUSY` can
  * surface at COMMIT, so a retry can follow an attempt that actually landed.
@@ -65,9 +73,13 @@ function runLocalWrite(
         if (injectedFault) throw injectedFault;
       }
       await db.withExclusiveTransactionAsync(async (txn) => {
-        // Own connection, busy_timeout defaults to 0 — wait for a held write lock
-        // instead of failing this offline write instantly (BOARDSESH-AB/AX).
-        await applyBusyTimeout(txn, attempt === 1 ? OFFLINE_DB_BUSY_TIMEOUT_MS : OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS);
+        // Own connection, busy_timeout defaults to 0, and expo's `BEGIN` is
+        // DEFERRED — arm the timeout and take the write lock in one step, or a
+        // held lock fails this offline write instantly (BOARDSESH-AB/AX, #4332).
+        await beginImmediateWrite(
+          txn,
+          attempt === 1 ? OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS : OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
+        );
         await task(txn);
       });
       if (__DEV__) {
@@ -149,7 +161,8 @@ export async function writeTickLocal(
  * self-contained — the drainer replays it from the payload alone — so an
  * outbox-only row is enough for the send to reach the server. It is also a
  * strictly smaller target than the full write: one `INSERT OR IGNORE`, no owner
- * read, at a later instant with its own (shorter) `busy_timeout`.
+ * read, at a later instant with its own (shorter) `busy_timeout`. It still opens
+ * IMMEDIATE — `enqueue` reads the existing row before it decides what to write.
  *
  * No owner stamp is needed: the server derives ownership from the authenticated
  * call. What the user gives up is documented at the call site — no local tick
@@ -168,7 +181,7 @@ export async function enqueueTickOutboxOnly(
   await runLocalWriteWithRetry(
     async () => {
       await db.withExclusiveTransactionAsync(async (txn) => {
-        await applyBusyTimeout(txn, OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS);
+        await beginImmediateWrite(txn, OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS);
         await enqueue(txn, 'boardsesh_ticks', 'create', input, tickUuid);
       });
     },
