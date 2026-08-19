@@ -1,29 +1,34 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
+import postgres from 'postgres';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { logger } from '../utils/logger';
 import { socialBoardMutations } from '../graphql/resolvers/social/boards';
 import { socialGymMutations } from '../graphql/resolvers/social/gyms';
 import { resetAllRateLimits } from '../utils/rate-limiter';
+import { getWorkerDatabaseUrl } from './worker-db';
+import { POSTGIS_SCHEMA_SQL, POSTGIS_TEARDOWN_SQL } from './schema-sql';
 
 /**
- * Real-DB coverage for board/gym mutations on a database WITHOUT PostGIS.
+ * Real-DB coverage for board/gym mutations on a database WITHOUT PostGIS — the
+ * deployment #4218 reports.
  *
- * IMPORTANT: this file only tests anything because the per-worker backend test
- * DB is a plain `postgres` image and `schema-sql.ts` declares `user_boards` and
- * `gyms` with latitude/longitude but no `location` column — it IS the
- * no-PostGIS deployment #4218 reports. If PostGIS is ever added to the test
- * image, every case here would pass vacuously — so the first case below asserts
- * the premise and fails loudly instead of going quietly green.
+ * The test database used to BE that deployment by accident. Since #4507 it
+ * carries PostGIS (the proximity queries need somewhere real to run), so this
+ * file builds its own no-PostGIS world instead: `beforeAll` drops the `location`
+ * columns and their derivation triggers, `afterAll` puts them back from the same
+ * DDL string schema-sql.ts applies, so there is no second copy to drift. Files
+ * run one at a time within a worker, so the window is this file only.
+ *
+ * Dropping the column beats stubbing the write: the resolver still issues the
+ * real statement and still gets a real SQLSTATE back from the real driver.
  *
  * On main, updateBoard/updateGym/createGym issued unguarded
  * `UPDATE ... SET location = ST_MakePoint(...)` statements, so saving an edit
- * with coordinates threw (42704 `type "geography" does not exist` here, 42703
- * undefined-column where the type exists but the column doesn't) after the row
- * had already been updated: the user saw a failure for a save that had landed.
- * Every case below except the premise probe and `createBoard` (already guarded)
- * fails against main.
+ * with coordinates threw after the row had already been updated: the user saw a
+ * failure for a save that had landed. Every case below except the premise probe
+ * and `createBoard` (already guarded) fails against main.
  */
 
 const OWNER = 'geo-degrade-owner';
@@ -86,6 +91,36 @@ function warnedGeographyFailures(warnSpy: { mock: { calls: unknown[][] } }): Geo
   });
 }
 
+/** Multi-statement DDL, so it goes through postgres.js directly rather than `db.execute`. */
+async function applySchemaStatements(statements: string): Promise<void> {
+  const client = postgres(getWorkerDatabaseUrl(), { max: 1, onnotice: () => {} });
+  try {
+    await client.unsafe(statements);
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
+/**
+ * Whether the server under test has PostGIS at all. It decides which SQLSTATE
+ * the guarded write comes back with: with the extension installed and only the
+ * column removed the `::geography` cast still resolves, so the failure is the
+ * undefined column; on a server with no PostGIS the cast itself is what fails.
+ */
+let hasPostGis = false;
+
+beforeAll(async () => {
+  const extension = await db.execute(
+    sql`SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'postgis') AS present`,
+  );
+  hasPostGis = Array.from(extension as Iterable<{ present: boolean }>)[0]?.present === true;
+  await applySchemaStatements(POSTGIS_TEARDOWN_SQL);
+});
+
+afterAll(async () => {
+  await applySchemaStatements(POSTGIS_SCHEMA_SQL);
+});
+
 beforeEach(async () => {
   resetAllRateLimits();
   await db.execute(sql`
@@ -118,9 +153,21 @@ describe('location geography writes degrade without PostGIS', () => {
     // the empty `location` result below is a real absence rather than a query
     // that silently returns nothing.
     expect(await tablesWithColumn('latitude')).toEqual(['gyms', 'user_boards']);
-    // If this ever fails, the test DB grew PostGIS and every case below is now
-    // vacuous — drop the column here (or stub the write) before trusting them.
+    // The beforeAll teardown is what every case below stands on: with the column
+    // still there the geography writes all succeed and the file passes vacuously.
+    // If this fails, the teardown stopped working — fix it before trusting them.
     expect(await tablesWithColumn('location')).toEqual([]);
+  });
+
+  it('leaves no derivation trigger to write the geography behind the resolver', async () => {
+    // The other half of the teardown. `gyms_set_location` derives `location` from
+    // lat/lng on every insert, so a surviving trigger would both hide the guarded
+    // write's failure and error inside the trigger body against the dropped column.
+    const triggers = await db.execute(sql`
+      SELECT tgname FROM pg_trigger
+      WHERE tgname IN ('gyms_set_location', 'user_boards_set_location')
+    `);
+    expect(Array.from(triggers as Iterable<{ tgname: string }>)).toEqual([]);
   });
 
   it('updateBoard saves new coordinates instead of failing on the missing column', async () => {
@@ -189,7 +236,10 @@ describe('location geography writes degrade without PostGIS', () => {
     expect(warnedGeographyFailures(warnSpy)).toContainEqual({
       table: 'user_boards',
       operation: 'updateBoard',
-      code: '42704', // type "geography" does not exist
+      // Both are the #4218 deployment, one column-shaped and one extension-shaped:
+      // with PostGIS installed the `::geography` cast resolves and the undefined
+      // column is what fails; with no PostGIS the cast fails first.
+      code: hasPostGis ? '42703' : '42704',
     });
   });
 
