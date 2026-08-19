@@ -218,9 +218,21 @@ export async function getOutboxSummary(db: SqlExecutor): Promise<OutboxSummary> 
   return summary;
 }
 
-export async function getDeadLetters(db: SqlExecutor): Promise<PendingMutation[]> {
+/**
+ * `limit` is for callers that act on the rows rather than display them (the
+ * launch recovery sweep), so their ceiling is enforced by the query instead of
+ * only by the loop that walks the result. Unbounded by default: the Sync-issues
+ * screen shows the user everything they have.
+ */
+export async function getDeadLetters(db: SqlExecutor, limit?: number): Promise<PendingMutation[]> {
+  if (limit === undefined) {
+    return db.getAllAsync<PendingMutation>(
+      `SELECT * FROM pending_mutations WHERE status = 'dead_letter' ORDER BY created_at ASC`,
+    );
+  }
   return db.getAllAsync<PendingMutation>(
-    `SELECT * FROM pending_mutations WHERE status = 'dead_letter' ORDER BY created_at ASC`,
+    `SELECT * FROM pending_mutations WHERE status = 'dead_letter' ORDER BY created_at ASC LIMIT ?`,
+    [limit],
   );
 }
 
