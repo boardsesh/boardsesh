@@ -107,6 +107,24 @@ function createValueBarrier<Result>(): { promise: Promise<Result>; release: (res
   return { promise, release };
 }
 
+/**
+ * Attach an inert rejection handler to a promise this test asserts on later.
+ *
+ * These tests deliberately leave a promise in flight across several `await`s.
+ * If it rejects during one of them, Node reaches its unhandled-rejection
+ * checkpoint before the assertion further down can attach a handler — vitest
+ * counts that under `Errors` and exits 1 with every test still passing
+ * (issue #4488, main run 31880202330).
+ *
+ * The promise itself is untouched: still rejected, still assertable. The
+ * `await expect(...).rejects.toThrow(...)` or bare `await` below still runs,
+ * still sees the same rejection, and still fails on the wrong error — so this
+ * cannot hide a defect. Its contract is pinned in deferred-rejection.test.ts.
+ */
+function handleLater(promise: Promise<unknown>): void {
+  void promise.catch((): void => undefined);
+}
+
 async function waitForSessionBlockedBy(blockingPid: number): Promise<void> {
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
@@ -1265,6 +1283,7 @@ describe('board-presence resolvers', () => {
       // Prime the iterator: kick off the first next() (this runs up to the
       // first `yield`, establishing the subscription) then report a climb.
       const nextPromise = iterator.next();
+      handleLater(nextPromise);
       // Give the eager subscribe a tick to settle.
       await new Promise((r) => setTimeout(r, 50));
 
@@ -1479,6 +1498,7 @@ describe('board-presence resolvers', () => {
           mergeReady.release(Number((session as { pid: number }).pid));
           await releaseMerge.promise;
         });
+        handleLater(mergePromise);
         const mergePid = await mergeReady.promise;
 
         savePromise = tickMutations.saveTick(
@@ -1486,6 +1506,7 @@ describe('board-presence resolvers', () => {
           { input: baseTickInput({ uuid: tickUuid, boardId: loserId }) },
           authCtx(),
         );
+        handleLater(savePromise);
         await waitForSessionBlockedBy(mergePid);
 
         releaseMerge.release();
@@ -1520,6 +1541,7 @@ describe('board-presence resolvers', () => {
           await releaseDelete.promise;
           await transaction.execute(sql`UPDATE user_boards SET deleted_at = now() WHERE id = ${boardId}`);
         });
+        handleLater(deletePromise);
         const deletePid = await deleteReady.promise;
 
         savePromise = tickMutations.saveTick(
@@ -1527,6 +1549,7 @@ describe('board-presence resolvers', () => {
           { input: baseTickInput({ uuid: tickUuid, boardId }) },
           authCtx(),
         );
+        handleLater(savePromise);
         await waitForSessionBlockedBy(deletePid);
 
         releaseDelete.release();
