@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -38,23 +38,26 @@ function stripComments(source: string): string {
 
 type DiscardedCall = { file: string; line: number; schemaName: string };
 
-/** Find statement-form `validateInput(SchemaName, ...)` calls: the trimmed
- * line starts with `validateInput(`, i.e. the return isn't assigned/awaited
- * into a variable. Every current discarded call site in this codebase fits
- * this single-line shape (verified against `grep -rn validateInput(` at
- * authoring time); a call written across multiple lines with the schema name
- * on a later line would be missed, so keep discarded calls single-line. */
+/** Find statement-form `validateInput(SchemaName, ...)` calls: the statement
+ * begins with `validateInput(`, i.e. the return isn't assigned/awaited into a
+ * variable. Matched against the whole file rather than line-by-line so a call
+ * wrapped across lines (schema name on the next line, as the formatter does
+ * for long argument lists) is still caught. */
 function findDiscardedValidateInputCalls(filePath: string): DiscardedCall[] {
   const source = stripComments(readFileSync(filePath, 'utf8'));
-  const lines = source.split('\n');
   const calls: DiscardedCall[] = [];
-  const statementFormRegex = /^validateInput\(\s*([A-Za-z_][A-Za-z0-9_]*)/;
-  lines.forEach((line, index) => {
-    const match = statementFormRegex.exec(line.trim());
-    if (match) {
-      calls.push({ file: filePath, line: index + 1, schemaName: match[1] });
-    }
-  });
+  const statementFormRegex = /(?:^|\n)[ \t]*validateInput\(\s*([A-Za-z_][A-Za-z0-9_]*)/g;
+  let match = statementFormRegex.exec(source);
+  while (match !== null) {
+    // Line number of the `validateInput(` token itself.
+    const tokenIndex = source.indexOf('validateInput(', match.index);
+    calls.push({
+      file: filePath,
+      line: source.slice(0, tokenIndex).split('\n').length,
+      schemaName: match[1],
+    });
+    match = statementFormRegex.exec(source);
+  }
   return calls;
 }
 
@@ -89,9 +92,7 @@ function schemaHasLiveDefaultOrTransform(schemaName: string, schemaFiles: { path
 describe('validateInput discarded-return usage', () => {
   it('never discards the return of a schema with a live .default()/.transform()', () => {
     const resolverFiles = listTsFiles(resolversDir);
-    const schemaFiles = listTsFiles(schemasDir)
-      .filter((path) => statSync(path).isFile())
-      .map((path) => ({ path, source: readFileSync(path, 'utf8') }));
+    const schemaFiles = listTsFiles(schemasDir).map((path) => ({ path, source: readFileSync(path, 'utf8') }));
 
     const offenders: DiscardedCall[] = [];
     for (const file of resolverFiles) {
@@ -119,9 +120,12 @@ describe('validateInput discarded-return usage', () => {
 
   it('sanity check: the scan actually finds discarded statement-form calls today', () => {
     // Guards against the scan itself silently matching nothing (e.g. a path
-    // typo) and the first test passing for the wrong reason.
+    // typo) and the first test passing for the wrong reason. Deliberately a
+    // low floor rather than today's exact count — resolvers legitimately come
+    // and go, and this assertion only needs to prove the scanner sees code.
     const resolverFiles = listTsFiles(resolversDir);
+    expect(resolverFiles.length).toBeGreaterThan(0);
     const totalDiscarded = resolverFiles.flatMap((file) => findDiscardedValidateInputCalls(file));
-    expect(totalDiscarded.length).toBeGreaterThan(50);
+    expect(totalDiscarded.length).toBeGreaterThan(5);
   });
 });

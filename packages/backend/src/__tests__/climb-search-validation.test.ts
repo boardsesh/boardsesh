@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { MAX_SEARCH_PAGE, mapSearchInputToParams } from '@boardsesh/db/queries';
+import { typeDefs } from '@boardsesh/shared-schema';
 import { ClimbSearchInputSchema } from '../validation/schemas';
 
 const base = {
@@ -100,5 +101,31 @@ describe('ClimbSearchInputSchema boulders/routes have no default (#3975)', () =>
     };
     expect(hasNoClimbTypeConstraint(omitted)).toBe(true);
     expect(hasNoClimbTypeConstraint(explicit)).toBe(true);
+  });
+});
+
+describe('ClimbSearchInputSchema covers every ClimbSearchInput SDL field (#3975)', () => {
+  it('has one Zod key per GraphQL input field, so parsing strips nothing the resolver needs', () => {
+    // searchClimbs now feeds `validateInput`'s PARSED result downstream, and
+    // Zod objects strip keys they don't declare. Before #3975 the resolver
+    // read the raw GraphQL input, so a field added to the SDL but forgotten
+    // in this schema still reached mapSearchInputToParams; now it would be
+    // silently dropped and the filter would just stop working. This test is
+    // the tripwire for that: add the field here whenever the SDL grows one.
+    const sdl = typeDefs.join('\n');
+    const inputBlock = /input ClimbSearchInput\s*\{([\s\S]*?)\n\s*\}/.exec(sdl);
+    expect(inputBlock).not.toBeNull();
+
+    const sdlFields = (inputBlock?.[1] ?? '')
+      .split('\n')
+      // Drop SDL doc-comment lines ("..." / """...""") and blanks.
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith('"') && !line.startsWith('#'))
+      .map((line) => line.split(':')[0].trim())
+      .sort();
+    const zodFields = Object.keys(ClimbSearchInputSchema.shape).sort();
+
+    expect(sdlFields.length).toBeGreaterThan(0);
+    expect(zodFields).toEqual(sdlFields);
   });
 });
