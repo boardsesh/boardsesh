@@ -1,4 +1,3 @@
-import { File } from 'expo-file-system';
 import { authenticatedFetch } from './auth-interceptor';
 import { BACKEND_URL } from './env';
 
@@ -7,10 +6,30 @@ import { BACKEND_URL } from './env';
 // in practice every upload is a small JPEG well under the limit.
 const AVATAR_ENDPOINT = `${BACKEND_URL}/api/avatars`;
 
+/**
+ * The same cap the backend enforces (`MAX_FILE_SIZE` in
+ * `packages/backend/src/handlers/avatars.ts`). Kept mobile-local rather than
+ * shared: it is a property of the avatar endpoint, and duplicating one number
+ * beats making every consumer of `@boardsesh/shared-schema` care about it.
+ * Checking it here turns a wasted multi-megabyte upload into an instant refusal.
+ */
+export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+
 /** A picked (and already-compressed) local image ready to upload. */
 export type AvatarUploadFile = {
-  /** Local file URI (file://...) from the picker/manipulator. */
+  /**
+   * Local file URI (file://...) from the picker/manipulator. Used for the
+   * on-screen preview; the upload itself goes off `bytes`.
+   */
   uri: string;
+  /**
+   * The image bytes, already read from `uri` and proven non-empty at pick time.
+   * Carrying the bytes instead of re-reading the URI here is deliberate: on
+   * Android a failed encode leaves a 0-byte file behind that reads back as an
+   * empty array without throwing, so the read has to happen where we can still
+   * recover (see `compressAvatar` in EditProfileScreen).
+   */
+  bytes: Uint8Array;
   /** Filename sent in the multipart part; defaults to `avatar.jpg`. */
   name?: string;
   /** MIME type; defaults to `image/jpeg` (what the manipulator emits). */
@@ -47,15 +66,13 @@ function withCacheBuster(url: string): string {
  * added by the fetch layer, and `authenticatedFetch` only touches `Authorization`.
  */
 export async function uploadAvatar(file: AvatarUploadFile, userId: string): Promise<string> {
-  const localFile = new File(file.uri);
-
-  // Read the bytes now instead of handing the encoder a lazy `bytes()` closure.
-  // The multipart encoder only awaits `bytes()` at encode time, so a picked file
-  // that has since become unreadable (cache eviction) would be encoded as an
-  // empty part and stored as a zero-byte avatar that renders as a blank circle.
-  // Reading here turns that into an error the caller can surface, before the POST.
-  const avatarBytes = await localFile.bytes();
-  if (avatarBytes.length === 0) {
+  // Last gate before the POST. The multipart encoder only awaits `bytes()` at
+  // encode time and writes whatever it gets, empty included, so an unusable
+  // image that reaches here would be stored as a zero-byte avatar behind a URL
+  // we then persist forever — the picture looks saved and renders as initials.
+  // Refusing costs the user a warning toast; accepting costs them their avatar.
+  const avatarBytes = file.bytes;
+  if (avatarBytes.length === 0 || avatarBytes.length > MAX_AVATAR_BYTES) {
     throw new Error('Avatar upload failed');
   }
 
