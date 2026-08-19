@@ -28,6 +28,23 @@ and keep their OTA fingerprint.
 phase) so a stale local export sitting in `packages/web/public/app` can never
 shadow the live dev server. The dev export keeps `baseUrl` `/app`.
 
+Metro cold-bundles on every start here (`--clear`), so first paint takes minutes
+and can outrun the orchestrator's readiness window on a loaded machine. Set
+**`BOARDSESH_EXPO_WEB_READY_TIMEOUT_MS`** to extend it
+(`scripts/lib/expo-web-readiness.ts`) rather than assuming the proxy is broken.
+The no-Metro-race alternative is `vp run dev:mobile:web-static`, below.
+
+## Scope: what the browser app is
+
+A **locale-neutral, `noindex` utility surface**, not a search or marketing
+surface. Keep it out of the sitemap and out of locale routing: it has no `/es`,
+`/fr` or `/de` route tree, which is why www's hand-off CTA strips the locale
+prefix (`packages/web/app/lib/app-handoff.ts`) and why the anonymous read-only
+matcher runs `stripLocalePrefix` before matching. In production the `noindex`
+comes from `deploy/app-subdomain/_headers`; on the dev `/app` proxy it comes
+from the `middleware.ts` carve-out (`next.config.mjs` has owned no `/app` header
+rule since W-24).
+
 ## Production: standalone subdomain at app.boardsesh.com
 
 The browser app is exported with `BOARDSESH_WEB_BASE_URL=/` so every asset and

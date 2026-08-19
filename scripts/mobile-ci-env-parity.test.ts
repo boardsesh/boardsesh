@@ -138,6 +138,19 @@ describe('Expo web export telemetry (app.boardsesh.com)', () => {
     expect(dsn).toBe(workflowEnvValue(readWorkflow(NATIVE_ANDROID), 'EXPO_PUBLIC_SENTRY_DSN'));
   });
 
+  it.each([
+    ['EXPO_PUBLIC_BACKEND_URL', 'https://ws.boardsesh.com'],
+    ['EXPO_PUBLIC_WS_URL', 'wss://ws.boardsesh.com/graphql'],
+  ])('pins %s to the production backend origin', (key, expected) => {
+    // Presence alone is not the invariant. `EXPO_PUBLIC_*` is inlined at export
+    // time, so a wrong-but-plausible host here (a staging box, a Railway
+    // *.up.railway.app URL, http:// instead of wss://) ships a browser app that
+    // cannot reach the backend at all — and the deploy still succeeds. The
+    // workflow's own BOARDSESH_EXPORT_EXPECT_URLS grep checks that the bundle
+    // contains what the workflow declared, not that the declaration is right.
+    expect(workflowEnvValue(readWorkflow(PRODUCTION_DEPLOY), key)).toBe(expected);
+  });
+
   it('pins the browser app auth origin to www, not app.boardsesh.com', () => {
     // The SPA does credentialed cross-origin auth against www.boardsesh.com
     // (see docs/expo-web-deployment.md, "Browser authentication"). Pointing

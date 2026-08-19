@@ -73,25 +73,25 @@ things. Neither is fixable by us for the copies already in the field.
   pins that URL shape, not the old Next.js implementation. The route file was
   deleted in #4715, but an unconditional external rewrite preserves the path and
   forwards it to Railway `/render/board` — the redirect wave (A6 in the
-  maintainer's plan; shipped piecemeal as W-17/#4433, W-19/#4479, W-20b/#4439)
+  maintainer's plan; shipped piecemeal as W-17/#4433, W-19/#4437, W-20b/#4439)
   had to leave the path alone, and so must any later cleanup. The default is
   overridable at build time (`#ifndef`) and at runtime through the device's own
   config endpoint (`embedded/libs/esp-web-server/src/esp_web_server.cpp:708-714`
   persists `render_base_url`), so it is recoverable, but only by hand, one device
   at a time.
 
-### App redirect destinations (the maintainer plan's A6; shipped across W-17/#4433, W-19/#4479, W-20b/#4439)
+### App redirect destinations (the maintainer plan's A6; shipped across W-17/#4433, W-19/#4437, W-20b/#4439)
 
 Destinations are paths on `${APP_ORIGIN}` (`app.boardsesh.com`), not on www. They
 used to be written with an `/app/` prefix, back when www proxied the Expo bundle
-at `/app`; W-24 (#4480) retired that static path, so the prefix is gone and the
+at `/app`; W-24 (#4438) retired that static path, so the prefix is gone and the
 shipped rules read `` `${APP_ORIGIN}${path}` `` — see `BASE_REDIRECTS` in
 `packages/web/next.config.mjs`.
 
 | Web route removed  | `${APP_ORIGIN}` destination                             | Status                                                                                                                                         |
 | ------------------ | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `join/[sessionId]` | `/join/{sessionId}`                                     | exists (`packages/mobile/app/join/[sessionId].tsx`; universal-link `/join` registered)                                                         |
-| `/you`             | `/profile`                                              | shipped in W-19 (#4479)                                                                                                                        |
+| `/you`             | `/profile`                                              | shipped in W-19 (#4437)                                                                                                                        |
 | `/settings`        | `/profile/more`                                         | no bare `/settings` in the app — redirect to `/profile/more`                                                                                   |
 | `/notifications`   | `/home/notifications`                                   | shipped in W-20b (#4439); `packages/mobile/app/(tabs)/home/notifications.tsx`, and `(tabs)/profile/notifications.tsx` renders the same screen  |
 | climb view         | `/climbs/{uuid}?boardName&layoutId&sizeId&setIds&angle` | exists; **all five query params required**, numeric IDs                                                                                        |
@@ -168,7 +168,8 @@ plus `useOptionalPlaylistActivation`. Refactor `multiboard-climb-list.tsx` and
   page still SSR-emits `ClimbViewSeoFragment` (by element identity), and the
   rendered HTML carries exactly one `<h1>`, the board `<img>` with explicit
   width/height, a setter link, angle cross-links, ≥3 internal links, and a CTA
-  whose href is `APP_URL` + the same pathname.
+  whose href is `APP_URL` + the same pathname **with any locale prefix
+  stripped** (see below).
 
 **Supersedes `docs/view-page-removal-pivot.md` (deleted, W-26/#4442).** That
 plan's drawer-first architecture and its "SEO content lives in a dedicated
@@ -211,7 +212,18 @@ plain `<img>` at the Railway `/render/board` overlay URL with explicit
 dimensions, a facts `<dl>`, a setter link, angle cross-links, beta videos,
 similar climbs, the community section, and one CTA — "Climb this", a real
 server-rendered `<a href>` at `APP_URL` + the same pathname, firing
-`Climb Handoff Clicked`. Not `BoardRenderer` or `BoardImageLayers`: both are
+`Climb Handoff Clicked`.
+
+**The locale carve-out, recorded here because `buildAppHandoffUrl`'s docblock
+says it is.** "The same pathname" is exact on `en-US` only. On `/es`, `/fr` and
+`/de` the CTA href drops the locale segment — `buildAppHandoffUrl`
+(`app/lib/app-handoff.ts`) strips every non-default prefix, deliberately and
+with no locale argument to forget. The Expo app has no `/es`, `/fr` or `/de`
+route tree, so a locale-prefixed app URL would match nothing and land on the
+SPA's not-found; a Spanish reader following "Climb this" therefore arrives at
+the right climb in the English app. That is the accepted regression, not a bug
+in this CTA — and it is why the epic's definition-of-done box for this CTA reads
+as "the same pathname" but is only literally true in one of the four locales. Not `BoardRenderer` or `BoardImageLayers`: both are
 hook-bearing client components, and this image is the page's LCP.
 
 **The `/list` front door** renders `StaticClimbList` with `virtualize={false}`.
@@ -784,9 +796,9 @@ The teardown was a **hard delete** with no retained `?classic=1` runtime
 fallback, so the RN-web interactive sheets had to be proven on real devices
 before the classic code was deleted. `@gorhom/bottom-sheet`'s web fallback does
 not implement the gesture-lock / keyboard contracts the native sheets rely on
-(see the "Expo web" section of `CLAUDE.md`). This ran on **real hardware** (not
-just simulators) on **both** origins — the Next-embedded `/app` and standalone
-`app.boardsesh.com`:
+(see the "Expo web" section of `CLAUDE.md`). It was to run on **real hardware**
+(not just simulators) on **both** origins — the Next-embedded `/app` and
+standalone `app.boardsesh.com`:
 
 Devices: a physical iPhone (iOS Safari) and a physical Android phone (Chrome).
 
@@ -802,10 +814,11 @@ Devices: a physical iPhone (iOS Safari) and a physical Android phone (Chrome).
       the whole delete.
 - [ ] Record crash-free confirmation for each sheet × device × origin.
 
-Sign-off on every box was the gate to start the classic-code delete (W-16). The
-boxes above are left unchecked because this doc has no record of who ran the
-device pass; the delete having shipped is the evidence it was satisfied one way
-or another.
+Sign-off on every box was the gate to start the classic-code delete (W-16).
+**No device pass is on record.** The boxes above are unchecked because this doc
+has no record of one having been run, and nothing above should be read as saying
+it was — only that W-16 shipped anyway. If a real-device regression turns up in
+these sheets, this gate is the first place to look, not the last.
 
 ## W-14 — the classic-web rollback artifact (#4368)
 
