@@ -983,6 +983,26 @@ describe('useBoardRouteTarget signed-out on web', () => {
     expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
   });
 
+  // The switch is for an emergency, so it has to work on a session already in
+  // flight — not only on one that starts killed. Flipping it mid-render must
+  // hand the reader back to the login wall.
+  it('hands the reader to login when the kill switch flips mid-session', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    const target = { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget;
+
+    const { container, rerender } = render(createElement(Harness, { target, anonymousClimbEnabled: true }));
+    await waitFor(() => expect(statusOf(container)).toBe('anonymous-climb'));
+
+    rerender(createElement(Harness, { target, anonymousClimbEnabled: false }));
+
+    await waitFor(() => expect(statusOf(container)).toBe('auth-required'));
+    // And it must not have handed off on the way out — `/play` is still gated.
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+    expect(setActiveBoard).not.toHaveBeenCalled();
+  });
+
   // A climb URL relaxes; a list URL does not. The list surface needs a board,
   // and minting one is `requireAuthenticated`.
   it('still hands a list URL to login', async () => {

@@ -434,14 +434,20 @@ function useAnonymousSlugBoard(slug: string | null): { board: UserBoard | null; 
   // slug it was fetched for, so a second URL through the same mounted screen
   // cannot render the previous board.
   const settled = resolved && resolved.slug === slug ? resolved : null;
-  return { board: settled?.board ?? null, error: settled?.board === null };
+  // Spelled out rather than derived from `settled?.board === null`, which is
+  // only correct because an unsettled read is `undefined` and a resolved-empty
+  // one is `null` — a distinction the next refactor of this state would quietly
+  // lose. Pending is not an error; a settled null board is.
+  if (!settled) return { board: null, error: false };
+  return { board: settled.board, error: settled.board === null };
 }
 
 /**
  * The status, in the order the checks have to run.
  *
- * `auth-required` comes before every resolution check: a signed-out visitor has
- * no board to fail on, and nothing was asked of the server on their behalf.
+ * A URL that did not parse is a dead end whatever the session is, so it leads.
+ * `auth-required` then comes before every RESOLUTION check: a signed-out visitor
+ * has no board to fail on, and nothing was asked of the server on their behalf.
  */
 function resolveStatus({
   parsedUrl,
