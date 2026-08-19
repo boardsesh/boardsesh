@@ -658,6 +658,35 @@ describe('setQueue baseline sequence (#3933)', () => {
     expect(queriesFor(SET_QUEUE_WITH_BASELINE)[0][1].variables.baselineSequence).toBe(9);
   });
 
+  it('reads the baseline before awaiting the session join, not after', async () => {
+    // The payload is composed by the caller at CALL time. `ensureReady` can
+    // await a session join, and a peer add landing during that wait advances
+    // the sync gate past what the payload knows. Reading the baseline after the
+    // await would tell the server "I already had everything through sequence
+    // 12", it would find no window to merge, and the peer's climb would be
+    // dropped by the replace — the exact bug this exists to prevent.
+    let applied = 7;
+    let releaseJoin: (() => void) | undefined;
+    const joined = new Promise<void>((resolve) => {
+      releaseJoin = resolve;
+    });
+
+    const pending = make({
+      getBaselineSequence: () => applied,
+      ensureReady: async (capturedSessionId) => {
+        await joined;
+        return capturedSessionId;
+      },
+    }).setQueue([item('a')]);
+
+    // Peer add applied while the join is still in flight.
+    applied = 12;
+    releaseJoin?.();
+    await pending;
+
+    expect(queriesFor(SET_QUEUE_WITH_BASELINE)[0][1].variables.baselineSequence).toBe(7);
+  });
+
   it('retries on the legacy document when the backend does not know the argument yet', async () => {
     // Rolling deploy / web preview pointed at prod / a mobile preview channel
     // running this branch — the old backend rejects the whole document at

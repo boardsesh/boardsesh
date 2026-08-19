@@ -79,7 +79,7 @@ const NOT_CONNECTED = 'Not connected to session';
 function isUnknownBaselineArgumentError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
   if (!message.includes('baselineSequence')) return false;
-  return /unknown argument|graphql_validation_failed|cannot query field|is not defined/i.test(message);
+  return /unknown argument|graphql_validation_failed|is not defined/i.test(message);
 }
 
 /**
@@ -143,6 +143,9 @@ export type QueueMutationsDeps<TItem> = {
    * (#3933). It MUST be the applied sequence, never a locally invented counter:
    * an add the client saw and deliberately dropped has a sequence at or below
    * the baseline and so is never resurrected.
+   *
+   * Read synchronously at `setQueue` call time, not after its internal awaits,
+   * so it lines up with the payload the caller just composed.
    *
    * Absent (web) or null: `setQueue` sends the legacy document with no baseline
    * argument and the server keeps its wholesale-overwrite behaviour.
@@ -458,6 +461,16 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
 
     setQueue: async (queue, currentClimbQueueItem) => {
       const queueInputs = queue.map(toQueueItemInput);
+      // Read the baseline SYNCHRONOUSLY, before any await, so it describes what
+      // the caller knew when it handed over this payload (#3933). Reading it
+      // after `resolveCore` — which can await a session join — lets a peer add
+      // that landed during that wait advance the gate past what the payload
+      // contains: the server then sees no window to merge and the replace drops
+      // the very climb this exists to save. The baseline has to track the
+      // payload in both directions — too new drops peer adds, too old
+      // resurrects climbs the climber deliberately replaced away — and call
+      // time is when the payload was composed.
+      const baselineSequence = getBaselineSequence?.() ?? null;
       // A wholesale replace is climber intent exactly like a per-item remove —
       // web's Clear button and mobile's playlist "replace my queue" both land
       // here and never touch `removeQueueItem`. Any recent activation missing
@@ -480,7 +493,6 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
         queue: queueInputs,
         currentClimbQueueItem: currentClimbQueueItem ? toQueueItemInput(currentClimbQueueItem) : undefined,
       };
-      const baselineSequence = getBaselineSequence?.() ?? null;
       if (baselineSequence !== null) {
         try {
           await runMutation(ready.client, {
