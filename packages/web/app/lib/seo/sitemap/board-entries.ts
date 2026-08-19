@@ -6,10 +6,12 @@ import type { SitemapItem } from './entries';
 /**
  * One entry per (board config × angle). Angles are genuinely different content —
  * grades shift with the wall angle and each angle page is self-canonical — so all
- * of them ship. Measured against the dev database, 51 listed configs give 660
- * items (2,640 locale-expanded URLs): 51 × 15 is the pre-filter upper bound, and
- * the MoonBoard 2-angle set plus the zero-climb skip below bring it to 660.
- * Either way it sits far inside the 11,250-item shard budget.
+ * of them ship. Measured against the dev image on 2026-08-19: 45 listed configs
+ * give 660 items (2,640 locale-expanded URLs) — 45 × 15 is the pre-filter upper
+ * bound and the zero-climb skip below brings it down — and the four MoonBoard
+ * configs `board-config-source.ts` synthesises add 8 more at their own 2-angle
+ * set, for 668 items / 2,672 URLs. Either way it sits far inside the
+ * 11,250-item shard budget. Production is not reconciled against these.
  *
  * Deliberately no `<lastmod>`: there is no per-config content timestamp in the
  * data today, and `new Date()` would be a lie. `<lastmod>` is optional in the

@@ -1,12 +1,44 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vite-plus/test';
+import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { buildGymEntries } from '../gym-entries';
 import { buildSetterEntries } from '../setter-entries';
 
 vi.mock('server-only', () => ({}));
-vi.mock('@/app/lib/server-popular-configs', () => ({
-  getAllBoardConfigsOrThrow: async () => [],
+
+const KILTER_CONFIG: PopularBoardConfig = {
+  boardType: 'kilter',
+  layoutId: 1,
+  layoutName: 'Kilter Board Original',
+  sizeId: 10,
+  sizeName: '12 x 12 with kickboard',
+  sizeDescription: '12 x 12 Square',
+  setIds: [1, 20],
+  setNames: ['Bolt Ons', 'Screw Ons'],
+  climbCount: 4200,
+  totalAscents: 99,
+  boardCount: 7,
+  displayName: 'Kilter OG 12x12',
+};
+
+/** The shape `board-config-source` synthesises: Masters 2017, every hold set. */
+const MOONBOARD_CONFIG: PopularBoardConfig = {
+  boardType: 'moonboard',
+  layoutId: 4,
+  layoutName: 'MoonBoard Masters 2017',
+  sizeId: 1,
+  sizeName: 'Standard',
+  sizeDescription: '11x18 Grid',
+  setIds: [11, 12, 13, 14, 15, 16],
+  setNames: ['Hold Set A', 'Hold Set B', 'Hold Set C', 'Original School Holds', 'Screw-on Feet', 'Wooden Holds'],
+  climbCount: 54678,
+  totalAscents: 0,
+  boardCount: 0,
+  displayName: 'MoonBoard Masters 2017',
+};
+vi.mock('../board-config-source', () => ({
+  getSitemapBoardConfigsOrThrow: async () => [KILTER_CONFIG, MOONBOARD_CONFIG],
 }));
 vi.mock('../playlist-query', () => ({
   fetchPlaylistSitemapRows: async () => [],
@@ -81,6 +113,29 @@ describe('SHARD_REGISTRY', () => {
     expect(Object.fromEntries(PAGED_SHARD_REGISTRY.map((shard) => [shard.id, shard.expectsUrls]))).toEqual({
       climbs: true,
     });
+  });
+
+  it('builds MoonBoard URLs into the boards shard, not just into the climb shards', async () => {
+    // The half-migration this catches: wiring only the climb shards to the
+    // sitemap config source and leaving the boards shard on the listed-config
+    // fetch. The climb shards would then emit tens of thousands of MoonBoard
+    // URLs while `/sitemaps/boards.xml` carried none, and nothing else here
+    // would go red.
+    const boards = SHARD_REGISTRY.find((shard) => shard.id === 'boards');
+    expect(boards).toBeDefined();
+
+    const items = await boards!.build();
+    const moonBoardPaths = items.map((item) => item.path).filter((path) => path.startsWith('/moonboard/'));
+
+    // Both MoonBoard angles, and nothing else on the board.
+    expect(moonBoardPaths).toHaveLength(2);
+    for (const path of moonBoardPaths) {
+      // `//` is the empty-path-segment shape `popularConfigListUrl` emits when
+      // it falls into its name branch with no set names — a 404 handed to Google.
+      expect(path).not.toContain('//');
+      expect(path).not.toContain('?');
+    }
+    expect(items.some((item) => item.path.startsWith('/kilter/'))).toBe(true);
   });
 
   it('keeps paged and fixed shard ids in one namespace', () => {

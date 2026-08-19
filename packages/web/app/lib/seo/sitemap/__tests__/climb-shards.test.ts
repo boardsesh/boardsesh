@@ -20,8 +20,8 @@ const KILTER_CONFIG: PopularBoardConfig = {
   displayName: 'Kilter Original 12x12',
 };
 
-vi.mock('@/app/lib/server-popular-configs', () => ({
-  getAllBoardConfigsOrThrow: async () => [KILTER_CONFIG],
+vi.mock('../board-config-source', () => ({
+  getSitemapBoardConfigsOrThrow: async () => [KILTER_CONFIG],
 }));
 vi.mock('../playlist-query', () => ({
   fetchPlaylistSitemapRows: async () => [{ uuid: 'abc-123', updatedAt: new Date('2026-04-30T00:00:00.000Z') }],

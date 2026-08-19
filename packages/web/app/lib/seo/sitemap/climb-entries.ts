@@ -108,40 +108,25 @@ export function resolveClimbSitemapGroups(configs: readonly PopularBoardConfig[]
 const PROBE_UUID = '00000000000000000000000000000000';
 
 /**
- * MoonBoard configurations are held out of the shard, and `isResolvableGroup`
- * cannot see why.
+ * The one filter: does this configuration have a readable URL at all?
  *
- * The set slug this builder emits does not round-trip through the parser the
- * MoonBoard page uses. `generateSetSlug` joins set-name slugs with `_`
- * (`readable-url-utils.ts`), while `getMoonBoardSetsBySlug`
- * (`url-utils.server.ts`) splits the slug on `-` and substring-matches the
- * parts — so `…/wooden-holds_screw_original-school-holds_…` parses back to a
- * DIFFERENT set-id list, and `generateMetadata` then emits a `<link
- * rel="canonical">` that is not the URL we submitted. Measured over the static
- * MoonBoard tables: 212 of 227 layout×set combinations mismatch, including the
- * full set list on masters-2017 and masters-2019. Every such URL is one Google
- * drops as "alternate page with proper canonical".
+ * A named MoonBoard exclusion used to sit alongside the probe, because the set
+ * slug this builder emits did not round-trip through the parser the MoonBoard
+ * page runs — `generateSetSlug` joins on `_` while `getMoonBoardSetsBySlug`
+ * split on `-`, so a submitted URL rendered a canonical pointing elsewhere and
+ * Google dropped it as "alternate page with proper canonical". That parser is
+ * now an exact match (`url-utils.server.ts`), pinned by a 291-tuple round-trip
+ * and by a byte-identity suite over these very groups, so the exclusion is gone
+ * with the reason for it.
  *
- * `tryConstructSlugViewUrl` returns a URL for all 227, so the resolvability
- * probe is green on every one of them — which is precisely why this is a
- * separate, named exclusion rather than a tweak to the probe.
- *
- * Not live today (`getPopularConfigs()` emits no MoonBoard rows — there is no
- * `board_product_sizes_layouts_sets` seed for it, and `/sitemaps/boards.xml`
- * carries zero `/moonboard/` URLs), so this costs nothing now and stops the
- * shard from going wrong the moment a seed lands. Lifting it means making
- * `getMoonBoardSetsBySlug` an exact `generateSetNameSlug` match on `_`-split
- * parts — a routing-parser change, not a sitemap one.
+ * The probe stays, and it is what still drops Kilter layout 5 ("Kilter Spire"):
+ * an orphaned layout with no size associations, so it has no readable URL at any
+ * tuple. 69 tier-2 climbs, documented rather than fixed.
  */
-function hasRoundTrippableSetSlug(group: ClimbConfigGroup): boolean {
-  return toBoardName(group.boardType) !== 'moonboard';
-}
-
 export function isResolvableGroup(group: ClimbConfigGroup): boolean {
   return (
-    hasRoundTrippableSetSlug(group) &&
     tryConstructSlugViewUrl(group.boardType, group.layoutId, group.sizeId, group.setIds, 0, PROBE_UUID, 'probe') !==
-      null
+    null
   );
 }
 

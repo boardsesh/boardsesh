@@ -5,7 +5,7 @@ import { getRoutableBoardAngles, toBoardName } from '@boardsesh/board-config';
 import { withSerialPlan, type SerialPlanDb } from '@boardsesh/db/queries';
 import { dbzRead } from '@/app/lib/db/db';
 import { boardClimbAliases, boardClimbStats, boardClimbs } from '@/app/lib/db/schema';
-import { getAllBoardConfigsOrThrow } from '@/app/lib/server-popular-configs';
+import { getSitemapBoardConfigsOrThrow } from './board-config-source';
 import {
   climbRowsToItems,
   resolveClimbSitemapGroups,
@@ -215,7 +215,7 @@ export async function fetchTier2ClimbRows(group: ClimbConfigGroup): Promise<Clim
  * fallback below only when the store is empty).
  */
 async function computeTier2Summary(): Promise<{ itemCount: number; lastModifiedIso: string | null }> {
-  const groups = resolveClimbSitemapGroups(await getAllBoardConfigsOrThrow());
+  const groups = resolveClimbSitemapGroups(await getSitemapBoardConfigsOrThrow());
 
   let itemCount = 0;
   let lastModified: Date | null = null;
@@ -321,7 +321,7 @@ export type Tier2UrlRow = {
  * of the shard; a drifting duplicate is exactly how that recurs.
  */
 export async function buildAllTier2UrlRows(): Promise<Tier2UrlRow[]> {
-  const groups = resolveClimbSitemapGroups(await getAllBoardConfigsOrThrow());
+  const groups = resolveClimbSitemapGroups(await getSitemapBoardConfigsOrThrow());
   const urlRows: Tier2UrlRow[] = [];
   let dropped = 0;
 
