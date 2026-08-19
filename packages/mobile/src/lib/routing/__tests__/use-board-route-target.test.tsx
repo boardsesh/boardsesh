@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useLayoutEffect, useState } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import type { BoardRouteTarget } from '../board-route-target';
+import { buildBoardClimbTarget, type BoardRouteTarget } from '../board-route-target';
 
 const router = vi.hoisted(() => ({ replace: vi.fn(), back: vi.fn(), canGoBack: vi.fn(() => true), push: vi.fn() }));
 const openPlayDrawer = vi.hoisted(() => vi.fn());
@@ -840,10 +840,14 @@ describe('useBoardRouteTarget signed-out on web', () => {
     expect(boardConfigOf(container)).toEqual({ ...KILTER_BOARD, angle: 25 });
   });
 
-  // `boardBySlug` returns null for a board a signed-out viewer may not see —
-  // indistinguishable from one that does not exist. That has to surface as the
-  // route's own not-found, never as a permanent spinner or a leaked board.
-  it('reports a board a signed-out viewer may not see as not-found', async () => {
+  // A PRIVATE board must not turn into a dead link. `boardBySlug` masks "you may
+  // not see this board" and "there is no such board" to the same null, so
+  // not-found here would tell a gym member their own board does not exist — on a
+  // URL that, before this branch existed, simply asked them to sign in and then
+  // showed them the climb. Sign-in is the only answer that is right either way,
+  // and the only one that resolves the ambiguity: signed in, the same URL either
+  // renders or reaches the route's own not-found.
+  it('asks a signed-out reader to sign in when the slug resolves to nothing', async () => {
     gateState.relaxesRoutes = true;
     authState.current = { isAuthenticated: false, isLoading: false };
     climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
@@ -855,7 +859,7 @@ describe('useBoardRouteTarget signed-out on web', () => {
       }),
     );
 
-    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    await waitFor(() => expect(statusOf(container)).toBe('auth-required'));
     expect(climbOf(container)).toBe('');
   });
 
@@ -875,15 +879,19 @@ describe('useBoardRouteTarget signed-out on web', () => {
       }),
     );
 
-    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    // The login wall, not the stranger's board: the stored one is never read on
+    // this path, so the server's null is the whole answer.
+    await waitFor(() => expect(statusOf(container)).toBe('auth-required'));
+    expect(boardConfigOf(container)).toBeNull();
   });
 
-  // A transport failure and a board that isn't there resolve to the SAME
-  // not-found, on purpose: there is no offline healing on this path (it only
-  // exists on the web export, where a reload is the retry). Pinned because it is
-  // a deliberate dead end rather than an oversight — anyone adding a retry here
-  // should have to change a test that says so.
-  it('treats a failed slug lookup as not-found rather than spinning', async () => {
+  // A transport failure lands in the same place as a masked board, on purpose:
+  // there is no offline healing on this path (it only exists on the web export,
+  // where a reload is the retry), and a failed read says nothing about whether
+  // the climb is there. What it must never be is a permanent spinner. Pinned
+  // because it is a deliberate choice — anyone adding a retry here should have to
+  // change a test that says so.
+  it('sends a failed slug lookup to the login wall rather than spinning', async () => {
     gateState.relaxesRoutes = true;
     authState.current = { isAuthenticated: false, isLoading: false };
     climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
@@ -895,7 +903,7 @@ describe('useBoardRouteTarget signed-out on web', () => {
       }),
     );
 
-    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    await waitFor(() => expect(statusOf(container)).toBe('auth-required'));
     expect(climbOf(container)).toBe('');
   });
 
@@ -1023,6 +1031,36 @@ describe('useBoardRouteTarget signed-out on web', () => {
     await waitFor(() => expect(climbQueryVariables.current.length).toBeGreaterThan(0));
     expect(statusOf(container)).toBe('resolving');
     expect(climbOf(container)).toBe('');
+  });
+
+  // `/…/{angle}/play/{segment}` opens anonymously too, and that is a decision
+  // rather than an accident. The two route files differ only in the surface they
+  // pass to `buildBoardClimbTarget`, which drops it — so both produce the same
+  // `kind: 'climb'` target and the predicate here cannot tell them apart. Left
+  // that way on purpose: `/play/…` is in the read-only allow-set, older shares
+  // and the web app's play view still emit it, and a reader who followed one
+  // would otherwise be the only arrival still meeting the login form.
+  //
+  // Built through the real builder rather than a literal, because the claim is
+  // about the ROUTE, not about a target shape a test made up. What stays gated is
+  // the app's own `/play` MODAL route — `read-only-routes.test.ts` pins that.
+  it('renders a /play climb URL anonymously as well, by the same target', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    const playTarget = buildBoardClimbTarget(
+      { boardName: 'kilter', layoutId: 'original', sizeId: '12x12-square', setIds: 'screw_bolt', angle: '40' },
+      'play',
+      CLIMB_UUID,
+    );
+
+    const { container } = render(createElement(Harness, { target: playTarget }));
+
+    await waitFor(() => expect(statusOf(container)).toBe('anonymous-climb'));
+    expect(climbOf(container)).toBe(CLIMB_UUID);
+    expect(boardConfigOf(container)).toEqual(KILTER_BOARD);
+    expect(router.replace).not.toHaveBeenCalled();
   });
 
   // THE FLEET-SAFETY ORACLE. Every merge to main touching packages/mobile
