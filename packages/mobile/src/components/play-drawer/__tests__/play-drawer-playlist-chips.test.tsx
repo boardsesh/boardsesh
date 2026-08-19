@@ -178,13 +178,25 @@ describe('PlayDrawerPlaylistChips', () => {
     expect(container.textContent).not.toContain('Project@40');
   });
 
-  it('renders from cache without requesting when the header is a swipe peek', () => {
+  it('still paints, without requesting, when the header is a swipe peek', () => {
     // A fling passes many climbs; the peek header must not fire a request per one.
-    ctrl.memberUuids = ['p1'];
+    // With nothing cached (`memberUuids` undefined, which is what a disabled query
+    // returns on a cold entry) it falls through to the store seed rather than
+    // going blank.
+    ctrl.seeded = new Set(['p1']);
     const { container } = renderChips({ fetchMembership: false });
     expect(ctrl.queryArgs.length).toBeGreaterThan(0);
     expect(ctrl.queryArgs.some((args) => args.enabled)).toBe(false);
     expect(container.textContent).toContain('Sunday sends');
+  });
+
+  it('paints a warm cache entry on a peek header without requesting', () => {
+    // A disabled React Query still serves cached data — the climb was the current
+    // one a swipe ago, so swiping back must not blank its chips.
+    ctrl.memberUuids = ['p2'];
+    const { container } = renderChips({ fetchMembership: false });
+    expect(ctrl.queryArgs.some((args) => args.enabled)).toBe(false);
+    expect(container.textContent).toContain('Project@40');
   });
 
   it('requests membership for the climb on screen', () => {
