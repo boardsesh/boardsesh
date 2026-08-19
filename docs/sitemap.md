@@ -98,7 +98,7 @@ path falls back to the live scan it replaced, and the next refresh repopulates i
    Worth being precise about what this buys, because it is easy to over- or
    under-sell. It is not required — the `after()` hook fires on the first
    `/sitemap.xml` request and closes the window for every request after it. What the
-   curl does is close it *now* rather than one crawl later, and it is the only one of
+   curl does is close it _now_ rather than one crawl later, and it is the only one of
    the three that reports back: a 409 tells you the refresh was refused and why,
    where the self-heal only writes that to the log. So: reach for it on a deploy that
    empties the store, and any time you want an answer rather than a hope.
