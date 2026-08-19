@@ -222,10 +222,13 @@ export const playlistMutations = {
 
     const userId = ctx.userId!;
 
-    // Build update object (only update provided fields)
-    const updateData: Record<string, unknown> = {
-      updatedAt: new Date(),
-    };
+    // Build update object (only update provided fields). `updatedAt` is stamped
+    // inside the transaction below, once the row lock is actually held: an edit
+    // that queued behind a concurrent writer would otherwise commit the
+    // timestamp it minted before it started waiting, writing an updated_at older
+    // than the row it replaces. That column orders the library and is the token
+    // the next client's `basedOn` is compared against.
+    const updateData: Record<string, unknown> = {};
 
     // Normalize the empty-string "clear" signal to NULL so a cleared field is
     // stored as NULL, not '' (matches createPlaylist's `|| null`). `undefined`
@@ -297,7 +300,7 @@ export const playlistMutations = {
 
       const [updatedRow] = await tx
         .update(dbSchema.playlists)
-        .set(updateData)
+        .set({ ...updateData, updatedAt: new Date() })
         .where(eq(dbSchema.playlists.id, lockedPlaylistId))
         .returning();
 

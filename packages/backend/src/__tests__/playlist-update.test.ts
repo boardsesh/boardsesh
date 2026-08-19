@@ -113,6 +113,40 @@ describe('updatePlaylist mutation — clearing optional fields', () => {
     expect('icon' in setArg).toBe(false);
   });
 
+  // The stamp has to happen after the FOR UPDATE read, not when the resolver
+  // was entered: an edit that queued behind a concurrent writer would otherwise
+  // commit a timestamp minted before it started waiting, writing an updated_at
+  // older than the row it replaces. That column orders the library and is the
+  // token the next client's basedOn is compared against.
+  it('stamps updatedAt after the row lock, not before the transaction opens', async () => {
+    vi.useFakeTimers();
+    try {
+      const enteredAt = new Date('2026-08-19T00:00:00.000Z');
+      vi.setSystemTime(enteredAt);
+
+      const ctx = makeCtx();
+      const updateChain = createMockChain([updatedRow]);
+      mockTx.select.mockReturnValueOnce(createMockChain([{ playlistId: 1 }])); // ownership
+      mockTx.select.mockImplementationOnce(() => {
+        // Stand in for the lock wait: the writer ahead of us commits, and only
+        // then does this transaction get its locked read.
+        vi.setSystemTime(new Date(enteredAt.getTime() + 5_000));
+        return createMockChain([updatedRow]);
+      });
+      mockTx.update.mockReturnValueOnce(updateChain);
+      mockDb.select.mockReturnValueOnce(createMockChain([{ count: 0 }])); // climbCount
+      mockDb.select.mockReturnValueOnce(createMockChain([])); // pin lookup
+
+      await playlistMutations.updatePlaylist(null, { input: { playlistId: 'p-uuid', name: 'Renamed' } }, ctx);
+
+      const setArg = (updateChain.set as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
+      expect(setArg.updatedAt).toBeInstanceOf(Date);
+      expect((setArg.updatedAt as Date).getTime()).toBe(enteredAt.getTime() + 5_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps a real colour value', async () => {
     const ctx = makeCtx();
     const updateChain = primeDb();
