@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
 import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-fragment';
 import { getClimbStatsForAllAngles, type ClimbStatsForAngle } from '@/app/lib/data/queries';
@@ -17,6 +17,10 @@ import { getClimbStatsForAllAngles, type ClimbStatsForAngle } from '@/app/lib/da
  *     with explicit dimensions, a setter link, angle cross-links, ≥3 internal
  *     links, and a CTA whose href is `APP_URL` + the same pathname.
  */
+
+// Mutable bits of the mocked climb row, so a test can vary what `getClimb`
+// returns without re-declaring the whole fixture.
+const climbRow = vi.hoisted(() => ({ description: null as string | null }));
 
 vi.mock('server-only', () => ({}));
 vi.mock('next/navigation', () => ({ notFound: vi.fn() }));
@@ -83,6 +87,7 @@ vi.mock('@/app/lib/data/queries', () => ({
     quality_average: '4.20',
     ascensionist_count: 12,
     frames: 'p1r12',
+    description: climbRow.description,
   })),
   getClimbStatsForAllAngles: vi.fn(async () => [
     {
@@ -284,6 +289,61 @@ describe('climb front door server HTML', () => {
     ]);
 
     expect(creativeWorkPayload(await renderFrontDoor())).not.toHaveProperty('description');
+  });
+});
+
+// #4494: setter-written notes are the one genuinely unique piece of prose on a
+// climb page, and until now they were stored and rendered nowhere.
+describe('setter notes on the climb front door', () => {
+  afterEach(() => {
+    climbRow.description = null;
+  });
+
+  it('SSR-emits a heading and the setter prose, verbatim', async () => {
+    climbRow.description = 'Match the rail, then a big move to the jug.';
+    const html = await renderFrontDoor();
+
+    expect(html).toContain('frontDoor.setterNotes.heading');
+    expect(html).toContain('Match the rail, then a big move to the jug.');
+  });
+
+  it('emits neither the heading nor an empty block when the setter wrote nothing', async () => {
+    climbRow.description = '';
+    expect(await renderFrontDoor()).not.toContain('frontDoor.setterNotes.heading');
+
+    climbRow.description = null;
+    expect(await renderFrontDoor()).not.toContain('frontDoor.setterNotes.heading');
+  });
+
+  it('drops a description that is only a restatement of "no match"', async () => {
+    for (const restatement of ['No match', 'No match\n', 'No matching.']) {
+      climbRow.description = restatement;
+      expect(await renderFrontDoor()).not.toContain('frontDoor.setterNotes.heading');
+    }
+  });
+
+  it('keeps real setter beta that merely mentions matching', async () => {
+    climbRow.description = 'No Houdini swap, spin around pls:). No matching.';
+    const html = await renderFrontDoor();
+
+    expect(html).toContain('frontDoor.setterNotes.heading');
+    expect(html).toContain('No Houdini swap, spin around pls:). No matching.');
+  });
+
+  it('still carries exactly one <h1> with the notes rendered', async () => {
+    climbRow.description = 'Match the rail, then a big move to the jug.';
+    const html = await renderFrontDoor();
+
+    expect(html.match(/<h1[\s>]/g) ?? []).toHaveLength(1);
+  });
+
+  it('leaves the JSON-LD description as the synthesised catalogue string', async () => {
+    climbRow.description = 'Match the rail, then a big move to the jug.';
+    const creativeWork = creativeWorkPayload(await renderFrontDoor());
+
+    expect(creativeWork.description).toBe(
+      'metadata.view.description(climbName=Test Climb,grade=V5,setter=setter-person,quality=4.20,ascents=12)',
+    );
   });
 });
 

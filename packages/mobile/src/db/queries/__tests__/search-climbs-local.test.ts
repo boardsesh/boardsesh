@@ -39,6 +39,7 @@ type ClimbFixture = {
   characteristics?: string[] | null;
   setterUsername?: string | null;
   createdAt?: string | null;
+  description?: string | null;
 };
 
 type StatFixture = {
@@ -55,14 +56,15 @@ type StatFixture = {
 async function insertClimb(db: TestSqliteDb, fixture: ClimbFixture): Promise<void> {
   await db.runAsync(
     `INSERT INTO board_climbs
-      (uuid, board_type, layout_id, name, is_listed, is_draft, frames_count, frames,
+      (uuid, board_type, layout_id, name, description, is_listed, is_draft, frames_count, frames,
        compatible_size_ids, required_set_ids, characteristics, setter_username, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       fixture.uuid,
       fixture.boardType ?? 'kilter',
       fixture.layoutId ?? 1,
       fixture.name ?? `Climb ${fixture.uuid}`,
+      fixture.description ?? null,
       fixture.isListed ?? 1,
       fixture.isDraft ?? 0,
       fixture.framesCount ?? 1,
@@ -199,6 +201,24 @@ describe('searchClimbsLocal', () => {
     expect(uuids(result)).toEqual(['a']);
     expect(result.hasMore).toBe(false);
     expect(await countClimbsLocal(db, makeInput())).toBe(1);
+  });
+
+  // #4494: the search read used to drop board_climbs.description on the floor,
+  // so a climb opened from the Climbs list reached the play drawer with no
+  // setter notes at all — and the offline path is the one most users hit.
+  it('carries the setter description through to the mapped climb', async () => {
+    await insertClimb(db, { uuid: 'with-notes', description: 'Match the rail, then\nbig move to the jug.' });
+
+    const result = await searchClimbsLocal(db, makeInput());
+    expect(result.climbs).toHaveLength(1);
+    expect(result.climbs[0].description).toBe('Match the rail, then\nbig move to the jug.');
+  });
+
+  it('reports an empty description (not undefined) when the setter wrote none', async () => {
+    await insertClimb(db, { uuid: 'no-notes' });
+
+    const result = await searchClimbsLocal(db, makeInput());
+    expect(result.climbs[0].description).toBe('');
   });
 
   it('filters by size via compatible_size_ids (contains), excluding NULL', async () => {
