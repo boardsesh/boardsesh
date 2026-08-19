@@ -83,6 +83,9 @@ const searchText = (input: Record<string, unknown>) =>
 const withoutFieldsDivergingOnBug4588 = (gym: SearchResult['gyms'][number]) => {
   const comparable: Record<string, unknown> = { ...gym };
   delete comparable.hoursUpdatedAt;
+  // Same defect, same cause: `created_at` is `timestamp` without time zone too,
+  // so it skews by the host offset in exactly the same way. Checked separately
+  // below for the thing that would actually 500 the query — that it parses.
   delete comparable.createdAt;
   return comparable;
 };
