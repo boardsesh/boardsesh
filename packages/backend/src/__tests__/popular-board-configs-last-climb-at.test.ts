@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { and, eq, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
