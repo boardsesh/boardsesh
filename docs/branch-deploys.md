@@ -1188,9 +1188,9 @@ Organized by migration priority (pure reads first, then mutations, then proxies)
 
 #### Batch 3: Aurora API Proxies
 
-> **Retired 2026-08-15 (W-25a, #4441), deleted 2026-08-19 (W-25b, #4443).** `getLogbook`,
+> **Retired 2026-08-15 (W-25a, #4441), deleted by W-25b (#4443).** `getLogbook`,
 > `saveClimb` and `user-sync` were deleted outright by W-25a. `login` and `saveAscent` answered
-> `410 Gone` from W-25a until W-25b removed the URLs 43 days ahead of the published `Sunset` date,
+> `410 Gone` from W-25a until W-25b removed the URLs ahead of the published `Sunset` date,
 > 2026-10-01 — both had answered 410 with no Aurora call behind them since W-25a, so W-25b changed
 > only how they were broken (410 → 404). The table below is kept as a record of the GraphQL migration.
 

@@ -8,7 +8,7 @@ Migrate the backend from Express to GraphQL Yoga, then reimplement Next.js REST 
 - **Server**: Pure GraphQL Yoga (replace Express entirely)
 - **Authentication**: JWT in Authorization header (same as WebSocket auth)
 - **Scope**: High priority APIs first, incremental implementation
-- **Exclusions**: Aurora proxy routes (`/api/v1/[board_name]/proxy/*`) stay in Next.js _(superseded — deleted: W-25a (#4441) removed three routes and put `login`/`saveAscent` behind 410, then W-25b (#4443) deleted the last two URLs on 2026-08-19, 43 days ahead of the published sunset)_
+- **Exclusions**: Aurora proxy routes (`/api/v1/[board_name]/proxy/*`) stay in Next.js _(superseded — deleted: W-25a (#4441) removed three routes and put `login`/`saveAscent` behind 410, then W-25b (#4443) deleted the last two URLs ahead of the published sunset of 2026-10-01)_
 
 ---
 

@@ -139,7 +139,7 @@ the Expo app in W-16 (#4435) — www keeps marketing, account and gym surfaces o
 
 - Server components fetch initial data.
 - Client components use React Query.
-- API: `/api/internal/...` for server-side ops; `/api/v1/[board]/proxy/...` for Aurora proxies.
+- API: `/api/internal/...` for server-side ops; `/api/v1/...` for the public read API (climbs, grades, heatmaps, slugs). The Aurora proxies are gone: W-25a (#4441) retired them, W-25b (#4443) deleted the URLs. Board login and tick logging run on GraphQL.
 - State: Context + `useReducer` for complex state; URL params as source of truth for board config.
 
 ### Integration points
