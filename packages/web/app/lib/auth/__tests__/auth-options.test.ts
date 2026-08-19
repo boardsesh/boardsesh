@@ -794,6 +794,9 @@ describe('authOptions.cookies — shared .boardsesh.com domain', () => {
 
   it('honours an AUTH_COOKIE_DOMAIN override', async () => {
     vi.stubEnv('VERCEL_ENV', 'production');
+    // Stubbed (not merely left ambient) so vi.unstubAllEnvs restores it after
+    // applyCanonicalAuthUrl writes the canonical origin into it on import.
+    vi.stubEnv('NEXTAUTH_URL', '');
     vi.stubEnv('AUTH_COOKIE_DOMAIN', '.staging.boardsesh.com');
     vi.resetModules();
     const cookies = await loadCookies();
@@ -849,5 +852,49 @@ describe('authOptions.cookies — shared .boardsesh.com domain', () => {
     expect(cookies?.sessionToken?.options.domain).toBeUndefined();
     expect(cookies?.sessionToken?.options.secure).toBe(false);
     expect(cookies?.callbackUrl?.options.domain).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// Canonical auth URL (issue #4227)
+// =============================================================================
+
+describe('auth-options module side effect — canonical NEXTAUTH_URL', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+    vi.restoreAllMocks();
+  });
+
+  it('rewrites a loopback NEXTAUTH_URL before the cookie config is built', async () => {
+    // The production state behind #4227: NEXTAUTH_URL points at localhost, so
+    // next-auth built redirect_uri=http://localhost:3000/api/auth/callback/google
+    // and sessionCookieDomain() returned undefined.
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubEnv('NEXTAUTH_URL', 'http://localhost:3000');
+    vi.stubEnv('VERCEL_ENV', 'production');
+    vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
+    vi.resetModules();
+
+    const { authOptions: freshOptions } = await import('../auth-options');
+
+    expect(process.env.NEXTAUTH_URL).toBe('https://www.boardsesh.com');
+    // …and the shared-cookie design comes back with it.
+    expect(freshOptions.cookies?.sessionToken?.options.domain).toBe('.boardsesh.com');
+    expect(freshOptions.cookies?.sessionToken?.name).toBe('__Secure-next-auth.session-token');
+  });
+
+  it('leaves a localhost NEXTAUTH_URL alone in local dev', async () => {
+    vi.stubEnv('NEXTAUTH_URL', 'http://localhost:3000');
+    vi.stubEnv('VERCEL', '');
+    vi.stubEnv('VERCEL_ENV', '');
+    vi.stubEnv('VERCEL_URL', '');
+    vi.stubEnv('BASE_URL', '');
+    vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
+    vi.resetModules();
+
+    await import('../auth-options');
+
+    expect(process.env.NEXTAUTH_URL).toBe('http://localhost:3000');
   });
 });
