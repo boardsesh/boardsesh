@@ -5,15 +5,16 @@ import { fileURLToPath } from 'node:url';
 
 // Regression guard for #3975: `validateInput(SomeSchema, raw, 'field')` is
 // only safe to call as a bare statement (discarding the parsed return) when
-// `SomeSchema` has no `.default(...)`/`.transform(...)` in its chain — those
-// only take effect on the PARSED result, never on the raw input the resolver
-// keeps reading afterwards. `ClimbSearchInputSchema`'s `boulders`/`routes`
-// defaults were exactly this: dead code because searchClimbs discarded the
-// parsed value (see packages/backend/src/graphql/resolvers/climbs/queries.ts
-// and packages/backend/src/validation/schemas/climbs.ts). This test statically
+// `SomeSchema` has no output-mutating operator in its chain (see
+// OUTPUT_MUTATING_OPS below) — those only take effect on the PARSED result,
+// never on the raw input the resolver keeps reading afterwards.
+// `ClimbSearchInputSchema`'s `boulders`/`routes` defaults were exactly this:
+// dead code because searchClimbs discarded the parsed value (see
+// packages/backend/src/graphql/resolvers/climbs/queries.ts and
+// packages/backend/src/validation/schemas/climbs.ts). This test statically
 // scans every resolver file for statement-form validateInput calls and fails
-// if the referenced schema has a live default/transform, so a future schema
-// change can't silently go dormant the same way.
+// if the referenced schema has a live one, so a future schema change can't
+// silently go dormant the same way.
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 // packages/backend/src/validation/__tests__ -> packages/backend/src
@@ -94,9 +95,18 @@ function collectSchemaBodies(schemaFiles: { path: string; source: string }[]): M
   return bodies;
 }
 
-/** True when the schema — or any schema it composes, transitively — carries a
- * `.default()`/`.transform()`. Composition matters: `ClimbQueueItemSchema` has
- * no default of its own but embeds `ClimbInputSchema`, whose null-coalescing
+/** Zod operators whose whole effect lands on the PARSED value, so they are
+ * dead when the caller keeps reading the raw input. `.default()` and
+ * `.transform()` are the two this guard was written for; `.trim()`,
+ * `.catch()` and `z.coerce.*` belong here for the same reason — they rewrite
+ * the output and leave the input untouched. None of them has a discarded
+ * call site today, so listing them costs nothing and closes the gap before
+ * someone reaches for `z.string().trim()` on a discarded schema. */
+const OUTPUT_MUTATING_OPS = /\.default\(|\.transform\(|\.trim\(|\.catch\(|z\.coerce\b/;
+
+/** True when the schema — or any schema it composes, transitively — carries an
+ * output-mutating op. Composition matters: `ClimbQueueItemSchema` has no
+ * default of its own but embeds `ClimbInputSchema`, whose null-coalescing
  * `.transform()`s are just as dead when the parsed return is thrown away. */
 function schemaHasLiveDefaultOrTransform(
   schemaName: string,
@@ -109,7 +119,7 @@ function schemaHasLiveDefaultOrTransform(
   // Schema not found in validation/schemas (e.g. imported from elsewhere,
   // or a plain z.ZodSchema built inline) — nothing to flag here.
   if (body === undefined) return false;
-  if (/\.default\(|\.transform\(/.test(body)) return true;
+  if (OUTPUT_MUTATING_OPS.test(body)) return true;
   for (const match of body.matchAll(/\b([A-Za-z_][A-Za-z0-9_]*)\b/g)) {
     const referenced = match[1];
     if (referenced === schemaName || !bodies.has(referenced)) continue;
@@ -128,9 +138,14 @@ function schemaHasLiveDefaultOrTransform(
  * store/broadcast the RAW item, so those coercions never apply — peers and
  * Redis keep the nulls. Capturing the parsed value here would change what
  * every party-mode client receives for a queue item, which needs its own
- * change with its own QA, not a drive-by in the #3975 fix.
+ * change with its own QA, not a drive-by in the #3975 fix. Tracked in #4601 —
+ * the entry comes out when that lands.
  *
  * Entries are `<resolver path relative to graphql/resolvers>::<SchemaName>`.
+ * One key covers every call site for that schema in that file (there are
+ * three for `ClimbQueueItemSchema`), so clean them up together: fixing a
+ * subset still satisfies the ratchet below.
+ *
  * Shrink this list; never grow it.
  */
 const KNOWN_DISCARDED_ALLOWLIST = new Set(['queue/mutations.ts::ClimbQueueItemSchema']);
@@ -140,7 +155,7 @@ function allowlistKey(call: DiscardedCall): string {
 }
 
 describe('validateInput discarded-return usage', () => {
-  it('never discards the return of a schema with a live .default()/.transform()', () => {
+  it('never discards the return of a schema with a live output-mutating op', () => {
     const resolverFiles = listTsFiles(resolversDir);
     const schemaBodies = collectSchemaBodies(
       listTsFiles(schemasDir).map((path) => ({ path, source: readFileSync(path, 'utf8') })),
@@ -169,10 +184,11 @@ describe('validateInput discarded-return usage', () => {
         .map((offender) => `  ${offender.file}:${offender.line} — validateInput(${offender.schemaName}, ...)`)
         .join('\n');
       throw new Error(
-        `Found ${offenders.length} statement-form validateInput() call(s) whose schema has a ` +
-          `.default()/.transform() that will never apply because the parsed return is discarded ` +
-          `(see #3975):\n${details}\n\nEither capture the return (const parsed = validateInput(...)) ` +
-          `and use it, or remove the default/transform if it's not meant to apply.`,
+        `Found ${offenders.length} statement-form validateInput() call(s) whose schema carries a ` +
+          `.default()/.transform()/.trim()/.catch()/z.coerce that will never apply because the ` +
+          `parsed return is discarded (see #3975):\n${details}\n\nEither capture the return ` +
+          `(const parsed = validateInput(...)) and use it, or drop the operator if it's not ` +
+          `meant to apply.`,
       );
     }
 
