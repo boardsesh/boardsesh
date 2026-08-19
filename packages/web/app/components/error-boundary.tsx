@@ -14,7 +14,10 @@ type ErrorBoundaryProps = {
    * instead of permanently showing the fallback. Useful for transient DOM
    * errors caused by browser extensions or auto-translate modifying the DOM.
    * Retries up to 3 times in quick succession before falling back permanently.
-   * The retry budget resets after 30 s of error-free operation.
+   * The retry budget resets after 30 s of error-free operation. That reset only
+   * helps a boundary that is currently rendering fine: once the budget is spent
+   * the boundary stays on the fallback, because zeroing the counter never
+   * clears `hasError` and unmounted children cannot throw again.
    */
   recoverable?: boolean;
 };
