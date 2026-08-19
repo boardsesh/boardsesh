@@ -39,8 +39,15 @@ const SKIPPED_DIR_NAMES = new Set(['node_modules', '.next', 'dist']);
 // "import" of it — package.json lists all 36 @boardsesh workspace deps and
 // next.config.mjs contains the list under test. Including either would make
 // assertion (b) trivially true for any entry, including the five just
-// pruned.
-const SKIPPED_RELATIVE_FILES = new Set(['package.json', 'next.config.mjs']);
+// pruned. This test file is skipped too: `prunedInW26` below spells out the
+// five pruned package names as string literals, which would otherwise supply
+// false "consumer" evidence for itself and blind the "has a real import"
+// assertion to exactly the regression it exists to catch.
+const SKIPPED_RELATIVE_FILES = new Set([
+  'package.json',
+  'next.config.mjs',
+  'app/__tests__/next-config-tracing-and-transpile.test.ts',
+]);
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 
