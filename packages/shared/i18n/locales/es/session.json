@@ -196,7 +196,14 @@
       "lifetimeSends_one": "{{count}} encadene",
       "lifetimeSends_other": "{{count}} encadenes",
       "lifetimeRecap": "{{tries}} {{sessions}}",
-      "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}"
+      "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}",
+      "signedOut": "Inicia sesión para ver tus intentos en este bloque."
+    },
+    "anonymous": {
+      "signInHeadline": "Registra este encadene",
+      "signInSubtitle": "Inicia sesión para guardar tus intentos, encadenes y beta en un solo sitio.",
+      "signInAction": "Iniciar sesión",
+      "tickAria": "Inicia sesión para registrar este encadene"
     },
     "similarClimbs": {
       "title": "Escaladas similares",

@@ -196,7 +196,14 @@
       "lifetimeSends_one": "{{count}} send",
       "lifetimeSends_other": "{{count}} sends",
       "lifetimeRecap": "{{tries}} {{sessions}}",
-      "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}"
+      "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}",
+      "signedOut": "Sign in to see your tries on this climb."
+    },
+    "anonymous": {
+      "signInHeadline": "Log this send",
+      "signInSubtitle": "Sign in to keep your tries, sends and beta in one place.",
+      "signInAction": "Sign in",
+      "tickAria": "Sign in to log this send"
     },
     "similarClimbs": {
       "title": "Similar Climbs",

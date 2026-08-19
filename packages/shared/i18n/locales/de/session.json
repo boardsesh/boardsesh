@@ -196,7 +196,14 @@
       "lifetimeSends_one": "{{count}} Begehung",
       "lifetimeSends_other": "{{count}} Begehungen",
       "lifetimeRecap": "{{tries}} {{sessions}}",
-      "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}"
+      "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}",
+      "signedOut": "Melde dich an, um deine Versuche an diesem Boulder zu sehen."
+    },
+    "anonymous": {
+      "signInHeadline": "Begehung eintragen",
+      "signInSubtitle": "Melde dich an, um Versuche, Begehungen und Beta an einem Ort zu behalten.",
+      "signInAction": "Anmelden",
+      "tickAria": "Melde dich an, um diese Begehung einzutragen"
     },
     "similarClimbs": {
       "title": "Ähnliche Boulder",

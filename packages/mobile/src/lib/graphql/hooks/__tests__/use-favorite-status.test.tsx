@@ -17,6 +17,14 @@ vi.mock('../../client', () => ({
   getHttpClient: () => ({ request: requestMock }),
 }));
 
+// `favorites` is `requireAuthenticated` server-side, so the hook reads the
+// session off the board adapter and refuses to fire without one. Mutable so the
+// signed-out case can be exercised without re-mocking.
+const adapterAuth = vi.hoisted(() => ({ isAuthenticated: true }));
+vi.mock('@boardsesh/board-react', () => ({
+  useBoardAdapter: () => adapterAuth,
+}));
+
 // The hooks barrel re-exports sibling hooks that transitively pull in
 // react-native / expo-router (auth provider, you-data, social, session-detail).
 // useFavoriteStatus + useToggleFavorite are pure React Query and touch none of
@@ -62,6 +70,7 @@ function makeWrapper() {
 
 beforeEach(() => {
   requestMock.mockReset();
+  adapterAuth.isAuthenticated = true;
 });
 
 describe('useFavoriteStatus', () => {
@@ -105,6 +114,34 @@ describe('useFavoriteStatus', () => {
     // Give React Query a tick; nothing should fire while disabled.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  // The anonymous read-only climb view opens the play drawer with
+  // `enabled: isSheetOpen` for a visitor who has no account. Without this gate
+  // every such open fired a GET_FAVORITES that `requireAuthenticated` rejects.
+  it('does not fetch for a signed-out reader even when the caller enables it', async () => {
+    adapterAuth.isAuthenticated = false;
+    requestMock.mockResolvedValue({ favorites: ['climb-1'] });
+    const { Wrapper } = makeWrapper();
+
+    renderHook(() => useFavoriteStatus('kilter', 'climb-1', 40, { enabled: true }), { wrapper: Wrapper });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  // The other half of the gate: the fix must not be "never fetch". A member on
+  // the same climb still gets exactly one request, so the heart keeps working.
+  it('still fetches once for a signed-in member on the same arguments', async () => {
+    requestMock.mockResolvedValue({ favorites: ['climb-1'] });
+    const { Wrapper } = makeWrapper();
+
+    const { result } = renderHook(() => useFavoriteStatus('kilter', 'climb-1', 40, { enabled: true }), {
+      wrapper: Wrapper,
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(requestMock).toHaveBeenCalledTimes(1);
   });
 
   it('does not fetch before a climb is selected (null uuid)', async () => {

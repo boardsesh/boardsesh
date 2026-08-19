@@ -108,6 +108,21 @@ const baseProps = {
   onOpenAngleSelector: vi.fn(),
 };
 
+/** The `data-action` iconName each ActionButton renders under (see the mock). */
+const ACTION_ICONS = {
+  mirror: 'mirror',
+  previous: 'skip.previous',
+  next: 'skip.next',
+  favorite: 'favorite',
+  favoriteFilled: 'favorite.fill',
+  ellipsis: 'more',
+  queue: 'queue',
+} as const;
+
+function actions(container: HTMLElement): string[] {
+  return [...container.querySelectorAll('[data-action]')].map((node) => node.getAttribute('data-action') ?? '');
+}
+
 describe('PlayDrawerActionBar', () => {
   it('renders the tick as a green glyph (colour on the icon, not a solid fill)', () => {
     const { container } = render(createElement(PlayDrawerActionBar, baseProps));
@@ -207,5 +222,82 @@ describe('PlayDrawerActionBar', () => {
 
     expect(activeLongPressBulb.getAttribute('data-long-press-enabled')).toBe('true');
     expect(activeLongPressBulb.getAttribute('data-long-press-hint')).toBe('ble.holdForControls');
+  });
+});
+
+// The signed-out reader on app.boardsesh.com's read-only climb URL. Every
+// affordance is asserted individually rather than as one "renders no write
+// buttons" sweep: flipping a single gate is a distinct product regression (a
+// heart that 401s; a missing tick that turns the surface into a dead end), and a
+// blanket assertion could not tell them apart.
+describe('PlayDrawerActionBar (anonymous viewer)', () => {
+  const anonymousProps = { ...baseProps, viewer: 'anonymous' as const, onSignInPress: vi.fn() };
+
+  it('removes the queue, favourite, lightbulb and climb-actions affordances', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, anonymousProps));
+    const rendered = actions(container);
+
+    expect(rendered).not.toContain(ACTION_ICONS.queue);
+    expect(rendered).not.toContain(ACTION_ICONS.favorite);
+    expect(rendered).not.toContain(ACTION_ICONS.favoriteFilled);
+    expect(rendered).not.toContain(ACTION_ICONS.ellipsis);
+    expect(container.querySelector('[data-ble="true"]')).toBeNull();
+    expect(container.querySelector('[data-lightbulb-holder-badge="true"]')).toBeNull();
+  });
+
+  // On a board with no mirror support the heart normally takes the first primary
+  // slot; anonymously that fallback has to go too, or the removal above is only
+  // half true.
+  it('does not fall back to the heart in the first slot on a fixed-mirror board', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...anonymousProps, supportsMirroring: false }));
+
+    expect(actions(container)).not.toContain(ACTION_ICONS.favorite);
+  });
+
+  it('keeps the reads: mirror, prev/next, share and the angle pill', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, anonymousProps));
+    const rendered = actions(container);
+
+    expect(rendered).toContain(ACTION_ICONS.mirror);
+    expect(rendered).toContain(ACTION_ICONS.previous);
+    expect(rendered).toContain(ACTION_ICONS.next);
+    expect(container.querySelector('[data-icon="share"]')).toBeTruthy();
+    expect(container.querySelector('[data-label="mobile.angleSelector.title"]')).toBeTruthy();
+  });
+
+  // The tick is the ONLY prompt in the anonymous bar. Hiding it would leave the
+  // visitor no way in; wiring it to onTickPress would open a tick sheet that
+  // cannot save.
+  it('keeps the tick button and routes it to the sign-in handler, not the tick sheet', () => {
+    const onSignInPress = vi.fn();
+    const onTickPress = vi.fn();
+    const { container } = render(createElement(PlayDrawerActionBar, { ...anonymousProps, onSignInPress, onTickPress }));
+    const tick = container.querySelector('[data-label="mobile.anonymous.tickAria"]') as HTMLElement;
+
+    expect(tick).toBeTruthy();
+    expect(container.querySelector('[data-icon="tick.outline"]')).toBeTruthy();
+    tick.click();
+    expect(onSignInPress).toHaveBeenCalledTimes(1);
+    expect(onTickPress).not.toHaveBeenCalled();
+  });
+
+  // `ascentCount` is the viewer's own send count. Anonymously it is somebody
+  // else's number, so the badge must not render.
+  it('drops the ascent badge, which counts a logbook the reader does not have', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...anonymousProps, ascentCount: 7 }));
+
+    expect(container.textContent).not.toContain('7');
+  });
+
+  // The member bar is the invariant half: nothing above may leak into it.
+  it('leaves the member bar untouched', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, baseProps));
+    const rendered = actions(container);
+
+    expect(rendered).toContain(ACTION_ICONS.queue);
+    expect(rendered).toContain(ACTION_ICONS.favorite);
+    expect(rendered).toContain(ACTION_ICONS.ellipsis);
+    expect(container.querySelector('[data-ble="true"]')).toBeTruthy();
+    expect(container.querySelector('[data-label="playView.tickFab.logAscentAria"]')).toBeTruthy();
   });
 });

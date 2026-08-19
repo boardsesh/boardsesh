@@ -167,6 +167,18 @@ type PlayDrawerProps = {
    *  when a WallStrip is docked above the pane and already owns that inset. Ignored
    *  in route mode (the modal always owns the top inset). */
   paneTopInset?: boolean;
+  /**
+   * Who is looking. `'anonymous'` is the signed-out reader that
+   * `AnonymousClimbView` renders on the web export's read-only climb URL: the
+   * board, header, grade and every below-fold read stay, and every write
+   * affordance is removed (see PlayDrawerActionBar's `viewer` prop for the full
+   * list and why removal beats disabling). Never reachable on native — the whole
+   * anonymous branch sits behind `RELAXES_ANONYMOUS_ROUTES`, a literal `false`
+   * in the native fork.
+   */
+  viewer?: 'member' | 'anonymous';
+  /** Anonymous only: hand this URL to login. Wired to the tick prompt. */
+  onSignIn?: () => void;
 };
 
 // Fallback used for the first-screen reserve before the Logbook header has
@@ -195,7 +207,11 @@ export function PlayDrawer({
   openTarget,
   presentation = 'route',
   paneTopInset = true,
+  viewer = 'member',
+  onSignIn,
 }: PlayDrawerProps) {
+  // The signed-out reader on app.boardsesh.com's read-only climb URL.
+  const isAnonymous = viewer === 'anonymous';
   // The iPad right-column pane is persistent — it has no dismiss. Suppresses the
   // pull-down dismiss gesture, the close chevron, the grabber, and router.dismiss.
   const isPane = presentation === 'pane';
@@ -392,8 +408,11 @@ export function PlayDrawer({
   // server's truth — so the heart reflects whether the climb is already a favorite
   // on open, and a single tap can't invert reality (the previous always-false
   // local state silently un-favorited already-favorited climbs).
+  // `favorites` is `requireAuthenticated` on the backend, and the heart is hidden
+  // anonymously anyway — arming it would fire a query that can only 401 on every
+  // read-only open. The hook re-checks the session itself; this is the local half.
   const { data: serverFavorited } = useFavoriteStatus(boardName, displayedClimb?.uuid ?? null, angle, {
-    enabled: isSheetOpen,
+    enabled: isSheetOpen && !isAnonymous,
   });
   const isFavorited = favoriteOverride ?? serverFavorited ?? false;
   // Lit visual, pending pulse, and the connect/disconnect tap — shared with the
@@ -1010,7 +1029,13 @@ export function PlayDrawer({
                           lightbulbPending={lightbulbPending}
                           autoDisconnectWarning={bluetooth?.autoDisconnectWarning ?? false}
                           lightbulbLongPressEnabled={bluetoothConnected}
-                          showLightbulb={bluetooth !== null}
+                          // Web Bluetooth IS mounted on the browser export, so the
+                          // bulb would otherwise render for a signed-out visitor —
+                          // board presence binds on an active board uuid they do not
+                          // have, and a pairing prompt on a first-ever visit is a
+                          // hostile opening. Anonymous wall lighting is its own
+                          // feature, not a v1 side effect.
+                          showLightbulb={bluetooth !== null && !isAnonymous}
                           // The on-wall banner owns the driver's face in the header
                           // when it's up; suppress the lightbulb pip so the same
                           // avatar never shows twice in the drawer.
@@ -1027,6 +1052,8 @@ export function PlayDrawer({
                           onShare={handleShare}
                           onTickPress={handleTickFabPress}
                           onTickLongPress={handleTickFabLongPress}
+                          viewer={viewer}
+                          onSignInPress={onSignIn}
                           currentAngle={angle}
                           onOpenAngleSelector={isAngleAdjustable ? handleOpenAngleSelector : undefined}
                         />

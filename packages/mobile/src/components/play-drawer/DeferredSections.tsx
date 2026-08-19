@@ -113,7 +113,8 @@ export const DeferredSections = memo(function DeferredSections({
   // only tried at (a send always leads; 3+ angles collapse to a count).
   const logbookSummary = useMemo(() => {
     // Logged-out visitors have no logbook, so "not tried yet" would be a lie —
-    // show no subtitle at all (the section still expands to the sign-in prompt).
+    // show no subtitle at all. The section body carries the sign-in line instead
+    // (LogbookSection's signed-out branch).
     if (!isAuthenticated) return null;
     const sends = climb.userAscents ?? 0;
     const attempts = climb.userAttempts ?? 0;
