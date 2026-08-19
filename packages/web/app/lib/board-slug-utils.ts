@@ -3,6 +3,7 @@ import { cache } from 'react';
 import type { ParsedBoardRouteParameters, BoardName } from '@/app/lib/types';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { getGraphQLHttpUrl } from '@/app/lib/graphql/client';
+import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
 
 export type ResolvedBoard = {
   uuid: string;
@@ -42,6 +43,11 @@ export type ResolvedBoard = {
  * Vercel's cacheable-status list — one blip pinned a cached 404 on an indexed
  * front door for the length of its `s-maxage` (24 h on lists). A 5xx is never
  * CDN-cached, and Google retries it and keeps the URL.
+ *
+ * "Every failure throws" only works if every failure eventually happens, which
+ * is what SSR_BACKEND_FETCH_TIMEOUT_MS buys: a backend that accepts the socket
+ * and never answers is otherwise not a failure at all, just a render that never
+ * finishes.
  */
 export const resolveBoardBySlug = cache(async (slug: string): Promise<ResolvedBoard | null> => {
   const url = getGraphQLHttpUrl();
@@ -77,10 +83,14 @@ export const resolveBoardBySlug = cache(async (slug: string): Promise<ResolvedBo
   // enter the shared data cache. Anonymous responses remain safely reusable.
   const cacheOptions = authToken ? { cache: 'no-store' as const } : { next: { revalidate: 300 } };
 
+  // An abort lands in the same bucket as a rejected fetch: it throws, so
+  // `/b/{slug}` answers 5xx (retried by crawlers, never CDN-cached) instead of
+  // holding the connection open for as long as the backend cares to stall.
   const response = await fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({ query, variables: { slug } }),
+    signal: AbortSignal.timeout(SSR_BACKEND_FETCH_TIMEOUT_MS),
     ...cacheOptions,
   });
 

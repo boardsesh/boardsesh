@@ -4,9 +4,15 @@ import { test, expect, type APIResponse } from '@playwright/test';
 // alphabetically within a shard, and this file's raw APIRequestContext
 // requests hang for 60s+ if certain browser-driven specs run against the
 // same server first — first-in-shard they pass every time, and the whole
-// suite is green. Which test poisons the server for raw requests is
-// unsolved and tracked; do not rename this file below its neighbours
-// until that is fixed.
+// suite is green. Do not rename this file below its neighbours.
+//
+// Half of that is fixed: #4463 gave the embed/kiosk SSR backend fetches a 3 s
+// deadline, so a stalled backend now renders the retry screen instead of
+// hanging the request. The other half is not: why the backend stalls on those
+// queries only after browser specs have run is still unexplained, and #4463
+// stays open on it. Nothing about this file is a Playwright state leak — the
+// `request` fixture builds a fresh APIRequestContext per test, and the suite
+// installs no service worker, storageState, or route interception.
 
 // These are raw APIRequestContext gets against a server that is concurrently
 // SSR-ing front-door pages for the other worker's browser tests. On a 2-core

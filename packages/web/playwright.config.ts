@@ -16,23 +16,25 @@ export default defineConfig({
   /* 1 retry in CI and locally — enough to absorb a single transient infra blip,
    * but not enough to bury a hard-broken test the way `retries: 3` did before. */
   retries: 1,
-  /* 1 in CI, deliberately. The suite already fans out as 8 shard jobs, each
-   * with its own server + database, so cross-shard parallelism carries the
-   * wall-clock. A second in-shard worker makes front-door page loads compete
-   * with the raw-request specs on a 2-core runner; the observed symptom was the
-   * embed header checks hanging >60s whenever they shared shard 7 with the
-   * rewritten tab-bar spec's front-door loads (#4448).
+  /* 1 in CI, deliberately, and staying that way. The suite already fans out as
+   * 8 shard jobs, each with its own server + database, so cross-shard
+   * parallelism carries the wall-clock and a second in-shard worker only adds
+   * contention on a 2-core runner.
    *
-   * Attribution corrected in #4461: this is NOT web DB-pool contention, as this
-   * comment used to claim. `/embed/**` issues zero web-side Postgres statements
-   * — it fetches the backend over HTTP (`embed-fetchers.ts`), so it cannot
-   * queue behind the web pool. The likelier mechanism is the event loop: a
-   * `/list` SSR render fires same-origin `/api/internal/board-render` warm
-   * requests, each a CPU-bound WASM render in the same runtime, and unrelated
-   * raw requests queue behind those. #4461 capped that fan-out; whether it is
-   * enough to restore 2 workers is #4463's call, not a change to make here.
-   * Which files share a shard reshuffles whenever specs are added or removed,
-   * so the flake jumps between unrelated files instead of staying put. */
+   * Two mechanisms this comment used to blame have been ruled out. It is not
+   * web DB-pool contention (#4461): `/embed/**` issues zero web-side Postgres
+   * statements, it fetches the backend over HTTP. It is not the web event loop
+   * being pegged by `/api/internal/board-render` WASM renders either: in run
+   * 31857179523's shard 7 the same server answered `/embed/gym/...` in 201 ms
+   * and `/` in 3.2 s while a `/embed/board/...` request started 1.3 s earlier
+   * sat stuck for 30 s. A blocked event loop cannot do that.
+   *
+   * What that shard actually showed was one un-deadlined SSR backend fetch
+   * hanging while the rest of the server stayed healthy. #4463 put a deadline
+   * on those fetches so a stall degrades in 3 s. What is still unexplained is
+   * why the backend stalled on that one query only after browser specs had run
+   * — until that is understood, 1 worker is the setting we can defend, and the
+   * `aa-embed-headers.spec.ts` ordering pin stays. */
   workers: process.env.CI ? 1 : undefined,
   /* Global per-test timeout — some tests (zoom, login flows) need more than Playwright's 30 s default */
   timeout: 60_000,
