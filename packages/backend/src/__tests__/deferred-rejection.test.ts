@@ -41,20 +41,32 @@ describe('handleLater', () => {
     process.on('unhandledRejection', onUnhandled);
 
     try {
-      // Same shape as the failing test: this rejects at ~10ms...
+      // Same shape as the failing test, sequenced by macrotask rather than by
+      // wall clock — a de-flaking test that races its own setTimeout budget on a
+      // loaded runner would be self-defeating.
+      let rejectFollow: (error: Error) => void = () => undefined;
       const followPromise = new Promise<never>((_resolve, reject) => {
-        setTimeout(() => reject(new Error('Board not found')), 10);
+        rejectFollow = reject;
       });
       handleLater(followPromise);
-      // ...while the test is suspended awaiting something that settles at ~30ms.
-      const mergePromise = new Promise<void>((resolve) => setTimeout(resolve, 30));
 
+      // The follow rejects while the test is suspended on something else.
+      const mergePromise = new Promise<void>((resolve) => {
+        setImmediate(() => {
+          rejectFollow(new Error('Board not found'));
+          resolve();
+        });
+      });
       await mergePromise;
-      await expect(followPromise).rejects.toThrow('Board not found');
-      // Give Node's unhandled-rejection checkpoint room to fire if it were going to.
-      await new Promise<void>((resolve) => setTimeout(resolve, 20));
+
+      // Node runs its unhandled-rejection checkpoint once the microtask queue
+      // drains at the end of a turn, so hopping two macrotasks is enough to give
+      // it every chance to fire. No time budget to blow.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(resolve));
 
       expect(leaks).toEqual([]);
+      await expect(followPromise).rejects.toThrow('Board not found');
     } finally {
       process.off('unhandledRejection', onUnhandled);
     }
