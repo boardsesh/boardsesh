@@ -36,8 +36,8 @@ const forever = <T>(): Promise<T> => new Promise<T>(() => {});
 /** Settles late: the failure mode a *total* budget turns into a starved shard. */
 const after = (ms: number): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-vi.mock('@/app/lib/server-popular-configs', () => ({
-  getAllBoardConfigsOrThrow: async () => {
+vi.mock('../board-config-source', () => ({
+  getSitemapBoardConfigsOrThrow: async () => {
     if (boardConfigs.hang) {
       return forever<PopularBoardConfig[]>();
     }

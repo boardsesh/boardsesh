@@ -191,8 +191,8 @@ describe('isResolvableGroup', () => {
   });
 });
 
-describe('the MoonBoard hold-out', () => {
-  /** masters-2017 (layout 4), the FULL static set list — the best case, and it still fails. */
+describe('MoonBoard, once its set slugs round-trip', () => {
+  /** masters-2017 (layout 4), the FULL static set list — the case that used to fail. */
   const MOONBOARD_GROUP: ClimbConfigGroup = {
     boardType: 'moonboard',
     layoutId: 4,
@@ -200,23 +200,29 @@ describe('the MoonBoard hold-out', () => {
     setIds: [11, 12, 13, 14, 15, 16],
   };
 
-  it('builds a readable URL for a MoonBoard configuration — the probe alone is not enough', () => {
-    // The trap this test exists to document: `tryConstructSlugViewUrl` happily
-    // returns a URL, so a resolvability-only filter would ship all 227 MoonBoard
-    // configurations.
+  const MOONBOARD_SET_NAMES = [
+    'Wooden Holds',
+    'Screw-on Feet',
+    'Original School Holds',
+    'Hold Set C',
+    'Hold Set B',
+    'Hold Set A',
+  ];
+
+  it('builds a readable URL for a MoonBoard configuration', () => {
+    // The slug is unchanged — the emitter never had the bug. What changed is
+    // that `getMoonBoardSetsBySlug` now parses `…_screw_…` back to set 15
+    // instead of dropping it, so this URL is self-canonical. Byte-identity for
+    // all seven layouts is pinned in `moonboard-canonical-identity.test.ts`.
     const path = climbRowsToItems([row()], MOONBOARD_GROUP).items[0]?.path;
 
-    // `Screw-on Feet` (id 15) is in the slug this emits and NOT in what the page
-    // parses back: `getMoonBoardSetsBySlug` splits on `-`, so no part of
-    // `…_screw_…` ever matches `screw-on-feet`, and the canonical comes back
-    // without it. Byte-identity fails on 212 of 227 MoonBoard configurations.
     expect(path).toBe(
       '/moonboard/masters-2017/standard-11x18-grid/wooden-holds_screw_original-school-holds_hold-set-c_hold-set-b_hold-set-a/40/view/test-climb-abcdef1234567890abcdef1234567890',
     );
   });
 
-  it('holds MoonBoard out of the shard until the set slug round-trips', () => {
-    expect(isResolvableGroup(MOONBOARD_GROUP)).toBe(false);
+  it('ships every MoonBoard layout the config source names', () => {
+    expect(isResolvableGroup(MOONBOARD_GROUP)).toBe(true);
     expect(
       resolveClimbSitemapGroups([
         config({
@@ -224,20 +230,33 @@ describe('the MoonBoard hold-out', () => {
           layoutId: 4,
           sizeId: 1,
           setIds: [11, 12, 13, 14, 15, 16],
-          setNames: [
-            'Wooden Holds',
-            'Screw-on Feet',
-            'Original School Holds',
-            'Hold Set C',
-            'Hold Set B',
-            'Hold Set A',
-          ],
+          setNames: MOONBOARD_SET_NAMES,
         }),
+        config({
+          boardType: 'moonboard',
+          layoutId: 2,
+          sizeId: 1,
+          setIds: [2, 3, 4],
+          setNames: ['Hold Set A', 'Hold Set B', 'Original School Holds'],
+        }),
+      ]).map((group) => `${group.boardType}/${group.layoutId}`),
+    ).toEqual(['moonboard/2', 'moonboard/4']);
+  });
+
+  it('still drops a MoonBoard configuration with no readable URL', () => {
+    // The probe has to stay ANDed in. Replacing the deleted hold-out with a
+    // blanket `return true` would ship this: layout 999 is not in
+    // `MOONBOARD_LAYOUTS`, so `getMoonBoardDetails` throws and there is no URL
+    // to emit at any tuple.
+    expect(isResolvableGroup({ boardType: 'moonboard', layoutId: 999, sizeId: 1, setIds: [11] })).toBe(false);
+    expect(
+      resolveClimbSitemapGroups([
+        config({ boardType: 'moonboard', layoutId: 999, sizeId: 1, setIds: [11], setNames: ['Hold Set A'] }),
       ]),
     ).toEqual([]);
   });
 
-  it('still ships the Aurora boards, so the hold-out is scoped and not a blanket', () => {
+  it('still ships the Aurora boards, so nothing about them moved', () => {
     expect(resolveClimbSitemapGroups([config({})])).toHaveLength(1);
     expect(
       resolveClimbSitemapGroups([config({ boardType: 'tension', layoutId: 9, sizeId: 1, setIds: [8, 9, 10, 11] })]),

@@ -1,6 +1,6 @@
 import 'server-only';
-import { getAllBoardConfigsOrThrow } from '@/app/lib/server-popular-configs';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
+import { getSitemapBoardConfigsOrThrow } from './board-config-source';
 import { boardConfigsToItems } from './board-entries';
 import { climbSitemapsEnabled } from './climb-sitemaps-enabled';
 import { buildClimbShardPage, fetchClimbShardSummary, fetchStoredClimbPageLastmods } from './climb-store';
@@ -74,9 +74,9 @@ export const SHARD_REGISTRY: readonly SitemapShard[] = [
     expectsUrls: true,
     // Board list pages cross-canonicalise to the default locale, so the twins
     // must not be listed. This shard was 2,780 URLs of which 2,085 were locale
-    // twins; it is ~695 now.
+    // twins; it is ~695 now, plus MoonBoard's below.
     expansion: 'default-locale-only',
-    build: async () => boardConfigsToItems(await getAllBoardConfigsOrThrow()),
+    build: async () => boardConfigsToItems(await getSitemapBoardConfigsOrThrow()),
   },
   { id: 'gyms', path: '/sitemaps/gyms.xml', expectsUrls: false, build: async () => buildGymEntries() },
   {
@@ -535,8 +535,11 @@ function sourceHeaders(shard: PagedSitemapShard, source: PagedShardSource | unde
  * its paged summary, so fixed and paged work intentionally share one constant.
  *
  * The data-backed builders no longer share one shape, and the difference is the
- * point. `getAllBoardConfigsOrThrow` is cached at two levels — a Next Data Cache
- * entry plus an in-process TTL and single-flight — because `/sitemap.xml` is
+ * point. `getBoardsShardConfigsOrThrow` is cached at two levels — a Next Data
+ * Cache entry plus an in-process TTL and single-flight, on both its legs: the
+ * listed configs through `getAllBoardConfigsOrThrow`'s own pair, and the
+ * MoonBoard climb-count query through the pair in `board-config-source.ts` —
+ * because `/sitemap.xml` is
  * `force-dynamic` and every CDN miss otherwise re-ran it live: the uncached boards
  * fetch took ~10 s cold and deterministically lost its shard on the first request
  * after a deploy (#4519). The climbs summary is no longer cached-expensive but
