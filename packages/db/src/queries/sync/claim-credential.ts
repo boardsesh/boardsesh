@@ -23,6 +23,11 @@ export const CREDENTIAL_MIN_RECLAIM_GAP_MS = 30_000;
 
 // Inlined as a numeric literal rather than a bound parameter so Postgres can
 // resolve `make_interval(secs => ...)` without an explicit cast.
+//
+// `sql.raw` is the injection-shaped escape hatch, so be explicit about why it
+// is safe here and not a pattern to copy: the argument is a module-level
+// number literal divided by 1000, never a request value. Anything that can
+// vary at runtime belongs in a bound `${}` parameter with a cast.
 const RECLAIM_GAP_SECONDS = sql.raw(String(CREDENTIAL_MIN_RECLAIM_GAP_MS / 1000));
 
 /** TRUE when the credential was last claimed more than {@link CREDENTIAL_MIN_RECLAIM_GAP_MS} ago (or never). */
@@ -136,6 +141,11 @@ export async function claimNextCredentialForSync(
         updatedAt: auroraCredentials.updatedAt,
       });
 
+    // Unreachable rather than merely unlikely: the row is locked by the SELECT
+    // above for the rest of this transaction, so nothing can delete it out from
+    // under the UPDATE. Returning null keeps the caller on its existing
+    // no-work-this-cycle path if that reasoning is ever wrong — a throw here
+    // would take down a daemon cycle over a row we did not claim anyway.
     const claim = stamped[0];
     if (!claim) return null;
 
