@@ -70,19 +70,33 @@ const TEST_FILE_PATTERN = /(?:^|[\\/])__tests__[\\/]|\.(?:test|spec)\.[cm]?[jt]s
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 
+/** `@boardsesh/board-config/holds` → `@boardsesh/board-config`; `./x` → null. */
+function packageNameOf(specifier: string): string | null {
+  if (specifier.startsWith('.') || specifier.startsWith('/')) return null;
+  const segments = specifier.split('/');
+  if (specifier.startsWith('@')) return segments.length >= 2 ? `${segments[0]}/${segments[1]}` : null;
+  return segments[0] || null;
+}
+
 /**
- * Collects the `@boardsesh/*` packages that are actually imported by non-test
- * source under `rootDir`.
+ * Collects the packages that are actually imported by non-test source under
+ * `rootDir`.
  *
- * The anchor is what makes this a real check: the specifier only counts when it
- * sits where a module specifier can sit — after `from`, after a bare/dynamic
+ * The anchor is what makes this a real check: a specifier only counts when it
+ * sits where a module specifier can sit — after `from`, after a bare or dynamic
  * `import`, or inside `require(...)`. Matching the package name anywhere in the
  * file counts comments and string literals, which is how the first two versions
  * of this test ended up supplying their own evidence.
+ *
+ * It collects every package, not just `@boardsesh/*`. Every entry in
+ * `transpilePackages` happens to be a workspace package today, but scoping the
+ * scan to that prefix would red the suite the day someone legitimately adds a
+ * third-party ESM-only dep — a false failure on a correct config is the other
+ * way a guard stops being trusted.
  */
-function collectImportedBoardseshPackages(rootDir: string): Set<string> {
+function collectImportedPackages(rootDir: string): Set<string> {
   const specifiers = new Set<string>();
-  const specifierPattern = /(?:\bfrom|\bimport|\brequire)\s*\(?\s*['"](@boardsesh\/[a-z0-9-]+)/g;
+  const specifierPattern = /(?:\bfrom|\bimport|\brequire)\s*\(?\s*['"]([^'"\n]+)['"]/g;
 
   const walk = (dir: string) => {
     for (const entryName of readdirSync(dir)) {
@@ -104,7 +118,8 @@ function collectImportedBoardseshPackages(rootDir: string): Set<string> {
 
       const contents = readFileSync(entryPath, 'utf8');
       for (const match of contents.matchAll(specifierPattern)) {
-        specifiers.add(match[1]);
+        const packageName = packageNameOf(match[1]);
+        if (packageName) specifiers.add(packageName);
       }
     }
   };
@@ -128,7 +143,7 @@ describe('next.config.mjs outputFileTracingIncludes', () => {
 });
 
 describe('next.config.mjs transpilePackages', () => {
-  const importedPackages = collectImportedBoardseshPackages(WEB_ROOT);
+  const importedPackages = collectImportedPackages(WEB_ROOT);
 
   it('is imported by at least one non-test source file under packages/web, for every entry', () => {
     const entries = nextConfig.transpilePackages ?? [];
