@@ -120,4 +120,17 @@ describe('AppleHealthCard', () => {
     expect(mocks.requestAppleHealthAuthorization).not.toHaveBeenCalled();
     expect(mocks.trackAppleHealthIntegrationConnected).not.toHaveBeenCalled();
   });
+
+  // Regression guard for the Linking.openSettings -> openAppSettings() migration
+  // (the wrapper is Platform-gated so it never throws on Expo web).
+  it('deep-links to Settings via the shared wrapper when denied', async () => {
+    mocks.getAppleHealthAuthorizationStatus.mockResolvedValue('denied');
+    const { getByText } = render(<AppleHealthCard />);
+
+    await waitFor(() => expect(mocks.getAppleHealthAuthorizationStatus).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(getByText('integrations.appleHealth.openSettings'));
+
+    await waitFor(() => expect(mocks.openSettings).toHaveBeenCalledTimes(1));
+  });
 });

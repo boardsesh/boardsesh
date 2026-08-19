@@ -71,6 +71,12 @@ export default defineConfig({
               message:
                 'Hermes does not implement Intl.ListFormat — crashes mobile release builds. Join the parts manually or via i18n.',
             },
+            {
+              object: 'Linking',
+              property: 'openSettings',
+              message:
+                "Linking.openSettings() does not exist in the Expo web runtime (react-native-web's Linking has no such method) — it throws on app.boardsesh.com. Use openAppSettings() from src/lib/open-app-settings, which Platform-gates and never throws.",
+            },
           ],
         },
       },

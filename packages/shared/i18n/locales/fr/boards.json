@@ -170,6 +170,7 @@
       "subtitle": "Touche une salle pour utiliser sa board",
       "locationNeeded": "Partage ta position pour trouver des salles à proximité",
       "grantLocation": "Utiliser ma position",
+      "locationBlocked": "Ton navigateur garde ta position pour lui. Tape une ville dans la recherche : ça marche partout.",
       "empty": "Aucune salle à proximité pour l'instant",
       "noBoards": "Aucune board ici pour l'instant",
       "boardCount_one": "{{count}} board",
