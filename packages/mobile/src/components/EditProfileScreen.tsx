@@ -33,7 +33,7 @@ const COMPRESSION_QUALITY = 0.85;
  * camera roll — can't be uploaded honestly without the manipulator, so the
  * fallback refuses it rather than mislabelling the bytes as JPEG.
  */
-const FALLBACK_FILE_NAMES: Record<string, string> = {
+const FALLBACK_FILE_NAMES: Partial<Record<string, string>> = {
   'image/jpeg': 'avatar.jpg',
   'image/png': 'avatar.png',
   'image/gif': 'avatar.gif',
