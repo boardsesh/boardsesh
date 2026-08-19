@@ -39,6 +39,7 @@ const recorded = vi.hoisted(() => ({
   headerLayout: undefined as ((event: LayoutChangeEvent) => void) | undefined,
 }));
 const setCurrentClimb = vi.hoisted(() => vi.fn());
+const dismissGestureRef = vi.hoisted(() => ({ current: undefined as unknown }));
 const queueState = vi.hoisted(() => ({
   queue: [] as unknown[],
   currentClimbQueueItem: null as unknown,
@@ -253,7 +254,11 @@ vi.mock('../use-below-fold-content-request', () => ({
   useBelowFoldContentRequest: () => ({ requested: false, request: vi.fn(), requestFromScrollOffset: vi.fn() }),
 }));
 vi.mock('../use-drawer-dismiss-gesture', () => ({
-  useDrawerDismissGesture: () => ({ gesture: { enabled: () => ({}) }, translateY: { value: 0 } }),
+  useDrawerDismissGesture: () => ({
+    gesture: { enabled: () => ({}) },
+    translateY: { value: 0 },
+    gestureRef: dismissGestureRef,
+  }),
 }));
 vi.mock('../use-play-drawer-wake-lock', () => ({ usePlayDrawerWakeLock: () => undefined }));
 // The lit-climb read reaches board presence → the ws client → secure storage;
@@ -337,6 +342,13 @@ beforeEach(() => {
 });
 
 describe('PlayDrawer relay board compatibility', () => {
+  it('forwards the claimed dismiss gesture ref alongside the current heatmap overlay', () => {
+    renderDrawer();
+
+    expect(lastBoardProps().dismissRef).toBe(dismissGestureRef);
+    expect(lastBoardProps().underOverlay).toBeNull();
+  });
+
   it.each([
     { climb: HOMEWALL_CLIMB, canRelay: false },
     { climb: TWELVE_CLIMB, canRelay: true },
