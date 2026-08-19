@@ -82,6 +82,17 @@ function credentialReclaimGapElapsedSql(): SQL {
  * Both statements stamp and compare against the DATABASE clock (`now()`), so
  * app/DB skew cannot re-open the window.
  *
+ * What the gap assumes: `now()` is `transaction_timestamp()`, so the guard
+ * holds as long as a claim transaction finishes well inside the gap. This one
+ * is BEGIN, one SELECT, one UPDATE, COMMIT with no application I/O between
+ * them, so 30s is a large margin. A claim that stayed open LONGER than the gap
+ * and then committed inside a racer's snapshot-to-lock window could still
+ * double-hand; no wall-clock gap can rule that out, only a claim-token column
+ * (`claimed_by`, or a 'syncing' status) would, and that is a schema change this
+ * fix deliberately does not make. The cost if it ever happens is one duplicated
+ * cycle, not corruption — the apply is idempotent (full snapshot re-pull, dedup
+ * + ON CONFLICT).
+ *
  * Deliberate semantics change: `last_sync_attempt_at` now advances when the
  * attempt STARTS rather than when it finishes, so a per-credential backoff
  * window is measured from attempt-start. The upside is that a process killed
