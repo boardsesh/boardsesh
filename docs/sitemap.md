@@ -88,12 +88,20 @@ path falls back to the live scan it replaced, and the next refresh repopulates i
    instance behind a 15-minute floor. This is what keeps the fix from depending on a
    scheduler: a lapsed cron degrades to "healed by the next crawl", not to a broken
    sitemap.
-3. **By hand**, which is the one to reach for after a deploy that empties the store:
+3. **By hand**, after a deploy that leaves the store empty:
 
    ```
    curl -sS -H "Authorization: Bearer $CRON_SECRET" \
      https://www.boardsesh.com/api/internal/refresh-sitemap-climbs
    ```
+
+   Worth being precise about what this buys, because it is easy to over- or
+   under-sell. It is not required — the `after()` hook fires on the first
+   `/sitemap.xml` request and closes the window for every request after it. What the
+   curl does is close it *now* rather than one crawl later, and it is the only one of
+   the three that reports back: a 409 tells you the refresh was refused and why,
+   where the self-heal only writes that to the log. So: reach for it on a deploy that
+   empties the store, and any time you want an answer rather than a hope.
 
 ### Refusals, and how to get out of one
 

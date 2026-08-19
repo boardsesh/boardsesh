@@ -14,6 +14,7 @@ const live = vi.hoisted(() => ({
     lastModifiedIso: string | null;
   },
   computeCalls: 0,
+  computeThrows: false,
   /** What the CACHED fallback returns when the store is empty. */
   fallbackCalls: 0,
 }));
@@ -21,6 +22,7 @@ const live = vi.hoisted(() => ({
 vi.mock('../climb-query', () => ({
   computeTier2Summary: async () => {
     live.computeCalls += 1;
+    if (live.computeThrows) throw new Error('tier-2 scan exploded');
     return live.computed;
   },
   fetchTier2Summary: async () => {
@@ -113,6 +115,7 @@ function storedRow(overrides: Partial<StoredRow> = {}): StoredRow {
 beforeEach(() => {
   live.computed = { itemCount: 52_000, lastModifiedIso: '2026-05-04T11:22:33.000Z' };
   live.computeCalls = 0;
+  live.computeThrows = false;
   live.fallbackCalls = 0;
   store.row = null;
   store.readThrows = false;
@@ -350,5 +353,30 @@ describe('the after() self-heal', () => {
 
     expect(errors.mock.calls.flat().join(' ')).toContain('self-heal failed');
     errors.mockRestore();
+  });
+
+  it('swallows a scan that throws, and does not retry it on the next request', async () => {
+    // The most operationally plausible failure here is the scan itself regressing,
+    // not the store read. `after()` runs post-flush, so an escaping rejection would
+    // be an unhandled one; and the 15-minute floor has to hold even for the attempt
+    // that failed, or a broken scan runs on every /sitemap.xml hit.
+    live.computeThrows = true;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(refreshClimbSummaryIfStale()).resolves.toBeUndefined();
+    await refreshClimbSummaryIfStale();
+
+    expect(live.computeCalls).toBe(1);
+    expect(errors.mock.calls.flat().join(' ')).toContain('self-heal failed');
+    errors.mockRestore();
+  });
+
+  it('propagates a scan error to a direct caller, so the cron route can 500', async () => {
+    // The self-heal swallows; the endpoint must not. A cron that answers 200 on a
+    // broken scan is a store that silently stops being refreshed.
+    live.computeThrows = true;
+
+    await expect(refreshStoredClimbSummary()).rejects.toThrow('tier-2 scan exploded');
+    expect(store.writes).toHaveLength(0);
   });
 });

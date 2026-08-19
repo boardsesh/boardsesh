@@ -137,7 +137,13 @@ export type ClimbSummaryRefreshResult = {
   lastModified: Date | null;
   previousItemCount: number | null;
   skipped: RefreshSkipReason | null;
-  durationMs: number;
+  /**
+   * The SCAN only — the sixteen `DISTINCT ON` queries. Deliberately not the whole
+   * call: the write transaction that follows is a single-row upsert measured in
+   * milliseconds, and lumping it in would hide which half actually costs anything
+   * when this number starts drifting.
+   */
+  scanDurationMs: number;
 };
 
 let refreshInFlight: { force: boolean; run: Promise<ClimbSummaryRefreshResult> } | null = null;
@@ -203,14 +209,14 @@ async function runRefresh(force: boolean): Promise<ClimbSummaryRefreshResult> {
   const startedAt = new Date();
   const { itemCount, lastModifiedIso } = await computeTier2Summary();
   const lastModified = lastModifiedIso ? new Date(lastModifiedIso) : null;
-  const durationMs = Date.now() - startedAt.getTime();
+  const scanDurationMs = Date.now() - startedAt.getTime();
 
   return dbz.transaction(async (tx) => {
     const lockRows = await tx.execute<{ locked: boolean }>(
       sql`SELECT pg_try_advisory_xact_lock(${REFRESH_LOCK_KEY}) AS locked`,
     );
     if (!lockRows[0]?.locked) {
-      return { itemCount, lastModified, previousItemCount: null, skipped: 'locked' as const, durationMs };
+      return { itemCount, lastModified, previousItemCount: null, skipped: 'locked' as const, scanDurationMs };
     }
 
     const [previous] = await tx
@@ -225,7 +231,7 @@ async function runRefresh(force: boolean): Promise<ClimbSummaryRefreshResult> {
       lastModified,
       previousItemCount,
       skipped,
-      durationMs,
+      scanDurationMs,
     });
 
     if (previous && previous.computedAt > startedAt) {
@@ -265,7 +271,7 @@ async function runRefresh(force: boolean): Promise<ClimbSummaryRefreshResult> {
         set: { itemCount, lastModified, computedAt },
       });
 
-    return { itemCount, lastModified, previousItemCount, skipped: null, durationMs };
+    return { itemCount, lastModified, previousItemCount, skipped: null, scanDurationMs };
   });
 }
 
@@ -299,7 +305,7 @@ export async function refreshClimbSummaryIfStale(): Promise<void> {
 
     const result = await refreshStoredClimbSummary();
     console.warn(
-      `[sitemap] self-healed the climbs summary store (${stored ? 'stale' : 'empty'}): ${result.itemCount} items in ${result.durationMs}ms, skipped=${result.skipped ?? 'no'}`,
+      `[sitemap] self-healed the climbs summary store (${stored ? 'stale' : 'empty'}): ${result.itemCount} items in ${result.scanDurationMs}ms, skipped=${result.skipped ?? 'no'}`,
     );
   } catch (err) {
     console.error('[sitemap] the climbs summary self-heal failed:', err instanceof Error ? err.message : err);

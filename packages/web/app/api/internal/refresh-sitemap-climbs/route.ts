@@ -33,7 +33,7 @@ export async function GET(request: Request) {
       itemCount: result.itemCount,
       previousItemCount: result.previousItemCount,
       lastModified: result.lastModified ? result.lastModified.toISOString() : null,
-      durationMs: result.durationMs,
+      scanDurationMs: result.scanDurationMs,
       skipped: result.skipped,
       forced: force,
     };
