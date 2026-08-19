@@ -10,7 +10,7 @@ import * as schema from '@/app/lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { compare } from 'bcryptjs';
 import { verifyNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
-import { isSecureCookieContext, sessionCookieDomain } from '@/app/lib/auth/secure-cookies';
+import { domainScopedCookieNames, isSecureCookieContext, sessionCookieDomain } from '@/app/lib/auth/secure-cookies';
 import { isAllowedAppOrigin } from '@/app/lib/auth/app-origin-allowlist';
 import { applyCanonicalAuthUrl } from '@/app/lib/auth/canonical-auth-url';
 
@@ -182,6 +182,9 @@ const useSecureCookies = isSecureCookieContext();
 // logged-in user's HttpOnly session — keep untrusted/third-party content off
 // *.boardsesh.com hosts.
 const cookieDomain = sessionCookieDomain();
+// Cookie names come from secure-cookies so the legacy host-only clears there
+// can never drift from what NextAuth actually writes here.
+const domainScopedCookieName = domainScopedCookieNames();
 
 export const authOptions: NextAuthOptions = {
   adapter: DrizzleAdapter(getDb(), {
@@ -199,7 +202,7 @@ export const authOptions: NextAuthOptions = {
     // stays true in secure contexts and the `__Secure-` prefix (which permits a
     // Domain attribute) is kept so the name still matches what getToken reads.
     sessionToken: {
-      name: `${useSecureCookies ? '__Secure-' : ''}next-auth.session-token`,
+      name: domainScopedCookieName.sessionToken,
       options: {
         httpOnly: true,
         sameSite: 'lax',
@@ -209,7 +212,7 @@ export const authOptions: NextAuthOptions = {
       },
     },
     callbackUrl: {
-      name: `${useSecureCookies ? '__Secure-' : ''}next-auth.callback-url`,
+      name: domainScopedCookieName.callbackUrl,
       options: {
         httpOnly: true,
         sameSite: useSecureCookies ? 'none' : 'lax',
@@ -219,7 +222,7 @@ export const authOptions: NextAuthOptions = {
       },
     },
     state: {
-      name: `${useSecureCookies ? '__Secure-' : ''}next-auth.state`,
+      name: domainScopedCookieName.state,
       options: {
         httpOnly: true,
         sameSite: useSecureCookies ? 'none' : 'lax',
@@ -229,7 +232,7 @@ export const authOptions: NextAuthOptions = {
       },
     },
     nonce: {
-      name: `${useSecureCookies ? '__Secure-' : ''}next-auth.nonce`,
+      name: domainScopedCookieName.nonce,
       options: {
         httpOnly: true,
         sameSite: useSecureCookies ? 'none' : 'lax',
@@ -239,7 +242,7 @@ export const authOptions: NextAuthOptions = {
       },
     },
     pkceCodeVerifier: {
-      name: `${useSecureCookies ? '__Secure-' : ''}next-auth.pkce.code_verifier`,
+      name: domainScopedCookieName.pkceCodeVerifier,
       options: {
         httpOnly: true,
         sameSite: useSecureCookies ? 'none' : 'lax',

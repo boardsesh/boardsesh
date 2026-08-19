@@ -3,6 +3,7 @@ import { getToken } from 'next-auth/jwt';
 import { type NextRequest, NextResponse } from 'next/server';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import {
+  appendLegacyHostOnlyOAuthFlowCookieClears,
   appendLegacyHostOnlySessionCookieClear,
   isSecureCookieContext,
   responseSetsSessionCookie,
@@ -30,6 +31,9 @@ type ExpectedSignOutIdentity = {
 const handler = NextAuth(authOptions) as NextAuthHandler;
 const OAUTH_SIGNIN_PATH_PATTERN = /\/api\/auth\/signin\/(apple|google)\/?$/;
 const OAUTH_CALLBACK_PATH_PATTERN = /\/api\/auth\/callback\/(apple|google)\/?$/;
+// Any provider's callback, not just the OIDC ones — `callback-url` is consumed
+// by the credentials and email callbacks too.
+const ANY_CALLBACK_PATH_PATTERN = /\/api\/auth\/callback\/[^/]+\/?$/;
 
 function oauthProviderForPath(pathname: string, action: 'signin' | 'callback'): ExpoWebOAuthProvider | null {
   const pattern = action === 'signin' ? OAUTH_SIGNIN_PATH_PATTERN : OAUTH_CALLBACK_PATH_PATTERN;
@@ -70,6 +74,12 @@ async function handleExpoOAuthPost(
   context: NextAuthRouteContext,
   pathname: string,
 ): Promise<Response | null> {
+  // The /signin/* branch below deliberately does NOT call
+  // clearLegacyOAuthFlowCookiesOnCallback. Not because the clears would be
+  // unsafe here — host-only and Domain-scoped are separate storage entries, so a
+  // Domain-less deletion next to a Domain-scoped write of the same name is
+  // well-defined — but because one placement is enough and the callback is the
+  // one every provider's flow reaches, GET and form_post alike.
   const signInProvider = oauthProviderForPath(pathname, 'signin');
   if (signInProvider) {
     const form = await readOAuthForm(request);
@@ -91,7 +101,10 @@ async function handleExpoOAuthPost(
   if (typeof state !== 'string' || !state) return null;
   const descriptor = readExpoReturnForState(request, state, callbackProvider);
   if (!descriptor) return null;
-  const response = clearLegacyCookieIfSessionWritten(await handler(request, context));
+  const response = clearLegacyOAuthFlowCookiesOnCallback(
+    clearLegacyCookieIfSessionWritten(await handler(request, context)),
+    pathname,
+  );
   return redirectExpoOAuthResponse(response, request, state, descriptor.returnUrl);
 }
 
@@ -144,6 +157,22 @@ function clearLegacyCookieIfSessionWritten(response: Response): Response {
   return response;
 }
 
+// Sweep the pre-#3775 host-only duplicates of the OAuth-flow cookies out of the
+// jar. This is hygiene, not a sign-in fix — a duplicate loses the read
+// deterministically; see appendLegacyHostOnlyOAuthFlowCookieClears for why.
+//
+// The callback response is the natural place for it: by the time we hold it,
+// NextAuth has already read state/pkce/callback-url off the REQUEST and expired
+// its own copies on this same response, so the flow is over and the deletion
+// cannot interact with it. Unconditional on outcome — an errored callback ends
+// the flow just as definitively as a successful one.
+function clearLegacyOAuthFlowCookiesOnCallback(response: Response, pathname: string): Response {
+  if (ANY_CALLBACK_PATH_PATTERN.test(pathname)) {
+    appendLegacyHostOnlyOAuthFlowCookieClears(response);
+  }
+  return response;
+}
+
 export async function POST(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
   const pathname = request.nextUrl.pathname.endsWith('/')
     ? request.nextUrl.pathname.slice(0, -1)
@@ -151,7 +180,10 @@ export async function POST(request: NextRequest, context: NextAuthRouteContext):
   const expoOAuthResponse = await handleExpoOAuthPost(request, context, pathname);
   if (expoOAuthResponse) return expoOAuthResponse;
   if (!pathname.endsWith('/api/auth/signout')) {
-    return clearLegacyCookieIfSessionWritten(await handler(request, context));
+    return clearLegacyOAuthFlowCookiesOnCallback(
+      clearLegacyCookieIfSessionWritten(await handler(request, context)),
+      pathname,
+    );
   }
 
   const expectedIdentity = await readExpectedSignOutIdentity(request);
@@ -185,14 +217,21 @@ export async function POST(request: NextRequest, context: NextAuthRouteContext):
 }
 
 export async function GET(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
-  const callbackProvider = oauthProviderForPath(request.nextUrl.pathname, 'callback');
+  const pathname = request.nextUrl.pathname;
+  const callbackProvider = oauthProviderForPath(pathname, 'callback');
   const state = request.nextUrl.searchParams.get('state');
   if (callbackProvider && state) {
     const descriptor = readExpoReturnForState(request, state, callbackProvider);
     if (descriptor) {
-      const response = clearLegacyCookieIfSessionWritten(await handler(request, context));
+      const response = clearLegacyOAuthFlowCookiesOnCallback(
+        clearLegacyCookieIfSessionWritten(await handler(request, context)),
+        pathname,
+      );
       return redirectExpoOAuthResponse(response, request, state, descriptor.returnUrl);
     }
   }
-  return clearLegacyCookieIfSessionWritten(await handler(request, context));
+  return clearLegacyOAuthFlowCookiesOnCallback(
+    clearLegacyCookieIfSessionWritten(await handler(request, context)),
+    pathname,
+  );
 }

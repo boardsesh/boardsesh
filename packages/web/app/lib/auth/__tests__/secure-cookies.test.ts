@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  appendLegacyHostOnlyOAuthFlowCookieClears,
   appendLegacyHostOnlySessionCookieClear,
+  domainScopedCookieNames,
   isSecureCookieContext,
+  oauthFlowCookieNames,
   responseSetsSessionCookie,
   sessionCookieDomain,
   sessionCookieName,
@@ -185,5 +188,146 @@ describe('appendLegacyHostOnlySessionCookieClear', () => {
     const response = new Response(null);
     appendLegacyHostOnlySessionCookieClear(response);
     expect(response.headers.getSetCookie()).toEqual([]);
+  });
+});
+
+describe('oauthFlowCookieNames', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('matches the NextAuth names for every Domain-scoped flow cookie in a secure context', () => {
+    stubAuthEnv({ NEXTAUTH_URL: 'https://www.boardsesh.com', VERCEL_ENV: 'production' });
+    expect(oauthFlowCookieNames()).toEqual([
+      '__Secure-next-auth.callback-url',
+      '__Secure-next-auth.state',
+      '__Secure-next-auth.nonce',
+      // NextAuth stores the PKCE verifier under `pkce.code_verifier`, NOT
+      // `pkceCodeVerifier` (next-auth/core/lib/cookie.js).
+      '__Secure-next-auth.pkce.code_verifier',
+    ]);
+  });
+
+  it('drops the prefix in a non-secure context', () => {
+    stubAuthEnv({ NEXTAUTH_URL: 'http://localhost:3000' });
+    expect(oauthFlowCookieNames()).toEqual([
+      'next-auth.callback-url',
+      'next-auth.state',
+      'next-auth.nonce',
+      'next-auth.pkce.code_verifier',
+    ]);
+  });
+
+  it('never targets the __Host- CSRF cookie, which cannot carry a Domain', () => {
+    stubAuthEnv({ NEXTAUTH_URL: 'https://www.boardsesh.com', VERCEL_ENV: 'production' });
+    expect(oauthFlowCookieNames().some((name) => name.includes('csrf'))).toBe(false);
+    expect(oauthFlowCookieNames().some((name) => name.startsWith('__Host-'))).toBe(false);
+  });
+
+  it('never targets the session token, which has its own clear', () => {
+    stubAuthEnv({ NEXTAUTH_URL: 'https://www.boardsesh.com', VERCEL_ENV: 'production' });
+    expect(oauthFlowCookieNames()).not.toContain(sessionCookieName());
+  });
+
+  // The sweep and auth-options' `cookies` block both read
+  // domainScopedCookieNames(), so a rename lands in both at once. This pins the
+  // relationship: the flow names are exactly that set minus the session token.
+  it('is exactly the Domain-scoped cookie set minus the session token', () => {
+    stubAuthEnv({ NEXTAUTH_URL: 'https://www.boardsesh.com', VERCEL_ENV: 'production' });
+    const { sessionToken, ...flowCookies } = domainScopedCookieNames();
+    expect(sessionToken).toBe(sessionCookieName());
+    expect([...oauthFlowCookieNames()].sort()).toEqual(Object.values(flowCookies).sort());
+  });
+});
+
+describe('appendLegacyHostOnlyOAuthFlowCookieClears', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  function clearedCookieNames(response: Response): string[] {
+    return response.headers.getSetCookie().map((setCookie) => setCookie.split('=', 1)[0] ?? '');
+  }
+
+  it('emits one Domain-less, Max-Age=0 deletion per Domain-scoped flow cookie in prod', () => {
+    stubAuthEnv({ NEXTAUTH_URL: 'https://www.boardsesh.com', VERCEL_ENV: 'production' });
+    const response = new Response(null);
+    appendLegacyHostOnlyOAuthFlowCookieClears(response);
+
+    const setCookies = response.headers.getSetCookie();
+    expect(setCookies).toHaveLength(4);
+    expect(clearedCookieNames(response)).toEqual([
+      '__Secure-next-auth.callback-url',
+      '__Secure-next-auth.state',
+      '__Secure-next-auth.nonce',
+      '__Secure-next-auth.pkce.code_verifier',
+    ]);
+    for (const setCookie of setCookies) {
+      // No Domain attribute is the whole mechanism: it targets the legacy
+      // host-only entry and cannot touch the Domain-scoped cookie.
+      expect(setCookie).not.toMatch(/;\s*Domain=/i);
+      expect(setCookie).toMatch(/Max-Age=0/i);
+      expect(setCookie).toMatch(/HttpOnly/);
+      expect(setCookie).toMatch(/Secure/);
+      // Empty value — a deletion, never a fresh write.
+      expect(setCookie.split(';', 1)[0]).toMatch(/=$/);
+    }
+  });
+
+  it('clears callback-url, the only flow cookie whose legacy copy can still be in the jar', () => {
+    // state and pkce.code_verifier get a 15-minute `expires` from NextAuth's
+    // signCookie (core/lib/oauth/checks.js) — auth-options drops the
+    // defaultCookies maxAge, signCookie's STATE_MAX_AGE/PKCE_MAX_AGE fallback
+    // supplies the bound — so any pre-#3775 host-only copy expired long ago.
+    // nonce is never written by this deployment (no provider enables the nonce
+    // check). callback-url gets neither, so it is the one leftover a sweep can
+    // actually find.
+    stubAuthEnv({ NEXTAUTH_URL: 'https://www.boardsesh.com', VERCEL_ENV: 'production' });
+    const response = new Response(null);
+    appendLegacyHostOnlyOAuthFlowCookieClears(response);
+    expect(clearedCookieNames(response)).toContain('__Secure-next-auth.callback-url');
+  });
+
+  it('never touches the __Host- CSRF cookie', () => {
+    stubAuthEnv({ NEXTAUTH_URL: 'https://www.boardsesh.com', VERCEL_ENV: 'production' });
+    const response = new Response(null);
+    appendLegacyHostOnlyOAuthFlowCookieClears(response);
+    expect(response.headers.getSetCookie().some((setCookie) => setCookie.includes('csrf'))).toBe(false);
+    expect(response.headers.getSetCookie().some((setCookie) => setCookie.startsWith('__Host-'))).toBe(false);
+  });
+
+  it('never touches the session cookie, whose clear is gated on a fresh write', () => {
+    stubAuthEnv({ NEXTAUTH_URL: 'https://www.boardsesh.com', VERCEL_ENV: 'production' });
+    const response = new Response(null);
+    appendLegacyHostOnlyOAuthFlowCookieClears(response);
+    expect(clearedCookieNames(response)).not.toContain('__Secure-next-auth.session-token');
+  });
+
+  it('is a no-op in dev, where the live flow cookies are themselves host-only', () => {
+    // Same load-bearing guard as the session clear: with no cookie domain the
+    // deletion would target the LIVE state/pkce/callback-url and break sign-in.
+    stubAuthEnv({ NEXTAUTH_URL: 'http://localhost:3000' });
+    const response = new Response(null);
+    appendLegacyHostOnlyOAuthFlowCookieClears(response);
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+
+  it('is a no-op on a Vercel preview even though the context is secure', () => {
+    stubAuthEnv({ VERCEL_ENV: 'preview', VERCEL_URL: 'boardsesh-abc123-marcodejonghs-projects.vercel.app' });
+    const response = new Response(null);
+    appendLegacyHostOnlyOAuthFlowCookieClears(response);
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+
+  it('is a no-op on a homelab preview host', () => {
+    stubAuthEnv({ NEXTAUTH_URL: 'https://42.preview.boardsesh.com' });
+    const response = new Response(null);
+    appendLegacyHostOnlyOAuthFlowCookieClears(response);
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+
+  it('appends alongside an existing session-cookie clear without replacing it', () => {
+    stubAuthEnv({ NEXTAUTH_URL: 'https://www.boardsesh.com', VERCEL_ENV: 'production' });
+    const response = new Response(null);
+    appendLegacyHostOnlySessionCookieClear(response);
+    appendLegacyHostOnlyOAuthFlowCookieClears(response);
+    expect(response.headers.getSetCookie()).toHaveLength(5);
+    expect(clearedCookieNames(response)).toContain('__Secure-next-auth.session-token');
   });
 });

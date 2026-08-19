@@ -379,6 +379,11 @@ describe('POST /api/auth/[...nextauth]', () => {
     expect(callbackResponse.headers.getSetCookie()).toContainEqual(
       expect.stringContaining('__Secure-next-auth.session-token=fresh'),
     );
+    // The Expo form-post branch runs its own handler call, so assert the legacy
+    // flow-cookie clears ride that path too and not just the plain callback.
+    expect(callbackResponse.headers.getSetCookie()).toContainEqual(
+      expect.stringMatching(/^__Secure-next-auth\.nonce=; .*Max-Age=0/),
+    );
   });
 
   it('does not bind an untrusted or malformed Expo callback URL', async () => {
@@ -419,5 +424,111 @@ describe('POST /api/auth/[...nextauth]', () => {
     await expect(POST(signInRequest, context)).rejects.toThrow(
       'NEXTAUTH_SECRET is required to bind Expo web OAuth returns',
     );
+  });
+});
+
+describe('legacy host-only OAuth-flow cookie clears', () => {
+  const FLOW_COOKIE_NAMES = [
+    '__Secure-next-auth.callback-url',
+    '__Secure-next-auth.state',
+    '__Secure-next-auth.nonce',
+    '__Secure-next-auth.pkce.code_verifier',
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('VERCEL_ENV', 'production');
+    vi.stubEnv('NEXTAUTH_URL', 'https://www.boardsesh.com');
+    vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
+    vi.stubEnv('NEXTAUTH_SECRET', 'test-nextauth-secret');
+    nextAuthHandlerMock.mockResolvedValue(new Response(null, { status: 200 }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  function hostOnlyClears(response: Response): string[] {
+    return response.headers
+      .getSetCookie()
+      .filter((setCookie) => !/;\s*Domain=/i.test(setCookie) && /Max-Age=0/i.test(setCookie))
+      .map((setCookie) => setCookie.split('=', 1)[0] ?? '');
+  }
+
+  it('clears every legacy flow cookie on a GET OAuth callback', async () => {
+    nextAuthHandlerMock.mockResolvedValue(
+      new Response(null, { status: 302, headers: { Location: 'https://www.boardsesh.com/' } }),
+    );
+    const callbackRequest = new NextRequest('https://www.boardsesh.com/api/auth/callback/google?code=provider-code');
+
+    const response = await GET(callbackRequest, context);
+
+    expect(hostOnlyClears(response)).toEqual(expect.arrayContaining(FLOW_COOKIE_NAMES));
+  });
+
+  it('clears every legacy flow cookie on a POST (form_post) OAuth callback', async () => {
+    const callbackRequest = request('/api/auth/callback/apple', { code: 'provider-code', state: 'apple-state' });
+
+    const response = await POST(callbackRequest, context);
+
+    expect(hostOnlyClears(response)).toEqual(expect.arrayContaining(FLOW_COOKIE_NAMES));
+  });
+
+  it('still clears them when the callback FAILED — that is the case needing healing', async () => {
+    nextAuthHandlerMock.mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: { Location: 'https://www.boardsesh.com/auth/error?error=OAuthCallback' },
+      }),
+    );
+    const callbackRequest = new NextRequest('https://www.boardsesh.com/api/auth/callback/google?code=provider-code');
+
+    const response = await GET(callbackRequest, context);
+
+    expect(hostOnlyClears(response)).toEqual(expect.arrayContaining(FLOW_COOKIE_NAMES));
+  });
+
+  it('does NOT clear them on the /signin redirect that mints the fresh flow cookies', async () => {
+    nextAuthHandlerMock.mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: { Location: 'https://accounts.google.com/o/oauth2/v2/auth?state=google-state-9' },
+      }),
+    );
+    const signInRequest = request('/api/auth/signin/google', { csrfToken: 'csrf-token' });
+
+    const response = await POST(signInRequest, context);
+
+    // Whole-set assertion, not "nonce is absent" — the test name says NO flow
+    // cookie is cleared here, so an erroneous clear of state or callback-url has
+    // to fail it too.
+    expect(hostOnlyClears(response)).toEqual([]);
+  });
+
+  it('does NOT clear them on a bare session read', async () => {
+    const sessionRequest = new NextRequest('https://www.boardsesh.com/api/auth/session', { method: 'GET' });
+
+    const response = await GET(sessionRequest, context);
+
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+
+  it('never clears the __Host- CSRF cookie', async () => {
+    const callbackRequest = new NextRequest('https://www.boardsesh.com/api/auth/callback/google?code=provider-code');
+
+    const response = await GET(callbackRequest, context);
+
+    expect(response.headers.getSetCookie().some((setCookie) => setCookie.includes('csrf'))).toBe(false);
+  });
+
+  it('is a no-op on a dev host, where the live flow cookies are themselves host-only', async () => {
+    vi.stubEnv('VERCEL_ENV', '');
+    vi.stubEnv('VERCEL_URL', '');
+    vi.stubEnv('NEXTAUTH_URL', 'http://localhost:3000');
+    const callbackRequest = new NextRequest('http://localhost:3000/api/auth/callback/google?code=provider-code');
+
+    const response = await GET(callbackRequest, context);
+
+    expect(response.headers.getSetCookie()).toEqual([]);
   });
 });
