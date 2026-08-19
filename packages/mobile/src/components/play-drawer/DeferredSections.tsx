@@ -14,6 +14,7 @@ import { BoardseshGradeSection } from './BoardseshGradeSection';
 import { buildBoardseshGradeView, buildBoardseshGradeSummary, isMoonBoard } from './boardsesh-grade-utils';
 import { buildAngleGradeBars } from './community-utils';
 import { BetaVideosSection } from './BetaVideosSection';
+import { SetterNotesSection } from './SetterNotesSection';
 import { useAuth } from '../../providers/auth-provider';
 import { useBoardseshGradeEnabled } from '../../providers/feature-flags-provider';
 import { useTheme } from '../../providers/theme-provider';
@@ -202,6 +203,13 @@ export const DeferredSections = memo(function DeferredSections({
 
       {readyToRender && (
         <>
+          {/* The setter's own notes. First below-fold section AFTER the Logbook,
+              never before it: PlayDrawer's `firstScreenReserve` /
+              `computeLogbookScrollTarget` assume the Logbook is the first
+              section here, so anything inserted above it breaks the fold math.
+              Renders nothing when the climb has no notes worth showing. */}
+          <SetterNotesSection description={climb.description} />
+
           <CollapsibleSection
             title={t('mobile.betaVideos.title')}
             defaultExpanded

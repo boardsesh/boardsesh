@@ -1,11 +1,22 @@
 import { gql } from 'graphql-request';
 import type { Climb, HoldsFilter, ZoneMatchMode } from '@boardsesh/shared-schema';
 
-// Slim fragment for search/list views. Intentionally omits `description` to
-// keep the list payload small — descriptions can be long and no list UI
-// renders them. The drafts drawer uses `SEARCH_DRAFT_CLIMBS` below, which
-// extends this fragment with `description` so a draft can be loaded back
-// into the create form in a single round-trip.
+// Slim fragment for search/list views.
+//
+// It used to omit `description` on the premise that no list UI renders it.
+// #4494 overturned that premise: opening a climb from the list lands in the
+// play drawer, which now renders the setter's notes, so the LIVE search
+// selection — mobile's hand-maintained copy in
+// packages/mobile/src/lib/graphql/operations.ts — carries `description`, with a
+// drift guard in packages/backend/src/__tests__/operations-schema-validation.test.ts.
+// This shared document has no client today (only the operations smoke test
+// imports the module, and the app imports it for types), so it is left as-is
+// rather than re-slimmed or re-widened; if it ever gains a caller, mirror
+// mobile's field list.
+//
+// The drafts drawer uses `SEARCH_DRAFT_CLIMBS` below, which extends this
+// fragment with `description` so a draft can be loaded back into the create
+// form in a single round-trip.
 // published_at/created_at are used by the create form to enforce the 24h
 // post-publish edit window.
 const CLIMB_SEARCH_FIELDS = `

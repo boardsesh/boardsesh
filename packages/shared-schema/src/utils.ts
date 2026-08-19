@@ -112,6 +112,31 @@ export function withNoMatch(description: string | null | undefined, enabled: boo
 }
 
 /**
+ * A description that says nothing beyond "this is a no-match climb" — the
+ * whole string, not a prefix. Aurora setters overwhelmingly type exactly this
+ * (83,864 of the 177,868 non-empty catalog descriptions), and the climb header
+ * already carries a no-match glyph, so repeating it as a notes block is noise.
+ *
+ * Anchored at both ends on purpose: "No matching feet allowed" and
+ * "No Houdini swap, spin around pls:). No matching." are real setter beta and
+ * must survive untouched. A prefix match here would eat both.
+ */
+const ONLY_NO_MATCH = /^no[\s-]?match(ing)?[.!]*$/i;
+
+/**
+ * The climb description to show a climber, or `''` when there is nothing worth
+ * showing. Three passes: strip Aurora's canonical `No match\n` marker line,
+ * trim, then drop a description that is only a restatement of "no match".
+ *
+ * Renderers should treat `''` as "render no notes section at all" rather than
+ * as an empty block. The text is user-written — never pass it through `t()`.
+ */
+export function getDisplayDescription(description: string | null | undefined): string {
+  const withoutMarker = withNoMatch(description, false).trim();
+  return ONLY_NO_MATCH.test(withoutMarker) ? '' : withoutMarker;
+}
+
+/**
  * Convert an Aurora quality rating (1-3) to a Boardsesh quality rating (1-5).
  *
  * Aurora's Kilter/Tension logbook stores user star ratings on a 1-3 scale

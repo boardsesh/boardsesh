@@ -412,7 +412,8 @@ export type LocalClimbRow = {
   boardsesh_difficulty: number | null;
   /** Boardsesh grade confidence tier from board_climb_grades; null when unjoined. */
   boardsesh_confidence: string | null;
-  /** Selected by the detail read; absent (undefined) for search rows. */
+  /** Setter-written notes. Selected by both the detail read and the search read
+   *  (#4494 — the play drawer renders it for whatever climb the list opened). */
   description?: string | null;
 };
 
@@ -441,6 +442,7 @@ export function mapRowToClimb(row: LocalClimbRow, boardType: string, layoutId: n
     setter_username: row.setter_username ?? '',
     userId: row.user_id ?? null,
     name: row.name ?? '',
+    description: row.description ?? '',
     frames: row.frames ?? '',
     angle,
     ascensionist_count: Number(row.ascensionist_count ?? 0),
@@ -508,7 +510,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
 
   const query = `
     SELECT
-      c.uuid, c.setter_username, c.user_id, c.name, c.frames, c.is_draft, c.characteristics,
+      c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.characteristics,
       c.created_at, c.published_at, c.frames_count, c.frames_pace,
       s.ascensionist_count, s.display_difficulty, s.difficulty_average, s.quality_average,
       s.benchmark_difficulty,

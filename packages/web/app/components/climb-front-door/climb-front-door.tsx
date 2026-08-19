@@ -1,6 +1,6 @@
 import React from 'react';
 import Box from '@mui/material/Box';
-import type { SimilarClimb } from '@boardsesh/shared-schema';
+import { getDisplayDescription, type SimilarClimb } from '@boardsesh/shared-schema';
 import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-fragment';
 import SimilarClimbsList from '@/app/components/similar-climbs/similar-climbs-list';
 import ClimbSocialSection from '@/app/components/social/climb-social-section';
@@ -55,6 +55,13 @@ const containerSx = {
   padding: `${themeTokens.spacing[4]}px`,
 };
 
+// Setters type notes with line breaks; keep them rather than collapsing the
+// whole thing onto one line.
+const setterNotesSx = {
+  whiteSpace: 'pre-line',
+  margin: 0,
+};
+
 /**
  * The SSR climb page: everything a reader (or a crawler) needs about one climb,
  * with exactly one action — open it in the app.
@@ -97,6 +104,12 @@ export default async function ClimbFrontDoor({
   // those differ, and the JSON-LD has to name the URL the page claims.
   const canonicalClimbUrl = buildCanonicalClimbViewUrl(boardDetails, angle, climb.uuid, climbName);
   const overlayUrl = climb.frames ? buildOverlayUrl(boardDetails, climb.frames, false) : null;
+  // The setter's own words about the climb — the one genuinely unique piece of
+  // indexable prose on this page. User-written, so it renders verbatim (never
+  // through `t()`) and stays out of the JSON-LD `description` below, which is
+  // the synthesised catalogue string. Empty when the setter wrote nothing, or
+  // only Aurora's "No match" marker.
+  const setterNotes = getDisplayDescription(climb.description);
   const currentAngleStats = angleStats.find((stats) => stats.angle === angle);
   const layoutName = boardDetails.layout_name ?? '';
   // The same catalog string `generateMetadata` fills, but structured data omits
@@ -162,6 +175,15 @@ export default async function ClimbFrontDoor({
       ) : null}
 
       <ClimbFacts climb={climb} boardDetails={boardDetails} angle={angle} currentAngleStats={currentAngleStats} />
+
+      {setterNotes ? (
+        <Box component="section">
+          <Box component="h2">{t('frontDoor.setterNotes.heading')}</Box>
+          <Box component="p" sx={setterNotesSx}>
+            {setterNotes}
+          </Box>
+        </Box>
+      ) : null}
 
       <ClimbHandoffCta
         pathname={handoffPath}
