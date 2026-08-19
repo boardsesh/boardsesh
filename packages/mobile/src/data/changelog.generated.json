@@ -1,6 +1,27 @@
 {
-  "generatedAt": "2026-08-16T11:44:10.398Z",
+  "generatedAt": "2026-08-19T10:12:24.775Z",
   "entries": [
+    {
+      "prNumber": 4530,
+      "category": "fixed",
+      "title": "Fixed the Save button getting pushed off-screen when editing a multi-frame route/circuit in the climb editor",
+      "mergedAt": "2026-08-19T10:11:09Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4530"
+    },
+    {
+      "prNumber": 4534,
+      "category": "new",
+      "title": "The gym directory is open to everyone now — browse every gym with a board at /gyms, or filter to just Kilter, Tension or MoonBoard.",
+      "mergedAt": "2026-08-19T00:15:25Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4534"
+    },
+    {
+      "prNumber": 4526,
+      "category": "fixed",
+      "title": "Analytics identity wiring; no user-visible change.",
+      "mergedAt": "2026-08-16T12:19:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4526"
+    },
     {
       "prNumber": 4520,
       "category": "new",

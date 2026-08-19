@@ -4,6 +4,16 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-19
+
+### New
+
+- The gym directory is open to everyone now — browse every gym with a board at /gyms, or filter to just Kilter, Tension or MoonBoard. ([#4534](https://github.com/boardsesh/boardsesh/pull/4534))
+
+### Fixed
+
+- Fixed the Save button getting pushed off-screen when editing a multi-frame route/circuit in the climb editor ([#4530](https://github.com/boardsesh/boardsesh/pull/4530))
+
 ## 2026-08-16
 
 ### New
@@ -23,6 +33,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Analytics identity wiring; no user-visible change. ([#4526](https://github.com/boardsesh/boardsesh/pull/4526))
 - Sitemap caching and post-deploy smoke; no user-facing change. ([#4522](https://github.com/boardsesh/boardsesh/pull/4522))
 - CI and test-fixture typing only. ([#4521](https://github.com/boardsesh/boardsesh/pull/4521))
 
