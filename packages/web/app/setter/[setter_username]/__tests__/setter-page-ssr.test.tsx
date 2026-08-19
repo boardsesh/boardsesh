@@ -68,7 +68,10 @@ vi.mock('@/app/components/providers/i18n-provider', () => ({
 }));
 vi.mock('@/app/components/back-button', () => ({ default: () => null }));
 vi.mock('../setter-share-button', () => ({ default: () => null }));
-vi.mock('../setter-follow-island', () => ({ default: () => null }));
+// The follow island is NOT mocked: the follower count lives inside it, and the
+// point of the assertion below is that moving it there kept it in the server
+// HTML. Only its session read is stubbed.
+vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }),
 }));
@@ -180,6 +183,11 @@ describe('the setter front door, server-rendered', () => {
     const climbAnchors = html.match(/href="\/kilter\/[^"]*\/view\/[^"]*"/g) ?? [];
     expect(climbAnchors).toHaveLength(3);
     expect(html).not.toContain('loading-spinner');
+    // The follower count moved into the follow island so a follow/unfollow moves
+    // it. A client component's first render still happens on the server, so it
+    // must remain in the crawlable HTML — this is what reds if it is ever made
+    // conditional on the viewer's follow state resolving.
+    expect(html).toContain('setter.follower');
   });
 
   it('advertises exactly the climb URLs it links to in the JSON-LD', () => {

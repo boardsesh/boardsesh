@@ -61,12 +61,11 @@ export type SetterPageData = {
  * `server-setter-data.test.ts` byte-compares the two rendered WHERE clauses
  * rather than trusting this comment.
  */
-function visibleSetterClimbsWhere(username: string): SQL {
-  return and(
-    eq(boardClimbs.setterUsername, username),
-    eq(boardClimbs.isListed, true),
-    eq(boardClimbs.isDraft, false),
-  ) as SQL;
+function visibleSetterClimbsWhere(username: string): SQL | undefined {
+  // `SQL | undefined` rather than a cast: drizzle types `and()` that way for the
+  // zero-argument case, `.where()` accepts it, and asserting it away would only
+  // silence the compiler about a shape it is describing correctly.
+  return and(eq(boardClimbs.setterUsername, username), eq(boardClimbs.isListed, true), eq(boardClimbs.isDraft, false));
 }
 
 /**

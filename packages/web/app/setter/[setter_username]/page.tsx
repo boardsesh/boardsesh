@@ -10,7 +10,6 @@ import BackButton from '@/app/components/back-button';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import StaticClimbList from '@/app/components/climb-list/static-climb-list';
 import I18nProvider from '@/app/components/providers/i18n-provider';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { buildVersionedOgImagePath } from '@/app/lib/seo/og';
@@ -189,17 +188,13 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
   const links = resolveSetterClimbLinks(setterData.climbs, await getAllBoardConfigsOrThrow());
   const primaryGroup = links.primaryGroup;
   const firstLinkedClimb = setterData.climbs.find((climb) => !links.unlinkedClimbUuids.has(climb.uuid));
+  // `fallbackBoardDetails` IS the primary group's board when there is a primary
+  // group, so this reuses the resolution the link builder already did rather
+  // than repeating it — and `getBoardDetailsForBoard` throws, which would take
+  // the whole page down for a related link.
   const boardListPath =
-    primaryGroup && firstLinkedClimb
-      ? buildCanonicalClimbListUrl(
-          getBoardDetailsForBoard({
-            board_name: primaryGroup.boardType,
-            layout_id: primaryGroup.layoutId,
-            size_id: primaryGroup.sizeId,
-            set_ids: primaryGroup.setIds,
-          }),
-          firstLinkedClimb.angle,
-        )
+    primaryGroup && firstLinkedClimb && links.fallbackBoardDetails
+      ? buildCanonicalClimbListUrl(links.fallbackBoardDetails, firstLinkedClimb.angle)
       : null;
 
   const basePath = `/setter/${encodeURIComponent(username)}`;
@@ -239,9 +234,6 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
           <Box>
             <Box sx={metaSx}>
               <span>
-                {setterData.followerCount} {t('setter.follower', { count: setterData.followerCount })}
-              </span>
-              <span>
                 {setterData.climbCount} {t('setter.climb', { count: setterData.climbCount })}
               </span>
             </Box>
@@ -250,7 +242,7 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
                 <Chip key={boardType} label={formatBoardDisplayName(boardType)} size="small" variant="outlined" />
               ))}
             </Box>
-            <SetterFollowIsland username={username} />
+            <SetterFollowIsland username={username} initialFollowerCount={setterData.followerCount} />
           </Box>
         </Box>
 
