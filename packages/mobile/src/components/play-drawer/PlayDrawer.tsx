@@ -44,7 +44,12 @@ import { SwitchBoardOverlay } from './SwitchBoardOverlay';
 import { LogAscentSheet } from '../LogAscentSheet';
 import { DeferredSections } from './DeferredSections';
 import { PanePlaceholder } from './PanePlaceholder';
-import { computeFirstScreenHeight, computeLogbookScrollTarget, shouldShowPanePlaceholder } from './play-drawer-layout';
+import {
+  computeFirstScreenHeight,
+  computeLogbookScrollTarget,
+  initialDrawerPreviewItem,
+  shouldShowPanePlaceholder,
+} from './play-drawer-layout';
 import { useBelowFoldContentRequest } from './use-below-fold-content-request';
 import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
 import { AngleSelectorSheet } from './AngleSelectorSheet';
@@ -234,7 +239,12 @@ export function PlayDrawer({
     const measured = event.nativeEvent.layout.height;
     setSheetViewportHeight((prev) => (Math.abs(prev - measured) > 2 ? Math.round(measured) : prev));
   }, []);
-  const [drawerPreviewItem, setDrawerPreviewItem] = useState<ClimbQueueItem | null>(null);
+  // Seeded from the open target rather than left null: the effect that applies
+  // the target runs after the first commit, so a pane that already has its climb
+  // would otherwise paint one frame of the "Pick a climb" placeholder first.
+  const [drawerPreviewItem, setDrawerPreviewItem] = useState<ClimbQueueItem | null>(() =>
+    initialDrawerPreviewItem(openTarget),
+  );
   const [drawerPreviewSuggestionSource, setDrawerPreviewSuggestionSource] = useState<PlaylistSuggestionSource | null>(
     null,
   );
