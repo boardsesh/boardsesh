@@ -283,6 +283,11 @@ export function useLiveActivity({
   // reactivate. Bounded: the nonce re-fires the start effect, the counter
   // stops after MAX_START_RETRIES, and both reset on success or deactivation.
   const [startRetryNonce, setStartRetryNonce] = useState(0);
+  // Native endSession removes the App-Group queue keys outright, so anything
+  // mirroring them has to re-publish once the teardown has run. Bumped ONLY on
+  // teardown — putting shouldBeActive in the sync effects' deps instead would
+  // also re-fire on activation and double the Activity's initial update.
+  const [sharedStateWipeNonce, setSharedStateWipeNonce] = useState(0);
   const startFailureCountRef = useRef(0);
   const startRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearStartRetry = () => {
@@ -365,6 +370,7 @@ export function useLiveActivity({
           // tear those down here — JS otherwise believes nothing is active and
           // never reaches the teardown paths. endSession is idempotent.
           void endLiveActivitySession();
+          setSharedStateWipeNonce((nonce) => nonce + 1);
           startFailureCountRef.current += 1;
           if (startFailureCountRef.current <= MAX_START_RETRIES) {
             const attempt = startFailureCountRef.current;
@@ -395,6 +401,19 @@ export function useLiveActivity({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- startRetryNonce re-fires the start after a failed attempt
   }, [shouldBeActive, stableBoard, available, startRetryNonce]);
+
+  // Native endSession removes the App-Group queue keys outright. On a real
+  // deactivation the teardown runs from the effect CLEANUP above (React runs it
+  // before the effect body, so the body's own end branch never sees
+  // isActiveRef true) — watch the transition here instead, after that effect,
+  // so the re-publish is dispatched behind the endSession it has to survive.
+  const wasActiveRef = useRef(shouldBeActive);
+  useEffect(() => {
+    if (wasActiveRef.current && !shouldBeActive) {
+      setSharedStateWipeNonce((nonce) => nonce + 1);
+    }
+    wasActiveRef.current = shouldBeActive;
+  }, [shouldBeActive]);
 
   // Stable scalar trigger for the on-device thumbnail backgrounds: the paths array
   // has a fresh identity each render, so depending on it directly would churn the
@@ -461,10 +480,10 @@ export function useLiveActivity({
     holderDisplayName,
     isPartySession,
     serializedQueue,
-    // A session ending wipes the App-Group queue keys (endSession), so re-push
-    // the mirrored copy the moment shouldBeActive flips — otherwise the next BLE
-    // connect reads an empty queue and clears the wall.
-    shouldBeActive,
+    // endSession wipes the App-Group queue keys, so re-push the mirrored copy
+    // once the teardown has run — otherwise the next BLE connect reads an empty
+    // queue and clears the wall.
+    sharedStateWipeNonce,
     stableBoard,
     widgetNavigationAllowed,
   ]);
@@ -508,8 +527,8 @@ export function useLiveActivity({
     holderDisplayName,
     isPartySession,
     queue,
-    // See Effect 1: a session end wipes the shared copy, so re-push on the flip.
-    shouldBeActive,
+    // See Effect 1: a session end wipes the shared copy, so re-push afterwards.
+    sharedStateWipeNonce,
     stableBoard,
     widgetNavigationAllowed,
   ]);
