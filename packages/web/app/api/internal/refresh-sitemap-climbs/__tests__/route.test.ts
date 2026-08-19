@@ -10,7 +10,7 @@ const refresh = vi.hoisted(() => ({
     lastModified: new Date('2026-05-04T11:22:33.000Z'),
     previousItemCount: 51_900,
     skipped: null,
-    durationMs: 41_000,
+    scanDurationMs: 41_000,
   } as ClimbSummaryRefreshResult,
   throws: false,
 }));
@@ -39,7 +39,7 @@ beforeEach(() => {
     lastModified: new Date('2026-05-04T11:22:33.000Z'),
     previousItemCount: 51_900,
     skipped: null,
-    durationMs: 41_000,
+    scanDurationMs: 41_000,
   };
   vi.stubEnv('CRON_SECRET', 'test-secret');
 });
