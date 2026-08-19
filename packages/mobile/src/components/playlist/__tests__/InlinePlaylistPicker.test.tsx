@@ -173,10 +173,10 @@ function NameInput(props: { value?: string; onChangeText?: (text: string) => voi
   });
 }
 
-function renderPicker(onBack?: () => void, onDetachedFailure?: (message: string) => void) {
+function renderPicker(onBack?: () => void, onDetachedFailure?: (message: string) => void, climbOverride?: Climb) {
   return render(
     <InlinePlaylistPicker
-      climb={climb}
+      climb={climbOverride ?? climb}
       angle={40}
       boardName="kilter"
       layoutId={1}
@@ -274,6 +274,61 @@ describe('InlinePlaylistPicker', () => {
     const { getByLabelText, queryByLabelText } = renderPicker();
     expect(getByLabelText('Aurora circuit')).not.toBeNull();
     expect(queryByLabelText('Tension circuit')).toBeNull();
+  });
+
+  // #4015 follow-up. The host props are the board the SURFACE is rendering on,
+  // which is not the climb's board on a cross-board preview (PlayDrawer opens
+  // the reaction menu with no board override, so a Tension climb previewed
+  // while the stored active board is Kilter lands here as boardName="kilter").
+  // The server guards the add on the climb's own board, so keying the list on
+  // the host offered Kilter playlists that the add then hard-failed.
+  it('offers the climbs own board when the climb disagrees with the host board', () => {
+    const tensionClimb = { ...climb, boardType: 'tension', layoutId: 10 } as Climb;
+    playlistContext.playlists = [
+      makePlaylist('p-kilter', 'Kilter warmups'),
+      {
+        ...basePlaylist,
+        id: 'p-tension',
+        uuid: 'p-tension',
+        name: 'Tension crimps',
+        boardType: 'tension',
+        layoutId: 10,
+      },
+    ];
+    const { getByLabelText, queryByLabelText } = renderPicker(undefined, undefined, tensionClimb);
+    expect(getByLabelText('Tension crimps')).not.toBeNull();
+    expect(queryByLabelText('Kilter warmups')).toBeNull();
+  });
+
+  // Same divergence within one board: a Kilter climb on layout 8 reached while
+  // the host renders layout 1 must be offered its own layout's playlists.
+  it('offers the climbs own layout when only the layout disagrees', () => {
+    const layout8Climb = { ...climb, boardType: 'kilter', layoutId: 8 } as Climb;
+    playlistContext.playlists = [
+      makePlaylist('p-layout-1', 'Layout one'),
+      { ...basePlaylist, id: 'p-layout-8', uuid: 'p-layout-8', name: 'Layout eight', layoutId: 8 },
+    ];
+    const { getByLabelText, queryByLabelText } = renderPicker(undefined, undefined, layout8Climb);
+    expect(getByLabelText('Layout eight')).not.toBeNull();
+    expect(queryByLabelText('Layout one')).toBeNull();
+  });
+
+  it('creates a new playlist on the climbs board, not the host board', async () => {
+    const tensionClimb = { ...climb, boardType: 'tension', layoutId: 10 } as Climb;
+    const created = { ...basePlaylist, id: 'p-new', uuid: 'p-new', name: 'Tension proj', boardType: 'tension' };
+    playlistContext.createPlaylist.mockResolvedValueOnce(created);
+    const { getByLabelText } = renderPicker(undefined, undefined, tensionClimb);
+
+    fireEvent.click(getByLabelText('actions.playlist.popover.createNew'));
+    fireEvent.change(getByLabelText('name-input'), { target: { value: 'Tension proj' } });
+    fireEvent.click(getByLabelText('actions.playlist.create.submit'));
+
+    await waitFor(() => {
+      expect(playlistContext.createPlaylist).toHaveBeenCalledWith('Tension proj', undefined, undefined, undefined, {
+        boardType: 'tension',
+        layoutId: 10,
+      });
+    });
   });
 
   it('adds the climb when tapping a non-member row (optimistic + store sync)', async () => {
