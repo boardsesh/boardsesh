@@ -61,6 +61,19 @@ function nonLoopbackOrigin(value: string | undefined): string | undefined {
 // hosting would make local dev look like a misconfigured deployment.
 const HOSTED_VERCEL_ENVS = new Set(['production', 'preview']);
 
+// Railway injects RAILWAY_PUBLIC_DOMAIN into any service that has a public
+// domain — the attached custom domain when there is one, otherwise the
+// generated `*.up.railway.app` host. It is never set on a developer machine, so
+// it is both a hosting signal and, as the last resort below BASE_URL, an
+// origin. Production web runs on Vercel today; this is what keeps a
+// `Dockerfile.web` container on Railway from silently falling back to
+// next-auth's loopback default when BASE_URL was not baked into the image.
+function railwayOrigin(env: AuthEnv): string | undefined {
+  const publicDomain = env.RAILWAY_PUBLIC_DOMAIN?.trim();
+  if (!publicDomain) return undefined;
+  return nonLoopbackOrigin(`https://${publicDomain}`);
+}
+
 // True when the deployment is clearly running on hosting rather than on a
 // developer's machine. Only in that case is a loopback NEXTAUTH_URL treated as
 // a misconfiguration to be ignored — local dev keeps its own localhost value
@@ -72,6 +85,7 @@ function isHostedDeployment(env: AuthEnv): boolean {
     env.VERCEL_URL?.trim() ||
     // A loopback BASE_URL is the dev default, not a hosting signal.
     nonLoopbackOrigin(env.BASE_URL) ||
+    railwayOrigin(env) ||
     env.AUTH_COOKIE_DOMAIN?.trim(),
   );
 }
@@ -110,7 +124,10 @@ export function resolveCanonicalAuthUrl(env: AuthEnv = process.env): string | un
 
   if (vercelUrl) return `https://${vercelUrl}`;
 
-  return undefined;
+  // Last resort: the host the platform itself says this container is served on.
+  // Below BASE_URL so an explicitly configured canonical origin always wins over
+  // a generated `*.up.railway.app` domain.
+  return railwayOrigin(env);
 }
 
 /**
@@ -118,6 +135,11 @@ export function resolveCanonicalAuthUrl(env: AuthEnv = process.env): string | un
  * is already there, so next-auth (and our cookie-domain helpers) read a correct
  * value. Idempotent; returns the applied value, or `undefined` when nothing was
  * resolved.
+ *
+ * Mutating: this both **sets and deletes** the key on the object it is passed
+ * (`process.env` by default). A hosted deployment whose only NEXTAUTH_URL is a
+ * loopback value, with nothing else naming an origin, has that key `delete`d
+ * rather than overwritten — see the comment on that branch.
  */
 export function applyCanonicalAuthUrl(env: AuthEnv = process.env): string | undefined {
   const resolved = resolveCanonicalAuthUrl(env);

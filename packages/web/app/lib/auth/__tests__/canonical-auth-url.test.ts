@@ -15,6 +15,8 @@ const HOSTED_ENVS: AuthEnv[] = [
   { BASE_URL: PROD_ORIGIN },
   { VERCEL_ENV: 'preview', VERCEL_URL: 'boardsesh-abc.vercel.app' },
   { VERCEL_ENV: 'preview', VERCEL_URL: 'boardsesh-abc.vercel.app', BASE_URL: PROD_ORIGIN },
+  { RAILWAY_PUBLIC_DOMAIN: 'boardsesh-web-production.up.railway.app' },
+  { NEXTAUTH_URL: 'http://localhost:3000', RAILWAY_PUBLIC_DOMAIN: 'www.boardsesh.com' },
 ];
 
 // The tracked `packages/web/.env.local` that every developer runs with. Nothing
@@ -123,6 +125,29 @@ describe('resolveCanonicalAuthUrl', () => {
     expect(resolveCanonicalAuthUrl({ NEXTAUTH_URL: 'not a url' })).toBeUndefined();
   });
 
+  it('falls back to the Railway public domain when nothing else names an origin', () => {
+    // A Dockerfile.web container on Railway with no BASE_URL baked in. Without
+    // this the resolver returns undefined and next-auth is back on
+    // http://localhost:3000 — issue #4227 all over again on a new host.
+    expect(resolveCanonicalAuthUrl({ RAILWAY_PUBLIC_DOMAIN: 'boardsesh-web-production.up.railway.app' })).toBe(
+      'https://boardsesh-web-production.up.railway.app',
+    );
+  });
+
+  it('prefers BASE_URL over the generated Railway domain', () => {
+    // RAILWAY_PUBLIC_DOMAIN is the generated host until a custom domain is
+    // attached, so an explicitly configured canonical origin must win.
+    expect(
+      resolveCanonicalAuthUrl({ BASE_URL: PROD_ORIGIN, RAILWAY_PUBLIC_DOMAIN: 'boardsesh-web.up.railway.app' }),
+    ).toBe(PROD_ORIGIN);
+  });
+
+  it('treats a Railway public domain as hosting, so a loopback NEXTAUTH_URL is ignored there', () => {
+    expect(
+      resolveCanonicalAuthUrl({ NEXTAUTH_URL: 'http://localhost:3000', RAILWAY_PUBLIC_DOMAIN: 'www.boardsesh.com' }),
+    ).toBe('https://www.boardsesh.com');
+  });
+
   it('ignores a loopback BASE_URL', () => {
     expect(resolveCanonicalAuthUrl({ BASE_URL: 'http://localhost:3000', VERCEL_ENV: 'production' })).toBe(PROD_ORIGIN);
   });
@@ -138,7 +163,9 @@ describe('resolveCanonicalAuthUrl', () => {
   });
 
   it('resolves an origin for every hosted env that names one', () => {
-    for (const env of HOSTED_ENVS.filter((env) => env.VERCEL_ENV || env.VERCEL_URL || env.BASE_URL)) {
+    for (const env of HOSTED_ENVS.filter(
+      (env) => env.VERCEL_ENV || env.VERCEL_URL || env.BASE_URL || env.RAILWAY_PUBLIC_DOMAIN,
+    )) {
       expect(resolveCanonicalAuthUrl(env), JSON.stringify(env)).toBeDefined();
     }
   });
