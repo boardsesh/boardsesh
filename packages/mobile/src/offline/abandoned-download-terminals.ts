@@ -47,8 +47,14 @@ import { reportScopeDownloadAbandonedOnSignOut, reportScopeDownloadAbandonedOnDi
  * no path anywhere can find an unfinished download for this scope.
  */
 async function closeDelistedScopeFunnel(db: SQLiteDatabase, scopeKey: string): Promise<void> {
-  reportScopeDownloadAbandonedOnDisable({ scopeKey });
+  // CLEAR FIRST, report second. The clear is the only step that can fail — a
+  // locked database — and `track()` cannot. Reporting first would emit the
+  // terminal and then leave the marker behind for the next launch's sweep to
+  // report a SECOND time; this way a failed clear emits nothing at all and the
+  // sweep is the one reporter. Exactly one terminal either way, which is the
+  // invariant that matters.
   await clearScopeDownloadFunnelMarkers(db, scopeKey);
+  reportScopeDownloadAbandonedOnDisable({ scopeKey });
 }
 
 /**
@@ -93,13 +99,14 @@ export async function reportAbandonedDownloadsOnSignOut(db: SQLiteDatabase): Pro
         // parse belongs to no namespace, so the registry never records one for
         // it and nothing can double-report it — those are reported rather than
         // dropped.
+        // Cleared FIRST, for the reason closeDelistedScopeFunnel spells out: a
+        // clear that throws must not leave a reported marker behind for the
+        // launch sweep to report again.
+        await clearScopeDownloadFunnelMarkers(db, scopeKey);
         const namespace = purgeNamespaceForScopeKey(scopeKey);
         if (namespace === undefined || claimAbandonedDownloadTerminal(scopeKey, namespace)) {
           reportScopeDownloadAbandonedOnSignOut({ scopeKey });
         }
-        // Cleared either way: the download is over whether or not this call site
-        // was the one that got to say so.
-        await clearScopeDownloadFunnelMarkers(db, scopeKey);
       });
     }
   } catch (error) {

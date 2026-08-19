@@ -89,10 +89,10 @@ describe('reportAbandonedDownloadsOnSignOut', () => {
     expect(reportScopeDownloadAbandonedOnSignOut).not.toHaveBeenCalled();
   });
 
-  // One locked write must not silently drop the other scopes from the sweep:
-  // they are independent funnels, and the one that failed still has its marker,
-  // so the next launch's backstop picks it up.
-  it('keeps going when one scope\u2019s clear fails', async () => {
+  // One locked write must not silently drop the other scopes: they are
+  // independent funnels. The one that failed emits nothing and keeps its marker,
+  // so the next launch's backstop reports it — exactly one terminal either way.
+  it('keeps going, and stays quiet, when one scope\u2019s clear fails', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     // The scope keys come back in index order, so the FAILING one has to sort
     // first — otherwise the old whole-loop try/catch would pass this too.
@@ -108,7 +108,12 @@ describe('reportAbandonedDownloadsOnSignOut', () => {
 
     await reportAbandonedDownloadsOnSignOut(db);
 
-    expect(reportScopeDownloadAbandonedOnSignOut).toHaveBeenCalledTimes(2);
+    // The healthy scope still reports; the locked one does not, and keeps its
+    // marker so it is reported once — not twice — on the next launch.
+    expect(reportScopeDownloadAbandonedOnSignOut).toHaveBeenCalledTimes(1);
+    expect(reportScopeDownloadAbandonedOnSignOut).toHaveBeenCalledWith({ scopeKey: DOWNLOADING });
+    vi.mocked(db.runAsync).mockRestore();
+    expect(await getUnfinishedDownloadScopeKeys(db)).toEqual([failing]);
   });
 
   it('never fails a sign-out over a database it cannot read', async () => {
