@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { createElement, type ReactNode } from 'react';
 import { render } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
-import { computeTileWidth, WorkoutTypeShelf, type WorkoutTypeShelfItem } from '../WorkoutTypeShelf';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { computeTileWidth, TILE_GAP, WorkoutTypeShelf, type WorkoutTypeShelfItem } from '../WorkoutTypeShelf';
 
 type ViewProps = {
   children?: ReactNode;
@@ -76,6 +76,10 @@ vi.mock('../../../../theme/tokens', () => ({
   borderRadius: { md: 8, lg: 12 },
 }));
 
+beforeEach(() => {
+  windowDimensions.width = 375;
+});
+
 function item(overrides?: Partial<WorkoutTypeShelfItem>): WorkoutTypeShelfItem {
   return {
     key: 'volume',
@@ -111,11 +115,10 @@ describe('WorkoutTypeShelf', () => {
   });
 
   it('snaps to tile boundaries', () => {
-    windowDimensions.width = 375;
     render(createElement(WorkoutTypeShelf, { items: [item()] }));
 
     const expectedTileWidth = computeTileWidth(375);
-    expect(scrollViewProps.latest?.snapToInterval).toBe(expectedTileWidth + 12);
+    expect(scrollViewProps.latest?.snapToInterval).toBe(expectedTileWidth + TILE_GAP);
     expect(scrollViewProps.latest?.snapToAlignment).toBe('start');
     expect(scrollViewProps.latest?.decelerationRate).toBe('fast');
   });
@@ -134,9 +137,8 @@ describe('computeTileWidth', () => {
     expect(tileWidth).toBe(expectedTileWidth);
 
     const horizontalInset = 16;
-    const tileGap = 12;
     const contentWidth = windowWidth - horizontalInset * 2;
-    const twoTilesAndOneGap = tileWidth * 2 + tileGap;
+    const twoTilesAndOneGap = tileWidth * 2 + TILE_GAP;
     const peek = contentWidth - twoTilesAndOneGap;
 
     // A peek must be visible (not zero/negative) and must be less than a

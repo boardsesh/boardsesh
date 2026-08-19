@@ -15,8 +15,9 @@ const CHART_HEIGHT = 82;
 
 // Mirrors the ScrollView's contentContainerStyle below, so the peek math
 // below accounts for exactly the padding/gap the row actually renders.
+// Exported so tests can assert against it instead of hardcoding the token.
 const SHELF_HORIZONTAL_INSET = spacing[4];
-const TILE_GAP = spacing[3];
+export const TILE_GAP = spacing[3];
 
 // Deliberately not a whole number: sizing tiles so a whole number of them
 // fills the screen edge-to-edge is what caused #4278 — on a 375pt phone the
