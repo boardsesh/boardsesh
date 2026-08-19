@@ -212,7 +212,8 @@ plain `<img>` at the Railway `/render/board` overlay URL with explicit
 dimensions, a facts `<dl>`, a setter link, angle cross-links, beta videos,
 similar climbs, the community section, and one CTA — "Climb this", a real
 server-rendered `<a href>` at `APP_URL` + the same pathname, firing
-`Climb Handoff Clicked`.
+`Climb Handoff Clicked`. Not `BoardRenderer` or `BoardImageLayers`: both are
+hook-bearing client components, and this image is the page's LCP.
 
 **The locale carve-out, recorded here because `buildAppHandoffUrl`'s docblock
 says it is.** "The same pathname" is exact on `en-US` only. On `/es`, `/fr` and
@@ -223,8 +224,7 @@ route tree, so a locale-prefixed app URL would match nothing and land on the
 SPA's not-found; a Spanish reader following "Climb this" therefore arrives at
 the right climb in the English app. That is the accepted regression, not a bug
 in this CTA — and it is why the epic's definition-of-done box for this CTA reads
-as "the same pathname" but is only literally true in one of the four locales. Not `BoardRenderer` or `BoardImageLayers`: both are
-hook-bearing client components, and this image is the page's LCP.
+as "the same pathname" but is only literally true in one of the four locales.
 
 **The `/list` front door** renders `StaticClimbList` with `virtualize={false}`.
 The virtualized path emits a 375×812-worth of rows on the server (~18), and the
