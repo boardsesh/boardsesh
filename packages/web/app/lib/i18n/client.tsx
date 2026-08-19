@@ -112,7 +112,10 @@ export function I18nProvider({
 }) {
   // react-i18next types `I18nContext` as always carrying an instance, but the
   // context is created with no default value — the outermost provider really
-  // does read `undefined` here.
+  // does read `undefined` here. If a future react-i18next reshapes the context
+  // value, this reads `undefined` and the server loses inheritance rather than
+  // breaking; the nested-provider case in ssr-locale-isolation.test.tsx is what
+  // turns that into a visible failure.
   const parentContext = useContext(I18nContext) as { i18n: i18n } | undefined;
   const parentInstance = parentContext?.i18n;
   const instance = useMemo(
