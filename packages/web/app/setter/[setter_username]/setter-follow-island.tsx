@@ -33,7 +33,8 @@ type SetterFollowIslandProps = {
  * `FollowButton` returns null with no session, and the effect below never runs.
  *
  * The count lives here rather than in the server component so a follow or
- * unfollow moves it — the component this replaced kept it in local state, and
+ * unfollow moves it, and so a signed-in viewer picks up the live number the
+ * follow-state fetch already returns — the component this replaced kept it in local state, and
  * a hero showing the pre-click number until a refresh is a regression. It is
  * still in the crawlable HTML: a client component's first render happens on the
  * server, and `initialFollowerCount` is a server-resolved prop.
@@ -55,7 +56,15 @@ export default function SetterFollowIsland({ username, initialFollowerCount }: S
         input: { username },
       })
       .then((response) => {
-        if (!cancelled) setIsFollowing(response.setterProfile?.isFollowedByMe ?? false);
+        if (cancelled) return;
+        setIsFollowing(response.setterProfile?.isFollowedByMe ?? false);
+        // The same response already carries the live count, so discarding it
+        // and rendering the server snapshot until the viewer follows somebody
+        // is a stale number for no saving. Safe to overwrite: the button is
+        // not rendered until `isFollowing` resolves, so there is no click this
+        // can land behind.
+        const liveCount = response.setterProfile?.followerCount;
+        if (typeof liveCount === 'number') setFollowerCount(liveCount);
       })
       .catch((error: unknown) => {
         console.error('Failed to read setter follow state:', error);
