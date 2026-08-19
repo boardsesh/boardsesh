@@ -28,6 +28,12 @@ function whereClauseOf(rendered: { sql: string }): string {
   return sql.slice(start, end.length > 0 ? Math.min(...end) : sql.length);
 }
 
+/** The bindings the WHERE clause actually references, in the order it names them. */
+function whereParamsOf(rendered: { sql: string; params: unknown[] }): unknown[] {
+  const placeholders = whereClauseOf(rendered).match(/\$(\d+)/g) ?? [];
+  return placeholders.map((placeholder) => rendered.params[Number(placeholder.slice(1)) - 1]);
+}
+
 // The rendered SQL of the real builders, never a rebuilt lookalike: a rebuilt
 // predicate asserts only that the test can restate itself.
 describe('the setter page queries', () => {
@@ -51,7 +57,11 @@ describe('the setter page queries', () => {
     // existence check but not the list publishes drafts on an indexable page.
     expect(whereClauseOf(climbs)).toBe(whereClauseOf(profile));
     // ...and the same bindings, so the two cannot differ by a parameter either.
-    expect(climbs.params.slice(0, profile.params.length)).toEqual(profile.params);
+    // Resolved through the `$n` placeholders the WHERE clause itself names,
+    // rather than by slicing the head of `params`: the head only happens to be
+    // the visibility bindings today, and a drizzle bump that emitted LIMIT or
+    // OFFSET first would leave the slice comparing the wrong values and passing.
+    expect(whereParamsOf(climbs)).toEqual(whereParamsOf(profile));
   });
 
   it('links each climb at the angle with the most ascents, the rule the climbs sitemap uses', () => {

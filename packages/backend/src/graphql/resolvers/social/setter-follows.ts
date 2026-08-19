@@ -248,10 +248,12 @@ export const setterFollowQueries = {
       const tables = UNIFIED_TABLES;
 
       // Build WHERE conditions for board filter
+      // `UNIFIED_TABLES.climbs` IS `dbSchema.boardClimbs`, so the shared
+      // visibility helper applies here verbatim. Spelling the two predicates out
+      // again is how the next one gets added to three call sites and missed on
+      // the fourth.
       const filterConditions: ReturnType<typeof eq>[] = [
-        eq(tables.climbs.setterUsername, username),
-        eq(tables.climbs.isListed, true),
-        eq(tables.climbs.isDraft, false),
+        ...visibleSetterClimbConditions(username),
         eq(tables.climbs.boardType, boardName),
       ];
 
@@ -436,13 +438,7 @@ export const setterFollowQueries = {
             eq(dbSchema.boardClimbGrades.angle, tables.climbStats.angle),
           ),
         )
-        .where(
-          and(
-            eq(tables.climbs.setterUsername, username),
-            eq(tables.climbs.isListed, true),
-            eq(tables.climbs.isDraft, false),
-          ),
-        )
+        .where(and(...visibleSetterClimbConditions(username)))
         .orderBy(
           sortBy === 'popular'
             ? sql`COALESCE(${tables.climbStats.ascensionistCount}, 0) DESC`
