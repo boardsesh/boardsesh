@@ -51,7 +51,12 @@ export type KioskPresenceHubInnerProps = KioskPresenceHubProps & {
    * `false` — it has nothing to wait for.
    */
   isAuthResolving: boolean;
-  /** How to wrap the ws client: read-only for displays, full for a viewer. */
+  /**
+   * How to wrap the ws client: read-only for displays, full for a viewer.
+   * MUST be a stable reference (both callers pass a module-level function) —
+   * it is a dep of the `presenceClient` memo, so an inline arrow here would
+   * rebuild the presence client on every render.
+   */
   createPresenceClient: (getClient: () => Client) => WebBoardPresenceClient;
 };
 
