@@ -223,6 +223,15 @@ describe('the setter front door, server-rendered', () => {
     expect(notFoundCalls.count).toBe(1);
   });
 
+  it("404s a `?page` inside the range but past this setter's climbs", async () => {
+    // Nothing links there and the sitemap submits only the bare path, so an
+    // indexable empty page is a thin duplicate reachable only by guessing.
+    setterData.value = { ...pageData([]), climbCount: 12 };
+
+    await expect(render({ page: '2' })).rejects.toThrow('NEXT_NOT_FOUND');
+    expect(notFoundCalls.count).toBe(1);
+  });
+
   it('404s a `?page` past the hard ceiling instead of running a deep OFFSET', async () => {
     setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'First Climb' }]);
 

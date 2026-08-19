@@ -179,6 +179,13 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
   // above noindexes on, so the two surfaces cannot disagree.
   if (!setterData) return notFound();
 
+  // A `?page` inside the range but past this setter's climbs is a thin page
+  // reachable only by guessing — nothing links past the last page with content,
+  // and the sitemap submits only the bare path. Across tens of thousands of
+  // setter pages that is a duplicate-content farm on demand, so it 404s rather
+  // than serving an indexable, self-canonical empty list.
+  if (page > 1 && setterData.climbs.length === 0) return notFound();
+
   const links = resolveSetterClimbLinks(setterData.climbs, await getAllBoardConfigsOrThrow());
   const primaryGroup = links.primaryGroup;
   const firstLinkedClimb = setterData.climbs.find((climb) => !links.unlinkedClimbUuids.has(climb.uuid));
