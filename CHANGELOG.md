@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Setter's notes now show up on a climb — the description whoever set it wrote in the create form, right under your logbook in the play drawer and on the climb's web page. ([#4540](https://github.com/boardsesh/boardsesh/pull/4540))
 - The gym directory is open to everyone now — browse every gym with a board at /gyms, or filter to just Kilter, Tension or MoonBoard. ([#4534](https://github.com/boardsesh/boardsesh/pull/4534))
 
 ### Fixed

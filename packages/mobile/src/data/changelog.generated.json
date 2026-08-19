@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-19T19:14:12.538Z",
+  "generatedAt": "2026-08-19T22:22:45.993Z",
   "entries": [
+    {
+      "prNumber": 4540,
+      "category": "new",
+      "title": "Setter's notes now show up on a climb — the description whoever set it wrote in the create form, right under your logbook in the play drawer and on the climb's web page.",
+      "mergedAt": "2026-08-19T22:19:49Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4540"
+    },
     {
       "prNumber": 4543,
       "category": "fixed",
