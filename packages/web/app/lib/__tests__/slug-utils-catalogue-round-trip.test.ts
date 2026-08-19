@@ -280,6 +280,11 @@ function nonEmptySetSubsets(setIds: readonly number[]): number[][] {
 
 const moonBoardLayoutKeys = Object.keys(MOONBOARD_LAYOUTS) as MoonBoardLayoutKey[];
 
+/** 32 hex characters in the dashed 8-4-4-4-12 form MoonBoard climbs actually use. */
+function toDashedUuid(hex: string): string {
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 describe('MoonBoard catalogue round-trip (the static tables, through the same www resolver)', () => {
   it.each(moonBoardLayoutKeys)(
     '%s: every emitted set-slug subset parses back to the ids it was built from',
@@ -292,7 +297,13 @@ describe('MoonBoard catalogue round-trip (the static tables, through the same ww
 
       for (const setIds of subsets) {
         const label = `${layoutKey} / sets [${setIds.join(',')}]`;
-        const climbUuid = `${layout.id}${setIds.join('')}`.padStart(32, '0');
+        // Dashed, because that is the only shape MoonBoard has: every one of the
+        // 142,566 MoonBoard rows on the dev image carries a 36-character
+        // RFC-4122 uuid, and no other board does. An Aurora-shaped 32-hex uuid
+        // here would leave the climb segment untested — the uuid extractor
+        // matched only the unbroken form, so a real MoonBoard climb URL parsed
+        // back with its whole `<name>-<uuid>` segment as the uuid and 404'd.
+        const climbUuid = toDashedUuid(`${layout.id}${setIds.join('')}`.padStart(32, '0'));
 
         const emittedPath = tryConstructSlugViewUrl(
           'moonboard',

@@ -113,9 +113,15 @@ describe('MoonBoard sitemap URLs are self-canonical', () => {
 
       // Two rows so an unnamed climb — the one whose canonical carries the
       // `-moonboard-climb-` display-name slug — is covered alongside a named one.
+      //
+      // Both uuids are real MoonBoard uuids off the dev image, and the shape is
+      // load-bearing: MoonBoard is the only board whose climbs carry the dashed
+      // 36-character form (142,566 of them; every Aurora board is 32 unbroken
+      // hex). An `'aaaa…'` fixture matches the uuid extractor's 32-hex rule and
+      // therefore proves nothing about the segment a real MoonBoard row emits.
       const rows = [
-        { uuid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', name: 'Slab Dancer', angle: 0, updatedAt: new Date(0) },
-        { uuid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', name: null, angle: 0, updatedAt: new Date(0) },
+        { uuid: '9fe54099-6fdd-5adb-b82f-2d7bcb10d4ad', name: 'Slab Dancer', angle: 0, updatedAt: new Date(0) },
+        { uuid: '28510d27-9e46-5f30-8d6b-4c9dbb2d1f70', name: null, angle: 0, updatedAt: new Date(0) },
       ];
 
       for (const angle of ANGLES.moonboard) {
@@ -139,6 +145,12 @@ describe('MoonBoard sitemap URLs are self-canonical', () => {
           expect(parsed.layout_id).toBe(group.layoutId);
           expect(parsed.size_id).toBe(group.sizeId);
           expect(parsed.angle).toBe(angle);
+
+          // The uuid the route hands `getClimb`. Without this the canonical
+          // below still matches — `buildCanonicalClimbViewUrl` re-slugs whatever
+          // it is given, so a segment that failed to yield its uuid rebuilds the
+          // same string — while the page itself 404s on a climb nobody has.
+          expect(parsed.climb_uuid, `${layoutKey} @ ${angle}: ${item.path}`).toBe(rows[index].uuid);
 
           const canonical = buildCanonicalClimbViewUrl(
             getBoardDetailsForBoard(parsed),
