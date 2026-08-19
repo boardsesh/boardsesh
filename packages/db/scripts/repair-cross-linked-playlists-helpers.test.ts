@@ -243,3 +243,19 @@ test('summarize and selectApplyablePlans keep merge candidates out unless opted 
     ['101', '102'],
   );
 });
+
+test('a duplicate ownership row for one user is refused, not treated as the adopter', () => {
+  const plan = classifyCrossLinkedPlaylist(
+    playlist({
+      owners: [
+        owner(),
+        owner({ createdAt: new Date('2026-03-29T11:00:00Z') }),
+        owner({ userId: 'user-adopter', userEmail: 'test22@boardsesh.com', createdAt: ADOPTER_AT }),
+      ],
+    }),
+  );
+
+  assert.equal(plan.action, 'refuse');
+  assert.equal(plan.adopter, null);
+  assert.match(plan.reason, /3 ownership rows for 2 users/);
+});
