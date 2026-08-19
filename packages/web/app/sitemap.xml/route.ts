@@ -1,3 +1,5 @@
+import { after } from 'next/server';
+import { refreshClimbSummaryIfStale } from '@/app/lib/seo/sitemap/climb-store';
 import { sitemapIndexRouteHandler } from '@/app/lib/seo/sitemap/shard-registry';
 
 /**
@@ -12,6 +14,30 @@ import { sitemapIndexRouteHandler } from '@/app/lib/seo/sitemap/shard-registry';
  */
 export const dynamic = 'force-dynamic';
 
+/**
+ * Not for the response — the handler bounds every shard at `SHARD_DEADLINE_MS` and
+ * answers in well under a second. This is headroom for the `after()` work below,
+ * which recomputes the climbs summary and takes tens of seconds when it fires.
+ */
+export const maxDuration = 300;
+
 export async function GET(): Promise<Response> {
-  return sitemapIndexRouteHandler();
+  const response = await sitemapIndexRouteHandler();
+
+  // Repopulate the climbs summary store when it is missing or two days stale, on
+  // THIS route: the index is the path that exhibited #4523, and `after()` runs
+  // once the response has flushed, so it cannot touch the 3 s shard deadline or
+  // the latency the crawler sees. `refreshClimbSummaryIfStale` no-ops cheaply on a
+  // fresh store and is single-flighted behind a 15-minute floor per instance.
+  //
+  // It is what makes the fix scheduler-independent: a cron the Railway cutover
+  // (#3795/#3798) forgets to re-point degrades to "healed by the next crawl"
+  // rather than to a sitemap that quietly goes back to dropping the shard.
+  //
+  // `after` from 'next/server', never `waitUntil` from '@vercel/functions' — Next
+  // 16.2 supplies a real awaiter on self-hosted Node too, and the Vercel-only
+  // import would not survive the move off Vercel.
+  after(refreshClimbSummaryIfStale);
+
+  return response;
 }
