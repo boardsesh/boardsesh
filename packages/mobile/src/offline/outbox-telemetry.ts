@@ -84,8 +84,16 @@ async function reviveLockedDeadLetters(db: SqlExecutor): Promise<number> {
     // `last_error` is the raw driver message markDeadLetter stored; the
     // predicate takes a string as readily as an Error.
     if (!isDatabaseLockedError(row.last_error)) continue;
-    await retryDeadLetter(db, row.id);
-    revived += 1;
+    try {
+      await retryDeadLetter(db, row.id);
+      revived += 1;
+    } catch (error) {
+      // Per row, not per sweep: the failure this exists to recover from is a
+      // held write lock, and the sweep runs once per runtime — letting one
+      // contended UPDATE abort the loop would strand every row behind it until
+      // the next launch.
+      if (__DEV__) console.warn('[OutboxTelemetry] could not revive dead letter', row.id, error);
+    }
   }
   return revived;
 }

@@ -182,6 +182,26 @@ describe('recoverAndReportOutboxOnce — lock-caused dead letters', () => {
 
     await expect(recoverAndReportOutboxOnce(db)).resolves.toBeUndefined();
   });
+
+  // The sweep runs once per runtime, so one contended UPDATE aborting the loop
+  // would strand every row behind it until the next launch.
+  it('keeps sweeping the rows behind one that could not be revived', async () => {
+    getDeadLettersMock.mockResolvedValue([
+      deadLetterRow(1, LOCK_ERROR),
+      deadLetterRow(2, LOCK_ERROR),
+      deadLetterRow(3, LOCK_ERROR),
+    ]);
+    retryDeadLetterMock.mockRejectedValueOnce(new Error('database is locked')).mockResolvedValue(undefined);
+
+    await recoverAndReportOutboxOnce(db);
+
+    expect(retryDeadLetterMock).toHaveBeenCalledTimes(3);
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineOutboxBacklogDetected,
+      // Only the two that actually went back in the queue are counted.
+      expect.objectContaining({ deadLettersRevived: 2 }),
+    );
+  });
 });
 
 describe('reportOutboxDiscardedOnSignOut', () => {
