@@ -238,9 +238,11 @@ export { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from './db/migration
 export type { Migration } from './db/migrations';
 export {
   OFFLINE_DB_BUSY_TIMEOUT_MS,
+  OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS,
   OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
   OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS,
   applyBusyTimeout,
+  beginImmediateWrite,
   configureMainConnection,
 } from './db/pragmas';
 

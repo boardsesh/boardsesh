@@ -12,7 +12,9 @@ import {
   deleteUserCheckpoints,
   deleteAllSyncMeta,
   applyBusyTimeout,
+  beginImmediateWrite,
   classifySqliteLockError,
+  OFFLINE_DB_BUSY_TIMEOUT_MS,
   configureMainConnection,
   vacuumDatabase,
   BOARD_DATA_TABLES,
@@ -487,7 +489,14 @@ export async function purgeLocalDataForSignOut(db: SQLiteDatabase): Promise<Sign
     // Same lock guard as clearUserData: this runs on its own connection alongside
     // in-flight sync reads/writes, so wait for the write lock rather than failing
     // instantly with SQLITE_BUSY (BOARDSESH-A9).
-    await applyBusyTimeout(txn);
+    //
+    // IMMEDIATE, not just a timeout (#4332): the two reads below run before the
+    // first DELETE, and expo's `BEGIN` is deferred — so a deferred transaction
+    // would open for READING here, and SQLite never consults `busy_timeout` when
+    // upgrading a read transaction to a write. A contended sign-out would fail in
+    // about a millisecond and leave the previous account's rows on disk, which is
+    // the exact hazard the owner stamp exists to defend against.
+    await beginImmediateWrite(txn, OFFLINE_DB_BUSY_TIMEOUT_MS);
     // Counted here, inside the transaction and immediately before the DELETE, because
     // this is the only place the number is both post-drain and exact. The count the
     // confirmation dialog showed was taken before sign-out's bounded 3s drain, so it

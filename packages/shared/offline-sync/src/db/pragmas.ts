@@ -5,9 +5,10 @@
 // connection per `withExclusiveTransactionAsync` task (`useNewConnection: true`).
 // That task connection opens a plain deferred `BEGIN` — expo-sqlite's "exclusive"
 // means one JS task owns the connection, NOT SQLite's `BEGIN EXCLUSIVE` — so it
-// takes no lock until its first real statement, which is why applying the timeout
-// as the task's first statement is early enough. Two settings keep these from
-// colliding:
+// takes no lock until its first real statement. Applying the timeout as the task's
+// first statement SETS it early enough; it does not follow that SQLite will ever
+// CONSULT it, which is what `beginImmediateWrite` below exists to fix. Two settings
+// keep these from colliding:
 //
 // - `journal_mode = WAL` PERSISTS in the database file header, so it is set ONCE
 //   on the main connection (configureMainConnection) and every later connection —
@@ -27,8 +28,27 @@ import type { SqlExecutor } from '../database';
  * seconds comfortably covers the longest offline write (a snapshot import or a
  * teardown delete on a large layout) without hanging a foreground interaction if
  * something is genuinely wedged.
+ *
+ * This is the BACKGROUND default — engine writers (pull, teardown, sign-out purge)
+ * have nobody waiting on a tap. A user-facing write takes the shorter
+ * OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS instead.
  */
 export const OFFLINE_DB_BUSY_TIMEOUT_MS = 5000;
+
+/**
+ * The `busy_timeout` for the FIRST attempt of a write a user is waiting on — a
+ * tick from the log-ascent sheet, a favorite, a follow.
+ *
+ * Shorter than the background default on purpose. Until #4332 the timeout was
+ * never consulted at all on this path (see `beginImmediateWrite`), so the real
+ * contention windows were finally measurable only from the retry ladder's own
+ * telemetry: `Offline Local Write Attempt Failed` over 30 days is 17 events with
+ * `elapsedMs` between 174ms and 342ms for a two-attempt ladder — i.e. every
+ * observed holder released inside ~340ms, and 14 of 16 recovered on attempt 2.
+ * 2.5s is a 7x margin over the worst window ever seen, while halving how long a
+ * genuinely wedged file (a VACUUM mid-rebuild) can freeze the sheet.
+ */
+export const OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS = 2500;
 
 /**
  * The `busy_timeout` in force *only* while the one-shot WAL switch is attempted.
@@ -47,7 +67,7 @@ export const OFFLINE_DB_WAL_SWITCH_TIMEOUT_MS = 250;
 
 /**
  * The `busy_timeout` for a RETRY of a local write whose first attempt already
- * waited out the full five seconds. Shorter on purpose: measured import windows
+ * waited out its whole window. Shorter on purpose: measured import windows
  * (`Offline Board Download Completed.importMs`, p50 806ms / max 3.2s over 60
  * days) all fit inside attempt 1, so a second full wait buys almost nothing —
  * this attempt asks "did the lock clear in the retry gap?" and gets out of the
@@ -69,10 +89,64 @@ export const OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS = 1000;
  * connection, which starts at `busy_timeout = 0`.
  *
  * `timeoutMs` exists for the retry ladder, which shortens the wait on later
- * attempts (see the two constants above). Everything else takes the default.
+ * attempts (see the constants above). Everything else takes the default.
+ *
+ * Setting the timeout is NOT sufficient on its own for a task that reads before
+ * it writes — use `beginImmediateWrite` for those. See its docblock.
  */
 export async function applyBusyTimeout(db: SqlExecutor, timeoutMs = OFFLINE_DB_BUSY_TIMEOUT_MS): Promise<void> {
   await db.execAsync(`PRAGMA busy_timeout = ${timeoutMs}`);
+}
+
+/**
+ * Open a `withExclusiveTransactionAsync` task as a WRITE transaction, with
+ * `busy_timeout` armed. Call it as the task's first statement instead of
+ * `applyBusyTimeout` whenever the task writes — always, if the task reads first.
+ *
+ * `timeoutMs` is REQUIRED rather than defaulted: this helper serves both a
+ * foreground write somebody is watching (OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS)
+ * and a background one nobody is (OFFLINE_DB_BUSY_TIMEOUT_MS), and there is no
+ * default that is right for both. Whichever it defaulted to, half the future call
+ * sites would silently get the wrong wait.
+ *
+ * Why this exists (#4332). expo's wrapper opens a plain deferred `BEGIN`, and a
+ * deferred transaction picks its lock from whatever statement runs first. When
+ * that is a SELECT — every tick and favorite write starts with a `sync_meta` read
+ * for the owner stamp — SQLite opens a READ transaction, and the later INSERT has
+ * to upgrade it. SQLite does not run the busy handler on that upgrade (btree.c's
+ * retry loop is gated on there being no transaction yet), and under WAL a snapshot
+ * conflict (SQLITE_BUSY_SNAPSHOT, 517, which prints as plain code 5) is not
+ * retryable at any timeout. So `busy_timeout` was set and then never consulted:
+ * measured against real SQLite with a second connection holding the write lock,
+ * `BEGIN; PRAGMA busy_timeout=5000; SELECT; INSERT` threw in 1ms, while the
+ * sequence below waited the full 5,049ms and then succeeded once the holder let go.
+ *
+ * The shape mirrors what the snapshot importer already does: close the wrapper's
+ * empty deferred transaction, then re-open it IMMEDIATE so the write lock is taken
+ * (and the busy handler engaged) up front, on a fresh snapshot.
+ *
+ * The catch is MANDATORY, not defensive dressing. expo runs an unconditional
+ * `ROLLBACK` on its error path, and a `ROLLBACK` with no open transaction throws —
+ * that error would REPLACE the lock error, breaking `isDatabaseLockedError`
+ * classification, defeating the retry ladder, and forking the Sentry aggregate the
+ * retry helper goes out of its way to keep intact. Restoring a deferred `BEGIN`
+ * first gives the wrapper something to roll back so the original error survives.
+ */
+export async function beginImmediateWrite(db: SqlExecutor, timeoutMs: number): Promise<void> {
+  // Connection-local, takes no lock, cannot fail — safe inside the empty transaction.
+  await applyBusyTimeout(db, timeoutMs);
+
+  try {
+    // The wrapper's `BEGIN` has taken no locks yet, so this commits nothing.
+    await db.execAsync('COMMIT');
+    await db.execAsync('BEGIN IMMEDIATE');
+  } catch (error) {
+    // Leave a transaction open for expo's unconditional ROLLBACK, whichever of the
+    // two statements failed. If COMMIT was the one that threw we are still inside
+    // the wrapper's transaction and this BEGIN fails harmlessly.
+    await db.execAsync('BEGIN').catch(() => {});
+    throw error;
+  }
 }
 
 /**
