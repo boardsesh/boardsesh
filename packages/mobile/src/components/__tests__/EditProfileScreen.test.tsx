@@ -279,6 +279,18 @@ describe('EditProfileScreen', () => {
       );
     });
     expect(showToastMock).not.toHaveBeenCalledWith('profile.validation.compressionFailed', 'error');
+    expect(routerBackMock).toHaveBeenCalledOnce();
+
+    // The manipulator's own error is what gets reported here, not a synthetic
+    // "empty file" — the two failure shapes stay distinguishable in triage.
+    expect(reportHandledErrorMock).toHaveBeenCalledOnce();
+    const [reportedError, context] = reportHandledErrorMock.mock.calls[0] as [Error, Record<string, unknown>];
+    expect(reportedError.message).toBe('CorruptedImageDataException');
+    expect(context).toMatchObject({
+      level: 'warning',
+      tags: { source: 'avatar-compress' },
+      extra: { compressedBytes: 0, originalBytes: 4 },
+    });
   });
 
   it('tells the user when neither the compressed file nor the picker crop is usable', async () => {
