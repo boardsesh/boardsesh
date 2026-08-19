@@ -22,6 +22,7 @@ import {
   UUIDSchema,
 } from '../../../validation/schemas';
 import { distanceMeters } from '@boardsesh/db/queries';
+import { isClaimableDomain } from '@boardsesh/gym-claim';
 import { logger } from '../../../utils/logger';
 import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
 import { syncLocationGeography } from './location-geography';
@@ -376,6 +377,17 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
   // while looking correct in a logged-in dev session.
   const isClaimed = gym.ownerId !== SYSTEM_BOARD_OWNER_ID;
 
+  // Whether the website on file can drive the self-service email claim. Both
+  // halves of the rule requestGymClaim enforces, in the same order and from the
+  // same helper so the advertised capability can't drift from the gate: the
+  // website has to be a real organisational domain, AND the gym's own owner has
+  // to have put it there (#3431). Viewer-independent, like isClaimed — it
+  // describes the listing, not who is asking, so it stays correct for anonymous
+  // SSR. This carries NO enforcement: the decision lives in requestGymClaim and
+  // stays there. It exists so a claim UI opens the form that can succeed instead
+  // of dead-ending a climber on submit (#4018).
+  const canClaimByDomain = isClaimableDomain(gym.website) && gym.websiteVouchedByOwner;
+
   return {
     uuid: gym.uuid,
     slug: gym.slug,
@@ -412,6 +424,7 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
     canGrantAccess,
     canClaim,
     isClaimed,
+    canClaimByDomain,
   };
 }
 
