@@ -142,6 +142,16 @@ describe('userTicks serial-plan guard', () => {
     expect(state.selectHandles).toEqual(['tx']);
   });
 
+  it('still opens exactly one guarded transaction for an empty logbook', async () => {
+    const ticks = await tickQueries.userTicks(null, { userId: 'user-123', boardType: 'kilter' });
+
+    expect(ticks).toEqual([]);
+    expect(state.transactions).toBe(1);
+    expect(state.executed).toHaveLength(1);
+    expect(state.executed[0]).toMatch(GUARD_PATTERN);
+    expect(state.selectHandles).toEqual(['tx']);
+  });
+
   it('rejects an unknown board type before opening a transaction', async () => {
     await expect(tickQueries.userTicks(null, { userId: 'user-123', boardType: 'nope' })).rejects.toThrow();
 
