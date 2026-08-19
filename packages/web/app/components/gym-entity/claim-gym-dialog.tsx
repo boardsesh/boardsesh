@@ -19,7 +19,6 @@ import CircularProgress from '@mui/material/CircularProgress';
 import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutline';
 import {
   extractDomain,
-  isClaimableDomain,
   emailDomainMatchesWebsite,
   GYM_CLAIM_MESSAGE_MAX_LENGTH,
   GYM_CLAIM_SUPPORT_EMAIL,
@@ -39,6 +38,17 @@ type ClaimGymDialogProps = {
   gymUuid: string;
   gymName: string;
   website?: string | null;
+  /**
+   * `Gym.canClaimByDomain`, straight off the server. BOTH halves of the rule
+   * requestGymClaim enforces: the website is a real (non-free-provider) domain
+   * AND the gym's own owner put it there. Deriving it here from `website` alone
+   * — as this dialog used to — opens the email form on a gym whose website
+   * nobody with ownership vouched for, so the climber fills in a work address
+   * and only the mutation says no (#4018). Required, not defaulted: a missing
+   * value must be a compile error, never a silent `false` that hides the email
+   * path from a gym that can use it.
+   */
+  canClaimByDomain: boolean;
   open: boolean;
   onClose: () => void;
 };
@@ -50,15 +60,23 @@ function graphqlErrorMessage(error: unknown): string | null {
   return response?.errors?.[0]?.message ?? null;
 }
 
-export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClose }: ClaimGymDialogProps) {
+export default function ClaimGymDialog({
+  gymUuid,
+  gymName,
+  website,
+  canClaimByDomain,
+  open,
+  onClose,
+}: ClaimGymDialogProps) {
   const { t } = useTranslation('boards');
   const { token, isLoading: tokenLoading } = useWsAuthToken();
   const router = useRouter();
   const queryClient = useQueryClient();
+  // Still derived locally, and only for display: the domain we print in the
+  // copy and the placeholder. The routing decision is the server's.
   const domain = extractDomain(website);
-  const canUseDomain = isClaimableDomain(website);
 
-  const [mode, setMode] = useState<Mode>(canUseDomain ? 'domain' : 'admin');
+  const [mode, setMode] = useState<Mode>(canClaimByDomain ? 'domain' : 'admin');
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -68,7 +86,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
   const [approved, setApproved] = useState(false);
 
   const reset = useCallback(() => {
-    setMode(canUseDomain ? 'domain' : 'admin');
+    setMode(canClaimByDomain ? 'domain' : 'admin');
     setEmail('');
     setMessage('');
     setSubmitting(false);
@@ -76,7 +94,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
     setSentTo(null);
     setAdminSent(false);
     setApproved(false);
-  }, [canUseDomain]);
+  }, [canClaimByDomain]);
 
   // A single GymDetail/ClaimGymDialog instance is reused across gyms, so re-init
   // every time it opens — otherwise mode/inputs leak from the previously shown gym.
@@ -186,7 +204,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
         <DialogContentText>{t('claimGym.admin.sent')}</DialogContentText>
       </Box>
     );
-  } else if (mode === 'domain' && canUseDomain && domain) {
+  } else if (mode === 'domain' && canClaimByDomain && domain) {
     body = (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <DialogContentText>{t('claimGym.domain.description', { gym: gymName, domain })}</DialogContentText>
@@ -229,7 +247,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
           placeholder={t('claimGym.admin.messagePlaceholder')}
           slotProps={{ htmlInput: { maxLength: GYM_CLAIM_MESSAGE_MAX_LENGTH } }}
         />
-        {canUseDomain && (
+        {canClaimByDomain && (
           <MuiLink
             component="button"
             type="button"
@@ -246,7 +264,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
 
   let primaryAction: React.ReactNode = null;
   if (!succeeded) {
-    if (mode === 'domain' && canUseDomain && domain) {
+    if (mode === 'domain' && canClaimByDomain && domain) {
       primaryAction = (
         <MuiButton
           variant="contained"

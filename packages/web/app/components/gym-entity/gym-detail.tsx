@@ -399,6 +399,7 @@ export default function GymDetail({ gymUuid, open, onClose, onDeleted, anchor = 
           gymUuid={gym.uuid}
           gymName={gym.name}
           website={gym.website}
+          canClaimByDomain={gym.canClaimByDomain}
           open={showClaimDialog}
           onClose={() => setShowClaimDialog(false)}
         />
