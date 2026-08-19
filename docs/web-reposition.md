@@ -407,7 +407,8 @@ gone-with-no-successor, when the edge just moved:
 
 `app/sitemap.ts` submitted 8 static paths × 4 locales — 32 URLs, and not one
 board, gym, setter or playlist. It is gone. `/sitemap.xml` is now a
-`<sitemapindex>` over `/sitemaps/{static,boards,gyms,setters,playlists}.xml`,
+`<sitemapindex>` over `/sitemaps/{static,boards,gyms,playlists}.xml` plus the
+paged shards under `/sitemaps/climbs/N.xml` and `/sitemaps/setters/N.xml`,
 which is what W-23's climb shards plug into.
 
 **`generateSitemaps()` is rejected, on evidence.** `MetadataRoute.Sitemap` can
@@ -432,7 +433,10 @@ as production): 4 public playlists with climbs, 51 listed board configs
 (→ 660 items, 2,640 URLs at all angles — 51 × 15 is the pre-filter upper bound,
 which the MoonBoard 2-angle set and the zero-climb skip bring down to 660),
 108,000 distinct (board, setter) pairs. Only the setters shard would need
-paging, and it ships empty. The cap is enforced rather than merely declared:
+paging, and it shipped empty at W-22 — #4465 later moved it to the paged
+registry rather than filling the fixed builder, precisely because
+`shardRouteHandler` hardcodes `expandAllLocales` and one page of four-locale
+setter rows renders far past `MAX_SHARD_BYTES`. The cap is enforced rather than merely declared:
 `shardRouteHandler` counts the locale-expanded URLs it is about to serve and
 503s past the budget instead of publishing a file Search Console rejects
 wholesale.
@@ -518,14 +522,16 @@ threaded into `fetchPlaylistSitemapRows` or a statement timeout on its query.
 per-shard summaries is what would make 3 s comfortably attainable on a cold
 instance. The climbs summary already has Data Cache plus in-process caching.
 
-**Two shards ship declared-empty, and that is the point.** `gyms.xml` waits on
-#4381's public-gyms enumeration query, which the gym-discovery epic (#4372)
+**Two shards shipped declared-empty, and that was the point.** `gyms.xml` waits
+on #4381's public-gyms enumeration query, which the gym-discovery epic (#4372)
 gates behind draining the duplicate queue — indexing a directory with live
-duplicates is an SEO own-goal. `setters.xml` waits on an SSR fragment for
-`/setter/[setter_username]`, whose first HTML is a spinner today, and on
-`getSetterOgSummary` learning to return null so `/setter/{anything}` stops
-answering 200. Both routes exist and serve a valid empty `<urlset>`, so filling
-them is one builder function away.
+duplicates is an SEO own-goal. `setters.xml` waited on an SSR fragment for
+`/setter/[setter_username]`, whose first HTML was a spinner, and on
+`getSetterOgSummary` learning to return null so `/setter/{anything}` stopped
+answering 200. Both landed in #4473, and #4465 replaced the fixed
+`setters.xml` route with the paged `/sitemaps/setters/N.xml` tree. `gyms.xml`
+still exists and serves a valid empty `<urlset>`, so filling it is one builder
+function away.
 
 **The boards shard carries no `<lastmod>`, deliberately.** There is no per-config
 content timestamp in the data, `<lastmod>` is optional in the protocol, and

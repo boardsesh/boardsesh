@@ -27,6 +27,10 @@ vi.mock('../board-config-source', () => ({
 vi.mock('../playlist-query', () => ({
   fetchPlaylistSitemapRows: async () => [{ uuid: 'abc-123', updatedAt: new Date('2026-04-30T00:00:00.000Z') }],
 }));
+vi.mock('../setter-query', () => ({
+  fetchSetterSitemapSummary: async () => ({ itemCount: 0, lastModified: null }),
+  buildSetterSitemapItems: async () => [],
+}));
 
 const LAST_MODIFIED = new Date('2026-05-04T11:22:33.000Z');
 
@@ -123,10 +127,9 @@ describe('the paged climbs shard', () => {
     expect(pagedSitemapShardEnabled({})).toBe(true);
   });
 
-  it('registers one paged shard, default-locale-only, on its own cache window', () => {
-    expect(PAGED_SHARD_REGISTRY).toHaveLength(1);
-    const [shard] = PAGED_SHARD_REGISTRY;
-    expect(shard.id).toBe('climbs');
+  it('registers the climbs shard as default-locale-only, on its own cache window', () => {
+    const shard = PAGED_SHARD_REGISTRY.find((candidate) => candidate.id === 'climbs')!;
+    expect(shard).toBeDefined();
     expect(shard.routeDirectory).toBe('climbs');
     expect(shard.expansion).toBe('default-locale-only');
     expect(shard.urlsPerShard).toBe(CLIMB_URLS_PER_SHARD);

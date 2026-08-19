@@ -28,7 +28,8 @@ const KILTER_CONFIG: PopularBoardConfig = {
 const boardConfigs = vi.hoisted(() => ({ shouldThrow: false, empty: false, hang: false, delayMs: 0 }));
 const playlistRows = vi.hoisted(() => ({ count: 1, uuidLength: 0, shouldThrow: false, hang: false, delayMs: 0 }));
 const climbSummary = vi.hoisted(() => ({ itemCount: 25_000, shouldThrow: false, hang: false, delayMs: 0 }));
-/** `static`, `gyms` and `setters` are pure builders — flags let the full index fail, or stall, at once. */
+const setterSummary = vi.hoisted(() => ({ itemCount: 12_000, shouldThrow: false, hang: false }));
+/** `static` and `gyms` are pure builders — flags let the full index fail, or stall, at once. */
 const pureBuilders = vi.hoisted(() => ({ shouldThrow: false, hang: false, delayMs: 0 }));
 
 /** Never settles: the failure mode a try/catch cannot see. */
@@ -99,10 +100,18 @@ vi.mock('../gym-entries', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../gym-entries')>();
   return { ...actual, buildGymEntries: () => pureBuilder(actual.buildGymEntries) };
 });
-vi.mock('../setter-entries', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../setter-entries')>();
-  return { ...actual, buildSetterEntries: () => pureBuilder(actual.buildSetterEntries) };
-});
+vi.mock('../setter-query', () => ({
+  fetchSetterSitemapSummary: async () => {
+    if (setterSummary.hang) {
+      return forever<never>();
+    }
+    if (setterSummary.shouldThrow) {
+      throw new Error('setters summary unavailable');
+    }
+    return { itemCount: setterSummary.itemCount, lastModified: new Date('2026-05-04T00:00:00.000Z') };
+  },
+  buildSetterSitemapItems: async () => [],
+}));
 
 vi.mock('../climb-store', () => ({
   fetchClimbShardSummary: async () => {
@@ -151,6 +160,7 @@ afterEach(() => {
   Object.assign(boardConfigs, { shouldThrow: false, empty: false, hang: false, delayMs: 0 });
   Object.assign(playlistRows, { count: 1, uuidLength: 0, shouldThrow: false, hang: false, delayMs: 0 });
   Object.assign(climbSummary, { itemCount: 25_000, shouldThrow: false, hang: false, delayMs: 0 });
+  Object.assign(setterSummary, { itemCount: 12_000, shouldThrow: false, hang: false });
   Object.assign(pureBuilders, { shouldThrow: false, hang: false, delayMs: 0 });
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
@@ -257,8 +267,10 @@ describe('buildSitemapIndexXml', () => {
     // "nobody has published a gym yet" and "the gyms query regressed to []" are
     // indistinguishable from here, so the omission is logged rather than silent.
     expect(xml).not.toContain('/sitemaps/gyms.xml');
-    expect(xml).not.toContain('/sitemaps/setters.xml');
-    expect(warnings.join(' ')).toContain('gyms, setters');
+    expect(warnings.join(' ')).toContain('gyms');
+    // `setters` is a paged, data-backed shard now, so it IS listed — one entry
+    // per page, derived from its summary rather than hardcoded.
+    expect(xml).toContain('https://www.boardsesh.com/sitemaps/setters/1.xml');
     // An empty shard is not a degradation: nothing failed, so the response keeps
     // the full cache window.
     expect(degradedShards).toEqual([]);
@@ -365,6 +377,7 @@ describe('buildSitemapIndexXml', () => {
     boardConfigs.shouldThrow = true;
     playlistRows.shouldThrow = true;
     climbSummary.shouldThrow = true;
+    setterSummary.shouldThrow = true;
     pureBuilders.shouldThrow = true;
 
     const response = await sitemapIndexRouteHandler();
@@ -428,6 +441,7 @@ describe('buildSitemapIndexXml', () => {
     boardConfigs.shouldThrow = true;
     playlistRows.shouldThrow = true;
     climbSummary.shouldThrow = true;
+    setterSummary.shouldThrow = true;
     pureBuilders.shouldThrow = true;
 
     await expect(buildSitemapIndexXml()).rejects.toThrow('refusing to publish an empty index');

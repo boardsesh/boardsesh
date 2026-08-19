@@ -14,10 +14,11 @@ import {
 import { buildGymEntries } from './gym-entries';
 import { playlistRowsToItems } from './playlist-entries';
 import { fetchPlaylistSitemapRows } from './playlist-query';
-import { buildSetterEntries } from './setter-entries';
+import { buildSetterSitemapItems, fetchSetterSitemapSummary } from './setter-query';
 import { buildStaticEntries } from './static-entries';
 import {
   CLIMB_URLS_PER_SHARD,
+  SETTER_URLS_PER_SHARD,
   MAX_SHARD_BYTES,
   MAX_URLS_PER_SHARD,
   pagedShardByteBudget,
@@ -27,7 +28,7 @@ import {
   type SitemapUrlEntry,
 } from './sitemap-xml';
 
-export type ShardId = 'static' | 'boards' | 'gyms' | 'setters' | 'playlists';
+export type ShardId = 'static' | 'boards' | 'gyms' | 'playlists';
 
 export type SitemapShard = {
   id: ShardId;
@@ -40,9 +41,9 @@ export type SitemapShard = {
    * shard must 503 instead of publishing an empty `<urlset>` that tells Google
    * those pages were deleted.
    *
-   * False for `gyms`/`setters` (declared-empty by design) and for `playlists`,
-   * where zero public playlists holding a climb is a legitimate state — failing
-   * closed there would take the whole index down because nobody shared a list.
+   * False for `gyms` (declared-empty by design) and for `playlists`, where zero
+   * public playlists holding a climb is a legitimate state — failing closed
+   * there would take the whole index down because nobody shared a list.
    */
   expectsUrls: boolean;
   /**
@@ -79,15 +80,6 @@ export const SHARD_REGISTRY: readonly SitemapShard[] = [
     build: async () => boardConfigsToItems(await getBoardsShardConfigsOrThrow()),
   },
   { id: 'gyms', path: '/sitemaps/gyms.xml', expectsUrls: false, build: async () => buildGymEntries() },
-  {
-    id: 'setters',
-    path: '/sitemaps/setters.xml',
-    expectsUrls: false,
-    // Setter pages cross-canonicalise too. Declared-empty today, so this is
-    // inert — set now so a future population cannot reintroduce the twins.
-    expansion: 'default-locale-only',
-    build: async () => buildSetterEntries(),
-  },
   {
     id: 'playlists',
     path: '/sitemaps/playlists.xml',
@@ -305,7 +297,7 @@ export async function shardRouteHandler(id: ShardId): Promise<Response> {
  */
 export type ShardExpansion = 'all-locales' | 'default-locale-only';
 
-export type PagedShardId = 'climbs';
+export type PagedShardId = 'climbs' | 'setters';
 
 /**
  * The shard's total item count and freshness.
@@ -395,6 +387,29 @@ export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
     buildPage: (page: number) => buildClimbShardPage(page),
     pageLastmods: () => fetchStoredClimbPageLastmods(),
     sourceHeader: CLIMB_SOURCE_HEADER,
+  },
+  {
+    id: 'setters',
+    routeDirectory: 'setters',
+    pagePath: (page: number) => `/sitemaps/setters/${page}.xml`,
+    // Paged and default-locale-only for the same reason the climb shards are,
+    // and this is why `setters` could not simply have its fixed builder filled:
+    // `shardRouteHandler` hardcodes `expandAllLocales`, and a setter `<url>`
+    // fanned out to four locales with a five-entry `xhtml:link` block on each
+    // runs roughly 2.4 kB per item — about 27 MB on one 11,250-item page,
+    // against a 4 MB response ceiling.
+    expansion: 'default-locale-only',
+    urlsPerShard: SETTER_URLS_PER_SHARD,
+    // A setters page that renders zero URLs is a regressed query, not a state:
+    // the summary already said there were items on it.
+    expectsUrls: true,
+    cacheControl: CLIMB_CACHE_CONTROL,
+    summary: () => fetchSetterSitemapSummary(),
+    buildPage: async (page: number) => {
+      const items = await buildSetterSitemapItems();
+      const start = (page - 1) * SETTER_URLS_PER_SHARD;
+      return { items: items.slice(start, start + SETTER_URLS_PER_SHARD), totalItems: items.length };
+    },
   },
 ];
 
