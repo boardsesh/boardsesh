@@ -16,6 +16,7 @@ import { DraftChip } from '../DraftChip';
 import { ProjectChip } from '../ProjectChip';
 import { useTheme } from '../../providers/theme-provider';
 import { PLAY_HEADER_TRAILING_MIN_WIDTH, WALL_STATE_PILL_TOUCH_HEIGHT } from '../../theme/layout';
+import { PlayDrawerPlaylistChips } from './PlayDrawerPlaylistChips';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { resolveClimbRuleLabels } from './climb-rule-labels';
 import { useGradeFormat } from '../../hooks/use-grade-format';
@@ -80,6 +81,11 @@ type PlayDrawerHeaderProps = {
   /** The angle currently being viewed. Compared against `statsAngle` to decide
    *  whether to show the "set at N°" marker under the grade. */
   angle?: number;
+  /** Playlist-membership tags, rendered under the subtitle. Must occupy a
+   *  constant height per climb (see `PlayDrawerPlaylistChips`) — the board art
+   *  below is `flex: 1` in a fixed-height first screen, so a header that grew for
+   *  one climb and shrank for the next would resize the board on every swipe. */
+  playlistChips?: ReactNode;
 };
 
 export const PlayDrawerHeader = memo(function PlayDrawerHeader({
@@ -103,6 +109,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   onPressSetter,
   statsAngle,
   angle,
+  playlistChips,
 }: PlayDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
@@ -220,6 +227,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
               {ruleLabels.parts.join(' · ')}
             </Text>
           ) : null}
+          {playlistChips}
         </>
       }
       trailingMinWidth={PLAY_HEADER_TRAILING_MIN_WIDTH}
@@ -280,6 +288,9 @@ type LivePlayDrawerHeaderProps = {
   leading?: ReactNode;
   onLongPressName?: () => void;
   onPressSetter?: () => void;
+  /** Whether this header may fetch the climb's playlist membership. True for the
+   *  climb on screen, false for the swipe "peek" (see `PlayDrawerPlaylistChips`). */
+  fetchPlaylistMembership?: boolean;
 };
 
 /** The only play-header child subscribed to the exact live-stat key. */
@@ -291,6 +302,7 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
   leading,
   onLongPressName,
   onPressSetter,
+  fetchPlaylistMembership = false,
 }: LivePlayDrawerHeaderProps) {
   const { resolveGrade } = useDisplayGrade();
   const { gradeFormat } = useGradeFormat();
@@ -339,6 +351,14 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
       onLongPressName={onLongPressName}
       statsAngle={climb.statsAngle}
       angle={angle}
+      playlistChips={
+        <PlayDrawerPlaylistChips
+          climbUuid={climb.uuid}
+          boardName={boardName}
+          layoutId={layoutId}
+          fetchMembership={fetchPlaylistMembership}
+        />
+      }
     />
   );
 });
