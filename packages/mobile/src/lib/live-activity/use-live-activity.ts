@@ -58,6 +58,25 @@ type UseLiveActivityOptions = {
 // presence surface; everything else short-circuits at the plugin layer.
 const supportsSessionPresence = Platform.OS === 'ios' || Platform.OS === 'android';
 
+// iOS keeps a copy of the queue + current index in the App Group so the native
+// BoardBleManager can drive the wall without JS (widget intents, CoreBluetooth
+// state restoration). It relights from that copy the instant a BLE link becomes
+// write-ready — and an EMPTY copy does not mean "leave the wall alone", it means
+// "clear it": displayCurrentItemOnBleQueue falls through to clearBoardOnBleQueue
+// when the current index is out of range.
+//
+// Live Activities only run for explicitly started sessions, so climbers who just
+// connect and climb — the large majority — had an empty copy, and every connect
+// darked their board (#4413). Mirror the shared state on iOS whether or not an
+// Activity is running: the ActivityKit push that rides along is a no-op when
+// there is no activity (LiveActivityManager.updateActivity returns early), and
+// the native relight then paints the current climb instead of a clear-all.
+//
+// Android's foreground service has no native BLE relight — every write there
+// goes through JS — so it stays gated on a real session and never raises a
+// notification for a solo queue.
+const mirrorsSharedQueueStateWhenIdle = Platform.OS === 'ios';
+
 // Retry budget for a failed native start (transient ActivityKit rejections).
 // Attempt n waits n × START_RETRY_DELAY_MS; the budget resets on a successful
 // start or a deactivation.
@@ -392,8 +411,11 @@ export function useLiveActivity({
   const queueSyncedRef = useRef(false);
 
   // Effect 1: Queue sync — sends the full queue when items change.
+  // Also runs while no Activity is live on iOS, so the App-Group copy the native
+  // BLE relight reads is never empty (see mirrorsSharedQueueStateWhenIdle).
   useEffect(() => {
-    if (!isActiveRef.current || !stableBoard) return;
+    if (!isActiveRef.current && !mirrorsSharedQueueStateWhenIdle) return;
+    if (!stableBoard) return;
 
     const displayItem = currentClimbRef.current ?? (queueRef.current.length > 0 ? queueRef.current[0] : null);
     if (!displayItem) return;
@@ -439,13 +461,18 @@ export function useLiveActivity({
     holderDisplayName,
     isPartySession,
     serializedQueue,
+    // A session ending wipes the App-Group queue keys (endSession), so re-push
+    // the mirrored copy the moment shouldBeActive flips — otherwise the next BLE
+    // connect reads an empty queue and clears the wall.
+    shouldBeActive,
     stableBoard,
     widgetNavigationAllowed,
   ]);
 
   // Effect 2: Climb navigation — lightweight update with only scalar data.
   useEffect(() => {
-    if (!isActiveRef.current || !stableBoard) return;
+    if (!isActiveRef.current && !mirrorsSharedQueueStateWhenIdle) return;
+    if (!stableBoard) return;
     if (queueSyncedRef.current) return;
 
     const displayItem = currentClimbQueueItem ?? (queue.length > 0 ? queue[0] : null);
@@ -481,6 +508,8 @@ export function useLiveActivity({
     holderDisplayName,
     isPartySession,
     queue,
+    // See Effect 1: a session end wipes the shared copy, so re-push on the flip.
+    shouldBeActive,
     stableBoard,
     widgetNavigationAllowed,
   ]);
