@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Linking, Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { ListRow } from '../ListRow';
 import { SwitchRow } from '../SwitchRow';
 import { useTheme } from '../../providers/theme-provider';
+import { openAppSettings } from '../../lib/open-app-settings';
 import { borderRadius, spacing } from '../../theme/tokens';
 import {
   getAppleHealthAuthorizationStatus,
@@ -98,7 +99,7 @@ export function AppleHealthCard() {
             showChevron
             showSeparator={false}
             onPress={() => {
-              void Linking.openSettings();
+              void openAppSettings();
             }}
           />
         </>

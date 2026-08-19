@@ -170,6 +170,7 @@
       "subtitle": "Tap a gym to use its board",
       "locationNeeded": "Share your location to find gyms nearby",
       "grantLocation": "Use my location",
+      "locationBlocked": "Your browser is keeping your location to itself. Type a town in the search box instead — that works everywhere.",
       "empty": "No gyms nearby yet",
       "noBoards": "No boards here yet",
       "boardCount_one": "{{count}} board",

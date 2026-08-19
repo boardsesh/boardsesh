@@ -170,6 +170,7 @@
       "subtitle": "Toca un rocódromo para usar su plafón",
       "locationNeeded": "Comparte tu ubicación para encontrar rocódromos cerca",
       "grantLocation": "Usar mi ubicación",
+      "locationBlocked": "Tu navegador no comparte tu ubicación. Escribe una ciudad en el buscador: eso funciona siempre.",
       "empty": "Aún no hay rocódromos cerca",
       "noBoards": "Aún no hay plafones aquí",
       "boardCount_one": "{{count}} plafón",

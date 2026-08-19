@@ -170,6 +170,7 @@
       "subtitle": "Tipp auf eine Halle, um ihr Board zu nutzen",
       "locationNeeded": "Teil deinen Standort, um Hallen in der Nähe zu finden",
       "grantLocation": "Meinen Standort nutzen",
+      "locationBlocked": "Dein Browser gibt deinen Standort nicht raus. Tipp stattdessen einen Ort ins Suchfeld, das geht überall.",
       "empty": "Noch keine Hallen in der Nähe",
       "noBoards": "Hier noch keine Boards",
       "boardCount_one": "{{count}} Board",
