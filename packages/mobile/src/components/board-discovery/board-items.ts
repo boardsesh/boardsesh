@@ -2,7 +2,7 @@
 // single DiscoveryBoardItem the carousel renders. Keeps the screen free of
 // per-shape branching.
 
-import type { BoardName, UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
+import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
 import { toBoardName, normaliseSetIds } from '@boardsesh/board-config';
 import type { DiscoveryBoardItem } from './BoardDiscoveryCard';
 import { boardTypeLabel } from './board-builder-labels';
