@@ -25,6 +25,10 @@ const WORKER_DB_PREFIX = 'boardsesh_backend_test';
  * It needs a variable of its own rather than reusing DATABASE_URL: `test.env` in
  * vite.config.ts writes DATABASE_URL during worker init, before setupFiles import
  * this module, so an exported DATABASE_URL is overwritten before we read it.
+ *
+ * Point it at a throwaway server only. Whatever it names inherits the whole test
+ * harness, including globalSetup's `dropStaleWorkerDatabases`, which DROPs every
+ * `boardsesh_backend_test_w*` database it finds there.
  */
 function getConfiguredDatabaseUrl(): string {
   return (
