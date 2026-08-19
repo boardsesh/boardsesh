@@ -137,13 +137,19 @@ export async function dispatchMoonboardPacket(
   return true;
 }
 
-// Whether the app is in the foreground right now. Native re-lights the wall on
-// every configureBoard so a colour change lands immediately, but a background
-// BLE wake also boots React Native — and the adopt path below pushes a config as
-// soon as it adopts. Passing the real foreground state lets native keep the wall
-// dark when nobody asked for the connection (#4499).
+// Whether the app is on screen right now. Native re-lights the wall on every
+// configureBoard so a colour change lands immediately, but a background BLE wake
+// also boots React Native — and the adopt path below pushes a config as soon as
+// it adopts. Passing the real foreground state lets native keep the wall dark
+// when nobody asked for the connection (#4499).
+//
+// `inactive` counts as on screen: iOS reports it while a call banner or the app
+// switcher is overlaid, and the user is still looking at us. Only `background`
+// is the wake-with-nobody-there case — a CoreBluetooth background launch reports
+// `background`, never `inactive` — so widening here can't reopen the bug, and it
+// stops a colour change landing during a call overlay from being dropped.
 function isAppActive(): boolean {
-  return AppState.currentState === 'active';
+  return AppState.currentState === 'active' || AppState.currentState === 'inactive';
 }
 
 // MoonBoard grid rows for the native configureBoard payload, so native

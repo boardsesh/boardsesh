@@ -2034,12 +2034,20 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // write is skipped — but the gate's verdict is still recorded, so
             // `configure(_:)` and the diagnostics see this connection's
             // provenance rather than the previous connection's.
-            implicitRelightAuthorizedForConnection = Self.shouldPerformImplicitRelight(
+            let authorized = Self.shouldPerformImplicitRelight(
                 origin: connectRequestOrigin,
                 requestedAt: connectRequestedAt,
                 now: Date(),
                 maxRequestAge: implicitRelightMaxRequestAge
             )
+            implicitRelightAuthorizedForConnection = authorized
+            // The counters track writes attempted vs written, and this branch
+            // issues neither — the intent's explicit displayCurrentItem does.
+            // Log the verdict anyway so Console.app still shows what the gate
+            // decided for this connection.
+            if !authorized {
+                logger.error("Implicit BLE re-light unauthorised for \(connectedDeviceId, privacy: .public) (origin=\(self.connectRequestOrigin?.rawValue ?? "none", privacy: .public)); an awaiting intent owns this write")
+            }
         } else {
             performImplicitRelightIfAuthorizedOnBleQueue(deviceId: connectedDeviceId)
         }

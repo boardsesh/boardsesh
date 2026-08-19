@@ -1731,6 +1731,22 @@ describe('useBoardBluetooth native connection adoption', () => {
     }
   });
 
+  it('tells native the app was on screen for a deliberate connect, including during a call overlay', async () => {
+    const adapter = makeAdoptableAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    // `inactive` is iOS's "on screen but not receiving events" — a call banner
+    // or the app switcher. The user is still looking at the app.
+    mockAppState.currentState = 'inactive';
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    expect(adapter.configureBoard).toHaveBeenCalledWith(expect.objectContaining({ appActive: true }));
+  });
+
   it('tells native the app was in the foreground when the user changes colours on screen', async () => {
     const adapter = makeAdoptableAdapter();
     vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
