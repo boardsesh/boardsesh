@@ -312,6 +312,7 @@ function BluetoothAutoSender({
   onWallConfirmed,
   reassertNonce,
   mirrorNonce,
+  connectionGeneration,
   connectInitialSendRef,
   lastPhysicalFramesRef,
   mirrorIntentRef,
@@ -322,6 +323,7 @@ function BluetoothAutoSender({
   onUnresolvedCurrentClimb,
   consumeBackgroundAdoptSendGate,
   onBackgroundAdoptSendSuppressed,
+  onDuplicateSendSkipped,
 }: {
   sendFramesToBoard: SendFramesToBoard;
   /**
@@ -334,6 +336,12 @@ function BluetoothAutoSender({
   // Changes when the mirror intent slot changes. Only a dep, so the drain
   // re-runs and its own signature dedup decides whether a write is due.
   mirrorNonce: number;
+  // The physical BLE connection this sender is writing over. The dedup caches
+  // below describe a specific link's wall, so a new link must retire them: a
+  // connect that lands while the app already believed itself connected renders
+  // no isConnected false→true edge, leaves this component mounted, and would
+  // otherwise keep suppressing writes over a board whose LEDs are no longer ours.
+  connectionGeneration: number;
   // One-shot seed: what connect() already wrote as initialFrames, so the
   // freshly mounted AutoSender doesn't repeat a byte-identical first send.
   connectInitialSendRef: React.MutableRefObject<BleConnectInitialSend | null>;
@@ -375,6 +383,11 @@ function BluetoothAutoSender({
   consumeBackgroundAdoptSendGate: () => boolean;
   // Reports a refused write so the gate is measurable in the field.
   onBackgroundAdoptSendSuppressed: (item: ClimbQueueItem) => void;
+  // Called when a re-broadcast was suppressed because the wall already shows
+  // these exact frames. The only suppression that emitted nothing at all, which
+  // is why a stuck dedup was invisible in analytics (#4413). `wallConfirmed`
+  // records whether the physical-frames check let the confirm through.
+  onDuplicateSendSkipped: (item: ClimbQueueItem, wallConfirmed: boolean) => void;
 }) {
   type AutoSendRequest = {
     item: ClimbQueueItem;
@@ -412,6 +425,10 @@ function BluetoothAutoSender({
   useEffect(() => {
     onBackgroundAdoptSendSuppressedRef.current = onBackgroundAdoptSendSuppressed;
   }, [onBackgroundAdoptSendSuppressed]);
+  const onDuplicateSendSkippedRef = useRef(onDuplicateSendSkipped);
+  useEffect(() => {
+    onDuplicateSendSkippedRef.current = onDuplicateSendSkipped;
+  }, [onDuplicateSendSkipped]);
   const queueRef = useRef(state.queue);
   queueRef.current = state.queue;
   // Dedup spill reports: the async drain can re-enter for the same incompatible
@@ -443,6 +460,14 @@ function BluetoothAutoSender({
   // signature, and clearing it again at the top of the next loop iteration is
   // what actually forces the re-push.
   const reassertPendingRef = useRef(false);
+  // Last connection generation acted on. Initialised from the prop so a first
+  // mount is NOT treated as a link change — that would clear the connect-initial
+  // -send seed and repeat connect()'s write (plus its success haptic).
+  const lastConnectionGenerationRef = useRef(connectionGeneration);
+  // Set when a new physical link is seen, consumed inside the drain loop (same
+  // shape as reassertPendingRef, for the same reason: a link change landing
+  // *during* an in-flight write must survive that write re-setting the caches).
+  const connectionChangedPendingRef = useRef(false);
 
   // Single AbortController scoped to the AutoSender's lifetime. Aborted
   // exactly once on unmount so the in-flight drain loop cancels the
@@ -469,6 +494,16 @@ function BluetoothAutoSender({
     if (reassertNonce !== lastReassertNonceRef.current) {
       lastReassertNonceRef.current = reassertNonce;
       reassertPendingRef.current = true;
+    }
+
+    // A new physical link means the wall's contents are unknown to us: the box
+    // may have been taken over and re-lit by another climber, and on iOS the
+    // native BoardBleManager relights from App-Group state at connection-ready.
+    // Retire the dedup caches so the current climb is written again rather than
+    // suppressed as "already up there".
+    if (connectionGeneration !== lastConnectionGenerationRef.current) {
+      lastConnectionGenerationRef.current = connectionGeneration;
+      connectionChangedPendingRef.current = true;
     }
 
     const sendRequest: AutoSendRequest = {
@@ -550,6 +585,20 @@ function BluetoothAutoSender({
           }
           lastUnresolvedReportedUuidRef.current = null;
 
+          // A link change retires everything we believed about the wall. Placed
+          // BEFORE the seed block on purpose: the seed needs
+          // `lastSentSignatureRef.current === null`, so clearing here keeps a
+          // connect that DID write initialFrames suppressing its own duplicate
+          // (and its second haptic), while a connect that wrote nothing still
+          // gets a real write. lastPhysicalFramesRef goes too — across a new
+          // link the wall's contents are unknown, and the dedup branch below
+          // must not report a phantom climb to board presence over a dark wall.
+          if (connectionChangedPendingRef.current) {
+            connectionChangedPendingRef.current = false;
+            lastSentSignatureRef.current = null;
+            lastPhysicalFramesRef.current = null;
+          }
+
           // #4499 off-screen-adopt gate. The wall must not light for a
           // connection nobody asked for, and adopting one boots this component
           // with a restored queue and a null dedup signature — the write would
@@ -620,9 +669,12 @@ function BluetoothAutoSender({
             // but only CONFIRM it if the wall still physically shows these frames.
             // A relight/undo may have changed the wall out from under us, in which
             // case confirming here would report a climb that isn't lit (a phantom).
-            if (physicalFramesSignature(item.climb.frames, effectiveMirrored) === lastPhysicalFramesRef.current) {
+            const wallConfirmed =
+              physicalFramesSignature(item.climb.frames, effectiveMirrored) === lastPhysicalFramesRef.current;
+            if (wallConfirmed) {
               onWallConfirmedRef.current(item);
             }
+            onDuplicateSendSkippedRef.current(item, wallConfirmed);
             toSend = pendingSendRef.current;
             pendingSendRef.current = null;
             continue;
@@ -664,6 +716,9 @@ function BluetoothAutoSender({
     };
 
     void drain();
+    // connectionGeneration is a dep so a NEW physical link re-drives the drain
+    // even when the current climb never changed — the reconnect-without-a-
+    // rendered-disconnect case, where nothing else in this list moves.
   }, [
     currentClimbQueueItem,
     sendFramesToBoard,
@@ -672,6 +727,7 @@ function BluetoothAutoSender({
     colorSignature,
     encodingSignature,
     sessionId,
+    connectionGeneration,
   ]);
 
   return null;
@@ -921,6 +977,12 @@ export function BluetoothProvider({
     const intent = mirrorIntentRef.current;
     if (intent != null && intent.climbUuid !== climbUuid) mirrorIntentRef.current = null;
   }, []);
+  // Monotonic id of the physical BLE link the auto-sender is writing over, fed
+  // from BleConnectionHandle.generation. The auto-sender is mounted on the
+  // rendered `isConnected` flag, which a connect that starts while the app
+  // already believes it is connected never flips — so without this the sender's
+  // "already on the wall" caches would outlive the link they describe.
+  const [connectionGeneration, setConnectionGeneration] = useState(0);
   const pendingReportSignatureRef = useRef<string | null>(null);
   const pendingWallReportRef = useRef<PendingWallReport | null>(null);
   const pendingPresenceResolveRef = useRef(false);
@@ -1145,6 +1207,12 @@ export function BluetoothProvider({
   const handleConnectSuccess = useCallback(
     (serial: string | null, connection: BleConnectionHandle) => {
       wallOperationEpochRef.current += 1;
+      // Publish the new physical link to the auto-sender. Called on BOTH
+      // generation-creating paths (connect() and the iOS native adoption), right
+      // after setIsConnected(true) — so it also fires on a connect that produced
+      // no rendered isConnected edge, which is the case the auto-sender's own
+      // mount/unmount cycle cannot see. Monotonic: never reset on disconnect.
+      setConnectionGeneration(connection.generation);
       lastAcceptedReportSignatureRef.current = null;
       lastAcceptedWallSignatureRef.current = null;
       pendingReportSignatureRef.current = null;
@@ -2037,6 +2105,24 @@ export function BluetoothProvider({
     });
   }, []);
 
+  // The auto-sender suppressed a byte-identical re-broadcast because the wall
+  // already shows these frames. Until now this was the one suppression that
+  // emitted nothing, so a dedup stuck over a wall someone else had taken looked
+  // exactly like "no send was ever requested" in analytics (#4413).
+  // `wallConfirmed` false means we skipped the write AND withheld the confirm —
+  // i.e. we believe the wall no longer shows this climb.
+  const handleDuplicateSendSkipped = useCallback((item: ClimbQueueItem, wallConfirmed: boolean) => {
+    track(SHARED_EVENTS.ClimbSentToBoardSkipped, {
+      skipReason: 'dedup',
+      boardName: boardNameRef.current,
+      layoutId: layoutIdRef.current,
+      sizeId: sizeIdRef.current,
+      climbUuid: item.climb.uuid,
+      wallConfirmed,
+      inSession: sessionIdRef.current != null,
+    });
+  }, []);
+
   // Bumped by `reassertWall()` to force the auto-sender to re-push the current
   // climb once, bypassing the byte-identical dedup.
   const [reassertNonce, setReassertNonce] = useState(0);
@@ -2272,6 +2358,7 @@ export function BluetoothProvider({
             onWallConfirmed={handleWallConfirmed}
             reassertNonce={reassertNonce}
             mirrorNonce={mirrorNonce}
+            connectionGeneration={connectionGeneration}
             connectInitialSendRef={connectInitialSendRef}
             lastPhysicalFramesRef={lastPhysicalFramesRef}
             mirrorIntentRef={mirrorIntentRef}
@@ -2282,6 +2369,7 @@ export function BluetoothProvider({
             activeConfig={currentBoardConfig}
             onSkipSpillClimb={handleSkipSpillClimb}
             onUnresolvedCurrentClimb={handleUnresolvedCurrentClimb}
+            onDuplicateSendSkipped={handleDuplicateSendSkipped}
           />
         )}
         {/* Reconciles a virtual hold with the server's single holder slot, and
