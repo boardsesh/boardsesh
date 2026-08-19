@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { distanceMeters, isGenericGymName, normalizeGymName } from '@boardsesh/db/queries';
+import { isClaimableDomain } from '@boardsesh/gym-claim';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
@@ -48,6 +49,8 @@ export type GymNameMatch = {
   name: string;
   address: string | null;
   website: string | null;
+  /** Whether the gym's OWNER put `website` on the listing — the provenance half of the domain-claim rule (#3431). */
+  websiteVouchedByOwner: boolean;
   ownerId: string;
   latitude: number | null;
   longitude: number | null;
@@ -62,6 +65,7 @@ const gymColumns = {
   name: dbSchema.gyms.name,
   address: dbSchema.gyms.address,
   website: dbSchema.gyms.website,
+  websiteVouchedByOwner: dbSchema.gyms.websiteVouchedByOwner,
   ownerId: dbSchema.gyms.ownerId,
   latitude: dbSchema.gyms.latitude,
   longitude: dbSchema.gyms.longitude,
@@ -537,6 +541,12 @@ export type SimilarGymResult = {
   distanceMeters: number | null;
   ownerType: 'SYSTEM' | 'USER';
   isClaimable: boolean;
+  /**
+   * Whether the website on file can drive the self-service email claim — a real
+   * (non-free-provider) domain the gym's OWNER put there. Answers a different
+   * question from `isClaimable`, which is about the viewer's standing.
+   */
+  canClaimByDomain: boolean;
   providerOrigins: string[];
 };
 
@@ -575,6 +585,9 @@ export const socialGymMatchQueries = {
       distanceMeters: candidate.distanceMeters,
       ownerType: candidate.ownerId === SYSTEM_BOARD_OWNER_ID ? 'SYSTEM' : 'USER',
       isClaimable: claimableByGym.get(candidate.id) ?? false,
+      // Same expression enrichGym uses, from the same helper requestGymClaim
+      // uses, so the three can't drift apart (#4018).
+      canClaimByDomain: isClaimableDomain(candidate.website) && candidate.websiteVouchedByOwner,
       providerOrigins: originsByGym.get(candidate.id) ?? [],
     }));
   },

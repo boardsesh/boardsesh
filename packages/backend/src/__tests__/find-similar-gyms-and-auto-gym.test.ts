@@ -62,12 +62,23 @@ const insertGym = async (opts: {
   longitude?: number | null;
   deleted?: boolean;
   isPublic?: boolean;
+  website?: string | null;
+  websiteVouchedByOwner?: boolean;
 }): Promise<{ id: number; uuid: string }> => {
-  const { ownerId, name, latitude = null, longitude = null, deleted = false, isPublic = true } = opts;
+  const {
+    ownerId,
+    name,
+    latitude = null,
+    longitude = null,
+    deleted = false,
+    isPublic = true,
+    website = null,
+    websiteVouchedByOwner = false,
+  } = opts;
   const uuid = uuidv4();
   const result = await db.execute(sql`
-    INSERT INTO gyms (uuid, name, slug, owner_id, is_public, latitude, longitude, deleted_at, created_at, updated_at)
-    VALUES (${uuid}, ${name}, ${uuid}, ${ownerId}, ${isPublic}, ${latitude}, ${longitude}, ${deleted ? sql`now()` : null}, now(), now())
+    INSERT INTO gyms (uuid, name, slug, owner_id, is_public, latitude, longitude, website, website_vouched_by_owner, deleted_at, created_at, updated_at)
+    VALUES (${uuid}, ${name}, ${uuid}, ${ownerId}, ${isPublic}, ${latitude}, ${longitude}, ${website}, ${websiteVouchedByOwner}, ${deleted ? sql`now()` : null}, now(), now())
     RETURNING id
   `);
   return { id: Number(Array.from(result as Iterable<{ id: number }>)[0].id), uuid };
@@ -205,6 +216,55 @@ describe('findSimilarGyms — matching tiers', () => {
     expect(own.providerOrigins).toEqual([]);
     // The querier owns this gym, so they cannot claim it.
     expect(own.isClaimable).toBe(false);
+  });
+
+  it('reports canClaimByDomain per listing, independently of isClaimable (#4018)', async () => {
+    // The two flags answer different questions — "may this viewer claim?" vs
+    // "can the website on file drive the email claim?" — and the suggestion card
+    // routes on the second. Conflating them puts a climber back on a dead-end
+    // email form, which is the bug.
+    const vouched = await insertGym({
+      ownerId: OTHER,
+      name: 'Boulder Bar',
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+      website: 'https://www.bonsist.bg',
+      websiteVouchedByOwner: true,
+    });
+    const unvouched = await insertGym({
+      ownerId: OTHER,
+      name: 'Boulder Bar',
+      latitude: LAT_120M,
+      longitude: BASE.longitude,
+      website: 'https://www.bonsist.bg',
+      websiteVouchedByOwner: false,
+    });
+    const freeProvider = await insertGym({
+      ownerId: OTHER,
+      name: 'Boulder Bar',
+      latitude: LAT_300M,
+      longitude: BASE.longitude,
+      website: 'https://mygym.wixsite.com',
+      websiteVouchedByOwner: true,
+    });
+
+    const byUuid = new Map(
+      (
+        await findSimilarGyms(
+          { name: 'Boulder Bar', latitude: BASE.latitude, longitude: BASE.longitude },
+          authCtx(QUERIER),
+        )
+      ).map((gym) => [gym.uuid, gym]),
+    );
+
+    // All three are claimable by this viewer; only the first can go by email.
+    expect(byUuid.get(vouched.uuid)!.isClaimable).toBe(true);
+    expect(byUuid.get(unvouched.uuid)!.isClaimable).toBe(true);
+    expect(byUuid.get(freeProvider.uuid)!.isClaimable).toBe(true);
+
+    expect(byUuid.get(vouched.uuid)!.canClaimByDomain).toBe(true);
+    expect(byUuid.get(unvouched.uuid)!.canClaimByDomain).toBe(false);
+    expect(byUuid.get(freeProvider.uuid)!.canClaimByDomain).toBe(false);
   });
 
   it("never enumerates another user's private gym, but includes the viewer's own private gym", async () => {

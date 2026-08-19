@@ -136,6 +136,14 @@ export const gymsTypeDefs = /* GraphQL */ `
     "Whether a real person owns this gym, as opposed to the system import user. Viewer-independent — unlike canClaim, which is false for every signed-out viewer."
     isClaimed: Boolean!
     """
+    Whether this gym's website can drive the self-service email claim: a real
+    (non-free-provider) domain that the gym's OWNER put on the listing. Mirrors
+    the two refusals in requestGymClaim, so a claim UI can open the form that
+    can actually succeed instead of dead-ending on submit. Viewer-independent —
+    unlike canClaim, this says nothing about who is asking.
+    """
+    canClaimByDomain: Boolean!
+    """
     The viewer's own unresolved claim on this gym, so a claimant who already
     filed sees "under review" instead of the claim call-out. A lazy field
     resolver with its own query — deliberately NOT part of enrichGym, which
@@ -187,6 +195,13 @@ export const gymsTypeDefs = /* GraphQL */ `
     ownerType: GymOwnerType!
     "Whether the current viewer can start an ownership claim for this gym."
     isClaimable: Boolean!
+    """
+    Whether this gym's website can drive the self-service email claim: a real
+    (non-free-provider) domain that the gym's OWNER put on the listing. Mirrors
+    the two refusals in requestGymClaim. Answers a different question from
+    isClaimable, which is about the viewer's standing, not the website.
+    """
+    canClaimByDomain: Boolean!
     "Upstream provider origins for a synced gym (e.g. \\"kilter\\", \\"tension\\"), from source-key prefixes. Empty for user-created gyms."
     providerOrigins: [String!]!
   }

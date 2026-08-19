@@ -104,6 +104,14 @@ export type Gym = {
    */
   isClaimed: boolean;
   /**
+   * Whether this gym's website can drive the self-service email claim: a real
+   * (non-free-provider) domain that the gym's OWNER put on the listing. Mirrors
+   * the two refusals in requestGymClaim, so a claim UI can open the form that
+   * can succeed. Viewer-independent, and required here because GYM_FIELDS
+   * selects it — every document typed `Gym` genuinely returns it.
+   */
+  canClaimByDomain: boolean;
+  /**
    * The viewer's unresolved claim on this gym, or null when they have none.
    * OPTIONAL on purpose: only GET_GYM_BY_SLUG selects it. Adding it to the
    * shared GYM_FIELDS would put it in documents the mobile app ships, where a
@@ -145,6 +153,12 @@ export type SimilarGym = {
   distanceMeters?: number | null;
   ownerType: GymOwnerType;
   isClaimable: boolean;
+  /**
+   * Whether this gym's website can drive the self-service email claim: a real
+   * (non-free-provider) domain that the gym's OWNER put on the listing. A
+   * different question from `isClaimable`, which is about the viewer's standing.
+   */
+  canClaimByDomain: boolean;
   /** Upstream provider origins for a synced gym (e.g. "kilter"); empty for user-created gyms. */
   providerOrigins: string[];
 };
