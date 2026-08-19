@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Regression guard for #3975: `validateInput(SomeSchema, raw, 'field')` is
@@ -78,30 +78,91 @@ function extractSchemaBody(source: string, schemaName: string): string | undefin
   return source.slice(startIndex, endIndex);
 }
 
-function schemaHasLiveDefaultOrTransform(schemaName: string, schemaFiles: { path: string; source: string }[]): boolean {
+/** Collect every `export const <Name>` in the schema files, so a schema body
+ * can be checked for references to OTHER schemas and followed into them. */
+function collectSchemaBodies(schemaFiles: { path: string; source: string }[]): Map<string, string> {
+  const bodies = new Map<string, string>();
   for (const { source } of schemaFiles) {
-    const body = extractSchemaBody(stripComments(source), schemaName);
-    if (body === undefined) continue;
-    return /\.default\(|\.transform\(/.test(body);
+    const stripped = stripComments(source);
+    for (const match of stripped.matchAll(/export const ([A-Za-z_][A-Za-z0-9_]*)\b/g)) {
+      const name = match[1];
+      if (bodies.has(name)) continue;
+      const body = extractSchemaBody(stripped, name);
+      if (body !== undefined) bodies.set(name, body);
+    }
   }
+  return bodies;
+}
+
+/** True when the schema — or any schema it composes, transitively — carries a
+ * `.default()`/`.transform()`. Composition matters: `ClimbQueueItemSchema` has
+ * no default of its own but embeds `ClimbInputSchema`, whose null-coalescing
+ * `.transform()`s are just as dead when the parsed return is thrown away. */
+function schemaHasLiveDefaultOrTransform(
+  schemaName: string,
+  bodies: Map<string, string>,
+  seen: Set<string> = new Set(),
+): boolean {
+  if (seen.has(schemaName)) return false;
+  seen.add(schemaName);
+  const body = bodies.get(schemaName);
   // Schema not found in validation/schemas (e.g. imported from elsewhere,
   // or a plain z.ZodSchema built inline) — nothing to flag here.
+  if (body === undefined) return false;
+  if (/\.default\(|\.transform\(/.test(body)) return true;
+  for (const match of body.matchAll(/\b([A-Za-z_][A-Za-z0-9_]*)\b/g)) {
+    const referenced = match[1];
+    if (referenced === schemaName || !bodies.has(referenced)) continue;
+    if (schemaHasLiveDefaultOrTransform(referenced, bodies, seen)) return true;
+  }
   return false;
+}
+
+/**
+ * Pre-existing discarded-return call sites, kept out of the failure list so
+ * this guard can land as a ratchet rather than forcing an unrelated
+ * behaviour change in the same PR.
+ *
+ * `ClimbQueueItemSchema` embeds `ClimbInputSchema`, whose nullish fields
+ * `.transform()` null into `''`/`0`. The queue mutations validate and then
+ * store/broadcast the RAW item, so those coercions never apply — peers and
+ * Redis keep the nulls. Capturing the parsed value here would change what
+ * every party-mode client receives for a queue item, which needs its own
+ * change with its own QA, not a drive-by in the #3975 fix.
+ *
+ * Entries are `<resolver path relative to graphql/resolvers>::<SchemaName>`.
+ * Shrink this list; never grow it.
+ */
+const KNOWN_DISCARDED_ALLOWLIST = new Set(['queue/mutations.ts::ClimbQueueItemSchema']);
+
+function allowlistKey(call: DiscardedCall): string {
+  return `${relative(resolversDir, call.file).split(sep).join('/')}::${call.schemaName}`;
 }
 
 describe('validateInput discarded-return usage', () => {
   it('never discards the return of a schema with a live .default()/.transform()', () => {
     const resolverFiles = listTsFiles(resolversDir);
-    const schemaFiles = listTsFiles(schemasDir).map((path) => ({ path, source: readFileSync(path, 'utf8') }));
+    const schemaBodies = collectSchemaBodies(
+      listTsFiles(schemasDir).map((path) => ({ path, source: readFileSync(path, 'utf8') })),
+    );
 
     const offenders: DiscardedCall[] = [];
+    const matchedAllowlistKeys = new Set<string>();
     for (const file of resolverFiles) {
       for (const call of findDiscardedValidateInputCalls(file)) {
-        if (schemaHasLiveDefaultOrTransform(call.schemaName, schemaFiles)) {
-          offenders.push(call);
+        if (!schemaHasLiveDefaultOrTransform(call.schemaName, schemaBodies)) continue;
+        const key = allowlistKey(call);
+        if (KNOWN_DISCARDED_ALLOWLIST.has(key)) {
+          matchedAllowlistKeys.add(key);
+          continue;
         }
+        offenders.push(call);
       }
     }
+
+    // The allowlist is a ratchet: once a call site is cleaned up (or deleted),
+    // its entry has to go too, or it silently starts covering something new.
+    expect([...KNOWN_DISCARDED_ALLOWLIST].filter((key) => !matchedAllowlistKeys.has(key))).toEqual([]);
 
     if (offenders.length > 0) {
       const details = offenders
