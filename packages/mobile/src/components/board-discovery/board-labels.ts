@@ -105,10 +105,12 @@ const DISAMBIGUATION_FACETS: ((board: BoardLabelSource) => string | null)[] = [
  * Subtitles for one rendered list, with same-subtitle boards pulled apart.
  *
  * Returns one subtitle per input board, in order. Boards that collide on their
- * base subtitle get ` · <facet>` appended using the first facet that actually
- * differs within that collision group — so two Kilter boards run by the same
+ * base subtitle get ` · <facet>` appended — so two Kilter boards run by the same
  * gym separate on their size, angle or serial instead of both reading "Bergen
- * Klatresenter". A group whose members are identical on every facet is left
+ * Klatresenter". Facets are tried in order and the first one that leaves every
+ * member of the group reading differently wins; if none does (a gym with three
+ * boards where two share a size), we fall back to the first facet that at least
+ * splits the group. A group whose members are identical on every facet is left
  * alone; we never invent a distinction.
  *
  * Runs once per list (call it from the list's `useMemo`, never from a row) and
@@ -126,17 +128,30 @@ export function disambiguateBoardSubtitles(boards: BoardLabelSource[]): string[]
 
   for (const group of indicesBySubtitle.values()) {
     if (group.length < 2) continue;
+    const base = subtitles[group[0]];
+    // The best labelling found so far — splits the group, but not completely.
+    let bestLabelling: string[] | null = null;
     for (const facet of DISAMBIGUATION_FACETS) {
-      const values = group.map((index) => facet(boards[index]));
-      const distinct = new Set(values);
-      // A facet every member shares (or none of them has) separates nothing.
-      if (distinct.size < 2) continue;
-      group.forEach((index, position) => {
-        const value = values[position];
-        if (value !== null) subtitles[index] = `${subtitles[index]} · ${value}`;
+      // A member with no value for this facet keeps the bare subtitle rather
+      // than being labelled with a fact we don't have — it still reads
+      // differently from the members that do carry one.
+      const labelling = group.map((index) => {
+        const value = facet(boards[index]);
+        return value === null ? base : `${base} · ${value}`;
       });
-      break;
+      const distinct = new Set(labelling).size;
+      if (distinct === group.length) {
+        bestLabelling = labelling;
+        break;
+      }
+      // A facet every member shares (or none of them has) separates nothing.
+      if (distinct > 1 && bestLabelling === null) bestLabelling = labelling;
     }
+    if (bestLabelling === null) continue;
+    const chosen = bestLabelling;
+    group.forEach((index, position) => {
+      subtitles[index] = chosen[position];
+    });
   }
 
   return subtitles;

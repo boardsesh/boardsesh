@@ -144,6 +144,36 @@ describe('disambiguateBoardSubtitles', () => {
     ]);
   });
 
+  it('prefers a facet that separates every member over one that only splits the group', () => {
+    // Three boards at one gym: two share a size, so the size facet would leave
+    // two cards reading the same. The angle facet separates all three.
+    const boards: BoardLabelSource[] = [
+      { ...kilter, gymName: 'Bergen Klatresenter', sizeId: 7, angle: 40 },
+      { ...kilter, gymName: 'Bergen Klatresenter', sizeId: 7, angle: 25 },
+      { ...kilter, gymName: 'Bergen Klatresenter', sizeId: 8, angle: 55 },
+    ];
+    expect(disambiguateBoardSubtitles(boards)).toEqual([
+      'Bergen Klatresenter · 40°',
+      'Bergen Klatresenter · 25°',
+      'Bergen Klatresenter · 55°',
+    ]);
+  });
+
+  it('falls back to a partial split when no single facet separates everyone', () => {
+    // Two boards are identical on every facet — nothing can separate those two,
+    // but the third still gets pulled out on size.
+    const boards: BoardLabelSource[] = [
+      { ...kilter, gymName: 'Bergen Klatresenter', sizeId: 7 },
+      { ...kilter, gymName: 'Bergen Klatresenter', sizeId: 7 },
+      { ...kilter, gymName: 'Bergen Klatresenter', sizeId: 8 },
+    ];
+    expect(disambiguateBoardSubtitles(boards)).toEqual([
+      'Bergen Klatresenter · 12×14',
+      'Bergen Klatresenter · 12×14',
+      'Bergen Klatresenter · 8×12',
+    ]);
+  });
+
   it('handles an empty list', () => {
     expect(disambiguateBoardSubtitles([])).toEqual([]);
   });
