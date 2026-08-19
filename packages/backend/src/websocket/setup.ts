@@ -232,6 +232,27 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         }
 
         await roomManager.registerClient(context.connectionId, undefined, authenticatedUserId);
+
+        // The socket can die while any of the awaits above are in flight, and
+        // graphql-ws only runs onDisconnect once the connection is acknowledged
+        // — which happens after onConnect resolves. Nothing would then ever
+        // remove the registration this call just made: the local client map has
+        // no sweeper, so the entry would sit there for the life of the process.
+        // That also blunts the cap, because the anonymous slot is already freed
+        // by the raw-socket 'close' listener, leaving a caller free to churn
+        // half-handshakes into unbounded room-manager state — the exact state
+        // issue #4035 is about bounding.
+        if (ctx.extra.socket.readyState > ctx.extra.socket.OPEN) {
+          await roomManager.removeClient(context.connectionId);
+          removeContext(context.connectionId);
+          releaseAnonConnectionSlot(context.connectionId);
+          logger.info('[WebSocket] Discarded registration for a socket that closed mid-handshake', {
+            connectionId: context.connectionId,
+            clientIp,
+          });
+          return false;
+        }
+
         // Attribution for connectionId → client identity: a subscription-auth
         // denial (see requireSessionMember) only carries the connectionId, so
         // logging the User-Agent + remote address here makes it cheap to trace
