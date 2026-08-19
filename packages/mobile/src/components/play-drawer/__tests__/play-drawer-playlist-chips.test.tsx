@@ -134,7 +134,10 @@ describe('PlayDrawerPlaylistChips', () => {
     ctrl.memberUuids = ['p1'];
     const { container } = renderChips();
     expect(container.textContent).toBe('');
-    expect(ctrl.queryArgs.every((args) => args.enabled)).toBe(false);
+    // `some`, not `every`: "no request was enabled", asserted against a hook
+    // that was definitely called (hooks run before the early return).
+    expect(ctrl.queryArgs.length).toBeGreaterThan(0);
+    expect(ctrl.queryArgs.some((args) => args.enabled)).toBe(false);
   });
 
   it('renders nothing, and fetches nothing, when the climber has no playlist on this board', () => {
@@ -143,7 +146,8 @@ describe('PlayDrawerPlaylistChips', () => {
     ctrl.playlists = [{ ...playlist('p9', 'Tension list'), boardType: 'tension' }];
     const { container } = renderChips();
     expect(container.textContent).toBe('');
-    expect(ctrl.queryArgs.every((args) => args.enabled)).toBe(false);
+    expect(ctrl.queryArgs.length).toBeGreaterThan(0);
+    expect(ctrl.queryArgs.some((args) => args.enabled)).toBe(false);
   });
 
   it('keeps the reserved slot the same height whether or not the climb is in a playlist', () => {
@@ -178,7 +182,8 @@ describe('PlayDrawerPlaylistChips', () => {
     // A fling passes many climbs; the peek header must not fire a request per one.
     ctrl.memberUuids = ['p1'];
     const { container } = renderChips({ fetchMembership: false });
-    expect(ctrl.queryArgs.every((args) => args.enabled)).toBe(false);
+    expect(ctrl.queryArgs.length).toBeGreaterThan(0);
+    expect(ctrl.queryArgs.some((args) => args.enabled)).toBe(false);
     expect(container.textContent).toContain('Sunday sends');
   });
 
