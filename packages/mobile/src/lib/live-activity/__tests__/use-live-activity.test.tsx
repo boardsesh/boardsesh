@@ -389,15 +389,17 @@ describe('useLiveActivity Android session gating', () => {
   });
 
   it('pushes nothing to the session-presence surface without an active session', async () => {
-    render(<Harness {...activeProps({ sessionId: null, isSessionActive: false })} />);
+    const { rerender } = render(<Harness {...activeProps({ sessionId: null, isSessionActive: false })} />);
 
     await waitFor(() => expect(plugin.isLiveActivityAvailable).toHaveBeenCalled());
-    await act(async () => {
-      await Promise.resolve();
-    });
-
     expect(plugin.startLiveActivitySession).not.toHaveBeenCalled();
     expect(plugin.updateLiveActivity).not.toHaveBeenCalled();
     expect(plugin.updateLiveActivityClimb).not.toHaveBeenCalled();
+
+    // Activating proves the harness really would have observed a push above,
+    // so the assertions are a live gate rather than a timing coincidence.
+    rerender(<Harness {...activeProps()} />);
+    await waitFor(() => expect(plugin.startLiveActivitySession).toHaveBeenCalled());
+    await waitFor(() => expect(plugin.updateLiveActivity).toHaveBeenCalled());
   });
 });

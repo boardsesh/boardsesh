@@ -682,6 +682,12 @@ export function BluetoothProvider({
   // rendered `isConnected` flag, which a connect that starts while the app
   // already believes it is connected never flips — so without this the sender's
   // "already on the wall" caches would outlive the link they describe.
+  //
+  // 0 is the "no link yet" sentinel and is never a real generation: the hook
+  // hands out `nextConnectionGenerationRef.current + 1`, so the first connect is
+  // 1. That is asserted in use-board-bluetooth.test.ts — were it ever to start
+  // at 0, the first connect would set the same value back and the drain effect
+  // would not re-fire.
   const [connectionGeneration, setConnectionGeneration] = useState(0);
   const pendingReportSignatureRef = useRef<string | null>(null);
   const pendingWallReportRef = useRef<PendingWallReport | null>(null);

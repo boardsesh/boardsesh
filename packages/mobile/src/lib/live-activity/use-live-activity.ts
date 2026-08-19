@@ -287,6 +287,12 @@ export function useLiveActivity({
   // mirroring them has to re-publish once the teardown has run. Bumped ONLY on
   // teardown — putting shouldBeActive in the sync effects' deps instead would
   // also re-fire on activation and double the Activity's initial update.
+  //
+  // Exactly TWO call sites, and they are mutually exclusive by construction:
+  // the start-failure catch below (which ends a session JS never saw start, so
+  // shouldBeActive is still true) and the deactivation effect further down
+  // (shouldBeActive true -> false). Keep them disjoint — a bump from both in one
+  // teardown would re-publish twice for no gain.
   const [sharedStateWipeNonce, setSharedStateWipeNonce] = useState(0);
   const startFailureCountRef = useRef(0);
   const startRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -370,6 +376,10 @@ export function useLiveActivity({
           // tear those down here — JS otherwise believes nothing is active and
           // never reaches the teardown paths. endSession is idempotent.
           void endLiveActivitySession();
+          // Wipe-nonce site 1 of 2 (see the useState declaration): that
+          // endSession just cleared the App-Group queue keys, and
+          // shouldBeActive is still true here, so the deactivation effect will
+          // not fire for this teardown.
           setSharedStateWipeNonce((nonce) => nonce + 1);
           startFailureCountRef.current += 1;
           if (startFailureCountRef.current <= MAX_START_RETRIES) {
@@ -409,6 +419,7 @@ export function useLiveActivity({
   // so the re-publish is dispatched behind the endSession it has to survive.
   const wasActiveRef = useRef(shouldBeActive);
   useEffect(() => {
+    // Wipe-nonce site 2 of 2 (see the useState declaration).
     if (wasActiveRef.current && !shouldBeActive) {
       setSharedStateWipeNonce((nonce) => nonce + 1);
     }
