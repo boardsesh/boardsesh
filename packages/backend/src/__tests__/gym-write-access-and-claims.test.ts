@@ -1256,6 +1256,164 @@ describe('requestGymClaim — the website must be owner-vouched to self-verify (
   });
 });
 
+// ============================================================================
+// #4018 — Gym.canClaimByDomain. Both claim UIs used to pick their form from
+// isClaimableDomain(website) alone, so an un-vouched gym with a company-looking
+// website opened the email form and only the mutation said no. The field
+// advertises the gate; requestGymClaim still IS the gate.
+// ============================================================================
+
+describe('canClaimByDomain advertises the requestGymClaim domain gate without becoming it (#4018)', () => {
+  type DomainCase = {
+    label: string;
+    website: string | null;
+    websiteVouchedByOwner: boolean;
+    claimEmail: string;
+    canClaimByDomain: boolean;
+    /** The refusal requestGymClaim must give when the capability is false. */
+    refusal?: RegExp;
+  };
+
+  const domainCases: DomainCase[] = [
+    {
+      label: 'a real company domain the owner put there',
+      website: 'https://www.bonsist.bg',
+      websiteVouchedByOwner: true,
+      claimEmail: 'manager@bonsist.bg',
+      canClaimByDomain: true,
+    },
+    {
+      label: 'a free-provider website, even when the owner put it there',
+      website: 'https://gmail.com',
+      websiteVouchedByOwner: true,
+      claimEmail: 'manager@gmail.com',
+      canClaimByDomain: false,
+      refusal: /no verifiable website domain/,
+    },
+    {
+      label: 'a real company domain nobody with ownership vouched for',
+      website: 'https://www.bonsist.bg',
+      websiteVouchedByOwner: false,
+      claimEmail: 'manager@bonsist.bg',
+      canClaimByDomain: false,
+      refusal: /hasn't been confirmed by the gym's owner/,
+    },
+    {
+      label: 'no website at all',
+      website: null,
+      websiteVouchedByOwner: false,
+      claimEmail: 'manager@bonsist.bg',
+      canClaimByDomain: false,
+      refusal: /no verifiable website domain/,
+    },
+  ];
+
+  for (const [index, domainCase] of domainCases.entries()) {
+    it(`is ${domainCase.canClaimByDomain} for ${domainCase.label}, and requestGymClaim agrees`, async () => {
+      const claimGym = await insertGym({
+        ownerId: OWNER,
+        name: `CanClaimByDomain ${index}`,
+        website: domainCase.website,
+        websiteVouchedByOwner: domainCase.websiteVouchedByOwner,
+      });
+
+      // A fresh claimant per case: applyRateLimit's tier-1 bucket is per-process
+      // and never reset between tests, so a shared fixture account would make
+      // the four cases order-dependent.
+      const claimant = `gw-domain-cap-${uuidv4()}`;
+      await insertUser(claimant);
+
+      const enriched = await socialGymQueries.gym(null, { gymUuid: claimGym.uuid }, authCtx(claimant));
+      expect(enriched).not.toBeNull();
+      expect(enriched!.canClaimByDomain).toBe(domainCase.canClaimByDomain);
+      // Viewer-independent, like isClaimed: the public gym page renders for
+      // signed-out visitors, so a viewer-dependent value here would route the
+      // anonymous "claim this gym" call-out at the wrong form.
+      expect((await socialGymQueries.gym(null, { gymUuid: claimGym.uuid }, anonCtx()))!.canClaimByDomain).toBe(
+        domainCase.canClaimByDomain,
+      );
+
+      // The pairing is the point: the field cannot quietly drift from the gate
+      // it advertises, because the same case exercises both.
+      const attempt = socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, claimEmail: domainCase.claimEmail } },
+        authCtx(claimant),
+      );
+
+      if (domainCase.canClaimByDomain) {
+        await expect(attempt).resolves.toEqual({ status: 'email_sent', email: domainCase.claimEmail });
+        expect(sendGymClaimVerificationEmail).toHaveBeenCalledTimes(1);
+      } else {
+        await expect(attempt).rejects.toThrow(domainCase.refusal!);
+        expect(await claimRowCount(claimGym.id)).toBe(0);
+        expect(sendGymClaimVerificationEmail).not.toHaveBeenCalled();
+      }
+    });
+  }
+
+  it('stays false for someone who can already edit the gym, without ever claiming otherwise', async () => {
+    // canClaim and canClaimByDomain answer different questions: one is about the
+    // viewer, one about the listing. An editor gets canClaim=false (the UI hides
+    // the call-out entirely) while canClaimByDomain still describes the website.
+    const claimGym = await insertGym({ ownerId: OWNER, name: 'Editor View', website: 'https://www.bonsist.bg' });
+    await socialGymMutations.grantGymWriteAccess(
+      null,
+      { input: { gymUuid: claimGym.uuid, userId: EDITOR_TARGET } },
+      authCtx(OWNER),
+    );
+
+    const asEditor = await socialGymQueries.gym(null, { gymUuid: claimGym.uuid }, authCtx(EDITOR_TARGET));
+    expect(asEditor!.canClaim).toBe(false);
+    expect(asEditor!.canClaimByDomain).toBe(true);
+  });
+
+  it('flips to false the moment an editor rewrites the website, exactly as the mutation does', async () => {
+    const claimGym = await insertGym({ ownerId: OWNER, name: 'Rewrite Watch', website: null });
+    await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid: claimGym.uuid, website: 'https://bonsist.bg' } },
+      authCtx(OWNER),
+    );
+    await socialGymMutations.grantGymWriteAccess(
+      null,
+      { input: { gymUuid: claimGym.uuid, userId: EDITOR_TARGET } },
+      authCtx(OWNER),
+    );
+    expect((await socialGymQueries.gym(null, { gymUuid: claimGym.uuid }, anonCtx()))!.canClaimByDomain).toBe(true);
+
+    await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid: claimGym.uuid, website: 'https://attacker-owned.example' } },
+      authCtx(EDITOR_TARGET),
+    );
+
+    expect((await socialGymQueries.gym(null, { gymUuid: claimGym.uuid }, anonCtx()))!.canClaimByDomain).toBe(false);
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, claimEmail: 'boss@attacker-owned.example' } },
+        authCtx(SECOND_TARGET),
+      ),
+    ).rejects.toThrow(/hasn't been confirmed by the gym's owner/);
+  });
+
+  it('survives the raw snake_case proximity row the PostGIS search path maps', async () => {
+    // searchGyms' PostGIS branch is a raw `SELECT *`, so enrichGym gets
+    // snake_case keys through mapRawGymRow. A camelCase read of
+    // website_vouched_by_owner there is `undefined` — falsy — and every gym in
+    // the proximity results would silently route to admin review.
+    const claimGym = await insertGym({ ownerId: OWNER, name: 'Proximity Row', website: 'https://www.bonsist.bg' });
+    const rawRow = Array.from(
+      (await db.execute(sql`SELECT * FROM gyms WHERE id = ${claimGym.id}`)) as Iterable<Record<string, unknown>>,
+    )[0];
+    expect(Object.keys(rawRow)).toContain('website_vouched_by_owner');
+
+    const enriched = await enrichGym(mapRawGymRow(rawRow), CLAIMANT);
+    expect(enriched.canClaimByDomain).toBe(true);
+  });
+});
+
 describe('requestGymClaim — admin-review path', () => {
   it('creates a pending admin claim + notifies the team when no email is given', async () => {
     const claimGym = await insertGym({ ownerId: OWNER, name: 'No Website Gym' });
