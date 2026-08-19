@@ -284,6 +284,15 @@ export const SHARED_EVENTS = {
   // both platforms land in one funnel.
   BetaCaptionCopied: 'Beta Caption Copied',
   BetaInstagramOpened: 'Beta Instagram Opened',
+  // The inbound half of that flow: a reel shared INTO the app got pinned to an
+  // ascent from the share-beta picker. That screen shipped with no analytics at
+  // all, so nothing could say whether the caption auto-match actually picks the
+  // climb or whether people scroll for it — which is exactly the question that
+  // had to be guessed at when #3357 asked how much the picker's board art is
+  // worth. Props: { source: 'suggested' | 'other', boardType, viaSearch,
+  // hasCaption }. `hasCaption` is a boolean on purpose — the caption is the
+  // user's post content and never leaves the device.
+  BetaAttached: 'Beta Attached',
   // Onboarding tour (first-run walkthrough). Web fires the same names from its
   // step-based guided tour; the mobile welcome carousel reuses them so both
   // platforms land in one PostHog funnel.
