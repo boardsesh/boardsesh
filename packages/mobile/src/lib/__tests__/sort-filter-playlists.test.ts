@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import type { Playlist } from '@boardsesh/graphql/operations/playlists';
-import { filterPlaylistsByBoard, sortAndFilterPlaylists, sortPlaylistsByName } from '../sort-filter-playlists';
+import {
+  filterPlaylistsByBoard,
+  hasPlaylistForBoard,
+  sortAndFilterPlaylists,
+  sortPlaylistsByName,
+} from '../sort-filter-playlists';
 
 // A minimal Playlist factory — the helper only reads `name`, so the rest is
 // padding to satisfy the type.
@@ -96,5 +101,36 @@ describe('filterPlaylistsByBoard', () => {
     const input = [playlist('a', { boardType: 'tension' }), playlist('b', { boardType: 'kilter', layoutId: 1 })];
     filterPlaylistsByBoard(input, 'kilter', 1);
     expect(names(input)).toEqual(['a', 'b']);
+  });
+});
+
+describe('hasPlaylistForBoard', () => {
+  // Agrees with filterPlaylistsByBoard by construction (shared predicate); these
+  // pin the agreement, since the play drawer reserves or drops a layout slot on
+  // this answer alone.
+  it('is false with no playlists at all', () => {
+    expect(hasPlaylistForBoard([], 'kilter', 9)).toBe(false);
+  });
+
+  it('is true for a playlist on this board and layout', () => {
+    expect(hasPlaylistForBoard([playlist('Kilter 9', { boardType: 'kilter', layoutId: 9 })], 'kilter', 9)).toBe(true);
+  });
+
+  it('is true for a board-wide playlist with no layout of its own', () => {
+    expect(hasPlaylistForBoard([playlist('Circuit', { boardType: 'kilter', layoutId: null })], 'kilter', 9)).toBe(true);
+  });
+
+  it('is false for another board, and for another layout of this board', () => {
+    expect(hasPlaylistForBoard([playlist('Tension', { boardType: 'tension', layoutId: 9 })], 'kilter', 9)).toBe(false);
+    expect(hasPlaylistForBoard([playlist('Layout 8', { boardType: 'kilter', layoutId: 8 })], 'kilter', 9)).toBe(false);
+  });
+
+  it('finds a match past non-matching entries', () => {
+    const input = [
+      playlist('Tension', { boardType: 'tension', layoutId: 9 }),
+      playlist('Layout 8', { boardType: 'kilter', layoutId: 8 }),
+      playlist('Kilter 9', { boardType: 'kilter', layoutId: 9 }),
+    ];
+    expect(hasPlaylistForBoard(input, 'kilter', 9)).toBe(true);
   });
 });

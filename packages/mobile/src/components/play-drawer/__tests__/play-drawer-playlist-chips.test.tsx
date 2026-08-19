@@ -150,6 +150,16 @@ describe('PlayDrawerPlaylistChips', () => {
     expect(ctrl.queryArgs.some((args) => args.enabled)).toBe(false);
   });
 
+  it('renders nothing, and fetches nothing, for a playlist on another layout of this board', () => {
+    // Layout-scoped playlists don't cross layouts, so this climber still can't
+    // see a chip here — the slot must not appear and eat board art.
+    ctrl.playlists = [playlist('p8', 'Original layout list', 2)];
+    const { container } = renderChips();
+    expect(container.textContent).toBe('');
+    expect(ctrl.queryArgs.length).toBeGreaterThan(0);
+    expect(ctrl.queryArgs.some((args) => args.enabled)).toBe(false);
+  });
+
   it('keeps the reserved slot the same height whether or not the climb is in a playlist', () => {
     // Load-bearing: the board art below is `flex: 1` inside a fixed-height first
     // screen, so a per-climb header height would resize the board on every swipe.
