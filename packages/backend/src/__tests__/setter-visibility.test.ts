@@ -76,6 +76,32 @@ describe('setter queries hand out only publicly visible climbs', () => {
     expect(oneBoard.climbs.map((climb) => climb.uuid)).toEqual([`${CLIMB_PREFIX}visible`]);
   });
 
+  it('keeps a drafts-only setter out of search, rather than offering a result that 404s', async () => {
+    // The whole point of the 404 is undone if search still offers the setter,
+    // with a climb count that includes the hidden climbs, and the tap lands on
+    // a not-found page.
+    await insertClimb('search-draft', { isListed: true, isDraft: true });
+
+    const drafts = await setterFollowQueries.searchUsersAndSetters(
+      null,
+      { input: { query: SETTER, limit: 10, offset: 0 } },
+      {} as never,
+    );
+    expect(drafts.results.map((result) => result.setter?.username)).not.toContain(SETTER);
+
+    await insertClimb('search-visible', { isListed: true, isDraft: false });
+
+    const visible = await setterFollowQueries.searchUsersAndSetters(
+      null,
+      { input: { query: SETTER, limit: 10, offset: 0 } },
+      {} as never,
+    );
+    const hit = visible.results.find((result) => result.setter?.username === SETTER)?.setter;
+    expect(hit).toBeDefined();
+    // ...and the count it advertises is the visible one, not the total.
+    expect(hit?.climbCount).toBe(1);
+  });
+
   it('is null for a setter whose whole catalogue is drafts or unlisted', async () => {
     // The signal `/setter/[setter_username]` turns into a real 404. Without the
     // predicate this returned a profile with climbCount 2.

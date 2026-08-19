@@ -49,6 +49,10 @@ export async function GET(request: NextRequest) {
           FROM boardsesh_ticks bt
           JOIN board_climbs bc ON bc.uuid = bt.climb_uuid
           WHERE bc.setter_username = ${username}
+            -- The card counts ascents on the same climbs the page shows. Without
+            -- this it draws grade bars from sends on climbs the setter unlisted.
+            AND bc.is_listed = true
+            AND bc.is_draft = false
             AND bt.status IN ('flash', 'send')
             AND bt.difficulty IS NOT NULL
           GROUP BY bt.difficulty

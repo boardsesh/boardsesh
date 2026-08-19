@@ -751,6 +751,11 @@ export const setterFollowQueries = {
         and(
           ilike(dbSchema.boardClimbs.setterUsername, searchPattern),
           sql`${dbSchema.boardClimbs.setterUsername} IS NOT NULL`,
+          // Same visibility rule the profile answers on. Without it search
+          // offers a setter whose whole catalogue is drafts, with a climb count
+          // that includes them, and the tap lands on a 404.
+          eq(dbSchema.boardClimbs.isListed, true),
+          eq(dbSchema.boardClimbs.isDraft, false),
         ),
       )
       .groupBy(dbSchema.boardClimbs.setterUsername)
@@ -882,11 +887,12 @@ export const setterFollowMutations = {
     const myUserId = ctx.userId!;
     const setterUsername = validatedInput.setterUsername;
 
-    // Verify setter exists in board_climbs
+    // Verify the setter exists AND is visible — the same rule the profile 404s
+    // on, so you cannot follow a setter whose page does not resolve.
     const [exists] = await db
       .select({ count: count() })
       .from(dbSchema.boardClimbs)
-      .where(eq(dbSchema.boardClimbs.setterUsername, setterUsername))
+      .where(and(...visibleSetterClimbConditions(setterUsername)))
       .limit(1);
 
     if (Number(exists?.count ?? 0) === 0) {
