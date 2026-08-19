@@ -16,13 +16,15 @@ import { useTheme } from '../../src/providers/theme-provider';
 import { useAuth } from '../../src/providers/auth-provider';
 import { useQueueSessionId, useQueueActions } from '../../src/providers/queue-provider';
 import { useToast } from '../../src/providers/toast-provider';
+import { isNetworkError } from '@boardsesh/offline-sync/error-classification';
 import {
   useSessionPreview,
-  useMyBoards,
   useCreateBoard,
   useBoardBySlug,
+  fetchAllMyBoards,
   fetchBoardBySlug,
 } from '../../src/lib/graphql/hooks';
+import { createBoardOrAdoptDuplicate } from '../../src/lib/graphql/create-board-or-adopt-duplicate';
 import { resolveBoardForSession } from '../../src/lib/board-path-to-user-board';
 import { spacing, borderRadius } from '../../src/theme/tokens';
 
@@ -47,7 +49,6 @@ export default function JoinSessionScreen() {
   const { joinSession, clearSession } = useQueueActions();
 
   const preview = useSessionPreview(sessionId);
-  const myBoards = useMyBoards(undefined, { enabled: isAuthenticated });
   const createBoard = useCreateBoard();
 
   const [isJoining, setIsJoining] = useState(false);
@@ -77,19 +78,20 @@ export default function JoinSessionScreen() {
     if (!session) return;
     setIsJoining(true);
     try {
-      // Make sure the user's boards have loaded before resolving. On a cold
-      // deep-link open the preview can resolve before myBoards; an empty list
-      // makes resolveBoardForSession create a board the user already owns, which
-      // the backend rejects ("You already have a board with this configuration")
-      // and surfaces as a generic join error. Awaiting the boards lets the
-      // owned-board reuse path run instead.
-      let ownedBoards = myBoards.data?.boards;
-      if (!ownedBoards) {
-        ownedBoards = (await myBoards.refetch()).data?.boards ?? [];
-      }
       const userBoard = await resolveBoardForSession(session.boardPath, {
-        ownedBoards,
-        createBoard: (input) => createBoard.mutateAsync(input),
+        // The whole owned rack, walked imperatively. `useMyBoards` hands back one
+        // page — 20 boards by default — so a joiner whose matching board sorts
+        // past it reads as owning no such board and the join mints a duplicate
+        // the backend then rejects. The walk also REJECTS when it can't reach the
+        // server, where an awaited `refetch()` would pause forever under
+        // `networkMode: 'offlineFirst'` and a `?? []` fallback would mint that
+        // same duplicate.
+        loadOwnedBoards: fetchAllMyBoards,
+        // Absorbs the narrow race the walk can't: a board with this config
+        // created on another device since the walk comes back as
+        // BOARD_DUPLICATE_CONFIG naming the board to join on instead.
+        createBoard: (input) =>
+          createBoardOrAdoptDuplicate(input, (createInput) => createBoard.mutateAsync(createInput)),
         fetchBoardBySlug,
       });
       await joinSession(session.id, { boardPath: session.boardPath, userBoard });
@@ -109,10 +111,14 @@ export default function JoinSessionScreen() {
       router.replace('/(tabs)/record');
     } catch (error) {
       if (__DEV__) console.warn('[join] failed to join session', error);
-      showToast(t('mobileJoin.joinError'), 'error');
+      // Resolving the session's board needs the network, so a join attempted with
+      // no signal fails on the transport rather than on anything the climber did.
+      // Saying so is the difference between "move to where you have bars" and a
+      // generic failure they can only retry blindly.
+      showToast(isNetworkError(error) ? t('mobileJoin.offlineError') : t('mobileJoin.joinError'), 'error');
       setIsJoining(false);
     }
-  }, [session, myBoards, createBoard, joinSession, router, showToast, t]);
+  }, [session, createBoard, joinSession, router, showToast, t]);
 
   const handleJoinPress = useCallback(() => {
     if (!session) return;

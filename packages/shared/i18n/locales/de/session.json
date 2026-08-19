@@ -551,6 +551,7 @@
     "switchBody": "Du verlässt deine aktive Session, um dieser beizutreten.",
     "signInToJoin": "Zum Beitreten anmelden",
     "joinError": "Der Session konnte nicht beigetreten werden",
+    "offlineError": "Offline — verbinde dich neu, um dieser Session beizutreten",
     "hostFallback": "jemandem aus der Crew"
   }
 }

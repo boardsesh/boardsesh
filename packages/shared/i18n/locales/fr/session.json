@@ -551,6 +551,7 @@
     "switchBody": "Vous quitterez votre session active pour rejoindre celle-ci.",
     "signInToJoin": "Connectez-vous pour rejoindre",
     "joinError": "Impossible de rejoindre la session",
+    "offlineError": "Hors ligne — reconnectez-vous pour rejoindre cette session",
     "hostFallback": "un grimpeur"
   }
 }
