@@ -492,6 +492,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       await ensureJoined(capturedSessionId);
       return capturedSessionId;
     },
+    // The last server sequence this device has APPLIED, so a wholesale replace
+    // (playlist activation, party seed, empty-room re-seed, offline
+    // reconciliation) tells the server which window to merge peer adds back
+    // from instead of overwriting them (#3933). Read through the gate ref, not
+    // a locally invented counter: a climb this device saw and then dropped sits
+    // at or below the baseline and so is never resurrected. Null before the
+    // first applied event — the server then keeps its legacy overwrite.
+    getBaselineSequence: () => queueSyncGateRef.current?.getLastSequence() ?? null,
     // Best-effort sync failures (coalescer drains for setCurrent / superseded
     // queue-adds) must not alarm: the local reducer already applied the change
     // and the WS subscription reconciles. Dev-log only — a user-facing "Action

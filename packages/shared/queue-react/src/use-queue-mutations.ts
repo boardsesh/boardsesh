@@ -35,6 +35,11 @@ export function useQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Queue
         ensureReady: hasEnsureReady
           ? (capturedSessionId) => depsRef.current.ensureReady!(capturedSessionId)
           : undefined,
+        // Always wired, unlike `ensureReady`: a caller that supplies no getter
+        // reads as "no baseline available", which is precisely what null means
+        // — so there is nothing structural for the memo to key on, and web
+        // keeps sending the legacy SET_QUEUE document unchanged.
+        getBaselineSequence: () => depsRef.current.getBaselineSequence?.() ?? null,
         onBestEffortError: (action, error) => depsRef.current.onBestEffortError?.(action, error),
         onRateLimited: (event) => depsRef.current.onRateLimited?.(event),
       }),
