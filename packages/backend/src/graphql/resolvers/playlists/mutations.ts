@@ -13,6 +13,7 @@ import {
   FollowPlaylistInputSchema,
   PinPlaylistInputSchema,
 } from '../../../validation/schemas';
+import { UNIFIED_TABLES } from '../../../db/queries/util/table-select';
 import { getPlaylistFollowStats } from './queries';
 import { verifyPlaylistAccess } from './helpers/enrichment';
 import { computePlaylistReorderWrites } from './helpers/reorder';
@@ -469,6 +470,17 @@ export const playlistMutations = {
    * never has to send a stale oldIndex), splices it to the clamped target index,
    * then renumbers positions to a dense 0..n-1. Only rows whose position actually
    * changed are written.
+   *
+   * `newIndex` is read in the client's index space — the rendered list, which
+   * excludes playlist rows whose climb_uuid doesn't resolve in board_climbs — and
+   * translated back to the full list before splicing (#4012).
+   *
+   * That index space is specifically the ALL-BOARDS `playlistClimbs` list, the
+   * one the only editor renders: the mobile playlist screen deliberately omits
+   * `boardName` so off-board climbs stay listed (dimmed) instead of being
+   * filtered out. A future editor that reordered from a board-SCOPED list would
+   * be numbering against a shorter list again, and this input carries no board
+   * argument to infer that from — it would have to start sending one.
    */
   reorderPlaylistClimb: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<boolean> => {
     requireAuthenticated(ctx);
@@ -512,9 +524,34 @@ export const playlistMutations = {
         .orderBy(asc(dbSchema.playlistClimbs.position), asc(dbSchema.playlistClimbs.addedAt))
         .for('update');
 
+      // `newIndex` is an index into the list the client RENDERS, and that list
+      // comes from the playlistClimbs query, which inner-joins board_climbs — a
+      // playlist row whose climb_uuid no longer resolves is dropped there while
+      // still holding a position here. Without translating index spaces, one such
+      // row ahead of the target silently shifts every move below it by one (#4012).
+      //
+      // Visibility is resolved with a second statement rather than a LEFT JOIN on
+      // the locked select above: Postgres rejects FOR UPDATE on the nullable side
+      // of an outer join. Playlists are small and board_climbs.uuid is the primary
+      // key, so this is an index scan over a handful of ids.
+      const rowClimbUuids = rows.map((row) => row.climbUuid);
+      const resolvableRows: Array<{ uuid: string }> =
+        rowClimbUuids.length === 0
+          ? []
+          : await tx
+              .select({ uuid: UNIFIED_TABLES.climbs.uuid })
+              .from(UNIFIED_TABLES.climbs)
+              .where(inArray(UNIFIED_TABLES.climbs.uuid, rowClimbUuids));
+      const resolvableClimbUuids = new Set(resolvableRows.map((row) => row.uuid));
+
       // Throws if the climb isn't in the playlist; returns only the rows whose
       // position actually shifts (dense 0..n-1 renumber).
-      const writes = computePlaylistReorderWrites(rows, validatedInput.climbUuid, validatedInput.newIndex);
+      const writes = computePlaylistReorderWrites(
+        rows,
+        validatedInput.climbUuid,
+        validatedInput.newIndex,
+        resolvableClimbUuids,
+      );
 
       // Persist every shifted row in ONE statement — a `CASE id WHEN … THEN …`
       // update — rather than a write per row. A move to the front of a 100-climb

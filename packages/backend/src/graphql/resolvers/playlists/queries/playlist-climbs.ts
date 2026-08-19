@@ -176,6 +176,17 @@ async function fetchSpecificBoardClimbs(
  * query uses (#4000), rather than a bare `playlist_climbs` row count. A stale
  * playlist row whose `climb_uuid` no longer resolves is excluded from both
  * results, so the count cannot exceed what paging through `climbs` can return.
+ * That exclusion is also why `reorderPlaylistClimb` translates the client's
+ * `newIndex` out of this (shorter) rendered list before splicing (#4012).
+ *
+ * The join keys on `uuid` alone, without a `board_type` predicate — unlike the
+ * specific-board path, which has a board to filter to. That is safe because
+ * `board_climbs.uuid` is the table's PRIMARY KEY, so a uuid names at most one
+ * climb across every board: the join cannot fan one playlist row into several
+ * page rows (which would break `pageSize + 1` paging), and it already rides the
+ * PK index. `playlist_climbs` therefore doesn't need to persist `board_type`
+ * (#4012). `playlist-climbs-uuid-join-invariant.test.ts` pins that key shape so
+ * a move to a composite `(board_type, uuid)` PK fails there rather than here.
  */
 async function fetchAllBoardsClimbs(
   playlistId: bigint,
