@@ -36,20 +36,23 @@ stale artifact, so keep it passing rather than skipping it.
 
 ## Keep these in sync
 
-After regenerating the pkg, re-copy into this folder and commit both:
+After regenerating the pkg, re-copy into every public folder and commit them all:
 
 ```
 bash scripts/sync-mobile-board-renderer-wasm.sh
 ```
 
 The script copies `board_renderer_wasm.js` + `board_renderer_wasm_bg.wasm` from
-the pkg and verifies the checksums match. `scripts/mobile-web-bundle-check.sh`
-fails on any byte difference.
+the pkg into **both** public folders that serve them — this one, and
+`packages/web/public/wasm/`, which the Next.js board-render worker loads from the
+site root — and verifies the checksums match.
 
-`packages/web/public/wasm/` holds a third copy for the Next.js board-render
-worker. It has no sync script and no CI parity check — copy the same two files
-there by hand when you regenerate, or www quietly keeps rendering with the old
-core (that is exactly how it drifted before issue #4495).
+Never copy any of them by hand. `scripts/mobile-web-bundle-check.sh` fails on a
+byte difference in either destination, and the `mobile` path filter in
+`.github/workflows/ci.yml` includes `packages/web/public/wasm/**` so a www-only
+edit still triggers the job that runs that gate. Before issue #4495 the www copy
+was the one nothing wrote and nothing checked, and it silently drifted onto an
+artifact that ignored `stroke_width_multiplier`.
 
 ## Marker support
 
