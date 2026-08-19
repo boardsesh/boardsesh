@@ -41,6 +41,7 @@ import {
 import { getLayoutBySlug, getSetsBySlug, getSizeBySlug } from '@/app/lib/slug-utils';
 import { tryConstructSlugViewUrl } from '@/app/lib/url-utils';
 import { parseBoardRouteParamsWithSlugs } from '@/app/lib/url-utils.server';
+import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, type MoonBoardLayoutKey } from '@/app/lib/moonboard-config';
 
 /**
  * The acceptance criterion for #4362: a round-trip over the WHOLE catalogue
@@ -72,6 +73,15 @@ import { parseBoardRouteParamsWithSlugs } from '@/app/lib/url-utils.server';
  * the repo's SQL-stub testing convention) and is out of scope here.
  */
 
+/**
+ * MoonBoard is walked by its own suite at the bottom of this file rather than by
+ * the loop below. It carries no rows in `@boardsesh/board-constants`' layout and
+ * product-size tables — its catalogue is the static `MOONBOARD_LAYOUTS` /
+ * `MOONBOARD_SETS` objects — so `getAllLayouts('moonboard')` is empty and this
+ * loop would walk zero tuples for it while still reporting green. The split is
+ * which TABLE each arm reads, not which board is covered; the coverage assertion
+ * below pins that the two arms together cover `SUPPORTED_BOARDS`.
+ */
 const auroraBoards = SUPPORTED_BOARDS.filter((boardName) => boardName !== 'moonboard');
 
 /**
@@ -245,5 +255,153 @@ describe('the pinned PERMANENT_SIZE_SLUG_ALIASES strings resolve through getSize
     }
 
     expect(resolvedAliases).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The MoonBoard arm. Until this shipped, MoonBoard was filtered out of this file
+ * entirely — which is exactly why `getMoonBoardSetsBySlug`'s `-`-splitting
+ * substring matcher survived: nothing ever fed a MoonBoard path it emitted back
+ * through `parseBoardRouteParamsWithSlugs`.
+ *
+ * Every non-empty subset, not just the full set: a MoonBoard URL names whichever
+ * hold sets are installed on that wall, `getMoonBoardDetails` turns the parsed
+ * ids into the hold-set background images the board renders, and a parser that
+ * resolves `hold-set-a` to all three 2016 sets draws holds the URL never asked
+ * for. 291 tuples across the seven layouts.
+ */
+function nonEmptySetSubsets(setIds: readonly number[]): number[][] {
+  const subsets: number[][] = [];
+  for (let mask = 1; mask < 1 << setIds.length; mask += 1) {
+    subsets.push(setIds.filter((_, index) => (mask & (1 << index)) !== 0));
+  }
+  return subsets;
+}
+
+const moonBoardLayoutKeys = Object.keys(MOONBOARD_LAYOUTS) as MoonBoardLayoutKey[];
+
+describe('MoonBoard catalogue round-trip (the static tables, through the same www resolver)', () => {
+  it.each(moonBoardLayoutKeys)(
+    '%s: every emitted set-slug subset parses back to the ids it was built from',
+    async (layoutKey) => {
+      const layout = MOONBOARD_LAYOUTS[layoutKey];
+      const allSetIds = MOONBOARD_SETS[layoutKey].map((set) => set.id);
+      const subsets = nonEmptySetSubsets(allSetIds);
+
+      expect(subsets.length, `${layoutKey}: no set subsets to walk`).toBe(2 ** allSetIds.length - 1);
+
+      for (const setIds of subsets) {
+        const label = `${layoutKey} / sets [${setIds.join(',')}]`;
+        const climbUuid = `${layout.id}${setIds.join('')}`.padStart(32, '0');
+
+        const emittedPath = tryConstructSlugViewUrl(
+          'moonboard',
+          layout.id,
+          MOONBOARD_SIZE.id,
+          setIds,
+          ROUND_TRIP_ANGLE,
+          climbUuid,
+          'Round Trip',
+        );
+        expect(emittedPath, `${label}: tryConstructSlugViewUrl returned null`).not.toBeNull();
+
+        const [, emittedBoard, emittedLayout, emittedSize, emittedSets, emittedAngle, surface, emittedClimb] =
+          emittedPath!.split('/');
+        expect(surface, `${label}: emitted path ${emittedPath}`).toBe('view');
+
+        const parsed = await parseBoardRouteParamsWithSlugs({
+          board_name: emittedBoard,
+          layout_id: emittedLayout,
+          size_id: emittedSize,
+          set_ids: emittedSets,
+          angle: emittedAngle,
+          climb_uuid: emittedClimb,
+        });
+
+        expect(
+          {
+            board_name: parsed.board_name,
+            layout_id: parsed.layout_id,
+            size_id: parsed.size_id,
+            set_ids: [...parsed.set_ids].sort((left, right) => left - right),
+            angle: parsed.angle,
+            climb_uuid: parsed.climb_uuid,
+          },
+          `${label}: ${emittedPath} did not parse back to its own ids`,
+        ).toEqual({
+          board_name: 'moonboard',
+          layout_id: layout.id,
+          size_id: MOONBOARD_SIZE.id,
+          set_ids: [...setIds].sort((left, right) => left - right),
+          angle: ROUND_TRIP_ANGLE,
+          climb_uuid: climbUuid,
+        });
+      }
+    },
+  );
+
+  it('walks all 291 subsets, and the two arms together cover every supported board', () => {
+    const walked = moonBoardLayoutKeys.reduce(
+      (total, layoutKey) => total + 2 ** MOONBOARD_SETS[layoutKey].length - 1,
+      0,
+    );
+    expect(walked).toBe(291);
+    expect([...auroraBoards, 'moonboard'].sort()).toEqual([...SUPPORTED_BOARDS].sort());
+  });
+});
+
+/**
+ * The other half of the parser's contract, which the round-trip above cannot
+ * reach: what happens to a set slug this app never emitted.
+ *
+ * The round-trip only ever feeds back slugs `generateSetSlug` built, and those
+ * rebuild by construction — so it stays green with the rebuild check deleted.
+ * These cases are what that check is for. A reordered or repeated slug is not a
+ * form www or the Expo app mints, so it is not authoritative about which sets
+ * are on the wall; it falls through to the layout's full set rather than
+ * silently deciding the URL meant a subset.
+ */
+describe('MoonBoard set slugs this app never emits', () => {
+  const layoutsWithSeveralSets = moonBoardLayoutKeys.filter((layoutKey) => MOONBOARD_SETS[layoutKey].length >= 2);
+
+  async function parseSetSlug(layoutKey: MoonBoardLayoutKey, setSlug: string): Promise<number[]> {
+    const parsed = await parseBoardRouteParamsWithSlugs({
+      board_name: 'moonboard',
+      layout_id: generateLayoutSlug(MOONBOARD_LAYOUTS[layoutKey].name),
+      size_id: 'standard-11x18-grid',
+      set_ids: setSlug,
+      angle: String(ROUND_TRIP_ANGLE),
+    });
+    return [...parsed.set_ids].sort((left, right) => left - right);
+  }
+
+  it.each(layoutsWithSeveralSets)('%s: a reordered two-set slug falls back to every set', async (layoutKey) => {
+    const pair = MOONBOARD_SETS[layoutKey].slice(0, 2);
+    const canonical = generateSetSlug(pair.map((set) => set.name));
+    const reordered = canonical.split('_').reverse().join('_');
+
+    // Without this the case is vacuous: a symmetric slug would prove nothing.
+    expect(reordered, `${layoutKey}: reversing '${canonical}' changed nothing`).not.toBe(canonical);
+
+    expect(await parseSetSlug(layoutKey, canonical)).toEqual(pair.map((set) => set.id).sort((a, b) => a - b));
+    expect(await parseSetSlug(layoutKey, reordered)).toEqual(
+      MOONBOARD_SETS[layoutKey].map((set) => set.id).sort((a, b) => a - b),
+    );
+  });
+
+  it.each(layoutsWithSeveralSets)('%s: a repeated part falls back to every set', async (layoutKey) => {
+    const [firstSet] = MOONBOARD_SETS[layoutKey];
+    const onePart = generateSetSlug([firstSet.name]);
+
+    expect(await parseSetSlug(layoutKey, onePart)).toEqual([firstSet.id]);
+    expect(await parseSetSlug(layoutKey, `${onePart}_${onePart}`)).toEqual(
+      MOONBOARD_SETS[layoutKey].map((set) => set.id).sort((a, b) => a - b),
+    );
+  });
+
+  it.each(moonBoardLayoutKeys)('%s: an unrecognised slug still renders the whole layout', async (layoutKey) => {
+    expect(await parseSetSlug(layoutKey, 'holds-that-do-not-exist')).toEqual(
+      MOONBOARD_SETS[layoutKey].map((set) => set.id).sort((a, b) => a - b),
+    );
   });
 });
