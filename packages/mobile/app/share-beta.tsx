@@ -7,11 +7,12 @@ import { FlashList } from '@shopify/flash-list';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { Text } from '../src/components/Text';
 import { Button } from '../src/components/Button';
 import { Icon } from '../src/components/Icon';
 import { ActivityIndicator } from '../src/components/ActivityIndicator';
-import { LogbookRow } from '../src/components/you/LogbookRow';
+import { ShareBetaAscentRow } from '../src/components/share-beta/ShareBetaAscentRow';
 import { useTheme } from '../src/providers/theme-provider';
 import { useAuth } from '../src/providers/auth-provider';
 import { useToast } from '../src/providers/toast-provider';
@@ -23,6 +24,14 @@ import {
   useBetaLinkPreview,
 } from '../src/lib/graphql/hooks';
 import { extractGraphqlMessage } from '../src/lib/graphql/extract-error-message';
+import { track } from '../src/lib/analytics';
+import {
+  buildShareBetaListItems,
+  shareBetaListItemType,
+  shareBetaListKey,
+  type ShareBetaAscentSource,
+  type ShareBetaListItem,
+} from '../src/lib/share-beta-list';
 import { spacing, borderRadius } from '../src/theme/tokens';
 import { iosSystemColors } from '../src/theme/ios-colors';
 
@@ -106,14 +115,27 @@ export default function ShareBetaScreen() {
     if (feed.hasNextPage && !feed.isFetchingNextPage) void feed.fetchNextPage();
   }, [feed]);
 
+  // Boolean, not the caption text — the event must never carry post content.
+  const hasCaption = caption != null;
+
   const handleAttach = useCallback(
-    (ascent: AscentFeedItem) => {
+    (ascent: AscentFeedItem, source: ShareBetaAscentSource) => {
       if (!link || attach.isPending) return;
       setAttachError(null);
       attach.mutate(
         { boardType: ascent.boardType, climbUuid: ascent.climbUuid, link, angle: ascent.angle, tickUuid: ascent.uuid },
         {
           onSuccess: () => {
+            // The picker had no product analytics at all, so "does anyone use
+            // this, and does the caption match actually pick the climb?" was
+            // only answerable by guessing. `source` splits caption-matched
+            // picks from browsed ones.
+            track(SHARED_EVENTS.BetaAttached, {
+              source,
+              boardType: ascent.boardType,
+              viaSearch: isSearching,
+              hasCaption,
+            });
             void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             // Toast is fine on success — router.back() dismisses the modal first,
             // so it lands on the screen underneath where the toast is visible.
@@ -132,22 +154,37 @@ export default function ShareBetaScreen() {
         },
       );
     },
-    [attach, link, router, showToast, t],
+    [attach, hasCaption, isSearching, link, router, showToast, t],
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: AscentFeedItem }) => <LogbookRow ascent={item} onActivate={handleAttach} />,
-    [handleAttach],
+    ({ item }: { item: ShareBetaListItem }) => {
+      if (item.kind === 'section') {
+        const suggested = item.source === 'suggested';
+        return (
+          <Text
+            variant="footnote"
+            color={suggested ? brandColors.primary : systemColors.tertiaryLabel}
+            style={styles.sectionLabel}
+            accessibilityRole="header"
+          >
+            {suggested ? t('mobile.betaVideos.shareSuggestedTitle') : t('mobile.betaVideos.shareOtherAscents')}
+          </Text>
+        );
+      }
+      return <ShareBetaAscentRow ascent={item.ascent} source={item.source} onActivate={handleAttach} />;
+    },
+    [brandColors.primary, handleAttach, systemColors.tertiaryLabel, t],
   );
 
-  // Drop suggested climbs from the browse list so a recent + matched climb isn't
-  // listed twice (once under "Suggested", once below).
-  const suggestedClimbUuids = useMemo(() => new Set(suggestions.map((ascent) => ascent.climbUuid)), [suggestions]);
-  const listData = useMemo(
-    () => (suggestedClimbUuids.size > 0 ? items.filter((ascent) => !suggestedClimbUuids.has(ascent.climbUuid)) : items),
-    [items, suggestedClimbUuids],
+  // One flat, fully virtualized list: section headers + suggested rows + the
+  // browse rows, with a suggested climb dropped from the browse section so a
+  // recent + matched climb isn't listed twice.
+  const listItems = useMemo(
+    () => buildShareBetaListItems({ ascents: items, suggestions, isSearching }),
+    [isSearching, items, suggestions],
   );
-  const showSuggestions = suggestions.length > 0;
+  const listContentStyle = useMemo(() => ({ paddingBottom: insets.bottom + spacing[6] }), [insets.bottom]);
 
   const containerStyle = [styles.container, { backgroundColor: systemColors.background, paddingTop: insets.top }];
 
@@ -245,30 +282,14 @@ export default function ShareBetaScreen() {
           </View>
         ) : (
           <FlashList
-            data={listData}
+            data={listItems}
             renderItem={renderItem}
-            keyExtractor={(item) => item.uuid}
+            keyExtractor={shareBetaListKey}
+            getItemType={shareBetaListItemType}
             keyboardShouldPersistTaps="handled"
             onEndReached={handleEndReached}
             onEndReachedThreshold={0.5}
-            contentContainerStyle={{ paddingBottom: insets.bottom + spacing[6] }}
-            ListHeaderComponent={
-              showSuggestions ? (
-                <View style={styles.suggestedSection}>
-                  <Text variant="footnote" color={brandColors.primary} style={styles.sectionLabel}>
-                    {t('mobile.betaVideos.shareSuggestedTitle')}
-                  </Text>
-                  {suggestions.map((ascent) => (
-                    <LogbookRow key={ascent.uuid} ascent={ascent} onActivate={handleAttach} />
-                  ))}
-                  {listData.length > 0 && (
-                    <Text variant="footnote" color={systemColors.tertiaryLabel} style={styles.sectionLabel}>
-                      {t('mobile.betaVideos.shareOtherAscents')}
-                    </Text>
-                  )}
-                </View>
-              ) : null
-            }
+            contentContainerStyle={listContentStyle}
             ListFooterComponent={
               feed.isFetchingNextPage ? (
                 <View style={styles.footer}>
@@ -277,14 +298,12 @@ export default function ShareBetaScreen() {
               ) : null
             }
             ListEmptyComponent={
-              showSuggestions ? null : (
-                <View style={styles.empty}>
-                  <Icon name="tick.outline" size={44} color={systemColors.tertiaryLabel} />
-                  <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyText}>
-                    {isSearching ? t('mobile.betaVideos.shareNoResults') : t('mobile.betaVideos.shareNoAscents')}
-                  </Text>
-                </View>
-              )
+              <View style={styles.empty}>
+                <Icon name="tick.outline" size={44} color={systemColors.tertiaryLabel} />
+                <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyText}>
+                  {isSearching ? t('mobile.betaVideos.shareNoResults') : t('mobile.betaVideos.shareNoAscents')}
+                </Text>
+              </View>
             }
           />
         )}
@@ -320,7 +339,6 @@ const styles = StyleSheet.create({
   thumb: { width: 44, height: 44, borderRadius: borderRadius.sm },
   thumbFallback: { alignItems: 'center', justifyContent: 'center' },
   linkText: { flex: 1, gap: 2 },
-  suggestedSection: { gap: spacing[1] },
   sectionLabel: {
     paddingHorizontal: spacing[4],
     paddingTop: spacing[3],

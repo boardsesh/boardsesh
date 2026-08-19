@@ -242,6 +242,7 @@
       "shareReadingCaption": "Reading the caption…",
       "shareSuggestedTitle": "Matched from the caption",
       "shareOtherAscents": "Your other ascents",
+      "shareAscentLabel": "Attach your beta to {{details}}",
       "shareTitle": "Share your beta",
       "step1Title": "Copy your caption",
       "step2Title": "Post it as a reel",
