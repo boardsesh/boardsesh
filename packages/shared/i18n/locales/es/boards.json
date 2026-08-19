@@ -656,6 +656,7 @@
         "invalid": "Este enlace de reclamación no es válido. Vuelve a iniciar la reclamación desde el rocódromo.",
         "expired": "Este enlace ha caducado. Vuelve a iniciar la reclamación para obtener uno nuevo.",
         "used": "Este enlace ya se ha usado.",
+        "superseded": "Este rocódromo ya tiene otro propietario, así que este enlace no puede traspasarlo. Vuelve a iniciar la reclamación desde el rocódromo y un administrador la revisará.",
         "serverError": "Algo salió mal por nuestra parte. Inténtalo de nuevo en un momento."
       }
     }

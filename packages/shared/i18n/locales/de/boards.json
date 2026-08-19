@@ -656,6 +656,7 @@
         "invalid": "Dieser Link ist ungültig. Starte den Anspruch nochmal von der Halle aus.",
         "expired": "Dieser Link ist abgelaufen. Starte den Anspruch nochmal und hol dir einen frischen.",
         "used": "Dieser Link wurde schon benutzt.",
+        "superseded": "Diese Halle hat jetzt einen anderen Besitzer, dieser Link kann sie also nicht übertragen. Starte den Anspruch nochmal von der Halle aus, dann schaut sich das ein Admin an.",
         "serverError": "Bei uns ging etwas schief. Versuch es gleich nochmal."
       }
     }

@@ -250,7 +250,8 @@
     "snackbar": {
       "approved": "Claim approved — ownership transferred",
       "denied": "Claim denied",
-      "failed": "Couldn't update the claim"
+      "failed": "Couldn't update the claim",
+      "superseded": "This gym changed hands after the claim was filed. Deny it, or use Move gym ownership below."
     },
     "table": {
       "claimant": "Claimant",

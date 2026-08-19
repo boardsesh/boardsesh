@@ -250,7 +250,8 @@
     "snackbar": {
       "approved": "Anspruch angenommen — Besitz übertragen",
       "denied": "Anspruch abgelehnt",
-      "failed": "Der Anspruch ließ sich nicht ändern"
+      "failed": "Der Anspruch ließ sich nicht ändern",
+      "superseded": "Diese Halle hat nach dem Anspruch den Besitzer gewechselt. Lehn ihn ab oder nutz unten Hallen-Besitz übertragen."
     },
     "table": {
       "claimant": "Anspruchsteller*in",

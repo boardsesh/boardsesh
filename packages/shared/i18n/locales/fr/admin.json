@@ -250,7 +250,8 @@
     "snackbar": {
       "approved": "Revendication approuvée — propriété transférée",
       "denied": "Revendication refusée",
-      "failed": "Impossible de mettre à jour la revendication"
+      "failed": "Impossible de mettre à jour la revendication",
+      "superseded": "Cette salle a changé de mains après le dépôt de la revendication. Refusez-la, ou utilisez Changer le propriétaire d’une salle plus bas."
     },
     "table": {
       "claimant": "Demandeur",
