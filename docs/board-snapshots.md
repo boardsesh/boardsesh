@@ -862,12 +862,19 @@ person can check it rather than re-derive it:
 | the app is backgrounded, or a sibling board's removal tears the cycle down      | `Failed { aborted: true, reason: 'aborted-background' / 'aborted-wipe' }` — an interruption, the download resumes  |
 | process death, uninstall, a climber who never opens the app again               | **nothing, and nothing can.** Per production this is the dominant unterminated bucket                              |
 
-The three `abandoned-*` reasons are the once-per-Started ones. The de-list paths also **clear**
-`scope-started:` and `scope-download-started:` (`clearScopeDownloadFunnelMarkers`) once they have
-reported, and nothing else: the rows and the `checkpoint:` keys stay, so a re-enable still resumes
-instantly. Two Starteds for a toggle-off-then-on is the intended reading — as far as the funnel is
-concerned those are two downloads, and a durable marker outliving its download is what made
-abandonment unmeasurable in the first place.
+The three `abandoned-*` reasons are the once-per-Started ones. The de-list paths **clear**
+`scope-started:` and `scope-download-started:` (`clearScopeDownloadFunnelMarkers`) and nothing else:
+the rows and the `checkpoint:` keys stay, so a re-enable still resumes instantly. Two Starteds for a
+toggle-off-then-on is the intended reading — as far as the funnel is concerned those are two
+downloads, and a durable marker outliving its download is what made abandonment unmeasurable in the
+first place.
+
+They clear **before** they report, and each scope's close is independently fault-tolerant. The clear
+is the only step that can fail (a locked database); `track()` cannot. Reporting first would emit the
+terminal and then leave the marker behind for the next launch's sweep to report a second time, so a
+failed clear now emits nothing and the sweep becomes the single reporter — exactly one terminal
+either way. Wrapping each scope separately keeps one locked write from silently dropping the rest of
+a sweep.
 
 Sign-out reports through **two** seams for one reason: the explicit wipe runs `deleteAllSyncMeta`, so
 only code inside that function can still see the markers, while the selective sign-outs keep every
