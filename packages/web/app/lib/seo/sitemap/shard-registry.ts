@@ -407,12 +407,15 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
  * PRECOMPUTED: one row of `sitemap_shard_refreshes`, written by a cron and an
  * `after()` self-heal, because caching an expensive question only moves when you
  * pay for it — a cold miss on sixteen sequential `DISTINCT ON` scans could never
- * meet 3 s at any cache temperature (#4523). `fetchPlaylistSitemapRows` remains
- * uncached and unprecomputed, and is the shard still degrading most often.
+ * meet 3 s at any cache temperature (#4523). `fetchPlaylistSitemapRows` is cached
+ * like boards rather than precomputed like climbs, because its answer is small
+ * enough to hold — ~200 KB of rows today, ~840 KB at the item cap, against
+ * Vercel's 2 MB Data Cache entry ceiling (#4524). All three data-backed builders
+ * are covered now; none of them is covered on a genuinely cold entry.
  *
  * None of that makes the deadline redundant. It makes it *reachable*: the first
- * boards miss after a cold start still pays full price, and an empty climbs store
- * falls back to the same scan that used to blow the budget.
+ * boards or playlists miss after a cold start still pays full price, and an empty
+ * climbs store falls back to the same scan that used to blow the budget.
  */
 export const SHARD_DEADLINE_MS = 3_000;
 
@@ -420,9 +423,14 @@ export const SHARD_DEADLINE_MS = 3_000;
  * Bounds `work` without cancelling it — a builder that ignores the deadline keeps
  * running (and, for boards, still hits its own `AbortController`); we simply stop
  * waiting. So this bounds *this request's* latency, not the load the abandoned
- * query keeps putting on the pool. Real cancellation needs an `AbortSignal`
- * threaded into `fetchPlaylistSitemapRows` (or a statement timeout on its query),
- * which is a follow-up, not something to claim here.
+ * query keeps putting on the pool.
+ *
+ * Still not cancellation, and the wording matters. The playlists query now runs
+ * under `SET LOCAL statement_timeout = '15s'` (#4524), which bounds a pathological
+ * plan rather than releasing the connection at 3 s — deliberately, since the
+ * `/sitemaps/playlists.xml` route legitimately takes up to ~4 s and a deadline-tight
+ * timeout would break a working URL. Real cancellation still needs an `AbortSignal`
+ * threaded through, which is a follow-up, not something to claim here.
  */
 async function withDeadline<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
