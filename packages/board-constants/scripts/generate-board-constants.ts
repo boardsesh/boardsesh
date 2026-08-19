@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { config } from 'dotenv';
+import { normalizeSizeDescription } from '../src/size-description-overrides';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -171,7 +172,10 @@ function querySizes(boardName: GeneratedBoardName): ProductSize[] {
   return parseRows(result, ([id, name, description, edgeLeft, edgeRight, edgeBottom, edgeTop, productId]) => ({
     id: parseInt(id, 10),
     name: name.trim(),
-    description: description.trim(),
+    // Aurora ships one misspelled description ('Commerical'); correct it on the
+    // way in so the constants — and the board URLs built from them — read
+    // properly. See ../src/size-description-overrides.ts and issue #4554.
+    description: normalizeSizeDescription(description.trim()),
     edgeLeft: parseInt(edgeLeft, 10),
     edgeRight: parseInt(edgeRight, 10),
     edgeBottom: parseInt(edgeBottom, 10),

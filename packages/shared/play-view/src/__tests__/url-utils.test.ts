@@ -39,7 +39,7 @@ describe('buildReadableClimbViewPath', () => {
         angle: 40,
         climbUuid: 'abc123',
       }),
-    ).toBe('/kilter/original/12x14-commerical/screw_bolt/40/view/abc123');
+    ).toBe('/kilter/original/12x14-commercial/screw_bolt/40/view/abc123');
   });
 
   it('falls back to numeric path with a climb slug when static board data cannot resolve', () => {

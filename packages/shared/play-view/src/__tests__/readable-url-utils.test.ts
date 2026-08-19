@@ -473,7 +473,7 @@ describe('legacy MoonBoard URL forms', () => {
   });
 });
 
-describe('permanently pinned qualified size slugs', () => {
+describe('permanently pinned size slugs', () => {
   const pinnedEntries = Object.entries(PERMANENT_SIZE_SLUG_ALIASES).flatMap(([boardName, aliasesBySizeId]) =>
     Object.entries(aliasesBySizeId ?? {}).flatMap(([sizeId, aliases]) =>
       aliases.map((alias) => ({ boardName: boardName as BoardName, sizeId: Number(sizeId), alias })),
@@ -481,7 +481,10 @@ describe('permanently pinned qualified size slugs', () => {
   );
 
   it('has exactly the forms we have shipped', () => {
+    // Integer-like keys enumerate ascending, so size 7 comes first however the
+    // source object is written.
     expect(pinnedEntries).toEqual([
+      { boardName: 'kilter', sizeId: 7, alias: '12x14-commerical' },
       { boardName: 'kilter', sizeId: 10, alias: '12x12-square' },
       { boardName: 'kilter', sizeId: 27, alias: '12x12-square-without-kickboard' },
     ]);
@@ -538,5 +541,44 @@ describe('permanently pinned qualified size slugs', () => {
         }
       }
     }
+  });
+});
+
+describe("the Kilter 12 x 14 'Commerical' spelling correction (#4554)", () => {
+  // Correcting Aurora's typo in the size description moved the generated URL
+  // segment from `12x14-commerical` to `12x14-commercial`. PostHog counted 629
+  // pageviews from 325 people on the old form in the 180 days to 2026-08-16 —
+  // /list, /view, /playlists, and the /es and /fr variants — and the Expo app's
+  // deep-link router resolves purely from board-constants with no database
+  // fallback. These cases are the proof those links still land.
+  it('mints the corrected slug for new links', () => {
+    expect(resolveSizeSlug('kilter', 1, 7)).toBe('12x14-commercial');
+    expect(generateSizeSlug('12 x 14', 'Commercial')).toBe('12x14-commercial');
+  });
+
+  it('still routes a climb link minted with the old spelling', () => {
+    expect(parseClimbRoutePath(`/kilter/original/12x14-commerical/screw_bolt/40/view/${CLIMB_UUID}`)).toEqual({
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 7,
+      setIds: '1,20',
+      angle: 40,
+      climbUuid: CLIMB_UUID,
+      surface: 'view',
+    });
+  });
+
+  it('still routes a climb-list link minted with the old spelling', () => {
+    expect(parseBoardListPath('/kilter/original/12x14-commerical/screw_bolt/40/list')).toEqual({
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 7,
+      setIds: '1,20',
+      angle: 40,
+    });
+  });
+
+  it('routes the corrected slug to the same board', () => {
+    expect(parseBoardListPath('/kilter/original/12x14-commercial/screw_bolt/40/list')?.sizeId).toBe(7);
   });
 });

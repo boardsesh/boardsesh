@@ -105,11 +105,11 @@ We'll always create a PR, never asks if a PR should be created, open as a draft.
   /mobile/          # React Native (Expo) mobile application
   /backend/         # WebSocket backend for party mode (graphql-ws)
   /shared-schema/   # Shared GraphQL schema and TypeScript types
+  /board-constants/ # Generated Aurora board catalogue (sizes, layouts, sets, holds), grade colours, difficulty bands
   /shared/
     /play-view/     # Play-drawer logic (queue nav, tick utils, grade display)
     /queue/         # Queue state machine (reducer, types, event utils)
     /board-config/  # Board metadata, hold maps, angle tables
-    /board-constants/ # Grade colours, difficulty bands
     /board-react/   # Renderer-agnostic BoardProvider + logbook/tick hooks (useSaveTick/useUpdateTick/useDeleteTick)
     /offline-sync/  # Offline sync engine: mutation outbox + drainer, pull client, SQLite DDL (platform I/O injected)
     /profile-stats/ # Pure climbing-stats aggregation for the You page / profile (chart builders, deriveProfileViewModel)

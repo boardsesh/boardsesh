@@ -26,7 +26,7 @@ export const AURORA_PRODUCT_SIZES: Record<BoardName, Record<number, ProductSizeD
     7: {
       id: 7,
       name: '12 x 14',
-      description: 'Commerical',
+      description: 'Commercial',
       edgeLeft: 0,
       edgeRight: 144,
       edgeBottom: 0,
