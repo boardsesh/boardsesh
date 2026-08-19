@@ -850,17 +850,17 @@ mid-**bootstrap** would otherwise produce two terminals for one Started — the 
 Issue #4452 widened the removal terminal above to every other ender. The full list, so the next
 person can check it rather than re-derive it:
 
-| How a download ends                                                              | Reports today                                                                                                   |
-| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| it finishes                                                                      | `Offline Board Download Completed`                                                                              |
-| board removed from Storage (`removeBoardScopeData`)                              | `Failed { stage: 'board-removed', reason: 'abandoned-removed' }` (#4406)                                         |
-| explicit sign-out / account deletion (`purgeLocalDataForSignOut`)                | `Failed { stage: 'abandoned', reason: 'abandoned-signed-out' }` — read before the wipe transaction, emitted after |
-| forced 401, proactive token expiry, identity change (`clearUserData` + de-list)  | `Failed { stage: 'abandoned', reason: 'abandoned-signed-out' }` — from `runSignedOutCleanup`, markers then cleared |
-| My Boards toggle-off                                                             | `Failed { stage: 'abandoned', reason: 'abandoned-disabled' }`, plus `Offline Board Toggled { enabled: false }`   |
-| a de-list that crashed before reporting, or a device upgrading into this build   | the launch backstop in `offline-sync-bridge.tsx`, as `abandoned-disabled`                                        |
-| the owner-stamp mismatch wipe (`clearUserData` in the bridge)                    | nothing, and correctly: it de-lists nothing, so the scope keeps downloading                                      |
-| the app is backgrounded, or a sibling board's removal tears the cycle down       | `Failed { aborted: true, reason: 'aborted-background' / 'aborted-wipe' }` — an interruption, the download resumes |
-| process death, uninstall, a climber who never opens the app again                | **nothing, and nothing can.** Per production this is the dominant unterminated bucket                            |
+| How a download ends                                                             | Reports today                                                                                                      |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| it finishes                                                                     | `Offline Board Download Completed`                                                                                 |
+| board removed from Storage (`removeBoardScopeData`)                             | `Failed { stage: 'board-removed', reason: 'abandoned-removed' }` (#4406)                                           |
+| explicit sign-out / account deletion (`purgeLocalDataForSignOut`)               | `Failed { stage: 'abandoned', reason: 'abandoned-signed-out' }` — read before the wipe transaction, emitted after  |
+| forced 401, proactive token expiry, identity change (`clearUserData` + de-list) | `Failed { stage: 'abandoned', reason: 'abandoned-signed-out' }` — from `runSignedOutCleanup`, markers then cleared |
+| My Boards toggle-off                                                            | `Failed { stage: 'abandoned', reason: 'abandoned-disabled' }`, plus `Offline Board Toggled { enabled: false }`     |
+| a de-list that crashed before reporting, or a device upgrading into this build  | the launch backstop in `offline-sync-bridge.tsx`, as `abandoned-disabled`                                          |
+| the owner-stamp mismatch wipe (`clearUserData` in the bridge)                   | nothing, and correctly: it de-lists nothing, so the scope keeps downloading                                        |
+| the app is backgrounded, or a sibling board's removal tears the cycle down      | `Failed { aborted: true, reason: 'aborted-background' / 'aborted-wipe' }` — an interruption, the download resumes  |
+| process death, uninstall, a climber who never opens the app again               | **nothing, and nothing can.** Per production this is the dominant unterminated bucket                              |
 
 The three `abandoned-*` reasons are the once-per-Started ones. The de-list paths also **clear**
 `scope-started:` and `scope-download-started:` (`clearScopeDownloadFunnelMarkers`) once they have
@@ -885,7 +885,7 @@ from the `Logout` half a second earlier, which made all of them unjoinable.
 
 **What this still does not cover.** Started → Completed will not reach 100% and is not meant to. Over
 the funnel's first weeks in production, of the (person, scope) pairs with a Started and no Completed,
-the majority emitted *nothing at all* after the Started — same first and last timestamp, no toggle,
+the majority emitted _nothing at all_ after the Started — same first and last timestamp, no toggle,
 no logout. That is process death, uninstall, or a climber who moved on, and no code change can emit
 an event for it.
 
