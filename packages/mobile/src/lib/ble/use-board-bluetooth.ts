@@ -137,6 +137,15 @@ export async function dispatchMoonboardPacket(
   return true;
 }
 
+// Whether the app is in the foreground right now. Native re-lights the wall on
+// every configureBoard so a colour change lands immediately, but a background
+// BLE wake also boots React Native — and the adopt path below pushes a config as
+// soon as it adopts. Passing the real foreground state lets native keep the wall
+// dark when nobody asked for the connection (#4499).
+function isAppActive(): boolean {
+  return AppState.currentState === 'active';
+}
+
 // MoonBoard grid rows for the native configureBoard payload, so native
 // re-encodes (widget intents, reconnect re-light) use the same serpentine grid
 // as the JS send path — Mini strips are 12 rows, standard 18 (#3392). Undefined
@@ -1177,6 +1186,7 @@ export function useBoardBluetooth({
               colorOverrides: sanitizedColorOverrides,
               numRows: moonboardNumRowsForNative(boardName, layoutId),
               lightAdjacentHolds: moonboardLightAdjacentHolds,
+              appActive: isAppActive(),
             });
           } catch (error) {
             console.warn('[BLE] Failed to push board configuration to native side:', error);
@@ -1590,6 +1600,7 @@ export function useBoardBluetooth({
           colorOverrides: sanitizedColorOverrides,
           numRows: moonboardNumRowsForNative(boardName, layoutId),
           lightAdjacentHolds: moonboardLightAdjacentHolds,
+          appActive: isAppActive(),
         })
         .catch(() => {});
 
@@ -1670,6 +1681,7 @@ export function useBoardBluetooth({
         colorOverrides: sanitizedColorOverrides,
         numRows: moonboardNumRowsForNative(boardName, layoutId),
         lightAdjacentHolds: moonboardLightAdjacentHolds,
+        appActive: isAppActive(),
       })
       .catch(() => {});
   }, [boardName, layoutId, sizeId, isConnected, sanitizedColorOverrides, moonboardLightAdjacentHolds]);

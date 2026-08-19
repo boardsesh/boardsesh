@@ -42,7 +42,7 @@ enum LiveActivityBleBridge {
         task.begin(name: "ble-reconnect-intent")
         defer { task.end() }
         return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            BoardBleManager.shared.reconnectToLastKnownBoard { result in
+            BoardBleManager.shared.reconnectToLastKnownBoard(origin: .liveActivityIntent) { result in
                 switch result {
                 case .success:
                     continuation.resume(returning: true)

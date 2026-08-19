@@ -312,6 +312,8 @@ const BLE_DIAGNOSTIC_TAG_KEYS = [
   'ble_char_properties',
   'ble_max_with_response',
   'ble_max_without_response',
+  'ble_connect_origin',
+  'ble_relight_suppressed',
 ] as const;
 
 export type BleConnectionDiagnostics = {
@@ -322,6 +324,11 @@ export type BleConnectionDiagnostics = {
   chosenWriteType?: 'withoutResponse' | 'withResponse';
   maxWriteWithResponse?: number;
   maxWriteWithoutResponse?: number;
+  // How the connection came to be, and whether its success point was allowed to
+  // re-light the wall. The #4499 zombie-reconnect is not reproducible on demand,
+  // so these tags are how we see the gate working in the field.
+  connectOrigin?: string;
+  implicitRelightSuppressed?: boolean;
 };
 
 // A scope whose tags accept `undefined` (the clear value) — wider than
@@ -356,6 +363,12 @@ export function applyBleDiagnosticsToScope(scope: TagScope, diagnostics: BleConn
   }
   if (diagnostics.maxWriteWithoutResponse !== undefined) {
     scope.setTag('ble_max_without_response', diagnostics.maxWriteWithoutResponse);
+  }
+  // The native bridge sends '' when it has no provenance to report; treat that
+  // as absent rather than tagging an empty string.
+  if (diagnostics.connectOrigin) scope.setTag('ble_connect_origin', diagnostics.connectOrigin);
+  if (diagnostics.implicitRelightSuppressed !== undefined) {
+    scope.setTag('ble_relight_suppressed', String(diagnostics.implicitRelightSuppressed));
   }
 }
 

@@ -15,11 +15,18 @@ const mockBleManager = vi.hoisted(() => ({
   onStateChange: vi.fn(),
 }));
 
+// Mutable so a test can put the app in the background and assert what the hook
+// tells native about it (`appActive` on configureBoard — see #4499).
+const mockAppState = vi.hoisted(() => ({
+  currentState: 'active' as 'active' | 'background' | 'inactive',
+  addEventListener: vi.fn(() => ({ remove: vi.fn() })),
+}));
+
 vi.mock('react-native', async () => {
   const { reactNativePermissionHarness: harness } = await import('./react-native-permissions-test-harness');
   return {
     Alert: { alert: vi.fn() },
-    AppState: { addEventListener: vi.fn(() => ({ remove: vi.fn() })) },
+    AppState: mockAppState,
     Platform: harness.platform,
     PermissionsAndroid: harness.permissionsAndroid,
   };
@@ -1693,11 +1700,62 @@ describe('useBoardBluetooth native connection adoption', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    mockAppState.currentState = 'active';
     vi.mocked(subscribeNativeBleConnected).mockImplementation(() => null);
     vi.mocked(getNativeBleConnectedDevice).mockImplementation(async () => null);
     vi.mocked(isNativeIosBleAdapter).mockReturnValue(false);
     vi.mocked(parseBoardTypeFromDeviceName).mockReset();
     vi.mocked(parseSerialNumber).mockReset();
+  });
+
+  // #4499: native re-lights the wall on every configureBoard, and a background
+  // BLE wake boots React Native — which adopts and immediately pushes a config.
+  // Telling native whether we were actually on screen is what stops that
+  // repainting a wall the native connect gate deliberately left dark.
+  it('tells native the app was backgrounded when it adopts from a background wake', async () => {
+    const adapter = makeAdoptableAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    mockAppState.currentState = 'background';
+
+    renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      connectedListener?.({ deviceId: 'native-dev', deviceName: 'Kilter Board#9@3' });
+    });
+
+    await waitFor(() => {
+      expect(adapter.configureBoard).toHaveBeenCalledWith(expect.objectContaining({ appActive: false }));
+    });
+    for (const call of adapter.configureBoard.mock.calls) {
+      expect(call[0]).toMatchObject({ appActive: false });
+    }
+  });
+
+  it('tells native the app was in the foreground when the user changes colours on screen', async () => {
+    const adapter = makeAdoptableAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    mockAppState.currentState = 'active';
+
+    const { rerender } = renderHook((props) => useBoardBluetooth(props), {
+      initialProps: {
+        boardName: 'kilter' as const,
+        layoutId: 1,
+        sizeId: 1,
+        ledColorOverrides: { HAND: '#111111' },
+      },
+    });
+
+    await act(async () => {
+      connectedListener?.({ deviceId: 'native-dev', deviceName: 'Kilter Board#9@3' });
+    });
+
+    rerender({ boardName: 'kilter', layoutId: 1, sizeId: 1, ledColorOverrides: { HAND: '#222222' } });
+
+    await waitFor(() => {
+      expect(adapter.configureBoard).toHaveBeenCalledWith(
+        expect.objectContaining({ colorOverrides: { HAND: '#222222' }, appActive: true }),
+      );
+    });
   });
 
   it('adopts a natively-connected board matching the active config', async () => {

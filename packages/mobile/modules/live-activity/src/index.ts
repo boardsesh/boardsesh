@@ -59,6 +59,19 @@ export type NativeBleConnectedDevice = {
   chosenWriteType?: 'withoutResponse' | 'withResponse';
   maxWriteWithResponse?: number;
   maxWriteWithoutResponse?: number;
+  /**
+   * How the current connection came to be: a JS `connect`, the Live Activity
+   * lightbulb, automatic write-stall recovery, or a CoreBluetooth state
+   * restoration nobody in this process asked for. Empty string when the binary
+   * has no provenance recorded. See #4499.
+   */
+  connectOrigin?: string;
+  /**
+   * True when this connection's success point was NOT allowed to re-light the
+   * wall from the persisted queue — either nobody asked for it, or the request
+   * that produced it was too old to still mean anything. See #4499.
+   */
+  implicitRelightSuppressed?: boolean;
 };
 
 /**
@@ -127,6 +140,15 @@ export type NativeBleConfigureBoardOptions = {
    * (makeMoonboardPacket). No-op on Aurora boards; older binaries ignore it.
    */
   lightAdjacentHolds?: boolean;
+  /**
+   * Whether the app was in the foreground when this configuration was pushed.
+   * Native re-lights the wall on every `configureBoard` so a colour change
+   * lands immediately; a background BLE wake also boots React Native, which
+   * would otherwise repaint a wall the native connect gate deliberately kept
+   * dark. Native defaults it to `true`, so an older JS bundle keeps today's
+   * behaviour. See #4499.
+   */
+  appActive?: boolean;
 };
 
 type BoardBleNativeModule = {
