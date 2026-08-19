@@ -414,12 +414,24 @@ function useAdoptedBoard(
  * somebody else's session. The offline healing `useAdoptedBoard` does is absent
  * for the same reason: this path only exists on the web export.
  *
- * Privacy is the resolver's job and already done: `boardBySlug` returns `null`
- * for a board a signed-out viewer may not see, indistinguishable from one that
- * does not exist — so a private or gym-scoped board reaches the same not-found
- * a typo does.
+ * `boardBySlug` returns `null` for a board a signed-out viewer may not see,
+ * indistinguishable from one that does not exist. That ambiguity is why
+ * `'unresolved'` is a state of its own rather than an error — see the call site
+ * for what the route does with it.
  */
-function useAnonymousSlugBoard(slug: string | null): { board: UserBoard | null; error: boolean } {
+type AnonymousSlugBoard =
+  /** The read is still in flight, or there is no slug to read. */
+  | { state: 'pending' }
+  | { state: 'resolved'; board: UserBoard }
+  /**
+   * The read came back with nothing — a private board, a gym board scoped to its
+   * members, a typo, or a failed request. Deliberately ONE state: the resolver
+   * masks all of them to the same `null` on purpose, so the route cannot tell
+   * them apart and must not pretend to.
+   */
+  | { state: 'unresolved' };
+
+function useAnonymousSlugBoard(slug: string | null): AnonymousSlugBoard {
   const [resolved, setResolved] = useState<{ slug: string; board: UserBoard | null } | null>(null);
 
   useEffect(() => {
@@ -442,12 +454,12 @@ function useAnonymousSlugBoard(slug: string | null): { board: UserBoard | null; 
   // slug it was fetched for, so a second URL through the same mounted screen
   // cannot render the previous board.
   const settled = resolved && resolved.slug === slug ? resolved : null;
-  // Spelled out rather than derived from `settled?.board === null`, which is
-  // only correct because an unsettled read is `undefined` and a resolved-empty
-  // one is `null` — a distinction the next refactor of this state would quietly
-  // lose. Pending is not an error; a settled null board is.
-  if (!settled) return { board: null, error: false };
-  return { board: settled.board, error: settled.board === null };
+  // A named state rather than a `board === null` reading: that one is correct
+  // only because an unsettled read is `undefined` and a resolved-empty one is
+  // `null`, a distinction the next refactor of this state would quietly lose —
+  // and losing it turns every in-flight read into a dead end.
+  if (!settled) return { state: 'pending' };
+  return settled.board ? { state: 'resolved', board: settled.board } : { state: 'unresolved' };
 }
 
 /**
@@ -509,23 +521,32 @@ export function useBoardRouteTarget(
   // default has to be the feature. A flag that must resolve before the anonymous
   // branch turns on would show a login redirect as the first frame of the very
   // surface this exists to build.
-  const anonymousClimb =
+  const anonymousClimbUrl =
     signedOutOnWeb &&
     (options?.anonymousClimbEnabled ?? true) &&
     (target?.kind === 'climb' || target?.kind === 'slug-climb');
-  const authRequired = signedOutOnWeb && !anonymousClimb;
-  // Neither signed-out branch adopts. Adoption's first act is a CREATE_BOARD the
-  // backend refuses without a session, and it is not a render input for either
-  // one — so it is skipped rather than gated on the outcome.
-  const { board: adoptedBoard, error: adoptedBoardError } = useAdoptedBoard(target, adoptsBoard && !signedOutOnWeb);
   // A shared gym-board link is the same kind of arrival as a search result, so
   // it must not be the one that still hits the login wall. It carries no config
   // in the URL, so unlike the tuple form it does have to resolve — but by a
   // public read, with nothing minted and nothing stored.
-  const anonymousSlug = anonymousClimb && target?.kind === 'slug-climb' ? target.slug : null;
-  const { board: anonymousBoard, error: anonymousBoardError } = useAnonymousSlugBoard(anonymousSlug);
+  const anonymousSlug = anonymousClimbUrl && target?.kind === 'slug-climb' ? target.slug : null;
+  const anonymousSlugBoard = useAnonymousSlugBoard(anonymousSlug);
+  // An unresolved slug asks for a sign-in; it is never a dead end. The resolver
+  // masks "you may not see this board" and "there is no such board" to the same
+  // null, so a not-found here would tell a gym member their own board does not
+  // exist — a REGRESSION on a URL that, before this branch existed, simply asked
+  // them to sign in and then showed them the climb. Sign-in is also the only
+  // move that resolves the ambiguity: signed in, the same URL either renders or
+  // reaches the route's own not-found. A typo'd slug costs one login form, which
+  // is what it cost yesterday.
+  const anonymousClimb = anonymousClimbUrl && anonymousSlugBoard.state !== 'unresolved';
+  const authRequired = signedOutOnWeb && !anonymousClimb;
+  // Neither signed-out branch adopts. Adoption's first act is a CREATE_BOARD the
+  // backend refuses without a session, and it is not a render input for either
+  // one — so it is skipped rather than gated on the outcome.
+  const { board: adoptedBoard, error: boardError } = useAdoptedBoard(target, adoptsBoard && !signedOutOnWeb);
+  const anonymousBoard = anonymousSlugBoard.state === 'resolved' ? anonymousSlugBoard.board : null;
   const board = adoptedBoard ?? anonymousBoard;
-  const boardError = adoptedBoardError || anonymousBoardError;
 
   const wantsClimb = target?.kind === 'climb' || target?.kind === 'slug-climb';
   const climbUuid = wantsClimb ? target.climbUuid : undefined;
