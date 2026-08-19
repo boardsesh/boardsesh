@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { handleLater } from './helpers/concurrency';
+
 /**
  * The concurrency tests in board-merge-tombstone.test.ts and board-presence.test.ts
  * start a promise, then `await` something else before asserting on it. When the
@@ -18,10 +20,6 @@ import { describe, expect, it } from 'vitest';
  * handler in place, changing the expected message in board-merge-tombstone.test.ts
  * makes the test fail. An inert guard that swallowed the rejection could not do that.
  */
-function handleLater(promise: Promise<unknown>): void {
-  void promise.catch((): void => undefined);
-}
-
 describe('handleLater', () => {
   it('leaves the promise rejected, so a later assertion still discriminates', async () => {
     const rejected = Promise.reject(new Error('Board not found'));

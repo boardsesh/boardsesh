@@ -32,6 +32,7 @@ import { setCachedBoardPresenceStats } from '../graphql/resolvers/board-presence
 import { buildTickBoardLockQuery, tickMutations } from '../graphql/resolvers/ticks/mutations';
 import { seedAuroraCatalogFixtures } from './helpers/board-catalog-fixture';
 import { logger } from '../utils/logger';
+import { createBarrier, createValueBarrier, handleLater } from './helpers/concurrency';
 
 // Board presence is always-on (the BOARD_PRESENCE_ENABLED env gate and the
 // PostHog flag were removed when the feature went GA), so the suite needs no
@@ -90,40 +91,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await cleanupBoardPresenceCatalogFixtures();
 });
-
-function createBarrier(): { promise: Promise<void>; release: () => void } {
-  let release = (): void => undefined;
-  const promise = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  return { promise, release };
-}
-
-function createValueBarrier<Result>(): { promise: Promise<Result>; release: (result: Result) => void } {
-  let release = (_result: Result): void => undefined;
-  const promise = new Promise<Result>((resolve) => {
-    release = resolve;
-  });
-  return { promise, release };
-}
-
-/**
- * Attach an inert rejection handler to a promise this test asserts on later.
- *
- * These tests deliberately leave a promise in flight across several `await`s.
- * If it rejects during one of them, Node reaches its unhandled-rejection
- * checkpoint before the assertion further down can attach a handler — vitest
- * counts that under `Errors` and exits 1 with every test still passing
- * (issue #4488, main run 31880202330).
- *
- * The promise itself is untouched: still rejected, still assertable. The
- * `await expect(...).rejects.toThrow(...)` or bare `await` below still runs,
- * still sees the same rejection, and still fails on the wrong error — so this
- * cannot hide a defect. Its contract is pinned in deferred-rejection.test.ts.
- */
-function handleLater(promise: Promise<unknown>): void {
-  void promise.catch((): void => undefined);
-}
 
 async function waitForSessionBlockedBy(blockingPid: number): Promise<void> {
   const deadline = Date.now() + 5_000;
