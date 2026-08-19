@@ -408,6 +408,26 @@ describe('buildSitemapIndexXml', () => {
     expect(errors.join(' ')).toContain(`exceeded its ${SHARD_DEADLINE_MS}ms deadline`);
   });
 
+  it('drops a setters summary that never settles and keeps the rest', async () => {
+    // Same failure a try/catch cannot see, on the shard this PR adds: the
+    // setters summary is a full grouped scan, so it is the one most likely to
+    // stall. The index must lose its pages for a minute, not 5xx.
+    vi.useFakeTimers();
+    setterSummary.hang = true;
+
+    const pending = sitemapIndexRouteHandler();
+    await vi.advanceTimersByTimeAsync(SHARD_DEADLINE_MS + 1);
+    const response = await pending;
+    const xml = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(xml).toContain('/sitemaps/static.xml');
+    expect(xml).toContain('/sitemaps/climbs/1.xml');
+    expect(xml).not.toContain('/sitemaps/setters/');
+    expect(response.headers.get('x-sitemap-degraded')).toBe('setters');
+    expect(errors.join(' ')).toContain(`exceeded its ${SHARD_DEADLINE_MS}ms deadline`);
+  });
+
   it('keeps every shard when all six are slow but each is inside its own deadline', async () => {
     // The walk is bounded by max(builder), not sum(builder). An earlier draft
     // sequenced the shards under a shared 8s budget, which made this exact case

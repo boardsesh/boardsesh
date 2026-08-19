@@ -132,6 +132,16 @@ export const CLIMB_SOURCE_HEADER = 'X-Sitemap-Climbs-Source';
 const CLIMB_CACHE_CONTROL = 'public, s-maxage=21600, stale-while-revalidate=604800';
 const DISABLED_PAGED_SITEMAP_CACHE_CONTROL = 'public, s-maxage=3600, must-revalidate';
 
+/**
+ * The setters shard's own window, equal to the climbs one today by judgement
+ * rather than by construction — its own constant so retuning the climb window
+ * for a climb-specific reason cannot silently retune this one. Same reasoning:
+ * setter pages change on the order of a climb being set, Google refetches a
+ * sitemap on the order of days, and the CDN is what absorbs a crawl burst across
+ * three pages before it reaches a ten-connection pool.
+ */
+const SETTER_CACHE_CONTROL = 'public, s-maxage=21600, stale-while-revalidate=604800';
+
 function xmlResponse(
   body: string,
   cacheControl: string = CACHE_CONTROL,
@@ -181,7 +191,7 @@ function disabledPagedSitemapResponse(id: PagedShardId): Response {
  * A builder that *throws* must produce a 503, never a truncated 200: a short
  * 200 tells Google the missing URLs were removed, while a 5xx makes it retry
  * and keep the last good copy. A builder that returns `[]` on purpose (gyms,
- * setters) is a declared-empty shard, not a failure.
+ * gyms) is a declared-empty shard, not a failure.
  *
  * This is the *shard route's* rule. The index degrades instead — see
  * `buildSitemapIndexXml` — and only reaches here when no shard built at all.
@@ -403,7 +413,7 @@ export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
     // A setters page that renders zero URLs is a regressed query, not a state:
     // the summary already said there were items on it.
     expectsUrls: true,
-    cacheControl: CLIMB_CACHE_CONTROL,
+    cacheControl: SETTER_CACHE_CONTROL,
     summary: () => fetchSetterSitemapSummary(),
     buildPage: async (page: number) => {
       const items = await buildSetterSitemapItems();
@@ -619,7 +629,7 @@ async function buildIndexEntry(shard: SitemapShard): Promise<SitemapIndexEntry |
   const items = await withDeadline(shard.build(), SHARD_DEADLINE_MS, `shard "${shard.id}"`);
 
   if (items.length === 0) {
-    // A declared-empty shard (gyms, setters, a site with no public playlists) is
+    // A declared-empty shard (gyms, a site with no public playlists) is
     // a success that contributes no entry. One that expects URLs is a regressed
     // query, and `emptinessError` says which is which.
     const emptiness = emptinessError(shard);

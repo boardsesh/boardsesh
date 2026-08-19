@@ -484,8 +484,9 @@ The post-deploy smoke was widened in the same PR for the same reason. It asserte
 "any one shard `<loc>`", which a degraded index satisfies — and `static` is a
 hardcoded builder that cannot fail, so the detector that caught #4476 would have
 been permanently green afterwards. It now names both `expectsUrls` shards
-(`static.xml`, `boards.xml`); the three declared-empty ones are legitimately
-absent and stay out of it.
+(`static.xml`, `boards.xml`); the declared-empty ones are legitimately absent and
+stay out of it. (`setters` was one of them at W-22; #4465 made it a paged,
+data-backed shard, so `gyms` and `playlists` are what remain.)
 
 **Slow is a failure mode, and a try/catch cannot see it.** Each fixed builder and
 paged-shard summary in the index walk is raced against `SHARD_DEADLINE_MS` (3 s,

@@ -85,9 +85,10 @@ function groupPredicate(group: ClimbConfigGroup): SQL {
  *     decodes early.
  *  3. **No C0/C7F control characters**, which no HTTP intermediary agrees on.
  *
- * `encodeURIComponent` itself cannot throw here: Postgres `text` in a UTF-8
- * database cannot hold a lone surrogate, so the round-trip is total. The item
- * builder still checks and warns — see `buildSetterSitemapItems`.
+ * Encoding itself cannot fail here: `encodeURIComponent` throws only on a lone
+ * surrogate, and Postgres `text` in a UTF-8 database cannot hold one. The item
+ * builder still checks — and refuses to cache when a check fires — because
+ * "unreachable" is a claim about the database, not a guarantee from this file.
  */
 const routableUsername = sql`
   setter_username IS NOT NULL
@@ -183,8 +184,18 @@ export function setterRowsToItems(rows: readonly SetterSitemapQueryRow[]): {
   let dropped = 0;
 
   for (const row of rows) {
-    const encoded = encodeURIComponent(row.setter_username);
-    if (decodeURIComponent(encoded) !== row.setter_username) {
+    let encoded: string;
+    try {
+      encoded = encodeURIComponent(row.setter_username);
+      if (decodeURIComponent(encoded) !== row.setter_username) {
+        dropped += 1;
+        continue;
+      }
+    } catch {
+      // `encodeURIComponent` throws on a lone surrogate. Postgres `text` in a
+      // UTF-8 database cannot hold one, so this is unreachable from the real
+      // query — but "unreachable" is a claim about the database, and it must
+      // not become a 500 on the sitemap route if it is ever wrong.
       dropped += 1;
       continue;
     }
@@ -197,6 +208,20 @@ export function setterRowsToItems(rows: readonly SetterSitemapQueryRow[]): {
   return { items, dropped };
 }
 
+/**
+ * Deliberately not a `COUNT(*)`, unlike the climbs summary.
+ *
+ * The climbs summary can count in SQL because its item builder drops nothing the
+ * query cannot also express. This one must agree with `setterRowsToItems` after
+ * the round-trip check, so the honest count is the length of the list that
+ * builder produces — the summary sizes the pages and the pages slice the list,
+ * and a count that disagrees by one turns the last page into a 503.
+ *
+ * The cost is materialising the rows in JS and discarding them. That is a real
+ * asymmetry with the climbs path, and it is the trade: tens of thousands of
+ * `{username, timestamp}` rows are cheap to hold once behind two cache layers,
+ * where a summary that can disagree with its own item list is not.
+ */
 const cachedSetterSummary = unstable_cache(
   async (): Promise<{ itemCount: number; lastModifiedIso: string | null }> => {
     // Built through the SAME item builder the pages serve, so the count the
@@ -273,8 +298,16 @@ export async function buildSetterSitemapItems(): Promise<SitemapItem[]> {
   const build = fetchSetterRows()
     .then((rows) => setterRowsToItems(rows))
     .then(({ items, dropped }) => {
+      // A drop is unreachable by construction — the SQL predicate rejects
+      // everything the round-trip check could — so one means the two rules have
+      // disagreed and the item list no longer matches the summary that sized the
+      // pages. Throwing 503s the page and retries; caching the short list
+      // instead would serve a wrong or empty shard for the full six-hour TTL
+      // behind a single `console.warn` nobody reads.
       if (dropped > 0) {
-        console.warn(`[sitemap] setters shard dropped ${dropped} usernames the SQL predicate should have excluded.`);
+        throw new Error(
+          `[sitemap] setters shard dropped ${dropped} of ${dropped + items.length} usernames the SQL predicate should have excluded — refusing to cache a list the summary does not describe`,
+        );
       }
       cachedItems = { builtAt: Date.now(), items };
       return items;
