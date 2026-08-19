@@ -128,7 +128,7 @@
     "climbsHeading": "Tous les blocs de {{name}}",
     "empty": "Aucun bloc sur cette page.",
     "browseBoard": "Voir tous les blocs de la board {{boardName}}",
-    "browsePlaylists": "Compose une liste avec ces blocs",
+    "browsePlaylists": "Crée une playlist avec ces blocs",
     "pagination": {
       "aria": "Pages de blocs",
       "previous": "Blocs précédents",

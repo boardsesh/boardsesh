@@ -22,6 +22,7 @@ const setterData = vi.hoisted(() => ({
 
 const ogSummary = vi.hoisted(() => ({
   value: { displayName: 'Marco', version: 'v1' } as { displayName: string; version: string } | null,
+  calls: 0,
 }));
 
 vi.mock('server-only', () => ({}));
@@ -60,7 +61,12 @@ vi.mock('@/app/lib/server-popular-configs', () => ({
   ],
 }));
 
-vi.mock('@/app/lib/seo/dynamic-og-data', () => ({ getSetterOgSummary: async () => ogSummary.value }));
+vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
+  getSetterOgSummary: async () => {
+    ogSummary.calls += 1;
+    return ogSummary.value;
+  },
+}));
 
 vi.mock('@/app/lib/i18n/get-locale', () => ({ getLocale: async () => 'en-US' }));
 vi.mock('@/app/lib/i18n/server', () => ({
@@ -191,6 +197,7 @@ function graphOf(
 beforeEach(() => {
   notFoundCalls.count = 0;
   ogSummary.value = { displayName: 'Marco', version: 'v1' };
+  ogSummary.calls = 0;
 });
 
 describe('the setter front door, server-rendered', () => {
@@ -321,6 +328,18 @@ describe('the setter front door, as a crawler reads its head', () => {
 
     expect(html.match(/href="\/kilter\/[^"]*\/view\/[^"]*"/g) ?? []).toHaveLength(1);
     expect(metadata.robots).toBeUndefined();
+  });
+
+  it('queries nothing for a `?page` past the hard ceiling', async () => {
+    // The page body 404s there before it touches the database. The head has to
+    // agree, or a crawler walking `?page=50000` costs one setter-page query per
+    // guess on a URL whose metadata is then thrown away.
+    setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'First Climb' }]);
+
+    const metadata = await metadataFor({ page: '5000' });
+
+    expect(ogSummary.calls).toBe(0);
+    expect(metadata.robots).toEqual({ index: false, follow: true });
   });
 
   it('serves a setter whose name contains a percent sign instead of 500ing on it', async () => {
