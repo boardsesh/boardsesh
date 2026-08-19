@@ -200,6 +200,15 @@
     "messages": {
       "updated": "Playlist updated successfully",
       "updateFailed": "Failed to update playlist"
+    },
+    "conflict": {
+      "title": "Changed somewhere else",
+      "message": "This playlist is saved as “{{serverName}}” now. Your edit says “{{yourName}}”.",
+      "messageDetails": "Someone else changed this playlist’s details while you were editing. The name matches, so pick which version of the rest to keep.",
+      "changedAgain": "It changed again while you were deciding. Save again to pick it up.",
+      "keepMine": "Keep mine",
+      "keepTheirs": "Use theirs",
+      "cancel": "Cancel"
     }
   },
   "create": {

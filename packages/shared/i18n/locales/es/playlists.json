@@ -200,6 +200,15 @@
     "messages": {
       "updated": "Lista actualizada correctamente",
       "updateFailed": "No se pudo actualizar la lista"
+    },
+    "conflict": {
+      "title": "Cambió en otro sitio",
+      "message": "Esta lista ahora se llama «{{serverName}}». Tu edición dice «{{yourName}}».",
+      "messageDetails": "Otra persona cambió los detalles de esta lista mientras editabas. El nombre coincide, así que elige con qué versión del resto te quedas.",
+      "changedAgain": "Volvió a cambiar mientras decidías. Guarda otra vez para verlo.",
+      "keepMine": "Quedarme con la mía",
+      "keepTheirs": "Usar la otra",
+      "cancel": "Cancelar"
     }
   },
   "create": {

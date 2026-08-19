@@ -4634,6 +4634,29 @@ export type PlaylistCreator = {
 };
 
 /**
+ * The playlist as the client last saw it, sent alongside an edit so the server
+ * can refuse to silently overwrite someone else's change.
+ *
+ * Carries the metadata values as well as the timestamp on purpose: adding,
+ * removing or reordering a climb also bumps `updatedAt`, so a bare timestamp
+ * comparison would report a conflict for edits that don't actually collide.
+ */
+export type PlaylistRevisionInput = {
+  /** Color the client saw */
+  color?: InputMaybe<Scalars['String']['input']>;
+  /** Description the client saw */
+  description?: InputMaybe<Scalars['String']['input']>;
+  /** Icon the client saw */
+  icon?: InputMaybe<Scalars['String']['input']>;
+  /** Visibility the client saw */
+  isPublic?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Name the client saw */
+  name?: InputMaybe<Scalars['String']['input']>;
+  /** The playlist's updatedAt when the client read it (ISO 8601) */
+  updatedAt: Scalars['String']['input'];
+};
+
+/**
  * A popular board configuration (board type + layout + size + hold sets),
  * derived from the catalog of valid configurations ranked by climb count.
  */
@@ -7828,6 +7851,12 @@ export type UpdateGymKioskInput = {
 
 /** Input for updating a playlist. */
 export type UpdatePlaylistInput = {
+  /**
+   * Omit for blind last-write-wins (what pre-#1934 clients and web send).
+   * Supply it to get a PLAYLIST_UPDATE_CONFLICT error instead of a silent
+   * overwrite when the playlist changed somewhere else.
+   */
+  basedOn?: InputMaybe<PlaylistRevisionInput>;
   /** New color */
   color?: InputMaybe<Scalars['String']['input']>;
   /** New description */
@@ -8507,6 +8536,7 @@ export type ResolversTypes = ResolversObject<{
   PlaylistClimb: ResolverTypeWrapper<PlaylistClimb>;
   PlaylistClimbsResult: ResolverTypeWrapper<PlaylistClimbsResult>;
   PlaylistCreator: ResolverTypeWrapper<PlaylistCreator>;
+  PlaylistRevisionInput: PlaylistRevisionInput;
   PopularBoardConfig: ResolverTypeWrapper<PopularBoardConfig>;
   PopularBoardConfigConnection: ResolverTypeWrapper<PopularBoardConfigConnection>;
   PopularBoardConfigsInput: PopularBoardConfigsInput;
@@ -8871,6 +8901,7 @@ export type ResolversParentTypes = ResolversObject<{
   PlaylistClimb: PlaylistClimb;
   PlaylistClimbsResult: PlaylistClimbsResult;
   PlaylistCreator: PlaylistCreator;
+  PlaylistRevisionInput: PlaylistRevisionInput;
   PopularBoardConfig: PopularBoardConfig;
   PopularBoardConfigConnection: PopularBoardConfigConnection;
   PopularBoardConfigsInput: PopularBoardConfigsInput;

@@ -19,6 +19,7 @@ import {
   type GetPlaylistClimbsInput,
   type GetPlaylistClimbsQueryResponse,
   type Playlist,
+  type PlaylistRevision,
 } from '@boardsesh/graphql/operations/playlists';
 import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
@@ -46,6 +47,7 @@ import { usePlaylistRenderBoard } from '../../../src/lib/playlists/use-playlist-
 import { resolvePlaylistClimbRenderBoard } from '../../../src/lib/playlists/playlist-climb-render-board';
 import { recordPlaylistOpen } from '../../../src/lib/playlists/recents-store';
 import { reportHandledError } from '../../../src/lib/error-reporting';
+import { readPlaylistUpdateConflict } from '../../../src/lib/graphql/extract-error-message';
 import { toQueueClimbs } from '../../../src/lib/climb-types';
 import { hapticSelection } from '../../../src/lib/haptics';
 import { useAuth } from '../../../src/providers/auth-provider';
@@ -393,12 +395,59 @@ export default function PlaylistDetail() {
     }
   }, [playlist, isFollowing, followPlaylist, unfollowPlaylist, queryClient, playlistUuid, showToast, t]);
 
+  // Both caches that hold this playlist: the detail hero, and the
+  // Add-to-Playlist picker's list (the shelves refetch on focus, but that cache
+  // wouldn't until its staleTime lapses).
+  const cacheUpdatedPlaylist = useCallback(
+    (updated: Playlist) => {
+      queryClient.setQueryData(['playlist', playlistUuid], updated);
+      queryClient.setQueryData<Playlist[]>(['userPlaylists'], (prev) =>
+        prev?.map((entry) => (entry.uuid === updated.uuid || entry.id === updated.id ? updated : entry)),
+      );
+    },
+    [queryClient, playlistUuid],
+  );
+
+  // The playlist as it looked when the edit sheet was opened, kept in a ref
+  // rather than read off the live query at submit time (#1934).
+  //
+  // The detail query refetches on app foreground and on reconnect — the query
+  // provider bridges React Query's focusManager to AppState and onlineManager to
+  // NetInfo, and the global staleTime is five minutes. So a sheet left open
+  // while the climber gets interrupted can have another device's rename land in
+  // the cache underneath it. PlaylistFormSheet seeds its fields only on the
+  // visible false→true edge, so the typed name survives that refetch — and a
+  // snapshot read at submit time would not. It would arrive at the server
+  // already matching the stored row, the compare-and-swap would see nothing to
+  // decide, and the other device's rename would be overwritten with no prompt:
+  // the exact silent loss this change exists to stop.
+  //
+  // Capturing at open can't invent a false conflict either. A bump this device
+  // caused itself (adding a climb) moves updated_at without moving the metadata,
+  // and the server's field comparison still applies the edit.
+  const editBasedOnRef = useRef<PlaylistRevision | null>(null);
+
+  const capturePlaylistRevision = useCallback((source: Playlist | null | undefined): PlaylistRevision | null => {
+    // A cached row from before `updatedAt` shipped in the fragment has nothing to
+    // compare against, so it falls back to last-write-wins.
+    if (!source?.updatedAt) return null;
+    return {
+      updatedAt: source.updatedAt,
+      name: source.name,
+      description: source.description ?? null,
+      isPublic: source.isPublic,
+      color: source.color ?? null,
+      icon: source.icon ?? null,
+    };
+  }, []);
+
   const handleEditSubmit = useCallback(
     async (values: PlaylistFormValues) => {
       if (!playlist) return;
       setSavingEdit(true);
       setEditError(null);
-      try {
+
+      const saveEdit = async (basedOn: PlaylistRevision | undefined) => {
         const updated = await updatePlaylist({
           playlistId: playlist.uuid,
           name: values.name,
@@ -408,16 +457,105 @@ export default function PlaylistDetail() {
           color: values.color,
           icon: values.icon,
           isPublic: values.isPublic,
+          basedOn,
         });
-        queryClient.setQueryData(['playlist', playlistUuid], updated);
-        // Also patch the Add-to-Playlist picker's react-query list (the shelves
-        // refetch on focus, but this cache wouldn't until its staleTime lapses).
-        queryClient.setQueryData<Playlist[]>(['userPlaylists'], (prev) =>
-          prev?.map((entry) => (entry.uuid === updated.uuid || entry.id === updated.id ? updated : entry)),
-        );
+        cacheUpdatedPlaylist(updated);
         setEditVisible(false);
         showToast(t('edit.messages.updated'), 'success');
+      };
+
+      try {
+        // What this edit is based on: the version the sheet was opened on. The
+        // server compares it against the stored row and refuses rather than
+        // silently overwriting a rename made on another device (#1934). The
+        // fallback covers a sheet that somehow became visible without going
+        // through openEditDetails — blind last-write-wins, as before.
+        await saveEdit(editBasedOnRef.current ?? capturePlaylistRevision(playlist) ?? undefined);
       } catch (err) {
+        // Checked BEFORE reporting: a conflict is an expected outcome the
+        // climber resolves, not a fault (same treatment as the beta-link
+        // validation rejections).
+        const conflict = readPlaylistUpdateConflict(err);
+        if (conflict) {
+          Alert.alert(
+            t('edit.conflict.title'),
+            // The server also conflicts on description, colour, icon and
+            // visibility, so the two names can be identical. Quoting them back
+            // would read as "saved as X now, your edit says X" — say the details
+            // diverged instead.
+            conflict.serverName === values.name
+              ? t('edit.conflict.messageDetails')
+              : t('edit.conflict.message', { serverName: conflict.serverName, yourName: values.name }),
+            [
+              { text: t('edit.conflict.cancel'), style: 'cancel' },
+              {
+                text: t('edit.conflict.keepTheirs'),
+                onPress: () => {
+                  // Adopting theirs has to land in BOTH caches, same as a
+                  // successful save — patching only the detail hero would leave
+                  // the library list and Add-to-Playlist picker on the old name.
+                  // Read the cache at press time rather than reusing the row
+                  // captured at submit, so a climb added while the prompt was up
+                  // isn't rolled back.
+                  // `?? undefined` because `Playlist` types the optional text
+                  // fields as `string | undefined`; a save response puts the
+                  // server's raw `null` in the same slots. Both mean "unset" to
+                  // every consumer — nothing compares these to `null` — but if
+                  // that ever stops being true, fix it in the type, not here.
+                  const current = queryClient.getQueryData<Playlist>(['playlist', playlistUuid]) ?? playlist;
+                  cacheUpdatedPlaylist({
+                    ...current,
+                    name: conflict.serverName,
+                    description: conflict.serverDescription ?? undefined,
+                    isPublic: conflict.serverIsPublic,
+                    color: conflict.serverColor ?? undefined,
+                    icon: conflict.serverIcon ?? undefined,
+                    updatedAt: conflict.serverUpdatedAt,
+                  });
+                  setEditVisible(false);
+                },
+              },
+              {
+                text: t('edit.conflict.keepMine'),
+                style: 'destructive',
+                onPress: async () => {
+                  setSavingEdit(true);
+                  try {
+                    // Re-based on the server's own values, so the retry compares
+                    // clean and overwrites deliberately rather than by accident.
+                    await saveEdit({
+                      updatedAt: conflict.serverUpdatedAt,
+                      name: conflict.serverName,
+                      description: conflict.serverDescription,
+                      isPublic: conflict.serverIsPublic,
+                      color: conflict.serverColor,
+                      icon: conflict.serverIcon,
+                    });
+                  } catch (retryError) {
+                    // A third device can land between this prompt and the retry.
+                    // Say so inline rather than prompting again — a prompt chain
+                    // has no natural end — and don't report it: it's still an
+                    // expected outcome, not a fault. Saving from the still-open
+                    // sheet re-prompts with the newest server values.
+                    if (readPlaylistUpdateConflict(retryError)) {
+                      setEditError(t('edit.conflict.changedAgain'));
+                      return;
+                    }
+                    console.error('Failed to update playlist:', retryError);
+                    reportHandledError(retryError, { tags: { source: 'playlist', op: 'update-keep-mine' } });
+                    setEditError(t('edit.messages.updateFailed'));
+                  } finally {
+                    setSavingEdit(false);
+                  }
+                },
+              },
+            ],
+          );
+          // The `finally` below still runs on this return, so the submit button
+          // stops spinning while the prompt is up: dismissing the alert leaves an
+          // editable sheet with the edit intact, not a frozen one.
+          return;
+        }
         console.error('Failed to update playlist:', err);
         reportHandledError(err, { tags: { source: 'playlist', op: 'update' } });
         // Inline, not a toast: the sheet is still open, so a root toast would be
@@ -427,7 +565,7 @@ export default function PlaylistDetail() {
         setSavingEdit(false);
       }
     },
-    [playlist, updatePlaylist, queryClient, playlistUuid, showToast, t],
+    [playlist, updatePlaylist, cacheUpdatedPlaylist, capturePlaylistRevision, queryClient, playlistUuid, showToast, t],
   );
 
   const handleDelete = useCallback(() => {
@@ -457,8 +595,10 @@ export default function PlaylistDetail() {
   // involved, so no sheet-handoff dance is needed.
   const openEditDetails = useCallback(() => {
     setEditError(null);
+    // Snapshot now, not at submit — see editBasedOnRef.
+    editBasedOnRef.current = capturePlaylistRevision(playlist);
     setEditVisible(true);
-  }, []);
+  }, [playlist, capturePlaylistRevision]);
 
   // Collapsed overflow menu (owner): Pin toggles in place; Delete confirms; Edit
   // enters the climbs edit mode once the menu sheet has dismissed (deferred via

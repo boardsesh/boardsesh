@@ -83,12 +83,15 @@ export function isExpectedBetaValidationError(error: unknown): boolean {
   );
 }
 
-// The board-mutation rejections clients branch on are parsed in
+// The board- and playlist-mutation rejections clients branch on are parsed in
 // @boardsesh/graphql so web and mobile read the same shapes. Re-exported here so
-// board screens keep a single import for GraphQL error handling.
+// screens keep a single import for GraphQL error handling.
 export {
   isDuplicateBoardError,
   readDuplicateBoardError,
   isBoardLimitError,
+  isPlaylistUpdateConflictError,
+  readPlaylistUpdateConflict,
   type DuplicateBoardError,
+  type PlaylistUpdateConflict,
 } from '@boardsesh/graphql/errors';

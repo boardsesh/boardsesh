@@ -200,6 +200,15 @@
     "messages": {
       "updated": "Playlist aktualisiert",
       "updateFailed": "Die Playlist ließ sich nicht aktualisieren"
+    },
+    "conflict": {
+      "title": "Woanders geändert",
+      "message": "Diese Playlist heißt jetzt „{{serverName}}“. Deine Änderung sagt „{{yourName}}“.",
+      "messageDetails": "Jemand anders hat die Details dieser Playlist geändert, während du bearbeitet hast. Der Name ist gleich – wähle, welche Version vom Rest bleibt.",
+      "changedAgain": "Sie hat sich noch mal geändert, während du überlegt hast. Speichere noch einmal, um sie zu übernehmen.",
+      "keepMine": "Meine behalten",
+      "keepTheirs": "Die andere nehmen",
+      "cancel": "Abbrechen"
     }
   },
   "create": {

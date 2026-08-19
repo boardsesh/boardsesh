@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { render, fireEvent, waitFor, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Climb } from '@boardsesh/queue';
@@ -78,6 +78,11 @@ vi.mock('../../../../src/components/you/CommentSheet', () => ({
 const climbsRefetch = vi.hoisted(() => vi.fn());
 const updatePlaylistMock = vi.hoisted(() => vi.fn());
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
+// A playlist-update conflict is an expected, user-resolvable outcome, so the
+// screen must NOT report it — spy on the reporter to prove that.
+const reportHandledErrorMock = vi.hoisted(() => vi.fn());
+const alertMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../../src/lib/error-reporting', () => ({ reportHandledError: reportHandledErrorMock }));
 vi.mock('@boardsesh/playlists-react', () => ({
   usePlaylistClimbs: () => ({
     query: {
@@ -121,7 +126,7 @@ vi.mock('react-native', () => ({
     accessibilityLabel?: string;
   }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1, absoluteFill: {} },
-  Alert: { alert: vi.fn() },
+  Alert: { alert: alertMock },
   Platform: { OS: 'ios' },
 }));
 
@@ -175,11 +180,22 @@ vi.mock('../../../../src/components/playlist', () => ({
     hero,
     headerSlot,
     actions,
+    onEditDetails,
   }: {
     hero: { name: string };
     headerSlot?: ReactNode;
     actions?: (collapsed: boolean) => ReactNode;
-  }) => createElement('div', { 'data-detail-view': 'true', 'data-hero-name': hero.name }, actions?.(false), headerSlot),
+    onEditDetails?: () => void;
+  }) =>
+    createElement(
+      'div',
+      { 'data-detail-view': 'true', 'data-hero-name': hero.name },
+      actions?.(false),
+      headerSlot,
+      // The cog that opens the details sheet. Driving it matters: that press is
+      // where the basedOn snapshot is taken (#1934).
+      createElement('button', { 'data-open-edit-details': 'true', onClick: onEditDetails }, 'open-edit-details'),
+    ),
   PlaylistDiscussionRow: ({ commentCount, onPress }: { commentCount: number; onPress: () => void }) =>
     createElement(
       'button',
@@ -191,14 +207,16 @@ vi.mock('../../../../src/components/playlist', () => ({
   // without the real gorhom sheet.
   PlaylistFormSheet: ({
     submitError,
+    submitting,
     onSubmit,
   }: {
     submitError?: string | null;
+    submitting?: boolean;
     onSubmit?: (values: unknown) => void;
   }) =>
     createElement(
       'div',
-      null,
+      { 'data-form-sheet': 'true', 'data-submitting': submitting ? 'true' : 'false' },
       submitError ? createElement('span', { 'data-edit-error': 'true' }, submitError) : null,
       createElement(
         'button',
@@ -239,6 +257,8 @@ beforeEach(() => {
   climbsRefetch.mockClear();
   updatePlaylistMock.mockReset();
   toast.showToast.mockClear();
+  alertMock.mockReset();
+  reportHandledErrorMock.mockReset();
   playlistMocks.allClimbs = [];
   playlistMocks.activationOptions = null;
   playlistMocks.renderBoardResult = { renderBoard: null, banner: null };
@@ -456,5 +476,283 @@ describe('PlaylistDetail discussion thread', () => {
     fireEvent.click(container.querySelector('[data-owner-edit="true"]') as HTMLButtonElement);
 
     await waitFor(() => expect(container.querySelector('[data-discussion-row="true"]')).toBeNull());
+  });
+});
+
+describe('PlaylistDetail edit conflict (#1934)', () => {
+  const cachedPlaylist = {
+    uuid: 'p-1',
+    id: 'p-1',
+    name: 'Old name',
+    icon: '🔥',
+    color: '#6D28D9',
+    description: '',
+    updatedAt: '2026-08-10T11:00:00.000Z',
+    climbCount: 3,
+    boardType: 'kilter',
+    layoutId: 1,
+    isPublic: false,
+    userRole: 'owner',
+    isPinnedByMe: false,
+    isFollowedByMe: false,
+    followerCount: 0,
+  };
+
+  // graphql-request's ClientError shape, as the backend's GraphQLError arrives.
+  const conflictError = {
+    response: {
+      errors: [
+        {
+          message: 'This playlist changed somewhere else',
+          extensions: {
+            code: 'PLAYLIST_UPDATE_CONFLICT',
+            playlistUuid: 'p-1',
+            serverUpdatedAt: '2026-08-10T12:30:00.000Z',
+            serverName: 'Renamed on the other phone',
+            serverDescription: null,
+            serverIsPublic: false,
+            serverColor: '#1F2937',
+            serverIcon: null,
+          },
+        },
+      ],
+    },
+  };
+
+  it('sends the cached playlist as basedOn so the server can refuse a collision', async () => {
+    requestMock.mockResolvedValue({ playlist: cachedPlaylist });
+    updatePlaylistMock.mockResolvedValue({ ...cachedPlaylist, name: 'Bad climbs' });
+
+    const { findByText } = renderDetail();
+    fireEvent.click(await findByText('open-edit-details'));
+    fireEvent.click(await findByText('form-submit'));
+
+    await waitFor(() => expect(updatePlaylistMock).toHaveBeenCalledTimes(1));
+    expect(updatePlaylistMock.mock.calls[0][0]).toMatchObject({
+      playlistId: 'p-1',
+      name: 'Bad climbs',
+      basedOn: {
+        updatedAt: '2026-08-10T11:00:00.000Z',
+        name: 'Old name',
+        description: '',
+        isPublic: false,
+        color: '#6D28D9',
+        icon: '🔥',
+      },
+    });
+  });
+
+  it('prompts instead of reporting a fault, and keeps the inline error clear', async () => {
+    requestMock.mockResolvedValue({ playlist: cachedPlaylist });
+    updatePlaylistMock.mockRejectedValue(conflictError);
+
+    const { findByText, container } = renderDetail();
+    fireEvent.click(await findByText('open-edit-details'));
+    fireEvent.click(await findByText('form-submit'));
+
+    await waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
+    expect(alertMock.mock.calls[0][0]).toBe('edit.conflict.title');
+    // A conflict is the climber's decision to make, not a fault to triage.
+    expect(reportHandledErrorMock).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-edit-error="true"]')).toBeNull();
+  });
+
+  it('"Keep mine" retries rebased on the server values from the conflict', async () => {
+    requestMock.mockResolvedValue({ playlist: cachedPlaylist });
+    updatePlaylistMock.mockRejectedValueOnce(conflictError);
+    updatePlaylistMock.mockResolvedValueOnce({ ...cachedPlaylist, name: 'Bad climbs' });
+
+    const { findByText } = renderDetail();
+    fireEvent.click(await findByText('open-edit-details'));
+    fireEvent.click(await findByText('form-submit'));
+
+    await waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
+    const buttons = alertMock.mock.calls[0][2] as Array<{ text: string; onPress?: () => void }>;
+    const keepMine = buttons.find((button) => button.text === 'edit.conflict.keepMine');
+    keepMine?.onPress?.();
+
+    await waitFor(() => expect(updatePlaylistMock).toHaveBeenCalledTimes(2));
+    // Rebased on what the server reported, so the second attempt overwrites
+    // deliberately rather than tripping the same check again.
+    expect(updatePlaylistMock.mock.calls[1][0]).toMatchObject({
+      name: 'Bad climbs',
+      basedOn: {
+        updatedAt: '2026-08-10T12:30:00.000Z',
+        name: 'Renamed on the other phone',
+        description: null,
+        isPublic: false,
+        color: '#1F2937',
+        icon: null,
+      },
+    });
+  });
+
+  it('"Use theirs" adopts the server version in the cache without another write', async () => {
+    requestMock.mockResolvedValue({ playlist: cachedPlaylist });
+    updatePlaylistMock.mockRejectedValue(conflictError);
+
+    const { queryClient, findByText } = renderDetail();
+    fireEvent.click(await findByText('open-edit-details'));
+    fireEvent.click(await findByText('form-submit'));
+
+    await waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
+    const buttons = alertMock.mock.calls[0][2] as Array<{ text: string; onPress?: () => void }>;
+    buttons.find((button) => button.text === 'edit.conflict.keepTheirs')?.onPress?.();
+
+    await waitFor(() => {
+      const cached = queryClient.getQueryData<{ name: string; updatedAt: string; color: string }>(['playlist', 'p-1']);
+      expect(cached?.name).toBe('Renamed on the other phone');
+      expect(cached?.updatedAt).toBe('2026-08-10T12:30:00.000Z');
+      expect(cached?.color).toBe('#1F2937');
+    });
+    // Adopting theirs is a local decision — nothing more is sent.
+    expect(updatePlaylistMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not quote two identical names back when the details are what diverged', async () => {
+    requestMock.mockResolvedValue({ playlist: cachedPlaylist });
+    // Both devices kept the name and changed the colour: the name-vs-name
+    // wording would read "saved as Bad climbs now, your edit says Bad climbs".
+    updatePlaylistMock.mockRejectedValue({
+      response: {
+        errors: [
+          {
+            message: 'This playlist changed somewhere else',
+            extensions: {
+              ...conflictError.response.errors[0].extensions,
+              serverName: 'Bad climbs',
+              serverColor: '#8C4A52',
+            },
+          },
+        ],
+      },
+    });
+
+    const { findByText } = renderDetail();
+    fireEvent.click(await findByText('open-edit-details'));
+    fireEvent.click(await findByText('form-submit'));
+
+    await waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
+    expect(alertMock.mock.calls[0][1]).toBe('edit.conflict.messageDetails');
+    // Keep mine / Use theirs still resolve the whole record.
+    const buttons = alertMock.mock.calls[0][2] as Array<{ text: string }>;
+    expect(buttons.map((button) => button.text)).toEqual([
+      'edit.conflict.cancel',
+      'edit.conflict.keepTheirs',
+      'edit.conflict.keepMine',
+    ]);
+  });
+
+  it('"Keep mine" losing a second race says so inline instead of reporting a fault', async () => {
+    requestMock.mockResolvedValue({ playlist: cachedPlaylist });
+    // A third device lands between the prompt and the retry.
+    updatePlaylistMock.mockRejectedValue(conflictError);
+
+    const { findByText, container } = renderDetail();
+    fireEvent.click(await findByText('open-edit-details'));
+    fireEvent.click(await findByText('form-submit'));
+
+    await waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
+    const buttons = alertMock.mock.calls[0][2] as Array<{ text: string; onPress?: () => void }>;
+    buttons.find((button) => button.text === 'edit.conflict.keepMine')?.onPress?.();
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-edit-error="true"]')?.textContent).toBe('edit.conflict.changedAgain');
+    });
+    // Still an expected outcome, not a fault — and no second prompt, which would
+    // have no natural end.
+    expect(reportHandledErrorMock).not.toHaveBeenCalled();
+    expect(alertMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('"Use theirs" also refreshes the library list, not just the detail hero', async () => {
+    requestMock.mockResolvedValue({ playlist: cachedPlaylist });
+    updatePlaylistMock.mockRejectedValue(conflictError);
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // The library / Add-to-Playlist cache still holds the pre-conflict row.
+    queryClient.setQueryData(['userPlaylists'], [{ uuid: 'p-1', id: 'p-1', name: 'Old name', color: '#6D28D9' }]);
+
+    const { findByText } = renderDetail(queryClient);
+    fireEvent.click(await findByText('open-edit-details'));
+    fireEvent.click(await findByText('form-submit'));
+
+    await waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
+    const buttons = alertMock.mock.calls[0][2] as Array<{ text: string; onPress?: () => void }>;
+    buttons.find((button) => button.text === 'edit.conflict.keepTheirs')?.onPress?.();
+
+    await waitFor(() => {
+      const cached = queryClient.getQueryData<Array<{ name: string; color: string }>>(['userPlaylists']);
+      expect(cached?.[0].name).toBe('Renamed on the other phone');
+      expect(cached?.[0].color).toBe('#1F2937');
+    });
+    // Only the metadata the server reported moves; the rest of the row survives.
+    expect(queryClient.getQueryData<{ climbCount: number }>(['playlist', 'p-1'])?.climbCount).toBe(3);
+  });
+
+  it('leaves an editable sheet — not one stuck mid-save — when the prompt is dismissed', async () => {
+    requestMock.mockResolvedValue({ playlist: cachedPlaylist });
+    let rejectUpdate: (reason: unknown) => void = () => {};
+    updatePlaylistMock.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectUpdate = reject;
+      }),
+    );
+
+    const { findByText, container } = renderDetail();
+    const submitting = () => container.querySelector('[data-form-sheet]')?.getAttribute('data-submitting');
+
+    fireEvent.click(await findByText('open-edit-details'));
+    fireEvent.click(await findByText('form-submit'));
+    // In flight: the sheet's submit button spins.
+    await waitFor(() => expect(submitting()).toBe('true'));
+
+    rejectUpdate(conflictError);
+
+    await waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
+    const buttons = alertMock.mock.calls[0][2] as Array<{ text: string; style?: string; onPress?: () => void }>;
+    const cancel = buttons.find((button) => button.text === 'edit.conflict.cancel');
+    expect(cancel?.style).toBe('cancel');
+    cancel?.onPress?.();
+
+    // Dismissed with the edit intact and the button live again, ready to retry.
+    await waitFor(() => expect(submitting()).toBe('false'));
+    expect(container.querySelector('[data-edit-error="true"]')).toBeNull();
+    expect(updatePlaylistMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the snapshot the sheet was opened on when the playlist refetches underneath it', async () => {
+    requestMock.mockResolvedValue({ playlist: cachedPlaylist });
+    updatePlaylistMock.mockResolvedValue({ ...cachedPlaylist, name: 'Bad climbs' });
+
+    const { queryClient, findByText } = renderDetail();
+    fireEvent.click(await findByText('open-edit-details'));
+
+    // Mid-edit, the app comes back to the foreground and the detail query
+    // refetches, picking up the other phone's rename. The form keeps the typed
+    // name (it seeds only on the open edge), so the snapshot has to keep the
+    // version the sheet was opened on too. Send the refreshed row instead and
+    // the server sees a basedOn that already matches what it has stored, decides
+    // there is nothing to arbitrate, and overwrites the other rename in silence.
+    await act(async () => {
+      queryClient.setQueryData(['playlist', 'p-1'], {
+        ...cachedPlaylist,
+        name: 'Renamed on the other phone',
+        updatedAt: '2026-08-10T12:30:00.000Z',
+      });
+    });
+
+    fireEvent.click(await findByText('form-submit'));
+
+    await waitFor(() => expect(updatePlaylistMock).toHaveBeenCalledTimes(1));
+    const sent = updatePlaylistMock.mock.calls[0][0] as { basedOn?: Record<string, unknown> };
+    expect(sent.basedOn).toEqual({
+      updatedAt: '2026-08-10T11:00:00.000Z',
+      name: 'Old name',
+      description: '',
+      isPublic: false,
+      color: '#6D28D9',
+      icon: '🔥',
+    });
   });
 });

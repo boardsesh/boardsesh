@@ -200,6 +200,15 @@
     "messages": {
       "updated": "Playlist mise à jour",
       "updateFailed": "Impossible de mettre à jour la playlist"
+    },
+    "conflict": {
+      "title": "Modifiée ailleurs",
+      "message": "Cette playlist s’appelle maintenant « {{serverName}} ». Votre modification dit « {{yourName}} ».",
+      "messageDetails": "Quelqu’un a modifié les détails de cette playlist pendant votre édition. Le nom est identique : choisissez quelle version garder pour le reste.",
+      "changedAgain": "Elle a encore changé pendant que vous décidiez. Enregistrez à nouveau pour la reprendre.",
+      "keepMine": "Garder la mienne",
+      "keepTheirs": "Garder l’autre",
+      "cancel": "Annuler"
     }
   },
   "create": {
