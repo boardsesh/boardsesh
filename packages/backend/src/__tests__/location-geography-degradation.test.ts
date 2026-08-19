@@ -252,6 +252,9 @@ describe('location geography writes degrade without PostGIS', () => {
     expect(warnedGeographyFailures(warnSpy)).toContainEqual({
       table: 'gyms',
       operation: 'updateGym',
+      // Unconditional, unlike the ST_MakePoint case above: clearing writes
+      // `SET location = NULL` with no geography cast, so the undefined column is
+      // the only thing that can fail, whether or not the extension is installed.
       code: '42703', // column "location" does not exist
     });
   });

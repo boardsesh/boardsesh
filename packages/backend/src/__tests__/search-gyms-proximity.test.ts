@@ -74,8 +74,13 @@ const searchNearby = (input: Record<string, unknown>) =>
 const searchText = (input: Record<string, unknown>) =>
   socialGymQueries.searchGyms(null, { input }, anonCtx()) as Promise<SearchResult>;
 
-/** Drop the two `timestamp` (no time zone) fields the branches disagree on — see #4588. */
-const withoutTimestamps = (gym: SearchResult['gyms'][number]) => {
+/**
+ * Drop the two fields the branches are KNOWN to disagree on, so the rest can be
+ * compared strictly. Not a convenience — it is carving a known bug (#4588,
+ * `timestamp` without time zone read in two different zones) out of an otherwise
+ * exact equality. Delete this helper when #4588 lands.
+ */
+const withoutFieldsDivergingOnBug4588 = (gym: SearchResult['gyms'][number]) => {
   const comparable: Record<string, unknown> = { ...gym };
   delete comparable.hoursUpdatedAt;
   delete comparable.createdAt;
@@ -160,8 +165,12 @@ describe('searchGyms proximity', () => {
   // Unconditional, so the whole file can never go quietly dark: if the CI
   // database ever loses PostGIS, every other test here would report a tidy
   // "skipped" and the job would stay green with zero proximity coverage.
-  it('asserts PostGIS is present when running in CI', () => {
-    if (!process.env.CI) return;
+  it('asserts PostGIS is present when running in CI', (ctx) => {
+    // Reports as skipped off CI rather than passing as a no-op — the rest of the
+    // file already signals that way. Under CI it always runs, which is the whole
+    // point: without it, a CI database that lost PostGIS would skip all fifteen
+    // cases below and leave the job green with zero proximity coverage.
+    if (!process.env.CI) ctx.skip();
     expect(hasPostGis).toBe(true);
   });
 
@@ -396,7 +405,7 @@ describe('searchGyms proximity', () => {
     // Every non-timestamp field must match the Drizzle branch exactly, so a
     // column added to `gyms` later has to be carried by both or this fails
     // rather than going quietly null on the proximity path only.
-    expect(withoutTimestamps(mapped)).toEqual(withoutTimestamps(viaTextPath));
+    expect(withoutFieldsDivergingOnBug4588(mapped)).toEqual(withoutFieldsDivergingOnBug4588(viaTextPath));
 
     // The timestamps do NOT match off UTC, and that is a real defect rather than
     // a test artefact: `hours_updated_at` is `timestamp` WITHOUT time zone, and
