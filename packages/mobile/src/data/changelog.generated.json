@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-08-19T19:07:22.972Z",
+  "generatedAt": "2026-08-19T19:14:12.538Z",
   "entries": [
+    {
+      "prNumber": 4543,
+      "category": "fixed",
+      "title": "The zoom reset button in the Play drawer says \"Reset zoom\" again instead of showing raw code",
+      "mergedAt": "2026-08-19T19:07:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4543",
+      "body": "The gym directory wall finder now has a proper \"Clear\" on its filter row, and the ascents feed shows its Mirrored and Benchmark tags and who set the climb"
+    },
+    {
+      "prNumber": 4545,
+      "category": "fixed",
+      "title": "Pages now always render in the language you asked for, even when the site is busy serving several languages at once",
+      "mergedAt": "2026-08-19T19:07:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4545"
+    },
     {
       "prNumber": 4546,
       "category": "fixed",

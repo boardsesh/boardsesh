@@ -12,6 +12,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- The zoom reset button in the Play drawer says "Reset zoom" again instead of showing raw code ([#4543](https://github.com/boardsesh/boardsesh/pull/4543))
+  The gym directory wall finder now has a proper "Clear" on its filter row, and the ascents feed shows its Mirrored and Benchmark tags and who set the climb
+- Pages now always render in the language you asked for, even when the site is busy serving several languages at once ([#4545](https://github.com/boardsesh/boardsesh/pull/4545))
 - Fixed the gyms map crashing in the browser when location access is blocked — you'll now see a note pointing you to the search box instead. ([#4546](https://github.com/boardsesh/boardsesh/pull/4546))
 - Log a tick while a board is downloading and it sticks — the app now waits its turn for the database instead of quietly dropping the send. ([#4557](https://github.com/boardsesh/boardsesh/pull/4557))
 - Adding a climb to a playlist from another board now fails cleanly instead of ([#4304](https://github.com/boardsesh/boardsesh/pull/4304))
