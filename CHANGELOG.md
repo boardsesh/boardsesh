@@ -12,6 +12,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Fixed the gyms map crashing in the browser when location access is blocked — you'll now see a note pointing you to the search box instead. ([#4546](https://github.com/boardsesh/boardsesh/pull/4546))
+- Log a tick while a board is downloading and it sticks — the app now waits its turn for the database instead of quietly dropping the send. ([#4557](https://github.com/boardsesh/boardsesh/pull/4557))
+- Adding a climb to a playlist from another board now fails cleanly instead of ([#4304](https://github.com/boardsesh/boardsesh/pull/4304))
+  leaving a ghost entry you can't tap off again.
 - Dragging a climb in a playlist now drops it exactly where you let go, even when the playlist holds a climb the catalog has lost track of. ([#4294](https://github.com/boardsesh/boardsesh/pull/4294))
 - Queues you share with your crew stop losing climbs: when someone adds a climb while you're activating a playlist or reseeding the queue, their climb now sticks around instead of vanishing. ([#4296](https://github.com/boardsesh/boardsesh/pull/4296))
 - Signing in with Google or Apple on the web now brings you back to Boardsesh instead of dumping you on a dead localhost page. ([#4264](https://github.com/boardsesh/boardsesh/pull/4264))

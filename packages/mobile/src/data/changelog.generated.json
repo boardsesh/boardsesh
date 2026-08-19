@@ -1,6 +1,28 @@
 {
-  "generatedAt": "2026-08-19T11:37:22.039Z",
+  "generatedAt": "2026-08-19T19:07:22.972Z",
   "entries": [
+    {
+      "prNumber": 4546,
+      "category": "fixed",
+      "title": "Fixed the gyms map crashing in the browser when location access is blocked — you'll now see a note pointing you to the search box instead.",
+      "mergedAt": "2026-08-19T19:06:16Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4546"
+    },
+    {
+      "prNumber": 4557,
+      "category": "fixed",
+      "title": "Log a tick while a board is downloading and it sticks — the app now waits its turn for the database instead of quietly dropping the send.",
+      "mergedAt": "2026-08-19T19:05:56Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4557"
+    },
+    {
+      "prNumber": 4304,
+      "category": "fixed",
+      "title": "Adding a climb to a playlist from another board now fails cleanly instead of",
+      "mergedAt": "2026-08-19T11:47:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4304",
+      "body": "leaving a ghost entry you can't tap off again."
+    },
     {
       "prNumber": 4294,
       "category": "fixed",
