@@ -19,9 +19,10 @@ type SyncLocationGeographyArgs = {
  *
  * These columns are denormalizations used by proximity search. The write runs
  * outside the caller's transaction and never throws: inside a transaction a
- * PostGIS failure (the column is absent in the backend test DB, and the
- * extension can be missing on any self-hosted deployment) rolled the whole
- * thing back and silently cost the user their gym. Out here the worst case is
+ * PostGIS failure (the extension can be missing on any self-hosted deployment,
+ * and the backend test DB skips it too when its server has no PostGIS package)
+ * rolled the whole thing back and silently cost the user their gym. Out here the
+ * worst case is
  * a null `location` that a backfill can repair — the row id is logged so that
  * backfill is a one-liner.
  *
