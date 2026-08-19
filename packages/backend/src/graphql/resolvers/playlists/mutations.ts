@@ -474,6 +474,13 @@ export const playlistMutations = {
    * `newIndex` is read in the client's index space — the rendered list, which
    * excludes playlist rows whose climb_uuid doesn't resolve in board_climbs — and
    * translated back to the full list before splicing (#4012).
+   *
+   * That index space is specifically the ALL-BOARDS `playlistClimbs` list, the
+   * one the only editor renders: the mobile playlist screen deliberately omits
+   * `boardName` so off-board climbs stay listed (dimmed) instead of being
+   * filtered out. A future editor that reordered from a board-SCOPED list would
+   * be numbering against a shorter list again, and this input carries no board
+   * argument to infer that from — it would have to start sending one.
    */
   reorderPlaylistClimb: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<boolean> => {
     requireAuthenticated(ctx);
