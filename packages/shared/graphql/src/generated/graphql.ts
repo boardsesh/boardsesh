@@ -923,7 +923,7 @@ export type Climb = {
   characteristics?: Maybe<Array<Scalars['String']['output']>>;
   /** ISO timestamp of when this climb row was created */
   created_at?: Maybe<Scalars['String']['output']>;
-  /** Description or notes about the climb (nullable - omitted from search results, fetch separately via climb detail query) */
+  /** Setter-written notes about the climb (nullable). Carried on search results too — the play drawer and the www climb page both render it. */
   description?: Maybe<Scalars['String']['output']>;
   /** Difficulty grade of the climb (e.g., 'V5', '6B+') */
   difficulty: Scalars['String']['output'];

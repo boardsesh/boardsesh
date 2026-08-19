@@ -18,7 +18,7 @@ type Climb {
   userId: ID
   "Name/title of the climb"
   name: String!
-  "Description or notes about the climb (nullable - omitted from search results, fetch separately via climb detail query)"
+  "Setter-written notes about the climb (nullable). Carried on search results too — the play drawer and the www climb page both render it."
   description: String
   "Encoded hold positions and colors for lighting up the board"
   frames: String!
