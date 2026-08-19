@@ -217,7 +217,7 @@ describe('addClimbToPlaylist — board-compatibility guard (#4015)', () => {
     expect(await climbUuidsInPlaylist(KILTER_LAYOUT_8_PLAYLIST)).toContain(ALIAS_UUID);
   });
 
-  it('resolves an alias uuid to its canonical board and rejects a cross-board add', async () => {
+  it('resolves an alias uuid to its canonical layout and rejects a layout mismatch', async () => {
     // ALIAS_UUID resolves to a Kilter layout-8 canonical climb; the
     // null-layout playlist above is Kilter (would accept it), so exercise
     // the reject path against a Kilter *layout-9* playlist instead — the
