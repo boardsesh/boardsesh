@@ -89,8 +89,20 @@ describe('www production smoke checks', () => {
       '<sitemapindex>' +
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/playlists.xml</loc></sitemap>' +
       '</sitemapindex>';
     expect(check.assert(response({ contentType: 'application/xml', body: healthyIndex }))).toBeNull();
+
+    // #4524: `playlists` was excluded from the required list as "legitimately
+    // empty". It is not — production serves 2,688 public playlists holding a
+    // climb — so an index that quietly drops it is 10,752 URLs gone and now goes
+    // red exactly like boards does.
+    const withoutPlaylists =
+      '<sitemapindex>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
+      '</sitemapindex>';
+    expect(check.assert(response({ contentType: 'application/xml', body: withoutPlaylists }))).toMatch(/playlists/);
 
     // The regression this check has to keep catching after #4476. The index now
     // degrades rather than 503ing, so a cold-start failure of the boards builder
@@ -145,8 +157,11 @@ describe('www production smoke checks', () => {
     });
     expect(check.assert(wrongShardDeclared)).toMatch(/boards/);
 
-    // Optional shards degrading is worth a warning but is not a missing mandatory.
-    const optionalOnly = response({
+    // A required-but-degradable shard the header names is a warning, and the
+    // annotation says which of the dropped shards was a required one — that is
+    // what separates "playlists missed the deadline again" from "climbs is
+    // deliberately not asserted here".
+    const declaredDegradable = response({
       contentType: 'application/xml',
       body:
         '<sitemapindex>' +
@@ -155,8 +170,24 @@ describe('www production smoke checks', () => {
         '</sitemapindex>',
       headers: { 'x-sitemap-degraded': 'playlists,climbs' },
     });
+    expect(check.assert(declaredDegradable)).toBeNull();
+    expect(check.degradation?.(declaredDegradable)).toMatch(/playlists, climbs/);
+    expect(check.degradation?.(declaredDegradable)).toMatch(/required playlists/);
+
+    // A shard this list does not require at all is worth a warning but is not a
+    // missing mandatory, so nothing is flagged as required.
+    const optionalOnly = response({
+      contentType: 'application/xml',
+      body:
+        '<sitemapindex>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/playlists.xml</loc></sitemap>' +
+        '</sitemapindex>',
+      headers: { 'x-sitemap-degraded': 'climbs' },
+    });
     expect(check.assert(optionalOnly)).toBeNull();
-    expect(check.degradation?.(optionalOnly)).toMatch(/playlists, climbs/);
+    expect(check.degradation?.(optionalOnly)).toMatch(/climbs/);
     expect(check.degradation?.(optionalOnly)).not.toMatch(/required/);
 
     // The header can never rescue a genuinely broken index: a non-200, a body
@@ -192,6 +223,7 @@ describe('www production smoke checks', () => {
         '<sitemapindex>' +
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/playlists.xml</loc></sitemap>' +
         '</sitemapindex>',
     });
     expect(check.degradation?.(healthy) ?? null).toBeNull();
