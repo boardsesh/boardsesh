@@ -222,17 +222,38 @@ describe('mobile plain-string subscription documents validate against the execut
 // opened from search while leaving deep-linked climbs fine. Same technique as
 // queue-climb-field-contract.test.ts: read the hand-maintained template out of
 // mobile's source and assert on the parsed field set.
-describe('mobile CLIMB_SEARCH_FIELDS carries the fields the play drawer renders', () => {
-  const searchFields = climbFieldNames(
+describe('CLIMB_SEARCH_FIELDS carries the fields the play drawer renders', () => {
+  // The shared document nests the list under `searchClimbs { climbs { ... } }`,
+  // so collect by the `climbs` parent rather than the `climb` one climbFieldNames uses.
+  function searchResultClimbFields(operationSource: string): Set<string> {
+    const fields = new Set<string>();
+    visit(parse(operationSource), {
+      Field(node) {
+        if (node.name.value !== 'climbs' || !node.selectionSet) return;
+        for (const selection of node.selectionSet.selections) {
+          if (selection.kind === 'Field') fields.add(selection.name.value);
+        }
+      },
+    });
+    return fields;
+  }
+
+  const mobileSearchFields = climbFieldNames(
     `{ climb { ${extractTemplateConst(readMobileOperationsSource(), 'CLIMB_SEARCH_FIELDS')} } }`,
   );
+  const sharedSearchFields = searchResultClimbFields(publicOperations.SEARCH_CLIMBS);
 
-  it('selects a non-empty field set', () => {
-    expect(searchFields.size).toBeGreaterThan(0);
+  it('both copies select a non-empty field set', () => {
+    expect(mobileSearchFields.size).toBeGreaterThan(0);
+    expect(sharedSearchFields.size).toBeGreaterThan(0);
   });
 
-  it('selects description, so the play drawer can show the setter notes (#4494)', () => {
-    expect(searchFields.has('description')).toBe(true);
+  it('mobile selects description, so the play drawer can show the setter notes (#4494)', () => {
+    expect(mobileSearchFields.has('description')).toBe(true);
+  });
+
+  it('the shared search operation selects description too, so a future web caller starts correct', () => {
+    expect(sharedSearchFields.has('description')).toBe(true);
   });
 });
 

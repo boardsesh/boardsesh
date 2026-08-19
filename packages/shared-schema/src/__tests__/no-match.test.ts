@@ -98,7 +98,11 @@ describe('getDisplayDescription', () => {
       'no matching',
       'NO MATCH.',
       'No-match',
+      'nomatch',
       'No matching!!',
+      'No matching?',
+      'No match;',
+      'No matching. ',
     ]) {
       expect(getDisplayDescription(restatement)).toBe('');
     }

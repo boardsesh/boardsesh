@@ -5,18 +5,14 @@ import type { Climb, HoldsFilter, ZoneMatchMode } from '@boardsesh/shared-schema
 //
 // It used to omit `description` on the premise that no list UI renders it.
 // #4494 overturned that premise: opening a climb from the list lands in the
-// play drawer, which now renders the setter's notes, so the LIVE search
-// selection — mobile's hand-maintained copy in
-// packages/mobile/src/lib/graphql/operations.ts — carries `description`, with a
-// drift guard in packages/backend/src/__tests__/operations-schema-validation.test.ts.
-// This shared document has no client today (only the operations smoke test
-// imports the module, and the app imports it for types), so it is left as-is
-// rather than re-slimmed or re-widened; if it ever gains a caller, mirror
-// mobile's field list.
-//
-// The drafts drawer uses `SEARCH_DRAFT_CLIMBS` below, which extends this
-// fragment with `description` so a draft can be loaded back into the create
-// form in a single round-trip.
+// play drawer, which renders the setter's notes, so a search result that drops
+// the field leaves the drawer blank for every climb reached through the list.
+// Both copies of this selection — this one and mobile's hand-maintained twin in
+// packages/mobile/src/lib/graphql/operations.ts — now carry it, and
+// packages/backend/src/__tests__/operations-schema-validation.test.ts guards
+// both against being re-slimmed. Cost is small: mean description length in the
+// catalog is 18 characters (max 254) against a `frames` string already on the
+// wire.
 // published_at/created_at are used by the create form to enforce the 24h
 // post-publish edit window.
 const CLIMB_SEARCH_FIELDS = `
@@ -42,10 +38,6 @@ const CLIMB_SEARCH_FIELDS = `
   framesPace
   boardseshDifficulty
   boardseshConfidence
-`;
-
-const CLIMB_DRAFT_FIELDS = `
-  ${CLIMB_SEARCH_FIELDS}
   description
 `;
 
@@ -90,15 +82,16 @@ export const SEARCH_CLIMBS = gql`
   }
 `;
 
-// Used by the drafts drawer only — fetches `description` alongside the
-// usual fields so tapping a draft can populate the create form without a
-// second round-trip. Kept separate so list and search queries don't pay
-// for the extra payload.
+// Used by the drafts drawer only — a separately-named operation so drafts can
+// be traced apart from ordinary search in logs and caches. It selects the same
+// fields as SEARCH_CLIMBS; `description` (which the create form needs to
+// repopulate a draft without a second round-trip) used to be the one addition,
+// and is now in the shared list.
 export const SEARCH_DRAFT_CLIMBS = gql`
   query SearchDraftClimbs($input: ClimbSearchInput!) {
     searchClimbs(input: $input) {
       climbs {
-        ${CLIMB_DRAFT_FIELDS}
+        ${CLIMB_SEARCH_FIELDS}
       }
       hasMore
     }
