@@ -106,7 +106,7 @@ describe('resolveBoardForSession', () => {
     const owned = makeBoard({ angle: 40 });
     const createBoard = vi.fn();
     const result = await resolveBoardForSession('kilter/8/17/27,28/30', {
-      ownedBoards: [owned],
+      loadOwnedBoards: async () => [owned],
       createBoard,
       fetchBoardBySlug: vi.fn(),
     });
@@ -118,7 +118,7 @@ describe('resolveBoardForSession', () => {
     const created = makeBoard({ uuid: 'fresh-uuid', isOwned: false, angle: 30 });
     const createBoard = vi.fn().mockResolvedValue(created);
     const result = await resolveBoardForSession('kilter/8/17/27,28/30', {
-      ownedBoards: [],
+      loadOwnedBoards: async () => [],
       createBoard,
       fetchBoardBySlug: vi.fn(),
     });
@@ -136,8 +136,58 @@ describe('resolveBoardForSession', () => {
 
   it('throws on an unparseable board path', async () => {
     await expect(
-      resolveBoardForSession('garbage', { ownedBoards: [], createBoard: vi.fn(), fetchBoardBySlug: vi.fn() }),
+      resolveBoardForSession('garbage', {
+        loadOwnedBoards: async () => [],
+        createBoard: vi.fn(),
+        fetchBoardBySlug: vi.fn(),
+      }),
     ).rejects.toThrow(/Cannot resolve a board/);
+  });
+
+  // The bug this contract exists for: a joiner's matching board sorts past the
+  // first `myBoards` page. The resolver never slices the list it is handed, so a
+  // match at the end of a full walk reuses that board instead of minting one.
+  it('reuses a matching board from deep in the owned list rather than creating one', async () => {
+    const matching = makeBoard({ uuid: 'page-two-uuid', angle: 40 });
+    const nonMatching = Array.from({ length: 60 }, (_, index) => makeBoard({ uuid: `other-${index}`, sizeId: 99 }));
+    const createBoard = vi.fn();
+    const result = await resolveBoardForSession('kilter/8/17/27,28/30', {
+      loadOwnedBoards: async () => [...nonMatching, matching],
+      createBoard,
+      fetchBoardBySlug: vi.fn(),
+    });
+    expect(result).toMatchObject({ uuid: 'page-two-uuid', angle: 30 });
+    expect(createBoard).not.toHaveBeenCalled();
+  });
+
+  // "You own no boards" and "we couldn't find out which boards you own" are the
+  // same input to the reuse step and mint the same duplicate, so a failed load
+  // has to fail the resolve.
+  it('propagates a failed owned-board load instead of creating a board', async () => {
+    const createBoard = vi.fn();
+    await expect(
+      resolveBoardForSession('kilter/8/17/27,28/30', {
+        loadOwnedBoards: async () => {
+          throw new Error('Network request failed');
+        },
+        createBoard,
+        fetchBoardBySlug: vi.fn(),
+      }),
+    ).rejects.toThrow(/Network request failed/);
+    expect(createBoard).not.toHaveBeenCalled();
+  });
+
+  // A named board resolves by slug, so the owned-list walk (a round trip, and a
+  // rejection while offline) must never run for it.
+  it('never loads the owned list for a named-board path', async () => {
+    const loadOwnedBoards = vi.fn(async () => []);
+    const namedBoard = makeBoard({ uuid: 'named-uuid', slug: 'my-gym-moonboard', angle: 25 });
+    await resolveBoardForSession('/b/my-gym-moonboard/40', {
+      loadOwnedBoards,
+      createBoard: vi.fn(),
+      fetchBoardBySlug: vi.fn().mockResolvedValue(namedBoard),
+    });
+    expect(loadOwnedBoards).not.toHaveBeenCalled();
   });
 
   describe('named-board (/b/{slug}) paths', () => {
@@ -146,7 +196,7 @@ describe('resolveBoardForSession', () => {
       const fetchBoardBySlug = vi.fn().mockResolvedValue(namedBoard);
       const createBoard = vi.fn();
       const result = await resolveBoardForSession('/b/my-gym-moonboard/40/list', {
-        ownedBoards: [],
+        loadOwnedBoards: async () => [],
         createBoard,
         fetchBoardBySlug,
       });
@@ -160,7 +210,7 @@ describe('resolveBoardForSession', () => {
       const namedBoard = makeBoard({ uuid: 'named-uuid', slug: 'my-gym-moonboard', angle: 25 });
       const fetchBoardBySlug = vi.fn().mockResolvedValue(namedBoard);
       const result = await resolveBoardForSession('/b/my-gym-moonboard', {
-        ownedBoards: [],
+        loadOwnedBoards: async () => [],
         createBoard: vi.fn(),
         fetchBoardBySlug,
       });
@@ -172,7 +222,7 @@ describe('resolveBoardForSession', () => {
       const fetchBoardBySlug = vi.fn().mockResolvedValue(null);
       await expect(
         resolveBoardForSession('/b/deleted-board/40', {
-          ownedBoards: [],
+          loadOwnedBoards: async () => [],
           createBoard: vi.fn(),
           fetchBoardBySlug,
         }),
