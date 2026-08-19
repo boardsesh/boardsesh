@@ -26,7 +26,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { EOAS_PACKAGE_SPEC, pathWithoutBrokenBunxShims } from './lib/eoas';
+import { EOAS_PACKAGE_SPEC, SELF_HOSTED_UPLOAD_RATE_PER_SECOND, pathWithoutBrokenBunxShims } from './lib/eoas';
 import {
   publishPlatformsSequentially,
   publishSelfHostedPlatformWithRetry,
@@ -100,6 +100,14 @@ export function buildSelfHostedEoasArgs(
     '--message',
     updateMessage,
     ...sourceMapArgs,
+    // Cap how fast eoas starts asset uploads. Before 3.1.2 it fired every asset
+    // of the export (380 in a current bundle) through one unbounded
+    // `Promise.all`, which is what tripped Tigris `SlowDown` (#3620). Applies to
+    // every self-hosted branch — `production` and the per-PR `pr-<n>` previews
+    // alike, since the previews are the concurrent ones. The EAS preview path
+    // (`buildEasUpdateArgs`) has no equivalent flag and is untouched.
+    '--upload-rate',
+    String(SELF_HOSTED_UPLOAD_RATE_PER_SECOND),
     '--nonInteractive',
     // The repo uses bun; force bunx so eoas spawns `bunx expo export` regardless
     // of the nearest package.json's packageManager field.
@@ -145,7 +153,7 @@ async function publishToSelfHostedChannel(
   const commitSubject = getCommitSubject();
   const updateMessage = explicitMessage ?? `${commitHash} ${commitSubject}`.trim();
 
-  // eoas@3.0.5 publish targets a server BRANCH (--branch holds the uploaded
+  // eoas publish targets a server BRANCH (--branch holds the uploaded
   // update). We deliberately do NOT pass --channel: in eoas@3 it's a DEPRECATED
   // client-side no-op — it only sets RELEASE_CHANNEL during config resolution; it
   // is NOT sent to the server, does NOT create a channel, and does NOT drive
@@ -153,8 +161,11 @@ async function publishToSelfHostedChannel(
   // (scripts/ota-channel-map.ts for per-PR previews; a one-time dashboard action
   // for production). Progressive rollouts are branch + runtimeVersion scoped
   // (--rollout-percentage targets a branch's runtimeVersion), not channel scoped.
-  // EOAS_PACKAGE_SPEC pins the CLI to the exact deployed V3 server version
-  // (control-plane requires an exact match); see scripts/lib/eoas.ts.
+  // EOAS_PACKAGE_SPEC pins the CLI (it may lead the deployed server, never trail
+  // it); see scripts/lib/eoas.ts. From 3.1.2 the CLI paces its own asset uploads
+  // (--upload-rate) and retries 429/5xx itself, so the whole-command retry ladder
+  // in lib/mobile-publish-retry.ts is now a backstop rather than the first line
+  // of defence against storage throttling.
   console.log(`[mobile:publish] Mode:     production (self-hosted expo-open-ota)`);
   console.log(`[mobile:publish] Server:   ${serverUrl}`);
   console.log(`[mobile:publish] Branch:   ${channelName}`);

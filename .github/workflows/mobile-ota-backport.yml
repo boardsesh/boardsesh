@@ -13,7 +13,7 @@ name: Mobile OTA Backport (Approved Release)
 # better to fail loudly. See docs/mobile-ota-updates.md.
 #
 # V2 is FROZEN: this backport publishes only to the V3 server (updates.boardsesh.com)
-# via eoas@3.0.5 (pinned in scripts/lib/eoas.ts, used by `vp run mobile:publish`),
+# via eoas@3.1.2 (pinned in scripts/lib/eoas.ts, used by `vp run mobile:publish`),
 # authenticated with EOO_TOKEN. It therefore reaches only V3-fingerprint release
 # anchors. Pre-V3 (old-fleet) binaries point at the retired V2 server and are NOT
 # served here — they migrate by store-updating to a V3 build.
