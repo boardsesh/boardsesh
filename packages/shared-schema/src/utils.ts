@@ -120,8 +120,12 @@ export function withNoMatch(description: string | null | undefined, enabled: boo
  * Anchored at both ends on purpose: "No matching feet allowed" and
  * "No Houdini swap, spin around pls:). No matching." are real setter beta and
  * must survive untouched. A prefix match here would eat both.
+ *
+ * The separator is optional (so "nomatch" is caught too) and any run of
+ * sentence-ending punctuation is tolerated, since setters end this one the same
+ * half-dozen ways.
  */
-const ONLY_NO_MATCH = /^no[\s-]?match(ing)?[.!]*$/i;
+const ONLY_NO_MATCH = /^no[\s-]?match(ing)?[.!?;,\s]*$/i;
 
 /**
  * The climb description to show a climber, or `''` when there is nothing worth

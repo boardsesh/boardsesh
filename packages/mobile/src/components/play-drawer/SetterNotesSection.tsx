@@ -26,6 +26,9 @@ export function SetterNotesSection({ description }: SetterNotesSectionProps) {
 
   if (!notes) return null;
 
+  // `persistKey` is deliberately climb-agnostic, like every sibling section here
+  // (logbook, community, similarClimbs): collapsing the notes is a standing
+  // "I don't want to see these" preference, not a per-climb one.
   return (
     <CollapsibleSection title={t('mobile.setterNotes.title')} defaultExpanded persistKey="setterNotes">
       <Text variant="subheadline" style={styles.notes} selectable>
