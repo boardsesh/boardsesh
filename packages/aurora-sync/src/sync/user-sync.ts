@@ -428,29 +428,47 @@ export async function upsertTableData(
               angle: number | null;
               position: number;
             }> = [];
+            let droppedDuplicateClimbs = 0;
             for (let i = 0; i < item.climbs.length; i++) {
               const climb = item.climbs[i];
               const climbUuid = climb.climb_uuid || climb.uuid || climb;
               const climbAngle = climb.angle ?? null;
               const climbPosition = climb.position ?? i;
 
-              if (typeof climbUuid === 'string' && !seenClimbUuids.has(climbUuid)) {
-                seenClimbUuids.add(climbUuid);
-                climbRows.push({
-                  playlistId: playlist.id,
-                  climbUuid,
-                  angle: climbAngle,
-                  position: climbPosition,
-                });
+              if (typeof climbUuid !== 'string') continue;
+              if (seenClimbUuids.has(climbUuid)) {
+                droppedDuplicateClimbs++;
+                continue;
               }
+              seenClimbUuids.add(climbUuid);
+              climbRows.push({
+                playlistId: playlist.id,
+                climbUuid,
+                angle: climbAngle,
+                position: climbPosition,
+              });
+            }
+
+            // Dropping a row is data loss the climber never asked for: the
+            // circuit they see in Aurora has an entry ours won't. Right trade
+            // against wedging their entire sync, but it has to be visible —
+            // without this line there is no way to tell "Aurora never repeats a
+            // climb" from "we have been quietly truncating circuits for
+            // months". If this fires in prod, widening the index to include
+            // angle is the real fix.
+            if (droppedDuplicateClimbs > 0) {
+              log(
+                `  Circuit ${item.uuid}: dropped ${droppedDuplicateClimbs} repeated climb_uuid row(s) — unique_playlist_climb is (playlist_id, climb_uuid) and ignores angle`,
+              );
             }
 
             if (climbRows.length > 0) {
               // Chunked batch insert with onConflictDoNothing: a concurrent
               // addClimbToPlaylist landing mid-transaction (both run under
               // READ COMMITTED) no-ops instead of aborting the whole sync
-              // batch with a raw 23505. Same pattern as kilter-sync's
-              // applyCircuits.
+              // batch with a raw 23505. Same shape as kilter-sync's
+              // applyCircuits, which leans on a bare onConflictDoNothing with
+              // no JS dedupe in front of it.
               await processBatches(climbRows, BATCH_SIZE, async (batch) => {
                 await db
                   .insert(playlistClimbs)

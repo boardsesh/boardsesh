@@ -410,6 +410,54 @@ describe('upsertTableData circuits — playlist_climbs idempotency (#4023)', () 
 
     expect(insertsInto(playlistClimbs)).toHaveLength(0);
   });
+
+  it('logs the dropped rows, because a silent dedupe is indistinguishable from Aurora never repeating a climb', async () => {
+    const { db } = createDbShim({
+      selectResults: [[{ upstreamId: 'circuit-1', ownerUserId: 'user-1' }]],
+      returningRows: [[{ id: BigInt(7) }]],
+    });
+    const lines: string[] = [];
+
+    await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [
+        circuit('circuit-1', 'Mine', [
+          { climb_uuid: 'climb-A', angle: 40, position: 0 },
+          { climb_uuid: 'climb-A', angle: 55, position: 1 },
+          { climb_uuid: 'climb-A', angle: 70, position: 2 },
+        ] as never),
+      ],
+      (line) => lines.push(line),
+    );
+
+    expect(lines.some((line) => line.includes('circuit-1') && line.includes('dropped 2 repeated climb_uuid'))).toBe(
+      true,
+    );
+  });
+
+  it('stays quiet when nothing was dropped', async () => {
+    const { db } = createDbShim({
+      selectResults: [[{ upstreamId: 'circuit-1', ownerUserId: 'user-1' }]],
+      returningRows: [[{ id: BigInt(7) }]],
+    });
+    const lines: string[] = [];
+
+    await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [circuit('circuit-1', 'Mine', [{ climb_uuid: 'climb-A' }, { climb_uuid: 'climb-B' }])],
+      (line) => lines.push(line),
+    );
+
+    expect(lines.some((line) => line.includes('dropped'))).toBe(false);
+  });
 });
 
 describe('upsertTableData circuits — race-guard suppression + owner lookup SQL', () => {
