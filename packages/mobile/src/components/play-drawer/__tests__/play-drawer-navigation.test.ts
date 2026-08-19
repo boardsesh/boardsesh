@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
-import { getViewOnlyPreviewNavigationTarget } from '../play-drawer-navigation';
+import { getSimilarClimbTapMode, getViewOnlyPreviewNavigationTarget } from '../play-drawer-navigation';
 
 function makeItem(id: string): ClimbQueueItem {
   return {
@@ -79,5 +79,22 @@ describe('getViewOnlyPreviewNavigationTarget', () => {
         targetItem: makeItem('previous'),
       }),
     ).toEqual({ viewOnly: false });
+  });
+});
+
+describe('getSimilarClimbTapMode', () => {
+  it('queues and activates for a signed-in member', () => {
+    expect(getSimilarClimbTapMode('member')).toBe('queue');
+  });
+
+  // The affordance the anonymous drawer keeps that could still write. Similar
+  // Climbs is a read worth keeping, but its member tap does two things a
+  // signed-out reader must not get: it writes the local queue (a list they
+  // cannot carry anywhere, next to a queue button that is hidden) and it calls
+  // `setCurrentClimb`, which re-arms the BLE auto-sender and pushes the climb to
+  // a connected board. The lightbulb is hidden for exactly that reason; this is
+  // the back door into the same behaviour.
+  it('only swaps the preview for a signed-out reader — no queue write, no BLE re-arm', () => {
+    expect(getSimilarClimbTapMode('anonymous')).toBe('preview');
   });
 });

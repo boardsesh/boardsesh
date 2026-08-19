@@ -76,7 +76,7 @@ import { getBoardRenderData } from '../../lib/board-details';
 import { hapticSuccess } from '../../lib/haptics';
 import { usePlayDrawerWakeLock } from './use-play-drawer-wake-lock';
 import { resolveFavoriteRollback } from './favorite-rollback';
-import { getViewOnlyPreviewNavigationTarget } from './play-drawer-navigation';
+import { getSimilarClimbTapMode, getViewOnlyPreviewNavigationTarget } from './play-drawer-navigation';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { track } from '../../lib/analytics';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -796,6 +796,18 @@ export function PlayDrawer({
   const handleSimilarClimbPress = useCallback(
     async (similarClimb: Climb) => {
       const queueItem = climbToQueueItem(similarClimb);
+      // A signed-out reader swaps what the drawer is showing and writes nothing:
+      // no queue entry they cannot carry anywhere, and no `setCurrentClimb`,
+      // which is what re-arms the BLE auto-sender. Similar Climbs is the only
+      // affordance in the anonymous view that could otherwise still drive a
+      // wall, so it takes the preview path the wrong-board drawer already uses.
+      if (getSimilarClimbTapMode(viewer) === 'preview') {
+        setDrawerPreviewItem(queueItem);
+        setDrawerPreviewSuggestionSource(null);
+        setIsMirrored(false);
+        setIsTickBarActive(false);
+        return;
+      }
       // A similar climb can be set on another board, so this add may raise the
       // cross-board prompt. Wait for it: backing out has to leave the drawer on
       // the climb they were already looking at, not activate the one they just
@@ -810,7 +822,7 @@ export function PlayDrawer({
       setIsTickBarActive(false);
       setCurrentClimb(queueItem, { playlistSuggestionSource: null });
     },
-    [addToQueue, setCurrentClimb],
+    [addToQueue, setCurrentClimb, viewer],
   );
 
   // The first screen is sized so the action bar stays visible and the Logbook
@@ -1039,13 +1051,16 @@ export function PlayDrawer({
                           lightbulbPending={lightbulbPending}
                           autoDisconnectWarning={bluetooth?.autoDisconnectWarning ?? false}
                           lightbulbLongPressEnabled={bluetoothConnected}
-                          // Web Bluetooth IS mounted on the browser export, so the
-                          // bulb would otherwise render for a signed-out visitor —
-                          // board presence binds on an active board uuid they do not
-                          // have, and a pairing prompt on a first-ever visit is a
-                          // hostile opening. Anonymous wall lighting is its own
-                          // feature, not a v1 side effect.
-                          showLightbulb={bluetooth !== null && !isAnonymous}
+                          // Whether a Bluetooth transport exists at all, and only
+                          // that. The anonymous suppression lives in the bar, with
+                          // the rest of the `viewer` rules and the test that pins
+                          // them — Web Bluetooth IS mounted on the browser export,
+                          // so without it the bulb would render for a signed-out
+                          // visitor, whose board presence binds on an active board
+                          // uuid they do not have and whose first-ever visit would
+                          // open with a pairing prompt. Anonymous wall lighting is
+                          // its own feature (#4606), not a v1 side effect.
+                          showLightbulb={bluetooth !== null}
                           // The on-wall banner owns the driver's face in the header
                           // when it's up; suppress the lightbulb pip so the same
                           // avatar never shows twice in the drawer.

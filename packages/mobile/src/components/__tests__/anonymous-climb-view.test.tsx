@@ -85,6 +85,27 @@ describe('AnonymousClimbView', () => {
     expect(props.onSwitchBoard).toBeUndefined();
   });
 
+  // THE LOOP GUARD. `openTarget` is an object literal, and PlayDrawer's
+  // apply-the-target effect keys on its IDENTITY — so an unmemoised one is a new
+  // target on every render, which re-opens the drawer, which renders again. The
+  // page never settles, and every other assertion in this file passes just as
+  // happily inside that loop: they all read the LAST render's props. Only the
+  // render count and the target's identity across a re-render can tell the
+  // difference.
+  it('settles — one render, and the same open-target object across a re-render', () => {
+    const { rerender } = render(createElement(AnonymousClimbView, { climb: CLIMB, boardConfig: BOARD_CONFIG }));
+
+    expect(drawerProps.calls).toHaveLength(1);
+    const firstTarget = lastDrawerProps().openTarget;
+
+    // A fresh board-config object carrying the same values — what an ordinary
+    // parent re-render looks like, and enough to defeat the outer `memo`.
+    rerender(createElement(AnonymousClimbView, { climb: CLIMB, boardConfig: { ...BOARD_CONFIG } }));
+
+    expect(drawerProps.calls).toHaveLength(2);
+    expect(lastDrawerProps().openTarget).toBe(firstTarget);
+  });
+
   it('opens the climb as a preview so the queue is never written', () => {
     render(createElement(AnonymousClimbView, { climb: CLIMB, boardConfig: BOARD_CONFIG }));
     const openTarget = lastDrawerProps().openTarget as { climb: Climb; options: { previewQueueItem: unknown } };
