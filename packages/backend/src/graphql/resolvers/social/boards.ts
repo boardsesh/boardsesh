@@ -683,7 +683,11 @@ export type CachedPopularConfig = {
   totalAscents: number;
   boardCount: number;
   displayName: string;
-  lastClimbAt: string | null;
+  // Optional, not just nullable: a legacy Redis row cached before this field
+  // existed has no key for it at all, and JSON.parse of that row produces
+  // `undefined` here, not `null` — the cache-legacy-row test pins that. A
+  // non-optional type would be a lie about what call sites actually see.
+  lastClimbAt?: string | null;
 };
 
 /**
@@ -701,6 +705,13 @@ export type CachedPopularConfig = {
  *
  * Returns `null` for anything unparseable, and for a timestamp in the future
  * (a corrupt row must never leak a fabricated future `<lastmod>`).
+ *
+ * The fractional-seconds group is explicitly truncated to exactly 3 digits
+ * (padded on the right when shorter) before hitting `Date.parse`. ECMA-262
+ * only specifies millisecond precision (`.sss`) for the extended ISO format;
+ * Aurora's microsecond-precision `created_at` (6 digits) parsing correctly is
+ * a V8 leniency, not a spec guarantee — truncate explicitly rather than lean
+ * on that.
  */
 export function normalizeCatalogTimestamp(raw: unknown): string | null {
   if (typeof raw !== 'string' || raw.length === 0) {
@@ -713,7 +724,11 @@ export function normalizeCatalogTimestamp(raw: unknown): string | null {
   }
 
   const [, datePart, timePart, fractionPart, zonePart] = match;
-  const rebuilt = `${datePart}T${timePart}${fractionPart ?? ''}${zonePart ?? 'Z'}`;
+  // fractionPart includes its leading dot (e.g. ".123456" or ".5"). Keep up to
+  // 3 digits after the dot and right-pad shorter fractions with zeros — ".5"
+  // means 0.5s = 500ms, so the pad is on the right, not the left.
+  const millis = fractionPart ? `.${fractionPart.slice(1, 4).padEnd(3, '0')}` : '';
+  const rebuilt = `${datePart}T${timePart}${millis}${zonePart ?? 'Z'}`;
   const parsedMs = Date.parse(rebuilt);
   if (!Number.isFinite(parsedMs)) {
     return null;

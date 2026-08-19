@@ -156,6 +156,8 @@ describe('normalizeCatalogTimestamp', () => {
     ['2024-03-11 09:00:00.123456', '2024-03-11T09:00:00.123Z'],
     ['2023-11-23T18:00:15.227', '2023-11-23T18:00:15.227Z'],
     ['2024-03-11T09:00:00Z', '2024-03-11T09:00:00.000Z'],
+    // Sub-millisecond fraction, explicitly right-padded (0.5s = 500ms, not 5ms).
+    ['2024-03-11T09:00:00.5', '2024-03-11T09:00:00.500Z'],
     [null, null],
     ['', null],
     ['unknown', null],
