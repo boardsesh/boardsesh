@@ -34,27 +34,20 @@ import { getSetting } from '../settings';
 import { reportScopeDownloadAbandonedOnSignOut, reportScopeDownloadAbandonedOnDisable } from './offline-sync-adapter';
 
 /**
- * Emit the terminal for one scope and close its funnel, unless a torn-down cycle
- * already reported one for this same teardown.
+ * Emit the terminal for a scope that was DE-LISTED without a teardown — the My
+ * Boards toggle-off and the launch backstop — then close its funnel.
  *
- * The claim is the dedup #4406 built: a sign-out bumps the global wipe epoch, so
- * the cycle it tears down reports its own `aborted-wipe` for the same scope
- * milliseconds earlier, and two terminals for one Started would break the funnel
- * invariant. The marker clear is the SECOND dedup, and the durable one — after
- * it, no later path can find an unfinished download for this scope.
+ * No teardown-generation claim here, deliberately, unlike the sign-out path
+ * below. Nothing tore a cycle down, so there is no competing `aborted-wipe` to
+ * defer to, and the claim would actively lose events: it is keyed on a
+ * generation that only a purge or a sign-out moves, so toggling one board off,
+ * back on, and off again in a single session — an ordinary thing to do — would
+ * report the first abandonment and silently swallow the second. The cleared
+ * marker is the dedup that actually holds, and it is durable: once it is gone,
+ * no path anywhere can find an unfinished download for this scope.
  */
-async function closeScopeFunnel(
-  db: SQLiteDatabase,
-  scopeKey: string,
-  report: (info: { scopeKey: string }) => void,
-): Promise<void> {
-  const namespace = purgeNamespaceForScopeKey(scopeKey);
-  // A key we cannot parse belongs to no namespace, so the registry never records
-  // a terminal against it and nothing can double-report it. Report it rather
-  // than dropping it — a malformed key is still an open funnel.
-  if (namespace === undefined || claimAbandonedDownloadTerminal(scopeKey, namespace)) {
-    report({ scopeKey });
-  }
+async function closeDelistedScopeFunnel(db: SQLiteDatabase, scopeKey: string): Promise<void> {
+  reportScopeDownloadAbandonedOnDisable({ scopeKey });
   await clearScopeDownloadFunnelMarkers(db, scopeKey);
 }
 
@@ -75,7 +68,20 @@ async function closeScopeFunnel(
 export async function reportAbandonedDownloadsOnSignOut(db: SQLiteDatabase): Promise<void> {
   try {
     for (const scopeKey of await getUnfinishedDownloadScopeKeys(db)) {
-      await closeScopeFunnel(db, scopeKey, reportScopeDownloadAbandonedOnSignOut);
+      // The teardown claim #4406 built, and this path genuinely needs it:
+      // `setSigningOut(true)` bumps the global wipe epoch and tears the running
+      // cycle down, so the bootstrap phase reports its own `aborted-wipe` for
+      // this same scope milliseconds earlier. Two terminals for one Started
+      // would break the funnel invariant. A key we cannot parse belongs to no
+      // namespace, so the registry never records one for it and nothing can
+      // double-report it — those are reported rather than dropped.
+      const namespace = purgeNamespaceForScopeKey(scopeKey);
+      if (namespace === undefined || claimAbandonedDownloadTerminal(scopeKey, namespace)) {
+        reportScopeDownloadAbandonedOnSignOut({ scopeKey });
+      }
+      // Cleared either way: the download is over whether or not this call site
+      // was the one that got to say so.
+      await clearScopeDownloadFunnelMarkers(db, scopeKey);
     }
   } catch (error) {
     if (__DEV__) {
@@ -100,7 +106,7 @@ export async function reportAbandonedDownloadOnDisable(db: SQLiteDatabase, scope
       isScopeDownloadComplete(db, scopeKey),
     ]);
     if (!started || complete) return;
-    await closeScopeFunnel(db, scopeKey, reportScopeDownloadAbandonedOnDisable);
+    await closeDelistedScopeFunnel(db, scopeKey);
   } catch (error) {
     if (__DEV__) {
       console.warn('[offline] failed to close the abandoned download funnel on toggle-off:', error);
@@ -132,7 +138,7 @@ export async function sweepDelistedDownloadTerminals(db: SQLiteDatabase): Promis
       // Still enabled means still downloading — a board-data crawl legitimately
       // spans launches, and its Started is meant to stay open across all of them.
       if (enabledScopeKeys.has(scopeKey)) continue;
-      await closeScopeFunnel(db, scopeKey, reportScopeDownloadAbandonedOnDisable);
+      await closeDelistedScopeFunnel(db, scopeKey);
     }
   } catch (error) {
     if (__DEV__) {

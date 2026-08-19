@@ -422,8 +422,8 @@ export const SHARED_EVENTS = {
   OfflineBoardDownloadCompleted: 'Offline Board Download Completed',
   // A bootstrap stage failed, or was cut short. Props: { scopeKey, stage:
   // 'manifest' | 'download' | 'import' | 'grades-download' | 'grades-import' |
-  // 'board-removed', attempt, expected, reason, aborted, errorMessage,
-  // offlineEngineEnabled }.
+  // 'board-removed' | 'abandoned', attempt, expected, reason, aborted,
+  // errorMessage, offlineEngineEnabled }.
   // `expected: true` is a transport/reachability failure — a phone in a tunnel,
   // not a defect — and is the normal case, not an alarm. These previously went
   // only to Sentry, where they could not be joined to the funnel.
@@ -438,22 +438,44 @@ export const SHARED_EVENTS = {
   // `Failed where aborted = false` over Started.
   //
   // `reason` is a closed, low-cardinality bucket — 'aborted-wipe' |
-  // 'aborted-background' | 'abandoned-removed' | 'database-locked' |
-  // 'schema-stale' | 'watermark-regression' | 'permanent-miss' |
-  // 'artifact-invalid' | 'artifact-truncated' | 'network' | 'unknown' |
-  // 'unknown-exit' — for grouping. The verbatim text stays on `errorMessage`.
-  // Dashboards that ENUMERATE reasons need 'artifact-truncated' (issue #4394's
-  // exact decoded-size gate) and 'abandoned-removed' (#4406) added;
-  // failure-rate queries (`aborted = false`) pick them up on their own.
+  // 'aborted-background' | 'abandoned-removed' | 'abandoned-signed-out' |
+  // 'abandoned-disabled' | 'database-locked' | 'schema-stale' |
+  // 'watermark-regression' | 'permanent-miss' | 'artifact-invalid' |
+  // 'artifact-truncated' | 'network' | 'unknown' | 'unknown-exit' — for
+  // grouping. The verbatim text stays on `errorMessage`. Dashboards that
+  // ENUMERATE reasons need 'artifact-truncated' (issue #4394's exact
+  // decoded-size gate), 'abandoned-removed' (#4406) and the two 'abandoned-*'
+  // de-list reasons (#4452) added; failure-rate queries (`aborted = false`) pick
+  // them up on their own.
   //
-  // 'abandoned-removed' is the one reason that is a COUNT of abandonments rather
-  // than of interruptions (issue #4406): the climber removed the board while its
-  // download was still running, so it fires at most once per Started — from the
-  // teardown, which is the last code that can see the durable start marker — and
-  // always with `stage: 'board-removed'`. Every other abort-shaped reason can
-  // repeat for one download (a pocketed phone, a sibling board's removal), which
-  // is why "downloads given up on" was previously only derivable as
-  // Started-minus-Completed.
+  // The three 'abandoned-*' reasons are the ones that COUNT abandonments rather
+  // than interruptions: each fires at most once per Started, from the last code
+  // that can still see the durable start marker. Every other abort-shaped reason
+  // can repeat many times over one download (a pocketed phone, a sibling board's
+  // removal), which is why "downloads given up on" was previously only derivable
+  // as Started-minus-Completed. They differ only in what ended the download:
+  //   'abandoned-removed'    — the board was removed and its rows deleted
+  //                            (#4406), always with `stage: 'board-removed'`.
+  //   'abandoned-signed-out' — sign-out ended it (#4452). Either the explicit
+  //                            wipe deleted the markers, or a forced-401 /
+  //                            expiry / identity-change sign-out emptied
+  //                            `syncEnabledBoards`, which orphans the Started
+  //                            just as thoroughly: the pull client's board loop
+  //                            only ever visits enabled scopes.
+  //   'abandoned-disabled'   — the climber turned the board off from My Boards,
+  //                            or a launch sweep found a start marker for a
+  //                            board nobody has enabled any more (#4452).
+  //                            Nothing was deleted; a re-enable opens a FRESH
+  //                            Started rather than resuming this one.
+  // Both #4452 reasons carry `stage: 'abandoned'` — deliberately not
+  // 'board-removed', which already ships in dashboards meaning "the rows were
+  // deleted".
+  //
+  // What is still NOT reportable, and per production is the dominant
+  // unterminated bucket: a Started followed by literally nothing — process
+  // death, an uninstall, a climber who never opened the app again. No code
+  // change can emit an event for those, so Started → Completed will not reach
+  // 100% and is not meant to.
   //
   // One pairing changed with #4390: `aborted: true` can now arrive alongside an
   // `Offline Snapshot Retry Scheduled` with `failureKind: 'transport'` — the
@@ -467,15 +489,17 @@ export const SHARED_EVENTS = {
   // rather than the phone went in a pocket. `attempt: 0` on any guard-emitted
   // report: it never spends the scope's retry budget.
   OfflineBoardDownloadFailed: 'Offline Board Download Failed',
-  // The climber turned a board OFF while its first download was still in flight
-  // — the abandonment the funnel exists to size, caught at the moment it
-  // happens. Props: { scopeKey, source: 'manage', stage, fraction, bytesDone,
-  // offlineEngineEnabled }. It needs a live progress frame naming the scope, so
-  // today only the My Boards toggle mid-snapshot fires it: a paged crawl
-  // publishes no such frame, and removing a board from Storage reports its exit
-  // as `Offline Board Toggled { enabled: false, source: 'storage' }` plus the
-  // funnel's own `Offline Board Download Failed { reason: 'abandoned-removed' }`
-  // (issue #4406) instead.
+  // Extra progress detail when the climber turns a board OFF mid-download.
+  // Props: { scopeKey, source: 'manage', stage, fraction, bytesDone,
+  // offlineEngineEnabled }.
+  //
+  // NOT the funnel's terminal, despite what this comment used to claim. It needs
+  // a live SNAPSHOT progress frame naming the exact scope, which a paged crawl
+  // never publishes — and it has fired ZERO times in 180 days of production as a
+  // result. The terminal that always fires is
+  // `Offline Board Download Failed { reason: 'abandoned-disabled' }` (#4452);
+  // this one only adds `fraction` / `bytesDone` on the runs where we happen to
+  // have them. Kept for that detail, not as a count of anything.
   OfflineBoardDownloadCancelled: 'Offline Board Download Cancelled',
   // One artifact transfer that actually moved bytes — the per-download
   // throughput measurement the funnel could not give us (issue #4394). Completed

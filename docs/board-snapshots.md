@@ -763,8 +763,8 @@ Completed` — so abandonment was structurally unmeasurable and failures went on
 | ---------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `Offline Board Download Started`   | first time any cycle starts pulling a scope, once ever                                 | `scopeKey`, `pathIntent`, `artifactBytes`, `trigger`, `offlineEngineEnabled`          |
 | `Offline Board Download Completed` | both board tables reached the tail, once ever                                          | `scopeKey`, `method`, `durationMs`, `bytes?`, `rowCount?`, `downloadMs?`, `importMs?` |
-| `Offline Board Download Failed`    | a bootstrap attempt ended without succeeding, or a removal ended the download for good | `scopeKey`, `stage`, `attempt`, `expected`, `reason`, `aborted`, `errorMessage`       |
-| `Offline Board Download Cancelled` | the board was switched off mid-download                                                | `scopeKey`, `source`, `stage?`, `fraction?`, `bytesDone?`                             |
+| `Offline Board Download Failed`    | a bootstrap attempt ended without succeeding, or something ended the download for good | `scopeKey`, `stage`, `attempt`, `expected`, `reason`, `aborted`, `errorMessage`       |
+| `Offline Board Download Cancelled` | progress detail when a board is switched off mid-snapshot; 0 events in 180 days        | `scopeKey`, `source`, `stage?`, `fraction?`, `bytesDone?`                             |
 | `Offline Board Toggled`            | the offline switch was flipped, either way                                             | `scopeKey`, `enabled`, `source`                                                       |
 | `Offline Download All Tapped`      | the "download all my boards" switch was TAPPED                                         | `boardCount`                                                                          |
 
@@ -789,6 +789,12 @@ abandonment spike in exactly the window the baseline is read from.
 
 > **If a future change wipes board data on logout** (issue #3621), it must clear both markers in the
 > same transaction as the rows. Otherwise the next sign-in emits Completed with no Started.
+
+**A marker is not the only thing that can orphan a Started.** `pullSync`'s board loop iterates the
+scopes in `syncEnabledBoards` and nothing else, so a board that leaves that list is never visited
+again — its `scope-started:` marker can survive perfectly intact and still describe a download
+nothing will ever finish. Anything that de-lists a board therefore owes the funnel a terminal, even
+when it deletes no rows at all. See "every path that ends a download" below.
 
 **The terminal-event invariant: every Started has exactly one terminal event.** A snapshot bootstrap
 attempt ends in `Offline Board Download Completed` (its scope finished) or `Offline Board Download
@@ -838,6 +844,50 @@ makes "downloads the climber gave up on" a count rather than a subtraction. A re
 mid-**bootstrap** would otherwise produce two terminals for one Started — the phase's own
 `aborted-wipe` and this one — so both claim against the purge generation `beginScopePurge` bumped
 (`sync/download-terminal-registry.ts`), and only the first claim reports.
+
+### Every path that ends a download, and which reports
+
+Issue #4452 widened the removal terminal above to every other ender. The full list, so the next
+person can check it rather than re-derive it:
+
+| How a download ends                                                              | Reports today                                                                                                   |
+| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| it finishes                                                                      | `Offline Board Download Completed`                                                                              |
+| board removed from Storage (`removeBoardScopeData`)                              | `Failed { stage: 'board-removed', reason: 'abandoned-removed' }` (#4406)                                         |
+| explicit sign-out / account deletion (`purgeLocalDataForSignOut`)                | `Failed { stage: 'abandoned', reason: 'abandoned-signed-out' }` — read before the wipe transaction, emitted after |
+| forced 401, proactive token expiry, identity change (`clearUserData` + de-list)  | `Failed { stage: 'abandoned', reason: 'abandoned-signed-out' }` — from `runSignedOutCleanup`, markers then cleared |
+| My Boards toggle-off                                                             | `Failed { stage: 'abandoned', reason: 'abandoned-disabled' }`, plus `Offline Board Toggled { enabled: false }`   |
+| a de-list that crashed before reporting, or a device upgrading into this build   | the launch backstop in `offline-sync-bridge.tsx`, as `abandoned-disabled`                                        |
+| the owner-stamp mismatch wipe (`clearUserData` in the bridge)                    | nothing, and correctly: it de-lists nothing, so the scope keeps downloading                                      |
+| the app is backgrounded, or a sibling board's removal tears the cycle down       | `Failed { aborted: true, reason: 'aborted-background' / 'aborted-wipe' }` — an interruption, the download resumes |
+| process death, uninstall, a climber who never opens the app again                | **nothing, and nothing can.** Per production this is the dominant unterminated bucket                            |
+
+The three `abandoned-*` reasons are the once-per-Started ones. The de-list paths also **clear**
+`scope-started:` and `scope-download-started:` (`clearScopeDownloadFunnelMarkers`) once they have
+reported, and nothing else: the rows and the `checkpoint:` keys stay, so a re-enable still resumes
+instantly. Two Starteds for a toggle-off-then-on is the intended reading — as far as the funnel is
+concerned those are two downloads, and a durable marker outliving its download is what made
+abandonment unmeasurable in the first place.
+
+Sign-out reports through **two** seams for one reason: the explicit wipe runs `deleteAllSyncMeta`, so
+only code inside that function can still see the markers, while the selective sign-outs keep every
+marker and are ended purely by `setSetting('syncEnabledBoards', [])`. The claim in
+`download-terminal-registry.ts` therefore keys on a **composite** `wipeEpoch:purgeEpoch` generation:
+`setSigningOut(true)` moves only the global wipe epoch and `beginScopePurge` only its namespace's, so
+a namespace-only key would let a stale `aborted-wipe` from an unrelated board removal suppress a real
+sign-out terminal. The de-list paths do **not** claim — nothing tore a cycle down for them, and the
+cleared marker is the durable dedup.
+
+`runSignedOutCleanup` also moved `resetAnalytics()` to **after** the offline cleanup. Every sign-out
+event — the discarded outbox, `Offline Data Wiped On Sign Out`, and these terminals — has to land on
+the account that is leaving; production showed every wipe event sitting on a different `person_id`
+from the `Logout` half a second earlier, which made all of them unjoinable.
+
+**What this still does not cover.** Started → Completed will not reach 100% and is not meant to. Over
+the funnel's first weeks in production, of the (person, scope) pairs with a Started and no Completed,
+the majority emitted *nothing at all* after the Started — same first and last timestamp, no toggle,
+no logout. That is process death, uninstall, or a climber who moved on, and no code change can emit
+an event for it.
 
 **A removal also re-arms the scheduler.** A removal latches its namespace for the seconds its delete
 transaction runs, and every purge guard in the pull client reads that latch as "purged" — so a cycle
