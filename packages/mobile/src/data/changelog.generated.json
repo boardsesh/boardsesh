@@ -1,6 +1,35 @@
 {
-  "generatedAt": "2026-08-19T10:12:24.775Z",
+  "generatedAt": "2026-08-19T11:37:22.039Z",
   "entries": [
+    {
+      "prNumber": 4294,
+      "category": "fixed",
+      "title": "Dragging a climb in a playlist now drops it exactly where you let go, even when the playlist holds a climb the catalog has lost track of.",
+      "mergedAt": "2026-08-19T11:35:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4294"
+    },
+    {
+      "prNumber": 4296,
+      "category": "fixed",
+      "title": "Queues you share with your crew stop losing climbs: when someone adds a climb while you're activating a playlist or reseeding the queue, their climb now sticks around instead of vanishing.",
+      "mergedAt": "2026-08-19T11:34:12Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4296"
+    },
+    {
+      "prNumber": 4264,
+      "category": "fixed",
+      "title": "Signing in with Google or Apple on the web now brings you back to Boardsesh instead of dumping you on a dead localhost page.",
+      "mergedAt": "2026-08-19T11:31:30Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4264"
+    },
+    {
+      "prNumber": 4538,
+      "category": "fixed",
+      "title": "Downloading a board for offline use no longer drops out partway through the grade sync when the servers are busy.",
+      "mergedAt": "2026-08-19T11:29:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4538",
+      "body": "Your logbook and stats load reliably during peak hours instead of erroring out."
+    },
     {
       "prNumber": 4530,
       "category": "fixed",

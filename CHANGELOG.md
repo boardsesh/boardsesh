@@ -12,6 +12,11 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Dragging a climb in a playlist now drops it exactly where you let go, even when the playlist holds a climb the catalog has lost track of. ([#4294](https://github.com/boardsesh/boardsesh/pull/4294))
+- Queues you share with your crew stop losing climbs: when someone adds a climb while you're activating a playlist or reseeding the queue, their climb now sticks around instead of vanishing. ([#4296](https://github.com/boardsesh/boardsesh/pull/4296))
+- Signing in with Google or Apple on the web now brings you back to Boardsesh instead of dumping you on a dead localhost page. ([#4264](https://github.com/boardsesh/boardsesh/pull/4264))
+- Downloading a board for offline use no longer drops out partway through the grade sync when the servers are busy. ([#4538](https://github.com/boardsesh/boardsesh/pull/4538))
+  Your logbook and stats load reliably during peak hours instead of erroring out.
 - Fixed the Save button getting pushed off-screen when editing a multi-frame route/circuit in the climb editor ([#4530](https://github.com/boardsesh/boardsesh/pull/4530))
 
 ## 2026-08-16
