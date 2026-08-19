@@ -99,8 +99,8 @@ vi.mock('../setter-entries', async (importOriginal) => {
   return { ...actual, buildSetterEntries: () => pureBuilder(actual.buildSetterEntries) };
 });
 
-vi.mock('../climb-query', () => ({
-  fetchTier2Summary: async () => {
+vi.mock('../climb-store', () => ({
+  fetchClimbShardSummary: async () => {
     if (climbSummary.hang) {
       return forever<never>();
     }
@@ -112,6 +112,9 @@ vi.mock('../climb-query', () => ({
     }
     return { itemCount: climbSummary.itemCount, lastModified: new Date('2026-05-04T00:00:00.000Z') };
   },
+}));
+
+vi.mock('../climb-query', () => ({
   buildTier2ClimbItems: async () => [],
 }));
 

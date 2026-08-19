@@ -153,12 +153,18 @@ const SITEMAP_DEGRADED_HEADER = 'x-sitemap-degraded';
  * Shards the index must always list.
  *
  * `gyms`, `setters` and `playlists` are legitimately empty, so a missing entry
- * there proves nothing. `climbs` is NOT in that category — the registry marks it
- * `expectsUrls: true` exactly like these two — but its summary cannot meet
- * `SHARD_DEADLINE_MS` today, so production serves it degraded on every request
- * and asserting it here would be a permanently red check rather than a detector.
- * That is a real ~52,000-URL hole tracked separately, not a property of this
- * list.
+ * there proves nothing.
+ *
+ * `climbs` is excluded for a different reason, and the reason is now weaker than
+ * it was. Its summary could not meet `SHARD_DEADLINE_MS` at any cache temperature,
+ * so production served the index degraded on most requests and asserting it here
+ * would have been a permanently red check rather than a detector. #4523 removed
+ * that: the summary is a single row of `sitemap_shard_refreshes` now. Promoting it
+ * to a `degradable: true` entry is a follow-up rather than part of that change,
+ * because the store is empty on the deploy that populates it and the entry would
+ * have to be added along with the three assertions below that currently encode
+ * "climbs is not required". Until then this list has no view of the largest
+ * surface on the site.
  *
  * `degradable` is what `X-Sitemap-Degraded` may excuse. `boards` is genuinely
  * transient — a cold cache, a slow backend — and self-heals under the 60s window.
