@@ -37,13 +37,16 @@ function config(overrides: Partial<PopularBoardConfig> = {}): PopularBoardConfig
 
 function render(configs: PopularBoardConfig[]) {
   const { sql, params } = dialect.sqlToQuery(buildSetterSitemapSql(resolveClimbSitemapGroups(configs)));
-  return { normalised: sql.toLowerCase().replace(/\s+/g, ' '), params };
+  // `raw` as well as `normalised`: lowercasing turns `\S` into `\s`, so a
+  // case-sensitive regex predicate is unassertable against the normalised form —
+  // the correct non-whitespace class and its exact inverse look identical.
+  return { raw: sql.replace(/\s+/g, ' '), normalised: sql.toLowerCase().replace(/\s+/g, ' '), params };
 }
 
 // The rendered SQL of the real builder, not a restatement of the predicate the
 // test hopes is there.
 describe('the setters shard query', () => {
-  const { normalised, params } = render([config()]);
+  const { raw, normalised, params } = render([config()]);
 
   it('submits only setters with publicly visible climbs', () => {
     expect(normalised).toContain('is_listed = true');
@@ -79,12 +82,23 @@ describe('the setters shard query', () => {
     // Leading/trailing whitespace encodes to a %20 crawlers strip; `/ ? #`
     // break the path outright. Both rules live in SQL so the summary and the
     // item list select the identical set.
-    expect(normalised).toContain(`setter_username ~ '^\\s(.*\\s)?$'`);
+    // Asserted against the RAW sql: `\S` (non-whitespace, what we want) and `\s`
+    // (whitespace, its exact inverse — which would submit only the ~0 usernames
+    // that carry edge whitespace) are the same string once lowercased.
+    expect(raw).toContain(`setter_username ~ '^\\S(.*\\S)?$'`);
+    expect(raw).not.toContain(`setter_username ~ '^\\s(`);
     expect(normalised).toContain(`setter_username !~ '[/?#]'`);
   });
 
   it('orders deterministically so a page is the same page between crawls', () => {
     expect(normalised).toContain('order by setter_username asc');
+  });
+
+  it('refuses to render at all when no board configuration resolves', () => {
+    // A bare `()` in the OR list is a syntax error at the database, which is a
+    // far worse way to learn the catalogue came back empty. The seam and the
+    // production path both fail here, identically.
+    expect(() => buildSetterSitemapSql([])).toThrow('no resolvable board configuration');
   });
 
   it('holds MoonBoard out through the shared group resolver, not a local check', () => {

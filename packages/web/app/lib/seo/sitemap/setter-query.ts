@@ -111,6 +111,14 @@ const routableUsername = sql`
  * changed every night, which is the exact signal destruction `entries.ts` forbids.
  */
 export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL {
+  // Guarded here rather than only in the caller: with no groups the `OR` list
+  // renders as a bare `()` and the statement is a syntax error at the database,
+  // which is a far worse way to learn the catalogue is empty. No resolvable
+  // group means no climb on this site has a canonical URL at all.
+  if (groups.length === 0) {
+    throw new Error('[sitemap] setters shard: no resolvable board configuration — refusing to build an empty shard');
+  }
+
   const linkable = sql.join(
     groups.map((group) => groupPredicate(group)),
     sql` OR `,
@@ -143,14 +151,10 @@ export function runSetterSitemapQuery(db: SerialPlanDb, groups: readonly ClimbCo
 }
 
 async function fetchSetterRows(): Promise<SetterSitemapQueryRow[]> {
+  // A catalogue failure rather than "no setters qualify" — publishing an empty
+  // shard there would tell Google the whole surface was deleted. The throw lives
+  // in `buildSetterSitemapSql`, so the seam and this path fail identically.
   const groups = resolveClimbSitemapGroups(await getAllBoardConfigsOrThrow());
-
-  // No resolvable group means no climb on this site has a canonical URL, which
-  // is a catalogue failure rather than "no setters qualify". Publishing an empty
-  // shard there would tell Google the whole surface was deleted.
-  if (groups.length === 0) {
-    throw new Error('[sitemap] setters shard: no resolvable board configuration — refusing to build an empty shard');
-  }
 
   return [...(await withSerialPlan(dbzRead, async (tx) => runSetterSitemapQuery(tx, groups)))];
 }
