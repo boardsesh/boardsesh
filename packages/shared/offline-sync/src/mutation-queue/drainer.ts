@@ -487,6 +487,12 @@ export async function drainMutationQueue(
           // than letting a lost lock become a queue-lifecycle decision. The
           // DELETE is idempotent, so a retry after an attempt that actually
           // committed is a no-op.
+          // Unlike the mobile write path (#4332), this one genuinely does wait:
+          // a standalone DELETE in autocommit consults the connection's
+          // `busy_timeout` (armed on the main connection at open), because there
+          // is no read-then-upgrade inside a deferred transaction for SQLite to
+          // skip the busy handler on. So the ladder below is a second chance
+          // after a real wait, not the only one.
           await runLocalWriteWithRetry(() => markCompleted(db, mutation.id));
           invalidateForTable(queryClient, mutation.table_name);
           notifyMutationStatus(options, {
