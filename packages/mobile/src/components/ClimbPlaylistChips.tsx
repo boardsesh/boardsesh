@@ -21,17 +21,15 @@ const MAX_VISIBLE_CHIPS = 2;
 // sizes rather than letting it push the row taller than the board thumbnail.
 const CHIP_MAX_FONT_SCALE = 1.3;
 
-export type ResolvedPlaylistChip = { key: string; name: string; dotColor: string; emoji: string | null };
+type ResolvedPlaylistChip = { key: string; name: string; dotColor: string; emoji: string | null };
 
 /**
  * Turn a climb's playlist UUIDs into renderable chips against the playlists
  * provider's `uuid → Playlist` index — O(membership), never a scan of the whole
  * playlist array. UUIDs with no matching playlist (a stale membership, another
- * board's list) are dropped. Exported so a caller that also needs the names in
- * text form (the play drawer builds a VoiceOver label from them) resolves them
- * the same way.
+ * board's list) are dropped.
  */
-export function resolvePlaylistChips(
+function resolvePlaylistChips(
   playlistUuids: Iterable<string>,
   playlistsById: Map<string, Playlist> | undefined,
 ): ResolvedPlaylistChip[] {
@@ -60,12 +58,17 @@ type PlaylistChipsRowProps = {
   /** `start` for a left-aligned list row, `center` for a centered detail header. */
   align?: 'start' | 'center';
   /**
-   * VoiceOver label for the whole strip. Omit (the list-row default) to hide the
-   * chips from the accessibility tree, keeping the row one clean target. Pass one
-   * on a detail surface, where membership is information the climber would
+   * Builds the VoiceOver label for the whole strip from every playlist name,
+   * including the ones the "+N" token hides. Omit (the list-row default) to hide
+   * the chips from the accessibility tree, keeping the row one clean target; pass
+   * one on a detail surface, where membership is information the climber would
    * otherwise never hear.
+   *
+   * A formatter rather than a finished string so the caller doesn't have to
+   * resolve the names a second time, and so the translation lookup it needs stays
+   * out of this component — which renders once per visible list row.
    */
-  accessibilityLabel?: string;
+  describeForAccessibility?: (playlistNames: string[]) => string;
 };
 
 /**
@@ -81,7 +84,7 @@ type PlaylistChipsRowProps = {
 export const PlaylistChipsRow = React.memo(function PlaylistChipsRow({
   playlistUuids,
   align = 'start',
-  accessibilityLabel,
+  describeForAccessibility,
 }: PlaylistChipsRowProps) {
   const playlistsContext = usePlaylistsContextOptional();
   const { variant, systemColors, m3 } = useTheme();
@@ -92,6 +95,7 @@ export const PlaylistChipsRow = React.memo(function PlaylistChipsRow({
 
   if (chips.length === 0) return null;
 
+  const accessibilityLabel = describeForAccessibility?.(chips.map((chip) => chip.name));
   const visibleChips = chips.slice(0, MAX_VISIBLE_CHIPS);
   const overflowCount = chips.length - visibleChips.length;
 

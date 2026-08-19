@@ -1,7 +1,7 @@
-import { memo, useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { PlaylistChipsRow, resolvePlaylistChips } from '../ClimbPlaylistChips';
+import { PlaylistChipsRow } from '../ClimbPlaylistChips';
 import { useClimbPlaylistMemberships } from '../../hooks/use-climb-playlist-memberships';
 import { useClimbPlaylistMembershipQuery } from '../../hooks/use-climb-playlist-membership-query';
 import { usePlaylistsContextOptional } from '../../providers/playlists-provider';
@@ -63,7 +63,6 @@ export const PlayDrawerPlaylistChips = memo(function PlayDrawerPlaylistChips({
   const { t } = useTranslation('climbs');
   const playlistsContext = usePlaylistsContextOptional();
   const playlists = playlistsContext?.playlists;
-  const playlistsById = playlistsContext?.playlistsById;
   const isAuthenticated = playlistsContext?.isAuthenticated ?? false;
 
   // Whether the climber has any playlist a chip could name. Board-scoped with the
@@ -94,16 +93,10 @@ export const PlayDrawerPlaylistChips = memo(function PlayDrawerPlaylistChips({
   // VoiceOver user nothing. The list variant stays hidden from the accessibility
   // tree (it would triple the length of every row); on a detail surface this is
   // the only place membership is announced at all.
-  //
-  // This resolves the same names the chips row resolves for itself. Handing it
-  // pre-resolved chips instead would push that work onto every caller — including
-  // the FlashList rows, where it currently sits behind their own memo — to save a
-  // handful of Map lookups on a header that renders twice. Not worth the trade.
-  const accessibilityLabel = useMemo(() => {
-    const names = resolvePlaylistChips(members, playlistsById).map((chip) => chip.name);
-    if (names.length === 0) return undefined;
-    return t('mobile.detail.inPlaylists', { playlists: names.join(', ') });
-  }, [members, playlistsById, t]);
+  const describeForAccessibility = useCallback(
+    (playlistNames: string[]) => t('mobile.detail.inPlaylists', { playlists: playlistNames.join(', ') }),
+    [t],
+  );
 
   // No slot at all — not even an empty one — for a signed-out climber or one with
   // no playlist on this board. They can never see a chip here, so they should not
@@ -112,7 +105,7 @@ export const PlayDrawerPlaylistChips = memo(function PlayDrawerPlaylistChips({
 
   return (
     <View style={styles.slot}>
-      <PlaylistChipsRow playlistUuids={members} align="center" accessibilityLabel={accessibilityLabel} />
+      <PlaylistChipsRow playlistUuids={members} align="center" describeForAccessibility={describeForAccessibility} />
     </View>
   );
 });
