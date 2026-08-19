@@ -14,6 +14,11 @@ const resizeMock = vi.hoisted(() => vi.fn());
 const renderAsyncMock = vi.hoisted(() => vi.fn());
 const saveAsyncMock = vi.hoisted(() => vi.fn());
 const releaseMock = vi.hoisted(() => vi.fn());
+const reportHandledErrorMock = vi.hoisted(() => vi.fn());
+// Bytes the stubbed expo-file-system `File` hands back, keyed by URI. Missing
+// entries read back as empty — which is exactly the Android failure under test:
+// a 0-byte file reads as an empty array instead of throwing.
+const fileBytesByUri = vi.hoisted(() => new Map<string, Uint8Array>());
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -39,6 +44,18 @@ vi.mock('expo-image-picker', () => ({
 vi.mock('expo-image-manipulator', () => ({
   ImageManipulator: { manipulate: manipulateMock },
   SaveFormat: { JPEG: 'jpeg' },
+}));
+
+vi.mock('expo-file-system', () => ({
+  File: class {
+    uri: string;
+    constructor(uri: string) {
+      this.uri = uri;
+    }
+    bytes() {
+      return Promise.resolve(fileBytesByUri.get(this.uri) ?? new Uint8Array());
+    }
+  },
 }));
 
 vi.mock('../../providers/theme-provider', () => ({
@@ -68,10 +85,14 @@ vi.mock('../../lib/graphql/hooks', () => ({
 
 vi.mock('../../lib/avatar-upload', () => ({
   uploadAvatar: uploadAvatarMock,
+  // Kept in step with the real module deliberately: the fallback crop is
+  // rejected against this cap, so a drift here would silently stop testing it.
+  MAX_AVATAR_BYTES: 2 * 1024 * 1024,
 }));
 
 vi.mock('../../lib/error-reporting', () => ({
   reportError: vi.fn(),
+  reportHandledError: reportHandledErrorMock,
 }));
 
 vi.mock('../Avatar', () => ({
@@ -130,6 +151,11 @@ beforeEach(() => {
   renderAsyncMock.mockReset();
   saveAsyncMock.mockReset();
   releaseMock.mockReset();
+  reportHandledErrorMock.mockReset();
+
+  fileBytesByUri.clear();
+  fileBytesByUri.set('file://picked-avatar.jpg', new Uint8Array([9, 9, 9, 9]));
+  fileBytesByUri.set('file://compressed-avatar.jpg', new Uint8Array([1, 2, 3]));
 
   requestMediaLibraryPermissionsMock.mockResolvedValue({ granted: true });
   launchImageLibraryMock.mockResolvedValue({
@@ -164,7 +190,12 @@ describe('EditProfileScreen', () => {
 
     await waitFor(() => {
       expect(uploadAvatarMock).toHaveBeenCalledWith(
-        { uri: 'file://compressed-avatar.jpg', name: 'avatar.jpg', type: 'image/jpeg' },
+        {
+          uri: 'file://compressed-avatar.jpg',
+          bytes: new Uint8Array([1, 2, 3]),
+          name: 'avatar.jpg',
+          type: 'image/jpeg',
+        },
         '11111111-1111-4111-8111-111111111111',
       );
     });
@@ -172,5 +203,105 @@ describe('EditProfileScreen', () => {
       avatarUrl: 'https://ws.example.com/static/avatars/11111111-1111-4111-8111-111111111111.jpg?v=upload-123',
     });
     expect(routerBackMock).toHaveBeenCalledOnce();
+    expect(reportHandledErrorMock).not.toHaveBeenCalled();
+  });
+
+  // Android's `saveAsync` ignores the Boolean `Bitmap.compress()` returns, so a
+  // failed encode resolves with a URI pointing at a 0-byte file. Every layer
+  // below treated that as success, and the user's picture vanished on the next
+  // screen with nothing logged anywhere.
+  it('falls back to the picker crop when the compressed file comes back empty', async () => {
+    fileBytesByUri.set('file://compressed-avatar.jpg', new Uint8Array());
+
+    render(createElement(EditProfileScreen));
+
+    fireEvent.click(screen.getByRole('button', { name: 'profile.avatar.upload' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('avatar').getAttribute('data-uri')).toBe('file://picked-avatar.jpg');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'profile.save' }));
+
+    await waitFor(() => {
+      expect(uploadAvatarMock).toHaveBeenCalledWith(
+        {
+          uri: 'file://picked-avatar.jpg',
+          bytes: new Uint8Array([9, 9, 9, 9]),
+          name: 'avatar.jpg',
+          type: 'image/jpeg',
+        },
+        '11111111-1111-4111-8111-111111111111',
+      );
+    });
+    expect(routerBackMock).toHaveBeenCalledOnce();
+
+    // The whole reason this went unnoticed: nothing reported it.
+    expect(reportHandledErrorMock).toHaveBeenCalledOnce();
+    const [reportedError, context] = reportHandledErrorMock.mock.calls[0] as [Error, Record<string, unknown>];
+    expect(reportedError.message).toBe('Avatar compression produced an empty file');
+    expect(context).toMatchObject({
+      level: 'warning',
+      tags: { source: 'avatar-compress' },
+      extra: { compressedBytes: 0, originalBytes: 4 },
+    });
+  });
+
+  it('falls back to the picker crop when the manipulator throws outright', async () => {
+    saveAsyncMock.mockRejectedValue(new Error('CorruptedImageDataException'));
+
+    render(createElement(EditProfileScreen));
+
+    fireEvent.click(screen.getByRole('button', { name: 'profile.avatar.upload' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('avatar').getAttribute('data-uri')).toBe('file://picked-avatar.jpg');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'profile.save' }));
+
+    await waitFor(() => {
+      expect(uploadAvatarMock).toHaveBeenCalledWith(
+        {
+          uri: 'file://picked-avatar.jpg',
+          bytes: new Uint8Array([9, 9, 9, 9]),
+          name: 'avatar.jpg',
+          type: 'image/jpeg',
+        },
+        '11111111-1111-4111-8111-111111111111',
+      );
+    });
+    expect(showToastMock).not.toHaveBeenCalledWith('profile.validation.compressionFailed', 'error');
+  });
+
+  it('tells the user when neither the compressed file nor the picker crop is usable', async () => {
+    fileBytesByUri.clear();
+
+    render(createElement(EditProfileScreen));
+
+    fireEvent.click(screen.getByRole('button', { name: 'profile.avatar.upload' }));
+
+    await waitFor(() => {
+      expect(showToastMock).toHaveBeenCalledWith('profile.validation.compressionFailed', 'error');
+    });
+    // No avatar was picked, so Save stays disabled and nothing is uploaded.
+    expect(screen.getByTestId('avatar').getAttribute('data-uri')).toBe('');
+    expect(screen.getByRole('button', { name: 'profile.save' })).toHaveProperty('disabled', true);
+    expect(uploadAvatarMock).not.toHaveBeenCalled();
+    expect(routerBackMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a fallback crop that is over the backend cap rather than uploading it', async () => {
+    fileBytesByUri.set('file://compressed-avatar.jpg', new Uint8Array());
+    fileBytesByUri.set('file://picked-avatar.jpg', new Uint8Array(2 * 1024 * 1024 + 1));
+
+    render(createElement(EditProfileScreen));
+
+    fireEvent.click(screen.getByRole('button', { name: 'profile.avatar.upload' }));
+
+    await waitFor(() => {
+      expect(showToastMock).toHaveBeenCalledWith('profile.validation.compressionFailed', 'error');
+    });
+    expect(uploadAvatarMock).not.toHaveBeenCalled();
   });
 });

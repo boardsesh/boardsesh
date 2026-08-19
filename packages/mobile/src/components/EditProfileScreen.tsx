@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import * as ImagePicker from 'expo-image-picker';
+import { File } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import type { UpdateProfileInput } from '@boardsesh/shared-schema';
 import { useTheme } from '../providers/theme-provider';
 import { useToast } from '../providers/toast-provider';
 import { useProfile, useUpdateProfile } from '../lib/graphql/hooks';
-import { uploadAvatar, type AvatarUploadFile } from '../lib/avatar-upload';
-import { reportError } from '../lib/error-reporting';
+import { MAX_AVATAR_BYTES, uploadAvatar, type AvatarUploadFile } from '../lib/avatar-upload';
+import { reportError, reportHandledError } from '../lib/error-reporting';
 import { spacing } from '../theme/tokens';
 import { Avatar } from './Avatar';
 import { AuthTextInput } from './AuthTextInput';
@@ -23,17 +24,20 @@ const DISPLAY_NAME_MAX = 100;
 const MAX_DIMENSION = 1024;
 const COMPRESSION_QUALITY = 0.85;
 
+/** A picked image that has been read off disk and proven to have bytes in it. */
+type CompressedAvatar = { uri: string; bytes: Uint8Array };
+
 /**
  * Resize (if needed) and re-encode a picked image to a small JPEG, returning the
  * local file URI. Resizing a single dimension preserves the aspect ratio; we
  * constrain whichever side is longer. A 0 dimension (the picker couldn't report
  * size) skips the resize but still re-encodes to shrink the file.
  */
-async function compressAvatar(uri: string, width: number, height: number): Promise<string> {
-  const context = ImageManipulator.manipulate(uri);
-  const longestSide = Math.max(width, height);
+async function renderCompressedJpeg(asset: ImagePicker.ImagePickerAsset): Promise<string> {
+  const context = ImageManipulator.manipulate(asset.uri);
+  const longestSide = Math.max(asset.width, asset.height);
   if (longestSide > MAX_DIMENSION) {
-    if (width >= height) {
+    if (asset.width >= asset.height) {
       context.resize({ width: MAX_DIMENSION });
     } else {
       context.resize({ height: MAX_DIMENSION });
@@ -48,6 +52,65 @@ async function compressAvatar(uri: string, width: number, height: number): Promi
     // path on disk and stays valid after the ref is gone.
     image.release();
   }
+}
+
+/** Read a local file, treating an unreadable one as empty rather than throwing. */
+async function readBytesOrEmpty(uri: string): Promise<Uint8Array> {
+  try {
+    return await new File(uri).bytes();
+  } catch {
+    return new Uint8Array();
+  }
+}
+
+/**
+ * Compress a picked image and hand back both its URI and its bytes, so nothing
+ * downstream has to trust that the file on disk is an image.
+ *
+ * Android's `saveAsync` throws away the `Boolean` that `Bitmap.compress()`
+ * returns, so a failed encode still resolves with a URI — pointing at a 0-byte
+ * file. iOS raises `CorruptedImageDataException` at the same spot, which is why
+ * only Android saw this. Nothing further down noticed either: reading an empty
+ * file returns an empty array without throwing, the multipart encoder writes a
+ * zero-length part, and the backend answered 200 with a URL we persisted. The
+ * user watched the crop land in the preview and lost it on the next screen.
+ *
+ * So check the bytes here, where we can still recover: fall back to the picker's
+ * own crop, which is already square (`aspect: [1, 1]`) and only misses the
+ * resize/re-encode. `expo-image-picker`'s Android exporter drops the same
+ * `Boolean`, so the fallback gets its own length check instead of being trusted.
+ */
+async function compressAvatar(asset: ImagePicker.ImagePickerAsset): Promise<CompressedAvatar> {
+  let compressedBytes = new Uint8Array();
+  let compressionError: unknown = null;
+  try {
+    const compressedUri = await renderCompressedJpeg(asset);
+    compressedBytes = await new File(compressedUri).bytes();
+    if (compressedBytes.length > 0) {
+      return { uri: compressedUri, bytes: compressedBytes };
+    }
+  } catch (error) {
+    compressionError = error;
+  }
+
+  const originalBytes = await readBytesOrEmpty(asset.uri);
+  // There is no telemetry on this path today (zero avatar/manipulator/picker
+  // events in 90 days), which is exactly why the failure went unnoticed for so
+  // long. Sizes and platform only — no URIs, no user identifiers.
+  reportHandledError(compressionError ?? new Error('Avatar compression produced an empty file'), {
+    level: 'warning',
+    tags: { source: 'avatar-compress' },
+    extra: {
+      compressedBytes: compressedBytes.length,
+      originalBytes: originalBytes.length,
+      platform: Platform.OS,
+    },
+  });
+
+  if (originalBytes.length === 0 || originalBytes.length > MAX_AVATAR_BYTES) {
+    throw new Error('Avatar compression produced an unusable file');
+  }
+  return { uri: asset.uri, bytes: originalBytes };
 }
 
 export function EditProfileScreen() {
@@ -104,8 +167,8 @@ export function EditProfileScreen() {
       });
       if (result.canceled) return;
       const asset = result.assets[0];
-      const compressedUri = await compressAvatar(asset.uri, asset.width, asset.height);
-      setPickedAvatar({ uri: compressedUri, name: 'avatar.jpg', type: 'image/jpeg' });
+      const { uri, bytes } = await compressAvatar(asset);
+      setPickedAvatar({ uri, bytes, name: 'avatar.jpg', type: 'image/jpeg' });
     } catch (error) {
       reportError(error);
       showToast(t('profile.validation.compressionFailed'), 'error');
