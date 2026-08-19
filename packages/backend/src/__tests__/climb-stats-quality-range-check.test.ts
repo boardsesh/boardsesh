@@ -19,10 +19,14 @@ import { getWorkerDatabaseUrl, setupWorkerDatabase } from './worker-db';
 // snapshot (ghcr.io/boardsesh/boardsesh-dev-db) has 22k+ real
 // board_climb_stats rows — all board_type='moonboard' — sitting at exactly
 // quality_average = upstream_quality_average = 0 (an "unrated" sentinel
-// migration 0151 already cleaned up once; see the schema comment on
+// migration 0151 already cleaned up once, which the MoonBoard problems
+// importer keeps writing back — #4617; see the schema comment on
 // boardClimbStats for the full account). `> 0` fails the ADD CONSTRAINT
 // table rewrite outright against that real data, so 0 is admitted here —
 // this still catches the unambiguously-impossible cases (negative, >5).
+//
+// So the `accepts 0` cases below encode a KNOWN-BAD sentinel, not a value we
+// want: flip them to rejections when #4617 tightens the bound to `> 0`.
 // ---------------------------------------------------------------------------
 
 describe('board_climb_stats quality range CHECK constraints (real DB)', () => {
