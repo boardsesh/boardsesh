@@ -1356,7 +1356,12 @@ describe('canClaimByDomain advertises the requestGymClaim domain gate without be
     // canClaim and canClaimByDomain answer different questions: one is about the
     // viewer, one about the listing. An editor gets canClaim=false (the UI hides
     // the call-out entirely) while canClaimByDomain still describes the website.
-    const claimGym = await insertGym({ ownerId: OWNER, name: 'Editor View', website: 'https://www.bonsist.bg' });
+    const claimGym = await insertGym({
+      ownerId: OWNER,
+      name: 'Editor View',
+      website: 'https://www.bonsist.bg',
+      websiteVouchedByOwner: true,
+    });
     await socialGymMutations.grantGymWriteAccess(
       null,
       { input: { gymUuid: claimGym.uuid, userId: EDITOR_TARGET } },
@@ -1403,7 +1408,12 @@ describe('canClaimByDomain advertises the requestGymClaim domain gate without be
     // snake_case keys through mapRawGymRow. A camelCase read of
     // website_vouched_by_owner there is `undefined` — falsy — and every gym in
     // the proximity results would silently route to admin review.
-    const claimGym = await insertGym({ ownerId: OWNER, name: 'Proximity Row', website: 'https://www.bonsist.bg' });
+    const claimGym = await insertGym({
+      ownerId: OWNER,
+      name: 'Proximity Row',
+      website: 'https://www.bonsist.bg',
+      websiteVouchedByOwner: true,
+    });
     const rawRow = Array.from(
       (await db.execute(sql`SELECT * FROM gyms WHERE id = ${claimGym.id}`)) as Iterable<Record<string, unknown>>,
     )[0];
