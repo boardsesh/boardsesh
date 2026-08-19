@@ -38,6 +38,10 @@ const TEST_SOURCE_FILES = [
     projectPath: 'BoardseshTests/BoardBleServiceDiscoveryTests.swift',
   },
   {
+    sourcePath: '../ios-tests/BoardBleRelightAuthorizationTests.swift',
+    projectPath: 'BoardseshTests/BoardBleRelightAuthorizationTests.swift',
+  },
+  {
     sourcePath: '../ios-tests/BoardRendererErrorClassificationTests.swift',
     projectPath: 'BoardseshTests/BoardRendererErrorClassificationTests.swift',
   },
