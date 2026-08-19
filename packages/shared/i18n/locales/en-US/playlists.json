@@ -118,7 +118,9 @@
       "subtitle": "Board data is missing for this climb."
     },
     "menu": {
-      "editClimbs": "Edit climbs",
+      "addClimbs": "Add climbs",
+      "editDetails": "Edit details",
+      "editClimbs": "Reorder & remove climbs",
       "delete": "Delete"
     },
     "visibility": {

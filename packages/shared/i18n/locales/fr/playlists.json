@@ -118,7 +118,9 @@
       "subtitle": "Les données de board manquent pour cette voie."
     },
     "menu": {
-      "editClimbs": "Modifier les blocs",
+      "addClimbs": "Ajouter des blocs",
+      "editDetails": "Modifier les détails",
+      "editClimbs": "Réorganiser et retirer des blocs",
       "delete": "Supprimer"
     },
     "visibility": {
