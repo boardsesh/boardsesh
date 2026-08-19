@@ -83,7 +83,46 @@ function getPosthog(): PostHog | null {
     persistence: 'localStorage',
   });
 
+  registerWebEnvironment(posthogClient);
+
   return posthogClient;
+}
+
+// Registers `environment: 'production'` as a persistent super property on every
+// event, mirroring mobile's registerAppEnvironment() in
+// packages/mobile/src/lib/posthog-client.ts. Without this, web PostHog events
+// carried no `environment` tag at all, so a dashboard filter of
+// `environment = 'production'` silently dropped 100% of web volume while still
+// counting mobile and backend correctly (#3945).
+//
+// Hardcoded to 'production' rather than resolved dynamically: getPosthog() is
+// gated by isProductionHost() a few lines above, and posthogClient is only ever
+// constructed when that gate passes, so 'production' is correct by
+// construction. If that gate is ever relaxed (e.g. preview deploys get their
+// own PostHog key), this must become dynamic like mobile's
+// resolveAppEnvironment().
+//
+// register() IS in posthog-js-lite's public typings (inherited from
+// @posthog/core's PostHogCoreStateless) — no structural cast needed here,
+// unlike registerSessionSuperProperties() below.
+//
+// Best-effort, exactly like mobile's registerAppEnvironment: a failure here
+// must never block analytics init, so a rejection AND a synchronous throw are
+// both swallowed. register() is declared `async` in @posthog/core 1.46.1, so
+// today it can only reject — the Promise.resolve() + try/catch keeps that from
+// being a silent version coupling if a future SDK makes it sync.
+function registerWebEnvironment(client: PostHog): void {
+  try {
+    void Promise.resolve(client.register({ environment: 'production' })).catch((error: unknown) => {
+      warnEnvironmentRegistrationFailed(error);
+    });
+  } catch (error) {
+    warnEnvironmentRegistrationFailed(error);
+  }
+}
+
+function warnEnvironmentRegistrationFailed(error: unknown): void {
+  if (shouldDebugAnalytics) console.warn('[analytics] failed to register environment super property', error);
 }
 
 type PosthogProperties = Record<string, string | number | boolean | null>;
@@ -227,8 +266,24 @@ export function alias(newId: string): boolean {
   return core.alias(newId);
 }
 
+// PostHog's reset() clears the distinct id AND every registered super
+// property, but getPosthog() caches the singleton, so the registration done at
+// construction never runs again. Re-register `environment` straight after so a
+// party-profile reset (party-profile-context.tsx) doesn't silently drop the tag
+// for the rest of the page session — mirrors mobile's reset() in
+// packages/mobile/src/lib/analytics.ts.
+//
+// Only re-registers when core.reset() actually forwarded to a real client
+// (didReset === true): calling getPosthog() unconditionally would construct a
+// client on the admin-page skip path, where core.reset() short-circuits before
+// ever calling getPosthog() itself.
 export function reset(): boolean {
-  return core.reset();
+  const didReset = core.reset();
+  if (didReset) {
+    const posthog = getPosthog();
+    if (posthog) registerWebEnvironment(posthog);
+  }
+  return didReset;
 }
 
 type PosthogSuperPropertyClient = {
