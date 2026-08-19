@@ -160,6 +160,17 @@ describe('PlayDrawerPlaylistChips', () => {
     expect(ctrl.queryArgs.some((args) => args.enabled)).toBe(false);
   });
 
+  it('does not request membership before a real layout is known', () => {
+    // layoutId 0 is the "not resolved yet" placeholder; the resolver would reject
+    // it, so the fetch waits rather than burning a round trip. A board-wide
+    // playlist matches every layout, including 0 — so the layout guard is the only
+    // thing that can be holding the request back here.
+    ctrl.playlists = [playlist('p5', 'Kilter circuit', null)];
+    renderChips({ layoutId: 0 });
+    expect(ctrl.queryArgs.length).toBeGreaterThan(0);
+    expect(ctrl.queryArgs.some((args) => args.enabled)).toBe(false);
+  });
+
   it('keeps the reserved slot the same height whether or not the climb is in a playlist', () => {
     // Load-bearing: the board art below is `flex: 1` inside a fixed-height first
     // screen, so a per-climb header height would resize the board on every swipe.
