@@ -14,8 +14,10 @@ import postgres from 'postgres';
  *
  * Opt-in: set LOCATION_TRIGGER_DB_URL to a PostGIS dev DB migrated to >= 0127
  * (`vp run db:up`, then the URL from .boardsesh/dev-db.env). Self-skips
- * otherwise so CI and dataless machines stay green. The backend test DB
- * (plain postgres:15, no PostGIS) cannot run this.
+ * otherwise so CI and dataless machines stay green. `packages/db` runs on
+ * Node's test runner and is not part of the Vitest projects, so this file is not
+ * in CI at all; the backend suite covers the same triggers through
+ * search-gyms-proximity.test.ts, whose test DB does carry PostGIS.
  *
  *   LOCATION_TRIGGER_DB_URL=postgres://postgres:password@localhost:5432/main pnpm --filter @boardsesh/db run test
  */
