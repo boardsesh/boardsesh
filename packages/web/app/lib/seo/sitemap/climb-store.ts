@@ -233,12 +233,17 @@ async function runRefresh(force: boolean): Promise<ClimbSummaryRefreshResult> {
       return declined('shrank');
     }
 
+    // One timestamp for both branches of the upsert, not two: an insert and a
+    // conflict-update would otherwise store values a few microseconds apart, and
+    // `computedAt` is what the superseded check and the staleness bound both
+    // pivot on.
+    const computedAt = new Date();
     await tx
       .insert(sitemapShardRefreshes)
-      .values({ shardId: CLIMBS_SHARD_ID, itemCount, lastModified, computedAt: new Date() })
+      .values({ shardId: CLIMBS_SHARD_ID, itemCount, lastModified, computedAt })
       .onConflictDoUpdate({
         target: sitemapShardRefreshes.shardId,
-        set: { itemCount, lastModified, computedAt: new Date() },
+        set: { itemCount, lastModified, computedAt },
       });
 
     return { itemCount, lastModified, previousItemCount, skipped: null, durationMs };

@@ -18,6 +18,10 @@ export const dynamic = 'force-dynamic';
  * Not for the response — the handler bounds every shard at `SHARD_DEADLINE_MS` and
  * answers in well under a second. This is headroom for the `after()` work below,
  * which recomputes the climbs summary and takes tens of seconds when it fires.
+ *
+ * Vercel-only, and inert everywhere else: on self-hosted Node (the Railway target,
+ * #3795) there is no per-invocation ceiling to raise and the `after()` work runs to
+ * completion regardless. Harmless to keep after the move, and load-bearing until it.
  */
 export const maxDuration = 300;
 
