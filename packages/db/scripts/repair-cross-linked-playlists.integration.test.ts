@@ -263,6 +263,29 @@ void describe('repair-cross-linked-playlists apply path', () => {
           [String(jsonImportPlaylistId), String(mergeCandidatePlaylistId)].sort(),
         );
 
+        // The opt-in widens the write set, so exercise it end-to-end rather than
+        // trusting that a defer-to-account-merge plan walks the same revoke path.
+        // The json-import plan rides along and is drift-skipped: it was already
+        // repaired above.
+        const mergeCandidateCounts = await applyRepairPlans(transaction, withMergeCandidates);
+        assert.deepEqual(mergeCandidateCounts, {
+          ownershipRowsDeleted: 1,
+          pinsDeleted: 1,
+          followsDeleted: 0,
+          tombstonesWritten: 1,
+          skippedByDrift: [String(jsonImportPlaylistId)],
+        });
+
+        const mergeCandidateOwners = await transaction
+          .select({ userId: playlistOwnership.userId })
+          .from(playlistOwnership)
+          .where(eq(playlistOwnership.playlistId, mergeCandidatePlaylistId));
+        assert.deepEqual(
+          mergeCandidateOwners.map((owner) => owner.userId),
+          [lowercaseUserId],
+          'the earlier of the two duplicate accounts keeps the playlist',
+        );
+
         const survivingUsers = await transaction
           .select({ id: users.id })
           .from(users)
