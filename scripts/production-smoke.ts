@@ -152,8 +152,16 @@ const SITEMAP_DEGRADED_HEADER = 'x-sitemap-degraded';
 /**
  * Shards the index must always list.
  *
- * `gyms`, `setters` and `playlists` are legitimately empty, so a missing entry
- * there proves nothing.
+ * `gyms` and `setters` are legitimately empty, so a missing entry there proves
+ * nothing.
+ *
+ * `playlists` used to sit in that sentence too, and the justification was stale:
+ * production serves 2,688 public playlists holding at least one climb, so a
+ * missing entry there is 10,752 locale-expanded URLs gone, not an empty surface.
+ * That is exactly why this check never caught #4524. It is `degradable: true`
+ * because the shard's rows are cached rather than stored, so a cold Data Cache
+ * entry can still lose the 3 s deadline once and self-heal on the `after()` warm —
+ * a WARN. The shard vanishing without the header saying so is still a FAIL.
  *
  * `climbs` is excluded for a different reason, and the reason is now weaker than
  * it was. Its summary could not meet `SHARD_DEADLINE_MS` at any cache temperature,
@@ -181,6 +189,7 @@ const SITEMAP_DEGRADED_HEADER = 'x-sitemap-degraded';
 const REQUIRED_SITEMAP_SHARDS = [
   { id: 'static', loc: 'https://www.boardsesh.com/sitemaps/static.xml', degradable: false },
   { id: 'boards', loc: 'https://www.boardsesh.com/sitemaps/boards.xml', degradable: true },
+  { id: 'playlists', loc: 'https://www.boardsesh.com/sitemaps/playlists.xml', degradable: true },
 ] as const;
 
 type RequiredSitemapShard = (typeof REQUIRED_SITEMAP_SHARDS)[number];

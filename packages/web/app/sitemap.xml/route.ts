@@ -1,5 +1,6 @@
 import { after } from 'next/server';
 import { refreshClimbSummaryIfStale } from '@/app/lib/seo/sitemap/climb-store';
+import { warmPlaylistSitemapCache } from '@/app/lib/seo/sitemap/playlist-query';
 import { sitemapIndexRouteHandler } from '@/app/lib/seo/sitemap/shard-registry';
 
 /**
@@ -42,6 +43,15 @@ export async function GET(): Promise<Response> {
   // 16.2 supplies a real awaiter on self-hosted Node too, and the Vercel-only
   // import would not survive the move off Vercel.
   after(refreshClimbSummaryIfStale);
+
+  // Same slot, same reason, different shard. The playlists rows are cached rather
+  // than stored (#4524), and a first-population `unstable_cache` miss registers
+  // its write only after the callback resolves — so an index that abandoned the
+  // query at the 3 s deadline has already returned and the write is not covered
+  // by `pendingWaitUntil`. Re-running it here puts it under the after-context's
+  // `withExecuteRevalidates`, where the write is actually executed, which is what
+  // turns "heals on some later request" into "heals on this one".
+  after(warmPlaylistSitemapCache);
 
   return response;
 }

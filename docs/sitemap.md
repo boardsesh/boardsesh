@@ -139,6 +139,79 @@ That lock serialises the _write_. Two instances can still _compute_ concurrently
 `superseded` check means the later finisher writes nothing instead of clobbering a
 newer answer.
 
+## The playlists cache
+
+`playlists` is a fixed shard, so the index asks it for the whole item list — one
+indexed query for every public playlist holding at least one climb. Uncached, that
+ran live on every `force-dynamic` index request. Measured across 12 distinct origin
+computations of the production index on 2026-08-19, `playlists` was named in
+`X-Sitemap-Degraded` in 4 of them, dropping 10,752 locale-expanded URLs each time
+(#4524). The shard route itself measured 1.3–4.3 s per CDN miss.
+
+It gets the boards treatment, not the climbs treatment, and the difference is a size
+question. The rows are the whole answer and they are small: 2,688 rows of
+`{ uuid, updatedAtIso }` is ~200 KB of JSON, ~840 KB at the hard `MAX_ITEMS_PER_SHARD`
+cap, against Vercel's 2 MB Data Cache entry ceiling. The climb item list is >10 MB,
+which is the only reason it needed a Postgres-backed summary store instead. So
+playlists caches the answer, which fixes the index _and_ `/sitemaps/playlists.xml`;
+a summary would have fixed only the index.
+
+Two layers, in `playlist-query.ts`:
+
+- **Next Data Cache** (`unstable_cache`, 1 hour, tag `sitemap-playlists`) — shared
+  across instances, so a cold lambda does not re-run the query.
+- **In-process TTL + single-flight** (1 hour) — `unstable_cache` does not dedupe
+  concurrent misses, and a crawl burst is the index plus the shard route arriving
+  together. Nothing is stored on rejection, so a failure is never memoised.
+
+### Dates do not survive the Data Cache
+
+`unstable_cache` JSON-serialises. A cached `Date` comes back a **string**, and
+`renderLastMod` calls `lastModified.toISOString()` on it — a TypeError that 503s
+`/sitemaps/playlists.xml` and degrades the index harder than no cache at all. So the
+cache stores `updatedAtIso` and the wrapper rehydrates with `new Date(...)`, once per
+TTL. A naive `unstable_cache` wrapper makes this bug worse; do not "simplify" that
+pair away. The climbs summary has the same pattern for the same reason.
+
+The round trip is lossless without a `to_char`: `playlists.updated_at` is a
+`timestamp` holding UTC and comes back through drizzle's timestamp decoder
+(`new Date(value + '+0000')`). `climb-query.ts` needs `to_char` only because its raw
+`sql` fragment bypasses that decoder.
+
+### Why the warm lives in `after()`
+
+`/sitemap.xml` calls `after(warmPlaylistSitemapCache)`. That is not belt-and-braces —
+without it the fix only heals probabilistically.
+
+On a first-population miss, `unstable_cache` registers its cache write in
+`workStore.pendingRevalidates` only **after** the callback resolves, while the route
+module snapshots `Object.values(workStore.pendingRevalidates)` into `pendingWaitUntil`
+at response time. An index that abandoned the query at the 3 s deadline has already
+returned, so its eventual write goes into an array nobody is holding and a freezing
+Vercel instance can drop it — and the next request misses again. Running the same
+fetch inside `after()` puts it under `withExecuteRevalidates`, whose `finally` diffs
+the store and awaits writes that appeared while the callbacks ran. The abandoned
+query is covered too, because the warm shares its in-flight promise.
+
+The warm returns without touching Postgres when the in-process cache is fresh, and a
+persistently failing query is held off by a 60 s per-instance floor rather than
+re-running on every crawl hit.
+
+### The statement timeout
+
+The query runs inside an explicit transaction with `SET LOCAL statement_timeout = '15s'`.
+`withDeadline` stops _waiting_ at 3 s but does not cancel, so before this an abandoned
+query kept a connection out of a pool of ten for as long as it liked.
+
+Fifteen seconds bounds a pathological plan; it is deliberately not tuned to the
+index's deadline, because `/sitemaps/playlists.xml` legitimately takes up to ~4 s and
+a deadline-tight timeout would break a working URL. A 57014 surfaces as a throw, which
+the index already degrades on and the shard route already 503s on.
+
+`SET LOCAL` in a transaction is the only form available: the `DB_STATEMENT_TIMEOUT_MS`
+startup parameter is deliberately off because PgBouncer transaction pooling rejects it
+and fails every connection (`packages/db/src/client/postgres.ts`, `docs/db-connectivity.md`).
+
 ## What is still slow
 
 `/sitemaps/climbs/N.xml` — the shard route, not the index. It still builds the full
@@ -147,8 +220,11 @@ instance takes ~51 s. The store fixes the index only. The fix for the route is a
 `sitemap_climb_urls` table holding the rendered paths, which is additive on the
 scaffolding above.
 
-`playlists` has no cache and no store at all: `fetchPlaylistSitemapRows` hits Postgres
-on every `force-dynamic` index request, and it is the shard degrading most often now.
+Fixed shards have **no byte budget**. `shardRouteHandler` checks `MAX_URLS_PER_SHARD`
+on the fixed path but never `MAX_SHARD_BYTES` — that guard exists only on the paged
+path. `/sitemaps/playlists.xml` already renders 2,326,713 bytes for 2,688 items
+(~866 B/item), so it crosses Vercel's 4.5 MB response ceiling at roughly 5,200 items
+while `MAX_ITEMS_PER_SHARD` lets it reach 11,250. Tracked separately.
 
 ## Operational gotchas
 
