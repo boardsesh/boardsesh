@@ -52,6 +52,22 @@ async function closeDelistedScopeFunnel(db: SQLiteDatabase, scopeKey: string): P
 }
 
 /**
+ * Run one scope's close without letting it take the rest of a sweep down with
+ * it. A locked database on the first of five scopes must not silently drop the
+ * other four — they are independent funnels, and the one that failed is covered
+ * by the next launch's sweep because its marker is still there.
+ */
+async function closeScopeFunnelQuietly(scopeKey: string, close: () => Promise<void>): Promise<void> {
+  try {
+    await close();
+  } catch (error) {
+    if (__DEV__) {
+      console.warn(`[offline] failed to close the abandoned download funnel for ${scopeKey}:`, error);
+    }
+  }
+}
+
+/**
  * The SELECTIVE sign-out — a forced 401, a proactive token expiry, or an
  * identity change. These keep every marker (`clearUserData` preserves the board
  * checkpoints and never touches `scope-started:`) and keep every downloaded row,
@@ -68,20 +84,23 @@ async function closeDelistedScopeFunnel(db: SQLiteDatabase, scopeKey: string): P
 export async function reportAbandonedDownloadsOnSignOut(db: SQLiteDatabase): Promise<void> {
   try {
     for (const scopeKey of await getUnfinishedDownloadScopeKeys(db)) {
-      // The teardown claim #4406 built, and this path genuinely needs it:
-      // `setSigningOut(true)` bumps the global wipe epoch and tears the running
-      // cycle down, so the bootstrap phase reports its own `aborted-wipe` for
-      // this same scope milliseconds earlier. Two terminals for one Started
-      // would break the funnel invariant. A key we cannot parse belongs to no
-      // namespace, so the registry never records one for it and nothing can
-      // double-report it — those are reported rather than dropped.
-      const namespace = purgeNamespaceForScopeKey(scopeKey);
-      if (namespace === undefined || claimAbandonedDownloadTerminal(scopeKey, namespace)) {
-        reportScopeDownloadAbandonedOnSignOut({ scopeKey });
-      }
-      // Cleared either way: the download is over whether or not this call site
-      // was the one that got to say so.
-      await clearScopeDownloadFunnelMarkers(db, scopeKey);
+      await closeScopeFunnelQuietly(scopeKey, async () => {
+        // The teardown claim #4406 built, and this path genuinely needs it:
+        // `setSigningOut(true)` bumps the global wipe epoch and tears the
+        // running cycle down, so the bootstrap phase reports its own
+        // `aborted-wipe` for this same scope milliseconds earlier. Two terminals
+        // for one Started would break the funnel invariant. A key we cannot
+        // parse belongs to no namespace, so the registry never records one for
+        // it and nothing can double-report it — those are reported rather than
+        // dropped.
+        const namespace = purgeNamespaceForScopeKey(scopeKey);
+        if (namespace === undefined || claimAbandonedDownloadTerminal(scopeKey, namespace)) {
+          reportScopeDownloadAbandonedOnSignOut({ scopeKey });
+        }
+        // Cleared either way: the download is over whether or not this call site
+        // was the one that got to say so.
+        await clearScopeDownloadFunnelMarkers(db, scopeKey);
+      });
     }
   } catch (error) {
     if (__DEV__) {
@@ -138,7 +157,7 @@ export async function sweepDelistedDownloadTerminals(db: SQLiteDatabase): Promis
       // Still enabled means still downloading — a board-data crawl legitimately
       // spans launches, and its Started is meant to stay open across all of them.
       if (enabledScopeKeys.has(scopeKey)) continue;
-      await closeDelistedScopeFunnel(db, scopeKey);
+      await closeScopeFunnelQuietly(scopeKey, () => closeDelistedScopeFunnel(db, scopeKey));
     }
   } catch (error) {
     if (__DEV__) {

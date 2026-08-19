@@ -25,7 +25,12 @@ const enabledScopeKeys = vi.hoisted(() => ({ current: [] as string[] }));
 vi.mock('../../settings', () => ({ getSetting: () => enabledScopeKeys.current }));
 
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { runMigrations, markScopeDownloadComplete, isScopeDownloadStarted } from '@boardsesh/offline-sync';
+import {
+  runMigrations,
+  markScopeDownloadComplete,
+  isScopeDownloadStarted,
+  getUnfinishedDownloadScopeKeys,
+} from '@boardsesh/offline-sync';
 import {
   createTestDatabase,
   __resetDownloadTerminalRegistryForTests,
@@ -82,6 +87,28 @@ describe('reportAbandonedDownloadsOnSignOut', () => {
   it('is a no-op when nothing was downloading', async () => {
     await reportAbandonedDownloadsOnSignOut(db);
     expect(reportScopeDownloadAbandonedOnSignOut).not.toHaveBeenCalled();
+  });
+
+  // One locked write must not silently drop the other scopes from the sweep:
+  // they are independent funnels, and the one that failed still has its marker,
+  // so the next launch's backstop picks it up.
+  it('keeps going when one scope\u2019s clear fails', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // The scope keys come back in index order, so the FAILING one has to sort
+    // first — otherwise the old whole-loop try/catch would pass this too.
+    const failing = 'kilter:1:7';
+    await announceDownload(failing);
+    await announceDownload(DOWNLOADING);
+    expect(await getUnfinishedDownloadScopeKeys(db)).toEqual([failing, DOWNLOADING]);
+    const realRun = db.runAsync.bind(db);
+    vi.spyOn(db, 'runAsync').mockImplementation(async (sql: string, params?: unknown) => {
+      if (JSON.stringify(params ?? null).includes(failing)) throw new Error('database is locked');
+      return realRun(sql, params as never);
+    });
+
+    await reportAbandonedDownloadsOnSignOut(db);
+
+    expect(reportScopeDownloadAbandonedOnSignOut).toHaveBeenCalledTimes(2);
   });
 
   it('never fails a sign-out over a database it cannot read', async () => {
