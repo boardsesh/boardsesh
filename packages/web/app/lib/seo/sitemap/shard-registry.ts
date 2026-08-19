@@ -190,8 +190,8 @@ function disabledPagedSitemapResponse(id: PagedShardId): Response {
 /**
  * A builder that *throws* must produce a 503, never a truncated 200: a short
  * 200 tells Google the missing URLs were removed, while a 5xx makes it retry
- * and keep the last good copy. A builder that returns `[]` on purpose (gyms,
- * gyms) is a declared-empty shard, not a failure.
+ * and keep the last good copy. A builder that returns `[]` on purpose (gyms) is
+ * a declared-empty shard, not a failure.
  *
  * This is the *shard route's* rule. The index degrades instead — see
  * `buildSitemapIndexXml` — and only reaches here when no shard built at all.

@@ -136,6 +136,20 @@ describe('the setters item + summary caches', () => {
     expect(items).toHaveLength(2);
   });
 
+  it('does not memoise a failed SUMMARY either', async () => {
+    // Symmetric with the item build above, and it matters more: the index reads
+    // the summary on every hit, so a poisoned entry would keep the setters pages
+    // out of `/sitemap.xml` long after the database recovered.
+    reads.shouldThrow = true;
+    await expect(fetchSetterSitemapSummary()).rejects.toThrow('setters scan failed');
+
+    reads.shouldThrow = false;
+    const summary = await fetchSetterSitemapSummary();
+
+    expect(reads.count).toBe(2);
+    expect(summary.itemCount).toBe(2);
+  });
+
   it('refuses to cache a list the summary does not describe', async () => {
     // The SQL predicate makes this unreachable, so reaching it means the SQL
     // rule and the JS round-trip check have disagreed. Caching the short list
