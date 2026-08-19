@@ -20,8 +20,13 @@ export function sortPlaylistsByName(playlists: Playlist[]): Playlist[] {
  * a layout, which is how Aurora- and Kilter-synced circuits arrive. Those are
  * legitimate targets on every layout of their board, and the Discover "My
  * playlists" list already shows them.
+ *
+ * The climb's `layoutId` is nullable for the other reason: a caller that could
+ * not resolve which layout the climb is on (see `resolveClimbBoardScope`) passes
+ * null rather than a guess, and every playlist on the board stays in the list.
+ * The server, which always knows the layout, still has the final say on those.
  */
-export function filterPlaylistsByBoard(playlists: Playlist[], boardName: string, layoutId: number): Playlist[] {
+export function filterPlaylistsByBoard(playlists: Playlist[], boardName: string, layoutId: number | null): Playlist[] {
   return playlists.filter((playlist) =>
     climbFitsPlaylistBoard(
       { boardType: boardName, layoutId },

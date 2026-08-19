@@ -54,17 +54,34 @@ export function climbFitsPlaylistBoard(climb: ClimbBoardScope, playlist: Playlis
  * config for payloads that don't, which is every single-board surface where the
  * two are the same value anyway.
  *
- * The fallback is per-field on purpose: `boardType` and `layoutId` are
- * independently nullable on the GraphQL `Climb`, and taking the host's layout
- * when only the board is known is still narrower than ignoring the climb
- * entirely.
+ * **A layout id is only ever paired with the board it was resolved in.** Layout
+ * ids are namespaced per board (`board_layouts` PK is `(board_type, id)`), so
+ * pairing the climb's board with the host's layout describes a board nobody
+ * has: a filter that matches none of the climber's own playlists, a membership
+ * query with no answer, and — worst — an inline create that writes a playlist
+ * row the server's guard can never accept. So the two fields resolve together,
+ * never one from each side:
+ *
+ * - the climb names no board, or names the host's, so it *is* on the host
+ *   board: the host's layout id is a legitimate stand-in for a missing one;
+ * - the climb names a different board: the host's layout id belongs to another
+ *   namespace, so a missing layout stays `null` — unknown, not guessed.
+ *   `climbFitsPlaylistBoard` then declines to reject on the layout and leaves
+ *   the last word to the server, which always knows the real one.
+ *
+ * `boardType` is what tells those apart: it is documented as "populated in
+ * multi-board contexts", so a payload that omits it came off a surface whose
+ * own board is the climb's.
+ *
+ * A `null` layout is a real outcome here, not a type formality — callers that
+ * need a concrete layout id (creating a playlist, querying memberships) have to
+ * handle "unknown" rather than substitute one.
  */
 export function resolveClimbBoardScope(
   climb: { boardType?: string | null; layoutId?: number | null },
   fallback: { boardType: string; layoutId: number },
-): { boardType: string; layoutId: number } {
-  return {
-    boardType: climb.boardType ?? fallback.boardType,
-    layoutId: climb.layoutId ?? fallback.layoutId,
-  };
+): { boardType: string; layoutId: number | null } {
+  const boardType = climb.boardType ?? fallback.boardType;
+  if (boardType !== fallback.boardType) return { boardType, layoutId: climb.layoutId ?? null };
+  return { boardType, layoutId: climb.layoutId ?? fallback.layoutId };
 }

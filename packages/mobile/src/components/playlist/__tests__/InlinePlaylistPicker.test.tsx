@@ -331,6 +331,62 @@ describe('InlinePlaylistPicker', () => {
     });
   });
 
+  // The shape that used to slip through: a subscription queue payload carries
+  // `boardType` but a null `layoutId` (toClimbQueueItem), and the queue sheet
+  // opens the reaction menu with no board override. Pairing the climb's board
+  // with the host's layout id would describe a board nobody has — layout ids are
+  // per-board — so the layout stays unknown and the board alone does the filtering.
+  it('offers every playlist on the climbs board when its layout is unknown', () => {
+    const tensionClimb = { ...climb, boardType: 'tension' } as Climb;
+    playlistContext.playlists = [
+      makePlaylist('p-kilter', 'Kilter warmups'),
+      {
+        ...basePlaylist,
+        id: 'p-tension',
+        uuid: 'p-tension',
+        name: 'Tension crimps',
+        boardType: 'tension',
+        layoutId: 10,
+      },
+    ];
+    const { getByLabelText, queryByLabelText } = renderPicker(undefined, undefined, tensionClimb);
+    // Not hidden behind the host's Kilter layout 1, which is what the climb
+    // would have inherited.
+    expect(getByLabelText('Tension crimps')).not.toBeNull();
+    expect(queryByLabelText('Kilter warmups')).toBeNull();
+  });
+
+  // Creating one would have to pin it to a layout, and the only one on hand is
+  // the host's — on the wrong board. That row could never be added to, by this
+  // climb or any other, so there is nothing to offer.
+  it('hides inline create when the climbs layout is unknown', () => {
+    const tensionClimb = { ...climb, boardType: 'tension' } as Climb;
+    playlistContext.playlists = [];
+    const { queryByLabelText } = renderPicker(undefined, undefined, tensionClimb);
+    expect(queryByLabelText('actions.playlist.popover.createNew')).toBeNull();
+  });
+
+  // The other half of that rule: when the climb names the host's own board, its
+  // missing layout IS the host's, so create keeps working. Only a climb on some
+  // OTHER board loses the host layout.
+  it('keeps the host layout when the climb names the host board and no layout', async () => {
+    const kilterClimb = { ...climb, boardType: 'kilter' } as Climb;
+    playlistContext.playlists = [];
+    playlistContext.createPlaylist.mockResolvedValueOnce({ ...basePlaylist, id: 'p-new', uuid: 'p-new', name: 'Proj' });
+    const { getByLabelText } = renderPicker(undefined, undefined, kilterClimb);
+
+    fireEvent.click(getByLabelText('actions.playlist.popover.createNew'));
+    fireEvent.change(getByLabelText('name-input'), { target: { value: 'Proj' } });
+    fireEvent.click(getByLabelText('actions.playlist.create.submit'));
+
+    await waitFor(() => {
+      expect(playlistContext.createPlaylist).toHaveBeenCalledWith('Proj', undefined, undefined, undefined, {
+        boardType: 'kilter',
+        layoutId: 1,
+      });
+    });
+  });
+
   it('adds the climb when tapping a non-member row (optimistic + store sync)', async () => {
     playlistContext.playlists = [makePlaylist('p-1', 'Hard Crimps')];
     qstate.data = [];
