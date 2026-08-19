@@ -60,7 +60,7 @@ describe('GymLocationPrompt', () => {
     expect(queryByRole('button')).toBeNull();
   });
 
-  it('pressing the button in idle/denied-on-native state calls onRequest or openAppSettings appropriately', () => {
+  it('pressing the button in the unavailable state retries via onRequest, not openAppSettings', () => {
     const onRequest = vi.fn();
     const { getByText } = render(<GymLocationPrompt status="unavailable" onRequest={onRequest} />);
 
