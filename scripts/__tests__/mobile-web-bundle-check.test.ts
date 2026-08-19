@@ -39,17 +39,22 @@ describe('mobile-web-bundle-check.sh', () => {
   let fixtureGuardScript: string;
   let sourceDirectory: string;
   let publicDirectory: string;
+  let webPublicDirectory: string;
 
   beforeEach(() => {
     fixtureRoot = mkdtempSync(join(tmpdir(), 'mobile-web-bundle-check-'));
     fixtureGuardScript = join(fixtureRoot, 'scripts', 'mobile-web-bundle-check.sh');
     sourceDirectory = join(fixtureRoot, 'packages', 'board-renderer', 'wasm', 'pkg');
     publicDirectory = join(fixtureRoot, 'packages', 'mobile', 'public', 'wasm');
+    // www serves its own copy of the same artifact to the Next.js board-render
+    // worker, and the guard checks it too (issue #4495).
+    webPublicDirectory = join(fixtureRoot, 'packages', 'web', 'public', 'wasm');
     const stubBinDirectory = join(fixtureRoot, 'bin');
 
     mkdirSync(dirname(fixtureGuardScript), { recursive: true });
     mkdirSync(sourceDirectory, { recursive: true });
     mkdirSync(publicDirectory, { recursive: true });
+    mkdirSync(webPublicDirectory, { recursive: true });
     mkdirSync(stubBinDirectory, { recursive: true });
     // The guard delegates the export to build-expo-web-export.sh; ship it too.
     copyFileSync(sourceGuardScript, fixtureGuardScript);
@@ -67,6 +72,8 @@ describe('mobile-web-bundle-check.sh', () => {
     writeFileSync(join(publicDirectory, GLUE_PATH), 'matching JavaScript glue');
     writeFileSync(join(sourceDirectory, WASM_PATH), 'matching WASM binary');
     writeFileSync(join(publicDirectory, WASM_PATH), 'matching WASM binary');
+    writeFileSync(join(webPublicDirectory, GLUE_PATH), 'matching JavaScript glue');
+    writeFileSync(join(webPublicDirectory, WASM_PATH), 'matching WASM binary');
 
     const bunxStub = join(stubBinDirectory, 'bunx');
     writeFileSync(
@@ -128,6 +135,24 @@ touch "$output_dir/wasm/${WORKER_PATH}"
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('public board-renderer WASM is stale');
+  });
+
+  it('fails before export when the www JavaScript glue is stale', () => {
+    writeFileSync(join(webPublicDirectory, GLUE_PATH), 'stale JavaScript glue');
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('public board-renderer www JavaScript glue is stale');
+  });
+
+  it('fails before export when the www WASM binary is stale', () => {
+    writeFileSync(join(webPublicDirectory, WASM_PATH), 'stale WASM binary');
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('public board-renderer www WASM is stale');
   });
 
   it('fails when a source or public artifact is missing', () => {
