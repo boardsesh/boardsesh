@@ -209,26 +209,24 @@ export function setterRowsToItems(rows: readonly SetterSitemapQueryRow[]): {
 }
 
 /**
- * Deliberately not a `COUNT(*)`, unlike the climbs summary.
+ * Deliberately not a `COUNT(*)`, unlike the climbs summary — it reads the length
+ * of the very list the pages will slice.
  *
  * The climbs summary can count in SQL because its item builder drops nothing the
- * query cannot also express. This one must agree with `setterRowsToItems` after
- * the round-trip check, so the honest count is the length of the list that
- * builder produces — the summary sizes the pages and the pages slice the list,
- * and a count that disagrees by one turns the last page into a 503.
+ * query cannot also express. This one has to agree with `setterRowsToItems`
+ * after the round-trip check, and a count that disagrees by one turns the last
+ * page into a 503.
  *
- * The cost is materialising the rows in JS and discarding them. That is a real
- * asymmetry with the climbs path, and it is the trade: tens of thousands of
- * `{username, timestamp}` rows are cheap to hold once behind two cache layers,
- * where a summary that can disagree with its own item list is not.
+ * It calls `buildSetterSitemapItems` rather than repeating `fetchSetterRows`,
+ * which is what makes that agreement structural rather than a convention: the
+ * two share one in-process single-flight, so a cold burst — `/sitemap.xml` and
+ * `/sitemaps/setters/1.xml` arriving together, the #4461 shape — runs ONE
+ * grouped scan on that instance instead of two in parallel. The Data Cache still
+ * stores only the two small values, which is what the index reads on every hit.
  */
 const cachedSetterSummary = unstable_cache(
   async (): Promise<{ itemCount: number; lastModifiedIso: string | null }> => {
-    // Built through the SAME item builder the pages serve, so the count the
-    // index publishes and the list the pages slice can never describe different
-    // sets — including the round-trip drop, which would otherwise leave the
-    // summary advertising a page the build cannot fill.
-    const { items } = setterRowsToItems(await fetchSetterRows());
+    const items = await buildSetterSitemapItems();
     const lastModified = latestLastModified(items);
 
     return { itemCount: items.length, lastModifiedIso: lastModified ? lastModified.toISOString() : null };

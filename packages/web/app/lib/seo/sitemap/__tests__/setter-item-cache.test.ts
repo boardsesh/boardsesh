@@ -99,6 +99,23 @@ describe('the setters item + summary caches', () => {
     expect(first.lastModified?.toISOString()).toBe('2026-05-04T11:22:33.000Z');
   });
 
+  it('runs ONE scan for a summary and a page arriving together', async () => {
+    // The cold-burst shape (#4461): `/sitemap.xml` reads the summary while
+    // `/sitemaps/setters/1.xml` builds the items. They share one single-flight
+    // rather than each running its own grouped scan.
+    let openGate = () => {};
+    reads.gate = new Promise<void>((resolve) => {
+      openGate = resolve;
+    });
+
+    const pending = Promise.all([fetchSetterSitemapSummary(), buildSetterSitemapItems()]);
+    openGate();
+    const [summary, items] = await pending;
+
+    expect(reads.count).toBe(1);
+    expect(summary.itemCount).toBe(items.length);
+  });
+
   it('serves the second caller from the TTL rather than scanning again', async () => {
     await buildSetterSitemapItems();
     await buildSetterSitemapItems();
