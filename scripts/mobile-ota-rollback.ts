@@ -9,7 +9,7 @@
  *
  *   --mode embedded   (default) → `eoas rollback --nonInteractive`   Publishes a
  *       rollback DIRECTIVE: every install currently on the bad OTA reverts to the
- *       binary's EMBEDDED bundle on its next launch. eoas@3.0.5 rollback prompts
+ *       binary's EMBEDDED bundle on its next launch. eoas@3.1.2 rollback prompts
  *       for confirmation and THROWS in a non-TTY, so the helper passes
  *       --nonInteractive — that's what makes it CI-safe. Use this to stop the
  *       bleeding fast — it always lands on a known-good (shipped) bundle.
@@ -17,6 +17,10 @@
  *   --mode republish            → `eoas republish`  Re-points the branch to a
  *       PREVIOUS published update you pick from a list. Interactive (eoas prompts
  *       for the update), so run it LOCALLY, not in CI.
+ *       NEEDS THE SERVER ON v3.1.2: republish's route shapes moved between 3.1.1
+ *       and 3.1.2, and the back-compat for older clients is server-side. Until the
+ *       Railway image is bumped, use --mode embedded (unchanged, and the mode the
+ *       incident runbook uses anyway).
  *
  * eoas resolves the target runtimeVersion (fingerprint) from the LOCAL config, so
  * the rollback only lands if it resolves the SAME fingerprint the shipped binary
@@ -95,7 +99,7 @@ export function parseRollbackArgs(argv: string[]): RollbackOptions {
 export function buildEoasArgs(options: RollbackOptions): string[] {
   const subcommand = options.mode === 'embedded' ? 'rollback' : 'republish';
   const args = [EOAS_PACKAGE_SPEC, subcommand, '--branch', options.branch, '--platform', options.platform];
-  // eoas@3.0.5 `rollback` prompts for confirmation and throws in a non-TTY (CI)
+  // eoas@3.1.2 `rollback` prompts for confirmation and throws in a non-TTY (CI)
   // without --nonInteractive. `republish` is interactive by design (it prompts for
   // which previous update to re-point to), so it stays TTY-driven — run it locally.
   if (options.mode === 'embedded') args.push('--nonInteractive');

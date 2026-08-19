@@ -4,7 +4,8 @@ How JS/TS-only fixes reach the `packages/mobile` app without a new native build.
 
 `expo-updates` speaks an open protocol, so we self-host the manifest + asset server with
 [expo-open-ota](https://github.com/mercuretechnologies/expo-open-ota) (the mercuretechnologies fork)
-instead of paying for EAS Update hosting. We run it in **V3 control-plane mode** (`v3.0.5`): a
+instead of paying for EAS Update hosting (upstream renamed the project **expo-open-ota → xprem** at
+v3.1.0; the old image name is still published). We run it in **V3 control-plane mode**: a
 Postgres-backed server that owns channel↔branch mapping, code-signing keys, and progressive
 rollouts itself, so there's no dependency on Expo's API and no MAU/bandwidth billing. The only thing
 we still keep from Expo is a free account/token for the EAS free-tier _preview_ path (below).
@@ -19,15 +20,16 @@ Postgres and left V2 untouched. Two servers now run in parallel:
 | Server          | Host                    | Version                                     | Who hits it                                                                                                                                                                     |
 | --------------- | ----------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **V2 (frozen)** | `ota.boardsesh.com`     | axelmarciano V2, stateless                  | Old store/TestFlight binaries built before the V3 cutover. They have `ota.boardsesh.com` + the old cert baked in, so V2 keeps serving them unchanged. **Do not publish to it.** |
-| **V3 (live)**   | `updates.boardsesh.com` | mercuretechnologies `v3.0.5`, control-plane | New/updated binaries (V3 URL + V3 cert + `expo-app-id` header baked in). CI publishes only here.                                                                                |
+| **V3 (live)**   | `updates.boardsesh.com` | mercuretechnologies xprem, control-plane    | New/updated binaries (V3 URL + V3 cert + `expo-app-id` header baked in). CI publishes only here.                                                                                |
 
 - Old installs migrate to V3 by store-updating to a V3 build; there's no cross-server backport.
 - **Rollback before the store rollout is free:** the V3 build bakes the V3 URL, so V3 must be proven
   good on TestFlight/internal track before wide release. If V3 misbehaves pre-rollout, fix it — the
   old fleet is untouched on V2. Post-rollout recovery is forward-only (publish a fixed OTA / roll
   back on V3).
-- V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/expo-open-ota:v3.0.5`),
-  backed by a dedicated Railway Postgres and a Tigris bucket `boardsesh-ota-v3`.
+- V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/xprem:v3.1.2` —
+  see [Versions](#versions-the-cli-pin-and-the-server-image)), backed by a dedicated Railway Postgres
+  and a Tigris bucket `boardsesh-ota-v3`.
 - **Retire V2 later**, telemetry-gated: watch the old-build share in PostHog (below); when it's
   negligible, decommission the `boardsesh-ota` service + its bucket. Until then it's one small idle
   service.
@@ -38,12 +40,39 @@ Postgres and left V2 untouched. Two servers now run in parallel:
   build bakes the stale V2 URL into the binary. Already-open PR branches keep pinning `eoas@2` and
   targeting the old URL until they're rebased onto the merged change.
 
+### Versions: the CLI pin and the server image
+
+One version governs both halves of the self-hosted path, and it lives in exactly one place:
+`EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts`, currently **`eoas@3.1.2`**. The matching server image is
+`ghcr.io/mercuretechnologies/xprem:v3.1.2`. `scripts/__tests__/eoas-version-parity.test.ts` fails CI
+if this doc, the setup runbook or the rollback helper drifts off the pin — root `scripts/` has no
+typecheck task, so nothing else would catch it.
+
+**The CLI may lead the server; it must never trail it.** The old rule here demanded an exact match,
+but that was our own convention, not a protocol requirement — neither side exchanges a version, and
+there is no version endpoint on the server (the deployed tag is only visible in the Railway
+dashboard). 3.1.2 was checked against the still-3.0.5 server before the pin moved: the three routes
+a publish uses (`/{appId}/requestUploadUrl/{branch}`, `/uploadLocalFile`,
+`/markUpdateAsUploaded/{branch}`) are unchanged, and the `markUpdateAsUploaded` block is
+byte-identical between the two builds.
+
+Two things need the **Railway image on v3.1.2** and do not work before it:
+
+- server-side reuse of the previous update's assets (xprem #165) — see
+  [The throttle](#the-throttle-and-what-actually-fixes-it) for what that is worth;
+- `vp run mobile:ota-rollback -- --mode republish`, whose route shapes moved between 3.1.1 and 3.1.2
+  (back-compat for older clients is server-side, xprem #168). `--mode embedded` — the mode the
+  incident runbook uses — is unaffected.
+
+After any bump: re-verify `/hc` = 200, `/ready` = 200, a header-carrying manifest + asset probe, and
+run `eoas doctor`.
+
 ### Standing rules
 
 - **Never drop `expo-app-id`.** V3 clients must always send it (baked in `updates.requestHeaders` via
   `OTA_APP_ID`). Dropping it breaks both publishing and the in-app channel switcher — keep it forever.
-- **Bump the V3 server image and `eoas` in lockstep** (exact version match). After any bump,
-  re-verify `/ready` = 200 and a header-carrying manifest + asset probe, and run `eoas doctor`.
+- **Move the `eoas` pin first, the V3 server image second — never the other way round.** A CLI that
+  trails the server can 404 on app-scoped routes. Re-verify after every bump (above).
 - **Dashboard creds are production-release creds.** `/dashboard` mints API keys, exports the cert,
   remaps channels, and runs rollouts — treat the admin login as production-release access (one admin,
   read-only members).
@@ -151,14 +180,59 @@ its external map and uploads the OTA bundle to our storage via the server. `eoas
 URL from `updates.url` in `app.config.ts`, so `EXPO_UPDATES_URL` must be present.
 **Auth is `EOO_TOKEN`, not an Expo token:** the V3 control-plane server rejects Expo tokens, so
 publish/rollback need an app-scoped `eoo_` key minted in the dashboard. The CLI is pinned to
-**`eoas@3.0.5`** via `EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` — it must match the deployed server
-version exactly (V3 routes are app-scoped; a `v2` CLI 404s). Bump the server image and the pin in
-lockstep.
+**`eoas@3.1.2`** via `EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` (V3 routes are app-scoped; a `v2`
+CLI 404s) — see [Versions](#versions-the-cli-pin-and-the-server-image) for the pin↔image rule. Every
+self-hosted publish also passes `--upload-rate 5` to pace its asset uploads; the reasoning is below.
 
 For Android, use `--platform android` on both commands and provide the same
 `GOOGLE_MAPS_API_KEY` used by the Android native build while publishing. Do not use `--platform all`:
 each `eoas publish` removes and recreates `packages/mobile/dist`, so the second platform would erase
 the first platform's source maps before they reached Sentry.
+
+### The throttle, and what actually fixes it
+
+Tigris answers a too-fast run of asset PUTs with `503 <Code>SlowDown</Code>` on the
+`boardsesh-ota-v3` bucket. Three things multiply into that, and it is worth keeping them apart —
+an earlier version of this doc said waiting was the only lever we had, which stopped being true on
+2026-08-19.
+
+**How much we upload.** One export is 380 assets, and 356 of them are the board-background images
+`require()`d by `packages/mobile/src/lib/board-backgrounds-manifest.ts` — 94% of the asset count.
+Storage keys are `{appId}/{branch}/{runtimeVersion}/{updateId}/assets/{hash}`; `updateId` is in the
+path, so before server-side reuse every publish wrote a fresh full copy: ~760 PUTs for a two-platform
+run, none of them deduplicated against the previous update.
+
+**How the CLI uploaded it.** Up to and including 3.1.1, `eoas publish` fired every asset through one
+unbounded `Promise.all`, and `fetchWithRetries` used a `retryOn` that inspected only transport errors
+— never an HTTP status. One throttled asset therefore fell through `!response.ok` to
+`process.exit(1)` and killed the whole publish.
+
+**How many of them run at once.** `mobile-ota-preview.yml` scopes its publish job per PR
+(`mobile-ota-preview-publish-<number>`), unlike `mobile-ota-production.yml`, which is a single
+repo-wide group. On 2026-08-19 up to **11 preview publish jobs ran concurrently** (peak 13:15–13:23
+UTC), each firing its own burst at the one bucket. A single repo-wide group would be the wrong fix:
+GitHub keeps at most one pending run per group, so intermediate PRs' previews would be silently
+superseded.
+
+`eoas`/xprem **3.1.2** (2026-08-19) fixes the first two, and we take both:
+
+- **`--upload-rate`** caps how many uploads start per second, enforced by a token-bucket limiter
+  awaited before each upload. Every self-hosted publish passes `--upload-rate 5`
+  (`SELF_HOSTED_UPLOAD_RATE_PER_SECOND` in `scripts/lib/eoas.ts`) — production and per-PR previews
+  alike, since the previews are the concurrent ones. The CLI default is 10; the limiter is per
+  process, so at 11 concurrent jobs the default would still aim ~110 starts/sec at one bucket. At 5
+  that peak is ~55/sec and a lone publish still starts all 380 assets inside ~76 seconds.
+- **Status-aware retries.** `fetchWithRetries` now retries 429 and 5xx, honours `Retry-After`, backs
+  off exponentially up to 60s over four attempts, and rebuilds the multipart body so a retried upload
+  does not replay a consumed stream. A single throttled asset no longer kills the publish.
+- **Server-side asset reuse** (xprem #165) is the third fix and the largest, but it is server-side
+  only: `requestUploadUrl` loads the previous update's `metadata.json` for the same
+  app/branch/runtimeVersion/platform, server-side-copies everything already there, and hands back
+  upload URLs for the remainder — roughly 380 uploads down to a handful on a repeat publish to a
+  branch. **It needs the Railway image on `xprem:v3.1.2`**; until then the CLI-side halves above are
+  what we have. It degrades safely (an unavailable copy just falls back to a normal upload).
+
+The whole-command retry ladder below is therefore now a **backstop**, not the first line of defence.
 
 **Transient upload failures** are retried only when eoas output contains the exact S3 SlowDown XML
 response or an explicit HTTP 5xx status. Each platform gets at most six attempts, with 1, 3, 5, 10,
@@ -170,13 +244,12 @@ Child output stays live and is not echoed again from a captured tail. The EAS-ho
 The ladder is sized against the object store's observed cooldown rather than a guess. Two production
 incidents (2026-07-15 run 29387706795, 2026-08-03 run 30855435091) throttled every attempt across a
 ~17 minute window and only published after a cool-down; the earlier 30/60/120 second ladder gave up
-about 8 minutes in, so both needed a manual re-run. Waiting is the only lever available on this side
-of the process boundary: `eoas` uploads every asset (380 in a current bundle) through one unbounded
-`Promise.all`, and its `fetchWithRetries` retries network errors only — never an HTTP status — so a
-single 503 `SlowDown` response calls `process.exit(1)` and kills the publish. A whole-command retry
-re-runs the Metro export and re-fires the identical burst, which is what trips the limit, so shorter
-waits just fail faster. This is unchanged in `eoas@3.1.1`; capping upload concurrency needs an
-upstream expo-open-ota change (tracked by the reopened [#3620](https://github.com/boardsesh/boardsesh/issues/3620)).
+about 8 minutes in, so both needed a manual re-run. It has been holding since: preview run
+32249835065 (PR #4546, 2026-08-19) **succeeded** after five throttled iOS attempts, publishing on the
+sixth — but it took 45m39s to do it. That is the shape of the problem the rate cap addresses: the
+ladder converts a hard failure into a slow success, because each retry re-runs a ~90s Metro export
+and re-fires the identical burst. Do not shorten the ladder on the strength of 3.1.2 until a week of
+publishes says so — and note that three workflows' `timeout-minutes` floors are derived from it.
 
 Because both budgets are spent sequentially, a fully throttled production run can take ~98 minutes
 before it reports failure. The publish jobs' `timeout-minutes` must stay above that: a job killed
@@ -659,7 +732,7 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    before boot. It seals the signing key in Postgres; **never regenerate it** (doing so makes every
    sealed key unreadable).
 4. **Deploy the server** — Railway service running
-   `ghcr.io/mercuretechnologies/expo-open-ota:v3.0.5` (see the
+   `ghcr.io/mercuretechnologies/xprem:v3.1.2` (see the
    [deployment](https://mercuretechnologies.github.io/expo-open-ota/docs/deployment/railway) /
    [env reference](https://mercuretechnologies.github.io/expo-open-ota/docs/reference/environment)
    docs). Required env:
@@ -698,7 +771,7 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    build).
 9. **Verify** — a header-carrying `GET https://updates.boardsesh.com/manifest` (with `expo-app-id`,
    `expo-channel-name: production`, platform/runtime headers) returns 200 with signature `keyid
-main` after the first publish, and its assets load. `bunx eoas@3.0.5 doctor --channel=production`
+main` after the first publish, and its assets load. `bunx eoas@3.1.2 doctor --channel=production`
    should be clean.
 
 ### Durability: Postgres holds the only private key
