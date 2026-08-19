@@ -124,25 +124,6 @@ const client = createClient({
           </CardContent>
         </MuiCard>
 
-        {/*
-          The retired Aurora proxies answer 410 with
-          `Link: <…/docs#retired-endpoints>; rel="deprecation"`, so this card is
-          the resource that link relation promises. Keep the id in sync with
-          DEPRECATION_DOCS_URL in app/lib/api-deprecation.ts.
-        */}
-        <MuiAlert severity="warning" id="retired-endpoints">
-          <AlertTitle>{t('docs.overview.retired.title')}</AlertTitle>
-          {t('docs.overview.retired.body', { sunset: '2026-10-01' })}
-          <ul>
-            <li>
-              <code>POST /api/v1/{'{board_name}'}/proxy/login</code>
-            </li>
-            <li>
-              <code>POST /api/v1/{'{board_name}'}/proxy/saveAscent</code>
-            </li>
-          </ul>
-        </MuiAlert>
-
         <MuiAlert severity="info">
           <AlertTitle>{t('docs.overview.rateLimit.title')}</AlertTitle>
           {t('docs.overview.rateLimit.body')}

@@ -287,11 +287,6 @@ export type BoardRouteParameters = {
   climb_uuid?: string;
 };
 
-// Route parameters for routes with only board_name
-export type BoardOnlyRouteParameters = {
-  board_name: string;
-};
-
 export type FetchCurrentProblemResponse = Climb;
 
 export type ErrorResponse = {

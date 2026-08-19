@@ -268,10 +268,6 @@
         "wsBody": "Récupérez un jeton JWT depuis",
         "wsBodyEnd": "et incluez-le dans les paramètres de connexion :"
       },
-      "retired": {
-        "title": "Endpoints retirés",
-        "body": "Les endpoints proxy Aurora ci-dessous renvoient 410 Gone : ils n'atteignent plus Aurora. Les URL disparaîtront le {{sunset}} et renverront ensuite 404. La connexion à la board et l'enregistrement des croix passent par l'API GraphQL décrite ci-dessus."
-      },
       "rateLimit": {
         "title": "Limitation de débit",
         "body": "Les endpoints d'authentification sont limités en débit pour éviter les abus. Les en-têtes de limite sont inclus dans les réponses. Les endpoints de lecture publics ont des limites généreuses."

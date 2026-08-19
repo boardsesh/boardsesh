@@ -74,7 +74,7 @@ describe('robots', () => {
 
     // The carve-outs must stay carve-outs: the rest of /api/ is still closed.
     expect(isPathCrawlable(rules, '/api/internal/dev-metadata')).toBe(false);
-    expect(isPathCrawlable(rules, '/api/v1/kilter/proxy/search')).toBe(false);
+    expect(isPathCrawlable(rules, '/api/v1/kilter/grades')).toBe(false);
   });
 
   it('keeps the surviving private surfaces closed and lets crawlers reach the deleted ones', () => {

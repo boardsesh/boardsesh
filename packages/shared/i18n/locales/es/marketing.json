@@ -344,10 +344,6 @@
         "wsBody": "Obtén un token JWT desde",
         "wsBodyEnd": "e inclúyelo en los parámetros de conexión:"
       },
-      "retired": {
-        "title": "Endpoints retirados",
-        "body": "Los endpoints proxy de Aurora que aparecen abajo responden 410 Gone: ya no llegan a Aurora. Las URL dejarán de existir el {{sunset}} y a partir de entonces devolverán 404. El inicio de sesión del plafón y el registro de ascensiones funcionan con la API GraphQL descrita arriba."
-      },
       "rateLimit": {
         "title": "Límite de solicitudes",
         "body": "Los endpoints de autenticación tienen límite de solicitudes para evitar abusos. Las respuestas incluyen cabeceras con la información del límite. Los endpoints públicos de lectura tienen límites generosos."
