@@ -4,6 +4,8 @@ Two kinds, and they fail in different ways.
 
 **Client flags** (`FEATURE_FLAG_KEYS` in `packages/web/app/flags.ts`) resolve in the browser via `FeatureFlagsProvider`. They hide a control. If PostHog is slow or unreachable the control stays hidden and nothing else happens.
 
+**Kill switches invert that default, deliberately.** A flag named `*-kill` gates a shipped feature and an unresolved read means _not killed_, i.e. the feature is on — the opposite of the rule above. The reason is the same asynchrony: a positive flag reads as OFF for the first frames of a cold open, which for a surface whose off-state is a redirect means the visitor watches a redirect flash before the flag lands. `anonymous-climb-view-kill` (mobile, `useAnonymousClimbViewEnabled`) is the worked example — its off-state is the login wall the feature exists to remove, so a flash of it on arrival would defeat the whole surface. Read a kill switch as `useFeatureFlag(key) !== true`, never `=== false`, so a missing key and an unresolved one both mean on.
+
 **Server flags** (`SERVER_FEATURE_FLAG_KEYS`) resolve during SSR via `getServerFeatureFlag` and decide whether a route renders at all — with one off, its route is a plain `notFound()`. A client-resolved flag could not do this: by the time the browser knows the answer the HTML has already shipped.
 
 The registry is **empty today**. `gyms-directory` was the only server flag; `/gyms` and its three facet routes now render for everyone and the flag is gone. The machinery below stays for the next route that needs it — and the diagnostics endpoint still answers any key you name.
