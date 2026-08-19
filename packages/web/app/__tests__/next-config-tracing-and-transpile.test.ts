@@ -26,6 +26,12 @@
  * A prose comment, a JSDoc line or a string literal naming `@boardsesh/<pkg>`
  * anywhere under `packages/web` used to satisfy the check, which made it
  * self-supplying: this file's own `prunedInW26` array is five such literals.
+ *
+ * Known residual, stated rather than papered over: this is a regex, not a
+ * parser, so a comment that quotes a whole import statement
+ * (`// re-exported from '@boardsesh/foo'`) still counts. That is why the
+ * `prunedInW26` backstop below names the five by hand — belt and braces, not
+ * the only working assertion.
  */
 import { describe, expect, it } from 'vite-plus/test';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -42,9 +48,9 @@ type NextConfig = {
 const configModule = await import('../../next.config.mjs');
 const nextConfig = configModule.default as unknown as NextConfig;
 
-// Directories that never contain a real `@boardsesh/*` import — walking them
-// only slows the scan down or (for node_modules) pulls in every dependency's
-// own source, which would make the "has a consumer" check vacuous.
+// Directories that never contain a real first-party import — walking them only
+// slows the scan down or (for node_modules) pulls in every dependency's own
+// source, which would make the "has a consumer" check vacuous.
 const SKIPPED_DIR_NAMES = new Set(['node_modules', '.next', 'dist']);
 
 // Files that legitimately name every transpiled package without importing it:
