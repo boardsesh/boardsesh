@@ -111,15 +111,19 @@ function workflowEnvValue(source: string, key: string): string | null {
 describe('Expo web export telemetry (app.boardsesh.com)', () => {
   const PRODUCTION_DEPLOY = 'production-deploy.yml';
 
-  it.each(['EXPO_PUBLIC_SENTRY_DSN', 'EXPO_PUBLIC_POSTHOG_KEY', 'EXPO_PUBLIC_SENTRY_ENVIRONMENT'])(
-    'declares %s at workflow level in production-deploy.yml',
-    (key) => {
-      // Workflow level (2-space indent) specifically: a job-level block is
-      // invisible to workflowEnvValue, and moving these into deploy-app-web
-      // would silently blind this test.
-      expect(workflowEnvValue(readWorkflow(PRODUCTION_DEPLOY), key)).not.toBeNull();
-    },
-  );
+  it.each([
+    'EXPO_PUBLIC_SENTRY_DSN',
+    'EXPO_PUBLIC_POSTHOG_KEY',
+    'EXPO_PUBLIC_SENTRY_ENVIRONMENT',
+    'EXPO_PUBLIC_BACKEND_URL',
+    'EXPO_PUBLIC_WS_URL',
+    'EXPO_PUBLIC_WEB_URL',
+  ])('declares %s at workflow level in production-deploy.yml', (key) => {
+    // Workflow level (2-space indent) specifically: a job-level block is
+    // invisible to workflowEnvValue, and moving these into deploy-app-web
+    // would silently blind this test.
+    expect(workflowEnvValue(readWorkflow(PRODUCTION_DEPLOY), key)).not.toBeNull();
+  });
 
   it('tags the browser app with its own Sentry/PostHog environment', () => {
     // `environment` is init-only in both SDKs, so this build-time value is the
@@ -132,6 +136,17 @@ describe('Expo web export telemetry (app.boardsesh.com)', () => {
     // split the browser app off into its own project without anyone noticing.
     const dsn = workflowEnvValue(readWorkflow(PRODUCTION_DEPLOY), 'EXPO_PUBLIC_SENTRY_DSN');
     expect(dsn).toBe(workflowEnvValue(readWorkflow(NATIVE_ANDROID), 'EXPO_PUBLIC_SENTRY_DSN'));
+  });
+
+  it('pins the browser app auth origin to www, not app.boardsesh.com', () => {
+    // The SPA does credentialed cross-origin auth against www.boardsesh.com
+    // (see docs/expo-web-deployment.md, "Browser authentication"). Pointing
+    // this at app.boardsesh.com is a plausible-looking "fix" — the bundle IS
+    // the app subdomain — that would break sign-in for every browser-app user.
+    // The in-workflow post-export grep (checks the emitted JS for the
+    // substring 'www.boardsesh.com') does not catch this: it would still find
+    // the string for unrelated reasons even if this declaration were wrong.
+    expect(workflowEnvValue(readWorkflow(PRODUCTION_DEPLOY), 'EXPO_PUBLIC_WEB_URL')).toBe('https://www.boardsesh.com');
   });
 });
 
