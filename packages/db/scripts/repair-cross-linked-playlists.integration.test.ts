@@ -1,9 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { createScriptDb, isLocalDatabaseUrl } from './db-connection.js';
 import { playlistClimbs, playlistOwnership, playlists, userPlaylistPins } from '../src/schema/app/playlists.js';
 import { playlistFollows } from '../src/schema/app/follows.js';
+import { syncDeletions } from '../src/schema/app/sync-deletions.js';
 import { users } from '../src/schema/auth/users.js';
 import { applyRepairPlans, loadAdopterAttachments, loadCrossLinkedPlaylists } from './repair-cross-linked-playlists.js';
 import { planCrossLinkedPlaylistRepairs, selectApplyablePlans } from './repair-cross-linked-playlists-helpers.js';
@@ -166,6 +167,7 @@ void describe('repair-cross-linked-playlists apply path', () => {
           ownershipRowsDeleted: 1,
           pinsDeleted: 1,
           followsDeleted: 1,
+          tombstonesWritten: 1,
           skippedByDrift: [],
         });
 
@@ -217,6 +219,26 @@ void describe('repair-cross-linked-playlists apply path', () => {
           "an unrelated user's follow is left alone",
         );
 
+        // The offline pull joins playlist_ownership, which has no delete
+        // trigger — without this tombstone the adopter's device would keep the
+        // playlist (and its climbs) forever. Scoped to the adopter, so the
+        // creator's devices never see it.
+        const playlistTombstones = await transaction
+          .select({ recordId: syncDeletions.recordId, userId: syncDeletions.userId })
+          .from(syncDeletions)
+          .where(and(eq(syncDeletions.tableName, 'playlists'), eq(syncDeletions.recordId, `${tag}-json-import`)));
+        assert.deepEqual(
+          playlistTombstones,
+          [{ recordId: `${tag}-json-import`, userId: adopterUserId }],
+          'exactly one adopter-scoped playlists tombstone is written',
+        );
+
+        const creatorScopedTombstones = await transaction
+          .select({ id: syncDeletions.id })
+          .from(syncDeletions)
+          .where(and(eq(syncDeletions.tableName, 'playlists'), eq(syncDeletions.userId, creatorUserId)));
+        assert.equal(creatorScopedTombstones.length, 0, "the creator's clients must not be told to drop the playlist");
+
         // --- idempotence: the playlist is no longer cross-linked -------------
         const afterRepair = await loadCrossLinkedPlaylists(transaction, [String(jsonImportPlaylistId)]);
         assert.deepEqual(afterRepair, []);
@@ -230,6 +252,7 @@ void describe('repair-cross-linked-playlists apply path', () => {
           ownershipRowsDeleted: 0,
           pinsDeleted: 0,
           followsDeleted: 0,
+          tombstonesWritten: 0,
           skippedByDrift: [String(jsonImportPlaylistId)],
         });
 
