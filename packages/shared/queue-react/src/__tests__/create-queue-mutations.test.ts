@@ -769,3 +769,96 @@ describe('wasUuidExplicitlyRemoved (#4009)', () => {
     expect(m.wasUuidExplicitlyRemoved('B')).toBe(false);
   });
 });
+
+// The ledger records the climber's LATEST intent, not "ever dropped". It lives
+// as long as the factory — which `useQueueMutations` memoises for the
+// QueueProvider's whole lifetime — so an append-only answer would keep saying
+// "dropped" for the rest of the app process and re-open #4009 for every climb
+// the climber had cleared earlier. Re-queueing a project you cleared is
+// ordinary, and mobile's clear-queue drops EVERY queued uuid in one burst.
+describe('removal ledger retraction (#4009)', () => {
+  it('forgets a removed uuid once addQueueItem puts it back', async () => {
+    const m = make();
+    await m.removeQueueItem('B');
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(true);
+    await m.addQueueItem(item('B'), 0);
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(false);
+  });
+
+  it('forgets a removed uuid once an activation carrying a queue-add re-picks it', async () => {
+    const m = make();
+    await m.removeQueueItem('B');
+    await m.setCurrentClimb(item('B'), true);
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(false);
+  });
+
+  // A pointer move is navigation, not "put this back in my queue" — it must not
+  // retract the drop, or stepping past a removed climb would re-arm its add.
+  it('keeps the drop when the re-activation carries no queue-add', async () => {
+    const m = make();
+    await m.removeQueueItem('B');
+    await m.setCurrentClimb(item('B'), false);
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(true);
+  });
+
+  it('forgets every uuid a setQueue payload contains', async () => {
+    const m = make();
+    await m.removeQueueItem('B');
+    await m.removeQueueItem('C');
+    await m.setQueue([item('B')]);
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(false);
+    // C is still dropped: the payload does not contain it.
+    expect(m.wasUuidExplicitlyRemoved('C')).toBe(true);
+  });
+
+  // The retraction runs before the discard diff, so a uuid that is both a stale
+  // add-candidate and absent from the payload still ends up recorded.
+  it('still records an add-candidate the same setQueue payload discarded', async () => {
+    const m = make();
+    await m.setCurrentClimb(item('B'), true);
+    await m.setQueue([item('X')]);
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(true);
+  });
+
+  // End to end through the coalescer, which is what the ledger exists for: the
+  // climb was cleared earlier in the app session, re-picked, and then wiped from
+  // the local queue by a wholesale server sync. The stale entry must not
+  // suppress the deferred add — that is #4009 all over again.
+  it('sends the deferred add for a climb dropped earlier and since re-picked', async () => {
+    const m = make({ onBestEffortError: () => {} });
+    // Earlier in the session the climber cleared this climb away.
+    await m.removeQueueItem('B');
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(true);
+    executeMock.mockReset();
+    executeMock.mockResolvedValue(undefined);
+
+    localQueue = [item('cur'), item('A'), item('B')];
+    let firstResolve: (() => void) | undefined;
+    let setCurrentCalls = 0;
+    executeMock.mockImplementation((_c, op) => {
+      if (op.query !== SET_CURRENT_CLIMB) return Promise.resolve();
+      setCurrentCalls += 1;
+      if (setCurrentCalls === 1)
+        return new Promise<void>((resolve) => {
+          firstResolve = () => resolve();
+        });
+      return new Promise<void>((_resolve, reject) =>
+        setTimeout(() => {
+          // The burst head's own FullSync replaces the queue and wipes the
+          // not-yet-synced optimistic slot for B.
+          localQueue = [item('cur'), item('A')];
+          reject(new Error('RATE_LIMITED'));
+        }, 0),
+      );
+    });
+
+    const pA = m.setCurrentClimb(item('A'), true);
+    const pB = m.setCurrentClimb(item('B'), true);
+    firstResolve?.();
+    await Promise.all([pA, pB]);
+    await flush();
+
+    expect(queriesFor(ADD_QUEUE_ITEM)).toHaveLength(1);
+    expect(queriesFor(ADD_QUEUE_ITEM)[0][1].variables).toEqual({ item: { uuid: 'B', climb: { uuid: 'c-B' } } });
+  });
+});
