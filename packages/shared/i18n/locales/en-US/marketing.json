@@ -268,10 +268,6 @@
         "wsBody": "Obtain a JWT token from",
         "wsBodyEnd": "and include it in the connection parameters:"
       },
-      "retired": {
-        "title": "Retired endpoints",
-        "body": "The Aurora proxy endpoints below answer 410 Gone — they no longer reach Aurora. The URLs stop existing on {{sunset}}, after which they return 404. Board login and tick logging run on the GraphQL API described above."
-      },
       "rateLimit": {
         "title": "Rate Limiting",
         "body": "Authentication endpoints are rate-limited to prevent abuse. Rate limit headers are included in responses. Public read endpoints have generous limits."

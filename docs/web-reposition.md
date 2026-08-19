@@ -22,20 +22,24 @@ The mobile app reaches the climbing backend through **GraphQL**, not the Next.js
 web proxies. The only web endpoints `packages/mobile/src` fetches are
 `/api/auth/session`, `/api/internal/ws-auth`, and `/api/internal/beta-link-thumbnail`.
 
-| Route                                                                     | Runtime callers                                                                                                   | Verdict                               |
-| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `/api/v1/[board]/proxy/{login,saveAscent,saveClimb,getLogbook,user-sync}` | **None** — already migrated to GraphQL (see `docs/branch-deploys.md`)                                             | W-25a: 3 deleted, 2 → 410 (see below) |
-| `/api/internal/{join,controllers,favorites}`                              | Only web session-app UI slated for teardown (`join/*` page, `account/controllers-section.tsx`, `climb-actions/*`) | delete with that UI                   |
-| `/api/internal/ws-auth`                                                   | `use-ws-auth-token.ts` → ~85 web files incl. kiosk presence; mobile `auth-store.web.ts:343`                       | **KEEP** — `/app` + kiosk auth bridge |
+| Route                                                                     | Runtime callers                                                                                                   | Verdict                                               |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `/api/v1/[board]/proxy/{login,saveAscent,saveClimb,getLogbook,user-sync}` | **None** — already migrated to GraphQL (see `docs/branch-deploys.md`)                                             | W-25a + W-25b: all five deleted, URLs 404 (see below) |
+| `/api/internal/{join,controllers,favorites}`                              | Only web session-app UI slated for teardown (`join/*` page, `account/controllers-section.tsx`, `climb-actions/*`) | delete with that UI                                   |
+| `/api/internal/ws-auth`                                                   | `use-ws-auth-token.ts` → ~85 web files incl. kiosk presence; mobile `auth-store.web.ts:343`                       | **KEEP** — `/app` + kiosk auth bridge                 |
 
 Loose ends to clean when the routes go (not runtime callers, but they'd go stale):
 `app/lib/api-docs/openapi-routes.ts` (documents `proxy/login`, `proxy/saveAscent`),
 `docs/branch-deploys.md` migration table, and the routes' own `__tests__`.
 **All three are discharged by W-25a (#4441)**, which also split the proxy row's
 verdict: `saveClimb`, `getLogbook` and `user-sync` are deleted, while `login` and
-`saveAscent` answer `410 Gone` until the 2026-10-01 sunset, when W-25b (#4443)
-removes the URLs. W-25b reads the `Deprecated Aurora Proxy Called` counter before
-deleting, and inherits the orphaned implementation modules listed on that issue.
+`saveAscent` answered `410 Gone` from 2026-08-15. W-25b (#4443) then deleted the
+last two URLs outright on 2026-08-19, 43 days ahead of the published
+`Sunset: Thu, 01 Oct 2026` header — Marco's call, since the routes had already
+answered 410 with no Aurora call behind them since W-25a, so any caller still
+hitting them was already broken; W-25b changes only how (410 → 404). The four
+orphaned implementation modules W-25a left behind are tracked in a follow-up
+issue, not folded into either PR.
 
 ### Shipped hardware pins `www` URL shapes (two different ones)
 
