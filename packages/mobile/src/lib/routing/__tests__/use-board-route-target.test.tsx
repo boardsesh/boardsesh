@@ -788,10 +788,14 @@ describe('useBoardRouteTarget signed-out on web', () => {
     expect(router.replace).not.toHaveBeenCalled();
   });
 
-  it('short-circuits a slug climb URL the same way', async () => {
+  // A shared gym-board link is the same kind of arrival as a search result. It
+  // carries no config, so unlike the tuple form it does resolve — but by the
+  // public `boardBySlug` read, with nothing minted and nothing stored.
+  it('renders a slug climb URL anonymously off one public board read', async () => {
     gateState.relaxesRoutes = true;
     authState.current = { isAuthenticated: false, isLoading: false };
     climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    fetchBoardBySlug.mockResolvedValue(board({ uuid: 'gym-board', slug: 'the-gym', angle: 25 }));
 
     const { container } = render(
       createElement(Harness, {
@@ -799,9 +803,84 @@ describe('useBoardRouteTarget signed-out on web', () => {
       }),
     );
 
+    await waitFor(() => expect(statusOf(container)).toBe('anonymous-climb'));
+    expect(fetchBoardBySlug).toHaveBeenCalledWith('the-gym');
+    // The URL's angle wins over the board's stored 25°.
+    expect(boardConfigOf(container)).toEqual({ ...KILTER_BOARD, angle: 40 });
+    expect(createBoardMutateAsync).not.toHaveBeenCalled();
+    expect(setActiveBoard).not.toHaveBeenCalled();
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  // The board's own stored angle when the URL carries none.
+  it('falls back to the board’s stored angle on a bare /b/{slug} climb URL', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    fetchBoardBySlug.mockResolvedValue(board({ uuid: 'gym-board', slug: 'the-gym', angle: 25 }));
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'the-gym', angle: null, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('anonymous-climb'));
+    expect(boardConfigOf(container)).toEqual({ ...KILTER_BOARD, angle: 25 });
+  });
+
+  // `boardBySlug` returns null for a board a signed-out viewer may not see —
+  // indistinguishable from one that does not exist. That has to surface as the
+  // route's own not-found, never as a permanent spinner or a leaked board.
+  it('reports a board a signed-out viewer may not see as not-found', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    fetchBoardBySlug.mockResolvedValue(null);
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'private-gym', angle: 40, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    expect(climbOf(container)).toBe('');
+  });
+
+  // The device's stored board belongs to whoever last signed in on this browser.
+  // Matching a slug against it would show an anonymous reader someone else's
+  // board, so the anonymous read is server-only.
+  it('never resolves an anonymous slug against the device’s stored boards', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    getStoredActiveBoard.mockResolvedValue(board({ uuid: 'someone-elses', slug: 'the-gym' }));
+    fetchBoardBySlug.mockResolvedValue(null);
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'the-gym', angle: 40, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+  });
+
+  // A slug LIST URL still needs a board it can adopt, so it keeps the login wall.
+  it('still hands a slug list URL to login', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-list', slug: 'the-gym', angle: 40 } as BoardRouteTarget,
+      }),
+    );
+
     await waitFor(() => expect(statusOf(container)).toBe('auth-required'));
     expect(fetchBoardBySlug).not.toHaveBeenCalled();
-    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
   });
 
   // A tuple climb URL is the one shape that renders with no account: it carries
