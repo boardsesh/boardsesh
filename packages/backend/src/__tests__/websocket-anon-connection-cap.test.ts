@@ -17,16 +17,17 @@ const VALID_USER_TOKEN = 'valid-user-token';
 const VALID_CONTROLLER_API_KEY = 'valid-controller-key';
 const ANON_CAP_CLOSE_CODE = 4429;
 
-const { registerClient } = vi.hoisted(() => ({
+const { registerClient, removeClient } = vi.hoisted(() => ({
   registerClient: vi.fn().mockResolvedValue('participant-1'),
+  removeClient: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../services/room-manager', () => ({
   roomManager: {
     registerClient,
+    removeClient,
     clearBoardWriterForConnection: vi.fn().mockResolvedValue(undefined),
     disconnectClient: vi.fn().mockResolvedValue(undefined),
-    removeClient: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -120,6 +121,7 @@ describe('WebSocket anonymous connection cap', () => {
 
   beforeEach(() => {
     registerClient.mockClear();
+    removeClient.mockClear();
     resetAnonConnectionCapRegistry();
     for (const key of CAP_ENV_KEYS) delete process.env[key];
     // The whole suite shares 127.0.0.1 as its TCP peer, so leave the backstop
@@ -261,6 +263,52 @@ describe('WebSocket anonymous connection cap', () => {
     expect(anonConnectionCapRegistrySize()).toBe(0);
     // The IP's budget must be intact, not permanently down one slot.
     registerClient.mockResolvedValue('participant-1');
+    expect((await connect(headers)).accepted).toBe(true);
+  });
+
+  it('discards the registration when the socket dies while registerClient is in flight', async () => {
+    process.env.WS_ANON_CONNECTIONS_PER_CLIENT_IP = '1';
+    const headers = { 'cf-connecting-ip': '203.0.113.13' };
+
+    let registeredConnectionId: string | undefined;
+    let finishRegistration: () => void = () => {};
+    const registrationStarted = new Promise<void>((started) => {
+      registerClient.mockImplementationOnce(async (connectionId: string) => {
+        registeredConnectionId = connectionId;
+        started();
+        await new Promise<void>((finish) => {
+          finishRegistration = finish;
+        });
+        return connectionId;
+      });
+    });
+
+    const socket = new WebSocket(webSocketUrl, GRAPHQL_TRANSPORT_WS, { headers });
+    socket.once('error', () => {
+      /* the abrupt terminate below surfaces as an error on some Node versions */
+    });
+    await new Promise<void>((open) => socket.once('open', () => open()));
+    socket.send(JSON.stringify({ type: 'connection_init' }));
+    await registrationStarted;
+
+    // The client vanishes while the registration is still awaiting Redis.
+    // graphql-ws never acknowledges this connection, so it never runs
+    // onDisconnect — onConnect itself is the only thing that can undo the
+    // registration, and without that the client map (which has no sweeper)
+    // grows one entry per abandoned handshake for the life of the process.
+    socket.terminate();
+    await vi.waitUntil(() => countAnonConnectionSlots('client-ip', '203.0.113.13') === 0, {
+      timeout: 2000,
+      interval: 5,
+    });
+
+    finishRegistration();
+    await vi.waitUntil(() => removeClient.mock.calls.length === 1, { timeout: 2000, interval: 5 });
+    expect(registeredConnectionId).toBeDefined();
+    expect(removeClient).toHaveBeenCalledWith(registeredConnectionId);
+    expect(anonConnectionCapRegistrySize()).toBe(0);
+
+    // ...and the IP's budget is intact for the next caller.
     expect((await connect(headers)).accepted).toBe(true);
   });
 
