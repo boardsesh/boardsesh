@@ -24,8 +24,12 @@
  * `auth-store.ts`) or not imported outside its own file at all — so Metro-web
  * never resolves into the gap. Flagging those would just teach people to
  * ignore the test. Instead this walks the real import graph: for every fork
- * pair, does any *platform-neutral* module (one Metro bundles unchanged for
- * every platform) import a name from the contract side that the web fork lacks?
+ * pair, does any module that Metro-web actually bundles import a name from the
+ * contract side that the web fork lacks? That's every platform-neutral module
+ * plus the `.web` forks themselves — a `.web` file importing a sibling fork
+ * through its unsuffixed path gets that sibling's `.web` implementation and
+ * falls into exactly the same gap. Only `.ios`/`.android` forks are out of
+ * scope; they never reach the browser.
  *
  * Two kinds of pair are checked, both keyed on the same question — what does a
  * caller typecheck against, and what does Metro-web actually bundle?
@@ -117,9 +121,15 @@ function isTestFile(fileName: string): boolean {
   return /\.(test|spec)\.[jt]sx?$/.test(fileName);
 }
 
-/** `.web.`, `.ios.`, `.android.` — a platform fork of some kind. */
-function isPlatformSuffixed(fileName: string): boolean {
-  return /\.(web|ios|android)\.tsx?$/.test(fileName);
+/**
+ * `.ios.` / `.android.` — a fork Metro never puts in the web bundle, so its
+ * imports can't be the ones that fall into a `.web` gap. Note `.web.` files
+ * are deliberately *not* here: they are bundled on web, and when one imports
+ * a sibling fork through the unsuffixed path Metro hands it that sibling's
+ * `.web` implementation, which is exactly the resolution this test guards.
+ */
+function isNativeOnlyFork(fileName: string): boolean {
+  return /\.(ios|android)\.tsx?$/.test(fileName);
 }
 
 function listSourceFiles(absoluteDir: string, collected: string[] = []): string[] {
@@ -380,7 +390,11 @@ function findViolations(
     .filter((filePath) => {
       const fileName = basename(filePath);
       if (isTestFile(fileName)) return false;
-      if (isPlatformSuffixed(fileName)) return false;
+      // `.ios`/`.android` forks never enter the web bundle. `.web` forks do,
+      // and they can import a *sibling* fork through its unsuffixed path —
+      // Metro then hands them that sibling's `.web` file, so they fall into
+      // the same gap as any neutral module and stay in scope here.
+      if (isNativeOnlyFork(fileName)) return false;
       // A declaration file emits nothing at runtime, so it can't be the module
       // that falls into a gap — it's only ever a pair's contract side.
       if (fileName.endsWith('.d.ts')) return false;
@@ -399,6 +413,9 @@ function findViolations(
 
       const pair = contractPathToPair.get(targetPath);
       if (!pair) continue;
+      // A `.web` fork importing its own contract path resolves back to itself
+      // under Metro-web. That's a self-cycle, not a parity gap.
+      if (pair.webPath === importerPath) continue;
 
       for (const name of edge.names) {
         if (pair.contractExports.has(name) && !pair.webExports.has(name)) {
@@ -465,7 +482,7 @@ rather than letting this check quietly stop scanning it.`,
     // modules this test is meant to guard. Both walks return an empty list for
     // a tree that isn't there, and an empty importer list yields zero
     // violations — which reads exactly like a pass. Floors sit well under
-    // today's counts (56 pairs, 13 of them `.d.ts`-contract, 890 importers) so
+    // today's counts (56 pairs, 13 of them `.d.ts`-contract, 948 importers) so
     // ordinary churn doesn't trip them.
     expect(forkPairs.length).toBeGreaterThan(20);
     expect(importerCount).toBeGreaterThan(200);
@@ -567,6 +584,46 @@ rather than letting this check quietly stop scanning it.`,
           name: 'BUTTON_HEIGHT',
           contractPath: 'Button.d.ts',
           webPath: 'Button.web.tsx',
+        },
+      ]);
+    } finally {
+      rmSync(fixtureDir, { recursive: true, force: true });
+    }
+  });
+
+  it('treats a .web fork as an importer too: it is in the web bundle and resolves siblings to their .web files', () => {
+    // Metro-web bundles `.web` files, so one importing a sibling fork through
+    // the unsuffixed path gets that sibling's `.web` implementation — the same
+    // resolution a neutral module gets, and the same crash if the name is
+    // missing. Excluding `.web` importers alongside the genuinely native-only
+    // `.ios`/`.android` ones would let that regression through.
+    const fixtureDir = mkdtempSync(join(tmpdir(), 'web-fork-export-parity-web-importer-'));
+    try {
+      writeFileSync(join(fixtureDir, 'store.ts'), [`export function onlyNative(): void {}`, ``].join('\n'));
+      writeFileSync(join(fixtureDir, 'store.web.ts'), [`export {};`, ``].join('\n'));
+
+      // The web side of another pair, reaching into the gap.
+      writeFileSync(
+        join(fixtureDir, 'consumer.web.ts'),
+        [`import { onlyNative } from './store';`, ``, `onlyNative();`, ``].join('\n'),
+      );
+      writeFileSync(join(fixtureDir, 'consumer.ts'), [`export {};`, ``].join('\n'));
+      // The ios side of the same pair must stay out of scope: Metro never puts
+      // it in the web bundle.
+      writeFileSync(
+        join(fixtureDir, 'consumer.ios.ts'),
+        [`import { onlyNative } from './store';`, ``, `onlyNative();`, ``].join('\n'),
+      );
+
+      const { violations } = findViolations(fixtureDir, [fixtureDir], [fixtureDir]);
+
+      expect(violations).toEqual([
+        {
+          importer: 'consumer.web.ts',
+          line: 1,
+          name: 'onlyNative',
+          contractPath: 'store.ts',
+          webPath: 'store.web.ts',
         },
       ]);
     } finally {
