@@ -984,6 +984,11 @@ export function useToggleFavorite() {
  * opens with `enabled: isSheetOpen` and fires a guaranteed rejection on every
  * open. Gating here rather than only at the call site means a future consumer
  * cannot reintroduce it by forgetting.
+ *
+ * The cost is a provider dependency this hook did not used to have: it reads the
+ * session off `useBoardAdapter()`, so it must be called under a
+ * `BoardAdapterProvider` — mounted app-wide in `app/_layout.tsx` — and throws at
+ * the hook rather than at query time outside one.
  */
 export function useFavoriteStatus(
   boardName: string,

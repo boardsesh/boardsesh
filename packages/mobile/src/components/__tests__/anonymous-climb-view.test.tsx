@@ -111,6 +111,18 @@ describe('AnonymousClimbView', () => {
     expect(router.push).toHaveBeenCalledWith(LOGIN_HREF);
   });
 
+  // The angle selector can hand back the angle already showing. Re-opening for
+  // it would rebuild the preview item for nothing.
+  it('leaves the open target alone when the angle has not actually moved', () => {
+    render(createElement(AnonymousClimbView, { climb: CLIMB, boardConfig: BOARD_CONFIG }));
+    const beforeTarget = lastDrawerProps().openTarget as { nonce: number };
+    const onAngleChange = lastDrawerProps().onAngleChange as (angle: number) => void;
+
+    act(() => onAngleChange(BOARD_CONFIG.angle));
+
+    expect((lastDrawerProps().openTarget as { nonce: number }).nonce).toBe(beforeTarget.nonce);
+  });
+
   it('re-applies the open target when the angle moves so the drawer cannot blank', () => {
     render(createElement(AnonymousClimbView, { climb: CLIMB, boardConfig: BOARD_CONFIG }));
     const beforeTarget = lastDrawerProps().openTarget as { nonce: number };

@@ -67,8 +67,14 @@ export const AnonymousClimbView = memo(function AnonymousClimbView({
   // current climb, which is empty here, and blank itself.
   const [openNonce, setOpenNonce] = useState(1);
   const handleAngleChange = useCallback((nextAngle: number) => {
-    setAngle((currentAngle) => (currentAngle === nextAngle ? currentAngle : nextAngle));
-    setOpenNonce((nonce) => nonce + 1);
+    // Both writes are conditional on the angle actually moving. Re-opening the
+    // drawer for an angle it is already on would rebuild the preview item for
+    // nothing.
+    setAngle((currentAngle) => {
+      if (currentAngle === nextAngle) return currentAngle;
+      setOpenNonce((nonce) => nonce + 1);
+      return nextAngle;
+    });
   }, []);
 
   const paneBoardConfig = useMemo<BoardConfig>(() => ({ ...boardConfig, angle }), [boardConfig, angle]);
