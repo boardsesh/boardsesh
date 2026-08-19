@@ -108,15 +108,15 @@ describe('WallFinderFilterChips', () => {
 
   it('hides Clear when nothing is active and shows it once any filter is set', () => {
     const { queryByText, rerender, getByText } = render(<WallFinderFilterChips {...baseProps()} />);
-    expect(queryByText('clear')).toBeNull();
+    expect(queryByText('actions.clear')).toBeNull();
     rerender(<WallFinderFilterChips {...baseProps({ multiBoardTypeOnly: true })} />);
-    expect(getByText('clear')).toBeTruthy();
+    expect(getByText('actions.clear')).toBeTruthy();
   });
 
   it('calls onClear when Clear is tapped', () => {
     const onClear = vi.fn();
     const { getByText } = render(<WallFinderFilterChips {...baseProps({ selected: ['kilter'], onClear })} />);
-    fireEvent.click(getByText('clear'));
+    fireEvent.click(getByText('actions.clear'));
     expect(onClear).toHaveBeenCalledTimes(1);
   });
 });

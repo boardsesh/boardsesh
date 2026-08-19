@@ -420,6 +420,8 @@ export default defineConfig({
         command: 'bun packages/web/scripts/check-untranslated-strings.ts',
         cache: false,
       },
+      // Two-way i18n guard: catalog keys with no reference, code references with
+      // no catalog key (#4416), and mobile files reading an unbundled namespace.
       'check:i18n:orphans': {
         command: 'bun packages/web/scripts/check-orphaned-i18n-keys.ts',
         cache: false,

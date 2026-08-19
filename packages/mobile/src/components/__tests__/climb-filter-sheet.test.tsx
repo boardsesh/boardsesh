@@ -873,11 +873,11 @@ describe('ClimbFilterSheet name field (#3606)', () => {
     const input = getByLabelText('mobile.filter.section.name') as HTMLInputElement;
     expect(input.value).toBe('foot');
 
-    fireEvent.click(getByLabelText('clear'));
+    fireEvent.click(getByLabelText('actions.clear'));
 
     expect(input.value).toBe('');
     expect(onClearName).toHaveBeenCalledTimes(1);
-    expect(queryByLabelText('clear')).toBeNull();
+    expect(queryByLabelText('actions.clear')).toBeNull();
   });
 
   it('resyncs the name field from an external searchName change, but ignores a trim-only difference', () => {

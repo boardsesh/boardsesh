@@ -31,6 +31,7 @@
   },
   "ascentsFeed": {
     "mirrored": "Mirrored",
+    "setBy": "Set by {{name}}",
     "benchmark": "Benchmark",
     "empty": "No ascents logged yet"
   },
