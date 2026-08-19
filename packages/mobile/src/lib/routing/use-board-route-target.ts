@@ -30,7 +30,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { onlineManager } from '@tanstack/react-query';
 import { isNetworkError } from '@boardsesh/offline-sync/error-classification';
-import type { CreateBoardInput, UserBoard } from '@boardsesh/shared-schema';
+import type { Climb, CreateBoardInput, UserBoard } from '@boardsesh/shared-schema';
 import { toBoardPath, type BoardRouteTarget } from './board-route-target';
 // The platform switch is this constant, not `Platform.OS` — the hook then needs
 // no `react-native` import, whose RN 0.86 Flow entry the vitest node env cannot
@@ -60,10 +60,27 @@ import { openClimbInPlayDrawer } from '../open-climb-in-play-drawer';
  * in the same React batch a state update would land in, so the render carrying
  * it never commits. `onHandedOff` is how a caller hears about it instead.
  *
- * `auth-required` is reachable on web only: the browser export serves these
- * routes to signed-out visitors, and board adoption needs an account.
+ * `auth-required` and `anonymous-climb` are both reachable on web only: the
+ * browser export serves these routes to signed-out visitors. Which of the two a
+ * signed-out visitor gets is the whole point of this hook's gate — a climb URL
+ * renders read-only in place (`anonymous-climb`), everything else still hands
+ * the path to login (`auth-required`).
  */
-export type BoardRouteStatus = 'resolving' | 'not-found' | 'auth-required';
+export type BoardRouteStatus = 'resolving' | 'not-found' | 'auth-required' | 'anonymous-climb';
+
+/**
+ * What the entry route should draw, plus what it needs to draw it.
+ *
+ * `climb` and `boardConfig` are populated for `anonymous-climb` only. Every
+ * other status is a redirector state, and the redirector needs no data — the
+ * signed-in path never returns a climb here because it hands one to the play
+ * drawer imperatively and navigates away.
+ */
+export type BoardRouteResult = {
+  status: BoardRouteStatus;
+  climb: Climb | null;
+  boardConfig: BoardConfig | null;
+};
 
 /**
  * Where the target came from, which decides two things the caller can't:
@@ -377,26 +394,69 @@ function useAdoptedBoard(
 }
 
 /**
+ * The status, in the order the checks have to run.
+ *
+ * `auth-required` comes before every resolution check: a signed-out visitor has
+ * no board to fail on, and nothing was asked of the server on their behalf.
+ */
+function resolveStatus({
+  parsedUrl,
+  authRequired,
+  boardError,
+  climbIsGone,
+  anonymousClimbReady,
+}: {
+  parsedUrl: boolean;
+  authRequired: boolean;
+  boardError: boolean;
+  climbIsGone: boolean;
+  anonymousClimbReady: boolean;
+}): BoardRouteStatus {
+  if (!parsedUrl) return 'not-found';
+  if (authRequired) return 'auth-required';
+  if (boardError) return 'not-found';
+  if (climbIsGone) return 'not-found';
+  if (anonymousClimbReady) return 'anonymous-climb';
+  return 'resolving';
+}
+
+/**
  * Drive a canonical board URL to its destination. Returns the status the entry
  * route should render — these routes are redirectors, so all they ever show is
  * a spinner or a not-found.
  */
 export function useBoardRouteTarget(
   target: BoardRouteTarget | null,
-  options?: { mode?: BoardRouteMode; onHandedOff?: () => void },
-): BoardRouteStatus {
+  options?: { mode?: BoardRouteMode; onHandedOff?: () => void; anonymousClimbEnabled?: boolean },
+): BoardRouteResult {
   const mode = options?.mode ?? 'deep-link';
   const adoptsBoard = mode === 'deep-link';
   const router = useRouter();
   const { openPlayDrawer } = useDrawerHost();
   const { isAuthenticated, isLoading: authIsLoading } = useAuth();
-  // Only reachable on web: the native gate never serves these routes signed-out.
-  // Board adoption needs the account (the tuple form mints a UserBoard, which is
-  // `requireAuthenticated`), so the route hands the URL to login rather than
-  // resolving anything anonymously. An unsettled session waits — bouncing on
-  // `isLoading` would send a signed-in visitor to login on every cold open.
-  const authRequired = RELAXES_ANONYMOUS_ROUTES && adoptsBoard && !authIsLoading && !isAuthenticated;
-  const { board, error: boardError } = useAdoptedBoard(target, adoptsBoard && !authRequired);
+  // Only reachable on web: the native gate never serves these routes signed-out,
+  // because `RELAXES_ANONYMOUS_ROUTES` is a literal `false` in the native fork.
+  // That constant — never a `Platform.OS` check, which would put the web
+  // behaviour in the native bundle — is what holds the store fleet still across
+  // the OTA this ships in. An unsettled session waits: bouncing on `isLoading`
+  // would send a signed-in visitor to login on every cold open.
+  const signedOutOnWeb = RELAXES_ANONYMOUS_ROUTES && adoptsBoard && !authIsLoading && !isAuthenticated;
+  // A climb URL is renderable with no account at all. Every input is in the URL
+  // — the tuple carries the whole board config, board art is a local catalogue
+  // lookup, and the `climb` resolver takes no viewer — so the route draws it in
+  // place instead of handing the visitor to a login form. Everything else (the
+  // list surfaces) still needs a board, and minting one is `requireAuthenticated`.
+  //
+  // `anonymousClimbEnabled` defaults ON: it carries a KILL switch, and the
+  // default has to be the feature. A flag that must resolve before the anonymous
+  // branch turns on would show a login redirect as the first frame of the very
+  // surface this exists to build.
+  const anonymousClimb = signedOutOnWeb && (options?.anonymousClimbEnabled ?? true) && target?.kind === 'climb';
+  const authRequired = signedOutOnWeb && !anonymousClimb;
+  // Neither signed-out branch adopts. Adoption's first act is a CREATE_BOARD the
+  // backend refuses without a session, and it is not a render input for either
+  // one — so it is skipped rather than gated on the outcome.
+  const { board, error: boardError } = useAdoptedBoard(target, adoptsBoard && !signedOutOnWeb);
 
   const wantsClimb = target?.kind === 'climb' || target?.kind === 'slug-climb';
   const climbUuid = wantsClimb ? target.climbUuid : undefined;
@@ -448,6 +508,12 @@ export function useBoardRouteTarget(
   useEffect(() => {
     if (!target || !targetKey || handedOffRef.current === targetKey) return;
     if (authRequired) return;
+    // The anonymous climb renders where it stands. Handing off would navigate to
+    // `/(tabs)/climbs` and then `/play`, both outside the read-only allow-set,
+    // and `AuthProvider` re-reads `window.location.pathname` on every
+    // navigation — so the drawer opening is exactly the moment the visitor gets
+    // bounced back to the login wall this branch exists to remove.
+    if (anonymousClimb) return;
     // A deep link has to land on the adopted board — the Climbs tab behind the
     // drawer renders whatever the active board is.
     if (adoptsBoard && !board) return;
@@ -498,16 +564,38 @@ export function useBoardRouteTarget(
     }
     openDrawer();
     leave();
-  }, [adoptsBoard, authRequired, board, boardConfig, climb, openPlayDrawer, router, target, targetKey, wantsClimb]);
+  }, [
+    adoptsBoard,
+    anonymousClimb,
+    authRequired,
+    board,
+    boardConfig,
+    climb,
+    openPlayDrawer,
+    router,
+    target,
+    targetKey,
+    wantsClimb,
+  ]);
 
-  if (!target) return 'not-found';
-  // Before every resolution check: a signed-out visitor has no board to fail on,
-  // and nothing was asked of the server on their behalf.
-  if (authRequired) return 'auth-required';
-  if (boardError) return 'not-found';
-  // Only a settled query says the climb is gone: `isLoading` briefly reads false
-  // in the render where the query switches on, which would flash a not-found
-  // over a climb that is about to arrive.
-  if (wantsClimb && (climbQuery.isError || (climbQuery.isSuccess && !climb))) return 'not-found';
-  return 'resolving';
+  const status = resolveStatus({
+    parsedUrl: target !== null,
+    authRequired,
+    boardError,
+    // Only a settled query says the climb is gone: `isLoading` briefly reads
+    // false in the render where the query switches on, which would flash a
+    // not-found over a climb that is about to arrive.
+    climbIsGone: wantsClimb && (climbQuery.isError || (climbQuery.isSuccess && !climb)),
+    // The anonymous branch has nothing to draw until the climb lands, and
+    // nowhere else to be meanwhile — so it sits on the spinner.
+    anonymousClimbReady: anonymousClimb && climb != null && boardConfig != null,
+  });
+
+  return useMemo(
+    () =>
+      status === 'anonymous-climb'
+        ? { status, climb: climb ?? null, boardConfig }
+        : { status, climb: null, boardConfig: null },
+    [status, climb, boardConfig],
+  );
 }
