@@ -49,6 +49,7 @@ const renderCta = (props: Partial<React.ComponentProps<typeof GymClaimCta>> = {}
       gymName="Boulderwelt"
       gymSlug="boulderwelt"
       website={null}
+      canClaimByDomain={false}
       viewerState="signed-in"
       {...props}
     />,
@@ -273,7 +274,14 @@ function GatedClaimCta({
   });
   if (!isPublic || variant === 'hidden') return null;
   return (
-    <GymClaimCta gymUuid="gym-1" gymName="Boulderwelt" gymSlug="boulderwelt" website={null} viewerState={variant} />
+    <GymClaimCta
+      gymUuid="gym-1"
+      gymName="Boulderwelt"
+      gymSlug="boulderwelt"
+      website={null}
+      canClaimByDomain={false}
+      viewerState={variant}
+    />
   );
 }
 

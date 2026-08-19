@@ -55,7 +55,14 @@ const isDisabled = (label: string) => (screen.getByRole('button', { name: label 
 const renderDialog = (website: string | null) =>
   render(
     <QueryClientProvider client={createTestQueryClient()}>
-      <ClaimGymDialog gymUuid="gym-uuid-1" gymName="Bonsist" website={website} open onClose={vi.fn()} />
+      <ClaimGymDialog
+        gymUuid="gym-uuid-1"
+        gymName="Bonsist"
+        website={website}
+        canClaimByDomain={website !== null}
+        open
+        onClose={vi.fn()}
+      />
     </QueryClientProvider>,
   );
 
