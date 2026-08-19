@@ -12,8 +12,19 @@
 //      idempotency key silently drops a repeat favorite/follow whenever the
 //      existing row is already a dead letter. The drop happens at enqueue time,
 //      so no drain and no dead-letter event ever mentions it.
+//
+// The launch pass also HEALS one specific kind of dead letter — see
+// `reviveLockedDeadLetters` (#4331).
 
-import { getOutboxSummary, queueTimestampAgeDays, type OutboxSummary, type SqlExecutor } from '@boardsesh/offline-sync';
+import {
+  getDeadLetters,
+  getOutboxSummary,
+  isDatabaseLockedError,
+  queueTimestampAgeDays,
+  retryDeadLetter,
+  type OutboxSummary,
+  type SqlExecutor,
+} from '@boardsesh/offline-sync';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../lib/analytics';
 import { reportHandledError } from '../lib/error-reporting';
@@ -40,17 +51,64 @@ function toGaugeProps(summary: OutboxSummary): OutboxGaugeProps {
 let hasReportedOutboxBacklog = false;
 
 /**
- * Report the outbox backlog this launch inherited, at most once per runtime and
- * only when something is actually queued. Never throws: a failed read must not
- * take the sync bridge down with it.
+ * A ceiling on the launch sweep, not a real limit: production devices carry
+ * single-digit dead letters. It only stops a pathologically large outbox from
+ * turning app launch into hundreds of UPDATEs; anything past it is picked up by
+ * the next launch.
  */
-export async function reportOutboxBacklogOnce(db: SqlExecutor): Promise<void> {
+const MAX_DEAD_LETTERS_REVIVED_PER_LAUNCH = 50;
+
+/**
+ * Put back the dead letters a lost local write lock manufactured (#4331).
+ *
+ * Until this release, a `database is locked` thrown by the drainer's outbox
+ * DELETE — the only local write in that try block, and one that runs AFTER the
+ * server has accepted the mutation — was classified non-retryable and
+ * force-dead-lettered the row. Every `Offline Mutation Dead Lettered` event in a
+ * 45-day window was one of these, with no server status attached, and the row
+ * then held its deterministic idempotency key until the user found More → Sync
+ * issues → Retry. Devices are still carrying rows up to a month old.
+ *
+ * So this re-sends ONLY writes the server never rejected: the filter is the same
+ * `isDatabaseLockedError` predicate the drainer and the write ladder use, read
+ * off the row's stored `last_error`. A dead letter from a 4xx, a validation
+ * failure, or a broken database is left exactly where it is. Every handled
+ * mutation is idempotent server-side, so a revived write that did land is a
+ * no-op.
+ */
+async function reviveLockedDeadLetters(db: SqlExecutor): Promise<number> {
+  const deadLetters = await getDeadLetters(db);
+  let revived = 0;
+  for (const row of deadLetters) {
+    if (revived >= MAX_DEAD_LETTERS_REVIVED_PER_LAUNCH) break;
+    // `last_error` is the raw driver message markDeadLetter stored; the
+    // predicate takes a string as readily as an Error.
+    if (!isDatabaseLockedError(row.last_error)) continue;
+    await retryDeadLetter(db, row.id);
+    revived += 1;
+  }
+  return revived;
+}
+
+/**
+ * Report the outbox backlog this launch inherited AND put back the dead letters
+ * a local write lock manufactured, at most once per runtime and only when
+ * something is actually queued. Never throws: neither a failed read nor a failed
+ * revive may take the sync bridge down with it.
+ *
+ * The counts on the event are read BEFORE the sweep, so they describe what the
+ * launch inherited; `deadLettersRevived` says how many of them went back into
+ * the queue. Revived rows are left for the scheduler's next drain — the same
+ * trigger that drains anything else queued at launch.
+ */
+export async function recoverAndReportOutboxOnce(db: SqlExecutor): Promise<void> {
   if (hasReportedOutboxBacklog) return;
   hasReportedOutboxBacklog = true;
   try {
     const summary = await getOutboxSummary(db);
     if (summary.pendingCount === 0 && summary.deadLetterCount === 0) return;
-    track(SHARED_EVENTS.OfflineOutboxBacklogDetected, toGaugeProps(summary));
+    const deadLettersRevived = summary.deadLetterCount === 0 ? 0 : await reviveLockedDeadLetters(db);
+    track(SHARED_EVENTS.OfflineOutboxBacklogDetected, { ...toGaugeProps(summary), deadLettersRevived });
   } catch (error) {
     if (__DEV__) console.warn('[OutboxTelemetry] backlog gauge failed:', error);
   }
@@ -73,12 +131,30 @@ export async function reportOutboxDiscardedOnSignOut(db: SqlExecutor): Promise<v
 }
 
 /**
+ * Report a repeat favorite/follow that reclaimed the idempotency key its
+ * dead-lettered predecessor was holding (#4331). A recovery, not a defect, so it
+ * gets the PostHog event and no Sentry report — the user's write is on its way.
+ */
+export function reportEnqueueRevived(tableName: string, operation: 'create' | 'delete'): void {
+  try {
+    track(SHARED_EVENTS.OfflineMutationRevived, { tableName, operation });
+  } catch (error) {
+    if (__DEV__) console.warn('[OutboxTelemetry] revived-enqueue report failed:', error);
+  }
+}
+
+/**
  * Report a repeat write that `INSERT OR IGNORE` swallowed because a
  * dead-lettered row already holds its idempotency key.
  *
  * Only the dead-letter case is reported. A suppression against a `pending` row
  * is correct dedup — a double-tapped favorite while offline — and reporting it
  * would bury the signal under the common case.
+ *
+ * Since #4331 the favorite/follow call sites revive that row instead, so this
+ * should no longer fire from them at all: it stays wired as the alarm for a
+ * revive that didn't take (and for any deterministic-key call site added later
+ * that forgets to opt in).
  */
 export function reportEnqueueSuppressed(
   tableName: string,

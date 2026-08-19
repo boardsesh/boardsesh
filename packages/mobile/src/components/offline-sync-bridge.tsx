@@ -10,7 +10,7 @@ import {
   type GraphQLFetch,
 } from '@boardsesh/offline-sync';
 import { startSyncScheduler, drainMutationQueue, startBackgroundTracking } from '../offline/offline-sync-adapter';
-import { reportOutboxBacklogOnce } from '../offline/outbox-telemetry';
+import { recoverAndReportOutboxOnce } from '../offline/outbox-telemetry';
 import { sweepDelistedDownloadTerminals } from '../offline/abandoned-download-terminals';
 import { getSetting } from '../settings';
 import { setupNotificationHandlers } from '../notifications';
@@ -150,15 +150,16 @@ export function OfflineSyncBridge() {
   // see startBackgroundTracking's doc.
   useEffect(() => startBackgroundTracking(), []);
 
-  // How much unsynced work this launch inherited. reportOutboxBacklogOnce
-  // self-guards against this effect re-running on auth changes and swallows its
-  // own errors.
+  // How much unsynced work this launch inherited — and, in the same pass, the
+  // dead letters a lost local write lock manufactured put back in the queue
+  // (#4331). recoverAndReportOutboxOnce self-guards against this effect re-running
+  // on auth changes and swallows its own errors.
   // Gated on the schema like every other db effect: pending_mutations does not
   // exist yet on a contended launch, and a gauge that throws there would report
   // no backlog rather than the backlog it could not read.
   useEffect(() => {
     if (!isAuthenticated || !schemaReady) return;
-    void reportOutboxBacklogOnce(db);
+    void recoverAndReportOutboxOnce(db);
   }, [db, isAuthenticated, schemaReady]);
 
   // Push-then-pull sync loop (foreground + reconnect triggers). Returns its own

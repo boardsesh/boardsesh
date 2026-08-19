@@ -1,3 +1,5 @@
+import { isDatabaseLockedError } from '../db/lock-errors';
+
 type GraphqlErrorEntry = {
   extensions?: { code?: unknown; status?: unknown };
 };
@@ -229,6 +231,21 @@ export function isNetworkError(error: unknown): boolean {
 }
 
 export function isRetryable(error: unknown): boolean {
+  // Local SQLite write-lock contention is ALWAYS retryable. It is not a server
+  // verdict at all: another connection (a snapshot import, a VACUUM, another
+  // write) held the file for a moment, and a holder always lets go. It reaches
+  // classification because the drainer's per-mutation try wraps the local
+  // bookkeeping write as well as the send, so a lock thrown by `markCompleted`
+  // resolved no status, fell through to `return false` below, and
+  // force-dead-lettered a write the server had ALREADY accepted (#4331 — every
+  // `Offline Mutation Dead Lettered` event in a 45-day window carried
+  // `database is locked` and no server status). The drainer handles a lock
+  // ahead of this call so it doesn't burn the persistent retry budget either;
+  // this is the verdict the rest of the engine sees.
+  if (isDatabaseLockedError(error)) {
+    return true;
+  }
+
   // Network failures always retry — the request never reached the server, so
   // replaying it is safe. `isNetworkError` itself now defers to a resolved status
   // for the English-prose-only case (#4027), so this check is already

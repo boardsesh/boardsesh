@@ -78,6 +78,7 @@ describe('enqueue suppression against real SQLite', () => {
   it('reports a fresh insert', async () => {
     await expect(enqueue(db, 'user_favorites', 'create', { climbUuid: 'climb-1' }, key)).resolves.toEqual({
       inserted: true,
+      revived: false,
       existingStatus: null,
     });
   });
@@ -89,6 +90,7 @@ describe('enqueue suppression against real SQLite', () => {
 
     await expect(enqueue(db, 'user_favorites', 'create', {}, key)).resolves.toEqual({
       inserted: false,
+      revived: false,
       existingStatus: 'pending',
     });
 
@@ -105,6 +107,7 @@ describe('enqueue suppression against real SQLite', () => {
 
     await expect(enqueue(db, 'user_favorites', 'create', {}, key)).resolves.toEqual({
       inserted: false,
+      revived: false,
       existingStatus: 'dead_letter',
     });
   });

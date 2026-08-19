@@ -620,7 +620,10 @@ export const SHARED_EVENTS = {
   // launch. Per-mutation events only count from ship day, so without this every
   // backlog that accumulated earlier is invisible. Fires at most once per app
   // launch, and only when something is queued. Props: { pendingCount,
-  // deadLetterCount, oldestPendingAgeDays, oldestDeadLetterAgeDays }.
+  // deadLetterCount, oldestPendingAgeDays, oldestDeadLetterAgeDays,
+  // deadLettersRevived }. The counts are what the launch INHERITED, read before
+  // the same pass revives lock-caused dead letters (#4331); `deadLettersRevived`
+  // is how many of that `deadLetterCount` it put back in the queue.
   OfflineOutboxBacklogDetected: 'Offline Outbox Backlog Detected',
   // Offline sync — sign-out deletes the whole outbox, dead letters included, so
   // this is the size of what the user just lost. Emitted before the analytics
@@ -631,8 +634,17 @@ export const SHARED_EVENTS = {
   // dead-lettered row already owns that deterministic idempotency key
   // (favorites, follows). The user's repeat action is dropped at enqueue time,
   // so neither a drain nor a dead-letter event can ever report it. Props:
-  // { tableName, operation, existingStatus }.
+  // { tableName, operation, existingStatus }. Should now be unreachable from
+  // the favorite/follow call sites, which revive the dead letter instead
+  // (#4331) — a non-zero count there means a revive UPDATE didn't take.
   OfflineMutationEnqueueSuppressed: 'Offline Mutation Enqueue Suppressed',
+  // Offline sync — a repeat favorite/follow reclaimed the deterministic
+  // idempotency key its dead-lettered predecessor was holding: the row is back
+  // to pending, carrying the CURRENT intent, and drains normally. A recovery
+  // rather than a defect, so it carries no Sentry event. Props: { tableName,
+  // operation }. Its rate should roughly track how often those writes used to
+  // dead-letter.
+  OfflineMutationRevived: 'Offline Mutation Revived',
   // Offline sync — the FIRST attempt of a local SQLite write (tick, favorite,
   // follow) threw, so the retry ladder ran. Silent on a clean write, so its raw
   // count is the contention rate. `outcome: 'recovered'` means a later attempt
