@@ -2,11 +2,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 
-// What these tests are about: the relations the zoom hook declares with the
-// surrounding scroll. The pan only mounts while zoomed, so it must WIN a downward
-// drag from the play drawer's RNGH ScrollView — otherwise the drawer scrolls out
-// from under a zoomed board instead of panning it. The interactive create/search
-// boards pass no scrollRef and must stay relation-free.
+// What these tests are about: the relations the zoom hook declares with the two
+// ancestors that compete for the same downward drag — the play drawer's RNGH
+// ScrollView and its pull-down-to-dismiss Pan. The zoom pan only mounts while
+// zoomed, so it must WIN that drag from both; otherwise the drawer scrolls (or
+// slides away) out from under a zoomed board instead of the board panning. The
+// interactive create/search boards pass neither ref and must stay relation-free.
 
 // Mirror reanimated's contract: useSharedValue returns the SAME mutable ref across
 // re-renders; animations resolve to their target synchronously.
@@ -59,6 +60,7 @@ import { useZoomPanGesture } from '../use-zoom-pan-gesture';
 type Options = Parameters<typeof useZoomPanGesture>[0];
 
 const scrollRef = { current: null } as unknown as NonNullable<Options['scrollRef']>;
+const dismissRef = { current: undefined } as NonNullable<Options['dismissRef']>;
 
 function builderOfKind(kind: string): RecordedBuilder {
   const found = recordedBuilders.filter((builder) => builder.kind === kind);
@@ -83,6 +85,24 @@ describe('useZoomPanGesture scroll relations', () => {
     const blocks = builderOfKind('Pan').calls.filter((call) => call.method === 'blocksExternalGesture');
     expect(blocks).toHaveLength(1);
     expect(blocks[0]?.args[0]).toBe(scrollRef);
+  });
+
+  it("makes the zoomed-only pan block the drawer's pull-down-to-dismiss pan", () => {
+    renderHook(() => useZoomPanGesture({ containerWidth: 320, containerHeight: 480, scrollRef, dismissRef }));
+
+    const blocked = builderOfKind('Pan')
+      .calls.filter((call) => call.method === 'blocksExternalGesture')
+      .map((call) => call.args[0]);
+    expect(blocked).toContain(dismissRef);
+  });
+
+  it('declares no dismiss relation when the host passes no dismissRef', () => {
+    renderHook(() => useZoomPanGesture({ containerWidth: 320, containerHeight: 480, scrollRef }));
+
+    // Only the scroll relation — nothing accidentally blocking a gesture the host
+    // never handed us.
+    const blocks = builderOfKind('Pan').calls.filter((call) => call.method === 'blocksExternalGesture');
+    expect(blocks.map((call) => call.args[0])).toEqual([scrollRef]);
   });
 
   it('keeps the pinch simultaneous with that scroll (a 2-finger zoom must not be a scroll)', () => {
