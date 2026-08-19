@@ -2,7 +2,8 @@ import 'server-only';
 import { getAllBoardConfigsOrThrow } from '@/app/lib/server-popular-configs';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
 import { boardConfigsToItems } from './board-entries';
-import { buildTier2ClimbItems, fetchTier2Summary } from './climb-query';
+import { buildTier2ClimbItems } from './climb-query';
+import { fetchClimbShardSummary } from './climb-store';
 import {
   allLocalesUrlCount,
   expandAllLocales,
@@ -233,10 +234,14 @@ export type PagedShardId = 'climbs';
 /**
  * The shard's total item count and freshness.
  *
- * A small ANSWER, not a cheap question: the climbs summary is the same
- * `DISTINCT ON` scan as the item build. That is why the index calls it behind a
- * deadline (`SHARD_DEADLINE_MS`) and why `fetchTier2Summary` keeps its own
- * single-flight in front of the Data Cache.
+ * For climbs this is now a single-row read of `sitemap_shard_refreshes`
+ * (`fetchClimbShardSummary`), ~1 ms at every temperature. It used to be a small
+ * ANSWER to an expensive QUESTION — the same sixteen `DISTINCT ON` scans as the
+ * item build, 16.7 s cold — which is why the index dropped the shard on any cache
+ * miss (#4523).
+ *
+ * The deadline below stays regardless: the live scan is still the fallback while
+ * the store is empty, and `playlists` has no precomputation at all.
  */
 export type PagedShardSummary = { itemCount: number; lastModified: Date | null };
 
@@ -275,7 +280,12 @@ export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
     // the summary already said there were items on it.
     expectsUrls: true,
     cacheControl: CLIMB_CACHE_CONTROL,
-    summary: () => fetchTier2Summary(),
+    summary: () => fetchClimbShardSummary(),
+    // Still the live grouped build, deliberately. #4523 materialised the SUMMARY
+    // only, because the reported bug is the INDEX dropping this shard. Page N
+    // therefore still costs the whole ordered list (51 s cold in production) —
+    // that is the follow-up the store's shape is designed to grow into, and it is
+    // additive: a `sitemap_climb_urls` table replaces these four lines.
     buildPage: async (page: number) => {
       const items = await buildTier2ClimbItems();
       const start = (page - 1) * CLIMB_URLS_PER_SHARD;
@@ -320,10 +330,13 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
     }
 
     const { items, totalItems } = await shard.buildPage(page);
-    // The summary and item list have independent epochs — the summary is in the
-    // Next Data Cache (global), while the list is an in-process TTL (per instance).
-    // A fresh summary can therefore advertise page 2 while a warm instance still
-    // holds exactly 10,000 items. That empty slice is transient disagreement, not
+    // The summary and item list have independent epochs — the summary is a row in
+    // `sitemap_shard_refreshes` (global, refreshed on a cron), while the list is an
+    // in-process TTL (per instance). A fresh summary can therefore advertise page 2
+    // while a warm instance still holds exactly 10,000 items. Materialising the
+    // summary made that gap wider, not narrower, and the follow-up that stores the
+    // URLs too is what finally closes it by giving both halves one epoch.
+    // That empty slice is transient disagreement, not
     // a permanently invalid URL: 503/no-store asks the crawler to retry after the
     // item epoch catches up. A true out-of-range page was already rejected above
     // by the current summary and remains a 404.
@@ -385,15 +398,21 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
  * Cheap to be wrong, so be impatient. W-23 (#4483) settled on the same value for
  * its paged summary, so fixed and paged work intentionally share one constant.
  *
- * Two of the three data-backed builders are now cached at two levels — a Next
- * Data Cache entry plus an in-process TTL and single-flight
- * (`getAllBoardConfigsOrThrow`, `fetchTier2Summary`) — because `/sitemap.xml` is
- * `force-dynamic` and every CDN miss otherwise re-ran them live: the uncached
- * boards fetch took ~10 s cold and deterministically lost its shard on the first
- * request after a deploy (#4519). Caching does not make the deadline redundant.
- * It makes it *reachable*: the first miss after a cold start still pays full
- * price, and the scan behind a cold climbs summary is expensive enough to need
- * the bound regardless. `fetchPlaylistSitemapRows` remains uncached.
+ * The data-backed builders no longer share one shape, and the difference is the
+ * point. `getAllBoardConfigsOrThrow` is cached at two levels — a Next Data Cache
+ * entry plus an in-process TTL and single-flight — because `/sitemap.xml` is
+ * `force-dynamic` and every CDN miss otherwise re-ran it live: the uncached boards
+ * fetch took ~10 s cold and deterministically lost its shard on the first request
+ * after a deploy (#4519). The climbs summary is no longer cached-expensive but
+ * PRECOMPUTED: one row of `sitemap_shard_refreshes`, written by a cron and an
+ * `after()` self-heal, because caching an expensive question only moves when you
+ * pay for it — a cold miss on sixteen sequential `DISTINCT ON` scans could never
+ * meet 3 s at any cache temperature (#4523). `fetchPlaylistSitemapRows` remains
+ * uncached and unprecomputed, and is the shard still degrading most often.
+ *
+ * None of that makes the deadline redundant. It makes it *reachable*: the first
+ * boards miss after a cold start still pays full price, and an empty climbs store
+ * falls back to the same scan that used to blow the budget.
  */
 export const SHARD_DEADLINE_MS = 3_000;
 
