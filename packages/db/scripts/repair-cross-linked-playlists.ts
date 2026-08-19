@@ -20,6 +20,11 @@
  *     alone. --include-merge-candidates opts in anyway.
  *   - Anything the helpers can't attribute to a known defect is refused, printed,
  *     and left for a human.
+ *   - The one row --apply ADDS is an append-only `sync_deletions` tombstone
+ *     scoped to the adopter, so their offline clients drop the playlist they
+ *     just lost access to. Without it the revoke is invisible on-device: the
+ *     offline pull is gated on playlist_ownership and that table has no delete
+ *     trigger, so the local copy would linger forever.
  *
  * Usage:
  *   vp run db:repair-cross-linked-playlists
@@ -33,9 +38,10 @@
 import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { pathToFileURL } from 'node:url';
-import { createScriptDb } from './db-connection.js';
+import { createScriptDb, describeDatabaseHost, getScriptDatabaseUrl } from './db-connection.js';
 import { playlistClimbs, playlistOwnership, playlists, userPlaylistPins } from '../src/schema/app/playlists.js';
 import { playlistFollows } from '../src/schema/app/follows.js';
+import { syncDeletions } from '../src/schema/app/sync-deletions.js';
 import { auroraCredentials, userBoardMappings } from '../src/schema/auth/mappings.js';
 import { users } from '../src/schema/auth/users.js';
 import {
@@ -90,6 +96,8 @@ export type AppliedRepairCounts = {
   ownershipRowsDeleted: number;
   pinsDeleted: number;
   followsDeleted: number;
+  /** Append-only `sync_deletions` rows written so the adopter's offline clients drop the playlist. */
+  tombstonesWritten: number;
   /** Playlist ids skipped because their ownership rows changed after the plan was built. */
   skippedByDrift: string[];
 };
@@ -195,7 +203,9 @@ function printHelp(): void {
 
 Options:
   --apply                       Delete the later owner's playlist_ownership row (plus that
-                                user's pin/follow on the same playlist). Omit for dry-run.
+                                user's pin/follow on the same playlist) and write an
+                                adopter-scoped sync_deletions tombstone so their offline
+                                clients drop the playlist too. Omit for dry-run.
   --playlist-ids <a,b,c>        Restrict the run to these playlists.id values.
   --include-merge-candidates    Also repair pairs whose two owners are the same email up to
                                 case. Off by default — merge-accounts.ts (#3278) handles those
@@ -205,7 +215,8 @@ Options:
   --help                        Show this help text.
 
 This script never deletes a playlist, a playlist_climbs row, a tick, a board
-credential, or a user.`);
+credential, or a user. The only row it ever adds is an append-only
+sync_deletions tombstone.`);
 }
 
 /** playlists.id is a bigint column; the helpers carry it as a decimal string. */
@@ -407,8 +418,25 @@ function describeOwner(owner: PlaylistOwnerRow): string {
   return `${owner.userEmail ?? '(no email)'} [${owner.userId}] role=${owner.role} at ${owner.createdAt.toISOString()}`;
 }
 
+/**
+ * What --apply would touch, counted from the plans it is actually allowed to
+ * write. The dry-run prints this so the totals can be checked against a
+ * pg_dump (or against the by-hand sample above) before anyone writes.
+ */
+export function countPlannedDeletions(
+  applyablePlans: CrossLinkRepairPlan[],
+  attachments: AdopterAttachments,
+): { ownershipRows: number; pins: number; follows: number } {
+  return {
+    ownershipRows: applyablePlans.length,
+    pins: applyablePlans.filter((plan) => attachments.pinnedPlaylistIds.has(plan.playlist.playlistId)).length,
+    follows: applyablePlans.filter((plan) => attachments.followedPlaylistUuids.has(plan.playlist.playlistUuid)).length,
+  };
+}
+
 function printRepairReport(
   plans: CrossLinkRepairPlan[],
+  applyablePlans: CrossLinkRepairPlan[],
   attachments: AdopterAttachments,
   scriptArgs: ScriptArgs,
 ): void {
@@ -443,9 +471,27 @@ function printRepairReport(
     console.info(`  reason: ${plan.reason}`);
   }
 
+  const plannedDeletions = countPlannedDeletions(applyablePlans, attachments);
+  const deferredButExcluded = scriptArgs.includeMergeCandidates
+    ? 0
+    : plans.filter((plan) => plan.action === 'defer-to-account-merge').length;
+
+  console.info('');
+  console.info(
+    `${LOG_TAG} ${scriptArgs.apply ? 'Applying to' : 'A --apply run would touch'} ${applyablePlans.length} playlist(s): ` +
+      `${plannedDeletions.ownershipRows} ownership row(s), ${plannedDeletions.pins} pin(s), ` +
+      `${plannedDeletions.follows} follow(s) deleted, plus ${applyablePlans.length} adopter-scoped ` +
+      `sync_deletions tombstone(s) so their offline clients drop the playlist. ` +
+      `${summarizeRepairPlans(plans).refused} refused playlist(s) are reported only and never written.`,
+  );
+  if (deferredButExcluded > 0) {
+    console.info(
+      `${LOG_TAG} ${deferredButExcluded} duplicate-account playlist(s) are excluded — pass ` +
+        `${INCLUDE_MERGE_CANDIDATES_FLAG} to include them, or merge the accounts with merge-accounts.ts (#3278).`,
+    );
+  }
   if (!scriptArgs.apply) {
-    console.info('');
-    console.info(`${LOG_TAG} Dry-run only. Re-run with --apply to delete the adopter ownership rows above.`);
+    console.info(`${LOG_TAG} Dry-run only. Nothing was written. Take a pg_dump before re-running with ${APPLY_FLAG}.`);
   }
 }
 
@@ -473,8 +519,9 @@ function printBoardAccountReport(boardAccounts: CrossLinkedBoardAccount[], email
 
 /**
  * Delete the adopter's ownership row (and their pin/follow on the same playlist)
- * for every plan handed in. Must run inside a transaction — the caller owns the
- * transaction so the integration test can roll the whole thing back.
+ * for every plan handed in, then tombstone the playlist for that adopter so
+ * their offline clients drop it. Must run inside a transaction — the caller owns
+ * the transaction so the integration test can roll the whole thing back.
  *
  * Re-reads and locks each playlist's ownership rows first: if they no longer
  * match the plan (a concurrent sync, a manual fix, a second run), the playlist is
@@ -490,6 +537,7 @@ export async function applyRepairPlans(
     ownershipRowsDeleted: 0,
     pinsDeleted: 0,
     followsDeleted: 0,
+    tombstonesWritten: 0,
     skippedByDrift: [],
   };
 
@@ -552,6 +600,23 @@ export async function applyRepairPlans(
       )
       .returning({ id: playlistFollows.id });
     counts.followsDeleted += deletedFollows.length;
+
+    // The offline pull joins playlist_ownership (syncPlaylists /
+    // syncPlaylistClimbs), and playlist_ownership carries no delete trigger, so
+    // revoking the row alone just makes the playlist stop arriving — the
+    // adopter's local SQLite copy and its playlist_climbs rows would survive
+    // forever. This adopter-scoped tombstone is what removes them; pull-client
+    // cascades the local climbs off a `playlists` tombstone, matching 0144's
+    // "no child tombstones for a whole-playlist delete" rule. The creator's
+    // devices never see it. Append-only: it deletes nothing.
+    if (deletedOwnership.length > 0) {
+      await transaction.insert(syncDeletions).values({
+        tableName: 'playlists',
+        recordId: plan.playlist.playlistUuid,
+        userId: adopter.userId,
+      });
+      counts.tombstonesWritten += 1;
+    }
   }
 
   return counts;
@@ -564,6 +629,14 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Name the target before doing anything: db-connection.ts loads .env.local,
+  // which in this repo can hold a real production credential, so "which
+  // database am I about to write to" must not be something the operator has to
+  // infer from their shell history.
+  console.info(
+    `${LOG_TAG} ${scriptArgs.apply ? 'WRITE MODE (--apply)' : 'Read-only audit (dry-run)'} against ${describeDatabaseHost(getScriptDatabaseUrl())}`,
+  );
+
   const { db, close } = createScriptDb();
 
   try {
@@ -572,15 +645,14 @@ async function main(): Promise<void> {
       minSpreadMinutes: scriptArgs.minSpreadMinutes,
     });
     const attachments = await loadAdopterAttachments(db, plans);
-    printRepairReport(plans, attachments, scriptArgs);
+    const applyablePlans = selectApplyablePlans(plans, {
+      includeMergeCandidates: scriptArgs.includeMergeCandidates,
+    });
+    printRepairReport(plans, applyablePlans, attachments, scriptArgs);
 
     const boardAccounts = await loadCrossLinkedBoardAccounts(db);
     const boardAccountUserIds = [...new Set(boardAccounts.flatMap((boardAccount) => boardAccount.userIds))];
     printBoardAccountReport(boardAccounts, await loadEmailsByUserId(db, boardAccountUserIds));
-
-    const applyablePlans = selectApplyablePlans(plans, {
-      includeMergeCandidates: scriptArgs.includeMergeCandidates,
-    });
 
     if (!scriptArgs.apply) {
       return;
@@ -596,7 +668,8 @@ async function main(): Promise<void> {
     console.info('');
     console.info(
       `${LOG_TAG} Repair complete: ${counts.ownershipRowsDeleted} ownership row(s), ${counts.pinsDeleted} pin(s), ` +
-        `${counts.followsDeleted} follow(s) deleted. No playlist, climb, tick, or credential was touched.`,
+        `${counts.followsDeleted} follow(s) deleted, ${counts.tombstonesWritten} sync_deletions tombstone(s) written. ` +
+        `No playlist, climb, tick, or credential was touched.`,
     );
     if (counts.skippedByDrift.length > 0) {
       console.info(
