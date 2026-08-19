@@ -523,6 +523,11 @@ export async function drainMutationQueue(
             // `retryableHit` rather than an outright cycle break because a
             // snapshot import can hold the lock for minutes — the in-cycle
             // backoff degrades into the scheduler's next trigger either way.
+            // Adding another local write to this try block does NOT break the
+            // outcome, only the reasoning: a lock thrown before the send would
+            // leave the row pending and replay it, and every handler is
+            // idempotent (that is what makes the whole outbox re-drainable), so
+            // the worst case is one redundant send rather than a lost write.
             retryableHit = true;
             break;
           }

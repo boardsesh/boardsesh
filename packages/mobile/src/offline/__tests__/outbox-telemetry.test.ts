@@ -183,6 +183,22 @@ describe('recoverAndReportOutboxOnce — lock-caused dead letters', () => {
     await expect(recoverAndReportOutboxOnce(db)).resolves.toBeUndefined();
   });
 
+  // The ceiling is a guard against a pathological outbox, not a real limit —
+  // the fleet's worst device carries 3 dead letters. Whatever it skips is picked
+  // up by the next launch.
+  it('stops at the per-launch ceiling', async () => {
+    const manyDeadLetters = Array.from({ length: 60 }, (_unused, index) => deadLetterRow(index + 1, LOCK_ERROR));
+    getDeadLettersMock.mockResolvedValue(manyDeadLetters);
+
+    await recoverAndReportOutboxOnce(db);
+
+    expect(retryDeadLetterMock).toHaveBeenCalledTimes(50);
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineOutboxBacklogDetected,
+      expect.objectContaining({ deadLettersRevived: 50 }),
+    );
+  });
+
   // The sweep runs once per runtime, so one contended UPDATE aborting the loop
   // would strand every row behind it until the next launch.
   it('keeps sweeping the rows behind one that could not be revived', async () => {
