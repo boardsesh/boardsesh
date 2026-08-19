@@ -53,12 +53,12 @@ const nextConfig = configModule.default as unknown as NextConfig;
 // source, which would make the "has a consumer" check vacuous.
 const SKIPPED_DIR_NAMES = new Set(['node_modules', '.next', 'dist']);
 
-// Files that legitimately name every transpiled package without importing it:
-// package.json lists all 36 @boardsesh workspace deps and next.config.mjs
-// contains the list under test. Neither is a source file the scanner would
-// read anyway once the specifier anchor is in place, but they are cheap to
-// skip and they document the two obvious sources of false evidence.
-const SKIPPED_RELATIVE_FILES = new Set(['package.json', 'next.config.mjs']);
+// `next.config.mjs` names every transpiled package without importing any of
+// them — it *is* the list under test — and it is a `.mjs` file, so the walk
+// would otherwise read it. (`package.json` needs no entry here: it lists all 36
+// @boardsesh workspace deps, but `.json` is not in SOURCE_EXTENSIONS, so the
+// walk never opens it.)
+const SKIPPED_RELATIVE_FILES = new Set(['next.config.mjs']);
 
 // Test files do not count as consumers. `transpilePackages` exists to make the
 // Next *build* compile a workspace package's source; vitest resolves workspace

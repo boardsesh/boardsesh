@@ -5,7 +5,7 @@
 # HARD RULE: never add a Content-Security-Policy with a `script-src` here. The
 # board-renderer WASM glue instantiates its module via `new Function(...)`, so it
 # needs `unsafe-eval` / `wasm-unsafe-eval`. A strict script-src breaks the
-# renderer.
+# renderer. Full reasoning + the CI gate: ./README.md, "The one hard rule: no CSP script-src".
 
 /*
   X-Robots-Tag: noindex
