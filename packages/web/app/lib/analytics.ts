@@ -104,12 +104,25 @@ function getPosthog(): PostHog | null {
 //
 // register() IS in posthog-js-lite's public typings (inherited from
 // @posthog/core's PostHogCoreStateless) — no structural cast needed here,
-// unlike registerSessionSuperProperties() below. Best-effort: a failure must
-// never block analytics init, matching mobile's contract.
+// unlike registerSessionSuperProperties() below.
+//
+// Best-effort, exactly like mobile's registerAppEnvironment: a failure here
+// must never block analytics init, so a rejection AND a synchronous throw are
+// both swallowed. register() is declared `async` in @posthog/core 1.46.1, so
+// today it can only reject — the Promise.resolve() + try/catch keeps that from
+// being a silent version coupling if a future SDK makes it sync.
 function registerWebEnvironment(client: PostHog): void {
-  void client.register({ environment: 'production' }).catch((error: unknown) => {
-    if (shouldDebugAnalytics) console.warn('[analytics] failed to register environment super property', error);
-  });
+  try {
+    void Promise.resolve(client.register({ environment: 'production' })).catch((error: unknown) => {
+      warnEnvironmentRegistrationFailed(error);
+    });
+  } catch (error) {
+    warnEnvironmentRegistrationFailed(error);
+  }
+}
+
+function warnEnvironmentRegistrationFailed(error: unknown): void {
+  if (shouldDebugAnalytics) console.warn('[analytics] failed to register environment super property', error);
 }
 
 type PosthogProperties = Record<string, string | number | boolean | null>;

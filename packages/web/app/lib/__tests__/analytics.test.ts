@@ -128,6 +128,19 @@ describe('analytics wrapper', () => {
     expect(mocks.posthog.capture).toHaveBeenCalledWith('Climb Opened', undefined);
   });
 
+  it('does not throw or block capture when register() throws synchronously', async () => {
+    // register() is `async` in @posthog/core 1.46.1 so it can only reject
+    // today, but analytics init must survive an SDK that makes it sync.
+    mocks.posthog.register.mockImplementationOnce(() => {
+      throw new Error('storage unavailable');
+    });
+    const { track } = await import('../analytics');
+
+    expect(() => track('Climb Opened')).not.toThrow();
+
+    expect(mocks.posthog.capture).toHaveBeenCalledWith('Climb Opened', undefined);
+  });
+
   it('fails loud once when the PostHog key is missing on a production host', async () => {
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', '');
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
