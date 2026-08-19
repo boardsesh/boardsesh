@@ -202,7 +202,9 @@ export async function warmPlaylistSitemapCache(): Promise<void> {
 
   try {
     const rows = await fetchPlaylistSitemapRows();
-    console.warn(`[sitemap] warmed the playlists rows cache: ${rows.length} playlists.`);
+    // `info`, not `warn`: this fires only on a cold cache past the floor, and a
+    // successful warm is the expected outcome rather than something to action.
+    console.info(`[sitemap] warmed the playlists rows cache: ${rows.length} playlists.`);
   } catch (err) {
     // Swallowed on purpose: this runs in `after()`, where a rejection is only a
     // logged task error, and the next crawl past the floor above retries it.
