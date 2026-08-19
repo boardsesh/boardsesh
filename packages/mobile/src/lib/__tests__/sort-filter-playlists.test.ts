@@ -92,6 +92,18 @@ describe('filterPlaylistsByBoard', () => {
     expect(filterPlaylistsByBoard(input, 'kilter', 9)).toEqual([]);
   });
 
+  // A caller that couldn't work out the climb's layout passes null rather than
+  // guessing the host's (see resolveClimbBoardScope). Every layout of the board
+  // stays offered — the server has the final say — but other boards still don't.
+  it('keeps every layout of the board when the climbs layout is unknown', () => {
+    const input = [
+      playlist('Layout 8', { boardType: 'kilter', layoutId: 8 }),
+      playlist('Layout 9', { boardType: 'kilter', layoutId: 9 }),
+      playlist('Tension climbs', { boardType: 'tension', layoutId: 9 }),
+    ];
+    expect(names(filterPlaylistsByBoard(input, 'kilter', null))).toEqual(['Layout 8', 'Layout 9']);
+  });
+
   it('does not mutate the input array', () => {
     const input = [playlist('a', { boardType: 'tension' }), playlist('b', { boardType: 'kilter', layoutId: 1 })];
     filterPlaylistsByBoard(input, 'kilter', 1);
