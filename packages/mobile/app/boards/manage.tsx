@@ -27,6 +27,7 @@ import {
   getBootstrapMetadataByScope,
   estimateScopeDownload,
 } from '@boardsesh/offline-sync';
+import { reportAbandonedDownloadOnDisable } from '../../src/offline/abandoned-download-terminals';
 import { useBoardDownloads } from '../../src/offline/use-board-downloads';
 import { useSnapshotManifest } from '../../src/offline/use-snapshot-manifest';
 import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-download';
@@ -235,9 +236,11 @@ export default function ManageBoards() {
       const key = offlineBoardKeyForBoard(board);
       const alreadyEnabled = getSetting('syncEnabledBoards').includes(key);
       if (alreadyEnabled) {
-        // Was this download still in flight? Read BEFORE the setting write, so the
-        // cancel event carries how far it had got (issue #4316) — this is the
-        // abandonment the funnel exists to size, caught at the moment it happens.
+        // How far had it got? Read BEFORE the setting write, so the cancel event
+        // below carries the live progress frame (issue #4316). It needs a
+        // snapshot frame naming this exact scope, so it is silent for a paged
+        // crawl — the funnel terminal further down is the signal that always
+        // fires, this is the extra detail when we happen to have it.
         const liveProgress = boardDownloadProgress({
           scopeKey: key,
           isSyncing: syncStatusRef.current.isSyncing,
@@ -273,12 +276,19 @@ export default function ManageBoards() {
             offlineEngineEnabled: isOfflineEngineEnabled(),
           });
         }
+        // The funnel's terminal (issue #4452). Turning a board off deletes
+        // nothing, so there is no teardown to hang this off — but the scope has
+        // just left `syncEnabledBoards`, and pullSync only ever visits enabled
+        // scopes, so this download is over for good. Reported and its markers
+        // cleared, so a re-enable opens a fresh Started → Completed pair rather
+        // than resuming a funnel this tap ended.
+        await reportAbandonedDownloadOnDisable(db, key);
         return;
       }
       // Size quote + confirm + enable, shared with the discovery-nudge surfaces.
       await confirmAndDownload(board, { trigger: 'toggle', source: 'manage' });
     },
-    [confirmAndDownload],
+    [confirmAndDownload, db],
   );
 
   // The escape from a board that settled onto the slow crawl (issue #4313).

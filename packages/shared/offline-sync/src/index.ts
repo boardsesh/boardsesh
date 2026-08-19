@@ -170,7 +170,12 @@ export {
   getCheckpointKey,
   markScopeDownloadComplete,
   isScopeDownloadComplete,
+  isScopeDownloadStarted,
   getDownloadedScopeKeys,
+  // The download funnel's other half (issue #4452): who still owes a terminal
+  // event, and how to close their funnel once one has been emitted.
+  getUnfinishedDownloadScopeKeys,
+  clearScopeDownloadFunnelMarkers,
   // rewindDeletionsCheckpoint / compareCheckpoints / DELETIONS_CHECKPOINT_KEY
   // stay package-internal (only the bootstrap engine consumes them).
 } from './sync/checkpoints';
@@ -195,6 +200,11 @@ export type { InvalidateKeys } from './sync/invalidate-keys';
 // --- Reclaiming a downloaded board's disk space ----------------------------------
 export { removeBoardScopeData, getScopeUsage, scopeSyncMetaKeys } from './sync/scope-teardown';
 export type { AbandonedDownloadInfo, ScopeTeardownResult, ScopeUsage } from './sync/scope-teardown';
+// Every path that ends a download for good claims its ONE terminal event here —
+// the board removal above, plus the sign-out and de-list paths mobile owns
+// (issue #4452). See download-terminal-registry.ts for why the claim is keyed on
+// a teardown generation rather than a flag.
+export { claimAbandonedDownloadTerminal } from './sync/download-terminal-registry';
 
 // --- Board-snapshot manifest (Phase 2 export ↔ Phase 3 bootstrap) ----------------
 export { parseSnapshotManifest, SNAPSHOT_MANIFEST_FORMAT_VERSION } from './sync/snapshot-manifest';
