@@ -394,6 +394,50 @@ function useAdoptedBoard(
 }
 
 /**
+ * The board behind a `/b/{slug}` climb URL for a reader with no account.
+ *
+ * Separate from `useAdoptedBoard` rather than a mode inside it, because almost
+ * nothing it does applies: there is no owned-board list to walk, no board to
+ * mint, and no active board to write. What is left is one public read.
+ *
+ * Server only — deliberately no local-first pass. The device's stored active
+ * board and downloaded cards belong to whoever last signed in on this browser,
+ * and matching a slug against them would show an anonymous reader a board from
+ * somebody else's session. The offline healing `useAdoptedBoard` does is absent
+ * for the same reason: this path only exists on the web export.
+ *
+ * Privacy is the resolver's job and already done: `boardBySlug` returns `null`
+ * for a board a signed-out viewer may not see, indistinguishable from one that
+ * does not exist — so a private or gym-scoped board reaches the same not-found
+ * a typo does.
+ */
+function useAnonymousSlugBoard(slug: string | null): { board: UserBoard | null; error: boolean } {
+  const [resolved, setResolved] = useState<{ slug: string; board: UserBoard | null } | null>(null);
+
+  useEffect(() => {
+    if (!slug) return;
+    let cancelled = false;
+    void fetchBoardBySlug(slug)
+      .then((board) => {
+        if (!cancelled) setResolved({ slug, board });
+      })
+      .catch((slugError) => {
+        if (__DEV__) console.warn('[board-route] could not resolve anonymous board slug', slug, slugError);
+        if (!cancelled) setResolved({ slug, board: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
+  // Same tagging rule as `useAdoptedBoard`: a result may only be read for the
+  // slug it was fetched for, so a second URL through the same mounted screen
+  // cannot render the previous board.
+  const settled = resolved && resolved.slug === slug ? resolved : null;
+  return { board: settled?.board ?? null, error: settled?.board === null };
+}
+
+/**
  * The status, in the order the checks have to run.
  *
  * `auth-required` comes before every resolution check: a signed-out visitor has
@@ -451,12 +495,23 @@ export function useBoardRouteTarget(
   // default has to be the feature. A flag that must resolve before the anonymous
   // branch turns on would show a login redirect as the first frame of the very
   // surface this exists to build.
-  const anonymousClimb = signedOutOnWeb && (options?.anonymousClimbEnabled ?? true) && target?.kind === 'climb';
+  const anonymousClimb =
+    signedOutOnWeb &&
+    (options?.anonymousClimbEnabled ?? true) &&
+    (target?.kind === 'climb' || target?.kind === 'slug-climb');
   const authRequired = signedOutOnWeb && !anonymousClimb;
   // Neither signed-out branch adopts. Adoption's first act is a CREATE_BOARD the
   // backend refuses without a session, and it is not a render input for either
   // one — so it is skipped rather than gated on the outcome.
-  const { board, error: boardError } = useAdoptedBoard(target, adoptsBoard && !signedOutOnWeb);
+  const { board: adoptedBoard, error: adoptedBoardError } = useAdoptedBoard(target, adoptsBoard && !signedOutOnWeb);
+  // A shared gym-board link is the same kind of arrival as a search result, so
+  // it must not be the one that still hits the login wall. It carries no config
+  // in the URL, so unlike the tuple form it does have to resolve — but by a
+  // public read, with nothing minted and nothing stored.
+  const anonymousSlug = anonymousClimb && target?.kind === 'slug-climb' ? target.slug : null;
+  const { board: anonymousBoard, error: anonymousBoardError } = useAnonymousSlugBoard(anonymousSlug);
+  const board = adoptedBoard ?? anonymousBoard;
+  const boardError = adoptedBoardError || anonymousBoardError;
 
   const wantsClimb = target?.kind === 'climb' || target?.kind === 'slug-climb';
   const climbUuid = wantsClimb ? target.climbUuid : undefined;
@@ -466,6 +521,13 @@ export function useBoardRouteTarget(
   // resolved board. One config feeds both the query and the drawer so the frames
   // the user sees can't drift from the ones we asked for.
   const configFromUrl = urlBoardConfig(target);
+  // A `/b/{slug}/{angle}/…` URL's angle wins over the board's stored one; a
+  // `/b/{slug}` URL carries none and the board's own angle is what the reader
+  // lands on. The ADOPTED board already arrives with that applied —
+  // `resolveBoardForSession` owns the rule for the signed-in path and the two
+  // branches must not encode it twice — so this covers only the anonymous slug
+  // read, which bypasses that resolver entirely.
+  const anonymousUrlAngle = anonymousBoard && target?.kind === 'slug-climb' ? target.angle : null;
   const configFromBoard = useMemo<BoardConfig | null>(
     () =>
       board
@@ -474,10 +536,10 @@ export function useBoardRouteTarget(
             layoutId: board.layoutId,
             sizeId: board.sizeId,
             setIds: board.setIds,
-            angle: board.angle,
+            angle: anonymousUrlAngle ?? board.angle,
           }
         : null,
-    [board],
+    [board, anonymousUrlAngle],
   );
   const boardConfig = configFromUrl ?? configFromBoard;
 
@@ -513,6 +575,11 @@ export function useBoardRouteTarget(
     // and `AuthProvider` re-reads `window.location.pathname` on every
     // navigation — so the drawer opening is exactly the moment the visitor gets
     // bounced back to the login wall this branch exists to remove.
+    //
+    // Ahead of the `!board` check below, not behind it. That check would happen
+    // to stop a TUPLE climb (which resolves no board at all), but a slug climb
+    // resolves one from the public read — so for `/b/{slug}/…` this line is the
+    // only thing between an anonymous reader and a hand-off to `/play`.
     if (anonymousClimb) return;
     // A deep link has to land on the adopted board — the Climbs tab behind the
     // drawer renders whatever the active board is.
