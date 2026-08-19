@@ -69,6 +69,13 @@ export const PlayDrawerPlaylistChips = memo(function PlayDrawerPlaylistChips({
   // same rule the `playlistsForClimb` resolver applies, so this is exactly "can a
   // chip ever appear here" — and it does not vary per climb, which is what keeps
   // the reserved slot's height constant while swiping through the queue.
+  //
+  // It can still flip once, from false to true, if a climber opens a climb before
+  // the app-root playlists query has resolved: the slot appears and the board
+  // settles 30pt. Reserving the slot while that query is in flight would trade
+  // that for the same settle in reverse, and would charge it to everyone who has
+  // no playlists — the majority — instead of only to playlist owners inside a
+  // one-or-two-second window at cold start. This is the cheaper side of the trade.
   const hasBoardPlaylists = useMemo(
     () => (playlists ? filterPlaylistsByBoard(playlists, boardName, layoutId).length > 0 : false),
     [playlists, boardName, layoutId],
