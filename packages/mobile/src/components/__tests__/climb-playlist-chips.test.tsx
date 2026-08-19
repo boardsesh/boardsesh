@@ -74,7 +74,7 @@ vi.mock('../../lib/show-playlist-tags-preference', () => ({
   useShowPlaylistTagsPreference: () => ({ enabled: ctrl.enabled, loaded: true, setEnabled: vi.fn() }),
 }));
 
-import { ClimbPlaylistChips, PlaylistChipsRow, resolvePlaylistChips } from '../ClimbPlaylistChips';
+import { ClimbPlaylistChips, PlaylistChipsRow } from '../ClimbPlaylistChips';
 
 function playlist(uuid: string, name: string, color?: string): Playlist {
   return {
@@ -206,27 +206,20 @@ describe('PlaylistChipsRow', () => {
     expect(rowStyle(centered.container)).toContain('"justifyContent":"center"');
   });
 
-  it('exposes a supplied accessibility label instead of hiding the strip', () => {
-    ctrl.playlistsById = new Map([['p1', playlist('p1', 'Sunday sends')]]);
+  it('builds an accessibility label from every name, including the ones "+N" hides', () => {
+    ctrl.playlistsById = new Map([
+      ['p1', playlist('p1', 'Sunday sends')],
+      ['p2', playlist('p2', 'Project@40')],
+      ['p3', playlist('p3', 'Warmups')],
+    ]);
     const { container } = render(
-      <PlaylistChipsRow playlistUuids={['p1']} accessibilityLabel="In playlists: Sunday sends" />,
+      <PlaylistChipsRow
+        playlistUuids={['p1', 'p2', 'p3']}
+        describeForAccessibility={(names) => `In playlists: ${names.join(', ')}`}
+      />,
     );
     const row = container.querySelector('[data-view]');
-    expect(row?.getAttribute('aria-label')).toBe('In playlists: Sunday sends');
+    expect(row?.getAttribute('aria-label')).toBe('In playlists: Sunday sends, Project@40, Warmups');
     expect(row?.getAttribute('data-a11y-hidden')).toBe('false');
-  });
-});
-
-describe('resolvePlaylistChips', () => {
-  it('returns nothing without a playlists index', () => {
-    expect(resolvePlaylistChips(['p1'], undefined)).toEqual([]);
-  });
-
-  it('resolves names in the order the uuids arrive', () => {
-    const byId = new Map([
-      ['p1', playlist('p1', 'One')],
-      ['p2', playlist('p2', 'Two')],
-    ]);
-    expect(resolvePlaylistChips(['p2', 'p1'], byId).map((chip) => chip.name)).toEqual(['Two', 'One']);
   });
 });
