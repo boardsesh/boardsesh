@@ -205,5 +205,32 @@ describe('useLiveActivity shared queue-state mirror (iOS)', () => {
     await waitFor(() => {
       expect(plugin.updateLiveActivity).toHaveBeenCalled();
     });
+    // The re-publish must not raise a fresh lock-screen widget for what is now
+    // a solo queue — only the App-Group copy is being restored.
+    expect(plugin.startLiveActivitySession).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-publishes after a failed start, which also wiped the shared keys', async () => {
+    // Native startSession writes the App-Group state before the Activity.request
+    // that throws, and the hook's catch tears it down with endSession — so this
+    // path wipes the queue copy just like a real session end, and the mirror has
+    // to restore it. Covers the second of the two wipe-nonce sites.
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    plugin.startLiveActivitySession.mockRejectedValue(new Error('permission denied'));
+
+    render(<Harness {...soloProps({ sessionId: 'session-1', isSessionActive: true })} />);
+
+    await waitFor(() => {
+      expect(plugin.endLiveActivitySession).toHaveBeenCalled();
+    });
+
+    // Two publishes and no more: the mount seed, then the restore after the
+    // failed start's endSession wiped the keys. (Counting rather than clearing
+    // the mock — the rejection settles in microtasks, so there is no safe point
+    // between "start was attempted" and "teardown ran" to reset a baseline at.)
+    await waitFor(() => {
+      expect(plugin.updateLiveActivity).toHaveBeenCalledTimes(2);
+    });
+    expect(plugin.updateLiveActivity.mock.calls.at(-1)?.[0].climbUuid).toBe('climb-1');
   });
 });
