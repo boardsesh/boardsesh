@@ -138,6 +138,11 @@ export function KioskPresenceHubInner({
   children,
 }: KioskPresenceHubInnerProps) {
   const hasBoards = boardIds.length > 0;
+  // Read at decision time by the liveness supervisor, which runs outside
+  // render. The gym-manage preview edits its slot list live, so a board can
+  // leave the tree while its last-known liveness is still on the books.
+  const boardIdsRef = useRef(boardIds);
+  boardIdsRef.current = boardIds;
 
   const [activeWsClient, setActiveWsClient] = useState<Client | null>(null);
   const clientRef = useRef<Client | null>(null);
@@ -185,7 +190,22 @@ export function KioskPresenceHubInner({
    * the socket is up (its first subscribe is rejected), and that ordering would
    * otherwise leave the countdown permanently unarmed.
    */
+  /**
+   * Forget boards that are no longer rendered. A board whose provider unmounts
+   * publishes no final snapshot, so without this its last known "dead" would
+   * keep forcing rebuilds for a slot the editor already removed.
+   */
+  const pruneDeadBoards = useCallback(() => {
+    const renderedBoardIds = new Set(boardIdsRef.current);
+    for (const boardId of deadBoardsRef.current) {
+      if (!renderedBoardIds.has(boardId)) {
+        deadBoardsRef.current.delete(boardId);
+      }
+    }
+  }, []);
+
   const evaluateStaleSubscriptions = useCallback(() => {
+    pruneDeadBoards();
     if (deadBoardsRef.current.size === 0) {
       clearStaleSubscriptionTimer();
       return;
@@ -200,11 +220,12 @@ export function KioskPresenceHubInner({
     if (staleSubscriptionTimerRef.current !== null) return;
     staleSubscriptionTimerRef.current = setTimeout(() => {
       staleSubscriptionTimerRef.current = null;
+      pruneDeadBoards();
       if (deadBoardsRef.current.size === 0 || !socketOpenRef.current) return;
       staleSubscriptionRebuildsRef.current += 1;
       setClientGeneration((generation) => generation + 1);
     }, presenceRebuildDelayMs(Math.random()));
-  }, [clearStaleSubscriptionTimer]);
+  }, [clearStaleSubscriptionTimer, pruneDeadBoards]);
 
   /**
    * Called for every snapshot a board publishes. `isLive` is false exactly when
