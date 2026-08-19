@@ -19,16 +19,15 @@ import {
   frontDoorPagePath,
   isFrontDoorPageOutOfRange,
   isIndexableFrontDoorPage,
+  NOINDEX_FOLLOW,
   parseFrontDoorPage,
   resolveListPageIndexation,
   type ListPageSearchParams,
 } from '@/app/lib/seo/list-page-robots';
-import { getAllBoardConfigsOrThrow } from '@/app/lib/server-popular-configs';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
 import { themeTokens } from '@/app/theme/theme-config';
-import { getSetterPageData } from './server-setter-data';
-import { resolveSetterClimbLinks } from './setter-climb-links';
+import { getSetterPageView, setterPageHasCrawlableClimb } from './setter-page-view';
 import SetterFollowIsland from './setter-follow-island';
 import SetterJsonLd from './setter-json-ld';
 import SetterSeoFragment from './setter-seo-fragment';
@@ -94,13 +93,15 @@ const relatedLinksSx = {
  * a soft-404 farm on a route linked from every climb front door.
  */
 export async function generateMetadata({ params, searchParams }: SetterPageProps): Promise<Metadata> {
-  const [{ setter_username }, resolvedSearchParams] = await Promise.all([params, searchParams]);
-  const username = decodeURIComponent(setter_username);
+  const [{ setter_username: username }, resolvedSearchParams] = await Promise.all([params, searchParams]);
   // `locale` is load-bearing: without it every /es, /fr and /de setter page
   // canonicalises onto its en-US twin and de-indexes the localised tree.
   const { t, locale } = await getServerTranslation('profile');
-  // Decoded once, encoded once, so the canonical is byte-stable no matter how
-  // the crawler encoded the incoming path.
+  // Encoded once, never decoded: Next has already decoded the dynamic segment
+  // (`getRouteMatcher` runs `decodeURIComponent` on every non-repeat group
+  // before params reach the segment), so decoding again turns a setter named
+  // `50%` into an unhandled `URIError` — a 500 where a 404 belongs — and
+  // silently rewrites `abc%2541` into `abcA`, a canonical naming somebody else.
   const cleanPath = `/setter/${encodeURIComponent(username)}`;
 
   try {
@@ -117,18 +118,23 @@ export async function generateMetadata({ params, searchParams }: SetterPageProps
     }
 
     const displayName = summary.displayName;
-    const { path, robots } = resolveListPageIndexation({
-      cleanPath,
-      page: parseFrontDoorPage(resolvedSearchParams.page),
-      searchParams: resolvedSearchParams,
-    });
+    const page = parseFrontDoorPage(resolvedSearchParams.page);
+    const { path, robots } = resolveListPageIndexation({ cleanPath, page, searchParams: resolvedSearchParams });
+    // The shared doctrine cannot see this one: a setter every one of whose
+    // climbs sits on a configuration `resolveClimbSitemapGroups` does not
+    // resolve renders an `<h1>`, fifty board images and NOT ONE crawlable climb
+    // link. That is 22,490 of the 91,946 setters who answer 200 on the dev
+    // image. `/sitemaps/setters` already refuses to submit them (linkable AND
+    // ≥3 climbs); this stops the ones a share link or an OG card surfaces from
+    // being indexed as content either.
+    const linklessPage = !(await setterPageHasCrawlableClimb(username, page));
 
     return createBoardContentPageMetadata({
       title: t('metadata.setter.title', { name: displayName }),
       description: t('metadata.setter.description', { name: displayName }),
       path,
       locale,
-      robots,
+      robots: robots ?? (linklessPage ? NOINDEX_FOLLOW : undefined),
       openGraphType: 'profile',
       imagePath: buildVersionedOgImagePath('/api/og/setter', { username }, summary.version),
       imageAlt: t('metadata.setter.ogAlt', { name: displayName }),
@@ -160,8 +166,7 @@ export async function generateMetadata({ params, searchParams }: SetterPageProps
  * crawlable payload: the follow button and the share control.
  */
 export default async function SetterProfilePage({ params, searchParams }: SetterPageProps) {
-  const [{ setter_username }, resolvedSearchParams] = await Promise.all([params, searchParams]);
-  const username = decodeURIComponent(setter_username);
+  const [{ setter_username: username }, resolvedSearchParams] = await Promise.all([params, searchParams]);
 
   // Past the hard ceiling there is no page to render, and 404ing before the
   // query means a crawler walking made-up page numbers costs one not-found
@@ -172,11 +177,14 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
   const locale = await getLocale();
   const { t } = await getServerTranslation('profile');
 
-  const setterData = await getSetterPageData(username, page);
+  // The SAME resolution `generateMetadata` read, memoised for this request, so
+  // the robots directive and the rendered links cannot describe different pages.
+  const view = await getSetterPageView(username, page);
   // A real 404, not a 200 shell. `getSetterPageData` returns null only when the
   // setter has no publicly visible climb at all — the same rule the metadata
   // above noindexes on, so the two surfaces cannot disagree.
-  if (!setterData) return notFound();
+  if (!view) return notFound();
+  const setterData = view.data;
 
   // A `?page` inside the range but past this setter's climbs is a thin page
   // reachable only by guessing — nothing links past the last page with content,
@@ -185,7 +193,7 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
   // than serving an indexable, self-canonical empty list.
   if (page > 1 && setterData.climbs.length === 0) return notFound();
 
-  const links = resolveSetterClimbLinks(setterData.climbs, await getAllBoardConfigsOrThrow());
+  const links = view.links;
   const primaryGroup = links.primaryGroup;
   const firstLinkedClimb = setterData.climbs.find((climb) => !links.unlinkedClimbUuids.has(climb.uuid));
   // `fallbackBoardDetails` IS the primary group's board when there is a primary

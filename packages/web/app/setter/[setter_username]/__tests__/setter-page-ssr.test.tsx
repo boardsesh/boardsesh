@@ -20,6 +20,10 @@ const setterData = vi.hoisted(() => ({
   value: null as unknown,
 }));
 
+const ogSummary = vi.hoisted(() => ({
+  value: { displayName: 'Marco', version: 'v1' } as { displayName: string; version: string } | null,
+}));
+
 vi.mock('server-only', () => ({}));
 vi.mock('@/app/lib/db/db', () => ({ dbz: {}, dbzRead: {}, sql: {}, executeRows: async () => [] }));
 
@@ -56,6 +60,8 @@ vi.mock('@/app/lib/server-popular-configs', () => ({
   ],
 }));
 
+vi.mock('@/app/lib/seo/dynamic-og-data', () => ({ getSetterOgSummary: async () => ogSummary.value }));
+
 vi.mock('@/app/lib/i18n/get-locale', () => ({ getLocale: async () => 'en-US' }));
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: async () => ({
@@ -79,16 +85,21 @@ vi.mock('@/app/components/board-renderer/board-image-layers', () => ({ default: 
 vi.mock('@/app/components/board-renderer/board-canvas-renderer', () => ({ default: () => null }));
 vi.mock('@/app/lib/board-render-worker/worker-manager', () => ({ useCanvasRendererReady: () => false }));
 
-const SetterProfilePage = (await import('../page')).default;
+const pageModule = await import('../page');
+const SetterProfilePage = pageModule.default;
+const { generateMetadata } = pageModule;
+const { absoluteUrl } = await import('@/app/lib/seo/base-url');
 
 type StubClimb = {
   uuid: string;
   name: string;
   isDraft?: boolean;
   isListed?: boolean;
+  /** Overridden by the no-crawlable-link case: a set the chosen config lacks. */
+  requiredSetIds?: number[];
 };
 
-function climbRow(climb: StubClimb) {
+function climbRow(climb: StubClimb & { requiredSetIds?: number[] }) {
   return {
     uuid: climb.uuid,
     layoutId: 1,
@@ -108,7 +119,7 @@ function climbRow(climb: StubClimb) {
     benchmark_difficulty: null,
     created_at: null,
     compatibleSizeIds: [10, 27],
-    requiredSetIds: [1, 20],
+    requiredSetIds: climb.requiredSetIds ?? [1, 20],
     updatedAt: new Date('2026-05-04T11:22:33.000Z'),
   };
 }
@@ -152,17 +163,34 @@ function renderPage(element: React.ReactElement): Promise<string> {
   });
 }
 
-async function render(searchParams: Record<string, string> = {}) {
+async function render(searchParams: Record<string, string> = {}, username = 'marco') {
   return renderPage(
     await SetterProfilePage({
-      params: Promise.resolve({ setter_username: 'marco' }),
+      params: Promise.resolve({ setter_username: username }),
       searchParams: Promise.resolve(searchParams),
     }),
   );
 }
 
+function metadataFor(searchParams: Record<string, string> = {}, username = 'marco') {
+  return generateMetadata({
+    params: Promise.resolve({ setter_username: username }),
+    searchParams: Promise.resolve(searchParams),
+  });
+}
+
+/** The `@graph` the page really emitted, parsed out of the rendered HTML. */
+function graphOf(
+  html: string,
+): { '@type': string; '@id'?: string; url?: string; mainEntityOfPage?: { '@id': string } }[] {
+  const block = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html);
+  expect(block).not.toBeNull();
+  return JSON.parse(block![1].replace(/\\u003c/g, '<'))['@graph'];
+}
+
 beforeEach(() => {
   notFoundCalls.count = 0;
+  ogSummary.value = { displayName: 'Marco', version: 'v1' };
 });
 
 describe('the setter front door, server-rendered', () => {
@@ -244,5 +272,69 @@ describe('the setter front door, server-rendered', () => {
     setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'First Climb' }]);
 
     await expect(render({ page: '5000' })).rejects.toThrow('NEXT_NOT_FOUND');
+  });
+});
+
+describe('the setter front door, as a crawler reads its head', () => {
+  it('names THIS page in the structured data, not page 1', async () => {
+    // On `?page=2` the graph used to carry page 1's URL while the document
+    // self-canonicalised to `?page=2` and the ItemList positions started at 51 —
+    // structured data asserting that the page-1 URL contains items 51–100.
+    // The expectation is COMPUTED from `generateMetadata`'s own canonical, so
+    // it cannot pass by both halves drifting together.
+    setterData.value = pageData([
+      { uuid: 'a'.repeat(32), name: 'First Climb' },
+      { uuid: 'b'.repeat(32), name: 'Second Climb' },
+    ]);
+
+    const [html, metadata] = await Promise.all([render({ page: '2' }), metadataFor({ page: '2' })]);
+    const canonical = absoluteUrl(String(metadata.alternates?.canonical));
+    const graph = graphOf(html);
+
+    expect(canonical).toContain('?page=2');
+    const profilePage = graph.find((node) => node['@type'] === 'ProfilePage');
+    expect(profilePage?.['@id']).toBe(canonical);
+    expect(profilePage?.url).toBe(canonical);
+    expect(graph.find((node) => node['@type'] === 'ItemList')?.mainEntityOfPage?.['@id']).toBe(canonical);
+  });
+
+  it('noindexes a page that renders no crawlable climb link at all', async () => {
+    // 22,490 of the 91,946 setters who answer 200 on the dev image (24.5%) have
+    // no climb on any configuration `resolveClimbSitemapGroups` resolves, so
+    // their page is an `<h1>` over rows with no anchor. The sitemap already
+    // refuses to submit them; this keeps the ones a share link surfaces out of
+    // the index too.
+    setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'Unlinkable', requiredSetIds: [1, 20, 26] }]);
+
+    const [metadata, html] = await Promise.all([metadataFor(), render()]);
+
+    expect(html.match(/href="\/kilter\/[^"]*\/view\/[^"]*"/g) ?? []).toHaveLength(0);
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+  });
+
+  it('keeps a page whose climbs DO link indexable', async () => {
+    // The control for the assertion above: without it a `robots` that was
+    // always `noindex` would pass just as happily.
+    setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'Linkable' }]);
+
+    const [metadata, html] = await Promise.all([metadataFor(), render()]);
+
+    expect(html.match(/href="\/kilter\/[^"]*\/view\/[^"]*"/g) ?? []).toHaveLength(1);
+    expect(metadata.robots).toBeUndefined();
+  });
+
+  it('serves a setter whose name contains a percent sign instead of 500ing on it', async () => {
+    // Next already decoded the dynamic segment, so the page's own
+    // `decodeURIComponent` was a SECOND decode: `50%` threw an unhandled
+    // `URIError` out of both `generateMetadata` and the page body — a 500 where
+    // a 404 or a 200 belongs — and `abc%2541` was silently rewritten to `abcA`,
+    // a canonical naming a different setter.
+    setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'First Climb' }]);
+
+    const metadata = await metadataFor({}, '50%');
+    expect(metadata.alternates?.canonical).toBe('/setter/50%25');
+
+    const html = await render({}, '50%');
+    expect(html).toContain('setter.seoHeading:Marco');
   });
 });

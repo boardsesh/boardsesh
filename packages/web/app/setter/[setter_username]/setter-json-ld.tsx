@@ -2,6 +2,7 @@ import React from 'react';
 import { absoluteLocaleUrl } from '@/app/lib/seo/base-url';
 import type { Locale } from '@/app/lib/i18n/config';
 import { JsonLd } from '@/app/lib/seo/json-ld';
+import { frontDoorPagePath } from '@/app/lib/seo/list-page-robots';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbViewUrl } from '@/app/lib/url-utils';
 import type { BoardDetails, Climb } from '@/app/lib/types';
@@ -40,7 +41,15 @@ export default function SetterJsonLd({
   page,
   locale,
 }: SetterJsonLdProps) {
-  const url = absoluteLocaleUrl(`/setter/${encodeURIComponent(username)}`, locale);
+  const basePath = `/setter/${encodeURIComponent(username)}`;
+  // The person's own URL is the bare profile on every page: that is the one
+  // canonical address for the entity.
+  const profileUrl = absoluteLocaleUrl(basePath, locale);
+  // The DOCUMENT's URL is this page. `frontDoorPagePath` is the same call
+  // `resolveListPageIndexation` makes for the `<link rel="canonical">`, so the
+  // two can never name different URLs — on `?page=2` the graph used to claim
+  // that page 1 contained items 51–100.
+  const pageUrl = absoluteLocaleUrl(frontDoorPagePath(basePath, page), locale);
   const offset = (page - 1) * SETTER_PAGE_SIZE;
 
   const listItems = climbs.flatMap((climb, index) => {
@@ -70,19 +79,19 @@ export default function SetterJsonLd({
         '@graph': [
           {
             '@type': 'ProfilePage',
-            '@id': url,
-            url,
+            '@id': pageUrl,
+            url: pageUrl,
             mainEntity: {
               '@type': 'Person',
               name: displayName,
-              url,
+              url: profileUrl,
             },
           },
           ...(listItems.length > 0
             ? [
                 {
                   '@type': 'ItemList',
-                  mainEntityOfPage: { '@id': url },
+                  mainEntityOfPage: { '@id': pageUrl },
                   numberOfItems: listItems.length,
                   itemListElement: listItems,
                 },

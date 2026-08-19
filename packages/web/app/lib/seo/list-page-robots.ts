@@ -93,7 +93,13 @@ export function frontDoorPagePath(basePath: string, page: number): string {
   return page <= 1 ? basePath : `${basePath}?page=${page}`;
 }
 
-const NOINDEX_FOLLOW = { index: false, follow: true } as const;
+/**
+ * The one `noindex` shape this tree emits. Exported because a page can have a
+ * reason of its own to drop out of the index that the doctrine below cannot
+ * see — the setter front door noindexes a page that renders no crawlable climb
+ * link at all — and a second literal would be a second rule.
+ */
+export const NOINDEX_FOLLOW = { index: false, follow: true } as const;
 
 export type ListPageIndexationInput = {
   /**

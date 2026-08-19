@@ -1,8 +1,10 @@
 import 'server-only';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { getClimbStars, getGradeLabel, withSerialPlan, type SerialPlanDb } from '@boardsesh/db/queries';
 import { dbzRead, executeRows } from '@/app/lib/db/db';
 import { boardClimbs, boardClimbStats } from '@/app/lib/db/schema';
+import { publishableAngleWhere, publishedAngleOrderBy } from '@/app/lib/seo/sitemap/published-angle';
 import type { Climb } from '@/app/lib/types';
 
 /**
@@ -86,22 +88,51 @@ export function buildSetterProfileQuery(db: SerialPlanDb, username: string) {
     .groupBy(boardClimbs.boardType);
 }
 
-/**
- * The angle a climb's row is shown (and linked) at: the one with the most
- * ascents, exactly the rule `buildChosenSubquery` uses for the climbs sitemap.
- * Picking a different angle here would link a tier-2 climb to a URL the sitemap
- * did not submit.
- */
-const mostAscendedAngle = sql`(
-  SELECT s.angle
-  FROM board_climb_stats s
-  WHERE s.board_type = ${boardClimbs.boardType}
-    AND s.climb_uuid = ${boardClimbs.uuid}
-  ORDER BY s.ascensionist_count DESC NULLS LAST, s.angle ASC
-  LIMIT 1
-)`;
+/** The stats rows this climb could be linked at, aliased away from the outer join. */
+const angleCandidates = alias(boardClimbStats, 'angle_candidate');
 
-/** Angle used when a climb has no stats row at all — matches the resolvers' fallback. */
+/**
+ * The angle a climb's row is shown (and linked) at.
+ *
+ * Both halves come from `published-angle.ts`, which is also what
+ * `buildChosenSubquery` builds the climbs sitemap's `DISTINCT ON` ordering
+ * from. That sharing is the whole point: the angle is a path segment, so a
+ * second rule here is a second indexable URL for a climb Google was already
+ * told about at a different address.
+ *
+ * It shipped as a hand-written `ORDER BY s.ascensionist_count DESC NULLS LAST,
+ * s.angle ASC` that was missing both of the sitemap's other clauses, and both
+ * misses were live on the dev image: 28 tier-2 climbs were linked at a
+ * tied-but-different angle, and one climb's argmax was `-5`, an angle the route
+ * tables do not carry at all.
+ */
+function mostAscendedAngle(db: SerialPlanDb): SQL {
+  return sql`(${db
+    .select({ angle: angleCandidates.angle })
+    .from(angleCandidates)
+    .where(
+      and(
+        eq(angleCandidates.boardType, boardClimbs.boardType),
+        eq(angleCandidates.climbUuid, boardClimbs.uuid),
+        publishableAngleWhere(angleCandidates.angle, boardClimbs.boardType),
+      ),
+    )
+    .orderBy(
+      ...publishedAngleOrderBy({
+        ascensionistCount: angleCandidates.ascensionistCount,
+        statsAngle: angleCandidates.angle,
+        climbAngle: boardClimbs.angle,
+      }),
+    )
+    .limit(1)
+    .getSQL()})`;
+}
+
+/**
+ * Angle used when a climb has no publishable stats row at all — matches the
+ * resolvers' fallback, and 40 is in `ANGLES` for every board we ship, so the
+ * fallback never itself invents a 404ing URL.
+ */
 export const DEFAULT_SETTER_CLIMB_ANGLE = 40;
 
 /**
@@ -141,7 +172,7 @@ export function buildSetterClimbsQuery(db: SerialPlanDb, username: string, offse
       and(
         eq(boardClimbStats.boardType, boardClimbs.boardType),
         eq(boardClimbStats.climbUuid, boardClimbs.uuid),
-        eq(boardClimbStats.angle, mostAscendedAngle),
+        eq(boardClimbStats.angle, mostAscendedAngle(db)),
       ),
     )
     .where(visibleSetterClimbsWhere(username))
