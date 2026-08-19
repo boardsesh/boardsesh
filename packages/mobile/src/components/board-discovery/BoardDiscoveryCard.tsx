@@ -6,6 +6,7 @@ import { getBoardRenderData } from '../../lib/board-details';
 import { hapticLight } from '../../lib/haptics';
 import { springs } from '../../theme/animations';
 import { spacing, borderRadius, overlays } from '../../theme/tokens';
+import { textStyles } from '../../theme/typography';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { useTheme } from '../../providers/theme-provider';
 import { Text } from '../Text';
@@ -37,6 +38,15 @@ export type DiscoveryBoardItem = {
 };
 
 export const DISCOVERY_CARD_WIDTH = 168;
+
+/**
+ * Lines the board name gets. Board names routinely run past a 168pt card
+ * ("Bergen Klatresenter Danmarksplass"), and one line ellipsised two boards at
+ * the same gym into the same string. The title box reserves all of them so a
+ * one-line card and a two-line card keep their subtitles on the same baseline
+ * across the row.
+ */
+const TITLE_LINES = 2;
 
 /** Distance badge copy: metres under 1km, one-decimal km above. */
 function formatDistance(meters: number): string {
@@ -175,10 +185,7 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
         ) : null}
       </View>
 
-      {/* Two lines: board names routinely run past the 168pt card ("Bergen
-          Klatresenter Danmarksplass"), and one line ellipsised two same-gym
-          boards into the same string. */}
-      <Text variant="subheadline" numberOfLines={2} style={styles.title}>
+      <Text variant="subheadline" numberOfLines={TITLE_LINES} style={styles.title}>
         {item.title}
       </Text>
       {item.subtitle ? (
@@ -256,8 +263,8 @@ const styles = StyleSheet.create({
   },
   title: {
     fontWeight: '600',
-    // Reserve both lines (subheadline lineHeight is 20) so a one-line card and a
-    // two-line card keep their subtitles on the same baseline across the row.
-    minHeight: 40,
+    // Both type scales (HIG and Material) give subheadline the same lineHeight,
+    // so one read covers both UI variants — see textStylesByVariant.
+    minHeight: TITLE_LINES * textStyles.subheadline.lineHeight,
   },
 });
