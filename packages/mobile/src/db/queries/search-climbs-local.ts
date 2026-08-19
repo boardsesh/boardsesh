@@ -413,8 +413,9 @@ export type LocalClimbRow = {
   /** Boardsesh grade confidence tier from board_climb_grades; null when unjoined. */
   boardsesh_confidence: string | null;
   /** Setter-written notes. Selected by both the detail read and the search read
-   *  (#4494 — the play drawer renders it for whatever climb the list opened). */
-  description?: string | null;
+   *  (#4494 — the play drawer renders it for whatever climb the list opened),
+   *  so it is always present on the row; null when the setter wrote none. */
+  description: string | null;
 };
 
 export function parseCharacteristics(raw: string | null): string[] | null {
