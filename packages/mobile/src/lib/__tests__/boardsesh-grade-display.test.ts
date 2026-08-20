@@ -191,6 +191,14 @@ describe('resolveTickDefaultGradeName', () => {
     ).toBeNull();
   });
 
+  it('never seeds the picker from a cross_angle_estimate, even with a real difficulty value', () => {
+    // Pre-filling a projection would feed the model's own output back into the
+    // ascent grades it's estimated from — the echo loop the model corrects for.
+    expect(
+      resolveTickDefaultGradeName({ boardseshDifficulty: 20, boardseshConfidence: 'cross_angle_estimate' }, true),
+    ).toBeNull();
+  });
+
   it('returns the Aurora difficulty_name for the resolved Boardsesh grade id', () => {
     // 20 = 6c/V5.
     expect(resolveTickDefaultGradeName({ boardseshDifficulty: 20.3, boardseshConfidence: 'confirmed' }, true)).toBe(

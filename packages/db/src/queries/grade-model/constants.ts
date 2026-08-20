@@ -30,12 +30,14 @@ export const UNIVERSAL_BOARDS = ['kilter', 'tension'] as const;
 /**
  * Confidence tiers surfaced to the UI.
  *
- * `crossAngleEstimate` is the one tier the nightly job never writes: it is
- * produced at read time for an angle a climb has NO ascents at, by projecting
- * the climb's other angles through the angle surface (see
- * cross-angle-estimate.ts). It carries a real grade and a real 95% band, so it
- * must not be conflated with `setter_only` ("no independent evidence at all,
- * here's the setter's number").
+ * `crossAngleEstimate` marks a row for an angle a climb has NO ascents at,
+ * projected from the climb's other angles through the angle surface (see
+ * `buildProjectedAngleObservations` in cross-angle-estimate.ts). The nightly
+ * refresh job computes and persists these rows into `board_climb_grades`
+ * itself (`computeBoard`'s `projectUnclimbedAngles` pass) — resolvers just
+ * read them back like any other row. It carries a real grade and a real 95%
+ * band, so it must not be conflated with `setter_only` ("no independent
+ * evidence at all, here's the setter's number").
  */
 export const CONFIDENCE = {
   confirmed: 'confirmed',
