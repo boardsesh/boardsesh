@@ -159,11 +159,16 @@ function Harness({
   onHandedOff?: () => void;
   anonymousClimbEnabled?: boolean;
 }) {
-  const { status, climb, boardConfig } = useBoardRouteTarget(target, { mode, onHandedOff, anonymousClimbEnabled });
+  const { status, climb, boardConfig, isAngleAdjustable } = useBoardRouteTarget(target, {
+    mode,
+    onHandedOff,
+    anonymousClimbEnabled,
+  });
   return createElement('span', {
     'data-status': status,
     'data-climb': climb?.uuid ?? '',
     'data-board-config': boardConfig ? JSON.stringify(boardConfig) : '',
+    'data-angle-adjustable': String(isAngleAdjustable),
   });
 }
 
@@ -174,6 +179,11 @@ function statusOf(container: HTMLElement): string | null {
 /** The climb the hook hands the route to draw — only ever set anonymously. */
 function climbOf(container: HTMLElement): string | null {
   return container.querySelector('span')?.getAttribute('data-climb') ?? null;
+}
+
+/** Whether the drawer should offer the angle pill for this board. */
+function angleAdjustableOf(container: HTMLElement): string | null {
+  return container.querySelector('span')?.getAttribute('data-angle-adjustable') ?? null;
 }
 
 /** The board config it draws against, parsed back from the harness. */
@@ -938,6 +948,81 @@ describe('useBoardRouteTarget signed-out on web', () => {
     // bounce back to login.
     expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
     expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  // A gym board bolted at a fixed angle resolves with `isAngleAdjustable: false`.
+  // The flag only exists on a board record, so the slug branch is the only place
+  // the anonymous view can learn it — dropping it at this boundary is invisible
+  // downstream, because the drawer's own default is an angle pill.
+  it('carries a fixed-angle gym board’s no-tilt setting through to the view', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    fetchBoardBySlug.mockResolvedValue(board({ uuid: 'gym-board', slug: 'the-gym', isAngleAdjustable: false }));
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'the-gym', angle: 40, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('anonymous-climb'));
+    expect(angleAdjustableOf(container)).toBe('false');
+  });
+
+  it('keeps the angle pill for a gym board that does tilt', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    fetchBoardBySlug.mockResolvedValue(board({ uuid: 'gym-board', slug: 'the-gym', isAngleAdjustable: true }));
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'the-gym', angle: 40, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('anonymous-climb'));
+    expect(angleAdjustableOf(container)).toBe('true');
+  });
+
+  // A tuple URL carries no board record, so there is nothing to read the flag
+  // off — it keeps the same default `createBoard` would have stored.
+  it('leaves a config-tuple URL adjustable', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('anonymous-climb'));
+    expect(angleAdjustableOf(container)).toBe('true');
+  });
+
+  // The anonymous branch has nothing to draw until the climb lands. Loosening
+  // this to the branch alone is not benign: `BoardRouteHandoff` only renders the
+  // view when it holds BOTH a climb and a config, so a still-loading anonymous
+  // climb would fall through to the redirector — and the existing
+  // "reports a missing climb as not-found" case stays green either way, because
+  // `climbIsGone` runs first and masks it.
+  it('sits on the spinner while an anonymous climb is still loading', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: undefined, isError: false, isSuccess: false };
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(climbQueryVariables.current.length).toBeGreaterThan(0));
+    expect(statusOf(container)).toBe('resolving');
+    expect(climbOf(container)).toBe('');
   });
 
   // THE FLEET-SAFETY ORACLE. Every merge to main touching packages/mobile

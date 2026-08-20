@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   FeatureFlagsProvider,
+  useAnonymousClimbViewEnabled,
   useBoardseshGradeEnabled,
   useFeatureFlag,
   useFeatureFlags,
@@ -151,6 +152,39 @@ describe('FeatureFlagsProvider', () => {
     );
     expect(result.current.snapshotBootstrap).toBe(true);
     expect(result.current.boardseshGrade).toBe(false);
+  });
+
+  // The kill switch's DIRECTION is the whole rollout-safety mechanism, and it is
+  // the one thing every other test mocks away (`BoardRouteRedirect.test.tsx`
+  // stubs this hook; the gate tests pass `anonymousClimbEnabled` in directly).
+  // Inverting the comparison here ships the feature dead for 100% of visitors and
+  // turns the emergency switch into an enable switch — so all three states are
+  // pinned, and the UNRESOLVED one is the assertion that distinguishes
+  // `!== true` from `=== false`.
+  it('the anonymous climb view is on while its kill flag is unresolved', () => {
+    const wrapper = ({ children }: { children: ReactNode }) => <FeatureFlagsProvider>{children}</FeatureFlagsProvider>;
+    const { result } = renderHook(() => useAnonymousClimbViewEnabled(), { wrapper });
+    // PostHog resolves asynchronously, and never at all for a browser that blocks
+    // it. An OFF-until-resolved reading is a login-redirect flash as the first
+    // frame of the surface this exists to build, and a permanent login wall for
+    // the ad-blocker cohort.
+    expect(result.current).toBe(true);
+  });
+
+  it('stays on when the kill flag resolves false', () => {
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <FeatureFlagsProvider flags={{ 'anonymous-climb-view-kill': false }}>{children}</FeatureFlagsProvider>
+    );
+    const { result } = renderHook(() => useAnonymousClimbViewEnabled(), { wrapper });
+    expect(result.current).toBe(true);
+  });
+
+  it('goes off only when the kill flag is actually flipped on', () => {
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <FeatureFlagsProvider flags={{ 'anonymous-climb-view-kill': true }}>{children}</FeatureFlagsProvider>
+    );
+    const { result } = renderHook(() => useAnonymousClimbViewEnabled(), { wrapper });
+    expect(result.current).toBe(false);
   });
 
   it('useFeatureFlagOverrides re-renders consumers when an override changes post-mount', () => {

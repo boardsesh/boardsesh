@@ -18,6 +18,8 @@ const routeStatus = vi.hoisted(() => ({ current: 'resolving' as BoardRouteStatus
 const anonymousClimbView = vi.hoisted(() => ({ enabled: true, seen: [] as (boolean | undefined)[] }));
 // What the anonymous branch renders instead of a redirect.
 const anonymousView = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
+// The resolved board's tilt setting, and whether the climb has landed yet.
+const anonymousResult = vi.hoisted(() => ({ isAngleAdjustable: true, climbHasLanded: true }));
 const redirect = vi.hoisted(() => ({ hrefs: [] as string[] }));
 const router = vi.hoisted(() => ({ replace: vi.fn() }));
 // The hand-off callback the hook holds. A successful hand-off never becomes a
@@ -73,9 +75,14 @@ vi.mock('../../lib/routing/use-board-route-target', () => ({
   useBoardRouteTarget: (_target: unknown, options?: { onHandedOff?: () => void; anonymousClimbEnabled?: boolean }) => {
     handoff.current = options?.onHandedOff ?? null;
     anonymousClimbView.seen.push(options?.anonymousClimbEnabled);
-    return routeStatus.current === 'anonymous-climb'
-      ? { status: routeStatus.current, climb: ANONYMOUS_CLIMB, boardConfig: ANONYMOUS_BOARD_CONFIG }
-      : { status: routeStatus.current, climb: null, boardConfig: null };
+    return routeStatus.current === 'anonymous-climb' && anonymousResult.climbHasLanded
+      ? {
+          status: routeStatus.current,
+          climb: ANONYMOUS_CLIMB,
+          boardConfig: ANONYMOUS_BOARD_CONFIG,
+          isAngleAdjustable: anonymousResult.isAngleAdjustable,
+        }
+      : { status: routeStatus.current, climb: null, boardConfig: null, isAngleAdjustable: true };
   },
 }));
 
@@ -105,6 +112,8 @@ beforeEach(() => {
   anonymousClimbView.enabled = true;
   anonymousClimbView.seen = [];
   anonymousView.props = [];
+  anonymousResult.isAngleAdjustable = true;
+  anonymousResult.climbHasLanded = true;
 });
 
 describe('BoardRouteRedirect', () => {
@@ -311,6 +320,42 @@ describe('BoardRouteHandoff anonymous climb', () => {
       status: 'anonymous',
       source: 'deep-link',
     });
+  });
+
+  // Only the slug branch resolves a board, and the flag lives on the board
+  // record. Dropping it here is invisible in the view, whose own default is an
+  // angle pill — so a gym wall bolted at one angle would still offer one.
+  it('hands a fixed-angle board’s no-tilt setting to the view', () => {
+    routeStatus.current = 'anonymous-climb';
+    anonymousResult.isAngleAdjustable = false;
+
+    render(createElement(BoardRouteHandoff, { target: SLUG_CLIMB_TARGET }));
+
+    expect(anonymousView.props.at(-1)?.isAngleAdjustable).toBe(false);
+  });
+
+  it('keeps the pill for a board that tilts', () => {
+    routeStatus.current = 'anonymous-climb';
+
+    render(createElement(BoardRouteHandoff, { target: SLUG_CLIMB_TARGET }));
+
+    expect(anonymousView.props.at(-1)?.isAngleAdjustable).toBe(true);
+  });
+
+  // `resolveStatus` refuses to say `anonymous-climb` before the climb lands, so
+  // this state is unreachable today. It is pinned because the fall-through is
+  // not benign: the redirector's only spinner used to be `resolving`, so a
+  // loosened guard upstream would paint "Not found" + Back-to-home over a URL
+  // that is one network round trip from rendering.
+  it('waits on the spinner rather than a dead end when the climb has not landed', () => {
+    routeStatus.current = 'anonymous-climb';
+    anonymousResult.climbHasLanded = false;
+
+    const { queryByTestId } = render(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
+
+    expect(queryByTestId('spinner')).not.toBeNull();
+    expect(queryByTestId('error-icon')).toBeNull();
+    expect(queryByTestId('back-home')).toBeNull();
   });
 
   // The kill switch has to reach the decision, not just exist.

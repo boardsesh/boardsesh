@@ -80,6 +80,14 @@ export type BoardRouteResult = {
   status: BoardRouteStatus;
   climb: Climb | null;
   boardConfig: BoardConfig | null;
+  /**
+   * Whether the board the climb is on can actually be tilted. Only a resolved
+   * board record carries the answer, so a `/b/{slug}` climb gets the gym's real
+   * setting and a config-tuple URL — which has no board record at all — keeps the
+   * same `true` the create path defaults to. Dropping it here is how an anonymous
+   * reader ends up with an angle pill for a wall bolted at one angle.
+   */
+  isAngleAdjustable: boolean;
 };
 
 /**
@@ -664,11 +672,15 @@ export function useBoardRouteTarget(
     anonymousClimbReady: anonymousClimb && climb != null && boardConfig != null,
   });
 
+  // Only the slug branch resolves a board anonymously; a tuple URL has none, and
+  // `true` is what `createBoard` would have stored for it anyway.
+  const isAngleAdjustable = board?.isAngleAdjustable ?? true;
+
   return useMemo(
     () =>
       status === 'anonymous-climb'
-        ? { status, climb: climb ?? null, boardConfig }
-        : { status, climb: null, boardConfig: null },
-    [status, climb, boardConfig],
+        ? { status, climb: climb ?? null, boardConfig, isAngleAdjustable }
+        : { status, climb: null, boardConfig: null, isAngleAdjustable: true },
+    [status, climb, boardConfig, isAngleAdjustable],
   );
 }

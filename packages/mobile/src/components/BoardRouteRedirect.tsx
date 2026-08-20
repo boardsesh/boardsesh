@@ -113,8 +113,15 @@ export function BoardRouteRedirect({ status }: { status: BoardRouteStatus }) {
       <Stack.Screen options={{ headerShown: false }} />
       {/* A handed-off screen keeps this spinner on its way out — nothing flips it
           to the not-found, because the board and climb it handed off with are
-          both still there. */}
-      {status === 'resolving' ? (
+          both still there.
+
+          `anonymous-climb` reaching HERE means the caller had the status but not
+          the climb — a state `resolveStatus` refuses to produce today (it only
+          says `anonymous-climb` once the climb has landed). It waits on the
+          spinner rather than falling through, because the alternative reading of
+          "the climb has not arrived yet" is "Not found" plus a Back-to-home
+          button, on a URL that is about to resolve. */}
+      {status === 'resolving' || status === 'anonymous-climb' ? (
         <ActivityIndicator size="large" />
       ) : (
         <>
@@ -145,7 +152,11 @@ export function BoardRouteHandoff({ target, mode }: { target: BoardRouteTarget |
   // `RELAXES_ANONYMOUS_ROUTES` is false, so the flag cannot reach a decision
   // there however it resolves.
   const anonymousClimbEnabled = useAnonymousClimbViewEnabled();
-  const { status, climb, boardConfig } = useBoardRouteTarget(target, { mode, onHandedOff, anonymousClimbEnabled });
+  const { status, climb, boardConfig, isAngleAdjustable } = useBoardRouteTarget(target, {
+    mode,
+    onHandedOff,
+    anonymousClimbEnabled,
+  });
 
   const renderedStatus = RENDERED_EVENT_STATUS[status as keyof typeof RENDERED_EVENT_STATUS];
   const parsedUrl = target !== null;
@@ -165,7 +176,7 @@ export function BoardRouteHandoff({ target, mode }: { target: BoardRouteTarget |
   // right here, on the URL the visitor arrived at, because every route the
   // hand-off would navigate to is behind the login gate.
   if (status === 'anonymous-climb' && climb && boardConfig) {
-    return <AnonymousClimbView climb={climb} boardConfig={boardConfig} />;
+    return <AnonymousClimbView climb={climb} boardConfig={boardConfig} isAngleAdjustable={isAngleAdjustable} />;
   }
 
   return <BoardRouteRedirect status={status} />;
