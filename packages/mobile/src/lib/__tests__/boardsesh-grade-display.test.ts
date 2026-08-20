@@ -69,7 +69,12 @@ describe('resolveDisplayGrade', () => {
 
   it('renders the legacy grade when the toggle is off', () => {
     const display = resolveDisplayGrade(legacyClimb, { useBoardseshGrades: false, gradeFormat: 'v-grade' });
-    expect(display).toEqual({ label: 'V4', color: expect.stringMatching(/^#/), isBoardsesh: false });
+    expect(display).toEqual({
+      label: 'V4',
+      color: expect.stringMatching(/^#/),
+      isBoardsesh: false,
+      isEstimated: false,
+    });
   });
 
   it('renders the legacy grade when boardseshDifficulty is null, even with the toggle on', () => {
@@ -77,7 +82,12 @@ describe('resolveDisplayGrade', () => {
       { difficulty: '6b/V4', boardseshDifficulty: null, boardseshConfidence: null },
       { useBoardseshGrades: true, gradeFormat: 'v-grade' },
     );
-    expect(display).toEqual({ label: 'V4', color: expect.stringMatching(/^#/), isBoardsesh: false });
+    expect(display).toEqual({
+      label: 'V4',
+      color: expect.stringMatching(/^#/),
+      isBoardsesh: false,
+      isEstimated: false,
+    });
   });
 
   it('renders the legacy grade for setter_only confidence, even with the toggle on', () => {
@@ -85,13 +95,18 @@ describe('resolveDisplayGrade', () => {
       { difficulty: '6b/V4', boardseshDifficulty: 27, boardseshConfidence: 'setter_only' },
       { useBoardseshGrades: true, gradeFormat: 'v-grade' },
     );
-    expect(display).toEqual({ label: 'V4', color: expect.stringMatching(/^#/), isBoardsesh: false });
+    expect(display).toEqual({
+      label: 'V4',
+      color: expect.stringMatching(/^#/),
+      isBoardsesh: false,
+      isEstimated: false,
+    });
   });
 
   it('prefers the Boardsesh grade when the toggle is on and it is trusted', () => {
     // 20 = 6c/V5, differs from the legacy 6b/V4 so the swap is observable.
     const display = resolveDisplayGrade(legacyClimb, { useBoardseshGrades: true, gradeFormat: 'v-grade' });
-    expect(display).toEqual({ label: 'V5', color: expect.stringMatching(/^#/), isBoardsesh: true });
+    expect(display).toEqual({ label: 'V5', color: expect.stringMatching(/^#/), isBoardsesh: true, isEstimated: false });
   });
 
   it('formats the Boardsesh grade per the v-grade/font/both preference', () => {
@@ -112,7 +127,17 @@ describe('resolveDisplayGrade', () => {
 
   it('falls back to an empty label when the legacy difficulty is missing entirely', () => {
     const display = resolveDisplayGrade({}, { useBoardseshGrades: false, gradeFormat: 'v-grade' });
-    expect(display).toEqual({ label: '', color: expect.stringMatching(/^#/), isBoardsesh: false });
+    expect(display).toEqual({ label: '', color: expect.stringMatching(/^#/), isBoardsesh: false, isEstimated: false });
+  });
+
+  it('marks a cross-angle estimate with the ≈ prefix and isEstimated', () => {
+    const display = resolveDisplayGrade(
+      { difficulty: '6b/V4', boardseshDifficulty: 20, boardseshConfidence: 'cross_angle_estimate' },
+      { useBoardseshGrades: true, gradeFormat: 'v-grade' },
+    );
+    expect(display.label).toBe('≈V5');
+    expect(display.isBoardsesh).toBe(true);
+    expect(display.isEstimated).toBe(true);
   });
 });
 

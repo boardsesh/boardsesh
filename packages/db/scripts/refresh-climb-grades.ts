@@ -22,6 +22,8 @@
  * instead of blocking — never use in prod).
  */
 import { sql } from 'drizzle-orm';
+import { ANGLES } from '@boardsesh/board-config';
+import type { BoardName } from '@boardsesh/shared-schema';
 import { createScriptDb } from './db-connection.js';
 import { boardClimbGrades, boardGradeCoefficients } from '../src/schema/app/climb-grades.js';
 import {
@@ -43,8 +45,10 @@ import {
   buildRaterEvidence,
   buildRaterSampleSql,
   buildSigmaWithinSql,
+  buildProjectedAngleObservations,
   buildTauSampleSql,
   buildTensionBenchmarkHoldoutSql,
+  buildZeroEvidenceSampleSql,
   computePosteriorGrade,
   createDisplayDeltaHygieneStats,
   deherdCrowdMean,
@@ -60,7 +64,9 @@ import {
   evaluateDisplayDeltaHygiene,
   evaluateFingerprintGate,
   evaluateTensionBenchmarkHoldout,
+  evaluateZeroEvidenceProjection,
   echoFractionFor,
+  foldCoefficientRows,
   effectiveN,
   evaluateResidualGapGate,
   mergeDisplayDeltaHygieneStats,
@@ -69,6 +75,7 @@ import {
   shouldPublish,
   GATE_NO_SHOCK_MAX_MOVE,
   GATE_NO_SHOCK_MIN_ASCENTS,
+  GATE_ZERO_EVIDENCE_MIN_ROWS,
   STAGE2_BEHAVIOR_MAX_EFFECTIVE_N,
   STAGE2_BEHAVIOR_MAX_MOVE,
   STAGE2_DEECHO_MAX_MOVE,
@@ -200,40 +207,9 @@ async function loadFrozenCoefficients(db: Db): Promise<GradeCoefficients | null>
       sql`SELECT coeff_version, kind, key, payload FROM board_grade_coefficients WHERE coeff_version = ${latest[0].coeff_version}`,
     ),
   );
-  const coefficients: GradeCoefficients = {
-    coeffVersion: latest[0].coeff_version,
-    echoFraction: {},
-    sigmaWithin: {},
-    tauSquared: {},
-    angleOffset: {},
-    boardOffset: {},
-    raterModel: {},
-    behaviorModel: {},
-    bridgeReadiness: {},
-  };
-  // Payload shapes are documented per `kind` on the boardGradeCoefficients
-  // schema; the writer below is the only producer, so shape-by-kind casts are
-  // safe here.
-  for (const row of rows) {
-    if (row.kind === 'echo_fraction') {
-      coefficients.echoFraction[row.key] = (row.payload as { lambda: number }).lambda;
-    } else if (row.kind === 'sigma_within') {
-      coefficients.sigmaWithin[row.key] = row.payload as GradeCoefficients['sigmaWithin'][string];
-    } else if (row.kind === 'tau_squared') {
-      coefficients.tauSquared[row.key] = row.payload as GradeCoefficients['tauSquared'][string];
-    } else if (row.kind === 'angle_offset') {
-      coefficients.angleOffset[row.key] = row.payload as GradeCoefficients['angleOffset'][string];
-    } else if (row.kind === 'board_offset') {
-      coefficients.boardOffset[row.key] = row.payload as GradeCoefficients['boardOffset'][string];
-    } else if (row.kind === 'rater_model') {
-      coefficients.raterModel[row.key] = row.payload as GradeCoefficients['raterModel'][string];
-    } else if (row.kind === 'behavior_model') {
-      coefficients.behaviorModel[row.key] = row.payload as GradeCoefficients['behaviorModel'][string];
-    } else if (row.kind === 'bridge_readiness') {
-      coefficients.bridgeReadiness[row.key] = row.payload as GradeCoefficients['bridgeReadiness'][string];
-    }
-  }
-  return coefficients;
+  // Payload-shape-by-kind knowledge lives next to the model rather than in this
+  // script, so a reader of `board_grade_coefficients` doesn't have to restate it.
+  return foldCoefficientRows(latest[0].coeff_version, rows);
 }
 
 async function refitCoefficients(
@@ -579,13 +555,28 @@ async function computeBoard(
   boardType: string,
   coefficients: GradeCoefficients,
   stage2Evidence: Stage2EvidenceMap = new Map(),
-  options: { applyStage2?: boolean; contentPriors?: Map<string, ContentPriorEntry> } = { applyStage2: true },
+  options: {
+    applyStage2?: boolean;
+    contentPriors?: Map<string, ContentPriorEntry>;
+    /**
+     * Manufacture zero-evidence rows for the angles a climb has no stats at
+     * (see cross-angle-estimate.ts). Off for the Stage-1 baseline pass, whose
+     * only consumer is the Tension benchmark holdout — benchmarks are real
+     * angles, so projections there would be computed and thrown away.
+     */
+    projectUnclimbedAngles?: boolean;
+  } = { applyStage2: true },
 ): Promise<{
   computed: ComputedRow[];
   isotonicStats: { movedRows: number; residualInversions: number };
   displayDeltaHygieneStats: DisplayDeltaHygieneStats;
+  projectedRows: number;
 }> {
   const pooledEvidence = await loadPooledFingerprintEvidence(db, boardType);
+  // MoonBoard can't reach this (the caller only walks CROWD_MEAN_BOARDS) and
+  // `buildProjectedAngleObservations` refuses it a second time anyway.
+  const boardAngles =
+    options.projectUnclimbedAngles === false ? [] : (ANGLES[boardType as BoardName] ?? ([] as readonly number[]));
   const contentPriors = options.contentPriors ?? new Map<string, ContentPriorEntry>();
   const contentFor = (climbUuid: string, angle: number): { contentPrior: number | null; contentSd: number | null } => {
     const entry = contentPriors.get(contentPriorKey(climbUuid, angle));
@@ -594,6 +585,7 @@ async function computeBoard(
   const computed: ComputedRow[] = [];
   const isotonicStats = { movedRows: 0, residualInversions: 0 };
   const displayDeltaHygieneStats = createDisplayDeltaHygieneStats();
+  let projectedRows = 0;
   let lastClimbUuid = '';
   for (;;) {
     const rows = rowsOf<StatsRow>(
@@ -660,23 +652,37 @@ async function computeBoard(
                   ),
             ),
       );
+      // Angles the board supports that this climb has no stats row at get a
+      // zero-evidence observation projected from the angles it does have, so
+      // they publish a `cross_angle_estimate` instead of nothing at all. They
+      // are appended to the same array the posteriors are computed against:
+      // `crossAnglePrior` ignores them as siblings (no crowd mean), so they
+      // can't feed each other, and each is graded purely off the real angles.
+      const projected = buildProjectedAngleObservations(observations, boardAngles, coefficients);
+      const allObservations = [...observations, ...projected];
+
       // Posteriors for the full angle set first (pooled set may be wider than
       // this member's own angles), then the per-climb isotonic projection —
       // grades may not decrease as the wall gets steeper (see isotonic.ts;
       // The Enchiridion @30° > @35° was the motivating inversion).
       const rawObservationByAngle = new Map(rawObservations.map((observation) => [observation.angle, observation]));
-      const angleRows: AngleGradeRow[] = observations.map((target) => ({
+      const angleRows: AngleGradeRow[] = allObservations.map((target) => ({
         angle: target.angle,
-        posterior: computePosteriorGrade(target, observations, coefficients),
+        posterior: computePosteriorGrade(target, allObservations, coefficients),
         observedMean: rawObservationByAngle.get(target.angle)?.difficultyAverage ?? null,
         ascensionistCount: rawObservationByAngle.get(target.angle)?.ascensionistCount ?? target.ascensionistCount,
+        projectedAngle: target.projectedAngle === true,
       }));
       const { adjusted, residualInversions, movedRows } = applyIsotonicAngleConstraint(angleRows);
       isotonicStats.movedRows += movedRows;
       isotonicStats.residualInversions += residualInversions;
 
-      // Emit one output row per angle THIS climb actually has.
-      const ownAngles = new Set(group.map((row) => row.angle));
+      // Emit one output row per angle THIS climb actually has, plus every angle
+      // projected onto it. (Pooled duplicate-fingerprint members still don't
+      // borrow each other's real angles — only the shared evidence behind them
+      // — but they do share the projected set, which is the same by
+      // construction since the pooled evidence is.)
+      const ownAngles = new Set([...group.map((row) => row.angle), ...projected.map((row) => row.angle)]);
       // Grade evidence may be pooled across duplicate fingerprints, but hygiene
       // compares against this emitted row's own upstream display label.
       const ownDisplayDifficultyByAngle = new Map(
@@ -707,6 +713,7 @@ async function computeBoard(
           rawAverage: angleRows[i].observedMean,
           holdFingerprint: group[0].hold_fingerprint,
         });
+        if (angleRows[i].projectedAngle === true) projectedRows += 1;
       }
       group = [];
     };
@@ -719,7 +726,7 @@ async function computeBoard(
     lastClimbUuid = effective[effective.length - 1].climb_uuid;
     if (isFinalPage) break;
   }
-  return { computed, isotonicStats, displayDeltaHygieneStats };
+  return { computed, isotonicStats, displayDeltaHygieneStats, projectedRows };
 }
 
 /** No-shock gate evaluated in memory on the freshly computed rows. */
@@ -1006,6 +1013,30 @@ async function recordGateResults(db: DbWriter, coefficients: GradeCoefficients, 
   });
 }
 
+/**
+ * Run the zero-evidence projection gate (the guard on the `cross_angle_estimate`
+ * rows the widened pipeline writes). A database with too few head climbs to
+ * score — the dev image, mostly — has no evidence either way, which is not a
+ * model regression, so `--allow-empty-backtest` downgrades it to a skip there
+ * the same way it does the history backtest. Production keeps it blocking.
+ */
+async function runZeroEvidenceGate(
+  db: Db,
+  coefficients: GradeCoefficients,
+  allowEmptyBacktest: boolean,
+): Promise<GateResult> {
+  const rows = rowsOf<TauSampleRow>(await db.execute(buildZeroEvidenceSampleSql()));
+  const gate = evaluateZeroEvidenceProjection(rows, coefficients);
+  if (!gate.passed && allowEmptyBacktest && (gate.metrics.scored ?? 0) < GATE_ZERO_EVIDENCE_MIN_ROWS) {
+    return {
+      ...gate,
+      passed: true,
+      detail: `skipped: only ${gate.metrics.scored ?? 0} scorable held-out angles (--allow-empty-backtest)`,
+    };
+  }
+  return gate;
+}
+
 function blockingGates(gates: GateResult[]): GateResult[] {
   return gates.filter((gate) => !gate.passed && gate.gate !== 'residual_paired_gap');
 }
@@ -1047,6 +1078,11 @@ async function validateOnly(db: Db, allowEmptyBacktest: boolean): Promise<void> 
     );
     console.log(`[grades]   head_holdout: ${backtest.headGate.passed ? 'PASS' : 'FAIL'} — ${backtest.headGate.detail}`);
   }
+  const zeroEvidenceGate = await runZeroEvidenceGate(db, coefficients, allowEmptyBacktest);
+  gates.push(zeroEvidenceGate);
+  console.log(
+    `[grades]   zero_evidence_projection: ${zeroEvidenceGate.passed ? 'PASS' : 'FAIL'} — ${zeroEvidenceGate.detail}`,
+  );
   const behaviorGate = evaluateBehaviorEligibility(coefficients);
   gates.push(behaviorGate);
   console.log(`[grades]   behavior_eligibility: ${behaviorGate.passed ? 'PASS' : 'FAIL'} — ${behaviorGate.detail}`);
@@ -1069,7 +1105,7 @@ async function validateOnly(db: Db, allowEmptyBacktest: boolean): Promise<void> 
   const computedByBoard = new Map<string, ComputedRow[]>();
   for (const boardType of CROWD_MEAN_BOARDS) {
     const contentPriors = await loadContentPriors(db, boardType);
-    const { computed, isotonicStats, displayDeltaHygieneStats } = await computeBoard(
+    const { computed, isotonicStats, displayDeltaHygieneStats, projectedRows } = await computeBoard(
       db,
       boardType,
       coefficients,
@@ -1088,10 +1124,13 @@ async function validateOnly(db: Db, allowEmptyBacktest: boolean): Promise<void> 
       return acc;
     }, {});
     console.log(
-      `[grades]   ${boardType}: ${computed.length} rows, tiers=${JSON.stringify(tiers)}; isotonic moved ${isotonicStats.movedRows} rows (${isotonicStats.residualInversions} residual inversions); no_shock ${noShock.passed ? 'PASS' : 'FAIL'} (${noShock.detail}); fingerprint ${fingerprint.passed ? 'PASS' : 'FAIL'} (${fingerprint.detail}); display_delta_hygiene ${displayDeltaHygiene.passed ? 'PASS' : 'FAIL'} (${displayDeltaHygiene.detail})`,
+      `[grades]   ${boardType}: ${computed.length} rows (${projectedRows} projected), tiers=${JSON.stringify(tiers)}; isotonic moved ${isotonicStats.movedRows} rows (${isotonicStats.residualInversions} residual inversions); no_shock ${noShock.passed ? 'PASS' : 'FAIL'} (${noShock.detail}); fingerprint ${fingerprint.passed ? 'PASS' : 'FAIL'} (${fingerprint.detail}); display_delta_hygiene ${displayDeltaHygiene.passed ? 'PASS' : 'FAIL'} (${displayDeltaHygiene.detail})`,
     );
   }
-  const baselineTension = await computeBoard(db, 'tension', baselineCoefficients, new Map(), { applyStage2: false });
+  const baselineTension = await computeBoard(db, 'tension', baselineCoefficients, new Map(), {
+    applyStage2: false,
+    projectUnclimbedAngles: false,
+  });
   const holdoutRows = rowsOf<TensionBenchmarkHoldoutRow>(await db.execute(buildTensionBenchmarkHoldoutSql()));
   const benchmarkPredictions = buildBenchmarkPredictions(
     holdoutRows,
@@ -1137,6 +1176,11 @@ async function main(): Promise<void> {
     console.log(`[grades] using coefficients ${coefficients.coeffVersion} (model ${GRADE_MODEL_VERSION})`);
 
     const gates: GateResult[] = [];
+    const zeroEvidenceGate = await runZeroEvidenceGate(db, coefficients, allowEmptyBacktest);
+    gates.push(zeroEvidenceGate);
+    console.log(
+      `[grades]   zero_evidence_projection: ${zeroEvidenceGate.passed ? 'PASS' : 'FAIL'} — ${zeroEvidenceGate.detail}`,
+    );
     const behaviorGate = evaluateBehaviorEligibility(coefficients);
     gates.push(behaviorGate);
     console.log(`[grades]   behavior_eligibility: ${behaviorGate.passed ? 'PASS' : 'FAIL'} — ${behaviorGate.detail}`);
@@ -1204,11 +1248,12 @@ async function main(): Promise<void> {
         computed,
         isotonicStats,
         displayDeltaHygieneStats: boardDisplayDeltaHygieneStats,
+        projectedRows,
       } = await computeBoard(db, boardType, coefficients, stage2Evidence, { contentPriors });
       mergeDisplayDeltaHygieneStats(displayDeltaHygieneStats, boardDisplayDeltaHygieneStats);
       computedByBoard.set(boardType, computed);
       console.log(
-        `[grades]   ${computed.length} climb+angle rows (isotonic moved ${isotonicStats.movedRows}, ${isotonicStats.residualInversions} residual inversions; display-delta hygiene downgraded ${boardDisplayDeltaHygieneStats.downgradedRows})`,
+        `[grades]   ${computed.length} climb+angle rows (${projectedRows} projected onto unclimbed angles; isotonic moved ${isotonicStats.movedRows}, ${isotonicStats.residualInversions} residual inversions; display-delta hygiene downgraded ${boardDisplayDeltaHygieneStats.downgradedRows})`,
       );
     }
     const allComputed = [...computedByBoard.values()].flat();
@@ -1216,7 +1261,10 @@ async function main(): Promise<void> {
     const fingerprintGate = evaluateFingerprintConsistency(allComputed);
     const displayDeltaHygieneGate = evaluateDisplayDeltaHygiene(displayDeltaHygieneStats);
     gates.push(noShockGate, fingerprintGate, displayDeltaHygieneGate);
-    const baselineTension = await computeBoard(db, 'tension', baselineCoefficients, new Map(), { applyStage2: false });
+    const baselineTension = await computeBoard(db, 'tension', baselineCoefficients, new Map(), {
+      applyStage2: false,
+      projectUnclimbedAngles: false,
+    });
     const holdoutRows = rowsOf<TensionBenchmarkHoldoutRow>(await db.execute(buildTensionBenchmarkHoldoutSql()));
     const benchmarkPredictions = buildBenchmarkPredictions(
       holdoutRows,

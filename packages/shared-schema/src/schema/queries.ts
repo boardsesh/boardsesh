@@ -121,16 +121,19 @@ export const queriesTypeDefs = /* GraphQL */ `
     climbStatsForClimbs(boardName: String!, climbUuids: [ID!]!): [ClimbStatsForClimb!]!
 
     """
-    Get the Boardsesh grade for a climb at a specific angle.
-    Returns null when no grade has been computed for that climb+angle
-    (e.g. MoonBoard, or too few ascents).
+    Get the Boardsesh grade for a climb at a specific angle. When that angle
+    has no ascents, the climb's other angles are projected onto it and the
+    result comes back tiered cross_angle_estimate.
+    Returns null when neither exists (e.g. MoonBoard, too few ascents, or fewer
+    than two other ascent-backed angles to project from).
     """
     boardseshGrade(boardName: String!, climbUuid: String!, angle: Int!): BoardseshGrade
 
     """
-    Get the Boardsesh grade for a climb at every angle it's been computed for.
-    Returns one entry per angle, ordered by angle ascending. Empty when no grade
-    has been computed for the climb (e.g. MoonBoard, or too few ascents).
+    Get the Boardsesh grade for a climb at every angle, ordered by angle
+    ascending: the computed grades, plus a cross_angle_estimate for each board
+    angle nobody has climbed. Empty when the climb has no grades at all
+    (e.g. MoonBoard, or too few ascents).
     """
     boardseshGradesForAngles(boardName: String!, climbUuid: String!): [BoardseshGradeForAngle!]!
 

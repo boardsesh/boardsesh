@@ -78,7 +78,7 @@ export function effectiveN(ascensionistCount: number, echoFraction: number): num
  */
 export function crossAnglePriorDetailed(
   target: ClimbAngleObservation,
-  siblings: ClimbAngleObservation[],
+  siblings: readonly ClimbAngleObservation[],
   coefficients: GradeCoefficients,
 ): { mean: number; effectiveNTotal: number } | null {
   const echo = echoFractionFor(coefficients, target.boardType);
@@ -105,7 +105,7 @@ export function crossAnglePriorDetailed(
 
 export function crossAnglePrior(
   target: ClimbAngleObservation,
-  siblings: ClimbAngleObservation[],
+  siblings: readonly ClimbAngleObservation[],
   coefficients: GradeCoefficients,
 ): number | null {
   return crossAnglePriorDetailed(target, siblings, coefficients)?.mean ?? null;
@@ -130,8 +130,11 @@ export function assignTier(ascensionistCount: number, postSd: number | null): Co
  *       shrunk = (V0·mean + se²·μ0)/(V0+se²), se² = σ²/n_eff
  *  2. Crowd mean only → the mean stands as-is with an honest SE (no fake
  *     shrinking toward display, which is the same signal — see crossAnglePrior).
- *  3. No crowd mean → cross-angle prior if present (SD √V0), else the display
- *     grade with no CI claim; always `setter_only`.
+ *  3. No crowd mean → cross-angle prior if present (SD √V0), else the content
+ *     prior, else the display grade with no CI claim. Tier: an angle nobody has
+ *     climbed (`projectedAngle`) publishes as `cross_angle_estimate`, a
+ *     content-driven grade as `provisional`, a bare display pass-through as
+ *     `setter_only`.
  *
  * Guard: for established rows (n ≥ GATE_NO_SHOCK_MIN_ASCENTS) the posterior is
  * clamped within GATE_NO_SHOCK_MAX_MOVE of the crowd mean — a prior must never
@@ -139,7 +142,7 @@ export function assignTier(ascensionistCount: number, postSd: number | null): Co
  */
 export function computePosteriorGrade(
   target: ClimbAngleObservation,
-  siblings: ClimbAngleObservation[],
+  siblings: readonly ClimbAngleObservation[],
   coefficients: GradeCoefficients,
 ): PosteriorGrade {
   const band = gradeBandForDifficulty(target.displayDifficulty ?? target.difficultyAverage);
@@ -153,6 +156,10 @@ export function computePosteriorGrade(
   let localGrade: number | null;
   let postSd: number | null;
   let contentDriven = false;
+  // Regime 3 reached with no own-angle evidence whatsoever: the posterior is
+  // purely the cross-angle prior. That is the only shape a projected angle may
+  // publish in — see the tier assignment below.
+  let priorDriven = false;
   if (target.difficultyAverage !== null && nEff > 0) {
     const seSquared = (sigma * sigma) / nEff;
     if (prior !== null && priorVariance !== null) {
@@ -171,6 +178,7 @@ export function computePosteriorGrade(
   } else if (prior !== null && priorVariance !== null) {
     localGrade = prior.mean;
     postSd = Math.sqrt(priorVariance);
+    priorDriven = true;
   } else if (target.contentPrior != null && Number.isFinite(target.contentPrior)) {
     // Cold tail: no crowd mean, no cross-angle prior. Use the Climb2Vec geometry
     // estimate with its held-out RMSE as the CI. This branch requires
@@ -194,10 +202,22 @@ export function computePosteriorGrade(
     };
   }
 
-  // Content-driven cold-tail grades carry model evidence + a CI, so they surface as
-  // provisional (with a band) rather than the bare setter_only assignTier would give
-  // an n<3 climb.
-  const confidence = contentDriven ? CONFIDENCE.provisional : assignTier(target.ascensionistCount, postSd);
+  // Both cold-tail regimes carry model evidence and a real band, so neither may
+  // take the bare `setter_only` that assignTier gives any n<3 row:
+  //  - a projected angle (nobody has climbed it) publishes as
+  //    `cross_angle_estimate` — a number transported from this climb's other
+  //    angles, which the UI must present as an estimate, not as a grade and not
+  //    as "no data";
+  //  - a content-driven grade (Climb2Vec geometry) publishes as provisional.
+  // A projected angle that somehow did NOT come out of the prior regime has no
+  // business publishing at all; `buildProjectedAngleObservations` drops any such
+  // observation by checking for this tier.
+  const confidence =
+    target.projectedAngle === true && priorDriven
+      ? CONFIDENCE.crossAngleEstimate
+      : contentDriven
+        ? CONFIDENCE.provisional
+        : assignTier(target.ascensionistCount, postSd);
   const offsetEntry = coefficients.boardOffset[target.boardType];
   const isUniversalBoard = (UNIVERSAL_BOARDS as readonly string[]).includes(target.boardType);
   const universalGrade = isUniversalBoard && offsetEntry ? localGrade + offsetEntry.offset : null;

@@ -129,6 +129,11 @@
       "provisionalRange_other": "Setzt sich noch · wahrscheinlich {{low}}–{{high}} · {{count}} Begehungen",
       "setter": "Weniger als 3 Begehungen zum Standardisieren"
     },
+    "estimate": {
+      "label": "Geschätzt",
+      "body": "Diesen Winkel hat noch niemand geklettert — die Zahl ist aus den Winkeln mit Begehungen hochgerechnet.",
+      "bodyRange": "Diesen Winkel hat noch niemand geklettert — wahrscheinlich {{low}}–{{high}}, hochgerechnet aus den Winkeln mit Begehungen."
+    },
     "dumbbell": {
       "legendBoardsesh": "Boardsesh-Grad",
       "legendCrowd": "Alter Grad",
@@ -137,6 +142,7 @@
       "tapCaption_other": "{{angle}}° · alter Grad {{crowd}} · Boardsesh-Grad {{boardsesh}} · {{count}} Begehungen",
       "tapCaptionAgree_one": "{{angle}}° · beide Grade stimmen überein · {{grade}} · {{count}} Begehung",
       "tapCaptionAgree_other": "{{angle}}° · beide Grade stimmen überein · {{grade}} · {{count}} Begehungen",
+      "tapCaptionEstimated": "{{angle}}° · Boardsesh-Grad {{boardsesh}} · geschätzt, noch nicht geklettert",
       "singleAngle_one": "Bei {{angle}}° · alter Grad {{crowd}} · Boardsesh-Grad {{boardsesh}} · {{count}} Begehung",
       "singleAngle_other": "Bei {{angle}}° · alter Grad {{crowd}} · Boardsesh-Grad {{boardsesh}} · {{count}} Begehungen",
       "crowdOnlyNote": "Noch zu wenige Begehungen über Boards hinweg, um nach Winkel zu vergleichen."

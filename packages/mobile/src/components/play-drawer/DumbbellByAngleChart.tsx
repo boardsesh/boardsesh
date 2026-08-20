@@ -54,6 +54,7 @@ const RING_DIAMETER: Record<DumbbellSizeBin, number> = { small: 12, medium: 16, 
 const DIAMOND_SIDE: Record<DumbbellSizeBin, number> = { small: 9, medium: 12, large: 16 };
 const NESTED_DIAMOND_SIDE: Record<DumbbellSizeBin, number> = { small: 6, medium: 8, large: 10 };
 const RING_BORDER = 2;
+const ESTIMATED_DIAMOND_BORDER = 2;
 const STEM_WIDTH = 2;
 const WHISKER_WIDTH = 2;
 const WHISKER_CAP = 6;
@@ -198,7 +199,10 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
             />
           ) : null}
 
-          {/* Boardsesh diamond (filled, grade-tinted) — disagree case. */}
+          {/* Boardsesh diamond — disagree case. Filled and grade-tinted when the
+              angle was actually climbed; hollow (grade-tinted outline on the
+              plot's own background) when the grade was projected from the
+              climb's other angles, so measured and estimated never look alike. */}
           {!row.agree && diamondY != null && row.boardseshColor ? (
             <View
               pointerEvents="none"
@@ -207,8 +211,9 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
                 {
                   width: diaSize,
                   height: diaSize,
-                  backgroundColor: row.boardseshColor,
-                  borderColor: diamondEdge,
+                  backgroundColor: row.estimated ? 'transparent' : row.boardseshColor,
+                  borderColor: row.estimated ? row.boardseshColor : diamondEdge,
+                  borderWidth: row.estimated ? ESTIMATED_DIAMOND_BORDER : undefined,
                   left: centerX - diaSize / 2,
                   top: diamondY - diaSize / 2,
                 },
@@ -234,6 +239,12 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
     if (focusedAngle == null) return null;
     const row = rows.find((candidate) => candidate.angle === focusedAngle);
     if (!row) return null;
+    if (row.estimated) {
+      return t('boardseshGrade.dumbbell.tapCaptionEstimated', {
+        angle: row.angle,
+        boardsesh: row.boardseshLabel ?? '—',
+      });
+    }
     if (row.agree && row.boardseshLabel) {
       return t('boardseshGrade.dumbbell.tapCaptionAgree', {
         angle: row.angle,

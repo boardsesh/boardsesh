@@ -206,6 +206,34 @@ fake a tighter CI. This is why the middle regime below leaves the mean alone.
 3. **No crowd mean** → the cross-angle prior if one exists (SD √V0), else the
    display grade passed through **with no CI**, always tiered `setter_only`.
 
+### Projected grades for unclimbed angles (v2.1)
+
+Regime 3 above already covers a climb+angle with thin evidence via the
+cross-angle prior. v2.1 persists that same projection for angles with **zero**
+ascents too — a climb that has never been climbed at 45° still gets a
+`board_climb_grades` row there, as long as the climb has real crowd evidence at
+2+ other angles. Previously the pipeline only ever computed a row for a
+(climb, angle) pair with an existing `board_climb_stats` row; unclimbed angles
+returned nothing, even though the model could project them the same way it
+already projects a thin one.
+
+`computeBoard` widens each eligible climb's angle set to the board's full fixed
+angle list, adding a zero-evidence synthetic observation for every angle
+without real stats, and lets it fall through the existing regime-3 path
+unchanged. The synthetic observation's `displayDifficulty` (needed to pick the
+right grade band for σ_within/τ²/angle-offset) is resolved with a cheap
+two-pass probe: run the cross-angle projection once to get a nominal grade,
+feed that back as the band-selection input, then compute the real posterior —
+without it, a zero-evidence row silently defaults to the `v3-5` band regardless
+of the climb's actual difficulty.
+
+These rows are tiered `cross_angle_estimate` (see the table below), are real
+SQL columns like any other grade — sortable, filterable, synced to mobile
+offline storage — and are gated by their own zero-evidence backtest (§4)
+before publish. Every board this model already covers gets it
+(`CROWD_MEAN_BOARDS`: Kilter, Tension, Grasshopper, Decoy, So iLL, Touchstone);
+MoonBoard has no crowd feed into this model at all and stays untouched.
+
 ### Per-climb isotonic angle constraint (v1.1)
 
 Each angle's crowd herds independently, so raw per-angle grades can invert —
@@ -327,6 +355,7 @@ Estimator: `estimateBoardOffsets`.
 | `confirmed`   | n ≥ 20 and `post_sd` ≤ 0.35, unless Kilter display-delta hygiene downgrades the row | grade, "confirmed by N sends"      |
 | `provisional` | 3 ≤ n < 20, or a confirmed Kilter row tripped the v1.2 display-delta hygiene rule   | grade with a visible ± band        |
 | `setter_only` | n < 3                                                                               | no Boardsesh number, setter's call |
+| `cross_angle_estimate` | 0 ascents at this angle, projected from 2+ sibling angles                | `≈` grade, muted, "projected from other angles" |
 
 ### Publish hysteresis
 
@@ -347,6 +376,7 @@ fails**. Results persist to `board_grade_coefficients` (kind `gate_results`).
 | `head_holdout`                   | single-angle shrunk MAE must not exceed raw MAE (+0.01), n ≥ 100                                                                  | yes                 | the model regressed the rows where it is supposed to be a no-op                                                               |
 | `behavior_eligibility`           | reports how many board behavior models pass the Stage 2 coverage guard                                                            | no (report only)    | behavior data is too concentrated or sparse on some boards, so their outcome signal is ignored                                |
 | `moon_bridge_readiness`          | reports Moon paired-user coverage and candidate offset stability                                                                  | no (report only)    | Moon still lacks a publishable bridge; this deliberately does not block Kilter/Tension grades                                 |
+| `zero_evidence_projection`       | hides a well-sampled angle (≥20 ascents), projects it as if unclimbed, must beat the naive effective-n-weighted sibling mean (+0.01 tolerance), n ≥ 100 | yes                  | walking a grade through the fitted angle surface is no better than assuming a climb grades the same at every angle — projected rows should not publish |
 | `deherded_tension_benchmark`     | held-out Tension benchmark Stage 2 MAE must not exceed Stage 1 MAE by >0.01, n ≥ 100; display MAE is reported only                | yes                 | rater/behavior/de-echo evidence made the benchmark set worse than the existing model                                          |
 | `deherded_tension_calibration`   | held-out Tension benchmark 95% interval coverage must land in [85%, 98%], n ≥ 100                                                 | yes                 | Stage 2 uncertainty is materially under- or over-confident                                                                    |
 | `deherded_segment_no_regression` | no grade-band, angle, or traffic segment with ≥50 rows may regress by >0.05 MAE vs Stage 1                                        | yes                 | the aggregate benchmark score hid a segment-level regression                                                                  |

@@ -141,6 +141,7 @@ describe('sessionTickToClimb → resolveDisplayGrade (framed path grade)', () =>
       label: 'V5',
       color: expect.stringMatching(/^#/),
       isBoardsesh: true,
+      isEstimated: false,
     });
   });
 
@@ -156,6 +157,7 @@ describe('sessionTickToClimb → resolveDisplayGrade (framed path grade)', () =>
       label: 'V4',
       color: expect.stringMatching(/^#/),
       isBoardsesh: false,
+      isEstimated: false,
     });
   });
 
@@ -170,7 +172,12 @@ describe('sessionTickToClimb → resolveDisplayGrade (framed path grade)', () =>
       boardseshConfidence: 'confirmed',
     });
     const display = resolveFramedGrade(tick, true);
-    expect(display).toEqual({ label: 'V4', color: expect.stringMatching(/^#/), isBoardsesh: false });
+    expect(display).toEqual({
+      label: 'V4',
+      color: expect.stringMatching(/^#/),
+      isBoardsesh: false,
+      isEstimated: false,
+    });
     expect(display.label).not.toBe('V5');
   });
 
@@ -186,6 +193,7 @@ describe('sessionTickToClimb → resolveDisplayGrade (framed path grade)', () =>
       label: 'V4',
       color: expect.stringMatching(/^#/),
       isBoardsesh: false,
+      isEstimated: false,
     });
 
     const noGrade = makeTick({
@@ -199,6 +207,7 @@ describe('sessionTickToClimb → resolveDisplayGrade (framed path grade)', () =>
       label: 'V4',
       color: expect.stringMatching(/^#/),
       isBoardsesh: false,
+      isEstimated: false,
     });
   });
 });

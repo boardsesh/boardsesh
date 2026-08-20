@@ -12,9 +12,11 @@
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
 import type { BoardseshGrade } from '@boardsesh/graphql/operations';
 import { getBoardCapabilities } from '@boardsesh/board-config';
+import { isCrossAngleEstimate } from '@boardsesh/logbook';
 import {
   renderDifficulty,
   clampDifficultyId,
+  ESTIMATE_PREFIX,
   GRADE_BY_ID,
   MIN_DIFFICULTY_ID,
   MAX_DIFFICULTY_ID,
@@ -40,6 +42,28 @@ export type BoardseshGradeView =
       /** The setter's grade to show muted ("Setter's call: V4"), or null when there's none at all. */
       grade: RenderedGrade | null;
       count: number;
+    }
+  | {
+      /**
+       * Nobody has climbed this angle; the grade came from the same climb's
+       * other angles. A real number with a real band, but not a measurement —
+       * rendered muted, marked with `≈`, and never given the confirmed seal.
+       */
+      kind: 'crossAngle';
+      /** True = cross-board (universal) grade; false = scoped to this board only. */
+      universal: boolean;
+      grade: RenderedGrade;
+      /** Raw primary grade float (drives the chart reference line). */
+      gradeValue: number;
+      /**
+       * The bounding grade labels, or null when the band is too wide to be
+       * worth printing. A projection's band routinely spans four grades either
+       * way (τ² is the transport error plus the siblings' own sampling error),
+       * and "V1–V9" tells a climber nothing — the caveat sentence carries the
+       * uncertainty in that case.
+       */
+      range: { low: string; high: string } | null;
+      computedAt: string;
     }
   | {
       kind: 'confirmed';
@@ -89,6 +113,28 @@ export function buildTrustBand(
 }
 
 /**
+ * Widest band, in grade points, still worth printing as a `low–high` range on a
+ * projected angle. One grade point is one Font letter, so 4 spans two full
+ * V-grades either side of the estimate — past that the range stops informing
+ * and starts looking broken, and the caveat sentence says it better in words.
+ */
+export const MAX_PRINTABLE_ESTIMATE_BAND = 4;
+
+/** The bounding grade labels for a projection, or null when the band is too wide or degenerate. */
+export function buildEstimateRange(
+  low: number | null,
+  high: number | null,
+  gradeFormat: GradeDisplayFormat,
+): { low: string; high: string } | null {
+  if (low == null || high == null) return null;
+  if (high - low > MAX_PRINTABLE_ESTIMATE_BAND) return null;
+  const lowLabel = boundLabel(low, gradeFormat);
+  const highLabel = boundLabel(high, gradeFormat);
+  if (!lowLabel || !highLabel || lowLabel === highLabel) return null;
+  return { low: lowLabel, high: highLabel };
+}
+
+/**
  * Build the display model for a climb+angle's Boardsesh grade.
  * `grade` is null when the nightly job has no row yet (falls back to setter-only).
  */
@@ -108,6 +154,17 @@ export function buildBoardseshGradeView(
 
   if (grade.confidence === 'setter_only' || primary == null || !rendered) {
     return { kind: 'setterOnly', grade: rendered, count: grade.ascensionistCount };
+  }
+
+  if (isCrossAngleEstimate(grade.confidence)) {
+    return {
+      kind: 'crossAngle',
+      universal,
+      grade: rendered,
+      gradeValue: primary,
+      range: buildEstimateRange(grade.gradeLow, grade.gradeHigh, gradeFormat),
+      computedAt: grade.computedAt,
+    };
   }
 
   if (grade.confidence === 'confirmed') {
@@ -215,7 +272,8 @@ export function buildCorrection(
  * string leading with the correction. When a crowd label is supplied and it
  * differs from the confirmed cross-board grade, shows "{crowd} ▸ {bs} ✓"; a
  * confident cross-board grade alone reads "{bs} ✓"; provisional "{bs} ~";
- * local-only "{bs} · {localWord}". Null for a no-crowd-grade board / setter-only.
+ * a projected angle "≈{bs}"; local-only "{bs} · {localWord}". Null for
+ * a no-crowd-grade board / setter-only.
  */
 export function buildBoardseshGradeSummary(
   view: BoardseshGradeView,
@@ -236,6 +294,10 @@ export function buildBoardseshGradeSummary(
       if (!view.universal && localWord) return `${bs} · ${localWord}`;
       return `${bs} ${TEASER_PROVISIONAL}`;
     }
+    case 'crossAngle':
+      // No crowd number to compare against at an unclimbed angle, so the teaser
+      // is just the marked estimate — never the ✓ seal or the correction arrow.
+      return `${ESTIMATE_PREFIX}${view.grade.label}`;
     default:
       return null;
   }

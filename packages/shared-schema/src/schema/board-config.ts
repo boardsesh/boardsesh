@@ -95,8 +95,10 @@ export const boardConfigTypeDefs = /* GraphQL */ `
 
   """
   The Boardsesh grade for a climb at one angle: the data-science-backed grade
-  produced by the nightly refresh job. Null query result means no grade has been
-  computed for that climb+angle (e.g. MoonBoard, or too few ascents).
+  produced by the nightly refresh job, or — for an angle nobody has climbed yet
+  — a cross_angle_estimate projected from the same climb's other angles. Null
+  query result means neither exists (e.g. MoonBoard, too few ascents, or fewer
+  than two other ascent-backed angles to project from).
   """
   type BoardseshGrade {
     "Within-board shrunk grade on the shared difficulty scale (null when unavailable)"
@@ -109,7 +111,7 @@ export const boardConfigTypeDefs = /* GraphQL */ `
     gradeLow: Float
     "High end of the 95% band on the surfaced grade"
     gradeHigh: Float
-    "Confidence tier: confirmed | provisional | setter_only"
+    "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles, no ascents here)"
     confidence: String!
     "Ascent count that produced this row"
     ascensionistCount: Int!
@@ -122,7 +124,8 @@ export const boardConfigTypeDefs = /* GraphQL */ `
   """
   The Boardsesh grade for a climb at one specific angle, carried in the
   per-angle list. Same shape as BoardseshGrade with the angle attached, so a
-  climb's grade at every angle it's been computed for can be fetched in one go.
+  climb's grade at every angle — computed from ascents or projected across
+  angles — can be fetched in one go.
   """
   type BoardseshGradeForAngle {
     "Board angle in degrees"
@@ -137,7 +140,7 @@ export const boardConfigTypeDefs = /* GraphQL */ `
     gradeLow: Float
     "High end of the 95% band on the surfaced grade"
     gradeHigh: Float
-    "Confidence tier: confirmed | provisional | setter_only"
+    "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles, no ascents here)"
     confidence: String!
     "Ascent count that produced this row"
     ascensionistCount: Int!

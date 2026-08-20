@@ -20,7 +20,7 @@ import { estimateLabelWidth } from '../../lib/chart/label-metrics';
 import type { AngleGradeBar } from './community-utils';
 
 /** Boardsesh confidence at an angle. Mirrors the grade resolver's tiers. */
-export type DumbbellTier = 'confirmed' | 'provisional' | 'setter_only';
+export type DumbbellTier = 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate';
 
 /** Ascent-count bin → marker size. `<5` small · `5–20` medium · `>20` large. */
 export type DumbbellSizeBin = 'small' | 'medium' | 'large';
@@ -59,9 +59,21 @@ export type DumbbellAngleRow = {
   hasCrowd: boolean;
   /** True when a Boardsesh diamond is drawn at this angle. */
   hasBoardsesh: boolean;
+  /**
+   * True when this angle's Boardsesh grade was projected from the climb's other
+   * angles because nobody has climbed it. Drawn as a hollow diamond, so the
+   * shape of the angle curve reads at a glance while the filled diamonds stay
+   * unambiguously the measured ones.
+   */
+  estimated: boolean;
 };
 
-const KNOWN_TIERS: ReadonlySet<string> = new Set<DumbbellTier>(['confirmed', 'provisional', 'setter_only']);
+const KNOWN_TIERS: ReadonlySet<string> = new Set<DumbbellTier>([
+  'confirmed',
+  'provisional',
+  'setter_only',
+  'cross_angle_estimate',
+]);
 
 /** Normalise a confidence string to a known tier, defaulting unknowns to provisional. */
 function toTier(confidence: string | undefined): DumbbellTier | null {
@@ -88,6 +100,9 @@ export function sizeBinForSends(sends: number): DumbbellSizeBin {
  *    `localGrade` (small boards that never earn a universal number).
  *  - A `setter_only` Boardsesh row (or one with no usable grade) draws NO
  *    diamond, but its crowd ring is still kept when the crowd has that angle.
+ *  - A `cross_angle_estimate` row draws a HOLLOW diamond and no whisker: the
+ *    grade is projected from the climb's other angles, so it belongs on the
+ *    curve but must not read as a measurement.
  *  - An angle present in only one source yields a lone marker (no stem).
  *  - An angle with neither a crowd grade nor a Boardsesh diamond is dropped.
  *  - `sends` (marker size) uses the larger of the community count and the
@@ -130,6 +145,7 @@ export function buildDumbbellByAngleModel(
 
     const sends = Math.max(crowdSends, boardsesh?.ascensionistCount ?? 0);
     const agree = hasCrowd && hasBoardsesh && clampDifficultyId(crowdGrade) === clampDifficultyId(boardseshGrade);
+    const estimated = tier === 'cross_angle_estimate';
 
     rows.push({
       angle,
@@ -141,11 +157,18 @@ export function buildDumbbellByAngleModel(
       sends,
       sizeBin: sizeBinForSends(sends),
       tier,
-      gradeLow: hasBoardsesh ? (boardsesh?.gradeLow ?? null) : null,
-      gradeHigh: hasBoardsesh ? (boardsesh?.gradeHigh ?? null) : null,
+      // A projected angle's band is the transport error plus the siblings' own
+      // sampling error — routinely eight grade points wide. Carrying it here
+      // would draw a whisker taller than the plot AND stretch the shared y-axis
+      // (buildDumbbellAxis windows on these bounds) until every real marker
+      // collapsed into the middle third. The estimate's uncertainty is stated in
+      // words above the chart instead.
+      gradeLow: hasBoardsesh && !estimated ? (boardsesh?.gradeLow ?? null) : null,
+      gradeHigh: hasBoardsesh && !estimated ? (boardsesh?.gradeHigh ?? null) : null,
       agree,
       hasCrowd,
       hasBoardsesh,
+      estimated,
     });
   }
 

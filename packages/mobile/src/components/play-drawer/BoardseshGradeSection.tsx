@@ -14,6 +14,7 @@ import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { getBoardCapabilities } from '@boardsesh/board-config';
 import { buildBoardseshGradeView, buildCorrection, buildTrustBand } from './boardsesh-grade-utils';
+import { ESTIMATE_PREFIX } from '../../lib/boardsesh-grade-display';
 
 type BoardseshGradeSectionProps = {
   climbUuid: string;
@@ -105,6 +106,45 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
           {/* Literal keys per board — the i18n linter rejects a computed t() key. */}
           {view.boardName === 'woods' ? t('boardseshGrade.woodsBody') : t('boardseshGrade.moonboardBody')}
         </Text>
+      </View>
+    );
+  }
+
+  if (view.kind === 'crossAngle') {
+    // Nobody has climbed this angle. Show the projection, marked: `≈` on the
+    // number, the grade colour kept (colour is content — see the design
+    // guidelines), but one type size down from a measured grade, no confirmed
+    // seal, and a sentence saying plainly where the number came from. The
+    // by-angle chart stays, because it's the thing that makes the estimate
+    // legible — the real angles are right there next to the projected one.
+    return (
+      <View style={styles.container}>
+        <View style={styles.singleHero}>
+          <Text variant="caption1" color={iosSystemColors.systemGray}>
+            {t('boardseshGrade.estimate.label')}
+          </Text>
+          <Text variant="title1" style={[styles.gradeValue, styles.estimateGrade, { color: view.grade.color }]}>
+            {`${ESTIMATE_PREFIX}${view.grade.label}`}
+          </Text>
+        </View>
+        <View style={styles.row}>
+          <Icon name="angle" size={18} color={iosSystemColors.systemGray} />
+          <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.flexText}>
+            {view.range
+              ? t('boardseshGrade.estimate.bodyRange', { low: view.range.low, high: view.range.high })
+              : t('boardseshGrade.estimate.body')}
+          </Text>
+        </View>
+        {dumbbellRows.length >= 1 && (
+          <View style={styles.histogram}>
+            <DumbbellByAngleChart
+              rows={dumbbellRows}
+              headlineGrade={view.gradeValue}
+              gradeFormat={gradeFormat}
+              accessibilityLabel={t('boardseshGrade.byAngle')}
+            />
+          </View>
+        )}
       </View>
     );
   }
@@ -329,6 +369,11 @@ const styles = StyleSheet.create({
   },
   setterGrade: {
     color: iosSystemColors.systemGray,
+  },
+  // HERO — projected angle. Keeps the grade colour (colour is content) but sits
+  // a size down from a measured grade and never carries the confirmed seal.
+  estimateGrade: {
+    opacity: 0.75,
   },
   // PAYOFF
   payoffRow: {

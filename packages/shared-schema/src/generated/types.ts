@@ -827,8 +827,10 @@ export type BoardTickCount = {
 
 /**
  * The Boardsesh grade for a climb at one angle: the data-science-backed grade
- * produced by the nightly refresh job. Null query result means no grade has been
- * computed for that climb+angle (e.g. MoonBoard, or too few ascents).
+ * produced by the nightly refresh job, or — for an angle nobody has climbed yet
+ * — a cross_angle_estimate projected from the same climb's other angles. Null
+ * query result means neither exists (e.g. MoonBoard, too few ascents, or fewer
+ * than two other ascent-backed angles to project from).
  */
 export type BoardseshGrade = {
   __typename?: 'BoardseshGrade';
@@ -836,7 +838,7 @@ export type BoardseshGrade = {
   ascensionistCount: Scalars['Int']['output'];
   /** When this grade was computed (ISO timestamp) */
   computedAt: Scalars['String']['output'];
-  /** Confidence tier: confirmed | provisional | setter_only */
+  /** Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles, no ascents here) */
   confidence: Scalars['String']['output'];
   /** Geometry (Climb2Vec) grade estimate from the hold layout alone, independent of crowd data; null when unscored */
   contentGrade?: Maybe<Scalars['Float']['output']>;
@@ -855,7 +857,8 @@ export type BoardseshGrade = {
 /**
  * The Boardsesh grade for a climb at one specific angle, carried in the
  * per-angle list. Same shape as BoardseshGrade with the angle attached, so a
- * climb's grade at every angle it's been computed for can be fetched in one go.
+ * climb's grade at every angle — computed from ascents or projected across
+ * angles — can be fetched in one go.
  */
 export type BoardseshGradeForAngle = {
   __typename?: 'BoardseshGradeForAngle';
@@ -865,7 +868,7 @@ export type BoardseshGradeForAngle = {
   ascensionistCount: Scalars['Int']['output'];
   /** When this grade was computed (ISO timestamp) */
   computedAt: Scalars['String']['output'];
-  /** Confidence tier: confirmed | provisional | setter_only */
+  /** Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles, no ascents here) */
   confidence: Scalars['String']['output'];
   /** Geometry (Climb2Vec) grade estimate from the hold layout alone, independent of crowd data; null when unscored */
   contentGrade?: Maybe<Scalars['Float']['output']>;
@@ -5095,15 +5098,18 @@ export type Query = {
    */
   boardsBySerialNumbers: Array<UserBoard>;
   /**
-   * Get the Boardsesh grade for a climb at a specific angle.
-   * Returns null when no grade has been computed for that climb+angle
-   * (e.g. MoonBoard, or too few ascents).
+   * Get the Boardsesh grade for a climb at a specific angle. When that angle
+   * has no ascents, the climb's other angles are projected onto it and the
+   * result comes back tiered cross_angle_estimate.
+   * Returns null when neither exists (e.g. MoonBoard, too few ascents, or fewer
+   * than two other ascent-backed angles to project from).
    */
   boardseshGrade?: Maybe<BoardseshGrade>;
   /**
-   * Get the Boardsesh grade for a climb at every angle it's been computed for.
-   * Returns one entry per angle, ordered by angle ascending. Empty when no grade
-   * has been computed for the climb (e.g. MoonBoard, or too few ascents).
+   * Get the Boardsesh grade for a climb at every angle, ordered by angle
+   * ascending: the computed grades, plus a cross_angle_estimate for each board
+   * angle nobody has climbed. Empty when the climb has no grades at all
+   * (e.g. MoonBoard, or too few ascents).
    */
   boardseshGradesForAngles: Array<BoardseshGradeForAngle>;
   /** Browse proposals across all climbs with filters. */
