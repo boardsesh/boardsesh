@@ -34,7 +34,6 @@ export const TILE_MIN_WIDTH = 104;
 
 // Visible row is `inset + n*(tile + gap) + peek` — only the LEADING inset is on
 // screen, the trailing one sits past the end of the content.
-
 export function computeTileWidth(containerWidth: number, itemCount: number): number {
   const availableWidth = containerWidth - SHELF_HORIZONTAL_INSET;
   // All but one item whole is the widest the ladder can go and still have a peek.
