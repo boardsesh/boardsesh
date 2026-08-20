@@ -4,6 +4,35 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-20
+
+### New
+
+- Find a climb on Google, tap through, and you see the climb — board, grade, community stats and beta — before anyone asks you to sign in. ([#4605](https://github.com/boardsesh/boardsesh/pull/4605))
+  Sign in from there and you land straight back on the climb you came for.
+- Nothing is reachable yet — the user-facing note ships with the stacked routing PR. ([#4604](https://github.com/boardsesh/boardsesh/pull/4604))
+
+### Fixed
+
+- Tell your boards apart in the picker: cards now show the gym or location under the name, fall back ([#4541](https://github.com/boardsesh/boardsesh/pull/4541))
+  to the layout and size, and add the size, angle or serial when two boards would otherwise read the
+  same
+  Long board names get two lines instead of being cut off mid-word
+- Your circuits keep syncing when a circuit lists the same climb twice — one repeat used to quietly stall every sync for that board account, ticks included. ([#4285](https://github.com/boardsesh/boardsesh/pull/4285))
+  Importing an Aurora export no longer drops a circuit that names the same climb more than once.
+- The Kilter 12 x 14 now reads "Commercial" instead of "Commerical" in the board picker and in board links. ([#4610](https://github.com/boardsesh/boardsesh/pull/4610))
+  Links you shared before the fix still open the same board.
+- A climb picked during a busy party session no longer goes missing for the rest of the crew when the app is pacing itself — including a climb you'd cleared off your queue earlier in the session and queued back up. ([#4289](https://github.com/boardsesh/boardsesh/pull/4289))
+- Hold shape, marker size and brush thickness now work in the browser app — picking a shape or ([#4587](https://github.com/boardsesh/boardsesh/pull/4587))
+  resizing your markers no longer wipes the holds off every climb.
+  Brush thickness actually changes how thick the outlines are drawn.
+- Gym embeds and kiosk screens no longer sit blank when the backend is slow — a cold render gives up after 3 seconds and shows the retry screen, which reloads itself. ([#4627](https://github.com/boardsesh/boardsesh/pull/4627))
+- Sharing a reel into Boardsesh shows the wall for every climb again, so you can spot the right send ([#4620](https://github.com/boardsesh/boardsesh/pull/4620))
+  instead of reading down a list of names.
+- Managing your own playlist works again on Android: the ⋯ menu's edit row now actually opens edit mode, so you can reorder and pull climbs out. ([#4621](https://github.com/boardsesh/boardsesh/pull/4621))
+  Rename a playlist, change its colour or icon straight from the ⋯ menu — no more hunting for the cog.
+  Empty playlist? There's a button that takes you to the climbs list instead of a dead end.
+
 ## 2026-08-19
 
 ### New
