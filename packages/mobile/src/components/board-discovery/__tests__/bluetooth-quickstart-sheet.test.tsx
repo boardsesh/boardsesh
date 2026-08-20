@@ -244,3 +244,39 @@ describe('BluetoothQuickstartSheet', () => {
     expect(scan.reset).not.toHaveBeenCalled();
   });
 });
+
+describe('BluetoothQuickstartSheet board rows', () => {
+  beforeEach(() => {
+    scan.status = 'done';
+    scan.serials = ['1234'];
+    boards.isLoading = false;
+  });
+
+  // The row used to render `{board.boardType} · {board.sizeName ?? ''}`, and the
+  // server sends sizeName as null on every board — so every hit read "kilter · "
+  // with a dangling separator.
+  it('shows where a resolved board is, not a dangling board type', () => {
+    boards.data = [
+      {
+        uuid: 'board-1',
+        name: 'Home wall',
+        boardType: 'kilter',
+        layoutId: 1,
+        sizeId: 7,
+        gymName: 'Bergen Klatresenter',
+        sizeName: null,
+      },
+    ];
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'Bergen Klatresenter')).toBe(true);
+    expect(hasText(container, 'kilter · ')).toBe(false);
+  });
+
+  it('falls back to the board config when it has no gym or location', () => {
+    boards.data = [{ uuid: 'board-1', name: 'Garage', boardType: 'kilter', layoutId: 1, sizeId: 7, sizeName: null }];
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'Original 12×14')).toBe(true);
+  });
+});

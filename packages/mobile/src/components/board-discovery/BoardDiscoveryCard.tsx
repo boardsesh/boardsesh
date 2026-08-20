@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { View, Pressable, StyleSheet, Platform } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -6,6 +6,7 @@ import { getBoardRenderData } from '../../lib/board-details';
 import { hapticLight } from '../../lib/haptics';
 import { springs } from '../../theme/animations';
 import { spacing, borderRadius, overlays } from '../../theme/tokens';
+import { textStyles } from '../../theme/typography';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { useTheme } from '../../providers/theme-provider';
 import { Text } from '../Text';
@@ -38,6 +39,15 @@ export type DiscoveryBoardItem = {
 
 export const DISCOVERY_CARD_WIDTH = 168;
 
+/**
+ * Lines the board name gets. Board names routinely run past a 168pt card
+ * ("Bergen Klatresenter Danmarksplass"), and one line ellipsised two boards at
+ * the same gym into the same string. The title box reserves all of them so a
+ * one-line card and a two-line card keep their subtitles on the same baseline
+ * across the row.
+ */
+const TITLE_LINES = 2;
+
 /** Distance badge copy: metres under 1km, one-decimal km above. */
 function formatDistance(meters: number): string {
   if (meters < 1000) return `${Math.round(meters)}m`;
@@ -60,7 +70,17 @@ type BoardDiscoveryCardProps = {
   downloadLabel?: string;
 };
 
-export function BoardDiscoveryCard({ item, onPress, onDownload, downloadLabel }: BoardDiscoveryCardProps) {
+/**
+ * One board in a carousel. Memoized: three carousels stacked on the Boards tab
+ * re-render together whenever any of their queries settle, and each card resolves
+ * board art.
+ */
+export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
+  item,
+  onPress,
+  onDownload,
+  downloadLabel,
+}: BoardDiscoveryCardProps) {
   const { systemColors, brandColors } = useTheme();
   const scale = useSharedValue(1);
 
@@ -165,7 +185,7 @@ export function BoardDiscoveryCard({ item, onPress, onDownload, downloadLabel }:
         ) : null}
       </View>
 
-      <Text variant="subheadline" numberOfLines={1} style={styles.title}>
+      <Text variant="subheadline" numberOfLines={TITLE_LINES} style={styles.title}>
         {item.title}
       </Text>
       {item.subtitle ? (
@@ -175,7 +195,7 @@ export function BoardDiscoveryCard({ item, onPress, onDownload, downloadLabel }:
       ) : null}
     </AnimatedPressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -243,5 +263,8 @@ const styles = StyleSheet.create({
   },
   title: {
     fontWeight: '600',
+    // Both type scales (HIG and Material) give subheadline the same lineHeight,
+    // so one read covers both UI variants — see textStylesByVariant.
+    minHeight: TITLE_LINES * textStyles.subheadline.lineHeight,
   },
 });

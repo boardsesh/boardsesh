@@ -70,3 +70,23 @@ describe('isActiveBoard', () => {
     expect(isActiveBoard(base, undefined)).toBe(false);
   });
 });
+
+describe('getBoardDetailFields size fallback', () => {
+  // The server sends sizeName/sizeDescription as null on every board, which left
+  // the Size spec row permanently hidden. Resolve it from the bundled tables.
+  const kilterBoard = { ...base, boardType: 'kilter', layoutId: 1, sizeId: 7 } as unknown as UserBoard;
+
+  it('resolves the size from the bundled tables when the server sends null', () => {
+    expect(getBoardDetailFields(kilterBoard).sizeText).toBe('12 x 14 · Commerical');
+  });
+
+  it('still prefers the server values when it does send them', () => {
+    const withServerSize = { ...kilterBoard, sizeName: '9 x 9', sizeDescription: 'Custom' } as UserBoard;
+    expect(getBoardDetailFields(withServerSize).sizeText).toBe('9 x 9 · Custom');
+  });
+
+  it('stays undefined for a board type the bundled tables do not know', () => {
+    const unknown = { ...kilterBoard, boardType: 'not-a-board' } as unknown as UserBoard;
+    expect(getBoardDetailFields(unknown).sizeText).toBeUndefined();
+  });
+});

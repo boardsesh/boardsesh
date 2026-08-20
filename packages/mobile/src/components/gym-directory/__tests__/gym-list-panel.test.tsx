@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
-import type { Gym } from '@boardsesh/shared-schema';
+import type { Gym, UserBoard } from '@boardsesh/shared-schema';
 import type { GymListRow } from '../gym-list-rows';
 
 type Children = { children?: ReactNode };
@@ -102,7 +102,10 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 
-vi.mock('@boardsesh/board-config', () => ({
+// Partial mock: the panel's badge formatting is stubbed, but the nested board
+// rows resolve their caption through the real toBoardName + bundled tables.
+vi.mock('@boardsesh/board-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/board-config')>()),
   formatBoardDisplayName: (boardType: string) => boardType.charAt(0).toUpperCase() + boardType.slice(1),
 }));
 
@@ -249,5 +252,53 @@ describe('GymListPanel', () => {
     expect(getByTestId('loc-prompt')).toBeTruthy();
     // The list (and its gym rows) is not rendered while the prompt is shown.
     expect(queryByText('Movement')).toBeNull();
+  });
+});
+
+describe('GymListPanel board rows', () => {
+  // The nested board caption used to render the raw `board.boardType`, so every
+  // board inside an expanded gym read a lowercase "kilter". Inside a gym the
+  // place is redundant, so the caption shows what the board is.
+  const gymBoard = {
+    uuid: 'b1',
+    name: 'Comp wall',
+    boardType: 'kilter',
+    layoutId: 1,
+    sizeId: 7,
+    gymName: 'Movement',
+  } as unknown as UserBoard;
+
+  function makeExpandedGymData(board: UserBoard): GymListRow[] {
+    return [
+      { kind: 'gym', key: 'gym:g1', gym, subtitle: '1 Crag St', expanded: true, selected: false, boards: [board] },
+    ];
+  }
+
+  function renderExpanded(board: UserBoard) {
+    return render(
+      <GymListPanel
+        data={makeExpandedGymData(board)}
+        mapAvailable
+        onPressGym={vi.fn()}
+        onActivateBoard={vi.fn()}
+        onEditGym={vi.fn()}
+        onEditBoard={vi.fn()}
+        noBoardsLabel="No boards yet"
+        searchSlot={<div>search</div>}
+      />,
+    );
+  }
+
+  it('captions a board with its config, not the raw board type', () => {
+    const { getByText, queryByText } = renderExpanded(gymBoard);
+    expect(getByText('Comp wall')).toBeTruthy();
+    expect(getByText('Original 12×14')).toBeTruthy();
+    expect(queryByText('kilter')).toBeNull();
+  });
+
+  it('falls back to the brand name when the config is unknown to the bundled tables', () => {
+    const { getByText, queryByText } = renderExpanded({ ...gymBoard, layoutId: 99999, sizeId: 99999 } as UserBoard);
+    expect(getByText('Kilter')).toBeTruthy();
+    expect(queryByText('kilter')).toBeNull();
   });
 });
