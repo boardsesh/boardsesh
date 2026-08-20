@@ -44,7 +44,8 @@ Postgres and left V2 untouched. Two servers now run in parallel:
 
 One version governs both halves of the self-hosted path, and it lives in exactly one place:
 `EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts`, currently **`eoas@3.1.2`**. The matching server image is
-`ghcr.io/mercuretechnologies/xprem:v3.1.2`. `scripts/__tests__/eoas-version-parity.test.ts` fails CI
+`ghcr.io/mercuretechnologies/xprem:v3.1.2` — **which Railway is not on yet**: the deployed tag is
+still 3.0.5 until the hand-off below, and that is fine (see the CLI-leads-server rule). `scripts/__tests__/eoas-version-parity.test.ts` fails CI
 if this doc, the setup runbook or the rollback helper drifts off the pin — root `scripts/` has no
 typecheck task, so nothing else would catch it.
 

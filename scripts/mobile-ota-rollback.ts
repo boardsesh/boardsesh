@@ -56,6 +56,9 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { EOAS_PACKAGE_SPEC, pathWithoutBrokenBunxShims } from './lib/eoas';
 
+/** The server image that matches the pinned CLI — derived so it can't drift from it. */
+const SERVER_IMAGE_REF = `xprem:v${EOAS_PACKAGE_SPEC.replace(/^eoas@/, '')}`;
+
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_DIR = resolve(ROOT_DIR, 'packages', 'mobile');
 
@@ -119,6 +122,29 @@ export function validateRollbackOptions(options: RollbackOptions): string | null
   return null;
 }
 
+/**
+ * Pre-flight note printed before a `--mode republish` run.
+ *
+ * eoas 3.1.2 lists republish candidates through `lib/serverUpdates`, which adds a
+ * `.../runtimeVersion/<rv>/publish-groups` route the 3.0.5 server never served, and
+ * one republish path sends `?publishGroup=` on the call itself. Back-compat for
+ * older clients is server-side (xprem #168), so this resolves itself the moment the
+ * Railway image is bumped.
+ *
+ * Warn, don't block: nothing here can detect the deployed version (the server has no
+ * version endpoint), so a guard would have to be unconditional — and would then need
+ * a code change to undo after the bump. Blocking a rollback path mid-incident to
+ * avoid a confusing error message is the wrong trade; naming the fallback is enough.
+ */
+export function republishServerVersionWarning(): string[] {
+  return [
+    `[ota-rollback] NOTE: republish needs the server on ${SERVER_IMAGE_REF}. If it is still on`,
+    '[ota-rollback] v3.0.5, expect a 404 listing previous updates — that is the version',
+    '[ota-rollback] gap, not a broken rollback. Use --mode embedded instead; it is',
+    '[ota-rollback] unaffected and is the mode the incident runbook uses.',
+  ];
+}
+
 function main(): number {
   const options = parseRollbackArgs(process.argv.slice(2));
 
@@ -176,17 +202,8 @@ function main(): number {
   console.log(`[ota-rollback] Branch:   ${options.branch}`);
   console.log(`[ota-rollback] Platform: ${options.platform}`);
   if (options.mode === 'republish') {
-    // eoas 3.1.2 lists republish candidates through lib/serverUpdates, which adds a
-    // `.../runtimeVersion/<rv>/publish-groups` route the 3.0.5 server does not serve,
-    // and can send `?publishGroup=` on the republish call itself. Server-side
-    // back-compat for that landed with the v3.1.2 image (xprem #168). Warn rather
-    // than block: this stops being a problem the moment the Railway image is bumped,
-    // and blocking would then need a code change to undo.
     console.log('');
-    console.log('[ota-rollback] NOTE: republish needs the server on xprem:v3.1.2. If it is still on');
-    console.log('[ota-rollback] v3.0.5, expect a 404 listing previous updates — that is the version');
-    console.log('[ota-rollback] gap, not a broken rollback. Use --mode embedded instead; it is');
-    console.log('[ota-rollback] unaffected and is the mode the incident runbook uses.');
+    for (const line of republishServerVersionWarning()) console.log(line);
   }
   console.log('');
   console.log(`[ota-rollback] Running: bunx ${eoasArgs.join(' ')}`);
