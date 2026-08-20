@@ -3,6 +3,8 @@ import { ANGLES } from '@boardsesh/board-config';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { popularConfigListUrl } from '@/app/lib/url-utils';
 import { boardConfigsToItems } from '../board-entries';
+import { expandAllLocales, latestLastModified } from '../entries';
+import { renderUrlset } from '../sitemap-xml';
 
 const kilterConfig: PopularBoardConfig = {
   boardType: 'kilter',
@@ -82,10 +84,22 @@ describe('boardConfigsToItems', () => {
     }
   });
 
-  it('carries no lastModified — there is no real per-config timestamp to report', () => {
-    for (const item of boardConfigsToItems([kilterConfig])) {
+  // The config does carry timestamps; none of them describes page 1 of this
+  // list, which is the top 50 by ascents and has not gained a climb in years.
+  // The measured numbers are in `board-entries.ts`. Asserted through the real
+  // renderer, not only on the items: wiring a config-wide timestamp back in
+  // would reach both the shard XML and the shard's own index entry, and an
+  // item-level assertion alone would not say so.
+  it('emits no <lastmod> at all — no per-config timestamp describes page 1 of the list', () => {
+    const items = boardConfigsToItems([kilterConfig, moonboardConfig]);
+    expect(items.length).toBeGreaterThan(0);
+
+    for (const item of items) {
       expect(item.lastModified).toBeUndefined();
     }
+
+    expect(renderUrlset(expandAllLocales(items))).not.toContain('<lastmod>');
+    expect(latestLastModified(items)).toBeNull();
   });
 
   it('skips configs with no listed climbs and unknown board types', () => {
