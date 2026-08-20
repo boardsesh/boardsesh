@@ -29,6 +29,7 @@ type ManageRowProps = {
   onRetryFastDownload?: (board: UserBoard) => void;
   onDelete: (board: UserBoard) => void;
   onUnfollow: (board: UserBoard) => void;
+  onToggleOffline: (board: UserBoard) => void;
 };
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn() }));
@@ -40,6 +41,7 @@ const confirmMock = vi.hoisted(() => vi.fn().mockResolvedValue(false));
 const retryFastDownloadMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const estimateScopeDownloadMock = vi.hoisted(() => vi.fn(() => ({ kind: 'unknown' }) as { kind: string }));
 const storedUserIdEnabledMock = vi.hoisted(() => vi.fn());
+const reportAbandonedDownloadOnDisableMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
 
 const state = vi.hoisted(() => ({
   isOffline: false,
@@ -307,6 +309,12 @@ vi.mock('../../../src/offline/use-remember-downloaded-boards', () => ({
   useRememberDownloadedBoards: vi.fn(),
 }));
 vi.mock('../../../src/offline/use-snapshot-manifest', () => ({ useSnapshotManifest: () => null }));
+// The download funnel's terminal for a toggle-off (issue #4452). Nothing is
+// deleted on that path, so there is no teardown to hang it off — the screen has
+// to report it itself.
+vi.mock('../../../src/offline/abandoned-download-terminals', () => ({
+  reportAbandonedDownloadOnDisable: reportAbandonedDownloadOnDisableMock,
+}));
 vi.mock('../../../src/offline/use-snapshot-source', () => ({
   useSnapshotSource: () => (state.snapshotSourceAvailable ? {} : undefined),
 }));
@@ -316,6 +324,7 @@ vi.mock('../../../src/settings', () => ({
   getSetting: () => state.enabledBoards,
   useSetting: () => [state.enabledBoards, vi.fn()],
   setOfflineBoardEnabled: vi.fn(),
+  forgetDownloadTrigger: vi.fn(),
   forgetOfflineBoard: (uuid: string) => forgetOfflineBoardMock(uuid),
   forgetOfflineBoardScope: vi.fn(),
   useOfflineBoards: () => state.offlineCards,
@@ -359,6 +368,7 @@ vi.mock('../../../src/components/board-discovery/BoardManageRow', () => ({
     onRetryFastDownload,
     onDelete,
     onUnfollow,
+    onToggleOffline,
   }: ManageRowProps) =>
     createElement(
       'div',
@@ -374,6 +384,11 @@ vi.mock('../../../src/components/board-discovery/BoardManageRow', () => ({
       rowBoard.name,
       createElement('button', { type: 'button', onClick: () => onDelete(rowBoard) }, `delete ${rowBoard.uuid}`),
       createElement('button', { type: 'button', onClick: () => onUnfollow(rowBoard) }, `unfollow ${rowBoard.uuid}`),
+      createElement(
+        'button',
+        { type: 'button', onClick: () => onToggleOffline(rowBoard) },
+        `toggle-offline ${rowBoard.uuid}`,
+      ),
       canRetryFastDownload && onRetryFastDownload
         ? createElement(
             'button',
@@ -1117,6 +1132,48 @@ describe('My Boards with no usable network list', () => {
     fireEvent.click(screen.getByText('delete net-1'));
 
     await waitFor(() => expect(forgetOfflineBoardMock).toHaveBeenCalledWith('net-1'));
+  });
+
+  // Issue #4452. Turning a board off deletes nothing, so no teardown reports for
+  // it — but the scope leaves `syncEnabledBoards` and pullSync only ever visits
+  // enabled scopes, so the download is over for good and its
+  // `Offline Board Download Started` would otherwise stay open forever.
+  it('closes the download funnel when a board is toggled off', async () => {
+    state.profileId = 'me';
+    state.enabledBoards = ['kilter:8:17'];
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+
+    render(createElement(ManageBoards));
+    await act(async () => {
+      fireEvent.click(screen.getByText('toggle-offline net-1'));
+    });
+
+    await waitFor(() => expect(reportAbandonedDownloadOnDisableMock).toHaveBeenCalledWith({}, 'kilter:8:17'));
+  });
+
+  // The other direction: enabling a board goes through the size-quote confirm,
+  // and there is no download of its own to close.
+  it('reports nothing when a board is toggled ON', async () => {
+    state.profileId = 'me';
+    state.enabledBoards = [];
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+
+    render(createElement(ManageBoards));
+    await act(async () => {
+      fireEvent.click(screen.getByText('toggle-offline net-1'));
+    });
+
+    expect(reportAbandonedDownloadOnDisableMock).not.toHaveBeenCalled();
   });
 
   it('forgets an unfollowed board too', async () => {

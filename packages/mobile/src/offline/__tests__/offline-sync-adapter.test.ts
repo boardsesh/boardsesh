@@ -95,6 +95,8 @@ import {
   hasUsableInternetConnection,
   subscribeMutationDelivery,
   reportScopeDownloadAbandoned,
+  reportScopeDownloadAbandonedOnSignOut,
+  reportScopeDownloadAbandonedOnDisable,
   __resetCoverageVerdictDedupeForTests,
   __resetCycleErrorDedupeForTests,
   __resetMeteredStateForTests,
@@ -574,6 +576,33 @@ describe('snapshot-bootstrap bindings', () => {
     );
     // A Remove tap is not a defect: `aborted: true` must stop the report at the
     // funnel, or every board removal would land in Sentry as a bootstrap failure.
+    expect(reportHandledError).not.toHaveBeenCalled();
+  });
+
+  // The de-listing terminals (issue #4452). Same permanent contract as the
+  // removal one above, and `stage: 'abandoned'` rather than 'board-removed'
+  // deliberately: nothing was removed on these paths, and 'board-removed'
+  // already ships in dashboards meaning "the rows were deleted".
+  it.each([
+    ['sign-out', reportScopeDownloadAbandonedOnSignOut, 'abandoned-signed-out'],
+    ['a My Boards toggle-off', reportScopeDownloadAbandonedOnDisable, 'abandoned-disabled'],
+  ])('reports a download abandoned by %s as the funnel Failed shape, never to Sentry', (_label, report, reason) => {
+    report({ scopeKey: 'tension:11:8' });
+
+    expect(trackMock).toHaveBeenCalledTimes(1);
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineBoardDownloadFailed,
+      expect.objectContaining({
+        scopeKey: 'tension:11:8',
+        stage: 'abandoned',
+        reason,
+        aborted: true,
+        expected: true,
+        attempt: 0,
+      }),
+    );
+    // Signing out and turning a board off are both things the climber chose to
+    // do. Neither is a defect, so neither may reach Sentry or a failure rate.
     expect(reportHandledError).not.toHaveBeenCalled();
   });
 

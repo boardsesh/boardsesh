@@ -281,6 +281,52 @@ describe('purgeLocalDataForSignOut', () => {
     expect(result).toMatchObject({ pendingDiscarded: 0, deadLettersDiscarded: 0, hadDownloads: false });
     expect(await countRows('board_climbs')).toBe(0);
   });
+
+  // The download funnel's sign-out terminal (issue #4452). `deleteAllSyncMeta`
+  // takes `scope-started:` with everything else, so this wipe is the last code
+  // that can tell an abandoned download from a board that was never downloaded —
+  // hence the read before its transaction and the report after the commit.
+  // `markScopeDownloadStarted` stays package-internal (only the pull client
+  // writes it), so the marker is inserted the way the engine would.
+  const announceDownload = (scopeKey: string) =>
+    db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [`scope-started:${scopeKey}`, '1']);
+
+  describe('the abandoned-download seam', () => {
+    it('calls the hook once per download that had started and never completed', async () => {
+      await seedSignedInDevice();
+      await announceDownload('tension:11:8');
+      // seedSignedInDevice already completed kilter:1:1 — its Started is closed,
+      // so it owes nothing.
+      await announceDownload('kilter:1:1');
+
+      const onDownloadAbandoned = vi.fn();
+      await purgeLocalDataForSignOut(db, { onDownloadAbandoned });
+
+      expect(onDownloadAbandoned).toHaveBeenCalledTimes(1);
+      expect(onDownloadAbandoned).toHaveBeenCalledWith({ scopeKey: 'tension:11:8' });
+    });
+
+    it('stays silent when nothing was downloading', async () => {
+      await seedSignedInDevice();
+      await announceDownload('kilter:1:1');
+
+      const onDownloadAbandoned = vi.fn();
+      await purgeLocalDataForSignOut(db, { onDownloadAbandoned });
+
+      expect(onDownloadAbandoned).not.toHaveBeenCalled();
+    });
+
+    it('wipes exactly the same rows when no hook is supplied', async () => {
+      await seedSignedInDevice();
+      await announceDownload('tension:11:8');
+
+      const result = await purgeLocalDataForSignOut(db);
+
+      expect(result).toMatchObject({ pendingDiscarded: 2, deadLettersDiscarded: 0, hadDownloads: true });
+      expect(await countRows('sync_meta')).toBe(0);
+      expect(await countRows('board_climbs')).toBe(0);
+    });
+  });
 });
 
 // #3646 retired the bundled seed-database import (ATTACH + row copy + cursor
