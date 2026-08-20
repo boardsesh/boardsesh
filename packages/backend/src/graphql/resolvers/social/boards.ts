@@ -806,8 +806,8 @@ const REDIS_CACHE_KEY = 'boardsesh:popular-board-configs:v2';
 // old, which is the safe direction for a `<lastmod>`, but say it out loud rather
 // than let a reader assume the field follows the data.
 //
-// Do not "fix" that by bounding the TTL to hours. The statement below takes 78 s
-// on the dev database (~750 ms per config LATERAL × 45 configs); every expiry
+// Do not "fix" that by bounding the TTL to hours. The statement below was timed
+// at 78 s end to end over the dev database's 45 listed configs; every expiry
 // would put that on a live request, behind the web side's 10 s
 // `SITEMAP_FETCH_TIMEOUT_MS` and the boards shard's 3 s `SHARD_DEADLINE_MS` —
 // trading a stale value for a periodic 503 shard and an empty homepage rail.
