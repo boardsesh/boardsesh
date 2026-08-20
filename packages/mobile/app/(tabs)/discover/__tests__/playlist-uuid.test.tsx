@@ -55,6 +55,9 @@ vi.mock('../../../../src/lib/graphql/hooks', () => ({
 const commentSheetProps = vi.hoisted(() => ({
   current: null as { entityType?: string; entityId: string | null; canComment?: boolean } | null,
 }));
+const detailViewProps = vi.hoisted(() => ({
+  current: null as { editMode: boolean; emptyAction: { label: string } | null } | null,
+}));
 const snapToIndex = vi.hoisted(() => vi.fn());
 vi.mock('../../../../src/components/you/CommentSheet', () => ({
   CommentSheet: (props: {
@@ -104,9 +107,11 @@ vi.mock('@boardsesh/playlists-react', () => ({
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+const routerNavigate = vi.hoisted(() => vi.fn());
 vi.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ playlist_uuid: 'p-1' }),
   useNavigation: () => ({ goBack: vi.fn() }),
+  useRouter: () => ({ navigate: routerNavigate, push: vi.fn(), back: vi.fn() }),
 }));
 
 vi.mock('react-native', () => ({
@@ -169,17 +174,41 @@ vi.mock('../../../../src/components/GlassIconButton', () => ({
   GlassIconButton: () => createElement('div', { 'data-glass-button': 'true' }),
 }));
 // PlaylistDetailView surfaces the hero title so we can prove the error branch
-// renders *instead of* a fallback-titled hero.
+// renders *instead of* a fallback-titled hero, and `editMode` so the overflow
+// menu's regression tests can see the screen actually flip into edit mode.
 vi.mock('../../../../src/components/playlist', () => ({
   PlaylistDetailView: ({
     hero,
     headerSlot,
     actions,
+    editMode,
+    emptyAction,
   }: {
     hero: { name: string };
     headerSlot?: ReactNode;
     actions?: (collapsed: boolean) => ReactNode;
-  }) => createElement('div', { 'data-detail-view': 'true', 'data-hero-name': hero.name }, actions?.(false), headerSlot),
+    editMode?: boolean;
+    emptyAction?: { label: string; onPress: () => void };
+  }) => {
+    detailViewProps.current = { editMode: !!editMode, emptyAction: emptyAction ?? null };
+    return createElement(
+      'div',
+      {
+        'data-detail-view': 'true',
+        'data-hero-name': hero.name,
+        'data-edit-mode': String(!!editMode),
+      },
+      actions?.(false),
+      headerSlot,
+      emptyAction
+        ? createElement(
+            'button',
+            { 'data-empty-action': emptyAction.label, onClick: emptyAction.onPress },
+            emptyAction.label,
+          )
+        : null,
+    );
+  },
   PlaylistDiscussionRow: ({ commentCount, onPress }: { commentCount: number; onPress: () => void }) =>
     createElement(
       'button',
@@ -190,15 +219,19 @@ vi.mock('../../../../src/components/playlist', () => ({
   // Surface the edit submit so the cache-patch test can drive handleEditSubmit
   // without the real gorhom sheet.
   PlaylistFormSheet: ({
+    mode,
+    visible,
     submitError,
     onSubmit,
   }: {
+    mode?: string;
+    visible?: boolean;
     submitError?: string | null;
     onSubmit?: (values: unknown) => void;
   }) =>
     createElement(
       'div',
-      null,
+      { 'data-form-sheet': 'true', 'data-form-mode': mode ?? '', 'data-form-visible': String(!!visible) },
       submitError ? createElement('span', { 'data-edit-error': 'true' }, submitError) : null,
       createElement(
         'button',
@@ -210,7 +243,34 @@ vi.mock('../../../../src/components/playlist', () => ({
         'form-submit',
       ),
     ),
-  PlaylistActionsMenu: () => null,
+  // The overflow menu's rows are the regression surface for #3966: each callback
+  // gets its own button so a test can fire it WITHOUT ever calling `onClose`
+  // (which the real sheet coordinator suppresses on a controlled close).
+  PlaylistActionsMenu: ({
+    onTogglePin,
+    onAddClimbs,
+    onEditDetails,
+    onEdit,
+    onDelete,
+    onClose,
+  }: {
+    onTogglePin?: () => void;
+    onAddClimbs?: () => void;
+    onEditDetails?: () => void;
+    onEdit?: () => void;
+    onDelete?: () => void;
+    onClose?: () => void;
+  }) =>
+    createElement(
+      'div',
+      { 'data-actions-menu': 'true', 'data-has-add-climbs': String(!!onAddClimbs) },
+      createElement('button', { 'data-menu-pin': 'true', onClick: onTogglePin }),
+      onAddClimbs ? createElement('button', { 'data-menu-add': 'true', onClick: onAddClimbs }) : null,
+      createElement('button', { 'data-menu-edit-details': 'true', onClick: onEditDetails }),
+      createElement('button', { 'data-menu-edit-climbs': 'true', onClick: onEdit }),
+      createElement('button', { 'data-menu-delete': 'true', onClick: onDelete }),
+      createElement('button', { 'data-menu-close': 'true', onClick: onClose }),
+    ),
   PlaylistFollowButton: () => null,
   PlaylistEditDoneButton: () => null,
   // Surfaces onEdit so a test can enter the climbs edit mode without the real
@@ -245,6 +305,8 @@ beforeEach(() => {
   commentsMock.calls = [];
   commentsMock.totalCount = 0;
   commentSheetProps.current = null;
+  detailViewProps.current = null;
+  routerNavigate.mockClear();
   snapToIndex.mockClear();
   authMock.isAuthenticated = true;
 });
@@ -456,5 +518,87 @@ describe('PlaylistDetail discussion thread', () => {
     fireEvent.click(container.querySelector('[data-owner-edit="true"]') as HTMLButtonElement);
 
     await waitFor(() => expect(container.querySelector('[data-discussion-row="true"]')).toBeNull());
+  });
+});
+
+// #3966. Every overflow-menu row used to defer its work to the menu's `onClose`,
+// which the sheet coordinator deliberately suppresses on a controlled
+// `visible: true -> false` (see the 'a coordinator-driven dismiss does NOT fire
+// onClose (selfDismissRef gate)' test in sheet-presentation-provider.test.tsx).
+// These tests fire each row WITHOUT calling `onClose` — the exact sequence a
+// real tap produces — so a row that goes back to deferring fails here.
+describe('PlaylistDetail owner overflow menu', () => {
+  async function renderOwnerDetail(playlistOverrides: Record<string, unknown> = {}) {
+    requestMock.mockResolvedValue({ playlist: makePlaylist({ userRole: 'owner', ...playlistOverrides }) });
+    const rendered = renderDetail();
+    await waitFor(() => expect(rendered.container.querySelector('[data-actions-menu="true"]')).not.toBeNull());
+    return rendered;
+  }
+
+  it('enters the climbs edit mode from the menu without waiting on onClose', async () => {
+    const { container } = await renderOwnerDetail();
+    expect(container.querySelector('[data-detail-view="true"]')?.getAttribute('data-edit-mode')).toBe('false');
+
+    fireEvent.click(container.querySelector('[data-menu-edit-climbs="true"]') as HTMLButtonElement);
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-detail-view="true"]')?.getAttribute('data-edit-mode')).toBe('true'),
+    );
+  });
+
+  it('does not enter edit mode when the menu is only swiped away', async () => {
+    const { container } = await renderOwnerDetail();
+
+    fireEvent.click(container.querySelector('[data-menu-close="true"]') as HTMLButtonElement);
+
+    await waitFor(() => expect(container.querySelector('[data-detail-view="true"]')).not.toBeNull());
+    expect(container.querySelector('[data-detail-view="true"]')?.getAttribute('data-edit-mode')).toBe('false');
+  });
+
+  it('opens the edit-details sheet from the menu (rename has its own row now)', async () => {
+    const { container } = await renderOwnerDetail();
+    expect(container.querySelector('[data-form-sheet="true"]')?.getAttribute('data-form-visible')).toBe('false');
+
+    fireEvent.click(container.querySelector('[data-menu-edit-details="true"]') as HTMLButtonElement);
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-form-sheet="true"]')?.getAttribute('data-form-visible')).toBe('true'),
+    );
+    expect(container.querySelector('[data-form-sheet="true"]')?.getAttribute('data-form-mode')).toBe('edit');
+    // The rename sheet must NOT drag the screen into edit mode with it.
+    expect(container.querySelector('[data-detail-view="true"]')?.getAttribute('data-edit-mode')).toBe('false');
+  });
+
+  it('routes the add-climbs row and the empty-state CTA to the Climbs tab', async () => {
+    const { container } = await renderOwnerDetail();
+
+    fireEvent.click(container.querySelector('[data-menu-add="true"]') as HTMLButtonElement);
+    expect(routerNavigate).toHaveBeenCalledWith('/(tabs)/climbs');
+
+    routerNavigate.mockClear();
+    fireEvent.click(container.querySelector('[data-empty-action="detail.menu.addClimbs"]') as HTMLButtonElement);
+    expect(routerNavigate).toHaveBeenCalledWith('/(tabs)/climbs');
+  });
+
+  it('hides the add-climbs affordances when the playlist is on another board', async () => {
+    playlistMocks.renderBoardResult = {
+      renderBoard: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 },
+      banner: { title: 'title', subtitle: 'subtitle', cta: 'cta', onPress: vi.fn() },
+    };
+
+    const { container } = await renderOwnerDetail();
+
+    // The switch-board banner owns that prompt, so no competing add CTA.
+    expect(container.querySelector('[data-actions-menu="true"]')?.getAttribute('data-has-add-climbs')).toBe('false');
+    expect(detailViewProps.current?.emptyAction).toBeNull();
+  });
+
+  it('gives a non-owner no overflow menu at all', async () => {
+    requestMock.mockResolvedValue({ playlist: makePlaylist({ userRole: 'viewer', isPublic: true }) });
+
+    const { container } = renderDetail();
+
+    await waitFor(() => expect(container.querySelector('[data-detail-view="true"]')).not.toBeNull());
+    expect(detailViewProps.current?.emptyAction).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, Alert, Pressable } from 'react-native';
-import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -61,6 +61,7 @@ export default function PlaylistDetail() {
   const { playlist_uuid: playlistUuid } = useLocalSearchParams<DetailParams>();
   const { t } = useTranslation('playlists');
   const navigation = useNavigation();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuth();
   const { showToast } = useToast();
@@ -211,10 +212,8 @@ export default function PlaylistDetail() {
   const [editMode, setEditMode] = useState(false);
   const [editClimbs, setEditClimbs] = useState<Climb[]>([]);
   const editClimbsRef = useRef<Climb[]>([]);
-  const pendingEditClimbsRef = useRef(false);
-  // Always-current view of the loaded climbs so enterEditMode — which runs
-  // asynchronously after the actions sheet finishes dismissing — seeds from the
-  // latest data, not the snapshot captured when the menu opened.
+  // Always-current view of the loaded climbs so enterEditMode seeds from the
+  // latest data, not the snapshot captured when the actions menu opened.
   const allClimbsRef = useRef(allClimbs);
   allClimbsRef.current = allClimbs;
 
@@ -453,38 +452,60 @@ export default function PlaylistDetail() {
     ]);
   }, [playlist, deletePlaylist, queryClient, playlistUuid, showToast, t, navigation]);
 
-  // Cog (shown in edit mode) → open the edit-details sheet directly. No menu is
-  // involved, so no sheet-handoff dance is needed.
+  // Cog (shown in edit mode) → open the edit-details sheet directly.
   const openEditDetails = useCallback(() => {
     setEditError(null);
     setEditVisible(true);
   }, []);
 
-  // Collapsed overflow menu (owner): Pin toggles in place; Delete confirms; Edit
-  // enters the climbs edit mode once the menu sheet has dismissed (deferred via
-  // the pending ref so the sheet's exit animation doesn't fight the top-bar swap).
+  // Collapsed overflow menu (owner). Every row acts IMMEDIATELY and closes the
+  // sheet itself — never defer the work to `onClose`. Setting `visible` false
+  // goes through the sheet coordinator, which sets `selfDismissRef` and
+  // deliberately swallows `onClose` for a controlled close (see the
+  // 'a coordinator-driven dismiss does NOT fire onClose (selfDismissRef gate)'
+  // test in src/providers/__tests__/sheet-presentation-provider.test.tsx). A row
+  // that hands its work to `onClose` is a silent no-op — that was #3966.
   const menuTogglePin = useCallback(() => {
     setActionsVisible(false);
     void handleTogglePin();
   }, [handleTogglePin]);
 
   const menuEnterEdit = useCallback(() => {
-    pendingEditClimbsRef.current = true;
     setActionsVisible(false);
-  }, []);
+    enterEditMode();
+  }, [enterEditMode]);
+
+  // The coordinator serialises the dismiss-then-present handoff, so opening the
+  // edit-details sheet in the same tick is safe.
+  const menuEditDetails = useCallback(() => {
+    setActionsVisible(false);
+    openEditDetails();
+  }, [openEditDetails]);
+
+  // There is no add-from-here flow yet — adding runs through a climb's own
+  // action menu — so both the overflow row and the empty-state CTA just land the
+  // user on the Climbs tab instead of leaving them at a dead end (#3966).
+  const goToClimbs = useCallback(() => router.navigate('/(tabs)/climbs'), [router]);
+
+  const menuAddClimbs = useCallback(() => {
+    setActionsVisible(false);
+    goToClimbs();
+  }, [goToClimbs]);
 
   const openDelete = useCallback(() => {
     setActionsVisible(false);
     handleDelete();
   }, [handleDelete]);
 
-  const handleActionsClose = useCallback(() => {
-    setActionsVisible(false);
-    if (pendingEditClimbsRef.current) {
-      pendingEditClimbsRef.current = false;
-      enterEditMode();
-    }
-  }, [enterEditMode]);
+  const handleActionsClose = useCallback(() => setActionsVisible(false), []);
+
+  // Owners only, and only while the playlist matches the active board — when it
+  // does not, the switch-board banner owns that prompt.
+  const canAddClimbs = isOwner && !boardBanner;
+  const emptyAction = useMemo(
+    () => (canAddClimbs ? { label: t('detail.menu.addClimbs'), icon: 'add' as const, onPress: goToClimbs } : undefined),
+    [canAddClimbs, goToClimbs, t],
+  );
 
   // Floating controls over the hero. Owners get a pin · edit · delete glass
   // toolbar that collapses to a single overflow ⋯ on scroll (and always on
@@ -653,6 +674,7 @@ export default function PlaylistDetail() {
         fetchNextPage={query.fetchNextPage}
         onActivateClimb={playlistActivation.activate}
         emptyMessage={t('detail.empty')}
+        emptyAction={emptyAction}
         actions={renderActions}
         editMode={editMode}
         onReorderClimb={handleReorderClimb}
@@ -669,6 +691,8 @@ export default function PlaylistDetail() {
         visible={actionsVisible}
         isPinned={isPinned}
         onTogglePin={menuTogglePin}
+        onAddClimbs={canAddClimbs ? menuAddClimbs : undefined}
+        onEditDetails={menuEditDetails}
         onEdit={menuEnterEdit}
         onDelete={openDelete}
         onClose={handleActionsClose}

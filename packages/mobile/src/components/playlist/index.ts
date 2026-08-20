@@ -7,6 +7,7 @@ export {
   type PlaylistDetailViewProps,
   type PlaylistDetailHero,
   type PlaylistDetailEmptyState,
+  type PlaylistDetailEmptyAction,
 } from './PlaylistDetailView';
 export { PlaylistBackFab } from './PlaylistBackFab';
 export { PlaylistFormSheet, type PlaylistFormValues } from './PlaylistFormSheet';

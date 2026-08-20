@@ -118,7 +118,9 @@
       "subtitle": "Für diesen Boulder fehlen die Board-Daten."
     },
     "menu": {
-      "editClimbs": "Boulder bearbeiten",
+      "addClimbs": "Boulder hinzufügen",
+      "editDetails": "Details bearbeiten",
+      "editClimbs": "Boulder umsortieren & entfernen",
       "delete": "Löschen"
     },
     "visibility": {

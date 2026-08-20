@@ -80,6 +80,15 @@ export type PlaylistDetailEmptyState = {
   supporting?: string;
 };
 
+/** Optional CTA button under the empty state, shown in both variants. */
+export type PlaylistDetailEmptyAction = {
+  /** Already-translated button label. */
+  label: string;
+  /** Leading icon on the button. */
+  icon?: IconName;
+  onPress: () => void;
+};
+
 export type PlaylistDetailHero = {
   name: string;
   climbCount: number;
@@ -121,6 +130,9 @@ export type PlaylistDetailViewProps = {
   /** Richer Material-branch empty state (e.g. the liked-climbs heart prompt).
    *  Glass branch ignores this and keeps `emptyMessage`. */
   emptyState?: PlaylistDetailEmptyState;
+  /** Optional CTA under the empty state (e.g. "Add climbs" on an owner's empty
+   *  playlist). Rendered in BOTH variants; omit for a message-only empty state. */
+  emptyAction?: PlaylistDetailEmptyAction;
   /** Floating top-right controls (follow / pin / more) over the hero, given the
    *  current collapse state so a control can swap to its compact icon form once
    *  the colour header bar takes over. The back FAB on the left is always
@@ -182,6 +194,7 @@ export function PlaylistDetailView({
   onActivateClimb,
   emptyMessage,
   emptyState,
+  emptyAction,
   actions,
   editMode = false,
   onReorderClimb,
@@ -384,6 +397,7 @@ export function PlaylistDetailView({
       icon={emptyState?.icon ?? 'playlist'}
       title={emptyState?.title ?? emptyMessage}
       supporting={emptyState?.supporting}
+      action={emptyAction}
       titleColor={systemColors.label}
       supportingColor={systemColors.secondaryLabel}
     />
@@ -393,6 +407,15 @@ export function PlaylistDetailView({
       <Text variant="subheadline" style={styles.emptyText}>
         {emptyMessage}
       </Text>
+      {emptyAction ? (
+        <Button
+          title={emptyAction.label}
+          onPress={emptyAction.onPress}
+          size="medium"
+          icon={emptyAction.icon}
+          style={styles.emptyActionButton}
+        />
+      ) : null}
     </View>
   );
 
@@ -669,17 +692,20 @@ export function PlaylistDetailView({
   );
 }
 
-/** Centered Material empty state: tonal icon + headline + supporting copy. */
+/** Centered Material empty state: tonal icon + headline + supporting copy, plus
+ *  an optional CTA. */
 function MaterialEmptyState({
   icon,
   title,
   supporting,
+  action,
   titleColor,
   supportingColor,
 }: {
   icon: IconName;
   title: string;
   supporting?: string;
+  action?: PlaylistDetailEmptyAction;
   titleColor: ColorValue;
   supportingColor: ColorValue;
 }) {
@@ -695,6 +721,15 @@ function MaterialEmptyState({
         <Text variant="subheadline" color={supportingColor} style={styles.materialEmptySupporting}>
           {supporting}
         </Text>
+      ) : null}
+      {action ? (
+        <Button
+          title={action.label}
+          onPress={action.onPress}
+          size="medium"
+          icon={action.icon}
+          style={styles.emptyActionButton}
+        />
       ) : null}
     </View>
   );
@@ -964,6 +999,9 @@ const styles = StyleSheet.create({
   },
   materialEmptySupporting: {
     textAlign: 'center',
+  },
+  emptyActionButton: {
+    marginTop: spacing[4],
   },
   banner: {
     marginHorizontal: spacing[4],

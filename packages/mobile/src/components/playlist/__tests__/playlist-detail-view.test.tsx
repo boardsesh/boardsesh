@@ -445,6 +445,25 @@ describe('PlaylistDetailView', () => {
     expect(container.querySelector('[data-icon="playlist"]')).not.toBeNull();
   });
 
+  it('renders the empty-state CTA in both variants and fires it on press', () => {
+    const onPress = vi.fn();
+    const emptyAction = { label: 'Add climbs', onPress };
+
+    for (const variant of ['liquidGlass', 'material'] as const) {
+      ctrl.variant = variant;
+      const { getByText, unmount } = render(<PlaylistDetailView {...makeProps({ climbs: [], emptyAction })} />);
+      fireEvent.click(getByText('Add climbs'));
+      unmount();
+    }
+
+    expect(onPress).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves the empty state CTA-free when no emptyAction is given', () => {
+    const { container } = render(<PlaylistDetailView {...makeProps({ climbs: [] })} />);
+    expect(container.querySelector('[data-button="true"]')).toBeNull();
+  });
+
   it('shows a small footer spinner when isFetchingNextPage=true', () => {
     const { container } = render(<PlaylistDetailView {...makeProps({ isFetchingNextPage: true, climbs: [CLIMB] })} />);
     expect(container.querySelector('[data-spinner="small"]')).not.toBeNull();
