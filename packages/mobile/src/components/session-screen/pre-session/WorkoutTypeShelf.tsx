@@ -13,71 +13,48 @@ import { borderRadius, spacing } from '../../../theme/tokens';
 
 const CHART_HEIGHT = 82;
 
-// Mirrors the ScrollView's contentContainerStyle below, so the peek math
-// accounts for exactly the padding/gap the row actually renders.
-// Exported so tests can assert against it instead of hardcoding the token.
+// Mirrors the ScrollView's contentContainerStyle below so the peek math uses
+// the padding/gap the row actually renders. Exported for the tests.
 export const SHELF_HORIZONTAL_INSET = spacing[4];
 export const TILE_GAP = spacing[3];
 
-// Deliberately not a whole number of tiles: sizing tiles so a whole number of
-// them fills the row edge-to-edge is what caused #4278 — on a 375pt phone the
-// old hardcoded TILE_WIDTH happened to fit exactly 2 tiles with no partial tile
-// showing, so the row looked complete even though 3 more workout types were
-// off-screen. Leaving a fixed fraction of the next tile in view means the
-// cut-off tile itself signals there's more to scroll to.
+// #4278: a whole number of tiles filled a 375pt row exactly, so the shelf looked
+// complete with 3 workout types off-screen. A partial tile is the scroll cue.
 const PEEK_FRACTION = 0.35;
 
 /** Never squeeze below two whole tiles, however narrow the container gets. */
 const MIN_WHOLE_TILES = 2;
 
-/** Tiles stop growing here. The chart inside each tile is drawn for a
- *  phone-sized tile; a 480pt-wide one just stretches it. 168 is the width the
- *  shelf shipped with before #4278, which read fine on iPad — wide containers
- *  gain more tiles in view rather than bigger ones. */
+// Tiles stop growing here (the pre-#4278 width): the chart is drawn for a
+// phone-sized tile, so wide containers gain more tiles rather than bigger ones.
 export const TILE_MAX_WIDTH = 168;
 
-/** Floor for degenerate containers (a Slide Over pane, a first layout pass that
- *  reports a hairline width) so a tile never collapses to nothing. */
+// Floor for degenerate containers (Slide Over, a hairline first layout pass).
 export const TILE_MIN_WIDTH = 104;
 
-/**
- * Tile width for a shelf `containerWidth` points wide holding `itemCount` tiles.
- *
- * Only the LEADING inset sits between the viewport edge and the first tile — the
- * trailing one lives at the far end of the content, past everything the user can
- * see — so the visible row is `inset + n*(tile + gap) + peek`.
- *
- * Widens the whole-tile count until tiles stop exceeding {@link TILE_MAX_WIDTH},
- * which keeps the peek proportional at every width instead of clamping the tile
- * and letting the leftover land back on a whole number of tiles (the #4278 bug,
- * one container width over).
- *
- * Pure so it can be unit tested at fixed widths without rendering.
- */
+// Visible row is `inset + n*(tile + gap) + peek` — only the LEADING inset is on
+// screen, the trailing one sits past the end of the content.
+
 export function computeTileWidth(containerWidth: number, itemCount: number): number {
   const availableWidth = containerWidth - SHELF_HORIZONTAL_INSET;
-  // Showing every item but one as a whole tile is the widest the ladder can go
-  // and still have a tile left over to peek with.
+  // All but one item whole is the widest the ladder can go and still have a peek.
   const maxWholeTiles = Math.max(MIN_WHOLE_TILES, itemCount - 1);
 
+  // Widen the tile count, not the tile: clamping the tile instead would park the
+  // leftover back on a whole number of tiles — the #4278 bug, one width over.
   for (let wholeTiles = MIN_WHOLE_TILES; wholeTiles <= maxWholeTiles; wholeTiles += 1) {
     const tileWidth = Math.round((availableWidth - TILE_GAP * wholeTiles) / (wholeTiles + PEEK_FRACTION));
     if (tileWidth <= TILE_MAX_WIDTH) return Math.max(TILE_MIN_WIDTH, tileWidth);
   }
 
-  // Wider than `itemCount` capped tiles: every workout type is already on screen,
-  // so there is nothing hidden for a peek to advertise.
+  // Every workout type already fits, so there is nothing for a peek to advertise.
   return TILE_MAX_WIDTH;
 }
 
-/**
- * The shelf's own box, which is NOT the window: on the iPad adaptive shell it
- * renders inside `shellContent` — a flex column between the sidebar and the
- * play/wall panes (`app/(tabs)/_layout.tsx`) — so on an 11" landscape iPad the
- * window is 1194pt while the shelf gets 399. Sizing tiles off the window there
- * produced a single tile wider than the pane it lives in. The window is only the
- * first-paint estimate, used until onLayout reports the real box.
- */
+// The shelf's own box, which is NOT the window: on the iPad adaptive shell it
+// sits in `shellContent` between the sidebar and the play/wall panes, so an 11"
+// landscape iPad reports 1194 while the shelf gets 399. Window is the first-paint
+// estimate only, until onLayout reports the real box.
 function useShelfWidth(): { containerWidth: number; onLayout: (event: LayoutChangeEvent) => void } {
   const { width: windowWidth } = useWindowDimensions();
   const [measuredWidth, setMeasuredWidth] = useState<number | null>(null);

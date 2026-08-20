@@ -125,8 +125,7 @@ function widthOfTile(tile: Element): number {
   return width;
 }
 
-/** Width the component actually put on a rendered tile, read back out of the
- *  style the tile hands to PressableSurface. */
+/** Width the component put on a rendered tile, read back off its style. */
 function renderedTileWidth(container: HTMLElement): number {
   const tile = container.querySelector('button');
   if (tile == null) throw new Error('no tile rendered');
@@ -177,9 +176,8 @@ describe('WorkoutTypeShelf', () => {
     expect(widths).toEqual(Array.from({ length: WORKOUT_TYPE_COUNT }, () => expectedTileWidth));
   });
 
-  // The regression this guards: the shelf renders inside `shellContent` on the
-  // iPad adaptive shell, a pane far narrower than the window. Sizing off
-  // useWindowDimensions() there made a single tile wider than the whole pane.
+  // Guards the iPad regression: `shellContent` is far narrower than the window,
+  // so sizing off useWindowDimensions() made a tile wider than the whole pane.
   it('sizes tiles from the measured container, not the window', () => {
     windowDimensions.width = 1194; // iPad 11" landscape
     const { container } = render(createElement(WorkoutTypeShelf, { items: workoutTypes() }));
@@ -207,12 +205,8 @@ describe('WorkoutTypeShelf', () => {
   });
 });
 
-/**
- * What the row actually puts on screen at rest. Content is laid out as
- * `[inset][tile][gap][tile][gap]…[inset]`, and the viewport shows the first
- * `containerWidth` points of it — so only the LEADING inset is on screen, and
- * the peek is whatever of the next tile is left after the whole ones.
- */
+// Content is `[inset][tile][gap]…[inset]` and the viewport shows its first
+// `containerWidth` points, so only the leading inset counts against the peek.
 function shelfLayout(containerWidth: number, itemCount: number) {
   const tileWidth = computeTileWidth(containerWidth, itemCount);
   const pitch = tileWidth + TILE_GAP;
@@ -228,11 +222,8 @@ function shelfLayout(containerWidth: number, itemCount: number) {
 }
 
 describe('computeTileWidth', () => {
-  // A whole number of tiles filling the row exactly is what caused #4278: the row
-  // looked "done" with no cue that more workout types were off-screen. Phones,
-  // the iPad panes (`shellContent`, between the sidebar and the play/wall
-  // columns) and full-width tablet/desktop windows all have to leave a partial
-  // tile peeking whenever something is hidden.
+  // #4278 was a row of whole tiles that looked "done" with more off-screen.
+  // Phones, the iPad `shellContent` panes and full-width tablets all need a peek.
   it.each([
     [320, 'iPad Slide Over / small split'],
     [375, 'iPhone SE / mini'],
