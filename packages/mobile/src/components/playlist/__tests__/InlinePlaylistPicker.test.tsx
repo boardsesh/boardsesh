@@ -366,6 +366,35 @@ describe('InlinePlaylistPicker', () => {
     expect(queryByLabelText('actions.playlist.popover.createNew')).toBeNull();
   });
 
+  // Finding 3, same rule one level up: `Climb.boardType` is a free-form string,
+  // so a value this build doesn't know narrows to null. The board is then not the
+  // host's either, which puts the climb's layout id in a namespace we can't name
+  // — so the host board is kept WITHOUT it, never half of each. Keeping the
+  // climb's layout beside the host board is the mongrel pair all over again.
+  it('drops the climbs layout when its board is not a board this build knows', () => {
+    const unknownBoardClimb = { ...climb, boardType: 'not-a-real-board', layoutId: 10 } as Climb;
+    playlistContext.playlists = [
+      makePlaylist('p-layout-1', 'Layout one'),
+      { ...basePlaylist, id: 'p-layout-10', uuid: 'p-layout-10', name: 'Layout ten', layoutId: 10 },
+      {
+        ...basePlaylist,
+        id: 'p-tension',
+        uuid: 'p-tension',
+        name: 'Tension crimps',
+        boardType: 'tension',
+        layoutId: 10,
+      },
+    ];
+    const { getByLabelText, queryByLabelText } = renderPicker(undefined, undefined, unknownBoardClimb);
+    // Host board, layout unknown: both of the host board's playlists stay, and
+    // layout 10 is NOT read as "the climb's layout" on the host board.
+    expect(getByLabelText('Layout one')).not.toBeNull();
+    expect(getByLabelText('Layout ten')).not.toBeNull();
+    expect(queryByLabelText('Tension crimps')).toBeNull();
+    // And with the layout unknown there is nothing to pin a new playlist to.
+    expect(queryByLabelText('actions.playlist.popover.createNew')).toBeNull();
+  });
+
   // The other half of that rule: when the climb names the host's own board, its
   // missing layout IS the host's, so create keeps working. Only a climb on some
   // OTHER board loses the host layout.
