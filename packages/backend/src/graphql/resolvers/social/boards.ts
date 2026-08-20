@@ -799,6 +799,19 @@ function formatDisplayName(
 // old key is simply orphaned and expires under its own TTL. Do NOT bump this
 // per deploy, only per payload-shape change.
 const REDIS_CACHE_KEY = 'boardsesh:popular-board-configs:v2';
+// A year, and the only thing that clears it is `warmPopularConfigsCache` at
+// boot. So every value in this payload — `climbCount`, `totalAscents`, and now
+// `lastClimbAt` — tracks DEPLOY CADENCE, not the catalogue: a climb set an hour
+// after a deploy does not move `lastClimbAt` until the next one. Staleness errs
+// old, which is the safe direction for a `<lastmod>`, but say it out loud rather
+// than let a reader assume the field follows the data.
+//
+// Do not "fix" that by bounding the TTL to hours. The statement below takes 78 s
+// on the dev database (~750 ms per config LATERAL × 45 configs); every expiry
+// would put that on a live request, behind the web side's 10 s
+// `SITEMAP_FETCH_TIMEOUT_MS` and the boards shard's 3 s `SHARD_DEADLINE_MS` —
+// trading a stale value for a periodic 503 shard and an empty homepage rail.
+// Boot-warm plus a long TTL is the design, not an oversight.
 const REDIS_CACHE_TTL_SECONDS = 365 * 24 * 60 * 60; // 1 year
 const REDIS_LOCK_KEY = 'boardsesh:popular-board-configs:lock';
 const REDIS_LOCK_TTL_SECONDS = 120; // 2 min lock to prevent duplicate queries across nodes

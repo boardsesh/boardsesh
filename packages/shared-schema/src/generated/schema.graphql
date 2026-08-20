@@ -2706,6 +2706,15 @@ type PopularBoardConfig {
   to null rather than error the whole config (which sits inside
   [PopularBoardConfig!]! — a non-null field here would null the entire row
   and error the whole query for every caller reading a stale cache entry).
+
+  NOT a sitemap <lastmod>. It describes the whole config, not any one page:
+  it is neither angle-filtered nor restricted to the top-50-by-ascents window
+  that /{board}/{layout}/{size}/{sets}/{angle}/list actually renders, and it
+  advances daily while that page's newest climb is years old. The measured
+  numbers are in packages/web/app/lib/seo/sitemap/board-entries.ts.
+
+  It is also only as fresh as the last backend deploy — see the Redis TTL
+  comment in the resolver.
   """
   lastClimbAt: String
 }
