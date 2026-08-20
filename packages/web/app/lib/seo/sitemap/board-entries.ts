@@ -16,7 +16,8 @@ import type { SitemapItem } from './entries';
  * Deliberately no `<lastmod>`, and the reason is not "the data carries no
  * timestamp" — it does. The reason is that no timestamp the *config* carries
  * describes *this page*. #4466 proposed a per-config
- * `MAX(board_climbs.created_at)`; measured against the dev database that value
+ * `MAX(board_climbs.created_at)`; measured against the dev database (the
+ * 2026-01-31 catalog snapshot — every date below is relative to it) that value
  * is fabricated freshness, so it is not wired up here:
  *
  * - The URL below is page 1 only, at the default sort: the top
