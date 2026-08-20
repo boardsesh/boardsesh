@@ -15,6 +15,13 @@
 // board/gym config changes still land within minutes. Live climb data does NOT
 // ride these fetches (the board embed's presence hub and the leaderboard's
 // client refetch carry freshness).
+//
+// Deadline: an unbounded `await fetch` here is what turns a slow backend into a
+// blank iframe. Node's fetch has no default timeout, so a socket that is
+// accepted and then never answered holds the render open indefinitely. With the
+// signal the catch below maps the abort to 'error' and the widget paints its
+// retry screen in seconds. See SSR_BACKEND_FETCH_TIMEOUT_MS for the value and
+// for the one case Next will not let us bound.
 
 import 'server-only';
 import { cache } from 'react';
@@ -28,6 +35,7 @@ import {
 } from '@boardsesh/graphql/operations';
 import type { Gym, UserBoard } from '@boardsesh/shared-schema';
 import { getGraphQLHttpUrl } from '@/app/lib/graphql/client';
+import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
 
 const EMBED_REVALIDATE_SECONDS = 300;
 
@@ -49,6 +57,7 @@ async function fetchEmbedGraphQL<ResponseData, Entity>(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(SSR_BACKEND_FETCH_TIMEOUT_MS),
       next: { revalidate: EMBED_REVALIDATE_SECONDS },
     });
     if (!response.ok) return { status: 'error' };

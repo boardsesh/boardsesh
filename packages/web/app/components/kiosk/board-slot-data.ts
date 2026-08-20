@@ -8,6 +8,7 @@ import 'server-only';
 import { BOARD_RECENT_CLIMBS } from '@boardsesh/graphql/operations';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { getGraphQLHttpUrl } from '@/app/lib/graphql/client';
+import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import type { BoardDetails } from '@/app/lib/types';
 import { buildBoardRenderUrl, toFlatFrames } from '../board-renderer/util';
@@ -51,13 +52,19 @@ function resolveBoardDetails(board: BoardSlotSource): BoardDetails | null {
 }
 
 /** Latest climbs for a board (newest first; index 0 = current). Anonymous,
- * uncached — this is the SSR seed for what's lit right now. */
+ * uncached — this is the SSR seed for what's lit right now.
+ *
+ * `cache: 'no-store'` means every kiosk/embed render pays this call for real,
+ * so it is the one with the least excuse to be unbounded. It already degrades
+ * to `[]` (the slot paints the bare board and the live subscription fills it in
+ * a moment later), which is a far better answer than a render that never ends. */
 async function fetchInitialClimbs(boardId: number): Promise<BoardPresenceClimb[]> {
   try {
     const response = await fetch(getGraphQLHttpUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query: BOARD_RECENT_CLIMBS, variables: { boardId } }),
+      signal: AbortSignal.timeout(SSR_BACKEND_FETCH_TIMEOUT_MS),
       cache: 'no-store',
     });
     if (!response.ok) return [];
