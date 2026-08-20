@@ -154,8 +154,18 @@ describe('popularBoardConfigs.lastClimbAt (SQL aggregate, real DB)', () => {
 describe('normalizeCatalogTimestamp', () => {
   it.each([
     ['2024-03-11 09:00:00.123456', '2024-03-11T09:00:00.123Z'],
+    // The commonest Aurora shape: space separator, no fraction at all. Covered
+    // only through the SQL test otherwise, which cannot distinguish "the
+    // normaliser handled it" from "the aggregate picked a different row".
+    ['2024-03-11 09:00:00', '2024-03-11T09:00:00.000Z'],
     ['2023-11-23T18:00:15.227', '2023-11-23T18:00:15.227Z'],
     ['2024-03-11T09:00:00Z', '2024-03-11T09:00:00.000Z'],
+    // The SQL `LIKE '____-__-__%'` mask is deliberately loose enough to pass a
+    // zone-carrying row through, so the JS side has to convert one rather than
+    // stamp `Z` over it. +05:30 is 03:30 UTC, and the colon-less spelling is
+    // the same instant.
+    ['2024-03-11T09:00:00+05:30', '2024-03-11T03:30:00.000Z'],
+    ['2024-03-11T09:00:00-0800', '2024-03-11T17:00:00.000Z'],
     // Sub-millisecond fraction, explicitly right-padded (0.5s = 500ms, not 5ms).
     ['2024-03-11T09:00:00.5', '2024-03-11T09:00:00.500Z'],
     [null, null],
