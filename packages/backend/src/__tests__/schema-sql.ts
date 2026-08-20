@@ -220,6 +220,20 @@ export const schemaSQL = `
     CONSTRAINT "board_climb_stats_quality_average_range" CHECK ("board_climb_stats"."quality_average" IS NULL OR ("board_climb_stats"."quality_average" >= 0 AND "board_climb_stats"."quality_average" <= 5)),
     CONSTRAINT "board_climb_stats_upstream_quality_average_range" CHECK ("board_climb_stats"."upstream_quality_average" IS NULL OR ("board_climb_stats"."upstream_quality_average" >= 0 AND "board_climb_stats"."upstream_quality_average" <= 5))
   );
+  -- Same trap as the "gyms" column backfill further down: "board_climb_stats" is
+  -- CREATE TABLE IF NOT EXISTS with no preceding DROP, and the per-worker test DBs
+  -- persist between runs, so the two CHECKs above never land on a DB that was
+  -- created before they existed. climb-stats-quality-range-check.test.ts asserts
+  -- on them by name, so re-add them idempotently for pre-existing worker DBs.
+  DO $$ BEGIN
+    ALTER TABLE "board_climb_stats" ADD CONSTRAINT "board_climb_stats_quality_average_range" CHECK ("board_climb_stats"."quality_average" IS NULL OR ("board_climb_stats"."quality_average" >= 0 AND "board_climb_stats"."quality_average" <= 5));
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
+
+  DO $$ BEGIN
+    ALTER TABLE "board_climb_stats" ADD CONSTRAINT "board_climb_stats_upstream_quality_average_range" CHECK ("board_climb_stats"."upstream_quality_average" IS NULL OR ("board_climb_stats"."upstream_quality_average" >= 0 AND "board_climb_stats"."upstream_quality_average" <= 5));
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
 
   CREATE TABLE IF NOT EXISTS "board_climb_grades" (
     "board_type" text NOT NULL,
