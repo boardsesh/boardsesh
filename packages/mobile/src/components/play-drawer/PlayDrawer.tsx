@@ -969,10 +969,18 @@ export function PlayDrawer({
                       }
                     />
 
-                    {isPreview && !drawerPreviewIsWallClimb ? (
+                    {isPreview && !drawerPreviewIsWallClimb && !isAnonymous ? (
                       // Cross-board previews use the switch-board overlay instead, so
                       // hide "Set active" there — promoting a foreign-board climb would
                       // only spill it into the queue.
+                      //
+                      // The anonymous drawer is ALWAYS a preview — that is what keeps
+                      // the queue untouched — so an ungated banner would put a live
+                      // "Set active" on every read-only open, and its press is
+                      // `setCurrentClimb`: the same queue write and the same BLE
+                      // auto-sender re-arm that `getSimilarClimbTapMode` blocks a few
+                      // lines up. "Preview" also means nothing to a reader who has no
+                      // active climb to promote it over.
                       <PlayDrawerPreviewBanner showSetActive={!boardMismatch} onSetActive={handleSetActive} />
                     ) : null}
 

@@ -34,6 +34,7 @@ import { PlayDrawer } from './play-drawer/PlayDrawer';
 import { Button } from './Button';
 import { Text } from './Text';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
+import { useClimb } from '../lib/graphql/hooks';
 import { buildLoginHrefWithReturn } from '../lib/routing/anonymous-auth-gate';
 import { useTheme } from '../providers/theme-provider';
 import type { BoardConfig } from '../providers/drawer-host-provider';
@@ -45,19 +46,22 @@ function noop() {}
 export const AnonymousClimbView = memo(function AnonymousClimbView({
   climb,
   boardConfig,
+  isAngleAdjustable = true,
 }: {
   climb: Climb;
   boardConfig: BoardConfig;
+  /** False for a board bolted at a fixed angle — hides the angle pill, the same
+   *  rule the signed-in chrome reads off `activeBoard.isAngleAdjustable`. The
+   *  tuple URL carries no board record, so it keeps the create path's default. */
+  isAngleAdjustable?: boolean;
 }) {
   const { t } = useTranslation('session');
   const router = useRouter();
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
 
-  // The angle pill stays live, and the drawer's board config is the only thing
-  // it moves — exactly what the signed-in deep-link path does, where an angle
-  // change rewrites `boardConfigOverride` and leaves the climb object alone.
-  // The URL is not rewritten for the same reason it is not there either.
+  // The angle pill stays live. The URL is not rewritten — the signed-in
+  // deep-link path doesn't either.
   const [angle, setAngle] = useState(boardConfig.angle);
 
   // Bumped alongside the angle so the open target re-applies. PlayDrawer clears
@@ -79,12 +83,29 @@ export const AnonymousClimbView = memo(function AnonymousClimbView({
 
   const paneBoardConfig = useMemo<BoardConfig>(() => ({ ...boardConfig, angle }), [boardConfig, angle]);
 
+  // Grade, stars and ascent count are baked into the climb row at the angle it
+  // was fetched for — `getClimbByUuid` joins the stats tables ON angle — and the
+  // route's query is frozen at the URL's angle. The signed-in header survives an
+  // angle change because `useEffectiveClimbStats` re-reads canonical stats per
+  // (climb, angle); that read is `requireAuthenticated`, so anonymously it never
+  // fires and the header keeps the URL angle's numbers. Meanwhile the Boardsesh
+  // grade, the crowd-grade bar and the angle sheet's own per-angle stats all move
+  // — two different grades for the same angle, on the same screen.
+  //
+  // So the climb itself is refetched at the live angle. The URL angle is left to
+  // the route's query (same key, one request); while a moved angle is in flight
+  // the previous climb keeps rendering, so the drawer never blanks mid-swap.
+  const movedAngleClimb = useClimb(
+    angle === boardConfig.angle ? null : { ...boardConfig, angle, climbUuid: climb.uuid },
+  );
+  const climbAtAngle = movedAngleClimb.data ?? climb;
+
   // `previewQueueItem` is what keeps the queue untouched: with it set, the
   // drawer renders the climb without dispatching `setCurrentClimb`. The deep
   // link already opens this way for a signed-in visitor.
   const openTarget = useMemo(
-    () => ({ climb, options: { previewQueueItem: climbToQueueItem(climb) }, nonce: openNonce }),
-    [climb, openNonce],
+    () => ({ climb: climbAtAngle, options: { previewQueueItem: climbToQueueItem(climbAtAngle) }, nonce: openNonce }),
+    [climbAtAngle, openNonce],
   );
 
   // Always the builder, never a hand-rolled `/auth/login`: it validates the
@@ -104,6 +125,7 @@ export const AnonymousClimbView = memo(function AnonymousClimbView({
         presentation="pane"
         viewer="anonymous"
         boardConfig={paneBoardConfig}
+        isAngleAdjustable={isAngleAdjustable}
         onAngleChange={handleAngleChange}
         onOpenQueue={noop}
         openTarget={openTarget}
