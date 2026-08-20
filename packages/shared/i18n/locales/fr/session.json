@@ -196,7 +196,14 @@
       "lifetimeRecap": "{{tries}} {{sessions}}",
       "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}",
       "pendingSync_one": "{{count}} en attente de synchronisation",
-      "pendingSync_other": "{{count}} en attente de synchronisation"
+      "pendingSync_other": "{{count}} en attente de synchronisation",
+      "signedOut": "Connecte-toi pour voir tes essais sur ce bloc."
+    },
+    "anonymous": {
+      "signInHeadline": "Fais la croix",
+      "signInSubtitle": "Connecte-toi pour garder tes essais, tes croix et ton beta au même endroit.",
+      "signInAction": "Se connecter",
+      "tickAria": "Connecte-toi pour enregistrer cette croix"
     },
     "similarClimbs": {
       "title": "Voies similaires",

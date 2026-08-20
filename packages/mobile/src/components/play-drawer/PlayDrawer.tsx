@@ -44,7 +44,12 @@ import { SwitchBoardOverlay } from './SwitchBoardOverlay';
 import { LogAscentSheet } from '../LogAscentSheet';
 import { DeferredSections } from './DeferredSections';
 import { PanePlaceholder } from './PanePlaceholder';
-import { computeFirstScreenHeight, computeLogbookScrollTarget, shouldShowPanePlaceholder } from './play-drawer-layout';
+import {
+  computeFirstScreenHeight,
+  computeLogbookScrollTarget,
+  initialDrawerPreviewItem,
+  shouldShowPanePlaceholder,
+} from './play-drawer-layout';
 import { useBelowFoldContentRequest } from './use-below-fold-content-request';
 import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
 import { AngleSelectorSheet } from './AngleSelectorSheet';
@@ -71,7 +76,7 @@ import { getBoardRenderData } from '../../lib/board-details';
 import { hapticSuccess } from '../../lib/haptics';
 import { usePlayDrawerWakeLock } from './use-play-drawer-wake-lock';
 import { resolveFavoriteRollback } from './favorite-rollback';
-import { getViewOnlyPreviewNavigationTarget } from './play-drawer-navigation';
+import { getSimilarClimbTapMode, getViewOnlyPreviewNavigationTarget } from './play-drawer-navigation';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { track } from '../../lib/analytics';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -167,6 +172,18 @@ type PlayDrawerProps = {
    *  when a WallStrip is docked above the pane and already owns that inset. Ignored
    *  in route mode (the modal always owns the top inset). */
   paneTopInset?: boolean;
+  /**
+   * Who is looking. `'anonymous'` is the signed-out reader that
+   * `AnonymousClimbView` renders on the web export's read-only climb URL: the
+   * board, header, grade and every below-fold read stay, and every write
+   * affordance is removed (see PlayDrawerActionBar's `viewer` prop for the full
+   * list and why removal beats disabling). Never reachable on native — the whole
+   * anonymous branch sits behind `RELAXES_ANONYMOUS_ROUTES`, a literal `false`
+   * in the native fork.
+   */
+  viewer?: 'member' | 'anonymous';
+  /** Anonymous only: hand this URL to login. Wired to the tick prompt. */
+  onSignIn?: () => void;
 };
 
 // Fallback used for the first-screen reserve before the Logbook header has
@@ -195,7 +212,11 @@ export function PlayDrawer({
   openTarget,
   presentation = 'route',
   paneTopInset = true,
+  viewer = 'member',
+  onSignIn,
 }: PlayDrawerProps) {
+  // The signed-out reader on app.boardsesh.com's read-only climb URL.
+  const isAnonymous = viewer === 'anonymous';
   // The iPad right-column pane is persistent — it has no dismiss. Suppresses the
   // pull-down dismiss gesture, the close chevron, the grabber, and router.dismiss.
   const isPane = presentation === 'pane';
@@ -218,7 +239,12 @@ export function PlayDrawer({
     const measured = event.nativeEvent.layout.height;
     setSheetViewportHeight((prev) => (Math.abs(prev - measured) > 2 ? Math.round(measured) : prev));
   }, []);
-  const [drawerPreviewItem, setDrawerPreviewItem] = useState<ClimbQueueItem | null>(null);
+  // Seeded from the open target rather than left null: the effect that applies
+  // the target runs after the first commit, so a pane that already has its climb
+  // would otherwise paint one frame of the "Pick a climb" placeholder first.
+  const [drawerPreviewItem, setDrawerPreviewItem] = useState<ClimbQueueItem | null>(() =>
+    initialDrawerPreviewItem(openTarget),
+  );
   const [drawerPreviewSuggestionSource, setDrawerPreviewSuggestionSource] = useState<PlaylistSuggestionSource | null>(
     null,
   );
@@ -392,8 +418,11 @@ export function PlayDrawer({
   // server's truth — so the heart reflects whether the climb is already a favorite
   // on open, and a single tap can't invert reality (the previous always-false
   // local state silently un-favorited already-favorited climbs).
+  // `favorites` is `requireAuthenticated` on the backend, and the heart is hidden
+  // anonymously anyway — arming it would fire a query that can only 401 on every
+  // read-only open. The hook re-checks the session itself; this is the local half.
   const { data: serverFavorited } = useFavoriteStatus(boardName, displayedClimb?.uuid ?? null, angle, {
-    enabled: isSheetOpen,
+    enabled: isSheetOpen && !isAnonymous,
   });
   const isFavorited = favoriteOverride ?? serverFavorited ?? false;
   // Lit visual, pending pulse, and the connect/disconnect tap — shared with the
@@ -767,6 +796,18 @@ export function PlayDrawer({
   const handleSimilarClimbPress = useCallback(
     async (similarClimb: Climb) => {
       const queueItem = climbToQueueItem(similarClimb);
+      // A signed-out reader swaps what the drawer is showing and writes nothing:
+      // no queue entry they cannot carry anywhere, and no `setCurrentClimb`,
+      // which is what re-arms the BLE auto-sender. Similar Climbs is the only
+      // affordance in the anonymous view that could otherwise still drive a
+      // wall, so it takes the preview path the wrong-board drawer already uses.
+      if (getSimilarClimbTapMode(viewer) === 'preview') {
+        setDrawerPreviewItem(queueItem);
+        setDrawerPreviewSuggestionSource(null);
+        setIsMirrored(false);
+        setIsTickBarActive(false);
+        return;
+      }
       // A similar climb can be set on another board, so this add may raise the
       // cross-board prompt. Wait for it: backing out has to leave the drawer on
       // the climb they were already looking at, not activate the one they just
@@ -781,7 +822,7 @@ export function PlayDrawer({
       setIsTickBarActive(false);
       setCurrentClimb(queueItem, { playlistSuggestionSource: null });
     },
-    [addToQueue, setCurrentClimb],
+    [addToQueue, setCurrentClimb, viewer],
   );
 
   // The first screen is sized so the action bar stays visible and the Logbook
@@ -928,10 +969,18 @@ export function PlayDrawer({
                       }
                     />
 
-                    {isPreview && !drawerPreviewIsWallClimb ? (
+                    {isPreview && !drawerPreviewIsWallClimb && !isAnonymous ? (
                       // Cross-board previews use the switch-board overlay instead, so
                       // hide "Set active" there — promoting a foreign-board climb would
                       // only spill it into the queue.
+                      //
+                      // The anonymous drawer is ALWAYS a preview — that is what keeps
+                      // the queue untouched — so an ungated banner would put a live
+                      // "Set active" on every read-only open, and its press is
+                      // `setCurrentClimb`: the same queue write and the same BLE
+                      // auto-sender re-arm that `getSimilarClimbTapMode` blocks a few
+                      // lines up. "Preview" also means nothing to a reader who has no
+                      // active climb to promote it over.
                       <PlayDrawerPreviewBanner showSetActive={!boardMismatch} onSetActive={handleSetActive} />
                     ) : null}
 
@@ -1010,6 +1059,15 @@ export function PlayDrawer({
                           lightbulbPending={lightbulbPending}
                           autoDisconnectWarning={bluetooth?.autoDisconnectWarning ?? false}
                           lightbulbLongPressEnabled={bluetoothConnected}
+                          // Whether a Bluetooth transport exists at all, and only
+                          // that. The anonymous suppression lives in the bar, with
+                          // the rest of the `viewer` rules and the test that pins
+                          // them — Web Bluetooth IS mounted on the browser export,
+                          // so without it the bulb would render for a signed-out
+                          // visitor, whose board presence binds on an active board
+                          // uuid they do not have and whose first-ever visit would
+                          // open with a pairing prompt. Anonymous wall lighting is
+                          // its own feature (#4606), not a v1 side effect.
                           showLightbulb={bluetooth !== null}
                           // The on-wall banner owns the driver's face in the header
                           // when it's up; suppress the lightbulb pip so the same
@@ -1027,6 +1085,8 @@ export function PlayDrawer({
                           onShare={handleShare}
                           onTickPress={handleTickFabPress}
                           onTickLongPress={handleTickFabLongPress}
+                          viewer={viewer}
+                          onSignInPress={onSignIn}
                           currentAngle={angle}
                           onOpenAngleSelector={isAngleAdjustable ? handleOpenAngleSelector : undefined}
                         />

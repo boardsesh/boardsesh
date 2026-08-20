@@ -36,7 +36,11 @@ type PlayDrawerActionBarProps = {
   lightbulbAccessibilityLabel?: string;
   lightbulbLongPressAccessibilityHint?: string;
   lightbulbLongPressEnabled?: boolean;
-  /** Hide the BLE action when the host platform has no Bluetooth provider. */
+  /**
+   * Whether the host platform has a Bluetooth provider at all. Only that — an
+   * anonymous viewer never gets the bulb regardless, and that rule lives here
+   * rather than at the call site (see `viewer`).
+   */
   showLightbulb?: boolean;
   /** Show the holder avatar pip on the lightbulb. Suppressed when the on-wall
    *  banner already carries the driver's face in the header, so the same face
@@ -44,6 +48,25 @@ type PlayDrawerActionBarProps = {
   showHolderBadge?: boolean;
   ascentCount: number;
   currentAngle?: number;
+  /**
+   * Who is looking.
+   *
+   * `'anonymous'` is the signed-out reader on the web export's read-only climb
+   * view (`AnonymousClimbView`). Every affordance that writes is REMOVED rather
+   * than disabled — a dead button a visitor taps and nothing happens is worse
+   * than the login wall this view replaced — and the tick becomes the one
+   * conversion prompt in the bar.
+   *
+   * Two of the removals are about navigation, not writes: the drawer is rendered
+   * IN PLACE on the canonical `/…/view/{segment}` URL, and the anonymous gate
+   * re-reads `window.location.pathname` on every navigation. Anything that
+   * pushes a route outside the read-only allow-set (`/boards`, `/play`,
+   * `/climbs/{uuid}`) bounces the visitor to login mid-session, so the queue and
+   * climb-actions entries have to go whether or not their targets would 401.
+   */
+  viewer?: 'member' | 'anonymous';
+  /** Anonymous only: what the tick button does instead of opening the tick sheet. */
+  onSignInPress?: () => void;
   onPrevClick: () => void;
   onNextClick: () => void;
   onMirror: () => void;
@@ -76,6 +99,8 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   showHolderBadge = true,
   ascentCount,
   currentAngle,
+  viewer = 'member',
+  onSignInPress,
   onPrevClick,
   onNextClick,
   onMirror,
@@ -93,6 +118,12 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   const { t: tClimbs } = useTranslation('climbs');
   const { t: tSettings } = useTranslation('settings');
   const theme = useTheme();
+  const isAnonymous = viewer === 'anonymous';
+
+  const handleSignIn = useCallback(() => {
+    hapticMedium();
+    onSignInPress?.();
+  }, [onSignInPress]);
 
   const handlePrev = useCallback(() => {
     hapticMedium();
@@ -127,6 +158,9 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   return (
     <View style={drawerActionBarStyles.container}>
       <View style={drawerActionBarStyles.rowPrimary}>
+        {/* Mirror, or the heart where a board can't mirror. An anonymous reader
+            gets neither fallback — a favourite needs an account — so the slot
+            stays empty and the row keeps its five-slot spacing either way. */}
         <View style={drawerActionBarStyles.primarySlot}>
           {supportsMirroring ? (
             <ActionButton
@@ -139,7 +173,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 isMirrored ? t('playView.actionBar.unmirrorAria') : t('playView.actionBar.mirrorAria')
               }
             />
-          ) : (
+          ) : isAnonymous ? null : (
             // On boards without mirror support, the favorite (heart) takes the
             // first slot — keeps the row visually balanced and gives heart a
             // bigger tap target. It is removed from Row 2 below in that case.
@@ -164,12 +198,17 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           />
         </View>
         <View style={drawerActionBarStyles.primarySlot}>
+          {/* The one prompt in the anonymous bar. It stays the hero slot and
+              keeps its glyph — a visitor who came to log a send should not have
+              to hunt for the way in — but it opens login carrying this URL
+              instead of the tick sheet, and drops the ascent badge, which counts
+              a logbook they do not have. */}
           <TickButton
             size="lg"
-            ascentCount={ascentCount}
-            onPress={onTickPress}
-            onLongPress={onTickLongPress}
-            accessibilityLabel={t('playView.tickFab.logAscentAria')}
+            ascentCount={isAnonymous ? 0 : ascentCount}
+            onPress={isAnonymous ? handleSignIn : onTickPress}
+            onLongPress={isAnonymous ? undefined : onTickLongPress}
+            accessibilityLabel={isAnonymous ? t('mobile.anonymous.tickAria') : t('playView.tickFab.logAscentAria')}
           />
         </View>
         <View style={drawerActionBarStyles.primarySlot}>
@@ -182,7 +221,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           />
         </View>
         <View style={drawerActionBarStyles.primarySlot}>
-          {showLightbulb ? (
+          {showLightbulb && !isAnonymous ? (
             <>
               <BleLightbulbButton
                 isConnected={lightbulbActive}
@@ -237,7 +276,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
             </Text>
           </Pressable>
         )}
-        {supportsMirroring && (
+        {supportsMirroring && !isAnonymous && (
           <ActionButton
             size="sm"
             iconName={isFavorited ? 'favorite.fill' : 'favorite'}
@@ -248,22 +287,32 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
             }
           />
         )}
-        <ActionButton
-          size="sm"
-          iconName="more"
-          onPress={onOpenActions}
-          accessibilityLabel={t('playView.actionBar.climbActionsAria')}
-        />
+        {/* The ellipsis opens queue / favourite / tick / playlist rows — every
+            one of them an account action. */}
+        {!isAnonymous && (
+          <ActionButton
+            size="sm"
+            iconName="more"
+            onPress={onOpenActions}
+            accessibilityLabel={t('playView.actionBar.climbActionsAria')}
+          />
+        )}
 
         <View style={drawerActionBarStyles.spacer} />
 
+        {/* Share is a pure client action and the whole point of a read-only
+            climb page, so it stays. */}
         <ShareButton size="sm" onPress={handleShare} accessibilityLabel={tClimbs('mobile.climbRow.share')} />
-        <ActionButton
-          size="sm"
-          iconName="queue"
-          onPress={onOpenQueue}
-          accessibilityLabel={t('playView.actionBar.queueCountAria', { count: remainingQueueCount })}
-        />
+        {/* A queue means nothing without a wall or a session, and the sheet it
+            opens is a write surface. */}
+        {!isAnonymous && (
+          <ActionButton
+            size="sm"
+            iconName="queue"
+            onPress={onOpenQueue}
+            accessibilityLabel={t('playView.actionBar.queueCountAria', { count: remainingQueueCount })}
+          />
+        )}
       </View>
     </View>
   );

@@ -38,6 +38,7 @@ import {
   type FavoritesQueryResponse,
 } from '@boardsesh/graphql/operations/favorites';
 import { BOULDER_GRADES } from '@boardsesh/board-config';
+import { useBoardAdapter } from '@boardsesh/board-react';
 import { myBoardsQueryKey } from '../query-keys';
 import { getDatabaseHandle } from '../../../db';
 import { offlineAwareRequest } from '../offline-request';
@@ -974,6 +975,20 @@ export function useToggleFavorite() {
  * angle matters — favoriting at 40° is distinct from 25°. Disabled until a
  * `climbUuid` is supplied (and via `enabled`, so callers can gate it on a sheet
  * being open). Returns `true` when the climb is favorited at this angle.
+ *
+ * The session is part of the gate, not just the caller's `enabled`. `favorites`
+ * is `requireAuthenticated` server-side, so for a signed-out reader this query
+ * has exactly one outcome: an error. That used to be theoretical — nothing
+ * signed-out could open the play drawer — and stopped being so when the web
+ * export began rendering read-only climb URLs anonymously, where the drawer
+ * opens with `enabled: isSheetOpen` and fires a guaranteed rejection on every
+ * open. Gating here rather than only at the call site means a future consumer
+ * cannot reintroduce it by forgetting.
+ *
+ * The cost is a provider dependency this hook did not used to have: it reads the
+ * session off `useBoardAdapter()`, so it must be called under a
+ * `BoardAdapterProvider` — mounted app-wide in `app/_layout.tsx` — and throws at
+ * the hook rather than at query time outside one.
  */
 export function useFavoriteStatus(
   boardName: string,
@@ -981,6 +996,7 @@ export function useFavoriteStatus(
   angle: number,
   options?: { enabled?: boolean },
 ) {
+  const { isAuthenticated } = useBoardAdapter();
   return useQuery({
     queryKey: ['favoriteStatus', boardName, climbUuid, angle],
     queryFn: () =>
@@ -990,7 +1006,7 @@ export function useFavoriteStatus(
         angle,
       }),
     select: (data) => data.favorites.includes(climbUuid!),
-    enabled: (options?.enabled ?? true) && !!climbUuid,
+    enabled: (options?.enabled ?? true) && !!climbUuid && isAuthenticated,
     staleTime: 5 * 60 * 1000,
   });
 }

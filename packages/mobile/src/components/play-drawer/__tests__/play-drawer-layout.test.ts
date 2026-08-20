@@ -4,6 +4,7 @@ import {
   computeContainedBoardSize,
   computeFirstScreenHeight,
   computeLogbookScrollTarget,
+  initialDrawerPreviewItem,
   shouldShowPanePlaceholder,
 } from '../play-drawer-layout';
 
@@ -113,5 +114,29 @@ describe('CAROUSEL_LAYER_Z', () => {
 
   it('keeps the reset-zoom button tappable above the pan overlay', () => {
     expect(CAROUSEL_LAYER_Z.resetZoom).toBeGreaterThan(CAROUSEL_LAYER_Z.zoomPan);
+  });
+});
+
+// The open target is applied by an effect, which runs after the first commit —
+// so without this seed a pane that already has its climb paints one frame of the
+// "Pick a climb / Tap a climb to see it here" placeholder first. True on the
+// iPad, where the pane really is waiting on a list selection; a lie on the
+// anonymous climb view, where there is no list to tap and the visitor followed a
+// link to one specific climb.
+describe('initialDrawerPreviewItem', () => {
+  const previewQueueItem = { uuid: 'queue-item', climb: { uuid: 'climb-1' } } as never;
+
+  it('seeds a preview open so the pane placeholder never paints', () => {
+    expect(initialDrawerPreviewItem({ options: { previewQueueItem } })).toBe(previewQueueItem);
+  });
+
+  // A commit open carries queue side effects (`setCurrentClimb`) that belong in
+  // the effect, not in a state initialiser — so it seeds nothing.
+  it('seeds nothing for a commit open, or no target at all', () => {
+    expect(initialDrawerPreviewItem({ options: { previewQueueItem: null } })).toBeNull();
+    expect(initialDrawerPreviewItem({ options: {} })).toBeNull();
+    expect(initialDrawerPreviewItem({})).toBeNull();
+    expect(initialDrawerPreviewItem(null)).toBeNull();
+    expect(initialDrawerPreviewItem(undefined)).toBeNull();
   });
 });
