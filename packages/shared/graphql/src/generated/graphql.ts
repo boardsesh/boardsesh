@@ -1097,7 +1097,7 @@ export type ClimbSearchInput = {
   angle: Scalars['Int']['input'];
   /** Board type (e.g., 'kilter', 'tension') */
   boardName: Scalars['String']['input'];
-  /** Include single-frame climbs (boulders). Default true. Set to false (paired with routes=true) to filter to routes only. */
+  /** Include single-frame climbs (boulders). Omitting both boulders and routes matches all climb types; set boulders=true with routes=false (or omit routes) to filter to boulders only. */
   boulders?: InputMaybe<Scalars['Boolean']['input']>;
   /** Grade accuracy filter ('tight', 'moderate', 'loose') */
   gradeAccuracy?: InputMaybe<Scalars['String']['input']>;
@@ -1139,7 +1139,7 @@ export type ClimbSearchInput = {
   pageSize?: InputMaybe<Scalars['Int']['input']>;
   /** Show only unclimbed projects (climbs with 0 ascents) */
   projectsOnly?: InputMaybe<Scalars['Boolean']['input']>;
-  /** Include multi-frame climbs (routes). Default false. Set to true to include or filter to routes. */
+  /** Include multi-frame climbs (routes). Omitting both boulders and routes matches all climb types; set routes=true with boulders=false (or omit boulders) to filter to routes only. */
   routes?: InputMaybe<Scalars['Boolean']['input']>;
   /** Comma-separated set IDs */
   setIds: Scalars['String']['input'];

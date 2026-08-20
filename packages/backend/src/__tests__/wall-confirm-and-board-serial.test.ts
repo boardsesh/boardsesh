@@ -20,6 +20,8 @@
  *  setSessionBoardSerial
  *  - Persists the serial via the room manager and publishes
  *    `SessionBoardSerialChanged` when the value changes.
+ *  - Normalizes the serial (trim + uppercase, via BoardSerialSchema's
+ *    validateInput return) before writing/broadcasting — see #3975.
  *  - Idempotent: when the stored serial already equals the incoming value,
  *    no event fires (avoids redundant subscriber work on reconnect storms).
  *  - Rejects non-members via the shared membership check.
@@ -358,6 +360,26 @@ describe('setSessionBoardSerial mutation', () => {
     );
     expect(roomManagerMock.setSessionBoardSerialAndReturnPrevious).not.toHaveBeenCalled();
     expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
+  });
+
+  it('normalizes the serial (trim + uppercase) before writing and broadcasting (#3975)', async () => {
+    // BoardSerialSchema's `.transform(normalizeSerial)` only takes effect on
+    // the parsed return; a lowercase/whitespace-padded serial must still
+    // reach roomManager and the broadcast event in its normalized form, the
+    // same way resolveBoardForSerial (board-presence/mutations.ts) already
+    // normalizes before comparing/storing. Regression guard for the
+    // discarded-validateInput-return bug fixed alongside #3975.
+    roomManagerMock.setSessionBoardSerialAndReturnPrevious.mockResolvedValueOnce(null);
+    roomManagerMock.getSessionBoardSerial.mockResolvedValueOnce(validSerial);
+    const ctx = makeCtx();
+
+    await sessionMutations.setSessionBoardSerial(undefined, { serial: '  kb-ab12-cd34  ' }, ctx);
+
+    expect(roomManagerMock.setSessionBoardSerialAndReturnPrevious).toHaveBeenCalledWith('session-1', validSerial);
+    expect(pubsubMock.publishSessionEvent).toHaveBeenCalledWith('session-1', {
+      __typename: 'SessionBoardSerialChanged',
+      lastConnectedBoardSerial: validSerial,
+    });
   });
 
   it('throws when ctx.participantId is missing and does not mutate state or publish', async () => {
