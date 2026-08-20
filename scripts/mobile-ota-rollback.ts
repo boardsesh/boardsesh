@@ -17,10 +17,12 @@
  *   --mode republish            → `eoas republish`  Re-points the branch to a
  *       PREVIOUS published update you pick from a list. Interactive (eoas prompts
  *       for the update), so run it LOCALLY, not in CI.
- *       NEEDS THE SERVER ON v3.1.2: republish's route shapes moved between 3.1.1
- *       and 3.1.2, and the back-compat for older clients is server-side. Until the
- *       Railway image is bumped, use --mode embedded (unchanged, and the mode the
- *       incident runbook uses anyway).
+ *       NEEDS THE SERVER ON v3.1.2: 3.1.2 lists candidates via lib/serverUpdates,
+ *       which adds a `.../runtimeVersion/<rv>/publish-groups` route 3.0.5 does not
+ *       serve, and can pass `?publishGroup=` on the republish call. Back-compat for
+ *       older clients is server-side (xprem #168). Until the Railway image is
+ *       bumped, use --mode embedded — unchanged, and the mode the incident runbook
+ *       uses anyway. The helper prints this warning before running.
  *
  * eoas resolves the target runtimeVersion (fingerprint) from the LOCAL config, so
  * the rollback only lands if it resolves the SAME fingerprint the shipped binary
@@ -173,6 +175,19 @@ function main(): number {
   console.log(`[ota-rollback] Server:   ${serverUrl}`);
   console.log(`[ota-rollback] Branch:   ${options.branch}`);
   console.log(`[ota-rollback] Platform: ${options.platform}`);
+  if (options.mode === 'republish') {
+    // eoas 3.1.2 lists republish candidates through lib/serverUpdates, which adds a
+    // `.../runtimeVersion/<rv>/publish-groups` route the 3.0.5 server does not serve,
+    // and can send `?publishGroup=` on the republish call itself. Server-side
+    // back-compat for that landed with the v3.1.2 image (xprem #168). Warn rather
+    // than block: this stops being a problem the moment the Railway image is bumped,
+    // and blocking would then need a code change to undo.
+    console.log('');
+    console.log('[ota-rollback] NOTE: republish needs the server on xprem:v3.1.2. If it is still on');
+    console.log('[ota-rollback] v3.0.5, expect a 404 listing previous updates — that is the version');
+    console.log('[ota-rollback] gap, not a broken rollback. Use --mode embedded instead; it is');
+    console.log('[ota-rollback] unaffected and is the mode the incident runbook uses.');
+  }
   console.log('');
   console.log(`[ota-rollback] Running: bunx ${eoasArgs.join(' ')}`);
   console.log('');
