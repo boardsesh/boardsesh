@@ -124,10 +124,16 @@ export const SHARED_EVENTS = {
   //
   // Fired by the native fleet and app.boardsesh.com. Props: { kind: 'list' |
   // 'climb' | 'slug-list' | 'slug-climb' | 'unparsed', status: 'resolved' |
-  // 'not_found' | 'auth_required', source: 'deep-link' | 'in-app' }.
+  // 'not_found' | 'auth_required' | 'anonymous', source: 'deep-link' |
+  // 'in-app' }.
   // `not_found` is held back for a parsed URL that failed while the device was
   // offline — that one heals on reconnect and would otherwise double-count as a
   // failure and a success.
+  // `anonymous` is a signed-out reader who got the read-only climb view instead
+  // of the login wall — web export only, and a climb URL only. It is a status
+  // VALUE rather than a second event name precisely so the Clicked ÷ Handoff
+  // ratio keeps counting the whole hop; split anonymous from signed-in arrivals
+  // with a breakdown, not a new funnel.
   BoardRouteHandoff: 'Board Route Handoff',
   // Fired by www's SSR front doors when a reader taps "Climb this". Props:
   // { environment: 'production-web', surface: 'climb_front_door' |
