@@ -269,7 +269,9 @@ export const SHARED_EVENTS = {
   // This is the field signal for tuning the native gate's freshness bound: the
   // ble_relight_suppressed Sentry tag only ever rides a captured error, so it
   // covers the sessions that also crashed rather than the ones that fired.
-  // Props: surface, connectOrigin (native only), boardName, layoutId, sizeId.
+  // Props: surface, boardName, layoutId, sizeId, plus connectOrigin on
+  // 'native_connect' and climbUuid (the climb that was not written) on
+  // 'js_auto_send'.
   BleImplicitRelightSuppressed: 'BLE Implicit Relight Suppressed',
   // Search
   // Fired once per resolved search/filter result set, keyed on the search text +

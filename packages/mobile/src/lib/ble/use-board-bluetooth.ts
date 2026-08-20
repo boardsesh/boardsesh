@@ -1655,6 +1655,14 @@ export function useBoardBluetooth({
           // reconnect, write-stall recovery), so the auto-sender may drive the
           // wall even though we adopted off screen. `undefined` is an older
           // binary with no verdict to report: stay armed, fail closed.
+          //
+          // The release is asynchronous and can land after the auto-sender's
+          // first drain. That is safe by construction: arming happens
+          // synchronously above, before `setIsConnected`, so the gate can only
+          // ever fail closed. On an authorised link the cost is at most one
+          // skipped JS write, and native already re-lit the wall itself at its
+          // own success point — every later write (a party peer's climb change)
+          // sees the released gate.
           if (device?.implicitRelightSuppressed === false) {
             backgroundAdoptSendGateRef.current = false;
             return;
