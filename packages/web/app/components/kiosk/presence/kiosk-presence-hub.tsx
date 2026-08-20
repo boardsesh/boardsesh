@@ -42,15 +42,17 @@
 // because the rebuild happens BY CONSTRUCTION while the backend is
 // unreachable, so the providers' own backfill seeds fail.
 //
-// Costs, stated plainly: each generation gets a fresh 10-attempt budget, so a
-// long outage roughly triples a TV's connect attempts against a backend that
-// is already down (measured: 31 attempts vs 11 over 12 minutes, one board).
-// That is inside `boardNowPlaying`'s 60/min anon bucket, and the rebuild
-// countdown carries the same jitter the transport's own backoff uses so a
-// fleet that dropped together does not rebuild in lockstep. Case (b) is capped
-// at MAX_STALE_SUBSCRIPTION_REBUILDS because a board the backend will never
-// serve again (flipped private mid-session) would otherwise churn the whole
-// client every 5 minutes for the rest of the day.
+// Costs, stated plainly: each generation gets a fresh 11-attempt budget (the
+// initial connect plus `retryAttempts: 10`), so an outage that outlives the
+// first window costs one extra burst of up to 11 attempts per rebuild instead
+// of the single burst a supervisor-less client spends. With the jittered window
+// averaging ~3.75 min, a 12-minute outage is on the order of 40 attempts rather
+// than 11 — spread over those 12 minutes, comfortably inside
+// `boardNowPlaying`'s 60/min anon bucket. The jitter is what keeps that from
+// arriving as one synchronized fleet-wide burst. Case (b) is capped at
+// MAX_STALE_SUBSCRIPTION_REBUILDS because a board the backend will never serve
+// again (flipped private mid-session) would otherwise churn the whole client
+// every 5 minutes for the rest of the day.
 //
 // Longer/other outages are covered by kiosk-reliability.tsx — but only on the
 // kiosk routes: `/embed/**` mounts this hub WITHOUT `KioskReliability`, so an
