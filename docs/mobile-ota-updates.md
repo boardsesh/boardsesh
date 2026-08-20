@@ -17,9 +17,9 @@ destructive storage re-path and an in-place stateless→control-plane key-sealin
 cutting a new native build anyway, so instead we stood up a fresh V3 server on an empty bucket + new
 Postgres and left V2 untouched. Two servers now run in parallel:
 
-| Server          | Host                    | Version                                     | Who hits it                                                                                                                                                                     |
-| --------------- | ----------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **V2 (frozen)** | `ota.boardsesh.com`     | axelmarciano V2, stateless                  | Old store/TestFlight binaries built before the V3 cutover. They have `ota.boardsesh.com` + the old cert baked in, so V2 keeps serving them unchanged. **Do not publish to it.** |
+| Server          | Host                    | Version                                                                                            | Who hits it                                                                                                                                                                     |
+| --------------- | ----------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **V2 (frozen)** | `ota.boardsesh.com`     | axelmarciano V2, stateless                                                                         | Old store/TestFlight binaries built before the V3 cutover. They have `ota.boardsesh.com` + the old cert baked in, so V2 keeps serving them unchanged. **Do not publish to it.** |
 | **V3 (live)**   | `updates.boardsesh.com` | mercuretechnologies xprem, control-plane ([which tag](#versions-the-cli-pin-and-the-server-image)) | New/updated binaries (V3 URL + V3 cert + `expo-app-id` header baked in). CI publishes only here.                                                                                |
 
 - Old installs migrate to V3 by store-updating to a V3 build; there's no cross-server backport.

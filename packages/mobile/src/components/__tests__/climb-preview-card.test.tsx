@@ -60,9 +60,14 @@ describe('ClimbPreviewCard', () => {
 
   it('renders a scheme-aware separator below the preview row', () => {
     const { container } = render(<ClimbPreviewCard climb={climb} {...boardConfig} />);
-    // The separator is the only block tinted with the separator colour; the row
-    // itself stays transparent so the sheet's glass shows through.
     expect(container.querySelector('[data-bg="#38383A"]')).not.toBeNull();
-    expect(container.querySelector('[data-bg="#000000"]')).toBeNull();
+  });
+
+  it('paints an opaque background instead of relying on the sheet under it', () => {
+    // Android's sheet backing isn't guaranteed opaque the way iOS's glass
+    // material is — the row needs its own ground so the board thumbnail never
+    // shows through to whatever's behind the sheet.
+    const { container } = render(<ClimbPreviewCard climb={climb} {...boardConfig} />);
+    expect(container.querySelector('[data-bg="#000000"]')).not.toBeNull();
   });
 });
