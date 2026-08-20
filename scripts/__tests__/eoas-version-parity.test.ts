@@ -95,7 +95,7 @@ describe('eoas version parity', () => {
     expect(drifted).toEqual([]);
   });
 
-  it.each(SERVER_IMAGE_DEPLOYED_FILES)('makes %s name the pending server bump while it trails the pin', (file) => {
+  it.each(SERVER_IMAGE_DEPLOYED_FILES)("keeps %s's pending-bump note in step with its server version", (file) => {
     const references = serverImageReferences(file);
     expect(references.length).toBeGreaterThan(0);
 
