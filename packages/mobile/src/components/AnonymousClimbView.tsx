@@ -24,7 +24,7 @@
 // Native never renders this. The whole anonymous branch sits behind
 // `RELAXES_ANONYMOUS_ROUTES`, whose native fork is a literal `false`.
 
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -70,15 +70,20 @@ export const AnonymousClimbView = memo(function AnonymousClimbView({
   // without a fresh nonce the anonymous drawer would fall back to the queue's
   // current climb, which is empty here, and blank itself.
   const [openNonce, setOpenNonce] = useState(1);
+  // The current angle again, in a ref, purely so the "did it actually move?"
+  // check can happen OUTSIDE a state updater. Bumping the nonce from inside
+  // `setAngle`'s updater read naturally but broke React's contract that updaters
+  // are pure: Strict Mode runs them twice, so every angle change moved the nonce
+  // by two in development and by one in production — the kind of difference that
+  // makes a re-open bug reproduce on a device and not on a desk.
+  const angleRef = useRef(boardConfig.angle);
   const handleAngleChange = useCallback((nextAngle: number) => {
-    // Both writes are conditional on the angle actually moving. Re-opening the
-    // drawer for an angle it is already on would rebuild the preview item for
-    // nothing.
-    setAngle((currentAngle) => {
-      if (currentAngle === nextAngle) return currentAngle;
-      setOpenNonce((nonce) => nonce + 1);
-      return nextAngle;
-    });
+    // Re-opening the drawer for the angle it is already on would rebuild the
+    // preview item for nothing, so both writes are conditional on the move.
+    if (angleRef.current === nextAngle) return;
+    angleRef.current = nextAngle;
+    setAngle(nextAngle);
+    setOpenNonce((nonce) => nonce + 1);
   }, []);
 
   const paneBoardConfig = useMemo<BoardConfig>(() => ({ ...boardConfig, angle }), [boardConfig, angle]);

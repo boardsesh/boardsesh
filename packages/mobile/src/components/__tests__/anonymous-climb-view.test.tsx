@@ -16,7 +16,7 @@
 //    and blanks itself.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
-import { act, createElement, type ReactNode } from 'react';
+import { act, createElement, StrictMode, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 
 // The gate's return, as a sentinel: this suite asserts the view forwards that
@@ -149,6 +149,24 @@ describe('AnonymousClimbView', () => {
     act(() => onAngleChange(BOARD_CONFIG.angle));
 
     expect((lastDrawerProps().openTarget as { nonce: number }).nonce).toBe(beforeTarget.nonce);
+  });
+
+  // Strict Mode is the oracle for the nonce, not a style check. React runs state
+  // updaters twice under it, so bumping the nonce from inside `setAngle`'s
+  // updater — which read perfectly well — advanced it by two in development and
+  // by one in production. Anything that later keys off the nonce's VALUE rather
+  // than its identity would then behave differently on a desk than on a device.
+  it('advances the open target by exactly one under Strict Mode', () => {
+    const { getByTestId } = render(
+      createElement(StrictMode, null, createElement(AnonymousClimbView, { climb: CLIMB, boardConfig: BOARD_CONFIG })),
+    );
+    expect(getByTestId('play-drawer')).not.toBeNull();
+    const before = (lastDrawerProps().openTarget as { nonce: number }).nonce;
+    const onAngleChange = lastDrawerProps().onAngleChange as (angle: number) => void;
+
+    act(() => onAngleChange(25));
+
+    expect((lastDrawerProps().openTarget as { nonce: number }).nonce).toBe(before + 1);
   });
 
   it('re-applies the open target when the angle moves so the drawer cannot blank', () => {
