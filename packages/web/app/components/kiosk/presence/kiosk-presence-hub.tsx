@@ -185,12 +185,6 @@ export function KioskPresenceHubInner({
   }, []);
 
   /**
-   * Start (or stand down) the countdown on case (b). Called both when a board's
-   * liveness changes and when the SOCKET connects — a board can go dead before
-   * the socket is up (its first subscribe is rejected), and that ordering would
-   * otherwise leave the countdown permanently unarmed.
-   */
-  /**
    * Forget boards that are no longer rendered. A board whose provider unmounts
    * publishes no final snapshot, so without this its last known "dead" would
    * keep forcing rebuilds for a slot the editor already removed.
@@ -204,6 +198,12 @@ export function KioskPresenceHubInner({
     }
   }, []);
 
+  /**
+   * Start (or stand down) the countdown on case (b). Called both when a board's
+   * liveness changes and when the SOCKET connects — a board can go dead before
+   * the socket is up (its first subscribe is rejected), and that ordering would
+   * otherwise leave the countdown permanently unarmed.
+   */
   const evaluateStaleSubscriptions = useCallback(() => {
     pruneDeadBoards();
     if (deadBoardsRef.current.size === 0) {
@@ -235,6 +235,9 @@ export function KioskPresenceHubInner({
    */
   const noteBoardLiveness = useCallback(
     (boardId: number, isLive: boolean) => {
+      // Prune BEFORE reading the set, so a removed board cannot make the
+      // all-live transitions below read false when every rendered board is up.
+      pruneDeadBoards();
       const deadBoards = deadBoardsRef.current;
       const wasAllLive = deadBoards.size === 0;
       if (isLive) {
@@ -260,7 +263,7 @@ export function KioskPresenceHubInner({
 
       evaluateStaleSubscriptions();
     },
-    [evaluateStaleSubscriptions],
+    [evaluateStaleSubscriptions, pruneDeadBoards],
   );
 
   useEffect(() => {
