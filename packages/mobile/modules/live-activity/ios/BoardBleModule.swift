@@ -198,6 +198,7 @@ public class BoardBleModule: Module {
         AsyncFunction("getConnectedDevice") { () -> [String: Any]? in
             guard let device = BoardBleManager.shared.connectedDeviceInfo else { return nil }
             let diagnostics = device.diagnostics
+            let provenance = BoardBleManager.shared.connectRelightProvenance
             return [
                 "deviceId": device.deviceId,
                 "name": device.name ?? "",
@@ -206,7 +207,11 @@ public class BoardBleModule: Module {
                 "supportsWriteWithoutResponse": diagnostics.supportsWriteWithoutResponse,
                 "chosenWriteType": diagnostics.chosenWriteType,
                 "maxWriteWithResponse": diagnostics.maxWriteWithResponse,
-                "maxWriteWithoutResponse": diagnostics.maxWriteWithoutResponse
+                "maxWriteWithoutResponse": diagnostics.maxWriteWithoutResponse,
+                // Implicit re-light provenance (additive; older JS ignores it).
+                // See BoardBleManager.shouldPerformImplicitRelight (#4499).
+                "connectOrigin": provenance.origin ?? "",
+                "implicitRelightSuppressed": provenance.implicitRelightSuppressed
             ]
         }
 
@@ -221,7 +226,8 @@ public class BoardBleModule: Module {
                     colorOverrides: options.colorOverrides ?? [:],
                     numRows: options.numRows,
                     lightAdjacentHolds: options.lightAdjacentHolds
-                )
+                ),
+                appActive: options.appActive
             )
         }
     }
@@ -273,6 +279,10 @@ struct ConfigureBoardOptions: Record {
     @Field var colorOverrides: [String: String]?
     // MoonBoard grid rows (18 standard, 12 Mini) — see #3392.
     @Field var numRows: Int?
+    // Whether the JS caller was in the foreground when it pushed this config.
+    // Defaults to true so an older JS bundle running against this binary keeps
+    // today's behaviour (mid-session colour re-lights still land) — see #4499.
+    @Field var appActive: Bool = true
     // MoonBoard "V2" additional-LED feature — see BoardBleConfiguration.
     @Field var lightAdjacentHolds: Bool?
 }

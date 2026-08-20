@@ -208,6 +208,8 @@ function BluetoothAutoSender({
   activeConfig,
   onSkipSpillClimb,
   onUnresolvedCurrentClimb,
+  consumeBackgroundAdoptSendGate,
+  onBackgroundAdoptSendSuppressed,
 }: {
   sendFramesToBoard: SendFramesToBoard;
   /**
@@ -245,6 +247,15 @@ function BluetoothAutoSender({
   // unresolved-current-climb window without the AutoSender owning analytics/board
   // context. Fired once per queue-item uuid.
   onUnresolvedCurrentClimb: (item: ClimbQueueItem) => void;
+  // Asked immediately before each write: `true` means refuse this one. The hook
+  // arms the gate when it adopts a native connection while the app is off screen
+  // and native's connect gate did not authorise an implicit re-light (#4499) — a
+  // CoreBluetooth state restoration boots React Native, restores the queue
+  // snapshot, and the drain below would otherwise repaint the wall the native
+  // gate deliberately kept dark. It releases itself once the app is on screen.
+  consumeBackgroundAdoptSendGate: () => boolean;
+  // Reports a refused write so the gate is measurable in the field.
+  onBackgroundAdoptSendSuppressed: (item: ClimbQueueItem) => void;
 }) {
   type AutoSendRequest = {
     item: ClimbQueueItem;
@@ -274,6 +285,14 @@ function BluetoothAutoSender({
   useEffect(() => {
     onUnresolvedCurrentClimbRef.current = onUnresolvedCurrentClimb;
   }, [onUnresolvedCurrentClimb]);
+  const consumeBackgroundAdoptSendGateRef = useRef(consumeBackgroundAdoptSendGate);
+  useEffect(() => {
+    consumeBackgroundAdoptSendGateRef.current = consumeBackgroundAdoptSendGate;
+  }, [consumeBackgroundAdoptSendGate]);
+  const onBackgroundAdoptSendSuppressedRef = useRef(onBackgroundAdoptSendSuppressed);
+  useEffect(() => {
+    onBackgroundAdoptSendSuppressedRef.current = onBackgroundAdoptSendSuppressed;
+  }, [onBackgroundAdoptSendSuppressed]);
   const queueRef = useRef(state.queue);
   queueRef.current = state.queue;
   // Dedup spill reports: the async drain can re-enter for the same incompatible
@@ -411,6 +430,20 @@ function BluetoothAutoSender({
             continue;
           }
           lastUnresolvedReportedUuidRef.current = null;
+
+          // #4499 off-screen-adopt gate. The wall must not light for a
+          // connection nobody asked for, and adopting one boots this component
+          // with a restored queue and a null dedup signature — the write would
+          // otherwise go straight out. Deliberately checked here, not at mount:
+          // the queue snapshot can hydrate after the adopt, so the first drain
+          // is the first moment a write is actually on the table. Nothing is
+          // recorded as sent, so a later user action still repaints.
+          if (consumeBackgroundAdoptSendGateRef.current()) {
+            onBackgroundAdoptSendSuppressedRef.current(item);
+            toSend = pendingSendRef.current;
+            pendingSendRef.current = null;
+            continue;
+          }
 
           // connect() may have just written these exact frames as its
           // initialFrames (connect-and-light flows like the play drawer).
@@ -970,6 +1003,7 @@ export function BluetoothProvider({
     reconnectSerialForCurrentBoard,
     reconnectDeviceIdForCurrentBoard,
     connectInitialSendRef,
+    consumeBackgroundAdoptSendGate,
   } = useBoardBluetooth({
     boardName,
     layoutId,
@@ -1434,6 +1468,20 @@ export function BluetoothProvider({
     });
   }, []);
 
+  // The auto-sender refused to light the wall for a link adopted off screen
+  // that native's connect gate did not authorise (#4499). Reported once per
+  // refusal so the gate's real-world hit rate — and the freshness bound it
+  // depends on — can be read off analytics instead of guessed at.
+  const handleBackgroundAdoptSendSuppressed = useCallback((item: ClimbQueueItem) => {
+    track(SHARED_EVENTS.BleImplicitRelightSuppressed, {
+      surface: 'js_auto_send',
+      boardName: boardNameRef.current,
+      layoutId: layoutIdRef.current,
+      sizeId: sizeIdRef.current,
+      climbUuid: item.climb.uuid,
+    });
+  }, []);
+
   // Bumped by `reassertWall()` to force the auto-sender to re-push the current
   // climb once, bypassing the byte-identical dedup.
   const [reassertNonce, setReassertNonce] = useState(0);
@@ -1595,6 +1643,8 @@ export function BluetoothProvider({
             reassertNonce={reassertNonce}
             connectInitialSendRef={connectInitialSendRef}
             lastPhysicalFramesRef={lastPhysicalFramesRef}
+            consumeBackgroundAdoptSendGate={consumeBackgroundAdoptSendGate}
+            onBackgroundAdoptSendSuppressed={handleBackgroundAdoptSendSuppressed}
             colorSignature={holdColorSignature}
             encodingSignature={encodingSignature}
             activeConfig={currentBoardConfig}

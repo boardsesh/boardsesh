@@ -235,16 +235,34 @@ describe('applyBleDiagnosticsToScope', () => {
   it('clears every BLE tag (sets undefined) when given null', () => {
     const scope = makeScope();
     applyBleDiagnosticsToScope(scope, null);
-    expect(scope.setTag).toHaveBeenCalledTimes(5);
+    expect(scope.setTag).toHaveBeenCalledTimes(7);
     for (const key of [
       'ble_chosen_write_type',
       'ble_supports_without_response',
       'ble_char_properties',
       'ble_max_with_response',
       'ble_max_without_response',
+      'ble_connect_origin',
+      'ble_relight_suppressed',
     ]) {
       expect(scope.setTag).toHaveBeenCalledWith(key, undefined);
     }
+  });
+
+  // #4499 — the zombie reconnect is not reproducible on demand, so these two
+  // tags are the only way to see the gate firing in the field.
+  it('tags how the connection came to be and whether the re-light was suppressed', () => {
+    const scope = makeScope();
+    applyBleDiagnosticsToScope(scope, { connectOrigin: 'restored', implicitRelightSuppressed: true });
+    expect(scope.setTag).toHaveBeenCalledWith('ble_connect_origin', 'restored');
+    expect(scope.setTag).toHaveBeenCalledWith('ble_relight_suppressed', 'true');
+  });
+
+  it('treats the empty connect origin the bridge sends for an unknown link as absent', () => {
+    const scope = makeScope();
+    applyBleDiagnosticsToScope(scope, { connectOrigin: '', implicitRelightSuppressed: false });
+    expect(scope.setTag).toHaveBeenCalledTimes(1);
+    expect(scope.setTag).toHaveBeenCalledWith('ble_relight_suppressed', 'false');
   });
 });
 

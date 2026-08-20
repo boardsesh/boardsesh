@@ -81,6 +81,9 @@ const bluetooth = vi.hoisted(() => {
           encodingSignature: string;
         } | null,
       },
+      // #4499 off-screen-adopt gate. `false` = let the write through, which is
+      // what every test here that isn't specifically about the gate wants.
+      consumeBackgroundAdoptSendGate: vi.fn(() => false),
     },
     useBoardBluetooth: vi.fn((options: BluetoothHookOptions) => {
       mock.options = options;
@@ -375,6 +378,8 @@ describe('BluetoothProvider wall-confirm integration', () => {
     bluetooth.state.sendFramesToBoard.mockReset();
     bluetooth.state.sendFramesToBoard.mockResolvedValue(true);
     bluetooth.state.connectInitialSendRef.current = null;
+    bluetooth.state.consumeBackgroundAdoptSendGate.mockReset();
+    bluetooth.state.consumeBackgroundAdoptSendGate.mockReturnValue(false);
     bluetooth.useBoardBluetooth.mockClear();
     presence.enabled = false;
     presence.boardId = null;
@@ -412,6 +417,62 @@ describe('BluetoothProvider wall-confirm integration', () => {
 
     expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1');
     expect(queue.confirmClimbOnWall).toHaveBeenCalledWith('climb-1');
+  });
+
+  // #4499. A CoreBluetooth state restoration (or a connect parked across
+  // suspension and honoured days later) boots React Native in the background,
+  // the hook adopts the link, and the auto-sender mounts with the restored queue
+  // snapshot and a null dedup signature. The native connect gate keeps the wall
+  // dark, but this write would repaint it anyway — the verbatim report.
+  it('refuses the first auto-send after adopting a link off screen', async () => {
+    bluetooth.state.consumeBackgroundAdoptSendGate.mockReturnValue(true);
+
+    renderProvider();
+
+    await waitFor(() => {
+      expect(bluetooth.state.consumeBackgroundAdoptSendGate).toHaveBeenCalled();
+    });
+    expect(bluetooth.state.sendFramesToBoard).not.toHaveBeenCalled();
+    expect(wallConfirm.emitWallConfirm).not.toHaveBeenCalled();
+    expect(analytics.track).toHaveBeenCalledWith(
+      'BLE Implicit Relight Suppressed',
+      expect.objectContaining({ surface: 'js_auto_send', climbUuid: 'climb-1' }),
+    );
+  });
+
+  // Nothing is recorded as being on the wall when the gate refuses, so the next
+  // climb the user picks still writes rather than being deduped into silence.
+  it('still writes the next climb after a refused off-screen auto-send', async () => {
+    bluetooth.state.consumeBackgroundAdoptSendGate.mockReturnValue(true);
+
+    const { rerender } = renderProvider();
+
+    await waitFor(() => {
+      expect(bluetooth.state.consumeBackgroundAdoptSendGate).toHaveBeenCalled();
+    });
+    expect(bluetooth.state.sendFramesToBoard).not.toHaveBeenCalled();
+
+    // The user opens the app: the hook releases the gate, and they navigate.
+    bluetooth.state.consumeBackgroundAdoptSendGate.mockReturnValue(false);
+    queue.currentClimbQueueItem = makeQueueItem('climb-2');
+    rerender(
+      createElement(BluetoothProvider, {
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,20',
+        children: createElement('div', null),
+      }),
+    );
+
+    await waitFor(() => {
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledWith(
+        'p1r12',
+        false,
+        expect.any(AbortSignal),
+        expect.objectContaining({ sendSource: 'auto', targetQueueItemUuid: 'queue-climb-2' }),
+      );
+    });
   });
 
   it('writes updated MoonBoard packets when the control sheet toggles adjacent holds', async () => {

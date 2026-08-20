@@ -137,6 +137,21 @@ export async function dispatchMoonboardPacket(
   return true;
 }
 
+// Whether the app is on screen right now. Native re-lights the wall on every
+// configureBoard so a colour change lands immediately, but a background BLE wake
+// also boots React Native — and the adopt path below pushes a config as soon as
+// it adopts. Passing the real foreground state lets native keep the wall dark
+// when nobody asked for the connection (#4499).
+//
+// `inactive` counts as on screen: iOS reports it while a call banner or the app
+// switcher is overlaid, and the user is still looking at us. Only `background`
+// is the wake-with-nobody-there case — a CoreBluetooth background launch reports
+// `background`, never `inactive` — so widening here can't reopen the bug, and it
+// stops a colour change landing during a call overlay from being dropped.
+function isAppActive(): boolean {
+  return AppState.currentState === 'active' || AppState.currentState === 'inactive';
+}
+
 // MoonBoard grid rows for the native configureBoard payload, so native
 // re-encodes (widget intents, reconnect re-light) use the same serpentine grid
 // as the JS send path — Mini strips are 12 rows, standard 18 (#3392). Undefined
@@ -530,6 +545,21 @@ export function useBoardBluetooth({
   // byte-identical current climb doesn't get re-sent immediately on connect —
   // a redundant full-frame write plus a doubled success haptic.
   const connectInitialSendRef = useRef<BleConnectInitialSend | null>(null);
+  // #4499, JS half. A background BLE wake — CoreBluetooth state restoration
+  // after a jetsam kill, or a connect parked across suspension and honoured days
+  // later — boots React Native, and the adopt path below flips `isConnected`.
+  // That mounts the auto-sender, whose first drain would push the restored
+  // queue's current climb and re-light the wall the native connect gate just
+  // kept dark. So the adopt path arms this gate whenever it adopts off screen,
+  // and the auto-sender refuses its write while it is armed.
+  //
+  // Native's own verdict releases it: `implicitRelightSuppressed === false`
+  // means the gate authorised this connection (a Live Activity lightbulb
+  // reconnect, a #3181 write-stall recovery), so a phone in a pocket keeps
+  // driving the wall for a party peer. Only the unauthorised off-screen adopt —
+  // the reported bug — stays silent, and it releases the moment the app is back
+  // on screen.
+  const backgroundAdoptSendGateRef = useRef(false);
   const configuredDeviceNameRef = useRef<string | undefined>(undefined);
   // The physical-link lifetime belongs to the adapter generation, not React's
   // rendered `isConnected` edge. It begins as soon as the adapter identity and
@@ -695,6 +725,7 @@ export function useBoardBluetooth({
       adapterRef.current = null;
       configuredDeviceNameRef.current = undefined;
       connectedConfigIdentityRef.current = null;
+      backgroundAdoptSendGateRef.current = false;
       writeAbortRef.current?.abort();
       writeAbortRef.current = null;
       writeChainRef.current = Promise.resolve();
@@ -1056,6 +1087,9 @@ export function useBoardBluetooth({
       // A deliberate connect re-arms native-connection adoption after an
       // earlier explicit disconnect suppressed it.
       adoptionSuppressedRef.current = false;
+      // The user asked for this link, so the off-screen-adopt gate from any
+      // previous connection must not survive into it (#4499).
+      backgroundAdoptSendGateRef.current = false;
 
       setLoading(true);
 
@@ -1177,6 +1211,7 @@ export function useBoardBluetooth({
               colorOverrides: sanitizedColorOverrides,
               numRows: moonboardNumRowsForNative(boardName, layoutId),
               lightAdjacentHolds: moonboardLightAdjacentHolds,
+              appActive: isAppActive(),
             });
           } catch (error) {
             console.warn('[BLE] Failed to push board configuration to native side:', error);
@@ -1463,6 +1498,7 @@ export function useBoardBluetooth({
       // app could otherwise see getConnectedDevice still report the device this
       // teardown is closing and silently re-adopt it.
       adoptionSuppressedRef.current = true;
+      backgroundAdoptSendGateRef.current = false;
       unsubDisconnectRef.current?.();
       unsubDisconnectRef.current = null;
       const adapter = adapterRef.current;
@@ -1563,6 +1599,11 @@ export function useBoardBluetooth({
 
       const adapter = createBluetoothAdapter(devicePicker, scanFamilyForBoard(boardName));
       if (!isNativeIosBleAdapter(adapter) || typeof adapter.configureBoard !== 'function') return;
+      // Arm the JS re-light gate before anything can flip `isConnected`: an
+      // adopt that happens while the app is off screen is a wake nobody asked
+      // for until native's verdict says otherwise (#4499).
+      const adoptedOffScreen = !isAppActive();
+      backgroundAdoptSendGateRef.current = adoptedOffScreen;
       adapter.adoptConnection(deviceId);
       apiLevelRef.current = parseApiLevel(deviceName);
       configuredDeviceNameRef.current = deviceName;
@@ -1590,6 +1631,7 @@ export function useBoardBluetooth({
           colorOverrides: sanitizedColorOverrides,
           numRows: moonboardNumRowsForNative(boardName, layoutId),
           lightAdjacentHolds: moonboardLightAdjacentHolds,
+          appActive: isAppActive(),
         })
         .catch(() => {});
 
@@ -1606,7 +1648,33 @@ export function useBoardBluetooth({
       // (widget reconnect / state restoration paths, not just JS connect).
       // Fire-and-forget; a native rejection is intentionally ignored.
       void getNativeBleConnectedDevice()
-        .then(setBleDiagnosticsTags)
+        .then((device) => {
+          setBleDiagnosticsTags(device);
+          if (!adoptedOffScreen) return;
+          // Native authorised this connection's implicit re-light (lightbulb
+          // reconnect, write-stall recovery), so the auto-sender may drive the
+          // wall even though we adopted off screen. `undefined` is an older
+          // binary with no verdict to report: stay armed, fail closed.
+          //
+          // The release is asynchronous and can land after the auto-sender's
+          // first drain. That is safe by construction: arming happens
+          // synchronously above, before `setIsConnected`, so the gate can only
+          // ever fail closed. On an authorised link the cost is at most one
+          // skipped JS write, and native already re-lit the wall itself at its
+          // own success point — every later write (a party peer's climb change)
+          // sees the released gate.
+          if (device?.implicitRelightSuppressed === false) {
+            backgroundAdoptSendGateRef.current = false;
+            return;
+          }
+          track(SHARED_EVENTS.BleImplicitRelightSuppressed, {
+            surface: 'native_connect',
+            connectOrigin: device?.connectOrigin || undefined,
+            boardName,
+            layoutId,
+            sizeId,
+          });
+        })
         .catch(() => {});
     };
 
@@ -1670,6 +1738,7 @@ export function useBoardBluetooth({
         colorOverrides: sanitizedColorOverrides,
         numRows: moonboardNumRowsForNative(boardName, layoutId),
         lightAdjacentHolds: moonboardLightAdjacentHolds,
+        appActive: isAppActive(),
       })
       .catch(() => {});
   }, [boardName, layoutId, sizeId, isConnected, sanitizedColorOverrides, moonboardLightAdjacentHolds]);
@@ -1743,6 +1812,23 @@ export function useBoardBluetooth({
     };
   }, [consumeConnectionLifetime, writeActivityStore]);
 
+  // Asked by the auto-sender immediately before each write it is about to make:
+  // `true` means refuse this one (#4499). Kept in the hook rather than read from
+  // a ref by the provider so the AppState reading and the gate's release rule
+  // stay in one place, next to the adopt path that arms it.
+  //
+  // The release is checked here, not at arm time, because the queue snapshot can
+  // hydrate long after the adopt: the user may already be back on screen by the
+  // time a write is first on the table, and then they should get their wall.
+  const consumeBackgroundAdoptSendGate = useCallback(() => {
+    if (!backgroundAdoptSendGateRef.current) return false;
+    if (isAppActive()) {
+      backgroundAdoptSendGateRef.current = false;
+      return false;
+    }
+    return true;
+  }, []);
+
   return {
     isConnected,
     loading,
@@ -1753,5 +1839,6 @@ export function useBoardBluetooth({
     reconnectSerialForCurrentBoard,
     reconnectDeviceIdForCurrentBoard,
     connectInitialSendRef,
+    consumeBackgroundAdoptSendGate,
   };
 }
