@@ -159,16 +159,18 @@ export function resolveSizeSlug(boardName: BoardName, layoutId: number, sizeId: 
 }
 
 /**
- * Qualified size slugs that must keep resolving forever, keyed by board and then
- * by size id.
+ * Size slugs that must keep resolving forever, keyed by board and then by size
+ * id.
  *
- * The qualifier {@link sizeSlugsForLayout} appends is derived from the upstream
- * size *name*, and upstream renames sizes — the July 2026 sync audit caught
- * several. A rename re-mints the qualifier, so the slug generated after it and
- * the slug already sitting in every shared link, chat message and search index
- * are different strings. Nothing about a link in the wild changes when Aurora
- * edits a row, so pinning is the only thing that keeps it working: a qualified
- * form is recorded here by *id* the moment it ships, and resolves from then on
+ * A size slug is built from upstream text: the dimensions and description feed
+ * {@link generateSizeSlug}, and the qualifier {@link sizeSlugsForLayout} appends
+ * comes from the size *name*. That text moves — upstream renames sizes (the July
+ * 2026 sync audit caught several), and we ourselves correct upstream typos in
+ * the description (#4554). Either way the slug generated afterwards and the slug
+ * already sitting in every shared link, chat message and search index are
+ * different strings. Nothing about a link in the wild changes when the text
+ * moves, so pinning is the only thing that keeps it working: a shipped form is
+ * recorded here by *id* the moment it changes, and resolves from then on
  * whatever the size ends up being called.
  *
  * Consulted only after the generated slugs, so an alias can never shadow a live
@@ -176,6 +178,17 @@ export function resolveSizeSlug(boardName: BoardName, layoutId: number, sizeId: 
  */
 export const PERMANENT_SIZE_SLUG_ALIASES: Partial<Record<BoardName, Readonly<Record<number, readonly string[]>>>> = {
   kilter: {
+    // Kilter layout 1 size 7, "12 x 14": Aurora describes it "Commerical", and
+    // that misspelling was folded straight into the size slug, so every link
+    // minted before #4554 carries `12x14-commerical`. The description is now
+    // corrected at the generator, so the generated slug is `12x14-commercial`
+    // and the old form only keeps resolving from here. PostHog counted 629
+    // pageviews from 325 people on `12x14-commerical` URLs in the 180 days to
+    // 2026-08-16, across /list, /view, /playlists and the /es and /fr variants —
+    // delete this entry and all of those links 404. Unlike the pins below this
+    // is a BARE slug rather than a qualified one, which needs nothing special:
+    // generated slugs are still matched first, so it cannot shadow a live one.
+    7: ['12x14-commerical'],
     // Kilter layout 1 size 10, "12 x 12 with kickboard": owns the bare
     // `12x12-square` slug by being first on the layout. Pinned so an upstream
     // RENAME of the size (generated slug changes, bare form stops matching)
@@ -208,8 +221,8 @@ export function resolvePermanentSizeSlugAlias(boardName: BoardName, sizeSlug: st
 
 /**
  * Inverse of {@link resolveSizeSlug}. Accepts a qualified slug, the bare legacy
- * one (which keeps resolving to the first match), and any qualified form pinned
- * in {@link PERMANENT_SIZE_SLUG_ALIASES}. Exported so the web app's
+ * one (which keeps resolving to the first match), and any form pinned in
+ * {@link PERMANENT_SIZE_SLUG_ALIASES}. Exported so the web app's
  * `getSizeBySlug` resolves the qualified form identically — a link has to mean
  * the same board on both hosts.
  */

@@ -47,7 +47,7 @@ const baseArgs = {
 };
 
 const expectedReadableShareUrl =
-  'https://www.boardsesh.com/kilter/original/12x14-commerical/screw_bolt/40/view/test-climb-climb-uuid-123';
+  'https://www.boardsesh.com/kilter/original/12x14-commercial/screw_bolt/40/view/test-climb-climb-uuid-123';
 
 const climbWithFrames = {
   uuid: 'climb-uuid-123',
