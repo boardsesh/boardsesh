@@ -20,7 +20,7 @@ Postgres and left V2 untouched. Two servers now run in parallel:
 | Server          | Host                    | Version                                     | Who hits it                                                                                                                                                                     |
 | --------------- | ----------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **V2 (frozen)** | `ota.boardsesh.com`     | axelmarciano V2, stateless                  | Old store/TestFlight binaries built before the V3 cutover. They have `ota.boardsesh.com` + the old cert baked in, so V2 keeps serving them unchanged. **Do not publish to it.** |
-| **V3 (live)**   | `updates.boardsesh.com` | mercuretechnologies xprem, control-plane    | New/updated binaries (V3 URL + V3 cert + `expo-app-id` header baked in). CI publishes only here.                                                                                |
+| **V3 (live)**   | `updates.boardsesh.com` | mercuretechnologies xprem, control-plane ([which tag](#versions-the-cli-pin-and-the-server-image)) | New/updated binaries (V3 URL + V3 cert + `expo-app-id` header baked in). CI publishes only here.                                                                                |
 
 - Old installs migrate to V3 by store-updating to a V3 build; there's no cross-server backport.
 - **Rollback before the store rollout is free:** the V3 build bakes the V3 URL, so V3 must be proven
@@ -60,8 +60,10 @@ Two things need the **Railway image on v3.1.2** and do not work before it:
 
 - server-side reuse of the previous update's assets (xprem #165) — see
   [The throttle](#the-throttle-and-what-actually-fixes-it) for what that is worth;
-- `vp run mobile:ota-rollback -- --mode republish`, whose route shapes moved between 3.1.1 and 3.1.2
-  (back-compat for older clients is server-side, xprem #168). `--mode embedded` — the mode the
+- `vp run mobile:ota-rollback -- --mode republish`: 3.1.2 lists republish candidates through a new
+  `.../runtimeVersion/<rv>/publish-groups` route that 3.0.5 does not serve, and can pass
+  `?publishGroup=` on the republish call itself; back-compat for older clients is server-side
+  (xprem #168). The helper prints a warning before running it. `--mode embedded` — the mode the
   incident runbook uses — is unaffected.
 
 After any bump: re-verify `/hc` = 200, `/ready` = 200, a header-carrying manifest + asset probe, and

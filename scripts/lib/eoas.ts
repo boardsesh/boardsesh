@@ -35,10 +35,11 @@ import { join, delimiter } from 'node:path';
 // expo-open-ota → xprem; the old image name is still published):
 //   * server-side reuse of the previous update's assets (xprem #165) — the half
 //     that drops a repeat publish from ~380 uploads to a handful; and
-//   * `vp run mobile:ota-rollback -- --mode republish`, whose route shapes moved
-//     between 3.1.1 and 3.1.2 (server-side back-compat landed in xprem #168).
-//     `--mode embedded`, the mode the rollback runbook actually uses, is
-//     unaffected.
+//   * `vp run mobile:ota-rollback -- --mode republish`: 3.1.2 lists candidates
+//     through a new `.../runtimeVersion/<rv>/publish-groups` route that 3.0.5 does
+//     not serve, with the back-compat living server-side (xprem #168). `--mode
+//     embedded`, the mode the rollback runbook actually uses, is unaffected, and
+//     the helper warns before running republish.
 //
 // Single source of truth: imported by mobile-publish.ts, mobile-ota-rollback.ts,
 // mobile-ota-setup.ts, and asserted by the rollback + version-parity tests so a
