@@ -106,6 +106,10 @@ jobs:
             mobile:
               - 'packages/mobile/**'
               - 'packages/board-renderer/wasm/pkg/**'
+              # www serves its own copy of the same artifact. The byte-parity
+              # gate lives in the mobile-bundle job, so a www-only edit to it
+              # must still trigger that job (issue #4495).
+              - 'packages/web/public/wasm/**'
               - 'patches/**'
               - 'scripts/mobile-platform-imports-check.sh'
               - 'scripts/mobile-web-bundle-check.sh'

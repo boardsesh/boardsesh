@@ -1,15 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
 
-/**
- * Render a transparent overlay image with hold circles.
- *
- * Takes a JSON config string with board dimensions, frames string, holds data,
- * and hold state color mapping. Returns raw RGBA pixel data prefixed with
- * width (u32 LE) and height (u32 LE) as the first 8 bytes.
- *
- * The caller is responsible for encoding to the desired image format (e.g. WebP via sharp).
- */
 export function render_overlay(config_json: string): Uint8Array;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
