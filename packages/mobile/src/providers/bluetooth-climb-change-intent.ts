@@ -23,3 +23,35 @@ export function shouldSuppressClimbChangeIntent(
   if (intent === 'tap') return !settings.lightOnClimbTap;
   return false;
 }
+
+export type ClimbChangeIntentArmer = {
+  /** Arm the one-shot tag. `now` is the caller's clock reading (ms). */
+  mark: (intent: ClimbChangeIntent, now: number) => void;
+  /**
+   * Consume (and clear) the armed tag. Returns `null` for an unarmed or
+   * expired tag — expiry is checked lazily here against `now`, not by a live
+   * timer, so there is nothing to clean up on unmount.
+   */
+  consume: (now: number) => ClimbChangeIntent | null;
+};
+
+/**
+ * One-shot arm/consume state machine with a TTL, backing
+ * `markClimbChangeIntent` / `BluetoothAutoSender`'s ref. Takes an explicit
+ * `now` on every call instead of reading the clock itself, so it's
+ * deterministic to unit test without fake timers or rendering the component.
+ */
+export function createClimbChangeIntentArmer(ttlMs: number): ClimbChangeIntentArmer {
+  let armed: { intent: ClimbChangeIntent; expiresAt: number } | null = null;
+  return {
+    mark(intent, now) {
+      armed = { intent, expiresAt: now + ttlMs };
+    },
+    consume(now) {
+      if (!armed) return null;
+      const { intent, expiresAt } = armed;
+      armed = null;
+      return now <= expiresAt ? intent : null;
+    },
+  };
+}
