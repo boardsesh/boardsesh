@@ -421,6 +421,14 @@
         "600": "10 minutes"
       }
     },
+    "lighting": {
+      "title": "Éclairage de la board",
+      "description": "Choisissez ce qui allume automatiquement la board connectée.",
+      "onSwipeLabel": "Allumer en faisant défiler les blocs",
+      "onSwipeDescription": "Allume la board quand vous passez d'un bloc à l'autre en faisant défiler.",
+      "onTapLabel": "Allumer en sélectionnant dans la liste",
+      "onTapDescription": "Allume la board quand vous sélectionnez un bloc dans une liste."
+    },
     "turnOff": "Éteindre la board",
     "holdForControls": "Maintenir pour les commandes",
     "sendFailedTitle": "Impossible d'allumer la board",

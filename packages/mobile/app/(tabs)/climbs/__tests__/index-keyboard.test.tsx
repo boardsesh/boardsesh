@@ -231,6 +231,10 @@ vi.mock('../../../../src/providers/queue-provider', () => ({
   useQueueActions: () => ({ addToQueue: vi.fn() }),
 }));
 
+vi.mock('../../../../src/providers/bluetooth-provider', () => ({
+  useOptionalBluetoothContext: () => null,
+}));
+
 vi.mock('../../../../src/hooks/use-bottom-accessory', () => ({ useNativeAccessoryActive: () => false }));
 vi.mock('../../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({

@@ -602,10 +602,11 @@ export function PlayDrawer({
     // Always-live: navigation commits the shared current climb for everyone.
     setDrawerPreviewItem(null);
     setDrawerPreviewIsWallClimb(false);
+    bluetooth?.markClimbChangeIntent('swipe');
     previousClimb();
     setIsMirrored(false);
     // The favorite override is cleared by the climb-change effect.
-  }, [drawerPreviewSuggestionSource, drawerPreviewItem, navigationState.prevItem, previousClimb]);
+  }, [drawerPreviewSuggestionSource, drawerPreviewItem, navigationState.prevItem, previousClimb, bluetooth]);
 
   const handleNext = useCallback(() => {
     const previewTarget = getViewOnlyPreviewNavigationTarget({
@@ -623,10 +624,11 @@ export function PlayDrawer({
     // Always-live: navigation commits the shared current climb for everyone.
     setDrawerPreviewItem(null);
     setDrawerPreviewIsWallClimb(false);
+    bluetooth?.markClimbChangeIntent('swipe');
     nextClimb();
     setIsMirrored(false);
     // The favorite override is cleared by the climb-change effect.
-  }, [drawerPreviewSuggestionSource, drawerPreviewItem, navigationState.nextItem, nextClimb]);
+  }, [drawerPreviewSuggestionSource, drawerPreviewItem, navigationState.nextItem, nextClimb, bluetooth]);
 
   // Promote the previewed climb to the active/current queue item. The Preview
   // badge clears and the lightbulb (which acts on the current climb) now drives

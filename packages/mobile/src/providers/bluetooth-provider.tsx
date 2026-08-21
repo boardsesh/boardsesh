@@ -54,6 +54,7 @@ import { useSetting } from '../settings';
 import { AutoDisconnectController } from '../lib/ble/auto-disconnect-controller';
 import { createBleWriteActivityStore } from '../lib/ble/write-activity-store';
 import { BluetoothWriteActivityProvider } from './bluetooth-write-activity';
+import { shouldSuppressClimbChangeIntent, type ClimbChangeIntent } from './bluetooth-climb-change-intent';
 
 type BluetoothContextValue = {
   isConnected: boolean;
@@ -96,6 +97,16 @@ type BluetoothContextValue = {
    */
   armUndoWallChangeToast: () => void;
   /**
+   * Tag the reason the current climb is about to change, so the auto-sender
+   * can honor the `lightOnSwipe` / `lightOnClimbTap` settings for it. UI call
+   * sites call this immediately before the queue action (next/previousClimb,
+   * a climb-list tap) that changes `currentClimbQueueItem`. One-shot —
+   * consumed by the very next queue-item change, whatever its cause. A change
+   * with no tag (remote sync, undo, initial load) always lights, matching the
+   * settings' default-on behavior.
+   */
+  markClimbChangeIntent: (intent: ClimbChangeIntent) => void;
+  /**
    * Serial to silently reconnect to for the board currently in view, or null
    * when nothing is remembered or the user switched boards — in which case
    * callers open the device picker instead. Aurora boards only.
@@ -119,6 +130,11 @@ const EMPTY_PICKER_DEVICES: [] = [];
 // switched board's props to reach this provider before it is dropped.
 const PENDING_AUTO_CONNECT_TTL_MS = 15_000;
 const UNDO_WALL_CHANGE_TOAST_ARM_TTL_MS = 10_000;
+// How long a markClimbChangeIntent() tag stays armed waiting for the queue
+// change it was called ahead of. Generous — covers a slow party-sync
+// round-trip — but short enough that an unrelated later change (a peer
+// advancing the queue, an undo) can't inherit a stale tag.
+const CLIMB_CHANGE_INTENT_ARM_TTL_MS = 5_000;
 
 function formatPickerBoardConfig(t: TFunction<'settings'>, config: BleBoardConfig): string {
   return t('boardConfigMismatch.mobileConfigValue', {
@@ -195,6 +211,7 @@ function BluetoothAutoSender({
   activeConfig,
   onSkipSpillClimb,
   onUnresolvedCurrentClimb,
+  climbChangeIntentRef,
 }: {
   sendFramesToBoard: SendFramesToBoard;
   /**
@@ -229,6 +246,9 @@ function BluetoothAutoSender({
   // unresolved-current-climb window without the AutoSender owning analytics/board
   // context. Fired once per queue-item uuid.
   onUnresolvedCurrentClimb: (item: ClimbQueueItem) => void;
+  // See markClimbChangeIntent on BluetoothContextValue — the provider owns
+  // writes, this effect only reads and consumes.
+  climbChangeIntentRef: React.MutableRefObject<ClimbChangeIntent | null>;
 }) {
   type AutoSendRequest = {
     item: ClimbQueueItem;
@@ -238,6 +258,8 @@ function BluetoothAutoSender({
 
   const { state } = useQueue();
   const { currentClimbQueueItem } = state;
+  const [lightOnSwipe] = useSetting('lightOnSwipe');
+  const [lightOnClimbTap] = useSetting('lightOnClimbTap');
   const onWallConfirmedRef = useRef(onWallConfirmed);
   useEffect(() => {
     onWallConfirmedRef.current = onWallConfirmed;
@@ -306,6 +328,18 @@ function BluetoothAutoSender({
     if (!currentClimbQueueItem) return;
     const signal = abortControllerRef.current?.signal;
     if (signal?.aborted) return;
+
+    // Consume the one-shot intent tag for THIS climb change. Swipe/tap call
+    // sites tag it immediately before the queue action that lands here; any
+    // other path (remote sync, undo, initial load) leaves it null and always
+    // lights, matching the settings' default-on behavior. Cleared on every
+    // run (not just when it gates something) so a later untagged change can't
+    // inherit a stale tag.
+    const climbChangeIntent = climbChangeIntentRef.current;
+    climbChangeIntentRef.current = null;
+    if (shouldSuppressClimbChangeIntent(climbChangeIntent, { lightOnSwipe, lightOnClimbTap })) {
+      return;
+    }
 
     // A reassert request (lightbulb re-take) forces a fresh write of the current
     // climb even when the pixels are byte-identical. Flag it; the drain loop
@@ -474,7 +508,7 @@ function BluetoothAutoSender({
     };
 
     void drain();
-  }, [currentClimbQueueItem, sendFramesToBoard, reassertNonce, colorSignature]);
+  }, [currentClimbQueueItem, sendFramesToBoard, reassertNonce, colorSignature, lightOnSwipe, lightOnClimbTap]);
 
   return null;
 }
@@ -643,8 +677,30 @@ export function BluetoothProvider({
     clearUndoWallChangeToastArm();
   }, [clearUndoWallChangeToastArm]);
 
+  // See markClimbChangeIntent below. A ref (not state): it's read once, inside
+  // BluetoothAutoSender's effect, by the very next currentClimbQueueItem
+  // change — re-rendering this provider to carry it as state would be wasted
+  // work for something that's gone again within one effect pass.
+  const climbChangeIntentRef = useRef<ClimbChangeIntent | null>(null);
+  const climbChangeIntentTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const markClimbChangeIntent = useCallback((intent: ClimbChangeIntent) => {
+    climbChangeIntentRef.current = intent;
+    if (climbChangeIntentTimeoutRef.current) clearTimeout(climbChangeIntentTimeoutRef.current);
+    climbChangeIntentTimeoutRef.current = setTimeout(() => {
+      climbChangeIntentRef.current = null;
+      climbChangeIntentTimeoutRef.current = null;
+    }, CLIMB_CHANGE_INTENT_ARM_TTL_MS);
+  }, []);
+
   // Cleanup-only effect: drop any one-shot arm timer when the provider unmounts.
   useEffect(() => clearUndoWallChangeToastArm, [clearUndoWallChangeToastArm]);
+  useEffect(
+    () => () => {
+      if (climbChangeIntentTimeoutRef.current) clearTimeout(climbChangeIntentTimeoutRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     const previousBoardConfigIdentity = previousBoardConfigIdentityRef.current;
@@ -1509,6 +1565,7 @@ export function BluetoothProvider({
       undoWallChange,
       relightPresenceClimb,
       armUndoWallChangeToast,
+      markClimbChangeIntent,
       reconnectSerialForCurrentBoard,
       reconnectDeviceIdForCurrentBoard,
       autoDisconnectEnabled: autoDisconnectBle,
@@ -1526,6 +1583,7 @@ export function BluetoothProvider({
       undoWallChange,
       relightPresenceClimb,
       armUndoWallChangeToast,
+      markClimbChangeIntent,
       reconnectSerialForCurrentBoard,
       reconnectDeviceIdForCurrentBoard,
       autoDisconnectBle,
@@ -1564,6 +1622,7 @@ export function BluetoothProvider({
             activeConfig={currentBoardConfig}
             onSkipSpillClimb={handleSkipSpillClimb}
             onUnresolvedCurrentClimb={handleUnresolvedCurrentClimb}
+            climbChangeIntentRef={climbChangeIntentRef}
           />
         )}
         <BlePickerHostContext.Provider value={pickerHostValue}>{children}</BlePickerHostContext.Provider>
