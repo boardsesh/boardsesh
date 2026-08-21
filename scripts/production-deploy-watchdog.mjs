@@ -212,7 +212,7 @@ function describeRun(entry) {
   return `run #${run.run_number ?? run.id} (${sha}, status=${run.status}): ${reason}`;
 }
 
-function formatSummary(plan, { dryRun = false, failedCancelIds = new Set() } = {}) {
+function formatSummary(plan, { dryRun = false, failedCancelIds = new Set(), dispatched = plan.redispatch } = {}) {
   const verb = dryRun ? 'would cancel' : 'cancelled';
   const lines = [];
   for (const entry of plan.cancel) {
@@ -220,7 +220,7 @@ function formatSummary(plan, { dryRun = false, failedCancelIds = new Set() } = {
     lines.push(`${failed ? 'could NOT cancel' : verb} ${describeRun(entry)}`);
   }
   for (const entry of plan.alert) lines.push(`alerting on ${describeRun(entry)}`);
-  if (plan.redispatch) {
+  if (dispatched) {
     lines.push(
       dryRun ? 'would dispatch a fresh production deploy for main' : 'dispatched a fresh production deploy for main',
     );
@@ -248,6 +248,11 @@ const FOLLOW_UP_LINES = {
   'queued-run-takes-over': 'The queued run behind it now has the group and will deploy the latest main.',
   redispatched: 'Dispatched a fresh deploy for the current main.',
   'head-already-deployed': 'Nothing is queued, but the current main already deployed successfully — no action needed.',
+  // Both of these are decided AFTER the cancels run, so planWatchdogActions
+  // never sets them — runCli does, once it knows what actually landed.
+  'cancel-failed': 'No deploy was started: a cancel did not land, so the group may still be held. Retrying next tick.',
+  'dispatch-deferred':
+    'No deploy was started: the run history could not be read, so the one-retry-per-commit guard could not be checked. Retrying next tick.',
   // No @here: the webhook post sets allowed_mentions.parse=[], so a ping would
   // render as inert text and read as louder than it is.
   'needs-intervention':
@@ -257,7 +262,7 @@ const FOLLOW_UP_LINES = {
 
 // Discord content. Mirrors the deploy notifications in production-deploy.yml:
 // URLs wrapped in <…> so Discord drops the inline preview embed.
-function formatDiscordContent(plan, { runUrlBase = '', failedCancelIds = new Set() } = {}) {
+function formatDiscordContent(plan, { runUrlBase = '', failedCancelIds = new Set(), followUp = plan.followUp } = {}) {
   if (plan.cancel.length === 0 && plan.alert.length === 0) return '';
 
   const lines = [];
@@ -280,9 +285,7 @@ function formatDiscordContent(plan, { runUrlBase = '', failedCancelIds = new Set
       );
       if (runUrlBase !== '') lines.push(`  <${runUrlBase}/${entry.run.id}>`);
     }
-    if (cancelled.length > 0) {
-      lines.push(FOLLOW_UP_LINES[plan.followUp] ?? FOLLOW_UP_LINES['needs-intervention']);
-    }
+    lines.push(FOLLOW_UP_LINES[followUp] ?? FOLLOW_UP_LINES['needs-intervention']);
     lines.push(
       'A run parks like this when the Production environment gate holds a job — check the environment protection rules if it repeats.',
     );
@@ -344,8 +347,17 @@ function createCliGitHub({ repository, workflowFile }) {
           // One status query failing must not blind the others.
         }
       }
-      add(this.listRecentRuns());
-      return [...byId.values()];
+      // Isolated like the status queries — but its loss is not free. The
+      // dispatch guards (alreadyRetriedHead, headAlreadyDeployed) read completed
+      // runs, which only this page carries, so runCli withholds the dispatch
+      // rather than firing one it cannot justify.
+      let recentPageOk = true;
+      try {
+        add(this.listRecentRuns());
+      } catch {
+        recentPageOk = false;
+      }
+      return { runs: [...byId.values()], recentPageOk };
     },
     listRunsByStatus(status) {
       const payload = ghApi([
@@ -408,7 +420,7 @@ function createCliGitHub({ repository, workflowFile }) {
 }
 
 function runCli({ github, headSha, nowMs, runUrlBase, discordFilePath, outputPath, dryRun }) {
-  const runs = github.listRuns();
+  const { runs, recentPageOk } = github.listRuns();
   const jobsByRunId = {};
   for (const run of runs) {
     if (isHoldingRun(run)) jobsByRunId[String(run.id)] = github.listJobs(run.id);
@@ -421,6 +433,7 @@ function runCli({ github, headSha, nowMs, runUrlBase, discordFilePath, outputPat
   // unguarded, the first such rejection would abort the loop and strand every
   // later one for another 15 minutes.
   const cancelFailures = [];
+  const failedCancelIds = new Set();
   for (const entry of plan.cancel) {
     console.error(`production-deploy-watchdog: ${dryRun ? 'would cancel' : 'cancelling'} ${describeRun(entry)}`);
     if (dryRun) continue;
@@ -428,6 +441,7 @@ function runCli({ github, headSha, nowMs, runUrlBase, discordFilePath, outputPat
       github.cancelRun(entry.run.id);
     } catch (error) {
       cancelFailures.push(entry);
+      failedCancelIds.add(String(entry.run.id));
       console.error(`production-deploy-watchdog: could NOT cancel ${describeRun(entry)}: ${error.message}`);
     }
   }
@@ -435,22 +449,33 @@ function runCli({ github, headSha, nowMs, runUrlBase, discordFilePath, outputPat
   // A failed cancel may mean the group is still held. Dispatching then would
   // spend this sha's one retry on a run that just queues behind the wedge, so
   // leave the retry for the next tick, which re-reads the real state.
-  if (plan.redispatch && cancelFailures.length === 0) {
+  const dispatchBlocked = cancelFailures.length > 0 || !recentPageOk;
+  const dispatched = plan.redispatch && !dispatchBlocked;
+  if (dispatched) {
     console.error(
       `production-deploy-watchdog: ${dryRun ? 'would dispatch' : 'dispatching'} a fresh production deploy for main`,
     );
     if (!dryRun) github.dispatchRun('main');
   } else if (plan.redispatch) {
-    console.error('production-deploy-watchdog: holding the dispatch — a cancel failed, so the group may still be held');
+    console.error(
+      `production-deploy-watchdog: holding the dispatch — ${
+        cancelFailures.length > 0 ? 'a cancel failed, so the group may still be held' : 'the run history was unreadable'
+      }`,
+    );
   }
 
-  const failedCancelIds = new Set(cancelFailures.map((entry) => String(entry.run.id)));
-  const summary = formatSummary(plan, { dryRun, failedCancelIds });
+  // The report must describe what happened, not what was planned: the follow-up
+  // is recomputed here because both of these are only knowable after the calls.
+  let followUp = plan.followUp;
+  if (cancelFailures.length > 0) followUp = 'cancel-failed';
+  else if (plan.redispatch && !dispatched) followUp = 'dispatch-deferred';
+
+  const summary = formatSummary(plan, { dryRun, failedCancelIds, dispatched });
   console.error(`production-deploy-watchdog: ${summary}`);
 
   // A dry run reports; it never pings Discord about work it did not do. Neither
   // does a failed cancel: the report names only what actually landed.
-  const discordContent = dryRun ? '' : formatDiscordContent(plan, { runUrlBase, failedCancelIds });
+  const discordContent = dryRun ? '' : formatDiscordContent(plan, { runUrlBase, failedCancelIds, followUp });
   if (discordContent !== '' && discordFilePath) writeFileSync(discordFilePath, discordContent, 'utf8');
   if (outputPath) {
     appendFileSync(outputPath, `notify=${discordContent === '' ? 'false' : 'true'}\n`, 'utf8');

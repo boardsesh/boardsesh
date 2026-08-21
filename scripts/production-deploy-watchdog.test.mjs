@@ -309,13 +309,17 @@ void test('a Discord message never exceeds the limit that would make the post fa
 void test('one cancel that fails does not strand the others', () => {
   const cancelled = [];
   const dispatched = [];
+  const discordFilePath = join(mkdtempSync(join(tmpdir(), 'boardsesh-watchdog-')), 'discord.txt');
 
   runCli({
     github: {
-      listRuns: () => [
-        run({ id: 1, status: 'waiting', head_sha: HEAD_SHA }),
-        run({ id: 2, status: 'waiting', head_sha: HEAD_SHA }),
-      ],
+      listRuns: () => ({
+        runs: [
+          run({ id: 1, status: 'waiting', head_sha: HEAD_SHA }),
+          run({ id: 2, status: 'waiting', head_sha: HEAD_SHA }),
+        ],
+        recentPageOk: true,
+      }),
       listJobs: () => [{ name: 'check-rollback', status: 'waiting' }],
       cancelRun: (runId) => {
         // GitHub rejects a cancel for a run that finished in the meantime.
@@ -327,7 +331,7 @@ void test('one cancel that fails does not strand the others', () => {
     headSha: HEAD_SHA,
     nowMs: NOW,
     runUrlBase: '',
-    discordFilePath: '',
+    discordFilePath,
     outputPath: '',
     dryRun: false,
   });
@@ -335,6 +339,36 @@ void test('one cancel that fails does not strand the others', () => {
   // The second cancel still happened...
   assert.deepEqual(cancelled, [2]);
   // ...and the retry is left for the next tick, since the group may still be held.
+  assert.deepEqual(dispatched, []);
+  // ...and crucially the report says so. One cancel DID land here, so the old
+  // `cancelled.length > 0` guard let the planned "Dispatched a fresh deploy"
+  // line through even though no dispatch fired.
+  const content = readFileSync(discordFilePath, 'utf8');
+  assert.doesNotMatch(content, /Dispatched a fresh deploy/);
+  assert.match(content, /No deploy was started/);
+  assert.match(content, /Could NOT cancel run/);
+});
+
+void test('an unreadable run history withholds the dispatch and says why', () => {
+  const dispatched = [];
+
+  runCli({
+    github: {
+      listRuns: () => ({ runs: [run({ id: 1, status: 'waiting', head_sha: HEAD_SHA })], recentPageOk: false }),
+      listJobs: () => [{ name: 'check-rollback', status: 'waiting' }],
+      cancelRun: () => {},
+      dispatchRun: (ref) => dispatched.push(ref),
+    },
+    headSha: HEAD_SHA,
+    nowMs: NOW,
+    runUrlBase: '',
+    discordFilePath: '',
+    outputPath: '',
+    dryRun: false,
+  });
+
+  // Without the completed runs, the one-retry-per-commit guard cannot be
+  // checked, so firing a dispatch would risk the loop the guard exists to stop.
   assert.deepEqual(dispatched, []);
 });
 
@@ -363,7 +397,7 @@ void test('the CLI cancels, redispatches and reports through one pass', () => {
 
   const plan = runCli({
     github: {
-      listRuns: () => [stalled],
+      listRuns: () => ({ runs: [stalled], recentPageOk: true }),
       listJobs: () => [{ name: 'check-rollback', status: 'waiting' }],
       cancelRun: (runId) => cancelled.push(runId),
       dispatchRun: (ref) => dispatched.push(ref),
@@ -390,7 +424,7 @@ void test('a dry run reports the same plan without touching anything', () => {
 
   const plan = runCli({
     github: {
-      listRuns: () => [run({ id: 7, status: 'waiting', head_sha: HEAD_SHA })],
+      listRuns: () => ({ runs: [run({ id: 7, status: 'waiting', head_sha: HEAD_SHA })], recentPageOk: true }),
       listJobs: () => [{ name: 'check-rollback', status: 'waiting' }],
       cancelRun: (runId) => cancelled.push(runId),
       dispatchRun: (ref) => dispatched.push(ref),
@@ -418,11 +452,14 @@ void test('only holding runs cost a jobs lookup', () => {
 
   runCli({
     github: {
-      listRuns: () => [
-        run({ id: 1, status: 'completed', conclusion: 'success' }),
-        run({ id: 2, status: 'pending' }),
-        run({ id: 3, status: 'waiting' }),
-      ],
+      listRuns: () => ({
+        runs: [
+          run({ id: 1, status: 'completed', conclusion: 'success' }),
+          run({ id: 2, status: 'pending' }),
+          run({ id: 3, status: 'waiting' }),
+        ],
+        recentPageOk: true,
+      }),
       listJobs: (runId) => {
         lookedUp.push(runId);
         return [{ name: 'check-rollback', status: 'waiting' }];
