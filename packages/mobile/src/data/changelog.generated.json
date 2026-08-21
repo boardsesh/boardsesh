@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-21T06:16:22.067Z",
+  "generatedAt": "2026-08-21T06:25:31.404Z",
   "entries": [
+    {
+      "prNumber": 4639,
+      "category": "fixed",
+      "title": "Fixed the long-press climb preview showing a see-through board on Android",
+      "mergedAt": "2026-08-21T06:16:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4639"
+    },
     {
       "prNumber": 4641,
       "category": "fixed",

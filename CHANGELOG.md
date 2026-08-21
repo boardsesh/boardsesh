@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Fixed the long-press climb preview showing a see-through board on Android ([#4639](https://github.com/boardsesh/boardsesh/pull/4639))
 - Scrolling by touch (finger drag) now works everywhere in the browser app — climbs list, queue, and logbook. It was completely stuck before if you weren't using a mouse wheel or trackpad. ([#4641](https://github.com/boardsesh/boardsesh/pull/4641))
 
 ## 2026-08-20
