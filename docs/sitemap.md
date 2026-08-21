@@ -43,7 +43,7 @@ cacheable lie at the edge for 25 hours.
 
 The index only 503s when there is nothing left to publish at all.
 
-## The climbs summary store
+## The climb store
 
 The climbs shard is the largest surface by two orders of magnitude — roughly 52,000
 URLs across six pages — and used to be the one least able to meet the 3 s deadline.
@@ -53,19 +53,38 @@ sixteen groups, sequential (concurrent heavy scans against a pool of ten is the 
 starvation). Measured on the full-board dev image, the largest single group: 16.7 s
 cold, 3.8 s warm, 0.95 s fully warm. No cache temperature meets 3 s, so any request
 that missed both cache layers dropped every climb URL out of the index for at least a
-minute (#4523).
+minute (#4523). The shard pages had the same disease with a worse bill: page N was a
+JS slice of the whole ordered list, so a cold `/sitemaps/climbs/N.xml` cost the full
+scan plus URL rendering — 51 s in production, once per page on a cold crawl (#4552).
 
-So the answer is stored instead of recomputed:
+So the answers are stored instead of recomputed, in two tables written by one
+refresher inside one transaction:
 
 - **`sitemap_shard_refreshes`** (`packages/db/src/schema/app/sitemap-shard-refreshes.ts`)
   — one row per shard: `shard_id`, `item_count`, `last_modified`, `computed_at`.
   Keyed by shard rather than modelled on climbs, because `playlists` (#4524) has the
   same shape of problem.
-- **`climb-store.ts`** — `fetchClimbShardSummary()` reads that row (~1 ms) and is what
-  the registry's `summary()` calls. `refreshStoredClimbSummary()` writes it.
+- **`sitemap_climb_urls`** (`packages/db/src/schema/app/sitemap-climb-urls.ts`) — the
+  rendered tier-2 URL list, one row per submitted URL: `ordinal` (int PK), `path`,
+  `last_modified`, `board_type`, `layout_id`. `ordinal` is the 0-based emission order
+  (groups in `resolveClimbSitemapGroups` order, then `uuid ASC` within a group), so a
+  page is `WHERE ordinal >= start AND ordinal < start + perPage` — measured at 21 ms
+  for a 10,000-row range against a 53,000-row stand-in with no index beyond the PK.
+- **`climb-store.ts`** — `fetchClimbShardSummary()` reads the summary row (~1 ms) for
+  the registry's `summary()`; `buildClimbShardPage()` reads an ordinal range for the
+  registry's `buildPage()`; `refreshClimbSitemapStore()` writes both. The summary is
+  DERIVED from the built URL rows (count + max `last_modified`), so one set of
+  sixteen scans feeds both tables and they can never describe different sets.
 
-It is a **cache, not a source of truth**. Truncate it and nothing is lost: the read
-path falls back to the live scan it replaced, and the next refresh repopulates it.
+The URL table also buys the index a **per-page `<lastmod>`**
+(`fetchStoredClimbPageLastmods`, a `max(last_modified)` per ordinal bucket): one
+stats update no longer makes all six pages look changed. It is strictly
+best-effort — an empty store or a failed aggregate falls back to the shard-wide
+value and never degrades the shard.
+
+Both tables are a **cache, not a source of truth**. Truncate them and nothing is
+lost: the read paths fall back to the live scan they replaced, and the next refresh
+repopulates them.
 
 ### Read behaviour
 
@@ -76,6 +95,12 @@ path falls back to the live scan it replaced, and the next refresh repopulates i
 | row older than 48 h | still **served**, plus a `console.error`. A sitemap whose `<lastmod>` drifted by a day beats a shard missing from the index |
 | read throws         | falls back to the live scan, plus a `console.error`. The realistic cause is the migration not having been applied           |
 
+The page read (`buildClimbShardPage`) follows the same doctrine: an empty
+`sitemap_climb_urls` or a read that throws falls back to the live grouped build —
+the 51 s path, correct and never worse than before the store existed. There is no
+staleness bound on pages; the summary row's 48 h shout covers the store as a whole,
+since both tables share one refresh.
+
 ### Who refreshes it
 
 1. **The cron** — `/api/internal/refresh-sitemap-climbs`, six-hourly, in
@@ -84,10 +109,13 @@ path falls back to the live scan it replaced, and the next refresh repopulates i
    `CRON_SECRET`; Vercel injects the matching bearer automatically.
 2. **The `after()` self-heal** on `/sitemap.xml` itself. After the response has
    flushed — so it cannot touch the 3 s deadline or the latency a crawler sees — the
-   index kicks a refresh if the store is empty or past 48 h. Single-flighted per
-   instance behind a 15-minute floor. This is what keeps the fix from depending on a
-   scheduler: a lapsed cron degrades to "healed by the next crawl", not to a broken
-   sitemap.
+   index kicks a refresh if the summary row is missing or past 48 h, **or if
+   `sitemap_climb_urls` is empty**. That last probe matters on the deploy that adds
+   the URL table: the summary row is fresh (the cron kept writing it), so a
+   summary-only check would wait out the six-hourly cron while every page request
+   took the 51 s fallback. Single-flighted per instance behind a 15-minute floor.
+   This is what keeps the fix from depending on a scheduler: a lapsed cron degrades
+   to "healed by the next crawl", not to a broken sitemap.
 3. **By hand**, after a deploy that leaves the store empty:
 
    ```
@@ -116,6 +144,10 @@ that found it rather than hiding in the logs.
 | `empty`      | 409    | the scan computed 0 climbs. Never stored — a stored zero makes the index drop the shard, which is the bug this table prevents |
 | `shrank`     | 409    | the scan computed less than half the stored count                                                                             |
 
+A refusal protects **both** tables: a declined refresh leaves `sitemap_climb_urls`
+exactly as it was, so the shrink guard cannot half-apply and strand the pages on a
+different catalogue than the summary advertises.
+
 `?force=1` bypasses the shrink guard, and only the shrink guard. Use it when the
 catalogue genuinely shrank; without it, a real shrink would make every scheduled run
 decline forever while the read path kept serving a frozen count. It never bypasses the
@@ -125,8 +157,13 @@ lock and never lets a zero be stored.
 
 The sixteen scans run **outside** any transaction — they take tens of seconds, and
 holding a pooled connection idle-in-transaction for that long against a pool of ten is
-the starvation the sequential loop already exists to avoid. Only the one-row upsert is
-transactional, and it takes `pg_try_advisory_xact_lock` as its first statement.
+the starvation the sequential loop already exists to avoid. Only the writes are
+transactional — the summary upsert plus the URL swap (`DELETE` then re-insert in
+chunks of 1,000 rows, because 5 columns × ~52,000 rows in one statement blows
+Postgres's 65,535 bind-parameter cap) — and the transaction takes
+`pg_try_advisory_xact_lock` as its first statement. One transaction for both tables
+is what gives the count the index advertises and the rows the pages serve a single
+epoch; MVCC keeps concurrent page reads on the previous rows until the commit.
 
 Transaction-scoped, never session-scoped. `pg_try_advisory_lock` plus a release in a
 `finally` is not mutual exclusion on this client: drizzle's `execute()` runs on an
@@ -152,7 +189,7 @@ It gets the boards treatment, not the climbs treatment, and the difference is a 
 question. The rows are the whole answer and they are small: 2,688 rows of
 `{ uuid, updatedAtIso }` is ~200 KB of JSON, ~840 KB at the hard `MAX_ITEMS_PER_SHARD`
 cap, against Vercel's 2 MB Data Cache entry ceiling. The climb item list is >10 MB,
-which is the only reason it needed a Postgres-backed summary store instead. So
+which is the only reason it needed the Postgres-backed store instead. So
 playlists caches the answer, which fixes the index _and_ `/sitemaps/playlists.xml`;
 a summary would have fixed only the index.
 
@@ -214,11 +251,11 @@ and fails every connection (`packages/db/src/client/postgres.ts`, `docs/db-conne
 
 ## What is still slow
 
-`/sitemaps/climbs/N.xml` — the shard route, not the index. It still builds the full
-ordered item list live and slices it in JS, so page N costs the whole list and a cold
-instance takes ~51 s. The store fixes the index only. The fix for the route is a
-`sitemap_climb_urls` table holding the rendered paths, which is additive on the
-scaffolding above.
+`/sitemaps/climbs/N.xml` is fixed (#4552) — a stored page reads in milliseconds. What
+remains slow is the **fallback**: an empty `sitemap_climb_urls` (the deploy that adds
+it, a truncation, local dev) still takes the 51 s live build until the first refresh
+runs. The self-heal's empty-table probe bounds that window to one crawl of
+`/sitemap.xml`; the manual curl closes it immediately.
 
 Fixed shards have **no byte budget**. `shardRouteHandler` checks `MAX_URLS_PER_SHARD`
 on the fixed path but never `MAX_SHARD_BYTES` — that guard exists only on the paged
@@ -228,13 +265,14 @@ while `MAX_ITEMS_PER_SHARD` lets it reach 11,250. Tracked separately.
 
 ## Operational gotchas
 
-- **A deploy that changes climb URL shape does not invalidate the store's counts.**
-  Counts and timestamps survive a URL-shape change untouched, which is fine; but the
-  follow-up URL table will store rendered paths, and that one will need a manual
-  refresh on any such deploy.
+- **A deploy that changes climb URL shape needs a manual refresh to take effect
+  before the next cron.** `sitemap_climb_urls.path` is RENDERED at refresh time, so
+  new URL logic keeps serving the old shape for up to six hours unless someone runs
+  the curl above. The old URLs still resolve (the pages self-canonicalise), so this
+  is a staleness window, not an outage.
 - **The cron is one of eight** in `packages/web/vercel.json`. The Railway cutover
   (#3795/#3798) has to re-point all of them. The `after()` self-heal is the backstop if
   one is missed.
-- **`scripts/production-smoke.ts` treats `/sitemaps/climbs/1.xml` as degradable
-  (WARN, not FAIL).** Leave it there until the URL table lands — immediately after a
-  deploy the store is empty and the fallback is the 51 s path.
+- **`scripts/production-smoke.ts` requires `climbs` in the index (degradable — WARN
+  when `X-Sitemap-Degraded` names it, FAIL when it vanishes silently).** The
+  degradable escape covers the empty-store window right after the migration deploys.
