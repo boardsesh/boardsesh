@@ -54,8 +54,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DISCORD_FILE: ${{ runner.temp }}/production-deploy-watchdog-discord.txt
+          # A schedule trigger has no `inputs`, so this reads as empty there; the
+          # fallback makes that an explicit "false" rather than something the
+          # shell has to infer from an empty expansion.
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
         run: |
           set -euo pipefail
+          if [ "$DRY_RUN" = "true" ]; then
+            set -- --dry-run
+          else
+            set --
+          fi
           # github.sha is main's head on both triggers, which is the commit the
           # watchdog re-dispatches for when cancelling empties the group.
           # Piped through tee so the report reaches the log and the job summary
@@ -63,7 +72,7 @@ jobs:
           node scripts/production-deploy-watchdog.mjs \
             --head "$GITHUB_SHA" \
             --discord-file "$DISCORD_FILE" \
-            ${{ inputs.dry_run && '--dry-run' || '' }} \
+            "$@" \
             2>&1 | tee "$RUNNER_TEMP/watchdog.log" && watchdog_status=0 || watchdog_status=$?
           {
             echo '### Production deploy watchdog'
