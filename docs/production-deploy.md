@@ -55,6 +55,12 @@ deploy loop.
 A run that is genuinely executing is never cancelled. Past 150 minutes it gets a
 Discord ping and a human decides.
 
+One operator-facing wrinkle: the retry budget cannot tell the watchdog's own
+dispatch from your `gh workflow run production-deploy.yml` on the same commit,
+because production-deploy declares no dispatch inputs to mark. So a manual
+dispatch spends that SHA's retry — if the run you started then stalls, the
+watchdog cancels and reports it rather than starting another one.
+
 The watchdog deliberately does **not** declare `environment: Production` —
 running under the gate it exists to break would park it too. That also means it
 only reads repository-level secrets; if `DISCORD_DEPLOY_WEBHOOK` is scoped to

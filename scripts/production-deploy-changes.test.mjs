@@ -108,6 +108,20 @@ void test('the deploy watchdog never queues a deploy of its own', () => {
   }
 });
 
+void test('a watchdog file alongside real code still deploys the real code', () => {
+  // The skip is per-file, not per-changeset: a commit touching both must still
+  // deploy what it changed, or the exclusion would swallow a real release.
+  assert.deepEqual(classifyChangedFiles(['scripts/production-deploy-watchdog.mjs', 'packages/backend/src/index.ts']), {
+    web: true,
+    backend: true,
+    app: false,
+  });
+  assert.deepEqual(
+    classifyChangedFiles(['.github/workflows/production-deploy-watchdog.yml', 'packages/mobile/app/index.tsx']),
+    { web: false, backend: true, app: true },
+  );
+});
+
 void test('treats the production workflow and its detector as affecting every target', () => {
   for (const filePath of ['.github/workflows/production-deploy.yml', 'scripts/production-deploy-changes.mjs']) {
     assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: true, app: true });

@@ -172,6 +172,14 @@ function planWatchdogActions({
 
   // A dispatch we already made for this SHA means the retry has been spent: if
   // that one wedged too, the gate is broken in a way cancelling cannot fix.
+  //
+  // This cannot tell our dispatch from an operator's own `gh workflow run
+  // production-deploy.yml` on the same commit — production-deploy declares no
+  // workflow_dispatch inputs, so there is no marker to set. Erring this way is
+  // the safe direction: a manual dispatch for the SHA consumes the retry, so a
+  // later stall on that commit is cancelled and reported rather than
+  // re-dispatched. The operator who is already in the run's page is better
+  // placed to decide than a loop is.
   const alreadyRetriedHead =
     headSha !== '' && candidates.some((run) => run?.event === 'workflow_dispatch' && run?.head_sha === headSha);
 
