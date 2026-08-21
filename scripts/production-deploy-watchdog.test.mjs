@@ -212,9 +212,63 @@ void test('a quiet tick plans nothing and says so', () => {
     nowMs: NOW,
   });
 
-  assert.deepEqual(plan, { cancel: [], alert: [], redispatch: false });
+  assert.deepEqual(plan, { cancel: [], alert: [], redispatch: false, followUp: 'none' });
   assert.equal(formatSummary(plan), 'no stalled production deploy found');
   assert.equal(formatDiscordContent(plan), '');
+});
+
+void test('says main is not deploying when nothing is queued and the retry is spent', () => {
+  // The worst possible report: free the group, then announce a recovery that is
+  // not happening. Retry spent by an earlier dispatch, no survivor behind it.
+  const plan = planWatchdogActions({
+    runs: [
+      run({ id: 2, status: 'waiting', event: 'workflow_dispatch', head_sha: HEAD_SHA }),
+      run({ id: 1, status: 'waiting', head_sha: HEAD_SHA }),
+    ],
+    jobsByRunId: {
+      1: [{ name: 'check-rollback', status: 'waiting' }],
+      2: [{ name: 'check-rollback', status: 'waiting' }],
+    },
+    headSha: HEAD_SHA,
+    nowMs: NOW,
+  });
+
+  assert.equal(plan.redispatch, false);
+  assert.equal(plan.followUp, 'needs-intervention');
+
+  const content = formatDiscordContent(plan);
+  assert.match(content, /main is NOT deploying/);
+  assert.doesNotMatch(content, /queued run behind it/);
+  // allowed_mentions.parse=[] blocks pings, so never write one.
+  assert.doesNotMatch(content, /@here|@everyone/);
+  assert.match(formatSummary(plan), /needs a human/);
+});
+
+void test('a freed group with a queued successor reports the successor, not a dispatch', () => {
+  const plan = planWatchdogActions({
+    runs: [run({ id: 2, status: 'pending', head_sha: HEAD_SHA }), run({ id: 1, status: 'waiting' })],
+    jobsByRunId: { 1: [{ name: 'check-rollback', status: 'waiting' }] },
+    headSha: HEAD_SHA,
+    nowMs: NOW,
+  });
+
+  assert.equal(plan.followUp, 'queued-run-takes-over');
+  assert.match(formatDiscordContent(plan), /queued run behind it/);
+});
+
+void test('a head that already deployed is not an intervention', () => {
+  const plan = planWatchdogActions({
+    runs: [
+      run({ id: 2, status: 'completed', conclusion: 'success', head_sha: HEAD_SHA }),
+      run({ id: 1, status: 'waiting' }),
+    ],
+    jobsByRunId: { 1: [{ name: 'check-rollback', status: 'waiting' }] },
+    headSha: HEAD_SHA,
+    nowMs: NOW,
+  });
+
+  assert.equal(plan.followUp, 'head-already-deployed');
+  assert.match(formatDiscordContent(plan), /already deployed successfully/);
 });
 
 void test('the Discord message names the run, the cause and the gate to check', () => {

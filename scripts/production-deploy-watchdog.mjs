@@ -190,7 +190,20 @@ function planWatchdogActions({
   const redispatch =
     cancel.length > 0 && !survivorHoldsGroup && !alreadyRetriedHead && !headAlreadyDeployed && headSha !== '';
 
-  return { cancel, alert, redispatch };
+  // What happens to main AFTER the cancels — the report is only worth anything
+  // if it distinguishes these. Freeing the group and then saying "the queued run
+  // takes over" when nothing is queued and the retry is spent would announce a
+  // recovery while production sits idle, which is the exact failure this
+  // watchdog exists to end.
+  let followUp = 'none';
+  if (cancel.length > 0) {
+    if (survivorHoldsGroup) followUp = 'queued-run-takes-over';
+    else if (redispatch) followUp = 'redispatched';
+    else if (headAlreadyDeployed) followUp = 'head-already-deployed';
+    else followUp = 'needs-intervention';
+  }
+
+  return { cancel, alert, redispatch, followUp };
 }
 
 function describeRun(entry) {
@@ -209,9 +222,23 @@ function formatSummary(plan, { dryRun = false } = {}) {
       dryRun ? 'would dispatch a fresh production deploy for main' : 'dispatched a fresh production deploy for main',
     );
   }
+  if (plan.followUp === 'needs-intervention') {
+    lines.push('main is NOT deploying: nothing is queued and this head sha has no retry left — needs a human');
+  }
   if (lines.length === 0) lines.push('no stalled production deploy found');
   return lines.join('\n');
 }
+
+const FOLLOW_UP_LINES = {
+  'queued-run-takes-over': 'The queued run behind it now has the group and will deploy the latest main.',
+  redispatched: 'Dispatched a fresh deploy for the current main.',
+  'head-already-deployed': 'Nothing is queued, but the current main already deployed successfully — no action needed.',
+  // No @here: the webhook post sets allowed_mentions.parse=[], so a ping would
+  // render as inert text and read as louder than it is.
+  'needs-intervention':
+    "🚨 **main is NOT deploying.** Nothing is queued and this commit's one retry is already spent. Start a deploy manually (`gh workflow run production-deploy.yml`) and check the Production environment gate.",
+  none: '',
+};
 
 // Discord content. Mirrors the deploy notifications in production-deploy.yml:
 // URLs wrapped in <…> so Discord drops the inline preview embed.
@@ -226,11 +253,7 @@ function formatDiscordContent(plan, { runUrlBase = '' } = {}) {
       lines.push(`• Cancelled run #${entry.run.run_number ?? entry.run.id} (\`${sha}\`) — ${entry.reason}.`);
       if (runUrlBase !== '') lines.push(`  <${runUrlBase}/${entry.run.id}>`);
     }
-    lines.push(
-      plan.redispatch
-        ? 'Dispatched a fresh deploy for the current main.'
-        : 'The queued run behind it now has the group and will deploy the latest main.',
-    );
+    lines.push(FOLLOW_UP_LINES[plan.followUp] ?? FOLLOW_UP_LINES['needs-intervention']);
     lines.push(
       'A run parks like this when the Production environment gate holds a job — check the environment protection rules if it repeats.',
     );
@@ -250,6 +273,12 @@ function formatDiscordContent(plan, { runUrlBase = '' } = {}) {
 const GH_API_TIMEOUT_MS = 30_000;
 const JOBS_PAGE_SIZE = 100;
 const MAX_JOB_PAGES = 5;
+const RUNS_PAGE_SIZE = 30;
+
+// Statuses the runs API can filter on that mean "not finished". Queried
+// individually so a run holding the group is found however deep the cancelled
+// history above it has grown.
+const HOLDING_QUERY_STATUSES = Object.freeze(['waiting', 'queued', 'requested', 'in_progress', 'pending']);
 
 function createCliGitHub({ repository, workflowFile }) {
   const ghApi = (args) =>
@@ -260,15 +289,49 @@ function createCliGitHub({ repository, workflowFile }) {
     });
 
   return {
+    // Two queries, unioned, because a single newest-first page is not enough.
+    //
+    // Every push that arrives while a run is parked replaces the one pending run
+    // and leaves ANOTHER cancelled run in the history above the holder. The
+    // August 2026 wedge stacked 17 of those in eight hours; a longer one buries
+    // the parked run past any fixed page size, and the watchdog would go blind
+    // exactly when it is needed. So the holding runs are fetched by status —
+    // the server filters, and no amount of cancelled history can hide them.
+    //
+    // The recent page is still needed for the dispatch guards, which ask about
+    // completed runs for the current head sha. Those are the newest runs by
+    // definition: anything that could push them off the page is a run for a
+    // NEWER commit, at which point this head is no longer main's head.
     listRuns() {
-      // One page is enough: a parked run holds the group, so every later push
-      // sits behind it as `pending` and both are near the top of a newest-first
-      // list. A stall older than 30 main runs would need the group to have been
-      // free in between, which is the case where nothing is wedged.
+      const byId = new Map();
+      const add = (runs) => {
+        for (const run of runs) if (run?.id !== undefined) byId.set(String(run.id), run);
+      };
+
+      for (const status of HOLDING_QUERY_STATUSES) {
+        try {
+          add(this.listRunsByStatus(status));
+        } catch {
+          // One status query failing must not blind the others.
+        }
+      }
+      add(this.listRecentRuns());
+      return [...byId.values()];
+    },
+    listRunsByStatus(status) {
       const payload = ghApi([
         '--method',
         'GET',
-        `repos/${repository}/actions/workflows/${workflowFile}/runs?branch=main&per_page=30`,
+        `repos/${repository}/actions/workflows/${workflowFile}/runs?branch=main&status=${status}&per_page=${RUNS_PAGE_SIZE}`,
+      ]);
+      const parsed = JSON.parse(payload);
+      return Array.isArray(parsed?.workflow_runs) ? parsed.workflow_runs : [];
+    },
+    listRecentRuns() {
+      const payload = ghApi([
+        '--method',
+        'GET',
+        `repos/${repository}/actions/workflows/${workflowFile}/runs?branch=main&per_page=${RUNS_PAGE_SIZE}`,
       ]);
       const parsed = JSON.parse(payload);
       return Array.isArray(parsed?.workflow_runs) ? parsed.workflow_runs : [];
