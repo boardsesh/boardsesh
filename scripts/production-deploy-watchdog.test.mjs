@@ -106,8 +106,23 @@ void test('a completed run is never a target', () => {
 });
 
 void test('a waiting run with no job list yet reads as parked', () => {
+  // `waiting` is GitHub's word for "held by an environment gate", so it is
+  // parked whether or not any job has materialised. `queued` is not: it means
+  // waiting on a runner, which resolves itself, so with no job list to prove
+  // otherwise it stays a candidate for the age-based alert rather than a cancel.
   assert.equal(isParked(run({ status: 'waiting' }), []), true);
   assert.equal(isParked(run({ status: 'queued' }), []), false);
+});
+
+void test('a job list that includes an executing job is never parked', () => {
+  // The pagination guard in listJobs exists for this: drop the page holding the
+  // one in_progress job and a working deploy would read as parked.
+  const jobs = Array.from({ length: 60 }, (_, index) => ({
+    name: `job-${index}`,
+    status: index === 55 ? 'in_progress' : 'completed',
+  }));
+
+  assert.equal(isParked(run({ status: 'in_progress' }), jobs), false);
 });
 
 void test('unreadable timestamps produce no action rather than a blind cancel', () => {

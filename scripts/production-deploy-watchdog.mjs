@@ -237,11 +237,26 @@ function formatDiscordContent(plan, { runUrlBase = '' } = {}) {
   return lines.join('\n');
 }
 
+// A hung API call would give the watchdog the very failure it exists to break —
+// a silent stall, here for the runner's 6-hour job timeout. Every call is bounded.
+const GH_API_TIMEOUT_MS = 30_000;
+const JOBS_PAGE_SIZE = 100;
+const MAX_JOB_PAGES = 5;
+
 function createCliGitHub({ repository, workflowFile }) {
-  const ghApi = (args) => execFileSync('gh', ['api', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const ghApi = (args) =>
+    execFileSync('gh', ['api', ...args], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: GH_API_TIMEOUT_MS,
+    });
 
   return {
     listRuns() {
+      // One page is enough: a parked run holds the group, so every later push
+      // sits behind it as `pending` and both are near the top of a newest-first
+      // list. A stall older than 30 main runs would need the group to have been
+      // free in between, which is the case where nothing is wedged.
       const payload = ghApi([
         '--method',
         'GET',
@@ -250,14 +265,30 @@ function createCliGitHub({ repository, workflowFile }) {
       const parsed = JSON.parse(payload);
       return Array.isArray(parsed?.workflow_runs) ? parsed.workflow_runs : [];
     },
+    // Paginated deliberately. A truncated job list is worse than no list: drop
+    // the page holding the one `in_progress` job and isParked reads the run as
+    // parked, which cancels a deploy that is actually working.
     listJobs(runId) {
       try {
-        const payload = ghApi(['--method', 'GET', `repos/${repository}/actions/runs/${runId}/jobs?per_page=50`]);
-        const parsed = JSON.parse(payload);
-        return Array.isArray(parsed?.jobs) ? parsed.jobs : [];
+        const jobs = [];
+        for (let page = 1; page <= MAX_JOB_PAGES; page += 1) {
+          const payload = ghApi([
+            '--method',
+            'GET',
+            `repos/${repository}/actions/runs/${runId}/jobs?per_page=${JOBS_PAGE_SIZE}&page=${page}`,
+          ]);
+          const parsed = JSON.parse(payload);
+          const pageJobs = Array.isArray(parsed?.jobs) ? parsed.jobs : [];
+          jobs.push(...pageJobs);
+          const totalCount = Number(parsed?.total_count ?? jobs.length);
+          if (pageJobs.length === 0 || !Number.isFinite(totalCount) || jobs.length >= totalCount) break;
+        }
+        return jobs;
       } catch {
         // A run whose jobs we cannot read falls back to its own status in
-        // isParked, which is the conservative reading.
+        // isParked. That is safe in both directions: an executing run is not
+        // `waiting`, so it is never cancelled on a missing list, and a `waiting`
+        // run is parked at the gate by GitHub's own definition.
         return [];
       }
     },
