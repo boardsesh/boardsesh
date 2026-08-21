@@ -64,6 +64,7 @@ import {
   useQueueSessionId,
 } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
+import { useSetting } from '../../settings';
 import type { OpenClimbActionsOptions } from '../../providers/drawer-host-provider';
 import { useAuth } from '../../providers/auth-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -76,7 +77,7 @@ import { getBoardRenderData } from '../../lib/board-details';
 import { hapticSuccess } from '../../lib/haptics';
 import { usePlayDrawerWakeLock } from './use-play-drawer-wake-lock';
 import { resolveFavoriteRollback } from './favorite-rollback';
-import { getSimilarClimbTapMode, getViewOnlyPreviewNavigationTarget } from './play-drawer-navigation';
+import { getSimilarClimbTapMode, getSwipeNavigationTarget } from './play-drawer-navigation';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { track } from '../../lib/analytics';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -378,6 +379,7 @@ export function PlayDrawer({
   const { sessionId } = useQueueSessionId();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   const bluetooth = useOptionalBluetoothContext();
+  const [lightOnSwipe] = useSetting('lightOnSwipe');
   const { mutate: toggleFavoriteMutate } = useToggleFavorite();
   // App-wide grade resolver: swaps the header grade (label + colour) to the
   // Boardsesh grade when the "Show Boardsesh grades" toggle is on and a trusted
@@ -587,10 +589,11 @@ export function PlayDrawer({
   }, [openTarget]);
 
   const handlePrev = useCallback(() => {
-    const previewTarget = getViewOnlyPreviewNavigationTarget({
+    const previewTarget = getSwipeNavigationTarget({
       previewItem: drawerPreviewItem,
       previewSuggestionSource: drawerPreviewSuggestionSource,
       targetItem: navigationState.prevItem,
+      lightOnSwipe,
     });
     if (previewTarget.viewOnly) {
       if (!previewTarget.targetItem) return;
@@ -605,13 +608,14 @@ export function PlayDrawer({
     previousClimb();
     setIsMirrored(false);
     // The favorite override is cleared by the climb-change effect.
-  }, [drawerPreviewSuggestionSource, drawerPreviewItem, navigationState.prevItem, previousClimb]);
+  }, [drawerPreviewSuggestionSource, drawerPreviewItem, navigationState.prevItem, previousClimb, lightOnSwipe]);
 
   const handleNext = useCallback(() => {
-    const previewTarget = getViewOnlyPreviewNavigationTarget({
+    const previewTarget = getSwipeNavigationTarget({
       previewItem: drawerPreviewItem,
       previewSuggestionSource: drawerPreviewSuggestionSource,
       targetItem: navigationState.nextItem,
+      lightOnSwipe,
     });
     if (previewTarget.viewOnly) {
       if (!previewTarget.targetItem) return;
@@ -626,7 +630,7 @@ export function PlayDrawer({
     nextClimb();
     setIsMirrored(false);
     // The favorite override is cleared by the climb-change effect.
-  }, [drawerPreviewSuggestionSource, drawerPreviewItem, navigationState.nextItem, nextClimb]);
+  }, [drawerPreviewSuggestionSource, drawerPreviewItem, navigationState.nextItem, nextClimb, lightOnSwipe]);
 
   // Promote the previewed climb to the active/current queue item. The Preview
   // badge clears and the lightbulb (which acts on the current climb) now drives

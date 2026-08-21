@@ -45,6 +45,10 @@ const baseProps = {
   autoDisconnectEnabled: false,
   autoDisconnectTimeoutLabel: '30 seconds',
   onToggleAutoDisconnect: vi.fn(),
+  lightOnSwipe: true,
+  onToggleLightOnSwipe: vi.fn(),
+  lightOnClimbTap: true,
+  onToggleLightOnClimbTap: vi.fn(),
   onClose: vi.fn(),
 };
 
@@ -53,6 +57,8 @@ beforeEach(() => {
   baseProps.onClearLights.mockClear();
   baseProps.onDisconnect.mockClear();
   baseProps.onToggleAutoDisconnect.mockClear();
+  baseProps.onToggleLightOnSwipe.mockClear();
+  baseProps.onToggleLightOnClimbTap.mockClear();
   baseProps.onClose.mockClear();
 });
 
@@ -94,6 +100,21 @@ describe('BleControlSheet', () => {
     fireEvent.click(getByText('ble.autoDisconnect.toggleTitle'));
     expect(baseProps.onToggleAutoDisconnect).toHaveBeenCalledTimes(1);
     expect(baseProps.onToggleAutoDisconnect).toHaveBeenCalledWith(true);
+  });
+
+  it('renders the board-lighting rows and toggles each independently', () => {
+    const { getByText } = render(<BleControlSheet {...baseProps} />);
+    expect(getByText('ble.lighting.onSwipeLabel')).toBeDefined();
+    expect(getByText('ble.lighting.onTapLabel')).toBeDefined();
+
+    fireEvent.click(getByText('ble.lighting.onSwipeLabel'));
+    expect(baseProps.onToggleLightOnSwipe).toHaveBeenCalledTimes(1);
+    expect(baseProps.onToggleLightOnSwipe).toHaveBeenCalledWith(false);
+    expect(baseProps.onToggleLightOnClimbTap).not.toHaveBeenCalled();
+
+    fireEvent.click(getByText('ble.lighting.onTapLabel'));
+    expect(baseProps.onToggleLightOnClimbTap).toHaveBeenCalledTimes(1);
+    expect(baseProps.onToggleLightOnClimbTap).toHaveBeenCalledWith(false);
   });
 
   it('always renders the turn-off row (every board now has a clear-all, incl. MoonBoard)', () => {

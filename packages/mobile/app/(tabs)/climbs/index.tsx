@@ -50,6 +50,8 @@ import { useTheme, useAppColorScheme } from '../../../src/providers/theme-provid
 import { selectByVariant } from '../../../src/theme/variants';
 import { useActiveClimbUuid, useQueueActions } from '../../../src/providers/queue-provider';
 import { ClimbSearchProvider, useClimbSearch, type GradeBound } from '../../../src/providers/climb-search-provider';
+import { useSetting } from '../../../src/settings';
+import { climbToQueueItem } from '../../../src/lib/climb-to-queue-item';
 import { useBoardActions } from '@boardsesh/board-react';
 import { randomUUID } from 'expo-crypto';
 import { type SearchHeaderHandle } from '../../../src/components/SearchHeader';
@@ -177,7 +179,8 @@ function ClimbListInner() {
   }>();
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
-  const { openClimbActions, openAddToPlaylist, openBoardSheet, usesDetailPane } = useDrawerHost();
+  const { openClimbActions, openAddToPlaylist, openBoardSheet, openPlayDrawer, usesDetailPane } = useDrawerHost();
+  const [lightOnClimbTap] = useSetting('lightOnClimbTap');
   // One-time board-history reveal: armed when the user binds a board from the
   // onboarding hand-off and consumed on focus (see the useFocusEffect below).
   // Declared here so handleOpenBoardDetail can clear it — tapping the board
@@ -780,9 +783,17 @@ function ClimbListInner() {
   const handleClimbPress = useCallback(
     (climb: Climb) => {
       blurSearchInputs();
+      if (!lightOnClimbTap) {
+        // Board lighting off for taps: open view-only (Preview badge + "Set
+        // active") instead of committing — same landing as the explicit
+        // "Preview" climb action, so the tap doesn't light the board or touch
+        // the queue until the climber taps to promote it.
+        openPlayDrawer(climb, { previewQueueItem: climbToQueueItem(climb) });
+        return;
+      }
       void activateClimbListClimb.activate(toQueueClimb(climb));
     },
-    [activateClimbListClimb, blurSearchInputs],
+    [activateClimbListClimb, blurSearchInputs, lightOnClimbTap, openPlayDrawer],
   );
 
   // Screenshot mode: when a specific board index is requested, switch the active

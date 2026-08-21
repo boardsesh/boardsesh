@@ -10,6 +10,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoConnectBle: true,
   autoDisconnectBle: false,
   autoDisconnectTimeoutSeconds: 30,
+  lightOnSwipe: true,
+  lightOnClimbTap: true,
   keepScreenAwake: true,
   theme: 'system',
   hapticFeedbackEnabled: true,

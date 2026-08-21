@@ -20,8 +20,12 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 
+vi.mock('../../Icon', () => ({
+  Icon: () => createElement('span', { 'data-testid': 'icon' }),
+}));
+
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { accent: '#007AFF' } }),
+  useTheme: () => ({ systemColors: { accent: '#007AFF' }, brandColors: { warning: '#FF9500' } }),
 }));
 
 vi.mock('../../../theme/ios-colors', () => ({
@@ -41,6 +45,11 @@ describe('PlayDrawerPreviewBanner', () => {
     expect(container.textContent).toContain('playView.previewBadge');
     expect(container.querySelector('button')).toBeTruthy();
     expect(container.textContent).toContain('playView.setActive');
+  });
+
+  it('shows a lightbulb glyph on the Set active button', () => {
+    const { container } = render(createElement(PlayDrawerPreviewBanner, { showSetActive: true, onSetActive: vi.fn() }));
+    expect(container.querySelector('button [data-testid="icon"]')).toBeTruthy();
   });
 
   it('promotes the climb when Set active is pressed', () => {

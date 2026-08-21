@@ -421,6 +421,14 @@
         "600": "10 minutes"
       }
     },
+    "lighting": {
+      "title": "Board lighting",
+      "description": "Choose what lights up the connected board automatically.",
+      "onSwipeLabel": "Light problems on swipe",
+      "onSwipeDescription": "Light the board when you swipe between climbs in the play view.",
+      "onTapLabel": "Light problems when tapping the list",
+      "onTapDescription": "Light the board when you select a climb from a climbs list."
+    },
     "turnOff": "Turn off the board",
     "holdForControls": "Hold for board controls",
     "sendFailedTitle": "Couldn't light board",

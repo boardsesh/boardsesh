@@ -8,16 +8,54 @@ export function getViewOnlyPreviewNavigationTarget({
   previewItem,
   previewSuggestionSource,
   targetItem,
+  forceViewOnly = false,
 }: {
   previewItem: ClimbQueueItem | null;
   previewSuggestionSource: PlaylistSuggestionSource | null;
   targetItem: ClimbQueueItem | null;
+  /**
+   * True when a local setting (lightOnSwipe off) says this navigation must
+   * not commit/light the board — the same view-only landing as the
+   * wrong-board path below, just a different reason, and independent of
+   * `previewItem`/`previewSuggestionSource` (it applies on the very first
+   * swipe away from a real committed climb, not just mid-preview-chain).
+   */
+  forceViewOnly?: boolean;
 }): ViewOnlyPreviewNavigationTarget {
+  if (forceViewOnly) return { viewOnly: true, targetItem };
   // Mobile only sets previewSuggestionSource for the wrong-board view-only
   // drawer path. Normal playlist activation commits navigation through the
   // queue and must leave this value null.
   if (!previewSuggestionSource || !previewItem) return { viewOnly: false };
   return { viewOnly: true, targetItem };
+}
+
+/**
+ * The wiring `handlePrev`/`handleNext` actually call: turns the `lightOnSwipe`
+ * setting into `forceViewOnly` and delegates to
+ * {@link getViewOnlyPreviewNavigationTarget}. Split out as its own function
+ * (rather than inlining `forceViewOnly: !lightOnSwipe` at each call site) so
+ * the setting → forceViewOnly translation is directly unit-testable — the
+ * component itself has no render test (PlayDrawer's dependency graph makes
+ * one impractical; see IpadPlayPane.test.tsx, which mocks it out entirely).
+ */
+export function getSwipeNavigationTarget({
+  previewItem,
+  previewSuggestionSource,
+  targetItem,
+  lightOnSwipe,
+}: {
+  previewItem: ClimbQueueItem | null;
+  previewSuggestionSource: PlaylistSuggestionSource | null;
+  targetItem: ClimbQueueItem | null;
+  lightOnSwipe: boolean;
+}): ViewOnlyPreviewNavigationTarget {
+  return getViewOnlyPreviewNavigationTarget({
+    previewItem,
+    previewSuggestionSource,
+    targetItem,
+    forceViewOnly: !lightOnSwipe,
+  });
 }
 
 /**
