@@ -347,6 +347,10 @@ void test('one cancel that fails does not strand the others', () => {
   assert.doesNotMatch(content, /Dispatched a fresh deploy/);
   assert.match(content, /No deploy was started/);
   assert.match(content, /Could NOT cancel run/);
+  // One cancel DID land, but the headline follows the worst outcome: a run may
+  // still be holding the group, so this must not read as a recovery.
+  assert.match(content, /still wedged/);
+  assert.doesNotMatch(content, /unwedged/);
 });
 
 void test('an unreadable run history withholds the dispatch and says why', () => {
@@ -386,6 +390,7 @@ void test('the report never claims a cancel that did not land', () => {
   assert.match(content, /Could NOT cancel run #1337/);
   // Still wedged, so it must not read as a recovery.
   assert.match(content, /still wedged/);
+  assert.doesNotMatch(content, /unwedged/);
   assert.doesNotMatch(content, /queued run behind it/);
   assert.match(formatSummary(plan, { failedCancelIds }), /could NOT cancel/);
 });

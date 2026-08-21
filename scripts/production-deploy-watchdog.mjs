@@ -270,7 +270,11 @@ function formatDiscordContent(plan, { runUrlBase = '', failedCancelIds = new Set
     const cancelled = plan.cancel.filter((entry) => !failedCancelIds.has(String(entry.run.id)));
     const failed = plan.cancel.filter((entry) => failedCancelIds.has(String(entry.run.id)));
 
-    lines.push(cancelled.length > 0 ? '🧹 **Production deploy unwedged**' : '⚠️ **Production deploy still wedged**');
+    // The headline follows the WORST outcome, not the best: if any cancel did
+    // not land, a run may still be holding the group, and "unwedged" over a
+    // still-wedged deploy is the reassuring-but-wrong reading this watchdog is
+    // supposed to make impossible.
+    lines.push(failed.length > 0 ? '⚠️ **Production deploy still wedged**' : '🧹 **Production deploy unwedged**');
     for (const entry of cancelled) {
       const sha = typeof entry.run.head_sha === 'string' ? entry.run.head_sha.slice(0, 7) : 'unknown';
       lines.push(`• Cancelled run #${entry.run.run_number ?? entry.run.id} (\`${sha}\`) — ${entry.reason}.`);
@@ -310,6 +314,11 @@ const RUNS_PAGE_SIZE = 30;
 // Statuses the runs API can filter on that mean "not finished". Queried
 // individually so a run holding the group is found however deep the cancelled
 // history above it has grown.
+// `pending` is here for the survivor check rather than for cancelling — a run
+// queued behind the group is never a target. If a future API drops it as a
+// filter value, the per-status try/catch swallows the rejection and the recent
+// unfiltered page still carries pending runs, so the check degrades rather than
+// breaking.
 const HOLDING_QUERY_STATUSES = Object.freeze(['waiting', 'queued', 'requested', 'in_progress', 'pending']);
 
 function createCliGitHub({ repository, workflowFile }) {
