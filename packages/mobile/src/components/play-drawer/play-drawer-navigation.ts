@@ -31,6 +31,34 @@ export function getViewOnlyPreviewNavigationTarget({
 }
 
 /**
+ * The wiring `handlePrev`/`handleNext` actually call: turns the `lightOnSwipe`
+ * setting into `forceViewOnly` and delegates to
+ * {@link getViewOnlyPreviewNavigationTarget}. Split out as its own function
+ * (rather than inlining `forceViewOnly: !lightOnSwipe` at each call site) so
+ * the setting → forceViewOnly translation is directly unit-testable — the
+ * component itself has no render test (PlayDrawer's dependency graph makes
+ * one impractical; see IpadPlayPane.test.tsx, which mocks it out entirely).
+ */
+export function getSwipeNavigationTarget({
+  previewItem,
+  previewSuggestionSource,
+  targetItem,
+  lightOnSwipe,
+}: {
+  previewItem: ClimbQueueItem | null;
+  previewSuggestionSource: PlaylistSuggestionSource | null;
+  targetItem: ClimbQueueItem | null;
+  lightOnSwipe: boolean;
+}): ViewOnlyPreviewNavigationTarget {
+  return getViewOnlyPreviewNavigationTarget({
+    previewItem,
+    previewSuggestionSource,
+    targetItem,
+    forceViewOnly: !lightOnSwipe,
+  });
+}
+
+/**
  * What a tap on a Similar Climbs card does, by viewer.
  *
  * `'queue'` is the long-standing behaviour: add the climb to the queue (which

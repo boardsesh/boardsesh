@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
-import { getSimilarClimbTapMode, getViewOnlyPreviewNavigationTarget } from '../play-drawer-navigation';
+import {
+  getSimilarClimbTapMode,
+  getViewOnlyPreviewNavigationTarget,
+  getSwipeNavigationTarget,
+} from '../play-drawer-navigation';
 
 function makeItem(id: string): ClimbQueueItem {
   return {
@@ -113,6 +117,49 @@ describe('getViewOnlyPreviewNavigationTarget', () => {
         targetItem: makeItem('next'),
       }),
     ).toEqual({ viewOnly: false });
+  });
+});
+
+describe('getSwipeNavigationTarget', () => {
+  // This is the exact call PlayDrawer's handlePrev/handleNext make — it exists
+  // so the lightOnSwipe -> forceViewOnly wiring is unit-tested without needing
+  // to render PlayDrawer (impractical; see IpadPlayPane.test.tsx, which mocks
+  // it out).
+  it('goes view-only with lightOnSwipe off, even on the very first swipe (no prior preview)', () => {
+    const nextItem = makeItem('next');
+    expect(
+      getSwipeNavigationTarget({
+        previewItem: null,
+        previewSuggestionSource: null,
+        targetItem: nextItem,
+        lightOnSwipe: false,
+      }),
+    ).toEqual({ viewOnly: true, targetItem: nextItem });
+  });
+
+  it('stays live with lightOnSwipe on and no wrong-board preview in progress', () => {
+    expect(
+      getSwipeNavigationTarget({
+        previewItem: null,
+        previewSuggestionSource: null,
+        targetItem: makeItem('next'),
+        lightOnSwipe: true,
+      }),
+    ).toEqual({ viewOnly: false });
+  });
+
+  it('still honors the wrong-board preview chain when lightOnSwipe is on', () => {
+    const currentItem = makeItem('current');
+    const nextItem = makeItem('next');
+    const previewSource = makePreviewSource(currentItem);
+    expect(
+      getSwipeNavigationTarget({
+        previewItem: currentItem,
+        previewSuggestionSource: previewSource,
+        targetItem: nextItem,
+        lightOnSwipe: true,
+      }),
+    ).toEqual({ viewOnly: true, targetItem: nextItem });
   });
 });
 

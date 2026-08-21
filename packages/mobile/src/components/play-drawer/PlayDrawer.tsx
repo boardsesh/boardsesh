@@ -77,7 +77,7 @@ import { getBoardRenderData } from '../../lib/board-details';
 import { hapticSuccess } from '../../lib/haptics';
 import { usePlayDrawerWakeLock } from './use-play-drawer-wake-lock';
 import { resolveFavoriteRollback } from './favorite-rollback';
-import { getSimilarClimbTapMode, getViewOnlyPreviewNavigationTarget } from './play-drawer-navigation';
+import { getSimilarClimbTapMode, getSwipeNavigationTarget } from './play-drawer-navigation';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { track } from '../../lib/analytics';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -589,11 +589,11 @@ export function PlayDrawer({
   }, [openTarget]);
 
   const handlePrev = useCallback(() => {
-    const previewTarget = getViewOnlyPreviewNavigationTarget({
+    const previewTarget = getSwipeNavigationTarget({
       previewItem: drawerPreviewItem,
       previewSuggestionSource: drawerPreviewSuggestionSource,
       targetItem: navigationState.prevItem,
-      forceViewOnly: !lightOnSwipe,
+      lightOnSwipe,
     });
     if (previewTarget.viewOnly) {
       if (!previewTarget.targetItem) return;
@@ -611,11 +611,11 @@ export function PlayDrawer({
   }, [drawerPreviewSuggestionSource, drawerPreviewItem, navigationState.prevItem, previousClimb, lightOnSwipe]);
 
   const handleNext = useCallback(() => {
-    const previewTarget = getViewOnlyPreviewNavigationTarget({
+    const previewTarget = getSwipeNavigationTarget({
       previewItem: drawerPreviewItem,
       previewSuggestionSource: drawerPreviewSuggestionSource,
       targetItem: navigationState.nextItem,
-      forceViewOnly: !lightOnSwipe,
+      lightOnSwipe,
     });
     if (previewTarget.viewOnly) {
       if (!previewTarget.targetItem) return;
