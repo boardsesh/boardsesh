@@ -167,21 +167,17 @@ function planWatchdogActions({
   // Anything still holding or queued after the cancels takes over the group, so
   // main ships without our help. `pending` counts here — it is the run we freed.
   const survivorHoldsGroup = candidates.some(
-    (run) =>
-      !cancelledIds.has(String(run?.id ?? '')) && (isHoldingRun(run) || run?.status === 'pending'),
+    (run) => !cancelledIds.has(String(run?.id ?? '')) && (isHoldingRun(run) || run?.status === 'pending'),
   );
 
   // A dispatch we already made for this SHA means the retry has been spent: if
   // that one wedged too, the gate is broken in a way cancelling cannot fix.
   const alreadyRetriedHead =
-    headSha !== '' &&
-    candidates.some((run) => run?.event === 'workflow_dispatch' && run?.head_sha === headSha);
+    headSha !== '' && candidates.some((run) => run?.event === 'workflow_dispatch' && run?.head_sha === headSha);
 
   const headAlreadyDeployed =
     headSha !== '' &&
-    candidates.some(
-      (run) => run?.head_sha === headSha && run?.status === 'completed' && run?.conclusion === 'success',
-    );
+    candidates.some((run) => run?.head_sha === headSha && run?.status === 'completed' && run?.conclusion === 'success');
 
   const redispatch =
     cancel.length > 0 && !survivorHoldsGroup && !alreadyRetriedHead && !headAlreadyDeployed && headSha !== '';
@@ -201,7 +197,9 @@ function formatSummary(plan, { dryRun = false } = {}) {
   for (const entry of plan.cancel) lines.push(`${verb} ${describeRun(entry)}`);
   for (const entry of plan.alert) lines.push(`alerting on ${describeRun(entry)}`);
   if (plan.redispatch) {
-    lines.push(dryRun ? 'would dispatch a fresh production deploy for main' : 'dispatched a fresh production deploy for main');
+    lines.push(
+      dryRun ? 'would dispatch a fresh production deploy for main' : 'dispatched a fresh production deploy for main',
+    );
   }
   if (lines.length === 0) lines.push('no stalled production deploy found');
   return lines.join('\n');
@@ -217,9 +215,7 @@ function formatDiscordContent(plan, { runUrlBase = '' } = {}) {
     lines.push('🧹 **Production deploy unwedged**');
     for (const entry of plan.cancel) {
       const sha = typeof entry.run.head_sha === 'string' ? entry.run.head_sha.slice(0, 7) : 'unknown';
-      lines.push(
-        `• Cancelled run #${entry.run.run_number ?? entry.run.id} (\`${sha}\`) — ${entry.reason}.`,
-      );
+      lines.push(`• Cancelled run #${entry.run.run_number ?? entry.run.id} (\`${sha}\`) — ${entry.reason}.`);
       if (runUrlBase !== '') lines.push(`  <${runUrlBase}/${entry.run.id}>`);
     }
     lines.push(
@@ -233,15 +229,16 @@ function formatDiscordContent(plan, { runUrlBase = '' } = {}) {
   }
   for (const entry of plan.alert) {
     const sha = typeof entry.run.head_sha === 'string' ? entry.run.head_sha.slice(0, 7) : 'unknown';
-    lines.push(`⏳ **Production deploy still running** — run #${entry.run.run_number ?? entry.run.id} (\`${sha}\`), ${entry.reason}. Not cancelled.`);
+    lines.push(
+      `⏳ **Production deploy still running** — run #${entry.run.run_number ?? entry.run.id} (\`${sha}\`), ${entry.reason}. Not cancelled.`,
+    );
     if (runUrlBase !== '') lines.push(`<${runUrlBase}/${entry.run.id}>`);
   }
   return lines.join('\n');
 }
 
 function createCliGitHub({ repository, workflowFile }) {
-  const ghApi = (args) =>
-    execFileSync('gh', ['api', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const ghApi = (args) => execFileSync('gh', ['api', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
   return {
     listRuns() {
