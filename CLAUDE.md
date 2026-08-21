@@ -121,7 +121,7 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/og-climb.md` — backend-served climb OG share cards (`GET /og/climb`: caches, env vars, timings)
 - `docs/mobile-sheets-vs-routes.md` — mobile: which surface to use (bottom sheet vs route), with the decision tree + the hard rules (incl. why `fullScreenModal` breaks the iOS 26 native tab bar)
 - `docs/gym-funnel-analytics.md` — the www gym funnel event contract in `@boardsesh/analytics` (seven event names, their property sets, the QR `?src=qr&medium=` landing params, and why `boardTypes` must be a joined string)
-- `docs/sitemap.md` — the shard registry, the degrade-at-the-index / fail-closed-at-the-shard split, and the climbs summary store (`sitemap_shard_refreshes`): who refreshes it, the `?force=1` escape hatch, and why the write lock is transaction-scoped
+- `docs/sitemap.md` — the shard registry, the degrade-at-the-index / fail-closed-at-the-shard split, and the climb store (`sitemap_shard_refreshes` + the `sitemap_climb_urls` ordinal table the shard pages read): who refreshes it, the `?force=1` escape hatch, and why the write lock is transaction-scoped
 
 ## Architecture Overview
 
