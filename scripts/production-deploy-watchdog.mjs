@@ -229,6 +229,18 @@ function formatSummary(plan, { dryRun = false } = {}) {
   return lines.join('\n');
 }
 
+// Discord rejects a content field over 2000 characters with a 400, and the
+// workflow's post is best-effort — so an oversized message would fail silently,
+// which is the failure mode this whole watchdog exists to remove. Cap it and say
+// the report was cut; the job summary always carries the full text.
+const DISCORD_CONTENT_LIMIT = 2000;
+const DISCORD_TRUNCATION_NOTICE = '\n… truncated — the job summary has the full list.';
+
+function capDiscordContent(content) {
+  if (content.length <= DISCORD_CONTENT_LIMIT) return content;
+  return `${content.slice(0, DISCORD_CONTENT_LIMIT - DISCORD_TRUNCATION_NOTICE.length)}${DISCORD_TRUNCATION_NOTICE}`;
+}
+
 const FOLLOW_UP_LINES = {
   'queued-run-takes-over': 'The queued run behind it now has the group and will deploy the latest main.',
   redispatched: 'Dispatched a fresh deploy for the current main.',
@@ -265,7 +277,7 @@ function formatDiscordContent(plan, { runUrlBase = '' } = {}) {
     );
     if (runUrlBase !== '') lines.push(`<${runUrlBase}/${entry.run.id}>`);
   }
-  return lines.join('\n');
+  return capDiscordContent(lines.join('\n'));
 }
 
 // A hung API call would give the watchdog the very failure it exists to break —
@@ -387,15 +399,32 @@ function runCli({ github, headSha, nowMs, runUrlBase, discordFilePath, outputPat
 
   const plan = planWatchdogActions({ runs, jobsByRunId, headSha, nowMs });
 
+  // Each cancel is isolated: two runs can be stalled at once, and a run that
+  // finished between the plan and the call makes GitHub reject the cancel. Left
+  // unguarded, the first such rejection would abort the loop and strand every
+  // later one for another 15 minutes.
+  const cancelFailures = [];
   for (const entry of plan.cancel) {
     console.error(`production-deploy-watchdog: ${dryRun ? 'would cancel' : 'cancelling'} ${describeRun(entry)}`);
-    if (!dryRun) github.cancelRun(entry.run.id);
+    if (dryRun) continue;
+    try {
+      github.cancelRun(entry.run.id);
+    } catch (error) {
+      cancelFailures.push(entry);
+      console.error(`production-deploy-watchdog: could NOT cancel ${describeRun(entry)}: ${error.message}`);
+    }
   }
-  if (plan.redispatch) {
+
+  // A failed cancel may mean the group is still held. Dispatching then would
+  // spend this sha's one retry on a run that just queues behind the wedge, so
+  // leave the retry for the next tick, which re-reads the real state.
+  if (plan.redispatch && cancelFailures.length === 0) {
     console.error(
       `production-deploy-watchdog: ${dryRun ? 'would dispatch' : 'dispatching'} a fresh production deploy for main`,
     );
     if (!dryRun) github.dispatchRun('main');
+  } else if (plan.redispatch) {
+    console.error('production-deploy-watchdog: holding the dispatch — a cancel failed, so the group may still be held');
   }
 
   const summary = formatSummary(plan, { dryRun });
@@ -463,6 +492,7 @@ if (process.argv[1] === scriptPath) {
 }
 
 export {
+  DISCORD_CONTENT_LIMIT,
   DEFAULT_RUNNING_ALERT_MINUTES,
   DEFAULT_STALL_MINUTES,
   classifyRun,

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import {
   DEFAULT_STALL_MINUTES,
+  DISCORD_CONTENT_LIMIT,
   classifyRun,
   formatDiscordContent,
   formatDuration,
@@ -285,6 +286,56 @@ void test('the Discord message names the run, the cause and the gate to check', 
   assert.match(content, /parked for 1h 30m/);
   assert.match(content, /Production environment gate/);
   assert.match(content, /<https:\/\/example\.test\/actions\/runs\/42>/);
+});
+
+void test('a Discord message never exceeds the limit that would make the post fail', () => {
+  // Many parked runs at once. Over 2000 chars Discord answers 400 and the
+  // workflow's best-effort post swallows it — a silent alarm, which is the one
+  // outcome this watchdog must never produce.
+  const runs = Array.from({ length: 60 }, (_, index) =>
+    run({ id: 100 + index, run_number: 1000 + index, status: 'waiting', head_sha: `${index}`.padStart(40, 'a') }),
+  );
+  const jobsByRunId = Object.fromEntries(
+    runs.map((entry) => [entry.id, [{ name: 'check-rollback', status: 'waiting' }]]),
+  );
+  const plan = planWatchdogActions({ runs, jobsByRunId, headSha: HEAD_SHA, nowMs: NOW });
+  const content = formatDiscordContent(plan, { runUrlBase: 'https://example.test/actions/runs' });
+
+  assert.equal(plan.cancel.length, 60);
+  assert.ok(content.length <= DISCORD_CONTENT_LIMIT, `content was ${content.length} chars`);
+  assert.match(content, /truncated/);
+});
+
+void test('one cancel that fails does not strand the others', () => {
+  const cancelled = [];
+  const dispatched = [];
+
+  runCli({
+    github: {
+      listRuns: () => [
+        run({ id: 1, status: 'waiting', head_sha: HEAD_SHA }),
+        run({ id: 2, status: 'waiting', head_sha: HEAD_SHA }),
+      ],
+      listJobs: () => [{ name: 'check-rollback', status: 'waiting' }],
+      cancelRun: (runId) => {
+        // GitHub rejects a cancel for a run that finished in the meantime.
+        if (runId === 1) throw new Error('HTTP 409: cannot cancel a completed run');
+        cancelled.push(runId);
+      },
+      dispatchRun: (ref) => dispatched.push(ref),
+    },
+    headSha: HEAD_SHA,
+    nowMs: NOW,
+    runUrlBase: '',
+    discordFilePath: '',
+    outputPath: '',
+    dryRun: false,
+  });
+
+  // The second cancel still happened...
+  assert.deepEqual(cancelled, [2]);
+  // ...and the retry is left for the next tick, since the group may still be held.
+  assert.deepEqual(dispatched, []);
 });
 
 void test('the CLI cancels, redispatches and reports through one pass', () => {
