@@ -626,8 +626,15 @@ jobs:
         # config, not part of the export. Copy them into the publish dir.
         run: |
           set -euo pipefail
-          cp deploy/app-subdomain/_redirects "$RUNNER_TEMP/app-standalone/_redirects"
-          cp deploy/app-subdomain/_headers   "$RUNNER_TEMP/app-standalone/_headers"
+          cp deploy/app-subdomain/_redirects   "$RUNNER_TEMP/app-standalone/_redirects"
+          cp deploy/app-subdomain/_headers     "$RUNNER_TEMP/app-standalone/_headers"
+          # _routes.json scopes the Function below to the three asset prefixes,
+          # so the shell and every SPA route stay pure static assets.
+          cp deploy/app-subdomain/_routes.json "$RUNNER_TEMP/app-standalone/_routes.json"
+          # Pages discovers `functions/` relative to wrangler's cwd and requires
+          # it to sit OUTSIDE the static root — put it beside the export, and
+          # publish with `--cwd "$RUNNER_TEMP"` so wrangler finds it there.
+          cp -R deploy/app-subdomain/functions "$RUNNER_TEMP/functions"
 
       - name: Publish to Cloudflare Pages
         env:
@@ -635,6 +642,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           bunx wrangler@4 pages deploy "$RUNNER_TEMP/app-standalone" \
+            --cwd "$RUNNER_TEMP" \
             --project-name=boardsesh-app \
             --branch=main
 
@@ -692,16 +700,60 @@ jobs:
             ! echo "$cc" | grep -qi 'immutable'
           }
 
-          # A real content-hashed asset URL, parsed out of the served index.html,
-          # must come back immutable-cached.
-          check_hashed_asset_immutable() {
+          # The entry chunk named by the served index.html must come back as real
+          # JavaScript, immutable-cached.
+          #
+          # The content-type and body checks are the point, not decoration. This
+          # used to assert only `immutable` off a HEAD, which cannot fail: when a
+          # chunk is missing, `_redirects`' `/* /index.html 200` answers the .js
+          # URL with the HTML shell, and `_headers`' `/_expo/*` rule stamps
+          # `immutable` on it by path — so a chunk that does not exist passed this
+          # check. The browser is stricter than the smoke was: `nosniff` + a
+          # `text/html` script means Chrome refuses to execute it, React never
+          # mounts, and #root stays empty with no console error to explain it.
+          # That is the exact silent failure this now catches, one step earlier
+          # and with a message that says which part was wrong.
+          check_entry_chunk_is_js() {
             local asset_path
-            asset_path=$(curl -sS "$base/" \
+            asset_path=$(curl -sS --max-time 20 "$base/" \
               | grep -oE '/_expo/static/[^"'"'"']+\.js' | head -n1)
             [ -n "$asset_path" ] || { echo "  no /_expo asset found in index.html"; return 1; }
-            local cc; cc=$(curl -sSI "$base$asset_path" | tr -d '\r' \
-              | grep -i '^cache-control:' || true)
-            echo "$cc" | grep -qi 'immutable'
+
+            local head; head=$(curl -sSI --max-time 20 "$base$asset_path" | tr -d '\r')
+            echo "$head" | grep -qiE '^content-type:.*javascript' || {
+              echo "  $asset_path"
+              echo "    status:       $(echo "$head" | head -n1 || echo '(none)')"
+              echo "    content-type: $(echo "$head" | grep -i '^content-type:' || echo '(none)')"
+              echo "  the entry chunk index.html names is not being served as JavaScript."
+              echo "  404 → the chunk is missing from the deployment (or has not propagated yet)."
+              echo "  text/html → the SPA fallback answered it, which also means the asset-404"
+              echo "    Function is not in the path; see deploy/app-subdomain/functions/_middleware.ts."
+              return 1
+            }
+            echo "$head" | grep -qi '^cache-control:.*immutable' || {
+              echo "  $asset_path is not immutable-cached: $(echo "$head" | grep -i '^cache-control:' || echo '(none)')"
+              return 1
+            }
+
+            # Read the start of the body too. Content-type can be right while the
+            # body is the shell if a future header rule ever sets the type by
+            # path as well.
+            #
+            # `head -c` closes the pipe once it has enough, so curl stops early
+            # and this never pulls the whole ~10MB chunk. Curl then reports a
+            # write failure, which is expected here and is why stderr is
+            # dropped; a fetch that genuinely failed still arrives as an empty
+            # `first` and is caught on the next line. Deliberately not a range
+            # request: asset paths are served through a Pages Function now
+            # (deploy/app-subdomain/functions/_middleware.ts), which does not
+            # answer 206, so `-r` would silently read the whole body anyway.
+            local first
+            first=$(curl -sS --max-time 60 "$base$asset_path" 2>/dev/null | head -c 64) || true
+            [ -n "$first" ] || { echo "  $asset_path body is empty"; return 1; }
+            case "$first" in
+              '<!doctype'*|'<!DOCTYPE'*|'<html'*)
+                echo "  $asset_path served the HTML shell, not JavaScript"; return 1 ;;
+            esac
           }
 
           check_manifest_link() {
@@ -747,7 +799,7 @@ jobs:
           retry "X-Robots-Tag: noindex on /"              check_noindex
           retry "wasm binary → 200 wasm/octet-stream"     check_wasm
           retry "index.html is NOT immutable-cached"      check_index_not_immutable
-          retry "hashed _expo asset is immutable-cached"  check_hashed_asset_immutable
+          retry "entry chunk serves as immutable JavaScript"  check_entry_chunk_is_js
           retry "PWA manifest → JSON with start_url/scope /"  check_manifest_link
 
       - name: Install Playwright chromium
@@ -769,6 +821,21 @@ jobs:
         env:
           PLAYWRIGHT_TEST_BASE_URL: https://app.boardsesh.com
         run: cd packages/web && bunx playwright test --config=playwright.production.config.ts
+
+      # The config already writes a trace on retry and a screenshot on failure,
+      # but nothing collected them, so a failed boot check left only the console
+      # output to work from — which for a blank #root says "element(s) not found"
+      # and nothing else. Keep them; this is the deploy that will need them.
+      - name: Upload boot-check artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-boot-check-failure
+          path: |
+            packages/web/test-results/
+            packages/web/playwright-report/
+          retention-days: 14
+          if-no-files-found: ignore
 
   # Homelab staging-backend deploy is currently broken — re-enable once the
   # self-hosted runner is healthy. It deploys the same :staging image and is

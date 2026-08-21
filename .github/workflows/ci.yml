@@ -497,7 +497,7 @@ jobs:
           cache: true
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Validate deploy/app-subdomain config (_headers, _redirects, no-CSP rule)
+      - name: Validate deploy/app-subdomain config (_headers, _redirects, _routes.json, asset-404 Function, no-CSP rule)
         run: vp test run --project deploy-app-subdomain
       # Same fs-reading blind spot, one project over: both suites read
       # Dockerfile.web / build-expo-web-export.sh / create-service-docker-context.mjs
