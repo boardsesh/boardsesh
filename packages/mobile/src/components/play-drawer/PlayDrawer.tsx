@@ -64,6 +64,7 @@ import {
   useQueueSessionId,
 } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
+import { useSetting } from '../../settings';
 import type { OpenClimbActionsOptions } from '../../providers/drawer-host-provider';
 import { useAuth } from '../../providers/auth-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -378,6 +379,7 @@ export function PlayDrawer({
   const { sessionId } = useQueueSessionId();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   const bluetooth = useOptionalBluetoothContext();
+  const [lightOnSwipe] = useSetting('lightOnSwipe');
   const { mutate: toggleFavoriteMutate } = useToggleFavorite();
   // App-wide grade resolver: swaps the header grade (label + colour) to the
   // Boardsesh grade when the "Show Boardsesh grades" toggle is on and a trusted
@@ -591,6 +593,7 @@ export function PlayDrawer({
       previewItem: drawerPreviewItem,
       previewSuggestionSource: drawerPreviewSuggestionSource,
       targetItem: navigationState.prevItem,
+      forceViewOnly: !lightOnSwipe,
     });
     if (previewTarget.viewOnly) {
       if (!previewTarget.targetItem) return;
@@ -602,17 +605,17 @@ export function PlayDrawer({
     // Always-live: navigation commits the shared current climb for everyone.
     setDrawerPreviewItem(null);
     setDrawerPreviewIsWallClimb(false);
-    bluetooth?.markClimbChangeIntent('swipe');
     previousClimb();
     setIsMirrored(false);
     // The favorite override is cleared by the climb-change effect.
-  }, [drawerPreviewSuggestionSource, drawerPreviewItem, navigationState.prevItem, previousClimb, bluetooth]);
+  }, [drawerPreviewSuggestionSource, drawerPreviewItem, navigationState.prevItem, previousClimb, lightOnSwipe]);
 
   const handleNext = useCallback(() => {
     const previewTarget = getViewOnlyPreviewNavigationTarget({
       previewItem: drawerPreviewItem,
       previewSuggestionSource: drawerPreviewSuggestionSource,
       targetItem: navigationState.nextItem,
+      forceViewOnly: !lightOnSwipe,
     });
     if (previewTarget.viewOnly) {
       if (!previewTarget.targetItem) return;
@@ -624,11 +627,10 @@ export function PlayDrawer({
     // Always-live: navigation commits the shared current climb for everyone.
     setDrawerPreviewItem(null);
     setDrawerPreviewIsWallClimb(false);
-    bluetooth?.markClimbChangeIntent('swipe');
     nextClimb();
     setIsMirrored(false);
     // The favorite override is cleared by the climb-change effect.
-  }, [drawerPreviewSuggestionSource, drawerPreviewItem, navigationState.nextItem, nextClimb, bluetooth]);
+  }, [drawerPreviewSuggestionSource, drawerPreviewItem, navigationState.nextItem, nextClimb, lightOnSwipe]);
 
   // Promote the previewed climb to the active/current queue item. The Preview
   // badge clears and the lightbulb (which acts on the current climb) now drives

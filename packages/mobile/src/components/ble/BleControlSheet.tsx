@@ -19,6 +19,10 @@ type BleControlSheetProps = {
   autoDisconnectEnabled: boolean;
   autoDisconnectTimeoutLabel: string;
   onToggleAutoDisconnect: (enabled: boolean) => void;
+  lightOnSwipe: boolean;
+  onToggleLightOnSwipe: (enabled: boolean) => void;
+  lightOnClimbTap: boolean;
+  onToggleLightOnClimbTap: (enabled: boolean) => void;
   onClose: () => void;
 };
 
@@ -33,6 +37,10 @@ function BleControlSheet({
   autoDisconnectEnabled,
   autoDisconnectTimeoutLabel,
   onToggleAutoDisconnect,
+  lightOnSwipe,
+  onToggleLightOnSwipe,
+  lightOnClimbTap,
+  onToggleLightOnClimbTap,
   onClose,
 }: BleControlSheetProps) {
   const { t: tSettings } = useTranslation('settings');
@@ -73,6 +81,36 @@ function BleControlSheet({
           }
           onPress={() => onToggleAutoDisconnect(!autoDisconnectEnabled)}
           accessibilityLabel={tSettings('ble.autoDisconnect.toggleAccessibility')}
+          showSeparator
+        />
+        <ListRow
+          title={tSettings('ble.lighting.onSwipeLabel')}
+          subtitle={tSettings('ble.lighting.onSwipeDescription')}
+          leading={<Icon name="lightbulb.fill" size={22} color={systemColors.secondaryLabel} />}
+          trailing={
+            <Switch
+              value={lightOnSwipe}
+              pointerEvents="none"
+              accessibilityLabel={tSettings('ble.lighting.onSwipeLabel')}
+            />
+          }
+          onPress={() => onToggleLightOnSwipe(!lightOnSwipe)}
+          accessibilityLabel={tSettings('ble.lighting.onSwipeLabel')}
+          showSeparator
+        />
+        <ListRow
+          title={tSettings('ble.lighting.onTapLabel')}
+          subtitle={tSettings('ble.lighting.onTapDescription')}
+          leading={<Icon name="lightbulb.fill" size={22} color={systemColors.secondaryLabel} />}
+          trailing={
+            <Switch
+              value={lightOnClimbTap}
+              pointerEvents="none"
+              accessibilityLabel={tSettings('ble.lighting.onTapLabel')}
+            />
+          }
+          onPress={() => onToggleLightOnClimbTap(!lightOnClimbTap)}
+          accessibilityLabel={tSettings('ble.lighting.onTapLabel')}
           showSeparator
         />
         <ListRow

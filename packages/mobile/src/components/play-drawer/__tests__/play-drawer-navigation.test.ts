@@ -80,6 +80,40 @@ describe('getViewOnlyPreviewNavigationTarget', () => {
       }),
     ).toEqual({ viewOnly: false });
   });
+
+  it('forceViewOnly (lightOnSwipe off) goes view-only even with no preview item or source yet', () => {
+    // The first swipe away from a real committed climb — there is no
+    // pre-existing preview to chain from, unlike the wrong-board path above.
+    expect(
+      getViewOnlyPreviewNavigationTarget({
+        previewItem: null,
+        previewSuggestionSource: null,
+        targetItem: makeItem('next'),
+        forceViewOnly: true,
+      }),
+    ).toEqual({ viewOnly: true, targetItem: makeItem('next') });
+  });
+
+  it('forceViewOnly consumes navigation even when there is no target item', () => {
+    expect(
+      getViewOnlyPreviewNavigationTarget({
+        previewItem: null,
+        previewSuggestionSource: null,
+        targetItem: null,
+        forceViewOnly: true,
+      }),
+    ).toEqual({ viewOnly: true, targetItem: null });
+  });
+
+  it('defaults forceViewOnly to false, preserving prior callers that omit it', () => {
+    expect(
+      getViewOnlyPreviewNavigationTarget({
+        previewItem: null,
+        previewSuggestionSource: null,
+        targetItem: makeItem('next'),
+      }),
+    ).toEqual({ viewOnly: false });
+  });
 });
 
 describe('getSimilarClimbTapMode', () => {

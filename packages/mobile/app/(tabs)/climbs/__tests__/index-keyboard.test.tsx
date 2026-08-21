@@ -205,6 +205,7 @@ vi.mock('../../../../src/providers/drawer-host-provider', () => ({
     openClimbActions: vi.fn(),
     openAddToPlaylist: vi.fn(),
     openBoardSheet: vi.fn(),
+    openPlayDrawer: vi.fn(),
   }),
 }));
 
@@ -231,8 +232,8 @@ vi.mock('../../../../src/providers/queue-provider', () => ({
   useQueueActions: () => ({ addToQueue: vi.fn() }),
 }));
 
-vi.mock('../../../../src/providers/bluetooth-provider', () => ({
-  useOptionalBluetoothContext: () => null,
+vi.mock('../../../../src/settings', () => ({
+  useSetting: (key: string) => (key === 'lightOnClimbTap' ? [true, vi.fn()] : [false, vi.fn()]),
 }));
 
 vi.mock('../../../../src/hooks/use-bottom-accessory', () => ({ useNativeAccessoryActive: () => false }));

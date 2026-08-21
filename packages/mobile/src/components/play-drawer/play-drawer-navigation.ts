@@ -8,11 +8,21 @@ export function getViewOnlyPreviewNavigationTarget({
   previewItem,
   previewSuggestionSource,
   targetItem,
+  forceViewOnly = false,
 }: {
   previewItem: ClimbQueueItem | null;
   previewSuggestionSource: PlaylistSuggestionSource | null;
   targetItem: ClimbQueueItem | null;
+  /**
+   * True when a local setting (lightOnSwipe off) says this navigation must
+   * not commit/light the board — the same view-only landing as the
+   * wrong-board path below, just a different reason, and independent of
+   * `previewItem`/`previewSuggestionSource` (it applies on the very first
+   * swipe away from a real committed climb, not just mid-preview-chain).
+   */
+  forceViewOnly?: boolean;
 }): ViewOnlyPreviewNavigationTarget {
+  if (forceViewOnly) return { viewOnly: true, targetItem };
   // Mobile only sets previewSuggestionSource for the wrong-board view-only
   // drawer path. Normal playlist activation commits navigation through the
   // queue and must leave this value null.

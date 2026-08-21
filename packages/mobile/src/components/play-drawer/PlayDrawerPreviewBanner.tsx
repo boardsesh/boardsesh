@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { StyleSheet, View, Pressable } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
+import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -16,19 +17,21 @@ type PlayDrawerPreviewBannerProps = {
 
 /**
  * Banner shown in the play drawer when the displayed climb is a *preview* — a
- * climb the user is browsing (workout builder, logbook/cross-board) that is NOT
+ * climb the user is browsing (workout builder, logbook/cross-board, or a
+ * swipe/tap navigated to with `lightOnSwipe`/`lightOnClimbTap` off) that is NOT
  * their active/wall climb. The lightbulb acts on the active climb, not this
  * preview, so the banner makes that explicit and offers a one-tap "Set active"
- * to promote it. The peer-driven accessory-bar wall climb is *not* a preview in
- * this sense — it's physically lit — so it renders {@link PlayDrawerOnWallBanner}
- * (read-only, no "Set active") instead.
+ * (with its own lightbulb glyph) to promote and light it. The peer-driven
+ * accessory-bar wall climb is *not* a preview in this sense — it's physically
+ * lit — so it renders {@link PlayDrawerOnWallBanner} (read-only, no "Set
+ * active") instead.
  */
 export const PlayDrawerPreviewBanner = memo(function PlayDrawerPreviewBanner({
   showSetActive,
   onSetActive,
 }: PlayDrawerPreviewBannerProps) {
   const { t } = useTranslation('session');
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors } = useTheme();
 
   return (
     <View style={styles.row}>
@@ -45,6 +48,7 @@ export const PlayDrawerPreviewBanner = memo(function PlayDrawerPreviewBanner({
           hitSlop={8}
           style={styles.setActive}
         >
+          <Icon name="lightbulb.fill" size={16} color={brandColors.warning} />
           <Text variant="subheadline" color={systemColors.accent} style={styles.setActiveLabel}>
             {t('playView.setActive')}
           </Text>
@@ -75,6 +79,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   setActive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
     paddingHorizontal: spacing[2],
     paddingVertical: spacing[1],
   },
