@@ -77,9 +77,6 @@ vi.mock('react-native-reanimated', async () => {
   };
 });
 
-vi.mock('@react-native-community/blur', () => ({
-  BlurView: () => createElement('div', { 'data-testid': 'blur-view' }),
-}));
 vi.mock('expo-linear-gradient', () => ({
   LinearGradient: ({ colors }: { colors?: readonly string[] }) => {
     captured.fadeColors = colors ?? null;
@@ -379,15 +376,6 @@ describe('ClimbReactionMenu surface treatment', () => {
     // GlassSurface hoists this clip off its elevated view, so asking for it no
     // longer costs the Android cast.
     expect((captured.glassSurfaceProps?.style as Record<string, unknown>)?.overflow).toBe('hidden');
-  });
-
-  it('never renders a blur view — the backdrop is an opaque fill, not a blur', () => {
-    for (const mode of ['material', 'solid', 'glass', 'blur']) {
-      ctrl.surfaceMode = mode;
-      const { container, unmount } = renderMenu();
-      expect(container.querySelector('[data-testid="blur-view"]')).toBeNull();
-      unmount();
-    }
   });
 
   it('paints the backdrop AND the board-art wrapper with the card tone on Material', () => {

@@ -84,25 +84,33 @@ const PREVIEW_MAX_WIDTH = 400;
 // because the bottom fade has to read the same tone; see MENU_FADE_COLORS.
 const MENU_CARD_ROLE: keyof MaterialSurfaceContainers = 'high';
 
+// The card's own tone off Material — there is no opaque M3 tone to read there,
+// the card is real glass, so this is a tuned approximation (#14111F dark).
+// Single source for both the fade (below) and the opaque backdrop/board-art
+// fill, so the two can't drift apart if this ever gets re-tuned.
+const MENU_CARD_BASE_RGB = {
+  dark: '20, 17, 31',
+  light: '255, 255, 255',
+} as const;
+
 // Bottom-edge fade for the scrollable action list — transparent → the card's own
 // surface. Concrete rgba, never a systemColors PlatformColor: feeding a PlatformColor
 // into the gradient bakes the wrong scheme (the ProgressiveBlur dark-band bug). On
 // Material the stops are derived from the very tone GlassSurface paints the card with,
 // so bumping MENU_CARD_ROLE can't leave the fade behind. Glass / blur / solid keep the
-// tuned constants — there is no opaque tone to read there, the card is real glass, and
-// the dark value tracks its #14111F base.
+// tuned constants from MENU_CARD_BASE_RGB.
 const MENU_FADE_END_ALPHA = 0.92;
 const MENU_FADE_COLORS = {
-  dark: ['rgba(20, 17, 31, 0)', `rgba(20, 17, 31, ${MENU_FADE_END_ALPHA})`],
-  light: ['rgba(255, 255, 255, 0)', `rgba(255, 255, 255, ${MENU_FADE_END_ALPHA})`],
+  dark: [`rgba(${MENU_CARD_BASE_RGB.dark}, 0)`, `rgba(${MENU_CARD_BASE_RGB.dark}, ${MENU_FADE_END_ALPHA})`],
+  light: [`rgba(${MENU_CARD_BASE_RGB.light}, 0)`, `rgba(${MENU_CARD_BASE_RGB.light}, ${MENU_FADE_END_ALPHA})`],
 } as const;
 
-// The card's own tone, fully opaque (the fade's dark/light base above, without the
-// alpha) — reused as the board-art backing so it reads as the same surface instead
-// of a mismatched theme color. Same Material-vs-glass split as the fade.
+// The card's own tone, fully opaque — reused as the backdrop and board-art
+// backing so both read as the same surface instead of a mismatched theme
+// color. Same Material-vs-glass split as the fade.
 const MENU_CARD_SOLID = {
-  dark: 'rgb(20, 17, 31)',
-  light: 'rgb(255, 255, 255)',
+  dark: `rgb(${MENU_CARD_BASE_RGB.dark})`,
+  light: `rgb(${MENU_CARD_BASE_RGB.light})`,
 } as const;
 
 // iOS portals above the persistent queue bar / tab bar via a native window overlay;

@@ -7,6 +7,7 @@ import { createElement, type ReactNode } from 'react';
 // to a list row. We mock the shared visual to assert the card forwards the climb
 // + board config to it (and wraps it in the shared row layout + a separator).
 const itemContent = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
+const MOCK_SYSTEM_COLORS = vi.hoisted(() => ({ separator: '#38383A', background: '#000000' }));
 
 vi.mock('react-native', () => ({
   View: ({ children, style }: { children?: ReactNode; style?: unknown }) => {
@@ -29,7 +30,7 @@ vi.mock('../climb-list-row-styles', () => ({
 }));
 
 vi.mock('../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { separator: '#38383A', background: '#000000' } }),
+  useTheme: () => ({ systemColors: MOCK_SYSTEM_COLORS }),
 }));
 
 import { ClimbPreviewCard } from '../ClimbPreviewCard';
@@ -60,7 +61,7 @@ describe('ClimbPreviewCard', () => {
 
   it('renders a scheme-aware separator below the preview row', () => {
     const { container } = render(<ClimbPreviewCard climb={climb} {...boardConfig} />);
-    expect(container.querySelector('[data-bg="#38383A"]')).not.toBeNull();
+    expect(container.querySelector(`[data-bg="${MOCK_SYSTEM_COLORS.separator}"]`)).not.toBeNull();
   });
 
   it('paints an opaque background instead of relying on the sheet under it', () => {
@@ -68,6 +69,6 @@ describe('ClimbPreviewCard', () => {
     // material is — the row needs its own ground so the board thumbnail never
     // shows through to whatever's behind the sheet.
     const { container } = render(<ClimbPreviewCard climb={climb} {...boardConfig} />);
-    expect(container.querySelector('[data-bg="#000000"]')).not.toBeNull();
+    expect(container.querySelector(`[data-bg="${MOCK_SYSTEM_COLORS.background}"]`)).not.toBeNull();
   });
 });
