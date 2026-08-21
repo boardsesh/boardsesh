@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-20T22:16:09.700Z",
+  "generatedAt": "2026-08-21T06:16:22.067Z",
   "entries": [
+    {
+      "prNumber": 4641,
+      "category": "fixed",
+      "title": "Scrolling by touch (finger drag) now works everywhere in the browser app — climbs list, queue, and logbook. It was completely stuck before if you weren't using a mouse wheel or trackpad.",
+      "mergedAt": "2026-08-21T06:15:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4641"
+    },
     {
       "prNumber": 4541,
       "category": "fixed",

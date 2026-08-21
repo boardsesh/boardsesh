@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-21
+
+### Fixed
+
+- Scrolling by touch (finger drag) now works everywhere in the browser app — climbs list, queue, and logbook. It was completely stuck before if you weren't using a mouse wheel or trackpad. ([#4641](https://github.com/boardsesh/boardsesh/pull/4641))
+
 ## 2026-08-20
 
 ### New
