@@ -39,13 +39,18 @@ const climbs = vi.hoisted(() => ({
   buildsEmpty: false,
   pathLength: 0,
   buildCalls: 0,
+  /** What the per-page lastmod aggregate answers; empty means "store empty, use the uniform value". */
+  pageLastmods: [] as (Date | null)[],
+  pageLastmodsThrow: false,
 }));
 
-// The index and the shard route now read the summary out of
-// `sitemap_shard_refreshes` through `fetchClimbShardSummary` (#4523). WHICH of its
-// three internal paths answered — stored row, stale row, empty-store fallback — is
-// climb-store.test.ts's job; from here it is just "the summary", and every
-// assertion in this file is the same contract it was before the store existed.
+// The index and the shard route both read the store (#4523/#4552): the summary
+// through `fetchClimbShardSummary`, the page through `buildClimbShardPage`.
+// WHICH internal path answered — stored rows, the empty-store live fallback, a
+// read that threw — is climb-store.test.ts's job; from here each is just its
+// CONTRACT, and every assertion in this file is the same one it was before the
+// store existed. The mock page build slices a full fake list exactly the way the
+// real fallback does, so the handler's slice/epoch checks stay exercised.
 vi.mock('../climb-store', () => ({
   fetchClimbShardSummary: async () => {
     if (climbs.summaryThrows) throw new Error('climbs summary unavailable');
@@ -53,20 +58,23 @@ vi.mock('../climb-store', () => ({
     if (climbs.summaryHangs) return new Promise<never>(() => {});
     return { itemCount: climbs.itemCount, lastModified: new Date('2026-05-04T11:22:33.000Z') };
   },
-}));
-
-vi.mock('../climb-query', () => ({
-  buildTier2ClimbItems: async () => {
+  buildClimbShardPage: async (page: number) => {
     climbs.buildCalls += 1;
     if (climbs.buildThrows) throw new Error('climbs builder exploded');
-    if (climbs.buildsEmpty) return [];
+    if (climbs.buildsEmpty) return { items: [], totalItems: 0 };
     // Padding lives in the PATH, so the byte guard is driven by a real rendered
     // body rather than by mutating the constant it is supposed to enforce.
     const padding = climbs.pathLength > 0 ? 'x'.repeat(climbs.pathLength) : '';
-    return Array.from({ length: climbs.builtCount ?? climbs.itemCount }, (_, index) => ({
+    const built = Array.from({ length: climbs.builtCount ?? climbs.itemCount }, (_, index) => ({
       path: `/kilter/original/12x12-square/screw_bolt/40/view/climb-${index}${padding}`,
       lastModified: new Date('2026-05-04T11:22:33.000Z'),
     })) satisfies SitemapItem[];
+    const start = (page - 1) * 10_000;
+    return { items: built.slice(start, start + 10_000), totalItems: built.length };
+  },
+  fetchStoredClimbPageLastmods: async () => {
+    if (climbs.pageLastmodsThrow) throw new Error('lastmod aggregate unavailable');
+    return climbs.pageLastmods;
   },
 }));
 
@@ -81,6 +89,8 @@ beforeEach(() => {
   climbs.buildsEmpty = false;
   climbs.pathLength = 0;
   climbs.buildCalls = 0;
+  climbs.pageLastmods = [];
+  climbs.pageLastmodsThrow = false;
 });
 
 describe('the paged climbs shard', () => {
@@ -200,6 +210,40 @@ describe('the index and the climbs shard', () => {
     expect(xml).toContain('https://www.boardsesh.com/sitemaps/climbs/2.xml');
     expect(xml).not.toContain('/sitemaps/climbs/3.xml');
     expect(xml).toContain(`<lastmod>${LAST_MODIFIED.toISOString()}</lastmod>`);
+  });
+
+  it('stamps each page with its own stored <lastmod> when the aggregate has one', async () => {
+    // What the URL store bought the index (#4552): one stats update no longer
+    // makes all N pages look changed, so Googlebot re-fetches one page, not six.
+    climbs.itemCount = CLIMB_URLS_PER_SHARD + 1;
+    climbs.pageLastmods = [new Date('2026-02-02T00:00:00.000Z'), new Date('2026-03-03T00:00:00.000Z')];
+
+    const { xml } = await buildSitemapIndexXml();
+
+    expect(xml).toContain('<lastmod>2026-02-02T00:00:00.000Z</lastmod>');
+    expect(xml).toContain('<lastmod>2026-03-03T00:00:00.000Z</lastmod>');
+    expect(xml).not.toContain(`<lastmod>${LAST_MODIFIED.toISOString()}</lastmod>`);
+  });
+
+  it('falls back to the uniform value for pages the aggregate cannot name, and never degrades on it', async () => {
+    // A mid-refresh tear can advertise one more page than the aggregate saw, and
+    // an empty store answers []. Both stamp the shard-wide value; only a missing
+    // SUMMARY may drop the shard.
+    climbs.itemCount = CLIMB_URLS_PER_SHARD + 1;
+    climbs.pageLastmods = [new Date('2026-02-02T00:00:00.000Z')];
+
+    const withPartialAggregate = await buildSitemapIndexXml();
+    expect(withPartialAggregate.xml).toContain('<lastmod>2026-02-02T00:00:00.000Z</lastmod>');
+    expect(withPartialAggregate.xml).toContain(`<lastmod>${LAST_MODIFIED.toISOString()}</lastmod>`);
+    expect(withPartialAggregate.degradedShards).toEqual([]);
+
+    climbs.pageLastmodsThrow = true;
+    const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const withBrokenAggregate = await buildSitemapIndexXml();
+    warnings.mockRestore();
+
+    expect(withBrokenAggregate.xml).toContain('https://www.boardsesh.com/sitemaps/climbs/2.xml');
+    expect(withBrokenAggregate.degradedShards).toEqual([]);
   });
 
   it('NEVER builds the items to render the index', async () => {

@@ -13,9 +13,8 @@ vi.mock('../playlist-query', () => ({
 }));
 vi.mock('../climb-store', () => ({
   fetchClimbShardSummary: async () => ({ itemCount: 0, lastModified: null }),
-}));
-vi.mock('../climb-query', () => ({
-  buildTier2ClimbItems: async () => [],
+  buildClimbShardPage: async () => ({ items: [], totalItems: 0 }),
+  fetchStoredClimbPageLastmods: async () => [],
 }));
 
 const { PAGED_SHARD_REGISTRY, SHARD_REGISTRY } = await import('../shard-registry');

@@ -1,5 +1,5 @@
 import { after } from 'next/server';
-import { refreshClimbSummaryIfStale } from '@/app/lib/seo/sitemap/climb-store';
+import { refreshClimbStoreIfStale } from '@/app/lib/seo/sitemap/climb-store';
 import { warmPlaylistSitemapCache } from '@/app/lib/seo/sitemap/playlist-query';
 import { sitemapIndexRouteHandler } from '@/app/lib/seo/sitemap/shard-registry';
 
@@ -29,11 +29,12 @@ export const maxDuration = 300;
 export async function GET(): Promise<Response> {
   const response = await sitemapIndexRouteHandler();
 
-  // Repopulate the climbs summary store when it is missing or two days stale, on
-  // THIS route: the index is the path that exhibited #4523, and `after()` runs
-  // once the response has flushed, so it cannot touch the 3 s shard deadline or
-  // the latency the crawler sees. `refreshClimbSummaryIfStale` no-ops cheaply on a
-  // fresh store and is single-flighted behind a 15-minute floor per instance.
+  // Repopulate the climb sitemap store — the summary row AND the URL rows — when
+  // it is missing or two days stale, on THIS route: the index is the path that
+  // exhibited #4523, and `after()` runs once the response has flushed, so it
+  // cannot touch the 3 s shard deadline or the latency the crawler sees.
+  // `refreshClimbStoreIfStale` no-ops cheaply on a fresh store and is
+  // single-flighted behind a 15-minute floor per instance.
   //
   // It is what makes the fix scheduler-independent: a cron the Railway cutover
   // (#3795/#3798) forgets to re-point degrades to "healed by the next crawl"
@@ -42,7 +43,7 @@ export async function GET(): Promise<Response> {
   // `after` from 'next/server', never `waitUntil` from '@vercel/functions' — Next
   // 16.2 supplies a real awaiter on self-hosted Node too, and the Vercel-only
   // import would not survive the move off Vercel.
-  after(refreshClimbSummaryIfStale);
+  after(refreshClimbStoreIfStale);
 
   // Same slot, same reason, different shard. The playlists rows are cached rather
   // than stored (#4524), and a first-population `unstable_cache` miss registers

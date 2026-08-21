@@ -2,8 +2,7 @@ import 'server-only';
 import { getAllBoardConfigsOrThrow } from '@/app/lib/server-popular-configs';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
 import { boardConfigsToItems } from './board-entries';
-import { buildTier2ClimbItems } from './climb-query';
-import { fetchClimbShardSummary } from './climb-store';
+import { buildClimbShardPage, fetchClimbShardSummary, fetchStoredClimbPageLastmods } from './climb-store';
 import {
   allLocalesUrlCount,
   expandAllLocales,
@@ -267,6 +266,12 @@ export type PagedSitemapShard = {
   /** The index calls this, never `buildPage`. Raced against `SHARD_DEADLINE_MS`. */
   summary: () => Promise<PagedShardSummary>;
   buildPage: (page: number) => Promise<PagedShardPage>;
+  /**
+   * Optional: `max(<lastmod>)` per page, indexed by 0-based page. An enhancement,
+   * not a dependency — the index falls back to the summary's shard-wide value for
+   * any page this cannot name, and a failure here never degrades the shard.
+   */
+  pageLastmods?: () => Promise<(Date | null)[]>;
 };
 
 export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
@@ -281,16 +286,11 @@ export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
     expectsUrls: true,
     cacheControl: CLIMB_CACHE_CONTROL,
     summary: () => fetchClimbShardSummary(),
-    // Still the live grouped build, deliberately. #4523 materialised the SUMMARY
-    // only, because the reported bug is the INDEX dropping this shard. Page N
-    // therefore still costs the whole ordered list (51 s cold in production) —
-    // that is the follow-up the store's shape is designed to grow into, and it is
-    // additive: a `sitemap_climb_urls` table replaces these four lines.
-    buildPage: async (page: number) => {
-      const items = await buildTier2ClimbItems();
-      const start = (page - 1) * CLIMB_URLS_PER_SHARD;
-      return { items: items.slice(start, start + CLIMB_URLS_PER_SHARD), totalItems: items.length };
-    },
+    // An ordinal range read of `sitemap_climb_urls` (#4552), with the live
+    // grouped build as its empty-store fallback — the 51 s cold path this store
+    // exists to retire.
+    buildPage: (page: number) => buildClimbShardPage(page),
+    pageLastmods: () => fetchStoredClimbPageLastmods(),
   },
 ];
 
@@ -330,16 +330,14 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
     }
 
     const { items, totalItems } = await shard.buildPage(page);
-    // The summary and item list have independent epochs — the summary is a row in
-    // `sitemap_shard_refreshes` (global, refreshed on a cron), while the list is an
-    // in-process TTL (per instance). A fresh summary can therefore advertise page 2
-    // while a warm instance still holds exactly 10,000 items. Materialising the
-    // summary made that gap wider, not narrower, and the follow-up that stores the
-    // URLs too is what finally closes it by giving both halves one epoch.
-    // That empty slice is transient disagreement, not
-    // a permanently invalid URL: 503/no-store asks the crawler to retry after the
-    // item epoch catches up. A true out-of-range page was already rejected above
-    // by the current summary and remains a 404.
+    // The summary and the URL rows are written in ONE transaction (#4552), so
+    // steady-state they cannot disagree. What this still catches: a torn read
+    // across a mid-flight refresh (the two reads land on different epochs), and
+    // the fallback build's per-instance TTL cache meeting a fresher global
+    // summary while the store is empty. Both are transient disagreement, not a
+    // permanently invalid URL: 503/no-store asks the crawler to retry after the
+    // epochs converge. A true out-of-range page was already rejected above by
+    // the current summary and remains a 404.
     if (items.length === 0 && totalItems > 0) {
       throw new Error(
         `[sitemap] paged shard "${shard.id}" page ${page} is listed by a ${summary.itemCount}-item summary but its cached ${totalItems}-item build has no slice — cache epochs disagree`,
@@ -496,14 +494,34 @@ async function buildPagedIndexEntries(shard: PagedSitemapShard): Promise<Sitemap
     return null;
   }
 
-  // Every page carries the shard's global max of the climb-content and stats
-  // clocks, so one content or stats update can make all N pages look changed. A
-  // per-page `<lastmod>` would require building the items to know which page a
-  // climb fell on — the exact scan the summary/build split exists to avoid — so
-  // the uniform value is the deliberate trade.
+  // Per-page `<lastmod>` where the shard can supply it. The uniform shard-wide
+  // value used to be a forced trade — knowing which page a climb fell on cost
+  // the whole scan — but the URL store's ordinal ranges made it a cheap
+  // aggregate (#4552). Still strictly best-effort: a throw, a missed deadline or
+  // an empty store falls back to the summary's uniform value, because losing the
+  // whole shard over an enhancement would invert the doctrine.
+  let pageLastmods: (Date | null)[] = [];
+  if (shard.pageLastmods) {
+    try {
+      pageLastmods = await withDeadline(
+        shard.pageLastmods(),
+        SHARD_DEADLINE_MS,
+        `paged shard "${shard.id}" page lastmods`,
+      );
+    } catch (err) {
+      console.warn(
+        `[sitemap] paged shard "${shard.id}" per-page lastmods unavailable — using the shard-wide value:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
   return Array.from({ length: pageCount }, (_, pageIndex) => ({
     loc: absoluteUrl(shard.pagePath(pageIndex + 1)),
-    lastModified: summary.lastModified,
+    // `??` also covers a page the aggregate could not name (a summary/URL-store
+    // tear mid-refresh): stamp the shard-wide value rather than dropping the
+    // entry.
+    lastModified: pageLastmods[pageIndex] ?? summary.lastModified,
   }));
 }
 
