@@ -112,10 +112,8 @@ vi.mock('../climb-store', () => ({
     }
     return { itemCount: climbSummary.itemCount, lastModified: new Date('2026-05-04T00:00:00.000Z') };
   },
-}));
-
-vi.mock('../climb-query', () => ({
-  buildTier2ClimbItems: async () => [],
+  buildClimbShardPage: async () => ({ items: [], totalItems: 0 }),
+  fetchStoredClimbPageLastmods: async () => [],
 }));
 
 const { SHARD_DEADLINE_MS, buildSitemapIndexXml, shardRouteHandler, sitemapIndexRouteHandler } =

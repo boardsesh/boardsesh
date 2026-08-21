@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import type { ClimbSummaryRefreshResult } from '@/app/lib/seo/sitemap/climb-store';
+import type { ClimbStoreRefreshResult } from '@/app/lib/seo/sitemap/climb-store';
 
 vi.mock('server-only', () => ({}));
 
@@ -11,12 +11,12 @@ const refresh = vi.hoisted(() => ({
     previousItemCount: 51_900,
     skipped: null,
     scanDurationMs: 41_000,
-  } as ClimbSummaryRefreshResult,
+  } as ClimbStoreRefreshResult,
   throws: false,
 }));
 
 vi.mock('@/app/lib/seo/sitemap/climb-store', () => ({
-  refreshStoredClimbSummary: async (options: { force?: boolean } = {}) => {
+  refreshClimbSitemapStore: async (options: { force?: boolean } = {}) => {
     refresh.calls.push(options);
     if (refresh.throws) throw new Error('scan exploded');
     return refresh.result;

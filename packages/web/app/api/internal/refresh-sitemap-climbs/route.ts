@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { requireCronAuth } from '@/app/lib/auth/cron-auth';
-import { refreshStoredClimbSummary } from '@/app/lib/seo/sitemap/climb-store';
+import { refreshClimbSitemapStore } from '@/app/lib/seo/sitemap/climb-store';
 
 /**
- * Recomputes the climbs shard summary and stores it, so `/sitemap.xml` can answer
- * "how many climb pages are there" in a millisecond instead of missing its 3 s
- * deadline and dropping ~52,000 URLs out of the index (#4523).
+ * Rebuilds the climb sitemap store: the summary row `/sitemap.xml` answers from
+ * in a millisecond instead of missing its 3 s deadline and dropping ~52,000 URLs
+ * out of the index (#4523), and the `sitemap_climb_urls` rows
+ * `/sitemaps/climbs/N.xml` serves as an ordinal range read instead of a 51 s
+ * full rebuild per cold page (#4552).
  *
  * Scheduled six-hourly in `packages/web/vercel.json`, matching the shard's own
  * `s-maxage=21600` so no layer is staler than any other. Vercel injects
@@ -27,7 +29,7 @@ export async function GET(request: Request) {
   const force = new URL(request.url).searchParams.get('force') === '1';
 
   try {
-    const result = await refreshStoredClimbSummary({ force });
+    const result = await refreshClimbSitemapStore({ force });
     const body = {
       shard: 'climbs',
       itemCount: result.itemCount,

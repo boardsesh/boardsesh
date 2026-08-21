@@ -209,17 +209,13 @@ export async function fetchTier2ClimbRows(group: ClimbConfigGroup): Promise<Clim
  * full-board dev image at 16.7 s cold, 0.95 s fully warm, for the largest of
  * sixteen groups. Read that as "small answer, expensive question".
  *
- * Exported for ONE caller: `refreshStoredClimbSummary` in `climb-store.ts`, which
- * writes the answer into `sitemap_shard_refreshes` so `/sitemap.xml` can read it
- * back in a millisecond (#4523). The refresher must bypass both caches below —
- * storing a six-hour-old cached answer would defeat the point of refreshing — but
- * it must not describe a DIFFERENT set from the request path, hence one function
- * both sides call rather than a second copy of the loop.
- *
- * Do not add a third per-request caller. Request paths want
- * `fetchClimbShardSummary()` (store first, this only as the empty-store fallback).
+ * One caller: the cached `fetchTier2Summary` fallback below. The refresher used
+ * to be the second (#4523), but it now derives the summary from the URL rows it
+ * builds anyway (`buildAllTier2UrlRows`), so it runs sixteen scans instead of
+ * thirty-two. Request paths want `fetchClimbShardSummary()` (store first, the
+ * fallback below only when the store is empty).
  */
-export async function computeTier2Summary(): Promise<{ itemCount: number; lastModifiedIso: string | null }> {
+async function computeTier2Summary(): Promise<{ itemCount: number; lastModifiedIso: string | null }> {
   const groups = resolveClimbSitemapGroups(await getAllBoardConfigsOrThrow());
 
   let itemCount = 0;
@@ -301,16 +297,42 @@ export async function fetchTier2Summary(): Promise<Tier2Summary> {
 let cachedItems: { builtAt: number; items: SitemapItem[] } | null = null;
 let inFlight: Promise<SitemapItem[]> | null = null;
 
-async function buildAllTier2Items(): Promise<SitemapItem[]> {
+/** One rendered climb URL, annotated with the group that emitted it. */
+export type Tier2UrlRow = {
+  path: string;
+  lastModified: Date | null;
+  boardType: string;
+  layoutId: number;
+};
+
+/**
+ * The full ordered tier-2 URL list, uncached, in EMISSION ORDER: groups in
+ * `resolveClimbSitemapGroups` order, then `uuid ASC` within a group. That order
+ * is a contract — `sitemap_climb_urls.ordinal` is the index into this array, and
+ * the shard pages slice on it, so reordering this loop moves every page boundary.
+ *
+ * This is the ONE code path that decides which climbs the shard carries. Both
+ * consumers — the store refresher (`refreshClimbSitemapStore`) and the live
+ * request fallback (`buildTier2ClimbItems`) — go through it, deliberately. The
+ * `buildChosenSubquery` comments above record two separate measured incidents
+ * where a plausible-looking second copy of this selection silently dropped most
+ * of the shard; a drifting duplicate is exactly how that recurs.
+ */
+export async function buildAllTier2UrlRows(): Promise<Tier2UrlRow[]> {
   const groups = resolveClimbSitemapGroups(await getAllBoardConfigsOrThrow());
-  const items: SitemapItem[] = [];
+  const urlRows: Tier2UrlRow[] = [];
   let dropped = 0;
 
   // Sequential, for the same pool reason as the summary.
   for (const group of groups) {
     const built = climbRowsToItems(await fetchTier2ClimbRows(group), group);
     for (const item of built.items) {
-      items.push(item);
+      urlRows.push({
+        path: item.path,
+        lastModified: item.lastModified ?? null,
+        boardType: group.boardType,
+        layoutId: group.layoutId,
+      });
     }
     dropped += built.dropped;
   }
@@ -322,7 +344,11 @@ async function buildAllTier2Items(): Promise<SitemapItem[]> {
     console.warn(`[sitemap] climbs shard dropped ${dropped} climbs with no resolvable canonical URL.`);
   }
 
-  return items;
+  return urlRows;
+}
+
+async function buildAllTier2Items(): Promise<SitemapItem[]> {
+  return (await buildAllTier2UrlRows()).map((row) => ({ path: row.path, lastModified: row.lastModified }));
 }
 
 /**
@@ -332,23 +358,20 @@ async function buildAllTier2Items(): Promise<SitemapItem[]> {
  * pages on a cold instance would otherwise run N full scans against a
  * ten-connection pool while the front door waits behind them.
  *
- * Scope, stated plainly because the comment above overstates it on its own:
- * this is a PER-INSTANCE defence. The item list is deliberately not in the Next
- * Data Cache (~20 MB, past the 2 MB entry ceiling), so on Vercel the only
- * cross-instance protection is the CDN — and on a genuinely cold crawl, where
- * Googlebot fetches N pages that all miss the CDN and land on N lambdas, the
- * cost really is N full builds. Per-page Data Cache entries would not fix it
- * either: building page N still needs the whole ordered list before it can
- * slice, so it would be N full builds plus N cache writes. The real fix is a
- * materialised tier-2 URL table.
+ * **No longer the shard pages' read path.** #4552 materialised the URL list into
+ * `sitemap_climb_urls`, so `buildClimbShardPage` (climb-store.ts) answers a page
+ * from an ordinal range read in milliseconds; this is its fallback for an empty
+ * or unreadable store — a fresh migration, a truncated table, local dev. That
+ * fallback is genuinely reached and genuinely slow (51 s cold in production,
+ * #4552), which is why it keeps both defences rather than being deleted: on the
+ * deploy that adds the store, every page request takes this path until the first
+ * refresh runs.
  *
- * **Still true after #4523**, which is the point worth being precise about. That
- * change materialised the SUMMARY only (`sitemap_shard_refreshes`), because the
- * bug it closed was the index dropping the shard on a missed 3 s deadline. The
- * item path is untouched: `/sitemaps/climbs/N.xml` still runs the full grouped
- * scan on a cold instance, still measured at 51 s in production, and page N still
- * costs the whole ordered list. The URL table that fixes that is a follow-up, and
- * it is purely additive on the store scaffolding #4523 added.
+ * The item list is deliberately not in the Next Data Cache (~20 MB, past the
+ * 2 MB entry ceiling), so on Vercel the only cross-instance protection on this
+ * fallback is the CDN — a genuinely cold crawl of N pages that all miss it
+ * really is N full builds. That is the burn the URL table exists to stop; do not
+ * try to fix the fallback instead of refreshing the store.
  */
 export async function buildTier2ClimbItems(): Promise<SitemapItem[]> {
   if (cachedItems && Date.now() - cachedItems.builtAt < ITEMS_TTL_MS) {
