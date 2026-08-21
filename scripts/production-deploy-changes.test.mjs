@@ -97,6 +97,17 @@ void test('classifies changed paths with the production workflow semantics', () 
   });
 });
 
+void test('the deploy watchdog never queues a deploy of its own', () => {
+  // It is a scheduled janitor for the concurrency group, not shipped code.
+  for (const filePath of [
+    '.github/workflows/production-deploy-watchdog.yml',
+    'scripts/production-deploy-watchdog.mjs',
+    'scripts/production-deploy-watchdog.test.mjs',
+  ]) {
+    assert.deepEqual(classifyChangedFiles([filePath]), { web: false, backend: false, app: false });
+  }
+});
+
 void test('treats the production workflow and its detector as affecting every target', () => {
   for (const filePath of ['.github/workflows/production-deploy.yml', 'scripts/production-deploy-changes.mjs']) {
     assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: true, app: true });
