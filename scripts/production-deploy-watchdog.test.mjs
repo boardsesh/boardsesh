@@ -338,6 +338,24 @@ void test('one cancel that fails does not strand the others', () => {
   assert.deepEqual(dispatched, []);
 });
 
+void test('the report never claims a cancel that did not land', () => {
+  const plan = planWatchdogActions({
+    runs: [run({ id: 7, run_number: 1337, status: 'waiting', head_sha: HEAD_SHA })],
+    jobsByRunId: { 7: [{ name: 'check-rollback', status: 'waiting' }] },
+    headSha: HEAD_SHA,
+    nowMs: NOW,
+  });
+  const failedCancelIds = new Set(['7']);
+  const content = formatDiscordContent(plan, { failedCancelIds });
+
+  assert.doesNotMatch(content, /• Cancelled run/);
+  assert.match(content, /Could NOT cancel run #1337/);
+  // Still wedged, so it must not read as a recovery.
+  assert.match(content, /still wedged/);
+  assert.doesNotMatch(content, /queued run behind it/);
+  assert.match(formatSummary(plan, { failedCancelIds }), /could NOT cancel/);
+});
+
 void test('the CLI cancels, redispatches and reports through one pass', () => {
   const cancelled = [];
   const dispatched = [];

@@ -212,10 +212,13 @@ function describeRun(entry) {
   return `run #${run.run_number ?? run.id} (${sha}, status=${run.status}): ${reason}`;
 }
 
-function formatSummary(plan, { dryRun = false } = {}) {
+function formatSummary(plan, { dryRun = false, failedCancelIds = new Set() } = {}) {
   const verb = dryRun ? 'would cancel' : 'cancelled';
   const lines = [];
-  for (const entry of plan.cancel) lines.push(`${verb} ${describeRun(entry)}`);
+  for (const entry of plan.cancel) {
+    const failed = failedCancelIds.has(String(entry.run.id));
+    lines.push(`${failed ? 'could NOT cancel' : verb} ${describeRun(entry)}`);
+  }
   for (const entry of plan.alert) lines.push(`alerting on ${describeRun(entry)}`);
   if (plan.redispatch) {
     lines.push(
@@ -254,18 +257,32 @@ const FOLLOW_UP_LINES = {
 
 // Discord content. Mirrors the deploy notifications in production-deploy.yml:
 // URLs wrapped in <…> so Discord drops the inline preview embed.
-function formatDiscordContent(plan, { runUrlBase = '' } = {}) {
+function formatDiscordContent(plan, { runUrlBase = '', failedCancelIds = new Set() } = {}) {
   if (plan.cancel.length === 0 && plan.alert.length === 0) return '';
 
   const lines = [];
   if (plan.cancel.length > 0) {
-    lines.push('🧹 **Production deploy unwedged**');
-    for (const entry of plan.cancel) {
+    const cancelled = plan.cancel.filter((entry) => !failedCancelIds.has(String(entry.run.id)));
+    const failed = plan.cancel.filter((entry) => failedCancelIds.has(String(entry.run.id)));
+
+    lines.push(cancelled.length > 0 ? '🧹 **Production deploy unwedged**' : '⚠️ **Production deploy still wedged**');
+    for (const entry of cancelled) {
       const sha = typeof entry.run.head_sha === 'string' ? entry.run.head_sha.slice(0, 7) : 'unknown';
       lines.push(`• Cancelled run #${entry.run.run_number ?? entry.run.id} (\`${sha}\`) — ${entry.reason}.`);
       if (runUrlBase !== '') lines.push(`  <${runUrlBase}/${entry.run.id}>`);
     }
-    lines.push(FOLLOW_UP_LINES[plan.followUp] ?? FOLLOW_UP_LINES['needs-intervention']);
+    // Reported, not omitted: a cancel that did not land may mean the run is
+    // still holding the group, which is the one thing an operator needs to know.
+    for (const entry of failed) {
+      const sha = typeof entry.run.head_sha === 'string' ? entry.run.head_sha.slice(0, 7) : 'unknown';
+      lines.push(
+        `• Could NOT cancel run #${entry.run.run_number ?? entry.run.id} (\`${sha}\`) — it may still be holding the group. Retrying next tick.`,
+      );
+      if (runUrlBase !== '') lines.push(`  <${runUrlBase}/${entry.run.id}>`);
+    }
+    if (cancelled.length > 0) {
+      lines.push(FOLLOW_UP_LINES[plan.followUp] ?? FOLLOW_UP_LINES['needs-intervention']);
+    }
     lines.push(
       'A run parks like this when the Production environment gate holds a job — check the environment protection rules if it repeats.',
     );
@@ -427,11 +444,13 @@ function runCli({ github, headSha, nowMs, runUrlBase, discordFilePath, outputPat
     console.error('production-deploy-watchdog: holding the dispatch — a cancel failed, so the group may still be held');
   }
 
-  const summary = formatSummary(plan, { dryRun });
+  const failedCancelIds = new Set(cancelFailures.map((entry) => String(entry.run.id)));
+  const summary = formatSummary(plan, { dryRun, failedCancelIds });
   console.error(`production-deploy-watchdog: ${summary}`);
 
-  // A dry run reports; it never pings Discord about work it did not do.
-  const discordContent = dryRun ? '' : formatDiscordContent(plan, { runUrlBase });
+  // A dry run reports; it never pings Discord about work it did not do. Neither
+  // does a failed cancel: the report names only what actually landed.
+  const discordContent = dryRun ? '' : formatDiscordContent(plan, { runUrlBase, failedCancelIds });
   if (discordContent !== '' && discordFilePath) writeFileSync(discordFilePath, discordContent, 'utf8');
   if (outputPath) {
     appendFileSync(outputPath, `notify=${discordContent === '' ? 'false' : 'true'}\n`, 'utf8');
