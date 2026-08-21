@@ -31,6 +31,9 @@ const WARM_TIMEOUT_MS = 30_000;
 /** The five Material tab-bar entries, in mobile's canonical order. */
 const TAB_NAMES = ['Home', 'Climbs', 'Record', 'Discover', 'Profile'] as const;
 
+/** The seeded shared board the suite binds through the board sheet (see e2e/SEED_CONTRACT.md). */
+const SEEDED_BOARD_NAME = 'Dyno Den';
+
 /** Android-tablet destinations: the wall view is promoted into the rail. */
 const DESKTOP_TAB_NAMES = ['Home', 'Climbs', 'Record', 'On the Wall', 'Discover', 'Profile'] as const;
 
@@ -255,7 +258,7 @@ test.describe('expo-web smoke', () => {
     if (await findBoardButton.isVisible()) {
       await findBoardButton.click({ force: true });
       const kilterResult = page.getByRole('button', { name: /\bkilter$/i }).first();
-      const ownedBoard = page.getByRole('button', { name: /Dyno Den/i }).first();
+      const ownedBoard = page.getByRole('button', { name: new RegExp(SEEDED_BOARD_NAME, 'i') }).first();
       await expect(kilterResult.or(ownedBoard).first()).toBeVisible({ timeout: WARM_TIMEOUT_MS });
       if (await ownedBoard.isVisible()) {
         await ownedBoard.click({ force: true });
@@ -287,6 +290,10 @@ test.describe('expo-web smoke', () => {
         type: 'touchMove',
         touchPoints: [{ x: centerX, y }],
       });
+      // Deliberate fixed delay, not a replaceable `expect.poll`: this paces the
+      // synthetic touchmove stream at roughly one frame apart (~60fps) so the
+      // browser's real touch-scroll physics sees a plausible drag rather than a
+      // burst of same-tick moves.
       await page.waitForTimeout(16);
     }
     await cdpSession.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
@@ -416,8 +423,6 @@ test.describe('expo-web smoke', () => {
     const BOARD_SLUG_PATH = 'kilter/original/12x12-square/screw_bolt/40';
     const BOARD_TUPLE_PATH = 'kilter/1/10/1,20/40';
     const SEEDED_BOARD = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: [1, 20], angle: 40 } as const;
-    /** The shared board entity behind the `/b/{slug}` URL family. */
-    const SEEDED_BOARD_NAME = 'Dyno Den';
 
     /**
      * A climb that really is listed on the seeded board at this angle. Picked
