@@ -243,6 +243,10 @@ describe('the index and the climbs shard', () => {
     warnings.mockRestore();
 
     expect(withBrokenAggregate.xml).toContain('https://www.boardsesh.com/sitemaps/climbs/2.xml');
+    // Every page falls back to the shard-wide value — the enhancement fails
+    // WITHOUT taking the <lastmod> signal down with it.
+    expect(withBrokenAggregate.xml).toContain(`<lastmod>${LAST_MODIFIED.toISOString()}</lastmod>`);
+    expect(withBrokenAggregate.xml).not.toContain('<lastmod>2026-02-02T00:00:00.000Z</lastmod>');
     expect(withBrokenAggregate.degradedShards).toEqual([]);
   });
 
