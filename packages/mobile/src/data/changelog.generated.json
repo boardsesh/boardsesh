@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-21T06:25:31.404Z",
+  "generatedAt": "2026-08-21T22:25:59.304Z",
   "entries": [
+    {
+      "prNumber": 4640,
+      "category": "new",
+      "title": "Added two settings to control when the board lights up automatically: on swipe between climbs, and on tapping a climb in a list (both on by default). When off, the climb opens as a preview you can light with one tap.",
+      "mergedAt": "2026-08-21T22:23:41Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4640"
+    },
     {
       "prNumber": 4639,
       "category": "fixed",

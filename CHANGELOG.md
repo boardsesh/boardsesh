@@ -6,6 +6,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-08-21
 
+### New
+
+- Added two settings to control when the board lights up automatically: on swipe between climbs, and on tapping a climb in a list (both on by default). When off, the climb opens as a preview you can light with one tap. ([#4640](https://github.com/boardsesh/boardsesh/pull/4640))
+
 ### Fixed
 
 - Fixed the long-press climb preview showing a see-through board on Android ([#4639](https://github.com/boardsesh/boardsesh/pull/4639))
