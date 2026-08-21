@@ -90,6 +90,7 @@ describe('www production smoke checks', () => {
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/playlists.xml</loc></sitemap>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
       '</sitemapindex>';
     expect(check.assert(response({ contentType: 'application/xml', body: healthyIndex }))).toBeNull();
 
@@ -101,8 +102,21 @@ describe('www production smoke checks', () => {
       '<sitemapindex>' +
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
       '</sitemapindex>';
     expect(check.assert(response({ contentType: 'application/xml', body: withoutPlaylists }))).toMatch(/playlists/);
+
+    // #4552: `climbs` is required too — ~52,000 URLs across six pages, the
+    // largest surface on the site, and the shard this check was blind to while
+    // its summary could not meet the deadline. Silently missing page 1 is a
+    // failure now.
+    const withoutClimbs =
+      '<sitemapindex>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/playlists.xml</loc></sitemap>' +
+      '</sitemapindex>';
+    expect(check.assert(response({ contentType: 'application/xml', body: withoutClimbs }))).toMatch(/climbs/);
 
     // The regression this check has to keep catching after #4476. The index now
     // degrades rather than 503ing, so a cold-start failure of the boards builder
@@ -140,7 +154,7 @@ describe('www production smoke checks', () => {
     const withoutBoards = response({
       contentType: 'application/xml',
       body: '<sitemapindex><sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap></sitemapindex>',
-      headers: { 'x-sitemap-degraded': 'boards,playlists' },
+      headers: { 'x-sitemap-degraded': 'boards,playlists,climbs' },
     });
     expect(check.assert(withoutBoards)).toBeNull();
     // Names the shards, so the annotation is actionable without opening the site.
@@ -159,8 +173,8 @@ describe('www production smoke checks', () => {
 
     // A required-but-degradable shard the header names is a warning, and the
     // annotation says which of the dropped shards was a required one — that is
-    // what separates "playlists missed the deadline again" from "climbs is
-    // deliberately not asserted here".
+    // what separates "a required shard missed the deadline again" from "an
+    // optional shard was quiet".
     const declaredDegradable = response({
       contentType: 'application/xml',
       body:
@@ -175,7 +189,8 @@ describe('www production smoke checks', () => {
     expect(check.degradation?.(declaredDegradable)).toMatch(/required playlists/);
 
     // A shard this list does not require at all is worth a warning but is not a
-    // missing mandatory, so nothing is flagged as required.
+    // missing mandatory, so nothing is flagged as required. (`climbs` moved to
+    // the required list in #4552; `gyms` is the remaining genuinely optional one.)
     const optionalOnly = response({
       contentType: 'application/xml',
       body:
@@ -183,11 +198,12 @@ describe('www production smoke checks', () => {
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/playlists.xml</loc></sitemap>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
         '</sitemapindex>',
-      headers: { 'x-sitemap-degraded': 'climbs' },
+      headers: { 'x-sitemap-degraded': 'gyms' },
     });
     expect(check.assert(optionalOnly)).toBeNull();
-    expect(check.degradation?.(optionalOnly)).toMatch(/climbs/);
+    expect(check.degradation?.(optionalOnly)).toMatch(/gyms/);
     expect(check.degradation?.(optionalOnly)).not.toMatch(/required/);
 
     // The header can never rescue a genuinely broken index: a non-200, a body
@@ -224,6 +240,7 @@ describe('www production smoke checks', () => {
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/playlists.xml</loc></sitemap>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
         '</sitemapindex>',
     });
     expect(check.degradation?.(healthy) ?? null).toBeNull();

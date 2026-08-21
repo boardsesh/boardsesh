@@ -163,16 +163,16 @@ const SITEMAP_DEGRADED_HEADER = 'x-sitemap-degraded';
  * entry can still lose the 3 s deadline once and self-heal on the `after()` warm —
  * a WARN. The shard vanishing without the header saying so is still a FAIL.
  *
- * `climbs` is excluded for a different reason, and the reason is now weaker than
- * it was. Its summary could not meet `SHARD_DEADLINE_MS` at any cache temperature,
- * so production served the index degraded on most requests and asserting it here
- * would have been a permanently red check rather than a detector. #4523 removed
- * that: the summary is a single row of `sitemap_shard_refreshes` now. Promoting it
- * to a `degradable: true` entry is a follow-up rather than part of that change,
- * because the store is empty on the deploy that populates it and the entry would
- * have to be added along with the three assertions below that currently encode
- * "climbs is not required". Until then this list has no view of the largest
- * surface on the site.
+ * `climbs` is required as of #4552 — before it, this list had no view of the
+ * largest surface on the site. It could not be asserted earlier: its summary
+ * could not meet `SHARD_DEADLINE_MS` at any cache temperature, so production
+ * served the index degraded on most requests and the entry would have been a
+ * permanently red check rather than a detector. #4523 made the summary a single
+ * row of `sitemap_shard_refreshes`; `degradable: true` covers the residue — a
+ * store empty right after the migration deploys falls back to the scan that
+ * loses the deadline once, self-heals via `after()`, and names itself in the
+ * header. The `<loc>` asserted is page 1, which exists whenever the shard has
+ * any URLs at all.
  *
  * `degradable` is what `X-Sitemap-Degraded` may excuse. `boards` is genuinely
  * transient — a cold cache, a slow backend — and self-heals under the 60s window.
@@ -190,6 +190,7 @@ const REQUIRED_SITEMAP_SHARDS = [
   { id: 'static', loc: 'https://www.boardsesh.com/sitemaps/static.xml', degradable: false },
   { id: 'boards', loc: 'https://www.boardsesh.com/sitemaps/boards.xml', degradable: true },
   { id: 'playlists', loc: 'https://www.boardsesh.com/sitemaps/playlists.xml', degradable: true },
+  { id: 'climbs', loc: 'https://www.boardsesh.com/sitemaps/climbs/1.xml', degradable: true },
 ] as const;
 
 type RequiredSitemapShard = (typeof REQUIRED_SITEMAP_SHARDS)[number];
