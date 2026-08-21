@@ -28,6 +28,10 @@ const mocks = vi.hoisted(() => ({
   searchFailed: false,
   offlineCatalog: null as 'missing' | 'queued' | null,
   activateClimb: vi.fn(),
+  openPlayDrawer: vi.fn(),
+  // Mutable per-test setting: false exercises the preview-open branch instead
+  // of the committing activateClimb path.
+  lightOnClimbTap: true,
   dismissKeyboard: vi.fn(),
   getLastSearch: vi.fn(),
   saveLastSearch: vi.fn(),
@@ -205,7 +209,7 @@ vi.mock('../../../../src/providers/drawer-host-provider', () => ({
     openClimbActions: vi.fn(),
     openAddToPlaylist: vi.fn(),
     openBoardSheet: vi.fn(),
-    openPlayDrawer: vi.fn(),
+    openPlayDrawer: mocks.openPlayDrawer,
   }),
 }));
 
@@ -233,7 +237,7 @@ vi.mock('../../../../src/providers/queue-provider', () => ({
 }));
 
 vi.mock('../../../../src/settings', () => ({
-  useSetting: (key: string) => (key === 'lightOnClimbTap' ? [true, vi.fn()] : [false, vi.fn()]),
+  useSetting: (key: string) => (key === 'lightOnClimbTap' ? [mocks.lightOnClimbTap, vi.fn()] : [false, vi.fn()]),
 }));
 
 vi.mock('../../../../src/hooks/use-bottom-accessory', () => ({ useNativeAccessoryActive: () => false }));
@@ -359,6 +363,8 @@ import ClimbList from '../index';
 
 beforeEach(() => {
   mocks.activateClimb.mockClear();
+  mocks.openPlayDrawer.mockClear();
+  mocks.lightOnClimbTap = true;
   mocks.dismissKeyboard.mockClear();
   mocks.getLogbook.mockClear();
   mocks.getLastSearch.mockReset();
@@ -454,6 +460,22 @@ describe('ClimbList keyboard handling', () => {
     // Logbook is fetched for every visible row, not just the pressed one — the
     // default fixture now has two climbs (added for the rank-tracking tests).
     await waitFor(() => expect(mocks.getLogbook).toHaveBeenCalledWith(['climb-1', 'climb-2']));
+  });
+});
+
+describe('ClimbList lightOnClimbTap setting', () => {
+  it('opens the pressed climb as a view-only preview instead of activating it when the setting is off', async () => {
+    mocks.lightOnClimbTap = false;
+    const { findByText } = render(<ClimbList />);
+
+    fireEvent.click(await findByText('Moonage'));
+
+    expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+    const [openedClimb, options] = mocks.openPlayDrawer.mock.calls[0];
+    expect(openedClimb).toBe(mocks.climb);
+    expect(options?.previewQueueItem?.climb?.uuid).toBe('climb-1');
+    // Doesn't touch the queue or the board — no commit, no BLE re-arm.
+    expect(mocks.activateClimb).not.toHaveBeenCalled();
   });
 });
 
