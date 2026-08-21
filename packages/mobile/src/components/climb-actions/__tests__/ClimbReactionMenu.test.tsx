@@ -62,14 +62,20 @@ vi.mock('react-native', async () => {
   };
 });
 
-vi.mock('react-native-reanimated', () => ({
-  default: { View: ({ children }: { children?: ReactNode }) => createElement('div', null, children) },
-  useAnimatedStyle: () => ({}),
-  useSharedValue: (v: number) => ({ value: v }),
-  withSpring: (v: number) => v,
-  withTiming: (v: number) => v,
-  runOnJS: (fn: () => void) => fn,
-}));
+vi.mock('react-native-reanimated', async () => {
+  const { flattenStyle } = await import('../../../../test/flatten-style');
+  return {
+    default: {
+      View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+        createElement('div', { 'data-bg': flattenStyle(style).backgroundColor }, children),
+    },
+    useAnimatedStyle: () => ({}),
+    useSharedValue: (v: number) => ({ value: v }),
+    withSpring: (v: number) => v,
+    withTiming: (v: number) => v,
+    runOnJS: (fn: () => void) => fn,
+  };
+});
 
 vi.mock('@react-native-community/blur', () => ({
   BlurView: () => createElement('div', { 'data-testid': 'blur-view' }),
@@ -148,7 +154,6 @@ vi.mock('../../../theme/animations', () => ({ springs: { gentle: {} }, timing: {
 vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 5: 20, 6: 24 },
   borderRadius: { lg: 12, xl: 16 },
-  overlays: { scrim: 'rgba(0, 0, 0, 0.6)' },
 }));
 // Tagged rather than re-implemented: the assertions care that the fade is built
 // from the card's own tone, not that we can redo hex→rgba arithmetic in a test.
@@ -376,35 +381,35 @@ describe('ClimbReactionMenu surface treatment', () => {
     expect((captured.glassSurfaceProps?.style as Record<string, unknown>)?.overflow).toBe('hidden');
   });
 
-  it('dims harder and drops the blur when no blur sits under the overlay', () => {
-    for (const mode of ['material', 'solid']) {
+  it('never renders a blur view — the backdrop is an opaque fill, not a blur', () => {
+    for (const mode of ['material', 'solid', 'glass', 'blur']) {
       ctrl.surfaceMode = mode;
       const { container, unmount } = renderMenu();
       expect(container.querySelector('[data-testid="blur-view"]')).toBeNull();
-      expect(container.querySelector('[data-bg="rgba(0, 0, 0, 0.6)"]')).not.toBeNull();
       unmount();
     }
   });
 
-  it('keeps the lighter tint on the blurred paths, where the blur already recedes the board', () => {
-    for (const mode of ['glass', 'blur']) {
+  it('paints the backdrop AND the board-art wrapper with the card tone on Material', () => {
+    ctrl.surfaceMode = 'material';
+    const { container } = renderMenu();
+    // m3SurfaceContainers.high — the same tone the card itself is raised to.
+    // Both the full-screen backdrop and the board-art wrapper paint it, so at
+    // least two elements should carry it.
+    expect(container.querySelectorAll('[data-bg="#404048"]').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("paints the backdrop with the card's opaque glass base off Material, by scheme", () => {
+    for (const mode of ['glass', 'blur', 'solid']) {
       ctrl.surfaceMode = mode;
-      const { container, unmount } = renderMenu();
-      expect(container.querySelector('[data-testid="blur-view"]')).not.toBeNull();
-      expect(container.querySelector('[data-bg="rgba(0, 0, 0, 0.5)"]')).not.toBeNull();
-      unmount();
+      ctrl.colorScheme = 'dark';
+      const dark = renderMenu();
+      expect(dark.container.querySelector('[data-bg="rgb(20, 17, 31)"]')).not.toBeNull();
+
+      ctrl.colorScheme = 'light';
+      const light = renderMenu();
+      expect(light.container.querySelector('[data-bg="rgb(255, 255, 255)"]')).not.toBeNull();
     }
-  });
-
-  it('stays lighter in light mode, where a 0.6 scrim would read as an accidental dark mode', () => {
-    ctrl.colorScheme = 'light';
-    const { container, unmount } = renderMenu();
-    expect(container.querySelector('[data-bg="rgba(0, 0, 0, 0.4)"]')).not.toBeNull();
-    unmount();
-
-    ctrl.surfaceMode = 'glass';
-    const blurred = renderMenu();
-    expect(blurred.container.querySelector('[data-bg="rgba(0, 0, 0, 0.35)"]')).not.toBeNull();
   });
 
   it('builds the list fade from the very tone the card is painted with on Material', () => {
