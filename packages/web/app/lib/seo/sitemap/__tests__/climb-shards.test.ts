@@ -41,13 +41,21 @@ const climbs = vi.hoisted(() => ({
   buildCalls: 0,
 }));
 
-vi.mock('../climb-query', () => ({
-  fetchTier2Summary: async () => {
+// The index and the shard route now read the summary out of
+// `sitemap_shard_refreshes` through `fetchClimbShardSummary` (#4523). WHICH of its
+// three internal paths answered — stored row, stale row, empty-store fallback — is
+// climb-store.test.ts's job; from here it is just "the summary", and every
+// assertion in this file is the same contract it was before the store existed.
+vi.mock('../climb-store', () => ({
+  fetchClimbShardSummary: async () => {
     if (climbs.summaryThrows) throw new Error('climbs summary unavailable');
     // A summary that never settles: the failure a try/catch cannot see.
     if (climbs.summaryHangs) return new Promise<never>(() => {});
     return { itemCount: climbs.itemCount, lastModified: new Date('2026-05-04T11:22:33.000Z') };
   },
+}));
+
+vi.mock('../climb-query', () => ({
   buildTier2ClimbItems: async () => {
     climbs.buildCalls += 1;
     if (climbs.buildThrows) throw new Error('climbs builder exploded');

@@ -7,6 +7,9 @@ vi.mock('server-only', () => ({}));
 // A drizzle instance with no client behind it: building and rendering a query
 // never touches the connection, and the test must not need a database.
 vi.mock('@/app/lib/db/db', () => ({ dbzRead: drizzle({} as never) }));
+// Module scope calls `unstable_cache` on import; the caching behaviour itself is
+// playlist-query.test.ts's subject, not this file's.
+vi.mock('next/cache', () => ({ unstable_cache: (fn: unknown) => fn }));
 
 const { buildPlaylistSitemapQuery } = await import('../playlist-query');
 
@@ -31,7 +34,10 @@ describe('the playlists query', () => {
   // Renders the SQL drizzle actually produces rather than grepping the source
   // for the predicate we hope is there: a restated predicate is a tautology, and
   // a substring grep false-reds on a harmless refactor.
-  const { sql, params } = buildPlaylistSitemapQuery().toSQL();
+  // The handle is a parameter now, so the query can run inside the transaction
+  // its `SET LOCAL statement_timeout` needs. Rendering it off a client-less
+  // drizzle instance is unchanged.
+  const { sql, params } = buildPlaylistSitemapQuery(drizzle({} as never)).toSQL();
   const normalised = sql.toLowerCase().replace(/\s+/g, ' ');
 
   it('filters to public playlists', () => {

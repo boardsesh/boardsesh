@@ -11,8 +11,10 @@ vi.mock('@/app/lib/server-popular-configs', () => ({
 vi.mock('../playlist-query', () => ({
   fetchPlaylistSitemapRows: async () => [],
 }));
+vi.mock('../climb-store', () => ({
+  fetchClimbShardSummary: async () => ({ itemCount: 0, lastModified: null }),
+}));
 vi.mock('../climb-query', () => ({
-  fetchTier2Summary: async () => ({ itemCount: 0, lastModified: null }),
   buildTier2ClimbItems: async () => [],
 }));
 
