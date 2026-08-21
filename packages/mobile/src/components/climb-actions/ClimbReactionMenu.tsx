@@ -98,6 +98,14 @@ const MENU_FADE_COLORS = {
   light: ['rgba(255, 255, 255, 0)', `rgba(255, 255, 255, ${MENU_FADE_END_ALPHA})`],
 } as const;
 
+// The card's own tone, fully opaque (the fade's dark/light base above, without the
+// alpha) — reused as the board-art backing so it reads as the same surface instead
+// of a mismatched theme color. Same Material-vs-glass split as the fade.
+const MENU_CARD_SOLID = {
+  dark: 'rgb(20, 17, 31)',
+  light: 'rgb(255, 255, 255)',
+} as const;
+
 // Backdrop dim, by scheme and by whether a real blur sits underneath. A blur (iOS 26
 // Liquid Glass, or its < 26 fallback) already makes the busy board-art grid recede, so
 // a light tint finishes the dim. With no blur — Android, Reduce Transparency, or the
@@ -421,6 +429,12 @@ export function ClimbReactionMenu({
     const cardTone = m3SurfaceContainers[MENU_CARD_ROLE];
     return [withAlpha(cardTone, 0), withAlpha(cardTone, MENU_FADE_END_ALPHA)];
   }, [surfaceMode, isDark, m3SurfaceContainers]);
+  // Same tone as the menu card, fully opaque — the board art backing reads as
+  // the same surface instead of a separate theme color.
+  const boardArtBackgroundColor = useMemo(() => {
+    if (surfaceMode === 'material') return m3SurfaceContainers[MENU_CARD_ROLE];
+    return isDark ? MENU_CARD_SOLID.dark : MENU_CARD_SOLID.light;
+  }, [surfaceMode, isDark, m3SurfaceContainers]);
 
   const backdropStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
   const previewStyle = useAnimatedStyle(() => ({
@@ -502,7 +516,7 @@ export function ClimbReactionMenu({
               ) : null}
             </View>
             {boardRenderData ? (
-              <Animated.View style={[styles.art, animatedArtStyle]}>
+              <Animated.View style={[styles.art, { backgroundColor: boardArtBackgroundColor }, animatedArtStyle]}>
                 <BoardImageNative
                   frames={climb.frames}
                   boardName={boardConfig.boardName as BoardName}
@@ -644,9 +658,15 @@ const styles = StyleSheet.create({
   },
   // The animating art wrapper — carries the rounded clip; its width/height are driven
   // by animatedArtStyle so the board render resizes between hero and compact sizes.
+  // No backgroundColor here (added at the call site with boardArtBackgroundColor,
+  // the menu card's own tone): LayeredClimbImage's board-photo layer paints
+  // asynchronously and has no opaque backing of its own, so without one this
+  // wrapper shows the blurred/scrim backdrop through it until the photo loads
+  // (persistently on Android, which has no blur to hide the gap behind).
   art: {
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
     overflow: 'hidden',
+    padding: spacing[2],
   },
   // The board render fills the animating wrapper; explicit width+height override
   // BoardImageNative's internal aspectRatio (the wrapper already preserves aspect).
