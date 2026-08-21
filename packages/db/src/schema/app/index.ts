@@ -34,3 +34,4 @@ export * from './sync-deletions';
 export * from './sync-daemon-leases';
 export * from './logbook-sync-skips';
 export * from './sitemap-shard-refreshes';
+export * from './sitemap-climb-urls';
