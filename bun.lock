@@ -274,7 +274,7 @@
         "expo-glass-effect": "57.0.1",
         "expo-haptics": "57.0.1",
         "expo-image": "57.0.1",
-        "expo-image-manipulator": "57.0.7",
+        "expo-image-manipulator": "57.0.11",
         "expo-image-picker": "57.0.7",
         "expo-keep-awake": "57.0.1",
         "expo-linear-gradient": "57.0.1",
@@ -3009,7 +3009,7 @@
 
     "expo-image-loader": ["expo-image-loader@57.0.1", "", { "peerDependencies": { "expo": "*" } }, "sha512-uhrZKLT/cTl2mXyR28kPpVkS5O+PK9N1QA/07IFM4f5T4g0lTW1JHT3NEWwEEsGFldPmVX4j7LwUVVZxE+woug=="],
 
-    "expo-image-manipulator": ["expo-image-manipulator@57.0.7", "", { "dependencies": { "expo-image-loader": "~57.0.1" }, "peerDependencies": { "expo": "*" } }, "sha512-opdXzhraozdHaUukC339cP15KzLNcRDeOSABFeZ6ULoTaPNKJeXJ/4NVVOgqi9hdTinvrO8NVZf06j621mc7Kw=="],
+    "expo-image-manipulator": ["expo-image-manipulator@57.0.11", "", { "dependencies": { "expo-image-loader": "~57.0.1" }, "peerDependencies": { "expo": "*" } }, "sha512-SMl1X9Mu3qNwFPiiQx+JGsnrKD6F16owbMCTKb/bU8F4GNHy8Nx9SqKlwD7BhpwDYjg1bQt+WnvzKA7vGS1fgA=="],
 
     "expo-image-picker": ["expo-image-picker@57.0.7", "", { "dependencies": { "expo-image-loader": "~57.0.1" }, "peerDependencies": { "expo": "*" } }, "sha512-aPZis1VeeAOeWrM/VID/As7/hF/WM6egtN2AUY+ODV97oBKfAZcGHMw7MR/5BoEy3HXzR5n1ZSYMEwnHBhICvg=="],
 
