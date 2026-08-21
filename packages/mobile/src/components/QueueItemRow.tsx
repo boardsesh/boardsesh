@@ -411,7 +411,12 @@ function QueueItemRowComponent({
     isHistoryItem && !isEditMode && typeof climbedAtAngle === 'number' && climbedAtAngle !== board.angle;
 
   const rowContent = (
-    <GestureDetector gesture={tapGesture}>
+    // touchAction="pan-y" (web only): RNGH otherwise defaults the row's DOM node
+    // to `touch-action: none`, which blocks native touch-scrolling for any drag
+    // starting on the row. pan-y lets a vertical drag fall through to the list's
+    // own scroll natively; only a horizontal drag is intercepted here or by the
+    // swipe Pan below.
+    <GestureDetector gesture={tapGesture} touchAction="pan-y">
       <Animated.View
         accessible
         accessibilityRole="button"
@@ -462,7 +467,7 @@ function QueueItemRowComponent({
 
         {/* Trailing action: tick (history) or drag handle (upcoming) */}
         {showTick && tickGesture ? (
-          <GestureDetector gesture={tickGesture}>
+          <GestureDetector gesture={tickGesture} touchAction="pan-y">
             <View
               testID="tick-button"
               accessible
@@ -513,7 +518,18 @@ function QueueItemRowComponent({
           </Animated.View>
         )}
 
-        {swipeEnabled ? <GestureDetector gesture={panGesture}>{rowContent}</GestureDetector> : rowContent}
+        {swipeEnabled ? (
+          // touchAction="pan-y": same web-only reasoning as the tap GestureDetector
+          // above — without it this Pan's DOM node defaults to `touch-action: none`
+          // and swallows vertical touch-scrolls before activeOffsetX/failOffsetY
+          // ever get evaluated (those only gate the JS recognizer, which the browser
+          // doesn't consult once it's decided not to hand a touch to it).
+          <GestureDetector gesture={panGesture} touchAction="pan-y">
+            {rowContent}
+          </GestureDetector>
+        ) : (
+          rowContent
+        )}
       </View>
 
       {/* Separator */}

@@ -186,7 +186,18 @@ function SwipeableRowComponent({
         </Animated.View>
       ) : null}
 
-      {enabled ? <GestureDetector gesture={panGesture}>{rowContent}</GestureDetector> : rowContent}
+      {enabled ? (
+        // touchAction="pan-y" (web only): RNGH otherwise defaults this Pan's DOM
+        // node to `touch-action: none`, which blocks native touch-scrolling for
+        // any drag starting on the row before activeOffsetX/failOffsetY (JS-side
+        // only) ever run. pan-y lets a vertical drag fall through to the list's
+        // own scroll natively; only a horizontal drag is intercepted here.
+        <GestureDetector gesture={panGesture} touchAction="pan-y">
+          {rowContent}
+        </GestureDetector>
+      ) : (
+        rowContent
+      )}
     </View>
   );
 }

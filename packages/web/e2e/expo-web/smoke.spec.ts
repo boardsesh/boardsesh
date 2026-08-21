@@ -226,6 +226,77 @@ test.describe('expo-web smoke', () => {
     expect(fatalErrors).toEqual([]);
   });
 
+  /**
+   * Regression for a touch-only scroll deadlock: react-native-gesture-handler's
+   * web `GestureDetector` defaults its DOM node to `touch-action: none` unless a
+   * `touchAction` prop is passed, which blocks the browser's native touch-scroll
+   * for any drag starting on that node — independent of the gesture's own
+   * activeOffsetX/failOffsetY (those only gate the JS recognizer, which the
+   * browser never consults once it has decided not to hand a touch to it).
+   * Mouse-wheel scrolling never goes through this path, so it worked even while
+   * touch scrolling was fully dead. Real hardware-originated touch input is
+   * required to exercise the browser's touch-action gating — a JS-dispatched
+   * synthetic TouchEvent bypasses it — so this drives touches through the CDP
+   * Input domain rather than `element.dispatchEvent`.
+   */
+  test('touch-drag scrolls the climbs list', async ({ page, context }) => {
+    const fatalErrors = collectFatalConsoleErrors(page);
+    await ensureSignedIn(page);
+
+    // Bind a board so the Climbs tab renders a long enough list to scroll.
+    // Tolerates both states `bindSeededBoard` doesn't need to: a fresh account
+    // (no boards yet — pick the "kilter" search result) and this seed image's
+    // actual state, where the Aurora-synced account already has boards under
+    // "Your boards" the instant the picker opens (tap one to bind it here).
+    await tabButton(page, 'Climbs').click();
+    const findBoardButton = page.getByRole('button', { name: 'Find my board' });
+    const boundThumbnail = page.locator('img[src^="blob:"]').first();
+    await expect(findBoardButton.or(boundThumbnail).first()).toBeVisible({ timeout: WARM_TIMEOUT_MS });
+    if (await findBoardButton.isVisible()) {
+      await findBoardButton.click({ force: true });
+      const kilterResult = page.getByRole('button', { name: /\bkilter$/i }).first();
+      const ownedBoard = page.getByRole('button', { name: /Dyno Den/i }).first();
+      await expect(kilterResult.or(ownedBoard).first()).toBeVisible({ timeout: WARM_TIMEOUT_MS });
+      if (await ownedBoard.isVisible()) {
+        await ownedBoard.click({ force: true });
+      } else {
+        await kilterResult.click({ force: true });
+      }
+    }
+    await expect(boundThumbnail).toBeVisible({ timeout: 60_000 });
+
+    const list = page.getByTestId('climb-list');
+    await expect(list).toBeVisible({ timeout: WARM_TIMEOUT_MS });
+    const box = await list.boundingBox();
+    if (!box) throw new Error('climb-list has no bounding box');
+
+    const scrollTopBefore = await list.evaluate((element) => element.scrollTop);
+
+    const cdpSession = await context.newCDPSession(page);
+    const centerX = box.x + box.width / 2;
+    const dragStartY = box.y + box.height * 0.85;
+    const dragEndY = box.y + box.height * 0.15;
+    const dragSteps = 10;
+    await cdpSession.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x: centerX, y: dragStartY }],
+    });
+    for (let step = 1; step <= dragSteps; step += 1) {
+      const y = dragStartY + (dragEndY - dragStartY) * (step / dragSteps);
+      await cdpSession.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: centerX, y }],
+      });
+      await page.waitForTimeout(16);
+    }
+    await cdpSession.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+
+    await expect
+      .poll(() => list.evaluate((element) => element.scrollTop), { timeout: 5_000 })
+      .toBeGreaterThan(scrollTopBefore + 10);
+    expect(fatalErrors).toEqual([]);
+  });
+
   test.describe('desktop adaptive shell', () => {
     test('uses the tablet rail and keeps every play action and deferred section in the detail pane', async ({
       browser,

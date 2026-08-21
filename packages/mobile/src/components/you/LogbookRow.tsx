@@ -449,7 +449,12 @@ export const LogbookRow = memo(function LogbookRow({
         onSwipeableOpen={handleSwipeableOpened}
         onSwipeableClose={handleSwipeableClosed}
       >
-        <GestureDetector gesture={tapGesture}>
+        {/* touchAction="pan-y" (web only): without it RNGH defaults the row's DOM
+            node to `touch-action: none`, which blocks native touch-scrolling for
+            any drag starting on the row — independent of ReanimatedSwipeable's own
+            gesture, which already sets pan-y. Vertical drags fall through to the
+            browser/list scroll; only horizontal ones reach this tap/long-press. */}
+        <GestureDetector gesture={tapGesture} touchAction="pan-y">
           <View
             accessible
             accessibilityRole="button"
