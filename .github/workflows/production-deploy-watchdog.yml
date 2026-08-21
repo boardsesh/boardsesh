@@ -39,6 +39,10 @@ jobs:
     # repository-level secrets: if DISCORD_DEPLOY_WEBHOOK is scoped to the
     # Production environment, the notify step no-ops and the job summary plus
     # the run's own annotations carry the report instead.
+    # Belt and braces with the 30s per-call cap in the script: if the runner
+    # itself wedges, a watchdog inheriting GitHub's 6-hour default would be the
+    # same silent stall it exists to break.
+    timeout-minutes: 10
     permissions:
       actions: write # cancel a stalled run, dispatch the replacement
       contents: read
