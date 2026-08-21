@@ -16,7 +16,6 @@ import {
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
-import { BlurView } from '@react-native-community/blur';
 import { FullWindowOverlay } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
@@ -35,7 +34,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { springs, timing } from '../../theme/animations';
-import { spacing, borderRadius, overlays } from '../../theme/tokens';
+import { spacing, borderRadius } from '../../theme/tokens';
 import { withAlpha, type MaterialSurfaceContainers } from '../../theme/colors';
 import { useEffectiveSurfaceMode } from '../../hooks/use-effective-surface-mode';
 import { useClimbActions, type ClimbActionId, type ClimbActionItem } from './use-climb-actions';
@@ -85,37 +84,34 @@ const PREVIEW_MAX_WIDTH = 400;
 // because the bottom fade has to read the same tone; see MENU_FADE_COLORS.
 const MENU_CARD_ROLE: keyof MaterialSurfaceContainers = 'high';
 
+// The card's own tone off Material — there is no opaque M3 tone to read there,
+// the card is real glass, so this is a tuned approximation (#14111F dark).
+// Single source for both the fade (below) and the opaque backdrop/board-art
+// fill, so the two can't drift apart if this ever gets re-tuned.
+const MENU_CARD_BASE_RGB = {
+  dark: '20, 17, 31',
+  light: '255, 255, 255',
+} as const;
+
 // Bottom-edge fade for the scrollable action list — transparent → the card's own
 // surface. Concrete rgba, never a systemColors PlatformColor: feeding a PlatformColor
 // into the gradient bakes the wrong scheme (the ProgressiveBlur dark-band bug). On
 // Material the stops are derived from the very tone GlassSurface paints the card with,
 // so bumping MENU_CARD_ROLE can't leave the fade behind. Glass / blur / solid keep the
-// tuned constants — there is no opaque tone to read there, the card is real glass, and
-// the dark value tracks its #14111F base.
+// tuned constants from MENU_CARD_BASE_RGB.
 const MENU_FADE_END_ALPHA = 0.92;
 const MENU_FADE_COLORS = {
-  dark: ['rgba(20, 17, 31, 0)', `rgba(20, 17, 31, ${MENU_FADE_END_ALPHA})`],
-  light: ['rgba(255, 255, 255, 0)', `rgba(255, 255, 255, ${MENU_FADE_END_ALPHA})`],
+  dark: [`rgba(${MENU_CARD_BASE_RGB.dark}, 0)`, `rgba(${MENU_CARD_BASE_RGB.dark}, ${MENU_FADE_END_ALPHA})`],
+  light: [`rgba(${MENU_CARD_BASE_RGB.light}, 0)`, `rgba(${MENU_CARD_BASE_RGB.light}, ${MENU_FADE_END_ALPHA})`],
 } as const;
 
-// Backdrop dim, by scheme and by whether a real blur sits underneath. A blur (iOS 26
-// Liquid Glass, or its < 26 fallback) already makes the busy board-art grid recede, so
-// a light tint finishes the dim. With no blur — Android, Reduce Transparency, or the
-// Material variant on iOS — the tint alone lets the grid bleed through and the overlay
-// stops reading as focused, so the scrim has to do the receding itself: the app's
-// shared scrim token in dark, and a deliberately lighter value in light, where 0.6 over
-// an already high-contrast screen reads as an accidental dark mode.
-const SCRIM_COLORS = {
-  blurred: { dark: 'rgba(0, 0, 0, 0.5)', light: 'rgba(0, 0, 0, 0.35)' },
-  flat: { dark: overlays.scrim, light: 'rgba(0, 0, 0, 0.4)' },
+// The card's own tone, fully opaque — reused as the backdrop and board-art
+// backing so both read as the same surface instead of a mismatched theme
+// color. Same Material-vs-glass split as the fade.
+const MENU_CARD_SOLID = {
+  dark: `rgb(${MENU_CARD_BASE_RGB.dark})`,
+  light: `rgb(${MENU_CARD_BASE_RGB.light})`,
 } as const;
-
-// Gated on the surface mode GlassSurface switches on, so the scrim and the card never
-// disagree about which material is underneath.
-function resolveScrimColor(hasBlur: boolean, isDark: boolean): string {
-  const scheme = hasBlur ? SCRIM_COLORS.blurred : SCRIM_COLORS.flat;
-  return isDark ? scheme.dark : scheme.light;
-}
 
 // iOS portals above the persistent queue bar / tab bar via a native window overlay;
 // Android uses a transparent Modal (which also gives a hardware-back handler).
@@ -130,11 +126,12 @@ function OverlayPortal({ children, onRequestClose }: { children: React.ReactNode
 
 /**
  * iMessage-style long-press reaction overlay: the climb floats, scaled up, over a
- * blurred background, with the climb-action menu floating beside it. Built with
- * Reanimated + BlurView so we control the enlargement, the animation, and the layout
- * — the native context-menu library can't host a custom enlarged preview on RN's New
- * Architecture (the preview leaks into the row). Used for every list long-press via
- * the provider's `openClimbActions`; PlayDrawer keeps its own bottom sheet.
+ * backdrop painted the menu card's own tone, with the climb-action menu floating
+ * beside it. Built with Reanimated so we control the enlargement, the animation,
+ * and the layout — the native context-menu library can't host a custom enlarged
+ * preview on RN's New Architecture (the preview leaks into the row). Used for
+ * every list long-press via the provider's `openClimbActions`; PlayDrawer keeps
+ * its own bottom sheet.
  *
  * Mounted only while open; the enter animation runs on mount (using the passed
  * `reduceMotion`), and dismissal animates out before calling `onClose`. Actions come
@@ -421,6 +418,12 @@ export function ClimbReactionMenu({
     const cardTone = m3SurfaceContainers[MENU_CARD_ROLE];
     return [withAlpha(cardTone, 0), withAlpha(cardTone, MENU_FADE_END_ALPHA)];
   }, [surfaceMode, isDark, m3SurfaceContainers]);
+  // Same tone as the menu card, fully opaque — the board art backing reads as
+  // the same surface instead of a separate theme color.
+  const boardArtBackgroundColor = useMemo(() => {
+    if (surfaceMode === 'material') return m3SurfaceContainers[MENU_CARD_ROLE];
+    return isDark ? MENU_CARD_SOLID.dark : MENU_CARD_SOLID.light;
+  }, [surfaceMode, isDark, m3SurfaceContainers]);
 
   const backdropStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
   const previewStyle = useAnimatedStyle(() => ({
@@ -432,25 +435,15 @@ export function ClimbReactionMenu({
     transform: [{ translateY: (1 - progress.value) * 18 }, { scale: 0.96 + progress.value * 0.04 }],
   }));
 
-  const hasBlur = surfaceMode === 'glass' || surfaceMode === 'blur';
-  const scrimColor = resolveScrimColor(hasBlur, isDark);
-
   return (
     <OverlayPortal onRequestClose={handleRequestClose}>
       <View style={StyleSheet.absoluteFill}>
-        {/* Blurred / dimmed backdrop. Tapping it pops the playlist view back to
-            the menu first (matching the back button), and dismisses from the menu
-            — so a stray tap can't tear down a half-typed create form. */}
+        {/* Backdrop, painted the same opaque tone as the menu card so the whole
+            overlay reads as one surface. Tapping it pops the playlist view back
+            to the menu first (matching the back button), and dismisses from the
+            menu — so a stray tap can't tear down a half-typed create form. */}
         <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
-          {hasBlur ? (
-            <BlurView
-              blurType={isDark ? 'dark' : 'light'}
-              blurAmount={12}
-              reducedTransparencyFallbackColor={scrimColor}
-              style={StyleSheet.absoluteFill}
-            />
-          ) : null}
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: scrimColor }]} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: boardArtBackgroundColor }]} />
           <Pressable
             style={StyleSheet.absoluteFill}
             onPress={handleRequestClose}
@@ -502,7 +495,7 @@ export function ClimbReactionMenu({
               ) : null}
             </View>
             {boardRenderData ? (
-              <Animated.View style={[styles.art, animatedArtStyle]}>
+              <Animated.View style={[styles.art, { backgroundColor: boardArtBackgroundColor }, animatedArtStyle]}>
                 <BoardImageNative
                   frames={climb.frames}
                   boardName={boardConfig.boardName as BoardName}
@@ -644,9 +637,15 @@ const styles = StyleSheet.create({
   },
   // The animating art wrapper — carries the rounded clip; its width/height are driven
   // by animatedArtStyle so the board render resizes between hero and compact sizes.
+  // No backgroundColor here (added at the call site with boardArtBackgroundColor,
+  // the menu card's own tone): LayeredClimbImage's board-photo layer paints
+  // asynchronously and has no opaque backing of its own, so without one this
+  // wrapper shows the blurred/scrim backdrop through it until the photo loads
+  // (persistently on Android, which has no blur to hide the gap behind).
   art: {
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
     overflow: 'hidden',
+    padding: spacing[2],
   },
   // The board render fills the animating wrapper; explicit width+height override
   // BoardImageNative's internal aspectRatio (the wrapper already preserves aspect).
