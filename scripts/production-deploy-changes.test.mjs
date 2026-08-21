@@ -120,6 +120,39 @@ void test('treats every input of the app.boardsesh.com export as app-affecting',
   }
 });
 
+void test('treats every deployed Cloudflare Pages config file as app-affecting', () => {
+  // Same failure mode as the patcher above, one directory over. These four are
+  // the only files deploy-app-web copies into (or beside) the export, and each
+  // decides what app.boardsesh.com serves: the SPA fallback, the cache/security
+  // headers, which paths reach the Function, and the Function itself. A change
+  // to any of them that does not fire deploy-app-web merges green and ships
+  // nothing — the asset-404 Function in particular would sit in the repo
+  // looking deployed while a missing chunk kept serving the HTML shell.
+  for (const filePath of [
+    'deploy/app-subdomain/_headers',
+    'deploy/app-subdomain/_redirects',
+    'deploy/app-subdomain/_routes.json',
+    'deploy/app-subdomain/functions/_middleware.ts',
+  ]) {
+    assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: false, app: true });
+  }
+});
+
+void test('leaves the non-deployed files in deploy/app-subdomain out of the app deploy', () => {
+  // The README, the tsconfig that only exists for type-aware lint, the vitest
+  // project and its suites are never uploaded to Pages. Redeploying production
+  // for a docs edit is pure noise, and treating the whole directory as
+  // app-affecting is the easy mistake that causes it.
+  for (const filePath of [
+    'deploy/app-subdomain/README.md',
+    'deploy/app-subdomain/tsconfig.json',
+    'deploy/app-subdomain/vite.config.ts',
+    'deploy/app-subdomain/__tests__/asset-404-middleware.test.ts',
+  ]) {
+    assert.equal(classifyChangedFiles([filePath]).app, false, `${filePath} must not trigger deploy-app-web`);
+  }
+});
+
 void test('keeps every backend build and runtime control path backend-affecting', () => {
   for (const filePath of ['Dockerfile.backend', 'railway.toml', 'bun.lock', 'package.json']) {
     assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: true, app: false });
