@@ -596,6 +596,11 @@ export function PlayDrawer({
     // resets it, and carrying a preview's mirror onto the committed head would
     // render (and, once animatable playback resumes, re-send) the head flipped.
     setIsMirrored(false);
+    // Close the callout explicitly rather than trusting the stale-state effect
+    // above: previewing the committed climb itself changes neither
+    // `wallPillState` nor `displayedClimbUuid` on exit, which would strand the
+    // explainer (and its focus trap) open with its action already spent.
+    setWallCalloutOpen(false);
   }, [markLatchExit]);
 
   // When the board angle changes, drop the locally-pinned climb so the drawer
@@ -1270,10 +1275,15 @@ export function PlayDrawer({
                       callout's assistive-tech trap: Android has no
                       accessibilityViewIsModal, so every ScrollView sibling of
                       the callout must hide itself while it's open or TalkBack
-                      walks straight past the scrim into the logbook. */}
+                      walks straight past the scrim into the logbook. Touches go
+                      dead too — the Logbook header deliberately peeks below the
+                      fixed-height first screen, outside the callout's scrim, and
+                      a tap there must not scroll the logbook behind an open
+                      modal. */}
                   <View
                     accessibilityElementsHidden={wallCalloutOpen}
                     importantForAccessibility={wallCalloutOpen ? 'no-hide-descendants' : 'auto'}
+                    pointerEvents={wallCalloutOpen ? 'none' : 'auto'}
                   >
                     <DeferredSections
                       climb={displayedClimb}
