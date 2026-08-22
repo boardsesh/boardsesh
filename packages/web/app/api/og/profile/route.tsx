@@ -8,6 +8,7 @@ import { BOULDER_GRADES } from '@/app/lib/board-data';
 import { createOgImageHeaders, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
 import { getProfileOgSummary } from '@/app/lib/seo/dynamic-og-data';
 import { ogErrorResponse } from '@/app/lib/seo/og-error';
+import { withReadDeadline } from '@/app/lib/db/read-deadline';
 
 export const runtime = 'nodejs';
 
@@ -34,10 +35,15 @@ export async function GET(request: NextRequest) {
 
     const dbT0 = performance.now();
     const sql = getReadPool();
-    const [summary, gradeRows] = await Promise.all([
-      getProfileOgSummary(userId),
-      rowsFromResult<{ difficulty: number; cnt: number }>(
-        await sql`
+    // The grade-count query is passed unawaited so both reads below actually
+    // start together — an `await` here (the old shape) would resolve before
+    // `Promise.all`/`withReadDeadline` ever runs, defeating the deadline for
+    // this query.
+    const [summary, gradeResult] = await withReadDeadline(
+      'og-profile',
+      Promise.all([
+        getProfileOgSummary(userId),
+        sql`
         SELECT difficulty, COUNT(DISTINCT climb_uuid) as cnt
         FROM boardsesh_ticks
         WHERE user_id = ${userId}
@@ -46,9 +52,10 @@ export async function GET(request: NextRequest) {
         GROUP BY difficulty
         ORDER BY difficulty
       `,
-      ),
-    ]);
+      ]),
+    );
     const dbMs = performance.now() - dbT0;
+    const gradeRows = rowsFromResult<{ difficulty: number; cnt: number }>(gradeResult);
 
     if (!summary) {
       return new Response('User not found', { status: 404 });
