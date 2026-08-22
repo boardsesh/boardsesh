@@ -226,7 +226,9 @@ export async function renderBoardImageBuffer({
     // the board, so the composed base is cached and only the overlay composite
     // + encode runs per climb.
     const bgT0 = performance.now();
-    const ogKey = `${bgRelPaths.join('|')}:${width}x${height}:og`;
+    // The OG base always composes full-size photos, so key it on those paths —
+    // not on `bgRelPaths`, which honours `thumbnail`.
+    const ogKey = `${getBackgroundRelPaths(boardDetails, false).join('|')}:${width}x${height}:og`;
     let ogBase = caches?.ogBase?.get(ogKey);
     if (ogBase) {
       cache = 'hit';
