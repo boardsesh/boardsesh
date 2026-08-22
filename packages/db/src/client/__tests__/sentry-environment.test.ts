@@ -92,6 +92,17 @@ void describe('resolveSentryEnvironment', () => {
     assert.equal(isProductionSentryEnvironment(), false);
   });
 
+  // A backend run inside Compose reaches Postgres by service name — `db` in
+  // packages/backend/docker-compose.yml, `postgres` in the e2e stack — which no
+  // IP range catches.
+  void it('is not production for a Compose service hostname', () => {
+    setEnv({ DATABASE_URL: 'postgresql://postgres:postgres@db:5432/boardsesh_backend' });
+    assert.equal(isPrivateDatabaseTarget(), true);
+    assert.equal(isProductionSentryEnvironment(), false);
+    setEnv({ DATABASE_URL: 'postgresql://postgres:password@postgres:5432/main' });
+    assert.equal(isProductionSentryEnvironment(), false);
+  });
+
   void it('keeps CI runs out of the production project', () => {
     setEnv({ GITHUB_ACTIONS: 'true', DATABASE_URL: 'postgresql://postgres:password@postgres:5432/main' });
     assert.equal(isProductionSentryEnvironment(), false);
