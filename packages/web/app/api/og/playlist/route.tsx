@@ -5,6 +5,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { createOgImageHeaders, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
 import { getPlaylistOgSummary } from '@/app/lib/seo/dynamic-og-data';
+import { ogErrorResponse } from '@/app/lib/seo/og-error';
 
 export const runtime = 'nodejs';
 
@@ -200,8 +201,6 @@ export async function GET(request: NextRequest) {
       },
     );
   } catch (error) {
-    console.error('Error generating playlist OG image:', error);
-    const message = error instanceof Error ? error.message : String(error);
-    return new Response(`Error generating image: ${message}`, { status: 500 });
+    return ogErrorResponse('playlist', error);
   }
 }

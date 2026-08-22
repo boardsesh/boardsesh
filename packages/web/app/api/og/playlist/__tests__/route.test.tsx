@@ -201,4 +201,21 @@ describe('api/og/playlist route', () => {
     await GET(makeRequest({ uuid: 'initials-playlist' }));
     expect(collectText(playlistRouteState.capturedElement)).toContain('SP');
   });
+
+  it('returns a generic 500 with no-store instead of leaking the underlying error', async () => {
+    playlistRouteState.getPlaylistOgSummaryMock.mockRejectedValue(
+      Object.assign(new Error('Failed query: SELECT * FROM playlists WHERE uuid = $1 params: leaky-playlist'), {
+        name: 'DrizzleQueryError',
+      }),
+    );
+
+    const response = await GET(makeRequest({ uuid: 'leaky-playlist' }));
+    const body = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(body).toBe('Error generating image');
+    expect(body).not.toContain('SELECT');
+    expect(body).not.toContain('leaky-playlist');
+  });
 });

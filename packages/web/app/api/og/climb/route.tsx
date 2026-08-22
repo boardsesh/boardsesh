@@ -4,6 +4,7 @@ import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { parseBoardRouteParamsWithSlugs } from '@/app/lib/url-utils.server';
 import { buildOgBoardRenderUrl } from '@/app/components/board-renderer/util';
 import { createOgImageHeaders } from '@/app/lib/seo/og';
+import { ogErrorResponse } from '@/app/lib/seo/og-error';
 
 export const runtime = 'nodejs';
 
@@ -67,8 +68,6 @@ export async function GET(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error('Error redirecting climb OG image:', error);
-    const message = error instanceof Error ? error.message : String(error);
-    return new Response(`Error generating image: ${message}`, { status: 500 });
+    return ogErrorResponse('climb', error);
   }
 }
