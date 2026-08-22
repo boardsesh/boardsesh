@@ -150,6 +150,20 @@ const MIN_RENDERED_PAGE_CHARS = 4_000;
 const SITEMAP_DEGRADED_HEADER = 'x-sitemap-degraded';
 
 /**
+ * The header `sitemapIndexRouteHandler` sets naming which path served the climbs
+ * shard: `store` (the materialised `sitemap_climb_urls` / `sitemap_shard_refreshes`
+ * read) or `live` (the scan they replaced).
+ *
+ * `X-Sitemap-Degraded` cannot see this. A store that is empty or unreadable still
+ * produces a complete, correct index — the live scan is the documented fallback —
+ * so the shard keeps its `<loc>` and nothing here goes red, while every
+ * `/sitemaps/climbs/N.xml` behind it rebuilds the whole ordered list at 51 s a
+ * page. That is the shape #4583 sat in from W-23 until #4661, unnoticed, so it
+ * gets its own signal.
+ */
+const SITEMAP_CLIMBS_SOURCE_HEADER = 'x-sitemap-climbs-source';
+
+/**
  * Shards the index must always list.
  *
  * `gyms` and `setters` are legitimately empty, so a missing entry there proves
@@ -282,11 +296,31 @@ export const WWW_CHECKS: SmokeCheck[] = [
         : `response body has no ${unexcused.map((shard) => shard.id).join(', ')} shard <loc> entry that the ${SITEMAP_DEGRADED_HEADER} header excuses`;
     },
     degradation: (response) => {
+      const reasons: string[] = [];
+
       const declared = declaredDegradedShards(response);
-      if (declared.length === 0) return null;
-      const missing = missingRequiredShards(response).map((shard) => shard.id);
-      const requiredNote = missing.length > 0 ? ` — including the required ${missing.join(', ')}` : '';
-      return `index published WITHOUT ${declared.join(', ')}${requiredNote} (${SITEMAP_DEGRADED_HEADER}: ${declared.join(',')})`;
+      if (declared.length > 0) {
+        const missing = missingRequiredShards(response).map((shard) => shard.id);
+        const requiredNote = missing.length > 0 ? ` — including the required ${missing.join(', ')}` : '';
+        reasons.push(
+          `index published WITHOUT ${declared.join(', ')}${requiredNote} (${SITEMAP_DEGRADED_HEADER}: ${declared.join(',')})`,
+        );
+      }
+
+      // A WARN and not an `assert`, on the same reasoning the header comment
+      // gives: the served index is complete and correct either way, so this is
+      // "the fast path is not the one running", not "the sitemap is broken".
+      // A missing header is not a finding — a deploy that predates the header,
+      // or a summary that lost the 3 s race and never reported a path, both
+      // leave it absent, and the `x-sitemap-degraded` branch above already
+      // covers the second one.
+      if (response.headers[SITEMAP_CLIMBS_SOURCE_HEADER] === 'live') {
+        reasons.push(
+          `the climbs shard is being served from the live scan, not the materialised store (${SITEMAP_CLIMBS_SOURCE_HEADER}: live) — every /sitemaps/climbs/N.xml is rebuilding the whole ordered list. Run /api/internal/refresh-sitemap-climbs`,
+        );
+      }
+
+      return reasons.length === 0 ? null : reasons.join('; ');
     },
   },
   {

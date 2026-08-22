@@ -1,4 +1,5 @@
 import 'server-only';
+import * as Sentry from '@sentry/nextjs';
 import { and, asc, eq, gte, lt, sql } from 'drizzle-orm';
 import { dbz } from '@/app/lib/db/db';
 import { sitemapClimbUrls, sitemapShardRefreshes } from '@/app/lib/db/schema';
@@ -38,6 +39,48 @@ export const CLIMBS_SHARD_ID = 'climbs';
  * slightly behind".
  */
 export const SITEMAP_CLIMB_STORE_MAX_AGE_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * Which path answered: the materialised store, or the live scan it falls back to.
+ *
+ * The fallback is correct and deliberate — it is why truncating either table
+ * loses nothing — but it is also the 51 s page build and the summary that cannot
+ * meet `SHARD_DEADLINE_MS`. #4583 was live in production for weeks precisely
+ * because a degrade left no trace anyone was watching, so the store says which
+ * path it took: `reportStoreFallback` puts it in Sentry, and the registry puts it
+ * on the response as `X-Sitemap-Climbs-Source`.
+ */
+export type ClimbShardSource = 'store' | 'live';
+
+/**
+ * Per-reason floor on Sentry emission, per instance.
+ *
+ * A crawl burst is `/sitemap.xml` plus one request per page arriving together,
+ * and an empty store degrades every one of them. Without a floor, one wedged
+ * store is one event per request; with it, it is one event per reason per
+ * instance per six hours — still loud, still deduplicated by Sentry on top.
+ */
+const FALLBACK_REPORT_FLOOR_MS = 6 * 60 * 60 * 1000;
+
+const lastFallbackReportAt = new Map<string, number>();
+
+/**
+ * Log every time, page at most once per reason per `FALLBACK_REPORT_FLOOR_MS`.
+ *
+ * `console.error` alone is what this fixes: on Vercel it lands in a log stream
+ * nobody reads, which is how the climbs shard stayed absent from the index from
+ * the day W-23 landed until #4661.
+ */
+function reportStoreFallback(reason: string, detail: string): void {
+  const message = `[sitemap] climb store fallback (${reason}): ${detail}`;
+  console.error(message);
+
+  const now = Date.now();
+  const previous = lastFallbackReportAt.get(reason);
+  if (previous !== undefined && now - previous < FALLBACK_REPORT_FLOOR_MS) return;
+  lastFallbackReportAt.set(reason, now);
+  Sentry.captureMessage(message, 'error');
+}
 
 /**
  * Transaction-scoped advisory-lock slot for the sitemap refresh write.
@@ -109,19 +152,29 @@ export async function fetchStoredClimbRefresh(): Promise<StoredShardRefresh | nu
  * rather than propagating: an index that degrades because its speed-up is missing
  * would be a worse outage than the one this replaced.
  */
-export async function fetchClimbShardSummary(): Promise<Tier2Summary> {
+export async function fetchClimbShardSummary(): Promise<Tier2Summary & { source: ClimbShardSource }> {
   let stored: StoredShardRefresh | null = null;
+  let readFailed = false;
   try {
     stored = await fetchStoredClimbRefresh();
   } catch (err) {
-    console.error(
-      '[sitemap] could not read the stored climbs summary — falling back to the live scan:',
-      err instanceof Error ? err.message : err,
+    readFailed = true;
+    reportStoreFallback(
+      'summary-read-failed',
+      `could not read sitemap_shard_refreshes, so /sitemap.xml is racing the live scan against SHARD_DEADLINE_MS: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
     );
   }
 
   if (!stored) {
-    return fetchTier2Summary();
+    if (!readFailed) {
+      reportStoreFallback(
+        'summary-empty',
+        'no sitemap_shard_refreshes row for the climbs shard — /sitemap.xml is racing the live scan against SHARD_DEADLINE_MS. The after() self-heal should fix this within one crawl; if it does not, run /api/internal/refresh-sitemap-climbs.',
+      );
+    }
+    return { ...(await fetchTier2Summary()), source: 'live' };
   }
 
   const ageMs = Date.now() - stored.computedAt.getTime();
@@ -133,7 +186,7 @@ export async function fetchClimbShardSummary(): Promise<Tier2Summary> {
     );
   }
 
-  return { itemCount: stored.itemCount, lastModified: stored.lastModified };
+  return { itemCount: stored.itemCount, lastModified: stored.lastModified, source: 'store' };
 }
 
 /** Why a refresh declined to write. `null` means it wrote. */
@@ -322,6 +375,9 @@ async function runRefresh(force: boolean): Promise<ClimbStoreRefreshResult> {
 /** One shard page from the store, or null when the URL table has never been populated. */
 export type StoredClimbPage = { items: SitemapItem[]; totalItems: number };
 
+/** One shard page plus which path built it, which is what the route header reports. */
+export type ClimbShardPage = StoredClimbPage & { source: ClimbShardSource };
+
 /**
  * Page N of the stored URL list: `ordinal >= start AND ordinal < start + perPage`,
  * a primary-key range scan measured at ~21 ms for a 10,000-row page.
@@ -369,23 +425,36 @@ export async function fetchStoredClimbPage(page: number): Promise<StoredClimbPag
  * propagating": the realistic throw is the migration not yet applied, and a page
  * that 503s because its speed-up is missing would be a worse outage than the
  * slow path it replaced.
+ *
+ * The fallback is never quiet. Nothing in this suite used to look at the page
+ * path at all — the smoke asserts the index's `<loc>` entries, not the pages —
+ * so an empty URL table meant every crawler fetch paid 51 s with no signal
+ * anywhere. It now fires a Sentry event and returns `source: 'live'`, which the
+ * route turns into `X-Sitemap-Climbs-Source: live`.
  */
-export async function buildClimbShardPage(page: number): Promise<StoredClimbPage> {
+export async function buildClimbShardPage(page: number): Promise<ClimbShardPage> {
+  let reason = 'page-empty';
+  let detail =
+    'sitemap_climb_urls holds no rows, so every /sitemaps/climbs/N.xml is rebuilding the whole ordered list (51 s cold in production, once per page per cold lambda). The after() self-heal on /sitemap.xml should fix this within one crawl; if it does not, run /api/internal/refresh-sitemap-climbs.';
   try {
     const stored = await fetchStoredClimbPage(page);
     if (stored) {
-      return stored;
+      return { ...stored, source: 'store' };
     }
   } catch (err) {
-    console.error(
-      '[sitemap] could not read the stored climb URLs — falling back to the live page build:',
-      err instanceof Error ? err.message : err,
-    );
+    reason = 'page-read-failed';
+    detail = `could not read sitemap_climb_urls, so /sitemaps/climbs/N.xml is rebuilding the whole ordered list: ${
+      err instanceof Error ? err.message : String(err)
+    }`;
   }
+
+  // Reported BEFORE the fallback build, not after: the build is the 51 s path,
+  // and on a Vercel timeout an event fired afterwards is an event nobody gets.
+  reportStoreFallback(reason, detail);
 
   const items = await buildTier2ClimbItems();
   const start = (page - 1) * CLIMB_URLS_PER_SHARD;
-  return { items: items.slice(start, start + CLIMB_URLS_PER_SHARD), totalItems: items.length };
+  return { items: items.slice(start, start + CLIMB_URLS_PER_SHARD), totalItems: items.length, source: 'live' };
 }
 
 /**
@@ -482,8 +551,9 @@ export async function refreshClimbStoreIfStale(): Promise<void> {
   }
 }
 
-/** Test seam: drops the per-instance single-flight and self-heal floor. */
+/** Test seam: drops the per-instance single-flight, self-heal floor and report floor. */
 export function resetClimbStoreStateForTests(): void {
   refreshInFlight = null;
   lastSelfHealAt = 0;
+  lastFallbackReportAt.clear();
 }

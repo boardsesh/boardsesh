@@ -246,6 +246,64 @@ describe('www production smoke checks', () => {
     expect(check.degradation?.(healthy) ?? null).toBeNull();
   });
 
+  it('warns when the climbs shard is served from the live scan rather than the store', () => {
+    // The gap `x-sitemap-degraded` structurally cannot see (#4583). An empty or
+    // unreadable store still produces a complete, correct index, so the body has
+    // every `<loc>` and no shard is declared dropped — while each
+    // `/sitemaps/climbs/N.xml` behind it rebuilds the whole ordered list. That is
+    // the shape the climbs shard sat in from W-23 until #4661.
+    const check = checkNamed('sitemap index');
+    const completeIndex =
+      '<sitemapindex>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/playlists.xml</loc></sitemap>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
+      '</sitemapindex>';
+
+    const liveSource = response({
+      contentType: 'application/xml',
+      body: completeIndex,
+      headers: { 'x-sitemap-climbs-source': 'live' },
+    });
+    // A WARN, never a FAIL: the index it just validated is complete either way.
+    expect(check.assert(liveSource)).toBeNull();
+    expect(check.degradation?.(liveSource)).toMatch(/live scan/);
+    expect(check.degradation?.(liveSource)).toMatch(/refresh-sitemap-climbs/);
+
+    // The fast path says nothing.
+    expect(
+      check.degradation?.(
+        response({
+          contentType: 'application/xml',
+          body: completeIndex,
+          headers: { 'x-sitemap-climbs-source': 'store' },
+        }),
+      ) ?? null,
+    ).toBeNull();
+
+    // Neither does an absent header — a deploy that predates it, or a summary
+    // that lost the 3 s race and never reported a path. The `x-sitemap-degraded`
+    // branch already covers the second one, and inventing a finding from silence
+    // would make every older deployment warn.
+    expect(check.degradation?.(response({ contentType: 'application/xml', body: completeIndex })) ?? null).toBeNull();
+
+    // Both signals at once read as both reasons, not one swallowing the other.
+    const bothWrong = response({
+      contentType: 'application/xml',
+      body:
+        '<sitemapindex>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
+        '</sitemapindex>',
+      headers: { 'x-sitemap-degraded': 'playlists', 'x-sitemap-climbs-source': 'live' },
+    });
+    expect(check.assert(bothWrong)).toBeNull();
+    expect(check.degradation?.(bothWrong)).toMatch(/playlists/);
+    expect(check.degradation?.(bothWrong)).toMatch(/live scan/);
+  });
+
   it('rejects an empty static sitemap shard', () => {
     const check = checkNamed('static sitemap shard');
     expect(
