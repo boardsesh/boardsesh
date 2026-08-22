@@ -123,6 +123,7 @@ to stay legible on near-black. The provider picks the set per scheme and exposes
 | `primaryFill`      | `#6D28D9` | `#7C3AED` | Brand **filled** surface/button background                                  |
 | `onPrimary`        | `#FFFFFF` | `#FFFFFF` | Text/icon sitting on `primaryFill`                                          |
 | `accent`           | `#FF8A3D` | `#FF8A3D` | Warm amber spark for highlights — **fill-only, always pair with dark text** |
+| `onAccent`         | `#16111F` | `#16111F` | The dark ink that pairs with `accent` (8.95:1); same in both schemes        |
 | `success`          | `#047857` | `#34D399` | Success states                                                              |
 | `warning`          | `#B45309` | `#FBBF24` | Warnings                                                                    |
 | `error`            | `#C81E1E` | `#F87171` | Destructive actions                                                         |

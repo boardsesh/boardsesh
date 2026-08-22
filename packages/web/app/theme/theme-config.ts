@@ -32,7 +32,7 @@ export const themeTokens = {
     primaryFillHover: '#5B21B6',
     onPrimary: brandColors.onPrimary, // #FFFFFF — text/icon on a primaryFill surface
     accent: brandColors.accent, // #FF8A3D — warm amber spark, FILL-ONLY, always pair with dark text
-    onAccent: '#16111F', // dark text on accent (8.95:1)
+    onAccent: brandColors.onAccent, // #16111F — dark text on accent (8.95:1)
     live: brandColors.live, // #B45309 — "now on the wall / physically lit" status hue (own role, not warning)
     secondary: '#5B5563', // violet-grey for info/secondary
     info: '#5E6491', // Violet-slate — help/guide accent, re-pulled into the violet family

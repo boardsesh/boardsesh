@@ -472,7 +472,29 @@
     }
   },
   "playView": {
-    "previewBadge": "Preview",
+    "wallState": {
+      "onWall": "On the wall",
+      "live": "Live",
+      "browsing": "Browsing",
+      "onWallHint": "This one's lit on the wall right now.",
+      "liveHint": "Your next climb goes up on the wall.",
+      "browsingHint": "You're just looking. The wall stays where it is.",
+      "pillHint": "See wall options",
+      "browseFromHere": "Browse from here",
+      "backToLive": "Back to live",
+      "putOnWall": "Put on the wall",
+      "joinedBrowseNotice": "You're browsing. The wall stays put until you put a climb up.",
+      "commitOverride": {
+        "body": "Someone just lit {{name}}. Put yours up instead?",
+        "confirm": "Put mine up",
+        "cancel": "Keep theirs"
+      },
+      "a11y": {
+        "browseAnnounce": "Browsing. The wall stays where it is.",
+        "backToLive": "Back to live: {{name}}",
+        "committed": "{{name}} is on the wall"
+      }
+    },
     "setActive": "Set active",
     "paneEmpty": {
       "title": "Pick a climb",

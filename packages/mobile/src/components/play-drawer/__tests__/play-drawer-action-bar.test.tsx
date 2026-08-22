@@ -72,9 +72,18 @@ vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
     actionButtonPressed: {},
   },
 }));
+// The commit-row content is covered by its own test; stubbed here (it pulls
+// reanimated) so this file stays a pure prop-contract test of the bar itself.
+vi.mock('../PlayDrawerCommitBar', () => ({
+  PlayDrawerCommitBar: ({ commitLabel }: { commitLabel?: string }) =>
+    createElement('div', { 'data-commit-bar': 'true', 'data-commit-label': commitLabel }),
+}));
 vi.mock('../../../theme/colors', () => ({ brandColors: { primary: '#6D28D9', success: '#047857' } }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ brandColors: { primary: '#6D28D9', success: '#047857' } }),
+  useTheme: () => ({
+    brandColors: { primary: '#6D28D9', success: '#047857' },
+    systemColors: { fill: 'rgba(109, 40, 217, 0.14)' },
+  }),
 }));
 vi.mock('../../../theme/ios-colors', () => ({
   iosSystemColors: { white: '#FFFFFF', systemGray: '#8E8E93', systemRed: '#FF3B30', separator: '#ccc' },
@@ -134,12 +143,12 @@ describe('PlayDrawerActionBar', () => {
     expect(container.querySelector('[data-icon="tick.outline"][data-color="#FFFFFF"]')).toBeNull();
   });
 
-  it('suppresses the lightbulb holder pip when the banner owns the driver face', () => {
+  it('suppresses the lightbulb holder pip when the header pill owns the driver face', () => {
     // Default: the pip shows on the lightbulb.
     const withPip = render(createElement(PlayDrawerActionBar, baseProps));
     expect(withPip.container.querySelector('[data-lightbulb-holder-badge="true"]')).toBeTruthy();
 
-    // Banner up → showHolderBadge false → no second face in the drawer.
+    // Pill showing the avatar → showHolderBadge false → no second face in the drawer.
     const noPip = render(createElement(PlayDrawerActionBar, { ...baseProps, showHolderBadge: false }));
     expect(noPip.container.querySelector('[data-lightbulb-holder-badge="true"]')).toBeNull();
   });
@@ -222,6 +231,61 @@ describe('PlayDrawerActionBar', () => {
 
     expect(activeLongPressBulb.getAttribute('data-long-press-enabled')).toBe('true');
     expect(activeLongPressBulb.getAttribute('data-long-press-hint')).toBe('ble.holdForControls');
+  });
+});
+
+// The second row is either the utilities OR the browse latch's controls — never
+// both, and never a new band. Every assertion below is about the SWAP, because
+// the drawer's height budget is the whole reason the commit controls live in a
+// row that already exists.
+describe('PlayDrawerActionBar (secondary row swap)', () => {
+  const commitProps = {
+    ...baseProps,
+    secondaryMode: 'commit' as const,
+    showBackToLive: true,
+    showPutOnWall: true,
+    commitLabel: 'putOnWall' as const,
+    onBackToLive: vi.fn(),
+    onCommit: vi.fn(),
+  };
+
+  it('replaces the utilities with the commit controls while the latch is up', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, commitProps));
+
+    expect(container.querySelector('[data-commit-bar="true"]')).toBeTruthy();
+    // The row's own contents are gone for the duration — that's the trade the
+    // spec makes to keep the row at 64pt.
+    expect(container.querySelector('[data-label="mobile.angleSelector.title"]')).toBeNull();
+    expect(actions(container)).not.toContain(ACTION_ICONS.queue);
+    expect(container.querySelector('[data-icon="share"]')).toBeNull();
+    // The primary row still acts on the displayed climb.
+    expect(container.querySelector('[data-icon="tick.outline"]')).toBeTruthy();
+  });
+
+  it('keeps the utilities when the latch is down', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...commitProps, secondaryMode: 'actions' }));
+
+    expect(container.querySelector('[data-commit-bar="true"]')).toBeNull();
+    expect(container.querySelector('[data-label="mobile.angleSelector.title"]')).toBeTruthy();
+  });
+
+  it('never gives a signed-out reader the commit controls', () => {
+    // The anonymous drawer is ALWAYS a preview, so a resolver bug that let
+    // `'commit'` through would put a live `setCurrentClimb` button — the queue
+    // write and BLE re-arm every other anonymous rule removes — on every
+    // read-only open. The suppression is asserted HERE, not only in the
+    // resolver, because the bar is the last gate before it renders.
+    const { container } = render(
+      createElement(PlayDrawerActionBar, { ...commitProps, viewer: 'anonymous' as const, onSignInPress: vi.fn() }),
+    );
+
+    expect(container.querySelector('[data-commit-bar="true"]')).toBeNull();
+  });
+
+  it('passes the context-sensitive commit label through', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...commitProps, commitLabel: 'setActive' }));
+
+    expect(container.querySelector('[data-commit-bar="true"]')?.getAttribute('data-commit-label')).toBe('setActive');
   });
 });
 

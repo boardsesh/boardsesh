@@ -17,9 +17,10 @@
 //   2. A similar-climb tap writes nothing anonymously — no `addToQueue`, no
 //      `setCurrentClimb` (which is what re-arms the BLE auto-sender) — and still
 //      does both for a member.
-//   3. No "Preview / Set active" banner anonymously. `Set active` calls
+//   3. No wall-state chrome anonymously — no header pill, and the action bar's
+//      second row never swaps to the commit controls. The commit button calls
 //      `setCurrentClimb`, so it is the same queue write and the same BLE re-arm
-//      wearing a different button.
+//      wearing a different label.
 //   4. The favourite query is disarmed anonymously (`favorites` is
 //      `requireAuthenticated`, so an armed one can only 401).
 //   5. The pane never paints its "Pick a climb" placeholder when the open target
@@ -33,9 +34,10 @@ type Props = Record<string, unknown>;
 
 const recorded = vi.hoisted(() => ({
   actionBar: [] as Props[],
-  previewBanner: [] as Props[],
+  wallPill: [] as Props[],
   deferredSections: [] as Props[],
   favoriteStatus: [] as Props[],
+  browseFrame: 0,
   panePlaceholder: 0,
 }));
 const queueActions = vi.hoisted(() => ({
@@ -53,7 +55,22 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1, absoluteFillObject: {} },
   Platform: { OS: 'web', select: (spec: Record<string, unknown>) => spec.web ?? spec.default },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
+  AccessibilityInfo: { announceForAccessibility: vi.fn() },
 }));
+// The settings store backs `lightOnSwipe`, which decides whether a preview's
+// next swipe commits — and therefore whether the browse chrome is telling the
+// truth. Kept in memory so each case can set it.
+vi.mock('react-native-mmkv', () => {
+  const store = new Map<string, string>();
+  return {
+    createMMKV: () => ({
+      getString: (key: string) => store.get(key),
+      set: (key: string, value: string) => store.set(key, value),
+      remove: (key: string) => store.delete(key),
+      clearAll: () => store.clear(),
+    }),
+  };
+});
 vi.mock('react-native-gesture-handler', () => ({
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -97,10 +114,17 @@ vi.mock('../PlayDrawerActionBar', () => ({
     return createElement('div', { 'data-testid': 'action-bar' });
   },
 }));
-vi.mock('../PlayDrawerPreviewBanner', () => ({
-  PlayDrawerPreviewBanner: (props: Props) => {
-    recorded.previewBanner.push(props);
-    return createElement('div', { 'data-testid': 'preview-banner' });
+vi.mock('../WallStatePill', () => ({
+  WallStatePill: (props: Props) => {
+    recorded.wallPill.push(props);
+    return createElement('div', { 'data-testid': 'wall-state-pill' });
+  },
+}));
+vi.mock('../WallStateCallout', () => ({ WallStateCallout: () => null }));
+vi.mock('../BrowseFrameOverlay', () => ({
+  BrowseFrameOverlay: () => {
+    recorded.browseFrame += 1;
+    return createElement('div', { 'data-testid': 'browse-frame' });
   },
 }));
 vi.mock('../DeferredSections', () => ({
@@ -118,11 +142,14 @@ vi.mock('../PanePlaceholder', () => ({
 vi.mock('../DeferredBoard', () => ({ DeferredBoard: () => createElement('div', { 'data-testid': 'board' }) }));
 vi.mock('../BoardRenderUnavailable', () => ({ BoardRenderUnavailable: () => null }));
 vi.mock('../PlaybackControls', () => ({ PlaybackControls: () => null }));
-vi.mock('../PlayDrawerHeader', () => ({ LivePlayDrawerHeader: () => createElement('div', null) }));
+// Renders its `leading` slot: that is where the wall-state pill lands, so a mock
+// that swallowed it would hide whether PlayDrawer passes one at all.
+vi.mock('../PlayDrawerHeader', () => ({
+  LivePlayDrawerHeader: ({ leading }: { leading?: ReactNode }) => createElement('div', null, leading),
+}));
 vi.mock('../SwipeableHeader', () => ({
   SwipeableHeader: ({ current }: { current?: ReactNode }) => createElement('div', null, current),
 }));
-vi.mock('../PlayDrawerOnWallBanner', () => ({ PlayDrawerOnWallBanner: () => null }));
 vi.mock('../SwitchBoardOverlay', () => ({ SwitchBoardOverlay: () => null }));
 vi.mock('../AngleSelectorSheet', () => ({ AngleSelectorSheet: () => null }));
 vi.mock('../../LogAscentSheet', () => ({ LogAscentSheet: () => null }));
@@ -168,11 +195,12 @@ vi.mock('../../../lib/board-details', () => ({
   getBoardRenderData: () => ({ boardWidth: 100, boardHeight: 100, holdsData: [], imagesToHolds: {} }),
 }));
 
-// `play-drawer-navigation`, `play-drawer-layout`, `boardsesh-grade-display` and
-// `favorite-rollback` stay REAL — the wiring of those helpers into the render is
-// exactly what this file exists to measure.
+// `play-drawer-navigation`, `play-drawer-layout`, `wall-state`,
+// `boardsesh-grade-display` and `favorite-rollback` stay REAL — the wiring of
+// those helpers into the render is exactly what this file exists to measure.
 
 const { PlayDrawer } = await import('../PlayDrawer');
+const { setSetting, resetAllSettings } = await import('../../../settings');
 
 const BOARD_CONFIG = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
 const CLIMB = {
@@ -219,11 +247,13 @@ function lastSimilarClimbHandler(): (climb: Climb) => Promise<void> {
 beforeEach(() => {
   vi.clearAllMocks();
   recorded.actionBar = [];
-  recorded.previewBanner = [];
+  recorded.wallPill = [];
   recorded.deferredSections = [];
   recorded.favoriteStatus = [];
+  recorded.browseFrame = 0;
   recorded.panePlaceholder = 0;
   queueActions.addToQueue.mockResolvedValue('added');
+  resetAllSettings();
 });
 
 describe('PlayDrawer — the anonymous joins', () => {
@@ -280,19 +310,68 @@ describe('PlayDrawer — the anonymous joins', () => {
     expect(queueActions.setCurrentClimb).toHaveBeenCalledTimes(1);
   });
 
-  it('offers no "Set active" banner to a signed-out reader', () => {
+  it('shows a signed-out reader no wall-state chrome at all', () => {
     renderDrawer('anonymous');
     // The anonymous drawer is ALWAYS a preview (that is what keeps the queue
-    // untouched), so an ungated banner renders an orange PREVIEW chip plus a
-    // live "Set active" button whose press is `setCurrentClimb` — the same
-    // queue write and BLE re-arm the similar-climb guard above blocks.
-    expect(recorded.previewBanner).toHaveLength(0);
+    // untouched), so ungated wall chrome would put a "Browsing" pill, the
+    // viewfinder brackets and a live commit button on every read-only open —
+    // and that button's press is `setCurrentClimb`, the same queue write and
+    // BLE re-arm the similar-climb guard above blocks.
+    expect(recorded.wallPill).toHaveLength(0);
+    expect(recorded.browseFrame).toBe(0);
+    expect(lastActionBarProps().secondaryMode).toBe('actions');
   });
 
-  it('still offers it to a member previewing a climb', () => {
+  it('gives a member previewing a climb the browse chrome and the commit row', () => {
+    // The browse latch is "a preview whose navigation genuinely stays view-only",
+    // which with no suggestion source means lightOnSwipe off.
+    setSetting('lightOnSwipe', false);
     renderDrawer('member');
-    expect(recorded.previewBanner.length).toBeGreaterThan(0);
-    expect(recorded.previewBanner.at(-1)?.showSetActive).toBe(true);
+
+    expect(recorded.wallPill.at(-1)?.state).toBe('browsing');
+    expect(recorded.browseFrame).toBeGreaterThan(0);
+    const props = lastActionBarProps();
+    expect(props.secondaryMode).toBe('commit');
+    expect(props.showBackToLive).toBe(true);
+    expect(props.showPutOnWall).toBe(true);
+    // No BLE link, no session, no known lit climb — the button must not promise
+    // a lighting it cannot do.
+    expect(props.commitLabel).toBe('setActive');
+  });
+
+  // The chrome's whole premise is that it never claims more than it can keep.
+  // With lightOnSwipe ON and no suggestion source, `getSwipeNavigationTarget`
+  // sends the next swipe through `setCurrentClimb` — the shared-queue write and
+  // BLE re-arm — so a "Browsing / the wall stays where it is" pill and the
+  // viewfinder brackets would be lying about the very next gesture. The COMMIT
+  // ROW is the one piece that stays: the pinned climb still needs its
+  // activation button (the old banner's "Set active" contract), and dropping it
+  // here would strand the explicit Preview action with no way to promote.
+  it('withholds the browse chrome — but not the commit row — from a preview whose next swipe would commit', () => {
+    renderDrawer('member');
+
+    expect(recorded.wallPill.at(-1)?.state).not.toBe('browsing');
+    expect(recorded.browseFrame).toBe(0);
+    const props = lastActionBarProps();
+    expect(props.secondaryMode).toBe('commit');
+    expect(props.showPutOnWall).toBe(true);
+    expect(props.commitLabel).toBe('setActive');
+  });
+
+  it('drops the latch when a member takes Back to live', () => {
+    setSetting('lightOnSwipe', false);
+    renderDrawer('member');
+
+    act(() => {
+      (lastActionBarProps().onBackToLive as () => void)();
+    });
+
+    // Purely local: the pinned preview is dropped and the drawer re-derives from
+    // the committed queue head. Nothing is sent, nothing is written — Back to
+    // live is an exit, not a commit, and wiring it to `handleSetActive` by
+    // mistake would light the wall on the way OUT of browsing.
+    expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+    expect(queueActions.addToQueue).not.toHaveBeenCalled();
   });
 
   it('disarms the favourite query for a signed-out reader', () => {

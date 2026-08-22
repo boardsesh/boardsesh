@@ -4,6 +4,7 @@ import {
   getSimilarClimbTapMode,
   getViewOnlyPreviewNavigationTarget,
   getSwipeNavigationTarget,
+  swipeStaysViewOnly,
 } from '../play-drawer-navigation';
 
 function makeItem(id: string): ClimbQueueItem {
@@ -160,6 +161,58 @@ describe('getSwipeNavigationTarget', () => {
         lightOnSwipe: true,
       }),
     ).toEqual({ viewOnly: true, targetItem: nextItem });
+  });
+});
+
+// What the wall-state chrome is allowed to claim. The pill ("Browsing"), the
+// viewfinder brackets and the commit row all promise the wall stays where it is;
+// that sentence is only true while the NEXT swipe is view-only, and being in a
+// preview is not enough on its own.
+describe('swipeStaysViewOnly', () => {
+  it('is false for a preview whose next swipe would commit and light the wall', () => {
+    const currentItem = makeItem('current');
+
+    // The explicit "Preview" climb action, a deep link, the workout builder: a
+    // pinned preview with NO suggestion source. With lightOnSwipe on, the swipe
+    // handlers fall straight through to setCurrentClimb — the shared-queue write
+    // and BLE re-arm the browse chrome would be denying.
+    expect(swipeStaysViewOnly({ previewItem: currentItem, previewSuggestionSource: null, lightOnSwipe: true })).toBe(
+      false,
+    );
+  });
+
+  it('is true when the lightOnSwipe setting is off — no swipe drives the wall', () => {
+    expect(swipeStaysViewOnly({ previewItem: null, previewSuggestionSource: null, lightOnSwipe: false })).toBe(true);
+  });
+
+  it('is true for a suggestion-sourced preview, which navigates within itself', () => {
+    const currentItem = makeItem('current');
+
+    expect(
+      swipeStaysViewOnly({
+        previewItem: currentItem,
+        previewSuggestionSource: makePreviewSource(currentItem),
+        lightOnSwipe: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('agrees with the swipe handlers it is derived from, whatever the target', () => {
+    const currentItem = makeItem('current');
+    const nextItem = makeItem('next');
+
+    for (const lightOnSwipe of [true, false]) {
+      for (const previewSuggestionSource of [null, makePreviewSource(currentItem)]) {
+        expect(swipeStaysViewOnly({ previewItem: currentItem, previewSuggestionSource, lightOnSwipe })).toBe(
+          getSwipeNavigationTarget({
+            previewItem: currentItem,
+            previewSuggestionSource,
+            targetItem: nextItem,
+            lightOnSwipe,
+          }).viewOnly,
+        );
+      }
+    }
   });
 });
 

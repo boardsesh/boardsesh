@@ -59,6 +59,35 @@ export function getSwipeNavigationTarget({
 }
 
 /**
+ * Whether a swipe from the drawer's current state would stay VIEW-ONLY — the
+ * predicate the browse chrome is allowed to claim.
+ *
+ * The wall-state pill, the viewfinder brackets and the commit row all say some
+ * version of "you're looking, the wall stays where it is". That sentence is only
+ * true while navigation itself is view-only, and being in a preview is NOT
+ * enough: with `lightOnSwipe` on and no suggestion source (the explicit "Preview"
+ * climb action, a deep link, the workout builder), the very next swipe falls
+ * through to `setCurrentClimb` — it writes the shared queue and re-arms the BLE
+ * auto-sender. Chrome promising otherwise would be the exact wall-hijack the
+ * feature exists to prevent.
+ *
+ * Derived from {@link getSwipeNavigationTarget} rather than re-stated, so the
+ * chrome and the swipe can never drift apart. The target item is irrelevant to
+ * the view-only decision, hence `null`.
+ */
+export function swipeStaysViewOnly({
+  previewItem,
+  previewSuggestionSource,
+  lightOnSwipe,
+}: {
+  previewItem: ClimbQueueItem | null;
+  previewSuggestionSource: PlaylistSuggestionSource | null;
+  lightOnSwipe: boolean;
+}): boolean {
+  return getSwipeNavigationTarget({ previewItem, previewSuggestionSource, targetItem: null, lightOnSwipe }).viewOnly;
+}
+
+/**
  * What a tap on a Similar Climbs card does, by viewer.
  *
  * `'queue'` is the long-standing behaviour: add the climb to the queue (which
