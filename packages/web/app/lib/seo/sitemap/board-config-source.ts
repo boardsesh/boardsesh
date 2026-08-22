@@ -160,9 +160,15 @@ async function getMoonBoardClimbCounts(): Promise<Map<number, number>> {
  * installed, which is what `getDefaultRenderBoard` already returns for MoonBoard
  * and what every MoonBoard board render in the app uses.
  *
- * `boardCount: 0` is honest — there is no `user_boards` row shape behind these —
- * and it also keeps them last under `isBetterConfig`'s ordering, so adding them
- * cannot reorder or displace any Aurora group.
+ * `boardCount: 0` is honest — there is no `user_boards` row shape behind these.
+ * It buys nothing in ordering, and the source is **additive in content, not in
+ * ordinal**: `isBetterConfig` only ranks candidates WITHIN one
+ * `boardType:layoutId` group, and cross-group order comes from the lexicographic
+ * `boardType` sort at the end of `resolveClimbSitemapGroups`, where `moonboard`
+ * lands between `kilter` and `soill`. So every Tension/Soill/Touchstone URL
+ * shifts by the MoonBoard row count and changes page in `sitemap_climb_urls`.
+ * That is a catalogue change, which is what `ordinal` is allowed to move for —
+ * see the "Adding a board also moves `ordinal`" note in `docs/sitemap.md`.
  *
  * A layout with no listed climbs is dropped rather than shipped with a zero
  * count: both shards would skip it anyway, and leaving it in means a future

@@ -82,8 +82,10 @@ layout that has listed, non-draft climbs, and appends them to the listed configs
 backend deploy to a sitemap change and move the board picker underneath it.
 
 The synthetic configs carry `boardCount: 0` and `totalAscents: 0`, which is
-honest (there is no `user_boards` row shape behind them) and also keeps them last
-under `isBetterConfig`'s ordering, so the source is strictly additive. The
+honest (there is no `user_boards` row shape behind them) and nothing more. It
+does not hold them last in any ordering: `isBetterConfig` only ranks candidates
+within one `boardType:layoutId` group, so the source is additive in **content**
+and not in **ordinal** — see "Adding a board also moves `ordinal`" below. The
 `climbCount` is a plain grouped count over `board_climbs`, **not** the tier-2
 `DISTINCT ON` scan: both shards read that number only as a `> 0` gate, so making
 the boards shard pay the climbs shard's cost budget for a boolean would be the
@@ -129,9 +131,14 @@ emits nothing new — a change that looks complete in review and ships a no-op.
 half-done edit.
 
 Adding a board also moves `ordinal`, because `resolveClimbSitemapGroups` orders
-by board type rather than appending. That is a catalogue change, which is what
-`ordinal` is allowed to move for; each page stays self-contained and its
-`<lastmod>` is recomputed from the rows it actually holds.
+by board type rather than appending — the sort is a plain lexicographic compare
+on `boardType`, so `moonboard` landed between `kilter` and `soill` rather than on
+the end. On the dev image that pushed 15,032 Soill/Tension/Touchstone URLs from
+pages 3–5 onto pages 8–9. That is a catalogue change, which is what `ordinal` is
+allowed to move for; each page stays self-contained and its `<lastmod>` is
+recomputed from the rows it actually holds. A board type that must NOT move the
+existing ordinals needs an explicit rank in that sort — `boardCount` and
+`isBetterConfig` cannot deliver it, since neither is consulted across groups.
 
 ## Degrade at the index, fail closed at the shard
 
@@ -205,9 +212,16 @@ live scan they replaced, and the next refresh repopulates them.
 
 The page read (`buildClimbShardPage`) follows the same doctrine: an empty
 `sitemap_climb_urls` or a read that throws falls back to the live grouped build —
-the 51 s path, correct and never worse than before the store existed. There is no
-staleness bound on pages; the summary row's 48 h shout covers the store as a whole,
-since both tables share one refresh.
+the 51 s path, correct and never worse than before the store existed. It is
+TTL-cached per instance, so only the first request into an empty store pays it
+(measured on the dev image with MoonBoard in: 22.7 s for the first hit against a
+warm database, dev route compile included, then 0.40 s and 0.48 s; the same scan
+costs 64.9 s cold — see "What the refresh costs" below, it is the same builder).
+That is why the route exports `maxDuration = 300` — the `after()`
+self-heal only fires on `/sitemap.xml`, so a crawler that lands on a page URL
+first has to be allowed to finish the slow build rather than be cut off. There is
+no staleness bound on pages; the summary row's 48 h shout covers the store as a
+whole, since both tables share one refresh.
 
 ### Saying which path served (#4583)
 
@@ -347,6 +361,26 @@ commented out in `production-deploy.yml`.
 a second cron service: the refresh runs on the Railway scheduler
 (`refresh-sitemap-climbs`), and `registry.test.ts` reds if a path is scheduled
 on both sides.
+
+### What the refresh costs
+
+Worth stating as a range, because the spread between a warm and a cold Postgres
+is wide enough to mislead if only one end is quoted. All measured on the full
+dev image (648k climbs, 85,347 tier-2 URLs across 13 groups, MoonBoard included),
+through the real cron route:
+
+| database state                          | `scanDurationMs` | measured                       |
+| --------------------------------------- | ---------------- | ------------------------------ |
+| cold — container restarted, empty store | **64.9 s**       | #4578 review, reproduced twice |
+| warm, repeat runs on a loaded box       | 20.0 – 28.4 s    | #4578 review, three runs       |
+| warm, quiet box                         | 8.9 – 12.2 s     | #4578 authoring, two runs      |
+
+Budget against the **cold** number. `maxDuration` on the cron route is 300 s;
+scaling 64.9 s by production's projected 126,642 rows over the dev image's 85,347
+gives roughly **96 s**, so the margin is about 3x — not the 24x the warm figure
+suggests. The same scan is what `buildClimbShardPage` falls back to when the
+store is empty, which is why `/sitemaps/climbs/[page]` carries a `maxDuration`
+of its own.
 
 ### Refusals, and how to get out of one
 

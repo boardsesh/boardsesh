@@ -22,7 +22,7 @@ vi.mock('next/navigation', () => ({
   },
 }));
 
-import { ANGLES } from '@boardsesh/board-config';
+import { ANGLES, getDefaultRenderBoard } from '@boardsesh/board-config';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, type MoonBoardLayoutKey } from '@/app/lib/moonboard-config';
@@ -182,9 +182,12 @@ describe('MoonBoard sitemap URLs are self-canonical', () => {
   });
 
   it('the full-set tuples are the ones the shared render-board resolver already names', () => {
-    // Literal, not re-derived: an expectation computed by calling the same
-    // function the source calls would assert `f(x) === f(x)`.
-    expect(MOONBOARD_LAYOUT_KEYS.map((layoutKey) => fullSetGroup(layoutKey))).toEqual([
+    // Two claims, and the second is the one the title is about.
+    //
+    // 1. The fixtures this whole file canonicalises are the literal tuples
+    //    below — written out, not re-derived, so a table that started emitting
+    //    a partial set list has something to disagree with.
+    const literalTuples = [
       { boardType: 'moonboard', layoutId: 1, sizeId: 1, setIds: [1] },
       { boardType: 'moonboard', layoutId: 2, sizeId: 1, setIds: [2, 3, 4] },
       { boardType: 'moonboard', layoutId: 3, sizeId: 1, setIds: [5, 6, 7, 8, 9, 10] },
@@ -192,6 +195,25 @@ describe('MoonBoard sitemap URLs are self-canonical', () => {
       { boardType: 'moonboard', layoutId: 5, sizeId: 1, setIds: [17, 18, 19, 20, 21, 22, 23] },
       { boardType: 'moonboard', layoutId: 6, sizeId: 1, setIds: [24, 25, 26, 27] },
       { boardType: 'moonboard', layoutId: 7, sizeId: 1, setIds: [28, 29, 30, 31] },
-    ]);
+    ];
+    expect(MOONBOARD_LAYOUT_KEYS.map((layoutKey) => fullSetGroup(layoutKey))).toEqual(literalTuples);
+
+    // 2. `getDefaultRenderBoard` — the function `board-config-source.ts`
+    //    actually derives the shipped configs from — names those same tuples.
+    //    Without this leg the whole suite would keep canonicalising tuples the
+    //    shard had stopped emitting: `fullSetGroup` reads `MOONBOARD_SETS`
+    //    directly, so a resolver that began returning a subset for MoonBoard
+    //    would drift away silently and every case here would stay green.
+    expect(
+      literalTuples.map(({ layoutId }) => {
+        const renderBoard = getDefaultRenderBoard('moonboard', layoutId);
+        return {
+          boardType: 'moonboard',
+          layoutId: renderBoard?.layoutId,
+          sizeId: renderBoard?.sizeId,
+          setIds: renderBoard?.setIds,
+        };
+      }),
+    ).toEqual(literalTuples);
   });
 });

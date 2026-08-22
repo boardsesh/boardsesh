@@ -99,9 +99,12 @@ describe('getSitemapClimbConfigsOrThrow', () => {
   it('adds one MoonBoard config per layout, on top of the listed configs', async () => {
     const configs = await getSitemapClimbConfigsOrThrow();
 
-    // The listed configs pass through untouched and stay first — a synthetic
-    // source that reordered or displaced them would be a different, riskier
-    // change than the additive one this is meant to be.
+    // The listed configs pass through untouched and are still at the front of
+    // THIS array: the synthetics are appended, never spliced in or substituted.
+    // Array position is not shard position — `resolveClimbSitemapGroups` sorts
+    // by board type downstream and does interleave MoonBoard (see
+    // `moonboard-reaches-the-store.test.ts`) — so what this pins is that no
+    // listed config was rewritten or dropped on the way through.
     expect(configs[0]).toEqual(KILTER_CONFIG);
     expect(configs.filter((config) => config.boardType === 'kilter')).toEqual([KILTER_CONFIG]);
 
@@ -139,8 +142,11 @@ describe('getSitemapClimbConfigsOrThrow', () => {
       'Screw-on Feet',
       'Wooden Holds',
     ]);
-    // Zero physical boards is the truth, and it also keeps every synthetic
-    // config last under `isBetterConfig`, so no Aurora group can be displaced.
+    // Zero physical boards is the truth, and that is all it is. It does NOT
+    // hold the synthetic configs last: `isBetterConfig` only ranks candidates
+    // within one `boardType:layoutId` group, and `resolveClimbSitemapGroups`
+    // orders groups lexicographically by board type, so `moonboard` sorts
+    // between `kilter` and `soill` and moves every later group's `ordinal`.
     expect(masters2017?.boardCount).toBe(0);
   });
 
