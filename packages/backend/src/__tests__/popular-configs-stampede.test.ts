@@ -37,7 +37,11 @@ vi.mock('../redis/client', () => ({
   },
 }));
 
-import { socialBoardQueries, dropPopularConfigsFallback } from '../graphql/resolvers/social/boards';
+import {
+  socialBoardQueries,
+  dropPopularConfigsFallback,
+  warmPopularConfigsCache,
+} from '../graphql/resolvers/social/boards';
 import { resetSingleFlightForTests } from '../utils/single-flight';
 
 const CONFIG_ROW = {
@@ -108,6 +112,25 @@ describe('popularBoardConfigs does not stampede the connection pool', () => {
     expect(executeMock).toHaveBeenCalledTimes(1);
     expect(redisGetMock).not.toHaveBeenCalled();
     expect(redisSetMock).not.toHaveBeenCalled();
+  });
+
+  it('re-runs the statement on the deploy warm-up instead of answering it from the last run', async () => {
+    executeMock.mockResolvedValue([CONFIG_ROW]);
+
+    await askForConfigs();
+    expect(executeMock).toHaveBeenCalledTimes(1);
+
+    // `warmPopularConfigsCache` exists to re-run the query on every deploy
+    // because the Aurora sync may have moved the data under it. With Redis it
+    // does that by DELETing the cache key; with no Redis it must drop the
+    // process-local copy, or the warm-up is answered from the previous run's
+    // fixture and quietly does nothing.
+    await warmPopularConfigsCache();
+    expect(executeMock).toHaveBeenCalledTimes(2);
+
+    // The warm-up re-seeded the copy, so the next visitor is still cheap.
+    await askForConfigs();
+    expect(executeMock).toHaveBeenCalledTimes(2);
   });
 
   it('keeps the Redis path exactly as it was — no process-local copy is consulted', async () => {

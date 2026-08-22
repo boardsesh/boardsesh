@@ -110,11 +110,13 @@ The home page's two backend reads — `popularBoardConfigs` and
 a heavy statement on a miss. The fall-through had no concurrency control, so N
 simultaneous visitors during a cold window meant N simultaneous copies, each
 holding one of the pool's ten connections. `popularBoardConfigs` costs 82 s on
-the dev-db image, so ten visitors emptied the pool for well over a minute, and
-after that every _other_ query in the process queued forever on the untimed
-acquire queue described above. `{ __typename }` kept answering in single-digit
-milliseconds through the same event loop, which is why it read as anything but
-saturation.
+the dev-db image; the one production observation on record is ~10 s cold, read
+through the sitemap's copy of the same statement
+(`packages/web/app/lib/server-popular-configs.ts`). Either number times ten
+visitors empties the pool, and after that every _other_ query in the process
+queued forever on the untimed acquire queue described in the next section.
+`{ __typename }` kept answering in single-digit milliseconds through the same
+event loop, which is why it read as anything but saturation.
 
 `packages/backend/src/utils/single-flight.ts` is the fix: concurrent callers of
 one key share one in-flight promise, so a cold window costs one statement and
