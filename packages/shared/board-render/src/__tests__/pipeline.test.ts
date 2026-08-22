@@ -272,13 +272,14 @@ describe('renderBoardImageBuffer with caches', () => {
     });
     // Different climbs, same board: one base, two overlays. 0x00 is a fully
     // transparent overlay, 0xff an opaque white one — visibly different output.
+    const boardBaseInFlight = new Map<string, Promise<Buffer | null>>();
     const paramsFor = (overlayFill: number) => ({
       ...baseParams,
       overlayBuffer: Buffer.alloc(PIXELS * 4, overlayFill),
       isOgVariant: false,
       format: 'webp' as const,
       boardDetails: boardWithLayers(['layer-a.png']),
-      caches: { boardBase },
+      caches: { boardBase, boardBaseInFlight },
     });
 
     const [first, second] = await Promise.all([
@@ -290,6 +291,30 @@ describe('renderBoardImageBuffer with caches', () => {
     expect(resolveCalls).toHaveLength(1);
     expect(first.buffer.equals(second.buffer)).toBe(false);
     expect(boardBase.size).toBe(1);
+    // The entry is dropped once the compose settles — nothing is held alive.
+    expect(boardBaseInFlight.size).toBe(0);
+  });
+
+  it('composes per render when no in-flight map is supplied', async () => {
+    filesByRelPath.set(relPathFor('layer-a.png'), await writeLayer('uncoalesced.png', { r: 7, g: 8, b: 9 }));
+    const boardBase = new BoundedLru<Buffer>({
+      maxEntries: 4,
+      maxBytes: 4 * 1024 * 1024,
+      sizeOf: (buffer) => buffer.length,
+    });
+    const params = {
+      ...baseParams,
+      overlayBuffer: transparentOverlay(),
+      isOgVariant: false,
+      format: 'webp' as const,
+      boardDetails: boardWithLayers(['layer-a.png']),
+      caches: { boardBase },
+    };
+
+    await Promise.all([renderBoardImageBuffer(params), renderBoardImageBuffer(params)]);
+
+    // Coalescing is opt-in: without the map both races compose their own base.
+    expect(resolveCalls).toHaveLength(2);
   });
 
   it('reports `none` when no cache is supplied', async () => {

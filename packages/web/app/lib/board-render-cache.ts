@@ -25,6 +25,15 @@ export const boardBaseCache = new BoundedLru<Buffer>({
   sizeOf: (buffer) => buffer.length,
 });
 
+/**
+ * Board-base composes running right now, so two climbs on the same board
+ * arriving together fold that board's photos once. Owned here rather than
+ * inside the shared pipeline: the key describes the board and output size, not
+ * this route's `findPublicImagePath`, so it must not be shared with a consumer
+ * that resolves images differently.
+ */
+export const boardBaseInFlight = new Map<string, Promise<Buffer | null>>();
+
 /** OG social-card bases (backdrop + board photos, raw RGBA at 1200×630 ≈ 3 MB each). */
 export const ogBaseCache = new BoundedLru<OgBaseResult>({
   maxEntries: 8,
@@ -55,4 +64,5 @@ export function resetBoardRenderCaches(): void {
   boardBaseCache.clear();
   ogBaseCache.clear();
   byteCache.clear();
+  boardBaseInFlight.clear();
 }
