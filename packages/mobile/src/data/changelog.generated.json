@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-22T06:31:53.182Z",
+  "generatedAt": "2026-08-22T11:58:47.006Z",
   "entries": [
+    {
+      "prNumber": 4676,
+      "category": "new",
+      "title": "The user-visible half of #4583 — tier-2 climbs actually reaching Google — shipped in #4661 and was verified in production there. What is left here is observability: nothing a climber sees, and a \"What's New\" line about a sitemap response header would be noise.",
+      "mergedAt": "2026-08-22T11:36:49Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4676"
+    },
     {
       "prNumber": 4666,
       "category": "new",

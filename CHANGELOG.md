@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- The user-visible half of #4583 — tier-2 climbs actually reaching Google — shipped in #4661 and was verified in production there. What is left here is observability: nothing a climber sees, and a "What's New" line about a sitemap response header would be noise. ([#4676](https://github.com/boardsesh/boardsesh/pull/4676))
 - The play view now shows at a glance whether the climb on your screen is the one lit on the wall — a pill in the header reads "On the wall", "Live", or "Browsing". ([#4666](https://github.com/boardsesh/boardsesh/pull/4666))
   Previewing a climb got cleaner: a proper "Put on the wall" button replaces the old orange banner, and the board art gets the space back.
 
