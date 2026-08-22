@@ -21,20 +21,26 @@ export default defineConfig({
    * parallelism carries the wall-clock and a second in-shard worker only adds
    * contention on a 2-core runner.
    *
-   * Two mechanisms this comment used to blame have been ruled out. It is not
-   * web DB-pool contention (#4461): `/embed/**` issues zero web-side Postgres
-   * statements, it fetches the backend over HTTP. It is not the web event loop
-   * being pegged by `/api/internal/board-render` WASM renders either: in run
-   * 31857179523's shard 7 the same server answered `/embed/gym/...` in 201 ms
-   * and `/` in 3.2 s while a `/embed/board/...` request started 1.3 s earlier
-   * sat stuck for 30 s. A blocked event loop cannot do that.
+   * Two mechanisms this comment used to blame were both wrong, and the record
+   * is worth keeping. It was not web DB-pool contention (#4461): `/embed/**`
+   * issues zero web-side Postgres statements, it fetches the backend over
+   * HTTP. It was not the web event loop being pegged by
+   * `/api/internal/board-render` WASM renders either: in run 31857179523's
+   * shard 7 the same server answered `/embed/gym/...` in 201 ms (a warm Next
+   * Data Cache entry, no backend round trip) and `/` in 3.2 s (its own 3 s
+   * backend deadline firing) while a `/embed/board/...` request sat stuck
+   * for 30 s.
    *
-   * What that shard actually showed was one un-deadlined SSR backend fetch
-   * hanging while the rest of the server stayed healthy. #4463 put a deadline
-   * on those fetches so a stall degrades in 3 s. What is still unexplained is
-   * why the backend stalled on that one query only after browser specs had run
-   * — until that is understood, 1 worker is the setting we can defend, and the
-   * `aa-embed-headers.spec.ts` ordering pin stays. */
+   * #4463 found it: the GraphQL BACKEND's connection pool, exhausted by
+   * concurrent copies of the home page's uncached `popularBoardConfigs`
+   * statement — 82 s each on the dev database, and uncacheable here because
+   * the CI backend runs with no REDIS_URL. Every spec that loaded `/` added
+   * another copy, postgres.js's acquire queue is unbounded and untimed, and
+   * every other backend read then waited forever. The backend now runs one
+   * copy of those cold reads at a time, the SSR fetches that wait on it carry
+   * SSR_BACKEND_FETCH_TIMEOUT_MS, and the `aa-` filename pin on the embed spec
+   * is gone — the ordering it stood for is driven explicitly inside
+   * e2e/embed-headers.spec.ts. */
   workers: process.env.CI ? 1 : undefined,
   /* Global per-test timeout — some tests (zoom, login flows) need more than Playwright's 30 s default */
   timeout: 60_000,
