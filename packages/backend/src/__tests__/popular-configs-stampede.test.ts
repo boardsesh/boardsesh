@@ -133,6 +133,24 @@ describe('popularBoardConfigs does not stampede the connection pool', () => {
     expect(executeMock).toHaveBeenCalledTimes(2);
   });
 
+  it('does not let a flight that started before a drop repopulate the copy behind it', async () => {
+    const inFlight = deferredRows();
+    executeMock.mockReturnValueOnce(inFlight.promise);
+
+    const readStartedFirst = askForConfigs();
+    // The deploy warm-up (or a test) drops the copy while that 82 s statement
+    // is still running. Its rows are pre-deploy; caching them afterwards would
+    // undo the drop for the next 10 minutes.
+    dropPopularConfigsFallback();
+    inFlight.resolve([CONFIG_ROW]);
+    await readStartedFirst;
+
+    executeMock.mockResolvedValueOnce([CONFIG_ROW]);
+    await askForConfigs();
+
+    expect(executeMock).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps the Redis path exactly as it was — no process-local copy is consulted', async () => {
     redisConnectedMock.mockReturnValue(true);
     redisGetMock.mockResolvedValue(null);

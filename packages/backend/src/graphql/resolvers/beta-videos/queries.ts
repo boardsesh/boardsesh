@@ -361,12 +361,22 @@ const RECENT_BETA_LINKS_FLIGHT_KEY = 'recent-beta-links';
 let localFallbackRows: { rows: CachedRecentBetaLinkRow[]; expiresAt: number } | null = null;
 
 /**
+ * Bumped on every invalidation. A CTE that was already running when a climber
+ * posted a link holds a pre-write snapshot, and without this it would repopulate
+ * the fallback *after* the drop and hide the new link for the full 10 minutes.
+ * A flight captures the counter before it starts and declines to cache its
+ * result if the number moved underneath it.
+ */
+let fallbackGeneration = 0;
+
+/**
  * The Redis-less twin of deleting RECENT_BETA_LINKS_REDIS_KEY. Called by
  * `invalidateRecentBetaLinksCache`, and by tests so one case cannot answer the
  * next from the previous one's fixture.
  */
 export function dropRecentBetaLinksFallback(): void {
   localFallbackRows = null;
+  fallbackGeneration += 1;
 }
 
 async function getCachedRecentBetaLinks(): Promise<CachedRecentBetaLinkRow[]> {
@@ -388,6 +398,7 @@ async function getCachedRecentBetaLinks(): Promise<CachedRecentBetaLinkRow[]> {
   // of the home page's cold read. One in-flight copy per process, joined by
   // every concurrent caller.
   return singleFlight(RECENT_BETA_LINKS_FLIGHT_KEY, async () => {
+    const generationAtStart = fallbackGeneration;
     const rows = await runRecentBetaLinksQuery();
 
     if (redisClientManager.isRedisConnected()) {
@@ -402,7 +413,7 @@ async function getCachedRecentBetaLinks(): Promise<CachedRecentBetaLinkRow[]> {
       } catch (err) {
         logger.error('[RecentBetaLinks] Redis write failed:', err);
       }
-    } else {
+    } else if (fallbackGeneration === generationAtStart) {
       localFallbackRows = { rows, expiresAt: Date.now() + REDISLESS_FALLBACK_TTL_MS };
     }
     return rows;
