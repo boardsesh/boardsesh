@@ -22,19 +22,30 @@ import { describe, expect, it } from 'vite-plus/test';
 const E2E_DIR = join(import.meta.dirname, '..', '..', 'e2e');
 
 /**
- * A doubled leading letter followed by `-` — `aa-`, `zzz-`, `aa_`-style
- * sorting hacks at either end of the alphabet. Real spec names never start
- * that way, so the pattern costs no false positives.
+ * The three cheap ways to buy a sort position, all of which work and all of
+ * which a reviewer reads as a typo rather than as a workaround. Real spec
+ * names start with a whole lowercase word, so none of these costs a false
+ * positive.
+ *
+ * This catches sorting hacks that *look* like hacks. It cannot catch a plain
+ * word that happens to sort first (`aardvark-embed.spec.ts`) — nothing short
+ * of a committed order manifest could, and that would make every added spec a
+ * two-file change. The point is that the obvious rename now fails loudly and
+ * says why.
  */
-const ORDERING_PREFIX = /^([a-z])\1+[-_]/;
+const ORDERING_PREFIXES: readonly RegExp[] = [
+  /^[^a-z]/, // a leading digit or `_` sorts before every letter
+  /^[a-z][-_]/, // `a-`, `z_` — one letter plus a separator sorts ahead of any real name
+  /^([a-z])\1+[-_]/, // `aa-`, `zzz_` — the original pin
+];
 
 function e2eSpecBasenames(): string[] {
   return readdirSync(E2E_DIR).filter((entry) => entry.endsWith('.spec.ts'));
 }
 
 describe('e2e spec filenames carry no alphabetical ordering pin', () => {
-  it('has no spec whose name starts with a doubled letter', () => {
-    const pinned = e2eSpecBasenames().filter((basename) => ORDERING_PREFIX.test(basename));
+  it('has no spec whose name buys a sort position', () => {
+    const pinned = e2eSpecBasenames().filter((basename) => ORDERING_PREFIXES.some((pattern) => pattern.test(basename)));
 
     expect(
       pinned,
