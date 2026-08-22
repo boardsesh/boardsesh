@@ -352,6 +352,13 @@ async function runRecentBetaLinksQuery(): Promise<CachedRecentBetaLinkRow[]> {
  * and writes the result back. On Redis unavailable, runs the CTE inline
  * (same fall-through pattern as `getPopularConfigs` in social/boards.ts).
  */
+/**
+ * One key for every caller, deliberately: the CTE below fetches a fixed
+ * RECENT_BETA_LINKS_CACHE_SIZE rows regardless of the caller's `limit`, which
+ * the resolver then slices. So two concurrent callers asking for different
+ * limits are asking for the same statement — the same reason the Redis key
+ * isn't parameterised either.
+ */
 const RECENT_BETA_LINKS_FLIGHT_KEY = 'recent-beta-links';
 
 /**
@@ -430,6 +437,11 @@ export async function warmRecentBetaLinksCache(): Promise<void> {
   // No Redis means there's no cache to warm — running the CTE here would
   // just discard the result. Skip the work and the log so dev/test logs
   // stay honest.
+  //
+  // This is why there is no `dropRecentBetaLinksFallback()` here to mirror
+  // `warmPopularConfigsCache`'s drop: that one keeps going without Redis (it
+  // seeds the process-local copy), this one stops before it could read or
+  // write anything.
   if (!redisClientManager.isRedisConnected()) return;
 
   try {
