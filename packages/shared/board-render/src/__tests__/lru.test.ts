@@ -64,6 +64,23 @@ describe('BoundedLru', () => {
     expect(cache.get('huge')).toBeUndefined();
   });
 
+  it('drops every entry and its byte total on clear', () => {
+    const cache = byteLru(3, 100);
+    cache.set('first', Buffer.alloc(10));
+    cache.set('second', Buffer.alloc(10));
+
+    cache.clear();
+
+    expect(cache.size).toBe(0);
+    expect(cache.byteSize).toBe(0);
+    expect(cache.get('first')).toBeUndefined();
+
+    // Still usable afterwards.
+    cache.set('third', Buffer.alloc(10));
+    expect(cache.size).toBe(1);
+    expect(cache.byteSize).toBe(10);
+  });
+
   it('returns undefined for missing keys and tracks sizes accurately across evictions', () => {
     const cache = byteLru(3, 100);
     expect(cache.get('missing')).toBeUndefined();
