@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-22T01:42:59.512Z",
+  "generatedAt": "2026-08-22T06:31:53.182Z",
   "entries": [
+    {
+      "prNumber": 4666,
+      "category": "new",
+      "title": "The play view now shows at a glance whether the climb on your screen is the one lit on the wall — a pill in the header reads \"On the wall\", \"Live\", or \"Browsing\".",
+      "mergedAt": "2026-08-22T06:30:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4666",
+      "body": "Previewing a climb got cleaner: a proper \"Put on the wall\" button replaces the old orange banner, and the board art gets the space back."
+    },
     {
       "prNumber": 4660,
       "category": "fixed",

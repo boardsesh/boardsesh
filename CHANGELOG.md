@@ -6,6 +6,11 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-08-22
 
+### New
+
+- The play view now shows at a glance whether the climb on your screen is the one lit on the wall — a pill in the header reads "On the wall", "Live", or "Browsing". ([#4666](https://github.com/boardsesh/boardsesh/pull/4666))
+  Previewing a climb got cleaner: a proper "Put on the wall" button replaces the old orange banner, and the board art gets the space back.
+
 ### Fixed
 
 - Ending a session is now a labelled button — "Stop" if you started it, "Leave" if you joined — instead of a bare flag icon. ([#4660](https://github.com/boardsesh/boardsesh/pull/4660))
