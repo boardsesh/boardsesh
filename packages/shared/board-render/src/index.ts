@@ -9,3 +9,4 @@ export * from './background';
 export * from './headers';
 export * from './render-config';
 export * from './lru';
+export * from './semaphore';
