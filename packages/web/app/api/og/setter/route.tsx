@@ -1,7 +1,7 @@
 import React from 'react';
 import { ImageResponse } from '@vercel/og';
 import type { NextRequest } from 'next/server';
-import { dbz, executeRows } from '@/app/lib/db/db';
+import { dbzRead, executeRows } from '@/app/lib/db/db';
 import { sql } from 'drizzle-orm';
 import { themeTokens } from '@/app/theme/theme-config';
 import { FONT_GRADE_COLORS, getGradeColorWithOpacity } from '@/app/lib/grade-colors';
@@ -9,6 +9,7 @@ import { BOULDER_GRADES } from '@/app/lib/board-data';
 import { createOgImageHeaders, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
 import { getSetterOgSummary } from '@/app/lib/seo/dynamic-og-data';
 import { ogErrorResponse } from '@/app/lib/seo/og-error';
+import { withReadDeadline } from '@/app/lib/db/read-deadline';
 
 export const runtime = 'nodejs';
 
@@ -34,25 +35,28 @@ export async function GET(request: NextRequest) {
     }
 
     const dbT0 = performance.now();
-    const [summary, gradeResult] = await Promise.all([
-      getSetterOgSummary(username),
-      executeRows<{
-        difficulty: number;
-        cnt: number;
-      }>(
-        dbz,
-        sql`
-        SELECT bt.difficulty, COUNT(*) as cnt
-        FROM boardsesh_ticks bt
-        JOIN board_climbs bc ON bc.uuid = bt.climb_uuid
-        WHERE bc.setter_username = ${username}
-          AND bt.status IN ('flash', 'send')
-          AND bt.difficulty IS NOT NULL
-        GROUP BY bt.difficulty
-        ORDER BY bt.difficulty
-      `,
-      ),
-    ]);
+    const [summary, gradeResult] = await withReadDeadline(
+      'og-setter',
+      Promise.all([
+        getSetterOgSummary(username),
+        executeRows<{
+          difficulty: number;
+          cnt: number;
+        }>(
+          dbzRead,
+          sql`
+          SELECT bt.difficulty, COUNT(*) as cnt
+          FROM boardsesh_ticks bt
+          JOIN board_climbs bc ON bc.uuid = bt.climb_uuid
+          WHERE bc.setter_username = ${username}
+            AND bt.status IN ('flash', 'send')
+            AND bt.difficulty IS NOT NULL
+          GROUP BY bt.difficulty
+          ORDER BY bt.difficulty
+        `,
+        ),
+      ]),
+    );
     const dbMs = performance.now() - dbT0;
     const gradeRows = gradeResult;
 
