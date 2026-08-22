@@ -6,7 +6,7 @@ import { PATHNAME_HEADER } from '@/app/lib/request-pathname-header';
 
 const { getClimbViewPageCacheTTL, getListPageCacheTTL, hasUserSpecificFilters } =
   await import('@/app/lib/list-page-cache');
-const { middleware } = await import('@/middleware');
+const { middleware, config } = await import('@/middleware');
 
 function sp(params: Record<string, string> = {}): URLSearchParams {
   return new URLSearchParams(params);
@@ -312,6 +312,73 @@ function makeRequest(url: string): NextRequest {
   return new NextRequest(new URL(url, 'http://localhost:3000'));
 }
 
+describe('middleware matcher config', () => {
+  it('pins the exact matcher entries', () => {
+    // Vercel bills/logs per invocation — this literal is the whole point of
+    // the fix, so a drift here (an accidental widening back to /api/:path*,
+    // or a narrowing that drops an auth path) must fail the suite outright.
+    expect(config.matcher).toEqual([
+      '/api/v1/:path*',
+      '/api/auth/:path*',
+      '/api/internal/ws-auth',
+      '/((?!api/|_next/static|_next/image|favicon.ico|monitoring|\\.well-known/|.*\\..*).*)',
+    ]);
+  });
+
+  // Coverage helper mirroring how Next compiles each matcher shape: entries
+  // 1-2 are `:path*` prefixes, entry 3 is an exact path, entry 4 is the full
+  // page-routes regex tested anchored end-to-end.
+  function isMatchedByConfig(pathname: string): boolean {
+    const [v1Prefix, authPrefix, wsAuthExact, pageRoutesRegex] = config.matcher;
+    if (pathname.startsWith(v1Prefix.replace(':path*', ''))) return true;
+    if (pathname.startsWith(authPrefix.replace(':path*', ''))) return true;
+    if (pathname === wsAuthExact) return true;
+    return new RegExp(`^${pageRoutesRegex}$`).test(pathname);
+  }
+
+  it.each([
+    '/api/internal/board-render',
+    '/api/og/setter',
+    '/api/internal/prewarm-heatmap/kilter',
+    '/api/internal/revalidate-climb',
+  ])('does not run middleware on %s (no CORS/locale/board-validation work needed there)', (pathname) => {
+    expect(isMatchedByConfig(pathname)).toBe(false);
+  });
+
+  it.each([
+    '/api/internal/ws-auth',
+    '/api/auth/session',
+    '/api/auth/callback/credentials',
+    '/api/v1/kilter/grades',
+    '/',
+    '/es/kilter/original/12x12-square/screw_bolt/40/view/x',
+    '/b/some-board/40/list',
+  ])('still runs middleware on %s', (pathname) => {
+    expect(isMatchedByConfig(pathname)).toBe(true);
+  });
+
+  it.each(['/_next/static/chunk.js', '/logo.png'])('does not run middleware on static asset %s', (pathname) => {
+    expect(isMatchedByConfig(pathname)).toBe(false);
+  });
+});
+
+describe('middleware /api/v1 board validation', () => {
+  it('404s an unsupported board name', () => {
+    const response = middleware(makeRequest('/api/v1/fakeboard/grades'));
+    expect(response.status).toBe(404);
+  });
+
+  it('passes through a supported board', () => {
+    const response = middleware(makeRequest('/api/v1/kilter/grades'));
+    expect(response.status).toBe(200);
+  });
+
+  it.each(['angles', 'grades'])('passes through the %s special segment without board validation', (segment) => {
+    const response = middleware(makeRequest(`/api/v1/${segment}`));
+    expect(response.status).toBe(200);
+  });
+});
+
 describe('middleware session redirect', () => {
   it('redirects when ?session= is present on a list page', () => {
     const response = middleware(makeRequest('/b/kilter-original-12x12/40/list?session=abc-123'));
@@ -582,6 +649,58 @@ describe('middleware cache headers on climb view pages', () => {
       expect(response.headers.has('CDN-Cache-Control')).toBe(false);
     },
   );
+});
+
+// A crawler that persists cookies (observed in production logs) acquires
+// boardsesh-locale by crawling one /de|/es|/fr page, then bounces every
+// subsequent unprefixed URL through a locale twin — ~15k of these 307s/day,
+// plus the render MISS on the twin it lands on. Bots must never be sent
+// through the sticky-locale redirect, and must never acquire the cookie.
+describe('middleware bot-gates the sticky locale redirect and cookie', () => {
+  const GOOGLEBOT_UA = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
+  const CHROME_UA =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+
+  function makeRequestWithUserAgent(url: string, ua: string): NextRequest {
+    return new NextRequest(new URL(url, 'http://localhost:3000'), {
+      headers: { 'user-agent': ua },
+    });
+  }
+
+  it('does not 307 a bot carrying a stale non-default locale cookie — it gets a default-locale 200 for the requested URL', () => {
+    const request = makeRequestWithUserAgent('/some/page', GOOGLEBOT_UA);
+    request.cookies.set(LOCALE_COOKIE, 'de');
+
+    const response = middleware(request);
+
+    expect(response.status).not.toBe(307);
+    expect(response.headers.has('location')).toBe(false);
+    expect(response.headers.get(`x-middleware-request-${LOCALE_HEADER}`)).toBe(DEFAULT_LOCALE);
+  });
+
+  it('still 307s a human (non-bot UA) carrying the same stale locale cookie', () => {
+    const request = makeRequestWithUserAgent('/some/page', CHROME_UA);
+    request.cookies.set(LOCALE_COOKIE, 'de');
+
+    const response = middleware(request);
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('http://localhost:3000/de/some/page');
+  });
+
+  it('never sets the boardsesh-locale cookie for a bot visiting a locale-prefixed URL', () => {
+    const response = middleware(makeRequestWithUserAgent('/es/some/page', GOOGLEBOT_UA));
+
+    expect(response.headers.has('set-cookie')).toBe(false);
+  });
+
+  it('sets the boardsesh-locale cookie for a human (non-bot UA) visiting a locale-prefixed URL', () => {
+    const response = middleware(makeRequestWithUserAgent('/es/some/page', CHROME_UA));
+
+    const setCookie = response.headers.get('set-cookie');
+    expect(setCookie).toContain(LOCALE_COOKIE);
+    expect(setCookie).toContain('es');
+  });
 });
 
 describe('middleware forwards the routing pathname header', () => {
