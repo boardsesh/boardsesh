@@ -202,7 +202,7 @@ describe('api/og/playlist route', () => {
     expect(collectText(playlistRouteState.capturedElement)).toContain('SP');
   });
 
-  it('returns a generic 500 with no-store instead of leaking the underlying error', async () => {
+  it('redirects to the branded fallback card instead of leaking the underlying error', async () => {
     playlistRouteState.getPlaylistOgSummaryMock.mockRejectedValue(
       Object.assign(new Error('Failed query: SELECT * FROM playlists WHERE uuid = $1 params: leaky-playlist'), {
         name: 'DrizzleQueryError',
@@ -212,9 +212,9 @@ describe('api/og/playlist route', () => {
     const response = await GET(makeRequest({ uuid: 'leaky-playlist' }));
     const body = await response.text();
 
-    expect(response.status).toBe(500);
-    expect(response.headers.get('Cache-Control')).toBe('no-store');
-    expect(body).toBe('Error generating image');
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/opengraph-image');
+    expect(response.headers.get('Cache-Control')).toBe('public, max-age=0, s-maxage=60');
     expect(body).not.toContain('SELECT');
     expect(body).not.toContain('leaky-playlist');
   });
