@@ -631,6 +631,15 @@ describe('board-render API route', () => {
     expect(new Uint8Array(await second.arrayBuffer())).toEqual(firstBytes);
   });
 
+  it('reports cache;desc=none for an overlay-only render', async () => {
+    // No background means no base to cache — reporting it as a `miss` would
+    // read as a cache the route keeps failing to fill.
+    const response = await GET(makeRequest(validParams));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Server-Timing')).toContain('cache;desc=none');
+  });
+
   it('reports a board-base cache hit once the board photos are composed', async () => {
     await GET(makeRequest({ ...validParams, include_background: '1' }));
     // Same board, different climb — the base is reused, the overlay is not.
