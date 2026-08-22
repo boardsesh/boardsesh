@@ -167,7 +167,7 @@ When the request references an issue ("fix issue #N", "this GH issue", a bug lin
 1. **Work in a fresh git worktree branched off the latest `main`.** Fetch `origin/main` first.
 2. **Plan before implementing.**
 3. **Pre-commit hook must pass** — fix underlying issues, no `--no-verify`.
-4. **Write a QA notes file before starting the dev server.** `.boardsesh/qa-notes.md` is the default path the orchestrator auto-detects and surfaces in-app via `/api/internal/dev-metadata`. Include the specific pages/flows to exercise, expected behaviour, and edge cases. For an alternate path, pass `vp run dev -- --qa-notes-file <path>`. **Never start the dev server for an issue fix without QA notes.**
+4. **Write a QA notes file before starting the dev server.** `.boardsesh/qa-notes.md` is the default path the orchestrator auto-detects and injects for `curl http://localhost:3000/api/internal/dev-metadata` to confirm (dev-only; no in-app surface). Include the specific pages/flows to exercise, expected behaviour, and edge cases. For an alternate path, pass `vp run dev -- --qa-notes-file <path>`. **Never start the dev server for an issue fix without QA notes.**
 5. **Start the dev server with `vp run dev`** (web) or `vp run dev:mobile` (mobile). Confirm the startup log shows `[dev] QA notes: <path>`. For mobile, the orchestrator surfaces QA notes in the `DevMetadataPanel` (More tab); Metro output is tee'd to `.boardsesh/mobile-metro.log`.
 6. **Tell the user the URL in one message** — whatever the server prints (typically `http://localhost:3000`). Don't paste the QA plan into chat; it's already in the file and the app.
 7. **Always open a PR** once validated.
@@ -301,7 +301,7 @@ React Native + Expo SDK 57, React Native 0.86, Expo Router 57.
 
 - **Lint via `vp check`** — runs for mobile just like other packages. Use `vp run typecheck:mobile` for type-only checks.
 - **Own i18n provider** at `packages/mobile/src/providers/i18n-provider.tsx`. No web i18n rules apply.
-- **No web dev-server workflow** — use `vp run dev:mobile` (Metro) instead. The QA-notes-into-`/api/internal/dev-metadata` flow is web-only; on mobile the `DevMetadataPanel` (More tab) reads `.boardsesh/qa-notes.md` via env injection.
+- **No web dev-server workflow** — use `vp run dev:mobile` (Metro) instead. The QA-notes-into-`/api/internal/dev-metadata` env injection is web-only (curl the route to confirm what a running dev server started with); on mobile the `DevMetadataPanel` (More tab) reads `.boardsesh/qa-notes.md` via env injection instead.
 - **Styling**: `StyleSheet.create` + theme provider. No MUI, no `style`-prop avoidance rule.
 - **Dev mode**: `__DEV__` global, not `process.env.NODE_ENV`.
 - **Storage**: `expo-secure-store` for credentials, not IndexedDB.

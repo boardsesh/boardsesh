@@ -517,16 +517,6 @@ export const constructClimbInfoUrl = ({ board_name }: BoardDetails, climb_uuid: 
   return `https://${board_name}boardapp${board_name === 'tension' ? '2' : ''}.com/climbs/${climb_uuid}`;
 };
 
-//`/${board_name}/${layout_id}/${size_id}/${set_ids}/${angle}/info/${climb_uuid}`;
-
-export const constructSetterStatsUrl = (
-  { board_name, layout_id, angle, size_id, set_ids }: ParsedBoardRouteParameters,
-  searchQuery?: string,
-) => {
-  const baseUrl = `/api/v1/${board_name}/${layout_id}/${size_id}/${set_ids.join(',')}/${angle}/setters`;
-  return searchQuery ? `${baseUrl}?search=${encodeURIComponent(searchQuery)}` : baseUrl;
-};
-
 /**
  * Name-based, so it emits the *bare* size slug even for a size that shares one
  * with another on the same layout (Kilter "12 x 12 without kickboard" — see

@@ -19,14 +19,23 @@ delete and how.
 ### API routes — what's safe to delete
 
 The mobile app reaches the climbing backend through **GraphQL**, not the Next.js
-web proxies. The only web endpoints `packages/mobile/src` fetches are
-`/api/auth/session`, `/api/internal/ws-auth`, and `/api/internal/beta-link-thumbnail`.
+web proxies. But it still fetches a handful of www-hosted Next.js routes for
+auth and two other flows: `/api/auth/session`, `/api/auth/providers-config`,
+`/api/auth/csrf`, `/api/auth/callback/credentials`, `/api/auth/register`,
+`/api/auth/forgot-password`, `/api/auth/reset-password`,
+`/api/auth/resend-verification` (native store fleet too, via the plain
+`app/auth/register.tsx`), `/api/auth/signout`, `/api/auth/native/callback`
+(native only), `/api/internal/ws-auth`, and `/api/internal/beta-link-thumbnail`.
+(`/api/aurora-credentials`, `/api/board-credentials/*`, `/api/aurora-import` and
+`/api/moonboard-import` are backend routes, not Next.js.)
 
-| Route                                                                     | Runtime callers                                                                                                   | Verdict                                               |
-| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| `/api/v1/[board]/proxy/{login,saveAscent,saveClimb,getLogbook,user-sync}` | **None** — already migrated to GraphQL (see `docs/branch-deploys.md`)                                             | W-25a + W-25b: all five deleted, URLs 404 (see below) |
-| `/api/internal/{join,controllers,favorites}`                              | Only web session-app UI slated for teardown (`join/*` page, `account/controllers-section.tsx`, `climb-actions/*`) | delete with that UI                                   |
-| `/api/internal/ws-auth`                                                   | `use-ws-auth-token.ts` → ~85 web files incl. kiosk presence; mobile `auth-store.web.ts:343`                       | **KEEP** — `/app` + kiosk auth bridge                 |
+| Route                                                                     | Runtime callers                                                                             | Verdict                                                       |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `/api/v1/[board]/proxy/{login,saveAscent,saveClimb,getLogbook,user-sync}` | **None** — already migrated to GraphQL (see `docs/branch-deploys.md`)                       | W-25a + W-25b: all five deleted, URLs 404 (see below)         |
+| `/api/internal/favorites`                                                 | Only web session-app UI slated for teardown (`climb-actions/*`)                             | deleted with that UI (see `deleted-private-surfaces.test.ts`) |
+| `/api/internal/join/[sessionId]`                                          | `app/join/[sessionId]/page.tsx`, `join-redirect.tsx`                                        | **KEEP** — session share links                                |
+| `/api/internal/controllers`                                               | `account/controllers-section.tsx`                                                           | **KEEP** — kept by W-21 (#4440)                               |
+| `/api/internal/ws-auth`                                                   | `use-ws-auth-token.ts` → ~85 web files incl. kiosk presence; mobile `auth-store.web.ts:343` | **KEEP** — `/app` + kiosk auth bridge                         |
 
 Loose ends to clean when the routes go (not runtime callers, but they'd go stale):
 `app/lib/api-docs/openapi-routes.ts` (documents `proxy/login`, `proxy/saveAscent`),
