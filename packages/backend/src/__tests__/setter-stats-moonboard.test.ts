@@ -108,6 +108,29 @@ describe('setterStats — size filter skips MoonBoard, still applies to Aurora b
     expect(result).toEqual([{ setterUsername: 'kilter-sized-setter', climbCount: 1 }]);
   });
 
+  it('accepts a negative angle (Aurora boards support negative tilt) and returns an empty result for the unmatched stats join', async () => {
+    // Mobile's setter filter sends the live board angle. There's no
+    // board_climb_stats row at -5° for any seeded climb here, so the inner
+    // join simply yields no rows — the request must not be rejected outright.
+    const result = await climbQueries.setterStats(
+      null,
+      { input: { boardName: 'moonboard', layoutId: 1, sizeId: 1, setIds: '1', angle: -5 } },
+      makeCtx(),
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  it('rejects angle -91 (outside the -90..90 board-tilt range)', async () => {
+    await expect(
+      climbQueries.setterStats(
+        null,
+        { input: { boardName: 'moonboard', layoutId: 1, sizeId: 1, setIds: '1', angle: -91 } },
+        makeCtx(),
+      ),
+    ).rejects.toThrow();
+  });
+
   it('filters MoonBoard setters by a search substring', async () => {
     const result = await climbQueries.setterStats(
       null,

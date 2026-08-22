@@ -232,6 +232,34 @@ describe('discoverPlaylists resolver', () => {
     expect(resultsCalls.where.length).toBe(1);
   });
 
+  it('accepts a negative angle (Aurora boards support negative tilt) filter', async () => {
+    const ctx = makeCtx();
+
+    const { chain: countChain } = createMockChain([{ count: 0 }]);
+    mockDb.select.mockReturnValueOnce(countChain);
+
+    const { chain: resultsChain } = createMockChain([]);
+    mockDb.select.mockReturnValueOnce(resultsChain);
+
+    const result = await playlistQueries.discoverPlaylists(
+      null,
+      { input: { boardType: 'kilter', layoutId: 8, sizeId: 25, angle: -5 } },
+      ctx,
+    );
+
+    expect(result.totalCount).toBe(0);
+    expect(result.playlists).toEqual([]);
+  });
+
+  it('rejects angle -91 (outside the -90..90 board-tilt range)', async () => {
+    const ctx = makeCtx();
+
+    await expect(
+      playlistQueries.discoverPlaylists(null, { input: { boardType: 'kilter', layoutId: 8, angle: -91 } }, ctx),
+    ).rejects.toThrow();
+    expect(mockDb.select).not.toHaveBeenCalled();
+  });
+
   it('should paginate correctly with hasMore', async () => {
     const ctx = makeCtx();
 
