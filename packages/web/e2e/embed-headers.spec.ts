@@ -21,8 +21,16 @@ import { waitForBoardListReady } from './helpers/waits';
 //    which is why it looked like something subtler than saturation.
 //  - Two fixes closed it: the backend now runs one copy of those cold reads at
 //    a time, and the SSR fetches that wait on the backend carry
-//    SSR_BACKEND_FETCH_TIMEOUT_MS, so a slow backend paints the retry screen —
-//    a 200 these assertions already accept.
+//    SSR_BACKEND_FETCH_TIMEOUT_MS, so a slow backend paints the retry screen
+//    instead of holding the socket open.
+//
+// Those two fixes need separate oracles, and only one of them is cheap. The
+// deadline is pinned by unit tests (embed-fetchers.server.test.ts,
+// kiosk-fetch-deadline.test.ts). The pool exhaustion is what the block at the
+// bottom of this file exists for, and the assertion that carries it is the
+// STATUS, not the clock: with the deadline in place a starved backend answers
+// in three seconds with the retry screen, so a wall-clock budget alone can
+// never fail. See the block for why 404 is the only non-degraded outcome.
 //
 // The ordering dependency is pinned explicitly at the bottom of this file
 // instead of through the filename, so it survives the next spec being added.
@@ -174,14 +182,12 @@ test.describe('embed security headers', () => {
  * browser preamble explicitly, in-file, so the raw-request path is checked
  * against a warmed-up server in EVERY run regardless of how the shards land.
  *
- * The budget is deliberately far above the 3 s SSR deadline and far below the
- * 60 s+ the un-deadlined fetch used to burn: a stalled backend must reach the
- * retry screen, not hold the socket. Measured wall clock, not just the request
- * timeout, so a response that arrives at 14.9 s still reads as a pass and a
- * regression to "hangs until Playwright gives up" reads as a fail.
+ * The wall-clock budget below is the weaker of the two oracles and is kept
+ * only as a latency backstop — with the SSR deadline in place nothing on these
+ * two routes can exceed it. The discriminating assertion is the 404.
  */
 const PREAMBLE_BOARD_PATH = '/kilter/original/12x12-square/screw_bolt/40';
-/** 5× the SSR deadline. Anything slower than this is the stall, not latency. */
+/** 5× the SSR deadline — headroom for a loaded 2-core runner, not an oracle. */
 const POST_PREAMBLE_BUDGET_MS = 15_000;
 
 async function timedGet(
@@ -195,18 +201,25 @@ async function timedGet(
 
 test.describe.serial('raw embed requests survive a browser-driven preamble', () => {
   test('the embed and kiosk raw requests still answer after front-door page loads', async ({ page, request }) => {
-    // Six cold server renders before the two assertions. On a 2-core runner
-    // that is comfortably past the 60 s per-test default, and a timeout here
-    // would read as the stall this guard exists to detect.
+    // Twelve cold server renders before the two assertions (ten concurrent `/`
+    // plus the two page loads). On a 2-core runner that is comfortably past
+    // the 60 s per-test default, and a timeout here would read as the stall
+    // this guard exists to detect.
     test.setTimeout(180_000);
 
     // CONCURRENT home-page renders first. This is the load that caused the
-    // stall, and the concurrency is the whole mechanism: `/` is the only
-    // surface that reads `popularBoardConfigs` + `recentBetaLinks`, the two
-    // cold backend reads that used to take one pool connection each, and the
-    // web's 3 s deadline aborts them before Next can cache the result — so
-    // every `/` render is a cold read, forever. Ten at once used to leave the
-    // backend's ten-connection pool with nothing for anything else.
+    // stall, and the concurrency is the whole mechanism. `/` reads
+    // `popularBoardConfigs` + `recentBetaLinks`, the two cold backend reads
+    // that used to take one pool connection each. (`/` is the surface this
+    // test drives, not the only reader: the sitemap's boards shard and the
+    // climb shards issue the same `popularBoardConfigs` statement through
+    // `getAllBoardConfigsOrThrow`, which is why that module carries its own
+    // in-process TTL + single-flight — the prior art the backend fix copies.)
+    // Neither read is deduped web-side: `unstable_cache` does not collapse
+    // concurrent misses, and the 3 s deadline aborts each one before Next can
+    // write the entry, so ten simultaneous renders are ten simultaneous
+    // statements. Against the un-fixed backend that left its ten-connection
+    // pool with nothing for anything else.
     //
     // Sequential `page.goto`s do NOT reproduce this (verified: a four-locale
     // sequential preamble stays green against the un-fixed backend), which is
@@ -232,17 +245,33 @@ test.describe.serial('raw embed requests survive a browser-driven preamble', () 
     // Data Cache fast path (`revalidate: 300` would otherwise answer this from
     // the entry the first test in this file wrote), so it always exercises a
     // cold backend read.
+    //
+    // 404 is the assertion that carries this test, and unlike the seven header
+    // checks above it does NOT accept 200. `board(boardUuid:)` on a fresh uuid
+    // is one indexed select; a backend that can reach the database answers
+    // "no such board" in milliseconds and the route notFound()s. A 200 here is
+    // by construction the retry screen — the SSR fetch hit its 3 s deadline —
+    // which for this uuid means the backend could not get a pool connection.
+    // That is exactly the regression the preamble above is staged to provoke,
+    // so it has to read as a failure rather than as an accepted degrade.
     const embed = await timedGet(request, `/embed/board/${randomUUID()}`);
-    expect([200, 404]).toContain(embed.response.status());
+    expect(
+      embed.response.status(),
+      'the embed render degraded to the retry screen while the home-page herd was in flight — the backend could not answer a one-row uuid lookup inside the SSR deadline (#4463 pool exhaustion)',
+    ).toBe(404);
     expect(headerValue(embed.response, 'content-security-policy')).toContain('frame-ancestors *');
     expect(embed.elapsedMs).toBeLessThan(POST_PREAMBLE_BUDGET_MS);
 
     // /kiosk/** is the same shape one route tree over, and it hung in CI too.
-    // Same two-status contract as the embed: 404 when the backend answers "no
-    // such kiosk", 200 when the fetch degrades to the retry screen. Asserted
-    // so a 5xx reads as a 5xx instead of as a missing header.
+    // A random uuid is a valid gym slug (lowercase hex + hyphens pass
+    // GYM_SLUG_PATTERN), so the resolver really does reach the database and
+    // really does answer null → 404. Same reasoning as the embed: 200 is the
+    // retry screen, which here means starvation.
     const kiosk = await timedGet(request, `/kiosk/${randomUUID()}`);
-    expect([200, 404]).toContain(kiosk.response.status());
+    expect(
+      kiosk.response.status(),
+      'the kiosk render degraded to the retry screen while the home-page herd was in flight (#4463 pool exhaustion)',
+    ).toBe(404);
     expect(headerValue(kiosk.response, 'x-frame-options')).toBe('SAMEORIGIN');
     expect(kiosk.elapsedMs).toBeLessThan(POST_PREAMBLE_BUDGET_MS);
   });
