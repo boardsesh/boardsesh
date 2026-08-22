@@ -49,6 +49,12 @@ export const SITEMAP_CLIMB_STORE_MAX_AGE_MS = 48 * 60 * 60 * 1000;
  * because a degrade left no trace anyone was watching, so the store says which
  * path it took: `reportStoreFallback` puts it in Sentry, and the registry puts it
  * on the response as `X-Sitemap-Climbs-Source`.
+ *
+ * Spelled out here rather than imported as the registry's `PagedShardSource`,
+ * which is the identical union: `shard-registry.ts` imports this module, so the
+ * registry owns the CONTRACT ("a paged shard may report which path answered") and
+ * this file owns its own answer. Pointing one at the other would close the loop
+ * for the sake of two string literals.
  */
 export type ClimbShardSource = 'store' | 'live';
 
