@@ -69,6 +69,22 @@ type ModalSheetProps = {
   /** Optional fixed header, rendered above the body and outside its scroll — so a
    * title and close affordance stay put while the body scrolls. */
   header?: ReactNode;
+  /** Open at the LAST snap point on Android instead of the first.
+   *
+   * `@expo/ui`'s Android sheet is a plain Material 3 `ModalBottomSheet`: it has
+   * only two real states, a fixed ~50% "partial" and a content-fitting
+   * "expanded" — the JS `%` snap-point VALUES are never read natively (see
+   * `BottomSheet.android.tsx`), only the count and which index is requested.
+   * iOS honours the requested fraction exactly (`useSheetColumnStyle`), so a
+   * sheet tuned for iOS's real first detent (e.g. the tick sheets' `65%`/`80%`,
+   * sized to fit a pinned footer under the content) can be TALLER than
+   * Android's fixed ~50% partial state. On Android that stranded the pinned
+   * footer below the fold — the climber had to drag/scroll the sheet up just
+   * to reach the Send button (#4231). Opt in per sheet rather than flipping
+   * this for every `ModalSheet`: most sheets (menus, pickers) are genuinely
+   * fine at Android's partial state, and forcing them open expanded would be
+   * its own regression. No effect with a single detent, or on iOS/web. */
+  androidOpensExpanded?: boolean;
 };
 
 export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(function ModalSheet(
@@ -88,6 +104,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
     surface = 'glass',
     footerSurface = 'plate',
     header,
+    androidOpensExpanded = false,
   },
   ref,
 ) {
@@ -101,6 +118,15 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   // them a partial state instead (see androidSafeSnapPoints).
   const effectiveSnapPoints = useMemo(() => androidSafeSnapPoints(snapPoints), [snapPoints]);
 
+  // See `androidOpensExpanded` above: Android's partial state ignores the
+  // requested fraction, so an opted-in sheet presents at its LAST detent
+  // (expanded) there instead of the first. iOS/web are unaffected — they
+  // honour `effectiveSnapPoints[0]` exactly.
+  const initialIndex =
+    Platform.OS === 'android' && androidOpensExpanded && effectiveSnapPoints.length > 1
+      ? effectiveSnapPoints.length - 1
+      : 0;
+
   const sheetRef = useRef<BottomSheetMethods>(null);
   const managed = useManagedSheet({
     open: visible,
@@ -108,6 +134,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
     sheetRef,
     onClose,
     onFullyDismissed,
+    presentIndex: initialIndex,
   });
   useImperativeHandle(ref, () => managed.handle, [managed.handle]);
 
@@ -115,7 +142,10 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   onChangeRef.current = onChange;
 
   // Track the resting detent so the iOS column bound follows drags between detents.
-  const [activeIndex, setActiveIndex] = useState(0);
+  // Seeded from `initialIndex` so a sheet that opens expanded on Android (see
+  // `androidOpensExpanded`) doesn't render one frame at the first-detent bound
+  // before the native `onChange` confirms the real one.
+  const [activeIndex, setActiveIndex] = useState(initialIndex);
   const columnStyle = useSheetColumnStyle(snapPoints, { enableDynamicSizing, activeIndex });
   // Dev-only observers for #3922 — they feed a log line, never layout.
   const { probeProps, sentinelProps, onColumnLayout } = useSheetDetentProbe(columnStyle, 'ModalSheet');
@@ -201,7 +231,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   return (
     <BottomSheetModal
       ref={sheetRef}
-      index={0}
+      index={initialIndex}
       snapPoints={enableDynamicSizing ? undefined : effectiveSnapPoints}
       enableDynamicSizing={enableDynamicSizing}
       enablePanDownToClose={enablePanDownToClose}

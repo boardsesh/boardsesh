@@ -69,6 +69,14 @@ type SheetProps = {
   /** Optional fixed header, rendered above the body and outside its scroll — so a
    * title and close affordance stay put while the body scrolls. */
   header?: ReactNode;
+  /** Open at the LAST snap point on Android instead of the first. See the
+   * identical prop on `ModalSheet` for the full rationale (#4231): Android's
+   * `@expo/ui` sheet ignores the requested `%` fraction on its "partial"
+   * state, so a sheet tuned for iOS's real first detent (e.g. the edit-tick
+   * sheet's `80%`, sized to fit a pinned footer under the content) can strand
+   * that footer below Android's fixed ~50% partial fold. No effect with a
+   * single detent, or on iOS/web. */
+  androidOpensExpanded?: boolean;
 };
 
 export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
@@ -88,6 +96,7 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
     surface = 'glass',
     footerSurface = 'plate',
     header,
+    androidOpensExpanded = false,
   },
   ref,
 ) {
@@ -96,6 +105,15 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
   const snapPoints = useMemo(() => customSnapPoints ?? ['50%', '90%'], [customSnapPoints]);
   // Plain string, never a PlatformColor — see the `surface` prop doc.
   const solidBackground = useMemo(() => ({ backgroundColor: sheetSurface }), [sheetSurface]);
+  const effectiveSnapPoints = useMemo(() => androidSafeSnapPoints(snapPoints), [snapPoints]);
+
+  // See `androidOpensExpanded` above: presents at the LAST detent (expanded)
+  // on Android when opted in, instead of the (real, but Android-ignored)
+  // first fraction. iOS/web are unaffected.
+  const initialIndex =
+    Platform.OS === 'android' && androidOpensExpanded && effectiveSnapPoints.length > 1
+      ? effectiveSnapPoints.length - 1
+      : 0;
 
   const sheetRef = useRef<BottomSheetMethods>(null);
   const managed = useManagedSheet({
@@ -104,6 +122,7 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
     sheetRef,
     onClose,
     onFullyDismissed,
+    presentIndex: initialIndex,
   });
   useImperativeHandle(ref, () => managed.handle as BottomSheetMethods, [managed.handle]);
 
@@ -111,7 +130,8 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
   onChangeRef.current = onChange;
 
   // Track the resting detent so the iOS column bound follows drags between detents.
-  const [activeIndex, setActiveIndex] = useState(0);
+  // Seeded from `initialIndex` — see the identical seed in `ModalSheet`.
+  const [activeIndex, setActiveIndex] = useState(initialIndex);
   const columnStyle = useSheetColumnStyle(snapPoints, { enableDynamicSizing, activeIndex });
   // Dev-only observers for #3922 — they feed a log line, never layout.
   const { probeProps, sentinelProps, onColumnLayout } = useSheetDetentProbe(columnStyle, 'Sheet');
@@ -198,7 +218,7 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
     <BottomSheet
       ref={sheetRef}
       index={-1}
-      snapPoints={enableDynamicSizing ? undefined : androidSafeSnapPoints(snapPoints)}
+      snapPoints={enableDynamicSizing ? undefined : effectiveSnapPoints}
       enableDynamicSizing={enableDynamicSizing}
       enablePanDownToClose={enablePanDownToClose}
       onChange={handleChange}
