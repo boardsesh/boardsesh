@@ -481,6 +481,11 @@ export function PlayDrawer({
     boardName: boardName as BoardName,
     mirrored: isMirrored,
     isOpen: isSheetOpen,
+    // A preview animates on-screen only — its frames must never reach the wall
+    // (the Browsing chrome promises "the wall stays put", and even without the
+    // chrome a preview is not a commit). The live climb's writes resume when
+    // the preview clears.
+    suppressWallWrites: isPreview,
   });
 
   // Auto-close tick bar and drop the favorite override when climb changes, so the
@@ -587,6 +592,10 @@ export function PlayDrawer({
     setDrawerPreviewItem(null);
     setDrawerPreviewSuggestionSource(null);
     setDrawerPreviewIsWallClimb(false);
+    // Mirroring is drawer-local per displayed climb: every other navigation
+    // resets it, and carrying a preview's mirror onto the committed head would
+    // render (and, once animatable playback resumes, re-send) the head flipped.
+    setIsMirrored(false);
   }, [markLatchExit]);
 
   // When the board angle changes, drop the locally-pinned climb so the drawer
@@ -762,11 +771,13 @@ export function PlayDrawer({
     // the queue item's own `climb.mirrored`, not this drawer-local state, so
     // without an explicit re-push the LEDs would keep showing the previous
     // orientation. isConnected means this device holds the BLE link (and
-    // therefore drives the wall).
-    if (bluetooth?.isConnected && displayedClimb?.frames) {
+    // therefore drives the wall). While a preview is pinned the toggle acts
+    // on-screen only — mirroring what you're merely looking at must not
+    // replace the live climb on the wall.
+    if (bluetooth?.isConnected && displayedClimb?.frames && !isPreview) {
       void bluetooth.sendFramesToBoard(displayedClimb.frames, nextMirrored);
     }
-  }, [isMirrored, bluetooth, displayedClimb]);
+  }, [isMirrored, bluetooth, displayedClimb, isPreview]);
 
   const handleToggleFavorite = useCallback(() => {
     if (!displayedClimb) return;
@@ -1255,22 +1266,31 @@ export function PlayDrawer({
                     ) : null}
                   </View>
 
-                  {/* Below-fold deferred sections */}
-                  <DeferredSections
-                    climb={displayedClimb}
-                    boardName={boardName}
-                    layoutId={layoutId}
-                    sizeId={sizeId}
-                    setIds={setIds}
-                    angle={angle}
-                    enabled={isSheetOpen}
-                    contentEnabled={belowFoldContentRequested}
-                    onSimilarClimbPress={handleSimilarClimbPress}
-                    onLogbookHeaderLayout={handleLogbookHeaderLayout}
-                    onLogbookSectionLayout={handleLogbookSectionLayout}
-                    onLogbookToggle={handleLogbookToggle}
-                    onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
-                  />
+                  {/* Below-fold deferred sections. The wrapper joins the
+                      callout's assistive-tech trap: Android has no
+                      accessibilityViewIsModal, so every ScrollView sibling of
+                      the callout must hide itself while it's open or TalkBack
+                      walks straight past the scrim into the logbook. */}
+                  <View
+                    accessibilityElementsHidden={wallCalloutOpen}
+                    importantForAccessibility={wallCalloutOpen ? 'no-hide-descendants' : 'auto'}
+                  >
+                    <DeferredSections
+                      climb={displayedClimb}
+                      boardName={boardName}
+                      layoutId={layoutId}
+                      sizeId={sizeId}
+                      setIds={setIds}
+                      angle={angle}
+                      enabled={isSheetOpen}
+                      contentEnabled={belowFoldContentRequested}
+                      onSimilarClimbPress={handleSimilarClimbPress}
+                      onLogbookHeaderLayout={handleLogbookHeaderLayout}
+                      onLogbookSectionLayout={handleLogbookSectionLayout}
+                      onLogbookToggle={handleLogbookToggle}
+                      onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
+                    />
+                  </View>
                 </>
               )}
             </ScrollView>
