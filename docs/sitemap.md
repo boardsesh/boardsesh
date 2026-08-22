@@ -58,6 +58,81 @@ and all other sitemap shards are unaffected by the switch. Turning it off and ba
 on costs nothing but a redeploy: the store is a cache, and the `after()` self-heal
 below repopulates it on the first crawl.
 
+## Where board configurations come from
+
+Two shards need the list of board configurations to build URLs from, and they do
+**not** ask the same question. `board-config-source.ts` is the seam.
+
+`getAllBoardConfigsOrThrow` (`server-popular-configs.ts`) answers _which board
+pages are worth building_. It reads `popularBoardConfigs` from the backend, which
+builds its universe with a `GROUP BY` over `board_product_sizes_layouts_sets` —
+the Aurora sync tables. That is the right universe for the home rail and the
+mobile board picker, and it is why MoonBoard was in no sitemap for so long:
+nothing writes a psls row for MoonBoard. The only writers are the Aurora
+importers and no migration seeds one, so MoonBoard was never ranked out — it was
+never a candidate.
+
+The sitemap's question is _which climbs are worth indexing_, and MoonBoard is the
+largest board in the addressable set. Its configuration is not in the database at
+all; it is the static `MOONBOARD_LAYOUTS` / `MOONBOARD_SETS` tables that
+`getDefaultRenderBoard` already resolves for every renderer we ship. So
+`board-config-source.ts` synthesises one `PopularBoardConfig` per MoonBoard
+layout that has listed, non-draft climbs, and appends them to the listed configs
+— rather than changing what `popularBoardConfigs` returns, which would couple a
+backend deploy to a sitemap change and move the board picker underneath it.
+
+The synthetic configs carry `boardCount: 0` and `totalAscents: 0`, which is
+honest (there is no `user_boards` row shape behind them) and also keeps them last
+under `isBetterConfig`'s ordering, so the source is strictly additive. The
+`climbCount` is a plain grouped count over `board_climbs`, **not** the tier-2
+`DISTINCT ON` scan: both shards read that number only as a `> 0` gate, so making
+the boards shard pay the climbs shard's cost budget for a boolean would be the
+wrong trade.
+
+### Two callers, two fail policies
+
+|                                   | caller                 | on a MoonBoard count failure    |
+| --------------------------------- | ---------------------- | ------------------------------- |
+| `getSitemapClimbConfigsOrThrow()` | the climb shards       | **throws**                      |
+| `getBoardsShardConfigsOrThrow()`  | `/sitemaps/boards.xml` | logs, serves the listed configs |
+
+The strict one has to be strict. The climbs shard resolves its groups twice per
+crawl — once for the summary the index sizes pages from, once for the item build
+— and `pagedShardRouteHandler` throws "cache epochs disagree" the moment those two
+see different group sets. A tolerated failure there is worse than a 503.
+
+The tolerant one has no second builder to disagree with, and the arithmetic is
+lopsided: MoonBoard contributes 8 of `boards.xml`'s 668 items on the dev image
+against the listed configs' 660. Before this module existed no database failure
+could reach that shard at all — it was a GraphQL fetch behind a backend Redis
+cache with a one-year TTL — so 503ing 660 working Kilter/Tension/Decoy URLs
+because a grouped count timed out would be a regression bought with nothing. A
+failed **listed** fetch still throws on both paths: that is the leg whose loss
+would tell Google the boards were deleted.
+
+The count query carries a 10 s budget applied _inside_ the shared single-flight
+promise, so a give-up is not memoised and the next caller retries instead of
+joining a stall that already gave up. Nothing else bounds it: the pool sets
+`connect_timeout: 30` and `statement_timeout` is off by default (PgBouncer
+rejects it as a startup parameter — see `docs/db-connectivity.md`).
+
+### The refresher is the only door
+
+Since the climb store landed, adding a board to the sitemap means adding it to
+`buildAllTier2UrlRows()`, and nowhere else is sufficient. The shard pages do not
+build anything: they read `sitemap_climb_urls`, and that table is written by one
+refresher whose only selection entry point is that function. A config that
+reaches `/sitemaps/boards.xml` and the live summary fallback but not the
+refresher produces a store that has never heard of the board and a shard that
+emits nothing new — a change that looks complete in review and ships a no-op.
+`__tests__/moonboard-reaches-the-store.test.ts` exists to red exactly that
+half-done edit.
+
+Adding a board also moves `ordinal`, because `resolveClimbSitemapGroups` orders
+by board type rather than appending. That is a catalogue change, which is what
+`ordinal` is allowed to move for; each page stays self-contained and its
+`<lastmod>` is recomputed from the rows it actually holds.
+
 ## Degrade at the index, fail closed at the shard
 
 The doctrine splits by layer, and the split is deliberate.
@@ -404,6 +479,18 @@ milliseconds. What remains slow is the **fallback**: an empty
 the first refresh runs. The self-heal's empty-table probe bounds that window to one
 crawl of `/sitemap.xml`; the manual curl closes it immediately. Disabled requests do
 not reach either path; they return the cacheable 410.
+
+That one crawl really does degrade, and it is worth knowing what it looks like so
+nobody mistakes it for a regression. Measured on the dev image with the store
+truncated, over the thirteen groups the code resolved when this branch was
+cut — the shape is what matters here, and the counts are owed a re-measure
+since `main` widened the tier-2 angle predicate to the routable set: `/sitemap.xml`
+answers 200 in 4.3 s with `X-Sitemap-Degraded: climbs` and no climbs pages
+listed, then the `after()` self-heal writes 85,347 rows and every request after
+it is healthy at ~0.1 s. Do not reach for concurrency here — a fan-out over the
+group list was tried and dropped, because a cold thirteen-group scan does not fit
+in `SHARD_DEADLINE_MS` at any lane count and the pool is ten connections wide
+(#4461). The answer to a slow fallback is a refreshed store.
 
 Both shard paths now check bytes, and they check different numbers on purpose
 (#4618, closed by #4648).
