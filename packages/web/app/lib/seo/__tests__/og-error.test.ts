@@ -24,7 +24,7 @@ describe('ogErrorResponse', () => {
     vi.useRealTimers();
   });
 
-  it('returns a generic 500 body with no-store, never the raw error message', async () => {
+  it('redirects to the branded fallback card with a short CDN-cacheable TTL, never the raw error message', async () => {
     const { ogErrorResponse } = await loadModule();
     const leakyError = Object.assign(new Error('Failed query: SELECT * FROM users WHERE email = $1'), {
       name: 'DrizzleQueryError',
@@ -33,9 +33,11 @@ describe('ogErrorResponse', () => {
     const response = ogErrorResponse('setter', leakyError);
     const body = await response.text();
 
-    expect(response.status).toBe(500);
-    expect(response.headers.get('Cache-Control')).toBe('no-store');
-    expect(body).toBe('Error generating image');
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/opengraph-image');
+    expect(response.headers.get('Cache-Control')).toBe('public, max-age=0, s-maxage=60');
+    expect(response.headers.get('CDN-Cache-Control')).toBe('public, s-maxage=60');
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe('public, s-maxage=60');
     expect(body).not.toContain('SELECT');
   });
 
