@@ -19,6 +19,16 @@ export const MAX_FRAMES_LENGTH = 16_384;
 
 export const MAX_SET_IDS = 10;
 
+/**
+ * Hard ceiling on the rendered pixel count. Every in-flight plane costs 4 bytes
+ * a pixel, so this is what stops a hand-crafted request from sizing a render
+ * past what the process can hold. The largest real board is Kilter's 1080×2498
+ * (~2.70 MP) — `board-dimensions.test.ts` fails if a board ever grows past this
+ * number, so a new board shows up as a red test rather than a 400 in
+ * production. Oversized requests are rejected, never resampled.
+ */
+export const MAX_RENDER_OUTPUT_PIXELS = 3_000_000;
+
 export function normalizeOutputFormat(format: string): OutputFormat | null {
   if (format === 'jpg') return 'jpeg';
   if (format === 'webp' || format === 'png' || format === 'jpeg') return format;

@@ -137,10 +137,16 @@ async function encodeRendered(
  * raw planes no matter how many hold-set images a board has. A layer that fails
  * to decode is skipped (the board still renders with whatever did load).
  *
- * Dimming is a linear scale rather than a composited black scrim: over an
- * opaque photo, compositing black at opacity `d` is exactly `rgb × (1 - d)`, so
- * the output is identical while a full W×H×4 scrim allocation disappears. It is
- * baked into the base because the caller's cache key includes the dim value.
+ * Dimming stays a composited black scrim, deliberately. Scaling RGB by
+ * `1 - dim` looks equivalent and allocates nothing, but only for *opaque*
+ * pixels: QA measured every board WebP and they all carry alpha — the board
+ * photos are transparent everywhere except the holds, so ~77% of pixels would
+ * come out with different alpha and up to 127 of RGB delta. `dim_background` is
+ * supposed to be a full-bleed wash over the whole image, which is what the iOS
+ * Live Activity widget asks for with `dim_background=0.18` and what mobile's
+ * LayeredClimbImage draws as a full-bleed `rgba(0, 0, 0, 0.18)` view. The scrim
+ * is composited over the *folded* base and baked into it, so a board pays for
+ * it once on a cold cache rather than once per request as before.
  *
  * Returns null when no background image resolves — the caller then falls back
  * to an overlay-only render.
@@ -181,9 +187,32 @@ export async function composeBoardBaseBuffer(params: {
   if (base === null) return null;
   if (dimBackground <= 0) return base;
 
-  const keep = 1 - dimBackground;
-  return sharp(base, { raw: rawLayer }).linear([keep, keep, keep, 1], [0, 0, 0, 0]).raw().toBuffer();
+  // Composited straight from a `create` descriptor: same pixels the old
+  // per-request PNG scrim produced, without encoding and decoding it first.
+  return sharp(base, { raw: rawLayer })
+    .composite([
+      {
+        input: { create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: dimBackground } } },
+        blend: 'over',
+      },
+    ])
+    .raw()
+    .toBuffer();
 }
+
+/**
+ * Concurrent composes of the same base, keyed exactly like the caller's cache.
+ * Two climbs on one board arriving together would otherwise each decode and
+ * fold that board's photos (~10 MB of planes for the tallest Kilter board) to
+ * produce identical bytes. Entries are removed as soon as the compose settles,
+ * so this never holds a buffer alive.
+ *
+ * Only used when the caller supplied a `boardBase` cache: the key describes the
+ * board and the output size, not the caller's `resolveImagePath`, so sharing it
+ * assumes one resolver per process (true today — the web route is the only
+ * consumer).
+ */
+const inFlightBoardBases = new Map<string, Promise<Buffer | null>>();
 
 /**
  * Single-shot render used by the web `board-render` route: takes the WASM
@@ -214,7 +243,6 @@ export async function renderBoardImageBuffer({
   let outputContentType = 'image/png';
   let bgMs = 0;
   let composeMs = 0;
-  let didCompositeBackground = false;
   let cache: RenderBoardImageResult['cache'] = 'none';
 
   const overlayOnlyImage = () => sharp(overlayBuffer, { raw: rawPlane });
@@ -248,7 +276,6 @@ export async function renderBoardImageBuffer({
     outputBuffer = encoded.buffer;
     outputContentType = encoded.contentType;
     composeMs = performance.now() - composeT0;
-    didCompositeBackground = true;
   } else if (includeBackground && isOgVariant) {
     // Dimmed OG card: no caller asks for this today, so it keeps the original
     // uncached composite rather than growing a third cache key.
@@ -280,7 +307,6 @@ export async function renderBoardImageBuffer({
         ])
         .png(DEFAULT_PNG_OPTIONS)
         .toBuffer();
-      didCompositeBackground = true;
     } else {
       imageBuffer = await overlayOnlyImage().png(DEFAULT_PNG_OPTIONS).toBuffer();
     }
@@ -294,15 +320,21 @@ export async function renderBoardImageBuffer({
     if (base) {
       cache = 'hit';
     } else {
-      base =
-        (await composeBoardBaseBuffer({
-          boardDetails,
-          width,
-          height,
-          thumbnail,
-          dimBackground,
-          resolveImagePath,
-        })) ?? undefined;
+      const composeParams = { boardDetails, width, height, thumbnail, dimBackground, resolveImagePath };
+      let composed: Buffer | null;
+      if (caches?.boardBase) {
+        const alreadyComposing = inFlightBoardBases.get(baseKey);
+        const composePromise =
+          alreadyComposing ??
+          composeBoardBaseBuffer(composeParams).finally(() => {
+            inFlightBoardBases.delete(baseKey);
+          });
+        if (!alreadyComposing) inFlightBoardBases.set(baseKey, composePromise);
+        composed = await composePromise;
+      } else {
+        composed = await composeBoardBaseBuffer(composeParams);
+      }
+      base = composed ?? undefined;
       if (base) caches?.boardBase?.set(baseKey, base);
       cache = caches?.boardBase ? 'miss' : 'none';
     }
@@ -322,7 +354,6 @@ export async function renderBoardImageBuffer({
       outputBuffer = encoded.outputBuffer;
       imageBuffer = encoded.imageBuffer;
       outputContentType = encoded.contentType;
-      didCompositeBackground = true;
     } else {
       // No background image resolved — fall back to overlay-only lossless.
       const encoded = await encodeRendered(overlayOnlyImage(), {
@@ -369,18 +400,10 @@ export async function renderBoardImageBuffer({
       outputBuffer = await ogImage.png(DEFAULT_PNG_OPTIONS).toBuffer();
       outputContentType = 'image/png';
     }
-  } else if (outputBuffer === null && imageBuffer && format === 'webp') {
-    const getWebpOptions = () => {
-      if (thumbnail) return THUMBNAIL_WEBP_OPTIONS;
-      if (didCompositeBackground) return DEFAULT_WEBP_OPTIONS;
-      return { lossless: true };
-    };
-    outputBuffer = await sharp(imageBuffer).webp(getWebpOptions()).toBuffer();
-    outputContentType = 'image/webp';
-  } else if (outputBuffer === null && imageBuffer && format === 'jpeg') {
-    outputBuffer = await sharp(imageBuffer).jpeg(getJpegOptions(thumbnail)).toBuffer();
-    outputContentType = 'image/jpeg';
   } else if (outputBuffer === null && imageBuffer) {
+    // Only PNG lands here: every branch above hands back finished bytes for
+    // WebP and JPEG, and the OG variant is taken by the branch above this one.
+    // There is nothing left to re-encode.
     outputBuffer = imageBuffer;
     outputContentType = 'image/png';
   }

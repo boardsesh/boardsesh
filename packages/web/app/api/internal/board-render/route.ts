@@ -11,6 +11,7 @@ import {
   createSemaphore,
   isValidFramesString,
   MAX_FRAMES_LENGTH,
+  MAX_RENDER_OUTPUT_PIXELS,
   normalizeOutputFormat,
   VALID_BOARD_NAMES,
   type OutputFormat,
@@ -30,20 +31,23 @@ export const runtime = 'nodejs';
 configureSharpForServerless();
 
 /**
- * Hard ceiling on the rendered pixel count. The largest real board is Kilter's
- * 1080×2498 (~2.70 MP); anything past 3 MP is a hand-crafted request, and each
- * one costs ~4 bytes/pixel per in-flight plane. Rejected outright rather than
- * resampled — a caller asking for a size no board has is a bug, not a photo.
- */
-const MAX_OUTPUT_PIXELS = 3_000_000;
-
-/**
  * Renders allowed to hold libvips buffers at once. Requests past the limit
  * queue instead of each allocating their own planes, which is what turns a
  * traffic spike into an OOM kill. Two keeps a 3 GB instance comfortable;
  * BOARD_RENDER_CONCURRENCY tunes it without a deploy.
  */
 const renderSemaphore = createSemaphore(Number(process.env.BOARD_RENDER_CONCURRENCY) || 2);
+
+/**
+ * How deep the render queue may get before new work is shed.
+ *
+ * Two renders in parallel at ~0.35–1.9s each clears roughly 30–60 queued
+ * requests inside the function's 30s budget. Past that a queued request would
+ * spend its whole budget waiting and then 504 — having already made everyone
+ * behind it wait — and the client retries straight back into the same queue.
+ * A fast 503 with `Retry-After` sheds the load instead of burning it.
+ */
+const MAX_QUEUED_RENDERS = 40;
 
 /**
  * Coalesces concurrent requests for the same uncached image into one render —
@@ -55,8 +59,11 @@ const inFlightRenders = new Map<string, Promise<RenderedImage>>();
 type RenderedImage = {
   buffer: Buffer;
   contentType: string;
-  /** Whether the board-photo base was already composed for this board. */
-  cache: 'base-hit' | 'miss';
+  /**
+   * Whether the board-photo base was already composed for this board.
+   * `none` is an overlay-only render, which has no base to cache.
+   */
+  cache: 'base-hit' | 'miss' | 'none';
   wasmMs: number;
   timings: RenderTimings;
 };
@@ -159,7 +166,8 @@ async function renderImage(params: {
     caches: { boardBase: boardBaseCache, ogBase: ogBaseCache },
   });
 
-  return { buffer, contentType, cache: cache === 'hit' ? 'base-hit' : 'miss', wasmMs, timings };
+  const baseCacheState = cache === 'hit' ? 'base-hit' : (cache ?? 'none');
+  return { buffer, contentType, cache: baseCacheState, wasmMs, timings };
 }
 
 export async function GET(request: NextRequest) {
@@ -253,10 +261,10 @@ export async function GET(request: NextRequest) {
 
     // Reject oversized renders before allocating anything for them.
     const outputHeight = Math.round((config.output_width * config.board_height) / config.board_width);
-    if (config.output_width * outputHeight > MAX_OUTPUT_PIXELS) {
+    if (config.output_width * outputHeight > MAX_RENDER_OUTPUT_PIXELS) {
       return NextResponse.json(
         {
-          error: `Requested render is ${config.output_width}x${outputHeight}, over the ${MAX_OUTPUT_PIXELS}px limit`,
+          error: `Requested render is ${config.output_width}x${outputHeight}, over the ${MAX_RENDER_OUTPUT_PIXELS}px limit`,
         },
         { status: 400 },
       );
@@ -267,6 +275,17 @@ export async function GET(request: NextRequest) {
     // the request that renders, the whole shared render for one that coalesces.
     let queueMs = 0;
     const inFlight = inFlightRenders.get(byteKey);
+
+    // Shed rather than queue behind more work than the budget can clear. A
+    // request joining an in-flight render adds nothing to the queue, so it is
+    // always let through.
+    if (!inFlight && renderSemaphore.pending > MAX_QUEUED_RENDERS) {
+      return NextResponse.json(
+        { error: 'Render queue is saturated' },
+        { status: 503, headers: { 'Retry-After': '5', 'Cache-Control': 'no-store' } },
+      );
+    }
+
     const renderPromise =
       inFlight ??
       renderSemaphore
