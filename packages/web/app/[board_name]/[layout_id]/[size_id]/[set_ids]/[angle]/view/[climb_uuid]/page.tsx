@@ -123,7 +123,18 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
           parsedParams.climb_uuid,
           currentClimb.name,
         );
-      permanentRedirect(newUrl);
+      // `generateSlugFromText` (shared/play-view) is ASCII-only (`\w` doesn't
+      // match Cyrillic/CJK/emoji), so a climb whose name is entirely
+      // non-Latin slugs to '' and both builders above fall back to the bare
+      // uuid — the same value this route may already have been requested
+      // with. Compare against the RAW request path (not `parsedParams`, which
+      // normalises slugs/ids and would never match) so we only redirect when
+      // the target actually differs; otherwise `permanentRedirect(newUrl)`
+      // would 308 the page to itself forever.
+      const requestedPath = `/${params.board_name}/${params.layout_id}/${params.size_id}/${params.set_ids}/${params.angle}/view/${params.climb_uuid}`;
+      if (newUrl !== requestedPath) {
+        permanentRedirect(newUrl);
+      }
     }
 
     const boardDetails = getBoardDetailsForBoard(parsedParams);
