@@ -692,6 +692,24 @@ describe('board-render API route', () => {
     },
   );
 
+  it('serves cached bytes for a param the renderer never reads', async () => {
+    const params = { ...validParams, include_background: '1' };
+
+    await GET(makeRequest(params));
+    expect(mockRenderOverlay).toHaveBeenCalledTimes(1);
+
+    // `angle` is a board-config param elsewhere in the app, but this route
+    // never reads it and nothing angle-shaped reaches the WASM config — so the
+    // cached bytes are the right answer for it. The day angle (or any new
+    // param) starts changing pixels, this test goes red and the param belongs
+    // in the byte key above, not in this exclusion.
+    const second = await GET(makeRequest({ ...params, angle: '40' }));
+
+    expect(second.status).toBe(200);
+    expect(mockRenderOverlay).toHaveBeenCalledTimes(1);
+    expect(second.headers.get('Server-Timing')).toContain('cache;desc=hit');
+  });
+
   it('never runs more renders at once than the concurrency limit', async () => {
     const closeGate = openRenderGate();
 
