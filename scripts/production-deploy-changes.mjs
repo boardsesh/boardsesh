@@ -45,6 +45,17 @@ function isProductionDeployControlFile(filePath) {
   return filePath === '.github/workflows/production-deploy.yml' || filePath === 'scripts/production-deploy-changes.mjs';
 }
 
+// CI-only files that never reach production: the deploy watchdog is a
+// scheduled janitor for the concurrency group, not shipped code, so editing it
+// must not queue a web deploy of its own.
+function isProductionDeployWatchdogFile(filePath) {
+  return (
+    filePath === '.github/workflows/production-deploy-watchdog.yml' ||
+    filePath === 'scripts/production-deploy-watchdog.mjs' ||
+    filePath === 'scripts/production-deploy-watchdog.test.mjs'
+  );
+}
+
 function isProductionDeployTestFile(filePath) {
   return (
     filePath === 'scripts/production-backend-smoke.test.mjs' ||
@@ -73,7 +84,8 @@ function isWebAffecting(filePath) {
     filePath.startsWith('docs/') ||
     filePath.endsWith('.md') ||
     filePath === 'scripts/production-backend-smoke.mjs' ||
-    isProductionDeployTestFile(filePath)
+    isProductionDeployTestFile(filePath) ||
+    isProductionDeployWatchdogFile(filePath)
   );
 }
 
@@ -104,7 +116,7 @@ function classifyChangedFiles(changedFiles) {
   const targets = { web: false, backend: false, app: false };
 
   for (const filePath of changedFiles) {
-    if (isProductionDeployTestFile(filePath)) continue;
+    if (isProductionDeployTestFile(filePath) || isProductionDeployWatchdogFile(filePath)) continue;
     if (isProductionDeployControlFile(filePath)) return { ...ALL_TARGETS };
     if (isBackendAffecting(filePath)) targets.backend = true;
     if (isWebAffecting(filePath)) targets.web = true;
@@ -281,6 +293,7 @@ export {
   isBackendAffecting,
   isProductionDeployControlFile,
   isProductionDeployTestFile,
+  isProductionDeployWatchdogFile,
   isWebAffecting,
   readRunsPayload,
   selectLatestSuccessfulPriorRun,

@@ -504,7 +504,7 @@ export default defineConfig({
       },
       'test:service-deploy-inputs': {
         command:
-          'node --test scripts/check-service-deploy-inputs.test.mjs scripts/production-backend-smoke.test.mjs scripts/production-deploy-changes.test.mjs scripts/railway-deployment-status.test.mjs',
+          'node --test scripts/check-service-deploy-inputs.test.mjs scripts/production-backend-smoke.test.mjs scripts/production-deploy-changes.test.mjs scripts/production-deploy-watchdog.test.mjs scripts/railway-deployment-status.test.mjs',
         cache: false,
       },
       'check:service-deploy-inputs': {

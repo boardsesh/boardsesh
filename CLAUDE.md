@@ -110,6 +110,7 @@ Ad-hoc edits and direct feature requests don't trigger this workflow. If the use
 Read relevant `docs/` before working on the matching area; update docs when the system changes.
 
 - `docs/websocket-implementation.md` — WebSocket party session architecture
+- `docs/production-deploy.md` — the production deploy concurrency group, how a run parked at the Production environment gate wedges every later push, the watchdog that breaks it, and the "main has not deployed" runbook
 - `docs/boardsesh-grade.md` — Boardsesh grade: the data-science-backed universal climb grade (data sources + quirks, the empirical-Bayes model and every coefficient, validation gates, limitations, rejected alternatives, contributor roadmap)
 - `docs/board-snapshots.md` — nightly SQLite board-catalog snapshots (export job, client bootstrap, ops runbook); `docs/board-snapshots-dataset.md` — the same snapshots as a public downloadable dataset
 - `docs/ai-design-guidelines.md` — Velvet Send design system (mobile-canonical: palette, typography, tokens, Liquid Glass / Material variants; web now consumes it too via `@boardsesh/velvet-tokens` + the foreground/fill split — see the "Web (consuming Velvet Send)" section)

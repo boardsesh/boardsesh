@@ -97,6 +97,37 @@ void test('classifies changed paths with the production workflow semantics', () 
   });
 });
 
+void test('the deploy watchdog never queues a deploy of its own', () => {
+  // It is a scheduled janitor for the concurrency group, not shipped code.
+  for (const filePath of [
+    '.github/workflows/production-deploy-watchdog.yml',
+    'scripts/production-deploy-watchdog.mjs',
+    'scripts/production-deploy-watchdog.test.mjs',
+  ]) {
+    assert.deepEqual(classifyChangedFiles([filePath]), { web: false, backend: false, app: false });
+  }
+});
+
+void test('a watchdog file alongside real code still deploys the real code', () => {
+  // The skip is per-file, not per-changeset: a commit touching both must still
+  // deploy what it changed, or the exclusion would swallow a real release.
+  //
+  // The backend path also sets web:true, which looks odd on its own. That is
+  // isWebAffecting's pre-existing shape, not something this test introduces: it
+  // is a denylist (mobile/, docs/, *.md and two scripts are excluded) so
+  // anything else counts as web-affecting. www imports shared packages, so
+  // erring toward a web deploy is the safe direction.
+  assert.deepEqual(classifyChangedFiles(['scripts/production-deploy-watchdog.mjs', 'packages/backend/src/index.ts']), {
+    web: true,
+    backend: true,
+    app: false,
+  });
+  assert.deepEqual(
+    classifyChangedFiles(['.github/workflows/production-deploy-watchdog.yml', 'packages/mobile/app/index.tsx']),
+    { web: false, backend: true, app: true },
+  );
+});
+
 void test('treats the production workflow and its detector as affecting every target', () => {
   for (const filePath of ['.github/workflows/production-deploy.yml', 'scripts/production-deploy-changes.mjs']) {
     assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: true, app: true });
