@@ -33,6 +33,26 @@ import { getAllBoardConfigsOrThrow } from '@/app/lib/server-popular-configs';
 
 /** In-process TTL and Data Cache window, matching `getAllBoardConfigsOrThrow`. */
 const MOONBOARD_REVALIDATE_SECONDS = 3_600;
+
+/**
+ * Wall-clock bound on the count query, matching the `SITEMAP_FETCH_TIMEOUT_MS`
+ * the listed-config fetch gives its own `AbortController`.
+ *
+ * `shardRouteHandler` is documented "deliberately unbounded" on the grounds that
+ * `getAllBoardConfigsOrThrow` budgets itself 10 s. This leg runs in parallel with
+ * it and had no bound at any layer: `dbzRead`'s pool sets `connect_timeout: 30`
+ * and `statement_timeout` is off by default (PgBouncer rejects it as a startup
+ * parameter — see docs/db-connectivity.md), so a stalled read would have held the
+ * boards shard for the whole platform timeout, and the single-flight would have
+ * made every later caller join the stall. Measured cost of the query itself on
+ * the dev image: 36 ms warm, 151 ms first touch, so 10 s is a tail bound and not
+ * a budget anything is expected to spend.
+ *
+ * Like `withDeadline` in `shard-registry.ts`, this stops waiting rather than
+ * cancelling: the abandoned query keeps running and will populate the caches for
+ * whoever asks next.
+ */
+const MOONBOARD_COUNT_TIMEOUT_MS = 10_000;
 const MOONBOARD_TTL_MS = MOONBOARD_REVALIDATE_SECONDS * 1_000;
 const MOONBOARD_CACHE_TAG = 'sitemap-moonboard-climb-counts';
 
@@ -76,6 +96,18 @@ async function fetchMoonBoardClimbCounts(): Promise<Map<number, number>> {
   return countsByLayout;
 }
 
+function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    work.finally(() => {
+      if (timer) clearTimeout(timer);
+    }),
+    new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} exceeded its ${ms}ms budget`)), ms);
+    }),
+  ]);
+}
+
 /** Data Cache stores plain JSON, so the Map is rebuilt on the way out. */
 const cachedMoonBoardClimbCounts = unstable_cache(
   async (): Promise<[number, number][]> => [...(await fetchMoonBoardClimbCounts()).entries()],
@@ -101,7 +133,15 @@ async function getMoonBoardClimbCounts(): Promise<Map<number, number>> {
     return countsInFlight;
   }
 
-  const build = cachedMoonBoardClimbCounts().then((entries) => {
+  // The timeout is INSIDE the shared promise on purpose: a rejection then flows
+  // through the same path a query error does, so it is not memoised, every
+  // concurrent caller sees it, and the next caller retries instead of joining a
+  // stall that already gave up.
+  const build = withTimeout(
+    cachedMoonBoardClimbCounts(),
+    MOONBOARD_COUNT_TIMEOUT_MS,
+    '[sitemap] MoonBoard climb-count query',
+  ).then((entries) => {
     const countsByLayout = new Map(entries);
     cachedCounts = { builtAt: Date.now(), countsByLayout };
     return countsByLayout;
@@ -162,14 +202,50 @@ function buildMoonBoardConfigs(countsByLayout: Map<number, number>): PopularBoar
 }
 
 /**
- * Every board configuration the sitemap shards build URLs from.
+ * Every board configuration the CLIMB shards build URLs from.
  *
- * Throws for the same reason `getAllBoardConfigsOrThrow` does: a sitemap that
- * quietly loses its URLs tells Google those pages were deleted, so the route
- * turns a throw into a 503 and the crawler keeps its last good copy.
+ * Strict on both legs, and it has to be. The climbs shard resolves its groups
+ * twice per crawl — once for the summary the index sizes pages from, once for
+ * the item build — and `pagedShardRouteHandler` throws "cache epochs disagree"
+ * the moment those two see different group sets. A MoonBoard count that failed
+ * for one and succeeded for the other is exactly that disagreement, so a failure
+ * has to fail the whole thing: the route turns the throw into a 503 and the
+ * crawler keeps its last good copy, which is what `getAllBoardConfigsOrThrow`
+ * already does for the same reason.
  */
-export async function getSitemapBoardConfigsOrThrow(): Promise<PopularBoardConfig[]> {
+export async function getSitemapClimbConfigsOrThrow(): Promise<PopularBoardConfig[]> {
   const [listedConfigs, moonBoardCounts] = await Promise.all([getAllBoardConfigsOrThrow(), getMoonBoardClimbCounts()]);
+
+  return [...listedConfigs, ...buildMoonBoardConfigs(moonBoardCounts)];
+}
+
+/**
+ * The same configurations for `/sitemaps/boards.xml`, with the MoonBoard leg
+ * allowed to fail.
+ *
+ * Different question, different fail policy. The boards shard has no second
+ * builder to disagree with, and the arithmetic is lopsided: MoonBoard
+ * contributes 8 of its 668 items on the dev image, while the listed configs
+ * contribute 660. Before this module existed no database failure could reach
+ * that shard at all — it was a GraphQL fetch behind a backend Redis cache with a
+ * one-year TTL — so making 660 working Kilter/Tension/Decoy URLs 503 for an hour
+ * because a grouped count timed out would be a strict regression bought with
+ * nothing.
+ *
+ * A failed listed fetch still throws. That is the leg whose loss would tell
+ * Google the boards were deleted.
+ */
+export async function getBoardsShardConfigsOrThrow(): Promise<PopularBoardConfig[]> {
+  const [listedConfigs, moonBoardCounts] = await Promise.all([
+    getAllBoardConfigsOrThrow(),
+    getMoonBoardClimbCounts().catch((err: unknown) => {
+      console.error(
+        '[sitemap] boards shard: MoonBoard climb counts unavailable, serving the listed configs without them:',
+        err instanceof Error ? err.message : err,
+      );
+      return new Map<number, number>();
+    }),
+  ]);
 
   return [...listedConfigs, ...buildMoonBoardConfigs(moonBoardCounts)];
 }

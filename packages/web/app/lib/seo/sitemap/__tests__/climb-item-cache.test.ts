@@ -32,7 +32,7 @@ const TENSION_CONFIG: PopularBoardConfig = {
 // Three groups, so "sequential" is observable at all: with one group a
 // Promise.all rewrite and a for-loop are indistinguishable.
 vi.mock('../board-config-source', () => ({
-  getSitemapBoardConfigsOrThrow: async () => [
+  getSitemapClimbConfigsOrThrow: async () => [
     KILTER_CONFIG,
     { ...KILTER_CONFIG, layoutId: 8, sizeId: 25, setIds: [26, 27] },
     TENSION_CONFIG,

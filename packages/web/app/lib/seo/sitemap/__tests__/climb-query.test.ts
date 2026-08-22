@@ -6,7 +6,7 @@ vi.mock('server-only', () => ({}));
 // A drizzle instance with no client behind it: building and rendering a query
 // never touches the connection, and the test must not need a database.
 vi.mock('@/app/lib/db/db', () => ({ dbzRead: drizzle({} as never) }));
-vi.mock('../board-config-source', () => ({ getSitemapBoardConfigsOrThrow: async () => [] }));
+vi.mock('../board-config-source', () => ({ getSitemapClimbConfigsOrThrow: async () => [] }));
 
 const { buildTier2ClimbQuery, buildTier2ClimbSummaryQuery, TIER_2_MIN_ASCENTS } = await import('../climb-query');
 

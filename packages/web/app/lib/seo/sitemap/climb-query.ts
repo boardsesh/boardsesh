@@ -5,7 +5,7 @@ import { getRoutableBoardAngles, toBoardName } from '@boardsesh/board-config';
 import { withSerialPlan, type SerialPlanDb } from '@boardsesh/db/queries';
 import { dbzRead } from '@/app/lib/db/db';
 import { boardClimbAliases, boardClimbStats, boardClimbs } from '@/app/lib/db/schema';
-import { getSitemapBoardConfigsOrThrow } from './board-config-source';
+import { getSitemapClimbConfigsOrThrow } from './board-config-source';
 import {
   climbRowsToItems,
   resolveClimbSitemapGroups,
@@ -206,16 +206,24 @@ export async function fetchTier2ClimbRows(group: ClimbConfigGroup): Promise<Clim
  * The RESULT is two numbers. The COST is not: it is the same `DISTINCT ON` scan
  * as the item build, once per `(board_type, layout_id)` group — measured on the
  * full-board dev image at 16.7 s cold, 0.95 s fully warm, for the largest of
- * sixteen groups. Read that as "small answer, expensive question".
+ * them. Read that as "small answer, expensive question".
  *
  * One caller: the cached `fetchTier2Summary` fallback below. The refresher used
  * to be the second (#4523), but it now derives the summary from the URL rows it
- * builds anyway (`buildAllTier2UrlRows`), so it runs sixteen scans instead of
- * thirty-two. Request paths want `fetchClimbShardSummary()` (store first, the
- * fallback below only when the store is empty).
+ * builds anyway (`buildAllTier2UrlRows`), so it runs one set of scans instead of
+ * two. Request paths want `fetchClimbShardSummary()` (store first, the fallback
+ * below only when the store is empty).
+ *
+ * Still sequential, and adding MoonBoard's groups is not a reason to change
+ * that. An earlier draft of this change fanned the loop out three lanes wide to
+ * bring the LIVE summary back inside `SHARD_DEADLINE_MS`; #4552 then took the
+ * index off this path entirely, so the deadline this raced is no longer on the
+ * far side of it. What is left is the pre-first-refresh fallback, where the
+ * answer is to refresh the store, not to spend three of a ten-connection pool on
+ * a path that should run once per deploy.
  */
 async function computeTier2Summary(): Promise<{ itemCount: number; lastModifiedIso: string | null }> {
-  const groups = resolveClimbSitemapGroups(await getSitemapBoardConfigsOrThrow());
+  const groups = resolveClimbSitemapGroups(await getSitemapClimbConfigsOrThrow());
 
   let itemCount = 0;
   let lastModified: Date | null = null;
@@ -319,9 +327,17 @@ export type Tier2UrlRow = {
  * `buildChosenSubquery` comments above record two separate measured incidents
  * where a plausible-looking second copy of this selection silently dropped most
  * of the shard; a drifting duplicate is exactly how that recurs.
+ *
+ * `getSitemapClimbConfigsOrThrow`, not `getAllBoardConfigsOrThrow`, and that one
+ * word is the whole of what puts MoonBoard in the sitemap. #4552 moved the pages
+ * onto `sitemap_climb_urls`, so a board that is missing from the config source
+ * the REFRESHER reads is missing from the stored rows, and every downstream read
+ * — the shard pages, the index's item count, the per-page `<lastmod>` — is
+ * missing it too, however many synthetic configs exist elsewhere. There is no
+ * second place to add it: the refresher's only entry point is this function.
  */
 export async function buildAllTier2UrlRows(): Promise<Tier2UrlRow[]> {
-  const groups = resolveClimbSitemapGroups(await getSitemapBoardConfigsOrThrow());
+  const groups = resolveClimbSitemapGroups(await getSitemapClimbConfigsOrThrow());
   const urlRows: Tier2UrlRow[] = [];
   let dropped = 0;
 

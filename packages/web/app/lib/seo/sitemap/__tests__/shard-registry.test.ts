@@ -38,7 +38,7 @@ const MOONBOARD_CONFIG: PopularBoardConfig = {
   displayName: 'MoonBoard Masters 2017',
 };
 vi.mock('../board-config-source', () => ({
-  getSitemapBoardConfigsOrThrow: async () => [KILTER_CONFIG, MOONBOARD_CONFIG],
+  getBoardsShardConfigsOrThrow: async () => [KILTER_CONFIG, MOONBOARD_CONFIG],
 }));
 vi.mock('../playlist-query', () => ({
   fetchPlaylistSitemapRows: async () => [],
