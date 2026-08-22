@@ -52,6 +52,15 @@ jobs:
       # `listing-guards` job (see below).
       storeMetadata: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.storeMetadata }}
       mobileLocales: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.mobileLocales }}
+      # The two REST-surface oracles walk packages/web/app/api/** and
+      # packages/web/vercel.json with readdirSync/readFileSync at run time, so
+      # Vitest's `--changed` module-graph analysis can never relate them to a
+      # diff that only adds or deletes a route file — the exact diff shape they
+      # exist to catch. Measured on #4663: adding app/api/internal/probe-route/
+      # route.ts, and separately deleting app/api/og/setter/route.tsx, each
+      # selected ZERO specs under `vp test run --project web --changed`. Gates
+      # the `rest-surface` job (see below).
+      restSurface: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.restSurface }}
       # PR-only guard signal: did this PR edit the OTA-owned changelog data file?
       # Defaults false off PRs (the OTA bot legitimately rewrites it on push).
       changelogData: ${{ github.event_name == 'pull_request' && steps.filter.outputs.changelogData || 'false' }}
@@ -67,10 +76,10 @@ jobs:
       # ci-location-sync-workflow.test.ts asserts on its terms; keep it in sync
       # with the job `if:`s below so a future job can gate on it again.
       runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.locationSync == 'true' || steps.filter.outputs.rootCi == 'true' }}
-      # NOTE: deployConfig, storeMetadata, and mobileLocales are deliberately
-      # NOT part of runAny — the deploy-config and listing-guards jobs below
-      # gate on their own filters, so a PR touching only their files runs
-      # nothing else.
+      # NOTE: deployConfig, storeMetadata, mobileLocales, and restSurface are
+      # deliberately NOT part of runAny — the deploy-config, listing-guards and
+      # rest-surface jobs below gate on their own filters, so a PR touching only
+      # their files runs nothing else.
     steps:
       # No actions/checkout here on purpose: on `pull_request` dorny/paths-filter
       # reads the changed-file list from the REST API (no working tree needed),
@@ -176,6 +185,17 @@ jobs:
             mobileLocales:
               - 'packages/mobile/locales/**'
               - 'scripts/mobile-locales-parity.test.ts'
+            # Everything the two REST-surface oracles read via fs at run time,
+            # plus the specs themselves and the api-docs module the OpenAPI one
+            # statically imports. `packages/web/app/api/**` is the load-bearing
+            # glob: a route-file-only diff matches anyJs (so test-default runs)
+            # but selects neither spec there, which is why this job exists.
+            restSurface:
+              - 'packages/web/app/api/**'
+              - 'packages/web/vercel.json'
+              - 'packages/web/app/lib/api-docs/**'
+              - 'packages/web/app/__tests__/rest-surface-inventory.test.ts'
+              - 'scripts/__tests__/ci-rest-surface-workflow.test.ts'
             rootCi:
               - '.github/workflows/ci.yml'
               - 'vite.config.ts'
@@ -537,6 +557,41 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Validate store listing copy and mobile locale parity
         run: vp test run --project scripts scripts/store-metadata-limits.test.ts scripts/mobile-locales-parity.test.ts
+
+  rest-surface:
+    needs: [changes]
+    # Deliberately not `--changed`-filtered, same rationale as deploy-config and
+    # listing-guards one job up: both specs reconcile the REST surface against
+    # the filesystem at run time (readdirSync over packages/web/app/api/**,
+    # readFileSync of vercel.json, existsSync per registered OpenAPI path), so
+    # Vitest's module-graph analysis in test-default never selects them for a
+    # diff that only adds or deletes a route file. That is precisely the diff
+    # each one guards, so inside test-default they were inert on PRs and only
+    # ever reddened post-merge on main. Run both unfiltered whenever the API
+    # tree, vercel.json, or the specs' own inputs change. Do not fold these into
+    # test-default and do not add `--changed` here.
+    if: needs.changes.outputs.restSurface == 'true' || needs.changes.outputs.rootCi == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Validate the REST surface inventory and the published OpenAPI spec
+        run: >-
+          vp test run --project web
+          packages/web/app/__tests__/rest-surface-inventory.test.ts
+          packages/web/app/lib/api-docs/__tests__/openapi-document.test.ts
+      # Same fs-reading blind spot one level up: this spec reads ci.yml itself,
+      # so nothing in test-default relates it to a diff that narrows this job.
+      # It is what stops the gate above from being quietly reverted.
+      - name: Validate this job's own gate
+        run: vp test run --project scripts scripts/__tests__/ci-rest-surface-workflow.test.ts
 
   test-default:
     needs: [changes]
@@ -1089,6 +1144,7 @@ jobs:
       - changelog-owned
       - deploy-config
       - listing-guards
+      - rest-surface
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2

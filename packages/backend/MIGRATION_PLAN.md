@@ -226,14 +226,8 @@ curl http://localhost:8080/graphql -H "Content-Type: application/json" \
 
 ### Parity Tests
 
-REST vs GraphQL parity tests compare responses from the public REST API against the local GraphQL implementation.
-
-```bash
-# Run parity tests locally (requires dev database)
-bun run test -w boardsesh-backend -- --config vitest.parity.config.ts
-```
-
-**Note:** Parity tests are excluded from CI (`vitest.config.ts` excludes `*parity*.test.ts`). They require:
-
-- Local development database running (`bun run db:up`)
-- Access to public REST API at www.boardsesh.com
+Removed in #4663. The REST vs GraphQL parity suite fetched the live public API
+at www.boardsesh.com from a developer's machine, ran under its own vitest
+config, and was excluded from CI — nothing kept it honest and it had gone
+stale. Compare a resolver against its REST route by hand, or add a
+fixture-backed test to the normal `backend` project.
