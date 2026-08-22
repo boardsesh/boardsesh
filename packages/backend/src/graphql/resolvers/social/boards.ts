@@ -37,7 +37,7 @@ import { publishBoardQueuePreviewTombstoneForBoard } from '../../../services/boa
 import { logger } from '../../../utils/logger';
 import { redisClientManager } from '../../../redis/client';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
-import { singleFlight } from '../../../utils/single-flight';
+import { REDISLESS_FALLBACK_TTL_MS, singleFlight } from '../../../utils/single-flight';
 import { lockAndAssertBoardSerialAvailable } from '../board-serial-write-lock';
 
 // ============================================
@@ -759,17 +759,15 @@ const POPULAR_CONFIGS_FLIGHT_KEY = 'popular-board-configs';
  * Without one, single-flight alone would still re-run the statement for the
  * first caller after each completion, forever.
  */
-const LOCAL_FALLBACK_TTL_MS = 10 * 60 * 1000;
 let localFallbackConfigs: { configs: CachedPopularConfig[]; expiresAt: number } | null = null;
 
-/** The Redis-less twin of deleting REDIS_CACHE_KEY: force the next read to re-query. */
-function dropPopularConfigsFallback(): void {
+/**
+ * The Redis-less twin of deleting REDIS_CACHE_KEY: force the next read to
+ * re-query. Called by the deploy warm-up, and by tests so one case cannot
+ * answer the next from the previous one's fixture.
+ */
+export function dropPopularConfigsFallback(): void {
   localFallbackConfigs = null;
-}
-
-/** Test-only: drop the Redis-less fallback so one test cannot leak into the next. */
-export function resetPopularConfigsFallbackForTests(): void {
-  dropPopularConfigsFallback();
 }
 
 async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
@@ -908,7 +906,7 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
       logger.error('[PopularConfigs] Redis write failed:', err);
     }
   } else {
-    localFallbackConfigs = { configs, expiresAt: Date.now() + LOCAL_FALLBACK_TTL_MS };
+    localFallbackConfigs = { configs, expiresAt: Date.now() + REDISLESS_FALLBACK_TTL_MS };
   }
   return configs;
 }

@@ -138,8 +138,9 @@ import {
   betaLinkQueries,
   warmRecentBetaLinksCache,
   invalidateRecentBetaLinksCache,
-  resetRecentBetaLinksFallbackForTests,
+  dropRecentBetaLinksFallback,
 } from '../graphql/resolvers/beta-videos/queries';
+import { resetSingleFlightForTests } from '../utils/single-flight';
 
 type Row = {
   boardType: string;
@@ -342,7 +343,7 @@ describe('recentBetaLinks resolver', () => {
     // With no Redis the resolver keeps a process-local copy for 10 minutes
     // (#4463), which would otherwise answer the next test from the previous
     // test's fixture instead of hitting `executeMock`.
-    resetRecentBetaLinksFallbackForTests();
+    dropRecentBetaLinksFallback();
   });
 
   // The CTE-based resolver returns flat snake_case rows from `db.execute` and
@@ -600,7 +601,7 @@ describe('recentBetaLinks Redis cache', () => {
     redisConnectedMock.mockReturnValue(true);
     // The Redis-less branch keeps a process-local copy for 10 minutes (#4463);
     // clear it so the one test here that disconnects Redis still reaches the CTE.
-    resetRecentBetaLinksFallbackForTests();
+    dropRecentBetaLinksFallback();
   });
 
   it('returns cached rows without running the CTE on hit', async () => {
@@ -657,6 +658,38 @@ describe('recentBetaLinks Redis cache', () => {
     expect(executeMock).toHaveBeenCalledTimes(1);
     expect(redisGetMock).not.toHaveBeenCalled();
     expect(redisSetMock).not.toHaveBeenCalled();
+  });
+
+  // The other half of the home page's cold read (#4463). Same hazard as
+  // popularBoardConfigs: with no concurrency control, N simultaneous visitors
+  // during a cold window meant N copies of the CTE, each holding one of the
+  // pool's ten connections until it finished — after which every other query
+  // in the process queued behind them forever.
+  it('runs one CTE for callers that arrive while the first is still running', async () => {
+    resetSingleFlightForTests();
+    redisConnectedMock.mockReturnValue(false);
+    let releaseCte!: (rows: unknown) => void;
+    executeMock.mockReturnValue(
+      new Promise((resolve) => {
+        releaseCte = resolve;
+      }),
+    );
+
+    const concurrent = [
+      betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }),
+      betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }),
+      betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }),
+      betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }),
+    ];
+    expect(executeMock).toHaveBeenCalledTimes(1);
+
+    releaseCte([cachedRow({ link: 'https://www.instagram.com/p/HERD/' })]);
+    const results = await Promise.all(concurrent);
+
+    expect(executeMock).toHaveBeenCalledTimes(1);
+    for (const result of results) {
+      expect(result).toHaveLength(1);
+    }
   });
 
   it('still serves a result when the Redis read throws', async () => {

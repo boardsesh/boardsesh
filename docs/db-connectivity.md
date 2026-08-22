@@ -99,6 +99,39 @@ off) rather than reaching into postgres.js's backoff.
 The connect-retry tests pin their pools to `backoff: () => 0` so they measure this
 wrapper's loop rather than that ramp.
 
+## What actually exhausts a pool: one uncached read, run concurrently (#4463)
+
+The deadlines above bound how long a caller _waits_. Neither bounds how many
+connections one logical read can hold at once, and that is what took the
+backend down in #4463.
+
+The home page's two backend reads — `popularBoardConfigs` and
+`recentBetaLinks` — are Redis-cached with a long TTL and both fall through to
+a heavy statement on a miss. The fall-through had no concurrency control, so N
+simultaneous visitors during a cold window meant N simultaneous copies, each
+holding one of the pool's ten connections. `popularBoardConfigs` costs 82 s on
+the dev-db image, so ten visitors emptied the pool for well over a minute, and
+after that every _other_ query in the process queued forever on the untimed
+acquire queue described above. `{ __typename }` kept answering in single-digit
+milliseconds through the same event loop, which is why it read as anything but
+saturation.
+
+`packages/backend/src/utils/single-flight.ts` is the fix: concurrent callers of
+one key share one in-flight promise, so a cold window costs one statement and
+one connection instead of one per caller. It is deliberately not a cache — the
+promise is dropped the moment it settles. A process-local copy
+(`REDISLESS_FALLBACK_TTL_MS`) covers deployments with no Redis, where
+single-flight alone would still re-run the statement for the first caller after
+every completion.
+
+The distributed Redis lock those reads' warm-up jobs take is not a substitute:
+it only stops a second _node_ from refreshing, and it is not held on the
+resolver path at all.
+
+**When adding a cache-with-fallthrough on a read that costs more than a few
+hundred milliseconds, wrap the fall-through.** The Redis hit rate is not the
+safety property; the concurrency of the miss is.
+
 ## Front-door read deadlines and pool sizing (#4461)
 
 The connect retry above bounds a _failed_ connect. It does nothing about a
