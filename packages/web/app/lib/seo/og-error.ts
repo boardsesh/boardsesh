@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nextjs';
 import { compactErrorMessage } from '@/app/lib/observability/compact-error';
 
 /**
@@ -33,7 +34,9 @@ function shouldLog(route: string): boolean {
  *    an info leak, since these routes are unauthenticated. The response body
  *    never echoes the error.
  *  - They logged on every failed render. This throttles to once per route per
- *    {@link OG_ERROR_LOG_INTERVAL_MS}.
+ *    {@link OG_ERROR_LOG_INTERVAL_MS} — and that same gate bounds the Sentry
+ *    volume too, so a wedged route costs one Sentry event per minute instead
+ *    of one per request.
  *
  * The response itself is a 302 to `/opengraph-image` (the existing DB-free
  * branded card, `app/opengraph-image.tsx`) rather than a 500. Unfurlers
@@ -51,6 +54,7 @@ function shouldLog(route: string): boolean {
 export function ogErrorResponse(route: string, error: unknown): Response {
   if (shouldLog(route)) {
     console.error(`[og] ${route} render failed:`, compactErrorMessage(error));
+    Sentry.captureException(error, { tags: { surface: 'og', route } });
   }
 
   return new Response(null, {
