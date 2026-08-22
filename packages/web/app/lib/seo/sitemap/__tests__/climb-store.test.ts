@@ -31,6 +31,8 @@ const live = vi.hoisted(() => ({
   /** What the CACHED item fallback returns when the URL store is empty. */
   fallbackItems: [] as { path: string; lastModified: Date | null }[],
   fallbackItemCalls: 0,
+  /** Lets a test observe WHEN the fallback build starts, relative to the report. */
+  onFallbackItems: null as null | (() => void),
 }));
 
 vi.mock('../climb-query', () => ({
@@ -45,6 +47,7 @@ vi.mock('../climb-query', () => ({
   },
   buildTier2ClimbItems: async () => {
     live.fallbackItemCalls += 1;
+    live.onFallbackItems?.();
     return live.fallbackItems;
   },
 }));
@@ -69,6 +72,20 @@ const schema = vi.hoisted(() => ({
 }));
 
 vi.mock('@/app/lib/db/schema', () => schema);
+
+/**
+ * Every Sentry event the store fired, in order. `console.error` alone is what
+ * #4583 proved insufficient — it is the channel the climbs shard went missing on
+ * for weeks — so "did this page anyone" is asserted separately from "was it
+ * logged".
+ */
+const sentry = vi.hoisted(() => ({ messages: [] as { message: string; level: string }[] }));
+
+vi.mock('@sentry/nextjs', () => ({
+  captureMessage: (message: string, level: string) => {
+    sentry.messages.push({ message, level });
+  },
+}));
 
 const store = vi.hoisted(() => ({
   row: null as StoredRow | null,
@@ -269,6 +286,7 @@ beforeEach(() => {
   live.fallbackSummaryCalls = 0;
   live.fallbackItems = [];
   live.fallbackItemCalls = 0;
+  live.onFallbackItems = null;
   store.row = null;
   store.urlRows = [];
   store.readThrows = false;
@@ -277,6 +295,7 @@ beforeEach(() => {
   store.urlWrites = [];
   store.transactionOps = [];
   store.executed = [];
+  sentry.messages = [];
   resetClimbStoreStateForTests();
 });
 
@@ -288,22 +307,32 @@ describe('reading the climbs shard summary', () => {
 
     expect(summary.itemCount).toBe(51_842);
     expect(summary.lastModified).toEqual(new Date('2026-05-04T11:22:33.000Z'));
+    expect(summary.source).toBe('store');
     // The assertion the whole change rests on: no sixteen-scan question is asked
     // on the path racing SHARD_DEADLINE_MS.
     expect(live.fallbackSummaryCalls).toBe(0);
     expect(live.buildCalls).toBe(0);
+    // A healthy read pages nobody. Without this the six-hour floor could be
+    // "fires once and never again" and every test below would still pass.
+    expect(sentry.messages).toEqual([]);
   });
 
-  it('falls back to the live summary when nothing has been stored yet', async () => {
+  it('falls back to the live summary when nothing has been stored yet, and says so', async () => {
     // The first request after this deploy, and local dev. Never WORSE than main —
-    // it is exactly main's path — but it is still the slow one, which is why the
-    // rollout runs one refresh by hand.
+    // it is exactly main's path — but it is still the slow one, and #4583 is the
+    // proof that "slow but correct" goes unnoticed unless it announces itself.
     store.row = null;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const summary = await fetchClimbShardSummary();
 
     expect(summary.itemCount).toBe(999);
+    expect(summary.source).toBe('live');
     expect(live.fallbackSummaryCalls).toBe(1);
+    expect(sentry.messages).toHaveLength(1);
+    expect(sentry.messages[0].level).toBe('error');
+    expect(sentry.messages[0].message).toContain('summary-empty');
+    errors.mockRestore();
   });
 
   it('falls back rather than propagating when the store read throws', async () => {
@@ -316,7 +345,32 @@ describe('reading the climbs shard summary', () => {
     const summary = await fetchClimbShardSummary();
 
     expect(summary.itemCount).toBe(999);
-    expect(errors.mock.calls.flat().join(' ')).toContain('could not read the stored climbs summary');
+    expect(summary.source).toBe('live');
+    expect(errors.mock.calls.flat().join(' ')).toContain('could not read sitemap_shard_refreshes');
+    // One event, not two: a throw is `summary-read-failed`, and the `!stored`
+    // branch it falls through to must not ALSO report `summary-empty` — the same
+    // degradation reported twice under two names is what makes a Sentry channel
+    // unreadable.
+    expect(sentry.messages.map((event) => event.message)).toHaveLength(1);
+    expect(sentry.messages[0].message).toContain('summary-read-failed');
+    errors.mockRestore();
+  });
+
+  it('pages once per reason per instance, however many crawlers arrive', async () => {
+    // A cold crawl is /sitemap.xml plus one request per page landing together. A
+    // wedged store degrades all of them, and one event per request would bury the
+    // signal in its own volume.
+    store.row = null;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await fetchClimbShardSummary();
+    await fetchClimbShardSummary();
+    await fetchClimbShardSummary();
+
+    expect(sentry.messages).toHaveLength(1);
+    // The log is NOT floored — every occurrence stays greppable once you know to
+    // look, which is a different job from paging someone.
+    expect(errors.mock.calls.length).toBe(3);
     errors.mockRestore();
   });
 
@@ -545,7 +599,9 @@ describe('buildClimbShardPage', () => {
     expect(page.items).toHaveLength(3);
     expect(page.totalItems).toBe(3);
     expect(page.items[0].lastModified).toEqual(new Date('2026-05-04T11:22:33.000Z'));
+    expect(page.source).toBe('store');
     expect(live.fallbackItemCalls).toBe(0);
+    expect(sentry.messages).toEqual([]);
   });
 
   it('falls back to the live build, slicing the same way, when the store is empty', async () => {
@@ -556,12 +612,37 @@ describe('buildClimbShardPage', () => {
       path: `/live-${index}`,
       lastModified: null,
     }));
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const page = await buildClimbShardPage(2);
 
     expect(live.fallbackItemCalls).toBe(1);
     expect(page.totalItems).toBe(PER_PAGE + 2);
     expect(page.items.map((item) => item.path)).toEqual([`/live-${PER_PAGE}`, `/live-${PER_PAGE + 1}`]);
+    expect(page.source).toBe('live');
+    // Nothing outside this process ever looked at the page path — the smoke reads
+    // the index's `<loc>` entries, not the pages — so before this event an empty
+    // URL table meant every crawler fetch paid 51 s in silence.
+    expect(sentry.messages).toHaveLength(1);
+    expect(sentry.messages[0].message).toContain('page-empty');
+    errors.mockRestore();
+  });
+
+  it('reports the page fallback BEFORE running the 51 s build', async () => {
+    // Ordering, not decoration. The fallback build is the slow path by
+    // definition, and a Vercel invocation that times out inside it never reaches
+    // a line placed after it — the event would be lost exactly when it matters.
+    const order: string[] = [];
+    live.fallbackItems = [{ path: '/live-0', lastModified: null }];
+    live.onFallbackItems = () => order.push('built');
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {
+      order.push('reported');
+    });
+
+    await buildClimbShardPage(1);
+
+    expect(order).toEqual(['reported', 'built']);
+    errors.mockRestore();
   });
 
   it('falls back rather than propagating when the store read throws', async () => {
@@ -575,7 +656,10 @@ describe('buildClimbShardPage', () => {
     const page = await buildClimbShardPage(1);
 
     expect(page.items.map((item) => item.path)).toEqual(['/live-0']);
-    expect(errors.mock.calls.flat().join(' ')).toContain('could not read the stored climb URLs');
+    expect(page.source).toBe('live');
+    expect(errors.mock.calls.flat().join(' ')).toContain('could not read sitemap_climb_urls');
+    expect(sentry.messages).toHaveLength(1);
+    expect(sentry.messages[0].message).toContain('page-read-failed');
     errors.mockRestore();
   });
 });

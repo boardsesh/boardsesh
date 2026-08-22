@@ -42,6 +42,9 @@ const climbs = vi.hoisted(() => ({
   /** What the per-page lastmod aggregate answers; empty means "store empty, use the uniform value". */
   pageLastmods: [] as (Date | null)[],
   pageLastmodsThrow: false,
+  /** Which path the store says answered. `undefined` is a build that reports none. */
+  summarySource: 'store' as 'store' | 'live' | undefined,
+  pageSource: 'store' as 'store' | 'live' | undefined,
 }));
 
 // The index and the shard route both read the store (#4523/#4552): the summary
@@ -56,12 +59,16 @@ vi.mock('../climb-store', () => ({
     if (climbs.summaryThrows) throw new Error('climbs summary unavailable');
     // A summary that never settles: the failure a try/catch cannot see.
     if (climbs.summaryHangs) return new Promise<never>(() => {});
-    return { itemCount: climbs.itemCount, lastModified: new Date('2026-05-04T11:22:33.000Z') };
+    return {
+      itemCount: climbs.itemCount,
+      lastModified: new Date('2026-05-04T11:22:33.000Z'),
+      source: climbs.summarySource,
+    };
   },
   buildClimbShardPage: async (page: number) => {
     climbs.buildCalls += 1;
     if (climbs.buildThrows) throw new Error('climbs builder exploded');
-    if (climbs.buildsEmpty) return { items: [], totalItems: 0 };
+    if (climbs.buildsEmpty) return { items: [], totalItems: 0, source: climbs.pageSource };
     // Padding lives in the PATH, so the byte guard is driven by a real rendered
     // body rather than by mutating the constant it is supposed to enforce.
     const padding = climbs.pathLength > 0 ? 'x'.repeat(climbs.pathLength) : '';
@@ -70,7 +77,7 @@ vi.mock('../climb-store', () => ({
       lastModified: new Date('2026-05-04T11:22:33.000Z'),
     })) satisfies SitemapItem[];
     const start = (page - 1) * 10_000;
-    return { items: built.slice(start, start + 10_000), totalItems: built.length };
+    return { items: built.slice(start, start + 10_000), totalItems: built.length, source: climbs.pageSource };
   },
   fetchStoredClimbPageLastmods: async () => {
     if (climbs.pageLastmodsThrow) throw new Error('lastmod aggregate unavailable');
@@ -78,7 +85,13 @@ vi.mock('../climb-store', () => ({
   },
 }));
 
-const { PAGED_SHARD_REGISTRY, buildSitemapIndexXml, pagedShardRouteHandler } = await import('../shard-registry');
+const {
+  CLIMB_SOURCE_HEADER,
+  PAGED_SHARD_REGISTRY,
+  buildSitemapIndexXml,
+  pagedShardRouteHandler,
+  sitemapIndexRouteHandler,
+} = await import('../shard-registry');
 
 beforeEach(() => {
   climbs.itemCount = 3;
@@ -91,6 +104,8 @@ beforeEach(() => {
   climbs.buildCalls = 0;
   climbs.pageLastmods = [];
   climbs.pageLastmodsThrow = false;
+  climbs.summarySource = 'store';
+  climbs.pageSource = 'store';
 });
 
 describe('the paged climbs shard', () => {
@@ -308,6 +323,68 @@ describe('the index and the climbs shard', () => {
     expect(errors.mock.calls.flat().join(' ')).toContain('expects URLs but its summary reports 0');
     errors.mockRestore();
   });
+});
+
+/**
+ * `X-Sitemap-Climbs-Source` (#4583).
+ *
+ * `X-Sitemap-Degraded` answers "did the index publish this shard". It cannot
+ * answer "and is the fast path the one serving it", and that second question is
+ * the one nobody could answer for the weeks the climbs shard was missing: an
+ * empty store still yields a complete, correct sitemap, so every external
+ * detector stays green while each page fetch behind it rebuilds the whole
+ * ordered list.
+ */
+describe('the climbs source header', () => {
+  it('names the store on a healthy page', async () => {
+    const response = await pagedShardRouteHandler('climbs', '1.xml');
+
+    expect(response.headers.get(CLIMB_SOURCE_HEADER)).toBe('store');
+  });
+
+  it("lets the page's own answer override the summary's", async () => {
+    // The exact state the deploy that added `sitemap_climb_urls` was in: a fresh
+    // summary row (the older cron kept writing it) over an empty URL table. A
+    // header taken from the summary alone would have called that healthy.
+    climbs.summarySource = 'store';
+    climbs.pageSource = 'live';
+
+    const response = await pagedShardRouteHandler('climbs', '1.xml');
+
+    expect(response.headers.get(CLIMB_SOURCE_HEADER)).toBe('live');
+  });
+
+  it('falls back to the summary when the page build reports no source', async () => {
+    climbs.summarySource = 'live';
+    climbs.pageSource = undefined;
+
+    const response = await pagedShardRouteHandler('climbs', '1.xml');
+
+    expect(response.headers.get(CLIMB_SOURCE_HEADER)).toBe('live');
+  });
+
+  it('names the path on the index too, alongside the degraded header', async () => {
+    climbs.summarySource = 'live';
+
+    const response = await sitemapIndexRouteHandler();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get(CLIMB_SOURCE_HEADER)).toBe('live');
+  });
+
+  it('claims nothing when the summary never settled', async () => {
+    // A summary that loses the SHARD_DEADLINE_MS race never said which path it
+    // was on. Reporting `live` there would be a measurement nobody took, and
+    // `X-Sitemap-Degraded` already covers the case.
+    climbs.summaryHangs = true;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await sitemapIndexRouteHandler();
+
+    expect(response.headers.get('x-sitemap-degraded')).toContain('climbs');
+    expect(response.headers.get(CLIMB_SOURCE_HEADER)).toBeNull();
+    errors.mockRestore();
+  }, 15_000);
 });
 
 describe('the deferred work stays deferred', () => {

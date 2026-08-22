@@ -101,6 +101,44 @@ the 51 s path, correct and never worse than before the store existed. There is n
 staleness bound on pages; the summary row's 48 h shout covers the store as a whole,
 since both tables share one refresh.
 
+### Saying which path served (#4583)
+
+The fallback is correct, and that is exactly the problem: an empty store produces a
+complete, correct sitemap, so nothing external goes red while every crawler fetch
+behind it pays the scan. The climbs shard was absent from the production index on
+every request from the day W-23 landed until #4661, and the reason it stayed there
+for weeks is that a degrade only ever reached a `console.error`.
+
+So a fallback names itself, on two channels:
+
+- **`X-Sitemap-Climbs-Source: store | live`** on `/sitemap.xml` and on every
+  `/sitemaps/climbs/N.xml`. Set from the `source` the summary and page builds have
+  already returned — never a fresh read. That matters: the index races each summary
+  against `SHARD_DEADLINE_MS` and `withDeadline` cannot cancel the loser, so a
+  diagnostic that issued its own query could outlive the deadline it describes and
+  hold the whole index open to `maxDuration`. A rejected or timed-out summary
+  reports no source at all rather than guessing, since `X-Sitemap-Degraded` already
+  covers that case. On a page the build's own answer wins over the summary's: a
+  fresh summary row against an empty URL table is exactly the state the deploy that
+  added the store was in.
+- **A Sentry event**, from `reportStoreFallback` in `climb-store.ts`, at most once
+  per reason per instance per six hours (`summary-empty`, `summary-read-failed`,
+  `page-empty`, `page-read-failed`). The page-path event fires _before_ the 51 s
+  fallback build, so a Vercel timeout cannot swallow it.
+
+`scripts/production-smoke.ts` reads the header off the index response it already
+fetches — no extra request — and reports `live` as a **warning**, not a failure:
+the index it just validated is complete either way, so this is "the fast path is not
+the one running", not "the sitemap is broken". A missing header is not a finding; a
+deploy that predates it and a summary that never settled both leave it absent.
+
+One honest limit, shared with `X-Sitemap-Degraded`: the header rides a CDN-cached
+response. A healthy index is `s-maxage=3600` and the shard pages are
+`s-maxage=21600`, and Vercel's edge ignores the smoke's `Cache-Control: no-cache`
+request header, so the value read can be up to that old in either direction. It is a
+signal that a wedged store gets noticed within the hour, not a live probe. The Sentry
+event has no such lag.
+
 ### Who refreshes it
 
 1. **The cron** — `/api/internal/refresh-sitemap-climbs`, six-hourly, in

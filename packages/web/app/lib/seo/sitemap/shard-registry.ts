@@ -93,6 +93,17 @@ const DEGRADED_CACHE_CONTROL = 'public, s-maxage=60, must-revalidate';
 const DEGRADED_HEADER = 'X-Sitemap-Degraded';
 
 /**
+ * Names which path served the climbs shard: `store` or `live`.
+ *
+ * Same precedent as `X-Sitemap-Degraded` — legible from a `curl -I` rather than
+ * only from a log line — and for the failure one layer down. `X-Sitemap-Degraded`
+ * answers "did the index publish this shard"; a wedged store can leave that answer
+ * "yes" while every page fetch behind it quietly rebuilds the whole ordered list.
+ * Exported because `scripts/production-smoke.ts` asserts on it.
+ */
+export const CLIMB_SOURCE_HEADER = 'X-Sitemap-Climbs-Source';
+
+/**
  * Climb shards get a far longer window than the hourly one the small shards use.
  * Google refetches a sitemap on the order of days, tier 2 changes on the order of
  * hours, and the CDN is what absorbs a crawl burst across a dozen pages before it
@@ -242,10 +253,23 @@ export type PagedShardId = 'climbs';
  * The deadline below stays regardless: the live scan is still the fallback while
  * the store is empty, and `playlists` has no precomputation at all.
  */
-export type PagedShardSummary = { itemCount: number; lastModified: Date | null };
+export type PagedShardSummary = { itemCount: number; lastModified: Date | null; source?: PagedShardSource };
 
 /** One page's slice, plus the length of the list it was sliced from. */
-export type PagedShardPage = { items: SitemapItem[]; totalItems: number };
+export type PagedShardPage = { items: SitemapItem[]; totalItems: number; source?: PagedShardSource };
+
+/**
+ * Which path a paged shard's answer came from, for shards that have more than one.
+ *
+ * `climbs` reads a materialised store and falls back to the live scan when the
+ * store is empty or unreadable (#4552). That fallback is CORRECT — the tables are
+ * a cache, truncating them loses nothing — and also invisible: the summary
+ * fallback blows `SHARD_DEADLINE_MS`, the page fallback costs 51 s, and neither
+ * left a mark outside a `console.error`. Reporting it here is how a `curl -I` and
+ * the post-deploy smoke can tell "fast path" from "the store is wedged and every
+ * crawler fetch is paying for it", which is the state #4583 lived in for weeks.
+ */
+export type PagedShardSource = 'store' | 'live';
 
 /**
  * A shard too large for one file, split across `/sitemaps/<dir>/1.xml … N.xml`.
@@ -272,6 +296,16 @@ export type PagedSitemapShard = {
    * any page this cannot name, and a failure here never degrades the shard.
    */
   pageLastmods?: () => Promise<(Date | null)[]>;
+  /**
+   * Response header that names the `source` this shard's summary and pages report.
+   *
+   * Set from values the handler ALREADY has — never a fresh read. The index races
+   * every summary against `SHARD_DEADLINE_MS` and `withDeadline` cannot cancel the
+   * loser, so a diagnostic that issued its own query would be free to outlive the
+   * deadline it is meant to describe and hold the whole index to `maxDuration`.
+   * Deriving it from the settled summary makes that impossible by construction.
+   */
+  sourceHeader?: string;
 };
 
 export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
@@ -291,6 +325,7 @@ export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
     // exists to retire.
     buildPage: (page: number) => buildClimbShardPage(page),
     pageLastmods: () => fetchStoredClimbPageLastmods(),
+    sourceHeader: CLIMB_SOURCE_HEADER,
   },
 ];
 
@@ -323,13 +358,18 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
   }
 
   let body: string;
+  let source: PagedShardSource | undefined;
   try {
     const summary = await shard.summary();
     if (page > pagedShardPageCount(summary, shard.urlsPerShard)) {
       return notFoundResponse();
     }
 
-    const { items, totalItems } = await shard.buildPage(page);
+    const { items, totalItems, source: pageSource } = await shard.buildPage(page);
+    // The page's own answer wins over the summary's: they read different tables,
+    // and a populated summary row against an empty URL table is exactly the state
+    // the deploy that added the store was in.
+    source = pageSource ?? summary.source;
     // The summary and the URL rows are written in ONE transaction (#4552), so
     // steady-state they cannot disagree. What this still catches: a torn read
     // across a mid-flight refresh (the two reads land on different epochs), and
@@ -374,7 +414,12 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
     return unavailableResponse();
   }
 
-  return xmlResponse(body, shard.cacheControl);
+  return xmlResponse(body, shard.cacheControl, sourceHeaders(shard, source));
+}
+
+/** `{ 'X-Sitemap-Climbs-Source': 'live' }`, or nothing when the shard reported none. */
+function sourceHeaders(shard: PagedSitemapShard, source: PagedShardSource | undefined): Record<string, string> {
+  return shard.sourceHeader && source ? { [shard.sourceHeader]: source } : {};
 }
 
 /**
@@ -479,7 +524,17 @@ async function buildIndexEntry(shard: SitemapShard): Promise<SitemapIndexEntry |
   return { loc: absoluteUrl(shard.path), lastModified: latestLastModified(items) };
 }
 
-async function buildPagedIndexEntries(shard: PagedSitemapShard): Promise<SitemapIndexEntry[] | null> {
+/**
+ * A paged shard's `<sitemap>` entries, plus which path its summary came from.
+ *
+ * The source rides back with the entries rather than being fetched again by the
+ * handler: `summary()` has already settled by the time this returns, so naming it
+ * on the response costs nothing and — unlike a second read — cannot outlive the
+ * `SHARD_DEADLINE_MS` race it describes.
+ */
+type PagedIndexResult = { entries: SitemapIndexEntry[] | null; source?: PagedShardSource };
+
+async function buildPagedIndexEntries(shard: PagedSitemapShard): Promise<PagedIndexResult> {
   // `summary()`, NEVER `buildPage()`. Running the full climb-item build on every
   // `/sitemap.xml` hit is the pool-starvation failure (#4461) this split avoids.
   const summary = await withDeadline(shard.summary(), SHARD_DEADLINE_MS, `paged shard "${shard.id}" summary`);
@@ -491,7 +546,7 @@ async function buildPagedIndexEntries(shard: PagedSitemapShard): Promise<Sitemap
         `[sitemap] paged shard "${shard.id}" expects URLs but its summary reports 0 — the entire surface is absent from the index`,
       );
     }
-    return null;
+    return { entries: null, source: summary.source };
   }
 
   // Per-page `<lastmod>` where the shard can supply it. The uniform shard-wide
@@ -516,19 +571,29 @@ async function buildPagedIndexEntries(shard: PagedSitemapShard): Promise<Sitemap
     }
   }
 
-  return Array.from({ length: pageCount }, (_, pageIndex) => ({
-    loc: absoluteUrl(shard.pagePath(pageIndex + 1)),
-    // `??` also covers a page the aggregate could not name (a summary/URL-store
-    // tear mid-refresh): stamp the shard-wide value rather than dropping the
-    // entry.
-    lastModified: pageLastmods[pageIndex] ?? summary.lastModified,
-  }));
+  return {
+    entries: Array.from({ length: pageCount }, (_, pageIndex) => ({
+      loc: absoluteUrl(shard.pagePath(pageIndex + 1)),
+      // `??` also covers a page the aggregate could not name (a summary/URL-store
+      // tear mid-refresh): stamp the shard-wide value rather than dropping the
+      // entry.
+      lastModified: pageLastmods[pageIndex] ?? summary.lastModified,
+    })),
+    source: summary.source,
+  };
 }
 
 export type SitemapIndexShardId = ShardId | PagedShardId;
 
-/** The index XML plus the shards it had to drop, so the caller can pick a cache window. */
-export type SitemapIndexResult = { xml: string; degradedShards: SitemapIndexShardId[] };
+/**
+ * The index XML plus the shards it had to drop, so the caller can pick a cache
+ * window, and the source headers the paged shards asked for.
+ */
+export type SitemapIndexResult = {
+  xml: string;
+  degradedShards: SitemapIndexShardId[];
+  sourceHeaders: Record<string, string>;
+};
 
 /**
  * The index lists only shards that carry at least one URL — pointing Google at
@@ -568,6 +633,7 @@ export async function buildSitemapIndexXml(): Promise<SitemapIndexResult> {
   const entries: SitemapIndexEntry[] = [];
   const degradedShards: SitemapIndexShardId[] = [];
   const emptyShards: SitemapIndexShardId[] = [];
+  const indexSourceHeaders: Record<string, string> = {};
 
   fixedSettled.forEach((outcome, index) => {
     const shard = SHARD_REGISTRY[index];
@@ -590,17 +656,21 @@ export async function buildSitemapIndexXml(): Promise<SitemapIndexResult> {
     const shard = PAGED_SHARD_REGISTRY[index];
     if (outcome.status === 'rejected') {
       degradedShards.push(shard.id);
+      // No source header on this branch, deliberately: a rejected or timed-out
+      // summary never told us which path it was on, and guessing `live` would put
+      // a claim on the response that nothing measured.
       console.error(
         `[sitemap] paged shard "${shard.id}" failed — serving the index WITHOUT its pages:`,
         outcome.reason instanceof Error ? outcome.reason.message : outcome.reason,
       );
       return;
     }
-    if (outcome.value === null) {
+    Object.assign(indexSourceHeaders, sourceHeaders(shard, outcome.value.source));
+    if (outcome.value.entries === null) {
       emptyShards.push(shard.id);
       return;
     }
-    entries.push(...outcome.value);
+    entries.push(...outcome.value.entries);
   });
 
   if (emptyShards.length > 0) {
@@ -617,16 +687,19 @@ export async function buildSitemapIndexXml(): Promise<SitemapIndexResult> {
     );
   }
 
-  return { xml: renderSitemapIndex(entries), degradedShards };
+  return { xml: renderSitemapIndex(entries), degradedShards, sourceHeaders: indexSourceHeaders };
 }
 
 export async function sitemapIndexRouteHandler(): Promise<Response> {
   try {
-    const { xml, degradedShards } = await buildSitemapIndexXml();
+    const { xml, degradedShards, sourceHeaders: shardSources } = await buildSitemapIndexXml();
     if (degradedShards.length === 0) {
-      return xmlResponse(xml);
+      return xmlResponse(xml, CACHE_CONTROL, shardSources);
     }
-    return xmlResponse(xml, DEGRADED_CACHE_CONTROL, { [DEGRADED_HEADER]: degradedShards.join(',') });
+    return xmlResponse(xml, DEGRADED_CACHE_CONTROL, {
+      ...shardSources,
+      [DEGRADED_HEADER]: degradedShards.join(','),
+    });
   } catch (err) {
     console.error('[sitemap] index failed to build:', err instanceof Error ? err.message : err);
     return unavailableResponse();
