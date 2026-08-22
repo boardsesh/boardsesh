@@ -69,28 +69,10 @@ type ModalSheetProps = {
   /** Optional fixed header, rendered above the body and outside its scroll — so a
    * title and close affordance stay put while the body scrolls. */
   header?: ReactNode;
-  /** Present as a single, expanded-only detent on Android instead of the usual
-   * multi-detent config.
-   *
-   * `@expo/ui`'s Android sheet is a plain Material 3 `ModalBottomSheet`: it has
-   * only two real states, a fixed ~50% "partial" and a content-fitting
-   * "expanded" — the JS `%` snap-point VALUES are never read natively (see
-   * `BottomSheet.android.tsx`), only the count and which index is requested.
-   * iOS honours the requested fraction exactly (`useSheetColumnStyle`), so a
-   * sheet tuned for iOS's real first detent (e.g. the tick sheets' `65%`/`80%`,
-   * sized to fit a pinned footer under the content) can be TALLER than
-   * Android's fixed ~50% partial state. On Android that stranded the pinned
-   * footer below the fold — the climber had to drag/scroll the sheet up just
-   * to reach the Send button (#4231). Collapsing to a single detent (see
-   * `androidSafeSnapPoints`) makes Android's native sheet set
-   * `skipPartiallyExpanded`, which removes "partial" as a landable state
-   * entirely — more reliable than requesting the last index of a multi-detent
-   * config, which depends on an imperative `expand()` call `@expo/ui`'s own
-   * Android layer can silently no-op ("Expanded anchor may be unreachable").
-   * Opt in per sheet rather than flipping this for every `ModalSheet`: most
-   * sheets (menus, pickers) are genuinely fine at Android's partial state, and
-   * forcing them open expanded would be its own regression. No effect with a
-   * single detent, or on iOS/web. */
+  /** Collapses to a single, expanded-only detent on Android instead of the usual
+   * multi-detent config, so a pinned footer never strands below Android's ~50%
+   * partial state (#4231). See `androidSafeSnapPoints` for the full rationale;
+   * no effect with a single detent, or on iOS/web. */
   androidOpensExpanded?: boolean;
 };
 

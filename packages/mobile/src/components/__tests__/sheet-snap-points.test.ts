@@ -67,6 +67,10 @@ describe('androidSafeSnapPoints (androidOpensExpanded, Android)', () => {
   it('leaves an already single-detent sheet unchanged when opted in', () => {
     expect(androidSafeSnapPoints(['90%'], true)).toEqual(['90%']);
   });
+
+  it('collapses a multi-detent sheet with numeric (px) detents to the last one', () => {
+    expect(androidSafeSnapPoints([300, 600], true)).toEqual([600]);
+  });
 });
 
 describe('androidSafeSnapPoints (androidOpensExpanded, iOS/web passthrough)', () => {

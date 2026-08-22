@@ -23,18 +23,11 @@ const ANDROID_NEAR_FULL_DETENT_PERCENT = 75;
  *
  * `androidOpensExpanded` (a multi-detent sheet whose pinned footer only fits at
  * its LAST detent, e.g. the tick sheets, #4231) collapses to that single last
- * detent on Android instead. This is deliberately NOT "keep both detents and pick
- * the last index at present-time": `skipPartiallyExpanded` on a single detent
- * removes "partial" as a valid resting state entirely, so the native sheet can
- * only land on Expanded (or Hidden) — no imperative re-snap needed. With two
- * detents, opening expanded instead relies on `@expo/ui`'s Android
- * `ModalBottomSheetView.kt` calling `sheetState.expand()` in a `LaunchedEffect`
- * that the library itself wraps in a swallowed `catch` ("Expanded anchor may be
- * unreachable; never crash the view") — a real, silent-failure race that can
- * leave the sheet resting at partial with the footer off-screen even with the
- * right detent index requested. Collapsing to one detent sidesteps that path
- * altogether, the same way any other near-full single-detent sheet in this
- * codebase already does.
+ * detent on Android — not "keep both detents and pick the last index at
+ * present-time", which depends on an `@expo/ui` Android `expand()` call the
+ * library's own `ModalBottomSheetView.kt` can silently no-op ("Expanded anchor
+ * may be unreachable"). A single detent removes "partial" as a resting state
+ * entirely, so the sheet can only land on Expanded.
  *
  * The added/removed values are ignored on Android (only partial/expanded exist),
  * and this keeps the body's flex layout intact (unlike switching to fit-to-content,

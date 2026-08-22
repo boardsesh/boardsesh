@@ -69,13 +69,10 @@ type SheetProps = {
   /** Optional fixed header, rendered above the body and outside its scroll — so a
    * title and close affordance stay put while the body scrolls. */
   header?: ReactNode;
-  /** Present as a single, expanded-only detent on Android instead of the usual
-   * multi-detent config. See the identical prop on `ModalSheet` for the full
-   * rationale (#4231): Android's `@expo/ui` sheet ignores the requested `%`
-   * fraction on its "partial" state, so a sheet tuned for iOS's real first
-   * detent (e.g. the edit-tick sheet's `80%`, sized to fit a pinned footer
-   * under the content) can strand that footer below Android's fixed ~50%
-   * partial fold. No effect with a single detent, or on iOS/web. */
+  /** Collapses to a single, expanded-only detent on Android instead of the usual
+   * multi-detent config, so a pinned footer never strands below Android's ~50%
+   * partial state (#4231). See `androidSafeSnapPoints` for the full rationale;
+   * no effect with a single detent, or on iOS/web. */
   androidOpensExpanded?: boolean;
 };
 
