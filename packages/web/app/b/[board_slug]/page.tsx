@@ -1,4 +1,4 @@
-import { notFound, permanentRedirect, redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import type { GymQrSearchParams } from '@boardsesh/analytics';
 import { resolveBoardBySlug } from '@/app/lib/board-slug-utils';
 import { gymQrAttributionQuery } from '@/app/lib/gym-attribution';
@@ -29,11 +29,16 @@ type BoardSlugPageProps = {
  * swallow the params. Board slugs are generated, so this is a guard rather than
  * a fix — but the printed URL and the redirect that carries it must agree.
  *
- * The clean case (no QR attribution query) is a stable, deterministic hop —
- * this URL always resolves to the same list page — so it's a 308
- * (permanent) redirect a crawler and browser can cache. A QR-attributed hop
- * carries a one-off tracking query that must be re-evaluated on every visit,
- * so it stays a 307.
+ * This redirect must stay a 307 (temporary), even for the clean, no-attribution
+ * case: the target embeds `board.angle`, a live DB field any board editor can
+ * change via the `updateBoard` mutation (see `isAngleAdjustable` in
+ * `packages/backend/src/graphql/resolvers/social/boards.ts`). A 308 is cached
+ * by browsers indefinitely — Server Components can't attach cache-control
+ * headers to `permanentRedirect` — so a visitor who followed a permanent
+ * redirect before a gym re-angled its board would be pinned to a stale
+ * `/b/{slug}/<old-angle>/list` forever. This hop is ~1 request/day in prod, so
+ * the crawl-cost win from caching it isn't worth that risk. (Considered and
+ * rejected in QA review on #4667.)
  */
 export default async function BoardSlugPage(props: BoardSlugPageProps) {
   const [params, searchParams] = await Promise.all([props.params, props.searchParams]);
@@ -44,9 +49,5 @@ export default async function BoardSlugPage(props: BoardSlugPageProps) {
   }
 
   const listPath = `/b/${encodeURIComponent(board.slug)}/${board.angle}/list`;
-  const attribution = gymQrAttributionQuery(searchParams);
-  if (attribution === '') {
-    permanentRedirect(listPath);
-  }
-  redirect(`${listPath}${attribution}`);
+  redirect(`${listPath}${gymQrAttributionQuery(searchParams)}`);
 }
