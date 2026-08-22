@@ -945,6 +945,46 @@ describe('SyncRunner.getSyncHealthSnapshot', () => {
     });
   });
 
+  // The regression that mattered. The test above models postgres-js's
+  // string-ness for the COUNTS and then hands oldestAttemptAt a real Date —
+  // the same blind spot the production code had, which is why nothing caught
+  // `snapshot.oldestAttemptAt.toISOString is not a function` for a month. Drive
+  // the raw Postgres text shape all the way through to the formatted line.
+  it('formats a health summary when the driver hands back a raw timestamp string', async () => {
+    const dbShim = {
+      select: () => ({
+        from: () => ({
+          where: () =>
+            Promise.resolve([
+              {
+                total: '4',
+                active: '4',
+                pending: '0',
+                error: '0',
+                expired: '0',
+                inBackoff: '0',
+                // `timestamp without time zone` as postgres-js yields it when
+                // no column decoder is attached to the min() aggregate.
+                oldestAttemptAt: '2026-05-06 07:08:09.123',
+              },
+            ]),
+        }),
+      }),
+    };
+
+    const runner = new SyncRunner();
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates & {
+      getClient: () => { client: unknown; db: unknown };
+    };
+    vi.spyOn(runnerPrivates, 'getClient').mockReturnValue({ client: {}, db: dbShim });
+
+    const snapshot = await runnerPrivates.getSyncHealthSnapshot();
+
+    // On main this throws instead of returning a line.
+    expect(() => formatSyncHealthSummary(snapshot)).not.toThrow();
+    expect(formatSyncHealthSummary(snapshot)).toContain('oldestAttempt=2026-05-06T07:08:09.123');
+  });
+
   it('defaults counts to 0 and oldestAttemptAt to null when no rows come back', async () => {
     const dbShim = {
       select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),

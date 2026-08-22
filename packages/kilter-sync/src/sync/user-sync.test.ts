@@ -46,7 +46,7 @@ function recomputedKeys(): Array<{ climbUuid: string; angle: number }> {
 type CallRecord = {
   // `conflict` records the ON CONFLICT clause an insert was given, so a test
   // can assert the ownership `setWhere` guard was attached.
-  kind: 'select' | 'delete' | 'execute' | 'insert' | 'update' | 'conflict';
+  kind: 'select' | 'delete' | 'execute' | 'insert' | 'update' | 'conflict' | 'transaction';
   args: unknown[];
 };
 
@@ -1188,6 +1188,14 @@ function createRichTx(
       calls.push({ kind: 'execute', args: [query] });
       return Promise.resolve();
     },
+    // applyClimbRatings wraps each upsert chunk in a savepoint so one refused
+    // row costs its chunk rather than the buffer. Drizzle models a savepoint as
+    // a nested .transaction(), so the shim just re-enters with the same tx —
+    // there is no real DB here to roll back to.
+    transaction(fn: (savepoint: unknown) => Promise<unknown>) {
+      calls.push({ kind: 'transaction', args: [] });
+      return Promise.resolve(fn(tx));
+    },
   };
 
   return { tx, calls, insertValues, returningRows: returningQueue };
@@ -1230,7 +1238,7 @@ type ApplyCircuitsTx = Parameters<typeof applyCircuits>[0];
 describe('applyClimbRatings — bulk upsert with COALESCE comment', () => {
   it('returns early on empty ops', async () => {
     const { tx, calls } = createRichTx();
-    await applyClimbRatings(tx as unknown as ApplyClimbRatingsTx, 'user-1', [], new Map());
+    await applyClimbRatings(tx as unknown as ApplyClimbRatingsTx, 'user-1', [], new Map(), () => {});
     expect(calls).toHaveLength(0);
   });
 
@@ -1241,7 +1249,13 @@ describe('applyClimbRatings — bulk upsert with COALESCE comment', () => {
       makeRatingPutOp({ climb_rating_uuid: 'r-2', climb_uuid: 'climb-B', angle: 25, rating: 5 }),
     ];
 
-    await applyClimbRatings(tx as unknown as ApplyClimbRatingsTx, 'user-1', ops, aliasCacheFor(['climb-A', 'climb-B']));
+    await applyClimbRatings(
+      tx as unknown as ApplyClimbRatingsTx,
+      'user-1',
+      ops,
+      aliasCacheFor(['climb-A', 'climb-B']),
+      () => {},
+    );
 
     expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(1);
     expect(insertValues[0]).toHaveLength(2);
@@ -1267,12 +1281,16 @@ describe('applyClimbRatings — bulk upsert with COALESCE comment', () => {
   it('sanitizes a Kilter rating=0 to NULL so the batch does not violate the CHECK', () => {
     const { tx, insertValues } = createRichTx();
     const ops = [makeRatingPutOp({ climb_rating_uuid: 'r-0', climb_uuid: 'climb-A', angle: 40, rating: 0 })];
-    return applyClimbRatings(tx as unknown as ApplyClimbRatingsTx, 'user-1', ops, aliasCacheFor(['climb-A'])).then(
-      () => {
-        expect(insertValues[0]).toHaveLength(1);
-        expect(insertValues[0][0]).toMatchObject({ kilterId: 'r-0', rating: null });
-      },
-    );
+    return applyClimbRatings(
+      tx as unknown as ApplyClimbRatingsTx,
+      'user-1',
+      ops,
+      aliasCacheFor(['climb-A']),
+      () => {},
+    ).then(() => {
+      expect(insertValues[0]).toHaveLength(1);
+      expect(insertValues[0][0]).toMatchObject({ kilterId: 'r-0', rating: null });
+    });
   });
 
   it('issues exactly one bulk soft-detach UPDATE for N REMOVE ops, never a DELETE', async () => {
@@ -1282,7 +1300,7 @@ describe('applyClimbRatings — bulk upsert with COALESCE comment', () => {
       { op_id: '2', op: 'REMOVE', object_type: 'climb_ratings', object_id: 'r-2' },
     ];
 
-    await applyClimbRatings(tx as unknown as ApplyClimbRatingsTx, 'user-1', ops, new Map());
+    await applyClimbRatings(tx as unknown as ApplyClimbRatingsTx, 'user-1', ops, new Map(), () => {});
 
     const updates = calls.filter((c) => c.kind === 'update');
     expect(updates).toHaveLength(1);
@@ -1304,7 +1322,7 @@ describe('applyClimbRatings — bulk upsert with COALESCE comment', () => {
       makeRatingPutOp({ climb_rating_uuid: 'r-new', climb_uuid: 'climb-A', angle: 30 }),
     ];
 
-    await applyClimbRatings(tx as unknown as ApplyClimbRatingsTx, 'user-1', ops, aliasCacheFor(['climb-A']));
+    await applyClimbRatings(tx as unknown as ApplyClimbRatingsTx, 'user-1', ops, aliasCacheFor(['climb-A']), () => {});
 
     expect(calls.filter((c) => c.kind === 'update')).toHaveLength(1);
     expect(calls.filter((c) => c.kind === 'delete')).toHaveLength(0);
@@ -1331,7 +1349,7 @@ describe('applyClimbRatings — bulk upsert with COALESCE comment', () => {
       makeRatingPutOp({ climb_rating_uuid: 'r-b', climb_uuid: 'climb-src-b', angle: 40, rating: 5 }),
     ];
 
-    await applyClimbRatings(tx as unknown as ApplyClimbRatingsTx, 'user-1', ops, aliasCache);
+    await applyClimbRatings(tx as unknown as ApplyClimbRatingsTx, 'user-1', ops, aliasCache, () => {});
 
     // Exactly one bulk insert carrying ONE deduped values row.
     expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(1);
@@ -1350,7 +1368,7 @@ describe('applyClimbRatings — bulk upsert with COALESCE comment', () => {
     const { tx, insertValues } = createRichTx();
     const op = makeRatingPutOp({ climb_rating_uuid: 'r-1', climb_uuid: 'climb-A', angle: 40, comment: null });
 
-    await applyClimbRatings(tx as unknown as ApplyClimbRatingsTx, 'user-1', [op], aliasCacheFor(['climb-A']));
+    await applyClimbRatings(tx as unknown as ApplyClimbRatingsTx, 'user-1', [op], aliasCacheFor(['climb-A']), () => {});
 
     // INSERT value normalises null → ''. The UPDATE clause uses
     // COALESCE(EXCLUDED.comment, …) which the file-level integration
