@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 const { constructorOptions, backend } = vi.hoisted(() => ({
   constructorOptions: [] as ({ signal?: AbortSignal } | undefined)[],
   /** `wedged` never answers; flip it to model a healthy backend. */
-  backend: { wedged: true },
+  backend: { wedged: true, rejectWith: undefined as unknown },
 }));
 
 vi.mock('server-only', () => ({}));
@@ -25,6 +25,9 @@ vi.mock('graphql-request', () => ({
       constructorOptions.push(options);
     }
     request<T>(): Promise<T> {
+      if (backend.rejectWith !== undefined) {
+        return Promise.reject(backend.rejectWith);
+      }
       // A wedged backend: the socket is open and nothing ever comes back.
       return backend.wedged ? new Promise<T>(() => {}) : (Promise.resolve({}) as Promise<T>);
     }
@@ -54,6 +57,7 @@ describe('createCachedGraphQLQuery timeout', () => {
   beforeEach(() => {
     constructorOptions.length = 0;
     backend.wedged = true;
+    backend.rejectWith = undefined;
     vi.useFakeTimers();
   });
 
@@ -94,5 +98,33 @@ describe('createCachedGraphQLQuery timeout', () => {
     // three seconds past its response.
     expect(vi.getTimerCount()).toBe(0);
     expect(constructorOptions[0]?.signal?.aborted).toBe(false);
+  });
+
+  it('rethrows a compact error, dropping the embedded query/variables text', async () => {
+    // Next's `unstable_cache` console.errors the whole rejection itself during
+    // stale revalidation (unwrappable — inside next/dist), so this bounds the
+    // SIZE of that unavoidable log event rather than trying to intercept it.
+    backend.wedged = false;
+    backend.rejectWith = Object.assign(
+      new Error(
+        'GraphQL Error (Code: 500): {"response":{"errors":[{"message":"upstream 500"}]},"request":{"query":"query Q { similarClimbs(input: $input) { uuid } }","variables":{"input":{"boardType":"kilter"}}}}',
+      ),
+      { response: { errors: [{ message: 'upstream 500' }] } },
+    );
+
+    const query = createCachedGraphQLQuery('query Q { x }', 'similar-climbs', 3600);
+
+    let caught: unknown;
+    try {
+      await query();
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    const message = (caught as Error).message;
+    expect(message).toBe('upstream 500');
+    expect(message).not.toContain('similarClimbs(input');
+    expect(message).not.toContain('boardType');
   });
 });
