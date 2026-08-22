@@ -798,9 +798,17 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
   // 2026-08-22 against the dev-db image (51 listed configs, 648k board_climbs,
   // idle 10-core box): 82 s for one execution. The header on this block used to
   // read "~31 configs, ~750ms worst case per LATERAL" — that is long stale, and
-  // the gap is why an uncached window mattered so much (#4463). Making this
-  // statement cheap is its own piece of work; what is fixed here is that a cold
-  // window can no longer run more than one copy of it at a time.
+  // the gap is why an uncached window mattered so much (#4463).
+  //
+  // Production is faster than the dev image but not fast: the only production
+  // observation on record is ~10 s cold, measured through the sitemap's copy of
+  // this same read (`packages/web/app/lib/server-popular-configs.ts`, which
+  // wraps it in an in-process TTL + single-flight for exactly this reason —
+  // prior art for what happens below). Ten seconds × one connection per
+  // concurrent visitor is still a pool.
+  //
+  // Making this statement cheap is its own piece of work; what is fixed here is
+  // that a cold window can no longer run more than one copy of it at a time.
   const result = await db.execute(sql`
     SELECT
       configs.board_type,

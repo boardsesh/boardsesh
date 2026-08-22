@@ -738,6 +738,21 @@ describe('recentBetaLinks Redis cache', () => {
 
     expect(redisDelMock).not.toHaveBeenCalled();
   });
+
+  it('invalidateRecentBetaLinksCache: drops the Redis-less copy so a new link shows up', async () => {
+    redisConnectedMock.mockReturnValue(false);
+    executeMock.mockReturnValue([cachedRow({ link: 'https://www.instagram.com/p/BEFORE/' })]);
+
+    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    expect(executeMock).toHaveBeenCalledTimes(1);
+
+    // Without the drop, a dev/CI server serves the pre-save strip for up to
+    // REDISLESS_FALLBACK_TTL_MS (10 min) after a climber posts a beta link.
+    await invalidateRecentBetaLinksCache();
+
+    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    expect(executeMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('betaLinkPreview resolver', () => {
