@@ -23,6 +23,10 @@ vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
   getSetterOgSummary: setterRouteState.getSetterOgSummaryMock,
 }));
 
+vi.mock('@sentry/nextjs', () => ({
+  captureException: vi.fn(),
+}));
+
 vi.mock('@/app/lib/db/db', () => ({
   dbzRead: setterRouteState.dbzReadSentinel,
   dbz: setterRouteState.dbzSentinel,
@@ -97,6 +101,16 @@ function makeRequest(params: Record<string, string>): NextRequest {
   return new NextRequest(url);
 }
 
+/**
+ * Mirrors real drizzle-orm@0.45.2's `DrizzleQueryError`: `.name` stays the
+ * inherited "Error" (the class never overrides it), the message embeds the
+ * full SQL + params, and `.cause` is always the underlying driver error.
+ */
+function makeDrizzleQueryError(sql: string, params: string, causeMessage = 'CONNECT_TIMEOUT'): Error {
+  const cause = Object.assign(new Error(causeMessage), { code: causeMessage });
+  return Object.assign(new Error(`Failed query: ${sql}\nparams: ${params}`), { cause });
+}
+
 describe('api/og/setter route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -135,9 +149,7 @@ describe('api/og/setter route', () => {
   it('redirects to the branded fallback card and logs a throttled compact message when the DB rejects', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     setterRouteState.getSetterOgSummaryMock.mockRejectedValue(
-      Object.assign(new Error('Failed query: SELECT * FROM boardsesh_ticks WHERE setter_username = $1'), {
-        name: 'DrizzleQueryError',
-      }),
+      makeDrizzleQueryError('SELECT * FROM boardsesh_ticks WHERE setter_username = $1', 'alex'),
     );
     setterRouteState.executeRowsMock.mockResolvedValue([]);
 
@@ -149,11 +161,11 @@ describe('api/og/setter route', () => {
     expect(response.headers.get('Cache-Control')).toBe('public, max-age=0, s-maxage=60');
     expect(response.headers.get('CDN-Cache-Control')).toBe('public, s-maxage=60');
     expect(body).not.toContain('SELECT');
+
     expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      '[og] setter render failed:',
-      expect.stringContaining('DrizzleQueryError'),
-    );
+    const [, loggedMessage] = consoleErrorSpy.mock.calls[0] as [string, string];
+    expect(loggedMessage).not.toContain('SELECT');
+    expect(loggedMessage).toBe('Error: CONNECT_TIMEOUT');
 
     consoleErrorSpy.mockRestore();
   });
