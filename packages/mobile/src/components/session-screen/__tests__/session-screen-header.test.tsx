@@ -35,11 +35,13 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12 } }));
+vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
 
 import { SessionScreenHeader } from '../SessionScreenHeader';
 
 const SHARE = '[data-label="mobile.session.invite"]';
 const END = '[data-label="mobile.session.inEndSession"]';
+const LEAVE = '[data-label="queueBar.ariaLabels.leaveSession"]';
 const MINIMIZE = '[data-label="mobile.session.minimize"]';
 
 describe('SessionScreenHeader', () => {
@@ -54,6 +56,22 @@ describe('SessionScreenHeader', () => {
     expect(end).not.toBeNull();
     end!.click();
     expect(onEndSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('labels the leader exit "Stop" beside a destructive flag glyph', () => {
+    const { container } = render(<SessionScreenHeader sessionActive onEndSession={vi.fn()} />);
+    const end = container.querySelector(END);
+    expect(end?.textContent).toContain('mobile.session.inStop');
+    expect(end?.querySelector('[data-icon="flag"]')?.getAttribute('data-color')).toBe('#C81E1E');
+    expect(end?.querySelector('[data-text-color]')?.getAttribute('data-text-color')).toBe('#C81E1E');
+  });
+
+  it('labels the joiner exit "Leave" in the neutral tint', () => {
+    const { container } = render(<SessionScreenHeader sessionActive onEndSession={vi.fn()} exitVariant="leave" />);
+    expect(container.querySelector(END)).toBeNull();
+    const leave = container.querySelector(LEAVE);
+    expect(leave?.textContent).toContain('mobile.session.inLeave');
+    expect(leave?.querySelector('[data-icon="leave.session"]')?.getAttribute('data-color')).toBe('#000');
   });
 
   it('renders no End control when onEndSession is absent (e.g. pre-session)', () => {

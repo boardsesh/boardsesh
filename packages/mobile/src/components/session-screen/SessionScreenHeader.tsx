@@ -5,6 +5,7 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
+import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 
 type SessionScreenHeaderProps = {
   /** Minimize handler (chevron-down). Absent in tab mode — switching tabs minimizes. */
@@ -12,8 +13,8 @@ type SessionScreenHeaderProps = {
   sessionActive: boolean;
   /** When set, a share button floats at the trailing edge to invite climbers. */
   onShare?: () => void;
-  /** When set (session live), an exit glyph docks beside share so the overlay's
-   *  control matches the tab chrome's trailing exit action. */
+  /** When set (session live), a labelled exit control (icon + "Stop" / "Leave")
+   *  docks beside share so the overlay matches the tab chrome's trailing exit. */
   onEndSession?: () => void;
   /**
    * What this device's exit actually does — `end` (destructive red stop) or
@@ -55,7 +56,15 @@ export function SessionScreenHeader({
   const { systemColors, brandColors } = useTheme();
 
   const title = sessionActive ? t('mobile.session.headerActive') : t('mobile.session.headerStart');
+  // Same split RecordTopChrome makes: leaving is non-destructive, so it gets
+  // neither the red tint nor the stop glyph, and the accessibility label stays
+  // the long-form string web's queue bar already ships.
   const isLeaveExit = exitVariant === 'leave';
+  const exitLabel = isLeaveExit ? t('queueBar.ariaLabels.leaveSession') : t('mobile.session.inEndSession');
+  // The word on the control. A bare flag glyph reads as "report this climb"
+  // (#4281), so the overlay strip names its exit the way the tab chrome does.
+  const exitActionLabel = isLeaveExit ? t('mobile.session.inLeave') : t('mobile.session.inStop');
+  const exitTint = isLeaveExit ? systemColors.label : brandColors.error;
 
   const row = (
     <View style={styles.row}>
@@ -86,7 +95,13 @@ export function SessionScreenHeader({
               style={styles.shareButton}
             >
               {inviteHint ? (
-                <Text variant="subheadline" color={systemColors.label} style={styles.shareLabel}>
+                <Text
+                  variant="subheadline"
+                  color={systemColors.label}
+                  numberOfLines={1}
+                  maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                  style={styles.shareLabel}
+                >
                   {t('mobile.session.inviteAction')}
                 </Text>
               ) : null}
@@ -94,20 +109,28 @@ export function SessionScreenHeader({
             </Pressable>
           ) : null}
           {onEndSession ? (
+            // Icon + word, matching the Stop pill in RecordTopChrome — the two
+            // surfaces show the same control for the same action, so neither can
+            // be the one a climber has to guess at.
             <Pressable
               onPress={onEndSession}
               hitSlop={12}
               accessibilityRole="button"
-              accessibilityLabel={
-                isLeaveExit ? t('queueBar.ariaLabels.leaveSession') : t('mobile.session.inEndSession')
-              }
-              style={styles.iconButton}
+              accessibilityLabel={exitLabel}
+              style={styles.exitButton}
             >
-              <Icon
-                name={isLeaveExit ? 'leave.session' : 'flag'}
-                size={22}
-                color={isLeaveExit ? systemColors.label : brandColors.error}
-              />
+              <Icon name={isLeaveExit ? 'leave.session' : 'flag'} size={22} color={exitTint} />
+              <Text
+                variant="subheadline"
+                color={exitTint}
+                numberOfLines={1}
+                // The strip's controls are pinned to 40dp, so the label has to
+                // stop growing before it clips.
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                style={styles.exitLabel}
+              >
+                {exitActionLabel}
+              </Text>
             </Pressable>
           ) : null}
         </View>
@@ -159,6 +182,20 @@ const styles = StyleSheet.create({
     paddingLeft: spacing[2],
   },
   shareLabel: {
+    fontWeight: '600',
+  },
+  // Matches shareButton's metrics so the two right-cluster controls sit on one
+  // baseline. 40dp tall + hitSlop 12 keeps the target well past 44pt.
+  exitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: spacing[1],
+    minWidth: 40,
+    height: 40,
+    paddingLeft: spacing[2],
+  },
+  exitLabel: {
     fontWeight: '600',
   },
 });
