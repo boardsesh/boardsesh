@@ -12,8 +12,18 @@ import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boards
 // so every case restates the runtime it means rather than inheriting the runner's.
 const RAILWAY_DATABASE_URL = 'postgresql://postgres:pw@postgres.railway.internal:5432/railway';
 
+// The baseline is the production shape, so a case that forgets to name its
+// database can't quietly inherit the runner's localhost URL and pass a
+// "not production" assertion for the wrong reason.
 function stubRuntime(overrides: Record<string, string>): void {
-  const runtime = { NODE_ENV: '', SENTRY_ENVIRONMENT: '', VITEST: '', GITHUB_ACTIONS: '', ...overrides };
+  const runtime = {
+    NODE_ENV: '',
+    SENTRY_ENVIRONMENT: '',
+    VITEST: '',
+    GITHUB_ACTIONS: '',
+    DATABASE_URL: RAILWAY_DATABASE_URL,
+    ...overrides,
+  };
   for (const [name, value] of Object.entries(runtime)) vi.stubEnv(name, value);
 }
 
