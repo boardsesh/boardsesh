@@ -5,7 +5,6 @@ import {
   initialState,
   createQueueSyncCoordinator,
   generateClientId,
-  isPlaylistPeekQueueItemUuid,
   playlistSuggestionSourceMatches,
   decideAdd,
   deriveAcceptedConfigs,
@@ -33,9 +32,9 @@ import {
 } from '../lib/graphql/operations';
 import { getStoredActiveBoard } from '../lib/active-board-store';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
-import { findPreviousQueueItem, findNextQueueItemWithSuggestions } from '@boardsesh/play-view';
+import { findPreviousQueueItem, findNextQueueItemWithSuggestions, shouldDefaultToBrowse } from '@boardsesh/play-view';
 import { toClimbQueueItem } from '../lib/queue-conversion';
-import { climbToQueueItem, toQueueItemWireInput, isClimbResolved } from '../lib/climb-to-queue-item';
+import { resolveCommittableQueueItem, toQueueItemWireInput, isClimbResolved } from '../lib/climb-to-queue-item';
 import { track } from '../lib/analytics';
 import { reportHandledError } from '../lib/error-reporting';
 import { useAuthTransportRevision } from '../lib/auth-transport-revision';
@@ -47,6 +46,7 @@ import {
   QueueSessionControlContext,
   QueueSessionIdContext,
   QueueLiveStatsContext,
+  QueueSharedSessionContext,
   QueueActiveClimbContext,
   QueueHasActiveClimbContext,
   QueueDataContext,
@@ -56,6 +56,7 @@ import {
   type QueueSessionControlContextValue,
   type QueueSessionIdContextValue,
   type QueueLiveStatsContextValue,
+  type QueueSharedSessionContextValue,
   type QueueActiveClimbContextValue,
   type QueueHasActiveClimbContextValue,
   type QueueDataContextValue,
@@ -80,6 +81,7 @@ export {
   useQueueSessionControls,
   useQueueSessionId,
   useQueueLiveStats,
+  useIsSharedSession,
   useActiveClimbUuid,
   useHasActiveClimb,
   useQueueData,
@@ -1303,6 +1305,15 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         climbUuid: item.climb.uuid,
         layoutId: activeBoardRef.current?.layoutId,
         source: 'mobile',
+        // Which crew's wall just moved, and how many people were watching it.
+        // The preview-first work turns this event into the ONE deliberate act
+        // that drives a shared wall (every browse-shaped gesture stopped firing
+        // it), so without these two the "did people stop stepping on each
+        // other" question has no numerator. `sessionId` is a room id, not a
+        // person; the count is distinct humans, matching how `partyMode` is
+        // stamped on Climb Added to Queue rather than raw connection rows.
+        sessionId: sessionIdRef.current,
+        participantCount: countDistinctSessionUsers(sessionRuntimeStateRef.current?.users),
       });
       // Activating a climb slots it right after the current climb (issue #2217),
       // pushing the current climb into history — matching the local "set climb
@@ -1326,20 +1337,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       playlistSuggestionSourceRef.current,
     );
     if (!nextItem) return;
-    if (isPlaylistPeekQueueItemUuid(nextItem.uuid)) {
-      // Mirror web: turn the transient peek into a real queue item with a fresh
-      // uuid so the synthetic `playlist-peek:<uuid>` never reaches the WS
-      // mutation (toQueueItemInput sends item.uuid verbatim). suggested:true so
-      // suggestion pruning still treats it as suggestion-origin. The peek climb
-      // is the queue package's wide Climb; climbToQueueItem only reads the
-      // ClimbInput subset, so the cast is runtime-safe.
-      const realItem = climbToQueueItem(nextItem.climb as unknown as Parameters<typeof climbToQueueItem>[0], {
-        suggested: true,
-      });
-      dispatchSetCurrent(realItem, true);
-    } else {
-      dispatchSetCurrent(nextItem, false);
-    }
+    // Mirror web: a transient `playlist-peek:<uuid>` must never reach the WS
+    // mutation (toQueueItemInput sends item.uuid verbatim). The laundering lives
+    // in `resolveCommittableQueueItem` so the play drawer's commit button —
+    // which can now pin a peek while browsing a shared session — applies exactly
+    // the same rule. A converted peek was never in the queue, so it has to be
+    // added; a real item is already there.
+    const { item, converted } = resolveCommittableQueueItem(nextItem);
+    dispatchSetCurrent(item, converted);
   }, [dispatchSetCurrent]);
 
   const previousClimb = useCallback(() => {
@@ -1483,6 +1488,19 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [liveStats, sessionUsers],
   );
 
+  // "Is anyone else here" — the gate that turns swipes and list taps into
+  // browsing instead of wall control. Derived here rather than in the drawer and
+  // the climb list so those two hot surfaces subscribe to a boolean that flips
+  // only across the solo ↔ crew boundary: the ≤1/2s stats push and every
+  // presence delta recreate `sessionUsers`, and re-rendering board art or a
+  // virtualized list twice a second for an answer that didn't change is exactly
+  // the provider-value churn the perf checklist bans.
+  const isSharedSession = shouldDefaultToBrowse({
+    sessionActive: sessionId != null,
+    distinctUserCount: countDistinctSessionUsers(sessionUsers),
+  });
+  const sharedSessionValue = useMemo<QueueSharedSessionContextValue>(() => ({ isSharedSession }), [isSharedSession]);
+
   const playlistSuggestionValue = useMemo<QueuePlaylistSuggestionContextValue>(
     () => ({ playlistSuggestionSource }),
     [playlistSuggestionSource],
@@ -1533,17 +1551,19 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     <QueueSessionControlContext.Provider value={sessionControlValue}>
       <QueueSessionIdContext.Provider value={sessionIdValue}>
         <QueueLiveStatsContext.Provider value={liveStatsValue}>
-          <QueueActionsContext.Provider value={actionsValue}>
-            <QueuePlaylistSuggestionContext.Provider value={playlistSuggestionValue}>
-              <QueueActiveClimbContext.Provider value={activeClimbValue}>
-                <QueueHasActiveClimbContext.Provider value={hasActiveClimbValue}>
-                  <QueueDataContext.Provider value={queueDataValue}>
-                    <QueueContext.Provider value={contextValue}>{children}</QueueContext.Provider>
-                  </QueueDataContext.Provider>
-                </QueueHasActiveClimbContext.Provider>
-              </QueueActiveClimbContext.Provider>
-            </QueuePlaylistSuggestionContext.Provider>
-          </QueueActionsContext.Provider>
+          <QueueSharedSessionContext.Provider value={sharedSessionValue}>
+            <QueueActionsContext.Provider value={actionsValue}>
+              <QueuePlaylistSuggestionContext.Provider value={playlistSuggestionValue}>
+                <QueueActiveClimbContext.Provider value={activeClimbValue}>
+                  <QueueHasActiveClimbContext.Provider value={hasActiveClimbValue}>
+                    <QueueDataContext.Provider value={queueDataValue}>
+                      <QueueContext.Provider value={contextValue}>{children}</QueueContext.Provider>
+                    </QueueDataContext.Provider>
+                  </QueueHasActiveClimbContext.Provider>
+                </QueueActiveClimbContext.Provider>
+              </QueuePlaylistSuggestionContext.Provider>
+            </QueueActionsContext.Provider>
+          </QueueSharedSessionContext.Provider>
         </QueueLiveStatsContext.Provider>
       </QueueSessionIdContext.Provider>
     </QueueSessionControlContext.Provider>

@@ -777,6 +777,20 @@ The session's `boardPath` is the route string the host first joined / created on
 
 ## Queue State Synchronization
 
+### The browse gate: browsing emits nothing
+
+Since #4281, a member of a session with **2+ distinct users** who is merely browsing
+climbs on mobile emits **no queue traffic at all** — no `CurrentClimbChanged`, no
+`QueueItemAdded`, no playback broadcasts. Browse-shaped gestures (swipes, climb-list
+taps, similar-climb taps, fresh drawer opens) pin a local view-only preview; only the
+explicit "Put on the wall" commit produces wire events, which then look exactly like
+any deliberate `setCurrentClimb`. This is a **sender-side** contract: receivers cannot
+distinguish an old client's browse noise from a real commit (slim payloads carry no
+intent flag — see the documented rejection in `sync-coordinator.ts`), so any future
+change to the message flow must preserve "browsing emits nothing" at the origin rather
+than trying to filter it downstream. The receiving side's auto-insert of every inbound
+current climb (issue #2217 behaviour) is only correct because of this contract.
+
 ### Event Types
 
 | Event                 | Description             | Fields                                                       |

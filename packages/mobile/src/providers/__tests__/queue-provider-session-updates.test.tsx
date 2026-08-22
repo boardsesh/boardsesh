@@ -225,6 +225,7 @@ vi.mock('../../lib/auth-transport-revision', async () => import('../../lib/auth-
 import {
   QueueProvider,
   useHasActiveClimb,
+  useIsSharedSession,
   usePlaylistSuggestionSource,
   useQueue,
   useQueueLiveStats,
@@ -273,6 +274,7 @@ type Snapshot = {
 type SelectorSnapshot = {
   sessionIdValue: ReturnType<typeof useQueueSessionId>;
   hasActiveClimb: boolean;
+  isSharedSession: boolean;
 };
 
 const user = (overrides: Partial<SessionUser> = {}): SessionUser => ({
@@ -396,9 +398,14 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
 function SelectorProbe({ onSnapshot }: { onSnapshot: (snapshot: SelectorSnapshot) => void }) {
   const sessionIdValue = useQueueSessionId();
   const hasActiveClimb = useHasActiveClimb();
+  // The gate that turns swipes and list taps into browsing. Derived from the
+  // roster in the provider, so this is the only place the derivation can be
+  // observed — the pure rule's own tests can't see whether it is wired to
+  // anything.
+  const isSharedSession = useIsSharedSession();
   useEffect(() => {
-    onSnapshot({ sessionIdValue, hasActiveClimb });
-  }, [hasActiveClimb, onSnapshot, sessionIdValue]);
+    onSnapshot({ sessionIdValue, hasActiveClimb, isSharedSession });
+  }, [hasActiveClimb, isSharedSession, onSnapshot, sessionIdValue]);
   return null;
 }
 
@@ -994,6 +1001,109 @@ describe('QueueProvider session update subscription', () => {
       const latestSnapshot = snapshots.at(-1);
       expect(latestSnapshot?.users.map((entry) => entry.id)).toEqual(['participant-self', 'participant-2']);
     });
+  });
+
+  // The join between the pure rule (`shouldDefaultToBrowse`) and the live
+  // roster. The rule's own table tests can't see whether the provider calls it —
+  // hardcoding `false` here would leave the whole preview-first feature inert
+  // with every other suite green, and hardcoding `true` would take one-swipe wall
+  // control away from every solo climber who ever started a session.
+  it('turns gestures into browsing only once a second climber is on the roster', async () => {
+    const snapshots: Snapshot[] = [];
+    const selectorSnapshots: SelectorSnapshot[] = [];
+    renderProviderWithSelectors(
+      (snapshot) => snapshots.push(snapshot),
+      (selectorSnapshot) => selectorSnapshots.push(selectorSnapshot),
+    );
+
+    await waitFor(() => {
+      expect(ws.getSessionUpdatesSink()).not.toBeNull();
+      expect(selectorSnapshots.at(-1)).toBeDefined();
+    });
+    // A session of one is still solo: this is the ordinary state right after
+    // starting a session, and it must keep one-swipe wall control.
+    expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(false);
+
+    const sessionUpdatesSink = ws.getSessionUpdatesSink();
+    if (!sessionUpdatesSink) throw new Error('session updates sink was not captured');
+
+    act(() => {
+      sessionUpdatesSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserJoined',
+            user: user({ id: 'participant-2', username: 'Bo', userId: 'db-bo' }),
+          },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(true);
+    });
+
+    // A third climber changes nothing, and must not churn the value: this
+    // boolean is read by the drawer (board art) and the climb list (a
+    // virtualized FlashList), which is why it lives in its own selector context.
+    const settledCount = selectorSnapshots.length;
+    act(() => {
+      sessionUpdatesSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserJoined',
+            user: user({ id: 'participant-3', username: 'Cy', userId: 'db-cy' }),
+          },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.users).toHaveLength(3);
+    });
+    expect(selectorSnapshots).toHaveLength(settledCount);
+    expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(true);
+  });
+
+  // Committing is now the ONE deliberate act that moves a shared wall — every
+  // browse-shaped gesture stopped firing this event — so it has to say which crew
+  // and how many people were in it. Without those two properties the question the
+  // whole preview-first change exists to answer ("did people stop stepping on
+  // each other") has no numerator.
+  it('stamps the crew and its size on the commit event', async () => {
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => expect(ws.getSessionUpdatesSink()).not.toBeNull());
+    const sessionUpdatesSink = ws.getSessionUpdatesSink();
+    if (!sessionUpdatesSink) throw new Error('session updates sink was not captured');
+
+    act(() => {
+      sessionUpdatesSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserJoined',
+            user: user({ id: 'participant-2', username: 'Bo', userId: 'db-bo' }),
+          },
+        },
+      });
+    });
+    await waitFor(() => expect(snapshots.at(-1)?.users).toHaveLength(2));
+
+    vi.mocked(track).mockClear();
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(makeQueueItem('commit-1', 'climb-commit-1'));
+    });
+
+    expect(vi.mocked(track)).toHaveBeenCalledWith(
+      SHARED_EVENTS.SetActiveClimb,
+      expect.objectContaining({
+        climbUuid: 'climb-commit-1',
+        sessionId: 'session-1',
+        // Distinct humans, the same count `partyMode` is derived from on Climb
+        // Added to Queue — not raw connection rows.
+        participantCount: 2,
+      }),
+    );
   });
 
   it('exposes the shared party wall actions through the mobile queue context', async () => {

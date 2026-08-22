@@ -32,29 +32,41 @@ export function getViewOnlyPreviewNavigationTarget({
 
 /**
  * The wiring `handlePrev`/`handleNext` actually call: turns the `lightOnSwipe`
- * setting into `forceViewOnly` and delegates to
- * {@link getViewOnlyPreviewNavigationTarget}. Split out as its own function
- * (rather than inlining `forceViewOnly: !lightOnSwipe` at each call site) so
- * the setting → forceViewOnly translation is directly unit-testable — the
- * component itself has no render test (PlayDrawer's dependency graph makes
- * one impractical; see IpadPlayPane.test.tsx, which mocks it out entirely).
+ * setting and the shared-session browse latch into `forceViewOnly` and delegates
+ * to {@link getViewOnlyPreviewNavigationTarget}. Split out as its own function
+ * (rather than inlining the translation at each call site) so it is directly
+ * unit-testable — the component itself has no render test (PlayDrawer's
+ * dependency graph makes one impractical; see IpadPlayPane.test.tsx, which mocks
+ * it out entirely).
+ *
+ * The two reasons to stay view-only are independent and either one is enough:
+ * the climber turned board lighting off for swipes, or someone else is in the
+ * session and a swipe would move THEIR wall and THEIR next-up.
  */
 export function getSwipeNavigationTarget({
   previewItem,
   previewSuggestionSource,
   targetItem,
   lightOnSwipe,
+  inSharedSession = false,
 }: {
   previewItem: ClimbQueueItem | null;
   previewSuggestionSource: PlaylistSuggestionSource | null;
   targetItem: ClimbQueueItem | null;
   lightOnSwipe: boolean;
+  /**
+   * A browse latch is up because there is an audience: a party session with at
+   * least one other climber in it, OR a latch that armed while there was one and
+   * has not been exited yet (the latch is one-way — see PlayDrawer). Defaults to
+   * false so the solo call sites read unchanged.
+   */
+  inSharedSession?: boolean;
 }): ViewOnlyPreviewNavigationTarget {
   return getViewOnlyPreviewNavigationTarget({
     previewItem,
     previewSuggestionSource,
     targetItem,
-    forceViewOnly: !lightOnSwipe,
+    forceViewOnly: !lightOnSwipe || inSharedSession,
   });
 }
 
@@ -79,12 +91,20 @@ export function swipeStaysViewOnly({
   previewItem,
   previewSuggestionSource,
   lightOnSwipe,
+  inSharedSession = false,
 }: {
   previewItem: ClimbQueueItem | null;
   previewSuggestionSource: PlaylistSuggestionSource | null;
   lightOnSwipe: boolean;
+  inSharedSession?: boolean;
 }): boolean {
-  return getSwipeNavigationTarget({ previewItem, previewSuggestionSource, targetItem: null, lightOnSwipe }).viewOnly;
+  return getSwipeNavigationTarget({
+    previewItem,
+    previewSuggestionSource,
+    targetItem: null,
+    lightOnSwipe,
+    inSharedSession,
+  }).viewOnly;
 }
 
 /**
@@ -108,7 +128,18 @@ export function swipeStaysViewOnly({
  *
  * The preview swap is the same mechanism `getViewOnlyPreviewNavigationTarget`
  * already uses above — show the climb, commit nothing.
+ *
+ * A member in a SHARED session takes the same preview path, for a third reason:
+ * the member branch double-writes (`addToQueue` AND `setCurrentClimb`), so a tap
+ * on a "you might also like" card would append to the crew's queue and take the
+ * wall in one gesture — the loudest possible outcome for the most idle possible
+ * intent. Browsing is what the tap means there; putting it up stays an explicit
+ * act on the commit row.
  */
-export function getSimilarClimbTapMode(viewer: 'member' | 'anonymous'): 'queue' | 'preview' {
-  return viewer === 'anonymous' ? 'preview' : 'queue';
+export function getSimilarClimbTapMode(
+  viewer: 'member' | 'anonymous',
+  { inSharedSession = false }: { inSharedSession?: boolean } = {},
+): 'queue' | 'preview' {
+  if (viewer === 'anonymous') return 'preview';
+  return inSharedSession ? 'preview' : 'queue';
 }
