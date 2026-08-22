@@ -12,7 +12,7 @@ import {
   claimNextCredentialForSync,
   claimSharedSyncSlot,
   credentialBackoffMs,
-  credentialRetryReadySql,
+  getCredentialFleetSnapshot,
   readSharedSyncCursor,
   releaseDaemonLease,
   selfHealStaleClimbStats,
@@ -33,7 +33,13 @@ import { isAuroraRequestError, isTransientAuroraError, isTransientSharedSyncAuro
 import { decrypt, encrypt } from '@boardsesh/crypto';
 import type { LocationSyncSummary } from '@boardsesh/location-sync';
 import type { AuroraBoardName } from '../api/types';
-import { DaemonLease, resolveDaemonOptions, runDaemonLoop } from '@boardsesh/sync-runtime';
+import {
+  DaemonLease,
+  formatSyncHealthSummary as formatSharedSyncHealthSummary,
+  resolveDaemonOptions,
+  runDaemonLoop,
+  type SyncHealthSnapshot,
+} from '@boardsesh/sync-runtime';
 import type { SyncRunnerConfig, SyncSummary, CredentialRecord, DaemonOptions, SyncErrorContext } from './types';
 
 type RunnerClient = ReturnType<typeof postgres>;
@@ -101,30 +107,17 @@ export class CredentialSyncError extends Error {
   }
 }
 
-/** Read-only snapshot of the aurora credential fleet, for the health-summary log. */
-export type SyncHealthSnapshot = {
-  total: number;
-  active: number;
-  pending: number;
-  error: number;
-  expired: number;
-  /** Syncable credentials currently skipped because they're inside a backoff window. */
-  inBackoff: number;
-  /** Oldest last_sync_attempt_at across aurora credentials (null = some never attempted). */
-  oldestAttemptAt: Date | null;
-};
+// Re-exported so this module's surface is unchanged by the move into
+// @boardsesh/sync-runtime.
+export type { SyncHealthSnapshot };
 
 /**
- * Format a {@link SyncHealthSnapshot} as a single greppable log line. Pure so
- * it's unit-testable without a database.
+ * Format the aurora fleet summary. Thin wrapper over the shared formatter in
+ * @boardsesh/sync-runtime so aurora and kilter emit the same line shape and one
+ * log alert covers both daemons.
  */
 export function formatSyncHealthSummary(snapshot: SyncHealthSnapshot): string {
-  const oldest = snapshot.oldestAttemptAt ? snapshot.oldestAttemptAt.toISOString() : 'never';
-  return (
-    `[SyncRunner] Sync health: ${snapshot.total} aurora credentials — ` +
-    `active=${snapshot.active} pending=${snapshot.pending} error=${snapshot.error} expired=${snapshot.expired}; ` +
-    `inBackoff=${snapshot.inBackoff}; oldestAttempt=${oldest}`
-  );
+  return formatSharedSyncHealthSummary(snapshot, '[SyncRunner]', 'aurora credentials');
 }
 
 type CredentialFailureUpdate = {
@@ -768,32 +761,9 @@ export class SyncRunner {
    */
   private async getSyncHealthSnapshot(): Promise<SyncHealthSnapshot> {
     const { db } = this.getClient();
-    const rows = await db
-      .select({
-        total: sql<number>`(count(*))::int`,
-        active: sql<number>`(count(*) filter (where ${auroraCredentials.syncStatus} = 'active'))::int`,
-        pending: sql<number>`(count(*) filter (where ${auroraCredentials.syncStatus} = 'pending'))::int`,
-        error: sql<number>`(count(*) filter (where ${auroraCredentials.syncStatus} = 'error'))::int`,
-        expired: sql<number>`(count(*) filter (where ${auroraCredentials.syncStatus} = 'expired'))::int`,
-        inBackoff: sql<number>`(count(*) filter (
-          where ${auroraCredentials.syncStatus} in ('pending', 'active', 'error')
-            and not ${credentialRetryReadySql()}
-        ))::int`,
-        oldestAttemptAt: sql<Date | null>`min(${auroraCredentials.lastSyncAttemptAt})`,
-      })
-      .from(auroraCredentials)
-      .where(ne(auroraCredentials.boardType, KILTER_BOARD_TYPE));
-
-    const row = rows[0];
-    return {
-      total: Number(row?.total ?? 0),
-      active: Number(row?.active ?? 0),
-      pending: Number(row?.pending ?? 0),
-      error: Number(row?.error ?? 0),
-      expired: Number(row?.expired ?? 0),
-      inBackoff: Number(row?.inBackoff ?? 0),
-      oldestAttemptAt: row?.oldestAttemptAt ?? null,
-    };
+    // Aurora's fleet is everything that isn't kilter; kilter-sync's runner
+    // passes the complementary predicate to the same query.
+    return getCredentialFleetSnapshot(db, ne(auroraCredentials.boardType, KILTER_BOARD_TYPE));
   }
 
   /**

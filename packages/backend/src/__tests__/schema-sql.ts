@@ -277,6 +277,15 @@ export const schemaSQL = `
     CONSTRAINT "board_climb_ratings_rating_range" CHECK ("rating" IS NULL OR ("rating" >= 1 AND "rating" <= 5))
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "board_climb_ratings_user_climb_angle_idx" ON "board_climb_ratings" ("board_type", "climb_uuid", "angle", "user_id");
+  -- The two surrogate uniques are PARTIAL (NOT NULL only) so a Boardsesh-originated
+  -- rating can sit unsynced without colliding with every other unsynced row. They are
+  -- GLOBAL, not user-scoped: one climb_rating_uuid lives on at most one row table-wide.
+  -- kilter-sync's ratings upsert can only name ONE conflict target, so it has to make
+  -- these unreachable before the statement runs (see applyClimbRatings). Leaving them
+  -- out of this test schema is what let a duplicate-key regression reach production and
+  -- wedge the kilter user sync for 30+ days.
+  CREATE UNIQUE INDEX IF NOT EXISTS "board_climb_ratings_kilter_id_unique" ON "board_climb_ratings" ("kilter_id") WHERE "kilter_id" IS NOT NULL;
+  CREATE UNIQUE INDEX IF NOT EXISTS "board_climb_ratings_aurora_id_unique" ON "board_climb_ratings" ("aurora_id") WHERE "aurora_id" IS NOT NULL;
 
   -- Mirrors packages/db schema/boards/unified.ts boardClimbStatsHistory. The
   -- weekly full-table snapshot (snapshotClimbStatsHistoryIfDue) appends the

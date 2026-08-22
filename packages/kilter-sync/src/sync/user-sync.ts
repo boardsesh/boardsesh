@@ -98,6 +98,14 @@ const NATURAL_KEY_FETCH_WINDOW_SECONDS = MAX_USER_UTC_OFFSET_SECONDS + NATURAL_K
  */
 const STREAM_FLUSH_THRESHOLD = 500;
 
+/**
+ * Rows per statement in the ratings upsert. Mirrors aurora-sync's
+ * WRITE_CHUNK_SIZE (apply-user-logbook.ts): a row Postgres refuses costs its
+ * chunk rather than the whole STREAM_FLUSH_THRESHOLD-sized buffer, which is
+ * what makes the row-by-row replay in applyClimbRatings affordable.
+ */
+const RATINGS_WRITE_CHUNK_SIZE = 100;
+
 export type SyncKilterUserDataArgs = {
   db: DrizzleDb;
   userId: string;
@@ -259,7 +267,28 @@ export async function syncKilterUserData({
   async function flushClimbRatings(): Promise<void> {
     if (buffer.climb_ratings.length === 0) return;
     const batch = buffer.climb_ratings.splice(0, buffer.climb_ratings.length);
-    await db.transaction((tx) => applyClimbRatings(tx, userId, batch, aliasCache));
+    await db.transaction((tx) => applyClimbRatings(tx, userId, batch, aliasCache, log));
+  }
+
+  // Phase isolation. A throw from one phase must not cancel the others. Before
+  // this, a single bad rating row aborted the ratings transaction, escaped
+  // syncKilterUserData entirely, and the circuits phase at the bottom never
+  // ran — so a user wedged on ratings silently lost playlist sync too, for as
+  // long as the wedge lasted. Failures are collected and re-thrown once every
+  // phase has had its turn, so the runner still records a failed user.
+  //
+  // No data is lost by continuing: PowerSync re-delivers a full snapshot every
+  // cycle and each apply is idempotent, so whatever a failed phase dropped
+  // lands on the next successful turn.
+  const phaseErrors: Error[] = [];
+  async function runPhase(name: string, phase: () => Promise<void>): Promise<void> {
+    try {
+      await phase();
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      log(`[kilter-sync] ${name} phase failed for user ${userId}: ${failure.message}`);
+      phaseErrors.push(new Error(`${name}: ${failure.message}`, { cause: failure }));
+    }
   }
 
   await streamKilterPowerSync({
@@ -277,8 +306,10 @@ export async function syncKilterUserData({
           }
           buffer.logs.push(op);
           if (buffer.logs.length >= STREAM_FLUSH_THRESHOLD) {
-            await primeAliasCacheForOps(db, aliasCache, buffer.logs, extractLogClimbUuid);
-            await flushLogs();
+            await runPhase('logs', async () => {
+              await primeAliasCacheForOps(db, aliasCache, buffer.logs, extractLogClimbUuid);
+              await flushLogs();
+            });
           }
           break;
         case 'climb_ratings':
@@ -291,8 +322,10 @@ export async function syncKilterUserData({
           }
           buffer.climb_ratings.push(op);
           if (buffer.climb_ratings.length >= STREAM_FLUSH_THRESHOLD) {
-            await primeAliasCacheForOps(db, aliasCache, buffer.climb_ratings, extractRatingClimbUuid);
-            await flushClimbRatings();
+            await runPhase('climb_ratings', async () => {
+              await primeAliasCacheForOps(db, aliasCache, buffer.climb_ratings, extractRatingClimbUuid);
+              await flushClimbRatings();
+            });
           }
           break;
         case 'circuits':
@@ -334,11 +367,15 @@ export async function syncKilterUserData({
   // about to apply, then run each phase in its own transaction. The
   // per-phase tx boundary matters more than cross-phase atomicity —
   // every apply is independently idempotent via ON CONFLICT.
-  await primeAliasCacheForOps(db, aliasCache, buffer.logs, extractLogClimbUuid);
-  await flushLogs();
+  await runPhase('logs', async () => {
+    await primeAliasCacheForOps(db, aliasCache, buffer.logs, extractLogClimbUuid);
+    await flushLogs();
+  });
 
-  await primeAliasCacheForOps(db, aliasCache, buffer.climb_ratings, extractRatingClimbUuid);
-  await flushClimbRatings();
+  await runPhase('climb_ratings', async () => {
+    await primeAliasCacheForOps(db, aliasCache, buffer.climb_ratings, extractRatingClimbUuid);
+    await flushClimbRatings();
+  });
 
   // Drop orphan circuit_climbs whose parent circuit didn't survive the
   // user_uuid filter. Doing it here (not at ingest time) avoids the
@@ -362,7 +399,24 @@ export async function syncKilterUserData({
   }
   await primeAliasCache(db, aliasCache, circuitClimbUuids);
 
-  return db.transaction((tx) => applyCircuits(tx, userId, buffer.circuits, filteredCircuitClimbs, aliasCache, log));
+  let circuitsResult: SyncKilterUserDataResult = { skippedForeignCircuits: 0 };
+  await runPhase('circuits', async () => {
+    circuitsResult = await db.transaction((tx) =>
+      applyCircuits(tx, userId, buffer.circuits, filteredCircuitClimbs, aliasCache, log),
+    );
+  });
+
+  // Surface the failures now that every phase has run. The runner classifies a
+  // non-KilterApiError as permanent, which is correct here: a phase that threw
+  // despite the per-row replay below applyClimbRatings is an unanticipated
+  // shape, not a retryable blip.
+  if (phaseErrors.length > 0) {
+    throw new Error(
+      `kilter user sync failed in ${phaseErrors.length} phase(s): ${phaseErrors.map((failure) => failure.message).join('; ')}`,
+    );
+  }
+
+  return circuitsResult;
 }
 
 function extractLogClimbUuid(op: PowerSyncOp): string | undefined {
@@ -605,8 +659,10 @@ export async function applyLogs(
   // id; our hand-rolled stream (api/powersync-client.ts) forwards every op
   // verbatim, so we dedupe here. Keyed by log_uuid, last-op-wins (later
   // op_id = freshest state, and logs ride a single bucket so buffer order
-  // is op_id order), mirroring the conflict-key dedupe in
-  // applyClimbRatings. Without this, two PUTs for the same log_uuid both
+  // is op_id order). applyClimbRatings now does the same on
+  // climb_rating_uuid — it used to dedupe only the CONFLICT key, which is
+  // exactly how a duplicate kilter_id reached its INSERT and wedged the user
+  // sync. Without this, two PUTs for the same log_uuid both
   // reach the INSERT below carrying the same kilter_id and violate the
   // GLOBAL boardsesh_ticks_kilter_id_unique index, aborting the flush.
   const dedupedPutsByLogUuid = new Map<string, PowerSyncOp>();
@@ -1048,8 +1104,19 @@ export async function applyClimbRatings(
   userId: string,
   ops: PowerSyncOp[],
   aliasCache: Map<string, string>,
+  log: (msg: string) => void,
 ): Promise<void> {
   if (ops.length === 0) return;
+
+  // Serialize concurrent same-user ratings applies. The repoint below reads
+  // who owns each kilter_id and then writes based on that read, so without a
+  // lock a racing writer between the two turns the detach into a no-op and the
+  // upsert back into a duplicate-key abort. Reuses the per-user tick lock key
+  // rather than minting a ratings-specific one: a second key would create a
+  // lock-ordering hazard the day one writer touches both tables. This phase
+  // runs in its own transaction and takes the lock as its first statement, so
+  // it can't invert order against applyLogs.
+  await acquireUserTickMutationLock(tx, userId);
 
   const removeIds: string[] = [];
   const puts: PowerSyncOp[] = [];
@@ -1098,51 +1165,247 @@ export async function applyClimbRatings(
 
   if (puts.length === 0) return;
 
-  // Dedupe by the conflict key (board_type, climb_uuid, angle, user_id)
-  // BEFORE the upsert. Distinct source UUIDs can alias to one canonical
-  // climb_uuid (resolveCanonicalClimbUuid), so two PUTs at the same
-  // angle+user can collapse to the same conflict key. Postgres rejects
-  // an ON CONFLICT DO UPDATE that touches the same target row twice in
-  // one statement ("command cannot affect row a second time"), which
-  // would abort the whole ratings flush. Last write wins — PowerSync
-  // delivers a full snapshot per cycle, so within one batch the final
-  // PUT carries the freshest state.
-  const valuesByConflictKey = new Map<string, typeof boardClimbRatings.$inferInsert>();
+  // (a) Dedupe by climb_rating_uuid — the SURROGATE, not the conflict key.
+  // PowerSync's oplog can carry several ops for one rating inside a single
+  // snapshot, and an upstream angle/climb edit re-delivers the same
+  // climb_rating_uuid under a DIFFERENT natural key. The conflict-key dedupe
+  // in (d) cannot see that: both copies survive it, reach one INSERT carrying
+  // the same kilter_id, and violate the GLOBAL partial-unique index
+  // board_climb_ratings_kilter_id_unique — aborting the whole flush. That is
+  // half of what wedged the kilter user sync for 30+ days. applyLogs has done
+  // this on log_uuid all along; ratings never had it.
+  //
+  // Last-op-wins: a later op_id is the freshest state, and ratings ride a
+  // single bucket so buffer order is op_id order.
+  const dedupedPutsByRatingUuid = new Map<string, PowerSyncOp>();
   for (const op of puts) {
+    dedupedPutsByRatingUuid.set((op.data as RawClimbRating).climb_rating_uuid, op);
+  }
+
+  type NormalisedRating = {
+    kilterId: string;
+    canonical: string;
+    angle: number;
+    values: typeof boardClimbRatings.$inferInsert;
+  };
+
+  const normalised: NormalisedRating[] = [];
+  for (const op of dedupedPutsByRatingUuid.values()) {
     const raw = op.data as RawClimbRating;
     const canonical = await resolveCanonicalClimbUuid(tx, KILTER_BOARD_TYPE, raw.climb_uuid, aliasCache);
-    valuesByConflictKey.set(`${KILTER_BOARD_TYPE}:${canonical}:${raw.angle}:${userId}`, {
-      boardType: KILTER_BOARD_TYPE,
-      climbUuid: canonical,
-      angle: raw.angle,
-      userId,
-      // Kilter sends 0 for "cleared"; the DB CHECK only allows NULL or 1-5, so
-      // a raw 0 would abort the whole batch. sanitizeKilterRating maps it (and
-      // any other out-of-range value) to NULL.
-      rating: sanitizeKilterRating(raw.rating),
-      difficultyGradeId: raw.difficulty_grade_id,
-      comment: raw.comment ?? '',
-      // Kilter's per-rating payload doesn't carry a `weight`; the field
-      // lives on the aggregated /api/logs response, not the rating row
-      // itself. Leave null for kilter-origin rows.
-      weight: null,
+    normalised.push({
       kilterId: raw.climb_rating_uuid,
-      // When the user actually rated the climb upstream. Without this the
-      // insert falls through to the column's defaultNow(), so created_at
-      // recorded when OUR sync first saw the row — every historical rating
-      // collapsed onto the day the Kilter sync started. Kilter sends an ISO
-      // string with an offset; Date.parse normalises it to UTC, matching the
-      // ::timestamptz-on-both-sides treatment applyLogs gives created_at.
-      // Unparseable input falls back to the column default rather than
-      // writing an Invalid Date (which Postgres rejects and which would abort
-      // the whole ratings batch).
-      createdAt: parseKilterTimestamp(raw.created_at),
+      canonical,
+      angle: raw.angle,
+      values: {
+        boardType: KILTER_BOARD_TYPE,
+        climbUuid: canonical,
+        angle: raw.angle,
+        userId,
+        // Kilter sends 0 for "cleared"; the DB CHECK only allows NULL or 1-5, so
+        // a raw 0 would abort the whole batch. sanitizeKilterRating maps it (and
+        // any other out-of-range value) to NULL.
+        rating: sanitizeKilterRating(raw.rating),
+        difficultyGradeId: raw.difficulty_grade_id,
+        comment: raw.comment ?? '',
+        // Kilter's per-rating payload doesn't carry a `weight`; the field
+        // lives on the aggregated /api/logs response, not the rating row
+        // itself. Leave null for kilter-origin rows.
+        weight: null,
+        kilterId: raw.climb_rating_uuid,
+        // When the user actually rated the climb upstream. Without this the
+        // insert falls through to the column's defaultNow(), so created_at
+        // recorded when OUR sync first saw the row — every historical rating
+        // collapsed onto the day the Kilter sync started. Kilter sends an ISO
+        // string with an offset; Date.parse normalises it to UTC, matching the
+        // ::timestamptz-on-both-sides treatment applyLogs gives created_at.
+        // Unparseable input falls back to the column default rather than
+        // writing an Invalid Date (which Postgres rejects and which would abort
+        // the whole ratings batch).
+        createdAt: parseKilterTimestamp(raw.created_at),
+      },
     });
   }
-  const values = Array.from(valuesByConflictKey.values());
 
-  if (values.length === 0) return;
+  const incomingKilterIds = normalised.map((entry) => entry.kilterId);
+  // Explicit empty-guard: drizzle's inArray([]) emits invalid `IN ()` SQL that
+  // throws at the DB. Non-empty here (puts.length === 0 returned above), so
+  // this is belt-and-braces against a future refactor thinning `normalised`.
+  if (incomingKilterIds.length === 0) return;
 
+  // (b) One GLOBAL SELECT, deliberately NOT user-scoped, to find who already
+  // holds each incoming climb_rating_uuid. board_climb_ratings_kilter_id_unique
+  // is global (partial only on NOT NULL), so a given kilter_id lives on at most
+  // one row table-wide and this IN-list probe is index-served. Partition by
+  // owner, exactly as applyLogs partitions ticks:
+  //   - same user  → a candidate for the repoint in (c).
+  //   - other user → foreign. The same Kilter account is linked to two
+  //     Boardsesh accounts. Writing those rows would collide on the global
+  //     index; adopting them would stamp a globally-taken id onto this user.
+  //     Skip-and-log so the situation stays visible instead of crashing.
+  const byKilterIdRows = await tx
+    .select({
+      kilterId: boardClimbRatings.kilterId,
+      ownerUserId: boardClimbRatings.userId,
+      boardType: boardClimbRatings.boardType,
+      climbUuid: boardClimbRatings.climbUuid,
+      angle: boardClimbRatings.angle,
+    })
+    .from(boardClimbRatings)
+    .where(inArray(boardClimbRatings.kilterId, incomingKilterIds));
+
+  const ownRowsByKilterId = new Map<string, (typeof byKilterIdRows)[number]>();
+  const foreignKilterIds = new Set<string>();
+  for (const row of byKilterIdRows) {
+    if (!row.kilterId) continue;
+    if (row.ownerUserId === userId) {
+      ownRowsByKilterId.set(row.kilterId, row);
+    } else {
+      foreignKilterIds.add(row.kilterId);
+    }
+  }
+
+  const writable: NormalisedRating[] = [];
+  for (const entry of normalised) {
+    if (foreignKilterIds.has(entry.kilterId)) {
+      log(
+        `[kilter-sync] climb_rating_uuid ${entry.kilterId} already linked to a different Boardsesh user — skipping for user ${userId} (duplicate Kilter account link)`,
+      );
+      continue;
+    }
+    writable.push(entry);
+  }
+  if (writable.length === 0) return;
+
+  // (c) Dedupe by the conflict key (board_type, climb_uuid, angle, user_id).
+  // Distinct source UUIDs can alias to one canonical climb_uuid
+  // (resolveCanonicalClimbUuid), so two PUTs at the same angle+user can
+  // collapse to the same conflict key. Postgres rejects an ON CONFLICT DO
+  // UPDATE that touches the same target row twice in one statement ("command
+  // cannot affect row a second time"). Last write wins — PowerSync delivers a
+  // full snapshot per cycle, so the final PUT carries the freshest state.
+  //
+  // Ordered BEFORE the repoint below so a row dropped here never triggers a
+  // pointless detach.
+  const writableByConflictKey = new Map<string, NormalisedRating>();
+  for (const entry of writable) {
+    writableByConflictKey.set(`${KILTER_BOARD_TYPE}:${entry.canonical}:${entry.angle}:${userId}`, entry);
+  }
+  const survivors = Array.from(writableByConflictKey.values());
+  if (survivors.length === 0) return;
+
+  // (d) Repoint. The incoming rating carries a kilter_id this user already has
+  // parked on a DIFFERENT natural key — an angle edited upstream, or a
+  // climb_uuid that re-canonicalises through board_climb_aliases. The upsert
+  // below conflict-targets the natural key, so both its INSERT branch and its
+  // DO UPDATE branch (which sets kilter_id through COALESCE) would try to
+  // stamp a globally-taken id onto another row and trip the partial unique.
+  // Postgres allows exactly ONE conflict target per ON CONFLICT, so the second
+  // unique cannot be covered by the statement — it has to be made unreachable
+  // first. Freeing the id in this same transaction leaves no window where it
+  // is unowned.
+  //
+  // kilter_detached_at IS stamped, and that is load-bearing rather than
+  // cosmetic. push-back selects Boardsesh-origin ratings to POST upstream with
+  // `kilter_id IS NULL AND kilter_detached_at IS NULL` (push-back.ts,
+  // pushPendingRatings). Nulling the surrogate without the marker would make
+  // the stale row look never-pushed, and the day the POST is wired push-back
+  // would re-create it upstream as a duplicate rating. The ascents feed reads
+  // the same marker to drop the row from the effectiveQuality fallback, which
+  // is also right: upstream no longer asserts a rating at the old
+  // (climb, angle) and will never PUT there again.
+  //
+  // The marker's contract is "not backed by a live upstream rating", which
+  // covers both an upstream delete and a moved link — the cause differs, the
+  // required behaviour doesn't. The log line below carries the distinction.
+  // It self-heals: if upstream ever rates that key again the DO UPDATE clears
+  // the marker on re-adoption.
+  const staleKilterIds: string[] = [];
+  for (const entry of survivors) {
+    const existing = ownRowsByKilterId.get(entry.kilterId);
+    if (!existing) continue;
+    // The common case — the id is already on the row we're about to write.
+    // Skipping it here is what keeps a steady-state cycle from churning
+    // updated_at on every rating it re-delivers.
+    if (
+      existing.boardType === KILTER_BOARD_TYPE &&
+      existing.climbUuid === entry.canonical &&
+      existing.angle === entry.angle
+    ) {
+      continue;
+    }
+    log(
+      `[kilter-sync] repointing kilter_id ${entry.kilterId} for user ${userId}: ${existing.climbUuid}@${existing.angle} -> ${entry.canonical}@${entry.angle}`,
+    );
+    staleKilterIds.push(entry.kilterId);
+  }
+  if (staleKilterIds.length > 0) {
+    const detachedAt = new Date();
+    // Keyed on (user_id, kilter_id) rather than the row's primary key: the
+    // predicate is self-verifying — it can only null a row that STILL carries
+    // that exact surrogate — and it lands on board_climb_ratings_user_kilter_idx.
+    // The user_id term is redundant (the partition already dropped foreign-owned
+    // ids) but is kept so the never-cross-users invariant is enforced at the
+    // write, not only by the partition above.
+    await tx
+      .update(boardClimbRatings)
+      .set({ kilterId: null, kilterDetachedAt: detachedAt, updatedAt: detachedAt })
+      .where(and(eq(boardClimbRatings.userId, userId), inArray(boardClimbRatings.kilterId, staleKilterIds)));
+  }
+
+  // (e) Upsert, chunked. One refused row costs its chunk, not the buffer.
+  const values = survivors.map((entry) => entry.values);
+  for (let offset = 0; offset < values.length; offset += RATINGS_WRITE_CHUNK_SIZE) {
+    await upsertClimbRatingChunk(tx, values.slice(offset, offset + RATINGS_WRITE_CHUNK_SIZE), userId, log);
+  }
+}
+
+/**
+ * One chunk of the ratings upsert, wrapped in a savepoint with a row-by-row
+ * replay on failure. Ported from aurora-sync's apply-user-logbook: a row
+ * Postgres still refuses — a shape we haven't anticipated — is skipped and
+ * logged instead of aborting the buffer, failing the user, and (because the
+ * throw escapes syncKilterUserData) taking the circuits phase down with it.
+ * PowerSync re-delivers a full snapshot every cycle, so a deterministic bad
+ * row would otherwise fail identically forever.
+ */
+async function upsertClimbRatingChunk(
+  tx: DrizzleDb,
+  chunk: Array<typeof boardClimbRatings.$inferInsert>,
+  userId: string,
+  log: (msg: string) => void,
+): Promise<void> {
+  if (chunk.length === 0) return;
+  try {
+    await tx.transaction(async (savepoint) => {
+      await writeClimbRatings(savepoint as unknown as DrizzleDb, chunk);
+    });
+    return;
+  } catch (batchError) {
+    log(
+      `[kilter-sync] batched climb-rating write failed for user ${userId} (${chunk.length} row(s)) — retrying row by row: ${
+        batchError instanceof Error ? batchError.message : String(batchError)
+      }`,
+    );
+  }
+
+  for (const row of chunk) {
+    try {
+      await tx.transaction(async (savepoint) => {
+        await writeClimbRatings(savepoint as unknown as DrizzleDb, [row]);
+      });
+    } catch (rowError) {
+      log(
+        `[kilter-sync] skipping climb rating ${row.kilterId ?? '(no kilter_id)'} for user ${userId} on ${row.climbUuid}@${row.angle}: ${
+          rowError instanceof Error ? rowError.message : String(rowError)
+        }`,
+      );
+    }
+  }
+}
+
+/** The ratings upsert statement itself. Conflict target is the natural key. */
+async function writeClimbRatings(tx: DrizzleDb, values: Array<typeof boardClimbRatings.$inferInsert>): Promise<void> {
   await tx
     .insert(boardClimbRatings)
     .values(values)
