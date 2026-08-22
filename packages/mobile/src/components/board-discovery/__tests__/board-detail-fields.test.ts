@@ -77,7 +77,7 @@ describe('getBoardDetailFields size fallback', () => {
   const kilterBoard = { ...base, boardType: 'kilter', layoutId: 1, sizeId: 7 } as unknown as UserBoard;
 
   it('resolves the size from the bundled tables when the server sends null', () => {
-    expect(getBoardDetailFields(kilterBoard).sizeText).toBe('12 x 14 · Commerical');
+    expect(getBoardDetailFields(kilterBoard).sizeText).toBe('12 x 14 · Commercial');
   });
 
   it('still prefers the server values when it does send them', () => {
