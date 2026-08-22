@@ -2,6 +2,7 @@ import 'server-only';
 import { unstable_cache } from 'next/cache';
 import { type RequestDocument, type Variables, GraphQLClient } from 'graphql-request';
 import { sortObjectKeys } from '@/app/lib/cache-utils';
+import { compactErrorMessage } from '@/app/lib/observability/compact-error';
 import { getGraphQLHttpUrl } from './client';
 import type { DiscoverablePlaylist, DiscoverPlaylistsQueryResponse } from '@boardsesh/graphql/operations/playlists';
 import type {
@@ -71,15 +72,28 @@ export function createCachedGraphQLQuery<T = unknown, V extends Variables = Vari
   return async (variables?: V): Promise<T> => {
     const cachedFn = unstable_cache(
       async () => {
-        if (!timeoutMs) {
-          return executeGraphQLInternal<T, V>(document, variables);
-        }
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
         try {
-          return await executeGraphQLInternal<T, V>(document, variables, controller.signal);
-        } finally {
-          clearTimeout(timer);
+          if (!timeoutMs) {
+            return await executeGraphQLInternal<T, V>(document, variables);
+          }
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), timeoutMs);
+          try {
+            return await executeGraphQLInternal<T, V>(document, variables, controller.signal);
+          } finally {
+            clearTimeout(timer);
+          }
+        } catch (error) {
+          // Next's `unstable_cache` console.errors the WHOLE rejection itself
+          // during stale-while-revalidate — a call site inside next/dist we
+          // cannot intercept. Rethrowing a compact error here bounds the SIZE
+          // of that unavoidable log event (a graphql-request ClientError or a
+          // DrizzleQueryError otherwise embeds the whole query/SQL). Every
+          // consumer of this function already catches and degrades without
+          // inspecting the error's shape, and `unstable_cache` never caches a
+          // rejection, so failure semantics are unchanged — only the log size
+          // shrinks.
+          throw new Error(compactErrorMessage(error));
         }
       },
       ['graphql', cacheTag, ...createCacheKeyFromVariables(variables)],
