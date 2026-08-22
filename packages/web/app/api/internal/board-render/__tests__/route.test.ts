@@ -1,12 +1,46 @@
 // @vitest-environment node
 
-import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
 import { resetBoardRenderCaches } from '@/app/lib/board-render-cache';
 import { GET } from '../route';
 
+// The route builds its semaphore once, at module load, from this env var —
+// hoisted so it is set before `../route` is imported. One slot makes the
+// concurrency and load-shedding behaviour observable with a handful of requests.
+vi.hoisted(() => {
+  process.env.BOARD_RENDER_CONCURRENCY = '1';
+});
+
+// Renders in flight right now, and the most that ever overlapped. Incremented
+// when a render starts its WASM pass, decremented when its encode finishes.
+let activeRenders = 0;
+let peakActiveRenders = 0;
+// When set, every encode parks here — holds renders open so a test can watch
+// what the semaphore admits.
+let renderGate: Promise<void> | null = null;
+
+let releaseRenderGate: (() => void) | null = null;
+
+function openRenderGate(): () => void {
+  let resolveGate!: () => void;
+  renderGate = new Promise<void>((resolve) => {
+    resolveGate = resolve;
+  });
+  releaseRenderGate = () => {
+    renderGate = null;
+    resolveGate();
+  };
+  return releaseRenderGate;
+}
+
+/** Let every pending microtask (and timer callback) settle. */
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 // Mock WASM module - returns raw RGBA with 8-byte dimension header
 const mockRenderOverlay = vi.fn((_config: string) => {
+  activeRenders += 1;
+  peakActiveRenders = Math.max(peakActiveRenders, activeRenders);
   // 2x2 pixel image: 8 bytes header + 16 bytes RGBA data
   const buf = new Uint8Array(8 + 16);
   const view = new DataView(buf.buffer);
@@ -45,6 +79,21 @@ const mockJpegOptions = vi.fn();
 // Substrings of an input path whose decode should reject, per test.
 const failingInputPaths: string[] = [];
 
+/**
+ * Terminal encode: the bytes carry the format and its options, so two renders
+ * that differ only in encode settings (thumbnail vs full, lossless vs lossy)
+ * produce visibly different bodies. Also the point where a render is counted as
+ * finished, and where the gate parks it.
+ */
+const terminalEncode = (kind: string, options: unknown) => {
+  const bytes = Buffer.from(`${kind}:${JSON.stringify(options ?? null)}`);
+  return vi.fn(async () => {
+    if (renderGate) await renderGate;
+    activeRenders = Math.max(0, activeRenders - 1);
+    return bytes;
+  });
+};
+
 const mockSharpInstance = (shouldFail: boolean) => {
   const instance = {
     composite: vi.fn((...args: unknown[]) => {
@@ -67,15 +116,15 @@ const mockSharpInstance = (shouldFail: boolean) => {
     ),
     webp: vi.fn((opts: unknown) => {
       mockWebpOptions(opts);
-      return { toBuffer: vi.fn(() => Promise.resolve(Buffer.from([0x52, 0x49, 0x46, 0x46]))) };
+      return { toBuffer: terminalEncode('webp', opts) };
     }),
     png: vi.fn((opts: unknown) => {
       mockPngOptions(opts);
-      return { toBuffer: vi.fn(() => Promise.resolve(Buffer.from([0x89, 0x50, 0x4e, 0x47]))) };
+      return { toBuffer: terminalEncode('png', opts) };
     }),
     jpeg: vi.fn((opts: unknown) => {
       mockJpegOptions(opts);
-      return { toBuffer: vi.fn(() => Promise.resolve(Buffer.from([0xff, 0xd8, 0xff]))) };
+      return { toBuffer: terminalEncode('jpeg', opts) };
     }),
   };
   return instance;
@@ -187,9 +236,23 @@ describe('board-render API route', () => {
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(true);
     failingInputPaths.length = 0;
+    activeRenders = 0;
+    peakActiveRenders = 0;
+    renderGate = null;
+    releaseRenderGate = null;
     // Module-level caches outlive a request by design — reset them so one
     // test's render can't serve another test's request.
     resetBoardRenderCaches();
+  });
+
+  afterEach(async () => {
+    // A failing gated test would otherwise leave its renders parked forever,
+    // holding the semaphore and timing out every test after it. Release the
+    // gate and drain the queue so a failure stays local to its own test.
+    releaseRenderGate?.();
+    releaseRenderGate = null;
+    await flush();
+    await flush();
   });
 
   it('returns 200 with WebP content for valid request', async () => {
@@ -460,25 +523,27 @@ describe('board-render API route', () => {
     expect(mockWebpOptions).toHaveBeenCalledWith({ lossless: true });
   });
 
-  it('dims the board base with a linear scale instead of compositing a scrim', async () => {
+  it('composites a full-bleed black scrim into the base when dim_background is set', async () => {
     const response = await GET(
       makeRequest({ ...validParams, thumbnail: '1', include_background: '1', dim_background: '0.18' }),
     );
     expect(response.status).toBe(200);
 
-    // rgb × (1 - 0.18), alpha untouched — no W×H×4 black scrim allocated.
-    expect(mockLinear).toHaveBeenCalledTimes(1);
-    const [multipliers, offsets] = mockLinear.mock.calls[0] as [number[], number[]];
-    expect(multipliers[0]).toBeCloseTo(0.82, 10);
-    expect(multipliers[1]).toBeCloseTo(0.82, 10);
-    expect(multipliers[2]).toBeCloseTo(0.82, 10);
-    expect(multipliers[3]).toBe(1);
-    expect(offsets).toEqual([0, 0, 0, 0]);
+    // Two composites onto the cached base: the scrim, then the holds overlay.
+    // The scrim must be a real layer — scaling RGB instead would leave the
+    // transparent parts of the board photo undimmed (see pipeline.ts).
+    expect(mockComposite).toHaveBeenCalledTimes(2);
+    expect(mockLinear).not.toHaveBeenCalled();
 
-    // Only the holds overlay is composited onto the base.
-    expect(mockComposite).toHaveBeenCalledTimes(1);
-    const layers = mockComposite.mock.calls[0][0] as unknown[];
-    expect(layers).toHaveLength(1);
+    const scrimLayers = mockComposite.mock.calls[0][0] as Array<{
+      input?: { create?: { channels?: number; background?: { r?: number; alpha?: number } } };
+    }>;
+    expect(scrimLayers).toHaveLength(1);
+    expect(scrimLayers[0].input?.create?.background).toEqual({ r: 0, g: 0, b: 0, alpha: 0.18 });
+    expect(scrimLayers[0].input?.create?.channels).toBe(4);
+
+    const overlayLayers = mockComposite.mock.calls[1][0] as unknown[];
+    expect(overlayLayers).toHaveLength(1);
   });
 
   it('does not dim when dim_background is absent', async () => {
@@ -486,9 +551,10 @@ describe('board-render API route', () => {
     expect(response.status).toBe(200);
     expect(mockLinear).not.toHaveBeenCalled();
     expect(mockComposite).toHaveBeenCalledTimes(1);
-    // composite array is [holds overlay] only.
-    const layers = mockComposite.mock.calls[0][0] as unknown[];
+    // composite array is [holds overlay] only — no scrim.
+    const layers = mockComposite.mock.calls[0][0] as Array<{ input?: { create?: unknown } }>;
     expect(layers).toHaveLength(1);
+    expect(layers[0].input).not.toHaveProperty('create');
   });
 
   it('returns 400 when dim_background is out of range', async () => {
@@ -583,6 +649,112 @@ describe('board-render API route', () => {
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(mockRenderOverlay).toHaveBeenCalledTimes(1);
+  });
+
+  // Every param that changes a pixel has to be in the byte-cache key. Drop one
+  // and the second request of its pair is served the first one's bytes — so
+  // each case asserts a genuine second render, not just a 200.
+  it.each([
+    // label, params both requests share, the one param that differs, whether
+    // the mocked encoder can show the difference in the response body.
+    ['format', {}, { format: 'png' }, true],
+    ['thumbnail', {}, { thumbnail: '1' }, true],
+    ['include_background', {}, { include_background: '0' }, true],
+    ['dim_background', {}, { dim_background: '0.18' }, false],
+    ['variant', { format: 'png' }, { variant: 'og' }, false],
+  ] as Array<[string, Record<string, string>, Record<string, string>, boolean]>)(
+    'keys the byte cache on %s',
+    async (_label, shared, override, expectDistinctBody) => {
+      const params = { ...validParams, include_background: '1', ...shared };
+
+      const first = await GET(makeRequest(params));
+      expect(first.status).toBe(200);
+      expect(mockRenderOverlay).toHaveBeenCalledTimes(1);
+      const firstBytes = Buffer.from(await first.arrayBuffer());
+
+      const second = await GET(makeRequest({ ...params, ...override }));
+      expect(second.status).toBe(200);
+      // A key missing this param would have served the cached bytes instead.
+      expect(mockRenderOverlay).toHaveBeenCalledTimes(2);
+      expect(second.headers.get('Server-Timing')).not.toContain('cache;desc=hit');
+
+      if (expectDistinctBody) {
+        const secondBytes = Buffer.from(await second.arrayBuffer());
+        const differs =
+          !secondBytes.equals(firstBytes) || second.headers.get('Content-Type') !== first.headers.get('Content-Type');
+        expect(differs).toBe(true);
+      }
+    },
+  );
+
+  it('never runs more renders at once than the concurrency limit', async () => {
+    const closeGate = openRenderGate();
+
+    const inFlight = ['p2001r42', 'p2002r42', 'p2003r42'].map((frames) =>
+      GET(makeRequest({ ...validParams, include_background: '1', frames })),
+    );
+    // Everything that can start has started; the rest are queued on the semaphore.
+    await flush();
+    expect(peakActiveRenders).toBe(1);
+
+    closeGate();
+    const responses = await Promise.all(inFlight);
+
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
+    expect(mockRenderOverlay).toHaveBeenCalledTimes(3);
+    // Held across the whole drain, not just the first moment.
+    expect(peakActiveRenders).toBe(1);
+    expect(activeRenders).toBe(0);
+  });
+
+  it('sheds with 503 + Retry-After once the render queue is saturated', async () => {
+    const closeGate = openRenderGate();
+
+    // One render holds the single slot; the next 41 queue up. The 43rd arrives
+    // to a queue past the ceiling and is shed rather than made to wait.
+    const queued = Array.from({ length: 42 }, (_unused, index) =>
+      GET(makeRequest({ ...validParams, frames: `p${3000 + index}r42` })),
+    );
+    await flush();
+
+    const shed = await GET(makeRequest({ ...validParams, frames: 'p3999r42' }));
+
+    expect(shed.status).toBe(503);
+    expect(shed.headers.get('Retry-After')).toBe('5');
+    expect(shed.headers.get('Cache-Control')).toBe('no-store');
+    const body = await shed.json();
+    expect(body.error).toContain('saturated');
+
+    closeGate();
+    const drained = await Promise.all(queued);
+    expect(drained.every((response) => response.status === 200)).toBe(true);
+    // The shed request never rendered; the 42 that queued all did.
+    expect(mockRenderOverlay).toHaveBeenCalledTimes(42);
+  });
+
+  it('does not shed a request that can join an in-flight render', async () => {
+    const closeGate = openRenderGate();
+
+    const params = { ...validParams, frames: 'p4242r42' };
+    const queued = [
+      GET(makeRequest(params)),
+      ...Array.from({ length: 41 }, (_unused, index) =>
+        GET(makeRequest({ ...validParams, frames: `p${4300 + index}r42` })),
+      ),
+    ];
+    await flush();
+
+    // Same bytes as the render already in flight: it costs nothing to serve, so
+    // it must not be shed even with the queue over the ceiling.
+    const coalescedPromise = GET(makeRequest(params));
+    closeGate();
+
+    const coalesced = await coalescedPromise;
+    expect(coalesced.status).toBe(200);
+
+    await Promise.all(queued);
+    // 42 renders for 43 requests — the coalesced one paid for nothing.
+    expect(mockRenderOverlay).toHaveBeenCalledTimes(42);
   });
 
   it('reports the queue wait in Server-Timing', async () => {

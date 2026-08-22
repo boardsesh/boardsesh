@@ -33,13 +33,16 @@ export const ogBaseCache = new BoundedLru<OgBaseResult>({
 });
 
 /**
- * Final encoded bytes, keyed by the full canonical param tuple. Entries are
- * small (a thumbnail is a few KB), so this mostly absorbs the list pages
- * re-requesting the same climbs while the CDN entry is still cold.
+ * Final encoded bytes, keyed by the full canonical param tuple. This absorbs
+ * the list pages re-requesting the same climbs while the CDN entry is still
+ * cold. Entry sizes span two orders of magnitude — a thumbnail is a few KB but
+ * a full-size lossless-WebP render measured 326 KB — so 32 MB is what makes the
+ * 2000-entry ceiling reachable for thumbnails while still holding ~100
+ * full-size renders.
  */
 export const byteCache = new BoundedLru<{ buffer: Buffer; contentType: string }>({
   maxEntries: 2000,
-  maxBytes: 16 * 1024 * 1024,
+  maxBytes: 32 * 1024 * 1024,
   sizeOf: (value) => value.buffer.length,
 });
 

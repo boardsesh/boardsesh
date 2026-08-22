@@ -22,6 +22,28 @@ function writeLayer(name: string, rgb: { r: number; g: number; b: number }, alph
     .then(() => path);
 }
 
+/**
+ * Write a PNG shaped like a real board photo: opaque where the holds are (the
+ * left half here), fully transparent everywhere else.
+ */
+async function writePartlyTransparentLayer(name: string, rgb: { r: number; g: number; b: number }): Promise<string> {
+  const path = join(fixtureDir, name);
+  const raw = Buffer.alloc(PIXELS * 4, 0);
+  for (let y = 0; y < SIZE; y += 1) {
+    for (let x = 0; x < SIZE / 2; x += 1) {
+      const offset = (y * SIZE + x) * 4;
+      raw[offset] = rgb.r;
+      raw[offset + 1] = rgb.g;
+      raw[offset + 2] = rgb.b;
+      raw[offset + 3] = 255;
+    }
+  }
+  await sharp(raw, { raw: { width: SIZE, height: SIZE, channels: 4 } })
+    .png()
+    .toFile(path);
+  return path;
+}
+
 /** Map board-relative image keys to fixture files; anything unmapped resolves to null. */
 let filesByRelPath = new Map<string, string>();
 let resolveCalls: string[] = [];
@@ -94,8 +116,16 @@ describe('composeBoardBaseBuffer', () => {
     expect(base?.length).toBe(PIXELS * 4);
   });
 
-  it('dims by scaling RGB, leaving alpha untouched', async () => {
-    filesByRelPath.set(relPathFor('layer-a.png'), await writeLayer('dim.png', { r: 200, g: 100, b: 50 }));
+  it('dims full-bleed: transparent board pixels darken too', async () => {
+    // Real board photos are transparent everywhere except the holds, and
+    // `dim_background` is a wash over the whole image — the iOS Live Activity
+    // widget and mobile's LayeredClimbImage both draw it that way. Scaling RGB
+    // by (1 - dim) instead would leave every transparent pixel untouched, so
+    // this pins the transparent half explicitly.
+    filesByRelPath.set(
+      relPathFor('layer-a.png'),
+      await writePartlyTransparentLayer('dim-alpha.png', { r: 200, g: 100, b: 50 }),
+    );
 
     const base = await composeBoardBaseBuffer({
       boardDetails: boardWithLayers(['layer-a.png']),
@@ -106,12 +136,38 @@ describe('composeBoardBaseBuffer', () => {
       resolveImagePath,
     });
 
-    const [red, green, blue, alpha] = readPixel(base as Buffer);
-    // Compositing black at 0.18 over an opaque photo is exactly rgb × 0.82.
+    // A fully transparent source pixel picks up the scrim's own alpha.
+    const transparentPixelIndex = SIZE / 2;
+    const [dimRed, dimGreen, dimBlue, dimAlpha] = readPixel(base as Buffer, transparentPixelIndex);
+    expect(dimAlpha).toBe(Math.round(0.18 * 255));
+    expect(dimRed).toBe(0);
+    expect(dimGreen).toBe(0);
+    expect(dimBlue).toBe(0);
+
+    // An opaque one darkens by (1 - dim) and stays opaque.
+    const [red, green, blue, alpha] = readPixel(base as Buffer, 0);
     expect(Math.abs(red - 200 * 0.82)).toBeLessThanOrEqual(1);
     expect(Math.abs(green - 100 * 0.82)).toBeLessThanOrEqual(1);
     expect(Math.abs(blue - 50 * 0.82)).toBeLessThanOrEqual(1);
     expect(alpha).toBe(255);
+  });
+
+  it('leaves a transparent pixel alone when dim is off', async () => {
+    filesByRelPath.set(
+      relPathFor('layer-a.png'),
+      await writePartlyTransparentLayer('no-dim-alpha.png', { r: 200, g: 100, b: 50 }),
+    );
+
+    const base = await composeBoardBaseBuffer({
+      boardDetails: boardWithLayers(['layer-a.png']),
+      width: SIZE,
+      height: SIZE,
+      thumbnail: false,
+      dimBackground: 0,
+      resolveImagePath,
+    });
+
+    expect(readPixel(base as Buffer, SIZE / 2)[3]).toBe(0);
   });
 
   it('skips a layer that fails to decode and keeps the rest', async () => {
@@ -205,6 +261,35 @@ describe('renderBoardImageBuffer with caches', () => {
     const metadata = await sharp(second.buffer).metadata();
     expect(metadata.width).toBe(SIZE);
     expect(metadata.height).toBe(SIZE);
+  });
+
+  it('composes the base once for two concurrent misses on the same board', async () => {
+    filesByRelPath.set(relPathFor('layer-a.png'), await writeLayer('coalesced.png', { r: 40, g: 50, b: 60 }));
+    const boardBase = new BoundedLru<Buffer>({
+      maxEntries: 4,
+      maxBytes: 4 * 1024 * 1024,
+      sizeOf: (buffer) => buffer.length,
+    });
+    // Different climbs, same board: one base, two overlays. 0x00 is a fully
+    // transparent overlay, 0xff an opaque white one — visibly different output.
+    const paramsFor = (overlayFill: number) => ({
+      ...baseParams,
+      overlayBuffer: Buffer.alloc(PIXELS * 4, overlayFill),
+      isOgVariant: false,
+      format: 'webp' as const,
+      boardDetails: boardWithLayers(['layer-a.png']),
+      caches: { boardBase },
+    });
+
+    const [first, second] = await Promise.all([
+      renderBoardImageBuffer(paramsFor(0x00)),
+      renderBoardImageBuffer(paramsFor(0xff)),
+    ]);
+
+    // Both raced past the cache, but only one of them composed the base.
+    expect(resolveCalls).toHaveLength(1);
+    expect(first.buffer.equals(second.buffer)).toBe(false);
+    expect(boardBase.size).toBe(1);
   });
 
   it('reports `none` when no cache is supplied', async () => {
