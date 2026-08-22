@@ -1,4 +1,4 @@
-import { notFound, redirect } from 'next/navigation';
+import { notFound, permanentRedirect, redirect } from 'next/navigation';
 import type { GymQrSearchParams } from '@boardsesh/analytics';
 import { resolveBoardBySlug } from '@/app/lib/board-slug-utils';
 import { gymQrAttributionQuery } from '@/app/lib/gym-attribution';
@@ -28,6 +28,12 @@ type BoardSlugPageProps = {
  * that a query rides behind the slug, a `#` in one would open a fragment and
  * swallow the params. Board slugs are generated, so this is a guard rather than
  * a fix — but the printed URL and the redirect that carries it must agree.
+ *
+ * The clean case (no QR attribution query) is a stable, deterministic hop —
+ * this URL always resolves to the same list page — so it's a 308
+ * (permanent) redirect a crawler and browser can cache. A QR-attributed hop
+ * carries a one-off tracking query that must be re-evaluated on every visit,
+ * so it stays a 307.
  */
 export default async function BoardSlugPage(props: BoardSlugPageProps) {
   const [params, searchParams] = await Promise.all([props.params, props.searchParams]);
@@ -38,5 +44,9 @@ export default async function BoardSlugPage(props: BoardSlugPageProps) {
   }
 
   const listPath = `/b/${encodeURIComponent(board.slug)}/${board.angle}/list`;
-  redirect(`${listPath}${gymQrAttributionQuery(searchParams)}`);
+  const attribution = gymQrAttributionQuery(searchParams);
+  if (attribution === '') {
+    permanentRedirect(listPath);
+  }
+  redirect(`${listPath}${attribution}`);
 }
