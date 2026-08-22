@@ -238,7 +238,11 @@ test.describe.serial('raw embed requests survive a browser-driven preamble', () 
     expect(embed.elapsedMs).toBeLessThan(POST_PREAMBLE_BUDGET_MS);
 
     // /kiosk/** is the same shape one route tree over, and it hung in CI too.
+    // Same two-status contract as the embed: 404 when the backend answers "no
+    // such kiosk", 200 when the fetch degrades to the retry screen. Asserted
+    // so a 5xx reads as a 5xx instead of as a missing header.
     const kiosk = await timedGet(request, `/kiosk/${randomUUID()}`);
+    expect([200, 404]).toContain(kiosk.response.status());
     expect(headerValue(kiosk.response, 'x-frame-options')).toBe('SAMEORIGIN');
     expect(kiosk.elapsedMs).toBeLessThan(POST_PREAMBLE_BUDGET_MS);
   });
