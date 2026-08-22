@@ -1,5 +1,5 @@
 // middleware.ts
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, userAgent, type NextRequest } from 'next/server';
 import { SUPPORTED_BOARDS } from './app/lib/board-data';
 import { getClimbViewPageCacheTTL, getListPageCacheTTL } from './app/lib/list-page-cache';
 import { CLIMB_SESSION_COOKIE } from './app/lib/climb-session-cookie';
@@ -185,10 +185,18 @@ export function middleware(request: NextRequest) {
     ? { locale: DEFAULT_LOCALE, strippedPath: pathname, needsRewrite: false }
     : detectLocale(pathname);
 
+  const requestUserAgent = userAgent(request);
+
   // Cookie-driven sticky locale: when a page request arrives without a locale
   // prefix and the visitor previously chose a non-default locale, send them
   // to the prefixed URL so subsequent navigation stays in their language.
-  if (!isApi && locale === DEFAULT_LOCALE) {
+  //
+  // Bots are excluded: crawlers that persist cookies (observed in production
+  // logs) acquire the boardsesh-locale cookie by crawling a /de|/es|/fr page
+  // once, then bounce every subsequent unprefixed URL through a locale twin —
+  // ~15k of these 307s/day, plus the render MISS on the twin they land on.
+  // Bots get a default-locale 200 for the URL they actually requested instead.
+  if (!isApi && locale === DEFAULT_LOCALE && !requestUserAgent.isBot) {
     const cookieLocale = request.cookies.get(LOCALE_COOKIE)?.value;
     if (isSupportedLocale(cookieLocale) && cookieLocale !== DEFAULT_LOCALE) {
       const target = new URL(`/${cookieLocale}${pathname}`, request.url);
@@ -224,7 +232,9 @@ export function middleware(request: NextRequest) {
 
   // Sticky cookie: any visit on a non-default locale URL writes the cookie so
   // a shared /es/... link from a friend persists for the recipient too.
-  if (locale !== DEFAULT_LOCALE) {
+  // Bots never acquire it — see the sticky-locale redirect bot-gate above for
+  // why a cookie-persisting crawler must never be handed this cookie.
+  if (locale !== DEFAULT_LOCALE && !requestUserAgent.isBot) {
     response.cookies.set(LOCALE_COOKIE, locale, {
       path: '/',
       sameSite: 'lax',
@@ -259,10 +269,27 @@ export function middleware(request: NextRequest) {
   return response;
 }
 
+// Vercel bills and logs per middleware invocation. The previous catch-all
+// matcher (`/api/:path*`-shaped, via the page-routes negative-lookahead not
+// excluding /api/) ran this middleware on every /api/** request, including
+// ~50k+/day board-render image fetches that take nothing from it — the
+// function does no locale/session/CORS work for those paths and every
+// invocation was pure cost. Only three /api families actually need it:
+//   - /api/v1/:path* — board-name validation (404s an unsupported board).
+//   - /api/auth/:path* — all 9 CORS_AUTH_PATHS auth endpoints live here
+//     (see cross-subdomain-cors.ts) and need the credentialed-CORS handling.
+//   - /api/internal/ws-auth — the one /api/internal path in CORS_AUTH_PATHS;
+//     its OPTIONS preflight is answered by middleware itself, so it must stay
+//     matched even though the rest of /api/internal/** is now excluded.
+// Pre-verified safe: no route under packages/web/app/api reads the
+// locale/pathname headers middleware sets, and nothing excluded here accepts
+// a `?session=` query param that middleware needs to intercept.
 export const config = {
   matcher: [
     '/api/v1/:path*',
+    '/api/auth/:path*',
+    '/api/internal/ws-auth',
     // Match all page routes but skip static files, Next.js internals, and Vercel Flags Explorer
-    '/((?!_next/static|_next/image|favicon.ico|monitoring|\\.well-known/|.*\\..*).*)',
+    '/((?!api/|_next/static|_next/image|favicon.ico|monitoring|\\.well-known/|.*\\..*).*)',
   ],
 };
