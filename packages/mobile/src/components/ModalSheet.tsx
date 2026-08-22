@@ -22,7 +22,7 @@ import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
 import { hapticMedium } from '../lib/haptics';
 import { spacing } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
-import { androidSafeSnapPoints } from './sheet-snap-points';
+import { androidSafeSnapPoints, androidInitialPresentIndex } from './sheet-snap-points';
 import { useSheetBodyContentStyle } from './sheet-content-inset';
 import { useSheetColumnStyle } from './use-sheet-column-style';
 import { useSheetDetentProbe } from './sheet-detent-probe';
@@ -118,14 +118,8 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   // them a partial state instead (see androidSafeSnapPoints).
   const effectiveSnapPoints = useMemo(() => androidSafeSnapPoints(snapPoints), [snapPoints]);
 
-  // See `androidOpensExpanded` above: Android's partial state ignores the
-  // requested fraction, so an opted-in sheet presents at its LAST detent
-  // (expanded) there instead of the first. iOS/web are unaffected — they
-  // honour `effectiveSnapPoints[0]` exactly.
-  const initialIndex =
-    Platform.OS === 'android' && androidOpensExpanded && effectiveSnapPoints.length > 1
-      ? effectiveSnapPoints.length - 1
-      : 0;
+  // See `androidOpensExpanded` above.
+  const initialIndex = androidInitialPresentIndex(effectiveSnapPoints, androidOpensExpanded);
 
   const sheetRef = useRef<BottomSheetMethods>(null);
   const managed = useManagedSheet({
@@ -231,7 +225,12 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   return (
     <BottomSheetModal
       ref={sheetRef}
-      index={initialIndex}
+      // Not `index={initialIndex}`: `BottomSheetModal` only reads its own `index`
+      // prop inside its own `.present()` method, which `useManagedSheet` never
+      // calls — it drives presentation via `snapToIndex(desiredIndexRef.current)`
+      // instead, seeded from `presentIndex` above. `-1` (always starts closed)
+      // is the only value that matters here.
+      index={-1}
       snapPoints={enableDynamicSizing ? undefined : effectiveSnapPoints}
       enableDynamicSizing={enableDynamicSizing}
       enablePanDownToClose={enablePanDownToClose}

@@ -18,7 +18,7 @@ import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
 import { hapticMedium } from '../lib/haptics';
 import { spacing } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
-import { androidSafeSnapPoints } from './sheet-snap-points';
+import { androidSafeSnapPoints, androidInitialPresentIndex } from './sheet-snap-points';
 import { useSheetBodyContentStyle } from './sheet-content-inset';
 import { useSheetColumnStyle } from './use-sheet-column-style';
 import { useSheetDetentProbe } from './sheet-detent-probe';
@@ -107,13 +107,8 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
   const solidBackground = useMemo(() => ({ backgroundColor: sheetSurface }), [sheetSurface]);
   const effectiveSnapPoints = useMemo(() => androidSafeSnapPoints(snapPoints), [snapPoints]);
 
-  // See `androidOpensExpanded` above: presents at the LAST detent (expanded)
-  // on Android when opted in, instead of the (real, but Android-ignored)
-  // first fraction. iOS/web are unaffected.
-  const initialIndex =
-    Platform.OS === 'android' && androidOpensExpanded && effectiveSnapPoints.length > 1
-      ? effectiveSnapPoints.length - 1
-      : 0;
+  // See `androidOpensExpanded` above.
+  const initialIndex = androidInitialPresentIndex(effectiveSnapPoints, androidOpensExpanded);
 
   const sheetRef = useRef<BottomSheetMethods>(null);
   const managed = useManagedSheet({

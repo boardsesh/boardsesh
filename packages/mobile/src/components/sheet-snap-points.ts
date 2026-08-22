@@ -33,3 +33,21 @@ export function androidSafeSnapPoints(snapPoints: (string | number)[]): (string 
   if (percent == null || percent >= ANDROID_NEAR_FULL_DETENT_PERCENT) return snapPoints;
   return [only, '100%'];
 }
+
+/**
+ * The index a sheet should present at. Android's `@expo/ui` sheet ignores the
+ * requested `%` fraction on its "partial" state (see `androidSafeSnapPoints`
+ * above), so a sheet tuned for iOS's real first detent (e.g. a pinned footer
+ * sized to fit under `65%`/`80%` content) can strand that footer below
+ * Android's fixed ~50% partial fold (#4231). An opted-in sheet presents at
+ * its LAST detent (expanded) on Android instead of the first. No effect with
+ * a single detent, or on iOS/web.
+ */
+export function androidInitialPresentIndex(
+  effectiveSnapPoints: (string | number)[],
+  androidOpensExpanded: boolean,
+): number {
+  return Platform.OS === 'android' && androidOpensExpanded && effectiveSnapPoints.length > 1
+    ? effectiveSnapPoints.length - 1
+    : 0;
+}

@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 vi.mock('react-native', () => ({ Platform: { OS: 'android' } }));
 
 import { Platform } from 'react-native';
-import { androidSafeSnapPoints } from '../sheet-snap-points';
+import { androidSafeSnapPoints, androidInitialPresentIndex } from '../sheet-snap-points';
 
 const platform = Platform as { OS: string };
 
@@ -47,5 +47,35 @@ describe('androidSafeSnapPoints (iOS passthrough)', () => {
   it('returns a small single detent unchanged (iOS honours the exact detent)', () => {
     expect(androidSafeSnapPoints(['55%'])).toEqual(['55%']);
     expect(androidSafeSnapPoints(['36%'])).toEqual(['36%']);
+  });
+});
+
+describe('androidInitialPresentIndex (Android)', () => {
+  beforeEach(() => {
+    platform.OS = 'android';
+  });
+
+  it('resolves to the last detent when opted in with multiple detents', () => {
+    expect(androidInitialPresentIndex(['50%', '90%'], true)).toBe(1);
+    expect(androidInitialPresentIndex(['20%', '50%', '90%'], true)).toBe(2);
+  });
+
+  it('resolves to 0 when not opted in, even with multiple detents', () => {
+    expect(androidInitialPresentIndex(['50%', '90%'], false)).toBe(0);
+  });
+
+  it('resolves to 0 when opted in but there is only a single detent', () => {
+    expect(androidInitialPresentIndex(['90%'], true)).toBe(0);
+  });
+});
+
+describe('androidInitialPresentIndex (iOS/web)', () => {
+  beforeEach(() => {
+    platform.OS = 'ios';
+  });
+
+  it('always resolves to 0, regardless of the opt-in', () => {
+    expect(androidInitialPresentIndex(['50%', '90%'], true)).toBe(0);
+    expect(androidInitialPresentIndex(['50%', '90%'], false)).toBe(0);
   });
 });

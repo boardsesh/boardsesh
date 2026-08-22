@@ -358,7 +358,10 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
 
   const openEditSheet = useCallback((ascent: AscentFeedItem) => {
     setEditAscent(ascent);
-    editSheetRef.current?.snapToIndex(0);
+    // `.present()`, not `.snapToIndex(0)` — snapToIndex would overwrite the
+    // presentIndex the sheet seeded from `androidOpensExpanded` (#4231), forcing
+    // it open at Android's partial detent instead of expanded.
+    editSheetRef.current?.present();
   }, []);
 
   // Swipe left-to-right → edit this tick (owner-only). The old tap behaviour.
