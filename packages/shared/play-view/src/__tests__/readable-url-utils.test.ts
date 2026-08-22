@@ -31,6 +31,13 @@ const CLIMB_UUID = '0A1B2C3D4E5F60718293A4B5C6D7E8F9';
  */
 const HEX_RUN_CLIMB_NAME_SLUG = 'beefcafe0ff1cedeadbeefcafe0ff1ce';
 
+/**
+ * A real MoonBoard uuid, copied off the dev image. MoonBoard is the one board
+ * whose climbs carry the dashed 36-character RFC-4122 form; every Aurora board
+ * carries the 32-character unbroken form above.
+ */
+const MOONBOARD_CLIMB_UUID = '9fe54099-6fdd-5adb-b82f-2d7bcb10d4ad';
+
 describe('extractUuidFromClimbSegment', () => {
   it('pulls the uuid out of a name-slugged segment', () => {
     expect(extractUuidFromClimbSegment(`crimpy-thing-${CLIMB_UUID}`)).toBe(CLIMB_UUID);
@@ -55,6 +62,29 @@ describe('extractUuidFromClimbSegment', () => {
 
   it('takes the uuid at the end even when the name runs longer than a uuid', () => {
     expect(extractUuidFromClimbSegment(`${HEX_RUN_CLIMB_NAME_SLUG}deadbeef-${CLIMB_UUID}`)).toBe(CLIMB_UUID);
+  });
+
+  it('pulls a dashed MoonBoard uuid out of a name-slugged segment', () => {
+    expect(extractUuidFromClimbSegment(`to-dokids-yuito-${MOONBOARD_CLIMB_UUID}`)).toBe(MOONBOARD_CLIMB_UUID);
+  });
+
+  it('passes a bare dashed MoonBoard uuid through', () => {
+    expect(extractUuidFromClimbSegment(MOONBOARD_CLIMB_UUID)).toBe(MOONBOARD_CLIMB_UUID);
+  });
+
+  it('carries a dashed MoonBoard uuid through a whole route parse', () => {
+    expect(
+      parseClimbRoutePath(`/moonboard/2016/standard/hold-set-a/40/view/to-dokids-yuito-${MOONBOARD_CLIMB_UUID}`)
+        ?.climbUuid,
+    ).toBe(MOONBOARD_CLIMB_UUID);
+  });
+
+  it('does not let the dashed shape steal the tail of an Aurora uuid', () => {
+    // The dashed alternative must end at the segment end and its final group is
+    // preceded by a `-`; the character twelve back from the end of a 32-hex uuid
+    // is always a hex digit, so it can never match here. A name slug that looks
+    // like the head of a dashed uuid is the adversarial case.
+    expect(extractUuidFromClimbSegment(`deadbeef-cafe-babe-face-${CLIMB_UUID}`)).toBe(CLIMB_UUID);
   });
 
   it('carries the hex-named climb through a whole route parse', () => {

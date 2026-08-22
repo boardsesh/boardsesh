@@ -16,6 +16,7 @@ import {
   parseBoardRouteParams,
   getMoonBoardLayoutBySlug,
 } from './url-utils';
+import { generateSetNameSlug, generateSetSlug } from '@boardsesh/play-view/readable-url-utils';
 import { type MoonBoardLayoutKey, MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from './moonboard-config';
 
 // Helper to parse MoonBoard size slug (always returns the single size)
@@ -23,16 +24,38 @@ function getMoonBoardSizeBySlug(): { id: number; name: string } {
   return { id: MOONBOARD_SIZE.id, name: MOONBOARD_SIZE.name };
 }
 
-// Helper to parse MoonBoard set slugs
+/**
+ * A MoonBoard set slug back to the exact set ids it was built from.
+ *
+ * Generate-and-compare, the same rule the Expo app already ships
+ * (`resolveMoonBoardSegmentsToIds`, `readable-url-utils.ts`): split the slug on
+ * `_` — the separator `generateSetSlug` joins with — pick the layout's sets
+ * whose `generateSetNameSlug` is one of those parts, then accept only if
+ * re-emitting the selection rebuilds the incoming slug byte for byte.
+ *
+ * The rule this replaces split on `-` and substring-matched the pieces against
+ * set names, so it could not tell one subset from another. Two concrete
+ * failures it produced on every www MoonBoard URL: `generateSetNameSlug('Screw-on
+ * Feet')` is `screw`, which a `-`-split never yields as a standalone part, so
+ * masters-2017's own full-set slug parsed back WITHOUT set 15 and masters-2019's
+ * without set 20 — and `generateMetadata` then emitted a `<link rel="canonical">`
+ * pointing at a different URL than the one requested. It also matched far too
+ * much: `hold-set-a` contains the part `set`, which is a substring of every
+ * `Hold Set *` name on the layout.
+ *
+ * Returning an empty array is the caller's signal to fall back to every set on
+ * the layout, which keeps a hand-edited or pre-slug link rendering instead of
+ * 404ing. That fallback is now the only lenient path.
+ */
 function getMoonBoardSetsBySlug(layoutKey: MoonBoardLayoutKey, setSlug: string): { id: number; name: string }[] {
   const sets = MOONBOARD_SETS[layoutKey] || [];
-  const slugParts = setSlug.split('-').map((s) => s.toLowerCase());
+  const slugParts = new Set(setSlug.split('_'));
 
-  // Try to match sets by name
-  return sets.filter((set) => {
-    const setNameLower = set.name.toLowerCase().replace(/\s+/g, '-');
-    return slugParts.some((part) => setNameLower.includes(part) || set.name.toLowerCase().includes(part));
-  });
+  const selectedSets = sets.filter((set) => slugParts.has(generateSetNameSlug(set.name)));
+  if (selectedSets.length === 0) return [];
+  if (generateSetSlug(selectedSets.map((set) => set.name)) !== setSlug) return [];
+
+  return selectedSets.map((set) => ({ id: set.id, name: set.name }));
 }
 
 // Enhanced route parsing function that handles both slug and numeric formats

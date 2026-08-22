@@ -443,8 +443,21 @@ const numericSegmentRegex = /^\d+$/;
  * perfectly valid shared link queried a uuid nobody has and rendered
  * not-found. A bare uuid still matches: the whole segment is then the run at
  * the end.
+ *
+ * Two shapes, because the catalogue holds two. Aurora climbs carry a 32-char
+ * unbroken hex uuid; every MoonBoard climb carries a dashed 36-char RFC-4122
+ * uuid (`9fe54099-6fdd-5adb-b82f-2d7bcb10d4ad`) — measured on the dev image:
+ * 142,566 MoonBoard rows, all dashed, and no other board has one. With only the
+ * 32-char form, no MoonBoard climb URL parsed: the whole `<name>-<uuid>` segment
+ * was handed on as the uuid, so the climb query missed and the page 404'd, while
+ * the same page reached by its bare uuid rendered a `<link rel="canonical">`
+ * pointing straight at that 404.
+ *
+ * The dashed alternative cannot steal a match from an Aurora segment: its final
+ * group must be preceded by a `-`, and the character 12 back from the end of a
+ * 32-hex uuid is always a hex digit.
  */
-const climbUuidRegex = /[0-9A-F]{32}$/i;
+const climbUuidRegex = /(?:[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}|[0-9A-F]{32})$/i;
 
 function isNumericSegment(value: string): boolean {
   return numericSegmentRegex.test(value);
