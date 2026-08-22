@@ -195,10 +195,30 @@ async function timedGet(
 
 test.describe.serial('raw embed requests survive a browser-driven preamble', () => {
   test('the embed and kiosk raw requests still answer after front-door page loads', async ({ page, request }) => {
-    // The preamble board-route-teardown.spec.ts drives: the SSR front door,
-    // scrolled to the bottom so everything below the fold mounts, then a climb
-    // view. Both read the database on the server and both were in the shard
-    // that stalled.
+    // Six cold server renders before the two assertions. On a 2-core runner
+    // that is comfortably past the 60 s per-test default, and a timeout here
+    // would read as the stall this guard exists to detect.
+    test.setTimeout(180_000);
+
+    // CONCURRENT home-page renders first. This is the load that caused the
+    // stall, and the concurrency is the whole mechanism: `/` is the only
+    // surface that reads `popularBoardConfigs` + `recentBetaLinks`, the two
+    // cold backend reads that used to take one pool connection each, and the
+    // web's 3 s deadline aborts them before Next can cache the result — so
+    // every `/` render is a cold read, forever. Ten at once used to leave the
+    // backend's ten-connection pool with nothing for anything else.
+    //
+    // Sequential `page.goto`s do NOT reproduce this (verified: a four-locale
+    // sequential preamble stays green against the un-fixed backend), which is
+    // why these are parallel raw requests rather than navigations.
+    const HOME_RENDER_FANOUT = 10;
+    await Promise.all(
+      Array.from({ length: HOME_RENDER_FANOUT }, () => request.get('/', { timeout: POST_PREAMBLE_BUDGET_MS })),
+    );
+
+    // Then the preamble board-route-teardown.spec.ts drives: the SSR front
+    // door, scrolled to the bottom so everything below the fold mounts, then a
+    // climb view. Both read the database on the server.
     await page.goto(`${PREAMBLE_BOARD_PATH}/list`, { waitUntil: 'load' });
     await waitForBoardListReady(page);
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
