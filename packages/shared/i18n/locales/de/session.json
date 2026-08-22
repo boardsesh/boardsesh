@@ -472,7 +472,29 @@
     }
   },
   "playView": {
-    "previewBadge": "Vorschau",
+    "wallState": {
+      "onWall": "An der Wand",
+      "live": "Live",
+      "browsing": "Stöbern",
+      "onWallHint": "Dieser Boulder ist gerade am Board beleuchtet.",
+      "liveHint": "Dein nächster Boulder wird direkt am Board beleuchtet.",
+      "browsingHint": "Du schaust dich nur um. Die Wand bleibt, wie sie ist.",
+      "pillHint": "Wand-Optionen anzeigen",
+      "browseFromHere": "Von hier aus stöbern",
+      "backToLive": "Zurück zu live",
+      "putOnWall": "Am Board beleuchten",
+      "joinedBrowseNotice": "Du stöberst. Die Wand bleibt unverändert, bis du einen Boulder am Board beleuchtest.",
+      "commitOverride": {
+        "body": "Jemand hat gerade {{name}} beleuchtet. Trotzdem deinen beleuchten?",
+        "confirm": "Meinen beleuchten",
+        "cancel": "Wand so lassen"
+      },
+      "a11y": {
+        "browseAnnounce": "Stöbern. Die Wand bleibt, wie sie ist.",
+        "backToLive": "Zurück zu live: {{name}}",
+        "committed": "{{name}} ist an der Wand"
+      }
+    },
     "setActive": "Aktiv setzen",
     "paneEmpty": {
       "title": "Wähl einen Boulder",

@@ -472,7 +472,29 @@
     }
   },
   "playView": {
-    "previewBadge": "Vista previa",
+    "wallState": {
+      "onWall": "En el muro",
+      "live": "En directo",
+      "browsing": "Explorando",
+      "onWallHint": "Este bloque está encendido en el muro ahora mismo.",
+      "liveHint": "El siguiente bloque que elijas se enciende en el muro.",
+      "browsingHint": "Solo estás mirando. El muro sigue como está.",
+      "pillHint": "Ver opciones del muro",
+      "browseFromHere": "Explorar desde aquí",
+      "backToLive": "Volver al muro",
+      "putOnWall": "Ponerlo en el muro",
+      "joinedBrowseNotice": "Estás explorando. El muro no cambia hasta que pongas un bloque.",
+      "commitOverride": {
+        "body": "Alguien acaba de encender {{name}}. ¿Pones el tuyo igualmente?",
+        "confirm": "Poner el mío",
+        "cancel": "Dejar el muro"
+      },
+      "a11y": {
+        "browseAnnounce": "Explorando. El muro sigue como está.",
+        "backToLive": "Volver al muro: {{name}}",
+        "committed": "{{name}} está en el muro"
+      }
+    },
     "setActive": "Activar",
     "paneEmpty": {
       "title": "Elige un bloque",

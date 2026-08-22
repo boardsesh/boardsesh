@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { materialSurfaces } from '@boardsesh/velvet-tokens';
+import { brandColors, brandColorsDark, materialSurfaces } from '@boardsesh/velvet-tokens';
 import { themeTokens, darkTokens } from '../theme-config';
 import { lightTheme, darkTheme } from '../mui-theme';
 // Read the literal index.css text from disk. A bundler import (?raw / glob) gets
@@ -147,6 +147,15 @@ describe('MUI theme wires the foreground/fill split correctly', () => {
   it('accent is fill-only with dark text', () => {
     expect(lightTheme.palette.accent.main.toLowerCase()).toBe(themeTokens.colors.accent.toLowerCase());
     expect(lightTheme.palette.accent.contrastText.toLowerCase()).toBe(themeTokens.colors.onAccent.toLowerCase());
+  });
+
+  it('the accent ink is the shared velvet token, identical in both schemes', () => {
+    // `onAccent` lives in @boardsesh/velvet-tokens so web's accent chips and the
+    // mobile app's accent-filled chrome cannot drift. The accent itself is
+    // scheme-agnostic, so its ink is too — a web-local literal here would let one
+    // platform retune the pairing alone.
+    expect(themeTokens.colors.onAccent).toBe(brandColors.onAccent);
+    expect(brandColorsDark.onAccent).toBe(brandColors.onAccent);
   });
 });
 
