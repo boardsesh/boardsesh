@@ -21,7 +21,8 @@ const KILTER_CONFIG: PopularBoardConfig = {
 };
 
 vi.mock('../board-config-source', () => ({
-  getSitemapBoardConfigsOrThrow: async () => [KILTER_CONFIG],
+  getSitemapClimbConfigsOrThrow: async () => [KILTER_CONFIG],
+  getBoardsShardConfigsOrThrow: async () => [KILTER_CONFIG],
 }));
 vi.mock('../playlist-query', () => ({
   fetchPlaylistSitemapRows: async () => [{ uuid: 'abc-123', updatedAt: new Date('2026-04-30T00:00:00.000Z') }],

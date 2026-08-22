@@ -37,7 +37,7 @@ const forever = <T>(): Promise<T> => new Promise<T>(() => {});
 const after = (ms: number): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 vi.mock('../board-config-source', () => ({
-  getSitemapBoardConfigsOrThrow: async () => {
+  getBoardsShardConfigsOrThrow: async () => {
     if (boardConfigs.hang) {
       return forever<PopularBoardConfig[]>();
     }

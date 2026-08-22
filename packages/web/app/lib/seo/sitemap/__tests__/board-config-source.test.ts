@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vite-plus/test';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
+import { MOONBOARD_LAYOUTS } from '@/app/lib/moonboard-config';
 
 vi.mock('server-only', () => ({}));
 
@@ -41,6 +42,8 @@ const climbCounts = vi.hoisted(() => ({
   rows: [] as { layoutId: number | null; climbCount: number }[],
   calls: 0,
   throws: false,
+  /** A read that never comes back — the mode the pool's 30 s connect timeout and the absent statement_timeout leave unbounded. */
+  stalls: false,
 }));
 vi.mock('@/app/lib/db/db', () => ({
   dbzRead: {
@@ -50,6 +53,7 @@ vi.mock('@/app/lib/db/db', () => ({
           groupBy: async () => {
             climbCounts.calls += 1;
             if (climbCounts.throws) throw new Error('read pool exhausted');
+            if (climbCounts.stalls) return new Promise(() => {});
             return climbCounts.rows;
           },
         }),
@@ -58,11 +62,27 @@ vi.mock('@/app/lib/db/db', () => ({
   },
 }));
 
-const { buildMoonBoardClimbCountQuery, getSitemapBoardConfigsOrThrow, resetSitemapBoardConfigCacheForTests } =
-  await import('../board-config-source');
+const {
+  buildMoonBoardClimbCountQuery,
+  getBoardsShardConfigsOrThrow,
+  getSitemapClimbConfigsOrThrow,
+  resetSitemapBoardConfigCacheForTests,
+} = await import('../board-config-source');
 
-/** Every MoonBoard layout id carrying a climb count, so all seven are synthesised. */
-const ALL_LAYOUTS = [1, 2, 3, 4, 5, 6, 7].map((layoutId) => ({ layoutId, climbCount: 1_000 + layoutId }));
+/**
+ * Every MoonBoard layout id carrying a climb count, so all seven are synthesised.
+ *
+ * Derived from the catalogue, not a hardcoded `[1..7]`: with a literal list a new
+ * `MOONBOARD_LAYOUTS` entry gets no count row, `climbCount` resolves to 0, and
+ * `buildMoonBoardConfigs` drops it before `toHaveLength(7)` or the literal tuple
+ * list below can see it — so this file stayed green on a half-done catalogue edit
+ * that the source comment claims it catches. The EXPECTATIONS stay literal; only
+ * the input is derived.
+ */
+const ALL_LAYOUTS = Object.values(MOONBOARD_LAYOUTS).map(({ id }) => ({
+  layoutId: id,
+  climbCount: 1_000 + id,
+}));
 
 beforeEach(() => {
   resetSitemapBoardConfigCacheForTests();
@@ -72,11 +92,12 @@ beforeEach(() => {
   climbCounts.rows = ALL_LAYOUTS;
   climbCounts.calls = 0;
   climbCounts.throws = false;
+  climbCounts.stalls = false;
 });
 
-describe('getSitemapBoardConfigsOrThrow', () => {
+describe('getSitemapClimbConfigsOrThrow', () => {
   it('adds one MoonBoard config per layout, on top of the listed configs', async () => {
-    const configs = await getSitemapBoardConfigsOrThrow();
+    const configs = await getSitemapClimbConfigsOrThrow();
 
     // The listed configs pass through untouched and stay first — a synthetic
     // source that reordered or displaced them would be a different, riskier
@@ -102,7 +123,7 @@ describe('getSitemapBoardConfigsOrThrow', () => {
   });
 
   it('carries the measured climb count, and the names both shards fall back to', async () => {
-    const masters2017 = (await getSitemapBoardConfigsOrThrow()).find(
+    const masters2017 = (await getSitemapClimbConfigsOrThrow()).find(
       (config) => config.boardType === 'moonboard' && config.layoutId === 4,
     );
 
@@ -129,14 +150,14 @@ describe('getSitemapBoardConfigsOrThrow', () => {
       { layoutId: 4, climbCount: 0 },
     ];
 
-    const moonboard = (await getSitemapBoardConfigsOrThrow()).filter((config) => config.boardType === 'moonboard');
+    const moonboard = (await getSitemapClimbConfigsOrThrow()).filter((config) => config.boardType === 'moonboard');
     expect(moonboard.map((config) => config.layoutId)).toEqual([2]);
   });
 
   it('ignores a count row with no layout id', async () => {
     climbCounts.rows = [{ layoutId: null, climbCount: 12_345 }];
 
-    const moonboard = (await getSitemapBoardConfigsOrThrow()).filter((config) => config.boardType === 'moonboard');
+    const moonboard = (await getSitemapClimbConfigsOrThrow()).filter((config) => config.boardType === 'moonboard');
     expect(moonboard).toEqual([]);
   });
 
@@ -145,17 +166,25 @@ describe('getSitemapBoardConfigsOrThrow', () => {
     // summary at the same moment. `unstable_cache` does not deduplicate
     // concurrent misses, which is why the in-process single-flight is here.
     await Promise.all([
-      getSitemapBoardConfigsOrThrow(),
-      getSitemapBoardConfigsOrThrow(),
-      getSitemapBoardConfigsOrThrow(),
+      getSitemapClimbConfigsOrThrow(),
+      getSitemapClimbConfigsOrThrow(),
+      getSitemapClimbConfigsOrThrow(),
     ]);
     expect(climbCounts.calls).toBe(1);
+    // Exactly one listed-config call per request — the `Promise.all` leg — with
+    // deduplication delegated to `getAllBoardConfigsOrThrow`'s own in-process
+    // single-flight (which the mock deliberately does not reimplement, or this
+    // would be asserting the mock). Three requests, three legs: replacing the
+    // `Promise.all` with two sequential `getAllBoardConfigsOrThrow()` calls
+    // doubles this to six. Left unasserted, the counter implied coverage the
+    // file did not have.
+    expect(listed.calls).toBe(3);
 
-    await getSitemapBoardConfigsOrThrow();
+    await getSitemapClimbConfigsOrThrow();
     expect(climbCounts.calls).toBe(1);
 
     resetSitemapBoardConfigCacheForTests();
-    await getSitemapBoardConfigsOrThrow();
+    await getSitemapClimbConfigsOrThrow();
     expect(climbCounts.calls).toBe(2);
   });
 
@@ -165,11 +194,11 @@ describe('getSitemapBoardConfigsOrThrow', () => {
     // empty MoonBoard catalogue for the whole TTL and the sitemap would quietly
     // lose 44k URLs while answering 200.
     climbCounts.throws = true;
-    await expect(getSitemapBoardConfigsOrThrow()).rejects.toThrow('read pool exhausted');
+    await expect(getSitemapClimbConfigsOrThrow()).rejects.toThrow('read pool exhausted');
     expect(climbCounts.calls).toBe(1);
 
     climbCounts.throws = false;
-    const moonboard = (await getSitemapBoardConfigsOrThrow()).filter((config) => config.boardType === 'moonboard');
+    const moonboard = (await getSitemapClimbConfigsOrThrow()).filter((config) => config.boardType === 'moonboard');
     expect(moonboard).toHaveLength(7);
     expect(climbCounts.calls).toBe(2);
   });
@@ -177,15 +206,15 @@ describe('getSitemapBoardConfigsOrThrow', () => {
   it('shares one rejection across concurrent callers, then lets the next one retry', async () => {
     climbCounts.throws = true;
     const inFlight = [
-      getSitemapBoardConfigsOrThrow(),
-      getSitemapBoardConfigsOrThrow(),
-      getSitemapBoardConfigsOrThrow(),
+      getSitemapClimbConfigsOrThrow(),
+      getSitemapClimbConfigsOrThrow(),
+      getSitemapClimbConfigsOrThrow(),
     ];
     await Promise.all(inFlight.map((pending) => expect(pending).rejects.toThrow('read pool exhausted')));
     expect(climbCounts.calls).toBe(1);
 
     climbCounts.throws = false;
-    await getSitemapBoardConfigsOrThrow();
+    await getSitemapClimbConfigsOrThrow();
     expect(climbCounts.calls).toBe(2);
   });
 
@@ -194,7 +223,72 @@ describe('getSitemapBoardConfigsOrThrow', () => {
     // deleted. The shard route turns this throw into a 503.
     listed.throws = true;
 
-    await expect(getSitemapBoardConfigsOrThrow()).rejects.toThrow('backend unreachable');
+    await expect(getSitemapClimbConfigsOrThrow()).rejects.toThrow('backend unreachable');
+  });
+});
+
+describe('the count query is bounded', () => {
+  it('gives up on a stalled read instead of holding the shard open', async () => {
+    // Nothing else bounds this. `dbzRead`'s pool sets `connect_timeout: 30` and
+    // leaves `statement_timeout` off by default, so before this the only limit
+    // was the platform's — and the single-flight made every later caller join
+    // the stall rather than retry.
+    climbCounts.stalls = true;
+    vi.useFakeTimers();
+    try {
+      const pending = getSitemapClimbConfigsOrThrow();
+      const asserted = expect(pending).rejects.toThrow('exceeded its 10000ms budget');
+      await vi.advanceTimersByTimeAsync(10_000);
+      await asserted;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lets the boards shard through on a stalled read', async () => {
+    climbCounts.stalls = true;
+    vi.useFakeTimers();
+    try {
+      const pending = getBoardsShardConfigsOrThrow();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(await pending).toEqual([KILTER_CONFIG]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('getBoardsShardConfigsOrThrow', () => {
+  it('serves the listed configs when the MoonBoard count fails, rather than 503ing the whole shard', async () => {
+    // The lopsided trade this exists for: on the dev image MoonBoard contributes
+    // 8 of `/sitemaps/boards.xml`'s 668 items and the listed configs contribute
+    // 660. Before this module, no database failure could reach that shard at all.
+    climbCounts.throws = true;
+
+    const configs = await getBoardsShardConfigsOrThrow();
+
+    expect(configs).toEqual([KILTER_CONFIG]);
+  });
+
+  it('still throws when the listed configs fail', async () => {
+    listed.throws = true;
+
+    await expect(getBoardsShardConfigsOrThrow()).rejects.toThrow('backend unreachable');
+  });
+
+  it('carries the MoonBoard configs when the count succeeds', async () => {
+    const moonboard = (await getBoardsShardConfigsOrThrow()).filter((config) => config.boardType === 'moonboard');
+
+    expect(moonboard).toHaveLength(7);
+  });
+
+  it('does not swallow a MoonBoard failure for the climbs shard', async () => {
+    // Same module, opposite policy — the climbs shard resolves its groups twice
+    // per crawl and `pagedShardRouteHandler` throws "cache epochs disagree" if
+    // those two disagree, so a tolerated failure there is worse than a 503.
+    climbCounts.throws = true;
+
+    await expect(getSitemapClimbConfigsOrThrow()).rejects.toThrow('read pool exhausted');
   });
 });
 
@@ -211,12 +305,17 @@ describe('the MoonBoard climb-count query', () => {
   const normalised = sql.toLowerCase().replace(/\s+/g, ' ');
 
   it('counts only listed, non-draft MoonBoard climbs, grouped by layout', () => {
-    expect(normalised).toMatch(/"board_climbs"\."board_type" = \$\d+/);
-    expect(params).toContain('moonboard');
-    expect(normalised).toMatch(/"board_climbs"\."is_listed" = \$\d+/);
-    expect(normalised).toMatch(/"board_climbs"\."is_draft" = \$\d+/);
-    expect(params).toContain(true);
-    expect(params).toContain(false);
+    expect(normalised).toMatch(/"board_climbs"\."board_type" = \$\d+ and "board_climbs"\."is_listed" = \$\d+/);
+    expect(normalised).toMatch(/"board_climbs"\."is_listed" = \$\d+ and "board_climbs"\."is_draft" = \$\d+/);
+    // POSITIONAL, not `toContain` three times. Drizzle renders the predicate as
+    // `board_type = $1 and is_listed = $2 and is_draft = $3`, so swapping the two
+    // booleans leaves the SQL text identical and a position-blind assertion still
+    // green — while the query counts drafted, unlisted MoonBoard climbs, of which
+    // the dev image has zero. `fetchMoonBoardClimbCounts` would return an empty
+    // Map, all seven layouts would be dropped, and both shards would ship exactly
+    // what they ship today with `expectsUrls` never firing, because Kilter and
+    // Tension keep them non-empty.
+    expect(params).toEqual(['moonboard', true, false]);
     expect(normalised).toContain('group by "board_climbs"."layout_id"');
   });
 
