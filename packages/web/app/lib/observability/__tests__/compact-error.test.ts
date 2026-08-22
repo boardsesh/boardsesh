@@ -25,19 +25,47 @@ describe('compactErrorMessage', () => {
   });
 
   it('unwraps a DrizzleQueryError to its cause, dropping the embedded SQL', () => {
+    // The real shape (verified against drizzle-orm@0.45.2), not an
+    // approximation: DrizzleQueryError never sets `this.name` (it stays
+    // 'Error') and its message is `Failed query: <sql>\nparams: <params>`.
+    // The underlying postgres failure is what's genuinely useful, and it
+    // lives on `.cause`.
     const postgresCause = Object.assign(new Error('CONNECT_TIMEOUT'), { code: 'CONNECT_TIMEOUT' });
     const drizzleError = Object.assign(
       new Error(
-        'Failed query: SELECT "id", "email", "password_hash" FROM "users" WHERE "users"."email" = $1 params: test@boardsesh.com',
+        'Failed query: SELECT "id", "email", "password_hash" FROM "users" WHERE "users"."email" = $1\nparams: test@boardsesh.com',
       ),
-      { name: 'DrizzleQueryError', cause: postgresCause },
+      { cause: postgresCause },
     );
 
     const result = compactErrorMessage(drizzleError);
 
-    expect(result).toBe('DrizzleQueryError: CONNECT_TIMEOUT');
+    expect(result).toBe('Error: CONNECT_TIMEOUT');
     expect(result).not.toContain('SELECT');
     expect(result).not.toContain('test@boardsesh.com');
+  });
+
+  it('drops the SQL from a Failed-query message that has no cause to unwrap (defense in depth)', () => {
+    // Not a real DrizzleQueryError (that always has a cause) — this covers the
+    // gap the cause-unwrap branch can't reach: some future error embeds SQL/PII
+    // in its own message with nothing to fall back to.
+    const error = new Error('Failed query: SELECT "id", "ssn" FROM "users" WHERE "id" = $1\nparams: 42');
+
+    const result = compactErrorMessage(error);
+
+    expect(result).toBe('Error: query failed');
+    expect(result).not.toContain('SELECT');
+    expect(result).not.toContain('ssn');
+  });
+
+  it('cuts a multi-line message at the first newline before truncating', () => {
+    const error = new Error('summary line\nsecond line with sensitive details\nthird line');
+
+    const result = compactErrorMessage(error);
+
+    expect(result).toBe('Error: summary line');
+    expect(result).not.toContain('second line');
+    expect(result).not.toContain('third line');
   });
 
   it('formats a plain Error as name: message', () => {
