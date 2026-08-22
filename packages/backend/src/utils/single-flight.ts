@@ -29,6 +29,18 @@
  */
 const inFlightByKey = new Map<string, Promise<unknown>>();
 
+/**
+ * How long a Redis-less deployment (local dev, the e2e CI stack) may answer
+ * one of those reads from a process-local copy.
+ *
+ * Single-flight alone still re-runs the statement for the first caller after
+ * every completion, which on an 82 s statement is a permanent one-connection
+ * burn and permanent database load. Shared by both call sites so the two do
+ * not drift; never consulted when Redis is connected, so production freshness
+ * is still decided by the shared cache and the deploy-time DELETE.
+ */
+export const REDISLESS_FALLBACK_TTL_MS = 10 * 60 * 1000;
+
 export function singleFlight<Result>(key: string, run: () => Promise<Result>): Promise<Result> {
   const joined = inFlightByKey.get(key) as Promise<Result> | undefined;
   if (joined) return joined;

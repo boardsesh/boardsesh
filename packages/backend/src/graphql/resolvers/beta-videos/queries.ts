@@ -19,7 +19,7 @@ import {
 } from '../../../lib/beta-link-thumbnails';
 import { redisClientManager } from '../../../redis/client';
 import { logger } from '../../../utils/logger';
-import { singleFlight } from '../../../utils/single-flight';
+import { REDISLESS_FALLBACK_TTL_MS, singleFlight } from '../../../utils/single-flight';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { applyRateLimit, requireAuthenticated } from '../shared/helpers';
 
@@ -358,11 +358,14 @@ const RECENT_BETA_LINKS_FLIGHT_KEY = 'recent-beta-links';
  * Redis-less fallback, mirroring `getPopularConfigs`. Never read or written
  * when a shared cache is available, so production behaviour is unchanged.
  */
-const LOCAL_FALLBACK_TTL_MS = 10 * 60 * 1000;
 let localFallbackRows: { rows: CachedRecentBetaLinkRow[]; expiresAt: number } | null = null;
 
-/** Test-only: drop the Redis-less fallback so one test cannot leak into the next. */
-export function resetRecentBetaLinksFallbackForTests(): void {
+/**
+ * The Redis-less twin of deleting RECENT_BETA_LINKS_REDIS_KEY. Called by
+ * `invalidateRecentBetaLinksCache`, and by tests so one case cannot answer the
+ * next from the previous one's fixture.
+ */
+export function dropRecentBetaLinksFallback(): void {
   localFallbackRows = null;
 }
 
@@ -400,7 +403,7 @@ async function getCachedRecentBetaLinks(): Promise<CachedRecentBetaLinkRow[]> {
         logger.error('[RecentBetaLinks] Redis write failed:', err);
       }
     } else {
-      localFallbackRows = { rows, expiresAt: Date.now() + LOCAL_FALLBACK_TTL_MS };
+      localFallbackRows = { rows, expiresAt: Date.now() + REDISLESS_FALLBACK_TTL_MS };
     }
     return rows;
   });
@@ -454,8 +457,8 @@ export async function warmRecentBetaLinksCache(): Promise<void> {
  */
 export async function invalidateRecentBetaLinksCache(): Promise<void> {
   // Drop the Redis-less copy too, or a dev/CI server would serve the pre-save
-  // strip for up to LOCAL_FALLBACK_TTL_MS after a new link lands.
-  localFallbackRows = null;
+  // strip for up to REDISLESS_FALLBACK_TTL_MS after a new link lands.
+  dropRecentBetaLinksFallback();
   if (!redisClientManager.isRedisConnected()) return;
   try {
     const { publisher } = redisClientManager.getClients();

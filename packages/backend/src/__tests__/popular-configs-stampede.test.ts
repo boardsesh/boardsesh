@@ -37,7 +37,7 @@ vi.mock('../redis/client', () => ({
   },
 }));
 
-import { socialBoardQueries, resetPopularConfigsFallbackForTests } from '../graphql/resolvers/social/boards';
+import { socialBoardQueries, dropPopularConfigsFallback } from '../graphql/resolvers/social/boards';
 import { resetSingleFlightForTests } from '../utils/single-flight';
 
 const CONFIG_ROW = {
@@ -68,7 +68,7 @@ beforeEach(() => {
   redisConnectedMock.mockReturnValue(false);
   redisGetMock.mockReset();
   redisSetMock.mockReset();
-  resetPopularConfigsFallbackForTests();
+  dropPopularConfigsFallback();
   resetSingleFlightForTests();
 });
 
