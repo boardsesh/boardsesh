@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-22T01:32:37.266Z",
+  "generatedAt": "2026-08-22T01:42:59.512Z",
   "entries": [
     {
       "prNumber": 4660,
@@ -11,7 +11,7 @@
     {
       "prNumber": 4576,
       "category": "fixed",
-      "title": "Shared MoonBoard climb links open the climb again instead of a not-found page, on the web and in the app.",
+      "title": "Shared climb links open the climb again instead of a not-found page, on the web and in the app. Every MoonBoard link was affected, and so were about 48,000 Kilter climbs.",
       "mergedAt": "2026-08-22T01:31:25Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/4576",
       "body": "MoonBoard links now light exactly the hold sets named in the URL. Masters 2017 and Masters 2019 links were quietly dropping Screw-on Feet, and a single-hold-set link lit the whole layout."

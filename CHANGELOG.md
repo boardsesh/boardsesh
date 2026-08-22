@@ -9,7 +9,7 @@ manual changes). See docs/mobile-ota-updates.md.
 ### Fixed
 
 - Ending a session is now a labelled button — "Stop" if you started it, "Leave" if you joined — instead of a bare flag icon. ([#4660](https://github.com/boardsesh/boardsesh/pull/4660))
-- Shared MoonBoard climb links open the climb again instead of a not-found page, on the web and in the app. ([#4576](https://github.com/boardsesh/boardsesh/pull/4576))
+- Shared climb links open the climb again instead of a not-found page, on the web and in the app. Every MoonBoard link was affected, and so were about 48,000 Kilter climbs. ([#4576](https://github.com/boardsesh/boardsesh/pull/4576))
   MoonBoard links now light exactly the hold sets named in the URL. Masters 2017 and Masters 2019 links were quietly dropping Screw-on Feet, and a single-hold-set link lit the whole layout.
 - Only affects a climb view URL that was already broken (an infinite-redirect 500-adjacent error page); nothing a climber would describe as a feature getting better. ([#4592](https://github.com/boardsesh/boardsesh/pull/4592))
 
