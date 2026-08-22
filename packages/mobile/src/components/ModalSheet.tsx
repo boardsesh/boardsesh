@@ -72,7 +72,7 @@ type ModalSheetProps = {
   /** Collapses to a single, expanded-only detent on Android instead of the usual
    * multi-detent config, so a pinned footer never strands below Android's ~50%
    * partial state (#4231). See `androidSafeSnapPoints` for the full rationale;
-   * no effect with a single detent, or on iOS/web. */
+   * no effect on iOS/web, or on a single detent already at/above 75%. */
   androidOpensExpanded?: boolean;
 };
 
@@ -211,14 +211,16 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   return (
     <BottomSheetModal
       ref={sheetRef}
-      // `BottomSheetModal` only reads its own `index` prop inside its own
-      // `.present()` method, which `useManagedSheet` never calls — it drives
-      // presentation via `snapToIndex` instead, always at index 0 (see
-      // `effectiveSnapPoints` above: an `androidOpensExpanded` sheet is already
-      // collapsed to its single expanded detent on Android, so index 0 IS
-      // expanded there too). `-1` (always starts closed) is the only value
-      // that matters here.
-      index={-1}
+      // Native `@expo/ui` ignores this prop entirely (its `BottomSheetModal`
+      // mounts closed regardless and is only ever opened via the imperative
+      // `snapToIndex` `useManagedSheet` drives). The Expo-web shim is NOT so
+      // forgiving: it reads `index` both to mount (`GorhomBottomSheetModal
+      // index={...}`) and inside its own `.present()`/`requestOpen` fallback, so
+      // `-1` here left the web sheet unable to ever open (#4684 review). Keep it
+      // at the real first-detent index; an `androidOpensExpanded` sheet is
+      // already collapsed to its single expanded detent on Android, so index 0
+      // IS expanded there too.
+      index={0}
       snapPoints={enableDynamicSizing ? undefined : effectiveSnapPoints}
       enableDynamicSizing={enableDynamicSizing}
       enablePanDownToClose={enablePanDownToClose}

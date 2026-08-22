@@ -27,7 +27,11 @@ const ANDROID_NEAR_FULL_DETENT_PERCENT = 75;
  * present-time", which depends on an `@expo/ui` Android `expand()` call the
  * library's own `ModalBottomSheetView.kt` can silently no-op ("Expanded anchor
  * may be unreachable"). A single detent removes "partial" as a resting state
- * entirely, so the sheet can only land on Expanded.
+ * entirely, so the sheet can only land on Expanded. This check runs BEFORE the
+ * small-single-detent padding below: without that ordering, an opted-in sheet
+ * with one detent under 75% would fall into the padding branch and come back
+ * out with a "partial" resting state again — exactly what the opt-in exists to
+ * remove.
  *
  * The added/removed values are ignored on Android (only partial/expanded exist),
  * and this keeps the body's flex layout intact (unlike switching to fit-to-content,
@@ -39,7 +43,7 @@ export function androidSafeSnapPoints(
   androidOpensExpanded = false,
 ): (string | number)[] {
   if (Platform.OS !== 'android') return snapPoints;
-  if (androidOpensExpanded && snapPoints.length > 1) return [snapPoints[snapPoints.length - 1]];
+  if (androidOpensExpanded) return [snapPoints[snapPoints.length - 1]];
   if (snapPoints.length !== 1) return snapPoints;
   const only = snapPoints[0];
   const percent = typeof only === 'string' && only.trim().endsWith('%') ? parseFloat(only) : null;

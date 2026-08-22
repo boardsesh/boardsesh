@@ -72,7 +72,7 @@ type SheetProps = {
   /** Collapses to a single, expanded-only detent on Android instead of the usual
    * multi-detent config, so a pinned footer never strands below Android's ~50%
    * partial state (#4231). See `androidSafeSnapPoints` for the full rationale;
-   * no effect with a single detent, or on iOS/web. */
+   * no effect on iOS/web, or on a single detent already at/above 75%. */
   androidOpensExpanded?: boolean;
 };
 

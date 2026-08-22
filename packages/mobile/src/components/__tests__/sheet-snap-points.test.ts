@@ -68,6 +68,10 @@ describe('androidSafeSnapPoints (androidOpensExpanded, Android)', () => {
     expect(androidSafeSnapPoints(['90%'], true)).toEqual(['90%']);
   });
 
+  it('does not fall through to the small-single-detent padding branch when opted in', () => {
+    expect(androidSafeSnapPoints(['65%'], true)).toEqual(['65%']);
+  });
+
   it('collapses a multi-detent sheet with numeric (px) detents to the last one', () => {
     expect(androidSafeSnapPoints([300, 600], true)).toEqual([600]);
   });
