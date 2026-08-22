@@ -47,6 +47,12 @@ export class BoundedLru<V> {
     this.evictIfNeeded();
   }
 
+  /** Drop every entry. Used to isolate process-lifetime caches between tests. */
+  clear(): void {
+    this.store.clear();
+    this.totalBytes = 0;
+  }
+
   get size(): number {
     return this.store.size;
   }

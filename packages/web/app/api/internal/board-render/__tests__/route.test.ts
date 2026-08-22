@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
+import { resetBoardRenderCaches } from '@/app/lib/board-render-cache';
 import { GET } from '../route';
 
 // Mock WASM module - returns raw RGBA with 8-byte dimension header
@@ -34,13 +35,17 @@ vi.mock('fs', () => ({
   existsSync: (path: string) => mockExistsSync(path),
 }));
 
-// Mock sharp - tracks calls to composite() and webp() options
+// Mock sharp - tracks the chained operations the pipeline drives.
 const mockComposite = vi.fn();
 const mockResize = vi.fn();
+const mockLinear = vi.fn();
 const mockWebpOptions = vi.fn();
 const mockPngOptions = vi.fn();
 const mockJpegOptions = vi.fn();
-const mockSharpInstance = () => {
+// Substrings of an input path whose decode should reject, per test.
+const failingInputPaths: string[] = [];
+
+const mockSharpInstance = (shouldFail: boolean) => {
   const instance = {
     composite: vi.fn((...args: unknown[]) => {
       mockComposite(...args);
@@ -48,8 +53,18 @@ const mockSharpInstance = () => {
     }),
     resize: vi.fn((...args: unknown[]) => {
       mockResize(...args);
-      return { toBuffer: vi.fn(() => Promise.resolve(Buffer.from([0xb0]))) };
+      return instance;
     }),
+    ensureAlpha: vi.fn(() => instance),
+    raw: vi.fn(() => instance),
+    linear: vi.fn((...args: unknown[]) => {
+      mockLinear(...args);
+      return instance;
+    }),
+    // Raw-pixel output: the board base and the per-layer decodes.
+    toBuffer: vi.fn(() =>
+      shouldFail ? Promise.reject(new Error('corrupt image')) : Promise.resolve(Buffer.from([0xb0])),
+    ),
     webp: vi.fn((opts: unknown) => {
       mockWebpOptions(opts);
       return { toBuffer: vi.fn(() => Promise.resolve(Buffer.from([0x52, 0x49, 0x46, 0x46]))) };
@@ -65,9 +80,15 @@ const mockSharpInstance = () => {
   };
   return instance;
 };
-const mockSharpDefault = vi.fn((_input?: unknown, _options?: unknown) => mockSharpInstance());
+const mockSharpDefault = vi.fn((input?: unknown, _options?: unknown) =>
+  mockSharpInstance(typeof input === 'string' && failingInputPaths.some((fragment) => input.includes(fragment))),
+);
 vi.mock('sharp', () => ({
-  default: (input?: unknown, options?: unknown) => mockSharpDefault(input, options),
+  // `cache`/`concurrency` are called once at route module load (sharp-runtime).
+  default: Object.assign((input?: unknown, options?: unknown) => mockSharpDefault(input, options), {
+    cache: () => undefined,
+    concurrency: () => undefined,
+  }),
 }));
 
 vi.mock('@/app/lib/board-utils', () => ({
@@ -136,11 +157,12 @@ vi.mock('@/app/components/board-renderer/types', () => ({
 vi.mock('@/app/lib/seo/og', () => ({
   OG_IMAGE_WIDTH: 1200,
   OG_IMAGE_HEIGHT: 630,
-  createOgImageHeaders: vi.fn(({ contentType }: { contentType: string }) => ({
+  createOgImageHeaders: vi.fn(({ contentType, serverTiming }: { contentType: string; serverTiming?: string }) => ({
     'Content-Type': contentType,
     'Cache-Control': 'public, max-age=31536000, s-maxage=31536000, immutable',
     'CDN-Cache-Control': 'public, s-maxage=31536000, immutable',
     'Vercel-CDN-Cache-Control': 'public, s-maxage=31536000, immutable',
+    ...(serverTiming ? { 'Server-Timing': serverTiming } : {}),
   })),
 }));
 
@@ -164,6 +186,10 @@ describe('board-render API route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(true);
+    failingInputPaths.length = 0;
+    // Module-level caches outlive a request by design — reset them so one
+    // test's render can't serve another test's request.
+    resetBoardRenderCaches();
   });
 
   it('returns 200 with WebP content for valid request', async () => {
@@ -434,22 +460,33 @@ describe('board-render API route', () => {
     expect(mockWebpOptions).toHaveBeenCalledWith({ lossless: true });
   });
 
-  it('adds a dim scrim layer to the composite when dim_background is set', async () => {
+  it('dims the board base with a linear scale instead of compositing a scrim', async () => {
     const response = await GET(
       makeRequest({ ...validParams, thumbnail: '1', include_background: '1', dim_background: '0.18' }),
     );
     expect(response.status).toBe(200);
+
+    // rgb × (1 - 0.18), alpha untouched — no W×H×4 black scrim allocated.
+    expect(mockLinear).toHaveBeenCalledTimes(1);
+    const [multipliers, offsets] = mockLinear.mock.calls[0] as [number[], number[]];
+    expect(multipliers[0]).toBeCloseTo(0.82, 10);
+    expect(multipliers[1]).toBeCloseTo(0.82, 10);
+    expect(multipliers[2]).toBeCloseTo(0.82, 10);
+    expect(multipliers[3]).toBe(1);
+    expect(offsets).toEqual([0, 0, 0, 0]);
+
+    // Only the holds overlay is composited onto the base.
     expect(mockComposite).toHaveBeenCalledTimes(1);
-    // The single background is the base; the composite array is [dim scrim, holds overlay].
     const layers = mockComposite.mock.calls[0][0] as unknown[];
-    expect(layers).toHaveLength(2);
+    expect(layers).toHaveLength(1);
   });
 
-  it('does not add a dim scrim when dim_background is absent', async () => {
+  it('does not dim when dim_background is absent', async () => {
     const response = await GET(makeRequest({ ...validParams, thumbnail: '1', include_background: '1' }));
     expect(response.status).toBe(200);
+    expect(mockLinear).not.toHaveBeenCalled();
     expect(mockComposite).toHaveBeenCalledTimes(1);
-    // composite array is [holds overlay] only — no scrim.
+    // composite array is [holds overlay] only.
     const layers = mockComposite.mock.calls[0][0] as unknown[];
     expect(layers).toHaveLength(1);
   });
@@ -500,46 +537,107 @@ describe('board-render API route', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
 
-    // Make sharp fail for paths containing "layer-bad" but succeed for others
-    let callIndex = 0;
-    mockSharpDefault.mockImplementation(() => {
-      const idx = callIndex++;
-      // First call is the WASM overlay sharp (raw buffer), calls after are backgrounds.
-      // Background calls: index 0 = good, index 1 = bad, index 2 = good
-      const instance = {
-        composite: vi.fn((...args: unknown[]) => {
-          mockComposite(...args);
-          return instance;
-        }),
-        resize: vi.fn((...args: unknown[]) => {
-          mockResize(...args);
-          if (idx === 1) {
-            // Second background image fails
-            return { toBuffer: vi.fn(() => Promise.reject(new Error('corrupt image'))) };
-          }
-          return { toBuffer: vi.fn(() => Promise.resolve(Buffer.from([0xb0]))) };
-        }),
-        webp: vi.fn((opts: unknown) => {
-          mockWebpOptions(opts);
-          return { toBuffer: vi.fn(() => Promise.resolve(Buffer.from([0x52, 0x49, 0x46, 0x46]))) };
-        }),
-        png: vi.fn((opts: unknown) => {
-          mockPngOptions(opts);
-          return { toBuffer: vi.fn(() => Promise.resolve(Buffer.from([0x89, 0x50, 0x4e, 0x47]))) };
-        }),
-        jpeg: vi.fn((opts: unknown) => {
-          mockJpegOptions(opts);
-          return { toBuffer: vi.fn(() => Promise.resolve(Buffer.from([0xff, 0xd8, 0xff]))) };
-        }),
-      };
-      return instance;
-    });
+    // The middle layer's decode rejects; the other two must still land.
+    failingInputPaths.push('layer-bad');
 
     const response = await GET(makeRequest({ ...validParams, include_background: '1' }));
     expect(response.status).toBe(200);
-    // Composite should still be called with the surviving backgrounds + overlay
-    expect(mockComposite).toHaveBeenCalled();
+    // Two surviving layers fold into the base (1 composite) + the overlay (1).
+    expect(mockComposite).toHaveBeenCalledTimes(2);
     // Should use lossy WebP (composited output) not lossless (fallback)
     expect(mockWebpOptions).toHaveBeenCalledWith({ quality: 80 });
+  });
+
+  it('serves an identical repeat request from the byte cache without re-rendering', async () => {
+    const params = { ...validParams, include_background: '1' };
+
+    const first = await GET(makeRequest(params));
+    expect(first.status).toBe(200);
+    expect(mockRenderOverlay).toHaveBeenCalledTimes(1);
+    const firstBytes = new Uint8Array(await first.arrayBuffer());
+
+    const second = await GET(makeRequest(params));
+    expect(second.status).toBe(200);
+    // No second WASM render, no second sharp pipeline.
+    expect(mockRenderOverlay).toHaveBeenCalledTimes(1);
+    expect(second.headers.get('Server-Timing')).toContain('cache;desc=hit');
+    expect(second.headers.get('Content-Type')).toBe(first.headers.get('Content-Type'));
+    expect(new Uint8Array(await second.arrayBuffer())).toEqual(firstBytes);
+  });
+
+  it('reports a board-base cache hit once the board photos are composed', async () => {
+    await GET(makeRequest({ ...validParams, include_background: '1' }));
+    // Same board, different climb — the base is reused, the overlay is not.
+    const response = await GET(makeRequest({ ...validParams, include_background: '1', frames: 'p1073r44' }));
+
+    expect(response.status).toBe(200);
+    expect(mockRenderOverlay).toHaveBeenCalledTimes(2);
+    expect(response.headers.get('Server-Timing')).toContain('cache;desc=base-hit');
+  });
+
+  it('coalesces concurrent identical requests into a single render', async () => {
+    const params = { ...validParams, include_background: '1' };
+
+    const [first, second] = await Promise.all([GET(makeRequest(params)), GET(makeRequest(params))]);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(mockRenderOverlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the queue wait in Server-Timing', async () => {
+    const response = await GET(makeRequest({ ...validParams, include_background: '1' }));
+    expect(response.headers.get('Server-Timing')).toMatch(/queue;dur=\d/);
+  });
+
+  it('returns 400 when the requested render exceeds the pixel ceiling', async () => {
+    const { getBoardDetailsForBoard } = await import('@/app/lib/board-utils');
+    vi.mocked(getBoardDetailsForBoard).mockReturnValueOnce({
+      board_name: 'kilter',
+      layout_id: 1,
+      size_id: 7,
+      set_ids: [1, 20],
+      boardWidth: 2000,
+      boardHeight: 3000,
+      holdsData: [{ id: 1073, mirroredHoldId: null, cx: 200, cy: 300, r: 20 }],
+      images_to_holds: { 'huge.png': [] },
+      edge_left: 0,
+      edge_right: 144,
+      edge_bottom: 0,
+      edge_top: 180,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const response = await GET(makeRequest(validParams));
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toContain('3000000');
+    // Nothing is rendered or allocated for an oversized request.
+    expect(mockRenderOverlay).not.toHaveBeenCalled();
+    expect(mockSharpDefault).not.toHaveBeenCalled();
+  });
+
+  it('still renders a board at the largest real size', async () => {
+    const { getBoardDetailsForBoard } = await import('@/app/lib/board-utils');
+    vi.mocked(getBoardDetailsForBoard).mockReturnValueOnce({
+      board_name: 'kilter',
+      layout_id: 5,
+      size_id: 15,
+      set_ids: [24],
+      // Kilter's tallest board: 1080×2498 ≈ 2.70 MP, just under the ceiling.
+      boardWidth: 1080,
+      boardHeight: 2498,
+      holdsData: [{ id: 1073, mirroredHoldId: null, cx: 200, cy: 300, r: 20 }],
+      images_to_holds: { 'tall.png': [] },
+      edge_left: 0,
+      edge_right: 144,
+      edge_bottom: 0,
+      edge_top: 180,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const response = await GET(makeRequest({ ...validParams, layout_id: '5', size_id: '15', set_ids: '24' }));
+    expect(response.status).toBe(200);
   });
 });
