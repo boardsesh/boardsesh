@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 vi.mock('react-native', () => ({ Platform: { OS: 'android' } }));
 
 import { Platform } from 'react-native';
-import { androidSafeSnapPoints, androidInitialPresentIndex } from '../sheet-snap-points';
+import { androidSafeSnapPoints } from '../sheet-snap-points';
 
 const platform = Platform as { OS: string };
 
@@ -50,43 +50,33 @@ describe('androidSafeSnapPoints (iOS passthrough)', () => {
   });
 });
 
-describe('androidInitialPresentIndex (Android)', () => {
+describe('androidSafeSnapPoints (androidOpensExpanded, Android)', () => {
   beforeEach(() => {
     platform.OS = 'android';
   });
 
-  it('resolves to the last detent when opted in with multiple detents', () => {
-    expect(androidInitialPresentIndex(['50%', '90%'], true)).toBe(1);
-    expect(androidInitialPresentIndex(['20%', '50%', '90%'], true)).toBe(2);
+  it('collapses a multi-detent sheet to its single last detent when opted in', () => {
+    expect(androidSafeSnapPoints(['50%', '90%'], true)).toEqual(['90%']);
+    expect(androidSafeSnapPoints(['20%', '50%', '90%'], true)).toEqual(['90%']);
   });
 
-  it('resolves to 0 when not opted in, even with multiple detents', () => {
-    expect(androidInitialPresentIndex(['50%', '90%'], false)).toBe(0);
+  it('leaves a multi-detent sheet unchanged when not opted in', () => {
+    expect(androidSafeSnapPoints(['50%', '90%'], false)).toEqual(['50%', '90%']);
   });
 
-  it('resolves to 0 when opted in but there is only a single detent', () => {
-    expect(androidInitialPresentIndex(['90%'], true)).toBe(0);
+  it('leaves an already single-detent sheet unchanged when opted in', () => {
+    expect(androidSafeSnapPoints(['90%'], true)).toEqual(['90%']);
   });
 });
 
-describe('androidInitialPresentIndex (iOS)', () => {
-  beforeEach(() => {
+describe('androidSafeSnapPoints (androidOpensExpanded, iOS/web passthrough)', () => {
+  it('leaves a multi-detent sheet unchanged on iOS, regardless of the opt-in', () => {
     platform.OS = 'ios';
+    expect(androidSafeSnapPoints(['50%', '90%'], true)).toEqual(['50%', '90%']);
   });
 
-  it('always resolves to 0, regardless of the opt-in', () => {
-    expect(androidInitialPresentIndex(['50%', '90%'], true)).toBe(0);
-    expect(androidInitialPresentIndex(['50%', '90%'], false)).toBe(0);
-  });
-});
-
-describe('androidInitialPresentIndex (web)', () => {
-  beforeEach(() => {
+  it('leaves a multi-detent sheet unchanged on web, regardless of the opt-in', () => {
     platform.OS = 'web';
-  });
-
-  it('always resolves to 0, regardless of the opt-in', () => {
-    expect(androidInitialPresentIndex(['50%', '90%'], true)).toBe(0);
-    expect(androidInitialPresentIndex(['50%', '90%'], false)).toBe(0);
+    expect(androidSafeSnapPoints(['50%', '90%'], true)).toEqual(['50%', '90%']);
   });
 });

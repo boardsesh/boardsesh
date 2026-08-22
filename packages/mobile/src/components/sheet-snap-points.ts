@@ -21,33 +21,35 @@ const ANDROID_NEAR_FULL_DETENT_PERCENT = 75;
  * expanded state is the right match, so it's left unchanged. Multi-detent sheets
  * already have a partial state, and non-% (px) detents are left as-is.
  *
- * The added value is ignored on Android (only partial/expanded exist), and this
- * keeps the body's flex layout intact (unlike switching to fit-to-content, which
- * can collapse a scrollable body). iOS / web honour the exact detents via SwiftUI
- * / CSS, so they're returned unchanged.
+ * `androidOpensExpanded` (a multi-detent sheet whose pinned footer only fits at
+ * its LAST detent, e.g. the tick sheets, #4231) collapses to that single last
+ * detent on Android instead. This is deliberately NOT "keep both detents and pick
+ * the last index at present-time": `skipPartiallyExpanded` on a single detent
+ * removes "partial" as a valid resting state entirely, so the native sheet can
+ * only land on Expanded (or Hidden) — no imperative re-snap needed. With two
+ * detents, opening expanded instead relies on `@expo/ui`'s Android
+ * `ModalBottomSheetView.kt` calling `sheetState.expand()` in a `LaunchedEffect`
+ * that the library itself wraps in a swallowed `catch` ("Expanded anchor may be
+ * unreachable; never crash the view") — a real, silent-failure race that can
+ * leave the sheet resting at partial with the footer off-screen even with the
+ * right detent index requested. Collapsing to one detent sidesteps that path
+ * altogether, the same way any other near-full single-detent sheet in this
+ * codebase already does.
+ *
+ * The added/removed values are ignored on Android (only partial/expanded exist),
+ * and this keeps the body's flex layout intact (unlike switching to fit-to-content,
+ * which can collapse a scrollable body). iOS / web honour the exact detents via
+ * SwiftUI / CSS, so they're returned unchanged.
  */
-export function androidSafeSnapPoints(snapPoints: (string | number)[]): (string | number)[] {
-  if (Platform.OS !== 'android' || snapPoints.length !== 1) return snapPoints;
+export function androidSafeSnapPoints(
+  snapPoints: (string | number)[],
+  androidOpensExpanded = false,
+): (string | number)[] {
+  if (Platform.OS !== 'android') return snapPoints;
+  if (androidOpensExpanded && snapPoints.length > 1) return [snapPoints[snapPoints.length - 1]];
+  if (snapPoints.length !== 1) return snapPoints;
   const only = snapPoints[0];
   const percent = typeof only === 'string' && only.trim().endsWith('%') ? parseFloat(only) : null;
   if (percent == null || percent >= ANDROID_NEAR_FULL_DETENT_PERCENT) return snapPoints;
   return [only, '100%'];
-}
-
-/**
- * The index a sheet should present at. Android's `@expo/ui` sheet ignores the
- * requested `%` fraction on its "partial" state (see `androidSafeSnapPoints`
- * above), so a sheet tuned for iOS's real first detent (e.g. a pinned footer
- * sized to fit under `65%`/`80%` content) can strand that footer below
- * Android's fixed ~50% partial fold (#4231). An opted-in sheet presents at
- * its LAST detent (expanded) on Android instead of the first. No effect with
- * a single detent, or on iOS/web.
- */
-export function androidInitialPresentIndex(
-  effectiveSnapPoints: (string | number)[],
-  androidOpensExpanded: boolean,
-): number {
-  return Platform.OS === 'android' && androidOpensExpanded && effectiveSnapPoints.length > 1
-    ? effectiveSnapPoints.length - 1
-    : 0;
 }

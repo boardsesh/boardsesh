@@ -22,7 +22,7 @@ import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
 import { hapticMedium } from '../lib/haptics';
 import { spacing } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
-import { androidSafeSnapPoints, androidInitialPresentIndex } from './sheet-snap-points';
+import { androidSafeSnapPoints } from './sheet-snap-points';
 import { useSheetBodyContentStyle } from './sheet-content-inset';
 import { useSheetColumnStyle } from './use-sheet-column-style';
 import { useSheetDetentProbe } from './sheet-detent-probe';
@@ -69,7 +69,8 @@ type ModalSheetProps = {
   /** Optional fixed header, rendered above the body and outside its scroll — so a
    * title and close affordance stay put while the body scrolls. */
   header?: ReactNode;
-  /** Open at the LAST snap point on Android instead of the first.
+  /** Present as a single, expanded-only detent on Android instead of the usual
+   * multi-detent config.
    *
    * `@expo/ui`'s Android sheet is a plain Material 3 `ModalBottomSheet`: it has
    * only two real states, a fixed ~50% "partial" and a content-fitting
@@ -80,10 +81,16 @@ type ModalSheetProps = {
    * sized to fit a pinned footer under the content) can be TALLER than
    * Android's fixed ~50% partial state. On Android that stranded the pinned
    * footer below the fold — the climber had to drag/scroll the sheet up just
-   * to reach the Send button (#4231). Opt in per sheet rather than flipping
-   * this for every `ModalSheet`: most sheets (menus, pickers) are genuinely
-   * fine at Android's partial state, and forcing them open expanded would be
-   * its own regression. No effect with a single detent, or on iOS/web. */
+   * to reach the Send button (#4231). Collapsing to a single detent (see
+   * `androidSafeSnapPoints`) makes Android's native sheet set
+   * `skipPartiallyExpanded`, which removes "partial" as a landable state
+   * entirely — more reliable than requesting the last index of a multi-detent
+   * config, which depends on an imperative `expand()` call `@expo/ui`'s own
+   * Android layer can silently no-op ("Expanded anchor may be unreachable").
+   * Opt in per sheet rather than flipping this for every `ModalSheet`: most
+   * sheets (menus, pickers) are genuinely fine at Android's partial state, and
+   * forcing them open expanded would be its own regression. No effect with a
+   * single detent, or on iOS/web. */
   androidOpensExpanded?: boolean;
 };
 
@@ -115,11 +122,12 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   const solidBackground = useMemo(() => ({ backgroundColor: sheetSurface }), [sheetSurface]);
 
   // Single-detent sheets jump to full screen on @expo/ui's Android sheet — give
-  // them a partial state instead (see androidSafeSnapPoints).
-  const effectiveSnapPoints = useMemo(() => androidSafeSnapPoints(snapPoints), [snapPoints]);
-
-  // See `androidOpensExpanded` above.
-  const initialIndex = androidInitialPresentIndex(effectiveSnapPoints, androidOpensExpanded);
+  // them a partial state instead. An `androidOpensExpanded` sheet instead
+  // collapses to its single LAST detent on Android (see androidSafeSnapPoints).
+  const effectiveSnapPoints = useMemo(
+    () => androidSafeSnapPoints(snapPoints, androidOpensExpanded),
+    [snapPoints, androidOpensExpanded],
+  );
 
   const sheetRef = useRef<BottomSheetMethods>(null);
   const managed = useManagedSheet({
@@ -128,7 +136,6 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
     sheetRef,
     onClose,
     onFullyDismissed,
-    presentIndex: initialIndex,
   });
   useImperativeHandle(ref, () => managed.handle, [managed.handle]);
 
@@ -136,10 +143,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   onChangeRef.current = onChange;
 
   // Track the resting detent so the iOS column bound follows drags between detents.
-  // Seeded from `initialIndex` so a sheet that opens expanded on Android (see
-  // `androidOpensExpanded`) doesn't render one frame at the first-detent bound
-  // before the native `onChange` confirms the real one.
-  const [activeIndex, setActiveIndex] = useState(initialIndex);
+  const [activeIndex, setActiveIndex] = useState(0);
   const columnStyle = useSheetColumnStyle(snapPoints, { enableDynamicSizing, activeIndex });
   // Dev-only observers for #3922 — they feed a log line, never layout.
   const { probeProps, sentinelProps, onColumnLayout } = useSheetDetentProbe(columnStyle, 'ModalSheet');
@@ -225,11 +229,13 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   return (
     <BottomSheetModal
       ref={sheetRef}
-      // Not `index={initialIndex}`: `BottomSheetModal` only reads its own `index`
-      // prop inside its own `.present()` method, which `useManagedSheet` never
-      // calls — it drives presentation via `snapToIndex(desiredIndexRef.current)`
-      // instead, seeded from `presentIndex` above. `-1` (always starts closed)
-      // is the only value that matters here.
+      // `BottomSheetModal` only reads its own `index` prop inside its own
+      // `.present()` method, which `useManagedSheet` never calls — it drives
+      // presentation via `snapToIndex` instead, always at index 0 (see
+      // `effectiveSnapPoints` above: an `androidOpensExpanded` sheet is already
+      // collapsed to its single expanded detent on Android, so index 0 IS
+      // expanded there too). `-1` (always starts closed) is the only value
+      // that matters here.
       index={-1}
       snapPoints={enableDynamicSizing ? undefined : effectiveSnapPoints}
       enableDynamicSizing={enableDynamicSizing}

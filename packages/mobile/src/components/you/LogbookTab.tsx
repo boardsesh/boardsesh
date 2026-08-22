@@ -358,9 +358,6 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
 
   const openEditSheet = useCallback((ascent: AscentFeedItem) => {
     setEditAscent(ascent);
-    // `.present()`, not `.snapToIndex(0)` — snapToIndex would overwrite the
-    // presentIndex the sheet seeded from `androidOpensExpanded` (#4231), forcing
-    // it open at Android's partial detent instead of expanded.
     editSheetRef.current?.present();
   }, []);
 
