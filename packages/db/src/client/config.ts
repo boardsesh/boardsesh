@@ -39,10 +39,19 @@ function getDatabaseHostname(): string | undefined {
  *
  * Production Postgres is a Railway host (`*.railway.internal`, or a public proxy
  * hostname), so none of these can match it.
+ *
+ * Private IPv6 ranges are deliberately absent. Railway's own private networking
+ * is IPv6 unique-local (`fc00::/7`), so a rule that called those "definitely not
+ * production" would be one config change away from silencing prod reporting —
+ * the exact failure #3603 was filed for. A dev database reached by literal IPv6
+ * address stays unrecognised instead, which fails the safe way: it reports.
  */
 function isPrivateHostname(hostname: string): boolean {
   if (hostname === 'localhost' || hostname.endsWith('.localhost')) return true;
   if (hostname.endsWith('.local') || hostname.endsWith('.ts.net')) return true;
+  // The IPv6 loopback/unspecified forms, plus IPv4's unspecified address, which
+  // the octet ranges below deliberately don't cover (0.0.0.0 is its own case, not
+  // part of any private block). Keep this check — nothing else catches them.
   if (hostname === '::1' || hostname === '::' || hostname === '0.0.0.0') return true;
 
   const ipv4Octets = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.\d{1,3}$/.exec(hostname);
@@ -101,6 +110,11 @@ function isNonProductionRuntime(): boolean {
  * onto a laptop would otherwise be enough to make it report as prod. Every other
  * explicit value (preview, staging) still wins outright, so branch deploys keep
  * their own name.
+ *
+ * There is deliberately no local escape hatch: no env var re-opens production
+ * reporting from a laptop or a CI runner, because the events would land in the
+ * live project indistinguishable from real ones. Smoke-test the wiring against a
+ * scratch project by pointing SENTRY_DSN at it instead.
  *
  * Single source of truth for both the `Sentry.init({ enabled, environment })`
  * gate in the backend's instrument.ts and the SentryWinstonTransport gate, so
