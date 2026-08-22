@@ -20,7 +20,7 @@ import {
 } from '@boardsesh/board-render';
 import { createOverlayRenderer } from '@boardsesh/board-render/wasm';
 import { renderBoardImageBuffer, type RenderTimings, type ResolveImagePath } from '@boardsesh/board-render/pipeline';
-import { boardBaseCache, byteCache, ogBaseCache } from '@/app/lib/board-render-cache';
+import { boardBaseCache, boardBaseInFlight, byteCache, ogBaseCache } from '@/app/lib/board-render-cache';
 import { configureSharpForServerless } from '@/app/lib/sharp-runtime';
 
 // Node.js runtime for reliable WASM loading via filesystem
@@ -163,7 +163,7 @@ async function renderImage(params: {
     dimBackground: params.dimBackground,
     boardDetails: params.boardDetails,
     resolveImagePath: findPublicImagePath,
-    caches: { boardBase: boardBaseCache, ogBase: ogBaseCache },
+    caches: { boardBase: boardBaseCache, ogBase: ogBaseCache, boardBaseInFlight },
   });
 
   const baseCacheState = cache === 'hit' ? 'base-hit' : (cache ?? 'none');

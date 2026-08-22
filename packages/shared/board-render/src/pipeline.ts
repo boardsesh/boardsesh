@@ -60,6 +60,15 @@ export type RenderBoardImageCaches = {
   boardBase?: BoundedLru<Buffer>;
   /** Gradient backdrop + board photos (raw RGBA) for the OG social-card path. */
   ogBase?: BoundedLru<OgBaseResult>;
+  /**
+   * Composes of `boardBase` entries currently running, so two climbs on the
+   * same board arriving together fold that board's photos once instead of
+   * twice (~10 MB of planes for the tallest Kilter board). Owned by the caller
+   * because the key describes the board and output size, not the caller's
+   * `resolveImagePath` — sharing one across resolvers would serve the wrong
+   * images. Omit it and each render composes its own base.
+   */
+  boardBaseInFlight?: Map<string, Promise<Buffer | null>>;
 };
 
 export type RenderBoardImageParams = {
@@ -201,20 +210,6 @@ export async function composeBoardBaseBuffer(params: {
 }
 
 /**
- * Concurrent composes of the same base, keyed exactly like the caller's cache.
- * Two climbs on one board arriving together would otherwise each decode and
- * fold that board's photos (~10 MB of planes for the tallest Kilter board) to
- * produce identical bytes. Entries are removed as soon as the compose settles,
- * so this never holds a buffer alive.
- *
- * Only used when the caller supplied a `boardBase` cache: the key describes the
- * board and the output size, not the caller's `resolveImagePath`, so sharing it
- * assumes one resolver per process (true today — the web route is the only
- * consumer).
- */
-const inFlightBoardBases = new Map<string, Promise<Buffer | null>>();
-
-/**
  * Single-shot render used by the web `board-render` route: takes the WASM
  * overlay RGBA and produces the final encoded image, optionally compositing
  * background board photos and (for the OG variant) the social-card backdrop.
@@ -294,15 +289,14 @@ export async function renderBoardImageBuffer({
       .map((result) => result.value);
 
     if (firstBg) {
-      const dimLayer = await sharp({
-        create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: dimBackground } },
-      })
-        .png()
-        .toBuffer();
       imageBuffer = await sharp(firstBg)
         .composite([
           ...restBgs.map((buf) => ({ input: buf, blend: 'over' as const })),
-          { input: dimLayer, blend: 'over' as const },
+          {
+            // Same `create` descriptor the cached path uses — no PNG round-trip.
+            input: { create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: dimBackground } } },
+            blend: 'over' as const,
+          },
           { input: overlayBuffer, raw: rawPlane, blend: 'over' as const },
         ])
         .png(DEFAULT_PNG_OPTIONS)
@@ -321,15 +315,16 @@ export async function renderBoardImageBuffer({
       cache = 'hit';
     } else {
       const composeParams = { boardDetails, width, height, thumbnail, dimBackground, resolveImagePath };
+      const inFlightBases = caches?.boardBaseInFlight;
       let composed: Buffer | null;
-      if (caches?.boardBase) {
-        const alreadyComposing = inFlightBoardBases.get(baseKey);
+      if (inFlightBases) {
+        const alreadyComposing = inFlightBases.get(baseKey);
         const composePromise =
           alreadyComposing ??
           composeBoardBaseBuffer(composeParams).finally(() => {
-            inFlightBoardBases.delete(baseKey);
+            inFlightBases.delete(baseKey);
           });
-        if (!alreadyComposing) inFlightBoardBases.set(baseKey, composePromise);
+        if (!alreadyComposing) inFlightBases.set(baseKey, composePromise);
         composed = await composePromise;
       } else {
         composed = await composeBoardBaseBuffer(composeParams);

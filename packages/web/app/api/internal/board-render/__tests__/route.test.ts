@@ -657,6 +657,11 @@ describe('board-render API route', () => {
   it.each([
     // label, params both requests share, the one param that differs, whether
     // the mocked encoder can show the difference in the response body.
+    ['board_name', {}, { board_name: 'tension' }, false],
+    ['layout_id', {}, { layout_id: '8' }, false],
+    ['size_id', {}, { size_id: '17' }, false],
+    ['set_ids', {}, { set_ids: '1,27' }, false],
+    ['frames', {}, { frames: 'p1073r44' }, false],
     ['format', {}, { format: 'png' }, true],
     ['thumbnail', {}, { thumbnail: '1' }, true],
     ['include_background', {}, { include_background: '0' }, true],
