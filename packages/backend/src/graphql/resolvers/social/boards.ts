@@ -762,12 +762,23 @@ const POPULAR_CONFIGS_FLIGHT_KEY = 'popular-board-configs';
 let localFallbackConfigs: { configs: CachedPopularConfig[]; expiresAt: number } | null = null;
 
 /**
+ * Bumped on every drop. The statement runs for tens of seconds, so a deploy
+ * warm-up can easily land while an earlier copy is still executing — and
+ * without this that copy would repopulate the fallback with pre-deploy data
+ * *after* the drop, which is the one thing the warm-up exists to prevent. A
+ * flight captures the counter before it starts and declines to cache its
+ * result if the number moved underneath it.
+ */
+let fallbackGeneration = 0;
+
+/**
  * The Redis-less twin of deleting REDIS_CACHE_KEY: force the next read to
  * re-query. Called by the deploy warm-up, and by tests so one case cannot
  * answer the next from the previous one's fixture.
  */
 export function dropPopularConfigsFallback(): void {
   localFallbackConfigs = null;
+  fallbackGeneration += 1;
 }
 
 async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
@@ -790,6 +801,8 @@ async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
 }
 
 async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
+  const generationAtStart = fallbackGeneration;
+
   // Query all per-size configs with climb counts filtered by size edges AND set membership.
   // A climb counts for a config only if ALL its holds belong to placements in that config's sets.
   // board_climb_holds.hold_id = board_placements.id (placement ID).
@@ -913,7 +926,7 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
     } catch (err) {
       logger.error('[PopularConfigs] Redis write failed:', err);
     }
-  } else {
+  } else if (fallbackGeneration === generationAtStart) {
     localFallbackConfigs = { configs, expiresAt: Date.now() + REDISLESS_FALLBACK_TTL_MS };
   }
   return configs;

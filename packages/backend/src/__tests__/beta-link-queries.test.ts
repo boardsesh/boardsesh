@@ -739,6 +739,29 @@ describe('recentBetaLinks Redis cache', () => {
     expect(redisDelMock).not.toHaveBeenCalled();
   });
 
+  it('invalidateRecentBetaLinksCache: a read already in flight cannot restore the pre-write strip', async () => {
+    redisConnectedMock.mockReturnValue(false);
+    let releaseFirstRead!: (rows: unknown) => void;
+    executeMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseFirstRead = resolve;
+      }),
+    );
+
+    const readStartedFirst = betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    // The climber saves their link while that CTE is still running, so its rows
+    // are the pre-save strip.
+    await invalidateRecentBetaLinksCache();
+    releaseFirstRead([cachedRow({ link: 'https://www.instagram.com/p/BEFORE/' })]);
+    await readStartedFirst;
+
+    executeMock.mockReturnValueOnce([cachedRow({ link: 'https://www.instagram.com/p/AFTER/' })]);
+    const readStartedAfter = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+
+    expect(executeMock).toHaveBeenCalledTimes(2);
+    expect(readStartedAfter[0]?.betaLink.link).toBe('https://www.instagram.com/p/AFTER/');
+  });
+
   it('invalidateRecentBetaLinksCache: drops the Redis-less copy so a new link shows up', async () => {
     redisConnectedMock.mockReturnValue(false);
     executeMock.mockReturnValue([cachedRow({ link: 'https://www.instagram.com/p/BEFORE/' })]);
