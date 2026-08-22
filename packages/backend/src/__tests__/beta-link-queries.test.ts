@@ -602,6 +602,9 @@ describe('recentBetaLinks Redis cache', () => {
     // The Redis-less branch keeps a process-local copy for 10 minutes (#4463);
     // clear it so the one test here that disconnects Redis still reaches the CTE.
     dropRecentBetaLinksFallback();
+    // Same reason, one layer up: a case that leaves a flight pending would
+    // otherwise hand its promise to the next case instead of hitting the CTE.
+    resetSingleFlightForTests();
   });
 
   it('returns cached rows without running the CTE on hit', async () => {
@@ -666,7 +669,6 @@ describe('recentBetaLinks Redis cache', () => {
   // pool's ten connections until it finished — after which every other query
   // in the process queued behind them forever.
   it('runs one CTE for callers that arrive while the first is still running', async () => {
-    resetSingleFlightForTests();
     redisConnectedMock.mockReturnValue(false);
     let releaseCte!: (rows: unknown) => void;
     executeMock.mockReturnValue(
