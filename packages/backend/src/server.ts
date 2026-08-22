@@ -74,6 +74,7 @@ import { registerBoardQueuePreviewHook } from './services/board-queue-preview';
 import { logger, setInstanceIdProvider } from './utils/logger';
 import { isClientAbortError } from './utils/http-errors';
 import { setDbConnectObserver } from '@boardsesh/db/client';
+import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boardsesh/db/client/config';
 import type { QueueEvent } from '@boardsesh/shared-schema';
 
 /**
@@ -663,6 +664,16 @@ export async function startServer(): Promise<ServerResources> {
   const intervals: NodeJS.Timeout[] = [pingInterval];
 
   logger.info(`Boardsesh Backend starting on port ${PORT}...`);
+  // Whether this process reports to the production Sentry/PostHog projects is
+  // inferred, not configured (see @boardsesh/db/client/config), so say the answer
+  // out loud at boot: a developer chasing a missing event shouldn't have to guess
+  // whether the SDK is off or the event never fired.
+  const sentryEnvironment = resolveSentryEnvironment();
+  logger.info(
+    isProductionSentryEnvironment()
+      ? `Sentry environment: ${sentryEnvironment}`
+      : `Sentry environment: ${sentryEnvironment} (reporting disabled — not the production runtime)`,
+  );
 
   // Start HTTP server (WebSocket server is attached to it)
   const httpScheme = tlsEnabled ? 'https' : 'http';

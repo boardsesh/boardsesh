@@ -245,6 +245,11 @@ describe('backend PostHog analytics helper', () => {
     // Vitest sets VITEST=true on the process; clear it so resolveSentryEnvironment()
     // sees a non-test runtime, which is what Railway prod actually looks like.
     vi.stubEnv('VITEST', '');
+    // Same idea for the two other "this isn't production" signals the resolver
+    // reads: the test runner's DATABASE_URL points at a localhost test database,
+    // and CI runs on a GitHub Actions runner. Railway prod is neither.
+    vi.stubEnv('DATABASE_URL', 'postgresql://postgres:pw@postgres.railway.internal:5432/railway');
+    vi.stubEnv('GITHUB_ACTIONS', '');
     const { captureBackendEvent } = await loadPosthogModule();
 
     const captured = captureBackendEvent('Live Activity Started', { distinctId: 'user-1' });
