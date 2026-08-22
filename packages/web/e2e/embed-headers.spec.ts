@@ -1,18 +1,31 @@
-import { test, expect, type APIResponse } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+import { test, expect, type APIRequestContext, type APIResponse } from '@playwright/test';
+import { waitForBoardListReady } from './helpers/waits';
 
-// The `aa-` prefix is load-bearing: Playwright orders spec files
-// alphabetically within a shard, and this file's raw APIRequestContext
-// requests hang for 60s+ if certain browser-driven specs run against the
-// same server first — first-in-shard they pass every time, and the whole
-// suite is green. Do not rename this file below its neighbours.
+// This file used to be `aa-embed-headers.spec.ts`. The prefix was load-bearing:
+// Playwright orders spec files alphabetically inside a shard, and these raw
+// APIRequestContext requests hung for 60s+ when browser-driven specs had run
+// against the same server first. #4463 root-caused that and removed it. The
+// short version, so nobody re-derives it:
 //
-// Half of that is fixed: #4463 gave the embed/kiosk SSR backend fetches a 3 s
-// deadline, so a stalled backend now renders the retry screen instead of
-// hanging the request. The other half is not: why the backend stalls on those
-// queries only after browser specs have run is still unexplained, and #4463
-// stays open on it. Nothing about this file is a Playwright state leak — the
-// `request` fixture builds a fresh APIRequestContext per test, and the suite
-// installs no service worker, storageState, or route interception.
+//  - Nothing here was a Playwright state leak. The `request` fixture builds a
+//    fresh APIRequestContext per test, and the suite installs no service
+//    worker, storageState, or route interception.
+//  - The stall was never in the web server. The GraphQL backend's connection
+//    pool was exhausted by concurrent copies of one uncached statement — the
+//    home page's `popularBoardConfigs`, which the CI backend can never cache
+//    because it runs with no REDIS_URL. Every spec that loaded `/` added
+//    another copy. postgres.js's acquire queue is unbounded and untimed, so
+//    every other backend read then waited forever, `/embed/**` renders
+//    included. `{ __typename }` kept answering in milliseconds throughout,
+//    which is why it looked like something subtler than saturation.
+//  - Two fixes closed it: the backend now runs one copy of those cold reads at
+//    a time, and the SSR fetches that wait on the backend carry
+//    SSR_BACKEND_FETCH_TIMEOUT_MS, so a slow backend paints the retry screen —
+//    a 200 these assertions already accept.
+//
+// The ordering dependency is pinned explicitly at the bottom of this file
+// instead of through the filename, so it survives the next spec being added.
 
 // These are raw APIRequestContext gets against a server that is concurrently
 // SSR-ing front-door pages for the other worker's browser tests. On a 2-core
@@ -149,5 +162,64 @@ test.describe('embed security headers', () => {
     expect(frenchLocation.pathname).toBe(`/embed/gym/${MISSING_GYM_UUID}/leaderboard`);
     // The redirect preserves the widget's query string.
     expect(frenchLocation.search).toBe('?period=day&board=abc');
+  });
+});
+
+/**
+ * The ordering pin, written down instead of encoded in the filename.
+ *
+ * `--shard=N/8` reshuffles which specs share a server every time a test is
+ * added or removed, so the `aa-` prefix only ever protected one particular
+ * arrangement — and hid the defect rather than testing it. This drives the
+ * browser preamble explicitly, in-file, so the raw-request path is checked
+ * against a warmed-up server in EVERY run regardless of how the shards land.
+ *
+ * The budget is deliberately far above the 3 s SSR deadline and far below the
+ * 60 s+ the un-deadlined fetch used to burn: a stalled backend must reach the
+ * retry screen, not hold the socket. Measured wall clock, not just the request
+ * timeout, so a response that arrives at 14.9 s still reads as a pass and a
+ * regression to "hangs until Playwright gives up" reads as a fail.
+ */
+const PREAMBLE_BOARD_PATH = '/kilter/original/12x12-square/screw_bolt/40';
+/** 5× the SSR deadline. Anything slower than this is the stall, not latency. */
+const POST_PREAMBLE_BUDGET_MS = 15_000;
+
+async function timedGet(
+  request: APIRequestContext,
+  path: string,
+): Promise<{ response: APIResponse; elapsedMs: number }> {
+  const startedAt = Date.now();
+  const response = await request.get(path, { maxRedirects: 0, timeout: POST_PREAMBLE_BUDGET_MS });
+  return { response, elapsedMs: Date.now() - startedAt };
+}
+
+test.describe.serial('raw embed requests survive a browser-driven preamble', () => {
+  test('the embed and kiosk raw requests still answer after front-door page loads', async ({ page, request }) => {
+    // The preamble board-route-teardown.spec.ts drives: the SSR front door,
+    // scrolled to the bottom so everything below the fold mounts, then a climb
+    // view. Both read the database on the server and both were in the shard
+    // that stalled.
+    await page.goto(`${PREAMBLE_BOARD_PATH}/list`, { waitUntil: 'load' });
+    await waitForBoardListReady(page);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+
+    const climbHref = await page.locator(`a[href*="${PREAMBLE_BOARD_PATH}/view/"]`).first().getAttribute('href');
+    expect(climbHref).toBeTruthy();
+    await page.goto(climbHref!, { waitUntil: 'load' });
+
+    // /embed/board/** is the render that awaits the backend over HTTP — the
+    // one that used to hang. A uuid nothing has asked for keeps it off the
+    // Data Cache fast path (`revalidate: 300` would otherwise answer this from
+    // the entry the first test in this file wrote), so it always exercises a
+    // cold backend read.
+    const embed = await timedGet(request, `/embed/board/${randomUUID()}`);
+    expect([200, 404]).toContain(embed.response.status());
+    expect(headerValue(embed.response, 'content-security-policy')).toContain('frame-ancestors *');
+    expect(embed.elapsedMs).toBeLessThan(POST_PREAMBLE_BUDGET_MS);
+
+    // /kiosk/** is the same shape one route tree over, and it hung in CI too.
+    const kiosk = await timedGet(request, `/kiosk/${randomUUID()}`);
+    expect(headerValue(kiosk.response, 'x-frame-options')).toBe('SAMEORIGIN');
+    expect(kiosk.elapsedMs).toBeLessThan(POST_PREAMBLE_BUDGET_MS);
   });
 });

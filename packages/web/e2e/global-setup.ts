@@ -62,11 +62,11 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
       );
     }
 
-    // 3. Pre-warm the SSR routes bottom-tab-bar navigates to. They call
-    //    cached GraphQL on the server and trigger
-    //    Next.js's compile-on-first-hit in dev. Without this, the first
-    //    navigation in a test races a cold backend round-trip against the
-    //    per-navigation timeout — the recurring shard-5 / shard-4 flake mode.
+    // 3. Pre-warm the remaining SSR routes the specs navigate to. They call
+    //    cached GraphQL on the server and trigger Next.js's compile-on-first-hit
+    //    in dev. Without this, the first navigation in a test races a cold
+    //    backend round-trip against the per-navigation timeout — the recurring
+    //    shard-5 / shard-4 flake mode.
     for (const path of WARMUP_PATHS) {
       await page.goto(path, { timeout: 60_000, waitUntil: 'domcontentloaded' }).catch(() => {
         // Soft-fail: warmup is best-effort. If a warmup route is genuinely
