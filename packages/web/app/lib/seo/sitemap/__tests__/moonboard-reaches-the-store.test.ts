@@ -60,6 +60,29 @@ const MOONBOARD_MASTERS_2017: PopularBoardConfig = {
   displayName: 'MoonBoard Masters 2017',
 };
 
+/**
+ * A second Aurora board, here only so the ordering assertion below has
+ * something to be wrong about. Tension's Original Layout on the full wall with
+ * all four sets is a resolvable group (`climb-entries.test.ts:262` pins that),
+ * and `tension` sorts AFTER `moonboard`, so this is the row MoonBoard displaces.
+ * Names and set list are the real catalogue ones, so nothing here reads as a
+ * tuple the app could not serve.
+ */
+const TENSION_CONFIG: PopularBoardConfig = {
+  boardType: 'tension',
+  layoutId: 9,
+  layoutName: 'Original Layout',
+  sizeId: 1,
+  sizeName: 'Full Wall',
+  sizeDescription: 'Rows: KB1, KB2, 1-18 Columns: A-K',
+  setIds: [8, 9, 10, 11],
+  setNames: ['Set A', 'Set B', 'Set C', 'Foot Set'],
+  climbCount: 3100,
+  totalAscents: 42,
+  boardCount: 7,
+  displayName: 'Tension Original Full Wall',
+};
+
 const source = vi.hoisted(() => ({ configs: [] as unknown[] }));
 vi.mock('../board-config-source', () => ({
   getSitemapClimbConfigsOrThrow: async () => source.configs,
@@ -107,7 +130,7 @@ afterEach(() => {
 
 describe('the refresher that fills sitemap_climb_urls', () => {
   it('emits MoonBoard URLs, so the stored rows carry them', async () => {
-    source.configs = [KILTER_CONFIG, MOONBOARD_MASTERS_2017];
+    source.configs = [KILTER_CONFIG, MOONBOARD_MASTERS_2017, TENSION_CONFIG];
 
     const urlRows = await buildAllTier2UrlRows();
     const moonboardRows = urlRows.filter((row) => row.boardType === 'moonboard');
@@ -125,11 +148,27 @@ describe('the refresher that fills sitemap_climb_urls', () => {
       `/moonboard/masters-2017/standard-11x18-grid/${FULL_SET_SLUG}/40/view/to-dokids-yuito-${KILTER_UUID}`,
     ]);
 
-    // Kilter is untouched and still first: the config source is additive, and a
-    // MoonBoard row displacing an Aurora one would move every page boundary in
-    // the store.
+    // Kilter's rows are untouched — same count, and still the first thing the
+    // store sees.
     expect(urlRows[0]?.boardType).toBe('kilter');
     expect(urlRows.filter((row) => row.boardType === 'kilter')).toHaveLength(2);
+
+    // The WHOLE emission order, not just row 0, because MoonBoard is NOT
+    // appended. `resolveClimbSitemapGroups` sorts groups by a lexicographic
+    // compare on board type, so `moonboard` lands between `kilter` and
+    // `tension` and every Tension ordinal moves by the MoonBoard row count.
+    // Asserting only `urlRows[0] === 'kilter'` cannot see that: `kilter` sorts
+    // first either way. This sequence is the contract the store's page
+    // boundaries actually follow, and `docs/sitemap.md` explains why moving
+    // them is allowed.
+    expect(urlRows.map((row) => row.boardType)).toEqual([
+      'kilter',
+      'kilter',
+      'moonboard',
+      'moonboard',
+      'tension',
+      'tension',
+    ]);
   });
 
   it('carries no MoonBoard rows when the config source has none — the state before this change', async () => {

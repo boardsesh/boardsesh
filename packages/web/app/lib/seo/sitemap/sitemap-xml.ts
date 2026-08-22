@@ -31,8 +31,26 @@ export const MAX_ITEMS_PER_SHARD = Math.floor(MAX_URLS_PER_SHARD / SUPPORTED_LOC
  *   refresh, which is exactly the re-crawl volume #4842/#4861 are open about.
  * - **Bounded work per request.** A page is one ordinal-range read plus one
  *   rendered string held whole in memory. At 10,000 rows that is ~21 ms and
- *   ~2.5 MB on a container whose RSS the deploy runbook watches; at 45,000 it
- *   is four and a half times both.
+ *   2.0-3.0 MB on a container whose RSS the deploy runbook watches; at 45,000
+ *   it is four and a half times both.
+ *
+ * The **set slug** is what spreads that range, so the worst page is a MoonBoard
+ * one, not a Kilter one. Measured through `climbRowsToItems` + `renderUrlset`
+ * with a 15-character climb name, 10,000 URLs, `default-locale-only`:
+ *
+ * - Kilter original 12x12 (`screw_bolt`, 10 chars) — 203 B/URL, 2.03 MB, 41% of
+ *   this page's `pagedShardByteBudget`.
+ * - MoonBoard Masters 2019 (`wooden-holds-c_wooden-holds-b_wooden-holds_screw_
+ *   original-school-holds_hold-set-b_hold-set-a`, 92 chars) — 303 B/URL,
+ *   **3.03 MB, 61%**. Every other MoonBoard layout sits between 246 and 284
+ *   B/URL.
+ *
+ * The arithmetic is linear and worth keeping: on a full page one extra
+ * character anywhere in the path costs 10,000 bytes, so Masters 2019 is ~197
+ * characters of set slug (or climb name) short of the budget. Lower this
+ * constant before adding a board that spends them. The failure mode is not
+ * transient — the budget is enforced on the rendered body, so an over-budget
+ * page 503s on every request until someone re-shards.
  *
  * Raising it is a deliberate change with a crawl-shape argument behind it, not
  * a leftover to clean up.
@@ -70,15 +88,19 @@ export const MAX_SHARD_BYTES = 45_000_000;
  * Bytes per URL a PAGED shard page may average before its own guard fires.
  *
  * `MAX_SHARD_BYTES` cannot do this job: it is sized to the protocol, and the only
- * paged shard configured today renders 10,000 URLs at ~250 bytes each — ~2.5 MB,
- * eighteen times under it. A ceiling that far above the page it guards cannot see
- * the regression that matters, which is a per-URL cost that multiplied. Fanning
- * the climbs pages out to locales would do exactly that: it adds the hreflang
- * alternates block `entries.ts` warns against, taking each URL from ~250 B to the
- * 866 B measured on `/sitemaps/playlists.xml` and a page from 2.5 MB to 8.7 MB.
+ * paged shard configured today renders 10,000 URLs at 203-303 bytes each — 2.0
+ * to 3.0 MB, fifteen times under it. A ceiling that far above the page it guards
+ * cannot see the regression that matters, which is a per-URL cost that
+ * multiplied. Fanning the climbs pages out to locales would do exactly that: it
+ * adds the hreflang alternates block `entries.ts` warns against, taking each URL
+ * to the 866 B measured on `/sitemaps/playlists.xml` and a page to 8.7 MB.
  *
- * 500 is double the measured cost and well under the fanned-out one, so a page
+ * 500 sits above the worst page and well under the fanned-out one, so a page
  * that grew legitimately long paths still serves and that regression still 503s.
+ * The margin is thinner than it reads: the spread is the SET SLUG, and MoonBoard
+ * Masters 2019 spends 92 characters of it at 303 B/URL — 1.65x, not the 2x this
+ * comment claimed while the shard was Kilter and Tension only. A board with a
+ * longer slug than that needs this constant revisited, not just added.
  */
 const PAGED_SHARD_BYTES_PER_URL = 500;
 
