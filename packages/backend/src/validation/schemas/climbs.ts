@@ -319,7 +319,9 @@ export const SimilarClimbsInputSchema = z
     // (favorites, playlists, etc.) and length-bounds them so a malformed
     // string can't reach the underlying SQL.
     excludeClimbUuid: ExternalUUIDSchema.optional(),
-    angle: z.number().int().min(0).max(90).optional(),
+    // Aurora boards support negative tilt (e.g. -5°); angle is only an optional
+    // stats-join key here, so a non-matching value nulls the join rather than erroring.
+    angle: z.number().int().min(-90).max(90).optional(),
     climbUuid: ExternalUUIDSchema.optional(),
     frames: z.string().min(1).max(10000).optional(),
   })

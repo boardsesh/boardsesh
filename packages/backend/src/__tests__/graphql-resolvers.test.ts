@@ -200,6 +200,87 @@ describe('GraphQL Resolver Input Validation', () => {
       );
     });
 
+    it('should reject invalid angle (< -90)', async () => {
+      const query = `
+        query TestClimb(
+          $boardName: String!
+          $layoutId: Int!
+          $sizeId: Int!
+          $setIds: String!
+          $angle: Int!
+          $climbUuid: ID!
+        ) {
+          climb(
+            boardName: $boardName
+            layoutId: $layoutId
+            sizeId: $sizeId
+            setIds: $setIds
+            angle: $angle
+            climbUuid: $climbUuid
+          ) {
+            uuid
+          }
+        }
+      `;
+
+      await expectError(
+        client,
+        {
+          query,
+          variables: {
+            boardName: 'kilter',
+            layoutId: 1,
+            sizeId: 1,
+            setIds: '1',
+            angle: -95,
+            climbUuid: 'test-uuid',
+          },
+        },
+        'Invalid angle',
+      );
+    });
+
+    it('should accept negative angle -5 (Aurora boards support negative tilt) without an angle error', async () => {
+      const query = `
+        query TestClimb(
+          $boardName: String!
+          $layoutId: Int!
+          $sizeId: Int!
+          $setIds: String!
+          $angle: Int!
+          $climbUuid: ID!
+        ) {
+          climb(
+            boardName: $boardName
+            layoutId: $layoutId
+            sizeId: $sizeId
+            setIds: $setIds
+            angle: $angle
+            climbUuid: $climbUuid
+          ) {
+            uuid
+          }
+        }
+      `;
+
+      // 'test-uuid' doesn't exist, so the resolver simply returns a null
+      // climb — the point of this test is that it gets past angle
+      // validation instead of throwing 'Invalid angle'.
+      const result = await execute<{ climb: { uuid: string } | null }>(client, {
+        query,
+        variables: {
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 1,
+          setIds: '1',
+          angle: -5,
+          climbUuid: 'test-uuid',
+        },
+      });
+
+      expect(result.climb).toBeNull();
+    });
+
     it('should reject invalid board name', async () => {
       const query = `
         query TestClimb(
