@@ -69,9 +69,20 @@ describe('androidInitialPresentIndex (Android)', () => {
   });
 });
 
-describe('androidInitialPresentIndex (iOS/web)', () => {
+describe('androidInitialPresentIndex (iOS)', () => {
   beforeEach(() => {
     platform.OS = 'ios';
+  });
+
+  it('always resolves to 0, regardless of the opt-in', () => {
+    expect(androidInitialPresentIndex(['50%', '90%'], true)).toBe(0);
+    expect(androidInitialPresentIndex(['50%', '90%'], false)).toBe(0);
+  });
+});
+
+describe('androidInitialPresentIndex (web)', () => {
+  beforeEach(() => {
+    platform.OS = 'web';
   });
 
   it('always resolves to 0, regardless of the opt-in', () => {
