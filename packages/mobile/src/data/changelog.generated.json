@@ -1,6 +1,28 @@
 {
-  "generatedAt": "2026-08-21T22:25:59.304Z",
+  "generatedAt": "2026-08-22T01:32:37.266Z",
   "entries": [
+    {
+      "prNumber": 4660,
+      "category": "fixed",
+      "title": "Ending a session is now a labelled button — \"Stop\" if you started it, \"Leave\" if you joined — instead of a bare flag icon.",
+      "mergedAt": "2026-08-22T01:32:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4660"
+    },
+    {
+      "prNumber": 4576,
+      "category": "fixed",
+      "title": "Shared MoonBoard climb links open the climb again instead of a not-found page, on the web and in the app.",
+      "mergedAt": "2026-08-22T01:31:25Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4576",
+      "body": "MoonBoard links now light exactly the hold sets named in the URL. Masters 2017 and Masters 2019 links were quietly dropping Screw-on Feet, and a single-hold-set link lit the whole layout."
+    },
+    {
+      "prNumber": 4592,
+      "category": "fixed",
+      "title": "Only affects a climb view URL that was already broken (an infinite-redirect 500-adjacent error page); nothing a climber would describe as a feature getting better.",
+      "mergedAt": "2026-08-22T01:29:59Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4592"
+    },
     {
       "prNumber": 4640,
       "category": "new",
