@@ -33,9 +33,10 @@ function getDatabaseHostname(): string | undefined {
 
 /**
  * True for a hostname that can only be a developer machine or a private network:
- * the loopback interface (`vp run dev`'s docker Postgres), an RFC1918 LAN
- * address, or the Tailnet the shared dev DB lives on — `scripts/dev-db-discover.ts`
- * hands back a `100.64.0.0/10` CGNAT address or a `*.ts.net` name for that one.
+ * the loopback interface (`vp run dev`'s docker Postgres), a Compose service name,
+ * an RFC1918 LAN address, or the Tailnet the shared dev DB lives on —
+ * `scripts/dev-db-discover.ts` hands back a `100.64.0.0/10` CGNAT address or a
+ * `*.ts.net` name for that one.
  *
  * Production Postgres is a Railway host (`*.railway.internal`, or a public proxy
  * hostname), so none of these can match it.
@@ -49,6 +50,14 @@ function getDatabaseHostname(): string | undefined {
 function isPrivateHostname(hostname: string): boolean {
   if (hostname === 'localhost' || hostname.endsWith('.localhost')) return true;
   if (hostname.endsWith('.local') || hostname.endsWith('.ts.net')) return true;
+  // A single-label hostname — `db` (packages/backend/docker-compose.yml),
+  // `postgres` / `postgres-test` (the e2e and test stacks), any other Compose
+  // service name — resolves only through container DNS or /etc/hosts, so it can
+  // never be the production database, which is a multi-label Railway host. This
+  // is the general form of the `postgres` / `postgres-test` entries in
+  // LOCAL_HOST_PATTERN over in ./postgres.ts; the two lists can't be shared
+  // because this module has to stay import-free for instrument.ts.
+  if (!hostname.includes('.') && !hostname.includes(':')) return true;
   // The IPv6 loopback/unspecified forms, plus IPv4's unspecified address, which
   // the octet ranges below deliberately don't cover (0.0.0.0 is its own case, not
   // part of any private block). Keep this check — nothing else catches them.

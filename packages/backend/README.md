@@ -50,7 +50,15 @@ Environment variables:
 | `POSTHOG_HOST`        | `https://us.i.posthog.com`                                        | PostHog ingestion host                                 |
 | `POSTHOG_ENVIRONMENT` | `resolveSentryEnvironment()`                                      | Environment for backend PostHog analytics — see below  |
 
-`POSTHOG_ENVIRONMENT` is an override; unset, the environment comes from `resolveSentryEnvironment()` in `@boardsesh/db/client/config` (the same helper that gates backend Sentry): `SENTRY_ENVIRONMENT` when set, else `production` in any non-dev, non-test runtime, else `NODE_ENV`. **Only a resolved `production` sends** (#3814) — a project key on its own is not enough, so a key that reaches a preview, staging, or local runtime can't pollute the prod project. When the gate closes, the backend logs `[PostHog] Resolved environment '<x>' is not production; backend analytics disabled` at warn.
+`POSTHOG_ENVIRONMENT` is an override; unset, the environment comes from `resolveSentryEnvironment()` in `@boardsesh/db/client/config` — the same helper that gates backend Sentry, so the two SDKs can't disagree about what runtime this is. It resolves in this order:
+
+1. `SENTRY_ENVIRONMENT`, when it names something other than `production` (this is how preview/staging deploys opt out and keep their own name).
+2. `development` (or `NODE_ENV`, when that isn't `production`) for any runtime that **looks local**: `NODE_ENV=development`, the test runner, a GitHub Actions job, or a `DATABASE_URL` pointing at a private host — loopback, a Compose service name, an RFC1918 address, or the tailnet dev DB.
+3. `production` otherwise. Railway prod sets no `NODE_ENV` and connects to a `*.railway.internal` host, so this is the branch it lands on.
+
+Step 2 outranks an explicit `SENTRY_ENVIRONMENT=production`: the production DSN is a hardcoded fallback, so a prod env file copied onto a laptop would otherwise be enough to make it report as prod. There is deliberately no env var that re-opens production reporting from a laptop or a CI runner — point `SENTRY_DSN` at a scratch project to smoke-test the wiring instead.
+
+**Only a resolved `production` sends** (#3814) — a project key on its own is not enough, so a key that reaches a preview, staging, or local runtime can't pollute the prod project. When the gate closes, the backend logs `[PostHog] Resolved environment '<x>' is not production; backend analytics disabled` at warn. The backend also logs its resolved Sentry environment at startup.
 
 ## Network Setup
 

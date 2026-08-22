@@ -55,10 +55,18 @@ describe('production Sentry gate', () => {
     expect(isProductionSentryEnvironment()).toBe(false);
   });
 
-  // e2e jobs run that same `start` script on a runner, against a throwaway
-  // Postgres service whose hostname says nothing about the environment.
+  // Inside Compose the database is reached by service name, which no IP range
+  // catches — `db` in packages/backend/docker-compose.yml, `postgres` in e2e.
+  it('stays out of production for a Compose service hostname', () => {
+    stubRuntime({ DATABASE_URL: 'postgresql://postgres:postgres@db:5432/boardsesh_backend' });
+
+    expect(isProductionSentryEnvironment()).toBe(false);
+  });
+
+  // e2e jobs run that same `start` script on a runner; the CI signal covers it
+  // even when the database hostname alone wouldn't.
   it('stays out of production on a GitHub Actions runner', () => {
-    stubRuntime({ GITHUB_ACTIONS: 'true', DATABASE_URL: 'postgresql://postgres:password@postgres:5432/main' });
+    stubRuntime({ GITHUB_ACTIONS: 'true', DATABASE_URL: RAILWAY_DATABASE_URL });
 
     expect(isProductionSentryEnvironment()).toBe(false);
   });
