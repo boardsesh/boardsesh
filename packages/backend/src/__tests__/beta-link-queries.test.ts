@@ -138,6 +138,7 @@ import {
   betaLinkQueries,
   warmRecentBetaLinksCache,
   invalidateRecentBetaLinksCache,
+  resetRecentBetaLinksFallbackForTests,
 } from '../graphql/resolvers/beta-videos/queries';
 
 type Row = {
@@ -338,6 +339,10 @@ describe('recentBetaLinks resolver', () => {
     // underlying CTE on every call. Individual tests opt-in to a connected
     // mock when they want to exercise cache hit/miss behaviour.
     redisConnectedMock.mockReturnValue(false);
+    // With no Redis the resolver keeps a process-local copy for 10 minutes
+    // (#4463), which would otherwise answer the next test from the previous
+    // test's fixture instead of hitting `executeMock`.
+    resetRecentBetaLinksFallbackForTests();
   });
 
   // The CTE-based resolver returns flat snake_case rows from `db.execute` and
@@ -593,6 +598,9 @@ describe('recentBetaLinks Redis cache', () => {
     redisSetMock.mockReset();
     redisDelMock.mockReset();
     redisConnectedMock.mockReturnValue(true);
+    // The Redis-less branch keeps a process-local copy for 10 minutes (#4463);
+    // clear it so the one test here that disconnects Redis still reaches the CTE.
+    resetRecentBetaLinksFallbackForTests();
   });
 
   it('returns cached rows without running the CTE on hit', async () => {

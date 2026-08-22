@@ -19,6 +19,7 @@ import {
 } from '../../../lib/beta-link-thumbnails';
 import { redisClientManager } from '../../../redis/client';
 import { logger } from '../../../utils/logger';
+import { singleFlight } from '../../../utils/single-flight';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { applyRateLimit, requireAuthenticated } from '../shared/helpers';
 
@@ -351,6 +352,20 @@ async function runRecentBetaLinksQuery(): Promise<CachedRecentBetaLinkRow[]> {
  * and writes the result back. On Redis unavailable, runs the CTE inline
  * (same fall-through pattern as `getPopularConfigs` in social/boards.ts).
  */
+const RECENT_BETA_LINKS_FLIGHT_KEY = 'recent-beta-links';
+
+/**
+ * Redis-less fallback, mirroring `getPopularConfigs`. Never read or written
+ * when a shared cache is available, so production behaviour is unchanged.
+ */
+const LOCAL_FALLBACK_TTL_MS = 10 * 60 * 1000;
+let localFallbackRows: { rows: CachedRecentBetaLinkRow[]; expiresAt: number } | null = null;
+
+/** Test-only: drop the Redis-less fallback so one test cannot leak into the next. */
+export function resetRecentBetaLinksFallbackForTests(): void {
+  localFallbackRows = null;
+}
+
 async function getCachedRecentBetaLinks(): Promise<CachedRecentBetaLinkRow[]> {
   if (redisClientManager.isRedisConnected()) {
     try {
@@ -362,19 +377,33 @@ async function getCachedRecentBetaLinks(): Promise<CachedRecentBetaLinkRow[]> {
     } catch (err) {
       logger.error('[RecentBetaLinks] Redis read failed:', err);
     }
+  } else if (localFallbackRows && localFallbackRows.expiresAt > Date.now()) {
+    return localFallbackRows.rows;
   }
 
-  const rows = await runRecentBetaLinksQuery();
+  // Same pool-exhaustion hazard as popularBoardConfigs (#4463): the other half
+  // of the home page's cold read. One in-flight copy per process, joined by
+  // every concurrent caller.
+  return singleFlight(RECENT_BETA_LINKS_FLIGHT_KEY, async () => {
+    const rows = await runRecentBetaLinksQuery();
 
-  if (redisClientManager.isRedisConnected()) {
-    try {
-      const { publisher } = redisClientManager.getClients();
-      await publisher.set(RECENT_BETA_LINKS_REDIS_KEY, JSON.stringify(rows), 'EX', RECENT_BETA_LINKS_REDIS_TTL_SECONDS);
-    } catch (err) {
-      logger.error('[RecentBetaLinks] Redis write failed:', err);
+    if (redisClientManager.isRedisConnected()) {
+      try {
+        const { publisher } = redisClientManager.getClients();
+        await publisher.set(
+          RECENT_BETA_LINKS_REDIS_KEY,
+          JSON.stringify(rows),
+          'EX',
+          RECENT_BETA_LINKS_REDIS_TTL_SECONDS,
+        );
+      } catch (err) {
+        logger.error('[RecentBetaLinks] Redis write failed:', err);
+      }
+    } else {
+      localFallbackRows = { rows, expiresAt: Date.now() + LOCAL_FALLBACK_TTL_MS };
     }
-  }
-  return rows;
+    return rows;
+  });
 }
 
 /**
@@ -424,6 +453,9 @@ export async function warmRecentBetaLinksCache(): Promise<void> {
  * never blocks the calling mutation.
  */
 export async function invalidateRecentBetaLinksCache(): Promise<void> {
+  // Drop the Redis-less copy too, or a dev/CI server would serve the pre-save
+  // strip for up to LOCAL_FALLBACK_TTL_MS after a new link lands.
+  localFallbackRows = null;
   if (!redisClientManager.isRedisConnected()) return;
   try {
     const { publisher } = redisClientManager.getClients();
