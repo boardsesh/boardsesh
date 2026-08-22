@@ -263,7 +263,8 @@ export async function GET(request: NextRequest) {
     }
 
     const queueT0 = performance.now();
-    // 0 for a coalesced request: it waited on another render, not on a slot.
+    // Time spent waiting before this request's own work could start: a slot for
+    // the request that renders, the whole shared render for one that coalesces.
     let queueMs = 0;
     const inFlight = inFlightRenders.get(byteKey);
     const renderPromise =
@@ -287,6 +288,7 @@ export async function GET(request: NextRequest) {
     if (!inFlight) inFlightRenders.set(byteKey, renderPromise);
 
     const rendered = await renderPromise;
+    if (inFlight) queueMs = performance.now() - queueT0;
 
     byteCache.set(byteKey, { buffer: rendered.buffer, contentType: rendered.contentType });
 

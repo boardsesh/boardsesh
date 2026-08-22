@@ -18,6 +18,13 @@ let configured = false;
  * limit instead of to core count. Route-level only — the long-running backend
  * renderer keeps libvips' defaults.
  *
+ * Both settings are process-global, not per-instance: they apply to every sharp
+ * call in whatever process runs this module. That is exactly what we want on
+ * Vercel, where each function gets its own isolated process, and it is
+ * currently a no-op elsewhere — `/api/internal/board-render` is the only route
+ * in `packages/web` that imports sharp at all. Anything else that starts using
+ * sharp in this app shares these limits, so give it a look first.
+ *
  * Idempotent: safe to call from any module's top level.
  */
 export function configureSharpForServerless(): void {
