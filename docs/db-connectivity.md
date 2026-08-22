@@ -110,8 +110,8 @@ rather than an error.
 
 `packages/web/app/lib/db/read-deadline.ts` bounds one read client-side. It races
 the pending query against a timer and rejects with `DbReadTimeoutError`
-(`code: 'DB_READ_TIMEOUT'`) when the timer wins. It is wired at the four
-front-door reads only — the two statements behind `getClimb`, the all-angles
+(`code: 'DB_READ_TIMEOUT'`) when the timer wins. It is wired at four
+front-door reads — the two statements behind `getClimb`, the all-angles
 stats select, and the shared climb search — and deliberately **not** inside
 `withConnectRetry` or `packages/db`, where it would change behaviour for the
 backend, the sync runners and every script.
@@ -139,6 +139,18 @@ puts one deadline timestamp in React's per-render `cache` scope and hands each
 read whatever the earlier ones left, floored at 500 ms. Outside a render scope
 (scripts, unit tests) React's `cache` is a passthrough and each read gets its own
 deadline.
+
+**Since #4650 the same helper also wraps four more reads: the unauthenticated
+OG image routes**, one `withReadDeadline` call around each route's whole DB
+phase — `og-setter`, `og-profile`, `og-playlist`, `og-session` (`/api/og/climb`
+needs nothing; its `getClimb` read is already covered above). Those add a
+third outcome to the table below: a timed-out or rejected OG read does not
+404 or 500, it redirects to `/opengraph-image` — the existing DB-free branded
+card — with a 60 s CDN `s-maxage`. Unfurlers render nothing on a bare 5xx and
+cache that failed scrape for days, so a degraded-but-present card beats a
+blank embed for that whole window, and the short `s-maxage` lets the CDN
+answer a burst of scraper retries during the brownout without sending each
+one at the database.
 
 ### What the reader sees when it fires
 
