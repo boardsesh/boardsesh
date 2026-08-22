@@ -15,6 +15,14 @@
  *    entry disk doesn't" direction — this is the one a subset-only check
  *    (`expect(derived).toContain(...)`) would silently survive, which is why
  *    both directions are asserted.
+ *  - A Vercel cron target labelled as if in-repo code called it reds a third
+ *    check, which reads the schedules out of vercel.json rather than trusting
+ *    the comment next to the row. Set equality alone never looks at verdicts.
+ *
+ * This file reads the API tree with readdirSync at run time, so nothing
+ * relates it to a route-file diff in test-default's `--changed` run. It is
+ * run unfiltered by the `rest-surface` job in .github/workflows/ci.yml —
+ * without that job the guarantees above only hold post-merge on main.
  *
  * `keep-external` = published surface with no in-repo runtime caller by
  * design (an ESP32 firmware target, a documented `/api/v1/*` route, a Vercel
@@ -24,7 +32,7 @@
  * delete" — see issue #1889 for the full reasoning per route.
  */
 import { describe, expect, it } from 'vite-plus/test';
-import { readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -55,11 +63,15 @@ const VERDICTS: Record<string, Verdict> = {
   // NODE_ENV=development) — the only machine-readable way to confirm which
   // QA notes a running dev server started with.
   'app/api/internal/dev-metadata/route.ts': 'keep-external',
+  // Vercel cron targets. Their only trigger is Vercel's scheduler reading
+  // packages/web/vercel.json — no in-repo code ever calls them, which is the
+  // intended steady state, not evidence of deadness. Pinned against that file
+  // by `classifies every Vercel cron target as an external surface` below.
+  'app/api/internal/cleanup/route.ts': 'keep-external',
+  'app/api/internal/prewarm-heatmap/[board_name]/route.ts': 'keep-external',
+  'app/api/internal/profile-percentiles/route.ts': 'keep-external',
+  'app/api/internal/refresh-sitemap-climbs/route.ts': 'keep-external',
   'app/api/internal/beta-link-thumbnail/route.ts': 'keep-caller',
-  'app/api/internal/cleanup/route.ts': 'keep-caller',
-  'app/api/internal/prewarm-heatmap/[board_name]/route.ts': 'keep-caller',
-  'app/api/internal/profile-percentiles/route.ts': 'keep-caller',
-  'app/api/internal/refresh-sitemap-climbs/route.ts': 'keep-caller',
   'app/api/internal/revalidate-climb/route.ts': 'keep-caller',
   'app/api/internal/climb-search-cache/revalidate/route.ts': 'keep-caller',
   'app/api/internal/controllers/route.ts': 'keep-caller',
@@ -116,6 +128,31 @@ function toWebRelative(absolutePath: string): string {
     .join('/');
 }
 
+type VercelConfig = { crons?: { path: string }[] };
+
+function readCronPaths(): string[] {
+  const config = JSON.parse(readFileSync(join(WEB_ROOT, 'vercel.json'), 'utf8')) as VercelConfig;
+  return (config.crons ?? []).map((cron) => cron.path);
+}
+
+/**
+ * Resolve a scheduled URL (`/api/internal/prewarm-heatmap/kilter`) to the route
+ * key that serves it (`app/api/internal/prewarm-heatmap/[board_name]/route.ts`),
+ * treating a `[param]` segment as a wildcard. Returns undefined when no route
+ * file can serve the schedule at all.
+ */
+function routeKeyForCronPath(cronPath: string, routeKeys: string[]): string | undefined {
+  const urlSegments = cronPath.replace(/^\//, '').split('/');
+  return routeKeys.find((routeKey) => {
+    const routeSegments = routeKey
+      .replace(/^app\//, '')
+      .replace(/\/route\.tsx?$/, '')
+      .split('/');
+    if (routeSegments.length !== urlSegments.length) return false;
+    return routeSegments.every((segment, index) => segment.startsWith('[') || segment === urlSegments[index]);
+  });
+}
+
 describe('REST surface inventory (issue #1889)', () => {
   const derived = new Set(collectRouteFiles(API_ROOT).map(toWebRelative));
   const pinned = new Map(Object.entries(VERDICTS));
@@ -133,6 +170,26 @@ describe('REST surface inventory (issue #1889)', () => {
   it('pins the two never-delete external surfaces', () => {
     expect(pinned.get('app/api/internal/board-render/route.ts')).toBe('keep-external');
     expect(pinned.get('app/api/internal/ws-auth/route.ts')).toBe('keep-external');
+  });
+
+  it('classifies every Vercel cron target as an external surface', () => {
+    // Nothing else reconciles the verdict COLUMN against reality — the two
+    // set-equality checks above only look at keys, so a cron route silently
+    // relabelled `keep-caller` (which is how all four shipped in #4663) would
+    // read as "something in the repo calls this" and invite a future audit to
+    // delete it when the grep comes back empty. The expected list is derived
+    // from vercel.json, so adding a schedule for a route that doesn't exist,
+    // or for one classified as having an in-repo caller, reds.
+    const cronPaths = readCronPaths();
+    expect(cronPaths.length).toBeGreaterThan(0);
+
+    const routeKeys = [...pinned.keys()];
+    const classified = cronPaths.map((cronPath) => {
+      const routeKey = routeKeyForCronPath(cronPath, routeKeys);
+      return { cronPath, verdict: routeKey ? pinned.get(routeKey) : 'no-route-file' };
+    });
+
+    expect(classified).toEqual(cronPaths.map((cronPath) => ({ cronPath, verdict: 'keep-external' })));
   });
 
   it('counts exactly the audited surface', () => {

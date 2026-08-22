@@ -79,6 +79,11 @@ describe('generated OpenAPI document', () => {
     // generated document (never from readdir), so an over-broad delete that
     // also removes a still-registered route file reds this, rather than the
     // check trivially agreeing with itself.
+    //
+    // existsSync is not a static import, so test-default's `--changed` never
+    // relates this spec to the route-file-only diff it guards. The
+    // `rest-surface` job in .github/workflows/ci.yml runs it unfiltered — see
+    // the note in packages/web/app/__tests__/rest-surface-inventory.test.ts.
     const missing = paths.filter((path) => !routeFileExists(path));
     expect(missing).toEqual([]);
   });
