@@ -1,9 +1,11 @@
 import 'server-only';
 
+import * as Sentry from '@sentry/nextjs';
 import type { SimilarClimb } from '@boardsesh/shared-schema';
 import { SIMILAR_CLIMBS_QUERY, type SimilarClimbsResponse } from '@boardsesh/graphql/operations/new-climb-feed';
 import { GET_BETA_LINKS, type GetBetaLinksQueryResponse } from '@boardsesh/graphql/operations/beta-links';
 import { createCachedGraphQLQuery } from '@/app/lib/graphql/server-cached-client';
+import { compactErrorMessage } from '@/app/lib/observability/compact-error';
 import { dedupeBetaLinks, mapBetaLinksResponse, type BetaLink } from '@/app/lib/beta-video-url';
 import type { BoardName } from '@/app/lib/types';
 
@@ -31,6 +33,37 @@ const BETA_LINKS_REVALIDATE_SECONDS = 3600;
  * these two sections are supplementary, the climb itself is not.
  */
 const FRONT_DOOR_BACKEND_TIMEOUT_MS = 3000;
+
+// Once per section per OUTAGE, not per render. A backend wedge fails every
+// climb-view render for as long as it lasts, so one log line says the same
+// thing as ten thousand — but latching it for the process lifetime would turn
+// a broken -> recovered -> broken cycle into a silent second outage. A
+// successful render re-arms the key, so each distinct outage costs exactly
+// one console.error + one Sentry message.
+const reportedFrontDoorFailures = new Set<string>();
+
+function reportFrontDoorOutage(
+  section: 'similar-climbs' | 'beta-links',
+  params: { boardType: BoardName; climbUuid: string },
+  error: unknown,
+): void {
+  if (reportedFrontDoorFailures.has(section)) {
+    return;
+  }
+  reportedFrontDoorFailures.add(section);
+
+  const compactError = compactErrorMessage(error);
+  console.error(`Front door: ${section} unavailable, rendering the section empty`, {
+    boardType: params.boardType,
+    climbUuid: params.climbUuid,
+    error: compactError,
+  });
+  Sentry.captureMessage(`Front door ${section} unavailable: ${compactError}`, 'warning');
+}
+
+function reportFrontDoorRecovered(section: 'similar-climbs' | 'beta-links'): void {
+  reportedFrontDoorFailures.delete(section);
+}
 
 type SimilarClimbsQueryVariables = {
   input: {
@@ -69,13 +102,10 @@ export async function getFrontDoorSimilarClimbs(params: {
         limit: params.limit ?? 10,
       },
     });
+    reportFrontDoorRecovered('similar-climbs');
     return response.similarClimbs ?? [];
   } catch (error) {
-    console.error('Front door: similar climbs unavailable, rendering the section empty', {
-      boardType: params.boardType,
-      climbUuid: params.climbUuid,
-      error,
-    });
+    reportFrontDoorOutage('similar-climbs', params, error);
     return [];
   }
 }
@@ -90,13 +120,10 @@ export async function getFrontDoorBetaLinks(params: { boardType: BoardName; clim
 
   try {
     const response = await query({ boardType: params.boardType, climbUuid: params.climbUuid });
+    reportFrontDoorRecovered('beta-links');
     return dedupeBetaLinks(mapBetaLinksResponse(response.betaLinks ?? []));
   } catch (error) {
-    console.error('Front door: beta links unavailable, rendering the section empty', {
-      boardType: params.boardType,
-      climbUuid: params.climbUuid,
-      error,
-    });
+    reportFrontDoorOutage('beta-links', params, error);
     return [];
   }
 }
