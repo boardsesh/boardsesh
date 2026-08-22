@@ -1,0 +1,75 @@
+name: Refresh Sitemap Tier 2
+
+# Rebuild the materialised tier-2 climb sitemap (`sitemap_tier2_climbs` +
+# `sitemap_tier2_groups`) so /sitemaps/climbs/N.xml reads bounded rows instead of
+# rebuilding the whole ordered catalogue per cold lambda (#4583). Idempotent —
+# one transaction, scoped delete, chunked insert. Safe to re-run.
+#
+# 02:20 UTC, deliberately clear of the 05:30–07:15 UTC database cron cluster
+# (refresh-content-model 05:30 Sun, refresh-recommendations 06:00,
+# refresh-hold-features 06:15, refresh-climb-grades 06:30, plus the 07:00/07:15
+# Monday jobs). Daily rather than 6-hourly: Googlebot refetches a sitemap on the
+# order of days, so sub-daily freshness buys nothing a crawler can observe.
+#
+# STALENESS CONSEQUENCE, stated deliberately: a climb crossing the ten-ascent
+# tier-2 threshold waits up to 24 h for this job, plus up to 5 min of the read
+# path's verdict TTL and up to 6 h of CDN `s-maxage` — worst case ~30 h from the
+# tenth ascent to a submittable URL. The alternative today is that page N costs a
+# full catalogue build, so the trade is deliberate and cheap.
+#
+# Dispatch this by hand immediately after the migration deploys: the tables ship
+# empty, and until the first run the read path takes the (correct, slow) live
+# fallback and says so through `X-Sitemap-Tier2-Source: live`.
+on:
+  schedule:
+    - cron: '20 2 * * *' # 02:20 UTC daily
+  workflow_dispatch:
+
+concurrency:
+  group: refresh-sitemap-tier2
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # DATABASE_URL must be a WRITABLE connection — the same secret the other five
+    # refresh crons use. No new credential, no new pathway.
+    environment: Production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Refresh the tier-2 climb sitemap
+        working-directory: packages/db
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node --import tsx scripts/refresh-sitemap-tier2.ts
+
+      - name: Notify Discord on failure
+        # The other five refresh crons notify nowhere, so a red run is visible
+        # only to whoever opens the Actions tab. The read path's staleness
+        # detector does close the loop — `X-Sitemap-Tier2-Age-Hours` plus a Sentry
+        # event after 36 h — but a 36 h detection lag when five lines gives
+        # minutes is a poor trade. Backfilling the other five is a separate change.
+        if: failure() && github.event_name == 'schedule'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+        run: |
+          if [ -z "${DISCORD_WEBHOOK}" ]; then
+            echo "::warning title=no Discord webhook::DISCORD_DEPLOY_WEBHOOK is unset — the tier-2 sitemap refresh failed with no notification."
+            exit 0
+          fi
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            -d "{\"content\": \"Sitemap tier-2 refresh FAILED. The stored table keeps serving, but it stops getting fresher. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}" \
+            "${DISCORD_WEBHOOK}"

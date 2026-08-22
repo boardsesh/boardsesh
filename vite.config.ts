@@ -107,6 +107,10 @@ export default defineConfig({
     projects: [
       './packages/web/vite.config.ts',
       './packages/backend/vite.config.ts',
+      // `packages/db` was absent from this list entirely, so nothing under it ran
+      // under `vp test` — its own config scopes the project to `src/**` so the
+      // ~20 dormant node:test files in `scripts/` stay dormant (#4583).
+      './packages/db/vite.config.ts',
       './packages/moonboard-ocr/vite.config.ts',
       './packages/board-constants/vite.config.ts',
       './packages/aurora-sync/vite.config.ts',

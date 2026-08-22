@@ -4,6 +4,7 @@ import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { normaliseSetIds } from '@boardsesh/board-config';
 import { rowsFromResult } from '@boardsesh/db/client';
+import { fetchPopularBoardConfigRows } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
@@ -754,105 +755,14 @@ async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
     }
   }
 
-  // Query all per-size configs with climb counts filtered by size edges AND set membership.
-  // A climb counts for a config only if ALL its holds belong to placements in that config's sets.
-  // board_climb_holds.hold_id = board_placements.id (placement ID).
-  // ~31 configs, ~750ms worst case per LATERAL, cached in Redis for 1 year (refreshed on deploy).
-  const result = await db.execute(sql`
-    SELECT
-      configs.board_type,
-      configs.layout_id,
-      bl.name AS layout_name,
-      configs.size_id,
-      bps.name AS size_name,
-      bps.description AS size_description,
-      configs.set_ids,
-      configs.set_names,
-      COALESCE(cc.climb_count, 0) AS climb_count,
-      COALESCE(cc.total_ascents, 0) AS total_ascents,
-      COALESCE(ub_counts.board_count, 0) AS board_count
-    FROM (
-      SELECT
-        psls.board_type,
-        psls.layout_id,
-        psls.product_size_id AS size_id,
-        array_agg(DISTINCT psls.set_id ORDER BY psls.set_id) AS set_ids,
-        array_agg(DISTINCT bs.name ORDER BY bs.name) AS set_names
-      FROM board_product_sizes_layouts_sets psls
-      JOIN board_sets bs ON bs.board_type = psls.board_type AND bs.id = psls.set_id
-      WHERE psls.is_listed = true
-      GROUP BY psls.board_type, psls.layout_id, psls.product_size_id
-    ) configs
-    JOIN board_layouts bl ON bl.board_type = configs.board_type AND bl.id = configs.layout_id
-    JOIN board_product_sizes bps ON bps.board_type = configs.board_type AND bps.id = configs.size_id
-    LEFT JOIN (
-      SELECT
-        ub.board_type,
-        ub.layout_id,
-        ub.size_id,
-        COUNT(*)::int AS board_count
-      FROM user_boards ub
-      WHERE ub.deleted_at IS NULL
-      GROUP BY ub.board_type, ub.layout_id, ub.size_id
-    ) ub_counts
-      ON ub_counts.board_type = configs.board_type
-      AND ub_counts.layout_id = configs.layout_id
-      AND ub_counts.size_id = configs.size_id
-    LEFT JOIN LATERAL (
-      SELECT
-        COUNT(DISTINCT bc.uuid)::int AS climb_count,
-        COALESCE(SUM(bcs.ascensionist_count), 0)::int AS total_ascents
-      FROM board_climbs bc
-      LEFT JOIN board_climb_stats bcs
-        ON bcs.board_type = bc.board_type AND bcs.climb_uuid = bc.uuid
-      WHERE bc.board_type = configs.board_type
-        AND bc.layout_id = configs.layout_id
-        AND bc.is_listed = true
-        AND bc.is_draft = false
-        AND bc.edge_left > bps.edge_left
-        AND bc.edge_right < bps.edge_right
-        AND bc.edge_bottom > bps.edge_bottom
-        AND bc.edge_top < bps.edge_top
-        AND NOT EXISTS (
-          SELECT 1 FROM board_climb_holds bch
-          WHERE bch.climb_uuid = bc.uuid
-            AND bch.board_type = bc.board_type
-            AND NOT EXISTS (
-              SELECT 1 FROM board_placements bp
-              WHERE bp.board_type = bch.board_type
-                AND bp.layout_id = bc.layout_id
-                AND bp.id = bch.hold_id
-                AND bp.set_id = ANY(configs.set_ids)
-            )
-        )
-    ) cc ON true
-    WHERE bl.is_listed = true
-      AND bps.is_listed = true
-    ORDER BY board_count DESC, total_ascents DESC, configs.board_type, bl.name
-  `);
-
-  const rows = rowsFromResult<Record<string, unknown>>(result);
-
-  const configs: CachedPopularConfig[] = rows.map((row) => {
-    const boardType = row.board_type as string;
-    const layoutName = (row.layout_name as string) ?? null;
-    const sizeName = (row.size_name as string) ?? null;
-    const setNames = row.set_names as string[];
-    return {
-      boardType,
-      layoutId: Number(row.layout_id),
-      layoutName,
-      sizeId: Number(row.size_id),
-      sizeName,
-      sizeDescription: (row.size_description as string) ?? null,
-      setIds: (row.set_ids as number[]).map(Number),
-      setNames,
-      climbCount: Number(row.climb_count),
-      totalAscents: Number(row.total_ascents),
-      boardCount: Number(row.board_count),
-      displayName: formatDisplayName(boardType, layoutName, sizeName, setNames),
-    };
-  });
+  // The SQL lives in `@boardsesh/db` because the nightly refresh-sitemap-tier2
+  // job needs the same winning config per layout to build the materialised climb
+  // sitemap (#4583). A second copy here is how the sitemap would come to describe
+  // configurations the site does not serve. Caching stays this resolver's job.
+  const configs: CachedPopularConfig[] = (await fetchPopularBoardConfigRows(db)).map((row) => ({
+    ...row,
+    displayName: formatDisplayName(row.boardType, row.layoutName, row.sizeName, row.setNames),
+  }));
 
   // Store in Redis
   if (redisClientManager.isRedisConnected()) {

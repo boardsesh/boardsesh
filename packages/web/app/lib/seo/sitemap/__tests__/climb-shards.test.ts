@@ -46,6 +46,23 @@ const climbs = vi.hoisted(() => ({
 // three internal paths answered — stored row, stale row, empty-store fallback — is
 // climb-store.test.ts's job; from here it is just "the summary", and every
 // assertion in this file is the same contract it was before the store existed.
+vi.mock('../tier2-table', () => ({
+  // The materialised tables are absent here, so every assertion in this file is
+  // the fallback path — which is the contract it was testing before #4583.
+  fetchTier2TableSummary: async () => null,
+  buildTier2TablePage: async () => null,
+  tier2SourceHeaders: async () => ({ 'X-Sitemap-Tier2-Source': 'live', 'X-Sitemap-Tier2-Reason': 'empty' }),
+  fetchTier2TableVerdict: async () => ({
+    source: 'live',
+    reason: 'empty',
+    groups: [],
+    ageHours: null,
+    warnings: [],
+  }),
+  auditTier2ConfigDrift: async () => {},
+  resetTier2TableStateForTests: () => {},
+}));
+
 vi.mock('../climb-store', () => ({
   fetchClimbShardSummary: async () => {
     if (climbs.summaryThrows) throw new Error('climbs summary unavailable');

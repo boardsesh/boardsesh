@@ -163,16 +163,17 @@ const SITEMAP_DEGRADED_HEADER = 'x-sitemap-degraded';
  * entry can still lose the 3 s deadline once and self-heal on the `after()` warm —
  * a WARN. The shard vanishing without the header saying so is still a FAIL.
  *
- * `climbs` is excluded for a different reason, and the reason is now weaker than
- * it was. Its summary could not meet `SHARD_DEADLINE_MS` at any cache temperature,
- * so production served the index degraded on most requests and asserting it here
- * would have been a permanently red check rather than a detector. #4523 removed
- * that: the summary is a single row of `sitemap_shard_refreshes` now. Promoting it
- * to a `degradable: true` entry is a follow-up rather than part of that change,
- * because the store is empty on the deploy that populates it and the entry would
- * have to be added along with the three assertions below that currently encode
- * "climbs is not required". Until then this list has no view of the largest
- * surface on the site.
+ * `climbs` was excluded for years, and the exclusion outlived its reason. Its
+ * summary could not meet `SHARD_DEADLINE_MS` at any cache temperature, so
+ * production served the index degraded on most requests and asserting it here
+ * would have been a permanently red check rather than a detector — a defensible
+ * call whose effect was that nothing alerted on the site's largest surface. #4523
+ * made the summary a single stored row and #4583 materialised the URLs behind it,
+ * so it is `degradable: false` now: the index has no remaining reason to drop the
+ * largest surface on the site, and if it does, that is a deploy to look at.
+ *
+ * Its `<loc>` is `/sitemaps/climbs/1.xml` because the shard is paged — page 1 is
+ * the entry the index always carries when the shard is present at all.
  *
  * `degradable` is what `X-Sitemap-Degraded` may excuse. `boards` is genuinely
  * transient — a cold cache, a slow backend — and self-heals under the 60s window.
@@ -190,7 +191,16 @@ const REQUIRED_SITEMAP_SHARDS = [
   { id: 'static', loc: 'https://www.boardsesh.com/sitemaps/static.xml', degradable: false },
   { id: 'boards', loc: 'https://www.boardsesh.com/sitemaps/boards.xml', degradable: true },
   { id: 'playlists', loc: 'https://www.boardsesh.com/sitemaps/playlists.xml', degradable: true },
+  { id: 'climbs', loc: 'https://www.boardsesh.com/sitemaps/climbs/1.xml', degradable: false },
 ] as const;
+
+/**
+ * Which path served the climbs shard, per `tier2SourceHeaders`. `live` means the
+ * materialised tier-2 tables were not trusted — empty, or selected by a predicate
+ * the code no longer runs — and the shard fell back to the scan that used to blow
+ * the deadline.
+ */
+const SITEMAP_TIER2_SOURCE_HEADER = 'x-sitemap-tier2-source';
 
 type RequiredSitemapShard = (typeof REQUIRED_SITEMAP_SHARDS)[number];
 
@@ -282,10 +292,23 @@ export const WWW_CHECKS: SmokeCheck[] = [
     },
     degradation: (response) => {
       const declared = declaredDegradedShards(response);
-      if (declared.length === 0) return null;
-      const missing = missingRequiredShards(response).map((shard) => shard.id);
-      const requiredNote = missing.length > 0 ? ` — including the required ${missing.join(', ')}` : '';
-      return `index published WITHOUT ${declared.join(', ')}${requiredNote} (${SITEMAP_DEGRADED_HEADER}: ${declared.join(',')})`;
+      if (declared.length > 0) {
+        const missing = missingRequiredShards(response).map((shard) => shard.id);
+        const requiredNote = missing.length > 0 ? ` — including the required ${missing.join(', ')}` : '';
+        return `index published WITHOUT ${declared.join(', ')}${requiredNote} (${SITEMAP_DEGRADED_HEADER}: ${declared.join(',')})`;
+      }
+
+      // A WARNING rather than a failure, deliberately. The shard is complete and
+      // correct on the live path — just slow, and one cold crawl away from
+      // missing the deadline again. The deploy that ships the migration also
+      // ships empty tables, so failing here would red the very deploy whose
+      // post-merge step is "dispatch Refresh Sitemap Tier 2". What must never be
+      // silent is that it happened.
+      const source = response.headers[SITEMAP_TIER2_SOURCE_HEADER];
+      if (source !== undefined && source !== 'table') {
+        return `climbs shard served from the LIVE scan, not the materialised tier-2 tables (${SITEMAP_TIER2_SOURCE_HEADER}: ${source}) — dispatch the "Refresh Sitemap Tier 2" workflow`;
+      }
+      return null;
     },
   },
   {

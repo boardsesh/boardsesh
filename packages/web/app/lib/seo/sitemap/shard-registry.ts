@@ -4,6 +4,7 @@ import { absoluteUrl } from '@/app/lib/seo/base-url';
 import { boardConfigsToItems } from './board-entries';
 import { buildTier2ClimbItems } from './climb-query';
 import { fetchClimbShardSummary } from './climb-store';
+import { buildTier2TablePage, tier2SourceHeaders } from './tier2-table';
 import {
   allLocalesUrlCount,
   expandAllLocales,
@@ -267,6 +268,12 @@ export type PagedSitemapShard = {
   /** The index calls this, never `buildPage`. Raced against `SHARD_DEADLINE_MS`. */
   summary: () => Promise<PagedShardSummary>;
   buildPage: (page: number) => Promise<PagedShardPage>;
+  /**
+   * Headers naming which path served this shard, set on the index AND on every
+   * page. Never allowed to fail the response — a diagnostic that can 503 the
+   * thing it diagnoses is worse than no diagnostic.
+   */
+  responseHeaders?: () => Promise<Record<string, string>>;
 };
 
 export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
@@ -281,16 +288,25 @@ export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
     expectsUrls: true,
     cacheControl: CLIMB_CACHE_CONTROL,
     summary: () => fetchClimbShardSummary(),
-    // Still the live grouped build, deliberately. #4523 materialised the SUMMARY
-    // only, because the reported bug is the INDEX dropping this shard. Page N
-    // therefore still costs the whole ordered list (51 s cold in production) —
-    // that is the follow-up the store's shape is designed to grow into, and it is
-    // additive: a `sitemap_climb_urls` table replaces these four lines.
+    /**
+     * Two bounded range scans over `sitemap_tier2_climbs`, or the live grouped
+     * build when the table cannot be trusted (#4583).
+     *
+     * The fallback is the shape this replaced: it builds the ENTIRE ordered list
+     * before it can slice page N — measured at 27.4 s for a genuinely cold
+     * production page fetch on 2026-08-21 — so on a cold crawl across N lambdas
+     * the cost really is N full builds. The table path pays one PK-prefix index
+     * range scan of at most `CLIMB_URLS_PER_SHARD` rows instead.
+     */
     buildPage: async (page: number) => {
+      const fromTable = await buildTier2TablePage(page, CLIMB_URLS_PER_SHARD);
+      if (fromTable) return fromTable;
+
       const items = await buildTier2ClimbItems();
       const start = (page - 1) * CLIMB_URLS_PER_SHARD;
       return { items: items.slice(start, start + CLIMB_URLS_PER_SHARD), totalItems: items.length };
     },
+    responseHeaders: () => tier2SourceHeaders(),
   },
 ];
 
@@ -376,7 +392,26 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
     return unavailableResponse();
   }
 
-  return xmlResponse(body, shard.cacheControl);
+  return xmlResponse(body, shard.cacheControl, await safeShardHeaders(shard));
+}
+
+/**
+ * A shard's diagnostic headers, or none. Swallows a failure on purpose: these
+ * exist so a degradation is legible from a `curl -I`, and a diagnostic that can
+ * take down the response it annotates would be a worse bug than the one it
+ * reports.
+ */
+async function safeShardHeaders(shard: PagedSitemapShard): Promise<Record<string, string> | undefined> {
+  if (!shard.responseHeaders) return undefined;
+  try {
+    return await shard.responseHeaders();
+  } catch (err) {
+    console.error(
+      `[sitemap] paged shard "${shard.id}" could not describe its source:`,
+      err instanceof Error ? err.message : err,
+    );
+    return undefined;
+  }
 }
 
 /**
@@ -605,10 +640,23 @@ export async function buildSitemapIndexXml(): Promise<SitemapIndexResult> {
 export async function sitemapIndexRouteHandler(): Promise<Response> {
   try {
     const { xml, degradedShards } = await buildSitemapIndexXml();
-    if (degradedShards.length === 0) {
-      return xmlResponse(xml);
+    // Every paged shard gets to say which path answered it, degraded or not.
+    // `climbs` is the one that does today (`X-Sitemap-Tier2-Source`): the index
+    // no longer drops the shard, so "is it being served from the materialised
+    // table or from the live scan" is the question a `curl -I` needs answered,
+    // and it is what the post-deploy smoke asserts.
+    const shardHeaders: Record<string, string> = {};
+    for (const shard of PAGED_SHARD_REGISTRY) {
+      Object.assign(shardHeaders, await safeShardHeaders(shard));
     }
-    return xmlResponse(xml, DEGRADED_CACHE_CONTROL, { [DEGRADED_HEADER]: degradedShards.join(',') });
+
+    if (degradedShards.length === 0) {
+      return xmlResponse(xml, CACHE_CONTROL, shardHeaders);
+    }
+    return xmlResponse(xml, DEGRADED_CACHE_CONTROL, {
+      ...shardHeaders,
+      [DEGRADED_HEADER]: degradedShards.join(','),
+    });
   } catch (err) {
     console.error('[sitemap] index failed to build:', err instanceof Error ? err.message : err);
     return unavailableResponse();

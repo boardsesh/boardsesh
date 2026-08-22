@@ -19,6 +19,26 @@ const live = vi.hoisted(() => ({
   fallbackCalls: 0,
 }));
 
+const tier2Table = vi.hoisted(() => ({
+  /** Non-null once a test wants the materialised tables to answer instead. */
+  summary: null as null | { itemCount: number; lastModified: Date | null },
+  verdictSource: 'live' as 'live' | 'table',
+}));
+
+// #4583 put the materialised tier-2 tables in front of this store. Default here
+// is "table absent", so every existing assertion still describes the store path
+// it was written for; the two tests below flip it to pin the new precedence.
+vi.mock('../tier2-table', () => ({
+  fetchTier2TableSummary: async () => tier2Table.summary,
+  fetchTier2TableVerdict: async () => ({
+    source: tier2Table.verdictSource,
+    reason: tier2Table.verdictSource === 'table' ? 'ok' : 'empty',
+    groups: [],
+    ageHours: null,
+    warnings: [],
+  }),
+}));
+
 vi.mock('../climb-query', () => ({
   computeTier2Summary: async () => {
     live.computeCalls += 1;
@@ -122,6 +142,8 @@ beforeEach(() => {
   store.locked = false;
   store.writes = [];
   store.executed = [];
+  tier2Table.summary = null;
+  tier2Table.verdictSource = 'live';
   resetClimbStoreStateForTests();
 });
 
@@ -182,6 +204,20 @@ describe('reading the climbs shard summary', () => {
 
   it('returns null rather than undefined when the table is empty', async () => {
     expect(await fetchStoredClimbRefresh()).toBeNull();
+  });
+
+  it('prefers the materialised tier-2 tables over this store', async () => {
+    // Precedence matters, not preference: only the tier-2 tables answer from the
+    // same epoch the item build reads, so a count taken from here against rows
+    // taken from there is the `cache epochs disagree` 503 the shard route has to
+    // survive. A fresh stored row must not win over a trusted table.
+    tier2Table.summary = { itemCount: 126_549, lastModified: new Date('2026-08-20T00:00:00.000Z') };
+    store.row = storedRow({ itemCount: 51_842 });
+
+    const summary = await fetchClimbShardSummary();
+
+    expect(summary.itemCount).toBe(126_549);
+    expect(live.fallbackCalls).toBe(0);
   });
 });
 
@@ -314,6 +350,18 @@ describe('the after() self-heal', () => {
     expect(live.computeCalls).toBe(1);
     expect(store.writes).toHaveLength(1);
     warnings.mockRestore();
+  });
+
+  it('does nothing while the materialised tier-2 tables are serving', async () => {
+    // Without this gate the self-heal would run the sixteen `DISTINCT ON` scans
+    // every fifteen minutes per instance to refresh a row the shard never reads.
+    tier2Table.verdictSource = 'table';
+    store.row = null;
+
+    await refreshClimbSummaryIfStale();
+
+    expect(live.computeCalls).toBe(0);
+    expect(store.writes).toHaveLength(0);
   });
 
   it('does nothing when the store is fresh', async () => {

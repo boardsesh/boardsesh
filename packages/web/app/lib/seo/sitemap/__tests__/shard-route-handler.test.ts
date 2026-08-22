@@ -99,6 +99,44 @@ vi.mock('../setter-entries', async (importOriginal) => {
   return { ...actual, buildSetterEntries: () => pureBuilder(actual.buildSetterEntries) };
 });
 
+/**
+ * Default: the materialised tables are absent, so every existing assertion in
+ * this file describes the fallback path it was written for. `serving` flips the
+ * whole shard onto the table, which is what the index and the smoke test care
+ * about after #4583.
+ */
+const tier2Table = vi.hoisted(() => ({ serving: false, headerThrows: false }));
+
+vi.mock('../tier2-table', () => ({
+  fetchTier2TableSummary: async () =>
+    tier2Table.serving ? { itemCount: 25_000, lastModified: new Date('2026-05-04T00:00:00.000Z') } : null,
+  buildTier2TablePage: async (page: number, urlsPerPage: number) =>
+    tier2Table.serving
+      ? {
+          items: Array.from({ length: Math.min(urlsPerPage, 25_000 - (page - 1) * urlsPerPage) }, (_, index) => ({
+            path: `/kilter/1/10/1-20/40/climb/p${page}-${index}/x`,
+            lastModified: new Date('2026-05-04T00:00:00.000Z'),
+          })),
+          totalItems: 25_000,
+        }
+      : null,
+  tier2SourceHeaders: async () => {
+    if (tier2Table.headerThrows) throw new Error('verdict unavailable');
+    return tier2Table.serving
+      ? { 'X-Sitemap-Tier2-Source': 'table' }
+      : { 'X-Sitemap-Tier2-Source': 'live', 'X-Sitemap-Tier2-Reason': 'empty' };
+  },
+  fetchTier2TableVerdict: async () => ({
+    source: tier2Table.serving ? 'table' : 'live',
+    reason: tier2Table.serving ? 'ok' : 'empty',
+    groups: [],
+    ageHours: null,
+    warnings: [],
+  }),
+  auditTier2ConfigDrift: async () => {},
+  resetTier2TableStateForTests: () => {},
+}));
+
 vi.mock('../climb-store', () => ({
   fetchClimbShardSummary: async () => {
     if (climbSummary.hang) {
@@ -118,7 +156,7 @@ vi.mock('../climb-query', () => ({
   buildTier2ClimbItems: async () => [],
 }));
 
-const { SHARD_DEADLINE_MS, buildSitemapIndexXml, shardRouteHandler, sitemapIndexRouteHandler } =
+const { SHARD_DEADLINE_MS, buildSitemapIndexXml, pagedShardRouteHandler, shardRouteHandler, sitemapIndexRouteHandler } =
   await import('../shard-registry');
 
 let errors: string[] = [];
@@ -148,6 +186,7 @@ afterEach(() => {
   Object.assign(playlistRows, { count: 1, shouldThrow: false, hang: false, delayMs: 0 });
   Object.assign(climbSummary, { itemCount: 25_000, shouldThrow: false, hang: false, delayMs: 0 });
   Object.assign(pureBuilders, { shouldThrow: false, hang: false, delayMs: 0 });
+  Object.assign(tier2Table, { serving: false, headerThrows: false });
   vi.restoreAllMocks();
 });
 
@@ -213,6 +252,33 @@ describe('shardRouteHandler', () => {
     const response = await shardRouteHandler('playlists');
 
     expect(response.status).toBe(200);
+  });
+});
+
+describe('the paged climbs route', () => {
+  it('serves the page out of the materialised table and names it on the response', async () => {
+    // The half of #4583 that #4523 did not fix. Without the table read, page N
+    // costs the whole ordered catalogue — 27.4 s on a cold production lambda —
+    // and the fallback build here returns nothing at all, so this is also the
+    // assertion that the table path is actually reached rather than bypassed.
+    tier2Table.serving = true;
+
+    const response = await pagedShardRouteHandler('climbs', '1.xml');
+    const xml = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(xml).toContain('/p1-0/');
+    expect(response.headers.get('x-sitemap-tier2-source')).toBe('table');
+  });
+
+  it('falls back to the live build when the table is not serving', async () => {
+    // The fallback builder is stubbed empty here, and `expectsUrls` is true for
+    // climbs, so "fell back" is observable as the fail-closed 503 rather than as
+    // a short 200 that would tell Google those URLs were deleted.
+    const response = await pagedShardRouteHandler('climbs', '1.xml');
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get('x-sitemap-tier2-source')).toBeNull();
   });
 });
 
@@ -282,6 +348,42 @@ describe('buildSitemapIndexXml', () => {
     // Named on the response, not only in a log line: a silent partial index is
     // what would make the post-deploy smoke that caught #4476 permanently green.
     expect(degraded.headers.get('x-sitemap-degraded')).toBe('boards');
+  });
+
+  it('lists the climbs shard and names the table that served it', async () => {
+    // The end-to-end oracle for #4583's definition of done: with the
+    // materialised tables populated, the index carries every climbs page, drops
+    // nothing, and says on the response which path answered — which is what the
+    // post-deploy smoke asserts and what a `curl -I` shows.
+    tier2Table.serving = true;
+
+    const response = await sitemapIndexRouteHandler();
+    const xml = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(xml).toContain('/sitemaps/climbs/1.xml');
+    expect(xml).toContain('/sitemaps/climbs/3.xml');
+    expect(response.headers.get('x-sitemap-degraded')).toBeNull();
+    expect(response.headers.get('cache-control')).toBe(FULL_CACHE_CONTROL);
+    expect(response.headers.get('x-sitemap-tier2-source')).toBe('table');
+  });
+
+  it('names the live fallback on the response when the table is not serving', async () => {
+    const response = await sitemapIndexRouteHandler();
+    expect(response.headers.get('x-sitemap-tier2-source')).toBe('live');
+    expect(response.headers.get('x-sitemap-tier2-reason')).toBe('empty');
+  });
+
+  it('still publishes the index when the source header cannot be resolved', async () => {
+    // A diagnostic that can take down the response it annotates would be a worse
+    // bug than the one it reports.
+    tier2Table.headerThrows = true;
+
+    const response = await sitemapIndexRouteHandler();
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('/sitemaps/static.xml');
+    expect(response.headers.get('x-sitemap-tier2-source')).toBeNull();
   });
 
   it('applies the same degraded response contract to the paged climbs summary', async () => {

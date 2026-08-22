@@ -1,61 +1,17 @@
 import { toBoardName } from '@boardsesh/board-config';
+import { chooseWinningConfigPerLayout, type ClimbConfigGroup, type ClimbSitemapRow } from '@boardsesh/db/queries';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { tryConstructSlugViewUrl } from '@/app/lib/url-utils';
 import type { SitemapItem } from './entries';
 
 /**
- * The board configuration a climb's sitemap URL is built from.
- *
- * Size and set ids are NOT properties of a climb — `board_climbs` carries
- * `board_type`, `layout_id`, `compatible_size_ids[]` and `required_set_ids[]`,
- * and a climb renders on many configurations. The sitemap therefore has to
- * *choose* one per climb, and it chooses per `(board_type, layout_id)` group so
- * a climb's URL never depends on which query happened to reach it first.
+ * Re-exported rather than re-declared. Both types moved to `@boardsesh/db` with
+ * the tier-2 query builders (#4583) so the nightly refresh job and this read path
+ * describe the same rows; every existing importer keeps its `./climb-entries`
+ * import path.
  */
-export type ClimbConfigGroup = {
-  boardType: string;
-  layoutId: number;
-  sizeId: number;
-  setIds: number[];
-};
-
-/** One tier-2 row: the climb, at the one angle the shard publishes. */
-export type ClimbSitemapRow = {
-  uuid: string;
-  name: string | null;
-  angle: number;
-  updatedAt: Date;
-};
-
-/** Stable id for a `(board_type, layout_id)` group. */
-function groupKey(boardType: string, layoutId: number): string {
-  return `${boardType}:${layoutId}`;
-}
-
-/** Numeric lexicographic order for the already-sorted set-id arrays. */
-function isLowerSetIdList(candidate: readonly number[], incumbent: readonly number[]): boolean {
-  const sharedLength = Math.min(candidate.length, incumbent.length);
-
-  for (let index = 0; index < sharedLength; index += 1) {
-    if (candidate[index] !== incumbent[index]) return candidate[index] < incumbent[index];
-  }
-
-  return candidate.length < incumbent.length;
-}
-
-/**
- * The winner is the config with the most physical boards, then the most listed
- * climbs, then the lowest size id, then the lowest set-id list. Determinism is
- * the point, not the ranking: an unstable pick churns the whole emitted set between crawls
- * and teaches Google that every climb URL is ephemeral.
- */
-function isBetterConfig(candidate: PopularBoardConfig, incumbent: PopularBoardConfig): boolean {
-  if (candidate.boardCount !== incumbent.boardCount) return candidate.boardCount > incumbent.boardCount;
-  if (candidate.climbCount !== incumbent.climbCount) return candidate.climbCount > incumbent.climbCount;
-  if (candidate.sizeId !== incumbent.sizeId) return candidate.sizeId < incumbent.sizeId;
-  return isLowerSetIdList(candidate.setIds, incumbent.setIds);
-}
+export type { ClimbConfigGroup, ClimbSitemapRow };
 
 /**
  * One config per `(board_type, layout_id)`, ordered deterministically.
@@ -73,30 +29,7 @@ function isBetterConfig(candidate: PopularBoardConfig, incumbent: PopularBoardCo
  * count, and it is what the branch-time reconciliation measures.
  */
 export function resolveClimbSitemapGroups(configs: readonly PopularBoardConfig[]): ClimbConfigGroup[] {
-  const best = new Map<string, PopularBoardConfig>();
-
-  for (const config of configs) {
-    if (!toBoardName(config.boardType)) continue;
-    if (config.climbCount <= 0) continue;
-
-    const key = groupKey(config.boardType, config.layoutId);
-    const incumbent = best.get(key);
-    if (!incumbent || isBetterConfig(config, incumbent)) {
-      best.set(key, config);
-    }
-  }
-
-  return [...best.values()]
-    .map((config) => ({
-      boardType: config.boardType,
-      layoutId: config.layoutId,
-      sizeId: config.sizeId,
-      setIds: config.setIds,
-    }))
-    .filter((group) => isResolvableGroup(group))
-    .sort((left, right) =>
-      left.boardType === right.boardType ? left.layoutId - right.layoutId : left.boardType < right.boardType ? -1 : 1,
-    );
+  return chooseWinningConfigPerLayout(configs).filter((group) => isResolvableGroup(group));
 }
 
 /**

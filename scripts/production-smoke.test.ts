@@ -90,8 +90,32 @@ describe('www production smoke checks', () => {
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/playlists.xml</loc></sitemap>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
       '</sitemapindex>';
     expect(check.assert(response({ contentType: 'application/xml', body: healthyIndex }))).toBeNull();
+
+    // #4583 re-armed `climbs`. It sat out of the required list because its
+    // summary could not meet the 3 s deadline, so asserting it would have been
+    // permanently red — and the effect was that 53,262 URLs went missing from the
+    // index for weeks with nothing to say so. Materialised, there is no longer a
+    // reason for the index to drop it, and no header excuses it: `degradable`
+    // is false, so a named drop is still a failure.
+    const withoutClimbs =
+      '<sitemapindex>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/playlists.xml</loc></sitemap>' +
+      '</sitemapindex>';
+    expect(check.assert(response({ contentType: 'application/xml', body: withoutClimbs }))).toMatch(/climbs/);
+    expect(
+      check.assert(
+        response({
+          contentType: 'application/xml',
+          body: withoutClimbs,
+          headers: { 'x-sitemap-degraded': 'climbs' },
+        }),
+      ),
+    ).toMatch(/climbs/);
 
     // #4524: `playlists` was excluded from the required list as "legitimately
     // empty". It is not — production serves 2,688 public playlists holding a
@@ -101,6 +125,7 @@ describe('www production smoke checks', () => {
       '<sitemapindex>' +
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
       '</sitemapindex>';
     expect(check.assert(response({ contentType: 'application/xml', body: withoutPlaylists }))).toMatch(/playlists/);
 
@@ -130,6 +155,43 @@ describe('www production smoke checks', () => {
     );
   });
 
+  it('warns when the climbs shard fell back to the live scan', () => {
+    // The detector for "someone changed the tier-2 predicate and nobody re-ran
+    // the job", and for a cron that died. A WARNING, not a failure: the shard is
+    // complete on the live path, and the deploy that ships the migration also
+    // ships empty tables, so failing here would red the very deploy whose
+    // post-merge step is to dispatch the refresh.
+    const check = checkNamed('sitemap index');
+    const healthy =
+      '<sitemapindex>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/playlists.xml</loc></sitemap>' +
+      '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
+      '</sitemapindex>';
+
+    const fromTable = response({
+      contentType: 'application/xml',
+      body: healthy,
+      headers: { 'x-sitemap-tier2-source': 'table' },
+    });
+    expect(check.assert(fromTable)).toBeNull();
+    expect(check.degradation?.(fromTable)).toBeNull();
+
+    const fromLive = response({
+      contentType: 'application/xml',
+      body: healthy,
+      headers: { 'x-sitemap-tier2-source': 'live' },
+    });
+    expect(check.assert(fromLive)).toBeNull();
+    expect(check.degradation?.(fromLive)).toMatch(/LIVE scan/);
+    expect(check.degradation?.(fromLive)).toMatch(/Refresh Sitemap Tier 2/);
+
+    // An older deploy that does not set the header at all is not a degradation.
+    const noHeader = response({ contentType: 'application/xml', body: healthy });
+    expect(check.degradation?.(noHeader)).toBeNull();
+  });
+
   it('warns instead of failing when the index declares which shard it dropped', () => {
     // #4519: `/sitemap.xml` is force-dynamic, so the first request after a deploy
     // rebuilds every shard live and the boards builder can miss the index's 3s
@@ -139,7 +201,11 @@ describe('www production smoke checks', () => {
     const check = checkNamed('sitemap index');
     const withoutBoards = response({
       contentType: 'application/xml',
-      body: '<sitemapindex><sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap></sitemapindex>',
+      body:
+        '<sitemapindex>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
+        '</sitemapindex>',
       headers: { 'x-sitemap-degraded': 'boards,playlists' },
     });
     expect(check.assert(withoutBoards)).toBeNull();
@@ -152,26 +218,30 @@ describe('www production smoke checks', () => {
     // must not become a blanket amnesty for anything absent from the body.
     const wrongShardDeclared = response({
       contentType: 'application/xml',
-      body: '<sitemapindex><sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap></sitemapindex>',
+      body:
+        '<sitemapindex>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
+        '</sitemapindex>',
       headers: { 'x-sitemap-degraded': 'playlists' },
     });
     expect(check.assert(wrongShardDeclared)).toMatch(/boards/);
 
     // A required-but-degradable shard the header names is a warning, and the
     // annotation says which of the dropped shards was a required one — that is
-    // what separates "playlists missed the deadline again" from "climbs is
-    // deliberately not asserted here".
+    // what separates "playlists missed the deadline again" from a hard loss.
     const declaredDegradable = response({
       contentType: 'application/xml',
       body:
         '<sitemapindex>' +
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
         '</sitemapindex>',
-      headers: { 'x-sitemap-degraded': 'playlists,climbs' },
+      headers: { 'x-sitemap-degraded': 'playlists' },
     });
     expect(check.assert(declaredDegradable)).toBeNull();
-    expect(check.degradation?.(declaredDegradable)).toMatch(/playlists, climbs/);
+    expect(check.degradation?.(declaredDegradable)).toMatch(/playlists/);
     expect(check.degradation?.(declaredDegradable)).toMatch(/required playlists/);
 
     // A shard this list does not require at all is worth a warning but is not a
@@ -183,11 +253,12 @@ describe('www production smoke checks', () => {
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/playlists.xml</loc></sitemap>' +
+        '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
         '</sitemapindex>',
-      headers: { 'x-sitemap-degraded': 'climbs' },
+      headers: { 'x-sitemap-degraded': 'gyms' },
     });
     expect(check.assert(optionalOnly)).toBeNull();
-    expect(check.degradation?.(optionalOnly)).toMatch(/climbs/);
+    expect(check.degradation?.(optionalOnly)).toMatch(/gyms/);
     expect(check.degradation?.(optionalOnly)).not.toMatch(/required/);
 
     // The header can never rescue a genuinely broken index: a non-200, a body

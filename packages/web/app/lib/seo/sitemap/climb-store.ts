@@ -3,6 +3,7 @@ import { eq, sql } from 'drizzle-orm';
 import { dbz } from '@/app/lib/db/db';
 import { sitemapShardRefreshes } from '@/app/lib/db/schema';
 import { computeTier2Summary, fetchTier2Summary, type Tier2Summary } from './climb-query';
+import { fetchTier2TableSummary, fetchTier2TableVerdict } from './tier2-table';
 
 /**
  * The precomputed side of the climbs shard: `/sitemap.xml` asks how many climb
@@ -84,10 +85,10 @@ export async function fetchStoredClimbRefresh(): Promise<StoredShardRefresh | nu
 }
 
 /**
- * What the index and the shard route call. Store first, live scan only when the
- * store has nothing to say.
+ * What the index and the shard route call. Materialised tier-2 tables first
+ * (#4583), then this store (#4523), then the live scan.
  *
- * Three cases, all of which happen:
+ * Three cases below the table, all of which happen:
  *
  * - **A fresh row** — the normal path, and the only one that meets the 3 s deadline.
  * - **No row** — a fresh migration, a truncated table, or local dev. Falls back to
@@ -103,6 +104,17 @@ export async function fetchStoredClimbRefresh(): Promise<StoredShardRefresh | nu
  * would be a worse outage than the one this replaced.
  */
 export async function fetchClimbShardSummary(): Promise<Tier2Summary> {
+  // The materialised tier-2 tables first (#4583). They are the only source whose
+  // count describes exactly the rows `/sitemaps/climbs/N.xml` will emit, because
+  // both halves read one epoch — this row-count/item-list split is what the
+  // `cache epochs disagree` guard in the shard registry exists to survive. Null
+  // means the table is empty or predicate-drifted, and `tier2-table.ts` has
+  // already said so loudly; fall through to what #4523 shipped.
+  const fromTable = await fetchTier2TableSummary();
+  if (fromTable) {
+    return fromTable;
+  }
+
   let stored: StoredShardRefresh | null = null;
   try {
     stored = await fetchStoredClimbRefresh();
@@ -298,6 +310,16 @@ export async function refreshClimbSummaryIfStale(): Promise<void> {
   lastSelfHealAt = now;
 
   try {
+    // Nothing to heal while the materialised tier-2 tables are serving: this row
+    // is then a fallback nobody reads, and refreshing it would run the sixteen
+    // `DISTINCT ON` scans every fifteen minutes per instance for an answer the
+    // shard never asks for. It resumes the moment the table stops being trusted,
+    // which is the only time this row matters.
+    const tier2 = await fetchTier2TableVerdict();
+    if (tier2.source === 'table') {
+      return;
+    }
+
     const stored = await fetchStoredClimbRefresh();
     if (stored && now - stored.computedAt.getTime() < SITEMAP_CLIMB_STORE_MAX_AGE_MS) {
       return;

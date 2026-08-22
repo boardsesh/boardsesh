@@ -17,6 +17,22 @@ vi.mock('../climb-store', () => ({
 vi.mock('../climb-query', () => ({
   buildTier2ClimbItems: async () => [],
 }));
+vi.mock('../tier2-table', () => ({
+  // The materialised tables are absent here, so every assertion in this file is
+  // the fallback path — which is the contract it was testing before #4583.
+  fetchTier2TableSummary: async () => null,
+  buildTier2TablePage: async () => null,
+  tier2SourceHeaders: async () => ({ 'X-Sitemap-Tier2-Source': 'live', 'X-Sitemap-Tier2-Reason': 'empty' }),
+  fetchTier2TableVerdict: async () => ({
+    source: 'live',
+    reason: 'empty',
+    groups: [],
+    ageHours: null,
+    warnings: [],
+  }),
+  auditTier2ConfigDrift: async () => {},
+  resetTier2TableStateForTests: () => {},
+}));
 
 const { PAGED_SHARD_REGISTRY, SHARD_REGISTRY } = await import('../shard-registry');
 

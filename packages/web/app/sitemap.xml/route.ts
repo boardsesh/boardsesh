@@ -1,6 +1,7 @@
 import { after } from 'next/server';
 import { refreshClimbSummaryIfStale } from '@/app/lib/seo/sitemap/climb-store';
 import { warmPlaylistSitemapCache } from '@/app/lib/seo/sitemap/playlist-query';
+import { auditTier2ConfigDrift } from '@/app/lib/seo/sitemap/tier2-table';
 import { sitemapIndexRouteHandler } from '@/app/lib/seo/sitemap/shard-registry';
 
 /**
@@ -52,6 +53,14 @@ export async function GET(): Promise<Response> {
   // `withExecuteRevalidates`, where the write is actually executed, which is what
   // turns "heals on some later request" into "heals on this one".
   after(warmPlaylistSitemapCache);
+
+  // Same slot again, and post-flush for the same reason: the tier-2 config
+  // cross-check needs `getAllBoardConfigsOrThrow()`, the ~10 s cold GraphQL fetch
+  // that caused #4519. Keeping it off the request path is the point of the
+  // materialised table (#4583) — it detects a winning-config flip or a group the
+  // table has no rows for, and reports through Sentry and the next response's
+  // `X-Sitemap-Tier2-Drift` header. It never changes what this response served.
+  after(auditTier2ConfigDrift);
 
   return response;
 }

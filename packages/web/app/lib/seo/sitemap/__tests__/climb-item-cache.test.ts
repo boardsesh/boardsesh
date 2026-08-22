@@ -56,7 +56,13 @@ const reads = vi.hoisted(() => ({
   summaryRow: null as null | { itemCount: number; lastModified: string | null },
 }));
 
-vi.mock('@boardsesh/db/queries', () => ({
+// `importOriginal` rather than a bare factory: `climb-query` also imports the
+// real tier-2 query builders and constants from here (#4583 moved them into
+// `@boardsesh/db`), and a factory that returned only `withSerialPlan` would make
+// `MAX_ROWS_PER_GROUP` undefined and the cap warning unreachable. Only the pool
+// seam is stubbed.
+vi.mock('@boardsesh/db/queries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/db/queries')>()),
   withSerialPlan: async () => {
     reads.count += 1;
     reads.inFlight += 1;
