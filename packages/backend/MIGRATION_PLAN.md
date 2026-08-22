@@ -94,20 +94,20 @@ Reimplement Next.js REST APIs as GraphQL queries/mutations. Only endpoints that 
 
 ### 2.4 User Management (High Priority)
 
-| REST Endpoint                           | Backend Operation                        | Status  |
-| --------------------------------------- | ---------------------------------------- | ------- |
-| `GET /api/internal/profile`             | `Query.profile`                          | ✅ DONE |
-| `PUT /api/internal/profile`             | `Mutation.updateProfile(...)`            | ✅ DONE |
-| `POST /api/internal/profile/avatar`     | `Mutation.uploadAvatar(...)`             | TODO    |
-| `GET /api/internal/favorites`           | `Query.favorites(...)`                   | ✅ DONE |
-| `POST /api/internal/favorites`          | `Mutation.toggleFavorite(...)`           | ✅ DONE |
-| `GET /api/aurora-credentials`           | Backend REST + `Query.auroraCredentials` | ✅ DONE |
-| `GET /api/aurora-credentials/unsynced`  | Backend REST                             | ✅ DONE |
-| `POST /api/aurora-credentials`          | Backend REST + shared credential service | ✅ DONE |
-| `DELETE /api/aurora-credentials`        | Backend REST + shared credential service | ✅ DONE |
-| `POST /api/board-credentials/kilter/*`  | Backend REST OAuth handoff/finalize      | ✅ DONE |
-| `GET /api/internal/user-board-mapping`  | n/a — route deleted in W-19 (#4437)      | ❌ GONE |
-| `POST /api/internal/user-board-mapping` | n/a — route deleted in W-19 (#4437)      | ❌ GONE |
+| REST Endpoint                           | Backend Operation                        | Status                                                                                                                         |
+| --------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/internal/profile`             | `Query.profile`                          | ⚠️ GraphQL exists, REST still live — `/settings` (`settings-page-content.tsx`) has no GraphQL caller yet, not decommissionable |
+| `PUT /api/internal/profile`             | `Mutation.updateProfile(...)`            | ✅ DONE — zero REST callers, superseded (see #1889)                                                                            |
+| `POST /api/internal/profile/avatar`     | `Mutation.uploadAvatar(...)`             | TODO                                                                                                                           |
+| `GET /api/internal/favorites`           | `Query.favorites(...)`                   | ✅ DONE                                                                                                                        |
+| `POST /api/internal/favorites`          | `Mutation.toggleFavorite(...)`           | ✅ DONE                                                                                                                        |
+| `GET /api/aurora-credentials`           | Backend REST + `Query.auroraCredentials` | ✅ DONE                                                                                                                        |
+| `GET /api/aurora-credentials/unsynced`  | Backend REST                             | ✅ DONE                                                                                                                        |
+| `POST /api/aurora-credentials`          | Backend REST + shared credential service | ✅ DONE                                                                                                                        |
+| `DELETE /api/aurora-credentials`        | Backend REST + shared credential service | ✅ DONE                                                                                                                        |
+| `POST /api/board-credentials/kilter/*`  | Backend REST OAuth handoff/finalize      | ✅ DONE                                                                                                                        |
+| `GET /api/internal/user-board-mapping`  | n/a — route deleted in W-19 (#4437)      | ❌ GONE                                                                                                                        |
+| `POST /api/internal/user-board-mapping` | n/a — route deleted in W-19 (#4437)      | ❌ GONE                                                                                                                        |
 
 ### 2.5 Endpoints Staying in Next.js
 

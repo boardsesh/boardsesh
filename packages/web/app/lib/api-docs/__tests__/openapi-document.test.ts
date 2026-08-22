@@ -1,9 +1,25 @@
 import { describe, expect, it } from 'vite-plus/test';
+import { existsSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as openApiRegistry from '../openapi-registry';
 import { generateOpenApiDocument } from '../generate-openapi';
 
 const document = generateOpenApiDocument();
 const paths = Object.keys(document.paths ?? {});
+
+// packages/web/app/lib/api-docs/__tests__ -> packages/web
+const WEB_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
+
+/** `/api/v1/{board_name}/grades` -> `app/api/v1/[board_name]/grades` */
+function toRouteDir(path: string): string {
+  return join('app', path.replace(/\{([^}]+)\}/g, '[$1]'));
+}
+
+function routeFileExists(path: string): boolean {
+  const dir = toRouteDir(path);
+  return existsSync(join(WEB_ROOT, dir, 'route.ts')) || existsSync(join(WEB_ROOT, dir, 'route.tsx'));
+}
 
 describe('generated OpenAPI document', () => {
   it('publishes no Aurora proxy operation', () => {
@@ -53,5 +69,17 @@ describe('generated OpenAPI document', () => {
     // Delete-safety half: an over-broad edit that empties the spec reds here.
     expect(paths.length).toBeGreaterThan(10);
     expect(paths).toContain('/api/internal/profile');
+  });
+
+  it('never advertises a registered path whose route file is gone', () => {
+    // `/openapi.json` is a build artefact in public/, not a route — nothing
+    // else reconciles the spec against the filesystem. Deleting a route
+    // without deregistering it here leaves the published, crawlable spec
+    // advertising a URL that 404s. The expected list is built ONLY from the
+    // generated document (never from readdir), so an over-broad delete that
+    // also removes a still-registered route file reds this, rather than the
+    // check trivially agreeing with itself.
+    const missing = paths.filter((path) => !routeFileExists(path));
+    expect(missing).toEqual([]);
   });
 });
