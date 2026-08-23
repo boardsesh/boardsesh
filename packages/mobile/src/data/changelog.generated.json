@@ -1,6 +1,28 @@
 {
-  "generatedAt": "2026-08-22T11:58:47.006Z",
+  "generatedAt": "2026-08-23T11:09:48.723Z",
   "entries": [
+    {
+      "prNumber": 4683,
+      "category": "new",
+      "title": "Browsing with your crew is now free: in a session with more than one climber, swiping and tapping around never touches the queue or the wall. One button — \"Put on the wall\" — makes the change, and if someone just lit a climb, the app checks before taking it.",
+      "mergedAt": "2026-08-23T11:08:46Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4683",
+      "body": "Changing the angle mid-browse keeps your spot instead of kicking you back to the live climb."
+    },
+    {
+      "prNumber": 4690,
+      "category": "fixed",
+      "title": "Climbers with very large Kilter histories now sync completely instead of giving up partway.",
+      "mergedAt": "2026-08-23T02:18:03Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4690"
+    },
+    {
+      "prNumber": 4686,
+      "category": "fixed",
+      "title": "Your Kilter ratings, ticks and circuits sync again — a bad rating could jam the whole sync, and for some climbers it had been stuck for over a month.",
+      "mergedAt": "2026-08-23T00:49:20Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4686"
+    },
     {
       "prNumber": 4676,
       "category": "new",

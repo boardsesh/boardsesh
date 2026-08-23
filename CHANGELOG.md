@@ -4,6 +4,18 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-23
+
+### New
+
+- Browsing with your crew is now free: in a session with more than one climber, swiping and tapping around never touches the queue or the wall. One button — "Put on the wall" — makes the change, and if someone just lit a climb, the app checks before taking it. ([#4683](https://github.com/boardsesh/boardsesh/pull/4683))
+  Changing the angle mid-browse keeps your spot instead of kicking you back to the live climb.
+
+### Fixed
+
+- Climbers with very large Kilter histories now sync completely instead of giving up partway. ([#4690](https://github.com/boardsesh/boardsesh/pull/4690))
+- Your Kilter ratings, ticks and circuits sync again — a bad rating could jam the whole sync, and for some climbers it had been stuck for over a month. ([#4686](https://github.com/boardsesh/boardsesh/pull/4686))
+
 ## 2026-08-22
 
 ### New
