@@ -36,7 +36,36 @@ export type PowerSyncOp = {
   data?: Record<string, unknown>;
 };
 
-const REQUEST_TIMEOUT_MS = 120_000;
+/**
+ * Abort only when the stream STOPS MAKING PROGRESS, not after a fixed wall
+ * clock. This used to be a flat 120s cap on the whole request, which is the
+ * wrong shape twice over:
+ *
+ *   - The duration of a snapshot scales with the size of the account. A cap
+ *     that a small account never reaches is one a large account can never
+ *     satisfy, so it reads as "upstream is broken" when the real meaning is
+ *     "this climber has a lot of ticks". One production account sat permanently
+ *     at ~127s against the 120s cap and could never complete a sync.
+ *   - `onOp` is awaited inline in the read loop, so time spent writing to
+ *     Postgres counted against what is nominally a network timeout. A slow
+ *     database made the upstream look unresponsive.
+ *
+ * Progress means a line arrived OR an op finished applying, so a long flush is
+ * not mistaken for a stall. A genuinely hung upstream still trips this in one
+ * idle window.
+ */
+const STREAM_IDLE_TIMEOUT_MS = 60_000;
+
+/**
+ * Absolute backstop so a pathological stream cannot occupy the daemon forever
+ * — it syncs one user per cycle, so an unbounded read would starve everyone
+ * else. Deliberately far above any healthy snapshot: this is a runaway guard,
+ * not a latency budget.
+ */
+const STREAM_MAX_DURATION_MS = 10 * 60_000;
+
+/** How often the stall detector checks. Cheap; granularity is not critical. */
+const STALL_CHECK_INTERVAL_MS = 5_000;
 
 function buildRequestBody(streams: KilterStream[]): string {
   return JSON.stringify({
@@ -165,9 +194,42 @@ export async function streamKilterPowerSync(args: {
   // separately so the catch block below can distinguish caller-shutdown
   // (intentional) from timeout (transient) from snapshot-complete (success).
   const completionController = new AbortController();
-  const timeoutSignal: AbortSignal | null = signal ? null : AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-  const upstreamSignal = signal ?? timeoutSignal!;
-  upstreamSignal.addEventListener('abort', () => completionController.abort(upstreamSignal.reason), { once: true });
+
+  // The stall detector runs even when the caller supplies a signal. Previously
+  // a caller signal REPLACED the timeout, so anyone passing a shutdown signal
+  // silently gave up every timeout protection — a latent footgun that happened
+  // not to bite only because the one caller that passes a signal is short-lived.
+  const stallController = new AbortController();
+  let timeoutReason: 'idle' | 'max-duration' | null = null;
+  const startedAt = Date.now();
+  let lastProgressAt = startedAt;
+  // True while an op is being applied. The idle check is suspended for that
+  // window: this timeout exists to detect an UNRESPONSIVE UPSTREAM, and a slow
+  // local write is not that. Counting write time as idleness is the same
+  // category error the old fixed cap made, just at a smaller scale — a big
+  // flush against a busy database would abort a perfectly healthy stream.
+  let applying = false;
+  const markProgress = () => {
+    lastProgressAt = Date.now();
+  };
+  const stallTimer = setInterval(() => {
+    const now = Date.now();
+    // The absolute ceiling still applies while applying: it is a runaway guard,
+    // so it deliberately covers local work too.
+    if (now - startedAt > STREAM_MAX_DURATION_MS) {
+      timeoutReason = 'max-duration';
+      stallController.abort();
+      return;
+    }
+    if (!applying && now - lastProgressAt > STREAM_IDLE_TIMEOUT_MS) {
+      timeoutReason = 'idle';
+      stallController.abort();
+    }
+  }, STALL_CHECK_INTERVAL_MS);
+
+  for (const upstream of [signal, stallController.signal]) {
+    upstream?.addEventListener('abort', () => completionController.abort(upstream.reason), { once: true });
+  }
 
   let response: Response;
   try {
@@ -208,6 +270,7 @@ export async function streamKilterPowerSync(args: {
     // HTTP stream on every other exit. The catch block below still owns
     // error classification; the `finally` only frees the socket.
     for await (const line of readNdjsonLines(response)) {
+      markProgress();
       let parsed: StreamLine;
       try {
         parsed = JSON.parse(line) as StreamLine;
@@ -248,7 +311,14 @@ export async function streamKilterPowerSync(args: {
           // the cycle next tick, so a transient writer failure
           // self-heals. A persistent one becomes a Sentry-visible
           // failure for the user, which is what we want.
-          await onOp(op);
+          applying = true;
+          try {
+            await onOp(op);
+          } finally {
+            applying = false;
+            // Restart the idle window from the end of the write, not its start.
+            markProgress();
+          }
         }
       }
     }
@@ -272,7 +342,7 @@ export async function streamKilterPowerSync(args: {
     // cast keeps the runtime check honest without weakening the type at
     // the top.
     const callerAborted = (signal as AbortSignal | undefined)?.aborted === true;
-    const timedOut = timeoutSignal?.aborted === true;
+    const timedOut = timeoutReason !== null;
     if (completionController.signal.aborted && !callerAborted && !timedOut) {
       return;
     }
@@ -280,10 +350,21 @@ export async function streamKilterPowerSync(args: {
       throw new KilterApiError('powersync', 'PowerSync stream cancelled by caller');
     }
     if (timedOut || (err instanceof Error && err.name === 'AbortError')) {
-      throw new KilterApiError('timeout', 'PowerSync stream aborted');
+      const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+      // Name the reason: "stalled" and "ran too long" call for different
+      // responses, and the old single message made a size problem look like an
+      // upstream outage.
+      const detail =
+        timeoutReason === 'max-duration'
+          ? `exceeded the ${Math.round(STREAM_MAX_DURATION_MS / 1000)}s ceiling`
+          : timeoutReason === 'idle'
+            ? `no progress for ${Math.round(STREAM_IDLE_TIMEOUT_MS / 1000)}s`
+            : 'aborted';
+      throw new KilterApiError('timeout', `PowerSync stream ${detail} after ${elapsedSeconds}s`);
     }
     throw err;
   } finally {
+    clearInterval(stallTimer);
     // Release the underlying fetch/HTTP stream on every exit path. The
     // catch above runs first (JS evaluates catch before finally), so its
     // error classification still observes the pre-abort

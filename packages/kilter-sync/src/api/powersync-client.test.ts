@@ -28,6 +28,41 @@ function mockFetch(response: Response): void {
   );
 }
 
+/**
+ * A fetch mock that wires `init.signal` through to the body, the way real
+ * fetch does. Without this an abort is invisible to the reader: the loop just
+ * drains the already-buffered chunks and finishes, so a timeout test passes
+ * whether or not the timeout works. Lines are left un-closed because the reader
+ * returns on checkpoint_complete.
+ */
+function mockFetchHonouringSignal(lines: string[]): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const encoder = new TextEncoder();
+      let controller!: ReadableStreamDefaultController<Uint8Array>;
+      const stream = new ReadableStream<Uint8Array>({
+        start(streamController) {
+          controller = streamController;
+          for (const line of lines) streamController.enqueue(encoder.encode(line));
+        },
+      });
+      init?.signal?.addEventListener('abort', () => {
+        const abortError = new Error('aborted');
+        abortError.name = 'AbortError';
+        // error() drops anything still queued, so an abort genuinely
+        // interrupts the read rather than being swallowed.
+        try {
+          controller.error(abortError);
+        } catch {
+          // already closed
+        }
+      });
+      return new Response(stream, { status: 200, headers: { 'Content-Type': 'application/x-ndjson' } });
+    }),
+  );
+}
+
 describe('streamKilterPowerSync', () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
@@ -163,6 +198,75 @@ describe('streamKilterPowerSync', () => {
       code: 'powersync',
       httpStatus: 503,
     });
+  });
+
+  // ---------------------------------------------------------------------
+  // Stall detection. This replaced a flat 120s cap on the whole request,
+  // which permanently blocked one production account whose snapshot simply
+  // took longer than that to apply — a size problem reported as a timeout.
+  // ---------------------------------------------------------------------
+
+  it('does not abort a slow stream that keeps making progress', async () => {
+    vi.useFakeTimers();
+    try {
+      // Each op takes longer than the idle window on its own. Under the old
+      // fixed cap the whole run was doomed; under stall detection, applying an
+      // op is progress, so this must complete.
+      const lines = Array.from(
+        { length: 4 },
+        (_, index) =>
+          `${JSON.stringify({ data: { data: [{ op_id: String(index), op: 'PUT', object_type: 'logs', object_id: `l-${index}`, data: {} }] } })}\n`,
+      );
+      lines.push(`${JSON.stringify({ checkpoint_complete: {} })}\n`);
+      mockFetchHonouringSignal(lines);
+
+      const seen: PowerSyncOp[] = [];
+      const pending = streamKilterPowerSync({
+        accessToken: 'token',
+        streams: ['user_buckets'],
+        onOp: async (op) => {
+          seen.push(op);
+          // 90s per op — well past the 60s idle window, and 4 of them is past
+          // the old 120s total cap.
+          await vi.advanceTimersByTimeAsync(90_000);
+        },
+      });
+
+      await expect(pending).resolves.toBeUndefined();
+      expect(seen).toHaveLength(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('aborts with a named reason when the stream goes idle', async () => {
+    vi.useFakeTimers();
+    try {
+      // A body that opens and then never delivers anything: the shape of a
+      // genuinely hung upstream, which is what a timeout SHOULD catch.
+      //
+      // The mock has to honour init.signal the way real fetch does — wiring the
+      // abort through to the body — or the reader never rejects and the test
+      // hangs instead of asserting.
+      mockFetchHonouringSignal([]);
+
+      const pending = streamKilterPowerSync({
+        accessToken: 'token',
+        streams: ['user_buckets'],
+        onOp: () => {},
+      });
+      const assertion = expect(pending).rejects.toMatchObject({
+        name: 'KilterApiError',
+        code: 'timeout',
+        // The message must say WHY — "stalled" and "too big" call for
+        // different responses, and the old single message conflated them.
+        message: expect.stringContaining('no progress for'),
+      });
+      await vi.advanceTimersByTimeAsync(70_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('throws KilterApiError("powersync", "cancelled by caller") when called with a pre-aborted signal', async () => {
