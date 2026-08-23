@@ -65,6 +65,13 @@ jobs:
       # Defaults false off PRs (the OTA bot legitimately rewrites it on push).
       changelogData: ${{ github.event_name == 'pull_request' && steps.filter.outputs.changelogData || 'false' }}
       dbMigrations: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.dbMigrations }}
+      # docs/postgres-image-digests.json and docs/*.patch are checked-in PG18
+      # rollout artifacts that nothing reads at run time, so nothing notices
+      # when the tree drifts under them. Their guard reads every input with
+      # readFileSync/readdirSync, which `--changed` can never relate to a diff
+      # of a workflow pin or of a file the patch's context depends on. No other
+      # filter matches docs/** at all. Gates the `pg18-artifacts` job below.
+      pg18Artifacts: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.pg18Artifacts }}
       # True if any downstream job's gate would fire. This used to gate the
       # `setup` job (bun install + build:db + a `built-packages` artifact every
       # heavy job downloaded); that job was deleted because @boardsesh/db and
@@ -76,10 +83,10 @@ jobs:
       # ci-location-sync-workflow.test.ts asserts on its terms; keep it in sync
       # with the job `if:`s below so a future job can gate on it again.
       runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.locationSync == 'true' || steps.filter.outputs.rootCi == 'true' }}
-      # NOTE: deployConfig, storeMetadata, mobileLocales, and restSurface are
-      # deliberately NOT part of runAny — the deploy-config, listing-guards and
-      # rest-surface jobs below gate on their own filters, so a PR touching only
-      # their files runs nothing else.
+      # NOTE: deployConfig, storeMetadata, mobileLocales, restSurface and
+      # pg18Artifacts are deliberately NOT part of runAny — the deploy-config,
+      # listing-guards, rest-surface and pg18-artifacts jobs below gate on their
+      # own filters, so a PR touching only their files runs nothing else.
     steps:
       # No actions/checkout here on purpose: on `pull_request` dorny/paths-filter
       # reads the changed-file list from the REST API (no working tree needed),
@@ -204,6 +211,27 @@ jobs:
             changelogData:
               - 'packages/mobile/src/data/changelog.generated.json'
               - 'CHANGELOG.md'
+            # Two PG18 rollout artifacts are checked into the repo and read by
+            # nothing at run time, so they drift silently: the handoff copy of
+            # the publisher digest manifest, and a prepared rename deferred
+            # until after the cutover. The guard reads all of these from disk,
+            # so this filter has to name every input it reads -- the manifest,
+            # the patch, every file the patch touches, and every consumer that
+            # pins a published digest.
+            pg18Artifacts:
+              - 'docs/postgres-image-digests.json'
+              - 'docs/*.patch'
+              - 'docs/neon-migration.md'
+              - 'docs/postgres-18-migration.md'
+              - 'scripts/neon-to-railway-replication.sh'
+              - 'scripts/neon-to-railway-replication.test.sh'
+              - 'scripts/postgres18-image-smoke.sh'
+              - 'docker-compose.yml'
+              - '.github/workflows/dev-db-docker.yml'
+              - '.github/workflows/e2e-tests.yml'
+              - '.github/workflows/db-migration-renumber.yml'
+              - 'scripts/__tests__/ci-location-sync-workflow.test.ts'
+              - 'scripts/__tests__/pg18-artifact-drift.test.ts'
             dbMigrations:
               - 'packages/db/drizzle/**'
               - 'packages/db/src/schema/**'
@@ -557,6 +585,30 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Validate store listing copy and mobile locale parity
         run: vp test run --project scripts scripts/store-metadata-limits.test.ts scripts/mobile-locales-parity.test.ts
+
+  pg18-artifacts:
+    needs: [changes]
+    # Deliberately not `--changed`-filtered, same rationale as deploy-config and
+    # listing-guards: the spec reads docs/postgres-image-digests.json, every
+    # docs/*.patch, and each pinned consumer with readFileSync/readdirSync at run
+    # time, so Vitest's module-graph analysis never relates it to a diff that only
+    # edits a workflow pin or a file the patch's context depends on. That is
+    # exactly the diff it guards. Note `.github/workflows/ci.yml` reaches it via
+    # rootCi rather than the pg18Artifacts list.
+    if: needs.changes.outputs.pg18Artifacts == 'true' || needs.changes.outputs.rootCi == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Validate published image digest pins and committed patches
+        run: vp test run --project scripts scripts/__tests__/pg18-artifact-drift.test.ts
 
   rest-surface:
     needs: [changes]
@@ -1145,6 +1197,7 @@ jobs:
       - deploy-config
       - listing-guards
       - rest-surface
+      - pg18-artifacts
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2

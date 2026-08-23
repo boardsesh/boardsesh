@@ -148,9 +148,31 @@ choose a supported path:
 - change the target artifact to a supported equal/newer PostGIS release and
   repeat every image/rehearsal gate.
 
-There is no override flag. A full rehearsal must restore the schema, copy every
-geography/geometry value, exercise spatial indexes and queries, and compare
-representative `ST_AsEWKB` values.
+The rule is enforced in four places, and only two of them have a knob:
+
+| Where                                         | What it compares                                               | Knob                       |
+| --------------------------------------------- | -------------------------------------------------------------- | -------------------------- |
+| `scripts/postgres-migration-audit.sh:1771`    | source `pg_extension.extversion` vs `EXPECTED_POSTGIS_VERSION` | `EXPECTED_POSTGIS_VERSION` |
+| `scripts/postgres-migration-audit.sh:2024`    | target, same comparison                                        | `EXPECTED_POSTGIS_VERSION` |
+| `scripts/postgres-migration-audit.sh:1943`    | whole-extension manifest, source vs target, version included   | none                       |
+| `scripts/neon-to-railway-replication.sh:1412` | the same manifest, as a hard `fail` before any restore         | none                       |
+
+`EXPECTED_POSTGIS_VERSION` (`postgres-migration-audit.sh:16`, documented at `:87`)
+relaxes the first two rows only. It is a build-time knob for wiring the expected
+version through from the image label, not an escape hatch: setting it does not
+move the two manifest comparisons, so a mismatched source still fails closed
+before any restore. Do not reach for it to get past this gate.
+
+A full rehearsal must restore the schema, copy every geography/geometry value,
+exercise spatial indexes and queries, and compare representative `ST_AsEWKB`
+values.
+
+Note also that `postgis_tiger_geocoder` and `postgis_topology` cannot simply be
+left off the target. The extension manifest at `:1943` is cluster-wide and has no
+allowlist, so a source extension with no target counterpart blocks regardless of
+how few objects it owns. Dropping them on the source is the only path that
+satisfies `unclassified_schemas()`, the manifest, and
+`assert_superuser_catalog_precreated` unchanged.
 
 ### 2. Publish and pin the PG18 image
 
