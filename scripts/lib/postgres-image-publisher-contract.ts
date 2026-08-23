@@ -823,6 +823,14 @@ function validatePublisherDocument(
     failures.push('publisher global constants must remain exact');
   }
 
+  for (const forbiddenIdentifier of spec.forbiddenIdentifiers) {
+    if (publisherWorkflow.includes(forbiddenIdentifier)) {
+      failures.push(`publisher must not reference ${forbiddenIdentifier}; the two image publishers stay split`);
+    }
+  }
+  if (!spec.installsArmEmulation && publisherWorkflow.includes('setup-qemu-action')) {
+    failures.push('publisher must not install ARM emulation for its linux/amd64-only image');
+  }
 
   const jobs = recordAt(publisher, 'jobs');
   if (!jobs) {
