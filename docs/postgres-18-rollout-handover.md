@@ -45,9 +45,19 @@ Two things worth knowing before touching it:
 - The journal entry kept its original `when`, older than main's newest. Both appliers order by `when`, so it would have been **silently skipped** — not a loud failure. `check:db-migrations` caught it; restamped by hand following `db-renumber`'s own `nextWhen` convention. See issue #4696: `check:db-migrations` tells you to run `vp run db:renumber`, but that tool only inspects the migration *number* and no-ops on a stale `when`.
 - `test-location-sync-integration` was red for the whole rollout because it ran on PG17. Consumer B fixed it — it now passes.
 
-### Branch `agent/split-seeded-image-publisher` — WIP, do not merge
+### Branch `agent/split-seeded-image-publisher` — reviewed, three P2s open
 
-Commit `9f0a602c1`. Splits the seeded dev image into its own publisher workflow (issue #4694). **Unreviewed and unvalidated** — the security review phase had not run. Before merging: recompute every `PRIVILEGED_RUN_SHA256` and `PRIVILEGED_JOB_SHA256`, confirm every mutation test still fails for the weakenings it catches, add equivalent coverage for the new workflow, and get an independent review of the trust boundary in both.
+Tip `5c1ccfdd7`. Splits the seeded dev image into its own publisher workflow (issue #4694). Contract suite **157/157**.
+
+An independent security review ran and returned **CHANGES_REQUIRED**, but the trust boundary itself came back intact in both workflows. It re-derived every hash with the file's own algorithm and found exactly 12 changed — 6 run bodies, 5 job hashes, and `CONTRACT_WORKFLOW_METADATA_SHA256` for the added trigger path. `validate-main`, `smoke-portable` and `smoke-seeded` hash identically to their pre-split values, which is good evidence the reviewed text was moved rather than retyped.
+
+Its P1 was about the commit, not the code: an earlier commit here snapshotted the worktree while the agent was still writing, so the tip was missing the eight lines that stop the two publishers re-coupling — the `forbiddenIdentifiers` loop and the `setup-qemu-action` ban for the amd64-only seeded image. Fixed in `5c1ccfdd7`; suite re-run green. Worth knowing as a general hazard: committing an agent worktree mid-run can capture a partial state that still looks coherent.
+
+Three P2s remain before merge:
+
+1. Both publishers validate both Dockerfiles, deliberately, to keep two privileged run bodies byte-identical and hash-shared. Fail-closed, but it means removing or relocating either Dockerfile breaks **both** publishers — document it in the `validate-main` bullet.
+2. Both publishers declare `environment: postgres-image-publisher`, so the seeded developer publisher holds the same environment-scoped OIDC identity as the production one. Nothing currently trusts it beyond GitHub's attestation API, but any future external trust policy must key on `job_workflow_ref`, never on the environment name.
+3. `vp check` is red on the branch with two `TS2339` errors in `scripts/expo-web-e2e.ts` (`Property 'unref' does not exist on type 'number'`). The file is untouched by the change and this looks like DOM-vs-Node `setTimeout` typing, but it was not confirmed against a pristine `main` — verify, and fix separately.
 
 ### Filed issues
 
