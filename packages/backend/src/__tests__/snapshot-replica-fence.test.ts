@@ -90,7 +90,7 @@ describe('replica snapshot fence', () => {
   it('runs the exact migration version guard and rejects pre-PG18 databases', async () => {
     const pool = createPool();
     const migrationSource = readFileSync(
-      new URL('../../../db/drizzle/0201_board_snapshot_replica_fence.sql', import.meta.url),
+      new URL('../../../db/drizzle/0205_board_snapshot_replica_fence.sql', import.meta.url),
       'utf8',
     );
     const [versionGuard] = migrationSource.split('--> statement-breakpoint');
@@ -441,7 +441,7 @@ describe('replica snapshot fence', () => {
             `INSERT INTO board_climbs (uuid, board_type, layout_id, compatible_size_ids, updated_at)
              VALUES ('old-start-late-commit', 'kilter', 1, '{5}'::int[], '2000-01-01'::timestamp)`,
           );
-          // Every explicit timestamp tries to violate the proof. Migration 0201
+          // Every explicit timestamp tries to violate the proof. Migration 0205
           // must replace each one with this transaction's UTC start time.
           await oldWriter.unsafe(
             `INSERT INTO board_climb_stats

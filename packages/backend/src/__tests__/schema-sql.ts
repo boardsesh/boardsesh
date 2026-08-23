@@ -1211,7 +1211,7 @@ export const schemaSQL = `
   CREATE INDEX IF NOT EXISTS "location_sync_unfreeze_audit_performed_by_idx"
     ON "location_sync_unfreeze_audit" ("performed_by");
 
-  -- Durable audit for the global-admin gym ownership handover (migration 0201).
+  -- Durable audit for the global-admin gym ownership handover (migration 0205).
   -- No foreign keys anywhere: the record must outlive the gym and both accounts.
   DROP TABLE IF EXISTS "gym_owner_reassignments" CASCADE;
   CREATE TABLE IF NOT EXISTS "gym_owner_reassignments" (
@@ -1454,7 +1454,7 @@ export const schemaSQL = `
             'kilter_type','kilter_id','kilter_synced_at','kilter_sync_error']))
     EXECUTE FUNCTION set_updated_at();
 
-  -- Replica-safe board snapshot coordinator (migration 0201). Backend tests do
+  -- Replica-safe board snapshot coordinator (migration 0205). Backend tests do
   -- not apply Drizzle migrations, so mirror the operational functions here.
   CREATE SCHEMA IF NOT EXISTS ops;
   REVOKE ALL ON SCHEMA ops FROM PUBLIC;

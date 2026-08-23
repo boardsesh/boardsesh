@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Runs migration 0201 exactly as the restricted production migrator will run
+# Runs migration 0205 exactly as the restricted production migrator will run
 # it. Every schema object is created in a unique scratch database. The four
 # canonical roles are still cluster-wide, so the script refuses non-loopback
 # servers, requires an explicit destructive-test opt-in, and refuses a cluster
@@ -10,7 +10,7 @@ set -euo pipefail
 
 REPOSITORY_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 BOOTSTRAP_SQL="$REPOSITORY_ROOT/packages/db/docker/bootstrap-pg18-development-roles.sql"
-MIGRATION_SQL="$REPOSITORY_ROOT/packages/db/drizzle/0201_board_snapshot_replica_fence.sql"
+MIGRATION_SQL="$REPOSITORY_ROOT/packages/db/drizzle/0205_board_snapshot_replica_fence.sql"
 DATABASE_URL="${SNAPSHOT_MIGRATION_PG18_DB_URL:?set SNAPSHOT_MIGRATION_PG18_DB_URL to a loopback PostgreSQL 18 admin database}"
 if [[ "${SNAPSHOT_MIGRATION_PG18_ALLOW_LOCAL_ADMIN:-}" != '1' ]]; then
   printf 'set SNAPSHOT_MIGRATION_PG18_ALLOW_LOCAL_ADMIN=1 to acknowledge local cluster role creation\n' >&2
@@ -69,9 +69,9 @@ psql_admin() {
   PGDATABASE="$ADMIN_DATABASE" psql -X -v ON_ERROR_STOP=1 "$@"
 }
 
-SMOKE_DATABASE="boardsesh_snapshot_0201_${$}_${RANDOM}"
+SMOKE_DATABASE="boardsesh_snapshot_0205_${$}_${RANDOM}"
 # Second scratch database for the development/CI apply path. It has to be a
-# separate database because both scenarios apply 0201, and it has to be dropped
+# separate database because both scenarios apply 0205, and it has to be dropped
 # before the production scenario runs because pg_shdepend is cluster-wide: the
 # bootstrap's fence-owner ownership allowlist resolves ops function OIDs in the
 # current database and would read another database's rows as foreign objects.
@@ -171,7 +171,7 @@ run_exact_preflight_expect_failure() {
   status=$?
   set -e
   if ((status == 0)); then
-    printf 'expected migration 0201 preflight to reject drift: %s\n' "$expected_message" >&2
+    printf 'expected migration 0205 preflight to reject drift: %s\n' "$expected_message" >&2
     exit 1
   fi
   grep -Fq "$expected_message" <<<"$output"
@@ -182,12 +182,12 @@ run_exact_preflight_expect_failure() {
 #
 # Nothing in dev or CI performs the production cutover, so packages/db/docker/
 # Dockerfile.dev-db and scripts/dev-db-up.sh apply the whole journal as the
-# bootstrap superuser and every pre-0201 object stays owned by that superuser.
+# bootstrap superuser and every pre-0205 object stays owned by that superuser.
 # The fixture below reproduces that state exactly and must never pre-own
 # anything for boardsesh_owner — pre-owning it is what hid the SET ROLE failure.
 # The full journal cannot be replayed here: migration 0000 alters the Aurora
 # tables pgloader imports into the image before any migration runs. The image
-# build is the all-migrations gate; this covers the ownership state 0201 meets
+# build is the all-migrations gate; this covers the ownership state 0205 meets
 # there, applied through the exact psql invocation apply-drizzle-migrations.sh
 # makes.
 # ---------------------------------------------------------------------------
@@ -201,14 +201,14 @@ psql_development() {
 
 psql_development -v boardsesh_dev_role_bootstrap=true -f "$BOOTSTRAP_SQL" >/dev/null
 
-# Pre-0201 objects, created by the connected superuser. The two public trigger
+# Pre-0205 objects, created by the connected superuser. The two public trigger
 # functions carry the definitions migrations 0144/0146 leave behind, and both
 # drizzle ledger tables are the ones apply-drizzle-migrations.sh creates before
 # it starts applying files.
 #
 # snapshot_smoke_bystander_* stand in for the ~200 other public tables and the
-# non-public schemas the dev image carries by the time 0201 runs. They exist so
-# this scenario can tell a preamble that re-owns exactly what 0201 replaces from
+# non-public schemas the dev image carries by the time 0205 runs. They exist so
+# this scenario can tell a preamble that re-owns exactly what 0205 replaces from
 # one that sweeps a whole schema or the whole database: an
 # `ALTER TABLE ALL IN SCHEMA public OWNER TO boardsesh_owner` would move them
 # too, and the post-apply contract below fails when it does.
@@ -270,7 +270,7 @@ BEGIN
       )
       AND relowner = 'boardsesh_owner'::regrole
   ) THEN
-    RAISE EXCEPTION 'development fixture must leave every pre-0201 object owned by the bootstrap superuser';
+    RAISE EXCEPTION 'development fixture must leave every pre-0205 object owned by the bootstrap superuser';
   END IF;
 END;
 $$;
@@ -280,11 +280,11 @@ SQL
 # makes: one transaction covering the migration file and both ledger writes.
 psql_development --single-transaction \
   -f "$MIGRATION_SQL" \
-  -c "INSERT INTO \"__drizzle_migrations\" (hash, created_at) VALUES ('0201', 1)" \
-  -c "INSERT INTO drizzle.\"__drizzle_migrations\" (hash, created_at) VALUES ('0201', 1)" \
+  -c "INSERT INTO \"__drizzle_migrations\" (hash, created_at) VALUES ('0205', 1)" \
+  -c "INSERT INTO drizzle.\"__drizzle_migrations\" (hash, created_at) VALUES ('0205', 1)" \
   >/dev/null
 
-# dev-db-up re-runs the bootstrap on every start, including after 0201 landed.
+# dev-db-up re-runs the bootstrap on every start, including after 0205 landed.
 psql_development -v boardsesh_dev_role_bootstrap=true -f "$BOOTSTRAP_SQL" >/dev/null
 
 psql_development >/dev/null <<'SQL'
@@ -325,7 +325,7 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'superuser apply did not hand the replaced public objects to the fence model owner';
   END IF;
-  -- The other half of the same contract: 0201 promises it re-owns exactly what
+  -- The other half of the same contract: 0205 promises it re-owns exactly what
   -- it replaces, so everything else the dev image already holds must still
   -- belong to the bootstrap superuser.
   IF EXISTS (
@@ -344,7 +344,7 @@ BEGIN
     WHERE oid = 'public.snapshot_smoke_bystander_function()'::regprocedure
       AND proowner <> bootstrap_superuser_oid
   ) THEN
-    RAISE EXCEPTION 'superuser apply re-owned objects outside the set migration 0201 replaces';
+    RAISE EXCEPTION 'superuser apply re-owned objects outside the set migration 0205 replaces';
   END IF;
   IF (
     SELECT count(*) FROM pg_trigger
@@ -369,7 +369,7 @@ SQL
 psql_admin -v development_database="$DEVELOPMENT_DATABASE" >/dev/null <<'SQL'
 DROP DATABASE :"development_database" WITH (FORCE);
 SQL
-printf 'Development superuser apply path for migration 0201 passed.\n'
+printf 'Development superuser apply path for migration 0205 passed.\n'
 
 # ---------------------------------------------------------------------------
 # Scenario 2: the restricted production migrator, on a database whose public
@@ -482,7 +482,7 @@ GRANT CREATE ON SCHEMA public TO boardsesh_snapshot_fence_owner;
 ALTER FUNCTION public.snapshot_smoke_fence_owned() OWNER TO boardsesh_snapshot_fence_owner;
 REVOKE CREATE ON SCHEMA public FROM boardsesh_snapshot_fence_owner;
 SQL
-run_exact_preflight_expect_failure 'must not own functions before migration 0201'
+run_exact_preflight_expect_failure 'must not own functions before migration 0205'
 psql_smoke -c 'DROP FUNCTION public.snapshot_smoke_fence_owned()' >/dev/null
 run_bootstrap
 
@@ -492,7 +492,7 @@ run_bootstrap
   printf '%s\n' 'COMMIT;' 'RESET SESSION AUTHORIZATION;'
 } | psql_smoke >/dev/null
 
-# dev-db-up invokes the bootstrap on every start, including after 0201 is in
+# dev-db-up invokes the bootstrap on every start, including after 0205 is in
 # the ledger. Prove that post-migration repair preserves the two owned ops ACLs.
 run_bootstrap
 
@@ -600,4 +600,4 @@ END;
 $contract$;
 SQL
 
-printf 'PostgreSQL 18 exact migration 0201 smoke passed.\n'
+printf 'PostgreSQL 18 exact migration 0205 smoke passed.\n'

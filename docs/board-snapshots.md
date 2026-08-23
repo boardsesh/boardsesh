@@ -185,7 +185,7 @@ less likely; neither proves the absent transaction has finished.
    immediately after the manifest PUT cannot roll that PUT back, but it emits no success heartbeat; failed
    layouts retain their previous manifest entries while successful layout updates remain valid.
 
-Migration `0201_board_snapshot_replica_fence` makes the cursor contract a database invariant. INSERT and
+Migration `0205_board_snapshot_replica_fence` makes the cursor contract a database invariant. INSERT and
 UPDATE triggers stamp `board_climbs.updated_at`, `board_climb_stats.updated_at`, and
 `board_climb_grades.computed_at` from the transaction timestamp converted to UTC; INSERTs into
 `sync_deletions` receive the same UTC transaction-time stamp. Caller-supplied/backdated values are ignored.
@@ -200,17 +200,17 @@ The adversarial integration test holds an old transaction open, attempts to back
 families, lets a newer transaction commit, and proves the fixed cutoff cannot publish a watermark past
 the late row.
 
-Migration `0201` is deliberately ordered after the PostgreSQL 18 cutover. Its first statement rejects
+Migration `0205` is deliberately ordered after the PostgreSQL 18 cutover. Its first statement rejects
 PostgreSQL 16/17 and rejects a missing or incorrectly provisioned fence-owner role before changing the
 schema. Do not merge/deploy the replica-snapshot migration while Railway still runs PostgreSQL 16. The
 major-upgrade PR, production PG18 cutover, and target-role preflight must complete first; only then deploy
-`0201` and start the homelab rollout.
+`0205` and start the homelab rollout.
 
 This change is stacked on the PostgreSQL 18 upgrade PR. Until that PR publishes and pins its verified PG18
 PostGIS/dev-database images, the location-sync integration job and the current published development-image
 digest remain PostgreSQL 17 and are an external rollout blocker. Do not guess or pre-pin an unpublished
 artifact in this change: rebase after the PG18 image is published, take its attested digest, rerun the exact
-`0201` smoke and location-sync integration, and only then deploy. For the same reason, this branch's
+`0205` smoke and location-sync integration, and only then deploy. For the same reason, this branch's
 `scripts/dev-db-up.sh` bootstrap intentionally requires the PG18 image supplied by the prerequisite PR.
 
 The proof also assumes the primary wall clock does not step backward by more than the stability window
@@ -1084,7 +1084,7 @@ session. Treat it as a statement-level assertion: never compose it with `release
 one SQL statement. Only the owning session can release its session advisory lock, and every production call
 site checks it before publishing.
 
-The target admin must create the non-login function owner before migration `0201`; the restricted Drizzle
+The target admin must create the non-login function owner before migration `0205`; the restricted Drizzle
 migrator cannot create roles or grant itself predefined monitoring privileges. Substitute the application
 owner role if it is named differently:
 
@@ -1101,7 +1101,7 @@ GRANT boardsesh_snapshot_fence_owner TO boardsesh_owner
   WITH ADMIN FALSE, INHERIT FALSE, SET TRUE;
 ```
 
-Migration `0201` fails closed unless that role is narrow, has exactly the direct `pg_read_all_stats` and
+Migration `0205` fails closed unless that role is narrow, has exactly the direct `pg_read_all_stats` and
 application-owner membership rows (including the PG18 `ADMIN`, `INHERIT`, and `SET` options above), and has
 direct non-grantable `EXECUTE` ACLs on the two control-identity functions. Effective access through another
 role is intentionally insufficient, and any extra direct role edge is drift. The migration grants the owner
@@ -1116,13 +1116,13 @@ idempotent but deliberately requires PostgreSQL 18, a superuser, and the explici
 production must provision and audit the roles through the PG18 cutover runbook, never auto-create them from
 the application or Drizzle migration path.
 
-Creating the roles is not enough on its own. Production reaches `0201` after
+Creating the roles is not enough on its own. Production reaches `0205` after
 `scripts/postgres18-production-role-transition.sh transfer-ownership` has already handed `public`, `drizzle`,
 and everything in them to `boardsesh_owner`, so `SET LOCAL ROLE boardsesh_owner` lands on objects the owner
 may replace. Development and CI have no cutover: both the image build and `dev-db-up.sh` apply the whole
-journal as the bootstrap superuser, which leaves every pre-`0201` object owned by that superuser and would
+journal as the bootstrap superuser, which leaves every pre-`0205` object owned by that superuser and would
 make the role switch fail on `CREATE OR REPLACE FUNCTION`, `CREATE TRIGGER`, and the drizzle ledger writes.
-`0201` therefore opens with a superuser-only block that mirrors the cutover for exactly the objects that one
+`0205` therefore opens with a superuser-only block that mirrors the cutover for exactly the objects that one
 transaction replaces, attaches a trigger to, or records itself in — the two `public` cursor functions, the
 four cursor-stamped tables, both `__drizzle_migrations` ledgers, and the `public`/`drizzle` schemas. The
 production migrator is verified `NOSUPERUSER` before it is handed the deploy secret, so that block never runs
@@ -1133,7 +1133,7 @@ schema-wide sweep fails the test instead of passing it.
 
 The block narrates itself at `NOTICE` level: one line naming `session_user` and each
 `ALTER SCHEMA`/`ALTER TABLE`/`ALTER FUNCTION` it runs, or one line saying it skipped because `session_user` is
-not a superuser. Grep a `0201` deploy log for `migration 0201 superuser preamble` — on the production migrator
+not a superuser. Grep a `0205` deploy log for `migration 0205 superuser preamble` — on the production migrator
 the only line is the skip. If a real PG18 database is ever migrated with a platform superuser credential
 (Railway hands one out by default), those `ALTER` lines are the trace of a half-cutover database: `public`,
 `drizzle`, six tables and two functions moved to `boardsesh_owner` while every other `public` table stayed on
@@ -1406,9 +1406,9 @@ This cutover is independently reversible and does not require promoting the stan
 
 1. Complete the PostgreSQL 18 cutover and verify Railway reports PG18. As the target admin, pre-provision
    `boardsesh_snapshot_fence_owner` and its grants above, plus the narrow coordinator/standby roles. Do not
-   attempt migration `0201` on PG16/17; it intentionally blocks the deploy.
+   attempt migration `0205` on PG16/17; it intentionally blocks the deploy.
 2. Run migrations under the documented restricted migrator/application-owner boundary. Deploy
-   `0201_board_snapshot_replica_fence`, set `DATABASE_DIRECT_URL`, and run the automated owner/grant audit.
+   `0205_board_snapshot_replica_fence`, set `DATABASE_DIRECT_URL`, and run the automated owner/grant audit.
    Keep both repository flags unset.
 3. Set `SNAPSHOT_PRIMARY_FENCE_ENABLED=true`; run one unfiltered manual identity+gzip export. Confirm the
    direct session retains the advisory lock through publish and a simultaneous second exporter exits with
