@@ -15,7 +15,7 @@
 DO $$
 BEGIN
   IF current_setting('server_version_num')::integer < 180000 THEN
-    RAISE EXCEPTION '0201_board_snapshot_replica_fence requires PostgreSQL 18 or newer; complete the PG18 cutover first';
+    RAISE EXCEPTION '0205_board_snapshot_replica_fence requires PostgreSQL 18 or newer; complete the PG18 cutover first';
   END IF;
 END;
 $$;
@@ -25,7 +25,7 @@ $$;
 -- already moved public, drizzle, and everything in them to boardsesh_owner, so
 -- the role switch below lands on objects the owner may replace.  Development and
 -- CI have no cutover: the dev-db image and dev-db-up apply the whole journal as
--- the bootstrap superuser, which leaves every pre-0201 object owned by that
+-- the bootstrap superuser, which leaves every pre-0205 object owned by that
 -- superuser.  SET ROLE drops the superuser bypass, so without this the CREATE OR
 -- REPLACE FUNCTION, CREATE TRIGGER, and drizzle ledger writes below all fail on
 -- objects postgres owns.  Mirror the cutover for exactly the objects this
@@ -50,11 +50,11 @@ BEGIN
     (SELECT role.rolsuper FROM pg_roles AS role WHERE role.rolname = session_user),
     false
   ) THEN
-    RAISE NOTICE 'migration 0201 superuser preamble: skipped, session_user % is not a superuser', session_user;
+    RAISE NOTICE 'migration 0205 superuser preamble: skipped, session_user % is not a superuser', session_user;
     RETURN;
   END IF;
 
-  RAISE NOTICE 'migration 0201 superuser preamble: session_user % is a superuser, re-owning the objects this migration replaces', session_user;
+  RAISE NOTICE 'migration 0205 superuser preamble: session_user % is a superuser, re-owning the objects this migration replaces', session_user;
 
   FOR v_alter_statement IN
     SELECT format('ALTER SCHEMA %I OWNER TO boardsesh_owner', namespace.nspname)
@@ -63,7 +63,7 @@ BEGIN
       AND namespace.nspowner <> 'boardsesh_owner'::regrole
     ORDER BY namespace.nspname
   LOOP
-    RAISE NOTICE 'migration 0201 superuser preamble: %', v_alter_statement;
+    RAISE NOTICE 'migration 0205 superuser preamble: %', v_alter_statement;
     EXECUTE v_alter_statement;
   END LOOP;
 
@@ -83,7 +83,7 @@ BEGIN
       AND relation.relowner <> 'boardsesh_owner'::regrole
     ORDER BY relation.oid::regclass::text
   LOOP
-    RAISE NOTICE 'migration 0201 superuser preamble: %', v_alter_statement;
+    RAISE NOTICE 'migration 0205 superuser preamble: %', v_alter_statement;
     EXECUTE v_alter_statement;
   END LOOP;
 
@@ -97,7 +97,7 @@ BEGIN
       AND procedure.proowner <> 'boardsesh_owner'::regrole
     ORDER BY procedure.oid::regprocedure::text
   LOOP
-    RAISE NOTICE 'migration 0201 superuser preamble: %', v_alter_statement;
+    RAISE NOTICE 'migration 0205 superuser preamble: %', v_alter_statement;
     EXECUTE v_alter_statement;
   END LOOP;
 END;
@@ -118,13 +118,13 @@ DECLARE
   v_stats_role_oid oid;
 BEGIN
   IF current_user <> 'boardsesh_owner' THEN
-    RAISE EXCEPTION 'migration 0201 must run as the NOLOGIN boardsesh_owner role';
+    RAISE EXCEPTION 'migration 0205 must run as the NOLOGIN boardsesh_owner role';
   END IF;
   SELECT * INTO v_fence_owner
   FROM pg_roles
   WHERE rolname = 'boardsesh_snapshot_fence_owner';
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'pre-provision NOLOGIN role boardsesh_snapshot_fence_owner before migration 0201';
+    RAISE EXCEPTION 'pre-provision NOLOGIN role boardsesh_snapshot_fence_owner before migration 0205';
   END IF;
   IF v_fence_owner.rolcanlogin
       OR v_fence_owner.rolsuper
@@ -139,7 +139,7 @@ BEGIN
     SELECT 1 FROM pg_proc AS procedure
     WHERE procedure.proowner = v_fence_owner.oid
   ) THEN
-    RAISE EXCEPTION 'boardsesh_snapshot_fence_owner must not own functions before migration 0201';
+    RAISE EXCEPTION 'boardsesh_snapshot_fence_owner must not own functions before migration 0205';
   END IF;
 
   SELECT oid INTO STRICT v_application_owner_oid
