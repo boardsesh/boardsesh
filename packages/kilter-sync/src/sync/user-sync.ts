@@ -241,6 +241,11 @@ export async function syncKilterUserData({
   // UUID once per sync. Pre-primed below before each phase runs.
   const aliasCache = new Map<string, string>();
 
+  // Shared across every ratings flush in this sync so the newest-wins
+  // tie-break spans flush boundaries — see the claimedNaturalKeys parameter on
+  // applyClimbRatings for why per-flush alone does not converge.
+  const claimedRatingKeys = new Map<string, { kilterId: string; createdAtMs: number }>();
+
   // Defensive scoping: the `circuit_buckets` stream is parameterised on
   // the Kilter server by circuit_uuid. Subscribing with empty
   // `parameters: {}` works against the production sync rules today (the
@@ -267,7 +272,7 @@ export async function syncKilterUserData({
   async function flushClimbRatings(): Promise<void> {
     if (buffer.climb_ratings.length === 0) return;
     const batch = buffer.climb_ratings.splice(0, buffer.climb_ratings.length);
-    await db.transaction((tx) => applyClimbRatings(tx, userId, batch, aliasCache, log));
+    await db.transaction((tx) => applyClimbRatings(tx, userId, batch, aliasCache, log, claimedRatingKeys));
   }
 
   // Phase isolation. A throw from one phase must not cancel the others. Before
@@ -1115,6 +1120,23 @@ export async function applyClimbRatings(
   ops: PowerSyncOp[],
   aliasCache: Map<string, string>,
   log: (msg: string) => void,
+  /**
+   * Natural key -> the rating already claimed for it EARLIER IN THIS SYNC.
+   *
+   * The dedupe below is per flush, and a flush is only STREAM_FLUSH_THRESHOLD
+   * ops wide. Two upstream ratings for one climb/angle landing in different
+   * flushes therefore both got written, and the later flush won — overriding
+   * the newest-wins tie-break and undoing the earlier write. The result is
+   * stable but never converges: every later sync re-writes the same rows in
+   * the same direction, churning updated_at and re-shipping them to offline
+   * clients. Observed on a production account as 714 pointless UPDATEs on
+   * every single run, indefinitely.
+   *
+   * One map for the whole sync makes the tie-break global rather than per
+   * flush. Omit it (tests, one-shot CLI calls) and a single call keeps exactly
+   * its old single-flush semantics.
+   */
+  claimedNaturalKeys: Map<string, { kilterId: string; createdAtMs: number }> = new Map(),
 ): Promise<void> {
   if (ops.length === 0) return;
 
@@ -1346,6 +1368,7 @@ export async function applyClimbRatings(
   }
   const survivors: NormalisedRating[] = [];
   let collapsedDuplicates = 0;
+  let crossFlushSkips = 0;
   for (const bucket of byConflictKey.values()) {
     if (bucket.length > 1) {
       collapsedDuplicates += bucket.length - 1;
@@ -1356,7 +1379,30 @@ export async function applyClimbRatings(
         return left.kilterId < right.kilterId ? -1 : left.kilterId > right.kilterId ? 1 : 0;
       });
     }
-    survivors.push(bucket[0]!);
+    const winner = bucket[0]!;
+    const key = `${KILTER_BOARD_TYPE}:${winner.canonical}:${winner.angle}:${userId}`;
+    const claimed = claimedNaturalKeys.get(key);
+    const winnerCreatedMs = winner.values.createdAt?.getTime() ?? 0;
+    if (claimed) {
+      // An earlier flush already wrote this climb/angle. Only displace it if
+      // this candidate really is newer (the same total order used within a
+      // bucket); otherwise skip, because writing it would undo the better
+      // choice and restart the churn.
+      const isNewer =
+        winnerCreatedMs > claimed.createdAtMs ||
+        (winnerCreatedMs === claimed.createdAtMs && winner.kilterId < claimed.kilterId);
+      if (!isNewer) {
+        crossFlushSkips += 1;
+        continue;
+      }
+    }
+    claimedNaturalKeys.set(key, { kilterId: winner.kilterId, createdAtMs: winnerCreatedMs });
+    survivors.push(winner);
+  }
+  if (crossFlushSkips > 0) {
+    log(
+      `[kilter-sync] ${crossFlushSkips} rating(s) already claimed by an earlier flush this sync for user ${userId} — keeping the earlier, newer pick`,
+    );
   }
   if (collapsedDuplicates > 0) {
     // Summarised, not per row: this is an upstream data condition that persists

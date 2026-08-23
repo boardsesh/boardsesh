@@ -360,6 +360,50 @@ describe('applyClimbRatings kilter_id reconciliation (real DB)', () => {
     expect(new Date(second!.updated_at).getTime()).toBe(new Date(first!.updated_at).getTime());
   });
 
+  it("does not let a later flush undo an earlier flush's newer pick", async () => {
+    // The bug a single-batch test cannot see. Duplicates for one climb/angle
+    // that land in DIFFERENT flushes were both written, and the later flush
+    // won regardless of which rating was newer — so the choice never
+    // converged and updated_at churned on every sync forever.
+    await seedUser(USER_ID);
+    const newer = putOp({ climbRatingUuid: 'kr-newer', angle: 40 });
+    (newer.data as Record<string, unknown>).created_at = '2026-06-01T12:00:00.000Z';
+    const older = putOp({ climbRatingUuid: 'kr-older', angle: 40 });
+
+    // One shared map = one sync; two calls = two flushes.
+    const claimed = new Map<string, { kilterId: string; createdAtMs: number }>();
+    await applyClimbRatings(applyTx, USER_ID, [newer], aliasCacheFor([CLIMB]), () => {}, claimed);
+    await applyClimbRatings(applyTx, USER_ID, [older], aliasCacheFor([CLIMB]), () => {}, claimed);
+
+    const rows = await readRatings(USER_ID);
+    expect(rows).toHaveLength(1);
+    // The newer rating from flush 1 survives; the older one in flush 2 is
+    // skipped rather than overwriting it.
+    expect(rows[0]?.kilter_id).toBe('kr-newer');
+  });
+
+  it('carries the flush claim across a whole sync without churning updated_at', async () => {
+    await seedUser(USER_ID);
+    const newer = putOp({ climbRatingUuid: 'kr-newer', angle: 40 });
+    (newer.data as Record<string, unknown>).created_at = '2026-06-01T12:00:00.000Z';
+    const older = putOp({ climbRatingUuid: 'kr-older', angle: 40 });
+
+    const syncOne = new Map<string, { kilterId: string; createdAtMs: number }>();
+    await applyClimbRatings(applyTx, USER_ID, [newer], aliasCacheFor([CLIMB]), () => {}, syncOne);
+    await applyClimbRatings(applyTx, USER_ID, [older], aliasCacheFor([CLIMB]), () => {}, syncOne);
+    const first = (await readRatings(USER_ID))[0];
+
+    // A second sync sees the same snapshot again. Nothing should move, which
+    // is what "converged" means: no UPDATE, no re-ship to offline clients.
+    const syncTwo = new Map<string, { kilterId: string; createdAtMs: number }>();
+    await applyClimbRatings(applyTx, USER_ID, [newer], aliasCacheFor([CLIMB]), () => {}, syncTwo);
+    await applyClimbRatings(applyTx, USER_ID, [older], aliasCacheFor([CLIMB]), () => {}, syncTwo);
+    const second = (await readRatings(USER_ID))[0];
+
+    expect(second?.kilter_id).toBe('kr-newer');
+    expect(new Date(second!.updated_at).getTime()).toBe(new Date(first!.updated_at).getTime());
+  });
+
   it('skips a row Postgres refuses instead of losing the whole batch', async () => {
     await seedUser(USER_ID);
 
