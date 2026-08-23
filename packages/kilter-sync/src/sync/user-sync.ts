@@ -1295,6 +1295,7 @@ export async function applyClimbRatings(
   }
 
   const incomingKilterIds = normalised.map((entry) => entry.kilterId);
+  const incomingKilterIdSet = new Set(incomingKilterIds);
   // Explicit empty-guard: drizzle's inArray([]) emits invalid `IN ()` SQL that
   // throws at the DB. Non-empty here (puts.length === 0 returned above), so
   // this is belt-and-braces against a future refactor thinning `normalised`.
@@ -1445,7 +1446,14 @@ export async function applyClimbRatings(
       // production account after the cross-flush claim fix.
       const stored = ownRowsByNaturalKey.get(key);
       const storedCreatedAt = stored?.createdAt ? new Date(stored.createdAt).getTime() : null;
-      if (stored?.kilterId && stored.kilterId !== winner.kilterId && storedCreatedAt !== null) {
+      // Only when the incumbent is STAYING PUT. If its surrogate is also in this
+      // batch it is being relocated — an upstream swap, where two ratings trade
+      // climb/angle — and deferring to it would block half the swap and leave
+      // the pair permanently half-applied. The earlier-flush case this guard
+      // exists for is precisely the opposite: the incumbent's surrogate arrives
+      // in a LATER flush, so it is absent here.
+      const incumbentIsMoving = stored?.kilterId ? incomingKilterIdSet.has(stored.kilterId) : false;
+      if (stored?.kilterId && stored.kilterId !== winner.kilterId && storedCreatedAt !== null && !incumbentIsMoving) {
         if (!ratingBeats(winnerKey, { createdAtMs: storedCreatedAt, kilterId: stored.kilterId })) {
           staleSkips += 1;
           continue;
