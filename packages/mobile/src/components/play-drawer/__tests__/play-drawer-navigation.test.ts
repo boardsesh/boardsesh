@@ -162,6 +162,46 @@ describe('getSwipeNavigationTarget', () => {
       }),
     ).toEqual({ viewOnly: true, targetItem: nextItem });
   });
+
+  // The shared-session half. With a crew present a swipe writes the queue
+  // EVERYONE reads and moves the wall someone may be mid-attempt on, so browsing
+  // must not cost that — regardless of the climber's own lighting setting, which
+  // is about their board, not about the crew's.
+  it('goes view-only in a shared session even with lightOnSwipe on and no preview', () => {
+    const nextItem = makeItem('next');
+    expect(
+      getSwipeNavigationTarget({
+        previewItem: null,
+        previewSuggestionSource: null,
+        targetItem: nextItem,
+        lightOnSwipe: true,
+        inSharedSession: true,
+      }),
+    ).toEqual({ viewOnly: true, targetItem: nextItem });
+  });
+
+  it('leaves a solo swipe live when the shared-session flag is off', () => {
+    expect(
+      getSwipeNavigationTarget({
+        previewItem: null,
+        previewSuggestionSource: null,
+        targetItem: makeItem('next'),
+        lightOnSwipe: true,
+        inSharedSession: false,
+      }),
+    ).toEqual({ viewOnly: false });
+  });
+
+  it('defaults inSharedSession to false, so solo call sites read unchanged', () => {
+    expect(
+      getSwipeNavigationTarget({
+        previewItem: null,
+        previewSuggestionSource: null,
+        targetItem: makeItem('next'),
+        lightOnSwipe: true,
+      }),
+    ).toEqual({ viewOnly: false });
+  });
 });
 
 // What the wall-state chrome is allowed to claim. The pill ("Browsing"), the
@@ -197,20 +237,49 @@ describe('swipeStaysViewOnly', () => {
     ).toBe(true);
   });
 
+  it('is true in a shared session, whatever the lighting setting says', () => {
+    const currentItem = makeItem('current');
+
+    // The one combination that used to commit — a pinned preview, no suggestion
+    // source, lighting on — and the bare committed state before any preview
+    // exists. Both browse once there is an audience.
+    expect(
+      swipeStaysViewOnly({
+        previewItem: currentItem,
+        previewSuggestionSource: null,
+        lightOnSwipe: true,
+        inSharedSession: true,
+      }),
+    ).toBe(true);
+    expect(
+      swipeStaysViewOnly({
+        previewItem: null,
+        previewSuggestionSource: null,
+        lightOnSwipe: true,
+        inSharedSession: true,
+      }),
+    ).toBe(true);
+  });
+
   it('agrees with the swipe handlers it is derived from, whatever the target', () => {
     const currentItem = makeItem('current');
     const nextItem = makeItem('next');
 
     for (const lightOnSwipe of [true, false]) {
-      for (const previewSuggestionSource of [null, makePreviewSource(currentItem)]) {
-        expect(swipeStaysViewOnly({ previewItem: currentItem, previewSuggestionSource, lightOnSwipe })).toBe(
-          getSwipeNavigationTarget({
-            previewItem: currentItem,
-            previewSuggestionSource,
-            targetItem: nextItem,
-            lightOnSwipe,
-          }).viewOnly,
-        );
+      for (const inSharedSession of [true, false]) {
+        for (const previewSuggestionSource of [null, makePreviewSource(currentItem)]) {
+          expect(
+            swipeStaysViewOnly({ previewItem: currentItem, previewSuggestionSource, lightOnSwipe, inSharedSession }),
+          ).toBe(
+            getSwipeNavigationTarget({
+              previewItem: currentItem,
+              previewSuggestionSource,
+              targetItem: nextItem,
+              lightOnSwipe,
+              inSharedSession,
+            }).viewOnly,
+          );
+        }
       }
     }
   });
@@ -230,5 +299,22 @@ describe('getSimilarClimbTapMode', () => {
   // the back door into the same behaviour.
   it('only swaps the preview for a signed-out reader — no queue write, no BLE re-arm', () => {
     expect(getSimilarClimbTapMode('anonymous')).toBe('preview');
+  });
+
+  // The member branch writes TWICE — appends to the queue AND takes the wall —
+  // which in a crew is the loudest possible outcome for the idlest possible
+  // intent: glancing at a "you might also like" card.
+  it('previews instead of double-writing when a member is in a crew', () => {
+    expect(getSimilarClimbTapMode('member', { inSharedSession: true })).toBe('preview');
+  });
+
+  it('keeps the solo member on the queue path', () => {
+    expect(getSimilarClimbTapMode('member', { inSharedSession: false })).toBe('queue');
+    expect(getSimilarClimbTapMode('member', {})).toBe('queue');
+  });
+
+  it('leaves the signed-out reader on the preview path either way', () => {
+    expect(getSimilarClimbTapMode('anonymous', { inSharedSession: true })).toBe('preview');
+    expect(getSimilarClimbTapMode('anonymous', { inSharedSession: false })).toBe('preview');
   });
 });

@@ -28,7 +28,10 @@ const mocks = vi.hoisted(() => ({
   searchFailed: false,
   offlineCatalog: null as 'missing' | 'queued' | null,
   activateClimb: vi.fn(),
+  activationOptions: undefined as { previewOnly?: boolean } | undefined,
   openPlayDrawer: vi.fn(),
+  // Mutable per-test: whether another climber is in the session.
+  isSharedSession: false,
   setSetting: vi.fn(),
   // Deep-link params, mutable so the screenshot-mode auto-opens can be driven
   // without a second mock scaffold.
@@ -237,6 +240,7 @@ vi.mock('../../../../src/theme/variants', () => ({
 
 vi.mock('../../../../src/providers/queue-provider', () => ({
   useActiveClimbUuid: () => null,
+  useIsSharedSession: () => mocks.isSharedSession,
   useQueueActions: () => ({ addToQueue: vi.fn() }),
 }));
 
@@ -299,8 +303,14 @@ vi.mock('../../../../src/offline/use-offline-catalog-state', () => ({
 vi.mock('../../../../src/hooks/use-is-offline', () => ({ useIsOffline: () => mocks.isOffline }));
 
 vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
-  usePlaylistActivation: () => ({
-    activate: mocks.activateClimb,
+  // Options captured, not swallowed: `previewOnly` is how the screen tells the
+  // activation hook that a row tap must browse rather than take the crew's wall,
+  // and dropping it at this call site is invisible to the hook's own tests.
+  usePlaylistActivation: (options: { previewOnly?: boolean }) => ({
+    activate: (...args: unknown[]) => {
+      mocks.activationOptions = options;
+      return mocks.activateClimb(...args);
+    },
     queueReplaceSheet: {
       visible: false,
       futureQueueCount: 0,
@@ -388,6 +398,8 @@ beforeEach(() => {
   mocks.searchFailed = false;
   mocks.offlineCatalog = null;
   mocks.searchParams = {};
+  mocks.isSharedSession = false;
+  mocks.activationOptions = undefined;
 });
 
 // The dead end this branch exists to remove, and the one it nearly reintroduced:
@@ -470,6 +482,61 @@ describe('ClimbList keyboard handling', () => {
   });
 });
 
+// Joining a crew changes what a row tap means: it browses instead of taking
+// everyone's wall. The screen decides that, and the drawer never sees the tap, so
+// nothing downstream can catch a regression here.
+describe('ClimbList shared-session row taps', () => {
+  it('routes a tap through the activation hook in browse mode', async () => {
+    mocks.isSharedSession = true;
+    const { findByText } = render(<ClimbList />);
+
+    fireEvent.click(await findByText('Moonage'));
+
+    // Through the hook — not the bare preview open — because only the hook can
+    // seed these results as the drawer's swipe track.
+    expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' });
+    expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+    // The flag that makes that activation view-only. Without it the hook commits.
+    expect(mocks.activationOptions?.previewOnly).toBe(true);
+  });
+
+  it('browses in a crew even when the climber has tap-lighting ON', async () => {
+    mocks.isSharedSession = true;
+    mocks.lightOnClimbTap = true;
+    const { findByText } = render(<ClimbList />);
+
+    fireEvent.click(await findByText('Moonage'));
+
+    expect(mocks.activationOptions?.previewOnly).toBe(true);
+  });
+
+  // The setting is about the climber's own board; the crew rule is about
+  // everyone else's. With lighting off AND a crew, the tap must still take the
+  // seeded path rather than the bare preview open, or swiping on from it would
+  // walk the queue instead of the results.
+  it('prefers the seeded browse over the bare preview when both reasons apply', async () => {
+    mocks.isSharedSession = true;
+    mocks.lightOnClimbTap = false;
+    const { findByText } = render(<ClimbList />);
+
+    fireEvent.click(await findByText('Moonage'));
+
+    expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+    expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' });
+    expect(mocks.activationOptions?.previewOnly).toBe(true);
+  });
+
+  it('leaves a solo tap committing', async () => {
+    mocks.isSharedSession = false;
+    const { findByText } = render(<ClimbList />);
+
+    fireEvent.click(await findByText('Moonage'));
+
+    expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' });
+    expect(mocks.activationOptions?.previewOnly).toBe(false);
+  });
+});
+
 describe('ClimbList lightOnClimbTap setting', () => {
   it('opens the pressed climb as a view-only preview instead of activating it when the setting is off', async () => {
     mocks.lightOnClimbTap = false;
@@ -519,6 +586,9 @@ describe('ClimbList screenshot-mode wall-state deep links', () => {
       // view-only, so the capture puts the device in that state rather than
       // photographing a promise the app wouldn't keep.
       expect(mocks.setSetting).toHaveBeenCalledWith('lightOnSwipe', false);
+      // And the one-shot card that same setting triggers is spent up front: a
+      // store shot is the steady state, not a climber's first five seconds.
+      expect(mocks.setSetting).toHaveBeenCalledWith('browseNoticeSeen', true);
     });
   });
 
