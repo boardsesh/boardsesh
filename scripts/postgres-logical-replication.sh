@@ -2284,8 +2284,14 @@ teardown_replication() {
   check_common_requirements
   require_env NEON_REPLICATION_DATABASE_URL SOURCE_REPLICATION_DATABASE_URL
   prepare_publisher_connection
-  [[ "$SOURCE_SLOT_RELEASE_SECONDS" =~ ^[0-9]+$ ]] ||
-    fail "SOURCE_SLOT_RELEASE_SECONDS must be a whole number of seconds"
+  # Leading zeros are rejected, not tolerated: bash reads a 0-prefixed literal as
+  # octal, so a plausible-looking SOURCE_SLOT_RELEASE_SECONDS=060 would quietly
+  # become 48 seconds and 08 would blow up mid-poll as "value too great for
+  # base", which the loop's `|| break` turns into an instant "budget spent". The
+  # failure message below names the total the operator asked for, so the total
+  # has to be the total they get.
+  [[ "$SOURCE_SLOT_RELEASE_SECONDS" =~ ^(0|[1-9][0-9]*)$ ]] ||
+    fail "SOURCE_SLOT_RELEASE_SECONDS must be a whole number of seconds with no leading zeros"
   # One allowance for the run, handed to every release_and_drop_source_slot call
   # from here on. Set it only after the format check, so a typo fails as a typo
   # rather than as arithmetic inside the poll loop.

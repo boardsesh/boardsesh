@@ -429,8 +429,10 @@ table-synchronization slot draw from the same 60 seconds, so a teardown that
 meets a dozen held sync slots still returns in about a minute rather than a
 dozen. A dead replication socket can hold one open until Neon's
 `wal_sender_timeout` expires; raise the budget past that rather than looping the
-command. The subscription is already dropped by this point, so the re-run picks
-up at the slot and the publication — expect it to say so, and treat the run as
+command, and write the new value without a leading zero: bash reads `090` as
+octal, so teardown refuses it outright rather than waiting a number nobody asked
+for. The subscription is already dropped by this point, so the re-run picks up
+at the slot and the publication — expect it to say so, and treat the run as
 unfinished until it exits clean. That re-run has no subscription left to match
 sync slots against, so instead of dropping them it lists them under `cannot
 attribute to any subscription`. Check that no other subscriber on that database

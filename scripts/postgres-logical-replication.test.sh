@@ -19,6 +19,9 @@ trap cleanup_test_root EXIT
 
 readonly FAKE_BIN="$TEST_ROOT/bin"
 readonly ARGUMENT_LOG="$TEST_ROOT/arguments.log"
+# The slice of ARGUMENT_LOG one run appended, so a case can assert on the SQL
+# that run emitted without truncating the log the password-leak checks read.
+readonly STATUS_ARGUMENT_LOG="$TEST_ROOT/status-arguments.log"
 readonly CLEANUP_PATH_LOG="$TEST_ROOT/cleanup-path.log"
 readonly SUBSCRIPTION_FILE_CHECK="$TEST_ROOT/subscription-file-checked"
 readonly HYPOPG_CREATE_MARKER="$TEST_ROOT/hypopg-created"
@@ -120,6 +123,12 @@ esac
 sql=''
 previous_argument=''
 expect_sql=false
+# Set once a --file argument is seen. The helper's only stdin-less, -c-less psql
+# calls are the --file ones, and for those the SQL is on disk, not on stdin;
+# reading stdin anyway blocks until EOF, so a caller that leaves an open pipe
+# there (a CI wrapper, an agent harness) wedges this whole suite on its first
+# --file call instead of running it.
+saw_file_argument=false
 # Real psql substitutes :'name' server-side, so the captured statement text never
 # carries the value. Keep the two the helper varies per call.
 psql_variable_slot_name=''
@@ -138,6 +147,7 @@ for argument in "$@"; do
     esac
   fi
   if [[ "$previous_argument" == '--file' || "$previous_argument" == '-f' ]]; then
+    saw_file_argument=true
     [[ -f "$argument" ]]
     [[ "$(stat -c '%a' "$argument" 2>/dev/null || stat -f '%Lp' "$argument")" == '600' ]]
     if grep -Fq 'CREATE SUBSCRIPTION' "$argument"; then
@@ -149,7 +159,9 @@ for argument in "$@"; do
   fi
   previous_argument="$argument"
 done
-if [[ -z "$sql" && ! -t 0 ]]; then
+# Heredoc SQL arrives on stdin, so it still has to be read -- but only when this
+# call had no other source for it. See saw_file_argument above.
+if [[ -z "$sql" && "$saw_file_argument" == false && ! -t 0 ]]; then
   sql="$(</dev/stdin)"
 fi
 if [[ "$sql" == *'CREATE EXTENSION IF NOT EXISTS hypopg'* ]]; then
@@ -251,6 +263,14 @@ case "$sql" in
     else
       [[ "$sql" == *'subscription.subslotname IS NULL'* ]] || contract_verdict=f
     fi
+    # subname is simulated by nothing at all -- every arm here answers for the
+    # one subscription this suite knows about -- so `WHERE subscription.subname
+    # = '...'` could become `WHERE true` and each remaining predicate would go on
+    # matching the same simulated row. It is the first of the five predicates no
+    # caller may relax, and the one that keeps the contract about this
+    # migration's subscription rather than about whatever single subscription
+    # happens to be on the target.
+    [[ "$sql" == *"subscription.subname = 'boardsesh_pg18_sub'"* ]] || contract_verdict=f
     [[ "$sql" == *"pg_get_userbyid(subscription.subowner) = '${FAKE_SUBSCRIPTION_OWNER:-boardsesh_pg18_subscriber}'"* ]] ||
       contract_verdict=f
     [[ "$sql" == *"subscription.subpublications = ARRAY['${FAKE_SUBSCRIPTION_PUBLICATION:-boardsesh_pg18_migration}']::text[]"* ]] ||
@@ -999,12 +1019,37 @@ run_status() {
 }
 
 # The control run proves the case below fails on the simulated row rather than on
-# a status command that was already broken.
+# a status command that was already broken. Note where the argv log had reached
+# first: the assertions after it must read only what this one run emitted, and
+# truncating instead would drop the teardown runs above out of the password-leak
+# check at the end of the file.
+status_argv_offset="$(wc -c <"$ARGUMENT_LOG")"
 run_status >"$ERROR_LOG" 2>&1 || {
   cat "$ERROR_LOG" >&2
   printf 'Expected status to accept an enabled subscription with its slot attached.\n' >&2
   exit 1
 }
+tail -c "+$((status_argv_offset + 1))" "$ARGUMENT_LOG" >"$STATUS_ARGUMENT_LOG"
+
+# Read the strict contract's slot predicate out of the SQL that run actually
+# emitted, instead of only inferring it from simulated rows. No simulated row can
+# see this axis on its own: real PostgreSQL refuses ALTER SUBSCRIPTION ... ENABLE
+# on a subscription with no slot name ("cannot enable subscription that does not
+# have a slot name"), so enabled-with-a-NULL-slot is unreachable and there is no
+# catalog shape the strict slot predicate is the only thing to reject. Without
+# these two lines, widening the strict `local slot_predicate=` to teardown's
+# `OR ... IS NULL` form -- every caller quietly helping itself to the relaxation
+# #4513 gave teardown alone -- leaves this whole suite green.
+grep -Fq "AND subscription.subslotname = 'boardsesh_pg18_migration'" "$STATUS_ARGUMENT_LOG" || {
+  cat "$STATUS_ARGUMENT_LOG" >&2
+  printf 'status stopped demanding the migration slot by name.\n' >&2
+  exit 1
+}
+if grep -Fq 'subslotname IS NULL' "$STATUS_ARGUMENT_LOG"; then
+  cat "$STATUS_ARGUMENT_LOG" >&2
+  printf 'status adopted the detached-subscription relaxation meant for teardown.\n' >&2
+  exit 1
+fi
 
 # Three simulated rows, each pinning a different piece of what the strict
 # contract still demands. The middle one is the state teardown actually
@@ -1013,7 +1058,8 @@ run_status >"$ERROR_LOG" 2>&1 || {
 # Enabled-with-a-NULL-slot is not a shape this script can leave behind, and
 # pinning status against a state nothing produces would prove nothing about the
 # real half-finished run -- so the third case carries the slot predicate on its
-# own instead, with a subscription that names somebody else's slot.
+# own instead, with a subscription that names somebody else's slot, and the NULL
+# half is held by the text check above.
 for rejected_subscription_state in disabled disabled-and-detached pointed-elsewhere; do
   case "$rejected_subscription_state" in
     disabled) simulated_enabled_state=f simulated_slot_state=boardsesh_pg18_migration ;;
@@ -1273,6 +1319,36 @@ if [[ -e "$PUBLICATION_DROPPED_MARKER" ]]; then
   exit 1
 fi
 
+# 22. The budget is read as a bash integer, and bash reads a leading zero as
+# octal. SOURCE_SLOT_RELEASE_SECONDS=060 is exactly what an operator types when
+# they mean a minute; unchecked it is 48 seconds, and 08 is an arithmetic error
+# the poll's `|| break` launders into an immediate "budget spent". Neither may
+# reach the catalog: the run has to stop at the argument, before it touches
+# anything, because the exhaustion message names the total that was asked for.
+# An empty value is not in this list: SOURCE_SLOT_RELEASE_SECONDS is read with
+# ${...:-60}, so unset and empty both mean the documented default.
+for malformed_release_budget in 060 08 1.5 sixty -1 ' 60'; do
+  reset_replication_object_state
+  if FAKE_SUBSCRIPTION_EXISTS=1 FAKE_PUBLICATION_EXISTS=1 FAKE_SLOT_EXISTS=1 \
+    SOURCE_SLOT_RELEASE_SECONDS="$malformed_release_budget" \
+    run_teardown >"$ERROR_LOG" 2>&1; then
+    printf 'Teardown accepted SOURCE_SLOT_RELEASE_SECONDS=%s.\n' "$malformed_release_budget" >&2
+    exit 1
+  fi
+  grep -Fq 'SOURCE_SLOT_RELEASE_SECONDS must be a whole number of seconds' "$ERROR_LOG" || {
+    cat "$ERROR_LOG" >&2
+    printf 'Teardown rejected SOURCE_SLOT_RELEASE_SECONDS=%s for the wrong reason.\n' "$malformed_release_budget" >&2
+    exit 1
+  }
+  # Refused at the argument, so nothing was dropped on the way to finding out.
+  if [[ -e "$SUBSCRIPTION_DROPPED_MARKER" || -e "$SLOT_DROPPED_MARKER" ||
+    -e "$PUBLICATION_DROPPED_MARKER" ]]; then
+    printf 'Teardown started work before rejecting SOURCE_SLOT_RELEASE_SECONDS=%s.\n' \
+      "$malformed_release_budget" >&2
+    exit 1
+  fi
+done
+
 assert_absent 'source:sec\ret' "$ARGUMENT_LOG" "$ERROR_LOG"
 assert_absent 'target-secret' "$ARGUMENT_LOG" "$ERROR_LOG"
 assert_absent 'publisher-secret' "$ARGUMENT_LOG" "$ERROR_LOG"
@@ -1283,3 +1359,4 @@ printf 'Teardown clears an orphan slot and publication without the role variable
 printf 'Teardown drops a disabled or slot-detached subscription without weakening its identity contract.\n'
 printf 'Teardown clears the sync slots a detached drop leaves behind, and waits out the publisher walsender.\n'
 printf 'The walsender wait is one budget for the run, and every slot drop re-proves the slot before deleting it.\n'
+printf 'The walsender budget is refused unless it reads as the number of seconds it looks like.\n'
