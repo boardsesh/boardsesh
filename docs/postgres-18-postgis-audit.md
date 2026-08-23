@@ -5,12 +5,13 @@ Target artifact: PostgreSQL 18.4, PostGIS 3.6.4 (newest PGDG offers for PG18)
 
 ## Actual spatial usage: two columns
 
-| Column | Type | Rows | Populated |
-|---|---|---|---|
-| `public.gyms.location` | `geography(Point,4326)` | 4875 | 3114 |
-| `public.user_boards.location` | `geography(Point,4326)` | 6375 | 3318 |
+| Column                        | Type                    | Rows | Populated |
+| ----------------------------- | ----------------------- | ---- | --------- |
+| `public.gyms.location`        | `geography(Point,4326)` | 4875 | 3114      |
+| `public.user_boards.location` | `geography(Point,4326)` | 6375 | 3318      |
 
 Two partial GiST indexes:
+
 - `gyms_location_idx` — `USING gist (location) WHERE deleted_at IS NULL AND is_public = true`
 - `user_boards_location_gist_idx` — `USING gist (location) WHERE is_public = true AND deleted_at IS NULL`
 
