@@ -140,6 +140,23 @@ active detent's height on iOS via `useSheetColumnStyle` (`src/components/use-she
 Android bounds it natively and keeps `flex: 1`. A raw-`BottomSheet` surface with a pinned footer
 (`ClimbFilterSheet`, `LogAscentSheet`) must apply the same hook itself.
 
+**Android sizing — only two real states.** `@expo/ui`'s Android sheet is a plain Material 3
+`ModalBottomSheet`: it never reads the requested `%` snap-point _values_, only the detent count
+and which index is requested — it has a fixed ~50% "partial" state and a content-fitting
+"expanded" state, nothing in between (see `androidSafeSnapPoints` in
+`src/components/sheet-snap-points.ts`). A sheet whose detents are tuned against iOS's real first
+fraction (e.g. `65%`/`80%`, sized so a pinned footer fits under the form) can be TALLER than
+Android's ~50% partial state, stranding that footer below the fold (#4231). For a multi-detent
+sheet with a pinned footer, pass `androidOpensExpanded` to `Sheet` / `ModalSheet` — `LogAscentSheet`
+and `LogbookEditSheet` opt in. It collapses the sheet to its single LAST detent on Android (via
+`androidSafeSnapPoints`) rather than requesting the last index of a multi-detent config: a single
+detent makes the native sheet set `skipPartiallyExpanded`, which removes "partial" as a landable
+state entirely, so it can only rest at Expanded (or Hidden) — no imperative re-snap in the mix.
+Requesting an index into a multi-detent config instead depends on `@expo/ui`'s Android layer
+calling `sheetState.expand()` in a `LaunchedEffect` it wraps in a swallowed `catch` ("Expanded
+anchor may be unreachable; never crash the view") — a real, silent-failure race that can leave
+the sheet resting at partial with the footer off-screen even when the right index was requested.
+
 The bound isn't optional the moment a surface gains a scroll body: without it the scroll view
 never gains an overflow, so nothing scrolls **and** the footer is off-screen. `LogAscentSheet`
 went years on a plain `flex: 1` column safely — it had no scroll body and no pinned footer, so

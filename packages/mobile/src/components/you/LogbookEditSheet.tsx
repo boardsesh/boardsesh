@@ -228,6 +228,10 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
       scrollable
       surface="solid"
       footerSurface="flush"
+      // See the identical fix on the create-tick sheet (`LogAscentSheet`,
+      // #4231): the edit sheet has the same pinned-footer-under-Android's-
+      // partial-state shape, so it gets the same opt-in.
+      androidOpensExpanded
       onClose={onClose}
       header={
         <TickSheetHeader
