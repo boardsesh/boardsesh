@@ -22,6 +22,11 @@ TARGET_MIGRATOR_ROLE="${TARGET_MIGRATOR_ROLE:-}"
 SOURCE_DATABASE_NAME="${SOURCE_DATABASE_NAME:-railway}"
 TARGET_DATABASE_NAME="${TARGET_DATABASE_NAME:-railway}"
 SOURCE_SLOT_RELEASE_SECONDS="${SOURCE_SLOT_RELEASE_SECONDS:-60}"
+# Seconds of walsender waiting left for the whole teardown run, shared by every
+# release_and_drop_source_slot call. Teardown initialises it from
+# SOURCE_SLOT_RELEASE_SECONDS once its format has been validated; see the note on
+# that function for why the budget is one allowance rather than one per slot.
+SOURCE_SLOT_RELEASE_BUDGET_REMAINING=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/postgres-credentials.sh
 source "$SCRIPT_DIR/lib/postgres-credentials.sh"
@@ -100,9 +105,14 @@ Environment:
                                     acceptance window and successful PG18 restore drill.
   SOURCE_SLOT_RELEASE_SECONDS       Optional teardown budget in seconds, default 60. How
                                     long to wait for the publisher to release a slot after
-                                    the subscription that held it is dropped. Raise it past
-                                    the source's wal_sender_timeout when a dead replication
-                                    socket keeps the walsender attached for longer.
+                                    the subscription that held it is dropped. One budget
+                                    for the whole run, shared by the migration slot and
+                                    every stranded table-synchronization slot -- not a
+                                    fresh 60s each, which an interrupted copy of many
+                                    tables would turn into an hour of waiting. Raise it
+                                    past the source's wal_sender_timeout when a dead
+                                    replication socket keeps the walsender attached for
+                                    longer.
 
 Commands:
   setup
@@ -2201,9 +2211,16 @@ SQL
 # detaching first makes this the code that has to sit through it. Polling beats
 # failing a teardown that is one socket close away from finishing, and anything
 # else still holding the slot fails the budget out with the catalogue untouched.
+#
+# The budget is one allowance for the run, not one per slot. Teardown calls this
+# once for the migration slot and once per table-synchronization slot the
+# interrupted copy stranded, and a fresh allowance each time would multiply the
+# default 60s by the number of unsynchronized tables -- 50 tables is close to an
+# hour of a teardown doing nothing while the source it was called to unblock
+# goes on filling. One walsender wait tells the operator everything the
+# fifty-first would; the answer is to wait and re-run, not to keep the terminal.
 release_and_drop_source_slot() {
   local slot_name="$1"
-  local release_attempt=0
   local slot_state
   while true; do
     # Three-valued deliberately. 'gone' means a second operator dropped the slot
@@ -2218,8 +2235,11 @@ SELECT coalesce(
          'gone');
 SQL
 )"
-    [[ "$slot_state" == 'held' && "$release_attempt" -lt "$SOURCE_SLOT_RELEASE_SECONDS" ]] || break
-    release_attempt=$((release_attempt + 1))
+    # Seconds remaining, not attempts made: every iteration that continues
+    # sleeps exactly one second and spends exactly one second of the run's
+    # budget, so a budget of 0 means "probe once and do not wait at all".
+    [[ "$slot_state" == 'held' && "$SOURCE_SLOT_RELEASE_BUDGET_REMAINING" -gt 0 ]] || break
+    SOURCE_SLOT_RELEASE_BUDGET_REMAINING=$((SOURCE_SLOT_RELEASE_BUDGET_REMAINING - 1))
     sleep 1
   done
   case "$slot_state" in
@@ -2229,12 +2249,33 @@ SQL
       return 0
       ;;
     *)
-      fail "source slot $slot_name is still held by an active walsender after ${SOURCE_SLOT_RELEASE_SECONDS}s; re-run teardown once it has disconnected, or raise SOURCE_SLOT_RELEASE_SECONDS past the source wal_sender_timeout"
+      fail "source slot $slot_name is still held by an active walsender and this teardown run's ${SOURCE_SLOT_RELEASE_SECONDS}s SOURCE_SLOT_RELEASE_SECONDS budget for all slots is spent; re-run teardown once it has disconnected, or raise SOURCE_SLOT_RELEASE_SECONDS past the source wal_sender_timeout"
       ;;
   esac
+  # Re-prove identity and idleness inside the deleting statement itself. The
+  # poll above and the contract check before it both read the catalogue in
+  # earlier transactions, and a walsender can reattach in the gap; a bare
+  # pg_drop_replication_slot(:'slot_name') would then act on a decision that had
+  # already gone stale. Matching nothing is the safe outcome here, so the drop
+  # cannot report it -- the verification below is what turns a WHERE that
+  # matched no row into a refusal instead of a silent all-clear over a slot that
+  # is still retaining WAL.
   psql_neon -X -v slot_name="$slot_name" >/dev/null <<'SQL'
-SELECT pg_drop_replication_slot(:'slot_name');
+SELECT pg_drop_replication_slot(slot.slot_name)
+FROM pg_replication_slots AS slot
+WHERE slot.slot_name = :'slot_name'
+  AND slot.slot_type = 'logical'
+  AND slot.plugin = 'pgoutput'
+  AND slot.database = current_database()
+  AND NOT slot.active;
 SQL
+  local slot_remains
+  slot_remains="$(psql_neon -X -Atq -v slot_name="$slot_name" <<'SQL'
+SELECT count(*) FROM pg_replication_slots WHERE slot_name = :'slot_name';
+SQL
+)"
+  [[ "$slot_remains" == '0' ]] ||
+    fail "source slot $slot_name survived its guarded drop, so it changed shape or was re-acquired between the release poll and the drop and is still retaining WAL; re-check it on the source and re-run teardown"
 }
 
 teardown_replication() {
@@ -2245,6 +2286,10 @@ teardown_replication() {
   prepare_publisher_connection
   [[ "$SOURCE_SLOT_RELEASE_SECONDS" =~ ^[0-9]+$ ]] ||
     fail "SOURCE_SLOT_RELEASE_SECONDS must be a whole number of seconds"
+  # One allowance for the run, handed to every release_and_drop_source_slot call
+  # from here on. Set it only after the format check, so a typo fails as a typo
+  # rather than as arithmetic inside the poll loop.
+  SOURCE_SLOT_RELEASE_BUDGET_REMAINING="$SOURCE_SLOT_RELEASE_SECONDS"
   # TARGET_OWNER_ROLE and TARGET_SUBSCRIBER_ROLE are deliberately not required
   # here. Dropping the subscription needs them (its owner is half the proof the
   # subscription is ours) and so does the role cleanup, and both demand them at
@@ -2363,6 +2408,14 @@ SQL
     # so a re-run repeats whichever of the three did not land. The slot itself
     # is then removed on the source, over the admin connection, by the block
     # below.
+    #
+    # Idempotent includes the middle statement, which is the one a re-run is
+    # most likely to repeat: verified on PostgreSQL 18.4, a second
+    # SET (slot_name = NONE) against an already-detached subscription returns
+    # ALTER SUBSCRIPTION cleanly rather than erroring on the NULL subslotname,
+    # and the DROP that follows it succeeds. Measured, not assumed -- the
+    # alternative would be reading subslotname first and branching, which buys
+    # nothing and adds a state to get wrong.
     psql_railway <<SQL
 ALTER SUBSCRIPTION $SUBSCRIPTION_NAME DISABLE;
 ALTER SUBSCRIPTION $SUBSCRIPTION_NAME SET (slot_name = NONE);

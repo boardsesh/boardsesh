@@ -421,16 +421,20 @@ never finished, so teardown sweeps the table-synchronization slots
 dropped. Those slots retain WAL exactly like the main one, and after a detached
 drop nothing else would ever remove them.
 
-If a walsender on Neon has not disconnected yet, teardown waits up to
-`SOURCE_SLOT_RELEASE_SECONDS` (default 60) for it and then stops with `source
-slot ... is still held by an active walsender`. A dead replication socket can
-hold one open until Neon's `wal_sender_timeout` expires; raise the budget past
-that rather than looping the command. The subscription is already dropped by
-this point, so the re-run picks up at the slot and the publication — expect it
-to say so, and treat the run as unfinished until it exits clean. That re-run has
-no subscription left to match sync slots against, so instead of dropping them it
-lists them under `cannot attribute to any subscription`. Check that no other
-subscriber on that database owns them and drop each one by hand:
+If a walsender on Neon has not disconnected yet, teardown waits for it and then
+stops with `source slot ... is still held by an active walsender`.
+`SOURCE_SLOT_RELEASE_SECONDS` (default 60) is the budget for that waiting across
+the whole run, not per slot: the migration slot and every stranded
+table-synchronization slot draw from the same 60 seconds, so a teardown that
+meets a dozen held sync slots still returns in about a minute rather than a
+dozen. A dead replication socket can hold one open until Neon's
+`wal_sender_timeout` expires; raise the budget past that rather than looping the
+command. The subscription is already dropped by this point, so the re-run picks
+up at the slot and the publication — expect it to say so, and treat the run as
+unfinished until it exits clean. That re-run has no subscription left to match
+sync slots against, so instead of dropping them it lists them under `cannot
+attribute to any subscription`. Check that no other subscriber on that database
+owns them and drop each one by hand:
 
 ```sql
 SELECT pg_drop_replication_slot('pg_<oid>_sync_<relid>_<sysid>');

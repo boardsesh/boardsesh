@@ -34,12 +34,21 @@ readonly SUBSCRIPTION_DROPPED_MARKER="$TEST_ROOT/subscription-dropped"
 # the migration slot and any stranded table-synchronization slot through the same
 # statement, so only the -v slot_name it passed tells them apart.
 readonly SLOT_DROP_NAME_LOG="$TEST_ROOT/slot-drop-names.log"
+# The release poll's wait is simulated, never slept: a fake sleep on PATH records
+# each second the helper would have spent so a case can assert how much of the
+# budget went where, and keeps the suite at seconds rather than minutes.
+readonly SLEEP_LOG="$TEST_ROOT/sleep.log"
+# One counter file per slot name, so a case can hold a slot for its first N
+# release probes and let it go afterwards. That is the shape that tells an
+# aggregate budget apart from a per-slot one.
+readonly SLOT_POLL_COUNT_DIR="$TEST_ROOT/slot-poll-counts"
 export ARGUMENT_LOG CLEANUP_PATH_LOG SUBSCRIPTION_FILE_CHECK HYPOPG_CREATE_MARKER \
   ROLE_STATEMENT_LOG SUBSCRIBER_DROPPED_MARKER REPLICATION_OBJECT_LOG \
   PUBLICATION_DROPPED_MARKER SLOT_DROPPED_MARKER SUBSCRIPTION_DROPPED_MARKER \
-  SLOT_DROP_NAME_LOG
-mkdir -p "$FAKE_BIN"
+  SLOT_DROP_NAME_LOG SLEEP_LOG SLOT_POLL_COUNT_DIR
+mkdir -p "$FAKE_BIN" "$SLOT_POLL_COUNT_DIR"
 : >"$SLOT_DROP_NAME_LOG"
+: >"$SLEEP_LOG"
 
 assert_absent() {
   local needle="$1"
@@ -161,12 +170,31 @@ if [[ "$sql" == *'DROP PUBLICATION'* ]]; then
   : >"$PUBLICATION_DROPPED_MARKER"
 fi
 if [[ "$sql" == *'pg_drop_replication_slot'* ]]; then
+  # The drop re-proves identity and idleness in the statement that deletes, since
+  # the poll that decided the slot was droppable committed earlier and a
+  # walsender can reattach in between. Simulating a drop that lost those
+  # predicates would let them be deleted with the suite still green, so refuse to
+  # answer one at all.
+  for required_drop_predicate in \
+    "slot.slot_name = :'slot_name'" \
+    "slot.slot_type = 'logical'" \
+    "slot.plugin = 'pgoutput'" \
+    'slot.database = current_database()' \
+    'NOT slot.active'; do
+    [[ "$sql" == *"$required_drop_predicate"* ]] || exit 81
+  done
   printf '%s\n' "$sql" >>"$REPLICATION_OBJECT_LOG"
-  printf '%s\n' "$psql_variable_slot_name" >>"$SLOT_DROP_NAME_LOG"
-  # Only the migration slot drives the simulated existence probes. Sync slots
-  # come and go by name through SLOT_DROP_NAME_LOG.
-  if [[ "$psql_variable_slot_name" == 'boardsesh_pg18_migration' ]]; then
-    : >"$SLOT_DROPPED_MARKER"
+  # FAKE_SLOT_DROP_MATCHES_NOTHING is that reattachment: the WHERE matches no
+  # row, so nothing is deleted and nothing is reported. Leave both the name log
+  # and the existence marker alone, so only the helper's own post-drop check can
+  # notice.
+  if [[ "${FAKE_SLOT_DROP_MATCHES_NOTHING:-0}" != '1' ]]; then
+    printf '%s\n' "$psql_variable_slot_name" >>"$SLOT_DROP_NAME_LOG"
+    # Only the migration slot drives the simulated existence probes. Sync slots
+    # come and go by name through SLOT_DROP_NAME_LOG.
+    if [[ "$psql_variable_slot_name" == 'boardsesh_pg18_migration' ]]; then
+      : >"$SLOT_DROPPED_MARKER"
+    fi
   fi
 fi
 if [[ "$sql" == *'DROP SUBSCRIPTION'* ]]; then
@@ -235,6 +263,21 @@ case "$sql" in
     [[ "$sql" == *"md5(subscription.subconninfo) = '"* ]] || contract_verdict=f
     [[ "$sql" == *"obj_description(subscription.oid, 'pg_subscription') ="* &&
       "$sql" == *"'boardsesh-pg18-conninfo-v1:"* ]] || contract_verdict=f
+    # The five option predicates need the same presence check, for the same
+    # reason and one more: no simulated knob varies them, and #4513 relaxed the
+    # two predicates next to them, so a slip that deleted one of these instead
+    # would leave every arm here matching and the whole suite green. They are
+    # asserted on every path, teardown included -- nothing teardown does can
+    # change a subscription's options, so there is no half-finished shape they
+    # could wrongly refuse and no reason for any caller to relax one.
+    for required_option_predicate in \
+      'AND NOT subscription.subbinary' \
+      "AND subscription.suborigin = 'none'" \
+      'AND NOT subscription.subrunasowner' \
+      'AND subscription.subpasswordrequired' \
+      'AND NOT subscription.subfailover'; do
+      [[ "$sql" == *"$required_option_predicate"* ]] || contract_verdict=f
+    done
     [[ "${FAKE_SUBSCRIPTION_CONNINFO_MATCHES:-t}" == 't' ]] || contract_verdict=f
     printf '%s\n' "$contract_verdict"
     ;;
@@ -279,10 +322,28 @@ case "$sql" in
     # The release poll. 'gone' simulates a second operator dropping the slot
     # mid-wait, so mark it dropped too: the verification afterwards has to see it
     # absent rather than blame a walsender that is no longer there.
-    if [[ "${FAKE_SLOT_RELEASE_STATE:-released}" == 'gone' ]]; then
+    slot_release_state="${FAKE_SLOT_RELEASE_STATE:-released}"
+    # Per-slot hold, layered over that: a slot named in FAKE_HELD_SLOT_NAMES
+    # answers 'held' for its first FAKE_HELD_SLOT_POLLS probes and 'released'
+    # after. Two slots each holding for one probe is what separates a budget
+    # shared by the run from one handed out fresh per slot.
+    if [[ -n "$psql_variable_slot_name" &&
+      " ${FAKE_HELD_SLOT_NAMES:-} " == *" $psql_variable_slot_name "* ]]; then
+      slot_poll_counter="$SLOT_POLL_COUNT_DIR/$psql_variable_slot_name"
+      slot_poll_count=0
+      [[ ! -f "$slot_poll_counter" ]] || slot_poll_count="$(<"$slot_poll_counter")"
+      slot_poll_count=$((slot_poll_count + 1))
+      printf '%s\n' "$slot_poll_count" >"$slot_poll_counter"
+      if [[ "$slot_poll_count" -le "${FAKE_HELD_SLOT_POLLS:-1}" ]]; then
+        slot_release_state=held
+      else
+        slot_release_state=released
+      fi
+    fi
+    if [[ "$slot_release_state" == 'gone' ]]; then
       : >"$SLOT_DROPPED_MARKER"
     fi
-    printf '%s\n' "${FAKE_SLOT_RELEASE_STATE:-released}"
+    printf '%s\n' "$slot_release_state"
     ;;
   *"~ '^pg_[0-9]+_sync_"*)
     # The orphan-path probe: sync slots that survive with no subscription left to
@@ -355,7 +416,17 @@ printf '\n' >>"$ARGUMENT_LOG"
 [[ " $* " != *'postgresql://'* && " $* " != *'postgres://'* ]]
 FAKE_PG_RESTORE
 
-chmod +x "$FAKE_BIN/psql" "$FAKE_BIN/pg_dump" "$FAKE_BIN/pg_restore"
+# The helper's release poll sleeps a second per iteration of the walsender wait.
+# Record the seconds instead of spending them: the budget arithmetic is what the
+# cases are about, and a real wait would put minutes on a suite that runs in
+# seconds. Deterministic too -- no wall clock decides how many probes happen.
+cat >"$FAKE_BIN/sleep" <<'FAKE_SLEEP'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\n' "$1" >>"$SLEEP_LOG"
+FAKE_SLEEP
+
+chmod +x "$FAKE_BIN/psql" "$FAKE_BIN/pg_dump" "$FAKE_BIN/pg_restore" "$FAKE_BIN/sleep"
 
 PATH="$FAKE_BIN:$PATH" \
 PGHOST='poison-host' \
@@ -771,9 +842,11 @@ assert_absent 'publisher-secret' "$ARGUMENT_LOG" "$ERROR_LOG"
 # row. Reset the drop markers so each run meets that state again.
 reset_replication_object_state() {
   rm -f "$SUBSCRIPTION_DROPPED_MARKER" "$PUBLICATION_DROPPED_MARKER" "$SLOT_DROPPED_MARKER"
+  rm -f "$SLOT_POLL_COUNT_DIR"/*
   : >"$REPLICATION_OBJECT_LOG"
   : >"$ROLE_STATEMENT_LOG"
   : >"$SLOT_DROP_NAME_LOG"
+  : >"$SLEEP_LOG"
 }
 
 # Every refusal is asserted twice: teardown has to exit non-zero *and* say why.
@@ -933,10 +1006,19 @@ run_status >"$ERROR_LOG" 2>&1 || {
   exit 1
 }
 
-for rejected_subscription_state in disabled detached; do
+# Three simulated rows, each pinning a different piece of what the strict
+# contract still demands. The middle one is the state teardown actually
+# produces: DISABLE and SET (slot_name = NONE) autocommit in that order, so
+# subslotname only ever goes NULL on a subscription that is already disabled.
+# Enabled-with-a-NULL-slot is not a shape this script can leave behind, and
+# pinning status against a state nothing produces would prove nothing about the
+# real half-finished run -- so the third case carries the slot predicate on its
+# own instead, with a subscription that names somebody else's slot.
+for rejected_subscription_state in disabled disabled-and-detached pointed-elsewhere; do
   case "$rejected_subscription_state" in
     disabled) simulated_enabled_state=f simulated_slot_state=boardsesh_pg18_migration ;;
-    detached) simulated_enabled_state=t simulated_slot_state='' ;;
+    disabled-and-detached) simulated_enabled_state=f simulated_slot_state='' ;;
+    pointed-elsewhere) simulated_enabled_state=t simulated_slot_state=somebody_elses_slot ;;
   esac
   if FAKE_SUBSCRIPTION_ENABLED="$simulated_enabled_state" \
     FAKE_SUBSCRIPTION_SLOT_NAME="$simulated_slot_state" \
@@ -1124,6 +1206,73 @@ if grep -Fq 'cannot attribute to any subscription' "$ERROR_LOG"; then
   exit 1
 fi
 
+# 20. SOURCE_SLOT_RELEASE_SECONDS is the budget for the run, not for each slot.
+# An interrupted initial copy leaves one sync slot per unsynchronized table, so a
+# per-slot allowance would multiply the default 60s by that count -- tens of
+# minutes of teardown waiting while the source it was called to unblock keeps
+# filling. Two slots that each hold for exactly one probe, against a one-second
+# budget: the first spends it, and the second must meet an empty budget rather
+# than a fresh one.
+reset_replication_object_state
+if FAKE_SUBSCRIPTION_EXISTS=1 FAKE_PUBLICATION_EXISTS=1 FAKE_SLOT_EXISTS=1 \
+  FAKE_SUBSCRIPTION_OID=24680 \
+  FAKE_TABLESYNC_SLOTS='pg_24680_sync_16400_74921 pg_24680_sync_16401_74921' \
+  FAKE_HELD_SLOT_NAMES='pg_24680_sync_16400_74921 pg_24680_sync_16401_74921' \
+  FAKE_HELD_SLOT_POLLS=1 SOURCE_SLOT_RELEASE_SECONDS=1 \
+  run_teardown >"$ERROR_LOG" 2>&1; then
+  printf 'Expected the second held slot to meet a budget the first had already spent.\n' >&2
+  exit 1
+fi
+grep -Fq 'budget for all slots is spent' "$ERROR_LOG" || {
+  cat "$ERROR_LOG" >&2
+  printf 'Teardown did not report the shared release budget as spent.\n' >&2
+  exit 1
+}
+grep -Fxq 'pg_24680_sync_16400_74921' "$SLOT_DROP_NAME_LOG" || {
+  cat "$ERROR_LOG" "$SLOT_DROP_NAME_LOG" >&2
+  printf 'The first held slot was not dropped after it released.\n' >&2
+  exit 1
+}
+if grep -Fxq 'pg_24680_sync_16401_74921' "$SLOT_DROP_NAME_LOG"; then
+  cat "$SLOT_DROP_NAME_LOG" >&2
+  printf 'The second held slot got a fresh release budget of its own.\n' >&2
+  exit 1
+fi
+# One second of budget, one second of waiting, across the whole run. A per-slot
+# budget would have slept once more before failing, or not failed at all.
+[[ "$(wc -l <"$SLEEP_LOG")" -eq 1 ]] || {
+  cat "$SLEEP_LOG" >&2
+  printf 'Teardown spent something other than the one second of budget it had.\n' >&2
+  exit 1
+}
+
+# 21. The drop re-checks identity and idleness in the deleting statement, so a
+# walsender that reattached since the release poll makes the WHERE match nothing.
+# Nothing deleted and nothing reported is the safe half; teardown still has to
+# say so, or #4513's loud wedge is traded for a silent all-clear over a slot that
+# is still retaining WAL.
+reset_replication_object_state
+if FAKE_SUBSCRIPTION_EXISTS=0 FAKE_PUBLICATION_EXISTS=1 FAKE_SLOT_EXISTS=1 \
+  FAKE_SLOT_DROP_MATCHES_NOTHING=1 \
+  run_teardown >"$ERROR_LOG" 2>&1; then
+  printf 'Expected teardown to fail over a slot its guarded drop did not remove.\n' >&2
+  exit 1
+fi
+grep -Fq 'survived its guarded drop' "$ERROR_LOG" || {
+  cat "$ERROR_LOG" >&2
+  printf 'Teardown failed for the wrong reason over a drop that matched nothing.\n' >&2
+  exit 1
+}
+grep -Fq 'pg_drop_replication_slot' "$REPLICATION_OBJECT_LOG" || {
+  cat "$ERROR_LOG" "$REPLICATION_OBJECT_LOG" >&2
+  printf 'Teardown never issued the guarded drop it then failed to verify.\n' >&2
+  exit 1
+}
+if [[ -e "$PUBLICATION_DROPPED_MARKER" ]]; then
+  printf 'Teardown carried on to the publication over a slot it had not removed.\n' >&2
+  exit 1
+fi
+
 assert_absent 'source:sec\ret' "$ARGUMENT_LOG" "$ERROR_LOG"
 assert_absent 'target-secret' "$ARGUMENT_LOG" "$ERROR_LOG"
 assert_absent 'publisher-secret' "$ARGUMENT_LOG" "$ERROR_LOG"
@@ -1133,3 +1282,4 @@ printf 'Teardown drops only an exact temporary subscriber role, idempotently.\n'
 printf 'Teardown clears an orphan slot and publication without the role variables.\n'
 printf 'Teardown drops a disabled or slot-detached subscription without weakening its identity contract.\n'
 printf 'Teardown clears the sync slots a detached drop leaves behind, and waits out the publisher walsender.\n'
+printf 'The walsender wait is one budget for the run, and every slot drop re-proves the slot before deleting it.\n'
