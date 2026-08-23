@@ -13,6 +13,7 @@ on:
       - 'packages/web/db/setup-development-db.sh'
       - '.github/workflows/dev-db-docker.yml'
       - '.github/workflows/postgres-image-publisher.yml'
+      - '.github/workflows/postgres-seeded-image-publisher.yml'
       - 'scripts/dev-db-image-smoke.sh'
       - 'scripts/dev-db-up.sh'
       - 'scripts/lib/postgres-credentials.sh'
@@ -33,7 +34,8 @@ on:
     paths: *database_image_paths
 
 # Feature-branch code is deliberately limited to read-only validation. Image
-# publication is defined by postgres-image-publisher.yml loaded from main.
+# publication is defined by postgres-image-publisher.yml and
+# postgres-seeded-image-publisher.yml, both loaded from main.
 permissions:
   contents: read
 

@@ -21,7 +21,14 @@ const ACTIONS = {
   uploadArtifact: 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02',
 } as const;
 
-const PUBLISHER_STEPS: Record<string, ExpectedStep[]> = {
+// The portable image (Railway production, homelab standby, ci.yml) and the
+// seeded developer image (Compose, e2e, migration renumber) are published by
+// two separate protected-main workflows so that a production publish never
+// waits on the ~17-minute seeded build's quiet-main window. Both workflows keep
+// the identical trust boundary; every assertion below runs against both.
+type PublisherKind = 'portable' | 'seeded';
+
+const PORTABLE_STEPS: Record<string, ExpectedStep[]> = {
   'authorize-current-main': [{ name: 'Bind workflow and audit publisher environment' }],
   'validate-main': [
     { name: 'Checkout exact current main commit', uses: ACTIONS.checkout },
@@ -40,7 +47,6 @@ const PUBLISHER_STEPS: Record<string, ExpectedStep[]> = {
     { name: 'Set up pinned ORAS client', uses: ACTIONS.setupOras },
     { name: 'Revalidate offline build inputs' },
     { name: 'Build portable OCI layout without registry credentials', uses: ACTIONS.buildPush },
-    { name: 'Build seeded OCI layout without registry credentials', uses: ACTIONS.buildPush },
     { name: 'Validate offline layouts and retired digest policy' },
     { name: 'Recheck exact current main and environment immediately before registry authentication' },
     { name: 'Authenticate ORAS to GHCR' },
@@ -68,6 +74,59 @@ const PUBLISHER_STEPS: Record<string, ExpectedStep[]> = {
     { name: 'Install locked dependencies after registry credential removal' },
     { name: 'Verify labels and boot exact portable platform' },
   ],
+  'attest-published-digests': [
+    { name: 'Recheck exact current main and environment immediately before OIDC attestation' },
+    { name: 'Attest exact portable digest', uses: ACTIONS.attest },
+  ],
+  'verify-attestations': [
+    { name: 'Create temporary read-only registry boundary' },
+    { name: 'Recheck exact current main immediately before registry authentication' },
+    { name: 'Log in to GHCR for attestation verification', uses: ACTIONS.login },
+    { name: 'Validate the attestation URL and verify the exact subject' },
+    { name: 'Remove temporary attestation verification credentials' },
+  ],
+  'record-published-digests': [
+    { name: 'Write machine-readable digest manifest and summary' },
+    { name: 'Recheck exact current main and workflow before artifact upload' },
+    { name: 'Upload verified digest manifest', uses: ACTIONS.uploadArtifact },
+  ],
+};
+
+// The seeded image is linux/amd64 only, so its publisher installs no QEMU and
+// its smoke job has no platform matrix. Everything else mirrors the portable
+// publisher step for step.
+const SEEDED_STEPS: Record<string, ExpectedStep[]> = {
+  'authorize-current-main': [{ name: 'Bind workflow and audit publisher environment' }],
+  'validate-main': [
+    { name: 'Checkout exact current main commit', uses: ACTIONS.checkout },
+    { name: 'Validate checkout and Docker inputs' },
+    { name: 'Set up Vite+', uses: ACTIONS.setupVp },
+    { name: 'Set up Bun', uses: ACTIONS.setupBun },
+    { name: 'Install locked dependencies' },
+    { name: 'Run PostgreSQL 18 contracts' },
+  ],
+  'publish-images': [
+    { name: 'Checkout exact current main commit', uses: ACTIONS.checkout },
+    { name: 'Validate retired-digest configuration before build setup' },
+    { name: 'Create temporary tool and credential boundary' },
+    { name: 'Set up Docker Buildx inside the temporary boundary', uses: ACTIONS.setupBuildx },
+    { name: 'Set up pinned ORAS client', uses: ACTIONS.setupOras },
+    { name: 'Revalidate offline build inputs' },
+    { name: 'Build seeded OCI layout without registry credentials', uses: ACTIONS.buildPush },
+    { name: 'Validate offline layouts and retired digest policy' },
+    { name: 'Recheck exact current main and environment immediately before registry authentication' },
+    { name: 'Authenticate ORAS to GHCR' },
+    { name: 'Publish exact prevalidated OCI layouts' },
+    { name: 'Remove temporary publisher credentials and builder' },
+  ],
+  'verify-published-images': [
+    { name: 'Set up pinned ORAS client', uses: ACTIONS.setupOras },
+    { name: 'Create temporary read-only registry boundary' },
+    { name: 'Recheck exact current main immediately before registry authentication' },
+    { name: 'Authenticate ORAS to GHCR read-only' },
+    { name: 'Verify exact remote manifests' },
+    { name: 'Remove temporary read-only registry credentials' },
+  ],
   'smoke-seeded': [
     { name: 'Checkout exact current main commit', uses: ACTIONS.checkout },
     { name: 'Create temporary read-only registry boundary' },
@@ -82,14 +141,13 @@ const PUBLISHER_STEPS: Record<string, ExpectedStep[]> = {
   ],
   'attest-published-digests': [
     { name: 'Recheck exact current main and environment immediately before OIDC attestation' },
-    { name: 'Attest exact portable digest', uses: ACTIONS.attest },
     { name: 'Attest exact seeded digest', uses: ACTIONS.attest },
   ],
   'verify-attestations': [
     { name: 'Create temporary read-only registry boundary' },
     { name: 'Recheck exact current main immediately before registry authentication' },
     { name: 'Log in to GHCR for attestation verification', uses: ACTIONS.login },
-    { name: 'Validate attestation URLs and verify both exact subjects' },
+    { name: 'Validate the attestation URL and verify the exact subject' },
     { name: 'Remove temporary attestation verification credentials' },
   ],
   'record-published-digests': [
@@ -99,12 +157,27 @@ const PUBLISHER_STEPS: Record<string, ExpectedStep[]> = {
   ],
 };
 
-const PUBLISHER_PERMISSIONS: Record<string, UnknownRecord> = {
+const PORTABLE_PERMISSIONS: Record<string, UnknownRecord> = {
   'authorize-current-main': { actions: 'read', contents: 'read' },
   'validate-main': { contents: 'read' },
   'publish-images': { actions: 'read', contents: 'read', packages: 'write' },
   'verify-published-images': { contents: 'read', packages: 'read' },
   'smoke-portable': { contents: 'read', packages: 'read' },
+  'attest-published-digests': {
+    actions: 'read',
+    contents: 'read',
+    attestations: 'write',
+    'id-token': 'write',
+  },
+  'verify-attestations': { contents: 'read', packages: 'read', attestations: 'read' },
+  'record-published-digests': { contents: 'read' },
+};
+
+const SEEDED_PERMISSIONS: Record<string, UnknownRecord> = {
+  'authorize-current-main': { actions: 'read', contents: 'read' },
+  'validate-main': { contents: 'read' },
+  'publish-images': { actions: 'read', contents: 'read', packages: 'write' },
+  'verify-published-images': { contents: 'read', packages: 'read' },
   'smoke-seeded': { contents: 'read', packages: 'read' },
   'attest-published-digests': {
     actions: 'read',
@@ -116,20 +189,13 @@ const PUBLISHER_PERMISSIONS: Record<string, UnknownRecord> = {
   'record-published-digests': { contents: 'read' },
 };
 
-const PUBLISHER_NEEDS: Record<string, string[]> = {
+const PORTABLE_NEEDS: Record<string, string[]> = {
   'authorize-current-main': [],
   'validate-main': ['authorize-current-main'],
   'publish-images': ['authorize-current-main', 'validate-main'],
   'verify-published-images': ['authorize-current-main', 'publish-images'],
   'smoke-portable': ['authorize-current-main', 'publish-images', 'verify-published-images'],
-  'smoke-seeded': ['authorize-current-main', 'publish-images', 'verify-published-images'],
-  'attest-published-digests': [
-    'authorize-current-main',
-    'publish-images',
-    'verify-published-images',
-    'smoke-portable',
-    'smoke-seeded',
-  ],
+  'attest-published-digests': ['authorize-current-main', 'publish-images', 'verify-published-images', 'smoke-portable'],
   'verify-attestations': ['authorize-current-main', 'publish-images', 'attest-published-digests'],
   'record-published-digests': [
     'authorize-current-main',
@@ -139,11 +205,29 @@ const PUBLISHER_NEEDS: Record<string, string[]> = {
   ],
 };
 
-// These hashes cover every parsed YAML run scalar in the publisher. The
+const SEEDED_NEEDS: Record<string, string[]> = {
+  'authorize-current-main': [],
+  'validate-main': ['authorize-current-main'],
+  'publish-images': ['authorize-current-main', 'validate-main'],
+  'verify-published-images': ['authorize-current-main', 'publish-images'],
+  'smoke-seeded': ['authorize-current-main', 'publish-images', 'verify-published-images'],
+  'attest-published-digests': ['authorize-current-main', 'publish-images', 'verify-published-images', 'smoke-seeded'],
+  'verify-attestations': ['authorize-current-main', 'publish-images', 'attest-published-digests'],
+  'record-published-digests': [
+    'authorize-current-main',
+    'publish-images',
+    'attest-published-digests',
+    'verify-attestations',
+  ],
+};
+
+// These hashes cover every parsed YAML run scalar in each publisher. The
 // semantic checks below keep the contract reviewable; this exact-body allowlist
 // additionally prevents commands being appended to an otherwise approved named
-// step, including in validation and artifact generation.
-const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
+// step, including in validation and artifact generation. Bodies that are
+// deliberately identical in both publishers share a hash, so a one-sided edit
+// to a duplicated privileged body fails the contract.
+const PORTABLE_RUN_SHA256: Record<string, Record<string, string>> = {
   'authorize-current-main': {
     'Bind workflow and audit publisher environment': 'a5bdefbc565f8a9d530316b439ab2560cb506f8223fa907e424c8a71335e9708',
   },
@@ -158,20 +242,20 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
     'Create temporary tool and credential boundary': '84bf5fb7b5ff5e70be8e8684099d2f87727cefde54b3a70b92b20220e3d1fea3',
     'Revalidate offline build inputs': '42ca53a491bf3433739be5ce55f88867c1d7fe5bd4403b33a3647b858596e907',
     'Validate offline layouts and retired digest policy':
-      '110821eff07459d4dc1299e88bc9e71da20b0a3ce23cb89b0162cef0159b421d',
+      '531e42a15335d2993dba1340c55a01dc56af21701a132682bbb3bbb62fbb5e6b',
     'Recheck exact current main and environment immediately before registry authentication':
       '64ddc967602b4458fc2a6c4cf6c58d4bdf629fcd173db97d2c80e2f4e1e2d509',
     'Authenticate ORAS to GHCR': '2409cc90e42b7448aba3c40d18a741735d513a6fdc0f2212544407fb09f3a4ce',
-    'Publish exact prevalidated OCI layouts': 'd1d1889c4b883ccdde4e2ecfc5f7d4d039caff1752ac16470d730f9005890942',
+    'Publish exact prevalidated OCI layouts': '258608dbeac18f4b5a6b8de64eae80460fe257813f8d53bfd54f96a462613713',
     'Remove temporary publisher credentials and builder':
-      'bdb4b5ce41cfb3a4953e704107111e23695432ff4c31c0b5cc053d8db3867420',
+      '16caf4c3ec026833a87740a6adf4663ad011649d1dce262530e50f072bfbda91',
   },
   'verify-published-images': {
     'Create temporary read-only registry boundary': '4337f5f5a43cf5dcd887de5e30f094f18d6dc6e4eaec00c9f663bd013085108e',
     'Recheck exact current main immediately before registry authentication':
       '27c9f8d7ad023da4b1e4942699fdb2f8931c2710e03f836cf9e77a012c188a9d',
     'Authenticate ORAS to GHCR read-only': '2409cc90e42b7448aba3c40d18a741735d513a6fdc0f2212544407fb09f3a4ce',
-    'Verify exact remote manifests': 'd92f640e34ba08728b4dbe753acfb3907a6225096689d72d1855020e5d81562d',
+    'Verify exact remote manifests': '2039da08f53129209e7d171e020dc9980aa37a5adb7af70556633d224f432747',
     'Remove temporary read-only registry credentials':
       '9a101fad60773bbfc7c39cf84f5d09df89d0a5f025d71aa7d2b3e7c8f2d16923',
   },
@@ -186,6 +270,59 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
       'ed6ae2ba19763eb56c4691c7113c556bc1dc78a2b5868187f418bcb53ecd3ffd',
     'Verify labels and boot exact portable platform':
       '5b9c73161f472d49ebed0409acef7cd36f3aa0c0ddc6c11e02ce73a49f45356c',
+  },
+  'attest-published-digests': {
+    'Recheck exact current main and environment immediately before OIDC attestation':
+      'ba63aad32d3c4db72db7bbed48281df422c0be9f1441cdbec1464649635262af',
+  },
+  'verify-attestations': {
+    'Create temporary read-only registry boundary': 'a5e51a8c6a73ccc35f8f25aa870fed6434dada853729687d5ce8fb8414cf4a3c',
+    'Recheck exact current main immediately before registry authentication':
+      '27c9f8d7ad023da4b1e4942699fdb2f8931c2710e03f836cf9e77a012c188a9d',
+    'Validate the attestation URL and verify the exact subject':
+      '234b7c43e88dbd2e78e2d699e4a19a7241df84844df2f3135eba2738d2067576',
+    'Remove temporary attestation verification credentials':
+      '1eb783af4e7705bd00ca9b7ac9b47ebe5664c1a3a6c641d3edfb30a7fe10b48d',
+  },
+  'record-published-digests': {
+    'Write machine-readable digest manifest and summary':
+      'ad5147ca125adff1bff78fa9fa00491a0a358b02bef525625d75d052df1a1b51',
+    'Recheck exact current main and workflow before artifact upload':
+      '3fd4d1ae5661abcd1101d9a60addb336e7d61cb30e362c75710da08560cbab0c',
+  },
+};
+
+const SEEDED_RUN_SHA256: Record<string, Record<string, string>> = {
+  'authorize-current-main': {
+    'Bind workflow and audit publisher environment': 'a5bdefbc565f8a9d530316b439ab2560cb506f8223fa907e424c8a71335e9708',
+  },
+  'validate-main': {
+    'Validate checkout and Docker inputs': 'd93f8b5c79e732dfa0d06bb5469b9437d690374d7f92441f128f64053ba08245',
+    'Install locked dependencies': 'ed6ae2ba19763eb56c4691c7113c556bc1dc78a2b5868187f418bcb53ecd3ffd',
+    'Run PostgreSQL 18 contracts': '66196ae8703cb101dc49952e602bd24ee2a6e03d7f2902c738bcccafb1b0edf9',
+  },
+  'publish-images': {
+    'Validate retired-digest configuration before build setup':
+      '8fa475f67e0d460703ef73b4870570790369d676cd6711209a1416234d54f7f4',
+    'Create temporary tool and credential boundary': '84bf5fb7b5ff5e70be8e8684099d2f87727cefde54b3a70b92b20220e3d1fea3',
+    'Revalidate offline build inputs': '42ca53a491bf3433739be5ce55f88867c1d7fe5bd4403b33a3647b858596e907',
+    'Validate offline layouts and retired digest policy':
+      'a06b4c13a701a41cb2640056c198b81484bf96a41a1baff3a7b2e70c596ca570',
+    'Recheck exact current main and environment immediately before registry authentication':
+      '64ddc967602b4458fc2a6c4cf6c58d4bdf629fcd173db97d2c80e2f4e1e2d509',
+    'Authenticate ORAS to GHCR': '2409cc90e42b7448aba3c40d18a741735d513a6fdc0f2212544407fb09f3a4ce',
+    'Publish exact prevalidated OCI layouts': '9b5e9d8fc7741858265dcbad7b2e8ac63c4e3ca355255e54001f4923bce8a6ef',
+    'Remove temporary publisher credentials and builder':
+      '1edb13a64ba9e0f47e791aaf97d9dcc4b1c40db0c01eebc7e30452b5542a59ba',
+  },
+  'verify-published-images': {
+    'Create temporary read-only registry boundary': '4337f5f5a43cf5dcd887de5e30f094f18d6dc6e4eaec00c9f663bd013085108e',
+    'Recheck exact current main immediately before registry authentication':
+      '27c9f8d7ad023da4b1e4942699fdb2f8931c2710e03f836cf9e77a012c188a9d',
+    'Authenticate ORAS to GHCR read-only': '2409cc90e42b7448aba3c40d18a741735d513a6fdc0f2212544407fb09f3a4ce',
+    'Verify exact remote manifests': 'b876af83f2d9d34c4004248ea18da503f9543e4bc6f5381445cb0b339a0e0117',
+    'Remove temporary read-only registry credentials':
+      '9a101fad60773bbfc7c39cf84f5d09df89d0a5f025d71aa7d2b3e7c8f2d16923',
   },
   'smoke-seeded': {
     'Create temporary read-only registry boundary': 'e8e2af6b76ef37f5a646991d6034bbf0011fe940e1b5e7f6542f7655de30cea6',
@@ -207,14 +344,14 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
     'Create temporary read-only registry boundary': 'a5e51a8c6a73ccc35f8f25aa870fed6434dada853729687d5ce8fb8414cf4a3c',
     'Recheck exact current main immediately before registry authentication':
       '27c9f8d7ad023da4b1e4942699fdb2f8931c2710e03f836cf9e77a012c188a9d',
-    'Validate attestation URLs and verify both exact subjects':
-      'd37796309c31024be340d996f54beebaf323172e5d4dedb0bc2b51203ee5bafe',
+    'Validate the attestation URL and verify the exact subject':
+      '6eeff90870cda6c9ea453945169929d5c3f4b8fb832033f1c12a4ae295b9101f',
     'Remove temporary attestation verification credentials':
       '1eb783af4e7705bd00ca9b7ac9b47ebe5664c1a3a6c641d3edfb30a7fe10b48d',
   },
   'record-published-digests': {
     'Write machine-readable digest manifest and summary':
-      '09823c60bd2dbc2a533cdad2b02e41343b5976c234122845e67452c5052dcbad',
+      'e15f29b507ee967aebaf25959e022f508a215a973f2e3c330e78d79c5b35c302',
     'Recheck exact current main and workflow before artifact upload':
       '3fd4d1ae5661abcd1101d9a60addb336e7d61cb30e362c75710da08560cbab0c',
   },
@@ -222,21 +359,133 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
 
 // Canonical parsed-job hashes also freeze action inputs, step environments,
 // conditions, outputs, and matrices. Together with the readable assertions,
-// this makes the whole publisher an exact structural allowlist.
-const PRIVILEGED_JOB_SHA256: Record<string, string> = {
+// this makes each publisher an exact structural allowlist.
+const PORTABLE_JOB_SHA256: Record<string, string> = {
   'authorize-current-main': '012c58011b4370b349d5f7dcfe89171bcfdf3e0653b459ab9fcbd865d3fc54c7',
   'validate-main': '79a3b6710f2f3268d467ae5a8d467d78fd212627f90f3da8c6505b1a4c51b29d',
-  'publish-images': '7230e1b43868539815cd52a82a3fa651647cd7b75a2d4f53ed976d75afa18002',
-  'verify-published-images': '05f165fb989b0c7c920b470b19bf4f14b5f3dd1f0c2880bd79e3f2b79228e1c8',
+  'publish-images': '23661fb209cd2b8fc5bb9c0d4a0d3ef03ee1e92d863b332cf4dd73208c7931dd',
+  'verify-published-images': '4daa8aff5b4a4c14876ab97b5dddb089c38462927540e66ca45cf9e5470ba56a',
   'smoke-portable': 'b5061e0cb86febdc3216af60b967ddf3825b7c74b43016d006d0d1aa245351ba',
+  'attest-published-digests': 'ca7523b1b504df41647a9ca8ea7224fb258f908f9385ea10d62dcf1048a3039c',
+  'verify-attestations': '7d832ccbf02bbe4521b70cbe55f916f2b03fa0ea39229b4cde897cd3a73fd659',
+  'record-published-digests': 'ed3fee4108e2cb0cc67c91171bcc5bc62d2f098717f3efc8b9d68b036e54a1f8',
+};
+
+const SEEDED_JOB_SHA256: Record<string, string> = {
+  'authorize-current-main': '26daa41dc074db1477d4550c5e257c575733edc547a5f5d16c7f9b200b6453c6',
+  'validate-main': '79a3b6710f2f3268d467ae5a8d467d78fd212627f90f3da8c6505b1a4c51b29d',
+  'publish-images': '7a74102848d3359bc6bd6df1ac3e5dea6db94dd1f072ed904a61baaf84842b28',
+  'verify-published-images': '2119fd689277fda45fb31524d4e3794084d3c78c8c9c278885130d6bf7ef7b8a',
   'smoke-seeded': '95bf708acbe676a46dde4981cc83ba978c37f6b6c3ca463ef2239647260ebdf9',
-  'attest-published-digests': 'f3815b58609bfc7c88061071e23ef1bdefe2c945613d79d15ae3ef3353b6bf5a',
-  'verify-attestations': 'e3e536f61601ef9d8681dc5809065ff814612c227a70afbc14e1c3cb21a6ff8c',
-  'record-published-digests': '8332efc25368a20c05a3ed6e4c79ecb7eef69b1886e41e9ff90963b765d9a5ed',
+  'attest-published-digests': '317b0556c9bbc6fe7f1209a4bacc20f84d400a1e42a64b24c89af6cc3be97ab4',
+  'verify-attestations': 'ad572d9ab94f9fc196ff4de165070d04e6c6ddc05468347c5c186f308f572a92',
+  'record-published-digests': 'b41f60261db040a18095f4da150d68c1419a998d60a535ab47cee3df33c5f2ee',
+};
+
+interface PublisherSpec {
+  kind: PublisherKind;
+  label: string;
+  workflowPath: string;
+  workflowName: string;
+  concurrencyGroup: string;
+  imageEnvironmentKey: string;
+  imageReference: string;
+  digestOutput: string;
+  attestationUrlOutput: string;
+  buildStepName: string;
+  attestStepName: string;
+  smokeJobName: string;
+  smokeCandidateStepName: string;
+  artifactName: string;
+  artifactPath: string;
+  installsArmEmulation: boolean;
+  layoutPatterns: readonly (readonly [RegExp, string])[];
+  remoteManifestPatterns: readonly (readonly [RegExp, string])[];
+  forbiddenIdentifiers: readonly string[];
+  steps: Record<string, ExpectedStep[]>;
+  permissions: Record<string, UnknownRecord>;
+  needs: Record<string, string[]>;
+  runHashes: Record<string, Record<string, string>>;
+  jobHashes: Record<string, string>;
+}
+
+const PORTABLE_SPEC: PublisherSpec = {
+  kind: 'portable',
+  label: 'portable publisher',
+  workflowPath: '.github/workflows/postgres-image-publisher.yml',
+  workflowName: 'Publish Current Main Portable PostgreSQL Image',
+  concurrencyGroup: 'postgres-image-publisher',
+  imageEnvironmentKey: 'PORTABLE_IMAGE',
+  imageReference: 'ghcr.io/boardsesh/boardsesh-postgres-postgis',
+  digestOutput: 'portable_digest',
+  attestationUrlOutput: 'portable_attestation_url',
+  buildStepName: 'Build portable OCI layout without registry credentials',
+  attestStepName: 'Attest exact portable digest',
+  smokeJobName: 'smoke-portable',
+  smokeCandidateStepName: 'Verify labels and boot exact portable platform',
+  artifactName: 'postgres-image-digests-${{ inputs.expected_main_sha }}',
+  artifactPath: 'postgres-image-digests.json',
+  installsArmEmulation: true,
+  layoutPatterns: [
+    [/portable_digest="\$\(layout_digest/, 'portable digest must come from the offline OCI layout'],
+    [/\["linux\/amd64","linux\/arm64"\]/, 'portable offline layout must have its exact platforms'],
+  ],
+  remoteManifestPatterns: [
+    [/\["linux\/amd64", "linux\/arm64"\]/, 'remote portable manifest must expose exactly amd64 and arm64'],
+  ],
+  forbiddenIdentifiers: ['SEEDED_IMAGE', 'boardsesh-dev-db', 'smoke-seeded', 'seeded-oci', 'seeded_digest'],
+  steps: PORTABLE_STEPS,
+  permissions: PORTABLE_PERMISSIONS,
+  needs: PORTABLE_NEEDS,
+  runHashes: PORTABLE_RUN_SHA256,
+  jobHashes: PORTABLE_JOB_SHA256,
+};
+
+const SEEDED_SPEC: PublisherSpec = {
+  kind: 'seeded',
+  label: 'seeded publisher',
+  workflowPath: '.github/workflows/postgres-seeded-image-publisher.yml',
+  workflowName: 'Publish Current Main Seeded PostgreSQL Image',
+  concurrencyGroup: 'postgres-seeded-image-publisher',
+  imageEnvironmentKey: 'SEEDED_IMAGE',
+  imageReference: 'ghcr.io/boardsesh/boardsesh-dev-db',
+  digestOutput: 'seeded_digest',
+  attestationUrlOutput: 'seeded_attestation_url',
+  buildStepName: 'Build seeded OCI layout without registry credentials',
+  attestStepName: 'Attest exact seeded digest',
+  smokeJobName: 'smoke-seeded',
+  smokeCandidateStepName: 'Verify labels, architecture, and seeded database',
+  artifactName: 'postgres-seeded-image-digest-${{ inputs.expected_main_sha }}',
+  artifactPath: 'postgres-seeded-image-digest.json',
+  installsArmEmulation: false,
+  layoutPatterns: [
+    [/seeded_digest="\$\(layout_digest/, 'seeded digest must come from the offline OCI layout'],
+    [/\["linux\/amd64"\]/, 'seeded offline layout must have its exact platform'],
+  ],
+  remoteManifestPatterns: [
+    [/\["linux\/amd64"\]/, 'remote seeded manifest must expose exactly amd64'],
+    [
+      /jq -e '\.os == "linux" and \.architecture == "amd64"' seeded-config\.json/,
+      'remote seeded verification must fall back to the image config architecture',
+    ],
+  ],
+  forbiddenIdentifiers: [
+    'PORTABLE_IMAGE',
+    'boardsesh-postgres-postgis',
+    'smoke-portable',
+    'portable-oci',
+    'portable_digest',
+  ],
+  steps: SEEDED_STEPS,
+  permissions: SEEDED_PERMISSIONS,
+  needs: SEEDED_NEEDS,
+  runHashes: SEEDED_RUN_SHA256,
+  jobHashes: SEEDED_JOB_SHA256,
 };
 
 const CONTRACT_PATHS = [
   '.github/workflows/postgres-image-publisher.yml',
+  '.github/workflows/postgres-seeded-image-publisher.yml',
   '.github/workflows/postgres-image-publisher-contract.yml',
   'vite.config.ts',
   'scripts/lib/postgres-image-publisher-contract.ts',
@@ -255,7 +504,7 @@ const CONTRACT_STEPS: ExpectedStep[] = [
   { name: 'Verify publisher authority and artifact contracts' },
 ];
 
-const CONTRACT_WORKFLOW_METADATA_SHA256 = '8b86e2310a57709dbf30f9210611d1d47feea44395b6643ba6fa23afaf22b03d';
+const CONTRACT_WORKFLOW_METADATA_SHA256 = 'df2485656ff61d77c91766bd962c59ce24c991e45ad659038a43711d92198cbd';
 const CONTRACT_JOB_METADATA_SHA256 = '9e0f951e6bceb41814be7e67f5cfe5cf5d808315af99a39bc312cbce1c7f0cfb';
 const CONTRACT_STEP_SHA256: Record<string, string> = {
   'Checkout repository without persisted credentials':
@@ -294,6 +543,10 @@ function normalizedStringArray(value: unknown): string[] {
   if (typeof value === 'string') return [value];
   if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) return [];
   return [...value].sort();
+}
+
+function escapeForRegExp(literal: string): string {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function canonicalValue(value: unknown): unknown {
@@ -380,11 +633,9 @@ function validateStepAllowlist(
   }
 }
 
-function validatePrivilegedRunBodies(failures: string[], jobs: UnknownRecord): void {
-  for (const [jobName, reviewedHashes] of Object.entries(PRIVILEGED_RUN_SHA256)) {
-    const expectedRunNames = PUBLISHER_STEPS[jobName]
-      .filter((step) => step.uses === undefined)
-      .map((step) => step.name);
+function validatePrivilegedRunBodies(failures: string[], spec: PublisherSpec, jobs: UnknownRecord): void {
+  for (const [jobName, reviewedHashes] of Object.entries(spec.runHashes)) {
+    const expectedRunNames = spec.steps[jobName].filter((step) => step.uses === undefined).map((step) => step.name);
     if (JSON.stringify(Object.keys(reviewedHashes)) !== JSON.stringify(expectedRunNames)) {
       failures.push(`${jobName} privileged run-body allowlist must cover every reviewed inline step`);
       continue;
@@ -402,12 +653,12 @@ function validatePrivilegedRunBodies(failures: string[], jobs: UnknownRecord): v
   }
 }
 
-function validatePrivilegedJobs(failures: string[], jobs: UnknownRecord): void {
-  if (JSON.stringify(Object.keys(PRIVILEGED_JOB_SHA256)) !== JSON.stringify(Object.keys(PRIVILEGED_RUN_SHA256))) {
+function validatePrivilegedJobs(failures: string[], spec: PublisherSpec, jobs: UnknownRecord): void {
+  if (JSON.stringify(Object.keys(spec.jobHashes)) !== JSON.stringify(Object.keys(spec.runHashes))) {
     failures.push('privileged parsed-job and run-body allowlists must cover the same jobs');
     return;
   }
-  for (const [jobName, expectedHash] of Object.entries(PRIVILEGED_JOB_SHA256)) {
+  for (const [jobName, expectedHash] of Object.entries(spec.jobHashes)) {
     const job = recordAt(jobs, jobName);
     if (job && canonicalSha256(job) !== expectedHash) {
       failures.push(`${jobName} privileged parsed job must match its exact reviewed structure`);
@@ -454,7 +705,7 @@ function validateOrasSetup(failures: string[], jobName: string, job: UnknownReco
   }
 }
 
-function validateBuildStep(failures: string[], step: UnknownRecord | undefined, kind: 'portable' | 'seeded'): void {
+function validateBuildStep(failures: string[], step: UnknownRecord | undefined, kind: PublisherKind): void {
   if (!step) return;
   const withInputs = recordAt(step, 'with');
   if (!withInputs) {
@@ -509,11 +760,17 @@ function validateBuildStep(failures: string[], step: UnknownRecord | undefined, 
   }
 }
 
-function validatePublisherDocument(failures: string[], publisher: UnknownRecord, publisherWorkflow: string): void {
+function validatePublisherDocument(
+  scopedFailures: string[],
+  spec: PublisherSpec,
+  publisher: UnknownRecord,
+  publisherWorkflow: string,
+): void {
+  const failures = scopedFailures;
   if (!keysEqual(publisher, ['name', 'on', 'concurrency', 'env', 'jobs'])) {
     failures.push('publisher top-level keys must match the exact executable allowlist with no defaults');
   }
-  if (publisher.name !== 'Publish Current Main PostgreSQL Images') {
+  if (publisher.name !== spec.workflowName) {
     failures.push('publisher workflow name must remain exact');
   }
   if ('defaults' in publisher) {
@@ -548,29 +805,31 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
   }
 
   const concurrency = recordAt(publisher, 'concurrency');
-  if (!recordsEqual(concurrency, { group: 'postgres-image-publisher', 'cancel-in-progress': false })) {
-    failures.push('publisher must serialize every run without cancelling an active publication');
+  if (!recordsEqual(concurrency, { group: spec.concurrencyGroup, 'cancel-in-progress': false })) {
+    failures.push(
+      'publisher must serialize every run in its own concurrency group without cancelling an active publication',
+    );
   }
 
-  const expectedEnvironment = {
+  const expectedEnvironment: UnknownRecord = {
     APPROVED_REPOSITORY: 'boardsesh/boardsesh',
     DEFAULT_BRANCH: 'main',
     PUBLISHER_ENVIRONMENT: 'postgres-image-publisher',
     REGISTRY: 'ghcr.io',
-    PORTABLE_IMAGE: 'ghcr.io/boardsesh/boardsesh-postgres-postgis',
-    SEEDED_IMAGE: 'ghcr.io/boardsesh/boardsesh-dev-db',
+    [spec.imageEnvironmentKey]: spec.imageReference,
     MAIN_REF: 'refs/heads/main',
   };
   if (!recordsEqual(recordAt(publisher, 'env'), expectedEnvironment)) {
     failures.push('publisher global constants must remain exact');
   }
 
+
   const jobs = recordAt(publisher, 'jobs');
   if (!jobs) {
     failures.push('publisher must define jobs');
     return;
   }
-  const expectedJobNames = Object.keys(PUBLISHER_STEPS);
+  const expectedJobNames = Object.keys(spec.steps);
   if (JSON.stringify(Object.keys(jobs)) !== JSON.stringify(expectedJobNames)) {
     failures.push('publisher jobs must match the exact reviewed job allowlist and order');
   }
@@ -581,11 +840,11 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
       failures.push(`publisher is missing ${jobName}`);
       continue;
     }
-    validateStepAllowlist(failures, jobName, job, PUBLISHER_STEPS[jobName]);
-    if (!recordsEqual(recordAt(job, 'permissions'), PUBLISHER_PERMISSIONS[jobName])) {
+    validateStepAllowlist(failures, jobName, job, spec.steps[jobName]);
+    if (!recordsEqual(recordAt(job, 'permissions'), spec.permissions[jobName])) {
       failures.push(`${jobName} permissions must match its exact allowlist`);
     }
-    if (JSON.stringify(normalizedStringArray(job.needs)) !== JSON.stringify([...PUBLISHER_NEEDS[jobName]].sort())) {
+    if (JSON.stringify(normalizedStringArray(job.needs)) !== JSON.stringify([...spec.needs[jobName]].sort())) {
       failures.push(`${jobName} dependencies must match the reviewed gate order`);
     }
     const environment = job.environment;
@@ -597,8 +856,19 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
       failures.push(`${jobName} environment authority is not allowed by the exact contract`);
     }
   }
-  validatePrivilegedRunBodies(failures, jobs);
-  validatePrivilegedJobs(failures, jobs);
+  validatePrivilegedRunBodies(failures, spec, jobs);
+  validatePrivilegedJobs(failures, spec, jobs);
+
+  const expectedWorkflowRef = `boardsesh/boardsesh/${spec.workflowPath}@refs/heads/main`;
+  for (const [jobName, stepName] of [
+    ['authorize-current-main', 'Bind workflow and audit publisher environment'],
+    ['record-published-digests', 'Recheck exact current main and workflow before artifact upload'],
+  ] as const) {
+    const stepEnvironment = recordAt(stepByName(recordAt(jobs, jobName) ?? {}, stepName) ?? {}, 'env');
+    if (!stepEnvironment || stepEnvironment.EXPECTED_WORKFLOW_REF !== expectedWorkflowRef) {
+      failures.push(`${jobName} must bind EXPECTED_WORKFLOW_REF to its own protected-main workflow path`);
+    }
+  }
 
   const authorize = recordAt(jobs, 'authorize-current-main') ?? {};
   for (const [pattern, message] of [
@@ -701,22 +971,19 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
   ) {
     failures.push('publisher must use its exact digest-pinned BuildKit daemon inside the temporary boundary');
   }
-  const portableQemu = stepByName(publish, 'Enable multi-architecture emulation');
-  const portableQemuInputs = portableQemu ? recordAt(portableQemu, 'with') : undefined;
-  if (
-    !portableQemuInputs ||
-    portableQemuInputs.image !==
-      'tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0' ||
-    portableQemuInputs.platforms !== 'arm64'
-  ) {
-    failures.push('portable publisher QEMU must use only the reviewed digest-pinned ARM64 helper');
+  if (spec.installsArmEmulation) {
+    const publisherQemu = stepByName(publish, 'Enable multi-architecture emulation');
+    const publisherQemuInputs = publisherQemu ? recordAt(publisherQemu, 'with') : undefined;
+    if (
+      !publisherQemuInputs ||
+      publisherQemuInputs.image !==
+        'tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0' ||
+      publisherQemuInputs.platforms !== 'arm64'
+    ) {
+      failures.push('portable publisher QEMU must use only the reviewed digest-pinned ARM64 helper');
+    }
   }
-  validateBuildStep(
-    failures,
-    stepByName(publish, 'Build portable OCI layout without registry credentials'),
-    'portable',
-  );
-  validateBuildStep(failures, stepByName(publish, 'Build seeded OCI layout without registry credentials'), 'seeded');
+  validateBuildStep(failures, stepByName(publish, spec.buildStepName), spec.kind);
   for (const [pattern, message] of [
     [
       /RETIRED_DB_IMAGE_DIGESTS must be none or contain one lowercase sha256 digest per non-empty line/,
@@ -727,10 +994,7 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
       'retired digest policy must reject malformed entries with an exact lowercase digest pattern',
     ],
     [/seen_retired_digests/, 'retired digest policy must reject duplicates and proposed retired digests'],
-    [/portable_digest="\$\(layout_digest/, 'portable digest must come from the offline OCI layout'],
-    [/seeded_digest="\$\(layout_digest/, 'seeded digest must come from the offline OCI layout'],
-    [/\["linux\/amd64","linux\/arm64"\]/, 'portable offline layout must have its exact platforms'],
-    [/\["linux\/amd64"\]/, 'seeded offline layout must have its exact platform'],
+    ...spec.layoutPatterns,
   ] as const) {
     requireRunPattern(failures, publish, 'Validate offline layouts and retired digest policy', pattern, message);
   }
@@ -749,14 +1013,14 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
     'publisher must re-audit no-bypass and the explicit self-review policy immediately before GHCR authentication',
   );
   const publishRun = stringAt(stepByName(publish, 'Publish exact prevalidated OCI layouts') ?? {}, 'run') ?? '';
-  if ((publishRun.match(/oras cp --from-oci-layout/g) ?? []).length !== 2) {
-    failures.push('publisher must copy exactly both prevalidated OCI layouts after login');
+  if ((publishRun.match(/oras cp --from-oci-layout/g) ?? []).length !== 1) {
+    failures.push('publisher must copy exactly its one prevalidated OCI layout after login');
   }
   if (
-    (publishRun.match(/"\$PORTABLE_IMAGE:\$SHA_TAG"/g) ?? []).length !== 2 ||
-    (publishRun.match(/"\$SEEDED_IMAGE:\$SHA_TAG"/g) ?? []).length !== 2
+    (publishRun.match(new RegExp(`"\\$${escapeForRegExp(spec.imageEnvironmentKey)}:\\$SHA_TAG"`, 'g')) ?? []).length !==
+    2
   ) {
-    failures.push('publisher must publish exact prevalidated OCI layouts under only their SHA tag');
+    failures.push('publisher must publish its exact prevalidated OCI layout under only its SHA tag');
   }
   if (/\b(?:vp|bun|npm|npx)\b|source\/scripts|docker build/.test(publishRun)) {
     failures.push('publisher must not run checked-out helpers or rebuild after registry login');
@@ -764,83 +1028,71 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
 
   const verifyImages = recordAt(jobs, 'verify-published-images') ?? {};
   validateOrasSetup(failures, 'verify-published-images', verifyImages);
+  for (const [pattern, message] of spec.remoteManifestPatterns) {
+    requireRunPattern(failures, verifyImages, 'Verify exact remote manifests', pattern, message);
+  }
+
+  const smokeJobName = spec.smokeJobName;
+  const smoke = recordAt(jobs, smokeJobName) ?? {};
+  validateCheckout(failures, smokeJobName, stepByName(smoke, 'Checkout exact current main commit'));
   requireRunPattern(
     failures,
-    verifyImages,
-    'Verify exact remote manifests',
-    /\["linux\/amd64", "linux\/arm64"\]/,
-    'remote portable manifest must expose exactly amd64 and arm64',
+    smoke,
+    'Recheck exact current main immediately before registry authentication',
+    /git\/ref\/heads\/\$DEFAULT_BRANCH/,
+    `${smokeJobName} must recheck live main immediately before login`,
   );
   requireRunPattern(
     failures,
-    verifyImages,
-    'Verify exact remote manifests',
-    /\["linux\/amd64"\]/,
-    'remote seeded manifest must expose exactly amd64',
+    smoke,
+    'Install locked dependencies after registry credential removal',
+    /^bun install --frozen-lockfile$/,
+    `${smokeJobName} must install only the reviewed lockfile graph before running candidate smoke code`,
   );
 
-  for (const smokeName of ['smoke-portable', 'smoke-seeded']) {
-    const smoke = recordAt(jobs, smokeName) ?? {};
-    validateCheckout(failures, smokeName, stepByName(smoke, 'Checkout exact current main commit'));
-    requireRunPattern(
-      failures,
-      smoke,
-      'Recheck exact current main immediately before registry authentication',
-      /git\/ref\/heads\/\$DEFAULT_BRANCH/,
-      `${smokeName} must recheck live main immediately before login`,
-    );
-    requireRunPattern(
-      failures,
-      smoke,
-      'Install locked dependencies after registry credential removal',
-      /^bun install --frozen-lockfile$/,
-      `${smokeName} must install only the reviewed lockfile graph before running candidate smoke code`,
-    );
+  const smokeSteps = stepsAt(smoke);
+  const credentialRemovalIndex = smokeSteps.findIndex(
+    (step) => step.name === 'Remove registry credentials before image smoke',
+  );
+  const setupVpIndex = smokeSteps.findIndex((step) => step.name === 'Set up Vite+');
+  const setupBunIndex = smokeSteps.findIndex((step) => step.name === 'Set up Bun after registry credential removal');
+  const dependencyInstallIndex = smokeSteps.findIndex(
+    (step) => step.name === 'Install locked dependencies after registry credential removal',
+  );
+  const candidateSmokeIndex = smokeSteps.findIndex((step) => step.name === spec.smokeCandidateStepName);
+  if (
+    credentialRemovalIndex < 0 ||
+    setupVpIndex <= credentialRemovalIndex ||
+    setupBunIndex <= setupVpIndex ||
+    dependencyInstallIndex <= setupBunIndex ||
+    candidateSmokeIndex <= dependencyInstallIndex
+  ) {
+    failures.push(`${smokeJobName} tool and dependency setup must occur only after registry credentials are removed`);
+  }
 
-    const smokeSteps = stepsAt(smoke);
-    const credentialRemovalIndex = smokeSteps.findIndex(
-      (step) => step.name === 'Remove registry credentials before image smoke',
-    );
-    const setupVpIndex = smokeSteps.findIndex((step) => step.name === 'Set up Vite+');
-    const setupBunIndex = smokeSteps.findIndex((step) => step.name === 'Set up Bun after registry credential removal');
-    const dependencyInstallIndex = smokeSteps.findIndex(
-      (step) => step.name === 'Install locked dependencies after registry credential removal',
-    );
-    const candidateSmokeStepName =
-      smokeName === 'smoke-portable'
-        ? 'Verify labels and boot exact portable platform'
-        : 'Verify labels, architecture, and seeded database';
-    const candidateSmokeIndex = smokeSteps.findIndex((step) => step.name === candidateSmokeStepName);
+  if (spec.kind === 'portable') {
     if (
-      credentialRemovalIndex < 0 ||
-      setupVpIndex <= credentialRemovalIndex ||
-      setupBunIndex <= setupVpIndex ||
-      dependencyInstallIndex <= setupBunIndex ||
-      candidateSmokeIndex <= dependencyInstallIndex
+      !recordsEqual(recordAt(smoke, 'strategy'), {
+        'fail-fast': false,
+        matrix: { platform: ['linux/amd64', 'linux/arm64'] },
+      })
     ) {
-      failures.push(`${smokeName} tool and dependency setup must occur only after registry credentials are removed`);
+      failures.push('portable smoke matrix must contain exactly linux/amd64 and linux/arm64');
     }
-  }
-  const smokePortable = recordAt(jobs, 'smoke-portable') ?? {};
-  if (
-    !recordsEqual(recordAt(smokePortable, 'strategy'), {
-      'fail-fast': false,
-      matrix: { platform: ['linux/amd64', 'linux/arm64'] },
-    })
-  ) {
-    failures.push('portable smoke matrix must contain exactly linux/amd64 and linux/arm64');
-  }
-  const smokeQemu = stepByName(smokePortable, 'Enable multi-architecture emulation');
-  const smokeQemuInputs = smokeQemu ? recordAt(smokeQemu, 'with') : undefined;
-  if (
-    !smokeQemu ||
-    smokeQemu.if !== "matrix.platform == 'linux/arm64'" ||
-    !smokeQemuInputs ||
-    smokeQemuInputs.platforms !== 'arm64' ||
-    smokeQemuInputs.image !==
-      'tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0'
-  ) {
-    failures.push('portable smoke must grant pinned QEMU only to its ARM64 matrix run');
+    const smokeQemu = stepByName(smoke, 'Enable multi-architecture emulation');
+    const smokeQemuInputs = smokeQemu ? recordAt(smokeQemu, 'with') : undefined;
+    if (
+      !smokeQemu ||
+      smokeQemu.if !== "matrix.platform == 'linux/arm64'" ||
+      !smokeQemuInputs ||
+      smokeQemuInputs.platforms !== 'arm64' ||
+      smokeQemuInputs.image !==
+        'tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0'
+    ) {
+      failures.push('portable smoke must grant pinned QEMU only to its ARM64 matrix run');
+    }
+  } else if ('strategy' in smoke) {
+    failures.push('seeded smoke must run a single linux/amd64 job without a platform matrix');
   }
 
   const attest = recordAt(jobs, 'attest-published-digests') ?? {};
@@ -858,25 +1110,18 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
     /\.can_admins_bypass == false[\s\S]*\(\.prevent_self_review \| type == "boolean"\)/,
     'attestation must re-audit no-bypass and the explicit self-review policy before OIDC authority',
   );
-  for (const [stepName, subjectName, subjectDigest] of [
-    [
-      'Attest exact portable digest',
-      '${{ env.PORTABLE_IMAGE }}',
-      '${{ needs.publish-images.outputs.portable_digest }}',
-    ],
-    ['Attest exact seeded digest', '${{ env.SEEDED_IMAGE }}', '${{ needs.publish-images.outputs.seeded_digest }}'],
-  ] as const) {
-    const step = stepByName(attest, stepName);
+  {
+    const step = stepByName(attest, spec.attestStepName);
     const withInputs = step ? recordAt(step, 'with') : undefined;
     if (
       !withInputs ||
       JSON.stringify(Object.keys(withInputs)) !==
         JSON.stringify(['subject-name', 'subject-digest', 'push-to-registry']) ||
-      withInputs['subject-name'] !== subjectName ||
-      withInputs['subject-digest'] !== subjectDigest ||
+      withInputs['subject-name'] !== `\${{ env.${spec.imageEnvironmentKey} }}` ||
+      withInputs['subject-digest'] !== `\${{ needs.publish-images.outputs.${spec.digestOutput} }}` ||
       withInputs['push-to-registry'] !== false
     ) {
-      failures.push(`${stepName} must use native source-aware provenance for only its exact digest`);
+      failures.push(`${spec.attestStepName} must use native source-aware provenance for only its exact digest`);
     }
   }
 
@@ -888,20 +1133,22 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
     ],
     [/gh attestation verify "oci:\/\/\$image@\$digest"/, 'downstream verification must verify the exact OCI subject'],
     [
-      /--signer-workflow "\$APPROVED_REPOSITORY\/\.github\/workflows\/postgres-image-publisher\.yml"/,
-      'downstream verification must pin the signer workflow',
+      new RegExp(`--signer-workflow "\\$APPROVED_REPOSITORY/${escapeForRegExp(spec.workflowPath)}"`),
+      'downstream verification must pin its own signer workflow',
     ],
     [/--signer-digest "\$EXPECTED_MAIN_SHA"/, 'downstream verification must pin the signer SHA'],
     [/--source-ref "\$MAIN_REF"/, 'downstream verification must pin refs/heads/main'],
     [/--source-digest "\$EXPECTED_MAIN_SHA"/, 'downstream verification must pin the source SHA'],
     [/--deny-self-hosted-runners/, 'downstream verification must reject self-hosted attestations'],
-    [/verify_attestation "\$PORTABLE_IMAGE"/, 'downstream verification must verify the portable attestation'],
-    [/verify_attestation "\$SEEDED_IMAGE"/, 'downstream verification must verify the seeded attestation'],
+    [
+      new RegExp(`verify_attestation "\\$${escapeForRegExp(spec.imageEnvironmentKey)}"`),
+      'downstream verification must verify its own image attestation',
+    ],
   ] as const) {
     requireRunPattern(
       failures,
       verifyAttestations,
-      'Validate attestation URLs and verify both exact subjects',
+      'Validate the attestation URL and verify the exact subject',
       pattern,
       message,
     );
@@ -919,6 +1166,13 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
     failures,
     recordJob,
     'Write machine-readable digest manifest and summary',
+    new RegExp(`images: \\{\\s+${spec.kind}: \\{`),
+    'digest handoff must record only the image this publisher owns',
+  );
+  requireRunPattern(
+    failures,
+    recordJob,
+    'Write machine-readable digest manifest and summary',
     /deployment_identity: "digest-only"[\s\S]*tags_are_mutable: true/,
     'digest handoff must declare digests as the sole identity and tags as mutable',
   );
@@ -929,6 +1183,18 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
     /attestation_verified: true/g,
     'digest handoff must record downstream attestation verification',
   );
+  const uploadStep = stepByName(recordJob, 'Upload verified digest manifest');
+  const uploadInputs = uploadStep ? recordAt(uploadStep, 'with') : undefined;
+  if (
+    !recordsEqual(uploadInputs, {
+      name: spec.artifactName,
+      path: spec.artifactPath,
+      'if-no-files-found': 'error',
+      'retention-days': 90,
+    })
+  ) {
+    failures.push('digest handoff artifact must use its exact reviewed name, path, and retention');
+  }
   for (const [pattern, message] of [
     [
       /\[\[ "\$EXPECTED_MAIN_SHA" == "\$GITHUB_SHA" \]\]/,
@@ -958,6 +1224,27 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
   }
   if (/:(?:latest|main|pg18)(?:[\s"']|$)/m.test(publisherWorkflow)) {
     failures.push('publisher must not publish mutable discovery tags');
+  }
+}
+
+// A weakening that recouples the two publishers, or that re-serializes the
+// seeded developer image behind the portable production image, has to change
+// one of these constants as well as the workflow it edits.
+function validatePublisherSeparation(failures: string[]): void {
+  if (PORTABLE_SPEC.workflowPath === SEEDED_SPEC.workflowPath) {
+    failures.push('the portable and seeded publishers must live at different protected-main workflow paths');
+  }
+  if (PORTABLE_SPEC.workflowName === SEEDED_SPEC.workflowName) {
+    failures.push('the portable and seeded publishers must be dispatchable by distinct names');
+  }
+  if (PORTABLE_SPEC.imageReference === SEEDED_SPEC.imageReference) {
+    failures.push('the portable and seeded publishers must publish different images');
+  }
+  if (PORTABLE_SPEC.artifactName === SEEDED_SPEC.artifactName) {
+    failures.push('the portable and seeded publishers must upload different digest handoff artifacts');
+  }
+  if (PORTABLE_SPEC.concurrencyGroup === SEEDED_SPEC.concurrencyGroup) {
+    failures.push('the seeded publisher must not share the portable publisher concurrency group');
   }
 }
 
@@ -1054,18 +1341,28 @@ export function containsDockerfileSyntaxDirective(dockerfile: string): boolean {
 }
 
 export interface PostgresImagePublisherContractInput {
-  publisherWorkflow: string;
+  portablePublisherWorkflow: string;
+  seededPublisherWorkflow: string;
   contractWorkflow: string;
 }
 
 export function createPostgresImagePublisherFailures({
-  publisherWorkflow,
+  portablePublisherWorkflow,
+  seededPublisherWorkflow,
   contractWorkflow,
 }: PostgresImagePublisherContractInput): string[] {
   const failures: string[] = [];
-  const publisher = parseWorkflow(publisherWorkflow, 'publisher workflow', failures);
+  validatePublisherSeparation(failures);
+  for (const [spec, source] of [
+    [PORTABLE_SPEC, portablePublisherWorkflow],
+    [SEEDED_SPEC, seededPublisherWorkflow],
+  ] as const) {
+    const scopedFailures: string[] = [];
+    const publisher = parseWorkflow(source, `${spec.label} workflow`, failures);
+    if (publisher) validatePublisherDocument(scopedFailures, spec, publisher, source);
+    failures.push(...scopedFailures.map((message) => `${spec.label}: ${message}`));
+  }
   const contract = parseWorkflow(contractWorkflow, 'publisher contract workflow', failures);
-  if (publisher) validatePublisherDocument(failures, publisher, publisherWorkflow);
   if (contract) validateContractDocument(failures, contract, contractWorkflow);
   return failures;
 }

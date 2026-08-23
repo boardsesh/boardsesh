@@ -1,4 +1,4 @@
-name: Publish Current Main Portable PostgreSQL Image
+name: Publish Current Main Seeded PostgreSQL Image
 
 # This workflow is a protected-main authority boundary. It publishes only the
 # exact commit that currently owns this workflow on protected main. See
@@ -12,7 +12,7 @@ on:
         type: string
 
 concurrency:
-  group: postgres-image-publisher
+  group: postgres-seeded-image-publisher
   cancel-in-progress: false
 
 env:
@@ -20,7 +20,7 @@ env:
   DEFAULT_BRANCH: main
   PUBLISHER_ENVIRONMENT: postgres-image-publisher
   REGISTRY: ghcr.io
-  PORTABLE_IMAGE: ghcr.io/boardsesh/boardsesh-postgres-postgis
+  SEEDED_IMAGE: ghcr.io/boardsesh/boardsesh-dev-db
   MAIN_REF: refs/heads/main
 
 jobs:
@@ -37,7 +37,7 @@ jobs:
           DISPATCH_REF: ${{ github.ref }}
           DISPATCH_SHA: ${{ github.sha }}
           EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
-          EXPECTED_WORKFLOW_REF: boardsesh/boardsesh/.github/workflows/postgres-image-publisher.yml@refs/heads/main
+          EXPECTED_WORKFLOW_REF: boardsesh/boardsesh/.github/workflows/postgres-seeded-image-publisher.yml@refs/heads/main
           GH_TOKEN: ${{ github.token }}
           REF_IS_PROTECTED: ${{ github.ref_protected }}
           WORKFLOW_REF: ${{ github.workflow_ref }}
@@ -191,7 +191,7 @@ jobs:
       contents: read
       packages: write
     outputs:
-      portable_digest: ${{ steps.layouts.outputs.portable_digest }}
+      seeded_digest: ${{ steps.layouts.outputs.seeded_digest }}
       sha_tag: ${{ steps.layouts.outputs.sha_tag }}
     steps:
       - name: Checkout exact current main commit
@@ -226,12 +226,6 @@ jobs:
               fail "RETIRED_DB_IMAGE_DIGESTS contains a duplicate: $retired_digest"
             seen_retired_digests["$retired_digest"]=1
           done <<<"$RETIRED_DIGESTS"
-
-      - name: Enable multi-architecture emulation
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
-        with:
-          image: tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
-          platforms: arm64
 
       - name: Create temporary tool and credential boundary
         run: |
@@ -278,17 +272,17 @@ jobs:
           [[ ! -L source/.dockerignore ]]
           grep -Fxq '.git' source/.dockerignore
 
-      - name: Build portable OCI layout without registry credentials
-        id: build-portable
+      - name: Build seeded OCI layout without registry credentials
+        id: build-seeded
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         env:
           DOCKER_BUILD_RECORD_UPLOAD: 'false'
           DOCKER_BUILD_SUMMARY: 'false'
         with:
           builder: ${{ steps.buildx.outputs.name }}
-          context: ./source/packages/db/docker
-          file: ./source/packages/db/docker/Dockerfile.postgres
-          platforms: linux/amd64,linux/arm64
+          context: ./source
+          file: ./source/packages/db/docker/Dockerfile.dev-db
+          platforms: linux/amd64
           pull: true
           push: false
           provenance: false
@@ -298,14 +292,14 @@ jobs:
             org.opencontainers.image.revision=${{ inputs.expected_main_sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.ref.name=refs/heads/main
-          outputs: type=oci,dest=${{ runner.temp }}/portable-oci,tar=false,name=${{ env.PORTABLE_IMAGE }}:sha-${{ inputs.expected_main_sha }}
+          outputs: type=oci,dest=${{ runner.temp }}/seeded-oci,tar=false,name=${{ env.SEEDED_IMAGE }}:sha-${{ inputs.expected_main_sha }}
 
       - name: Validate offline layouts and retired digest policy
         id: layouts
         env:
-          EXPECTED_PORTABLE_DIGEST: ${{ steps.build-portable.outputs.digest }}
-          PORTABLE_LAYOUT: ${{ runner.temp }}/portable-oci
+          EXPECTED_SEEDED_DIGEST: ${{ steps.build-seeded.outputs.digest }}
           RETIRED_DIGESTS: ${{ vars.RETIRED_DB_IMAGE_DIGESTS }}
+          SEEDED_LAYOUT: ${{ runner.temp }}/seeded-oci
         run: |
           set -Eeuo pipefail
 
@@ -345,11 +339,11 @@ jobs:
             fi
           }
 
-          portable_digest="$(layout_digest "$PORTABLE_LAYOUT")"
-          [[ "$portable_digest" == "$EXPECTED_PORTABLE_DIGEST" ]] ||
-            fail 'portable Buildx output digest does not match its OCI layout'
-          [[ "$(platform_list "$PORTABLE_LAYOUT" "$portable_digest")" == '["linux/amd64","linux/arm64"]' ]] ||
-            fail 'portable OCI layout does not contain exactly linux/amd64 and linux/arm64'
+          seeded_digest="$(layout_digest "$SEEDED_LAYOUT")"
+          [[ "$seeded_digest" == "$EXPECTED_SEEDED_DIGEST" ]] ||
+            fail 'seeded Buildx output digest does not match its OCI layout'
+          [[ "$(platform_list "$SEEDED_LAYOUT" "$seeded_digest")" == '["linux/amd64"]' ]] ||
+            fail 'seeded OCI layout does not contain exactly linux/amd64'
 
           [[ "$RETIRED_DIGESTS" =~ [^[:space:]] ]] ||
             fail 'RETIRED_DB_IMAGE_DIGESTS must be explicitly set to none or lowercase sha256 digests'
@@ -365,12 +359,12 @@ jobs:
             done <<<"$RETIRED_DIGESTS"
           fi
 
-          for proposed_digest in "$portable_digest"; do
+          for proposed_digest in "$seeded_digest"; do
             [[ -z "${seen_retired_digests[$proposed_digest]:-}" ]] ||
               fail "refusing to publish retired digest $proposed_digest"
           done
 
-          printf 'portable_digest=%s\n' "$portable_digest" >>"$GITHUB_OUTPUT"
+          printf 'seeded_digest=%s\n' "$seeded_digest" >>"$GITHUB_OUTPUT"
           printf 'sha_tag=sha-%s\n' "${{ inputs.expected_main_sha }}" >>"$GITHUB_OUTPUT"
 
       - name: Recheck exact current main and environment immediately before registry authentication
@@ -431,23 +425,23 @@ jobs:
 
       - name: Publish exact prevalidated OCI layouts
         env:
-          PORTABLE_DIGEST: ${{ steps.layouts.outputs.portable_digest }}
-          PORTABLE_LAYOUT: ${{ runner.temp }}/portable-oci
+          SEEDED_DIGEST: ${{ steps.layouts.outputs.seeded_digest }}
+          SEEDED_LAYOUT: ${{ runner.temp }}/seeded-oci
           SHA_TAG: ${{ steps.layouts.outputs.sha_tag }}
         run: |
           set -Eeuo pipefail
           oras cp --from-oci-layout \
-            "$PORTABLE_LAYOUT@$PORTABLE_DIGEST" \
-            "$PORTABLE_IMAGE:$SHA_TAG" \
+            "$SEEDED_LAYOUT@$SEEDED_DIGEST" \
+            "$SEEDED_IMAGE:$SHA_TAG" \
             --to-registry-config "$DOCKER_CONFIG/config.json"
 
-          [[ "$(oras resolve --registry-config "$DOCKER_CONFIG/config.json" "$PORTABLE_IMAGE:$SHA_TAG")" == "$PORTABLE_DIGEST" ]]
+          [[ "$(oras resolve --registry-config "$DOCKER_CONFIG/config.json" "$SEEDED_IMAGE:$SHA_TAG")" == "$SEEDED_DIGEST" ]]
 
       - name: Remove temporary publisher credentials and builder
         if: always()
         env:
           BUILDER_NAME: ${{ steps.buildx.outputs.name }}
-          PORTABLE_LAYOUT: ${{ runner.temp }}/portable-oci
+          SEEDED_LAYOUT: ${{ runner.temp }}/seeded-oci
         run: |
           set -Eeuo pipefail
           [[ -n "${DOCKER_CONFIG:-}" ]] || exit 0
@@ -462,7 +456,7 @@ jobs:
           fi
           find "$DOCKER_CONFIG" -type f -exec sh -c ': >"$1"' _ {} \;
           find "$DOCKER_CONFIG" -depth -delete
-          find "$PORTABLE_LAYOUT" -depth -delete 2>/dev/null || true
+          find "$SEEDED_LAYOUT" -depth -delete 2>/dev/null || true
           [[ ! -e "$DOCKER_CONFIG" ]]
           ((cleanup_status == 0))
 
@@ -510,21 +504,29 @@ jobs:
 
       - name: Verify exact remote manifests
         env:
-          PORTABLE_DIGEST: ${{ needs.publish-images.outputs.portable_digest }}
+          SEEDED_DIGEST: ${{ needs.publish-images.outputs.seeded_digest }}
           SHA_TAG: ${{ needs.publish-images.outputs.sha_tag }}
         run: |
           set -Eeuo pipefail
-          [[ "$(oras resolve --registry-config "$DOCKER_CONFIG/config.json" "$PORTABLE_IMAGE:$SHA_TAG")" == "$PORTABLE_DIGEST" ]]
+          [[ "$(oras resolve --registry-config "$DOCKER_CONFIG/config.json" "$SEEDED_IMAGE:$SHA_TAG")" == "$SEEDED_DIGEST" ]]
 
           oras manifest fetch \
             --registry-config "$DOCKER_CONFIG/config.json" \
-            --output portable-manifest.json \
-            "$PORTABLE_IMAGE@$PORTABLE_DIGEST"
-          jq -e '
-            .schemaVersion == 2 and
-            ([.manifests[].platform | "\(.os)/\(.architecture)"] | sort) ==
-              ["linux/amd64", "linux/arm64"]
-          ' portable-manifest.json >/dev/null
+            --output seeded-manifest.json \
+            "$SEEDED_IMAGE@$SEEDED_DIGEST"
+          if jq -e '.manifests | type == "array"' seeded-manifest.json >/dev/null; then
+            jq -e '
+              .schemaVersion == 2 and
+              ([.manifests[].platform | "\(.os)/\(.architecture)"] | sort) ==
+                ["linux/amd64"]
+            ' seeded-manifest.json >/dev/null
+          else
+            oras manifest fetch-config \
+              --registry-config "$DOCKER_CONFIG/config.json" \
+              --output seeded-config.json \
+              "$SEEDED_IMAGE@$SEEDED_DIGEST"
+            jq -e '.os == "linux" and .architecture == "amd64"' seeded-config.json >/dev/null
+          fi
 
       - name: Remove temporary read-only registry credentials
         if: always()
@@ -540,15 +542,11 @@ jobs:
           find "$DOCKER_CONFIG" -depth -delete
           [[ ! -e "$DOCKER_CONFIG" ]]
 
-  smoke-portable:
-    name: Smoke portable (${{ matrix.platform }})
+  smoke-seeded:
+    name: Smoke seeded (linux/amd64)
     needs: [authorize-current-main, publish-images, verify-published-images]
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [linux/amd64, linux/arm64]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: read
@@ -560,17 +558,10 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Enable multi-architecture emulation
-        if: matrix.platform == 'linux/arm64'
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
-        with:
-          image: tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
-          platforms: arm64
-
       - name: Create temporary read-only registry boundary
         run: |
           set -Eeuo pipefail
-          auth_directory="$RUNNER_TEMP/boardsesh-ghcr-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-portable-smoke"
+          auth_directory="$RUNNER_TEMP/boardsesh-ghcr-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-seeded-smoke"
           install -d -m 700 "$auth_directory"
           printf 'DOCKER_CONFIG=%s\n' "$auth_directory" >>"$GITHUB_ENV"
 
@@ -592,11 +583,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
           logout: false
 
-      - name: Pull exact portable digest and platform
+      - name: Pull exact seeded digest
         env:
-          IMAGE: ${{ env.PORTABLE_IMAGE }}@${{ needs.publish-images.outputs.portable_digest }}
-          PLATFORM: ${{ matrix.platform }}
-        run: docker pull --platform "$PLATFORM" "$IMAGE"
+          IMAGE: ${{ env.SEEDED_IMAGE }}@${{ needs.publish-images.outputs.seeded_digest }}
+        run: docker pull --platform linux/amd64 "$IMAGE"
 
       - name: Remove registry credentials before image smoke
         if: always()
@@ -604,7 +594,7 @@ jobs:
           set -Eeuo pipefail
           [[ -n "${DOCKER_CONFIG:-}" ]] || exit 0
           case "$DOCKER_CONFIG" in
-            "$RUNNER_TEMP"/boardsesh-ghcr-*-portable-smoke) ;;
+            "$RUNNER_TEMP"/boardsesh-ghcr-*-seeded-smoke) ;;
             *) printf 'Refusing to clean unexpected DOCKER_CONFIG: %s\n' "$DOCKER_CONFIG" >&2; exit 1 ;;
           esac
           docker logout "$REGISTRY" >/dev/null 2>&1 || true
@@ -621,18 +611,18 @@ jobs:
       - name: Install locked dependencies after registry credential removal
         run: bun install --frozen-lockfile
 
-      - name: Verify labels and boot exact portable platform
+      - name: Verify labels, architecture, and seeded database
         env:
           EXPECTED_REVISION: ${{ inputs.expected_main_sha }}
           EXPECTED_SOURCE: ${{ github.server_url }}/${{ github.repository }}
-          IMAGE: ${{ env.PORTABLE_IMAGE }}@${{ needs.publish-images.outputs.portable_digest }}
-          PLATFORM: ${{ matrix.platform }}
+          IMAGE: ${{ env.SEEDED_IMAGE }}@${{ needs.publish-images.outputs.seeded_digest }}
         run: |
           set -Eeuo pipefail
+          [[ "$(docker inspect --format '{{ .Architecture }}' "$IMAGE")" == 'amd64' ]]
           [[ "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$IMAGE")" == "$EXPECTED_REVISION" ]]
           [[ "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' "$IMAGE")" == "$EXPECTED_SOURCE" ]]
           [[ "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.ref.name" }}' "$IMAGE")" == 'refs/heads/main' ]]
-          vp run test:postgres18-architecture-image "$IMAGE" "$PLATFORM"
+          vp run test:postgres18-dev-db-image "$IMAGE"
 
   attest-published-digests:
     name: Attest verified image digests
@@ -640,7 +630,7 @@ jobs:
       - authorize-current-main
       - publish-images
       - verify-published-images
-      - smoke-portable
+      - smoke-seeded
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: postgres-image-publisher
@@ -650,7 +640,7 @@ jobs:
       attestations: write
       id-token: write
     outputs:
-      portable_attestation_url: ${{ steps.attest-portable.outputs.attestation-url }}
+      seeded_attestation_url: ${{ steps.attest-seeded.outputs.attestation-url }}
     steps:
       - name: Recheck exact current main and environment immediately before OIDC attestation
         env:
@@ -693,12 +683,12 @@ jobs:
           ' <<<"$branch_policies_json" >/dev/null ||
             fail 'publisher environment main-only policy changed before OIDC attestation'
 
-      - name: Attest exact portable digest
-        id: attest-portable
+      - name: Attest exact seeded digest
+        id: attest-seeded
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-name: ${{ env.PORTABLE_IMAGE }}
-          subject-digest: ${{ needs.publish-images.outputs.portable_digest }}
+          subject-name: ${{ env.SEEDED_IMAGE }}
+          subject-digest: ${{ needs.publish-images.outputs.seeded_digest }}
           push-to-registry: false
 
   verify-attestations:
@@ -739,12 +729,12 @@ jobs:
         env:
           EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
           GH_TOKEN: ${{ github.token }}
-          PORTABLE_ATTESTATION_URL: ${{ needs.attest-published-digests.outputs.portable_attestation_url }}
-          PORTABLE_DIGEST: ${{ needs.publish-images.outputs.portable_digest }}
+          SEEDED_ATTESTATION_URL: ${{ needs.attest-published-digests.outputs.seeded_attestation_url }}
+          SEEDED_DIGEST: ${{ needs.publish-images.outputs.seeded_digest }}
         run: |
           set -Eeuo pipefail
           attestation_url_pattern='^https://github\.com/boardsesh/boardsesh/attestations/[0-9]+$'
-          [[ "$PORTABLE_ATTESTATION_URL" =~ $attestation_url_pattern ]]
+          [[ "$SEEDED_ATTESTATION_URL" =~ $attestation_url_pattern ]]
 
           verify_attestation() {
             local image="$1"
@@ -753,7 +743,7 @@ jobs:
             local digest_hex="${digest#sha256:}"
             gh attestation verify "oci://$image@$digest" \
               --repo "$APPROVED_REPOSITORY" \
-              --signer-workflow "$APPROVED_REPOSITORY/.github/workflows/postgres-image-publisher.yml" \
+              --signer-workflow "$APPROVED_REPOSITORY/.github/workflows/postgres-seeded-image-publisher.yml" \
               --signer-digest "$EXPECTED_MAIN_SHA" \
               --source-ref "$MAIN_REF" \
               --source-digest "$EXPECTED_MAIN_SHA" \
@@ -771,7 +761,7 @@ jobs:
               ' "$output" >/dev/null
           }
 
-          verify_attestation "$PORTABLE_IMAGE" "$PORTABLE_DIGEST" portable-attestation.json
+          verify_attestation "$SEEDED_IMAGE" "$SEEDED_DIGEST" seeded-attestation.json
 
       - name: Remove temporary attestation verification credentials
         if: always()
@@ -802,22 +792,22 @@ jobs:
       - name: Write machine-readable digest manifest and summary
         env:
           EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
-          PORTABLE_ATTESTATION_URL: ${{ needs.attest-published-digests.outputs.portable_attestation_url }}
-          PORTABLE_DIGEST: ${{ needs.publish-images.outputs.portable_digest }}
+          SEEDED_ATTESTATION_URL: ${{ needs.attest-published-digests.outputs.seeded_attestation_url }}
+          SEEDED_DIGEST: ${{ needs.publish-images.outputs.seeded_digest }}
           SHA_TAG: ${{ needs.publish-images.outputs.sha_tag }}
         run: |
           set -Eeuo pipefail
           attestation_url_pattern='^https://github\.com/boardsesh/boardsesh/attestations/[0-9]+$'
-          [[ "$PORTABLE_ATTESTATION_URL" =~ $attestation_url_pattern ]]
+          [[ "$SEEDED_ATTESTATION_URL" =~ $attestation_url_pattern ]]
           jq -n \
             --arg source_repository "$APPROVED_REPOSITORY" \
             --arg source_url "$GITHUB_SERVER_URL/$APPROVED_REPOSITORY" \
             --arg main_ref "$MAIN_REF" \
             --arg main_sha "$EXPECTED_MAIN_SHA" \
             --arg sha_tag "$SHA_TAG" \
-            --arg portable_image "$PORTABLE_IMAGE" \
-            --arg portable_digest "$PORTABLE_DIGEST" \
-            --arg portable_attestation_url "$PORTABLE_ATTESTATION_URL" '
+            --arg seeded_image "$SEEDED_IMAGE" \
+            --arg seeded_digest "$SEEDED_DIGEST" \
+            --arg seeded_attestation_url "$SEEDED_ATTESTATION_URL" '
               {
                 schema_version: 2,
                 source: {
@@ -837,16 +827,16 @@ jobs:
                   "org.opencontainers.image.ref.name": $main_ref
                 },
                 images: {
-                  portable: {
-                    name: $portable_image,
-                    digest: $portable_digest,
-                    platforms: ["linux/amd64", "linux/arm64"],
-                    attestation_url: $portable_attestation_url,
+                  seeded: {
+                    name: $seeded_image,
+                    digest: $seeded_digest,
+                    platforms: ["linux/amd64"],
+                    attestation_url: $seeded_attestation_url,
                     attestation_verified: true
                   }
                 }
               }
-            ' >postgres-image-digests.json
+            ' >postgres-seeded-image-digest.json
           jq -e '
             .source.ref == "refs/heads/main" and
             (.source.sha | test("^[0-9a-f]{40}$")) and
@@ -854,13 +844,13 @@ jobs:
             .tag_policy.tags_are_mutable == true and
             ([.images[].digest | test("^sha256:[0-9a-f]{64}$")] | all) and
             ([.images[].attestation_verified] | all)
-          ' postgres-image-digests.json >/dev/null
+          ' postgres-seeded-image-digest.json >/dev/null
 
           {
-            echo '## Verified portable PostgreSQL image digest'
+            echo '## Verified seeded PostgreSQL image digest'
             echo
             echo "- Source: \`$MAIN_REF@$EXPECTED_MAIN_SHA\`"
-            echo "- Portable (linux/amd64, linux/arm64): \`$PORTABLE_IMAGE@$PORTABLE_DIGEST\`"
+            echo "- Seeded (linux/amd64): \`$SEEDED_IMAGE@$SEEDED_DIGEST\`"
             echo
             echo "The \`$SHA_TAG\` tag is a mutable lookup alias. Pin only the exact digest above."
           } >>"$GITHUB_STEP_SUMMARY"
@@ -868,7 +858,7 @@ jobs:
       - name: Recheck exact current main and workflow before artifact upload
         env:
           EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
-          EXPECTED_WORKFLOW_REF: boardsesh/boardsesh/.github/workflows/postgres-image-publisher.yml@refs/heads/main
+          EXPECTED_WORKFLOW_REF: boardsesh/boardsesh/.github/workflows/postgres-seeded-image-publisher.yml@refs/heads/main
           GH_TOKEN: ${{ github.token }}
           WORKFLOW_REF: ${{ github.workflow_ref }}
           WORKFLOW_SHA: ${{ github.workflow_sha }}
@@ -892,7 +882,7 @@ jobs:
       - name: Upload verified digest manifest
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: postgres-image-digests-${{ inputs.expected_main_sha }}
-          path: postgres-image-digests.json
+          name: postgres-seeded-image-digest-${{ inputs.expected_main_sha }}
+          path: postgres-seeded-image-digest.json
           if-no-files-found: error
           retention-days: 90

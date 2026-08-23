@@ -4,6 +4,7 @@ on:
   pull_request:
     paths: &publisher_contract_paths
       - '.github/workflows/postgres-image-publisher.yml'
+      - '.github/workflows/postgres-seeded-image-publisher.yml'
       - '.github/workflows/postgres-image-publisher-contract.yml'
       - 'vite.config.ts'
       - 'scripts/lib/postgres-image-publisher-contract.ts'

@@ -45,7 +45,7 @@ PostGIS image and boots the native and ARM64 candidates without logging in to a
 registry. The same read-only workflow builds and boots the final seeded dev
 image on a fresh volume, validates seed rows and the Drizzle ledger, restarts
 the same volume, and validates it again. Publication and attestation belong only
-to the protected-main publisher described below.
+to the two protected-main publishers described below.
 
 The portable image has two independent boot gates: the native runner exercises
 the full catalog/logical-replication rehearsal, and QEMU boots the actual
@@ -75,18 +75,28 @@ the candidate, and consume it in separate merges:
 2. Merge producer commit A, containing only PG18 image inputs, builders,
    rehearsals, and read-only validation, to `main`. Treat that merge result as
    frozen image input.
-3. Dispatch the trusted `Publish Current Main PostgreSQL Images` workflow from
-   `main`, passing the full 40-character current `main` SHA as
+3. Dispatch the trusted `Publish Current Main Portable PostgreSQL Image`
+   workflow from `main`, passing the full 40-character current `main` SHA as
    `expected_main_sha`. It rejects tags, non-default branches,
    stale SHAs, and any checked-out SHA mismatch before registry login. It
-   publishes only the `sha-<full-sha>` tag, boots
-   both published digests, verifies
+   publishes only the `sha-<full-sha>` tag, boots the published digest on fresh
+   amd64 and arm64 runners, verifies
    `org.opencontainers.image.revision` and `org.opencontainers.image.source`,
-   and emits the portable and seeded digests in both the job summary and the
+   and emits the portable digest in both the job summary and the
    downloadable `postgres-image-digests-<sha>/postgres-image-digests.json`
-   artifact. Do not change any
+   artifact. This build takes about two minutes, so the quiet-`main` window a
+   production cutover needs is short. Do not change any
    image input after that run; a change requires a new A and a new publication.
-4. Consumer commit B may change only consumer pins, activation contracts, and
+4. Dispatch `Publish Current Main Seeded PostgreSQL Image` from `main` with the
+   same SHA. It is a separate workflow with the same guards, publishing only
+   `ghcr.io/boardsesh/boardsesh-dev-db` and emitting
+   `postgres-seeded-image-digest-<sha>/postgres-seeded-image-digest.json`. It
+   takes roughly seventeen minutes because the seeded build downloads and
+   unpacks six Android APKs; the developer image is not a production database
+   artifact, so nothing in a production cutover waits on it. Keep `main` quiet
+   for this run too, or accept redispatching it. If the two runs landed on
+   different `main` SHAs, record which pin came from which artifact.
+5. Consumer commit B may change only consumer pins, activation contracts, and
    documentation. Pin
    A's portable digest in `.github/workflows/ci.yml`; pin A's seeded digest in
    the existing seeded CI fixture there and in both seeded-image references in
@@ -98,7 +108,7 @@ the candidate, and consume it in separate merges:
    Run the full CI suite against these exact digests before creating a Railway
    candidate.
 
-The migration publisher does not update mutable discovery tags such as `latest`
+Neither publisher updates mutable discovery tags such as `latest`
 or `pg18`; neither is an accepted CI, migration, Railway, or homelab pin. The
 source-A workflow validation and tests are independent of B's as-yet-unknown
 consumer digests, so A cannot deadlock on its own publication result.
@@ -156,19 +166,23 @@ representative `ST_AsEWKB` values.
 
 Feature-branch workflows are read-only and cannot log in to GHCR, write
 packages, attest, or request OIDC. First merge the minimal
-`.github/workflows/postgres-image-publisher.yml` publisher definition to protected
-`main` in a prerequisite PR. Merge producer A to `main`, then dispatch that
-trusted workflow with the exact current `main` lowercase 40-character SHA. The
-publisher rejects tags, non-default branches, stale SHAs, and mismatched
+`.github/workflows/postgres-image-publisher.yml` and
+`.github/workflows/postgres-seeded-image-publisher.yml` publisher definitions to
+protected `main` in a prerequisite PR. Merge producer A to `main`, then dispatch
+each trusted workflow with the exact current `main` lowercase 40-character SHA.
+Each publisher rejects tags, non-default branches, stale SHAs, and mismatched
 checkouts, and binds every checkout and OCI
 revision label to that SHA before registry login, emits a downloadable digest
-manifest, and smoke-tests the exact portable digest on fresh amd64 and arm64
-runners. It publishes only immutable `sha-<full-sha>` tags.
+manifest, and smoke-tests its exact published digest on fresh runners — amd64
+and arm64 for the portable image, amd64 for the seeded one. They publish only
+immutable `sha-<full-sha>` tags. The two workflows exist so the fast portable
+build that production consumes never sits behind the slow seeded developer
+build; see `docs/postgres-image-publishing.md`.
 
 Treat the image-input commit as frozen commit A. After publication, commit B may
-only pin the emitted portable/seeded digests in consumers, contracts, and docs;
-any Dockerfile, migration, setup, seed, or smoke input change requires a new A
-publication. Verify the same portable digest is configured for the Railway
+only pin the portable and seeded digests emitted by the two runs in consumers,
+contracts, and docs; any Dockerfile, migration, setup, seed, or smoke input
+change requires a new A publication. Verify the same portable digest is configured for the Railway
 candidate and future homelab standby. Do not add WAL-G to this image. WAL-G uses
 a separately pinned sidecar/credential boundary in the later backup stage.
 
