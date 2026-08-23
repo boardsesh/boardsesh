@@ -17,6 +17,19 @@
 #
 # When it fails, the fix is not to extend the list here. It is to extend the
 # rehearsal fixture, re-run it, and update the record — then add the function.
+#
+# This is the repository-side half of the same question. The runtime half lives
+# in scripts/lib/postgres-spatial-capability.sh, which enumerates the same two
+# dimensions -- ST_* references and geography columns -- out of a live catalog
+# and requires the target to provide each one. They should agree about what "the
+# spatial surface" means; a new spatial migration should trip this file, and a
+# database that grew one anyway should trip that one.
+#
+# The runtime half sees two things this file does not, and both are deliberate:
+# PostGIS operators (`&&`, `<->`) and operator classes, which have no ST_* name
+# to grep for. If a migration ever introduces a spatial operator, expect the
+# database-side manifest to grow a row that this file cannot explain -- that is
+# the gap working, not a bug, but it is the moment to widen the scan here too.
 
 set -Eeuo pipefail
 
@@ -44,13 +57,22 @@ REHEARSED_FUNCTIONS='ST_AsEWKB ST_AsText ST_Distance ST_DWithin ST_MakePoint'
 # output and `node_modules` is not ours. Tests are deliberately IN scope: a
 # spatial query that exists only in a test fixture today is still a spatial
 # query someone will promote tomorrow.
+#
+# The scan is case-insensitive and folds every hit to upper case. SQL does not
+# care, so `st_dwithin(` is the same call as `ST_DWithin(` -- and the runtime
+# half of this gate, the routine-body scan in
+# scripts/lib/postgres-spatial-capability.sh, lowercases before matching for
+# exactly that reason. A case-sensitive scan here would let a lowercase call
+# site pass this file while the database-side manifest still reported it, which
+# is the two halves disagreeing about what "the spatial surface" is.
 inventory="$(
-  grep -rnoE '\bST_[A-Za-z][A-Za-z0-9_]*[[:space:]]*\(' \
+  grep -rnoEi '\bST_[A-Za-z][A-Za-z0-9_]*[[:space:]]*\(' \
     --include='*.sql' --include='*.ts' --include='*.tsx' \
     packages/ scripts/ 2>/dev/null |
     grep -v '/node_modules/' |
     grep -v '/dist/' |
-    sed -E 's/.*(ST_[A-Za-z0-9_]+).*/\1/' |
+    sed -E 's/.*([Ss][Tt]_[A-Za-z0-9_]+).*/\1/' |
+    tr '[:lower:]' '[:upper:]' |
     sort -u
 )"
 
@@ -60,9 +82,13 @@ inventory="$(
 [[ -n "$inventory" ]] ||
   fail 'the ST_* inventory came back empty; the scan is broken, and an empty scan must never read as "no new spatial usage"'
 
+# REHEARSED_FUNCTIONS keeps its canonical mixed case because that is how the
+# rehearsal script and the record spell it; membership is compared upper-folded
+# so the two sides meet in the middle.
+rehearsed_upper="$(printf '%s' "$REHEARSED_FUNCTIONS" | tr '[:lower:]' '[:upper:]')"
 unrehearsed=''
 while IFS= read -r spatial_function; do
-  case " $REHEARSED_FUNCTIONS " in
+  case " $rehearsed_upper " in
     *" $spatial_function "*) ;;
     *) unrehearsed="$unrehearsed $spatial_function" ;;
   esac
@@ -86,7 +112,7 @@ fi
 # function claimed as rehearsed has to appear in the rehearsal script, or the
 # list can drift into permitting things nothing ever runs.
 for spatial_function in $REHEARSED_FUNCTIONS; do
-  grep -Fq "$spatial_function" "$REHEARSAL_SCRIPT" ||
+  grep -Fqi "$spatial_function" "$REHEARSAL_SCRIPT" ||
     fail "$spatial_function is listed as rehearsed but does not appear in $REHEARSAL_SCRIPT"
 done
 

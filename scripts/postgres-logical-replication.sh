@@ -27,9 +27,17 @@ SOURCE_SLOT_RELEASE_SECONDS="${SOURCE_SLOT_RELEASE_SECONDS:-60}"
 # SOURCE_SLOT_RELEASE_SECONDS once its format has been validated; see the note on
 # that function for why the budget is one allowance rather than one per slot.
 SOURCE_SLOT_RELEASE_BUDGET_REMAINING=0
+# The exact PostGIS version the TARGET must report, mirroring
+# scripts/postgres-migration-audit.sh:16. Only the target is pinned: the source
+# is whatever the mutable postgis/postgis:16-master tag last built, and
+# assert_spatial_capability_precreated decides that difference on capabilities
+# instead. See docs/postgres-18-migration.md section 1.
+EXPECTED_POSTGIS_VERSION="${EXPECTED_POSTGIS_VERSION:-3.6.4}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/postgres-credentials.sh
 source "$SCRIPT_DIR/lib/postgres-credentials.sh"
+# shellcheck source=scripts/lib/postgres-spatial-capability.sh
+source "$SCRIPT_DIR/lib/postgres-spatial-capability.sh"
 NEON_DATABASE_URL="${NEON_DATABASE_URL:-${SOURCE_DATABASE_URL:-}}"
 RAILWAY_DATABASE_URL="${RAILWAY_DATABASE_URL:-${TARGET_DATABASE_URL:-}}"
 NEON_REPLICATION_DATABASE_URL="${NEON_REPLICATION_DATABASE_URL:-${SOURCE_REPLICATION_DATABASE_URL:-}}"
@@ -1434,28 +1442,98 @@ ORDER BY category, identity, definition;"
   esac
 }
 
+# Every source PostGIS capability must exist on the target before a single
+# catalog entry is restored. This is the hard-fail twin of the audit's soft
+# blocker, and it deliberately runs the SAME query from the SAME library: an
+# audit that passes while setup aborts here, or the reverse, would send an
+# operator hunting for a difference between two scripts instead of a difference
+# between two databases.
+assert_spatial_capability_precreated() {
+  local included_schemas_sql excluded_schemas_sql manifest_sql gap_sql
+  local source_manifest manifest_values target_gaps gap_row target_postgis_version
+
+  # Pin the target before asking it anything. Until this change the extension
+  # manifest above compared postgis exactly on both sides, so an unexpected
+  # target build could not get this far; making that row version-tolerant would
+  # otherwise have left this script with no PostGIS version check at all, and an
+  # operator who skipped the audit could restore into a 3.4 or 3.8 image whose
+  # function NAMES happen to cover the manifest. The capability comparison below
+  # only means something when the thing it interrogates is the artifact the
+  # image and rehearsal gates actually validated.
+  target_postgis_version="$(psql_railway -X -Atq -c "
+SELECT coalesce(
+  (SELECT extversion FROM pg_catalog.pg_extension WHERE extname = 'postgis'),
+  'MISSING'
+);")"
+  [[ "$target_postgis_version" == "$EXPECTED_POSTGIS_VERSION" ]] ||
+    fail "target PostGIS is $target_postgis_version; expected exactly $EXPECTED_POSTGIS_VERSION. The target is our own attested artifact, so no other version is accepted; if the artifact really did move, re-run the image and rehearsal gates rather than overriding EXPECTED_POSTGIS_VERSION"
+
+  # INCLUDE_SCHEMAS/EXCLUDE_SCHEMAS here are the same scope the audit passes as
+  # MIGRATION_SCHEMAS/MIGRATION_EXCLUDED_SCHEMAS. The two scripts share the
+  # query but not the variable names, so a schema added to one and not the other
+  # is how these two gates would quietly stop agreeing.
+  included_schemas_sql="$(boardsesh_sql_identifier_list INCLUDE_SCHEMAS "$INCLUDE_SCHEMAS")" ||
+    fail "INCLUDE_SCHEMAS must list every application schema as a simple identifier"
+  if [[ -n "${EXCLUDE_SCHEMAS// /}" ]]; then
+    excluded_schemas_sql="$(boardsesh_sql_identifier_list EXCLUDE_SCHEMAS "$EXCLUDE_SCHEMAS")" ||
+      fail "EXCLUDE_SCHEMAS must contain only simple identifiers"
+  else
+    excluded_schemas_sql="'__no_excluded_schema__'"
+  fi
+
+  manifest_sql="$(boardsesh_spatial_capability_manifest_sql \
+    "$included_schemas_sql" "$excluded_schemas_sql")" ||
+    fail "could not build the spatial capability manifest query"
+  source_manifest="$(psql_neon -X -Atq -c "$manifest_sql")"
+  # Fail closed. The source is known to carry two geography columns and their
+  # GiST indexes, so an empty manifest means the enumeration broke, not that the
+  # database stopped using PostGIS.
+  [[ -n "$source_manifest" ]] ||
+    fail "the source spatial capability enumeration returned nothing; an empty manifest is a broken enumeration, not proof that the source uses no PostGIS"
+  printf 'Source spatial capability manifest:\n%s\n' "$source_manifest"
+
+  case "$source_manifest" in
+    *"'routine-body-unresolved'"*)
+      printf '%s\n' "$source_manifest" | grep -F "'routine-body-unresolved'" >&2 || true
+      fail "a source routine body references a PostGIS-shaped name that resolves to no routine on the source; the capability cannot be classified, so it cannot be proven present on the target"
+      ;;
+  esac
+
+  manifest_values="$(paste -sd, <(printf '%s\n' "$source_manifest"))"
+  gap_sql="$(boardsesh_spatial_capability_gap_sql "$manifest_values")" ||
+    fail "could not build the spatial capability gap query"
+  target_gaps="$(psql_railway -X -Atq -c "$gap_sql")"
+  if [[ -n "$target_gaps" ]]; then
+    while IFS= read -r gap_row; do
+      [[ -n "$gap_row" ]] || continue
+      printf 'spatial capability gap: %s\n' \
+        "$(boardsesh_describe_spatial_capability_gap "$gap_row")" >&2
+    done <<<"$target_gaps"
+    fail "the target PostGIS build does not provide every capability the source uses; PostGIS versions may differ only while this manifest is satisfied (docs/postgres-18-postgis-rehearsal.md)"
+  fi
+  echo "Target PostGIS satisfies every capability in the source spatial manifest."
+}
+
 assert_superuser_catalog_precreated() {
   local source_extension_manifest target_extension_manifest source_manifest target_manifest
-  source_extension_manifest="$(psql_neon -X -Atq -c "
-SELECT extension.extname || '|' || extension.extversion || '|' || namespace.nspname || '|' ||
-       extension.extrelocatable::text
-FROM pg_extension AS extension
-JOIN pg_namespace AS namespace ON namespace.oid = extension.extnamespace
-WHERE extension.extname <> 'plpgsql'
-ORDER BY extension.extname;")"
-  target_extension_manifest="$(psql_railway -X -Atq -c "
-SELECT extension.extname || '|' || extension.extversion || '|' || namespace.nspname || '|' ||
-       extension.extrelocatable::text
-FROM pg_extension AS extension
-JOIN pg_namespace AS namespace ON namespace.oid = extension.extnamespace
-WHERE extension.extname <> 'plpgsql'
-ORDER BY extension.extname;")"
+  local extension_manifest_sql
+  # Same version-tolerant rendering the audit compares, from the same library.
+  # postgis is the only extension whose recorded version may differ, and only
+  # because assert_spatial_capability_precreated decides that difference on
+  # capabilities instead. postgis_topology and postgis_tiger_geocoder are
+  # separate extensions and still have to match exactly.
+  extension_manifest_sql="$(boardsesh_extension_manifest_sql)" ||
+    fail "could not build the extension manifest query"
+  source_extension_manifest="$(psql_neon -X -Atq -c "$extension_manifest_sql")"
+  target_extension_manifest="$(psql_railway -X -Atq -c "$extension_manifest_sql")"
   if [[ "$source_extension_manifest" != "$target_extension_manifest" ]]; then
     diff -u \
       <(printf '%s\n' "$source_extension_manifest") \
       <(printf '%s\n' "$target_extension_manifest") >&2 || true
-    fail "every source extension must be pre-created at the exact version/schema/relocatability on the target"
+    fail "every source extension must be pre-created at the exact version/schema/relocatability on the target; drop postgis_topology/postgis_tiger_geocoder on the source rather than looking for an allowlist, and note that only postgis may differ in version"
   fi
+
+  assert_spatial_capability_precreated
 
   source_manifest="$(superuser_catalog_manifest source)"
   target_manifest="$(superuser_catalog_manifest target)"

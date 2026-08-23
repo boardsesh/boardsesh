@@ -501,6 +501,108 @@ CREATE TABLE pg18_smoke_inheritance_parent (id integer PRIMARY KEY);
 CREATE TABLE pg18_smoke_inheritance_child () INHERITS (pg18_smoke_inheritance_parent);
 ALTER TABLE pg18_smoke_inheritance_child ADD PRIMARY KEY (id);
 
+-- The first spatial fixture this smoke test has ever had. `CREATE EXTENSION
+-- postgis` has been above since the file was written, with not one spatial
+-- column under it, so the PostGIS half of the migration contract had nothing to
+-- run against. This reproduces the application's real surface from the
+-- migrations that created it: both geography(Point,4326) columns (0052, 0054),
+-- both partial GiST indexes, and the lat/lng derivation trigger (0127).
+--
+-- The trigger is the reason the fixture exists in this shape. Its ST_MakePoint
+-- call lives inside a plpgsql body, which PostgreSQL stores as opaque text and
+-- records no pg_depend edge for, so a capability check built on catalog
+-- dependencies alone would report that this database uses no PostGIS functions
+-- at all. scripts/lib/postgres-spatial-capability.sh scans routine bodies for
+-- exactly this reason, and this is what proves the scan works.
+--
+-- Everything past the two production-shaped tables is here to hold one specific
+-- property of that library in place. Each is annotated where it is defined; the
+-- assertions that read them are grouped after the post-teardown audit.
+CREATE DOMAIN pg18_smoke_gps_point AS geography(Point, 4326);
+CREATE TABLE pg18_smoke_gyms (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  name text NOT NULL,
+  latitude double precision,
+  longitude double precision,
+  is_public boolean NOT NULL DEFAULT true,
+  deleted_at timestamptz,
+  location geography(Point, 4326),
+  -- A column that reaches geography through a user domain. The capability
+  -- manifest must report the postgis type underneath, not this domain: the
+  -- replication helper runs the same check BEFORE the schema restore, so a
+  -- manifest naming pg18_smoke_gps_point would ask a pre-restore target for a
+  -- type only that restore could create, and wedge the cutover permanently.
+  checked_location pg18_smoke_gps_point
+);
+CREATE TABLE pg18_smoke_user_boards (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  name text NOT NULL,
+  latitude double precision,
+  longitude double precision,
+  is_public boolean NOT NULL DEFAULT true,
+  deleted_at timestamptz,
+  location geography(Point, 4326)
+);
+CREATE FUNCTION pg18_smoke_set_location() RETURNS trigger AS $$
+BEGIN
+  IF NEW.latitude IS NOT NULL AND NEW.longitude IS NOT NULL THEN
+    NEW.location := ST_MakePoint(NEW.longitude, NEW.latitude)::geography;
+  ELSE
+    NEW.location := NULL;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER pg18_smoke_gyms_set_location
+  BEFORE INSERT OR UPDATE OF latitude, longitude ON pg18_smoke_gyms
+  FOR EACH ROW EXECUTE FUNCTION pg18_smoke_set_location();
+CREATE TRIGGER pg18_smoke_user_boards_set_location
+  BEFORE INSERT OR UPDATE OF latitude, longitude ON pg18_smoke_user_boards
+  FOR EACH ROW EXECUTE FUNCTION pg18_smoke_set_location();
+CREATE INDEX pg18_smoke_gyms_location_idx ON pg18_smoke_gyms USING GIST (location)
+  WHERE deleted_at IS NULL AND is_public = true;
+CREATE INDEX pg18_smoke_user_boards_location_idx ON pg18_smoke_user_boards USING GIST (location)
+  WHERE is_public = true AND deleted_at IS NULL;
+-- An expression index is the cheapest object that records a real pg_depend edge
+-- to a PostGIS function. Without one, every 'function' row in the manifest would
+-- come from the routine-body scan and the catalog half of that dimension could
+-- be deleted outright with this whole file still passing.
+CREATE INDEX pg18_smoke_gyms_wkt_idx ON pg18_smoke_gyms (ST_AsText(location));
+-- ... and an index predicate is the cheapest object that records an edge to a
+-- PostGIS OPERATOR. `&&` is how a GiST index is actually driven, an operator
+-- carries no pg_proc edge of its own, and the routine-body scan cannot see
+-- operators at all, so this is the only thing holding that dimension up. The
+-- bound is a literal rather than ST_MakePoint on purpose: a function call here
+-- would add a catalog edge for st_makepoint and flip its manifest row from
+-- 'routine-body' to 'catalog', which is exactly the evidence the plpgsql scan
+-- assertion below depends on.
+CREATE INDEX pg18_smoke_gyms_bbox_idx ON pg18_smoke_gyms USING GIST (location)
+  WHERE location && 'SRID=4326;POINT(0 0)'::geography;
+-- A user routine that shares a name with a PostGIS one. postgis_topology ships
+-- its own st_srid/st_simplify/st_geometrytype, so this collision is production's
+-- situation, not a contrivance; it deliberately breaks the pg18_smoke_ naming
+-- convention because colliding is the entire point. If the manifest ever drops a
+-- reference merely because some non-PostGIS routine shares the name, the
+-- st_makepoint assertion below stops firing and the gate has gone quietly blind.
+CREATE FUNCTION st_makepoint(text) RETURNS text
+  LANGUAGE sql IMMUTABLE STRICT AS 'SELECT $1';
+-- Every other row keeps a NULL location, so a copy that silently coerced NULL
+-- to a point could not pass the EWKB comparison later in this file.
+INSERT INTO pg18_smoke_gyms (name, latitude, longitude, is_public, deleted_at)
+SELECT 'gym ' || n,
+       CASE WHEN n % 2 = 0 THEN NULL ELSE -89 + (n * 1.77) END,
+       CASE WHEN n % 2 = 0 THEN NULL ELSE -179 + (n * 3.55) END,
+       n % 7 <> 0,
+       CASE WHEN n % 11 = 0 THEN now() ELSE NULL END
+FROM generate_series(1, 100) AS n;
+INSERT INTO pg18_smoke_user_boards (name, latitude, longitude, is_public, deleted_at)
+SELECT 'board ' || n,
+       CASE WHEN n % 2 = 0 THEN NULL ELSE -88 + (n * 1.75) END,
+       CASE WHEN n % 2 = 0 THEN NULL ELSE -178 + (n * 3.51) END,
+       n % 5 <> 0,
+       CASE WHEN n % 13 = 0 THEN now() ELSE NULL END
+FROM generate_series(1, 100) AS n;
+
 CREATE TYPE pg18_smoke_composite AS (
   marker text,
   attempt_count integer
@@ -599,6 +701,11 @@ ALTER TABLE public.pg18_smoke_partitioned OWNER TO pg18_smoke_owner;
 ALTER TABLE public.pg18_smoke_partitioned_low OWNER TO pg18_smoke_owner;
 ALTER TABLE public.pg18_smoke_inheritance_parent OWNER TO pg18_smoke_owner;
 ALTER TABLE public.pg18_smoke_inheritance_child OWNER TO pg18_smoke_owner;
+ALTER TABLE public.pg18_smoke_gyms OWNER TO pg18_smoke_owner;
+ALTER TABLE public.pg18_smoke_user_boards OWNER TO pg18_smoke_owner;
+ALTER FUNCTION public.pg18_smoke_set_location() OWNER TO pg18_smoke_owner;
+ALTER FUNCTION public.st_makepoint(text) OWNER TO pg18_smoke_owner;
+ALTER DOMAIN public.pg18_smoke_gps_point OWNER TO pg18_smoke_owner;
 ALTER TABLE public.__drizzle_migrations OWNER TO pg18_smoke_owner;
 ALTER TABLE drizzle.__drizzle_migrations OWNER TO pg18_smoke_owner;
 ALTER TABLE pg18_extension_mixed.user_table OWNER TO pg18_smoke_owner;
@@ -621,23 +728,27 @@ GRANT SELECT, INSERT, UPDATE, DELETE
   ON public.pg18_smoke_persistence, public.pg18_smoke_never_called,
      public.pg18_smoke_partitioned, public.pg18_smoke_partitioned_low,
      public.pg18_smoke_inheritance_parent, public.pg18_smoke_inheritance_child,
+     public.pg18_smoke_gyms, public.pg18_smoke_user_boards,
      pg18_extension_mixed.user_table
   TO pg18_smoke_runtime;
 GRANT SELECT
   ON public.pg18_smoke_persistence, public.pg18_smoke_never_called,
      public.pg18_smoke_partitioned, public.pg18_smoke_partitioned_low,
      public.pg18_smoke_inheritance_parent, public.pg18_smoke_inheritance_child,
+     public.pg18_smoke_gyms, public.pg18_smoke_user_boards,
      public.__drizzle_migrations, drizzle.__drizzle_migrations,
      pg18_extension_mixed.user_table
   TO pg18_smoke_publisher;
 GRANT USAGE
   ON public.pg18_smoke_persistence_id_seq,
-     public.pg18_smoke_never_called_id_seq
+     public.pg18_smoke_never_called_id_seq,
+     public.pg18_smoke_gyms_id_seq,
+     public.pg18_smoke_user_boards_id_seq
   TO pg18_smoke_runtime;
 REVOKE USAGE ON TYPE public.pg18_smoke_composite, public.pg18_smoke_domain,
-  public.pg18_smoke_range FROM PUBLIC;
+  public.pg18_smoke_range, public.pg18_smoke_gps_point FROM PUBLIC;
 GRANT USAGE ON TYPE public.pg18_smoke_composite, public.pg18_smoke_domain,
-  public.pg18_smoke_range
+  public.pg18_smoke_range, public.pg18_smoke_gps_point
   TO pg18_smoke_runtime;
 SELECT format('REVOKE ALL PRIVILEGES ON ROUTINE %s FROM PUBLIC; GRANT EXECUTE ON ROUTINE %s TO pg18_smoke_runtime;',
               procedure.oid::regprocedure, procedure.oid::regprocedure)
@@ -1094,26 +1205,164 @@ FROM pg_publication
 WHERE pubname = 'pg18_smoke_publication';")"
 [[ "$retry_side_effects" == '0|0' ]]
 
-docker run --rm \
-  --network "$NETWORK_NAME" \
-  --volume "$REPOSITORY_ROOT:/workspace:ro" \
-  --entrypoint bash \
-  --env NEON_DATABASE_URL="$source_admin_url" \
-  --env RAILWAY_DATABASE_URL="$target_admin_url" \
-  --env NEON_REPLICATION_DATABASE_URL="$source_publisher_url" \
-  --env TARGET_OWNER_ROLE=pg18_smoke_owner \
-  --env TARGET_MIGRATOR_ROLE=pg18_smoke_migrator \
-  --env TARGET_SUBSCRIBER_ROLE=pg18_smoke_subscriber \
-  --env TARGET_RUNTIME_ROLE=pg18_smoke_runtime \
-  --env 'TARGET_RUNTIME_SCHEMAS=public drizzle pg18_extension_mixed pg18_empty_app' \
-  --env TARGET_SNAPSHOT_FENCE_OWNER_ROLE=pg18_smoke_fence_owner \
-  --env SOURCE_DATABASE_NAME=main \
-  --env TARGET_DATABASE_NAME=main \
-  --env PUBLICATION_NAME=pg18_smoke_publication \
-  --env SUBSCRIPTION_NAME=pg18_smoke_subscription \
-  --env SLOT_NAME=pg18_smoke_subscription \
-  --env 'INCLUDE_SCHEMAS=public drizzle pg18_extension_mixed pg18_empty_app' \
-  "$IMAGE_TAG" /workspace/scripts/postgres-logical-replication.sh setup
+run_replication_setup() {
+  docker run --rm \
+    --network "$NETWORK_NAME" \
+    --volume "$REPOSITORY_ROOT:/workspace:ro" \
+    --entrypoint bash \
+    --env NEON_DATABASE_URL="$source_admin_url" \
+    --env RAILWAY_DATABASE_URL="$target_admin_url" \
+    --env NEON_REPLICATION_DATABASE_URL="$source_publisher_url" \
+    --env TARGET_OWNER_ROLE=pg18_smoke_owner \
+    --env TARGET_MIGRATOR_ROLE=pg18_smoke_migrator \
+    --env TARGET_SUBSCRIBER_ROLE=pg18_smoke_subscriber \
+    --env TARGET_RUNTIME_ROLE=pg18_smoke_runtime \
+    --env 'TARGET_RUNTIME_SCHEMAS=public drizzle pg18_extension_mixed pg18_empty_app' \
+    --env TARGET_SNAPSHOT_FENCE_OWNER_ROLE=pg18_smoke_fence_owner \
+    --env SOURCE_DATABASE_NAME=main \
+    --env TARGET_DATABASE_NAME=main \
+    --env PUBLICATION_NAME=pg18_smoke_publication \
+    --env SUBSCRIPTION_NAME=pg18_smoke_subscription \
+    --env SLOT_NAME=pg18_smoke_subscription \
+    --env 'INCLUDE_SCHEMAS=public drizzle pg18_extension_mixed pg18_empty_app' \
+    --env EXPECTED_POSTGIS_VERSION="$IMAGE_POSTGIS_VERSION" \
+    "$IMAGE_TAG" /workspace/scripts/postgres-logical-replication.sh setup
+}
+
+# setup must not have written a single catalog entry when a spatial gate fires:
+# that gate runs before the dump, and running it after would make it advice.
+assert_target_schema_unrestored() {
+  local label="$1" unrestored_target_state
+  unrestored_target_state="$(docker exec "$TARGET_CONTAINER_NAME" psql -X -Atq -U postgres -d main \
+    -c "SELECT (to_regclass('public.pg18_smoke_gyms') IS NULL)::text;")"
+  [[ "$unrestored_target_state" == 'true' ]] || {
+    printf 'Setup restored schema despite %s\n' "$label" >&2
+    exit 1
+  }
+}
+
+# Drop one postgis member on the TARGET, prove setup aborts naming it, put it
+# back. Extension membership is the right lever: the object itself is untouched,
+# and every DDL/ownership/ACL manifest in this file filters deptype='e', so the
+# capability gate is the only thing that can react to the change.
+expect_setup_spatial_gap() {
+  local label="$1" drop_statement="$2" add_statement="$3" expected_message="$4"
+  local setup_succeeded=false
+  docker exec "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
+    -c "$drop_statement" >/dev/null
+  run_replication_setup >"$AUDIT_REPORT_FILE" 2>&1 && setup_succeeded=true
+  docker exec "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
+    -c "$add_statement" >/dev/null
+  if [[ "$setup_succeeded" == 'true' ]]; then
+    printf 'Expected a target missing %s to abort setup\n' "$label" >&2
+    exit 1
+  fi
+  assert_report_contains "$expected_message"
+  assert_target_schema_unrestored "a target missing $label"
+}
+
+# Model the production reality the narrowed PostGIS gate exists for. Railway's
+# PG16 tracks the mutable postgis/postgis:16-master tag and reports 3.7.0dev;
+# the attested PG18 artifact is pinned to 3.6.4; PGDG publishes no stable 3.7
+# for PostgreSQL 18 and PostGIS ships no downgrade script, so neither side can
+# be moved to meet the other. Both containers here run the same image, so
+# writing the source's recorded version is the only way to exercise a version
+# difference at all. extversion is pure metadata -- pg_dump never emits it and
+# nothing in the copy path reads it -- so this changes exactly the one fact the
+# old gate compared and nothing else. Everything below runs with the difference
+# in place, including the final post-teardown audit.
+docker exec "$CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
+  -c "UPDATE pg_catalog.pg_extension SET extversion = '3.7.0dev' WHERE extname = 'postgis';" >/dev/null
+source_postgis_extversion="$(docker exec "$CONTAINER_NAME" psql -X -Atq -U postgres -d main \
+  -c "SELECT extversion FROM pg_catalog.pg_extension WHERE extname = 'postgis';")"
+[[ "$source_postgis_extversion" == '3.7.0dev' ]] || {
+  printf 'Could not stage a PostGIS version difference; source reports %s\n' \
+    "$source_postgis_extversion" >&2
+  exit 1
+}
+
+# The negative case for the narrowed gate: a PostGIS capability the source has
+# and the target does not. Adding a function to the postgis extension is the
+# only way to manufacture that between two containers running one image, and it
+# is a faithful model -- a 3.7.0dev build genuinely does carry functions 3.6.4
+# lacks. The reference goes in the plpgsql trigger body, so this also proves the
+# routine-body scan is what catches it: there is no pg_depend edge here.
+docker exec -i "$CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main <<'SQL' >/dev/null
+CREATE FUNCTION public.st_pg18_smoke_source_only(integer) RETURNS integer
+  LANGUAGE sql IMMUTABLE STRICT AS 'SELECT $1';
+ALTER EXTENSION postgis ADD FUNCTION public.st_pg18_smoke_source_only(integer);
+CREATE OR REPLACE FUNCTION public.pg18_smoke_set_location() RETURNS trigger AS $$
+BEGIN
+  IF NEW.latitude IS NOT NULL AND NEW.longitude IS NOT NULL THEN
+    NEW.location := ST_MakePoint(NEW.longitude, NEW.latitude)::geography;
+    PERFORM ST_PG18_Smoke_Source_Only(1);
+  ELSE
+    NEW.location := NULL;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+SQL
+if run_replication_setup >"$AUDIT_REPORT_FILE" 2>&1; then
+  printf 'Expected a source PostGIS capability the target lacks to abort setup\n' >&2
+  exit 1
+fi
+assert_report_contains 'the target PostGIS build does not provide function "st_pg18_smoke_source_only"'
+assert_report_contains 'the target PostGIS build does not provide every capability the source uses'
+assert_target_schema_unrestored 'an unsatisfied spatial capability'
+docker exec -i "$CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main <<'SQL' >/dev/null
+CREATE OR REPLACE FUNCTION public.pg18_smoke_set_location() RETURNS trigger AS $$
+BEGIN
+  IF NEW.latitude IS NOT NULL AND NEW.longitude IS NOT NULL THEN
+    NEW.location := ST_MakePoint(NEW.longitude, NEW.latitude)::geography;
+  ELSE
+    NEW.location := NULL;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+ALTER EXTENSION postgis DROP FUNCTION public.st_pg18_smoke_source_only(integer);
+DROP FUNCTION public.st_pg18_smoke_source_only(integer);
+SQL
+
+# The function branch above is one of four the gap query decides. Before these
+# three cases existed, rewriting `WHEN 'type' THEN EXISTS (...)` to
+# `WHEN 'type' THEN true` -- or the opclass or operator branch the same way --
+# passed this entire file.
+expect_setup_spatial_gap 'the geography type' \
+  'ALTER EXTENSION postgis DROP TYPE public.geography;' \
+  'ALTER EXTENSION postgis ADD TYPE public.geography;' \
+  'the target PostGIS build does not provide type "geography(Point,4326)"'
+expect_setup_spatial_gap 'the geography GiST operator class' \
+  'ALTER EXTENSION postgis DROP OPERATOR CLASS public.gist_geography_ops USING gist;' \
+  'ALTER EXTENSION postgis ADD OPERATOR CLASS public.gist_geography_ops USING gist;' \
+  'the target PostGIS build does not provide opclass "gist/public.gist_geography_ops"'
+expect_setup_spatial_gap 'the geography overlap operator' \
+  'ALTER EXTENSION postgis DROP OPERATOR public.&&(geography,geography);' \
+  'ALTER EXTENSION postgis ADD OPERATOR public.&&(geography,geography);' \
+  'the target PostGIS build does not provide operator "public.&&(geography,geography)"'
+
+# Making the postgis row version-tolerant took the last exact PostGIS version
+# comparison out of this script's path; assert_spatial_capability_precreated
+# pins the target itself instead. Without it an operator who skipped the audit
+# could restore into a build no rehearsal ever saw, so long as its function
+# names happened to cover the manifest.
+docker exec "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
+  -c "UPDATE pg_catalog.pg_extension SET extversion = '3.4.0' WHERE extname = 'postgis';" >/dev/null
+if run_replication_setup >"$AUDIT_REPORT_FILE" 2>&1; then
+  docker exec "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
+    -c "UPDATE pg_catalog.pg_extension SET extversion = '$IMAGE_POSTGIS_VERSION' WHERE extname = 'postgis';" >/dev/null
+  printf 'Expected an unexpected target PostGIS version to abort setup\n' >&2
+  exit 1
+fi
+docker exec "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
+  -c "UPDATE pg_catalog.pg_extension SET extversion = '$IMAGE_POSTGIS_VERSION' WHERE extname = 'postgis';" >/dev/null
+assert_report_contains "target PostGIS is 3.4.0; expected exactly $IMAGE_POSTGIS_VERSION"
+assert_target_schema_unrestored 'an unexpected target PostGIS version'
+
+# Same command, capability satisfied, PostGIS versions still different: this is
+# the case the old version-equality gate made impossible.
+run_replication_setup
 
 excluded_target_state="$(docker exec "$TARGET_CONTAINER_NAME" psql -X -Atq -F '|' -U postgres -d main -c "
 SELECT (to_regnamespace('neon_control_plane') IS NULL)::text || '|' ||
@@ -1136,6 +1385,37 @@ WHERE subscription.subname = 'pg18_smoke_subscription';")"
   sleep 1
 done
 [[ "$subscription_state" =~ ^[1-9][0-9]*\|0$ ]]
+
+# The comparison docs/postgres-18-migration.md asks for by name: the on-the-wire
+# binary of every populated geography, byte for byte, plus the row and populated
+# counts so a copy that dropped rows or coerced NULL to a point cannot pass.
+#
+# ST_AsEWKB takes geometry, not geography. The rehearsal's first version
+# compared a signature that does not exist, both sides errored to the empty
+# string, and the comparison reported a match; the shape assertion below is what
+# stops that recurring here.
+spatial_geography_digest() {
+  local container_name="$1"
+  docker exec "$container_name" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d main -c "
+SELECT (SELECT md5(string_agg(encode(ST_AsEWKB(location::geometry), 'hex'), ',' ORDER BY id))
+               || '|' || count(*) || '|' || count(location)
+        FROM public.pg18_smoke_gyms)
+       || '/' ||
+       (SELECT md5(string_agg(encode(ST_AsEWKB(location::geometry), 'hex'), ',' ORDER BY id))
+               || '|' || count(*) || '|' || count(location)
+        FROM public.pg18_smoke_user_boards);"
+}
+source_geography_digest="$(spatial_geography_digest "$CONTAINER_NAME")"
+target_geography_digest="$(spatial_geography_digest "$TARGET_CONTAINER_NAME")"
+[[ "$source_geography_digest" =~ ^[0-9a-f]{32}\|100\|50/[0-9a-f]{32}\|100\|50$ ]] || {
+  printf 'Source geography digest is not the expected shape: %s\n' "$source_geography_digest" >&2
+  exit 1
+}
+[[ "$source_geography_digest" == "$target_geography_digest" ]] || {
+  printf 'Geography EWKB differs across the logical copy:\n  source %s\n  target %s\n' \
+    "$source_geography_digest" "$target_geography_digest" >&2
+  exit 1
+}
 
 install_snapshot_fence_contract "$CONTAINER_NAME"
 install_snapshot_fence_contract "$TARGET_CONTAINER_NAME"
@@ -1170,6 +1450,112 @@ MIGRATION_OWNER_TEST_DATABASE_NAME=main \
 
 # Establish a clean baseline before adversarial mutations so every later
 # expected failure is attributable to the mutation it labels.
+assert_audit_clean
+
+# That clean audit ran with source PostGIS 3.7.0dev against target 3.6.4, which
+# the old version-equality gate could never allow. Prove it reached the clean
+# result by satisfying capabilities rather than by not looking: every dimension
+# of the manifest has to be present, including the ST_MakePoint that lives only
+# inside a plpgsql body and produces no catalog dependency.
+assert_report_contains "NOTE: source PostGIS is 3.7.0dev and the pinned target artifact is $IMAGE_POSTGIS_VERSION"
+assert_report_contains "('type', 'geography(Point,4326)', 'catalog'"
+assert_report_contains "('opclass', 'gist/public.gist_geography_ops', 'catalog'"
+assert_report_contains "('function', 'st_makepoint', 'routine-body'"
+# The catalog half of the function dimension, which the routine-body assertion
+# above cannot reach: st_astext is here only because an expression index records
+# a real pg_depend edge to it. Delete that branch of the manifest query and this
+# is the assertion that notices.
+assert_report_contains "('function', 'st_astext', 'catalog'"
+# The operator dimension. Nothing else in the manifest sees `&&`: it carries no
+# pg_proc edge, and the textual scan matches st_*/postgis_* names only.
+assert_report_contains "('operator', 'public.&&(geography,geography)', 'catalog'"
+assert_report_contains "Spatial capability: target PostGIS $IMAGE_POSTGIS_VERSION satisfies every capability the source PostGIS 3.7.0dev manifest requires."
+
+# The domain column must have been normalised to the postgis type underneath.
+# Reporting the domain's own name instead is what wedges the cutover: the
+# replication helper runs this same manifest before the restore, so the target
+# would be asked for a type only that restore could create. Assert both halves --
+# the postgis token names the domain column, and the domain name appears nowhere.
+assert_report_contains "('type', 'geography(Point,4326)', 'catalog', 'public.pg18_smoke_gyms.checked_location"
+if grep -Fq "'type', 'pg18_smoke_gps_point'" "$AUDIT_REPORT_FILE"; then
+  cat "$AUDIT_REPORT_FILE" >&2
+  printf 'Spatial manifest named a user domain instead of the PostGIS type under it\n' >&2
+  exit 1
+fi
+
+# public.st_makepoint(text) exists in this fixture and is not a PostGIS routine.
+# The st_makepoint assertion above therefore also proves the manifest keeps a
+# reference whose name postgis provides even when something else shares it --
+# the postgis_topology st_srid/st_simplify/st_geometrytype collision in
+# miniature. A "does any other routine share this name?" test deletes that row.
+
+# Tolerating the PostGIS version must not have tolerated versions in general.
+# Every other extension is still compared exactly.
+source_pg_trgm_extversion="$(docker exec "$CONTAINER_NAME" psql -X -Atq -U postgres -d main \
+  -c "SELECT extversion FROM pg_catalog.pg_extension WHERE extname = 'pg_trgm';")"
+[[ -n "$source_pg_trgm_extversion" ]]
+docker exec "$CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
+  -c "UPDATE pg_catalog.pg_extension SET extversion = '0.0-smoke-drift' WHERE extname = 'pg_trgm';" >/dev/null
+expect_audit_blocker 'non-PostGIS extension version drift' \
+  'target is missing or mismatches source extension definition(s): pg_trgm|0.0-smoke-drift|public|'
+docker exec "$CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
+  -c "UPDATE pg_catalog.pg_extension SET extversion = '$source_pg_trgm_extversion' WHERE extname = 'pg_trgm';" >/dev/null
+assert_audit_clean
+
+# The audit's half of the target version pin. Target strictness is what makes
+# source tolerance sound -- a capability manifest proven against a build no
+# rehearsal ever saw proves nothing -- so this is the one comparison on the
+# postgis row that must stay exact. The extension manifest is version-tolerant
+# for postgis now, so nothing else can be reacting to this mutation.
+docker exec "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
+  -c "UPDATE pg_catalog.pg_extension SET extversion = '3.4.0' WHERE extname = 'postgis';" >/dev/null
+expect_audit_blocker 'target PostGIS version drift' \
+  "target PostGIS is 3.4.0; expected exactly $IMAGE_POSTGIS_VERSION"
+docker exec "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
+  -c "UPDATE pg_catalog.pg_extension SET extversion = '$IMAGE_POSTGIS_VERSION' WHERE extname = 'postgis';" >/dev/null
+assert_audit_clean
+
+# The audit's half of the capability negative. Both bodies change together so
+# the DDL manifest stays identical and the only thing the audit can be reacting
+# to is the missing capability itself.
+docker exec -i "$CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main <<'SQL' >/dev/null
+CREATE FUNCTION public.st_pg18_smoke_source_only(integer) RETURNS integer
+  LANGUAGE sql IMMUTABLE STRICT AS 'SELECT $1';
+ALTER EXTENSION postgis ADD FUNCTION public.st_pg18_smoke_source_only(integer);
+SQL
+replace_smoke_location_trigger_body() {
+  local extra_statement="$1" container_name
+  for container_name in "$CONTAINER_NAME" "$TARGET_CONTAINER_NAME"; do
+    docker exec -i "$container_name" psql -X -v ON_ERROR_STOP=1 -U postgres -d main >/dev/null <<SQL
+CREATE OR REPLACE FUNCTION public.pg18_smoke_set_location() RETURNS trigger AS \$\$
+BEGIN
+  IF NEW.latitude IS NOT NULL AND NEW.longitude IS NOT NULL THEN
+    NEW.location := ST_MakePoint(NEW.longitude, NEW.latitude)::geography;
+    ${extra_statement}
+  ELSE
+    NEW.location := NULL;
+  END IF;
+  RETURN NEW;
+END;
+\$\$ LANGUAGE plpgsql;
+SQL
+  done
+}
+replace_smoke_location_trigger_body 'PERFORM ST_PG18_Smoke_Source_Only(1);'
+expect_audit_blocker 'PostGIS capability the target build lacks' \
+  'the target PostGIS build does not provide function "st_pg18_smoke_source_only"'
+docker exec -i "$CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main <<'SQL' >/dev/null
+ALTER EXTENSION postgis DROP FUNCTION public.st_pg18_smoke_source_only(integer);
+DROP FUNCTION public.st_pg18_smoke_source_only(integer);
+SQL
+
+# A PostGIS-shaped name that resolves nowhere is not silently tolerated either.
+# The routine-body scan is textual and cannot resolve overloads or operators, so
+# the one thing it must never do is treat "I do not recognise this" as "fine".
+replace_smoke_location_trigger_body 'PERFORM ST_PG18_Smoke_Absent(1);'
+expect_audit_blocker 'unclassifiable spatial reference' \
+  'source spatial capability cannot be classified'
+replace_smoke_location_trigger_body '-- no extra spatial reference'
 assert_audit_clean
 
 docker exec "$TARGET_CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
@@ -1797,6 +2183,8 @@ ALTER PUBLICATION pg18_smoke_publication SET TABLE
   public.pg18_smoke_partitioned_low,
   public.pg18_smoke_inheritance_parent,
   public.pg18_smoke_inheritance_child,
+  public.pg18_smoke_gyms,
+  public.pg18_smoke_user_boards,
   public.__drizzle_migrations,
   drizzle.__drizzle_migrations,
   pg18_extension_mixed.user_table;
@@ -1815,6 +2203,8 @@ ALTER PUBLICATION pg18_smoke_publication SET TABLE
   public.pg18_smoke_partitioned_low,
   public.pg18_smoke_inheritance_parent,
   public.pg18_smoke_inheritance_child,
+  public.pg18_smoke_gyms,
+  public.pg18_smoke_user_boards,
   public.__drizzle_migrations,
   drizzle.__drizzle_migrations,
   pg18_extension_mixed.user_table;
