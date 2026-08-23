@@ -20,6 +20,8 @@ on:
       - 'scripts/neon-to-railway-replication.test.sh'
       - 'scripts/postgres-credentials.test.sh'
       - 'scripts/postgres18-architecture-smoke.sh'
+      - 'scripts/postgres18-spatial-rehearsal.sh'
+      - 'scripts/postgres18-spatial-surface.test.sh'
       - 'scripts/postgres16-role-transition-smoke.sh'
       - 'scripts/postgres18-image-smoke.sh'
       - 'scripts/postgres18-production-role-transition.sh'
