@@ -73,7 +73,7 @@ describe('location-sync CI integration contract', () => {
 
   it('runs the full project against the pinned migrated dev database', () => {
     expect(integrationJob).toContain(
-      'image: ghcr.io/boardsesh/boardsesh-dev-db@sha256:ce32f2a70405112178f3b8b3e4b373175878539d8532f46dd313e04bbcb14cb4',
+      'image: ghcr.io/boardsesh/boardsesh-dev-db@sha256:d4574a27a639919b70d89c457e88f17bf672b358dd38dbdc3c2ba5f65ecc44e5',
     );
     expect(integrationJob).toContain("VERIFY_MIGRATION_JOURNAL: '1'");
     expect(integrationJob).toContain('run: bun run --filter=@boardsesh/db db:migrate');
