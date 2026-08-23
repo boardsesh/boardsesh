@@ -21,6 +21,7 @@ TARGET_RUNTIME_SCHEMAS="${TARGET_RUNTIME_SCHEMAS:-}"
 TARGET_MIGRATOR_ROLE="${TARGET_MIGRATOR_ROLE:-}"
 SOURCE_DATABASE_NAME="${SOURCE_DATABASE_NAME:-railway}"
 TARGET_DATABASE_NAME="${TARGET_DATABASE_NAME:-railway}"
+SOURCE_SLOT_RELEASE_SECONDS="${SOURCE_SLOT_RELEASE_SECONDS:-60}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/postgres-credentials.sh
 source "$SCRIPT_DIR/lib/postgres-credentials.sh"
@@ -97,6 +98,11 @@ Environment:
                                     sync-sequences will proceed.
   TEARDOWN_CONFIRMED               Must be true for teardown. Set only after the 72-hour
                                     acceptance window and successful PG18 restore drill.
+  SOURCE_SLOT_RELEASE_SECONDS       Optional teardown budget in seconds, default 60. How
+                                    long to wait for the publisher to release a slot after
+                                    the subscription that held it is dropped. Raise it past
+                                    the source's wal_sender_timeout when a dead replication
+                                    socket keeps the walsender attached for longer.
 
 Commands:
   setup
@@ -768,6 +774,14 @@ SELECT subscriber.rolcanlogin::text || '|' ||
         (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) OR
         pg_has_role(current_user, subscriber.oid, 'SET'))::text || '|' ||
        (
+         -- subenabled stays asserted here even though teardown now tolerates a
+         -- disabled subscription. Teardown only reaches this through
+         -- drop_target_subscriber_role, which runs after an unfiltered re-count
+         -- of pg_subscription has already proven the subscription is gone, so
+         -- the count is 0 whichever way this predicate reads. Relaxing it for
+         -- symmetry would be dead weakening: the 'absent' case below would then
+         -- read a disabled leftover as absent and clear the way for the role to
+         -- be dropped out from under a subscription that still exists.
          SELECT count(*) FROM pg_subscription AS subscription
          WHERE subscription.subname = '${SUBSCRIPTION_NAME}'
            AND subscription.subowner = subscriber.oid
@@ -1446,20 +1460,49 @@ ORDER BY extension.extname;")"
 assert_subscription_contract() {
   # Validate the role boundary independently first. The exact catalog query
   # below is the single authority for whether the expected subscription is
-  # present, enabled, and owned by that role.
+  # present, owned by that role, and -- unless the caller says otherwise --
+  # still able to replicate.
   #
   # Teardown passes skip-subscriber-role-shape. Dropping a subscription, slot
   # and publication never touches the role, so the role's ACL shape cannot make
   # that unsafe -- and gating on it would strand the WAL-emergency path exactly
-  # when the slot is filling the source disk. Identity is still proven, by the
-  # subowner/name/slot/publication equality in the query below. The full role
-  # contract is still enforced where it decides a DROP ROLE, in
-  # drop_target_subscriber_role.
+  # when the slot is filling the source disk. The full role contract is still
+  # enforced where it decides a DROP ROLE, in drop_target_subscriber_role.
   local subscriber_role_check="${1:-validate-subscriber-role}"
   [[ "$subscriber_role_check" =~ ^(validate-subscriber-role|skip-subscriber-role-shape)$ ]] ||
     fail "internal subscriber role check must be validate-subscriber-role or skip-subscriber-role-shape"
   if [[ "$subscriber_role_check" == 'validate-subscriber-role' ]]; then
     validate_target_subscriber_role optional
+  fi
+
+  # Teardown also passes allow-disabled-detached, for the same reason and with
+  # the same care. subenabled and subslotname say whether the subscription can
+  # still replicate, not whose it is, and teardown is the one caller whose job
+  # is to remove one that cannot. DROP SUBSCRIPTION has to reach the publisher
+  # to drop the remote slot, so the outage that sends an operator to teardown
+  # commits the DISABLE and then fails the DROP; teardown answers that by
+  # detaching the slot with SET (slot_name = NONE) first, which nulls
+  # subslotname. Both half-finished shapes have to be resumable, or the slot
+  # keeps filling the source disk with nothing left that will remove it.
+  #
+  # Identity is carried by the five predicates no caller may relax: subname,
+  # subowner = TARGET_SUBSCRIBER_ROLE, subpublications, the md5 of subconninfo,
+  # and the conninfo-digest comment setup wrote on the subscription. Only this
+  # migration's setup produces all five together, so a same-named subscription
+  # belonging to somebody else is still refused, disabled or not. The option
+  # predicates -- binary, origin, run_as_owner, password_required, failover --
+  # stay asserted on every path; nothing teardown does can change them, so
+  # there is no half-finished shape they could wrongly refuse. The table
+  # coverage comparison at the end of this function is the one assertion that
+  # is neither identity nor teardown-proof; see the note there.
+  local replication_state_check="${2:-require-enabled-attached}"
+  [[ "$replication_state_check" =~ ^(require-enabled-attached|allow-disabled-detached)$ ]] ||
+    fail "internal replication state check must be require-enabled-attached or allow-disabled-detached"
+  local enabled_predicate='AND subscription.subenabled'
+  local slot_predicate="AND subscription.subslotname = '${SLOT_NAME}'"
+  if [[ "$replication_state_check" == 'allow-disabled-detached' ]]; then
+    enabled_predicate=''
+    slot_predicate="AND (subscription.subslotname = '${SLOT_NAME}' OR subscription.subslotname IS NULL)"
   fi
 
   [[ "$PUBLISHER_CONNINFO_DIGEST" =~ ^[0-9a-f]{32}$ &&
@@ -1472,13 +1515,13 @@ SELECT count(*) = 1
 FROM pg_subscription AS subscription
 WHERE subscription.subname = '${SUBSCRIPTION_NAME}'
   AND pg_get_userbyid(subscription.subowner) = '${TARGET_SUBSCRIBER_ROLE}'
-  AND subscription.subenabled
+  ${enabled_predicate}
   AND NOT subscription.subbinary
   AND subscription.suborigin = 'none'
   AND NOT subscription.subrunasowner
   AND subscription.subpasswordrequired
   AND NOT subscription.subfailover
-  AND subscription.subslotname = '${SLOT_NAME}'
+  ${slot_predicate}
   AND subscription.subpublications = ARRAY['${PUBLICATION_NAME}']::text[]
   AND md5(subscription.subconninfo) = '${PUBLISHER_CONNINFO_DIGEST}'
   AND obj_description(subscription.oid, 'pg_subscription') =
@@ -1497,6 +1540,15 @@ JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
 WHERE subscription.subname = '${SUBSCRIPTION_NAME}'
 ORDER BY 1;")"
 
+  # Health, not identity: the comparison below holds the source's included
+  # tables against what the subscription synchronizes, which drifts whenever a
+  # table is created or dropped in an included schema. It is asserted on the
+  # teardown path too, deliberately left alone by the #4513 relaxation: that
+  # fix widened exactly the two predicates a half-finished teardown of our own
+  # making turns false, and schema drift is neither of them. It is a real
+  # second way to strand teardown, tracked separately -- it needs the same
+  # treatment on assert_publication_contract's manifest, which gates teardown
+  # just as hard.
   if [[ "$source_manifest" != "$target_manifest" ]]; then
     diff -u \
       <(printf '%s\n' "$source_manifest") \
@@ -2119,12 +2171,80 @@ SELECT count(*) FROM pg_roles AS subscriber WHERE subscriber.rolname = '${TARGET
   echo "Temporary subscriber role '$TARGET_SUBSCRIBER_ROLE' removed. Drop MIGRATION_SUBSCRIBER_ROLE and MIGRATION_SUBSCRIPTION_NAME from the deploy environment now."
 }
 
+# Every table-synchronization slot the initial copy of one subscription created
+# on the source. PostgreSQL builds these names as
+# pg_<subscription oid>_sync_<relation oid>_<subscriber system identifier>; the
+# trailing group only appeared in 15, so the pattern tolerates its absence
+# rather than walking past a WAL-retaining slot from an older subscriber. The
+# subscription OID is the discriminator: it is read out of the target catalogue
+# before the subscription is dropped, so no other subscription's sync slots can
+# match. The logical/pgoutput/current-database shape is asserted for the same
+# reason the main slot asserts it.
+source_tablesync_slots() {
+  psql_neon -X -Atq -v subscription_oid="$1" <<'SQL'
+SELECT slot.slot_name
+FROM pg_replication_slots AS slot
+WHERE slot.slot_name ~ ('^pg_' || :'subscription_oid' || '_sync_[0-9]+(_[0-9]+)?$')
+  AND slot.slot_type = 'logical'
+  AND slot.plugin = 'pgoutput'
+  AND slot.database = current_database()
+ORDER BY slot.slot_name;
+SQL
+}
+
+# Wait out the publisher's walsender, then drop a slot this run has already
+# proven belongs to the subscription it just removed. DROP SUBSCRIPTION stops
+# the subscriber's workers before it returns, but the publisher only releases
+# the slot once its walsender notices the closed connection -- which, when the
+# socket died rather than closed, takes until wal_sender_timeout. That gap used
+# to be invisible, because an attached DROP removed the remote slots itself;
+# detaching first makes this the code that has to sit through it. Polling beats
+# failing a teardown that is one socket close away from finishing, and anything
+# else still holding the slot fails the budget out with the catalogue untouched.
+release_and_drop_source_slot() {
+  local slot_name="$1"
+  local release_attempt=0
+  local slot_state
+  while true; do
+    # Three-valued deliberately. 'gone' means a second operator dropped the slot
+    # while this run was waiting, which is the outcome the caller wanted anyway;
+    # folding it into a plain "not released" boolean would spend the whole
+    # budget on an absent slot and then blame a walsender that is not there.
+    slot_state="$(psql_neon -X -Atq -v slot_name="$slot_name" <<'SQL'
+SELECT coalesce(
+         (SELECT CASE WHEN slot.active THEN 'held' ELSE 'released' END
+          FROM pg_replication_slots AS slot
+          WHERE slot.slot_name = :'slot_name'),
+         'gone');
+SQL
+)"
+    [[ "$slot_state" == 'held' && "$release_attempt" -lt "$SOURCE_SLOT_RELEASE_SECONDS" ]] || break
+    release_attempt=$((release_attempt + 1))
+    sleep 1
+  done
+  case "$slot_state" in
+    released) ;;
+    gone)
+      echo "Source slot '$slot_name' was already gone when teardown reached it."
+      return 0
+      ;;
+    *)
+      fail "source slot $slot_name is still held by an active walsender after ${SOURCE_SLOT_RELEASE_SECONDS}s; re-run teardown once it has disconnected, or raise SOURCE_SLOT_RELEASE_SECONDS past the source wal_sender_timeout"
+      ;;
+  esac
+  psql_neon -X -v slot_name="$slot_name" >/dev/null <<'SQL'
+SELECT pg_drop_replication_slot(:'slot_name');
+SQL
+}
+
 teardown_replication() {
   [[ "${TEARDOWN_CONFIRMED:-false}" == "true" ]] ||
     fail "teardown requires TEARDOWN_CONFIRMED=true after the 72-hour acceptance window and a successful PG18 restore drill"
   check_common_requirements
   require_env NEON_REPLICATION_DATABASE_URL SOURCE_REPLICATION_DATABASE_URL
   prepare_publisher_connection
+  [[ "$SOURCE_SLOT_RELEASE_SECONDS" =~ ^[0-9]+$ ]] ||
+    fail "SOURCE_SLOT_RELEASE_SECONDS must be a whole number of seconds"
   # TARGET_OWNER_ROLE and TARGET_SUBSCRIBER_ROLE are deliberately not required
   # here. Dropping the subscription needs them (its owner is half the proof the
   # subscription is ours) and so does the role cleanup, and both demand them at
@@ -2142,6 +2262,7 @@ teardown_replication() {
   # stale or unrelated publication/subscription/slot must never be deleted by
   # a teardown invocation that happens to reuse these names.
   local subscription_exists publication_exists source_slot_exists source_slot_contract
+  local subscription_identity='' subscription_oid='' subscription_slot_name=''
   subscription_exists="$(psql_railway -Atq -c "SELECT 1 FROM pg_subscription WHERE subname = '$SUBSCRIPTION_NAME';")"
   publication_exists="$(psql_neon -Atq -c "SELECT 1 FROM pg_publication WHERE pubname = '$PUBLICATION_NAME';")"
   source_slot_exists="$(psql_neon -X -Atq -v slot_name="$SLOT_NAME" <<'SQL'
@@ -2157,22 +2278,58 @@ SQL
     fail "source has duplicate slots named $SLOT_NAME"
 
   if [[ "$subscription_exists" == "1" ]]; then
+    # Read the OID and the slot association before any guard consults them, and
+    # before the drop takes both away. The slot association is what tells a
+    # subscription this teardown already detached (subslotname NULL, the shape a
+    # run interrupted after SET (slot_name = NONE) leaves) apart from one that
+    # never named this migration's slot at all. The OID is the only thing that
+    # will identify the table-synchronization slots afterwards.
+    subscription_identity="$(psql_railway -X -Atq -c "
+SELECT format('%s|%s', subscription.oid, coalesce(subscription.subslotname, ''))
+FROM pg_subscription AS subscription
+WHERE subscription.subname = '${SUBSCRIPTION_NAME}';")"
+    subscription_oid="${subscription_identity%%|*}"
+    subscription_slot_name="${subscription_identity#*|}"
+    [[ "$subscription_oid" =~ ^[0-9]+$ ]] ||
+      fail "could not read the OID of subscription $SUBSCRIPTION_NAME; refusing teardown"
+    # Not relaxed alongside subenabled/subslotname, and not an oversight.
+    # Teardown drops subscription, then slot, then publication, so no partial run
+    # of its own can produce a subscription without a publication; and a
+    # publication retains no WAL, so no emergency hand-fix produces that shape
+    # either. It only happens when these names describe two different migrations.
     [[ "$publication_exists" == '1' ]] ||
       fail "subscription $SUBSCRIPTION_NAME exists without the exact source publication; refusing teardown"
-    [[ "$source_slot_exists" == '1' ]] ||
+    # A subscription that still names its slot must have that slot on the source;
+    # anything else means these names do not describe one migration. A detached
+    # subscription is the legitimate exception: the slot it used to own may
+    # already be gone, dropped by the block below on an earlier run or by hand
+    # during the WAL emergency. Gate the exception on the detachment rather than
+    # dropping the guard, so the ordinary case still fails closed.
+    [[ "$source_slot_exists" == '1' || -z "$subscription_slot_name" ]] ||
       fail "subscription $SUBSCRIPTION_NAME exists without source slot $SLOT_NAME; refusing teardown"
     [[ -n "${TARGET_OWNER_ROLE:-}" && -n "${TARGET_SUBSCRIBER_ROLE:-}" ]] ||
       fail "subscription $SUBSCRIPTION_NAME still exists; proving it belongs to this migration needs TARGET_SUBSCRIBER_ROLE, and finishing the run needs TARGET_OWNER_ROLE for the role cleanup. Export both. Slot- and publication-only cleanup needs neither"
-    assert_subscription_contract skip-subscriber-role-shape
+    assert_subscription_contract skip-subscriber-role-shape allow-disabled-detached
   fi
   if [[ "$publication_exists" == '1' ]]; then
     assert_publication_contract
   fi
   if [[ "$source_slot_exists" == '1' ]]; then
+    # An active slot is only tolerable when the walsender holding it announces
+    # itself as this migration's subscription, which is what setup put in the
+    # subscription's conninfo application_name. That attribution used to be
+    # gated on the subscription still existing, and detaching-before-dropping
+    # broke the assumption behind the gate: the walsender outlives the drop by
+    # up to wal_sender_timeout, so a run that exhausts the release budget below
+    # leaves precisely a live walsender with no subscription. Gating on the
+    # subscription would have met that re-run with an identity-shaped refusal --
+    # "this slot is not yours" -- when the truthful answer is "wait". The gate
+    # never carried identity anyway; the application_name comparison does, and
+    # it is unchanged. Nothing is dropped on the strength of this check either:
+    # release_and_drop_source_slot re-proves the slot is idle first.
     source_slot_contract="$(psql_neon -X -Atq \
       -v slot_name="$SLOT_NAME" \
-      -v subscription_name="$SUBSCRIPTION_NAME" \
-      -v subscription_exists="${subscription_exists:+true}" <<'SQL'
+      -v subscription_name="$SUBSCRIPTION_NAME" <<'SQL'
 SELECT count(*) = 1
 FROM pg_replication_slots AS slot
 WHERE slot.slot_name = :'slot_name'
@@ -2181,14 +2338,11 @@ WHERE slot.slot_name = :'slot_name'
   AND slot.database = current_database()
   AND (
     NOT slot.active
-    OR (
-      :'subscription_exists' = 'true'
-      AND EXISTS (
-        SELECT 1
-        FROM pg_stat_replication AS replication
-        WHERE replication.pid = slot.active_pid
-          AND replication.application_name = :'subscription_name'
-      )
+    OR EXISTS (
+      SELECT 1
+      FROM pg_stat_replication AS replication
+      WHERE replication.pid = slot.active_pid
+        AND replication.application_name = :'subscription_name'
     )
   );
 SQL
@@ -2199,17 +2353,37 @@ SQL
 
   echo "Dropping Railway subscription if present..."
   if [[ "$subscription_exists" == "1" ]]; then
+    # Detach the slot before dropping. DROP SUBSCRIPTION opens a replication
+    # connection to the publisher to drop the remote slot, and an unreachable
+    # publisher is the usual reason teardown is being run at all: without the
+    # detach the DISABLE commits, the DROP fails, and the source goes on
+    # retaining WAL behind a slot nothing will remove. The order is
+    # load-bearing, because PostgreSQL only accepts slot_name = NONE on a
+    # disabled subscription. Every statement is autocommitted and idempotent,
+    # so a re-run repeats whichever of the three did not land. The slot itself
+    # is then removed on the source, over the admin connection, by the block
+    # below.
     psql_railway <<SQL
 ALTER SUBSCRIPTION $SUBSCRIPTION_NAME DISABLE;
+ALTER SUBSCRIPTION $SUBSCRIPTION_NAME SET (slot_name = NONE);
 DROP SUBSCRIPTION $SUBSCRIPTION_NAME;
 SQL
   else
     echo "Railway subscription '$SUBSCRIPTION_NAME' does not exist."
   fi
 
-  # DROP SUBSCRIPTION normally removes its remote slot. A failed/partial prior
-  # teardown can leave the exact migration slot orphaned, so verify and remove
-  # it independently. Never touch any other slot.
+  # Detaching the slot above makes this the normal path rather than the
+  # exceptional one: the drop no longer removes the remote slot, so the source
+  # slot is still here on every teardown that had a subscription, not just after
+  # a failed or partial prior one. What that does not change is how weak a
+  # slot's own identity is -- slots carry no owner and no comment, so all this
+  # can prove is the exact name plus the logical/pgoutput/current-database
+  # shape. The subscription contract above is what ties that name to this
+  # migration; on the orphan path, where there is no subscription left to ask,
+  # the name is the whole of it. A second rehearsal that reuses SLOT_NAME
+  # against the same source database is the one thing that could fool it.
+  # Verify the exact migration slot and remove only that one. Never touch any
+  # other slot.
   source_slot_exists="$(psql_neon -X -Atq -v slot_name="$SLOT_NAME" <<'SQL'
 SELECT count(*) FROM pg_replication_slots WHERE slot_name = :'slot_name';
 SQL
@@ -2221,15 +2395,12 @@ FROM pg_replication_slots
 WHERE slot_name = :'slot_name'
   AND slot_type = 'logical'
   AND plugin = 'pgoutput'
-  AND database = current_database()
-  AND NOT active;
+  AND database = current_database();
 SQL
 )"
     [[ "$source_slot_contract" == 't' ]] ||
-      fail "source slot $SLOT_NAME exists but is active or does not match the exact logical pgoutput/current-database contract"
-    psql_neon -X -v slot_name="$SLOT_NAME" >/dev/null <<'SQL'
-SELECT pg_drop_replication_slot(:'slot_name');
-SQL
+      fail "source slot $SLOT_NAME does not match the exact logical pgoutput/current-database contract"
+    release_and_drop_source_slot "$SLOT_NAME"
   elif [[ "$source_slot_exists" != '0' ]]; then
     fail "source has duplicate slots named $SLOT_NAME"
   fi
@@ -2239,6 +2410,57 @@ SELECT count(*) FROM pg_replication_slots WHERE slot_name = :'slot_name';
 SQL
 )"
   [[ "$source_slot_exists" == '0' ]] || fail "source slot $SLOT_NAME still exists after teardown"
+
+  # An attached DROP SUBSCRIPTION also removes the table-synchronization slots
+  # an unfinished initial copy left on the publisher; a detached one, by design,
+  # contacts the publisher for nothing at all. So a teardown that interrupts a
+  # copy -- the likeliest shape of the disk-filling emergency, since retention
+  # peaks there -- strands one sync slot per unsynchronized table, each holding
+  # WAL exactly like the main slot, and nothing else will ever remove them: the
+  # subscription that named them is gone. Sweep them over the same admin
+  # connection that just dropped the main slot, and verify, or the fix for
+  # #4513 would have traded a loud wedge for a silent all-clear over a source
+  # that is still filling up.
+  local stranded_tablesync_slots unattributed_tablesync_slots tablesync_slot
+  if [[ -n "$subscription_oid" ]]; then
+    stranded_tablesync_slots="$(source_tablesync_slots "$subscription_oid")"
+    if [[ -n "$stranded_tablesync_slots" ]]; then
+      echo "Dropping table-synchronization slots stranded by the initial copy..."
+      while IFS= read -r tablesync_slot; do
+        [[ -n "$tablesync_slot" ]] || continue
+        echo "  $tablesync_slot"
+        release_and_drop_source_slot "$tablesync_slot"
+      done <<<"$stranded_tablesync_slots"
+      [[ -z "$(source_tablesync_slots "$subscription_oid")" ]] ||
+        fail "source table-synchronization slots for subscription $SUBSCRIPTION_NAME still exist after teardown and keep retaining WAL"
+    fi
+  else
+    # No subscription left to read an OID from, so nothing here can prove which
+    # subscription a sync slot belongs to -- another subscriber replicating this
+    # same database produces indistinguishable names, and teardown does not drop
+    # what it cannot attribute. Report instead. A run that exhausted the release
+    # budget above dies after the subscription is already gone, so its re-run
+    # arrives exactly here with its own sync slots still holding WAL, and
+    # exiting clean over them is the one outcome worse than refusing.
+    unattributed_tablesync_slots="$(psql_neon -X -Atq <<'SQL'
+SELECT slot.slot_name
+FROM pg_replication_slots AS slot
+WHERE slot.slot_name ~ '^pg_[0-9]+_sync_[0-9]+(_[0-9]+)?$'
+  AND slot.slot_type = 'logical'
+  AND slot.plugin = 'pgoutput'
+  AND slot.database = current_database()
+ORDER BY slot.slot_name;
+SQL
+)"
+    if [[ -n "$unattributed_tablesync_slots" ]]; then
+      echo "warning: the source still holds table-synchronization slots that teardown cannot attribute to any subscription, and they retain WAL:"
+      while IFS= read -r tablesync_slot; do
+        [[ -n "$tablesync_slot" ]] || continue
+        echo "  $tablesync_slot"
+      done <<<"$unattributed_tablesync_slots"
+      echo "warning: confirm no other subscriber owns them, then drop each with SELECT pg_drop_replication_slot('<name>') on the source."
+    fi
+  fi
 
   echo "Dropping Neon publication if present..."
   if [[ "$publication_exists" == '1' ]]; then
