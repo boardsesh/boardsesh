@@ -13,7 +13,6 @@ function sp(params: Record<string, string> = {}): URLSearchParams {
 }
 
 const TTL_24H = 86400;
-const TTL_1H = 3600;
 const LEGACY_LIST = '/kilter/original/12x12-square/screw_bolt/40/list';
 const SLUG_LIST = '/b/kilter-original-12x12/40/list';
 // View pages, all three URL shapes that resolve to the same climb.
@@ -180,19 +179,21 @@ describe('getListPageCacheTTL', () => {
 describe('getClimbViewPageCacheTTL', () => {
   describe('route matching', () => {
     it('matches the slug view format', () => {
-      expect(getClimbViewPageCacheTTL(SLUG_VIEW, sp())).toBe(TTL_1H);
+      expect(getClimbViewPageCacheTTL(SLUG_VIEW, sp())).toBe(TTL_24H);
     });
 
     it('matches the named-segment (legacy) view format', () => {
-      expect(getClimbViewPageCacheTTL(NAMED_VIEW, sp())).toBe(TTL_1H);
+      expect(getClimbViewPageCacheTTL(NAMED_VIEW, sp())).toBe(TTL_24H);
     });
 
     it('matches the numeric view format (so its redirect is cacheable)', () => {
-      expect(getClimbViewPageCacheTTL(NUMERIC_VIEW, sp())).toBe(TTL_1H);
+      expect(getClimbViewPageCacheTTL(NUMERIC_VIEW, sp())).toBe(TTL_24H);
     });
 
     it('matches the tension board view', () => {
-      expect(getClimbViewPageCacheTTL('/tension/original/12x12/screw_bolt/30/view/some-climb-uuid', sp())).toBe(TTL_1H);
+      expect(getClimbViewPageCacheTTL('/tension/original/12x12/screw_bolt/30/view/some-climb-uuid', sp())).toBe(
+        TTL_24H,
+      );
     });
 
     it('rejects an unsupported board (legacy view shape)', () => {
@@ -226,7 +227,7 @@ describe('getClimbViewPageCacheTTL', () => {
 
   describe('search params', () => {
     it('caches with non-user-specific params (tracking/query noise)', () => {
-      expect(getClimbViewPageCacheTTL(SLUG_VIEW, sp({ utm_source: 'twitter' }))).toBe(TTL_1H);
+      expect(getClimbViewPageCacheTTL(SLUG_VIEW, sp({ utm_source: 'twitter' }))).toBe(TTL_24H);
     });
 
     it.each([
@@ -599,7 +600,7 @@ describe('middleware cache headers on list pages', () => {
 });
 
 describe('middleware cache headers on climb view pages', () => {
-  const expected1h = `s-maxage=${TTL_1H}, stale-while-revalidate=${TTL_1H * 7}`;
+  const expectedClimbViewCacheHeader = `s-maxage=${TTL_24H}, stale-while-revalidate=${TTL_24H * 7}`;
 
   it.each([
     ['slug view', SLUG_VIEW],
@@ -607,10 +608,10 @@ describe('middleware cache headers on climb view pages', () => {
     // The numeric view URL 308-redirects to its slug form; caching the request
     // lets the CDN serve that deterministic redirect without re-rendering.
     ['numeric view (redirect)', NUMERIC_VIEW],
-  ])('sets 1h CDN cache headers on the %s URL', (_shape, url) => {
+  ])('sets 24h CDN cache headers on the %s URL', (_shape, url) => {
     const response = middleware(makeRequest(url));
-    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe(expected1h);
-    expect(response.headers.get('CDN-Cache-Control')).toBe(expected1h);
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe(expectedClimbViewCacheHeader);
+    expect(response.headers.get('CDN-Cache-Control')).toBe(expectedClimbViewCacheHeader);
   });
 
   it('does not cache a play page', () => {
@@ -629,8 +630,8 @@ describe('middleware cache headers on climb view pages', () => {
       const enResponse = middleware(makeRequest(SLUG_VIEW));
       const localizedResponse = middleware(makeRequest(`/${locale}${SLUG_VIEW}`));
       // Both are cacheable, but the CDN keys them by their distinct request URLs.
-      expect(enResponse.headers.get('Vercel-CDN-Cache-Control')).toBe(expected1h);
-      expect(localizedResponse.headers.get('Vercel-CDN-Cache-Control')).toBe(expected1h);
+      expect(enResponse.headers.get('Vercel-CDN-Cache-Control')).toBe(expectedClimbViewCacheHeader);
+      expect(localizedResponse.headers.get('Vercel-CDN-Cache-Control')).toBe(expectedClimbViewCacheHeader);
     },
   );
 
