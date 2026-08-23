@@ -40,6 +40,12 @@ import { streamKilterPowerSync, type PowerSyncOp } from '../api/powersync-client
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
 /**
+ * Natural key -> the rating chosen for it, used to keep the newest-wins
+ * tie-break consistent across the flushes of one sync.
+ */
+type RatingClaims = Map<string, { kilterId: string; createdAtMs: number }>;
+
+/**
  * Per-user pull (design Flow B): drain Kilter's PowerSync stream for this
  * user's buckets and translate ops into boardsesh rows.
  *
@@ -244,7 +250,7 @@ export async function syncKilterUserData({
   // Shared across every ratings flush in this sync so the newest-wins
   // tie-break spans flush boundaries — see the claimedNaturalKeys parameter on
   // applyClimbRatings for why per-flush alone does not converge.
-  const claimedRatingKeys = new Map<string, { kilterId: string; createdAtMs: number }>();
+  const claimedRatingKeys: RatingClaims = new Map();
 
   // Defensive scoping: the `circuit_buckets` stream is parameterised on
   // the Kilter server by circuit_uuid. Subscribing with empty
@@ -272,7 +278,18 @@ export async function syncKilterUserData({
   async function flushClimbRatings(): Promise<void> {
     if (buffer.climb_ratings.length === 0) return;
     const batch = buffer.climb_ratings.splice(0, buffer.climb_ratings.length);
-    await db.transaction((tx) => applyClimbRatings(tx, userId, batch, aliasCache, log, claimedRatingKeys));
+    // Merge the claims only AFTER the transaction commits. applyClimbRatings
+    // stages them rather than mutating the shared map, because a rollback would
+    // otherwise leave claims describing writes that never happened — and the
+    // next flush would skip those climb/angle keys as already claimed, silently
+    // leaving no rating at all. That is reachable today: a failing flush is
+    // caught by runPhase and the sync continues to the next one.
+    const committedClaims = await db.transaction((tx) =>
+      applyClimbRatings(tx, userId, batch, aliasCache, log, claimedRatingKeys),
+    );
+    for (const [naturalKey, claim] of committedClaims) {
+      claimedRatingKeys.set(naturalKey, claim);
+    }
   }
 
   // Phase isolation. A throw from one phase must not cancel the others. Before
@@ -1136,9 +1153,9 @@ export async function applyClimbRatings(
    * flush. Omit it (tests, one-shot CLI calls) and a single call keeps exactly
    * its old single-flush semantics.
    */
-  claimedNaturalKeys: Map<string, { kilterId: string; createdAtMs: number }> = new Map(),
-): Promise<void> {
-  if (ops.length === 0) return;
+  claimedNaturalKeys: RatingClaims = new Map(),
+): Promise<RatingClaims> {
+  if (ops.length === 0) return new Map();
 
   // Serialize concurrent same-user ratings applies. The repoint below reads
   // who owns each kilter_id and then writes based on that read, so without a
@@ -1195,7 +1212,7 @@ export async function applyClimbRatings(
       .where(and(eq(boardClimbRatings.userId, userId), inArray(boardClimbRatings.kilterId, removeIds)));
   }
 
-  if (puts.length === 0) return;
+  if (puts.length === 0) return new Map();
 
   // (a) Dedupe by climb_rating_uuid — the SURROGATE, not the conflict key.
   // PowerSync's oplog can carry several ops for one rating inside a single
@@ -1263,7 +1280,7 @@ export async function applyClimbRatings(
   // Explicit empty-guard: drizzle's inArray([]) emits invalid `IN ()` SQL that
   // throws at the DB. Non-empty here (puts.length === 0 returned above), so
   // this is belt-and-braces against a future refactor thinning `normalised`.
-  if (incomingKilterIds.length === 0) return;
+  if (incomingKilterIds.length === 0) return new Map();
 
   // (b) One GLOBAL SELECT, deliberately NOT user-scoped, to find who already
   // holds each incoming climb_rating_uuid. board_climb_ratings_kilter_id_unique
@@ -1335,7 +1352,7 @@ export async function applyClimbRatings(
     }
     writable.push(entry);
   }
-  if (writable.length === 0) return;
+  if (writable.length === 0) return new Map();
 
   // (c) Dedupe by the conflict key (board_type, climb_uuid, angle, user_id).
   // Distinct source UUIDs can alias to one canonical climb_uuid
@@ -1369,6 +1386,7 @@ export async function applyClimbRatings(
   const survivors: NormalisedRating[] = [];
   let collapsedDuplicates = 0;
   let crossFlushSkips = 0;
+  const stagedClaims = new Map<string, { kilterId: string; createdAtMs: number }>();
   for (const bucket of byConflictKey.values()) {
     if (bucket.length > 1) {
       collapsedDuplicates += bucket.length - 1;
@@ -1396,7 +1414,12 @@ export async function applyClimbRatings(
         continue;
       }
     }
-    claimedNaturalKeys.set(key, { kilterId: winner.kilterId, createdAtMs: winnerCreatedMs });
+    // Staged, NOT written into the shared map yet. applyClimbRatings runs
+    // INSIDE db.transaction, so a claim recorded here would survive a rollback
+    // that discarded the write it describes — and the next flush in the same
+    // sync would then skip that climb/angle as "already claimed", leaving no
+    // row at all. The caller merges these only after the transaction commits.
+    stagedClaims.set(key, { kilterId: winner.kilterId, createdAtMs: winnerCreatedMs });
     survivors.push(winner);
   }
   if (crossFlushSkips > 0) {
@@ -1412,7 +1435,7 @@ export async function applyClimbRatings(
       `[kilter-sync] ${collapsedDuplicates} upstream rating(s) collapse onto an already-claimed climb/angle for user ${userId} — keeping the newest per climb/angle`,
     );
   }
-  if (survivors.length === 0) return;
+  if (survivors.length === 0) return new Map();
 
   // The upsert's `kilterId: COALESCE(EXCLUDED.kilter_id, …)` overwrites whatever
   // surrogate the natural-key row already carries, orphaning the old one. That
@@ -1504,9 +1527,28 @@ export async function applyClimbRatings(
 
   // (e) Upsert, chunked. One refused row costs its chunk, not the buffer.
   const values = survivors.map((entry) => entry.values);
+  const skippedKilterIds = new Set<string>();
   for (let offset = 0; offset < values.length; offset += RATINGS_WRITE_CHUNK_SIZE) {
-    await upsertClimbRatingChunk(tx, values.slice(offset, offset + RATINGS_WRITE_CHUNK_SIZE), userId, log);
+    await upsertClimbRatingChunk(
+      tx,
+      values.slice(offset, offset + RATINGS_WRITE_CHUNK_SIZE),
+      userId,
+      log,
+      skippedKilterIds,
+    );
   }
+
+  // A row Postgres refused was never written, so it must not hold a claim —
+  // otherwise a later flush with a different candidate for the same climb/angle
+  // would defer to a write that does not exist.
+  if (skippedKilterIds.size > 0) {
+    for (const entry of survivors) {
+      if (!skippedKilterIds.has(entry.kilterId)) continue;
+      stagedClaims.delete(`${KILTER_BOARD_TYPE}:${entry.canonical}:${entry.angle}:${userId}`);
+    }
+  }
+
+  return stagedClaims;
 }
 
 /**
@@ -1523,6 +1565,7 @@ async function upsertClimbRatingChunk(
   chunk: Array<typeof boardClimbRatings.$inferInsert>,
   userId: string,
   log: (msg: string) => void,
+  skippedKilterIds: Set<string>,
 ): Promise<void> {
   if (chunk.length === 0) return;
   try {
@@ -1544,6 +1587,7 @@ async function upsertClimbRatingChunk(
         await writeClimbRatings(savepoint as unknown as DrizzleDb, [row]);
       });
     } catch (rowError) {
+      if (row.kilterId) skippedKilterIds.add(row.kilterId);
       log(
         `[kilter-sync] skipping climb rating ${row.kilterId ?? '(no kilter_id)'} for user ${userId} on ${row.climbUuid}@${row.angle}: ${
           rowError instanceof Error ? rowError.message : String(rowError)
