@@ -13,6 +13,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Fixed the Send/Save button being cut off below the screen when logging or editing a tick on Android ([#4684](https://github.com/boardsesh/boardsesh/pull/4684))
+  Fixed note text appearing cut in half when typing a note on Android
 - Climbers with very large Kilter histories now sync completely instead of giving up partway. ([#4690](https://github.com/boardsesh/boardsesh/pull/4690))
 - Your Kilter ratings, ticks and circuits sync again — a bad rating could jam the whole sync, and for some climbers it had been stuck for over a month. ([#4686](https://github.com/boardsesh/boardsesh/pull/4686))
 

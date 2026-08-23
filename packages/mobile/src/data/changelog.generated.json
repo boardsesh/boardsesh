@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-23T11:09:48.723Z",
+  "generatedAt": "2026-08-23T12:34:18.953Z",
   "entries": [
+    {
+      "prNumber": 4684,
+      "category": "fixed",
+      "title": "Fixed the Send/Save button being cut off below the screen when logging or editing a tick on Android",
+      "mergedAt": "2026-08-23T12:33:06Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4684",
+      "body": "Fixed note text appearing cut in half when typing a note on Android"
+    },
     {
       "prNumber": 4683,
       "category": "new",
