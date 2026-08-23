@@ -1462,7 +1462,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   CREATE INDEX IF NOT EXISTS "location_sync_unfreeze_audit_performed_by_idx"
     ON "location_sync_unfreeze_audit" ("performed_by");
 
-  -- Durable audit for the global-admin gym ownership handover (migration 0201).
+  -- Durable audit for the global-admin gym ownership handover (migration 0205).
   -- No foreign keys anywhere: the record must outlive the gym and both accounts.
   DROP TABLE IF EXISTS "gym_owner_reassignments" CASCADE;
   CREATE TABLE IF NOT EXISTS "gym_owner_reassignments" (
