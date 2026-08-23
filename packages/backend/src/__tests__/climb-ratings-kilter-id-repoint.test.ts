@@ -111,6 +111,20 @@ function aliasCacheFor(climbUuids: string[]): Map<string, string> {
 type ApplyTx = Parameters<typeof applyClimbRatings>[0];
 const applyTx = db as unknown as ApplyTx;
 
+type RatingClaims = Map<string, { kilterId: string; createdAtMs: number }>;
+
+/**
+ * One flush, exactly as flushClimbRatings does it: the claims returned by a
+ * call are merged into the shared map only after it resolves. Tests that merge
+ * eagerly (or not at all) would not exercise the cross-flush protection they
+ * are named for.
+ */
+async function applyFlush(batch: PowerSyncOp[], claims: RatingClaims, log: (msg: string) => void = () => {}) {
+  const committed = await applyClimbRatings(applyTx, USER_ID, batch, aliasCacheFor([CLIMB]), log, claims);
+  for (const [key, claim] of committed) claims.set(key, claim);
+  return committed;
+}
+
 describe('applyClimbRatings kilter_id reconciliation (real DB)', () => {
   afterEach(async () => {
     await db.execute(sql`DELETE FROM board_climb_ratings WHERE user_id IN (${USER_ID}, ${OTHER_USER_ID})`);
@@ -371,9 +385,9 @@ describe('applyClimbRatings kilter_id reconciliation (real DB)', () => {
     const older = putOp({ climbRatingUuid: 'kr-older', angle: 40 });
 
     // One shared map = one sync; two calls = two flushes.
-    const claimed = new Map<string, { kilterId: string; createdAtMs: number }>();
-    await applyClimbRatings(applyTx, USER_ID, [newer], aliasCacheFor([CLIMB]), () => {}, claimed);
-    await applyClimbRatings(applyTx, USER_ID, [older], aliasCacheFor([CLIMB]), () => {}, claimed);
+    const claimed: RatingClaims = new Map();
+    await applyFlush([newer], claimed);
+    await applyFlush([older], claimed);
 
     const rows = await readRatings(USER_ID);
     expect(rows).toHaveLength(1);
@@ -388,20 +402,59 @@ describe('applyClimbRatings kilter_id reconciliation (real DB)', () => {
     (newer.data as Record<string, unknown>).created_at = '2026-06-01T12:00:00.000Z';
     const older = putOp({ climbRatingUuid: 'kr-older', angle: 40 });
 
-    const syncOne = new Map<string, { kilterId: string; createdAtMs: number }>();
-    await applyClimbRatings(applyTx, USER_ID, [newer], aliasCacheFor([CLIMB]), () => {}, syncOne);
-    await applyClimbRatings(applyTx, USER_ID, [older], aliasCacheFor([CLIMB]), () => {}, syncOne);
+    const syncOne: RatingClaims = new Map();
+    await applyFlush([newer], syncOne);
+    await applyFlush([older], syncOne);
     const first = (await readRatings(USER_ID))[0];
 
     // A second sync sees the same snapshot again. Nothing should move, which
     // is what "converged" means: no UPDATE, no re-ship to offline clients.
-    const syncTwo = new Map<string, { kilterId: string; createdAtMs: number }>();
-    await applyClimbRatings(applyTx, USER_ID, [newer], aliasCacheFor([CLIMB]), () => {}, syncTwo);
-    await applyClimbRatings(applyTx, USER_ID, [older], aliasCacheFor([CLIMB]), () => {}, syncTwo);
+    const syncTwo: RatingClaims = new Map();
+    await applyFlush([newer], syncTwo);
+    await applyFlush([older], syncTwo);
     const second = (await readRatings(USER_ID))[0];
 
     expect(second?.kilter_id).toBe('kr-newer');
     expect(new Date(second!.updated_at).getTime()).toBe(new Date(first!.updated_at).getTime());
+  });
+
+  it('does not keep a flush claim when the transaction rolls back', async () => {
+    // The claim map is consulted by later flushes in the same sync to avoid
+    // undoing an earlier, newer pick. applyClimbRatings runs INSIDE
+    // db.transaction, so a claim recorded during the call would outlive a
+    // rollback that discarded the write it describes — and the next flush would
+    // then skip that climb/angle as "already claimed", leaving no row at all.
+    //
+    // This is reachable, not theoretical: a failing flush is caught by runPhase
+    // and the sync continues to the next one.
+    await seedUser(USER_ID);
+    const claimed: RatingClaims = new Map();
+
+    const newer = putOp({ climbRatingUuid: 'kr-rolledback', angle: 40 });
+    (newer.data as Record<string, unknown>).created_at = '2026-06-01T12:00:00.000Z';
+
+    // Flush 1 applies cleanly and is then rolled back by an unrelated failure.
+    await expect(
+      db.transaction(async (tx) => {
+        await applyClimbRatings(tx as unknown as ApplyTx, USER_ID, [newer], aliasCacheFor([CLIMB]), () => {}, claimed);
+        throw new Error('simulated failure after the write');
+      }),
+    ).rejects.toThrow('simulated failure');
+
+    // Nothing was written, so nothing may be claimed.
+    expect(await readRatings(USER_ID)).toHaveLength(0);
+    expect(claimed.size).toBe(0);
+
+    // Flush 2 carries an OLDER rating for the same climb/angle. If the rolled
+    // back claim had survived, this would be skipped as already-claimed and the
+    // user would end up with no rating for this climb at all.
+    const older = putOp({ climbRatingUuid: 'kr-after-rollback', angle: 40 });
+    await applyFlush([older], claimed);
+
+    const rows = await readRatings(USER_ID);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.kilter_id).toBe('kr-after-rollback');
+    expect(claimed.size).toBe(1);
   });
 
   it('skips a row Postgres refuses instead of losing the whole batch', async () => {
