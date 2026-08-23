@@ -72,7 +72,9 @@ function foldedCondition(source: string): string {
   return conditionLines.join(' ');
 }
 
-function runBash(script: string, environment: NodeJS.ProcessEnv) {
+// Callers pass plain string maps of the variables under test. NodeJS.ProcessEnv
+// is augmented in this repo to require NODE_ENV, which none of them set.
+function runBash(script: string, environment: Record<string, string>) {
   return spawnSync('/bin/bash', ['-c', `set -euo pipefail\n${script}`], {
     cwd: process.cwd(),
     encoding: 'utf8',
