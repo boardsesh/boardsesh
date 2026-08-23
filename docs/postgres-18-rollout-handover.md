@@ -36,9 +36,9 @@ Handoff artifact copied to `docs/postgres-image-digests.json`. It records `deplo
 
 ## 2. Open work
 
-### PR #4475 — snapshot fencing (effectively green)
+### PR #4475 — snapshot fencing (green, ready for review)
 
-27 passing, 0 failing. Migration renumbered to **0205** after main took 0200-0204.
+**28 passing, 0 failing** at `c9579a444`. Migration renumbered to **0205** after main took 0200-0204.
 
 Two things worth knowing before touching it:
 
