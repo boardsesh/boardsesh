@@ -1337,7 +1337,14 @@ describe('applyClimbRatings — bulk upsert with COALESCE comment', () => {
     // Without dedup the VALUES list carries two rows with the same conflict
     // key and Postgres aborts the whole flush ("ON CONFLICT DO UPDATE
     // command cannot affect row a second time"). The dedup must hand the
-    // upsert exactly one row, last-write-wins.
+    // upsert exactly one row.
+    //
+    // The winner is the NEWEST upstream rating, not the last op to arrive.
+    // PowerSync gives no stable op order between snapshots, so arrival-order
+    // dedupe flips the winner every cycle and the pair ping-pongs forever
+    // (observed on a production account: 254 keys alternating each pass).
+    // Here both carry the same created_at, so the surrogate breaks the tie
+    // and 'r-a' wins on every run regardless of order.
     const { tx, calls, insertValues } = createRichTx();
     // Both source uuids resolve to the same canonical via the alias cache.
     const aliasCache = new Map<string, string>();
@@ -1351,16 +1358,28 @@ describe('applyClimbRatings — bulk upsert with COALESCE comment', () => {
 
     await applyClimbRatings(tx as unknown as ApplyClimbRatingsTx, 'user-1', ops, aliasCache, () => {});
 
+    // The same batch reversed must produce the same survivor — that is the
+    // whole point, and it is what a last-op-wins implementation fails.
+    const reversed = createRichTx();
+    await applyClimbRatings(
+      reversed.tx as unknown as ApplyClimbRatingsTx,
+      'user-1',
+      [...ops].reverse(),
+      new Map(aliasCache),
+      () => {},
+    );
+    expect(reversed.insertValues[0][0]).toMatchObject({ kilterId: 'r-a', rating: 3 });
+
     // Exactly one bulk insert carrying ONE deduped values row.
     expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(1);
     expect(insertValues[0]).toHaveLength(1);
-    // Last write wins: the second PUT (r-b, rating 5) is the survivor.
+    // Deterministic tie-break on the surrogate: 'r-a' < 'r-b'.
     expect(insertValues[0][0]).toMatchObject({
       climbUuid: 'climb-canonical',
       angle: 40,
       userId: 'user-1',
-      rating: 5,
-      kilterId: 'r-b',
+      rating: 3,
+      kilterId: 'r-a',
     });
   });
 

@@ -1325,11 +1325,47 @@ export async function applyClimbRatings(
   //
   // Ordered BEFORE the repoint below so a row dropped here never triggers a
   // pointless detach.
-  const writableByConflictKey = new Map<string, NormalisedRating>();
+  //
+  // The winner is chosen DETERMINISTICALLY, not by arrival order. Plain
+  // last-op-wins looks equivalent and is not: PowerSync does not guarantee a
+  // stable op order between snapshots, so when two upstream ratings collapse to
+  // one natural key the winner flips every cycle. Each flip genuinely changes
+  // kilter_id, so the setWhere guard fires, updated_at churns, the row is
+  // re-shipped to offline clients, and the pair ping-pongs forever without ever
+  // converging. Observed in production on one account: 254 natural keys
+  // alternating between the same two rating UUIDs on every pass.
+  //
+  // Newest upstream rating wins, with the surrogate as a stable tie-break so
+  // the outcome is total and identical on every run.
+  const byConflictKey = new Map<string, NormalisedRating[]>();
   for (const entry of writable) {
-    writableByConflictKey.set(`${KILTER_BOARD_TYPE}:${entry.canonical}:${entry.angle}:${userId}`, entry);
+    const key = `${KILTER_BOARD_TYPE}:${entry.canonical}:${entry.angle}:${userId}`;
+    const bucket = byConflictKey.get(key);
+    if (bucket) bucket.push(entry);
+    else byConflictKey.set(key, [entry]);
   }
-  const survivors = Array.from(writableByConflictKey.values());
+  const survivors: NormalisedRating[] = [];
+  let collapsedDuplicates = 0;
+  for (const bucket of byConflictKey.values()) {
+    if (bucket.length > 1) {
+      collapsedDuplicates += bucket.length - 1;
+      bucket.sort((left, right) => {
+        const leftCreated = left.values.createdAt?.getTime() ?? 0;
+        const rightCreated = right.values.createdAt?.getTime() ?? 0;
+        if (leftCreated !== rightCreated) return rightCreated - leftCreated;
+        return left.kilterId < right.kilterId ? -1 : left.kilterId > right.kilterId ? 1 : 0;
+      });
+    }
+    survivors.push(bucket[0]!);
+  }
+  if (collapsedDuplicates > 0) {
+    // Summarised, not per row: this is an upstream data condition that persists
+    // across every sync, so one line per occurrence would mean hundreds of
+    // identical lines every cycle for the affected account.
+    log(
+      `[kilter-sync] ${collapsedDuplicates} upstream rating(s) collapse onto an already-claimed climb/angle for user ${userId} — keeping the newest per climb/angle`,
+    );
+  }
   if (survivors.length === 0) return;
 
   // The upsert's `kilterId: COALESCE(EXCLUDED.kilter_id, …)` overwrites whatever
@@ -1343,12 +1379,21 @@ export async function applyClimbRatings(
   // warning is the only reason this class of identity drift was ever visible;
   // ratings discarding the same information without a word is how the drift
   // stayed invisible here for a month. Report it, then proceed.
+  const divergent: string[] = [];
   for (const entry of survivors) {
     const naturalKeyRow = ownRowsByNaturalKey.get(`${KILTER_BOARD_TYPE}:${entry.canonical}:${entry.angle}:${userId}`);
     if (!naturalKeyRow?.kilterId) continue;
     if (naturalKeyRow.kilterId === entry.kilterId) continue;
+    divergent.push(`${entry.canonical}@${entry.angle} ${naturalKeyRow.kilterId}->${entry.kilterId}`);
+  }
+  if (divergent.length > 0) {
+    // Count plus a bounded sample rather than one line per row. The first
+    // version logged every occurrence and produced ~700 lines per sync for a
+    // single account, which buries the signal it exists to provide.
+    const sample = divergent.slice(0, 5).join(', ');
+    const more = divergent.length > 5 ? ` (+${divergent.length - 5} more)` : '';
     log(
-      `[kilter-sync] divergent kilter_id on rating ${entry.canonical}@${entry.angle} for user ${userId}: existing=${naturalKeyRow.kilterId} incoming=${entry.kilterId} — replacing (natural key is the identity)`,
+      `[kilter-sync] replacing kilter_id on ${divergent.length} rating(s) for user ${userId} — natural key is the identity: ${sample}${more}`,
     );
   }
 

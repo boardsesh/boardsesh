@@ -311,6 +311,50 @@ describe('applyClimbRatings kilter_id reconciliation (real DB)', () => {
     expect(divergence).toContain('incoming=kr-new');
   });
 
+  it('picks the same winner regardless of the order two upstream ratings arrive in', async () => {
+    // Two upstream ratings collapsing onto one natural key is a real upstream
+    // condition, not a corner case: one production account had 254 of them.
+    // PowerSync gives no stable op order between snapshots, so a last-op-wins
+    // dedupe flips the winner every cycle — kilter_id genuinely changes, the
+    // setWhere guard fires, updated_at churns, and the pair ping-pongs forever.
+    // The winner must be a function of the DATA, not of arrival order.
+    await seedUser(USER_ID);
+    const older = putOp({ climbRatingUuid: 'kr-older', angle: 40, opId: '1' });
+    const newer = putOp({ climbRatingUuid: 'kr-newer', angle: 40, opId: '2' });
+    (newer.data as Record<string, unknown>).created_at = '2026-06-01T12:00:00.000Z';
+
+    await applyClimbRatings(applyTx, USER_ID, [older, newer], aliasCacheFor([CLIMB]), () => {});
+    const forward = (await readRatings(USER_ID))[0]?.kilter_id;
+
+    await db.execute(sql`DELETE FROM board_climb_ratings WHERE user_id = ${USER_ID}`);
+
+    // Same batch, reversed. A last-op-wins implementation returns 'kr-older' here.
+    await applyClimbRatings(applyTx, USER_ID, [newer, older], aliasCacheFor([CLIMB]), () => {});
+    const reversed = (await readRatings(USER_ID))[0]?.kilter_id;
+
+    expect(forward).toBe('kr-newer');
+    expect(reversed).toBe('kr-newer');
+  });
+
+  it('does not churn updated_at when a duplicate pair re-arrives in the other order', async () => {
+    await seedUser(USER_ID);
+    const older = putOp({ climbRatingUuid: 'kr-older', angle: 40, opId: '1' });
+    const newer = putOp({ climbRatingUuid: 'kr-newer', angle: 40, opId: '2' });
+    (newer.data as Record<string, unknown>).created_at = '2026-06-01T12:00:00.000Z';
+
+    await applyClimbRatings(applyTx, USER_ID, [older, newer], aliasCacheFor([CLIMB]), () => {});
+    const first = (await readRatings(USER_ID))[0];
+
+    // The next snapshot delivers the same two rows in the opposite order. With
+    // a stable winner nothing changes, so the setWhere guard suppresses the
+    // UPDATE entirely and the row is not re-shipped to offline clients.
+    await applyClimbRatings(applyTx, USER_ID, [newer, older], aliasCacheFor([CLIMB]), () => {});
+    const second = (await readRatings(USER_ID))[0];
+
+    expect(second?.kilter_id).toBe(first?.kilter_id);
+    expect(new Date(second!.updated_at).getTime()).toBe(new Date(first!.updated_at).getTime());
+  });
+
   it('skips a row Postgres refuses instead of losing the whole batch', async () => {
     await seedUser(USER_ID);
 
