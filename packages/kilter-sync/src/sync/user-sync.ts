@@ -1427,6 +1427,14 @@ async function writeClimbRatings(tx: DrizzleDb, values: Array<typeof boardClimbR
         // an incoming row that arrives WITHOUT a kilter_id (shouldn't
         // happen for kilter-origin PUTs in practice, but defensive)
         // never nulls out a kilter_id we already adopted.
+        //
+        // TODO: when the natural-key row already holds a DIFFERENT kilter_id
+        // this silently overwrites it, orphaning the old surrogate. It cannot
+        // raise 23505 (one value leaves the index as another enters) and for
+        // ratings the natural key genuinely is the identity, so it is benign
+        // today — but applyLogs skips-and-logs the same shape, and discarding
+        // the conflict silently is what made this class of drift invisible in
+        // the first place. Log the divergence here.
         kilterId: sql`COALESCE(EXCLUDED.kilter_id, ${boardClimbRatings.kilterId})`,
         // Re-linking a rating clears the upstream-deleted marker: a
         // REMOVE-then-PUT snapshot redelivery detaches (stamping
