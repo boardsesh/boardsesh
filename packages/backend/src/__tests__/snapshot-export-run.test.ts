@@ -21,14 +21,93 @@ vi.mock('../storage/s3', () => ({
 }));
 
 import { Readable } from 'node:stream';
+import postgres from 'postgres';
 import { sql } from 'drizzle-orm';
 import { LATEST_SCHEMA_VERSION, type SnapshotManifest, type SnapshotManifestEntry } from '@boardsesh/offline-sync';
 import { createPool } from '@boardsesh/db/client';
 import { db } from '../db/client';
 import { uploadToS3, getFromS3Strict, deleteFromS3, listS3Objects } from '../storage/s3';
 import { runExport, mergeManifestEntries } from '../scripts/export-board-snapshots';
+import { getWorkerDatabaseUrl } from './worker-db';
 
 const MANIFEST_KEY = 'board-snapshots/v1/manifest.json';
+const TEST_EXPORTER_IMAGE_DIGEST = `sha256:${'a'.repeat(64)}`;
+let heartbeatCoordinatorSequence = 0;
+
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replaceAll('"', '""')}"`;
+}
+
+type CoordinatorContractDrift =
+  | 'none'
+  | 'indirect'
+  | 'grant-option'
+  | 'extra-execute'
+  | 'inherited-extra-execute'
+  | 'owned-extra-execute';
+
+async function runHeartbeatExport(args: string[], contractDrift: CoordinatorContractDrift = 'none'): Promise<void> {
+  const previousDirectUrl = process.env.DATABASE_DIRECT_URL;
+  const previousImageDigest = process.env.SNAPSHOT_EXPORTER_IMAGE_DIGEST;
+  const testSuffix = `w${process.env.VITEST_POOL_ID ?? '0'}_p${process.pid}`;
+  heartbeatCoordinatorSequence += 1;
+  const roleName = `snapshot_coordinator_${testSuffix}_${heartbeatCoordinatorSequence}`;
+  const rolePassword = 'snapshot-coordinator-test';
+  const quotedRole = quoteIdentifier(roleName);
+  const grantRoleName = `snapshot_coordinator_grant_${testSuffix}_${heartbeatCoordinatorSequence}`;
+  const quotedGrantRole = quoteIdentifier(grantRoleName);
+  const adminPool = createPool();
+  await adminPool.unsafe(`CREATE ROLE ${quotedRole} LOGIN PASSWORD '${rolePassword}'`);
+  const needsGrantRole = contractDrift === 'indirect' || contractDrift === 'inherited-extra-execute';
+  const privilegeRole = contractDrift === 'indirect' ? quotedGrantRole : quotedRole;
+  if (needsGrantRole) await adminPool.unsafe(`CREATE ROLE ${quotedGrantRole} NOLOGIN`);
+  await adminPool.unsafe(`GRANT USAGE ON SCHEMA ops TO ${privilegeRole}`);
+  await adminPool.unsafe(`GRANT EXECUTE ON FUNCTION ops.board_snapshot_cluster_identity() TO ${privilegeRole}`);
+  await adminPool.unsafe(`GRANT EXECUTE ON FUNCTION ops.acquire_board_snapshot_fence(integer) TO ${privilegeRole}`);
+  await adminPool.unsafe(`GRANT EXECUTE ON FUNCTION ops.board_snapshot_fence_held() TO ${privilegeRole}`);
+  await adminPool.unsafe(`GRANT EXECUTE ON FUNCTION ops.release_board_snapshot_fence() TO ${privilegeRole}`);
+  if (contractDrift === 'indirect') await adminPool.unsafe(`GRANT ${quotedGrantRole} TO ${quotedRole}`);
+  if (contractDrift === 'grant-option') {
+    await adminPool.unsafe(
+      `GRANT EXECUTE ON FUNCTION ops.acquire_board_snapshot_fence(integer) TO ${quotedRole} WITH GRANT OPTION`,
+    );
+  }
+  if (contractDrift === 'extra-execute') {
+    await adminPool.unsafe(`GRANT EXECUTE ON FUNCTION ops.set_sync_deletion_cursor() TO ${quotedRole}`);
+  }
+  if (contractDrift === 'inherited-extra-execute') {
+    await adminPool.unsafe(`GRANT EXECUTE ON FUNCTION ops.set_sync_deletion_cursor() TO ${quotedGrantRole}`);
+    await adminPool.unsafe(`GRANT ${quotedGrantRole} TO ${quotedRole}`);
+  }
+  if (contractDrift === 'owned-extra-execute') {
+    const functionName = `snapshot_coordinator_owned_${testSuffix}_${heartbeatCoordinatorSequence}`;
+    const quotedFunction = quoteIdentifier(functionName);
+    await adminPool.unsafe(`CREATE FUNCTION ops.${quotedFunction}() RETURNS integer LANGUAGE sql AS 'SELECT 1'`);
+    await adminPool.unsafe(`GRANT CREATE ON SCHEMA ops TO ${quotedRole}`);
+    await adminPool.unsafe(`ALTER FUNCTION ops.${quotedFunction}() OWNER TO ${quotedRole}`);
+    await adminPool.unsafe(`REVOKE CREATE ON SCHEMA ops FROM ${quotedRole}`);
+  }
+  const coordinatorUrl = new URL(getWorkerDatabaseUrl());
+  coordinatorUrl.username = roleName;
+  coordinatorUrl.password = rolePassword;
+  coordinatorUrl.searchParams.delete('options');
+  process.env.DATABASE_DIRECT_URL = coordinatorUrl.toString();
+  process.env.SNAPSHOT_EXPORTER_IMAGE_DIGEST = TEST_EXPORTER_IMAGE_DIGEST;
+  try {
+    await runExport([...args, '--heartbeat']);
+  } finally {
+    if (previousDirectUrl === undefined) delete process.env.DATABASE_DIRECT_URL;
+    else process.env.DATABASE_DIRECT_URL = previousDirectUrl;
+    if (previousImageDigest === undefined) delete process.env.SNAPSHOT_EXPORTER_IMAGE_DIGEST;
+    else process.env.SNAPSHOT_EXPORTER_IMAGE_DIGEST = previousImageDigest;
+    await adminPool.unsafe(`DROP OWNED BY ${quotedRole}`).catch(() => {});
+    await adminPool.unsafe(`DROP ROLE IF EXISTS ${quotedRole}`).catch(() => {});
+    if (needsGrantRole) {
+      await adminPool.unsafe(`DROP OWNED BY ${quotedGrantRole}`).catch(() => {});
+      await adminPool.unsafe(`DROP ROLE IF EXISTS ${quotedGrantRole}`).catch(() => {});
+    }
+  }
+}
 
 function manifestEntryFixture(boardType: string, layoutId: number, key: string): SnapshotManifestEntry {
   return {
@@ -250,6 +329,61 @@ describe('runExport — threshold refresh', () => {
     expect(listS3Objects).not.toHaveBeenCalled();
   });
 
+  it('publishes only a refresh heartbeat for a healthy threshold no-op', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedStatsDelta('kilter', 'k1-a', 499);
+    const previousManifest = manifestFixture([manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`)]);
+    serveExistingManifest(previousManifest);
+
+    await runHeartbeatExport(thresholdArgs);
+
+    expect(vi.mocked(uploadToS3).mock.calls.map(([, key]) => key)).toEqual(['board-snapshots/ops/refresh.json']);
+    const [body, , contentType, options] = vi.mocked(uploadToS3).mock.calls[0];
+    expect(contentType).toBe('application/json');
+    expect(options).toEqual({ cacheControl: 'no-store, max-age=0' });
+    expect(JSON.parse((body as Buffer).toString('utf8'))).toMatchObject({
+      formatVersion: 1,
+      runKind: 'refresh',
+      source: 'primary',
+      imageDigest: TEST_EXPORTER_IMAGE_DIGEST,
+      keyPrefix: GZIP_PREFIX,
+      manifestGeneratedAt: previousManifest.generatedAt,
+      refreshedLayouts: 0,
+    });
+    expect(listS3Objects).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when coordinator privileges are inherited instead of directly granted', async () => {
+    await expect(runHeartbeatExport(thresholdArgs, 'indirect')).rejects.toThrow(
+      'caller_memberships_exact, caller_ops_schema_acl_exact, caller_function_acls_exact',
+    );
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a coordinator function ACL carries grant option', async () => {
+    await expect(runHeartbeatExport(thresholdArgs, 'grant-option')).rejects.toThrow('caller_function_acls_exact');
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the coordinator can execute an extra ops function', async () => {
+    await expect(runHeartbeatExport(thresholdArgs, 'extra-execute')).rejects.toThrow('caller_function_acls_exact');
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when an inherited role adds extra ops execution', async () => {
+    await expect(runHeartbeatExport(thresholdArgs, 'inherited-extra-execute')).rejects.toThrow(
+      'caller_memberships_exact',
+    );
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on implicit execution from coordinator function ownership', async () => {
+    await expect(runHeartbeatExport(thresholdArgs, 'owned-extra-execute')).rejects.toThrow(
+      'caller_owns_no_ops_functions, caller_has_no_unexpected_ops_execute',
+    );
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
   it('rebuilds only the layout at the exact 500-row threshold and preserves every other entry', async () => {
     await seedClimb('kilter', 1, 'k1-a');
     await seedClimb('kilter', 2, 'k2-a');
@@ -280,18 +414,34 @@ describe('runExport — threshold refresh', () => {
     const previousEntry = manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`);
     serveExistingManifest(manifestFixture([previousEntry]));
 
-    // Temporarily advertise one connection so the observer probe fails closed:
-    // the export transaction can still run, but its LayoutSnapshotResult carries
-    // observer-pool-capacity and no boundary. Restore the shared pool immediately.
-    const poolOptions = createPool().options as { max: number };
-    const originalPoolMax = poolOptions.max;
-    poolOptions.max = 1;
+    // Hold a transaction under another authenticated role. The unfenced
+    // compatibility path cannot prove full pg_stat_activity visibility across
+    // roles, so it must preserve the previous live artifact and fail closed.
+    const testSuffix = `w${process.env.VITEST_POOL_ID ?? '0'}_p${process.pid}`;
+    const roleName = `snapshot_visibility_peer_${testSuffix}`;
+    const quotedRole = quoteIdentifier(roleName);
+    // Fixed credential for a disposable local test role, never a production
+    // secret. CREATE ROLE does not accept a bind parameter in this position.
+    const peerPassword = 'snapshot-visibility-peer-test';
+    const adminPool = createPool();
+    await adminPool.unsafe(`DROP ROLE IF EXISTS ${quotedRole}`);
+    await adminPool.unsafe(`CREATE ROLE ${quotedRole} LOGIN PASSWORD '${peerPassword}'`);
+    const peerUrl = new URL(getWorkerDatabaseUrl());
+    peerUrl.username = roleName;
+    peerUrl.password = peerPassword;
+    const peerPool = postgres(peerUrl.toString(), { max: 1, ssl: false });
+    const peer = await peerPool.reserve();
     try {
+      await peer.unsafe('BEGIN');
+      await peer.unsafe('SELECT 1');
       await expect(runExport(['--gzip', '--key-prefix', GZIP_PREFIX, '--refresh-threshold', '1'])).rejects.toThrow(
         /Export failed for 1 layout\(s\): kilter:1/,
       );
     } finally {
-      poolOptions.max = originalPoolMax;
+      await peer.unsafe('ROLLBACK').catch(() => {});
+      peer.release();
+      await peerPool.end({ timeout: 5 });
+      await adminPool.unsafe(`DROP ROLE IF EXISTS ${quotedRole}`).catch(() => {});
     }
 
     const artifactUploads = vi.mocked(uploadToS3).mock.calls.filter(([, key]) => key !== GZIP_MANIFEST_KEY);
@@ -585,6 +735,46 @@ describe('runExport — gzip + key-prefix (dual-publish transition)', () => {
     expect(options).toEqual({ contentEncoding: 'gzip' });
     expect((body as Buffer)[0]).toBe(0x1f); // gzip magic
     expect((body as Buffer)[1]).toBe(0x8b);
+  });
+
+  it('publishes a successful full manifest before matching full and refresh heartbeats', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+
+    await runHeartbeatExport(['--gzip', '--key-prefix', GZIP_PREFIX]);
+
+    const uploadCalls = vi.mocked(uploadToS3).mock.calls;
+    const uploadedKeys = uploadCalls.map(([, key]) => key);
+    expect(uploadedKeys.slice(-3)).toEqual([
+      GZIP_MANIFEST_KEY,
+      'board-snapshots/ops/full.json',
+      'board-snapshots/ops/refresh.json',
+    ]);
+    const manifest = uploadedManifest(GZIP_MANIFEST_KEY);
+    const fullHeartbeatCall = uploadCalls.find(([, key]) => key === 'board-snapshots/ops/full.json')!;
+    const refreshHeartbeatCall = uploadCalls.find(([, key]) => key === 'board-snapshots/ops/refresh.json')!;
+    const fullHeartbeat = JSON.parse((fullHeartbeatCall[0] as Buffer).toString('utf8')) as Record<string, unknown>;
+    const refreshHeartbeat = JSON.parse((refreshHeartbeatCall[0] as Buffer).toString('utf8')) as Record<
+      string,
+      unknown
+    >;
+
+    expect(fullHeartbeatCall.slice(2)).toEqual(['application/json', { cacheControl: 'no-store, max-age=0' }]);
+    expect(refreshHeartbeatCall.slice(2)).toEqual(['application/json', { cacheControl: 'no-store, max-age=0' }]);
+    expect(fullHeartbeat).toMatchObject({
+      formatVersion: 1,
+      runKind: 'full',
+      source: 'primary',
+      imageDigest: TEST_EXPORTER_IMAGE_DIGEST,
+      keyPrefix: GZIP_PREFIX,
+      manifestGeneratedAt: manifest.generatedAt,
+      refreshedLayouts: 1,
+    });
+    expect(refreshHeartbeat).toMatchObject({ ...fullHeartbeat, runKind: 'refresh' });
+    expect(fullHeartbeat.completedAt).toBe(refreshHeartbeat.completedAt);
+    expect(fullHeartbeat.systemIdentifier).toMatch(/^\d+$/);
+    expect(fullHeartbeat.timelineId).toBeGreaterThan(0);
+    expect(fullHeartbeat.targetLsn).toMatch(/^[0-9A-F]+\/[0-9A-F]+$/);
+    expect(fullHeartbeat.replayLsn).toBe(fullHeartbeat.targetLsn);
   });
 
   it('--gzip publishes the pre-compression size in uncompressedBytes, distinct from the stored bytes', async () => {

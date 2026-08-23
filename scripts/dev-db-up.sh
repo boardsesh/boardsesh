@@ -19,6 +19,7 @@ HBA_FILE="/var/lib/postgresql/pgdata/pg_hba.conf"
 # shellcheck disable=SC1007
 REPO_ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 DRIZZLE_DIR="$REPO_ROOT/packages/db/drizzle"
+DEVELOPMENT_ROLE_BOOTSTRAP_SQL="$REPO_ROOT/packages/db/docker/bootstrap-pg18-development-roles.sql"
 GENERATED_ENV_DIR="$REPO_ROOT/.boardsesh"
 GENERATED_ENV_FILE="$GENERATED_ENV_DIR/dev-db.env"
 
@@ -108,6 +109,15 @@ ensure_postgres_password() {
   echo "  Password ensured."
 }
 
+bootstrap_pg18_development_roles() {
+  echo "Ensuring restricted PostgreSQL 18 development roles..."
+  docker exec -i -u postgres "$PG_CONTAINER" \
+    psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
+      -v boardsesh_dev_role_bootstrap=true \
+    <"$DEVELOPMENT_ROLE_BOOTSTRAP_SQL" >/dev/null
+  echo "  Restricted development roles ensured."
+}
+
 sync_drizzle_migration_tracker() {
   # Older pre-built images only have the public.__drizzle_migrations table.
   # Newer drizzle-orm uses the drizzle.__drizzle_migrations table. Ensure
@@ -132,6 +142,7 @@ sync_drizzle_migration_tracker() {
 prepare_docker_postgres() {
   ensure_postgres_network_access
   ensure_postgres_password
+  bootstrap_pg18_development_roles
   sync_drizzle_migration_tracker
   run_pending_drizzle_sql_migrations
   write_dev_db_env "localhost" "$1" "$(detect_local_redis_url)"
