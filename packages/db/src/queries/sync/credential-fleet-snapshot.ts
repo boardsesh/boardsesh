@@ -1,27 +1,23 @@
 import { sql, type SQL } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 
+import type { SyncHealthSnapshot } from '@boardsesh/sync-runtime';
+
 import { auroraCredentials } from '../../schema/auth/mappings';
 import { credentialRetryReadySql } from './credential-backoff';
 
 type SnapshotDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
-/** Read-only snapshot of a credential fleet, for a daemon's health-summary log. */
-export type CredentialFleetSnapshot = {
-  total: number;
-  active: number;
-  pending: number;
-  error: number;
-  expired: number;
-  /** Syncable credentials currently skipped because they're inside a backoff window. */
-  inBackoff: number;
-  /**
-   * Oldest last_sync_attempt_at across the fleet (null = some never attempted).
-   * Typed to admit a string: a raw `sql` aggregate carries no decoder unless one
-   * is attached, and this one attaches the column's — see below.
-   */
-  oldestAttemptAt: Date | string | null;
-};
+/**
+ * Read-only snapshot of a credential fleet, for a daemon's health-summary log.
+ *
+ * Deliberately an alias rather than a second declaration of the same shape: the
+ * formatter in @boardsesh/sync-runtime owns the contract, and two structurally
+ * identical types under different names would drift the first time either is
+ * edited. The dependency runs db -> sync-runtime only; sync-runtime is
+ * dependency-free by design and must never import back.
+ */
+export type CredentialFleetSnapshot = SyncHealthSnapshot;
 
 /**
  * One aggregate scan over the credentials table: counts by sync_status, how
