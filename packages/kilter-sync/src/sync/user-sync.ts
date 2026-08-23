@@ -1190,7 +1190,9 @@ export async function applyClimbRatings(
   };
 
   const normalised: NormalisedRating[] = [];
-  for (const op of dedupedPutsByRatingUuid.values()) {
+  for (const op of puts) {
+    // SCRATCH: surrogate dedupe bypassed to reproduce violation path (a).
+    void dedupedPutsByRatingUuid;
     const raw = op.data as RawClimbRating;
     const canonical = await resolveCanonicalClimbUuid(tx, KILTER_BOARD_TYPE, raw.climb_uuid, aliasCache);
     normalised.push({
@@ -1337,7 +1339,8 @@ export async function applyClimbRatings(
     log(
       `[kilter-sync] repointing kilter_id ${entry.kilterId} for user ${userId}: ${existing.climbUuid}@${existing.angle} -> ${entry.canonical}@${entry.angle}`,
     );
-    staleKilterIds.push(entry.kilterId);
+    // SCRATCH: repoint bypassed to reproduce violation path (b).
+    void entry;
   }
   if (staleKilterIds.length > 0) {
     const detachedAt = new Date();
