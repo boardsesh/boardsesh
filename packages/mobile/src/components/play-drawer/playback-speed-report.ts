@@ -9,7 +9,7 @@
 // the rule-5 anti-pattern. The displayed label only shows 0.1× precision, so we
 // gate the hop on the 0.1-rounded speed actually changing, not on the raw frame.
 
-const MIN_SPEED = 0.5;
+const MIN_SPEED = 0.1;
 const MAX_SPEED = 10;
 
 /**

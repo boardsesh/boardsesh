@@ -25,16 +25,16 @@ function reportsForDrag(pixels: number[]): number[] {
 
 describe('shouldReportSpeed gate', () => {
   it('matches the displayed 0.1x-rounded speed', () => {
-    // 0.5x..10x over 300px ≈ 0.0317x/px. Endpoints are exact.
-    expect(roundedReportSpeed(0, USABLE)).toBe(0.5);
+    // 0.1x..10x over 300px = 0.033x/px. Endpoints are exact.
+    expect(roundedReportSpeed(0, USABLE)).toBe(0.1);
     expect(roundedReportSpeed(USABLE, USABLE)).toBe(10);
-    // Mid-track lands at (0.5 + 0.5 * 9.5) = 5.25; Math.round(52.5) = 53 → 5.3.
-    expect(roundedReportSpeed(USABLE / 2, USABLE)).toBe(5.3);
+    // Mid-track lands at (0.1 + 0.5 * 9.9) = 5.05; Math.round(50.5) = 51 → 5.1.
+    expect(roundedReportSpeed(USABLE / 2, USABLE)).toBe(5.1);
   });
 
   it('reports far fewer times than the frame count over a sub-pixel-per-frame drag', () => {
-    // 60 frames of 1px each = 60px of travel ≈ 1.9x. One report per 0.1x step,
-    // so ~19 reports vs 60 frames — never one per frame.
+    // 60 frames of 1px each = 60px of travel ≈ 2.0x. One report per 0.1x step,
+    // so ~20 reports vs 60 frames — never one per frame.
     const pixels = Array.from({ length: 60 }, (_, index) => index + 1);
     const reported = reportsForDrag(pixels);
 
@@ -47,7 +47,7 @@ describe('shouldReportSpeed gate', () => {
   });
 
   it('does not report when several frames stay within the same 0.1x bucket', () => {
-    // ~0.0317x/px, so a 1px nudge near the same spot can stay in one bucket.
+    // 0.033x/px, so a 1px nudge near the same spot can stay in one bucket.
     // Frames at the same px never re-report; the first reports, the rest skip.
     let lastReported = roundedReportSpeed(100, USABLE);
     const decisions = [101, 100, 100, 101].map((px) => {
