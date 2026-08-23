@@ -1,0 +1,168 @@
+# PostgreSQL 18 rollout — handover
+
+State as of 2026-08-23, `main` at `6a699e564`. Written to move this to a machine that can run Docker.
+
+Everything up to and including image publication and consumer pinning is **done and merged**. Nothing has touched the Railway production database except one read-only audit. The remaining work is the production cutover, and it is blocked on two things this machine could not resolve.
+
+---
+
+## 1. What is merged
+
+| PR | What | Merge commit |
+|---|---|---|
+| #4497 | Trusted PostgreSQL image publisher | `577c5c021` |
+| #4474 | PG18 producer A — migration and cutover tooling | `a5795a08eee7514986339e3278e791248a40b222` |
+| #4695 | Consumer B — pin every consumer to the attested digests | `6a699e564` |
+| marcodejongh/blackheathdc-ansible#344 | Homelab PostgreSQL standby and DR | merged |
+
+### Published images — these are the accepted artifacts
+
+Publisher run [32616607289](https://github.com/boardsesh/boardsesh/actions/runs/32616607289), source `ca308bd225519bd1062dfdbab288e7b063e253c9`.
+
+| Image | Digest | Platforms | Attestation |
+|---|---|---|---|
+| `ghcr.io/boardsesh/boardsesh-postgres-postgis` (portable, production) | `sha256:01c2671dbccd2104ec15534de1552d1e092301a5a77cad010795318d47f76796` | amd64 + arm64 | [42389745](https://github.com/boardsesh/boardsesh/attestations/42389745) verified |
+| `ghcr.io/boardsesh/boardsesh-dev-db` (seeded, dev/CI) | `sha256:d4574a27a639919b70d89c457e88f17bf672b358dd38dbdc3c2ba5f65ecc44e5` | amd64 | [42389746](https://github.com/boardsesh/boardsesh/attestations/42389746) verified |
+
+Handoff artifact copied to `docs/postgres-image-digests.json`. It records `deployment_identity: "digest-only"` and `tags_are_mutable: true` — a `sha-<commit>` tag is a lookup aid, never a deployment pin.
+
+### Repo configuration applied
+
+- Environment `postgres-image-publisher`: required reviewer `marcodejongh`, `can_admins_bypass=false`, custom branch policy of exactly `main`.
+- **`prevent_self_review = false`** — a deliberate, accepted risk. Single maintainer, and a GitHub App cannot be an environment reviewer. The three audits now require the field to be present and boolean rather than `true`, so a missing or reshaped API field still fails closed, and the mutation test was retargeted rather than deleted. Rationale in `docs/postgres-image-publishing.md`. Flip it back to `true` the moment a second reviewer exists — no code change needed.
+- Repo variable `RETIRED_DB_IMAGE_DIGESTS = none`.
+
+---
+
+## 2. Open work
+
+### PR #4475 — snapshot fencing (effectively green)
+
+27 passing, 0 failing. Migration renumbered to **0205** after main took 0200-0204.
+
+Two things worth knowing before touching it:
+
+- The journal entry kept its original `when`, older than main's newest. Both appliers order by `when`, so it would have been **silently skipped** — not a loud failure. `check:db-migrations` caught it; restamped by hand following `db-renumber`'s own `nextWhen` convention. See issue #4696: `check:db-migrations` tells you to run `vp run db:renumber`, but that tool only inspects the migration *number* and no-ops on a stale `when`.
+- `test-location-sync-integration` was red for the whole rollout because it ran on PG17. Consumer B fixed it — it now passes.
+
+### Branch `agent/split-seeded-image-publisher` — WIP, do not merge
+
+Commit `9f0a602c1`. Splits the seeded dev image into its own publisher workflow (issue #4694). **Unreviewed and unvalidated** — the security review phase had not run. Before merging: recompute every `PRIVILEGED_RUN_SHA256` and `PRIVILEGED_JOB_SHA256`, confirm every mutation test still fails for the weakenings it catches, add equivalent coverage for the new workflow, and get an independent review of the trust boundary in both.
+
+### Filed issues
+
+| Issue | What |
+|---|---|
+| [#4508](https://github.com/boardsesh/boardsesh/issues/4508) | Build dev-db from offline snapshots instead of scraping six APKs from a third-party mirror |
+| [#4513](https://github.com/boardsesh/boardsesh/issues/4513) | Teardown wedges on a disabled subscription — bites during the WAL emergency itself |
+| [#4514](https://github.com/boardsesh/boardsesh/issues/4514) | Rename the Neon-era replication script (patch saved, see below) |
+| [#4694](https://github.com/boardsesh/boardsesh/issues/4694) | Split the seeded image out of the production publish path |
+| [#4696](https://github.com/boardsesh/boardsesh/issues/4696) | `db:renumber` no-ops on a stale `when` that `check:db-migrations` rejects |
+
+`docs/pg18-replication-rename.patch` (committed here) holds a verified rename of `neon-to-railway-replication.sh` → `postgres-logical-replication.sh` across all 7 referencing files, applying cleanly against `661e8c488`. Deferred so commit A did not need another review cycle. The workflow path filter and the `test:postgres18-contract` file list must move together — `scripts/postgres18-workflow-contract.test.sh` fails closed on a half-done rename.
+
+---
+
+## 3. Production audit — read-only, 2026-08-23
+
+Credentials came from 1Password `Boardsesh` vault, item **`RAILWAY Postgres PROD (readonly)`**, used via a mode-0600 passfile and deleted afterwards. Nothing was mutated.
+
+| | |
+|---|---|
+| Version | **PostgreSQL 16.9** (Debian, x86_64) |
+| System identifier | `7635874554056458274` |
+| Database | `railway` (canonical, matches the runbook) |
+| Size | 11 GB |
+| Encoding / collate / ctype | UTF8 / en_US.utf8 / en_US.utf8 |
+| `data_checksums` | **off** |
+| `wal_level` | **replica** |
+| `max_replication_slots` / `max_wal_senders` | 10 / 10 |
+| PostGIS | **3.7.0dev** (`3.6.0rc2-339-g6d7299047`), GEOS `3.15.0dev` |
+| Publications / replication slots | none — clean slate |
+| Roles (non-system) | `postgres` (superuser), `boardsesh_readonly` |
+| Schemas | `public` 464, `tiger` 120, `neon_auth` 30, `topology` 10, `drizzle` 3 |
+
+Railway runs the database from image `postgis/postgis:16-master` **with auto-updates enabled** — a mutable dev tag on production.
+
+---
+
+## 4. The two blockers
+
+### Blocker 1 — `wal_level = replica`
+
+Logical replication needs `wal_level = logical`. Changing it requires a **restart of the Railway Postgres service**, i.e. a short production outage before any migration work starts. `max_replication_slots` and `max_wal_senders` are already 10, so nothing else needs changing.
+
+### Blocker 2 — PostGIS version
+
+Production is on `3.7.0dev`; the attested image ships stable **3.6.4**. `docs/postgres-18-migration.md` §1 blocks the catalog audit unless both sides match, on the basis that a downgrade is not assumed wire-compatible.
+
+**PGDG has no stable 3.7 for PG18.** Available for `postgresql-18-postgis-3` on `bookworm-pgdg/amd64`:
+
+    3.6.2+dfsg-1.pgdg12+1
+    3.6.3+dfsg-1.pgdg12+1
+    3.6.4+dfsg-2.pgdg12+1   <- newest, what the image ships
+
+So "upgrade the target to match" is not possible from packages. Production is only on a dev build because the service tracks the `master` tag.
+
+**But the actual exposure is tiny.** Full spatial usage in the app schemas:
+
+| Column | Type | Rows | Populated |
+|---|---|---|---|
+| `public.gyms.location` | `geography(Point,4326)` | 4875 | 3114 |
+| `public.user_boards.location` | `geography(Point,4326)` | 6375 | 3318 |
+
+Two partial GiST indexes:
+
+    gyms_location_idx              USING gist (location) WHERE deleted_at IS NULL AND is_public = true
+    user_boards_location_gist_idx  USING gist (location) WHERE is_public = true AND deleted_at IS NULL
+
+No geometry, raster or topogeometry columns anywhere. And `tiger` / `topology` are **empty scaffolding** — `tiger.geocode_settings` has 0 rows, 0 live tuples across `tiger`, `tiger_data`, `topology`. Not installing those two extensions on the target removes 130 objects from the migration surface.
+
+`geography(Point,4326)` plus GiST is among the oldest and most stable parts of PostGIS, unchanged in API and storage across 3.x. Nothing here uses a 3.7-only feature.
+
+**Open decision, not taken.** Three candidate paths, no consensus reached:
+
+1. Keep the target at 3.6.4 and narrow the audit from "versions equal" to "target supports every spatial type and function actually in use", failing loudly if new spatial usage appears.
+2. Prove it by restoring a real Railway dump into the attested PG18/3.6.4 image and confirming both geography columns, their data, and both partial GiST indexes survive. This doubles as the §4 rehearsal the checkpoint needs. **This is the natural first task on a machine with working Docker.**
+3. Treat the dev-build drift as the actual bug: pin the Railway service to a stable PostGIS 16 image with auto-updates off, then revisit.
+
+---
+
+## 5. What to do next
+
+1. **Rehearse the restore** (§4). Dump Railway, restore into `ghcr.io/boardsesh/boardsesh-postgres-postgis@sha256:01c2671d…`, verify the two geography columns, their row counts, and both partial GiST indexes. That settles Blocker 2 with evidence and produces the rehearsal the checkpoint requires.
+2. **Decide Blocker 2** on that evidence.
+3. **Schedule the `wal_level` restart** with the write interruption it implies.
+4. **Run the PG16 role transition** (`docs/postgres-18-migration.md` §"Ordered PG16 production-role transition"). None of `boardsesh_owner`, `boardsesh_runtime` or `boardsesh_migrator` exist yet; the app appears to connect as `postgres`. `scripts/postgres18-production-role-transition.sh` has bounded `lock_timeout`, a wall-clock hold ceiling, and a long-running-transaction pre-flight — validated against a real PG16 in CI.
+5. **Then** the Phase 4 checkpoint, then replication.
+
+### Publishing again — read this first
+
+The publisher binds to the exact live `main` head and rechecks before registry login, before OIDC attestation, and before the digest artifact upload. The recheck happens **after both image builds**.
+
+Measured: portable **1 m 39 s**, seeded **16 m 52 s**, ~19 min dispatch to recheck. Observed cadence on `main` is ~1 commit per 24 minutes, and every merge also fires an automated `chore(changelog)` commit.
+
+Two attempts were lost to this before the third succeeded behind a deliberate merge freeze:
+
+| Run | SHA | Outcome |
+|---|---|---|
+| 31924828661 | `a5795a08…` | aborted at the pre-auth recheck; main moved during the ~2 h approval wait. Never authenticated, nothing published |
+| 31929880126 | `b61480a1…` | main moved before approval could be given; cancelled |
+| 32616607289 | `ca308bd2…` | **success** |
+
+So: announce a freeze, dispatch, approve within a few minutes, and expect a second approval prompt for the attestation job. Do not weaken the exact-main guard — re-dispatch for the new head instead. #4694 exists to shrink this window.
+
+---
+
+## 6. Environment notes from this machine
+
+Things that cost time here and may not apply on the new machine:
+
+- **Docker was entirely unusable.** The VM stopped booting — every command returned `Bad response from Docker engine`; `dockerd.log` showed `healthcheck failed fatally` and containerd `setns` errors. A full Docker Desktop restart did not recover it. `Docker.raw` was 119 GB against 34 GB free host disk. Reclaiming 48.8 GB of build cache did not help. This blocked the dev-db image build, the `postgres18-image` smoke, and the ansible offline suite at ansible-core 2.16.3 — all of which CI ran instead.
+- **`grep` here is `ugrep`, not GNU grep**, and `/usr/bin/grep` is BSD. Two real portability bugs came from this class: `stat -f` is BSD-only (on GNU, `-f` means `--file-system`), and the runners have no `ripgrep` at all. That second one was worse than a broken test — the credential test's argv guard was *fail-open* in CI, because an empty result from a missing binary is indistinguishable from "no forbidden match".
+- **Local `psql` is 14.22**, connecting to a PG16 server. Fine for the audit queries used, but worth upgrading before the cutover.
+- A fresh git worktree needs `bun install --frozen-lockfile` before `vp` will run.
+
+## Release Notes
+
+none
