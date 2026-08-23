@@ -457,6 +457,50 @@ describe('applyClimbRatings kilter_id reconciliation (real DB)', () => {
     expect(claimed.size).toBe(1);
   });
 
+  it('leaves a stored newer rating alone when an older one arrives', async () => {
+    // The residual churn after the cross-flush fix. A duplicate pair split
+    // across flushes leaves the EARLIER flush holding only the older candidate.
+    // Without comparing against what is stored it writes anyway, and the later
+    // flush corrects it — one wasted UPDATE and one updated_at bump per key per
+    // sync, forever. Measured at 369 per run on a production account.
+    await seedUser(USER_ID);
+
+    // Establish the newer rating as the stored one.
+    const newer = putOp({ climbRatingUuid: 'kr-newer', angle: 40 });
+    (newer.data as Record<string, unknown>).created_at = '2026-06-01T12:00:00.000Z';
+    await applyFlush([newer], new Map());
+    const before = (await readRatings(USER_ID))[0];
+    expect(before?.kilter_id).toBe('kr-newer');
+
+    // A later sync whose first flush carries only the older duplicate.
+    const older = putOp({ climbRatingUuid: 'kr-older', angle: 40 });
+    const logged: string[] = [];
+    await applyFlush([older], new Map(), (msg) => logged.push(msg));
+
+    const after = (await readRatings(USER_ID))[0];
+    expect(after?.kilter_id).toBe('kr-newer');
+    // No write at all, so no updated_at bump and nothing re-shipped to clients.
+    expect(new Date(after!.updated_at).getTime()).toBe(new Date(before!.updated_at).getTime());
+    expect(logged.join('\n')).toContain('older than the stored rating');
+  });
+
+  it('still replaces the stored rating when the incoming one is genuinely newer', async () => {
+    // The guard must not become "never update". An upstream rating that really
+    // is newer has to win, or a re-rated climb would freeze at its first value.
+    await seedUser(USER_ID);
+    const older = putOp({ climbRatingUuid: 'kr-older', angle: 40 });
+    await applyFlush([older], new Map());
+
+    const newer = putOp({ climbRatingUuid: 'kr-newer', angle: 40, rating: 2 });
+    (newer.data as Record<string, unknown>).created_at = '2026-06-01T12:00:00.000Z';
+    await applyFlush([newer], new Map());
+
+    const rows = await readRatings(USER_ID);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.kilter_id).toBe('kr-newer');
+    expect(rows[0]?.rating).toBe(2);
+  });
+
   it('skips a row Postgres refuses instead of losing the whole batch', async () => {
     await seedUser(USER_ID);
 

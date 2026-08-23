@@ -46,6 +46,24 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 type RatingClaims = Map<string, { kilterId: string; createdAtMs: number }>;
 
 /**
+ * Total order over rating candidates for one climb/angle: the newest upstream
+ * rating wins, with the surrogate breaking ties so the result is stable across
+ * runs regardless of the order PowerSync delivers ops in.
+ *
+ * Deliberately one function rather than three inline copies — the bucket sort,
+ * the cross-flush claim check and the stored-row check must agree exactly, and
+ * an order that disagrees with itself reintroduces the ping-pong it exists to
+ * prevent.
+ */
+function ratingBeats(
+  candidate: { createdAtMs: number; kilterId: string },
+  incumbent: { createdAtMs: number; kilterId: string },
+): boolean {
+  if (candidate.createdAtMs !== incumbent.createdAtMs) return candidate.createdAtMs > incumbent.createdAtMs;
+  return candidate.kilterId < incumbent.kilterId;
+}
+
+/**
  * Per-user pull (design Flow B): drain Kilter's PowerSync stream for this
  * user's buckets and translate ops into boardsesh rows.
  *
@@ -1304,6 +1322,12 @@ export async function applyClimbRatings(
       boardType: boardClimbRatings.boardType,
       climbUuid: boardClimbRatings.climbUuid,
       angle: boardClimbRatings.angle,
+      // Needed to tell whether an incoming candidate is actually NEWER than what
+      // is already stored. Without it an earlier flush cannot distinguish "this
+      // key is unwritten" from "this key already holds a newer rating", so it
+      // writes regardless and a later flush has to correct it — a wasted UPDATE
+      // on every sync, forever.
+      createdAt: boardClimbRatings.createdAt,
     })
     .from(boardClimbRatings)
     .where(
@@ -1386,32 +1410,46 @@ export async function applyClimbRatings(
   const survivors: NormalisedRating[] = [];
   let collapsedDuplicates = 0;
   let crossFlushSkips = 0;
+  let staleSkips = 0;
   const stagedClaims = new Map<string, { kilterId: string; createdAtMs: number }>();
   for (const bucket of byConflictKey.values()) {
     if (bucket.length > 1) {
       collapsedDuplicates += bucket.length - 1;
       bucket.sort((left, right) => {
-        const leftCreated = left.values.createdAt?.getTime() ?? 0;
-        const rightCreated = right.values.createdAt?.getTime() ?? 0;
-        if (leftCreated !== rightCreated) return rightCreated - leftCreated;
-        return left.kilterId < right.kilterId ? -1 : left.kilterId > right.kilterId ? 1 : 0;
+        const leftKey = { createdAtMs: left.values.createdAt?.getTime() ?? 0, kilterId: left.kilterId };
+        const rightKey = { createdAtMs: right.values.createdAt?.getTime() ?? 0, kilterId: right.kilterId };
+        if (ratingBeats(leftKey, rightKey)) return -1;
+        if (ratingBeats(rightKey, leftKey)) return 1;
+        return 0;
       });
     }
     const winner = bucket[0]!;
     const key = `${KILTER_BOARD_TYPE}:${winner.canonical}:${winner.angle}:${userId}`;
     const claimed = claimedNaturalKeys.get(key);
     const winnerCreatedMs = winner.values.createdAt?.getTime() ?? 0;
+    const winnerKey = { createdAtMs: winnerCreatedMs, kilterId: winner.kilterId };
     if (claimed) {
       // An earlier flush already wrote this climb/angle. Only displace it if
-      // this candidate really is newer (the same total order used within a
-      // bucket); otherwise skip, because writing it would undo the better
-      // choice and restart the churn.
-      const isNewer =
-        winnerCreatedMs > claimed.createdAtMs ||
-        (winnerCreatedMs === claimed.createdAtMs && winner.kilterId < claimed.kilterId);
-      if (!isNewer) {
+      // this candidate really is newer; otherwise skip, because writing it
+      // would undo the better choice and restart the churn.
+      if (!ratingBeats(winnerKey, claimed)) {
         crossFlushSkips += 1;
         continue;
+      }
+    } else {
+      // Nothing claimed this key yet in this sync, so compare against what is
+      // already STORED. A duplicate pair split across flushes leaves the earlier
+      // flush holding only the older candidate; without this it writes anyway
+      // and the later flush corrects it, costing a redundant UPDATE and an
+      // updated_at bump on every single sync. Measured at 369 per run on one
+      // production account after the cross-flush claim fix.
+      const stored = ownRowsByNaturalKey.get(key);
+      const storedCreatedAt = stored?.createdAt ? new Date(stored.createdAt).getTime() : null;
+      if (stored?.kilterId && stored.kilterId !== winner.kilterId && storedCreatedAt !== null) {
+        if (!ratingBeats(winnerKey, { createdAtMs: storedCreatedAt, kilterId: stored.kilterId })) {
+          staleSkips += 1;
+          continue;
+        }
       }
     }
     // Staged, NOT written into the shared map yet. applyClimbRatings runs
@@ -1421,6 +1459,11 @@ export async function applyClimbRatings(
     // row at all. The caller merges these only after the transaction commits.
     stagedClaims.set(key, { kilterId: winner.kilterId, createdAtMs: winnerCreatedMs });
     survivors.push(winner);
+  }
+  if (staleSkips > 0) {
+    log(
+      `[kilter-sync] ${staleSkips} rating(s) older than the stored rating for their climb/angle for user ${userId} — leaving the newer one in place`,
+    );
   }
   if (crossFlushSkips > 0) {
     log(
