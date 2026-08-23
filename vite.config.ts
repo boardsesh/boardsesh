@@ -255,7 +255,7 @@ export default defineConfig({
       },
       'test:postgres18-contract': {
         command:
-          'node --import tsx --test packages/db/scripts/migration-owner-role.test.ts && bash packages/db/docker/dev-db-entrypoint.test.sh && bash packages/db/docker/apply-drizzle-migrations.test.sh && bash scripts/postgres-credentials.test.sh && bash scripts/neon-to-railway-replication.test.sh && bash scripts/postgres18-workflow-contract.test.sh && bash -n packages/db/docker/dev-db-entrypoint.sh packages/db/docker/apply-drizzle-migrations.sh scripts/dev-db-up.sh scripts/dev-db-image-smoke.sh scripts/lib/postgres-credentials.sh scripts/postgres16-role-transition-smoke.sh scripts/postgres18-image-smoke.sh scripts/postgres18-architecture-smoke.sh scripts/postgres18-production-role-transition.sh scripts/postgres18-workflow-contract.test.sh scripts/postgres-migration-audit.sh scripts/postgres-migration-verify-data.sh scripts/neon-to-railway-replication.sh scripts/neon-to-railway-replication.test.sh scripts/postgres-credentials.test.sh packages/db/docker/setup-development-db.sh packages/web/db/setup-development-db.sh',
+          'node --import tsx --test packages/db/scripts/migration-owner-role.test.ts && bash packages/db/docker/dev-db-entrypoint.test.sh && bash packages/db/docker/apply-drizzle-migrations.test.sh && bash scripts/postgres-credentials.test.sh && bash scripts/neon-to-railway-replication.test.sh && bash scripts/postgres18-workflow-contract.test.sh && bash scripts/postgres18-spatial-surface.test.sh && bash -n packages/db/docker/dev-db-entrypoint.sh packages/db/docker/apply-drizzle-migrations.sh scripts/dev-db-up.sh scripts/dev-db-image-smoke.sh scripts/lib/postgres-credentials.sh scripts/postgres16-role-transition-smoke.sh scripts/postgres18-image-smoke.sh scripts/postgres18-architecture-smoke.sh scripts/postgres18-spatial-rehearsal.sh scripts/postgres18-spatial-surface.test.sh scripts/postgres18-production-role-transition.sh scripts/postgres18-workflow-contract.test.sh scripts/postgres-migration-audit.sh scripts/postgres-migration-verify-data.sh scripts/neon-to-railway-replication.sh scripts/neon-to-railway-replication.test.sh scripts/postgres-credentials.test.sh packages/db/docker/setup-development-db.sh packages/web/db/setup-development-db.sh',
         cache: false,
       },
       'test:postgres16-role-transition': {
@@ -268,6 +268,15 @@ export default defineConfig({
       },
       'test:postgres18-architecture-image': {
         command: 'bash scripts/postgres18-architecture-smoke.sh',
+        cache: false,
+      },
+      // Boots the exact image production runs (postgis/postgis:16-master,
+      // PostGIS 3.7.0dev) beside the pinned PG18/3.6.4 artifact and copies the
+      // application's whole spatial surface between them. Needs docker and
+      // several minutes; it is the evidence behind the PostGIS blocker, not a
+      // per-PR gate.
+      'test:postgres18-spatial-rehearsal': {
+        command: 'bash scripts/postgres18-spatial-rehearsal.sh',
         cache: false,
       },
       'test:postgres18-dev-db-image': {
