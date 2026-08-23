@@ -59,10 +59,19 @@ async function seedLocalRating(userId: string, climbUuid: string, angle: number)
   `);
 }
 
-async function seedKilterRating(userId: string, climbUuid: string, angle: number, kilterId: string): Promise<void> {
+async function seedKilterRating(
+  userId: string,
+  climbUuid: string,
+  angle: number,
+  kilterId: string,
+  // A kilter-origin row carries the UPSTREAM rating date, not the insert time.
+  // Defaulting this to now() made every fixture look newer than any realistic
+  // incoming rating, which is not a shape production ever produces.
+  createdAt = '2020-01-01T00:00:00.000Z',
+): Promise<void> {
   await db.execute(sql`
-    INSERT INTO board_climb_ratings (board_type, climb_uuid, angle, user_id, rating, kilter_id)
-    VALUES ('kilter', ${climbUuid}, ${angle}, ${userId}, 3, ${kilterId})
+    INSERT INTO board_climb_ratings (board_type, climb_uuid, angle, user_id, rating, kilter_id, created_at)
+    VALUES ('kilter', ${climbUuid}, ${angle}, ${userId}, 3, ${kilterId}, ${createdAt})
   `);
 }
 
@@ -499,6 +508,28 @@ describe('applyClimbRatings kilter_id reconciliation (real DB)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.kilter_id).toBe('kr-newer');
     expect(rows[0]?.rating).toBe(2);
+  });
+
+  it('still swaps when the incumbent rating is itself being relocated', async () => {
+    // The stale-candidate guard must not block an upstream swap. Both ratings
+    // trade climb/angle in one batch, so each incumbent is vacating its key —
+    // deferring to it would apply half the swap and wedge the pair. An earlier
+    // version of the guard did exactly that, and only the real-DB swap test
+    // caught it.
+    await seedUser(USER_ID);
+    await seedKilterRating(USER_ID, CLIMB, 40, 'kr-a', '2021-01-01T00:00:00.000Z');
+    // Deliberately NEWER than the incoming ops, so the guard would skip it if it
+    // did not notice kr-b is moving too.
+    await seedKilterRating(USER_ID, CLIMB, 25, 'kr-b', '2030-01-01T00:00:00.000Z');
+
+    await applyFlush(
+      [putOp({ climbRatingUuid: 'kr-a', angle: 25 }), putOp({ climbRatingUuid: 'kr-b', angle: 40 })],
+      new Map(),
+    );
+
+    const rows = await readRatings(USER_ID);
+    expect(rows.find((row) => row.angle === 25)?.kilter_id).toBe('kr-a');
+    expect(rows.find((row) => row.angle === 40)?.kilter_id).toBe('kr-b');
   });
 
   it('skips a row Postgres refuses instead of losing the whole batch', async () => {
