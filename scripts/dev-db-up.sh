@@ -14,7 +14,13 @@
 
 set -e
 
-HBA_FILE="/var/lib/postgresql/pgdata/pg_hba.conf"
+# PGDATA is owned by the image, not by this script: PostgreSQL 18 puts it at
+# /var/lib/postgresql/18/docker, and a future major moves it again. Read it back
+# out of the running container so a version bump does not silently point these
+# edits at a path with no cluster in it.
+postgres_data_dir() {
+  docker exec "$PG_CONTAINER" sh -c 'printf %s "$PGDATA"' 2>/dev/null
+}
 # CDPATH is intentionally cleared only for cd.
 # shellcheck disable=SC1007
 REPO_ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
@@ -77,6 +83,13 @@ ensure_postgres_network_access() {
   echo "Ensuring pg_hba.conf allows Docker network and Tailscale connections..."
   hba_updated=false
 
+  pgdata=$(postgres_data_dir)
+  if [ -z "$pgdata" ]; then
+    echo "ERROR: could not read PGDATA from the postgres container." >&2
+    exit 1
+  fi
+  HBA_FILE="$pgdata/pg_hba.conf"
+
   if docker exec "$PG_CONTAINER" grep -F -q "host all all 0.0.0.0/0 md5" "$HBA_FILE" 2>/dev/null; then
     echo "  IPv4 md5 rule already present."
   else
@@ -96,7 +109,7 @@ ensure_postgres_network_access() {
   fi
 
   if [ "$hba_updated" = true ]; then
-    docker exec -u postgres "$PG_CONTAINER" pg_ctl reload -D /var/lib/postgresql/pgdata
+    docker exec -u postgres "$PG_CONTAINER" pg_ctl reload -D "$pgdata"
     echo "  pg_hba.conf updated and reloaded."
   fi
 }

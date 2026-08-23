@@ -3,8 +3,14 @@ services:
     image: ghcr.io/boardsesh/boardsesh-dev-db@sha256:d4574a27a639919b70d89c457e88f17bf672b358dd38dbdc3c2ba5f65ecc44e5
     shm_size: '256mb'
     command: postgres -c listen_addresses='*' -c max_connections=300 -c log_min_messages=warning
+    # PostgreSQL 18 changed the storage contract: PGDATA is
+    # /var/lib/postgresql/18/docker and the persistent volume mounts at the
+    # parent, /var/lib/postgresql. Never mount at /var/lib/postgresql/data or
+    # reuse a pre-PG18 volume — the image's entrypoint fails closed on both.
+    # The volume name is versioned so an old PG16/17 db_data volume is retained
+    # rather than rejected. See docs/postgres-18-migration.md.
     volumes:
-      - db_data:/var/lib/postgresql/pgdata
+      - db_data_pg18:/var/lib/postgresql
     ports:
       - '5432:5432'
     environment:
@@ -28,4 +34,4 @@ services:
       retries: 5
 
 volumes:
-  db_data:
+  db_data_pg18:
