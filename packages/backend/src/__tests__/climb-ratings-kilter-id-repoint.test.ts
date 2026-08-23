@@ -286,6 +286,31 @@ describe('applyClimbRatings kilter_id reconciliation (real DB)', () => {
     expect(logged.join('\n')).not.toContain('repointing');
   });
 
+  it('logs when it replaces a different kilter_id already on the natural-key row', async () => {
+    await seedUser(USER_ID);
+    // The row Kilter is about to re-identify: same climb+angle, different
+    // surrogate. The upsert replaces kilter_id through COALESCE, which is
+    // intended — the natural key is the identity — but must not be silent.
+    await seedKilterRating(USER_ID, CLIMB, 40, 'kr-old');
+
+    const logged: string[] = [];
+    await applyClimbRatings(
+      applyTx,
+      USER_ID,
+      [putOp({ climbRatingUuid: 'kr-new', angle: 40 })],
+      aliasCacheFor([CLIMB]),
+      (msg) => logged.push(msg),
+    );
+
+    const rows = await readRatings(USER_ID);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.kilter_id).toBe('kr-new');
+    const divergence = logged.find((line) => line.includes('divergent kilter_id on rating'));
+    expect(divergence).toBeDefined();
+    expect(divergence).toContain('existing=kr-old');
+    expect(divergence).toContain('incoming=kr-new');
+  });
+
   it('skips a row Postgres refuses instead of losing the whole batch', async () => {
     await seedUser(USER_ID);
 

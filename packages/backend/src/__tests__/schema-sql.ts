@@ -285,6 +285,12 @@ export const schemaSQL = `
   -- out of this test schema is what let a duplicate-key regression reach production and
   -- wedge the kilter user sync for 30+ days.
   CREATE UNIQUE INDEX IF NOT EXISTS "board_climb_ratings_kilter_id_unique" ON "board_climb_ratings" ("kilter_id") WHERE "kilter_id" IS NOT NULL;
+  -- aurora_id has the same structural hazard as kilter_id, but no writer today:
+  -- board_climb_ratings is written ONLY by kilter-sync's applyClimbRatings, and
+  -- nothing anywhere sets aurora_id. The column and index exist so an Aurora
+  -- rating can be adopted later. Whoever adds that writer needs the same
+  -- reconcile-before-upsert treatment kilter_id got — a single-target
+  -- ON CONFLICT on the natural key does NOT cover this index.
   CREATE UNIQUE INDEX IF NOT EXISTS "board_climb_ratings_aurora_id_unique" ON "board_climb_ratings" ("aurora_id") WHERE "aurora_id" IS NOT NULL;
 
   -- Mirrors packages/db schema/boards/unified.ts boardClimbStatsHistory. The

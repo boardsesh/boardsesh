@@ -29,19 +29,25 @@ vi.mock('../api/keycloak', () => ({
   verifyKeycloakToken: async () => ({ sub: 'kilter-sub' }),
 }));
 
+import { boardClimbRatings, boardseshTicks, playlists } from '@boardsesh/db/schema';
+
 import { syncKilterUserData } from './user-sync';
 
 type SyncArgs = Parameters<typeof syncKilterUserData>[0];
 
-function ratingOp(): Record<string, unknown> {
+// STREAM_FLUSH_THRESHOLD in user-sync.ts — the buffer size that triggers a
+// mid-stream flush, which is what lets one phase fail more than once per cycle.
+const STREAM_FLUSH_THRESHOLD = 500;
+
+function ratingOp(uuid = 'kr-1'): Record<string, unknown> {
   return {
     op_id: '1',
     op: 'PUT',
     object_type: 'climb_ratings',
-    object_id: 'kr-1',
+    object_id: uuid,
     data: {
-      id: 'kr-1',
-      climb_rating_uuid: 'kr-1',
+      id: uuid,
+      climb_rating_uuid: uuid,
       user_uuid: 'kilter-sub',
       climb_uuid: 'climb-A',
       angle: 40,
@@ -73,33 +79,80 @@ function circuitOp(): Record<string, unknown> {
 }
 
 /**
- * Minimal db shim. Phases are driven entirely through `db.transaction`, so
- * failing the Nth call is enough to simulate a phase blowing up without needing
- * a real database or stubbing same-module functions.
+ * Minimal db shim.
+ *
+ * The phase is identified by the TABLE the transaction body touches, never by
+ * call order. An earlier version keyed off a transaction counter, which was
+ * correct only while flushLogs happened to short-circuit on an empty buffer —
+ * an invisible invariant that any future statement opening a transaction ahead
+ * of the ratings phase would have silently broken, shifting every assertion
+ * without failing the test.
  */
-function createDb(failOnTransaction: number) {
+function createDb(failPhase: 'ratings' | 'circuits' | 'none') {
   const phases: string[] = [];
-  let transactionCount = 0;
-  const emptySelect = {
-    from: () => ({ where: () => Promise.resolve([]) }),
-  };
+
+  function phaseOfTable(table: unknown): string | undefined {
+    if (table === boardClimbRatings) return 'ratings';
+    if (table === playlists) return 'circuits';
+    if (table === boardseshTicks) return 'logs';
+    return undefined;
+  }
+
+  // Any table access inside the transaction body reveals which phase is running.
+  // The first recognised table wins, then we either throw or record.
+  function makeTx() {
+    let settled = false;
+    const observe = (table: unknown) => {
+      const phase = phaseOfTable(table);
+      if (!phase || settled) return;
+      settled = true;
+      phases.push(failPhase === phase ? `${phase}:threw` : `${phase}:ok`);
+      if (failPhase === phase) {
+        throw new Error(`simulated ${phase} failure`);
+      }
+    };
+    const tx: Record<string, unknown> = {
+      execute: () => Promise.resolve([]),
+      select: () => ({
+        from: (table: unknown) => {
+          observe(table);
+          const rows: unknown[] = [];
+          return Object.assign(Promise.resolve(rows), {
+            where: () => Object.assign(Promise.resolve(rows), { orderBy: () => Promise.resolve(rows) }),
+            leftJoin: () => ({ where: () => Promise.resolve(rows) }),
+            orderBy: () => Promise.resolve(rows),
+          });
+        },
+      }),
+      insert: (table: unknown) => {
+        observe(table);
+        const chain = {
+          onConflictDoUpdate: () =>
+            Object.assign(Promise.resolve(), { returning: () => Promise.resolve([{ id: BigInt(1) }]) }),
+          onConflictDoNothing: () => Promise.resolve(),
+        };
+        return { values: () => Object.assign(Promise.resolve(), chain) };
+      },
+      update: (table: unknown) => {
+        observe(table);
+        return { set: () => ({ where: () => Promise.resolve() }) };
+      },
+      delete: (table: unknown) => {
+        observe(table);
+        return { where: () => Promise.resolve() };
+      },
+    };
+    tx.transaction = (fn: (savepoint: unknown) => Promise<unknown>) => Promise.resolve(fn(tx));
+    return tx;
+  }
+
   return {
     phases,
     db: {
-      select: () => emptySelect,
+      select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
       transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
-        transactionCount += 1;
-        // flushLogs returns early on an empty buffer without opening one, so
-        // with ratings + circuits ops the order is #1 ratings, #2 circuits.
-        const phase = transactionCount === 1 ? 'ratings' : 'circuits';
-        if (transactionCount === failOnTransaction) {
-          phases.push(`${phase}:threw`);
-          throw new Error('simulated ratings failure');
-        }
-        phases.push(`${phase}:ok`);
-        // applyCircuits' return shape; the real function never runs here.
-        void fn;
-        return { skippedForeignCircuits: 0 };
+        const result = await fn(makeTx());
+        return result ?? { skippedForeignCircuits: 0 };
       },
     },
   };
@@ -108,9 +161,7 @@ function createDb(failOnTransaction: number) {
 describe('syncKilterUserData phase isolation', () => {
   it('still runs the circuits phase when the ratings phase throws', async () => {
     hoisted.ops = [ratingOp(), circuitOp()];
-    // Only ratings and circuits reach a transaction — flushLogs returns early
-    // on an empty buffer — so the ratings flush is transaction #1.
-    const { db, phases } = createDb(1);
+    const { db, phases } = createDb('ratings');
 
     await expect(
       syncKilterUserData({ db, userId: 'user-1', accessToken: 'token', log: () => {} } as unknown as SyncArgs),
@@ -123,7 +174,7 @@ describe('syncKilterUserData phase isolation', () => {
 
   it('reports the failure rather than swallowing it', async () => {
     hoisted.ops = [ratingOp(), circuitOp()];
-    const { db } = createDb(1);
+    const { db } = createDb('ratings');
 
     // Isolation must not become "pretend it worked" — the runner has to see a
     // failed user, or a permanently broken phase would look healthy forever.
@@ -132,9 +183,27 @@ describe('syncKilterUserData phase isolation', () => {
     ).rejects.toThrow(/failed in 1 phase/);
   });
 
+  it('counts a phase that fails twice as one failed phase', async () => {
+    // climb_ratings runs once per mid-stream threshold flush AND once at
+    // end-of-stream, so the same phase can fail more than once in a cycle.
+    // Reporting that as "failed in 2 phase(s)" would overstate the blast radius.
+    // One MORE than the threshold: the mid-stream flush drains the buffer at
+    // exactly 500, so the spare op is what gives the final flush something to
+    // fail on and makes climb_ratings fail twice in one cycle.
+    hoisted.ops = [
+      ...Array.from({ length: STREAM_FLUSH_THRESHOLD + 1 }, (_, index) => ratingOp(`kr-${index}`)),
+      circuitOp(),
+    ];
+    const { db } = createDb('ratings');
+
+    await expect(
+      syncKilterUserData({ db, userId: 'user-1', accessToken: 'token', log: () => {} } as unknown as SyncArgs),
+    ).rejects.toThrow(/failed in 1 phase/);
+  });
+
   it('resolves normally when every phase succeeds', async () => {
     hoisted.ops = [ratingOp(), circuitOp()];
-    const { db, phases } = createDb(0);
+    const { db, phases } = createDb('none');
 
     await expect(
       syncKilterUserData({ db, userId: 'user-1', accessToken: 'token', log: () => {} } as unknown as SyncArgs),
