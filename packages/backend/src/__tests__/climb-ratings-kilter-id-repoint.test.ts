@@ -305,10 +305,15 @@ describe('applyClimbRatings kilter_id reconciliation (real DB)', () => {
     const rows = await readRatings(USER_ID);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.kilter_id).toBe('kr-new');
-    const divergence = logged.find((line) => line.includes('divergent kilter_id on rating'));
+    // The log is summarised (a count plus a bounded sample) rather than one
+    // line per row: the per-row form produced ~700 lines per sync for a single
+    // production account, which buries the signal it exists to provide.
+    const divergence = logged.find((line) => line.includes('replacing kilter_id on'));
     expect(divergence).toBeDefined();
-    expect(divergence).toContain('existing=kr-old');
-    expect(divergence).toContain('incoming=kr-new');
+    expect(divergence).toContain('1 rating(s)');
+    // The sample must still name both surrogates, or the line reports that
+    // drift happened without saying what changed.
+    expect(divergence).toContain('kr-old->kr-new');
   });
 
   it('picks the same winner regardless of the order two upstream ratings arrive in', async () => {
