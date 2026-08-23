@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { and, eq, exists, inArray, sql } from 'drizzle-orm';
+import { and, eq, exists, inArray, or, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 
 import {
@@ -280,14 +280,22 @@ export async function syncKilterUserData({
   // No data is lost by continuing: PowerSync re-delivers a full snapshot every
   // cycle and each apply is idempotent, so whatever a failed phase dropped
   // lands on the next successful turn.
-  const phaseErrors: Error[] = [];
+  //
+  // Keyed by phase NAME rather than appended per failure: logs and climb_ratings
+  // each run once per mid-stream threshold flush AND once at end-of-stream, so
+  // one repeatedly-failing phase would otherwise report as several distinct
+  // failed phases ("failed in 3 phase(s)") and misdescribe the blast radius.
+  // First failure per phase wins — later ones are the same cause re-hit.
+  const phaseErrors = new Map<string, Error>();
   async function runPhase(name: string, phase: () => Promise<void>): Promise<void> {
     try {
       await phase();
     } catch (error) {
       const failure = error instanceof Error ? error : new Error(String(error));
       log(`[kilter-sync] ${name} phase failed for user ${userId}: ${failure.message}`);
-      phaseErrors.push(new Error(`${name}: ${failure.message}`, { cause: failure }));
+      if (!phaseErrors.has(name)) {
+        phaseErrors.set(name, new Error(`${name}: ${failure.message}`, { cause: failure }));
+      }
     }
   }
 
@@ -410,9 +418,11 @@ export async function syncKilterUserData({
   // non-KilterApiError as permanent, which is correct here: a phase that threw
   // despite the per-row replay below applyClimbRatings is an unanticipated
   // shape, not a retryable blip.
-  if (phaseErrors.length > 0) {
+  if (phaseErrors.size > 0) {
     throw new Error(
-      `kilter user sync failed in ${phaseErrors.length} phase(s): ${phaseErrors.map((failure) => failure.message).join('; ')}`,
+      `kilter user sync failed in ${phaseErrors.size} phase(s): ${[...phaseErrors.values()]
+        .map((failure) => failure.message)
+        .join('; ')}`,
     );
   }
 
@@ -1243,7 +1253,12 @@ export async function applyClimbRatings(
   //     Boardsesh accounts. Writing those rows would collide on the global
   //     index; adopting them would stamp a globally-taken id onto this user.
   //     Skip-and-log so the situation stays visible instead of crashing.
-  const byKilterIdRows = await tx
+  // The same query also fetches THIS user's rows at the incoming natural keys,
+  // so the DO UPDATE's `COALESCE(EXCLUDED.kilter_id, …)` can be reported when it
+  // replaces a different surrogate (see the divergence log below). One widened
+  // round trip rather than a second query: both arms are index-served, and the
+  // natural-key arm is bounded to one user and one board.
+  const existingRows = await tx
     .select({
       kilterId: boardClimbRatings.kilterId,
       ownerUserId: boardClimbRatings.userId,
@@ -1252,11 +1267,34 @@ export async function applyClimbRatings(
       angle: boardClimbRatings.angle,
     })
     .from(boardClimbRatings)
-    .where(inArray(boardClimbRatings.kilterId, incomingKilterIds));
+    .where(
+      or(
+        inArray(boardClimbRatings.kilterId, incomingKilterIds),
+        and(
+          eq(boardClimbRatings.boardType, KILTER_BOARD_TYPE),
+          eq(boardClimbRatings.userId, userId),
+          inArray(
+            boardClimbRatings.climbUuid,
+            normalised.map((entry) => entry.canonical),
+          ),
+          inArray(
+            boardClimbRatings.angle,
+            normalised.map((entry) => entry.angle),
+          ),
+        ),
+      ),
+    );
 
-  const ownRowsByKilterId = new Map<string, (typeof byKilterIdRows)[number]>();
+  const ownRowsByKilterId = new Map<string, (typeof existingRows)[number]>();
   const foreignKilterIds = new Set<string>();
-  for (const row of byKilterIdRows) {
+  // Keyed on the full natural key: the two inArray terms above are a cross
+  // product, so this map must be built from exact tuples, not either column
+  // alone.
+  const ownRowsByNaturalKey = new Map<string, (typeof existingRows)[number]>();
+  for (const row of existingRows) {
+    if (row.ownerUserId === userId) {
+      ownRowsByNaturalKey.set(`${row.boardType}:${row.climbUuid}:${row.angle}:${row.ownerUserId}`, row);
+    }
     if (!row.kilterId) continue;
     if (row.ownerUserId === userId) {
       ownRowsByKilterId.set(row.kilterId, row);
@@ -1293,6 +1331,26 @@ export async function applyClimbRatings(
   }
   const survivors = Array.from(writableByConflictKey.values());
   if (survivors.length === 0) return;
+
+  // The upsert's `kilterId: COALESCE(EXCLUDED.kilter_id, …)` overwrites whatever
+  // surrogate the natural-key row already carries, orphaning the old one. That
+  // is deliberate — for a rating the natural key genuinely is the identity, and
+  // Kilter is authoritative for kilter_id, so the freshest upstream surrogate
+  // should win. It also cannot raise 23505: one value leaves the partial index
+  // as another enters.
+  //
+  // But it must not be SILENT. applyLogs skips-and-logs the same shape, and its
+  // warning is the only reason this class of identity drift was ever visible;
+  // ratings discarding the same information without a word is how the drift
+  // stayed invisible here for a month. Report it, then proceed.
+  for (const entry of survivors) {
+    const naturalKeyRow = ownRowsByNaturalKey.get(`${KILTER_BOARD_TYPE}:${entry.canonical}:${entry.angle}:${userId}`);
+    if (!naturalKeyRow?.kilterId) continue;
+    if (naturalKeyRow.kilterId === entry.kilterId) continue;
+    log(
+      `[kilter-sync] divergent kilter_id on rating ${entry.canonical}@${entry.angle} for user ${userId}: existing=${naturalKeyRow.kilterId} incoming=${entry.kilterId} — replacing (natural key is the identity)`,
+    );
+  }
 
   // (d) Repoint. The incoming rating carries a kilter_id this user already has
   // parked on a DIFFERENT natural key — an angle edited upstream, or a
@@ -1428,13 +1486,12 @@ async function writeClimbRatings(tx: DrizzleDb, values: Array<typeof boardClimbR
         // happen for kilter-origin PUTs in practice, but defensive)
         // never nulls out a kilter_id we already adopted.
         //
-        // TODO: when the natural-key row already holds a DIFFERENT kilter_id
-        // this silently overwrites it, orphaning the old surrogate. It cannot
-        // raise 23505 (one value leaves the index as another enters) and for
-        // ratings the natural key genuinely is the identity, so it is benign
-        // today — but applyLogs skips-and-logs the same shape, and discarding
-        // the conflict silently is what made this class of drift invisible in
-        // the first place. Log the divergence here.
+        // When the natural-key row already holds a DIFFERENT kilter_id this
+        // replaces it, orphaning the old surrogate. Deliberate — the natural
+        // key is the identity and Kilter is authoritative for kilter_id — and
+        // it cannot raise 23505, since one value leaves the partial index as
+        // another enters. The caller logs every such replacement before this
+        // statement runs; see the divergence loop in applyClimbRatings.
         kilterId: sql`COALESCE(EXCLUDED.kilter_id, ${boardClimbRatings.kilterId})`,
         // Re-linking a rating clears the upstream-deleted marker: a
         // REMOVE-then-PUT snapshot redelivery detaches (stamping
