@@ -603,6 +603,66 @@ describe('interruption safety', () => {
   });
 });
 
+describe('a throwing progress consumer', () => {
+  // `emitSnapshotFrame` calls `onProgress` with no try/catch of its own. The
+  // stage-entry frame is emitted OUTSIDE the import's try, so a throw there
+  // charges nothing — but the per-batch frames are emitted from INSIDE it, where
+  // an escaping throw would look exactly like an import failure: a spent
+  // structural-budget slot out of two, and a deleted ~103 MB artifact.
+  it('does not fail the import or move the structural counter', async () => {
+    const { db } = await freshClientDb('throwing-onprogress');
+    const deleteArtifact = vi.fn(async () => {});
+    const source: SnapshotSource = {
+      fetchManifest: async () => ({
+        formatVersion: SNAPSHOT_MANIFEST_FORMAT_VERSION,
+        generatedAt: BUILT_AT,
+        entries: [
+          {
+            boardType: 'kilter',
+            layoutId: 1,
+            key: 'board-snapshots/v1/kilter/1/2026-08-01.db',
+            url: 'https://example.test/kilter-1.db',
+            bytes: 4096,
+            contentEncoding: 'gzip',
+            builtAt: BUILT_AT,
+            schemaVersion: LATEST_SCHEMA_VERSION,
+            tables: {
+              board_climbs: { watermarkUpdatedAt: WATERMARK_AT, watermarkSyncSeq: WATERMARK_SEQ, rowCount: 30 },
+              board_climb_stats: { watermarkUpdatedAt: WATERMARK_AT, watermarkSyncSeq: WATERMARK_SEQ, rowCount: 40 },
+            },
+          },
+        ],
+      }),
+      downloadArtifact: async () => ({ filePath: artifactPath }),
+      deleteArtifact,
+    };
+    let framesOffered = 0;
+
+    await pullSync(db, { invalidateQueries: vi.fn() } as unknown as QueryInvalidator, emptyPageFetch(), {
+      enabledBoards: [KILTER_SCOPE_KEY],
+      snapshotSource: source,
+      // Only the frames this change MOVED throw: the per-batch ones and the
+      // terminal one, which are emitted from inside the import's try/catch. The
+      // stage-entry frame (the first import frame) is emitted outside it and
+      // keeps its existing behaviour — a throw there propagates out of
+      // `pullSync` and charges nothing, exactly as it did before.
+      onProgress: (progress) => {
+        if (progress.snapshot?.stage !== 'import') return;
+        framesOffered += 1;
+        if (framesOffered === 1) return;
+        throw new Error('the progress sink blew up');
+      },
+    });
+
+    expect(framesOffered).toBeGreaterThan(1);
+    // The import landed, checkpoints and all.
+    expect(await readClimbs(db)).toHaveLength(14);
+    expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:10')).not.toBeNull();
+    expect(await getBootstrapAttempts(db, KILTER_SCOPE_KEY)).toBe(0);
+    expect(deleteArtifact).toHaveBeenCalledTimes(1); // the release fallback, not the failure arm
+  });
+});
+
 describe('purge mid-import', () => {
   it('raises SnapshotWipedError, stamps no checkpoint, and leaves the partial rows reachable by teardown', async () => {
     const { db } = await freshClientDb('purged');

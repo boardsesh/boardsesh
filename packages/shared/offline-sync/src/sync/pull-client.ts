@@ -2195,17 +2195,30 @@ async function runBootstrapPhase(params: {
         // is two more full COUNT(*) scans over the artifact, inside the very
         // phase this PR exists to shrink. Clamped, so it can never exceed 1.
         const importRowsTotal = entry.tables.board_climbs.rowCount + entry.tables.board_climb_stats.rowCount;
+        // Swallows, and that is load-bearing. Unlike the stage-entry frame below
+        // — which sits OUTSIDE the import's try/catch and charges nothing — these
+        // fire from INSIDE it, where an escaping throw from a progress consumer
+        // would be indistinguishable from an import failure: a spent structural
+        // budget slot and, on the retained-artifact path, a deleted ~103 MB file.
+        // Same discipline as `runLocalWriteWithRetry`'s `onSettled` and the
+        // drainer's `onMutationStatusError`.
+        const emitImportFraction = (fraction: number | null): void => {
+          try {
+            emitSnapshotFrame(
+              progressThrottle.offer({
+                scopeKey: scope.scopeKey,
+                stage: 'import',
+                fraction,
+                wireBytes: entry.bytes,
+                wireBytesDone: null,
+              }),
+            );
+          } catch {
+            // A broken progress sink must never be reported as a failed import.
+          }
+        };
         const emitImportProgress = (rowsImported: number): void => {
-          const fraction = importRowsTotal > 0 ? Math.min(1, rowsImported / importRowsTotal) : null;
-          emitSnapshotFrame(
-            progressThrottle.offer({
-              scopeKey: scope.scopeKey,
-              stage: 'import',
-              fraction,
-              wireBytes: entry.bytes,
-              wireBytesDone: null,
-            }),
-          );
+          emitImportFraction(importRowsTotal > 0 ? Math.min(1, rowsImported / importRowsTotal) : null);
         };
         emitSnapshotFrame(
           progressThrottle.flush({
@@ -2242,15 +2255,7 @@ async function runBootstrapPhase(params: {
           // The bar tops out at the layout-wide denominator's ceiling, so close
           // it explicitly at the stage boundary rather than leaving a scoped
           // download parked at 0.31 while the grades transaction runs.
-          emitSnapshotFrame(
-            progressThrottle.offer({
-              scopeKey: scope.scopeKey,
-              stage: 'import',
-              fraction: 1,
-              wireBytes: entry.bytes,
-              wireBytesDone: null,
-            }),
-          );
+          emitImportFraction(1);
           const timings = bootstrapTimings.get(scope.scopeKey) ?? { bytes: entry.bytes };
           bootstrapTimings.set(scope.scopeKey, {
             ...timings,

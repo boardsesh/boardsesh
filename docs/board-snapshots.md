@@ -459,8 +459,8 @@ gunzipper (a native dependency, OTA-forbidden) — and the CDN measurement in
 "Why continuation and not persisted pause/resume" below proves `Range` addresses ENCODED bytes while both
 platforms write DECODED bytes to disk. This paragraph used to assign resume to issue #4310 while the same
 document disproved it a few hundred lines down. The cheap-failed-transfer problem it was reaching for is
-real (26–31% of Kilter transfers fail and discard ~99 MB); the answer is artifact **sharding**, tracked
-separately.
+real (26–31% of Kilter transfers fail and discard ~99 MB); the answer is artifact **sharding**, tracked in
+issue #4721 with its trigger condition named.
 
 **Import mechanics** (`bootstrapScopeFromSnapshot`). Since issue #4310 the import is **not one
 transaction**. It is an autocommit preamble, then a sequence of short exclusive transactions with the lock
