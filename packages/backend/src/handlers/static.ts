@@ -420,8 +420,13 @@ export async function handleStaticBetaThumbnail(
       cacheControl: 'public, max-age=31536000, immutable',
     });
     if (!served) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Not found' }));
+      // `?size=280` is the URL both clients actually request, so this is the
+      // branch a corrupt thumbnail reaches — `serveResizedImageFromS3` returns
+      // false for a zero-byte original just as it does for a missing one. A
+      // cached 404 here would hide the repair: `cacheRemoteThumbnail` now
+      // refuses to store an empty body, so the key stays absent until a later
+      // fetch fills in the same immutable URL.
+      sendNotFound(res, { noStore: true });
     }
     return;
   }
@@ -429,8 +434,8 @@ export async function handleStaticBetaThumbnail(
   const s3Object = await getFromS3('media', s3Key);
 
   if (!s3Object) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not found' }));
+    // Same reasoning as the resized branch: the key can still be filled in.
+    sendNotFound(res, { noStore: true });
     return;
   }
 
