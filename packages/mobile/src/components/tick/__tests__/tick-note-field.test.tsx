@@ -93,8 +93,7 @@ describe('TickNoteField', () => {
     const { container } = renderField();
     const style = inputStyle(container);
 
-    const paddingVertical = verticalPaddingOf(style);
-    expect(paddingVertical).toBeGreaterThan(0);
+    expect(totalVerticalPaddingOf(style)).toBeGreaterThan(0);
   });
 
   it('leaves room for a full line of subheadline inside its resting height', () => {
@@ -107,7 +106,7 @@ describe('TickNoteField', () => {
 
     const minHeight = Number(style.minHeight);
     const borderWidth = Number(style.borderWidth ?? 0);
-    const contentHeight = minHeight - 2 * verticalPaddingOf(style) - 2 * borderWidth;
+    const contentHeight = minHeight - totalVerticalPaddingOf(style) - 2 * borderWidth;
 
     expect(contentHeight).toBeGreaterThanOrEqual(materialTextStyles.subheadline.lineHeight);
   });
@@ -123,7 +122,7 @@ describe('TickNoteField', () => {
     const maxHeight = Number(style.maxHeight);
     const borderWidth = Number(style.borderWidth ?? 0);
     const visibleLines = Math.floor(
-      (maxHeight - 2 * verticalPaddingOf(style) - 2 * borderWidth) / materialTextStyles.subheadline.lineHeight,
+      (maxHeight - totalVerticalPaddingOf(style) - 2 * borderWidth) / materialTextStyles.subheadline.lineHeight,
     );
 
     expect(maxHeight).toBeGreaterThan(Number(style.minHeight));
@@ -133,15 +132,16 @@ describe('TickNoteField', () => {
   });
 });
 
-/** Vertical padding however it was spelled: `paddingVertical`, `padding`, or a
- *  matching `paddingTop`/`paddingBottom` pair. Any of the three sets Fabric's
- *  `hasPadding*` flags and suppresses the injected theme default. */
-function verticalPaddingOf(style: Record<string, unknown>): number {
-  if (style.paddingVertical != null) return Number(style.paddingVertical);
-  if (style.paddingTop != null && style.paddingBottom != null) {
-    expect(style.paddingTop).toBe(style.paddingBottom);
-    return Number(style.paddingTop);
+/** Top + bottom padding, however it was spelled: `paddingVertical`, `padding`,
+ *  or a `paddingTop`/`paddingBottom` pair. Any of the three sets Fabric's
+ *  `hasPadding*` flags and suppresses the injected theme default. Returns the
+ *  sum rather than one edge, so the arithmetic below holds even if the two
+ *  edges ever differ — and so this helper never asserts on the caller's behalf. */
+function totalVerticalPaddingOf(style: Record<string, unknown>): number {
+  if (style.paddingVertical != null) return 2 * Number(style.paddingVertical);
+  if (style.paddingTop != null || style.paddingBottom != null) {
+    return Number(style.paddingTop ?? 0) + Number(style.paddingBottom ?? 0);
   }
-  if (style.padding != null) return Number(style.padding);
+  if (style.padding != null) return 2 * Number(style.padding);
   return 0;
 }

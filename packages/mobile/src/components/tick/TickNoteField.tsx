@@ -75,8 +75,8 @@ const styles = StyleSheet.create({
     // TextInput draws no scrollbar — so whatever is above the ceiling is gone
     // with nothing on screen to say so. At the old 96pt (4 lines) that bit
     // early: on a 405x900pt Pixel emulator a six-line note opened mid-sentence
-    // ("out. Felt hard for the grade today...") while ~300pt of the sheet sat
-    // empty between this row and the Attempt/Send bar (#4642). 180pt is eight
+    // ("before the dyn beta is solid now and I wan...") while ~300pt of the
+    // sheet sat empty below this row (#4642). 180pt is eight
     // lines (8 x 20 + 16 padding + 2 border), and it still fits whole inside
     // the ~293pt that sheet body keeps above the keyboard, so a long note stays
     // one glance rather than a blind scroll. Anything longer scrolls the sheet
