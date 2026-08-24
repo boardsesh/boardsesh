@@ -12,10 +12,20 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
  *   - "Wall changed · Undo"  (Undo → re-lights the previous wall climb)
  * Each has its own visible/nonce pair so showing one doesn't disturb the other.
  */
+/**
+ * Which copy the queue snackbar shows. `'added'` is the plain append;
+ * `'next'` confirms a Play next — the climb jumped to the slot right behind the
+ * one on the wall, which reads as a broken button if the snackbar still says
+ * "added to queue".
+ */
+export type QueueAddedSnackbarVariant = 'added' | 'next';
+
 type QueueSnackbarContextValue = {
   /** Show the snackbar (or re-show + reset its timer if already visible). */
-  showQueueAddedSnackbar: () => void;
+  showQueueAddedSnackbar: (variant?: QueueAddedSnackbarVariant) => void;
   visible: boolean;
+  /** Copy for the currently-showing queue snackbar. */
+  queueAddedVariant: QueueAddedSnackbarVariant;
   /** Bumped on every show so the overlay can reset its dismiss timer + replay its entrance. */
   nonce: number;
   dismissSnackbar: () => void;
@@ -41,10 +51,12 @@ export function useQueueSnackbar(): QueueSnackbarContextValue {
 export function QueueSnackbarProvider({ children }: { children: ReactNode }) {
   const [visible, setVisible] = useState(false);
   const [nonce, setNonce] = useState(0);
+  const [queueAddedVariant, setQueueAddedVariant] = useState<QueueAddedSnackbarVariant>('added');
   const [undoWallChangeVisible, setUndoWallChangeVisible] = useState(false);
   const [undoWallChangeNonce, setUndoWallChangeNonce] = useState(0);
 
-  const showQueueAddedSnackbar = useCallback(() => {
+  const showQueueAddedSnackbar = useCallback((variant: QueueAddedSnackbarVariant = 'added') => {
+    setQueueAddedVariant(variant);
     setNonce((current) => current + 1);
     setVisible(true);
   }, []);
@@ -62,6 +74,7 @@ export function QueueSnackbarProvider({ children }: { children: ReactNode }) {
     () => ({
       showQueueAddedSnackbar,
       visible,
+      queueAddedVariant,
       nonce,
       dismissSnackbar,
       showUndoWallChangeSnackbar,
@@ -72,6 +85,7 @@ export function QueueSnackbarProvider({ children }: { children: ReactNode }) {
     [
       showQueueAddedSnackbar,
       visible,
+      queueAddedVariant,
       nonce,
       dismissSnackbar,
       showUndoWallChangeSnackbar,

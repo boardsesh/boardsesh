@@ -185,6 +185,72 @@ describe('DELTA_ADD_QUEUE_ITEM', () => {
     });
     expect(result.queue.map((queueItem) => queueItem.uuid)).toEqual(['a', 'inserted', 'b']);
   });
+
+  it('inserts at the head on position 0', () => {
+    const state = makeState({ queue: [makeClimbQueueItem({ uuid: 'a' }), makeClimbQueueItem({ uuid: 'b' })] });
+
+    const result = queueReducer(state, {
+      type: 'DELTA_ADD_QUEUE_ITEM',
+      payload: { item: makeClimbQueueItem({ uuid: 'inserted' }), position: 0 },
+    });
+    expect(result.queue.map((queueItem) => queueItem.uuid)).toEqual(['inserted', 'a', 'b']);
+  });
+
+  // position === queue.length is the inclusive upper bound in insertQueueItemIdempotent.
+  it('appends when position equals the queue length', () => {
+    const state = makeState({ queue: [makeClimbQueueItem({ uuid: 'a' }), makeClimbQueueItem({ uuid: 'b' })] });
+
+    const result = queueReducer(state, {
+      type: 'DELTA_ADD_QUEUE_ITEM',
+      payload: { item: makeClimbQueueItem({ uuid: 'inserted' }), position: 2 },
+    });
+    expect(result.queue.map((queueItem) => queueItem.uuid)).toEqual(['a', 'b', 'inserted']);
+  });
+
+  // A client whose queue is behind the server can overshoot; the server clamps the
+  // same way (see docs/websocket-implementation.md).
+  it('appends without throwing when position overshoots the queue', () => {
+    const state = makeState({ queue: [makeClimbQueueItem({ uuid: 'a' })] });
+
+    const result = queueReducer(state, {
+      type: 'DELTA_ADD_QUEUE_ITEM',
+      payload: { item: makeClimbQueueItem({ uuid: 'inserted' }), position: 99 },
+    });
+    expect(result.queue.map((queueItem) => queueItem.uuid)).toEqual(['a', 'inserted']);
+  });
+
+  it('appends on a negative position', () => {
+    const state = makeState({ queue: [makeClimbQueueItem({ uuid: 'a' })] });
+
+    const result = queueReducer(state, {
+      type: 'DELTA_ADD_QUEUE_ITEM',
+      payload: { item: makeClimbQueueItem({ uuid: 'inserted' }), position: -1 },
+    });
+    expect(result.queue.map((queueItem) => queueItem.uuid)).toEqual(['a', 'inserted']);
+  });
+
+  it('appends when no position is given (the default add path)', () => {
+    const state = makeState({ queue: [makeClimbQueueItem({ uuid: 'a' }), makeClimbQueueItem({ uuid: 'b' })] });
+
+    const result = queueReducer(state, {
+      type: 'DELTA_ADD_QUEUE_ITEM',
+      payload: { item: makeClimbQueueItem({ uuid: 'inserted' }) },
+    });
+    expect(result.queue.map((queueItem) => queueItem.uuid)).toEqual(['a', 'b', 'inserted']);
+  });
+
+  // The self-echo of a positional add must stay a no-op, or a Play next would
+  // insert the same item a second time when the server broadcast comes back.
+  it('stays idempotent when the echo carries a position', () => {
+    const item = makeClimbQueueItem({ uuid: 'item-1' });
+    const state = makeState({ queue: [makeClimbQueueItem({ uuid: 'a' }), item] });
+
+    const result = queueReducer(state, {
+      type: 'DELTA_ADD_QUEUE_ITEM',
+      payload: { item, position: 0 },
+    });
+    expect(result).toBe(state);
+  });
 });
 
 describe('DELTA_REMOVE_QUEUE_ITEM', () => {
