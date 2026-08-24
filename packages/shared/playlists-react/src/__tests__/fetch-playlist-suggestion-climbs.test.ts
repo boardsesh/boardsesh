@@ -273,6 +273,34 @@ describe('drainPlaylistPages', () => {
     expect(46_000).toBeGreaterThan(PLAYLIST_RATE_LIMIT_MAX_WAIT_MS);
   });
 
+  // The attempt budget is per page and covers BOTH retry reasons: a rate limit
+  // arriving on the second attempt throws rather than sleeping again. That keeps
+  // a page bounded at two requests no matter how the failures interleave, which
+  // is the property that stops a rate limit from becoming an unbounded wait.
+  it('does not wait out a rate limit that arrives on the last allowed attempt', async () => {
+    const sleep = makeImmediateSleep();
+    const fetchPage = vi
+      .fn<(args: { page: number }) => Promise<{ climbs: Climb[]; hasMore: boolean }>>()
+      .mockRejectedValueOnce(makeTransportError())
+      .mockRejectedValueOnce(makeRateLimitError(1));
+
+    await expect(
+      drainPlaylistPages({
+        fetchPage,
+        signal: new AbortController().signal,
+        pageSize: 100,
+        maxPages: 30,
+        isRetryable: (error) => error instanceof TypeError,
+        parseRetryAfterSeconds: (error) => parseRetryAfterSecondsForTest(error),
+        sleep,
+      }),
+    ).rejects.toThrow(/Rate limit exceeded/);
+
+    expect(fetchPage).toHaveBeenCalledTimes(PLAYLIST_PAGE_MAX_ATTEMPTS);
+    // Only the transport backoff slept. The rate limit was never waited out.
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
   it('propagates an AbortError from a page without retrying it', async () => {
     const sleep = makeImmediateSleep();
     const abortError = new Error('aborted');
