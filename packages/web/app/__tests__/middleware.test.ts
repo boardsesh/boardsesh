@@ -655,12 +655,27 @@ describe('middleware cache headers on climb view pages', () => {
 // A crawler that persists cookies (observed in production logs) acquires
 // boardsesh-locale by crawling one /de|/es|/fr page, then bounces every
 // subsequent unprefixed URL through a locale twin — ~15k of these 307s/day,
-// plus the render MISS on the twin it lands on. Bots must never be sent
+// plus the render MISS on the twin it lands on. Crawlers must never be sent
 // through the sticky-locale redirect, and must never acquire the cookie.
+//
+// #4667 gated this on Next's `userAgent(request).isBot`, whose list names no
+// scraper newer than ~2023. Probed against production on 2026-08-24, Googlebot
+// correctly got a 200 while AhrefsBot, SemrushBot, DataForSeoBot and MJ12bot
+// were all still taking the 307 to the /es twin. The cases below cover both
+// halves of the repo-owned list in `app/lib/is-crawler.ts`.
 describe('middleware bot-gates the sticky locale redirect and cookie', () => {
   const GOOGLEBOT_UA = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
   const CHROME_UA =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+  const CRAWLER_UAS: [string, string][] = [
+    ['Googlebot (named by Next)', GOOGLEBOT_UA],
+    ['AhrefsBot', 'Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)'],
+    ['SemrushBot', 'Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)'],
+    ['DataForSeoBot', 'Mozilla/5.0 (compatible; DataForSeoBot/1.0; +https://dataforseo.com/dataforseo-bot)'],
+    ['MJ12bot', 'Mozilla/5.0 (compatible; MJ12bot/v1.4.8; http://mj12bot.com/)'],
+    ['DotBot', 'Mozilla/5.0 (compatible; DotBot/1.2; +https://opensiteexplorer.org/dotbot; help@moz.com)'],
+    ['archive.org_bot', 'Mozilla/5.0 (compatible; archive.org_bot +http://www.archive.org/details/archive.org_bot)'],
+  ];
 
   function makeRequestWithUserAgent(url: string, ua: string): NextRequest {
     return new NextRequest(new URL(url, 'http://localhost:3000'), {
@@ -668,16 +683,19 @@ describe('middleware bot-gates the sticky locale redirect and cookie', () => {
     });
   }
 
-  it('does not 307 a bot carrying a stale non-default locale cookie — it gets a default-locale 200 for the requested URL', () => {
-    const request = makeRequestWithUserAgent('/some/page', GOOGLEBOT_UA);
-    request.cookies.set(LOCALE_COOKIE, 'de');
+  it.each(CRAWLER_UAS)(
+    'does not 307 %s carrying a stale non-default locale cookie — it gets a default-locale 200 for the requested URL',
+    (_label, crawlerUa) => {
+      const request = makeRequestWithUserAgent('/some/page', crawlerUa);
+      request.cookies.set(LOCALE_COOKIE, 'de');
 
-    const response = middleware(request);
+      const response = middleware(request);
 
-    expect(response.status).not.toBe(307);
-    expect(response.headers.has('location')).toBe(false);
-    expect(response.headers.get(`x-middleware-request-${LOCALE_HEADER}`)).toBe(DEFAULT_LOCALE);
-  });
+      expect(response.status).not.toBe(307);
+      expect(response.headers.has('location')).toBe(false);
+      expect(response.headers.get(`x-middleware-request-${LOCALE_HEADER}`)).toBe(DEFAULT_LOCALE);
+    },
+  );
 
   it('still 307s a human (non-bot UA) carrying the same stale locale cookie', () => {
     const request = makeRequestWithUserAgent('/some/page', CHROME_UA);
@@ -689,11 +707,14 @@ describe('middleware bot-gates the sticky locale redirect and cookie', () => {
     expect(response.headers.get('location')).toBe('http://localhost:3000/de/some/page');
   });
 
-  it('never sets the boardsesh-locale cookie for a bot visiting a locale-prefixed URL', () => {
-    const response = middleware(makeRequestWithUserAgent('/es/some/page', GOOGLEBOT_UA));
+  it.each(CRAWLER_UAS)(
+    'never sets the boardsesh-locale cookie for %s visiting a locale-prefixed URL',
+    (_label, crawlerUa) => {
+      const response = middleware(makeRequestWithUserAgent('/es/some/page', crawlerUa));
 
-    expect(response.headers.has('set-cookie')).toBe(false);
-  });
+      expect(response.headers.has('set-cookie')).toBe(false);
+    },
+  );
 
   it('sets the boardsesh-locale cookie for a human (non-bot UA) visiting a locale-prefixed URL', () => {
     const response = middleware(makeRequestWithUserAgent('/es/some/page', CHROME_UA));
@@ -701,6 +722,21 @@ describe('middleware bot-gates the sticky locale redirect and cookie', () => {
     const setCookie = response.headers.get('set-cookie');
     expect(setCookie).toContain(LOCALE_COOKIE);
     expect(setCookie).toContain('es');
+  });
+
+  // The /api/v1 and /api/auth matcher entries reach the classifier call site,
+  // so the isApi short-circuit must leave their behaviour untouched.
+  it('leaves an /api/v1 request unchanged whether or not it carries a crawler UA', () => {
+    const crawlerResponse = middleware(
+      makeRequestWithUserAgent('/api/v1/kilter/climbs', 'Mozilla/5.0 (compatible; AhrefsBot/7.0)'),
+    );
+    const humanResponse = middleware(makeRequestWithUserAgent('/api/v1/kilter/climbs', CHROME_UA));
+
+    expect(crawlerResponse.status).toBe(humanResponse.status);
+    expect(crawlerResponse.headers.has('set-cookie')).toBe(false);
+    expect(humanResponse.headers.has('set-cookie')).toBe(false);
+    expect(crawlerResponse.headers.get(`x-middleware-request-${LOCALE_HEADER}`)).toBe(DEFAULT_LOCALE);
+    expect(humanResponse.headers.get(`x-middleware-request-${LOCALE_HEADER}`)).toBe(DEFAULT_LOCALE);
   });
 });
 

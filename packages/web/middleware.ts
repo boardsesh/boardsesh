@@ -1,7 +1,8 @@
 // middleware.ts
-import { NextResponse, userAgent, type NextRequest } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { SUPPORTED_BOARDS } from './app/lib/board-data';
 import { getClimbViewPageCacheTTL, getListPageCacheTTL } from './app/lib/list-page-cache';
+import { isCrawlerUserAgent } from './app/lib/is-crawler';
 import { CLIMB_SESSION_COOKIE } from './app/lib/climb-session-cookie';
 import { PATHNAME_HEADER } from './app/lib/request-pathname-header';
 import { isSecureCookieContext } from './app/lib/auth/secure-cookies';
@@ -185,18 +186,27 @@ export function middleware(request: NextRequest) {
     ? { locale: DEFAULT_LOCALE, strippedPath: pathname, needsRewrite: false }
     : detectLocale(pathname);
 
-  const requestUserAgent = userAgent(request);
+  // Classify once for the two sticky-locale gates below. Skipped outright for
+  // /api/*: the `/api/v1/:path*` and `/api/auth/:path*` matcher entries do
+  // reach this line, but `isApi` above pins their locale to DEFAULT_LOCALE, so
+  // neither gate can fire for them and classifying would be pure cost.
+  const isCrawler = isApi ? false : isCrawlerUserAgent(request.headers.get('user-agent'));
 
   // Cookie-driven sticky locale: when a page request arrives without a locale
   // prefix and the visitor previously chose a non-default locale, send them
   // to the prefixed URL so subsequent navigation stays in their language.
   //
-  // Bots are excluded: crawlers that persist cookies (observed in production
+  // Crawlers are excluded: ones that persist cookies (observed in production
   // logs) acquire the boardsesh-locale cookie by crawling a /de|/es|/fr page
   // once, then bounce every subsequent unprefixed URL through a locale twin —
   // ~15k of these 307s/day, plus the render MISS on the twin they land on.
-  // Bots get a default-locale 200 for the URL they actually requested instead.
-  if (!isApi && locale === DEFAULT_LOCALE && !requestUserAgent.isBot) {
+  // Crawlers get a default-locale 200 for the URL they requested instead.
+  //
+  // The classifier is ours, not Next's `userAgent(request).isBot`: Next's list
+  // names no scraper newer than ~2023, and AhrefsBot, SemrushBot, DataForSeoBot
+  // and MJ12bot were all still taking this 307 in production on 2026-08-24. See
+  // `app/lib/is-crawler.ts` for the token list and the probe behind it.
+  if (!isApi && locale === DEFAULT_LOCALE && !isCrawler) {
     const cookieLocale = request.cookies.get(LOCALE_COOKIE)?.value;
     if (isSupportedLocale(cookieLocale) && cookieLocale !== DEFAULT_LOCALE) {
       const target = new URL(`/${cookieLocale}${pathname}`, request.url);
@@ -232,9 +242,9 @@ export function middleware(request: NextRequest) {
 
   // Sticky cookie: any visit on a non-default locale URL writes the cookie so
   // a shared /es/... link from a friend persists for the recipient too.
-  // Bots never acquire it — see the sticky-locale redirect bot-gate above for
+  // Crawlers never acquire it — see the sticky-locale redirect gate above for
   // why a cookie-persisting crawler must never be handed this cookie.
-  if (locale !== DEFAULT_LOCALE && !requestUserAgent.isBot) {
+  if (locale !== DEFAULT_LOCALE && !isCrawler) {
     response.cookies.set(LOCALE_COOKIE, locale, {
       path: '/',
       sameSite: 'lax',
