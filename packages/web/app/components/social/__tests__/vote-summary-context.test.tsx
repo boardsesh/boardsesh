@@ -42,11 +42,12 @@ beforeEach(() => {
   mockUseWsAuthToken.mockReturnValue({ token: 'test-token', isAuthenticated: true, isLoading: false, error: null });
 });
 
-// Regression coverage for #4102: any of the seven VoteSummaryProvider call
-// sites (logbook, feeds, session detail) can pass more than 100 entity ids,
-// which the backend's BulkVoteSummaryInputSchema rejects outright
-// (`.max(100)`). The provider must chunk internally so no single request
-// ever exceeds the cap, and callers no longer need to slice their own lists.
+// Regression coverage for #4102: any of the four VoteSummaryProvider call
+// sites (activity feed, global ascents, following ascents, session detail)
+// can pass more than 100 entity ids, which the backend's
+// BulkVoteSummaryInputSchema rejects outright (`.max(100)`). The provider
+// must chunk internally so no single request ever exceeds the cap, and
+// callers no longer need to slice their own lists.
 describe('VoteSummaryProvider', () => {
   it('splits entity ids over the backend 100-ID cap into multiple <=100-ID requests', async () => {
     const entityIds = Array.from({ length: 135 }, (_, index) => `tick-${String(index).padStart(3, '0')}`);

@@ -55,11 +55,16 @@ type VoteSummaryProviderProps = {
  * VoteButtons with this provider to avoid N+1 individual requests.
  *
  * Chunks internally so callers never need to slice their entityIds list
- * before handing it here — a caller-side cap used to silently drop rows
- * past 100 to a `0` vote display instead of fetching their real count.
- * If one chunk's request fails, the rows it covered simply stay
- * unhydrated (VoteButton falls back to its own single-entity fetch);
- * chunks that did resolve still populate the map.
+ * before handing it here — the backend rejects an over-cap request outright
+ * (`BulkVoteSummaryInputSchema`), so a paginating feed used to lose every
+ * vote count on the page that pushed it past 100.
+ *
+ * Chunks fetch, cache and retry independently, so a failed chunk still
+ * leaves its siblings populating the map. The rows that chunk covered do
+ * NOT recover on their own: VoteButton skips its single-entity fallback
+ * whenever a provider is above it (vote-button.tsx), so those buttons keep
+ * showing their `initial*` props until this provider remounts or the
+ * chunk's query is invalidated.
  */
 export function VoteSummaryProvider({ entityType, entityIds, children }: VoteSummaryProviderProps) {
   const { token, isAuthenticated, isLoading: isAuthLoading } = useWsAuthToken();
