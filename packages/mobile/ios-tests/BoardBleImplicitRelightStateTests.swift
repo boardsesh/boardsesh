@@ -152,7 +152,10 @@ final class BoardBleImplicitRelightStateTests: XCTestCase {
         SharedQueueState.save(items: [queueItem()], currentIndex: 5, to: defaults)
         manager.testHooks.displaySharedCurrentItem(defaults: defaults)
 
-        XCTAssertTrue(peripheral.writtenChunks.isEmpty)
+        XCTAssertTrue(
+            peripheral.writtenChunks.isEmpty,
+            "a stale out-of-range index must not clear the wall (#4544)"
+        )
     }
 
     func testImplicitRelightWithAValidSharedCurrentClimbStillLights() {
