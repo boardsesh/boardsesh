@@ -20,15 +20,15 @@ number nobody can trace back to a query.
 From [#4648]'s billing table, measured 2026-08-21, three days into the Aug 18 – Sep 17 cycle. Shown
 as arithmetic so every figure can be re-derived:
 
-| Line | 3-day usage | Per day | Charge (3 days) |
-|---|---|---|---|
-| Fluid Active CPU | 127 h | 127 ÷ 3 = **42.3 CPU-h/day** | $16.56 |
-| Fluid Provisioned Memory | 373 GB·h | 373 ÷ 3 = **124.3 GB·h/day** | $4.06 |
-| Function Invocations | 1.8 M | 1.8 ÷ 3 = **600 k/day** (≈7/s) | $1.08 |
-| Fast Origin Transfer | 101 GB | 101 ÷ 3 = **33.7 GB/day** | $6.29 |
-| Observability Events | 6.89 M | 6.89 ÷ 3 = **2.30 M/day** | $8.27 |
+| Line                     | 3-day usage | Per day                        | Charge (3 days) |
+| ------------------------ | ----------- | ------------------------------ | --------------- |
+| Fluid Active CPU         | 127 h       | 127 ÷ 3 = **42.3 CPU-h/day**   | $16.56          |
+| Fluid Provisioned Memory | 373 GB·h    | 373 ÷ 3 = **124.3 GB·h/day**   | $4.06           |
+| Function Invocations     | 1.8 M       | 1.8 ÷ 3 = **600 k/day** (≈7/s) | $1.08           |
+| Fast Origin Transfer     | 101 GB      | 101 ÷ 3 = **33.7 GB/day**      | $6.29           |
+| Observability Events     | 6.89 M      | 6.89 ÷ 3 = **2.30 M/day**      | $8.27           |
 
-Provisioned memory is *provisioned*, not resident. 124.3 GB·h/day ÷ 24 = 5.18 GB mean provisioned,
+Provisioned memory is _provisioned_, not resident. 124.3 GB·h/day ÷ 24 = 5.18 GB mean provisioned,
 which is a billing quantity, not a working-set size. Railway has to be sized on peak RSS, and only
 the metrics pull gives that.
 
@@ -84,13 +84,13 @@ Observability — that needs the token. `vercel metrics schema` is authoritative
 Marco's 24-hour grouped-log ranking from 2026-08-22, with each row's merged fix. Log-line counts
 carry one middleware plus one function line per request, so halve them for requests.
 
-| Route | 24h log lines | Fix | Merged |
-|---|---|---|---|
-| `/api/internal/board-render` | 101,659 | OOM pack: LRU caches, sharp tuning, render semaphore, `memory: 3009` | [#4675] |
-| climb-view SSR | 86,773 | CDN TTL 3600 → 86400 s, ×7 SWR | [#4685], gated on [#4592] |
-| sticky-locale 307s | ~15k/day | crawler gate on the redirect + cookie write | [#4667], widened in [#4716] |
-| edge middleware | 218,219 inv/day | matcher narrowed off `/api/internal/**` | [#4667] |
-| sitemap shards | — | climb-URL store; page 1 origin miss 51 s → 0.088 s | [#4552] → [#4661] |
+| Route                        | 24h log lines   | Fix                                                                  | Merged                      |
+| ---------------------------- | --------------- | -------------------------------------------------------------------- | --------------------------- |
+| `/api/internal/board-render` | 101,659         | OOM pack: LRU caches, sharp tuning, render semaphore, `memory: 3009` | [#4675]                     |
+| climb-view SSR               | 86,773          | CDN TTL 3600 → 86400 s, ×7 SWR                                       | [#4685], gated on [#4592]   |
+| sticky-locale 307s           | ~15k/day        | crawler gate on the redirect + cookie write                          | [#4667], widened in [#4716] |
+| edge middleware              | 218,219 inv/day | matcher narrowed off `/api/internal/**`                              | [#4667]                     |
+| sitemap shards               | —               | climb-URL store; page 1 origin miss 51 s → 0.088 s                   | [#4552] → [#4661]           |
 
 ### board-render: what the 101,659 does and does not say
 
@@ -127,7 +127,7 @@ Two things to watch when comparing windows:
 - [#4667] removed `/api/internal/**` from the middleware matcher on 2026-08-22, changing this route's
   middleware exposure mid-window. Pre- and post-wave hit rate must be **compared**, not assumed equal.
 - Cloudflare fronts www and returns `cf-cache-status: DYNAMIC` for board-render, so it is not caching
-  the image at its own edge either. Every Vercel-CDN miss *and* every Cloudflare pass-through reaches
+  the image at its own edge either. Every Vercel-CDN miss _and_ every Cloudflare pass-through reaches
   the origin. That is a lever [#4652] owns.
 
 Moving `/api/internal/board-render` to the Railway backend is the biggest remaining CPU lever —
@@ -141,17 +141,17 @@ much the port is worth depends on a hit ratio nobody has measured.
 **Crons are not the burner.** `packages/web/vercel.json` declares eight, and `maxDuration` is a
 ceiling, not a runtime. Absolute worst case, every cron burning its full ceiling every time:
 
-| Cron | Schedule | Runs/week | maxDuration | Worst case CPU-s/week |
-|---|---|---|---|---|
-| `/api/internal/prewarm-heatmap/kilter` | `0 4 * * 0` | 1 | 300 | 300 |
-| `/api/internal/prewarm-heatmap/tension` | `15 4 * * 0` | 1 | 300 | 300 |
-| `/api/internal/prewarm-heatmap/decoy` | `30 4 * * 0` | 1 | 300 | 300 |
-| `/api/internal/prewarm-heatmap/touchstone` | `45 4 * * 0` | 1 | 300 | 300 |
-| `/api/internal/prewarm-heatmap/grasshopper` | `0 5 * * 0` | 1 | 300 | 300 |
-| `/api/internal/profile-percentiles` | `0 6 * * 0` | 1 | 300 | 300 |
-| `/api/internal/cleanup` | `0 5 * * *` | 7 | 60 | 420 |
-| `/api/internal/refresh-sitemap-climbs` | `0 */6 * * *` | 28 | 300 | 8,400 |
-| **Total** | | | | **10,620** |
+| Cron                                        | Schedule      | Runs/week | maxDuration | Worst case CPU-s/week |
+| ------------------------------------------- | ------------- | --------- | ----------- | --------------------- |
+| `/api/internal/prewarm-heatmap/kilter`      | `0 4 * * 0`   | 1         | 300         | 300                   |
+| `/api/internal/prewarm-heatmap/tension`     | `15 4 * * 0`  | 1         | 300         | 300                   |
+| `/api/internal/prewarm-heatmap/decoy`       | `30 4 * * 0`  | 1         | 300         | 300                   |
+| `/api/internal/prewarm-heatmap/touchstone`  | `45 4 * * 0`  | 1         | 300         | 300                   |
+| `/api/internal/prewarm-heatmap/grasshopper` | `0 5 * * 0`   | 1         | 300         | 300                   |
+| `/api/internal/profile-percentiles`         | `0 6 * * 0`   | 1         | 300         | 300                   |
+| `/api/internal/cleanup`                     | `0 5 * * *`   | 7         | 60          | 420                   |
+| `/api/internal/refresh-sitemap-climbs`      | `0 */6 * * *` | 28        | 300         | 8,400                 |
+| **Total**                                   |               |           |             | **10,620**            |
 
 10,620 CPU-s/week = 1,517 CPU-s/day = **0.42 CPU-h/day**, or **1.0%** of 42.3. The two daily/6-hourly
 crons are five times the weekly ones put together, so they are worth naming — but the conclusion
@@ -184,11 +184,11 @@ origin render). Its actual effect is **unmeasured**; step 5 with
 
 PostHog project 412845, human web pageviews:
 
-| Window | Pageviews | Distinct persons |
-|---|---|---|
-| 2026-08-10 → 08-21 (baseline) | 99–289/day | 33–89/day |
-| 2026-08-22 | 2,054 | **2,031** |
-| 2026-08-23 | 754 | 686 |
+| Window                        | Pageviews  | Distinct persons |
+| ----------------------------- | ---------- | ---------------- |
+| 2026-08-10 → 08-21 (baseline) | 99–289/day | 33–89/day        |
+| 2026-08-22                    | 2,054      | **2,031**        |
+| 2026-08-23                    | 754        | 686              |
 
 Hourly: a first burst 08-22 02:00–07:00Z ramping 42 → 463/hr, a second 08-22 21:00Z → 08-23 02:00Z
 peaking at 382/hr, then back to ≤16/hr from 08-23 03:00Z.
@@ -218,15 +218,15 @@ nothing about how much CPU is wanted at once at peak, and the traffic is nowhere
 series swings about 29× between peak (463/hr) and trough (≤16/hr). A single Railway container has to
 survive the peak, not the mean.
 
-| | Pre-wave (Aug 19–21) | Post-wave (Aug 23 09:00Z →) |
-|---|---|---|
-| CPU-h/day | 42.3 | **TODO — needs `VERCEL_TOKEN`** |
-| 24-h mean vCPU | 1.76 | **TODO** |
-| p95 concurrent CPU | **TODO** | **TODO** |
-| Peak concurrent CPU | **TODO** | **TODO** |
-| Peak RSS | **TODO** | **TODO** |
-| Invocations/day | 600 k | **TODO** |
-| Fast Origin Transfer/day | 33.7 GB | **TODO** |
+|                          | Pre-wave (Aug 19–21) | Post-wave (Aug 23 09:00Z →)     |
+| ------------------------ | -------------------- | ------------------------------- |
+| CPU-h/day                | 42.3                 | **TODO — needs `VERCEL_TOKEN`** |
+| 24-h mean vCPU           | 1.76                 | **TODO**                        |
+| p95 concurrent CPU       | **TODO**             | **TODO**                        |
+| Peak concurrent CPU      | **TODO**             | **TODO**                        |
+| Peak RSS                 | **TODO**             | **TODO**                        |
+| Invocations/day          | 600 k                | **TODO**                        |
+| Fast Origin Transfer/day | 33.7 GB              | **TODO**                        |
 
 **Container size recommendation: TODO.** It needs the p95 and peak rows above from the same pull, not
 just the mean. Two things will move the answer materially before it is worth computing:
@@ -285,7 +285,7 @@ Still open with existing owners, cited here and not absorbed: [#4664] (WASM 3-co
   risk is low and it would auto-cover crawlers nobody has named. Left out to keep the gate one
   reviewable idea; first thing to add if the token list starts needing monthly edits.
 - **Noindexing or dropping hreflang on the `/es`, `/fr`, `/de` climb twins** to cut the 211k-URL
-  crawl surface by 4× is *not* recommended, and the cost argument for it has been removed rather than
+  crawl surface by 4× is _not_ recommended, and the cost argument for it has been removed rather than
   restated: §3 shows the twins do cache, and the actual saving is unmeasured. This is an SEO
   decision. `entries.ts` already made it and wrote down why — climbs fan out to the default locale
   only in the sitemap while `createPageMetadata` emits reciprocal HTML `alternates.languages` for all
