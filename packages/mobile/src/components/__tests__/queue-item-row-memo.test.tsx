@@ -203,7 +203,13 @@ vi.mock('react-native-gesture-handler', () => {
 });
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  // Raw key passthrough (what the rest of this file asserts on), EXCEPT for the
+  // added-by label, which resolves its `{{name}}` placeholder. Asserting on a raw
+  // key there would pass even if the name argument never reached the catalog.
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) =>
+      key === 'mobile.queue.addedByAria' ? `Added by ${String(options?.name)}` : key,
+  }),
 }));
 
 vi.mock('../../providers/theme-provider', () => ({
@@ -857,7 +863,7 @@ describe('QueueItemRow added-by attribution', () => {
       <QueueItemRow item={makeItem('a', 'Crimp Master', peer)} {...baseProps} showAddedBy={false} viewerUserId="me" />,
     );
     expect(container.querySelector('[data-added-by]')).toBeNull();
-    expect(a11y.row?.accessibilityLabel).not.toContain('mobile.queue.addedByAria');
+    expect(a11y.row?.accessibilityLabel).not.toContain('Added by');
   });
 
   it('renders no empty slot for an item that predates attribution', () => {
@@ -865,7 +871,7 @@ describe('QueueItemRow added-by attribution', () => {
       <QueueItemRow item={makeItem('a', 'Crimp Master')} {...baseProps} showAddedBy viewerUserId="me" />,
     );
     expect(container.querySelector('[data-added-by]')).toBeNull();
-    expect(a11y.row?.accessibilityLabel).not.toContain('mobile.queue.addedByAria');
+    expect(a11y.row?.accessibilityLabel).not.toContain('Added by');
   });
 
   it('renders nothing for the viewers own add', () => {
@@ -874,7 +880,7 @@ describe('QueueItemRow added-by attribution', () => {
       <QueueItemRow item={makeItem('a', 'Crimp Master', own)} {...baseProps} showAddedBy viewerUserId="me" />,
     );
     expect(container.querySelector('[data-added-by]')).toBeNull();
-    expect(a11y.row?.accessibilityLabel).not.toContain('mobile.queue.addedByAria');
+    expect(a11y.row?.accessibilityLabel).not.toContain('Added by');
   });
 
   it('renders the peers face and names them in the row label', () => {
@@ -882,7 +888,7 @@ describe('QueueItemRow added-by attribution', () => {
       <QueueItemRow item={makeItem('a', 'Crimp Master', peer)} {...baseProps} showAddedBy viewerUserId="me" />,
     );
     expect(container.querySelector('[data-added-by]')?.getAttribute('data-added-by')).toBe('Mina');
-    expect(a11y.row?.accessibilityLabel).toContain('mobile.queue.addedByAria');
+    expect(a11y.row?.accessibilityLabel).toContain('Added by Mina');
   });
 
   it('suppresses the face in edit mode', () => {
