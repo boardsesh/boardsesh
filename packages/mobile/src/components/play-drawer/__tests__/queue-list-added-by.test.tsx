@@ -17,7 +17,7 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 // starts mid-queue" test would prove nothing. A store notification re-renders
 // QueueList through the memo, exactly the way a real context change does.
 const session = vi.hoisted(() => {
-  type Snapshot = { sessionId: string | null; profile: { id: string } | null };
+  type Snapshot = { sessionId: string | null; profile: { id: string } | null; isLoading?: boolean };
   const listeners = new Set<() => void>();
   let snapshot: Snapshot = { sessionId: null, profile: null };
   return {
@@ -119,9 +119,10 @@ vi.mock('../../../providers/queue-provider', async () => {
 vi.mock('../../../providers/party-profile-provider', async () => {
   const React = await vi.importActual<typeof import('react')>('react');
   return {
-    usePartyProfile: () => ({
-      profile: React.useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot).profile,
-    }),
+    usePartyProfile: () => {
+      const snapshot = React.useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
+      return { profile: snapshot.profile, isLoading: snapshot.isLoading ?? false };
+    },
   };
 });
 
@@ -221,6 +222,30 @@ describe('QueueList added-by wiring', () => {
     for (const props of capturedRows.props) {
       expect(props.showAddedBy).toBe(true);
       expect(props.viewerUserId).toBeNull();
+    }
+  });
+
+  it('holds every face back until the party profile has resolved', () => {
+    // A cold launch into a restored session resolves sessionId before the party
+    // profile, so viewerUserId is null for a frame. Without this gate the
+    // viewer's OWN face flashes on their own rows, because the queue provider
+    // stamps solo adds with this device's identity too.
+    session.set({ sessionId: 'session-1', profile: null, isLoading: true });
+    renderList();
+
+    expect(capturedRows.props).toHaveLength(3);
+    for (const props of capturedRows.props) {
+      expect(props.showAddedBy).toBe(false);
+    }
+
+    // ...and they arrive once it lands, without a remount.
+    capturedRows.props.length = 0;
+    act(() => session.set({ sessionId: 'session-1', profile: { id: 'me' }, isLoading: false }));
+
+    expect(capturedRows.props).toHaveLength(3);
+    for (const props of capturedRows.props) {
+      expect(props.showAddedBy).toBe(true);
+      expect(props.viewerUserId).toBe('me');
     }
   });
 });

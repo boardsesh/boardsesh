@@ -891,7 +891,10 @@ describe('QueueItemRow added-by attribution', () => {
     expect(a11y.row?.accessibilityLabel).toContain('Added by Mina');
   });
 
-  it('suppresses the face in edit mode', () => {
+  it('suppresses the face in edit mode but keeps the name in the row label', () => {
+    // Edit mode is the row's widest state, so the 20dp glyph goes. The
+    // accessibility label has no width budget though, and a VoiceOver user
+    // bulk-selecting rows to delete still needs to know whose climb each one is.
     const { container } = render(
       <QueueItemRow
         item={makeItem('a', 'Crimp Master', peer)}
@@ -902,6 +905,7 @@ describe('QueueItemRow added-by attribution', () => {
       />,
     );
     expect(container.querySelector('[data-added-by]')).toBeNull();
+    expect(a11y.row?.accessibilityLabel).toContain('Added by Mina');
   });
 
   it('still skips a re-render with attribution props set', () => {

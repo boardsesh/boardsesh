@@ -100,9 +100,13 @@ function QueueListComponent({
   // session would show the viewer's own face on every row. Neither value is read
   // from the live `sessionUsers` roster, which is recreated by every session
   // stats push.
+  // Gated on isLoading as well: `profile` and `sessionId` hydrate on racing async
+  // paths, so a cold launch into a restored session can resolve the session first
+  // and leave viewerUserId null for a frame — long enough to flash the viewer's
+  // own face on their own rows before self-exclusion can suppress it.
   const { sessionId } = useQueueSessionId();
-  const { profile } = usePartyProfile();
-  const showAddedBy = sessionId != null;
+  const { profile, isLoading: isPartyProfileLoading } = usePartyProfile();
+  const showAddedBy = sessionId != null && !isPartyProfileLoading;
   const viewerUserId = profile?.id ?? null;
 
   // Clear the queue toolbar (styles.listContent's spacing[10]) AND the Android

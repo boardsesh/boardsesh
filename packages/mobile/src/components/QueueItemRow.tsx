@@ -418,12 +418,15 @@ function QueueItemRowComponent({
   const showSentAtAngle =
     isHistoryItem && !isEditMode && typeof climbedAtAngle === 'number' && climbedAtAngle !== board.angle;
 
-  // Edit mode strips secondary chrome (same rule as the sent-at-angle chip) and
-  // is the row's widest state — the checkbox slot plus the delete affordance.
   const addedBy = resolveQueueRowAttribution(item.addedByUser, {
-    showAddedBy: showAddedBy && !isEditMode,
+    showAddedBy,
     viewerUserId,
   });
+  // Edit mode strips secondary chrome (same rule as the sent-at-angle chip) and
+  // is the row's widest state — the checkbox slot plus the delete affordance.
+  // Only the glyph goes: the accessibility label has no width budget, and a
+  // VoiceOver user needs to know whose climb they are about to bulk-delete.
+  const showAddedByAvatar = addedBy != null && !isEditMode;
 
   // A plain const, deliberately NOT a useMemo: `rowAccessibilityActions` above is
   // memoized because a test asserts its identity across re-renders, but a string
@@ -489,7 +492,7 @@ function QueueItemRowComponent({
         )}
 
         {/* Who queued it — decorative; the row's own label carries the name. */}
-        {addedBy && (
+        {showAddedByAvatar && addedBy && (
           <View
             pointerEvents="none"
             accessibilityElementsHidden
