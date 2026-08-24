@@ -20,23 +20,16 @@ type Children = { children?: ReactNode };
 type ButtonProps = { title: string; onPress?: () => void };
 type ManageRowProps = {
   board: UserBoard;
-  readOnly?: boolean;
   downloadState?: string;
   downloadCount?: number;
   downloadNotice?: string | null;
   downloadProgress?: { stage: string; fraction: number | null } | null;
   canRetryFastDownload?: boolean;
   onRetryFastDownload?: (board: UserBoard) => void;
-  onDelete: (board: UserBoard) => void;
-  onUnfollow: (board: UserBoard) => void;
   onToggleOffline: (board: UserBoard) => void;
 };
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn() }));
-const setOptionsMock = vi.hoisted(() => vi.fn());
-const forgetOfflineBoardMock = vi.hoisted(() => vi.fn());
-const deleteBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-const unfollowBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const confirmMock = vi.hoisted(() => vi.fn().mockResolvedValue(false));
 const retryFastDownloadMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const estimateScopeDownloadMock = vi.hoisted(() => vi.fn(() => ({ kind: 'unknown' }) as { kind: string }));
@@ -151,7 +144,6 @@ vi.mock('@shopify/flash-list', () => ({
 
 vi.mock('expo-router', () => ({
   useRouter: () => routerMock,
-  useNavigation: () => ({ setOptions: setOptionsMock }),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -166,7 +158,6 @@ vi.mock('react-i18next', () => ({
         'mobile.discovery.create': 'Create a board',
         'mobile.manage.ownedHeader': 'Your boards',
         'mobile.manage.followingHeader': 'Following',
-        'mobile.manage.edit': 'Edit',
         'mobile.offline.pickerNotice': "No signal — here are the boards you've downloaded.",
         'mobile.offline.pickerNoticeUnreachable':
           "Can't reach your boards right now — here are the ones you've downloaded.",
@@ -255,13 +246,10 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
     isError: false,
     refetch: vi.fn(),
   }),
-  useDeleteBoard: () => ({ isPending: false, variables: undefined, mutateAsync: deleteBoardMock }),
-  useUnfollowBoard: () => ({ isPending: false, variables: undefined, mutateAsync: unfollowBoardMock }),
 }));
 
 vi.mock('../../../src/lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: state.activeBoard }),
-  useClearActiveBoard: () => vi.fn(),
 }));
 
 vi.mock('../../../src/providers/auth-provider', () => ({
@@ -325,7 +313,6 @@ vi.mock('../../../src/settings', () => ({
   useSetting: () => [state.enabledBoards, vi.fn()],
   setOfflineBoardEnabled: vi.fn(),
   forgetDownloadTrigger: vi.fn(),
-  forgetOfflineBoard: (uuid: string) => forgetOfflineBoardMock(uuid),
   forgetOfflineBoardScope: vi.fn(),
   useOfflineBoards: () => state.offlineCards,
   offlineBoardKeyForBoard: (input: { boardType: string; layoutId: number; sizeId: number }) =>
@@ -359,22 +346,18 @@ vi.mock('../../../src/components/ActivityIndicator', () => ({
 vi.mock('../../../src/components/board-discovery/BoardManageRow', () => ({
   BoardManageRow: ({
     board: rowBoard,
-    readOnly,
     downloadState,
     downloadCount,
     downloadNotice,
     downloadProgress,
     canRetryFastDownload,
     onRetryFastDownload,
-    onDelete,
-    onUnfollow,
     onToggleOffline,
   }: ManageRowProps) =>
     createElement(
       'div',
       {
         'data-board': rowBoard.uuid,
-        'data-readonly': String(!!readOnly),
         'data-download-state': downloadState ?? '',
         'data-download-count': downloadCount ?? '',
         'data-download-notice': downloadNotice ?? '',
@@ -382,8 +365,6 @@ vi.mock('../../../src/components/board-discovery/BoardManageRow', () => ({
         'data-can-retry-fast': String(!!canRetryFastDownload),
       },
       rowBoard.name,
-      createElement('button', { type: 'button', onClick: () => onDelete(rowBoard) }, `delete ${rowBoard.uuid}`),
-      createElement('button', { type: 'button', onClick: () => onUnfollow(rowBoard) }, `unfollow ${rowBoard.uuid}`),
       createElement(
         'button',
         { type: 'button', onClick: () => onToggleOffline(rowBoard) },
@@ -403,8 +384,6 @@ const { default: ManageBoards } = await import('../manage');
 
 beforeEach(() => {
   vi.clearAllMocks();
-  deleteBoardMock.mockResolvedValue(undefined);
-  unfollowBoardMock.mockResolvedValue(undefined);
   confirmMock.mockResolvedValue(false);
   estimateScopeDownloadMock.mockReturnValue({ kind: 'unknown' });
   state.isOffline = false;
@@ -1052,7 +1031,11 @@ describe('My Boards with no usable network list', () => {
     expect(screen.getByText("No signal — here are the boards you've downloaded.")).toBeTruthy();
   });
 
-  it('hides the network-only affordances: Create, Edit, and the per-row mutations', () => {
+  // Create is the last network-only affordance on this screen: #4623 moved edit,
+  // delete and unfollow onto the /boards picker cards, so there is no per-row
+  // mutation left to hide. What remains is that the offline list offers no way to
+  // POST a new board while the rows keep their local offline toggle.
+  it('hides Create offline while the local offline toggle keeps working', () => {
     state.isOffline = true;
     state.offlineCards = [board({ uuid: 'board-a', name: 'Marco garage' })];
     state.enabledBoards = ['kilter:8:17'];
@@ -1061,11 +1044,9 @@ describe('My Boards with no usable network list', () => {
     render(createElement(ManageBoards));
 
     expect(screen.queryByRole('button', { name: 'Create a board' })).toBeNull();
-    expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-readonly')).toBe('true');
-    // The header Edit button only reveals delete/unfollow, both server mutations.
-    expect(setOptionsMock.mock.calls.at(-1)?.[0]?.headerRight).toBeUndefined();
     // The local offline toggle keeps working — its state comes off disk, not the wire.
     expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-download-state')).toBe('downloaded');
+    expect(screen.getByText('toggle-offline board-a')).toBeTruthy();
   });
 
   it('leaves the owned/followed split and the Create button alone online', () => {
@@ -1085,13 +1066,12 @@ describe('My Boards with no usable network list', () => {
     expect(screen.getByRole('button', { name: 'Create a board' })).toBeTruthy();
     expect(screen.getByText('Network board')).toBeTruthy();
     expect(screen.queryByText('Marco garage')).toBeNull();
-    expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-readonly')).toBe('false');
   });
 
-  it('degrades to the read-only list, not the error state, when the profile fails online', () => {
+  it('degrades to the downloaded list, not the error state, when the profile fails online', () => {
     // Reviewer-flagged path: online, boards loaded, but the profile settled with no
     // id (e.g. a 401 on that query alone). Today that shows the hard error state;
-    // owned-vs-followed is unclassifiable, so the read-only list is the honest render.
+    // owned-vs-followed is unclassifiable, so the downloaded list is the honest render.
     state.isOffline = false;
     state.profileId = undefined;
     state.isProfileLoading = false;
@@ -1112,26 +1092,6 @@ describe('My Boards with no usable network list', () => {
     expect(screen.queryByText('Your boards')).toBeNull();
     // Online with a dead profile request: the notice must not claim there is no signal.
     expect(screen.getByText("Can't reach your boards right now — here are the ones you've downloaded.")).toBeTruthy();
-    expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-readonly')).toBe('true');
-  });
-
-  it('forgets a deleted board so its card cannot outlive it', async () => {
-    // A plain toggle-off leaves the download in place, so the scope stays "downloaded"
-    // and forgetOfflineBoardScope never fires here. Without the per-uuid forget the
-    // card lives forever and hands a uuid the backend has dropped to setActiveBoard.
-    confirmMock.mockResolvedValue(true);
-    state.profileId = 'me';
-    state.myBoards = {
-      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
-      isLoading: false,
-      isError: false,
-      isRefetching: false,
-    };
-
-    render(createElement(ManageBoards));
-    fireEvent.click(screen.getByText('delete net-1'));
-
-    await waitFor(() => expect(forgetOfflineBoardMock).toHaveBeenCalledWith('net-1'));
   });
 
   // Issue #4452. Turning a board off deletes nothing, so no teardown reports for
@@ -1176,39 +1136,6 @@ describe('My Boards with no usable network list', () => {
     expect(reportAbandonedDownloadOnDisableMock).not.toHaveBeenCalled();
   });
 
-  it('forgets an unfollowed board too', async () => {
-    state.profileId = 'me';
-    state.myBoards = {
-      data: { boards: [board({ uuid: 'net-1', name: 'Network board', isOwned: false, ownerId: 'someone' })] },
-      isLoading: false,
-      isError: false,
-      isRefetching: false,
-    };
-
-    render(createElement(ManageBoards));
-    fireEvent.click(screen.getByText('unfollow net-1'));
-
-    await waitFor(() => expect(forgetOfflineBoardMock).toHaveBeenCalledWith('net-1'));
-  });
-
-  it('keeps the card when the delete mutation fails', async () => {
-    confirmMock.mockResolvedValue(true);
-    deleteBoardMock.mockRejectedValue(new Error('offline'));
-    state.profileId = 'me';
-    state.myBoards = {
-      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
-      isLoading: false,
-      isError: false,
-      isRefetching: false,
-    };
-
-    render(createElement(ManageBoards));
-    fireEvent.click(screen.getByText('delete net-1'));
-
-    await waitFor(() => expect(deleteBoardMock).toHaveBeenCalled());
-    expect(forgetOfflineBoardMock).not.toHaveBeenCalled();
-  });
-
   it('still shows the retry state offline when nothing has been downloaded', () => {
     state.isOffline = true;
 
@@ -1237,9 +1164,6 @@ describe('My Boards offline with a persisted user id (#4003)', () => {
     expect(rendered.indexOf('Your boards')).toBeLessThan(rendered.indexOf('board-a'));
     expect(rendered.indexOf('board-a')).toBeLessThan(rendered.indexOf('Following'));
     expect(rendered.indexOf('Following')).toBeLessThan(rendered.indexOf('board-b'));
-    // Every row is still read-only: edit / delete / unfollow stay server mutations.
-    expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-readonly')).toBe('true');
-    expect(document.querySelector('[data-board="board-b"]')?.getAttribute('data-readonly')).toBe('true');
   });
 
   it('stays flat when the keychain yields no id at all', () => {
@@ -1274,7 +1198,6 @@ describe('My Boards offline with a persisted user id (#4003)', () => {
     expect(screen.queryByText('Something went wrong')).toBeNull();
     expect(screen.getByText('Your boards')).toBeTruthy();
     expect(screen.getByText('Network board')).toBeTruthy();
-    expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-readonly')).toBe('false');
   });
 
   it('holds the spinner while the keychain read is still in flight', () => {

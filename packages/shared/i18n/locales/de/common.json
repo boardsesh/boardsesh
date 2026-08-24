@@ -411,7 +411,7 @@
     "shareFailed": "Teilen fehlgeschlagen"
   },
   "myBoards": {
-    "title": "Meine Boards"
+    "title": "Boards verwalten"
   },
   "myGyms": {
     "roleOwner": "Inhaber*in",
@@ -421,7 +421,6 @@
   },
   "userDrawer": {
     "signIn": "Anmelden",
-    "changeBoard": "Board wechseln",
     "myPlaylists": "Meine Playlists",
     "about": "Über",
     "whatsNew": "Neuigkeiten",

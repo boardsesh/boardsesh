@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const browser = vi.hoisted(() => ({ openBrowserAsync: vi.fn().mockResolvedValue(undefined) }));
@@ -62,9 +62,10 @@ vi.mock('react-i18next', () => ({
         'ariaLabels.close': 'Close',
         'ariaLabels.settings': 'Settings',
         'header.you': 'You',
-        'myBoards.title': 'My boards',
+        // #4623 folded "Change board" and "My boards" into one row, titled from the
+        // shared common:mobile.nav.boards key.
+        'mobile.nav.boards': 'Boards',
         'userDrawer.about': 'About',
-        'userDrawer.changeBoard': 'Change board',
         'userDrawer.joinDiscord': 'Join Discord',
         'userDrawer.logout': 'Log out',
         'userDrawer.myPlaylists': 'My playlists',
@@ -273,7 +274,6 @@ describe('user-drawer route defers each action until the route unmounts', () => 
     ['My playlists', '/(tabs)/discover/all'],
     ["What's New", '/changelog'],
     ['About', '/about'],
-    ['My boards', '/boards/manage'],
   ])('%s closes the drawer, then pushes %s', (rowTitle, route) => {
     const { rerender } = render(<Harness showScreen />);
 
@@ -297,10 +297,12 @@ describe('user-drawer route defers each action until the route unmounts', () => 
     expect(await screen.findByText('New')).toBeTruthy();
   });
 
-  it('Change board closes the drawer, then pushes the /boards modal route with the returnTo', () => {
+  // One Boards row now, not a "Change board" / "My boards" pair (#4623): /boards
+  // both switches board and manages them, so this is the only board entry left.
+  it('Boards closes the drawer, then pushes the /boards modal route with the returnTo', () => {
     const { rerender } = render(<Harness showScreen />);
 
-    fireEvent.click(screen.getByText('Change board'));
+    fireEvent.click(screen.getByText('Boards'));
 
     expect(routerMock.push).not.toHaveBeenCalled();
     flushDrawerClose();
@@ -311,7 +313,7 @@ describe('user-drawer route defers each action until the route unmounts', () => 
   it('captures the focused tab as the board returnTo at open time (from discover)', () => {
     // Focused tab is discover when the drawer is opened — the returnTo must be
     // captured THEN (before /user-drawer is pushed and useSegments would resolve
-    // to ['user-drawer']), so a later Change board returns to discover.
+    // to ['user-drawer']), so a later Boards tap returns to discover.
     segmentsMock.current = ['(tabs)', 'discover'];
     const { rerender } = render(<Harness showScreen={false} />);
 
@@ -320,7 +322,7 @@ describe('user-drawer route defers each action until the route unmounts', () => 
     routerMock.push.mockClear();
 
     rerender(<Harness showScreen />);
-    fireEvent.click(screen.getByText('Change board'));
+    fireEvent.click(screen.getByText('Boards'));
     flushDrawerClose();
     rerender(<Harness showScreen={false} />);
     expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/boards', params: { returnTo: '/(tabs)/discover' } });

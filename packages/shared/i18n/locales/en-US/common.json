@@ -411,7 +411,7 @@
     "shareFailed": "Failed to share"
   },
   "myBoards": {
-    "title": "My Boards"
+    "title": "Manage boards"
   },
   "myGyms": {
     "roleOwner": "Owner",
@@ -421,7 +421,6 @@
   },
   "userDrawer": {
     "signIn": "Sign in",
-    "changeBoard": "Change board",
     "myPlaylists": "My playlists",
     "about": "About",
     "whatsNew": "What's New",

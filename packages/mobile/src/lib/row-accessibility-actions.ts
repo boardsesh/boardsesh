@@ -26,10 +26,13 @@ const ACTIVATE_ACTIONS: readonly AccessibilityActionInfo[] =
 // so the identity is stable across rerenders.
 export const ACTIVATE_ACCESSIBILITY_ACTIONS = ACTIVATE_ACTIONS.length > 0 ? ACTIVATE_ACTIONS : undefined;
 
-// A row that also owns a nested button has to publish that button as a labelled
+// A row that also owns nested buttons has to publish each of them as a labelled
 // custom action of its own: UIKit treats the row's `accessible` container as a leaf
 // and VoiceOver never focuses inside it. (TalkBack does, which is why the nested
-// view keeps its own props too.) Wrap the result in a useMemo at the call site.
-export function rowAccessibilityActionsWith(nestedAction: AccessibilityActionInfo): AccessibilityActionInfo[] {
-  return [...ACTIVATE_ACTIONS, nestedAction];
+// views keep their own props too.) Variadic because a row can own more than one:
+// the board card publishes activate + its ownership action + the download glyph.
+// Wrap the result in a useMemo at the call site, keyed on the resolved label
+// strings — never on `t`, whose identity churns.
+export function rowAccessibilityActionsWith(...nestedActions: AccessibilityActionInfo[]): AccessibilityActionInfo[] {
+  return [...ACTIVATE_ACTIONS, ...nestedActions];
 }

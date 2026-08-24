@@ -52,6 +52,22 @@ describe('userBoardToItem', () => {
     const bad = { ...board, boardType: 'not-a-board' } as unknown as UserBoard;
     expect(userBoardToItem(bad)).toBeNull();
   });
+
+  // Ownership is resolved here, once per list build, so the card's action slot
+  // never scans back into myBoards from inside a virtualized row.
+  it('stamps ownership against the signed-in user', () => {
+    const owned = { ...board, ownerId: 'me' } as unknown as UserBoard;
+    const followed = { ...board, ownerId: 'someone-else' } as unknown as UserBoard;
+    expect(userBoardToItem(owned, null, undefined, 'me')?.isViewerOwner).toBe(true);
+    expect(userBoardToItem(followed, null, undefined, 'me')?.isViewerOwner).toBe(false);
+  });
+
+  // "We don't know" is its own answer: the card renders no ownership badge
+  // rather than offering to unfollow the user's own wall.
+  it('leaves ownership undefined when no user id is passed', () => {
+    const owned = { ...board, ownerId: 'me' } as unknown as UserBoard;
+    expect(userBoardToItem(owned)?.isViewerOwner).toBeUndefined();
+  });
 });
 
 describe('userBoardsToItems', () => {
@@ -112,6 +128,12 @@ describe('popularConfigToItem', () => {
   it('drops a config whose board type is unsupported', () => {
     const bad = { ...config, boardType: 'xyz' } as unknown as PopularBoardConfig;
     expect(popularConfigToItem(bad)).toBeNull();
+  });
+
+  // A popular setup is nobody's board yet, so it must never carry an ownership
+  // badge (and therefore never an unfollow).
+  it('never stamps ownership on a popular config', () => {
+    expect(popularConfigToItem(config)?.isViewerOwner).toBeUndefined();
   });
 });
 

@@ -60,6 +60,8 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   View: ({ children }: Children) => createElement('div', null, children),
   ScrollView: ({ children }: Children) => createElement('div', null, children),
+  Pressable: ({ children, onPress }: Children & { onPress?: () => void }) =>
+    createElement('button', { onClick: onPress, type: 'button' }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
@@ -89,6 +91,9 @@ vi.mock('react-i18next', () => ({
         'mobile.discovery.bluetooth': 'Bluetooth',
         'mobile.discovery.findGym': 'Find a gym',
         'mobile.boardSwitchError': 'Could not switch board',
+        'mobile.manage.edit': 'Edit',
+        'mobile.manage.done': 'Done',
+        'myBoards.title': 'Manage boards',
       };
       const template = map[key] ?? key;
       return options?.name === undefined ? template : template.replace('{{name}}', options.name);
@@ -113,11 +118,19 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
   useMyBoards: () => ({ ...state.myBoards, refetch: vi.fn() }),
   usePopularBoardConfigs: () => ({ data: state.popular }),
   useNearbyBoards: () => ({ data: undefined, isLoading: false }),
+  useProfile: () => ({ data: { id: 'me' } }),
+  useDeleteBoard: () => ({ mutateAsync: vi.fn(), isPending: false, variables: undefined }),
+  useUnfollowBoard: () => ({ mutateAsync: vi.fn(), isPending: false, variables: undefined }),
 }));
 
 vi.mock('../../../src/lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: state.activeBoard }),
   useSetActiveBoard: () => setActiveBoardMock,
+  useClearActiveBoard: () => vi.fn(),
+}));
+
+vi.mock('../../../src/hooks/use-current-user-id', () => ({
+  useStoredUserId: () => ({ userId: 'me', isLoading: false }),
 }));
 
 vi.mock('../../../src/lib/board-discovery/use-adopt-found-board', () => ({
@@ -132,6 +145,13 @@ vi.mock('../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true, refreshAuthState: vi.fn() }),
 }));
 vi.mock('../../../src/providers/toast-provider', () => ({ useToast: () => toastMock }));
+vi.mock('../../../src/providers/dialog-provider', () => ({ useConfirm: () => vi.fn(async () => true) }));
+vi.mock('../../../src/providers/theme-provider', () => ({
+  useTheme: () => ({
+    brandColors: { primary: '#6D28D9' },
+    systemColors: { tertiaryLabel: '#999' },
+  }),
+}));
 vi.mock('../../../src/lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../src/lib/onboarding/onboarding-storage', () => ({
   setBoardRevealTipPending: vi.fn().mockResolvedValue(undefined),
@@ -145,6 +165,7 @@ vi.mock('../../../src/hooks/use-is-offline', () => ({ useIsOffline: () => state.
 vi.mock('../../../src/settings', () => ({
   useOfflineBoards: () => state.offlineCards,
   useSetting: () => [state.enabledScopeKeys, vi.fn()],
+  forgetOfflineBoard: vi.fn(),
   offlineBoardKeyForBoard: (board: { boardType: string; layoutId: number; sizeId: number }) =>
     `${board.boardType}:${board.layoutId}:${board.sizeId}`,
 }));
@@ -195,17 +216,28 @@ vi.mock('../../../src/components/board-discovery/BoardCarousel', () => ({
     items,
     onSelect,
     onDownload,
+    actionFor,
+    onAction,
   }: {
     items: CarouselItem[];
     onSelect: (item: CarouselItem) => void;
     onDownload?: (item: CarouselItem) => void;
+    actionFor?: (item: CarouselItem) => string | null;
+    onAction?: (item: CarouselItem) => void;
   }) =>
     createElement(
       'div',
-      { 'data-testid': 'carousel' },
+      { 'data-testid': 'carousel', 'data-has-actions': onAction === undefined ? 'no' : 'yes' },
       items.map((item) =>
         createElement('span', { key: item.key }, [
           createElement('button', { key: 'select', type: 'button', onClick: () => onSelect(item) }, item.title),
+          actionFor && onAction
+            ? createElement(
+                'button',
+                { key: 'action', type: 'button', onClick: () => onAction(item) },
+                `${actionFor(item) ?? 'none'} ${item.title}`,
+              )
+            : null,
           // Only the Your Boards carousel is handed one; the download glyph is
           // what fires the board-card accept event.
           onDownload
@@ -339,6 +371,23 @@ describe('board picker with no usable network list', () => {
     // but every request still fails, so a follow mutation can only produce the
     // "Could not follow X" toast (plus a Sentry report) on a downloaded board.
     expect(adoptFoundBoardMock).not.toHaveBeenCalled();
+  });
+
+  // Every board action on this screen is a server mutation, so the offline branch
+  // offers none of them — and no Edit control either, since there is nothing
+  // behind it that could succeed.
+  it('offers no per-card action and no Edit control on the offline branch', () => {
+    state.isOffline = true;
+    state.offlineCards = [downloadedBoard];
+    state.downloadedScopeKeys = ['kilter:8:17'];
+
+    render(createElement(BoardSelection));
+
+    expect(screen.getByTestId('carousel').getAttribute('data-has-actions')).toBe('no');
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+    // The drill-in survives: it is navigation, not a mutation, and it is the only
+    // route left to the download console now the drawer's second board row is gone.
+    expect(screen.getByRole('button', { name: 'Manage boards' })).toBeTruthy();
   });
 
   it('keeps a retry escape hatch when the connection lies and nothing is downloaded', () => {
