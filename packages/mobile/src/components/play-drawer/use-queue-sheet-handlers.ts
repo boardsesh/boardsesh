@@ -74,7 +74,12 @@ export function useQueueSheetHandlers({
   // correct.
   const handleOpenActions = useCallback(
     (item: ClimbQueueItem) => {
-      openClimbActions(item.climb, undefined, { dismissSourceSheet: dismissQueueSheetAndWait });
+      // `queueItemUuid` names the exact row that was long-pressed, so "Play next"
+      // moves that slot instead of the first copy of a twice-queued climb.
+      openClimbActions(item.climb, undefined, {
+        dismissSourceSheet: dismissQueueSheetAndWait,
+        queueItemUuid: item.uuid,
+      });
     },
     [openClimbActions, dismissQueueSheetAndWait],
   );
