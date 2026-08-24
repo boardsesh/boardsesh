@@ -56,3 +56,21 @@ export {
   isAbortError,
   PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
 } from './fetch-playlist-suggestion-climbs';
+
+// Bounded/resumable page drain for queue replacement (#4622). The retry policy
+// is injected by the caller so this package stays transport-agnostic.
+export {
+  drainPlaylistPages,
+  fetchPlaylistPageWithRetry,
+  abortableSleep,
+  PLAYLIST_QUEUE_REPLACE_MAX_PAGES,
+  PLAYLIST_DRAIN_MAX_TOTAL_WAIT_MS,
+} from './drain-playlist-pages';
+export type {
+  ShouldRetryPage,
+  DrainSleep,
+  PlaylistPage,
+  PlaylistPageFetcher,
+  DrainPlaylistPagesResult,
+  DrainStopReason,
+} from './drain-playlist-pages';

@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
-import type { UsePlaylistClimbActivationOptions } from '@boardsesh/playlists-react';
+import type { DrainPlaylistPagesResult, UsePlaylistClimbActivationOptions } from '@boardsesh/playlists-react';
 import { usePlaylistActivation, _resetEmptyBoardFetchReportsForTests } from '../use-playlist-activation';
 
 // The shared `usePlaylistClimbActivation` is exercised by @boardsesh/playlists-react's
@@ -15,6 +15,17 @@ type ActiveBoard = { boardType: string; layoutId: number; sizeId: number; setIds
 type SuggestionSource = { playlistUuid: string; activatedClimbUuid: string; boardKey: string } | null;
 
 type QueueState = { queue: ClimbQueueItem[]; currentClimbQueueItem: ClimbQueueItem | null };
+
+type DrainArgs = {
+  fetchPage: (args: { page: number; pageSize: number; signal: AbortSignal }) => Promise<{
+    climbs: Climb[];
+    hasMore: boolean;
+  }>;
+  signal: AbortSignal;
+  pageSize: number;
+  maxPages?: number;
+  shouldRetryPage?: (error: unknown, attempt: number) => number | null;
+};
 
 const mocks = vi.hoisted(() => ({
   setCurrentClimb: vi.fn(),
@@ -32,7 +43,34 @@ const mocks = vi.hoisted(() => ({
   captured: undefined as UsePlaylistClimbActivationOptions | undefined,
   queueItemCounter: 0,
   reportHandledError: vi.fn(),
+  drain: vi.fn<(args: DrainArgs) => Promise<DrainPlaylistPagesResult>>(),
+  capturedDrainArgs: undefined as DrainArgs | undefined,
 }));
+
+/**
+ * Stand-in for the real bounded drain: pages the injected fetchPage until the
+ * server says there's no more, and reports it as a complete read. Keeps the
+ * wrapper's existing replacement cases exercising the real fetchPage plumbing;
+ * the drain's own stop reasons are covered in @boardsesh/playlists-react.
+ */
+async function drainToExhaustion(args: DrainArgs): Promise<DrainPlaylistPagesResult> {
+  const climbs: Climb[] = [];
+  let page = 0;
+  let hasMore = true;
+  while (hasMore && !args.signal.aborted) {
+    try {
+      const pageResult = await args.fetchPage({ page, pageSize: args.pageSize, signal: args.signal });
+      climbs.push(...pageResult.climbs);
+      hasMore = pageResult.hasMore;
+    } catch (error) {
+      // The real drain never throws for a page failure — it hands back what it
+      // has plus the reason, and the caller decides.
+      return { climbs, pagesFetched: page, complete: false, stoppedBy: 'error', error };
+    }
+    page += 1;
+  }
+  return { climbs, pagesFetched: page, complete: !hasMore, stoppedBy: hasMore ? 'aborted' : 'exhausted' };
+}
 
 const VIEW_ONLY_BOARD = { boardName: 'tension', layoutId: 9, sizeId: 5, setIds: '1,2', angle: 35 };
 
@@ -44,6 +82,11 @@ vi.mock('@boardsesh/playlists-react', () => ({
   fetchPlaylistSuggestionClimbs: (args: unknown) => mocks.fetchSuggestion(args),
   isAbortError: (error: unknown) => error instanceof Error && error.name === 'AbortError',
   PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE: 100,
+  PLAYLIST_QUEUE_REPLACE_MAX_PAGES: 30,
+  drainPlaylistPages: (args: DrainArgs) => {
+    mocks.capturedDrainArgs = args;
+    return mocks.drain(args);
+  },
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({
@@ -138,6 +181,8 @@ beforeEach(() => {
   mocks.suggestionSource = null;
   mocks.queueState = { queue: [], currentClimbQueueItem: null };
   mocks.captured = undefined;
+  mocks.capturedDrainArgs = undefined;
+  mocks.drain.mockImplementation(drainToExhaustion);
   mocks.activate.mockResolvedValue(undefined);
   mocks.queueItemCounter = 0;
   // Mirror real setQueue: it commits the new queue, so a later getQueueSnapshot
@@ -468,6 +513,11 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     });
     expect(fetchPage).toHaveBeenCalled();
     expect(climbs.map((climb) => climb.uuid)).toEqual(['b']);
+    // The swipe-track refresh shares the queue-replacement drain's server
+    // bucket, so it gets the same bounded per-page backoff.
+    expect(mocks.fetchSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({ shouldRetryPage: expect.any(Function) }),
+    );
   });
 
   it('swallows rejections from the underlying activation (no unhandled void promise)', async () => {
@@ -799,16 +849,126 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     it('keeps the queue unchanged and shows a toast when the full playlist fetch fails', async () => {
       const fetchPage = vi.fn().mockRejectedValue(new Error('network'));
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const tapped = makeClimb('b');
       const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
 
       await act(async () => {
-        await result.current.activate(makeClimb('b'));
+        await result.current.activate(tapped);
       });
 
       await waitFor(() => {
         expect(mocks.showToast).toHaveBeenCalledWith('detail.queueReplace.loadFailed', 'error');
       });
+      // Nothing landed at all, so this is still a hard failure: reported as
+      // `replace-queue`, not as a partial drain.
+      expect(mocks.reportHandledError).toHaveBeenCalledWith(expect.any(Error), {
+        tags: { source: 'playlist', op: 'replace-queue' },
+      });
+      // The seeded one-item queue is left alone — the drain never replaced it.
+      expect(mocks.setQueue).toHaveBeenCalledTimes(1);
+      expect(mocks.setQueue.mock.calls[0][0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['b']);
       errorSpy.mockRestore();
+    });
+
+    // #4622. The old drain was all-or-nothing: one throttled or dropped page
+    // threw away every page already fetched and the climber got an error toast
+    // instead of a queue. A partial read is a working circuit, so use it.
+    it('replaces the queue with a partial drain rather than failing the whole activation', async () => {
+      const tapped = makeClimb('b');
+      mocks.drain.mockResolvedValue({
+        climbs: [tapped, makeClimb('c')],
+        pagesFetched: 2,
+        complete: false,
+        stoppedBy: 'error',
+        error: new Error('Rate limit exceeded. Try again in 46 seconds.'),
+      });
+      const { result } = renderActivation(vi.fn(), { replaceQueueOnActivate: true });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+
+      await waitFor(() => {
+        const lastSetQueue = mocks.setQueue.mock.calls.at(-1);
+        expect(lastSetQueue?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['b', 'c']);
+      });
+      expect(mocks.showToast).not.toHaveBeenCalled();
+      expect(mocks.reportHandledError).toHaveBeenCalledTimes(1);
+      expect(mocks.reportHandledError).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({
+          level: 'warning',
+          tags: { source: 'playlist', op: 'replace-queue-partial' },
+          extra: expect.objectContaining({ stoppedBy: 'error', pagesFetched: 2, climbCount: 2 }),
+        }),
+      );
+    });
+
+    it('replaces the queue and reports the truncation when the drain hits its page cap', async () => {
+      const tapped = makeClimb('b');
+      mocks.drain.mockResolvedValue({
+        climbs: [tapped, makeClimb('c')],
+        pagesFetched: 30,
+        complete: false,
+        stoppedBy: 'page-cap',
+      });
+      const { result } = renderActivation(vi.fn(), { replaceQueueOnActivate: true });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+
+      await waitFor(() => {
+        const lastSetQueue = mocks.setQueue.mock.calls.at(-1);
+        expect(lastSetQueue?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['b', 'c']);
+      });
+      expect(mocks.showToast).not.toHaveBeenCalled();
+      expect(mocks.reportHandledError).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({
+          tags: { source: 'playlist', op: 'replace-queue-partial' },
+          extra: expect.objectContaining({ stoppedBy: 'page-cap', pagesFetched: 30 }),
+        }),
+      );
+    });
+
+    it('touches nothing and reports nothing when the drain is aborted mid-flight', async () => {
+      const tapped = makeClimb('b');
+      let cancelReplacement: () => void = () => {};
+      mocks.drain.mockImplementation(async () => {
+        // Leaving the screen (or tapping another row) aborts the replacement.
+        cancelReplacement();
+        return { climbs: [tapped, makeClimb('c')], pagesFetched: 1, complete: false, stoppedBy: 'aborted' };
+      });
+      const { result } = renderActivation(vi.fn(), { replaceQueueOnActivate: true });
+      cancelReplacement = () => result.current.queueReplaceSheet.onCancel();
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+
+      // Only the seed from the tap itself — the drained list never lands.
+      expect(mocks.setQueue).toHaveBeenCalledTimes(1);
+      expect(mocks.setQueue.mock.calls[0][0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['b']);
+      expect(mocks.showToast).not.toHaveBeenCalled();
+      expect(mocks.reportHandledError).not.toHaveBeenCalled();
+    });
+
+    it('drains with the shared page size, the page cap and a retry policy', async () => {
+      const tapped = makeClimb('b');
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [tapped], hasMore: false });
+      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+
+      await waitFor(() => expect(mocks.capturedDrainArgs).toBeDefined());
+      expect(mocks.capturedDrainArgs).toMatchObject({
+        pageSize: 100,
+        maxPages: 30,
+        shouldRetryPage: expect.any(Function),
+      });
     });
   });
 });

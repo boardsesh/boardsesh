@@ -21,8 +21,11 @@ import { useTranslation } from 'react-i18next';
 import {
   usePlaylistClimbActivation,
   fetchPlaylistSuggestionClimbs,
+  drainPlaylistPages,
   isAbortError,
   PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
+  PLAYLIST_QUEUE_REPLACE_MAX_PAGES,
+  type DrainPlaylistPagesResult,
 } from '@boardsesh/playlists-react';
 import { createPlaylistSuggestionSource, getQueueBoardKey, type Climb, type ClimbQueueItem } from '@boardsesh/queue';
 import { canAddClimbToBoard } from '@boardsesh/board-config';
@@ -34,6 +37,7 @@ import { climbToQueueItem } from '../climb-to-queue-item';
 import { reportHandledError } from '../error-reporting';
 import { toSchemaClimb } from '../climb-types';
 import { getPlaylistRenderBoardTarget } from './playlist-climb-render-board';
+import { shouldRetryPlaylistPage } from './playlist-page-retry';
 import type { PlaylistRenderBoard } from './use-playlist-render-board';
 
 // Playlists whose board-scoped fetch has already been reported as empty this app
@@ -310,14 +314,21 @@ export function usePlaylistActivation({
         activatedClimbUuid,
         signal,
         fetchPage: ({ page, pageSize, signal: pageSignal }) => fetchPage({ page, pageSize, board, signal: pageSignal }),
+        // Same server bucket as the queue-replacement drain, so a throttled or
+        // dropped page gets the same bounded backoff instead of killing the
+        // whole swipe-track refresh.
+        shouldRetryPage: shouldRetryPlaylistPage,
       });
     },
     [activeBoard, fetchPage],
   );
 
+  // Reads the whole playlist for queue replacement. Bounded (30 pages), with a
+  // per-page backoff that RESUMES from the failed page and a partial result when
+  // it can't finish — see @boardsesh/playlists-react's drain for why (#4622).
   const fetchAllClimbsForBoard = useCallback(
-    async ({ signal }: { signal: AbortSignal }) => {
-      if (!activeBoard) return [];
+    async ({ signal }: { signal: AbortSignal }): Promise<DrainPlaylistPagesResult> => {
+      if (!activeBoard) return { climbs: [], pagesFetched: 0, complete: true, stoppedBy: 'exhausted' };
       const board = {
         boardName: activeBoard.boardType,
         layoutId: activeBoard.layoutId,
@@ -325,23 +336,13 @@ export function usePlaylistActivation({
         setIds: activeBoard.setIds,
         angle: activeBoard.angle,
       };
-      const climbs: Climb[] = [];
-      let page = 0;
-      let hasMore = true;
-
-      while (hasMore && !signal.aborted) {
-        const pageResult = await fetchPage({
-          page,
-          pageSize: PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
-          board,
-          signal,
-        });
-        climbs.push(...pageResult.climbs);
-        hasMore = pageResult.hasMore;
-        page += 1;
-      }
-
-      return climbs;
+      return drainPlaylistPages({
+        fetchPage: ({ page, pageSize, signal: pageSignal }) => fetchPage({ page, pageSize, board, signal: pageSignal }),
+        signal,
+        pageSize: PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
+        maxPages: PLAYLIST_QUEUE_REPLACE_MAX_PAGES,
+        shouldRetryPage: shouldRetryPlaylistPage,
+      });
     },
     [activeBoard, fetchPage],
   );
@@ -378,7 +379,30 @@ export function usePlaylistActivation({
       replacementAbortRef.current = abortController;
       setIsReplacingQueue(true);
       try {
-        const climbs = options.loadedClimbs ?? (await fetchAllClimbsForBoard({ signal: abortController.signal }));
+        let climbs = options.loadedClimbs;
+        if (!climbs) {
+          const drain = await fetchAllClimbsForBoard({ signal: abortController.signal });
+          // Nothing landed at all and the drain died on a rejection — that is the
+          // same failure as before, so rethrow and let the catch below toast and
+          // leave the seeded queue alone. Anything else is good enough to play.
+          if (drain.pagesFetched === 0 && drain.stoppedBy === 'error') throw drain.error;
+          climbs = drain.climbs;
+          if (!drain.complete && drain.stoppedBy !== 'aborted') {
+            // Silent for the climber (they got a working queue), but the page
+            // cap, the rate-limit stops and the wait ceiling are all judgement
+            // calls we want production numbers for before tuning them.
+            reportHandledError(drain.error ?? new Error('Playlist queue replacement drained partially'), {
+              level: 'warning',
+              tags: { source: 'playlist', op: 'replace-queue-partial' },
+              extra: {
+                sourceId,
+                stoppedBy: drain.stoppedBy,
+                pagesFetched: drain.pagesFetched,
+                climbCount: drain.climbs.length,
+              },
+            });
+          }
+        }
         if (abortController.signal.aborted) return;
         // Canary. A board-scoped fetch that comes back empty for a playlist the
         // detail list has already rendered climbable rows for degrades into a

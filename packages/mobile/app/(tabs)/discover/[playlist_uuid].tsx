@@ -121,10 +121,12 @@ export default function PlaylistDetail() {
       page,
       pageSize,
       board,
+      signal,
     }: {
       page: number;
       pageSize: number;
       board: { boardName: string; layoutId: number; sizeId: number; setIds: string; angle: number };
+      signal: AbortSignal;
     }) => {
       const input: GetPlaylistClimbsInput = {
         playlistId: playlistUuid,
@@ -136,9 +138,14 @@ export default function PlaylistDetail() {
         page,
         pageSize,
       };
+      // Object overload so the abort signal reaches fetch: leaving a playlist
+      // mid-drain must cancel the request in flight, not just stop the next one.
       const response = await getHttpClient().request<GetPlaylistClimbsQueryResponse, { input: GetPlaylistClimbsInput }>(
-        GET_PLAYLIST_CLIMBS,
-        { input },
+        {
+          document: GET_PLAYLIST_CLIMBS,
+          variables: { input },
+          signal,
+        },
       );
       return {
         climbs: toQueueClimbs(response.playlistClimbs.climbs),

@@ -1,4 +1,5 @@
 import type { Climb } from '@boardsesh/queue';
+import { fetchPlaylistPageWithRetry, type DrainSleep, type ShouldRetryPage } from './drain-playlist-pages';
 
 export const PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE = 100;
 const MAX_PLAYLIST_SUGGESTION_REFRESH_PAGES = 10;
@@ -34,6 +35,8 @@ export async function fetchPlaylistSuggestionClimbs({
   pageSize = PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
   maxPages = MAX_PLAYLIST_SUGGESTION_REFRESH_PAGES,
   maxClimbsAfterActivated = MAX_PLAYLIST_SUGGESTION_REFRESH_CLIMBS_AFTER_ACTIVE,
+  shouldRetryPage,
+  sleep,
 }: {
   activatedClimbUuid: string;
   signal: AbortSignal;
@@ -41,6 +44,15 @@ export async function fetchPlaylistSuggestionClimbs({
   pageSize?: number;
   maxPages?: number;
   maxClimbsAfterActivated?: number;
+  /**
+   * Optional per-page retry policy. Omitted (the default) this helper behaves
+   * exactly as it always has: the first rejection propagates and nothing
+   * sleeps. Callers that share a rate-limited server bucket opt in so a single
+   * throttled or dropped page doesn't kill the whole refresh.
+   */
+  shouldRetryPage?: ShouldRetryPage;
+  /** Injectable sleep for tests; defaults to an abortable setTimeout. */
+  sleep?: DrainSleep;
 }): Promise<Climb[]> {
   const fetchedClimbs: Climb[] = [];
   let page = 0;
@@ -49,7 +61,14 @@ export async function fetchPlaylistSuggestionClimbs({
   let loadedClimbsAfterActivated = 0;
 
   while (hasMore && page < maxPages && loadedClimbsAfterActivated < maxClimbsAfterActivated && !signal.aborted) {
-    const pageResult = await fetchPage({ page, pageSize, signal });
+    const pageResult = await fetchPlaylistPageWithRetry({
+      fetchPage,
+      page,
+      pageSize,
+      signal,
+      shouldRetryPage,
+      sleep,
+    });
 
     for (const pageClimb of pageResult.climbs) {
       if (pageClimb.uuid === activatedClimbUuid) {
