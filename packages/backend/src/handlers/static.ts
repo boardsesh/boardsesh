@@ -7,6 +7,7 @@ import { getAvatarsDir } from './avatars';
 import { getGymLogosDir } from './gym-logos';
 import { getGymPhotosDir } from './gym-photos';
 import { isS3Configured, getFromS3, uploadToS3 } from '../storage/s3';
+import { logger } from '../utils/logger';
 import { type AllowedImageSize, resizeImageBuffer, resizedVariantKey, streamToBuffer } from '../lib/image-resize';
 
 const MIME_TYPES: Record<string, string> = {
@@ -50,10 +51,13 @@ async function serveResizedImageFromS3(
   options: { cacheVariant: boolean; cacheControl: string },
 ): Promise<boolean> {
   if (options.cacheVariant) {
-    const cached = await getFromS3('media', resizedVariantKey(baseKey, size));
+    const variantKey = resizedVariantKey(baseKey, size);
+    const cached = await getFromS3('media', variantKey);
     if (cached && cached.contentLength === 0) {
       // A zero-byte cached variant would be served as an "OK" empty image.
-      // Drop it and fall through to resizing the original.
+      // Drop it and fall through to resizing the original. Logged because the
+      // only outward sign is an elevated origin-hit rate on this key.
+      logger.warn(`[Static] discarding zero-byte cached variant ${variantKey}; resizing original instead`);
       cached.stream.destroy();
     } else if (cached) {
       res.writeHead(200, {
