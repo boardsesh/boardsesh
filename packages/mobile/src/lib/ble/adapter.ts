@@ -60,8 +60,11 @@ function waitForRetryBackoffBeforeDeadline(deadlineMs: number): Promise<boolean>
       resolve(completedFullBackoff);
     };
 
-    // Schedule the deadline first so an exact tie preserves the existing
-    // semantics: no second attempt begins once the shared budget is exhausted.
+    // Scheduled first, so on an exact-millisecond tie the deadline settles
+    // before the backoff and no second attempt begins on an exhausted budget.
+    // Both real runtimes and Vitest's fake timers run same-expiry timers in
+    // insertion order; `settle` is idempotent either way, so the tie-break is a
+    // preference, not something correctness rests on.
     deadlineTimer = setTimeout(() => settle(false), remainingMs);
     backoffTimer = setTimeout(() => settle(true), ANDROID_CONNECT_RETRY_BACKOFF_MS);
   });
@@ -207,14 +210,12 @@ export class RNBleAdapter implements BluetoothAdapter {
       return { connected: secondAttempt.result, retrySucceeded: true };
     }
 
-    const secondError = secondAttempt.error;
-    if (isRetryableAndroidConnectError(secondError)) {
-      // No third attempt. Close the exhausted handle without waiting: we already
-      // have the terminal error, so awaiting a cleanup that may hang would only
-      // keep the climber on a spinner before we can show it.
-      cancelWithoutWaiting();
-    }
-    throw secondError;
+    // No third attempt. Close whatever handle attempt two left behind, whatever
+    // it failed with — a non-retryable second error strands one just as readily.
+    // Without waiting: we already hold the terminal error, so awaiting a cleanup
+    // that may hang would only keep the climber on a spinner before we show it.
+    cancelWithoutWaiting();
+    throw secondAttempt.error;
   }
 
   async isAvailable(): Promise<boolean> {

@@ -1318,6 +1318,31 @@ describe('RNBleAdapter', () => {
       }
     });
 
+    it('still closes the handle when attempt two fails with a non-retryable error', async () => {
+      vi.useFakeTimers();
+      try {
+        const deniedSecondError = androidConnectError(201, 19);
+        const { devicePicker } = setupSelectedDevice();
+        mockBleManager.connectToDevice
+          .mockRejectedValueOnce(androidConnectError(201, 133))
+          .mockRejectedValueOnce(deniedSecondError);
+        mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
+
+        const adapter = new RNBleAdapter(devicePicker, 'aurora', true);
+        const settled = adapter.requestAndConnect().catch((error: unknown) => error);
+        await vi.advanceTimersByTimeAsync(500);
+
+        await expect(settled).resolves.toBe(deniedSecondError);
+        expect(mockBleManager.connectToDevice).toHaveBeenCalledTimes(2);
+        // Cleanup is not conditional on the second error being retryable — a
+        // denied status strands a native GATT handle just the same.
+        expect(mockBleManager.cancelDeviceConnection).toHaveBeenCalledTimes(2);
+        expect(adapter.getLastConnectAttemptCount()).toBe(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('surfaces the second error immediately even when the exhausted cleanup hangs', async () => {
       vi.useFakeTimers();
       try {
