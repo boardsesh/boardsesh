@@ -27,11 +27,23 @@ const nextBotTokens = extractNextBotTokens();
 const uaContaining = (token: string) => `Mozilla/5.0 (compatible; ${token}/2.1; +http://example.invalid/bot.html)`;
 
 describe('isCrawlerUserAgent is a superset of the installed Next bot list', () => {
-  it('found the isBot regex in the installed Next, with a plausible token count', () => {
+  it('extracted a plausible token list from the installed Next, not regex debris', () => {
     // Guards the extraction itself: if Next ever ships a differently-shaped
-    // isBot, this fails loudly instead of leaving the it.each below vacuous.
+    // isBot, this must fail loudly rather than leave the it.each below vacuous
+    // or, worse, iterating over fragments that happen to number 30+. A count
+    // alone would not catch that, so anchor on tokens Next has shipped since
+    // 2019 and reject anything that does not look like a UA token.
     expect(nextBotTokens.length).toBeGreaterThanOrEqual(30);
-    expect(nextBotTokens).toContain('Googlebot');
+    expect(nextBotTokens.length).toBeLessThan(200);
+    for (const anchorToken of ['Googlebot', 'Bingbot', 'facebookexternalhit', 'Twitterbot', 'GPTBot']) {
+      expect(nextBotTokens).toContain(anchorToken);
+    }
+    for (const token of nextBotTokens) {
+      expect(token.length).toBeGreaterThan(2);
+      expect(token.length).toBeLessThan(40);
+      // UA tokens, not regex fragments: no leftover grouping or quantifiers.
+      expect(/^[\w .+-]+$/.test(token)).toBe(true);
+    }
   });
 
   it.each(nextBotTokens)('still classifies Next token %s as a crawler', (token) => {
