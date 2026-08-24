@@ -137,7 +137,10 @@ final class BoardBleImplicitRelightStateTests: XCTestCase {
         SharedQueueState.save(items: [], currentIndex: 0, to: defaults)
         manager.testHooks.displaySharedCurrentItem(defaults: defaults)
 
-        XCTAssertTrue(peripheral.writtenChunks.isEmpty)
+        XCTAssertTrue(
+            peripheral.writtenChunks.isEmpty,
+            "a published-but-empty queue must not clear the wall either (#4544)"
+        )
     }
 
     func testImplicitRelightWithAnOutOfRangeSharedIndexLeavesTheWallAlone() {
