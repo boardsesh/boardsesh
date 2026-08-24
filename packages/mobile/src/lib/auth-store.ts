@@ -6,9 +6,9 @@ import {
   writeSecureValueToEitherNamespace,
 } from './secure-store-io';
 
-export const JWT_KEY = 'boardsesh_jwt';
-export const REFRESH_TOKEN_KEY = 'boardsesh_refresh_token';
-export const EXPIRES_AT_KEY = 'boardsesh_token_expires_at';
+const JWT_KEY = 'boardsesh_jwt';
+const REFRESH_TOKEN_KEY = 'boardsesh_refresh_token';
+const EXPIRES_AT_KEY = 'boardsesh_token_expires_at';
 const CLEARED_CREDENTIAL = '__boardsesh_auth_credential_cleared__';
 const AUTH_SECURE_KEYS = [JWT_KEY, REFRESH_TOKEN_KEY, EXPIRES_AT_KEY] as const;
 let credentialGeneration = 0;
