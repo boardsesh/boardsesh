@@ -31,7 +31,9 @@
     "saveError": "No se pudieron guardar los ajustes",
     "validation": {
       "displayNameTooLong": "El nombre debe tener menos de 100 caracteres",
-      "compressionFailed": "No se pudo comprimir — prueba con una imagen más pequeña"
+      "compressionFailed": "No se pudo comprimir — prueba con una imagen más pequeña",
+      "avatarUnreadable": "Esa foto no se pudo abrir — prueba con otra",
+      "avatarFormatUnsupported": "Ese formato no es compatible — prueba con JPEG o PNG"
     },
     "avatarUploadFailed": "No se pudo subir la foto de perfil"
   },

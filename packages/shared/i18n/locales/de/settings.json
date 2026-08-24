@@ -31,7 +31,9 @@
     "saveError": "Einstellungen konnten nicht gespeichert werden",
     "validation": {
       "displayNameTooLong": "Der Anzeigename muss kürzer als 100 Zeichen sein",
-      "compressionFailed": "Komprimieren hat nicht geklappt — probier ein kleineres Bild"
+      "compressionFailed": "Komprimieren hat nicht geklappt — probier ein kleineres Bild",
+      "avatarUnreadable": "Das Foto ließ sich nicht öffnen — probier ein anderes",
+      "avatarFormatUnsupported": "Das Format wird nicht unterstützt — probier ein JPEG oder PNG"
     },
     "avatarUploadFailed": "Avatar-Upload fehlgeschlagen"
   },

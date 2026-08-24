@@ -19,10 +19,21 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 /**
- * Write a 404. `noStore` is used by the avatar / gym-logo handlers: a stored
- * object can be replaced by a re-upload at the same key, so an edge cache
- * holding onto the 404 would pin the broken state for a day. Missing images
- * are rare enough that the extra origin hits don't matter.
+ * Write a 404. `noStore` keeps an edge cache from holding onto the miss.
+ *
+ * Two caveats worth stating plainly, because the obvious justification for this
+ * is weaker than it looks. Missing avatars are **not** rare — 83 of 156 stored
+ * avatar URLs (53%) already 404 in production. And a repaired image does not
+ * reappear at the same URL: every re-upload stamps a fresh `v=<timestamp>`
+ * (`packages/mobile/src/lib/avatar-upload.ts`) and gym images carry `?v=<version>`,
+ * so a cached 404 on the old URL could not shadow the replacement anyway.
+ *
+ * What `no-store` actually buys is that a client which has already resolved a
+ * URL — a rendered feed, a cached GraphQL payload — retries instead of being
+ * told "gone" for four hours by Cloudflare's default TTL on an origin that sends
+ * no cache header. The cost is an origin hit per render for those 53%, on a repo
+ * where production burn is tracked. If that cost shows up, `public, max-age=300`
+ * is the right trade here rather than reverting to an uncontrolled TTL.
  */
 function sendNotFound(res: ServerResponse, options: { noStore?: boolean } = {}): void {
   res.writeHead(404, {

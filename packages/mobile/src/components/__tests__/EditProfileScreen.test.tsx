@@ -286,6 +286,50 @@ describe('EditProfileScreen', () => {
     });
   });
 
+  it('rescues a good crop the picker could not put a MIME type on', async () => {
+    // `ImagePickerAsset.mimeType` is documented as null when the picker cannot
+    // determine it. Refusing on that alone would forfeit exactly the rescue this
+    // fallback exists for, so the type is read off the bytes instead.
+    launchImageLibraryMock.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file://picked-avatar.jpg', width: 2400, height: 1600, mimeType: undefined }],
+    });
+    // A real JPEG header — FF D8 FF.
+    fileBytesByUri.set('file://picked-avatar.jpg', new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2]));
+    fileBytesByUri.set('file://compressed-avatar.jpg', new Uint8Array());
+
+    render(createElement(EditProfileScreen));
+
+    fireEvent.click(screen.getByRole('button', { name: 'profile.avatar.upload' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'profile.save' })).toHaveProperty('disabled', false);
+    });
+    expect(showToastMock).not.toHaveBeenCalledWith('profile.validation.avatarFormatUnsupported', 'error');
+
+    fireEvent.click(screen.getByRole('button', { name: 'profile.save' }));
+
+    await waitFor(() => {
+      expect(uploadAvatarMock).toHaveBeenCalledWith(
+        {
+          uri: 'file://picked-avatar.jpg',
+          bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2]),
+          name: 'avatar.jpg',
+          type: 'image/jpeg',
+        },
+        '11111111-1111-4111-8111-111111111111',
+      );
+    });
+
+    // Rescued, so this is a warning rather than a lost pick.
+    const [, context] = reportHandledErrorMock.mock.calls[0] as [Error, Record<string, unknown>];
+    expect(context).toMatchObject({
+      level: 'warning',
+      tags: { source: 'avatar-compress', compressed_read: 'empty' },
+      extra: { originalType: 'image/jpeg', declaredType: 'unknown' },
+    });
+  });
+
   it('refuses a fallback crop the backend would not accept, rather than mislabelling it', async () => {
     launchImageLibraryMock.mockResolvedValue({
       canceled: false,
@@ -299,12 +343,20 @@ describe('EditProfileScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'profile.avatar.upload' }));
 
     await waitFor(() => {
-      expect(showToastMock).toHaveBeenCalledWith('profile.validation.compressionFailed', 'error');
+      // The format is the problem, so say so — "try a smaller image" would send
+      // the climber round a loop that cannot succeed.
+      expect(showToastMock).toHaveBeenCalledWith('profile.validation.avatarFormatUnsupported', 'error');
     });
+    expect(showToastMock).not.toHaveBeenCalledWith('profile.validation.compressionFailed', 'error');
     expect(uploadAvatarMock).not.toHaveBeenCalled();
 
     const [, context] = reportHandledErrorMock.mock.calls[0] as [Error, Record<string, unknown>];
-    expect(context).toMatchObject({ level: 'error', extra: { originalType: 'image/heic' } });
+    // `originalType` is what we would have sent; the picker's own label is kept
+    // separately so triage can see a format we refused.
+    expect(context).toMatchObject({
+      level: 'error',
+      extra: { originalType: 'unknown', declaredType: 'image/heic' },
+    });
   });
 
   it('falls back to the picker crop when the manipulator throws outright', async () => {
@@ -354,8 +406,10 @@ describe('EditProfileScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'profile.avatar.upload' }));
 
     await waitFor(() => {
-      expect(showToastMock).toHaveBeenCalledWith('profile.validation.compressionFailed', 'error');
+      // Nothing read back, so no smaller image would help either.
+      expect(showToastMock).toHaveBeenCalledWith('profile.validation.avatarUnreadable', 'error');
     });
+    expect(showToastMock).not.toHaveBeenCalledWith('profile.validation.compressionFailed', 'error');
     // No avatar was picked, so Save stays disabled and nothing is uploaded.
     expect(screen.getByTestId('avatar').getAttribute('data-uri')).toBe('');
     expect(screen.getByRole('button', { name: 'profile.save' })).toHaveProperty('disabled', true);
