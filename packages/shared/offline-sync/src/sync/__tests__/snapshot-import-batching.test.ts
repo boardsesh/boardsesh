@@ -18,7 +18,14 @@ import {
   SNAPSHOT_IMPORT_BATCH_ROWS,
   type SnapshotSource,
 } from '../snapshot-bootstrap';
-import { classifyBootstrapFailure, getBootstrapAttempts, readBootstrapRetryState } from '../bootstrap-retry';
+import {
+  classifyBootstrapFailure,
+  getBootstrapAttempts,
+  isTerminal as isBootstrapRetryTerminal,
+  readBootstrapRetryState,
+  shouldSkipPagedPull,
+  MAX_BOOTSTRAP_LOCK_FAILURES,
+} from '../bootstrap-retry';
 import { pullSync } from '../pull-client';
 import { getCheckpoint } from '../checkpoints';
 import { removeBoardScopeData } from '../scope-teardown';
@@ -714,12 +721,61 @@ describe('a lost lock race is not a bad artifact', () => {
   // the import stage. With ~143 acquisitions instead of one, two lost races would
   // have spent the whole structural budget (MAX_BOOTSTRAP_ATTEMPTS is 2) and
   // settled a board onto the paged crawl for the life of the install.
-  it('classifies a locked import as transport, not structural', () => {
+  it('classifies a locked import as database-locked — its own budget, not structural or transport', () => {
     const locked = new Error('Error code 5: database is locked');
-    expect(classifyBootstrapFailure({ cause: locked, stage: 'import' })).toBe('transport');
+    expect(classifyBootstrapFailure({ cause: locked, stage: 'import' })).toBe('database-locked');
     expect(classifyBootstrapFailure({ cause: new Error('quick_check failed'), stage: 'import' })).toBe(
       'structural-artifact',
     );
+  });
+
+  it('charges lock-acquisition wait to importLockWaitMs, not to the phase it waited in', async () => {
+    // The conflation this PR exists to undo, one level down: `importReconcileMs`
+    // and `importRowsMs` used to be stamped around `runExclusive`, which BEGINs
+    // first. A reconcile that executes in 1ms behind a `removeBoardScopeData`
+    // would then report the whole busy_timeout + ladder wait, and the follow-up
+    // trigger for batching reconcileScope (`importReconcileMs` p90 on
+    // `bootstrapHealed = true`) would fire on contention rather than on cost.
+    const { db } = await freshClientDb('lock-wait-split');
+    const adapterPrototype = Object.getPrototypeOf(db) as { execAsync: typeof db.execAsync };
+    const realExecAsync = adapterPrototype.execAsync;
+    let exclusiveOpens = 0;
+    vi.spyOn(adapterPrototype, 'execAsync').mockImplementation(async function (this: unknown, source: string) {
+      if (source === 'BEGIN EXCLUSIVE') {
+        exclusiveOpens += 1;
+        // The FIRST acquisition is the reconcile's, so the whole injected wait
+        // below belongs to `importReconcileMs`'s window and nothing else.
+        if (exclusiveOpens === 1) throw new Error('Error code 5: database is locked');
+      }
+      return realExecAsync.call(this, source);
+    } as typeof db.execAsync);
+
+    const WAIT_MS = 40;
+    // Real wall time, ignoring the requested rung: the ladder's 250ms would make
+    // the case slow for no extra signal. Yields rather than a timer so the SQLite
+    // double's microtask ordering is untouched.
+    const sleep = async (): Promise<void> => {
+      const until = Date.now() + WAIT_MS;
+      while (Date.now() < until) await Promise.resolve();
+    };
+
+    const result = await bootstrapScopeFromSnapshot({
+      db,
+      scope: KILTER_SCOPE,
+      scopeKey: KILTER_SCOPE_KEY,
+      filePath: artifactPath,
+      batchRows: 4,
+      sleep,
+    });
+
+    vi.restoreAllMocks();
+    expect(result.importLockWaitMs).toBeGreaterThanOrEqual(WAIT_MS);
+    // The wait was subtracted, not charged: a 14-climb fixture's reconcile is
+    // ~1ms of work, so this can only clear WAIT_MS if the wait leaked in.
+    expect(result.importReconcileMs).toBeLessThan(WAIT_MS);
+    // And the hold is measured from AFTER the BEGIN succeeded, so it never
+    // contains the wait either.
+    expect(result.importLockMaxMs).toBeLessThan(result.importLockWaitMs);
   });
 
   it('retries a batch that loses BEGIN EXCLUSIVE rather than throwing the import away', async () => {
@@ -820,6 +876,105 @@ describe('a lost lock race is not a bad artifact', () => {
       false,
     );
     expect(retryState.structuralFailures).toBe(0);
-    expect(retryState.lastFailureKind).toBe('transport');
+    expect(retryState.lastFailureKind).toBe('database-locked');
+    // Its OWN budget, not transport's: this very cycle handed the artifact back
+    // off disk (`reused: true`) and `clearTransportFailures` ran on the way past,
+    // so a transport-charged failure would have been reset before it was charged.
+    expect(retryState.lockFailures).toBe(1);
+    expect(retryState.transportFailures).toBe(0);
+  });
+
+  it('settles onto the paged crawl after MAX_BOOTSTRAP_LOCK_FAILURES instead of looping forever', async () => {
+    // The failure this case exists for: charge the lock failure to the TRANSPORT
+    // budget and a retained artifact resets it every cycle — `downloadArtifact`
+    // short-circuits with `reused: true` having moved zero bytes, and the caller
+    // still runs `clearTransportFailures`. The counter can then never reach its
+    // cap, the scope is never terminal, `markBootstrapPagedFallback` never runs,
+    // and `shouldSkipPagedPull` keeps skipping the crawl on the ~2-minute
+    // cooldown (well inside BOOTSTRAP_RETRY_GRACE_WINDOW_MS). A device with
+    // persistent write-lock contention would re-ATTACH and re-quick_check the
+    // artifact every couple of minutes and never get the board by EITHER path —
+    // strictly worse than the two structural strikes this escape replaced.
+    const { db } = await freshClientDb('lock-budget-bounded');
+    const adapterPrototype = Object.getPrototypeOf(db) as { runAsync: typeof db.runAsync };
+    const realRunAsync = adapterPrototype.runAsync;
+    // Contention that outlives every cycle: the stats batch never lands.
+    vi.spyOn(adapterPrototype, 'runAsync').mockImplementation(async function (
+      this: unknown,
+      source: string,
+      ...rest: unknown[]
+    ) {
+      if (source.includes('INSERT OR REPLACE INTO main.board_climb_stats')) {
+        throw new Error('Error code 5: database is locked');
+      }
+      return realRunAsync.call(this, source, ...(rest as never[]));
+    } as typeof db.runAsync);
+
+    const deleteArtifact = vi.fn(async () => {});
+    const manifestEntry: SnapshotManifestEntry = {
+      boardType: 'kilter',
+      layoutId: 1,
+      key: 'board-snapshots/v1/kilter/1/2026-08-01.db',
+      url: 'https://example.test/kilter-1.db',
+      bytes: 4096,
+      contentEncoding: 'gzip',
+      builtAt: BUILT_AT,
+      schemaVersion: LATEST_SCHEMA_VERSION,
+      tables: {
+        board_climbs: { watermarkUpdatedAt: WATERMARK_AT, watermarkSyncSeq: WATERMARK_SEQ, rowCount: 30 },
+        board_climb_stats: { watermarkUpdatedAt: WATERMARK_AT, watermarkSyncSeq: WATERMARK_SEQ, rowCount: 40 },
+      },
+    };
+    const source: SnapshotSource = {
+      fetchManifest: async () => ({
+        formatVersion: SNAPSHOT_MANIFEST_FORMAT_VERSION,
+        generatedAt: BUILT_AT,
+        entries: [manifestEntry],
+      }),
+      // The retained artifact, cycle after cycle: zero bytes moved.
+      downloadArtifact: async () => ({ filePath: artifactPath, reused: true }),
+      deleteArtifact,
+      releaseArtifact: async () => {},
+    };
+
+    // Injected clock rather than fake timers, which fight the SQLite double. Each
+    // cycle starts past the previous failure's cooldown rung (2 min, then 15 min),
+    // so eligibility is never what stops the loop — the budget is.
+    let clockMs = 1_800_000_000_000;
+    for (let cycle = 0; cycle < MAX_BOOTSTRAP_LOCK_FAILURES; cycle += 1) {
+      await pullSync(db, { invalidateQueries: vi.fn() } as unknown as QueryInvalidator, emptyPageFetch(), {
+        enabledBoards: [KILTER_SCOPE_KEY],
+        snapshotSource: source,
+        now: () => clockMs,
+        random: () => 0,
+      });
+      clockMs += 3 * 60 * 60 * 1000;
+    }
+
+    vi.restoreAllMocks();
+    const { state: retryState } = await readBootstrapRetryState(
+      db,
+      KILTER_SCOPE_KEY,
+      { now: clockMs, random: () => 0 },
+      false,
+    );
+    // Asserted FIRST because it is the defect, not a detail: on the transport
+    // budget this reads `false` after three cycles (and after three hundred),
+    // and the two lines below it read `true` and no marker at all.
+    expect(isBootstrapRetryTerminal(retryState)).toBe(true);
+    // The point of going terminal: the board gets served, slowly, instead of not
+    // at all. A fresh scope stops skipping its 400-round-trip crawl.
+    expect(shouldSkipPagedPull({ retryState, hasBoardCheckpoint: false, now: clockMs })).toBe(false);
+    expect(retryState.lockFailures).toBe(MAX_BOOTSTRAP_LOCK_FAILURES);
+    // Never laundered into, or out of, either of the other two budgets.
+    expect(retryState.transportFailures).toBe(0);
+    expect(retryState.structuralFailures).toBe(0);
+    const pagedFallback = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
+      `bootstrap-paged-fallback:${KILTER_SCOPE_KEY}`,
+    ]);
+    expect(pagedFallback?.value).toBe('1');
+    // And the ~103 MB file survives all three: contention is not a bad artifact.
+    expect(deleteArtifact).not.toHaveBeenCalled();
+    expect(existsSync(artifactPath)).toBe(true);
   });
 });

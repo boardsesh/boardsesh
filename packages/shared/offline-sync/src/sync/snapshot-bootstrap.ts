@@ -85,6 +85,19 @@ const SNAPSHOT_ALIAS = 'bs_snapshot';
  * `applyBulkImportPragmas` drops the import connection to `synchronous =
  * NORMAL`. The number to read before changing it is `importLockMaxMs` p99 on
  * `Offline Board Download Completed`, which this import emits for exactly that.
+ *
+ * THE SECOND PER-COMMIT COST, which the fsync argument above does not cover:
+ * SQLite attempts a WAL autocheckpoint at COMMIT, and nothing here overrides the
+ * 1000-page default. The single pre-#4310 transaction paid that once, at the end;
+ * batching moves it inside the holds, crossing the threshold roughly every 4 MB
+ * of WAL, so a minority of batches COMMIT with a passive checkpoint (page copy-
+ * back plus the WAL sync `synchronous = NORMAL` still performs before one) inside
+ * `heldMs`. So the `importLockMaxMs` tail is set by checkpoint-carrying batches,
+ * not by the ~150 ms typical batch this number is sized from, and that same cost
+ * is the most likely way `importRowsMs` regresses against the single transaction.
+ * `wal_autocheckpoint = 0` for the import would move it out of the holds at the
+ * price of a WAL that grows to the size of the whole import on a phone — not a
+ * trade worth making before `importLockMaxMs` says the tail is a problem.
  */
 export const SNAPSHOT_IMPORT_BATCH_ROWS = 5_000;
 
@@ -337,11 +350,43 @@ export type SnapshotBootstrapResult = {
    * transaction, so on a heal-over-partial (#4313) or a second size of an
    * already-downloaded layout it can be the maximum rather than a batch — that
    * population is the named follow-up, and this number is how it gets read.
+   *
+   * HOLD vs WAIT, kept apart on purpose. `importLockMaxMs` starts after
+   * `BEGIN EXCLUSIVE` succeeds, so it is a hold and nothing else. The time spent
+   * WAITING to acquire — up to `busy_timeout` per attempt plus the 250/750/2000 ms
+   * ladder — is accumulated into `importLockWaitMs` and SUBTRACTED from
+   * `importReconcileMs` and `importRowsMs`, so those two are work-plus-hold. Left
+   * in, a reconcile that executed in 40 ms behind a `removeBoardScopeData` would
+   * report seconds, and the follow-up trigger for batching `reconcileScope`
+   * (`importReconcileMs` p90 on `bootstrapHealed = true`) would fire on
+   * contention rather than on reconcile cost — the same conflation between "time
+   * elapsed" and "time holding the lock" that this whole split exists to undo.
+   *
+   * ONE COST STAYS INSIDE THE HOLD, unavoidably: SQLite attempts a WAL
+   * autocheckpoint at COMMIT, and nothing in this engine overrides the 1000-page
+   * default (grep `wal_autocheckpoint`: only the explicit TRUNCATE checkpoints in
+   * vacuum.ts and remove-offline-board.ts exist). The single pre-#4310
+   * transaction paid that once, after everything; ~142 commits cross the
+   * threshold roughly every 4 MB of WAL, so some batches carry a passive
+   * checkpoint — copying pages back into the main DB plus the WAL sync
+   * `synchronous = NORMAL` still performs before one — inside their COMMIT, and
+   * therefore inside `heldMs`. Read `importLockMaxMs` p90 knowing its tail is
+   * checkpoint-carrying batches, not the ~150 ms typical batch
+   * `SNAPSHOT_IMPORT_BATCH_ROWS` is sized from. Disabling the autocheckpoint for
+   * the import would move that cost out of the holds but let the WAL grow to the
+   * size of the whole import on a phone, which is a worse trade.
    */
   importVerifyMs: number;
   importReconcileMs: number;
   importRowsMs: number;
   importLockMaxMs: number;
+  /**
+   * Total time spent waiting for `BEGIN EXCLUSIVE` across every exclusive
+   * transaction of this import: `busy_timeout` blocking plus the retry ladder's
+   * sleeps. Non-zero means the import met real contention, which is what decides
+   * whether `IMPORT_LOCK_RETRY_DELAYS_MS` and the batch size are tuned right.
+   */
+  importLockWaitMs: number;
   /** Exclusive transactions the row import committed: climbs batches + stats batches. */
   importBatches: number;
 };
@@ -1302,6 +1347,7 @@ export async function bootstrapScopeFromSnapshot(params: {
   let importReconcileMs = 0;
   let importRowsMs = 0;
   let importLockMaxMs = 0;
+  let importLockWaitMs = 0;
   try {
     await db.withExclusiveTransactionAsync(async (txn) => {
       // Close the wrapper's (empty, deferred) transaction so ATTACH is legal,
@@ -1370,8 +1416,15 @@ export async function bootstrapScopeFromSnapshot(params: {
 
         /** One short exclusive transaction: take the lock, re-check, write, let go. */
         const runExclusive = async (body: () => Promise<void>): Promise<void> => {
+          // Acquisition is measured separately from the hold, and the phase
+          // stamps below subtract it. `busy_timeout` blocking plus the ladder's
+          // sleeps can run to seconds behind a `removeBoardScopeData`, and
+          // charging that to "reconcile" or "rows" would repeat, one level down,
+          // exactly the elapsed-vs-hold conflation this split exists to undo.
+          const acquireFrom = Date.now();
           await beginExclusiveWithRetry(txn, sleep);
           const heldFrom = Date.now();
+          importLockWaitMs += heldFrom - acquireFrom;
           try {
             // INSIDE the lock, deliberately. A purge that wins the lock between
             // two batches deletes this scope's rows; a batch that then re-ran
@@ -1396,15 +1449,20 @@ export async function bootstrapScopeFromSnapshot(params: {
         // delete), NOT bounded on a heal-over-partial (#4313) or a second size
         // of an already-downloaded layout — which is why it is measured
         // separately and counted into importLockMaxMs rather than hidden.
+        // `importReconcileMs` is work-plus-hold: the lock-acquisition wait is
+        // subtracted, so the follow-up trigger for batching this reads reconcile
+        // cost rather than whoever else held the lock.
         const reconcileStartedAt = Date.now();
+        const waitBeforeReconcile = importLockWaitMs;
         await runExclusive(async () => {
           await reconcileScope(txn, scope, stampedWatermarks);
         });
-        importReconcileMs = Date.now() - reconcileStartedAt;
+        importReconcileMs = Date.now() - reconcileStartedAt - (importLockWaitMs - waitBeforeReconcile);
 
         const rowsStartedAt = Date.now();
+        const waitBeforeRows = importLockWaitMs;
         imported = await importScopeBatched(txn, scope, onSchemaDrift, { batchRows, runExclusive, onBatch });
-        importRowsMs = Date.now() - rowsStartedAt;
+        importRowsMs = Date.now() - rowsStartedAt - (importLockWaitMs - waitBeforeRows);
 
         // CHECKPOINTS LAST, in their own transaction, after every row batch has
         // committed. This is the invariant that makes partial rows survivable:
@@ -1468,6 +1526,7 @@ export async function bootstrapScopeFromSnapshot(params: {
     importReconcileMs,
     importRowsMs,
     importLockMaxMs,
+    importLockWaitMs,
   };
 }
 

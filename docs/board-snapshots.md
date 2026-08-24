@@ -448,10 +448,14 @@ sync if the code comment changes):
 | download fails or returns `null`, anything else                      | `structural-device`     | 6 h ladder; crawl runs                                                                    |
 | download throws `SnapshotPermanentMissError`                         | `structural-device`     | full bytes were spent; bounded retry ladder, with paged progress this cycle               |
 | import throws — corrupt/short artifact, row-count/format mismatch    | `structural-artifact`   | 6 h ladder; a new `builtAt` may re-arm it once                                            |
+| import loses the write lock (`SQLITE_BUSY`/locked) after its ladder  | `database-locked`       | own 3-strike budget on the 2 min ladder; artifact kept; never re-armed by a new build     |
 | import throws `SnapshotSchemaStaleError`                             | **no**                  | permanent miss this run → normal paged pull                                               |
 | import throws `SnapshotWatermarkRegressionError`                     | `structural-artifact`   | nothing written → normal paged pull; 6 h ladder; reported `expected: false`               |
 | a sign-out wipe is detected mid-phase                                | **no**                  | whole phase bails, mirrors `syncTable`'s wipe guard                                       |
 | success                                                              | transport counter reset | marked done; deletions rewound; paged pull runs as a small delta from scoped watermarks   |
+
+The `transport counter reset` on that last row is why `database-locked` is not a transport failure: a
+retained artifact reaches it having moved zero bytes.
 
 Resumable / ranged artifact downloads are **not deliverable client-side**, and are nobody's open work item.
 Artifacts ship gzip-encoded and rely on the native stack to decode, so byte-offset resume would need a JS
@@ -537,18 +541,38 @@ as a bail-out, not a counted failure.
 
 **A lost lock race is not a bad artifact.** Batching turns one lock acquisition into ~143 against writers
 that genuinely exist, so a batch that loses `BEGIN EXCLUSIVE` outright retries on a short ladder
-(250/750/2000 ms), and a lock-shaped import failure is classified `transport` rather than
-`structural-artifact` — cleared by the next successful download, so it can never accumulate toward the
-two-strike structural budget that settles a board onto the paged crawl. The retained artifact is not
-deleted on that path either.
+(250/750/2000 ms), and a lock-shaped import failure is classified `database-locked` — its **own** budget,
+`MAX_BOOTSTRAP_LOCK_FAILURES = 3`, on the transport cooldown rungs. The retained artifact is not deleted on
+that path either.
 
-**Import telemetry** (`Offline Board Download Completed`, all absent-when-unknown — filter every query on
-`importMs IS NOT NULL`): `importVerifyMs` (the autocommit preamble), `importReconcileMs`, `importRowsMs`,
-`importBatches`, and `importLockMaxMs` — the longest SINGLE exclusive hold, which is the number to read
-before changing the batch size or the local-write retry ladder. `importMs` itself is the whole call and was
-never a lock hold; two in-repo retry ladders were once sized as if it were. The separate grades artifact
-reports `gradesDownloadMs`, `gradesVerifyMs` and `gradesLockMs`; its import is still one unbatched
-exclusive transaction.
+Neither existing budget could hold it. `structural-artifact` strands the board after two strikes and
+deletes the ~103 MB file, for a fault the artifact did not cause. `transport` fails the other way:
+`clearTransportFailures` runs after every successful download, and a **retained** artifact is handed back
+off disk with zero bytes moved — so a device with persistent write-lock contention would charge 1, get
+reset, charge 1, forever, never reaching a cap, while `shouldSkipPagedPull` kept skipping the crawl on the
+2-minute cooldown. The board would be unreachable by _both_ paths. With its own counter the third failure is
+terminal, so the paged crawl runs and the board still lands, slowly. A new `builtAt` does **not** re-arm it:
+tonight's export cannot win a lock race either.
+
+**Import telemetry** (`Offline Board Download Completed`, all absent-when-unknown). Two different filters:
+
+- The six `import*` props — filter on `importMs IS NOT NULL`. `importVerifyMs` (the autocommit preamble),
+  `importReconcileMs`, `importRowsMs`, `importBatches`, `importLockWaitMs`, and `importLockMaxMs` — the
+  longest SINGLE exclusive hold, which is the number to read before changing the batch size or the
+  local-write retry ladder. `importMs` itself is the whole call and was never a lock hold; two in-repo retry
+  ladders were once sized as if it were.
+- The three `grades*` props (`gradesDownloadMs`, `gradesVerifyMs`, `gradesLockMs`) — filter each on its own
+  `IS NOT NULL`, **not** on `importMs`. The grades retrofit path imports grades for a scope that is already
+  bootstrapped, in a cycle with no whole-layout import, and that is exactly the still-crawling population
+  issue #4719 is about. The grades import is still one unbatched exclusive transaction.
+
+`importLockMaxMs` is stamped from after `BEGIN EXCLUSIVE` succeeds, so it is a hold and never a wait; the
+wait (busy_timeout blocking plus the retry ladder's sleeps) is reported separately as `importLockWaitMs` and
+subtracted out of `importReconcileMs`/`importRowsMs`. One cost does stay inside the holds: SQLite attempts a
+WAL autocheckpoint at COMMIT and the engine leaves the 1000-page default in place, so where the single
+pre-#4310 transaction paid that once at the end, a minority of batches now pay a passive checkpoint inside
+their COMMIT. Read the `importLockMaxMs` tail with that in mind rather than against the ~150 ms typical
+batch `SNAPSHOT_IMPORT_BATCH_ROWS` is sized from.
 
 **Query-cache invalidation**: because the delta pull that follows a successful bootstrap may legitimately
 return zero documents (the snapshot already satisfied the scope), and `syncTable`'s cache invalidation only

@@ -318,12 +318,16 @@ export const reportScopeDownloadAbandonedOnDisable = ({ scopeKey }: { scopeKey: 
 // for the same reason: a cycle that ran no import did not spend that time, and
 // most completions are exactly that. `importLockMaxMs` is the longest single
 // exclusive-transaction hold — the worst case a concurrent user write has to
-// survive (#4314) — and is the number this change is judged on; query it with
-// `importMs IS NOT NULL` or the p90 is dominated by import-free cycles.
+// survive (#4314) — and is the number this change is judged on; query the six
+// `import*` props with `importMs IS NOT NULL` or the p90 is dominated by
+// import-free cycles.
 // `gradesDownloadMs` / `gradesVerifyMs` / `gradesLockMs` close the other half:
 // `importGradesForScope` runs its own transfer and its own exclusive
 // transaction, and neither was visible in any phase field, which is most of the
-// ~11s p50 gap between `durationMs` and the sum of the phases.
+// ~11s p50 gap between `durationMs` and the sum of the phases. Those three take
+// their OWN `IS NOT NULL` filter, NOT `importMs` — the grades retrofit path fires
+// them for an already-bootstrapped scope in a cycle with no whole-layout import,
+// which is the still-crawling population of #4719.
 const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
   scopeKey,
   method,
@@ -358,6 +362,7 @@ const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
     ...(phases.importReconcileMs === undefined ? {} : { importReconcileMs: phases.importReconcileMs }),
     ...(phases.importRowsMs === undefined ? {} : { importRowsMs: phases.importRowsMs }),
     ...(phases.importLockMaxMs === undefined ? {} : { importLockMaxMs: phases.importLockMaxMs }),
+    ...(phases.importLockWaitMs === undefined ? {} : { importLockWaitMs: phases.importLockWaitMs }),
     ...(phases.importBatches === undefined ? {} : { importBatches: phases.importBatches }),
     ...(phases.gradesDownloadMs === undefined ? {} : { gradesDownloadMs: phases.gradesDownloadMs }),
     ...(phases.gradesVerifyMs === undefined ? {} : { gradesVerifyMs: phases.gradesVerifyMs }),

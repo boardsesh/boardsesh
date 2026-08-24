@@ -224,22 +224,34 @@ export type ScopeDownloadPhaseBreakdown = {
    * to the absent-when-unknown `importMs` would read as a real measurement of a
    * fast import. events.ts states the rule outright ("Read a missing value as
    * UNKNOWN, never as 0") and names #4393's `gradesRows: 0` as the precedent.
-   * Every query over these MUST filter on `importMs IS NOT NULL`; unfiltered,
-   * the p90 is dominated by the cycles that imported nothing.
+   * Every query over THESE SIX must filter on `importMs IS NOT NULL`;
+   * unfiltered, the p90 is dominated by the cycles that imported nothing. That
+   * filter does NOT extend to the three `grades*` fields below — see their doc.
    *
    *  - `importVerifyMs`    ATTACH + quick_check + meta verify + watermarks, all
    *                        in autocommit holding no lock.
-   *  - `importReconcileMs` the (still unbatched) reconcile transaction.
-   *  - `importRowsMs`      the batch loop end to end, keyset probes included.
+   *  - `importReconcileMs` the (still unbatched) reconcile transaction, MINUS
+   *                        its lock-acquisition wait.
+   *  - `importRowsMs`      the batch loop end to end, keyset probes included,
+   *                        MINUS the batches' lock-acquisition waits.
    *  - `importLockMaxMs`   THE METRIC. The longest SINGLE exclusive hold —
    *                        reconcile, any row batch, or the checkpoint
    *                        transaction — i.e. the worst case a concurrent user
-   *                        write has to survive (#4314).
+   *                        write has to survive (#4314). Stamped from after
+   *                        `BEGIN EXCLUSIVE` succeeds, so it is a hold and never
+   *                        a wait. Its tail includes the WAL autocheckpoint some
+   *                        batches pay inside their COMMIT; see
+   *                        SNAPSHOT_IMPORT_BATCH_ROWS.
+   *  - `importLockWaitMs`  the other side of that: total time spent waiting for
+   *                        `BEGIN EXCLUSIVE` (busy_timeout blocking plus the
+   *                        retry ladder's sleeps). Non-zero means the import met
+   *                        real contention in the field.
    */
   importVerifyMs?: number;
   importReconcileMs?: number;
   importRowsMs?: number;
   importLockMaxMs?: number;
+  importLockWaitMs?: number;
   /** Exclusive transactions the row import committed. Absent when no import ran. */
   importBatches?: number;
   /**
@@ -253,6 +265,15 @@ export type ScopeDownloadPhaseBreakdown = {
    * `gradesLockMs` is the grades import's exclusive hold. It is still ONE
    * unbatched transaction, so it is reported next to `importLockMaxMs` rather
    * than folded into it.
+   *
+   * DO NOT filter these three on `importMs IS NOT NULL`. `importGradesForScope`
+   * has a second call site — the retrofit path for a scope that is already
+   * bootstrapped or complete but holds no grades checkpoint — which downloads and
+   * imports grades in a cycle where no whole-layout import ran, so `importMs` is
+   * absent and these three are present. That is exactly the still-crawling
+   * population #4719 exists to characterise, so the `importMs` filter would
+   * exclude the cycles `gradesLockMs` is most needed for. Each of the three is
+   * absent-when-unknown on its own, so its own `IS NOT NULL` is the filter.
    */
   gradesDownloadMs?: number;
   gradesVerifyMs?: number;
@@ -423,9 +444,9 @@ export type CoverageEvaluatedReporter = (info: CoverageEvaluatedInfo) => void;
 /**
  * Fired when a bootstrap failure schedules the scope's next snapshot attempt
  * (issue #4313). Operational, not an error — `onSnapshotBootstrapError` still
- * carries the failure itself at its existing severity. `terminal` means both
- * budgets are spent, so the scope has settled onto the paged crawl until the
- * user asks for a retry or removes the board.
+ * carries the failure itself at its existing severity. `terminal` means the
+ * budget this failure spent is exhausted, so the scope has settled onto the paged
+ * crawl until the user asks for a retry or removes the board.
  */
 export type BootstrapRetryScheduledInfo = {
   scopeKey: string;
@@ -435,6 +456,14 @@ export type BootstrapRetryScheduledInfo = {
   /** Milliseconds until the scheduled retry; 0 when the scope went terminal. */
   retryAfterMs: number;
   transportFailures: number;
+  /**
+   * Lock-contention import failures spent (issue #4310). Its own budget, so a
+   * lost write-lock race can neither be laundered away by a retained artifact's
+   * zero-byte "download" nor strand the board on two strikes as a bad artifact
+   * would. Non-zero here is the field signal that batching made the import a
+   * real contender for the write lock.
+   */
+  lockFailures: number;
   structuralFailures: number;
   terminal: boolean;
 };
@@ -1517,7 +1546,11 @@ async function runBootstrapPhase(params: {
     retryDelayMs = MANIFEST_RETRY_DELAY_MS,
   ): void => {
     const burned =
-      settled.failureKind === 'transport' ? settled.state.transportFailures : settled.state.structuralFailures;
+      settled.failureKind === 'transport'
+        ? settled.state.transportFailures
+        : settled.failureKind === 'database-locked'
+          ? settled.state.lockFailures
+          : settled.state.structuralFailures;
     onSnapshotBootstrapError?.({
       scopeKey: scope.scopeKey,
       stage,
@@ -1538,6 +1571,7 @@ async function runBootstrapPhase(params: {
       retryAfterMs:
         terminal || settled.state.retryAfter === null ? 0 : Math.max(0, settled.state.retryAfter - evaluatedAt),
       transportFailures: settled.state.transportFailures,
+      lockFailures: settled.state.lockFailures,
       structuralFailures: settled.state.structuralFailures,
       terminal,
     });
@@ -2103,6 +2137,7 @@ async function runBootstrapPhase(params: {
                     ? 0
                     : Math.max(0, retryState.retryAfter - evaluatedAt),
                 transportFailures: retryState.transportFailures,
+                lockFailures: retryState.lockFailures,
                 structuralFailures: retryState.structuralFailures,
                 terminal: isTerminal(retryState),
               });
@@ -2177,6 +2212,14 @@ async function runBootstrapPhase(params: {
 
         // The artifact came down: the link works, so the consecutive-transport
         // counter (and any cooldown it scheduled) no longer describes anything.
+        //
+        // This runs for a RETAINED artifact too, where `download.reused` is true
+        // and no bytes moved — which is precisely why a lock-contention import
+        // failure gets its own `lockFailures` budget rather than riding transport
+        // (issue #4310). On the transport budget this line would reset it every
+        // cycle, so it could never reach its cap, the scope would never go
+        // terminal, and `shouldSkipPagedPull` would keep skipping the crawl on
+        // the ~2-minute cooldown — a board unreachable by both paths.
         const withTransportCleared = clearTransportFailures(retryState);
         if (withTransportCleared !== retryState) {
           retryState = await writeBootstrapRetryState(db, scope.scopeKey, withTransportCleared);
@@ -2234,11 +2277,20 @@ async function runBootstrapPhase(params: {
         phases.artifactReused = download.reused === true;
         const importStartedAt = Date.now();
         try {
-          // Imports the scope's rows, stamps both table checkpoints, and rewinds
-          // the global deletions cursor to the artifact's safe deletion boundary
-          // (or the older scoped-table watermark for legacy artifacts) — all in
-          // one transaction, so no crash point can separate the imported rows
-          // from the tombstone-replay window that must cover them.
+          // Imports the scope's rows in bounded batches, then stamps both table
+          // checkpoints and rewinds the global deletions cursor to the artifact's
+          // safe deletion boundary (or the older scoped-table watermark for
+          // legacy artifacts) — those three together in the FINAL transaction,
+          // after every row batch has committed.
+          //
+          // Not one transaction any more (issue #4310), so a crash CAN leave rows
+          // without markers. That direction is benign: the re-import is
+          // idempotent and a teardown still removes them. The direction that is
+          // unrecoverable — a stamped cursor the strict `>` delta pull will never
+          // revisit, with no rows behind it — is what the checkpoints-last
+          // ordering rules out, and the deletions rewind rides in the same
+          // transaction so the tombstone-replay window can never be narrower
+          // than the rows it must cover.
           const imported = await bootstrapScopeFromSnapshot({
             db,
             scope,
@@ -2271,6 +2323,7 @@ async function runBootstrapPhase(params: {
           phases.importReconcileMs = (phases.importReconcileMs ?? 0) + imported.importReconcileMs;
           phases.importRowsMs = (phases.importRowsMs ?? 0) + imported.importRowsMs;
           phases.importLockMaxMs = Math.max(phases.importLockMaxMs ?? 0, imported.importLockMaxMs);
+          phases.importLockWaitMs = (phases.importLockWaitMs ?? 0) + imported.importLockWaitMs;
           phases.importBatches = (phases.importBatches ?? 0) + imported.importBatches;
           artifactImported.set(download.filePath, true);
           // The scope imported an artifact, so any free-round marker it carries
@@ -2370,8 +2423,10 @@ async function runBootstrapPhase(params: {
           // A lost lock race is not a bad artifact (issue #4310). Batching turned
           // one lock acquisition into ~143, so this arm — which DELETES the
           // ~103 MB file and spends the once-per-build free round — must not
-          // fire for contention. `classifyBootstrapFailure` keeps the same
-          // failure off the structural budget below.
+          // fire for contention. `classifyBootstrapFailure` routes the same
+          // failure to its own `lockFailures` budget below, which is bounded at
+          // `MAX_BOOTSTRAP_LOCK_FAILURES` and, unlike transport, is NOT reset by
+          // the next cycle's zero-byte reuse of this very file.
           const importLostTheLock = classifySqliteLockError(error).locked;
           if (
             !importLostTheLock &&

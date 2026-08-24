@@ -145,6 +145,7 @@ export type { SnapshotBootstrapFailureReason } from './sync/bootstrap-failure-re
 export {
   MAX_BOOTSTRAP_ATTEMPTS,
   MAX_TRANSPORT_DOWNLOAD_FAILURES,
+  MAX_BOOTSTRAP_LOCK_FAILURES,
   MAX_STRUCTURAL_REARMS,
   EMPTY_BOOTSTRAP_RETRY_STATE,
   classifyBootstrapFailure,

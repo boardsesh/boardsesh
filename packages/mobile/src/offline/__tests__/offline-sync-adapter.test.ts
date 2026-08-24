@@ -754,6 +754,7 @@ describe('snapshot-bootstrap bindings', () => {
       failureKind: 'transport' as const,
       retryAfterMs: 120_000,
       transportFailures: 1,
+      lockFailures: 0,
       structuralFailures: 0,
       terminal: false,
     };
