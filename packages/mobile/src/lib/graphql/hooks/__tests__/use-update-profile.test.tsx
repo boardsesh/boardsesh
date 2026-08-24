@@ -34,8 +34,6 @@ vi.mock('../use-social', () => ({
   useUserClimbs: vi.fn(),
   useVote: vi.fn(),
   useBulkVoteSummaries: vi.fn(),
-  useChunkedBulkVoteSummaries: vi.fn(),
-  useGroupedBulkVoteSummaries: vi.fn(),
   useComments: vi.fn(),
   useAddComment: vi.fn(),
 }));
