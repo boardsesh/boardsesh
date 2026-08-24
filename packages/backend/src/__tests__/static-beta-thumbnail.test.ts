@@ -16,7 +16,7 @@ vi.mock('../storage/s3', () => ({
 }));
 
 const { handleStaticBetaThumbnail } = await import('../handlers/static');
-const { parseSizeParam } = await import('../lib/image-resize');
+const { parseSizeParam, resizedVariantKey } = await import('../lib/image-resize');
 
 const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0xff, 0xd9]);
 const THUMBNAIL_PATH = '/static/beta-link-thumbnails/instagram/ABC123.jpg';
@@ -68,6 +68,33 @@ describe('serving beta-link thumbnails stored in S3', () => {
 
       expect(response.status).toBe(404);
       expect(response.headers.get('cache-control')).toBe('no-store');
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('404s a zero-byte original on the ?size= path with no-store, not a plain 404', async () => {
+    // `?size=280` is the URL both clients actually request, so this is the
+    // branch a corrupt thumbnail really reaches. It used to fall through to a
+    // plain 404 with no cache header, letting an edge cache pin the miss and
+    // hide the repair — the direct path's guard never saw this traffic.
+    const baseKey = 'beta-link-thumbnails/instagram/ABC123.jpg';
+    getFromS3Mock.mockImplementation((key: string) =>
+      Promise.resolve(
+        key === resizedVariantKey(baseKey, 280)
+          ? null
+          : { stream: Readable.from([]), contentType: 'image/jpeg', contentLength: 0 },
+      ),
+    );
+
+    const { baseUrl, server } = await startThumbnailServer();
+    try {
+      const response = await fetch(`${baseUrl}${THUMBNAIL_PATH}?size=280`);
+
+      expect(response.status).toBe(404);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      // The empty original must never be written back as a cached variant.
+      expect(uploadToS3Mock).not.toHaveBeenCalled();
     } finally {
       await closeServer(server);
     }
