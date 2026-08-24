@@ -33,7 +33,21 @@ export class SecureStoreWriteError extends Error {
   }
 }
 
-/** Read v2, falling back to the pre-migration legacy namespace. */
+/**
+ * Read v2, falling back to the pre-migration legacy namespace.
+ *
+ * A v2 THROW propagates rather than falling through to legacy, and that is
+ * deliberate. On a locked device a v2 miss is `errSecItemNotFound` (a null, not
+ * a throw), because the item simply is not there yet — so the fallback still
+ * runs for every unmigrated key. A v2 throw means the item exists and could not
+ * be read, and swallowing that to hand back a stale legacy copy would be worse
+ * than surfacing it. It also keeps auth-store's contract intact: a throw becomes
+ * `unavailable` in auth-session.ts, a null becomes a real sign-out (#4001).
+ *
+ * Only `keychainService` distinguishes the namespaces on a lookup;
+ * `keychainAccessible` rides along in the shared options constant and is ignored
+ * on read and delete (it is applied at insert time — see secure-store-options).
+ */
 export async function readSecureValue(key: string): Promise<string | null> {
   const v2Value = await SecureStore.getItemAsync(key, SECURE_STORE_V2_OPTIONS);
   // A v2 hit ends the read: it is both the current value and the proof this key
@@ -93,7 +107,13 @@ export async function writeSecureValueToEitherNamespace(key: string, value: stri
   if (failures.length === 2) throw new SecureStoreWriteError(key, failures);
 }
 
-/** Delete from both namespaces so a cleared value cannot resurface via fallback. */
+/**
+ * Delete from both namespaces so a cleared value cannot resurface via fallback.
+ *
+ * Passes the same options constant the writes use: only `keychainService`
+ * selects which item to delete, and off iOS that constant carries no service at
+ * all, so the call is byte-for-byte today's single-namespace delete.
+ */
 export async function deleteSecureValue(key: string): Promise<void> {
   await SecureStore.deleteItemAsync(key, SECURE_STORE_V2_OPTIONS);
   if (USES_V2_NAMESPACE) await SecureStore.deleteItemAsync(key);

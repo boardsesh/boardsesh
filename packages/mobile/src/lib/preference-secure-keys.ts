@@ -16,6 +16,14 @@
 //   react-i18next and every catalog through ./config, which is a lot of module
 //   graph to load for one string.
 //
+// Nothing forces a NEW SecureStore key into this list — it is maintained by
+// hand, and preference-secure-keys.test.ts can only catch a key that is here but
+// broken, not one that was never added. Adding a key to a store means adding it
+// here too, or it stays WHEN_UNLOCKED on iOS and its background read keeps
+// failing. Phase 2 (#4128) retires the list entirely, so a completeness check
+// against every `*_KEY` export in the repo would be scaffolding with a short
+// shelf life.
+//
 // Two keys are deliberately absent:
 //
 // * boardsesh_party_profile — the analytics id, read synchronously at
