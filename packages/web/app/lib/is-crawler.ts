@@ -46,7 +46,8 @@
  *   URLs on 2026-08-22 presenting ordinary Chrome/Firefox/Edge UAs (PostHog:
  *   2,031 distinct persons, one pageview each, `$referring_domain` null on
  *   every event). That population needs an edge rate-limit, not a UA list —
- *   see `docs/vercel-compute-baseline.md`.
+ *   see the burn-hunt write-up on #4650 (`docs/vercel-compute-baseline.md`,
+ *   added by the companion PR #4717).
  */
 
 /**
