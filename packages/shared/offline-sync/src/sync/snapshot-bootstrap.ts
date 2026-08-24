@@ -1438,6 +1438,11 @@ export async function bootstrapScopeFromSnapshot(params: {
             await body();
             await txn.execAsync('COMMIT');
           } finally {
+            // Measured to the throw, not to the wrapper's later ROLLBACK, on a
+            // failing batch. `importLockMaxMs` answers "what is the worst hold a
+            // concurrent write had to survive" on the path that COMMITs; a batch
+            // that threw is a failed import the caller settles, and the ROLLBACK
+            // that follows is teardown rather than work this metric is sizing.
             const heldMs = Date.now() - heldFrom;
             if (heldMs > importLockMaxMs) importLockMaxMs = heldMs;
           }
@@ -1648,6 +1653,10 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
         if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
 
         await applyBusyTimeout(txn);
+        // Deliberately NOT applyBulkImportPragmas: that exists to stop ~142 batch
+        // commits each paying an fsync, and this is ONE transaction, so a single
+        // durable commit is the cheaper end of the trade. If `gradesLockMs` says
+        // this needs batching too, the pragma comes with it.
         gradesVerifyMs = Date.now() - verifyStartedAt;
         await beginExclusiveWithRetry(txn, sleep);
       } catch (preTransactionError) {
@@ -1655,54 +1664,70 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
         throw preTransactionError;
       }
 
-      const lockHeldFrom = Date.now();
-      const gradeColumns = await sharedColumns(txn, GRADES_TABLE, onSchemaDrift, GRADES_ALIAS);
-      assertSafeColumns(gradeColumns);
-      if (gradeColumns.length === 0) throw new Error('snapshot grades bootstrap: no shared board_climb_grades columns');
-      const columnList = gradeColumns.join(', ');
+      // Same restore-BEGIN discipline as bootstrapScopeFromSnapshot's row loop,
+      // and needed for the same reason: this function now COMMITs its own
+      // transaction (so `gradesLockMs` covers the COMMIT) and hands the wrapper a
+      // fresh empty one. That opens a window the pre-#4310 shape did not have —
+      // a throw from the trailing `BEGIN` would meet expo's unconditional
+      // ROLLBACK with no transaction active, and "cannot rollback - no
+      // transaction is active" would MASK the real error the caller dispatches
+      // on (SnapshotWipedError vs a counted grades failure). The `.catch` covers
+      // the case where the throw happened while the exclusive transaction was
+      // still open.
+      try {
+        const lockHeldFrom = Date.now();
+        const gradeColumns = await sharedColumns(txn, GRADES_TABLE, onSchemaDrift, GRADES_ALIAS);
+        assertSafeColumns(gradeColumns);
+        if (gradeColumns.length === 0)
+          throw new Error('snapshot grades bootstrap: no shared board_climb_grades columns');
+        const columnList = gradeColumns.join(', ');
 
-      const importFilter = gradesScopeFilter(scope, 'g', 'main');
-      const inserted = await txn.runAsync(
-        `INSERT OR REPLACE INTO main.${GRADES_TABLE} (${columnList})
+        const importFilter = gradesScopeFilter(scope, 'g', 'main');
+        const inserted = await txn.runAsync(
+          `INSERT OR REPLACE INTO main.${GRADES_TABLE} (${columnList})
          SELECT ${columnList} FROM ${GRADES_ALIAS}.${GRADES_TABLE} g
          WHERE ${importFilter.sql}`,
-        importFilter.params,
-      );
-      rowsImported = inserted.changes;
+          importFilter.params,
+        );
+        rowsImported = inserted.changes;
 
-      // Stamp at the watermark of the rows the INSERT above actually selected:
-      // the ARTIFACT's rows, under the same scope filter (mirroring
-      // scopedWatermarks' artifact-side reads for climbs/stats). Two wrong
-      // alternatives, both a permanent silent gap because the strict `>` delta
-      // never revisits anything at-or-below the stamp:
-      //  - the artifact's snapshot_meta watermark could stamp past a row the
-      //    scope filter excluded (its climb outside this scope);
-      //  - main.board_climb_grades could stamp past rows this scope NEVER
-      //    received — the table is shared across scopes, so a sibling scope's
-      //    earlier crawl (e.g. kilter:1:7 synced for months when kilter:1:10 is
-      //    added) leaves rows for shared climbs with cursors far beyond this
-      //    artifact, and stamping there skips every grade row computed since
-      //    the artifact was built for climbs exclusive to THIS scope.
-      const watermarkRow = await txn.getFirstAsync<{ cursor_at: string; sync_seq: number | string }>(
-        `SELECT ${GRADES_CURSOR_COLUMN} AS cursor_at, sync_seq
+        // Stamp at the watermark of the rows the INSERT above actually selected:
+        // the ARTIFACT's rows, under the same scope filter (mirroring
+        // scopedWatermarks' artifact-side reads for climbs/stats). Two wrong
+        // alternatives, both a permanent silent gap because the strict `>` delta
+        // never revisits anything at-or-below the stamp:
+        //  - the artifact's snapshot_meta watermark could stamp past a row the
+        //    scope filter excluded (its climb outside this scope);
+        //  - main.board_climb_grades could stamp past rows this scope NEVER
+        //    received — the table is shared across scopes, so a sibling scope's
+        //    earlier crawl (e.g. kilter:1:7 synced for months when kilter:1:10 is
+        //    added) leaves rows for shared climbs with cursors far beyond this
+        //    artifact, and stamping there skips every grade row computed since
+        //    the artifact was built for climbs exclusive to THIS scope.
+        const watermarkRow = await txn.getFirstAsync<{ cursor_at: string; sync_seq: number | string }>(
+          `SELECT ${GRADES_CURSOR_COLUMN} AS cursor_at, sync_seq
          FROM ${GRADES_ALIAS}.${GRADES_TABLE} g
          WHERE ${importFilter.sql}
          ORDER BY ${GRADES_CURSOR_COLUMN} DESC, sync_seq DESC
          LIMIT 1`,
-        importFilter.params,
-      );
-      watermark = watermarkRow
-        ? { updatedAt: String(watermarkRow.cursor_at), syncSeq: String(watermarkRow.sync_seq) }
-        : EPOCH_WATERMARK;
+          importFilter.params,
+        );
+        watermark = watermarkRow
+          ? { updatedAt: String(watermarkRow.cursor_at), syncSeq: String(watermarkRow.sync_seq) }
+          : EPOCH_WATERMARK;
 
-      if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
+        if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
 
-      await setCheckpoint(txn, getCheckpointKey(GRADES_TABLE, scopeKey), watermark);
-      // COMMIT here rather than leaving it for the wrapper, so gradesLockMs
-      // covers the whole hold, then hand the wrapper an empty transaction.
-      await txn.execAsync('COMMIT');
-      gradesLockMs = Date.now() - lockHeldFrom;
-      await txn.execAsync('BEGIN');
+        await setCheckpoint(txn, getCheckpointKey(GRADES_TABLE, scopeKey), watermark);
+        // COMMIT here rather than leaving it for the wrapper, so gradesLockMs
+        // covers the whole hold, then hand the wrapper an empty transaction.
+        await txn.execAsync('COMMIT');
+        gradesLockMs = Date.now() - lockHeldFrom;
+        await txn.execAsync('BEGIN');
+      } catch (gradesImportError) {
+        await txn.execAsync('BEGIN').catch(() => {});
+        throw gradesImportError;
+      }
     });
   } finally {
     await db.execAsync(`DETACH DATABASE ${GRADES_ALIAS}`).catch(() => {});

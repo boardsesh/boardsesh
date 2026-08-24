@@ -4303,6 +4303,46 @@ describe('bootstrapScopeGradesFromSnapshot', () => {
     expect(await getCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5')).toBeNull();
   });
 
+  it('surfaces the real error when the post-COMMIT BEGIN fails, instead of a masked ROLLBACK', async () => {
+    // Issue #4310 gave this function its own COMMIT (so `gradesLockMs` covers the
+    // hold) and a trailing empty BEGIN for the wrapper to close. That opened a
+    // window the pre-change shape did not have: a throw from that BEGIN meets
+    // expo's unconditional ROLLBACK with no transaction active, and "cannot
+    // rollback - no transaction is active" would MASK the error the caller
+    // dispatches on. The restore-BEGIN wrapper is what keeps the real cause.
+    await seedScopeClimb('c1');
+    const gradesPath = join(workDir, 'grades-post-commit-begin.db');
+    buildGradesArtifact({
+      filePath: gradesPath,
+      grades: [{ climbUuid: 'c1' }],
+      watermark: { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '10' },
+    });
+
+    const adapterPrototype = Object.getPrototypeOf(db) as { execAsync: typeof db.execAsync };
+    const realExecAsync = adapterPrototype.execAsync;
+    let commits = 0;
+    let failedBegins = 0;
+    vi.spyOn(adapterPrototype, 'execAsync').mockImplementation(async function (this: unknown, source: string) {
+      if (source === 'COMMIT') commits += 1;
+      // The exclusive transaction's COMMIT is the second one — the first closes
+      // the wrapper's deferred BEGIN in the preamble. Fail the BEGIN that follows
+      // it exactly ONCE, which is the transient shape the restore is for: a
+      // connection that cannot open ANY transaction masks the cause either way,
+      // same as the whole-layout import's own `.catch(() => {})`.
+      if (source === 'BEGIN' && commits >= 2 && failedBegins === 0) {
+        failedBegins += 1;
+        throw new Error('post-commit BEGIN exploded');
+      }
+      return realExecAsync.call(this, source);
+    } as typeof db.execAsync);
+
+    await expect(
+      bootstrapScopeGradesFromSnapshot({ db, scope: SCOPE, scopeKey: 'kilter:1:5', filePath: gradesPath }),
+    ).rejects.toThrow(/post-commit BEGIN exploded/);
+
+    vi.restoreAllMocks();
+  });
+
   it('leaves the deletions checkpoint alone — grades have no delete trigger to replay', async () => {
     await seedScopeClimb('c1');
     const deletionsCursor = { updatedAt: '2026-07-01T00:00:00Z', syncSeq: '500' };
