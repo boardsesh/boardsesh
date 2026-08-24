@@ -1,7 +1,6 @@
 import { deleteSecureValue, readSecureValue, writeSecureValue } from './secure-store-io';
+import { CREATED_SESSION_ID_KEY, SESSION_ID_KEY } from './session-store-keys';
 import type { UserStorageOwner } from './user-storage-owner';
-
-export const SESSION_ID_KEY = 'boardsesh_active_session_id';
 
 export async function getStoredSessionId(_owner?: UserStorageOwner | null): Promise<string | null> {
   try {
@@ -47,8 +46,6 @@ export async function clearStoredSessionId(_owner?: UserStorageOwner | null): Pr
  * leading with Leave, and End is still one tap away. A signal that degrades
  * toward offering the destructive action would be worse than no signal at all.
  */
-export const CREATED_SESSION_ID_KEY = 'boardsesh_created_session_id';
-
 export async function getStoredCreatedSessionId(): Promise<string | null> {
   try {
     return await readSecureValue(CREATED_SESSION_ID_KEY);

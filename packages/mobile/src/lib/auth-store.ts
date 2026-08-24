@@ -1,5 +1,10 @@
-import { createOnceRunner, migrateSecureKeysToV2 } from './keychain-namespace-migration';
-import { deleteSecureValue, readSecureValue, writeSecureValue } from './secure-store-io';
+import { createOnceRunner, isMigrationComplete, migrateSecureKeysToV2 } from './keychain-namespace-migration';
+import {
+  deleteSecureValue,
+  readSecureValue,
+  writeSecureValue,
+  writeSecureValueToEitherNamespace,
+} from './secure-store-io';
 
 export const JWT_KEY = 'boardsesh_jwt';
 export const REFRESH_TOKEN_KEY = 'boardsesh_refresh_token';
@@ -30,11 +35,23 @@ class AuthCredentialCleanupError extends Error {
 // carries it across unchanged: it must stay visible to getStoredCredential in v2,
 // or a signed-out user whose deletion never physically landed would read the live
 // legacy credential through the fallback and be signed back in.
-const ensureAuthCredentialsMigrated = createOnceRunner(async () => {
-  await serializeCredentialMutation(async () => {
-    await migrateSecureKeysToV2(AUTH_SECURE_KEYS, 'auth');
-  });
-});
+//
+// The pass reports whether it COMPLETED, and only a complete pass latches. A
+// process cold-launched in the background on a locked phone (BGTask, push, Live
+// Activity — every BOARDSESH-C3 event carries in_foreground: false) gets nothing
+// but legacy-read-failed, and must be free to try again once the phone is
+// unlocked. auth-provider.tsx re-runs checkAuth on every AppState `active`,
+// which lands back here through getStoredCredential; that is the retry.
+//
+// HAZARD: this enqueues on the same credentialMutationQueue as sign-in and
+// sign-out, so calling getAuthToken() from INSIDE a serialized mutation would
+// deadlock. No caller does today — clearStoredCredential reads through
+// readSecureValue directly and writeCredentialForGeneration never reads. The
+// queue is not optional: without it a sign-out's delete could interleave between
+// the migration's legacy read and its v2 write and resurrect the credential.
+const ensureAuthCredentialsMigrated = createOnceRunner(() =>
+  serializeCredentialMutation(async () => isMigrationComplete(await migrateSecureKeysToV2(AUTH_SECURE_KEYS, 'auth'))),
+);
 
 async function getStoredCredential(key: string): Promise<string | null> {
   // Best-effort. A keychain that refuses the migration refuses the read below
@@ -67,9 +84,12 @@ async function clearStoredCredential(key: string): Promise<void> {
     // Some keychain failures reject deletion while still permitting an overwrite.
     // Persist a value that every getter treats as absent so credentials cannot be
     // restored on relaunch merely because physical deletion was unavailable.
-    // Written to v2 (and mirrored to legacy) so it shadows any legacy credential
-    // the failed deletion left behind.
-    await writeSecureValue(key, CLEARED_CREDENTIAL);
+    // Written to v2 AND legacy independently, so it shadows any legacy credential
+    // the failed deletion left behind. Unlike a normal credential write this
+    // must not insist on v2: if the v2 write is the one that rejects, a
+    // v2-first-then-mirror writer would throw before the legacy write ran and
+    // leave the surviving legacy credential readable through the read fallback.
+    await writeSecureValueToEitherNamespace(key, CLEARED_CREDENTIAL);
   } catch (error) {
     failures.push(error);
     throw new AuthCredentialCleanupError(`Failed to clear stored auth credential: ${key}`, failures);
