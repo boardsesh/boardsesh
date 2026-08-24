@@ -24,10 +24,10 @@ export type AvatarUploadFile = {
   uri: string;
   /**
    * The image bytes, already read from `uri` and proven non-empty at pick time.
-   * Carrying the bytes instead of re-reading the URI here is deliberate: on
-   * Android a failed encode leaves a 0-byte file behind that reads back as an
-   * empty array without throwing, so the read has to happen where we can still
-   * recover (see `compressAvatar` in EditProfileScreen).
+   * Carrying the bytes instead of re-reading the URI here is deliberate: an
+   * unusable pick reads back as an empty array without throwing anywhere in the
+   * chain, so the read has to happen where we can still recover and report what
+   * came back (see `compressAvatar` in EditProfileScreen).
    */
   bytes: Uint8Array;
   /** Filename sent in the multipart part; defaults to `avatar.jpg`. */

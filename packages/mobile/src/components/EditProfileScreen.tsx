@@ -81,18 +81,27 @@ class AvatarCompressionError extends Error {
  * Compress a picked image and hand back both its URI and its bytes, so nothing
  * downstream has to trust that the file on disk is an image.
  *
- * Android's `saveAsync` throws away the `Boolean` that `Bitmap.compress()`
- * returns, so a failed encode still resolves with a URI — pointing at a 0-byte
- * file. iOS raises `CorruptedImageDataException` at the same spot, which is why
- * only Android saw this. Nothing further down noticed either: reading an empty
- * file returns an empty array without throwing, the multipart encoder writes a
+ * Somewhere between the picker and the multipart body we started producing empty
+ * uploads: 100% of avatars stored on or after 2026-07-08 are zero bytes, on both
+ * platforms, where every upload through 2026-07-07 is healthy. That boundary
+ * lines up with the Expo SDK 57 / React Native 0.86 upgrade (`02b6a6610`,
+ * `027932017`), not with any change to this file — `compressAvatar` has not been
+ * touched since 2026-06-18. An earlier reading blamed `expo-image-manipulator`'s
+ * Android encoder discarding the `Boolean` from `Bitmap.compress()`; a
+ * deterministic, cross-platform, date-bounded failure does not fit an
+ * image-dependent encoder fault, so treat that attribution as unproven.
+ *
+ * Whatever the producer is, nothing downstream noticed: reading an empty file
+ * returns an empty array without throwing, the multipart encoder writes a
  * zero-length part, and the backend answered 200 with a URL we persisted. The
  * user watched the crop land in the preview and lost it on the next screen.
  *
  * So check the bytes here, where we can still recover: fall back to the picker's
  * own crop, which is already square (`aspect: [1, 1]`) and only misses the
- * resize/re-encode. `expo-image-picker`'s Android exporter drops the same
- * `Boolean`, so the fallback gets its own length check instead of being trusted.
+ * resize/re-encode. That fallback gets its own length check rather than being
+ * trusted — and the `compressedBytes` / `originalBytes` pair reported below is
+ * what tells us which read is actually coming back empty. Both zero means the
+ * `File.bytes()` read itself is the producer and this fallback cannot rescue it.
  */
 async function compressAvatar(asset: ImagePicker.ImagePickerAsset): Promise<AvatarUploadFile> {
   let compressedBytes = new Uint8Array();
