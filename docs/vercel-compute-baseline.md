@@ -88,7 +88,7 @@ carry one middleware plus one function line per request, so halve them for reque
 |---|---|---|---|
 | `/api/internal/board-render` | 101,659 | OOM pack: LRU caches, sharp tuning, render semaphore, `memory: 3009` | [#4675] |
 | climb-view SSR | 86,773 | CDN TTL 3600 → 86400 s, ×7 SWR | [#4685], gated on [#4592] |
-| sticky-locale 307s | ~15k/day | crawler gate on the redirect + cookie write | [#4667], widened in the PR that adds this doc |
+| sticky-locale 307s | ~15k/day | crawler gate on the redirect + cookie write | [#4667], widened in [#4716] |
 | edge middleware | 218,219 inv/day | matcher narrowed off `/api/internal/**` | [#4667] |
 | sitemap shards | — | climb-URL store; page 1 origin miss 51 s → 0.088 s | [#4552] → [#4661] |
 
@@ -267,7 +267,8 @@ Still open with existing owners, cited here and not absorbed: [#4664] (WASM 3-co
   ("a shared /es/… link from a friend persists for the recipient too"), so it is a product call.
 - **Should the four SEO scrapers get a `Disallow: /` in robots.txt?** `packages/web/app/robots.ts`
   emits a single `userAgent: '*'` group today. A per-agent group — or a Cloudflare rule — would
-  remove the whole SSR render for those agents, not just the 307: strictly stronger than the UA gate.
+  remove the whole SSR render for those agents, not just the 307: strictly stronger than the UA gate
+  in [#4716].
   Cloudflare is already doing exactly this for the AI crawlers (probed 2026-08-24: ClaudeBot,
   Claude-User, PerplexityBot, GPTBot, OAI-SearchBot, ChatGPT-User, Bytespider, Amazonbot, CCBot,
   PetalBot and meta-externalagent all get `HTTP/2 403` from `server: cloudflare` and never reach
@@ -306,3 +307,4 @@ Still open with existing owners, cited here and not absorbed: [#4664] (WASM 3-co
 [#4675]: https://github.com/boardsesh/boardsesh/pull/4675
 [#4685]: https://github.com/boardsesh/boardsesh/pull/4685
 [#4715]: https://github.com/boardsesh/boardsesh/issues/4715
+[#4716]: https://github.com/boardsesh/boardsesh/pull/4716
