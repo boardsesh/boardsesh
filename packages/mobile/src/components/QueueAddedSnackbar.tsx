@@ -9,7 +9,7 @@ import { borderRadius, spacing, shadowColor } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
 import { createVariantComponent } from '../theme/variants';
 import { useBottomChromeMetrics } from '../hooks/use-bottom-chrome-metrics';
-import type { QueueAddedSnackbarVariant } from '../providers/queue-snackbar-provider';
+import type { QueueAddedSnackbarOptions } from '../providers/queue-snackbar-provider';
 
 const DEFAULT_DURATION = 4000;
 
@@ -20,16 +20,17 @@ type QueueAddedSnackbarProps = {
   onDismiss: () => void;
   onOpen: () => void;
   duration?: number;
-  /** `'next'` swaps the message to the Play next confirmation. Defaults to the
-   *  plain "added to queue" copy. */
-  variant?: QueueAddedSnackbarVariant;
+  /** `kind: 'playNext'` swaps the message to the Play next confirmation.
+   *  Defaults to the plain "added to queue" copy. */
+  queueAdded?: QueueAddedSnackbarOptions;
 };
 
-/** The variant's message, resolved in one place so the Material and Liquid Glass
- *  implementations can't drift apart. Literal keys (never `t(variable)`) so the
- *  i18n orphan scanner can see both. */
-function snackbarMessage(t: TFunction<'session'>, variant: QueueAddedSnackbarVariant): string {
-  return variant === 'next' ? t('mobile.queueSnackbar.playingNext') : t('mobile.queueSnackbar.added');
+/** The message for this confirmation, resolved in one place so the Material and
+ *  Liquid Glass implementations can't drift apart. Literal keys (never
+ *  `t(variable)`) so the i18n orphan scanner can see both. `count` is ignored
+ *  here — #4673 adds the plural against this same vocabulary. */
+function snackbarMessage(t: TFunction<'session'>, queueAdded: QueueAddedSnackbarOptions): string {
+  return queueAdded.kind === 'playNext' ? t('mobile.queueSnackbar.playingNext') : t('mobile.queueSnackbar.added');
 }
 
 /**
@@ -51,7 +52,7 @@ function QueueAddedSnackbarMaterial({
   onDismiss,
   onOpen,
   duration = DEFAULT_DURATION,
-  variant = 'added',
+  queueAdded = { kind: 'added' },
 }: QueueAddedSnackbarProps) {
   const { t } = useTranslation('session');
   const bottomChrome = useBottomChromeMetrics();
@@ -77,7 +78,7 @@ function QueueAddedSnackbarMaterial({
         accessibilityLabel: t('mobile.queueSnackbar.openAria'),
       }}
     >
-      {snackbarMessage(t, variant)}
+      {snackbarMessage(t, queueAdded)}
     </Snackbar>
   );
 }
@@ -89,7 +90,7 @@ function QueueAddedSnackbarGlass({
   onDismiss,
   onOpen,
   duration = DEFAULT_DURATION,
-  variant = 'added',
+  queueAdded = { kind: 'added' },
 }: QueueAddedSnackbarProps) {
   const { systemColors, brandColors } = useTheme();
   const { t } = useTranslation('session');
@@ -116,7 +117,7 @@ function QueueAddedSnackbarGlass({
           accessibilityRole="alert"
         >
           <Text variant="subheadline" color={systemColors.label} style={styles.message} numberOfLines={1}>
-            {snackbarMessage(t, variant)}
+            {snackbarMessage(t, queueAdded)}
           </Text>
           <Pressable
             onPress={onOpen}

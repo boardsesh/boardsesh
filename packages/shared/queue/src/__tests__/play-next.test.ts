@@ -78,6 +78,29 @@ describe('planPlayNext', () => {
     expect(applyMove(queue, plan.oldIndex, plan.newIndex)).toEqual(['q-b', 'q-c', 'q-a', 'q-d']);
   });
 
+  // The ONE move branch that does not route through `playNextInsertPosition`:
+  // `planPlayNext` decides "after current" itself via the `currentIndex === -1`
+  // arm. Both say 0 today; nothing else pins that they agree, so if the helper's
+  // orphan branch ever changes this test is what catches the drift.
+  it('moves an already-queued climb to the head when the current climb is an orphan', () => {
+    const queue = buildQueue('a', 'b', 'c');
+    const orphanCurrent = makeItem('gone');
+    const plan = planPlayNext(queue, orphanCurrent, { climbUuid: 'c-c' });
+    expect(plan).toEqual({ kind: 'move', uuid: 'q-c', oldIndex: 2, newIndex: 0 });
+    if (plan.kind !== 'move') throw new Error('expected a move');
+    expect(applyMove(queue, plan.oldIndex, plan.newIndex)).toEqual(['q-c', 'q-a', 'q-b']);
+  });
+
+  // oldIndex === currentIndex - 1: the tightest backward move there is, and the
+  // one where an off-by-one would be least visible.
+  it('moves the row immediately BEFORE current to immediately after it', () => {
+    const queue = buildQueue('a', 'b', 'c');
+    const plan = planPlayNext(queue, queue[2], { climbUuid: 'c-b' });
+    expect(plan).toEqual({ kind: 'move', uuid: 'q-b', oldIndex: 1, newIndex: 2 });
+    if (plan.kind !== 'move') throw new Error('expected a move');
+    expect(applyMove(queue, plan.oldIndex, plan.newIndex)).toEqual(['q-a', 'q-c', 'q-b']);
+  });
+
   it('reports already-next when the target already sits right after current', () => {
     const queue = buildQueue('a', 'b', 'c');
     expect(planPlayNext(queue, queue[0], { climbUuid: 'c-b' })).toEqual({
@@ -113,6 +136,9 @@ describe('planPlayNext', () => {
     const queue: ClimbQueue = [makeItem('dupe-early', 'x'), makeItem('dupe-mid', 'x'), makeItem('c')];
     const plan = planPlayNext(queue, queue[2], { climbUuid: 'c-x' });
     expect(plan).toEqual({ kind: 'move', uuid: 'q-dupe-early', oldIndex: 0, newIndex: 2 });
+    if (plan.kind !== 'move') throw new Error('expected a move');
+    // Current sits at the tail, so "after current" is the last slot.
+    expect(applyMove(queue, plan.oldIndex, plan.newIndex)).toEqual(['q-dupe-mid', 'q-c', 'q-dupe-early']);
   });
 
   it('honours an explicit queueItemUuid over a climb-uuid duplicate elsewhere', () => {

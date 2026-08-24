@@ -145,6 +145,41 @@ describe('QueueAddedSnackbar', () => {
     expect(container.querySelector('[data-animated]')).toBeNull();
   });
 
+  // The file's contract is that the public prop API is identical across both
+  // implementations, so `queueAdded` is asserted on BOTH. Miss one and that
+  // platform silently keeps the "added to queue" copy after a Play next.
+  it('shows the Play next copy on Material when kind is playNext', () => {
+    ctrl.variant = 'material';
+    const { container } = render(<QueueAddedSnackbar {...base} queueAdded={{ kind: 'playNext' }} />);
+    const snackbar = container.querySelector('[data-paper-snackbar]');
+    expect(snackbar?.textContent).toContain('mobile.queueSnackbar.playingNext');
+    expect(snackbar?.textContent).not.toContain('mobile.queueSnackbar.added');
+    // The Open affordance is unchanged by the copy swap.
+    expect(container.querySelector('[data-action]')?.textContent).toBe('mobile.queueSnackbar.open');
+  });
+
+  it('shows the Play next copy on Liquid Glass when kind is playNext', () => {
+    ctrl.variant = 'liquidGlass';
+    const { container } = render(<QueueAddedSnackbar {...base} queueAdded={{ kind: 'playNext' }} />);
+    expect(container.textContent).toContain('mobile.queueSnackbar.playingNext');
+    expect(container.textContent).not.toContain('mobile.queueSnackbar.added');
+    expect(container.querySelector('[data-label="mobile.queueSnackbar.openAria"]')).not.toBeNull();
+  });
+
+  it.each(['material', 'liquidGlass'] as const)('defaults to the added copy on %s', (variant) => {
+    ctrl.variant = variant;
+    const { container } = render(<QueueAddedSnackbar {...base} />);
+    expect(container.textContent).toContain('mobile.queueSnackbar.added');
+    expect(container.textContent).not.toContain('mobile.queueSnackbar.playingNext');
+  });
+
+  // `count` is carried for #4673's plural and must not disturb this feature's copy.
+  it.each(['material', 'liquidGlass'] as const)('ignores an unused count on %s', (variant) => {
+    ctrl.variant = variant;
+    const { container } = render(<QueueAddedSnackbar {...base} queueAdded={{ kind: 'playNext', count: 3 }} />);
+    expect(container.textContent).toContain('mobile.queueSnackbar.playingNext');
+  });
+
   it('auto-dismisses via timer on the Liquid Glass variant', () => {
     vi.useFakeTimers();
     ctrl.variant = 'liquidGlass';
