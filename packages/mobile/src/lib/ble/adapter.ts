@@ -148,6 +148,12 @@ export class RNBleAdapter implements BluetoothAdapter {
   // reached the GATT connect at all (picker cancelled, board not found, scan
   // error), 1 means a single attempt, and 2 means the retry ran.
   private lastConnectAttemptCount = 0;
+  // Whether the retry of the most recent connect won the GATT connect. Read on
+  // the failure path too, where the thrown error carries no result object: a
+  // recovered GATT connect can still fail later at MTU negotiation or service
+  // discovery, and `lastConnectAttemptCount === 2` alone can't tell that apart
+  // from a retry that lost.
+  private lastConnectRetrySucceeded = false;
 
   constructor(
     private readonly devicePicker: DevicePickerFn,
@@ -170,6 +176,7 @@ export class RNBleAdapter implements BluetoothAdapter {
     // silently freeze the clock and pass for the wrong reason.
     const deadlineMs = performance.now() + CONNECTION_TIMEOUT_MS;
     this.lastConnectAttemptCount = 0;
+    this.lastConnectRetrySucceeded = false;
     const attemptConnect = () => {
       this.lastConnectAttemptCount += 1;
       return settleBeforeDeadline(() => bleManager.connectToDevice(selectedDeviceId), deadlineMs);
@@ -207,6 +214,7 @@ export class RNBleAdapter implements BluetoothAdapter {
       throw connectionTimeoutError();
     }
     if (secondAttempt.kind === 'fulfilled') {
+      this.lastConnectRetrySucceeded = true;
       return { connected: secondAttempt.result, retrySucceeded: true };
     }
 
@@ -576,10 +584,20 @@ export class RNBleAdapter implements BluetoothAdapter {
   }
 
   // 0 when the flow never reached the GATT connect, 1 for a single attempt,
-  // 2 when the Android retry ran. Pairs with `retrySucceeded` to give the retry
-  // a denominator: 2 + success is a save, 2 + failure is a retry that lost.
+  // 2 when the retry ran. This is the retry denominator only — on its own it
+  // says nothing about the outcome, because the connect can still fail after a
+  // recovered GATT connect. Read it with getLastConnectRetrySucceeded().
   getLastConnectAttemptCount(): number {
     return this.lastConnectAttemptCount;
+  }
+
+  // True when the retry of the most recent connect won its GATT connect, even
+  // if a later stage then failed. Together with getLastConnectAttemptCount()
+  // this makes the retry hit rate unambiguous on both events:
+  // 2 + true = the retry recovered the GATT connect (a save, whether or not
+  // MTU/discovery then failed); 2 + false = the retry ran and lost.
+  getLastConnectRetrySucceeded(): boolean {
+    return this.lastConnectRetrySucceeded;
   }
 }
 
