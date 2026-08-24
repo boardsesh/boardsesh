@@ -175,3 +175,39 @@ export function createScriptDb(url?: string): { db: ScriptDb; close: () => Promi
     },
   };
 }
+
+/**
+ * The startup options a read-only script connection is opened with. Exported so
+ * the guarantee is unit-testable without opening a socket.
+ *
+ * `default_transaction_read_only=on` is enforced by POSTGRES, not by us: every
+ * transaction on this connection starts read-only and the server rejects any
+ * INSERT/UPDATE/DELETE/DDL with SQLSTATE 25006. That matters because
+ * "this script is read-only" is otherwise just a convention that one stray
+ * `db.update()` silently breaks — and the #3909 report is meant to be safe to
+ * point at a production replica.
+ *
+ * Not a substitute for a read-only DB credential, which is still the right
+ * outer layer: this only binds the connection the script itself opens.
+ */
+export const READ_ONLY_CONNECTION_OPTIONS = '-c default_transaction_read_only=on';
+
+/**
+ * A script connection that CANNOT write. Same `{ db, close }` shape as
+ * `createScriptDb`, whose signature is deliberately left untouched so every
+ * existing caller keeps its read-write connection.
+ */
+export function createReadOnlyScriptDb(url?: string): { db: ScriptDb; close: () => Promise<void> } {
+  const databaseUrl = url ?? getScriptDatabaseUrl();
+  const client = postgres(databaseUrl, {
+    max: 1,
+    connection: { options: READ_ONLY_CONNECTION_OPTIONS },
+  });
+  const db = drizzle(client);
+  return {
+    db,
+    close: async () => {
+      await client.end();
+    },
+  };
+}
