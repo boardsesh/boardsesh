@@ -122,8 +122,9 @@ type BoardDiscoveryCardProps = {
 /**
  * One board in a carousel. Memoized: three carousels stacked on the Boards tab
  * re-render together whenever any of their queries settle, and each card resolves
- * board art. Every action prop is a scalar or a host-memoized callback, so one
- * card starting a mutation leaves every sibling's memo intact.
+ * board art. `isEditing` and `isActionPending` are scalars and the handlers are
+ * host-memoized, so a mutation starting re-renders the carousel but flips
+ * `isActionPending` on the one card that owns it.
  */
 export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
   item,
@@ -205,10 +206,12 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
     (event: AccessibilityActionEvent) => {
       const { actionName } = event.nativeEvent;
       if (actionName === 'activate' && !isEditing) handlePress();
-      if (actionName === BOARD_ACTION_NAME) handleAction();
+      // Route to the same handler the touch path uses, so the destructive button
+      // keeps its haptic when it is reached from the rotor.
+      if (actionName === BOARD_ACTION_NAME) (showEditAction ? handleEditAction : handleAction)();
       if (actionName === DOWNLOAD_ACTION_NAME) handleDownload();
     },
-    [isEditing, handlePress, handleAction, handleDownload],
+    [isEditing, showEditAction, handlePress, handleAction, handleEditAction, handleDownload],
   );
 
   const activeLabel = t('mobile.discovery.activeBadge');

@@ -87,6 +87,8 @@ vi.mock('react-i18next', () => ({
         'mobile.discovery.yourBoardsTitle': 'Your boards',
         'mobile.discovery.popularTitle': 'Popular',
         'mobile.discovery.create': 'Create a board',
+        // Short form, tile only — "Create board" truncates in an 84 dp tile.
+        'mobile.discovery.createTile': 'Create',
         'mobile.discovery.findNearby': 'Find nearby',
         'mobile.discovery.bluetooth': 'Bluetooth',
         'mobile.discovery.findGym': 'Find a gym',
@@ -488,7 +490,7 @@ describe('board picker with no usable network list', () => {
     expect(screen.getByText('Popular')).toBeTruthy();
     expect(screen.queryByText("No signal — here are the boards you've downloaded.")).toBeNull();
     // All four discovery mode cards, including the two that need a connection.
-    for (const label of ['Find nearby', 'Bluetooth', 'Find a gym', 'Create a board']) {
+    for (const label of ['Find nearby', 'Bluetooth', 'Find a gym', 'Create']) {
       expect(document.querySelector(`[data-mode-card="${label}"]`)).toBeTruthy();
     }
   });

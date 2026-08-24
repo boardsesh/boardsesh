@@ -90,7 +90,8 @@
       "followingBadgeAria": "Siguiendo",
       "popularTitle": "Configuraciones populares",
       "findGym": "Buscar rocódromo",
-      "create": "Crear",
+      "create": "Crear plafón",
+      "createTile": "Crear",
       "followed": "{{name}} añadido a tus plafones",
       "followError": "No se pudo añadir {{name}} a tus plafones"
     },

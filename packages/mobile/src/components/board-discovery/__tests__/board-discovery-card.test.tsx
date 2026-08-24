@@ -459,6 +459,64 @@ describe('BoardDiscoveryCard accessibility', () => {
     expect(actions[1]?.label).toBe('Make Tension 8x10 available offline');
   });
 
+  // Publishing the array is half the contract; routing it is the other half, and
+  // it is the ONLY VoiceOver path to either nested glyph. A mis-wired actionName
+  // switch would otherwise ship green.
+  it('routes each custom action to its own handler', () => {
+    const onPress = vi.fn();
+    const onAction = vi.fn();
+    const onDownload = vi.fn();
+    render(
+      createElement(BoardDiscoveryCard, {
+        item: { ...item, offlineState: 'off' },
+        onPress,
+        onDownload,
+        downloadLabel: 'Download',
+        action: 'edit',
+        onAction,
+        actionLabel: 'Edit Tension 8x10',
+      }),
+    );
+    const dispatch = cardRootProps.last?.onAccessibilityAction as (event: {
+      nativeEvent: { actionName: string };
+    }) => void;
+
+    dispatch({ nativeEvent: { actionName: 'boardAction' } });
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onDownload).not.toHaveBeenCalled();
+
+    dispatch({ nativeEvent: { actionName: 'download' } });
+    expect(onDownload).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledTimes(1);
+
+    dispatch({ nativeEvent: { actionName: 'activate' } });
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves activate inert in edit mode, where the card body is not a target', () => {
+    const onPress = vi.fn();
+    const onAction = vi.fn();
+    render(
+      createElement(BoardDiscoveryCard, {
+        item,
+        onPress,
+        action: 'delete',
+        onAction,
+        actionTitle: 'Delete',
+        isEditing: true,
+      }),
+    );
+    const dispatch = cardRootProps.last?.onAccessibilityAction as (event: {
+      nativeEvent: { actionName: string };
+    }) => void;
+
+    dispatch({ nativeEvent: { actionName: 'activate' } });
+    expect(onPress).not.toHaveBeenCalled();
+
+    dispatch({ nativeEvent: { actionName: 'boardAction' } });
+    expect(onAction).toHaveBeenCalledWith(item);
+  });
+
   it('keeps one accessibilityActions identity across re-renders', () => {
     const props = {
       onPress: vi.fn(),

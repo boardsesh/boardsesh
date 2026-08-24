@@ -40,14 +40,25 @@ describe('boardCardAction', () => {
   });
 
   // Inside `myBoards` every non-owned board is one you already follow, so a
-  // "Follow" resting state is unreachable. A type-level pin plus the exhaustive
-  // runtime sweep above.
-  it('has no follow member in the action union', () => {
-    const actions: BoardCardAction[] = ['edit', 'unfollow', 'delete', null];
+  // "Follow" resting state is unreachable. The real work here is the suppression
+  // below: it fails the typecheck if anyone widens the union. The runtime half
+  // just proves the helper never invents a fourth value.
+  it('only ever returns a member of the three-value union', () => {
     // @ts-expect-error — 'follow' is deliberately not part of BoardCardAction.
     const rejected: BoardCardAction = 'follow';
-    expect(actions).toHaveLength(4);
     expect(rejected).toBe('follow');
+
+    const produced = new Set<BoardCardAction>();
+    for (const isViewerOwner of [true, false]) {
+      for (const isEditing of [true, false]) {
+        for (const readOnly of [true, false]) {
+          produced.add(boardCardAction({ isViewerOwner, isEditing, readOnly }));
+        }
+      }
+    }
+    expect([...produced].filter((action) => action !== null).sort()).toEqual(['delete', 'edit', 'unfollow']);
+    expect(produced.has(null)).toBe(true);
+    expect(produced.size).toBe(4);
   });
 });
 

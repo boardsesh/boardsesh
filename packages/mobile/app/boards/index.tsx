@@ -84,6 +84,13 @@ export default function BoardSelection() {
   const clearActiveBoard = useClearActiveBoard();
   const deleteBoard = useDeleteBoard();
   const unfollowBoard = useUnfollowBoard();
+  // `useMutation` returns a fresh object literal on every render, so depending on
+  // the mutation objects would rebuild the action handler — and with it the
+  // carousel's `renderItem` and every card's memo — on every commit.
+  // `mutateAsync` is bound once by the MutationObserver, so it is the stable half
+  // to close over.
+  const deleteBoardAsync = deleteBoard.mutateAsync;
+  const unfollowBoardAsync = unfollowBoard.mutateAsync;
 
   // Who is looking, so a card can tell your own wall from a gym you follow.
   // Deliberately NOT a gate: unlike /boards/manage, a missing id must never stop
@@ -317,10 +324,19 @@ export default function BoardSelection() {
   );
   const myBoardActionLabelFor = useCallback(
     (item: DiscoveryBoardItem) => {
-      const action = myBoardActionFor(item);
-      if (action === 'edit') return t('mobile.manage.editAria', { name: item.title });
-      if (action === 'delete') return t('mobile.manage.deleteAria', { name: item.title });
-      return t('mobile.manage.unfollowAria', { name: item.title });
+      switch (myBoardActionFor(item)) {
+        case 'edit':
+          return t('mobile.manage.editAria', { name: item.title });
+        case 'delete':
+          return t('mobile.manage.deleteAria', { name: item.title });
+        case 'unfollow':
+          return t('mobile.manage.unfollowAria', { name: item.title });
+        // No slot renders for a board whose ownership did not resolve, so there
+        // is no action to label. Exhaustive rather than a fallthrough, so a
+        // future action can't inherit the wrong string.
+        case null:
+          return '';
+      }
     },
     [myBoardActionFor, t],
   );
@@ -333,8 +349,12 @@ export default function BoardSelection() {
         showToast(t('mobile.boardSwitchError'), 'error');
         return;
       }
+      // Unreachable from the UI — a board whose ownership did not resolve renders
+      // no slot at all — but bail explicitly rather than let a coercion collapse
+      // "unknown" into "followed" and offer to unfollow the user's own wall.
+      if (item.isViewerOwner === undefined) return;
       const action = boardCardAction({
-        isViewerOwner: item.isViewerOwner === true,
+        isViewerOwner: item.isViewerOwner,
         isEditing: isEditingBoards,
         readOnly: false,
       });
@@ -353,7 +373,7 @@ export default function BoardSelection() {
         });
         if (!confirmed) return;
         try {
-          await deleteBoard.mutateAsync(board.uuid);
+          await deleteBoardAsync(board.uuid);
           // The offline picker's snapshot goes with it. The download itself stays
           // (a sibling board can share the scope), but a card for a board the
           // backend has dropped must never reach setActiveBoard.
@@ -381,7 +401,7 @@ export default function BoardSelection() {
           if (!confirmed) return;
         }
         try {
-          await unfollowBoard.mutateAsync(board.uuid);
+          await unfollowBoardAsync(board.uuid);
           forgetOfflineBoard(board.uuid);
           if (wasActive) await clearActiveBoard();
         } catch {
@@ -395,8 +415,8 @@ export default function BoardSelection() {
       router,
       activeBoard?.uuid,
       confirm,
-      deleteBoard,
-      unfollowBoard,
+      deleteBoardAsync,
+      unfollowBoardAsync,
       clearActiveBoard,
       showToast,
       t,
@@ -436,10 +456,10 @@ export default function BoardSelection() {
   const onManageBoards = useCallback(() => {
     router.push('/boards/manage');
   }, [router]);
-  // The full vertical list with the per-board download console. This is the only
-  // route to it now that the drawer's second board row is gone, so it renders on
-  // the offline branch too: it is navigation, not a mutation, and the manage
-  // screen has its own offline list.
+  // The full vertical list with the per-board download console. With the drawer's
+  // second board row gone this and OfflineSpotlightCard are the only routes to
+  // it, so it renders on the offline branch too: it is navigation, not a
+  // mutation, and the manage screen has its own offline list.
   const manageBoardsRow = (
     <Pressable onPress={onManageBoards} accessibilityRole="button" style={styles.manageRow}>
       <Text variant="body" color={brandColors.primary} style={styles.manageRowLabel}>
@@ -683,7 +703,10 @@ export default function BoardSelection() {
           />
           <BoardModeCard icon="bluetooth" label={t('mobile.discovery.bluetooth')} onPress={onModeBluetooth} />
           <BoardModeCard icon="pin" label={t('mobile.discovery.findGym')} onPress={onModeFindGym} />
-          <BoardModeCard icon="plus" label={t('mobile.discovery.create')} onPress={onModeCreate} />
+          {/* The tile is 84 dp wide (68 dp of text): "Create board" truncated in
+              en-US and in all three other locales. The `+` glyph and the row's
+              context carry the noun here; the full-width CTAs keep it. */}
+          <BoardModeCard icon="plus" label={t('mobile.discovery.createTile')} onPress={onModeCreate} />
         </View>
 
         {nearbySection}

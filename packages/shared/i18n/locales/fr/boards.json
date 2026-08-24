@@ -90,7 +90,8 @@
       "followingBadgeAria": "Abonné",
       "popularTitle": "Configurations populaires",
       "findGym": "Trouver une salle",
-      "create": "Créer",
+      "create": "Créer une board",
+      "createTile": "Créer",
       "followed": "{{name}} ajoutée à tes boards",
       "followError": "Impossible d'ajouter {{name}} à tes boards"
     },

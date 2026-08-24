@@ -107,6 +107,9 @@ vi.mock('react-i18next', () => ({
         'mobile.manage.deleteError': "Couldn't delete that board. Try again.",
         'mobile.manage.unfollowError': "Couldn't unfollow that board. Try again.",
         'mobile.boardSwitchError': 'Could not switch board',
+        'mobile.errorTitle': 'Something went wrong',
+        'mobile.emptyTitle': 'No boards yet',
+        'mobile.emptySubtitle': 'Search for a board to get started',
         'myBoards.title': 'Manage boards',
       };
       const template = map[key] ?? key;
@@ -398,6 +401,9 @@ describe('deleting a board', () => {
     await waitFor(() =>
       expect(toastMock.showToast).toHaveBeenCalledWith("Couldn't delete that board. Try again.", 'error'),
     );
+    // The board is still on the server, so its offline snapshot must survive.
+    expect(forgetOfflineBoardMock).not.toHaveBeenCalled();
+    expect(clearActiveBoardMock).not.toHaveBeenCalled();
   });
 });
 
@@ -480,14 +486,23 @@ describe('identity resolution never blocks the switcher', () => {
 
   // Degraded means "no ownership slot", not "everything looks followed" — the
   // latter would offer to unfollow the user's own wall.
-  it('offers no per-card action with no resolvable user id', () => {
+  it('offers no per-card action with no resolvable user id', async () => {
     state.profile = undefined;
     state.storedUserId = undefined;
 
     render(createElement(BoardSelection));
 
     expect(carouselProps.last?.items.every((item) => item.isViewerOwner === undefined)).toBe(true);
-    expect(screen.getByRole('button', { name: 'none Marco garage' })).toBeTruthy();
+    const slot = screen.getByRole('button', { name: 'none Marco garage' });
+    expect(slot).toBeTruthy();
+
+    // And if the handler is reached anyway, it must run nothing rather than
+    // treat "unknown" as "followed".
+    fireEvent.click(slot);
+    await waitFor(() => expect(carouselProps.last?.pendingActionKey).toBeNull());
+    expect(unfollowBoardMock).not.toHaveBeenCalled();
+    expect(deleteBoardMock).not.toHaveBeenCalled();
+    expect(routerMock.push).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/boards/edit' }));
   });
 
   it('falls back to the id this device already has when the profile is missing', () => {

@@ -90,7 +90,8 @@
       "followingBadgeAria": "Du folgst",
       "popularTitle": "Beliebte Setups",
       "findGym": "Halle finden",
-      "create": "Erstellen",
+      "create": "Board anlegen",
+      "createTile": "Erstellen",
       "followed": "{{name}} zu deinen Boards hinzugefügt",
       "followError": "{{name}} ließ sich nicht zu deinen Boards hinzufügen"
     },
