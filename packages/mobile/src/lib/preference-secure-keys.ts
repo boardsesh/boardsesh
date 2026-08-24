@@ -5,7 +5,16 @@
 //
 // Every literal is imported from the module that owns it rather than restated
 // here: a re-declared key is how a store silently drops out of migration
-// coverage after a rename.
+// coverage after a rename. Two of those literals live in a module of their own
+// rather than with their store, because importing them from the store would be
+// unsafe or expensive:
+//
+// * session-store-keys.ts — session-store.ts has a session-store.web.ts sibling,
+//   and Metro resolves `./session-store` to that fork on the browser target,
+//   where the keys are not exported. This list would silently get `undefined`.
+// * i18n/locale-preference-key.ts — locale-preference.ts reaches i18next,
+//   react-i18next and every catalog through ./config, which is a lot of module
+//   graph to load for one string.
 //
 // Two keys are deliberately absent:
 //
@@ -32,11 +41,11 @@ import {
   THEME_OVERRIDE_KEY,
   UI_VARIANT_KEY,
 } from '@boardsesh/key-value-storage';
-import { LOCALE_OVERRIDE_KEY } from './i18n/locale-preference';
+import { LOCALE_OVERRIDE_KEY } from './i18n/locale-preference-key';
 import { LAST_GRADE_KEY } from './last-grade-store';
 import { LAST_SEARCH_KEY } from './last-search-store';
 import { RECENT_FILTERS_KEY } from './recent-filter-store';
-import { CREATED_SESSION_ID_KEY, SESSION_ID_KEY } from './session-store';
+import { CREATED_SESSION_ID_KEY, SESSION_ID_KEY } from './session-store-keys';
 
 export const PREFERENCE_SECURE_KEYS: readonly string[] = [
   SESSION_ID_KEY,

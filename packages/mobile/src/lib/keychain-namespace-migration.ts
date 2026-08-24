@@ -81,8 +81,27 @@ async function migrateKey(key: string): Promise<SecureKeyMigrationOutcome> {
   return { key, status: 'migrated' };
 }
 
+/** True when every key in the pass reached a terminal, retry-free state. */
+export function isMigrationComplete(outcomes: readonly SecureKeyMigrationOutcome[]): boolean {
+  return outcomes.every((outcome) => SUCCESS_STATUSES.includes(outcome.status));
+}
+
+// An incomplete pass is retried on the next token read (auth) or the next
+// foreground (preferences), and on a locked background wake every one of those
+// retries fails identically. Emitting each of them would turn a single stuck
+// device into a stream of identical events, so only the first incomplete pass
+// per scope is reported. The entry is cleared when the scope completes, so a
+// later regression is still visible.
+const reportedIncompleteScopes = new Set<string>();
+
 function reportOutcomes(scope: string, outcomes: readonly SecureKeyMigrationOutcome[]): void {
   const failures = outcomes.filter((outcome) => !SUCCESS_STATUSES.includes(outcome.status));
+  if (failures.length === 0) {
+    reportedIncompleteScopes.delete(scope);
+  } else {
+    if (reportedIncompleteScopes.has(scope)) return;
+    reportedIncompleteScopes.add(scope);
+  }
   track('Keychain Namespace Migration', {
     scope,
     keys: outcomes.length,
@@ -119,13 +138,26 @@ export async function migrateSecureKeysToV2(
 }
 
 /**
- * Run `task` at most once per process, sharing the in-flight promise with
- * concurrent callers and allowing a retry after failure. Mirrors
- * metro-target-store's migration guard: `completed` flips only on success, so a
- * transient failure can't permanently skip the work, and a boolean alone would
- * let the six near-simultaneous cold-start auth readers each start a pass.
+ * Run `task` until it reports completion, at most once at a time, sharing the
+ * in-flight promise with concurrent callers.
+ *
+ * `task` resolves `true` to latch (never run again this process) and `false` to
+ * ask for a retry on the next call; a rejection also retries. The boolean is
+ * what keeps a background cold launch on a locked phone from burning the single
+ * attempt: migrateSecureKeysToV2 never rejects — a locked keychain is an
+ * expected outcome it resolves, not an error — so a void task would latch on a
+ * pass where every key came back legacy-read-failed and never retry, even after
+ * the user unlocks and foregrounds the app. Signalling that with a thrown
+ * sentinel would work too, but throwing for a normal, expected outcome is
+ * exactly the control flow a later edit "helpfully" deletes.
+ *
+ * The retry hooks are real: auth re-runs through auth-provider.tsx's AppState
+ * `active` -> checkAuth -> getAuthToken path, and preferences re-run from
+ * KeychainNamespaceMigration's own AppState listener. The shared in-flight
+ * promise is what stops the six near-simultaneous cold-start auth readers from
+ * each starting a pass.
  */
-export function createOnceRunner(task: () => Promise<void>): () => Promise<void> {
+export function createOnceRunner(task: () => Promise<boolean>): () => Promise<void> {
   let completed = false;
   let inFlight: Promise<void> | null = null;
 
@@ -133,8 +165,8 @@ export function createOnceRunner(task: () => Promise<void>): () => Promise<void>
     if (completed) return Promise.resolve();
     if (inFlight !== null) return inFlight;
     inFlight = task().then(
-      () => {
-        completed = true;
+      (didComplete: boolean) => {
+        completed = didComplete;
         inFlight = null;
       },
       (error: unknown) => {

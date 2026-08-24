@@ -18,6 +18,7 @@ vi.mock('expo-secure-store', () => {
   const items = new Map<string, StoredItem>();
   const lockedServices = new Set<string>();
   const writeFailureKeys = new Set<string>();
+  const droppedWriteKeys = new Set<string>();
 
   const serviceOf = (options?: { keychainService?: string }) => options?.keychainService ?? 'app';
   const itemKey = (key: string, options?: { keychainService?: string }) => `${serviceOf(options)}::${key}`;
@@ -35,6 +36,10 @@ vi.mock('expo-secure-store', () => {
         const existing = items.get(itemKey(key, options));
         // The bug being fixed: an existing item keeps its original accessibility
         // because expo-secure-store's update() sends kSecValueData only.
+        // A write that reports success but leaves nothing behind — the case the
+        // read-back exists to catch, and the only shape it can physically take
+        // (SecItemAdd either stores the bytes it was handed or returns an error).
+        if (droppedWriteKeys.has(itemKey(key, options))) return;
         items.set(itemKey(key, options), {
           value,
           accessible: existing ? existing.accessible : options?.keychainAccessible,
@@ -49,11 +54,18 @@ vi.mock('expo-secure-store', () => {
     },
     __get: (key: string, service = V2_SERVICE) => items.get(`${service}::${key}`) ?? null,
     __lockService: (service: string) => lockedServices.add(service),
+    __unlockService: (service: string) => lockedServices.delete(service),
     __failWriteFor: (key: string, service = V2_SERVICE) => writeFailureKeys.add(`${service}::${key}`),
+    __dropWriteFor: (key: string, service = V2_SERVICE) => droppedWriteKeys.add(`${service}::${key}`),
+    __clearWriteHooks: () => {
+      writeFailureKeys.clear();
+      droppedWriteKeys.clear();
+    },
     __reset: () => {
       items.clear();
       lockedServices.clear();
       writeFailureKeys.clear();
+      droppedWriteKeys.clear();
     },
   };
 });
@@ -64,7 +76,10 @@ type SecureStoreFake = {
   __seedLegacy: (key: string, value: string, accessible?: string) => void;
   __get: (key: string, service?: string) => StoredItem | null;
   __lockService: (service: string) => void;
+  __unlockService: (service: string) => void;
   __failWriteFor: (key: string, service?: string) => void;
+  __dropWriteFor: (key: string, service?: string) => void;
+  __clearWriteHooks: () => void;
   __reset: () => void;
   getItemAsync: ReturnType<typeof vi.fn>;
   setItemAsync: ReturnType<typeof vi.fn>;
@@ -171,6 +186,28 @@ describe('migrateSecureKeysToV2', () => {
     ]);
   });
 
+  it('reports verify-mismatch and leaves legacy intact when the read-back disagrees', async () => {
+    const store = await secureStore();
+    store.__seedLegacy('boardsesh_jwt', 'jwt-value');
+    // The write reports success but nothing lands. Without the read-back this
+    // pass would report `migrated` while the next launch still read legacy.
+    store.__dropWriteFor('boardsesh_jwt');
+    const { migrateSecureKeysToV2 } = await import('../keychain-namespace-migration');
+
+    const outcomes = await migrateSecureKeysToV2(['boardsesh_jwt'], 'auth');
+
+    expect(outcomes).toEqual([{ key: 'boardsesh_jwt', status: 'verify-mismatch' }]);
+    // Nothing was destroyed: legacy is byte-identical to the seed.
+    expect(store.__get('boardsesh_jwt', 'app')).toEqual({ value: 'jwt-value', accessible: 'when-unlocked' });
+    expect(store.deleteItemAsync).not.toHaveBeenCalled();
+
+    // And a later pass with the write behaving picks the key back up.
+    store.__clearWriteHooks();
+    await expect(migrateSecureKeysToV2(['boardsesh_jwt'], 'auth')).resolves.toEqual([
+      { key: 'boardsesh_jwt', status: 'migrated' },
+    ]);
+  });
+
   it('reports per-key outcomes to analytics, with key names but never values', async () => {
     const store = await secureStore();
     store.__seedLegacy('boardsesh_jwt', 'jwt-value');
@@ -192,12 +229,77 @@ describe('migrateSecureKeysToV2', () => {
     });
     expect(JSON.stringify(vi.mocked(track).mock.calls)).not.toContain('jwt-value');
   });
+
+  it('reports an incomplete scope once per process, and again when it completes', async () => {
+    const store = await secureStore();
+    store.__seedLegacy('boardsesh_jwt', 'jwt-value');
+    store.__lockService('app');
+    const { migrateSecureKeysToV2 } = await import('../keychain-namespace-migration');
+    const { track } = await import('../analytics');
+
+    // A locked background wake retries on every token read, and every retry
+    // fails identically. One stuck device must not become a stream of events.
+    await migrateSecureKeysToV2(['boardsesh_jwt'], 'auth');
+    await migrateSecureKeysToV2(['boardsesh_jwt'], 'auth');
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenLastCalledWith(
+      'Keychain Namespace Migration',
+      expect.objectContaining({ scope: 'auth', failed: 1, failures: 'boardsesh_jwt:legacy-read-failed' }),
+    );
+
+    store.__unlockService('app');
+    await migrateSecureKeysToV2(['boardsesh_jwt'], 'auth');
+
+    expect(track).toHaveBeenCalledTimes(2);
+    expect(track).toHaveBeenLastCalledWith(
+      'Keychain Namespace Migration',
+      expect.objectContaining({ scope: 'auth', migrated: 1, failed: 0, failures: '' }),
+    );
+    expect(JSON.stringify(vi.mocked(track).mock.calls)).not.toContain('jwt-value');
+  });
+
+  it('bounds incomplete reports per scope, not across scopes', async () => {
+    const store = await secureStore();
+    store.__seedLegacy('boardsesh_jwt', 'jwt-value');
+    store.__lockService('app');
+    const { migrateSecureKeysToV2 } = await import('../keychain-namespace-migration');
+    const { track } = await import('../analytics');
+
+    await migrateSecureKeysToV2(['boardsesh_jwt'], 'auth');
+    await migrateSecureKeysToV2(['boardsesh_jwt'], 'preferences');
+
+    expect(track).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('isMigrationComplete', () => {
+  it('accepts the three terminal statuses and rejects every retryable one', async () => {
+    const { isMigrationComplete } = await import('../keychain-namespace-migration');
+
+    expect(isMigrationComplete([])).toBe(true);
+    expect(
+      isMigrationComplete([
+        { key: 'a', status: 'already-v2' },
+        { key: 'b', status: 'migrated' },
+        { key: 'c', status: 'absent' },
+      ]),
+    ).toBe(true);
+    for (const status of ['v2-read-failed', 'legacy-read-failed', 'v2-write-failed', 'verify-mismatch'] as const) {
+      expect(
+        isMigrationComplete([
+          { key: 'a', status: 'migrated' },
+          { key: 'b', status },
+        ]),
+      ).toBe(false);
+    }
+  });
 });
 
 describe('createOnceRunner', () => {
   it('shares one in-flight run across concurrent callers', async () => {
     const { createOnceRunner } = await import('../keychain-namespace-migration');
-    const task = vi.fn(async () => {});
+    const task = vi.fn(async () => true);
     const runOnce = createOnceRunner(task);
 
     await Promise.all([runOnce(), runOnce(), runOnce()]);
@@ -205,9 +307,9 @@ describe('createOnceRunner', () => {
     expect(task).toHaveBeenCalledTimes(1);
   });
 
-  it('does not re-run after success', async () => {
+  it('latches on a complete pass and never runs again', async () => {
     const { createOnceRunner } = await import('../keychain-namespace-migration');
-    const task = vi.fn(async () => {});
+    const task = vi.fn(async () => true);
     const runOnce = createOnceRunner(task);
 
     await runOnce();
@@ -216,16 +318,66 @@ describe('createOnceRunner', () => {
     expect(task).toHaveBeenCalledTimes(1);
   });
 
-  it('retries after a failure instead of latching completed', async () => {
+  it('does NOT latch on an incomplete pass, so the next caller retries', async () => {
+    const { createOnceRunner } = await import('../keychain-namespace-migration');
+    // migrateSecureKeysToV2 never rejects — a locked keychain resolves as an
+    // outcome — so `false` is the only signal that the work still needs doing.
+    const task = vi.fn<() => Promise<boolean>>().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const runOnce = createOnceRunner(task);
+
+    await runOnce();
+    await runOnce();
+    await runOnce();
+
+    expect(task).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries after a rejection instead of latching completed', async () => {
     const { createOnceRunner } = await import('../keychain-namespace-migration');
     const task = vi
-      .fn<() => Promise<void>>()
+      .fn<() => Promise<boolean>>()
       .mockRejectedValueOnce(new Error('keychain locked'))
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce(true);
     const runOnce = createOnceRunner(task);
 
     await expect(runOnce()).rejects.toThrow('keychain locked');
     await expect(runOnce()).resolves.toBeUndefined();
     expect(task).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a fully failed migration pass in the SAME process once the keychain unlocks', async () => {
+    // The latch bug this guards: a process cold-launched in the background on a
+    // locked phone gets nothing but legacy-read-failed, and used to burn its one
+    // attempt on it and never retry for the whole process lifetime.
+    const store = await secureStore();
+    store.__seedLegacy('boardsesh_jwt', 'jwt-value');
+    store.__seedLegacy('boardsesh_refresh_token', 'refresh-value');
+    store.__seedLegacy('boardsesh_token_expires_at', '2026-09-01T00:00:00.000Z');
+    store.__lockService('app');
+    const { createOnceRunner, isMigrationComplete, migrateSecureKeysToV2 } =
+      await import('../keychain-namespace-migration');
+    const keys = ['boardsesh_jwt', 'boardsesh_refresh_token', 'boardsesh_token_expires_at'];
+    const outcomesPerPass: string[][] = [];
+    const runOnce = createOnceRunner(async () => {
+      const outcomes = await migrateSecureKeysToV2(keys, 'auth');
+      outcomesPerPass.push(outcomes.map((outcome) => outcome.status));
+      return isMigrationComplete(outcomes);
+    });
+
+    await runOnce();
+    expect(outcomesPerPass[0]).toEqual(['legacy-read-failed', 'legacy-read-failed', 'legacy-read-failed']);
+    expect(store.__get('boardsesh_jwt')).toBeNull();
+
+    store.__unlockService('app');
+    await runOnce();
+
+    expect(outcomesPerPass[1]).toEqual(['migrated', 'migrated', 'migrated']);
+    for (const key of keys) {
+      expect(store.__get(key)?.accessible).toBe(AFTER_FIRST_UNLOCK);
+    }
+
+    // And now it latches.
+    await runOnce();
+    expect(outcomesPerPass).toHaveLength(2);
   });
 });

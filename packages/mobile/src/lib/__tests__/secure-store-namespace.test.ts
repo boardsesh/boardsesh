@@ -18,6 +18,7 @@ vi.mock('expo-secure-store', () => {
   const items = new Map<string, string>();
   const lockedServices = new Set<string>();
   const undeletableServices = new Set<string>();
+  const writeFailureKeys = new Set<string>();
 
   const serviceOf = (options?: { keychainService?: string }) => options?.keychainService ?? LEGACY_SERVICE;
   const itemKey = (key: string, options?: { keychainService?: string }) => `${serviceOf(options)}::${key}`;
@@ -29,6 +30,7 @@ vi.mock('expo-secure-store', () => {
       return items.get(itemKey(key, options)) ?? null;
     }),
     setItemAsync: vi.fn(async (key: string, value: string, options?: { keychainService?: string }) => {
+      if (writeFailureKeys.has(itemKey(key, options))) throw new Error('write failed');
       if (lockedServices.has(serviceOf(options))) throw new Error('User interaction is not allowed.');
       items.set(itemKey(key, options), value);
     }),
@@ -41,10 +43,12 @@ vi.mock('expo-secure-store', () => {
     __get: (service: string, key: string) => items.get(`${service}::${key}`) ?? null,
     __lockService: (service: string) => lockedServices.add(service),
     __makeUndeletable: (service: string) => undeletableServices.add(service),
+    __failWriteFor: (service: string, key: string) => writeFailureKeys.add(`${service}::${key}`),
     __reset: () => {
       items.clear();
       lockedServices.clear();
       undeletableServices.clear();
+      writeFailureKeys.clear();
     },
   };
 });
@@ -56,6 +60,7 @@ type SecureStoreFake = {
   __get: (service: string, key: string) => string | null;
   __lockService: (service: string) => void;
   __makeUndeletable: (service: string) => void;
+  __failWriteFor: (service: string, key: string) => void;
   __reset: () => void;
   getItemAsync: ReturnType<typeof vi.fn>;
 };
@@ -110,6 +115,43 @@ describe('writeSecureValue', () => {
 
     await expect(writeSecureValue('k', 'fresh')).resolves.toBeUndefined();
     expect(store.__get(V2_SERVICE, 'k')).toBe('fresh');
+  });
+});
+
+describe('writeSecureValueToEitherNamespace', () => {
+  it('still lands in legacy when the v2 write rejects', async () => {
+    const store = await secureStore();
+    store.__failWriteFor(V2_SERVICE, 'k');
+    const { writeSecureValueToEitherNamespace } = await import('../secure-store-io');
+
+    await expect(writeSecureValueToEitherNamespace('k', 'fresh')).resolves.toBeUndefined();
+
+    expect(store.__get(V2_SERVICE, 'k')).toBeNull();
+    expect(store.__get(LEGACY_SERVICE, 'k')).toBe('fresh');
+  });
+
+  it('still lands in v2 when the legacy write rejects', async () => {
+    const store = await secureStore();
+    store.__lockService(LEGACY_SERVICE);
+    const { writeSecureValueToEitherNamespace } = await import('../secure-store-io');
+
+    await expect(writeSecureValueToEitherNamespace('k', 'fresh')).resolves.toBeUndefined();
+
+    expect(store.__get(V2_SERVICE, 'k')).toBe('fresh');
+  });
+
+  it('rejects with both causes only when neither namespace accepts the write', async () => {
+    const store = await secureStore();
+    store.__failWriteFor(V2_SERVICE, 'k');
+    store.__failWriteFor(LEGACY_SERVICE, 'k');
+    const { writeSecureValueToEitherNamespace } = await import('../secure-store-io');
+
+    await expect(writeSecureValueToEitherNamespace('k', 'fresh')).rejects.toMatchObject({
+      name: 'SecureStoreWriteError',
+      failures: [expect.any(Error), expect.any(Error)],
+    });
+    expect(store.__get(V2_SERVICE, 'k')).toBeNull();
+    expect(store.__get(LEGACY_SERVICE, 'k')).toBeNull();
   });
 });
 
@@ -188,6 +230,60 @@ describe('auth-store over the v2 namespace', () => {
 
     expect(store.__get(V2_SERVICE, 'boardsesh_jwt')).toBe('jwt');
     expect(store.__get(LEGACY_SERVICE, 'boardsesh_jwt')).toBe('jwt');
+  });
+
+  it('tombstones through legacy when the v2 write is the one that fails', async () => {
+    const store = await secureStore();
+    store.__seed(LEGACY_SERVICE, 'boardsesh_jwt', 'legacy-jwt');
+    // Deletion silently does nothing AND the v2 tombstone write rejects. A
+    // v2-first-then-mirror writer would throw before the legacy write ran,
+    // leaving the surviving legacy credential readable through the fallback.
+    store.__makeUndeletable(LEGACY_SERVICE);
+    store.__failWriteFor(V2_SERVICE, 'boardsesh_jwt');
+    const { clearTokens, getAuthToken } = await import('../auth-store');
+
+    await expect(clearTokens()).resolves.toBeUndefined();
+
+    expect(store.__get(LEGACY_SERVICE, 'boardsesh_jwt')).toBe('__boardsesh_auth_credential_cleared__');
+    await expect(getAuthToken()).resolves.toBeNull();
+  });
+
+  it('fails the sign-out cleanup only when BOTH namespaces reject the tombstone', async () => {
+    const store = await secureStore();
+    store.__seed(LEGACY_SERVICE, 'boardsesh_jwt', 'legacy-jwt');
+    store.__makeUndeletable(LEGACY_SERVICE);
+    store.__makeUndeletable(V2_SERVICE);
+    store.__failWriteFor(V2_SERVICE, 'boardsesh_jwt');
+    store.__failWriteFor(LEGACY_SERVICE, 'boardsesh_jwt');
+    const { clearTokens } = await import('../auth-store');
+
+    await expect(clearTokens()).rejects.toMatchObject({
+      name: 'AuthCredentialCleanupError',
+      failures: [expect.anything()],
+    });
+  });
+
+  it('does not resurrect the session when sign-out races the first-read migration', async () => {
+    const store = await secureStore();
+    store.__seed(LEGACY_SERVICE, 'boardsesh_jwt', 'legacy-jwt');
+    store.__seed(LEGACY_SERVICE, 'boardsesh_refresh_token', 'legacy-refresh');
+    const { clearTokens, getAuthToken, getRefreshToken } = await import('../auth-store');
+
+    // No await between them: the migration pass and the sign-out both land on
+    // the credential mutation queue. Settling at all is half the assertion —
+    // a self-enqueueing read inside the queue would deadlock here.
+    const pendingRead = getAuthToken();
+    const pendingSignOut = clearTokens();
+    await Promise.allSettled([pendingRead, pendingSignOut]);
+
+    await expect(getAuthToken()).resolves.toBeNull();
+    await expect(getRefreshToken()).resolves.toBeNull();
+    for (const service of [V2_SERVICE, LEGACY_SERVICE]) {
+      for (const key of ['boardsesh_jwt', 'boardsesh_refresh_token']) {
+        const stored = store.__get(service, key);
+        expect(stored === null || stored === '__boardsesh_auth_credential_cleared__').toBe(true);
+      }
+    }
   });
 
   it('runs the credential migration once across concurrent cold-start reads', async () => {
