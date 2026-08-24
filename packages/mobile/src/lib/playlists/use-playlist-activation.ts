@@ -405,14 +405,20 @@ export function usePlaylistActivation({
           drainPagesFetched = drainResult.pagesFetched;
         }
         if (abortController.signal.aborted) return;
-        // The runaway bound fired, which means a server paging defect (or a
-        // genuinely enormous playlist) got past every other guard. Truncation is
-        // silent on purpose — the climber gets a working circuit either way, and
-        // a toast for a branch nothing should reach is copy we would have to
-        // translate forever. If this shows up in Sentry, revisit with evidence.
-        if (drainStopReason === 'page-cap' && !options.loadedClimbs) {
-          reportHandledError(new Error('Playlist drain hit the page cap'), {
-            tags: { source: 'playlist', op: 'replace-queue-capped' },
+        // The drain stopped short of the server's own end-of-list. Both reasons
+        // truncate silently for the climber — they still get a working circuit,
+        // and a toast for this would be copy we translate forever — so this
+        // report is the ONLY signal either branch produces. Separate `op` per
+        // reason because their odds could not be more different:
+        //   page-cap     needs 20 productive pages (2,000 climbs). Should never fire.
+        //   no-progress  is the count/select drift the guard exists for and CAN
+        //                fire on live data: a logbook playlist whose refs all
+        //                fail to hydrate returns `climbs: [], hasMore: true`,
+        //                which would otherwise be a silent one-item queue.
+        // Kept off the #3891 canary's `op` so neither signal pollutes the other.
+        if ((drainStopReason === 'page-cap' || drainStopReason === 'no-progress') && !options.loadedClimbs) {
+          reportHandledError(new Error(`Playlist drain stopped early: ${drainStopReason}`), {
+            tags: { source: 'playlist', op: `replace-queue-${drainStopReason}` },
             extra: { sourceId, pagesFetched: drainPagesFetched, climbCount: climbs.length },
           });
         }
@@ -472,7 +478,10 @@ export function usePlaylistActivation({
         }
         setPendingReplacement(null);
       } catch (error) {
-        if (isAbortError(error)) return;
+        // Ask the signal, not the error's `name` — see the drain's own catch.
+        // A runtime whose abort does not carry `name: 'AbortError'` would
+        // otherwise toast the climber for a cancellation they requested.
+        if (abortController.signal.aborted || isAbortError(error)) return;
         console.error('Playlist queue replacement failed:', error);
         reportHandledError(error, {
           tags: { source: 'playlist', op: 'replace-queue' },

@@ -301,7 +301,50 @@ describe('drainPlaylistPages', () => {
     expect(sleep).toHaveBeenCalledTimes(1);
   });
 
-  it('propagates an AbortError from a page without retrying it', async () => {
+  it('reports a caller-requested stop as caller-stop, not the runaway page cap', async () => {
+    const fetchPage = vi.fn(async ({ page }: { page: number }) => ({
+      climbs: makePage(page, 10),
+      hasMore: true,
+    }));
+
+    const result = await drainPlaylistPages({
+      fetchPage,
+      signal: new AbortController().signal,
+      pageSize: 10,
+      maxPages: 20,
+      isRetryable: neverRetryable,
+      parseRetryAfterSeconds: noRateLimit,
+      sleep: makeImmediateSleep(),
+      stopAfterPage: () => true,
+    });
+
+    // A consumer that mistook this for 'page-cap' would ship bogus runaway-bound
+    // telemetry for a stop it asked for itself.
+    expect(result.stopReason).toBe('caller-stop');
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a uuid repeated inside a single page', async () => {
+    const duplicated = makeClimb('dupe');
+    const fetchPage = vi.fn(async () => ({
+      climbs: [duplicated, makeClimb('other'), duplicated],
+      hasMore: false,
+    }));
+
+    const result = await drainPlaylistPages({
+      fetchPage,
+      signal: new AbortController().signal,
+      pageSize: 10,
+      maxPages: 20,
+      isRetryable: neverRetryable,
+      parseRetryAfterSeconds: noRateLimit,
+      sleep: makeImmediateSleep(),
+    });
+
+    expect(result.climbs.map((climb) => climb.uuid)).toEqual(['dupe', 'other']);
+  });
+
+  it('rejects with an AbortError from a page without retrying it', async () => {
     const sleep = makeImmediateSleep();
     const abortError = new Error('aborted');
     abortError.name = 'AbortError';
@@ -316,6 +359,37 @@ describe('drainPlaylistPages', () => {
         pageSize: 100,
         maxPages: 30,
         // Deliberately permissive: abort must win over the retry predicate.
+        isRetryable: () => true,
+        parseRetryAfterSeconds: noRateLimit,
+        sleep,
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  // The expo/fetch shape. `FetchError` sets no `name` and prefixes the message
+  // with "fetch failed:", which `isTransportNetworkError` matches — so an abort
+  // would be classified as a retryable transport blip and, once the attempt
+  // budget refused the retry, surface as a hard failure for a cancellation the
+  // caller requested. Only the signal is authoritative.
+  it('treats a cancelled request as an abort even when the error carries no AbortError marker', async () => {
+    const sleep = makeImmediateSleep();
+    const controller = new AbortController();
+    const fetchPage = vi.fn(async () => {
+      controller.abort();
+      // No `name`, message shaped exactly like expo/fetch's FetchError.
+      throw new Error('fetch failed: The operation was aborted.');
+    });
+
+    await expect(
+      drainPlaylistPages({
+        fetchPage,
+        signal: controller.signal,
+        pageSize: 100,
+        maxPages: 20,
+        // Deliberately permissive: this is the predicate that would misfire.
         isRetryable: () => true,
         parseRetryAfterSeconds: noRateLimit,
         sleep,

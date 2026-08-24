@@ -18,7 +18,15 @@ const MAX_PLAYLIST_SUGGESTION_REFRESH_CLIMBS_AFTER_ACTIVE = 250;
 // draining until a rate limiter says stop — CLAUDE.md's mobile performance
 // checklist bans drain-until-`hasMore` outright. Hitting it is a bug, so the
 // mobile caller reports it to Sentry rather than telling the climber.
-export const MAX_PLAYLIST_QUEUE_REPLACE_PAGES = 30;
+//
+// 20 is chosen against the budget this guard exists to protect, not by feel:
+//   20 pages x PLAYLIST_PAGE_MAX_ATTEMPTS (2) = 40 requests worst case,
+//   against `applyRateLimit(ctx, 60, 'smartPlaylist')` — a fixed 60-per-60s
+//   bucket keyed `${userId}:smartPlaylist` and SHARED with the list screen's
+//   own infinite scroll. 40 leaves 20 requests of headroom; 30 pages would put
+//   the worst case at exactly 60, i.e. sitting on the trip point.
+// 20 x 100 climbs is still a 2,000-climb queue, far past any real session.
+export const MAX_PLAYLIST_QUEUE_REPLACE_PAGES = 20;
 
 // One retry per page. A dropped fetch on gym wifi recovers on the second try;
 // a third almost never lands and just doubles the time to the error toast.
@@ -27,6 +35,10 @@ const PLAYLIST_PAGE_RETRY_DELAY_MS = 600;
 const PLAYLIST_PAGE_RETRY_JITTER_MS = 250;
 // A rate limit asking for longer than this is handed to the climber instead of
 // held behind a spinner. The server hands out waits of up to 60 s.
+// Per PAGE, not per drain: a fully rate-limited 20-page drain could still sleep
+// ~60 s in total behind the caller's spinner. That needs a 2,000-climb playlist
+// AND sustained 429s, so it is a known bound rather than a live risk; a
+// drain-level deadline is the fix if it ever shows up.
 export const PLAYLIST_RATE_LIMIT_MAX_WAIT_MS = 3_000;
 
 type FetchPlaylistSuggestionPageArgs = {
@@ -43,8 +55,10 @@ type PlaylistSuggestionPage = {
 export type PlaylistDrainStopReason =
   /** The server said `hasMore: false`. The list is whole. */
   | 'complete'
-  /** A client-side cap stopped a server that still had more to give. */
+  /** The runaway page bound stopped a server that still had more to give. */
   | 'page-cap'
+  /** The caller's own `stopAfterPage` predicate ended the drain. Not a fault. */
+  | 'caller-stop'
   /** A page added no climbs we had not already seen. The server is repeating itself. */
   | 'no-progress'
   /** The caller aborted between pages. */
@@ -177,7 +191,14 @@ export async function drainPlaylistPages({
       try {
         return await fetchPage({ page: pageIndex, pageSize, signal });
       } catch (error) {
-        if (isAbortError(error)) throw error;
+        // Abort wins over everything — including the runtime's error shape. Only
+        // ask the signal, which is authoritative; `name: 'AbortError'` is not.
+        // RN's whatwg-fetch sets it, but expo/fetch throws a `FetchError` with
+        // NO `name` and a "fetch failed:" prefix, which `isTransportNetworkError`
+        // would happily classify as a retryable transport blip. Trusting the
+        // shape alone turns a cancellation the climber asked for into a red
+        // toast plus a Sentry event.
+        if (signal.aborted || isAbortError(error)) throw createAbortError();
         if (attempt >= PLAYLIST_PAGE_MAX_ATTEMPTS) throw error;
 
         const retryAfterSeconds = parseRetryAfterSeconds(error);
@@ -207,9 +228,13 @@ export async function drainPlaylistPages({
     const pageResult = await fetchPageWithRetry(page);
     page += 1;
 
-    const newClimbs = pageResult.climbs.filter((pageClimb) => !seenClimbUuids.has(pageClimb.uuid));
-    for (const newClimb of newClimbs) {
-      seenClimbUuids.add(newClimb.uuid);
+    // Marking as we go, so a uuid repeated INSIDE one page is dropped too — a
+    // filter-then-mark pass would let both copies through.
+    const newClimbs: Climb[] = [];
+    for (const pageClimb of pageResult.climbs) {
+      if (seenClimbUuids.has(pageClimb.uuid)) continue;
+      seenClimbUuids.add(pageClimb.uuid);
+      newClimbs.push(pageClimb);
     }
     climbs.push(...newClimbs);
     hasMore = pageResult.hasMore;
@@ -223,7 +248,7 @@ export async function drainPlaylistPages({
     }
 
     if (hasMore && stopAfterPage?.(newClimbs)) {
-      stopReason = 'page-cap';
+      stopReason = 'caller-stop';
       break;
     }
   }

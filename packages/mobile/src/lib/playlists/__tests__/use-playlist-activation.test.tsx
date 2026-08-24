@@ -90,6 +90,20 @@ vi.mock('../../climb-to-queue-item', () => ({
   }),
 }));
 
+/** The shape graphql-request 7.4.0 actually throws for a rate-limited operation. */
+function makeRateLimitClientError(retryAfterSeconds: number): Error {
+  return Object.assign(new Error(`Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`), {
+    response: {
+      errors: [
+        {
+          message: `Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`,
+          extensions: { code: 'RATE_LIMITED', operation: 'smartPlaylist', retryAfterSeconds },
+        },
+      ],
+    },
+  });
+}
+
 function makeClimb(uuid: string, overrides: Partial<Climb> = {}): Climb {
   return {
     uuid,
@@ -881,7 +895,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       await waitFor(() => {
         expect(mocks.reportHandledError).toHaveBeenCalledWith(
           expect.any(Error),
-          expect.objectContaining({ tags: { source: 'playlist', op: 'replace-queue-capped' } }),
+          expect.objectContaining({ tags: { source: 'playlist', op: 'replace-queue-page-cap' } }),
         );
       });
       // Exactly one call per page: the mock never rejects, so no retry inflates this.
@@ -914,6 +928,81 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       );
       // And it does not spin: one page is enough to know the server is stuck.
       expect(fetchPage).toHaveBeenCalledTimes(1);
+    });
+
+    // The reachable half of the guard, and the one that used to be silent: a
+    // logbook playlist whose refs all fail to hydrate returns `climbs: []` with
+    // `hasMore: true`. The climber still gets a one-item queue either way, so
+    // this Sentry report is the only signal anyone gets.
+    it('reports a no-progress stop under its own op so triage can tell it from the page cap', async () => {
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: true });
+      const { result } = renderActivation(fetchPage, {
+        replaceQueueOnActivate: true,
+        sourceId: 'playlist:no-progress-2',
+        allClimbs: [makeClimb('a'), makeClimb('b')],
+      });
+
+      await act(async () => {
+        await result.current.activate(makeClimb('b'));
+      });
+
+      await waitFor(() => {
+        expect(mocks.reportHandledError).toHaveBeenCalledWith(
+          expect.any(Error),
+          expect.objectContaining({
+            tags: { source: 'playlist', op: 'replace-queue-no-progress' },
+            extra: { sourceId: 'playlist:no-progress-2', pagesFetched: 1, climbCount: 0 },
+          }),
+        );
+      });
+      // Still silent for the climber.
+      expect(mocks.showToast).not.toHaveBeenCalled();
+    });
+
+    // The rate-limit path runs through the REAL parseRateLimitError from
+    // @boardsesh/graphql-client (this file does not mock it). Without these two,
+    // renaming `retryAfterSeconds` or breaking the ClientError shape match would
+    // leave every suite green while every rate limit became a hard failure.
+    it('waits out a short rate limit read by the real parser and still fills the queue', async () => {
+      const tapped = makeClimb('b');
+      const fetchPage = vi
+        .fn()
+        .mockRejectedValueOnce(makeRateLimitClientError(1))
+        .mockResolvedValue({ climbs: [makeClimb('a'), tapped], hasMore: false });
+      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+
+      expect(fetchPage).toHaveBeenCalledTimes(2);
+      expect(mocks.showToast).not.toHaveBeenCalled();
+      const lastSetQueue = mocks.setQueue.mock.calls.at(-1);
+      expect(lastSetQueue?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['a', 'b']);
+    }, 10_000);
+
+    it('fails fast on a long rate limit and hands the original error to Sentry', async () => {
+      const fetchPage = vi.fn().mockRejectedValue(makeRateLimitClientError(46));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+
+      await act(async () => {
+        await result.current.activate(makeClimb('b'));
+      });
+
+      await waitFor(() => {
+        expect(mocks.showToast).toHaveBeenCalledWith('detail.queueReplace.loadFailed', 'error');
+      });
+      // No spinner held for 46 seconds, and no retry spent on it.
+      expect(fetchPage).toHaveBeenCalledTimes(1);
+      // The ORIGINAL error is what reaches reportHandledError, so
+      // isGraphqlRateLimitedError can still read extensions.code and downgrade
+      // the event to warning + rate_limited instead of paging someone.
+      const reported = mocks.reportHandledError.mock.calls.at(-1);
+      expect(reported?.[0]).toMatchObject({
+        response: { errors: [{ extensions: { code: 'RATE_LIMITED', retryAfterSeconds: 46 } }] },
+      });
+      errorSpy.mockRestore();
     });
 
     // The toast overlay renders BEHIND a native @expo/ui sheet, so a failure on

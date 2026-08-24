@@ -56,8 +56,6 @@ export {
   fetchPlaylistSuggestionClimbs,
   isAbortError,
   MAX_PLAYLIST_QUEUE_REPLACE_PAGES,
-  PLAYLIST_PAGE_MAX_ATTEMPTS,
-  PLAYLIST_RATE_LIMIT_MAX_WAIT_MS,
   PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
 } from './fetch-playlist-suggestion-climbs';
 export type {
