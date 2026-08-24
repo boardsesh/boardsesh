@@ -49,7 +49,7 @@ export default function SessionDetailScreen() {
 
   const { data: session, isPending } = useSessionDetail(sessionId);
   const { data: voteSummaries } = useBulkVoteSummaries('session', sessionId ? [sessionId] : [], !!sessionId);
-  const sessionVoteSummary = voteSummaries?.[0];
+  const sessionVoteSummary = voteSummaries[0];
   const { data: profile } = useProfile();
 
   // Only the session's creator can rename it / edit the recap (the server enforces

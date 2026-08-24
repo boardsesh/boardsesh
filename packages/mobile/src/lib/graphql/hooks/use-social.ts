@@ -210,8 +210,10 @@ type BulkVoteSummaryChunkResult = {
 /** One ≤100-ID request, cached and retried independently of its siblings. */
 function bulkVoteSummaryChunkQuery(entityType: SocialEntityType, chunk: string[], enabled: boolean) {
   return {
-    // Sorted so two callers holding the same IDs in different orders share a
-    // cache entry (the request itself keeps the caller's order).
+    // Sorted so the key is order-independent *within* a chunk (the request
+    // itself keeps the caller's order). Chunk boundaries still follow the
+    // caller's order, which is what keeps an append-only feed's earlier
+    // chunks cached as it pages.
     queryKey: ['bulkVoteSummaries', entityType, [...chunk].sort()],
     queryFn: async (): Promise<BulkVoteSummaries> => {
       const response = await getHttpClient().request<GetBulkVoteSummariesQueryResponse>(GET_BULK_VOTE_SUMMARIES, {
@@ -248,28 +250,6 @@ function combineVoteSummaryChunks(results: BulkVoteSummaryChunkResult[]) {
 }
 
 /**
- * Shared chunked-query construction for the bulk-vote-summary hooks — one
- * query per ≤100-ID chunk, merged back into a single stable list.
- */
-function useBulkVoteSummaryChunks(entityType: SocialEntityType, chunks: string[][], enabled: boolean) {
-  return useQueries({
-    queries: chunks.map((chunk) => bulkVoteSummaryChunkQuery(entityType, chunk, enabled)),
-    combine: combineVoteSummaryChunks,
-  });
-}
-
-/**
- * Splits an ID list into ≤100-ID chunks, once per list change rather than per
- * render. Memoized on the array reference, so a caller that builds its list
- * inline (`ticks.map((tick) => tick.uuid)`) re-chunks every render — harmless,
- * since `useQueries` matches its observers by query hash either way, and the
- * feed screens that hand over the long lists already memoize them.
- */
-function useVoteSummaryChunks(entityIds: string[]): string[][] {
-  return useMemo(() => batchVoteSummaryEntityIds(entityIds), [entityIds]);
-}
-
-/**
  * Accurate vote state (count + `userVote`) for a batch of entities. Chunks
  * internally so callers never need to worry about the backend's 100-ID cap
  * (`BulkVoteSummaryInputSchema`) — a caller handing this an unbounded,
@@ -283,8 +263,16 @@ function useVoteSummaryChunks(entityIds: string[]): string[][] {
  * needs per-chunk state should use `useQueries` directly.
  */
 export function useBulkVoteSummaries(entityType: SocialEntityType, entityIds: string[], enabled = true) {
-  const chunks = useVoteSummaryChunks(entityIds);
-  const { summaries, refetchChunks } = useBulkVoteSummaryChunks(entityType, chunks, enabled);
+  // Chunked once per list change rather than per render. Memoized on the array
+  // reference, so a caller that builds its list inline
+  // (`ticks.map((tick) => tick.uuid)`) re-chunks every render — harmless,
+  // since `useQueries` matches its observers by query hash either way, and the
+  // feed screens that hand over the long lists already memoize them.
+  const chunks = useMemo(() => batchVoteSummaryEntityIds(entityIds), [entityIds]);
+  const { summaries, refetchChunks } = useQueries({
+    queries: chunks.map((chunk) => bulkVoteSummaryChunkQuery(entityType, chunk, enabled)),
+    combine: combineVoteSummaryChunks,
+  });
 
   // Callers keep this object in `useCallback`/`useMemo` deps (Home's
   // pull-to-refresh handler does), so it only changes when the vote data or
@@ -296,21 +284,6 @@ export function useBulkVoteSummaries(entityType: SocialEntityType, entityIds: st
     }),
     [summaries, refetchChunks],
   );
-}
-
-/** Accurate vote state for more than one backend-safe batch of entities. */
-export function useChunkedBulkVoteSummaries(entityType: SocialEntityType, entityIds: string[], enabled = true) {
-  const chunks = useVoteSummaryChunks(entityIds);
-  return useBulkVoteSummaryChunks(entityType, chunks, enabled).summaries;
-}
-
-/** Accurate vote state for stable groups, such as individual feed pages. */
-export function useGroupedBulkVoteSummaries(entityType: SocialEntityType, entityIdGroups: string[][], enabled = true) {
-  const chunks = useMemo(
-    () => entityIdGroups.flatMap((entityIds) => batchVoteSummaryEntityIds(entityIds)),
-    [entityIdGroups],
-  );
-  return useBulkVoteSummaryChunks(entityType, chunks, enabled).summaries;
 }
 
 /** Comment thread for a social entity. */
