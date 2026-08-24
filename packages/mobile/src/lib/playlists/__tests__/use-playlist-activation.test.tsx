@@ -1008,6 +1008,26 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       errorSpy.mockRestore();
     });
 
+    // The one zero-page stop that must NOT rethrow: `fetchAllClimbsForBoard`
+    // short-circuits to `{ pagesFetched: 0, stoppedBy: 'exhausted' }` when no
+    // board is active, and an "exhausted" read genuinely has nothing to add.
+    // Narrowing the guard to `pagesFetched === 0` would turn this into a toast.
+    it('falls through without a toast when a zero-page drain reports exhausted', async () => {
+      const tapped = makeClimb('b');
+      mocks.drain.mockResolvedValue({ climbs: [], pagesFetched: 0, complete: true, stoppedBy: 'exhausted' });
+      const { result } = renderActivation(vi.fn(), { replaceQueueOnActivate: true });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+
+      await waitFor(() => expect(mocks.setQueue).toHaveBeenCalledTimes(2));
+      // The seed, then the replacement built from the tapped climb alone.
+      expect(mocks.setQueue.mock.calls[1][0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['b']);
+      expect(mocks.showToast).not.toHaveBeenCalled();
+      expect(mocks.reportHandledError).not.toHaveBeenCalled();
+    });
+
     it('keeps the seeded queue when a tap-path drain lands zero pages on its wait budget', async () => {
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       const tapped = makeClimb('b');

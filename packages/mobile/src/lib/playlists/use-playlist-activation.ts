@@ -401,16 +401,19 @@ export function usePlaylistActivation({
             // Silent for the climber (they got a working queue), but the page
             // cap, the rate-limit stops and the wait ceiling are all judgement
             // calls we want production numbers for before tuning them.
-            reportHandledError(drain.error ?? new Error('Playlist queue replacement drained partially'), {
-              level: 'warning',
-              tags: { source: 'playlist', op: 'replace-queue-partial' },
-              extra: {
-                sourceId,
-                stoppedBy: drain.stoppedBy,
-                pagesFetched: drain.pagesFetched,
-                climbCount: drain.climbs.length,
+            reportHandledError(
+              drain.error ?? new Error(`Playlist queue replacement drained partially (${drain.stoppedBy})`),
+              {
+                level: 'warning',
+                tags: { source: 'playlist', op: 'replace-queue-partial' },
+                extra: {
+                  sourceId,
+                  stoppedBy: drain.stoppedBy,
+                  pagesFetched: drain.pagesFetched,
+                  climbCount: drain.climbs.length,
+                },
               },
-            });
+            );
           }
         }
         if (abortController.signal.aborted) return;

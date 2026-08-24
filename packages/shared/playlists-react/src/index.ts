@@ -59,11 +59,13 @@ export {
 
 // Bounded/resumable page drain for queue replacement (#4622). The retry policy
 // is injected by the caller so this package stays transport-agnostic.
+// `PlaylistDrainWaitBudgetError` and `DrainWaitBudget` are deliberately NOT
+// re-exported: they are the internal signal and accounting shared between the
+// drain and the suggestion refresh, not something a consumer should bind to.
 export {
   drainPlaylistPages,
   fetchPlaylistPageWithRetry,
   abortableSleep,
-  PlaylistDrainWaitBudgetError,
   PLAYLIST_QUEUE_REPLACE_MAX_PAGES,
   PLAYLIST_DRAIN_MAX_TOTAL_WAIT_MS,
 } from './drain-playlist-pages';
@@ -71,7 +73,6 @@ export type {
   ShouldRetryPage,
   CreatePageRetryPolicy,
   DrainSleep,
-  DrainWaitBudget,
   PlaylistPage,
   PlaylistPageFetcher,
   DrainPlaylistPagesResult,

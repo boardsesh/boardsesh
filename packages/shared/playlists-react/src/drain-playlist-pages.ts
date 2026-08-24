@@ -62,12 +62,13 @@ export type PlaylistPageFetcher = (args: {
 
 /**
  * Retry policy for a failed page. Returns how long to wait before re-sending
- * the SAME page, or `null` to give up on it. `attempt` is 0 on the first
- * failure, 1 on the second, and so on.
+ * the SAME page, or `null` to give up on it.
  *
- * A policy instance is scoped to ONE page, so it may keep state — which is how
- * a policy gives each class of failure its own budget instead of sharing one
- * counter (a transient network drop must not spend the page's rate-limit
+ * `attempt` counts EVERY retry of this page so far regardless of what failed —
+ * 0 on the first failure, 1 on the second, and so on. It is not a per-class
+ * count, so a policy with separate budgets per error class must keep its own
+ * counters and ignore this. A policy instance is scoped to ONE page precisely
+ * so it can (a transient network drop must not spend the page's rate-limit
  * retry).
  */
 export type ShouldRetryPage = (error: unknown, attempt: number) => number | null;
