@@ -59,10 +59,30 @@ and the web cron `packages/web/app/lib/data-sync/aurora/user-sync.ts`) route
 `ascents`/`bids` through the shared `applyAuroraAscents` / `applyAuroraBids`
 (`packages/aurora-sync/src/sync/apply-user-logbook.ts`):
 
-- **Timezone-correct.** Aurora's naive `"YYYY-MM-DD HH:MM:SS"` is UTC; it is
-  written through `normalizeTimestamp`, not `new Date(...)` (which V8 would parse
-  as server-local and shift by the deployment offset). This makes a pulled ascent
+- **Timezone.** Aurora's naive `"YYYY-MM-DD HH:MM:SS"` is written through
+  `normalizeTimestamp`, not `new Date(...)` (which V8 would parse as
+  server-local and shift by the deployment offset). That makes a pulled ascent
   land on the same instant the JSON import wrote for the same climb.
+
+  **What the naive string MEANS is an open question ([#3909]).**
+  `normalizeTimestamp` currently pins it to UTC, and for ascents Boardsesh
+  itself pushed back that round-trips consistently — we send UTC and read the
+  same value out. But ascents logged in the official Kilter/Tension app measure
+  as the CLIMBER's local wall clock relabelled UTC: that is what
+  `packages/db/src/queries/tick-offset-inference.ts` was written to work around,
+  and #3909's production measurement found per-USER offsets (−1h×799, +8h×354,
+  −10h×319, +5h×153) rather than the single fleet-wide offset a server-local
+  parse would produce. If that reading is right, every pull today still writes a
+  shifted row. Measure it with `vp run db:report-tick-timezones` (read-only) —
+  its control-cohort section splits each origin around the PR4 deploy — and see
+  [docs/tick-timezone-correction.md](./tick-timezone-correction.md).
+
+  The by-aurora-id update path carries a guard (`preserveCorrectedClimbedAt`) so
+  a legacy row whose `climbed_at` has been corrected is not rewritten with the
+  shifted upstream value on the next pull.
+
+[#3909]: https://github.com/boardsesh/boardsesh/issues/3909
+
 - **Cross-source claim.** On an `aurora_id` miss, before inserting, the incoming
   ascent natural-key-matches the user's existing `json_import`/`native` rows
   (widened window + per-user offset inference) and, on a hit, stamps
