@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import postgres from 'postgres';
 import {
+  READ_ONLY_CONNECTION_OPTIONS,
   describeDatabaseHost,
   isLocalDatabaseUrl,
   resolveScriptDatabaseUrl,
@@ -209,4 +210,13 @@ void test('resolveScriptDatabaseUrl and its env-var precedence / Vercel guard', 
     process.env.VERCEL = '1';
     assert.equal(resolveScriptDatabaseUrl(), 'postgresql://user:pass@direct.example:5432/db');
   });
+});
+
+// #3909: the report script's "read-only" claim must be a server-enforced fact,
+// not a convention that one stray db.update() silently breaks. Asserting the
+// startup option here (rather than opening a socket) keeps the guarantee under
+// test without needing a database.
+void test('the read-only connection asks Postgres to enforce it', () => {
+  assert.match(READ_ONLY_CONNECTION_OPTIONS, /default_transaction_read_only=on/);
+  assert.match(READ_ONLY_CONNECTION_OPTIONS, /^-c /);
 });
