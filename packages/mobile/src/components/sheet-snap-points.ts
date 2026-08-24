@@ -22,7 +22,7 @@ const ANDROID_NEAR_FULL_DETENT_PERCENT = 75;
  * already have a partial state, and non-% (px) detents are left as-is.
  *
  * `androidOpensExpanded` (a multi-detent sheet whose pinned footer only fits at
- * its LAST detent, e.g. the tick sheets, #4231) collapses to that single last
+ * its LAST detent, e.g. the tick sheets, #4642) collapses to that single last
  * detent on Android — not "keep both detents and pick the last index at
  * present-time", which depends on an `@expo/ui` Android `expand()` call the
  * library's own `ModalBottomSheetView.kt` can silently no-op ("Expanded anchor

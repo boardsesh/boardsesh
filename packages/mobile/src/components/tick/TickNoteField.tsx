@@ -1,7 +1,15 @@
-// One note field for both tick sheets. A single styled `TextInput`, not a
-// bordered wrapper `View` around a `flex: 1` input — that two-layer shape
-// clipped multiline text on Android (#4231); matches `EndSessionSheet`'s flat
-// shape instead.
+// One note field for both tick sheets. A single styled `TextInput`, never a
+// bordered wrapper `View` around a `flex: 1` input.
+//
+// The vertical padding below is load-bearing on Android — do not remove it. On
+// Fabric a TextInput that declares no vertical padding has the theme's default
+// EditText padding (~10pt top + ~10pt bottom) written into its Yoga style by
+// `AndroidTextInputComponentDescriptor`, so declaring padding here replaces that
+// default rather than adding to it. In the old two-layer shape the outer box's
+// `justifyContent: 'center'` pinned the `flex: 1` input to a 26pt content box,
+// the inherited ~20pt of theme padding ate almost all of it, and the note
+// rendered as a ~5pt sliver of glyph bottoms and a stub caret (#4642, fixed in
+// #4684). `EndSessionSheet` uses the same flat shape.
 import React, { useCallback, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
@@ -63,9 +71,19 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 1,
     minHeight: 44,
-    // Grows with the note up to three-ish lines, then scrolls — the sheet's
-    // detent is sized for the resting height, not the longest possible note.
-    maxHeight: 96,
+    // Past this the note scrolls INSIDE the field, and an Android multiline
+    // TextInput draws no scrollbar — so whatever is above the ceiling is gone
+    // with nothing on screen to say so. At the old 96pt (4 lines) that bit
+    // early: on a 405x900pt Pixel emulator a six-line note opened mid-sentence
+    // ("out. Felt hard for the grade today...") while ~300pt of the sheet sat
+    // empty between this row and the Attempt/Send bar (#4642). 180pt is eight
+    // lines (8 x 20 + 16 padding + 2 border), and it still fits whole inside
+    // the ~293pt that sheet body keeps above the keyboard, so a long note stays
+    // one glance rather than a blind scroll. Anything longer scrolls the sheet
+    // body, which at least moves visibly. Detents are unchanged: the body is
+    // scrollable under a pinned footer, so the extra height costs the
+    // Attempt/Send bar nothing.
+    maxHeight: 180,
     textAlignVertical: 'top',
   },
 });

@@ -144,7 +144,7 @@ export function LogAscentSheet({
       surface="solid"
       footerSurface="flush"
       // Android's ~50% partial state can't fit this form under a pinned
-      // footer (see `androidOpensExpanded` on `ModalSheet`, #4231) — open
+      // footer (see `androidOpensExpanded` on `ModalSheet`, #4642) — open
       // expanded there so the Send button never lands off the fold.
       androidOpensExpanded
       header={
