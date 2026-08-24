@@ -55,6 +55,19 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
+// The only wording we accept as "the climber dismissed the picker". Deliberately
+// narrow: a bare `cancel` would also match genuine technical failures such as
+// CoreBluetooth's "operation cancelled" and ble-plx's "Connection cancelled by
+// peer", which would then show the climber nothing at all.
+//
+// One constant on purpose. Both classifyBleFailure and
+// isRetryableAndroidConnectError need the same answer, and broadening it in only
+// one of them would let a cancelled connect burn the 500ms backoff plus a doomed
+// second connect (or, the other way round, silently swallow a real failure).
+// No `g` flag, so `.test` carries no lastIndex state and this instance is safe
+// to share across call sites.
+const USER_CANCEL_MESSAGE_PATTERN = /user cancell?ed|Device selection cancelled/i;
+
 // The three numeric codes `react-native-ble-plx` puts on every thrown `BleError`.
 // Read structurally (this package is platform-agnostic pure TS and must not depend
 // on react-native-ble-plx) after gating on the error name below.
@@ -93,11 +106,9 @@ const RETRYABLE_ANDROID_GATT_STATUSES = new Set([133, 147]);
 export function isRetryableAndroidConnectError(error: unknown): boolean {
   if (!isBlePlxError(error) || typeof error.errorCode !== 'number') return false;
   if (!RETRYABLE_ANDROID_CONNECT_ERROR_CODES.has(error.errorCode)) return false;
-  // A chooser dismissal is never a failed GATT handshake. Keep this identical
-  // to classifyBleFailure's deliberately narrow user-cancel wording: a broad
-  // `cancel` match would also catch genuine technical failures such as
-  // "Operation was cancelled" and "Connection cancelled by peer".
-  if (/user cancell?ed|Device selection cancelled/i.test(errorMessage(error))) return false;
+  // A chooser dismissal is never a failed GATT handshake, so it must never
+  // replay the connect. Same pattern classifyBleFailure uses, by construction.
+  if (USER_CANCEL_MESSAGE_PATTERN.test(errorMessage(error))) return false;
   // ble-plx always carries both platform fields and uses null for the inactive
   // platform. Reject a populated iOS field so this Android-only predicate stays
   // safe even when called independently of the platform-gated adapter factory.
@@ -172,11 +183,10 @@ export function classifyBleFailure(error: unknown, pairingStage?: string): BleFa
     if (codeCategory) return codeCategory;
   }
 
-  // User dismissed the picker. Match only explicit user-cancel signals — a bare
-  // "cancel" would also swallow real failures like CoreBluetooth's
-  // "operation cancelled" / "Connection cancelled by peer", silently showing
-  // the user nothing. NotFoundError is the Web Bluetooth chooser-dismissed name.
-  if (name === 'NotFoundError' || /user cancell?ed|Device selection cancelled/i.test(message)) {
+  // User dismissed the picker. Match only explicit user-cancel signals — see
+  // USER_CANCEL_MESSAGE_PATTERN for why the wording is this narrow.
+  // NotFoundError is the Web Bluetooth chooser-dismissed name.
+  if (name === 'NotFoundError' || USER_CANCEL_MESSAGE_PATTERN.test(message)) {
     return 'user_cancelled';
   }
 

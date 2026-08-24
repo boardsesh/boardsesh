@@ -156,4 +156,8 @@ export type BluetoothAdapter = {
   // never reached the connect, 1 for a single attempt, 2 when the Android retry
   // ran. Optional: only the ble-plx adapter counts them.
   getLastConnectAttemptCount?(): number;
+  // Whether that retry won its GATT connect, even if the connect then failed
+  // downstream (MTU, discovery). Needed on the failure path, where the thrown
+  // error carries no `retrySucceeded`. Optional: only the ble-plx adapter retries.
+  getLastConnectRetrySucceeded?(): boolean;
 };

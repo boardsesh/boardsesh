@@ -1178,10 +1178,48 @@ describe('RNBleAdapter', () => {
       expect(adapter.getLastConnectAttemptCount()).toBe(1);
     });
 
-    it('reports zero connect attempts before the flow ever reaches the GATT connect', () => {
-      expect(
-        new RNBleAdapter(createMockDevicePicker(), 'aurora', { enableAndroidConnectRetry: true }).getLastConnectAttemptCount(),
-      ).toBe(0);
+    it('reports zero connect attempts when the picker is cancelled before the GATT connect', async () => {
+      // Drives the real flow into the documented 0 bucket instead of reading the
+      // field initializer back: this fails if any pre-connect stage bumps it.
+      setupSelectedDevice('cancelled-device');
+      const cancellingPicker = vi.fn<DevicePickerFn>(() => Promise.reject(new Error('Device selection cancelled')));
+
+      const adapter = new RNBleAdapter(cancellingPicker, 'aurora', { enableAndroidConnectRetry: true });
+      await expect(adapter.requestAndConnect()).rejects.toThrow('Device selection cancelled');
+
+      expect(mockBleManager.connectToDevice).not.toHaveBeenCalled();
+      expect(adapter.getLastConnectAttemptCount()).toBe(0);
+      expect(adapter.getLastConnectRetrySucceeded()).toBe(false);
+    });
+
+    it('starts the attempt count and the retry flag over on the next connect', async () => {
+      vi.useFakeTimers();
+      try {
+        const { devicePicker, connectedDevice } = setupSelectedDevice();
+        mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
+        mockBleManager.connectToDevice
+          .mockRejectedValueOnce(androidConnectError(201, 133))
+          .mockResolvedValueOnce(connectedDevice);
+
+        const adapter = new RNBleAdapter(devicePicker, 'aurora', { enableAndroidConnectRetry: true });
+        const recovered = adapter.requestAndConnect();
+        await vi.advanceTimersByTimeAsync(500);
+        await recovered;
+        expect(adapter.getLastConnectAttemptCount()).toBe(2);
+        expect(adapter.getLastConnectRetrySucceeded()).toBe(true);
+
+        // Same adapter, a clean second connect. Both fields are per-connect: drop
+        // the reset in connectSelectedDevice and this reports three attempts and
+        // a retry that never ran on this connect.
+        mockBleManager.connectToDevice.mockResolvedValue(connectedDevice);
+        await adapter.requestAndConnect();
+
+        expect(mockBleManager.connectToDevice).toHaveBeenCalledTimes(3);
+        expect(adapter.getLastConnectAttemptCount()).toBe(1);
+        expect(adapter.getLastConnectRetrySucceeded()).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('is disabled by default and preserves the exact first connect error', async () => {
@@ -1313,6 +1351,9 @@ describe('RNBleAdapter', () => {
         expect(mockBleManager.connectToDevice).toHaveBeenCalledTimes(2);
         expect(mockBleManager.cancelDeviceConnection).toHaveBeenCalledTimes(2);
         expect(adapter.getLastConnectAttemptCount()).toBe(2);
+        // The retry genuinely lost — the counterpart to the discovery-failure
+        // case below, where the same count of 2 comes with a saved connect.
+        expect(adapter.getLastConnectRetrySucceeded()).toBe(false);
       } finally {
         vi.useRealTimers();
       }
@@ -1328,7 +1369,7 @@ describe('RNBleAdapter', () => {
           .mockRejectedValueOnce(deniedSecondError);
         mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
 
-        const adapter = new RNBleAdapter(devicePicker, 'aurora', true);
+        const adapter = new RNBleAdapter(devicePicker, 'aurora', { enableAndroidConnectRetry: true });
         const settled = adapter.requestAndConnect().catch((error: unknown) => error);
         await vi.advanceTimersByTimeAsync(500);
 
@@ -1426,6 +1467,33 @@ describe('RNBleAdapter', () => {
       expect(mockBleManager.connectToDevice).toHaveBeenCalledOnce();
       expect(secondSelection.connectedDevice.requestMTU).toHaveBeenCalledOnce();
       expect(secondSelection.connectedDevice.discoverAllServicesAndCharacteristics).toHaveBeenCalledOnce();
+    });
+
+    it('still reports the retry as a save when the recovered connect fails during discovery', async () => {
+      vi.useFakeTimers();
+      try {
+        const discoveryError = new Error('service discovery failed');
+        const { devicePicker, connectedDevice } = setupSelectedDevice('recovered-then-broken');
+        connectedDevice.discoverAllServicesAndCharacteristics.mockRejectedValue(discoveryError);
+        mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
+        mockBleManager.connectToDevice
+          .mockRejectedValueOnce(androidConnectError(201, 133))
+          .mockResolvedValueOnce(connectedDevice);
+
+        const adapter = new RNBleAdapter(devicePicker, 'aurora', { enableAndroidConnectRetry: true });
+        const settled = adapter.requestAndConnect().catch((error: unknown) => error);
+        await vi.advanceTimersByTimeAsync(500);
+
+        await expect(settled).resolves.toBe(discoveryError);
+        // The retry won the GATT connect and discovery broke afterwards. This is
+        // the case `connectAttempts: 2` alone can't tell from a retry that lost —
+        // the failure event carries the flag so the hit rate isn't undercounted.
+        expect(mockBleManager.connectToDevice).toHaveBeenCalledTimes(2);
+        expect(adapter.getLastConnectAttemptCount()).toBe(2);
+        expect(adapter.getLastConnectRetrySucceeded()).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

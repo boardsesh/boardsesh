@@ -384,6 +384,7 @@ describe('useBoardBluetooth', () => {
       // terminal attempt-two error and must emit its existing failure path once.
       ...makeFakeAdapter({ requestAndConnect: vi.fn().mockRejectedValue(finalError) }),
       getLastConnectAttemptCount: vi.fn(() => 2),
+      getLastConnectRetrySucceeded: vi.fn(() => false),
     };
     vi.mocked(createBluetoothAdapter).mockReturnValue(
       fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
@@ -401,6 +402,7 @@ describe('useBoardBluetooth', () => {
       bleErrorCode: 201,
       androidErrorCode: 147,
       connectAttempts: 2,
+      retrySucceeded: false,
     });
     expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Success')).toBeUndefined();
     expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Disconnected')).toBeUndefined();
@@ -409,6 +411,34 @@ describe('useBoardBluetooth', () => {
     expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.connectFailed');
     expect(reportHandledError).toHaveBeenCalledTimes(1);
     expect(reportHandledError).toHaveBeenCalledWith(finalError, expect.any(Object));
+  });
+
+  it('marks a failure that followed a recovered connect as a retry that saved the GATT connect', async () => {
+    // Two attempts and a failure event, but the retry did NOT lose: it recovered
+    // the GATT connect and discovery broke afterwards. Counting saves as
+    // (success ∧ attempts=2) / (attempts=2) would miss this one.
+    const fakeAdapter = {
+      ...makeFakeAdapter({
+        requestAndConnect: vi.fn().mockRejectedValue(new Error('UART service was not found')),
+      }),
+      getLastConnectAttemptCount: vi.fn(() => 2),
+      getLastConnectRetrySucceeded: vi.fn(() => true),
+    };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    const failure = mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Failed');
+    expect(failure?.[1]).toMatchObject({
+      failureReason: 'service_missing',
+      connectAttempts: 2,
+      retrySucceeded: true,
+    });
   });
 
   it('tags a service_missing failure with the services the board exposed (#3480)', async () => {
