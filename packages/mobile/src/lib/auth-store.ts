@@ -74,6 +74,13 @@ async function clearStoredCredential(key: string): Promise<void> {
       // throws (SecureStoreModule.swift:43-51). That was survivable while one
       // item existed; across two namespaces a half-completed delete would leave
       // the legacy copy for the read fallback to find. Confirm by reading.
+      //
+      // A throw from that read-back is treated as a failed attempt even though
+      // the delete may well have worked. That is the safe direction: we cannot
+      // tell "deleted" from "still there but unreadable", and retrying, then
+      // tombstoning, lands the same correct end state either way. The cost of
+      // being wrong here is one redundant tombstone write, not a session that
+      // comes back.
       if ((await readSecureValue(key)) === null) return;
     } catch (error) {
       failures.push(error);
