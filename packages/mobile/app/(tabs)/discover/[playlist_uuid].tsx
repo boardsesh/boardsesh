@@ -32,7 +32,6 @@ import {
   PlaylistEditDoneButton,
   PlaylistOwnerToolbar,
   PlaylistBackFab,
-  PlaylistQueueReplaceSheet,
   PlaylistDiscussionRow,
   type PlaylistFormValues,
 } from '../../../src/components/playlist';
@@ -691,6 +690,8 @@ export default function PlaylistDetail() {
         onReorderClimb={handleReorderClimb}
         onRemoveClimb={handleRemoveClimb}
         onEditDetails={openEditDetails}
+        onAddAllToQueue={playlistActivation.addToQueue.append}
+        isAddingAllToQueue={playlistActivation.addToQueue.isAppending}
         headerSlot={
           discussionEntityId && !editMode ? (
             <PlaylistDiscussionRow commentCount={commentCount} onPress={openDiscussion} />
@@ -721,8 +722,6 @@ export default function PlaylistDetail() {
           setEditError(null);
         }}
       />
-
-      <PlaylistQueueReplaceSheet {...playlistActivation.queueReplaceSheet} />
 
       <CommentSheet
         sheetRef={commentSheetRef}

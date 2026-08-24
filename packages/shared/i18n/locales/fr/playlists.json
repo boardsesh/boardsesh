@@ -108,7 +108,14 @@
   "detail": {
     "share": "Partager la playlist",
     "actions": "Actions de la playlist",
-    "activateAll": "Mettre toutes les voies en file",
+    "activateAll": "Lancer la playlist",
+    "addToQueue": {
+      "action": "Ajouter à la file",
+      "subtitle": "Ta file actuelle reste intacte",
+      "queueFull": "Ta file est déjà pleine avec {{max}} blocs",
+      "nothingToAdd": "Rien ici pour ta board pour l'instant",
+      "failed": "Impossible d'ajouter à la file. Réessaie."
+    },
     "boardMismatch": {
       "title": "Passez à {{board}} pour grimper cette playlist",
       "subtitle": "Ce sont des voies {{board}}. Changez de board pour les mettre en file.",
@@ -139,7 +146,8 @@
       "message_other": "Cela supprimera {{count}} blocs en file après votre bloc actuel.",
       "cancel": "Garder la file",
       "confirm": "Lancer la playlist",
-      "loadFailed": "Impossible de lancer la playlist. Réessayez."
+      "loadFailed": "Impossible de lancer la playlist. Réessayez.",
+      "addInstead": "Ajouter à la file"
     },
     "deleteConfirm": {
       "title": "Supprimer la playlist ?",

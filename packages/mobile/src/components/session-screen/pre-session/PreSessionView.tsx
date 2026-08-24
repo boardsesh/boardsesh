@@ -96,7 +96,7 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
   const bottomChrome = useBottomChromeMetrics();
   const { data: activeBoard } = useActiveBoard();
   const { isAuthenticated } = useAuth();
-  const { startSession, appendGeneratedSession } = useQueueActions();
+  const { startSession, appendQueueItems } = useQueueActions();
   const { openPlayDrawer } = useDrawerHost();
   const { showToast } = useToast();
 
@@ -225,8 +225,11 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
       if (selection.type === 'on') {
         // Queue the reviewed preview behind whatever's already going, leaving
         // the current climb alone so the wall doesn't repaint and hand-queued
-        // climbs survive. Opens on climb #1 only when nothing is current.
-        appendGeneratedSession(generatedItems);
+        // climbs survive. `activateFirstWhenIdle` opts this path — and only this
+        // path — into opening on climb #1 when nothing is current, which is what
+        // starting a generated session means. Bulk adds that aren't "start my
+        // session" (the playlist row) leave it off so they never take the wall.
+        appendQueueItems(generatedItems, { activateFirstWhenIdle: true });
         track(SHARED_EVENTS.SessionQueueGenerated, {
           workoutType: selection.options.type,
           boardName: activeBoard.boardType,
@@ -249,7 +252,7 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
     refreshingUuids,
     plannedCount,
     startSession,
-    appendGeneratedSession,
+    appendQueueItems,
     showToast,
     t,
   ]);

@@ -311,13 +311,7 @@ vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
       mocks.activationOptions = options;
       return mocks.activateClimb(...args);
     },
-    queueReplaceSheet: {
-      visible: false,
-      futureQueueCount: 0,
-      isReplacing: false,
-      onCancel: vi.fn(),
-      onConfirm: vi.fn(),
-    },
+    addToQueue: { append: undefined, isAppending: false },
   }),
 }));
 

@@ -108,7 +108,14 @@
   "detail": {
     "share": "Playlist teilen",
     "actions": "Playlist-Aktionen",
-    "activateAll": "Alle Boulder in die Warteschlange",
+    "activateAll": "Playlist starten",
+    "addToQueue": {
+      "action": "Zur Warteschlange hinzufügen",
+      "subtitle": "Deine Warteschlange bleibt",
+      "queueFull": "Deine Warteschlange ist mit {{max}} Bouldern voll",
+      "nothingToAdd": "Hier ist noch nichts für dein Board",
+      "failed": "Konnte nicht hinzugefügt werden. Versuch's nochmal."
+    },
     "boardMismatch": {
       "title": "Wechsel zu {{board}}, um diese Playlist zu klettern",
       "subtitle": "Das sind {{board}}-Boulder. Wechsel das Board, um sie in die Warteschlange zu packen.",
@@ -139,7 +146,8 @@
       "message_other": "Damit fliegen {{count}} Boulder aus der Warteschlange hinter deinem aktuellen Boulder.",
       "cancel": "Warteschlange behalten",
       "confirm": "Playlist starten",
-      "loadFailed": "Die Playlist ließ sich nicht starten. Versuch's nochmal."
+      "loadFailed": "Die Playlist ließ sich nicht starten. Versuch's nochmal.",
+      "addInstead": "Zur Warteschlange hinzufügen"
     },
     "deleteConfirm": {
       "title": "Playlist löschen?",

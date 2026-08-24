@@ -3,6 +3,7 @@ import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
+import { MAX_SYNCED_QUEUE_ITEMS } from '@boardsesh/queue';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 
 // Self-contained QueueProvider harness for the LOCAL solo queue model: no
@@ -48,7 +49,7 @@ const activeBoard = vi.hoisted(() => ({
 }));
 
 const queueMutations = vi.hoisted(() => ({
-  addQueueItem: vi.fn(async () => {}),
+  addQueueItem: vi.fn(async (_item: ClimbQueueItem, _position?: number) => {}),
   removeQueueItem: vi.fn(async () => {}),
   reorderQueueItem: vi.fn(async () => {}),
   setCurrentClimb: vi.fn(async () => {}),
@@ -162,7 +163,7 @@ type Snapshot = {
   playlistSuggestionSource: PlaylistSuggestionSource | null;
   addToQueue: ReturnType<typeof useQueue>['addToQueue'];
   setCurrentClimb: ReturnType<typeof useQueue>['setCurrentClimb'];
-  appendGeneratedSession: ReturnType<typeof useQueue>['appendGeneratedSession'];
+  appendQueueItems: ReturnType<typeof useQueue>['appendQueueItems'];
   startSession: ReturnType<typeof useQueue>['startSession'];
   joinSession: ReturnType<typeof useQueue>['joinSession'];
 };
@@ -177,7 +178,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       playlistSuggestionSource,
       addToQueue: queue.addToQueue,
       setCurrentClimb: queue.setCurrentClimb,
-      appendGeneratedSession: queue.appendGeneratedSession,
+      appendQueueItems: queue.appendQueueItems,
       startSession: queue.startSession,
       joinSession: queue.joinSession,
     });
@@ -187,7 +188,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     playlistSuggestionSource,
     queue.addToQueue,
     queue.setCurrentClimb,
-    queue.appendGeneratedSession,
+    queue.appendQueueItems,
     queue.startSession,
     queue.joinSession,
     onSnapshot,
@@ -554,7 +555,7 @@ describe('QueueProvider local solo queue', () => {
     expect(queueSnapshotStore.clearStoredQueueSnapshot).toHaveBeenCalled();
   });
 
-  it('appendGeneratedSession keeps the current climb and the hand-queued climbs around it', async () => {
+  it('appendQueueItems keeps the current climb and the hand-queued climbs around it', async () => {
     // Mid-project: working "item-b", with "item-c" queued up next by hand.
     const itemA = makeQueueItem('item-a');
     const itemB = makeQueueItem('item-b');
@@ -568,7 +569,7 @@ describe('QueueProvider local solo queue', () => {
     });
 
     act(() => {
-      snapshots.at(-1)?.appendGeneratedSession([makeQueueItem('gen-1'), makeQueueItem('gen-2')]);
+      snapshots.at(-1)?.appendQueueItems([makeQueueItem('gen-1'), makeQueueItem('gen-2')]);
     });
 
     await waitFor(() => {
@@ -587,7 +588,31 @@ describe('QueueProvider local solo queue', () => {
     expect(snapshots.at(-1)?.state.queue.map((entry) => entry.uuid)).toContain('item-c');
   });
 
-  it('appendGeneratedSession opens on the first generated climb when nothing is current', async () => {
+  it('appendQueueItems leaves the current pointer null by default when nothing is current', async () => {
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => {
+      expect(snapshots.length).toBeGreaterThan(0);
+    });
+
+    queueMutations.setQueue.mockClear();
+    act(() => {
+      snapshots.at(-1)?.appendQueueItems([makeQueueItem('gen-1'), makeQueueItem('gen-2')]);
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((entry) => entry.uuid)).toEqual(['gen-1', 'gen-2']);
+    });
+    // Default is "don't take the wall": the playlist "Add to queue" row lands
+    // here, and an add must never activate a climb the climber didn't tap.
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem).toBeNull();
+    // And it must not reach the wire as a whole-queue replace — an absent
+    // currentClimbQueueItem is how the resolver is told to CLEAR the session's
+    // current climb, which would blank every peer's wall.
+    expect(queueMutations.setQueue).not.toHaveBeenCalled();
+  });
+
+  it('appendQueueItems with activateFirstWhenIdle opens on the first item when nothing is current', async () => {
     const snapshots: Snapshot[] = [];
     renderProvider((snapshot) => snapshots.push(snapshot));
     await waitFor(() => {
@@ -595,19 +620,22 @@ describe('QueueProvider local solo queue', () => {
     });
 
     act(() => {
-      snapshots.at(-1)?.appendGeneratedSession([makeQueueItem('gen-1'), makeQueueItem('gen-2')]);
+      snapshots
+        .at(-1)
+        ?.appendQueueItems([makeQueueItem('gen-1'), makeQueueItem('gen-2')], { activateFirstWhenIdle: true });
     });
 
     await waitFor(() => {
       expect(snapshots.at(-1)?.state.queue.map((entry) => entry.uuid)).toEqual(['gen-1', 'gen-2']);
     });
+    // The workout generator's contract, unchanged: starting a generated session
+    // opens on its first climb.
     expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('gen-1');
   });
 
-  it('appendGeneratedSession opens on the first generated climb when the queue has items but none is current', async () => {
-    // Browsed climbs into the queue without activating any of them. There's no
-    // wall to protect, so the session opens on its own first climb rather than
-    // silently activating something the user only ever queued.
+  it('appendQueueItems leaves the pointer null when the queue has items but none is current', async () => {
+    // Browsed climbs into the queue without activating any of them. An append
+    // adds behind them and still activates nothing.
     const itemA = makeQueueItem('item-a');
     queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot([itemA], null));
 
@@ -619,16 +647,126 @@ describe('QueueProvider local solo queue', () => {
     expect(snapshots.at(-1)?.state.currentClimbQueueItem).toBeNull();
 
     act(() => {
-      snapshots.at(-1)?.appendGeneratedSession([makeQueueItem('gen-1'), makeQueueItem('gen-2')]);
+      snapshots.at(-1)?.appendQueueItems([makeQueueItem('gen-1'), makeQueueItem('gen-2')]);
     });
 
     await waitFor(() => {
       expect(snapshots.at(-1)?.state.queue.map((entry) => entry.uuid)).toEqual(['item-a', 'gen-1', 'gen-2']);
     });
-    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('gen-1');
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem).toBeNull();
   });
 
-  it('appendGeneratedSession leaves an empty generated list alone', async () => {
+  it('appendQueueItems with activateFirstWhenIdle opens on the first item when the queue has items but none is current', async () => {
+    const itemA = makeQueueItem('item-a');
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot([itemA], null));
+
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((entry) => entry.uuid)).toEqual(['item-a']);
+    });
+
+    act(() => {
+      snapshots
+        .at(-1)
+        ?.appendQueueItems([makeQueueItem('gen-1'), makeQueueItem('gen-2')], { activateFirstWhenIdle: true });
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('gen-1');
+    });
+    expect(snapshots.at(-1)?.state.queue.map((entry) => entry.uuid)).toEqual(['item-a', 'gen-1', 'gen-2']);
+  });
+
+  it('appendQueueItems broadcasts per-item adds (never a pointer-clearing setQueue) when nothing is current', async () => {
+    // The whole reason the no-pointer branch exists: `Mutation.setQueue` reads an
+    // absent currentClimbQueueItem as "clear it" and writes null into shared
+    // session state, so an ADDITIVE action would wipe the crew's current climb.
+    // ADD_QUEUE_ITEM carries no pointer at all.
+    sessionStore.getStoredSessionId.mockResolvedValue('session-1');
+    http.request.mockImplementation((operation: string) =>
+      operation.includes('SessionStatus')
+        ? Promise.resolve({ sessionStatus: 'active' })
+        : Promise.resolve({ createSession: { id: 'session-new' } }),
+    );
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(null);
+
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    queueMutations.setQueue.mockClear();
+    queueMutations.addQueueItem.mockClear();
+    act(() => {
+      snapshots.at(-1)?.appendQueueItems([makeQueueItem('gen-1'), makeQueueItem('gen-2')]);
+    });
+
+    await waitFor(() => {
+      expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(2);
+    });
+    expect(queueMutations.setQueue).not.toHaveBeenCalled();
+    expect(queueMutations.addQueueItem.mock.calls.map(([item]) => item.uuid)).toEqual(['gen-1', 'gen-2']);
+  });
+
+  it('appendQueueItems clamps the batch to MAX_SYNCED_QUEUE_ITEMS and returns what landed', async () => {
+    const seeded = Array.from({ length: MAX_SYNCED_QUEUE_ITEMS - 5 }, (_unused, index) =>
+      makeQueueItem(`seed-${index}`),
+    );
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot(seeded, seeded[0]));
+
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.length).toBe(MAX_SYNCED_QUEUE_ITEMS - 5);
+    });
+
+    queueMutations.setQueue.mockClear();
+    let appendedCount = -1;
+    act(() => {
+      appendedCount =
+        snapshots
+          .at(-1)
+          ?.appendQueueItems(Array.from({ length: 20 }, (_unused, index) => makeQueueItem(`new-${index}`))) ?? -1;
+    });
+
+    // Only the remaining capacity lands — the resolver THROWS on a payload over
+    // the cap rather than truncating, so an over-long queue would wedge every
+    // later full sync for the session.
+    expect(appendedCount).toBe(5);
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.length).toBe(MAX_SYNCED_QUEUE_ITEMS);
+    });
+    expect(snapshots.at(-1)?.state.queue.at(-1)?.uuid).toBe('new-4');
+    const [wireQueue = []] = queueMutations.setQueue.mock.calls.at(-1) ?? [];
+    expect(wireQueue.length).toBe(MAX_SYNCED_QUEUE_ITEMS);
+  });
+
+  it('appendQueueItems returns 0 and broadcasts nothing when the queue is already at the cap', async () => {
+    const seeded = Array.from({ length: MAX_SYNCED_QUEUE_ITEMS }, (_unused, index) => makeQueueItem(`seed-${index}`));
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot(seeded, seeded[0]));
+
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.length).toBe(MAX_SYNCED_QUEUE_ITEMS);
+    });
+
+    queueMutations.setQueue.mockClear();
+    queueMutations.addQueueItem.mockClear();
+    let appendedCount = -1;
+    act(() => {
+      appendedCount = snapshots.at(-1)?.appendQueueItems([makeQueueItem('overflow')]) ?? -1;
+    });
+
+    expect(appendedCount).toBe(0);
+    expect(snapshots.at(-1)?.state.queue.length).toBe(MAX_SYNCED_QUEUE_ITEMS);
+    expect(queueMutations.setQueue).not.toHaveBeenCalled();
+    expect(queueMutations.addQueueItem).not.toHaveBeenCalled();
+  });
+
+  it('appendQueueItems leaves an empty batch alone', async () => {
     const itemA = makeQueueItem('item-a');
     queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot([itemA], itemA));
 
@@ -640,7 +778,7 @@ describe('QueueProvider local solo queue', () => {
 
     queueMutations.setQueue.mockClear();
     act(() => {
-      snapshots.at(-1)?.appendGeneratedSession([]);
+      snapshots.at(-1)?.appendQueueItems([]);
     });
 
     await waitFor(() => {
@@ -651,7 +789,7 @@ describe('QueueProvider local solo queue', () => {
     expect(queueMutations.setQueue).not.toHaveBeenCalled();
   });
 
-  it('appendGeneratedSession broadcasts the merged queue with the carried current to party peers', async () => {
+  it('appendQueueItems broadcasts the merged queue with the carried current to party peers', async () => {
     sessionStore.getStoredSessionId.mockResolvedValue('session-1');
     http.request.mockImplementation((operation: string) =>
       operation.includes('SessionStatus')
@@ -676,7 +814,7 @@ describe('QueueProvider local solo queue', () => {
 
     const generated = [makeQueueItem('gen-1'), makeQueueItem('gen-2')];
     act(() => {
-      snapshots.at(-1)?.appendGeneratedSession(generated);
+      snapshots.at(-1)?.appendQueueItems(generated);
     });
 
     await waitFor(() => {
@@ -687,7 +825,7 @@ describe('QueueProvider local solo queue', () => {
     expect(wireCurrent?.uuid).toBe('item-a');
   });
 
-  it('appendGeneratedSession drops an unresolved current climb from the party payload but keeps it locally', async () => {
+  it('appendQueueItems drops an unresolved current climb from the party payload but keeps it locally', async () => {
     // Documents a pre-existing setQueue contract (#2527): a thin/partially-synced
     // item can't form a valid ClimbInput, so it never goes on the wire. Carrying
     // the current climb forward makes that path easier to hit — peers land on the
@@ -717,7 +855,7 @@ describe('QueueProvider local solo queue', () => {
 
     queueMutations.setQueue.mockClear();
     act(() => {
-      snapshots.at(-1)?.appendGeneratedSession([makeQueueItem('gen-1')]);
+      snapshots.at(-1)?.appendQueueItems([makeQueueItem('gen-1')]);
     });
 
     await waitFor(() => {
