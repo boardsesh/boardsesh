@@ -1,0 +1,1 @@
+CREATE INDEX "board_climb_aliases_alias_uuid_idx" ON "board_climb_aliases" USING btree ("alias_uuid");

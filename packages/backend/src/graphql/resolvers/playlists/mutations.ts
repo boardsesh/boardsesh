@@ -2,6 +2,7 @@ import { eq, and, asc, inArray, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { v4 as uuidv4 } from 'uuid';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { climbFitsPlaylistBoard } from '@boardsesh/board-config';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
@@ -74,18 +75,6 @@ async function resolveClimbBoardScopes(climbUuid: string): Promise<ClimbBoardSco
     },
   );
   return [];
-}
-
-// The playlist side of the same rule playlistsForClimb / playlistsForClimbs
-// use to scope membership: the boards must match, and a playlist pinned to one
-// layout only takes climbs from that layout (a null layoutId — how Aurora- and
-// Kilter-synced circuits arrive — takes any layout of its own board).
-function climbFitsPlaylistBoard(
-  climbScope: ClimbBoardScope,
-  playlistScope: { boardType: string; layoutId: number | null },
-): boolean {
-  if (climbScope.boardType !== playlistScope.boardType) return false;
-  return playlistScope.layoutId === null || climbScope.layoutId === playlistScope.layoutId;
 }
 
 function playlistResult(playlist: dbSchema.Playlist, climbCount: number): Record<string, unknown> {
@@ -373,16 +362,17 @@ export const playlistMutations = {
     const playlistId = ownership[0].id;
 
     // Board-compatibility guard (#4015): reject adds where the climb's own
-    // board/layout doesn't match the playlist's. This mirrors the exact rule
-    // playlistsForClimb / playlistsForClimbs already use to scope membership
-    // (board_type match + layout_id match-or-null) — without it, an add could
-    // succeed here while the membership refetch silently excludes it, making
-    // the UI checkmark vanish on the next fetch and leaving a row the climber
-    // can no longer untick. #4268 already stops the mobile picker from
-    // offering a mismatched playlist as a target; this is the server-side
-    // backstop for every client that predates it — OTA rollout takes days to
-    // reach the whole fleet, and offline queues can replay an add that was
-    // composed before the update landed.
+    // board/layout doesn't match the playlist's. Without it, an add could
+    // succeed here while the board-scoped membership refetch silently excludes
+    // it, making the UI checkmark vanish on the next fetch and leaving a row
+    // the climber can no longer untick.
+    //
+    // `climbFitsPlaylistBoard` is the ONE definition of this rule, shared with
+    // the mobile picker via @boardsesh/board-config. It has to be shared: the
+    // picker previously filtered its offered playlists against whatever board
+    // the host surface was rendering on, which is the climb's own board on
+    // every surface except a cross-board preview — so the picker could offer a
+    // target this guard then rejected outright.
     const climbBoardScopes = await resolveClimbBoardScopes(validatedInput.climbUuid);
     if (climbBoardScopes.length > 0 && !climbBoardScopes.some((scope) => climbFitsPlaylistBoard(scope, ownership[0]))) {
       // A GraphQLError with a BAD_USER_INPUT code rather than a bare Error: the
