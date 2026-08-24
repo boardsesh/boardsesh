@@ -1161,7 +1161,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         reconcileFailedContentMutation(error);
       });
       // Surface the "Climb added to queue · Open" snackbar for every add path.
-      showQueueAddedSnackbar(placement === 'next' ? 'next' : 'added');
+      showQueueAddedSnackbar({ kind: placement === 'next' ? 'playNext' : 'added' });
     },
     [attributeNewItem, mutations, reconcileFailedContentMutation, showQueueAddedSnackbar],
   );
@@ -1312,12 +1312,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
 
       if (plan.kind === 'move') {
         reorderQueue(plan.uuid, plan.oldIndex, plan.newIndex, { source: 'play-next' });
-        showQueueAddedSnackbar('next');
+        showQueueAddedSnackbar({ kind: 'playNext' });
         return 'moved';
       }
 
       if (plan.kind === 'unchanged') {
-        showQueueAddedSnackbar('next');
+        showQueueAddedSnackbar({ kind: 'playNext' });
         return 'unchanged';
       }
 

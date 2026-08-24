@@ -236,7 +236,7 @@ describe('QueueProvider play next', () => {
 
     expect(queueMutations.addQueueItem).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'new' }), undefined);
     expect(latest().queueUuids).toEqual(['a', 'b', 'new']);
-    expect(snackbar.showQueueAddedSnackbar).toHaveBeenCalledWith('added');
+    expect(snackbar.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'added' });
   });
 
   it('sends the SAME position to the local dispatch and the broadcast', async () => {
@@ -276,7 +276,7 @@ describe('QueueProvider play next', () => {
     expect(queueMutations.reorderQueueItem).toHaveBeenCalledWith('d', 3, 2);
     expect(queueMutations.addQueueItem).not.toHaveBeenCalled();
     expect(latest().queueUuids).toEqual(['a', 'b', 'd', 'c']);
-    expect(snackbar.showQueueAddedSnackbar).toHaveBeenCalledWith('next');
+    expect(snackbar.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'playNext' });
   });
 
   // Direction-aware index: a history item's slot vanishes on the splice-remove,
@@ -306,7 +306,7 @@ describe('QueueProvider play next', () => {
     expect(queueMutations.reorderQueueItem).not.toHaveBeenCalled();
     expect(queueMutations.addQueueItem).not.toHaveBeenCalled();
     expect(latest().queueUuids).toEqual(['a', 'b', 'c']);
-    expect(snackbar.showQueueAddedSnackbar).toHaveBeenCalledWith('next');
+    expect(snackbar.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'playNext' });
   });
 
   it('leaves the queue alone when the target is the climb on the wall', async () => {

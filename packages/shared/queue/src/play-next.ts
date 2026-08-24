@@ -7,12 +7,18 @@
  * matching mutation (`addQueueItem(item, position)` / `reorderQueueItem(...)`),
  * which is also what peers receive over the session subscription.
  *
- * NOTE for future readers: `insertQueueItemAfterCurrent` (playlist-suggestions.ts)
- * deliberately APPENDS when there is no current item; this helper deliberately
- * puts the climb at the FRONT instead. Both are correct for their caller — a
- * playlist suggestion queues behind existing work, while "Play next" has to be
- * distinguishable from "Add to queue" (with no current climb, `queue[0]` is what
- * plays next). Do not "fix" one to match the other.
+ * NOTE on the orphan-current case, because a sibling looks like it disagrees:
+ * the reducer's `insertAfterCurrent` flag (`SET_CURRENT_CLIMB`) appends when the
+ * current climb is not in the queue, where this file inserts at index 0. Both
+ * are right, because they answer different questions. There, the inserted climb
+ * *becomes* the current one, so its slot never decides what plays next and an
+ * append is harmless. Here the climb has to end up ahead of the queue, and index
+ * 0 is the best available slot (see `playNextInsertPosition`). Do not "fix"
+ * either to match the other.
+ *
+ * `insertQueueItemAfterCurrent` used to be the third answer to this question. It
+ * appended for an orphan current, had no callers, and was deleted with this
+ * feature rather than left as a trap for whoever read it next.
  */
 
 import type { ClimbQueue, ClimbQueueItem } from './types';
@@ -67,10 +73,17 @@ function findTargetIndex(queue: ClimbQueue, currentIndex: number, target: PlayNe
 /**
  * The index a BRAND-NEW queue item takes to play next.
  *
- * - No current climb (or a current climb that is not in the queue — a playlist
- *   peek, or a slot someone else removed): the head of the queue IS next, so
- *   position 0. An empty queue takes the same branch.
- * - Otherwise: directly after the current climb.
+ * - **No current climb at all** (`null`), empty queue included → `0`. Here 0
+ *   really is next: `findNextQueueItemWithSuggestions` (`@boardsesh/play-view`)
+ *   returns `queue[0]` when there is no current item.
+ * - **Current climb set and present in the queue** → directly after it.
+ * - **Current climb set but NOT in the queue** — an uncommitted playlist peek, or
+ *   a slot a peer removed → `0`, as the best available landing slot. NOT because
+ *   0 is what plays next: with an orphan current pointer
+ *   `findNextQueueItemWithSuggestions` falls through to the playlist peek (or
+ *   `null`) and never consults `queue[0]`, so forward navigation will not reach
+ *   this climb until the current item rejoins the queue. The head is simply the
+ *   least-bad slot — appending buries the climb behind everything instead.
  *
  * Total, so a caller committing a fresh item never has to fall back to an
  * append it did not ask for.
@@ -112,6 +125,11 @@ export function planPlayNext(
     return { kind: 'unchanged', reason: 'is-current' };
   }
 
+  // Both arms are `playNextInsertPosition(queue, currentClimbQueueItem)` by
+  // construction — `currentIndex + 1` when current is in the queue, `0` when it
+  // is not — restated here only because the forward arm needs the post-removal
+  // correction the helper (which places a NEW item) must not apply. Change one
+  // and change the other; the orphan-current move test pins them together.
   const newIndex = currentIndex === -1 ? 0 : existingIndex > currentIndex ? currentIndex + 1 : currentIndex;
 
   if (newIndex === existingIndex) {
