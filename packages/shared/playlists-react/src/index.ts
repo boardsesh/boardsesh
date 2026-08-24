@@ -49,10 +49,19 @@ export type { UsePlaylistMutationsOptions, UsePlaylistMutationsResult } from './
 export { usePlaylistItemMutations } from './use-playlist-item-mutations';
 export type { UsePlaylistItemMutationsOptions, UsePlaylistItemMutationsResult } from './use-playlist-item-mutations';
 
-// Suggestion-refresh helper (also reachable via the
-// ./fetch-playlist-suggestion-climbs subpath).
+// Paged playlist drain + the suggestion-refresh helper built on it (also
+// reachable via the ./fetch-playlist-suggestion-climbs subpath).
 export {
+  drainPlaylistPages,
   fetchPlaylistSuggestionClimbs,
   isAbortError,
+  MAX_PLAYLIST_QUEUE_REPLACE_PAGES,
+  PLAYLIST_PAGE_MAX_ATTEMPTS,
+  PLAYLIST_RATE_LIMIT_MAX_WAIT_MS,
   PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
+} from './fetch-playlist-suggestion-climbs';
+export type {
+  DrainPlaylistPagesArgs,
+  PlaylistDrainResult,
+  PlaylistDrainStopReason,
 } from './fetch-playlist-suggestion-climbs';

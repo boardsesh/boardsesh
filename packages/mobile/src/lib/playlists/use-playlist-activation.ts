@@ -20,10 +20,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   usePlaylistClimbActivation,
+  drainPlaylistPages,
   fetchPlaylistSuggestionClimbs,
   isAbortError,
+  MAX_PLAYLIST_QUEUE_REPLACE_PAGES,
   PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
+  type PlaylistDrainResult,
+  type PlaylistDrainStopReason,
 } from '@boardsesh/playlists-react';
+import { isTransportNetworkError } from '@boardsesh/offline-sync/error-classification';
+import { parseRateLimitError } from '@boardsesh/graphql-client';
 import { createPlaylistSuggestionSource, getQueueBoardKey, type Climb, type ClimbQueueItem } from '@boardsesh/queue';
 import { canAddClimbToBoard } from '@boardsesh/board-config';
 import { useActiveClimbUuid, usePlaylistSuggestionSource, useQueueActions } from '../../providers/queue-provider';
@@ -41,6 +47,16 @@ import type { PlaylistRenderBoard } from './use-playlist-render-board';
 // climber poking at a broken playlist re-taps rows freely, so without this one
 // bad playlist could ship hundreds of identical events.
 const reportedEmptyBoardFetches = new Set<string>();
+
+// Which page failures the drain should try again, injected so the shared package
+// keeps no dependency on `@boardsesh/offline-sync` (web does not have it).
+// `isTransportNetworkError` is deliberately narrow — it matches the runtime's
+// own hardcoded transport strings and errno codes, never a programmer bug — so a
+// deterministic server verdict still fails on the first attempt.
+const PLAYLIST_DRAIN_RETRY_POLICY = {
+  isRetryable: isTransportNetworkError,
+  parseRetryAfterSeconds: (error: unknown) => parseRateLimitError(error)?.retryAfterSeconds ?? null,
+} as const;
 
 /**
  * Clear the once-per-session canary bookkeeping. Test-only: the Set above is
@@ -132,6 +148,12 @@ type PendingQueueReplacement = {
   futureQueueCount: number;
   loadedClimbs?: Climb[];
   previewQueueItem?: ClimbQueueItem | null;
+  /**
+   * How the drain that produced `loadedClimbs` ended. Carried across the confirm
+   * sheet so the #3891 empty-fetch canary is judged on the drain that actually
+   * ran, not re-derived from a page list that has lost its provenance.
+   */
+  drainStopReason?: PlaylistDrainStopReason;
 };
 
 export type PlaylistQueueReplaceSheetState = {
@@ -310,14 +332,15 @@ export function usePlaylistActivation({
         activatedClimbUuid,
         signal,
         fetchPage: ({ page, pageSize, signal: pageSignal }) => fetchPage({ page, pageSize, board, signal: pageSignal }),
+        ...PLAYLIST_DRAIN_RETRY_POLICY,
       });
     },
     [activeBoard, fetchPage],
   );
 
   const fetchAllClimbsForBoard = useCallback(
-    async ({ signal }: { signal: AbortSignal }) => {
-      if (!activeBoard) return [];
+    async ({ signal }: { signal: AbortSignal }): Promise<PlaylistDrainResult> => {
+      if (!activeBoard) return { climbs: [], stopReason: 'complete', pagesFetched: 0 };
       const board = {
         boardName: activeBoard.boardType,
         layoutId: activeBoard.layoutId,
@@ -325,23 +348,13 @@ export function usePlaylistActivation({
         setIds: activeBoard.setIds,
         angle: activeBoard.angle,
       };
-      const climbs: Climb[] = [];
-      let page = 0;
-      let hasMore = true;
-
-      while (hasMore && !signal.aborted) {
-        const pageResult = await fetchPage({
-          page,
-          pageSize: PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
-          board,
-          signal,
-        });
-        climbs.push(...pageResult.climbs);
-        hasMore = pageResult.hasMore;
-        page += 1;
-      }
-
-      return climbs;
+      return drainPlaylistPages({
+        signal,
+        pageSize: PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
+        maxPages: MAX_PLAYLIST_QUEUE_REPLACE_PAGES,
+        fetchPage: ({ page, pageSize, signal: pageSignal }) => fetchPage({ page, pageSize, board, signal: pageSignal }),
+        ...PLAYLIST_DRAIN_RETRY_POLICY,
+      });
     },
     [activeBoard, fetchPage],
   );
@@ -371,15 +384,38 @@ export function usePlaylistActivation({
         allowClearingManualFuture?: boolean;
         loadedClimbs?: Climb[];
         previewQueueItem?: ClimbQueueItem | null;
+        drainStopReason?: PlaylistDrainStopReason;
       } = {},
     ) => {
       replacementAbortRef.current?.abort();
       const abortController = new AbortController();
       replacementAbortRef.current = abortController;
       setIsReplacingQueue(true);
+      // Read by the catch block so a failed drain reports how far it got.
+      let drainStopReason: PlaylistDrainStopReason | null = null;
+      let drainPagesFetched = 0;
       try {
-        const climbs = options.loadedClimbs ?? (await fetchAllClimbsForBoard({ signal: abortController.signal }));
+        let climbs = options.loadedClimbs;
+        if (climbs) {
+          drainStopReason = options.drainStopReason ?? null;
+        } else {
+          const drainResult = await fetchAllClimbsForBoard({ signal: abortController.signal });
+          climbs = drainResult.climbs;
+          drainStopReason = drainResult.stopReason;
+          drainPagesFetched = drainResult.pagesFetched;
+        }
         if (abortController.signal.aborted) return;
+        // The runaway bound fired, which means a server paging defect (or a
+        // genuinely enormous playlist) got past every other guard. Truncation is
+        // silent on purpose — the climber gets a working circuit either way, and
+        // a toast for a branch nothing should reach is copy we would have to
+        // translate forever. If this shows up in Sentry, revisit with evidence.
+        if (drainStopReason === 'page-cap' && !options.loadedClimbs) {
+          reportHandledError(new Error('Playlist drain hit the page cap'), {
+            tags: { source: 'playlist', op: 'replace-queue-capped' },
+            extra: { sourceId, pagesFetched: drainPagesFetched, climbCount: climbs.length },
+          });
+        }
         // Canary. A board-scoped fetch that comes back empty for a playlist the
         // detail list has already rendered climbable rows for degrades into a
         // perfectly plausible one-item queue (buildPlaylistQueue appends the
@@ -388,7 +424,14 @@ export function usePlaylistActivation({
         // per playlist per session, so the next instance of that class pages us
         // instead of a user. Gated on climbs this board CAN render, so a playlist
         // full of off-board climbs (legitimately empty here) stays silent.
-        if (climbs.length === 0 && activeBoard && !reportedEmptyBoardFetches.has(sourceId)) {
+        if (
+          climbs.length === 0 &&
+          // A capped or repeating drain is a different, already-reported fault.
+          // Firing #3891's canary on it would poison that signal.
+          (drainStopReason === null || drainStopReason === 'complete') &&
+          activeBoard &&
+          !reportedEmptyBoardFetches.has(sourceId)
+        ) {
           const renderableCount = countClimbsThisBoardCanRender(loadedClimbsRef.current, {
             boardName: activeBoard.boardType,
             layoutId: activeBoard.layoutId,
@@ -416,6 +459,7 @@ export function usePlaylistActivation({
             futureQueueCount: latestFutureQueueCount,
             loadedClimbs: climbs,
             previewQueueItem: options.previewQueueItem ?? null,
+            drainStopReason: drainStopReason ?? undefined,
           });
           return;
         }
@@ -430,7 +474,15 @@ export function usePlaylistActivation({
       } catch (error) {
         if (isAbortError(error)) return;
         console.error('Playlist queue replacement failed:', error);
-        reportHandledError(error, { tags: { source: 'playlist', op: 'replace-queue' } });
+        reportHandledError(error, {
+          tags: { source: 'playlist', op: 'replace-queue' },
+          extra: { sourceId, reason: drainStopReason ?? 'error', pagesFetched: drainPagesFetched },
+        });
+        // Dismiss the confirm sheet FIRST. The toast overlay is a root-level JS
+        // view and renders BEHIND a native @expo/ui sheet (toast-provider.tsx),
+        // so a failure on the confirm path used to leave the sheet up with an
+        // invisible error behind it.
+        setPendingReplacement(null);
         showToast(t('detail.queueReplace.loadFailed'), 'error');
       } finally {
         if (replacementAbortRef.current === abortController) {
@@ -463,6 +515,7 @@ export function usePlaylistActivation({
       allowClearingManualFuture: true,
       loadedClimbs: pendingReplacement.loadedClimbs,
       previewQueueItem: pendingReplacement.previewQueueItem,
+      drainStopReason: pendingReplacement.drainStopReason,
     });
   }, [getQueueSnapshot, isReplacingQueue, pendingReplacement, replaceQueueWithPlaylist]);
 
