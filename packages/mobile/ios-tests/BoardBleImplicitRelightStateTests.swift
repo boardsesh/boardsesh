@@ -126,6 +126,20 @@ final class BoardBleImplicitRelightStateTests: XCTestCase {
         )
     }
 
+    /// Distinct from the absent-state case above: here JS did publish, and what
+    /// it published is an empty queue. `SharedQueueState.currentItem` returns
+    /// nil for both, and neither is a licence to clear — an explicit clear
+    /// comes through `write(hex:)` with empty frames, not through this loader.
+    func testImplicitRelightWithAnExplicitlyEmptySharedQueueLeavesTheWallAlone() {
+        let peripheral = FakeWritablePeripheral()
+        installConnection(peripheral)
+
+        SharedQueueState.save(items: [], currentIndex: 0, to: defaults)
+        manager.testHooks.displaySharedCurrentItem(defaults: defaults)
+
+        XCTAssertTrue(peripheral.writtenChunks.isEmpty)
+    }
+
     func testImplicitRelightWithAnOutOfRangeSharedIndexLeavesTheWallAlone() {
         let peripheral = FakeWritablePeripheral()
         installConnection(peripheral)
