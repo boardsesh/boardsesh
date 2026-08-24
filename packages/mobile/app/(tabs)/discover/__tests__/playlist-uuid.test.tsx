@@ -35,6 +35,7 @@ const playlistMocks = vi.hoisted(() => ({
     renderBoard: null as TestRenderBoard | null,
     banner: null as TestBoardBanner | null,
   },
+  appendToQueue: vi.fn(),
 }));
 vi.mock('../../../../src/lib/graphql/client', () => ({
   getHttpClient: () => ({ request: requestMock }),
@@ -57,7 +58,12 @@ const commentSheetProps = vi.hoisted(() => ({
   current: null as { entityType?: string; entityId: string | null; canComment?: boolean } | null,
 }));
 const detailViewProps = vi.hoisted(() => ({
-  current: null as { editMode: boolean; emptyAction: { label: string } | null } | null,
+  current: null as {
+    editMode: boolean;
+    emptyAction: { label: string } | null;
+    onAddAllToQueue?: () => void;
+    isAddingAllToQueue?: boolean;
+  } | null,
 }));
 const snapToIndex = vi.hoisted(() => vi.fn());
 vi.mock('../../../../src/components/you/CommentSheet', () => ({
@@ -149,13 +155,7 @@ vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
     playlistMocks.activationOptions = options;
     return {
       activate: vi.fn(),
-      queueReplaceSheet: {
-        visible: false,
-        futureQueueCount: 0,
-        isReplacing: false,
-        onCancel: vi.fn(),
-        onConfirm: vi.fn(),
-      },
+      addToQueue: { append: playlistMocks.appendToQueue, isAppending: false },
     };
   },
 }));
@@ -188,14 +188,23 @@ vi.mock('../../../../src/components/playlist', () => ({
     actions,
     editMode,
     emptyAction,
+    onAddAllToQueue,
+    isAddingAllToQueue,
   }: {
     hero: { name: string };
     headerSlot?: ReactNode;
     actions?: (collapsed: boolean) => ReactNode;
     editMode?: boolean;
     emptyAction?: { label: string; onPress: () => void };
+    onAddAllToQueue?: () => void;
+    isAddingAllToQueue?: boolean;
   }) => {
-    detailViewProps.current = { editMode: !!editMode, emptyAction: emptyAction ?? null };
+    detailViewProps.current = {
+      editMode: !!editMode,
+      emptyAction: emptyAction ?? null,
+      onAddAllToQueue,
+      isAddingAllToQueue,
+    };
     return createElement(
       'div',
       {
@@ -283,7 +292,6 @@ vi.mock('../../../../src/components/playlist', () => ({
   PlaylistOwnerToolbar: ({ onEdit }: { onEdit?: () => void }) =>
     createElement('button', { 'data-owner-edit': 'true', onClick: onEdit }, 'edit-climbs'),
   PlaylistBackFab: () => createElement('div', { 'data-back-fab': 'true' }),
-  PlaylistQueueReplaceSheet: () => null,
 }));
 
 import PlaylistDetail from '../[playlist_uuid]';
@@ -628,5 +636,18 @@ describe('PlaylistDetail owner overflow menu', () => {
 
     await waitFor(() => expect(container.querySelector('[data-detail-view="true"]')).not.toBeNull());
     expect(detailViewProps.current?.emptyAction).toBeNull();
+  });
+
+  it('forwards the bulk add-to-queue handler and its in-flight flag to the detail view', async () => {
+    // A non-owner is the case the issue names — a crew member queueing someone
+    // else's playlist — and it is exactly the population the overflow menu can't
+    // reach, so the wiring has to survive here.
+    requestMock.mockResolvedValue({ playlist: makePlaylist({ userRole: 'viewer', isPublic: true }) });
+
+    const { container } = renderDetail();
+
+    await waitFor(() => expect(container.querySelector('[data-detail-view="true"]')).not.toBeNull());
+    expect(detailViewProps.current?.onAddAllToQueue).toBe(playlistMocks.appendToQueue);
+    expect(detailViewProps.current?.isAddingAllToQueue).toBe(false);
   });
 });
