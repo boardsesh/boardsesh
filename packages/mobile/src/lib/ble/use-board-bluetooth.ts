@@ -1508,7 +1508,11 @@ export function useBoardBluetooth({
           deviceNamePresent: !!connection.deviceName,
           boardId: analyticsBoardId ?? undefined,
           connectedViaMismatchOverride: getConnectedViaMismatchOverride?.() ?? false,
-          retry_succeeded: connection.retrySucceeded === true,
+          retrySucceeded: connection.retrySucceeded === true,
+          // Denominator for retrySucceeded: 0 = never reached the GATT connect,
+          // 1 = one attempt, 2 = the Android retry ran. Key is dropped on native
+          // iOS and web, whose adapters don't count attempts.
+          connectAttempts: connectAdapter?.getLastConnectAttemptCount?.(),
           bleChosenWriteType: connectionDiagnostics?.chosenWriteType,
           bleSupportsWithoutResponse: connectionDiagnostics?.supportsWriteWithoutResponse,
           bleCharProperties: connectionDiagnostics?.characteristicProperties,
@@ -1597,18 +1601,20 @@ export function useBoardBluetooth({
             Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.unknownError'));
         }
 
-        if (failureCategory !== 'user_cancelled') {
-          track(SHARED_EVENTS.BluetoothConnectionFailed, {
-            boardName,
-            layoutId,
-            sizeId,
-            failureReason: failureCategory === 'unknown' ? classifyBleFailureReason(error) : failureCategory,
-            // Raw ble-plx codes (Android) so the real connect-failure cause and the
-            // low-level GATT status are visible for re-measurement (#3608). Empty on
-            // web / native iOS.
-            ...blePlxErrorCodes(error),
-          });
-        }
+        track(SHARED_EVENTS.BluetoothConnectionFailed, {
+          boardName,
+          layoutId,
+          sizeId,
+          failureReason: failureCategory === 'unknown' ? classifyBleFailureReason(error) : failureCategory,
+          // 0 = never reached the GATT connect (picker cancelled, board not
+          // found, scan error), 1 = one attempt, 2 = the Android retry ran and
+          // lost. Key is dropped on native iOS and web.
+          connectAttempts: connectAdapter?.getLastConnectAttemptCount?.(),
+          // Raw ble-plx codes (Android) so the real connect-failure cause and the
+          // low-level GATT status are visible for re-measurement (#3608). Empty on
+          // web / native iOS.
+          ...blePlxErrorCodes(error),
+        });
       } finally {
         connectInFlightRef.current = false;
         setLoading(false);

@@ -45,7 +45,7 @@ const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
  * Whichever timer wins clears the other, so a deadline during backoff cannot
  * leave a 500ms timer alive after the connect sequence has already settled. */
 function waitForRetryBackoffBeforeDeadline(deadlineMs: number): Promise<boolean> {
-  const remainingMs = deadlineMs - Date.now();
+  const remainingMs = deadlineMs - performance.now();
   if (remainingMs <= 0) return Promise.resolve(false);
 
   return new Promise<boolean>((resolve) => {
@@ -81,7 +81,7 @@ async function settleBeforeDeadline<T>(
   operation: () => Promise<T>,
   deadlineMs: number,
 ): Promise<DeadlineSettlement<T>> {
-  const remainingMs = deadlineMs - Date.now();
+  const remainingMs = deadlineMs - performance.now();
   if (remainingMs <= 0) return { kind: 'deadline' };
 
   let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
@@ -139,6 +139,12 @@ export class RNBleAdapter implements BluetoothAdapter {
   // Whether a transient first GATT connect failure gets one in-budget retry
   // (see BleAdapterOptions.enableAndroidConnectRetry) — Android only.
   private readonly enableAndroidConnectRetry: boolean;
+  // GATT connect attempts made by the most recent connect, for analytics.
+  // Domain is 0/1/2: the adapter is constructed per connect
+  // (use-board-bluetooth.ts createBluetoothAdapter), so 0 means the flow never
+  // reached the GATT connect at all (picker cancelled, board not found, scan
+  // error), 1 means a single attempt, and 2 means the retry ran.
+  private lastConnectAttemptCount = 0;
 
   constructor(
     private readonly devicePicker: DevicePickerFn,
@@ -154,8 +160,17 @@ export class RNBleAdapter implements BluetoothAdapter {
   private async connectSelectedDevice(
     selectedDeviceId: string,
   ): Promise<{ connected: Device; retrySucceeded: boolean }> {
-    const deadlineMs = Date.now() + CONNECTION_TIMEOUT_MS;
-    const attemptConnect = () => settleBeforeDeadline(() => bleManager.connectToDevice(selectedDeviceId), deadlineMs);
+    // Monotonic clock so a mid-connect wall-clock correction cannot stretch or
+    // collapse the budget. The deadline arithmetic here relies on Vitest faking
+    // `performance.now` alongside the timers — it does by default, so never add
+    // an explicit `toFake` list that omits `performance` or the boundary tests
+    // silently freeze the clock and pass for the wrong reason.
+    const deadlineMs = performance.now() + CONNECTION_TIMEOUT_MS;
+    this.lastConnectAttemptCount = 0;
+    const attemptConnect = () => {
+      this.lastConnectAttemptCount += 1;
+      return settleBeforeDeadline(() => bleManager.connectToDevice(selectedDeviceId), deadlineMs);
+    };
     const cancelWithoutWaiting = () => {
       void bleManager.cancelDeviceConnection(selectedDeviceId).catch(() => {});
     };
@@ -194,9 +209,10 @@ export class RNBleAdapter implements BluetoothAdapter {
 
     const secondError = secondAttempt.error;
     if (isRetryableAndroidConnectError(secondError)) {
-      // No third attempt. Give the exhausted handle the same bounded cleanup as
-      // the first while preserving the exact second error for telemetry.
-      await settleBeforeDeadline(() => bleManager.cancelDeviceConnection(selectedDeviceId), deadlineMs);
+      // No third attempt. Close the exhausted handle without waiting: we already
+      // have the terminal error, so awaiting a cleanup that may hang would only
+      // keep the climber on a spinner before we can show it.
+      cancelWithoutWaiting();
     }
     throw secondError;
   }
@@ -556,6 +572,13 @@ export class RNBleAdapter implements BluetoothAdapter {
   // carries the MTU/chunking story; the park/resume fields are iOS-native-only.
   async getLastWriteDiagnostics(): Promise<BleWriteDiagnostics | null> {
     return this.lastWriteDiagnostics;
+  }
+
+  // 0 when the flow never reached the GATT connect, 1 for a single attempt,
+  // 2 when the Android retry ran. Pairs with `retrySucceeded` to give the retry
+  // a denominator: 2 + success is a save, 2 + failure is a retry that lost.
+  getLastConnectAttemptCount(): number {
+    return this.lastConnectAttemptCount;
   }
 }
 

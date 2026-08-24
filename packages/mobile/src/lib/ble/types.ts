@@ -152,4 +152,8 @@ export type BluetoothAdapter = {
   // Diagnostics of the adapter's most recent failed connect, for tagging a
   // service_missing report. Optional: only native iOS reports it.
   getLastConnectDiagnostics?(): Promise<BleConnectDiagnostics | null>;
+  // GATT connect attempts the adapter's most recent connect made: 0 when it
+  // never reached the connect, 1 for a single attempt, 2 when the Android retry
+  // ran. Optional: only the ble-plx adapter counts them.
+  getLastConnectAttemptCount?(): number;
 };
