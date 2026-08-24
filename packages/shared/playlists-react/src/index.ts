@@ -63,12 +63,15 @@ export {
   drainPlaylistPages,
   fetchPlaylistPageWithRetry,
   abortableSleep,
+  PlaylistDrainWaitBudgetError,
   PLAYLIST_QUEUE_REPLACE_MAX_PAGES,
   PLAYLIST_DRAIN_MAX_TOTAL_WAIT_MS,
 } from './drain-playlist-pages';
 export type {
   ShouldRetryPage,
+  CreatePageRetryPolicy,
   DrainSleep,
+  DrainWaitBudget,
   PlaylistPage,
   PlaylistPageFetcher,
   DrainPlaylistPagesResult,

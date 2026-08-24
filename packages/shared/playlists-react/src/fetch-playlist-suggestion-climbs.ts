@@ -1,5 +1,12 @@
 import type { Climb } from '@boardsesh/queue';
-import { fetchPlaylistPageWithRetry, type DrainSleep, type ShouldRetryPage } from './drain-playlist-pages';
+import {
+  fetchPlaylistPageWithRetry,
+  PlaylistDrainWaitBudgetError,
+  PLAYLIST_DRAIN_MAX_TOTAL_WAIT_MS,
+  type CreatePageRetryPolicy,
+  type DrainSleep,
+  type DrainWaitBudget,
+} from './drain-playlist-pages';
 
 export const PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE = 100;
 const MAX_PLAYLIST_SUGGESTION_REFRESH_PAGES = 10;
@@ -35,7 +42,8 @@ export async function fetchPlaylistSuggestionClimbs({
   pageSize = PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
   maxPages = MAX_PLAYLIST_SUGGESTION_REFRESH_PAGES,
   maxClimbsAfterActivated = MAX_PLAYLIST_SUGGESTION_REFRESH_CLIMBS_AFTER_ACTIVE,
-  shouldRetryPage,
+  createPageRetryPolicy,
+  maxTotalWaitMs = PLAYLIST_DRAIN_MAX_TOTAL_WAIT_MS,
   sleep,
 }: {
   activatedClimbUuid: string;
@@ -45,30 +53,49 @@ export async function fetchPlaylistSuggestionClimbs({
   maxPages?: number;
   maxClimbsAfterActivated?: number;
   /**
-   * Optional per-page retry policy. Omitted (the default) this helper behaves
-   * exactly as it always has: the first rejection propagates and nothing
-   * sleeps. Callers that share a rate-limited server bucket opt in so a single
-   * throttled or dropped page doesn't kill the whole refresh.
+   * Optional per-page retry policy factory. Omitted (the default) this helper
+   * behaves exactly as it always has: the first rejection propagates and
+   * nothing sleeps. Callers that share a rate-limited server bucket opt in so a
+   * single throttled or dropped page doesn't kill the whole refresh.
    */
-  shouldRetryPage?: ShouldRetryPage;
+  createPageRetryPolicy?: CreatePageRetryPolicy;
+  /**
+   * Wall-clock ceiling on everything this refresh may SLEEP across all of its
+   * pages. Without it a 10-page walk against a throttled bucket could stay
+   * pending for minutes on a fire-and-forget prefetch; with it the refresh
+   * stops early and returns the climbs it already has.
+   */
+  maxTotalWaitMs?: number;
   /** Injectable sleep for tests; defaults to an abortable setTimeout. */
   sleep?: DrainSleep;
 }): Promise<Climb[]> {
   const fetchedClimbs: Climb[] = [];
+  // One budget for the whole walk, not per page.
+  const waitBudget: DrainWaitBudget = { remainingMs: maxTotalWaitMs };
   let page = 0;
   let hasMore = true;
   let activatedClimbSeen = false;
   let loadedClimbsAfterActivated = 0;
 
   while (hasMore && page < maxPages && loadedClimbsAfterActivated < maxClimbsAfterActivated && !signal.aborted) {
-    const pageResult = await fetchPlaylistPageWithRetry({
-      fetchPage,
-      page,
-      pageSize,
-      signal,
-      shouldRetryPage,
-      sleep,
-    });
+    let pageResult: PlaylistSuggestionPage;
+    try {
+      pageResult = await fetchPlaylistPageWithRetry({
+        fetchPage,
+        page,
+        pageSize,
+        signal,
+        shouldRetryPage: createPageRetryPolicy?.(),
+        sleep,
+        waitBudget,
+      });
+    } catch (error) {
+      // Out of wait budget: the swipe track is a prefetch, so stop with what we
+      // have instead of failing the refresh on an internal signal. Every other
+      // rejection still propagates the way it always has.
+      if (error instanceof PlaylistDrainWaitBudgetError) break;
+      throw error;
+    }
 
     for (const pageClimb of pageResult.climbs) {
       if (pageClimb.uuid === activatedClimbUuid) {

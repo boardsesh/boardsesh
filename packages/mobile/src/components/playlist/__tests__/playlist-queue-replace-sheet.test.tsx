@@ -30,7 +30,9 @@ type ModalSheetMockProps = {
 // ModalSheet presents imperatively in the real app; here we render its children
 // only while `visible` and expose a synthetic close button to exercise onClose.
 vi.mock('../../ModalSheet', () => ({
-  ModalSheet: ({ children, visible, enableDynamicSizing, enablePanDownToClose, onClose }: ModalSheetMockProps) =>
+  // `enablePanDownToClose` defaults to true in the real ModalSheet, so the mock
+  // has to as well or "did this component lock the sheet?" reads backwards.
+  ModalSheet: ({ children, visible, enableDynamicSizing, enablePanDownToClose = true, onClose }: ModalSheetMockProps) =>
     visible
       ? createElement(
           'div',
@@ -141,14 +143,26 @@ describe('PlaylistQueueReplaceSheet', () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
-  it('locks pan-to-close and shows loading while replacing', () => {
+  // #4622: confirming genuinely starts the page drain, and a throttled first
+  // page can now back off for the length of a server window. A locked sheet with
+  // a greyed-out Cancel for that long reads as a hung app, and `onCancel` aborts
+  // the drain and its sleep — so the way out must stay reachable.
+  it('keeps cancel and pan-to-close live while replacing', () => {
     const { container } = render(<PlaylistQueueReplaceSheet {...makeProps({ isReplacing: true })} />);
-    expect(container.querySelector('[data-sheet]')?.getAttribute('data-pan-close')).toBe('false');
-    expect(button(container, 'detail.queueReplace.cancel')?.disabled).toBe(true);
+    expect(container.querySelector('[data-sheet]')?.getAttribute('data-pan-close')).toBe('true');
+    expect(button(container, 'detail.queueReplace.cancel')?.disabled).toBeFalsy();
+    // Confirm still blocks a double-tap starting a second drain.
     expect(button(container, 'detail.queueReplace.confirm')?.getAttribute('data-loading')).toBe('true');
   });
 
-  it('allows pan-to-close only while idle', () => {
+  it('can be cancelled mid-replacement', () => {
+    const onCancel = vi.fn();
+    const { container } = render(<PlaylistQueueReplaceSheet {...makeProps({ isReplacing: true, onCancel })} />);
+    fireEvent.click(button(container, 'detail.queueReplace.cancel')!);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows pan-to-close while idle', () => {
     const { container } = render(<PlaylistQueueReplaceSheet {...makeProps()} />);
     expect(container.querySelector('[data-sheet]')?.getAttribute('data-pan-close')).toBe('true');
   });

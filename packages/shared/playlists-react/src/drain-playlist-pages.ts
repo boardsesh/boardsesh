@@ -19,9 +19,11 @@
 //      queue from a partial result instead of failing the whole activation.
 //
 // The retry POLICY (which errors are worth re-sending, and how long to wait) is
-// injected as `shouldRetryPage` rather than imported: this package stays free of
-// transport and error-shape dependencies, per CLAUDE.md's "inject every platform
-// I/O" rule for shared packages.
+// injected as `createPageRetryPolicy` rather than imported: this package stays
+// free of transport and error-shape dependencies, per CLAUDE.md's "inject every
+// platform I/O" rule for shared packages. It is a factory, not a function,
+// because a policy needs per-page state to keep separate budgets per error
+// class.
 
 import type { Climb } from '@boardsesh/queue';
 import { isAbortError } from './fetch-playlist-suggestion-climbs';
@@ -62,8 +64,19 @@ export type PlaylistPageFetcher = (args: {
  * Retry policy for a failed page. Returns how long to wait before re-sending
  * the SAME page, or `null` to give up on it. `attempt` is 0 on the first
  * failure, 1 on the second, and so on.
+ *
+ * A policy instance is scoped to ONE page, so it may keep state — which is how
+ * a policy gives each class of failure its own budget instead of sharing one
+ * counter (a transient network drop must not spend the page's rate-limit
+ * retry).
  */
 export type ShouldRetryPage = (error: unknown, attempt: number) => number | null;
+
+/**
+ * Builds a fresh, page-scoped retry policy. The drain calls this once per page
+ * so a stateful policy starts every page with full budgets.
+ */
+export type CreatePageRetryPolicy = () => ShouldRetryPage;
 
 /** Injectable sleep so tests never wait on real timers. */
 export type DrainSleep = (ms: number, signal: AbortSignal) => Promise<void>;
@@ -82,8 +95,12 @@ export type DrainPlaylistPagesResult = {
   error?: unknown;
 };
 
-/** Mutable wait accounting shared across every page of one drain. */
-type DrainWaitBudget = { remainingMs: number };
+/**
+ * Mutable wait accounting shared across every page of one page walk. Build one
+ * before the loop and hand the same object to every page, so the ceiling is on
+ * the whole walk rather than per page.
+ */
+export type DrainWaitBudget = { remainingMs: number };
 
 function createAbortError(): Error {
   const abortError = new Error('Playlist page drain aborted');
@@ -187,7 +204,7 @@ export async function drainPlaylistPages({
   signal,
   pageSize,
   maxPages = PLAYLIST_QUEUE_REPLACE_MAX_PAGES,
-  shouldRetryPage,
+  createPageRetryPolicy,
   sleep = abortableSleep,
   maxTotalWaitMs = PLAYLIST_DRAIN_MAX_TOTAL_WAIT_MS,
 }: {
@@ -195,7 +212,8 @@ export async function drainPlaylistPages({
   signal: AbortSignal;
   pageSize: number;
   maxPages?: number;
-  shouldRetryPage?: ShouldRetryPage;
+  /** Built once per page, so each page starts with fresh per-class budgets. */
+  createPageRetryPolicy?: CreatePageRetryPolicy;
   sleep?: DrainSleep;
   maxTotalWaitMs?: number;
 }): Promise<DrainPlaylistPagesResult> {
@@ -212,7 +230,7 @@ export async function drainPlaylistPages({
         page,
         pageSize,
         signal,
-        shouldRetryPage,
+        shouldRetryPage: createPageRetryPolicy?.(),
         sleep,
         waitBudget,
       });

@@ -18,8 +18,14 @@ type PlaylistQueueReplaceSheetProps = {
 // Confirmation before a playlist tap replaces the whole queue: replacing clears
 // the climbs queued after the current one, so warn first. Built on ModalSheet
 // (the shared @expo/ui native sheet wrapper) so it goes through the presentation
-// coordinator and never overlaps another native sheet. Pan-to-close is locked
-// while the replacement is in flight; the buttons drive the decision.
+// coordinator and never overlaps another native sheet.
+//
+// Cancel stays live while the replacement is in flight, and so does pan-to-close.
+// Confirming here genuinely starts the page drain, and a throttled first page can
+// now back off for the length of a server window (#4622) — locking the climber
+// into a modal for that long would read as a hung app. `onCancel` aborts the
+// in-flight drain and its sleep, so leaving is instant. Only Confirm is blocked
+// while replacing (it shows a spinner), so a double-tap can't start two drains.
 export function PlaylistQueueReplaceSheet({
   visible,
   futureQueueCount,
@@ -31,7 +37,7 @@ export function PlaylistQueueReplaceSheet({
   const { systemColors } = useTheme();
 
   return (
-    <ModalSheet visible={visible} enableDynamicSizing enablePanDownToClose={!isReplacing} onClose={onCancel}>
+    <ModalSheet visible={visible} enableDynamicSizing onClose={onCancel}>
       {/* The footerless ModalSheet wrapper composes insets.bottom onto the body
           (withSheetBottomInset), so this content only adds its own spacing. */}
       <View style={styles.content}>
@@ -51,7 +57,6 @@ export function PlaylistQueueReplaceSheet({
             variant="outlined"
             role="cancel"
             onPress={onCancel}
-            disabled={isReplacing}
             style={styles.button}
           />
           <Button

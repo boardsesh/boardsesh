@@ -111,7 +111,7 @@ describe('drainPlaylistPages', () => {
       fetchPage,
       signal: new AbortController().signal,
       pageSize: PAGE_SIZE,
-      shouldRetryPage,
+      createPageRetryPolicy: () => shouldRetryPage,
       sleep,
     });
 
@@ -138,7 +138,7 @@ describe('drainPlaylistPages', () => {
       fetchPage,
       signal: new AbortController().signal,
       pageSize: PAGE_SIZE,
-      shouldRetryPage: () => null,
+      createPageRetryPolicy: () => () => null,
       sleep,
     });
 
@@ -164,7 +164,7 @@ describe('drainPlaylistPages', () => {
       fetchPage,
       signal: new AbortController().signal,
       pageSize: PAGE_SIZE,
-      shouldRetryPage: () => 45_000,
+      createPageRetryPolicy: () => () => 45_000,
       sleep,
       maxTotalWaitMs: 60_000,
     });
@@ -209,7 +209,7 @@ describe('drainPlaylistPages', () => {
       fetchPage,
       signal: new AbortController().signal,
       pageSize: PAGE_SIZE,
-      shouldRetryPage,
+      createPageRetryPolicy: () => shouldRetryPage,
       sleep,
     });
 
@@ -217,6 +217,48 @@ describe('drainPlaylistPages', () => {
     expect(waits).toEqual([]);
     expect(result.stoppedBy).toBe('aborted');
     expect(result.climbs).toEqual([]);
+  });
+
+  // Retry budgets are PER PAGE. A policy instance leaking across pages would let
+  // an early flaky page spend the budget of every page after it.
+  it('builds a fresh retry policy for every page', async () => {
+    const requestedPages: number[] = [];
+    const failedOnce = new Set<number>();
+    const fetchPage = vi
+      .fn<(args: { page: number }) => Promise<PlaylistPage>>()
+      .mockImplementation(async ({ page }) => {
+        requestedPages.push(page);
+        if (!failedOnce.has(page)) {
+          failedOnce.add(page);
+          throw new Error(`page ${page} dropped`);
+        }
+        return makePage(page, 1, page < 2);
+      });
+    const { sleep, waits } = createSleepRecorder();
+    // A single-use budget: `null` on the second failure the same instance sees.
+    const createPageRetryPolicy = () => {
+      let used = false;
+      const policy: ShouldRetryPage = () => {
+        if (used) return null;
+        used = true;
+        return 100;
+      };
+      return policy;
+    };
+
+    const result = await drainPlaylistPages({
+      fetchPage,
+      signal: new AbortController().signal,
+      pageSize: PAGE_SIZE,
+      createPageRetryPolicy,
+      sleep,
+    });
+
+    // Every page failed once and every page still got its own retry.
+    expect(requestedPages).toEqual([0, 0, 1, 1, 2, 2]);
+    expect(waits).toEqual([100, 100, 100]);
+    expect(result.stoppedBy).toBe('exhausted');
+    expect(result.pagesFetched).toBe(3);
   });
 
   it("preserves today's fail-fast behaviour when no retry policy is injected", async () => {

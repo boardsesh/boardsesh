@@ -24,7 +24,7 @@ type DrainArgs = {
   signal: AbortSignal;
   pageSize: number;
   maxPages?: number;
-  shouldRetryPage?: (error: unknown, attempt: number) => number | null;
+  createPageRetryPolicy?: () => (error: unknown, attempt: number) => number | null;
 };
 
 const mocks = vi.hoisted(() => ({
@@ -516,7 +516,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     // The swipe-track refresh shares the queue-replacement drain's server
     // bucket, so it gets the same bounded per-page backoff.
     expect(mocks.fetchSuggestion).toHaveBeenCalledWith(
-      expect.objectContaining({ shouldRetryPage: expect.any(Function) }),
+      expect.objectContaining({ createPageRetryPolicy: expect.any(Function) }),
     );
   });
 
@@ -954,6 +954,85 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(mocks.reportHandledError).not.toHaveBeenCalled();
     });
 
+    // #4622 regression. Only an `error` stop used to rethrow, so a drain that
+    // read NOTHING for any other reason fell through with `climbs = []` and
+    // committed a one-item queue — silently wiping the queue the climber had
+    // just confirmed the size of, with no toast anywhere.
+    it('leaves the queue alone and toasts when a confirmed replacement drains nothing', async () => {
+      const current = makeQueueItem('q-current', 'current');
+      const future = makeQueueItem('q-future', 'future');
+      mocks.queueState = { queue: [current, future], currentClimbQueueItem: current };
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const tapped = makeClimb('b');
+      // Page 0 came back throttled with a hint longer than the drain's whole
+      // wait budget, so not one page was ever read.
+      mocks.drain.mockResolvedValue({
+        climbs: [],
+        pagesFetched: 0,
+        complete: false,
+        stoppedBy: 'wait-budget',
+        error: new Error('Rate limit exceeded. Try again in 60 seconds.'),
+      });
+      const { result } = renderActivation(vi.fn(), {
+        replaceQueueOnActivate: true,
+        sourceId: 'playlist:wait-budget-1',
+        allClimbs: [tapped],
+      });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+      // The confirm-after-warning path is the one that never pre-seeds a queue.
+      expect(result.current.queueReplaceSheet.visible).toBe(true);
+      expect(mocks.setQueue).not.toHaveBeenCalled();
+
+      await act(async () => {
+        result.current.queueReplaceSheet.onConfirm();
+      });
+
+      await waitFor(() => {
+        expect(mocks.showToast).toHaveBeenCalledWith('detail.queueReplace.loadFailed', 'error');
+      });
+      // The climber's queue survives intact.
+      expect(mocks.setQueue).not.toHaveBeenCalled();
+      expect(mocks.reportHandledError).toHaveBeenCalledWith(expect.any(Error), {
+        tags: { source: 'playlist', op: 'replace-queue' },
+      });
+      // ...and the #3891 empty-fetch canary must not fire on a drain that never
+      // read a page — a false positive there permanently disarms the detector
+      // for this playlist for the rest of the session.
+      expect(mocks.reportHandledError).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ tags: { source: 'playlist', op: 'replace-queue-empty' } }),
+      );
+      errorSpy.mockRestore();
+    });
+
+    it('keeps the seeded queue when a tap-path drain lands zero pages on its wait budget', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const tapped = makeClimb('b');
+      mocks.drain.mockResolvedValue({
+        climbs: [],
+        pagesFetched: 0,
+        complete: false,
+        stoppedBy: 'wait-budget',
+        error: new Error('Rate limit exceeded. Try again in 60 seconds.'),
+      });
+      const { result } = renderActivation(vi.fn(), { replaceQueueOnActivate: true });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+
+      await waitFor(() => {
+        expect(mocks.showToast).toHaveBeenCalledWith('detail.queueReplace.loadFailed', 'error');
+      });
+      // Only the seed from the tap itself — never an empty replacement.
+      expect(mocks.setQueue).toHaveBeenCalledTimes(1);
+      expect(mocks.setQueue.mock.calls[0][0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['b']);
+      errorSpy.mockRestore();
+    });
+
     it('drains with the shared page size, the page cap and a retry policy', async () => {
       const tapped = makeClimb('b');
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [tapped], hasMore: false });
@@ -967,7 +1046,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(mocks.capturedDrainArgs).toMatchObject({
         pageSize: 100,
         maxPages: 30,
-        shouldRetryPage: expect.any(Function),
+        createPageRetryPolicy: expect.any(Function),
       });
     });
   });

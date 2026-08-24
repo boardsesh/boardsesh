@@ -37,7 +37,7 @@ import { climbToQueueItem } from '../climb-to-queue-item';
 import { reportHandledError } from '../error-reporting';
 import { toSchemaClimb } from '../climb-types';
 import { getPlaylistRenderBoardTarget } from './playlist-climb-render-board';
-import { shouldRetryPlaylistPage } from './playlist-page-retry';
+import { createPlaylistPageRetryPolicy } from './playlist-page-retry';
 import type { PlaylistRenderBoard } from './use-playlist-render-board';
 
 // Playlists whose board-scoped fetch has already been reported as empty this app
@@ -316,8 +316,9 @@ export function usePlaylistActivation({
         fetchPage: ({ page, pageSize, signal: pageSignal }) => fetchPage({ page, pageSize, board, signal: pageSignal }),
         // Same server bucket as the queue-replacement drain, so a throttled or
         // dropped page gets the same bounded backoff instead of killing the
-        // whole swipe-track refresh.
-        shouldRetryPage: shouldRetryPlaylistPage,
+        // whole swipe-track refresh — under the same total wait ceiling, so this
+        // fire-and-forget prefetch can't stay pending for minutes.
+        createPageRetryPolicy: createPlaylistPageRetryPolicy,
       });
     },
     [activeBoard, fetchPage],
@@ -341,7 +342,7 @@ export function usePlaylistActivation({
         signal,
         pageSize: PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
         maxPages: PLAYLIST_QUEUE_REPLACE_MAX_PAGES,
-        shouldRetryPage: shouldRetryPlaylistPage,
+        createPageRetryPolicy: createPlaylistPageRetryPolicy,
       });
     },
     [activeBoard, fetchPage],
@@ -382,12 +383,21 @@ export function usePlaylistActivation({
         let climbs = options.loadedClimbs;
         if (!climbs) {
           const drain = await fetchAllClimbsForBoard({ signal: abortController.signal });
-          // Nothing landed at all and the drain died on a rejection — that is the
-          // same failure as before, so rethrow and let the catch below toast and
-          // leave the seeded queue alone. Anything else is good enough to play.
-          if (drain.pagesFetched === 0 && drain.stoppedBy === 'error') throw drain.error;
+          // Cancelled: the climber left the playlist or tapped another climb.
+          // Write nothing, report nothing, toast nothing.
+          if (drain.stoppedBy === 'aborted') return;
+          // Nothing landed at all. Every non-`exhausted` stop reason here is a
+          // failure — a rejection, but also the wait ceiling and (in principle)
+          // a zero page cap — and committing `[]` would silently destroy the
+          // climber's whole queue down to the one tapped climb with no error
+          // anywhere. Rethrow so the catch below toasts and leaves the queue
+          // alone. `exhausted` at zero pages is the legitimate no-active-board
+          // case and must fall through.
+          if (drain.pagesFetched === 0 && drain.stoppedBy !== 'exhausted') {
+            throw drain.error ?? new Error(`Playlist queue replacement drained no pages (${drain.stoppedBy})`);
+          }
           climbs = drain.climbs;
-          if (!drain.complete && drain.stoppedBy !== 'aborted') {
+          if (!drain.complete) {
             // Silent for the climber (they got a working queue), but the page
             // cap, the rate-limit stops and the wait ceiling are all judgement
             // calls we want production numbers for before tuning them.
