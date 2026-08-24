@@ -271,6 +271,7 @@
       "unknownClimb": "Bloque desconocido",
       "removeClimb": "Eliminar bloque",
       "positionLabel": "posición {{position}}",
+      "addedByAria": "Añadido por {{name}}",
       "syncError": "Error de sincronización de cola",
       "outOfSyncRefreshed": "La cola estaba desincronizada. Se actualizó con tu grupo.",
       "sessionCreateError": "No se pudo crear la sesión",

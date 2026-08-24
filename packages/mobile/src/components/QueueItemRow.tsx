@@ -15,6 +15,8 @@ import { Text } from './Text';
 import { Icon } from './Icon';
 import { ClimbListItemContent } from './ClimbListItemContent';
 import { THUMBNAIL_WIDTH } from './ClimbListThumbnail';
+import { BoardDriverAvatar } from './board-presence/BoardDriverAvatar';
+import { resolveQueueRowAttribution } from '../lib/queue-attribution';
 import { iosSystemColors } from '../theme/ios-colors';
 import { spacing } from '../theme/tokens';
 import { springs } from '../theme/animations';
@@ -69,6 +71,10 @@ type QueueItemRowProps = {
   queueIndex?: number;
   /** Whether this row may be dragged (future rows, not in edit mode). */
   isDraggable?: boolean;
+  /** Show who queued this climb. True only while a party session is active. */
+  showAddedBy?: boolean;
+  /** The viewer's own party-profile id; their own adds render no avatar. */
+  viewerUserId?: string | null;
 };
 
 function PositionIndicator({
@@ -121,6 +127,8 @@ function QueueItemRowComponent({
   rowIndex,
   queueIndex,
   isDraggable = false,
+  showAddedBy = false,
+  viewerUserId = null,
 }: QueueItemRowProps) {
   const { systemColors, brandColors } = useTheme();
   const { t } = useTranslation('session');
@@ -410,6 +418,21 @@ function QueueItemRowComponent({
   const showSentAtAngle =
     isHistoryItem && !isEditMode && typeof climbedAtAngle === 'number' && climbedAtAngle !== board.angle;
 
+  // Edit mode strips secondary chrome (same rule as the sent-at-angle chip) and
+  // is the row's widest state — the checkbox slot plus the delete affordance.
+  const addedBy = resolveQueueRowAttribution(item.addedByUser, {
+    showAddedBy: showAddedBy && !isEditMode,
+    viewerUserId,
+  });
+
+  // A plain const, deliberately NOT a useMemo: `rowAccessibilityActions` above is
+  // memoized because a test asserts its identity across re-renders, but a string
+  // has no such contract and memoizing it would only add a deps array to keep true.
+  const positionLabel = t('mobile.queue.positionLabel', { position });
+  const rowAccessibilityLabel = addedBy
+    ? `${climbName}, ${positionLabel}, ${t('mobile.queue.addedByAria', { name: addedBy.name })}`
+    : `${climbName}, ${positionLabel}`;
+
   const rowContent = (
     // touchAction="pan-y" (web only): RNGH otherwise defaults the row's DOM node
     // to `touch-action: none`, which blocks native touch-scrolling for any drag
@@ -420,7 +443,7 @@ function QueueItemRowComponent({
       <Animated.View
         accessible
         accessibilityRole="button"
-        accessibilityLabel={`${climbName}, ${t('mobile.queue.positionLabel', { position })}`}
+        accessibilityLabel={rowAccessibilityLabel}
         accessibilityState={{ selected: isEditMode ? isSelected : isCurrentClimb }}
         onAccessibilityTap={handlePress}
         accessibilityActions={rowAccessibilityActions}
@@ -463,6 +486,18 @@ function QueueItemRowComponent({
           >
             {t('mobile.queue.sentAtAngle', { angle: climbedAtAngle })}
           </Text>
+        )}
+
+        {/* Who queued it — decorative; the row's own label carries the name. */}
+        {addedBy && (
+          <View
+            pointerEvents="none"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            style={styles.addedByAvatar}
+          >
+            <BoardDriverAvatar uri={addedBy.avatarUrl} name={addedBy.name} size={20} status="none" />
+          </View>
         )}
 
         {/* Trailing action: tick (history) or drag handle (upcoming) */}
@@ -581,6 +616,9 @@ const styles = StyleSheet.create({
   sentAtAngle: {
     flexShrink: 0,
     fontVariant: ['tabular-nums'],
+  },
+  addedByAvatar: {
+    flexShrink: 0,
   },
   deleteAction: {
     position: 'absolute',
