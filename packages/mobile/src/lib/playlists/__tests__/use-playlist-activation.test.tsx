@@ -884,6 +884,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
           expect.objectContaining({ tags: { source: 'playlist', op: 'replace-queue-capped' } }),
         );
       });
+      // Exactly one call per page: the mock never rejects, so no retry inflates this.
       expect(fetchPage).toHaveBeenCalledTimes(MAX_PLAYLIST_QUEUE_REPLACE_PAGES);
       // Truncated, not failed: the climber still gets a circuit and no toast.
       expect(mocks.setQueue).toHaveBeenCalled();

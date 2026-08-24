@@ -77,6 +77,10 @@ export type DrainPlaylistPagesArgs = {
   /**
    * Stop the drain after this page even though the server has more. Receives the
    * climbs this page actually added (duplicates already filtered out).
+   *
+   * Only called while `hasMore` is still true — on the final page the drain is
+   * ending anyway, so there is nothing left to stop. Do not use it as a
+   * see-every-page hook: it will miss the last one.
    */
   stopAfterPage?: (newClimbs: Climb[]) => boolean;
   /** Injectable so tests do not wait on real timers. */
