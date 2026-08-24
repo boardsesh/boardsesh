@@ -77,6 +77,7 @@ import {
   resetUserDataForLostCoverage,
 } from './deletions-coverage';
 import { applyBusyTimeout } from '../db/pragmas';
+import { classifySqliteLockError } from '../db/lock-errors';
 import { getPendingCount } from '../mutation-queue/queue';
 import { isNetworkError } from '../mutation-queue/error-classification';
 import {
@@ -165,7 +166,15 @@ export type ScopeDownloadPhaseBreakdown = {
   manifestMs: number;
   /** Fetching the artifact. 0 when it was reused from disk or shared with another size of the layout. */
   downloadMs: number;
-  /** ATTACH + verify + the single exclusive import transaction. */
+  /**
+   * ATTACH + verify + reconcile + the row batches + the checkpoint transaction.
+   *
+   * NOT A LOCK HOLD, and never was: most of it is autocommit work — the ATTACH,
+   * `PRAGMA quick_check` over the whole artifact, `verifySnapshotMeta`'s two full
+   * `COUNT(*)` truncation checks, and the scoped watermark reads. Two in-repo
+   * retry ladders were once sized as if this number were a lock hold; see
+   * db/write-retry.ts. `importLockMaxMs` is the hold.
+   */
   importMs: number;
   /** Stored (possibly gzip) size of the artifact this scope imported; 0 when none. */
   artifactBytes: number;
@@ -208,12 +217,52 @@ export type ScopeDownloadPhaseBreakdown = {
    * meaningful only when at least one of the two is present.
    */
   gradesArtifactRows?: number;
+  /**
+   * The whole-layout import, split (issue #4310). ABSENT — never 0 — on any
+   * cycle that ran no import, which is most of them: a completion whose artifact
+   * landed in an EARLIER cycle did not spend this time, and a fabricated 0 next
+   * to the absent-when-unknown `importMs` would read as a real measurement of a
+   * fast import. events.ts states the rule outright ("Read a missing value as
+   * UNKNOWN, never as 0") and names #4393's `gradesRows: 0` as the precedent.
+   * Every query over these MUST filter on `importMs IS NOT NULL`; unfiltered,
+   * the p90 is dominated by the cycles that imported nothing.
+   *
+   *  - `importVerifyMs`    ATTACH + quick_check + meta verify + watermarks, all
+   *                        in autocommit holding no lock.
+   *  - `importReconcileMs` the (still unbatched) reconcile transaction.
+   *  - `importRowsMs`      the batch loop end to end, keyset probes included.
+   *  - `importLockMaxMs`   THE METRIC. The longest SINGLE exclusive hold —
+   *                        reconcile, any row batch, or the checkpoint
+   *                        transaction — i.e. the worst case a concurrent user
+   *                        write has to survive (#4314).
+   */
+  importVerifyMs?: number;
+  importReconcileMs?: number;
+  importRowsMs?: number;
+  importLockMaxMs?: number;
+  /** Exclusive transactions the row import committed. Absent when no import ran. */
+  importBatches?: number;
+  /**
+   * The grades artifact's own transfer and import, previously invisible to this
+   * breakdown entirely — `importGradesForScope` runs its own download and its
+   * own exclusive transaction and neither added to `downloadMs`/`importMs`,
+   * which is most of the ~11s p50 residual between `durationMs` and the sum of
+   * the other phases. Same absent-when-unknown rule: no grades artifact imported
+   * this cycle means no key, not a zero.
+   *
+   * `gradesLockMs` is the grades import's exclusive hold. It is still ONE
+   * unbatched transaction, so it is reported next to `importLockMaxMs` rather
+   * than folded into it.
+   */
+  gradesDownloadMs?: number;
+  gradesVerifyMs?: number;
+  gradesLockMs?: number;
 };
 
 /**
  * A zeroed breakdown: what a scope reports before any phase has run.
- * `gradesRows` and `gradesArtifactRows` are deliberately ABSENT rather than 0 —
- * see their docs.
+ * `gradesRows`, `gradesArtifactRows` and every `import*` / `grades*Ms` timing are
+ * deliberately ABSENT rather than 0 — see their docs.
  */
 export function emptyScopeDownloadPhases(): ScopeDownloadPhaseBreakdown {
   return {
@@ -1362,6 +1411,7 @@ async function runBootstrapPhase(params: {
         latchedDownloadVerdict ??= teardownVerdict(scope.scopeKey);
       });
       let downloadCause: unknown = null;
+      const gradesDownloadStartedAt = Date.now();
       try {
         gradesDownload = (await source.downloadGradesArtifact(gradesArtifact)) ?? null;
       } catch (error) {
@@ -1369,6 +1419,12 @@ async function runBootstrapPhase(params: {
         downloadCause = error;
       } finally {
         unsubscribeGradesTeardown();
+        // Closes half of the ~11s p50 residual between `durationMs` and the sum
+        // of the other phases: this transfer never touched `phases.downloadMs`.
+        // Charged on the failure path too — a grades transfer that timed out
+        // spent that time just as surely as one that landed.
+        const gradesPhases = phaseTimings(scope.scopeKey);
+        gradesPhases.gradesDownloadMs = (gradesPhases.gradesDownloadMs ?? 0) + (Date.now() - gradesDownloadStartedAt);
       }
       // A NULL return counts exactly as a throw does. `SnapshotSource` lets a
       // source signal "unusable this cycle" either way (see downloadArtifact's
@@ -1411,7 +1467,7 @@ async function runBootstrapPhase(params: {
     }
 
     try {
-      const { rowsImported } = await bootstrapScopeGradesFromSnapshot({
+      const { rowsImported, gradesVerifyMs, gradesLockMs } = await bootstrapScopeGradesFromSnapshot({
         db,
         scope,
         scopeKey: scope.scopeKey,
@@ -1426,6 +1482,10 @@ async function runBootstrapPhase(params: {
       // exclusive per scope today, and `+=` stays correct if that changes.
       const phases = phaseTimings(scope.scopeKey);
       phases.gradesArtifactRows = (phases.gradesArtifactRows ?? 0) + rowsImported;
+      phases.gradesVerifyMs = (phases.gradesVerifyMs ?? 0) + gradesVerifyMs;
+      // MAX, like importLockMaxMs: the question is the worst hold a concurrent
+      // write met, which does not add up across scopes of the same layout.
+      phases.gradesLockMs = Math.max(phases.gradesLockMs ?? 0, gradesLockMs);
       for (const key of TABLE_CONFIGS.board_climb_grades.invalidateKeys) {
         queryClient.invalidateQueries({ queryKey: key });
       }
@@ -2123,16 +2183,35 @@ async function runBootstrapPhase(params: {
           metadataSettled = true;
         }
 
-        // Stage 3 of 3. Indeterminate by construction: the import is one
-        // exclusive SQLite transaction with no safe place to emit from inside it.
+        // Stage 3 of 3, and determinate since #4310: the import commits in
+        // bounded batches, so there IS a safe place to emit from between them.
         // The guard moves first so anything thrown from here on — including the
         // progress consumer on the next line — is attributed to the import.
         funnelGuard.enterStage('import');
+        // The denominator is the artifact's LAYOUT-wide row count, which is what
+        // `verifySnapshotMeta` already read; a size-scoped Kilter scope therefore
+        // tops out below 1 (around 0.97 for size 10, lower for a small size)
+        // before the terminal frame below takes it to 1. The honest alternative
+        // is two more full COUNT(*) scans over the artifact, inside the very
+        // phase this PR exists to shrink. Clamped, so it can never exceed 1.
+        const importRowsTotal = entry.tables.board_climbs.rowCount + entry.tables.board_climb_stats.rowCount;
+        const emitImportProgress = (rowsImported: number): void => {
+          const fraction = importRowsTotal > 0 ? Math.min(1, rowsImported / importRowsTotal) : null;
+          emitSnapshotFrame(
+            progressThrottle.offer({
+              scopeKey: scope.scopeKey,
+              stage: 'import',
+              fraction,
+              wireBytes: entry.bytes,
+              wireBytesDone: null,
+            }),
+          );
+        };
         emitSnapshotFrame(
           progressThrottle.flush({
             scopeKey: scope.scopeKey,
             stage: 'import',
-            fraction: null,
+            fraction: importRowsTotal > 0 ? 0 : null,
             wireBytes: entry.bytes,
             wireBytesDone: null,
           }),
@@ -2158,7 +2237,20 @@ async function runBootstrapPhase(params: {
             existingCheckpoints: hasBoardCheckpoint
               ? { board_climbs: climbsCheckpoint ?? undefined, board_climb_stats: statsCheckpoint ?? undefined }
               : undefined,
+            onBatch: ({ rowsImported }) => emitImportProgress(rowsImported),
           });
+          // The bar tops out at the layout-wide denominator's ceiling, so close
+          // it explicitly at the stage boundary rather than leaving a scoped
+          // download parked at 0.31 while the grades transaction runs.
+          emitSnapshotFrame(
+            progressThrottle.offer({
+              scopeKey: scope.scopeKey,
+              stage: 'import',
+              fraction: 1,
+              wireBytes: entry.bytes,
+              wireBytesDone: null,
+            }),
+          );
           const timings = bootstrapTimings.get(scope.scopeKey) ?? { bytes: entry.bytes };
           bootstrapTimings.set(scope.scopeKey, {
             ...timings,
@@ -2166,6 +2258,15 @@ async function runBootstrapPhase(params: {
             rowCount: imported.climbsImported + imported.statsImported,
           });
           phases.importMs += Date.now() - importStartedAt;
+          // Accumulated, not assigned, for the same reason `importMs` is: one
+          // cycle can import several scopes of the same layout. `importLockMaxMs`
+          // is a MAX rather than a sum — it answers "what is the worst hold a
+          // concurrent write had to survive", which does not add up across scopes.
+          phases.importVerifyMs = (phases.importVerifyMs ?? 0) + imported.importVerifyMs;
+          phases.importReconcileMs = (phases.importReconcileMs ?? 0) + imported.importReconcileMs;
+          phases.importRowsMs = (phases.importRowsMs ?? 0) + imported.importRowsMs;
+          phases.importLockMaxMs = Math.max(phases.importLockMaxMs ?? 0, imported.importLockMaxMs);
+          phases.importBatches = (phases.importBatches ?? 0) + imported.importBatches;
           artifactImported.set(download.filePath, true);
           // The scope imported an artifact, so any free-round marker it carries
           // describes a build that no longer matters.
@@ -2261,7 +2362,17 @@ async function runBootstrapPhase(params: {
           // would otherwise buy another free round every cycle, forever, with a
           // fresh scope skipping its paged pull each time. The second failure on
           // the same build falls through to the counted structural path below.
-          if (download.reused && (await getReusedImportFailure(db, scope.scopeKey)) !== entry.builtAt) {
+          // A lost lock race is not a bad artifact (issue #4310). Batching turned
+          // one lock acquisition into ~143, so this arm — which DELETES the
+          // ~103 MB file and spends the once-per-build free round — must not
+          // fire for contention. `classifyBootstrapFailure` keeps the same
+          // failure off the structural budget below.
+          const importLostTheLock = classifySqliteLockError(error).locked;
+          if (
+            !importLostTheLock &&
+            download.reused &&
+            (await getReusedImportFailure(db, scope.scopeKey)) !== entry.builtAt
+          ) {
             await recordReusedImportFailure(db, scope.scopeKey, entry.builtAt);
             await source.deleteArtifact(download.filePath).catch(() => {});
             artifactImported.delete(download.filePath);

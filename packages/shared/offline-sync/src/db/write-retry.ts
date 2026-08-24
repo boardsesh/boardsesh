@@ -17,11 +17,23 @@
 //     which an honoured 5s timeout makes arithmetically impossible. With
 //     `beginImmediateWrite` the wait is real for the first time, and 2.5s carries
 //     a 7x margin over the longest window ever observed.
-//   - Attempt 2 gets a shortened 1.5s timeout after a 150ms gap. Measured
-//     `Offline Board Download Completed.importMs` over 60 days is p50 806ms,
-//     p90 2.3s, max 3.2s — every observed import fits inside attempt 1's window,
-//     so a second full wait buys almost nothing. Attempt 2 is a "did the lock
-//     clear in the gap" probe.
+//   - Attempt 2 gets a shortened 1.5s timeout after a 150ms gap: a "did the lock
+//     clear in the gap" probe rather than a second full wait.
+//     CORRECTION (issue #4310). This bullet used to justify that with "measured
+//     `Offline Board Download Completed.importMs` over 60 days is p50 806ms, p90
+//     2.3s, max 3.2s — every observed import fits inside attempt 1's window".
+//     Both halves are wrong. The window never existed: `importMs` was first
+//     emitted on 2026-08-12 (#4337/#4345) and this file was written on
+//     2026-08-14. And `importMs` is not a lock hold — it is stamped around
+//     ATTACH + `PRAGMA quick_check` over a 271 MB artifact + two full `COUNT(*)`
+//     scans + the scoped watermark reads + the write transaction, and only the
+//     last of those holds anything. The live series reads p50 2,944ms / p90
+//     21,988ms / max 253,939ms, but that is still the whole import, not the hold.
+//     How long the import really held the lock has never been measured; the
+//     batched importer emits `importLockMaxMs` for exactly that, and it is the
+//     first number this ladder can honestly be sized against. What DID change
+//     underneath it: before #4310 the import was one exclusive transaction that
+//     no ladder could outlast; after it the longest holder is one batch.
 //   - A caller may then run a smaller fallback write (mobile's outbox-only tick
 //     degrade) on the remaining budget.
 // Worst case 2500 + 150 + 1500 + 1000 + 150 + 1000 = 6.3s, under the hard

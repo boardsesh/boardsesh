@@ -412,6 +412,8 @@ export const SHARED_EVENTS = {
   // method: 'snapshot' | 'paged', durationMs, bytes?, rowCount?, downloadMs?,
   // importMs?, bootstrapHealed?, manifestMs, artifactReused, climbsPullMs,
   // statsPullMs, gradesPullMs, gradesRows?, gradesArtifactRows?,
+  // importVerifyMs?, importReconcileMs?, importRowsMs?, importLockMaxMs?,
+  // importBatches?, gradesDownloadMs?, gradesVerifyMs?, gradesLockMs?,
   // offlineEngineEnabled }.
   // Every optional prop is ABSENT rather than faked when this cycle cannot vouch
   // for it — most often because the completing delta pull landed in a later cycle
@@ -432,7 +434,27 @@ export const SHARED_EVENTS = {
   // Deliberately NOT emitted: the breakdown's own `downloadMs`, `importMs` and
   // `artifactBytes` — the per-scope timings above carry the honest,
   // absent-when-unknown versions of the same numbers, so re-adding the phase
-  // copies would put a cycle-scoped 0 next to them. Mobile-only today (the engine
+  // copies would put a cycle-scoped 0 next to them.
+  //
+  // THE IMPORT SPLIT (issue #4310), all eight absent-when-unknown for exactly
+  // that reason — a cycle that ran no import did not spend the time, and most
+  // completions are import-free because the artifact landed in an earlier cycle.
+  // FILTER EVERY QUERY OVER THEM ON `importMs IS NOT NULL`; unfiltered, the p90
+  // reads near zero whatever the import is doing.
+  //  - `importLockMaxMs` is THE number: the longest SINGLE exclusive-transaction
+  //    hold of the import (reconcile, any row batch, or the checkpoint
+  //    transaction), i.e. the worst case a concurrent user write has to survive
+  //    (#4314). Before the batching change it was the whole import and had never
+  //    been measured — `importMs` is ATTACH + quick_check over a 271 MB file +
+  //    two full COUNT(*) scans + watermarks + the write work, and all but the
+  //    last of those hold nothing.
+  //  - `importVerifyMs` / `importReconcileMs` / `importRowsMs` split `importMs`;
+  //    `importBatches` counts the exclusive transactions the rows took.
+  //  - `gradesDownloadMs` / `gradesVerifyMs` / `gradesLockMs` cover the SEPARATE
+  //    grades artifact, whose transfer and (still unbatched) exclusive
+  //    transaction were invisible to every phase field — most of the ~11s p50
+  //    gap between `durationMs` and the sum of the phases.
+  // Mobile-only today (the engine
   // is shared, so a future web offline consumer would fire this too).
   OfflineBoardDownloadCompleted: 'Offline Board Download Completed',
   // A bootstrap stage failed, or was cut short. Props: { scopeKey, stage:

@@ -48,6 +48,7 @@
 
 import type { OfflineDatabase, SqlExecutor } from '../database';
 import { isNetworkError } from '../mutation-queue/error-classification';
+import { classifySqliteLockError } from '../db/lock-errors';
 
 // --- sync_meta keys -----------------------------------------------------------
 //
@@ -184,19 +185,33 @@ export const EMPTY_BOOTSTRAP_RETRY_STATE: BootstrapRetryState = {
 // --- Pure decisions -----------------------------------------------------------
 
 /**
- * Which budget a failure spends. Import-stage failures are always
- * `structural-artifact`: the bytes are already on disk, so nothing about them is
- * a network problem, and a rebuilt artifact is the one thing that could fix it.
- * Anything else transport-shaped (`isNetworkError`, the same predicate the
- * mutation drainer uses to keep a mutation off the dead-letter path) is
- * `transport`; everything remaining is attributed to the device, which is the
- * conservative default because a plain `Error` from an adapter's downloader
- * cannot be told apart from a disk-full or cache-dir fault.
+ * Which budget a failure spends. Import-stage failures are `structural-artifact`
+ * unless they are lock contention: the bytes are already on disk, so nothing
+ * about them is a network problem, and a rebuilt artifact is the one thing that
+ * could fix it. Anything else transport-shaped (`isNetworkError`, the same
+ * predicate the mutation drainer uses to keep a mutation off the dead-letter
+ * path) is `transport`; everything remaining is attributed to the device, which
+ * is the conservative default because a plain `Error` from an adapter's
+ * downloader cannot be told apart from a disk-full or cache-dir fault.
+ *
+ * THE LOCK ESCAPE (issue #4310). A "database is locked" at the import stage says
+ * nothing about the artifact — a rebuilt one would lose the same race. Before
+ * batching that barely mattered: the import took the lock once, for the whole
+ * import. Now it takes it once per batch (~143 times for a Kilter layout)
+ * against writers that genuinely exist, including a `removeBoardScopeData` for a
+ * DIFFERENT layout that runs longer than the import connection's busy_timeout.
+ * Charging those to the structural budget would strand a board on the paged
+ * crawl after two lost races — `MAX_BOOTSTRAP_ATTEMPTS` is 2 and there is at
+ * most one lifetime re-arm — which remove-offline-board.ts already documents as
+ * a live hazard for VACUUM. `transport` is the right bucket: it is cleared by
+ * the next successful artifact download, so a lock race can never accumulate,
+ * and it still schedules a cooldown instead of retrying into the same contention.
  */
 export function classifyBootstrapFailure(input: {
   cause: unknown;
   stage: 'manifest' | 'download' | 'import';
 }): BootstrapFailureKind {
+  if (classifySqliteLockError(input.cause).locked) return 'transport';
   if (input.stage === 'import') return 'structural-artifact';
   // Keep this module dependency-neutral: snapshot-bootstrap imports the retry
   // constants below at module initialization time. The mobile adapter converts
