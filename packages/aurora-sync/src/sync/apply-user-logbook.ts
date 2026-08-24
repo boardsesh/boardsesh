@@ -7,6 +7,7 @@ import {
   recomputeClimbStatsBulk,
   inferUserUtcOffsetSeconds,
   adoptionMatchScoreSeconds,
+  isWholeUtcOffsetShift,
   MAX_USER_UTC_OFFSET_SECONDS,
   NATURAL_KEY_TOLERANCE_SECONDS,
   acquireUserTickMutationLock,
@@ -549,6 +550,35 @@ function payloadDiffersFromStored(incoming: NormalizedLogbookRow, stored: Compar
   );
 }
 
+/**
+ * #3909 writer guard: keep a corrected legacy `climbed_at` instead of letting
+ * the pull write the shifted upstream value back over it.
+ *
+ * Aurora's naive "YYYY-MM-DD HH:MM:SS" is believed to carry the CLIMBER's local
+ * wall clock for ascents logged in the official Kilter/Tension app (see
+ * packages/db/src/queries/tick-offset-inference.ts and #3909's per-user offset
+ * measurement). Once a legacy row's climbed_at is corrected to the true UTC
+ * instant, the by-aurora-id update path below sees stored − incoming = a whole
+ * UTC offset, calls it a payload change, and rewrites the shifted value: the
+ * correction self-reverts inside one sync cycle. So on exactly that shape we
+ * substitute the STORED climbed_at into the update payload — every other field
+ * still applies, only the timestamp is held.
+ *
+ * TRADE-OFF, stated plainly: an upstream edit that moves an ascent by a
+ * plausible whole zone offset (a climber fixing "I logged this an hour out") is
+ * byte-identical to the legacy shift and is therefore also suppressed. Sub-hour
+ * edits, and any change ≥15 min that is not within 60s of a 15-minute grid
+ * point, still propagate — `isWholeUtcOffsetShift` deliberately excludes the
+ * ±60s fast path that `climbedAtMatchesForAdoption` would have swallowed.
+ */
+function preserveCorrectedClimbedAt(incoming: NormalizedLogbookRow, stored: ComparedRow): NormalizedLogbookRow {
+  const storedMs = Date.parse(stored.climbedAt);
+  const incomingMs = Date.parse(incoming.climbedAt);
+  if (!Number.isFinite(storedMs) || !Number.isFinite(incomingMs)) return incoming;
+  if (!isWholeUtcOffsetShift(storedMs - incomingMs)) return incoming;
+  return { ...incoming, climbedAt: stored.climbedAt };
+}
+
 /** True when the row carries a local edit newer than the last successful sync. */
 function isLocallyEdited(stored: ComparedRow): boolean {
   if (stored.auroraSyncedAt === null) return false; // never synced from Aurora → pull is authoritative
@@ -708,12 +738,17 @@ async function applyLogbookChunk(
   }
 
   // (c) By-aurora-id updates: skip locally-edited rows and no-op re-syncs.
+  // preserveCorrectedClimbedAt runs BEFORE payloadDiffersFromStored so a row
+  // whose only difference is a #3909 whole-offset shift drops out of the update
+  // set entirely instead of being rewritten with the shifted timestamp.
   const updates = incoming
     .map((row) => ({ row, stored: storedByAuroraId.get(row.auroraId) }))
     .filter(
       (u): u is { row: NormalizedLogbookRow; stored: ComparedRow } =>
-        u.stored !== undefined && !isLocallyEdited(u.stored) && payloadDiffersFromStored(u.row, u.stored),
-    );
+        u.stored !== undefined && !isLocallyEdited(u.stored),
+    )
+    .map(({ row, stored }) => ({ row: preserveCorrectedClimbedAt(row, stored), stored }))
+    .filter(({ row, stored }) => payloadDiffersFromStored(row, stored));
 
   // (d) Inserts: misses that weren't claimed.
   const inserts = misses.filter((m) => !claims.has(m.auroraId));

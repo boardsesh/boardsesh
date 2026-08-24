@@ -97,6 +97,8 @@
     "db:repair-woods-rules": "tsx scripts/repair-woods-rules.ts",
     "db:repair-moonboard-8c-grades": "tsx scripts/repair-moonboard-8c-grades.ts",
     "db:backfill-clamped-send-attempts": "tsx scripts/backfill-clamped-send-attempts.ts",
+    "db:report-tick-timezones": "tsx scripts/report-mislabeled-tick-timezones.ts",
+    "db:backfill-tick-timezones": "tsx scripts/backfill-mislabeled-tick-timezones.ts",
     "db:dedupe-gyms": "tsx scripts/dedupe-gym-locations.ts",
     "db:dedupe-serial-boards": "tsx scripts/dedupe-serial-boards.ts",
     "db:dedupe-beta-links": "tsx scripts/dedupe-beta-links.ts",

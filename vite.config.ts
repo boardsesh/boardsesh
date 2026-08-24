@@ -410,6 +410,21 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/db run db:backfill-clamped-send-attempts',
         cache: false,
       },
+      // #3909 legacy tick-timezone audit. The report is READ-ONLY and enforced
+      // as such by Postgres (`default_transaction_read_only=on` on the
+      // connection), so it is safe to point at a replica. The backfill writes
+      // nothing without `--apply`, and `--apply` against a non-local DB_URL
+      // additionally needs TICK_TZ_BACKFILL_ALLOW_REMOTE=1. Neither is wired
+      // into any dependsOn or CI workflow: the correction run is a deliberate
+      // human action, never a deploy side effect.
+      'db:report-tick-timezones': {
+        command: 'bun run --filter=@boardsesh/db db:report-tick-timezones',
+        cache: false,
+      },
+      'db:backfill-tick-timezones': {
+        command: 'bun run --filter=@boardsesh/db db:backfill-tick-timezones',
+        cache: false,
+      },
 
       // --- Codegen (GraphQL types for client + backend resolvers) ---
       // Direct workspace-binary invocation; no remote package runner.
