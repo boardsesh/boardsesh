@@ -4,11 +4,15 @@ import type {
   QueueAction,
   ClimbQueueItem,
   PlaylistSuggestionSource,
+  QueueAddPlacement,
   SetCurrentClimbOptions,
 } from '@boardsesh/queue';
 import type { PublishPlaybackStateInput } from '@boardsesh/queue-react';
 import type { PlaybackStateChangedEvent, SessionSummary, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 import type { SessionLiveStatsEvent } from '../../lib/graphql/operations';
+
+/** What triggered a queue reorder — attribution for `SHARED_EVENTS.QueueReordered`. */
+export type QueueReorderSource = 'drag' | 'play-next';
 
 export type StartSessionConfig = {
   name?: string;
@@ -39,10 +43,32 @@ type QueueContextValue = {
    * board and the climber backed out of the cross-board prompt — callers that
    * sequence something on the add (activating the climb, closing a sheet)
    * should await it; fire-and-forget callers can `void` it.
+   *
+   * `placement: 'next'` slots it right behind the climb on the wall instead of
+   * at the bottom. The index is derived inside the provider from live state, so
+   * a cross-board prompt can't stale it. Most callers want the default `'end'`.
    */
-  addToQueue: (item: ClimbQueueItem) => Promise<'added' | 'cancelled'>;
+  addToQueue: (item: ClimbQueueItem, options?: { placement?: QueueAddPlacement }) => Promise<'added' | 'cancelled'>;
+  /**
+   * Jump a climb to the slot right behind the current one.
+   *
+   * A climb that is already in the queue MOVES rather than being duplicated, so
+   * the crew isn't left deleting a stale copy further down. Pass
+   * `queueItemUuid` when the action came from a queue row — it names the exact
+   * slot, which matters when the same climb is queued twice.
+   *
+   * - `'added'` — it wasn't queued, so it was inserted
+   * - `'moved'` — it was queued elsewhere and jumped the line
+   * - `'unchanged'` — it was already up next (or is the climb on the wall)
+   * - `'cancelled'` — the climber backed out of the cross-board prompt
+   */
+  playNext: (target: {
+    item: ClimbQueueItem;
+    queueItemUuid?: string;
+  }) => Promise<'added' | 'moved' | 'unchanged' | 'cancelled'>;
   removeFromQueue: (uuid: string) => void;
-  reorderQueue: (uuid: string, oldIndex: number, newIndex: number) => void;
+  /** `source` is analytics attribution only — a drag in the queue sheet vs a Play next. */
+  reorderQueue: (uuid: string, oldIndex: number, newIndex: number, options?: { source?: QueueReorderSource }) => void;
   clearQueue: () => void;
   /** Replace the entire queue (optimistic local UPDATE_QUEUE + best-effort party sync). */
   setQueue: (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null) => void;

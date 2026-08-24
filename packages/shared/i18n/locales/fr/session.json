@@ -304,6 +304,7 @@
     },
     "queueSnackbar": {
       "added": "Bloc ajouté à la file",
+      "playingNext": "Le bloc passe juste après",
       "open": "Ouvrir",
       "openAria": "Ouvrir la file"
     },

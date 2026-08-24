@@ -482,6 +482,7 @@
     },
     "climbActions": {
       "preview": "Preview",
+      "playNext": "Play next",
       "copyLink": "Copy link",
       "linkCopied": "Link copied",
       "nameCopied": "Name copied",

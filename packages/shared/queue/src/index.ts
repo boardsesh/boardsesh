@@ -24,6 +24,10 @@ export type { Climb, ClimbQueueItem, QueueItemUser, ClimbRegradePatch } from './
 export { insertQueueItemIdempotent, evaluateQueueEventSequence } from './event-utils';
 export type { QueueSequenceDecision } from './event-utils';
 
+// "Play next" placement maths — where a climb lands when it jumps the line.
+export { planPlayNext, playNextInsertPosition } from './play-next';
+export type { PlayNextPlan, PlayNextTarget, QueueAddPlacement } from './play-next';
+
 export {
   mergeUniquePlaylistClimbs,
   playlistSuggestionSourceMatches,

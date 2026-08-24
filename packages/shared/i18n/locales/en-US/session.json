@@ -304,6 +304,7 @@
     },
     "queueSnackbar": {
       "added": "Climb added to queue",
+      "playingNext": "Climb is up next",
       "open": "Open",
       "openAria": "Open queue"
     },

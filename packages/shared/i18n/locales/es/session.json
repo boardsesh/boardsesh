@@ -304,6 +304,7 @@
     },
     "queueSnackbar": {
       "added": "Bloque añadido a la cola",
+      "playingNext": "El bloque va a continuación",
       "open": "Abrir",
       "openAria": "Abrir cola"
     },

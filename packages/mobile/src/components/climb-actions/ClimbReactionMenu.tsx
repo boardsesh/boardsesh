@@ -49,6 +49,9 @@ const PRIMARY_ACTION_IDS: readonly ClimbActionId[] = ['tick', 'playlist', 'share
 type ClimbReactionMenuProps = {
   climb: Climb;
   boardConfig: BoardConfig;
+  /** Set only when the menu was opened from a queue row — names the exact slot
+   *  "Play next" should move, which matters when a climb is queued twice. */
+  queueItemUuid?: string;
   currentUserId?: string | null;
   isAuthenticated: boolean;
   onEditEntry?: () => void;
@@ -140,6 +143,7 @@ function OverlayPortal({ children, onRequestClose }: { children: React.ReactNode
 export function ClimbReactionMenu({
   climb,
   boardConfig,
+  queueItemUuid,
   currentUserId,
   isAuthenticated,
   onEditEntry,
@@ -236,6 +240,7 @@ export function ClimbReactionMenu({
   const actions = useClimbActions({
     climb,
     boardConfig,
+    queueItemUuid,
     currentUserId,
     isAuthenticated,
     onEditEntry,
