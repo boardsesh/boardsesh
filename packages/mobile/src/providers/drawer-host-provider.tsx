@@ -355,7 +355,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const {
     visible: snackbarVisible,
     nonce: snackbarNonce,
-    queueAddedVariant: snackbarVariant,
+    queueAdded: snackbarQueueAdded,
     dismissSnackbar,
     undoWallChangeVisible,
     undoWallChangeNonce,
@@ -951,7 +951,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         <QueueAddedSnackbar
           visible={snackbarVisible}
           nonce={snackbarNonce}
-          variant={snackbarVariant}
+          queueAdded={snackbarQueueAdded}
           onDismiss={dismissSnackbar}
           onOpen={handleSnackbarOpen}
         />

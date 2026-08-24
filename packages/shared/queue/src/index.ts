@@ -33,7 +33,6 @@ export {
   playlistSuggestionSourceMatches,
   getPlaylistSuggestedClimbs,
   pruneSuggestedQueueItemsAfterCurrent,
-  insertQueueItemAfterCurrent,
   getPlaylistPeekQueueItemUuid,
   isPlaylistPeekQueueItemUuid,
   getQueueBoardKey,
