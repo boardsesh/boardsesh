@@ -26,6 +26,10 @@ const TEST_SOURCE_FILES = [
     projectPath: 'BoardseshTests/BoardBleWriteFlowTests.swift',
   },
   {
+    sourcePath: '../ios-tests/BoardBleImplicitRelightStateTests.swift',
+    projectPath: 'BoardseshTests/BoardBleImplicitRelightStateTests.swift',
+  },
+  {
     sourcePath: '../ios-tests/BoardBleDisconnectTests.swift',
     projectPath: 'BoardseshTests/BoardBleDisconnectTests.swift',
   },
