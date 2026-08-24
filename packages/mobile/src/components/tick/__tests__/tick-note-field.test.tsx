@@ -96,19 +96,39 @@ describe('TickNoteField', () => {
     expect(totalVerticalPaddingOf(style)).toBeGreaterThan(0);
   });
 
-  it('leaves room for a full line of subheadline inside its resting height', () => {
-    // The property the fix actually established: content box =
-    // minHeight - 2*paddingVertical - 2*borderWidth must clear one rendered
-    // line. Green today at 44 - 16 - 2 = 26 against a 20pt line box; red the
-    // moment someone shaves the minimum or fattens the padding.
+  it('opens with room for two lines of subheadline, never fewer than one', () => {
+    // Two invariants in one, and they are not the same invariant.
+    //
+    // The floor — content box clears ONE rendered line — is the property
+    // #4684's fix established, and the one that failed in 2.3.1. It must hold
+    // whatever the resting height becomes.
+    //
+    // The target — it clears TWO — is #4642's other half: a beta note that
+    // opens one line tall gives the climber a word's worth of room to start a
+    // sentence in. Green today at 64 - 16 - 2 = 46 against a 20pt line box.
     const { container } = renderField();
     const style = inputStyle(container);
 
     const minHeight = Number(style.minHeight);
     const borderWidth = Number(style.borderWidth ?? 0);
     const contentHeight = minHeight - totalVerticalPaddingOf(style) - 2 * borderWidth;
+    const { lineHeight } = materialTextStyles.subheadline;
 
-    expect(contentHeight).toBeGreaterThanOrEqual(materialTextStyles.subheadline.lineHeight);
+    expect(contentHeight).toBeGreaterThanOrEqual(lineHeight);
+    expect(contentHeight).toBeGreaterThanOrEqual(2 * lineHeight);
+  });
+
+  it('draws a visible edge before it is focused', () => {
+    // `transparent` at rest left the field with no boundary at all, so it read
+    // as decoration rather than somewhere to type. The contrast that border
+    // reaches is a separate, tracked problem (#4722); that it EXISTS is this
+    // one. `borderWidth` stays put either way so focus never resizes the box.
+    const { container } = renderField();
+    const style = inputStyle(container);
+
+    expect(style.borderColor).not.toBe('transparent');
+    expect(style.borderColor).toBeTruthy();
+    expect(Number(style.borderWidth)).toBeGreaterThan(0);
   });
 
   it('grows past its resting height before it starts hiding text', () => {
