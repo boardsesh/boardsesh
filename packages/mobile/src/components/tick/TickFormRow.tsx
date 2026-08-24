@@ -29,7 +29,7 @@ type TickFormRowProps = {
    *  row's trailing gutter so the rail reads as scrollable rather than clipped. */
   bleed?: boolean;
   /** Top-align the label against a control that is much taller than the 56pt
-   *  beat — the note field, which grows to 180pt. Centred, its label floats
+   *  beat — the note field, which grows to 160pt. Centred, its label floats
    *  ~31pt below the first line of the climber's own text and reads as broken.
    *  Opt-in, so every other row keeps the centred beat. NOT `stacked`: that
    *  flips the row to a column and is a different layout. */

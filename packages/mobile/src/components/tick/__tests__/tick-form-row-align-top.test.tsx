@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// `alignTop` exists for exactly one row. The note field grows to 180pt while
+// `alignTop` exists for exactly one row. The note field grows to 160pt while
 // every other tick control sits on the 56pt beat, and the row's default
 // `alignItems: 'center'` puts the label's baseline against the middle of that
 // tall box — roughly 31pt below the first line of the climber's own text, which

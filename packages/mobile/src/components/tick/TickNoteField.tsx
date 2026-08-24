@@ -65,8 +65,9 @@ export const TickNoteField = React.memo(function TickNoteField({
           // visible boundary reads as decoration rather than somewhere to
           // type. `borderWidth` is unchanged either way, so focus recolours the
           // edge instead of resizing the box. `separator` is the only border
-          // role the design system has here and it clears only ~1.9:1 on
-          // Android dark, under WCAG 1.4.11's 3:1 — tracked in #4722.
+          // role the design system has here, and it clears WCAG 1.4.11's 3:1 in
+          // neither scheme: ~1.9:1 in dark, ~1.6:1 in light, so dark is the
+          // BETTER of the two rather than the worst case — tracked in #4722.
           borderColor: focused ? brandColors.primary : systemColors.separator,
           color: systemColors.label,
         },
@@ -89,18 +90,30 @@ const styles = StyleSheet.create({
     // with nothing on screen to say so. At the old 96pt (4 lines) that bit
     // early: on a 405x900pt Pixel emulator a six-line note opened mid-sentence
     // ("before the dyn beta is solid now and I wan...") while ~300pt of the
-    // sheet sat empty below this row (#4642). 180pt is eight
-    // lines (8 x 20 + 16 padding + 2 border), and it still fits whole inside
-    // the ~293pt that sheet body keeps above the keyboard, so a long note stays
-    // one glance rather than a blind scroll. iOS is the tighter of the two and
-    // the real bound on this number: its keyboard-up visible body is ~196-200pt
-    // (derived from the detents, not measured here), which 180 clears with
-    // ~16pt spare. A field taller than the visible body can never scroll fully
-    // into view, so anyone raising this ceiling has to re-check iOS first.
+    // sheet sat empty below this row (#4642). 160pt is seven lines
+    // (7 x 20 + 16 padding + 2 border = 158, 2pt spare) — +67% on the old
+    // ceiling, so a long note stays one glance rather than a blind scroll.
+    //
+    // iOS is the tighter of the two and the real bound on this number: its
+    // keyboard-up visible body is 162pt. Derived, not measured, on the
+    // reference device the detent test pins (`log-ascent-sheet.test.tsx`:
+    // window 844 - top inset 44 - iOS-26 card gap 24 = base 776). The '92%'
+    // keyboard detent gives a 694pt column; KAV `behavior="padding"` takes 336
+    // for the keyboard, leaving 358; less the 56pt header and the 140pt
+    // footer = 162. The footer is 140 and NOT 106 because
+    // `useWindowBottomInset()` keeps returning the published 34pt window inset
+    // while the keyboard is up — nothing in the app zeroes it on keyboard show
+    // (`hooks/use-window-bottom-inset.ts`). An earlier draft assumed that inset
+    // collapsed, read the body as ~196pt, and set 180 — which overflows the
+    // real body by 18pt. A field taller than the visible body can never scroll
+    // fully into view, so anyone raising this ceiling has to re-check that
+    // inset first, not just the detent.
+    //
     // Anything longer scrolls the sheet body, which at least moves visibly.
-    // Detents are unchanged: the body is scrollable under a pinned footer, so
-    // the extra height costs the Attempt/Send bar nothing.
-    maxHeight: 180,
+    // Detent VALUES are unchanged: the body is scrollable under a pinned
+    // footer, so the extra height costs the Attempt/Send bar nothing (the
+    // derivations in `tick-sheet-metrics.ts` do carry the taller note row).
+    maxHeight: 160,
     textAlignVertical: 'top',
   },
 });

@@ -109,6 +109,11 @@ describe('TickNoteField', () => {
     const { container } = renderField();
     const style = inputStyle(container);
 
+    // Ahead of the arithmetic, because `minHeight` living on a wrapper instead
+    // of the input (the 2.3.1 shape) makes every number below `NaN`, and
+    // "expected NaN to be >= 40" names the symptom rather than the cause.
+    expect(style.minHeight).toBeTypeOf('number');
+
     const minHeight = Number(style.minHeight);
     const borderWidth = Number(style.borderWidth ?? 0);
     const contentHeight = minHeight - totalVerticalPaddingOf(style) - 2 * borderWidth;
@@ -135,9 +140,15 @@ describe('TickNoteField', () => {
     // #4642's second half: past `maxHeight` the note scrolls inside the field,
     // and an Android multiline TextInput draws no scrollbar — so the start of
     // the note disappears with nothing on screen to say so. Four lines was too
-    // few to be rare. Keep the ceiling at eight lines or better.
+    // few to be rare. Seven is the ceiling, and it is bounded from above too:
+    // iOS keeps only 162pt of sheet body above the keyboard, and a field taller
+    // than that can never scroll fully into view (see `TickNoteField`).
     const { container } = renderField();
     const style = inputStyle(container);
+
+    // Same reason as the resting-height test: without this the regression
+    // reports `NaN`, not "the ceiling moved off the input".
+    expect(style.maxHeight).toBeTypeOf('number');
 
     const maxHeight = Number(style.maxHeight);
     const borderWidth = Number(style.borderWidth ?? 0);
@@ -146,7 +157,7 @@ describe('TickNoteField', () => {
     );
 
     expect(maxHeight).toBeGreaterThan(Number(style.minHeight));
-    expect(visibleLines).toBeGreaterThanOrEqual(8);
+    expect(visibleLines).toBeGreaterThanOrEqual(7);
     expect(style.textAlignVertical).toBe('top');
     expect(container.querySelector('textarea')?.getAttribute('data-multiline')).toBe('true');
   });

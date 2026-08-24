@@ -63,12 +63,19 @@ export const TICK_COUNT_RAIL_MIN_CHIPS = 15;
 /**
  * Create sheet detents.
  *
- * Column: header 56 + rows (date 56 + grade 60 + stars 56 + tries 60 + note 56
- * = 288) + footer (paddingTop 12 + error slot 18 + gap 8 + button 56 +
- * paddingBottom 12 + window inset ~34 = 140) = 484; plus SHEET_TOP_CHROME_PT 20
- * = 504. On an iPhone 16 Pro the fraction base is 852 - 59 top inset - 24 top
- * gap = 769, so 504/769 = 65.5% -> '65%'. The second detent is the keyboard
- * detent.
+ * Column: header 56 + rows (date 56 + grade 60 + stars 56 + tries 60 + note 68
+ * = 300) + footer (paddingTop 12 + error slot 18 + gap 8 + button 56 +
+ * paddingBottom 12 + window inset ~34 = 140) = 496; plus SHEET_TOP_CHROME_PT 20
+ * = 516. On an iPhone 16 Pro the fraction base is 852 - 59 top inset - 24 top
+ * gap = 769, so 516/769 = 67.1%. The detent stays '65%' anyway — that is a
+ * 480pt column, ~16pt short of the content, so the bottom edge of the note row
+ * opens just under the fold. Deliberate: the body scrolls under a pinned
+ * footer, and erring SHORT is the safe direction (use-sheet-column-style.ts:5-8
+ * — a few spare points beat a clipped footer, #3330). The second detent is the
+ * keyboard detent.
+ *
+ * The note row is 68, not the 56pt beat: the field's own minHeight 64 plus the
+ * row's 4pt `alignTop` inset (#4642). Change either and this derivation moves.
  */
 export const CREATE_TICK_SNAP_POINTS = ['65%', '92%'];
 
@@ -76,10 +83,10 @@ export const CREATE_TICK_SNAP_POINTS = ['65%', '92%'];
  * Edit sheet detents.
  *
  * Column: header 56 + rows (status 56 + date 56 + grade 60 + angle 64 + stars
- * 56 + tries 60 + note 56 = 408) + delete group (spacing[8] 32 + 56 = 88) +
- * footer 122 = 674; plus 20 = 694/769 = 90%. That is higher than we want a
- * sheet to open, so the first detent is deliberately '80%' and the body scrolls
- * the last ~90pt — safe because Save is pinned in the footer, not chased down
- * the scroll. The second detent is the keyboard detent.
+ * 56 + tries 60 + note 68 = 420) + delete group (spacing[8] 32 + 56 = 88) +
+ * footer 122 = 686; plus 20 = 706/769 = 91.8%. That is higher than we want a
+ * sheet to open, so the first detent is deliberately '80%' (a 595pt column) and
+ * the body scrolls the last ~91pt — safe because Save is pinned in the footer,
+ * not chased down the scroll. The second detent is the keyboard detent.
  */
 export const EDIT_TICK_SNAP_POINTS = ['80%', '92%'];
