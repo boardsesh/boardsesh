@@ -22,17 +22,28 @@
 // migration and their next token write. Legacy cleanup belongs to phase 2, after
 // this has soaked — a leftover legacy copy is inert while readers prefer v2.
 //
-// All calls here are RAW SecureStore on purpose: routing them through
+// Nothing is destroyed, but the copy is not inert either: it is a read of legacy
+// followed by a write of that value into v2, and a store that clears or rewrites
+// the same key in between would be silently undone by the write. The auth scope
+// avoids that by running inside auth-store's credential mutation queue; the 16
+// preference keys have no such queue, so migrateKey stands down on any key this
+// process has written or deleted (secure-store-io's touched-key registry).
+//
+// The SecureStore calls here are RAW on purpose: routing them through
 // secure-store-io would re-enter the auth read path that awaits this migration.
+// The one thing imported from that module is a synchronous predicate, which
+// performs no I/O and cannot re-enter anything.
 
 import * as SecureStore from 'expo-secure-store';
 import { track } from './analytics';
 import { SECURE_STORE_V2_OPTIONS, USES_V2_NAMESPACE } from './secure-store-options';
+import { wasSecureKeyTouchedThisProcess } from './secure-store-io';
 
 export type SecureKeyMigrationStatus =
   | 'already-v2'
   | 'migrated'
   | 'absent'
+  | 'superseded'
   | 'v2-read-failed'
   | 'legacy-read-failed'
   | 'v2-write-failed'
@@ -40,7 +51,16 @@ export type SecureKeyMigrationStatus =
 
 export type SecureKeyMigrationOutcome = { key: string; status: SecureKeyMigrationStatus };
 
-const SUCCESS_STATUSES: readonly SecureKeyMigrationStatus[] = ['already-v2', 'migrated', 'absent'];
+// `superseded` sits with the successes because the app's own write already put
+// the key in v2 (writeSecureValue writes v2 first), or its delete removed the key
+// from both namespaces — either way there is nothing left for a retry to do, and
+// treating it as a failure would keep the pass permanently incomplete and hide
+// the completion signal phase 2 (#4128) gates on. The one gap is a
+// writeSecureValueToEitherNamespace whose v2 half was rejected while legacy
+// succeeded, which needs a keychain refusing v2 writes — a device that has not
+// been unlocked since boot, where the migration was going to fail anyway. The
+// next launch starts with an empty registry and picks it back up.
+const SUCCESS_STATUSES: readonly SecureKeyMigrationStatus[] = ['already-v2', 'migrated', 'absent', 'superseded'];
 
 async function migrateKey(key: string): Promise<SecureKeyMigrationOutcome> {
   let existingV2: string | null;
@@ -60,6 +80,13 @@ async function migrateKey(key: string): Promise<SecureKeyMigrationOutcome> {
     return { key, status: 'legacy-read-failed' };
   }
   if (legacyValue === null) return { key, status: 'absent' };
+
+  // Last statement before the write, and deliberately so: the app marks a key
+  // synchronously on entry to any write or delete, so a mutation that started at
+  // any point since this pass began is visible here. Writing `legacyValue` now
+  // would resurrect a preference the user just cleared, or revert one they just
+  // saved, because readSecureValue prefers the v2 copy this write would create.
+  if (wasSecureKeyTouchedThisProcess(key)) return { key, status: 'superseded' };
 
   try {
     await SecureStore.setItemAsync(key, legacyValue, SECURE_STORE_V2_OPTIONS);
@@ -108,6 +135,7 @@ function reportOutcomes(scope: string, outcomes: readonly SecureKeyMigrationOutc
     migrated: outcomes.filter((outcome) => outcome.status === 'migrated').length,
     already_v2: outcomes.filter((outcome) => outcome.status === 'already-v2').length,
     absent: outcomes.filter((outcome) => outcome.status === 'absent').length,
+    superseded: outcomes.filter((outcome) => outcome.status === 'superseded').length,
     failed: failures.length,
     // Key names only — never values. Bounded by the fixed key list, and only
     // non-success keys appear, so a healthy pass sends an empty string.

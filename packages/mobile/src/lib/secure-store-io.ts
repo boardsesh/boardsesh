@@ -18,9 +18,40 @@
 // Phase 2, once this has soaked, drops the mirror, deletes the legacy copies and
 // collapses the read back to a single call. Tracked as the follow-up issue on the
 // #4103 PR.
+//
+// Every mutation also records its key here so a migration pass running
+// concurrently can stand down — see touchedSecureKeys below.
 
 import * as SecureStore from 'expo-secure-store';
 import { SECURE_STORE_V2_OPTIONS, SECURE_STORE_WRITE_OPTIONS, USES_V2_NAMESPACE } from './secure-store-options';
+
+// Keys this process has written or deleted. The migration pass reads it to avoid
+// racing the app: migrateKey reads legacy, then writes that value into v2, and a
+// store that deletes or rewrites the same key in between would be undone by the
+// write that follows — a cleared preference reappearing, or a just-saved one
+// reverting to the legacy blob. The auth scope is immune because its pass runs
+// inside auth-store's credential mutation queue; nothing plays that role for the
+// 16 preference keys, and this set is what does instead.
+//
+// The handshake is exact, not probabilistic. Each mutation below marks its key
+// SYNCHRONOUSLY, before its first await, so the mark is in place by the time the
+// mutation's first native call is even enqueued. migrateKey checks after its last
+// await and immediately before its write. So either the app got in first and the
+// migration sees the mark and stands down, or the app started after the check —
+// in which case its native call is queued behind the migration's write on
+// expo-modules-core's serial AsyncFunction queue (AsyncFunctionDefinition.swift:20
+// creates a plain, non-concurrent DispatchQueue; :161 dispatches every async
+// module call onto it) and therefore lands last, which is the outcome we want.
+//
+// Skipping loses nothing: a key this process wrote went to v2 first, so it is
+// already migrated by construction, and a key this process deleted is gone from
+// both namespaces with nothing left to copy.
+const touchedSecureKeys = new Set<string>();
+
+/** True when this process has written or deleted `key` since launch. */
+export function wasSecureKeyTouchedThisProcess(key: string): boolean {
+  return touchedSecureKeys.has(key);
+}
 
 /** Raised when a value could not be written to any keychain namespace. */
 export class SecureStoreWriteError extends Error {
@@ -59,6 +90,7 @@ export async function readSecureValue(key: string): Promise<string | null> {
 
 /** Write to v2, then mirror into legacy for rollback safety (best-effort). */
 export async function writeSecureValue(key: string, value: string): Promise<void> {
+  touchedSecureKeys.add(key);
   await SecureStore.setItemAsync(key, value, SECURE_STORE_V2_OPTIONS);
   if (!USES_V2_NAMESPACE) return;
   try {
@@ -83,6 +115,7 @@ export async function writeSecureValue(key: string, value: string): Promise<void
  * readable through readSecureValue's fallback.
  */
 export async function writeSecureValueToEitherNamespace(key: string, value: string): Promise<void> {
+  touchedSecureKeys.add(key);
   const failures: unknown[] = [];
 
   try {
@@ -115,6 +148,7 @@ export async function writeSecureValueToEitherNamespace(key: string, value: stri
  * all, so the call is byte-for-byte today's single-namespace delete.
  */
 export async function deleteSecureValue(key: string): Promise<void> {
+  touchedSecureKeys.add(key);
   await SecureStore.deleteItemAsync(key, SECURE_STORE_V2_OPTIONS);
   if (USES_V2_NAMESPACE) await SecureStore.deleteItemAsync(key);
 }

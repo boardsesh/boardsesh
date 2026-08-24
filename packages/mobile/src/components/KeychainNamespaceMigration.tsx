@@ -5,9 +5,11 @@
 //
 // Mounted next to InstallReferrerTracker and shaped the same way: fire-and-forget
 // after mount, renders nothing, never blocks the splash or the auth gate. There
-// is no foreground gate: nothing here is destructive, so a background launch
-// either migrates a key or reports it as retry-later, and the v2 item itself
-// records which.
+// is no foreground gate, because a background launch can only ever copy a key
+// forward or report it as retry-later, and the v2 item itself records which. The
+// one way a pass could change what a user sees is by racing a store that clears
+// or rewrites the same key mid-copy; migrateKey stands down on any key this
+// process has already written or deleted, so that cannot happen.
 //
 // A pass that did not complete does not latch, and this component re-runs it on
 // AppState `active`. The case that matters is a process cold-launched in the

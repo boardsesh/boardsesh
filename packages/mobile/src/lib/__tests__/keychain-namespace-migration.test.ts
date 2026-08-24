@@ -19,6 +19,10 @@ vi.mock('expo-secure-store', () => {
   const lockedServices = new Set<string>();
   const writeFailureKeys = new Set<string>();
   const droppedWriteKeys = new Set<string>();
+  // Fires once the legacy read has produced its value but before the caller
+  // resumes — the exact window a migration pass is in when the app mutates the
+  // same key underneath it.
+  const legacyReadHooks = new Map<string, () => void>();
 
   const serviceOf = (options?: { keychainService?: string }) => options?.keychainService ?? 'app';
   const itemKey = (key: string, options?: { keychainService?: string }) => `${serviceOf(options)}::${key}`;
@@ -27,7 +31,15 @@ vi.mock('expo-secure-store', () => {
     AFTER_FIRST_UNLOCK,
     getItemAsync: vi.fn(async (key: string, options?: { keychainService?: string }) => {
       if (lockedServices.has(serviceOf(options))) throw new Error('User interaction is not allowed.');
-      return items.get(itemKey(key, options))?.value ?? null;
+      const storedValue = items.get(itemKey(key, options))?.value ?? null;
+      if (serviceOf(options) === 'app') {
+        const hook = legacyReadHooks.get(key);
+        if (hook) {
+          legacyReadHooks.delete(key);
+          hook();
+        }
+      }
+      return storedValue;
     }),
     setItemAsync: vi.fn(
       async (key: string, value: string, options?: { keychainService?: string; keychainAccessible?: string }) => {
@@ -57,6 +69,7 @@ vi.mock('expo-secure-store', () => {
     __unlockService: (service: string) => lockedServices.delete(service),
     __failWriteFor: (key: string, service = V2_SERVICE) => writeFailureKeys.add(`${service}::${key}`),
     __dropWriteFor: (key: string, service = V2_SERVICE) => droppedWriteKeys.add(`${service}::${key}`),
+    __onceOnLegacyRead: (key: string, hook: () => void) => legacyReadHooks.set(key, hook),
     __clearWriteHooks: () => {
       writeFailureKeys.clear();
       droppedWriteKeys.clear();
@@ -66,6 +79,7 @@ vi.mock('expo-secure-store', () => {
       lockedServices.clear();
       writeFailureKeys.clear();
       droppedWriteKeys.clear();
+      legacyReadHooks.clear();
     },
   };
 });
@@ -79,6 +93,7 @@ type SecureStoreFake = {
   __unlockService: (service: string) => void;
   __failWriteFor: (key: string, service?: string) => void;
   __dropWriteFor: (key: string, service?: string) => void;
+  __onceOnLegacyRead: (key: string, hook: () => void) => void;
   __clearWriteHooks: () => void;
   __reset: () => void;
   getItemAsync: ReturnType<typeof vi.fn>;
@@ -224,6 +239,7 @@ describe('migrateSecureKeysToV2', () => {
       migrated: 1,
       already_v2: 0,
       absent: 0,
+      superseded: 0,
       failed: 1,
       failures: 'theme_override:v2-write-failed',
     });
@@ -273,8 +289,101 @@ describe('migrateSecureKeysToV2', () => {
   });
 });
 
+describe('migrateSecureKeysToV2 against a concurrent app mutation', () => {
+  // migrateKey is a read of legacy followed by a write of that value into v2, and
+  // readSecureValue prefers v2. A store that clears or rewrites the key inside
+  // that window would be undone by the write: a cleared preference would come
+  // back, a just-saved one would revert. The auth scope is serialized by
+  // auth-store's credential mutation queue; these 16 preference keys are not, so
+  // the guard is secure-store-io's touched-key registry.
+  const RECENT_FILTERS_KEY = 'boardsesh_recent_filters';
+
+  it('does not resurrect a preference cleared while the pass was mid-copy', async () => {
+    const store = await secureStore();
+    const { deleteSecureValue, readSecureValue } = await import('../secure-store-io');
+    const { migrateSecureKeysToV2 } = await import('../keychain-namespace-migration');
+    store.__seedLegacy(RECENT_FILTERS_KEY, '["A","B"]');
+
+    // The user taps "Clear recents" after the legacy read has handed the pass
+    // ["A","B"] and before it writes that value into v2.
+    const pendingClears: Promise<void>[] = [];
+    store.__onceOnLegacyRead(RECENT_FILTERS_KEY, () => {
+      pendingClears.push(deleteSecureValue(RECENT_FILTERS_KEY));
+    });
+
+    const outcomes = await migrateSecureKeysToV2([RECENT_FILTERS_KEY], 'preferences');
+    await Promise.all(pendingClears);
+
+    expect(outcomes).toEqual([{ key: RECENT_FILTERS_KEY, status: 'superseded' }]);
+    expect(store.__get(RECENT_FILTERS_KEY)).toBeNull();
+    expect(store.__get(RECENT_FILTERS_KEY, 'app')).toBeNull();
+    await expect(readSecureValue(RECENT_FILTERS_KEY)).resolves.toBeNull();
+  });
+
+  it('does not revert a preference saved while the pass was mid-copy', async () => {
+    const store = await secureStore();
+    const { readSecureValue, writeSecureValue } = await import('../secure-store-io');
+    const { migrateSecureKeysToV2 } = await import('../keychain-namespace-migration');
+    store.__seedLegacy(RECENT_FILTERS_KEY, '["A","B"]');
+
+    const pendingWrites: Promise<void>[] = [];
+    store.__onceOnLegacyRead(RECENT_FILTERS_KEY, () => {
+      pendingWrites.push(writeSecureValue(RECENT_FILTERS_KEY, '["C"]'));
+    });
+
+    const outcomes = await migrateSecureKeysToV2([RECENT_FILTERS_KEY], 'preferences');
+    await Promise.all(pendingWrites);
+
+    expect(outcomes).toEqual([{ key: RECENT_FILTERS_KEY, status: 'superseded' }]);
+    // The app's write is authoritative in both namespaces; the stale legacy blob
+    // the pass was carrying never lands.
+    await expect(readSecureValue(RECENT_FILTERS_KEY)).resolves.toBe('["C"]');
+    expect(store.__get(RECENT_FILTERS_KEY)).toEqual({ value: '["C"]', accessible: AFTER_FIRST_UNLOCK });
+  });
+
+  it('needs no copy at all for a key the app already wrote this process', async () => {
+    const store = await secureStore();
+    const { writeSecureValue } = await import('../secure-store-io');
+    const { isMigrationComplete, migrateSecureKeysToV2 } = await import('../keychain-namespace-migration');
+    store.__seedLegacy(RECENT_FILTERS_KEY, '["A","B"]');
+
+    // The claim that makes standing down safe: writeSecureValue writes v2 first,
+    // so an app write leaves the key migrated by construction. This one does not
+    // even reach the touched-key check — the v2 read short-circuits first.
+    await writeSecureValue(RECENT_FILTERS_KEY, '["C"]');
+    store.setItemAsync.mockClear();
+    const outcomes = await migrateSecureKeysToV2([RECENT_FILTERS_KEY], 'preferences');
+
+    expect(outcomes).toEqual([{ key: RECENT_FILTERS_KEY, status: 'already-v2' }]);
+    expect(store.setItemAsync).not.toHaveBeenCalled();
+    expect(isMigrationComplete(outcomes)).toBe(true);
+  });
+
+  it('leaves untouched keys in the same pass fully migrated', async () => {
+    const store = await secureStore();
+    const { deleteSecureValue } = await import('../secure-store-io');
+    const { migrateSecureKeysToV2 } = await import('../keychain-namespace-migration');
+    store.__seedLegacy(RECENT_FILTERS_KEY, '["A","B"]');
+    store.__seedLegacy('theme_override', '"dark"');
+
+    const pendingClears: Promise<void>[] = [];
+    store.__onceOnLegacyRead(RECENT_FILTERS_KEY, () => {
+      pendingClears.push(deleteSecureValue(RECENT_FILTERS_KEY));
+    });
+
+    const outcomes = await migrateSecureKeysToV2([RECENT_FILTERS_KEY, 'theme_override'], 'preferences');
+    await Promise.all(pendingClears);
+
+    expect(outcomes).toEqual([
+      { key: RECENT_FILTERS_KEY, status: 'superseded' },
+      { key: 'theme_override', status: 'migrated' },
+    ]);
+    expect(store.__get('theme_override')).toEqual({ value: '"dark"', accessible: AFTER_FIRST_UNLOCK });
+  });
+});
+
 describe('isMigrationComplete', () => {
-  it('accepts the three terminal statuses and rejects every retryable one', async () => {
+  it('accepts the four terminal statuses and rejects every retryable one', async () => {
     const { isMigrationComplete } = await import('../keychain-namespace-migration');
 
     expect(isMigrationComplete([])).toBe(true);
@@ -283,6 +392,11 @@ describe('isMigrationComplete', () => {
         { key: 'a', status: 'already-v2' },
         { key: 'b', status: 'migrated' },
         { key: 'c', status: 'absent' },
+        // Terminal too: the app's own write already put the key in v2, or its
+        // delete removed it from both namespaces. Retrying would find the same
+        // mark and stand down again, so a retryable `superseded` would keep the
+        // pass permanently incomplete.
+        { key: 'd', status: 'superseded' },
       ]),
     ).toBe(true);
     for (const status of ['v2-read-failed', 'legacy-read-failed', 'v2-write-failed', 'verify-mismatch'] as const) {

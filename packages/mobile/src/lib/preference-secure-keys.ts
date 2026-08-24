@@ -16,13 +16,17 @@
 //   react-i18next and every catalog through ./config, which is a lot of module
 //   graph to load for one string.
 //
-// Nothing forces a NEW SecureStore key into this list — it is maintained by
-// hand, and preference-secure-keys.test.ts can only catch a key that is here but
-// broken, not one that was never added. Adding a key to a store means adding it
-// here too, or it stays WHEN_UNLOCKED on iOS and its background read keeps
-// failing. Phase 2 (#4128) retires the list entirely, so a completeness check
-// against every `*_KEY` export in the repo would be scaffolding with a short
-// shelf life.
+// preference-secure-keys.test.ts guards the two ways an entry here can go wrong:
+// it pins the sixteen literals so a rename shows up as a diff, and it reads this
+// file's imports and fails if any of them names a module with a `.web` sibling —
+// the fork hazard above, which no value assertion can see because Vitest and tsc
+// both resolve to the native file.
+//
+// What nothing guards is a NEW key: the list is maintained by hand, so adding a
+// SecureStore key to a store means adding it here too, or it stays WHEN_UNLOCKED
+// on iOS and its background read keeps failing. Phase 2 (#4128) retires the list
+// entirely, so a completeness check against every `*_KEY` export in the repo
+// would be scaffolding with a short shelf life.
 //
 // Two keys are deliberately absent:
 //
