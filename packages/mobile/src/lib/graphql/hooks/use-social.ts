@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   VOTE,
@@ -32,32 +33,10 @@ import {
   type GetUserClimbsQueryResponse,
   type GetUserClimbsQueryVariables,
 } from '@boardsesh/graphql/operations';
-import type { SocialEntityType } from '@boardsesh/shared-schema';
+import { batchVoteSummaryEntityIds, type SocialEntityType } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../client';
 
-const BULK_VOTE_SUMMARY_CHUNK_SIZE = 100;
 const SOCIAL_PAGE_SIZE = 30;
-
-function dedupeEntityIds(entityIds: string[]): string[] {
-  const seenIds = new Set<string>();
-  const dedupedIds: string[] = [];
-
-  for (const entityId of entityIds) {
-    if (seenIds.has(entityId)) continue;
-    seenIds.add(entityId);
-    dedupedIds.push(entityId);
-  }
-
-  return dedupedIds;
-}
-
-function chunkEntityIds(entityIds: string[]): string[][] {
-  const chunks: string[][] = [];
-  for (let startIndex = 0; startIndex < entityIds.length; startIndex += BULK_VOTE_SUMMARY_CHUNK_SIZE) {
-    chunks.push(entityIds.slice(startIndex, startIndex + BULK_VOTE_SUMMARY_CHUNK_SIZE));
-  }
-  return chunks;
-}
 
 /** Public social profile for a user, including follower/following counts. */
 export function usePublicProfile(userId: string | undefined, enabled = true) {
@@ -221,72 +200,117 @@ export function useVote() {
   });
 }
 
-/** Accurate vote state (count + `userVote`) for a batch of entities. */
-export function useBulkVoteSummaries(entityType: SocialEntityType, entityIds: string[], enabled = true) {
-  // Key off a sorted copy so the cache identity tracks the *set* of ids, not the
-  // array order or reference. React Query hashes keys by value, so a fresh array
-  // each render is already a cache hit — the sort additionally makes a reordered
-  // (but identical) id list resolve to the same query instead of a refetch.
-  const sortedIds = [...entityIds].sort();
-  return useQuery({
-    queryKey: ['bulkVoteSummaries', entityType, sortedIds],
-    queryFn: async () => {
-      // `enabled` gates automatic fetches, but a manual `refetch()` (e.g. pull-to-refresh)
-      // bypasses it — short-circuit here so we never send the backend an empty list.
-      if (entityIds.length === 0) return [];
+type BulkVoteSummaries = GetBulkVoteSummariesQueryResponse['bulkVoteSummaries'];
+
+type BulkVoteSummaryChunkResult = {
+  data: BulkVoteSummaries | undefined;
+  refetch: () => Promise<unknown>;
+};
+
+/** One ≤100-ID request, cached and retried independently of its siblings. */
+function bulkVoteSummaryChunkQuery(entityType: SocialEntityType, chunk: string[], enabled: boolean) {
+  return {
+    // Sorted so two callers holding the same IDs in different orders share a
+    // cache entry (the request itself keeps the caller's order).
+    queryKey: ['bulkVoteSummaries', entityType, [...chunk].sort()],
+    queryFn: async (): Promise<BulkVoteSummaries> => {
       const response = await getHttpClient().request<GetBulkVoteSummariesQueryResponse>(GET_BULK_VOTE_SUMMARIES, {
-        input: { entityType, entityIds },
+        input: { entityType, entityIds: chunk },
       });
       return response.bulkVoteSummaries;
     },
-    enabled: enabled && entityIds.length > 0,
+    enabled,
+  };
+}
+
+/**
+ * Merges the per-chunk results into one summary list plus the chunks' own
+ * `refetch` handles.
+ *
+ * Passing this to `useQueries` as `combine` is what keeps the merged value
+ * referentially stable. Without a `combine`, `useQueries` hands back a
+ * freshly mapped array on every render, so `.data` would change identity even
+ * when no vote moved — which churns the Home feed's `summaryMap` and, through
+ * FlashList `extraData`, re-invokes `renderItem` for every mounted row on any
+ * unrelated parent render. With `combine`, react-query runs the merge through
+ * `replaceEqualDeep` and hands back the previous value when nothing changed.
+ *
+ * Declared at module scope so its identity never changes: react-query re-runs
+ * `combine` whenever the function itself does.
+ */
+function combineVoteSummaryChunks(results: BulkVoteSummaryChunkResult[]) {
+  return {
+    summaries: results.flatMap((result) => result.data ?? []),
+    // Each `refetch` is bound to its chunk's observer and so is stable across
+    // renders, which lets `replaceEqualDeep` keep this array's identity too.
+    refetchChunks: results.map((result) => result.refetch),
+  };
+}
+
+/**
+ * Shared chunked-query construction for the bulk-vote-summary hooks — one
+ * query per ≤100-ID chunk, merged back into a single stable list.
+ */
+function useBulkVoteSummaryChunks(entityType: SocialEntityType, chunks: string[][], enabled: boolean) {
+  return useQueries({
+    queries: chunks.map((chunk) => bulkVoteSummaryChunkQuery(entityType, chunk, enabled)),
+    combine: combineVoteSummaryChunks,
   });
+}
+
+/**
+ * Splits an ID list into ≤100-ID chunks, once per list change rather than per
+ * render. Memoized on the array reference, so a caller that builds its list
+ * inline (`ticks.map((tick) => tick.uuid)`) re-chunks every render — harmless,
+ * since `useQueries` matches its observers by query hash either way, and the
+ * feed screens that hand over the long lists already memoize them.
+ */
+function useVoteSummaryChunks(entityIds: string[]): string[][] {
+  return useMemo(() => batchVoteSummaryEntityIds(entityIds), [entityIds]);
+}
+
+/**
+ * Accurate vote state (count + `userVote`) for a batch of entities. Chunks
+ * internally so callers never need to worry about the backend's 100-ID cap
+ * (`BulkVoteSummaryInputSchema`) — a caller handing this an unbounded,
+ * paginating list (e.g. a feed) used to blow the cap outright once it passed
+ * 100 rows, failing the whole query. A failed chunk contributes no rows
+ * rather than blanking the ones that did load. `refetch` re-runs every
+ * chunk (e.g. for pull-to-refresh).
+ *
+ * Returns `{ data, refetch }` rather than a `UseQueryResult` — there is no
+ * single query behind it to report `isLoading`/`isError` for. A caller that
+ * needs per-chunk state should use `useQueries` directly.
+ */
+export function useBulkVoteSummaries(entityType: SocialEntityType, entityIds: string[], enabled = true) {
+  const chunks = useVoteSummaryChunks(entityIds);
+  const { summaries, refetchChunks } = useBulkVoteSummaryChunks(entityType, chunks, enabled);
+
+  // Callers keep this object in `useCallback`/`useMemo` deps (Home's
+  // pull-to-refresh handler does), so it only changes when the vote data or
+  // the chunk set actually does.
+  return useMemo(
+    () => ({
+      data: summaries,
+      refetch: () => Promise.all(refetchChunks.map((refetchChunk) => refetchChunk())),
+    }),
+    [summaries, refetchChunks],
+  );
 }
 
 /** Accurate vote state for more than one backend-safe batch of entities. */
 export function useChunkedBulkVoteSummaries(entityType: SocialEntityType, entityIds: string[], enabled = true) {
-  const chunks = chunkEntityIds(dedupeEntityIds(entityIds));
-  const results = useQueries({
-    queries: chunks.map((chunk) => {
-      const sortedIds = [...chunk].sort();
-      return {
-        queryKey: ['bulkVoteSummaries', entityType, sortedIds],
-        queryFn: async () => {
-          if (chunk.length === 0) return [];
-          const response = await getHttpClient().request<GetBulkVoteSummariesQueryResponse>(GET_BULK_VOTE_SUMMARIES, {
-            input: { entityType, entityIds: chunk },
-          });
-          return response.bulkVoteSummaries;
-        },
-        enabled: enabled && chunk.length > 0,
-      };
-    }),
-  });
-
-  return results.flatMap((result) => result.data ?? []);
+  const chunks = useVoteSummaryChunks(entityIds);
+  return useBulkVoteSummaryChunks(entityType, chunks, enabled).summaries;
 }
 
 /** Accurate vote state for stable groups, such as individual feed pages. */
 export function useGroupedBulkVoteSummaries(entityType: SocialEntityType, entityIdGroups: string[][], enabled = true) {
-  const chunks = entityIdGroups.flatMap((entityIds) => chunkEntityIds(dedupeEntityIds(entityIds)));
-  const results = useQueries({
-    queries: chunks.map((chunk) => {
-      const sortedIds = [...chunk].sort();
-      return {
-        queryKey: ['bulkVoteSummaries', entityType, sortedIds],
-        queryFn: async () => {
-          if (chunk.length === 0) return [];
-          const response = await getHttpClient().request<GetBulkVoteSummariesQueryResponse>(GET_BULK_VOTE_SUMMARIES, {
-            input: { entityType, entityIds: chunk },
-          });
-          return response.bulkVoteSummaries;
-        },
-        enabled: enabled && chunk.length > 0,
-      };
-    }),
-  });
-
-  return results.flatMap((result) => result.data ?? []);
+  const chunks = useMemo(
+    () => entityIdGroups.flatMap((entityIds) => batchVoteSummaryEntityIds(entityIds)),
+    [entityIdGroups],
+  );
+  return useBulkVoteSummaryChunks(entityType, chunks, enabled).summaries;
 }
 
 /** Comment thread for a social entity. */

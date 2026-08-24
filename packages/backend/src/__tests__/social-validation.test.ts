@@ -11,6 +11,7 @@ import {
   BulkVoteSummaryInputSchema,
   VoteInputSchema,
 } from '../validation/schemas';
+import { BULK_VOTE_SUMMARY_CHUNK_SIZE } from '@boardsesh/shared-schema';
 
 describe('Social Validation Schemas', () => {
   describe('FollowInputSchema', () => {
@@ -308,6 +309,11 @@ describe('Social Validation Schemas', () => {
     });
   });
 
+  // Regression coverage for issue #4102: a paginating feed handed this schema
+  // its whole accumulated list and every request past ~100 rows was rejected
+  // outright. The clients now batch by BULK_VOTE_SUMMARY_CHUNK_SIZE, so these
+  // cases derive their boundary from that same constant — raising one without
+  // the other fails here.
   describe('BulkVoteSummaryInputSchema', () => {
     it('should accept a populated entityIds array', () => {
       const result = BulkVoteSummaryInputSchema.safeParse({
@@ -328,10 +334,18 @@ describe('Social Validation Schemas', () => {
       }
     });
 
-    it('should reject more than 100 entityIds', () => {
+    it('should accept exactly the shared chunk size, so clients can batch right up to it', () => {
       const result = BulkVoteSummaryInputSchema.safeParse({
         entityType: 'tick',
-        entityIds: Array.from({ length: 101 }, (_unused, index) => `id-${index}`),
+        entityIds: Array.from({ length: BULK_VOTE_SUMMARY_CHUNK_SIZE }, (_unused, index) => `id-${index}`),
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject one entityId more than the shared chunk size', () => {
+      const result = BulkVoteSummaryInputSchema.safeParse({
+        entityType: 'tick',
+        entityIds: Array.from({ length: BULK_VOTE_SUMMARY_CHUNK_SIZE + 1 }, (_unused, index) => `id-${index}`),
       });
       expect(result.success).toBe(false);
     });
