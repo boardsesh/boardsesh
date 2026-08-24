@@ -114,6 +114,7 @@
       "subtitle": "Deine Warteschlange bleibt",
       "queueFull": "Deine Warteschlange ist mit {{max}} Bouldern voll",
       "nothingToAdd": "Hier ist noch nichts für dein Board",
+      "alreadyAdding": "Diese Playlist wird schon hinzugefügt",
       "failed": "Konnte nicht hinzugefügt werden. Versuch's nochmal."
     },
     "boardMismatch": {

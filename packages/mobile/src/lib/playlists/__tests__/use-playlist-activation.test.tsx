@@ -602,6 +602,43 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       // Nothing was cleared, and the current climb was never handed over.
       expect(mocks.setQueue).not.toHaveBeenCalled();
       expect(mocks.appendQueueItems.mock.calls[0][1]).toBeUndefined();
+      // The entryPoint split is the whole point of the property — it answers
+      // whether people find the additive path on its own or only once the
+      // destructive prompt offers it.
+      expect(mocks.track.mock.calls[0][1]).toMatchObject({ entryPoint: 'replacePrompt', sourceKind: 'playlist' });
+    });
+
+    it('says so instead of silently dropping the pick when an append is already in flight', async () => {
+      const current = makeQueueItem('q-current', 'current');
+      const future = makeQueueItem('q-future', 'future');
+      mocks.queueState = { queue: [current, future], currentClimbQueueItem: current };
+      let releaseRowFetch: (value: { climbs: Climb[]; hasMore: boolean }) => void = () => {};
+      const fetchPage = vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            releaseRowFetch = resolve;
+          }),
+      );
+      mocks.choose.mockResolvedValue('append');
+      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+
+      // Row append starts and is still paging...
+      act(() => {
+        result.current.addToQueue.append?.();
+      });
+      // ...then a row tap raises the fork and the climber deliberately picks
+      // "Add to queue". The re-entrancy guard swallows it, so it has to say so —
+      // an explicit pick that does nothing at all is the bug.
+      await act(async () => {
+        await result.current.activate(makeClimb('b'));
+      });
+
+      expect(mocks.showToast).toHaveBeenCalledWith('detail.addToQueue.alreadyAdding', 'info');
+      await act(async () => {
+        releaseRowFetch({ climbs: [makeClimb('a')], hasMore: false });
+      });
+      // And the append that WAS in flight still lands, exactly once.
+      await waitFor(() => expect(mocks.appendQueueItems).toHaveBeenCalledTimes(1));
     });
 
     it('re-asks with the bigger count when the queue grows while the prompt is open', async () => {
@@ -1070,6 +1107,22 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         tags: { source: 'playlist', op: 'append-queue' },
       });
       errorSpy.mockRestore();
+    });
+
+    it('tags a smart playlist as sourceKind "smart" without shipping its user id', async () => {
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [makeClimb('a')], hasMore: false });
+      const { result } = renderActivation(fetchPage, {
+        replaceQueueOnActivate: true,
+        sourceId: 'smart:LIKED_CLIMBS:u-1',
+      });
+
+      await act(async () => {
+        result.current.addToQueue.append?.();
+      });
+
+      await waitFor(() => expect(mocks.track).toHaveBeenCalled());
+      expect(mocks.track.mock.calls[0][1]).toMatchObject({ sourceKind: 'smart' });
+      expect(JSON.stringify(mocks.track.mock.calls[0][1])).not.toContain('u-1');
     });
 
     it('withholds append entirely when there is no active board', async () => {

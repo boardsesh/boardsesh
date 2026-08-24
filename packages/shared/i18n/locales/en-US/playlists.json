@@ -114,6 +114,7 @@
       "subtitle": "Keeps everything already queued",
       "queueFull": "Your queue is full at {{max}} climbs",
       "nothingToAdd": "Nothing here for your board yet",
+      "alreadyAdding": "Already adding this playlist",
       "failed": "Couldn't add to the queue. Try again."
     },
     "boardMismatch": {

@@ -483,7 +483,16 @@ export function usePlaylistActivation({
    */
   const appendClimbsToQueue = useCallback(
     async ({ loadedClimbs, entryPoint }: { loadedClimbs?: Climb[]; entryPoint: 'listHeader' | 'replacePrompt' }) => {
-      if (!activeBoard || isAppendingRef.current) return;
+      if (!activeBoard) return;
+      if (isAppendingRef.current) {
+        // The row swallows its own press while appending (and shows a spinner),
+        // so reaching this from `listHeader` means a double tap inside one frame
+        // — nothing to say. From the prompt it is a deliberate pick that would
+        // otherwise do nothing at all, so say what is already happening: the
+        // in-flight append is landing this same playlist.
+        if (entryPoint === 'replacePrompt') showToast(t('detail.addToQueue.alreadyAdding'), 'info');
+        return;
+      }
       isAppendingRef.current = true;
       const abortController = new AbortController();
       appendAbortRef.current = abortController;
@@ -517,7 +526,11 @@ export function usePlaylistActivation({
 
         const appendedCount = appendQueueItems(queueItems);
         track(SHARED_EVENTS.PlaylistQueued, {
-          sourceKind: sourceId.split(':')[0],
+          // `sourceId` is `playlist:<uuid>` or `smart:<type>:<userId>`. Only the
+          // prefix is safe to ship — the smart form carries a user id — and an
+          // explicit test keeps the property to the union `events.ts` documents
+          // instead of whatever a future id format happens to start with.
+          sourceKind: sourceId.startsWith('smart:') ? 'smart' : 'playlist',
           entryPoint,
           fetchedCount: queueItems.length,
           appendedCount,

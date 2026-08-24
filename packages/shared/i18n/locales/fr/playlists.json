@@ -111,10 +111,11 @@
     "activateAll": "Lancer la playlist",
     "addToQueue": {
       "action": "Ajouter à la file",
-      "subtitle": "Ta file actuelle reste intacte",
-      "queueFull": "Ta file est déjà pleine avec {{max}} blocs",
-      "nothingToAdd": "Rien ici pour ta board pour l'instant",
-      "failed": "Impossible d'ajouter à la file. Réessaie."
+      "subtitle": "Votre file actuelle reste intacte",
+      "queueFull": "Votre file est déjà pleine avec {{max}} blocs",
+      "nothingToAdd": "Rien ici pour votre board pour l'instant",
+      "alreadyAdding": "Cette playlist est déjà en cours d'ajout",
+      "failed": "Impossible d'ajouter à la file. Réessayez."
     },
     "boardMismatch": {
       "title": "Passez à {{board}} pour grimper cette playlist",

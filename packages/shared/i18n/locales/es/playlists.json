@@ -114,6 +114,7 @@
       "subtitle": "No se pierde nada de tu cola",
       "queueFull": "Tu cola ya está llena con {{max}} bloques",
       "nothingToAdd": "Aquí no hay nada para tu plafón todavía",
+      "alreadyAdding": "Ya se está añadiendo esta playlist",
       "failed": "No se pudo añadir a la cola. Inténtalo de nuevo."
     },
     "boardMismatch": {
