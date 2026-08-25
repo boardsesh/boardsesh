@@ -912,6 +912,14 @@ export default defineConfig({
         command: 'tsx scripts/discord-feedback-scan.ts',
         cache: false,
       },
+      // Cloudflare config-as-code for the boardsesh.com zone (DNS proxied flag,
+      // the edge-cache rules and the WAF crawler rules). Dry-run by default;
+      // forward `-- --apply` (and optionally `--allow-zone-ssl`) to converge.
+      // See scripts/cloudflare-apply.ts + docs/cloudflare.md.
+      'cf:apply': {
+        command: 'tsx scripts/cloudflare-apply.ts',
+        cache: false,
+      },
 
       // --- Dev servers ---
       'dev:mobile': {

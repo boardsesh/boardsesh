@@ -1,0 +1,322 @@
+/// <reference types="node" />
+
+// Pure planning logic for the Cloudflare apply tool: diff desired-vs-live and merge
+// our cache rule into an existing rules array without disturbing foreign rules. No
+// I/O, no globals — everything here is deterministic and unit-tested in
+// scripts/cloudflare-apply.test.ts. The I/O (fetching live state, applying changes)
+// lives in scripts/cloudflare-apply.ts.
+
+import { SSL_MODE_STRENGTH, ZONE_NAME } from './config';
+import type { CacheRuleDesired, DnsRecordDesired, SslDesired, SslMode, WafRuleDesired } from './config';
+
+/** Anything this tool owns inside a ruleset phase. Identity is the description marker. */
+export type ManagedRuleDesired = CacheRuleDesired | WafRuleDesired;
+
+/** A DNS record as Cloudflare returns it. We only manage `proxied`; the rest is context. */
+export interface LiveDnsRecord {
+  id: string;
+  name: string;
+  type: string;
+  content: string;
+  proxied: boolean;
+}
+
+/**
+ * A rule inside a ruleset phase, as Cloudflare returns it. Cloudflare adds read-only
+ * fields (version, last_updated, ref) we neither set nor rely on; foreign rules are
+ * preserved verbatim at runtime by object spread even when a field isn't named here.
+ */
+export interface RulesetRule {
+  id?: string;
+  description?: string;
+  expression?: string;
+  action?: string;
+  // Widened to `unknown`: foreign rules carry arbitrary action parameters we never
+  // read, and it keeps our strongly-typed desired rule assignable here. Compared
+  // structurally via jsonEqual, never accessed by shape.
+  action_parameters?: unknown;
+  enabled?: boolean;
+  version?: string;
+  last_updated?: string;
+  ref?: string;
+}
+
+/** Live zone state the plan diffs against, gathered by the apply script's read phase. */
+export interface LiveState {
+  dnsRecord: LiveDnsRecord;
+  cacheRules: RulesetRule[];
+  /** Rules live in the WAF custom phase. Empty when the phase has no entrypoint ruleset yet. */
+  wafRules: RulesetRule[];
+  sslMode: string;
+}
+
+export interface PlanOptions {
+  /** Permit the (opt-in) zone-wide SSL mutation. When false, a weaker SSL mode is reported but not applied. */
+  allowZoneSsl: boolean;
+}
+
+export interface PlannedChange {
+  resource: 'dns' | 'cache-rule' | 'waf-rule' | 'ssl';
+  /** One-line human-readable summary of what would change. */
+  summary: string;
+  /** Optional extra context printed under the summary. */
+  detail?: string;
+  /**
+   * true = a change that is NOT auto-applied: the zone-wide SSL mutation
+   * requires an explicit opt-in flag (it affects every host on the zone), and
+   * the proxied flip is held back while a required SSL change is blocked.
+   */
+  blocked?: boolean;
+}
+
+/** Deep structural equality for plain JSON values (objects, arrays, primitives). Key order independent. */
+export function jsonEqual(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (typeof left !== typeof right) return false;
+  if (left === null || right === null) return left === right;
+
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+    return left.every((item, index) => jsonEqual(item, right[index]));
+  }
+
+  if (typeof left === 'object' && typeof right === 'object') {
+    const leftRecord = left as Record<string, unknown>;
+    const rightRecord = right as Record<string, unknown>;
+    const leftKeys = Object.keys(leftRecord);
+    const rightKeys = Object.keys(rightRecord);
+    if (leftKeys.length !== rightKeys.length) return false;
+    return leftKeys.every(
+      (key) => Object.prototype.hasOwnProperty.call(rightRecord, key) && jsonEqual(leftRecord[key], rightRecord[key]),
+    );
+  }
+
+  return false;
+}
+
+/** True when a live rule already matches the fields we manage (identity is by description, checked by the caller). */
+export function cacheRuleMatches(liveRule: RulesetRule, desiredRule: ManagedRuleDesired): boolean {
+  return (
+    liveRule.expression === desiredRule.expression &&
+    liveRule.action === desiredRule.action &&
+    (liveRule.enabled ?? true) === desiredRule.enabled &&
+    jsonEqual(liveRule.action_parameters, desiredRule.action_parameters)
+  );
+}
+
+/** Element-wise comparison used to decide whether an upsert actually changed anything. */
+function sameRule(liveRule: RulesetRule | undefined, nextRule: RulesetRule): boolean {
+  if (liveRule === nextRule) return true;
+  if (!liveRule) return false;
+  return (
+    liveRule.description === nextRule.description &&
+    liveRule.expression === nextRule.expression &&
+    liveRule.action === nextRule.action &&
+    (liveRule.enabled ?? true) === (nextRule.enabled ?? true) &&
+    jsonEqual(liveRule.action_parameters, nextRule.action_parameters)
+  );
+}
+
+export interface CacheRuleUpsertResult {
+  /** The rules array to PUT back. Foreign rules keep their order and every field verbatim. */
+  rules: RulesetRule[];
+  /** Whether our rule was created or updated (false = already in the desired state). */
+  changed: boolean;
+}
+
+/**
+ * Merge our desired rules into an existing phase's rules array. Ours are identified
+ * only by their description markers, so:
+ *   - none present → append the whole group, in declared order, at the end.
+ *   - some present → rewrite them as one contiguous group at the position of the
+ *     first one we own, keeping each rule's Cloudflare-assigned id.
+ *   - already in the desired state → return the array unchanged (no-op).
+ *
+ * Every rule we do NOT own is preserved verbatim, by reference, in its original
+ * relative order.
+ *
+ * The contiguous-group rewrite is what makes WAF ordering safe. Upserting rule by
+ * rule would append a newly-added allow rule AFTER an already-present block rule,
+ * which reverses their precedence and blocks the search engines the allow rule
+ * exists to protect. Declared order in the group always wins.
+ *
+ * What this deliberately does not do is reorder our group relative to foreign
+ * rules — a pre-existing foreign block rule that runs before ours keeps running
+ * first. Cloudflare's own AI-crawler block is exactly such a rule and must stay
+ * ahead of us.
+ */
+export function upsertCacheRule(
+  existingRules: RulesetRule[],
+  desiredRules: ManagedRuleDesired | ManagedRuleDesired[],
+): CacheRuleUpsertResult {
+  const desired = Array.isArray(desiredRules) ? desiredRules : [desiredRules];
+  const managedDescriptions = new Set(desired.map((rule) => rule.description));
+  const isManaged = (rule: RulesetRule) => rule.description !== undefined && managedDescriptions.has(rule.description);
+
+  const idByDescription = new Map<string, string>();
+  for (const rule of existingRules) {
+    if (isManaged(rule) && rule.id) idByDescription.set(rule.description as string, rule.id);
+  }
+
+  const managedBlock: RulesetRule[] = desired.map((rule) => {
+    const existingId = idByDescription.get(rule.description);
+    return existingId ? { id: existingId, ...rule } : { ...rule };
+  });
+
+  const foreignRules = existingRules.filter((rule) => !isManaged(rule));
+  const firstManagedIndex = existingRules.findIndex(isManaged);
+  const insertAt =
+    firstManagedIndex === -1
+      ? foreignRules.length
+      : existingRules.slice(0, firstManagedIndex).filter((rule) => !isManaged(rule)).length;
+
+  const rules = [...foreignRules.slice(0, insertAt), ...managedBlock, ...foreignRules.slice(insertAt)];
+  const changed =
+    rules.length !== existingRules.length || rules.some((rule, index) => !sameRule(existingRules[index], rule));
+
+  return { rules: changed ? rules : existingRules, changed };
+}
+
+/** Plan the DNS proxied-flag change, or null when already at the desired value. */
+export function diffDnsRecord(desired: DnsRecordDesired, liveRecord: LiveDnsRecord): PlannedChange | null {
+  if (liveRecord.proxied === desired.proxied) return null;
+  return {
+    resource: 'dns',
+    summary: `DNS ${desired.name}: set proxied ${liveRecord.proxied} → ${desired.proxied}`,
+    detail: `record ${liveRecord.type} ${liveRecord.name} → ${liveRecord.content} (target unchanged; only the proxied flag is managed)`,
+  };
+}
+
+/**
+ * Plan the changes for one ruleset phase — one PlannedChange per rule that is
+ * missing or has drifted. Returns an empty array when the phase already matches.
+ *
+ * Reported per rule rather than per phase so a dry-run says which rule drifted;
+ * the apply itself still PUTs the phase once, because that is the only write the
+ * rulesets API offers.
+ */
+export function diffManagedRules(
+  existingRules: RulesetRule[],
+  desiredRules: ManagedRuleDesired[],
+  resource: 'cache-rule' | 'waf-rule',
+): PlannedChange[] {
+  const { changed } = upsertCacheRule(existingRules, desiredRules);
+  if (!changed) return [];
+
+  const managedDescriptions = new Set(desiredRules.map((rule) => rule.description));
+  const foreignCount = existingRules.filter(
+    (rule) => rule.description === undefined || !managedDescriptions.has(rule.description),
+  ).length;
+  const label = resource === 'waf-rule' ? 'WAF rule' : 'Cache rule';
+
+  const changes: PlannedChange[] = [];
+  for (const desiredRule of desiredRules) {
+    const liveRule = existingRules.find((rule) => rule.description === desiredRule.description);
+    if (liveRule && cacheRuleMatches(liveRule, desiredRule)) continue;
+    changes.push({
+      resource,
+      summary: liveRule
+        ? `${label} "${desiredRule.description}" differs from desired — will update`
+        : `${label} "${desiredRule.description}" missing — will create`,
+      detail: `${desiredRule.action}: ${desiredRule.expression}`,
+    });
+  }
+
+  // Every rule matches individually but the array still changed: our group is in
+  // the wrong order. For WAF that is the difference between allowing Googlebot and
+  // blocking it, so it must surface as its own planned change rather than silently.
+  if (changes.length === 0) {
+    changes.push({
+      resource,
+      summary: `${label}s are present but out of order — will reorder`,
+      detail: `desired order: ${desiredRules.map((rule) => rule.description).join(' → ')}`,
+    });
+  }
+
+  if (foreignCount > 0) {
+    changes[changes.length - 1] = {
+      ...changes[changes.length - 1],
+      detail: `${changes[changes.length - 1].detail}\n    (${foreignCount} other rule(s) in this phase left untouched)`,
+    };
+  }
+
+  return changes;
+}
+
+/** Back-compat single-rule wrapper. Returns the first planned change, or null when in sync. */
+export function diffCacheRule(existingRules: RulesetRule[], desiredRule: CacheRuleDesired): PlannedChange | null {
+  return diffManagedRules(existingRules, [desiredRule], 'cache-rule')[0] ?? null;
+}
+
+/** Index of a mode in the weakest→strongest order, or -1 for an unknown mode. */
+function sslModeStrength(mode: string): number {
+  return SSL_MODE_STRENGTH.indexOf(mode as SslMode);
+}
+
+/**
+ * Plan the SSL mode change, or null when the live mode already meets the requirement.
+ * We only ever upgrade toward the desired mode — never downgrade — and we never
+ * silently mutate a zone-wide setting: when the live mode is weaker and allowZoneSsl
+ * is false the change is returned `blocked`, so dry-run reports drift but --apply
+ * leaves the zone-wide setting alone.
+ */
+export function diffSslMode(desiredMode: SslMode, liveMode: string, allowZoneSsl: boolean): PlannedChange | null {
+  if (liveMode === desiredMode) return null;
+
+  const liveStrength = sslModeStrength(liveMode);
+  const desiredStrength = sslModeStrength(desiredMode);
+  // Don't touch a zone that's already at least as strict as we require (or stricter).
+  if (liveStrength >= 0 && liveStrength >= desiredStrength) return null;
+
+  return {
+    resource: 'ssl',
+    blocked: !allowZoneSsl,
+    summary: `Zone SSL mode "${liveMode}" is weaker than required "${desiredMode}"`,
+    detail: allowZoneSsl
+      ? `Will set the zone-wide SSL/TLS mode to "${desiredMode}" (--allow-zone-ssl given).`
+      : `Left unchanged: the zone-wide SSL/TLS setting affects every hostname on ${ZONE_NAME}. ` +
+        `Re-run with --allow-zone-ssl to set it, or change it in the Cloudflare dashboard.`,
+  };
+}
+
+/** Full desired-vs-live diff: the ordered list of changes --apply would attempt. Empty = in sync. */
+export function buildPlan(
+  desired: {
+    dns: DnsRecordDesired;
+    cacheRules: CacheRuleDesired[];
+    wafRules: WafRuleDesired[];
+    ssl: SslDesired;
+  },
+  live: LiveState,
+  options: PlanOptions,
+): PlannedChange[] {
+  const changes: PlannedChange[] = [];
+
+  const dnsChange = diffDnsRecord(desired.dns, live.dnsRecord);
+
+  const cacheChanges = diffManagedRules(live.cacheRules, desired.cacheRules, 'cache-rule');
+  const wafChanges = diffManagedRules(live.wafRules, desired.wafRules, 'waf-rule');
+
+  const sslChange = diffSslMode(desired.ssl.mode, live.sslMode, options.allowZoneSsl);
+  // Order matters on cutover: SSL and the cache rule must be live BEFORE the
+  // proxied flip, or traffic transits Cloudflare without them (Flexible-SSL
+  // redirect loops would take the WebSocket host down).
+  if (sslChange) changes.push(sslChange);
+  changes.push(...cacheChanges);
+  changes.push(...wafChanges);
+  if (dnsChange) {
+    if (desired.dns.proxied && sslChange?.blocked) {
+      // Never turn the proxy on while the required SSL mode can't be applied:
+      // Flexible SSL against the origin causes redirect loops on every host.
+      changes.push({
+        ...dnsChange,
+        blocked: true,
+        detail: 'Held back: zone SSL must be strict first (re-run with --allow-zone-ssl or fix the zone setting).',
+      });
+    } else {
+      changes.push(dnsChange);
+    }
+  }
+
+  return changes;
+}

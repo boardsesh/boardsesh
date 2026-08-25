@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const scriptPath = fileURLToPath(import.meta.url);
 const ZERO_SHA = '0000000000000000000000000000000000000000';
-const ALL_TARGETS = Object.freeze({ web: true, backend: true, app: true });
+const ALL_TARGETS = Object.freeze({ web: true, backend: true, app: true, cloudflare: true });
 const FULL_COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i;
 
 function fullDeploy(reason) {
@@ -63,6 +63,18 @@ function isProductionDeployTestFile(filePath) {
   );
 }
 
+// Cloudflare zone config-as-code: the desired state and the script that
+// converges it. Deliberately NOT web-affecting (see isWebAffecting) — a cache
+// rule or WAF edit changes the edge, not the Next build, so it must not queue a
+// web deploy of its own.
+function isCloudflareAffecting(filePath) {
+  return (
+    filePath.startsWith('infra/cloudflare/') ||
+    filePath === 'scripts/cloudflare-apply.ts' ||
+    filePath === 'scripts/cloudflare-apply.test.ts'
+  );
+}
+
 function isBackendAffecting(filePath) {
   return (
     filePath.startsWith('packages/') ||
@@ -85,7 +97,8 @@ function isWebAffecting(filePath) {
     filePath.endsWith('.md') ||
     filePath === 'scripts/production-backend-smoke.mjs' ||
     isProductionDeployTestFile(filePath) ||
-    isProductionDeployWatchdogFile(filePath)
+    isProductionDeployWatchdogFile(filePath) ||
+    isCloudflareAffecting(filePath)
   );
 }
 
@@ -113,7 +126,7 @@ function isAppAffecting(filePath) {
 }
 
 function classifyChangedFiles(changedFiles) {
-  const targets = { web: false, backend: false, app: false };
+  const targets = { web: false, backend: false, app: false, cloudflare: false };
 
   for (const filePath of changedFiles) {
     if (isProductionDeployTestFile(filePath) || isProductionDeployWatchdogFile(filePath)) continue;
@@ -121,6 +134,7 @@ function classifyChangedFiles(changedFiles) {
     if (isBackendAffecting(filePath)) targets.backend = true;
     if (isWebAffecting(filePath)) targets.web = true;
     if (isAppAffecting(filePath)) targets.app = true;
+    if (isCloudflareAffecting(filePath)) targets.cloudflare = true;
   }
 
   return targets;
@@ -247,6 +261,7 @@ function formatGitHubOutputs(result) {
     `web=${result.web}`,
     `backend=${result.backend}`,
     `app=${result.app}`,
+    `cloudflare=${result.cloudflare}`,
     `deployment_base_sha=${result.deploymentBaseSha}`,
   ].join('\n');
 }
