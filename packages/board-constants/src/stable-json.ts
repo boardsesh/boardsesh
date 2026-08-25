@@ -1,5 +1,5 @@
 const BOARD_SORT_ORDER = new Map(
-  ['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill', 'moonboard'].map((boardName, index) => [
+  ['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill', 'moonboard', 'woods'].map((boardName, index) => [
     boardName,
     index,
   ]),

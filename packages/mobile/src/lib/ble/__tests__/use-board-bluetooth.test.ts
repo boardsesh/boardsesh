@@ -1188,7 +1188,8 @@ describe('useBoardBluetooth', () => {
 
   it('still lights a partially unmapped Woods climb but records the skip', async () => {
     // Two holds land, one has no LED on the 8×10 board. The wall must still light
-    // what it can; the skip is only otherwise visible as a console.warn.
+    // what it can; the encoder is silent by design, so the skip counts it returns
+    // — reported here via reportHandledError — are the only trace of the miss.
     const woodsWrite = makeWriteSpy();
     const fakeAdapter = makeFakeAdapter({ write: woodsWrite });
     vi.mocked(createBluetoothAdapter).mockReturnValue(

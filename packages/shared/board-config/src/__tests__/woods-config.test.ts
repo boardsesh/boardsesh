@@ -169,7 +169,9 @@ describe('getWoodsBoardDetails', () => {
     expect(details.size_id).toBe(1);
     expect(details.layout_name).toBe('Original');
     expect(details.size_name).toBe(WOODS_SIZES['8x10'].name);
-    expect(details.supportsMirroring).toBe(true);
+    // Mirroring is not wired end-to-end (the BLE send path ignores `mirrored`),
+    // so the descriptor must not offer it — matching `boardSupportsMirroring`.
+    expect(details.supportsMirroring).toBe(false);
     expect(details.boardWidth).toBe(WOODS_GEOMETRY['8x10'].width);
     expect(details.boardHeight).toBe(WOODS_GEOMETRY['8x10'].height);
     expect(details.edge_right).toBe(WOODS_GEOMETRY['8x10'].maxColumns);

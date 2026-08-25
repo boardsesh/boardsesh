@@ -174,10 +174,13 @@ export function getWoodsHoldImagePosition(
 
 /**
  * The horizontally-mirrored hold for a `baseHoldLocation` — the same row, with the
- * column reflected across the row's width (column → rowLength - 1 - column). Woods
- * supports mirrored climbs, so saved climbs can be re-rendered flipped. Returns the
- * input location for the centre hold of an odd-width row (it mirrors to itself) and
- * undefined for a location past the board.
+ * column reflected across the row's width (column → rowLength - 1 - column). Returns
+ * the input location for the centre hold of an odd-width row (it mirrors to itself)
+ * and undefined for a location past the board.
+ *
+ * Woods does not offer mirrored climbs yet (`supportsMirroring` is false below);
+ * this is the geometry half of that feature, ready for the follow-up that threads
+ * `mirrored` through the BLE send path.
  */
 export function getWoodsMirroredHoldLocation(baseHoldLocation: number, size: WoodsBoardSize): number | undefined {
   const rowColumn = getWoodsHoldRowColumn(baseHoldLocation, size);
@@ -235,7 +238,13 @@ export function getWoodsBoardDetails({ size_id }: { size_id: number }) {
     set_names: WOODS_SETS.map((set) => set.name),
     boardWidth: geometry.width,
     boardHeight: geometry.height,
-    supportsMirroring: true,
+    // Mirroring is not wired end-to-end for Woods, so don't offer it: the BLE
+    // send path ignores `mirrored` and lights the unmirrored holds, and
+    // `boardSupportsMirroring('woods', …)` already answers false. The geometry
+    // half exists — `getWoodsMirroredHoldLocation` and the `mirroredHoldId` on
+    // each hold below — so a follow-up only has to thread the flag through the
+    // send path. MoonBoard, the other code-driven board, reports false too.
+    supportsMirroring: false,
     edge_left: 0,
     edge_right: geometry.maxColumns,
     edge_bottom: 0,

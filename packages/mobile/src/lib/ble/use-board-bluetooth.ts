@@ -865,10 +865,11 @@ export function useBoardBluetooth({
 
             // A partial skip still lights the wall, just short a hold or two, so it
             // must not fail the send — but it means the climb's frames disagree with
-            // the board's LED table, and the only other trace is a console.warn
-            // inside the encoder. Record it so a real wall reporting "two holds
-            // missing" is diagnosable from the field. Matches the web MoonBoard
-            // branch's partial-skip report.
+            // the board's LED table. The encoder is silent by design (library code
+            // that logs nothing), so the counts it returns are the only trace.
+            // Record them so a real wall reporting "two holds missing" is
+            // diagnosable from the field. Matches the web MoonBoard branch's
+            // partial-skip report.
             if (woodsSkipped > 0) {
               reportHandledError(
                 new Error(

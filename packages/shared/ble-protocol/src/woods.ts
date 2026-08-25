@@ -47,6 +47,14 @@ export type WoodsPacketResult = {
  *
  * Missing placements/roles are skipped gracefully; the result carries counts so
  * callers can detect a partial or full miss.
+ *
+ * Single-frame only: the input is split on `p` alone, never on the `,` that
+ * separates frames in Aurora's multi-frame strings. Woods climbs are always
+ * single-frame — `encodeWoodsHoldsToFrames` emits one `p{loc}r{role}` run and never
+ * a `,` — and the Woods app has no multi-frame concept to import. Multi-frame input
+ * is not supported here and is not merely lossy: the comma rides along on the role
+ * (`4,` parses as NaN), so the last hold of every frame but the final one is
+ * dropped as an unrecognised role. Flatten upstream if Woods ever gains frames.
  */
 export function getWoodsBluetoothPacket(frames: string, size: WoodsBoardSize): WoodsPacketResult {
   const ledMap = WOODS_LED_MAPS[size];
