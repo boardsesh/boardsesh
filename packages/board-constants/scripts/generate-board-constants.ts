@@ -441,6 +441,7 @@ ${generateSizesTypeScript('touchstone', boardData.touchstone.sizes)},
 ${generateSizesTypeScript('grasshopper', boardData.grasshopper.sizes)},
 ${generateSizesTypeScript('soill', boardData.soill.sizes)},
   moonboard: {},
+  woods: {},
 };
 
 export const LAYOUTS: Record<BoardName, Record<number, LayoutData>> = {
@@ -451,6 +452,7 @@ ${generateLayoutsTypeScript('touchstone', boardData.touchstone.layouts)},
 ${generateLayoutsTypeScript('grasshopper', boardData.grasshopper.layouts)},
 ${generateLayoutsTypeScript('soill', boardData.soill.layouts)},
   moonboard: {},
+  woods: {},
 };
 
 export const SETS: Record<BoardName, Record<string, SetData[]>> = {
@@ -461,6 +463,7 @@ ${generateSetsTypeScript('touchstone', boardData.touchstone.sets)},
 ${generateSetsTypeScript('grasshopper', boardData.grasshopper.sets)},
 ${generateSetsTypeScript('soill', boardData.soill.sets)},
   moonboard: {},
+  woods: {},
 };
 
 export const IMAGE_FILENAMES: Record<BoardName, Record<string, string>> = {
@@ -471,6 +474,7 @@ ${generateImageFilenamesTypeScript('touchstone', boardData.touchstone.imageFilen
 ${generateImageFilenamesTypeScript('grasshopper', boardData.grasshopper.imageFilenames)},
 ${generateImageFilenamesTypeScript('soill', boardData.soill.imageFilenames)},
   moonboard: {},
+  woods: {},
 };
 `;
 }
@@ -593,6 +597,7 @@ export function getBoardHolePlacements(boardName: BoardName): BoardHolePlacement
 const ALL_BOARD_NAMES: BoardName[] = [
   ...([${BOARD_NAMES.map((boardName) => `'${boardName}'`).join(', ')}] as const),
   'moonboard',
+  'woods',
 ];
 
 /**
@@ -665,6 +670,7 @@ ${generateLedPlacementsTypeScript('touchstone', boardData.touchstone.ledPlacemen
 ${generateLedPlacementsTypeScript('grasshopper', boardData.grasshopper.ledPlacements)},
 ${generateLedPlacementsTypeScript('soill', boardData.soill.ledPlacements)},
   moonboard: {},
+  woods: {},
 };
 `;
 }

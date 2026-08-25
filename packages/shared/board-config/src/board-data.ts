@@ -1,7 +1,8 @@
-import { AURORA_BOARDS, SUPPORTED_BOARDS as ALL_SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import { SUPPORTED_BOARDS as ALL_SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import type { BoardName } from '@boardsesh/shared-schema';
 import type { Angle } from './types';
 import { MOONBOARD_ENABLED, MOONBOARD_ANGLES, MOONBOARD_WIDE_ANGLES } from './moonboard-config';
+import { WOODS_ANGLES } from './woods-config';
 
 type ImageDimensions = Record<
   string,
@@ -11,8 +12,12 @@ type ImageDimensions = Record<
   }
 >;
 
-// Conditionally include moonboard based on feature flag
-export const SUPPORTED_BOARDS: BoardName[] = MOONBOARD_ENABLED ? [...ALL_SUPPORTED_BOARDS] : [...AURORA_BOARDS];
+// Conditionally include the non-Aurora boards based on their feature flags.
+// Aurora boards are always enabled; moonboard gates on its flag. Woods ships unflagged.
+export const SUPPORTED_BOARDS: BoardName[] = [...ALL_SUPPORTED_BOARDS].filter((boardName) => {
+  if (boardName === 'moonboard') return MOONBOARD_ENABLED;
+  return true;
+});
 
 export const BOARD_IMAGE_DIMENSIONS: Record<BoardName, ImageDimensions> = {
   kilter: {
@@ -207,6 +212,12 @@ export const BOARD_IMAGE_DIMENSIONS: Record<BoardName, ImageDimensions> = {
     'product_sizes_layouts_sets/1-v3.png': { width: 1080, height: 1800 },
     'product_sizes_layouts_sets/2-v2.png': { width: 1080, height: 1200 },
   },
+  // Woods board art extracted from the decompiled Woods app. Keys end in `.png`
+  // because every consumer rewrites the extension to `.webp` at request time.
+  woods: {
+    'woods-8x10-bg.png': { width: 720, height: 1000 },
+    'woods-12x12-bg.png': { width: 1225, height: 1400 },
+  },
 };
 
 export const ANGLES: Record<BoardName, Angle[]> = {
@@ -218,6 +229,7 @@ export const ANGLES: Record<BoardName, Angle[]> = {
   touchstone: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70],
   grasshopper: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70],
   soill: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70],
+  woods: [...WOODS_ANGLES],
 };
 
 // Module scope so every call returns the same array reference (a stable dep/memo key).

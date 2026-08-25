@@ -54,6 +54,11 @@
       "types": "./src/readable-text-color.ts",
       "import": "./src/readable-text-color.ts",
       "default": "./src/readable-text-color.ts"
+    },
+    "./woods": {
+      "types": "./src/woods.ts",
+      "import": "./src/woods.ts",
+      "default": "./src/woods.ts"
     }
   },
   "scripts": {

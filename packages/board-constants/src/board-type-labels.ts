@@ -12,6 +12,7 @@ export const BOARD_TYPE_LABELS: Record<string, string> = {
   touchstone: 'Touchstone',
   grasshopper: 'Grasshopper',
   soill: 'So iLL',
+  woods: 'Woods',
 };
 
 /** Display label for a board type, falling back to the raw type string. */

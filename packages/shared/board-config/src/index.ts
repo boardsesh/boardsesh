@@ -7,4 +7,5 @@ export * from './set-ids';
 export * from './moonboard-config';
 export * from './resolve-render-board';
 export * from './moonboard-cell-sets';
+export * from './woods-config';
 export type { Angle, SetIdList, ClimbCompatibilityInput, BoardCompatibilityTarget } from './types';

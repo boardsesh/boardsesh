@@ -18,9 +18,37 @@ const MOONBOARD_PRODUCT_SIZES: Record<number, ProductSizeData> = {
   },
 };
 
+// The two Woods board sizes. Edges are the hold-grid extents: 8x10 is 25 rows of
+// at most 21 holds, 12x12 is 31 rows of at most 33. They get distinct product ids
+// so size-comparison never treats the smaller board as a crop of the larger one —
+// the two sizes number their holds differently and share no hold ids.
+const WOODS_PRODUCT_SIZES: Record<number, ProductSizeData> = {
+  1: {
+    id: 1,
+    name: '8 x 10',
+    description: '',
+    edgeLeft: 0,
+    edgeRight: 21,
+    edgeBottom: 0,
+    edgeTop: 25,
+    productId: 1,
+  },
+  2: {
+    id: 2,
+    name: '12 x 12',
+    description: '',
+    edgeLeft: 0,
+    edgeRight: 33,
+    edgeBottom: 0,
+    edgeTop: 31,
+    productId: 2,
+  },
+};
+
 export const PRODUCT_SIZES: Record<BoardName, Record<number, ProductSizeData>> = {
   ...AURORA_PRODUCT_SIZES,
   moonboard: MOONBOARD_PRODUCT_SIZES,
+  woods: WOODS_PRODUCT_SIZES,
 };
 
 export { LAYOUTS, SETS, IMAGE_FILENAMES, HOLE_PLACEMENTS, getBoardHolePlacements };
@@ -215,6 +243,7 @@ export const getBoardSelectorOptions = () => {
     touchstone: [],
     grasshopper: [],
     soill: [],
+    woods: [],
   };
   const sizes: Record<string, { id: number; name: string; description: string }[]> = {};
   const sets: Record<string, { id: number; name: string }[]> = {};

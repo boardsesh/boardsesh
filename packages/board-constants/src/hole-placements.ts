@@ -123,6 +123,7 @@ export function getBoardHolePlacements(boardName: BoardName): BoardHolePlacement
 const ALL_BOARD_NAMES: BoardName[] = [
   ...(['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill'] as const),
   'moonboard',
+  'woods',
 ];
 
 /**

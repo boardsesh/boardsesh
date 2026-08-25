@@ -363,6 +363,17 @@ describe('encodeMapsToFramesString', () => {
     // MoonBoard has no FOOT canonical code.
     expect(encodeMapsToFramesString(maps, 'moonboard')).toBe('p100r42');
   });
+
+  it('encodes Woods holds with the wire role codes the BLE encoder parses', () => {
+    // Woods role codes (spec §6): Foot 1, Hand 2, Finish 3, Start 4. The frames
+    // string Boardsesh stores for a Woods climb is fed straight to
+    // `getWoodsBluetoothPacket`, so these codes have to survive a round trip.
+    const original = 'p0r4p5r2p7r3p9r1';
+    const maps = accumulateFramesToMaps(original, 'woods');
+    const reEncoded = encodeMapsToFramesString(maps, 'woods');
+    expect(reEncoded).toBe(original);
+    expect(accumulateFramesToMaps(reEncoded, 'woods')).toEqual(maps);
+  });
 });
 
 describe('flattenFramesToUnion / toFlatFrames', () => {

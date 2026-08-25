@@ -19204,4 +19204,5 @@ export const LED_PLACEMENTS: Record<BoardName, Record<string, Record<number, num
     },
   },
   moonboard: {},
+  woods: {},
 };

@@ -11,6 +11,7 @@ export const SUPPORTED_BOARDS = [
   'touchstone',
   'grasshopper',
   'soill',
+  'woods',
 ] as const;
 
 export type BoardName = (typeof SUPPORTED_BOARDS)[number];

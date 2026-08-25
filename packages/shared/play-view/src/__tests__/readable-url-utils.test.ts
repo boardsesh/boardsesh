@@ -195,7 +195,10 @@ describe('parseBoardRoutePath', () => {
 });
 
 describe('round-trip across every real board config', () => {
-  const auroraBoards = SUPPORTED_BOARDS.filter((boardName) => boardName !== 'moonboard');
+  // MoonBoard and Woods are code-driven boards: they have no generated
+  // LAYOUTS/SETS rows, so this catalogue-walking loop finds nothing for them.
+  // Their readable URLs are covered by their own round-trip cases.
+  const auroraBoards = SUPPORTED_BOARDS.filter((boardName) => boardName !== 'moonboard' && boardName !== 'woods');
 
   /**
    * Exact round-trip: every real board config produces a URL that parses back to
