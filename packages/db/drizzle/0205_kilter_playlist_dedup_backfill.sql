@@ -62,8 +62,11 @@
 -- twins are strict subsets of the surviving row, but 71 playlist_climbs rows
 -- across 26 pairs exist ONLY on the twin and are lost with it. Exactly 2 pairs
 -- have fully disjoint climb sets, and both are generic names ('projects', 'to
--- try') — the shape most likely to be a false pair. That residue was accepted
--- deliberately when this shipped; it is not an oversight.
+-- try') — the shape most likely to be a false pair. Those 71 rows are the known
+-- cost of name-matching, and they do not come back: the surviving row's
+-- `updated_at` stays ahead of the `kilter_synced_at` this migration stamps, so
+-- the edit-clobber guard in applyCircuits reads it as locally edited and
+-- Kilter's copy of those climbs never re-lands.
 --
 -- For scale: 3,162 legacy rows across 354 owners are still un-duplicated. That
 -- is the population #4746's adoption step stops from ever duplicating.
