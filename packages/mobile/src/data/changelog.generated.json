@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-25T00:34:49.908Z",
+  "generatedAt": "2026-08-25T00:43:38.007Z",
   "entries": [
+    {
+      "prNumber": 4708,
+      "category": "new",
+      "title": "Play back routes up to 5x slower (down to 0.1x)",
+      "mergedAt": "2026-08-25T00:35:55Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4708"
+    },
     {
       "prNumber": 4727,
       "category": "new",

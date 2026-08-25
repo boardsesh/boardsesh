@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Play back routes up to 5x slower (down to 0.1x) ([#4708](https://github.com/boardsesh/boardsesh/pull/4708))
 - The queue now shows who put each climb up while you're in a session with your crew. ([#4727](https://github.com/boardsesh/boardsesh/pull/4727))
   A small face sits on every row someone else added — upcoming, current, and the ones you've already worked through. Your own adds stay clean.
 
