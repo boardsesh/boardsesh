@@ -24,17 +24,21 @@ import { getWorkerDatabaseUrl } from './worker-db';
 // ---------------------------------------------------------------------------
 
 const MIGRATION_SUFFIX = '_kilter_playlist_dedup_backfill.sql';
-const GUARD_TAG_PREFIX = '';
 
 const DRIZZLE_DIR = join(import.meta.dirname, '../../../db/drizzle');
 
 function readMigration(): { tag: string; body: string } {
   const file = readdirSync(DRIZZLE_DIR).find((name) => name.endsWith(MIGRATION_SUFFIX));
   if (!file) throw new Error(`no migration ending in ${MIGRATION_SUFFIX} under ${DRIZZLE_DIR}`);
-  return {
-    tag: `${GUARD_TAG_PREFIX}${file.replace(/\.sql$/, '')}`,
-    body: readFileSync(join(DRIZZLE_DIR, file), 'utf8'),
-  };
+  const body = readFileSync(join(DRIZZLE_DIR, file), 'utf8');
+  // Read the guard tag out of the SQL rather than deriving it from the
+  // filename. `vp run db:renumber` renames the file but must never rewrite a
+  // tag inside a migration body, so after a renumber the two legitimately
+  // disagree — and a filename-derived tag would send the idempotency assertion
+  // looking for a guard row that was never written.
+  const tag = /_bs_migration_guards\s+WHERE\s+tag\s*=\s*'([^']+)'/i.exec(body)?.[1];
+  if (!tag) throw new Error(`could not find the _bs_migration_guards tag inside ${file}`);
+  return { tag, body };
 }
 
 /**
