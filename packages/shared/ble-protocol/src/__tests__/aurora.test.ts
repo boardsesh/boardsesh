@@ -353,4 +353,34 @@ describe('getAuroraBluetoothPacket allLedsDark', () => {
   it('is false for the deliberate clear-all packet', () => {
     expect(getAuroraBluetoothPacket('', {}, 'kilter', 2).allLedsDark).toBe(false);
   });
+
+  it("stays false on v3 for a near-black colour override, which is the caller's own choice", () => {
+    // encodeColorV3 packs R>>5, G>>5, B>>6, so #101010 encodes to a zero byte.
+    // v3 has no power budget, so nothing overruled the caller here — refusing
+    // their send as an "incompatible climb" would be wrong.
+    const result = getAuroraBluetoothPacket('p100r42', { 100: 1 }, 'kilter', 3, { STARTING: '#101010' });
+    expect(result.packet.length).toBeGreaterThan(0);
+    expect(result.allLedsDark).toBe(false);
+  });
+
+  it('refuses end to end: a real dense route flattens to a union the v2 ladder cannot light', () => {
+    // The whole chain with no mocks — route string in, refusal signal out.
+    const holdCount = 160;
+    const placements: Record<number, number> = {};
+    for (let index = 1; index <= holdCount; index += 1) placements[index] = index;
+    const firstFrame = Array.from({ length: holdCount - 1 }, (_, index) => `p${index + 1}r43`).join('');
+    const route = `${firstFrame},"p${holdCount}r43`;
+
+    const flat = toFlatFrames(route, 'kilter');
+    expect(flat.split('p').filter(Boolean)).toHaveLength(holdCount);
+
+    const result = getAuroraBluetoothPacket(flat, placements, 'kilter', 2);
+    expect(result.skippedRoleCount).toBe(0);
+    expect(result.packet.length).toBeGreaterThan(0);
+    expect(result.allLedsDark).toBe(true);
+
+    // The same route at a size the ladder can light stays writable.
+    const sparse = toFlatFrames('p1r43p2r43,"p3r43', 'kilter');
+    expect(getAuroraBluetoothPacket(sparse, { 1: 1, 2: 2, 3: 3 }, 'kilter', 2).allLedsDark).toBe(false);
+  });
 });

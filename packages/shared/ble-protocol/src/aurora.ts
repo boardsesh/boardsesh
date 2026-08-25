@@ -217,7 +217,10 @@ export type BluetoothPacketResult = {
    * goes dark while `write()` resolves and the caller reports a successful send.
    *
    * Callers must treat this as a failed send, not a successful one. Always
-   * `false` on v3 (no power budget) and for the empty / all-skipped results.
+   * `false` on v3 and for the empty / all-skipped results: v3 has no power
+   * budget, so the only way its colour bytes reach zero is a caller-supplied
+   * near-black `LedColorOverrides` value — the caller's own choice, not the
+   * protocol overruling them.
    */
   allLedsDark: boolean;
 };
@@ -364,6 +367,10 @@ export const getAuroraBluetoothPacket = (
     skippedPositionCount,
     skippedRoleCount,
     totalPlacements,
-    allLedsDark: ledsWithColour === 0,
+    // Scoped to v2 deliberately. On v3 a zero colour byte can only come from a
+    // caller-supplied near-black `LedColorOverrides` value (R<32, G<32, B<64) —
+    // that is the user's own choice, not the power ladder silently overruling
+    // them, and refusing their send with "incompatible climb" would be wrong.
+    allLedsDark: isV2 && ledsWithColour === 0,
   };
 };
