@@ -55,8 +55,10 @@ async function applyMigration(body: string): Promise<void> {
   }
 }
 
-const USERS = ['dedup-u1', 'dedup-u2', 'dedup-u3', 'dedup-u4', 'dedup-u4-other', 'dedup-u5'];
-const UUIDS = ['L1', 'T1', 'L2', 'T2', 'L3a', 'L3b', 'T3', 'L4', 'T4', 'N5', 'T5'].map((u) => `dedup-${u}`);
+const USERS = ['dedup-u1', 'dedup-u2', 'dedup-u3', 'dedup-u4', 'dedup-u4-other', 'dedup-u5', 'dedup-u6'];
+const UUIDS = ['L1', 'T1', 'L2', 'T2', 'L3a', 'L3b', 'T3', 'L4', 'T4', 'N5', 'T5', 'L6a', 'T6a', 'L6b', 'T6b'].map(
+  (u) => `dedup-${u}`,
+);
 
 /** drizzle expands an interpolated JS array into a tuple, not an array literal. */
 function sqlList(values: string[]) {
@@ -66,12 +68,20 @@ function sqlList(values: string[]) {
   );
 }
 
-type Row = { uuid: string; name: string; aurora_id: string | null; kilter_id: string | null; marker_carried: boolean };
+type Row = {
+  uuid: string;
+  name: string;
+  aurora_id: string | null;
+  kilter_id: string | null;
+  marker_carried: boolean;
+  untouched_updated_at: boolean;
+};
 
 async function readRows(): Promise<Map<string, Row>> {
   const result = await db.execute(sql`
     SELECT uuid, name, aurora_id, kilter_id,
-           (kilter_synced_at = COALESCE(aurora_synced_at, created_at)) AS marker_carried
+           (kilter_synced_at = COALESCE(aurora_synced_at, created_at)) AS marker_carried,
+           (updated_at < now() - interval '29 days') AS untouched_updated_at
     FROM playlists WHERE uuid IN (${sqlList(UUIDS)})
   `);
   return new Map(Array.from(result as Iterable<Row>).map((row) => [row.uuid, row]));
@@ -186,22 +196,47 @@ describe('0205 kilter playlist dedup backfill (real DB)', () => {
     `);
     await seedTwin({ uuid: 'dedup-T5', userIds: ['dedup-u5'], kilterId: 'dedup-circ-5', name: 'Native' });
 
+    // u6 — TWO unambiguous pairs for one user. Both must merge; the degree
+    // filter is per-pair, not per-user.
+    await seedLegacy({ uuid: 'dedup-L6a', userId: 'dedup-u6', auroraId: 'dedup-circ-6a', name: 'Slopers' });
+    await seedTwin({ uuid: 'dedup-T6a', userIds: ['dedup-u6'], kilterId: 'dedup-circ-6a', name: 'Slopers' });
+    await seedLegacy({ uuid: 'dedup-L6b', userId: 'dedup-u6', auroraId: 'dedup-json-6b', name: 'Crimps' });
+    await seedTwin({ uuid: 'dedup-T6b', userIds: ['dedup-u6'], kilterId: 'dedup-circ-6b', name: 'Crimps' });
+
     await applyMigration(readMigration().body);
 
     const rows = await readRows();
 
     // Merged: the LEGACY row survives (it owns the uuid pins/follows point at),
     // gains the twin's kilter_id, and keeps its own name and climbs.
-    for (const [legacy, twin, kilterId] of [
+    const mergedPairs = [
       ['dedup-L1', 'dedup-T1', 'dedup-circ-1'],
       ['dedup-L2', 'dedup-T2', 'dedup-circ-2'],
-    ] as const) {
+      // Two pairs for one user: the 1:1 degree filter is per-pair, not per-user.
+      ['dedup-L6a', 'dedup-T6a', 'dedup-circ-6a'],
+      ['dedup-L6b', 'dedup-T6b', 'dedup-circ-6b'],
+    ] as const;
+    for (const [legacy, twin, kilterId] of mergedPairs) {
       expect(rows.get(legacy)?.kilter_id, legacy).toBe(kilterId);
       // kilter_synced_at carries the legacy upstream content marker rather than
       // now(), or the edit-clobber guard stops reading the user's edits as local.
       expect(rows.get(legacy)?.marker_carried, legacy).toBe(true);
+      // updated_at must NOT move. The whole edit-clobber guard is
+      // `updated_at <= kilter_synced_at`, so a stray `updated_at = now()` in the
+      // SET clause would silently hand the user's edits back to Kilter.
+      expect(rows.get(legacy)?.untouched_updated_at, legacy).toBe(true);
       expect(rows.has(twin), twin).toBe(false);
     }
+
+    // Every deleted twin is tombstoned, not just the one the focused test covers.
+    const tombstoned = await db.execute(sql`
+      SELECT record_id FROM sync_deletions WHERE record_id IN (${sqlList(UUIDS)})
+    `);
+    expect(
+      Array.from(tombstoned as Iterable<{ record_id: string }>)
+        .map((row) => row.record_id)
+        .sort(),
+    ).toEqual(mergedPairs.map(([, twin]) => twin).sort());
     expect(rows.get('dedup-L1')?.name).toBe('Warmups');
     expect(rows.get('dedup-L2')?.name).toBe('  Projects ');
 
