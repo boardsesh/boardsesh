@@ -145,7 +145,7 @@ vi.mock('../PanePlaceholder', () => ({
 }));
 vi.mock('../DeferredBoard', () => ({ DeferredBoard: () => createElement('div', { 'data-testid': 'board' }) }));
 vi.mock('../BoardRenderUnavailable', () => ({ BoardRenderUnavailable: () => null }));
-vi.mock('../PlaybackControls', () => ({ PlaybackControls: () => null }));
+vi.mock('../../playback/PlaybackControls', () => ({ PlaybackControls: () => null }));
 // Renders its `leading` slot: that is where the wall-state pill lands, so a mock
 // that swallowed it would hide whether PlayDrawer passes one at all.
 vi.mock('../PlayDrawerHeader', () => ({

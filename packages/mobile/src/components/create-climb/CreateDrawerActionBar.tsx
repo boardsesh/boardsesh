@@ -43,11 +43,8 @@ type CreateDrawerActionBarProps = {
    *  which lights one static frame — the whole frame cluster is hidden then. */
   supportsMultiFrame: boolean;
   frameCount: number;
-  currentFrameIndex: number;
   onDuplicateFrame: () => void;
   onDeleteFrame: () => void;
-  onPrevFrame: () => void;
-  onNextFrame: () => void;
   canSetActive: boolean;
   onSetActive: () => void;
   saveState: SaveButtonState;
@@ -83,11 +80,8 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   onNewClimb,
   supportsMultiFrame,
   frameCount,
-  currentFrameIndex,
   onDuplicateFrame,
   onDeleteFrame,
-  onPrevFrame,
-  onNextFrame,
   canSetActive,
   onSetActive,
   saveState,
@@ -217,9 +211,9 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
             onPress={onClearHolds}
             accessibilityLabel={t('mobile.create.actions.clear')}
           />
-          {/* Duplicate is what MAKES a second frame, so it goes with the stepper
-              on a board that can't have one. Leaving it would offer a control
-              whose only outcome is a climb the wall then refuses to light. */}
+          {/* Duplicate is what MAKES a second frame, so it is hidden on a board
+              that can't have one. Leaving it would offer a control whose only
+              outcome is a climb the wall then refuses to light. */}
           {supportsMultiFrame && (
             <ActionButton
               size="sm"
@@ -229,31 +223,12 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
             />
           )}
           {supportsMultiFrame && frameCount > 1 && (
-            <>
-              <ActionButton
-                size="sm"
-                iconName="skip.previous"
-                onPress={onPrevFrame}
-                disabled={currentFrameIndex === 0}
-                accessibilityLabel={t('mobile.create.frames.prev')}
-              />
-              <Text variant="caption1" style={styles.frameCounter} numberOfLines={1}>
-                {t('mobile.create.frames.counter', { index: currentFrameIndex + 1, total: frameCount })}
-              </Text>
-              <ActionButton
-                size="sm"
-                iconName="skip.next"
-                onPress={onNextFrame}
-                disabled={currentFrameIndex >= frameCount - 1}
-                accessibilityLabel={t('mobile.create.frames.next')}
-              />
-              <ActionButton
-                size="sm"
-                iconName="frame.remove"
-                onPress={onDeleteFrame}
-                accessibilityLabel={t('mobile.create.frames.delete')}
-              />
-            </>
+            <ActionButton
+              size="sm"
+              iconName="frame.remove"
+              onPress={onDeleteFrame}
+              accessibilityLabel={t('mobile.create.frames.delete')}
+            />
           )}
           {/* Last in the scroller: the least-used control in the row, and the one
               it's fine to scroll for. `plus`, not `refresh` — that's already the
@@ -266,12 +241,17 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
           />
         </ScrollView>
 
+        {/* Not a play glyph: this pushes the climb into the queue, which lights
+            it on a connected wall. The transport above the brush row is what
+            plays the route. `flash` is the flashed-ascent glyph elsewhere and
+            `lightbulb` is the header's Bluetooth toggle in this same sheet. */}
         <ActionButton
           size="sm"
-          iconName="play.circle"
+          iconName="queue"
           onPress={onSetActive}
           disabled={!canSetActive}
           accessibilityLabel={t('mobile.create.actions.setActive')}
+          accessibilityHint={canSetActive ? undefined : t('mobile.create.actions.setActiveHint')}
         />
         <SaveButton saveState={saveState} onSave={onSave} publishBlocked={publishBlocked} />
       </View>
@@ -344,10 +324,6 @@ const styles = StyleSheet.create({
   },
   chipLabel: {
     fontWeight: '600',
-  },
-  frameCounter: {
-    minWidth: 44,
-    textAlign: 'center',
   },
   // The status row carries the bar's bottom padding, so the line sits 4dp under
   // the Save pill rather than a full gap below it.

@@ -525,7 +525,8 @@
       },
       "actions": {
         "clear": "Borrar presas",
-        "setActive": "Fijar como vía activa",
+        "setActive": "Ponerlo en el muro",
+        "setActiveHint": "Marca primero una presa de inicio y una de final",
         "undo": "Deshacer",
         "redo": "Rehacer",
         "newClimb": "Empezar una vía nueva",
@@ -533,11 +534,8 @@
         "closeHint": "Tu borrador se queda en este teléfono."
       },
       "frames": {
-        "duplicate": "Duplicar cuadro",
-        "delete": "Eliminar cuadro",
-        "prev": "Cuadro anterior",
-        "next": "Cuadro siguiente",
-        "counter": "{{index}}/{{total}}"
+        "duplicate": "Duplicar fotograma",
+        "delete": "Eliminar fotograma"
       },
       "holdRole": {
         "title": "Asignar rol de presa",

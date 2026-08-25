@@ -525,7 +525,8 @@
       },
       "actions": {
         "clear": "Griffe entfernen",
-        "setActive": "Als aktiven Boulder setzen",
+        "setActive": "Am Board beleuchten",
+        "setActiveHint": "Setz zuerst einen Start- und einen Zielgriff",
         "undo": "Rückgängig",
         "redo": "Wiederholen",
         "newClimb": "Neuen Boulder erstellen",
@@ -534,10 +535,7 @@
       },
       "frames": {
         "duplicate": "Bild duplizieren",
-        "delete": "Bild löschen",
-        "prev": "Vorheriges Bild",
-        "next": "Nächstes Bild",
-        "counter": "{{index}}/{{total}}"
+        "delete": "Bild löschen"
       },
       "holdRole": {
         "title": "Griff-Rolle festlegen",

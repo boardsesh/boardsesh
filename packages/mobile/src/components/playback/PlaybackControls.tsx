@@ -45,6 +45,9 @@ function nextSpeedStep(current: number): number {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
+// Hoisted so the adjustable node isn't handed a fresh array every render.
+const ADJUSTABLE_ACTIONS = [{ name: 'increment' }, { name: 'decrement' }] as const;
+
 type PlaybackControlsProps = {
   frameIndex: number;
   frameCount: number;
@@ -57,6 +60,13 @@ type PlaybackControlsProps = {
    * playback isn't being followed. Renders a one-line passive notice.
    */
   peerFrameMismatch?: boolean;
+  /**
+   * Replaces the frame counter with a chip when this transport is no longer the
+   * thing driving the wall. The create drawer passes "On the wall" after handing
+   * the route to the queue: the wall then shows the whole route, so a counter
+   * reading "2 / 3" over it would be a lie. Omit it and the counter renders.
+   */
+  wallStateLabel?: string | null;
   onPlay: () => void;
   onPause: () => void;
   onSeek: (index: number) => void;
@@ -117,12 +127,14 @@ function SpeedPill({
   onCycle,
   onToggleSlider,
   accessibilityLabel,
+  accessibilityHint,
 }: {
   label: string;
   active: boolean;
   onCycle: () => void;
   onToggleSlider: () => void;
   accessibilityLabel: string;
+  accessibilityHint: string;
 }) {
   const { systemColors } = useTheme();
   const scale = useSharedValue(1);
@@ -142,6 +154,7 @@ function SpeedPill({
       accessibilityRole="button"
       accessibilityState={{ expanded: active }}
       accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
       style={[
         styles.speedPill,
         { backgroundColor: active ? staticBrandColors.primary : systemColors.fill },
@@ -174,6 +187,7 @@ function SpeedSlider({
 }) {
   const theme = useTheme();
   const { systemColors } = theme;
+  const { t } = useTranslation('session');
   const [trackWidth, setTrackWidth] = useState(0);
   const usable = Math.max(0, trackWidth - THUMB_SIZE);
   const position = useSharedValue(0);
@@ -284,12 +298,45 @@ function SpeedSlider({
     setTrackWidth(event.nativeEvent.layout.width);
   }, []);
 
+  // A pan gesture is invisible to VoiceOver/TalkBack, so the whole track is
+  // published as one `adjustable` node with 0.5× increment/decrement actions.
+  const adjustBy = useCallback(
+    (step: number) => {
+      const next = Math.min(MAX_SPEED, Math.max(MIN_SPEED, Math.round((value + step) * 10) / 10));
+      onLiveChange(next);
+      onChange(next);
+    },
+    [value, onChange, onLiveChange],
+  );
+
   return (
     <GestureDetector gesture={composed}>
-      <View style={styles.sliderTrackWrapper} onLayout={handleLayout}>
-        <View style={[styles.sliderTrack, { backgroundColor: systemColors.fill }]} />
-        <Animated.View style={[styles.sliderFill, { backgroundColor: theme.brandColors.primary }, fillStyle]} />
-        <Animated.View style={[styles.sliderThumb, thumbStyle]} />
+      <View
+        style={styles.sliderTrackWrapper}
+        onLayout={handleLayout}
+        accessible
+        accessibilityRole="adjustable"
+        accessibilityLabel={t('playView.speed')}
+        accessibilityValue={{ text: formatSpeed(value), min: MIN_SPEED, max: MAX_SPEED, now: value }}
+        accessibilityActions={ADJUSTABLE_ACTIONS}
+        onAccessibilityAction={({ nativeEvent }) => adjustBy(nativeEvent.actionName === 'increment' ? 0.5 : -0.5)}
+      >
+        {/* Android would otherwise publish each child of an adjustable composite
+            as its own node, so the slider reads as three unlabelled views. */}
+        <View
+          style={[styles.sliderTrack, { backgroundColor: systemColors.fill }]}
+          importantForAccessibility="no-hide-descendants"
+        />
+        <Animated.View
+          style={[styles.sliderFill, { backgroundColor: theme.brandColors.primary }, fillStyle]}
+          importantForAccessibility="no-hide-descendants"
+        />
+        {/* White fill alone is ~1.09:1 against the track — the brand ring is what
+            clears WCAG 1.4.11's 3:1 for a UI component, in both schemes. */}
+        <Animated.View
+          style={[styles.sliderThumb, { borderColor: theme.brandColors.primary }, thumbStyle]}
+          importantForAccessibility="no-hide-descendants"
+        />
       </View>
     </GestureDetector>
   );
@@ -311,6 +358,7 @@ export function PlaybackControls({
   speed,
   paceMs,
   peerFrameMismatch = false,
+  wallStateLabel = null,
   onPlay,
   onPause,
   onSeek,
@@ -398,10 +446,28 @@ export function PlaybackControls({
 
       <View style={styles.transportRow}>
         <View style={styles.sideLeft}>
-          <Text variant="footnote" style={styles.counter}>
-            <Text style={[styles.counterCurrent, { color: systemColors.label }]}>{frameIndex + 1}</Text>
-            <Text style={{ color: systemColors.secondaryLabel }}>{` / ${frameCount}`}</Text>
-          </Text>
+          {wallStateLabel ? (
+            <Text
+              variant="caption1"
+              color={systemColors.secondaryLabel}
+              numberOfLines={1}
+              style={[styles.wallStateChip, { backgroundColor: systemColors.fill }]}
+            >
+              {wallStateLabel}
+            </Text>
+          ) : (
+            <Text
+              variant="footnote"
+              style={styles.counter}
+              numberOfLines={1}
+              accessible
+              accessibilityRole="text"
+              accessibilityLabel={t('playView.frameCounterA11y', { index: frameIndex + 1, total: frameCount })}
+            >
+              <Text style={[styles.counterCurrent, { color: systemColors.label }]}>{frameIndex + 1}</Text>
+              <Text style={{ color: systemColors.secondaryLabel }}>{` / ${frameCount}`}</Text>
+            </Text>
+          )}
         </View>
 
         <View style={styles.centerGroup}>
@@ -446,6 +512,7 @@ export function PlaybackControls({
             onCycle={cycleSpeed}
             onToggleSlider={toggleSpeed}
             accessibilityLabel={`${t('playView.speed')}, ${formatSpeed(liveSpeed)}`}
+            accessibilityHint={t('playView.speedHint')}
           />
         </View>
       </View>
@@ -524,9 +591,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minWidth: 52,
+    // 28 + hitSlop 8 top and bottom = the 44dp touch floor in both type scales
+    // (footnote is 18dp on HIG, 16dp on Material, so padding alone fell short).
+    minHeight: 28,
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[1],
     borderRadius: borderRadius.full,
+  },
+  wallStateChip: {
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[1],
+    borderRadius: borderRadius.full,
+    overflow: 'hidden',
   },
   mismatchNotice: {
     textAlign: 'center',
@@ -557,6 +633,7 @@ const styles = StyleSheet.create({
     height: THUMB_SIZE,
     borderRadius: THUMB_SIZE / 2,
     backgroundColor: iosSystemColors.white,
+    borderWidth: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,

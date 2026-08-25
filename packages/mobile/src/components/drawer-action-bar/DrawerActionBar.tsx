@@ -29,6 +29,11 @@ type ActionButtonProps = {
   activeColor?: string;
   iconColor?: string;
   accessibilityLabel: string;
+  /**
+   * Why the button is unavailable. A disabled icon-only button is ~1.1:1
+   * against the sheet and carries no explanation, so a gated action needs one.
+   */
+  accessibilityHint?: string;
 };
 
 export function ActionButton({
@@ -40,6 +45,7 @@ export function ActionButton({
   activeColor,
   iconColor,
   accessibilityLabel,
+  accessibilityHint,
 }: ActionButtonProps) {
   const { dim, icon } = SIZES[size];
   const buttonStyle: ViewStyle[] = [
@@ -60,6 +66,7 @@ export function ActionButton({
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled }}
       style={({ pressed }) => [
         ...buttonStyle,

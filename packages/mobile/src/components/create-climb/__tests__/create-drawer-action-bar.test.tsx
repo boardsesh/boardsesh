@@ -75,11 +75,8 @@ const baseProps = {
   onNewClimb: vi.fn(),
   supportsMultiFrame: true,
   frameCount: 1,
-  currentFrameIndex: 0,
   onDuplicateFrame: vi.fn(),
   onDeleteFrame: vi.fn(),
-  onPrevFrame: vi.fn(),
-  onNextFrame: vi.fn(),
   canSetActive: true,
   onSetActive: vi.fn(),
   saveState: 'ready' as const,
@@ -95,7 +92,7 @@ function renderBar(frameCount: number, overrides: Partial<typeof baseProps> = {}
     statusRow: container.querySelector('[data-testid="create-draft-status-row"]') as HTMLElement,
     scroller: container.querySelector('[data-scroll="true"]') as HTMLElement,
     undo: container.querySelector('[data-action="undo"]') as HTMLElement,
-    setActive: container.querySelector('[data-action="play.circle"]') as HTMLElement,
+    setActive: container.querySelector('[data-action="queue"]') as HTMLElement,
     save: container.querySelector('[data-save-button="true"]') as HTMLElement,
   };
 }
@@ -186,15 +183,24 @@ describe('CreateDrawerActionBar', () => {
     expect(withStatus.statusRow.textContent).toContain('mobile.create.autosave.onDevice');
   });
 
-  it('puts the multi-frame stepper in the scroller rather than pushing Save off the row', () => {
+  it('leaves frame stepping to the transport and keeps only Delete frame in the scroller', () => {
+    // The transport above the brush row owns time; the action bar owns editing.
+    // Dropping the stepper is also what stops the scroller clipping its own
+    // controls — three of its eight children are gone.
     const { scroller, setActive, save } = renderBar(3);
 
-    // The four extra controls a multi-frame climb adds...
-    expect(scroller.querySelector('[data-action="skip.previous"]')).toBeTruthy();
-    expect(scroller.querySelector('[data-action="skip.next"]')).toBeTruthy();
+    expect(scroller.querySelector('[data-action="skip.previous"]')).toBeNull();
+    expect(scroller.querySelector('[data-action="skip.next"]')).toBeNull();
     expect(scroller.querySelector('[data-action="frame.remove"]')).toBeTruthy();
-    // ...all land inside it, so the pinned pair is still reachable.
     expect(scroller.contains(setActive)).toBe(false);
     expect(scroller.contains(save)).toBe(false);
+  });
+
+  it('labels Set Active with a queue glyph, not a play glyph', () => {
+    // A play glyph on a button that does not play is half of "the play button
+    // doesn't work"; `flash` is the flashed-ascent glyph elsewhere in the app.
+    const { setActive } = renderBar(3);
+    expect(setActive).toBeTruthy();
+    expect(document.querySelector('[data-action="play.circle"]')).toBeNull();
   });
 });

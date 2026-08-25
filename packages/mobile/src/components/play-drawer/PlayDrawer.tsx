@@ -33,7 +33,7 @@ import type { ActiveSubDrawer } from '@boardsesh/play-view';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { DeferredBoard } from './DeferredBoard';
 import { BoardRenderUnavailable } from './BoardRenderUnavailable';
-import { PlaybackControls } from './PlaybackControls';
+import { PlaybackControls } from '../playback/PlaybackControls';
 import { useMobilePlayback } from './use-mobile-playback';
 import { LivePlayDrawerHeader } from './PlayDrawerHeader';
 import { copyClimbName } from './copy-climb-name';

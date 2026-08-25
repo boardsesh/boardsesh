@@ -525,7 +525,8 @@
       },
       "actions": {
         "clear": "Effacer les prises",
-        "setActive": "Définir comme voie active",
+        "setActive": "Allumer au mur",
+        "setActiveHint": "Ajoute d'abord une prise de départ et une d'arrivée",
         "undo": "Annuler",
         "redo": "Rétablir",
         "newClimb": "Commencer une nouvelle voie",
@@ -534,10 +535,7 @@
       },
       "frames": {
         "duplicate": "Dupliquer l'image",
-        "delete": "Supprimer l'image",
-        "prev": "Image précédente",
-        "next": "Image suivante",
-        "counter": "{{index}}/{{total}}"
+        "delete": "Supprimer l'image"
       },
       "holdRole": {
         "title": "Définir le rôle de la prise",
