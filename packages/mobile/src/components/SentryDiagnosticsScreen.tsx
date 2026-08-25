@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import { reportError } from '../lib/error-reporting';
 import { hapticError, hapticLight } from '../lib/haptics';
 import { isSentryEnabled, nativeSentryCrash } from '../lib/sentry';
+import { scheduleUncaughtSentryTestError } from '../lib/sentry-diagnostics';
 import { useProfile } from '../lib/graphql/hooks';
 import { useConfirm } from '../providers/dialog-provider';
 import { useTheme } from '../providers/theme-provider';
@@ -34,9 +35,7 @@ export function SentryDiagnosticsScreen() {
 
   const throwUncaughtError = useCallback(() => {
     hapticError();
-    setTimeout(() => {
-      throw new Error('Sentry test: uncaught JS exception — diagnostics');
-    }, 0);
+    scheduleUncaughtSentryTestError();
   }, []);
 
   const triggerNativeCrash = useCallback(async () => {

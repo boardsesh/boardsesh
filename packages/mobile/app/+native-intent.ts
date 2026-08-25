@@ -1,5 +1,13 @@
 import { getShareExtensionKey } from 'expo-share-intent';
 
+const LEGACY_PREVIEW_PREFIX = /^(?:https:\/\/(?:www\.)?boardsesh\.com\/?|com\.boardsesh\.app:\/\/\/?)/i;
+const LEGACY_PREVIEW_PATH = /^\/preview\/pr-[1-9]\d*(?:[/?#]|$)/;
+
+function isLegacyPreviewLink(path: string): boolean {
+  const normalizedPath = path.replace(LEGACY_PREVIEW_PREFIX, '/');
+  return LEGACY_PREVIEW_PATH.test(normalizedPath);
+}
+
 // Expo Router's redirect hook for OS-level deep links. The iOS Share Extension
 // (expo-share-intent) opens the app via a synthetic `com.boardsesh.app://...
 // dataUrl=<key>` URL; without this redirect Expo Router treats that as an
@@ -20,6 +28,12 @@ export function redirectSystemPath({ path, initial }: { path: string; initial: b
   // that can't throw — so a getShareExtensionKey() throw can't bypass it.
   if (path.startsWith('com.boardsesh.app://auth/callback') || path.startsWith('/auth/callback')) {
     return '';
+  }
+  // The retired custom OTA picker emitted /preview/pr-N links in PR comments.
+  // New builds no longer have that route; land those durable links on What's
+  // New, where xprem's official "Try a preview" control opens the branch picker.
+  if (isLegacyPreviewLink(path)) {
+    return '/changelog';
   }
   try {
     if (path.includes(`dataUrl=${getShareExtensionKey()}`)) {

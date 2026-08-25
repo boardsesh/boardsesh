@@ -62,6 +62,7 @@ describe('buildOtaStatusProperties', () => {
 
   it('reads the running xprem branch from manifest extra', () => {
     expect(readOtaBranch({ extra: { branch: 'pr-1234' } })).toBe('pr-1234');
+    expect(readOtaBranch({ extra: { branch: '' } })).toBeNull();
     expect(readOtaBranch({ extra: {} })).toBeNull();
     expect(readOtaBranch(null)).toBeNull();
   });

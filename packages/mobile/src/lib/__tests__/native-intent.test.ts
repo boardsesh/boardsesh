@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getShareExtensionKeyMock = vi.fn();
 vi.mock('expo-share-intent', () => ({
@@ -68,6 +68,39 @@ describe('redirectSystemPath', () => {
       throw new Error('native module not loaded');
     });
     expect(redirectSystemPath({ path: CALLBACK, initial: true })).toBe('');
+  });
+
+  // Existing OTA-preview PR comments outlive the retired custom preview route.
+  // New builds land each old link on What's New, whose "Try a preview" action
+  // opens xprem's official branch picker.
+  it.each([
+    'com.boardsesh.app://preview/pr-1234',
+    'com.boardsesh.app:///preview/pr-1234',
+    '/preview/pr-1234',
+    'https://boardsesh.com/preview/pr-1234',
+    'https://www.boardsesh.com/preview/pr-1234',
+  ])('lands the legacy preview link on the official picker entry point: %s', (path) => {
+    getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
+    expect(redirectSystemPath({ path, initial: true })).toBe('/changelog');
+  });
+
+  it('normalises the preview link even when getShareExtensionKey throws', () => {
+    getShareExtensionKeyMock.mockImplementation(() => {
+      throw new Error('native module not loaded');
+    });
+    expect(redirectSystemPath({ path: 'com.boardsesh.app://preview/pr-1234', initial: true })).toBe('/changelog');
+  });
+
+  it('does not rewrite a scheme link that merely starts with the word preview', () => {
+    getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
+    expect(redirectSystemPath({ path: 'com.boardsesh.app://previews/pr-1234', initial: true })).toBe(
+      'com.boardsesh.app://previews/pr-1234',
+    );
+  });
+
+  it('does not rewrite a non-preview branch', () => {
+    getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
+    expect(redirectSystemPath({ path: '/preview/production', initial: true })).toBe('/preview/production');
   });
 
   it('does not treat a non-callback deep link on the same scheme as the callback', () => {

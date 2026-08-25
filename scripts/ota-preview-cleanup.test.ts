@@ -15,7 +15,7 @@ type CommandResult = {
   stderr: string;
 };
 
-function runCleanup(branch: string, environment: NodeJS.ProcessEnv): Promise<CommandResult> {
+function runCleanup(branch: string, environment: Partial<NodeJS.ProcessEnv>): Promise<CommandResult> {
   return new Promise((resolveResult, reject) => {
     const child = spawn('bun', [cleanupScript, 'delete', '--branch', branch], {
       env: { ...process.env, ...environment },
