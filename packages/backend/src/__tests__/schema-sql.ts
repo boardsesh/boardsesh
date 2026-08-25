@@ -642,6 +642,12 @@ export const schemaSQL = `
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "last_accessed_at" timestamp
   );
+  -- The two GLOBAL (non-partial) uniques the sync writers conflict on. Without
+  -- them Postgres' "NULLs are distinct" behaviour — the whole cause of the
+  -- kilter playlist duplication in #4707 — is unreproducible in the test DB,
+  -- and an ON CONFLICT (kilter_id) would fail outright for want of an index.
+  CREATE UNIQUE INDEX IF NOT EXISTS "playlists_aurora_id_idx" ON "playlists" ("aurora_id");
+  CREATE UNIQUE INDEX IF NOT EXISTS "playlists_kilter_id_idx" ON "playlists" ("kilter_id");
 
   CREATE TABLE IF NOT EXISTS "playlist_ownership" (
     "id" bigserial PRIMARY KEY NOT NULL,

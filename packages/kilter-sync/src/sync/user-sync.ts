@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { and, eq, exists, inArray, or, sql } from 'drizzle-orm';
+import { and, eq, exists, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 
 import {
@@ -1709,6 +1709,132 @@ async function writeClimbRatings(tx: DrizzleDb, values: Array<typeof boardClimbR
     });
 }
 
+/**
+ * A pre-Grips Kilter playlist this user solely owns that carries no `kilter_id`
+ * yet — a candidate for the adoption step in `applyCircuits` (#4707).
+ */
+type AdoptableLegacyPlaylist = { id: bigint; auroraId: string | null; normalizedName: string };
+
+/** Case- and whitespace-insensitive playlist name, for the tier-2 match. */
+function normalizePlaylistName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+/** value -> how many times it appears. */
+function tally(values: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+  return counts;
+}
+
+/**
+ * The candidate lookup `selectAdoptableLegacyPlaylists` actually awaits.
+ *
+ * Split out so a unit test can render it with `.toSQL()`. The sync tests drive
+ * the transaction through hand-rolled stubs that ignore SQL entirely, so
+ * without this seam the predicate that decides which rows may be adopted —
+ * `aurora_id IS NOT NULL` above all, which is what stops a Boardsesh-native
+ * playlist being hijacked by a same-named Kilter circuit — has no coverage at
+ * all: deleting it keeps every stub-based test green.
+ */
+export function adoptableLegacyPlaylistsQuery(
+  db: DrizzleDb,
+  userId: string,
+  circuitUuids: string[],
+  normalizedNames: string[],
+) {
+  const originMatches: SQL[] = [];
+  if (circuitUuids.length > 0) originMatches.push(inArray(playlists.auroraId, circuitUuids));
+  if (normalizedNames.length > 0) originMatches.push(inArray(sql`lower(btrim(${playlists.name}))`, normalizedNames));
+
+  return db
+    .select({ id: playlists.id, auroraId: playlists.auroraId, name: playlists.name })
+    .from(playlists)
+    .innerJoin(
+      playlistOwnership,
+      and(
+        eq(playlistOwnership.playlistId, playlists.id),
+        eq(playlistOwnership.userId, userId),
+        eq(playlistOwnership.role, 'owner'),
+      ),
+    )
+    .where(
+      and(
+        eq(playlists.boardType, KILTER_BOARD_TYPE),
+        // Not yet linked to Kilter. A row that already holds a kilter_id is
+        // reached by the ordinary ON CONFLICT path, not by adoption.
+        isNull(playlists.kilterId),
+        // ALREADY carries an upstream origin. This is the guard that keeps a
+        // playlist the user built by hand in Boardsesh from being swallowed by
+        // a Kilter circuit that happens to share its name.
+        isNotNull(playlists.auroraId),
+        or(...originMatches),
+        // Sole ownership — the same arbitration the kilter_id path uses.
+        foreignPlaylistOwnerGuard(userId),
+      ),
+    );
+}
+
+/**
+ * Legacy Kilter playlists (written by aurora-sync before Kilter split off the
+ * Aurora backend on 2026-03-30, or by the mobile JSON import) that the incoming
+ * circuit batch could be the Grips-side twin of.
+ *
+ * Chunked at 500 circuits per statement, the same bound
+ * `selectUpstreamPlaylistOwners` and the playlist_climbs insert respect.
+ * Sequential, not Promise.all: this runs on a transaction handle, and a Drizzle
+ * transaction rides one connection that PgBouncer cannot multiplex.
+ */
+async function selectAdoptableLegacyPlaylists(
+  tx: DrizzleDb,
+  userId: string,
+  circuits: Array<{ uuid: string; name: string }>,
+): Promise<AdoptableLegacyPlaylist[]> {
+  const CANDIDATE_LOOKUP_CHUNK = 500;
+  // Keyed by playlist id: one row can match both halves of the OR, and two
+  // chunks can both return it.
+  const byId = new Map<string, AdoptableLegacyPlaylist>();
+
+  for (let offset = 0; offset < circuits.length; offset += CANDIDATE_LOOKUP_CHUNK) {
+    const chunk = circuits.slice(offset, offset + CANDIDATE_LOOKUP_CHUNK);
+    const rows = await adoptableLegacyPlaylistsQuery(
+      tx,
+      userId,
+      Array.from(new Set(chunk.map((circuit) => circuit.uuid))),
+      Array.from(new Set(chunk.map((circuit) => normalizePlaylistName(circuit.name)))),
+    );
+    for (const row of rows) {
+      byId.set(String(row.id), {
+        id: row.id,
+        auroraId: row.auroraId,
+        normalizedName: normalizePlaylistName(row.name),
+      });
+    }
+  }
+
+  return Array.from(byId.values());
+}
+
+/**
+ * `DO UPDATE … WHERE` half of the circuits edit-clobber guard (#4707), the twin
+ * of the tick guard in `isLocallyEditedSinceKilterSync`: let Kilter's snapshot
+ * overwrite the playlist only while it carries no Boardsesh-side edit made
+ * since Kilter content last landed in it.
+ *
+ * Correlated to `playlists.id`, so inside a DO UPDATE it reads the EXISTING
+ * row. A NULL `kilter_synced_at` reads as "Kilter is authoritative" (same as
+ * the tick guard) — the COALESCE makes the comparison true rather than unknown.
+ *
+ * ⚠️ Tradeoff, deliberate and human-approved: circuit push-back is still stubbed
+ * behind `KILTER_SYNC_PUSH_ENABLED` (#3525), so a playlist the user edits in
+ * Boardsesh is frozen against Kilter-side changes until push-back ships. The
+ * alternative — letting Kilter's stale snapshot win — is silent, unrecoverable
+ * loss of the user's edits, which is what #4707 reported.
+ */
+function playlistNotLocallyEditedGuard(): SQL {
+  return sql`${playlists.updatedAt} <= COALESCE(${playlists.kilterSyncedAt}, ${playlists.updatedAt})`;
+}
+
 export type ApplyCircuitsResult = {
   /**
    * Circuits refused because their playlist belongs to another Boardsesh user
@@ -1793,6 +1919,73 @@ export async function applyCircuits(
     );
   };
 
+  // ---- Legacy playlist adoption (#4707) ------------------------------------
+  //
+  // Kilter used to be an ordinary Aurora board, so a circuit the user has had
+  // for years already exists as a playlist keyed on `aurora_id`, with
+  // `kilter_id` still NULL. Postgres treats NULLs as distinct in a unique
+  // index, so `ON CONFLICT (kilter_id)` below can never match that row and the
+  // first sync after re-linking Kilter inserted a SECOND playlist — carrying
+  // Kilter's pre-split content, stamped created_at = today, sorted to the top
+  // of the list. Every pre-split circuit got a twin.
+  //
+  // The fix mirrors what applyLogs already does for ticks: match on the
+  // surrogate key, else match on a natural key and stamp the surrogate onto the
+  // row that is already there, else insert. Adoption (rather than dedupe-on-
+  // read or delete-and-reinsert) is what preserves `playlists.uuid` — the
+  // offline-sync local PK that user_playlist_pins, playlist_follows and every
+  // mobile client already point at.
+  //
+  // Only circuits whose kilter_id nothing holds yet can be adopted; `own`
+  // re-syncs go down the ordinary upsert path. Deduped by uuid because one
+  // batch can carry several ops for one circuit.
+  const adoptablePutsByUuid = new Map<string, { uuid: string; name: string }>();
+  for (const op of circuitOps) {
+    if (op.op === 'REMOVE') continue;
+    const raw = op.data as RawCircuit | undefined;
+    if (!raw?.circuit_uuid) continue;
+    if (decisionFor(raw.circuit_uuid) !== 'adopt') continue;
+    adoptablePutsByUuid.set(raw.circuit_uuid, { uuid: raw.circuit_uuid, name: raw.name ?? '' });
+  }
+  const adoptablePuts = Array.from(adoptablePutsByUuid.values());
+
+  /** Tier 1 — exact upstream identity: Grips kept the circuit uuid. */
+  const candidateByAuroraId = new Map<string, bigint>();
+  /** Tier 2 — unambiguous 1:1 normalized name (a JSON import rotates the id). */
+  const candidateByName = new Map<string, bigint>();
+
+  if (adoptablePuts.length > 0) {
+    const candidates = await selectAdoptableLegacyPlaylists(tx, userId, adoptablePuts);
+    const wantedUuids = new Set(adoptablePuts.map((circuit) => circuit.uuid));
+    for (const candidate of candidates) {
+      if (candidate.auroraId && wantedUuids.has(candidate.auroraId)) {
+        candidateByAuroraId.set(candidate.auroraId, candidate.id);
+      }
+    }
+    // Names that appear exactly once among the candidates AND exactly once
+    // among the incoming circuits. Anything ambiguous is dropped entirely —
+    // the same conservative 1:1 rule 0165_kilter_dedup_backfill.sql uses. A
+    // wrong merge is worse than a duplicate.
+    const candidateNameCounts = tally(candidates.map((candidate) => candidate.normalizedName));
+    const incomingNameCounts = tally(adoptablePuts.map((circuit) => normalizePlaylistName(circuit.name)));
+    for (const candidate of candidates) {
+      if (candidateNameCounts.get(candidate.normalizedName) !== 1) continue;
+      if (incomingNameCounts.get(candidate.normalizedName) !== 1) continue;
+      candidateByName.set(candidate.normalizedName, candidate.id);
+    }
+  }
+
+  /**
+   * Retire a candidate from BOTH indexes once an adoption has been attempted
+   * against it — win or lose. Two circuits in one batch must never both try to
+   * adopt the same row (the second would fail the `kilter_id IS NULL` re-check
+   * anyway, but this keeps it to one statement).
+   */
+  const consumeCandidate = (candidateId: bigint): void => {
+    for (const [key, value] of candidateByAuroraId) if (value === candidateId) candidateByAuroraId.delete(key);
+    for (const [key, value] of candidateByName) if (value === candidateId) candidateByName.delete(key);
+  };
+
   for (const op of circuitOps) {
     if (op.op === 'REMOVE') {
       // Sole-ownership gate. The EXISTS below only asks "do I have an
@@ -1862,6 +2055,59 @@ export async function applyCircuits(
     const now = new Date();
     const normalizedColor = normalizePlaylistColor(raw.color);
 
+    // Adoption: this circuit has no playlist keyed on kilter_id, but the user
+    // already has the pre-split copy of it. Link the two instead of inserting a
+    // twin.
+    if (decision === 'adopt') {
+      const candidateId =
+        candidateByAuroraId.get(raw.circuit_uuid) ?? candidateByName.get(normalizePlaylistName(raw.name ?? ''));
+      if (candidateId !== undefined) {
+        consumeCandidate(candidateId);
+        const adopted = await tx
+          .update(playlists)
+          .set({
+            kilterId: raw.circuit_uuid,
+            kilterType: 'circuits',
+            // Deliberately NOT `now`. `kilter_synced_at` means "Kilter's
+            // content was last written into this row", and the adoption cycle
+            // links the row WITHOUT overwriting name/description/is_public/
+            // color/playlist_climbs — the user's Boardsesh-side edits are the
+            // only copy that exists while circuit push-back is stubbed (#3525).
+            // Stamping `now` would claim a content sync that never happened and
+            // make playlistNotLocallyEditedGuard read "no local edits", so the
+            // very next cycle would clobber exactly what this preserved.
+            // Carrying the legacy upstream marker over instead keeps one
+            // uniform rule: edited-since-last-upstream-content ⇒ hands off.
+            kilterSyncedAt: sql`COALESCE(${playlists.auroraSyncedAt}, ${playlists.createdAt})`,
+          })
+          .where(
+            and(
+              eq(playlists.id, candidateId),
+              // Statement-time re-check of what the candidate SELECT read
+              // inside this transaction: nobody claimed the row in between.
+              isNull(playlists.kilterId),
+              exists(myPlaylistOwnerEdge(userId)),
+              foreignPlaylistOwnerGuard(userId),
+            ),
+          )
+          .returning({ id: playlists.id });
+
+        if (adopted[0]?.id !== undefined) {
+          // Keep the snapshotted owner map in step, exactly as the insert path
+          // below does: a later REMOVE for this circuit in the same batch has
+          // to see that we now hold the playlist.
+          ownersByCircuitUuid.set(raw.circuit_uuid, [userId]);
+          // Link-only. No ownership insert (the candidate query required our
+          // owner edge) and no climbs diff: the next cycle sees a matching
+          // kilter_id and, if the user never edited this playlist, applies
+          // Kilter's content then.
+          continue;
+        }
+        // Lost the race — fall through to the insert below, i.e. today's
+        // behaviour. Worst case is the duplicate we already had.
+      }
+    }
+
     // Upsert playlist row keyed on kilter_id, return the bigserial id so
     // we can attach climbs + ownership.
     const upserted = await tx
@@ -1877,6 +2123,12 @@ export async function applyCircuits(
         kilterType: 'circuits',
         kilterId: raw.circuit_uuid,
         kilterSyncedAt: now,
+        // Explicit, not the column default. `updated_at` and `kilter_synced_at`
+        // have to come from the SAME clock for the edit-clobber guard below to
+        // read "no local edits" on the next cycle — the default would be
+        // Postgres' `now()`, microseconds AFTER this JS Date, which reads as an
+        // edit and would freeze every freshly-inserted playlist forever.
+        updatedAt: now,
       })
       .onConflictDoUpdate({
         target: playlists.kilterId,
@@ -1897,7 +2149,12 @@ export async function applyCircuits(
         // lands. When it bites, DO UPDATE matches nothing, `.returning()` comes
         // back empty and the `playlistId === undefined` guard below skips the
         // op — the same outcome as the JS refusal, minus the log line.
-        setWhere: foreignPlaylistOwnerGuard(userId),
+        //
+        // Second half: the edit-clobber guard (#4707). A playlist the user
+        // edited in Boardsesh since Kilter content last landed in it is left
+        // alone — metadata AND climbs, since the empty `.returning()` skips the
+        // diff-and-replace below too.
+        setWhere: and(foreignPlaylistOwnerGuard(userId), playlistNotLocallyEditedGuard()),
       })
       .returning({ id: playlists.id });
 

@@ -8,6 +8,10 @@ export {
   // and './sync' subpaths, so a deep import into user-sync isn't an option.
   applyLogs,
   applyClimbRatings,
+  // Same reason: the legacy-playlist adoption in applyCircuits (#4707) turns on
+  // how Postgres treats NULLs in the global `playlists_kilter_id_idx` unique,
+  // which only a real database reproduces.
+  applyCircuits,
   type SyncKilterUserDataArgs,
   type SyncKilterUserDataResult,
   type ApplyCircuitsResult,
