@@ -210,7 +210,7 @@ async function importWoodsCatalog() {
           synced: true,
           syncError: null,
           userId: null,
-          // Copied per row: the exported constant is frozen and shared, and a
+          // Copied per row: the exported constant is shared and readonly, and a
           // row must own the array it hands to the driver.
           requiredSetIds: [...WOODS_REQUIRED_SET_IDS],
           compatibleSizeIds: mapped.compatibleSizeIds,

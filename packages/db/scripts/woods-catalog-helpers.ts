@@ -42,17 +42,17 @@ export const WOODS_LAYOUT_ID = 1;
 // Postgres, so a Woods climb can never be filtered out by a set list. NULL would
 // read as "not backfilled yet" (and `NULL <@ …` drops the row wherever the filter
 // does run).
-// Frozen and typed `readonly` so the single exported instance can't be handed to
-// thousands of climb rows as a shared mutable reference — callers copy it into
-// each row (`[...WOODS_REQUIRED_SET_IDS]`).
-export const WOODS_REQUIRED_SET_IDS: readonly number[] = Object.freeze([]);
+// Typed `readonly` so nothing writes through the single exported instance; the
+// import copies it into each climb row (`[...WOODS_REQUIRED_SET_IDS]`), which is
+// what the driver wants anyway.
+export const WOODS_REQUIRED_SET_IDS: readonly number[] = [];
 
 // boardDimension → compatible product-size ids. 8x10 is product size 1, 12x12 is
 // product size 2 (matching the WOODS_BOARD_SIZES ordering in board-constants).
-export const WOODS_DIMENSION_TO_SIZE_IDS: Readonly<Record<string, readonly number[]>> = Object.freeze({
-  '8x10': Object.freeze([1]),
-  '12x12': Object.freeze([2]),
-});
+export const WOODS_DIMENSION_TO_SIZE_IDS: Readonly<Record<string, readonly number[]>> = {
+  '8x10': [1],
+  '12x12': [2],
+};
 
 // Woods grades that fold onto a lower grade's shared difficulty id because the
 // shared BOULDER_GRADES table has no distinct id left for them. Derived from

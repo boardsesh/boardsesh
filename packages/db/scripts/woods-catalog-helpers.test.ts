@@ -321,9 +321,6 @@ void test('WOODS_REQUIRED_SET_IDS is empty even though the board config reports 
   // empty array can never hide a Woods climb — including from a client that
   // selected no sets at all.
   assert.deepEqual(WOODS_REQUIRED_SET_IDS, []);
-  // Frozen: one shared instance is copied into thousands of climb rows, so it
-  // must not be mutable from any of them.
-  assert.ok(Object.isFrozen(WOODS_REQUIRED_SET_IDS));
   assert.deepEqual(getWoodsBoardDetails({ size_id: 1 }).set_ids, [1]);
   assert.deepEqual(getWoodsBoardDetails({ size_id: 2 }).set_ids, [1]);
 });
