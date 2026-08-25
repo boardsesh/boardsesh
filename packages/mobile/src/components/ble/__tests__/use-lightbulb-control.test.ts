@@ -240,7 +240,9 @@ describe('useLightbulbControl on a wall with no LED light kit', () => {
     expect(ctrl.bluetooth?.takeVirtualWall).toHaveBeenCalledOnce();
     expect(ctrl.bluetooth?.connect).not.toHaveBeenCalled();
     expect(ctrl.bluetooth?.armUndoWallChangeToast).not.toHaveBeenCalled();
-    expect(hapticLightMock).toHaveBeenCalledOnce();
+    // The provider's takeVirtualWall owns the haptic (and the toast it goes
+    // with). Buzzing here as well would stutter every tap.
+    expect(hapticLightMock).not.toHaveBeenCalled();
   });
 
   it('releases the wall on the next tap', () => {
@@ -249,6 +251,7 @@ describe('useLightbulbControl on a wall with no LED light kit', () => {
     result.current.onPress();
     expect(ctrl.bluetooth?.releaseVirtualWall).toHaveBeenCalledOnce();
     expect(ctrl.bluetooth?.disconnect).not.toHaveBeenCalled();
+    expect(hapticLightMock).not.toHaveBeenCalled();
   });
 
   it('reads lit while holding the wall, without claiming a local BLE link', () => {
