@@ -39,6 +39,7 @@ import { InteractiveCreateBoard, type CreateBoardControls } from './InteractiveC
 import { CreateDrawerHeader } from './CreateDrawerHeader';
 import { CreateDrawerActionBar } from './CreateDrawerActionBar';
 import { CreateDrawerForm } from './CreateDrawerForm';
+import { PlaybackControls } from '../playback/PlaybackControls';
 import { OpenDraftsSection } from './OpenDraftsSection';
 import { DuplicateBanner } from './DuplicateBanner';
 import { InlineConfirmBanner } from './InlineConfirmBanner';
@@ -82,6 +83,17 @@ type CreateDrawerProps = {
 // the peek taller and eat into an already-tight budget on a tall board.
 const ABOVE_FOLD_CHROME = 324;
 
+// PlaybackControls' resting height: paddingVertical 12 x 2 + the 52dp play
+// button + marginTop 8. Taken out of the board budget only for a route,
+// otherwise duplicating a frame would shrink the board for boulders too.
+const PLAYBACK_TRANSPORT_RESERVE = 84;
+
+// The peek must never grow into the '100%' snap — at that point the two snap
+// points collapse into one, the sheet has no travel and the "drag up for the
+// form" affordance is dead. Belt and braces for a large Dynamic Type setting or
+// a locale with taller chrome.
+const MAX_PEEK_FRACTION = 0.92;
+
 // The native sheet's drag grabber sits in the sheet chrome above the content;
 // reserve a small fixed amount for it in the peek snap-point (replaces the old
 // runtime-measured gorhom handle height).
@@ -104,7 +116,7 @@ export function CreateDrawer({
   onViewDuplicate,
 }: CreateDrawerProps) {
   const { systemColors } = useTheme();
-  const { t } = useTranslation('climbs');
+  const { t } = useTranslation(['climbs', 'session']);
   const insets = useSafeAreaInsets();
   // Bottom terms use the WINDOW inset: this drawer is a route inside the climbs
   // tab, whose per-tab provider folds iOS 26 tab chrome the sheet covers into
@@ -177,7 +189,11 @@ export function CreateDrawer({
     [resetBoardZoom, onLoadDraft],
   );
 
-  const boardMaxHeight = Math.max(200, windowHeight - insets.top - windowInsetBottom - ABOVE_FOLD_CHROME);
+  const isRoute = controller.frameCount > 1;
+  const boardMaxHeight = Math.max(
+    200,
+    windowHeight - insets.top - windowInsetBottom - ABOVE_FOLD_CHROME - (isRoute ? PLAYBACK_TRANSPORT_RESERVE : 0),
+  );
 
   // Compute the on-screen board size up front (window width minus the board
   // section margins, capped by the height budget) so the board paints on the
@@ -205,8 +221,11 @@ export function CreateDrawer({
   // native grabber reserve + content paddingTop + above-fold (header + board +
   // action bar) + bottom safe area + a reveal margin so a hint of the below-fold
   // form peeks.
+  const maxPeek = (windowHeight - insets.top) * MAX_PEEK_FRACTION;
   const peekHeight =
-    aboveFoldHeight > 0 ? NATIVE_HANDLE_RESERVE + spacing[2] + aboveFoldHeight + windowInsetBottom + spacing[3] : 0;
+    aboveFoldHeight > 0
+      ? Math.min(NATIVE_HANDLE_RESERVE + spacing[2] + aboveFoldHeight + windowInsetBottom + spacing[3], maxPeek)
+      : 0;
 
   // Re-snap to the current index whenever the peek height changes: the first
   // measurement (fallback → measured peek) and any re-layout (rotation resizes
@@ -335,6 +354,29 @@ export function CreateDrawer({
               />
             </View>
 
+            {isRoute && (
+              /* The nested root is load-bearing on Android, not decoration: the
+                 speed slider is a GestureDetector, and this sheet's content lives
+                 inside a Jetpack Compose ModalBottomSheet that the app's single
+                 root GestureHandlerRootView does not cover (#4320). The explicit
+                 style matters too — RNGH defaults to flex: 1, and a flex child
+                 inside the measured View would corrupt peekHeight. */
+              <GestureHandlerRootView style={styles.playbackRoot}>
+                <PlaybackControls
+                  frameIndex={controller.currentFrameIndex}
+                  frameCount={controller.frameCount}
+                  isPlaying={controller.playback.isPlaying}
+                  speed={controller.playback.speed}
+                  paceMs={controller.playback.paceMs}
+                  wallStateLabel={controller.handedOff ? t('playView.wallState.onWall') : null}
+                  onPlay={controller.playback.play}
+                  onPause={controller.playback.pause}
+                  onSeek={controller.playback.seek}
+                  onSpeedChange={controller.playback.setSpeed}
+                />
+              </GestureHandlerRootView>
+            )}
+
             <CreateDrawerActionBar
               boardName={board.boardName}
               selectedBrush={controller.selectedBrush}
@@ -350,8 +392,6 @@ export function CreateDrawer({
               currentFrameIndex={controller.currentFrameIndex}
               onDuplicateFrame={controller.duplicateFrame}
               onDeleteFrame={controller.deleteFrame}
-              onPrevFrame={controller.prevFrame}
-              onNextFrame={controller.nextFrame}
               canSetActive={controller.canSetActive}
               onSetActive={controller.handleSetActive}
               saveState={controller.saveState}
@@ -394,6 +434,9 @@ const styles = StyleSheet.create({
   boardSection: {
     marginHorizontal: spacing[4],
     marginTop: spacing[2],
+  },
+  playbackRoot: {
+    alignSelf: 'stretch',
   },
   belowFold: {
     paddingHorizontal: spacing[4],

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import {
   useClimbFrames,
@@ -11,6 +11,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../lib/analytics';
 import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
+import { useBleFrameWriter } from '../../lib/ble/use-ble-frame-writer';
 
 type UseMobilePlaybackInput = {
   climb: Climb | null | undefined;
@@ -152,67 +153,18 @@ export function useMobilePlayback({
     onPeerFrameMismatch: handlePeerFrameMismatch,
   });
 
-  // --- Latest-wins BLE frame writer ---
-  // sendFramesToBoard serialises writes across all callers (its writeChainRef
-  // mutex, mirroring web's), so overlapping calls can no longer interleave at
-  // the GATT boundary. This drain still matters for a different reason: it
-  // collapses animation-frame bursts to the newest frame instead of queueing
-  // every intermediate frame behind the mutex, which would let the wall lag
-  // arbitrarily far behind the on-screen playback.
-  const isWritingFrameRef = useRef(false);
-  const pendingFrameRef = useRef<string | null>(null);
-  const lastSentFrameRef = useRef<string | null>(null);
-  const mirroredRef = useRef(mirrored);
-  mirroredRef.current = mirrored;
-
-  // Reset the write trackers on climb change so the new climb's first frame
-  // always flushes.
-  useEffect(() => {
-    lastSentFrameRef.current = null;
-    pendingFrameRef.current = null;
-  }, [climbUuid]);
-
+  // --- BLE frame writer ---
+  // Extracted to `useBleFrameWriter` so the create drawer's route preview drives
+  // the wall through exactly the same latest-wins drain (#4634).
   const { currentFrameString, isAnimatable } = playback;
   const bluetoothConnected = bluetooth?.isConnected ?? false;
-
-  useEffect(() => {
-    if (!isOpen || suppressWallWrites || !isAnimatable || !bluetoothConnected || !bluetooth) return;
-    const frame = currentFrameString;
-    if (!frame || frame === lastSentFrameRef.current) return;
-    if (isWritingFrameRef.current) {
-      pendingFrameRef.current = frame;
-      return;
-    }
-    isWritingFrameRef.current = true;
-    const sendFramesToBoard = bluetooth.sendFramesToBoard;
-    const drain = async () => {
-      let toSend: string | null = frame;
-      try {
-        while (toSend !== null) {
-          const next: string = toSend;
-          if (next === lastSentFrameRef.current) {
-            toSend = pendingFrameRef.current;
-            pendingFrameRef.current = null;
-            continue;
-          }
-          lastSentFrameRef.current = next;
-          try {
-            await sendFramesToBoard(next, mirroredRef.current);
-          } catch (error) {
-            // Best-effort: a dropped frame self-heals on the next tick. Dev-log
-            // only (mobile has no analytics transport for a 'BLE Frame Send
-            // Failed' event yet).
-            if (__DEV__) console.warn('[mobile-playback] BLE frame send failed', error);
-          }
-          toSend = pendingFrameRef.current;
-          pendingFrameRef.current = null;
-        }
-      } finally {
-        isWritingFrameRef.current = false;
-      }
-    };
-    void drain();
-  }, [isOpen, suppressWallWrites, isAnimatable, bluetoothConnected, bluetooth, currentFrameString]);
+  const wallFrame = !isOpen || suppressWallWrites || !isAnimatable || !bluetoothConnected ? null : currentFrameString;
+  useBleFrameWriter({
+    frame: wallFrame,
+    send: bluetooth?.sendFramesToBoard,
+    mirrored,
+    resetKey: climbUuid,
+  });
 
   const play = useCallback(() => {
     // Fire the analytics seam only on a deliberate user play of a route — peer

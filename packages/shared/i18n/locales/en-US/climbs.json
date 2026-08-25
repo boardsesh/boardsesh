@@ -525,7 +525,8 @@
       },
       "actions": {
         "clear": "Clear holds",
-        "setActive": "Set as active climb",
+        "setActive": "Put it on the wall",
+        "setActiveHint": "Add a start and a finish hold first",
         "undo": "Undo",
         "redo": "Redo",
         "newClimb": "Start a new climb",
@@ -534,10 +535,7 @@
       },
       "frames": {
         "duplicate": "Duplicate frame",
-        "delete": "Delete frame",
-        "prev": "Previous frame",
-        "next": "Next frame",
-        "counter": "{{index}}/{{total}}"
+        "delete": "Delete frame"
       },
       "holdRole": {
         "title": "Set hold role",

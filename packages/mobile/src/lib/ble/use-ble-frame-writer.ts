@@ -1,0 +1,93 @@
+import { useEffect, useRef } from 'react';
+import type { SendFramesToBoard } from './use-board-bluetooth';
+
+type UseBleFrameWriterInput = {
+  /**
+   * The flat, single-frame BLE string to put on the wall, or `null` for "don't
+   * write" — paused, view-only, disconnected, or a surface that isn't driving
+   * the wall right now.
+   */
+  frame: string | null;
+  send: SendFramesToBoard | undefined;
+  mirrored: boolean;
+  /**
+   * Resets the dedup so the next frame always flushes. Change it whenever the
+   * thing being played changes identity (a new climb, a new draft).
+   */
+  resetKey: string | null;
+  /**
+   * Called once per successful write, before the frame lands. Lets the wall-state
+   * dedup in the Bluetooth provider know its record of what the wall physically
+   * shows is now stale.
+   */
+  onWrite?: () => void;
+};
+
+/**
+ * Latest-wins BLE frame writer, shared by the play drawer's route playback and
+ * the create drawer's route preview.
+ *
+ * `sendFramesToBoard` serialises writes across all callers (its write-chain
+ * mutex, mirroring web's), so overlapping calls can no longer interleave at the
+ * GATT boundary. This drain still matters for a different reason: it collapses
+ * animation-frame bursts to the newest frame instead of queueing every
+ * intermediate frame behind the mutex, which would let the wall lag arbitrarily
+ * far behind the on-screen playback.
+ */
+export function useBleFrameWriter({ frame, send, mirrored, resetKey, onWrite }: UseBleFrameWriterInput): void {
+  const isWritingFrameRef = useRef(false);
+  const pendingFrameRef = useRef<string | null>(null);
+  const lastSentFrameRef = useRef<string | null>(null);
+  const mirroredRef = useRef(mirrored);
+  mirroredRef.current = mirrored;
+  const onWriteRef = useRef(onWrite);
+  onWriteRef.current = onWrite;
+
+  // Reset the write trackers on identity change so the new thing's first frame
+  // always flushes.
+  useEffect(() => {
+    lastSentFrameRef.current = null;
+    pendingFrameRef.current = null;
+  }, [resetKey]);
+
+  useEffect(() => {
+    if (!send || !frame) return;
+    if (frame === lastSentFrameRef.current) return;
+    if (isWritingFrameRef.current) {
+      pendingFrameRef.current = frame;
+      return;
+    }
+    isWritingFrameRef.current = true;
+    const drain = async () => {
+      let toSend: string | null = frame;
+      try {
+        while (toSend !== null) {
+          const next: string = toSend;
+          if (next === lastSentFrameRef.current) {
+            toSend = pendingFrameRef.current;
+            pendingFrameRef.current = null;
+            continue;
+          }
+          lastSentFrameRef.current = next;
+          try {
+            onWriteRef.current?.();
+            await send(next, mirroredRef.current);
+          } catch (error) {
+            // Best-effort: a dropped frame self-heals on the next tick. Dev-log
+            // only (mobile has no analytics transport for a 'BLE Frame Send
+            // Failed' event yet).
+            if (__DEV__) console.warn('[ble-frame-writer] BLE frame send failed', error);
+          }
+          toSend = pendingFrameRef.current;
+          pendingFrameRef.current = null;
+        }
+      } finally {
+        isWritingFrameRef.current = false;
+      }
+    };
+    void drain();
+    // `resetKey` is a dep so a reset genuinely re-flushes: the reset effect above
+    // runs first (declaration order), clearing the dedup, and this one then
+    // re-sends even when the frame string itself is unchanged.
+  }, [frame, send, resetKey]);
+}

@@ -78,6 +78,14 @@ type BluetoothContextValue = {
    */
   reassertWall: () => void;
   /**
+   * Forget what the wall physically shows. Any surface that writes the wall
+   * OUTSIDE the auto-sender (the create drawer's live preview and its route
+   * transport) must call this, or re-selecting the previously-lit queue item
+   * hits the auto-sender's dedup skip and reports the climb confirmed over a
+   * wall that is actually showing whatever the creator last painted.
+   */
+  invalidateWallState: () => void;
+  /**
    * Restore the climb captured before this device's latest accepted wall report.
    * The platform relights it over BLE first, then reports it to board presence.
    */
@@ -1446,6 +1454,10 @@ export function BluetoothProvider({
   const [reassertNonce, setReassertNonce] = useState(0);
   const reassertWall = useCallback(() => setReassertNonce((nonce) => nonce + 1), []);
 
+  const invalidateWallState = useCallback(() => {
+    lastPhysicalFramesRef.current = null;
+  }, []);
+
   const disconnectInFlightRef = useRef<Promise<void> | null>(null);
 
   // Coalesce adapter disconnect calls. The hook consumes and reports the active
@@ -1542,6 +1554,7 @@ export function BluetoothProvider({
       sendFramesToBoard: sendFramesToBoardWithActivityReset,
       clearBoard,
       reassertWall,
+      invalidateWallState,
       undoWallChange,
       relightPresenceClimb,
       armUndoWallChangeToast,
@@ -1564,6 +1577,7 @@ export function BluetoothProvider({
       sendFramesToBoardWithActivityReset,
       clearBoard,
       reassertWall,
+      invalidateWallState,
       undoWallChange,
       relightPresenceClimb,
       armUndoWallChangeToast,

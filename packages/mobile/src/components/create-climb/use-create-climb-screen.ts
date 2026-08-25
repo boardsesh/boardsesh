@@ -48,6 +48,8 @@ import {
 import { computeRoleCapacity, getNextBrushRole, getPaintRoles, type BrushRole } from './brush-roles';
 import { useCreateClimbAutosave } from './use-create-climb-autosave';
 import { deriveDraftStatusView, type DraftStatusView } from './draft-status-view';
+import { useBleFrameWriter } from '../../lib/ble/use-ble-frame-writer';
+import { useCreateClimbPlayback } from './use-create-climb-playback';
 
 // The save button's visual state, derived from auth + the saved-climb snapshot +
 // in-flight state. Lives here (the controller computes it) so the UI imports it.
@@ -287,8 +289,7 @@ export function useCreateClimbScreen({
     loadFrames,
     duplicateFrame,
     deleteFrame,
-    nextFrame,
-    prevFrame,
+    goToFrame,
     undo,
     redo,
     canUndo,
@@ -735,7 +736,13 @@ export function useCreateClimbScreen({
   }, []);
 
   // ---- Local autosave (debounced). ----
-  const holdsJson = useMemo(() => JSON.stringify(litUpHoldsMap), [litUpHoldsMap]);
+  // Frame 0, NOT the active frame: `holdsJson` is an autosave dep, and playback
+  // moves the active frame every tick — at the 500ms debounce under a 750ms pace
+  // that is one draft write per frame, each persisting a different holdsJson for
+  // the same framesJson. Frame 0 is also what the legacy single-frame restore
+  // fallback below actually wants, and it is invariant under frame navigation,
+  // which is what makes it agree with the `serverFrames[0]` draft baseline.
+  const holdsJson = useMemo(() => JSON.stringify(frames[0] ?? {}), [frames]);
   // The active frame as an absolute single-frame Aurora string — what the board
   // renderer draws. `currentFrameBleString`'s identity already tracks
   // `litUpHoldsMap`, so this recomputes exactly once per paint.
@@ -816,6 +823,23 @@ export function useCreateClimbScreen({
     restoreEpoch,
   });
 
+  // ---- Route playback (preview the moves before publishing). ----
+  const playback = useCreateClimbPlayback({
+    frames,
+    boardName: board.boardName,
+    currentFrameIndex,
+    goToFrame,
+  });
+
+  // True once Set-Active handed the route to the queue. The auto-sender then
+  // owns the wall and lights the whole route, so the creator stands its own
+  // writers down rather than fighting it a frame at a time — and the transport
+  // swaps its frame counter for an "On the wall" chip, because "2 / 3" over a
+  // fully-lit wall is worse than no counter at all. Any edit or transport press
+  // takes the wall back.
+  const [handedOff, setHandedOff] = useState(false);
+  const reclaimWall = useCallback(() => setHandedOff(false), []);
+
   // ---- BLE preview (debounced) while connected. ----
   const sendFramesRef = useRef(bluetooth?.sendFramesToBoard);
   sendFramesRef.current = bluetooth?.sendFramesToBoard;
@@ -825,16 +849,36 @@ export function useCreateClimbScreen({
       bluetooth.layoutId === board.layoutId &&
       bluetooth.sizeId === board.sizeId);
   const bleConnected = (bluetooth?.isConnected ?? false) && wallMatchesEditor;
+  const invalidateWallState = bluetooth?.invalidateWallState;
+  const invalidateWallStateRef = useRef(invalidateWallState);
+  invalidateWallStateRef.current = invalidateWallState;
+  const isPlaying = playback.isPlaying;
   useEffect(() => {
-    if (!bleConnected || editSizeMismatch) return;
+    // While playing, the frame writer below owns the wall — at MIN_PACE_MS this
+    // debounce would swallow every frame and send nothing until playback stops.
+    if (!bleConnected || editSizeMismatch || isPlaying || handedOff) return;
     const handle = setTimeout(() => {
       // The active frame only — the wall mirrors whatever you're painting
       // right now, not multi-frame route syntax the BLE packet builder can't
       // parse.
+      invalidateWallStateRef.current?.();
       void sendFramesRef.current?.(currentFrameBleString());
     }, BLE_PREVIEW_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [holdsJson, bleConnected, editSizeMismatch, currentFrameBleString]);
+  }, [holdsJson, bleConnected, editSizeMismatch, isPlaying, handedOff, currentFrameBleString]);
+
+  // Latest-wins writer for playback frames — the same drain the play drawer uses.
+  useBleFrameWriter({
+    frame: isPlaying && bleConnected && !handedOff && !editSizeMismatch ? playback.currentFrameString : null,
+    send: bluetooth?.sendFramesToBoard,
+    mirrored: false,
+    resetKey: draftKey,
+    // The creator writes straight past the auto-sender, so its record of what
+    // the wall physically shows has to be dropped — otherwise re-selecting the
+    // previously-lit queue item hits the dedup skip and confirms a climb over a
+    // wall showing the creator's frame 3.
+    onWrite: invalidateWallState,
+  });
 
   // ---- Painting + role assignment. ----
   // A tap sets the tapped hold straight to the selected brush — cycling only
@@ -849,6 +893,7 @@ export function useCreateClimbScreen({
   const lastPaintRef = useRef<{ holdId: number; brush: BrushRole } | null>(null);
   const handlePaint = useCallback(
     (holdId: number) => {
+      reclaimWall();
       const currentState = litUpHoldsMap[holdId]?.state ?? 'OFF';
       // `lastPaintRef` itself is never cleared on a brush switch — only this
       // equality check gates it — so tapping X under brush A, switching to
@@ -867,7 +912,7 @@ export function useCreateClimbScreen({
       setHoldState(holdId, nextState);
       lastPaintRef.current = { holdId, brush: selectedBrush };
     },
-    [setHoldState, selectedBrush, litUpHoldsMap, board.boardName, campus],
+    [setHoldState, selectedBrush, litUpHoldsMap, board.boardName, campus, reclaimWall],
   );
 
   // A hold-role cycle only makes sense while staying on the same frame —
@@ -878,13 +923,51 @@ export function useCreateClimbScreen({
 
   const handleAssignRole = useCallback(
     (holdId: number, role: BrushRole) => {
+      reclaimWall();
       setHoldState(holdId, role);
       // The long-press role sheet is a direct assignment, not a tap — clear
       // any in-progress cycle so a follow-up tap on this hold starts fresh
       // instead of resuming wherever the sheet left it.
       lastPaintRef.current = null;
     },
-    [setHoldState],
+    [setHoldState, reclaimWall],
+  );
+
+  // Editing or touching the transport takes the wall back from the queue.
+  const handleDuplicateFrame = useCallback(() => {
+    reclaimWall();
+    duplicateFrame();
+  }, [duplicateFrame, reclaimWall]);
+
+  const handleDeleteFrame = useCallback(() => {
+    reclaimWall();
+    deleteFrame();
+  }, [deleteFrame, reclaimWall]);
+
+  const handlePlay = useCallback(() => {
+    reclaimWall();
+    playback.play();
+  }, [playback, reclaimWall]);
+
+  const handleSeek = useCallback(
+    (index: number) => {
+      reclaimWall();
+      playback.seek(index);
+    },
+    [playback, reclaimWall],
+  );
+
+  const playbackControls = useMemo(
+    () => ({
+      isPlaying: playback.isPlaying,
+      speed: playback.speed,
+      paceMs: playback.paceMs,
+      play: handlePlay,
+      pause: playback.pause,
+      seek: handleSeek,
+      setSpeed: playback.setSpeed,
+    }),
+    [playback.isPlaying, playback.speed, playback.paceMs, playback.pause, playback.setSpeed, handlePlay, handleSeek],
   );
 
   // ---- Clear holds vs. start a new climb. ----
@@ -894,11 +977,13 @@ export function useCreateClimbScreen({
 
   /** Empty this frame's holds. Undoable through the reducer; touches nothing else. */
   const handleClearHolds = useCallback(() => {
+    reclaimWall();
     resetHolds();
     lastPaintRef.current = null;
-  }, [resetHolds]);
+  }, [resetHolds, reclaimWall]);
 
   const resetToBlankClimb = useCallback(async () => {
+    reclaimWall();
     // Drop the working copy THIS session owns — in fork/edit mode that is the
     // `fork:`/`edit:` slot, not the shared new-climb one. Clearing only
     // `draftKey` left an abandoned fork slot behind, which the plain creator's
@@ -941,7 +1026,7 @@ export function useCreateClimbScreen({
     } finally {
       startNewInFlightRef.current = false;
     }
-  }, [resetHolds, discardAutosaveSlot, isEditing, isForking, onStartedNewClimb]);
+  }, [resetHolds, discardAutosaveSlot, isEditing, isForking, onStartedNewClimb, reclaimWall]);
 
   const confirmNewClimb = useCallback(() => {
     if (saveInFlightRef.current || startNewInFlightRef.current) return;
@@ -1054,11 +1139,15 @@ export function useCreateClimbScreen({
 
   // ---- Set Active: build a minimal Climb and push to the queue. ----
   const handleSetActive = useCallback(() => {
-    const frames = generateFramesString();
-    if (!frames) return;
+    const framesString = generateFramesString();
+    if (!framesString) return;
+    // Stop the transport first: a running clock would race the auto-sender's
+    // write, and the wall is about to show the whole route rather than a frame.
+    playback.pause();
+    setHandedOff(true);
     const uuid = savedClimb?.uuid ?? previewUuidRef.current ?? randomUUID();
-    setCurrentClimb(climbToQueueItem(buildProvisionalClimb(uuid, frames), { uuid }));
-  }, [generateFramesString, savedClimb, buildProvisionalClimb, setCurrentClimb]);
+    setCurrentClimb(climbToQueueItem(buildProvisionalClimb(uuid, framesString), { uuid }));
+  }, [generateFramesString, savedClimb, buildProvisionalClimb, setCurrentClimb, playback]);
 
   // ---- BLE toggle (drives the header lightbulb): connect lights the wall with
   // the current holds; tapping again disconnects. ----
@@ -1134,6 +1223,9 @@ export function useCreateClimbScreen({
     }
 
     saveInFlightRef.current = true;
+    // Stop the transport before the save pushes the climb into the queue — a
+    // running clock would race the auto-sender for the wall.
+    playback.pause();
     setIsSaving(true);
     setPublishDuplicateError(null);
     // Captured BEFORE the mutation fires. Anything typed during the round trip
@@ -1318,6 +1410,7 @@ export function useCreateClimbScreen({
     t,
     queryClient,
     onPublished,
+    playback,
   ]);
 
   const dismissDuplicateError = useCallback(() => setPublishDuplicateError(null), []);
@@ -1330,8 +1423,8 @@ export function useCreateClimbScreen({
   const supportsMultiFrame = boardCapabilities.multiFrameClimbs;
   const guardedDuplicateFrame = useCallback(() => {
     if (!supportsMultiFrame) return;
-    duplicateFrame();
-  }, [supportsMultiFrame, duplicateFrame]);
+    handleDuplicateFrame();
+  }, [supportsMultiFrame, handleDuplicateFrame]);
 
   const canSetActive = isValid;
 
@@ -1375,9 +1468,10 @@ export function useCreateClimbScreen({
     frameCount,
     currentFrameIndex,
     duplicateFrame: guardedDuplicateFrame,
-    deleteFrame,
-    nextFrame,
-    prevFrame,
+    deleteFrame: handleDeleteFrame,
+    // route playback (transport)
+    playback: playbackControls,
+    handedOff,
     // undo/redo (current editing session only)
     undo,
     redo,

@@ -8,6 +8,13 @@ export default defineConfig({
   define: {
     __DEV__: 'true',
   },
+  // Several `@boardsesh/*-react` packages carry their own React devDependency so
+  // they can run their own suites, which bun installs as a nested copy. Without
+  // deduping, a mobile suite that renders a hook from one of them loads a second
+  // React and every hook call throws "Cannot read properties of null".
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+  },
   test: {
     name: 'mobile',
     globals: true,
