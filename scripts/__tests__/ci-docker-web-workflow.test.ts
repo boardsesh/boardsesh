@@ -163,6 +163,19 @@ describe('docker-web CI job contract', () => {
     }
   });
 
+  it('runs the job on diffs to the job itself', () => {
+    // Neither entry is an image input. They are what stops a ci.yml-only PR
+    // from narrowing the filter, gutting an assertion or deleting the job and
+    // going green: this spec reads ci.yml with readFileSync, so Vitest's
+    // `--changed` module-graph analysis in test-default can never relate it to
+    // such a diff. Without them the gate could be quietly reverted by the exact
+    // change shape it exists to catch — and, on the PR that introduced it, the
+    // job would never have run in CI even once before merging.
+    const filter = withoutComments(dockerWebFilter);
+    expect(filter).toContain("- '.github/workflows/ci.yml'");
+    expect(filter).toContain("- 'scripts/__tests__/ci-docker-web-workflow.test.ts'");
+  });
+
   it('runs only when the web image inputs change', () => {
     expect(dockerWebSteps).toContain("if: needs.changes.outputs.dockerWeb == 'true'");
   });

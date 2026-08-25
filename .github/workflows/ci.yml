@@ -238,22 +238,23 @@ jobs:
             #     drop the set together.
             #   * the generator itself and vite.config.ts, which defines the
             #     `docker-context:web` script.
+            #   * `.github/workflows/ci.yml`. Not an image input — it is here so
+            #     a diff that narrows this filter, or edits the job, actually
+            #     runs the job it changes. ci-docker-web-workflow.test.ts reads
+            #     ci.yml with readFileSync, which `--changed` can never relate to
+            #     a diff, so without this entry a ci.yml-only PR could quietly
+            #     gut the gate and go green. Measured cost: ci.yml took 50 of the
+            #     last 4,941 commits (~1%).
             #
-            # KNOWN BLIND SPOTS, accepted deliberately:
-            #   * packages/mobile/**, packages/shared/offline-sync/** and
-            #     packages/shared/key-value-storage/** ARE copied into the web
-            #     context (services.web roots at @boardsesh/mobile too), but
-            #     nothing in the image builds or runs them — W-24/#4438 deleted
-            #     the Expo export step from the builder stage and W-26/#4442
-            #     drops them from the context. Mobile is by far the highest-churn
-            #     tree in the repo, so gating an 11-minute build on it would make
-            #     most PRs pay for bytes the runner never sees.
-            #   * a `.github/workflows/ci.yml`-only diff that narrows this filter
-            #     does not run the job, so ci-docker-web-workflow.test.ts is not
-            #     selected on that PR (it reads ci.yml with readFileSync, which
-            #     `--changed` can't relate to a diff). The unconditional
-            #     main-push build catches it on the next push instead.
-            # Both close by re-running the job unconditionally on main.
+            # KNOWN BLIND SPOT, accepted deliberately: packages/mobile/**,
+            # packages/shared/offline-sync/** and packages/shared/
+            # key-value-storage/** ARE copied into the web context (services.web
+            # roots at @boardsesh/mobile too), but nothing in the image builds or
+            # runs them — W-24/#4438 deleted the Expo export step from the
+            # builder stage and W-26/#4442 drops them from the context. Mobile is
+            # by far the highest-churn tree in the repo, so gating an 11-minute
+            # build on it would make most PRs pay for bytes the runner never
+            # sees. The unconditional main-push build is the backstop.
             dockerWeb:
               - 'packages/web/**'
               - 'packages/aurora-sync/**'
@@ -303,6 +304,8 @@ jobs:
               - 'scripts/lib/patch-expo-web-pwa-manifest.mjs'
               - 'scripts/lib/tailscale-hostname.ts'
               - 'vite.config.ts'
+              - '.github/workflows/ci.yml'
+              - 'scripts/__tests__/ci-docker-web-workflow.test.ts'
             rootCi:
               - '.github/workflows/ci.yml'
               - 'vite.config.ts'
