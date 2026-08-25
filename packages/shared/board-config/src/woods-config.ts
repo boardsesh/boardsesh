@@ -29,7 +29,7 @@ export const WOODS_SIZES: Record<WoodsBoardSize, { id: number; name: string; dim
 
 // Map a board size's numeric id back to its dimension string (and vice versa).
 export function woodsSizeIdToDimension(sizeId: number): WoodsBoardSize | undefined {
-  return Object.values(WOODS_SIZES).find((size) => size.id === sizeId)?.dimension as WoodsBoardSize | undefined;
+  return Object.values(WOODS_SIZES).find((size) => size.id === sizeId)?.dimension;
 }
 
 export function woodsDimensionToSizeId(dimension: WoodsBoardSize): number {

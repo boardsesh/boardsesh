@@ -346,7 +346,7 @@ describe('assertKnownBoardConfig', () => {
     await expectUnknownBoardConfig(assertKnownBoardConfig('woods', woodsLayoutId, largeSizeId, '1,2'));
     await expectUnknownBoardConfig(assertKnownBoardConfig('woods', woodsLayoutId, largeSizeId, ''));
 
-    // Static catalog: not one of those eight answers came from the database.
+    // Static catalog: not one of those seven answers came from the database.
     expect(selectSpy).not.toHaveBeenCalled();
   });
 });

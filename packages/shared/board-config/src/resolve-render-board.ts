@@ -201,9 +201,16 @@ function resolveWoodsRenderBoard({
   ResolveRenderBoardArgs,
   'climbLayoutId' | 'compatibleSizeIds' | 'tickBoard' | 'ownerBoards'
 >): RenderBoardConfig | null {
+  // Woods has exactly one layout, so an unknown or stale climb/tick layout id
+  // resolves to it rather than being echoed back to the caller.
   const layoutId = climbLayoutId ?? WOODS_LAYOUTS.woods.id;
+  // An empty `compatible_size_ids` means the same thing as a null one — no
+  // compatibility data for this climb (a legacy row, or denormalised columns
+  // that haven't been populated yet) — so it imposes no constraint, matching
+  // how `candidateSizesForLayout` degrades rather than returning nothing.
   const fitsClimb = (sizeId: number): boolean =>
-    WOODS_SIZE_IDS.has(sizeId) && (compatibleSizeIds == null || compatibleSizeIds.includes(sizeId));
+    WOODS_SIZE_IDS.has(sizeId) &&
+    (compatibleSizeIds == null || compatibleSizeIds.length === 0 || compatibleSizeIds.includes(sizeId));
 
   // 1. The board it was logged on, when the climb actually fits that size.
   if (
@@ -212,7 +219,7 @@ function resolveWoodsRenderBoard({
     (climbLayoutId == null || tickBoard.layoutId === climbLayoutId) &&
     fitsClimb(tickBoard.sizeId)
   ) {
-    return { layoutId: tickBoard.layoutId, sizeId: tickBoard.sizeId, setIds: [...WOODS_SET_IDS] };
+    return { layoutId, sizeId: tickBoard.sizeId, setIds: [...WOODS_SET_IDS] };
   }
 
   // 2. The smallest of their own Woods boards the climb fits on. Owned beats
@@ -223,6 +230,11 @@ function resolveWoodsRenderBoard({
   if (fitting.length > 0) {
     const best = fitting.reduce((smallest, board) => {
       if (board.isOwned !== smallest.isOwned) return board.isOwned ? board : smallest;
+      // `getSizeRank` warns it is only meaningful within one `productId`, and the
+      // two Woods sizes deliberately carry different ones (D2: distinct product
+      // ids stop `size-comparison` treating the 8x10 as a crop of the 12x12).
+      // The rank itself is still a pure height/width ordering, so comparing them
+      // orders 8x10 (25 rows) below 12x12 (31 rows) — which is all rung 2 needs.
       return getSizeRank('woods', board.sizeId) < getSizeRank('woods', smallest.sizeId) ? board : smallest;
     });
     return { layoutId, sizeId: best.sizeId, setIds: [...WOODS_SET_IDS] };

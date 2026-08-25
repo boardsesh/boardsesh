@@ -338,4 +338,47 @@ describe('resolveRenderBoard — Woods', () => {
       setIds: [WOODS_SET],
     });
   });
+
+  it('reads an empty compatibleSizeIds as no data, not as "fits nothing"', () => {
+    // The schema documents `[]` as "the server has no compatibility data for
+    // this climb (legacy row)", which is the same thing null means. Treating it
+    // as a constraint would reject every rung and drop a climb the user has a
+    // board for onto the default, matching nothing they own.
+    expect(
+      resolveRenderBoard({
+        boardType: 'woods',
+        climbLayoutId: WOODS_LAYOUT,
+        compatibleSizeIds: [],
+        tickBoard: woodsBoard(WOODS_8X10),
+      })?.sizeId,
+    ).toBe(WOODS_8X10);
+    expect(
+      resolveRenderBoard({
+        boardType: 'woods',
+        climbLayoutId: WOODS_LAYOUT,
+        compatibleSizeIds: [],
+        ownerBoards: [woodsBoard(WOODS_12X12)],
+      })?.sizeId,
+    ).toBe(WOODS_12X12);
+    // With no board to reason from either, it still degrades to the 12x12
+    // default rather than returning null.
+    expect(resolveRenderBoard({ boardType: 'woods', climbLayoutId: WOODS_LAYOUT, compatibleSizeIds: [] })).toEqual({
+      layoutId: WOODS_LAYOUT,
+      sizeId: WOODS_12X12,
+      setIds: [WOODS_SET],
+    });
+  });
+
+  it('pins the layout to Woods when the climb carries none, whatever the tick board says', () => {
+    // Woods ships exactly one layout, so a stale or cross-board tick layout id
+    // must not be echoed back — the caller uses this id to look up board art.
+    expect(
+      resolveRenderBoard({
+        boardType: 'woods',
+        climbLayoutId: null,
+        compatibleSizeIds: [WOODS_8X10],
+        tickBoard: woodsBoard(WOODS_8X10, { layoutId: 99 }),
+      }),
+    ).toEqual({ layoutId: WOODS_LAYOUT, sizeId: WOODS_8X10, setIds: [WOODS_SET] });
+  });
 });

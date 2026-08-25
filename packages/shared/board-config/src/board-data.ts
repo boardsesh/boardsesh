@@ -272,7 +272,7 @@ export function getGradesForBoard(boardName: BoardName) {
     // band onto the LOWEST shared difficulty id in it, so only 17 of the 24 ids
     // ever appear on a Woods climb. Offering the whole ladder would put dead
     // stops on the grade rail and in the filters — a range no climb can match.
-    return BOULDER_GRADES.filter((g) => WOODS_DIFFICULTY_IDS.has(g.difficulty_id));
+    return BOULDER_GRADES.filter((grade) => WOODS_DIFFICULTY_IDS.has(grade.difficulty_id));
   }
   return BOULDER_GRADES;
 }

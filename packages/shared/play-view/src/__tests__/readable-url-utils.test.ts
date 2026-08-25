@@ -434,10 +434,31 @@ describe('Woods readable URLs', () => {
     ).toEqual({ boardName: 'woods', layoutId: 1, sizeId: 1, setIds: WOODS_SETS_CSV });
   });
 
+  it("accepts the dashed size forms and any casing, matching www's parser", () => {
+    // www lower-cases every Woods segment and takes `8-10` / `12-12` alongside
+    // `8x10` / `12x12` (packages/web/app/lib/url-utils.server.ts). A link that
+    // opens on the website has to open in the app, so the two agree here.
+    for (const [sizeSlug, sizeId] of [
+      ['8-10', 1],
+      ['12-12', 2],
+      ['12X12', 2],
+    ] as const) {
+      expect(
+        resolveBoardSegmentsToIds({ boardName: 'woods', layoutSlug: 'original', sizeSlug, setSlug: 'standard' }),
+        sizeSlug,
+      ).toEqual({ boardName: 'woods', layoutId: 1, sizeId, setIds: WOODS_SETS_CSV });
+    }
+    expect(
+      resolveBoardSegmentsToIds({ boardName: 'woods', layoutSlug: 'ORIGINAL', sizeSlug: '8X10', setSlug: 'STANDARD' }),
+    ).toEqual({ boardName: 'woods', layoutId: 1, sizeId: 1, setIds: WOODS_SETS_CSV });
+  });
+
   it('rejects a layout, size or set segment Woods does not have', () => {
     for (const segments of [
       { layoutSlug: 'two-original', sizeSlug: '12x12', setSlug: 'standard' },
       { layoutSlug: 'original', sizeSlug: '10x10', setSlug: 'standard' },
+      // Only the two real dimensions get the dashed spelling, not any pair.
+      { layoutSlug: 'original', sizeSlug: '10-10', setSlug: 'standard' },
       { layoutSlug: 'original', sizeSlug: '12x12', setSlug: 'bolt' },
       { layoutSlug: 'original', sizeSlug: '12x12', setSlug: 'standard_standard' },
       { layoutSlug: 'original', sizeSlug: '12x12', setSlug: '' },

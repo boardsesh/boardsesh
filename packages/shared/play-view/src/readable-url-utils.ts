@@ -627,9 +627,12 @@ function resolveMoonBoardSegmentsToIds({
  * Both the readable form this app emits (`original` / `8x10` | `12x12` /
  * `standard`) and the bare numeric ids resolve, because a URL can mix them: the
  * all-numeric path never reaches here, but `/woods/original/2/standard/40` does.
- * The set segment stays exact for the same reason MoonBoard's does — a slug that
- * doesn't rebuild is not a form either host emitted, so it isn't authoritative
- * about what's on the wall.
+ * The accepted forms are kept in step with www's server-side parser
+ * (`packages/web/app/lib/url-utils.server.ts`) — same segments, same casing
+ * rules, same dashed size variants — so a link that opens on the website opens
+ * in the app too. The set segment stays exact for the same reason MoonBoard's
+ * does: a slug that doesn't rebuild is not a form either host emitted, so it
+ * isn't authoritative about what's on the wall.
  */
 function resolveWoodsSegmentsToIds({
   layoutSlug,
@@ -640,17 +643,34 @@ function resolveWoodsSegmentsToIds({
   sizeSlug: string;
   setSlug: string;
 }): Omit<ParsedBoardConfigPath, 'angle'> | null {
-  const woodsLayout = WOODS_LAYOUTS.woods;
-  if (layoutSlug !== generateLayoutSlug(woodsLayout.name) && layoutSlug !== String(woodsLayout.id)) return null;
+  // Slugs are lower-case by construction, but a hand-typed or link-shortened URL
+  // can arrive upper-cased; www lower-cases every Woods segment before matching.
+  const layoutSegment = layoutSlug.toLowerCase();
+  const sizeSegment = sizeSlug.toLowerCase();
+  const setSegment = setSlug.toLowerCase();
 
-  const size = Object.values(WOODS_SIZES).find(
-    (candidate) => generateSizeSlug(candidate.name) === sizeSlug || String(candidate.id) === sizeSlug,
-  );
+  const woodsLayout = WOODS_LAYOUTS.woods;
+  if (layoutSegment !== generateLayoutSlug(woodsLayout.name) && layoutSegment !== String(woodsLayout.id)) return null;
+
+  // Size: the numeric id ('1' / '2'), the dimension slug ('8x10' / '12x12'), or
+  // its dashed variant ('8-10' / '12-12').
+  const size = Object.values(WOODS_SIZES).find((candidate) => {
+    const dimensionSlug = generateSizeSlug(candidate.name);
+    return (
+      sizeSegment === String(candidate.id) ||
+      sizeSegment === dimensionSlug ||
+      sizeSegment === dimensionSlug.replace('x', '-')
+    );
+  });
   if (!size) return null;
 
   const woodsSetIds = WOODS_SETS.map((woodsSet) => woodsSet.id);
   const canonicalSetSlug = generateSetSlug(WOODS_SETS.map((woodsSet) => woodsSet.name));
-  if (setSlug !== canonicalSetSlug && setSlug !== woodsSetIds.join(',')) return null;
+  // The one form www accepts that this resolver deliberately does not is the
+  // EMPTY set segment. www needs it because a board path can be built with no
+  // sets; here an empty segment can only come from a hand-edited slug URL, and
+  // resolving it would mean inventing a set list the URL never named.
+  if (setSegment !== canonicalSetSlug && setSegment !== woodsSetIds.join(',')) return null;
 
   return {
     boardName: 'woods',
