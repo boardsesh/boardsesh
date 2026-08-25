@@ -18,6 +18,7 @@ import {
 } from './url-utils';
 import { generateSetNameSlug, generateSetSlug } from '@boardsesh/play-view/readable-url-utils';
 import { type MoonBoardLayoutKey, MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from './moonboard-config';
+import { WOODS_BOARD_SIZES, WOODS_LAYOUTS, WOODS_SETS, WOODS_SIZES } from './woods-config';
 
 // Helper to parse MoonBoard size slug (always returns the single size)
 function getMoonBoardSizeBySlug(): { id: number; name: string } {
@@ -110,6 +111,51 @@ export async function parseBoardRouteParamsWithSlugs<T extends BoardRouteParamet
         parsedSetIds = sets.map((set) => set.id);
       }
     }
+
+    const parsedParams = {
+      board_name: board_name as BoardName,
+      layout_id: parsedLayoutId,
+      size_id: parsedSizeId,
+      set_ids: parsedSetIds,
+      angle: Number(angle),
+    };
+
+    if (climb_uuid) {
+      return {
+        ...parsedParams,
+        climb_uuid: extractUuidFromSlug(climb_uuid),
+      } as T extends BoardRouteParametersWithUuid ? ParsedBoardRouteParametersWithUuid : never;
+    }
+
+    return parsedParams as T extends BoardRouteParametersWithUuid ? never : ParsedBoardRouteParameters;
+  }
+
+  // Handle Woods separately (static config, single layout, one synthetic set).
+  if (board_name === 'woods') {
+    // Woods ships a single layout, so both `original` and `1` land on it. Numeric
+    // ids are accepted on mixed-format routes too — there is no slug to confuse
+    // them with.
+    const decodedLayoutId = decodeURIComponent(layout_id);
+    parsedLayoutId = isNumericId(decodedLayoutId) ? Number(decodedLayoutId) : WOODS_LAYOUTS.woods.id;
+
+    // Size: numeric id ('1' / '2'), or a dimension slug ('8x10' / '8-10' /
+    // '12x12' / '12-12').
+    const decodedSizeId = decodeURIComponent(size_id);
+    if (isNumericId(decodedSizeId)) {
+      parsedSizeId = Number(decodedSizeId);
+    } else {
+      const sizeDigits = decodedSizeId.replace(/\D/g, '');
+      const matchedDimension = WOODS_BOARD_SIZES.find((dimension) => dimension.replace(/\D/g, '') === sizeDigits);
+      parsedSizeId = matchedDimension ? WOODS_SIZES[matchedDimension].id : WOODS_SIZES['8x10'].id;
+    }
+
+    // Woods has one synthetic hold set, so `standard`, `1` and an empty segment
+    // all resolve to it. An empty set list would break the board builder and the
+    // `board/layout/size/sets/angle` path parser.
+    const decodedSetIds = decodeURIComponent(set_ids);
+    parsedSetIds = isNumericId(decodedSetIds.split(',')[0])
+      ? decodedSetIds.split(',').map((id) => Number(id))
+      : WOODS_SETS.map((set) => set.id);
 
     const parsedParams = {
       board_name: board_name as BoardName,

@@ -5,6 +5,7 @@ import BoardLitupHolds from './board-litup-holds';
 import type { LitUpHoldsMap } from './types';
 import styles from './board-renderer.module.css';
 import MoonBoardRenderer from '../moonboard-renderer/moonboard-renderer';
+import WoodsBoardRenderer from '../woods-renderer/woods-renderer';
 
 export type BoardProps = {
   boardDetails: BoardDetails;
@@ -26,6 +27,7 @@ export type BoardProps = {
 const BoardRenderer = React.memo(
   ({ boardDetails, thumbnail, maxHeight, fillHeight, litUpHoldsMap, mirrored, onHoldClick }: BoardProps) => {
     const isMoonBoard = boardDetails.board_name === 'moonboard' && !!boardDetails.layoutFolder;
+    const isWoods = boardDetails.board_name === 'woods';
 
     // Only compute maxHeight when not using fillHeight - memoized to prevent recreation.
     // Hoisted above the MoonBoard early return so hook call order is stable regardless
@@ -41,6 +43,25 @@ const BoardRenderer = React.memo(
         <MoonBoardRenderer
           layoutFolder={boardDetails.layoutFolder!}
           holdSetImages={boardDetails.holdSetImages || []}
+          litUpHoldsMap={litUpHoldsMap}
+          mirrored={mirrored}
+          thumbnail={thumbnail}
+          fillHeight={fillHeight}
+          onHoldClick={onHoldClick}
+        />
+      );
+    }
+
+    // Delegate to WoodsBoardRenderer for the Woods board (committed PNG/JPG art +
+    // detected, non-grid hold centres from boardDetails.holdsData).
+    if (isWoods) {
+      const woodsBackground = Object.keys(boardDetails.images_to_holds)[0] ?? '';
+      return (
+        <WoodsBoardRenderer
+          holdsData={boardDetails.holdsData}
+          backgroundImage={woodsBackground}
+          boardWidth={boardDetails.boardWidth}
+          boardHeight={boardDetails.boardHeight}
           litUpHoldsMap={litUpHoldsMap}
           mirrored={mirrored}
           thumbnail={thumbnail}

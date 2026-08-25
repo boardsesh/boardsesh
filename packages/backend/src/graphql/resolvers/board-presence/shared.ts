@@ -677,6 +677,7 @@ const BOARD_TYPE_LABELS: Record<string, string> = {
   touchstone: 'Touchstone',
   grasshopper: 'Grasshopper',
   soill: 'So iLL',
+  woods: 'Woods',
 };
 
 export function defaultBoardName(boardType: string): string {

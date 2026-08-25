@@ -691,6 +691,7 @@ const BOARD_TYPE_LABELS: Record<string, string> = {
   touchstone: 'Touchstone',
   grasshopper: 'Grasshopper',
   soill: 'So iLL',
+  woods: 'Woods',
 };
 
 const GENERIC_SETS = new Set(['bolt ons', 'screw ons', 'foot set', 'plastic', 'wood']);

@@ -82,7 +82,13 @@ import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, type MoonBoardLayout
  * which TABLE each arm reads, not which board is covered; the coverage assertion
  * below pins that the two arms together cover `SUPPORTED_BOARDS`.
  */
-const auroraBoards = SUPPORTED_BOARDS.filter((boardName) => boardName !== 'moonboard');
+/**
+ * Woods is split out for the same reason as MoonBoard: it carries no rows in
+ * `@boardsesh/board-constants`' layout and set tables, so `getAllLayouts('woods')`
+ * is empty and this loop would walk zero tuples while still reporting green. Its
+ * arm is `Woods board URL segments` at the bottom of this file.
+ */
+const auroraBoards = SUPPORTED_BOARDS.filter((boardName) => boardName !== 'moonboard' && boardName !== 'woods');
 
 /**
  * Tuples each board carries today. Asserted per board inside the round-trip
@@ -357,7 +363,7 @@ describe('MoonBoard catalogue round-trip (the static tables, through the same ww
       0,
     );
     expect(walked).toBe(291);
-    expect([...auroraBoards, 'moonboard'].sort()).toEqual([...SUPPORTED_BOARDS].sort());
+    expect([...auroraBoards, 'moonboard', 'woods'].sort()).toEqual([...SUPPORTED_BOARDS].sort());
   });
 });
 
@@ -414,5 +420,46 @@ describe('MoonBoard set slugs this app never emits', () => {
     expect(await parseSetSlug(layoutKey, 'holds-that-do-not-exist')).toEqual(
       MOONBOARD_SETS[layoutKey].map((set) => set.id).sort((a, b) => a - b),
     );
+  });
+});
+
+/**
+ * The Woods arm. Woods is code-driven like MoonBoard — one layout, two sizes and
+ * a single synthetic hold set — so its segments are resolved by a static branch
+ * in `url-utils.server.ts` rather than by the slug resolvers above. Every shape a
+ * Woods URL can take has to land on the same ids, and the set segment has to
+ * resolve to `[1]` rather than an empty list: an empty set list mis-parses the
+ * `board/layout/size/sets/angle` path and breaks the board builder.
+ */
+describe('Woods board URL segments', () => {
+  async function parseWoods(layoutSegment: string, sizeSegment: string, setSegment: string) {
+    const parsed = await parseBoardRouteParamsWithSlugs({
+      board_name: 'woods',
+      layout_id: layoutSegment,
+      size_id: sizeSegment,
+      set_ids: setSegment,
+      angle: String(ROUND_TRIP_ANGLE),
+    });
+    return { layoutId: parsed.layout_id, sizeId: parsed.size_id, setIds: parsed.set_ids, angle: parsed.angle };
+  }
+
+  it.each([
+    ['original', '8x10', 'standard', 1],
+    ['original', '8-10', 'standard', 1],
+    ['1', '1', '1', 1],
+    ['original', '12x12', 'standard', 2],
+    ['original', '12-12', 'standard', 2],
+    ['1', '2', '1', 2],
+  ])('resolves /woods/%s/%s/%s to size %i', async (layoutSegment, sizeSegment, setSegment, expectedSizeId) => {
+    expect(await parseWoods(String(layoutSegment), String(sizeSegment), String(setSegment))).toEqual({
+      layoutId: 1,
+      sizeId: expectedSizeId,
+      setIds: [1],
+      angle: ROUND_TRIP_ANGLE,
+    });
+  });
+
+  it('resolves an empty set segment to the synthetic set rather than no sets', async () => {
+    expect((await parseWoods('original', '12x12', '')).setIds).toEqual([1]);
   });
 });
