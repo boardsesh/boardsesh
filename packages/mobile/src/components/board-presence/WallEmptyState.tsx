@@ -56,7 +56,11 @@ function WallEmptyStateComponent() {
       <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.body}>
         {ledless ? t('mobile.boardPresence.wallEmptyBodyNoLeds') : t('mobile.boardPresence.wallEmptyBody')}
       </Text>
-      {ledless ? (
+      {/* `ledless` comes from the stored board rather than the Bluetooth context,
+          so the COPY is right even before the provider mounts. The button still
+          needs something to call, though — rendering one that silently does
+          nothing is worse than rendering none. */}
+      {ledless && takeVirtualWall ? (
         <View style={styles.cta}>
           <Button
             title={t('mobile.boardPresence.wallEmptyCtaNoLeds')}

@@ -1255,11 +1255,19 @@ export function BluetoothProvider({
   // Switching boards (or leaving) hands the wall back.
   const releaseVirtualWallRef = useRef(releaseVirtualWall);
   releaseVirtualWallRef.current = releaseVirtualWall;
+  // Declared BEFORE the release effect below so its cleanup runs first: React
+  // tears cleanups down in declaration order, which is what lets the release
+  // tell a board switch apart from the provider going away. Without it the
+  // 'unmount' reason would never be reached on a board that has a uuid.
+  const providerUnmountingRef = useRef(false);
   useEffect(() => {
-    if (!boardUuid) return;
-    return () => releaseVirtualWallRef.current('board_changed');
+    return () => {
+      providerUnmountingRef.current = true;
+    };
+  }, []);
+  useEffect(() => {
+    return () => releaseVirtualWallRef.current(providerUnmountingRef.current ? 'unmount' : 'board_changed');
   }, [boardUuid]);
-  useEffect(() => () => releaseVirtualWallRef.current('unmount'), []);
 
   const resolvedPickerBoards = useResolvedBleDeviceBoards(pickerState?.devices ?? EMPTY_PICKER_DEVICES);
   const currentBoardConfig = useMemo(() => {

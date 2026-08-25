@@ -102,7 +102,14 @@ vi.mock('react-native', () => ({
 
 vi.mock('@tanstack/react-query', () => ({
   // The provider reads the viewer's id off the shared ['profile'] cache entry.
-  useQuery: () => ({ data: viewer.profile }),
+  // Scoped to that key on purpose: answering EVERY useQuery with a profile would
+  // hand a future query the wrong shape and pass anyway.
+  useQuery: ({ queryKey }: { queryKey: readonly unknown[] }) => {
+    if (queryKey[0] !== 'profile') {
+      throw new Error(`Unmocked useQuery in this suite: ${JSON.stringify(queryKey)}`);
+    }
+    return { data: viewer.profile };
+  },
 }));
 
 vi.mock('../../settings', () => ({
