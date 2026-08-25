@@ -111,13 +111,29 @@ export function deriveLightbulbLit(args: {
  * exclusivity: the server keeps one last-write-wins holder slot, so a phone
  * whose local `wallHeld` is still true but whose slot went to someone else is
  * showing a stale claim, and must read as a peer's wall rather than its own.
+ *
+ * It also carries the peer signal for a BYSTANDER on a wall with no lights —
+ * someone who never took the wall and is not in a party session. `boardConnection`
+ * only reports a peer whose userId matches a session member, and production says
+ * the sharing pattern here is *same board, no session*: 413 of 1,162 boards with
+ * climb events have more than one distinct reporter, while only 36 have any
+ * session row at all. Without this branch the climber watching someone else's
+ * turn — the case the feature exists for — sees nothing.
+ *
+ * Restricted to `ledless` on purpose. On a wall WITH lights the holder can be a
+ * stranger who happens to share the board feed, and `deriveBoardConnection`'s
+ * session gate deliberately keeps them from lighting your bulb. A wall with no
+ * light kit has no such ambiguity: the holder is by definition the person whose
+ * climb is up, which is exactly what the gym screen already shows everyone.
  */
 export function deriveInAppBoardConnection(args: {
   boardConnection: BoardConnection;
+  ledless: boolean;
   wallHeld: boolean;
   wallHeldByOtherUser: boolean;
 }): BoardConnection {
   if (args.wallHeld && args.wallHeldByOtherUser) return 'heldByPeer';
   if (args.wallHeld) return 'connectedByMe';
+  if (args.ledless && args.wallHeldByOtherUser && args.boardConnection === 'disconnected') return 'heldByPeer';
   return args.boardConnection;
 }

@@ -1,18 +1,17 @@
-import { useCallback, useMemo, useRef } from 'react';
-import { View, ActivityIndicator, Platform, StyleSheet } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { BottomSheetModal, BottomSheetView, BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { parseSerialNumber } from '@boardsesh/ble-protocol';
 import { formatBoardDisplayName } from '@boardsesh/board-config';
 import type { DiscoveredDevice } from '../../lib/ble/types';
-import { useManagedSheet } from '../../providers/sheet-presentation-provider';
+import { SHEET_SETTLE_MS, useManagedSheet } from '../../providers/sheet-presentation-provider';
 import { androidSafeSnapPoints } from '../sheet-snap-points';
 import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleBoardConfig } from '../../lib/ble/board-config-match';
 import { noListedBoardMatchesSelectedType } from '../../lib/ble/picker-resolution-stats';
 import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-location-hint';
-import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { hapticSelection } from '../../lib/haptics';
 import { Text } from '../Text';
 import { Button } from '../Button';
@@ -21,20 +20,17 @@ import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 
-/**
- * How long to wait after dismissing the picker before taking the wall. The picker
- * is a NATIVE modal sheet and `takeVirtualWall`'s confirmation toast is a
- * root-level JS view, so it renders BEHIND the sheet (see toast-provider) — fire
- * the take only once the dismissal has settled. Mirrors the sheet coordinator's
- * own settle ceiling (`SETTLE_MS` in sheet-presentation-provider), which is
- * module-private there.
- */
-const TAKE_WALL_AFTER_DISMISS_MS = Platform.OS === 'ios' ? 550 : 350;
-
 type DevicePickerSheetProps = {
   devices: DiscoveredDevice[];
   onSelect: (deviceId: string) => void;
   onDismiss: () => void;
+  /**
+   * Take the wall with no Bluetooth, for the "this wall has no lights" offer
+   * after a scan that finds nothing. Omitted where no such action exists; the
+   * offer is then not rendered. Passed in rather than read off BluetoothContext
+   * because BluetoothProvider renders this sheet.
+   */
+  onNoLeds?: () => void;
   isScanning: boolean;
   resolvedBoards: ReadonlyMap<string, ResolvedBoardEntry>;
   currentBoardConfig?: BleBoardConfig;
@@ -47,15 +43,21 @@ export function DevicePickerSheet({
   isScanning,
   resolvedBoards,
   currentBoardConfig,
+  onNoLeds,
 }: DevicePickerSheetProps) {
   const { t } = useTranslation('settings');
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const sheetRef = useRef<BottomSheetModal>(null);
-  // Both hosts (app root inside BluetoothProvider, and the play route) sit under
-  // the provider, but read it optionally so a host that ever mounts the picker
-  // outside it renders the list without the no-lights offer instead of throwing.
-  const bluetooth = useOptionalBluetoothContext();
+  // The take fires after the dismissal has settled (below), by which point this
+  // component is gone — so the timer has to be cancellable from a cleanup.
+  const takeWallTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (takeWallTimeoutRef.current !== null) clearTimeout(takeWallTimeoutRef.current);
+    },
+    [],
+  );
 
   const snapPoints = useMemo(() => androidSafeSnapPoints(['72%']), []);
 
@@ -132,9 +134,8 @@ export function DevicePickerSheet({
   // A scan that finished with ZERO devices is the only place this belongs. Boards
   // that WERE found but are the wrong type (`noneMatchedSelectedType`) mean there
   // is LED hardware in the room, so the offer would be misleading there.
-  const showNoLedsOffer = bluetooth !== null && showEmptyState && !showLocationHint && !showLocationServicesHint;
+  const showNoLedsOffer = onNoLeds !== undefined && showEmptyState && !showLocationHint && !showLocationServicesHint;
 
-  const takeVirtualWall = bluetooth?.takeVirtualWall;
   const handleNoLeds = useCallback(() => {
     hapticSelection();
     // Stops the scan and clears the host's picker state, which unmounts this
@@ -145,8 +146,15 @@ export function DevicePickerSheet({
     // RN 0.86 scan regression) and a wrong server flip would strip the Bluetooth
     // affordance from every climber on this board. The server flag is set only
     // from the board edit form.
-    setTimeout(() => takeVirtualWall?.(), TAKE_WALL_AFTER_DISMISS_MS);
-  }, [onDismiss, takeVirtualWall]);
+    //
+    // Deferred past the sheet's dismissal because the picker is a NATIVE modal
+    // and the "You've got the wall" toast is a root-level JS view, so it would
+    // render behind it. Same ceiling the sheet coordinator itself waits.
+    takeWallTimeoutRef.current = setTimeout(() => {
+      takeWallTimeoutRef.current = null;
+      onNoLeds?.();
+    }, SHEET_SETTLE_MS);
+  }, [onDismiss, onNoLeds]);
 
   return (
     <BottomSheetModal

@@ -17,6 +17,7 @@ import { resetAllRateLimits } from '../utils/rate-limiter';
  */
 
 const OWNER = 'has-leds-owner';
+const STRANGER = 'has-leds-stranger';
 
 let connectionCounter = 0;
 const authCtx = (userId: string): ConnectionContext =>
@@ -52,8 +53,8 @@ const createBoard = (input: Record<string, unknown> = {}) =>
     authCtx(OWNER),
   ) as Promise<CreatedBoard>;
 
-const updateBoard = (input: Record<string, unknown>) =>
-  socialBoardMutations.updateBoard(null, { input }, authCtx(OWNER)) as Promise<CreatedBoard>;
+const updateBoard = (input: Record<string, unknown>, userId = OWNER) =>
+  socialBoardMutations.updateBoard(null, { input }, authCtx(userId)) as Promise<CreatedBoard>;
 
 const readBoard = (boardUuid: string) =>
   socialBoardQueries.board(null, { boardUuid }, authCtx(OWNER)) as Promise<CreatedBoard | null>;
@@ -70,7 +71,7 @@ beforeEach(async () => {
       "community_roles", "gym_members", "gym_follows", "location_sync_gym_sources", "user_boards", "gyms"
     RESTART IDENTITY CASCADE
   `);
-  await insertUser(OWNER);
+  await Promise.all([insertUser(OWNER), insertUser(STRANGER)]);
 });
 
 describe('user_boards.has_leds', () => {
@@ -102,6 +103,18 @@ describe('user_boards.has_leds', () => {
     const board = await createBoard({ hasLeds: false });
     await updateBoard({ boardUuid: board.uuid, name: 'Renamed wall' });
     expect(await rawHasLeds(board.uuid)).toBe(false);
+  });
+
+  it('refuses to let a climber with no edit access turn a gym wall dark', async () => {
+    // The highest-consequence write in this feature: flipping the flag on a
+    // shared row removes the Bluetooth connect affordance for every climber at
+    // that gym. It must go through the same edit-access gate as every other
+    // board field — the device picker's offer deliberately never writes it.
+    const board = await createBoard();
+    await expect(updateBoard({ boardUuid: board.uuid, hasLeds: false }, STRANGER)).rejects.toThrow(
+      /Not authorized to update this board/,
+    );
+    expect(await rawHasLeds(board.uuid)).toBe(true);
   });
 
   it('lands on the row a gym kiosk embeds — the same uuid every climber adopts', async () => {

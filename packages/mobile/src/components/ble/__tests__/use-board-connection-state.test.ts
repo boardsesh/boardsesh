@@ -110,13 +110,35 @@ describe('useBoardConnectionState under a virtual hold', () => {
     expect(result.current.holderDisplayName).toBe('Anna');
   });
 
-  it('is a pass-through with no hold, on any board', () => {
+  it('is a pass-through with no hold and no peer holder, on any board', () => {
     for (const ledless of [false, true]) {
       ctrl.bluetooth = makeBluetooth({ ledless });
       const { result } = renderState();
       expect(result.current.inAppBoardConnection).toBe(result.current.boardConnection);
       expect(result.current.lit).toBe(false);
     }
+  });
+
+  it('shows a bystander who is driving a ledless wall, with no party session', () => {
+    // This is the observed sharing pattern — same board, no session — and the
+    // session-gated `boardConnection` reports nothing for it.
+    ctrl.bluetooth = makeBluetooth({ ledless: true, wallHeldByOtherUser: true });
+    ctrl.presence = {
+      holder: { userId: 'peer', displayName: 'Anna' },
+      currentClimb: null,
+    } as unknown as BoardPresenceCurrentState;
+    const { result } = renderState();
+
+    expect(result.current.boardConnection).toBe('disconnected');
+    expect(result.current.inAppBoardConnection).toBe('heldByPeer');
+    expect(result.current.holderDisplayName).toBe('Anna');
+    expect(result.current.wallHeldLocally).toBe(false);
+  });
+
+  it('leaves a board WITH lights on the session-gated peer rule', () => {
+    ctrl.bluetooth = makeBluetooth({ ledless: false, wallHeldByOtherUser: true });
+    const { result } = renderState();
+    expect(result.current.inAppBoardConnection).toBe('disconnected');
   });
 
   it('degrades to "has LEDs, nothing held" with no bluetooth context at all', () => {

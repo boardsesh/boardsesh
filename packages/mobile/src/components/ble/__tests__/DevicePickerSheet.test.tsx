@@ -26,11 +26,11 @@ const locationHint = vi.hoisted(() => ({
   lastActive: null as boolean | null,
 }));
 
-// The Bluetooth context, stubbed at the hook boundary. `takeVirtualWall` is the
-// ONLY thing the no-lights offer is allowed to call — see the source guard at the
-// bottom of this file.
+// The take-the-wall action, supplied by the host as a prop. It is the ONLY thing
+// the no-lights offer is allowed to call — see the source guard at the bottom of
+// this file.
 const bluetooth = vi.hoisted(() => ({
-  context: null as { takeVirtualWall: () => void } | null,
+  onNoLeds: undefined as (() => void) | undefined,
   takeVirtualWall: vi.fn(),
 }));
 
@@ -80,6 +80,8 @@ vi.mock('@boardsesh/board-config', () => ({
 
 vi.mock('../../../providers/sheet-presentation-provider', () => ({
   useManagedSheet: () => ({ onChange: () => {}, onFullyDismissed: () => {} }),
+  // The real value is Platform-derived; the sheet only needs a number to defer by.
+  SHEET_SETTLE_MS: 550,
 }));
 
 vi.mock('../../sheet-snap-points', () => ({
@@ -88,10 +90,6 @@ vi.mock('../../sheet-snap-points', () => ({
 
 vi.mock('../../../lib/ble/picker-resolution-stats', () => ({
   noListedBoardMatchesSelectedType: () => stats.noneMatchedSelectedType,
-}));
-
-vi.mock('../../../providers/bluetooth-provider', () => ({
-  useOptionalBluetoothContext: () => bluetooth.context,
 }));
 
 vi.mock('../../../lib/haptics', () => ({
@@ -146,6 +144,7 @@ function makeProps(over: Partial<Parameters<typeof DevicePickerSheet>[0]> = {}) 
     isScanning: false,
     resolvedBoards: new Map(),
     currentBoardConfig: KILTER_CONFIG,
+    onNoLeds: bluetooth.onNoLeds,
     ...over,
   };
 }
@@ -167,7 +166,7 @@ describe('DevicePickerSheet', () => {
     locationHint.requestLocationPermission.mockClear();
     locationHint.promptEnableLocationServices.mockClear();
     bluetooth.takeVirtualWall.mockClear();
-    bluetooth.context = { takeVirtualWall: bluetooth.takeVirtualWall };
+    bluetooth.onNoLeds = bluetooth.takeVirtualWall;
     haptics.hapticSelection.mockClear();
   });
 
@@ -340,8 +339,8 @@ describe('DevicePickerSheet', () => {
       expect(container.querySelector('[data-button="ble.noLedsCta"]')).toBeNull();
     });
 
-    it('stays hidden when no Bluetooth context is mounted (nothing to take the wall with)', () => {
-      bluetooth.context = null;
+    it('stays hidden when the host supplies no take-the-wall action', () => {
+      bluetooth.onNoLeds = undefined;
       const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: false, devices: [] })} />);
       expect(container.querySelector('[data-button="ble.noLedsCta"]')).toBeNull();
     });
@@ -379,6 +378,10 @@ describe('DevicePickerSheet', () => {
       // No GraphQL / board-record module reaches this sheet at all.
       const importLines = source.match(/^import[\s\S]*?;$/gm)?.join('\n') ?? '';
       expect(importLines).not.toMatch(/graphql|mutation|use-active-board/i);
+
+      // And the sheet must not reach back up into BluetoothProvider, which
+      // renders it — that would be a static import cycle.
+      expect(importLines).not.toMatch(/bluetooth-provider/);
 
       // And nothing in the code itself (comments stripped, since they discuss
       // the flag by name) touches the server flag or a board write.
