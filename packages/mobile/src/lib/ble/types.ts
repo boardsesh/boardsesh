@@ -69,7 +69,11 @@ export type BleWriteDiagnostics = {
     | 'defaultWithoutResponse'
     | 'watchdogFallback'
     | 'learnedPersistentFallback'
-    | 'moonboardCharacteristic';
+    | 'moonboardCharacteristic'
+    // The board itself demands the write type, whatever the characteristic
+    // advertises — see BleAdapterOptions.preferWriteWithResponse. JS-adapter
+    // only; the Swift writer has no equivalent source.
+    | 'boardPreference';
   chunkSize?: number;
   // PLANNED chunks for the write on both platforms (stamped at enqueue), not
   // progress — a write that fails mid-stream still reports the full plan.
@@ -97,6 +101,25 @@ export type BleConnectDiagnostics = {
   // known write service (stale iOS GATT cache or a decoy peripheral matched by
   // name); unfamiliar UUIDs point at a controller generation we don't handle yet.
   discoveredServices: string[];
+};
+
+/**
+ * Per-board transport preferences handed to an adapter at construction.
+ *
+ * `preferWriteWithResponse` forces acknowledged GATT writes (write request)
+ * regardless of what the write characteristic advertises. The Woods board needs
+ * it: its protocol spec (§8, `docs/WOODS_BLUETOOTH_PROTOCOL_SPEC.md`) mandates
+ * write requests, and the acknowledgement also paces the 20-byte chunks for its
+ * Arduino-class firmware. Aurora boards must never set it — write-without-
+ * response is their proven path.
+ *
+ * Only `RNBleAdapter` honours it. `NativeIosBleAdapter` accepts it for
+ * signature symmetry but cannot act on it, because the write type of a native
+ * write is chosen in Swift (`BoardBleEncoding.preferredWriteType`); the factory
+ * routes boards that need acknowledged writes through `RNBleAdapter` instead.
+ */
+export type BleAdapterOptions = {
+  preferWriteWithResponse?: boolean;
 };
 
 export type BluetoothAdapter = {

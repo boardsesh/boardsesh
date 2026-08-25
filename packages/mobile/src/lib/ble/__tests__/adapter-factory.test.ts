@@ -70,6 +70,27 @@ describe('createBluetoothAdapter', () => {
     expect(RNBleAdapter).toHaveBeenCalledTimes(1);
     expect(NativeIosBleAdapter).not.toHaveBeenCalled();
   });
+
+  // A board that needs acknowledged writes (Woods, protocol spec §8) can't take
+  // the native path: the Swift writer hardcodes write-without-response for every
+  // non-moonboard board and has no Woods encoder at all (#3314).
+  it('returns RNBleAdapter on iOS with the native module linked when the board prefers acknowledged writes', () => {
+    platformMock.OS = 'ios';
+    harness.module.boardBleNative = { _placeholder: true };
+    createBluetoothAdapter(noopPicker, 'moonboard', { preferWriteWithResponse: true });
+    expect(RNBleAdapter).toHaveBeenCalledTimes(1);
+    expect(RNBleAdapter).toHaveBeenCalledWith(noopPicker, 'moonboard', { preferWriteWithResponse: true });
+    expect(NativeIosBleAdapter).not.toHaveBeenCalled();
+  });
+
+  it('still returns NativeIosBleAdapter on iOS when the board does not prefer acknowledged writes', () => {
+    platformMock.OS = 'ios';
+    harness.module.boardBleNative = { _placeholder: true };
+    createBluetoothAdapter(noopPicker, 'moonboard', { preferWriteWithResponse: false });
+    expect(NativeIosBleAdapter).toHaveBeenCalledTimes(1);
+    expect(NativeIosBleAdapter).toHaveBeenCalledWith(noopPicker, 'moonboard', { preferWriteWithResponse: false });
+    expect(RNBleAdapter).not.toHaveBeenCalled();
+  });
 });
 
 describe('isNativeIosBleAdapter', () => {

@@ -31,10 +31,12 @@ import {
   isNativeIosBleAdapter,
   subscribeNativeBleConnected,
 } from './adapter-factory';
+import { supportsNativeBoardControl } from './board-families';
 import { requestBleRuntimePermissions } from './use-ble-permissions';
 import { describeBlePermissionDenial } from './android-location-permission';
 import { manufacturerCompanyId } from './advertisement';
 import type {
+  BleAdapterOptions,
   BleDisconnectInfo,
   BleWriteDiagnostics,
   BluetoothAdapter,
@@ -184,6 +186,13 @@ function parseAnyBoardTypeFromDeviceName(deviceName?: string): string | undefine
 // Woods both advertise the UART service and need name-based matching.
 function scanFamilyForBoard(boardName: string): 'aurora' | 'moonboard' {
   return boardName === 'moonboard' || boardName === 'woods' ? 'moonboard' : 'aurora';
+}
+
+// Transport preferences for the board in view. Woods takes acknowledged writes
+// (protocol spec §8), which also routes it onto the JS ble-plx adapter on iOS —
+// see createBluetoothAdapter.
+function adapterOptionsForBoard(boardName: string): BleAdapterOptions {
+  return { preferWriteWithResponse: boardName === 'woods' };
 }
 
 /**
@@ -1127,7 +1136,11 @@ export function useBoardBluetooth({
           return false;
         }
 
-        const adapter = createBluetoothAdapter(devicePicker, scanFamilyForBoard(boardName));
+        const adapter = createBluetoothAdapter(
+          devicePicker,
+          scanFamilyForBoard(boardName),
+          adapterOptionsForBoard(boardName),
+        );
         connectAdapter = adapter;
 
         const available = await adapter.isAvailable();
@@ -1581,6 +1594,10 @@ export function useBoardBluetooth({
   // JS was suspended are missed). No-op on Android and on binaries older than
   // the `getConnectedDevice` surface.
   useEffect(() => {
+    // A board native code can't drive (Woods) never rides the native adapter, so
+    // there is no native connection to adopt — and no point building a throwaway
+    // adapter just to learn that from isNativeIosBleAdapter below.
+    if (!supportsNativeBoardControl(boardName)) return;
     const adopt = (deviceId: string, rawDeviceName?: string) => {
       // The bridge sends '' for a missing name — normalise so name parsing
       // (board type, serial, API level) sees undefined instead.
@@ -1609,7 +1626,11 @@ export function useBoardBluetooth({
         return;
       }
 
-      const adapter = createBluetoothAdapter(devicePicker, scanFamilyForBoard(boardName));
+      const adapter = createBluetoothAdapter(
+        devicePicker,
+        scanFamilyForBoard(boardName),
+        adapterOptionsForBoard(boardName),
+      );
       if (!isNativeIosBleAdapter(adapter) || typeof adapter.configureBoard !== 'function') return;
       adapter.adoptConnection(deviceId);
       apiLevelRef.current = parseApiLevel(deviceName);

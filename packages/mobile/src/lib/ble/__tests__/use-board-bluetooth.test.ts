@@ -271,7 +271,9 @@ describe('useBoardBluetooth', () => {
 
     expect(secondConnectResult).toBe(false);
     expect(createBluetoothAdapter).toHaveBeenCalledTimes(1);
-    expect(createBluetoothAdapter).toHaveBeenCalledWith(expect.any(Function), 'moonboard');
+    expect(createBluetoothAdapter).toHaveBeenCalledWith(expect.any(Function), 'moonboard', {
+      preferWriteWithResponse: false,
+    });
 
     await act(async () => {
       resolveRequest({ deviceId: 'device-1', deviceName: 'MoonBoard' });
@@ -297,7 +299,9 @@ describe('useBoardBluetooth', () => {
       await result.current.connect();
     });
 
-    expect(createBluetoothAdapter).toHaveBeenCalledWith(expect.any(Function), 'aurora');
+    expect(createBluetoothAdapter).toHaveBeenCalledWith(expect.any(Function), 'aurora', {
+      preferWriteWithResponse: false,
+    });
     expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.unknownError');
   });
 
@@ -1261,6 +1265,26 @@ describe('useBoardBluetooth', () => {
     expect(failureCall?.[1]).toMatchObject({ boardName: 'woods', failureReason: 'missing_led_placements' });
   });
 
+  it('asks the factory for acknowledged writes on Woods and never configures the native board', async () => {
+    // Woods firmware takes write requests (protocol spec §8); the preference
+    // also keeps the board off the native iOS adapter, whose Swift encoder has
+    // no Woods support (#3314) — hence no configureBoard handoff.
+    const fakeAdapter = { ...makeFakeAdapter(), configureBoard: vi.fn().mockResolvedValue(undefined) };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'woods', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    expect(createBluetoothAdapter).toHaveBeenCalledWith(expect.any(Function), 'moonboard', {
+      preferWriteWithResponse: true,
+    });
+    expect(fakeAdapter.configureBoard).not.toHaveBeenCalled();
+  });
+
   it('attaches write diagnostics alongside failureReason on a failed send (#3230)', async () => {
     const writeDiagnostics: BleWriteDiagnostics = {
       chunkSize: 244,
@@ -1876,6 +1900,22 @@ describe('useBoardBluetooth native connection adoption', () => {
         expect.objectContaining({ colorOverrides: { HAND: '#222222' } }),
       );
     });
+  });
+
+  it('never arms adoption for Woods — no listener, no throwaway adapter, no configureBoard', async () => {
+    // Woods always runs on the JS ble-plx adapter (acknowledged writes), so
+    // there is never a native connection to adopt. The effect bails before it
+    // subscribes, rather than building an adapter just to discover that.
+    const adapter = makeAdoptableAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'woods', layoutId: 1, sizeId: 1 }));
+
+    expect(subscribeNativeBleConnected).not.toHaveBeenCalled();
+    expect(createBluetoothAdapter).not.toHaveBeenCalled();
+    expect(adapter.adoptConnection).not.toHaveBeenCalled();
+    expect(adapter.configureBoard).not.toHaveBeenCalled();
+    expect(result.current.isConnected).toBe(false);
   });
 
   it('refuses to adopt a device it cannot positively identify as the active board type', async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { DevicePickerFn, BoardScanFamily } from '../types';
+import type { BleAdapterOptions, DevicePickerFn, BoardScanFamily } from '../types';
 
 // ── Hoisted mocks (available inside vi.mock factories) ──────────────────
 
@@ -68,6 +68,7 @@ function setupConnectableAdapter(
   family: BoardScanFamily,
   deviceId: string,
   characteristicsForService: ReturnType<typeof vi.fn>,
+  options?: BleAdapterOptions,
 ): RNBleAdapter {
   mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
   mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
@@ -94,7 +95,7 @@ function setupConnectableAdapter(
     discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
   });
 
-  return new RNBleAdapter(() => Promise.resolve(deviceId), family);
+  return new RNBleAdapter(() => Promise.resolve(deviceId), family, options);
 }
 
 // Connects a single board the way setupConnectableAdapter does, but hands back
@@ -105,14 +106,21 @@ function setupWriteDiagnosticsAdapter(
   family: BoardScanFamily,
   requestMtuFn: ReturnType<typeof vi.fn>,
   connectedDeviceMtu?: number,
-): { adapter: RNBleAdapter; requestMtuFn: ReturnType<typeof vi.fn>; writeFn: ReturnType<typeof vi.fn> } {
+  options?: BleAdapterOptions,
+): {
+  adapter: RNBleAdapter;
+  requestMtuFn: ReturnType<typeof vi.fn>;
+  writeFn: ReturnType<typeof vi.fn>;
+  writeWithResponseFn: ReturnType<typeof vi.fn>;
+} {
   const deviceId = `write-diag-${family}-device`;
   const writeFn = vi.fn().mockResolvedValue(undefined);
+  const writeWithResponseFn = vi.fn().mockResolvedValue(undefined);
   const characteristic = {
     uuid: 'uart-write-uuid',
     isWritableWithoutResponse: true,
     writeWithoutResponse: writeFn,
-    writeWithResponse: vi.fn().mockResolvedValue(undefined),
+    writeWithResponse: writeWithResponseFn,
   };
   const mockDeviceWithServices = {
     id: deviceId,
@@ -136,7 +144,12 @@ function setupWriteDiagnosticsAdapter(
     },
   );
 
-  return { adapter: new RNBleAdapter(() => Promise.resolve(deviceId), family), requestMtuFn, writeFn };
+  return {
+    adapter: new RNBleAdapter(() => Promise.resolve(deviceId), family, options),
+    requestMtuFn,
+    writeFn,
+    writeWithResponseFn,
+  };
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────
@@ -1325,6 +1338,76 @@ describe('RNBleAdapter', () => {
       expect(characteristic.writeWithoutResponse).toHaveBeenCalledOnce();
       expect(characteristic.writeWithResponse).not.toHaveBeenCalled();
     });
+
+    // Woods rides the moonboard scan family but its firmware needs acknowledged
+    // writes (protocol spec §8) whatever its UART characteristic advertises.
+    it('uses writeWithResponse when the board prefers it, even for a characteristic writable without response', async () => {
+      const characteristic = {
+        uuid: 'uart-write-uuid',
+        isWritableWithoutResponse: true,
+        writeWithoutResponse: vi.fn().mockResolvedValue(undefined),
+        writeWithResponse: vi.fn().mockResolvedValue(undefined),
+      };
+      const characteristicsForService = vi.fn().mockResolvedValue([characteristic]);
+      const adapter = setupConnectableAdapter('moonboard', 'woods-prefers-response', characteristicsForService, {
+        preferWriteWithResponse: true,
+      });
+      await adapter.requestAndConnect();
+
+      const data = new Uint8Array([0x01]);
+      vi.mocked(splitMessages).mockReturnValue([data]);
+      await adapter.write(data);
+
+      expect(characteristic.writeWithResponse).toHaveBeenCalledOnce();
+      expect(characteristic.writeWithoutResponse).not.toHaveBeenCalled();
+    });
+
+    it('reports the board-preference write type in the write diagnostics', async () => {
+      const characteristic = {
+        uuid: 'uart-write-uuid',
+        isWritableWithoutResponse: true,
+        writeWithoutResponse: vi.fn().mockResolvedValue(undefined),
+        writeWithResponse: vi.fn().mockResolvedValue(undefined),
+      };
+      const characteristicsForService = vi.fn().mockResolvedValue([characteristic]);
+      const adapter = setupConnectableAdapter('moonboard', 'woods-diagnostics', characteristicsForService, {
+        preferWriteWithResponse: true,
+      });
+      await adapter.requestAndConnect();
+
+      const data = new Uint8Array([0x01]);
+      vi.mocked(splitMessages).mockReturnValue([data]);
+      await adapter.write(data);
+
+      await expect(adapter.getLastWriteDiagnostics()).resolves.toMatchObject({
+        writeType: 'withResponse',
+        writeTypeSource: 'boardPreference',
+      });
+    });
+
+    it('leaves the write type alone when the board preference is absent or false', async () => {
+      const characteristic = {
+        uuid: 'uart-write-uuid',
+        isWritableWithoutResponse: true,
+        writeWithoutResponse: vi.fn().mockResolvedValue(undefined),
+        writeWithResponse: vi.fn().mockResolvedValue(undefined),
+      };
+      const characteristicsForService = vi.fn().mockResolvedValue([characteristic]);
+      const adapter = setupConnectableAdapter('moonboard', 'moon-preference-false', characteristicsForService, {
+        preferWriteWithResponse: false,
+      });
+      await adapter.requestAndConnect();
+
+      const data = new Uint8Array([0x01]);
+      vi.mocked(splitMessages).mockReturnValue([data]);
+      await adapter.write(data);
+
+      expect(characteristic.writeWithoutResponse).toHaveBeenCalledOnce();
+      expect(characteristic.writeWithResponse).not.toHaveBeenCalled();
+      // No source key at all — only the board preference names one.
+      const diagnostics = await adapter.getLastWriteDiagnostics();
+      expect(diagnostics).not.toHaveProperty('writeTypeSource');
+    });
   });
 
   describe('write — MTU-sized chunking and diagnostics (#3230)', () => {
@@ -1361,6 +1444,32 @@ describe('RNBleAdapter', () => {
       // the RedBearLab box shouldn't see avoidable GATT ops.
       expect(requestMtuFn).not.toHaveBeenCalled();
       expect(splitMessages).toHaveBeenCalledWith(data, 20);
+    });
+
+    it('keeps the 20-byte chunks and MTU skip for an acknowledged-write board (Woods)', async () => {
+      // Same family gating as the MoonBoard case above — preferring
+      // write-with-response must not disturb chunk size or MTU negotiation.
+      const requestMtuFn = vi.fn().mockResolvedValue({ mtu: 247 });
+      const { adapter, writeWithResponseFn } = setupWriteDiagnosticsAdapter('moonboard', requestMtuFn, undefined, {
+        preferWriteWithResponse: true,
+      });
+      await adapter.requestAndConnect();
+
+      const data = new Uint8Array([0x01, 0x02, 0x03]);
+      vi.mocked(splitMessages).mockReturnValue([data]);
+      await adapter.write(data);
+
+      expect(requestMtuFn).not.toHaveBeenCalled();
+      expect(splitMessages).toHaveBeenCalledWith(data, 20);
+      expect(writeWithResponseFn).toHaveBeenCalledOnce();
+      await expect(adapter.getLastWriteDiagnostics()).resolves.toEqual({
+        origin: 'js',
+        writeType: 'withResponse',
+        writeTypeSource: 'boardPreference',
+        negotiatedMtu: 23,
+        chunkSize: 20,
+        chunkCount: 1,
+      });
     });
 
     it('falls back to the default ATT chunk (20) when MTU negotiation rejects', async () => {
