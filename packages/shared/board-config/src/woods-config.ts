@@ -66,7 +66,6 @@ const WOODS_HOLD_TYPE_TO_CODE: Record<WoodsHoldType, number> = {
 export function encodeWoodsHoldsToFrames(holds: Array<{ type: string; baseHoldLocation: number }>): string {
   return holds
     .filter((hold): hold is { type: WoodsHoldType; baseHoldLocation: number } => hold.type in WOODS_HOLD_TYPE_TO_CODE)
-    .slice()
     .sort((a, b) => a.baseHoldLocation - b.baseHoldLocation)
     .map((hold) => `p${hold.baseHoldLocation}r${WOODS_HOLD_TYPE_TO_CODE[hold.type]}`)
     .join('');

@@ -291,6 +291,10 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
       // The two Woods sizes reuse the same hold ids for different physical holds,
       // so the id set is per-size; the `compatible_size_ids` filter above is what
       // keeps the other size's climbs out of the results.
+      //
+      // The id list needs no cap the way `holdsFilter` does: it isn't user input,
+      // it's a subset of one board size's hold table, so it tops out at the 894
+      // holds of a 12x12 no matter what box arrives.
       const zoneHoldIds = woodsHoldIdsInZone(params.size_id, validZoneBox);
       if (!zoneHoldIds || zoneHoldIds.length === 0) {
         // An unknown size id, or a box drawn over bare board. No climb can match
