@@ -235,6 +235,12 @@ export function useLiveActivity({
           climbName: q.climb.name,
           difficulty: q.climb.difficulty,
           angle: q.climb.angle,
+          // Falls back to the raw string when the route collapses to nothing.
+          // Note the deliberate asymmetry with the JS send path, which refuses
+          // outright with `incompatible_climb`: there we own the write and can
+          // surface an alert, whereas here we are only filling a snapshot, and
+          // shipping `''` would read to native as a deliberate clear-all. The raw
+          // string lets native's own zero-encoded refusal handle it instead.
           frames: flatFrames || q.climb.frames,
           setterUsername: q.climb.setter_username,
           mirrored: q.climb.mirrored === true,

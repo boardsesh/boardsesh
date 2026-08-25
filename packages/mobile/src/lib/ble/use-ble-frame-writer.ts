@@ -73,6 +73,12 @@ export function useBleFrameWriter({ frame, send, mirrored, resetKey, onWrite }: 
       return;
     }
     isWritingFrameRef.current = true;
+    // A `send` change mid-drain (adapter swap on reconnect) leaves the old drain
+    // running against the old function while this effect starts a fresh one. The
+    // shared write mutex serialises them, but the old drain holds
+    // `isWritingFrameRef` until it exits, so the new one queues its first frame
+    // instead of flushing it — one tick late, then self-healing. Carried over
+    // unchanged from `use-mobile-playback`; not worth a generation counter.
     const drain = async () => {
       let toSend: string | null = frame;
       try {
