@@ -271,6 +271,7 @@
       "unknownClimb": "Bloc inconnu",
       "removeClimb": "Supprimer le bloc",
       "positionLabel": "position {{position}}",
+      "addedByAria": "Ajouté par {{name}}",
       "syncError": "Erreur de synchronisation de la file",
       "outOfSyncRefreshed": "La file était désynchronisée. Actualisée depuis ton groupe.",
       "sessionCreateError": "Impossible de créer la session",

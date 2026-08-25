@@ -271,6 +271,7 @@
       "unknownClimb": "Unknown climb",
       "removeClimb": "Remove climb",
       "positionLabel": "position {{position}}",
+      "addedByAria": "Added by {{name}}",
       "syncError": "Queue sync error",
       "outOfSyncRefreshed": "Queue was out of sync. Refreshed from your crew.",
       "sessionCreateError": "Couldn't create session",

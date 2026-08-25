@@ -271,6 +271,7 @@
       "unknownClimb": "Unbekannter Boulder",
       "removeClimb": "Boulder entfernen",
       "positionLabel": "Position {{position}}",
+      "addedByAria": "Hinzugefügt von {{name}}",
       "syncError": "Sync-Fehler in der Warteschlange",
       "outOfSyncRefreshed": "Die Warteschlange war nicht synchron. Von deiner Crew neu geladen.",
       "sessionCreateError": "Session konnte nicht erstellt werden",

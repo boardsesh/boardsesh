@@ -13,6 +13,8 @@ import { Text } from '../Text';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
+import { useQueueSessionId } from '../../providers/queue-provider';
+import { usePartyProfile } from '../../providers/party-profile-provider';
 import { hapticSelection } from '../../lib/haptics';
 import { useSearchClimbs } from '../../lib/graphql/hooks';
 import { toClimbSearchInput, DEFAULT_CLIMB_FILTER_STATE } from '@boardsesh/climb-filters';
@@ -88,6 +90,24 @@ function QueueListComponent({
   const { systemColors, brandColors } = useTheme();
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList<QueueListRow> | null>(null);
+
+  // Attribution is a session artifact: faces appear while a party session is
+  // joined and stay put when a peer leaves. Deliberately NOT useIsSharedSession()
+  // — that resolves to `sessionActive && distinctUserCount > 1`, so the last peer
+  // leaving (or presence flapping) would wipe every face off a queue still full
+  // of the crew's climbs. And deliberately paired with viewerUserId: the queue
+  // provider stamps SOLO adds too, so without the self-exclusion a one-person
+  // session would show the viewer's own face on every row. Neither value is read
+  // from the live `sessionUsers` roster, which is recreated by every session
+  // stats push.
+  // Gated on isLoading as well: `profile` and `sessionId` hydrate on racing async
+  // paths, so a cold launch into a restored session can resolve the session first
+  // and leave viewerUserId null for a frame — long enough to flash the viewer's
+  // own face on their own rows before self-exclusion can suppress it.
+  const { sessionId } = useQueueSessionId();
+  const { profile, isLoading: isPartyProfileLoading } = usePartyProfile();
+  const showAddedBy = sessionId != null && !isPartyProfileLoading;
+  const viewerUserId = profile?.id ?? null;
 
   // Clear the queue toolbar (styles.listContent's spacing[10]) AND the Android
   // edge-to-edge navigation bar, so the last row never sits under the 3-button nav
@@ -271,6 +291,8 @@ function QueueListComponent({
               onRemove={onRemove}
               onToggleSelect={onToggleSelect}
               onTickHistory={onTickHistory}
+              showAddedBy={showAddedBy}
+              viewerUserId={viewerUserId}
             />
           );
 
@@ -287,6 +309,8 @@ function QueueListComponent({
               onOpenActions={onOpenActions}
               onRemove={onRemove}
               onToggleSelect={onToggleSelect}
+              showAddedBy={showAddedBy}
+              viewerUserId={viewerUserId}
             />
           );
 
@@ -307,6 +331,8 @@ function QueueListComponent({
               rowIndex={index}
               queueIndex={row.queueIndex}
               isDraggable={!isEditMode}
+              showAddedBy={showAddedBy}
+              viewerUserId={viewerUserId}
             />
           );
 
@@ -349,6 +375,8 @@ function QueueListComponent({
       onTickHistory,
       onShowFullHistory,
       handleSuggestionPress,
+      showAddedBy,
+      viewerUserId,
       systemColors.separator,
       systemColors.secondaryBackground,
       brandColors.primary,
