@@ -10,6 +10,8 @@ const emitZoneFilterSelection = vi.hoisted(() => vi.fn());
 // Captures navigation.setOptions calls so tests can assert the headerRight
 // "Clear all" shows only while a zone exists.
 const navMock = vi.hoisted(() => ({ setOptions: vi.fn() }));
+// Router spy for the unsupported-board bail-out.
+const routerMock = vi.hoisted(() => ({ canGoBack: vi.fn(() => false), back: vi.fn(), replace: vi.fn() }));
 // Mutable across tests so each can seed its own route params.
 const routeParams = vi.hoisted(() => ({ current: {} as Record<string, string> }));
 
@@ -40,6 +42,7 @@ vi.mock('react-native', () => ({
 
 vi.mock('expo-router', () => ({
   useLocalSearchParams: () => routeParams.current,
+  useRouter: () => routerMock,
   // The screen drives the native header (title + headerRight) through setOptions.
   useNavigation: () => navMock,
   // Route the focus effect through a real useEffect so its cleanup (the handoff
@@ -144,6 +147,10 @@ describe('ZoneFilterScreen', () => {
     haptics.selection.mockClear();
     emitZoneFilterSelection.mockClear();
     navMock.setOptions.mockClear();
+    routerMock.canGoBack.mockClear();
+    routerMock.canGoBack.mockReturnValue(false);
+    routerMock.back.mockClear();
+    routerMock.replace.mockClear();
     routeParams.current = baseParams();
   });
 
@@ -313,6 +320,21 @@ describe('ZoneFilterScreen', () => {
       const selection = emitZoneFilterSelection.mock.calls.at(-1)?.[0] as { holdsFilter?: HoldsFilter };
       // The bogus FINISH leaf is dropped; the valid HAND leaf survives.
       expect(selection.holdsFilter).toEqual({ '1': { HAND: 'include' } });
+    });
+  });
+
+  // The filter sheet hides the Zone row for Woods, so only a hand-built link
+  // gets here — and its hold centres are board-art pixels, not the placement
+  // grid the box is expressed in, so a dragged region would filter nothing.
+  describe('a board whose holds are not in placement-grid space', () => {
+    it('leaves the route instead of offering a region to drag', () => {
+      routeParams.current = baseParams({ boardName: 'woods', sizeId: '1' });
+
+      const { container } = render(<ZoneFilterScreen />);
+
+      expect(routerMock.replace).toHaveBeenCalledWith('/(tabs)/climbs');
+      expect(container.querySelector('[data-button="mobile.zoneFilter.enable"]')).toBeNull();
+      expect(container.querySelector('[data-spinner]')).not.toBeNull();
     });
   });
 });

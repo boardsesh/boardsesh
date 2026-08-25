@@ -14,6 +14,8 @@ import { HoldFilterPicker } from '../../../src/components/search/HoldFilterPicke
 import { useTheme } from '../../../src/providers/theme-provider';
 import { getCreateBoardHolds, parseSetIdsParam } from '../../../src/lib/create-board-holds';
 import { emitHoldsFilterSelection } from '../../../src/lib/hold-filter-handoff';
+import { supportsHoldFilters } from '../../../src/lib/boards/supports-hold-filters';
+import { useUnsupportedBoardExit } from '../../../src/lib/routing/use-unsupported-board-exit';
 import { track } from '../../../src/lib/analytics';
 import { spacing } from '../../../src/theme/tokens';
 
@@ -59,6 +61,12 @@ export default function HoldFilterScreen() {
   // `boardDetails.layout_name`), not the numeric id, so the hold-filter events
   // join cleanly with web across platforms. Falls back to '' for unknown ids.
   const boardLayout = getLayout(boardName, layoutId)?.name ?? '';
+
+  // The filter sheet hides the Holds row on a board that can't answer a hold
+  // search (Woods), so only a hand-built link reaches this route for one. Leave
+  // rather than paint a board whose taps would search against no placement rows.
+  const boardCannotSearchHolds = params.boardName != null && !supportsHoldFilters(params.boardName);
+  useUnsupportedBoardExit(boardCannotSearchHolds);
 
   const [holdsFilter, setHoldsFilter] = useState<HoldsFilter>(() => parseHoldsFilter(params.holdsFilter));
   // Mirror of the latest holdsFilter so the focus-effect cleanup hands back the
@@ -150,7 +158,7 @@ export default function HoldFilterScreen() {
     });
   }, [navigation, filteredCount, handleClearAll, brandColors.primary, t]);
 
-  if (!boardHolds || !boardName) {
+  if (!boardHolds || !boardName || boardCannotSearchHolds) {
     return (
       <View style={[styles.loading, { backgroundColor: systemColors.background }]}>
         <ActivityIndicator size="large" />

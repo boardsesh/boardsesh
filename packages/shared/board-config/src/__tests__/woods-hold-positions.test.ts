@@ -13,19 +13,27 @@
 // and board-constants must not depend on board-config.
 import { describe, it, expect } from 'vitest';
 import { WOODS_HOLD_POSITIONS, WOODS_BOARD_SIZES, type WoodsBoardSize } from '@boardsesh/board-constants/woods';
-import { WOODS_ROW_LENGTHS } from '../woods-config';
+import { WOODS_GEOMETRY, WOODS_ROW_LENGTHS } from '../woods-config';
 
 // The detector rounds to 5 decimals, so rows are never perfectly level. 0.005 of
 // the board height (~5 px on 8x10, ~7 px on 12x12) is well under the ~0.03 row
 // pitch — enough slack for detection jitter, not enough to hide a swapped row.
 const ROW_OVERLAP_TOLERANCE = 0.005;
 
-// Duplicate coordinates the CV pass currently emits — two holds detected at the
-// identical centre, so one of them draws on top of the other. Pinned as an upper
-// bound: a re-extraction may only ever reduce these. Raising a number here means
-// the new table renders MORE holds on top of each other than the one shipped.
-const DUPLICATE_COORDINATE_BUDGET: Record<WoodsBoardSize, number> = {
-  '8x10': 16,
+// How close two hold centres have to land, in board-art PIXELS, before they
+// count as the same detection. Measured in pixels rather than compared as
+// coordinate strings because the defect is visual: the rendered radius is 11.5 px
+// (8×10) / 13.5 px (12×12), so a pair 1 px apart draws as one hold just as
+// surely as a pair at the identical coordinate — and a string check scored those
+// as clean, which is how 8 of the 8×10 near-duplicates went unpinned.
+const COINCIDENT_EPSILON_PX = 2;
+
+// Near-coincident pairs the CV pass currently emits, as measured on the shipped
+// table. Pinned as an upper bound: a re-extraction may only ever reduce these.
+// Raising a number here means the new table renders MORE holds on top of each
+// other than the one shipped.
+const COINCIDENT_PAIR_BUDGET: Record<WoodsBoardSize, number> = {
+  '8x10': 24,
   '12x12': 17,
 };
 
@@ -80,13 +88,23 @@ describe.each(WOODS_BOARD_SIZES)('WOODS_HOLD_POSITIONS[%s]', (size) => {
   });
 
   it('does not detect more coincident hold centres than the shipped table', () => {
-    const occurrences = new Map<string, number>();
-    for (const location of locations) {
-      const [x, y] = positions[location];
-      const key = `${x},${y}`;
-      occurrences.set(key, (occurrences.get(key) ?? 0) + 1);
+    const { width, height } = WOODS_GEOMETRY[size];
+    // Normalised (0..1) → the board-art pixel space the holds are drawn in, so
+    // the threshold is the same distance the eye sees.
+    const centres = locations.map((location) => ({
+      x: positions[location][0] * width,
+      y: positions[location][1] * height,
+    }));
+
+    let coincidentPairs = 0;
+    for (let first = 0; first < centres.length; first++) {
+      for (let second = first + 1; second < centres.length; second++) {
+        const dx = centres[first].x - centres[second].x;
+        const dy = centres[first].y - centres[second].y;
+        if (Math.hypot(dx, dy) < COINCIDENT_EPSILON_PX) coincidentPairs++;
+      }
     }
-    const duplicates = [...occurrences.values()].reduce((sum, count) => sum + (count - 1), 0);
-    expect(duplicates).toBeLessThanOrEqual(DUPLICATE_COORDINATE_BUDGET[size]);
+
+    expect(coincidentPairs).toBeLessThanOrEqual(COINCIDENT_PAIR_BUDGET[size]);
   });
 });

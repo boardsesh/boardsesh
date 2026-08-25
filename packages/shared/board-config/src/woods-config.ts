@@ -136,12 +136,18 @@ export function getWoodsHoldGridPosition(
  * Rendered hold-circle radius (board-art px) per board size.
  *
  * Sized off the MEASURED spacing of `WOODS_HOLD_POSITIONS`, not a computed grid:
- * the median nearest-neighbour distance is 27.1 px on 8×10 and 31.8 px on 12×12,
- * so ~0.42 × that leaves a visible gap between adjacent circles. The previous
- * `min(cellWidth, cellHeight) / 2` estimate gave 17.1 / 18.6 px, which overlapped
- * a neighbour for 90% of 8×10 holds and 83% of 12×12 holds — the board rendered
- * as one smear instead of discrete holds. The rows aren't evenly pitched, which
- * is why the cell-size estimate was so far out.
+ * the median nearest-neighbour distance is 27.1 px on 8×10 and 31.8 px on 12×12.
+ * At ~0.42 × that, the share of holds overlapping a neighbour drops from 90% to
+ * 43% on 8×10 and from 83% to 36% on 12×12. The previous
+ * `min(cellWidth, cellHeight) / 2` estimate gave 17.1 / 18.6 px, at which the
+ * board rendered as one smear instead of discrete holds. The rows aren't evenly
+ * pitched, which is why the cell-size estimate was so far out.
+ *
+ * The residual 43% / 36% is not a sizing problem and no radius fixes it: it's
+ * near-duplicate detections from the CV pass — pairs of centres a pixel or two
+ * apart that draw on top of each other whatever radius they get.
+ * `__tests__/woods-hold-positions.test.ts` pins their count as a budget, and
+ * re-extracting the table is the follow-up that clears them.
  */
 export const WOODS_HOLD_RADIUS_PX: Record<WoodsBoardSize, number> = {
   '8x10': 11.5,

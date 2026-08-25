@@ -157,8 +157,9 @@ export const DeferredSections = memo(function DeferredSections({
   // (rather than read from BoardseshGradeSection) because that section
   // unmounts while collapsed — React Query dedupes this fetch with the
   // section's identical-key one once it expands, so this costs no extra request.
-  // MoonBoard and Woods carry no crowd grade, so the Boardsesh-grade, stats-history
-  // and by-angle queries have nothing to answer with — skip them for both.
+  // MoonBoard and Woods carry no crowd grade, so the Boardsesh-grade and
+  // stats-history queries below have nothing to answer with — skip them for
+  // both. (BoardseshGradeSection gates its own by-angle query the same way.)
   const noCrowdGrade = lacksCrowdGrade(boardName);
   const boardseshReady = boardseshGradeEnabled && !noCrowdGrade && readyToRender;
   const { data: boardseshGrade } = useBoardseshGrade(boardName, climb.uuid, angle, {

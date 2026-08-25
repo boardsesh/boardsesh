@@ -2,6 +2,7 @@ import { getProductSize, getImageFilename, getHolePlacements } from '@boardsesh/
 import {
   BOARD_IMAGE_DIMENSIONS,
   MOONBOARD_SIZE,
+  WOODS_LAYOUTS,
   getMoonBoardDetails,
   getWoodsBoardDetails,
 } from '@boardsesh/board-config';
@@ -79,7 +80,7 @@ function computeBoardRenderData(params: {
   }
 
   if (boardName === 'woods') {
-    return getWoodsRenderData({ sizeId });
+    return getWoodsRenderData({ layoutId, sizeId });
   }
 
   const sizeData = getProductSize(boardName, sizeId);
@@ -169,12 +170,24 @@ function getMoonBoardRenderData(params: {
  * Woods render data. Woods is code-driven like MoonBoard — no placement rows and
  * no `board_images` — so the geometry comes from `getWoodsBoardDetails`, which
  * carries a hold centre per detected hold (in board-art pixels) for the size.
- * There is one layout and one synthetic hold set, so only the size id selects
- * anything: the 8x10 and 12x12 boards have different art AND different hold
- * numbering, so drawing one on the other's art would light the wrong holds.
+ * There is one layout and one synthetic hold set, so the size id is the only
+ * input that selects anything: the 8x10 and 12x12 boards have different art AND
+ * different hold numbering, so drawing one on the other's art would light the
+ * wrong holds.
+ *
+ * A layout id other than the single Woods layout is rejected up front, the way
+ * the MoonBoard branch rejects a size that isn't MoonBoard's: it means the caller
+ * resolved the board config against some other board, and silently rendering the
+ * only Woods layout would hide that mismatch behind a plausible-looking wall.
  */
-function getWoodsRenderData(params: { sizeId: number }): BoardRenderData | null {
-  const { sizeId } = params;
+function getWoodsRenderData(params: { layoutId: number; sizeId: number }): BoardRenderData | null {
+  const { layoutId, sizeId } = params;
+
+  if (layoutId !== WOODS_LAYOUTS.woods.id) {
+    // eslint-disable-next-line no-console
+    console.warn('[board-details] Woods render data unavailable:', `unknown layout id ${layoutId}`);
+    return null;
+  }
 
   try {
     const details = getWoodsBoardDetails({ size_id: sizeId });

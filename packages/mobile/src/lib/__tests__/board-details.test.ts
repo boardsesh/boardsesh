@@ -19,6 +19,7 @@ vi.mock('@boardsesh/board-config', async () => {
       moonboard: {},
     },
     MOONBOARD_SIZE: { id: 1 },
+    WOODS_LAYOUTS: actual.WOODS_LAYOUTS,
     getMoonBoardDetails: vi.fn(),
     getWoodsBoardDetails: actual.getWoodsBoardDetails,
   };
@@ -196,9 +197,23 @@ describe('getBoardRenderData', () => {
     expect(result?.holdsData.every((hold) => hold.r === 11.5)).toBe(true);
   });
 
-  // The layout and set ids are fixed for Woods, so an unknown SIZE is the only
-  // config that can miss — and it must degrade to "no board" rather than throw
-  // out of a render.
+  // Woods has ONE layout, so any other id means the caller resolved the config
+  // against a different board. Rejected up front rather than rendered as the
+  // only Woods layout, which would hide the mismatch behind a plausible wall.
+  it('warns and returns null for a Woods layout id that is not the Woods layout', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      expect(getBoardRenderData({ boardName: 'woods', layoutId: 8, sizeId: 1, setIds: [1] })).toBeNull();
+      expect(warnSpy).toHaveBeenCalledWith('[board-details] Woods render data unavailable:', 'unknown layout id 8');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  // The set ids are fixed for Woods, so beyond the layout an unknown SIZE is the
+  // only config that can miss — and it must degrade to "no board" rather than
+  // throw out of a render.
   it('warns and returns null for an unknown Woods size', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
