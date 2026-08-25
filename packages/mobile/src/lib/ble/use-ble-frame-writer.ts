@@ -16,9 +16,11 @@ type UseBleFrameWriterInput = {
    */
   resetKey: string | null;
   /**
-   * Called once per successful write, before the frame lands. Lets the wall-state
-   * dedup in the Bluetooth provider know its record of what the wall physically
-   * shows is now stale.
+   * Called once per write ATTEMPT, immediately before the frame is handed to the
+   * transport — so it also fires for a write that then throws. That is
+   * deliberate: it tells the Bluetooth provider's wall-state dedup that its
+   * record of what the wall physically shows is no longer trustworthy, and after
+   * a failed write it genuinely isn't.
    */
   onWrite?: () => void;
 };
