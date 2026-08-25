@@ -1715,9 +1715,19 @@ async function writeClimbRatings(tx: DrizzleDb, values: Array<typeof boardClimbR
  */
 type AdoptableLegacyPlaylist = { id: bigint; auroraId: string | null; normalizedName: string };
 
-/** Case- and whitespace-insensitive playlist name, for the tier-2 match. */
+/**
+ * Case- and space-insensitive playlist name, for the tier-2 match.
+ *
+ * Trims ASCII spaces only — deliberately NOT `String.prototype.trim()`. The
+ * candidate lookup filters on Postgres `lower(btrim(name))`, and `btrim(x)`
+ * with no explicit character set strips spaces and nothing else. A JS trim
+ * that also stripped tabs, newlines or U+2003 would produce a key the SQL side
+ * never generates, so the row would be filtered out of the candidate set and
+ * the circuit would insert as a duplicate. Agreeing with Postgres is what
+ * matters here, not stripping the most characters.
+ */
 function normalizePlaylistName(name: string): string {
-  return name.trim().toLowerCase();
+  return name.replace(/^ +/, '').replace(/ +$/, '').toLowerCase();
 }
 
 /** value -> how many times it appears. */
@@ -1953,6 +1963,12 @@ export async function applyCircuits(
   const candidateByAuroraId = new Map<string, bigint>();
   /** Tier 2 — unambiguous 1:1 normalized name (a JSON import rotates the id). */
   const candidateByName = new Map<string, bigint>();
+  /**
+   * playlist id -> the keys it was registered under. Without it, retiring a
+   * consumed candidate means scanning both maps by VALUE, which is O(n) per
+   * adoption and O(n²) over a full 500-circuit batch.
+   */
+  const candidateKeysById = new Map<string, { auroraId?: string; normalizedName?: string }>();
 
   if (adoptablePuts.length > 0) {
     const candidates = await selectAdoptableLegacyPlaylists(tx, userId, adoptablePuts);
@@ -1960,6 +1976,7 @@ export async function applyCircuits(
     for (const candidate of candidates) {
       if (candidate.auroraId && wantedUuids.has(candidate.auroraId)) {
         candidateByAuroraId.set(candidate.auroraId, candidate.id);
+        candidateKeysById.set(String(candidate.id), { auroraId: candidate.auroraId });
       }
     }
     // Names that appear exactly once among the candidates AND exactly once
@@ -1972,6 +1989,9 @@ export async function applyCircuits(
       if (candidateNameCounts.get(candidate.normalizedName) !== 1) continue;
       if (incomingNameCounts.get(candidate.normalizedName) !== 1) continue;
       candidateByName.set(candidate.normalizedName, candidate.id);
+      const keys = candidateKeysById.get(String(candidate.id)) ?? {};
+      keys.normalizedName = candidate.normalizedName;
+      candidateKeysById.set(String(candidate.id), keys);
     }
   }
 
@@ -1982,8 +2002,11 @@ export async function applyCircuits(
    * anyway, but this keeps it to one statement).
    */
   const consumeCandidate = (candidateId: bigint): void => {
-    for (const [key, value] of candidateByAuroraId) if (value === candidateId) candidateByAuroraId.delete(key);
-    for (const [key, value] of candidateByName) if (value === candidateId) candidateByName.delete(key);
+    const keys = candidateKeysById.get(String(candidateId));
+    if (!keys) return;
+    if (keys.auroraId !== undefined) candidateByAuroraId.delete(keys.auroraId);
+    if (keys.normalizedName !== undefined) candidateByName.delete(keys.normalizedName);
+    candidateKeysById.delete(String(candidateId));
   };
 
   for (const op of circuitOps) {
