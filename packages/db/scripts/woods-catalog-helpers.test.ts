@@ -11,6 +11,7 @@ import {
   holdsToFrames,
   woodsClimbUuid,
   dimensionToSizeIds,
+  WOODS_DIMENSION_TO_SIZE_IDS,
   normalizeWoodsPublishedDate,
   mapWoodsProblemToClimb,
   woodsGradeRows,
@@ -56,7 +57,7 @@ const IMPOSSIBLE: WoodsCatalogProblem = {
 // 664(Hand→r2) 793(Start→r4). The Start is the highest location, so frames end r4.
 const EXPECTED_FRAMES = 'p273r3p337r2p464r2p664r2p793r4';
 const EXPECTED_FINGERPRINT = 'ca6d54ebabdfca1a95cf2b1c0f3a928e41f0da9dbe90bd03ccdab2d130c3568d';
-const EXPECTED_UUID = 'ef9aa942-d3c1-59b3-8f57-b6169d2a3845';
+const EXPECTED_UUID = '74350bc2-8cd6-5c42-9c8f-5c67c407135d';
 
 void test('woodsHoldState maps the four states and drops Clear / unknown', () => {
   assert.equal(woodsHoldState('Start'), 'STARTING');
@@ -83,21 +84,88 @@ void test('parseHoldList drops Clear holds and sorts ascending by baseHoldLocati
   );
 });
 
+void test('parseHoldList collapses a hold the catalog lists twice (last wins)', () => {
+  // 12x12 problem 81 ("The Motto") really does list hold 757 twice. One hold
+  // list has to feed the frames string, the fingerprint and board_climb_holds —
+  // and board_climb_holds is keyed on climb + hold, so a repeat that survives
+  // here would leave the three disagreeing about the same climb.
+  const parsed = parseHoldList([
+    { type: 'Finish', baseHoldLocation: 10 },
+    { type: 'Hand', baseHoldLocation: 236 },
+    { type: 'Start', baseHoldLocation: 757 },
+    { type: 'Hand', baseHoldLocation: 596 },
+    { type: 'Start', baseHoldLocation: 757 },
+  ]);
+  assert.deepEqual(
+    parsed.map((hold) => hold.holdId),
+    [10, 236, 596, 757],
+  );
+  assert.equal(holdsToFrames(parsed), 'p10r3p236r2p596r2p757r4');
+});
+
+void test('parseHoldList keeps the LAST entry when a repeated hold changes role', () => {
+  const parsed = parseHoldList([
+    { type: 'Foot', baseHoldLocation: 757 },
+    { type: 'Start', baseHoldLocation: 757 },
+  ]);
+  assert.deepEqual(parsed, [{ holdId: 757, holdState: 'STARTING', roleCode: 4 }]);
+});
+
+void test('mapWoodsProblemToClimb derives frames, fingerprint and holds from one deduped list', () => {
+  const mapped = mapWoodsProblemToClimb({
+    ...IMPOSSIBLE,
+    holdList: [...IMPOSSIBLE.holdList, { type: 'Start', baseHoldLocation: 793 }],
+  })!;
+  // The repeat changes nothing: same frames, same fingerprint, same UUID, and
+  // one board_climb_holds row per hold.
+  assert.equal(mapped.frames, EXPECTED_FRAMES);
+  assert.equal(mapped.holdFingerprint, EXPECTED_FINGERPRINT);
+  assert.equal(mapped.uuid, EXPECTED_UUID);
+  assert.equal(mapped.holds.length, 5);
+  assert.equal(new Set(mapped.holds.map((hold) => hold.holdId)).size, 5);
+});
+
 void test('holdsToFrames encodes p{baseHoldLocation}r{roleCode}, Start ending in r4', () => {
   assert.equal(holdsToFrames(parseHoldList(IMPOSSIBLE.holdList)), EXPECTED_FRAMES);
 });
 
 void test('woodsClimbUuid is deterministic, namespace-keyed, and a valid v5 UUID', () => {
-  const uuid = woodsClimbUuid({ name: 'Impossible ', author: '23chloec', frames: EXPECTED_FRAMES });
+  const uuid = woodsClimbUuid({
+    name: 'Impossible ',
+    author: '23chloec',
+    frames: EXPECTED_FRAMES,
+    boardDimension: '12x12',
+  });
   assert.equal(uuid, EXPECTED_UUID);
-  assert.equal(uuid, uuidv5(`Impossible |23chloec|${EXPECTED_FRAMES}`, WOODS_UUID_NAMESPACE));
+  assert.equal(uuid, uuidv5(`12x12|Impossible |23chloec|${EXPECTED_FRAMES}`, WOODS_UUID_NAMESPACE));
   assert.match(uuid, /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 });
 
 void test('woodsClimbUuid changes when the frames (holds) change', () => {
   assert.notEqual(
-    woodsClimbUuid({ name: 'Impossible ', author: '23chloec', frames: EXPECTED_FRAMES }),
-    woodsClimbUuid({ name: 'Impossible ', author: '23chloec', frames: `${EXPECTED_FRAMES}p800r1` }),
+    woodsClimbUuid({ name: 'Impossible ', author: '23chloec', frames: EXPECTED_FRAMES, boardDimension: '12x12' }),
+    woodsClimbUuid({
+      name: 'Impossible ',
+      author: '23chloec',
+      frames: `${EXPECTED_FRAMES}p800r1`,
+      boardDimension: '12x12',
+    }),
+  );
+});
+
+void test('woodsClimbUuid separates the two board sizes', () => {
+  // 8x10 hold ids are a numeric subset of the 12x12 ids, but they are different
+  // physical holds on a different wall. Two problems that agree on name, setter
+  // and hold-id list across the two catalog files are two climbs — collapsing
+  // them onto one row would let the second file overwrite the first's
+  // compatible_size_ids and hide a whole size's climb.
+  assert.notEqual(
+    woodsClimbUuid({ name: 'Impossible ', author: '23chloec', frames: EXPECTED_FRAMES, boardDimension: '12x12' }),
+    woodsClimbUuid({ name: 'Impossible ', author: '23chloec', frames: EXPECTED_FRAMES, boardDimension: '8x10' }),
+  );
+  assert.equal(
+    mapWoodsProblemToClimb({ ...IMPOSSIBLE, boardDimension: '8x10' })!.uuid,
+    woodsClimbUuid({ name: 'Impossible ', author: '23chloec', frames: EXPECTED_FRAMES, boardDimension: '8x10' }),
   );
 });
 
@@ -113,6 +181,16 @@ void test('dimensionToSizeIds maps both board sizes', () => {
   assert.deepEqual(dimensionToSizeIds('8x10'), [1]);
   assert.deepEqual(dimensionToSizeIds('12x12'), [2]);
   assert.deepEqual(dimensionToSizeIds('bogus'), []);
+});
+
+void test('dimensionToSizeIds hands every caller its own array', () => {
+  // Thousands of climb rows carry one of these. Sharing the lookup table's array
+  // would mean a single mutation anywhere rewrites compatible_size_ids on every
+  // climb of that size.
+  const first = dimensionToSizeIds('12x12');
+  first.push(99);
+  assert.deepEqual(dimensionToSizeIds('12x12'), [2]);
+  assert.notEqual(mapWoodsProblemToClimb(IMPOSSIBLE)!.compatibleSizeIds, WOODS_DIMENSION_TO_SIZE_IDS['12x12']);
 });
 
 void test('normalizeWoodsPublishedDate rewrites MM/DD/YYYY into lexically sortable ISO', () => {
@@ -132,6 +210,25 @@ void test('normalizeWoodsPublishedDate keeps the 29 comma-separated catalog rows
   // 29 of the 5,418 rows come back as "02/05/2023, 18:34:33" — the same format
   // with a locale separator. Rejecting them would silently null their created_at.
   assert.equal(normalizeWoodsPublishedDate('02/05/2023, 18:34:33'), '2023-02-05 18:34:33');
+});
+
+void test('normalizeWoodsPublishedDate rejects a value whose fields are out of range', () => {
+  // The shape matches but the numbers are nonsense. Storing them verbatim would
+  // put "2020-13-45 99:99:99" in created_at — a string that sorts after every
+  // real December and that no date parser reads back.
+  assert.equal(normalizeWoodsPublishedDate('13/45/2020 99:99:99'), null);
+  assert.equal(normalizeWoodsPublishedDate('00/00/2020 00:00:00'), null);
+  // A leading 31 is not a DD/MM row to rescue — the catalog is MM/DD throughout,
+  // so re-reading it as a day would file the climb under the wrong month.
+  assert.equal(normalizeWoodsPublishedDate('31/12/2025 10:00:00'), null);
+  assert.equal(normalizeWoodsPublishedDate('12/31/2025 24:00:00'), null);
+  assert.equal(normalizeWoodsPublishedDate('12/31/2025 23:60:00'), null);
+  assert.equal(normalizeWoodsPublishedDate('12/31/2025 23:59:60'), null);
+});
+
+void test('normalizeWoodsPublishedDate keeps the boundary values that are real', () => {
+  assert.equal(normalizeWoodsPublishedDate('01/01/2020 00:00:00'), '2020-01-01 00:00:00');
+  assert.equal(normalizeWoodsPublishedDate('12/31/2025 23:59:59'), '2025-12-31 23:59:59');
 });
 
 void test('normalizeWoodsPublishedDate returns null for anything it cannot parse', () => {
@@ -224,6 +321,9 @@ void test('WOODS_REQUIRED_SET_IDS is empty even though the board config reports 
   // empty array can never hide a Woods climb — including from a client that
   // selected no sets at all.
   assert.deepEqual(WOODS_REQUIRED_SET_IDS, []);
+  // Frozen: one shared instance is copied into thousands of climb rows, so it
+  // must not be mutable from any of them.
+  assert.ok(Object.isFrozen(WOODS_REQUIRED_SET_IDS));
   assert.deepEqual(getWoodsBoardDetails({ size_id: 1 }).set_ids, [1]);
   assert.deepEqual(getWoodsBoardDetails({ size_id: 2 }).set_ids, [1]);
 });

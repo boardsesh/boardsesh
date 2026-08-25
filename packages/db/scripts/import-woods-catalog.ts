@@ -18,7 +18,8 @@ import {
   type WoodsCatalogFile,
 } from './woods-catalog-helpers.js';
 import { assertWoodsImportAllowed } from './woods-import-guard.js';
-import { getScriptDatabaseUrl } from './db-connection.js';
+import { getScriptDatabaseUrl, describeDatabaseHost } from './db-connection.js';
+import { blendedQualityAverageSql } from '../src/queries/climb-stats/quality-blend.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -27,12 +28,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // =============================================================================
 // Imports the full Woods catalog scraped from the Daniel Woods Board iOS app's
 // REST API. One JSON file per physical size ({ boardDimension, count,
-// problems[] }); we write one climb row per (name, author, hold layout) onto the
-// single Woods layout, with compatibleSizeIds selecting the size.
+// problems[] }); we write one climb row per (size, name, author, hold layout)
+// onto the single Woods layout, with compatibleSizeIds selecting the size.
 //
-// Idempotent: each climb gets a deterministic name|author|frames UUID, so a
-// re-import upserts in place rather than duplicating. Stat upserts are monotonic
-// for the ascent count (never shrink it). board_difficulty_grades is seeded once.
+// Idempotent: each climb gets a deterministic size|name|author|frames UUID, so a
+// re-import upserts in place rather than duplicating. The catalog's repeat count
+// is this board's UPSTREAM ascent count: it lands in upstream_ascensionist_count
+// and the materialised total is rewritten as upstream + Boardsesh in the same
+// statement, so neither a tick recompute nor a re-import can erase the other's
+// number. board_difficulty_grades is seeded once.
 //
 // The catalog files are not committed. Point the script at a local checkout of
 // the woodsboard-scraper catalog directory — as a positional argument, or via
@@ -41,8 +45,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 //   DB_URL=<target> tsx scripts/import-woods-catalog.ts /path/to/catalog
 //   DB_URL=<target> WOODS_CATALOG_DIR=/path/to/catalog tsx scripts/import-woods-catalog.ts
 //   DB_URL=<target> vp run db:import-woods-catalog -- /path/to/catalog
-// Relative paths resolve against the current working directory. The positional
-// argument wins over WOODS_CATALOG_DIR, which wins over the sibling default.
+// The positional argument wins over WOODS_CATALOG_DIR, which wins over the
+// sibling default. A relative path resolves against the directory you typed the
+// command in, but only because of INIT_CWD: a package-scoped runner (`vp run
+// db:import-woods-catalog`) starts the script with packages/db as its cwd, so a
+// plain process.cwd() would quietly resolve `./catalog` inside the package. An
+// absolute path is recommended.
 //
 // DB_URL must be set inline — it beats the dev-db .env override and is how you
 // target prod vs local. A non-local host also needs WOODS_IMPORT_ALLOW_REMOTE=1
@@ -54,16 +62,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // scripts → db → packages → repo root → the dir holding both checkouts).
 const DEFAULT_DIR = path.join(__dirname, '../../../../woodsboard-scraper/catalog');
 // 2000 rows/insert keeps every table well under Postgres's 65,535 bind-param
-// limit (widest is board_climbs at ~22 cols) while cutting round-trips.
+// limit while cutting round-trips. The widest insert is board_climbs at 26 bound
+// columns per row — 52,000 parameters per full batch, with ~13,500 to spare.
 const BATCH_SIZE = 2000;
 
 async function importWoodsCatalog() {
   const positional = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
   const envDir = process.env.WOODS_CATALOG_DIR;
+  // The shell's own cwd, as the package manager captured it before switching
+  // into packages/db. Falls back to process.cwd() when the script is run
+  // directly (plain tsx), where the two are the same directory.
+  const invocationCwd = process.env.INIT_CWD ?? process.cwd();
   const catalogDir = positional
-    ? path.resolve(process.cwd(), positional)
+    ? path.resolve(invocationCwd, positional)
     : envDir
-      ? path.resolve(process.cwd(), envDir)
+      ? path.resolve(invocationCwd, envDir)
       : DEFAULT_DIR;
 
   if (!fs.existsSync(catalogDir) || !fs.statSync(catalogDir).isDirectory()) {
@@ -83,13 +96,16 @@ async function importWoodsCatalog() {
   }
 
   const databaseUrl = getScriptDatabaseUrl();
-  const dbHost = databaseUrl.split('@')[1]?.split('/')[0] || 'unknown';
-  console.info(`🔄 Importing Woods catalog to: ${dbHost}`);
+  console.info(`🔄 Importing Woods catalog to: ${describeDatabaseHost(databaseUrl)}`);
   assertWoodsImportAllowed(databaseUrl, 'import-woods-catalog.ts');
   console.info(`📂 Reading catalog from: ${catalogDir} (${files.length} files)`);
 
   const client = postgres(databaseUrl, { max: 1 });
   const db = drizzle(client);
+
+  // One timestamp for the whole run, so every row this import touches carries the
+  // same "upstream last seen at" instant rather than a per-row clock reading.
+  const upstreamSyncedAt = new Date().toISOString();
 
   const totals = {
     climbs: 0,
@@ -98,6 +114,7 @@ async function importWoodsCatalog() {
     aliases: 0,
     skippedProblems: 0,
     duplicateProblems: 0,
+    unknownDimension: 0,
     clampedGrades: 0,
     unmappedGrades: 0,
   };
@@ -134,6 +151,7 @@ async function importWoodsCatalog() {
       let mappedCount = 0;
       let skippedProblems = 0;
       let duplicateProblems = 0;
+      let unknownDimension = 0;
       let clampedGrades = 0;
       let unmappedGrades = 0;
 
@@ -141,6 +159,15 @@ async function importWoodsCatalog() {
         const mapped = mapWoodsProblemToClimb(problem);
         if (!mapped) {
           skippedProblems++;
+          continue;
+        }
+        // An unrecognised boardDimension yields no compatible size ids, and a
+        // climb with `compatible_size_ids = {}` is invisible: every client asks
+        // for the size its wall is built at. Skip and count it rather than
+        // writing a row nobody can ever see — a new Woods size appearing in the
+        // catalog should surface here as a number, not as missing climbs.
+        if (mapped.compatibleSizeIds.length === 0) {
+          unknownDimension++;
           continue;
         }
         mappedCount++;
@@ -183,7 +210,9 @@ async function importWoodsCatalog() {
           synced: true,
           syncError: null,
           userId: null,
-          requiredSetIds: WOODS_REQUIRED_SET_IDS,
+          // Copied per row: the exported constant is frozen and shared, and a
+          // row must own the array it hands to the driver.
+          requiredSetIds: [...WOODS_REQUIRED_SET_IDS],
           compatibleSizeIds: mapped.compatibleSizeIds,
           holdFingerprint: mapped.holdFingerprint,
           characteristics: null,
@@ -195,14 +224,28 @@ async function importWoodsCatalog() {
           angle: mapped.angle,
           displayDifficulty: mapped.difficulty,
           benchmarkDifficulty: null,
+          // The catalog's repeat count is the Woods board's upstream source, so
+          // it belongs in upstream_ascensionist_count. ascensionist_count is
+          // MATERIALISED as upstream + boardsesh by the tick recompute; leaving
+          // upstream NULL would make the first Boardsesh tick on a 47-repeat
+          // problem rewrite the total as 0 + 1. Seed the total too — a fresh row
+          // has no Boardsesh ticks yet.
+          upstreamAscensionistCount: mapped.ascensionistCount,
           ascensionistCount: mapped.ascensionistCount,
           difficultyAverage: mapped.difficulty,
+          // The Woods API publishes likes/dislikes, not a 1-5 rating, so this
+          // board has no upstream quality at all: both quality columns start
+          // NULL, and quality_average becomes purely Boardsesh's own star
+          // average once members rate the climb (see the conflict set below).
+          upstreamQualityAverage: null,
           qualityAverage: mapped.qualityAverage,
           qualityNormalized: true,
           faUsername: mapped.faUsername,
           // The Woods API credits a first ascensionist by name but publishes no
           // date for it, so there is nothing honest to put here.
           faAt: null,
+          // This import is the Woods board's only upstream stats source.
+          upstreamSyncedAt,
         });
 
         for (const hold of mapped.holds) {
@@ -236,6 +279,11 @@ async function importWoodsCatalog() {
       console.info(
         `   ${mappedCount} mapped, ${skippedProblems} skipped (no holds), ${duplicateProblems} duplicates folded`,
       );
+      if (unknownDimension > 0) {
+        console.warn(
+          `   ⚠️  ${unknownDimension} problems carry an unknown boardDimension — skipped (no compatible size)`,
+        );
+      }
       if (clampedGrades > 0) {
         console.info(`   ${clampedGrades} problems graded above the shared scale, clamped onto 8c+/V16`);
       }
@@ -266,20 +314,50 @@ async function importWoodsCatalog() {
             });
         }
 
-        // Stats — take the new grade, but never shrink the ascent count.
+        // Stats — monotonic merge: take the new grade, but never null out a
+        // stored one, never shrink the upstream count, and never touch the
+        // Boardsesh side. The total is rebuilt as upstream + Boardsesh here, so a
+        // re-import also repairs any climb whose count a tick recompute had
+        // clobbered while upstream_ascensionist_count was still NULL.
+        //
+        // The NEW upstream count this upsert resolves to: monotonic GREATEST of
+        // the stored and incoming snapshot. Defined once and reused for the
+        // upstream column, the materialised total AND the blend weight — a SET
+        // expression reads the OLD value of a bare column, so all three have to
+        // be written from this resolved value rather than from the column.
+        const resolvedUpstream = sql`greatest(coalesce(excluded.upstream_ascensionist_count, 0), coalesce(${boardClimbStats.upstreamAscensionistCount}, 0))`;
+        // quality_average is MATERIALISED: the blend of an upstream average and
+        // Boardsesh's own star ratings. Woods has no upstream rating, so
+        // excluded.quality_average is always NULL and writing it would erase
+        // every star Boardsesh members had given the climb. Run the shared blend
+        // instead — with a NULL upstream term it degenerates to exactly the
+        // Boardsesh average the tick recompute writes, so the value survives a
+        // re-import untouched and the column stays in lockstep with the upstream
+        // write in the same statement.
+        const blendedQuality = blendedQualityAverageSql({
+          upstreamQualityAverage: sql`coalesce(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`,
+          upstreamAscensionistCount: resolvedUpstream,
+          boardseshQualitySum: sql`${boardClimbStats.boardseshQualitySum}`,
+          boardseshQualityCount: sql`${boardClimbStats.boardseshQualityCount}`,
+        });
         for (let offset = 0; offset < statsRecords.length; offset += BATCH_SIZE) {
           await tx
             .insert(boardClimbStats)
             .values(statsRecords.slice(offset, offset + BATCH_SIZE))
             .onConflictDoUpdate({
               target: [boardClimbStats.boardType, boardClimbStats.climbUuid, boardClimbStats.angle],
+              // Existing-side refs must be table-qualified — a bare column name
+              // is ambiguous between the target row and `excluded` in ON CONFLICT.
               set: {
-                displayDifficulty: sql`excluded.display_difficulty`,
-                difficultyAverage: sql`excluded.difficulty_average`,
-                ascensionistCount: sql`greatest(coalesce(excluded.ascensionist_count, 0), coalesce(${boardClimbStats.ascensionistCount}, 0))`,
-                qualityAverage: sql`excluded.quality_average`,
+                // A scrape that lost a grade must not null out a stored one.
+                displayDifficulty: sql`coalesce(excluded.display_difficulty, ${boardClimbStats.displayDifficulty})`,
+                difficultyAverage: sql`coalesce(excluded.difficulty_average, ${boardClimbStats.difficultyAverage})`,
+                upstreamAscensionistCount: resolvedUpstream,
+                ascensionistCount: sql`${resolvedUpstream} + coalesce(${boardClimbStats.boardseshAscensionistCount}, 0)`,
+                qualityAverage: blendedQuality,
                 qualityNormalized: sql`true`,
                 faUsername: sql`excluded.fa_username`,
+                upstreamSyncedAt: sql`excluded.upstream_synced_at`,
               },
             });
         }
@@ -311,6 +389,7 @@ async function importWoodsCatalog() {
       totals.aliases += aliasRecords.length;
       totals.skippedProblems += skippedProblems;
       totals.duplicateProblems += duplicateProblems;
+      totals.unknownDimension += unknownDimension;
       totals.clampedGrades += clampedGrades;
       totals.unmappedGrades += unmappedGrades;
     }
@@ -322,6 +401,7 @@ async function importWoodsCatalog() {
     console.info(`   Aliases upserted:  ${totals.aliases}`);
     console.info(`   Problems skipped:  ${totals.skippedProblems} (no holds)`);
     console.info(`   Duplicates folded: ${totals.duplicateProblems} (same name, setter, holds and angle)`);
+    console.info(`   Unknown sizes:     ${totals.unknownDimension} (unrecognised boardDimension, skipped)`);
     console.info(`   Grades clamped:    ${totals.clampedGrades} (above 8c+/V16, the top of the shared scale)`);
     if (totals.unmappedGrades > 0) {
       console.warn(`   ⚠️  Grades unmapped: ${totals.unmappedGrades} — stored with a NULL difficulty`);

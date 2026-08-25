@@ -17,9 +17,10 @@ import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping
 // `boardDimension` ("8x10" | "12x12"), and the holds as a `holdList` of
 // { type: "Start" | "Hand" | "Finish" | "Foot" | "Clear", baseHoldLocation }.
 //
-// We import one climb per (name, author, hold layout). The Woods board has a
-// single hold layout (layout 1); the two sizes are product sizes, selected via
-// `compatibleSizeIds`. Frames use the firmware's own wire role codes
+// We import one climb per (board size, name, author, hold layout). The Woods
+// board has a single hold layout (layout 1); the two sizes are product sizes,
+// selected via `compatibleSizeIds` — and part of the climb UUID, because the
+// same hold ids mean different holds on the two walls. Frames use the firmware's own wire role codes
 // (@boardsesh/board-constants WOODS_WIRE_ROLE) so a frame's role maps straight
 // onto the wire when the BLE encoder lights the board.
 // =============================================================================
@@ -41,14 +42,17 @@ export const WOODS_LAYOUT_ID = 1;
 // Postgres, so a Woods climb can never be filtered out by a set list. NULL would
 // read as "not backfilled yet" (and `NULL <@ …` drops the row wherever the filter
 // does run).
-export const WOODS_REQUIRED_SET_IDS: number[] = [];
+// Frozen and typed `readonly` so the single exported instance can't be handed to
+// thousands of climb rows as a shared mutable reference — callers copy it into
+// each row (`[...WOODS_REQUIRED_SET_IDS]`).
+export const WOODS_REQUIRED_SET_IDS: readonly number[] = Object.freeze([]);
 
 // boardDimension → compatible product-size ids. 8x10 is product size 1, 12x12 is
 // product size 2 (matching the WOODS_BOARD_SIZES ordering in board-constants).
-export const WOODS_DIMENSION_TO_SIZE_IDS: Record<string, number[]> = {
-  '8x10': [1],
-  '12x12': [2],
-};
+export const WOODS_DIMENSION_TO_SIZE_IDS: Readonly<Record<string, readonly number[]>> = Object.freeze({
+  '8x10': Object.freeze([1]),
+  '12x12': Object.freeze([2]),
+});
 
 // Woods grades that fold onto a lower grade's shared difficulty id because the
 // shared BOULDER_GRADES table has no distinct id left for them. Derived from
@@ -174,19 +178,29 @@ export function woodsHoldState(type: string): WoodsHoldState | null {
 }
 
 /**
- * Drop "Clear" holds, map each remaining hold to its id/state/role, and sort
+ * Drop "Clear" holds, collapse repeats of the same hold id (last wins), and sort
  * ascending by baseHoldLocation so the frames string and UUID are deterministic
  * regardless of the order the API returned the holds in.
+ *
+ * The dedupe is not defensive padding: 12x12 problem 81 ("The Motto") lists hold
+ * 757 twice. Without collapsing it here the repeat reaches the frames string and
+ * the hold fingerprint, while board_climb_holds (keyed on climb + hold id) keeps
+ * a single row — three views of one climb derived from two different hold lists.
+ * Last wins so a later entry's role is the one that survives, matching how the
+ * app renders a hold that was tapped again.
  */
 export function parseHoldList(holdList: WoodsHoldListItem[]): ParsedWoodsHold[] {
-  return holdList
-    .map((item) => {
-      const holdState = woodsHoldState(item.type);
-      if (holdState === null) return null;
-      return { holdId: item.baseHoldLocation, holdState, roleCode: TYPE_TO_ROLE_CODE[item.type] };
-    })
-    .filter((hold): hold is ParsedWoodsHold => hold !== null)
-    .sort((left, right) => left.holdId - right.holdId);
+  const byHoldId = new Map<number, ParsedWoodsHold>();
+  for (const item of holdList) {
+    const holdState = woodsHoldState(item.type);
+    if (holdState === null) continue;
+    byHoldId.set(item.baseHoldLocation, {
+      holdId: item.baseHoldLocation,
+      holdState,
+      roleCode: TYPE_TO_ROLE_CODE[item.type],
+    });
+  }
+  return [...byHoldId.values()].sort((left, right) => left.holdId - right.holdId);
 }
 
 /** Encode holds as the `p{baseHoldLocation}r{roleCode}` frames string. */
@@ -196,17 +210,30 @@ export function holdsToFrames(holds: ParsedWoodsHold[]): string {
 
 /**
  * Deterministic, idempotent climb UUID. The Woods API has stable problem ids,
- * but we key the UUID on name|author|frames (not the id) so a re-set of the same
- * physical problem maps to the same climb. A different hold layout yields
- * different frames → a different UUID.
+ * but we key the UUID on boardDimension|name|author|frames (not the id) so a
+ * re-set of the same physical problem maps to the same climb. A different hold
+ * layout yields different frames → a different UUID.
+ *
+ * The board size is part of the key because the two sizes are two different
+ * walls, not two views of one. 8x10 hold ids are a numeric subset of the 12x12
+ * ids but sit at different physical positions, so a problem that happens to
+ * share a name, setter and hold-id list across both files is two climbs. Keying
+ * without the dimension would collapse them onto one row, and whichever file
+ * imported last would overwrite compatible_size_ids — hiding the other size's
+ * climb from every client that filters on size.
  */
-export function woodsClimbUuid(args: { name: string; author: string; frames: string }): string {
-  return uuidv5(`${args.name}|${args.author}|${args.frames}`, WOODS_UUID_NAMESPACE);
+export function woodsClimbUuid(args: { name: string; author: string; frames: string; boardDimension: string }): string {
+  return uuidv5(`${args.boardDimension}|${args.name}|${args.author}|${args.frames}`, WOODS_UUID_NAMESPACE);
 }
 
-/** 8x10 → [1], 12x12 → [2]; [] for an unrecognised dimension. */
+/**
+ * 8x10 → [1], 12x12 → [2]; [] for an unrecognised dimension. Returns a fresh
+ * array every call, so a climb row never holds a reference into the lookup table
+ * that another row could mutate out from under it.
+ */
 export function dimensionToSizeIds(boardDimension: string): number[] {
-  return WOODS_DIMENSION_TO_SIZE_IDS[boardDimension] ?? [];
+  const sizeIds = WOODS_DIMENSION_TO_SIZE_IDS[boardDimension];
+  return sizeIds ? [...sizeIds] : [];
 }
 
 /**
@@ -226,6 +253,17 @@ export function normalizeWoodsPublishedDate(raw: string | null | undefined): str
   const match = WOODS_PUBLISHED_DATE_PATTERN.exec((raw ?? '').trim());
   if (!match) return null;
   const [, month, day, year, hours, minutes, seconds] = match;
+  // The pattern proves the shape, not the values. Range-check the fields as
+  // well, or "13/45/2020 99:99:99" is stored verbatim as "2020-13-45 99:99:99" —
+  // a string that sorts after every real December and that no date parser will
+  // read back. Null is the honest answer for a value the API mangled.
+  //
+  // A leading field above 12 is not a DD/MM row worth rescuing either: the
+  // catalog is MM/DD throughout, so re-reading "31/12/2025" as 31 December would
+  // invent an ordering from a row that is simply corrupt.
+  if (Number(month) < 1 || Number(month) > 12) return null;
+  if (Number(day) < 1 || Number(day) > 31) return null;
+  if (Number(hours) > 23 || Number(minutes) > 59 || Number(seconds) > 59) return null;
   return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')} ${hours}:${minutes}:${seconds}`;
 }
 
@@ -245,7 +283,12 @@ export function mapWoodsProblemToClimb(problem: WoodsCatalogProblem): MappedWood
     // Key the UUID off the same trimmed author that lands in setter_username —
     // keying off the raw value would mint a different UUID for " ada" and "ada"
     // while storing the same display name.
-    uuid: woodsClimbUuid({ name: problem.problemName, author, frames }),
+    uuid: woodsClimbUuid({
+      name: problem.problemName,
+      author,
+      frames,
+      boardDimension: problem.boardDimension,
+    }),
     layoutId: WOODS_LAYOUT_ID,
     angle: problem.angle,
     name: problem.problemName,
