@@ -76,6 +76,15 @@ describe('buildBoardRenderProjections', () => {
     }
   });
 
+  it('records no unrenderable combination', () => {
+    // `projectCatalogueEntry` swallows a throw so one bad board cannot take the
+    // generator down — this is what stops that from being a silent branch. A board
+    // that quietly stops rendering shows up here, not just as a version that moved.
+    for (const [boardName, projection] of Object.entries(buildBoardRenderProjections())) {
+      expect(projection.unrenderableCount, boardName).toBe(0);
+    }
+  });
+
   // The review of the original plan found a hand-written file list that missed
   // @boardsesh/board-config and excluded headers.ts on a false premise. These
   // assert the projection genuinely carries those inputs, so it cannot regress

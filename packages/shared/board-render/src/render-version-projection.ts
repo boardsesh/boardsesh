@@ -63,6 +63,13 @@ export type BoardRenderProjection = {
   imageRelPaths: string[];
   /** Catalogue combinations that fed the digest — reported so a shrinking catalogue is visible. */
   entryCount: number;
+  /**
+   * Combinations that threw instead of resolving board details. Recorded rather
+   * than thrown so the generator cannot be taken down by one bad board, but
+   * surfaced here so the silent branch is observable: a board that quietly stops
+   * rendering would otherwise only show up as a version that moved.
+   */
+  unrenderableCount: number;
 };
 
 const FRAMES_PROBE = '';
@@ -206,7 +213,9 @@ export function buildBoardRenderProjections(): Record<string, BoardRenderProject
     // Hashed entry by entry: the full JSON for Kilter alone is tens of MB.
     const boardHash = createHash('sha256');
     const imageRelPaths = new Set<string>();
+    let unrenderableCount = 0;
     for (const projected of entries) {
+      if ('unrenderable' in projected) unrenderableCount += 1;
       boardHash.update(stableStringify(projected));
       boardHash.update('\n');
       for (const key of ['backgrounds_full', 'backgrounds_thumbnail'] as const) {
@@ -223,6 +232,7 @@ export function buildBoardRenderProjections(): Record<string, BoardRenderProject
       configDigest: boardHash.digest('hex'),
       imageRelPaths: [...imageRelPaths].sort(),
       entryCount: entries.length,
+      unrenderableCount,
     };
   }
 
