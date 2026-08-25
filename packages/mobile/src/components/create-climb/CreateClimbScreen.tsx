@@ -65,6 +65,20 @@ export function CreateClimbScreen({
     [board.boardName, board.layoutId, board.sizeId, board.setIds],
   );
 
+  // Every dismiss path — chevron, pan-down, backdrop, hardware back — lands here.
+  // No confirm on any of them: the autosave flush on unmount already keeps the
+  // work, and a modal on the pan-down (the most-used gesture on this surface)
+  // would be hostile. Just say it once, and only when the climber could
+  // reasonably think it's gone — the controller decides that.
+  //
+  // Toast AFTER the pop, not before: the toast overlay is a root-level JS View
+  // that renders behind any native sheet (see toast-provider), so firing it while
+  // the drawer is still up shows nothing.
+  const handleClose = useCallback(() => {
+    router.back();
+    controller.notifyDraftKeptOnDismiss();
+  }, [router, controller]);
+
   const handleLongPress = useCallback((holdId: number) => setLongPressHoldId(holdId), []);
   const closeHoldRole = useCallback(() => setLongPressHoldId(null), []);
 
@@ -136,7 +150,7 @@ export function CreateClimbScreen({
         onLongPressHold={handleLongPress}
         subSheetOpen={longPressHoldId !== null}
         onLoadDraft={handleLoadDraft}
-        onClose={() => router.back()}
+        onClose={handleClose}
         onViewDuplicate={handleViewDuplicate}
       />
 

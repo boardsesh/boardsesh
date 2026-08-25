@@ -35,7 +35,9 @@ export function DuplicateBanner({ name, onView, onDismiss }: DuplicateBannerProp
           </Pressable>
         ) : null}
       </View>
-      <Pressable onPress={onDismiss} accessibilityRole="button" hitSlop={8}>
+      {/* 16dp glyph + hitSlop 8 was a 32dp effective target, under the 44 floor.
+          14 lands it at 44 without moving anything visually. */}
+      <Pressable onPress={onDismiss} accessibilityRole="button" hitSlop={14}>
         <Icon name="close" size={16} color={systemColors.secondaryLabel} />
       </Pressable>
     </View>

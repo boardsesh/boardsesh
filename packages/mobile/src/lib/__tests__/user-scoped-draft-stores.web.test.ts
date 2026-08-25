@@ -73,6 +73,24 @@ describe('browser user-scoped draft stores', () => {
     await expect(loadDraft(boardKey)).resolves.toEqual(draft);
   });
 
+  it('reports storage as unavailable with no signed-in owner, and writes nothing', async () => {
+    // Every browser write is account-scoped, so a signed-out visitor stores
+    // nothing at all. The status line reads this so it can say "Sign in to keep
+    // this draft" instead of promising a draft that was never written.
+    const { isDraftStorageAvailable, saveDraft, loadDraft } = await import('../create-climb-draft-store.web');
+    const { setCurrentUserStorageOwner } = await import('../user-storage-owner.web');
+
+    setCurrentUserStorageOwner(null);
+    expect(isDraftStorageAvailable()).toBe(false);
+    await saveDraft('kilter:1:2:10:40', { holdsJson: '{}', name: 'Anonymous', description: '', isDraft: true });
+    await expect(loadDraft('kilter:1:2:10:40')).resolves.toBeNull();
+
+    setCurrentUserStorageOwner(userASessionOne);
+    expect(isDraftStorageAvailable()).toBe(true);
+    // ...and the signed-out attempt left nothing behind for the account either.
+    await expect(loadDraft('kilter:1:2:10:40')).resolves.toBeNull();
+  });
+
   it('does not expose user A recap draft to user B for the same session', async () => {
     const { setDraftComment, getDraftComment } = await import('../session-comment-draft-store.web');
     const { setCurrentUserStorageOwner } = await import('../user-storage-owner.web');

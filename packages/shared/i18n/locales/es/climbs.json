@@ -505,7 +505,10 @@
         "clear": "Borrar presas",
         "setActive": "Fijar como vía activa",
         "undo": "Deshacer",
-        "redo": "Rehacer"
+        "redo": "Rehacer",
+        "newClimb": "Empezar una vía nueva",
+        "close": "Cerrar",
+        "closeHint": "Tu borrador se queda en este teléfono."
       },
       "frames": {
         "duplicate": "Duplicar cuadro",
@@ -522,7 +525,7 @@
         "draftLabel": "Guardar como borrador",
         "draftDescription": "Los borradores quedan privados hasta que los publiques.",
         "showAllHoldsLabel": "Mostrar todas las presas",
-        "showAllHoldsDescription": "Resalta todas las presas pulsables del panel.",
+        "showAllHoldsDescription": "Resalta todas las presas pulsables del plafón.",
         "noMatchLabel": "Sin igualar",
         "noMatchDescription": "No se pueden igualar las manos en la misma presa",
         "noKickboardLabel": "Sin repisa inferior",
@@ -533,11 +536,13 @@
       "drafts": {
         "holds_one": "{{count}} presa",
         "holds_other": "{{count}} presas",
-        "sectionTitle": "Borradores abiertos"
+        "sectionTitle": "Borradores abiertos",
+        "frames_one": "{{count}} fotograma",
+        "frames_other": "{{count}} fotogramas"
       },
       "unavailable": {
         "title": "Aún no se puede crear aquí",
-        "subtitle": "Esta configuración de panel no admite la creación de vías."
+        "subtitle": "Esta configuración de plafón no admite la creación de vías."
       },
       "fab": {
         "ariaLabel": "Crear una vía"
@@ -552,6 +557,24 @@
         "done": "Guardado",
         "draftToast": "Borrador guardado",
         "publishedToast": "Vía publicada"
+      },
+      "autosave": {
+        "onDevice": "Guardado en este teléfono",
+        "inAccount": "Borrador guardado en tu cuenta",
+        "unsyncedEdits": "Los últimos cambios están solo en este teléfono",
+        "notStored": "Inicia sesión para guardar este borrador",
+        "saveFailed": "No se pudo guardar en tu cuenta. Toca Guardar para reintentar.",
+        "keptToast": "Borrador guardado en este teléfono. Vuelve a abrir el editor para terminarla."
+      },
+      "newClimb": {
+        "confirm": {
+          "title": "¿Empezar de cero?",
+          "message": "Esta todavía no está en tus borradores. Si empiezas otra, se pierde.",
+          "action": "Empezar de cero"
+        }
+      },
+      "publish": {
+        "blocked": "Añade una presa de inicio y una de final para publicar"
       }
     },
     "holdFilter": {

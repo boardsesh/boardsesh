@@ -505,7 +505,10 @@
         "clear": "Griffe entfernen",
         "setActive": "Als aktiven Boulder setzen",
         "undo": "Rückgängig",
-        "redo": "Wiederholen"
+        "redo": "Wiederholen",
+        "newClimb": "Neuen Boulder erstellen",
+        "close": "Schließen",
+        "closeHint": "Dein Entwurf bleibt auf diesem Handy."
       },
       "frames": {
         "duplicate": "Bild duplizieren",
@@ -533,7 +536,9 @@
       "drafts": {
         "holds_one": "{{count}} Griff",
         "holds_other": "{{count}} Griffe",
-        "sectionTitle": "Entwürfe öffnen"
+        "sectionTitle": "Offene Entwürfe",
+        "frames_one": "{{count}} Frame",
+        "frames_other": "{{count}} Frames"
       },
       "unavailable": {
         "title": "Hier lässt sich noch nichts bauen",
@@ -552,6 +557,24 @@
         "done": "Gespeichert",
         "draftToast": "Entwurf gespeichert",
         "publishedToast": "Boulder veröffentlicht"
+      },
+      "autosave": {
+        "onDevice": "Auf diesem Handy gespeichert",
+        "inAccount": "Entwurf in deinem Konto gespeichert",
+        "unsyncedEdits": "Die neuesten Änderungen sind nur auf diesem Handy",
+        "notStored": "Melde dich an, um diesen Entwurf zu behalten",
+        "saveFailed": "Speichern in deinem Konto fehlgeschlagen. Tippe auf Speichern, um es nochmal zu versuchen.",
+        "keptToast": "Entwurf auf diesem Handy behalten. Öffne den Editor wieder, um ihn fertig zu machen."
+      },
+      "newClimb": {
+        "confirm": {
+          "title": "Neu anfangen?",
+          "message": "Der hier ist noch nicht in deinen Entwürfen. Wenn du neu anfängst, ist er weg.",
+          "action": "Neu anfangen"
+        }
+      },
+      "publish": {
+        "blocked": "Füge einen Start- und einen Zielgriff hinzu, um zu veröffentlichen"
       }
     },
     "holdFilter": {

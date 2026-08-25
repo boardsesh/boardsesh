@@ -41,10 +41,13 @@ type CreateDrawerProps = {
   onViewDuplicate: (uuid: string) => void;
 };
 
-// Space the header + two-row action bar + handle + safe areas need, so the
-// board is sized to leave them on-screen at the peek (a rough reserve — the
-// peek snap itself is measured from the real above-fold height).
-const ABOVE_FOLD_CHROME = 300;
+// Space the header + action bar + draft-status line + handle + safe areas need,
+// so the board is sized to leave them on-screen at the peek (a rough reserve —
+// the peek snap itself is measured from the real above-fold height, so erring
+// high only costs a few dp of board). Raised from 300 when the status line
+// landed under the Save row: it adds a 16dp caption plus its padding, minus the
+// 8dp the action row gives back.
+const ABOVE_FOLD_CHROME = 320;
 
 // The native sheet's drag grabber sits in the sheet chrome above the content;
 // reserve a small fixed amount for it in the peek snap-point (replaces the old
@@ -205,7 +208,8 @@ export function CreateDrawer({
             canRedo={controller.canRedo}
             onUndo={controller.undo}
             onRedo={controller.redo}
-            onClear={controller.handleClear}
+            onClearHolds={controller.handleClearHolds}
+            onNewClimb={() => void controller.handleNewClimb()}
             frameCount={controller.frameCount}
             currentFrameIndex={controller.currentFrameIndex}
             onDuplicateFrame={controller.duplicateFrame}
@@ -216,6 +220,8 @@ export function CreateDrawer({
             onSetActive={controller.handleSetActive}
             saveState={controller.saveState}
             onSave={() => void controller.handleSave()}
+            publishBlocked={controller.publishBlocked}
+            draftStatus={controller.draftStatus}
           />
         </View>
 

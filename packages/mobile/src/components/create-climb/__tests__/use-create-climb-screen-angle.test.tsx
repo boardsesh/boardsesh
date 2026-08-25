@@ -38,6 +38,8 @@ const createClimb = vi.hoisted(() => ({
   startingCount: 1,
   finishCount: 1,
   isValid: true,
+  canSave: true,
+  canPublish: true,
   resetHolds: vi.fn(),
   loadHolds: vi.fn(),
   loadFrames: vi.fn(),
@@ -120,6 +122,14 @@ vi.mock('../../../lib/create-climb-draft-store', () => ({
   saveDraft: vi.fn(async () => {}),
   clearDraft: vi.fn(async () => {}),
   createClimbDraftKey: () => 'draft-key',
+  createClimbEditDraftKey: (boardType: string, uuid: string) => `edit:${boardType}:${uuid}`,
+  createClimbForkDraftKey: (boardKey: string) => `fork:${boardKey}`,
+  isDraftStorageAvailable: () => true,
+}));
+// The controller awaits `confirm` from here for "start a new climb"; the real
+// provider pulls in react-native's Alert/Platform, which this file doesn't stub.
+vi.mock('../../../providers/dialog-provider', () => ({
+  useConfirm: () => vi.fn(async () => true),
 }));
 vi.mock('../brush-roles', () => ({
   getPaintRoles: () => ['HAND', 'STARTING', 'FINISH'],

@@ -68,6 +68,7 @@ export function Button({
   loading = false,
   haptic = true,
   tintColor,
+  minHeight = 44,
   over,
   role = 'default',
   testID,
@@ -125,7 +126,7 @@ export function Button({
     buttonBorderShape('roundedRectangle', radii.button),
     controlSize(CONTROL_SIZE[size]),
     font({ textStyle: TEXT_STYLE[size], weight: 'semibold' }),
-    frame({ minHeight: 44, ...(isFullWidth ? { maxWidth: Infinity } : {}) }),
+    frame({ minHeight, ...(isFullWidth ? { maxWidth: Infinity } : {}) }),
     disabledModifier(disabled || loading),
     accessibilityLabelModifier(accessibilityLabel ?? title),
   ];

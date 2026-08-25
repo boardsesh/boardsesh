@@ -28,7 +28,16 @@ export function DraftRow({ climb, onPress, onDelete }: DraftRowProps) {
 
   const holdCount = countHolds(climb.frames);
   const relative = formatRelativeTime(climb.created_at);
-  const subtitleParts = [t('mobile.create.drafts.holds', { count: holdCount }), relative].filter(Boolean);
+  const framesCount = climb.framesCount ?? 1;
+  // Untitled drafts all render as "Draft", so the subtitle is what tells them
+  // apart. Frame count joins it once a climb is a route — never a localized
+  // fallback written into `board_climbs.name`, which would freeze one locale
+  // into the row forever.
+  const subtitleParts = [
+    t('mobile.create.drafts.holds', { count: holdCount }),
+    framesCount > 1 ? t('mobile.create.drafts.frames', { count: framesCount }) : null,
+    relative,
+  ].filter(Boolean);
 
   const handlePress = useCallback(() => {
     hapticLight();
