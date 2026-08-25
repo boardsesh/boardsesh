@@ -122,6 +122,7 @@ jobs:
               - 'packages/backend/**'
             mobile:
               - 'packages/mobile/**'
+              - 'packages/web/public/images/**/*.webp'
               - 'packages/board-renderer/wasm/pkg/**'
               # www serves its own copy of the same artifact. The byte-parity
               # gate lives in the mobile-bundle job, so a www-only edit to it
@@ -964,7 +965,7 @@ jobs:
 
   mobile-bundle:
     needs: [changes]
-    if: needs.changes.outputs.mobile == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true'
+    if: needs.changes.outputs.mobile == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.staticAssets == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

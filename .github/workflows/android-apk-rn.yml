@@ -15,6 +15,8 @@ on:
       - 'packages/shared/**'
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
+      - 'packages/web/public/images/**/*.webp'
+      - 'packages/mobile/plugins/with-board-art-resources.js'
       - 'package.json' # root patchedDependencies and linker inputs affect the mobile native graph
       - 'bun.lock'
       - 'patches/**' # bun patches to mobile deps live in root patches/, not under packages/mobile/**
@@ -245,7 +247,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-rn-${{ hashFiles('packages/mobile/package.json', 'bun.lock') }}
+          key: ${{ runner.os }}-gradle-rn-${{ hashFiles('packages/mobile/package.json', 'bun.lock', 'packages/mobile/plugins/with-board-art-resources.js', 'packages/web/public/images/**/*.webp') }}
           restore-keys: |
             ${{ runner.os }}-gradle-rn-
 

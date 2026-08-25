@@ -17,6 +17,7 @@ import { requireOptionalNativeModule } from 'expo-modules-core';
  * everyone to install a fresh native build first.
  */
 type BoardRendererNativeModule = {
+  resolvePackagedBoardAsset?(objectKey: string): string | null;
   renderHoldsOverlayWithMarkers?(configJson: string, cacheKey: string): Promise<string>;
   renderHoldsOverlay?(configJson: string, cacheKey: string): Promise<string>;
   renderComposite?(configJson: string, backgroundPaths: string[], cacheKey: string): Promise<string>;
@@ -31,6 +32,15 @@ type BoardRendererNativeModule = {
 export const boardRendererNative = requireOptionalNativeModule<BoardRendererNativeModule>('BoardRenderer');
 export const MARKER_RENDERER_UNAVAILABLE_MESSAGE =
   'Marker shape, size, and brush overrides require a rebuilt BoardRenderer native binary';
+
+export function resolvePackagedBoardAsset(objectKey: string): string | null {
+  if (typeof boardRendererNative?.resolvePackagedBoardAsset !== 'function') return null;
+  try {
+    return boardRendererNative.resolvePackagedBoardAsset(objectKey);
+  } catch {
+    return null;
+  }
+}
 
 // Heuristic: does this error look like "the native binary doesn't actually
 // implement this method"? Some Expo NativeModulesProxy configurations

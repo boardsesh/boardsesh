@@ -51,8 +51,9 @@ export const EOAS_PACKAGE_SPEC = 'eoas@3.1.2';
 // limiter is PER PROCESS while our preview publishes are per-PR concurrent —
 // 11 simultaneous publish jobs were measured on 2026-08-19, which at the default
 // would aim ~110 upload starts/sec at the one `boardsesh-ota-v3` bucket. At 5
-// that peak is ~55/sec, and a lone publish still starts all 380 assets of a full
-// bundle inside ~76 seconds.
+// that peak is ~55/sec. A lone publish historically started all 380 assets
+// inside ~76 seconds; #4612 removed 356 board WebPs from OTA exports, but the
+// limiter remains a backstop for concurrent preview bursts.
 export const SELF_HOSTED_UPLOAD_RATE_PER_SECOND = 5;
 
 // vp (Vite+) prepends its own bun shim directory to PATH, and that shim's `bunx`

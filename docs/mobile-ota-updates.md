@@ -199,11 +199,13 @@ Tigris answers a too-fast run of asset PUTs with `503 <Code>SlowDown</Code>` on 
 an earlier version of this doc said waiting was the only lever we had, which stopped being true on
 2026-08-19.
 
-**How much we upload.** One export is 380 assets, and 356 of them are the board-background images
-`require()`d by `packages/mobile/src/lib/board-backgrounds-manifest.ts` — 94% of the asset count.
-Storage keys are `{appId}/{branch}/{runtimeVersion}/{updateId}/assets/{hash}`; `updateId` is in the
-path, so before server-side reuse every publish wrote a fresh full copy: ~760 PUTs for a two-platform
-run, none of them deduplicated against the previous update.
+**How much we upload.** Before #4612, one export was 380 assets and 356 were board-background WebPs
+pulled into Metro by a generated `require()` graph — 94% of the asset count. Board art now ships as
+content-addressed resources in the installed native wrapper, selected by the metadata-only static
+asset catalog. It is absent from Expo Updates exports, so OTA publishes no longer upload those
+WebPs. Storage keys for the remaining OTA assets are
+`{appId}/{branch}/{runtimeVersion}/{updateId}/assets/{hash}`; `updateId` in the path is why reuse and
+upload pacing still matter for ordinary update assets.
 
 **How the CLI uploaded it.** Up to and including 3.1.1, `eoas publish` fired every asset through one
 unbounded `Promise.all`, and `fetchWithRetries` used a `retryOn` that inspected only transport errors
@@ -224,15 +226,17 @@ superseded.
   (`SELF_HOSTED_UPLOAD_RATE_PER_SECOND` in `scripts/lib/eoas.ts`) — production and per-PR previews
   alike, since the previews are the concurrent ones. The CLI default is 10; the limiter is per
   process, so at 11 concurrent jobs the default would still aim ~110 starts/sec at one bucket. At 5
-  that peak is ~55/sec and a lone publish still starts all 380 assets inside ~76 seconds.
+  that peak is ~55/sec. Before #4612, a lone publish started the historical 380-asset export inside
+  ~76 seconds; removing 356 board WebPs makes the current burst much smaller.
 - **Status-aware retries.** `fetchWithRetries` now retries 429 and 5xx, honours `Retry-After`, backs
   off exponentially up to 60s over four attempts, and rebuilds the multipart body so a retried upload
   does not replay a consumed stream. A single throttled asset no longer kills the publish.
 - **Server-side asset reuse** (xprem #165) is the third fix and the largest, but it is server-side
   only: `requestUploadUrl` loads the previous update's `metadata.json` for the same
   app/branch/runtimeVersion/platform, server-side-copies everything already there, and hands back
-  upload URLs for the remainder — roughly 380 uploads down to a handful on a repeat publish to a
-  branch. **It needs the Railway image on `xprem:v3.1.2`**; until then the CLI-side halves above are
+  upload URLs for the remainder — historically roughly 380 uploads down to a handful on a repeat
+  publish, and now a much smaller non-board-art set. **It needs the Railway image on
+  `xprem:v3.1.2`**; until then the CLI-side halves above are
   what we have. It degrades safely (an unavailable copy just falls back to a normal upload).
 
 The whole-command retry ladder below is therefore now a **backstop**, not the first line of defence.

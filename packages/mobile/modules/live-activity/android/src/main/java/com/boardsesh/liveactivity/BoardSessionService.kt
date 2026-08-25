@@ -469,6 +469,13 @@ class BoardSessionService : Service() {
     }
 
     private fun decodeLocalFile(path: String): Bitmap? {
+        packagedAssetPath(path)?.let { assetPath ->
+            return try {
+                assets.open(assetPath).use { inputStream -> BitmapFactory.decodeStream(inputStream) }
+            } catch (_: java.io.IOException) {
+                null
+            }
+        }
         val fsPath = if (path.startsWith("file://")) path.removePrefix("file://") else path
         return BitmapFactory.decodeFile(fsPath)
     }

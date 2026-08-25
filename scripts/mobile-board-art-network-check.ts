@@ -1,10 +1,10 @@
 /// <reference types="node" />
 
 /**
- * Guards the React Native app's no-network board-art rule.
+ * Guards the React Native app's wrapper-only board-art rule.
  *
- * Mobile board backgrounds must come from bundled `.webp` assets resolved to
- * `file://` paths. Remote user media is allowed; board art over HTTP is not.
+ * Board WebPs are native-wrapper resources, never Metro/OTA assets and never a
+ * native network fetch. Remote user media and Expo web CDN URLs are allowed.
  *
  * Usage: vp run check:mobile-board-art-network
  */
@@ -35,11 +35,12 @@ const SOURCE_ROOTS = [
   'packages/mobile/app',
   'packages/mobile/src',
   'packages/mobile/modules/live-activity',
+  'packages/mobile/modules/board-renderer',
   'packages/mobile/targets/BoardseshWidgets',
   'packages/shared',
 ] as const;
 
-const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.swift']);
+const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.swift', '.kt']);
 
 const IGNORED_PATH_PARTS = [
   '/__tests__/',
@@ -47,7 +48,6 @@ const IGNORED_PATH_PARTS = [
   '/ios-tests/',
   '/test/',
   '/tests/',
-  '/board-backgrounds-manifest.ts',
   '.test.ts',
   '.test.tsx',
 ] as const;
@@ -55,7 +55,7 @@ const IGNORED_PATH_PARTS = [
 const RULES: readonly Rule[] = [
   {
     name: 'remote-board-image-host',
-    message: 'Do not reference hosted board-art URLs from mobile runtime code; use bundled manifest keys.',
+    message: 'Do not reference hosted board-art URLs from native runtime code; use packaged object keys.',
     test: (lineText) => /https?:\/\/[^"'`\s)]*\/images\//.test(lineText),
   },
   {
@@ -65,13 +65,26 @@ const RULES: readonly Rule[] = [
   },
   {
     name: 'image-prefetch',
-    message: 'Do not prefetch board art with React Native Image.prefetch; resolve bundled assets instead.',
+    message: 'Do not prefetch board art with React Native Image.prefetch; resolve packaged assets instead.',
     test: (lineText) => lineText.includes('Image.prefetch'),
   },
   {
     name: 'svg-image-background',
     message: 'Do not render board backgrounds through react-native-svg Image href; use bundled file paths.',
     test: (lineText) => /\bSvgImage\b/.test(lineText),
+  },
+  {
+    name: 'board-art-metro-require',
+    message: 'Do not import/require packages/web/public/images; board art must stay out of Metro and OTA bundles.',
+    test: (lineText) =>
+      /\brequire\s*\([^)]*web\/public\/images/.test(lineText) ||
+      /\bimport\s*\(\s*["'][^"']*web\/public\/images/.test(lineText) ||
+      /(?:from\s+|import\s*)["'][^"']*web\/public\/images/.test(lineText),
+  },
+  {
+    name: 'expo-asset-board-art',
+    message: 'Do not materialize board art through expo-asset; native wrappers own the files.',
+    test: (lineText) => lineText.includes("from 'expo-asset'") || lineText.includes('asset.downloadAsync('),
   },
   // NOTE: the `server-rendered-background` rule (forbidding include_background=1)
   // was removed for the 2.0 release. The Live Activity thumbnail now fetches the
@@ -149,7 +162,7 @@ export function main(): number {
   const violations = findMobileBoardArtNetworkViolations(readSourceFiles(repoRoot));
 
   if (violations.length > 0) {
-    console.error('[mobile-board-art-network] FAILED - board art can be fetched over the network:');
+    console.error('[mobile-board-art-network] FAILED - native board-art packaging invariant was violated:');
     for (const violation of violations) {
       console.error(`  ${violation.path}:${violation.line} ${violation.rule}`);
       console.error(`    ${violation.text}`);
@@ -157,7 +170,7 @@ export function main(): number {
     return 1;
   }
 
-  console.log('[mobile-board-art-network] OK - mobile board art stays on bundled assets.');
+  console.log('[mobile-board-art-network] OK - board art stays out of Metro/OTA and native network fetches.');
   return 0;
 }
 

@@ -7,6 +7,8 @@ on:
       - 'packages/shared/**'
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
+      - 'packages/web/public/images/**/*.webp'
+      - 'packages/mobile/plugins/with-board-art-resources.js'
       - 'package.json'
       - 'bun.lock'
       - 'patches/**'
@@ -21,6 +23,8 @@ on:
       - 'packages/shared/**'
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
+      - 'packages/web/public/images/**/*.webp'
+      - 'packages/mobile/plugins/with-board-art-resources.js'
       - 'package.json'
       - 'bun.lock'
       - 'patches/**'
@@ -130,7 +134,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: packages/mobile/ios/Pods
-          key: ${{ runner.os }}-pods-rn-ci-${{ hashFiles('packages/mobile/package.json', 'bun.lock', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'patches/**') }}
+          key: ${{ runner.os }}-pods-rn-ci-${{ hashFiles('packages/mobile/package.json', 'bun.lock', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/web/public/images/**/*.webp', 'patches/**') }}
           restore-keys: |
             ${{ runner.os }}-pods-rn-ci-
             ${{ runner.os }}-pods-rn-

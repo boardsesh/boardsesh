@@ -45,6 +45,10 @@ import {
 // no native module object to mirror on web.
 export const boardRendererNative: { readonly platform: 'web' } = { platform: 'web' };
 
+export function resolvePackagedBoardAsset(_objectKey: string): null {
+  return null;
+}
+
 export const MARKER_RENDERER_UNAVAILABLE_MESSAGE =
   'Marker shape, size, and brush overrides require a rebuilt BoardRenderer native binary';
 

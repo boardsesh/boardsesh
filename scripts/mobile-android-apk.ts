@@ -96,6 +96,24 @@ function hashDir(dir: string, root: string, hash: Hash): void {
   }
 }
 
+type NativeBoardArtRecord = {
+  logicalPath: string;
+  objectKey: string;
+  nativeBundle: boolean;
+};
+
+function hashNativeBoardArt(hash: Hash): void {
+  const catalogPath = join(ROOT_DIR, 'packages/shared/static-assets/src/generated/catalog.json');
+  const catalog = JSON.parse(readFileSync(catalogPath, 'utf8')) as Record<string, NativeBoardArtRecord>;
+  const records = Object.values(catalog)
+    .filter((record) => record.nativeBundle)
+    .sort((firstRecord, secondRecord) => firstRecord.logicalPath.localeCompare(secondRecord.logicalPath));
+  for (const record of records) {
+    const sourcePath = join(ROOT_DIR, `packages/web/public${record.logicalPath}`);
+    hash.update(record.logicalPath).update(record.objectKey).update(readFileSync(sourcePath));
+  }
+}
+
 /** Short hash over the inputs that change the native build (mirrors CI's cache key, broadened). */
 function nativeInputHash(): string {
   const hash = createHash('sha256');
@@ -109,6 +127,7 @@ function nativeInputHash(): string {
     const abs = join(ROOT_DIR, rel);
     if (existsSync(abs)) hashDir(abs, ROOT_DIR, hash);
   }
+  hashNativeBoardArt(hash);
   return hash.digest('hex').slice(0, 16);
 }
 

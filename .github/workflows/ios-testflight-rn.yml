@@ -8,6 +8,8 @@ on:
       - 'packages/shared/**'
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
+      - 'packages/web/public/images/**/*.webp'
+      - 'packages/mobile/plugins/with-board-art-resources.js'
       - 'package.json' # root patchedDependencies and linker inputs affect the mobile native graph
       - 'bun.lock'
       - 'patches/**' # bun patches to mobile deps live in root patches/, not under packages/mobile/**
@@ -244,7 +246,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: packages/mobile/ios/Pods
-          key: ${{ runner.os }}-pods-rn-${{ hashFiles('packages/mobile/package.json', 'bun.lock', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'patches/**') }}
+          key: ${{ runner.os }}-pods-rn-${{ hashFiles('packages/mobile/package.json', 'bun.lock', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/web/public/images/**/*.webp', 'patches/**') }}
           restore-keys: |
             ${{ runner.os }}-pods-rn-
 

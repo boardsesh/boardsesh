@@ -22,6 +22,7 @@ type FingerprintConfig = {
     decodeBunStorePackageName(encodedPackageName: string): string;
     normalizeAutolinkingValue(value: unknown): unknown;
     normalizeTerminalBunPeerSuffixes(filePath: string): string;
+    buildNativeBoardArtSources(manifest: Record<string, unknown>): ExtraSource[];
   };
 };
 type FingerprintSource = {
@@ -203,8 +204,8 @@ describe('mobile fingerprint config', () => {
     ).toThrow();
   });
 
-  it('hashes the config itself, the iOS locale strings and the monorepo root patches with stable keys', () => {
-    expect(fingerprintConfig.extraSources).toEqual([
+  it('hashes config, native resource metadata, board WebPs, locale strings, and root patches', () => {
+    expect(fingerprintConfig.extraSources.slice(0, 4)).toEqual([
       {
         type: 'file',
         filePath: 'fingerprint.config.js',
@@ -223,7 +224,28 @@ describe('mobile fingerprint config', () => {
         reasons: ['bunPatchedDependencies'],
         overrideHashKey: 'bunPatchedDependencies',
       },
+      {
+        type: 'file',
+        filePath: 'plugins/with-board-art-resources.js',
+        reasons: ['boardArtResourcePlugin'],
+        overrideHashKey: 'boardArtResourcePlugin',
+      },
     ]);
+    const boardArtSources = fingerprintConfig.extraSources.slice(4);
+    expect(boardArtSources.length).toBeGreaterThan(300);
+    expect(boardArtSources.every((source) => source.reasons.includes('packagedBoardArt'))).toBe(true);
+    expect(boardArtSources.every((source) => source.filePath.endsWith('.webp'))).toBe(true);
+  });
+
+  it('does not let web-only catalog records enter the native fingerprint source list', () => {
+    const boardRecord = { logicalPath: '/images/kilter/bg.webp', nativeBundle: true };
+    const webRecord = { logicalPath: '/brand/logo.png', nativeBundle: false };
+    const baseSources = fingerprintConfig.__test.buildNativeBoardArtSources({ board: boardRecord });
+    const withWebOnlyRecord = fingerprintConfig.__test.buildNativeBoardArtSources({
+      board: boardRecord,
+      web: webRecord,
+    });
+    expect(withWebOnlyRecord).toEqual(baseSources);
   });
 });
 

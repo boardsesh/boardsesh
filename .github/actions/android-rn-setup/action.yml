@@ -43,7 +43,7 @@ runs:
         path: |
           ~/.gradle/caches
           ~/.gradle/wrapper
-        key: ${{ runner.os }}-gradle-rn-${{ hashFiles('packages/mobile/package.json', 'bun.lock') }}
+        key: ${{ runner.os }}-gradle-rn-${{ hashFiles('packages/mobile/package.json', 'bun.lock', 'packages/mobile/plugins/with-board-art-resources.js', 'packages/web/public/images/**/*.webp') }}
         restore-keys: |
           ${{ runner.os }}-gradle-rn-
 

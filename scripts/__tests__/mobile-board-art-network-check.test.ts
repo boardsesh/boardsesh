@@ -23,6 +23,25 @@ describe('mobile board-art network check', () => {
     expect(check('Image.prefetch(boardImageUrl);')).toContainEqual(expect.stringContaining('image-prefetch'));
   });
 
+  it('flags board images pulled into the Metro require graph', () => {
+    expect(check("const image = require('../../../web/public/images/kilter/bg.webp');")).toContainEqual(
+      expect.stringContaining('board-art-metro-require'),
+    );
+    expect(check("import image from '../../../web/public/images/kilter/bg.webp';")).toContainEqual(
+      expect.stringContaining('board-art-metro-require'),
+    );
+    expect(check("const image = await import('../../../web/public/images/kilter/bg.webp');")).toContainEqual(
+      expect.stringContaining('board-art-metro-require'),
+    );
+  });
+
+  it('flags expo-asset materialization and downloads', () => {
+    expect(check("import { Asset } from 'expo-asset';")).toContainEqual(
+      expect.stringContaining('expo-asset-board-art'),
+    );
+    expect(check('await asset.downloadAsync();')).toContainEqual(expect.stringContaining('expo-asset-board-art'));
+  });
+
   it('flags react-native-svg image backgrounds', () => {
     expect(check("import Svg, { Image as SvgImage } from 'react-native-svg';")).toContainEqual(
       expect.stringContaining('svg-image-background'),
@@ -46,10 +65,11 @@ describe('mobile board-art network check', () => {
     ).toEqual([]);
   });
 
-  it('allows bundled board image paths and overlay images', () => {
+  it('allows packaged board image paths and overlay images', () => {
     expect(
       check(`
         <Image source={{ uri: \`file://\${path}\` }} />
+        <Image source={{ uri: \`file:///android_asset/boardsesh-board-art/\${objectKey}\` }} />
         <Image source={{ uri: overlayUri }} />
       `),
     ).toEqual([]);

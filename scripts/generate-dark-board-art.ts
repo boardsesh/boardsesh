@@ -35,7 +35,7 @@
  *
  * Alpha is never touched by either transform.
  *
- * The output files are committed. `scripts/sync-mobile-board-backgrounds.sh` derives a
+ * The output files are committed. `vp run generate:static-assets` derives a
  * manifest key per file path, so `holdsetb.dark.webp` becomes its own key with no
  * change to that script; `packages/mobile/src/lib/background-image-cache.ts` then
  * prefers the `.dark.webp` sibling when the colour scheme is dark, and falls back to
@@ -257,7 +257,7 @@ async function main(): Promise<void> {
   console.log(
     written === 0
       ? '==> Dark board-art variants already up to date.'
-      : `==> Wrote ${written} dark board-art variant(s). Re-run scripts/sync-mobile-board-backgrounds.sh to refresh the manifest.`,
+      : `==> Wrote ${written} dark board-art variant(s). Run vp run generate:static-assets to refresh the catalog.`,
   );
 }
 

@@ -23,6 +23,8 @@ on:
       - 'packages/shared/**'
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
+      - 'packages/web/public/images/**/*.webp'
+      - 'packages/mobile/plugins/with-board-art-resources.js'
       - '.github/workflows/android-apk-dev-client.yml'
   workflow_dispatch:
 
@@ -92,7 +94,7 @@ jobs:
             ~/.gradle/wrapper
           # Separate key prefix from the release workflow so the debug build's
           # cache never collides with the signed release cache.
-          key: ${{ runner.os }}-gradle-rn-dev-${{ hashFiles('packages/mobile/package.json', 'bun.lock') }}
+          key: ${{ runner.os }}-gradle-rn-dev-${{ hashFiles('packages/mobile/package.json', 'bun.lock', 'packages/mobile/plugins/with-board-art-resources.js', 'packages/web/public/images/**/*.webp') }}
           restore-keys: |
             ${{ runner.os }}-gradle-rn-dev-
 

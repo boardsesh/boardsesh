@@ -6,32 +6,29 @@ vi.mock('../board-details', () => ({
     backgroundImageKeys: ['kilter/product_sizes_layouts_sets/36-1.webp'],
   })),
 }));
-
-const downloadAsync = vi.fn();
-vi.mock('expo-asset', () => ({
-  Asset: {
-    fromModule: vi.fn(() => ({ localUri: null, uri: '/app/assets/36-1.webp', downloadAsync })),
+const resolveBoardBackgroundAsset = vi.fn(
+  (_asset: { objectKey: string }, manifestKey: string) => `https://cdn.example/${manifestKey}`,
+);
+vi.mock('../board-background-asset-resolver', () => ({ resolveBoardBackgroundAsset }));
+vi.mock('../board-backgrounds-manifest', () => ({
+  BOARD_BACKGROUND_ASSETS: {
+    'kilter/product_sizes_layouts_sets/36-1.webp': {
+      objectKey: 'static/v1/abc.webp',
+    },
   },
 }));
 
-vi.mock('../board-backgrounds-manifest', () => ({
-  BOARD_BACKGROUND_ASSETS: { 'kilter/product_sizes_layouts_sets/36-1.webp': 100 },
-}));
-
 const { ensureBackgroundsCached, tryGetBackgroundPathsSync } = await import('../background-image-cache');
-
 const params = { boardName: 'kilter' as const, layoutId: 1, sizeId: 10, setIds: [24] };
 
-describe('background image cache on web', () => {
-  it('returns the browser asset URL synchronously', () => {
-    expect(tryGetBackgroundPathsSync(params)).toEqual({ paths: ['/app/assets/36-1.webp'], missingCount: 0 });
-  });
-
-  it('does not try to materialize browser assets as file URLs', async () => {
-    await expect(ensureBackgroundsCached(params)).resolves.toEqual({
-      paths: ['/app/assets/36-1.webp'],
+describe('background image lookup on web', () => {
+  it('returns the immutable CDN URL synchronously without asking the native wrapper', async () => {
+    const expected = {
+      paths: ['https://cdn.example/kilter/product_sizes_layouts_sets/36-1.webp'],
       missingCount: 0,
-    });
-    expect(downloadAsync).not.toHaveBeenCalled();
+    };
+    expect(tryGetBackgroundPathsSync(params)).toEqual(expected);
+    await expect(ensureBackgroundsCached(params)).resolves.toEqual(expected);
+    expect(resolveBoardBackgroundAsset).toHaveBeenCalled();
   });
 });

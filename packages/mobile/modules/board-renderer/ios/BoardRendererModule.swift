@@ -221,6 +221,16 @@ public class BoardRendererModule: Module {
   public func definition() -> ModuleDefinition {
     Name("BoardRenderer")
 
+    Function("resolvePackagedBoardAsset") { (objectKey: String) -> String? in
+      guard objectKey.range(of: #"^static/v1/[0-9a-f]{64}\.webp$"#, options: .regularExpression) != nil,
+        let resourceRoot = Bundle.main.resourceURL
+      else { return nil }
+      let resourceUrl = resourceRoot
+        .appendingPathComponent("BoardseshBoardArt.bundle", isDirectory: true)
+        .appendingPathComponent(objectKey, isDirectory: false)
+      return FileManager.default.fileExists(atPath: resourceUrl.path) ? resourceUrl.path : nil
+    }
+
     // Renders just the climb's hold overlay — a transparent-background PNG
     // containing only the hold markers. The RN component stacks bundled
     // board background images underneath this overlay, mirroring the web

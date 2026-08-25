@@ -101,8 +101,9 @@ export function buildSelfHostedEoasArgs(
     updateMessage,
     ...sourceMapArgs,
     // Cap how fast eoas starts asset uploads. Before 3.1.2 it fired every asset
-    // of the export (380 in a current bundle) through one unbounded
-    // `Promise.all`, which is what tripped Tigris `SlowDown` (#3620). Applies to
+    // of the export (historically 380, including 356 board WebPs removed from
+    // OTA in #4612) through one unbounded `Promise.all`, which is what tripped
+    // Tigris `SlowDown` (#3620). Applies to
     // every self-hosted branch — `production` and the per-PR `pr-<n>` previews
     // alike, since the previews are the concurrent ones. The EAS preview path
     // (`buildEasUpdateArgs`) has no equivalent flag and is untouched.

@@ -303,11 +303,10 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     // resolve the historical mobile-only config and native fingerprint.
     platforms: webPlatform.platforms,
     ...(webPlatform.web ? { web: webPlatform.web } : {}),
-    // Board backgrounds are bundled via explicit require() in
-    // src/lib/board-backgrounds-manifest.ts (canonical files live in
-    // packages/web/public/images, no duplication), so they're picked up
-    // by Metro regardless of this pattern. Keep the default-ish glob for
-    // anything we drop under assets/ later.
+    // Board backgrounds deliberately do not enter this Metro/OTA pattern.
+    // with-board-art-resources copies content-addressed WebPs into the native
+    // wrapper at prebuild; the JS catalog contains metadata only. Keep this
+    // default-ish glob for ordinary app assets under assets/.
     assetBundlePatterns: ['assets/**/*'],
     // Localized system dialogs. Expo's built-in `locales` support writes each
     // file to <lang>.lproj/InfoPlist.strings during prebuild, so the permission
@@ -532,6 +531,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // relies on below.
       './plugins/with-share-intent-app-group-dedup',
       'expo-router',
+      './plugins/with-board-art-resources',
       'expo-secure-store',
       // Native Sign in with Apple (adds the entitlement alongside usesAppleSignIn).
       'expo-apple-authentication',

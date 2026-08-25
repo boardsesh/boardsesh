@@ -152,6 +152,17 @@ class BoardRendererModule : Module() {
     override fun definition() = ModuleDefinition {
         Name("BoardRenderer")
 
+        Function("resolvePackagedBoardAsset") { objectKey: String ->
+            val assetPath = PackagedBoardAsset.assetPath(objectKey) ?: return@Function null
+            val assetManager = appContext.reactContext?.assets ?: return@Function null
+            try {
+                assetManager.open(assetPath).use { }
+                PackagedBoardAsset.uri(assetPath)
+            } catch (_: java.io.IOException) {
+                null
+            }
+        }
+
         // Renders just the climb's hold overlay — a transparent-background
         // PNG containing only the hold markers. The RN component stacks
         // bundled board backgrounds underneath this overlay, so backgrounds

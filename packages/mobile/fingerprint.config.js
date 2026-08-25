@@ -5,6 +5,20 @@ const AUTOLINKING_SOURCE_IDS = new Set([
   'rncoreAutolinkingConfig:android',
 ]);
 
+const staticAssetManifest = require('../shared/static-assets/src/generated/catalog.json');
+function buildNativeBoardArtSources(manifest) {
+  return Object.values(manifest)
+    .filter((record) => record.nativeBundle === true)
+    .sort((firstRecord, secondRecord) => firstRecord.logicalPath.localeCompare(secondRecord.logicalPath))
+    .map((record) => ({
+      type: 'file',
+      filePath: `../web/public${record.logicalPath}`,
+      reasons: ['packagedBoardArt'],
+      overrideHashKey: `packagedBoardArt:${record.logicalPath}`,
+    }));
+}
+const nativeBoardArtSources = buildNativeBoardArtSources(staticAssetManifest);
+
 // Bun's isolated linker appends a peer-resolution hash to a package's store
 // directory. It describes the JS install graph, not native compatibility. Match
 // the full store boundary so arbitrary `.bun/<text>+<hex>` strings cannot be
@@ -114,6 +128,13 @@ module.exports = {
       // fails in the safe direction (over-triggering); if web patches ever
       // become common, narrow this to the mobile-reachable patch files.
     },
+    {
+      type: 'file',
+      filePath: 'plugins/with-board-art-resources.js',
+      reasons: ['boardArtResourcePlugin'],
+      overrideHashKey: 'boardArtResourcePlugin',
+    },
+    ...nativeBoardArtSources,
   ],
   fileHookTransform,
   // Ignored by @expo/fingerprint's config loader; exported only for focused unit
@@ -123,5 +144,6 @@ module.exports = {
     decodeBunStorePackageName,
     normalizeAutolinkingValue,
     normalizeTerminalBunPeerSuffixes,
+    buildNativeBoardArtSources,
   },
 };

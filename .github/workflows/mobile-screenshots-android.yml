@@ -163,7 +163,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-rn-screenshots-${{ hashFiles('packages/mobile/package.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'patches/**', 'bun.lock') }}
+          key: ${{ runner.os }}-gradle-rn-screenshots-${{ hashFiles('packages/mobile/package.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/web/public/images/**/*.webp', 'patches/**', 'bun.lock') }}
           restore-keys: |
             ${{ runner.os }}-gradle-rn-screenshots-
 

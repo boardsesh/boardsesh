@@ -25,6 +25,8 @@ on:
       - 'packages/shared/**'
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
+      - 'packages/web/public/images/**/*.webp'
+      - 'packages/mobile/plugins/with-board-art-resources.js'
       - 'package.json' # root patchedDependencies and linker inputs affect the mobile native graph
       - 'bun.lock'
       - 'patches/**'
