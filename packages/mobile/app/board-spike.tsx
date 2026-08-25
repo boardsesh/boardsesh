@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SpikeBoard } from '../src/components/board-spike/SpikeBoard';
 import { SPIKE_ART_LABEL, SPIKE_ART_LEVELS, type SpikeArtLevel } from '../src/components/board-spike/spike-art';
+import { DEFAULT_SPIKE_BOARD_KEY, SPIKE_BOARDS } from '../src/components/board-spike/spike-boards';
 import {
   SPIKE_BACKGROUNDS,
   SPIKE_PALETTE_LABEL,
@@ -17,21 +18,55 @@ import { spacing } from '../src/theme/tokens';
 /**
  * Dev-only spike screen for issue #2202 — "hard to see Grasshopper board climbs".
  *
- * Renders one climb on one board under every rendering treatment proposed in the
- * issue thread, with the board art, the play-field colour and the role palette as
- * independent axes, so they can be compared on a real device instead of in a
- * mockup. Not reachable from app navigation: open it with
- * `com.boardsesh.app://board-spike`.
+ * Renders one synthesised climb under every rendering treatment proposed in the
+ * issue thread, on every board in `spike-boards.ts`, with the board art, the
+ * play-field colour and the role palette as independent axes — so they can be
+ * compared on a real device instead of in a mockup.
+ *
+ * Not reachable from app navigation. Open it with
+ * `com.boardsesh.app:///board-spike`, optionally `?board=<key>&treatment=<key>`
+ * so a capture script can land directly on one cell of the matrix. Three
+ * slashes: with two, the route name parses as the URL host and Expo Router
+ * never matches it.
  */
 export default function BoardSpikeScreen() {
   const insets = useSafeAreaInsets();
-  const [treatmentIndex, setTreatmentIndex] = useState(0);
+  const params = useLocalSearchParams<{ board?: string; treatment?: string }>();
+
+  const initialBoardIndex = Math.max(
+    0,
+    SPIKE_BOARDS.findIndex((option) => option.key === (params.board ?? DEFAULT_SPIKE_BOARD_KEY)),
+  );
+  const initialTreatmentIndex = Math.max(
+    0,
+    SPIKE_TREATMENTS.findIndex((option) => option.key === params.treatment),
+  );
+
+  const [boardIndex, setBoardIndex] = useState(initialBoardIndex);
+  const [treatmentIndex, setTreatmentIndex] = useState(initialTreatmentIndex);
+
+  // Expo Router reuses this screen when the same route is deep-linked again, so
+  // the useState initialisers above only ever run once per JS launch. Without
+  // this the capture script's second `?board=…&treatment=…` link would be a
+  // silent no-op and every shot after the first would be of the same cell.
+  useEffect(() => {
+    const nextBoard = SPIKE_BOARDS.findIndex((option) => option.key === params.board);
+    if (nextBoard >= 0) setBoardIndex(nextBoard);
+    const nextTreatment = SPIKE_TREATMENTS.findIndex((option) => option.key === params.treatment);
+    if (nextTreatment >= 0) setTreatmentIndex(nextTreatment);
+  }, [params.board, params.treatment]);
   const [art, setArt] = useState<SpikeArtLevel>('original');
   const [background, setBackground] = useState<SpikeBackgroundKey>('field');
   const [palette, setPalette] = useState<SpikePaletteKey>('shipped');
+  const [desaturate, setDesaturate] = useState(false);
+  const [smooth, setSmooth] = useState(true);
 
+  const board = SPIKE_BOARDS[boardIndex];
   const treatment = SPIKE_TREATMENTS[treatmentIndex];
   const backgroundColor = SPIKE_BACKGROUNDS.find((option) => option.key === background)?.color ?? '#181225';
+
+  const step = (delta: number) =>
+    setTreatmentIndex((index) => (index + delta + SPIKE_TREATMENTS.length) % SPIKE_TREATMENTS.length);
 
   return (
     <>
@@ -42,30 +77,37 @@ export default function BoardSpikeScreen() {
             {`${treatmentIndex + 1}/${SPIKE_TREATMENTS.length}  ${treatment.label}`}
           </Text>
           <Text variant="caption1" color="#A9A2B6" numberOfLines={2}>
-            {treatment.note}
+            {`${board.label} · ${treatment.note}`}
           </Text>
         </View>
 
-        <SpikeBoard treatment={treatment} art={art} backgroundColor={backgroundColor} palette={palette} />
+        <SpikeBoard
+          board={board}
+          treatment={treatment}
+          art={art}
+          backgroundColor={backgroundColor}
+          palette={palette}
+          desaturate={desaturate}
+          smooth={smooth}
+        />
 
         <View style={[styles.controls, { paddingBottom: insets.bottom + spacing[2] }]}>
-          {/* A stepper rather than a chip per treatment: there are more treatments
-              than fit a phone row, and stepping is what you actually do with them
-              — flip through, compare against the one before. */}
           <View style={styles.row}>
-            <SpikeChip
-              label="◀  Previous"
-              selected={false}
-              onPress={() =>
-                setTreatmentIndex((index) => (index - 1 + SPIKE_TREATMENTS.length) % SPIKE_TREATMENTS.length)
-              }
-            />
-            <SpikeChip
-              label="Next  ▶"
-              selected
-              onPress={() => setTreatmentIndex((index) => (index + 1) % SPIKE_TREATMENTS.length)}
-            />
+            <SpikeChip label="◀  Previous" selected={false} onPress={() => step(-1)} />
+            <SpikeChip label="Next  ▶" selected onPress={() => step(1)} />
+            <SpikeChip label="Desat" selected={desaturate} onPress={() => setDesaturate((on) => !on)} />
+            <SpikeChip label="Smooth" selected={smooth} onPress={() => setSmooth((on) => !on)} />
           </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+            {SPIKE_BOARDS.map((option, index) => (
+              <SpikeChip
+                key={option.key}
+                label={option.label}
+                selected={index === boardIndex}
+                onPress={() => setBoardIndex(index)}
+              />
+            ))}
+          </ScrollView>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
             {SPIKE_ART_LEVELS.map((level) => (
               <SpikeChip
@@ -83,8 +125,6 @@ export default function BoardSpikeScreen() {
                 onPress={() => setPalette(key)}
               />
             ))}
-          </ScrollView>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
             {SPIKE_BACKGROUNDS.map((option) => (
               <SpikeChip
                 key={option.key}

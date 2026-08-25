@@ -22,17 +22,12 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import sharp from 'sharp';
-import { getHolePlacements, getImageFilename, getProductSize } from '@boardsesh/board-constants/product-sizes';
+import { getBoardRenderData } from '../src/lib/board-details';
+import { SPIKE_BOARDS } from '../src/components/board-spike/spike-boards';
 
 const ROOT_DIR = path.resolve(import.meta.dirname, '../../..');
-const SOURCE_DIR = path.join(ROOT_DIR, 'packages/web/public/images/grasshopper/product_sizes_layouts_sets');
+const IMAGES_DIR = path.join(ROOT_DIR, 'packages/web/public/images');
 const OUTPUT_FILE = path.join(ROOT_DIR, 'packages/mobile/src/components/board-spike/spike-hold-lightness.ts');
-
-/** Must match SPIKE_BOARD in src/components/board-spike/spike-config.ts. */
-const BOARD_NAME = 'grasshopper' as const;
-const LAYOUT_ID = 1;
-const SIZE_ID = 5;
-const SET_IDS = [1, 2, 3, 4, 6];
 
 /** Annulus the selector ring occupies, as fractions of the placement radius. */
 const INNER_FRACTION = 0.85;
@@ -53,27 +48,25 @@ function oklabLightness(red: number, green: number, blue: number): number {
   return 0.2104542553 * long + 0.793617785 * medium - 0.0040720468 * short;
 }
 
-async function main(): Promise<number> {
-  const size = getProductSize(BOARD_NAME, SIZE_ID);
-  if (!size) throw new Error(`unknown product size ${SIZE_ID}`);
-  const { edgeLeft, edgeRight, edgeBottom, edgeTop } = size;
-
-  const layerFiles: string[] = [];
-  const placementTuples: Array<[number, number | null, number, number]> = [];
-  for (const setId of SET_IDS) {
-    const filename = getImageFilename(BOARD_NAME, LAYOUT_ID, SIZE_ID, setId);
-    if (!filename) continue;
-    layerFiles.push(path.join(SOURCE_DIR, path.basename(filename).replace(/\.png$/, '.webp')));
-    placementTuples.push(...getHolePlacements(BOARD_NAME, LAYOUT_ID, setId));
-  }
-
-  const { width, height } = await sharp(layerFiles[0]).metadata();
-  if (width === undefined || height === undefined) throw new Error('source layer has no dimensions');
-  const rawLayer = { width, height, channels: 4 as const };
+async function measureBoard(
+  boardKey: string,
+  boardName: string,
+  layoutId: number,
+  sizeId: number,
+  setIds: number[],
+): Promise<Map<number, number>> {
+  const renderData = getBoardRenderData({ boardName: boardName as never, layoutId, sizeId, setIds });
+  if (!renderData) throw new Error(`${boardKey}: no render data`);
+  const { boardWidth, boardHeight, holdsData, backgroundImageKeys } = renderData;
+  const rawLayer = { width: boardWidth, height: boardHeight, channels: 4 as const };
 
   let composite: Buffer | null = null;
-  for (const file of layerFiles) {
-    const layer = await sharp(file).ensureAlpha().raw().toBuffer();
+  for (const key of backgroundImageKeys) {
+    const layer = await sharp(path.join(IMAGES_DIR, key))
+      .resize(boardWidth, boardHeight, { fit: 'fill' })
+      .ensureAlpha()
+      .raw()
+      .toBuffer();
     composite =
       composite === null
         ? layer
@@ -82,33 +75,26 @@ async function main(): Promise<number> {
             .raw()
             .toBuffer();
   }
-  if (composite === null) throw new Error('no layers composited');
-
-  const xSpacing = width / (edgeRight - edgeLeft);
-  const ySpacing = height / (edgeTop - edgeBottom);
-  const radius = xSpacing * 4;
-  const inner = (radius * INNER_FRACTION) ** 2;
-  const outer = (radius * OUTER_FRACTION) ** 2;
+  if (composite === null) throw new Error(`${boardKey}: no layers`);
 
   const lightnessByHold = new Map<number, number>();
-  for (const [holdId, , gridX, gridY] of placementTuples) {
-    if (gridX <= edgeLeft || gridX >= edgeRight || gridY <= edgeBottom || gridY >= edgeTop) continue;
-    if (lightnessByHold.has(holdId)) continue;
-    const centreX = (gridX - edgeLeft) * xSpacing;
-    const centreY = height - (gridY - edgeBottom) * ySpacing;
+  for (const placement of holdsData) {
+    if (lightnessByHold.has(placement.id)) continue;
+    const inner = (placement.r * INNER_FRACTION) ** 2;
+    const outer = (placement.r * OUTER_FRACTION) ** 2;
+    const bound = Math.ceil(placement.r * OUTER_FRACTION);
 
     let weighted = 0;
     let weight = 0;
-    const bound = Math.ceil(radius * OUTER_FRACTION);
     for (let dy = -bound; dy <= bound; dy += 1) {
-      const y = Math.round(centreY + dy);
-      if (y < 0 || y >= height) continue;
+      const y = Math.round(placement.cy + dy);
+      if (y < 0 || y >= boardHeight) continue;
       for (let dx = -bound; dx <= bound; dx += 1) {
         const distance = dx * dx + dy * dy;
         if (distance < inner || distance > outer) continue;
-        const x = Math.round(centreX + dx);
-        if (x < 0 || x >= width) continue;
-        const offset = (y * width + x) * 4;
+        const x = Math.round(placement.cx + dx);
+        if (x < 0 || x >= boardWidth) continue;
+        const offset = (y * boardWidth + x) * 4;
         // Alpha-weighted: a transparent gap is play field, not black art.
         const alpha = composite[offset + 3] / 255;
         if (alpha === 0) continue;
@@ -117,26 +103,41 @@ async function main(): Promise<number> {
       }
     }
     // No art in the annulus at all: the ring sits on bare play field.
-    lightnessByHold.set(holdId, weight === 0 ? 0 : Number((weighted / weight).toFixed(3)));
+    lightnessByHold.set(placement.id, weight === 0 ? 0 : Number((weighted / weight).toFixed(3)));
   }
 
-  const entries = [...lightnessByHold.entries()].sort((a, b) => a[0] - b[0]);
-  const values = entries.map(([, lightness]) => lightness);
+  const values = [...lightnessByHold.values()];
   const mean = values.reduce((total, value) => total + value, 0) / values.length;
   console.log(
-    `[spike] ${entries.length} placements; mean OkLab L under the ring ${mean.toFixed(3)}, ` +
-      `min ${Math.min(...values).toFixed(3)}, max ${Math.max(...values).toFixed(3)}`,
+    `[spike] ${boardKey.padEnd(24)} ${lightnessByHold.size} placements; mean OkLab L under the ring ` +
+      `${mean.toFixed(3)}, min ${Math.min(...values).toFixed(3)}, max ${Math.max(...values).toFixed(3)}`,
   );
+  return lightnessByHold;
+}
+
+async function main(): Promise<number> {
+  const perBoard: Array<[string, Map<number, number>]> = [];
+  for (const board of SPIKE_BOARDS) {
+    perBoard.push([
+      board.key,
+      await measureBoard(board.key, board.boardName, board.layoutId, board.sizeId, board.setIds),
+    ]);
+  }
+
+  const body = perBoard
+    .map(([boardKey, lightnessByHold]) => {
+      const entries = [...lightnessByHold.entries()].sort((a, b) => a[0] - b[0]);
+      return `  '${boardKey}': {\n${entries.map(([holdId, lightness]) => `    ${holdId}: ${lightness},`).join('\n')}\n  },`;
+    })
+    .join('\n');
 
   writeFileSync(
     OUTPUT_FILE,
     `// Generated by packages/mobile/scripts/spike-hold-lightness.ts — do not edit by hand.\n` +
       `// Mean OkLab lightness of the board art in the annulus each selector ring is drawn in\n` +
-      `// (0.85r..1.15r), alpha-weighted, for Grasshopper layout 1 / size 5 / sets ${SET_IDS.join(',')}.\n` +
+      `// (0.85r..1.15r), alpha-weighted, keyed by the board keys in spike-boards.ts.\n` +
       `// Feeds the spike's contrast-casing treatment — see spike-config.ts.\n` +
-      `export const SPIKE_HOLD_ART_LIGHTNESS: Record<number, number> = {\n` +
-      entries.map(([holdId, lightness]) => `  ${holdId}: ${lightness},`).join('\n') +
-      `\n};\n`,
+      `export const SPIKE_HOLD_ART_LIGHTNESS: Record<string, Record<number, number>> = {\n${body}\n};\n`,
   );
   console.log(`[spike] wrote ${path.relative(ROOT_DIR, OUTPUT_FILE)}`);
   return 0;

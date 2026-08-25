@@ -1,12 +1,13 @@
 /// <reference types="node" />
 
 /**
- * Spike (issue #2202): trace the actual silhouette of every hold on a board.
+ * Spike (issue #2202): trace the actual silhouette of every hold, on every board
+ * the spike draws.
  *
  * Usage: vp run spike:hold-outlines
  *
  * The point of a halo, per the issue, is to show the *shape* of the hold so you
- * can find that shape on the wall — and hold shapes on one board range from a
+ * can find that shape on the wall — and hold sizes on one board range from a
  * fingernail-sized foot chip to a jug three times its width. A ring at the
  * placement radius says nothing about either. So this traces the real outline
  * out of the art's alpha channel and ships it as paths the renderer can stroke.
@@ -19,24 +20,21 @@
  *
  * Known limits, both visible in the output: a hold whose art touches a
  * neighbour's yields the merged blob, and a placement with no art under it
- * (a mounting hole) yields nothing and is simply absent from the table.
+ * yields nothing and is simply absent from the table. The second is not an edge
+ * case on MoonBoard — its placements are a synthetic 11x18 grid, and most cells
+ * genuinely have no hold — so consumers must fall back to a ring.
  */
 
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import sharp from 'sharp';
-import { getHolePlacements, getImageFilename, getProductSize } from '@boardsesh/board-constants/product-sizes';
+import { getBoardRenderData } from '../src/lib/board-details';
+import { SPIKE_BOARDS } from '../src/components/board-spike/spike-boards';
 
 const ROOT_DIR = path.resolve(import.meta.dirname, '../../..');
-const SOURCE_DIR = path.join(ROOT_DIR, 'packages/web/public/images/grasshopper/product_sizes_layouts_sets');
+const IMAGES_DIR = path.join(ROOT_DIR, 'packages/web/public/images');
 const OUTPUT_FILE = path.join(ROOT_DIR, 'packages/mobile/src/components/board-spike/spike-hold-outlines.ts');
-
-/** Must match SPIKE_BOARD in src/components/board-spike/spike-config.ts. */
-const BOARD_NAME = 'grasshopper' as const;
-const LAYOUT_ID = 1;
-const SIZE_ID = 5;
-const SET_IDS = [1, 2, 3, 4, 6];
 
 /** A pixel counts as hold if its alpha is at least this. */
 const ALPHA_FLOOR = 96;
@@ -53,7 +51,6 @@ type Point = [number, number];
 function traceBorder(filled: Uint8Array, width: number, height: number, start: Point): Point[] {
   const at = (x: number, y: number): boolean =>
     x >= 0 && y >= 0 && x < width && y < height && filled[y * width + x] === 1;
-  // Clockwise neighbourhood, starting west.
   const offsets: Point[] = [
     [-1, 0],
     [-1, -1],
@@ -76,7 +73,6 @@ function traceBorder(filled: Uint8Array, width: number, height: number, start: P
       const index = (backtrackIndex + turn) % 8;
       const candidate: Point = [current[0] + offsets[index][0], current[1] + offsets[index][1]];
       if (!at(candidate[0], candidate[1])) continue;
-      // Re-enter from the direction we came, so the next scan starts behind us.
       backtrackIndex = (index + 5) % 8;
       current = candidate;
       moved = true;
@@ -114,27 +110,21 @@ function simplify(points: Point[], epsilon: number): Point[] {
   ];
 }
 
-async function main(): Promise<number> {
-  const size = getProductSize(BOARD_NAME, SIZE_ID);
-  if (!size) throw new Error(`unknown product size ${SIZE_ID}`);
-  const { edgeLeft, edgeRight, edgeBottom, edgeTop } = size;
-
-  const layerFiles: string[] = [];
-  const placementTuples: Array<[number, number | null, number, number]> = [];
-  for (const setId of SET_IDS) {
-    const filename = getImageFilename(BOARD_NAME, LAYOUT_ID, SIZE_ID, setId);
-    if (!filename) continue;
-    layerFiles.push(path.join(SOURCE_DIR, path.basename(filename).replace(/\.png$/, '.webp')));
-    placementTuples.push(...getHolePlacements(BOARD_NAME, LAYOUT_ID, setId));
-  }
-
-  const { width, height } = await sharp(layerFiles[0]).metadata();
-  if (width === undefined || height === undefined) throw new Error('source layer has no dimensions');
-  const rawLayer = { width, height, channels: 4 as const };
+async function traceBoard(boardKey: string, boardName: string, layoutId: number, sizeId: number, setIds: number[]) {
+  const renderData = getBoardRenderData({ boardName: boardName as never, layoutId, sizeId, setIds });
+  if (!renderData) throw new Error(`${boardKey}: no render data`);
+  const { boardWidth, boardHeight, holdsData, backgroundImageKeys } = renderData;
+  const rawLayer = { width: boardWidth, height: boardHeight, channels: 4 as const };
 
   let composite: Buffer | null = null;
-  for (const file of layerFiles) {
-    const layer = await sharp(file).ensureAlpha().raw().toBuffer();
+  for (const key of backgroundImageKeys) {
+    // Board art is authored at assorted sizes; the placement coordinates are in
+    // board space, so every layer is resampled to it before compositing.
+    const layer = await sharp(path.join(IMAGES_DIR, key))
+      .resize(boardWidth, boardHeight, { fit: 'fill' })
+      .ensureAlpha()
+      .raw()
+      .toBuffer();
     composite =
       composite === null
         ? layer
@@ -143,47 +133,52 @@ async function main(): Promise<number> {
             .raw()
             .toBuffer();
   }
-  if (composite === null) throw new Error('no layers composited');
+  if (composite === null) throw new Error(`${boardKey}: no layers`);
 
-  const opaque = new Uint8Array(width * height);
-  for (let pixel = 0; pixel < width * height; pixel += 1) {
+  const opaque = new Uint8Array(boardWidth * boardHeight);
+  for (let pixel = 0; pixel < boardWidth * boardHeight; pixel += 1) {
     opaque[pixel] = composite[pixel * 4 + 3] >= ALPHA_FLOOR ? 1 : 0;
   }
-
-  const xSpacing = width / (edgeRight - edgeLeft);
-  const ySpacing = height / (edgeTop - edgeBottom);
-  const radius = xSpacing * 4;
-  const box = Math.round(radius * SEARCH_RADII);
 
   const outlines = new Map<number, number[]>();
   let missing = 0;
   let pointTotal = 0;
 
-  for (const [holdId, , gridX, gridY] of placementTuples) {
-    if (gridX <= edgeLeft || gridX >= edgeRight || gridY <= edgeBottom || gridY >= edgeTop) continue;
-    if (outlines.has(holdId)) continue;
-    const centreX = Math.round((gridX - edgeLeft) * xSpacing);
-    const centreY = Math.round(height - (gridY - edgeBottom) * ySpacing);
+  for (const placement of holdsData) {
+    if (outlines.has(placement.id)) continue;
+    const centreX = Math.round(placement.cx);
+    const centreY = Math.round(placement.cy);
+    const box = Math.round(placement.r * SEARCH_RADII);
 
-    // Local mask, so a hold touching its neighbour cannot flood the whole board.
     const left = Math.max(0, centreX - box);
     const top = Math.max(0, centreY - box);
-    const right = Math.min(width - 1, centreX + box);
-    const bottom = Math.min(height - 1, centreY + box);
+    const right = Math.min(boardWidth - 1, centreX + box);
+    const bottom = Math.min(boardHeight - 1, centreY + box);
+    if (right <= left || bottom <= top) {
+      missing += 1;
+      continue;
+    }
     const localWidth = right - left + 1;
     const localHeight = bottom - top + 1;
     const local = new Uint8Array(localWidth * localHeight);
     for (let y = 0; y < localHeight; y += 1) {
       for (let x = 0; x < localWidth; x += 1) {
-        local[y * localWidth + x] = opaque[(top + y) * width + (left + x)];
+        local[y * localWidth + x] = opaque[(top + y) * boardWidth + (left + x)];
       }
     }
 
-    // Seed: the placement centre if it is on the hold, else the nearest filled
-    // pixel to it — some placements sit on a bolt hole punched out of the art.
+    // Seed at the placement centre, or the nearest filled pixel to it — some
+    // placements sit on a bolt hole punched out of the art. On MoonBoard most
+    // grid cells have no art at all and drop out here.
     let seed: Point | null = null;
     const localCentre: Point = [centreX - left, centreY - top];
-    if (local[localCentre[1] * localWidth + localCentre[0]] === 1) {
+    if (
+      localCentre[0] >= 0 &&
+      localCentre[1] >= 0 &&
+      localCentre[0] < localWidth &&
+      localCentre[1] < localHeight &&
+      local[localCentre[1] * localWidth + localCentre[0]] === 1
+    ) {
       seed = localCentre;
     } else {
       let bestDistance = Infinity;
@@ -203,8 +198,6 @@ async function main(): Promise<number> {
       continue;
     }
 
-    // Flood-fill the connected region so neighbouring holds inside the box are
-    // excluded from the trace.
     const region = new Uint8Array(localWidth * localHeight);
     const stack: number[] = [seed[1] * localWidth + seed[0]];
     region[stack[0]] = 1;
@@ -236,31 +229,44 @@ async function main(): Promise<number> {
       continue;
     }
     const simplified = simplify(border, SIMPLIFY_EPSILON);
-    // Relative to the placement centre in board pixels, so the renderer only
-    // has to add cx/cy — the same space the overlay already works in.
     const flat: number[] = [];
     for (const [x, y] of simplified) {
       flat.push(Math.round(left + x - centreX), Math.round(top + y - centreY));
     }
-    outlines.set(holdId, flat);
+    outlines.set(placement.id, flat);
     pointTotal += simplified.length;
   }
 
-  const entries = [...outlines.entries()].sort((a, b) => a[0] - b[0]);
   console.log(
-    `[spike] traced ${entries.length} outlines (${missing} placements had no usable art), ` +
-      `${(pointTotal / entries.length).toFixed(1)} points each on average`,
+    `[spike] ${boardKey.padEnd(24)} ${outlines.size}/${holdsData.length} traced ` +
+      `(${missing} with no usable art), ${outlines.size > 0 ? (pointTotal / outlines.size).toFixed(1) : '0'} points each`,
   );
+  return outlines;
+}
+
+async function main(): Promise<number> {
+  const perBoard: Array<[string, Map<number, number[]>]> = [];
+  for (const board of SPIKE_BOARDS) {
+    perBoard.push([
+      board.key,
+      await traceBoard(board.key, board.boardName, board.layoutId, board.sizeId, board.setIds),
+    ]);
+  }
+
+  const body = perBoard
+    .map(([boardKey, outlines]) => {
+      const entries = [...outlines.entries()].sort((a, b) => a[0] - b[0]);
+      return `  '${boardKey}': {\n${entries.map(([holdId, flat]) => `    ${holdId}: [${flat.join(',')}],`).join('\n')}\n  },`;
+    })
+    .join('\n');
 
   writeFileSync(
     OUTPUT_FILE,
     `// Generated by packages/mobile/scripts/spike-hold-outlines.ts — do not edit by hand.\n` +
       `// Each hold's real silhouette, traced out of the board art's alpha channel, as flat\n` +
-      `// [x0, y0, x1, y1, ...] board pixels RELATIVE to the placement centre.\n` +
-      `// Grasshopper layout 1 / size 5 / sets ${SET_IDS.join(',')}.\n` +
-      `export const SPIKE_HOLD_OUTLINES: Record<number, number[]> = {\n` +
-      entries.map(([holdId, flat]) => `  ${holdId}: [${flat.join(',')}],`).join('\n') +
-      `\n};\n`,
+      `// [x0, y0, x1, y1, ...] board pixels RELATIVE to the placement centre, keyed by the\n` +
+      `// board keys in spike-boards.ts. A placement with no traceable art is absent.\n` +
+      `export const SPIKE_HOLD_OUTLINES: Record<string, Record<number, number[]>> = {\n${body}\n};\n`,
   );
   console.log(`[spike] wrote ${path.relative(ROOT_DIR, OUTPUT_FILE)}`);
   return 0;

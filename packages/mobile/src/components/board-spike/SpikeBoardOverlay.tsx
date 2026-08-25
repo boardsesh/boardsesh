@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
-import Svg, { Circle, Defs, G, Path, RadialGradient, Stop } from 'react-native-svg';
+import Svg, { Circle, ClipPath, Defs, G, Path, RadialGradient, Stop } from 'react-native-svg';
 import type { HoldPlacement } from '../board-renderer/types';
-import { plainRingPath, spikyRingPath, wavyRingPath } from './spike-shapes';
+import { plainRingPath, polygonPath, spikyRingPath, splinePath, wavyRingPath } from './spike-shapes';
 import { SPIKE_HOLD_ART_LIGHTNESS } from './spike-hold-lightness';
 import { SPIKE_HOLD_OUTLINES } from './spike-hold-outlines';
 import {
@@ -15,6 +15,7 @@ import {
 } from './spike-config';
 
 type SpikeBoardOverlayProps = {
+  boardKey: string;
   boardWidth: number;
   boardHeight: number;
   placements: HoldPlacement[];
@@ -23,21 +24,9 @@ type SpikeBoardOverlayProps = {
   haloShape: HaloShape;
   selector: SelectorStyle;
   palette: SpikePaletteKey;
+  /** Curve the traced outlines through their points instead of joining them straight. */
+  smooth: boolean;
 };
-
-/**
- * A traced silhouette as an SVG path, moved to the hold's position. The table
- * stores flat [x, y, …] pairs relative to the placement centre.
- */
-function outlinePath(holdId: number, cx: number, cy: number): string | null {
-  const flat = SPIKE_HOLD_OUTLINES[holdId];
-  if (flat === undefined || flat.length < 6) return null;
-  let path = '';
-  for (let index = 0; index < flat.length; index += 2) {
-    path += `${index === 0 ? 'M' : 'L'} ${cx + flat[index]} ${cy + flat[index + 1]} `;
-  }
-  return `${path}Z`;
-}
 
 /** Placements that get a neutral outline under the current scope. */
 function haloTargets(scope: HaloScope, placements: HoldPlacement[], litHolds: SpikeLitHold[]): HoldPlacement[] {
@@ -56,6 +45,7 @@ function haloTargets(scope: HaloScope, placements: HoldPlacement[], litHolds: Sp
  * ported into `renderer.rs` unchanged.
  */
 export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
+  boardKey,
   boardWidth,
   boardHeight,
   placements,
@@ -64,18 +54,46 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   haloShape,
   selector,
   palette,
+  smooth,
 }: SpikeBoardOverlayProps) {
   const colors = SPIKE_PALETTES[palette];
+  const outlines = SPIKE_HOLD_OUTLINES[boardKey] ?? {};
+  const lightness = SPIKE_HOLD_ART_LIGHTNESS[boardKey] ?? {};
+
+  const outlinePath = useMemo(
+    () =>
+      (holdId: number, cx: number, cy: number): string | null => {
+        const points = outlines[holdId];
+        if (points === undefined || points.length < 6) return null;
+        return smooth ? splinePath(points, cx, cy) : polygonPath(points, cx, cy);
+      },
+    [outlines, smooth],
+  );
+
   const targets = useMemo(() => haloTargets(halos, placements, litHolds), [halos, placements, litHolds]);
+  /**
+   * Widest and faintest first, narrowest and brightest last. Opacity follows a
+   * squared falloff so the outer bands fade quickly and the core stays solid —
+   * a linear ramp still read as distinct rings.
+   */
+  const glowBands = useMemo(() => {
+    const { glowBandCount, glowSpreadWidth, glowCoreWidth, glowPeakOpacity } = SPIKE_TUNING;
+    return Array.from({ length: glowBandCount }, (_, index) => {
+      const position = index / (glowBandCount - 1);
+      return {
+        width: glowSpreadWidth + (glowCoreWidth - glowSpreadWidth) * position,
+        opacity: Number((glowPeakOpacity * (0.06 + 0.94 * position ** 2)).toFixed(3)),
+      };
+    });
+  }, []);
   const litRoles = useMemo(() => [...new Set(litHolds.map((hold) => hold.role))], [litHolds]);
   const haloOpacity = halos === 'near' ? SPIKE_TUNING.nearHaloOpacity : SPIKE_TUNING.haloOpacity;
   const drawsGlow = selector === 'glow' || selector === 'glow-shape';
   const drawsCasing = selector === 'casing';
-  const drawsShapeGlow = selector === 'shape-glow';
+  const drawsShapeGlow = selector === 'shape-glow' || selector === 'shape-glow-out';
+  const outwardOnly = selector === 'shape-glow-out';
   const drawsTint = selector === 'tint';
   const drawsShape = selector === 'shape' || selector === 'glow-shape';
-  // The combined treatment lets the halo carry the reach, so its outline is
-  // thinner — a full-weight ring on top of the glow just reads as a blob.
   const outlineWidth = selector === 'glow-shape' ? SPIKE_TUNING.strokeWidth * 0.7 : SPIKE_TUNING.strokeWidth;
 
   return (
@@ -101,6 +119,21 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
             </RadialGradient>
           );
         })}
+        {outwardOnly &&
+          litHolds.map((hold) => {
+            const path = outlinePath(hold.id, hold.cx, hold.cy);
+            if (path === null) return null;
+            return (
+              // Everything on the board MINUS this hold. A stroke is centred on
+              // its path, so half of every glow band would fall inside the hold
+              // and wash out the surface you are about to grab; clipping to the
+              // outside makes the light come off the edge the way a real LED
+              // behind the hold does.
+              <ClipPath key={`clip-${hold.id}`} id={`spike-outside-${hold.id}`}>
+                <Path d={`M 0 0 H ${boardWidth} V ${boardHeight} H 0 Z ${path}`} clipRule="evenodd" />
+              </ClipPath>
+            );
+          })}
       </Defs>
 
       <G>
@@ -108,13 +141,18 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
           if (haloShape === 'outline') {
             const path = outlinePath(placement.id, placement.cx, placement.cy);
             if (path === null) return null;
+            // A fixed white outline is invisible on the boards that need it most:
+            // Kilter Homewall, MoonBoard and TB2 draw pale holds, and white on
+            // pale is nothing. Pick the outline the way `contrast-color()` would,
+            // from the art measured under it.
+            const onPaleArt = (lightness[placement.id] ?? 0) >= SPIKE_TUNING.casingLightnessThreshold;
             return (
               <Path
                 key={`halo-${placement.id}`}
                 d={path}
                 fill="none"
-                stroke="#FFFFFF"
-                strokeOpacity={haloOpacity}
+                stroke={onPaleArt ? '#000000' : '#FFFFFF'}
+                strokeOpacity={onPaleArt ? SPIKE_TUNING.outlineHaloDarkOpacity : haloOpacity}
                 strokeWidth={SPIKE_TUNING.outlineHaloStrokeWidth}
                 strokeLinejoin="round"
               />
@@ -144,11 +182,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
               cy={hold.cy}
               r={hold.radius}
               fill="none"
-              stroke={
-                (SPIKE_HOLD_ART_LIGHTNESS[hold.id] ?? 0) >= SPIKE_TUNING.casingLightnessThreshold
-                  ? '#000000'
-                  : '#FFFFFF'
-              }
+              stroke={(lightness[hold.id] ?? 0) >= SPIKE_TUNING.casingLightnessThreshold ? '#000000' : '#FFFFFF'}
               strokeOpacity={SPIKE_TUNING.casingOpacity}
               strokeWidth={SPIKE_TUNING.strokeWidth * SPIKE_TUNING.casingWidthMultiplier}
             />
@@ -163,12 +197,13 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
               fill={`url(#spike-glow-${hold.role})`}
             />
           ))}
+
         {(drawsShapeGlow || drawsTint) &&
           litHolds.map((hold) => {
             const color = colors[hold.role] ?? '#FFFFFF';
             const path = outlinePath(hold.id, hold.cx, hold.cy);
-            // No traced silhouette for this hold — fall back to the ring rather
-            // than leaving a lit hold unmarked.
+            // No traced silhouette (a bare MoonBoard grid cell, say) — fall back
+            // to a ring rather than leaving a lit hold unmarked.
             if (path === null) {
               return (
                 <Circle
@@ -196,22 +231,27 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                 </G>
               );
             }
+            // A stroke straddles its path, so the outward-only variant doubles
+            // the widths: the clip throws the inner half away and the visible
+            // spread of light stays the same.
+            const scale = outwardOnly ? 2 : 1;
             return (
-              <G key={`sel-${hold.id}`}>
-                {SPIKE_TUNING.shapeGlowBands.map((band) => (
+              <G key={`sel-${hold.id}`} clipPath={outwardOnly ? `url(#spike-outside-${hold.id})` : undefined}>
+                {glowBands.map((band) => (
                   <Path
                     key={band.width}
                     d={path}
                     fill="none"
                     stroke={color}
                     strokeOpacity={band.opacity}
-                    strokeWidth={band.width}
+                    strokeWidth={band.width * scale}
                     strokeLinejoin="round"
                   />
                 ))}
               </G>
             );
           })}
+
         {!drawsShapeGlow &&
           !drawsTint &&
           litHolds.map((hold) => {

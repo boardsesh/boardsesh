@@ -1,24 +1,5 @@
 import type { HoldState } from '@boardsesh/shared-schema';
 
-/**
- * Fixed board + climb the rendering spike draws (issue #2202).
- *
- * Grasshopper Master 8x12 with Tweeners: 332 hold placements on the board photo
- * the issue was filed against, which is the density that makes the problem
- * visible. The climb is synthesised from real placements (a start pair, a hand
- * line up the wall, a finish, six feet) rather than pulled from the catalogue,
- * so the spike needs no network, no login and no seeded database.
- */
-export const SPIKE_BOARD = {
-  boardName: 'grasshopper',
-  layoutId: 1,
-  sizeId: 5,
-  setIds: [1, 2, 3, 4, 6],
-} as const;
-
-export const SPIKE_FRAMES =
-  'p85r1p121r1p58r2p96r2p333r2p114r2p396r2p138r2p103r2p466r3p50r4p126r4p47r4p155r4p81r4p116r4';
-
 /** Which holds get a neutral outline: none, every placement, or only the ones near a lit hold. */
 export type HaloScope = 'none' | 'all' | 'near';
 
@@ -33,12 +14,20 @@ export type HaloScope = 'none' | 'all' | 'near';
 export type HaloShape = 'circle' | 'outline';
 
 /** How a lit hold is marked. */
-export type SelectorStyle = 'ring' | 'glow' | 'shape' | 'glow-shape' | 'casing' | 'shape-glow' | 'tint';
+export type SelectorStyle =
+  | 'ring'
+  | 'glow'
+  | 'shape'
+  | 'glow-shape'
+  | 'casing'
+  | 'shape-glow'
+  | 'shape-glow-out'
+  | 'tint';
 
 export type SpikeTreatment = {
   key: string;
   label: string;
-  /** Chip label — kept short so all six fit one row on a phone. */
+  /** Short label for the stepper caption and any compact control. */
   chip: string;
   /** One line on what this treatment is testing, shown under the board. */
   note: string;
@@ -106,6 +95,15 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
     halos: 'all',
     haloShape: 'outline',
     selector: 'shape-glow',
+  },
+  {
+    key: 'outward-glow',
+    chip: 'Outward',
+    label: 'Outward glow',
+    note: 'The glow is clipped to outside the hold, so the light comes off the edge and the surface stays clean.',
+    halos: 'all',
+    haloShape: 'outline',
+    selector: 'shape-glow-out',
   },
   {
     key: 'hold-tint',
@@ -197,16 +195,27 @@ export const SPIKE_TUNING = {
   /** Traced silhouettes are drawn thinner than the circular rings — they are longer. */
   outlineHaloStrokeWidth: 2.2,
   /**
-   * Shape-following glow: the same traced path stroked repeatedly, wide and faint
-   * to narrow and solid. SVG has no gradient that follows an arbitrary outline, so
-   * the fade is built out of concentric strokes.
+   * A dark outline on pale art needs more weight than a light one on dark art to
+   * read as the same strength, because the surrounding play field is dark either
+   * way and a black line has less to separate it from.
    */
-  shapeGlowBands: [
-    { width: 46, opacity: 0.1 },
-    { width: 32, opacity: 0.2 },
-    { width: 20, opacity: 0.42 },
-    { width: 10, opacity: 0.95 },
-  ],
+  outlineHaloDarkOpacity: 0.45,
+  /**
+   * Shape-following glow, built out of concentric strokes along the traced
+   * outline from `glowSpreadWidth` down to `glowCoreWidth`.
+   *
+   * The obvious implementation — one wide stroke through an `FeGaussianBlur` —
+   * does not work: react-native-svg's Android backend paints the filter region
+   * as a solid rectangle of the stroke colour instead of blurring it (verified
+   * on device, react-native-svg 15.15.5). `FeColorMatrix` in the same version is
+   * fine, which is what the desaturate toggle uses, so this is a gap in that one
+   * primitive rather than filters being unavailable. Four bands showed visible
+   * rings; twelve on a squared falloff reads as a smooth fade.
+   */
+  glowBandCount: 12,
+  glowSpreadWidth: 40,
+  glowCoreWidth: 11,
+  glowPeakOpacity: 0.95,
   /** Whole-hold tint: fill opacity over the hold, plus a crisp edge on its outline. */
   tintFillOpacity: 0.55,
   tintEdgeWidth: 4,
