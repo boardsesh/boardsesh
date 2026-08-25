@@ -1135,8 +1135,12 @@ export function useCreateClimbScreen({
   // same-uuid local SET_CURRENT_CLIMB. The live BLE preview keeps the local
   // wall correct; a mobile queue `updateQueueItem` is the follow-up for peers.
   const syncSavedToQueue = useCallback(
-    (uuid: string, frames: string) => {
-      setCurrentClimb(climbToQueueItem(buildProvisionalClimb(uuid, frames), { uuid }));
+    (uuid: string, framesString: string) => {
+      // Same wall hand-off as Set-Active: the auto-sender now lights the whole
+      // route. A draft save leaves the drawer open, so without this the creator's
+      // debounced preview would snatch the wall straight back to one frame.
+      setHandedOff(true);
+      setCurrentClimb(climbToQueueItem(buildProvisionalClimb(uuid, framesString), { uuid }));
     },
     [buildProvisionalClimb, setCurrentClimb],
   );

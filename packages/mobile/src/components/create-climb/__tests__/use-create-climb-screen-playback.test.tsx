@@ -20,6 +20,10 @@ const bluetooth = vi.hoisted(() => ({
 }));
 
 const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
+const boardActions = vi.hoisted(() => ({
+  saveClimb: vi.fn(async () => ({ uuid: 'saved-1', createdAt: null, publishedAt: null, isDraft: true })),
+  updateClimb: vi.fn(),
+}));
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 
 const frameOne = { 1: { state: 'STARTING' }, 2: { state: 'HAND' } };
@@ -74,8 +78,8 @@ vi.mock('@boardsesh/create-climb-react', () => ({
 vi.mock('@boardsesh/board-react', () => ({
   useBoardActions: () => ({
     isAuthenticated: true,
-    saveClimb: vi.fn(),
-    updateClimb: vi.fn(),
+    saveClimb: boardActions.saveClimb,
+    updateClimb: boardActions.updateClimb,
   }),
   isDuplicateClimbError: () => false,
 }));
@@ -114,6 +118,7 @@ beforeEach(() => {
   bluetooth.sendFramesToBoard.mockClear();
   bluetooth.invalidateWallState.mockClear();
   queue.setCurrentClimb.mockClear();
+  boardActions.saveClimb.mockClear();
   createClimb.frames = [frameOne, frameTwo] as typeof createClimb.frames;
 });
 
@@ -175,6 +180,18 @@ describe('create-climb wall hand-off', () => {
     act(() => result.current.handleSetActive());
     act(() => result.current.playback.play());
     expect(result.current.handedOff).toBe(false);
+  });
+
+  it('hands the wall over on a draft save too — the drawer stays open there', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.setName('Draft Route'));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(boardActions.saveClimb).toHaveBeenCalled();
+    expect(result.current.handedOff).toBe(true);
   });
 
   it('pauses a running transport before handing over', () => {
