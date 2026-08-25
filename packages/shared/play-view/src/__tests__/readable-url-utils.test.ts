@@ -388,6 +388,77 @@ describe('resolveBoardSegmentsToIds', () => {
   });
 });
 
+/**
+ * Woods. One layout ("Original"), two sizes, and one synthetic hold set — none
+ * of which appear in the generated layout/size/set tables, so both directions
+ * run off the static `woods-config` constants. Both sizes have to round-trip:
+ * the 8x10 and the 12x12 number their holds from their own origins, so landing
+ * on the wrong one draws a different climb rather than failing.
+ */
+describe('Woods readable URLs', () => {
+  const WOODS_SETS_CSV = '1';
+
+  it.each([
+    [1, '8x10'],
+    [2, '12x12'],
+  ])('size %i round-trips through its %s slug', (sizeId, sizeSlug) => {
+    const config = { boardName: 'woods' as const, layoutId: 1, sizeId, setIds: WOODS_SETS_CSV, angle: 40 };
+
+    const viewPath = buildReadableClimbViewPath({ ...config, climbUuid: CLIMB_UUID, climbName: 'Woodsy Thing' });
+    expect(viewPath).toBe(`/woods/original/${sizeSlug}/standard/40/view/woodsy-thing-${CLIMB_UUID}`);
+    expect(parseClimbRoutePath(viewPath)).toEqual({ ...config, climbUuid: CLIMB_UUID, surface: 'view' });
+
+    const listPath = buildReadableClimbListPath(config);
+    expect(listPath).toBe(`/woods/original/${sizeSlug}/standard/40/list`);
+    expect(parseBoardListPath(listPath)).toEqual(config);
+  });
+
+  it('parses the all-numeric form too', () => {
+    expect(parseBoardListPath('/woods/1/2/1/40/list')).toEqual({
+      boardName: 'woods',
+      layoutId: 1,
+      sizeId: 2,
+      setIds: WOODS_SETS_CSV,
+      angle: 40,
+    });
+  });
+
+  it('accepts numeric layout and size segments mixed into a slug path', () => {
+    // An all-numeric path never reaches the slug resolver, so these mixed shapes
+    // are the only way the numeric forms get exercised there.
+    expect(
+      resolveBoardSegmentsToIds({ boardName: 'woods', layoutSlug: '1', sizeSlug: '2', setSlug: 'standard' }),
+    ).toEqual({ boardName: 'woods', layoutId: 1, sizeId: 2, setIds: WOODS_SETS_CSV });
+    expect(
+      resolveBoardSegmentsToIds({ boardName: 'woods', layoutSlug: 'original', sizeSlug: '1', setSlug: '1' }),
+    ).toEqual({ boardName: 'woods', layoutId: 1, sizeId: 1, setIds: WOODS_SETS_CSV });
+  });
+
+  it('rejects a layout, size or set segment Woods does not have', () => {
+    for (const segments of [
+      { layoutSlug: 'two-original', sizeSlug: '12x12', setSlug: 'standard' },
+      { layoutSlug: 'original', sizeSlug: '10x10', setSlug: 'standard' },
+      { layoutSlug: 'original', sizeSlug: '12x12', setSlug: 'bolt' },
+      { layoutSlug: 'original', sizeSlug: '12x12', setSlug: 'standard_standard' },
+      { layoutSlug: 'original', sizeSlug: '12x12', setSlug: '' },
+    ]) {
+      expect(resolveBoardSegmentsToIds({ boardName: 'woods', ...segments }), JSON.stringify(segments)).toBeNull();
+    }
+  });
+
+  it('falls back to the numeric path rather than emitting a URL for a set Woods has no holds for', () => {
+    const args = { boardName: 'woods', layoutId: 1, sizeId: 2, setIds: '2', angle: 40, climbUuid: CLIMB_UUID };
+    expect(tryBuildReadableClimbViewPath(args)).toBeNull();
+    expect(buildReadableClimbViewPath(args)).toBe(`/woods/1/2/2/40/view/${CLIMB_UUID}`);
+  });
+
+  it('falls back to the numeric path for a size Woods does not have', () => {
+    const args = { boardName: 'woods', layoutId: 1, sizeId: 3, setIds: '1', angle: 40, climbUuid: CLIMB_UUID };
+    expect(tryBuildReadableClimbViewPath(args)).toBeNull();
+    expect(buildReadableClimbViewPath(args)).toBe(`/woods/1/3/1/40/view/${CLIMB_UUID}`);
+  });
+});
+
 describe('legacy MoonBoard URL forms', () => {
   const canonicalMoonBoardSizeSlug = generateSizeSlug(MOONBOARD_SIZE.name, MOONBOARD_SIZE.description);
 

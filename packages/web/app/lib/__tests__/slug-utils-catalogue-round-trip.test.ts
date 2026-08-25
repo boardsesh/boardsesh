@@ -42,6 +42,7 @@ import { getLayoutBySlug, getSetsBySlug, getSizeBySlug } from '@/app/lib/slug-ut
 import { tryConstructSlugViewUrl } from '@/app/lib/url-utils';
 import { parseBoardRouteParamsWithSlugs } from '@/app/lib/url-utils.server';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, type MoonBoardLayoutKey } from '@/app/lib/moonboard-config';
+import { WOODS_LAYOUTS, WOODS_SETS, WOODS_SIZES } from '@/app/lib/woods-config';
 
 /**
  * The acceptance criterion for #4362: a round-trip over the WHOLE catalogue
@@ -432,6 +433,9 @@ describe('MoonBoard set slugs this app never emits', () => {
  * `board/layout/size/sets/angle` path and breaks the board builder.
  */
 describe('Woods board URL segments', () => {
+  /** An unbroken 32-hex uuid — the shape the Woods importer mints. */
+  const WOODS_CLIMB_UUID = '00d5b1a7c4e9f2360a1b2c3d4e5f6071';
+
   async function parseWoods(layoutSegment: string, sizeSegment: string, setSegment: string) {
     const parsed = await parseBoardRouteParamsWithSlugs({
       board_name: 'woods',
@@ -482,5 +486,61 @@ describe('Woods board URL segments', () => {
     ['unknown set slug', 'original', '12x12', 'crimps'],
   ])('404s %s', async (_case, layoutSegment, sizeSegment, setSegment) => {
     await expect(parseWoods(layoutSegment, sizeSegment, setSegment)).rejects.toThrow(/notFound\(\)/);
+  });
+
+  /**
+   * The other half of the contract: what www itself emits has to parse back
+   * here. Both sizes, because the 8x10 and the 12x12 number their holds from
+   * their own origins — landing on the wrong one silently draws a different
+   * climb rather than failing.
+   */
+  it.each([
+    [WOODS_SIZES['8x10'].id, '8x10'],
+    [WOODS_SIZES['12x12'].id, '12x12'],
+  ])('size %i: the URL www emits parses back to its own ids', async (sizeId, expectedSizeSlug) => {
+    const setIds = WOODS_SETS.map((woodsSet) => woodsSet.id);
+    const emittedPath = tryConstructSlugViewUrl(
+      'woods',
+      WOODS_LAYOUTS.woods.id,
+      sizeId,
+      setIds,
+      ROUND_TRIP_ANGLE,
+      WOODS_CLIMB_UUID,
+      'Round Trip',
+    );
+    expect(emittedPath, `woods size ${sizeId}: tryConstructSlugViewUrl returned null`).not.toBeNull();
+
+    const [, emittedBoard, emittedLayout, emittedSize, emittedSets, emittedAngle, surface, emittedClimb] =
+      emittedPath!.split('/');
+    expect(surface, `woods size ${sizeId}: emitted path ${emittedPath}`).toBe('view');
+    expect(emittedSize).toBe(expectedSizeSlug);
+
+    const parsed = await parseBoardRouteParamsWithSlugs({
+      board_name: emittedBoard,
+      layout_id: emittedLayout,
+      size_id: emittedSize,
+      set_ids: emittedSets,
+      angle: emittedAngle,
+      climb_uuid: emittedClimb,
+    });
+
+    expect(
+      {
+        board_name: parsed.board_name,
+        layout_id: parsed.layout_id,
+        size_id: parsed.size_id,
+        set_ids: [...parsed.set_ids].sort((left, right) => left - right),
+        angle: parsed.angle,
+        climb_uuid: parsed.climb_uuid,
+      },
+      `woods size ${sizeId}: ${emittedPath} did not parse back to its own ids`,
+    ).toEqual({
+      board_name: 'woods',
+      layout_id: WOODS_LAYOUTS.woods.id,
+      size_id: sizeId,
+      set_ids: [...setIds].sort((left, right) => left - right),
+      angle: ROUND_TRIP_ANGLE,
+      climb_uuid: WOODS_CLIMB_UUID,
+    });
   });
 });
