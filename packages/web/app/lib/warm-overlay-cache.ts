@@ -4,7 +4,26 @@ import { isCrawlerUserAgent } from '@/app/lib/is-crawler';
 import { SITE_URL } from '@/app/lib/seo/base-url';
 import type { BoardDetails, Climb } from '@/app/lib/types';
 
-const BASE_URL = process.env.VERCEL_URL ? SITE_URL : 'http://localhost:3000';
+// Absolute base for the same-origin warm fetches below. Read per call rather
+// than pinned at module scope: this used to be `VERCEL_URL ? SITE_URL :
+// 'http://localhost:3000'`, which points every warm fetch at localhost on any
+// host that isn't Vercel — on a hot SSR path, so the whole warm silently becomes
+// a fan-out of connection refusals (#4651).
+//
+// A configured https BASE_URL wins (that is the deployment's canonical origin);
+// otherwise the loopback default, which is what local dev wants and is the only
+// thing a warm can reach when nothing names an origin.
+function warmOrigin(): string {
+  const configuredOrigin = process.env.BASE_URL?.trim();
+  if (configuredOrigin?.startsWith('https://')) return configuredOrigin;
+  const nextAuthOrigin = process.env.NEXTAUTH_URL?.trim();
+  if (nextAuthOrigin?.startsWith('https://')) return nextAuthOrigin;
+  // TODO(#4656): retire with the Vercel project. Unreachable in the nodejs
+  // runtime today — instrumentation.ts patches NEXTAUTH_URL to the canonical
+  // origin before any request is served — but kept so this stays a strict
+  // superset of the behaviour it replaces.
+  return process.env.VERCEL_URL ? SITE_URL : 'http://localhost:3000';
+}
 
 /**
  * How many list rows the `/list` front door warms per SSR render.
@@ -98,9 +117,10 @@ export async function warmOverlays(options: WarmOverlaysOptions): Promise<void> 
     const isThumbnail = variant === 'thumbnail';
     const toWarm = climbs.slice(0, maxImages);
 
+    const origin = warmOrigin();
     const warmTargets: string[] = [];
     for (const climb of toWarm) {
-      warmTargets.push(`${BASE_URL}${buildOverlayUrl(boardDetails, climb.frames, isThumbnail)}`);
+      warmTargets.push(`${origin}${buildOverlayUrl(boardDetails, climb.frames, isThumbnail)}`);
 
       // Only the full climb-view pages warm the og card. A thumbnail list would
       // fan out one backend og render per row for images no crawler fetches.

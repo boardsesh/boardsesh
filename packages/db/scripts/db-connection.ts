@@ -22,6 +22,11 @@ export function getScriptDatabaseUrl(): string {
   const isLocalUrl =
     databaseUrl.includes('localhost') || databaseUrl.includes('localtest.me') || databaseUrl.includes('127.0.0.1');
 
+  // TODO(#4656): make this host-agnostic when the Vercel project goes away.
+  // Widening it to "any automated build" is NOT the fix — .github/workflows/ci.yml
+  // and db-migration-renumber.yml both run these scripts in GitHub Actions
+  // against a localhost service container on purpose, so a CI term here would
+  // exit(1) on every one of those jobs.
   if (process.env.VERCEL && isLocalUrl) {
     console.error('Refusing to run with local DATABASE_URL in Vercel build');
     process.exit(1);

@@ -6,9 +6,14 @@ export const ENV_VAR_NAME = 'AURORA_CREDENTIALS_SECRET';
 const DEFAULT_DEV_KEY = 'changeme-development-key';
 
 /**
- * Get the encryption secret, with optional development fallback
- * Supports both Vercel (VERCEL_ENV) and Node.js (NODE_ENV) environments
- * @throws Error if secret is not set and not in development mode
+ * Get the encryption secret, with a development fallback.
+ *
+ * Keyed on NODE_ENV alone — the host-agnostic signal. `VERCEL_ENV === 'development'`
+ * used to be OR'd in, but it is only ever set by the tracked
+ * `packages/web/.env.local`, where NODE_ENV already says `development`, so it
+ * added no case any host reaches (#4651).
+ *
+ * @throws Error if the secret is not set and this is not a dev/test run
  */
 export function getEncryptionSecret(): string {
   const secret = process.env[ENV_VAR_NAME];
@@ -17,12 +22,8 @@ export function getEncryptionSecret(): string {
     return secret;
   }
 
-  // Check if we're in development mode
-  const isVercelDev = process.env.VERCEL_ENV === 'development';
-  const isNodeDev = process.env.NODE_ENV === 'development';
-  const isDevelopment = isVercelDev || isNodeDev;
-
-  if (isDevelopment) {
+  const nodeEnv = process.env.NODE_ENV;
+  if (nodeEnv === 'development' || nodeEnv === 'test') {
     return DEFAULT_DEV_KEY;
   }
 

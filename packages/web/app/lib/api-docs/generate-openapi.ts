@@ -87,9 +87,13 @@ Layout, size, and set IDs can be either numeric IDs or human-readable slugs.
     },
     servers: [
       {
-        url: process.env.VERCEL_URL
-          ? `https://${process.env.VERCEL_URL}`
-          : process.env.NEXTAUTH_URL || 'http://localhost:3000',
+        // The deployment's canonical origin first — VERCEL_URL is the
+        // per-deployment hostname, which is neither stable nor present off
+        // Vercel (#4651). TODO(#4656): drop the VERCEL_URL term with the project.
+        url:
+          process.env.BASE_URL?.trim() ||
+          process.env.NEXTAUTH_URL?.trim() ||
+          (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'),
         description: 'Current server',
       },
     ],

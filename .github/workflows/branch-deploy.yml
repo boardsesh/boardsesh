@@ -184,7 +184,13 @@ jobs:
             BACKEND_INTERNAL_URL="ws://staging-backend:8080/graphql"
           fi
 
-          # Pull and start web
+          # Pull and start web.
+          #
+          # TODO(#4656): the `-e VERCEL_ENV=preview` below goes with the Vercel
+          # project. Traced inert already — the https NEXTAUTH_URL short-circuits
+          # every consumer ahead of it — but this workflow is
+          # workflow_dispatch-only, so no PR can produce the live proof, and
+          # #4651 chose not to remove it on a desk-check alone.
           docker pull ghcr.io/boardsesh/boardsesh-web:pr-${PR_NUM}
 
           docker run -d \

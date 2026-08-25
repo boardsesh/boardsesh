@@ -61,7 +61,13 @@ export async function GET(request: NextRequest) {
     const gradeRows = gradeResult;
 
     const displayName = summary.displayName;
-    const origin = process.env.VERCEL_URL ? 'https://www.boardsesh.com' : 'http://localhost:3000';
+    // Absolute base for a relative avatar path. Host-agnostic: the request's own
+    // origin is correct on every deployment AND on localhost, and a configured
+    // https BASE_URL wins so the avatar fetch goes out through the CDN rather
+    // than looping back into this instance. Keying this on VERCEL_URL silently
+    // rewrote every avatar to localhost off Vercel (#4651).
+    const configuredOrigin = process.env.BASE_URL?.trim();
+    const origin = configuredOrigin?.startsWith('https://') ? configuredOrigin : new URL(request.url).origin;
     const rawAvatarUrl = summary.avatarUrl || null;
     const avatarUrl = rawAvatarUrl && !rawAvatarUrl.startsWith('http') ? `${origin}${rawAvatarUrl}` : rawAvatarUrl;
 

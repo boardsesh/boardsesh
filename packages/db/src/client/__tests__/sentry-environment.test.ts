@@ -119,4 +119,23 @@ void describe('resolveSentryEnvironment', () => {
     assert.equal(isPrivateDatabaseTarget(), false);
     assert.equal(isProductionSentryEnvironment(), true);
   });
+
+  // packages/web's sentry.{server,edge}.config.ts moved off
+  // `VERCEL_ENV === 'production'` onto these helpers (#4651). The two cases below
+  // are the ones that swap could have got wrong.
+  void it('still reports from a Vercel production deployment', () => {
+    setEnv({ VERCEL_ENV: 'production', NODE_ENV: 'production', DATABASE_URL: PRODUCTION_DATABASE_URL });
+    assert.equal(resolveSentryEnvironment(), 'production');
+    assert.equal(isProductionSentryEnvironment(), true);
+  });
+
+  void it('fails OPEN in an edge runtime that never sees DATABASE_URL', () => {
+    // The edge sandbox may not carry DATABASE_URL, so isPrivateDatabaseTarget()
+    // has no signal there. That resolves to 'production' and reports, which is
+    // the safe direction — but it means edge Sentry can be enabled where server
+    // Sentry is not. Asserted so the asymmetry is deliberate, not a surprise.
+    setEnv({ NODE_ENV: 'production' });
+    assert.equal(isPrivateDatabaseTarget(), false);
+    assert.equal(isProductionSentryEnvironment(), true);
+  });
 });

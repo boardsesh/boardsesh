@@ -41,6 +41,8 @@ async function runMigrations() {
   const isLocalUrl =
     databaseUrl.includes('localhost') || databaseUrl.includes('localtest.me') || databaseUrl.includes('127.0.0.1');
 
+  // TODO(#4656): host-agnostic form — see db-connection.ts for why a CI term
+  // here would break the workflows that migrate a localhost service container.
   if (process.env.VERCEL && isLocalUrl) {
     console.error('❌ Refusing to run migrations with local DATABASE_URL in Vercel build');
     console.error('   Set DATABASE_URL in Vercel project environment variables');

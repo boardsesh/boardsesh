@@ -159,3 +159,62 @@ describe('scheduleOverlayWarming', () => {
     expect(fetch).toHaveBeenCalled();
   });
 });
+
+describe('the origin warm fetches are aimed at', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ body: null }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  function warmedOverlayUrl(): string {
+    const overlayCall = vi.mocked(fetch).mock.calls.find(([url]) => String(url).includes('/api/internal/board-render'));
+    return String(overlayCall?.[0]);
+  }
+
+  function expectOriginIs(warmedUrl: string, expectedOrigin: string): void {
+    expect(new URL(warmedUrl).origin).toBe(expectedOrigin);
+  }
+
+  function stubOriginEnv(overrides: Partial<Record<'BASE_URL' | 'NEXTAUTH_URL' | 'VERCEL_URL', string>>) {
+    vi.stubEnv('BASE_URL', overrides.BASE_URL ?? '');
+    vi.stubEnv('NEXTAUTH_URL', overrides.NEXTAUTH_URL ?? '');
+    vi.stubEnv('VERCEL_URL', overrides.VERCEL_URL ?? '');
+  }
+
+  it('uses a configured https BASE_URL, on any host', async () => {
+    stubOriginEnv({ BASE_URL: 'https://www.boardsesh.com' });
+    await warmOverlays({ boardDetails, climbs, variant: 'thumbnail' });
+    expectOriginIs(warmedOverlayUrl(), 'https://www.boardsesh.com');
+  });
+
+  it('falls back to the canonical NEXTAUTH_URL when BASE_URL names nothing', async () => {
+    stubOriginEnv({ NEXTAUTH_URL: 'https://www.boardsesh.com' });
+    await warmOverlays({ boardDetails, climbs, variant: 'thumbnail' });
+    expectOriginIs(warmedOverlayUrl(), 'https://www.boardsesh.com');
+  });
+
+  it('does NOT aim at localhost just because VERCEL_URL is unset', async () => {
+    // The bug: `VERCEL_URL ? SITE_URL : 'http://localhost:3000'` sent every warm
+    // fetch on a non-Vercel host to a loopback port nothing is listening on —
+    // on the hot SSR path of every list and climb-view render (#4651).
+    stubOriginEnv({ NEXTAUTH_URL: 'https://www.boardsesh.com' });
+    await warmOverlays({ boardDetails, climbs, variant: 'thumbnail' });
+    expect(warmedOverlayUrl()).not.toContain('localhost');
+  });
+
+  it('still uses the site URL on Vercel, and localhost in local dev', async () => {
+    stubOriginEnv({ VERCEL_URL: 'boardsesh-abc.vercel.app' });
+    await warmOverlays({ boardDetails, climbs, variant: 'thumbnail' });
+    expectOriginIs(warmedOverlayUrl(), 'https://www.boardsesh.com');
+
+    vi.mocked(fetch).mockClear();
+    stubOriginEnv({ NEXTAUTH_URL: 'http://localhost:3000' });
+    await warmOverlays({ boardDetails, climbs, variant: 'thumbnail' });
+    expectOriginIs(warmedOverlayUrl(), 'http://localhost:3000');
+  });
+});
