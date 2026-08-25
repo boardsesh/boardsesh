@@ -72,6 +72,13 @@ jobs:
       # of a workflow pin or of a file the patch's context depends on. No other
       # filter matches docs/** at all. Gates the `pg18-artifacts` job below.
       pg18Artifacts: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.pg18Artifacts }}
+      # Inputs to the www production image (Dockerfile.web). Gates the
+      # `docker-web` job below — the only thing in CI that ever runs
+      # `next build` for web. Off PRs this hardcodes `true` like every output
+      # above, which is deliberate here: the unconditional main-push build is
+      # both the backstop for whatever the PR filter misses and the only writer
+      # of the `web-main` buildx cache the PR builds restore from. #4653.
+      dockerWeb: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.dockerWeb }}
       # True if any downstream job's gate would fire. This used to gate the
       # `setup` job (bun install + build:db + a `built-packages` artifact every
       # heavy job downloaded); that job was deleted because @boardsesh/db and
@@ -83,10 +90,15 @@ jobs:
       # ci-location-sync-workflow.test.ts asserts on its terms; keep it in sync
       # with the job `if:`s below so a future job can gate on it again.
       runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.locationSync == 'true' || steps.filter.outputs.rootCi == 'true' }}
-      # NOTE: deployConfig, storeMetadata, mobileLocales, restSurface and
-      # pg18Artifacts are deliberately NOT part of runAny — the deploy-config,
-      # listing-guards, rest-surface and pg18-artifacts jobs below gate on their
-      # own filters, so a PR touching only their files runs nothing else.
+      # NOTE: deployConfig, storeMetadata, mobileLocales, restSurface,
+      # pg18Artifacts and dockerWeb are deliberately NOT part of runAny — the
+      # deploy-config, listing-guards, rest-surface, pg18-artifacts and
+      # docker-web jobs below gate on their own filters, so a PR touching only
+      # their files runs nothing else. Every dockerWeb path except
+      # `Dockerfile.web` is already matched by a term above (web, sharedDeps,
+      # ocr, locationSync, mobile for patches/**, anyJs for the two scripts,
+      # rootCi for the root manifests), so adding it here would change nothing
+      # but the `Dockerfile.web`-only case.
     steps:
       # No actions/checkout here on purpose: on `pull_request` dorny/paths-filter
       # reads the changed-file list from the REST API (no working tree needed),
@@ -203,6 +215,94 @@ jobs:
               - 'packages/web/app/lib/api-docs/**'
               - 'packages/web/app/__tests__/rest-surface-inventory.test.ts'
               - 'scripts/__tests__/ci-rest-surface-workflow.test.ts'
+            # Everything that decides what the www production image contains.
+            # Gates `docker-web` below, which is expensive (a full `next build`
+            # plus a three-stage image), so this list is the DERIVED closure
+            # rather than a convenient `packages/**`:
+            #
+            #   * `packages/web/**` — the app itself, next.config.mjs included.
+            #   * the 37 workspace packages @boardsesh/web transitively depends
+            #     on, taken from the same dependencies/optionalDependencies/
+            #     peerDependencies walk create-service-docker-context.mjs runs.
+            #     scripts/__tests__/ci-docker-web-workflow.test.ts re-derives
+            #     that walk and fails if this list stops covering it, so a new
+            #     workspace dep can't open a silent hole.
+            #   * the install inputs — Dockerfile.web, bun.lock, the root
+            #     package.json, patches/** (bun resolves patchedDependencies
+            #     before the deps stage can install at all).
+            #   * the three repo-root scripts services.web.extraSourceFiles
+            #     copies into the context. Only tailscale-hostname.ts is
+            #     load-bearing (packages/web/scripts imports it and Next's
+            #     production type-check compiles that directory); the other two
+            #     are listed because the context copies them and W-26/#4442 will
+            #     drop the set together.
+            #   * the generator itself and vite.config.ts, which defines the
+            #     `docker-context:web` script.
+            #
+            # KNOWN BLIND SPOTS, accepted deliberately:
+            #   * packages/mobile/**, packages/shared/offline-sync/** and
+            #     packages/shared/key-value-storage/** ARE copied into the web
+            #     context (services.web roots at @boardsesh/mobile too), but
+            #     nothing in the image builds or runs them — W-24/#4438 deleted
+            #     the Expo export step from the builder stage and W-26/#4442
+            #     drops them from the context. Mobile is by far the highest-churn
+            #     tree in the repo, so gating an 11-minute build on it would make
+            #     most PRs pay for bytes the runner never sees.
+            #   * a `.github/workflows/ci.yml`-only diff that narrows this filter
+            #     does not run the job, so ci-docker-web-workflow.test.ts is not
+            #     selected on that PR (it reads ci.yml with readFileSync, which
+            #     `--changed` can't relate to a diff). The unconditional
+            #     main-push build catches it on the next push instead.
+            # Both close by re-running the job unconditionally on main.
+            dockerWeb:
+              - 'packages/web/**'
+              - 'packages/aurora-sync/**'
+              - 'packages/board-constants/**'
+              - 'packages/board-renderer/wasm/**'
+              - 'packages/crypto/**'
+              - 'packages/db/**'
+              - 'packages/location-sync/**'
+              - 'packages/moonboard-ocr/**'
+              - 'packages/shared-schema/**'
+              - 'packages/shared/analytics/**'
+              - 'packages/shared/ble-protocol/**'
+              - 'packages/shared/board-config/**'
+              - 'packages/shared/board-presence/**'
+              - 'packages/shared/board-presence-react/**'
+              - 'packages/shared/board-react/**'
+              - 'packages/shared/board-render/**'
+              - 'packages/shared/climb-actions/**'
+              - 'packages/shared/climb-filters/**'
+              - 'packages/shared/create-climb-react/**'
+              - 'packages/shared/email/**'
+              - 'packages/shared/graphql/**'
+              - 'packages/shared/graphql-client/**'
+              - 'packages/shared/gym-claim/**'
+              - 'packages/shared/i18n/**'
+              - 'packages/shared/kiosk/**'
+              - 'packages/shared/logbook/**'
+              - 'packages/shared/party-profile/**'
+              - 'packages/shared/play-view/**'
+              - 'packages/shared/playback-react/**'
+              - 'packages/shared/playlist-generator/**'
+              - 'packages/shared/playlists-react/**'
+              - 'packages/shared/profile-stats/**'
+              - 'packages/shared/queue/**'
+              - 'packages/shared/queue-react/**'
+              - 'packages/shared/queue-runtime/**'
+              - 'packages/shared/velvet-tokens/**'
+              - 'packages/shared/watch-pairing/**'
+              - 'packages/sync-runtime/**'
+              - 'Dockerfile.web'
+              - '.dockerignore'
+              - 'bun.lock'
+              - 'package.json'
+              - 'patches/**'
+              - 'scripts/create-service-docker-context.mjs'
+              - 'scripts/build-expo-web-export.sh'
+              - 'scripts/lib/patch-expo-web-pwa-manifest.mjs'
+              - 'scripts/lib/tailscale-hostname.ts'
+              - 'vite.config.ts'
             rootCi:
               - '.github/workflows/ci.yml'
               - 'vite.config.ts'
@@ -1041,6 +1141,130 @@ jobs:
           path: ${{ runner.temp }}/metro-web
           key: metro-web-${{ runner.os }}-${{ hashFiles('bun.lock', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
 
+  # Builds Dockerfile.web — the image #3795 makes the www production artifact.
+  # Nothing else in per-PR CI runs `next build` for web (e2e-tests.yml is
+  # workflow_dispatch-only), so before this job a source change that broke the
+  # production build reached main un-caught. Build only: no registry login, no
+  # push, no attestation, no deploy. #4653.
+  #
+  # There is no `bun install` step on purpose. `vp run docker-context:web` is
+  # `node scripts/create-service-docker-context.mjs web`, which imports node
+  # builtins only, and every dependency the image needs is installed inside the
+  # build. production-deploy.yml's build-backend job runs the same shape.
+  docker-web:
+    needs: [changes]
+    if: needs.changes.outputs.dockerWeb == 'true'
+    runs-on: ubuntu-latest
+    # Measured cold on ubuntu-latest at 11m20s (branch-deploy.yml run
+    # 31797731863, which also pushed to GHCR). 30 minutes leaves room for a cold
+    # run on a slow runner while still failing loud instead of burning six hours.
+    timeout-minutes: 30
+    # Narrower than the workflow default: this job reads the repo and nothing
+    # else. No `packages: write` — it never publishes the image it builds.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Generate the web Docker context
+        run: vp run docker-context:web
+
+      # Pre-build because it is the cheapest of the three checks and the one
+      # whose failure mode is silent. next.config.mjs resolves the GraphQL SWC
+      # plugin's `artifactDirectory` against the workspace root, not
+      # packages/web; if that path is not in the generated context the plugin
+      # no-ops and the bundle silently keeps the whole gql.ts Documents map.
+      # The path is READ OUT of next.config.mjs rather than pinned here, so an
+      # edit to it is checked against reality instead of against a second copy
+      # of the same mistake.
+      - name: Verify the GraphQL artifactDirectory resolves inside the context
+        run: |
+          set -euo pipefail
+          artifact_directory=$(sed -n "s/.*artifactDirectory: *'\.\/\([^']*\)'.*/\1/p" packages/web/next.config.mjs)
+          if [ -z "$artifact_directory" ]; then
+            echo "::error file=packages/web/next.config.mjs::could not read artifactDirectory from next.config.mjs"
+            exit 1
+          fi
+          if [ ! -s ".docker-context/web/source/$artifact_directory/gql.ts" ]; then
+            echo "::error file=packages/web/next.config.mjs::artifactDirectory '$artifact_directory' does not resolve inside the web Docker context; the GraphQL SWC plugin will silently no-op"
+            exit 1
+          fi
+          echo "artifactDirectory OK: $artifact_directory/gql.ts is in the build context"
+
+      # BASE_URL and NEXT_PUBLIC_WS_URL are baked into the client bundle, so
+      # they are passed in production SHAPE to exercise the real code path. This
+      # image is never pushed or served — do not treat these as deploy config.
+      #
+      # Cache: PRs restore from the default-branch lineage and never write.
+      # GitHub gives the repo 10 GB of Actions cache and it already sits at
+      # 9.15 GB across 69 entries (measured 2026-08-25); this image's
+      # node_modules layer alone is 2.7 GB uncompressed, so PR writes would evict
+      # the gradle and vp toolchain caches by LRU and slow unrelated jobs. Only
+      # main refreshes `web-main`, and it does so on every push because the
+      # gate's `dockerWeb` output hardcodes true off PRs. If `web-main` turns out
+      # to push the repo over quota, move this scope to a registry-backed cache
+      # (type=registry on GHCR, no 10 GB ceiling) rather than dropping it.
+      - name: Build the web image
+        uses: docker/build-push-action@v7
+        with:
+          context: .docker-context/web
+          file: .docker-context/web/Dockerfile
+          push: false
+          load: true
+          tags: boardsesh-web:ci-${{ github.sha }}
+          build-args: |
+            NEXT_PUBLIC_WS_URL=wss://ws.boardsesh.com/graphql
+            BASE_URL=https://www.boardsesh.com
+          cache-from: type=gha,scope=web-main
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max,scope=web-main' || '' }}
+
+      # packages/web/app/api/internal/board-render/route.ts probes four
+      # candidate paths against process.cwd(); the runner's WORKDIR is /app, so
+      # this is the one that hits. It gets there only through
+      # next.config.mjs's `outputFileTracingIncludes` — and Next's standalone
+      # tracer behaves differently from the Vercel builder that has been
+      # producing the current artifact, which is exactly why it is asserted.
+      #
+      # The size floor, not just `test -s`, is the assertion: a 0-byte or stub
+      # file passes a presence check. Do NOT relax this to `find / -name
+      # '*.wasm'` — the image also carries the committed public/wasm copy, a
+      # Turbopack asset copy and two @vercel/og blobs, any of which would make a
+      # loose check pass while tracing is broken.
+      - name: Verify the board-renderer WASM is traced into the image
+        run: |
+          docker run --rm --entrypoint sh boardsesh-web:ci-${{ github.sha }} -c '
+            set -eu
+            wasm_path=/app/packages/web/node_modules/@boardsesh/board-renderer-wasm/pkg/board_renderer_wasm_bg.wasm
+            test -s "$wasm_path" || { echo "::error::board-renderer WASM missing at $wasm_path"; exit 1; }
+            wasm_bytes=$(wc -c < "$wasm_path")
+            [ "$wasm_bytes" -gt 400000 ] || { echo "::error::WASM at $wasm_path is $wasm_bytes bytes, expected >400000"; exit 1; }
+            echo "WASM OK: $wasm_path ($wasm_bytes bytes)"
+          '
+
+      # public/openapi.json is gitignored and written by the `generate:openapi`
+      # half of packages/web's build script, so its presence in the image is
+      # real proof that step ran. Parsing it and counting paths is the
+      # assertion: an empty or truncated document passes `test -s`. `node` is in
+      # the runner image; `bun` is not.
+      - name: Verify the generated OpenAPI document shipped in the image
+        run: |
+          docker run --rm --entrypoint sh boardsesh-web:ci-${{ github.sha }} -c '
+            set -eu
+            openapi_path=/app/packages/web/public/openapi.json
+            test -s "$openapi_path" || { echo "::error::$openapi_path missing from the image"; exit 1; }
+            node -e "
+              const spec = require(process.argv[1]);
+              const routeCount = Object.keys(spec.paths ?? {}).length;
+              if (routeCount === 0) throw new Error(\"openapi.json has no paths\");
+              console.log(\"openapi OK: \" + routeCount + \" paths\");
+            " "$openapi_path"
+          '
+
   commit-lint:
     needs: [changes]
     # Conventional Commit gate. The PR TITLE is the authoritative hard check — it's
@@ -1191,6 +1415,7 @@ jobs:
       - test-ocr
       - test-location-sync-integration
       - mobile-bundle
+      - docker-web
       - commit-lint
       - release-notes
       - changelog-owned
