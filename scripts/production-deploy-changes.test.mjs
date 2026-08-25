@@ -5,6 +5,7 @@ import {
   determineProductionDeployChanges,
   formatGitHubOutputs,
   selectLatestSuccessfulPriorRun,
+  summariseTargets,
 } from './production-deploy-changes.mjs';
 
 const BASE_SHA = '1111111111111111111111111111111111111111';
@@ -359,4 +360,24 @@ void test('a git comparison error falls back to a full build', () => {
 
   assert.equal(result.fullBuild, true);
   assert.deepEqual([result.web, result.backend, result.app], [true, true, true]);
+});
+
+void test('the human-readable summary names every target the outputs do', () => {
+  // These drifted once already: `cloudflare` was added to the GITHUB_OUTPUT
+  // block but not to the log line, so the deploy log could not say whether the
+  // Cloudflare apply had been targeted. Deriving one from the other makes that
+  // impossible, and this pins it.
+  const result = determineProductionDeployChanges({
+    eventName: 'workflow_dispatch',
+    headSha: '',
+    runsPayload: null,
+    git: null,
+  });
+
+  const summary = summariseTargets(result);
+  for (const target of ['web', 'backend', 'app', 'cloudflare']) {
+    assert.ok(summary.includes(`${target}=`), `summary must name ${target}: ${summary}`);
+  }
+  // And it must not leak the base sha, which the caller prints separately.
+  assert.ok(!summary.includes('deployment_base_sha'), summary);
 });
