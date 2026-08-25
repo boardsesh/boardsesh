@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-23T12:34:18.953Z",
+  "generatedAt": "2026-08-25T00:34:49.908Z",
   "entries": [
+    {
+      "prNumber": 4727,
+      "category": "new",
+      "title": "The queue now shows who put each climb up while you're in a session with your crew.",
+      "mergedAt": "2026-08-25T00:33:43Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4727",
+      "body": "A small face sits on every row someone else added — upcoming, current, and the ones you've already worked through. Your own adds stay clean."
+    },
     {
       "prNumber": 4684,
       "category": "fixed",

@@ -4,6 +4,13 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-25
+
+### New
+
+- The queue now shows who put each climb up while you're in a session with your crew. ([#4727](https://github.com/boardsesh/boardsesh/pull/4727))
+  A small face sits on every row someone else added — upcoming, current, and the ones you've already worked through. Your own adds stay clean.
+
 ## 2026-08-23
 
 ### New
