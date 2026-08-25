@@ -537,8 +537,8 @@
         "holds_one": "{{count}} Griff",
         "holds_other": "{{count}} Griffe",
         "sectionTitle": "Offene Entwürfe",
-        "frames_one": "{{count}} Frame",
-        "frames_other": "{{count}} Frames"
+        "frames_one": "{{count}} Bild",
+        "frames_other": "{{count}} Bilder"
       },
       "unavailable": {
         "title": "Hier lässt sich noch nichts bauen",

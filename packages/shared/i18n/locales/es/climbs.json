@@ -537,8 +537,8 @@
         "holds_one": "{{count}} presa",
         "holds_other": "{{count}} presas",
         "sectionTitle": "Borradores abiertos",
-        "frames_one": "{{count}} fotograma",
-        "frames_other": "{{count}} fotogramas"
+        "frames_one": "{{count}} cuadro",
+        "frames_other": "{{count}} cuadros"
       },
       "unavailable": {
         "title": "Aún no se puede crear aquí",
