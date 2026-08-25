@@ -26,7 +26,6 @@ import { toQueueClimbs } from '../../../../src/lib/climb-types';
 import { smartPlaylistByType } from '../../../../src/lib/smart-playlists';
 import { useProfile } from '../../../../src/lib/graphql/hooks';
 import { useAuthToken } from '../../../../src/lib/graphql/use-auth-token';
-import { useIsSharedSession } from '../../../../src/providers/queue-provider';
 import { iosSystemColors } from '../../../../src/theme/ios-colors';
 
 type SmartParams = {
@@ -38,9 +37,6 @@ export default function SmartPlaylistDetail() {
   const { t } = useTranslation('playlists');
   const { data: profile } = useProfile();
   const { isLoading: tokenLoading } = useAuthToken();
-  // "Is anyone else here" — one boolean off a dedicated selector context, so the
-  // session-stats push doesn't re-render this screen's list.
-  const isSharedSession = useIsSharedSession();
 
   const userId = profile?.id ?? '';
   const preset = smartPlaylistByType(type);
@@ -79,9 +75,6 @@ export default function SmartPlaylistDetail() {
     sourceId: `smart:${smartType}:${userId}`,
     allClimbs,
     fetchPage,
-    // Same rule as the playlist screen above: with a crew present a row tap is a
-    // look, not a queue replacement plus a wall grab.
-    previewOnly: isSharedSession,
     refreshErrorMessage: 'Failed to refresh smart playlist suggestions:',
     replaceQueueOnActivate: true,
   });

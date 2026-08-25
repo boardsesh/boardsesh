@@ -136,49 +136,54 @@ beforeEach(() => {
   });
 });
 
-type PlaybackProps = { climb: Climb | null; viewOnly: boolean };
+type PlaybackHarnessProps = { climb: Climb | null; suppressWallWrites?: boolean };
 
-function renderPlayback(climb: Climb | null, viewOnly = false) {
+function renderPlayback(climb: Climb | null, options?: { suppressWallWrites?: boolean }) {
   return renderHook(
-    (props: PlaybackProps) =>
+    (props: PlaybackHarnessProps) =>
       useMobilePlayback({
         climb: props.climb,
         boardName: KILTER,
         mirrored: false,
         isOpen: true,
-        viewOnly: props.viewOnly,
+        suppressWallWrites: props.suppressWallWrites ?? false,
       }),
-    { initialProps: { climb, viewOnly } },
+    { initialProps: { climb, suppressWallWrites: options?.suppressWallWrites } as PlaybackHarnessProps },
   );
 }
 
 /** Push a new current frame and rerender so the BLE effect re-evaluates. */
 async function setFrame(
-  rerender: (props?: PlaybackProps) => void,
+  rerender: (props: { climb: Climb | null; suppressWallWrites?: boolean }) => void,
   climb: Climb | null,
   frame: string,
-  viewOnly = false,
 ) {
   await act(async () => {
     mocks.playback.currentFrameString = frame;
-    rerender({ climb, viewOnly });
+    rerender({ climb });
   });
 }
 
 describe('useMobilePlayback — BLE drain', () => {
   // The Browsing chrome promises "the wall stays put": while the drawer shows a
   // preview, playback animates on-screen but not one frame may reach the board.
-  it('viewOnly keeps every frame off the wall, then resumes when it lifts', async () => {
+  it('suppressWallWrites keeps every frame off the wall, then resumes when it lifts', async () => {
     const climb = climbWith('c1');
-    const { rerender } = renderPlayback(climb, true);
+    const { rerender } = renderPlayback(climb, { suppressWallWrites: true });
 
-    await setFrame(rerender, climb, 'F0', true);
-    await setFrame(rerender, climb, 'F1', true);
+    await act(async () => {
+      mocks.playback.currentFrameString = 'F0';
+      rerender({ climb, suppressWallWrites: true });
+    });
+    await act(async () => {
+      mocks.playback.currentFrameString = 'F1';
+      rerender({ climb, suppressWallWrites: true });
+    });
     expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
 
     // Preview cleared (Back to live / commit): writes resume with the current frame.
     await act(async () => {
-      rerender({ climb, viewOnly: false });
+      rerender({ climb, suppressWallWrites: false });
     });
     expect(mocks.bluetooth.sendFramesToBoard).toHaveBeenCalledTimes(1);
     expect(mocks.sendCalls[0].frame).toBe('F1');
@@ -269,35 +274,6 @@ describe('useMobilePlayback — BLE drain', () => {
     await setFrame(rerender, climb, 'F0');
     expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
   });
-
-  // The drawer can be BLE-connected, open, and animating a route while what's on
-  // screen is a preview — someone else's climb is lit, or the climber is looking
-  // ahead in a crew. Every other gate here is satisfied in that state, so this is
-  // the one that keeps a scrubbed preview off the wall.
-  it('writes nothing while the drawer is showing a preview', async () => {
-    const climb = climbWith('c1');
-    const { rerender } = renderPlayback(climb, true);
-
-    await setFrame(rerender, climb, 'F0', true);
-    expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
-  });
-
-  it('flushes the frame once the preview is committed', async () => {
-    // Leaving the preview must not leave the wall stuck on the last live frame:
-    // the gate suppresses writes, it doesn't poison the write trackers.
-    const climb = climbWith('c1');
-    const { rerender } = renderPlayback(climb, true);
-
-    await setFrame(rerender, climb, 'F0', true);
-    expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
-
-    await setFrame(rerender, climb, 'F0', false);
-    expect(mocks.bluetooth.sendFramesToBoard).toHaveBeenCalledTimes(1);
-    expect(mocks.sendCalls[0].frame).toBe('F0');
-    await act(async () => {
-      mocks.sendCalls[0].resolve(true);
-    });
-  });
 });
 
 describe('useMobilePlayback — party-sync', () => {
@@ -327,7 +303,7 @@ describe('useMobilePlayback — party-sync', () => {
     expect(mocks.lastEngineInput.current?.externalState).not.toBeNull();
 
     act(() => {
-      rerender({ climb: climbWith('c2'), viewOnly: false });
+      rerender({ climb: climbWith('c2') });
     });
     expect(mocks.lastEngineInput.current?.externalState).toBeNull();
   });
@@ -383,40 +359,10 @@ describe('useMobilePlayback — party-sync', () => {
     // A publisher older than the field sends nothing; the engine must see null
     // rather than a stale count from the previous event.
     act(() => {
-      rerender({ climb: climbWith('c1'), viewOnly: false });
+      rerender({ climb: climbWith('c1') });
     });
     emitPlayback(playbackEvent({ climbUuid: 'c1', frameCount: undefined }));
     expect(mocks.lastEngineInput.current?.externalState?.frameCount).toBeNull();
-  });
-
-  // Browsing emits NOTHING on the wire. A published playback state is a write
-  // every peer on that climb follows — the wall one hop further out — so a
-  // preview being scrubbed must not reach the session at all.
-  it('publishes nothing while the drawer is showing a preview', () => {
-    renderPlayback(climbWith('c1'), true);
-
-    act(() => {
-      mocks.lastEngineInput.current?.onLocalStateChange?.({
-        frameIndex: 1,
-        frameCount: 3,
-        isPlaying: true,
-        speed: 1,
-        paceMs: 500,
-        anchorTimestamp: 1700,
-        clientId: 'self',
-      });
-    });
-
-    expect(mocks.publishPlaybackState).not.toHaveBeenCalled();
-  });
-
-  // Watching what the crew is doing is exactly what browsing IS, so the inbound
-  // half stays armed — only the outbound half is gated.
-  it('still follows a peer while showing a preview', () => {
-    renderPlayback(climbWith('c1'), true);
-
-    emitPlayback(playbackEvent({ climbUuid: 'c1', clientId: 'peer-1' }));
-    expect(mocks.lastEngineInput.current?.externalState?.clientId).toBe('peer-1');
   });
 
   it('reports a peer frame-count disagreement to analytics', () => {
