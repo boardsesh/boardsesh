@@ -71,36 +71,42 @@ void test('classifies changed paths with the production workflow semantics', () 
     backend: false,
     app: false,
     cloudflare: false,
+    staticAssets: false,
   });
   assert.deepEqual(classifyChangedFiles(['packages/backend/src/index.ts']), {
     web: true,
     backend: true,
     app: false,
     cloudflare: false,
+    staticAssets: false,
   });
   assert.deepEqual(classifyChangedFiles(['packages/mobile/app/index.tsx']), {
     web: false,
     backend: true,
     app: true,
     cloudflare: false,
+    staticAssets: false,
   });
   assert.deepEqual(classifyChangedFiles(['packages/shared-schema/src/schema.ts']), {
     web: true,
     backend: true,
     app: true,
     cloudflare: false,
+    staticAssets: false,
   });
   assert.deepEqual(classifyChangedFiles(['scripts/production-backend-smoke.mjs']), {
     web: false,
     backend: true,
     app: false,
     cloudflare: false,
+    staticAssets: false,
   });
   assert.deepEqual(classifyChangedFiles(['scripts/production-backend-smoke.test.mjs']), {
     web: false,
     backend: false,
     app: false,
     cloudflare: false,
+    staticAssets: false,
   });
 });
 
@@ -111,7 +117,13 @@ void test('the deploy watchdog never queues a deploy of its own', () => {
     'scripts/production-deploy-watchdog.mjs',
     'scripts/production-deploy-watchdog.test.mjs',
   ]) {
-    assert.deepEqual(classifyChangedFiles([filePath]), { web: false, backend: false, app: false, cloudflare: false });
+    assert.deepEqual(classifyChangedFiles([filePath]), {
+      web: false,
+      backend: false,
+      app: false,
+      cloudflare: false,
+      staticAssets: false,
+    });
   }
 });
 
@@ -129,22 +141,35 @@ void test('a watchdog file alongside real code still deploys the real code', () 
     backend: true,
     app: false,
     cloudflare: false,
+    staticAssets: false,
   });
   assert.deepEqual(
     classifyChangedFiles(['.github/workflows/production-deploy-watchdog.yml', 'packages/mobile/app/index.tsx']),
-    { web: false, backend: true, app: true, cloudflare: false },
+    { web: false, backend: true, app: true, cloudflare: false, staticAssets: false },
   );
 });
 
 void test('treats the production workflow and its detector as affecting every target', () => {
   for (const filePath of ['.github/workflows/production-deploy.yml', 'scripts/production-deploy-changes.mjs']) {
-    assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: true, app: true, cloudflare: true });
+    assert.deepEqual(classifyChangedFiles([filePath]), {
+      web: true,
+      backend: true,
+      app: true,
+      cloudflare: true,
+      staticAssets: true,
+    });
   }
 });
 
 void test('keeps production deploy unit tests CI-only', () => {
   for (const filePath of ['scripts/production-backend-smoke.test.mjs', 'scripts/production-deploy-changes.test.mjs']) {
-    assert.deepEqual(classifyChangedFiles([filePath]), { web: false, backend: false, app: false, cloudflare: false });
+    assert.deepEqual(classifyChangedFiles([filePath]), {
+      web: false,
+      backend: false,
+      app: false,
+      cloudflare: false,
+      staticAssets: false,
+    });
   }
 });
 
@@ -155,8 +180,22 @@ void test('treats every input of the app.boardsesh.com export as app-affecting',
   // merge green, deploy nothing, and leave the author believing it shipped.
   // W-24 / #4438.
   for (const filePath of ['scripts/build-expo-web-export.sh', 'scripts/lib/patch-expo-web-pwa-manifest.mjs']) {
-    assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: false, app: true, cloudflare: false });
+    assert.deepEqual(classifyChangedFiles([filePath]), {
+      web: true,
+      backend: false,
+      app: true,
+      cloudflare: false,
+      staticAssets: false,
+    });
   }
+});
+
+void test('publishes cataloged static images but excludes retained board PNG sources', () => {
+  assert.equal(classifyChangedFiles(['packages/web/public/images/kilter/wall.webp']).staticAssets, true);
+  assert.equal(classifyChangedFiles(['packages/web/public/images/kilter/wall.png']).staticAssets, false);
+  assert.equal(classifyChangedFiles(['packages/web/public/brand/boardsesh-mark.png']).staticAssets, true);
+  assert.equal(classifyChangedFiles(['packages/web/app/favicon.ico']).staticAssets, true);
+  assert.equal(classifyChangedFiles(['scripts/upload-static-assets.ts']).staticAssets, true);
 });
 
 void test('treats every deployed Cloudflare Pages config file as app-affecting', () => {
@@ -173,7 +212,13 @@ void test('treats every deployed Cloudflare Pages config file as app-affecting',
     'deploy/app-subdomain/_routes.json',
     'deploy/app-subdomain/functions/_middleware.ts',
   ]) {
-    assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: false, app: true, cloudflare: false });
+    assert.deepEqual(classifyChangedFiles([filePath]), {
+      web: true,
+      backend: false,
+      app: true,
+      cloudflare: false,
+      staticAssets: false,
+    });
   }
 });
 
@@ -205,7 +250,7 @@ void test('a Cloudflare zone-config change converges the edge without a web depl
   ]) {
     assert.deepEqual(
       classifyChangedFiles([filePath]),
-      { web: false, backend: false, app: false, cloudflare: true },
+      { web: false, backend: false, app: false, cloudflare: true, staticAssets: false },
       `${filePath} must converge Cloudflare and nothing else`,
     );
   }
@@ -222,7 +267,13 @@ void test('a code change never drags the Cloudflare apply along with it', () => 
 
 void test('keeps every backend build and runtime control path backend-affecting', () => {
   for (const filePath of ['Dockerfile.backend', 'railway.toml', 'bun.lock', 'package.json']) {
-    assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: true, app: false, cloudflare: false });
+    assert.deepEqual(classifyChangedFiles([filePath]), {
+      web: true,
+      backend: true,
+      app: false,
+      cloudflare: false,
+      staticAssets: false,
+    });
   }
 });
 
@@ -341,7 +392,7 @@ void test('compares the successful deployment baseline through the current head'
   ]);
   assert.equal(
     formatGitHubOutputs(result),
-    `web=true\nbackend=true\napp=false\ncloudflare=false\ndeployment_base_sha=${BASE_SHA}`,
+    `web=true\nbackend=true\napp=false\ncloudflare=false\nstatic_assets=false\ndeployment_base_sha=${BASE_SHA}`,
   );
 });
 

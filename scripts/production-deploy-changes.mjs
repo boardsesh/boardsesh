@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const scriptPath = fileURLToPath(import.meta.url);
 const ZERO_SHA = '0000000000000000000000000000000000000000';
-const ALL_TARGETS = Object.freeze({ web: true, backend: true, app: true, cloudflare: true });
+const ALL_TARGETS = Object.freeze({ web: true, backend: true, app: true, cloudflare: true, staticAssets: true });
 const FULL_COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i;
 
 function fullDeploy(reason) {
@@ -75,6 +75,21 @@ function isCloudflareAffecting(filePath) {
   );
 }
 
+function isStaticAssetsAffecting(filePath) {
+  return (
+    (filePath.startsWith('packages/web/public/images/') && filePath.endsWith('.webp')) ||
+    filePath === 'packages/web/public/brand/boardsesh-mark.png' ||
+    (filePath.startsWith('packages/web/public/icons/') && filePath.endsWith('.png')) ||
+    filePath === 'packages/web/app/favicon.ico' ||
+    filePath === 'packages/web/app/icon.png' ||
+    filePath.startsWith('packages/shared/static-assets/') ||
+    filePath === 'scripts/generate-static-assets.ts' ||
+    filePath === 'scripts/lib/static-asset-catalog.ts' ||
+    filePath === 'scripts/upload-static-assets.ts' ||
+    filePath === 'scripts/lib/static-asset-upload.ts'
+  );
+}
+
 function isBackendAffecting(filePath) {
   return (
     filePath.startsWith('packages/') ||
@@ -126,7 +141,7 @@ function isAppAffecting(filePath) {
 }
 
 function classifyChangedFiles(changedFiles) {
-  const targets = { web: false, backend: false, app: false, cloudflare: false };
+  const targets = { web: false, backend: false, app: false, cloudflare: false, staticAssets: false };
 
   for (const filePath of changedFiles) {
     if (isProductionDeployTestFile(filePath) || isProductionDeployWatchdogFile(filePath)) continue;
@@ -135,6 +150,7 @@ function classifyChangedFiles(changedFiles) {
     if (isWebAffecting(filePath)) targets.web = true;
     if (isAppAffecting(filePath)) targets.app = true;
     if (isCloudflareAffecting(filePath)) targets.cloudflare = true;
+    if (isStaticAssetsAffecting(filePath)) targets.staticAssets = true;
   }
 
   return targets;
@@ -262,6 +278,7 @@ function formatGitHubOutputs(result) {
     `backend=${result.backend}`,
     `app=${result.app}`,
     `cloudflare=${result.cloudflare}`,
+    `static_assets=${result.staticAssets}`,
     `deployment_base_sha=${result.deploymentBaseSha}`,
   ].join('\n');
 }
@@ -323,6 +340,7 @@ export {
   isProductionDeployControlFile,
   isProductionDeployTestFile,
   isProductionDeployWatchdogFile,
+  isStaticAssetsAffecting,
   isWebAffecting,
   readRunsPayload,
   selectLatestSuccessfulPriorRun,

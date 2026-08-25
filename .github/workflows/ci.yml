@@ -65,6 +65,7 @@ jobs:
       # Defaults false off PRs (the OTA bot legitimately rewrites it on push).
       changelogData: ${{ github.event_name == 'pull_request' && steps.filter.outputs.changelogData || 'false' }}
       dbMigrations: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.dbMigrations }}
+      staticAssets: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.staticAssets }}
       # docs/postgres-image-digests.json and docs/*.patch are checked-in PG18
       # rollout artifacts that nothing reads at run time, so nothing notices
       # when the tree drifts under them. Their guard reads every input with
@@ -82,7 +83,7 @@ jobs:
       # union of every downstream gate, and scripts/__tests__/
       # ci-location-sync-workflow.test.ts asserts on its terms; keep it in sync
       # with the job `if:`s below so a future job can gate on it again.
-      runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.locationSync == 'true' || steps.filter.outputs.rootCi == 'true' }}
+      runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.locationSync == 'true' || steps.filter.outputs.rootCi == 'true' || steps.filter.outputs.staticAssets == 'true' }}
       # NOTE: deployConfig, storeMetadata, mobileLocales, restSurface and
       # pg18Artifacts are deliberately NOT part of runAny — the deploy-config,
       # listing-guards, rest-surface and pg18-artifacts jobs below gate on their
@@ -248,6 +249,19 @@ jobs:
               # Defines the test:migration-journal script this job's new step
               # invokes, so editing it has to run the job that depends on it.
               - 'packages/db/package.json'
+            staticAssets:
+              - 'packages/web/public/images/**/*.webp'
+              - 'packages/web/public/brand/boardsesh-mark.png'
+              - 'packages/web/public/icons/*.png'
+              - 'packages/web/app/favicon.ico'
+              - 'packages/web/app/icon.png'
+              - 'packages/shared/static-assets/**'
+              - 'scripts/generate-static-assets.ts'
+              - 'scripts/lib/static-asset-catalog.ts'
+              - 'scripts/lib/static-asset-catalog.test.ts'
+              - 'scripts/upload-static-assets.ts'
+              - 'scripts/lib/static-asset-upload.ts'
+              - 'scripts/lib/static-asset-upload.test.ts'
 
   lint:
     needs: [changes]
@@ -258,7 +272,7 @@ jobs:
     # packages/board-renderer/wasm/pkg/**, scripts/mobile-*.sh — so dropping
     # either term would silently stop running the patch and fingerprint guards
     # on exactly the PR shape they exist for. Only ever widen this.
-    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.sharedDeps == 'true'
+    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.staticAssets == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -289,6 +303,8 @@ jobs:
       # that a failing guard no longer short-circuits Metro's work.
       - name: Check mobile board art stays bundled
         run: vp run check:mobile-board-art-network
+      - name: Check static asset catalog is current
+        run: vp run check:static-assets
       # Catches iOS bundle-phase dep-resolution breaks (e.g. a transitive-only
       # @sentry/cli unresolvable from packages/mobile under Bun's isolated
       # linker) here on Linux, instead of in the macOS TestFlight archive on
