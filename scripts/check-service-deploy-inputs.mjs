@@ -316,6 +316,34 @@ function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
     failures,
     repoRoot,
     '.github/workflows/production-deploy.yml',
+    'static_assets_changed:',
+    'Production deploy must expose the cumulative static-assets change signal.',
+  );
+  requireFileIncludes(
+    failures,
+    repoRoot,
+    '.github/workflows/production-deploy.yml',
+    'run: vp run upload:static-assets',
+    'Production deploy must publish static assets through the sanctioned vp task.',
+  );
+  requireFileIncludes(
+    failures,
+    repoRoot,
+    '.github/workflows/production-deploy.yml',
+    "needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped'",
+    'Production artifacts must wait for static asset publication when it runs.',
+  );
+  requireFileIncludes(
+    failures,
+    repoRoot,
+    '.github/workflows/production-deploy.yml',
+    'SYNC_STATIC_ASSETS: ${{ needs.sync-static-assets.result }}',
+    'Production failure notifications must report static asset publication failures.',
+  );
+  requireFileIncludes(
+    failures,
+    repoRoot,
+    '.github/workflows/production-deploy.yml',
     'BEFORE_SHA: ${{ needs.detect-changes.outputs.deployment_base_sha }}',
     'Production notifications must report the same cumulative range that was deployed.',
   );
