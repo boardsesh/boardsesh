@@ -574,7 +574,7 @@
         }
       },
       "publish": {
-        "blocked": "Füge einen Start- und einen Zielgriff hinzu, um zu veröffentlichen"
+        "blocked": "Füge einen Startgriff und einen Topgriff hinzu, um zu veröffentlichen"
       }
     },
     "holdFilter": {

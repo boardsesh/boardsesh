@@ -574,7 +574,7 @@
         }
       },
       "publish": {
-        "blocked": "Añade una presa de inicio y una de final para publicar"
+        "blocked": "Añade una presa de salida y una de final para publicar"
       }
     },
     "holdFilter": {

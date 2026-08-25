@@ -574,7 +574,7 @@
         }
       },
       "publish": {
-        "blocked": "Ajoutez une prise de départ et une prise finale pour publier"
+        "blocked": "Ajoutez une prise de départ et une prise d'arrivée pour publier"
       }
     },
     "holdFilter": {
