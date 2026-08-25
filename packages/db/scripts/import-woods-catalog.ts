@@ -15,7 +15,7 @@ import {
   mapWoodsProblemToClimb,
   woodsGradeRows,
   WOODS_REQUIRED_SET_IDS,
-  type WoodsCatalogFile,
+  parseWoodsCatalogFile,
 } from './woods-catalog-helpers.js';
 import { assertWoodsImportAllowed } from './woods-import-guard.js';
 import { getScriptDatabaseUrl, describeDatabaseHost } from './db-connection.js';
@@ -137,7 +137,7 @@ async function importWoodsCatalog() {
 
     for (const file of files) {
       const raw = fs.readFileSync(path.join(catalogDir, file), 'utf-8');
-      const dump: WoodsCatalogFile = JSON.parse(raw);
+      const dump = parseWoodsCatalogFile(raw, file);
       console.info(`\n📖 ${file} — ${dump.boardDimension}, ${dump.problems.length} problems`);
 
       // Dedupe in memory (last wins) keyed per conflict target so a single batch

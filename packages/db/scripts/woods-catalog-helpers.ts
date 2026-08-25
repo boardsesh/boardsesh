@@ -127,6 +127,37 @@ export type WoodsCatalogFile = {
   problems: WoodsCatalogProblem[];
 };
 
+/**
+ * Parse one catalog file, failing loudly WITH THE FILE NAME. TypeScript's
+ * `WoodsCatalogFile` is erased at runtime, so a re-scrape that changes shape
+ * (say, `problems` becoming an object) would otherwise read as `undefined`
+ * lengths and silently import nothing — and a malformed file would surface as a
+ * bare SyntaxError that makes the operator bisect the catalog directory to find
+ * it. Only the fields the importer dereferences unconditionally are guarded;
+ * per-problem fields stay the job of `mapWoodsProblemToClimb`.
+ */
+export function parseWoodsCatalogFile(raw: string, fileName: string): WoodsCatalogFile {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`Catalog file ${fileName} is not valid JSON: ${error instanceof Error ? error.message : error}`);
+  }
+  const candidate = parsed as Partial<WoodsCatalogFile> | null;
+  if (typeof candidate !== 'object' || candidate === null) {
+    throw new Error(
+      `Catalog file ${fileName} is not a JSON object (got ${candidate === null ? 'null' : typeof candidate})`,
+    );
+  }
+  if (typeof candidate.boardDimension !== 'string') {
+    throw new Error(`Catalog file ${fileName} has no string "boardDimension" — is this a Woods catalog dump?`);
+  }
+  if (!Array.isArray(candidate.problems)) {
+    throw new Error(`Catalog file ${fileName} has no "problems" array — is this a Woods catalog dump?`);
+  }
+  return candidate as WoodsCatalogFile;
+}
+
 // A mapped climb hold (board_climb_holds row payload).
 export type WoodsClimbHold = { holdId: number; holdState: WoodsHoldState };
 

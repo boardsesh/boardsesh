@@ -14,6 +14,7 @@ import {
   WOODS_DIMENSION_TO_SIZE_IDS,
   normalizeWoodsPublishedDate,
   mapWoodsProblemToClimb,
+  parseWoodsCatalogFile,
   woodsGradeRows,
   WOODS_REQUIRED_SET_IDS,
   type WoodsCatalogProblem,
@@ -382,4 +383,34 @@ void test('woodsGradeRows is ascending and covers every id mapWoodsProblemToClim
     difficulties,
     [...difficulties].sort((left, right) => left - right),
   );
+});
+
+void test('parseWoodsCatalogFile round-trips a valid dump', () => {
+  const dump = parseWoodsCatalogFile(
+    JSON.stringify({ boardDimension: '8x10', count: 1, problems: [{ id: 1 }] }),
+    'woodsboard_8x10.json',
+  );
+  assert.equal(dump.boardDimension, '8x10');
+  assert.equal(dump.problems.length, 1);
+});
+
+void test('parseWoodsCatalogFile names the file on malformed JSON', () => {
+  assert.throws(
+    () => parseWoodsCatalogFile('{ not json', 'woodsboard_12x12.json'),
+    /woodsboard_12x12\.json is not valid JSON/,
+  );
+});
+
+void test('parseWoodsCatalogFile fails loudly when problems is not an array', () => {
+  // The importer reads dump.problems.length unconditionally; without this guard a
+  // reshaped dump would import zero climbs while reporting success.
+  assert.throws(
+    () => parseWoodsCatalogFile(JSON.stringify({ boardDimension: '8x10', count: 0, problems: {} }), 'bad.json'),
+    /bad\.json has no "problems" array/,
+  );
+  assert.throws(
+    () => parseWoodsCatalogFile(JSON.stringify({ count: 0, problems: [] }), 'bad.json'),
+    /bad\.json has no string "boardDimension"/,
+  );
+  assert.throws(() => parseWoodsCatalogFile('null', 'bad.json'), /bad\.json is not a JSON object/);
 });

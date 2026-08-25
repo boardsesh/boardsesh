@@ -24,6 +24,14 @@ export type AdvertisementRecon = {
   serviceData?: Record<string, string>;
 };
 
+// Names the BLE PROTOCOL FAMILY, not a board brand. 'aurora' = the Aurora
+// advertised-service boards (Kilter/Tension/...). 'moonboard' = the Nordic-UART
+// family: MoonBoard AND Woods both ride it (same scan UUIDs, 20-byte chunks, no
+// MTU negotiation) — Woods maps here via `scanFamilyForBoard`, with its
+// board-specific transport need (acknowledged writes) expressed separately as
+// `BleAdapterOptions.preferWriteWithResponse`, not as a third family. Before
+// adding a variant for a new UART board, check whether an adapter option covers
+// it: every consumer branches two ways on this type.
 export type BoardScanFamily = 'aurora' | 'moonboard';
 
 // Best-effort reason for an unsolicited BLE drop, surfaced to analytics so we
