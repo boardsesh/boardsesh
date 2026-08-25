@@ -94,7 +94,9 @@ describe('renderVersionModuleSource', () => {
 
 describe('checkBoardRenderVersion', () => {
   it('reports no drift for the committed tree', () => {
-    expect(checkBoardRenderVersion(REPO_ROOT)).toBeNull();
+    const { version, drift } = checkBoardRenderVersion(REPO_ROOT);
+    expect(drift).toBeNull();
+    expect(version).toBe(BOARD_RENDER_VERSION);
   });
 
   it('reports drift when the committed constant is stale', () => {
@@ -111,9 +113,9 @@ describe('checkBoardRenderVersion', () => {
     mkdirSync(path.dirname(generatedTarget), { recursive: true });
     writeFileSync(generatedTarget, renderVersionModuleSource('000000000000'));
 
-    const drift = checkBoardRenderVersion(scratchRoot);
+    const { version, drift } = checkBoardRenderVersion(scratchRoot);
     expect(drift).not.toBeNull();
-    expect(drift?.version).toMatch(/^[0-9a-f]{12}$/);
+    expect(version).toMatch(/^[0-9a-f]{12}$/);
     // The scratch tree has no board photos, so its version legitimately differs
     // from the repo's — what matters is that the check compares the committed
     // text against the recomputed one instead of agreeing with itself.

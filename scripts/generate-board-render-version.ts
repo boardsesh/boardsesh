@@ -72,7 +72,10 @@ export const OPAQUE_RENDER_INPUTS: readonly string[] = [
   'packages/board-renderer/wasm/pkg/board_renderer_wasm.js',
   // sharp composite / dim / encode quality (#4675 changed exactly this).
   'packages/shared/board-render/src/pipeline.ts',
-  // Board-photo path logic and the OG social-card backdrop SVG.
+  // The OG social-card backdrop SVG (gradient stops, blur radius, frame geometry).
+  // `getBackgroundRelPaths` lives here too and IS covered by the projection, so this
+  // file is the one deliberate overlap: a comment-only edit to it churns the version.
+  // Worth it — the backdrop is drawn, not derived, and there is nothing to project.
   'packages/shared/board-render/src/background.ts',
 ];
 
@@ -151,31 +154,36 @@ export function writeBoardRenderVersion(repoRoot: string): { version: string; ch
 export type BoardRenderVersionDrift = {
   committedSource: string | null;
   expectedSource: string;
-  version: string;
 };
 
-/** Returns null when the committed file is current, or the drift details when it is not. */
-export function checkBoardRenderVersion(repoRoot: string): BoardRenderVersionDrift | null {
+export type BoardRenderVersionCheck = {
+  /** The version the working tree implies, whether or not the committed file agrees. */
+  version: string;
+  /** Null when the committed file is current; the two sources when it is not. */
+  drift: BoardRenderVersionDrift | null;
+};
+
+export function checkBoardRenderVersion(repoRoot: string): BoardRenderVersionCheck {
   const version = computeBoardRenderVersion(repoRoot);
   const targetPath = path.join(repoRoot, GENERATED_VERSION_FILE);
   const committedSource = existsSync(targetPath) ? readFileSync(targetPath, 'utf8') : null;
   const expectedSource = renderVersionModuleSource(version);
-  if (committedSource === expectedSource) return null;
-  return { committedSource, expectedSource, version };
+  if (committedSource === expectedSource) return { version, drift: null };
+  return { version, drift: { committedSource, expectedSource } };
 }
 
 function main(): void {
   const isCheck = process.argv.includes('--check');
 
   if (isCheck) {
-    const drift = checkBoardRenderVersion(REPO_ROOT);
+    const { version, drift } = checkBoardRenderVersion(REPO_ROOT);
     if (drift === null) {
-      console.log(`board-render version is up to date (${computeBoardRenderVersion(REPO_ROOT)}).`);
+      console.log(`board-render version is up to date (${version}).`);
       return;
     }
     console.error(
       `${GENERATED_VERSION_FILE} is out of date.\n` +
-        `  expected BOARD_RENDER_VERSION = '${drift.version}'\n` +
+        `  expected BOARD_RENDER_VERSION = '${version}'\n` +
         '  run `vp run generate:board-render-version` and commit the result.',
     );
     process.exitCode = 1;

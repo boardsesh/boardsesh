@@ -498,13 +498,13 @@ jobs:
             exit 1
           fi
 
-  # No `if:` path gate on purpose. The version is derived from the whole board
-  # catalogue plus the compiled renderer and every board photo the catalogue
-  # composites — a paths-filter listing those would drift from the generator's real
-  # input set, and a guard that silently stops guarding is worse than none (see the
-  # `check:db-migrations` / `rest-surface` precedents). The job is ~90s.
+  # No `if:` path gate and no `needs: [changes]` on purpose. The version is derived
+  # from the whole board catalogue plus the compiled renderer and every board photo
+  # the catalogue composites — a paths-filter listing those would drift from the
+  # generator's real input set, and a guard that silently stops guarding is worse
+  # than none (see the `check:db-migrations` / `large-files` precedents). Since it
+  # reads no `changes` output, waiting on that job would only add latency.
   board-render-version:
-    needs: [changes]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

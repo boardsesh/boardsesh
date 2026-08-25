@@ -18,12 +18,16 @@ describe('createOgImageHeaders', () => {
     const headers = createOgImageHeaders({ contentType: 'image/jpeg' });
     expect(headers['Cache-Control']).toBe('public, max-age=0, s-maxage=300, stale-while-revalidate=86400');
     expect(headers['CDN-Cache-Control']).toBe('public, s-maxage=300, stale-while-revalidate=86400');
+    expect(headers['Vercel-CDN-Cache-Control']).toBe('public, s-maxage=300, stale-while-revalidate=86400');
   });
 
   it('caps an unversioned render at a day on the daily tier', () => {
     const headers = createOgImageHeaders({ contentType: 'image/webp', unversionedTier: 'daily' });
     expect(headers['Cache-Control']).toBe('public, max-age=0, s-maxage=86400, stale-while-revalidate=604800');
     expect(headers['CDN-Cache-Control']).toBe('public, s-maxage=86400, stale-while-revalidate=604800');
+    // Load-bearing on Vercel while www still serves from there — it has to track
+    // the CDN header on every tier, not just the immutable one.
+    expect(headers['Vercel-CDN-Cache-Control']).toBe('public, s-maxage=86400, stale-while-revalidate=604800');
   });
 
   it('ignores the unversioned tier once a version is present', () => {

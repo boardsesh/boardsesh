@@ -3,7 +3,11 @@ export const OG_IMAGE_HEIGHT = 630;
 
 const ONE_YEAR_SECONDS = 31_536_000;
 const SHORT_TTL_SECONDS = 300;
-const STALE_TTL_SECONDS = 86_400;
+// The short tier's stale window and the daily tier's fresh window are both a day
+// by coincidence, not by shared meaning — they answer different questions and can
+// move independently. Named apart so an edit to one cannot silently be an edit to
+// the other.
+const SHORT_STALE_TTL_SECONDS = 86_400;
 const DAILY_TTL_SECONDS = 86_400;
 const DAILY_STALE_TTL_SECONDS = 604_800;
 
@@ -41,7 +45,7 @@ export function createOgImageHeaders({
 }): Record<string, string> {
   const isVersioned = version !== null && version !== undefined;
   const unversionedMaxAge = unversionedTier === 'daily' ? DAILY_TTL_SECONDS : SHORT_TTL_SECONDS;
-  const unversionedStale = unversionedTier === 'daily' ? DAILY_STALE_TTL_SECONDS : STALE_TTL_SECONDS;
+  const unversionedStale = unversionedTier === 'daily' ? DAILY_STALE_TTL_SECONDS : SHORT_STALE_TTL_SECONDS;
   const browserCacheControl = isVersioned
     ? `public, max-age=${ONE_YEAR_SECONDS}, s-maxage=${ONE_YEAR_SECONDS}, immutable`
     : `public, max-age=0, s-maxage=${unversionedMaxAge}, stale-while-revalidate=${unversionedStale}`;
