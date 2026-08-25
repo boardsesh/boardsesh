@@ -467,6 +467,7 @@ async function enrichBoard(
     isOwned: board.isOwned,
     angle: Number(board.angle),
     isAngleAdjustable: board.isAngleAdjustable,
+    hasLeds: board.hasLeds,
     createdAt: board.createdAt.toISOString(),
     // Computed name fields (TODO: resolve from board-specific layout/size/set tables if needed)
     layoutName: null,
@@ -690,6 +691,7 @@ export async function enrichBoards(
       isOwned: board.isOwned,
       angle: Number(board.angle),
       isAngleAdjustable: board.isAngleAdjustable,
+      hasLeds: board.hasLeds,
       createdAt: board.createdAt.toISOString(),
       layoutName: null,
       sizeName: null,
@@ -1256,6 +1258,7 @@ export const socialBoardQueries = {
           isOwned: false,
           angle: Number(board.angle),
           isAngleAdjustable: board.isAngleAdjustable,
+          hasLeds: board.hasLeds,
           createdAt: board.createdAt.toISOString(),
           layoutName: null,
           sizeName: null,
@@ -2126,6 +2129,7 @@ export const socialBoardMutations = {
       isOwned: validatedInput.isOwned ?? true,
       angle: validatedInput.angle ?? 40,
       isAngleAdjustable: validatedInput.isAngleAdjustable ?? true,
+      hasLeds: validatedInput.hasLeds ?? true,
       serialNumber: validatedInput.serialNumber ?? null,
       timerName: validatedInput.timerName ?? null,
     };
@@ -2307,6 +2311,7 @@ export const socialBoardMutations = {
     if (validatedInput.angle !== undefined) updateValues.angle = validatedInput.angle;
     if (validatedInput.isAngleAdjustable !== undefined)
       updateValues.isAngleAdjustable = validatedInput.isAngleAdjustable;
+    if (validatedInput.hasLeds !== undefined) updateValues.hasLeds = validatedInput.hasLeds;
     if (validatedInput.serialNumber !== undefined) updateValues.serialNumber = validatedInput.serialNumber;
     if (validatedInput.timerName !== undefined) updateValues.timerName = validatedInput.timerName;
 

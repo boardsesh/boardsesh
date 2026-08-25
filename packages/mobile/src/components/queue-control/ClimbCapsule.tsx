@@ -86,7 +86,7 @@ export function ClimbCapsule({
   const { openGesture, currentItem } = useAccessoryClimbTap();
   // Connection state drives the leading control + the "you have control" glow.
   // Read from the single source so the bar can't disagree with the drawer bulb.
-  const { boardConnection, bluetooth } = useBoardConnectionState();
+  const { inAppBoardConnection, bluetooth } = useBoardConnectionState();
 
   // Queue head only — the wall's lit climb lives in the top "On the wall" strip.
   const currentClimb = currentItem?.climb ?? null;
@@ -95,7 +95,7 @@ export function ClimbCapsule({
   // Show the connect control once a board is bound (the BLE context exists).
   const hasBoardControl = bluetooth != null;
   // Only "you are driving the wall" lights the bar up.
-  const connected = boardConnection === 'connectedByMe';
+  const connected = inAppBoardConnection === 'connectedByMe';
 
   // Boardsesh grade (label + colour) when the toggle is on and a trusted one
   // exists, else the legacy Aurora grade — the same treatment as the list rows.

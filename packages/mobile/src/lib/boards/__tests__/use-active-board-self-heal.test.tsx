@@ -98,6 +98,49 @@ describe('useActiveBoardSelfHeal', () => {
     expect(mocks.clearActiveBoard).not.toHaveBeenCalled();
   });
 
+  // A gym admin turning the light kit off has no other way to reach a climber
+  // already carrying the board — the next foreground is the only moment we look.
+  it('re-persists the snapshot when only hasLeds changed', async () => {
+    mocks.activeBoard = { ...board('lit-uuid'), hasLeds: true };
+    mocks.fetchBoardByUuid.mockResolvedValue({ ...board('lit-uuid'), hasLeds: false });
+
+    renderHook(() => useActiveBoardSelfHeal());
+
+    await waitFor(() => expect(mocks.setActiveBoard).toHaveBeenCalledTimes(1));
+    expect(mocks.setActiveBoard.mock.calls[0][0].uuid).toBe('lit-uuid');
+    expect(mocks.setActiveBoard.mock.calls[0][0].hasLeds).toBe(false);
+    expect(mocks.clearActiveBoard).not.toHaveBeenCalled();
+  });
+
+  // `activeBoard` is not a dep of the `validate` callback, so comparing against
+  // the closed-over board would measure the render that STARTED the fetch. Here
+  // the board is edited elsewhere while the request is in flight and already
+  // matches what the server returns — a stale comparison would write anyway.
+  it('compares hasLeds against the current board, not the render that started the fetch', async () => {
+    let resolveInFlightBoard: ((resolved: UserBoard) => void) | undefined;
+    mocks.activeBoard = { ...board('raced-uuid'), hasLeds: true };
+    mocks.fetchBoardByUuid.mockImplementationOnce(
+      () =>
+        new Promise<UserBoard>((resolve) => {
+          resolveInFlightBoard = resolve;
+        }),
+    );
+
+    const hook = renderHook(() => useActiveBoardSelfHeal());
+    await waitFor(() => expect(mocks.fetchBoardByUuid).toHaveBeenCalledTimes(1));
+
+    mocks.activeBoard = { ...board('raced-uuid'), hasLeds: false };
+    hook.rerender();
+
+    await act(async () => {
+      resolveInFlightBoard?.({ ...board('raced-uuid'), hasLeds: false });
+      await Promise.resolve();
+    });
+
+    expect(mocks.setActiveBoard).not.toHaveBeenCalled();
+    expect(mocks.clearActiveBoard).not.toHaveBeenCalled();
+  });
+
   it('does nothing when there is no stored active board', () => {
     mocks.activeBoard = null;
     renderHook(() => useActiveBoardSelfHeal());

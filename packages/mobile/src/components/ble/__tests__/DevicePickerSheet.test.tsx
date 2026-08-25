@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
 import type { DiscoveredDevice } from '../../../lib/ble/types';
 
@@ -23,6 +25,16 @@ const locationHint = vi.hoisted(() => ({
   promptEnableLocationServices: vi.fn(async () => true),
   lastActive: null as boolean | null,
 }));
+
+// The Bluetooth context, stubbed at the hook boundary. `takeVirtualWall` is the
+// ONLY thing the no-lights offer is allowed to call — see the source guard at the
+// bottom of this file.
+const bluetooth = vi.hoisted(() => ({
+  context: null as { takeVirtualWall: () => void } | null,
+  takeVirtualWall: vi.fn(),
+}));
+
+const haptics = vi.hoisted(() => ({ hapticSelection: vi.fn() }));
 
 type ViewMockProps = { children?: ReactNode };
 vi.mock('react-native', () => ({
@@ -76,6 +88,14 @@ vi.mock('../../sheet-snap-points', () => ({
 
 vi.mock('../../../lib/ble/picker-resolution-stats', () => ({
   noListedBoardMatchesSelectedType: () => stats.noneMatchedSelectedType,
+}));
+
+vi.mock('../../../providers/bluetooth-provider', () => ({
+  useOptionalBluetoothContext: () => bluetooth.context,
+}));
+
+vi.mock('../../../lib/haptics', () => ({
+  hapticSelection: haptics.hapticSelection,
 }));
 
 vi.mock('../../../lib/ble/use-android-scan-location-hint', () => ({
@@ -146,6 +166,9 @@ describe('DevicePickerSheet', () => {
     locationHint.lastActive = null;
     locationHint.requestLocationPermission.mockClear();
     locationHint.promptEnableLocationServices.mockClear();
+    bluetooth.takeVirtualWall.mockClear();
+    bluetooth.context = { takeVirtualWall: bluetooth.takeVirtualWall };
+    haptics.hapticSelection.mockClear();
   });
 
   it('shows the spinner and hides troubleshoot tips while the initial scan runs', () => {
@@ -280,5 +303,87 @@ describe('DevicePickerSheet', () => {
 
     expect(hasText(container, 'ble.locationHintTitle')).toBe(true);
     expect(hasText(container, 'ble.locationServicesHintTitle')).toBe(false);
+  });
+
+  describe('the "this wall has no lights" offer', () => {
+    it('appears once the scan has genuinely finished with zero devices', () => {
+      const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: false, devices: [] })} />);
+      expect(hasText(container, 'ble.noLedsBody')).toBe(true);
+      expect(container.querySelector('[data-button="ble.noLedsCta"]')).not.toBeNull();
+    });
+
+    it('stays hidden while the initial scan is still running', () => {
+      const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: true, devices: [] })} />);
+      expect(container.querySelector('[data-button="ble.noLedsCta"]')).toBeNull();
+    });
+
+    it('stays hidden when boards were found but none match the selected type', () => {
+      // Boards ARE in the room, so there is LED hardware nearby — offering "this
+      // wall has no lights" here would be flatly wrong.
+      stats.noneMatchedSelectedType = true;
+      const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: false, devices: [device('a')] })} />);
+      expect(hasText(container, 'ble.troubleshootTitle')).toBe(true);
+      expect(container.querySelector('[data-button="ble.noLedsCta"]')).toBeNull();
+    });
+
+    it('stays hidden behind the Android location-permission hint', () => {
+      // The OS is withholding scan results — the board's light kit is not the
+      // question yet.
+      locationHint.shouldOfferLocationGrant = true;
+      const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: false, devices: [] })} />);
+      expect(container.querySelector('[data-button="ble.noLedsCta"]')).toBeNull();
+    });
+
+    it('stays hidden behind the Android location-services hint', () => {
+      locationHint.shouldOfferLocationServicesEnable = true;
+      const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: false, devices: [] })} />);
+      expect(container.querySelector('[data-button="ble.noLedsCta"]')).toBeNull();
+    });
+
+    it('stays hidden when no Bluetooth context is mounted (nothing to take the wall with)', () => {
+      bluetooth.context = null;
+      const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: false, devices: [] })} />);
+      expect(container.querySelector('[data-button="ble.noLedsCta"]')).toBeNull();
+    });
+
+    it('dismisses the sheet FIRST, then takes the wall once the dismissal has settled', () => {
+      // The picker is a native modal sheet and the "You've got the wall" toast is
+      // a root-level JS view, so it renders behind it. Taking the wall before the
+      // sheet is gone means the user never sees the confirmation.
+      vi.useFakeTimers();
+      try {
+        const props = makeProps({ isScanning: false, devices: [] });
+        const { container } = render(<DevicePickerSheet {...props} />);
+        const cta = container.querySelector('[data-button="ble.noLedsCta"]') as HTMLButtonElement;
+
+        act(() => cta.click());
+        expect(haptics.hapticSelection).toHaveBeenCalledTimes(1);
+        expect(props.onDismiss).toHaveBeenCalledTimes(1);
+        expect(bluetooth.takeVirtualWall).not.toHaveBeenCalled();
+
+        act(() => void vi.runAllTimers());
+        expect(bluetooth.takeVirtualWall).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('takes the wall SESSION-LOCALLY and never writes the board record', () => {
+      // Blocking safety constraint from the Bluetooth review: an empty scan is
+      // weak evidence (box powered off, out of range, the Android RN 0.86 scan
+      // regression). Persisting `hasLeds: false` here would strip the Bluetooth
+      // connect affordance from every climber at that gym. The server flag is set
+      // only through the board edit form.
+      const source = readFileSync(join(__dirname, '../DevicePickerSheet.tsx'), 'utf8');
+
+      // No GraphQL / board-record module reaches this sheet at all.
+      const importLines = source.match(/^import[\s\S]*?;$/gm)?.join('\n') ?? '';
+      expect(importLines).not.toMatch(/graphql|mutation|use-active-board/i);
+
+      // And nothing in the code itself (comments stripped, since they discuss
+      // the flag by name) touches the server flag or a board write.
+      const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+      expect(code).not.toMatch(/hasLeds|updateBoard|setActiveBoard/i);
+    });
   });
 });

@@ -38,6 +38,7 @@ type EditBoardFormValues = {
   isOwned: boolean;
   angle?: number;
   isAngleAdjustable?: boolean;
+  hasLeds?: boolean;
   layoutId?: number;
   sizeId?: number;
   setIds?: string;
@@ -148,6 +149,7 @@ export default function EditBoardForm({ board, onSuccess, onCancel, formId, onSu
             isOwned: values.isOwned,
             angle: values.angle,
             isAngleAdjustable: values.isAngleAdjustable,
+            hasLeds: values.hasLeds,
             ...(configEditable
               ? {
                   layoutId: values.layoutId,
@@ -210,6 +212,7 @@ export default function EditBoardForm({ board, onSuccess, onCancel, formId, onSu
           isOwned: board.isOwned,
           angle: board.angle,
           isAngleAdjustable: board.isAngleAdjustable,
+          hasLeds: board.hasLeds,
           layoutId: board.layoutId,
           sizeId: board.sizeId,
           setIds: board.setIds,

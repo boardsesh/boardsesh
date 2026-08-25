@@ -25,6 +25,11 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const bluetooth = useOptionalBluetoothContext();
+  // Optional-field contract: only an explicit `hasLeds: false` reaches the
+  // context as `ledless`, so a missing/stale flag keeps every Bluetooth
+  // affordance exactly as it is today.
+  const ledless = bluetooth?.ledless ?? false;
+  const takeVirtualWall = bluetooth?.takeVirtualWall;
 
   const {
     isPreviewing,
@@ -57,6 +62,13 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
     },
     [],
   );
+
+  // Deliberately NOT wrapped in `withHaptic`: taking the wall is a state change,
+  // not a selection, and `takeVirtualWall` fires its own hapticLight alongside
+  // the "You've got the wall" toast. Wrapping it would buzz twice.
+  const handleTakeWall = useCallback(() => {
+    takeVirtualWall?.();
+  }, [takeVirtualWall]);
 
   // Live/idle: only backward navigation is meaningful (nothing is newer than the
   // live wall), so show a single labeled "Browse history" affordance — not a row of
@@ -142,13 +154,23 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
     </Pressable>
   );
 
+  // On a wall with no lights nothing is lit — the climb goes UP on the wall, so
+  // the confirm reads "Put <name> up" / "Putting it up…" instead of "Light this".
+  const relightLabel = ledless
+    ? t('mobile.boardPresence.kiosk.putUpThis', { name: previewName })
+    : t('mobile.boardPresence.kiosk.lightThis', { name: previewName });
+  const inFlightLabel = ledless ? t('mobile.boardPresence.kiosk.puttingUp') : t('mobile.boardPresence.kiosk.lighting');
+
   const confirmSlot = !isPreviewing ? null : pendingOverride ? (
     <View style={styles.overrideBox}>
       <Text variant="footnote" color={systemColors.label} style={styles.overrideBody}>
         {t('mobile.boardPresence.kiosk.confirmOverrideBody', { name: liveClimb?.name ?? '' })}
       </Text>
       <View style={styles.overrideActions}>
-        <Pressable onPress={withHaptic(cancelOverride)} style={styles.secondaryBtn}>
+        <Pressable
+          onPress={withHaptic(cancelOverride)}
+          style={[styles.secondaryBtn, { borderColor: systemColors.separator }]}
+        >
           <Text variant="footnote" color={systemColors.label}>
             {t('mobile.boardPresence.kiosk.confirmOverrideCancel')}
           </Text>
@@ -186,6 +208,32 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
         {t('mobile.boardPresence.kiosk.notDriverChip', { name: previewName })}
       </Text>
     </Pressable>
+  ) : lightBlockedReason === 'no-leds-not-held' ? (
+    // Wall with no light kit: there is no Bluetooth link to offer, so the way to
+    // put a climb up is to take the wall. Session-local — nothing is written to
+    // the board record here.
+    <Pressable
+      onPress={handleTakeWall}
+      disabled={!takeVirtualWall}
+      style={({ pressed }) => [
+        styles.filledButton,
+        { backgroundColor: systemColors.fill },
+        pressed && styles.pressed,
+        !takeVirtualWall && styles.disabled,
+      ]}
+    >
+      <Icon name="pin" size={20} color={systemColors.label} />
+      <Text
+        variant="callout"
+        color={systemColors.label}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.75}
+        style={styles.bold}
+      >
+        {t('mobile.boardPresence.kiosk.noLedsNotHeldChip', { name: previewName })}
+      </Text>
+    </Pressable>
   ) : lightBlockedReason === 'no-frames' ? (
     <View style={styles.blockedChip}>
       <Text variant="footnote" color={systemColors.secondaryLabel}>
@@ -216,11 +264,7 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
         minimumFontScale={0.75}
         style={styles.bold}
       >
-        {isLighting
-          ? t('mobile.boardPresence.kiosk.lighting')
-          : lightError
-            ? t('mobile.boardPresence.kiosk.lightFailed')
-            : t('mobile.boardPresence.kiosk.lightThis', { name: previewName })}
+        {isLighting ? inFlightLabel : lightError ? t('mobile.boardPresence.kiosk.lightFailed') : relightLabel}
       </Text>
     </Pressable>
   );
@@ -330,11 +374,16 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[2],
     borderRadius: borderRadius.full,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(128,128,128,0.4)',
+    // 8dp of padding around footnote text is ~34dp of touch target — under the
+    // 44dp floor. Pin the height and centre the label inside it.
+    minHeight: 44,
+    justifyContent: 'center',
   },
   primaryBtn: {
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[2],
     borderRadius: borderRadius.full,
+    minHeight: 44,
+    justifyContent: 'center',
   },
 });

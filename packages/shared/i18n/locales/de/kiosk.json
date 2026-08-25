@@ -18,8 +18,8 @@
   },
   "board": {
     "wallsOpen": "Wand ist frei",
-    "lastLit": "Zuletzt beleuchtet: {{name}}",
-    "litBy": "beleuchtet von {{name}}",
+    "lastLit": "Zuletzt an der Wand: {{name}}",
+    "litBy": "Auswahl von {{name}}",
     "unnamedClimb": "Boulder ohne Namen"
   },
   "installQr": {

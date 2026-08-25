@@ -51,6 +51,8 @@ const bt = vi.hoisted(() => ({
 
 const boardState = vi.hoisted(() => ({
   boardConnection: 'connectedByMe' as 'connectedByMe' | 'heldByPeer' | 'disconnected',
+  inAppBoardConnection: 'connectedByMe' as 'connectedByMe' | 'heldByPeer' | 'disconnected',
+  ledless: false,
   holderDisplayName: null as string | null,
   hasBluetooth: true,
 }));
@@ -105,7 +107,15 @@ vi.mock('../../../components/ble/use-board-connection-state', () => ({
     pending: false,
     sessionId: queue.sessionId,
     boardConnection: boardState.boardConnection,
-    lit: boardState.boardConnection !== 'disconnected',
+    // Deliberately divergent from `boardConnection`: on a wall with no LED light
+    // kit the in-app surfaces read a virtual hold as "you're driving" while the
+    // BLE-only value stays disconnected. The bridge must read the BLE-only one.
+    inAppBoardConnection: boardState.ledless ? boardState.inAppBoardConnection : boardState.boardConnection,
+    ledless: boardState.ledless,
+    wallHeldLocally: boardState.ledless && boardState.inAppBoardConnection === 'connectedByMe',
+    wallHeldByOtherUser: false,
+    canDriveWall: boardState.boardConnection === 'connectedByMe' || boardState.ledless,
+    lit: (boardState.ledless ? boardState.inAppBoardConnection : boardState.boardConnection) !== 'disconnected',
     holderDisplayName: boardState.holderDisplayName,
   }),
 }));
@@ -162,6 +172,8 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
     widget.boardControlListener = null;
     widget.useLiveActivity.mockClear();
     boardState.boardConnection = 'connectedByMe';
+    boardState.inAppBoardConnection = 'connectedByMe';
+    boardState.ledless = false;
     boardState.holderDisplayName = null;
     boardState.hasBluetooth = true;
     bt.connect.mockClear();
@@ -495,6 +507,26 @@ describe('LiveActivityBridge notification thumbnail board', () => {
 
     expect(climbRender.useNativeClimbRender).toHaveBeenCalledWith(
       expect.objectContaining({ boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2' }),
+    );
+  });
+});
+
+describe('LiveActivityBridge on a wall with no LED light kit', () => {
+  it('keeps the lock screen dark and Prev/Next hidden under a virtual hold', () => {
+    // The lock-screen bulb and both native iOS intents act by writing the radio.
+    // A hold with no radio behind it must not light them or arm widget
+    // navigation — which is exactly why the bridge reads the BLE-only value and
+    // no Swift change was needed for this feature.
+    boardState.ledless = true;
+    boardState.boardConnection = 'disconnected';
+    boardState.inAppBoardConnection = 'connectedByMe';
+    renderBridge();
+
+    expect(widget.useLiveActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        boardConnection: 'disconnected',
+        widgetNavigationAllowed: false,
+      }),
     );
   });
 });

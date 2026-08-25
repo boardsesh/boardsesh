@@ -21,6 +21,18 @@ type BoardControlIndicatorVisualInput = {
   peerColor: string | OpaqueColorValue;
   /** Neutral tone for "tap to connect" (systemColors.secondaryLabel). */
   disconnectedColor: string | OpaqueColorValue;
+  /**
+   * The board has no LED light kit. A filled lightbulb with a warm halo on a
+   * wall that has no bulbs is a false statement, so the held/open states switch
+   * to a pin — shape-distinct from both the bulb and the person glyph.
+   */
+  ledless?: boolean;
+  /**
+   * Tone for "you have the wall" on a board with no lights (brandColors.primary).
+   * Deliberately NOT the warm `connectedColor`: amber means the LEDs are on, and
+   * it must stay exclusive to a real write.
+   */
+  wallHeldColor?: string;
 };
 
 /**
@@ -35,7 +47,23 @@ export function getBoardControlIndicatorVisual({
   connectedColor,
   peerColor,
   disconnectedColor,
+  ledless = false,
+  wallHeldColor,
 }: BoardControlIndicatorVisualInput): BoardControlIndicatorVisual {
+  if (ledless) {
+    switch (boardConnection) {
+      case 'connectedByMe': {
+        // "You have the wall" — a pin, in the brand tone, never the lit-LED amber.
+        const heldColor = wallHeldColor ?? connectedColor;
+        return { iconName: 'pin.fill', iconColor: heldColor, haloColor: `${heldColor}24` };
+      }
+      case 'heldByPeer':
+        return { iconName: 'person.fill', iconColor: peerColor };
+      case 'disconnected':
+        // The wall is open — tap to take it.
+        return { iconName: 'pin', iconColor: disconnectedColor };
+    }
+  }
   switch (boardConnection) {
     case 'connectedByMe':
       // Warm filled bulb + halo, matching the lightbulb's connected look.

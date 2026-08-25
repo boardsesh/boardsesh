@@ -23,7 +23,7 @@ export function LightbulbToolbarAction() {
   const { t: tCommon } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
   const { open: openControls } = useBleControlSheet();
-  const { bluetooth, lit, localConnected, onPress, onLongPress } = useLightbulbControl({
+  const { bluetooth, lit, localConnected, ledless, wallHeldLocally, onPress, onLongPress } = useLightbulbControl({
     onOpenControls: openControls,
   });
 
@@ -34,6 +34,15 @@ export function LightbulbToolbarAction() {
 
   if (!bluetooth) return null;
 
+  // On a wall with no light kit there is no Bluetooth link to describe, so the
+  // label names the two states that DO exist there: holding the wall or not.
+  let accessibilityLabel: string;
+  if (ledless) {
+    accessibilityLabel = wallHeldLocally ? tSettings('ble.releaseWall') : tSettings('ble.takeWall');
+  } else {
+    accessibilityLabel = localConnected ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard');
+  }
+
   return (
     <GlassToolbarAction
       onPress={handlePress}
@@ -42,7 +51,7 @@ export function LightbulbToolbarAction() {
       onLongPress={localConnected ? onLongPress : undefined}
       // The label reflects what tapping does (keyed on this device's link), not
       // the fill — the bulb can read lit because a peer holds the wall.
-      accessibilityLabel={localConnected ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard')}
+      accessibilityLabel={accessibilityLabel}
     >
       <Icon
         name={lit ? 'lightbulb.fill' : 'lightbulb'}
