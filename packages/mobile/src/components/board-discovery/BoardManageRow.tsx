@@ -19,6 +19,12 @@ const THUMB_SIZE = 56;
 
 type BoardManageRowProps = {
   board: UserBoard;
+  /**
+   * True when the viewer owns this board. Still needed after the edit/delete
+   * affordances moved to the picker's cards: it is what decides whether the
+   * subtitle names the place or the owner.
+   */
+  isOwned: boolean;
   isActive: boolean;
   /**
    * Offline download state for this board's (type, layout, size) scope.
@@ -65,6 +71,7 @@ type BoardManageRowProps = {
  */
 function BoardManageRowComponent({
   board,
+  isOwned,
   isActive,
   downloadState,
   downloadCount,
@@ -96,11 +103,11 @@ function BoardManageRowComponent({
       : { width: THUMB_SIZE * aspect, height: THUMB_SIZE };
   }, [renderData]);
 
-  // Where the board is (or what it is) — the line that tells two Kilters apart.
-  // Deliberately not `ownerDisplayName`: that would subtitle every board the user
-  // owns with the user's own name. Whose board a followed one is comes from the
-  // "Following" group header instead.
-  const subtitle = boardRowSubtitle(board);
+  // Owned: where the board is (or what it is) tells one of your walls apart.
+  // Followed: whose board it is — the group header only says "Following", it
+  // names nobody, and the picker's cards never show an owner either, so this is
+  // the one place in the app that answers "whose board is this".
+  const subtitle = isOwned ? boardRowSubtitle(board) : (board.ownerDisplayName ?? boardRowSubtitle(board));
 
   // Live bootstrap always wins over persisted history: the engine may retry a
   // scope whose previous run selected a paged fallback, and showing both would

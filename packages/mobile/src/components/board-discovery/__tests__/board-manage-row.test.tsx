@@ -120,6 +120,7 @@ const board = {
 
 const rowProps = {
   board,
+  isOwned: true,
   isActive: false,
   onToggleOffline: vi.fn(),
 };
@@ -384,14 +385,33 @@ describe('BoardManageRow subtitle', () => {
     expect(queryByText('Original 12×12 with kickboard')).not.toBeNull();
   });
 
-  // Regression pin (#4623, step 6): the row used to fall back to `ownerDisplayName`
-  // on a board the user does not own, which subtitled every board the user DOES own
-  // with the user's own display name. The subtitle is now always boardRowSubtitle —
-  // whose board a followed one is comes from the "Following" group header instead.
-  it('never subtitles a board with its owner, even when the wire carries one', () => {
+  // This is the ONLY place in the app that answers "whose board is this": the
+  // group header is a static "Following" that names nobody, and the picker's
+  // cards have never shown an owner. Losing it would make two same-titled gym
+  // boards indistinguishable.
+  it('shows the owner on a followed board', () => {
+    const followed = { ...board, ownerDisplayName: 'Marco' } as unknown as UserBoard;
+    const { queryByText } = render(
+      <BoardManageRow {...rowProps} board={followed} isOwned={false} downloadState={undefined} />,
+    );
+    expect(queryByText('Marco')).not.toBeNull();
+  });
+
+  // The other half of the same branch: the owner fallback must never fire on a
+  // board the viewer owns, or every one of their walls reads as their own name.
+  it('never subtitles a board the viewer owns with their own name', () => {
     const withOwner = { ...board, ownerDisplayName: 'Marco' } as unknown as UserBoard;
     const { queryByText } = render(<BoardManageRow {...rowProps} board={withOwner} downloadState={undefined} />);
     expect(queryByText('Marco')).toBeNull();
+    expect(queryByText('Original 12×12 with kickboard')).not.toBeNull();
+  });
+
+  // A followed board whose wire row carries no owner still needs a subtitle.
+  it('falls back to what a followed board is when it has no owner name', () => {
+    const anonymous = { ...board, ownerDisplayName: null } as unknown as UserBoard;
+    const { queryByText } = render(
+      <BoardManageRow {...rowProps} board={anonymous} isOwned={false} downloadState={undefined} />,
+    );
     expect(queryByText('Original 12×12 with kickboard')).not.toBeNull();
   });
 });

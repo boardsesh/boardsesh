@@ -467,6 +467,7 @@ export default function ManageBoards() {
       return (
         <BoardManageRow
           board={item.board}
+          isOwned={item.isOwned}
           isActive={item.isActive}
           downloadState={downloadState}
           downloadCount={downloadCount}

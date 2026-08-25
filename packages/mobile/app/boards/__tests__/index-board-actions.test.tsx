@@ -342,11 +342,28 @@ describe('the Edit / Done control', () => {
     expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
   });
 
+  // The gate covers the per-card slot too, not just the toggle. Gating only the
+  // toggle would have left a followed board's glyph live during onboarding — and
+  // for as long as that glyph was a Pressable, that was a one-tap unfollow.
+  it('takes the per-card action slot with it, not just the toggle', () => {
+    state.source = 'onboarding';
+    render(createElement(BoardSelection));
+
+    expect(carouselProps.last?.actionFor).toBeUndefined();
+    expect(carouselProps.last?.onAction).toBeUndefined();
+    expect(screen.queryByRole('button', { name: 'edit Marco garage' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'unfollow High Point Orlando' })).toBeNull();
+    // Switching boards is the whole point of the onboarding hand-off and must
+    // still work.
+    expect(screen.getByRole('button', { name: 'Marco garage' })).toBeTruthy();
+  });
+
   it('does not render when no identity resolved', () => {
     state.profile = undefined;
     state.storedUserId = undefined;
     render(createElement(BoardSelection));
     expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(carouselProps.last?.actionFor).toBeUndefined();
   });
 
   it('stops a card tap from switching the board while editing', () => {
@@ -493,12 +510,23 @@ describe('identity resolution never blocks the switcher', () => {
     render(createElement(BoardSelection));
 
     expect(carouselProps.last?.items.every((item) => item.isViewerOwner === undefined)).toBe(true);
-    const slot = screen.getByRole('button', { name: 'none Marco garage' });
-    expect(slot).toBeTruthy();
+    // Suppressed at the screen, so no slot reaches a card at all.
+    expect(carouselProps.last?.actionFor).toBeUndefined();
+    expect(carouselProps.last?.onAction).toBeUndefined();
+    expect(screen.queryByRole('button', { name: 'none Marco garage' })).toBeNull();
+  });
 
-    // And if the handler is reached anyway, it must run nothing rather than
-    // treat "unknown" as "followed".
-    fireEvent.click(slot);
+  // Defence in depth, independent of the screen-level gate above: hand the
+  // handler an item whose ownership never resolved and it must run nothing,
+  // rather than let `undefined` collapse into "followed" and unfollow the user's
+  // own wall.
+  it('refuses to act on an item whose ownership did not resolve', async () => {
+    render(createElement(BoardSelection));
+
+    const onAction = carouselProps.last?.onAction;
+    expect(onAction).toBeTypeOf('function');
+    onAction?.({ key: 'mine', title: 'Marco garage' });
+
     await waitFor(() => expect(carouselProps.last?.pendingActionKey).toBeNull());
     expect(unfollowBoardMock).not.toHaveBeenCalled();
     expect(deleteBoardMock).not.toHaveBeenCalled();

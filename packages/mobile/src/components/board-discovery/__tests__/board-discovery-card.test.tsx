@@ -277,13 +277,52 @@ describe('BoardDiscoveryCard ownership action', () => {
     expect(container.querySelector(`[data-icon="${icon}"]`)).not.toBeNull();
   });
 
-  it('renders no slot without an action, and none without a handler', () => {
+  it('renders no slot without an action, and no pencil without a handler', () => {
     const withoutAction = render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn(), onAction: vi.fn() }));
     expect(withoutAction.container.querySelector('[data-icon="edit"]')).toBeNull();
+    expect(withoutAction.container.querySelector('[data-icon="person.check"]')).toBeNull();
     cleanup();
 
     const withoutHandler = render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn(), action: 'edit' }));
     expect(withoutHandler.container.querySelector('[data-icon="edit"]')).toBeNull();
+  });
+
+  // The whole point of B1: a 26pt disc that sits in the same white circle as the
+  // non-interactive download-status badge on the opposite corner must not remove
+  // a board in one unconfirmed tap. Unfollow lives on Edit mode's labelled
+  // button; the resting glyph is status only.
+  it('makes the Following glyph non-interactive — no press target, no button role', () => {
+    const onAction = vi.fn();
+    const { container } = render(
+      createElement(BoardDiscoveryCard, {
+        item,
+        onPress: vi.fn(),
+        action: 'unfollow',
+        onAction,
+        actionLabel: 'Unfollow Tension 8x10',
+      }),
+    );
+    const badge = container.querySelector('[data-icon="person.check"]')!.parentElement!;
+    expect(badge.getAttribute('role')).toBeNull();
+    expect(badge.getAttribute('aria-label')).toBeNull();
+    fireEvent.click(badge);
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  // ...and it publishes no custom action either, or VoiceOver would hand back the
+  // one-tap unfollow the touch surface just gave up.
+  it('publishes no board action for a resting followed board', () => {
+    render(
+      createElement(BoardDiscoveryCard, {
+        item,
+        onPress: vi.fn(),
+        action: 'unfollow',
+        onAction: vi.fn(),
+        actionLabel: 'Unfollow Tension 8x10',
+      }),
+    );
+    const actions = (cardRootProps.last?.accessibilityActions ?? []) as { name: string }[];
+    expect(actions.map((entry) => entry.name)).not.toContain('boardAction');
   });
 
   it('fires onAction and never onPress when the slot is tapped', () => {
@@ -303,18 +342,6 @@ describe('BoardDiscoveryCard ownership action', () => {
     fireEvent.click(badge);
     expect(onAction).toHaveBeenCalledWith(item);
     expect(onPress).not.toHaveBeenCalled();
-  });
-
-  it('swaps the glyph for a spinner and stops firing while a mutation is in flight', () => {
-    const onAction = vi.fn();
-    const { container, getByTestId } = render(
-      createElement(BoardDiscoveryCard, { item, onPress: vi.fn(), action: 'edit', onAction, isActionPending: true }),
-    );
-    expect(container.querySelector('[data-icon="edit"]')).toBeNull();
-    const badge = getByTestId('spinner').parentElement!;
-    expect(badge.getAttribute('aria-disabled')).toBe('true');
-    fireEvent.click(badge);
-    expect(onAction).not.toHaveBeenCalled();
   });
 });
 
@@ -357,6 +384,26 @@ describe('BoardDiscoveryCard edit mode', () => {
     );
     fireEvent.click(getByTestId('edit-action'));
     expect(onAction).toHaveBeenCalledWith(item);
+  });
+
+  it('swaps the footer label for a spinner and stops firing while a mutation is in flight', () => {
+    const onAction = vi.fn();
+    const { container, getByTestId } = render(
+      createElement(BoardDiscoveryCard, {
+        item,
+        onPress: vi.fn(),
+        action: 'delete',
+        onAction,
+        actionTitle: 'Delete',
+        isEditing: true,
+        isActionPending: true,
+      }),
+    );
+    expect(container.querySelector('[data-icon="minus.circle"]')).toBeNull();
+    const footer = getByTestId('edit-action');
+    expect(footer.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(footer);
+    expect(onAction).not.toHaveBeenCalled();
   });
 
   it('stops the card body activating the board', () => {

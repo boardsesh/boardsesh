@@ -16,33 +16,25 @@ const board = (overrides: Partial<UserBoard> & { uuid: string }): UserBoard =>
 
 describe('boardCardAction', () => {
   it('offers a pencil on your own board and Following on one you follow', () => {
-    expect(boardCardAction({ isViewerOwner: true, isEditing: false, readOnly: false })).toBe('edit');
-    expect(boardCardAction({ isViewerOwner: false, isEditing: false, readOnly: false })).toBe('unfollow');
+    expect(boardCardAction({ isViewerOwner: true, isEditing: false })).toBe('edit');
+    expect(boardCardAction({ isViewerOwner: false, isEditing: false })).toBe('unfollow');
   });
 
   it('turns the slot destructive in edit mode', () => {
-    expect(boardCardAction({ isViewerOwner: true, isEditing: true, readOnly: false })).toBe('delete');
+    expect(boardCardAction({ isViewerOwner: true, isEditing: true })).toBe('delete');
   });
 
   // Delete is owner-only server-side, so a followed board must never reach a
   // mutation the backend is going to reject.
   it('never offers delete on a board the viewer does not own, even in edit mode', () => {
-    expect(boardCardAction({ isViewerOwner: false, isEditing: true, readOnly: false })).toBe('unfollow');
-  });
-
-  it.each([
-    [true, true],
-    [true, false],
-    [false, true],
-    [false, false],
-  ])('offers nothing at all when read-only (owner=%s, editing=%s)', (isViewerOwner, isEditing) => {
-    expect(boardCardAction({ isViewerOwner, isEditing, readOnly: true })).toBeNull();
+    expect(boardCardAction({ isViewerOwner: false, isEditing: true })).toBe('unfollow');
   });
 
   // Inside `myBoards` every non-owned board is one you already follow, so a
   // "Follow" resting state is unreachable. The real work here is the suppression
   // below: it fails the typecheck if anyone widens the union. The runtime half
-  // just proves the helper never invents a fourth value.
+  // proves the helper never invents a fourth value — and never returns null,
+  // since suppressing the slot entirely is the caller's job, not this helper's.
   it('only ever returns a member of the three-value union', () => {
     // @ts-expect-error — 'follow' is deliberately not part of BoardCardAction.
     const rejected: BoardCardAction = 'follow';
@@ -51,14 +43,10 @@ describe('boardCardAction', () => {
     const produced = new Set<BoardCardAction>();
     for (const isViewerOwner of [true, false]) {
       for (const isEditing of [true, false]) {
-        for (const readOnly of [true, false]) {
-          produced.add(boardCardAction({ isViewerOwner, isEditing, readOnly }));
-        }
+        produced.add(boardCardAction({ isViewerOwner, isEditing }));
       }
     }
-    expect([...produced].filter((action) => action !== null).sort()).toEqual(['delete', 'edit', 'unfollow']);
-    expect(produced.has(null)).toBe(true);
-    expect(produced.size).toBe(4);
+    expect([...produced].sort()).toEqual(['delete', 'edit', 'unfollow']);
   });
 });
 

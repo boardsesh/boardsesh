@@ -69,9 +69,16 @@ export const DISCOVERY_CARD_WIDTH = 168;
  */
 const TITLE_LINES = 2;
 
-/** Corner badge diameter, and the hitSlop that lifts it to the 44pt tap floor. */
+/**
+ * Corner badge diameter, and the hitSlop that lifts it to the 44pt tap floor.
+ * The inset matches the hitSlop on purpose: Android clips a child's hitSlop to
+ * its parent's bounds, and these discs live inside `thumb` (which has
+ * `overflow: 'hidden'`), so an 8pt inset would clamp the rect to 43pt. At 9 the
+ * 44pt square starts exactly on the thumb's edge and survives on both platforms.
+ */
 const CORNER_BADGE_SIZE = 26;
 const CORNER_BADGE_HIT_SLOP = 9;
+const CORNER_BADGE_INSET = CORNER_BADGE_HIT_SLOP;
 
 /** Custom accessibility action names for the card's nested buttons. */
 const BOARD_ACTION_NAME = 'boardAction';
@@ -161,17 +168,20 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
     borderWidth: item.isActive ? 2 : StyleSheet.hairlineWidth,
   };
 
-  // Resting: a pencil on your own board, a person-with-check on one you follow.
-  // Edit mode swaps the badge for the labelled footer button, so the two never
-  // co-exist and the destructive control is never a bare corner glyph.
-  const showActionBadge = !isEditing && (action === 'edit' || action === 'unfollow') && onAction !== undefined;
+  // Resting, a pencil on your own board: a navigation, safe to fire from a corner
+  // glyph. Resting, a board you follow gets a NON-INTERACTIVE person-with-check —
+  // unfollow is destructive and unconfirmed, and a 26pt disc that reads like the
+  // download-status badge on the opposite corner must never remove a board in one
+  // tap. Unfollowing lives on Edit mode's labelled footer button instead, so the
+  // resting surface carries no destructive control at all.
+  const showEditBadge = !isEditing && action === 'edit' && onAction !== undefined;
+  const showFollowingBadge = !isEditing && action === 'unfollow';
   const showEditAction = isEditing && (action === 'delete' || action === 'unfollow') && onAction !== undefined;
   const canDownload = item.offlineState === 'off' && onDownload !== undefined;
 
   const handleAction = useCallback(() => {
-    if (isActionPending) return;
     onAction?.(item);
-  }, [isActionPending, onAction, item]);
+  }, [onAction, item]);
 
   const handleEditAction = useCallback(() => {
     if (isActionPending) return;
@@ -194,7 +204,8 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
   // nested button as a labelled custom action instead — the same shape
   // ClimbListRow uses for its ⋮ button. Keyed on the resolved label strings,
   // never on `t`, whose identity churns on plenty of renders.
-  const hasBoardAction = showActionBadge || showEditAction;
+  // The following indicator is status, not an action, so it publishes nothing.
+  const hasBoardAction = showEditBadge || showEditAction;
   const accessibilityActions = useMemo(() => {
     const nested: AccessibilityActionInfo[] = [];
     if (hasBoardAction && actionLabel !== undefined) nested.push({ name: BOARD_ACTION_NAME, label: actionLabel });
@@ -296,21 +307,22 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
           </Pressable>
         ) : null}
 
-        {showActionBadge ? (
+        {showEditBadge ? (
           <Pressable
             onPress={handleAction}
-            disabled={isActionPending}
             accessibilityRole="button"
             accessibilityLabel={actionLabel}
             style={styles.actionBadge}
             hitSlop={CORNER_BADGE_HIT_SLOP}
           >
-            {isActionPending ? (
-              <ActivityIndicator size="small" color={brandColors.primaryFill} />
-            ) : (
-              <Icon name={action === 'edit' ? 'edit' : 'person.check'} size={15} color={brandColors.primaryFill} />
-            )}
+            <Icon name="edit" size={15} color={brandColors.primaryFill} />
           </Pressable>
+        ) : showFollowingBadge ? (
+          // No press target and no accessibility props of its own: the composed
+          // card label already announces "Following".
+          <View style={styles.actionBadge}>
+            <Icon name="person.check" size={15} color={brandColors.primaryFill} />
+          </View>
         ) : null}
 
         {/* "This is the board you're on" is the most important state on the card,
@@ -394,7 +406,7 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
 // circles and two pills — never four circles, never a destructive one.
 const cornerBadge = {
   position: 'absolute',
-  top: spacing[2],
+  top: CORNER_BADGE_INSET,
   width: CORNER_BADGE_SIZE,
   height: CORNER_BADGE_SIZE,
   borderRadius: borderRadius.full,
@@ -443,11 +455,11 @@ const styles = StyleSheet.create({
   },
   offlineBadge: {
     ...cornerBadge,
-    left: spacing[2],
+    left: CORNER_BADGE_INSET,
   },
   actionBadge: {
     ...cornerBadge,
-    right: spacing[2],
+    right: CORNER_BADGE_INSET,
   },
   activeBadge: {
     ...overlayPill,
@@ -473,5 +485,9 @@ const styles = StyleSheet.create({
   },
   editActionLabel: {
     fontWeight: '600',
+    // RN row children default to flexShrink: 0, so a label wider than the box
+    // overflows instead of ellipsising. German "Nicht mehr folgen" runs ~158dp at
+    // the 1.2 cap against 148dp of usable width.
+    flexShrink: 1,
   },
 });

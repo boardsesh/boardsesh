@@ -319,7 +319,7 @@ export default function BoardSelection() {
     (item: DiscoveryBoardItem): BoardCardAction =>
       item.isViewerOwner === undefined
         ? null
-        : boardCardAction({ isViewerOwner: item.isViewerOwner, isEditing: isEditingBoards, readOnly: false }),
+        : boardCardAction({ isViewerOwner: item.isViewerOwner, isEditing: isEditingBoards }),
     [isEditingBoards],
   );
   const myBoardActionLabelFor = useCallback(
@@ -353,11 +353,7 @@ export default function BoardSelection() {
       // no slot at all — but bail explicitly rather than let a coercion collapse
       // "unknown" into "followed" and offer to unfollow the user's own wall.
       if (item.isViewerOwner === undefined) return;
-      const action = boardCardAction({
-        isViewerOwner: item.isViewerOwner,
-        isEditing: isEditingBoards,
-        readOnly: false,
-      });
+      const action = boardCardAction({ isViewerOwner: item.isViewerOwner, isEditing: isEditingBoards });
       if (action === 'edit') {
         router.push({ pathname: '/boards/edit', params: { boardUuid: board.uuid } });
         return;
@@ -445,9 +441,12 @@ export default function BoardSelection() {
       ? (unfollowBoard.variables ?? null)
       : null;
 
-  // Hidden during onboarding (the first screen a new account ever sees), with no
-  // boards, with no resolvable identity, and offline — where every action behind
-  // it is a network mutation.
+  // Gates the Edit/Done toggle AND the whole per-card action slot. Onboarding is
+  // the reason the two share a predicate: the first screen a new account ever
+  // sees must not carry a board action of any kind, and gating only the toggle
+  // would have left the followed-board glyph live there. Also off with no boards,
+  // with no resolvable identity, and offline — where every action behind it is a
+  // network mutation.
   const canEditBoards = myBoardItems.length > 0 && currentUserId !== undefined && !isLocalOnly && !fromOnboarding;
   useEffect(() => {
     if (isEditingBoards && !canEditBoards) setIsEditingBoards(false);
@@ -495,9 +494,9 @@ export default function BoardSelection() {
           onSelect={onSelectMyBoardCard}
           onDownload={offlineDownloadsEnabled ? onDownloadMyBoard : undefined}
           downloadLabelFor={downloadLabelFor}
-          actionFor={myBoardActionFor}
+          actionFor={canEditBoards ? myBoardActionFor : undefined}
           actionLabelFor={myBoardActionLabelFor}
-          onAction={onMyBoardAction}
+          onAction={canEditBoards ? onMyBoardAction : undefined}
           deleteActionTitle={t('mobile.manage.deleteConfirm')}
           unfollowActionTitle={t('mobile.manage.unfollowConfirm')}
           isEditing={isEditingBoards}
