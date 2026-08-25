@@ -10,6 +10,7 @@ import {
   SPIKE_PALETTE_LABEL,
   SPIKE_TREATMENTS,
   type SpikeBackgroundKey,
+  type SpikeOverride,
   type SpikePaletteKey,
 } from '../src/components/board-spike/spike-config';
 import { Text } from '../src/components/Text';
@@ -60,6 +61,7 @@ export default function BoardSpikeScreen() {
   const [palette, setPalette] = useState<SpikePaletteKey>('shipped');
   const [desaturate, setDesaturate] = useState(false);
   const [smooth, setSmooth] = useState(true);
+  const [halosOverride, setHalosOverride] = useState<SpikeOverride>('auto');
 
   const board = SPIKE_BOARDS[boardIndex];
   const treatment = SPIKE_TREATMENTS[treatmentIndex];
@@ -89,6 +91,7 @@ export default function BoardSpikeScreen() {
           palette={palette}
           desaturate={desaturate}
           smooth={smooth}
+          halosOverride={halosOverride}
         />
 
         <View style={[styles.controls, { paddingBottom: insets.bottom + spacing[2] }]}>
@@ -97,6 +100,13 @@ export default function BoardSpikeScreen() {
             <SpikeChip label="Next  ▶" selected onPress={() => step(1)} />
             <SpikeChip label="Desat" selected={desaturate} onPress={() => setDesaturate((on) => !on)} />
             <SpikeChip label="Smooth" selected={smooth} onPress={() => setSmooth((on) => !on)} />
+            <SpikeChip
+              label={`Halos: ${halosOverride}`}
+              selected={halosOverride !== 'auto'}
+              onPress={() =>
+                setHalosOverride((current) => (current === 'auto' ? 'on' : current === 'on' ? 'off' : 'auto'))
+              }
+            />
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
             {SPIKE_BOARDS.map((option, index) => (

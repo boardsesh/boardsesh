@@ -93,6 +93,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   const drawsShapeGlow = selector === 'shape-glow' || selector === 'shape-glow-out';
   const outwardOnly = selector === 'shape-glow-out';
   const drawsTint = selector === 'tint';
+  const drawsTracedRing = selector === 'traced-ring';
   const drawsShape = selector === 'shape' || selector === 'glow-shape';
   const outlineWidth = selector === 'glow-shape' ? SPIKE_TUNING.strokeWidth * 0.7 : SPIKE_TUNING.strokeWidth;
 
@@ -198,7 +199,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
             />
           ))}
 
-        {(drawsShapeGlow || drawsTint) &&
+        {(drawsShapeGlow || drawsTint || drawsTracedRing) &&
           litHolds.map((hold) => {
             const color = colors[hold.role] ?? '#FFFFFF';
             const path = outlinePath(hold.id, hold.cx, hold.cy);
@@ -214,6 +215,18 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                   fill="none"
                   stroke={color}
                   strokeWidth={SPIKE_TUNING.strokeWidth}
+                />
+              );
+            }
+            if (drawsTracedRing) {
+              return (
+                <Path
+                  key={`sel-${hold.id}`}
+                  d={path}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={SPIKE_TUNING.strokeWidth}
+                  strokeLinejoin="round"
                 />
               );
             }
@@ -254,6 +267,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
 
         {!drawsShapeGlow &&
           !drawsTint &&
+          !drawsTracedRing &&
           litHolds.map((hold) => {
             const color = colors[hold.role] ?? '#FFFFFF';
             if (!drawsShape) {

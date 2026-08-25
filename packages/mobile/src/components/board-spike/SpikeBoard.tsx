@@ -8,8 +8,8 @@ import { SPIKE_OKLAB_ART, type SpikeArtLevel } from './spike-art';
 import { SpikeBoardOverlay } from './SpikeBoardOverlay';
 import { SPIKE_HOLD_OUTLINES } from './spike-hold-outlines';
 import { polygonPath, splinePath } from './spike-shapes';
-import { synthesiseSpikeFrames, type SpikeBoardConfig } from './spike-boards';
-import type { SpikeLitHold, SpikePaletteKey, SpikeTreatment } from './spike-config';
+import { boardWantsNeutralHalos, synthesiseSpikeFrames, type SpikeBoardConfig } from './spike-boards';
+import type { HaloScope, SpikeLitHold, SpikeOverride, SpikePaletteKey, SpikeTreatment } from './spike-config';
 
 type SpikeBoardProps = {
   board: SpikeBoardConfig;
@@ -21,7 +21,23 @@ type SpikeBoardProps = {
   desaturate: boolean;
   /** Curve the traced outlines instead of joining their points straight. */
   smooth: boolean;
+  /** Force the every-hold neutral outline on or off, or leave it to the board. */
+  halosOverride: SpikeOverride;
 };
+
+/**
+ * Whether this board, under this treatment, draws the neutral outline on unlit
+ * holds. A treatment with `haloPolicy: 'never'` is defined without it and is
+ * never given one; everything else defers to the board's measured share of
+ * low-contrast holds unless the override says otherwise.
+ */
+function resolveHalos(treatment: SpikeTreatment, board: SpikeBoardConfig, override: SpikeOverride): HaloScope {
+  if ((treatment.haloPolicy ?? 'never') === 'never') return treatment.halos;
+  if (override === 'on') return treatment.halos === 'near' ? 'near' : 'all';
+  if (override === 'off') return 'none';
+  if (treatment.halos === 'near') return 'near';
+  return boardWantsNeutralHalos(board) ? 'all' : 'none';
+}
 
 /**
  * The spike's board surface: a solid play field, the board-art layers over it,
@@ -38,7 +54,16 @@ type SpikeBoardProps = {
  * Deliberately does NOT go through BoardImageNative / the Rust renderer: the
  * point is to try overlays the renderer cannot draw yet.
  */
-export function SpikeBoard({ board, treatment, art, backgroundColor, palette, desaturate, smooth }: SpikeBoardProps) {
+export function SpikeBoard({
+  board,
+  treatment,
+  art,
+  backgroundColor,
+  palette,
+  desaturate,
+  smooth,
+  halosOverride,
+}: SpikeBoardProps) {
   const renderData = useMemo(
     () =>
       getBoardRenderData({
@@ -154,7 +179,7 @@ export function SpikeBoard({ board, treatment, art, backgroundColor, palette, de
         boardHeight={boardHeight}
         placements={renderData.holdsData}
         litHolds={litHolds}
-        halos={treatment.halos}
+        halos={resolveHalos(treatment, board, halosOverride)}
         haloShape={treatment.haloShape ?? 'circle'}
         selector={treatment.selector}
         palette={palette}

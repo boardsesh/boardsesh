@@ -13,6 +13,9 @@ export type HaloScope = 'none' | 'all' | 'near';
  */
 export type HaloShape = 'circle' | 'outline';
 
+/** Three-state control: follow the per-board measurement, or force it either way. */
+export type SpikeOverride = 'auto' | 'on' | 'off';
+
 /** How a lit hold is marked. */
 export type SelectorStyle =
   | 'ring'
@@ -22,7 +25,19 @@ export type SelectorStyle =
   | 'casing'
   | 'shape-glow'
   | 'shape-glow-out'
+  | 'traced-ring'
   | 'tint';
+
+/**
+ * Whether a treatment ever draws the neutral outline on UNLIT holds.
+ *
+ * `never` means the treatment is defined without it (the baseline, and the plain
+ * traced outline). `auto` means it participates in the per-board decision in
+ * `spike-boards.ts` — on for the boards whose holds actually vanish into the
+ * field, off for the ones where every hold already contrasts. Review on Kilter
+ * was blunt about this: an outline on 500 holds that already read is just noise.
+ */
+export type HaloPolicy = 'never' | 'auto';
 
 export type SpikeTreatment = {
   key: string;
@@ -32,6 +47,8 @@ export type SpikeTreatment = {
   /** One line on what this treatment is testing, shown under the board. */
   note: string;
   halos: HaloScope;
+  /** Defaults to `never` when absent. */
+  haloPolicy?: HaloPolicy;
   /** Defaults to `circle` when absent. */
   haloShape?: HaloShape;
   selector: SelectorStyle;
@@ -45,6 +62,15 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
     note: 'What ships today: stroke-only role rings, no outline on unlit holds.',
     halos: 'none',
     selector: 'ring',
+  },
+  {
+    key: 'traced-ring',
+    chip: 'Outline',
+    label: 'Traced outline',
+    note: "The lit hold's own silhouette in its role colour — no glow, no fill, nothing on unlit holds.",
+    halos: 'none',
+    haloShape: 'outline',
+    selector: 'traced-ring',
   },
   {
     key: 'piece-halos',
@@ -80,6 +106,7 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
   },
   {
     key: 'shaped-halos',
+    haloPolicy: 'auto',
     chip: 'Traced',
     label: 'Traced halos',
     note: "The neutral outline follows each hold's real silhouette instead of a fixed circle.",
@@ -89,6 +116,7 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
   },
   {
     key: 'shaped-glow',
+    haloPolicy: 'auto',
     chip: 'Trace+glow',
     label: 'Traced glow',
     note: 'Lit holds glow along their own outline, so the shape you are hunting for is the lit thing.',
@@ -98,6 +126,7 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
   },
   {
     key: 'outward-glow',
+    haloPolicy: 'auto',
     chip: 'Outward',
     label: 'Outward glow',
     note: 'The glow is clipped to outside the hold, so the light comes off the edge and the surface stays clean.',
@@ -107,6 +136,7 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
   },
   {
     key: 'hold-tint',
+    haloPolicy: 'auto',
     chip: 'Tint',
     label: 'Whole-hold tint',
     note: 'No ring at all: the lit hold itself takes the role hue, the way an LED behind it would.',

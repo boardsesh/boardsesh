@@ -19,7 +19,34 @@ export type SpikeBoardConfig = {
   layoutId: number;
   sizeId: number;
   setIds: number[];
+  /**
+   * Share of this board's holds whose art sits within 0.18 OkLab lightness of the
+   * play field (`#181225`, L 0.200), measured in the annulus a selector ring is
+   * drawn in — see `scripts/spike-hold-lightness.ts`. This is the number that
+   * decides whether a neutral outline on every hold is worth its clutter: it is
+   * the proportion of holds that genuinely disappear into the background.
+   */
+  lowContrastHoldShare: number;
 };
+
+/**
+ * Above this share of low-contrast holds, the every-hold neutral outline earns
+ * its cost; below it, it is drawing 500 outlines to fix a problem the board does
+ * not have.
+ *
+ * The measurements split the catalogue cleanly, and not the way the issue
+ * assumed. Both MoonBoards are the worst affected (34.6% and 24.0%) because
+ * their art is drawn for a white wall; Grasshopper — the board the issue was
+ * filed against — is next at 11.6%; Tension Original is marginal at 6.2%; and
+ * the three Kilter/TB2 boards are 0.0-0.2%, i.e. essentially every hold already
+ * contrasts with the field, which is exactly why the outline looked like a
+ * no-op on Kilter in review.
+ */
+export const NEUTRAL_HALO_THRESHOLD = 0.05;
+
+export function boardWantsNeutralHalos(board: SpikeBoardConfig): boolean {
+  return board.lowContrastHoldShare >= NEUTRAL_HALO_THRESHOLD;
+}
 
 export const SPIKE_BOARDS: readonly SpikeBoardConfig[] = [
   {
@@ -30,6 +57,7 @@ export const SPIKE_BOARDS: readonly SpikeBoardConfig[] = [
     layoutId: 1,
     sizeId: 5,
     setIds: [1, 2, 3, 4, 6],
+    lowContrastHoldShare: 0.116,
   },
   {
     key: 'tension-classic',
@@ -39,6 +67,7 @@ export const SPIKE_BOARDS: readonly SpikeBoardConfig[] = [
     layoutId: 9,
     sizeId: 1,
     setIds: [8, 9, 10, 11],
+    lowContrastHoldShare: 0.062,
   },
   {
     key: 'tension-mirror-12x12',
@@ -48,6 +77,7 @@ export const SPIKE_BOARDS: readonly SpikeBoardConfig[] = [
     layoutId: 10,
     sizeId: 6,
     setIds: [12, 13],
+    lowContrastHoldShare: 0.0,
   },
   {
     key: 'kilter-homewall-10x12',
@@ -57,6 +87,7 @@ export const SPIKE_BOARDS: readonly SpikeBoardConfig[] = [
     layoutId: 8,
     sizeId: 25,
     setIds: [26, 27, 28, 29],
+    lowContrastHoldShare: 0.002,
   },
   {
     key: 'kilter-original-12x12',
@@ -66,6 +97,7 @@ export const SPIKE_BOARDS: readonly SpikeBoardConfig[] = [
     layoutId: 1,
     sizeId: 10,
     setIds: [1, 20],
+    lowContrastHoldShare: 0.002,
   },
   {
     key: 'moonboard-2016',
@@ -75,6 +107,7 @@ export const SPIKE_BOARDS: readonly SpikeBoardConfig[] = [
     layoutId: 2,
     sizeId: 1,
     setIds: [2, 3, 4],
+    lowContrastHoldShare: 0.346,
   },
   {
     key: 'moonboard-masters-2019',
@@ -84,6 +117,7 @@ export const SPIKE_BOARDS: readonly SpikeBoardConfig[] = [
     layoutId: 5,
     sizeId: 1,
     setIds: [17, 18, 21],
+    lowContrastHoldShare: 0.24,
   },
 ];
 
