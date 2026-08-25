@@ -31,12 +31,42 @@
 -- Conservative: only an UNAMBIGUOUS 1:1 pair inside a SINGLE sole owner is
 -- merged — a legacy row with >1 candidate twin, or a twin claimed by >1 legacy
 -- row, is left completely untouched and counted in the RAISE NOTICE. Matching
--- is `aurora_id = kilter_id` (Grips kept the circuit uuid) OR an exactly-equal
--- normalized name, the same two tiers the code uses. Rows with more than one
--- `owner` edge (the cross-linked accounts from #3541) are excluded entirely.
+-- is `aurora_id = kilter_id` OR an exactly-equal normalized name, the same two
+-- tiers the code uses. Rows with more than one `owner` edge (the cross-linked
+-- accounts from #3541) are excluded entirely.
 --
--- Counts are NOT baked into this header: it was written without prod DB access,
--- so they are emitted at runtime by the RAISE NOTICE at the bottom instead.
+-- ⚠️ IN PRACTICE THIS MIGRATION IS ENTIRELY NAME-BASED. An earlier draft of this
+-- header said `aurora_id = kilter_id` matches because "Grips kept the circuit
+-- uuid". Measured against production, that tier is INERT and always will be:
+-- legacy `aurora_id` is either a synthetic `json-import-…` value (3,036 of
+-- 3,162) or a 32-char undashed Aurora uuid, while every `kilter_id` is a 36-char
+-- dashed Kilter uuid. Overlap is 0, and still 0 after normalising case/dashes.
+-- Read every risk statement below as applying to name equality, not identity.
+--
+-- Measured on production 2026-08-25 13:44 UTC (read-only, primary — the same
+-- CTEs below, run verbatim as SELECTs). 0165 bakes its counts in; so does this:
+--
+--   clean 1:1 pairs merged .............  95   (of 103 candidate pairs)
+--   playlists rows DELETEd .............  95
+--   users affected .....................  12
+--   tier 1 (aurora_id = kilter_id) .....   0   ← inert, see above
+--   tier 2 (normalized name) ...........  95   (100%)
+--   ambiguous, left untouched ..........   4 legacy rows / 8 twins
+--   twins with USER edits ..............   0   (on all 95, updated_at is
+--                                              EXACTLY kilter_synced_at: every
+--                                              twin's last write was the sync)
+--   user_playlist_pins destroyed .......   0
+--   playlist_follows destroyed .........   0
+--
+-- What name-matching costs, also measured: 92 of 95 pairs share climbs and 69
+-- twins are strict subsets of the surviving row, but 71 playlist_climbs rows
+-- across 26 pairs exist ONLY on the twin and are lost with it. Exactly 2 pairs
+-- have fully disjoint climb sets, and both are generic names ('projects', 'to
+-- try') — the shape most likely to be a false pair. That residue was accepted
+-- deliberately when this shipped; it is not an oversight.
+--
+-- For scale: 3,162 legacy rows across 354 owners are still un-duplicated. That
+-- is the population #4746's adoption step stops from ever duplicating.
 --
 -- This migration is NOT value-idempotent. Safety comes from BOTH the migrator's
 -- single transaction + __drizzle_migrations bookkeeping AND a durable
@@ -88,6 +118,18 @@ BEGIN
       JOIN sole_owner so ON so.playlist_id = p.id
      WHERE p.board_type = 'kilter'
        AND p.kilter_id IS NOT NULL
+       -- A twin the buggy sync created NEVER carries `aurora_id`: the insert in
+       -- `applyCircuits` writes uuid/name/kilter_* and no aurora column at all.
+       -- A row with BOTH set is therefore not a twin — it is a legacy row that
+       -- #4746's adoption already merged in place, i.e. exactly the row this
+       -- migration exists to protect. Without this predicate an adopted row is
+       -- eligible as a `twin`, and a leftover same-named JSON-import copy can
+       -- pair with it as a "clean" 1:1 and delete the user's real, pinned
+       -- playlist. Pre-#4746 that shape was degree-2 ambiguous and thus safe;
+       -- adoption removes the ambiguity signal, and it has been running in
+       -- production since #4746 merged, so the population grows every cycle.
+       -- 0165 draws the same line with its `origin = 'kilter_pull'` filter.
+       AND p.aurora_id IS NULL
   )
   SELECT l.id AS legacy_id,
          t.id AS twin_id,

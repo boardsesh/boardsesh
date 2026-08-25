@@ -55,7 +55,17 @@ async function applyMigration(body: string): Promise<void> {
   }
 }
 
-const USERS = ['dedup-u1', 'dedup-u2', 'dedup-u3', 'dedup-u4', 'dedup-u4-other', 'dedup-u5', 'dedup-u6', 'dedup-u7'];
+const USERS = [
+  'dedup-u1',
+  'dedup-u2',
+  'dedup-u3',
+  'dedup-u4',
+  'dedup-u4-other',
+  'dedup-u5',
+  'dedup-u6',
+  'dedup-u7',
+  'dedup-u8',
+];
 const UUIDS = [
   'L1',
   'T1',
@@ -74,6 +84,8 @@ const UUIDS = [
   'T6b',
   'L7',
   'T7',
+  'A8',
+  'L8',
 ].map((u) => `dedup-${u}`);
 
 /** drizzle expands an interpolated JS array into a tuple, not an array literal. */
@@ -158,6 +170,32 @@ async function seedTwin(args: { uuid: string; userIds: string[]; kilterId: strin
       SELECT id, ${userId}, 'owner' FROM playlists WHERE uuid = ${args.uuid}
     `);
   }
+}
+
+/**
+ * A legacy row that #4746's adoption has ALREADY merged in place: it carries
+ * both its original `aurora_id` and the `kilter_id` adoption stamped onto it.
+ * This shape did not exist when the migration was written and now appears in
+ * production on every sync cycle, which is exactly why it needs a fixture.
+ */
+async function seedAdopted(args: {
+  uuid: string;
+  userId: string;
+  auroraId: string;
+  kilterId: string;
+  name: string;
+}): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO playlists (uuid, board_type, name, aurora_type, aurora_id, aurora_synced_at,
+                           kilter_type, kilter_id, kilter_synced_at, created_at, updated_at)
+    VALUES (${args.uuid}, 'kilter', ${args.name}, 'circuits', ${args.auroraId},
+            now() - interval '200 days', 'circuits', ${args.kilterId},
+            now() - interval '200 days', now() - interval '200 days', now() - interval '30 days')
+  `);
+  await db.execute(sql`
+    INSERT INTO playlist_ownership (playlist_id, user_id, role)
+    SELECT id, ${args.userId}, 'owner' FROM playlists WHERE uuid = ${args.uuid}
+  `);
 }
 
 async function seedUsers(): Promise<void> {
@@ -282,6 +320,57 @@ describe('0205 kilter playlist dedup backfill (real DB)', () => {
     for (const uuid of ['dedup-T3', 'dedup-T4', 'dedup-T5']) {
       expect(rows.has(uuid), uuid).toBe(true);
     }
+  });
+
+  it('never treats a row #4746 already adopted as a deletable twin', async () => {
+    // Regression for the wrong-delete path the Fable review found on #4747.
+    //
+    // The buggy sync's insert writes uuid/name/kilter_* and NO aurora column,
+    // so a genuine twin always has `aurora_id IS NULL`. An adopted row has BOTH
+    // set. Without `aurora_id IS NULL` on the twin CTE the adopted row is an
+    // eligible twin, and a leftover same-named JSON-import copy pairs with it
+    // as a clean 1:1 — deleting the user's real, pinned playlist and keeping
+    // the import instead. Pre-#4746 this shape was degree-2 ambiguous and
+    // therefore safe; adoption is what removes the ambiguity signal.
+    await seedUsers();
+
+    // The row adoption already merged: real content, real climbs, the uuid that
+    // pins/follows/offline clients point at.
+    await seedAdopted({
+      uuid: 'dedup-A8',
+      userId: 'dedup-u8',
+      auroraId: 'dedup-circ-8',
+      kilterId: 'dedup-circ-8',
+      name: 'Sloper Session',
+    });
+    // A leftover JSON-import copy of the same circuit under the same owner. Its
+    // aurora_id differs, so ONLY the name can pair it with anything.
+    await seedLegacy({
+      uuid: 'dedup-L8',
+      userId: 'dedup-u8',
+      auroraId: 'dedup-json-8',
+      name: 'sloper session',
+    });
+
+    await applyMigration(readMigration().body);
+
+    const rows = await readRows();
+
+    // The adopted row must survive, keys intact.
+    expect(rows.has('dedup-A8')).toBe(true);
+    expect(rows.get('dedup-A8')?.kilter_id).toBe('dedup-circ-8');
+    expect(rows.get('dedup-A8')?.name).toBe('Sloper Session');
+    // ...and must not be tombstoned, or offline clients would drop it locally
+    // even if the row itself survived.
+    const tombstoned = await db.execute(sql`
+      SELECT record_id FROM sync_deletions WHERE record_id = 'dedup-A8'
+    `);
+    expect(Array.from(tombstoned as Iterable<unknown>)).toHaveLength(0);
+
+    // The leftover import is left exactly as it was: this migration has no
+    // opinion about it, and inventing one is how the wrong delete happened.
+    expect(rows.has('dedup-L8')).toBe(true);
+    expect(rows.get('dedup-L8')?.kilter_id).toBeNull();
   });
 
   it('keeps the surviving row’s climbs', async () => {
