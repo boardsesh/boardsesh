@@ -519,7 +519,7 @@ function generateHolePlacementsLoaderFile(): string {
  * spurious diff.
  */
 
-import type { BoardName } from '@boardsesh/shared-schema';
+import { BOARD_DISPLAY_ORDER, SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
 import type { HoldTuple } from './types';
 
 type BoardHolePlacements = Record<string, HoldTuple[]>;
@@ -591,42 +591,42 @@ export function getBoardHolePlacements(boardName: BoardName): BoardHolePlacement
   return placements;
 }
 
-// All board names that have (or could have) hole placements, including the
-// non-Aurora \`moonboard\` so the proxy enumerates the same keys the old eager
-// record did.
-const ALL_BOARD_NAMES: BoardName[] = [
-  ...([${BOARD_NAMES.map((boardName) => `'${boardName}'`).join(', ')}] as const),
-  'moonboard',
-  'woods',
-];
-
 /**
  * Backwards-compatible all-boards view. A Proxy keeps the old
  * \`HOLE_PLACEMENTS[board][key]\` and \`Object.entries(HOLE_PLACEMENTS)\` shapes
  * working for Node-side consumers (backend export, aurora-sync, the iOS Swift
  * generator) while still loading each board's shard lazily on first access — the
  * mobile hot path (\`getBoardHolePlacements\`) never forces the other boards.
+ *
+ * Membership comes from \`SUPPORTED_BOARDS\` — the schema's own list, which already
+ * covers the code-driven boards (moonboard, woods) whose shards don't exist and
+ * resolve to an empty record. Enumeration comes from \`BOARD_DISPLAY_ORDER\`: the
+ * same set, but \`ownKeys\` is the one trap whose ORDER is observable
+ * (\`Object.keys\` / \`Object.entries\`), and that order was Aurora-boards-first
+ * before this list was shared. The two are pinned as permutations of each other
+ * by shared-schema's board-display-order.test.ts, so a new board joins both.
  */
 export const HOLE_PLACEMENTS: Record<BoardName, BoardHolePlacements> = new Proxy(
   {} as Record<BoardName, BoardHolePlacements>,
   {
     get(_target, property: string | symbol) {
-      if (typeof property !== 'string' || !ALL_BOARD_NAMES.includes(property as BoardName)) {
+      if (typeof property !== 'string' || !SUPPORTED_BOARDS.includes(property as BoardName)) {
         return undefined;
       }
       return getBoardHolePlacements(property as BoardName);
     },
     ownKeys() {
-      return ALL_BOARD_NAMES;
+      // A fresh array each call: the shared constant must not escape the module.
+      return [...BOARD_DISPLAY_ORDER];
     },
     has(_target, property: string | symbol) {
-      return typeof property === 'string' && ALL_BOARD_NAMES.includes(property as BoardName);
+      return typeof property === 'string' && SUPPORTED_BOARDS.includes(property as BoardName);
     },
     getOwnPropertyDescriptor(_target, property: string | symbol) {
       // Guard like the get/has traps so an unknown key reports \`undefined\` rather
       // than a phantom descriptor — otherwise the three traps disagree and
       // descriptor-walking consumers (structuredClone, serializers) misbehave.
-      if (typeof property !== 'string' || !ALL_BOARD_NAMES.includes(property as BoardName)) {
+      if (typeof property !== 'string' || !SUPPORTED_BOARDS.includes(property as BoardName)) {
         return undefined;
       }
       // The target has no such own property and is extensible, so the descriptor

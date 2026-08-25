@@ -1,9 +1,10 @@
-const BOARD_SORT_ORDER = new Map(
-  ['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill', 'moonboard', 'woods'].map((boardName, index) => [
-    boardName,
-    index,
-  ]),
-);
+import { BOARD_DISPLAY_ORDER } from '@boardsesh/shared-schema';
+
+// Board keys sort in the shared display order (Aurora boards first, then the
+// code-driven ones) rather than alphabetically, so a serialised all-boards map
+// reads the way the rest of the app lists boards. Every other key falls through
+// to the natural compare below.
+const BOARD_SORT_ORDER = new Map<string, number>(BOARD_DISPLAY_ORDER.map((boardName, index) => [boardName, index]));
 
 function compareStableKeys(leftKey: string, rightKey: string): number {
   const leftBoardOrder = BOARD_SORT_ORDER.get(leftKey);
