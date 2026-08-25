@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { MOONBOARD_LAYOUTS, SUPPORTED_BOARDS, WOODS_LAYOUTS } from '@boardsesh/board-config';
 import {
   DEFAULT_WALL_FINDER_FILTER,
   hasActiveWallFinderFilter,
@@ -130,6 +131,28 @@ describe('buildLayoutOptions', () => {
       expect(option.label.length).toBeGreaterThan(0);
     }
   });
+
+  // Woods and MoonBoard are code-driven: they have no rows in the generated
+  // LAYOUTS table, so the Aurora-only accessor these builders used to call
+  // returned nothing and their chip rows came up empty (#4751).
+  it('lists the single Woods layout', () => {
+    expect(buildLayoutOptions({ boardTypes: ['woods'] })).toEqual([{ id: WOODS_LAYOUTS.woods.id, label: 'Original' }]);
+  });
+
+  it('lists every MoonBoard layout', () => {
+    expect(buildLayoutOptions({ boardTypes: ['moonboard'] })).toEqual(
+      Object.values(MOONBOARD_LAYOUTS).map((layout) => ({ id: layout.id, label: layout.name })),
+    );
+  });
+
+  // The regression guard the two cases above exist to generalise: a board added
+  // to SUPPORTED_BOARDS without a layout source silently ships an empty chip row,
+  // which reads as a broken filter rather than an absent one.
+  it('offers at least one layout for every supported board type', () => {
+    for (const boardType of SUPPORTED_BOARDS) {
+      expect(buildLayoutOptions({ boardTypes: [boardType] }).length).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe('buildSizeOptions', () => {
@@ -148,5 +171,25 @@ describe('buildSizeOptions', () => {
       expect(typeof option.label).toBe('string');
       expect(option.sizeIds.length).toBeGreaterThan(0);
     }
+  });
+
+  // Both Woods sizes, as separate chips — an 8x10 climb can't be queued onto a
+  // 12x12 board, so the two must never collapse into one label.
+  it('offers both Woods sizes under the Woods layout', () => {
+    expect(buildSizeOptions({ boardTypes: ['woods'], layoutIds: [WOODS_LAYOUTS.woods.id] })).toEqual([
+      { label: '8 x 10', sizeIds: [1] },
+      { label: '12 x 12', sizeIds: [2] },
+    ]);
+  });
+
+  it("offers MoonBoard's single size under a MoonBoard layout", () => {
+    expect(
+      buildSizeOptions({ boardTypes: ['moonboard'], layoutIds: [MOONBOARD_LAYOUTS['moonboard-2024'].id] }),
+    ).toEqual([{ label: 'Standard', sizeIds: [1] }]);
+  });
+
+  it('stays empty for a layout the selected board type does not have', () => {
+    expect(buildSizeOptions({ boardTypes: ['woods'], layoutIds: [999] })).toEqual([]);
+    expect(buildSizeOptions({ boardTypes: ['moonboard'], layoutIds: [999] })).toEqual([]);
   });
 });

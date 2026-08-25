@@ -1,5 +1,5 @@
 import type { BoardName } from '@boardsesh/shared-schema';
-import { getAllLayouts, getSizesForLayoutId } from '@boardsesh/board-constants';
+import { getBoardLayouts, getBoardSizesForLayoutId } from './custom-board-options';
 
 /**
  * The applied filter for the Find Gym ("Wall Finder") screen.
@@ -14,7 +14,7 @@ import { getAllLayouts, getSizesForLayoutId } from '@boardsesh/board-constants';
  *   not literally named after it).
  * - `place` — the label of a geocoded place search ("Showing <place>"); the
  *   camera move itself is viewport state, not stored here.
- * - `boardTypes` — selected board types (Kilter / Tension / MoonBoard),
+ * - `boardTypes` — selected board types (every board in `SUPPORTED_BOARDS`),
  *   multi-select OR. ANDs with `name` and the current viewport.
  * - `layoutIds` — selected layout ids, multi-select OR. Only meaningful when a
  *   single board type is selected (layouts are board-type-scoped), so the toggle
@@ -105,27 +105,34 @@ export function clearWallFinderChipFilters(filter: WallFinderFilter): WallFinder
 
 /**
  * Layout chips for the current filter — empty unless exactly one board type is
- * selected (layouts are board-type-scoped). Sourced from board-constants so the
- * chips are deterministic and don't vanish as the user narrows.
+ * selected (layouts are board-type-scoped). Sourced from the same board-aware
+ * cascade the board builder uses, so the chips are deterministic, don't vanish
+ * as the user narrows, and carry the exact ids the builder wrote to
+ * `user_boards.layout_id`. Going through `getBoardLayouts` rather than
+ * board-constants' `getAllLayouts` is what makes the code-driven boards work:
+ * MoonBoard and Woods have no generated `LAYOUTS` rows, so the Aurora-only
+ * helper returns nothing for them and their chips came up empty.
  */
 export function buildLayoutOptions(filter: WallFinderFilter): WallFinderLayoutOption[] {
   const types = filter.boardTypes ?? [];
   if (types.length !== 1) return [];
-  return getAllLayouts(types[0]).map((layout) => ({ id: layout.id, label: layout.name }));
+  return getBoardLayouts(types[0]).map((layout) => ({ id: layout.id, label: layout.name }));
 }
 
 /**
  * Size chips for the current filter — empty unless exactly one board type AND one
  * layout are selected (sizes are layout-scoped). Grouped by display name so one
  * chip can carry several Aurora size ids that share a label (e.g. a Full Ride /
- * Mainline pair under the same dimensions).
+ * Mainline pair under the same dimensions). Same board-aware cascade as
+ * `buildLayoutOptions` — Woods' two sizes and MoonBoard's single one live in
+ * code, not in the generated tables.
  */
 export function buildSizeOptions(filter: WallFinderFilter): WallFinderSizeOption[] {
   const types = filter.boardTypes ?? [];
   const layouts = filter.layoutIds ?? [];
   if (types.length !== 1 || layouts.length !== 1) return [];
   const byName = new Map<string, number[]>();
-  for (const size of getSizesForLayoutId(types[0], layouts[0])) {
+  for (const size of getBoardSizesForLayoutId(types[0], layouts[0])) {
     const existing = byName.get(size.name);
     if (existing) existing.push(size.id);
     else byName.set(size.name, [size.id]);
