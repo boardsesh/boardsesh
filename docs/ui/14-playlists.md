@@ -71,6 +71,27 @@ The library is the user's playlist hub, combining owned, pinned, smart, and comm
 - Each climb row: thumbnail, climb name, grade, board info. Tapping a climb activates it in the queue context if available.
 - Empty state: "No climbs in this playlist yet" (via `EmptyState` component).
 
+**Getting a playlist into the queue (mobile) — two paths, one destructive:**
+
+| control                                                               | what it does                                                                                                   | confirmation                                                                                                                                                                         |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Add to queue** row (list header, above Discussion)                  | Appends every board-scoped climb behind the live queue. Nothing is cleared, and the current climb never moves. | None on the way in — a count on the way out.                                                                                                                                         |
+| **Start playlist** (Material app-bar play action, or a climb-row tap) | Replaces the whole queue with the playlist order, tapped climb active, so previous/next walk the circuit.      | A three-way prompt whenever anything is queued after the current climb: **Start playlist** (destructive) · **Add to queue** · **Keep queue**. Silent when there is nothing to clear. |
+
+The additive row (`PlaylistAddToQueueRow`) renders on both platform branches, for
+owners and non-owners, and on smart playlists (Liked Climbs / Five Stars /
+Projects) — which have no overflow menu at all, so a menu item could never have
+reached them. It is hidden when there is no active board, when the playlist is on
+another board (the switch-board banner owns that prompt), on an empty playlist,
+and in edit mode.
+
+Append semantics live in `appendQueueItems` on the mobile queue provider. It
+clamps the batch to `MAX_SYNCED_QUEUE_ITEMS` (the party backend's `setQueue`
+throws rather than truncating a longer payload) and returns what landed. It never
+broadcasts a whole-queue replace without a current-climb pointer, because the
+resolver reads an absent pointer as "clear the session's current climb" — with
+nothing current it fans the batch out as per-item adds instead.
+
 **Discussion Section:**
 
 - Rendered only for public playlists.

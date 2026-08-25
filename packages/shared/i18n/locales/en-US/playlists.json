@@ -108,7 +108,15 @@
   "detail": {
     "share": "Share playlist",
     "actions": "Playlist actions",
-    "activateAll": "Queue every climb",
+    "activateAll": "Start playlist",
+    "addToQueue": {
+      "action": "Add to queue",
+      "subtitle": "Keeps everything already queued",
+      "queueFull": "Your queue is full at {{max}} climbs",
+      "nothingToAdd": "Nothing here for your board yet",
+      "alreadyAdding": "Already adding this playlist",
+      "failed": "Couldn't add to the queue. Try again."
+    },
     "boardMismatch": {
       "title": "Switch to {{board}} to climb this playlist",
       "subtitle": "These are {{board}} climbs. Switch boards to queue them.",
@@ -139,7 +147,8 @@
       "message_other": "This will clear {{count}} queued climbs after your current climb.",
       "cancel": "Keep queue",
       "confirm": "Start playlist",
-      "loadFailed": "Couldn't start playlist. Try again."
+      "loadFailed": "Couldn't start playlist. Try again.",
+      "addInstead": "Add to queue"
     },
     "deleteConfirm": {
       "title": "Delete playlist?",

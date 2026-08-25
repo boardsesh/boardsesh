@@ -8,7 +8,7 @@ const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 
 const queue = vi.hoisted(() => ({
   startSession: vi.fn(async () => 'session-1' as string | null),
-  appendGeneratedSession: vi.fn(),
+  appendQueueItems: vi.fn(),
 }));
 
 const drawer = vi.hoisted(() => ({ openPlayDrawer: vi.fn() }));
@@ -128,7 +128,7 @@ vi.mock('../../../../providers/theme-provider', () => ({
 vi.mock('../../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => activeBoard }));
 vi.mock('../../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../../providers/queue-provider', () => ({
-  useQueueActions: () => ({ startSession: queue.startSession, appendGeneratedSession: queue.appendGeneratedSession }),
+  useQueueActions: () => ({ startSession: queue.startSession, appendQueueItems: queue.appendQueueItems }),
 }));
 vi.mock('../../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ openPlayDrawer: drawer.openPlayDrawer }),
@@ -170,7 +170,7 @@ beforeEach(() => {
   analytics.track.mockClear();
   queue.startSession.mockClear();
   queue.startSession.mockResolvedValue('session-1');
-  queue.appendGeneratedSession.mockClear();
+  queue.appendQueueItems.mockClear();
   activeBoard.data = { boardType: 'kilter', layoutId: 8, sizeId: 21, setIds: '1,2', angle: 40 };
   preview.result.items = previewRows as unknown[];
   preview.result.status = 'ready';
@@ -205,7 +205,7 @@ describe('PreSessionView analytics', () => {
 
     await act(async () => {
       startButton.onPress?.();
-      // Let the async handleStart chain (startSession → appendGeneratedSession
+      // Let the async handleStart chain (startSession → appendQueueItems
       // → track) settle.
       await Promise.resolve();
       await Promise.resolve();
@@ -223,8 +223,12 @@ describe('PreSessionView analytics', () => {
 
     // Preview items queued behind the live queue; the provider decides the
     // current climb (it stays put unless nothing is active).
-    expect(queue.appendGeneratedSession).toHaveBeenCalledTimes(1);
-    expect(queue.appendGeneratedSession).toHaveBeenCalledWith(previewItems);
+    expect(queue.appendQueueItems).toHaveBeenCalledTimes(1);
+    // `activateFirstWhenIdle` is the generator's contract and must stay opted IN
+    // here: the default is off (the playlist "Add to queue" row must never take
+    // the wall), so dropping the flag would silently stop a generated session
+    // from opening on its first climb.
+    expect(queue.appendQueueItems).toHaveBeenCalledWith(previewItems, { activateFirstWhenIdle: true });
     expect(analytics.track).toHaveBeenCalledWith('Session Queue Generated', {
       workoutType: 'volume',
       boardName: 'kilter',
@@ -243,7 +247,7 @@ describe('PreSessionView analytics', () => {
     });
     await waitFor(() => expect(queue.startSession).toHaveBeenCalled());
 
-    expect(queue.appendGeneratedSession).not.toHaveBeenCalled();
+    expect(queue.appendQueueItems).not.toHaveBeenCalled();
     expect(analytics.track).not.toHaveBeenCalledWith('Session Queue Generated', expect.anything());
   });
 
@@ -275,6 +279,6 @@ describe('PreSessionView analytics', () => {
     });
 
     expect(queue.startSession).not.toHaveBeenCalled();
-    expect(queue.appendGeneratedSession).not.toHaveBeenCalled();
+    expect(queue.appendQueueItems).not.toHaveBeenCalled();
   });
 });

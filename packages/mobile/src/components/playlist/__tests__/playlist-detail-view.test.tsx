@@ -265,6 +265,15 @@ vi.mock('../../GlassSurface', () => ({
     createElement('div', { 'data-glass-surface': 'true' }, children ?? null),
 }));
 
+vi.mock('../PlaylistAddToQueueRow', () => ({
+  PlaylistAddToQueueRow: ({ onPress, isAppending }: { onPress: () => void; isAppending: boolean }) =>
+    createElement('button', {
+      'data-add-to-queue-row': 'true',
+      'data-appending': String(isAppending),
+      onClick: onPress,
+    }),
+}));
+
 vi.mock('../PlaylistBoardBackdrop', () => ({
   PlaylistBoardBackdrop: ({ boardType }: { boardType: string }) => createElement('div', { 'data-backdrop': boardType }),
 }));
@@ -738,6 +747,70 @@ describe('PlaylistDetailView', () => {
 
       expect(onActivateClimb).toHaveBeenCalledWith(TENSION_CLIMB);
       expect(banner.onPress).not.toHaveBeenCalled();
+    });
+  });
+  describe('add-to-queue row', () => {
+    const CLIMBS = [CLIMB];
+
+    function renderRow(overrides: Partial<PlaylistDetailViewProps> = {}) {
+      return render(<PlaylistDetailView {...makeProps({ climbs: CLIMBS, onAddAllToQueue: vi.fn(), ...overrides })} />);
+    }
+
+    it('renders in the list header on the glass variant', () => {
+      const { container } = renderRow();
+      expect(container.querySelector('[data-add-to-queue-row]')).not.toBeNull();
+    });
+
+    it('renders in the list header on the material variant', () => {
+      // The destructive bulk control is Material-only (an Appbar.Action), so the
+      // additive one has to exist on BOTH branches or iOS gets nothing.
+      ctrl.variant = 'material';
+      const { container } = renderRow();
+      expect(container.querySelector('[data-add-to-queue-row]')).not.toBeNull();
+    });
+
+    it('sits above the discussion row — a queue action outranks a comment thread', () => {
+      const { container } = renderRow({
+        headerSlot: <div data-discussion-slot="true" />,
+      });
+      const nodes = Array.from(container.querySelectorAll('[data-add-to-queue-row], [data-discussion-slot]'));
+      expect(nodes.map((node) => node.getAttribute('data-add-to-queue-row') ?? 'discussion')).toEqual([
+        'true',
+        'discussion',
+      ]);
+    });
+
+    it('forwards the press and the in-flight flag', () => {
+      const onAddAllToQueue = vi.fn();
+      const { container } = renderRow({ onAddAllToQueue, isAddingAllToQueue: true });
+      const row = container.querySelector('[data-add-to-queue-row]') as HTMLButtonElement;
+      expect(row.getAttribute('data-appending')).toBe('true');
+      fireEvent.click(row);
+      expect(onAddAllToQueue).toHaveBeenCalledTimes(1);
+    });
+
+    it('is absent when the host withholds the handler (no active board)', () => {
+      const { container } = render(<PlaylistDetailView {...makeProps({ climbs: CLIMBS })} />);
+      expect(container.querySelector('[data-add-to-queue-row]')).toBeNull();
+    });
+
+    it('is absent on an empty playlist', () => {
+      const { container } = renderRow({ climbs: [] });
+      expect(container.querySelector('[data-add-to-queue-row]')).toBeNull();
+    });
+
+    it('is absent while the switch-board banner is shown', () => {
+      // The playlist is on another board, so the board-scoped fetch would return
+      // nothing; the banner owns that prompt.
+      const { container } = renderRow({
+        boardBanner: { title: 't', subtitle: 's', cta: 'c', onPress: vi.fn() },
+      });
+      expect(container.querySelector('[data-add-to-queue-row]')).toBeNull();
+    });
+
+    it('is absent in edit mode', () => {
+      const { container } = renderRow({ editMode: true });
+      expect(container.querySelector('[data-add-to-queue-row]')).toBeNull();
     });
   });
 });

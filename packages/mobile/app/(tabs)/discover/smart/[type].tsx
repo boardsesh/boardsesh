@@ -16,7 +16,6 @@ import {
   PlaylistDetailView,
   SKELETON_PLACEHOLDERS,
   PlaylistBackFab,
-  PlaylistQueueReplaceSheet,
   type PlaylistDetailEmptyState,
 } from '../../../../src/components/playlist';
 import { getHttpClient } from '../../../../src/lib/graphql/client';
@@ -156,8 +155,9 @@ export default function SmartPlaylistDetail() {
         onActivateClimb={playlistActivation.activate}
         emptyMessage={t('library.smart.empty')}
         emptyState={emptyState}
+        onAddAllToQueue={playlistActivation.addToQueue.append}
+        isAddingAllToQueue={playlistActivation.addToQueue.isAppending}
       />
-      <PlaylistQueueReplaceSheet {...playlistActivation.queueReplaceSheet} />
     </>
   );
 }

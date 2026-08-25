@@ -64,7 +64,11 @@ vi.mock('react-native-paper', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    // Resolve the plural suffix the way i18next would, so a case can tell
+    // `added_one` from `added_other` — with a bare passthrough the count would
+    // be invisible and the plural assertions below would pass vacuously.
+    t: (key: string, options?: { count?: number }) =>
+      typeof options?.count === 'number' ? `${key}_${options.count === 1 ? 'one' : 'other'}` : key,
   }),
 }));
 
@@ -100,7 +104,7 @@ describe('QueueAddedSnackbar', () => {
     expect(snackbar).not.toBeNull();
     expect(snackbar?.getAttribute('data-visible')).toBe('true');
     expect(snackbar?.getAttribute('data-duration')).toBe('4000'); // default duration mapped
-    expect(snackbar?.textContent).toContain('mobile.queueSnackbar.added');
+    expect(snackbar?.textContent).toContain('mobile.queueSnackbar.added_one');
     const action = container.querySelector('[data-action]');
     expect(action?.textContent).toBe('mobile.queueSnackbar.open');
     expect(action?.getAttribute('data-action-label')).toBe('mobile.queueSnackbar.openAria');
@@ -131,7 +135,7 @@ describe('QueueAddedSnackbar', () => {
     const animated = container.querySelector('[data-animated]');
     expect(animated).not.toBeNull();
     expect(animated?.getAttribute('data-role')).toBe('alert');
-    expect(container.textContent).toContain('mobile.queueSnackbar.added');
+    expect(container.textContent).toContain('mobile.queueSnackbar.added_one');
     expect(container.querySelector('[data-paper-snackbar]')).toBeNull();
     // The "Open" Pressable routes to onOpen.
     const openButton = container.querySelector('[data-label="mobile.queueSnackbar.openAria"]') as HTMLElement;
@@ -153,7 +157,7 @@ describe('QueueAddedSnackbar', () => {
     const { container } = render(<QueueAddedSnackbar {...base} queueAdded={{ kind: 'playNext' }} />);
     const snackbar = container.querySelector('[data-paper-snackbar]');
     expect(snackbar?.textContent).toContain('mobile.queueSnackbar.playingNext');
-    expect(snackbar?.textContent).not.toContain('mobile.queueSnackbar.added');
+    expect(snackbar?.textContent).not.toContain('mobile.queueSnackbar.added_one');
     // The Open affordance is unchanged by the copy swap.
     expect(container.querySelector('[data-action]')?.textContent).toBe('mobile.queueSnackbar.open');
   });
@@ -162,22 +166,38 @@ describe('QueueAddedSnackbar', () => {
     ctrl.variant = 'liquidGlass';
     const { container } = render(<QueueAddedSnackbar {...base} queueAdded={{ kind: 'playNext' }} />);
     expect(container.textContent).toContain('mobile.queueSnackbar.playingNext');
-    expect(container.textContent).not.toContain('mobile.queueSnackbar.added');
+    expect(container.textContent).not.toContain('mobile.queueSnackbar.added_one');
     expect(container.querySelector('[data-label="mobile.queueSnackbar.openAria"]')).not.toBeNull();
   });
 
   it.each(['material', 'liquidGlass'] as const)('defaults to the added copy on %s', (variant) => {
     ctrl.variant = variant;
     const { container } = render(<QueueAddedSnackbar {...base} />);
-    expect(container.textContent).toContain('mobile.queueSnackbar.added');
+    expect(container.textContent).toContain('mobile.queueSnackbar.added_one');
     expect(container.textContent).not.toContain('mobile.queueSnackbar.playingNext');
   });
 
-  // `count` is carried for #4673's plural and must not disturb this feature's copy.
+  // A Play next is always exactly one climb, so a count must never reach its copy.
   it.each(['material', 'liquidGlass'] as const)('ignores an unused count on %s', (variant) => {
     ctrl.variant = variant;
     const { container } = render(<QueueAddedSnackbar {...base} queueAdded={{ kind: 'playNext', count: 3 }} />);
     expect(container.textContent).toContain('mobile.queueSnackbar.playingNext');
+  });
+
+  // The bulk playlist append (#4673) is the only caller that passes a count.
+  it.each(['material', 'liquidGlass'] as const)('pluralises the added copy on a bulk count on %s', (variant) => {
+    ctrl.variant = variant;
+    const { container } = render(<QueueAddedSnackbar {...base} queueAdded={{ kind: 'added', count: 12 }} />);
+    expect(container.textContent).toContain('mobile.queueSnackbar.added_other');
+    expect(container.textContent).not.toContain('mobile.queueSnackbar.added_one');
+  });
+
+  // A single add passes no count at all; it must keep the exact wording every
+  // add path has always shown, not fall through to a plural.
+  it.each(['material', 'liquidGlass'] as const)('keeps the singular for a count of one on %s', (variant) => {
+    ctrl.variant = variant;
+    const { container } = render(<QueueAddedSnackbar {...base} queueAdded={{ kind: 'added', count: 1 }} />);
+    expect(container.textContent).toContain('mobile.queueSnackbar.added_one');
   });
 
   it('auto-dismisses via timer on the Liquid Glass variant', () => {

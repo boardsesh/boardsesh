@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react';
-import { View, StyleSheet, type ViewStyle } from 'react-native';
+import { View, StyleSheet, type AccessibilityState, type ViewStyle } from 'react-native';
 import { Text } from './Text';
 import { Icon } from './Icon';
 import { PressableSurface } from './PressableSurface';
@@ -20,6 +20,8 @@ type ListRowProps = {
   style?: ViewStyle;
   accessibilityLabel?: string;
   accessibilityHint?: string;
+  /** e.g. `{ busy: true, disabled: true }` while the row's action is in flight. */
+  accessibilityState?: AccessibilityState;
 };
 
 export function ListRow({
@@ -35,6 +37,7 @@ export function ListRow({
   style,
   accessibilityLabel,
   accessibilityHint,
+  accessibilityState,
 }: ListRowProps) {
   const { systemColors } = useTheme();
 
@@ -84,6 +87,7 @@ export function ListRow({
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel ?? title}
         accessibilityHint={accessibilityHint}
+        accessibilityState={accessibilityState}
         style={[styles.container, style]}
       >
         {content}

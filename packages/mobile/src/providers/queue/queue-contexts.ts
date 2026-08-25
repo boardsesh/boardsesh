@@ -80,8 +80,19 @@ type QueueContextValue = {
    * queue change.
    */
   getQueueSnapshot: () => { queue: ClimbQueueItem[]; currentClimbQueueItem: ClimbQueueItem | null };
-  /** Append a generated session behind the live queue, leaving the current climb where it is. */
-  appendGeneratedSession: (items: ClimbQueueItem[]) => void;
+  /**
+   * Append a batch behind the live queue, leaving the current climb where it is.
+   *
+   * Returns how many items actually landed: the batch is clamped to
+   * `MAX_SYNCED_QUEUE_ITEMS` so a bulk add can't grow the queue past the size the
+   * party backend's `setQueue` accepts (it throws rather than truncating).
+   *
+   * `activateFirstWhenIdle` (default **false**) lets the caller open on the first
+   * appended climb when nothing is current — the workout generator's contract.
+   * The playlist "Add to queue" row leaves it off: an add must never take the
+   * crew's wall. It can only fill an empty pointer, never move one that is set.
+   */
+  appendQueueItems: (items: ClimbQueueItem[], options?: { activateFirstWhenIdle?: boolean }) => number;
   setCurrentClimb: (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => void;
   nextClimb: () => void;
   previousClimb: () => void;

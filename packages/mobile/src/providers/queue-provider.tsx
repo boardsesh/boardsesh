@@ -10,6 +10,7 @@ import {
   deriveAcceptedConfigs,
   planPlayNext,
   playNextInsertPosition,
+  MAX_SYNCED_QUEUE_ITEMS,
 } from '@boardsesh/queue';
 import type {
   QueueSearchParams,
@@ -1114,20 +1115,94 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  // Queue a generated session behind whatever the climber already has going,
-  // instead of replacing it. Leaving the current pointer alone is what keeps the
-  // BLE auto-sender (it writes state.currentClimbQueueItem) from repainting the
-  // wall out from under someone mid-project, and appending rather than replacing
-  // keeps their hand-queued climbs. Only when nothing is current do we open on
-  // the session's first climb. Mirrors web's start-sesh-drawer.
-  const appendGeneratedSession = useCallback(
-    (items: ClimbQueueItem[]) => {
-      // Nothing generated: don't broadcast a SET_QUEUE that changes nothing.
-      if (items.length === 0) return;
+  // Append a batch behind whatever the climber already has going, instead of
+  // replacing it. Leaving the current pointer alone is what keeps the BLE
+  // auto-sender (it writes state.currentClimbQueueItem) from repainting the wall
+  // out from under someone mid-project, and appending rather than replacing keeps
+  // their hand-queued climbs. Mirrors web's start-sesh-drawer.
+  //
+  // `activateFirstWhenIdle` is the workout generator's contract — "start me on
+  // the first climb of the session I just generated" — and defaults OFF, because
+  // the other caller is the playlist "Add to queue" row, where taking the wall is
+  // exactly what the climber asked us not to do. It can only FILL an empty
+  // pointer; it never moves one that is already set.
+  //
+  // Returns how many items actually landed, after the clamp below, so the caller
+  // can confirm an honest count.
+  const appendQueueItems = useCallback(
+    (items: ClimbQueueItem[], options?: { activateFirstWhenIdle?: boolean }): number => {
+      // Nothing to append: don't broadcast a SET_QUEUE that changes nothing.
+      if (items.length === 0) return 0;
       const { queue, currentClimbQueueItem } = stateRef.current;
-      setQueue([...queue, ...items], currentClimbQueueItem ?? items[0]);
+      // `Mutation.setQueue` THROWS on a payload longer than MAX_SYNCED_QUEUE_ITEMS
+      // rather than truncating it, and an append is the one write that can cross
+      // that line by addition — so clamp here and report what fit. Note the cap is
+      // measured against the LOCAL queue: the server's copy can be longer if a
+      // concurrent-add merge re-appended peer climbs on top of a full payload
+      // (see the follow-up filed with this change).
+      const remainingCapacity = MAX_SYNCED_QUEUE_ITEMS - queue.length;
+      if (remainingCapacity <= 0) return 0;
+      const appended = items.length > remainingCapacity ? items.slice(0, remainingCapacity) : items;
+
+      const nextCurrent = currentClimbQueueItem ?? (options?.activateFirstWhenIdle ? appended[0] : null);
+      if (nextCurrent) {
+        setQueue([...queue, ...appended], nextCurrent);
+        return appended.length;
+      }
+
+      // Nothing is current and the caller did not ask to take the wall. A
+      // wholesale `setQueue` cannot express "leave the current climb alone": the
+      // resolver reads an absent pointer as a CLEAR and writes null into session
+      // state for the whole crew (queue/mutations.ts setQueue →
+      // roomManager.updateQueueState). An additive action must never be able to
+      // blank a peer's wall, not even through a stale local mirror, so this batch
+      // goes out as per-item adds instead — ADD_QUEUE_ITEM carries no pointer at
+      // all, so the invariant holds by construction. (`clearQueue` fans out
+      // per-item too, but for a different reason: there is no bulk-clear
+      // mutation. What is borrowed from it is the reconcile shape below.)
+      //
+      // Attribution set hoisted once: `attributeNewItem` otherwise rescans the
+      // whole queue per item, and this is the caller its `existingUuids`
+      // parameter was written for — a playlist can hand over the entire board
+      // list.
+      const existingUuids = new Set(queue.map((queueItem) => queueItem.uuid));
+      const attributedItems = appended.map((item) => attributeNewItem(item, existingUuids));
+      for (const item of attributedItems) {
+        dispatch({ type: 'DELTA_ADD_QUEUE_ITEM', payload: { item } });
+      }
+      // Drain the wire sends ONE AT A TIME. Every addQueueItem lands in the
+      // backend's `withQueueVersionRetry` around a single-key Redis CAS, with a
+      // 3-attempt ceiling and no backoff or jitter — so firing N of them at once
+      // means each attempt wins with roughly 1/N probability and most of a batch
+      // exhausts its retries. Three things would break at once: peers receive a
+      // fraction of the playlist, they receive it in CAS-resolution order rather
+      // than playlist order (no `position` is sent — the server appends), and the
+      // ordered-hash watchdog then collapses THIS device's queue to whatever
+      // landed, losing climbs the snackbar already confirmed. Sequential sends
+      // are uncontended and arrive in order; the local queue is already correct,
+      // so the latency is invisible.
+      void (async () => {
+        const failures: unknown[] = [];
+        for (const item of attributedItems) {
+          try {
+            await mutations.addQueueItem(item);
+          } catch (error) {
+            if (__DEV__) console.warn('[queue] appendQueueItems addQueueItem sync failed', error);
+            failures.push(error);
+          }
+        }
+        if (failures.length === 0) return;
+        // ONE reconcile for the batch, not one per item: each call can toast and
+        // kick a resync, so 30 failed adds would be 30 toasts. Prefer a throttled
+        // reason over the first — a burst typically only trips the limiter at the
+        // tail, and an unrelated early failure would otherwise swallow the pacing
+        // hint. Same rule as `clearQueue`.
+        const throttledFailure = failures.find((error) => isRateLimitedError(error));
+        reconcileFailedContentMutation(throttledFailure ?? failures[0]);
+      })();
+      return appended.length;
     },
-    [setQueue],
+    [attributeNewItem, mutations, reconcileFailedContentMutation, setQueue],
   );
 
   // A throttled setCurrentClimb that carried `shouldAddToQueue` lost two
@@ -1453,7 +1528,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       clearQueue,
       setQueue,
       getQueueSnapshot,
-      appendGeneratedSession,
+      appendQueueItems,
       setCurrentClimb,
       nextClimb,
       previousClimb,
@@ -1479,7 +1554,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       clearQueue,
       setQueue,
       getQueueSnapshot,
-      appendGeneratedSession,
+      appendQueueItems,
       setCurrentClimb,
       nextClimb,
       previousClimb,

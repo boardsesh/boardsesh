@@ -14,7 +14,11 @@
 // Playlist-detail screens additionally opt into `replaceQueueOnActivate`: a tap
 // replaces the whole queue with the playlist order (tapped climb active) so
 // previous/next walk the circuit. Because that clears any future queue items, a
-// confirmation sheet warns first whenever the queue has items after the current.
+// three-way prompt warns first whenever the queue has items after the current:
+// start the playlist (destructive), add it behind what's queued, or back out.
+//
+// The same additive landing is available on its own, without a row tap, through
+// `addToQueue.append` — the playlist-detail "Add to queue" row.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -24,22 +28,40 @@ import {
   isAbortError,
   PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
 } from '@boardsesh/playlists-react';
-import { createPlaylistSuggestionSource, getQueueBoardKey, type Climb, type ClimbQueueItem } from '@boardsesh/queue';
+import {
+  createPlaylistSuggestionSource,
+  getQueueBoardKey,
+  MAX_SYNCED_QUEUE_ITEMS,
+  type Climb,
+  type ClimbQueueItem,
+} from '@boardsesh/queue';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { canAddClimbToBoard } from '@boardsesh/board-config';
 import { useActiveClimbUuid, usePlaylistSuggestionSource, useQueueActions } from '../../providers/queue-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
+import { useQueueSnackbar } from '../../providers/queue-snackbar-provider';
+import { useChoose } from '../../providers/dialog-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useActiveBoard } from '../graphql/use-active-board';
 import { climbToQueueItem } from '../climb-to-queue-item';
 import { reportHandledError } from '../error-reporting';
+import { track } from '../analytics';
 import { toSchemaClimb } from '../climb-types';
 import { getPlaylistRenderBoardTarget } from './playlist-climb-render-board';
 import type { PlaylistRenderBoard } from './use-playlist-render-board';
+
+/** Which board-scoped fetch a canary report came from. */
+type EmptyBoardFetchOp = 'replace-queue-empty' | 'append-queue-empty';
 
 // Playlists whose board-scoped fetch has already been reported as empty this app
 // session. `reportHandledError` has no dedup or rate limit of its own, and a
 // climber poking at a broken playlist re-taps rows freely, so without this one
 // bad playlist could ship hundreds of identical events.
+//
+// Keyed on `<op>|<sourceId>`, not the sourceId alone: the replace path and the
+// append path fetch the same list through different call sites, and a single
+// shared key would let whichever fired first silently swallow the other's
+// canary for the rest of the session.
 const reportedEmptyBoardFetches = new Set<string>();
 
 /**
@@ -127,27 +149,31 @@ export type UsePlaylistActivationOptions = {
   replaceQueueOnActivate?: boolean;
 };
 
-type PendingQueueReplacement = {
-  climb: Climb;
-  futureQueueCount: number;
-  loadedClimbs?: Climb[];
-  previewQueueItem?: ClimbQueueItem | null;
-};
-
-export type PlaylistQueueReplaceSheetState = {
-  visible: boolean;
-  futureQueueCount: number;
-  isReplacing: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
+export type PlaylistAddToQueueState = {
+  /**
+   * Append every board-scoped climb in this playlist behind the live queue.
+   *
+   * **Undefined when there is no active board.** The board-scoped fetch is built
+   * from the active board, so with none it returns an empty list and the climber
+   * would be told "nothing here for your board yet" when the truth is "you
+   * haven't picked a board". Absent instead, so the row simply isn't rendered.
+   */
+  append?: () => void;
+  isAppending: boolean;
 };
 
 export type PlaylistActivationResult = {
   /** Callback to wire onto a climb row tap. */
   activate: (climb: Climb) => Promise<void>;
-  /** Props for PlaylistQueueReplaceSheet. */
-  queueReplaceSheet: PlaylistQueueReplaceSheetState;
+  /** Bulk additive queueing for the detail screen's "Add to queue" row. */
+  addToQueue: PlaylistAddToQueueState;
 };
+
+/** What the climber picked in the replace-or-append prompt. */
+type QueueForkDecision = 'replace' | 'append' | 'cancel';
+
+/** The five ways a bulk append can end, as reported to `PlaylistQueued`. */
+type PlaylistQueuedOutcome = 'added' | 'addedPartial' | 'queueFull' | 'nothingToAdd' | 'failed';
 
 function countFutureQueueItems(queue: ClimbQueueItem[], currentClimbQueueItem: ClimbQueueItem | null): number {
   const currentIndex = currentClimbQueueItem
@@ -199,16 +225,28 @@ export function usePlaylistActivation({
   refreshErrorMessage,
   replaceQueueOnActivate = false,
 }: UsePlaylistActivationOptions): PlaylistActivationResult {
-  const { setCurrentClimb, setPlaylistSuggestionSource, refreshPlaylistSuggestionSource, setQueue, getQueueSnapshot } =
-    useQueueActions();
+  const {
+    setCurrentClimb,
+    setPlaylistSuggestionSource,
+    refreshPlaylistSuggestionSource,
+    setQueue,
+    getQueueSnapshot,
+    appendQueueItems,
+  } = useQueueActions();
   const { openPlayDrawer } = useDrawerHost();
+  const { showQueueAddedSnackbar } = useQueueSnackbar();
   const { showToast } = useToast();
+  const choose = useChoose();
   const { t } = useTranslation('playlists');
   const activeBoard = useActiveBoard().data ?? null;
 
-  const [pendingReplacement, setPendingReplacement] = useState<PendingQueueReplacement | null>(null);
-  const [isReplacingQueue, setIsReplacingQueue] = useState(false);
   const replacementAbortRef = useRef<AbortController | null>(null);
+  const appendAbortRef = useRef<AbortController | null>(null);
+  const [isAppending, setIsAppending] = useState(false);
+  // Re-entrancy guard read synchronously: `isAppending` only lands after a
+  // render, so two taps inside one frame would both pass a state check and fire
+  // two fetches (and two appends).
+  const isAppendingRef = useRef(false);
 
   // Mirror the active climb uuid + the live suggestion source into refs so the
   // returned callback can decide how to handle a re-tap of the already-active
@@ -316,7 +354,7 @@ export function usePlaylistActivation({
   );
 
   const fetchAllClimbsForBoard = useCallback(
-    async ({ signal }: { signal: AbortSignal }) => {
+    async ({ signal, limit }: { signal: AbortSignal; limit?: number }) => {
       if (!activeBoard) return [];
       const board = {
         boardName: activeBoard.boardType,
@@ -329,7 +367,11 @@ export function usePlaylistActivation({
       let page = 0;
       let hasMore = true;
 
-      while (hasMore && !signal.aborted) {
+      // `limit` stops the paging loop once the caller has all it can use — the
+      // bulk append can only take the queue's remaining capacity, so a
+      // 900-climb playlist shouldn't page nine times to throw eight pages away.
+      // Replace passes none and stays unbounded.
+      while (hasMore && !signal.aborted && (limit === undefined || climbs.length < limit)) {
         const pageResult = await fetchPage({
           page,
           pageSize: PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
@@ -341,14 +383,47 @@ export function usePlaylistActivation({
         page += 1;
       }
 
-      return climbs;
+      return limit === undefined ? climbs : climbs.slice(0, limit);
     },
     [activeBoard, fetchPage],
+  );
+
+  /**
+   * Canary. A board-scoped fetch that comes back empty for a playlist the detail
+   * list has already rendered climbable rows for degrades into something
+   * perfectly plausible — a one-item queue on the replace path, a "nothing here"
+   * toast on the append path — with no error anywhere, which is exactly how
+   * #3891's MoonBoard size filter stayed invisible for months. Sentry-only, once
+   * per playlist per op per session, so the next instance of that class pages us
+   * instead of a user. Gated on climbs this board CAN render, so a playlist full
+   * of off-board climbs (legitimately empty here) stays silent.
+   */
+  const reportEmptyBoardFetchOnce = useCallback(
+    (op: EmptyBoardFetchOp) => {
+      if (!activeBoard) return;
+      const reportKey = `${op}|${sourceId}`;
+      if (reportedEmptyBoardFetches.has(reportKey)) return;
+      const renderableCount = countClimbsThisBoardCanRender(loadedClimbsRef.current, {
+        boardName: activeBoard.boardType,
+        layoutId: activeBoard.layoutId,
+        sizeId: activeBoard.sizeId,
+        setIds: activeBoard.setIds,
+        angle: activeBoard.angle,
+      });
+      if (renderableCount === 0) return;
+      reportedEmptyBoardFetches.add(reportKey);
+      reportHandledError(new Error('Playlist board-scoped fetch returned no climbs'), {
+        tags: { source: 'playlist', op },
+        extra: { sourceId, renderableCount, loadedCount: loadedClimbsRef.current.length },
+      });
+    },
+    [activeBoard, sourceId],
   );
 
   useEffect(() => {
     return () => {
       replacementAbortRef.current?.abort();
+      appendAbortRef.current?.abort();
     };
   }, []);
 
@@ -364,6 +439,166 @@ export function usePlaylistActivation({
     refreshErrorMessage,
   });
 
+  /**
+   * The three-way fork behind a destructive playlist start: keep the queue and
+   * start the playlist anyway, add the playlist behind what's already queued, or
+   * back out. Raised through `useChoose()` — the same imperative prompt the
+   * cross-board queue-add gate uses — so it renders as a native iOS action sheet
+   * on Liquid Glass and an M3 dialog on Material, both of which already handle
+   * three long localised labels and the 44 dp tap-target floor.
+   *
+   * Loops on `replace` when the queue grew while the prompt was open, so the
+   * climber never clears items they haven't seen counted.
+   */
+  const promptQueueFork = useCallback(
+    async (futureQueueCount: number): Promise<QueueForkDecision> => {
+      let warnedCount = futureQueueCount;
+      for (;;) {
+        const picked = await choose<QueueForkDecision>({
+          title: t('detail.queueReplace.title'),
+          message: t('detail.queueReplace.message', { count: warnedCount }),
+          options: [
+            // Destructive first: the climber tapped play, and we don't hijack
+            // that tap by demoting what they asked for.
+            { value: 'replace', label: t('detail.queueReplace.confirm'), destructive: true },
+            { value: 'append', label: t('detail.queueReplace.addInstead') },
+            { value: 'cancel', label: t('detail.queueReplace.cancel'), cancel: true },
+          ],
+          cancelValue: 'cancel',
+        });
+        if (picked !== 'replace') return picked;
+        const { queue, currentClimbQueueItem } = getQueueSnapshot();
+        const latestFutureQueueCount = countFutureQueueItems(queue, currentClimbQueueItem);
+        if (latestFutureQueueCount <= warnedCount) return 'replace';
+        warnedCount = latestFutureQueueCount;
+      }
+    },
+    [choose, getQueueSnapshot, t],
+  );
+
+  /**
+   * Append every board-scoped climb in this playlist behind the live queue.
+   * Nothing is cleared and the current climb never moves, so there is no
+   * confirmation on the way in — only a count on the way out.
+   *
+   * `loadedClimbs` short-circuits the fetch for the replace prompt's "add
+   * instead" branch, which already has the board-scoped list in hand.
+   */
+  const appendClimbsToQueue = useCallback(
+    async ({ loadedClimbs, entryPoint }: { loadedClimbs?: Climb[]; entryPoint: 'listHeader' | 'replacePrompt' }) => {
+      if (!activeBoard) return;
+      if (isAppendingRef.current) {
+        // The row swallows its own press while appending (and shows a spinner),
+        // so reaching this from `listHeader` means a double tap inside one frame
+        // — nothing to say. From the prompt it is a deliberate pick that would
+        // otherwise do nothing at all, so say what is already happening: the
+        // in-flight append is landing this same playlist.
+        if (entryPoint === 'replacePrompt') showToast(t('detail.addToQueue.alreadyAdding'), 'info');
+        return;
+      }
+      isAppendingRef.current = true;
+      const abortController = new AbortController();
+      appendAbortRef.current = abortController;
+      setIsAppending(true);
+      // Every outcome is instrumented, including the two that return before an
+      // append is even attempted — otherwise `queueFull` (the branch that
+      // actually fires when the queue is at the cap) and `nothingToAdd` would be
+      // unmeasurable, and the counts alone couldn't tell them apart.
+      const trackQueued = (outcome: PlaylistQueuedOutcome, fetchedCount: number, appendedCount: number) => {
+        track(SHARED_EVENTS.PlaylistQueued, {
+          // `sourceId` is `playlist:<uuid>` or `smart:<type>:<userId>`. Only the
+          // prefix is safe to ship — the smart form carries a user id — and an
+          // explicit test keeps the property to the union `events.ts` documents
+          // instead of whatever a future id format happens to start with.
+          sourceKind: sourceId.startsWith('smart:') ? 'smart' : 'playlist',
+          entryPoint,
+          outcome,
+          fetchedCount,
+          appendedCount,
+          boardName: activeBoard.boardType,
+          layoutId: activeBoard.layoutId,
+          angle: activeBoard.angle,
+        });
+      };
+
+      try {
+        const remainingCapacity = MAX_SYNCED_QUEUE_ITEMS - getQueueSnapshot().queue.length;
+        if (remainingCapacity <= 0) {
+          trackQueued('queueFull', 0, 0);
+          showToast(t('detail.addToQueue.queueFull', { max: MAX_SYNCED_QUEUE_ITEMS }), 'error');
+          return;
+        }
+        const fetchedClimbs =
+          loadedClimbs ?? (await fetchAllClimbsForBoard({ signal: abortController.signal, limit: remainingCapacity }));
+        if (abortController.signal.aborted) return;
+
+        if (fetchedClimbs.length === 0) {
+          reportEmptyBoardFetchOnce('append-queue-empty');
+          trackQueued('nothingToAdd', 0, 0);
+          showToast(t('detail.addToQueue.nothingToAdd'), 'info');
+          return;
+        }
+
+        // Dedupe by uuid before building queue items: paging an ordered list that
+        // is being edited underneath can hand the same climb back on two pages.
+        // Same rule `buildPlaylistQueue` applies to the replace path.
+        const seenClimbUuids = new Set<string>();
+        const queueItems: ClimbQueueItem[] = [];
+        for (const climb of fetchedClimbs) {
+          if (seenClimbUuids.has(climb.uuid)) continue;
+          seenClimbUuids.add(climb.uuid);
+          queueItems.push(climbToQueueItem(toSchemaClimb(climb)));
+        }
+
+        const appendedCount = appendQueueItems(queueItems);
+        trackQueued(
+          appendedCount === 0 ? 'queueFull' : appendedCount < queueItems.length ? 'addedPartial' : 'added',
+          queueItems.length,
+          appendedCount,
+        );
+
+        // Nothing fit: the queue was already at the wire cap. That is an error
+        // outcome with nothing to open, so it takes the toast, not the snackbar.
+        if (appendedCount === 0) {
+          showToast(t('detail.addToQueue.queueFull', { max: MAX_SYNCED_QUEUE_ITEMS }), 'error');
+          return;
+        }
+
+        // Climbs landed in the queue, so this is the queue-added snackbar — the
+        // one confirmation in the app whose "Open" takes you to the result —
+        // fired ONCE for the whole batch (the bulk append bypasses
+        // `commitQueueAdd`, which is what fires it for a single add).
+        //
+        // The count is what actually landed, not what was fetched, so a batch
+        // clamped at the wire cap confirms the honest number.
+        showQueueAddedSnackbar({ kind: 'added', count: appendedCount });
+      } catch (error) {
+        if (isAbortError(error)) return;
+        console.error('Playlist queue append failed:', error);
+        reportHandledError(error, { tags: { source: 'playlist', op: 'append-queue' } });
+        trackQueued('failed', 0, 0);
+        showToast(t('detail.addToQueue.failed'), 'error');
+      } finally {
+        if (appendAbortRef.current === abortController) {
+          appendAbortRef.current = null;
+        }
+        isAppendingRef.current = false;
+        setIsAppending(false);
+      }
+    },
+    [
+      activeBoard,
+      appendQueueItems,
+      fetchAllClimbsForBoard,
+      getQueueSnapshot,
+      reportEmptyBoardFetchOnce,
+      showQueueAddedSnackbar,
+      showToast,
+      sourceId,
+      t,
+    ],
+  );
+
   const replaceQueueWithPlaylist = useCallback(
     async (
       climb: Climb,
@@ -376,48 +611,28 @@ export function usePlaylistActivation({
       replacementAbortRef.current?.abort();
       const abortController = new AbortController();
       replacementAbortRef.current = abortController;
-      setIsReplacingQueue(true);
       try {
         const climbs = options.loadedClimbs ?? (await fetchAllClimbsForBoard({ signal: abortController.signal }));
         if (abortController.signal.aborted) return;
-        // Canary. A board-scoped fetch that comes back empty for a playlist the
-        // detail list has already rendered climbable rows for degrades into a
-        // perfectly plausible one-item queue (buildPlaylistQueue appends the
-        // tapped climb), with no error anywhere — which is exactly how #3891's
-        // MoonBoard size filter stayed invisible for months. Sentry-only, once
-        // per playlist per session, so the next instance of that class pages us
-        // instead of a user. Gated on climbs this board CAN render, so a playlist
-        // full of off-board climbs (legitimately empty here) stays silent.
-        if (climbs.length === 0 && activeBoard && !reportedEmptyBoardFetches.has(sourceId)) {
-          const renderableCount = countClimbsThisBoardCanRender(loadedClimbsRef.current, {
-            boardName: activeBoard.boardType,
-            layoutId: activeBoard.layoutId,
-            sizeId: activeBoard.sizeId,
-            setIds: activeBoard.setIds,
-            angle: activeBoard.angle,
-          });
-          if (renderableCount > 0) {
-            reportedEmptyBoardFetches.add(sourceId);
-            reportHandledError(new Error('Playlist board-scoped fetch returned no climbs'), {
-              tags: { source: 'playlist', op: 'replace-queue-empty' },
-              extra: { sourceId, renderableCount, loadedCount: loadedClimbsRef.current.length },
-            });
-          }
-        }
+        if (climbs.length === 0) reportEmptyBoardFetchOnce('replace-queue-empty');
         // Re-check live queue state after the async load: new future items may
         // have landed while the ordered list streamed in, and replacement still
-        // clears them — so warn instead of clearing silently. Skipped once the
-        // user has confirmed (allowClearingManualFuture).
+        // clears them — so fork instead of clearing silently. Skipped once the
+        // user has already answered the fork (allowClearingManualFuture).
         const { queue: latestQueue, currentClimbQueueItem: latestCurrent } = getQueueSnapshot();
         const latestFutureQueueCount = countFutureQueueItems(latestQueue, latestCurrent);
         if (!options.allowClearingManualFuture && latestFutureQueueCount > 0) {
-          setPendingReplacement({
-            climb,
-            futureQueueCount: latestFutureQueueCount,
-            loadedClimbs: climbs,
-            previewQueueItem: options.previewQueueItem ?? null,
-          });
-          return;
+          const decision = await promptQueueFork(latestFutureQueueCount);
+          // The prompt is modal, so nothing in the UI can abort underneath it —
+          // but an unmount can, and the old sheet flow could not reach this at
+          // all. Don't replace a queue on behalf of a screen that is gone.
+          if (abortController.signal.aborted) return;
+          if (decision === 'cancel') return;
+          if (decision === 'append') {
+            // The board-scoped list is already in hand — no second round trip.
+            await appendClimbsToQueue({ loadedClimbs: climbs, entryPoint: 'replacePrompt' });
+            return;
+          }
         }
         const { queue, currentItem } = buildPlaylistQueue(climbs, climb, options.previewQueueItem);
         setQueue(queue, currentItem);
@@ -426,7 +641,6 @@ export function usePlaylistActivation({
         if (!options.previewQueueItem) {
           openPlayDrawer(toSchemaClimb(climb), { committedExternally: true });
         }
-        setPendingReplacement(null);
       } catch (error) {
         if (isAbortError(error)) return;
         console.error('Playlist queue replacement failed:', error);
@@ -436,35 +650,20 @@ export function usePlaylistActivation({
         if (replacementAbortRef.current === abortController) {
           replacementAbortRef.current = null;
         }
-        setIsReplacingQueue(false);
       }
     },
-    [activeBoard, fetchAllClimbsForBoard, getQueueSnapshot, openPlayDrawer, setQueue, showToast, sourceId, t],
+    [
+      appendClimbsToQueue,
+      fetchAllClimbsForBoard,
+      getQueueSnapshot,
+      openPlayDrawer,
+      promptQueueFork,
+      reportEmptyBoardFetchOnce,
+      setQueue,
+      showToast,
+      t,
+    ],
   );
-
-  const cancelQueueReplacement = useCallback(() => {
-    replacementAbortRef.current?.abort();
-    setPendingReplacement(null);
-    setIsReplacingQueue(false);
-  }, []);
-
-  const confirmQueueReplacement = useCallback(() => {
-    if (!pendingReplacement || isReplacingQueue) return;
-    // The queue can grow between opening the sheet and confirming. Re-read it and,
-    // if more future items appeared, bump the warning count and require another
-    // confirm so the user never clears items they haven't seen counted.
-    const { queue, currentClimbQueueItem } = getQueueSnapshot();
-    const latestFutureQueueCount = countFutureQueueItems(queue, currentClimbQueueItem);
-    if (latestFutureQueueCount > pendingReplacement.futureQueueCount) {
-      setPendingReplacement({ ...pendingReplacement, futureQueueCount: latestFutureQueueCount });
-      return;
-    }
-    void replaceQueueWithPlaylist(pendingReplacement.climb, {
-      allowClearingManualFuture: true,
-      loadedClimbs: pendingReplacement.loadedClimbs,
-      previewQueueItem: pendingReplacement.previewQueueItem,
-    });
-  }, [getQueueSnapshot, isReplacingQueue, pendingReplacement, replaceQueueWithPlaylist]);
 
   // Open the drawer immediately, then let the shared hook commit the climb. The
   // open and the synchronous setCurrentClimb dispatch land in the same React
@@ -549,8 +748,13 @@ export function usePlaylistActivation({
           const futureQueueCount = countFutureQueueItems(queue, currentClimbQueueItem);
           if (futureQueueCount > 0) {
             replacementAbortRef.current?.abort();
-            setPendingReplacement({ climb, futureQueueCount });
-            return Promise.resolve();
+            // Ask before the fetch so the climber isn't waiting on a network
+            // round trip to be told what we're about to destroy.
+            return promptQueueFork(futureQueueCount).then((decision) => {
+              if (decision === 'cancel') return;
+              if (decision === 'append') return appendClimbsToQueue({ entryPoint: 'replacePrompt' });
+              return replaceQueueWithPlaylist(climb, { allowClearingManualFuture: true });
+            });
           }
           const item = climbToQueueItem(schemaClimb);
           setQueue([item], item);
@@ -593,8 +797,10 @@ export function usePlaylistActivation({
     [
       activate,
       allClimbs,
+      appendClimbsToQueue,
       getQueueSnapshot,
       openPlayDrawer,
+      promptQueueFork,
       replaceQueueOnActivate,
       replaceQueueWithPlaylist,
       resolveTarget,
@@ -604,17 +810,18 @@ export function usePlaylistActivation({
     ],
   );
 
+  // `append` is withheld (undefined) without an active board so the detail view's
+  // render gate collapses "no board picked" into "no row" instead of shipping a
+  // control that can only ever answer "nothing here for your board yet".
+  const append = useCallback(() => {
+    void appendClimbsToQueue({ entryPoint: 'listHeader' });
+  }, [appendClimbsToQueue]);
+
   return useMemo(
     () => ({
       activate: activatePlaylistClimb,
-      queueReplaceSheet: {
-        visible: pendingReplacement !== null,
-        futureQueueCount: pendingReplacement?.futureQueueCount ?? 0,
-        isReplacing: isReplacingQueue,
-        onCancel: cancelQueueReplacement,
-        onConfirm: confirmQueueReplacement,
-      },
+      addToQueue: { append: activeBoard ? append : undefined, isAppending },
     }),
-    [activatePlaylistClimb, cancelQueueReplacement, confirmQueueReplacement, isReplacingQueue, pendingReplacement],
+    [activatePlaylistClimb, activeBoard, append, isAppending],
   );
 }

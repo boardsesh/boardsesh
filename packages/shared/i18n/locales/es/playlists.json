@@ -108,7 +108,15 @@
   "detail": {
     "share": "Compartir playlist",
     "actions": "Acciones de la playlist",
-    "activateAll": "Poner en cola todos los bloques",
+    "activateAll": "Iniciar playlist",
+    "addToQueue": {
+      "action": "Añadir a la cola",
+      "subtitle": "No se pierde nada de tu cola",
+      "queueFull": "Tu cola ya está llena con {{max}} bloques",
+      "nothingToAdd": "Aquí no hay nada para tu plafón todavía",
+      "alreadyAdding": "Ya se está añadiendo esta playlist",
+      "failed": "No se pudo añadir a la cola. Inténtalo de nuevo."
+    },
     "boardMismatch": {
       "title": "Cambia a {{board}} para escalar esta playlist",
       "subtitle": "Estos son bloques de {{board}}. Cambia de plafón para ponerlos en cola.",
@@ -139,7 +147,8 @@
       "message_other": "Esto borrará {{count}} bloques en cola después de tu bloque actual.",
       "cancel": "Mantener cola",
       "confirm": "Iniciar playlist",
-      "loadFailed": "No se pudo iniciar la playlist. Inténtalo de nuevo."
+      "loadFailed": "No se pudo iniciar la playlist. Inténtalo de nuevo.",
+      "addInstead": "Añadir a la cola"
     },
     "deleteConfirm": {
       "title": "¿Eliminar playlist?",

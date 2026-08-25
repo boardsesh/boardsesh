@@ -302,7 +302,8 @@
       "doneEditing": "Fertig"
     },
     "queueSnackbar": {
-      "added": "Boulder in die Warteschlange gelegt",
+      "added_one": "Boulder in die Warteschlange gelegt",
+      "added_other": "{{count}} Boulder in die Warteschlange gelegt",
       "playingNext": "Boulder kommt als Nächstes dran",
       "open": "Öffnen",
       "openAria": "Warteschlange öffnen"

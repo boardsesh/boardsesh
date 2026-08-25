@@ -34,6 +34,7 @@ import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from '../climb-list-thumbnail-metri
 import { GlassIconButton } from '../GlassIconButton';
 import { ProgressiveBlur } from '../ProgressiveBlur';
 import { Button } from '../Button';
+import { PlaylistAddToQueueRow } from './PlaylistAddToQueueRow';
 import { PlaylistEditClimbRow, type PlaylistEditRowBoard } from './PlaylistEditClimbRow';
 import { usePlaylistDrag } from './use-playlist-drag';
 import { PlaylistBoardBackdrop } from './PlaylistBoardBackdrop';
@@ -151,6 +152,13 @@ export type PlaylistDetailViewProps = {
    *  board-mismatch banner. Stays inside the existing FlashList header so no
    *  second scroll container is introduced. */
   headerSlot?: ReactNode;
+  /** Append every climb in this playlist behind the live queue, without clearing
+   *  anything or moving the current climb. Omit to hide the row — the callers
+   *  withhold it when there is no active board, so "no board picked" collapses
+   *  into "no row" instead of a control that can only report an empty fetch. */
+  onAddAllToQueue?: () => void;
+  /** True while that append is in flight (spinner in the row's trailing slot). */
+  isAddingAllToQueue?: boolean;
 };
 
 const noopReorder = (_climbUuid: string, _newIndex: number) => {};
@@ -201,6 +209,8 @@ export function PlaylistDetailView({
   onRemoveClimb,
   onEditDetails,
   headerSlot,
+  onAddAllToQueue,
+  isAddingAllToQueue = false,
 }: PlaylistDetailViewProps) {
   const { t } = useTranslation('playlists');
   const { t: tCommon } = useTranslation('common');
@@ -429,6 +439,15 @@ export function PlaylistDetailView({
   // one. Sits inside the list header so it scrolls with the hero in both variants.
   const bannerNode = boardBanner ? <BoardMismatchBanner banner={boardBanner} systemColors={systemColors} /> : null;
 
+  // Additive bulk queueing, above the discussion row in both variants — a queue
+  // action outranks a comment thread. Same four conditions the destructive
+  // bulk control uses, plus "the host actually handed us a handler" (withheld
+  // when there is no active board, since the board-scoped fetch would be empty).
+  const addToQueueNode =
+    onAddAllToQueue && climbs.length > 0 && !boardBanner && !editMode ? (
+      <PlaylistAddToQueueRow onPress={onAddAllToQueue} isAppending={isAddingAllToQueue} />
+    ) : null;
+
   // ── Material 3 branch ───────────────────────────────────────────────────────
   if (isMaterial) {
     const accent = brandColors.primary;
@@ -494,6 +513,7 @@ export function PlaylistDetailView({
                 ) : null}
               </View>
               {bannerNode}
+              {addToQueueNode}
               {headerSlot}
             </>
           }
@@ -650,6 +670,7 @@ export function PlaylistDetailView({
           <>
             {header}
             {bannerNode}
+            {addToQueueNode}
             {headerSlot}
           </>
         }
