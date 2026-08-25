@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-25T14:14:56.813Z",
+  "generatedAt": "2026-08-25T15:54:43.167Z",
   "entries": [
+    {
+      "prNumber": 4784,
+      "category": "improved",
+      "title": "Say thanks to xprem, the update server that gets fixes to your phone without an app store wait",
+      "mergedAt": "2026-08-25T15:45:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4784"
+    },
     {
       "prNumber": 4718,
       "category": "fixed",

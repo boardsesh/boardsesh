@@ -17,6 +17,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Improved
 
+- Say thanks to xprem, the update server that gets fixes to your phone without an app store wait ([#4784](https://github.com/boardsesh/boardsesh/pull/4784))
 - Tapping and swiping through climbs in a shared session puts them on the wall again, the way it did before the last update. ([#4745](https://github.com/boardsesh/boardsesh/pull/4745))
 
 ### Fixed
