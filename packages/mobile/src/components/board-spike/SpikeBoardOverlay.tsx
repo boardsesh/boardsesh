@@ -4,6 +4,7 @@ import type { HoldPlacement } from '../board-renderer/types';
 import { plainRingPath, polygonPath, spikyRingPath, splinePath, wavyRingPath } from './spike-shapes';
 import { SPIKE_HOLD_ART_LIGHTNESS } from './spike-hold-lightness';
 import { SPIKE_HOLD_OUTLINES } from './spike-hold-outlines';
+import { RoleGlyph } from './RoleGlyph';
 import {
   SPIKE_PALETTES,
   SPIKE_TUNING,
@@ -32,7 +33,7 @@ type SpikeBoardOverlayProps = {
  * Largest extent of a traced silhouette, in board pixels. Feeds the size floor:
  * a hold much narrower than its placement circle needs the ring kept.
  */
-function outlineExtent(holdId: number, boardKey: string): number {
+function outlineExtent(holdId: number, boardKey: string, axis: 'longest' | 'shortest' = 'longest'): number {
   const flat = SPIKE_HOLD_OUTLINES[boardKey]?.[holdId];
   if (flat === undefined || flat.length < 6) return Infinity;
   let minX = Infinity;
@@ -45,7 +46,7 @@ function outlineExtent(holdId: number, boardKey: string): number {
     minY = Math.min(minY, flat[index + 1]);
     maxY = Math.max(maxY, flat[index + 1]);
   }
-  return Math.max(maxX - minX, maxY - minY);
+  return axis === 'longest' ? Math.max(maxX - minX, maxY - minY) : Math.min(maxX - minX, maxY - minY);
 }
 
 /** Placements that get a neutral outline under the current scope. */
@@ -113,6 +114,15 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   const drawsShapeGlow = selector === 'shape-glow' || selector === 'shape-glow-out';
   const outwardOnly = selector === 'shape-glow-out';
   const drawsTint = selector === 'tint';
+  const drawsHybrid = selector === 'glow-tint';
+  /**
+   * Glyph colour where the mark underneath is already the role colour (glow,
+   * tint): a neutral picked from the art, not the role hue — a role-coloured
+   * glyph on a role-coloured mark is invisible, which is exactly what the first
+   * pass shipped.
+   */
+  const neutralGlyph = (holdId: number): string =>
+    (lightness[holdId] ?? 0) >= SPIKE_TUNING.casingLightnessThreshold ? '#101018' : '#FFFFFF';
   const drawsTracedRing = selector === 'traced-ring';
   const drawsShape = selector === 'shape' || selector === 'glow-shape';
   const outlineWidth = selector === 'glow-shape' ? SPIKE_TUNING.strokeWidth * 0.7 : SPIKE_TUNING.strokeWidth;
@@ -140,6 +150,20 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
             </RadialGradient>
           );
         })}
+        {(drawsTint || drawsHybrid) &&
+          litHolds.map((hold) => {
+            const path = outlinePath(hold.id, hold.cx, hold.cy);
+            if (path === null) return null;
+            // The silhouette edge is stroked at double width through this clip so
+            // only its inner half survives. A centred stroke sits proud of the art
+            // on every edge and blunts tapers into lozenges — and taper is how you
+            // recognise a hold on the wall.
+            return (
+              <ClipPath key={`inside-${hold.id}`} id={`spike-inside-${hold.id}`}>
+                <Path d={path} />
+              </ClipPath>
+            );
+          })}
         {outwardOnly &&
           litHolds.map((hold) => {
             const path = outlinePath(hold.id, hold.cx, hold.cy);
@@ -162,21 +186,31 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
           if (haloShape === 'outline') {
             const path = outlinePath(placement.id, placement.cx, placement.cy);
             if (path === null) return null;
-            // A fixed white outline is invisible on the boards that need it most:
-            // Kilter Homewall, MoonBoard and TB2 draw pale holds, and white on
-            // pale is nothing. Pick the outline the way `contrast-color()` would,
-            // from the art measured under it.
-            const onPaleArt = (lightness[placement.id] ?? 0) >= SPIKE_TUNING.casingLightnessThreshold;
+            // One unconditional two-tone casing rather than a per-hold
+            // black-or-white choice. The classifier version flipped polarity on
+            // visually identical neighbours wherever their measured lightness
+            // straddled the threshold, which reads as salt-and-pepper; a dark
+            // pass with a lighter core on top reads on both pale and dark art
+            // without having to decide which it is.
             return (
-              <Path
-                key={`halo-${placement.id}`}
-                d={path}
-                fill="none"
-                stroke={onPaleArt ? '#000000' : '#FFFFFF'}
-                strokeOpacity={onPaleArt ? SPIKE_TUNING.outlineHaloDarkOpacity : SPIKE_TUNING.outlineHaloOpacity}
-                strokeWidth={SPIKE_TUNING.outlineHaloStrokeWidth}
-                strokeLinejoin="round"
-              />
+              <G key={`halo-${placement.id}`}>
+                <Path
+                  d={path}
+                  fill="none"
+                  stroke={SPIKE_TUNING.casingDarkColor}
+                  strokeOpacity={SPIKE_TUNING.casingDarkOpacity}
+                  strokeWidth={SPIKE_TUNING.casingDarkWidth}
+                  strokeLinejoin="round"
+                />
+                <Path
+                  d={path}
+                  fill="none"
+                  stroke={SPIKE_TUNING.casingLightColor}
+                  strokeOpacity={SPIKE_TUNING.casingLightOpacity}
+                  strokeWidth={SPIKE_TUNING.casingLightWidth}
+                  strokeLinejoin="round"
+                />
+              </G>
             );
           }
           return (
@@ -219,7 +253,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
             />
           ))}
 
-        {(drawsShapeGlow || drawsTint || drawsTracedRing) &&
+        {(drawsShapeGlow || drawsTint || drawsTracedRing || drawsHybrid) &&
           litHolds.map((hold) => {
             const color = colors[hold.role] ?? '#FFFFFF';
             const path = outlinePath(hold.id, hold.cx, hold.cy);
@@ -253,6 +287,71 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                 strokeWidth={SPIKE_TUNING.sizeFloorRingWidth}
               />
             ) : null;
+            // Sized on the placement circle so the glyph is identical across arms
+            // — except where the real hold is smaller than that, where it has to
+            // fit inside the hold or it stops reading as a mark on the hold and
+            // starts reading as a blob over it. Measured on the hold's SHORTEST
+            // axis: sizing on the longest put a bar the full height of a thin
+            // elongated rail, which is the same failure in the other direction.
+            const glyphDiameter = Math.min(hold.radius * 2, outlineExtent(hold.id, boardKey, 'shortest'));
+            if (drawsHybrid) {
+              // Normalise the art under the hold toward a common lightness before
+              // the role colour goes on, so the same role hex composites to the
+              // same colour on Grasshopper's near-black holds and Kilter
+              // Homewall's cream ones. Translucent, not an opaque underlay — the
+              // hold's own shading and bolt hole have to survive.
+              const artLightness = lightness[hold.id] ?? SPIKE_TUNING.tintNormaliseTarget;
+              const target = SPIKE_TUNING.tintNormaliseTarget;
+              const normaliseColor = artLightness < target ? '#FFFFFF' : '#000000';
+              const normaliseOpacity =
+                artLightness < target
+                  ? (target - artLightness) / Math.max(1e-3, 1 - artLightness)
+                  : (artLightness - target) / Math.max(1e-3, artLightness);
+              return (
+                <G key={`sel-${hold.id}`}>
+                  {floorRing}
+                  <G clipPath={`url(#spike-outside-${hold.id})`}>
+                    {glowBands.map((band) => (
+                      <Path
+                        key={band.width}
+                        d={path}
+                        fill="none"
+                        stroke={color}
+                        strokeOpacity={band.opacity}
+                        strokeWidth={band.width * 2}
+                        strokeLinejoin="round"
+                      />
+                    ))}
+                  </G>
+                  <Path d={path} fill={normaliseColor} fillOpacity={Math.min(0.9, normaliseOpacity)} />
+                  <Path d={path} fill={color} fillOpacity={SPIKE_TUNING.tintFillOpacity} />
+                  <G clipPath={`url(#spike-inside-${hold.id})`}>
+                    <Path
+                      d={path}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={SPIKE_TUNING.tintBandWidth * 2}
+                      strokeLinejoin="round"
+                    />
+                  </G>
+                  <Path
+                    d={path}
+                    fill="none"
+                    stroke="#FFFFFF"
+                    strokeOpacity={0.85}
+                    strokeWidth={SPIKE_TUNING.tintOuterEdgeWidth}
+                    strokeLinejoin="round"
+                  />
+                  <RoleGlyph
+                    role={hold.role}
+                    cx={hold.cx}
+                    cy={hold.cy}
+                    diameter={glyphDiameter}
+                    color={neutralGlyph(hold.id)}
+                  />
+                </G>
+              );
+            }
             if (drawsTracedRing) {
               return (
                 <G key={`sel-${hold.id}`}>
@@ -264,6 +363,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                     strokeWidth={SPIKE_TUNING.strokeWidth}
                     strokeLinejoin="round"
                   />
+                  <RoleGlyph role={hold.role} cx={hold.cx} cy={hold.cy} diameter={glyphDiameter} color={color} />
                 </G>
               );
             }
@@ -278,6 +378,13 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                     stroke={color}
                     strokeWidth={SPIKE_TUNING.tintEdgeWidth}
                     strokeLinejoin="round"
+                  />
+                  <RoleGlyph
+                    role={hold.role}
+                    cx={hold.cx}
+                    cy={hold.cy}
+                    diameter={glyphDiameter}
+                    color={neutralGlyph(hold.id)}
                   />
                 </G>
               );
@@ -302,6 +409,13 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                     />
                   ))}
                 </G>
+                <RoleGlyph
+                  role={hold.role}
+                  cx={hold.cx}
+                  cy={hold.cy}
+                  diameter={glyphDiameter}
+                  color={neutralGlyph(hold.id)}
+                />
               </G>
             );
           })}
@@ -309,6 +423,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
         {!drawsShapeGlow &&
           !drawsTint &&
           !drawsTracedRing &&
+          !drawsHybrid &&
           litHolds.map((hold) => {
             const color = colors[hold.role] ?? '#FFFFFF';
             if (!drawsShape) {

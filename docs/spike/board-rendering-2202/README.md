@@ -113,6 +113,42 @@ drawn as well, so the silhouette carries identity and the ring carries findabili
 lit holds on TB2 Mirror and 5/10 on MoonBoard 2016, and on 0/16 on Kilter Homewall, whose holds are
 already 70% of the circle.
 
+## Acting on the review: four arms, not three
+
+The arm set is now **Baseline · Traced outline · Outward glow · Glow + tint**, following the
+review's calls:
+
+- **Outward glow leads.** The only treatment that beat baseline on every board compared, and the
+  only one where the wall's own bright holds cannot be mistaken for lit ones — a halo is something
+  photographic hold art cannot produce.
+- **Traced halos is not an arm.** Its lit mark is byte-identical to baseline, so as an arm it can
+  only lose on lit visibility. It is the per-board modifier described above, and nothing else.
+- **Plain whole-hold tint is out, replaced by Glow + tint.** Plain tint lost to baseline on three
+  of six boards on small holds, and on Grasshopper a tinted hold read as the same class as the
+  wall's own cyan art. The hybrid normalises the art under the hold toward a common lightness
+  (translucent, so the hold's shading and bolt hole survive), fills at α0.55, puts a crisp
+  inside-clipped silhouette edge on it, and keeps the outward glow for reach.
+- **Role glyphs, identical in every arm.** Role was carried by hue alone, and hue is the channel
+  that fails: under protanopia HAND `#4455FF` and FOOT `#FF00FF` land 7.7 ΔE apart — one colour.
+  The second channel is silhouette: HAND nothing, FOOT a dot, START a bar, FINISH a cross, sized
+  inside the existing footprint so the mark does not grow. `boards/colour-vision.webp` is the
+  Viénot 1999 protan/deutan simulation of the captures, baseline against glyphs.
+
+Two implementation notes that differ from the review's text, both deliberate:
+
+- The glyph is sized on the hold's **shortest** axis, not the marker diameter. Sizing on the
+  marker put a bar the full height of a thin elongated rail.
+- The every-hold outline is one **unconditional two-tone casing** (dark pass, lighter core) rather
+  than a per-hold black-or-white choice. The classifier flipped polarity on visually identical
+  neighbours whose measured lightness straddled the threshold, which reads as salt-and-pepper.
+
+### Open, and worth a decision
+
+On Grasshopper and Tension the board art draws a **white bolt-hole dot at the centre of every
+hold**, so the white FOOT dot glyph reads as a bolt hole rather than as a mark. The bar and cross
+are unaffected, and so is Kilter (its bolt marks are dark). Either FOOT needs a shape that is not
+a dot, or the glyph needs an edge that separates it from the art.
+
 ## Regenerating the derived data
 
 Three generators, all offline, all committed output:

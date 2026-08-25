@@ -26,6 +26,7 @@ export type SelectorStyle =
   | 'shape-glow'
   | 'shape-glow-out'
   | 'traced-ring'
+  | 'glow-tint'
   | 'tint';
 
 /**
@@ -64,6 +65,16 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
     selector: 'ring',
   },
   {
+    key: 'outward-glow',
+    haloPolicy: 'auto',
+    chip: 'Outward',
+    label: 'Outward glow',
+    note: 'The glow is clipped to outside the hold, so the light comes off the edge and the surface stays clean.',
+    halos: 'all',
+    haloShape: 'outline',
+    selector: 'shape-glow-out',
+  },
+  {
     key: 'traced-ring',
     chip: 'Outline',
     label: 'Traced outline',
@@ -71,6 +82,16 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
     halos: 'none',
     haloShape: 'outline',
     selector: 'traced-ring',
+  },
+  {
+    key: 'glow-tint',
+    chip: 'Hybrid',
+    label: 'Glow + tint',
+    note: 'Lightness-normalised fill for shape, a crisp silhouette edge, and an outward glow for reach.',
+    halos: 'all',
+    haloPolicy: 'auto',
+    haloShape: 'outline',
+    selector: 'glow-tint',
   },
   {
     key: 'piece-halos',
@@ -123,16 +144,6 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
     halos: 'all',
     haloShape: 'outline',
     selector: 'shape-glow',
-  },
-  {
-    key: 'outward-glow',
-    haloPolicy: 'auto',
-    chip: 'Outward',
-    label: 'Outward glow',
-    note: 'The glow is clipped to outside the hold, so the light comes off the edge and the surface stays clean.',
-    halos: 'all',
-    haloShape: 'outline',
-    selector: 'shape-glow-out',
   },
   {
     key: 'hold-tint',
@@ -274,6 +285,40 @@ export const SPIKE_TUNING = {
   /** Whole-hold tint: fill opacity over the hold, plus a crisp edge on its outline. */
   tintFillOpacity: 0.55,
   tintEdgeWidth: 4,
+  /**
+   * Target OkLab lightness the hold's art is normalised toward before the role
+   * colour goes on. Without it the same role hex composites to a different
+   * colour on every board — a HAND on Grasshopper's near-black holds and a HAND
+   * on Kilter Homewall's cream ones are not the same blue. Normalising with a
+   * translucent white or black (rather than an opaque underlay) keeps the hold's
+   * own shading and bolt hole visible underneath.
+   */
+  tintNormaliseTarget: 0.588,
+  /** Crisp saturated silhouette-exact edges are the thing photographic hold art cannot fake. */
+  tintBandWidth: 3,
+  tintOuterEdgeWidth: 1,
+  /**
+   * Two-tone casing for the every-hold outline: a dark pass with a lighter core
+   * on top. One unconditional language instead of a per-hold black-or-white
+   * classifier, which produced visible salt-and-pepper where neighbouring holds
+   * happened to land either side of the threshold.
+   */
+  casingDarkWidth: 3,
+  casingDarkColor: '#10101A',
+  casingDarkOpacity: 0.55,
+  casingLightWidth: 1.25,
+  casingLightColor: '#FFFFFF',
+  casingLightOpacity: 0.6,
+  /**
+   * Role glyphs. Role is carried by hue alone in every treatment here, and under
+   * protanopia HAND #4455FF and FOOT #FF00FF collapse to one colour (7.7 dE).
+   * A glyph inside the existing footprint adds a second channel — silhouette —
+   * without growing the mark: none / dot / bar / cross. Identical in every arm,
+   * so an experiment measures treatments and not glyph sets.
+   */
+  glyphDotFraction: 0.3,
+  glyphBarLengthFraction: 0.62,
+  glyphBarThicknessFraction: 0.2,
 } as const;
 
 export type SpikeLitHold = {
