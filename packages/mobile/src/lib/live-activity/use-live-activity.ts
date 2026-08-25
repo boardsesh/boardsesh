@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { parseSetIds, toBoardName } from '@boardsesh/board-config';
+import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
+import type { BoardName } from '@boardsesh/shared-schema';
 import type { BoardConnection } from '../../components/play-drawer/lightbulb-control';
 import { getAuthToken } from '../auth-store';
 import { BACKEND_URL } from '../env';
@@ -203,19 +205,41 @@ export function useLiveActivity({
 
   // Memoize queue serialization so it only recomputes when the queue array
   // changes, not on every currentClimbQueueItem navigation.
+  //
+  // Frames are flattened to the route's union here, not shipped raw (#4634).
+  // This snapshot is what the native side writes to the wall for lock-screen
+  // Prev/Next and the reconnect re-light, and Swift's `parseFrames`
+  // (BoardBleEncoding.swift) is the same naive `split("p")`/`split("r")` the JS
+  // packet builders use: handed a raw multi-frame string it lights holds a later
+  // frame turned off and drops the hold before every frame boundary. The JS send
+  // path collapses to the union at its choke point, so without this the SAME
+  // climb on the SAME wall would show the union when selected in-app and a
+  // garble when reached from the lock screen — and the JS dedup would then
+  // confirm over a wall it never wrote. Swift parses a flat string byte-
+  // correctly, and its `mirroredFrames` stops dropping pairs too.
+  //
+  // A route that collapses to nothing keeps its raw string: native's own
+  // zero-encoded refusal is the right handler for that, and shipping `''` would
+  // read as a deliberate clear-all.
+  const boardNameForFrames = board?.boardName;
   const serializedQueue = useMemo(
     () =>
-      queue.map((q) => ({
-        uuid: q.uuid,
-        climbUuid: q.climb.uuid,
-        climbName: q.climb.name,
-        difficulty: q.climb.difficulty,
-        angle: q.climb.angle,
-        frames: q.climb.frames,
-        setterUsername: q.climb.setter_username,
-        mirrored: q.climb.mirrored === true,
-      })),
-    [queue],
+      queue.map((q) => {
+        const flatFrames = boardNameForFrames
+          ? toFlatFrames(q.climb.frames, boardNameForFrames as BoardName)
+          : q.climb.frames;
+        return {
+          uuid: q.uuid,
+          climbUuid: q.climb.uuid,
+          climbName: q.climb.name,
+          difficulty: q.climb.difficulty,
+          angle: q.climb.angle,
+          frames: flatFrames || q.climb.frames,
+          setterUsername: q.climb.setter_username,
+          mirrored: q.climb.mirrored === true,
+        };
+      }),
+    [queue, boardNameForFrames],
   );
   const serializedQueueRef = useRef(serializedQueue);
   serializedQueueRef.current = serializedQueue;

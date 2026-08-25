@@ -204,6 +204,22 @@ export type BluetoothPacketResult = {
   skippedRoleCount: number;
   /** Total placement entries parsed from the frames string */
   totalPlacements: number;
+  /**
+   * True when every LED in a NON-EMPTY packet was encoded with all three colour
+   * channels at zero — a valid packet that darks the whole wall.
+   *
+   * Only reachable on API v2. `scaledColorV2` is `floor(value * scale) >> 6`, so
+   * any scale at or below 0.25 turns a saturated 255 channel into 0. The power
+   * ladder walks 1.0 → 0.05 looking for the first rung whose total fits the 18 W
+   * budget, and the 0.2 rung's computed power is always 0 — it therefore "fits"
+   * for any climb, however dense. A busy climb on a bare-name (v2-defaulting)
+   * Kilter box thus encodes a full-length packet of colourless LEDs: the wall
+   * goes dark while `write()` resolves and the caller reports a successful send.
+   *
+   * Callers must treat this as a failed send, not a successful one. Always
+   * `false` on v3 (no power budget) and for the empty / all-skipped results.
+   */
+  allLedsDark: boolean;
 };
 
 /**
@@ -233,6 +249,7 @@ export const getAuroraBluetoothPacket = (
       skippedPositionCount: 0,
       skippedRoleCount: 0,
       totalPlacements: 0,
+      allLedsDark: false,
     };
   }
 
@@ -282,6 +299,7 @@ export const getAuroraBluetoothPacket = (
       skippedPositionCount,
       skippedRoleCount,
       totalPlacements,
+      allLedsDark: false,
     };
   }
 
@@ -292,6 +310,10 @@ export const getAuroraBluetoothPacket = (
   const resultArray: number[][] = [];
   let tempArray = [cmds.middle];
   let ledsWritten = 0;
+  // LEDs whose encoded bytes carry at least one non-zero colour bit. When this
+  // stays at 0 for a packet that DID write LEDs, the board receives a full,
+  // well-formed packet that lights nothing — see `allLedsDark`.
+  let ledsWithColour = 0;
 
   for (const { position, color } of ledEntries) {
     const encoded = isV2
@@ -312,6 +334,10 @@ export const getAuroraBluetoothPacket = (
     }
     tempArray.push(...encoded);
     ledsWritten++;
+    // v2 packs r/g/b into the top six bits of byte 2 (the low two bits are
+    // position[9:8]); v3 gives colour its own third byte.
+    const colourBits = isV2 ? encoded[1] & 0xfc : encoded[2];
+    if (colourBits !== 0) ledsWithColour++;
   }
 
   // All LEDs overflowed the v2 10-bit limit — return empty packet so the caller
@@ -322,6 +348,7 @@ export const getAuroraBluetoothPacket = (
       skippedPositionCount,
       skippedRoleCount,
       totalPlacements,
+      allLedsDark: false,
     };
   }
 
@@ -337,5 +364,6 @@ export const getAuroraBluetoothPacket = (
     skippedPositionCount,
     skippedRoleCount,
     totalPlacements,
+    allLedsDark: ledsWithColour === 0,
   };
 };

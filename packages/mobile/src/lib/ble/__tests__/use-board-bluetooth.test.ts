@@ -3388,3 +3388,140 @@ describe('resolveWriteSignal', () => {
     expect(combinedSignal).toBe(generation.signal);
   });
 });
+
+// #4634 — every JS wall write funnels through sendFramesToBoard, so the
+// flat-single-frame invariant the packet builders require is enforced there.
+describe('useBoardBluetooth multi-frame route collapse (#4634)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetReactNativePermissionHarness();
+    mockBleManager.state.mockResolvedValue('PoweredOn');
+  });
+
+  const auroraPacket = (overrides: Record<string, unknown> = {}) => ({
+    packet: new Uint8Array([9]),
+    skippedPositionCount: 0,
+    skippedRoleCount: 0,
+    totalPlacements: 4,
+    allLedsDark: false,
+    ...overrides,
+  });
+
+  async function connectedHook(props: Parameters<typeof useBoardBluetooth>[0], adapter = makeFakeAdapter()) {
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    const { result } = renderHook(() => useBoardBluetooth(props));
+    await act(async () => {
+      await result.current.connect();
+    });
+    return { result, adapter };
+  }
+
+  it('hands the packet builder the union of every frame, not the raw route', async () => {
+    mockGetLedPlacements.mockReturnValue({ 100: 1, 200: 2, 300: 3, 400: 4 });
+    mockGetAuroraBluetoothPacket.mockReturnValue(auroraPacket());
+
+    const { result } = await connectedHook({ boardName: 'kilter', layoutId: 1, sizeId: 1 });
+    await act(async () => {
+      // Frame 1 turns hold 100 off and adds 400. Raw, `split('p')` would light
+      // 100 (which frame 1 cleared) and drop 200 (its role parses as NaN).
+      await result.current.sendFramesToBoard('p100r42p200r43p300r44,"x100p400r43');
+    });
+
+    expect(mockGetAuroraBluetoothPacket).toHaveBeenCalledWith(
+      'p100r42p200r43p300r44p400r43',
+      expect.anything(),
+      'kilter',
+      expect.anything(),
+      undefined,
+    );
+  });
+
+  it('leaves a single-frame climb byte-identical', async () => {
+    mockGetLedPlacements.mockReturnValue({ 100: 1, 200: 2 });
+    mockGetAuroraBluetoothPacket.mockReturnValue(auroraPacket({ totalPlacements: 2 }));
+
+    const { result } = await connectedHook({ boardName: 'kilter', layoutId: 1, sizeId: 1 });
+    await act(async () => {
+      await result.current.sendFramesToBoard('p100r42p200r43');
+    });
+
+    expect(mockGetAuroraBluetoothPacket).toHaveBeenCalledWith(
+      'p100r42p200r43',
+      expect.anything(),
+      'kilter',
+      expect.anything(),
+      undefined,
+    );
+  });
+
+  it('still treats an empty string as the deliberate clear-all', async () => {
+    mockGetAuroraBluetoothPacket.mockReturnValue(auroraPacket({ packet: new Uint8Array([84]), totalPlacements: 0 }));
+
+    const { result, adapter } = await connectedHook({ boardName: 'kilter', layoutId: 1, sizeId: 1 });
+    let sendResult: boolean | undefined;
+    await act(async () => {
+      sendResult = await result.current.sendFramesToBoard('');
+    });
+
+    expect(sendResult).toBe(true);
+    expect(adapter.write).toHaveBeenCalled();
+    expect(mockGetAuroraBluetoothPacket).toHaveBeenCalledWith('', {}, 'kilter', expect.anything());
+  });
+
+  it('mirrors the collapsed union, so no rNaN reaches the packet builder', async () => {
+    mockGetLedPlacements.mockReturnValue({ 900: 1, 901: 2, 902: 3 });
+    mockGetAuroraBluetoothPacket.mockReturnValue(auroraPacket({ totalPlacements: 3 }));
+
+    const { result } = await connectedHook({
+      boardName: 'tension',
+      layoutId: 1,
+      sizeId: 1,
+      holdsData: [makePlacement(100, 900), makePlacement(200, 901), makePlacement(300, 902)],
+    });
+    await act(async () => {
+      await result.current.sendFramesToBoard('p100r1p200r2,"p300r2', true);
+    });
+
+    const mirroredFrames = mockGetAuroraBluetoothPacket.mock.calls.at(-1)?.[0] as string;
+    expect(mirroredFrames).not.toContain('NaN');
+    expect(mirroredFrames).toBe('p900r1p901r2p902r2');
+  });
+
+  it('refuses a route that collapses to zero holds instead of darking the wall', async () => {
+    // MoonBoard FOOT (45) and AUX (46) have no canonical code, so the whole
+    // route re-emits as ''. Letting that through would write the clear-all
+    // packet and return success over a dark wall.
+    const { result, adapter } = await connectedHook({ boardName: 'moonboard', layoutId: 1, sizeId: 1 });
+
+    let sendResult: boolean | undefined;
+    await act(async () => {
+      sendResult = await result.current.sendFramesToBoard('p1r45p2r46,"p3r45');
+    });
+
+    expect(sendResult).toBe(false);
+    expect(adapter.write).not.toHaveBeenCalled();
+    expect(mockGetMoonboardBluetoothPacket).not.toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledWith('ble.sendFailedTitle', 'ble.errorIncompatible');
+    const failure = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Failure');
+    expect(failure?.[1]).toMatchObject({ failureReason: 'incompatible_climb' });
+  });
+
+  it('refuses a v2 packet whose power ladder zeroed every colour channel', async () => {
+    mockGetLedPlacements.mockReturnValue({ 100: 1, 200: 2 });
+    mockGetAuroraBluetoothPacket.mockReturnValue(auroraPacket({ totalPlacements: 160, allLedsDark: true }));
+
+    // connect() without initialFrames never writes, so any write below is this send.
+    const { result, adapter } = await connectedHook({ boardName: 'kilter', layoutId: 1, sizeId: 1 });
+
+    let sendResult: boolean | undefined;
+    await act(async () => {
+      sendResult = await result.current.sendFramesToBoard('p100r42p200r43');
+    });
+
+    expect(sendResult).toBe(false);
+    expect(adapter.write).not.toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledWith('ble.sendFailedTitle', 'ble.errorIncompatible');
+    const failure = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Failure');
+    expect(failure?.[1]).toMatchObject({ failureReason: 'power_budget_dark', totalPlacements: 160 });
+  });
+});

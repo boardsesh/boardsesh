@@ -26,7 +26,8 @@ import {
   type BleFailureCategory,
 } from '@boardsesh/ble-protocol/connection-error';
 import { boardSupportsMirroring } from '@boardsesh/play-view';
-import type { AuroraBoardName } from '@boardsesh/shared-schema';
+import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
+import type { AuroraBoardName, BoardName } from '@boardsesh/shared-schema';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { RECORD_BOARD_SERIAL } from '@boardsesh/graphql/operations';
 import { getHttpClient } from '../graphql/client';
@@ -874,6 +875,24 @@ export function useBoardBluetooth({
       // straight through (see resolveWriteSignal).
       const { combinedSignal, dispose: disposeWriteSignal } = resolveWriteSignal(signal, generationSignal, Platform.OS);
 
+      // Collapse a multi-frame route to one static snapshot before any packet
+      // builder sees it (#4634). Aurora (`aurora.ts` `frames.split('p')`) and
+      // MoonBoard (`moonboard.ts` the same) both tokenise on `p` and understand
+      // neither the `,"` frame separator nor `x<id>` off-tokens, so a raw route
+      // string lights holds a later frame turned OFF and silently drops the hold
+      // sitting immediately before every frame boundary (its role parses as
+      // `NaN`). That is the reported "weird mix of some of the frames".
+      //
+      // The union is what this repo already shows for a route nothing is
+      // animating: the ESP32 gym controller, the web kiosk board slot, the web
+      // renderer and the mobile share card all call the same `toFlatFrames`. A
+      // phone-driven wall now agrees with the wall's own controller.
+      //
+      // Flat strings (99.9% of the catalog) come back byte-identical via the
+      // `!includes(',') && !includes('x')` fast path, so single-frame climbs are
+      // untouched on every board.
+      const framesToWrite = toFlatFrames(frames, boardName as BoardName);
+
       const performSend = async (): Promise<boolean | undefined> => {
         // Transport diagnostics of the write that just settled (#3230) — iOS
         // native adapter (full flow-control story) or ble-plx (MTU/chunking
@@ -906,9 +925,27 @@ export function useBoardBluetooth({
           const activeLifetime = activeConnectionLifetimeRef.current;
           sendGeneration = activeLifetime?.adapter === sendAdapter ? activeLifetime.generation : null;
 
+          // The collapse can drop every hold of a NON-empty route: MoonBoard
+          // FOOT/AUX have no canonical code, an unrecognised role code decodes
+          // to the `{holdId}={code}` sentinel which has no code either, and an
+          // unknown boardName has no code table at all. Letting `''` through
+          // would hit the clear-all path below, dark the wall, return true, and
+          // drive the AutoSender's success path — haptic buzz plus a "climb is
+          // lit" report to board presence over a dark wall. Refuse instead, the
+          // same shape as the MoonBoard `!sent` branch.
+          if (frames !== '' && framesToWrite === '') {
+            console.warn('[BLE] Route collapsed to zero holds — climb has unrecognised hold data');
+            Alert.alert(t('ble.sendFailedTitle'), t('ble.errorIncompatible'));
+            track(SHARED_EVENTS.ClimbSentToBoardFailure, {
+              ...boardAnalyticsProperties,
+              failureReason: 'incompatible_climb',
+            });
+            return false;
+          }
+
           if (boardName === 'moonboard') {
             const sent = await dispatchMoonboardPacket(
-              frames,
+              framesToWrite,
               adapterRef.current.write.bind(adapterRef.current),
               combinedSignal,
               moonNumRows,
@@ -1039,7 +1076,7 @@ export function useBoardBluetooth({
             return true;
           }
 
-          let framesToSend = frames;
+          let framesToSend = framesToWrite;
 
           if (mirrored && boardSupportsMirroring(boardName, layoutId)) {
             // On a board that supports mirroring, a mirrored send REQUIRES the
@@ -1058,7 +1095,10 @@ export function useBoardBluetooth({
               });
               return false;
             }
-            framesToSend = convertToMirroredFramesString(frames, holdsData);
+            // Mirroring runs on the collapsed string: `convertToMirroredFramesString`
+            // is a third `split('p')`/`split('r')` tokeniser, so a raw route made
+            // it emit `p<id>rNaN` or throw on a comma-mangled hold id (#4634).
+            framesToSend = convertToMirroredFramesString(framesToWrite, holdsData);
           }
 
           if (!cachedGetLedPlacements) {
@@ -1098,6 +1138,35 @@ export function useBoardBluetooth({
               failureReason: 'incompatible_climb',
               skippedPositionCount: result.skippedPositionCount,
               skippedRoleCount: result.skippedRoleCount,
+              totalPlacements: result.totalPlacements,
+            });
+            return false;
+          }
+
+          // A well-formed packet that lights nothing (#4634). On API v2 the 18 W
+          // power ladder walks 1.0 → 0.05 and `scaledColorV2` is
+          // `floor(value * scale) >> 6`, so every rung at or below 0.25 zeroes a
+          // saturated channel — and the 0.2 rung's computed power is 0, so it
+          // "fits" for any climb however dense. Past roughly 135 lit holds on a
+          // Kilter box (2 LEDs per hold) that is the rung the ladder picks, and
+          // the board is handed a full packet of colourless LEDs: the wall goes
+          // dark, `write()` resolves, and the AutoSender buzzes success and
+          // reports the climb lit to board presence.
+          //
+          // Bare-name Kilter-built boxes advertise without `@N`, so `parseApiLevel`
+          // defaults them to 2 — this is reachable on real hardware. It is a
+          // pre-existing hazard for dense single-frame climbs; collapsing routes
+          // to their union makes routes dense enough to reach it too, so refuse
+          // here rather than dark a wall with a success buzz.
+          if (result.allLedsDark) {
+            console.warn(
+              `[BLE] v2 power budget zeroed every LED colour for ${result.totalPlacements} placements — refusing to write a dark wall`,
+            );
+            Alert.alert(t('ble.sendFailedTitle'), t('ble.errorIncompatible'));
+            track(SHARED_EVENTS.ClimbSentToBoardFailure, {
+              ...boardAnalyticsProperties,
+              failureReason: 'power_budget_dark',
+              apiLevel: apiLevelRef.current,
               totalPlacements: result.totalPlacements,
             });
             return false;

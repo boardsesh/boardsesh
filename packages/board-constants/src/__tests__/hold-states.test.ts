@@ -524,6 +524,35 @@ describe('flattenFramesToUnion / toFlatFrames', () => {
   it('returns an empty map for no frames', () => {
     expect(flattenFramesToUnion([])).toEqual({});
   });
+
+  // #4634: the BLE packet builders tokenise with `frames.split('p')` and parse
+  // neither the `,"` frame separator nor `x<id>` off-tokens, so anything left in
+  // the output would corrupt an LED write.
+  it('emits no comma, quote or x token — the invariant the packet builders need', () => {
+    const flat = toFlatFrames('p100r42p200r43p300r44,"x100p400r43,"p500r45', 'kilter');
+    expect(flat).not.toMatch(/[,"x]/);
+  });
+
+  it('collapses a MoonBoard foot/aux-only route to the empty string', () => {
+    // STATE_TO_PRIMARY_CODE.moonboard has no FOOT (45) or AUX (46) code, so
+    // every hold is dropped on re-emit. Senders must refuse this rather than
+    // treat it as a clear-all request.
+    expect(toFlatFrames('p1r45p2r46,"p3r45', 'moonboard')).toBe('');
+  });
+
+  it('re-emits MoonBoard live-preview hand roles as the canonical hand code', () => {
+    // 47 and 48 are both HAND in HOLD_STATE_MAP.moonboard; the raw string's
+    // codes are unknown to MOONBOARD_ROLE_MAP and never light today.
+    expect(toFlatFrames('p1r47,"p2r48', 'moonboard')).toBe('p1r43p2r43');
+  });
+
+  it('recovers the hold sitting on a frame boundary in an additive route', () => {
+    // Duplicate-frame authoring produces supersets: frame 1 keeps every hold of
+    // frame 0 and adds more, so the encoded delta is `,"` + only the new holds.
+    // The raw string's hold 300 is the token immediately before the separator —
+    // the one `split('p')` mangles. The union keeps all four.
+    expect(toFlatFrames('p100r42p200r43p300r44,"p400r43', 'kilter')).toBe('p100r42p200r43p300r44p400r43');
+  });
 });
 
 describe('isSentinelHoldState', () => {
