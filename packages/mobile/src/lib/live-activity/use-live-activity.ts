@@ -3,7 +3,6 @@ import { Platform } from 'react-native';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { parseSetIds, toBoardName } from '@boardsesh/board-config';
 import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
-import type { BoardName } from '@boardsesh/shared-schema';
 import type { BoardConnection } from '../../components/play-drawer/lightbulb-control';
 import { getAuthToken } from '../auth-store';
 import { BACKEND_URL } from '../env';
@@ -221,13 +220,15 @@ export function useLiveActivity({
   // A route that collapses to nothing keeps its raw string: native's own
   // zero-encoded refusal is the right handler for that, and shipping `''` would
   // read as a deliberate clear-all.
-  const boardNameForFrames = board?.boardName;
+  // Validated against the BoardName union rather than cast — an unknown board has
+  // no code table, so `toFlatFrames` would drop every hold and the fallback below
+  // would silently ship the raw route string that this exists to avoid. Better to
+  // be explicit that an unrecognised board keeps its frames untouched.
+  const boardNameForFrames = toBoardName(board?.boardName);
   const serializedQueue = useMemo(
     () =>
       queue.map((q) => {
-        const flatFrames = boardNameForFrames
-          ? toFlatFrames(q.climb.frames, boardNameForFrames as BoardName)
-          : q.climb.frames;
+        const flatFrames = boardNameForFrames ? toFlatFrames(q.climb.frames, boardNameForFrames) : q.climb.frames;
         return {
           uuid: q.uuid,
           climbUuid: q.climb.uuid,

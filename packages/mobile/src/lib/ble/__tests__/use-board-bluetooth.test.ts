@@ -3506,6 +3506,37 @@ describe('useBoardBluetooth multi-frame route collapse (#4634)', () => {
     expect(failure?.[1]).toMatchObject({ failureReason: 'incompatible_climb' });
   });
 
+  it('refuses end to end: a dense route collapses to a union the v2 ladder cannot light', async () => {
+    // The two failure modes meet here — a multi-frame route is flattened to its
+    // union, the union is dense enough for the v2 power ladder to zero every
+    // colour channel, and the wall must not be written.
+    const holdCount = 160;
+    const placements: Record<number, number> = {};
+    for (let index = 1; index <= holdCount; index += 1) placements[index] = index;
+    const frameOne = Array.from({ length: holdCount - 1 }, (_, index) => `p${index + 1}r43`).join('');
+    const route = `${frameOne},"p${holdCount}r43`;
+
+    mockGetLedPlacements.mockReturnValue(placements);
+    mockGetAuroraBluetoothPacket.mockReturnValue(
+      auroraPacket({ totalPlacements: holdCount, allLedsDark: true, packet: new Uint8Array([9]) }),
+    );
+
+    const { result, adapter } = await connectedHook({ boardName: 'kilter', layoutId: 1, sizeId: 1 });
+
+    let sendResult: boolean | undefined;
+    await act(async () => {
+      sendResult = await result.current.sendFramesToBoard(route);
+    });
+
+    // The builder saw the flattened union — every hold, no route syntax.
+    const framesSeen = mockGetAuroraBluetoothPacket.mock.calls.at(-1)?.[0] as string;
+    expect(framesSeen).not.toMatch(/[,"x]/);
+    expect(framesSeen.split('p').filter(Boolean)).toHaveLength(holdCount);
+    // ...and the write was refused rather than darking the wall with a success.
+    expect(sendResult).toBe(false);
+    expect(adapter.write).not.toHaveBeenCalled();
+  });
+
   it('refuses a v2 packet whose power ladder zeroed every colour channel', async () => {
     mockGetLedPlacements.mockReturnValue({ 100: 1, 200: 2 });
     mockGetAuroraBluetoothPacket.mockReturnValue(auroraPacket({ totalPlacements: 160, allLedsDark: true }));
