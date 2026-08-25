@@ -676,6 +676,54 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       });
     });
 
+    it('stays silent when a Woods 12x12 wall opens a playlist of 8x10-only climbs', async () => {
+      // Woods' two boards number their holds from their own origins, so an 8x10
+      // climb's hold ids all exist on the 12x12 as different holds. The backend's
+      // `compatible_size_ids @> ARRAY[sizeId]` correctly returns nothing here, and
+      // before the climbs carried `compatibleSizeIds` the canary's hold-id check
+      // waved every row through and reported a defect that wasn't one.
+      mocks.activeBoard = { boardType: 'woods', layoutId: 1, sizeId: 2, setIds: '1', angle: 40 } as ActiveBoard;
+      const eightByTen = { boardType: 'woods', layoutId: 1, frames: 'p12r4p207r2', compatibleSizeIds: [1] };
+      const tapped = makeClimb('b', eightByTen);
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
+      const { result } = renderActivation(fetchPage, {
+        replaceQueueOnActivate: true,
+        sourceId: 'playlist:empty-fetch-woods-1',
+        allClimbs: [makeClimb('a', eightByTen), tapped],
+      });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+
+      await waitFor(() => expect(fetchPage).toHaveBeenCalled());
+      expect(mocks.reportHandledError).not.toHaveBeenCalled();
+    });
+
+    it('still reports when the Woods wall is the size those climbs fit', async () => {
+      // Same climbs on the 8x10 they were set on: the backend owed us those rows,
+      // so an empty fetch is a real defect and must page us.
+      mocks.activeBoard = { boardType: 'woods', layoutId: 1, sizeId: 1, setIds: '1', angle: 40 } as ActiveBoard;
+      const tapped = makeClimb('b', { boardType: 'woods', layoutId: 1, frames: 'p12r4p207r2', compatibleSizeIds: [1] });
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
+      const { result } = renderActivation(fetchPage, {
+        replaceQueueOnActivate: true,
+        sourceId: 'playlist:empty-fetch-woods-2',
+        allClimbs: [tapped],
+      });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+
+      await waitFor(() => {
+        expect(mocks.reportHandledError).toHaveBeenCalledWith(expect.any(Error), {
+          tags: { source: 'playlist', op: 'replace-queue-empty' },
+          extra: { sourceId: 'playlist:empty-fetch-woods-2', renderableCount: 1, loadedCount: 1 },
+        });
+      });
+    });
+
     it('keeps the queue unchanged and shows a toast when the full playlist fetch fails', async () => {
       const fetchPage = vi.fn().mockRejectedValue(new Error('network'));
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

@@ -66,6 +66,13 @@ export type Climb = {
   // boards. Populated by `userClimbs` (the profile Climbs tab, where no board is
   // in the route); null everywhere the board comes from the URL.
   renderBoard?: RenderBoardConfig | null;
+  // `board_climbs.compatible_size_ids` — the product sizes this climb fits on.
+  // Null/undefined means the server has no compatibility data for it (a legacy
+  // row, or a fetch path that doesn't project the column) and imposes no
+  // constraint. Load-bearing on Woods, whose two sizes number their holds from
+  // their own origins, so hold-id containment alone can't tell them apart
+  // (canAddClimbToBoard rule 5).
+  compatibleSizeIds?: number[] | null;
 };
 
 // Input type for Climb (matches GraphQL ClimbInput)
@@ -107,6 +114,10 @@ export type ClimbInput = {
   // peers render the grade without a per-climb refetch. Null when unavailable.
   boardseshDifficulty?: number | null;
   boardseshConfidence?: string | null;
+  // `board_climbs.compatible_size_ids`, round-tripped through the queue so a
+  // party peer on a different-sized wall can tell the climb doesn't fit theirs.
+  // Null/undefined means unknown and imposes no constraint.
+  compatibleSizeIds?: number[] | null;
 };
 
 /**

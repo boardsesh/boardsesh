@@ -53,6 +53,11 @@ export function toClimbInput(climb: Climb): ClimbInput {
     // Round-trip the Boardsesh grade so party peers render it without a refetch.
     boardseshDifficulty: climb.boardseshDifficulty,
     boardseshConfidence: climb.boardseshConfidence,
+    // The sizes the climb fits on. A party peer standing at a different-sized
+    // wall needs it: on Woods the 8x10's hold ids all exist on the 12x12 as
+    // different holds, so without this the peer's board lights the wrong climb
+    // instead of skipping it (canAddClimbToBoard rule 5).
+    compatibleSizeIds: climb.compatibleSizeIds,
   };
 }
 
@@ -142,6 +147,9 @@ export function climbToQueueItem(climb: Climb, options?: { suggested?: boolean; 
       // Carry the Boardsesh grade so the queue row / play drawer render it.
       boardseshDifficulty: climb.boardseshDifficulty,
       boardseshConfidence: climb.boardseshConfidence,
+      // Size compatibility, so a queued climb keeps the one signal that tells
+      // Woods' two boards apart (see toClimbInput above).
+      compatibleSizeIds: climb.compatibleSizeIds,
     },
   };
 }

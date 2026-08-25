@@ -924,6 +924,16 @@ export type Climb = {
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
   /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod). */
   characteristics?: Maybe<Array<Scalars['String']['output']>>;
+  /**
+   * Product sizes this climb fits on (denormalised from edge bounds). Null when
+   * the server has no compatibility data for this climb — a legacy row, or a
+   * fetch path that doesn't project the column — which imposes no constraint.
+   * On Woods it is load-bearing rather than cosmetic: the 8x10 and the 12x12
+   * number their holds from their own origins, so an 8x10 climb's hold ids all
+   * exist on a 12x12 as different holds and only this field can tell the two
+   * apart (see canAddClimbToBoard rule 5).
+   */
+  compatibleSizeIds?: Maybe<Array<Scalars['Int']['output']>>;
   /** ISO timestamp of when this climb row was created */
   created_at?: Maybe<Scalars['String']['output']>;
   /** Setter-written notes about the climb (nullable). Carried on search results too — the play drawer and the www climb page both render it. */
@@ -1006,6 +1016,8 @@ export type ClimbInput = {
   boardseshDifficulty?: InputMaybe<Scalars['Float']['input']>;
   /** Structured climb characteristics, round-tripped so the queue keeps method/no-match tags. */
   characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
+  /** Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them. */
+  compatibleSizeIds?: InputMaybe<Array<Scalars['Int']['input']>>;
   description?: InputMaybe<Scalars['String']['input']>;
   difficulty: Scalars['String']['input'];
   difficulty_error: Scalars['String']['input'];
@@ -9495,6 +9507,7 @@ export type ClimbResolvers<
   boardseshConfidence?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   boardseshDifficulty?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   characteristics?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
+  compatibleSizeIds?: Resolver<Maybe<Array<ResolversTypes['Int']>>, ParentType, ContextType>;
   created_at?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   description?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   difficulty?: Resolver<ResolversTypes['String'], ParentType, ContextType>;

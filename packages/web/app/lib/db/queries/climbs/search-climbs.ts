@@ -104,7 +104,9 @@ function _getCachedFn(boardName: BoardName, revalidate: number): CachedClimbSear
     // v7: searches past the stats-having boundary now return stats-less climbs (issue
     // #1971), and the stats-driven fallback orders stats-having climbs ahead of
     // stats-less ones — cached truncated pages must not keep serving the old result.
-    fn = unstable_cache(_executeClimbSearch, [`climb-search-v7:${boardName}`], {
+    // v8: rows now carry compatibleSizeIds; a cached v7 row lacks it, which reads
+    // as "no compatibility data" and switches the client-side size check off.
+    fn = unstable_cache(_executeClimbSearch, [`climb-search-v8:${boardName}`], {
       revalidate,
       tags: ['climb-search', getBoardClimbSearchTag(boardName)],
     });
