@@ -11,6 +11,7 @@ import {
   getAuroraBluetoothPacket,
 } from '../aurora';
 import { MESSAGE_BODY_MAX_LENGTH } from '../transport';
+import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
 
 describe('checksum', () => {
   it('returns 0xFF XOR complement for an empty array', () => {
@@ -270,5 +271,86 @@ describe('getAuroraBluetoothPacket', () => {
     const named = getAuroraBluetoothPacket('p100r12', placements, 'kilter', 3, { STARTING: 'red' });
     expect(shorthand.packet).toEqual(canonical.packet);
     expect(named.packet).toEqual(canonical.packet);
+  });
+});
+
+// #4634 — the reported "weird mix of some of the frames". The oracle is the real
+// packet builder: feed it the raw multi-frame string a route is stored as, then
+// the collapsed union, and compare what each actually encodes.
+describe('multi-frame route strings reaching getAuroraBluetoothPacket', () => {
+  // Kilter canonical codes: 42 STARTING, 43 HAND, 44 FINISH.
+  const placements = { 100: 1, 200: 2, 300: 3, 400: 4 };
+
+  it('drops the hold on every frame boundary when handed a raw route', () => {
+    // An additive route (the shape `Duplicate frame` authors): frame 1 is frame 0
+    // plus hold 400, so the encoded delta is `,"p400r43`. `split('p')` yields the
+    // token `300r44,"`, whose role parses as NaN.
+    const raw = 'p100r42p200r43p300r44,"p400r43';
+    const result = getAuroraBluetoothPacket(raw, placements, 'kilter', 3);
+    expect(result.skippedRoleCount).toBe(1);
+  });
+
+  it('lights a hold a later frame turned off when handed a raw route', () => {
+    // Frame 1 clears hold 100 (`x100`) — yet 100 is the one hold that survives
+    // tokenisation intact, so today the wall lights exactly the wrong holds.
+    const raw = 'p100r42p200r43,"x100p300r43';
+    const result = getAuroraBluetoothPacket(raw, placements, 'kilter', 3);
+    expect(result.skippedRoleCount).toBe(1);
+    expect(result.totalPlacements).toBe(3);
+  });
+
+  it('encodes every hold of the route with no skips once collapsed to the union', () => {
+    const raw = 'p100r42p200r43p300r44,"p400r43';
+    const result = getAuroraBluetoothPacket(toFlatFrames(raw, 'kilter'), placements, 'kilter', 3);
+    expect(result.skippedRoleCount).toBe(0);
+    expect(result.skippedPositionCount).toBe(0);
+    expect(result.totalPlacements).toBe(4);
+  });
+
+  it('leaves a single-frame climb byte-identical', () => {
+    const flat = 'p100r42p200r43p300r44';
+    const direct = getAuroraBluetoothPacket(flat, placements, 'kilter', 3);
+    const collapsed = getAuroraBluetoothPacket(toFlatFrames(flat, 'kilter'), placements, 'kilter', 3);
+    expect(collapsed.packet).toEqual(direct.packet);
+  });
+});
+
+// #4634 finding 4634-2 — a valid packet that darks the whole wall.
+describe('getAuroraBluetoothPacket allLedsDark', () => {
+  // Kilter HAND (#00FFFF): two saturated channels, 2 LEDs per hold.
+  const denseKilterRoute = (holdCount: number) => {
+    const frames = Array.from({ length: holdCount }, (_, index) => `p${index + 1}r43`).join('');
+    const placements: Record<number, number> = {};
+    for (let index = 0; index < holdCount; index += 1) placements[index + 1] = index + 1;
+    return { frames, placements };
+  };
+
+  it('is false on v3, which has no power budget', () => {
+    const { frames, placements } = denseKilterRoute(300);
+    expect(getAuroraBluetoothPacket(frames, placements, 'kilter', 3).allLedsDark).toBe(false);
+  });
+
+  it('is false for a v2 climb the power ladder can still light', () => {
+    const { frames, placements } = denseKilterRoute(40);
+    const result = getAuroraBluetoothPacket(frames, placements, 'kilter', 2);
+    expect(result.packet.length).toBeGreaterThan(0);
+    expect(result.allLedsDark).toBe(false);
+  });
+
+  it('flags a dense v2 climb whose every colour channel scaled to zero', () => {
+    // Past ~135 cyan holds the 18W ladder falls to the 0.2 rung, where
+    // floor(255 * 0.2) >> 6 === 0 for every channel — the rung always "fits"
+    // because its computed power is 0. The packet is full length and lights
+    // nothing.
+    const { frames, placements } = denseKilterRoute(160);
+    const result = getAuroraBluetoothPacket(frames, placements, 'kilter', 2);
+    expect(result.packet.length).toBeGreaterThan(0);
+    expect(result.skippedPositionCount).toBe(0);
+    expect(result.skippedRoleCount).toBe(0);
+    expect(result.allLedsDark).toBe(true);
+  });
+
+  it('is false for the deliberate clear-all packet', () => {
+    expect(getAuroraBluetoothPacket('', {}, 'kilter', 2).allLedsDark).toBe(false);
   });
 });

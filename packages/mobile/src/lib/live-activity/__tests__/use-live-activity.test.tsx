@@ -55,6 +55,22 @@ const nextQueueItem = {
   },
 } as unknown as ClimbQueueItem;
 
+// A 3-frame route: frame 1 turns hold 100 off and adds 400. Native's Swift
+// `parseFrames` is the same naive split('p')/split('r') the JS builders use, so
+// a raw string like this drives the lock-screen writes into the #4634 garble.
+const routeQueueItem = {
+  uuid: 'queue-item-route',
+  climb: {
+    uuid: 'climb-route',
+    name: 'Route Climb',
+    difficulty: 'V6',
+    angle: 40,
+    frames: 'p100r42p200r43p300r44,"x100p400r43',
+    setter_username: 'setter',
+    mirrored: false,
+  },
+} as unknown as ClimbQueueItem;
+
 type HookProps = Parameters<typeof useLiveActivity>[0];
 
 type DeferredStartPromise = {
@@ -367,5 +383,36 @@ describe('useLiveActivity auth-token gating', () => {
     expect(plugin.startLiveActivitySession).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: 'session-2', authToken: 'fresh-token' }),
     );
+  });
+});
+
+describe('useLiveActivity frames snapshot (#4634)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    plugin.isLiveActivityAvailable.mockResolvedValue(true);
+    plugin.startLiveActivitySession.mockResolvedValue(undefined);
+    plugin.updateLiveActivity.mockResolvedValue(undefined);
+    plugin.updateLiveActivityClimb.mockResolvedValue(undefined);
+    plugin.endLiveActivitySession.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('ships the flattened union to native, not the raw multi-frame route', async () => {
+    render(<Harness {...activeProps({ queue: [routeQueueItem], currentClimbQueueItem: routeQueueItem })} />);
+
+    await waitFor(() => expect(plugin.updateLiveActivity).toHaveBeenCalled());
+    const payload = plugin.updateLiveActivity.mock.calls.at(-1)?.[0] as { queue: Array<{ frames: string }> };
+    expect(payload.queue[0].frames).toBe('p100r42p200r43p300r44p400r43');
+  });
+
+  it('leaves a single-frame climb byte-identical', async () => {
+    render(<Harness {...activeProps()} />);
+
+    await waitFor(() => expect(plugin.updateLiveActivity).toHaveBeenCalled());
+    const payload = plugin.updateLiveActivity.mock.calls.at(-1)?.[0] as { queue: Array<{ frames: string }> };
+    expect(payload.queue[0].frames).toBe('p1r1');
   });
 });

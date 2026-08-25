@@ -19,14 +19,16 @@ export type BleFailureCategory =
 /**
  * Reason a *send* to the board failed, tracked on `Climb Sent to Board Failure`.
  * The classifier below covers the thrown-during-write cases; callers also set
- * the explicit, pre-write reasons (`incompatible_climb`, `missing_led_placements`,
- * `missing_mirror_data`) directly at their return-false sites. Kept as one union
+ * the explicit, pre-write reasons (`incompatible_climb`, `power_budget_dark`,
+ * `missing_led_placements`, `missing_mirror_data`) directly at their return-false
+ * sites. Kept as one union
  * so web and mobile emit byte-identical strings and the reliability metric is
  * comparable across platforms.
  */
 export type BleSendFailureReason =
   | 'disconnected' // write threw on a dead GATT link (board dropped / stolen)
   | 'incompatible_climb' // every placement skipped — climb is for another board
+  | 'power_budget_dark' // v2 power ladder zeroed every colour channel: the packet would dark the wall (#4634)
   | 'missing_led_placements' // LED placement map empty for this board config
   | 'missing_mirror_data' // mirroring requested but holdsData absent (pre-write)
   | 'missing_mirror_mapping' // a hold had no mirrored id while building the mirror
