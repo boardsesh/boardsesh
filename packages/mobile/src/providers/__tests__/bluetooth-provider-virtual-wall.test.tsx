@@ -86,6 +86,12 @@ const presence = vi.hoisted(() => ({
 
 const viewer = vi.hoisted(() => ({ profile: { id: 'me' } as { id: string } | null }));
 
+// Every GraphQL operation the provider could possibly issue funnels through this
+// one client, so counting its calls is a behavioural proof that taking the wall
+// writes nothing to the server — unlike a source-text tripwire, a refactor
+// cannot quietly defeat it.
+const graphql = vi.hoisted(() => ({ request: vi.fn(async () => ({ board: null })) }));
+
 const resolvedBoards = vi.hoisted(() => ({ value: new Map<string, ResolvedBoardEntry>() }));
 
 vi.mock('react-native', () => ({
@@ -143,7 +149,7 @@ vi.mock('../../lib/haptics', () => haptics);
 vi.mock('../../lib/analytics', () => ({ track: analytics.track }));
 vi.mock('../../lib/graphql/use-active-board', () => ({ useSetActiveBoard: () => vi.fn(async () => {}) }));
 vi.mock('../../lib/graphql/client', () => ({
-  getHttpClient: () => ({ request: vi.fn(async () => ({ board: null })) }),
+  getHttpClient: () => ({ request: graphql.request }),
 }));
 
 vi.mock('../../components/ble/DevicePickerSheet', () => ({
@@ -257,6 +263,7 @@ describe('BluetoothProvider — taking a wall with no LED light kit', () => {
     presence.reportDisconnectForBoard.mockClear();
     presence.restampBoardMembershipByUuid.mockClear();
     presence.restampBoardMembershipByUuid.mockResolvedValue(true);
+    graphql.request.mockClear();
     viewer.profile = { id: 'me' };
     capturedBluetooth = null;
   });
@@ -356,6 +363,26 @@ describe('BluetoothProvider — taking a wall with no LED light kit', () => {
     });
     await settle();
     expect(presence.reportClimbForBoard).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing to the server when the wall is taken', async () => {
+    // The blocking Bluetooth-review constraint, asserted on behaviour rather
+    // than on the source text. An empty scan is weak evidence (box powered off,
+    // out of range, the Android RN 0.86 scan regression), so the picker's offer
+    // must never persist `hasLeds: false` — a wrong flip strips the Bluetooth
+    // connect button from every climber at that gym. Board presence reports go
+    // over the presence transport, not this client.
+    renderProvider({ hasLeds: true });
+    await takeTheWall();
+    await settle();
+
+    expect(capturedBluetooth?.virtualWallHeld).toBe(true);
+    expect(graphql.request).not.toHaveBeenCalled();
+
+    await act(async () => {
+      capturedBluetooth?.releaseVirtualWall();
+    });
+    expect(graphql.request).not.toHaveBeenCalled();
   });
 
   it('takes the wall on a board that still claims to have lights', async () => {
@@ -490,6 +517,22 @@ describe('BluetoothProvider — a real link always wins over a virtual hold', ()
     await act(async () => {});
     expect(capturedBluetooth?.virtualWallHeld).toBe(false);
     expect(capturedBluetooth?.wallHeldByOtherUser).toBe(true);
+  });
+
+  it("still reads as the peer's wall after losing it, not as an open one", async () => {
+    // The release IS the consequence of the peer taking the slot, and the watch
+    // has no reason to re-fire. Clearing the peer answer as part of releasing
+    // would tell the climber the wall is free at the exact moment someone else
+    // took it — the confusion this feature exists to remove.
+    const { rerender } = renderProvider();
+    await takeTheWall();
+
+    presence.holder = { userId: 'someone-else' };
+    await rerenderWith(rerender);
+
+    expect(capturedBluetooth?.virtualWallHeld).toBe(false);
+    expect(capturedBluetooth?.wallHeldByOtherUser).toBe(true);
+    expect(capturedBluetooth?.canDriveWall).toBe(false);
   });
 
   it('keeps the hold when the holder slot is this device, or anonymous', async () => {

@@ -584,6 +584,10 @@ function VirtualWallHolderWatch({ onHeldByOtherUserChange }: { onHeldByOtherUser
   useEffect(() => {
     onHeldByOtherUserChangeRef.current(heldByOtherUser);
   }, [heldByOtherUser]);
+  // Unmount-only, so a board that stops being watched doesn't strand a stale
+  // "a peer holds it". Separate from the effect above: sharing one cleanup
+  // would churn the value false on every holder change.
+  useEffect(() => () => onHeldByOtherUserChangeRef.current(false), []);
   return null;
 }
 
@@ -1203,7 +1207,11 @@ export function BluetoothProvider({
       if (!virtualWallHeldRef.current) return;
       virtualWallHeldRef.current = false;
       setVirtualWallHeld(false);
-      setWallHeldByOtherUser(false);
+      // Deliberately does NOT clear `wallHeldByOtherUser`. On a peer takeover
+      // this release IS the consequence of that flag going true, and the watch
+      // has no reason to re-fire — clearing it here would tell the climber the
+      // wall is free at the exact moment someone else took it. The watch owns
+      // that value for as long as it is mounted, and clears it on unmount.
       // Only a deliberate hand-back is announced. An auto-release (BLE took
       // over, the board changed, a peer took the wall) is not something the user
       // did, and a toast for it would read as an error.
