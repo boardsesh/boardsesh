@@ -7,6 +7,7 @@ import {
   getImageUrl,
   toDarkArtUrl,
   hasDarkBoardArt,
+  buildOverlayPreloadUrls,
   BOARDS_WITH_DARK_ART,
   buildBoardRenderUrl,
   buildOverlayUrl,
@@ -80,6 +81,28 @@ describe('getImageUrl', () => {
       // Guards the ordering: getImageUrl rewrites .png → .webp first, so a caller that
       // reverses the two would silently ask for art that was never generated.
       expect(toDarkArtUrl('/images/woods/woods-8x10-bg.png')).toBe('/images/woods/woods-8x10-bg.png');
+    });
+  });
+
+  describe('buildOverlayPreloadUrls', () => {
+    const boardDetails = (board_name: string) =>
+      ({ board_name, layout_id: 1, size_id: 1, set_ids: [1], boardWidth: 720, boardHeight: 1000 }) as never;
+
+    it('preloads one image for a board with no dark art', () => {
+      expect(buildOverlayPreloadUrls(boardDetails('kilter'), 'p1r42')).toHaveLength(1);
+    });
+
+    it('preloads both variants for a board that ships dark art', () => {
+      // Both are in the markup and the browser fetches both anyway; hinting only the light
+      // one would leave a dark-mode reader's actual LCP element unprioritised.
+      const [light, dark] = buildOverlayPreloadUrls(boardDetails('woods'), 'p1r42');
+      expect(light).not.toContain('color_scheme=dark');
+      expect(dark).toContain('color_scheme=dark');
+    });
+
+    it('preloads nothing when the climb has no frames', () => {
+      expect(buildOverlayPreloadUrls(boardDetails('woods'), null)).toEqual([]);
+      expect(buildOverlayPreloadUrls(boardDetails('woods'), '')).toEqual([]);
     });
   });
 

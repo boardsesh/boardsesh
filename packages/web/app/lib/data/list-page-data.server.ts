@@ -4,7 +4,7 @@ import type { BoardDetails, Climb, ParsedBoardRouteParameters, SearchRequestPagi
 import { cachedSearchClimbs } from '@/app/lib/db/queries/climbs/search-climbs';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { FRONT_DOOR_WARM_LIMIT, scheduleOverlayWarming } from '@/app/lib/warm-overlay-cache';
-import { buildOverlayUrl } from '@/app/components/board-renderer/util';
+import { buildOverlayPreloadUrls } from '@/app/components/board-renderer/util';
 import { DEFAULT_SEARCH_PARAMS } from '@/app/lib/url-utils';
 import { FRONT_DOOR_PAGE_SIZE } from '@/app/lib/seo/list-page-robots';
 
@@ -13,7 +13,7 @@ export type FrontDoorListPage = {
   climbs: Climb[];
   hasMore: boolean;
   /** Pre-resolved overlay URL for the first climb so the page can `<link rel="preload">` it. */
-  preloadUrl: string | null;
+  preloadUrls: string[];
 };
 
 /**
@@ -77,7 +77,7 @@ export async function fetchFrontDoorListPage(
   });
 
   const firstClimb = searchResponse.climbs[0];
-  const preloadUrl = firstClimb?.frames ? buildOverlayUrl(boardDetails, firstClimb.frames, true) : null;
+  const preloadUrls = buildOverlayPreloadUrls(boardDetails, firstClimb?.frames, true);
 
-  return { boardDetails, climbs: searchResponse.climbs, hasMore: searchResponse.hasMore, preloadUrl };
+  return { boardDetails, climbs: searchResponse.climbs, hasMore: searchResponse.hasMore, preloadUrls };
 }

@@ -144,11 +144,13 @@ export default async function DynamicResultsPage(props: {
   const page = parseFrontDoorPage(searchParams.page);
   const listData = await fetchFrontDoorListPage(parsedParams, page);
   if (!listData) return notFound();
-  const { boardDetails, climbs, hasMore, preloadUrl } = listData;
+  const { boardDetails, climbs, hasMore, preloadUrls } = listData;
 
   return (
     <>
-      {preloadUrl && <link rel="preload" as="image" href={preloadUrl} fetchPriority="high" />}
+      {preloadUrls.map((preloadUrl) => (
+        <link key={preloadUrl} rel="preload" as="image" href={preloadUrl} fetchPriority="high" />
+      ))}
       <StaticListFrontDoor
         boardDetails={boardDetails}
         angle={parsedParams.angle}

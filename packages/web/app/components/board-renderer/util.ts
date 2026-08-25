@@ -135,6 +135,25 @@ export const buildOverlayUrl = (
   });
 
 /**
+ * The board images a page should preload when it treats one as its LCP element.
+ *
+ * One URL for most boards. Boards with dark art put both variants in the markup and let CSS
+ * choose, so both are preloaded: the browser fetches both either way, and hinting only the
+ * light one leaves a dark-mode reader's actual LCP element unprioritised.
+ */
+export const buildOverlayPreloadUrls = (
+  boardDetails: BoardDetails,
+  frames: string | null | undefined,
+  thumbnail?: boolean,
+): string[] => {
+  if (!frames) return [];
+
+  const light = buildOverlayUrl(boardDetails, frames, thumbnail);
+  if (!hasDarkBoardArt(boardDetails.board_name)) return [light];
+  return [light, buildOverlayUrl(boardDetails, frames, thumbnail, 'dark')];
+};
+
+/**
  * OG card image for a shared climb. Points at the backend `/og/climb` endpoint
  * (long-running process, warm renderer, JPEG by default) as an absolute URL so
  * crawlers fetch it directly instead of the slow Vercel render path. When the

@@ -128,6 +128,9 @@ vi.mock('@/app/components/board-renderer/util', () => ({
     (_bd: unknown, _frames: string, _thumbnail?: boolean, colorScheme?: 'light' | 'dark') =>
       `/api/internal/board-render?variant=overlay${colorScheme === 'dark' ? '&color_scheme=dark' : ''}`,
   ),
+  buildOverlayPreloadUrls: vi.fn((_bd: unknown, frames: string | null | undefined) =>
+    frames ? ['/api/internal/board-render?variant=overlay'] : [],
+  ),
   buildOgBoardRenderUrl: vi.fn(() => 'https://ws.boardsesh.com/og/climb'),
   // The fixtures here are Kilter, which has no dark art — so the front door emits its
   // single board image and these assertions keep counting one.
