@@ -5,7 +5,7 @@ import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-f
 import SimilarClimbsList from '@/app/components/similar-climbs/similar-climbs-list';
 import ClimbSocialSection from '@/app/components/social/climb-social-section';
 import BoardseshBetaList from '@/app/components/beta-videos/boardsesh-beta-list';
-import { buildOverlayUrl, hasDarkBoardArt } from '@/app/components/board-renderer/util';
+import { buildBoardArtLayers, toDarkArtUrl } from '@/app/components/board-renderer/util';
 import boardArtStyles from '@/app/components/board-renderer/board-art-theme.module.css';
 import { buildCanonicalClimbListUrl, buildCanonicalClimbViewUrl } from '@/app/lib/url-utils';
 import { getServerTranslation } from '@/app/lib/i18n/server';
@@ -56,6 +56,20 @@ const containerSx = {
   padding: `${themeTokens.spacing[4]}px`,
 };
 
+// The board photo and the holds render are separate images on a themed board, so they stack
+// in one CSS grid cell. Grid rather than absolute positioning, matching BoardImageLayers:
+// absolutely positioned images inside an aspect-ratio container hit iOS 18.x WebKit bugs.
+const boardArtSx = {
+  display: 'grid',
+  '& > img': { gridArea: '1 / 1' },
+};
+
+const boardLayerStyle: React.CSSProperties = {
+  maxWidth: '100%',
+  height: 'auto',
+  width: '100%',
+};
+
 // Setters type notes with line breaks; keep them rather than collapsing the
 // whole thing onto one line.
 const setterNotesSx = {
@@ -104,14 +118,12 @@ export default async function ClimbFrontDoor({
   // The breadcrumb's leaf is the page's CANONICAL, not `handoffPath`: on `/b`
   // those differ, and the JSON-LD has to name the URL the page claims.
   const canonicalClimbUrl = buildCanonicalClimbViewUrl(boardDetails, angle, climb.uuid, climbName);
-  const overlayUrl = climb.frames ? buildOverlayUrl(boardDetails, climb.frames, false) : null;
-  // Woods art has a white ground that glares in dark mode, so it ships a dark sibling and
-  // both renders go into the page for CSS to choose between — see board-art-theme.module.css.
-  // The JSON-LD below deliberately keeps the light URL: a crawler has no theme.
-  const darkOverlayUrl =
-    climb.frames && hasDarkBoardArt(boardDetails.board_name)
-      ? buildOverlayUrl(boardDetails, climb.frames, false, 'dark')
-      : null;
+  // Woods art has a white ground that glares in dark mode, so it ships a dark sibling. Rather
+  // than render the whole composite twice — one WASM + sharp job per theme, per climb — the
+  // board photo splits out as static layers the stylesheet picks between, and the holds
+  // render once on top. See buildBoardArtLayers. The JSON-LD below keeps the overlay URL
+  // either way: a crawler has no theme.
+  const { backgroundUrls, overlayUrl } = buildBoardArtLayers(boardDetails, climb.frames, false);
   // The setter's own words about the climb — the one genuinely unique piece of
   // indexable prose on this page. User-written, so it renders verbatim (never
   // through `t()`) and stays out of the JSON-LD `description` below, which is
@@ -163,7 +175,33 @@ export default async function ClimbFrontDoor({
       <ClimbViewSeoFragment climb={climb} boardDetails={boardDetails} />
 
       {overlayUrl ? (
-        <>
+        <Box sx={boardArtSx}>
+          {backgroundUrls.map((backgroundUrl) => (
+            <React.Fragment key={backgroundUrl}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={backgroundUrl}
+                alt=""
+                width={boardDetails.boardWidth}
+                height={boardDetails.boardHeight}
+                className={boardArtStyles.lightArt}
+                fetchPriority="high"
+                decoding="async"
+                style={boardLayerStyle}
+              />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={toDarkArtUrl(backgroundUrl)}
+                alt=""
+                width={boardDetails.boardWidth}
+                height={boardDetails.boardHeight}
+                className={boardArtStyles.darkArt}
+                fetchPriority="high"
+                decoding="async"
+                style={boardLayerStyle}
+              />
+            </React.Fragment>
+          ))}
           {/* eslint-disable-next-line @next/next/no-img-element -- the overlay route
               is already an optimised render endpoint; next/image would add a second
               proxy hop in front of the page's LCP element for no gain. */}
@@ -177,33 +215,11 @@ export default async function ClimbFrontDoor({
             })}
             width={boardDetails.boardWidth}
             height={boardDetails.boardHeight}
-            className={darkOverlayUrl ? boardArtStyles.lightArt : undefined}
             fetchPriority="high"
             decoding="async"
-            style={{ maxWidth: '100%', height: 'auto' }}
+            style={boardLayerStyle}
           />
-          {darkOverlayUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={darkOverlayUrl}
-              /* Same alt as the light image, not an empty one: whichever variant the theme
-                 hides is `display: none` and drops out of the accessibility tree, so exactly
-                 one is ever announced — and a dark-mode reader must not lose the description. */
-              alt={t('frontDoor.boardImageAlt', {
-                climbName,
-                boardName: boardDetails.board_name,
-                layoutName,
-                angle,
-              })}
-              width={boardDetails.boardWidth}
-              height={boardDetails.boardHeight}
-              className={boardArtStyles.darkArt}
-              fetchPriority="high"
-              decoding="async"
-              style={{ maxWidth: '100%', height: 'auto' }}
-            />
-          ) : null}
-        </>
+        </Box>
       ) : null}
 
       <ClimbFacts climb={climb} boardDetails={boardDetails} angle={angle} currentAngleStats={currentAngleStats} />

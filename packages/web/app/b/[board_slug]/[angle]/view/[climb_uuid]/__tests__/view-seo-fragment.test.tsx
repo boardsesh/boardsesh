@@ -124,6 +124,13 @@ vi.mock('@/app/lib/data/front-door-data.server', () => ({
 
 vi.mock('@/app/lib/warm-overlay-cache', () => ({ scheduleOverlayWarming: vi.fn() }));
 vi.mock('@/app/components/board-renderer/util', () => ({
+  // The fixtures here are Kilter, which has no dark art — one composite, no photo layers, so
+  // the assertions below keep counting a single board image.
+  buildBoardArtLayers: vi.fn((_bd: unknown, frames: string | null | undefined) => ({
+    backgroundUrls: [],
+    overlayUrl: frames ? '/api/internal/board-render?variant=overlay' : null,
+  })),
+  toDarkArtUrl: (url: string) => url.replace(/\.webp$/, '.dark.webp'),
   buildOverlayUrl: vi.fn(
     (_bd: unknown, _frames: string, _thumbnail?: boolean, colorScheme?: 'light' | 'dark') =>
       `/api/internal/board-render?variant=overlay${colorScheme === 'dark' ? '&color_scheme=dark' : ''}`,

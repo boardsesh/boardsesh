@@ -86,18 +86,28 @@ describe('getImageUrl', () => {
 
   describe('buildOverlayPreloadUrls', () => {
     const boardDetails = (board_name: string) =>
-      ({ board_name, layout_id: 1, size_id: 1, set_ids: [1], boardWidth: 720, boardHeight: 1000 }) as never;
+      ({
+        board_name,
+        layout_id: 1,
+        size_id: 1,
+        set_ids: [1],
+        images_to_holds: { 'woods-8x10-bg.png': [] },
+        boardWidth: 720,
+        boardHeight: 1000,
+      }) as never;
 
     it('preloads one image for a board with no dark art', () => {
       expect(buildOverlayPreloadUrls(boardDetails('kilter'), 'p1r42')).toHaveLength(1);
     });
 
-    it('preloads both variants for a board that ships dark art', () => {
-      // Both are in the markup and the browser fetches both anyway; hinting only the light
-      // one would leave a dark-mode reader's actual LCP element unprioritised.
-      const [light, dark] = buildOverlayPreloadUrls(boardDetails('woods'), 'p1r42');
-      expect(light).not.toContain('color_scheme=dark');
-      expect(dark).toContain('color_scheme=dark');
+    it('preloads the single overlay plus both photo layers for a themed board', () => {
+      // A themed board draws photo + overlay stacked, so all of it is the LCP element. There
+      // is still only ONE per-climb render in the list — the rest are static files.
+      const urls = buildOverlayPreloadUrls(boardDetails('woods'), 'p1r42');
+
+      expect(urls.filter((url) => url.includes('board-render'))).toHaveLength(1);
+      expect(urls).toContain('/images/woods/woods-8x10-bg.webp');
+      expect(urls).toContain('/images/woods/woods-8x10-bg.dark.webp');
     });
 
     it('preloads nothing when the climb has no frames', () => {

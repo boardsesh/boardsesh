@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo } from 'react';
 import type { BoardDetails } from '@/app/lib/types';
-import { getImageUrl, buildOverlayUrl, hasDarkBoardArt, toDarkArtUrl } from './util';
+import { buildBoardArtLayers, getImageUrl, hasDarkBoardArt, toDarkArtUrl } from './util';
 import styles from './board-art-theme.module.css';
 import { THUMBNAIL_WIDTH } from './types';
 import { trackRenderError, type RenderContext } from '@/app/lib/rendering-metrics';
@@ -61,16 +61,20 @@ const BoardImageLayers = React.memo(function BoardImageLayers({
   style,
   fetchPriority,
 }: BoardImageLayersProps) {
-  // Boards with dark art render both variants and let CSS choose — see the module stylesheet
-  // for why this can't be decided at render time. Everything else renders exactly one image,
-  // so no other board pays a second request or a second server render.
+  // Boards with dark art split the board photo back out as a static layer and keep ONE
+  // per-climb overlay render — see buildBoardArtLayers for why a themed composite would cost
+  // a second WASM + sharp job per card. Everything else keeps the single baked composite.
   const darkArt = hasDarkBoardArt(boardDetails.board_name);
-  const overlayUrl = frames ? buildOverlayUrl(boardDetails, frames, thumbnail) : null;
-  const darkOverlayUrl = frames && darkArt ? buildOverlayUrl(boardDetails, frames, thumbnail, 'dark') : null;
-  const backgroundUrls = useMemo(
+  const { backgroundUrls: artBackgroundUrls, overlayUrl } = useMemo(
+    () => buildBoardArtLayers(boardDetails, frames, thumbnail),
+    [boardDetails, frames, thumbnail],
+  );
+  const bareBackgroundUrls = useMemo(
     () => Object.keys(boardDetails.images_to_holds).map((img) => getImageUrl(img, boardDetails.board_name, thumbnail)),
     [boardDetails.images_to_holds, boardDetails.board_name, thumbnail],
   );
+  // With no climb to overlay, the photo layers are all there is to draw.
+  const backgroundUrls = overlayUrl ? artBackgroundUrls : bareBackgroundUrls;
 
   const containerStyle = useMemo<React.CSSProperties>(
     () => ({
@@ -106,69 +110,50 @@ const BoardImageLayers = React.memo(function BoardImageLayers({
 
   return (
     <div style={containerStyle}>
-      {overlayUrl ? (
-        // Single composited image: background + overlay baked together server-side
-        <>
+      {backgroundUrls.map((url, i) => (
+        <React.Fragment key={url}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={overlayUrl}
+            src={url}
             alt=""
             width={imgWidth}
             height={imgHeight}
             style={imgStyle}
-            className={darkOverlayUrl ? styles.lightArt : undefined}
-            fetchPriority={fetchPriority}
-            loading={thumbnail && fetchPriority !== 'high' ? 'lazy' : undefined}
-            onError={handleOverlayError}
+            className={darkArt ? styles.lightArt : undefined}
+            fetchPriority={i === 0 ? fetchPriority : undefined}
+            loading={thumbnail && !(i === 0 && fetchPriority === 'high') ? 'lazy' : undefined}
           />
-          {darkOverlayUrl ? (
+          {darkArt ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={darkOverlayUrl}
+              src={toDarkArtUrl(url)}
               alt=""
               width={imgWidth}
               height={imgHeight}
               style={imgStyle}
               className={styles.darkArt}
-              // Same priority as its light twin: for a dark-mode reader this IS the LCP
-              // element, so boosting only the hidden one would miss the point.
-              fetchPriority={fetchPriority}
-              loading={thumbnail && fetchPriority !== 'high' ? 'lazy' : undefined}
-              onError={handleOverlayError}
-            />
-          ) : null}
-        </>
-      ) : (
-        // No climb selected: just show background layers
-        backgroundUrls.map((url, i) => (
-          <React.Fragment key={url}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={url}
-              alt=""
-              width={imgWidth}
-              height={imgHeight}
-              style={imgStyle}
-              className={darkArt ? styles.lightArt : undefined}
               fetchPriority={i === 0 ? fetchPriority : undefined}
               loading={thumbnail && !(i === 0 && fetchPriority === 'high') ? 'lazy' : undefined}
             />
-            {darkArt ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={toDarkArtUrl(url)}
-                alt=""
-                width={imgWidth}
-                height={imgHeight}
-                style={imgStyle}
-                className={styles.darkArt}
-                fetchPriority={i === 0 ? fetchPriority : undefined}
-                loading={thumbnail && !(i === 0 && fetchPriority === 'high') ? 'lazy' : undefined}
-              />
-            ) : null}
-          </React.Fragment>
-        ))
-      )}
+          ) : null}
+        </React.Fragment>
+      ))}
+
+      {overlayUrl ? (
+        // One render per climb either way: the board photo baked in for an ordinary board,
+        // transparent and stacked over the photo layers above for a themed one.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={overlayUrl}
+          alt=""
+          width={imgWidth}
+          height={imgHeight}
+          style={imgStyle}
+          fetchPriority={fetchPriority}
+          loading={thumbnail && fetchPriority !== 'high' ? 'lazy' : undefined}
+          onError={handleOverlayError}
+        />
+      ) : null}
     </div>
   );
 });

@@ -5,9 +5,22 @@ import { render } from '@testing-library/react';
 import React from 'react';
 import type { BoardDetails } from '@/app/lib/types';
 import BoardImageLayers from '../board-image-layers';
-import { buildOverlayUrl } from '../util';
 
 vi.mock('../util', () => ({
+  // Mirrors the real split: an ordinary board gets one composite with the photo baked in,
+  // a themed board gets static photo layers plus a background-less overlay.
+  buildBoardArtLayers: (bd: BoardDetails, frames: string | undefined, thumbnail?: boolean) => {
+    const overlay = frames ? `/api/internal/board-render?frames=${frames}${thumbnail ? '&thumbnail=1' : ''}` : null;
+    if (bd.board_name !== 'woods') {
+      return { backgroundUrls: [], overlayUrl: overlay ? `${overlay}&include_background=1` : null };
+    }
+    return {
+      backgroundUrls: Object.keys(bd.images_to_holds).map((image) =>
+        `/images/${bd.board_name}/${image}`.replace(/\.png$/, '.webp'),
+      ),
+      overlayUrl: overlay,
+    };
+  },
   // Mirrors the real .png -> .webp rewrite: toDarkArtUrl keys off the .webp extension, so a
   // mock that skipped it would make the dark URL identical to the light one and the paired
   // assertions below would pass without exercising anything.
@@ -105,10 +118,12 @@ describe('BoardImageLayers', () => {
     expect(wrapper.style.transform).toBeFalsy();
   });
 
-  it('passes thumbnail flag to buildOverlayUrl', () => {
-    render(<BoardImageLayers boardDetails={mockBoardDetails} frames="p1r42" mirrored={false} thumbnail />);
+  it('passes the thumbnail flag through to the art URLs', () => {
+    const { container } = render(
+      <BoardImageLayers boardDetails={mockBoardDetails} frames="p1r42" mirrored={false} thumbnail />,
+    );
 
-    expect(buildOverlayUrl).toHaveBeenCalledWith(mockBoardDetails, 'p1r42', true);
+    expect(container.querySelector('img')?.getAttribute('src')).toContain('thumbnail=1');
   });
 
   it('uses object-fit contain when contain prop is set', () => {
@@ -218,20 +233,29 @@ describe('BoardImageLayers', () => {
         className: img.getAttribute('class') ?? '',
       }));
 
-    it('renders a light and a dark composite, tagged apart', () => {
+    it('themes the static photo and still renders the climb overlay exactly once', () => {
+      // The point of the split: a themed board must not cost a second WASM + sharp render
+      // per card. Two photo layers (static files every card on the page shares) and one
+      // overlay — never two overlays.
       const { container } = render(
         <BoardImageLayers boardDetails={woodsBoardDetails} frames="p1r42" mirrored={false} />,
       );
 
       const images = imageSources(container);
-      expect(images).toHaveLength(2);
-      expect(images[0].src).not.toContain('color_scheme=dark');
-      expect(images[1].src).toContain('color_scheme=dark');
-      expect(images[0].className).not.toBe(images[1].className);
-      expect(images.every((image) => image.className !== '')).toBe(true);
+      expect(images).toHaveLength(3);
+
+      const [light, dark, overlay] = images;
+      expect(light.src).toBe('/images/woods/woods-8x10-bg.webp');
+      expect(dark.src).toBe('/images/woods/woods-8x10-bg.dark.webp');
+      expect(light.className).not.toBe(dark.className);
+
+      expect(overlay.src).toContain('board-render');
+      expect(overlay.src).not.toContain('include_background=1');
+      expect(overlay.className).toBe('');
+      expect(images.filter((image) => image.src.includes('board-render'))).toHaveLength(1);
     });
 
-    it('pairs the background layers too, when there is no climb to overlay', () => {
+    it('pairs the background layers when there is no climb to overlay', () => {
       const { container } = render(<BoardImageLayers boardDetails={woodsBoardDetails} mirrored={false} />);
 
       expect(imageSources(container).map((image) => image.src)).toEqual([
@@ -256,13 +280,14 @@ describe('BoardImageLayers', () => {
       expect(kilter.querySelector('img')?.style.display).toBe('block');
     });
 
-    it('renders one image per layer for every other board', () => {
+    it('keeps the single baked composite for every other board', () => {
       const { container } = render(
         <BoardImageLayers boardDetails={mockBoardDetails} frames="p1r42" mirrored={false} />,
       );
 
       const images = imageSources(container);
       expect(images).toHaveLength(1);
+      expect(images[0].src).toContain('include_background=1');
       expect(images[0].className).toBe('');
     });
   });

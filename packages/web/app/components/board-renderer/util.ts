@@ -134,6 +134,52 @@ export const buildOverlayUrl = (
     colorScheme,
   });
 
+export type BoardArtLayers = {
+  /**
+   * Static board-art layers, as light URLs. Empty when the overlay already bakes the board
+   * photo in; non-empty means the caller must also render each URL's `toDarkArtUrl` twin and
+   * let the stylesheet pick.
+   */
+  backgroundUrls: string[];
+  /** The per-climb hold render. Includes the board photo only when `backgroundUrls` is empty. */
+  overlayUrl: string | null;
+};
+
+/**
+ * How to draw one climb's board art, split so a themed board never doubles the render cost.
+ *
+ * Boards without dark art keep the server-composited image they always had: one request,
+ * board photo and holds baked together, shared by every viewer.
+ *
+ * Boards with dark art cannot use that composite for both themes. Its URL carries the
+ * climb's frames, so a dark twin is a *second* WASM + sharp render per climb — 50 of them on
+ * a front-door list, which is exactly the work `warmOverlays` caps itself to avoid. The holds
+ * overlay is identical in both themes though; only the board photo behind it differs. So the
+ * photo splits back out as static art (two files per board size, shared by every card on the
+ * page) and the overlay renders once with no background baked in.
+ */
+export const buildBoardArtLayers = (
+  boardDetails: BoardDetails,
+  frames: string | null | undefined,
+  thumbnail?: boolean,
+): BoardArtLayers => {
+  if (!hasDarkBoardArt(boardDetails.board_name)) {
+    return {
+      backgroundUrls: [],
+      overlayUrl: frames ? buildOverlayUrl(boardDetails, frames, thumbnail) : null,
+    };
+  }
+
+  return {
+    backgroundUrls: Object.keys(boardDetails.images_to_holds).map((image) =>
+      getImageUrl(image, boardDetails.board_name, thumbnail),
+    ),
+    overlayUrl: frames
+      ? buildBoardRenderUrl(boardDetails, toFlatFrames(frames, boardDetails.board_name), { thumbnail })
+      : null,
+  };
+};
+
 /**
  * The board images a page should preload when it treats one as its LCP element.
  *
@@ -148,9 +194,14 @@ export const buildOverlayPreloadUrls = (
 ): string[] => {
   if (!frames) return [];
 
-  const light = buildOverlayUrl(boardDetails, frames, thumbnail);
-  if (!hasDarkBoardArt(boardDetails.board_name)) return [light];
-  return [light, buildOverlayUrl(boardDetails, frames, thumbnail, 'dark')];
+  const { backgroundUrls, overlayUrl } = buildBoardArtLayers(boardDetails, frames, thumbnail);
+  if (!overlayUrl) return [];
+
+  // On a themed board the visible LCP element is the board photo plus the overlay stacked, so
+  // hint all of it. The photo layers are static files every card on the page shares, and both
+  // themes' copies are fetched regardless — hinting only the light one would leave a
+  // dark-mode reader's actual pixels unprioritised.
+  return [overlayUrl, ...backgroundUrls.flatMap((url) => [url, toDarkArtUrl(url)])];
 };
 
 /**
