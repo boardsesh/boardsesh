@@ -49,16 +49,23 @@ export default function BoardSpikeScreen() {
         <SpikeBoard treatment={treatment} art={art} backgroundColor={backgroundColor} palette={palette} />
 
         <View style={[styles.controls, { paddingBottom: insets.bottom + spacing[2] }]}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
-            {SPIKE_TREATMENTS.map((option, index) => (
-              <SpikeChip
-                key={option.key}
-                label={option.chip}
-                selected={index === treatmentIndex}
-                onPress={() => setTreatmentIndex(index)}
-              />
-            ))}
-          </ScrollView>
+          {/* A stepper rather than a chip per treatment: there are more treatments
+              than fit a phone row, and stepping is what you actually do with them
+              — flip through, compare against the one before. */}
+          <View style={styles.row}>
+            <SpikeChip
+              label="◀  Previous"
+              selected={false}
+              onPress={() =>
+                setTreatmentIndex((index) => (index - 1 + SPIKE_TREATMENTS.length) % SPIKE_TREATMENTS.length)
+              }
+            />
+            <SpikeChip
+              label="Next  ▶"
+              selected
+              onPress={() => setTreatmentIndex((index) => (index + 1) % SPIKE_TREATMENTS.length)}
+            />
+          </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
             {SPIKE_ART_LEVELS.map((level) => (
               <SpikeChip

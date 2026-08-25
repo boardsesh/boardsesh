@@ -75,6 +75,7 @@ export function SpikeBoard({ treatment, art, backgroundColor, palette }: SpikeBo
         placements={renderData.holdsData}
         litHolds={litHolds}
         halos={treatment.halos}
+        haloShape={treatment.haloShape ?? 'circle'}
         selector={treatment.selector}
         palette={palette}
       />

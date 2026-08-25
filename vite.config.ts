@@ -477,6 +477,14 @@ export default defineConfig({
         command: 'node --import tsx scripts/spike-oklab-board-art.ts',
         cache: false,
       },
+      'spike:hold-lightness': {
+        command: 'node --import tsx packages/mobile/scripts/spike-hold-lightness.ts',
+        cache: false,
+      },
+      'spike:hold-outlines': {
+        command: 'node --import tsx packages/mobile/scripts/spike-hold-outlines.ts',
+        cache: false,
+      },
       'generate:oss-licenses': {
         command: 'node --import tsx scripts/generate-oss-licenses.ts',
         cache: false,

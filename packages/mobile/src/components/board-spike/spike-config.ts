@@ -22,8 +22,18 @@ export const SPIKE_FRAMES =
 /** Which holds get a neutral outline: none, every placement, or only the ones near a lit hold. */
 export type HaloScope = 'none' | 'all' | 'near';
 
+/**
+ * What that neutral outline is shaped like. `circle` is a ring at a fraction of
+ * the placement radius — cheap, and what a renderer can draw from geometry
+ * alone. `outline` follows the hold's real silhouette, traced out of the art's
+ * alpha channel by `spike-hold-outlines.ts`. The difference matters most where
+ * hold sizes differ most: a circle says nothing about whether the thing you are
+ * looking for on the wall is a fingernail chip or a jug.
+ */
+export type HaloShape = 'circle' | 'outline';
+
 /** How a lit hold is marked. */
-export type SelectorStyle = 'ring' | 'glow' | 'shape' | 'glow-shape';
+export type SelectorStyle = 'ring' | 'glow' | 'shape' | 'glow-shape' | 'casing' | 'shape-glow' | 'tint';
 
 export type SpikeTreatment = {
   key: string;
@@ -33,6 +43,8 @@ export type SpikeTreatment = {
   /** One line on what this treatment is testing, shown under the board. */
   note: string;
   halos: HaloScope;
+  /** Defaults to `circle` when absent. */
+  haloShape?: HaloShape;
   selector: SelectorStyle;
 };
 
@@ -76,6 +88,41 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
     note: 'Role carried by outline shape: dashed start, wavy hand, spiky finish, plain foot.',
     halos: 'all',
     selector: 'shape',
+  },
+  {
+    key: 'shaped-halos',
+    chip: 'Traced',
+    label: 'Traced halos',
+    note: "The neutral outline follows each hold's real silhouette instead of a fixed circle.",
+    halos: 'all',
+    haloShape: 'outline',
+    selector: 'ring',
+  },
+  {
+    key: 'shaped-glow',
+    chip: 'Trace+glow',
+    label: 'Traced glow',
+    note: 'Lit holds glow along their own outline, so the shape you are hunting for is the lit thing.',
+    halos: 'all',
+    haloShape: 'outline',
+    selector: 'shape-glow',
+  },
+  {
+    key: 'hold-tint',
+    chip: 'Tint',
+    label: 'Whole-hold tint',
+    note: 'No ring at all: the lit hold itself takes the role hue, the way an LED behind it would.',
+    halos: 'all',
+    haloShape: 'outline',
+    selector: 'tint',
+  },
+  {
+    key: 'contrast-casing',
+    chip: 'Casing',
+    label: 'Contrast casing',
+    note: 'Each ring gets a casing picked black-or-white from the art lightness under it.',
+    halos: 'all',
+    selector: 'casing',
   },
   {
     key: 'glow-shape',
@@ -138,6 +185,31 @@ export const SPIKE_TUNING = {
   glowRadius: 1.7,
   /** Renderer base stroke (6.0) times grasshopper's 1.35 board multiplier. */
   strokeWidth: 6 * 1.35,
+  /**
+   * Contrast casing: a stroke drawn under the role ring, wide enough to leave a
+   * visible edge on both sides of it. Its colour flips at this OkLab lightness —
+   * the same choice CSS `contrast-color()` makes, resolved offline against the
+   * measured art rather than against a declared background colour.
+   */
+  casingWidthMultiplier: 2,
+  casingOpacity: 0.7,
+  casingLightnessThreshold: 0.5,
+  /** Traced silhouettes are drawn thinner than the circular rings — they are longer. */
+  outlineHaloStrokeWidth: 2.2,
+  /**
+   * Shape-following glow: the same traced path stroked repeatedly, wide and faint
+   * to narrow and solid. SVG has no gradient that follows an arbitrary outline, so
+   * the fade is built out of concentric strokes.
+   */
+  shapeGlowBands: [
+    { width: 46, opacity: 0.1 },
+    { width: 32, opacity: 0.2 },
+    { width: 20, opacity: 0.42 },
+    { width: 10, opacity: 0.95 },
+  ],
+  /** Whole-hold tint: fill opacity over the hold, plus a crisp edge on its outline. */
+  tintFillOpacity: 0.55,
+  tintEdgeWidth: 4,
 } as const;
 
 export type SpikeLitHold = {

@@ -2,10 +2,13 @@ import React, { useMemo } from 'react';
 import Svg, { Circle, Defs, G, Path, RadialGradient, Stop } from 'react-native-svg';
 import type { HoldPlacement } from '../board-renderer/types';
 import { plainRingPath, spikyRingPath, wavyRingPath } from './spike-shapes';
+import { SPIKE_HOLD_ART_LIGHTNESS } from './spike-hold-lightness';
+import { SPIKE_HOLD_OUTLINES } from './spike-hold-outlines';
 import {
   SPIKE_PALETTES,
   SPIKE_TUNING,
   type HaloScope,
+  type HaloShape,
   type SelectorStyle,
   type SpikeLitHold,
   type SpikePaletteKey,
@@ -17,9 +20,24 @@ type SpikeBoardOverlayProps = {
   placements: HoldPlacement[];
   litHolds: SpikeLitHold[];
   halos: HaloScope;
+  haloShape: HaloShape;
   selector: SelectorStyle;
   palette: SpikePaletteKey;
 };
+
+/**
+ * A traced silhouette as an SVG path, moved to the hold's position. The table
+ * stores flat [x, y, …] pairs relative to the placement centre.
+ */
+function outlinePath(holdId: number, cx: number, cy: number): string | null {
+  const flat = SPIKE_HOLD_OUTLINES[holdId];
+  if (flat === undefined || flat.length < 6) return null;
+  let path = '';
+  for (let index = 0; index < flat.length; index += 2) {
+    path += `${index === 0 ? 'M' : 'L'} ${cx + flat[index]} ${cy + flat[index + 1]} `;
+  }
+  return `${path}Z`;
+}
 
 /** Placements that get a neutral outline under the current scope. */
 function haloTargets(scope: HaloScope, placements: HoldPlacement[], litHolds: SpikeLitHold[]): HoldPlacement[] {
@@ -43,6 +61,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   placements,
   litHolds,
   halos,
+  haloShape,
   selector,
   palette,
 }: SpikeBoardOverlayProps) {
@@ -51,6 +70,9 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   const litRoles = useMemo(() => [...new Set(litHolds.map((hold) => hold.role))], [litHolds]);
   const haloOpacity = halos === 'near' ? SPIKE_TUNING.nearHaloOpacity : SPIKE_TUNING.haloOpacity;
   const drawsGlow = selector === 'glow' || selector === 'glow-shape';
+  const drawsCasing = selector === 'casing';
+  const drawsShapeGlow = selector === 'shape-glow';
+  const drawsTint = selector === 'tint';
   const drawsShape = selector === 'shape' || selector === 'glow-shape';
   // The combined treatment lets the halo carry the reach, so its outline is
   // thinner — a full-weight ring on top of the glow just reads as a blob.
@@ -82,21 +104,55 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
       </Defs>
 
       <G>
-        {targets.map((placement) => (
-          <Circle
-            key={`halo-${placement.id}`}
-            cx={placement.cx}
-            cy={placement.cy}
-            r={placement.r * SPIKE_TUNING.haloRadius}
-            fill="none"
-            stroke="#FFFFFF"
-            strokeOpacity={haloOpacity}
-            strokeWidth={SPIKE_TUNING.haloStrokeWidth}
-          />
-        ))}
+        {targets.map((placement) => {
+          if (haloShape === 'outline') {
+            const path = outlinePath(placement.id, placement.cx, placement.cy);
+            if (path === null) return null;
+            return (
+              <Path
+                key={`halo-${placement.id}`}
+                d={path}
+                fill="none"
+                stroke="#FFFFFF"
+                strokeOpacity={haloOpacity}
+                strokeWidth={SPIKE_TUNING.outlineHaloStrokeWidth}
+                strokeLinejoin="round"
+              />
+            );
+          }
+          return (
+            <Circle
+              key={`halo-${placement.id}`}
+              cx={placement.cx}
+              cy={placement.cy}
+              r={placement.r * SPIKE_TUNING.haloRadius}
+              fill="none"
+              stroke="#FFFFFF"
+              strokeOpacity={haloOpacity}
+              strokeWidth={SPIKE_TUNING.haloStrokeWidth}
+            />
+          );
+        })}
       </G>
 
       <G>
+        {drawsCasing &&
+          litHolds.map((hold) => (
+            <Circle
+              key={`casing-${hold.id}`}
+              cx={hold.cx}
+              cy={hold.cy}
+              r={hold.radius}
+              fill="none"
+              stroke={
+                (SPIKE_HOLD_ART_LIGHTNESS[hold.id] ?? 0) >= SPIKE_TUNING.casingLightnessThreshold
+                  ? '#000000'
+                  : '#FFFFFF'
+              }
+              strokeOpacity={SPIKE_TUNING.casingOpacity}
+              strokeWidth={SPIKE_TUNING.strokeWidth * SPIKE_TUNING.casingWidthMultiplier}
+            />
+          ))}
         {drawsGlow &&
           litHolds.map((hold) => (
             <Circle
@@ -107,70 +163,121 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
               fill={`url(#spike-glow-${hold.role})`}
             />
           ))}
-        {litHolds.map((hold) => {
-          const color = colors[hold.role] ?? '#FFFFFF';
-          if (!drawsShape) {
-            if (drawsGlow) return null;
+        {(drawsShapeGlow || drawsTint) &&
+          litHolds.map((hold) => {
+            const color = colors[hold.role] ?? '#FFFFFF';
+            const path = outlinePath(hold.id, hold.cx, hold.cy);
+            // No traced silhouette for this hold — fall back to the ring rather
+            // than leaving a lit hold unmarked.
+            if (path === null) {
+              return (
+                <Circle
+                  key={`sel-${hold.id}`}
+                  cx={hold.cx}
+                  cy={hold.cy}
+                  r={hold.radius}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={SPIKE_TUNING.strokeWidth}
+                />
+              );
+            }
+            if (drawsTint) {
+              return (
+                <G key={`sel-${hold.id}`}>
+                  <Path d={path} fill={color} fillOpacity={SPIKE_TUNING.tintFillOpacity} />
+                  <Path
+                    d={path}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={SPIKE_TUNING.tintEdgeWidth}
+                    strokeLinejoin="round"
+                  />
+                </G>
+              );
+            }
             return (
-              <Circle
-                key={`sel-${hold.id}`}
-                cx={hold.cx}
-                cy={hold.cy}
-                r={hold.radius}
-                fill="none"
-                stroke={color}
-                strokeWidth={outlineWidth}
-              />
+              <G key={`sel-${hold.id}`}>
+                {SPIKE_TUNING.shapeGlowBands.map((band) => (
+                  <Path
+                    key={band.width}
+                    d={path}
+                    fill="none"
+                    stroke={color}
+                    strokeOpacity={band.opacity}
+                    strokeWidth={band.width}
+                    strokeLinejoin="round"
+                  />
+                ))}
+              </G>
             );
-          }
-          const radius = selector === 'glow-shape' ? hold.radius * 1.02 : hold.radius;
-          if (hold.role === 'HAND') {
+          })}
+        {!drawsShapeGlow &&
+          !drawsTint &&
+          litHolds.map((hold) => {
+            const color = colors[hold.role] ?? '#FFFFFF';
+            if (!drawsShape) {
+              if (drawsGlow) return null;
+              return (
+                <Circle
+                  key={`sel-${hold.id}`}
+                  cx={hold.cx}
+                  cy={hold.cy}
+                  r={hold.radius}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={outlineWidth}
+                />
+              );
+            }
+            const radius = selector === 'glow-shape' ? hold.radius * 1.02 : hold.radius;
+            if (hold.role === 'HAND') {
+              return (
+                <Path
+                  key={`sel-${hold.id}`}
+                  d={wavyRingPath(hold.cx, hold.cy, radius)}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={outlineWidth}
+                  strokeLinejoin="round"
+                />
+              );
+            }
+            if (hold.role === 'FINISH') {
+              return (
+                <Path
+                  key={`sel-${hold.id}`}
+                  d={spikyRingPath(hold.cx, hold.cy, radius)}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={outlineWidth}
+                  strokeLinejoin="round"
+                />
+              );
+            }
+            if (hold.role === 'STARTING') {
+              return (
+                <Path
+                  key={`sel-${hold.id}`}
+                  d={wavyRingPath(hold.cx, hold.cy, radius)}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={outlineWidth}
+                  strokeDasharray="26,16"
+                  strokeLinecap="round"
+                />
+              );
+            }
             return (
               <Path
                 key={`sel-${hold.id}`}
-                d={wavyRingPath(hold.cx, hold.cy, radius)}
+                d={plainRingPath(hold.cx, hold.cy, radius)}
                 fill="none"
                 stroke={color}
                 strokeWidth={outlineWidth}
-                strokeLinejoin="round"
               />
             );
-          }
-          if (hold.role === 'FINISH') {
-            return (
-              <Path
-                key={`sel-${hold.id}`}
-                d={spikyRingPath(hold.cx, hold.cy, radius)}
-                fill="none"
-                stroke={color}
-                strokeWidth={outlineWidth}
-                strokeLinejoin="round"
-              />
-            );
-          }
-          if (hold.role === 'STARTING') {
-            return (
-              <Path
-                key={`sel-${hold.id}`}
-                d={wavyRingPath(hold.cx, hold.cy, radius)}
-                fill="none"
-                stroke={color}
-                strokeWidth={outlineWidth}
-                strokeDasharray="26,16"
-                strokeLinecap="round"
-              />
-            );
-          }
-          return (
-            <Path
-              key={`sel-${hold.id}`}
-              d={plainRingPath(hold.cx, hold.cy, radius)}
-              fill="none"
-              stroke={color}
-              strokeWidth={outlineWidth}
-            />
-          );
-        })}
+          })}
       </G>
     </Svg>
   );
