@@ -4,9 +4,10 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import {
   appendLegacyHostOnlySessionCookieClear,
+  appendSignOutSessionCookieClears,
   isSecureCookieContext,
   responseSetsSessionCookie,
-  sessionCookieName,
+  sessionCookieNameCandidates,
 } from '@/app/lib/auth/secure-cookies';
 import {
   bindExpoReturnToState,
@@ -162,14 +163,16 @@ export async function POST(request: NextRequest, context: NextAuthRouteContext):
   if (expectedIdentity === null) return guardedSignOutResponse(400, 'signout_identity_required');
   if (expectedIdentity === 'invalid') return guardedSignOutResponse(400, 'invalid_signout_identity');
 
+  // Both cookie names, preferred first — the same read the WebSocket handshake
+  // does. If the identity guard only looked at the name isSecureCookieContext()
+  // currently picks, a session living under the other name would fail the
+  // comparison and turn every sign-out into a 409 the user cannot get past.
+  const [preferredCookieName, fallbackCookieName] = sessionCookieNameCandidates();
+  const tokenOptions = { req: request, secret: process.env.NEXTAUTH_SECRET, secureCookie: isSecureCookieContext() };
   let token: Awaited<ReturnType<typeof getToken>>;
   try {
-    token = await getToken({
-      req: request,
-      secret: process.env.NEXTAUTH_SECRET,
-      secureCookie: isSecureCookieContext(),
-      cookieName: sessionCookieName(),
-    });
+    token = await getToken({ ...tokenOptions, cookieName: preferredCookieName });
+    token ??= await getToken({ ...tokenOptions, cookieName: fallbackCookieName });
   } catch {
     return guardedSignOutResponse(503, 'signout_identity_unavailable');
   }
@@ -177,10 +180,11 @@ export async function POST(request: NextRequest, context: NextAuthRouteContext):
   if (token?.sub !== expectedIdentity.userId || token.authSessionId !== expectedIdentity.authSessionId) {
     return guardedSignOutResponse(409, 'signout_identity_changed');
   }
-  // NextAuth's sign-out clears only the Domain-scoped cookie; also clear the
-  // legacy host-only cookie so a pre-migration session can't survive logout.
+  // NextAuth's sign-out clears only the Domain-scoped cookie under the one name
+  // it picked. Clear both names in both scopes, so the read fallback above can't
+  // resurrect a session the user just signed out of.
   const response = await handler(request, context);
-  appendLegacyHostOnlySessionCookieClear(response);
+  appendSignOutSessionCookieClears(response);
   return response;
 }
 
