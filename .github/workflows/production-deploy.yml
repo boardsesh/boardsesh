@@ -559,6 +559,16 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
+      # `vp` does not come from `bun install` — it is a separate toolchain the
+      # action puts on PATH. Without this step the apply step dies on
+      # `vp: command not found` AFTER the Production environment has already
+      # handed it the Cloudflare token, which reads as a credentials problem
+      # and is not. Every other `vp run` step in this workflow pairs with it.
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
