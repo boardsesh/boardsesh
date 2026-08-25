@@ -24,6 +24,7 @@ import {
   type GradeAccuracyValue,
 } from '@boardsesh/climb-filters';
 import { getTallWideScope } from '@boardsesh/board-constants';
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import { ClimbListRow } from '../../../src/components/ClimbListRow';
 import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkeleton';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
@@ -76,7 +77,6 @@ import {
   publishScreenshotWallClimbs,
 } from '../../../src/lib/board-presence/screenshot-wall-seed';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../../../src/lib/create-board-holds';
-import { supportsClimbCreation } from '../../../src/lib/boards/supports-climb-creation';
 import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { OnboardingTipBanner } from '../../../src/components/onboarding/OnboardingTipBanner';
 import {
@@ -1548,7 +1548,7 @@ function ClimbListInner() {
         // tab itself names the screen, so the centre title is dropped entirely —
         // the redundant "All climbs" label added nothing.
         title={showFilterChips ? undefined : searchTitle}
-        canCreate={isAuthenticated && hasBoardConfig && supportsClimbCreation(boardName)}
+        canCreate={isAuthenticated && hasBoardConfig && getBoardCapabilities(boardName).climbCreation}
         onCreate={handleCreateClimb}
         onOpenBoardDetail={handleOpenBoardDetail}
         showBoardBadge={showRevealTip}

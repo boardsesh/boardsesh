@@ -11,7 +11,7 @@ import {
 } from '@boardsesh/ble-protocol/aurora';
 import { getMoonboardBluetoothPacket, isMoonboardDeviceName } from '@boardsesh/ble-protocol/moonboard';
 import { getWoodsBluetoothPacket, isWoodsDeviceName } from '@boardsesh/ble-protocol/woods';
-import { getMoonBoardGeometryByLayoutId, woodsSizeIdToDimension } from '@boardsesh/board-config';
+import { getBoardCapabilities, getMoonBoardGeometryByLayoutId, woodsSizeIdToDimension } from '@boardsesh/board-config';
 import {
   blePlxErrorCodes,
   classifyBleFailure,
@@ -31,7 +31,6 @@ import {
   isNativeIosBleAdapter,
   subscribeNativeBleConnected,
 } from './adapter-factory';
-import { supportsNativeBoardControl } from './board-families';
 import { requestBleRuntimePermissions } from './use-ble-permissions';
 import { describeBlePermissionDenial } from './android-location-permission';
 import { manufacturerCompanyId } from './advertisement';
@@ -1597,7 +1596,7 @@ export function useBoardBluetooth({
     // A board native code can't drive (Woods) never rides the native adapter, so
     // there is no native connection to adopt — and no point building a throwaway
     // adapter just to learn that from isNativeIosBleAdapter below.
-    if (!supportsNativeBoardControl(boardName)) return;
+    if (!getBoardCapabilities(boardName).nativeBoardControl) return;
     const adopt = (deviceId: string, rawDeviceName?: string) => {
       // The bridge sends '' for a missing name — normalise so name parsing
       // (board type, serial, API level) sees undefined instead.

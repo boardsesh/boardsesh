@@ -11,6 +11,7 @@
 // Kept free of React so it unit-tests without a renderer.
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
 import type { BoardseshGrade } from '@boardsesh/graphql/operations';
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import {
   renderDifficulty,
   clampDifficultyId,
@@ -31,17 +32,6 @@ export { renderDifficulty, clampDifficultyId, GRADE_BY_ID, MIN_DIFFICULTY_ID, MA
 const TEASER_ARROW = '▸';
 const TEASER_CONFIRMED = '✓';
 const TEASER_PROVISIONAL = '~';
-
-// Boards whose climbs carry no crowd grade in our feed: MoonBoard has no
-// standardized community grade, and Woods ships only the setter's V number from
-// its own app. Neither has ascent data behind it, so the nightly Boardsesh-grade
-// job has nothing to compute and the section explains that instead.
-const BOARDS_WITHOUT_CROWD_GRADE: ReadonlySet<string> = new Set(['moonboard', 'woods']);
-
-/** True when this board has no community grade data behind it (see the set above). */
-export function lacksCrowdGrade(boardName: string): boolean {
-  return BOARDS_WITHOUT_CROWD_GRADE.has(boardName.toLowerCase());
-}
 
 export type BoardseshGradeView =
   | { kind: 'noCrowdGrade'; boardName: string }
@@ -107,7 +97,7 @@ export function buildBoardseshGradeView(
   grade: BoardseshGrade | null,
   gradeFormat: GradeDisplayFormat,
 ): BoardseshGradeView {
-  if (lacksCrowdGrade(boardName)) return { kind: 'noCrowdGrade', boardName: boardName.toLowerCase() };
+  if (!getBoardCapabilities(boardName).crowdGrade) return { kind: 'noCrowdGrade', boardName: boardName.toLowerCase() };
   if (!grade) return { kind: 'setterOnly', grade: null, count: 0 };
 
   // Prefer the cross-board universal grade; fall back to the board-local grade

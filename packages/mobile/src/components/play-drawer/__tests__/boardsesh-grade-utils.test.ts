@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { BoardseshGrade } from '@boardsesh/graphql/operations';
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import {
   buildBoardseshGradeView,
   buildBoardseshGradeSummary,
@@ -7,7 +8,6 @@ import {
   buildTrustBand,
   formatHalfGrades,
   renderDifficulty,
-  lacksCrowdGrade,
 } from '../boardsesh-grade-utils';
 
 function makeGrade(overrides: Partial<BoardseshGrade> = {}): BoardseshGrade {
@@ -42,14 +42,16 @@ describe('renderDifficulty', () => {
   });
 });
 
-describe('lacksCrowdGrade', () => {
+describe('the crowdGrade capability behind the view', () => {
   it('matches the no-crowd-grade boards case-insensitively', () => {
-    expect(lacksCrowdGrade('moonboard')).toBe(true);
-    expect(lacksCrowdGrade('MoonBoard')).toBe(true);
-    expect(lacksCrowdGrade('woods')).toBe(true);
-    expect(lacksCrowdGrade('Woods')).toBe(true);
-    expect(lacksCrowdGrade('kilter')).toBe(false);
-    expect(lacksCrowdGrade('tension')).toBe(false);
+    // The view builder reads getBoardCapabilities(...).crowdGrade, so the whole
+    // section turns on and off from the board-capability table.
+    expect(getBoardCapabilities('moonboard').crowdGrade).toBe(false);
+    expect(getBoardCapabilities('MoonBoard').crowdGrade).toBe(false);
+    expect(getBoardCapabilities('woods').crowdGrade).toBe(false);
+    expect(getBoardCapabilities('Woods').crowdGrade).toBe(false);
+    expect(getBoardCapabilities('kilter').crowdGrade).toBe(true);
+    expect(getBoardCapabilities('tension').crowdGrade).toBe(true);
   });
 });
 

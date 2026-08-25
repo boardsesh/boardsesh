@@ -12,7 +12,8 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useTheme } from '../../providers/theme-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
-import { buildBoardseshGradeView, buildCorrection, buildTrustBand, lacksCrowdGrade } from './boardsesh-grade-utils';
+import { getBoardCapabilities } from '@boardsesh/board-config';
+import { buildBoardseshGradeView, buildCorrection, buildTrustBand } from './boardsesh-grade-utils';
 
 type BoardseshGradeSectionProps = {
   climbUuid: string;
@@ -29,8 +30,9 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
   const { gradeFormat } = useGradeFormat();
   const { brandColors } = useTheme();
 
-  // MoonBoard and Woods have no community grade data in our feed, so skip the fetch.
-  const noCrowdGrade = lacksCrowdGrade(boardName);
+  // MoonBoard and Woods have no community grade data in our feed, so skip the
+  // fetch (see the crowdGrade row of the board-capability table).
+  const noCrowdGrade = !getBoardCapabilities(boardName).crowdGrade;
   const {
     data: grade,
     isLoading,

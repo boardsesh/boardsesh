@@ -15,7 +15,8 @@ import type { OpaqueColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { randomUUID } from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
-import { AURORA_BOARDS, type Climb } from '@boardsesh/shared-schema';
+import type { AuroraBoardName, Climb } from '@boardsesh/shared-schema';
+import { getBoardCapabilities, toAuroraBoardName } from '@boardsesh/board-config';
 import { computeCanUpdate, type SavedClimbSnapshot } from '@boardsesh/create-climb-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { IconName } from '../icon-map';
@@ -24,7 +25,6 @@ import { useDrawerHost, boardConfigsMatch, type BoardConfig } from '../../provid
 import { useQueueActions } from '../../providers/queue-provider';
 import { useToggleFavorite, useFavoriteStatus } from '../../lib/graphql/hooks';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
-import { supportsClimbCreation } from '../../lib/boards/supports-climb-creation';
 import { useTheme } from '../../providers/theme-provider';
 import { useShareClimb } from '../../hooks/use-share-climb';
 import { track } from '../../lib/analytics';
@@ -105,11 +105,10 @@ type UseClimbActionsArgs = {
 };
 
 // Mirrors web's constructClimbInfoUrl: Kilter no longer has a public app URL.
-function buildAuroraAppUrl(boardName: string, climbUuid: string): string | null {
-  // Only the Aurora boards have a `<board>boardapp.com` site. Without this gate a
-  // code-driven board (MoonBoard, Woods) gets an invented domain and the row opens
-  // a browser on an error page.
-  if (!(AURORA_BOARDS as readonly string[]).includes(boardName)) return null;
+// Aurora-only by construction — the caller gates on the auroraAppLink capability
+// and narrows the board name before calling, so a code-driven board (MoonBoard,
+// Woods) never reaches this and never gets an invented domain.
+function buildAuroraAppUrl(boardName: AuroraBoardName, climbUuid: string): string | null {
   if (boardName === 'kilter') return null;
   const suffix = boardName === 'tension' ? '2' : '';
   return `https://${boardName}boardapp${suffix}.com/climbs/${climbUuid}`;
@@ -162,13 +161,16 @@ export function useClimbActions({
 
     const { boardName, layoutId, sizeId, setIds, angle } = boardConfig;
     const { success: successColor, favorite: favoriteColor, accent: accentColor } = actionColors;
-    const auroraAppUrl = buildAuroraAppUrl(boardName, climb.uuid);
+    // Only boards with an official app page get the row; the guard is what turns
+    // the loose board string into the AuroraBoardName the builder assumes.
+    const auroraBoardName = getBoardCapabilities(boardName).auroraAppLink ? toAuroraBoardName(boardName) : null;
+    const auroraAppUrl = auroraBoardName ? buildAuroraAppUrl(auroraBoardName, climb.uuid) : null;
 
     // Edit is owner-only, and only while the climb is still a draft OR within 24h of
     // first publish (the backend enforces the same window). `userId` is null for
     // Aurora-synced climbs that predate Boardsesh accounts.
     const canEdit = (() => {
-      if (!supportsClimbCreation(boardName)) return false;
+      if (!getBoardCapabilities(boardName).climbCreation) return false;
       if (!currentUserId || !climb.userId || climb.userId !== currentUserId) return false;
       const snapshot: SavedClimbSnapshot = {
         uuid: climb.uuid,
@@ -323,7 +325,7 @@ export function useClimbActions({
 
     // Fork drops into the create-climb editor, so it only appears on boards that
     // can have climbs set on them.
-    if (supportsClimbCreation(boardName)) {
+    if (getBoardCapabilities(boardName).climbCreation) {
       items.push({
         id: 'fork',
         title: t('mobile.climbActions.fork'),

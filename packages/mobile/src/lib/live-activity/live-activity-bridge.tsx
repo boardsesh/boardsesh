@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { toBoardName } from '@boardsesh/board-config';
-import { supportsNativeBoardControl } from '../ble/board-families';
+import { getBoardCapabilities, toBoardName } from '@boardsesh/board-config';
 import { useQueue } from '../../providers/queue-provider';
 import { useBoardConnectionState } from '../../components/ble/use-board-connection-state';
 import { useNativeClimbRender } from '../../hooks/use-native-climb-render';
@@ -93,7 +92,7 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
     // This also gates the App Intents' `navigationAllowed` guard natively.
     // Boards the Swift encoder can't drive (Woods, until #3314) never get them:
     // native would encode the packet itself and light the wrong holds.
-    widgetNavigationAllowed: boardConnection === 'connectedByMe' && supportsNativeBoardControl(boardName),
+    widgetNavigationAllowed: boardConnection === 'connectedByMe' && getBoardCapabilities(boardName).nativeBoardControl,
     isPartySession: sessionId !== null,
     boardConnection,
     holderDisplayName,

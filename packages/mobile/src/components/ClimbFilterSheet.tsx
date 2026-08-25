@@ -37,6 +37,7 @@ import {
   type BoardSearchConfig,
   type ProgressFilter,
 } from '@boardsesh/climb-filters';
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import { Text } from './Text';
 import { Button } from './Button';
 import { SegmentedControl } from './SegmentedControl';
@@ -55,7 +56,6 @@ import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
 import { getTallWideScope } from '@boardsesh/board-constants';
 import { buildFilterLabels, formatSettersLabel, progressFilterLabel } from '../lib/filter-labels';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../lib/create-board-holds';
-import { supportsHoldFilters } from '../lib/boards/supports-hold-filters';
 import { subscribeToHoldsFilterSelection } from '../lib/hold-filter-handoff';
 import { subscribeToZoneFilterSelection, type ZoneFilterSelection } from '../lib/zone-filter-handoff';
 import { subscribeToSetterFilterSelection } from '../lib/setter-filter-handoff';
@@ -550,7 +550,7 @@ export function ClimbFilterSheet({
   // Skipped on a board whose Holds row is hidden (Woods): the warm cache has no
   // reader left, so it would only burn the geometry pass on sheet open.
   useEffect(() => {
-    if (!boardConfig || !supportsHoldFilters(boardConfig.boardName)) return;
+    if (!boardConfig || !getBoardCapabilities(boardConfig.boardName).holdFilters) return;
     prewarmCreateBoardHolds({
       boardName: boardConfig.boardName as BoardName,
       layoutId: boardConfig.layoutId,
@@ -708,8 +708,9 @@ export function ClimbFilterSheet({
   // Woods has no `board_placements` rows to search hold ids against, and its
   // zone box would be dragged in board-art pixels rather than the placement-grid
   // space the query filters on — both rows would return silent zero results, so
-  // hide them entirely. See src/lib/boards/supports-hold-filters.ts.
-  const holdFiltersAvailable = supportsHoldFilters(boardConfig?.boardName);
+  // hide them entirely (#4748). See the holdFilters row of the board-capability
+  // table in @boardsesh/board-config.
+  const holdFiltersAvailable = getBoardCapabilities(boardConfig?.boardName).holdFilters;
 
   const trackColor = systemColors.fill;
   const accuracyValue: GradeAccuracyValue | 'off' = localFilters.gradeAccuracy ?? 'off';

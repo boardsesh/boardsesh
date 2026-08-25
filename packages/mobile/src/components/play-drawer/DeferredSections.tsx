@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import * as Haptics from 'expo-haptics';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { useLogbook } from '@boardsesh/board-react';
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import { deriveOtherAngleActivity } from './logbook-summary';
 import { CollapsibleSection } from '../CollapsibleSection';
 import { Icon } from '../Icon';
@@ -11,7 +12,7 @@ import { LogbookSection } from './LogbookSection';
 import { SimilarClimbsSection } from './SimilarClimbsSection';
 import { CommunitySection } from './CommunitySection';
 import { BoardseshGradeSection } from './BoardseshGradeSection';
-import { buildBoardseshGradeView, buildBoardseshGradeSummary, lacksCrowdGrade } from './boardsesh-grade-utils';
+import { buildBoardseshGradeView, buildBoardseshGradeSummary } from './boardsesh-grade-utils';
 import { buildAngleGradeBars } from './community-utils';
 import { BetaVideosSection } from './BetaVideosSection';
 import { SetterNotesSection } from './SetterNotesSection';
@@ -160,7 +161,7 @@ export const DeferredSections = memo(function DeferredSections({
   // MoonBoard and Woods carry no crowd grade, so the Boardsesh-grade and
   // stats-history queries below have nothing to answer with — skip them for
   // both. (BoardseshGradeSection gates its own by-angle query the same way.)
-  const noCrowdGrade = lacksCrowdGrade(boardName);
+  const noCrowdGrade = !getBoardCapabilities(boardName).crowdGrade;
   const boardseshReady = boardseshGradeEnabled && !noCrowdGrade && readyToRender;
   const { data: boardseshGrade } = useBoardseshGrade(boardName, climb.uuid, angle, {
     enabled: boardseshReady,

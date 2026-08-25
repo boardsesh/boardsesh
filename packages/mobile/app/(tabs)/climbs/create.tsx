@@ -1,13 +1,12 @@
 import { useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { SUPPORTED_BOARDS } from '@boardsesh/board-config';
+import { getBoardCapabilities, SUPPORTED_BOARDS } from '@boardsesh/board-config';
 import type { BoardName, UserBoard } from '@boardsesh/shared-schema';
 import { CreateClimbScreen } from '../../../src/components/create-climb/CreateClimbScreen';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { createClimbScreenKey } from '../../../src/lib/create-climb-screen-key';
-import { supportsClimbCreation } from '../../../src/lib/boards/supports-climb-creation';
 import { useUnsupportedBoardExit } from '../../../src/lib/routing/use-unsupported-board-exit';
 
 type CreateClimbParams = {
@@ -40,10 +39,11 @@ type EditorBoard = {
  * render on the remix/edit path (#3804). Treating an unsupported value as absent
  * makes it fall back to the active board, exactly like a missing param.
  *
- * A board that cannot have climbs set on it (Woods) is NOT handled here — it
- * would look identical to a typo and fall back to some other board's wall, which
- * is not what a link saying "create on Woods" asked for. `CreateClimbRoute`
- * checks it separately and leaves the route.
+ * A board that cannot have climbs set on it (the climbCreation capability;
+ * Woods, until #4750) is NOT handled here — it would look identical to a typo and
+ * fall back to some other board's wall, which is not what a link saying "create
+ * on Woods" asked for. `CreateClimbRoute` checks it separately and leaves the
+ * route.
  */
 function supportedBoardName(candidate: string | undefined): BoardName | undefined {
   if (candidate == null) return undefined;
@@ -54,7 +54,7 @@ function supportedBoardName(candidate: string | undefined): BoardName | undefine
 function activeBoardTuple(activeBoard: UserBoard | null | undefined): EditorBoard | null {
   if (!activeBoard) return null;
   const boardName = supportedBoardName(activeBoard.boardType);
-  if (!boardName || !supportsClimbCreation(boardName)) return null;
+  if (!boardName || !getBoardCapabilities(boardName).climbCreation) return null;
   const { layoutId, sizeId, setIds, angle } = activeBoard;
   return { boardName, layoutId, sizeId, setIds, angle };
 }
@@ -72,7 +72,7 @@ function activeBoardTuple(activeBoard: UserBoard | null | undefined): EditorBoar
 function resolveEditorBoard(params: CreateClimbParams, activeBoard: UserBoard | null | undefined): EditorBoard | null {
   const activeTuple = activeBoardTuple(activeBoard);
   const boardName = supportedBoardName(params.boardName);
-  if (!boardName || !supportsClimbCreation(boardName)) return activeTuple;
+  if (!boardName || !getBoardCapabilities(boardName).climbCreation) return activeTuple;
 
   const sameBoard = boardName === activeTuple?.boardName ? activeTuple : null;
   const layoutId = params.layoutId ? Number(params.layoutId) : sameBoard?.layoutId;
@@ -92,20 +92,20 @@ export default function CreateClimbRoute() {
   const params = useLocalSearchParams<CreateClimbParams>();
   const { data: activeBoard } = useActiveBoard();
 
-  // A board that can't have climbs set on it (Woods) has nowhere to land here:
+  // A board that can't have climbs set on it (Woods, #4750) has nowhere to land:
   // the editor cannot paint its holds, and silently swapping in a different
   // board would set the climb on the wrong wall. That's true whether the link
   // names it or it's simply the user's active board — either way, leave the
   // route rather than render a spinner that never resolves. Checking
   // `boardType` (not the absent tuple) keeps this off the still-loading case,
   // where `activeBoard` is undefined and the spinner is the right answer.
-  const linkNamesUncreatableBoard = params.boardName != null && !supportsClimbCreation(params.boardName);
+  const linkNamesUncreatableBoard = params.boardName != null && !getBoardCapabilities(params.boardName).climbCreation;
   // A missing or unrecognised board name falls back to the active board whole,
   // so an uncreatable ACTIVE board is the same dead end by another route.
   const fallsBackToUncreatableBoard =
     supportedBoardName(params.boardName) == null &&
     activeBoard != null &&
-    !supportsClimbCreation(activeBoard.boardType);
+    !getBoardCapabilities(activeBoard.boardType).climbCreation;
   const cannotCreateHere = linkNamesUncreatableBoard || fallsBackToUncreatableBoard;
   useUnsupportedBoardExit(cannotCreateHere);
 

@@ -28,9 +28,10 @@ vi.mock('expo-router', () => ({
   useRouter: () => router,
 }));
 
-vi.mock('@boardsesh/board-config', () => ({
-  SUPPORTED_BOARDS: ['kilter', 'tension', 'moonboard', 'decoy', 'touchstone', 'grasshopper', 'soill', 'woods'],
-}));
+// Real board-config: the route reads both SUPPORTED_BOARDS and the
+// board-capability table, and stubbing the latter here would fork the per-board
+// feature switches away from the one table this route is supposed to follow.
+// The package is pure TS constants — nothing native to keep out of the test.
 
 vi.mock('../../../../src/components/create-climb/CreateClimbScreen', () => ({
   CreateClimbScreen: (props: { board: Record<string, unknown> }) => {

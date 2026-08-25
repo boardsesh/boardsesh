@@ -12,6 +12,7 @@ import {
   type HoldPositionLookup,
 } from '@boardsesh/climb-filters';
 import { getLayout } from '@boardsesh/board-constants';
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import type { BoardName, HoldsFilter, ZoneBoxInput, ZoneMatchMode } from '@boardsesh/shared-schema';
 import { Text } from '../../../src/components/Text';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
@@ -26,7 +27,6 @@ import { ZoneOverlay, type ZoneCornerLabels } from '../../../src/components/sear
 import { useTheme } from '../../../src/providers/theme-provider';
 import { getCreateBoardHolds } from '../../../src/lib/create-board-holds';
 import { emitZoneFilterSelection } from '../../../src/lib/zone-filter-handoff';
-import { supportsHoldFilters } from '../../../src/lib/boards/supports-hold-filters';
 import { useUnsupportedBoardExit } from '../../../src/lib/routing/use-unsupported-board-exit';
 import { track } from '../../../src/lib/analytics';
 import { hapticSelection } from '../../../src/lib/haptics';
@@ -115,8 +115,8 @@ export default function ZoneFilterScreen() {
   // The filter sheet hides the Zone row on a board whose hold centres aren't in
   // placement-grid space (Woods), so only a hand-built link reaches this route
   // for one. Leave rather than let a box be dragged in coordinates the search
-  // can't read back.
-  const boardCannotSearchZone = params.boardName != null && !supportsHoldFilters(params.boardName);
+  // can't read back (#4748).
+  const boardCannotSearchZone = params.boardName != null && !getBoardCapabilities(params.boardName).holdFilters;
   useUnsupportedBoardExit(boardCannotSearchZone);
 
   const [zoneBox, setZoneBox] = useState<ZoneBoxInput | null>(() => parseZoneBox(params.zoneBox));
