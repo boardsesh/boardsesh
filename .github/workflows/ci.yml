@@ -1194,7 +1194,9 @@ jobs:
           set -euo pipefail
           artifact_directory=$(sed -n "s/.*artifactDirectory: *'\.\/\([^']*\)'.*/\1/p" packages/web/next.config.mjs)
           if [ -z "$artifact_directory" ]; then
-            echo "::error file=packages/web/next.config.mjs::could not read artifactDirectory from next.config.mjs"
+            # Two different causes, so say both: the key is gone, or it no longer
+            # uses the single-quoted './'-prefixed form this pattern matches.
+            echo "::error file=packages/web/next.config.mjs::could not read artifactDirectory from next.config.mjs — either the swcPlugins entry is gone, or its value is no longer a single-quoted './'-prefixed path and this step's sed pattern needs updating"
             exit 1
           fi
           if [ ! -s ".docker-context/web/source/$artifact_directory/gql.ts" ]; then

@@ -197,10 +197,10 @@ describe('docker-web CI job contract', () => {
 
   it('writes the shared buildx cache from main only', () => {
     // GitHub gives the repo 10 GB of Actions cache and it already sits at
-    // ~8.2 GB. This image's node_modules layer alone is 2.7 GB uncompressed, so
-    // PR writes would evict the gradle and vp toolchain caches by LRU. Widening
-    // this to every branch is invisible in review and only shows up as other
-    // jobs getting slower, so pin the guard.
+    // 9.15 GB (measured 2026-08-25). This image's node_modules layer alone is
+    // 2.72 GB uncompressed, so PR writes would evict the gradle and vp toolchain
+    // caches by LRU. Widening this to every branch is invisible in review and
+    // only shows up as other jobs getting slower, so pin the guard.
     expect(dockerWebSteps).toContain('cache-from: type=gha,scope=web-main');
     expect(dockerWebSteps).toContain(
       "cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max,scope=web-main' || '' }}",
@@ -222,7 +222,22 @@ describe('docker-web CI job contract', () => {
     // the real context instead of a second copy of the same mistake.
     expect(dockerWebSteps).toContain('artifactDirectory');
     expect(dockerWebSteps).toContain('packages/web/next.config.mjs');
-    expect(dockerWebSteps).not.toContain("artifactDirectory: './packages/shared/graphql");
+  });
+
+  it('reads artifactDirectory from next.config.mjs instead of hardcoding it', () => {
+    // Resolve the value the same way the workflow's `sed` does, then assert the
+    // workflow does not contain it. Pinning one known-wrong string here would
+    // only prove that one string is absent; deriving the RIGHT value and
+    // asserting its absence is what actually catches someone replacing the
+    // extraction with a literal — the second copy of the mistake this whole
+    // check exists to avoid. It also fails if next.config.mjs stops using the
+    // single-quoted `./`-prefixed form the workflow's pattern matches, which is
+    // the one way that pattern could silently start returning nothing.
+    const nextConfigSource = readFileSync('packages/web/next.config.mjs', 'utf8');
+    const artifactDirectory = /artifactDirectory: *'\.\/([^']*)'/.exec(nextConfigSource)?.[1];
+
+    expect(artifactDirectory).toBeTruthy();
+    expect(dockerWebSteps).not.toContain(String(artifactDirectory));
   });
 
   it('makes the aggregate status depend on the job', () => {
