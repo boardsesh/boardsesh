@@ -130,9 +130,21 @@ function sessionCookieClear(name: string, domain: string | undefined): string {
  * nothing at all on exactly the host-only deployments (local, previews, a
  * mis-enved container) where the other name is most likely to be the live one.
  */
-export function appendSignOutSessionCookieClears(response: Response): void {
+export function appendSignOutSessionCookieClears(response: Response, requestCookieNames: readonly string[] = []): void {
   const domain = sessionCookieDomain();
-  for (const name of [SECURE_SESSION_COOKIE_NAME, PLAIN_SESSION_COOKIE_NAME]) {
+  const namesToClear = new Set([SECURE_SESSION_COOKIE_NAME, PLAIN_SESSION_COOKIE_NAME]);
+  // next-auth splits an oversized session cookie into `<name>.0`, `<name>.1`, …
+  // and its SessionStore reassembles anything whose name startsWith the base
+  // (next-auth/core/lib/cookie.js). Clearing only the base names would leave a
+  // chunked session intact — and the fallback read would go on honouring it.
+  // Pass the names the request actually carried so the chunk count never has to
+  // be guessed.
+  for (const cookieName of requestCookieNames) {
+    for (const baseName of [SECURE_SESSION_COOKIE_NAME, PLAIN_SESSION_COOKIE_NAME]) {
+      if (cookieName.startsWith(`${baseName}.`)) namesToClear.add(cookieName);
+    }
+  }
+  for (const name of namesToClear) {
     response.headers.append('Set-Cookie', sessionCookieClear(name, undefined));
     if (domain) response.headers.append('Set-Cookie', sessionCookieClear(name, domain));
   }

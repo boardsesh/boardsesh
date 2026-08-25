@@ -184,7 +184,10 @@ export async function POST(request: NextRequest, context: NextAuthRouteContext):
   // it picked. Clear both names in both scopes, so the read fallback above can't
   // resurrect a session the user just signed out of.
   const response = await handler(request, context);
-  appendSignOutSessionCookieClears(response);
+  appendSignOutSessionCookieClears(
+    response,
+    request.cookies.getAll().map((requestCookie) => requestCookie.name),
+  );
   return response;
 }
 

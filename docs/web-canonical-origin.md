@@ -66,6 +66,17 @@ both variables at run time anyway (Railway service variables, `docker run -e`);
 the build arg is only a baked default for an image built for one known origin,
 which is how `.github/workflows/branch-deploy.yml` builds preview images.
 
+Two consequences worth knowing:
+
+- With no `--build-arg BASE_URL`, that `ENV` bakes the **empty string**, so
+  `BASE_URL` is present-and-empty rather than absent. Anything reading it must
+  treat empty as unset — `?.trim() ||`, never `??`. The transactional-email
+  routes (`register`, `forgot-password`, `resend-verification`) do.
+- Running the standalone server straight out of a local `vp run build`
+  (`node packages/web/.next/standalone/packages/web/server.js`) now exits `1`:
+  that tree has no `.env` files at all, for the same reason the container didn't.
+  Pass `NEXTAUTH_URL=http://localhost:3000` on the command line.
+
 ## Verifying a deployment
 
 ```sh

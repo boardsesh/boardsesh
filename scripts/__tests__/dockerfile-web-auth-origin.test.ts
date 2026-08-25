@@ -32,9 +32,20 @@ describe('Dockerfile.web canonical auth origin', () => {
   });
 
   it('declares BASE_URL in the runner stage, not only in the builder', () => {
-    expect(builderStage).toContain('ENV BASE_URL=$BASE_URL');
-    expect(runnerStage).toContain('ARG BASE_URL');
-    expect(runnerStage).toContain('ENV BASE_URL=$BASE_URL');
+    // Whole-line matches: `toContain('ARG BASE_URL')` is happily satisfied by
+    // `ARG BASE_URL_SOMETHING_ELSE`, and text pinning is this file's only job.
+    expect(builderStage).toMatch(/^ENV BASE_URL=\$BASE_URL$/m);
+    expect(runnerStage).toMatch(/^ARG BASE_URL$/m);
+    expect(runnerStage).toMatch(/^ENV BASE_URL=\$BASE_URL$/m);
+  });
+
+  it('documents that the runner ENV is an empty string without the build arg', () => {
+    // `ENV BASE_URL=$BASE_URL` with no `--build-arg` bakes BASE_URL="" — the
+    // variable is PRESENT and empty, not absent. Three transactional-email
+    // routes read it, and `??` would have kept that empty string and stripped
+    // the origin off every verification and password-reset link. They use
+    // `?.trim() ||`; this pins the reason next to the cause.
+    expect(runnerStage).toMatch(/empty string/i);
   });
 
   it('does not bake a NEXTAUTH_URL into the image', () => {

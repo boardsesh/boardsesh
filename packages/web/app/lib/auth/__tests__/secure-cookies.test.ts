@@ -361,6 +361,26 @@ describe('appendSignOutSessionCookieClears', () => {
     );
   });
 
+  it('clears the chunks of an oversized session cookie, not just the base name', () => {
+    // next-auth splits a >4KB session into `<name>.0`, `<name>.1`, … and its
+    // SessionStore reassembles anything whose name startsWith the base. Clear
+    // only the base and a chunked session survives sign-out — and the fallback
+    // read keeps honouring it. Drop the chunk loop and this goes red.
+    stubAuthEnv({ NEXTAUTH_URL: 'https://www.boardsesh.com' });
+    const response = new Response(null);
+    appendSignOutSessionCookieClears(response, [
+      `${PLAIN_SESSION_COOKIE_NAME}.0`,
+      `${PLAIN_SESSION_COOKIE_NAME}.1`,
+      'unrelated-cookie',
+    ]);
+
+    const clearedNames = response.headers.getSetCookie().map((setCookie) => setCookie.split('=', 1)[0]);
+    expect(clearedNames).toContain(`${PLAIN_SESSION_COOKIE_NAME}.0`);
+    expect(clearedNames).toContain(`${PLAIN_SESSION_COOKIE_NAME}.1`);
+    // Never touch a cookie that isn't a session token.
+    expect(clearedNames).not.toContain('unrelated-cookie');
+  });
+
   it('clears every name the read path would accept, in every environment', () => {
     // Mutation guard: drop a name from appendSignOutSessionCookieClears and this
     // goes red. Without it, sign-out leaves a cookie the dual read still honours.

@@ -104,6 +104,12 @@ ENV BOARDSESH_WEB=$BOARDSESH_WEB
 # Prefer supplying NEXTAUTH_URL and BASE_URL at `docker run` / in the Railway
 # service variables; this build arg is only a baked default for an image built
 # for one known origin, which is how branch-deploy.yml builds preview images.
+#
+# NOTE: with no `--build-arg BASE_URL`, this bakes the EMPTY STRING — BASE_URL is
+# then PRESENT and empty rather than absent. Everything that reads it must treat
+# empty as unset; the transactional-email routes use `?.trim() ||`, never `??`,
+# for exactly this reason.
+#
 # Pinned by scripts/__tests__/dockerfile-web-auth-origin.test.ts, because
 # nothing in CI builds this file.
 ARG BASE_URL
