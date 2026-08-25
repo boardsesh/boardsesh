@@ -1,16 +1,19 @@
 import { useCallback, useMemo } from 'react';
-import { Alert } from 'react-native';
+import { Redirect } from 'expo-router';
+import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import { reportError } from '../lib/error-reporting';
 import { hapticError, hapticLight } from '../lib/haptics';
 import { isSentryEnabled, nativeSentryCrash } from '../lib/sentry';
 import { useProfile } from '../lib/graphql/hooks';
 import { useConfirm } from '../providers/dialog-provider';
+import { useTheme } from '../providers/theme-provider';
 import { SwitcherForm } from './SwitcherForm';
 import type { SwitcherFormModel } from './SwitcherForm.types';
 
 /** Tester-only controls for verifying each Sentry capture path on a real build. */
 export function SentryDiagnosticsScreen() {
-  const { data: profile } = useProfile();
+  const { systemColors } = useTheme();
+  const { data: profile, isLoading: profileLoading } = useProfile();
   const confirm = useConfirm();
 
   const sendHandledEvent = useCallback(() => {
@@ -100,6 +103,26 @@ export function SentryDiagnosticsScreen() {
     [sendHandledEvent, throwUncaughtError, triggerNativeCrash],
   );
 
-  if (!profile?.isTester) return null;
+  if (!__DEV__) {
+    if (profileLoading) {
+      return (
+        <View style={[styles.loading, { backgroundColor: systemColors.groupedBackground }]}>
+          <ActivityIndicator />
+        </View>
+      );
+    }
+    if (!profile?.isTester) {
+      return <Redirect href="/(tabs)/profile/more" />;
+    }
+  }
+
   return <SwitcherForm model={model} />;
 }
+
+const styles = StyleSheet.create({
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
