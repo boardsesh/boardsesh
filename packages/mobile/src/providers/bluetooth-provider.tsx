@@ -1836,7 +1836,6 @@ export function BluetoothProvider({
             auto-sender mounts on either transport — no driver/preview write-gate.
             Aurora is last-connection-wins, so one phone is physically connected;
             a virtual hold is released the moment a real link appears. */}
-        {(virtualWallHeld || ledless) && <VirtualWallHolderWatch onHeldByOtherUserChange={setWallHeldByOtherUser} />}
         {(isConnected || virtualWallHeld) && (
           <BluetoothAutoSender
             sendFramesToBoard={commitWallFrames}
@@ -1850,6 +1849,11 @@ export function BluetoothProvider({
             onUnresolvedCurrentClimb={handleUnresolvedCurrentClimb}
           />
         )}
+        {/* Reconciles a virtual hold with the server's single holder slot, and
+            carries the peer signal for a bystander on a wall with no light kit.
+            Mounted only where one of those applies, so the profile read it needs
+            stays off the ordinary Bluetooth path. */}
+        {(virtualWallHeld || ledless) && <VirtualWallHolderWatch onHeldByOtherUserChange={setWallHeldByOtherUser} />}
         <BlePickerHostContext.Provider value={pickerHostValue}>{children}</BlePickerHostContext.Provider>
         {/* App-root picker, for connects off the tab screens / accessory bar.
             Suppressed while a route (the player) hosts its own — see
