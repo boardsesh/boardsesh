@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-25T00:43:38.007Z",
+  "generatedAt": "2026-08-25T02:06:03.965Z",
   "entries": [
+    {
+      "prNumber": 4745,
+      "category": "improved",
+      "title": "Tapping and swiping through climbs in a shared session puts them on the wall again, the way it did before the last update.",
+      "mergedAt": "2026-08-25T02:04:55Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4745"
+    },
     {
       "prNumber": 4708,
       "category": "new",

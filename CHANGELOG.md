@@ -12,6 +12,10 @@ manual changes). See docs/mobile-ota-updates.md.
 - The queue now shows who put each climb up while you're in a session with your crew. ([#4727](https://github.com/boardsesh/boardsesh/pull/4727))
   A small face sits on every row someone else added — upcoming, current, and the ones you've already worked through. Your own adds stay clean.
 
+### Improved
+
+- Tapping and swiping through climbs in a shared session puts them on the wall again, the way it did before the last update. ([#4745](https://github.com/boardsesh/boardsesh/pull/4745))
+
 ## 2026-08-23
 
 ### New
