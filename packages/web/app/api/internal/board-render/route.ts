@@ -217,7 +217,6 @@ export async function GET(request: NextRequest) {
     // served to every viewer, so the caller decides which art it wants. OG cards never pass
     // it — a social card is read outside our theme.
     const colorSchemeParam = searchParams.get('color_scheme');
-    const colorScheme: BoardArtColorScheme = colorSchemeParam === 'dark' ? 'dark' : 'light';
     const format = normalizeOutputFormat(searchParams.get('format') ?? (isOgVariant ? 'png' : 'webp'));
     // Mirroring is handled client-side via CSS scaleX(-1) to maximize cache hit rate
 
@@ -239,6 +238,10 @@ export async function GET(request: NextRequest) {
     if (colorSchemeParam !== null && colorSchemeParam !== 'dark' && colorSchemeParam !== 'light') {
       return NextResponse.json({ error: 'color_scheme must be light or dark' }, { status: 400 });
     }
+
+    // Narrowed only after the check above, so an unrecognised value can never silently
+    // become a light render.
+    const colorScheme: BoardArtColorScheme = colorSchemeParam === 'dark' ? 'dark' : 'light';
 
     if (frames.length > MAX_FRAMES_LENGTH) {
       return NextResponse.json({ error: 'Frames string is too large' }, { status: 400 });

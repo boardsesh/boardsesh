@@ -8,7 +8,10 @@ import BoardImageLayers from '../board-image-layers';
 import { buildOverlayUrl } from '../util';
 
 vi.mock('../util', () => ({
-  getImageUrl: (imageUrl: string, board: string) => `/images/${board}/${imageUrl}`,
+  // Mirrors the real .png -> .webp rewrite: toDarkArtUrl keys off the .webp extension, so a
+  // mock that skipped it would make the dark URL identical to the light one and the paired
+  // assertions below would pass without exercising anything.
+  getImageUrl: (imageUrl: string, board: string) => `/images/${board}/${imageUrl}`.replace(/\.png$/, '.webp'),
   buildOverlayUrl: vi.fn(
     (_bd: BoardDetails, frames: string, thumbnail?: boolean, colorScheme?: 'light' | 'dark') =>
       `/api/internal/board-render?frames=${frames}${thumbnail ? '&thumbnail=1' : ''}&include_background=1` +
@@ -52,7 +55,7 @@ describe('BoardImageLayers', () => {
 
     const images = container.querySelectorAll('img');
     expect(images).toHaveLength(1);
-    expect(images[0].getAttribute('src')).toBe('/images/kilter/product_sizes_layouts_sets/36-1.png');
+    expect(images[0].getAttribute('src')).toBe('/images/kilter/product_sizes_layouts_sets/36-1.webp');
   });
 
   it('renders multiple background images when no frames and board has multiple sets', () => {
@@ -232,8 +235,8 @@ describe('BoardImageLayers', () => {
       const { container } = render(<BoardImageLayers boardDetails={woodsBoardDetails} mirrored={false} />);
 
       expect(imageSources(container).map((image) => image.src)).toEqual([
-        '/images/woods/woods-8x10-bg.png',
-        '/images/woods/woods-8x10-bg.png',
+        '/images/woods/woods-8x10-bg.webp',
+        '/images/woods/woods-8x10-bg.dark.webp',
       ]);
     });
 
