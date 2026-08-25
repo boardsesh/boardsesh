@@ -1,5 +1,4 @@
 import { useCallback } from 'react';
-import { hapticLight } from '../../lib/haptics';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { derivePlayDrawerLightbulbPressAction } from '../play-drawer/lightbulb-control';
 import { useBoardConnectionState } from './use-board-connection-state';
@@ -83,14 +82,16 @@ export function useLightbulbControl(options: UseLightbulbControlOptions = {}): L
     // first take has no previous wall state to restore, so the undo toast stays
     // unarmed. Taking the wall reports the current climb to everyone watching
     // the board feed and to the gym screen.
+    //
+    // No haptic here. `takeVirtualWall` / `releaseVirtualWall` fire their own
+    // `hapticLight` alongside the toast, so buzzing here too would stutter every
+    // tap. Same reason WallScrubber and WallEmptyState call them bare.
     if (pressAction === 'takeWall') {
-      hapticLight();
       bluetooth.takeVirtualWall();
       return;
     }
 
     if (pressAction === 'releaseWall') {
-      hapticLight();
       bluetooth.releaseVirtualWall();
       return;
     }
