@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { MOONBOARD_LAYOUTS, SUPPORTED_BOARDS, WOODS_LAYOUTS } from '@boardsesh/board-config';
+import {
+  MOONBOARD_LAYOUTS,
+  MOONBOARD_SIZE,
+  SUPPORTED_BOARDS,
+  WOODS_LAYOUTS,
+  WOODS_SIZES,
+} from '@boardsesh/board-config';
 import {
   DEFAULT_WALL_FINDER_FILTER,
   hasActiveWallFinderFilter,
@@ -174,18 +180,21 @@ describe('buildSizeOptions', () => {
   });
 
   // Both Woods sizes, as separate chips — an 8x10 climb can't be queued onto a
-  // 12x12 board, so the two must never collapse into one label.
+  // 12x12 board, so the two must never collapse into one label. Ids come from
+  // the catalogue (a renumber there is not this builder's business); the labels
+  // stay literal because grouping BY label is the behaviour under test, and
+  // deriving both sides would make the assertion tautological.
   it('offers both Woods sizes under the Woods layout', () => {
     expect(buildSizeOptions({ boardTypes: ['woods'], layoutIds: [WOODS_LAYOUTS.woods.id] })).toEqual([
-      { label: '8 x 10', sizeIds: [1] },
-      { label: '12 x 12', sizeIds: [2] },
+      { label: '8 x 10', sizeIds: [WOODS_SIZES['8x10'].id] },
+      { label: '12 x 12', sizeIds: [WOODS_SIZES['12x12'].id] },
     ]);
   });
 
   it("offers MoonBoard's single size under a MoonBoard layout", () => {
     expect(
       buildSizeOptions({ boardTypes: ['moonboard'], layoutIds: [MOONBOARD_LAYOUTS['moonboard-2024'].id] }),
-    ).toEqual([{ label: 'Standard', sizeIds: [1] }]);
+    ).toEqual([{ label: 'Standard', sizeIds: [MOONBOARD_SIZE.id] }]);
   });
 
   it('stays empty for a layout the selected board type does not have', () => {
