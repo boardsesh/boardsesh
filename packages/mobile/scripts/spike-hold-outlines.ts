@@ -38,8 +38,27 @@ const OUTPUT_FILE = path.join(ROOT_DIR, 'packages/mobile/src/components/board-sp
 
 /** A pixel counts as hold if its alpha is at least this. */
 const ALPHA_FLOOR = 96;
-/** Half-width of the search box around a placement, in placement radii. */
-const SEARCH_RADII = 1.25;
+/**
+ * Half-width of the search box around a placement, in placement radii. Generous
+ * on purpose: the nearest-placement partition below is what stops a hold running
+ * into its neighbour, so the box only has to be big enough to contain the
+ * largest real hold. At 1.25 it was smaller than a Kilter Homewall mainline
+ * hold, and 43% of that board's outlines came back with a piece of the box
+ * boundary traced into them as a straight edge.
+ */
+const SEARCH_RADII = 2.6;
+/**
+ * Seed disc around the placement centre, as a fraction of the distance to the
+ * nearest other placement. Big enough to step off a punched-out bolt hole, far
+ * too small to reach a neighbour — the old "nearest filled pixel anywhere in the
+ * box" rule put 22% of MoonBoard Masters' lit holds on the wrong hold, because
+ * that board's placements are a synthetic grid and most cells have no art of
+ * their own to find.
+ */
+const SEED_PITCH_FRACTION = 0.15;
+const MIN_SEED_RADIUS = 4;
+/** Fraction of perimeter allowed to sit on the search-box boundary before the trace is junk. */
+const MAX_BOX_EDGE_SHARE = 0.1;
 /** Douglas-Peucker tolerance in board pixels. Bigger = fewer points, blockier outline. */
 const SIMPLIFY_EPSILON = 1.6;
 /** Outlines shorter than this many pixels of perimeter are noise, not a hold. */
@@ -110,6 +129,95 @@ function simplify(points: Point[], epsilon: number): Point[] {
   ];
 }
 
+/**
+ * Nearest-placement label for every pixel, by two-pass chamfer propagation from
+ * the placement centres.
+ *
+ * This is what makes touching holds separable. Without it a flood fill started
+ * on one hold walks straight through the contact patch into its neighbour and
+ * the pair traces as one blob — visible as a single glow covering three holds on
+ * Kilter Homewall. With it, each hold's mask is clipped at the midline between
+ * its own bolt and the next one, which is where a climber would say the hold
+ * ends anyway.
+ */
+function buildLabelMap(
+  width: number,
+  height: number,
+  placements: Array<{ id: number; cx: number; cy: number }>,
+): Int32Array {
+  const label = new Int32Array(width * height).fill(-1);
+  const distance = new Float64Array(width * height).fill(Infinity);
+  for (const [index, placement] of placements.entries()) {
+    const x = Math.round(placement.cx);
+    const y = Math.round(placement.cy);
+    if (x < 0 || y < 0 || x >= width || y >= height) continue;
+    label[y * width + x] = index;
+    distance[y * width + x] = 0;
+  }
+
+  const relax = (from: number, to: number, step: number): void => {
+    const candidate = distance[from] + step;
+    if (candidate < distance[to]) {
+      distance[to] = candidate;
+      label[to] = label[from];
+    }
+  };
+  const DIAGONAL = Math.SQRT2;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const here = y * width + x;
+      if (x > 0) relax(here - 1, here, 1);
+      if (y > 0) relax(here - width, here, 1);
+      if (y > 0 && x > 0) relax(here - width - 1, here, DIAGONAL);
+      if (y > 0 && x < width - 1) relax(here - width + 1, here, DIAGONAL);
+    }
+  }
+  for (let y = height - 1; y >= 0; y -= 1) {
+    for (let x = width - 1; x >= 0; x -= 1) {
+      const here = y * width + x;
+      if (x < width - 1) relax(here + 1, here, 1);
+      if (y < height - 1) relax(here + width, here, 1);
+      if (y < height - 1 && x < width - 1) relax(here + width + 1, here, DIAGONAL);
+      if (y < height - 1 && x > 0) relax(here + width - 1, here, DIAGONAL);
+    }
+  }
+  return label;
+}
+
+/** Distance from each placement to its nearest neighbour, used to size the seed disc. */
+function nearestPitch(placements: Array<{ cx: number; cy: number }>): number[] {
+  return placements.map((placement, index) => {
+    let best = Infinity;
+    for (const [otherIndex, other] of placements.entries()) {
+      if (otherIndex === index) continue;
+      const distance = (other.cx - placement.cx) ** 2 + (other.cy - placement.cy) ** 2;
+      if (distance < best) best = distance;
+    }
+    return Number.isFinite(best) ? Math.sqrt(best) : 0;
+  });
+}
+
+/**
+ * Share of a polygon's perimeter lying on the search-box boundary. A real hold
+ * silhouette never runs along a straight axis-aligned line for long; a trace that
+ * hit the box and followed it always does.
+ */
+function boxEdgeShare(flat: number[], box: number): number {
+  let onEdge = 0;
+  let perimeter = 0;
+  for (let index = 0; index < flat.length; index += 2) {
+    const next = (index + 2) % flat.length;
+    const length = Math.hypot(flat[next] - flat[index], flat[next + 1] - flat[index + 1]);
+    perimeter += length;
+    const onVertical = Math.abs(Math.abs(flat[index]) - box) <= 1 && Math.abs(Math.abs(flat[next]) - box) <= 1;
+    const onHorizontal =
+      Math.abs(Math.abs(flat[index + 1]) - box) <= 1 && Math.abs(Math.abs(flat[next + 1]) - box) <= 1;
+    if (onVertical || onHorizontal) onEdge += length;
+  }
+  return perimeter === 0 ? 1 : onEdge / perimeter;
+}
+
 async function traceBoard(boardKey: string, boardName: string, layoutId: number, sizeId: number, setIds: number[]) {
   const renderData = getBoardRenderData({ boardName: boardName as never, layoutId, sizeId, setIds });
   if (!renderData) throw new Error(`${boardKey}: no render data`);
@@ -140,11 +248,16 @@ async function traceBoard(boardKey: string, boardName: string, layoutId: number,
     opaque[pixel] = composite[pixel * 4 + 3] >= ALPHA_FLOOR ? 1 : 0;
   }
 
+  const placementList = holdsData.map((hold) => ({ id: hold.id, cx: hold.cx, cy: hold.cy }));
+  const label = buildLabelMap(boardWidth, boardHeight, placementList);
+  const pitches = nearestPitch(placementList);
+
   const outlines = new Map<number, number[]>();
   let missing = 0;
+  let rejectedBox = 0;
   let pointTotal = 0;
 
-  for (const placement of holdsData) {
+  for (const [placementIndex, placement] of holdsData.entries()) {
     if (outlines.has(placement.id)) continue;
     const centreX = Math.round(placement.cx);
     const centreY = Math.round(placement.cy);
@@ -160,39 +273,38 @@ async function traceBoard(boardKey: string, boardName: string, layoutId: number,
     }
     const localWidth = right - left + 1;
     const localHeight = bottom - top + 1;
+
+    // The mask is this placement's own territory only: opaque art whose nearest
+    // placement is this one.
     const local = new Uint8Array(localWidth * localHeight);
     for (let y = 0; y < localHeight; y += 1) {
       for (let x = 0; x < localWidth; x += 1) {
-        local[y * localWidth + x] = opaque[(top + y) * boardWidth + (left + x)];
+        const global = (top + y) * boardWidth + (left + x);
+        local[y * localWidth + x] = opaque[global] === 1 && label[global] === placementIndex ? 1 : 0;
       }
     }
 
-    // Seed at the placement centre, or the nearest filled pixel to it — some
-    // placements sit on a bolt hole punched out of the art. On MoonBoard most
-    // grid cells have no art at all and drop out here.
-    let seed: Point | null = null;
+    // Seed strictly near the placement, never "nearest filled pixel in the box".
+    const seedRadius = Math.max(MIN_SEED_RADIUS, pitches[placementIndex] * SEED_PITCH_FRACTION);
     const localCentre: Point = [centreX - left, centreY - top];
-    if (
-      localCentre[0] >= 0 &&
-      localCentre[1] >= 0 &&
-      localCentre[0] < localWidth &&
-      localCentre[1] < localHeight &&
-      local[localCentre[1] * localWidth + localCentre[0]] === 1
-    ) {
-      seed = localCentre;
-    } else {
-      let bestDistance = Infinity;
-      for (let y = 0; y < localHeight; y += 1) {
-        for (let x = 0; x < localWidth; x += 1) {
-          if (local[y * localWidth + x] !== 1) continue;
-          const distance = (x - localCentre[0]) ** 2 + (y - localCentre[1]) ** 2;
-          if (distance < bestDistance) {
-            bestDistance = distance;
-            seed = [x, y];
-          }
-        }
+    let seed: Point | null = null;
+    let bestDistance = Infinity;
+    const seedBound = Math.ceil(seedRadius);
+    for (let dy = -seedBound; dy <= seedBound; dy += 1) {
+      for (let dx = -seedBound; dx <= seedBound; dx += 1) {
+        const distance = dx * dx + dy * dy;
+        if (distance > seedRadius * seedRadius || distance >= bestDistance) continue;
+        const x = localCentre[0] + dx;
+        const y = localCentre[1] + dy;
+        if (x < 0 || y < 0 || x >= localWidth || y >= localHeight) continue;
+        if (local[y * localWidth + x] !== 1) continue;
+        bestDistance = distance;
+        seed = [x, y];
       }
     }
+    // No art of its own under the placement: emit nothing and let the renderer
+    // fall back. On the synthetic MoonBoard grids this is the honest answer for
+    // most cells.
     if (seed === null) {
       missing += 1;
       continue;
@@ -233,13 +345,31 @@ async function traceBoard(boardKey: string, boardName: string, layoutId: number,
     for (const [x, y] of simplified) {
       flat.push(Math.round(left + x - centreX), Math.round(top + y - centreY));
     }
+    // Backstop: a trace that ran into the search box and followed it is not a
+    // silhouette, whatever it looks like.
+    if (boxEdgeShare(flat, box) > MAX_BOX_EDGE_SHARE) {
+      rejectedBox += 1;
+      missing += 1;
+      continue;
+    }
     outlines.set(placement.id, flat);
     pointTotal += simplified.length;
   }
 
+  // No area backstop. Before the partition, a flood fill could walk through a
+  // contact patch into the neighbouring hold, and an "area far above the board
+  // median" rule was the only way to catch it. After it, a region is by
+  // construction made only of pixels whose nearest placement is this one, so it
+  // cannot reach another placement's centre and a merge is not expressible.
+  // The rule was still firing — on Grasshopper it deleted 14 outlines, and
+  // rendering them showed they were the board's genuinely large square holds,
+  // not merges. A board with a 6x spread of hold sizes has no safe global area
+  // threshold; keeping one costs real holds to catch nothing.
+
   console.log(
     `[spike] ${boardKey.padEnd(24)} ${outlines.size}/${holdsData.length} traced ` +
-      `(${missing} with no usable art), ${outlines.size > 0 ? (pointTotal / outlines.size).toFixed(1) : '0'} points each`,
+      `(${missing} fell back: ${rejectedBox} hit the search box, ` +
+      `${missing - rejectedBox} had no art of their own)`,
   );
   return outlines;
 }

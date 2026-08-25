@@ -28,6 +28,26 @@ type SpikeBoardOverlayProps = {
   smooth: boolean;
 };
 
+/**
+ * Largest extent of a traced silhouette, in board pixels. Feeds the size floor:
+ * a hold much narrower than its placement circle needs the ring kept.
+ */
+function outlineExtent(holdId: number, boardKey: string): number {
+  const flat = SPIKE_HOLD_OUTLINES[boardKey]?.[holdId];
+  if (flat === undefined || flat.length < 6) return Infinity;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let index = 0; index < flat.length; index += 2) {
+    minX = Math.min(minX, flat[index]);
+    maxX = Math.max(maxX, flat[index]);
+    minY = Math.min(minY, flat[index + 1]);
+    maxY = Math.max(maxY, flat[index + 1]);
+  }
+  return Math.max(maxX - minX, maxY - minY);
+}
+
 /** Placements that get a neutral outline under the current scope. */
 function haloTargets(scope: HaloScope, placements: HoldPlacement[], litHolds: SpikeLitHold[]): HoldPlacement[] {
   if (scope === 'none') return [];
@@ -218,21 +238,39 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                 />
               );
             }
+            // Size floor: keep the ring when the real hold is much smaller than
+            // the placement circle, so a correct-but-tiny mark does not cost
+            // findability against the baseline.
+            const needsSizeFloor = outlineExtent(hold.id, boardKey) < hold.radius * 2 * SPIKE_TUNING.sizeFloorFraction;
+            const floorRing = needsSizeFloor ? (
+              <Circle
+                cx={hold.cx}
+                cy={hold.cy}
+                r={hold.radius}
+                fill="none"
+                stroke={color}
+                strokeOpacity={SPIKE_TUNING.sizeFloorRingOpacity}
+                strokeWidth={SPIKE_TUNING.sizeFloorRingWidth}
+              />
+            ) : null;
             if (drawsTracedRing) {
               return (
-                <Path
-                  key={`sel-${hold.id}`}
-                  d={path}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth={SPIKE_TUNING.strokeWidth}
-                  strokeLinejoin="round"
-                />
+                <G key={`sel-${hold.id}`}>
+                  {floorRing}
+                  <Path
+                    d={path}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={SPIKE_TUNING.strokeWidth}
+                    strokeLinejoin="round"
+                  />
+                </G>
               );
             }
             if (drawsTint) {
               return (
                 <G key={`sel-${hold.id}`}>
+                  {floorRing}
                   <Path d={path} fill={color} fillOpacity={SPIKE_TUNING.tintFillOpacity} />
                   <Path
                     d={path}
@@ -249,18 +287,21 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
             // spread of light stays the same.
             const scale = outwardOnly ? 2 : 1;
             return (
-              <G key={`sel-${hold.id}`} clipPath={outwardOnly ? `url(#spike-outside-${hold.id})` : undefined}>
-                {glowBands.map((band) => (
-                  <Path
-                    key={band.width}
-                    d={path}
-                    fill="none"
-                    stroke={color}
-                    strokeOpacity={band.opacity}
-                    strokeWidth={band.width * scale}
-                    strokeLinejoin="round"
-                  />
-                ))}
+              <G key={`sel-${hold.id}`}>
+                {floorRing}
+                <G clipPath={outwardOnly ? `url(#spike-outside-${hold.id})` : undefined}>
+                  {glowBands.map((band) => (
+                    <Path
+                      key={band.width}
+                      d={path}
+                      fill="none"
+                      stroke={color}
+                      strokeOpacity={band.opacity}
+                      strokeWidth={band.width * scale}
+                      strokeLinejoin="round"
+                    />
+                  ))}
+                </G>
               </G>
             );
           })}

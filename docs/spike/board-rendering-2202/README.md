@@ -75,6 +75,44 @@ Four independent axes, each a row of chips:
   is fine (the Desat toggle uses it), so the glow falloff is twelve concentric strokes on a squared
   ramp instead of one blurred stroke. Four bands read as visible rings; twelve does not.
 
+## The design review, and the three bugs it found
+
+`design-review.md` is the output of a fifteen-agent design pass over the device captures — seven
+lenses, every finding adversarially verified against the images, then synthesised. It made three
+structural claims about the tracer, all three of which held up when audited against the generated
+data:
+
+| Defect | Before | After |
+| --- | --- | --- |
+| Outlines that ran into the search box and traced its edge | 215/499 on Kilter Homewall, 33 on TB2, 31 on Masters, 21 on MoonBoard 2016 | 0 everywhere |
+| Lit holds whose silhouette came from a *neighbouring* hold | 31/143 on Masters 2019, 19/159 on MoonBoard 2016 | 0 everywhere |
+| Merged blobs spanning two or more holds | up to 36 per board | not expressible |
+
+The fixes, in the tracer:
+
+- **Nearest-placement partition.** A jump-flood-style two-pass chamfer from every placement centre
+  labels each pixel with the placement it belongs to, and a hold's mask is `opaque ∧ label == self`.
+  Touching holds split along the midline between their bolts. This is what makes merges structurally
+  impossible rather than something to filter for afterwards.
+- **Seed containment.** The seed is now taken from a disc of `max(4px, 0.15 × nearest-placement
+  pitch)` around the placement centre. The old rule — nearest filled pixel anywhere in the search
+  box — reached two-thirds of the way into a neighbour on MoonBoard, where the cell pitch (58.7px)
+  is barely larger than the marker radius (38.8px), and that is exactly how a light ended up on the
+  wrong hold.
+- **A bigger search box.** 1.25 → 2.6 placement radii. At 1.25 the box was smaller than a Kilter
+  Homewall mainline hold, so the trace hit the boundary and followed it. The partition is what makes
+  a big box safe.
+- **No area backstop.** A "reject anything above 2.2× the board median area" rule was the only
+  defence against merges before the partition. Afterwards it fired on Grasshopper's genuinely large
+  square holds — 14 real holds deleted to catch nothing. A board with a 6× spread of hold sizes has
+  no safe global area threshold.
+
+One more finding acted on: tracing shrinks every mark, because a silhouette is the real hold and the
+baseline circle is usually bigger than it. Below `0.45 × placement diameter` the baseline ring is now
+drawn as well, so the silhouette carries identity and the ring carries findability. It fires on 7/16
+lit holds on TB2 Mirror and 5/10 on MoonBoard 2016, and on 0/16 on Kilter Homewall, whose holds are
+already 70% of the circle.
+
 ## Regenerating the derived data
 
 Three generators, all offline, all committed output:

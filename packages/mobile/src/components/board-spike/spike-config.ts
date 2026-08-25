@@ -259,6 +259,18 @@ export const SPIKE_TUNING = {
   glowSpreadWidth: 21,
   glowCoreWidth: 8,
   glowPeakOpacity: 0.95,
+  /**
+   * Size floor. A traced silhouette is the real hold, and on boards like Kilter
+   * Homewall the real hold is much smaller than the placement circle the baseline
+   * draws — so tracing everything shrank the marks and made the climb *harder* to
+   * spot than baseline, even though each mark was now correct. When a hold's
+   * silhouette is narrower than this fraction of the placement diameter, the
+   * baseline ring is drawn as well, so the silhouette carries identity and the
+   * ring carries findability.
+   */
+  sizeFloorFraction: 0.45,
+  sizeFloorRingWidth: 6 * 1.35 * 0.8,
+  sizeFloorRingOpacity: 0.85,
   /** Whole-hold tint: fill opacity over the hold, plus a crisp edge on its outline. */
   tintFillOpacity: 0.55,
   tintEdgeWidth: 4,
