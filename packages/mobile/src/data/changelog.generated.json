@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-25T02:06:03.965Z",
+  "generatedAt": "2026-08-25T13:24:23.857Z",
   "entries": [
+    {
+      "prNumber": 3306,
+      "category": "new",
+      "title": "Woods Board owners can add their 12×12 or 8×10 board and browse 5,400+ climbs",
+      "mergedAt": "2026-08-25T13:23:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3306",
+      "body": "Light up any Woods climb over Bluetooth straight from the play view\nGrades, setters and angles come straight from the Woods app, so the problem you are projecting is the one you will find here"
+    },
     {
       "prNumber": 4745,
       "category": "improved",

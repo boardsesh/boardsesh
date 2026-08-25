@@ -8,6 +8,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Woods Board owners can add their 12×12 or 8×10 board and browse 5,400+ climbs ([#3306](https://github.com/boardsesh/boardsesh/pull/3306))
+  Light up any Woods climb over Bluetooth straight from the play view
+  Grades, setters and angles come straight from the Woods app, so the problem you are projecting is the one you will find here
 - Play back routes up to 5x slower (down to 0.1x) ([#4708](https://github.com/boardsesh/boardsesh/pull/4708))
 - The queue now shows who put each climb up while you're in a session with your crew. ([#4727](https://github.com/boardsesh/boardsesh/pull/4727))
   A small face sits on every row someone else added — upcoming, current, and the ones you've already worked through. Your own adds stay clean.
