@@ -1,4 +1,6 @@
+import { headers } from 'next/headers';
 import { buildOgBoardRenderUrl, buildOverlayUrl } from '@/app/components/board-renderer/util';
+import { isCrawlerUserAgent } from '@/app/lib/is-crawler';
 import { SITE_URL } from '@/app/lib/seo/base-url';
 import type { BoardDetails, Climb } from '@/app/lib/types';
 
@@ -35,10 +37,58 @@ type WarmOverlaysOptions = {
  * shares the climb — the first crawler fetch is then a warm hit.
  */
 export function scheduleOverlayWarming(options: WarmOverlaysOptions): void {
+  const pendingHeaders = requestHeadersOrNull();
+  // No request scope (a static prerender) — there is no visitor whose LCP this
+  // would be racing, so there is nothing to warm for.
+  if (!pendingHeaders) return;
+
   // Fire-and-forget — don't await. The serverless function stays alive
   // while the SSR response is still streaming, giving these fetches
   // time to complete and populate the CDN cache.
-  void warmOverlays(options);
+  void warmUnlessCrawler(pendingHeaders, options);
+}
+
+/**
+ * `headers()` has to be CALLED synchronously inside the request scope to bind
+ * to Next's async store — awaiting the promise later, inside the
+ * fire-and-forget chain, is fine. Returns null instead of throwing so the
+ * caller can treat "no request" as "nothing to warm".
+ */
+function requestHeadersOrNull(): ReturnType<typeof headers> | null {
+  try {
+    return headers();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Warming for a crawler is pure waste: it renders the page and then never
+ * fetches the image the warm just rendered. That is what made
+ * `/api/internal/board-render` a shadow of the crawl rather than independent
+ * traffic — measured 2026-08-25, board-render invocations tracked climb-view
+ * invocations at 1.06:1, roughly one 3 GB WASM+sharp render per crawled climb
+ * page (#4650).
+ *
+ * Googlebot-Image is unaffected: it still gets the image, rendered on demand
+ * when it actually asks, which `app/robots.ts` explicitly allows. The rendered
+ * HTML does not change either way — the warm is a pure side effect — so this
+ * cannot fork the CDN entry between crawlers and humans.
+ *
+ * Fails CLOSED. A header read that throws skips the warm, because the cost of
+ * a false skip is one un-warmed LCP image that renders on demand, while the
+ * cost of a false warm is exactly the invocation this exists to remove.
+ */
+async function warmUnlessCrawler(
+  pendingHeaders: ReturnType<typeof headers>,
+  options: WarmOverlaysOptions,
+): Promise<void> {
+  try {
+    if (isCrawlerUserAgent((await pendingHeaders).get('user-agent'))) return;
+  } catch {
+    return;
+  }
+  await warmOverlays(options);
 }
 
 // Exported for tests; `scheduleOverlayWarming` is the production entry point.

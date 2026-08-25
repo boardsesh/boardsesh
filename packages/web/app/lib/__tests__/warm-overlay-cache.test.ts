@@ -7,7 +7,10 @@ vi.mock('@/app/components/board-renderer/util', () => ({
   buildOgBoardRenderUrl: vi.fn(() => 'https://ws.boardsesh.com/og/climb?og'),
 }));
 
-import { FRONT_DOOR_WARM_LIMIT, warmOverlays } from '../warm-overlay-cache';
+const headersMock = vi.hoisted(() => vi.fn());
+vi.mock('next/headers', () => ({ headers: headersMock }));
+
+import { FRONT_DOOR_WARM_LIMIT, scheduleOverlayWarming, warmOverlays } from '../warm-overlay-cache';
 import { buildOgBoardRenderUrl } from '@/app/components/board-renderer/util';
 
 type WarmOverlaysArg = Parameters<typeof warmOverlays>[0];
@@ -80,5 +83,79 @@ describe('warmOverlays', () => {
     // pool connections it is holding — alive past the response it rode in on.
     const [, requestInit] = vi.mocked(fetch).mock.calls[0];
     expect(requestInit?.signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe('scheduleOverlayWarming', () => {
+  /** Let the fire-and-forget chain inside `scheduleOverlayWarming` settle. */
+  const flushWarming = () => new Promise((resolve) => setImmediate(resolve));
+
+  const withUserAgent = (userAgentHeader: string | null) =>
+    headersMock.mockReturnValue(Promise.resolve({ get: () => userAgentHeader }));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(buildOgBoardRenderUrl).mockReturnValue('https://ws.boardsesh.com/og/climb?og');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ body: null }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('warms for a human visitor', async () => {
+    withUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/126.0.0.0 Safari/537.36');
+
+    scheduleOverlayWarming({ boardDetails, climbs, variant: 'full' });
+    await flushWarming();
+
+    expect(fetch).toHaveBeenCalled();
+  });
+
+  // The whole point of the gate: a crawler renders the page and never fetches
+  // the image, so every warm it triggers is a wasted 3 GB WASM+sharp render.
+  it.each([
+    ['Googlebot', 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'],
+    ['AhrefsBot', 'Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)'],
+    ['SemrushBot', 'Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)'],
+  ])('skips warming for %s', async (_name, userAgentHeader) => {
+    withUserAgent(userAgentHeader);
+
+    scheduleOverlayWarming({ boardDetails, climbs, variant: 'full' });
+    await flushWarming();
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  // Fails closed — see the doc comment on `warmUnlessCrawler`. A false skip
+  // costs one on-demand LCP render; a false warm costs the invocation the gate
+  // exists to remove.
+  it('skips warming when there is no request scope', async () => {
+    headersMock.mockImplementation(() => {
+      throw new Error('`headers` was called outside a request scope');
+    });
+
+    scheduleOverlayWarming({ boardDetails, climbs, variant: 'full' });
+    await flushWarming();
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('skips warming when the header read rejects', async () => {
+    headersMock.mockReturnValue(Promise.reject(new Error('dynamic API not available')));
+
+    scheduleOverlayWarming({ boardDetails, climbs, variant: 'full' });
+    await flushWarming();
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('warms when the request carries no user-agent at all', async () => {
+    withUserAgent(null);
+
+    scheduleOverlayWarming({ boardDetails, climbs, variant: 'full' });
+    await flushWarming();
+
+    expect(fetch).toHaveBeenCalled();
   });
 });
