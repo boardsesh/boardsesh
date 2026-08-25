@@ -215,11 +215,7 @@ void test('a code change never drags the Cloudflare apply along with it', () => 
   // production token; firing it on every packages/ commit would turn an
   // unrelated merge into an edge mutation.
   for (const filePath of ['packages/web/app/page.tsx', 'packages/backend/src/index.ts', 'bun.lock']) {
-    assert.equal(
-      classifyChangedFiles([filePath]).cloudflare,
-      false,
-      `${filePath} must not trigger deploy-cloudflare`,
-    );
+    assert.equal(classifyChangedFiles([filePath]).cloudflare, false, `${filePath} must not trigger deploy-cloudflare`);
   }
 });
 
@@ -342,7 +338,10 @@ void test('compares the successful deployment baseline through the current head'
     ['ancestor', BASE_SHA, HEAD_SHA],
     ['diff', BASE_SHA, HEAD_SHA],
   ]);
-  assert.equal(formatGitHubOutputs(result), `web=true\nbackend=true\napp=false\ncloudflare=false\ndeployment_base_sha=${BASE_SHA}`);
+  assert.equal(
+    formatGitHubOutputs(result),
+    `web=true\nbackend=true\napp=false\ncloudflare=false\ndeployment_base_sha=${BASE_SHA}`,
+  );
 });
 
 void test('a git comparison error falls back to a full build', () => {

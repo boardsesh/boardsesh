@@ -2,11 +2,21 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { CACHE_RULE_DESCRIPTION, desiredCloudflareState } from '../infra/cloudflare/config';
+import {
+  BOARD_RENDER_CACHE_RULE_DESCRIPTION,
+  CACHE_RULE_DESCRIPTION,
+  CRAWLER_ALLOW_RULE_DESCRIPTION,
+  CRAWLER_ALLOW_TOKENS,
+  CRAWLER_BLOCK_RULE_DESCRIPTION,
+  CRAWLER_BLOCK_TOKENS,
+  WWW_HOSTNAME,
+  desiredCloudflareState,
+} from '../infra/cloudflare/config';
 import {
   buildPlan,
   cacheRuleMatches,
   diffCacheRule,
+  diffManagedRules,
   diffDnsRecord,
   diffSslMode,
   jsonEqual,
@@ -16,6 +26,8 @@ import type { LiveDnsRecord, LiveState, RulesetRule } from '../infra/cloudflare/
 import { parseArgs } from './cloudflare-apply';
 
 const desired = desiredCloudflareState;
+/** The og cache rule — the one the pre-existing cases in this file were written against. */
+const ogCacheRule = desired.cacheRules[0];
 
 function liveDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord {
   return {
@@ -35,9 +47,9 @@ function matchingLiveCacheRule(): RulesetRule {
     version: '3',
     last_updated: '2026-07-20T00:00:00Z',
     ref: 'our-rule-ref',
-    description: desired.cacheRule.description,
-    expression: desired.cacheRule.expression,
-    action: desired.cacheRule.action,
+    description: ogCacheRule.description,
+    expression: ogCacheRule.expression,
+    action: ogCacheRule.action,
     action_parameters: {
       cache: true,
       edge_ttl: { mode: 'bypass_by_default' },
@@ -62,10 +74,28 @@ function foreignRule(id: string): RulesetRule {
   };
 }
 
+/** Live copies of every managed rule, matching desired (plus Cloudflare's read-only fields). */
+function matchingLiveRules(
+  desiredRules: readonly { description: string; expression: string; action: string; action_parameters?: unknown }[],
+): RulesetRule[] {
+  return desiredRules.map((rule, index) => ({
+    id: `our-rule-id-${index}`,
+    version: '3',
+    last_updated: '2026-07-20T00:00:00Z',
+    ref: `our-rule-ref-${index}`,
+    description: rule.description,
+    expression: rule.expression,
+    action: rule.action,
+    action_parameters: rule.action_parameters,
+    enabled: true,
+  }));
+}
+
 function inSyncLiveState(): LiveState {
   return {
     dnsRecord: liveDnsRecord(),
-    cacheRules: [matchingLiveCacheRule()],
+    cacheRules: matchingLiveRules(desired.cacheRules),
+    wafRules: matchingLiveRules(desired.wafRules),
     sslMode: 'strict',
   };
 }
@@ -133,7 +163,7 @@ describe('upsertCacheRule (foreign-rule preservation)', () => {
   it('appends our rule when the phase has none, leaving foreign rules first and untouched', () => {
     const foreignA = foreignRule('foreign-a');
     const foreignB = foreignRule('foreign-b');
-    const { rules, changed } = upsertCacheRule([foreignA, foreignB], desired.cacheRule);
+    const { rules, changed } = upsertCacheRule([foreignA, foreignB], ogCacheRule);
 
     expect(changed).toBe(true);
     expect(rules).toHaveLength(3);
@@ -147,7 +177,7 @@ describe('upsertCacheRule (foreign-rule preservation)', () => {
 
   it('is a no-op when our rule already matches', () => {
     const existing = [foreignRule('foreign-a'), matchingLiveCacheRule()];
-    const { rules, changed } = upsertCacheRule(existing, desired.cacheRule);
+    const { rules, changed } = upsertCacheRule(existing, ogCacheRule);
     expect(changed).toBe(false);
     expect(rules).toBe(existing);
   });
@@ -157,13 +187,13 @@ describe('upsertCacheRule (foreign-rule preservation)', () => {
     const staleOurs: RulesetRule = { ...matchingLiveCacheRule(), expression: '(http.host eq "stale")' };
     const foreignB = foreignRule('foreign-b');
 
-    const { rules, changed } = upsertCacheRule([foreignA, staleOurs, foreignB], desired.cacheRule);
+    const { rules, changed } = upsertCacheRule([foreignA, staleOurs, foreignB], ogCacheRule);
 
     expect(changed).toBe(true);
     expect(rules).toHaveLength(3);
     // Our rule stays at index 1, keeps its Cloudflare-assigned id, gets the desired expression.
     expect(rules[1].id).toBe('our-rule-id');
-    expect(rules[1].expression).toBe(desired.cacheRule.expression);
+    expect(rules[1].expression).toBe(ogCacheRule.expression);
     expect(rules[1].action_parameters).toEqual({
       cache: true,
       edge_ttl: { mode: 'bypass_by_default' },
@@ -179,22 +209,22 @@ describe('cacheRuleMatches', () => {
   it('treats a missing enabled field as enabled', () => {
     const withoutEnabled: RulesetRule = { ...matchingLiveCacheRule() };
     delete withoutEnabled.enabled;
-    expect(cacheRuleMatches(withoutEnabled, desired.cacheRule)).toBe(true);
+    expect(cacheRuleMatches(withoutEnabled, ogCacheRule)).toBe(true);
   });
 
   it('detects an action_parameters difference', () => {
     const drifted: RulesetRule = { ...matchingLiveCacheRule(), action_parameters: { cache: false } };
-    expect(cacheRuleMatches(drifted, desired.cacheRule)).toBe(false);
+    expect(cacheRuleMatches(drifted, ogCacheRule)).toBe(false);
   });
 });
 
 describe('diffCacheRule', () => {
   it('is a no-op when our rule already matches', () => {
-    expect(diffCacheRule([matchingLiveCacheRule()], desired.cacheRule)).toBeNull();
+    expect(diffCacheRule([matchingLiveCacheRule()], ogCacheRule)).toBeNull();
   });
 
   it('reports a create when our rule is absent', () => {
-    const change = diffCacheRule([foreignRule('foreign-a')], desired.cacheRule);
+    const change = diffCacheRule([foreignRule('foreign-a')], ogCacheRule);
     expect(change?.summary).toContain('missing');
     expect(change?.detail).toContain('1 other rule');
   });
@@ -209,11 +239,14 @@ describe('buildPlan', () => {
     const drifted: LiveState = {
       dnsRecord: liveDnsRecord({ proxied: false }),
       cacheRules: [foreignRule('foreign-a')],
+      wafRules: matchingLiveRules(desired.wafRules),
       sslMode: 'full',
     };
     const changes = buildPlan(desired, drifted, { allowZoneSsl: false });
-    // Cutover-safe order: the proxied flip is planned last, after SSL + cache.
-    expect(changes.map((change) => change.resource)).toEqual(['ssl', 'cache-rule', 'dns']);
+    // Cutover-safe order: the proxied flip is planned last, after SSL + the rules.
+    // Both cache rules are missing (the phase holds only a foreign rule), and the
+    // WAF phase is already in sync, so it contributes nothing.
+    expect(changes.map((change) => change.resource)).toEqual(['ssl', 'cache-rule', 'cache-rule', 'dns']);
     // The SSL change is blocked without the opt-in flag, but still reported as drift.
     expect(changes.find((change) => change.resource === 'ssl')?.blocked).toBe(true);
     // And the proxied flip is held back while the required SSL change is blocked —
@@ -227,6 +260,7 @@ describe('buildPlan', () => {
     const drifted: LiveState = {
       dnsRecord: liveDnsRecord({ proxied: false }),
       cacheRules: [],
+      wafRules: [],
       sslMode: 'strict',
     };
     const changes = buildPlan(desired, drifted, { allowZoneSsl: false });
@@ -256,5 +290,157 @@ describe('jsonEqual', () => {
     expect(jsonEqual([1, 2, 3], [1, 2, 3])).toBe(true);
     expect(jsonEqual([1, 2], [1, 2, 3])).toBe(false);
     expect(jsonEqual(null, undefined)).toBe(false);
+  });
+});
+
+describe('www cost-control rules (#4650)', () => {
+  const boardRenderRule = desired.cacheRules.find((rule) => rule.description === BOARD_RENDER_CACHE_RULE_DESCRIPTION);
+  const allowRule = desired.wafRules.find((rule) => rule.description === CRAWLER_ALLOW_RULE_DESCRIPTION);
+  const blockRule = desired.wafRules.find((rule) => rule.description === CRAWLER_BLOCK_RULE_DESCRIPTION);
+
+  it('scopes the board-render cache rule to www and the render path', () => {
+    // Cloudflare caches by file extension by default and this path has none, which
+    // is the entire reason the route measured cf-cache-status: DYNAMIC despite
+    // sending `immutable, max-age=31536000`.
+    expect(boardRenderRule?.expression).toBe(
+      `(http.host eq "${WWW_HOSTNAME}" and starts_with(http.request.uri.path, "/api/internal/board-render"))`,
+    );
+    expect(boardRenderRule?.action_parameters.cache).toBe(true);
+    // A 503 from the render semaphore sends no cacheable Cache-Control; bypassing
+    // by default is what keeps load-shed responses out of the edge cache.
+    expect(boardRenderRule?.action_parameters.edge_ttl.mode).toBe('bypass_by_default');
+  });
+
+  it('keeps the two cache rules separately addressable', () => {
+    // Identity is the description marker; a duplicate would make the upsert treat
+    // one rule as the other and silently drop it.
+    expect(new Set(desired.cacheRules.map((rule) => rule.description)).size).toBe(desired.cacheRules.length);
+    expect(CACHE_RULE_DESCRIPTION).not.toBe(BOARD_RENDER_CACHE_RULE_DESCRIPTION);
+  });
+
+  it('lowercases the user agent in every WAF expression', () => {
+    // Cloudflare's `contains` is CASE-SENSITIVE. Without lower(), the rule installs
+    // cleanly and matches nothing — the worst kind of failure, because it looks done.
+    for (const rule of desired.wafRules) {
+      const comparisons = rule.expression.split(' or ');
+      expect(comparisons.length).toBeGreaterThan(0);
+      for (const comparison of comparisons) {
+        expect(comparison).toMatch(/^lower\(http\.user_agent\) contains "[^A-Z]*"$/);
+      }
+    }
+  });
+
+  it('never blocks a search engine or unfurler we allow', () => {
+    // The real hazard of a token list: one short token catching a crawler we depend
+    // on. Checked against full UA strings, not just the tokens.
+    const allowedUserAgents = [
+      'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+      'Mozilla/5.0 (compatible; Googlebot-Image/1.0; +http://www.google.com/bot.html)',
+      'Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)',
+      'Mozilla/5.0 (compatible; Brave-Search/1.0; +https://search.brave.com/help/brave-search-crawler)',
+      'Mozilla/5.0 (compatible; DuckDuckBot-Https/1.1; https://duckduckgo.com/duckduckbot)',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36',
+      'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+      'Twitterbot/1.0',
+    ];
+    for (const userAgent of allowedUserAgents) {
+      for (const token of CRAWLER_BLOCK_TOKENS) {
+        expect(userAgent.toLowerCase()).not.toContain(token);
+      }
+    }
+  });
+
+  it('matches the scrapers it is meant to block', () => {
+    const blockedUserAgents = [
+      'Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)',
+      'Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)',
+      'Mozilla/5.0 (compatible; DataForSeoBot/1.0; +https://dataforseo.com/dataforseo-bot)',
+      'Mozilla/5.0 (compatible; MJ12bot/v1.4.8; http://mj12bot.com/)',
+      'Mozilla/5.0 (compatible; DotBot/1.2; +https://opensiteexplorer.org/dotbot;)',
+      'Screaming Frog SEO Spider/21.4',
+    ];
+    for (const userAgent of blockedUserAgents) {
+      const matched = CRAWLER_BLOCK_TOKENS.some((token) => userAgent.toLowerCase().includes(token));
+      expect(matched, `${userAgent} must be blocked`).toBe(true);
+    }
+  });
+
+  it('never lists the same token as both allowed and blocked', () => {
+    for (const blockToken of CRAWLER_BLOCK_TOKENS) {
+      for (const allowToken of CRAWLER_ALLOW_TOKENS) {
+        expect(blockToken.includes(allowToken) || allowToken.includes(blockToken)).toBe(false);
+      }
+    }
+  });
+
+  it('declares the allow rule before the block rule', () => {
+    // Precedence is the whole safety mechanism: skip-remaining only protects a
+    // crawler if it is evaluated first.
+    expect(desired.wafRules.indexOf(allowRule!)).toBeLessThan(desired.wafRules.indexOf(blockRule!));
+    expect(allowRule?.action).toBe('skip');
+    expect(allowRule?.action_parameters).toEqual({ ruleset: 'current' });
+    expect(blockRule?.action).toBe('block');
+  });
+});
+
+describe('managed rule ordering and foreign-rule safety', () => {
+  const liveRule = (description: string, extra: Partial<RulesetRule> = {}): RulesetRule => ({
+    id: `${description}-id`,
+    version: '2',
+    description,
+    expression: 'lower(http.user_agent) contains "stale"',
+    action: 'block',
+    enabled: true,
+    ...extra,
+  });
+
+  it('puts a newly added allow rule BEFORE an already-present block rule', () => {
+    // The regression this exists for. A rule-by-rule upsert would append the new
+    // allow rule after the existing block rule, reversing precedence and blocking
+    // Googlebot the moment the config landed.
+    const existing = [liveRule(CRAWLER_BLOCK_RULE_DESCRIPTION)];
+    const { rules, changed } = upsertCacheRule(existing, desired.wafRules);
+
+    expect(changed).toBe(true);
+    expect(rules.map((rule) => rule.description)).toEqual([
+      CRAWLER_ALLOW_RULE_DESCRIPTION,
+      CRAWLER_BLOCK_RULE_DESCRIPTION,
+    ]);
+    // The pre-existing rule keeps its Cloudflare-assigned id rather than being
+    // recreated, so its analytics and history survive.
+    expect(rules[1].id).toBe(`${CRAWLER_BLOCK_RULE_DESCRIPTION}-id`);
+  });
+
+  it('reports an out-of-order group as drift even when each rule matches', () => {
+    const reversed = [...desired.wafRules].reverse().map((rule) => ({ ...rule, id: `${rule.description}-id` }));
+    const changes = diffManagedRules(reversed, desired.wafRules, 'waf-rule');
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0].summary).toContain('out of order');
+  });
+
+  it('preserves foreign WAF rules, including the AI-crawler block', () => {
+    // The rulesets API PUT replaces the whole phase. Cloudflare 403s ClaudeBot,
+    // GPTBot and friends via a rule we do not own; dropping it here would quietly
+    // reopen the site to every AI scraper.
+    const aiBlock = liveRule('cloudflare-managed: block AI crawlers');
+    const other = liveRule('some other custom rule');
+    const { rules } = upsertCacheRule([aiBlock, other], desired.wafRules);
+
+    expect(rules).toContain(aiBlock);
+    expect(rules).toContain(other);
+    expect(rules).toHaveLength(2 + desired.wafRules.length);
+    // Foreign rules keep their position ahead of ours, so an existing block still
+    // runs first.
+    expect(rules.slice(0, 2)).toEqual([aiBlock, other]);
+  });
+
+  it('is a no-op when the phase already matches', () => {
+    const inSync = desired.wafRules.map((rule, index) => ({ id: `id-${index}`, ...rule }));
+    const { rules, changed } = upsertCacheRule(inSync, desired.wafRules);
+
+    expect(changed).toBe(false);
+    expect(rules).toBe(inSync);
+    expect(diffManagedRules(inSync, desired.wafRules, 'waf-rule')).toEqual([]);
   });
 });

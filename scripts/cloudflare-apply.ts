@@ -36,7 +36,7 @@
  */
 
 import { pathToFileURL } from 'node:url';
-import { CACHE_RULE_PHASE, ZONE_NAME, desiredCloudflareState } from '../infra/cloudflare/config';
+import { CACHE_RULE_PHASE, WAF_RULE_PHASE, ZONE_NAME, desiredCloudflareState } from '../infra/cloudflare/config';
 import type { SslMode } from '../infra/cloudflare/config';
 import { buildPlan, upsertCacheRule } from '../infra/cloudflare/plan';
 import type { LiveDnsRecord, LiveState, PlannedChange, RulesetRule } from '../infra/cloudflare/plan';
@@ -171,13 +171,13 @@ async function fetchDnsRecord(token: string, zoneId: string, name: string): Prom
   return record;
 }
 
-/** The cache-phase entrypoint ruleset. Returns an empty rule set when the phase has no ruleset yet (404). */
-async function fetchCacheRules(token: string, zoneId: string): Promise<RulesetRule[]> {
+/** A phase's entrypoint ruleset. Returns an empty rule set when the phase has no ruleset yet (404). */
+async function fetchPhaseRules(token: string, zoneId: string, phase: string): Promise<RulesetRule[]> {
   try {
     const ruleset = await cfRequest<{ id: string; rules?: RulesetRule[] }>(
       token,
       'GET',
-      `/zones/${zoneId}/rulesets/phases/${CACHE_RULE_PHASE}/entrypoint`,
+      `/zones/${zoneId}/rulesets/phases/${phase}/entrypoint`,
     );
     return ruleset.rules ?? [];
   } catch (error) {
@@ -193,23 +193,26 @@ async function fetchSslMode(token: string, zoneId: string): Promise<string> {
 }
 
 async function fetchLiveState(token: string, zoneId: string, dnsName: string): Promise<LiveState> {
-  const [dnsRecord, cacheRules, sslMode] = await Promise.all([
+  const [dnsRecord, cacheRules, wafRules, sslMode] = await Promise.all([
     fetchDnsRecord(token, zoneId, dnsName),
-    fetchCacheRules(token, zoneId),
+    fetchPhaseRules(token, zoneId, CACHE_RULE_PHASE),
+    fetchPhaseRules(token, zoneId, WAF_RULE_PHASE),
     fetchSslMode(token, zoneId),
   ]);
-  return { dnsRecord, cacheRules, sslMode };
+  return { dnsRecord, cacheRules, wafRules, sslMode };
 }
 
 async function applyDnsProxied(token: string, zoneId: string, recordId: string, proxied: boolean): Promise<void> {
   await cfRequest(token, 'PATCH', `/zones/${zoneId}/dns_records/${recordId}`, { proxied });
 }
 
-async function applyCacheRules(token: string, zoneId: string, rules: RulesetRule[]): Promise<void> {
+async function applyPhaseRules(token: string, zoneId: string, phase: string, rules: RulesetRule[]): Promise<void> {
   // PUT to the phase entrypoint creates the ruleset when it doesn't exist yet, or
-  // replaces its rules array when it does. We send the merged array (foreign rules
-  // preserved), so this only ever adds/updates our rule.
-  await cfRequest(token, 'PUT', `/zones/${zoneId}/rulesets/phases/${CACHE_RULE_PHASE}/entrypoint`, { rules });
+  // replaces its rules array when it does. It REPLACES — so `rules` must always be
+  // the merged array from upsertCacheRule, which carries every foreign rule through
+  // verbatim. Sending only our own rules here would delete the zone's other rules,
+  // including the WAF rule that blocks the AI crawlers.
+  await cfRequest(token, 'PUT', `/zones/${zoneId}/rulesets/phases/${phase}/entrypoint`, { rules });
 }
 
 async function applySslMode(token: string, zoneId: string, mode: SslMode): Promise<void> {
@@ -286,6 +289,7 @@ async function main(): Promise<number> {
   // Mutations are applied sequentially with no rollback: a mid-apply failure
   // leaves the zone partially converged. Safe because the plan is ordered
   // (SSL -> cache rule -> proxied flip last) and re-running converges the rest.
+  const appliedPhases = new Set<string>();
   for (const change of changes) {
     if (change.blocked) {
       console.warn(`[cf-apply] SKIPPED (blocked): ${change.summary}`);
@@ -297,9 +301,18 @@ async function main(): Promise<number> {
     if (change.resource === 'dns') {
       await applyDnsProxied(token, zoneId, live.dnsRecord.id, desired.dns.proxied);
       console.log(`[cf-apply] applied: ${change.summary}`);
-    } else if (change.resource === 'cache-rule') {
-      const { rules } = upsertCacheRule(live.cacheRules, desired.cacheRule);
-      await applyCacheRules(token, zoneId, rules);
+    } else if (change.resource === 'cache-rule' || change.resource === 'waf-rule') {
+      // One PUT per phase, not per planned change. The plan reports each drifted
+      // rule separately so a dry-run names them, but the rulesets API only offers
+      // a whole-phase write and the merged array already contains every rule.
+      const phase = change.resource === 'waf-rule' ? WAF_RULE_PHASE : CACHE_RULE_PHASE;
+      if (!appliedPhases.has(phase)) {
+        const existingRules = change.resource === 'waf-rule' ? live.wafRules : live.cacheRules;
+        const desiredRules = change.resource === 'waf-rule' ? desired.wafRules : desired.cacheRules;
+        const { rules } = upsertCacheRule(existingRules, desiredRules);
+        await applyPhaseRules(token, zoneId, phase, rules);
+        appliedPhases.add(phase);
+      }
       console.log(`[cf-apply] applied: ${change.summary}`);
     } else if (change.resource === 'ssl') {
       await applySslMode(token, zoneId, desired.ssl.mode);

@@ -48,6 +48,74 @@ What it manages (and nothing else on the zone):
 Code prerequisite (shipped): the og rate limiter prefers `CF-Connecting-IP`, so
 per-client buckets survive the proxy hop.
 
+## www.boardsesh.com crawl cost controls (#4650)
+
+Measured against production on 2026-08-25 with the Vercel MCP:
+
+|                                    | per day          |
+| ---------------------------------- | ---------------- |
+| Vercel function invocations        | ~442,600         |
+| — `/api/internal/board-render`     | ~215,600 (48.7%) |
+| — climb view `…/view/[climb_uuid]` | ~203,900 (46.1%) |
+| — `/setter/[setter_username]`      | ~15,900 (3.6%)   |
+| — the other 48 routes combined     | ~7,100 (1.6%)    |
+| Homepage `/`                       | ~2,000           |
+
+Two routes are 94% of all compute, against a published sitemap of only ~60k climb
+URLs and ~2,000 homepage hits. That shape is a crawl, not an audience.
+
+> **Reading the numbers yourself:** `get_runtime_logs` with `since: 24h` is
+> silently truncated — it reports 249,960 where the 6 h window × 4 gives 442,564
+> and the 30 min window × 48 gives 535,632. The two short windows agree with each
+> other and the 24 h one does not. Derive daily rates from a 6 h or 30 min window
+> and scale, or you will under-report by ~2×.
+
+Two more rules, managed the same way (declared in `infra/cloudflare/config.ts`,
+converged by `vp run cf:apply`):
+
+- **Board-render cache rule** — `http_request_cache_settings`, expression
+  `(http.host eq "www.boardsesh.com" and starts_with(http.request.uri.path, "/api/internal/board-render"))`.
+  The route already sends `cache-control: public, max-age=31536000, immutable`
+  and a matching `CDN-Cache-Control`, but **Cloudflare caches by file extension
+  by default** and this path has none, so it measured `cf-cache-status: DYNAMIC`
+  while `/_next/static/*.js` on the same zone was a `HIT`. Every image byte was
+  transiting Cloudflare to Vercel (~54 GB/day). The rule is the entire fix — no
+  origin header change is needed or wanted.
+
+- **Crawler rules** — two rules in `http_request_firewall_custom`, in this order:
+  1. `skip` (all remaining custom rules) for search engines and share-card
+     unfurlers. Brave runs its **own** index rather than reselling Bing or
+     Google, so it is allowlisted explicitly.
+  2. `block` for commercial SEO/backlink crawlers (Ahrefs, Semrush, DataForSEO,
+     MJ12, DotBot, BLEXBot, Barkrowler, serpstat, Seznam, Zoominfo, Screaming
+     Frog). Each was verified reaching our origin on 2026-08-24. They sell
+     backlink data and send Boardsesh no traffic.
+
+  **Order is load-bearing and enforced by the tool.** `upsertCacheRule` rewrites
+  our rules as one contiguous group in declared order, because a rule-by-rule
+  upsert would append a newly added allow rule _after_ an existing block rule and
+  reverse their precedence. A test pins this.
+
+  Two things the tool will not do, both deliberate:
+  - It never reorders our group relative to **foreign** rules. Cloudflare's own
+    AI-crawler block (which already 403s ClaudeBot, GPTBot, PerplexityBot,
+    Bytespider, CCBot and friends — verified 2026-08-24) runs ahead of ours and
+    stays there. That is also why those agents are absent from our block list:
+    duplicating them would be dead config that drifts.
+  - It never uses `cf.client.bot` as the allowlist. Ahrefs and Semrush are
+    themselves Cloudflare _verified bots_, so that field is true for precisely
+    the crawlers we are blocking.
+
+`lower()` on every user-agent comparison is required, not stylistic:
+Cloudflare's `contains` is case-sensitive, so a bare `contains "AhrefsBot"`
+installs cleanly and matches nothing. A test pins that too.
+
+**What this does not catch.** UA blocking only stops crawlers that identify
+themselves honestly. A UA-rotating farm walked ~2,500 climb-view URLs on
+2026-08-22 behind ordinary Chrome/Firefox UAs (PostHog: 2,031 distinct persons,
+one pageview each, `$referring_domain` null on every event). That population
+needs an edge rate-limit rule, which is not managed here yet.
+
 ### One-time: create the API token
 
 Create ONE token covering both today's zone tooling and the upcoming OpenNext
@@ -60,7 +128,10 @@ Create a token at <https://dash.cloudflare.com/profile/api-tokens> scoped to the
 
 - **Zone.Zone Read** — resolve the zone id by name + read the zone list
 - **Zone.DNS Edit** — patch the `ws` record proxied flag
-- **Zone.Cache Rules Edit** — create/update the `/og/` cache rule
+- **Zone.Cache Rules Edit** — create/update the `/og/` and board-render cache rules
+- **Zone.WAF Edit** — create/update the two crawler rules (see below). Without
+  this scope `cf:apply` fails on the WAF phase while the cache rules still apply,
+  so a partially-converged zone is the failure mode, not a silent skip.
 - **Zone.Zone Settings Read** — read the SSL/TLS mode
 - **Zone.Zone Settings Edit** — only if you'll run `--allow-zone-ssl`
 
@@ -103,6 +174,33 @@ straight through to Railway.
 `wss://ws.boardsesh.com/graphql` still connects (web party mode + mobile app);
 `curl -sI 'https://ws.boardsesh.com/og/climb?...'` twice — the second response
 shows `cf-cache-status: HIT`.
+
+For the www rules:
+
+```bash
+# Board-render becomes cacheable: DYNAMIC -> MISS -> HIT.
+B='https://www.boardsesh.com/api/internal/board-render?board_name=kilter&layout_id=1&size_id=10&set_ids=1,20&frames=p1085r15p1128r12&include_background=1'
+curl -sI "$B" | grep -i cf-cache-status
+curl -sI "$B" | grep -i cf-cache-status
+
+# Blocked crawlers get a Cloudflare 403 and never reach the origin; allowed ones
+# still do. `x-vercel-id` present == the request reached Vercel, which is the
+# assertion that matters — a 403 alone could come from anywhere.
+for UA in "AhrefsBot/7.0" "SemrushBot/7~bl" "Brave-Search/1.0" "Googlebot/2.1" "Bingbot/2.0"; do
+  printf '%-18s %s ' "$UA" "$(curl -sS -o /dev/null -A "$UA" -w '%{http_code}' https://www.boardsesh.com/)"
+  curl -sSI -A "$UA" https://www.boardsesh.com/ | grep -ci '^x-vercel-id' | sed 's/^/reached-vercel:/'
+done
+```
+
+Expect Ahrefs and Semrush at `403 reached-vercel:0`; Brave, Google and Bing at
+`200 reached-vercel:1`.
+
+Then confirm the compute actually fell — the point of the exercise. Rerun the
+route breakdown a day later and compare against the table above:
+
+```
+get_runtime_logs since=6h group_by=route source=["serverless"] environment=production
+```
 
 ### CI auto-apply
 
