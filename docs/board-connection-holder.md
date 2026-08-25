@@ -40,7 +40,27 @@ The clean release path is the client calling `reportBoardDisconnect` on BLE drop
 ## Clients
 
 - **Shared** (`@boardsesh/board-presence` + `@boardsesh/board-presence-react`): the reducer tracks `holder` + `lastConnectionSeq` (seq-gated `APPLY_CONNECTION_CHANGED` / `SEED_CONNECTION`); `useBoardPresenceCurrent()` exposes `holder`; the client interface gains optional `fetchConnection` / `reportDisconnect`.
-- **Mobile**: the play-drawer lightbulb is a **connect/disconnect toggle** (lit iff BLE connected) — connecting auto-pushes the climb and takes the board; pressing again disconnects and frees it. `BluetoothAutoSender` mounts on `isConnected` alone (no driver/preview write-gate). `BoardConnectionBadge` renders the holder beside the lightbulb. `reportBoardDisconnect` fires on explicit and unexpected BLE drops.
+- **Mobile**: the play-drawer lightbulb is a **connect/disconnect toggle** on a board with LEDs (lit iff BLE connected) — connecting auto-pushes the climb and takes the board; pressing again disconnects and frees it. `BluetoothAutoSender` mounts on `isConnected || virtualWallHeld` (no driver/preview write-gate). `BoardConnectionBadge` renders the holder beside the lightbulb. `reportBoardDisconnect` fires on explicit and unexpected BLE drops, and on a released virtual hold.
+
+## Holding a wall with no light kit
+
+`user_boards.has_leds` is a capability flag, `NOT NULL DEFAULT true`. The client type is `hasLeds?: boolean` and every branch tests `=== false`, so a stale snapshot or a query that omitted the field degrades to "has LEDs" — an LED wall can only lose its Bluetooth affordances through an explicit `false` from someone with edit access. 79% of production board rows have no serial number, so absence of hardware evidence is emphatically **not** evidence of absence.
+
+**One commit seam, two backends.** `commitWallFrames` (`packages/mobile/src/providers/bluetooth-provider.tsx`) is what the auto-sender, `undoWallChange` and `relightPresenceClimb` all call:
+
+1. `isConnected` → the real BLE write, byte-identical to a board with lights. **Tested first**, so a physical link always wins even in the window before the auto-release effect runs.
+2. else the wall is held virtually → wait out `VIRTUAL_WALL_SETTLE_MS` (600 ms) and return `true`. Zero bytes are written.
+3. else `false`.
+
+The settle window exists because the drain loop's latest-wins coalescing only engages while a commit is in flight. Without it a five-climb swipe would land five durable `board_climb_events` rows instead of the two a BLE write produces.
+
+**Who may hold.** `takeVirtualWall()` is guarded on `!isConnected` alone, deliberately _not_ on `ledless`: the device picker offers "this wall has no lights" after a scan that found nothing, on a board whose server flag still says it has them, and that offer takes the wall **session-locally only**. It never writes `has_leds` — an empty scan is weak evidence (box powered off, out of range, the Android RN 0.86 scan regression), and a wrong flip removes the connect affordance for every climber at that gym. The server flag is set only through the board edit form.
+
+**Exclusivity without a radio.** A BLE link is exclusive because the radio says so. A virtual hold has nothing, and the server keeps a single last-write-wins holder slot, so `VirtualWallHolderWatch` compares `holder.userId` against the viewer's and exposes `wallHeldByOtherUser`. The phone that lost the slot auto-releases. The comparison is **board-scoped and not session-gated** — production shows 413 of 1,162 boards with climb events have several distinct reporters while only 36 have any `board_sessions` row, so a session gate would miss the case this exists for. Anonymous holders carry no userId and cannot be compared; that is accepted, not guessed at.
+
+**Two connection values, on purpose.** `deriveBoardConnection` stays BLE-only: it is the Live Activity contract, read by the lock-screen bulb, the Dynamic Island, Prev/Next and both native iOS intents, every one of which acts by writing the radio. `deriveInAppBoardConnection` is the widened value that in-app surfaces read — it reports `connectedByMe` under a virtual hold, yields to `heldByPeer` when the server holder is someone else, and (on a ledless board only) reports a peer holder to a **bystander** who never took the wall. That last branch is restricted to ledless boards because on a wall with lights the holder can be a stranger sharing the board feed, and the session gate deliberately keeps them from lighting your bulb.
+
+**Membership.** A report rejected for lapsed membership triggers one `restampBoardMembershipByUuid` and one retry. It calls the client resolver directly and never enters `beginResolution`, which would clear `boardId` and blank the wall screen mid-hold. Anonymous emitters are keyed `conn:{connectionId}` and lose membership on every socket reconnect, which is the case this covers.
 
 ## Known limitations
 
