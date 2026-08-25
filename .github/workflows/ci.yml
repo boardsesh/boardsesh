@@ -252,7 +252,7 @@ jobs:
             # roots at @boardsesh/mobile too), but nothing in the image builds or
             # runs them — W-24/#4438 deleted the Expo export step from the
             # builder stage and W-26/#4442 drops them from the context. Mobile is
-            # by far the highest-churn tree in the repo, so gating an 11-minute
+            # by far the highest-churn tree in the repo, so gating a 4-minute
             # build on it would make most PRs pay for bytes the runner never
             # sees. The unconditional main-push build is the backstop.
             dockerWeb:
@@ -1158,9 +1158,13 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.dockerWeb == 'true'
     runs-on: ubuntu-latest
-    # Measured cold on ubuntu-latest at 11m20s (branch-deploy.yml run
-    # 31797731863, which also pushed to GHCR). 30 minutes leaves room for a cold
-    # run on a slow runner while still failing loud instead of burning six hours.
+    # Measured on ubuntu-latest with a completely cold cache (`web-main` did not
+    # exist yet): 4m09s for the job, of which the image build is 2m53s. The
+    # 11m20s figure from branch-deploy.yml run 31797731863 is NOT the number to
+    # plan against — that job also pushed ~225 MB of layers to GHCR and wrote a
+    # 2.7 GB gha cache, and this one does neither. 30 minutes is deliberate slack
+    # for a slow runner or a cold dependency bump, so a hang fails loud instead
+    # of burning six hours.
     timeout-minutes: 30
     # Narrower than the workflow default: this job reads the repo and nothing
     # else. No `packages: write` — it never publishes the image it builds.

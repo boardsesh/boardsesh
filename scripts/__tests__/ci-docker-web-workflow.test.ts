@@ -127,7 +127,7 @@ describe('docker-web CI job contract', () => {
     // so packages/mobile and its exclusive deps are copied into the context —
     // but W-24 (#4438) deleted the Expo export step, so nothing in the image
     // builds or runs them, and W-26 (#4442) drops them from the context. Mobile
-    // is the highest-churn tree in the repo; gating an 11-minute build on it
+    // is the highest-churn tree in the repo; gating a 4-minute build on it
     // would make most PRs pay for bytes the runner never sees. This assertion is
     // the cost decision, written down. It self-retires: once W-26 removes the
     // mobile root, the set below is empty and nothing is asserted.
