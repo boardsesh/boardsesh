@@ -55,10 +55,26 @@ async function applyMigration(body: string): Promise<void> {
   }
 }
 
-const USERS = ['dedup-u1', 'dedup-u2', 'dedup-u3', 'dedup-u4', 'dedup-u4-other', 'dedup-u5', 'dedup-u6'];
-const UUIDS = ['L1', 'T1', 'L2', 'T2', 'L3a', 'L3b', 'T3', 'L4', 'T4', 'N5', 'T5', 'L6a', 'T6a', 'L6b', 'T6b'].map(
-  (u) => `dedup-${u}`,
-);
+const USERS = ['dedup-u1', 'dedup-u2', 'dedup-u3', 'dedup-u4', 'dedup-u4-other', 'dedup-u5', 'dedup-u6', 'dedup-u7'];
+const UUIDS = [
+  'L1',
+  'T1',
+  'L2',
+  'T2',
+  'L3a',
+  'L3b',
+  'T3',
+  'L4',
+  'T4',
+  'N5',
+  'T5',
+  'L6a',
+  'T6a',
+  'L6b',
+  'T6b',
+  'L7',
+  'T7',
+].map((u) => `dedup-${u}`);
 
 /** drizzle expands an interpolated JS array into a tuple, not an array literal. */
 function sqlList(values: string[]) {
@@ -109,11 +125,14 @@ async function seedLegacy(args: {
   auroraId: string;
   name: string;
   climbUuid?: string;
+  /** Leave `aurora_synced_at` NULL — a shape the JSON import can produce. */
+  noAuroraSyncedAt?: boolean;
 }): Promise<void> {
   await db.execute(sql`
     INSERT INTO playlists (uuid, board_type, name, aurora_type, aurora_id, aurora_synced_at, created_at, updated_at)
     VALUES (${args.uuid}, 'kilter', ${args.name}, 'circuits', ${args.auroraId},
-            now() - interval '200 days', now() - interval '200 days', now() - interval '30 days')
+            CASE WHEN ${args.noAuroraSyncedAt ?? false} THEN NULL ELSE now() - interval '200 days' END,
+            now() - interval '200 days', now() - interval '30 days')
   `);
   await db.execute(sql`
     INSERT INTO playlist_ownership (playlist_id, user_id, role)
@@ -166,7 +185,9 @@ describe('0205 kilter playlist dedup backfill (real DB)', () => {
       name: 'Warmups',
       climbUuid: 'climb-A',
     });
-    await seedTwin({ uuid: 'dedup-T1', userIds: ['dedup-u1'], kilterId: 'dedup-circ-1', name: 'Warmups' });
+    // The names deliberately DIFFER, so only `aurora_id = kilter_id` can pair
+    // these two — otherwise tier 2 could be quietly doing tier 1's job.
+    await seedTwin({ uuid: 'dedup-T1', userIds: ['dedup-u1'], kilterId: 'dedup-circ-1', name: 'Renamed On Kilter' });
 
     // u2 — tier 2: a JSON import rotated the id, only the name matches.
     await seedLegacy({ uuid: 'dedup-L2', userId: 'dedup-u2', auroraId: 'dedup-json-x', name: '  Projects ' });
@@ -203,6 +224,17 @@ describe('0205 kilter playlist dedup backfill (real DB)', () => {
     await seedLegacy({ uuid: 'dedup-L6b', userId: 'dedup-u6', auroraId: 'dedup-json-6b', name: 'Crimps' });
     await seedTwin({ uuid: 'dedup-T6b', userIds: ['dedup-u6'], kilterId: 'dedup-circ-6b', name: 'Crimps' });
 
+    // u7 — a legacy row with NO aurora_synced_at, so the migration's COALESCE
+    // has to fall back to created_at instead of stamping NULL.
+    await seedLegacy({
+      uuid: 'dedup-L7',
+      userId: 'dedup-u7',
+      auroraId: 'dedup-circ-7',
+      name: 'Pockets',
+      noAuroraSyncedAt: true,
+    });
+    await seedTwin({ uuid: 'dedup-T7', userIds: ['dedup-u7'], kilterId: 'dedup-circ-7', name: 'Pockets' });
+
     await applyMigration(readMigration().body);
 
     const rows = await readRows();
@@ -215,6 +247,9 @@ describe('0205 kilter playlist dedup backfill (real DB)', () => {
       // Two pairs for one user: the 1:1 degree filter is per-pair, not per-user.
       ['dedup-L6a', 'dedup-T6a', 'dedup-circ-6a'],
       ['dedup-L6b', 'dedup-T6b', 'dedup-circ-6b'],
+      // aurora_synced_at IS NULL: exercises the created_at leg of
+      // COALESCE(aurora_synced_at, created_at).
+      ['dedup-L7', 'dedup-T7', 'dedup-circ-7'],
     ] as const;
     for (const [legacy, twin, kilterId] of mergedPairs) {
       expect(rows.get(legacy)?.kilter_id, legacy).toBe(kilterId);
