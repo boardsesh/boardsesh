@@ -216,6 +216,12 @@ export type BluetoothPacketResult = {
    * Kilter box thus encodes a full-length packet of colourless LEDs: the wall
    * goes dark while `write()` resolves and the caller reports a successful send.
    *
+   * Detects the all-or-nothing case only. A route that leaves a handful of LEDs
+   * lit and zeroes the rest still reports `false` and still writes a near-dark
+   * wall — a pre-existing hazard of the same ladder that this narrows but does
+   * not close, since "how dark is too dark" is a product call rather than a
+   * protocol one.
+   *
    * Callers must treat this as a failed send, not a successful one. Always
    * `false` on v3 and for the empty / all-skipped results: v3 has no power
    * budget, so the only way its colour bytes reach zero is a caller-supplied
@@ -337,8 +343,11 @@ export const getAuroraBluetoothPacket = (
     }
     tempArray.push(...encoded);
     ledsWritten++;
-    // v2 packs r/g/b into the top six bits of byte 2 (the low two bits are
-    // position[9:8]); v3 gives colour its own third byte.
+    // Byte layout, per `encodePositionAndColorV2` / `encodePositionAndColorV3`
+    // above: v2 emits [posLo, (r<<6)|(g<<4)|(b<<2)|posHi], so colour is bits
+    // [7:2] of byte 2 and 0xfc masks off the position bits; v3 emits
+    // [posLo, posHi, colour], so colour is the whole third byte. Both must be
+    // re-read if either encoder's packing changes.
     const colourBits = isV2 ? encoded[1] & 0xfc : encoded[2];
     if (colourBits !== 0) ledsWithColour++;
   }
