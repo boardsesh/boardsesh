@@ -52,7 +52,7 @@ const BoardRenderer = React.memo(
       );
     }
 
-    // Delegate to WoodsBoardRenderer for the Woods board (committed PNG/JPG art +
+    // Delegate to WoodsBoardRenderer for the Woods board (committed board art +
     // detected, non-grid hold centres from boardDetails.holdsData).
     if (isWoods) {
       const woodsBackground = Object.keys(boardDetails.images_to_holds)[0] ?? '';

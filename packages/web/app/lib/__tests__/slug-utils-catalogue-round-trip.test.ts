@@ -462,4 +462,25 @@ describe('Woods board URL segments', () => {
   it('resolves an empty set segment to the synthetic set rather than no sets', async () => {
     expect((await parseWoods('original', '12x12', '')).setIds).toEqual([1]);
   });
+
+  /**
+   * Woods has exactly one (layout, size, set) catalogue, so any segment outside it
+   * names a board that does not exist and has to 404 — the `next/navigation` mock
+   * at the top of this file turns `notFound()` into a throw. Before this, an
+   * unknown numeric size passed straight through and `getWoodsBoardDetails` threw
+   * on it (a 500, not a 404), an unknown size slug silently rendered the 8×10
+   * board, and the layout and set segments were not checked at all.
+   */
+  it.each([
+    ['unknown numeric size', 'original', '99', 'standard'],
+    ['unknown size slug', 'original', '9x9', 'standard'],
+    ['unknown dashed size slug', 'original', '9-9', 'standard'],
+    ['unknown numeric layout', '99', '12x12', 'standard'],
+    ['unknown layout slug', 'benchmark', '12x12', 'standard'],
+    ['a set that does not exist', 'original', '12x12', '2'],
+    ['more sets than Woods has', 'original', '12x12', '1,2'],
+    ['unknown set slug', 'original', '12x12', 'crimps'],
+  ])('404s %s', async (_case, layoutSegment, sizeSegment, setSegment) => {
+    await expect(parseWoods(layoutSegment, sizeSegment, setSegment)).rejects.toThrow(/notFound\(\)/);
+  });
 });

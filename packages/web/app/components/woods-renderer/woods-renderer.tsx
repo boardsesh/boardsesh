@@ -2,6 +2,7 @@
 
 import React, { useMemo } from 'react';
 import type { HoldRenderData, LitUpHoldsMap } from '../board-renderer/types';
+import { getImageUrl } from '../board-renderer/util';
 
 // Props for the Woods renderer. Like the MoonBoard renderer it draws the board
 // art plus a circle per lit hold, but it consumes the precomputed `holdsData`
@@ -33,10 +34,10 @@ const WoodsBoardRenderer: React.FC<WoodsBoardRendererProps> = ({
   fillHeight = false,
   onHoldClick,
 }) => {
-  // The Woods board art ships as committed PNG/JPG (no .webp or thumbs/ variants),
-  // so reference the raw filename directly — do NOT route through getImageUrl,
-  // which rewrites .png → .webp and would 404.
-  const backgroundHref = `/images/woods/${backgroundImage}`;
+  // Woods art ships the same three variants every other board does — full-size
+  // .png, .webp, and a 416px thumbs/*.webp — so build the href the shared way:
+  // getImageUrl rewrites .png → .webp and splices /thumbs/ for thumbnails.
+  const backgroundHref = getImageUrl(backgroundImage, 'woods', thumbnail);
 
   // Index holds by id for O(1) mirror lookups. Woods holds are distinctly shaped
   // and asymmetric, so a mirrored climb keeps the board art fixed and re-positions
