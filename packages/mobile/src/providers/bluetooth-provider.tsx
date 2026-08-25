@@ -822,6 +822,10 @@ export function BluetoothProvider({
       lastAcceptedReportSignatureRef.current = null;
       lastAcceptedWallSignatureRef.current = null;
       pendingReportSignatureRef.current = null;
+      // The one-shot re-stamp marker is per board: two boards can in principle
+      // produce the same report signature, and the second must still get its
+      // one membership retry.
+      restampedReportSignatureRef.current = null;
       undoWallChangeTargetRef.current = null;
       clearPendingWallReportAndUndoToastArm();
     }

@@ -549,6 +549,21 @@ describe('BluetoothProvider — a rejected report re-stamps membership once', ()
     expect(capturedBluetooth?.virtualWallHeld).toBe(true);
   });
 
+  it('gives up when the re-stamp itself throws', async () => {
+    // The websocket dropped, or the resolve failed outright. One retry attempt,
+    // no report, and the hold survives so the next climb change can try again.
+    presence.reportClimbForBoard.mockResolvedValue(false);
+    presence.restampBoardMembershipByUuid.mockRejectedValue(new Error('socket closed'));
+
+    renderProvider();
+    await takeTheWall();
+    await settle(2);
+
+    expect(presence.restampBoardMembershipByUuid).toHaveBeenCalledTimes(1);
+    expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+    expect(capturedBluetooth?.virtualWallHeld).toBe(true);
+  });
+
   it('gives up rather than hammering when the re-stamp says the board moved', async () => {
     presence.reportClimbForBoard.mockResolvedValue(false);
     presence.restampBoardMembershipByUuid.mockResolvedValue(false);
