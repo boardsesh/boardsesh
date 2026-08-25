@@ -40,6 +40,8 @@ const boardActions = vi.hoisted(() => ({
   updateClimb: vi.fn(),
 }));
 
+const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
+
 const createClimb = vi.hoisted(() => ({
   litUpHoldsMap: {} as Record<number, { state: string }>,
   frames: [{} as Record<number, { state: string }>],
@@ -125,7 +127,7 @@ vi.mock('../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => null,
 }));
 vi.mock('../../../providers/toast-provider', () => ({
-  useToast: () => ({ showToast: vi.fn() }),
+  useToast: () => ({ showToast: toast.showToast }),
 }));
 vi.mock('../../../providers/dialog-provider', () => ({
   useConfirm: () => vi.fn(async () => true),
@@ -176,6 +178,8 @@ beforeEach(() => {
   createClimb.frames = [{}];
   appState.listeners = [];
   appState.addEventListener.mockClear();
+  toast.showToast.mockClear();
+  draftStore.isDraftStorageAvailable.mockReturnValue(true);
 });
 
 afterEach(() => {
@@ -511,5 +515,79 @@ describe('useCreateClimbScreen autosave flush', () => {
     // (the detach effect nulls savedClimb, so the payload can't carry it).
     expect(savedKeys()).toEqual(['kilter:1:10:1,2:25']);
     expect(draftStore.saveDraft.mock.calls[0]?.[1]?.savedClimbJson).toBeUndefined();
+  });
+
+  it('tells you the draft was kept only when it is nowhere else to be found', async () => {
+    // The one conditional toast on dismiss. Silent when the work is already a row
+    // in Open drafts (the status line said so), and silent for an empty editor —
+    // a notice on every close is noise, and noise on the most-used gesture on
+    // this surface is how confirms get trained away.
+    boardActions.saveClimb.mockResolvedValue({ uuid: 'row-1', createdAt: null, publishedAt: null, isDraft: true });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    await waitFor(() => expect(draftStore.loadDraft).toHaveBeenCalled());
+
+    // Empty editor: nothing to lose, nothing to say.
+    act(() => result.current.notifyDraftKeptOnDismiss());
+    expect(toast.showToast).not.toHaveBeenCalled();
+
+    // Painted but never saved: this is the case a climber could think is gone.
+    act(() => result.current.setName('Unsaved WIP'));
+    act(() => result.current.notifyDraftKeptOnDismiss());
+    expect(toast.showToast).toHaveBeenCalledTimes(1);
+    expect(toast.showToast.mock.calls[0]?.[0]).toBe('mobile.create.autosave.keptToast');
+
+    // Saved to the account: it is in Open drafts, so stay quiet. (Clear after the
+    // save, whose own "Draft saved" toast is a separate, wanted one.)
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    toast.showToast.mockClear();
+    act(() => result.current.notifyDraftKeptOnDismiss());
+    expect(toast.showToast).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet on dismiss when nothing could be stored in the first place', async () => {
+    // Signed-out expo-web writes nothing at all, so promising a kept draft would
+    // be a lie. The status line already says "Sign in to keep this draft".
+    draftStore.isDraftStorageAvailable.mockReturnValue(false);
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    await waitFor(() => expect(draftStore.loadDraft).toHaveBeenCalled());
+
+    act(() => result.current.setName('Anonymous WIP'));
+    act(() => result.current.notifyDraftKeptOnDismiss());
+
+    expect(toast.showToast).not.toHaveBeenCalled();
+    expect(result.current.draftStatus).toEqual({
+      text: 'mobile.create.autosave.notStored',
+      tone: 'warning',
+      announce: true,
+    });
+  });
+
+  it('blocks publishing a climb with no start or finish, and says why', async () => {
+    // `isValid` is `totalHolds > 0` and SaveClimbInputSchema checks neither end,
+    // so without this a one-hold blob is one tap from being a public climb.
+    createClimb.canPublish = false;
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    await waitFor(() => expect(draftStore.loadDraft).toHaveBeenCalled());
+    act(() => result.current.setName('One blob'));
+
+    // A DRAFT save is unaffected — drafts stay cheap.
+    expect(result.current.publishBlocked).toBe(false);
+
+    act(() => result.current.setIsDraft(false));
+    expect(result.current.publishBlocked).toBe(true);
+    expect(result.current.draftStatus).toEqual({
+      text: 'mobile.create.publish.blocked',
+      tone: 'warning',
+      announce: true,
+    });
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(boardActions.saveClimb).not.toHaveBeenCalled();
+
+    createClimb.canPublish = true;
   });
 });
