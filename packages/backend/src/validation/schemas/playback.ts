@@ -35,7 +35,7 @@ export const PlaybackStateInputSchema = z.object({
   speed: z
     .number()
     .finite('Playback speed must be finite')
-    .min(0.5, 'Playback speed must be at least 0.5×')
+    .min(0.1, 'Playback speed must be at least 0.1×')
     .max(10, 'Playback speed cannot exceed 10×'),
   paceMs: z
     .number()
