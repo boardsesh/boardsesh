@@ -12,9 +12,8 @@
  *     endpoint — eoas derives the upload host from updates.url in app.config)
  *     and EOO_TOKEN (the app-scoped expo-open-ota API key; the V3 control-plane
  *     server rejects Expo tokens). The `--channel <name>` value is used as the
- *     server BRANCH name; the channel→branch mapping is a separate step
- *     (a one-time dashboard action for production; scripts/ota-channel-map.ts
- *     for per-PR previews).
+ *     server BRANCH name. Production has a one-time dashboard channel mapping;
+ *     per-PR previews are selected through xprem branch surfing.
  *
  * Usage:
  *   vp run mobile:publish                              # preview: current git branch
@@ -149,9 +148,8 @@ async function publishToSelfHostedChannel(
   // update). We deliberately do NOT pass --channel: in eoas@3 it's a DEPRECATED
   // client-side no-op — it only sets RELEASE_CHANNEL during config resolution; it
   // is NOT sent to the server, does NOT create a channel, and does NOT drive
-  // rollouts. Channel creation + channel→branch mapping is a separate step
-  // (scripts/ota-channel-map.ts for per-PR previews; a one-time dashboard action
-  // for production). Progressive rollouts are branch + runtimeVersion scoped
+  // rollouts. Production's channel→branch mapping is a one-time dashboard action;
+  // per-PR previews use branch surfing. Progressive rollouts are branch + runtimeVersion scoped
   // (--rollout-percentage targets a branch's runtimeVersion), not channel scoped.
   // EOAS_PACKAGE_SPEC pins the CLI to the exact deployed V3 server version
   // (control-plane requires an exact match); see scripts/lib/eoas.ts.

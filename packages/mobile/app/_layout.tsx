@@ -26,6 +26,7 @@ import * as Updates from 'expo-updates';
 import { SystemBars } from 'react-native-edge-to-edge';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@expo/ui/community/bottom-sheet';
+import { ControlCenter } from '@xprem/control-center';
 import { QueryProvider } from '../src/providers/query-provider';
 import { ThemeProvider, useTheme } from '../src/providers/theme-provider';
 import { MaterialThemeProvider } from '../src/providers/material-theme-provider';
@@ -71,6 +72,7 @@ import { glassStackScreenOptions } from '../src/theme/navigation';
 import { reportError, reportHandledError } from '../src/lib/error-reporting';
 import { track, getAnalyticsClient } from '../src/lib/analytics';
 import { performOtaRecovery, type OtaRecoveryPhase } from '../src/lib/ota-recovery';
+import { isPreviewBuild } from '../src/lib/preview-build';
 import { loadRequiredFonts } from '../src/lib/required-fonts';
 import { loadSectionExpandState } from '../src/lib/section-expand-store';
 import { useImageCacheMemoryManagement } from '../src/hooks/use-image-cache-memory-management';
@@ -87,6 +89,8 @@ import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
 import { BottomChromeDebugOverlay } from '../src/components/BottomChromeDebugOverlay';
 import { WindowInsetPublisher } from '../src/hooks/use-window-bottom-inset';
 import { LiveActivityIntentDiagnostics } from '../src/components/LiveActivityIntentDiagnostics';
+import { clearLegacyOtaChannelOverride } from '../src/lib/legacy-ota-channel-migration';
+import { getPreference, removePreference } from '../src/lib/preference-store';
 // Side-effect import: instantiates the Android-only MemoryTrim native module
 // (expo-modules-core creates modules lazily on first JS access), whose Kotlin
 // OnCreate registers the Glide trim-on-UI_HIDDEN callback. No-op on iOS.
@@ -121,6 +125,37 @@ function buildStaticFeatureFlags(): FeatureFlags | undefined {
 }
 
 const STATIC_FEATURE_FLAGS = buildStaticFeatureFlags();
+
+function OtaBranchControlCenter() {
+  // Updates.channel can be null on a real Android production build, so identify
+  // branch-surfing builds by capability/build kind instead of that value.
+  const branchSurfingBuild = !__DEV__ && Updates.isEnabled && !isPreviewBuild();
+  const [migrationComplete, setMigrationComplete] = useState(!branchSurfingBuild);
+
+  useEffect(() => {
+    if (!branchSurfingBuild) return;
+
+    let cancelled = false;
+    void clearLegacyOtaChannelOverride({
+      branchSurfingBuild,
+      readOverride: getPreference,
+      clearRequestHeadersOverride: () => Updates.setUpdateRequestHeadersOverride(null),
+      removeOverride: removePreference,
+    })
+      .catch((error: unknown) => {
+        reportHandledError(error, { tags: { source: 'ota', op: 'clear-legacy-channel-override' } });
+      })
+      .finally(() => {
+        if (!cancelled) setMigrationComplete(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [branchSurfingBuild]);
+
+  return branchSurfingBuild && migrationComplete ? <ControlCenter /> : null;
+}
 
 const errorStyles = StyleSheet.create({
   container: {
@@ -480,6 +515,10 @@ function RootLayout() {
           iOS LiveActivityIntent background launch mounted React, then consumes
           eligible interrupted markers when the app is foregrounded. */}
       <LiveActivityIntentDiagnostics />
+      {/* Official xprem branch picker. A one-time migration clears request
+          headers left by the retired Boardsesh channel picker before this
+          mounts, so the two override formats can never compete. */}
+      <OtaBranchControlCenter />
       {/* PostHogProvider sits at the top so touch autocapture covers the whole
           app. It owns the single PostHog client; manual events go through the
           imperative wrapper in src/lib/analytics. No-ops (renders children

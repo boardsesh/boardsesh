@@ -63,7 +63,7 @@ jobs:
             const prNumber = Number(process.env.PR_NUMBER);
             if (!Number.isInteger(prNumber) || prNumber <= 0) return;
 
-            const channel = `pr-${prNumber}`;
+            const branch = `pr-${prNumber}`;
             const marker = '<!-- mobile-ota-preview-prompt -->';
             const publishedMarker = '<!-- mobile-ota-preview -->';
 
@@ -89,8 +89,8 @@ jobs:
               `### 📱 OTA preview — available on request`,
               '',
               `This is a fork PR, so it can't auto-publish an OTA preview — fork runs don't get the ` +
-                `OTA token. A maintainer can comment **\`/ota-preview\`** to publish **\`${channel}\`** ` +
-                `to the in-app switcher (What's New → Try a preview → pick this PR).`,
+                `OTA token. A maintainer can comment **\`/ota-preview\`** to publish branch **\`${branch}\`**. ` +
+                `Then select it from xprem's blue branch marker or What's New → Try a preview.`,
               '',
               '<sub>Re-comment `/ota-preview` after new pushes to refresh the preview. A native change ' +
                 "can't ride OTA — ship a TestFlight/Play build instead.</sub>",

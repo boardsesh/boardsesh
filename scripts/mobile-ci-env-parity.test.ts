@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 //      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID (→ google-signin iosUrlScheme),
 //      GOOGLE_MAPS_API_KEY (handled per-platform, see the dedicated test), and —
 //      once the committed cert activates the self-hosted updates block —
-//      EXPO_UPDATES_URL + EXPO_UPDATES_CHANNEL. If any of these drift between the
+//      EXPO_UPDATES_URL. If this drifts between the
 //      OTA publish (mobile-ota-production.yml) and the native builds
 //      (ios-testflight-rn.yml / android-apk-rn.yml), the published fingerprint
 //      won't match the shipped binary and the OTA silently never lands.
@@ -35,10 +35,9 @@ const OTA = 'mobile-ota-production.yml';
 // fingerprint, so its fingerprint-affecting env must stay locked to the native
 // builds — or it would report a verdict against an env the binaries never had.
 const OTA_CHECK = 'mobile-ota-check.yml';
-// The per-PR preview publish (mobile-ota-preview.yml) ships a `pr-<number>` channel
+// The per-PR preview publish (mobile-ota-preview.yml) ships a `pr-<number>` branch
 // onto the SAME store binary as production, so it must resolve the identical
-// fingerprint — including EXPO_UPDATES_CHANNEL=production (the baked header), NOT
-// pr-N (which is only the eoas upload target). Same parity rule as the rest.
+// fingerprint. The production channel and xprem header are literals in app.config.
 const OTA_PREVIEW = 'mobile-ota-preview.yml';
 // The approved-release backport publish (mobile-ota-backport.yml) resolves the
 // fingerprint of an OLD release and asserts it against the anchor tag before
@@ -76,7 +75,6 @@ const SHARED_ENV_KEYS = [
   // an OTA whose fresh-board downloads silently fall back to the paged crawl
   // (or fetch a stale bucket) — a behaviour change, not a delivery failure.
   'EXPO_PUBLIC_SNAPSHOT_BASE_URL',
-  'EXPO_UPDATES_CHANNEL',
   'EXPO_UPDATES_URL',
 ] as const;
 
@@ -176,11 +174,17 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
     expect(ota.match(/GOOGLE_MAPS_API_KEY:/g)?.length ?? 0).toBe(1);
   });
 
-  it('keeps the OTA publish on the self-hosted server (production channel)', () => {
+  it('keeps the OTA publish on the self-hosted production branch', () => {
     const ota = readWorkflow(OTA);
-    expect(workflowEnvValue(ota, 'EXPO_UPDATES_CHANNEL')).toBe('production');
     expect(ota).toMatch(/--channel production --platform ios/);
     expect(ota).toMatch(/--channel production --platform android/);
+  });
+
+  it('bakes the fixed production + branch-surfing request headers in app.config', () => {
+    const appConfig = readFileSync(resolve(REPO_ROOT, 'packages/mobile/app.config.ts'), 'utf8');
+    expect(appConfig).toMatch(/'expo-channel-name': 'production'/);
+    expect(appConfig).toMatch(/'xprem-branch': ''/);
+    expect(appConfig).not.toContain('EXPO_UPDATES_CHANNEL');
   });
 
   it('gates each native build on its platform fingerprint (resolve + per-platform tag)', () => {
@@ -355,26 +359,24 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
 });
 
 // The per-PR preview publish (mobile-ota-preview.yml) + its sweep
-// (mobile-ota-preview-sweep.yml) ship and reap `pr-<number>` channels on the same
+// (mobile-ota-preview-sweep.yml) ship and reap `pr-<number>` branches on the same
 // store binary + S3 bucket as production. The fingerprint-env parity above already
 // guards delivery; these guard the security boundary (never touch production) and
-// the cleanup boundary (the channel name's prefix must equal the S3 lifecycle
+// the cleanup boundary (the branch name's prefix must equal the S3 lifecycle
 // prefix, or previews never expire).
 const OTA_PREVIEW_SWEEP = 'mobile-ota-preview-sweep.yml';
 
-describe('mobile OTA preview channel isolation + S3 lifecycle coupling', () => {
-  it('publishes the preview to a pr-<number> channel, never production', () => {
+describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
+  it('publishes the preview to a pr-<number> branch, never production', () => {
     const preview = readWorkflow(OTA_PREVIEW);
-    // The baked channel header stays `production` (fingerprint parity); the publish
-    // target is the pr-<number> channel passed to mobile:publish.
-    expect(workflowEnvValue(preview, 'EXPO_UPDATES_CHANNEL')).toBe('production');
-    expect(preview).toMatch(/--channel "\$CHANNEL" --platform ios/);
-    expect(preview).toMatch(/--channel "\$CHANNEL" --platform android/);
+    expect(preview).toMatch(/--channel "\$BRANCH" --platform ios/);
+    expect(preview).toMatch(/--channel "\$BRANCH" --platform android/);
+    expect(preview).not.toMatch(/^  map:/m);
   });
 
-  it('guards every channel mutation behind ^pr-[0-9]+$', () => {
-    // Defense-in-depth: even if the resolved channel were wrong, the publish,
-    // cleanup, and sweep all refuse anything that isn't a numeric PR channel — so
+  it('guards every branch mutation behind ^pr-[0-9]+$', () => {
+    // Defense-in-depth: even if the resolved branch were wrong, the publish,
+    // cleanup, and sweep all refuse anything that isn't a numeric PR branch — so
     // none of them can ever delete or overwrite `production`.
     const preview = readWorkflow(OTA_PREVIEW);
     const sweep = readWorkflow(OTA_PREVIEW_SWEEP);
@@ -383,44 +385,44 @@ describe('mobile OTA preview channel isolation + S3 lifecycle coupling', () => {
     expect(sweep).toMatch(/\^pr-\[0-9\]\+\$/);
   });
 
-  it('scopes the S3 lifecycle prefix to <appId>/pr- (ends with the channel prefix, and documented)', () => {
+  it('scopes the S3 lifecycle prefix to <appId>/pr- (ends with the branch prefix, and documented)', () => {
     // V3 (control-plane) keys updates as <appId>/<branch>/<rtv>/<ts>/…, so the S3
     // lifecycle rule that bounds per-PR preview storage is scoped to `<appId>/pr-`
-    // — NOT a bare `pr-`. It MUST end with the workflow's channel-name prefix (so
-    // it matches only pr-<n> channels) and can never match `<appId>/production/…`.
-    // Post-V3 the channel-name prefix and the S3 key prefix differ, so they're two
+    // — NOT a bare `pr-`. It MUST end with the workflow's branch-name prefix (so
+    // it matches only pr-<n> branches) and can never match `<appId>/production/…`.
+    // The branch-name prefix and the S3 key prefix differ, so they're two
     // constants in mobile-ota-setup.ts; if they drift, previews either never expire
     // (storage leak) or the rule hits production. The docs must document the exact
     // appId-scoped prefix.
     const preview = readWorkflow(OTA_PREVIEW);
     const guard = preview.match(/\^(pr-)\[0-9\]\+\$/);
-    expect(guard, 'preview workflow must guard channels as ^pr-[0-9]+$').not.toBeNull();
-    const channelPrefix = guard![1];
+    expect(guard, 'preview workflow must guard branches as ^pr-[0-9]+$').not.toBeNull();
+    const branchPrefix = guard![1];
 
     const setup = readFileSync(resolve(REPO_ROOT, 'scripts/mobile-ota-setup.ts'), 'utf8');
     const appId = setup.match(/OTA_APP_ID\s*=\s*'([^']+)'/)?.[1];
-    const channelConst = setup.match(/PREVIEW_CHANNEL_PREFIX\s*=\s*'([^']+)'/)?.[1];
+    const branchConst = setup.match(/PREVIEW_BRANCH_PREFIX\s*=\s*'([^']+)'/)?.[1];
     expect(appId, 'setup must define OTA_APP_ID').toBeTruthy();
-    expect(channelConst, 'setup PREVIEW_CHANNEL_PREFIX must equal the workflow channel prefix').toBe(channelPrefix);
+    expect(branchConst, 'setup PREVIEW_BRANCH_PREFIX must equal the workflow branch prefix').toBe(branchPrefix);
     // Guard the DEFINITION, not a value we reconstruct: PREVIEW_S3_PREFIX must be
-    // composed as `${OTA_APP_ID}/${PREVIEW_CHANNEL_PREFIX}`. A hardcoded rewrite
+    // composed as `${OTA_APP_ID}/${PREVIEW_BRANCH_PREFIX}`. A hardcoded rewrite
     // (e.g. 'previews/') that stopped matching pr- keys would then fail here instead
     // of silently leaking preview storage.
-    expect(setup, 'PREVIEW_S3_PREFIX must be composed from OTA_APP_ID + PREVIEW_CHANNEL_PREFIX').toMatch(
-      /PREVIEW_S3_PREFIX\s*=\s*`\$\{OTA_APP_ID\}\/\$\{PREVIEW_CHANNEL_PREFIX\}`/,
+    expect(setup, 'PREVIEW_S3_PREFIX must be composed from OTA_APP_ID + PREVIEW_BRANCH_PREFIX').toMatch(
+      /PREVIEW_S3_PREFIX\s*=\s*`\$\{OTA_APP_ID\}\/\$\{PREVIEW_BRANCH_PREFIX\}`/,
     );
-    const s3Prefix = `${appId}/${channelConst}`;
-    expect(s3Prefix.endsWith(channelPrefix), 'the composed S3 prefix must end with the channel-name prefix').toBe(true);
+    const s3Prefix = `${appId}/${branchConst}`;
+    expect(s3Prefix.endsWith(branchPrefix), 'the composed S3 prefix must end with the branch-name prefix').toBe(true);
 
     const docs = readFileSync(resolve(REPO_ROOT, 'docs/mobile-ota-updates.md'), 'utf8');
     expect(docs.toLowerCase(), 'docs must describe the S3 lifecycle rule').toContain('lifecycle');
     expect(docs, `docs must document the appId-scoped lifecycle prefix \`${s3Prefix}\``).toContain(s3Prefix);
   });
 
-  it('keeps the OTA app id identical across app.config, the shared const, the map helper, and setup', () => {
+  it('keeps the OTA app id identical across app.config, the shared const, cleanup, and setup', () => {
     // The expo-app-id header is baked by app.config.ts (inline — Expo's config loader
-    // can't import a sibling .ts) and mirrored in src/lib/ota-app-id.ts for the in-app
-    // channel switcher; the channel-map helper (DEFAULT_APP_ID) and the setup runbook
+    // can't import a sibling .ts) and mirrored in src/lib/ota-app-id.ts for the EAS
+    // preview-build switcher; the cleanup helper (DEFAULT_APP_ID) and the setup runbook
     // (OTA_APP_ID) address the same app. A drift 404s ("Unknown app id") or mis-routes
     // previews, and the id is a fingerprint input — so pin all four equal.
     const idFrom = (rel: string, name: string): string | undefined => {
@@ -433,7 +435,9 @@ describe('mobile OTA preview channel isolation + S3 lifecycle coupling', () => {
     const shared = idFrom('packages/mobile/src/lib/ota-app-id.ts', 'OTA_APP_ID');
     expect(shared, 'src/lib/ota-app-id must define OTA_APP_ID').toBeTruthy();
     expect(idFrom('packages/mobile/app.config.ts', 'OTA_APP_ID'), 'app.config OTA_APP_ID').toBe(shared);
-    expect(idFrom('scripts/ota-channel-map.ts', 'DEFAULT_APP_ID'), 'ota-channel-map DEFAULT_APP_ID').toBe(shared);
+    expect(idFrom('scripts/ota-preview-cleanup.ts', 'DEFAULT_APP_ID'), 'ota-preview-cleanup DEFAULT_APP_ID').toBe(
+      shared,
+    );
     expect(idFrom('scripts/mobile-ota-setup.ts', 'OTA_APP_ID'), 'mobile-ota-setup OTA_APP_ID').toBe(shared);
   });
 

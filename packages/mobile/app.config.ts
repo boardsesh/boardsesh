@@ -71,7 +71,8 @@ const EAS_PROJECT_ID = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? DEFAULT_EAS_PRO
 // here — NOT imported — because Expo's config loader compiles only app.config.ts and
 // can't resolve a sibling .ts import at config-read time (bundle check fails with
 // "Cannot find module './src/lib/ota-app-id'"). The identical value lives in
-// src/lib/ota-app-id.ts for the in-app channel switcher; mobile-ci-env-parity.test.ts
+// src/lib/ota-app-id.ts for the EAS preview-build branch switcher;
+// mobile-ci-env-parity.test.ts
 // asserts the two stay equal. NOT the EAS project id (that value is only the cert CN).
 export const OTA_APP_ID = process.env.EXPO_PUBLIC_OTA_APP_ID ?? '007e6fd7-f200-448c-9449-8d48ba5d51fc';
 const IOS_APP_STORE_URL = 'https://apps.apple.com/app/boardsesh/id6761350784';
@@ -126,8 +127,6 @@ export function resolveUpdatesConfig(easProjectId: string, projectRoot: string):
     return { url: easUrl };
   }
 
-  const channel = process.env.EXPO_UPDATES_CHANNEL;
-
   return {
     url: selfHostUrl,
     enabled: true,
@@ -135,13 +134,13 @@ export function resolveUpdatesConfig(easProjectId: string, projectRoot: string):
     // `expo prebuild`. expo-app-id identifies the app to the V3 (control-plane)
     // server on every manifest/asset request, and `eoas@3` refuses to publish
     // without it — so it's baked unconditionally (present at both runtime and
-    // publish). expo-channel-name maps to a server branch when a channel is set;
-    // the tester channel switcher overrides that header at runtime via
-    // Updates.setUpdateRequestHeadersOverride — which only works because the key
-    // is baked in here — and needs no disableAntiBrickingMeasures.
+    // publish). The production channel is a literal native-build invariant, not
+    // workflow plumbing. xprem's official ControlCenter overrides only
+    // xprem-branch while branch surfing, leaving the production channel fixed.
     requestHeaders: {
       'expo-app-id': OTA_APP_ID,
-      ...(channel ? { 'expo-channel-name': channel } : {}),
+      'expo-channel-name': 'production',
+      'xprem-branch': '',
     },
     // Verifies the manifest signature on-device so a compromised manifest host
     // can't push arbitrary JS. Private key lives only on the server.
@@ -447,19 +446,6 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
           data: [
             { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/auth/reset-password' },
             { scheme: 'https', host: 'boardsesh.com', pathPrefix: '/auth/reset-password' },
-          ],
-          category: ['BROWSABLE', 'DEFAULT'],
-        },
-        // The OTA-preview link in every PR comment. iOS gets this free from the
-        // wildcard AASA; Android intent filters are path-scoped, so the prefix has
-        // to be declared here. Without it an Android tester lands on the web page
-        // and has to tap through its "Open in Boardsesh" button instead.
-        {
-          action: 'VIEW',
-          autoVerify: true,
-          data: [
-            { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/preview' },
-            { scheme: 'https', host: 'boardsesh.com', pathPrefix: '/preview' },
           ],
           category: ['BROWSABLE', 'DEFAULT'],
         },

@@ -492,42 +492,7 @@
       }
     },
     "previewChannels": {
-      "screenTitle": "Versiones de prueba",
-      "entryTitle": "Prueba una versión previa",
-      "intro": "Carga una propuesta de cambios para probarla antes de que se publique. Al cambiar, la app se reinicia en esa versión; restablece para volver.",
-      "currentSection": "Versión actual",
-      "buildChannelLabel": "Canal de compilación",
-      "selectedChannelLabel": "Canal seleccionado",
-      "defaultValue": "{{channel}} (predeterminado)",
-      "runtimeVersionLabel": "Versión de ejecución",
-      "unavailableNotice": "Las versiones de prueba requieren una compilación de TestFlight o de la App Store, así que aquí el cambio está desactivado.",
-      "listSection": "Versiones de prueba disponibles",
-      "productionTitle": "Producción",
-      "productionSubtitle": "La versión estable que usa todo el mundo",
-      "loading": "Cargando versiones de prueba…",
-      "empty": "No hay versiones de prueba ahora mismo. Vuelve pronto.",
-      "error": "No se pudieron cargar las versiones de prueba. Inténtalo de nuevo en un rato.",
-      "reset": "Restablecer a {{channel}}",
-      "confirmSwitchTitle": "¿Cambiar a esta versión de prueba?",
-      "confirmSwitchMessage": "¿Cargar «{{label}}» y reiniciar? Necesita una versión de prueba publicada para tu versión de la app.",
-      "confirmSwitchConfirm": "Cambiar",
-      "cancel": "Cancelar",
-      "confirmResetTitle": "¿Volver a {{channel}}?",
-      "confirmResetMessage": "¿Salir de la versión de prueba y volver a «{{channel}}»? La app se reiniciará.",
-      "confirmResetConfirm": "Restablecer",
-      "switchFailedTitle": "No se pudo cambiar",
-      "switchFailedFallback": "No se pudo cambiar. Puede que esta compilación no admita versiones de prueba.",
-      "restartTitle": "Reinicia para terminar",
-      "restartSwitchMessage": "Se descargó «{{label}}». Reinicia la app para cambiar a ella.",
-      "restartResetMessage": "Se quitó la versión de prueba. Reinicia la app para volver a «{{channel}}».",
-      "resetFailedTitle": "No se pudo restablecer",
-      "resetFailedReason": "No se pudo restablecer.",
-      "resetFailedMessage": "{{reason}} Se quedó en «{{channel}}».",
-      "presetSection": "Más canales",
-      "manualSection": "Introduce un canal manualmente",
-      "manualHint": "No se pudo cargar la lista de versiones de prueba. Introduce un nombre de canal (como pr-1234) para cambiar manualmente.",
-      "manualPlaceholder": "nombre del canal",
-      "manualInputA11y": "Nombre del canal al que cambiar"
+      "entryTitle": "Prueba una versión previa"
     },
     "offlineState": {
       "title": "Sin conexión",
@@ -568,24 +533,6 @@
     "description": "Esta versión ya no está en servicio. Descarga la nueva Boardsesh y tu logbook, tus sesiones y tu grupo se van contigo.",
     "cta": "Descargar la nueva app",
     "fallbackCta": "Abrir la página de la tienda"
-  },
-  "otaPreview": {
-    "metadata": {
-      "title": "Prueba la PR #{{number}} en la app",
-      "description": "Carga la versión de prueba de Boardsesh de la pull request #{{number}} directamente en la app."
-    },
-    "eyebrow": "Versión de prueba",
-    "heading": "Prueba la PR #{{number}} en Boardsesh",
-    "intro": "Esta pull request está publicada como versión de prueba. Cárgala en la app, dale caña y restablece cuando termines.",
-    "openInApp": "Abrir en Boardsesh",
-    "openInAppHint": "Toca aquí desde el móvil que tenga Boardsesh instalada. La app te pregunta antes de cambiar y luego se reinicia con la versión de prueba.",
-    "qrDivider": "o",
-    "qrHint": "Escanea con el móvil para abrir esta página ahí.",
-    "notesHeading": "Ten en cuenta",
-    "noteBuild": "Las versiones de prueba necesitan una compilación de TestFlight o de la App Store. Una compilación de desarrollo con Metro no puede cambiar.",
-    "noteNative": "Si esta pull request tocó código nativo no hay versión de prueba que cargar: esa necesita una compilación nueva de TestFlight o de Play.",
-    "noteManual": "A mano: Novedades → Prueba una versión previa → <code>{{channel}}</code>.",
-    "viewPullRequest": "Lee la pull request #{{number}} en GitHub"
   },
   "footer": {
     "tagline": "Encuentra bloques, compártelos y mira qué hay en el plafón de tu rocódromo. La escalada pasa en la app.",

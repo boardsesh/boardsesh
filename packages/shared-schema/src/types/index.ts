@@ -24,6 +24,5 @@ export * from './device-logging';
 export * from './feedback';
 export * from './integrations';
 export * from './instagram-beta-import';
-export * from './ota';
 export * from './sync';
 export * from './location-sync-admin';

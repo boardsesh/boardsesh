@@ -11,9 +11,9 @@ import { resolveUpdatesConfig, OTA_APP_ID } from '../../app.config';
 const PROJECT_ID = 'test-project-id';
 const SELF_HOST_URL = 'https://ota.example.test/manifest';
 
-// The three env vars resolveUpdatesConfig reads. Snapshot + restore so tests
+// The two env vars resolveUpdatesConfig reads. Snapshot + restore so tests
 // don't leak into each other or the rest of the suite.
-const ENV_KEYS = ['EAS_BUILD', 'EXPO_UPDATES_URL', 'EXPO_UPDATES_CHANNEL'] as const;
+const ENV_KEYS = ['EAS_BUILD', 'EXPO_UPDATES_URL'] as const;
 let savedEnv: Record<string, string | undefined>;
 
 beforeEach(() => {
@@ -57,7 +57,6 @@ describe('resolveUpdatesConfig', () => {
   it('returns the EAS URL for eas build (EAS_BUILD set), ignoring self-host env + cert', () => {
     process.env.EAS_BUILD = '1';
     process.env.EXPO_UPDATES_URL = SELF_HOST_URL;
-    process.env.EXPO_UPDATES_CHANNEL = 'production';
     expect(resolveUpdatesConfig(PROJECT_ID, projectRoot(true))).toEqual({ url: EAS_URL });
   });
 
@@ -67,32 +66,23 @@ describe('resolveUpdatesConfig', () => {
 
   it('FAILS CLOSED to the EAS URL when the server URL is set but the cert is missing', () => {
     process.env.EXPO_UPDATES_URL = SELF_HOST_URL;
-    process.env.EXPO_UPDATES_CHANNEL = 'production';
     // No cert in this project root → must not bake the self-hosted (unsigned) URL.
     expect(resolveUpdatesConfig(PROJECT_ID, projectRoot(false))).toEqual({ url: EAS_URL });
   });
 
-  it('uses the self-hosted server with app-id + channel headers + code signing when URL + cert are present', () => {
+  it('uses the self-hosted server with fixed production branch-surfing headers when URL + cert are present', () => {
     process.env.EXPO_UPDATES_URL = SELF_HOST_URL;
-    process.env.EXPO_UPDATES_CHANNEL = 'production';
     expect(resolveUpdatesConfig(PROJECT_ID, projectRoot(true))).toEqual({
       url: SELF_HOST_URL,
       enabled: true,
-      // expo-app-id is baked unconditionally (V3 routes on it + eoas requires it);
-      // expo-channel-name is added when a channel is set.
-      requestHeaders: { 'expo-app-id': OTA_APP_ID, 'expo-channel-name': 'production' },
+      requestHeaders: {
+        'expo-app-id': OTA_APP_ID,
+        'expo-channel-name': 'production',
+        'xprem-branch': '',
+      },
       codeSigningCertificate: './certs/certificate.pem',
       codeSigningMetadata: { keyid: 'main', alg: 'rsa-v1_5-sha256' },
     });
-  });
-
-  it('keeps the app-id header but omits the channel header when EXPO_UPDATES_CHANNEL is unset (still signed)', () => {
-    process.env.EXPO_UPDATES_URL = SELF_HOST_URL;
-    const result = resolveUpdatesConfig(PROJECT_ID, projectRoot(true)) as Record<string, unknown>;
-    expect(result.url).toBe(SELF_HOST_URL);
-    // expo-app-id is always present; only expo-channel-name is conditional.
-    expect(result.requestHeaders).toEqual({ 'expo-app-id': OTA_APP_ID });
-    expect(result.codeSigningCertificate).toBe('./certs/certificate.pem');
   });
 
   it('resolves the cert relative to projectRoot, not process.cwd()', () => {
@@ -100,7 +90,6 @@ describe('resolveUpdatesConfig', () => {
     // such file, so a cwd-based check would wrongly fail closed. This asserts the
     // path-invariant behaviour.
     process.env.EXPO_UPDATES_URL = SELF_HOST_URL;
-    process.env.EXPO_UPDATES_CHANNEL = 'production';
     const result = resolveUpdatesConfig(PROJECT_ID, projectRoot(true)) as Record<string, unknown>;
     expect(result.url).toBe(SELF_HOST_URL);
   });

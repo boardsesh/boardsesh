@@ -755,6 +755,18 @@ export default function MoreScreen() {
         onPress: navAction(() => router.push('/(tabs)/profile/dev-offline-writes')),
       });
     }
+    if (profile?.isTester) {
+      devRows.push({
+        kind: 'nav',
+        key: 'sentryDiagnostics',
+        // i18n-ignore-next-line — tester-only dev tooling
+        label: 'Sentry Diagnostics',
+        // i18n-ignore-next-line
+        subtitle: 'Verify handled, uncaught, and native crash reporting',
+        icon: 'otaChannel',
+        onPress: navAction(() => router.push('/(tabs)/profile/sentry-diagnostics')),
+      });
+    }
     sections.push({ key: 'development', title: t('mobile.more.development'), rows: devRows });
   }
 
