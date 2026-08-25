@@ -50,6 +50,12 @@ export function getPlaylistRenderBoardTarget(renderBoard: PlaylistRenderBoard): 
     // as an exact fit on a base-only wall: the row renders undimmed, and the tap
     // then falls through the set-scoped backend fetch into a one-item queue.
     set_ids: setIds,
+    // The wall's size, for the same reason one rung down: Woods numbers each of
+    // its two boards' holds from its own origin, so an 8x10 climb's hold ids all
+    // exist on a 12x12 as different holds and hold-id containment alone reads it
+    // as an exact fit. Both `canAddClimbToBoard` call sites in this file resolve
+    // their target through here, so threading it once covers both.
+    size_id: renderBoard.sizeId,
   };
 }
 

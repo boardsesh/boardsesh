@@ -2,6 +2,7 @@ import { SUPPORTED_BOARDS as ALL_SUPPORTED_BOARDS } from '@boardsesh/shared-sche
 import type { BoardName } from '@boardsesh/shared-schema';
 import type { Angle } from './types';
 import { MOONBOARD_ENABLED, MOONBOARD_ANGLES, MOONBOARD_WIDE_ANGLES } from './moonboard-config';
+import { WOODS_DIFFICULTY_IDS } from '@boardsesh/board-constants/woods';
 import { WOODS_ANGLES } from './woods-config';
 
 type ImageDimensions = Record<
@@ -265,6 +266,13 @@ export const MOONBOARD_MIN_DIFFICULTY_ID = 13; // 5a/V1 (MoonBoard "5+" grade)
 export function getGradesForBoard(boardName: BoardName) {
   if (boardName === 'moonboard') {
     return BOULDER_GRADES.filter((g) => g.difficulty_id >= MOONBOARD_MIN_DIFFICULTY_ID);
+  }
+  if (boardName === 'woods') {
+    // The Woods app grades on a 0-based V scale, and the importer folds each V
+    // band onto the LOWEST shared difficulty id in it, so only 17 of the 24 ids
+    // ever appear on a Woods climb. Offering the whole ladder would put dead
+    // stops on the grade rail and in the filters — a range no climb can match.
+    return BOULDER_GRADES.filter((g) => WOODS_DIFFICULTY_IDS.has(g.difficulty_id));
   }
   return BOULDER_GRADES;
 }

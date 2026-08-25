@@ -15,6 +15,12 @@ const SQUARE_12X12 = 10;
 const SMALL_7X10 = 14;
 const KILTER_SETS = getSetsForLayoutAndSize('kilter', KILTER_LAYOUT, COMMERCIAL_12X14).map((set) => set.id);
 
+// Woods: one layout, one synthetic hold set, two sizes with no product-size rows.
+const WOODS_LAYOUT = 1;
+const WOODS_8X10 = 1;
+const WOODS_12X12 = 2;
+const WOODS_SET = 1;
+
 function ownedBoard(sizeId: number, overrides: Partial<RenderBoardCandidate> = {}): RenderBoardCandidate {
   return {
     boardType: 'kilter',
@@ -227,5 +233,109 @@ describe('getDefaultRenderBoard', () => {
 
   it('returns null for an unknown board', () => {
     expect(getDefaultRenderBoard('not-a-board', 1)).toBeNull();
+  });
+
+  it('gives Woods the 12x12 and its single synthetic hold set', () => {
+    expect(getDefaultRenderBoard('woods', WOODS_LAYOUT)).toEqual({
+      layoutId: WOODS_LAYOUT,
+      sizeId: WOODS_12X12,
+      setIds: [WOODS_SET],
+    });
+    expect(getDefaultRenderBoard('woods', null)).toEqual({
+      layoutId: WOODS_LAYOUT,
+      sizeId: WOODS_12X12,
+      setIds: [WOODS_SET],
+    });
+  });
+});
+
+/**
+ * Woods runs its own ladder: the Aurora product-size tables carry no Woods rows,
+ * so the generic rungs 3 and 4 have nothing to read. Size is the whole point of
+ * it — the 8x10 numbers its holds 0-484 and the 12x12 numbers its own 0-893, so
+ * an 8x10 climb drawn on the 12x12 doesn't fail, it silently draws the wrong
+ * holds.
+ */
+describe('resolveRenderBoard — Woods', () => {
+  function woodsBoard(sizeId: number, overrides: Partial<RenderBoardCandidate> = {}): RenderBoardCandidate {
+    return { boardType: 'woods', layoutId: WOODS_LAYOUT, sizeId, setIds: [WOODS_SET], isOwned: true, ...overrides };
+  }
+
+  it('uses the board the ascent was logged against', () => {
+    expect(
+      resolveRenderBoard({
+        boardType: 'woods',
+        climbLayoutId: WOODS_LAYOUT,
+        compatibleSizeIds: [WOODS_8X10],
+        tickBoard: woodsBoard(WOODS_8X10),
+        ownerBoards: [woodsBoard(WOODS_12X12)],
+      }),
+    ).toEqual({ layoutId: WOODS_LAYOUT, sizeId: WOODS_8X10, setIds: [WOODS_SET] });
+  });
+
+  it('refuses a tick board whose size the climb does not fit', () => {
+    // Unlike the generic rung 1, which trusts the tick board outright: here that
+    // would draw an 8x10 climb on 12x12 art, on holds that mean something else.
+    expect(
+      resolveRenderBoard({
+        boardType: 'woods',
+        climbLayoutId: WOODS_LAYOUT,
+        compatibleSizeIds: [WOODS_8X10],
+        tickBoard: woodsBoard(WOODS_12X12),
+        ownerBoards: [woodsBoard(WOODS_8X10)],
+      })?.sizeId,
+    ).toBe(WOODS_8X10);
+  });
+
+  it('picks the smallest of their own Woods boards the climb fits on', () => {
+    expect(
+      resolveRenderBoard({
+        boardType: 'woods',
+        climbLayoutId: WOODS_LAYOUT,
+        compatibleSizeIds: [WOODS_8X10, WOODS_12X12],
+        ownerBoards: [woodsBoard(WOODS_12X12), woodsBoard(WOODS_8X10)],
+      })?.sizeId,
+    ).toBe(WOODS_8X10);
+  });
+
+  it('prefers an owned board over a followed one of the other size', () => {
+    expect(
+      resolveRenderBoard({
+        boardType: 'woods',
+        climbLayoutId: WOODS_LAYOUT,
+        compatibleSizeIds: [WOODS_8X10, WOODS_12X12],
+        ownerBoards: [woodsBoard(WOODS_8X10, { isOwned: false }), woodsBoard(WOODS_12X12)],
+      })?.sizeId,
+    ).toBe(WOODS_12X12);
+  });
+
+  it('skips a Woods board of theirs the climb does not fit', () => {
+    expect(
+      resolveRenderBoard({
+        boardType: 'woods',
+        climbLayoutId: WOODS_LAYOUT,
+        compatibleSizeIds: [WOODS_8X10],
+        ownerBoards: [woodsBoard(WOODS_12X12)],
+      })?.sizeId,
+    ).toBe(WOODS_8X10);
+  });
+
+  it('falls back to the size the climb is known to fit when they own no Woods board', () => {
+    expect(
+      resolveRenderBoard({
+        boardType: 'woods',
+        climbLayoutId: WOODS_LAYOUT,
+        compatibleSizeIds: [WOODS_8X10],
+        ownerBoards: [ownedBoard(SQUARE_12X12)],
+      }),
+    ).toEqual({ layoutId: WOODS_LAYOUT, sizeId: WOODS_8X10, setIds: [WOODS_SET] });
+  });
+
+  it('falls back to the 12x12 when nothing is known about the climb size', () => {
+    expect(resolveRenderBoard({ boardType: 'woods', climbLayoutId: WOODS_LAYOUT })).toEqual({
+      layoutId: WOODS_LAYOUT,
+      sizeId: WOODS_12X12,
+      setIds: [WOODS_SET],
+    });
   });
 });

@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { WOODS_DIFFICULTY_IDS } from '@boardsesh/board-constants/woods';
+import { BOULDER_GRADES, getGradesForBoard } from '../board-data';
 import {
   WOODS_ROW_LENGTHS,
   WOODS_GEOMETRY,
@@ -203,5 +205,26 @@ describe('getWoodsBoardDetails', () => {
 
   it('throws for an unknown size id', () => {
     expect(() => getWoodsBoardDetails({ size_id: 99 })).toThrow(/Woods board size not found/);
+  });
+});
+
+describe('getGradesForBoard(woods)', () => {
+  it('offers only the 17 difficulty ids a Woods climb can carry', () => {
+    const grades = getGradesForBoard('woods');
+
+    expect(grades).toHaveLength(17);
+    expect(grades.map((grade) => grade.difficulty_id)).toEqual([
+      10, 13, 15, 16, 18, 20, 22, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33,
+    ]);
+    // Every offered grade is a band the importer actually maps a V number onto —
+    // an id in between would be a dead stop on the grade rail.
+    for (const grade of grades) {
+      expect(WOODS_DIFFICULTY_IDS.has(grade.difficulty_id)).toBe(true);
+    }
+  });
+
+  it('leaves the other boards on the full ladder', () => {
+    expect(getGradesForBoard('kilter')).toEqual(BOULDER_GRADES);
+    expect(getGradesForBoard('woods').length).toBeLessThan(BOULDER_GRADES.length);
   });
 });
