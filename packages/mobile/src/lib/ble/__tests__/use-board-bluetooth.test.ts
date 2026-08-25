@@ -131,11 +131,16 @@ import {
   subscribeNativeBleConnected,
 } from '../adapter-factory';
 import { parseBoardTypeFromDeviceName, parseSerialNumber } from '@boardsesh/ble-protocol/aurora';
+// The Woods encoder is left unmocked (unlike MoonBoard's) — it is pure, and the
+// dispatch tests below assert the real ASCII command, so the LED table is read
+// here rather than restated as magic numbers.
+import { WOODS_LED_MAPS } from '@boardsesh/board-constants/woods';
 import {
   bleConnectReportLevel,
   bleWriteDiagnosticsProperties,
   convertToMirroredFramesString,
   dispatchMoonboardPacket,
+  dispatchWoodsPacket,
   moonboardNumRowsForNative,
   resolveWriteSignal,
   useBoardBluetooth,
@@ -3018,6 +3023,117 @@ describe('dispatchMoonboardPacket', () => {
 
     expect(result).toBe(true);
     expect(write).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── dispatchWoodsPacket ─────────────────────────────────────────────────────
+
+describe('dispatchWoodsPacket', () => {
+  // Woods size ids: 1 = 8x10, 2 = 12x12 (WOODS_SIZES).
+  const TWELVE_BY_TWELVE_SIZE_ID = 2;
+  const ledMap = WOODS_LED_MAPS['12x12'];
+  const [litPlacement, litLedIndex] = Object.entries(ledMap)[0];
+  // A placement id far past the top of the table has no LED on either size, so
+  // the encoder skips it as a position miss.
+  const unlitPlacement = 99999;
+
+  const decode = (packet: Uint8Array) => new TextDecoder().decode(packet);
+
+  it('encodes the lit holds and writes the ASCII command bytes', async () => {
+    const write = makeWriteSpy();
+
+    const result = await dispatchWoodsPacket(`p${litPlacement}r2`, TWELVE_BY_TWELVE_SIZE_ID, write);
+
+    expect(result).toEqual({
+      kind: 'sent',
+      size: '12x12',
+      skippedRoleCount: 0,
+      skippedPositionCount: 0,
+      totalPlacements: 1,
+    });
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(decode(write.mock.calls[0][0])).toBe(`${litLedIndex},2,!`);
+  });
+
+  it('writes the bare `,!` clear command and reports it as a clear for empty frames', async () => {
+    const write = makeWriteSpy();
+
+    const result = await dispatchWoodsPacket('', TWELVE_BY_TWELVE_SIZE_ID, write);
+
+    // 'cleared' is what tells the hook this was a deliberate wall-clear rather
+    // than a climb send, so only a user-initiated clear is counted as one.
+    expect(result).toEqual({
+      kind: 'cleared',
+      size: '12x12',
+      skippedRoleCount: 0,
+      skippedPositionCount: 0,
+      totalPlacements: 0,
+    });
+    expect(decode(write.mock.calls[0][0])).toBe(',!');
+  });
+
+  it('forwards the AbortSignal to write()', async () => {
+    const write = makeWriteSpy();
+    const controller = new AbortController();
+
+    await dispatchWoodsPacket(`p${litPlacement}r4`, TWELVE_BY_TWELVE_SIZE_ID, write, controller.signal);
+
+    expect(write.mock.calls[0][1]).toBe(controller.signal);
+  });
+
+  it('returns unknown_size and never writes when the size id maps to no LED table', async () => {
+    const write = makeWriteSpy();
+
+    const result = await dispatchWoodsPacket(`p${litPlacement}r2`, 99, write);
+
+    expect(result).toEqual({ kind: 'unknown_size' });
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('returns incompatible and never writes when every placement is skipped (board would go dark)', async () => {
+    // Woods encodes "clear" as an empty hold list, so a climb whose holds all
+    // miss the LED table produces the same bare `,!` — writing it would silently
+    // dark the wall while the send reported success.
+    const write = makeWriteSpy();
+
+    const result = await dispatchWoodsPacket(
+      `p${unlitPlacement}r2p${unlitPlacement}r4`,
+      TWELVE_BY_TWELVE_SIZE_ID,
+      write,
+    );
+
+    expect(result).toEqual({ kind: 'incompatible' });
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('returns incompatible for a frames string whose every role is unrecognised', async () => {
+    const write = makeWriteSpy();
+
+    const result = await dispatchWoodsPacket(`p${litPlacement}r99`, TWELVE_BY_TWELVE_SIZE_ID, write);
+
+    expect(result).toEqual({ kind: 'incompatible' });
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('writes and reports the skip counts when only some placements are skipped', async () => {
+    // A partial miss still lights what it can — the counts are what the hook
+    // reports to Sentry so a wall missing two holds is diagnosable from the field.
+    const write = makeWriteSpy();
+
+    const result = await dispatchWoodsPacket(
+      `p${litPlacement}r2p${unlitPlacement}r2p${litPlacement}r99`,
+      TWELVE_BY_TWELVE_SIZE_ID,
+      write,
+    );
+
+    expect(result).toEqual({
+      kind: 'sent',
+      size: '12x12',
+      skippedRoleCount: 1,
+      skippedPositionCount: 1,
+      totalPlacements: 3,
+    });
+    expect(decode(write.mock.calls[0][0])).toBe(`${litLedIndex},2,!`);
   });
 });
 

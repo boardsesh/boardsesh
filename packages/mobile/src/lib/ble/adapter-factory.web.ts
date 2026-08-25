@@ -7,15 +7,17 @@ import { WebBluetoothAdapter } from './web-adapter';
 // navigator.bluetooth.requestDevice, so the RN device-picker callback (used by
 // the native adapters to drive an in-app scan UI) is unused on web.
 //
-// `options` is accepted for signature parity and ignored: Web Bluetooth picks
-// the write type itself from the characteristic's properties, and the only
-// board that asks for acknowledged writes (Woods) has no web encoder anyway.
+// `options` is NOT ignored: `preferWriteWithResponse` is a firmware fact, not a
+// platform one. A board that only acknowledges written chunks (Woods, protocol
+// spec §8) still advertises write-without-response, so leaving Web Bluetooth to
+// pick the write type from the characteristic's properties would send every
+// chunk unacknowledged and leave the wall dark with no error to show for it.
 export function createBluetoothAdapter(
   _devicePicker: DevicePickerFn,
   scanFamily: BoardScanFamily,
-  _options?: BleAdapterOptions,
+  options?: BleAdapterOptions,
 ): BluetoothAdapter {
-  return new WebBluetoothAdapter(scanFamily);
+  return new WebBluetoothAdapter(scanFamily, options);
 }
 
 export function isNativeIosBleAdapter(_adapter: BluetoothAdapter): _adapter is NativeIosBleAdapter {

@@ -20,7 +20,7 @@ import {
   type WebBluetoothDevice,
   type WebBluetoothRemoteGATTCharacteristic,
 } from '@boardsesh/ble-protocol/web-transport';
-import type { BleConnection, BluetoothAdapter, BoardScanFamily } from './types';
+import type { BleAdapterOptions, BleConnection, BluetoothAdapter, BoardScanFamily } from './types';
 
 export { isWebBluetoothAvailable, requestDeviceOptionsForFamily };
 
@@ -34,7 +34,13 @@ export class WebBluetoothAdapter implements BluetoothAdapter {
   // we mirror that by queuing every write behind the previous one.
   private writeQueue: Promise<void> = Promise.resolve();
 
-  constructor(private readonly scanFamily: BoardScanFamily) {}
+  // Transport preferences from the board in view. Only `preferWriteWithResponse`
+  // means anything to a browser transport: Web Bluetooth otherwise picks the
+  // write type from the characteristic's own properties.
+  constructor(
+    private readonly scanFamily: BoardScanFamily,
+    private readonly options?: BleAdapterOptions,
+  ) {}
 
   isAvailable(): Promise<boolean> {
     return Promise.resolve(isWebBluetoothAvailable());
@@ -113,10 +119,15 @@ export class WebBluetoothAdapter implements BluetoothAdapter {
       throw new Error('Not connected');
     }
     const messages = splitMessages(data);
-    // MoonBoard may choose write-with-response up front for the RedBearLab box;
-    // Aurora starts without-response and only retries with-response when Web
-    // Bluetooth rejects the write as unsupported by this characteristic.
+    // A board that demands acknowledged writes (Woods, protocol spec §8) takes
+    // writeValueWithResponse for every chunk — its characteristic advertises
+    // write-without-response, so nothing the browser reports would reveal that
+    // the firmware drops those. Otherwise: MoonBoard may choose
+    // write-with-response up front for the RedBearLab box, and Aurora starts
+    // without-response and only retries with-response when Web Bluetooth
+    // rejects the write as unsupported by this characteristic.
     await writeCharacteristicSeries(characteristic, messages, signal, {
+      forceWithResponse: this.options?.preferWriteWithResponse ?? false,
       allowWithResponseFallback: this.scanFamily === 'moonboard',
       allowUnsupportedWithResponseRetry: this.scanFamily !== 'moonboard',
     });

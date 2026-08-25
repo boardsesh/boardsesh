@@ -10,7 +10,7 @@ import {
   type LedColorOverrides,
 } from '@boardsesh/ble-protocol/aurora';
 import { getMoonboardBluetoothPacket, isMoonboardDeviceName } from '@boardsesh/ble-protocol/moonboard';
-import { getWoodsBluetoothPacket, isWoodsDeviceName } from '@boardsesh/ble-protocol/woods';
+import { getWoodsBluetoothPacket, isWoodsDeviceName, type WoodsBoardSize } from '@boardsesh/ble-protocol/woods';
 import { getBoardCapabilities, getMoonBoardGeometryByLayoutId, woodsSizeIdToDimension } from '@boardsesh/board-config';
 import {
   blePlxErrorCodes,
@@ -134,6 +134,65 @@ export async function dispatchMoonboardPacket(
   }
   await write(packet, signal);
   return true;
+}
+
+/**
+ * Outcome of a Woods send. The hook maps each case onto the user-facing
+ * behaviour (alert, analytics, error report) — everything here is encode + write.
+ */
+export type WoodsDispatchResult =
+  /** `sizeId` maps to no Woods LED table, so nothing could be encoded. */
+  | { kind: 'unknown_size' }
+  /**
+   * A climb send whose every placement was skipped. Woods encodes "clear" as an
+   * empty hold list, so writing that packet would silently dark the wall while
+   * the caller reported success — refuse it the way the MoonBoard branch does.
+   */
+  | { kind: 'incompatible' }
+  /**
+   * Written. `cleared` marks the deliberate clear (empty frames, the bare `,!`);
+   * the counts are the encoder's own, and a non-zero skip means the climb's
+   * frames disagree with the board's LED table — the wall still lights what it
+   * can, so that is a report, not a failure.
+   */
+  | {
+      kind: 'sent' | 'cleared';
+      size: WoodsBoardSize;
+      skippedRoleCount: number;
+      skippedPositionCount: number;
+      totalPlacements: number;
+    };
+
+/**
+ * Encode a Woods climb and write it, mirroring `dispatchMoonboardPacket`: the
+ * packet building and the board-darking guard live here, the reporting stays with
+ * the caller (which owns `t`, `track` and the board analytics properties).
+ */
+export async function dispatchWoodsPacket(
+  frames: string,
+  sizeId: number,
+  write: BluetoothAdapter['write'],
+  signal?: AbortSignal,
+): Promise<WoodsDispatchResult> {
+  const size = woodsSizeIdToDimension(sizeId);
+  if (!size) return { kind: 'unknown_size' };
+
+  // Woods encodes "clear" as an empty hold list (a bare `,!`), so empty frames
+  // flow through the same path.
+  const { packet, skippedRoleCount, skippedPositionCount, totalPlacements } = getWoodsBluetoothPacket(frames, size);
+  const skipped = skippedRoleCount + skippedPositionCount;
+  if (frames !== '' && totalPlacements > 0 && skipped === totalPlacements) {
+    return { kind: 'incompatible' };
+  }
+
+  await write(packet, signal);
+  return {
+    kind: frames === '' ? 'cleared' : 'sent',
+    size,
+    skippedRoleCount,
+    skippedPositionCount,
+    totalPlacements,
+  };
 }
 
 // MoonBoard grid rows for the native configureBoard payload, so native
@@ -846,8 +905,14 @@ export function useBoardBluetooth({
           }
 
           if (boardName === 'woods') {
-            const woodsSize = woodsSizeIdToDimension(sizeId);
-            if (!woodsSize) {
+            const woodsResult = await dispatchWoodsPacket(
+              frames,
+              sizeId,
+              adapterRef.current.write.bind(adapterRef.current),
+              combinedSignal,
+            );
+
+            if (woodsResult.kind === 'unknown_size') {
               console.error(`[BLE] Unknown Woods board size_id ${sizeId}; cannot map to an LED table.`);
               Alert.alert(t('ble.sendFailedTitle'), t('ble.errorLedMissing'));
               track(SHARED_EVENTS.ClimbSentToBoardFailure, {
@@ -857,11 +922,7 @@ export function useBoardBluetooth({
               return false;
             }
 
-            // Woods encodes "clear" as an empty hold list (a bare `,!`), so empty
-            // frames flow through the same path.
-            const woodsResult = getWoodsBluetoothPacket(frames, woodsSize);
-            const woodsSkipped = woodsResult.skippedRoleCount + woodsResult.skippedPositionCount;
-            if (frames !== '' && woodsResult.totalPlacements > 0 && woodsSkipped === woodsResult.totalPlacements) {
+            if (woodsResult.kind === 'incompatible') {
               console.warn('[BLE] All Woods placements skipped — climb has unrecognised hold data');
               Alert.alert(t('ble.sendFailedTitle'), t('ble.errorIncompatible'));
               track(SHARED_EVENTS.ClimbSentToBoardFailure, {
@@ -878,10 +939,11 @@ export function useBoardBluetooth({
             // Record them so a real wall reporting "two holds missing" is
             // diagnosable from the field. Matches the web MoonBoard branch's
             // partial-skip report.
+            const woodsSkipped = woodsResult.skippedRoleCount + woodsResult.skippedPositionCount;
             if (woodsSkipped > 0) {
               reportHandledError(
                 new Error(
-                  `[BLE] ${woodsSkipped} of ${woodsResult.totalPlacements} Woods placements skipped (${woodsSize})`,
+                  `[BLE] ${woodsSkipped} of ${woodsResult.totalPlacements} Woods placements skipped (${woodsResult.size})`,
                 ),
                 {
                   level: 'warning',
@@ -895,8 +957,7 @@ export function useBoardBluetooth({
               );
             }
 
-            await adapterRef.current.write(woodsResult.packet, combinedSignal);
-            if (frames === '') {
+            if (woodsResult.kind === 'cleared') {
               // The bare `,!` just cleared the wall. Only a user-initiated clear
               // counts as one; an auto-sent empty climb darks the board without
               // being a clear action (MoonBoard/Aurora parity above).
