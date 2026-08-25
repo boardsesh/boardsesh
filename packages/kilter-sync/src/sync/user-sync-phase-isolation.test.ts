@@ -120,6 +120,9 @@ function createDb(failPhase: 'ratings' | 'circuits' | 'none') {
           return Object.assign(Promise.resolve(rows), {
             where: () => Object.assign(Promise.resolve(rows), { orderBy: () => Promise.resolve(rows) }),
             leftJoin: () => ({ where: () => Promise.resolve(rows) }),
+            // applyCircuits' legacy-playlist adoption lookup (#4707) joins
+            // playlist_ownership before filtering.
+            innerJoin: () => ({ where: () => Promise.resolve(rows) }),
             orderBy: () => Promise.resolve(rows),
           });
         },
@@ -135,7 +138,11 @@ function createDb(failPhase: 'ratings' | 'circuits' | 'none') {
       },
       update: (table: unknown) => {
         observe(table);
-        return { set: () => ({ where: () => Promise.resolve() }) };
+        return {
+          set: () => ({
+            where: () => Object.assign(Promise.resolve(), { returning: () => Promise.resolve([{ id: BigInt(1) }]) }),
+          }),
+        };
       },
       delete: (table: unknown) => {
         observe(table);

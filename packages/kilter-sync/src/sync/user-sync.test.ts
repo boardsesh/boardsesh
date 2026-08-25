@@ -1052,7 +1052,13 @@ import {
  * connection, so query-shape assertions need no database.
  */
 const renderOnlyDb = drizzle({} as never);
-import { applyCircuits, applyClimbRatings, parseKilterTimestamp, sanitizeKilterRating } from './user-sync';
+import {
+  adoptableLegacyPlaylistsQuery,
+  applyCircuits,
+  applyClimbRatings,
+  parseKilterTimestamp,
+  sanitizeKilterRating,
+} from './user-sync';
 
 describe('parseKilterTimestamp', () => {
   it('keeps the instant of a Z-suffixed UTC string', () => {
@@ -1111,11 +1117,23 @@ type ChainTx = {
  * next array, defaulting to a single autoincrement-ish row.
  */
 function createRichTx(
-  opts: { selectResults?: SelectResult[]; returningRows?: Array<Array<Record<string, unknown>>> } = {},
+  opts: {
+    selectResults?: SelectResult[];
+    returningRows?: Array<Array<Record<string, unknown>>>;
+    /**
+     * Queue for `update(...).set(...).where(...).returning(...)` — the legacy
+     * playlist adoption in applyCircuits (#4707). Kept separate from
+     * `returningRows` so an adoption can't silently eat an insert's row (or
+     * vice versa) and quietly change what a test is asserting.
+     */
+    updateReturningRows?: Array<Array<Record<string, unknown>>>;
+  } = {},
 ): ChainTx {
   const calls: CallRecord[] = [];
   const selectResults = opts.selectResults ?? [];
   const returningQueue = opts.returningRows ?? [];
+  const updateReturningQueue = opts.updateReturningRows ?? [];
+  let updateReturningIdx = 0;
   let selectIdx = 0;
   let returningIdx = 0;
   const insertValues: Array<Array<Record<string, unknown>>> = [];
@@ -1159,7 +1177,12 @@ function createRichTx(
         set: (setValues: Record<string, unknown>) => ({
           where: (_cond: unknown) => {
             calls.push({ kind: 'update', args: [setValues, _cond] });
-            return Promise.resolve();
+            // Awaitable on its own (the ratings soft-detach) AND carrying
+            // .returning() (the circuits adoption).
+            return Object.assign(Promise.resolve(), {
+              returning: (_cols?: unknown) =>
+                Promise.resolve(updateReturningQueue[updateReturningIdx++] ?? [{ id: BigInt(1) }]),
+            });
           },
         }),
       };
@@ -2031,5 +2054,360 @@ describe('applyCircuits — foreign-owner guard (#3526)', () => {
     expect(writeCalls(calls)).toHaveLength(0);
     expect(result.skippedForeignCircuits).toBe(1);
     expect(logged[0]).toContain('already owned by a different Boardsesh user');
+  });
+});
+
+/**
+ * #4707: "the re activation of kilter sync made duplicates of all kilter
+ * playlists". Kilter used to be an ordinary Aurora board, so a pre-split
+ * circuit already lives in `playlists` keyed on `aurora_id` with `kilter_id`
+ * still NULL — and Postgres treats NULLs as distinct in a unique index, so
+ * `ON CONFLICT (kilter_id)` could never match it. Every legacy circuit got a
+ * second row carrying Kilter's stale content, stamped created_at = today.
+ */
+describe('applyCircuits — legacy playlist adoption (#4707)', () => {
+  /** Rows a playlist INSERT would carry (the ownership insert has `role`). */
+  const playlistInserts = (calls: CallRecord[]) =>
+    calls.filter((c) => {
+      if (c.kind !== 'insert') return false;
+      const arg = c.args[0];
+      const rows = Array.isArray(arg) ? arg : [arg];
+      return (rows as Array<Record<string, unknown>>).some((r) => 'kilterType' in r);
+    });
+
+  it('stamps the surrogate keys onto the legacy row instead of inserting a twin (tier 1: aurora_id)', async () => {
+    const { tx, calls } = createRichTx({
+      // #1 owner lookup: nothing holds this kilter_id yet → 'adopt'.
+      // #2 adoption candidates: the pre-split row, aurora_id === circuit uuid.
+      selectResults: [[], [{ id: BigInt(7), auroraId: 'circuit-1', name: 'Warmups' }]],
+      updateReturningRows: [[{ id: BigInt(7) }]],
+    });
+
+    await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Warmups' })],
+      [makeCircuitClimbPutOp({ circuit_uuid: 'circuit-1', climb_uuid: 'climb-A', position: 0 })],
+      aliasCacheFor(['climb-A']),
+    );
+
+    const updates = calls.filter((c) => c.kind === 'update');
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.args[0]).toMatchObject({ kilterId: 'circuit-1', kilterType: 'circuits' });
+    // The bug itself: no second playlist row.
+    expect(playlistInserts(calls)).toHaveLength(0);
+  });
+
+  it('leaves the user’s Boardsesh-side content alone on the adoption cycle (option B)', async () => {
+    // Circuit push-back is stubbed (#3525), so edits the user made in Boardsesh
+    // since the original import are the ONLY copy that exists. Adoption links
+    // the rows; it must not replace name/description/is_public/color, and must
+    // not wipe and re-insert playlist_climbs.
+    const { tx, calls } = createRichTx({
+      selectResults: [[], [{ id: BigInt(7), auroraId: 'circuit-1', name: 'Warmups' }]],
+      updateReturningRows: [[{ id: BigInt(7) }]],
+    });
+
+    await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Renamed On Kilter', color: '#aB3' })],
+      [makeCircuitClimbPutOp({ circuit_uuid: 'circuit-1', climb_uuid: 'climb-A', position: 0 })],
+      aliasCacheFor(['climb-A']),
+    );
+
+    const setValues = calls.find((c) => c.kind === 'update')?.args[0] as Record<string, unknown>;
+    expect(Object.keys(setValues).sort()).toEqual(['kilterId', 'kilterSyncedAt', 'kilterType']);
+    // No climbs wipe, and no climbs re-insert.
+    expect(calls.filter((c) => c.kind === 'delete')).toHaveLength(0);
+    const climbInserts = calls.filter((c) => {
+      if (c.kind !== 'insert') return false;
+      const arg = c.args[0];
+      const rows = Array.isArray(arg) ? arg : [arg];
+      return (rows as Array<Record<string, unknown>>).some((r) => 'climbUuid' in r);
+    });
+    expect(climbInserts).toHaveLength(0);
+  });
+
+  it('adopts on the normalized name when a JSON import rotated the upstream id (tier 2)', async () => {
+    const { tx, calls } = createRichTx({
+      selectResults: [[], [{ id: BigInt(11), auroraId: 'json-import-9f2c', name: ' Warmups ' }]],
+      updateReturningRows: [[{ id: BigInt(11) }]],
+    });
+
+    await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'warmups' })],
+      [],
+      new Map(),
+    );
+
+    expect(calls.filter((c) => c.kind === 'update')).toHaveLength(1);
+    expect(playlistInserts(calls)).toHaveLength(0);
+  });
+
+  it('inserts rather than guessing when two candidates share a normalized name', async () => {
+    const { tx, calls } = createRichTx({
+      selectResults: [
+        [],
+        [
+          { id: BigInt(11), auroraId: 'json-import-a', name: 'Warmups' },
+          { id: BigInt(12), auroraId: 'json-import-b', name: 'warmups' },
+        ],
+      ],
+      returningRows: [[{ id: BigInt(99) }]],
+    });
+
+    await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Warmups' })],
+      [],
+      new Map(),
+    );
+
+    expect(calls.filter((c) => c.kind === 'update')).toHaveLength(0);
+    expect(playlistInserts(calls)).toHaveLength(1);
+  });
+
+  it('inserts rather than guessing when two incoming circuits share a name', async () => {
+    const { tx, calls } = createRichTx({
+      selectResults: [[], [{ id: BigInt(11), auroraId: 'json-import-a', name: 'Warmups' }], [], []],
+      returningRows: [[{ id: BigInt(98) }], [{ id: BigInt(99) }]],
+    });
+
+    await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [
+        makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Warmups' }),
+        makeCircuitPutOp({ circuit_uuid: 'circuit-2', name: 'warmups' }),
+      ],
+      [],
+      new Map(),
+    );
+
+    expect(calls.filter((c) => c.kind === 'update')).toHaveLength(0);
+    expect(playlistInserts(calls)).toHaveLength(2);
+  });
+
+  it('lets only ONE circuit in a batch adopt a given legacy row', async () => {
+    // circuit-1 matches the row on aurora_id; circuit-2 matches the SAME row on
+    // its name. Whoever gets there first consumes it; the other inserts.
+    const { tx, calls } = createRichTx({
+      selectResults: [[], [{ id: BigInt(7), auroraId: 'circuit-1', name: 'Warmups' }], []],
+      updateReturningRows: [[{ id: BigInt(7) }]],
+      returningRows: [[{ id: BigInt(99) }]],
+    });
+
+    await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [
+        makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Projects' }),
+        makeCircuitPutOp({ circuit_uuid: 'circuit-2', name: 'Warmups' }),
+      ],
+      [],
+      new Map(),
+    );
+
+    expect(calls.filter((c) => c.kind === 'update')).toHaveLength(1);
+    expect(playlistInserts(calls)).toHaveLength(1);
+  });
+
+  it('falls back to the insert path when the guarded UPDATE loses the race', async () => {
+    // Someone claimed the row between the candidate SELECT and the UPDATE, so
+    // the statement-time re-check matched nothing. Worst case is the duplicate
+    // we already had — never a dropped playlist.
+    const { tx, calls } = createRichTx({
+      selectResults: [[], [{ id: BigInt(7), auroraId: 'circuit-1', name: 'Warmups' }], []],
+      updateReturningRows: [[]],
+      returningRows: [[{ id: BigInt(99) }]],
+    });
+
+    await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Warmups' })],
+      [makeCircuitClimbPutOp({ circuit_uuid: 'circuit-1', climb_uuid: 'climb-A', position: 0 })],
+      aliasCacheFor(['climb-A']),
+    );
+
+    expect(calls.filter((c) => c.kind === 'update')).toHaveLength(1);
+    expect(playlistInserts(calls)).toHaveLength(1);
+    // The rest of the op still ran against the inserted row.
+    const ownershipInsert = calls.find((c) => {
+      if (c.kind !== 'insert') return false;
+      const arg = c.args[0];
+      const rows = Array.isArray(arg) ? arg : [arg];
+      return (rows as Array<Record<string, unknown>>).some((r) => 'role' in r);
+    });
+    expect(ownershipInsert).toBeDefined();
+  });
+
+  it('does not look for candidates — or adopt — once the row is linked', async () => {
+    // The idempotency the issue is really about: cycle two resolves 'own', so
+    // there is no candidate lookup and no UPDATE, only the ordinary upsert.
+    const { tx, calls } = createRichTx({
+      selectResults: [[{ upstreamId: 'circuit-1', ownerUserId: 'user-1' }], []],
+      returningRows: [[{ id: BigInt(7) }]],
+    });
+
+    await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Warmups' })],
+      [],
+      new Map(),
+    );
+
+    expect(calls.filter((c) => c.kind === 'update')).toHaveLength(0);
+    // Exactly two selects: the owner lookup and the playlist_climbs read. A
+    // third would mean the candidate lookup ran for an already-linked circuit.
+    expect(calls.filter((c) => c.kind === 'select')).toHaveLength(2);
+  });
+
+  it('never adopts a playlist owned by another Boardsesh user', async () => {
+    const { tx, calls } = createRichTx({
+      selectResults: [[{ upstreamId: 'circuit-1', ownerUserId: 'user-2' }]],
+      updateReturningRows: [[{ id: BigInt(7) }]],
+    });
+
+    const result = await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Warmups' })],
+      [],
+      new Map(),
+      () => {},
+    );
+
+    expect(calls.filter((c) => c.kind === 'update')).toHaveLength(0);
+    expect(calls.filter((c) => c.kind === 'select')).toHaveLength(1);
+    expect(result.skippedForeignCircuits).toBe(1);
+  });
+
+  it('renders the candidate lookup so a Boardsesh-native playlist can never be adopted', () => {
+    // The stub transaction ignores SQL, so without rendering the real query the
+    // load-bearing half of the tier-2 heuristic — `aurora_id IS NOT NULL`, which
+    // is what stops a hand-built Boardsesh playlist being swallowed by a
+    // same-named Kilter circuit — would have no coverage at all.
+    const rendered = adoptableLegacyPlaylistsQuery(renderOnlyDb as never, 'user-1', ['circuit-1'], ['warmups']).toSQL();
+
+    expect(rendered.sql).toContain('from "playlists"');
+    expect(rendered.sql).toContain('inner join "playlist_ownership"');
+    expect(rendered.sql).toContain('"playlists"."kilter_id" is null');
+    expect(rendered.sql).toContain('"playlists"."aurora_id" is not null');
+    expect(rendered.sql).toContain('lower(btrim("playlists"."name"))');
+    // Sole ownership: mine, and nobody else's.
+    expect(rendered.sql).toContain('not exists');
+    expect(rendered.params).toContain('user-1');
+    expect(rendered.params).toContain('owner');
+    expect(rendered.params).toContain('circuit-1');
+    expect(rendered.params).toContain('warmups');
+  });
+
+  it('renders the guarded adoption UPDATE as sole-ownership plus an unclaimed row', async () => {
+    const { tx, calls } = createRichTx({
+      selectResults: [[], [{ id: BigInt(7), auroraId: 'circuit-1', name: 'Warmups' }]],
+      updateReturningRows: [[{ id: BigInt(7) }]],
+    });
+
+    await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Warmups' })],
+      [],
+      new Map(),
+    );
+
+    const condition = calls.find((c) => c.kind === 'update')?.args[1];
+    const rendered = new PgDialect().sqlToQuery(condition as never);
+    expect(rendered.sql).toContain('"playlists"."kilter_id" is null');
+    expect(rendered.sql).toContain('exists');
+    expect(rendered.sql).toContain('not exists');
+    expect(rendered.sql).toContain('"playlist_ownership"."user_id" <>');
+    expect(rendered.params.filter((param) => param === 'user-1')).toHaveLength(2);
+  });
+
+  it('carries the legacy upstream content marker into kilter_synced_at, not now()', async () => {
+    // Stamping now() would claim a content sync that never happened and make
+    // the edit-clobber guard read "no local edits" — the next cycle would then
+    // overwrite exactly the edits this adoption preserved.
+    const { tx, calls } = createRichTx({
+      selectResults: [[], [{ id: BigInt(7), auroraId: 'circuit-1', name: 'Warmups' }]],
+      updateReturningRows: [[{ id: BigInt(7) }]],
+    });
+
+    await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Warmups' })],
+      [],
+      new Map(),
+    );
+
+    const setValues = calls.find((c) => c.kind === 'update')?.args[0] as Record<string, unknown>;
+    expect(setValues.kilterSyncedAt).not.toBeInstanceOf(Date);
+    const rendered = new PgDialect().sqlToQuery(setValues.kilterSyncedAt as never);
+    expect(rendered.sql).toContain('COALESCE');
+    expect(rendered.sql).toContain('"aurora_synced_at"');
+    expect(rendered.sql).toContain('"created_at"');
+  });
+
+  it('guards the ON CONFLICT overwrite against a Boardsesh-side edit', async () => {
+    // The other half of option B: once the row is linked, a playlist the user
+    // edited in Boardsesh since Kilter content last landed must not be stomped
+    // by Kilter's stale snapshot on the next cycle.
+    const { tx, calls } = createRichTx({
+      selectResults: [[], []],
+      returningRows: [[{ id: BigInt(99) }]],
+    });
+
+    await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Liked Climbs' })],
+      [],
+      new Map(),
+    );
+
+    const conflictClause = calls.find((c) => c.kind === 'conflict')?.args[0] as
+      | { setWhere?: unknown; set?: Record<string, unknown> }
+      | undefined;
+    const rendered = new PgDialect().sqlToQuery(conflictClause?.setWhere as never);
+    expect(rendered.sql).toContain('"playlists"."updated_at" <= COALESCE');
+    expect(rendered.sql).toContain('"playlists"."kilter_synced_at"');
+    // Still carries the foreign-owner guard it is ANDed with.
+    expect(rendered.sql).toContain('not exists');
+    // Both columns move together on the DO UPDATE, or the next cycle reads the
+    // sync's own write as a user edit and freezes the playlist.
+    expect(conflictClause?.set?.updatedAt).toEqual(conflictClause?.set?.kilterSyncedAt);
+  });
+
+  it('stamps updated_at from the same clock as kilter_synced_at on a fresh insert', async () => {
+    // Letting `updated_at` fall back to the column default would make it
+    // Postgres' now(), microseconds AFTER the JS `kilter_synced_at` — which the
+    // edit-clobber guard reads as a local edit, freezing every brand-new
+    // playlist against Kilter from its second cycle onwards.
+    const { tx, insertValues } = createRichTx({
+      selectResults: [[], []],
+      returningRows: [[{ id: BigInt(99) }]],
+    });
+
+    await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Liked Climbs' })],
+      [],
+      new Map(),
+    );
+
+    const playlistInsert = insertValues
+      .flatMap((rows) => (Array.isArray(rows) ? rows : [rows]))
+      .find((row) => 'kilterType' in row);
+    expect(playlistInsert?.updatedAt).toBeInstanceOf(Date);
+    expect(playlistInsert?.updatedAt).toEqual(playlistInsert?.kilterSyncedAt);
   });
 });
