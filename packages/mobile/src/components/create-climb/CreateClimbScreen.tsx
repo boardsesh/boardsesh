@@ -74,10 +74,11 @@ export function CreateClimbScreen({
   // Toast AFTER the pop, not before: the toast overlay is a root-level JS View
   // that renders behind any native sheet (see toast-provider), so firing it while
   // the drawer is still up shows nothing.
+  const { notifyDraftKeptOnDismiss } = controller;
   const handleClose = useCallback(() => {
     router.back();
-    controller.notifyDraftKeptOnDismiss();
-  }, [router, controller]);
+    notifyDraftKeptOnDismiss();
+  }, [router, notifyDraftKeptOnDismiss]);
 
   const handleLongPress = useCallback((holdId: number) => setLongPressHoldId(holdId), []);
   const closeHoldRole = useCallback(() => setLongPressHoldId(null), []);
