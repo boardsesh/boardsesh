@@ -4,13 +4,20 @@ import { fileURLToPath } from 'url';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { sql } from 'drizzle-orm';
-import { boardClimbs, boardClimbStats, boardClimbHolds, boardDifficultyGrades } from '../src/schema/boards/unified.js';
+import {
+  boardClimbs,
+  boardClimbStats,
+  boardClimbHolds,
+  boardClimbAliases,
+  boardDifficultyGrades,
+} from '../src/schema/boards/unified.js';
 import {
   mapWoodsProblemToClimb,
   woodsGradeRows,
   WOODS_REQUIRED_SET_IDS,
   type WoodsCatalogFile,
 } from './woods-catalog-helpers.js';
+import { assertWoodsImportAllowed } from './woods-import-guard.js';
 import { getScriptDatabaseUrl } from './db-connection.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -28,11 +35,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // for the ascent count (never shrink it). board_difficulty_grades is seeded once.
 //
 // The catalog files are not committed. Point the script at a local checkout of
-// the woodsboard-scraper catalog directory (defaults to a sibling checkout):
-//   DB_URL=<target> tsx scripts/import-woods-catalog.ts "/path/to/catalog"
+// the woodsboard-scraper catalog directory — as a positional argument, or via
+// WOODS_CATALOG_DIR, or leave both off to fall back to a sibling checkout
+// (../../woodsboard-scraper/catalog relative to the repo root):
+//   DB_URL=<target> tsx scripts/import-woods-catalog.ts /path/to/catalog
 //   DB_URL=<target> WOODS_CATALOG_DIR=/path/to/catalog tsx scripts/import-woods-catalog.ts
-// (DB_URL must be set inline — it beats the dev-db .env override and is how you
-// target prod vs local.)
+//   DB_URL=<target> vp run db:import-woods-catalog -- /path/to/catalog
+// Relative paths resolve against the current working directory. The positional
+// argument wins over WOODS_CATALOG_DIR, which wins over the sibling default.
+//
+// DB_URL must be set inline — it beats the dev-db .env override and is how you
+// target prod vs local. A non-local host also needs WOODS_IMPORT_ALLOW_REMOTE=1
+// (see woods-import-guard.ts): the run rewrites the whole catalog, so pointing it
+// at prod has to be deliberate rather than whatever DB_URL the shell carried in.
 // =============================================================================
 
 // Sibling checkout of boardsesh/woodsboard-scraper (../../../../ from scripts/:
@@ -54,6 +69,7 @@ async function importWoodsCatalog() {
   if (!fs.existsSync(catalogDir) || !fs.statSync(catalogDir).isDirectory()) {
     console.error(`❌ Catalog directory not found: ${catalogDir}`);
     console.error('   Usage: DB_URL=<target> tsx scripts/import-woods-catalog.ts [/path/to/catalog]');
+    console.error('   (or set WOODS_CATALOG_DIR instead of passing a path)');
     process.exit(1);
   }
 
@@ -69,12 +85,22 @@ async function importWoodsCatalog() {
   const databaseUrl = getScriptDatabaseUrl();
   const dbHost = databaseUrl.split('@')[1]?.split('/')[0] || 'unknown';
   console.info(`🔄 Importing Woods catalog to: ${dbHost}`);
+  assertWoodsImportAllowed(databaseUrl, 'import-woods-catalog.ts');
   console.info(`📂 Reading catalog from: ${catalogDir} (${files.length} files)`);
 
   const client = postgres(databaseUrl, { max: 1 });
   const db = drizzle(client);
 
-  const totals = { climbs: 0, stats: 0, holds: 0, skippedProblems: 0 };
+  const totals = {
+    climbs: 0,
+    stats: 0,
+    holds: 0,
+    aliases: 0,
+    skippedProblems: 0,
+    duplicateProblems: 0,
+    clampedGrades: 0,
+    unmappedGrades: 0,
+  };
 
   try {
     // Seed the grade scale once (idempotent upsert).
@@ -104,8 +130,12 @@ async function importWoodsCatalog() {
       const climbByUuid = new Map<string, typeof boardClimbs.$inferInsert>();
       const statsByKey = new Map<string, typeof boardClimbStats.$inferInsert>();
       const holdsByKey = new Map<string, typeof boardClimbHolds.$inferInsert>();
+      const aliasByUuid = new Map<string, typeof boardClimbAliases.$inferInsert>();
       let mappedCount = 0;
       let skippedProblems = 0;
+      let duplicateProblems = 0;
+      let clampedGrades = 0;
+      let unmappedGrades = 0;
 
       for (const problem of dump.problems) {
         const mapped = mapWoodsProblemToClimb(problem);
@@ -114,6 +144,15 @@ async function importWoodsCatalog() {
           continue;
         }
         mappedCount++;
+        if (mapped.difficultyClamped) clampedGrades++;
+        if (mapped.difficulty === null) unmappedGrades++;
+
+        const statsKey = `${mapped.uuid}:${mapped.angle}`;
+        // Two catalog problems that agree on name|author|holds AND angle are the
+        // same climb listed twice — they collapse onto one row here (last wins).
+        // Counted so the "problems in the files" vs "climbs in the database" gap
+        // is visible in the summary instead of looking like dropped data.
+        if (statsByKey.has(statsKey)) duplicateProblems++;
 
         climbByUuid.set(mapped.uuid, {
           uuid: mapped.uuid,
@@ -122,6 +161,9 @@ async function importWoodsCatalog() {
           setterId: null,
           setterUsername: mapped.setterUsername,
           name: mapped.name,
+          // `notes` is '' on every row of the catalog as of 2026-08, so there is
+          // nothing to carry across; '' rather than NULL matches how every other
+          // importer writes a description-less climb.
           description: '',
           hsm: null,
           edgeLeft: null,
@@ -133,6 +175,9 @@ async function importWoodsCatalog() {
           framesPace: 0,
           frames: mapped.frames,
           isDraft: false,
+          // Projects are listed on purpose: a Woods "project" is a problem nobody
+          // has sent yet, not a hidden or unfinished draft. The app shows them and
+          // ~1,100 of them are real climbs to try, so hiding them would be wrong.
           isListed: true,
           createdAt: mapped.createdAt,
           synced: true,
@@ -144,7 +189,7 @@ async function importWoodsCatalog() {
           characteristics: null,
         });
 
-        statsByKey.set(`${mapped.uuid}:${mapped.angle}`, {
+        statsByKey.set(statsKey, {
           boardType: 'woods',
           climbUuid: mapped.uuid,
           angle: mapped.angle,
@@ -154,7 +199,9 @@ async function importWoodsCatalog() {
           difficultyAverage: mapped.difficulty,
           qualityAverage: mapped.qualityAverage,
           qualityNormalized: true,
-          faUsername: null,
+          faUsername: mapped.faUsername,
+          // The Woods API credits a first ascensionist by name but publishes no
+          // date for it, so there is nothing honest to put here.
           faAt: null,
         });
 
@@ -167,13 +214,34 @@ async function importWoodsCatalog() {
             holdState: hold.holdState,
           });
         }
+
+        // Self-alias so resolveCanonicalClimbUuid always hits for a Woods climb.
+        // Nothing in the Woods path needs it today (there is no dedup pass and no
+        // legacy uuid to redirect), but every other board maintains the invariant
+        // "every canonical climb aliases to itself" and a future merge/repair pass
+        // would otherwise start from a half-populated table.
+        aliasByUuid.set(mapped.uuid, {
+          boardType: 'woods',
+          aliasUuid: mapped.uuid,
+          canonicalUuid: mapped.uuid,
+          source: 'woods-catalog-import',
+        });
       }
 
       const climbRecords = [...climbByUuid.values()];
       const statsRecords = [...statsByKey.values()];
       const holdsRecords = [...holdsByKey.values()];
+      const aliasRecords = [...aliasByUuid.values()];
 
-      console.info(`   ${mappedCount} mapped, ${skippedProblems} problems skipped (no holds)`);
+      console.info(
+        `   ${mappedCount} mapped, ${skippedProblems} skipped (no holds), ${duplicateProblems} duplicates folded`,
+      );
+      if (clampedGrades > 0) {
+        console.info(`   ${clampedGrades} problems graded above the shared scale, clamped onto 8c+/V16`);
+      }
+      if (unmappedGrades > 0) {
+        console.warn(`   ⚠️  ${unmappedGrades} problems carry a grade outside 0-17 — stored with a NULL difficulty`);
+      }
 
       // One transaction per file: a crash mid-file never leaves a climb without
       // its holds, and completed files stay committed for an idempotent re-run.
@@ -211,6 +279,7 @@ async function importWoodsCatalog() {
                 ascensionistCount: sql`greatest(coalesce(excluded.ascensionist_count, 0), coalesce(${boardClimbStats.ascensionistCount}, 0))`,
                 qualityAverage: sql`excluded.quality_average`,
                 qualityNormalized: sql`true`,
+                faUsername: sql`excluded.fa_username`,
               },
             });
         }
@@ -221,20 +290,42 @@ async function importWoodsCatalog() {
             .values(holdsRecords.slice(offset, offset + BATCH_SIZE))
             .onConflictDoNothing();
         }
+
+        for (let offset = 0; offset < aliasRecords.length; offset += BATCH_SIZE) {
+          await tx
+            .insert(boardClimbAliases)
+            .values(aliasRecords.slice(offset, offset + BATCH_SIZE))
+            .onConflictDoUpdate({
+              target: [boardClimbAliases.boardType, boardClimbAliases.aliasUuid],
+              set: { canonicalUuid: sql`excluded.canonical_uuid`, lastSeenAt: sql`now()` },
+            });
+        }
       });
 
-      console.info(`   ✓ climbs ${climbRecords.length}, stats ${statsRecords.length}, holds ${holdsRecords.length}`);
+      console.info(
+        `   ✓ climbs ${climbRecords.length}, stats ${statsRecords.length}, holds ${holdsRecords.length}, aliases ${aliasRecords.length}`,
+      );
       totals.climbs += climbRecords.length;
       totals.stats += statsRecords.length;
       totals.holds += holdsRecords.length;
+      totals.aliases += aliasRecords.length;
       totals.skippedProblems += skippedProblems;
+      totals.duplicateProblems += duplicateProblems;
+      totals.clampedGrades += clampedGrades;
+      totals.unmappedGrades += unmappedGrades;
     }
 
     console.info('\n✅ Import completed!');
-    console.info(`   Climbs upserted:  ${totals.climbs}`);
-    console.info(`   Stats upserted:   ${totals.stats}`);
-    console.info(`   Holds upserted:   ${totals.holds}`);
-    console.info(`   Problems skipped: ${totals.skippedProblems}`);
+    console.info(`   Climbs upserted:   ${totals.climbs}`);
+    console.info(`   Stats upserted:    ${totals.stats}`);
+    console.info(`   Holds upserted:    ${totals.holds}`);
+    console.info(`   Aliases upserted:  ${totals.aliases}`);
+    console.info(`   Problems skipped:  ${totals.skippedProblems} (no holds)`);
+    console.info(`   Duplicates folded: ${totals.duplicateProblems} (same name, setter, holds and angle)`);
+    console.info(`   Grades clamped:    ${totals.clampedGrades} (above 8c+/V16, the top of the shared scale)`);
+    if (totals.unmappedGrades > 0) {
+      console.warn(`   ⚠️  Grades unmapped: ${totals.unmappedGrades} — stored with a NULL difficulty`);
+    }
 
     await client.end();
     process.exit(0);

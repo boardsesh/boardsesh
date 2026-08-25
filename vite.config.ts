@@ -308,6 +308,17 @@ export default defineConfig({
         dependsOn: ['db:up'],
         cache: false,
       },
+      // Imports the full Woods Board catalog (5,400+ climbs) from a local
+      // checkout of boardsesh/woodsboard-scraper. Point it at the catalog dir
+      // with `vp run db:import-woods-catalog -- /path/to/catalog` (or set
+      // WOODS_CATALOG_DIR). No db:up dependency: the prod import targets a
+      // remote DB_URL, and the in-script guard (woods-import-guard.ts) is what
+      // gates a non-local host — it refuses unless WOODS_IMPORT_ALLOW_REMOTE=1.
+      // Booting local Docker first would only get in the way of that run.
+      'db:import-woods-catalog': {
+        command: 'bun run --filter=@boardsesh/db db:import-woods-catalog',
+        cache: false,
+      },
       // Regenerates the committed MoonBoard cell->set map from the per-set board
       // art. No DB needed (reads images, writes a TS file). Pass `-- --check` for
       // a drift check that fails instead of writing.
