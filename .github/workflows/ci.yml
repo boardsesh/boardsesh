@@ -75,9 +75,9 @@ jobs:
       # Inputs to the www production image (Dockerfile.web). Gates the
       # `docker-web` job below — the only thing in CI that ever runs
       # `next build` for web. Off PRs this hardcodes `true` like every output
-      # above, which is deliberate here: the unconditional main-push build is
-      # both the backstop for whatever the PR filter misses and the only writer
-      # of the `web-main` buildx cache the PR builds restore from. #4653.
+      # above, which is load-bearing here: an unconditional build on every push
+      # to main is the backstop for whatever the PR filter misses, and the
+      # filter is deliberately narrow (see the `dockerWeb:` block below). #4653.
       dockerWeb: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.dockerWeb }}
       # True if any downstream job's gate would fire. This used to gate the
       # `setup` job (bun install + build:db + a `built-packages` artifact every
@@ -1209,15 +1209,26 @@ jobs:
       # they are passed in production SHAPE to exercise the real code path. This
       # image is never pushed or served — do not treat these as deploy config.
       #
-      # Cache: PRs restore from the default-branch lineage and never write.
-      # GitHub gives the repo 10 GB of Actions cache and it already sits at
-      # 9.15 GB across 69 entries (measured 2026-08-25); this image's
-      # node_modules layer alone is 2.7 GB uncompressed, so PR writes would evict
-      # the gradle and vp toolchain caches by LRU and slow unrelated jobs. Only
-      # main refreshes `web-main`, and it does so on every push because the
-      # gate's `dockerWeb` output hardcodes true off PRs. If `web-main` turns out
-      # to push the repo over quota, move this scope to a registry-backed cache
-      # (type=registry on GHCR, no 10 GB ceiling) rather than dropping it.
+      # THERE IS NO `cache-to`, ON PURPOSE — do not add one back.
+      #
+      # A fully cold build of this image measured 2m53s (4m09s for the whole
+      # job) on ubuntu-latest, so a warm cache saves a minute or two at most.
+      # Writing it costs 2.72 GB against a repo cache that is already at 9.15 GB
+      # of GitHub's 10 GB ceiling (measured 2026-08-25, 69 entries), which means
+      # the write evicts other scopes by LRU — the gradle and vp toolchain
+      # caches among them, and those serve mobile PRs, the dominant PR shape in
+      # this repo. Spending someone else's cache to save 90 seconds here is
+      # net-negative.
+      #
+      # `cache-from` stays: it costs no quota, is a harmless no-op while nothing
+      # writes `web-main`, and turns into a free speedup the day #3795's
+      # build-web starts seeding that scope on main.
+      #
+      # If this ever does need a writable cache, note that the registry-backed
+      # option (type=registry on GHCR) requires push credentials, which would
+      # destroy this job's "never publishes anything" property — the one
+      # scripts/__tests__/ci-docker-web-workflow.test.ts guards. Weigh that
+      # first; it is worth more than the minute.
       - name: Build the web image
         uses: docker/build-push-action@v7
         with:
@@ -1230,7 +1241,6 @@ jobs:
             NEXT_PUBLIC_WS_URL=wss://ws.boardsesh.com/graphql
             BASE_URL=https://www.boardsesh.com
           cache-from: type=gha,scope=web-main
-          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max,scope=web-main' || '' }}
 
       # packages/web/app/api/internal/board-render/route.ts probes four
       # candidate paths against process.cwd(); the runner's WORKDIR is /app, so
@@ -1240,10 +1250,12 @@ jobs:
       # producing the current artifact, which is exactly why it is asserted.
       #
       # The size floor, not just `test -s`, is the assertion: a 0-byte or stub
-      # file passes a presence check. Do NOT relax this to `find / -name
-      # '*.wasm'` — the image also carries the committed public/wasm copy, a
-      # Turbopack asset copy and two @vercel/og blobs, any of which would make a
-      # loose check pass while tracing is broken.
+      # file passes a presence check. The artifact measured 473,535 bytes on
+      # 2026-08-25; the floor sits at 400,000 (~85% of that) so a legitimate
+      # wasm rebuild doesn't red the gate while a stub still does. Do NOT relax
+      # this to `find / -name '*.wasm'` — the image also carries the committed
+      # public/wasm copy, a Turbopack asset copy and two @vercel/og blobs, any
+      # of which would make a loose check pass while tracing is broken.
       - name: Verify the board-renderer WASM is traced into the image
         run: |
           docker run --rm --entrypoint sh boardsesh-web:ci-${{ github.sha }} -c '

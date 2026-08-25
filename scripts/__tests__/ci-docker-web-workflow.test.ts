@@ -195,16 +195,16 @@ describe('docker-web CI job contract', () => {
     expect(dockerWebSteps).not.toContain('attest-build-provenance');
   });
 
-  it('writes the shared buildx cache from main only', () => {
-    // GitHub gives the repo 10 GB of Actions cache and it already sits at
-    // 9.15 GB (measured 2026-08-25). This image's node_modules layer alone is
-    // 2.72 GB uncompressed, so PR writes would evict the gradle and vp toolchain
-    // caches by LRU. Widening this to every branch is invisible in review and
-    // only shows up as other jobs getting slower, so pin the guard.
+  it('reads the shared buildx cache but never writes it', () => {
+    // A fully cold build measured 2m53s, so a warm cache is worth a minute or
+    // two. Writing it costs 2.72 GB against a repo cache already at 9.15 GB of
+    // GitHub's 10 GB ceiling (measured 2026-08-25), which evicts other scopes by
+    // LRU — including the gradle and vp toolchain caches that serve mobile PRs,
+    // the dominant PR shape here. Adding `cache-to` back looks like a free
+    // speedup in review and only shows up as unrelated jobs getting slower, so
+    // its absence is pinned rather than left to memory.
     expect(dockerWebSteps).toContain('cache-from: type=gha,scope=web-main');
-    expect(dockerWebSteps).toContain(
-      "cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max,scope=web-main' || '' }}",
-    );
+    expect(dockerWebSteps).not.toContain('cache-to');
   });
 
   it('asserts the three things the image is built to prove', () => {
@@ -241,6 +241,14 @@ describe('docker-web CI job contract', () => {
   });
 
   it('makes the aggregate status depend on the job', () => {
+    // Worth being precise about what this buys: main's branch protection
+    // requires a pull-request review but its required_status_checks list is
+    // EMPTY, and there are no rulesets, so no check — ci-status included —
+    // mechanically blocks a merge today. Without this wiring a failed build
+    // would not even turn ci-status red, so the failure would be invisible
+    // unless someone opened the job list. With it, the aggregate goes red and a
+    // reviewer sees it. That is a visible soft gate resting on maintainer
+    // discipline, not an enforced one.
     expect(ciStatusJob).toContain('- docker-web');
   });
 });
