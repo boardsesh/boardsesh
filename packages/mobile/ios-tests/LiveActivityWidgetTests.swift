@@ -354,8 +354,9 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertEqual(state.currentIndex, 0)
 
         // Emptying the queue leaves index 0 into an empty array — every
-        // consumer bounds-checks (SharedQueueState.currentItem returns nil,
-        // displayCurrentItemOnBleQueue clears the board), so this must stay a
+        // consumer bounds-checks: SharedQueueState.currentItem returns nil, and
+        // the implicit re-light then leaves the wall alone (#4544) while the
+        // explicit displayCurrentItem path still clears. So this must stay a
         // representable, non-crashing state.
         state = QueueStateReducer.apply(.itemRemoved(uuid: "A", sequence: 3), to: state)
         XCTAssertTrue(state.items.isEmpty)
