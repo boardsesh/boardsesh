@@ -37,7 +37,6 @@ import {
   type BoardSearchConfig,
   type ProgressFilter,
 } from '@boardsesh/climb-filters';
-import { getBoardCapabilities } from '@boardsesh/board-config';
 import { Text } from './Text';
 import { Button } from './Button';
 import { SegmentedControl } from './SegmentedControl';
@@ -547,10 +546,8 @@ export function ClimbFilterSheet({
   // a board config — the sheet only mounts while it's open, so mount == visible.
   // Prewarming is an idempotent cache warm, so a re-run on boardConfig churn is
   // harmless. (Replaces the old expand-triggered PREWARM_..._AFTER_REFINE path.)
-  // Skipped on a board whose Holds row is hidden (Woods): the warm cache has no
-  // reader left, so it would only burn the geometry pass on sheet open.
   useEffect(() => {
-    if (!boardConfig || !getBoardCapabilities(boardConfig.boardName).holdFilters) return;
+    if (!boardConfig) return;
     prewarmCreateBoardHolds({
       boardName: boardConfig.boardName as BoardName,
       layoutId: boardConfig.layoutId,
@@ -705,12 +702,6 @@ export function ClimbFilterSheet({
 
   const holdFilterCount = countFilteredHolds(localBoardFilters.holdsFilter);
   const zoneActive = localBoardFilters.zoneBox != null;
-  // Woods has no `board_placements` rows to search hold ids against, and its
-  // zone box would be dragged in board-art pixels rather than the placement-grid
-  // space the query filters on — both rows would return silent zero results, so
-  // hide them entirely (#4748). See the holdFilters row of the board-capability
-  // table in @boardsesh/board-config.
-  const holdFiltersAvailable = getBoardCapabilities(boardConfig?.boardName).holdFilters;
 
   const trackColor = systemColors.fill;
   const accuracyValue: GradeAccuracyValue | 'off' = localFilters.gradeAccuracy ?? 'off';
@@ -1047,55 +1038,51 @@ export function ClimbFilterSheet({
                 </View>
               </Pressable>
 
-              {holdFiltersAvailable ? (
-                <>
-                  <View style={styles.subsectionGap} />
-                  <Pressable
-                    onPress={openHoldFilter}
-                    disabled={!boardConfig}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('mobile.holdFilter.title')}
-                    style={({ pressed }) => [
-                      styles.tappableRow,
-                      { backgroundColor: systemColors.tertiaryBackground },
-                      pressed && styles.tappableRowPressed,
-                      !boardConfig && styles.tappableRowDisabled,
-                    ]}
-                  >
-                    <Text variant="body">{t('mobile.holdFilter.title')}</Text>
-                    <View style={styles.tappableRowTrailing}>
-                      <Text variant="footnote" style={styles.tappableRowValue}>
-                        {holdFilterCount > 0
-                          ? t('mobile.holdFilter.summaryCount', { count: holdFilterCount })
-                          : t('mobile.filter.none')}
-                      </Text>
-                      <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
-                    </View>
-                  </Pressable>
+              <View style={styles.subsectionGap} />
+              <Pressable
+                onPress={openHoldFilter}
+                disabled={!boardConfig}
+                accessibilityRole="button"
+                accessibilityLabel={t('mobile.holdFilter.title')}
+                style={({ pressed }) => [
+                  styles.tappableRow,
+                  { backgroundColor: systemColors.tertiaryBackground },
+                  pressed && styles.tappableRowPressed,
+                  !boardConfig && styles.tappableRowDisabled,
+                ]}
+              >
+                <Text variant="body">{t('mobile.holdFilter.title')}</Text>
+                <View style={styles.tappableRowTrailing}>
+                  <Text variant="footnote" style={styles.tappableRowValue}>
+                    {holdFilterCount > 0
+                      ? t('mobile.holdFilter.summaryCount', { count: holdFilterCount })
+                      : t('mobile.filter.none')}
+                  </Text>
+                  <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
+                </View>
+              </Pressable>
 
-                  <View style={styles.subsectionGap} />
-                  <Pressable
-                    onPress={openZoneFilter}
-                    disabled={!boardConfig}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('mobile.zoneFilter.title')}
-                    style={({ pressed }) => [
-                      styles.tappableRow,
-                      { backgroundColor: systemColors.tertiaryBackground },
-                      pressed && styles.tappableRowPressed,
-                      !boardConfig && styles.tappableRowDisabled,
-                    ]}
-                  >
-                    <Text variant="body">{t('mobile.zoneFilter.title')}</Text>
-                    <View style={styles.tappableRowTrailing}>
-                      <Text variant="footnote" style={styles.tappableRowValue}>
-                        {zoneActive ? t('mobile.zoneFilter.summaryActive') : t('mobile.filter.none')}
-                      </Text>
-                      <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
-                    </View>
-                  </Pressable>
-                </>
-              ) : null}
+              <View style={styles.subsectionGap} />
+              <Pressable
+                onPress={openZoneFilter}
+                disabled={!boardConfig}
+                accessibilityRole="button"
+                accessibilityLabel={t('mobile.zoneFilter.title')}
+                style={({ pressed }) => [
+                  styles.tappableRow,
+                  { backgroundColor: systemColors.tertiaryBackground },
+                  pressed && styles.tappableRowPressed,
+                  !boardConfig && styles.tappableRowDisabled,
+                ]}
+              >
+                <Text variant="body">{t('mobile.zoneFilter.title')}</Text>
+                <View style={styles.tappableRowTrailing}>
+                  <Text variant="footnote" style={styles.tappableRowValue}>
+                    {zoneActive ? t('mobile.zoneFilter.summaryActive') : t('mobile.filter.none')}
+                  </Text>
+                  <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
+                </View>
+              </Pressable>
 
               {/* Beta videos — a content property of the climb, not a quality signal.
                   A group header carries the pin; the switch uses the descriptive line

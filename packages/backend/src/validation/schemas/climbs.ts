@@ -5,8 +5,8 @@ import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
 
 // Cap holdsFilter entries: each ANY entry becomes a LIKE scan over board_climbs.frames
 // (no trigram index there), so an unbounded record is a cheap amplification vector on
-// an anonymous endpoint. 300 is far above any board layout's usable hold count, so it
-// never rejects a real per-hold selection.
+// an anonymous endpoint. 300 is far above the number of holds anyone taps by hand —
+// though no longer above every board's hold count, since a Woods 12x12 has 894.
 const MAX_HOLD_FILTER_ENTRIES = 300;
 
 /** One transport batch for primary-backed live climb-stat reconciliation. */

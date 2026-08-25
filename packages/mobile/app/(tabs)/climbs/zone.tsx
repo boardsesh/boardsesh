@@ -12,7 +12,6 @@ import {
   type HoldPositionLookup,
 } from '@boardsesh/climb-filters';
 import { getLayout } from '@boardsesh/board-constants';
-import { getBoardCapabilities } from '@boardsesh/board-config';
 import type { BoardName, HoldsFilter, ZoneBoxInput, ZoneMatchMode } from '@boardsesh/shared-schema';
 import { Text } from '../../../src/components/Text';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
@@ -27,7 +26,6 @@ import { ZoneOverlay, type ZoneCornerLabels } from '../../../src/components/sear
 import { useTheme } from '../../../src/providers/theme-provider';
 import { getCreateBoardHolds } from '../../../src/lib/create-board-holds';
 import { emitZoneFilterSelection } from '../../../src/lib/zone-filter-handoff';
-import { useUnsupportedBoardExit } from '../../../src/lib/routing/use-unsupported-board-exit';
 import { track } from '../../../src/lib/analytics';
 import { hapticSelection } from '../../../src/lib/haptics';
 import { overlays, spacing } from '../../../src/theme/tokens';
@@ -111,13 +109,6 @@ export default function ZoneFilterScreen() {
   // carried the board family (e.g. "kilter"), so resolve the real name from the
   // board config instead of trusting the param.
   const layoutName = getLayout(boardName, layoutId)?.name ?? '';
-
-  // The filter sheet hides the Zone row on a board whose hold centres aren't in
-  // placement-grid space (Woods), so only a hand-built link reaches this route
-  // for one. Leave rather than let a box be dragged in coordinates the search
-  // can't read back (#4748).
-  const boardCannotSearchZone = params.boardName != null && !getBoardCapabilities(params.boardName).holdFilters;
-  useUnsupportedBoardExit(boardCannotSearchZone);
 
   const [zoneBox, setZoneBox] = useState<ZoneBoxInput | null>(() => parseZoneBox(params.zoneBox));
   const [zoneMode, setZoneMode] = useState<ZoneMatchMode>(() => parseZoneMode(params.zoneMode));
@@ -299,7 +290,7 @@ export default function ZoneFilterScreen() {
     });
   }, [navigation, zoneActive, handleClear, brandColors.primary, t]);
 
-  if (!boardHolds || !boardName || !dims || boardCannotSearchZone) {
+  if (!boardHolds || !boardName || !dims) {
     return (
       <View style={[styles.loading, { backgroundColor: systemColors.background }]}>
         <ActivityIndicator size="large" />

@@ -314,11 +314,14 @@ function parseHoldsFilterFromUrl(urlParams: URLSearchParams): HoldsFilter {
   const result: HoldsFilter = {};
   for (const [key, value] of urlParams.entries()) {
     if (!key.startsWith('hold_')) continue;
-    // Hold IDs in board_climb_holds are positive integers, so reject 0,
-    // negatives, NaN, and floats. Floats like `hold_1.5` would silently
-    // miss every climb in the SQL `LIKE '%1.5r%'` lookup.
-    const holdId = Number(key.slice('hold_'.length));
-    if (!Number.isInteger(holdId) || holdId <= 0) continue;
+    // Hold ids in board_climb_holds are non-negative integers — 0 included, since
+    // Woods numbers its holds from 0 — so reject only negatives, NaN and floats.
+    // Floats like `hold_1.5` would silently miss every climb in the SQL
+    // `LIKE '%p1.5r%'` lookup. Digits-only rather than a bare `>= 0` test, because
+    // `Number('')` is 0 and would let a lone `hold_` through as hold 0.
+    const holdKey = key.slice('hold_'.length);
+    const holdId = Number(holdKey);
+    if (!/^\d+$/.test(holdKey) || !Number.isSafeInteger(holdId)) continue;
     const entry = parseSingleEntry(value);
     if (Object.keys(entry).length > 0) {
       result[holdId] = entry;
