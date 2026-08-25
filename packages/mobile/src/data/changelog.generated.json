@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-08-25T13:24:23.857Z",
+  "generatedAt": "2026-08-25T14:14:56.813Z",
   "entries": [
+    {
+      "prNumber": 4718,
+      "category": "fixed",
+      "title": "Room for real beta when you log a send: the note box opens two lines tall and grows to hold a full paragraph, so what you're writing stays on screen instead of scrolling out of sight.",
+      "mergedAt": "2026-08-25T14:13:56Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4718"
+    },
+    {
+      "prNumber": 4746,
+      "category": "fixed",
+      "title": "Re-linking your Kilter account no longer clones every playlist you already had — your existing lists get linked back up instead of sprouting a stale twin at the top of the list.",
+      "mergedAt": "2026-08-25T13:40:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4746",
+      "body": "Playlists you've edited in Boardsesh keep your version. Kilter's older copy no longer overwrites them."
+    },
     {
       "prNumber": 3306,
       "category": "new",

@@ -19,6 +19,12 @@ manual changes). See docs/mobile-ota-updates.md.
 
 - Tapping and swiping through climbs in a shared session puts them on the wall again, the way it did before the last update. ([#4745](https://github.com/boardsesh/boardsesh/pull/4745))
 
+### Fixed
+
+- Room for real beta when you log a send: the note box opens two lines tall and grows to hold a full paragraph, so what you're writing stays on screen instead of scrolling out of sight. ([#4718](https://github.com/boardsesh/boardsesh/pull/4718))
+- Re-linking your Kilter account no longer clones every playlist you already had — your existing lists get linked back up instead of sprouting a stale twin at the top of the list. ([#4746](https://github.com/boardsesh/boardsesh/pull/4746))
+  Playlists you've edited in Boardsesh keep your version. Kilter's older copy no longer overwrites them.
+
 ## 2026-08-23
 
 ### New
