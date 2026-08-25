@@ -35,10 +35,7 @@ export const privateSponsorCount: number = data.privateSponsorCount;
 /** Where the "Become a sponsor" empty-state CTA points. */
 export const SPONSORS_URL = 'https://github.com/sponsors/boardsesh';
 
-/**
- * The self-hosted OTA server behind our over-the-air releases and per-PR previews.
- * Mercure Technologies gave us an enterprise license for it — see the "Powered by" card.
- */
+/** The OTA server behind our releases — Mercure Technologies gave us an enterprise license. */
 export const XPREM_URL = 'https://github.com/mercuretechnologies/xprem';
 
 // Personal thanks — kept as data so the screen renders the names directly.
