@@ -229,6 +229,14 @@ export type BluetoothPacketResult = {
    * protocol overruling them.
    */
   allLedsDark: boolean;
+  /** LEDs actually written into the packet (skipped placements excluded). */
+  ledsWritten: number;
+  /**
+   * Of those, how many carry a non-zero colour. On v2 the gap between this and
+   * `ledsWritten` is the power ladder dimming holds out of existence; it sizes
+   * the partially-dark residual `allLedsDark` deliberately does not refuse.
+   */
+  ledsWithColour: number;
 };
 
 /**
@@ -259,6 +267,8 @@ export const getAuroraBluetoothPacket = (
       skippedRoleCount: 0,
       totalPlacements: 0,
       allLedsDark: false,
+      ledsWritten: 0,
+      ledsWithColour: 0,
     };
   }
 
@@ -309,6 +319,8 @@ export const getAuroraBluetoothPacket = (
       skippedRoleCount,
       totalPlacements,
       allLedsDark: false,
+      ledsWritten: 0,
+      ledsWithColour: 0,
     };
   }
 
@@ -361,6 +373,8 @@ export const getAuroraBluetoothPacket = (
       skippedRoleCount,
       totalPlacements,
       allLedsDark: false,
+      ledsWritten: 0,
+      ledsWithColour: 0,
     };
   }
 
@@ -381,5 +395,7 @@ export const getAuroraBluetoothPacket = (
     // that is the user's own choice, not the power ladder silently overruling
     // them, and refusing their send with "incompatible climb" would be wrong.
     allLedsDark: isV2 && ledsWithColour === 0,
+    ledsWritten,
+    ledsWithColour,
   };
 };

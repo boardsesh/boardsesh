@@ -76,6 +76,40 @@ describe('useBleFrameWriter', () => {
     expect(vi.mocked(send).mock.calls[1][0]).toBe('p4r42');
   });
 
+  it('drops a queued frame when it stands down mid-write, so it cannot land after the new owner', async () => {
+    // #4761-1. The creator hands the wall to the queue while a write is in flight
+    // and a tick is queued behind it. If the drain flushed that queued frame it
+    // would land AFTER the auto-sender's union — the wall would show the whole
+    // route, then flip back to a stale single frame under the "On the wall" chip.
+    const firstWrite = deferred();
+    const send = vi
+      .fn()
+      .mockReturnValueOnce(firstWrite.promise)
+      .mockResolvedValue(true) as unknown as SendFramesToBoard;
+
+    const { rerender } = renderHook(
+      (props: { frame: string | null }) =>
+        useBleFrameWriter({ frame: props.frame, send, mirrored: false, resetKey: 'draft-1' }),
+      { initialProps: { frame: 'p1r42' as string | null } },
+    );
+
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    // A playback tick queues behind the in-flight write...
+    rerender({ frame: 'p2r42' });
+    expect(send).toHaveBeenCalledTimes(1);
+    // ...then Set-Active stands this writer down before that write resolves.
+    rerender({ frame: null });
+
+    await act(async () => {
+      firstWrite.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(send).mock.calls.map((call) => call[0])).toEqual(['p1r42']);
+  });
+
   it('re-flushes the same frame after the reset key changes', async () => {
     const send = vi.fn().mockResolvedValue(true) as unknown as SendFramesToBoard;
     const { rerender } = renderHook(

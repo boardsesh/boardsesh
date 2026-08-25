@@ -437,6 +437,7 @@
     "errorPermissionDenied": "Autorisez le Bluetooth pour connecter une board.",
     "errorLedMissing": "Impossible d'envoyer à la board — données LED manquantes pour cette configuration.",
     "errorIncompatible": "Ce bloc est pour une configuration de board différente.",
+    "errorTooManyHolds": "Trop de prises allumées à la fois pour le contrôleur LED de cette board.",
     "barControl": {
       "connectedLabel": "Board connectée, vous avez le contrôle",
       "connectedHint": "Ouvre les commandes de la board",

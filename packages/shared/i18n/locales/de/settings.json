@@ -437,6 +437,7 @@
     "errorPermissionDenied": "Erlaube Bluetooth, um ein Board zu verbinden.",
     "errorLedMissing": "Konnte nichts ans Board schicken — für diese Board-Konfiguration fehlen die LED-Daten.",
     "errorIncompatible": "Dieser Boulder gehört zu einer anderen Board-Konfiguration.",
+    "errorTooManyHolds": "Zu viele Griffe gleichzeitig für den LED-Controller dieses Boards.",
     "barControl": {
       "connectedLabel": "Board verbunden, du hast die Steuerung",
       "connectedHint": "Öffnet die Board-Steuerung",

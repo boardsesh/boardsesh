@@ -3404,6 +3404,8 @@ describe('useBoardBluetooth multi-frame route collapse (#4634)', () => {
     skippedRoleCount: 0,
     totalPlacements: 4,
     allLedsDark: false,
+    ledsWritten: 4,
+    ledsWithColour: 4,
     ...overrides,
   });
 
@@ -3452,6 +3454,24 @@ describe('useBoardBluetooth multi-frame route collapse (#4634)', () => {
       expect.anything(),
       undefined,
     );
+  });
+
+  it('reports the dim residual on a successful v2 send so it can be sized in the field', async () => {
+    // `allLedsDark` refuses only the all-or-nothing cliff. A wall where the power
+    // ladder dimmed SOME holds to nothing still writes — these counts are how we
+    // find out whether that population exists before picking a threshold.
+    mockGetLedPlacements.mockReturnValue({ 100: 1, 200: 2 });
+    mockGetAuroraBluetoothPacket.mockReturnValue(
+      auroraPacket({ totalPlacements: 90, ledsWritten: 90, ledsWithColour: 61 }),
+    );
+
+    const { result } = await connectedHook({ boardName: 'kilter', layoutId: 1, sizeId: 1 });
+    await act(async () => {
+      await result.current.sendFramesToBoard('p100r42p200r43');
+    });
+
+    const success = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Success');
+    expect(success?.[1]).toMatchObject({ ledsWritten: 90, ledsWithColour: 61 });
   });
 
   it('still treats an empty string as the deliberate clear-all', async () => {
@@ -3551,7 +3571,9 @@ describe('useBoardBluetooth multi-frame route collapse (#4634)', () => {
 
     expect(sendResult).toBe(false);
     expect(adapter.write).not.toHaveBeenCalled();
-    expect(Alert.alert).toHaveBeenCalledWith('ble.sendFailedTitle', 'ble.errorIncompatible');
+    // Its own copy, not the generic "wrong board" line — hold count is the cause
+    // and the user can act on that.
+    expect(Alert.alert).toHaveBeenCalledWith('ble.sendFailedTitle', 'ble.errorTooManyHolds');
     const failure = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Failure');
     expect(failure?.[1]).toMatchObject({ failureReason: 'power_budget_dark', totalPlacements: 160 });
   });
