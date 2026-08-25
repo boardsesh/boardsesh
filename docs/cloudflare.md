@@ -82,6 +82,24 @@ converged by `vp run cf:apply`):
   transiting Cloudflare to Vercel (~54 GB/day). The rule is the entire fix — no
   origin header change is needed or wanted.
 
+  Because the rule makes Cloudflare honour that year-long TTL, the URL has to
+  identify the bytes it names. Every web-built board-render URL now carries a
+  `&v=<12 hex>` renderer version (#4773), derived from the shipped board
+  catalogue plus the compiled WASM renderer and the sharp pipeline — see
+  `scripts/generate-board-render-version.ts`. A renderer change mints new URLs
+  and the old ones age out; Vercel used to cover this by purging its CDN on every
+  deploy (12–22×/day), and Cloudflare does not. **There is no purge tooling and
+  the CI token has no `Zone.Cache Purge` scope** (see the token list below), so a
+  purge is a manual dashboard action (Caching → Configuration → Purge Everything)
+  if one is ever needed.
+
+  Requests *without* `v` — the ESP32 firmware, the iOS Live Activity widget, and
+  URLs Googlebot-Image crawled before this shipped (`app/robots.ts` allows the
+  path) — get `s-maxage=86400, stale-while-revalidate=604800` instead of the
+  one-year immutable branch. A day of staleness rather than a year, at 1/288th
+  the origin cost a 300 s TTL would have carried on the route that is 48.7% of
+  all function invocations.
+
 - **Crawler rules** — two rules in `http_request_firewall_custom`, in this order:
   1. `skip` (all remaining custom rules) for search engines and share-card
      unfurlers. Brave runs its **own** index rather than reselling Bing or
@@ -182,6 +200,13 @@ For the www rules:
 B='https://www.boardsesh.com/api/internal/board-render?board_name=kilter&layout_id=1&size_id=10&set_ids=1,20&frames=p1085r15p1128r12&include_background=1'
 curl -sI "$B" | grep -i cf-cache-status
 curl -sI "$B" | grep -i cf-cache-status
+
+# The versioned URL is the one the site actually emits, and the only one that
+# gets the immutable branch. Use the current constant from
+# packages/shared/board-render/src/generated/render-version.ts.
+V=$(sed -n "s/.*BOARD_RENDER_VERSION = '\(.*\)';/\1/p" packages/shared/board-render/src/generated/render-version.ts)
+curl -sI "$B&v=$V" | grep -iE 'cache-control|cf-cache-status'   # immutable; MISS then HIT
+curl -sI "$B"      | grep -iE 'cache-control|cf-cache-status'   # s-maxage=86400 + SWR
 
 # Blocked crawlers get a Cloudflare 403 and never reach the origin; allowed ones
 # still do. `x-vercel-id` present == the request reached Vercel, which is the

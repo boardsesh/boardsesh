@@ -119,13 +119,39 @@ const findPublicImagePath: ResolveImagePath = (relPath) => {
   return null;
 };
 
-/** Wrap encoded image bytes in the shared immutable-cache response. */
-function imageResponse(buffer: Buffer, contentType: string, timingParts: string[]): NextResponse {
+/**
+ * Shape a `v` parameter must have before its response is marked immutable for a
+ * year. Any well-formed version wins the immutable branch — not only the one this
+ * deploy emits — because a URL minted by an earlier deploy still names a fixed set
+ * of bytes; downgrading it would send every already-crawled OG card and open tab
+ * back to the origin. Malformed junk gets the bounded branch, so a crawler cannot
+ * mint unlimited year-long edge objects out of a query string.
+ */
+function isWellFormedRenderVersion(value: string | null): value is string {
+  return value !== null && /^[0-9a-f]{8,64}$/.test(value);
+}
+
+/**
+ * Wrap encoded image bytes in the shared cache response.
+ *
+ * `renderVersion` is the request's own `v` — the route used to hard-code the
+ * string `'immutable'` here, which claimed a year of cache lifetime for a URL that
+ * did not identify its bytes (#4773). Unversioned requests (the ESP32 firmware,
+ * the iOS Live Activity widget, already-crawled URLs) fall to the bounded daily
+ * tier instead of pinning a year.
+ */
+function imageResponse(
+  buffer: Buffer,
+  contentType: string,
+  timingParts: string[],
+  renderVersion: string | null,
+): NextResponse {
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       ...createOgImageHeaders({
         contentType,
-        version: 'immutable',
+        version: renderVersion,
+        unversionedTier: 'daily',
         serverTiming: timingParts.join(', '),
       }),
     },
@@ -185,6 +211,9 @@ export async function GET(request: NextRequest) {
     const format = normalizeOutputFormat(searchParams.get('format') ?? (isOgVariant ? 'png' : 'webp'));
     // Mirroring is handled client-side via CSS scaleX(-1) to maximize cache hit rate
 
+    const versionParam = searchParams.get('v');
+    const renderVersion = isWellFormedRenderVersion(versionParam) ? versionParam : null;
+
     if (!boardName || !layoutId || !sizeId || !setIds || frames === null) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
     }
@@ -217,7 +246,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Final-bytes cache first: a hit costs nothing and never enters the render
-    // queue. Keyed on every param that changes a pixel.
+    // queue. Keyed on every param that changes a pixel. `v` is deliberately NOT
+    // in the key: one process only ever runs one renderer, so two versions of the
+    // same URL produce identical bytes and keying on it would halve the cache for
+    // nothing during a rolling deploy.
     const byteKey = [
       boardName,
       layoutId,
@@ -233,7 +265,12 @@ export async function GET(request: NextRequest) {
 
     const cachedBytes = byteCache.get(byteKey);
     if (cachedBytes) {
-      return imageResponse(cachedBytes.buffer, cachedBytes.contentType, ['cache;desc=hit', 'queue;dur=0.0']);
+      return imageResponse(
+        cachedBytes.buffer,
+        cachedBytes.contentType,
+        ['cache;desc=hit', 'queue;dur=0.0'],
+        renderVersion,
+      );
     }
 
     const parsedSetIds = setIds
@@ -320,7 +357,7 @@ export async function GET(request: NextRequest) {
     if (rendered.timings.bgMs > 0) timingParts.push(`bg;dur=${rendered.timings.bgMs.toFixed(1)}`);
     timingParts.push(`cache;desc=${rendered.cache}`, `queue;dur=${Math.max(0, queueMs).toFixed(1)}`);
 
-    return imageResponse(rendered.buffer, rendered.contentType, timingParts);
+    return imageResponse(rendered.buffer, rendered.contentType, timingParts, renderVersion);
   } catch (error) {
     console.error('Board render error:', error);
     const message = error instanceof Error ? error.message : String(error);

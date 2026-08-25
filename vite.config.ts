@@ -163,6 +163,13 @@ export default defineConfig({
     'packages/mobile/{src,app}/**/*.{ts,tsx}': () => 'vp run check:i18n:orphans',
     'packages/mobile/**/*.{ts,tsx,swift}': () => 'vp run check:mobile-board-art-network',
     'packages/shared/i18n/locales/**/*.json': () => 'vp run check:i18n:orphans',
+    // Anything that can change what /api/internal/board-render draws has to move
+    // the committed `&v=` constant with it, or Cloudflare keeps serving the old
+    // pixels `immutable` for a year (#4773). Broad globs on purpose: the generator
+    // derives its inputs from the board catalogue, so a narrow paths list here
+    // would be a guard that silently stops guarding.
+    '{packages/board-renderer/wasm/pkg/**,packages/shared/board-render/src/**,packages/shared/board-config/src/**,packages/board-constants/src/**,packages/web/public/images/**}':
+      () => 'vp run check:board-render-version',
   },
   run: {
     tasks: {
@@ -479,6 +486,18 @@ export default defineConfig({
       },
       'generate:changelog': {
         command: 'node --import tsx scripts/generate-changelog.ts',
+        cache: false,
+      },
+      // The `&v=` cache version in every /api/internal/board-render URL. Committed
+      // (not computed at build time) because the value has to be byte-identical in
+      // web's client bundle, the RSC graph and the Node route handler — see the
+      // header comment in the generator. `check:` is the drift gate.
+      'generate:board-render-version': {
+        command: 'node --import tsx scripts/generate-board-render-version.ts',
+        cache: false,
+      },
+      'check:board-render-version': {
+        command: 'node --import tsx scripts/generate-board-render-version.ts --check',
         cache: false,
       },
       'check:changelog': {

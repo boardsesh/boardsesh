@@ -4,30 +4,50 @@ export const OG_IMAGE_HEIGHT = 630;
 const ONE_YEAR_SECONDS = 31_536_000;
 const SHORT_TTL_SECONDS = 300;
 const STALE_TTL_SECONDS = 86_400;
+const DAILY_TTL_SECONDS = 86_400;
+const DAILY_STALE_TTL_SECONDS = 604_800;
 
 /**
- * Build the cache + content headers for an OG image response. Versioned
- * requests (a content hash / timestamp in the URL) get immutable one-year
- * caching; unversioned ones get a short TTL with a stale-while-revalidate
- * window. Emits the Vercel-CDN-Cache-Control variant too — harmless on other
- * CDNs, load-bearing on Vercel.
+ * How long an *unversioned* request may be cached. Versioned requests always get
+ * the one-year immutable branch.
+ *
+ * - `short` (default, 300s + 24h SWR): the original branch, calibrated for the
+ *   `/api/og/climb` 307 redirect, which carries no image bytes.
+ * - `daily` (24h + 7d SWR): for an unversioned request that costs a real render.
+ *   Board-render is 48.7% of all function invocations and `app/robots.ts` invites
+ *   Googlebot-Image to index it, so a 300s TTL there would mean re-rendering the
+ *   already-crawled unversioned tail up to 288 times a day per URL. A day of
+ *   staleness is the whole correctness win at 1/288th of the origin cost.
+ */
+export type UnversionedCacheTier = 'short' | 'daily';
+
+/**
+ * Build the cache + content headers for an OG image response. Three tiers:
+ * versioned (a content hash in the URL) gets immutable one-year caching;
+ * unversioned gets either the short redirect-grade TTL or the bounded daily one.
+ * Emits the Vercel-CDN-Cache-Control variant too — harmless on other CDNs,
+ * load-bearing on Vercel.
  */
 export function createOgImageHeaders({
   contentType,
   version,
   serverTiming,
+  unversionedTier = 'short',
 }: {
   contentType: string;
   version?: string | null;
   serverTiming?: string;
+  unversionedTier?: UnversionedCacheTier;
 }): Record<string, string> {
   const isVersioned = version !== null && version !== undefined;
+  const unversionedMaxAge = unversionedTier === 'daily' ? DAILY_TTL_SECONDS : SHORT_TTL_SECONDS;
+  const unversionedStale = unversionedTier === 'daily' ? DAILY_STALE_TTL_SECONDS : STALE_TTL_SECONDS;
   const browserCacheControl = isVersioned
     ? `public, max-age=${ONE_YEAR_SECONDS}, s-maxage=${ONE_YEAR_SECONDS}, immutable`
-    : `public, max-age=0, s-maxage=${SHORT_TTL_SECONDS}, stale-while-revalidate=${STALE_TTL_SECONDS}`;
+    : `public, max-age=0, s-maxage=${unversionedMaxAge}, stale-while-revalidate=${unversionedStale}`;
   const cdnCacheControl = isVersioned
     ? `public, s-maxage=${ONE_YEAR_SECONDS}, immutable`
-    : `public, s-maxage=${SHORT_TTL_SECONDS}, stale-while-revalidate=${STALE_TTL_SECONDS}`;
+    : `public, s-maxage=${unversionedMaxAge}, stale-while-revalidate=${unversionedStale}`;
 
   return {
     'Content-Type': contentType,

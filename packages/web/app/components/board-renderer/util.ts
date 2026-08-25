@@ -1,4 +1,8 @@
 import { toFlatFrames as toFlatFramesShared } from '@boardsesh/board-constants/hold-states';
+// Leaf subpath, not the package barrel: this module compiles into the client
+// bundle, and the barrel pulls in the render pipeline. The generated constant
+// has no imports at all.
+import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 import type { BoardDetails, BoardName } from '@/app/lib/types';
 import { getPublicBackendHttpUrl } from '@/app/lib/backend-url';
 import { BOARD_IMAGE_DIMENSIONS } from '../../lib/board-data';
@@ -25,6 +29,13 @@ type BuildBoardRenderUrlOptions = {
 /**
  * Build the URL for the Rust/WASM-rendered board image.
  * Mirroring is handled via CSS (scaleX(-1)), not a separate render — halves cache variants.
+ *
+ * The trailing `&v=` is the renderer version (#4773). Board-render responses are
+ * cached `immutable` for a year, and Cloudflare — unlike Vercel — does not purge on
+ * deploy, so without it a change to the renderer, the sharp pipeline, board geometry
+ * or the board photos would keep serving the old pixels to everyone who already had
+ * them. The version is derived, not hand-bumped: see
+ * `scripts/generate-board-render-version.ts`.
  */
 export const buildBoardRenderUrl = (
   boardDetails: BoardDetails,
@@ -53,6 +64,10 @@ export const buildBoardRenderUrl = (
   if (format) {
     url += `&format=${format}`;
   }
+
+  // Last, always: it reads as the version stamp in a log line, and the route's
+  // byte cache deliberately ignores it (one process only ever runs one renderer).
+  url += `&v=${BOARD_RENDER_VERSION}`;
 
   return url;
 };
@@ -93,6 +108,13 @@ export const buildOverlayUrl = (boardDetails: BoardDetails, frames: string, thum
  * crawlers fetch it directly instead of the slow Vercel render path. When the
  * backend origin can't be resolved (misconfigured env, some test contexts) it
  * falls back to the web board-render route unchanged.
+ *
+ * The backend branch deliberately carries no `v=`: mobile builds the same
+ * `/og/climb` URL independently (`packages/mobile/src/hooks/use-share-climb.ts`)
+ * from a shipped binary, so versioning it on this side alone would split the edge
+ * entry in two instead of versioning it. `/og/climb` gets its own fix — do not
+ * "helpfully" add `v` here. The fallback branch goes through
+ * `buildBoardRenderUrl` and is versioned like every other web producer.
  */
 export const buildOgBoardRenderUrl = (boardDetails: BoardDetails, frames: string) => {
   const flatFrames = toFlatFrames(frames, boardDetails.board_name);
