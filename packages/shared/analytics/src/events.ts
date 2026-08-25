@@ -36,13 +36,19 @@ export const SHARED_EVENTS = {
   // A whole playlist (or smart playlist) was appended behind the live queue via
   // the playlist-detail "Add to queue" row, or via the "add instead" branch of
   // the replace prompt. Props: { sourceKind: 'playlist' | 'smart', entryPoint:
-  // 'listHeader' | 'replacePrompt', fetchedCount, appendedCount, boardName,
-  // layoutId, angle }. `fetchedCount` vs `appendedCount` is the signal — a gap
-  // means the 500-item wire cap clamped the batch; `appendedCount: 0` means the
-  // queue was already at it. The entryPoint split answers whether people find
-  // the additive path on its own or only once the destructive prompt offers it.
-  // Mobile-only by design — www has no queue (the climbing UI moved to the Expo
-  // app in W-16 / #4435).
+  // 'listHeader' | 'replacePrompt', outcome: 'added' | 'addedPartial' |
+  // 'queueFull' | 'nothingToAdd' | 'failed', fetchedCount, appendedCount,
+  // boardName, layoutId, angle }.
+  //
+  // Fired on EVERY outcome, including the two that return before an append is
+  // attempted — `queueFull` (the queue was already at the 500-item wire cap, so
+  // nothing was even fetched) and `nothingToAdd` (the board-scoped fetch came
+  // back empty). Read `outcome` rather than inferring from the counts: those two
+  // both report 0/0. `addedPartial` is the clamp actually biting mid-batch.
+  //
+  // The entryPoint split answers whether people find the additive path on its own
+  // or only once the destructive prompt offers it. Mobile-only by design — www
+  // has no queue (the climbing UI moved to the Expo app in W-16 / #4435).
   PlaylistQueued: 'Playlist Queued',
   ClimbRemovedFromQueue: 'Climb Removed from Queue',
   QueueReordered: 'Queue Reordered',

@@ -48,7 +48,7 @@ export const PlaylistAddToQueueRow = memo(function PlaylistAddToQueueRow({
             // mid-append — no reflow of the list under the climber's thumb. It
             // is progress, not a control, so it never becomes its own focus stop.
             <View style={styles.spinner} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-              <ActivityIndicator size="small" color={systemColors.secondaryLabel as string} />
+              <ActivityIndicator size="small" color={systemColors.secondaryLabel} />
             </View>
           ) : undefined
         }
@@ -73,7 +73,7 @@ function noop() {}
 
 const styles = StyleSheet.create({
   container: { paddingHorizontal: spacing[2], paddingBottom: spacing[2] },
-  // Matches the 32 dp leading slot so the label column never shifts when the
-  // spinner appears.
+  // Fixed width so the trailing slot reserves the same space whether or not the
+  // indicator is there — the label column never shifts mid-append.
   spinner: { width: 20, alignItems: 'center', justifyContent: 'center' },
 });

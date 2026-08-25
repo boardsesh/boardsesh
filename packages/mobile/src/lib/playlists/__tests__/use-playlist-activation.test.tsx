@@ -605,7 +605,11 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       // The entryPoint split is the whole point of the property — it answers
       // whether people find the additive path on its own or only once the
       // destructive prompt offers it.
-      expect(mocks.track.mock.calls[0][1]).toMatchObject({ entryPoint: 'replacePrompt', sourceKind: 'playlist' });
+      expect(mocks.track.mock.calls[0][1]).toMatchObject({
+        entryPoint: 'replacePrompt',
+        sourceKind: 'playlist',
+        outcome: 'added',
+      });
     });
 
     it('says so instead of silently dropping the pick when an append is already in flight', async () => {
@@ -957,6 +961,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(mocks.track.mock.calls[0][1]).toMatchObject({
         sourceKind: 'playlist',
         entryPoint: 'listHeader',
+        outcome: 'addedPartial',
         fetchedCount: 2,
         appendedCount: 1,
         boardName: 'kilter',
@@ -981,6 +986,49 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       });
       // Nothing landed, so there is nothing to open — no snackbar.
       expect(mocks.showQueueAddedSnackbar).not.toHaveBeenCalled();
+    });
+
+    it('reports every outcome, including the two that return before an append is attempted', async () => {
+      // `queueFull` (pre-fetch) and `nothingToAdd` both end 0/0, so the counts
+      // alone cannot tell them apart — `outcome` is what makes them measurable.
+      mocks.queueState = {
+        queue: Array.from({ length: 500 }, (_unused, index) => makeQueueItem(`q-${index}`, `c-${index}`)),
+        currentClimbQueueItem: null,
+      };
+      const { result: full } = renderActivation(vi.fn(), { replaceQueueOnActivate: true });
+      await act(async () => {
+        full.current.addToQueue.append?.();
+      });
+      await waitFor(() => expect(mocks.track).toHaveBeenCalledTimes(1));
+      expect(mocks.track.mock.calls[0][1]).toMatchObject({ outcome: 'queueFull', fetchedCount: 0, appendedCount: 0 });
+
+      mocks.track.mockClear();
+      mocks.queueState = { queue: [], currentClimbQueueItem: null };
+      const emptyFetch = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
+      const { result: empty } = renderActivation(emptyFetch, { replaceQueueOnActivate: true });
+      await act(async () => {
+        empty.current.addToQueue.append?.();
+      });
+      await waitFor(() => expect(mocks.track).toHaveBeenCalledTimes(1));
+      expect(mocks.track.mock.calls[0][1]).toMatchObject({
+        outcome: 'nothingToAdd',
+        fetchedCount: 0,
+        appendedCount: 0,
+      });
+    });
+
+    it('reports the failed outcome on a non-abort throw', async () => {
+      const fetchPage = vi.fn().mockRejectedValue(new Error('network'));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+
+      await act(async () => {
+        result.current.addToQueue.append?.();
+      });
+
+      await waitFor(() => expect(mocks.track).toHaveBeenCalled());
+      expect(mocks.track.mock.calls[0][1]).toMatchObject({ outcome: 'failed' });
+      errorSpy.mockRestore();
     });
 
     it('shows the queue-full error without fetching when the queue is already at the cap', async () => {

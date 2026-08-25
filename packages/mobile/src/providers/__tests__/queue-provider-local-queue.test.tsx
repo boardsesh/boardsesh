@@ -710,6 +710,110 @@ describe('QueueProvider local solo queue', () => {
     expect(queueMutations.addQueueItem.mock.calls.map(([item]) => item.uuid)).toEqual(['gen-1', 'gen-2']);
   });
 
+  it('appendQueueItems drains the per-item adds sequentially and in playlist order', async () => {
+    // The backend wraps every addQueueItem in withQueueVersionRetry around a
+    // single-key Redis CAS — 3 attempts, no backoff, no jitter. Firing them
+    // concurrently means most of a batch exhausts its retries: peers get a
+    // fraction of the playlist, in CAS-resolution order rather than playlist
+    // order (no `position` is sent), and the ordered-hash watchdog then collapses
+    // THIS device's queue to whatever landed. The mock below fails the test if a
+    // second send starts before the first resolves, so the concurrent form cannot
+    // pass this.
+    sessionStore.getStoredSessionId.mockResolvedValue('session-1');
+    http.request.mockImplementation((operation: string) =>
+      operation.includes('SessionStatus')
+        ? Promise.resolve({ sessionStatus: 'active' })
+        : Promise.resolve({ createSession: { id: 'session-new' } }),
+    );
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(null);
+
+    let inFlight = 0;
+    let sawOverlap = false;
+    const releases: Array<() => void> = [];
+    queueMutations.addQueueItem.mockImplementation(async () => {
+      if (inFlight > 0) sawOverlap = true;
+      inFlight += 1;
+      await new Promise<void>((resolve) => releases.push(resolve));
+      inFlight -= 1;
+    });
+
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    queueMutations.addQueueItem.mockClear();
+    act(() => {
+      snapshots.at(-1)?.appendQueueItems([makeQueueItem('gen-1'), makeQueueItem('gen-2'), makeQueueItem('gen-3')]);
+    });
+
+    // Only the first send may be open; the rest wait their turn.
+    await waitFor(() => expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(1));
+    for (let step = 0; step < 3; step += 1) {
+      await act(async () => {
+        releases.shift()?.();
+      });
+    }
+    await waitFor(() => expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(3));
+    expect(sawOverlap).toBe(false);
+    // Sequential sends also fix the order: the server appends, so the wire order
+    // IS the playlist order.
+    expect(queueMutations.addQueueItem.mock.calls.map(([item]) => item.uuid)).toEqual(['gen-1', 'gen-2', 'gen-3']);
+    // Locally the whole batch was already there from the first frame.
+    expect(snapshots.at(-1)?.state.queue.map((entry) => entry.uuid)).toEqual(['gen-1', 'gen-2', 'gen-3']);
+  });
+
+  it('appendQueueItems reconciles ONCE for a batch of failed adds, preferring the throttled reason', async () => {
+    // Each reconcile can toast and kick a resync, so a per-item reconcile would
+    // make 3 failed adds 3 toasts and 3 resyncs.
+    sessionStore.getStoredSessionId.mockResolvedValue('session-1');
+    http.request.mockImplementation((operation: string) =>
+      operation.includes('SessionStatus')
+        ? Promise.resolve({ sessionStatus: 'active' })
+        : Promise.resolve({ createSession: { id: 'session-new' } }),
+    );
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(null);
+
+    const rateLimited = {
+      response: {
+        status: 200,
+        errors: [
+          {
+            message: 'Rate limit exceeded. Try again in 7 seconds.',
+            extensions: { code: 'RATE_LIMITED', operation: 'addQueueItem', retryAfterSeconds: 7 },
+          },
+        ],
+      },
+    };
+    queueMutations.addQueueItem
+      .mockRejectedValueOnce(new Error('transport'))
+      .mockRejectedValueOnce(rateLimited)
+      .mockRejectedValueOnce(new Error('transport'));
+
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    toast.showToast.mockClear();
+    await act(async () => {
+      snapshots.at(-1)?.appendQueueItems([makeQueueItem('gen-1'), makeQueueItem('gen-2'), makeQueueItem('gen-3')]);
+    });
+    await waitFor(() => expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(3));
+
+    // One toast for the batch, and it is the pacing hint — not the unrelated
+    // transport error that happened to fail first.
+    await waitFor(() => {
+      expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
+    });
+    expect(toast.showToast.mock.calls.filter(([message]) => message === 'mobile.queue.rateLimited')).toHaveLength(1);
+    // The local queue keeps every climb — the sync is best-effort, the local
+    // state is the source of truth.
+    expect(snapshots.at(-1)?.state.queue.map((entry) => entry.uuid)).toEqual(['gen-1', 'gen-2', 'gen-3']);
+  });
+
   it('appendQueueItems clamps the batch to MAX_SYNCED_QUEUE_ITEMS and returns what landed', async () => {
     const seeded = Array.from({ length: MAX_SYNCED_QUEUE_ITEMS - 5 }, (_unused, index) =>
       makeQueueItem(`seed-${index}`),

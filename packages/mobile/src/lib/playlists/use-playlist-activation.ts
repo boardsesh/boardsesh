@@ -172,6 +172,9 @@ export type PlaylistActivationResult = {
 /** What the climber picked in the replace-or-append prompt. */
 type QueueForkDecision = 'replace' | 'append' | 'cancel';
 
+/** The five ways a bulk append can end, as reported to `PlaylistQueued`. */
+type PlaylistQueuedOutcome = 'added' | 'addedPartial' | 'queueFull' | 'nothingToAdd' | 'failed';
+
 function countFutureQueueItems(queue: ClimbQueueItem[], currentClimbQueueItem: ClimbQueueItem | null): number {
   const currentIndex = currentClimbQueueItem
     ? queue.findIndex((queueItem) => queueItem.uuid === currentClimbQueueItem.uuid)
@@ -497,9 +500,31 @@ export function usePlaylistActivation({
       const abortController = new AbortController();
       appendAbortRef.current = abortController;
       setIsAppending(true);
+      // Every outcome is instrumented, including the two that return before an
+      // append is even attempted — otherwise `queueFull` (the branch that
+      // actually fires when the queue is at the cap) and `nothingToAdd` would be
+      // unmeasurable, and the counts alone couldn't tell them apart.
+      const trackQueued = (outcome: PlaylistQueuedOutcome, fetchedCount: number, appendedCount: number) => {
+        track(SHARED_EVENTS.PlaylistQueued, {
+          // `sourceId` is `playlist:<uuid>` or `smart:<type>:<userId>`. Only the
+          // prefix is safe to ship — the smart form carries a user id — and an
+          // explicit test keeps the property to the union `events.ts` documents
+          // instead of whatever a future id format happens to start with.
+          sourceKind: sourceId.startsWith('smart:') ? 'smart' : 'playlist',
+          entryPoint,
+          outcome,
+          fetchedCount,
+          appendedCount,
+          boardName: activeBoard.boardType,
+          layoutId: activeBoard.layoutId,
+          angle: activeBoard.angle,
+        });
+      };
+
       try {
         const remainingCapacity = MAX_SYNCED_QUEUE_ITEMS - getQueueSnapshot().queue.length;
         if (remainingCapacity <= 0) {
+          trackQueued('queueFull', 0, 0);
           showToast(t('detail.addToQueue.queueFull', { max: MAX_SYNCED_QUEUE_ITEMS }), 'error');
           return;
         }
@@ -509,6 +534,7 @@ export function usePlaylistActivation({
 
         if (fetchedClimbs.length === 0) {
           reportEmptyBoardFetchOnce('append-queue-empty');
+          trackQueued('nothingToAdd', 0, 0);
           showToast(t('detail.addToQueue.nothingToAdd'), 'info');
           return;
         }
@@ -525,19 +551,11 @@ export function usePlaylistActivation({
         }
 
         const appendedCount = appendQueueItems(queueItems);
-        track(SHARED_EVENTS.PlaylistQueued, {
-          // `sourceId` is `playlist:<uuid>` or `smart:<type>:<userId>`. Only the
-          // prefix is safe to ship — the smart form carries a user id — and an
-          // explicit test keeps the property to the union `events.ts` documents
-          // instead of whatever a future id format happens to start with.
-          sourceKind: sourceId.startsWith('smart:') ? 'smart' : 'playlist',
-          entryPoint,
-          fetchedCount: queueItems.length,
+        trackQueued(
+          appendedCount === 0 ? 'queueFull' : appendedCount < queueItems.length ? 'addedPartial' : 'added',
+          queueItems.length,
           appendedCount,
-          boardName: activeBoard.boardType,
-          layoutId: activeBoard.layoutId,
-          angle: activeBoard.angle,
-        });
+        );
 
         // Nothing fit: the queue was already at the wire cap. That is an error
         // outcome with nothing to open, so it takes the toast, not the snackbar.
@@ -550,7 +568,7 @@ export function usePlaylistActivation({
         // one confirmation in the app whose "Open" takes you to the result —
         // fired ONCE for the whole batch (the bulk append bypasses
         // `commitQueueAdd`, which is what fires it for a single add).
-        // TODO(#4671): pass `{ kind: 'added', count: appendedCount }` once the
+        // TODO(#4712): pass `{ kind: 'added', count: appendedCount }` once the
         // parametric `showQueueAddedSnackbar` from PR #4712 is on main; today's
         // signature takes no arguments and its copy is hardcoded singular, so a
         // 12-climb append currently confirms without the count. A partial append
@@ -561,6 +579,7 @@ export function usePlaylistActivation({
         if (isAbortError(error)) return;
         console.error('Playlist queue append failed:', error);
         reportHandledError(error, { tags: { source: 'playlist', op: 'append-queue' } });
+        trackQueued('failed', 0, 0);
         showToast(t('detail.addToQueue.failed'), 'error');
       } finally {
         if (appendAbortRef.current === abortController) {
@@ -607,6 +626,10 @@ export function usePlaylistActivation({
         const latestFutureQueueCount = countFutureQueueItems(latestQueue, latestCurrent);
         if (!options.allowClearingManualFuture && latestFutureQueueCount > 0) {
           const decision = await promptQueueFork(latestFutureQueueCount);
+          // The prompt is modal, so nothing in the UI can abort underneath it —
+          // but an unmount can, and the old sheet flow could not reach this at
+          // all. Don't replace a queue on behalf of a screen that is gone.
+          if (abortController.signal.aborted) return;
           if (decision === 'cancel') return;
           if (decision === 'append') {
             // The board-scoped list is already in hand — no second round trip.
