@@ -1,16 +1,16 @@
 import { config } from 'dotenv';
 import { defineConfig } from 'drizzle-kit';
 import path from 'path';
+// One definition of "this host can only be a developer machine", shared with the
+// runtime Sentry gate rather than re-listed here. That module is deliberately
+// import-free, so pulling it in costs nothing.
+import { isPrivateHostname } from './src/client/config';
 
 // Load environment from root or web package
 config({ path: path.resolve(process.cwd(), '../../.boardsesh/dev-db.env') });
 config({ path: path.resolve(process.cwd(), '../../.env.local') });
 config({ path: path.resolve(process.cwd(), '../web/.env.local') });
 config({ path: path.resolve(process.cwd(), '../web/.env.development.local') });
-
-// Hostnames that can only be a developer machine or a compose service, so TLS
-// would be pointless there. Anything else is a real database and gets TLS.
-const LOCAL_POSTGRES_HOSTS = new Set(['', 'localhost', '127.0.0.1', '0.0.0.0', '::1', 'postgres', 'postgres-test']);
 
 // Support both DATABASE_URL (Neon) and individual POSTGRES_* variables (local Docker)
 const getDatabaseConfig = () => {
@@ -32,7 +32,7 @@ const getDatabaseConfig = () => {
     // silently ran without TLS (#4651). This branch only runs when DATABASE_URL
     // is unset (the early return above), i.e. the local POSTGRES_* path.
     ssl:
-      !LOCAL_POSTGRES_HOSTS.has((process.env.POSTGRES_HOST ?? '').trim().toLowerCase()) ||
+      !isPrivateHostname((process.env.POSTGRES_HOST ?? '').trim().toLowerCase()) ||
       process.env.IS_CI === 'true' ||
       // TODO(#4656): retire with the Vercel project.
       process.env.VERCEL_ENV === 'production',

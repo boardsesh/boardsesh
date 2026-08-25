@@ -47,7 +47,7 @@ function getDatabaseHostname(): string | undefined {
  * the exact failure #3603 was filed for. A dev database reached by literal IPv6
  * address stays unrecognised instead, which fails the safe way: it reports.
  */
-function isPrivateHostname(hostname: string): boolean {
+export function isPrivateHostname(hostname: string): boolean {
   if (hostname === 'localhost' || hostname.endsWith('.localhost')) return true;
   if (hostname.endsWith('.local') || hostname.endsWith('.ts.net')) return true;
   // A single-label hostname — `db` (packages/backend/docker-compose.yml),

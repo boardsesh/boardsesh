@@ -198,13 +198,15 @@ describe('the origin warm fetches are aimed at', () => {
     expectOriginIs(warmedOverlayUrl(), 'https://www.boardsesh.com');
   });
 
-  it('does NOT aim at localhost just because VERCEL_URL is unset', async () => {
-    // The bug: `VERCEL_URL ? SITE_URL : 'http://localhost:3000'` sent every warm
-    // fetch on a non-Vercel host to a loopback port nothing is listening on —
-    // on the hot SSR path of every list and climb-view render (#4651).
-    stubOriginEnv({ NEXTAUTH_URL: 'https://www.boardsesh.com' });
+  it('ignores a loopback origin variable rather than warming localhost from a real host', async () => {
+    // The bug shape: `VERCEL_URL ? SITE_URL : 'http://localhost:3000'` sent every
+    // warm fetch on a non-Vercel host to a loopback port nothing is listening on,
+    // on the hot SSR path of every list and climb-view render (#4651). The
+    // tracked packages/web/.env.local supplies exactly this loopback BASE_URL, so
+    // an https NEXTAUTH_URL has to win over it.
+    stubOriginEnv({ BASE_URL: 'http://localhost:3000', NEXTAUTH_URL: 'https://www.boardsesh.com' });
     await warmOverlays({ boardDetails, climbs, variant: 'thumbnail' });
-    expect(warmedOverlayUrl()).not.toContain('localhost');
+    expectOriginIs(warmedOverlayUrl(), 'https://www.boardsesh.com');
   });
 
   it('still uses the site URL on Vercel, and localhost in local dev', async () => {

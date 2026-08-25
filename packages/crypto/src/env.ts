@@ -13,7 +13,7 @@ const DEFAULT_DEV_KEY = 'changeme-development-key';
  * `packages/web/.env.local`, where NODE_ENV already says `development`, so it
  * added no case any host reaches (#4651).
  *
- * @throws Error if the secret is not set and this is not a dev/test run
+ * @throws Error if the secret is not set and this is not a dev run
  */
 export function getEncryptionSecret(): string {
   const secret = process.env[ENV_VAR_NAME];
@@ -22,8 +22,7 @@ export function getEncryptionSecret(): string {
     return secret;
   }
 
-  const nodeEnv = process.env.NODE_ENV;
-  if (nodeEnv === 'development' || nodeEnv === 'test') {
+  if (process.env.NODE_ENV === 'development') {
     return DEFAULT_DEV_KEY;
   }
 

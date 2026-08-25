@@ -129,6 +129,18 @@ void describe('resolveSentryEnvironment', () => {
     assert.equal(isProductionSentryEnvironment(), true);
   });
 
+  void it('is silenced by a VERCEL_ENV=development leaking out of packages/web/.env.local', () => {
+    // The load-bearing half of the case above. The tracked packages/web/.env.local
+    // sets VERCEL_ENV=development, and its NEXTAUTH_URL demonstrably DOES leak
+    // into the Vercel production runtime. If VERCEL_ENV leaked the same way, the
+    // swap off `VERCEL_ENV === 'production'` onto isLocalDevelopment() would turn
+    // production Sentry off. It does not leak — Vercel sets VERCEL_ENV as a real
+    // system variable, which wins over any .env file — but this pins what would
+    // happen if that ever changed, so the failure is a red test and not silence.
+    setEnv({ VERCEL_ENV: 'development', NODE_ENV: 'production', DATABASE_URL: PRODUCTION_DATABASE_URL });
+    assert.equal(isProductionSentryEnvironment(), false);
+  });
+
   void it('fails OPEN in an edge runtime that never sees DATABASE_URL', () => {
     // The edge sandbox may not carry DATABASE_URL, so isPrivateDatabaseTarget()
     // has no signal there. That resolves to 'production' and reports, which is
