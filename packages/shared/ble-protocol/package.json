@@ -25,6 +25,11 @@
       "import": "./src/rogue-timer.ts",
       "default": "./src/rogue-timer.ts"
     },
+    "./woods": {
+      "types": "./src/woods.ts",
+      "import": "./src/woods.ts",
+      "default": "./src/woods.ts"
+    },
     "./connection-error": {
       "types": "./src/connection-error.ts",
       "import": "./src/connection-error.ts",

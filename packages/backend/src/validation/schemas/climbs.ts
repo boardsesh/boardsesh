@@ -109,6 +109,11 @@ export const ClimbInputSchema = z.object({
   // Source of truth for the tier set: CONFIDENCE / ConfidenceTier in
   // packages/db/src/queries/grade-model/constants.ts.
   boardseshConfidence: z.enum([CONFIDENCE.confirmed, CONFIDENCE.provisional, CONFIDENCE.setterOnly]).nullish(),
+  // The sizes the climb fits on, round-tripped through the queue so a peer on a
+  // different-sized wall keeps the one signal that separates Woods' two boards
+  // (their hold ids overlap as different holds). Bounded: a board type has a
+  // handful of product sizes, never dozens.
+  compatibleSizeIds: z.array(z.number().int()).max(50).nullish(),
 });
 
 /**

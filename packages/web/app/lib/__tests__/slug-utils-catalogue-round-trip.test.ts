@@ -42,6 +42,7 @@ import { getLayoutBySlug, getSetsBySlug, getSizeBySlug } from '@/app/lib/slug-ut
 import { tryConstructSlugViewUrl } from '@/app/lib/url-utils';
 import { parseBoardRouteParamsWithSlugs } from '@/app/lib/url-utils.server';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, type MoonBoardLayoutKey } from '@/app/lib/moonboard-config';
+import { WOODS_LAYOUTS, WOODS_SETS, WOODS_SIZES } from '@/app/lib/woods-config';
 
 /**
  * The acceptance criterion for #4362: a round-trip over the WHOLE catalogue
@@ -82,7 +83,13 @@ import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, type MoonBoardLayout
  * which TABLE each arm reads, not which board is covered; the coverage assertion
  * below pins that the two arms together cover `SUPPORTED_BOARDS`.
  */
-const auroraBoards = SUPPORTED_BOARDS.filter((boardName) => boardName !== 'moonboard');
+/**
+ * Woods is split out for the same reason as MoonBoard: it carries no rows in
+ * `@boardsesh/board-constants`' layout and set tables, so `getAllLayouts('woods')`
+ * is empty and this loop would walk zero tuples while still reporting green. Its
+ * arm is `Woods board URL segments` at the bottom of this file.
+ */
+const auroraBoards = SUPPORTED_BOARDS.filter((boardName) => boardName !== 'moonboard' && boardName !== 'woods');
 
 /**
  * Tuples each board carries today. Asserted per board inside the round-trip
@@ -357,7 +364,7 @@ describe('MoonBoard catalogue round-trip (the static tables, through the same ww
       0,
     );
     expect(walked).toBe(291);
-    expect([...auroraBoards, 'moonboard'].sort()).toEqual([...SUPPORTED_BOARDS].sort());
+    expect([...auroraBoards, 'moonboard', 'woods'].sort()).toEqual([...SUPPORTED_BOARDS].sort());
   });
 });
 
@@ -414,5 +421,126 @@ describe('MoonBoard set slugs this app never emits', () => {
     expect(await parseSetSlug(layoutKey, 'holds-that-do-not-exist')).toEqual(
       MOONBOARD_SETS[layoutKey].map((set) => set.id).sort((a, b) => a - b),
     );
+  });
+});
+
+/**
+ * The Woods arm. Woods is code-driven like MoonBoard — one layout, two sizes and
+ * a single synthetic hold set — so its segments are resolved by a static branch
+ * in `url-utils.server.ts` rather than by the slug resolvers above. Every shape a
+ * Woods URL can take has to land on the same ids, and the set segment has to
+ * resolve to `[1]` rather than an empty list: an empty set list mis-parses the
+ * `board/layout/size/sets/angle` path and breaks the board builder.
+ */
+describe('Woods board URL segments', () => {
+  /** An unbroken 32-hex uuid — the shape the Woods importer mints. */
+  const WOODS_CLIMB_UUID = '00d5b1a7c4e9f2360a1b2c3d4e5f6071';
+
+  async function parseWoods(layoutSegment: string, sizeSegment: string, setSegment: string) {
+    const parsed = await parseBoardRouteParamsWithSlugs({
+      board_name: 'woods',
+      layout_id: layoutSegment,
+      size_id: sizeSegment,
+      set_ids: setSegment,
+      angle: String(ROUND_TRIP_ANGLE),
+    });
+    return { layoutId: parsed.layout_id, sizeId: parsed.size_id, setIds: parsed.set_ids, angle: parsed.angle };
+  }
+
+  it.each([
+    ['original', '8x10', 'standard', 1],
+    ['original', '8-10', 'standard', 1],
+    ['1', '1', '1', 1],
+    ['original', '12x12', 'standard', 2],
+    ['original', '12-12', 'standard', 2],
+    ['1', '2', '1', 2],
+  ])('resolves /woods/%s/%s/%s to size %i', async (layoutSegment, sizeSegment, setSegment, expectedSizeId) => {
+    expect(await parseWoods(String(layoutSegment), String(sizeSegment), String(setSegment))).toEqual({
+      layoutId: 1,
+      sizeId: expectedSizeId,
+      setIds: [1],
+      angle: ROUND_TRIP_ANGLE,
+    });
+  });
+
+  it('resolves an empty set segment to the synthetic set rather than no sets', async () => {
+    expect((await parseWoods('original', '12x12', '')).setIds).toEqual([1]);
+  });
+
+  /**
+   * Woods has exactly one (layout, size, set) catalogue, so any segment outside it
+   * names a board that does not exist and has to 404 — the `next/navigation` mock
+   * at the top of this file turns `notFound()` into a throw. Before this, an
+   * unknown numeric size passed straight through and `getWoodsBoardDetails` threw
+   * on it (a 500, not a 404), an unknown size slug silently rendered the 8×10
+   * board, and the layout and set segments were not checked at all.
+   */
+  it.each([
+    ['unknown numeric size', 'original', '99', 'standard'],
+    ['unknown size slug', 'original', '9x9', 'standard'],
+    ['unknown dashed size slug', 'original', '9-9', 'standard'],
+    ['unknown numeric layout', '99', '12x12', 'standard'],
+    ['unknown layout slug', 'benchmark', '12x12', 'standard'],
+    ['a set that does not exist', 'original', '12x12', '2'],
+    ['more sets than Woods has', 'original', '12x12', '1,2'],
+    ['unknown set slug', 'original', '12x12', 'crimps'],
+  ])('404s %s', async (_case, layoutSegment, sizeSegment, setSegment) => {
+    await expect(parseWoods(layoutSegment, sizeSegment, setSegment)).rejects.toThrow(/notFound\(\)/);
+  });
+
+  /**
+   * The other half of the contract: what www itself emits has to parse back
+   * here. Both sizes, because the 8x10 and the 12x12 number their holds from
+   * their own origins — landing on the wrong one silently draws a different
+   * climb rather than failing.
+   */
+  it.each([
+    [WOODS_SIZES['8x10'].id, '8x10'],
+    [WOODS_SIZES['12x12'].id, '12x12'],
+  ])('size %i: the URL www emits parses back to its own ids', async (sizeId, expectedSizeSlug) => {
+    const setIds = WOODS_SETS.map((woodsSet) => woodsSet.id);
+    const emittedPath = tryConstructSlugViewUrl(
+      'woods',
+      WOODS_LAYOUTS.woods.id,
+      sizeId,
+      setIds,
+      ROUND_TRIP_ANGLE,
+      WOODS_CLIMB_UUID,
+      'Round Trip',
+    );
+    expect(emittedPath, `woods size ${sizeId}: tryConstructSlugViewUrl returned null`).not.toBeNull();
+
+    const [, emittedBoard, emittedLayout, emittedSize, emittedSets, emittedAngle, surface, emittedClimb] =
+      emittedPath!.split('/');
+    expect(surface, `woods size ${sizeId}: emitted path ${emittedPath}`).toBe('view');
+    expect(emittedSize).toBe(expectedSizeSlug);
+
+    const parsed = await parseBoardRouteParamsWithSlugs({
+      board_name: emittedBoard,
+      layout_id: emittedLayout,
+      size_id: emittedSize,
+      set_ids: emittedSets,
+      angle: emittedAngle,
+      climb_uuid: emittedClimb,
+    });
+
+    expect(
+      {
+        board_name: parsed.board_name,
+        layout_id: parsed.layout_id,
+        size_id: parsed.size_id,
+        set_ids: [...parsed.set_ids].sort((left, right) => left - right),
+        angle: parsed.angle,
+        climb_uuid: parsed.climb_uuid,
+      },
+      `woods size ${sizeId}: ${emittedPath} did not parse back to its own ids`,
+    ).toEqual({
+      board_name: 'woods',
+      layout_id: WOODS_LAYOUTS.woods.id,
+      size_id: sizeId,
+      set_ids: [...setIds].sort((left, right) => left - right),
+      angle: ROUND_TRIP_ANGLE,
+      climb_uuid: WOODS_CLIMB_UUID,
+    });
   });
 });

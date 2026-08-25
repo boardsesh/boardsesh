@@ -12,6 +12,7 @@ describe('boardTypeLabel', () => {
     expect(boardTypeLabel('kilter')).toBe('Kilter');
     expect(boardTypeLabel('tension')).toBe('Tension');
     expect(boardTypeLabel('moonboard')).toBe('MoonBoard');
+    expect(boardTypeLabel('woods')).toBe('Woods');
   });
 
   it('falls back to a capitalized name for unknown boards', () => {
@@ -83,5 +84,26 @@ describe('formatDefaultBoardName', () => {
     expect(
       formatDefaultBoardName({ userName: 'Sam', boardName: 'kilter', layoutName: 'Kilter Board Homewall', size: null }),
     ).toBe("Sam's Kilter Homewall");
+  });
+
+  // The Woods layout is named "Original" (not "Woods Board") precisely so the
+  // cleanup below leaves something to show — a layout called "Woods Board" would
+  // strip to an empty string and the default name would read "Marco's Woods 12×12"
+  // with a hole in it.
+  it('names a Woods board without repeating the word Board', () => {
+    expect(cleanLayoutName('Original', 'woods')).toBe('Original');
+    expect(
+      formatDefaultBoardName({
+        userName: 'Marco',
+        boardName: 'woods',
+        layoutName: 'Original',
+        size: { name: '12 x 12' },
+      }),
+    ).toBe("Marco's Woods Original 12×12");
+  });
+
+  it('formats the Woods size names with the × separator', () => {
+    expect(formatSizeLabel({ name: '12 x 12', description: '' })).toBe('12×12');
+    expect(formatSizeLabel({ name: '8 x 10', description: '' })).toBe('8×10');
   });
 });

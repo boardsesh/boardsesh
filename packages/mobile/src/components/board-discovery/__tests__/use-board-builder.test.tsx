@@ -19,6 +19,29 @@ describe('useBoardBuilder', () => {
     expect(result.current.canCreate).toBe(true);
   });
 
+  // Woods ships one synthetic hold set. If the cascade returned no sets, the
+  // builder's `setIds.length > 0` gate would keep Create disabled forever.
+  it('auto-selects the single Woods set and defaults to the 12x12 board', () => {
+    const { result } = renderHook(() => useBoardBuilder());
+
+    act(() => result.current.selectBoard('woods'));
+    act(() => result.current.selectLayout(1));
+
+    expect(result.current.sizeId).toBe(2);
+    expect(result.current.setIds).toEqual([1]);
+    expect(result.current.canCreate).toBe(true);
+
+    act(() => result.current.selectSize(1));
+    expect(result.current.setIds).toEqual([1]);
+    expect(result.current.canCreate).toBe(true);
+    expect(result.current.buildCreateInput()).toMatchObject({
+      boardType: 'woods',
+      layoutId: 1,
+      sizeId: 1,
+      setIds: '1',
+    });
+  });
+
   it('resets downstream selections when the board changes', () => {
     const { result } = renderHook(() => useBoardBuilder());
     act(() => result.current.selectBoard('kilter'));

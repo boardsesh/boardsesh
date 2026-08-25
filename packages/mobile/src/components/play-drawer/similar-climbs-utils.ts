@@ -18,6 +18,11 @@ export function buildClimbStub(similar: SimilarClimb, boardType: string): Climb 
     stars: 0,
     difficulty_error: '',
     benchmark_difficulty: null,
+    // `SimilarClimb.compatibleSizeIds` is non-null but uses the empty array for
+    // "no compatibility data" (a legacy row). The `Climb` field spells that as
+    // null, and the difference matters: an empty list would otherwise read as
+    // "fits nothing" instead of "imposes no constraint".
+    compatibleSizeIds: similar.compatibleSizeIds.length > 0 ? similar.compatibleSizeIds : null,
   };
 }
 

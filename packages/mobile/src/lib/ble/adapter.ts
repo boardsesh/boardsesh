@@ -17,6 +17,7 @@ import { isLikelyBoardDevice } from './board-device-filter';
 import { HIGH_POWER_BOARD_SCAN_OPTIONS } from './scan-options';
 import { upsertDiscoveredDevice } from './scan-device-cache';
 import type {
+  BleAdapterOptions,
   BluetoothAdapter,
   BleConnection,
   BleDisconnectInfo,
@@ -67,11 +68,17 @@ export class RNBleAdapter implements BluetoothAdapter {
   private negotiatedMtu = DEFAULT_ATT_MTU;
   // Transport diagnostics of the most recently settled write, for analytics.
   private lastWriteDiagnostics: BleWriteDiagnostics | null = null;
+  // Board-level demand for acknowledged writes (see BleAdapterOptions). Fixed
+  // for the adapter's lifetime — the board it was built for doesn't change.
+  private readonly preferWriteWithResponse: boolean;
 
   constructor(
     private readonly devicePicker: DevicePickerFn,
     private readonly scanFamily: BoardScanFamily = 'aurora',
-  ) {}
+    options?: BleAdapterOptions,
+  ) {
+    this.preferWriteWithResponse = options?.preferWriteWithResponse ?? false;
+  }
 
   async isAvailable(): Promise<boolean> {
     return waitForBlePoweredOn();
@@ -359,13 +366,23 @@ export class RNBleAdapter implements BluetoothAdapter {
     // Expo Go iOS. Decided once per write (the characteristic object never
     // changes mid-write, only nulls on disconnect) so the dispatch below and
     // the diagnostics report the same value by construction.
+    //
+    // preferWriteWithResponse overrides both gates: the Woods board's firmware
+    // is Arduino-class and its protocol spec (§8) mandates acknowledged writes,
+    // whatever its Nordic-UART characteristic advertises. The acknowledgement
+    // also paces the 20-byte chunks for us. Aurora never sets the flag, so it
+    // stays unconditionally on write-without-response.
     const usesWithoutResponse =
-      this.scanFamily !== 'moonboard' || (writeCharacteristic.isWritableWithoutResponse ?? true);
+      !this.preferWriteWithResponse &&
+      (this.scanFamily !== 'moonboard' || (writeCharacteristic.isWritableWithoutResponse ?? true));
     // Every write through this adapter is JS-driven (Android has no
-    // widget-intent write path), hence the fixed 'js' origin.
+    // widget-intent write path), hence the fixed 'js' origin. Only the board
+    // preference names a writeTypeSource — the family/characteristic gate is
+    // this adapter's long-standing default and has never reported one.
     this.lastWriteDiagnostics = {
       origin: 'js',
       writeType: usesWithoutResponse ? 'withoutResponse' : 'withResponse',
+      ...(this.preferWriteWithResponse ? { writeTypeSource: 'boardPreference' as const } : {}),
       negotiatedMtu: this.negotiatedMtu,
       chunkSize,
       chunkCount: chunks.length,

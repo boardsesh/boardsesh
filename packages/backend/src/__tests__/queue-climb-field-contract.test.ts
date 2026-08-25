@@ -179,6 +179,7 @@ describe('queue climb field parity: GraphQL ClimbInput <-> backend Zod schema', 
       framesPace: 0,
       boardseshDifficulty: 19.2,
       boardseshConfidence: 'confirmed',
+      compatibleSizeIds: [10, 17],
     };
 
     const parsed = ClimbQueueItemSchema.parse({ uuid: 'queue-slot-1', climb });

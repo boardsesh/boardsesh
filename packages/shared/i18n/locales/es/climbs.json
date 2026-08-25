@@ -101,6 +101,7 @@
   "boardseshGrade": {
     "title": "Grado Boardsesh",
     "moonboardBody": "Aún no tenemos datos de grado de la comunidad para MoonBoard. Registra tus encadenes en Moon con Boardsesh para ayudar a desbloquearlo.",
+    "woodsBody": "Aún no tenemos datos de grado de la comunidad para el Woods Board. Registra tus encadenes en el plafón Woods con Boardsesh para ayudar a desbloquearlo.",
     "loadError": "No se pudo cargar el grado ahora mismo.",
     "byAngle": "Cómo cuesta según el ángulo",
     "summaryLocal": "local",

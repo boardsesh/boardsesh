@@ -60,6 +60,16 @@ export const climbTypeDefs = /* GraphQL */ `
     boardseshConfidence: String
     "Board configuration to draw this climb on, resolved against its setter's boards. Populated by userClimbs; null wherever the board is already known from the route."
     renderBoard: RenderBoardConfig
+    """
+    Product sizes this climb fits on (denormalised from edge bounds). Null when
+    the server has no compatibility data for this climb — a legacy row, or a
+    fetch path that doesn't project the column — which imposes no constraint.
+    On Woods it is load-bearing rather than cosmetic: the 8x10 and the 12x12
+    number their holds from their own origins, so an 8x10 climb's hold ids all
+    exist on a 12x12 as different holds and only this field can tell the two
+    apart (see canAddClimbToBoard rule 5).
+    """
+    compatibleSizeIds: [Int!]
   }
 
   """
@@ -102,6 +112,8 @@ export const climbTypeDefs = /* GraphQL */ `
     boardseshDifficulty: Float
     "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only'), round-tripped through the queue."
     boardseshConfidence: String
+    "Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them."
+    compatibleSizeIds: [Int!]
   }
 
   # ============================================

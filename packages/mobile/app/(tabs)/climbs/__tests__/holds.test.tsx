@@ -18,17 +18,18 @@ const emitMock = vi.hoisted(() => vi.fn());
 // Captures navigation.setOptions calls so tests can assert the headerRight
 // "Clear all" shows only while there's something to clear.
 const navMock = vi.hoisted(() => ({ setOptions: vi.fn() }));
+// Router spy for the unsupported-board bail-out, plus mutable route params so a
+// test can seed a board the hold search can't answer for.
+const routerMock = vi.hoisted(() => ({ canGoBack: vi.fn(() => false), back: vi.fn(), replace: vi.fn() }));
+const routeParams = vi.hoisted(() => ({
+  current: { boardName: 'kilter', layoutId: '1', sizeId: '10', setIds: '1,2' } as Record<string, string | undefined>,
+}));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('expo-router', () => ({
-  useLocalSearchParams: () => ({
-    boardName: 'kilter',
-    layoutId: '1',
-    sizeId: '10',
-    setIds: '1,2',
-    holdsFilter: undefined,
-  }),
+  useLocalSearchParams: () => routeParams.current,
+  useRouter: () => routerMock,
   // The screen drives the native header (title + headerRight) through setOptions.
   useNavigation: () => navMock,
   // Run the effect immediately and stash its cleanup so the test can fire it.
@@ -135,6 +136,11 @@ beforeEach(() => {
   trackMock.mockClear();
   emitMock.mockClear();
   navMock.setOptions.mockClear();
+  routerMock.canGoBack.mockClear();
+  routerMock.canGoBack.mockReturnValue(false);
+  routerMock.back.mockClear();
+  routerMock.replace.mockClear();
+  routeParams.current = { boardName: 'kilter', layoutId: '1', sizeId: '10', setIds: '1,2' };
   focus.cleanup = null;
 });
 
@@ -185,5 +191,18 @@ describe('HoldFilterScreen', () => {
 
     expect(emitMock).toHaveBeenCalledTimes(1);
     expect(emitMock).toHaveBeenCalledWith({ [String(TAPPED_HOLD_ID)]: { STARTING: 'include' } });
+  });
+
+  // The filter sheet hides the Holds row for Woods, so only a hand-built link
+  // gets here — and painting holds would search against placement rows that
+  // don't exist for that board.
+  it('leaves the route for a board that has no hold placements to search', () => {
+    routeParams.current = { boardName: 'woods', layoutId: '1', sizeId: '1', setIds: '1' };
+
+    const { container, queryByText } = render(<HoldFilterScreen />);
+
+    expect(routerMock.replace).toHaveBeenCalledWith('/(tabs)/climbs');
+    expect(queryByText('board')).toBeNull();
+    expect(container.querySelector('[data-spinner]')).not.toBeNull();
   });
 });

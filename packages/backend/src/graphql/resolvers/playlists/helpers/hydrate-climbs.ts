@@ -100,6 +100,11 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       frames: tables.climbs.frames,
       frames_count: tables.climbs.framesCount,
       frames_pace: tables.climbs.framesPace,
+      // The sizes the climb fits on. Playlist rows and the activation canary
+      // both run `canAddClimbToBoard` over these climbs, and on Woods this is
+      // the only field that stops an 8x10 climb reading as an exact fit on a
+      // 12x12 wall whose hold ids happen to cover the same numbers.
+      compatible_size_ids: tables.climbs.compatibleSizeIds,
       statsAngle: tables.climbStats.angle,
       ascensionist_count: tables.climbStats.ascensionistCount,
       difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
@@ -181,6 +186,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       frames: row.frames || '',
       framesCount: row.frames_count ?? null,
       framesPace: row.frames_pace ?? null,
+      compatibleSizeIds: row.compatible_size_ids ?? null,
       angle,
       ascensionist_count: Number(row.ascensionist_count || 0),
       difficulty: getGradeLabel(row.difficulty_id),

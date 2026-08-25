@@ -9,7 +9,7 @@ CDN miss, and platforms like Facebook drop embeds that respond slowly.
 
 ```
 GET https://ws.boardsesh.com/og/climb
-  ?board_name=kilter          # enum: kilter|tension|moonboard|decoy|touchstone|grasshopper|soill
+  ?board_name=kilter          # enum: kilter|tension|moonboard|decoy|touchstone|grasshopper|soill|woods
   &layout_id=1
   &size_id=10
   &set_ids=1,20               # canonicalised (sorted + deduped) by the zod schema

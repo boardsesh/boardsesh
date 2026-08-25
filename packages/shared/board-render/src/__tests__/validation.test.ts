@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
+import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import {
   isValidFrameSegment,
   isValidFramesString,
@@ -70,9 +71,13 @@ describe('isValidFramesString', () => {
 
 describe('VALID_BOARD_NAMES', () => {
   it('includes every supported board', () => {
-    for (const name of ['kilter', 'tension', 'moonboard', 'decoy', 'touchstone', 'grasshopper', 'soill']) {
+    for (const name of ['kilter', 'tension', 'moonboard', 'decoy', 'touchstone', 'grasshopper', 'soill', 'woods']) {
       expect(VALID_BOARD_NAMES.has(name)).toBe(true);
     }
+  });
+
+  it('is exactly SUPPORTED_BOARDS, so a new board can never be a silent 400', () => {
+    expect([...VALID_BOARD_NAMES].sort()).toEqual([...SUPPORTED_BOARDS].sort());
   });
 
   it('rejects unknown boards', () => {
@@ -114,6 +119,19 @@ describe('ogClimbQuerySchema', () => {
 
   it('rejects an invalid board_name', () => {
     expect(ogClimbQuerySchema.safeParse({ ...valid, board_name: 'evil' }).success).toBe(false);
+  });
+
+  it('accepts a Woods share card', () => {
+    const parsed = ogClimbQuerySchema.parse({
+      ...valid,
+      board_name: 'woods',
+      layout_id: '1',
+      size_id: '2',
+      set_ids: '1',
+    });
+    expect(parsed.board_name).toBe('woods');
+    expect(parsed.size_id).toBe(2);
+    expect(parsed.set_ids).toBe('1');
   });
 
   it('rejects non-numeric set_ids', () => {

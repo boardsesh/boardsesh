@@ -37,7 +37,7 @@ import {
   type FavoritesQueryVariables,
   type FavoritesQueryResponse,
 } from '@boardsesh/graphql/operations/favorites';
-import { BOULDER_GRADES } from '@boardsesh/board-config';
+import { getGradesForBoard, toBoardName } from '@boardsesh/board-config';
 import { useBoardAdapter } from '@boardsesh/board-react';
 import { myBoardsQueryKey } from '../query-keys';
 import { getDatabaseHandle } from '../../../db';
@@ -732,28 +732,50 @@ export function useUnfollowBoard() {
 // Board Configuration
 // ============================================
 
-// Bundled grade taxonomy (ids 10-33) for the cold-offline case: grades are static
-// V↔Font data, so the grade-range rail works with no signal even if the network
-// grades were never fetched. Online refetches the board's real list.
-const OFFLINE_GRADES: Grade[] = BOULDER_GRADES.map((grade) => ({
-  difficultyId: grade.difficulty_id,
-  name: grade.difficulty_name,
-}));
+// Bundled grade taxonomy for the cold-offline case: grades are static V↔Font
+// data, so the grade-range rail works with no signal even if the network grades
+// were never fetched. Online refetches the board's real list.
+//
+// Board-aware, because the full 10-33 scale is not what every board offers:
+// MoonBoard starts at 6A and Woods only carries the V-bands its own app grades
+// in. Cold-offline used to hand every board the whole scale, so MoonBoard's rail
+// offered sub-6A stops its online list never had — the offline rail now matches
+// the online filter on both boards.
+//
+// Memoised per board name so the query's `placeholderData` is referentially
+// stable: a fresh object each render reads as new data to React Query and
+// re-runs `select` (and every grade consumer) on every render.
+const offlineGradesByBoard = new Map<string, { grades: Grade[] }>();
+
+function getOfflineGrades(boardName: string): { grades: Grade[] } {
+  const cached = offlineGradesByBoard.get(boardName);
+  if (cached) return cached;
+  // An unrecognised board falls back to Kilter's full scale — the same list the
+  // pre-board-aware code handed everyone, so an unknown board is never worse off.
+  const grades = getGradesForBoard(toBoardName(boardName) ?? 'kilter').map((grade) => ({
+    difficultyId: grade.difficulty_id,
+    name: grade.difficulty_name,
+  }));
+  const response = { grades };
+  offlineGradesByBoard.set(boardName, response);
+  return response;
+}
 
 export function useGrades(boardName: string, enabled = true) {
+  const offlineGrades = getOfflineGrades(boardName);
   return useQuery({
     queryKey: ['grades', boardName],
     queryFn: () => {
       // Grades are the same static data online/offline, so (unlike search) the
       // offline flag stays OUT of the key — no cache miss / refetch on every flip.
-      if (!onlineManager.isOnline()) return { grades: OFFLINE_GRADES };
+      if (!onlineManager.isOnline()) return offlineGrades;
       return getHttpClient().request<GetGradesQueryResponse>(GET_GRADES, { boardName });
     },
     select: (data) => data.grades,
     staleTime: 24 * 60 * 60 * 1000,
     // Bundled grades render immediately (and cover a cold-offline start); the
     // network refines the board's real list when online.
-    placeholderData: { grades: OFFLINE_GRADES },
+    placeholderData: offlineGrades,
     enabled: enabled && boardName.length > 0,
   });
 }

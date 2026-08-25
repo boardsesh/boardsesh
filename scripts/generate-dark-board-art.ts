@@ -146,6 +146,9 @@ const ART_GROUPS: readonly ArtGroup[] = [
  *   - `moonboardmasters2017|2019/screw-onfeet` — small mid-tone screw-on footholds; they read
  *     already, and lifting them would crowd the lifted set B they sit between.
  *   - `woodenholds*` — mid-tone wood.
+ *   - `woods/woods-8x10-bg` / `woods-12x12-bg` — an opaque photograph of the hold set on a
+ *     white ground, not a near-black transparent layer; there is nothing to lift, and the
+ *     tint/curve transforms would only wash the wood grain out.
  *   - Every non-MoonBoard board — mid-tone by construction.
  */
 

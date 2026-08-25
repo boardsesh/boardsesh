@@ -53,6 +53,10 @@ export type SubscriptionClimb = {
   // renders its grade without a per-climb refetch. Nullish from older peers.
   boardseshDifficulty?: number | null;
   boardseshConfidence?: string | null;
+  // The sizes the climb fits on, so a peer standing at a different-sized wall
+  // keeps the one signal that separates Woods' two boards (their hold ids
+  // overlap as different holds). Nullish from older peers.
+  compatibleSizeIds?: number[] | null;
 };
 
 export type SubscriptionQueueItemUser = {
@@ -120,6 +124,7 @@ export function toClimbQueueItem(subscriptionItem: SubscriptionQueueItem): Climb
       framesPace: subscriptionItem.climb.framesPace,
       boardseshDifficulty: subscriptionItem.climb.boardseshDifficulty,
       boardseshConfidence: subscriptionItem.climb.boardseshConfidence,
+      compatibleSizeIds: subscriptionItem.climb.compatibleSizeIds,
     },
   };
 }

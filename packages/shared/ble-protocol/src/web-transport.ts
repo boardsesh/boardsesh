@@ -231,7 +231,11 @@ export async function writeCharacteristicSeries(
   characteristic: WebBluetoothRemoteGATTCharacteristic,
   messages: Uint8Array[],
   signal?: AbortSignal,
-  options?: { allowWithResponseFallback?: boolean; allowUnsupportedWithResponseRetry?: boolean },
+  options?: {
+    forceWithResponse?: boolean;
+    allowWithResponseFallback?: boolean;
+    allowUnsupportedWithResponseRetry?: boolean;
+  },
 ): Promise<void> {
   // Default to the proven write-without-response path. MoonBoard may choose
   // write-with-response up front for the original RedBearLab box (its LED
@@ -239,8 +243,16 @@ export async function writeCharacteristicSeries(
   // behaviour-driven: it tries without-response first and only retries
   // with-response when Web Bluetooth rejects the operation with
   // NotSupportedError on a write-only characteristic.
+  //
+  // `forceWithResponse` overrides all of that: a board whose firmware only
+  // acknowledges written chunks (Woods, protocol spec §8) drops
+  // write-without-response silently, and the characteristic still ADVERTISES
+  // writeWithoutResponse — so neither the property probe nor the
+  // NotSupportedError retry would ever catch it. The caller states the
+  // requirement instead of hoping the browser reports it.
   const useWithResponse =
-    (options?.allowWithResponseFallback ?? false) && characteristic.properties?.writeWithoutResponse === false;
+    (options?.forceWithResponse ?? false) ||
+    ((options?.allowWithResponseFallback ?? false) && characteristic.properties?.writeWithoutResponse === false);
 
   const writeChunks = async (chunks: Uint8Array[], writeWithResponse: boolean) => {
     for (let messageIndex = 0; messageIndex < chunks.length; messageIndex++) {

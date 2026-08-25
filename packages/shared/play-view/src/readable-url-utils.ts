@@ -7,9 +7,13 @@ import {
 } from '@boardsesh/board-constants/product-sizes';
 import {
   getMoonBoardDetails,
+  getWoodsBoardDetails,
   MOONBOARD_LAYOUTS,
   MOONBOARD_SETS,
   MOONBOARD_SIZE,
+  WOODS_LAYOUTS,
+  WOODS_SETS,
+  WOODS_SIZES,
   type MoonBoardLayoutKey,
 } from '@boardsesh/board-config';
 import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
@@ -340,6 +344,29 @@ function resolveReadableBoardSegments({
     }
   }
 
+  if (boardType === 'woods') {
+    try {
+      const woodsDetails = getWoodsBoardDetails({ size_id: sizeId });
+      if (woodsDetails.layout_id !== layoutId) return null;
+      // Woods ships one synthetic hold set, so anything but exactly that set
+      // names holds the board doesn't have — emit the numeric form instead of a
+      // readable URL that would resolve back to a different config.
+      const woodsSetIds = new Set<number>(woodsDetails.set_ids);
+      if (woodsSetIds.size !== setIdValues.length || setIdValues.some((setId) => !woodsSetIds.has(setId))) {
+        return null;
+      }
+
+      return {
+        boardName: boardType,
+        layoutSlug: generateLayoutSlug(woodsDetails.layout_name),
+        sizeSlug: generateSizeSlug(woodsDetails.size_name),
+        setSlug: generateSetSlug(woodsDetails.set_names),
+      };
+    } catch {
+      return null;
+    }
+  }
+
   const layout = getLayout(boardType, layoutId);
   const size = getProductSize(boardType, sizeId);
   const availableSets = getSetsForLayoutAndSize(boardType, layoutId, sizeId);
@@ -593,6 +620,67 @@ function resolveMoonBoardSegmentsToIds({
 }
 
 /**
+ * The Woods half of the parse direction. Woods carries no rows in the generated
+ * layout/size/set tables, so the catalogue walk below finds nothing for it —
+ * everything resolves off the static `woods-config` constants instead.
+ *
+ * Both the readable form this app emits (`original` / `8x10` | `12x12` /
+ * `standard`) and the bare numeric ids resolve, because a URL can mix them: the
+ * all-numeric path never reaches here, but `/woods/original/2/standard/40` does.
+ * The accepted forms are kept in step with www's server-side parser
+ * (`packages/web/app/lib/url-utils.server.ts`) — same segments, same casing
+ * rules, same dashed size variants — so a link that opens on the website opens
+ * in the app too. The set segment stays exact for the same reason MoonBoard's
+ * does: a slug that doesn't rebuild is not a form either host emitted, so it
+ * isn't authoritative about what's on the wall.
+ */
+function resolveWoodsSegmentsToIds({
+  layoutSlug,
+  sizeSlug,
+  setSlug,
+}: {
+  layoutSlug: string;
+  sizeSlug: string;
+  setSlug: string;
+}): Omit<ParsedBoardConfigPath, 'angle'> | null {
+  // Slugs are lower-case by construction, but a hand-typed or link-shortened URL
+  // can arrive upper-cased; www lower-cases every Woods segment before matching.
+  const layoutSegment = layoutSlug.toLowerCase();
+  const sizeSegment = sizeSlug.toLowerCase();
+  const setSegment = setSlug.toLowerCase();
+
+  const woodsLayout = WOODS_LAYOUTS.woods;
+  if (layoutSegment !== generateLayoutSlug(woodsLayout.name) && layoutSegment !== String(woodsLayout.id)) return null;
+
+  // Size: the numeric id ('1' / '2'), the dimension slug ('8x10' / '12x12'), or
+  // its dashed variant ('8-10' / '12-12').
+  const size = Object.values(WOODS_SIZES).find((candidate) => {
+    const dimensionSlug = generateSizeSlug(candidate.name);
+    return (
+      sizeSegment === String(candidate.id) ||
+      sizeSegment === dimensionSlug ||
+      sizeSegment === dimensionSlug.replace('x', '-')
+    );
+  });
+  if (!size) return null;
+
+  const woodsSetIds = WOODS_SETS.map((woodsSet) => woodsSet.id);
+  const canonicalSetSlug = generateSetSlug(WOODS_SETS.map((woodsSet) => woodsSet.name));
+  // The one form www accepts that this resolver deliberately does not is the
+  // EMPTY set segment. www needs it because a board path can be built with no
+  // sets; here an empty segment can only come from a hand-edited slug URL, and
+  // resolving it would mean inventing a set list the URL never named.
+  if (setSegment !== canonicalSetSlug && setSegment !== woodsSetIds.join(',')) return null;
+
+  return {
+    boardName: 'woods',
+    layoutId: woodsLayout.id,
+    sizeId: size.id,
+    setIds: woodsSetIds.join(','),
+  };
+}
+
+/**
  * Inverse of {@link resolveReadableBoardSegments}: named URL slugs back to the
  * numeric board config. Resolution is generate-and-compare against the static
  * board tables — every candidate layout/size/set is slugified with the very
@@ -616,6 +704,10 @@ export function resolveBoardSegmentsToIds({
 
   if (boardType === 'moonboard') {
     return resolveMoonBoardSegmentsToIds({ layoutSlug, sizeSlug, setSlug });
+  }
+
+  if (boardType === 'woods') {
+    return resolveWoodsSegmentsToIds({ layoutSlug, sizeSlug, setSlug });
   }
 
   const layout = getAllLayouts(boardType).find((candidate) => generateLayoutSlug(candidate.name) === layoutSlug);

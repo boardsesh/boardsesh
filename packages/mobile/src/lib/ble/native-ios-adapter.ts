@@ -11,6 +11,7 @@ import {
   type NativeBleScanEvent,
 } from '../../../modules/live-activity/src/index';
 import type {
+  BleAdapterOptions,
   BluetoothAdapter,
   BleConnection,
   BleConnectDiagnostics,
@@ -78,11 +79,19 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
   // connect attempt so both the failure analytics event and the Sentry report
   // can read it.
   private lastConnectDiagnostics: BleConnectDiagnostics | null = null;
+  // Accepted for signature symmetry with RNBleAdapter, deliberately NOT acted
+  // on: a native write's type is decided in Swift
+  // (`BoardBleEncoding.preferredWriteType`), which JS can't reach without a
+  // native release (#3314). The factory keeps boards that need acknowledged
+  // writes off this adapter entirely, so an honoured value never comes up.
+  readonly options: BleAdapterOptions;
 
   constructor(
     private readonly devicePicker: DevicePickerFn,
     private readonly scanFamily: BoardScanFamily = 'aurora',
+    options: BleAdapterOptions = {},
   ) {
+    this.options = options;
     if (!boardBleNative) {
       throw new Error('BoardBle native module not linked — rebuild the preview client');
     }

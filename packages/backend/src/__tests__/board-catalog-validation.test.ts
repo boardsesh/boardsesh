@@ -4,7 +4,15 @@ import { GraphQLError } from 'graphql';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, normaliseSetIds } from '@boardsesh/board-config';
+import {
+  MOONBOARD_LAYOUTS,
+  MOONBOARD_SETS,
+  MOONBOARD_SIZE,
+  WOODS_LAYOUTS,
+  WOODS_SETS,
+  WOODS_SIZES,
+  normaliseSetIds,
+} from '@boardsesh/board-config';
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { assertKnownBoardConfig } from '../graphql/resolvers/board-presence/board-catalog';
@@ -316,6 +324,29 @@ describe('assertKnownBoardConfig', () => {
         String(MOONBOARD_SETS['moonboard-2010'][0].id),
       ),
     );
+    expect(selectSpy).not.toHaveBeenCalled();
+  });
+
+  it('validates Woods against its single layout, its two sizes and its one synthetic set', async () => {
+    const selectSpy = vi.spyOn(db, 'select');
+    const woodsLayoutId = WOODS_LAYOUTS.woods.id;
+    const woodsSetIds = WOODS_SETS.map((woodsSet) => woodsSet.id).join(',');
+    const smallSizeId = WOODS_SIZES['8x10'].id;
+    const largeSizeId = WOODS_SIZES['12x12'].id;
+
+    await expect(assertKnownBoardConfig('woods', woodsLayoutId, smallSizeId, woodsSetIds)).resolves.toBeUndefined();
+    await expect(assertKnownBoardConfig('woods', woodsLayoutId, largeSizeId, woodsSetIds)).resolves.toBeUndefined();
+
+    // A layout, a size and a set the board doesn't have. The empty set string is
+    // rejected one layer earlier by the CSV grammar, which this asserts too:
+    // an empty set list mis-parses the board path and breaks the board builder.
+    await expectUnknownBoardConfig(assertKnownBoardConfig('woods', woodsLayoutId + 1, largeSizeId, woodsSetIds));
+    await expectUnknownBoardConfig(assertKnownBoardConfig('woods', woodsLayoutId, largeSizeId + 1, woodsSetIds));
+    await expectUnknownBoardConfig(assertKnownBoardConfig('woods', woodsLayoutId, largeSizeId, '2'));
+    await expectUnknownBoardConfig(assertKnownBoardConfig('woods', woodsLayoutId, largeSizeId, '1,2'));
+    await expectUnknownBoardConfig(assertKnownBoardConfig('woods', woodsLayoutId, largeSizeId, ''));
+
+    // Static catalog: not one of those seven answers came from the database.
     expect(selectSpy).not.toHaveBeenCalled();
   });
 });

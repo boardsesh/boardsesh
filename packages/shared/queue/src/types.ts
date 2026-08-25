@@ -53,6 +53,14 @@ export type Climb = {
   // party-peer broadcast shows the grade without a per-climb refetch.
   boardseshDifficulty?: number | null;
   boardseshConfidence?: string | null;
+  // `board_climbs.compatible_size_ids` — the product sizes this climb fits on.
+  // Null/undefined means no compatibility data (legacy row, or a fetch path
+  // that doesn't project it) and imposes no constraint. Carried through the
+  // queue because a party peer on a different-sized wall needs it: on Woods the
+  // 8x10's hold ids all exist on the 12x12 as different holds, so this is the
+  // only field that stops an 8x10 climb lighting up wrong (canAddClimbToBoard
+  // rule 5).
+  compatibleSizeIds?: number[] | null;
 };
 
 export type ClimbQueueItem = {

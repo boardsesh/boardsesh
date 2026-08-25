@@ -365,4 +365,8 @@ export const BOARD_BACKGROUND_ASSETS: Record<string, number> = {
   'touchstone/product_sizes_layouts_sets/1-v4.webp': require('../../../web/public/images/touchstone/product_sizes_layouts_sets/1-v4.webp'),
   'touchstone/product_sizes_layouts_sets/thumbs/1-v2.webp': require('../../../web/public/images/touchstone/product_sizes_layouts_sets/thumbs/1-v2.webp'),
   'touchstone/product_sizes_layouts_sets/thumbs/1-v4.webp': require('../../../web/public/images/touchstone/product_sizes_layouts_sets/thumbs/1-v4.webp'),
+  'woods/thumbs/woods-12x12-bg.webp': require('../../../web/public/images/woods/thumbs/woods-12x12-bg.webp'),
+  'woods/thumbs/woods-8x10-bg.webp': require('../../../web/public/images/woods/thumbs/woods-8x10-bg.webp'),
+  'woods/woods-12x12-bg.webp': require('../../../web/public/images/woods/woods-12x12-bg.webp'),
+  'woods/woods-8x10-bg.webp': require('../../../web/public/images/woods/woods-8x10-bg.webp'),
 };

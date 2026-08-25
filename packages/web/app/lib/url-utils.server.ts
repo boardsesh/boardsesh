@@ -16,8 +16,14 @@ import {
   parseBoardRouteParams,
   getMoonBoardLayoutBySlug,
 } from './url-utils';
-import { generateSetNameSlug, generateSetSlug } from '@boardsesh/play-view/readable-url-utils';
+import {
+  generateLayoutSlug,
+  generateSetNameSlug,
+  generateSetSlug,
+  generateSizeSlug,
+} from '@boardsesh/play-view/readable-url-utils';
 import { type MoonBoardLayoutKey, MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from './moonboard-config';
+import { WOODS_LAYOUTS, WOODS_SETS, WOODS_SIZES } from './woods-config';
 
 // Helper to parse MoonBoard size slug (always returns the single size)
 function getMoonBoardSizeBySlug(): { id: number; name: string } {
@@ -110,6 +116,76 @@ export async function parseBoardRouteParamsWithSlugs<T extends BoardRouteParamet
         parsedSetIds = sets.map((set) => set.id);
       }
     }
+
+    const parsedParams = {
+      board_name: board_name as BoardName,
+      layout_id: parsedLayoutId,
+      size_id: parsedSizeId,
+      set_ids: parsedSetIds,
+      angle: Number(angle),
+    };
+
+    if (climb_uuid) {
+      return {
+        ...parsedParams,
+        climb_uuid: extractUuidFromSlug(climb_uuid),
+      } as T extends BoardRouteParametersWithUuid ? ParsedBoardRouteParametersWithUuid : never;
+    }
+
+    return parsedParams as T extends BoardRouteParametersWithUuid ? never : ParsedBoardRouteParameters;
+  }
+
+  // Handle Woods separately (static config, single layout, one synthetic set).
+  if (board_name === 'woods') {
+    // Every Woods segment is validated against the static catalogue and a miss is
+    // a 404, the way the MoonBoard block above 404s an unknown layout. Woods has
+    // exactly one (layout, size, set) catalogue, so a segment outside it names a
+    // board that does not exist — passing it through instead made
+    // `getWoodsBoardDetails` throw on an unknown size id (a 500 on `/woods/1/99/…`)
+    // or silently render the wrong board for an unknown size slug.
+
+    // Woods ships a single layout, so its numeric id and its name slug
+    // (`original`) both land on it.
+    const decodedLayoutId = decodeURIComponent(layout_id).toLowerCase();
+    if (
+      decodedLayoutId !== String(WOODS_LAYOUTS.woods.id) &&
+      decodedLayoutId !== generateLayoutSlug(WOODS_LAYOUTS.woods.name)
+    ) {
+      return notFound();
+    }
+    parsedLayoutId = WOODS_LAYOUTS.woods.id;
+
+    // Size: the numeric id ('1' / '2'), the dimension slug `generateSizeSlug`
+    // emits ('8x10' / '12x12'), or its dashed variant ('8-10' / '12-12').
+    const decodedSizeId = decodeURIComponent(size_id).toLowerCase();
+    const matchedSize = Object.values(WOODS_SIZES).find((size) => {
+      const dimensionSlug = generateSizeSlug(size.name);
+      return (
+        decodedSizeId === String(size.id) ||
+        decodedSizeId === dimensionSlug ||
+        decodedSizeId === dimensionSlug.replace('x', '-')
+      );
+    });
+    if (!matchedSize) {
+      return notFound();
+    }
+    parsedSizeId = matchedSize.id;
+
+    // Woods has one synthetic hold set, so `standard`, `1` and an empty segment
+    // all resolve to it — and nothing else does, since there is no second set to
+    // combine it with. An empty set list would break the board builder and the
+    // `board/layout/size/sets/angle` path parser, so the empty segment resolves
+    // to the set rather than to nothing.
+    const decodedSetIds = decodeURIComponent(set_ids).toLowerCase();
+    const woodsSetIds = WOODS_SETS.map((set) => set.id);
+    if (
+      decodedSetIds !== '' &&
+      decodedSetIds !== woodsSetIds.join(',') &&
+      decodedSetIds !== generateSetSlug(WOODS_SETS.map((set) => set.name))
+    ) {
+      return notFound();
+    }
+    parsedSetIds = woodsSetIds;
 
     const parsedParams = {
       board_name: board_name as BoardName,

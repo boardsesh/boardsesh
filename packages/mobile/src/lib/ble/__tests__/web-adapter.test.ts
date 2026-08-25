@@ -325,6 +325,51 @@ describe('write', () => {
   });
 });
 
+// Woods reaches the browser transport as the 'moonboard' (Nordic UART) scan
+// family with preferWriteWithResponse set — its firmware acknowledges every
+// chunk (protocol spec §8) while its characteristic still advertises
+// write-without-response, so the preference is the only signal there is.
+describe('write with preferWriteWithResponse', () => {
+  it('acknowledges every 20-byte chunk even when without-response is advertised', async () => {
+    const characteristic = makeCharacteristic(true);
+    const { device } = makeDevice({ [UART_SERVICE_UUID]: characteristic });
+    stubBluetooth(vi.fn().mockResolvedValue(device));
+
+    const adapter = new WebBluetoothAdapter('moonboard', { preferWriteWithResponse: true });
+    await adapter.requestAndConnect();
+
+    // 50 bytes at a 20-byte chunk ceiling → 3 chunks (20, 20, 10).
+    await adapter.write(new Uint8Array(50).fill(7));
+
+    expect(characteristic.writeValueWithResponse).toHaveBeenCalledTimes(3);
+    expect(characteristic.writeValueWithoutResponse).not.toHaveBeenCalled();
+    const writtenChunks = characteristic.writeValueWithResponse.mock.calls.map((call) => call[0] as Uint8Array);
+    expect(writtenChunks.map((chunk) => chunk.length)).toEqual([
+      MAX_BLUETOOTH_MESSAGE_SIZE,
+      MAX_BLUETOOTH_MESSAGE_SIZE,
+      10,
+    ]);
+  });
+
+  it('leaves the write path byte-identical when the preference is absent or false', async () => {
+    // Same payload, same chunking, same GATT calls as an adapter built with no
+    // options at all — the preference must not perturb anything but the write
+    // type it asks for.
+    const chunksFor = async (options?: { preferWriteWithResponse: boolean }) => {
+      const characteristic = makeCharacteristic(true);
+      const { device } = makeDevice({ [UART_SERVICE_UUID]: characteristic });
+      stubBluetooth(vi.fn().mockResolvedValue(device));
+      const adapter = new WebBluetoothAdapter('moonboard', options);
+      await adapter.requestAndConnect();
+      await adapter.write(new Uint8Array(50).fill(7));
+      expect(characteristic.writeValueWithResponse).not.toHaveBeenCalled();
+      return characteristic.writeValueWithoutResponse.mock.calls.map((call) => Array.from(call[0] as Uint8Array));
+    };
+
+    expect(await chunksFor({ preferWriteWithResponse: false })).toEqual(await chunksFor(undefined));
+  });
+});
+
 describe('onDisconnect', () => {
   it('fires the callback on a gattserverdisconnected event and unsubscribes cleanly', async () => {
     const characteristic = makeCharacteristic();

@@ -100,7 +100,8 @@
   },
   "boardseshGrade": {
     "title": "Grade Boardsesh",
-    "moonboardBody": "Nous n'avons pas encore de données de grade communautaires pour le MoonBoard. Enregistre tes croix Moon sur Boardsesh pour aider à le débloquer.",
+    "moonboardBody": "Nous n'avons pas encore de données de cotation communautaires pour le MoonBoard. Enregistre tes croix Moon sur Boardsesh pour aider à la débloquer.",
+    "woodsBody": "Nous n'avons pas encore de données de cotation communautaires pour le Woods Board. Enregistre tes croix sur le Woods pour aider à la débloquer.",
     "loadError": "Impossible de charger le grade pour le moment.",
     "byAngle": "Sa difficulté selon l'angle",
     "summaryLocal": "local",

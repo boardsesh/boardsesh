@@ -23,6 +23,8 @@ const FALLBACK_BOARD_PREVIEW_CONFIGS: Record<string, { layout_id: number; size_i
   touchstone: { layout_id: 1, size_id: 1, set_ids: [1] },
   grasshopper: { layout_id: 1, size_id: 4, set_ids: [1, 2] },
   soill: { layout_id: 1, size_id: 1, set_ids: [1] },
+  // Woods: the one layout, its 12x12 size and the single synthetic hold set.
+  woods: { layout_id: 1, size_id: 2, set_ids: [1] },
 };
 
 const OG_BYTE_CACHE_MB = Number(process.env.OG_BYTE_CACHE_MB) || 32;

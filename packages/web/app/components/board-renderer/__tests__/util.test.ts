@@ -3,7 +3,7 @@ import { getImageUrl, buildBoardRenderUrl, buildOverlayUrl, buildOgBoardRenderUr
 import type { BoardDetails } from '@/app/lib/types';
 
 describe('getImageUrl', () => {
-  describe('self-hosted Kilter/Tension images (relative paths)', () => {
+  describe('self-hosted board images (relative paths)', () => {
     it('converts PNG to WebP', () => {
       expect(getImageUrl('product_sizes_layouts_sets/36-1.png', 'kilter')).toBe(
         '/images/kilter/product_sizes_layouts_sets/36-1.webp',
@@ -26,6 +26,17 @@ describe('getImageUrl', () => {
       expect(getImageUrl('product_sizes_layouts_sets/1.png', 'tension', true)).toBe(
         '/images/tension/product_sizes_layouts_sets/thumbs/1.webp',
       );
+    });
+
+    // The Woods renderer feeds this the bare background key from
+    // `getWoodsBoardDetails().images_to_holds` — the same three variants ship
+    // under public/images/woods/ as for every other board.
+    it('builds the Woods background href from the bare .png key', () => {
+      expect(getImageUrl('woods-8x10-bg.png', 'woods')).toBe('/images/woods/woods-8x10-bg.webp');
+    });
+
+    it('inserts /thumbs/ for a Woods thumbnail', () => {
+      expect(getImageUrl('woods-12x12-bg.png', 'woods', true)).toBe('/images/woods/thumbs/woods-12x12-bg.webp');
     });
   });
 

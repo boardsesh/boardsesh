@@ -38,6 +38,13 @@ import type { BoardName, RenderBoardConfig } from '@boardsesh/shared-schema';
 
 import { toBoardName } from './board-name';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, type MoonBoardLayoutKey } from './moonboard-config';
+import { WOODS_LAYOUTS, WOODS_SETS, WOODS_SIZES } from './woods-config';
+
+/** Woods' one synthetic hold set — every Woods board and climb carries it. */
+const WOODS_SET_IDS: number[] = WOODS_SETS.map((woodsSet) => woodsSet.id);
+const WOODS_SIZE_IDS = new Set(Object.values(WOODS_SIZES).map((woodsSize) => woodsSize.id));
+/** The bigger of the two Woods boards, and the one most of the catalog is set on. */
+const WOODS_DEFAULT_SIZE_ID = WOODS_SIZES['12x12'].id;
 
 /**
  * The layout / size / hold sets a climb should be rendered with — the GraphQL
@@ -137,6 +144,18 @@ export function getDefaultRenderBoard(
     return { layoutId, sizeId: MOONBOARD_SIZE.id, setIds: sets.map((set) => set.id) };
   }
 
+  if (boardName === 'woods') {
+    // Woods has one layout, one synthetic hold set, and two sizes that carry no
+    // rows in the Aurora product-size tables — so the "biggest size on the
+    // layout" walk below has nothing to read. The 12x12 is the no-information
+    // default: it is the board the bulk of the catalog is set on.
+    return {
+      layoutId: climbLayoutId ?? WOODS_LAYOUTS.woods.id,
+      sizeId: WOODS_DEFAULT_SIZE_ID,
+      setIds: [...WOODS_SET_IDS],
+    };
+  }
+
   const layoutId = climbLayoutId ?? getAllLayouts(boardName)[0]?.id;
   if (!layoutId) return null;
 
@@ -160,6 +179,78 @@ export function getDefaultRenderBoard(
 }
 
 /**
+ * The Woods rung of the ladder. Woods needs its own because the generic path
+ * reads the Aurora product-size tables, which carry no Woods rows: rung 3 can't
+ * find a product family to compare sizes in, and rung 4's "biggest size on the
+ * layout" walk finds nothing to walk.
+ *
+ * Size is the whole game here. The two Woods boards number their holds from
+ * their own origins — the 8x10 runs 0-484 and the 12x12 runs 0-893 — so an 8x10
+ * climb's hold ids all exist on the 12x12 as completely different holds. Drawing
+ * one on the other doesn't fail; it silently draws the wrong climb. So every
+ * rung that can consult `compatible_size_ids` does, including the tick board:
+ * the generic ladder trusts a tick board outright, but a Woods tick board whose
+ * size the climb doesn't fit is exactly the case that renders wrong.
+ */
+function resolveWoodsRenderBoard({
+  climbLayoutId,
+  compatibleSizeIds,
+  tickBoard,
+  ownerBoards,
+}: Pick<
+  ResolveRenderBoardArgs,
+  'climbLayoutId' | 'compatibleSizeIds' | 'tickBoard' | 'ownerBoards'
+>): RenderBoardConfig | null {
+  // Woods has exactly one layout, so an unknown or stale climb/tick layout id
+  // resolves to it rather than being echoed back to the caller.
+  const layoutId = climbLayoutId ?? WOODS_LAYOUTS.woods.id;
+  // An empty `compatible_size_ids` means the same thing as a null one — no
+  // compatibility data for this climb (a legacy row, or denormalised columns
+  // that haven't been populated yet) — so it imposes no constraint, matching
+  // how `candidateSizesForLayout` degrades rather than returning nothing.
+  const fitsClimb = (sizeId: number): boolean =>
+    WOODS_SIZE_IDS.has(sizeId) &&
+    (compatibleSizeIds == null || compatibleSizeIds.length === 0 || compatibleSizeIds.includes(sizeId));
+
+  // 1. The board it was logged on, when the climb actually fits that size.
+  if (
+    tickBoard &&
+    tickBoard.boardType === 'woods' &&
+    (climbLayoutId == null || tickBoard.layoutId === climbLayoutId) &&
+    fitsClimb(tickBoard.sizeId)
+  ) {
+    return { layoutId, sizeId: tickBoard.sizeId, setIds: [...WOODS_SET_IDS] };
+  }
+
+  // 2. The smallest of their own Woods boards the climb fits on. Owned beats
+  //    followed, matching the generic rung 2.
+  const fitting = (ownerBoards ?? []).filter(
+    (board) => board.boardType === 'woods' && board.layoutId === layoutId && fitsClimb(board.sizeId),
+  );
+  if (fitting.length > 0) {
+    const best = fitting.reduce((smallest, board) => {
+      if (board.isOwned !== smallest.isOwned) return board.isOwned ? board : smallest;
+      // `getSizeRank` warns it is only meaningful within one `productId`, and the
+      // two Woods sizes deliberately carry different ones (D2: distinct product
+      // ids stop `size-comparison` treating the 8x10 as a crop of the 12x12).
+      // The rank itself is still a pure height/width ordering, so comparing them
+      // orders 8x10 (25 rows) below 12x12 (31 rows) — which is all rung 2 needs.
+      return getSizeRank('woods', board.sizeId) < getSizeRank('woods', smallest.sizeId) ? board : smallest;
+    });
+    return { layoutId, sizeId: best.sizeId, setIds: [...WOODS_SET_IDS] };
+  }
+
+  // 3. None of theirs fits: draw it on a size the climb is known to fit.
+  const firstCompatibleSizeId = compatibleSizeIds?.find((sizeId) => WOODS_SIZE_IDS.has(sizeId));
+  if (firstCompatibleSizeId != null) {
+    return { layoutId, sizeId: firstCompatibleSizeId, setIds: [...WOODS_SET_IDS] };
+  }
+
+  // 4. Nothing known about the climb's size either — the 12x12 default.
+  return getDefaultRenderBoard('woods', climbLayoutId);
+}
+
+/**
  * Resolve the board configuration a logged climb should be drawn on. See the
  * module comment for the ladder. Returns null only when the board type or layout
  * can't be resolved at all, which callers render as a plain tile.
@@ -168,6 +259,10 @@ export function resolveRenderBoard(args: ResolveRenderBoardArgs): RenderBoardCon
   const { boardType, climbLayoutId, compatibleSizeIds, requiredSetIds, tickBoard, ownerBoards } = args;
   const boardName = toBoardName(boardType);
   if (!boardName) return null;
+
+  if (boardName === 'woods') {
+    return resolveWoodsRenderBoard({ climbLayoutId, compatibleSizeIds, tickBoard, ownerBoards });
+  }
 
   // 1. The board it was actually climbed on. A layout mismatch means the tick's
   //    board association is stale or cross-layout, and drawing the climb on it

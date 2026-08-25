@@ -100,6 +100,16 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
     3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     4: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
   },
+  // Woods Board. The firmware derives each LED's colour from these role codes
+  // (the wire format carries no colour); the codes match WOODS_WIRE_ROLE.
+  woods: {
+    // Magenta foot holds match every Aurora board — the hold-filter swatches read
+    // their colour straight out of this map, and colour never goes on the wire.
+    1: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
+    2: { name: 'HAND', displayColor: '#4444FF', color: '#0000FF' },
+    3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
+    4: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
+  },
 };
 
 // The canonical role code used when *writing* frame strings for each board.
@@ -119,6 +129,8 @@ export const STATE_TO_PRIMARY_CODE: Record<BoardName, Partial<Record<HoldState, 
   touchstone: { STARTING: 1, HAND: 2, FINISH: 3, FOOT: 4 },
   grasshopper: { STARTING: 1, HAND: 2, FINISH: 3, FOOT: 4 },
   soill: { STARTING: 1, HAND: 2, FINISH: 3, FOOT: 4 },
+  // Woods wire role codes (spec §6): Foot 1, Hand 2, Finish 3, Start 4.
+  woods: { STARTING: 4, HAND: 2, FINISH: 3, FOOT: 1 },
 };
 
 export type BoardRenderDefaults = {

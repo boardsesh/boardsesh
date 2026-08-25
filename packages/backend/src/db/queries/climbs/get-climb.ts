@@ -48,6 +48,10 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
         created_at: tables.climbs.createdAt,
         published_at: tables.climbs.publishedAt,
         characteristics: tables.climbs.characteristics,
+        // The sizes this climb fits on — the queue judges size compatibility
+        // client-side, and on Woods it is the only signal separating the 8x10
+        // from the 12x12 (their hold ids overlap as different holds).
+        compatible_size_ids: tables.climbs.compatibleSizeIds,
         // Boardsesh grade at the requested angle. The queue's angle-change refetch
         // routes through this query, so the fresh grade rides along for free.
         boardsesh_difficulty: sql<
@@ -106,6 +110,7 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       framesCount: row.frames_count ?? null,
       framesPace: row.frames_pace ?? null,
       characteristics: row.characteristics ?? null,
+      compatibleSizeIds: row.compatible_size_ids ?? null,
       boardseshDifficulty: row.boardsesh_difficulty == null ? null : Number(row.boardsesh_difficulty),
       boardseshConfidence: toConfidenceTier(row.boardsesh_confidence),
     };

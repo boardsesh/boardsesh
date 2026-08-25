@@ -39,6 +39,7 @@ const CLIMB_SEARCH_FIELDS = `
   boardseshDifficulty
   boardseshConfidence
   description
+  compatibleSizeIds
 `;
 
 // Full fragment for single-climb views that need all fields
@@ -69,6 +70,7 @@ const CLIMB_DETAIL_FIELDS = `
   framesPace
   boardseshDifficulty
   boardseshConfidence
+  compatibleSizeIds
 `;
 
 export const SEARCH_CLIMBS = gql`

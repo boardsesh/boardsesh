@@ -45,6 +45,12 @@ export type Climb = {
   // 'setter_only'). Null when no grade row exists. The UI keeps the Aurora
   // grade when this is null or 'setter_only'.
   boardseshConfidence?: string | null;
+  // `board_climbs.compatible_size_ids` — the product sizes this climb fits on.
+  // Null/undefined means no compatibility data (legacy row, or a fetch path
+  // that doesn't project it) and imposes no constraint. On Woods it separates
+  // the two sizes, whose hold ids overlap without meaning the same holds
+  // (canAddClimbToBoard rule 5).
+  compatibleSizeIds?: number[] | null;
 };
 
 export type ClimbQueryResult = {
