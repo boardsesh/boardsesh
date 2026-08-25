@@ -473,6 +473,10 @@ export default defineConfig({
         command: 'node --import tsx scripts/generate-dark-board-art.ts',
         cache: false,
       },
+      'spike:oklab-board-art': {
+        command: 'node --import tsx scripts/spike-oklab-board-art.ts',
+        cache: false,
+      },
       'generate:oss-licenses': {
         command: 'node --import tsx scripts/generate-oss-licenses.ts',
         cache: false,
