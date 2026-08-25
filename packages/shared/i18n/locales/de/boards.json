@@ -124,6 +124,9 @@
       "gym": "Halle",
       "gymNone": "Nicht in einer Halle",
       "clearLocation": "Standort löschen",
+      "lights": "Beleuchtung",
+      "hasLeds": "Board hat LED-Licht",
+      "hasLedsHint": "Schalt es aus, wenn dein Board kein LED-Kit hat. Deine Crew wechselt sich trotzdem ab, und der Hallen-Bildschirm zeigt weiter den aktuellen Boulder. Bluetooth brauchst du dafür nicht.",
       "duplicate": {
         "title": "Dieses Setup hast du schon",
         "body": "Du hast „{{name}}“ schon — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
@@ -396,6 +399,7 @@
       "serialNumber": "Seriennummer des Controllers",
       "defaultAngle": "Standardwinkel",
       "angleAdjustable": "Winkel ist verstellbar",
+      "hasLeds": "Board hat LED-Licht",
       "isPublic": "Öffentliches Board",
       "unlisted": "Nicht gelistet",
       "hideLocation": "Aus Boards in der Nähe ausblenden",
@@ -411,7 +415,8 @@
     },
     "helperText": {
       "unlisted": "Taucht nicht in der Suche auf, ist aber über den direkten Link erreichbar",
-      "hideLocation": "Taucht nicht in der Umkreissuche auf, außer du folgst der suchenden Person"
+      "hideLocation": "Taucht nicht in der Umkreissuche auf, außer du folgst der suchenden Person",
+      "hasLeds": "Aus heißt: kein LED-Kit. Ihr wechselt euch trotzdem ab, und der Hallen-Bildschirm zeigt weiter den aktuellen Boulder."
     },
     "alerts": {
       "configEditable": "Du kannst Layout, Größe und Hold-Sets ändern. Schon eingetragene Begehungen bleiben erhalten."

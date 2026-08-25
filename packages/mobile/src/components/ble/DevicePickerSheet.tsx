@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, Platform, StyleSheet } from 'react-native';
 import { BottomSheetModal, BottomSheetView, BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -12,12 +12,24 @@ import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleBoardConfig } from '../../lib/ble/board-config-match';
 import { noListedBoardMatchesSelectedType } from '../../lib/ble/picker-resolution-stats';
 import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-location-hint';
+import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
+import { hapticSelection } from '../../lib/haptics';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { DeviceCard } from './DeviceCard';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
+
+/**
+ * How long to wait after dismissing the picker before taking the wall. The picker
+ * is a NATIVE modal sheet and `takeVirtualWall`'s confirmation toast is a
+ * root-level JS view, so it renders BEHIND the sheet (see toast-provider) — fire
+ * the take only once the dismissal has settled. Mirrors the sheet coordinator's
+ * own settle ceiling (`SETTLE_MS` in sheet-presentation-provider), which is
+ * module-private there.
+ */
+const TAKE_WALL_AFTER_DISMISS_MS = Platform.OS === 'ios' ? 550 : 350;
 
 type DevicePickerSheetProps = {
   devices: DiscoveredDevice[];
@@ -40,6 +52,10 @@ export function DevicePickerSheet({
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const sheetRef = useRef<BottomSheetModal>(null);
+  // Both hosts (app root inside BluetoothProvider, and the play route) sit under
+  // the provider, but read it optionally so a host that ever mounts the picker
+  // outside it renders the list without the no-lights offer instead of throwing.
+  const bluetooth = useOptionalBluetoothContext();
 
   const snapPoints = useMemo(() => androidSafeSnapPoints(['72%']), []);
 
@@ -112,6 +128,25 @@ export function DevicePickerSheet({
   const handleEnableLocationServices = useCallback(() => {
     void promptEnableLocationServices();
   }, [promptEnableLocationServices]);
+
+  // A scan that finished with ZERO devices is the only place this belongs. Boards
+  // that WERE found but are the wrong type (`noneMatchedSelectedType`) mean there
+  // is LED hardware in the room, so the offer would be misleading there.
+  const showNoLedsOffer = bluetooth !== null && showEmptyState && !showLocationHint && !showLocationServicesHint;
+
+  const takeVirtualWall = bluetooth?.takeVirtualWall;
+  const handleNoLeds = useCallback(() => {
+    hapticSelection();
+    // Stops the scan and clears the host's picker state, which unmounts this
+    // sheet — so there is no post-dismiss callback left to hang the take off.
+    onDismiss();
+    // Session-local only. This deliberately does NOT write `hasLeds: false`: an
+    // empty scan is weak evidence (box powered off, out of range, or the Android
+    // RN 0.86 scan regression) and a wrong server flip would strip the Bluetooth
+    // affordance from every climber on this board. The server flag is set only
+    // from the board edit form.
+    setTimeout(() => takeVirtualWall?.(), TAKE_WALL_AFTER_DISMISS_MS);
+  }, [onDismiss, takeVirtualWall]);
 
   return (
     <BottomSheetModal
@@ -226,6 +261,27 @@ export function DevicePickerSheet({
             <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
               {t('ble.troubleshootTips')}
             </Text>
+            {/* The wall may simply have no light kit. Offer to drive it anyway:
+                everyone on the board feed (and the gym screen) still sees the
+                climb. Session-local — nothing is written to the board record. */}
+            {showNoLedsOffer && (
+              <View style={styles.noLedsOffer}>
+                <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
+                  {t('ble.noLedsBody')}
+                </Text>
+                <Button
+                  title={t('ble.noLedsCta')}
+                  onPress={handleNoLeds}
+                  variant="text"
+                  size="medium"
+                  icon="pin"
+                  // The handler fires hapticSelection itself so the tap keeps one
+                  // haptic; takeVirtualWall's own hapticLight lands after the
+                  // dismissal, alongside the "You've got the wall" toast.
+                  haptic={false}
+                />
+              </View>
+            )}
           </View>
         )}
         <Button title={t('ble.cancel')} onPress={onDismiss} variant="text" size="medium" role="cancel" />
@@ -278,5 +334,12 @@ const styles = StyleSheet.create({
   },
   troubleshootTip: {
     textAlign: 'center',
+  },
+  noLedsOffer: {
+    alignItems: 'center',
+    gap: spacing[1],
+    // The troubleshoot block's own gap is spacing[1]; this pushes the no-lights
+    // offer clear of the hardware tips so it reads as a separate suggestion.
+    marginTop: spacing[3],
   },
 });

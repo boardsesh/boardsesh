@@ -1500,6 +1500,8 @@ export type CreateBoardInput = {
   description?: InputMaybe<Scalars['String']['input']>;
   /** Optional gym UUID to link board to */
   gymUuid?: InputMaybe<Scalars['String']['input']>;
+  /** Whether this wall has an LED light kit (default true) */
+  hasLeds?: InputMaybe<Scalars['Boolean']['input']>;
   /** Hide from proximity search unless owner follows searcher (default false) */
   hideLocation?: InputMaybe<Scalars['Boolean']['input']>;
   /** Whether the board's angle is physically adjustable (default true) */
@@ -7959,6 +7961,8 @@ export type UpdateBoardInput = {
   boardUuid: Scalars['ID']['input'];
   /** New description */
   description?: InputMaybe<Scalars['String']['input']>;
+  /** New LED light kit flag */
+  hasLeds?: InputMaybe<Scalars['Boolean']['input']>;
   /** Hide from proximity search unless owner follows searcher */
   hideLocation?: InputMaybe<Scalars['Boolean']['input']>;
   /** New angle adjustable flag */
@@ -8193,6 +8197,8 @@ export type UserBoard = {
   gymName?: Maybe<Scalars['String']['output']>;
   /** Gym UUID if linked to a gym */
   gymUuid?: Maybe<Scalars['String']['output']>;
+  /** Whether this wall has an LED light kit */
+  hasLeds: Scalars['Boolean']['output'];
   /** Whether hidden from proximity/nearby search */
   hideLocation: Scalars['Boolean']['output'];
   /** Whether the board's angle is physically adjustable */
@@ -13636,6 +13642,7 @@ export type UserBoardResolvers<
   gymId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   gymName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   gymUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  hasLeds?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   hideLocation?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isAngleAdjustable?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isFollowedByMe?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;

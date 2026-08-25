@@ -8,6 +8,7 @@ import { WallScrubber } from './WallScrubber';
 import { Text } from '../../Text';
 import { useTheme } from '../../../providers/theme-provider';
 import { useDisplayGrade } from '../../../hooks/use-display-grade';
+import { useActiveBoard } from '../../../lib/graphql/use-active-board';
 import { formatRelativeTime } from '../../../lib/format-relative-time';
 import { borderRadius, spacing } from '../../../theme/tokens';
 import type { WallKioskRegion } from './wall-kiosk-layout';
@@ -30,6 +31,10 @@ function WallIdleRecovery({
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
+  // Same source as WallStateStrip's idle line so the two can't disagree about
+  // whether this wall has a light kit. Optional-field contract: only `false`.
+  const { data: activeBoard } = useActiveBoard();
+  const ledless = activeBoard?.hasLeds === false;
 
   const name = lastLitClimb?.name?.trim() || '';
   // BoardPresenceClimb carries no Boardsesh grade today, so `resolveGrade` falls
@@ -58,7 +63,7 @@ function WallIdleRecovery({
         </Text>
       ) : null}
       <Text color={systemColors.secondaryLabel} style={hintLine}>
-        {t('mobile.boardPresence.kiosk.idleHint')}
+        {ledless ? t('mobile.boardPresence.kiosk.idleHintNoLeds') : t('mobile.boardPresence.kiosk.idleHint')}
       </Text>
     </View>
   );

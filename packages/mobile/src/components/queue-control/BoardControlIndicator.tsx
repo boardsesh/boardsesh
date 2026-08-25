@@ -9,9 +9,14 @@
 //                    confirmation lives in the long-press controls sheet now.
 //   heldByPeer     → open the read-only "Now on the wall" view (a teammate drives)
 //
+// On a board with no LED light kit the same control takes and releases the wall
+// instead (pin glyph, brand tone — never the lit-LED amber), and long-press is
+// suppressed: every action in the controls sheet writes the radio.
+//
 // Long-press is a power-user shortcut into the BleControlSheet (Re-light / Turn
-// off / Disconnect). State is read from the single `useBoardConnectionState`
-// source, so the bar can never disagree with the drawer bulb or the Live Activity.
+// off / Disconnect), gated on a real BLE link. State is read from the single
+// `useBoardConnectionState` source, so the bar can never disagree with the drawer
+// bulb; the Live Activity keeps reading the narrower BLE-only value.
 
 import { useCallback } from 'react';
 import { Pressable, StyleSheet, type AccessibilityActionEvent } from 'react-native';
@@ -46,7 +51,7 @@ export function BoardControlIndicator({
 }: BoardControlIndicatorProps) {
   const { t } = useTranslation('settings');
   const { systemColors, brandColors } = useTheme();
-  const { boardConnection, holderDisplayName, bluetooth } = useBoardConnectionState();
+  const { inAppBoardConnection, localConnected, ledless, holderDisplayName, bluetooth } = useBoardConnectionState();
   const { open: openBoardControls } = useBleControlSheet();
   // Shared connect/disconnect path so undo-arming and the press semantics match
   // the drawer + toolbar lightbulbs: connectedByMe → disconnect, disconnected →
@@ -56,21 +61,24 @@ export function BoardControlIndicator({
 
   const handlePress = useCallback(() => {
     // A teammate drives the wall → open the read-only "Now on the wall" view.
-    if (boardConnection === 'heldByPeer') {
+    if (inAppBoardConnection === 'heldByPeer') {
       openPlay();
       return;
     }
-    // connectedByMe → disconnect; disconnected → connect. The destructive
-    // Disconnect's confirmation moved to the long-press controls sheet.
+    // connectedByMe → disconnect (or release, on a wall with no lights);
+    // disconnected → connect (or take). The destructive Disconnect's
+    // confirmation moved to the long-press controls sheet.
     lightbulbPress();
-  }, [boardConnection, openPlay, lightbulbPress]);
+  }, [inAppBoardConnection, openPlay, lightbulbPress]);
 
   const handleLongPress = useCallback(() => {
-    // Only meaningful when this device holds the link — the sheet self-guards too.
-    if (boardConnection !== 'connectedByMe') return;
+    // Gated on the BLE-only `localConnected`, NOT the widened in-app value: the
+    // sheet's Re-light / Turn off / Disconnect actions all write the radio, and
+    // there is no controller behind a virtual hold to write to.
+    if (!localConnected) return;
     hapticMedium();
     openBoardControls();
-  }, [boardConnection, openBoardControls]);
+  }, [localConnected, openBoardControls]);
 
   const handleAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
@@ -83,34 +91,36 @@ export function BoardControlIndicator({
   if (!bluetooth) return null;
 
   const visual = getBoardControlIndicatorVisual({
-    boardConnection,
+    boardConnection: inAppBoardConnection,
     connectedColor: brandColors.warning,
     peerColor: systemColors.secondaryLabel,
     disconnectedColor: systemColors.secondaryLabel,
+    ledless,
+    wallHeldColor: brandColors.primary,
   });
 
-  const accessibilityLabel =
-    boardConnection === 'connectedByMe'
-      ? t('ble.barControl.connectedLabel')
-      : boardConnection === 'heldByPeer'
-        ? holderDisplayName
-          ? t('ble.barControl.peerLabel', { name: holderDisplayName })
-          : t('ble.barControl.peerLabelAnonymous')
-        : t('ble.barControl.disconnectedLabel');
+  const heldByMe = inAppBoardConnection === 'connectedByMe';
+  const accessibilityLabel = heldByMe
+    ? t(ledless ? 'ble.barControl.wallHeldLabel' : 'ble.barControl.connectedLabel')
+    : inAppBoardConnection === 'heldByPeer'
+      ? holderDisplayName
+        ? t('ble.barControl.peerLabel', { name: holderDisplayName })
+        : t('ble.barControl.peerLabelAnonymous')
+      : t(ledless ? 'ble.barControl.wallOpenLabel' : 'ble.barControl.disconnectedLabel');
 
-  const accessibilityHint =
-    boardConnection === 'connectedByMe'
-      ? t('ble.barControl.connectedHint')
-      : boardConnection === 'heldByPeer'
-        ? t('ble.barControl.peerHint')
-        : t('ble.barControl.disconnectedHint');
+  const accessibilityHint = heldByMe
+    ? t(ledless ? 'ble.barControl.wallHeldHint' : 'ble.barControl.connectedHint')
+    : inAppBoardConnection === 'heldByPeer'
+      ? t('ble.barControl.peerHint')
+      : t(ledless ? 'ble.barControl.wallOpenHint' : 'ble.barControl.disconnectedHint');
 
   // Surface the long-press shortcut to assistive tech without overriding the
   // default activate (so a VoiceOver/TalkBack double-tap still fires the tap).
+  // Gated on the BLE-only `localConnected` for the same reason handleLongPress
+  // is: announcing a "Board controls" action that opens nothing is worse than
+  // not announcing it at all.
   const accessibilityActions =
-    enableLongPress && boardConnection === 'connectedByMe'
-      ? [{ name: 'longpress', label: t('ble.holdForControls') }]
-      : undefined;
+    enableLongPress && localConnected ? [{ name: 'longpress', label: t('ble.holdForControls') }] : undefined;
 
   return (
     <Pressable
@@ -119,7 +129,7 @@ export function BoardControlIndicator({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
-      accessibilityState={{ selected: boardConnection === 'connectedByMe' }}
+      accessibilityState={{ selected: heldByMe }}
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={accessibilityActions ? handleAccessibilityAction : undefined}
       hitSlop={8}

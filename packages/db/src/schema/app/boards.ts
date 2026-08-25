@@ -41,6 +41,7 @@ export const userBoards = pgTable(
     isOwned: boolean('is_owned').default(true).notNull(),
     angle: bigint('angle', { mode: 'number' }).notNull().default(40),
     isAngleAdjustable: boolean('is_angle_adjustable').notNull().default(true),
+    hasLeds: boolean('has_leds').notNull().default(true),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     serialNumber: text('serial_number'),

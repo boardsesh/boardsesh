@@ -445,7 +445,18 @@ export function PlayDrawer({
     localConnected: bluetoothConnected,
     pending: lightbulbPending,
     onPress: handleLightbulb,
+    ledless: boardIsLedless,
+    wallHeldLocally,
   } = useLightbulbControl();
+  const { t: tSettings } = useTranslation('settings');
+  // On a wall with no light kit the bulb takes and releases the wall, so the
+  // screen-reader label must say that rather than "Connect board" / "Turn off",
+  // and "selected" has to follow the virtual hold — there is no BLE link to read.
+  const lightbulbAccessibilityLabel = boardIsLedless
+    ? wallHeldLocally
+      ? tSettings('ble.releaseWall')
+      : tSettings('ble.takeWall')
+    : undefined;
   const navigationSuggestionSource = drawerPreviewSuggestionSource ?? playlistSuggestionSource;
   const navigationState = useMemo(
     () => computeNavigationStateWithSuggestions(queue, displayedQueueItem, navigationSuggestionSource),
@@ -1193,8 +1204,9 @@ export function PlayDrawer({
                             isFavorited={isFavorited}
                             remainingQueueCount={navigationState.remainingCount}
                             lightbulbActive={lightbulbActive}
-                            lightbulbConnected={bluetoothConnected}
+                            lightbulbConnected={bluetoothConnected || wallHeldLocally}
                             lightbulbPending={lightbulbPending}
+                            lightbulbAccessibilityLabel={lightbulbAccessibilityLabel}
                             autoDisconnectWarning={bluetooth?.autoDisconnectWarning ?? false}
                             lightbulbLongPressEnabled={bluetoothConnected}
                             // Whether a Bluetooth transport exists at all, and only

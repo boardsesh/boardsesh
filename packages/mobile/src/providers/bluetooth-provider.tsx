@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Alert, AppState } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -35,8 +36,8 @@ import { summarizePickerResolution, type PickerResolutionStats } from '../lib/bl
 import { getAndroidLocationPermissionState } from '../lib/ble/android-location-permission';
 import { useSetActiveBoard } from '../lib/graphql/use-active-board';
 import { getHttpClient } from '../lib/graphql/client';
-import { GET_BOARD } from '../lib/graphql/operations';
-import type { GetBoardQueryResponse } from '../lib/graphql/operations';
+import { GET_BOARD, GET_PROFILE } from '../lib/graphql/operations';
+import type { GetBoardQueryResponse, GetProfileQueryResponse } from '../lib/graphql/operations';
 import { getBoardRenderData } from '../lib/board-details';
 import { registerBluetoothConnection } from '../lib/ble/bluetooth-status-store';
 import { reportHandledError } from '../lib/error-reporting';
@@ -45,7 +46,7 @@ import { useBoardPresenceControls } from './board-presence-provider';
 import { useQueueSnackbar } from './queue-snackbar-provider';
 import { useToast } from './toast-provider';
 import { toClimbInput } from '../lib/climb-to-queue-item';
-import { hapticSuccess } from '../lib/haptics';
+import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { DevicePickerSheet } from '../components/ble/DevicePickerSheet';
 import { BlePickerHostContext, type BlePickerHostValue } from './ble-picker-host';
 import { track } from '../lib/analytics';
@@ -111,6 +112,39 @@ type BluetoothContextValue = {
   autoDisconnectEnabled: boolean;
   autoDisconnectTimeoutSeconds: number;
   autoDisconnectWarning: boolean;
+  /**
+   * The active board is flagged as having no LED light kit (`hasLeds === false`).
+   * Optional-field contract: a missing/stale flag reads as "has LEDs", so an LED
+   * wall can only lose its Bluetooth affordances through an explicit `false`.
+   */
+  ledless: boolean;
+  /**
+   * This device holds the wall WITHOUT a Bluetooth link: it drives who is on the
+   * wall for everyone watching the board feed, but writes zero bytes. Never true
+   * at the same time as a physical link — {@link takeVirtualWall} refuses while
+   * connected and an effect releases the hold the moment BLE connects.
+   */
+  virtualWallHeld: boolean;
+  /**
+   * The server's single holder slot belongs to a DIFFERENT signed-in user. A
+   * virtual hold has no radio to enforce exclusivity the way a BLE link does, so
+   * this is the only thing that stops two phones both believing they drive the
+   * wall. Anonymous holders carry no userId and can't be compared, so they never
+   * set this.
+   */
+  wallHeldByOtherUser: boolean;
+  /**
+   * Take the wall with no Bluetooth: report the current climb to the board feed
+   * and keep reporting as the queue moves. Refused while a BLE link exists —
+   * a real write always wins. Safe to call on a board that still reports
+   * `hasLeds: true`; the picker's "this wall has no lights" offer uses exactly
+   * that to take the wall for this app run without touching the server flag.
+   */
+  takeVirtualWall: () => void;
+  /** Release a virtual hold and tell the feed the wall is free. No-op when not held. */
+  releaseVirtualWall: () => void;
+  /** Either transport can put a climb on the wall right now. */
+  canDriveWall: boolean;
 };
 
 const BluetoothContext = createContext<BluetoothContextValue | null>(null);
@@ -119,6 +153,27 @@ const EMPTY_PICKER_DEVICES: [] = [];
 // switched board's props to reach this provider before it is dropped.
 const PENDING_AUTO_CONNECT_TTL_MS = 15_000;
 const UNDO_WALL_CHANGE_TOAST_ARM_TTL_MS = 10_000;
+// Stand-in for the physical write's latency on a wall with no lights. The
+// auto-sender's drain loop only coalesces while a commit is in flight, so
+// without a settle window a five-climb swipe would land five reports (and five
+// durable board_climb_events rows) instead of the two a BLE write produces.
+const VIRTUAL_WALL_SETTLE_MS = 600;
+
+/** Resolves after `ms`, or immediately when the caller's signal aborts. */
+function settleVirtualWallWrite(ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(false);
+  return new Promise<boolean>((resolve) => {
+    const timeoutId = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve(true);
+    }, ms);
+    function onAbort() {
+      clearTimeout(timeoutId);
+      resolve(false);
+    }
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
 
 function formatPickerBoardConfig(t: TFunction<'settings'>, config: BleBoardConfig): string {
   return t('boardConfigMismatch.mobileConfigValue', {
@@ -479,12 +534,58 @@ function BluetoothAutoSender({
   return null;
 }
 
+/**
+ * Reconciles a virtual hold with the server's holder slot.
+ *
+ * A BLE link is exclusive because the radio says so — one phone is connected to
+ * an Aurora box at a time. A hold with no radio has nothing enforcing that, and
+ * the server keeps a single last-write-wins holder slot, so without this two
+ * climbers at the same wall would both show a lit control and both keep
+ * reporting. The comparison is board-scoped and deliberately NOT session-gated:
+ * production shows 413 boards with several climbers reporting versus 36 boards
+ * with any party-session row at all, so a session gate would miss the case this
+ * feature exists for.
+ *
+ * Mounted only while the wall is held virtually, which keeps the profile read
+ * (and the holder subscription's re-renders) entirely off the Bluetooth path.
+ * Anonymous holders carry no userId and cannot be compared — accepted, not
+ * guessed at.
+ */
+function VirtualWallHolderWatch({ onHeldByOtherUserChange }: { onHeldByOtherUserChange: (held: boolean) => void }) {
+  const { holder } = useBoardPresenceCurrent();
+  // Same `['profile']` query key every other profile reader uses, so this is a
+  // React Query cache read, not another request. Declared inline rather than
+  // through the `lib/graphql/hooks` barrel on purpose: the barrel would join the
+  // Bluetooth provider's module graph for a value only this mount-gated child
+  // ever needs.
+  const { data: viewerProfile } = useQuery({
+    queryKey: ['profile'],
+    queryFn: () => getHttpClient().request<GetProfileQueryResponse>(GET_PROFILE),
+    select: (response: GetProfileQueryResponse) => response.profile,
+  });
+  const holderUserId = holder?.userId ?? null;
+  const viewerUserId = viewerProfile?.id ?? null;
+  const heldByOtherUser = holderUserId !== null && viewerUserId !== null && holderUserId !== viewerUserId;
+  const onHeldByOtherUserChangeRef = useRef(onHeldByOtherUserChange);
+  onHeldByOtherUserChangeRef.current = onHeldByOtherUserChange;
+  useEffect(() => {
+    onHeldByOtherUserChangeRef.current(heldByOtherUser);
+  }, [heldByOtherUser]);
+  return null;
+}
+
 type BluetoothProviderProps = {
   boardName?: string;
   layoutId?: number;
   sizeId?: number;
   setIds?: string;
   boardUuid?: string;
+  /**
+   * Whether the active board has an LED light kit. Optional on purpose — see the
+   * `ledless` note on BluetoothContextValue. Only an explicit `false` changes
+   * behaviour.
+   */
+  hasLeds?: boolean;
   children: React.ReactNode;
 };
 
@@ -494,12 +595,21 @@ export function BluetoothProvider({
   sizeId,
   setIds,
   boardUuid,
+  hasLeds,
   children,
 }: BluetoothProviderProps) {
+  const ledless = hasLeds === false;
+  // A hold with no radio behind it. Kept OUT of `isConnected` so the Live
+  // Activity, the lock-screen Prev/Next and both native iOS intents keep seeing
+  // the BLE-only value they see today (no Swift change).
+  const [virtualWallHeld, setVirtualWallHeld] = useState(false);
+  const virtualWallHeldRef = useRef(false);
+  virtualWallHeldRef.current = virtualWallHeld;
   const [writeActivityStore] = useState(createBleWriteActivityStore);
   const { sessionId, confirmClimbOnWall, reportWallDisconnect, setSessionBoardSerial, lastConnectedBoardSerial } =
     useQueueSessionControls();
   const { t } = useTranslation('settings');
+  const { t: tSession } = useTranslation('session');
   // Board presence ("now on the wall"). Always-on now (the board-presence flag
   // was removed). `enabled` is true while the provider is mounted and false only
   // for the outside-provider DISABLED_CONTROLS fallback, where `boardId` is null
@@ -512,8 +622,12 @@ export function BluetoothProvider({
     resolveAndBindBoardByConfig,
     reportClimbForBoard,
     reportDisconnectForBoard,
+    restampBoardMembershipByUuid,
   } = useBoardPresenceControls();
   const { currentClimb: wallCurrentClimb } = useBoardPresenceCurrent();
+  // Set by VirtualWallHolderWatch, which only mounts while this device holds the
+  // wall virtually — so the profile read it needs never runs on the BLE path.
+  const [wallHeldByOtherUser, setWallHeldByOtherUser] = useState(false);
   const { showUndoWallChangeSnackbar } = useQueueSnackbar();
   // Queue actions (no state subscription, so the provider doesn't re-render on
   // queue changes) + toast, for advancing past a spill climb and telling the user.
@@ -575,6 +689,14 @@ export function BluetoothProvider({
   reportClimbForBoardRef.current = reportClimbForBoard;
   const reportDisconnectForBoardRef = useRef(reportDisconnectForBoard);
   reportDisconnectForBoardRef.current = reportDisconnectForBoard;
+  const restampBoardMembershipByUuidRef = useRef(restampBoardMembershipByUuid);
+  restampBoardMembershipByUuidRef.current = restampBoardMembershipByUuid;
+  const boardUuidRef = useRef(boardUuid);
+  boardUuidRef.current = boardUuid;
+  // One membership re-stamp per report signature. An anonymous emitter is keyed
+  // `conn:{connectionId}` and loses membership on every socket reconnect, so the
+  // first rejection is worth one retry — a second would just hammer.
+  const restampedReportSignatureRef = useRef<string | null>(null);
   const wallCurrentClimbRef = useRef<BoardPresenceClimb | null>(wallCurrentClimb);
   wallCurrentClimbRef.current = wallCurrentClimb;
   const showUndoWallChangeSnackbarRef = useRef(showUndoWallChangeSnackbar);
@@ -718,11 +840,26 @@ export function BluetoothProvider({
 
       const climbInput = { uuid: item.uuid, climb: toClimbInput(item.climb) };
       const angle = item.climb.angle ?? null;
+      const sendReport = () =>
+        reportClimbForBoardRef.current(boardId, climbInput, angle).catch((error: unknown) => {
+          console.warn('[board-presence] reportBoardClimb failed', error);
+          return false;
+        });
+
       pendingReportSignatureRef.current = reportSignature;
-      const accepted = await reportClimbForBoardRef.current(boardId, climbInput, angle).catch((error: unknown) => {
-        console.warn('[board-presence] reportBoardClimb failed', error);
-        return false;
-      });
+      let accepted = await sendReport();
+      // The backend rejects a report from a client whose board membership has
+      // lapsed. Under BLE that never showed, because every reconnect re-resolved
+      // the board; a wall held with no radio has no such event. Re-stamp
+      // membership once (without disturbing the live binding) and retry.
+      const currentBoardUuid = boardUuidRef.current;
+      if (!accepted && currentBoardUuid && restampedReportSignatureRef.current !== reportSignature) {
+        restampedReportSignatureRef.current = reportSignature;
+        const stillTheSameBoard = await restampBoardMembershipByUuidRef
+          .current({ boardUuid: currentBoardUuid })
+          .catch(() => false);
+        if (stillTheSameBoard) accepted = await sendReport();
+      }
       if (pendingReportSignatureRef.current === reportSignature) {
         pendingReportSignatureRef.current = null;
       }
@@ -978,6 +1115,125 @@ export function BluetoothProvider({
     },
     [sendFramesToBoard, resetAutoDisconnect],
   );
+
+  /**
+   * The single commit seam for "put this climb on the wall". Two backends, one
+   * pipeline: everything downstream of a `true` — the latest-wins coalescing
+   * drain, the spill guard, `handleWallConfirmed`'s emitWallConfirm /
+   * confirmClimbOnWall / report fan-out, the re-take dedup, the undo target —
+   * is the existing BLE code, reused verbatim.
+   *
+   * **Order is load-bearing (BLE first).** `takeVirtualWall` refuses while
+   * connected and an effect releases the hold when BLE connects, but that effect
+   * runs after the commit that raced it. Testing `isConnected` first means a
+   * physical link ALWAYS writes real bytes: the virtual branch is unreachable
+   * while a radio is attached, no matter how the two flags interleave.
+   */
+  const commitWallFrames = useCallback<SendFramesToBoard>(
+    (frames, mirrored, signal, sendContext) => {
+      if (isConnected) return sendFramesToBoardWithActivityReset(frames, mirrored, signal, sendContext);
+      // A wall with no lights: nothing to write. Wait out a stand-in for the
+      // write latency so the drain loop coalesces a fast swipe the same way a
+      // physical write does, then report the climb as up.
+      if (virtualWallHeldRef.current) return settleVirtualWallWrite(VIRTUAL_WALL_SETTLE_MS, signal);
+      return Promise.resolve(false);
+    },
+    [isConnected, sendFramesToBoardWithActivityReset],
+  );
+
+  /**
+   * Take the wall with no Bluetooth. Deliberately guarded on `!isConnected`
+   * ALONE, not on `ledless`: the device picker offers this after a scan that
+   * found nothing, on a board whose server flag still says it has LEDs (an empty
+   * scan is weak evidence — the box may be off, out of range, or hitting the
+   * Android RN 0.86 scan regression), and that offer has to work. Which
+   * affordances a board shows is what `ledless` decides; who may take the wall
+   * is decided here.
+   */
+  const takeVirtualWall = useCallback(() => {
+    if (isConnected || virtualWallHeldRef.current) return;
+    // Same reset a fresh BLE connect does, so the climb already on screen is
+    // reported rather than deduped away as "already sent".
+    lastAcceptedReportSignatureRef.current = null;
+    lastAcceptedWallSignatureRef.current = null;
+    pendingReportSignatureRef.current = null;
+    pendingWallReportRef.current = null;
+    undoWallChangeTargetRef.current = null;
+    lastPhysicalFramesRef.current = null;
+    virtualWallHeldRef.current = true;
+    setVirtualWallHeld(true);
+    hapticLight();
+    showToast(tSession('mobile.boardPresence.wallTakenToast'), 'success');
+    track(SHARED_EVENTS.WallTaken, {
+      boardName: boardNameRef.current,
+      layoutId: layoutIdRef.current,
+      sizeId: sizeIdRef.current,
+      ledless,
+      inSession: sessionIdRef.current != null,
+      boardId: presenceBoardIdRef.current ?? resolvedPresenceBoardIdRef.current ?? undefined,
+    });
+  }, [isConnected, ledless, showToast, tSession]);
+
+  /**
+   * Give the wall back. Mirrors what a BLE drop does (`handleBluetoothConnectionEnded`):
+   * broadcast the session-scoped "wall went dark", release the server's holder
+   * slot, and drop the undo target — a phone that no longer drives the wall must
+   * stop reporting.
+   */
+  const releaseVirtualWall = useCallback(
+    (reason: 'user' | 'ble_connected' | 'board_changed' | 'taken_by_peer' | 'unmount' = 'user') => {
+      if (!virtualWallHeldRef.current) return;
+      virtualWallHeldRef.current = false;
+      setVirtualWallHeld(false);
+      setWallHeldByOtherUser(false);
+      // Only a deliberate hand-back is announced. An auto-release (BLE took
+      // over, the board changed, a peer took the wall) is not something the user
+      // did, and a toast for it would read as an error.
+      if (reason === 'user') {
+        hapticLight();
+        showToast(tSession('mobile.boardPresence.wallReleasedToast'), 'info');
+      }
+      undoWallChangeTargetRef.current = null;
+      clearPendingWallReportAndUndoToastArm();
+      void reportWallDisconnectRef.current();
+      const boardId = presenceBoardIdRef.current ?? resolvedPresenceBoardIdRef.current;
+      if (boardId !== null) void reportDisconnectForBoardRef.current(boardId);
+      track(SHARED_EVENTS.WallReleased, {
+        boardName: boardNameRef.current,
+        layoutId: layoutIdRef.current,
+        sizeId: sizeIdRef.current,
+        ledless,
+        reason,
+        inSession: sessionIdRef.current != null,
+        boardId: boardId ?? undefined,
+      });
+    },
+    [clearPendingWallReportAndUndoToastArm, ledless, showToast, tSession],
+  );
+
+  const releaseVirtualWallForUser = useCallback(() => releaseVirtualWall('user'), [releaseVirtualWall]);
+
+  // A real link always wins: drop the virtual hold the moment BLE connects, so
+  // the two can never both be driving. (commitWallFrames' BLE-first ordering
+  // covers the window before this effect runs.)
+  useEffect(() => {
+    if (isConnected) releaseVirtualWall('ble_connected');
+  }, [isConnected, releaseVirtualWall]);
+
+  // Another signed-in climber took the server's holder slot. With no radio to
+  // enforce exclusivity, this is what stops two phones both reporting.
+  useEffect(() => {
+    if (wallHeldByOtherUser) releaseVirtualWall('taken_by_peer');
+  }, [wallHeldByOtherUser, releaseVirtualWall]);
+
+  // Switching boards (or leaving) hands the wall back.
+  const releaseVirtualWallRef = useRef(releaseVirtualWall);
+  releaseVirtualWallRef.current = releaseVirtualWall;
+  useEffect(() => {
+    if (!boardUuid) return;
+    return () => releaseVirtualWallRef.current('board_changed');
+  }, [boardUuid]);
+  useEffect(() => () => releaseVirtualWallRef.current('unmount'), []);
 
   const resolvedPickerBoards = useResolvedBleDeviceBoards(pickerState?.devices ?? EMPTY_PICKER_DEVICES);
   const currentBoardConfig = useMemo(() => {
@@ -1252,7 +1508,7 @@ export function BluetoothProvider({
     }
 
     lastAcceptedReportSignatureRef.current = null;
-    const writeSucceeded = await sendFramesToBoardWithActivityReset(frames, false, undefined, {
+    const writeSucceeded = await commitWallFrames(frames, false, undefined, {
       sendSource: 'undo',
       climbUuid: undoTarget.climbUuid,
     }).catch((error: unknown) => {
@@ -1277,7 +1533,7 @@ export function BluetoothProvider({
     lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(undoTarget);
     undoWallChangeTargetRef.current = null;
     return true;
-  }, [sendFramesToBoardWithActivityReset]);
+  }, [commitWallFrames]);
 
   // Generalized `undoWallChange`: relight ANY presence climb (the wall kiosk's
   // "Light this" confirm), not just the captured undo target. Same BLE-first-
@@ -1298,7 +1554,7 @@ export function BluetoothProvider({
       }
 
       lastAcceptedReportSignatureRef.current = null;
-      const writeSucceeded = await sendFramesToBoardWithActivityReset(frames, false, undefined, {
+      const writeSucceeded = await commitWallFrames(frames, false, undefined, {
         sendSource: 'wall-relight',
         climbUuid: climb.climbUuid,
       }).catch((error: unknown) => {
@@ -1323,7 +1579,7 @@ export function BluetoothProvider({
       lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(climb);
       return true;
     },
-    [sendFramesToBoardWithActivityReset],
+    [commitWallFrames],
   );
 
   const clearBoard = useCallback(
@@ -1514,6 +1770,12 @@ export function BluetoothProvider({
       autoDisconnectEnabled: autoDisconnectBle,
       autoDisconnectTimeoutSeconds,
       autoDisconnectWarning,
+      ledless,
+      virtualWallHeld,
+      wallHeldByOtherUser,
+      takeVirtualWall,
+      releaseVirtualWall: releaseVirtualWallForUser,
+      canDriveWall: isConnected || virtualWallHeld,
     }),
     [
       isConnected,
@@ -1531,6 +1793,11 @@ export function BluetoothProvider({
       autoDisconnectBle,
       autoDisconnectTimeoutSeconds,
       autoDisconnectWarning,
+      ledless,
+      virtualWallHeld,
+      wallHeldByOtherUser,
+      takeVirtualWall,
+      releaseVirtualWallForUser,
     ],
   );
 
@@ -1550,12 +1817,14 @@ export function BluetoothProvider({
   return (
     <BluetoothContext.Provider value={value}>
       <BluetoothWriteActivityProvider store={writeActivityStore}>
-        {/* Holder model: anyone connected writes the wall (always-take), so the
-            auto-sender mounts on isConnected alone — no driver/preview write-gate.
-            Aurora is last-connection-wins, so one phone is physically connected. */}
-        {isConnected && (
+        {/* Holder model: anyone driving the wall writes it (always-take), so the
+            auto-sender mounts on either transport — no driver/preview write-gate.
+            Aurora is last-connection-wins, so one phone is physically connected;
+            a virtual hold is released the moment a real link appears. */}
+        {virtualWallHeld && <VirtualWallHolderWatch onHeldByOtherUserChange={setWallHeldByOtherUser} />}
+        {(isConnected || virtualWallHeld) && (
           <BluetoothAutoSender
-            sendFramesToBoard={sendFramesToBoardWithActivityReset}
+            sendFramesToBoard={commitWallFrames}
             onWallConfirmed={handleWallConfirmed}
             reassertNonce={reassertNonce}
             connectInitialSendRef={connectInitialSendRef}

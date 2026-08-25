@@ -134,6 +134,17 @@ type BoardPresenceControlsValue = {
    */
   resolveAndBindBoardByUuid: (args: ResolveBoardUuidArgs) => Promise<BoardBindingIdentity | null>;
   /**
+   * Re-stamp board membership for an already-bound board without touching the
+   * binding. An anonymous emitter's membership is keyed `conn:{connectionId}`
+   * and dies on a socket reconnect, so a rejected report needs the membership
+   * refreshed before it can be retried. Deliberately does NOT go through
+   * `beginResolution`: that synchronously clears the binding and calls
+   * `setBoardId(null)`, which mid-hold would blank `WallScreen` and unmount the
+   * iPad wall column. Resolves true when the board id is unchanged (the retry is
+   * worth making), false otherwise.
+   */
+  restampBoardMembershipByUuid: (args: ResolveBoardUuidArgs) => Promise<boolean>;
+  /**
    * Report directly to a specific board id. Used immediately after a connect
    * resolve when the React boardId context has not re-rendered yet.
    */
@@ -347,6 +358,27 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
     [beginResolution, settleActiveResolution],
   );
 
+  // Refresh membership for the board we are ALREADY bound to. Calls the client
+  // resolver directly, never `beginResolution`, so the live binding (and the
+  // wall screen that keys off it) survives. If the server hands back a
+  // different board id the wall moved under us — report it and refuse the
+  // retry rather than silently re-pointing the bound feed.
+  const restampBoardMembershipByUuid = useCallback(async (args: ResolveBoardUuidArgs): Promise<boolean> => {
+    const activeClient = clientRef.current;
+    if (!enabledRef.current || activeClient === null || !activeClient.resolveBoardForUuid) {
+      return false;
+    }
+    const boundBoardId = boundBoardBindingRef.current?.boardId ?? boardIdRef.current;
+    if (boundBoardId === null) return false;
+    try {
+      const resolved = await activeClient.resolveBoardForUuid(args);
+      return resolved.boardId === boundBoardId;
+    } catch (error) {
+      console.warn('[board-presence] restampBoardMembershipByUuid failed', error);
+      return false;
+    }
+  }, []);
+
   const resolveAndBindBoardByConfig = useCallback(
     (args: ResolveBoardConfigArgs): Promise<BoardBindingIdentity | null> => {
       const activeClient = clientRef.current;
@@ -473,6 +505,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
       resolveAndBindBoard,
       resolveAndBindBoardByConfig,
       resolveAndBindBoardByUuid,
+      restampBoardMembershipByUuid,
       reportClimbForBoard,
       reportDisconnectForBoard,
       resetPresence,
@@ -483,6 +516,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
       resolveAndBindBoard,
       resolveAndBindBoardByConfig,
       resolveAndBindBoardByUuid,
+      restampBoardMembershipByUuid,
       reportClimbForBoard,
       reportDisconnectForBoard,
       resetPresence,
@@ -544,6 +578,7 @@ const DISABLED_CONTROLS: BoardPresenceControlsValue = {
   resolveAndBindBoard: async () => null,
   resolveAndBindBoardByConfig: async () => null,
   resolveAndBindBoardByUuid: async () => null,
+  restampBoardMembershipByUuid: async () => false,
   reportClimbForBoard: async () => false,
   reportDisconnectForBoard: async () => false,
   resetPresence: () => {},

@@ -1,13 +1,24 @@
-export type PlayDrawerLightbulbPressAction = 'noop' | 'connect' | 'disconnect';
+export type PlayDrawerLightbulbPressAction = 'noop' | 'connect' | 'disconnect' | 'takeWall' | 'releaseWall';
 
 export function derivePlayDrawerLightbulbPressAction(args: {
   hasBluetooth: boolean;
   isBluetoothConnected: boolean;
   isBluetoothLoading: boolean;
+  /** The board is flagged as having no LED light kit (`hasLeds === false`). */
+  ledless?: boolean;
+  /** This device holds the wall with no Bluetooth link. */
+  wallHeld?: boolean;
 }): PlayDrawerLightbulbPressAction {
   // No board selected yet, or a connect/disconnect already in flight — ignore.
   if (!args.hasBluetooth || args.isBluetoothLoading) return 'noop';
+  // Connected state wins, always. A ledless board can still end up with a live
+  // link — the creator header's Bluetooth toggle, or an iOS reconnect intent for
+  // a previously paired box — and the user must be able to hang it up. This is
+  // also the recovery path when a board is wrongly flagged as having no lights.
   if (args.isBluetoothConnected) return 'disconnect';
+  if (args.wallHeld) return 'releaseWall';
+  // A wall with no lights has nothing to connect to; the tap takes the wall.
+  if (args.ledless) return 'takeWall';
   return 'connect';
 }
 
@@ -85,4 +96,28 @@ export function deriveLightbulbLit(args: {
   isSessionWallLit: boolean;
 }): boolean {
   return deriveBoardConnection(args) !== 'disconnected';
+}
+
+/**
+ * In-app widening of {@link deriveBoardConnection} for a wall with no lights.
+ *
+ * Kept SEPARATE from `deriveBoardConnection` on purpose: that function is the
+ * Live Activity contract (lock-screen bulb, Prev/Next, and both native iOS
+ * intents), and a virtual hold must not light the lock screen or arm widget
+ * navigation — there is no radio behind it to write the wall. Only in-app
+ * surfaces read this value.
+ *
+ * `wallHeldByOtherUser` is what a virtual hold has instead of the radio's
+ * exclusivity: the server keeps one last-write-wins holder slot, so a phone
+ * whose local `wallHeld` is still true but whose slot went to someone else is
+ * showing a stale claim, and must read as a peer's wall rather than its own.
+ */
+export function deriveInAppBoardConnection(args: {
+  boardConnection: BoardConnection;
+  wallHeld: boolean;
+  wallHeldByOtherUser: boolean;
+}): BoardConnection {
+  if (args.wallHeld && args.wallHeldByOtherUser) return 'heldByPeer';
+  if (args.wallHeld) return 'connectedByMe';
+  return args.boardConnection;
 }

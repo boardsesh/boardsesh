@@ -124,6 +124,9 @@
       "gym": "Gym",
       "gymNone": "Not at a gym",
       "clearLocation": "Clear location",
+      "lights": "Lights",
+      "hasLeds": "Board has LED lights",
+      "hasLedsHint": "Turn it off for a board with no light kit. Your crew still takes turns, and the gym screen still shows the active climb. No Bluetooth needed.",
       "duplicate": {
         "title": "You already have this setup",
         "body": "You already have \"{{name}}\" with the same layout, size and hold sets.",
@@ -396,6 +399,7 @@
       "serialNumber": "Controller Serial Number",
       "defaultAngle": "Default Angle",
       "angleAdjustable": "Angle is adjustable",
+      "hasLeds": "Board has LED lights",
       "isPublic": "Public board",
       "unlisted": "Unlisted",
       "hideLocation": "Hide from nearby boards",
@@ -411,7 +415,8 @@
     },
     "helperText": {
       "unlisted": "Hidden from search results but accessible via direct link",
-      "hideLocation": "Hidden from nearby board searches unless you follow the searcher"
+      "hideLocation": "Hidden from nearby board searches unless you follow the searcher",
+      "hasLeds": "Off means no light kit. Turns still work, and the gym screen still shows the active climb."
     },
     "alerts": {
       "configEditable": "You can change the layout, size, and hold sets. Climbs already logged stay put."
