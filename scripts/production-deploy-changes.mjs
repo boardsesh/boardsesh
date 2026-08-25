@@ -266,6 +266,14 @@ function formatGitHubOutputs(result) {
   ].join('\n');
 }
 
+/** Human-readable target summary, derived from the emitted outputs so the two can't drift. */
+function summariseTargets(result) {
+  return formatGitHubOutputs(result)
+    .split('\n')
+    .filter((line) => !line.startsWith('deployment_base_sha='))
+    .join('; ');
+}
+
 function runCli(argv) {
   const options = parseCliArguments(argv);
   const result = determineProductionDeployChanges({
@@ -282,7 +290,12 @@ function runCli(argv) {
 
   console.error(
     `production-deploy-changes: ${result.reason}; base=${result.deploymentBaseSha || 'none'}; ` +
-      `web=${result.web}; backend=${result.backend}; app=${result.app}`,
+      // Derived from formatGitHubOutputs, not hand-listed: the two drifted apart
+      // when `cloudflare` was added (#3837) and the deploy log then could not
+      // say whether the Cloudflare apply had been targeted — precisely the
+      // question you ask when that job misbehaves. Deriving it means a new
+      // target shows up here for free.
+      summariseTargets(result),
   );
   if (result.changedFiles.length > 0) {
     console.error(`Changed files since deployment baseline:\n${result.changedFiles.join('\n')}`);
@@ -301,6 +314,7 @@ if (process.argv[1] === scriptPath) {
 
 export {
   classifyChangedFiles,
+  summariseTargets,
   createCliGit,
   determineProductionDeployChanges,
   formatGitHubOutputs,
