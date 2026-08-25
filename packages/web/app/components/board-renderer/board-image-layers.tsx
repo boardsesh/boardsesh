@@ -1,21 +1,35 @@
 import React, { useCallback, useMemo } from 'react';
 import type { BoardDetails } from '@/app/lib/types';
-import { getImageUrl, buildOverlayUrl } from './util';
+import { getImageUrl, buildOverlayUrl, hasDarkBoardArt, toDarkArtUrl } from './util';
+import styles from './board-art-theme.module.css';
 import { THUMBNAIL_WIDTH } from './types';
 import { trackRenderError, type RenderContext } from '@/app/lib/rendering-metrics';
 
 // Use CSS Grid stacking (gridArea: 1/1) instead of absolute positioning to avoid
 // iOS 18.x WebKit bugs with absolutely positioned images in aspect-ratio containers.
-const layerStyle: React.CSSProperties = {
+const baseLayerStyle: React.CSSProperties = {
   gridArea: '1 / 1',
   width: '100%',
   height: '100%',
   objectFit: 'fill',
+};
+
+const layerStyle: React.CSSProperties = {
+  ...baseLayerStyle,
   display: 'block',
 };
 
 const layerContainStyle: React.CSSProperties = {
   ...layerStyle,
+  objectFit: 'contain',
+};
+
+// Light/dark pairs leave `display` to board-art-theme.module.css — an inline value would
+// beat the class and both variants would paint on top of each other.
+const pairedLayerStyle: React.CSSProperties = baseLayerStyle;
+
+const pairedLayerContainStyle: React.CSSProperties = {
+  ...baseLayerStyle,
   objectFit: 'contain',
 };
 
@@ -47,7 +61,12 @@ const BoardImageLayers = React.memo(function BoardImageLayers({
   style,
   fetchPriority,
 }: BoardImageLayersProps) {
+  // Boards with dark art render both variants and let CSS choose — see the module stylesheet
+  // for why this can't be decided at render time. Everything else renders exactly one image,
+  // so no other board pays a second request or a second server render.
+  const darkArt = hasDarkBoardArt(boardDetails.board_name);
   const overlayUrl = frames ? buildOverlayUrl(boardDetails, frames, thumbnail) : null;
+  const darkOverlayUrl = frames && darkArt ? buildOverlayUrl(boardDetails, frames, thumbnail, 'dark') : null;
   const backgroundUrls = useMemo(
     () => Object.keys(boardDetails.images_to_holds).map((img) => getImageUrl(img, boardDetails.board_name, thumbnail)),
     [boardDetails.images_to_holds, boardDetails.board_name, thumbnail],
@@ -63,7 +82,9 @@ const BoardImageLayers = React.memo(function BoardImageLayers({
     [style, mirrored],
   );
 
-  const imgStyle = contain || thumbnail ? layerContainStyle : layerStyle;
+  const useContain = contain || thumbnail;
+  let imgStyle = useContain ? layerContainStyle : layerStyle;
+  if (darkArt) imgStyle = useContain ? pairedLayerContainStyle : pairedLayerStyle;
 
   let renderContext: RenderContext = 'card';
   if (thumbnail) {
@@ -87,31 +108,61 @@ const BoardImageLayers = React.memo(function BoardImageLayers({
     <div style={containerStyle}>
       {overlayUrl ? (
         // Single composited image: background + overlay baked together server-side
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={overlayUrl}
-          alt=""
-          width={imgWidth}
-          height={imgHeight}
-          style={imgStyle}
-          fetchPriority={fetchPriority}
-          loading={thumbnail && fetchPriority !== 'high' ? 'lazy' : undefined}
-          onError={handleOverlayError}
-        />
-      ) : (
-        // No climb selected: just show background layers
-        backgroundUrls.map((url, i) => (
-          // eslint-disable-next-line @next/next/no-img-element
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            key={url}
-            src={url}
+            src={overlayUrl}
             alt=""
             width={imgWidth}
             height={imgHeight}
             style={imgStyle}
-            fetchPriority={i === 0 ? fetchPriority : undefined}
-            loading={thumbnail && !(i === 0 && fetchPriority === 'high') ? 'lazy' : undefined}
+            className={darkOverlayUrl ? styles.lightArt : undefined}
+            fetchPriority={fetchPriority}
+            loading={thumbnail && fetchPriority !== 'high' ? 'lazy' : undefined}
+            onError={handleOverlayError}
           />
+          {darkOverlayUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={darkOverlayUrl}
+              alt=""
+              width={imgWidth}
+              height={imgHeight}
+              style={imgStyle}
+              className={styles.darkArt}
+              loading={thumbnail && fetchPriority !== 'high' ? 'lazy' : undefined}
+              onError={handleOverlayError}
+            />
+          ) : null}
+        </>
+      ) : (
+        // No climb selected: just show background layers
+        backgroundUrls.map((url, i) => (
+          <React.Fragment key={url}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={url}
+              alt=""
+              width={imgWidth}
+              height={imgHeight}
+              style={imgStyle}
+              className={darkArt ? styles.lightArt : undefined}
+              fetchPriority={i === 0 ? fetchPriority : undefined}
+              loading={thumbnail && !(i === 0 && fetchPriority === 'high') ? 'lazy' : undefined}
+            />
+            {darkArt ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={toDarkArtUrl(url)}
+                alt=""
+                width={imgWidth}
+                height={imgHeight}
+                style={imgStyle}
+                className={styles.darkArt}
+                loading={thumbnail && !(i === 0 && fetchPriority === 'high') ? 'lazy' : undefined}
+              />
+            ) : null}
+          </React.Fragment>
         ))
       )}
     </div>

@@ -25,7 +25,24 @@ type BuildBoardRenderUrlOptions = {
   includeBackground?: boolean;
   variant?: 'default' | 'og';
   format?: 'webp' | 'png' | 'jpg' | 'jpeg';
+  /** Ask for the dark art siblings. Only meaningful for boards in `BOARDS_WITH_DARK_ART`. */
+  colorScheme?: 'light' | 'dark';
 };
+
+/**
+ * Boards whose art has a dark-mode sibling committed under public/images.
+ *
+ * Woods is the only one on web: its art is hold sprites on an opaque white ground, which in
+ * dark mode renders as a lit rectangle, so scripts/generate-woods-dark-art.ts keys that
+ * ground out (issue #4753). MoonBoard has dark files too, but they were tuned against the
+ * mobile app's surfaces and are not wired up here yet.
+ *
+ * This gate is what keeps the theme swap from doubling requests and server renders for every
+ * other board — those would render identical bytes twice.
+ */
+const BOARDS_WITH_DARK_ART: ReadonlySet<string> = new Set(['woods']);
+
+export const hasDarkBoardArt = (board: BoardName) => BOARDS_WITH_DARK_ART.has(board);
 
 /**
  * Build the URL for the Rust/WASM-rendered board image.
@@ -41,7 +58,7 @@ type BuildBoardRenderUrlOptions = {
 export const buildBoardRenderUrl = (
   boardDetails: BoardDetails,
   frames: string,
-  { thumbnail, includeBackground, variant, format }: BuildBoardRenderUrlOptions = {},
+  { thumbnail, includeBackground, variant, format, colorScheme }: BuildBoardRenderUrlOptions = {},
 ) => {
   let url =
     `/api/internal/board-render?board_name=${boardDetails.board_name}` +
@@ -64,6 +81,10 @@ export const buildBoardRenderUrl = (
 
   if (format) {
     url += `&format=${format}`;
+  }
+
+  if (colorScheme === 'dark') {
+    url += '&color_scheme=dark';
   }
 
   // Last, always: it reads as the version stamp in a log line, and the route's
@@ -97,10 +118,16 @@ export const buildBoardRenderUrl = (
 export const toFlatFrames = (frames: string | null | undefined, boardName: BoardName): string =>
   toFlatFramesShared(frames, boardName);
 
-export const buildOverlayUrl = (boardDetails: BoardDetails, frames: string, thumbnail?: boolean) =>
+export const buildOverlayUrl = (
+  boardDetails: BoardDetails,
+  frames: string,
+  thumbnail?: boolean,
+  colorScheme?: 'light' | 'dark',
+) =>
   buildBoardRenderUrl(boardDetails, toFlatFrames(frames, boardDetails.board_name), {
     thumbnail,
     includeBackground: true,
+    colorScheme,
   });
 
 /**
@@ -147,6 +174,16 @@ const toThumbUrl = (webpUrl: string) => {
   const lastSlash = webpUrl.lastIndexOf('/');
   return `${webpUrl.substring(0, lastSlash)}/thumbs${webpUrl.substring(lastSlash)}`;
 };
+
+/**
+ * Dark-mode sibling of a WebP art path: `foo.webp` -> `foo.dark.webp`.
+ *
+ * Same convention as `DARK_VARIANT_SUFFIX` in the mobile app's background-image-cache.ts,
+ * written by scripts/generate-dark-board-art.ts and scripts/generate-woods-dark-art.ts. Only
+ * Woods ships these on web today — callers are responsible for knowing a sibling exists,
+ * because a missing one 404s rather than falling back the way the mobile manifest does.
+ */
+export const toDarkArtUrl = (webpUrl: string) => webpUrl.replace(/\.webp$/, '.dark.webp');
 
 export const getImageUrl = (imageUrl: string, board: BoardName, thumbnail?: boolean) => {
   // Absolute path (e.g. MoonBoard images already prefixed with /images/moonboard/...)

@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vite-plus/test';
 import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 import { STATIC_ASSET_OBJECT_KEYS } from '@boardsesh/static-assets';
-import { getImageUrl, buildBoardRenderUrl, buildOverlayUrl, buildOgBoardRenderUrl } from '../util';
+import {
+  getImageUrl,
+  toDarkArtUrl,
+  hasDarkBoardArt,
+  buildBoardRenderUrl,
+  buildOverlayUrl,
+  buildOgBoardRenderUrl,
+} from '../util';
 import type { BoardDetails } from '@/app/lib/types';
 
 describe('getImageUrl', () => {
@@ -52,6 +59,35 @@ describe('getImageUrl', () => {
 
     it('inserts /thumbs/ for a Woods thumbnail', () => {
       expect(getImageUrl('woods-12x12-bg.png', 'woods', true)).toBe('/images/woods/thumbs/woods-12x12-bg.webp');
+    });
+  });
+
+  describe('toDarkArtUrl', () => {
+    it('appends .dark before the extension', () => {
+      expect(toDarkArtUrl('/images/woods/woods-8x10-bg.webp')).toBe('/images/woods/woods-8x10-bg.dark.webp');
+    });
+
+    it('composes with a thumbnail path', () => {
+      expect(toDarkArtUrl(getImageUrl('woods-12x12-bg.png', 'woods', true))).toBe(
+        '/images/woods/thumbs/woods-12x12-bg.dark.webp',
+      );
+    });
+
+    it('leaves a path that is not .webp alone', () => {
+      // Guards the ordering: getImageUrl rewrites .png → .webp first, so a caller that
+      // reverses the two would silently ask for art that was never generated.
+      expect(toDarkArtUrl('/images/woods/woods-8x10-bg.png')).toBe('/images/woods/woods-8x10-bg.png');
+    });
+  });
+
+  describe('hasDarkBoardArt', () => {
+    it('is Woods only', () => {
+      // The gate that keeps the theme swap from doubling requests and server renders for
+      // boards whose art has no dark sibling — they would render identical bytes twice.
+      expect(hasDarkBoardArt('woods')).toBe(true);
+      for (const board of ['kilter', 'tension', 'moonboard'] as const) {
+        expect(hasDarkBoardArt(board as never)).toBe(false);
+      }
     });
   });
 
