@@ -39,8 +39,12 @@ type BuildBoardRenderUrlOptions = {
  *
  * This gate is what keeps the theme swap from doubling requests and server renders for every
  * other board — those would render identical bytes twice.
+ *
+ * Unlike mobile, which falls back when a key is absent from its bundle manifest, a missing
+ * file here is a 404 — so util.test.ts walks the listed boards' image directories and fails
+ * if any light `.webp` has lost its dark sibling.
  */
-const BOARDS_WITH_DARK_ART: ReadonlySet<string> = new Set(['woods']);
+export const BOARDS_WITH_DARK_ART: ReadonlySet<string> = new Set(['woods']);
 
 export const hasDarkBoardArt = (board: BoardName) => BOARDS_WITH_DARK_ART.has(board);
 

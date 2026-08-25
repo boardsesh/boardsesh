@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vite-plus/test';
+import { existsSync, readdirSync } from 'node:fs';
+import path from 'node:path';
 import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 import { STATIC_ASSET_OBJECT_KEYS } from '@boardsesh/static-assets';
 import {
   getImageUrl,
   toDarkArtUrl,
   hasDarkBoardArt,
+  BOARDS_WITH_DARK_ART,
   buildBoardRenderUrl,
   buildOverlayUrl,
   buildOgBoardRenderUrl,
@@ -89,6 +92,32 @@ describe('getImageUrl', () => {
         expect(hasDarkBoardArt(board as never)).toBe(false);
       }
     });
+
+    // Web resolves these paths by URL, so unlike mobile — which falls back when a key is
+    // absent from its bundle manifest — a deleted or renamed dark file is a silent 404 for
+    // every dark-mode reader. Walk what the gate claims and check the bytes are really there.
+    const IMAGES_DIR = path.resolve(import.meta.dirname, '../../../../public/images');
+
+    const lightWebpPaths = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const entryPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) return lightWebpPaths(entryPath);
+        if (!entry.name.endsWith('.webp') || entry.name.endsWith('.dark.webp')) return [];
+        return [entryPath];
+      });
+
+    for (const board of BOARDS_WITH_DARK_ART) {
+      it(`${board} has a committed dark sibling for every one of its light images`, () => {
+        const boardDir = path.join(IMAGES_DIR, board);
+        expect(existsSync(boardDir)).toBe(true);
+
+        const lightPaths = lightWebpPaths(boardDir);
+        expect(lightPaths.length).toBeGreaterThan(0);
+
+        const missing = lightPaths.filter((lightPath) => !existsSync(toDarkArtUrl(lightPath)));
+        expect(missing.map((absolute) => path.relative(IMAGES_DIR, absolute))).toEqual([]);
+      });
+    }
   });
 
   describe('absolute paths (MoonBoard images starting with /)', () => {

@@ -130,6 +130,9 @@ const BoardImageLayers = React.memo(function BoardImageLayers({
               height={imgHeight}
               style={imgStyle}
               className={styles.darkArt}
+              // Same priority as its light twin: for a dark-mode reader this IS the LCP
+              // element, so boosting only the hidden one would miss the point.
+              fetchPriority={fetchPriority}
               loading={thumbnail && fetchPriority !== 'high' ? 'lazy' : undefined}
               onError={handleOverlayError}
             />
@@ -159,6 +162,7 @@ const BoardImageLayers = React.memo(function BoardImageLayers({
                 height={imgHeight}
                 style={imgStyle}
                 className={styles.darkArt}
+                fetchPriority={i === 0 ? fetchPriority : undefined}
                 loading={thumbnail && !(i === 0 && fetchPriority === 'high') ? 'lazy' : undefined}
               />
             ) : null}
