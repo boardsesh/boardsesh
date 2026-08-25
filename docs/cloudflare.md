@@ -93,7 +93,7 @@ converged by `vp run cf:apply`):
   purge is a manual dashboard action (Caching → Configuration → Purge Everything)
   if one is ever needed.
 
-  Requests *without* `v` — the ESP32 firmware, the iOS Live Activity widget, and
+  Requests _without_ `v` — the ESP32 firmware, the iOS Live Activity widget, and
   URLs Googlebot-Image crawled before this shipped (`app/robots.ts` allows the
   path) — get `s-maxage=86400, stale-while-revalidate=604800` instead of the
   one-year immutable branch. A day of staleness rather than a year, at 1/288th
