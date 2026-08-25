@@ -97,6 +97,17 @@ describe('useBleFrameWriter', () => {
     await waitFor(() => expect(onWrite).toHaveBeenCalledTimes(1));
   });
 
+  it('reports the write attempt even when the write then throws', async () => {
+    // Deliberate: after a failed write the wall-state record is untrustworthy,
+    // so it must be invalidated whether or not the bytes landed.
+    const send = vi.fn().mockRejectedValue(new Error('link dropped')) as unknown as SendFramesToBoard;
+    const onWrite = vi.fn();
+    renderHook(() => useBleFrameWriter({ frame: 'p1r42', send, mirrored: false, resetKey: 'draft-1', onWrite }));
+
+    await waitFor(() => expect(send).toHaveBeenCalled());
+    expect(onWrite).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps draining after a failed write', async () => {
     const send = vi
       .fn()
