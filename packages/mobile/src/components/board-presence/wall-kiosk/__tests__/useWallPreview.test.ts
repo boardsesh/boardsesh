@@ -35,7 +35,6 @@ const h = vi.hoisted(() => {
     // a wall with no light kit is driven by a virtual hold that writes no bytes.
     canDriveWall: true,
     ledless: false,
-    wallHeldLocally: false,
     relight: vi.fn(async (_climb: Climb): Promise<boolean> => true),
   };
 });
@@ -59,7 +58,6 @@ vi.mock('../../../ble/use-board-connection-state', () => ({
   useBoardConnectionState: () => ({
     canDriveWall: h.canDriveWall,
     ledless: h.ledless,
-    wallHeldLocally: h.wallHeldLocally,
   }),
 }));
 
@@ -74,7 +72,6 @@ describe('useWallPreview', () => {
     h.isLoadingOlder = false;
     h.canDriveWall = true;
     h.ledless = false;
-    h.wallHeldLocally = false;
     h.loadOlder.mockClear();
     h.relight.mockClear();
     h.relight.mockImplementation(async () => true);
@@ -210,7 +207,6 @@ describe('useWallPreview', () => {
     // The whole point of #4585: there is no LED box to connect to, so prompting
     // for Bluetooth is a dead end. The scrubber must offer the wall instead.
     h.ledless = true;
-    h.wallHeldLocally = false;
     h.canDriveWall = false;
     const { result } = renderHook(() => useWallPreview());
     act(() => result.current.step('older'));
@@ -220,7 +216,6 @@ describe('useWallPreview', () => {
 
   it('lets a ledless iPad put a climb up once it holds the wall virtually', () => {
     h.ledless = true;
-    h.wallHeldLocally = true;
     h.canDriveWall = true;
     const { result } = renderHook(() => useWallPreview());
     act(() => result.current.step('older'));
@@ -230,7 +225,6 @@ describe('useWallPreview', () => {
 
   it('relights through the shared commit seam while holding the wall with no Bluetooth', async () => {
     h.ledless = true;
-    h.wallHeldLocally = true;
     h.canDriveWall = true;
     const { result } = renderHook(() => useWallPreview());
     act(() => result.current.step('older'));
@@ -245,12 +239,25 @@ describe('useWallPreview', () => {
     // Precedence guard: an unheld ledless wall must not ask the user to fix a
     // missing-frames problem they cannot act on until they hold the wall.
     h.ledless = true;
-    h.wallHeldLocally = false;
     h.canDriveWall = false;
     h.liveHistory = [h.mk('c3', 3), h.mk('c2', 2, { frames: '' }), h.mk('c1', 1)];
     const { result } = renderHook(() => useWallPreview());
     act(() => result.current.step('older'));
     expect(result.current.lightBlockedReason).toBe('no-leds-not-held');
+  });
+
+  it('lets a mis-flagged but connected board light the wall, not take it', () => {
+    // A board wrongly flagged as having no lights can still hold a live link —
+    // the creator header's Bluetooth toggle, an iOS reconnect intent. Offering
+    // "take the wall" there is a dead button: takeVirtualWall refuses while
+    // connected. Connected wins, matching derivePlayDrawerLightbulbPressAction.
+    h.ledless = true;
+    h.canDriveWall = true;
+    h.liveHistory = [h.mk('c3', 3), h.mk('c2', 2), h.mk('c1', 1)];
+    const { result } = renderHook(() => useWallPreview());
+    act(() => result.current.step('older'));
+    expect(result.current.lightBlockedReason).toBeNull();
+    expect(result.current.canLight).toBe(true);
   });
 
   it('blocks Light-this when the previewed climb has no saved holds', () => {

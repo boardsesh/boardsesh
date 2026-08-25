@@ -85,25 +85,29 @@ function dedupeNewestFirst(a: BoardPresenceClimb[], b: BoardPresenceClimb[]): Bo
 
 /**
  * Which blocked affordance the scrubber should offer, if any. Split out of the
- * hook so the precedence is one readable ladder instead of a ternary chain: a
- * wall with no light kit gets "take the wall", an unheld wall WITH lights gets
- * the Bluetooth connect prompt, and only then does a frameless entry report as
- * such.
+ * hook so the precedence is one readable ladder instead of a ternary chain.
+ *
+ * **Being able to drive the wall is tested first**, the same rule
+ * `derivePlayDrawerLightbulbPressAction` follows: a board wrongly flagged as
+ * having no lights can still hold a live Bluetooth link (the creator header's
+ * toggle, an iOS reconnect intent), and that climber can light the wall. Asking
+ * them to "take the wall" would hand them a dead button — `takeVirtualWall`
+ * refuses while connected. `canDriveWall` already covers the virtual hold, so
+ * the ledless branch only ever answers for someone who cannot drive at all.
  */
 function deriveLightBlockedReason({
   ledless,
-  wallHeldLocally,
   canDriveWall,
   previewHasFrames,
 }: {
   ledless: boolean;
-  wallHeldLocally: boolean;
   canDriveWall: boolean;
   /** null when nothing is previewed. */
   previewHasFrames: boolean | null;
 }): WallLightBlockedReason {
-  if (ledless && !wallHeldLocally) return 'no-leds-not-held';
-  if (!canDriveWall) return 'not-driver';
+  // Can't drive it at all: offer the way in. On a wall with no light kit the
+  // answer is never "connect Bluetooth" — there is nothing to connect to.
+  if (!canDriveWall) return ledless ? 'no-leds-not-held' : 'not-driver';
   if (previewHasFrames === false) return 'no-frames';
   return null;
 }
@@ -125,9 +129,9 @@ export function useWallPreview(): WallPreviewState {
   const bluetooth = useOptionalBluetoothContext();
   // `canDriveWall`, not `localConnected`: a wall with no light kit is driven by a
   // virtual hold that writes zero bytes, and that climber may re-put a climb up
-  // exactly like a Bluetooth driver. `ledless` / `wallHeldLocally` only decide
-  // WHICH blocked affordance to offer.
-  const { canDriveWall, ledless, wallHeldLocally } = useBoardConnectionState();
+  // exactly like a Bluetooth driver. `ledless` only decides WHICH blocked
+  // affordance to offer someone who can't drive it.
+  const { canDriveWall, ledless } = useBoardConnectionState();
 
   const [previewKey, setPreviewKey] = useState<string | null>(null);
   const [isLighting, setIsLighting] = useState(false);
@@ -341,12 +345,8 @@ export function useWallPreview(): WallPreviewState {
     setPendingOverride(false);
   }, [bumpActivity]);
 
-  // Order matters: on a wall flagged as having no lights the answer is never
-  // "connect Bluetooth" — there is nothing to connect to — so the take-the-wall
-  // offer wins over the Bluetooth prompt.
   const lightBlockedReason = deriveLightBlockedReason({
     ledless,
-    wallHeldLocally,
     canDriveWall,
     previewHasFrames: previewClimb ? !!previewClimb.frames : null,
   });
