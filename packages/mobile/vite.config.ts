@@ -12,6 +12,10 @@ export default defineConfig({
   // they can run their own suites, which bun installs as a nested copy. Without
   // deduping, a mobile suite that renders a hook from one of them loads a second
   // React and every hook call throws "Cannot read properties of null".
+  //
+  // This mirrors production rather than diverging from it: metro.config.js already
+  // forces the same singletons via SINGLETON_MODULES, so the app has never shipped
+  // two Reacts. Two bundlers, one decision — change both.
   resolve: {
     dedupe: ['react', 'react-dom'],
   },

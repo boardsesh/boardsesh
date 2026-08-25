@@ -66,6 +66,9 @@ config.resolver.assetExts = [...(config.resolver.assetExts ?? []), 'xml'];
 // to the shared hooks' useQueryClient() → "No QueryClient set". Redirecting the
 // bare specifier to the mobile app's copy guarantees one context across app +
 // shared packages, while leaving relative/absolute paths to Metro's resolver.
+//
+// The test resolver needs the same arrangement: see `resolve.dedupe` in
+// packages/mobile/vite.config.ts. Two bundlers, one decision — change both.
 const SINGLETON_MODULES = [
   'react',
   'react-dom',

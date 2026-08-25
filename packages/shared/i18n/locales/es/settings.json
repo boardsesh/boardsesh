@@ -437,6 +437,7 @@
     "errorPermissionDenied": "Permite los permisos de Bluetooth para conectar un plafón.",
     "errorLedMissing": "No se pudo enviar al plafón — faltan datos LED para esta configuración.",
     "errorIncompatible": "Este bloque es para una configuración de plafón diferente.",
+    "errorTooManyHolds": "Demasiadas presas encendidas a la vez para el controlador LED de este plafón.",
     "barControl": {
       "connectedLabel": "Plafón conectado, tienes el control",
       "connectedHint": "Abre los controles del plafón",

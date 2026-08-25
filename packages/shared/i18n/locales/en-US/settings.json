@@ -437,6 +437,7 @@
     "errorPermissionDenied": "Allow Bluetooth permissions to connect a board.",
     "errorLedMissing": "Could not send to board — LED data missing for this board configuration.",
     "errorIncompatible": "This climb is for a different board configuration.",
+    "errorTooManyHolds": "Too many holds lit at once for this board's LED controller.",
     "barControl": {
       "connectedLabel": "Board connected, you have control",
       "connectedHint": "Opens board controls",

@@ -1162,7 +1162,7 @@ export function useBoardBluetooth({
             console.warn(
               `[BLE] v2 power budget zeroed every LED colour for ${result.totalPlacements} placements — refusing to write a dark wall`,
             );
-            Alert.alert(t('ble.sendFailedTitle'), t('ble.errorIncompatible'));
+            Alert.alert(t('ble.sendFailedTitle'), t('ble.errorTooManyHolds'));
             track(SHARED_EVENTS.ClimbSentToBoardFailure, {
               ...boardAnalyticsProperties,
               failureReason: 'power_budget_dark',
@@ -1179,6 +1179,14 @@ export function useBoardBluetooth({
           await adapterRef.current.write(result.packet, combinedSignal);
           track(SHARED_EVENTS.ClimbSentToBoardSuccess, {
             ...boardAnalyticsProperties,
+            // `allLedsDark` refuses only the all-or-nothing v2 cliff. These two
+            // size the partially-dark residual it lets through — a wall where the
+            // power ladder dimmed SOME holds to nothing — so a refusal threshold
+            // can be chosen from field data rather than guessed. With the default
+            // palettes the gap should always be zero.
+            ledsWritten: result.ledsWritten,
+            ledsWithColour: result.ledsWithColour,
+            apiLevel: apiLevelRef.current,
             ...bleWriteDiagnosticsProperties(await fetchWriteDiagnostics()),
           });
           // Board-render A/B telemetry (issue #2202): a no-op unless this

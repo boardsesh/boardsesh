@@ -53,7 +53,20 @@ export function useBleFrameWriter({ frame, send, mirrored, resetKey, onWrite }: 
   }, [resetKey]);
 
   useEffect(() => {
-    if (!send || !frame) return;
+    if (!send || !frame) {
+      // Standing down — this surface is no longer driving the wall (the creator
+      // handed it to the queue, playback paused, the drawer closed). Drop any
+      // frame queued behind an in-flight write: without this the drain wakes when
+      // that write resolves, finds the stale pending frame, and writes it AFTER
+      // whoever took the wall over has already written it. On slow boxes (v2
+      // with-response, MoonBoard) a write in flight plus a queued tick is the
+      // common state at the 750ms pace, so the wall would light the whole route
+      // and then flip back to a stale single frame — under an "On the wall" chip,
+      // after presence was told the climb is lit. The in-flight write itself is
+      // fine: it precedes the new owner's write in the shared mutex.
+      pendingFrameRef.current = null;
+      return;
+    }
     if (frame === lastSentFrameRef.current) return;
     if (isWritingFrameRef.current) {
       pendingFrameRef.current = frame;
