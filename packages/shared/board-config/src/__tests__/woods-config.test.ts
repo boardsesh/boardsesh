@@ -4,6 +4,7 @@ import { BOULDER_GRADES, getGradesForBoard } from '../board-data';
 import {
   WOODS_ROW_LENGTHS,
   WOODS_GEOMETRY,
+  WOODS_HOLD_RADIUS_PX,
   WOODS_SIZES,
   WOODS_SETS,
   WOODS_LAYOUTS,
@@ -199,8 +200,19 @@ describe('getWoodsBoardDetails', () => {
     const image = getWoodsHoldImagePosition(0, '12x12')!;
     expect(firstHold.cx).toBeCloseTo(image.cx, 5);
     expect(firstHold.cy).toBeCloseTo(image.cy, 5);
-    expect(firstHold.r).toBeGreaterThan(0);
+    expect(firstHold.r).toBe(WOODS_HOLD_RADIUS_PX['12x12']);
     expect(firstHold.mirroredHoldId).toBe(16);
+  });
+
+  // The radius is a measured constant, not a cell-size estimate: at 0.42 x the
+  // median nearest-neighbour distance (27.1 px on 8x10, 31.8 px on 12x12) the
+  // circles stay separated. Anything at or above half the median spacing puts
+  // most holds back in contact with a neighbour.
+  it('uses per-size hold radii well under half the measured hold spacing', () => {
+    expect(WOODS_HOLD_RADIUS_PX['8x10']).toBe(11.5);
+    expect(WOODS_HOLD_RADIUS_PX['12x12']).toBe(13.5);
+    expect(getWoodsBoardDetails({ size_id: 1 }).holdsData.every((hold) => hold.r === 11.5)).toBe(true);
+    expect(getWoodsBoardDetails({ size_id: 2 }).holdsData.every((hold) => hold.r === 13.5)).toBe(true);
   });
 
   it('throws for an unknown size id', () => {

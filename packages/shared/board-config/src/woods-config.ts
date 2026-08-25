@@ -132,6 +132,22 @@ export function getWoodsHoldGridPosition(
   return { x: position[0], y: position[1] };
 }
 
+/**
+ * Rendered hold-circle radius (board-art px) per board size.
+ *
+ * Sized off the MEASURED spacing of `WOODS_HOLD_POSITIONS`, not a computed grid:
+ * the median nearest-neighbour distance is 27.1 px on 8×10 and 31.8 px on 12×12,
+ * so ~0.42 × that leaves a visible gap between adjacent circles. The previous
+ * `min(cellWidth, cellHeight) / 2` estimate gave 17.1 / 18.6 px, which overlapped
+ * a neighbour for 90% of 8×10 holds and 83% of 12×12 holds — the board rendered
+ * as one smear instead of discrete holds. The rows aren't evenly pitched, which
+ * is why the cell-size estimate was so far out.
+ */
+export const WOODS_HOLD_RADIUS_PX: Record<WoodsBoardSize, number> = {
+  '8x10': 11.5,
+  '12x12': 13.5,
+};
+
 export type WoodsGeometry = {
   numRows: number;
   // Widest row — the master column count the narrower rows align to.
@@ -206,10 +222,7 @@ export function getWoodsBoardDetails({ size_id }: { size_id: number }) {
   const geometry = WOODS_GEOMETRY[dimension];
   const sizeInfo = WOODS_SIZES[dimension];
 
-  // A sensible hold radius: half the smaller of the average cell width/height.
-  // The detected centres aren't a perfect grid, so this is an approximation that
-  // keeps circles legible without overlapping their neighbours.
-  const holdRadius = Math.min(geometry.width / geometry.maxColumns, geometry.height / geometry.numRows) * 0.5;
+  const holdRadius = WOODS_HOLD_RADIUS_PX[dimension];
 
   // One entry per detected hold centre. `id` is the baseHoldLocation, matching the
   // `p{baseHoldLocation}r{code}` frames stored for Woods climbs.
