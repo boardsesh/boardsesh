@@ -33,6 +33,7 @@ const appState = vi.hoisted(() => ({
 // to drive it. Parameterised the way use-create-climb-screen-angle.test.tsx does.
 const graphql = vi.hoisted(() => ({
   climb: undefined as undefined | Record<string, unknown>,
+  climbFailed: false,
 }));
 
 const boardActions = vi.hoisted(() => ({
@@ -118,7 +119,7 @@ vi.mock('../../../providers/auth-provider', () => ({
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: { displayName: 'Tester' } }),
-  useClimb: () => ({ data: graphql.climb }),
+  useClimb: () => ({ data: graphql.climb, isError: graphql.climbFailed }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({ setCurrentClimb: vi.fn() }),
@@ -173,6 +174,7 @@ beforeEach(() => {
   boardActions.saveClimb.mockReset();
   boardActions.updateClimb.mockReset();
   graphql.climb = undefined;
+  graphql.climbFailed = false;
   createClimb.frameCount = 1;
   createClimb.litUpHoldsMap = {};
   createClimb.frames = [{}];
@@ -589,5 +591,39 @@ describe('useCreateClimbScreen autosave flush', () => {
     expect(boardActions.saveClimb).not.toHaveBeenCalled();
 
     createClimb.canPublish = true;
+  });
+
+  it('keeps autosaving in edit mode even when the climb never loads', async () => {
+    // If the query fails permanently — offline, or the row is gone — the seed
+    // effect never runs. Gate autosave on it and the whole edit session silently
+    // stops saving: paint, kill the app, lose everything. That is the exact
+    // failure this change exists to remove, so the gate opens on the failure too.
+    graphql.climb = undefined;
+    graphql.climbFailed = true;
+
+    const { result, unmount } = renderHook(() => useCreateClimbScreen({ board: BOARD, editClimbUuid: 'climb-9' }));
+    act(() => result.current.setName('Painted while offline'));
+    unmount();
+
+    expect(savedKeys()).toEqual(['edit:kilter:climb-9']);
+    expect(draftStore.saveDraft.mock.calls[0]?.[1]?.name).toBe('Painted while offline');
+  });
+
+  it('drops the slot this session owns when starting a new climb, not always the new-climb one', async () => {
+    // Clearing only the board-config key left an abandoned fork slot behind, and
+    // the plain creator's fork fallback would then resurrect it as a ghost draft
+    // on the next open.
+    const { result } = renderHook(() =>
+      useCreateClimbScreen({ board: BOARD, forkFrames: 'p1r12', forkName: 'Original' }),
+    );
+    await waitFor(() => expect(result.current.name).toBe('Original remix'));
+    draftStore.clearDraft.mockClear();
+
+    await act(async () => {
+      await result.current.handleNewClimb();
+    });
+
+    expect(draftStore.clearDraft).toHaveBeenCalledWith('fork:draft-key');
+    expect(draftStore.clearDraft).not.toHaveBeenCalledWith('draft-key');
   });
 });

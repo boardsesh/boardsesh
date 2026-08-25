@@ -319,7 +319,7 @@ export function useCreateClimbScreen({
         : null,
     [isEditing, editClimbUuid, board],
   );
-  const { data: editClimb } = useClimb(editVariables);
+  const { data: editClimb, isError: editClimbFailed } = useClimb(editVariables);
 
   // Apply a stored working copy over whatever the editor currently holds.
   const applyStoredDraft = useCallback(
@@ -381,6 +381,17 @@ export function useCreateClimbScreen({
         restoredRef.current = true;
       });
   }, [editClimb, board.boardName, loadFrames, applyStoredDraft]);
+
+  // If the climb never loads — offline, or the row is gone — the seed effect
+  // above never runs, so the gate it opens would stay shut for the whole session
+  // and autosave would be silently off in exactly the mode this change exists to
+  // fix. Open it on a settled failure so the paint is still kept on the phone.
+  // (A later retry that succeeds still seeds, and its `edit:` slot load then
+  // reapplies whatever was painted in the meantime.)
+  useEffect(() => {
+    if (!isEditing || !editClimbFailed || editSeededRef.current) return;
+    restoredRef.current = true;
+  }, [isEditing, editClimbFailed]);
 
   // ---- Local autosave restore on mount (plain new climb). ----
   useEffect(() => {
@@ -550,8 +561,14 @@ export function useCreateClimbScreen({
     setFailedSignature(null);
     // Fresh climb identity for the next WIP so its queue item is independent.
     previewUuidRef.current = randomUUID();
-    void clearDraft(draftKey);
-  }, [resetHolds, draftKey, savedClimb, hasContent, confirm, t]);
+    // Drop the working copy THIS session owns — in fork/edit mode that is the
+    // `fork:`/`edit:` slot, not the shared new-climb one. Clearing only
+    // `draftKey` left an abandoned fork slot behind, which the plain creator's
+    // fork fallback would then resurrect as a ghost draft on the next open. A
+    // server draft is untouched either way: it lives in board_climbs, not here,
+    // so an edit session still leaves its row in Open drafts.
+    void clearDraft(autosaveSlotKey);
+  }, [resetHolds, autosaveSlotKey, savedClimb, hasContent, confirm, t]);
 
   // Build a minimal Climb the queue can hold for a not-yet-saved or just-saved
   // climb. The mutation input (`ClimbInput`) is a strict subset of Climb, so

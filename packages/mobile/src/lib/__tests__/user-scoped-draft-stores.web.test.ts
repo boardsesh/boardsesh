@@ -33,6 +33,23 @@ async function resetStorage(): Promise<void> {
   storage.__reset();
 }
 
+// The two platform forks declare `CreateClimbDraft` independently, so tsc sees no
+// relationship between them and silent drift is possible — it has already
+// happened once (the web fork was missing `framesJson` while round-tripping it at
+// runtime). This is a compile-time equality check, not a runtime assertion: add a
+// field to one fork and `vp run typecheck:mobile` fails here.
+type NativeCreateClimbDraft = import('../create-climb-draft-store').CreateClimbDraft;
+type WebCreateClimbDraft = import('../create-climb-draft-store.web').CreateClimbDraft;
+// Compare the KEY SETS, not just assignability: every field here is optional
+// except the original four, and an optional field present on one side only is
+// still mutually assignable — which is precisely the drift that happened.
+type SameKeys<A, B> = [keyof A] extends [keyof B] ? ([keyof B] extends [keyof A] ? true : false) : false;
+type MutuallyAssignable<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+const createClimbDraftKeysMatch: SameKeys<NativeCreateClimbDraft, WebCreateClimbDraft> = true;
+const createClimbDraftTypesMatch: MutuallyAssignable<NativeCreateClimbDraft, WebCreateClimbDraft> = true;
+void createClimbDraftKeysMatch;
+void createClimbDraftTypesMatch;
+
 describe('browser user-scoped draft stores', () => {
   beforeEach(async () => {
     vi.resetModules();

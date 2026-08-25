@@ -66,13 +66,17 @@ export function useCreateClimbAutosave({
     if (!restoredRef.current) return;
     pendingDraftRef.current = { key: slotKey, draft: draftRef.current, dirty: hasContent };
     const handle = setTimeout(() => {
+      // Key off the mirrored payload, exactly as `flush` does. A slot change
+      // re-runs this effect and its cleanup cancels the pending timer, so the two
+      // can't actually diverge — but reading one source makes that plain instead
+      // of leaving a reader to prove it.
       const pending = pendingDraftRef.current;
       pending.dirty = false;
       if (!hasContent) {
-        void clearDraft(slotKey);
+        void clearDraft(pending.key);
         return;
       }
-      void saveDraft(slotKey, pending.draft);
+      void saveDraft(pending.key, pending.draft);
     }, AUTOSAVE_DEBOUNCE_MS);
     return () => clearTimeout(handle);
     // `draftSignature` stands in for the payload contents; `draftRef` carries the
