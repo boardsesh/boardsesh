@@ -1,0 +1,23 @@
+{
+  "name": "@boardsesh/static-assets",
+  "version": "1.0.0",
+  "description": "Platform-neutral catalog of immutable Boardsesh static assets",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./catalog.json": "./src/generated/catalog.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "~7.0.2"
+  }
+}
