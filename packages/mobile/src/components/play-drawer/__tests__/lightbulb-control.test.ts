@@ -334,6 +334,7 @@ describe('deriveInAppBoardConnection', () => {
     expect(
       deriveInAppBoardConnection({
         boardConnection: 'disconnected',
+        ledless: true,
         wallHeld: true,
         wallHeldByOtherUser: false,
       }),
@@ -346,19 +347,61 @@ describe('deriveInAppBoardConnection', () => {
     expect(
       deriveInAppBoardConnection({
         boardConnection: 'disconnected',
+        ledless: true,
         wallHeld: true,
         wallHeldByOtherUser: true,
       }),
     ).toBe('heldByPeer');
   });
 
-  it('passes the BLE value straight through with no virtual hold', () => {
+  it('shows a bystander on a ledless wall who is driving it, with no session', () => {
+    // The population the issue is about: 413 boards have several climbers
+    // reporting, only 36 have any party-session row. `boardConnection` only
+    // reports a session member, so without this a climber watching someone
+    // else's turn sees an open wall.
+    expect(
+      deriveInAppBoardConnection({
+        boardConnection: 'disconnected',
+        ledless: true,
+        wallHeld: false,
+        wallHeldByOtherUser: true,
+      }),
+    ).toBe('heldByPeer');
+  });
+
+  it('leaves a board WITH lights on the session-gated peer rule', () => {
+    // There the holder can be a stranger sharing the board feed, and
+    // deriveBoardConnection deliberately keeps them from lighting your bulb.
+    expect(
+      deriveInAppBoardConnection({
+        boardConnection: 'disconnected',
+        ledless: false,
+        wallHeld: false,
+        wallHeldByOtherUser: true,
+      }),
+    ).toBe('disconnected');
+  });
+
+  it('passes the BLE value straight through with no virtual hold and no peer holder', () => {
     for (const boardConnection of connections) {
-      for (const wallHeldByOtherUser of [false, true]) {
-        expect(deriveInAppBoardConnection({ boardConnection, wallHeld: false, wallHeldByOtherUser })).toBe(
-          boardConnection,
-        );
+      for (const ledless of [false, true]) {
+        expect(
+          deriveInAppBoardConnection({ boardConnection, ledless, wallHeld: false, wallHeldByOtherUser: false }),
+        ).toBe(boardConnection);
       }
+    }
+  });
+
+  it('never overrides a live BLE link with a peer holder', () => {
+    for (const ledless of [false, true]) {
+      expect(
+        deriveInAppBoardConnection({
+          boardConnection: 'connectedByMe',
+          ledless,
+          wallHeld: false,
+          wallHeldByOtherUser: true,
+        }),
+      ).toBe('connectedByMe');
     }
   });
 });

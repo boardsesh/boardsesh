@@ -481,6 +481,17 @@ describe('BluetoothProvider — a real link always wins over a virtual hold', ()
     expect(presence.reportDisconnectForBoard).toHaveBeenCalledWith(42);
   });
 
+  it('watches the holder on a ledless board even when nothing is held here', async () => {
+    // The bystander case: a climber who never took the wall still needs to see
+    // that someone else is driving it, and the boards where that happens mostly
+    // have no party session to carry the signal.
+    presence.holder = { userId: 'someone-else' };
+    renderProvider();
+    await act(async () => {});
+    expect(capturedBluetooth?.virtualWallHeld).toBe(false);
+    expect(capturedBluetooth?.wallHeldByOtherUser).toBe(true);
+  });
+
   it('keeps the hold when the holder slot is this device, or anonymous', async () => {
     const { rerender } = renderProvider();
     await takeTheWall();

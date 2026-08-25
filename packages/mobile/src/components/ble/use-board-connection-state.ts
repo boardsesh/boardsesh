@@ -92,6 +92,7 @@ export function useBoardConnectionState(): BoardConnectionState {
   // virtual hold can never light the lock screen or arm widget navigation.
   const inAppBoardConnection = deriveInAppBoardConnection({
     boardConnection,
+    ledless,
     wallHeld: wallHeldLocally,
     wallHeldByOtherUser,
   });

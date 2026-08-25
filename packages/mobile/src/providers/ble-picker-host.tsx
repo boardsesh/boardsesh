@@ -17,6 +17,13 @@ export type BlePickerHostValue = {
    *  the picker — otherwise a root-presented sheet lands behind the modal route
    *  (and presenting it forces the route to dismiss). */
   setHostedExternally: (hosted: boolean) => void;
+  /**
+   * Take the wall with no Bluetooth, for the picker's "this wall has no lights"
+   * offer after a scan that found nothing. Passed down rather than read back out
+   * of BluetoothContext: BluetoothProvider renders the picker, so the picker
+   * importing the provider would be a static import cycle.
+   */
+  onNoLeds: () => void;
 };
 
 export const BlePickerHostContext = createContext<BlePickerHostValue | null>(null);

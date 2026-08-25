@@ -211,6 +211,10 @@ function settleVirtualWallWrite(ms: number, signal?: AbortSignal): Promise<boole
       resolve(true);
     }, ms);
     function onAbort() {
+      // Remove explicitly rather than trusting `{ once: true }`: React Native's
+      // AbortSignal is a JS shim, and an ignored option would leak a listener per
+      // settle. Removing here is harmless if the option IS honoured.
+      signal?.removeEventListener('abort', onAbort);
       clearTimeout(timeoutId);
       resolve(false);
     }
@@ -623,10 +627,15 @@ function BluetoothAutoSender({
  * with any party-session row at all, so a session gate would miss the case this
  * feature exists for.
  *
- * Mounted only while the wall is held virtually, which keeps the profile read
- * (and the holder subscription's re-renders) entirely off the Bluetooth path.
- * Anonymous holders carry no userId and cannot be compared — accepted, not
- * guessed at.
+ * On a wall with no light kit it also carries the peer signal for a BYSTANDER
+ * who never took the wall: `deriveBoardConnection` only reports a holder who is
+ * a member of your party session, and the observed sharing pattern here is same
+ * board, no session.
+ *
+ * Mounted only on a ledless board, or while the wall is held virtually, which
+ * keeps the profile read (and the holder subscription's re-renders) entirely off
+ * the ordinary Bluetooth path. Anonymous holders carry no userId and cannot be
+ * compared — accepted, not guessed at.
  */
 function VirtualWallHolderWatch({ onHeldByOtherUserChange }: { onHeldByOtherUserChange: (held: boolean) => void }) {
   const { holder } = useBoardPresenceCurrent();
@@ -639,6 +648,10 @@ function VirtualWallHolderWatch({ onHeldByOtherUserChange }: { onHeldByOtherUser
     queryKey: ['profile'],
     queryFn: () => getHttpClient().request<GetProfileQueryResponse>(GET_PROFILE),
     select: (response: GetProfileQueryResponse) => response.profile,
+    // The viewer's own id does not change within a session, and this component
+    // mounts every time someone takes the wall. Without this the default
+    // staleTime of 0 would fire a background refetch on each of those mounts.
+    staleTime: Infinity,
   });
   const holderUserId = holder?.userId ?? null;
   const viewerUserId = viewerProfile?.id ?? null;
@@ -702,8 +715,9 @@ export function BluetoothProvider({
     restampBoardMembershipByUuid,
   } = useBoardPresenceControls();
   const { currentClimb: wallCurrentClimb } = useBoardPresenceCurrent();
-  // Set by VirtualWallHolderWatch, which only mounts while this device holds the
-  // wall virtually — so the profile read it needs never runs on the BLE path.
+  // Set by VirtualWallHolderWatch, which mounts only on a wall with no light kit
+  // or while this device holds one virtually — so the profile read it needs never
+  // runs on the ordinary Bluetooth path.
   const [wallHeldByOtherUser, setWallHeldByOtherUser] = useState(false);
   const { showUndoWallChangeSnackbar } = useQueueSnackbar();
   // Queue actions (no state subscription, so the provider doesn't re-render on
@@ -1992,8 +2006,9 @@ export function BluetoothProvider({
       onSelect: handlePickerSelect,
       currentBoardConfig,
       setHostedExternally: setPickerHostedExternally,
+      onNoLeds: takeVirtualWall,
     }),
-    [pickerState, handlePickerSelect, currentBoardConfig],
+    [pickerState, handlePickerSelect, currentBoardConfig, takeVirtualWall],
   );
 
   return (
@@ -2003,7 +2018,7 @@ export function BluetoothProvider({
             auto-sender mounts on either transport — no driver/preview write-gate.
             Aurora is last-connection-wins, so one phone is physically connected;
             a virtual hold is released the moment a real link appears. */}
-        {virtualWallHeld && <VirtualWallHolderWatch onHeldByOtherUserChange={setWallHeldByOtherUser} />}
+        {(virtualWallHeld || ledless) && <VirtualWallHolderWatch onHeldByOtherUserChange={setWallHeldByOtherUser} />}
         {(isConnected || virtualWallHeld) && (
           <BluetoothAutoSender
             sendFramesToBoard={commitWallFrames}
@@ -2032,6 +2047,7 @@ export function BluetoothProvider({
             isScanning={pickerState.isScanning}
             resolvedBoards={resolvedPickerBoards}
             currentBoardConfig={currentBoardConfig}
+            onNoLeds={takeVirtualWall}
           />
         )}
       </BluetoothWriteActivityProvider>
