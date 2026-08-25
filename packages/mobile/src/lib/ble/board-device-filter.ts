@@ -6,6 +6,7 @@ import {
 } from '@boardsesh/ble-protocol';
 import { parseBoardTypeFromDeviceName } from '@boardsesh/ble-protocol/aurora';
 import { isMoonboardDeviceName } from '@boardsesh/ble-protocol/moonboard';
+import { isWoodsDeviceName } from '@boardsesh/ble-protocol/woods';
 import type { BoardScanFamily } from './types';
 
 const AURORA_SERVICE_UUID = AURORA_ADVERTISED_SERVICE_UUID.toLowerCase();
@@ -71,5 +72,5 @@ export function isLikelyBoardDevice({
   }
 
   if (!name) return false;
-  return isMoonboardDeviceName(name);
+  return isMoonboardDeviceName(name) || isWoodsDeviceName(name);
 }

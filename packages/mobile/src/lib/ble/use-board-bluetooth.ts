@@ -10,7 +10,8 @@ import {
   type LedColorOverrides,
 } from '@boardsesh/ble-protocol/aurora';
 import { getMoonboardBluetoothPacket, isMoonboardDeviceName } from '@boardsesh/ble-protocol/moonboard';
-import { getMoonBoardGeometryByLayoutId } from '@boardsesh/board-config';
+import { getWoodsBluetoothPacket, isWoodsDeviceName } from '@boardsesh/ble-protocol/woods';
+import { getMoonBoardGeometryByLayoutId, woodsSizeIdToDimension } from '@boardsesh/board-config';
 import {
   blePlxErrorCodes,
   classifyBleFailure,
@@ -175,11 +176,14 @@ export function boardConfigKey(boardName: string, layoutId: number, sizeId: numb
 function parseAnyBoardTypeFromDeviceName(deviceName?: string): string | undefined {
   if (!deviceName) return undefined;
   if (isMoonboardDeviceName(deviceName)) return 'moonboard';
+  if (isWoodsDeviceName(deviceName)) return 'woods';
   return parseBoardTypeFromDeviceName(deviceName);
 }
 
+// 'moonboard' here is the Nordic-UART (non-Aurora) scan family: MoonBoard and
+// Woods both advertise the UART service and need name-based matching.
 function scanFamilyForBoard(boardName: string): 'aurora' | 'moonboard' {
-  return boardName === 'moonboard' ? 'moonboard' : 'aurora';
+  return boardName === 'moonboard' || boardName === 'woods' ? 'moonboard' : 'aurora';
 }
 
 /**
@@ -821,6 +825,72 @@ export function useBoardBluetooth({
               // user-initiated clear counts as "lights cleared" — an auto-sent
               // climb with empty frames darks the wall (Aurora parity) but is not
               // a clear action.
+              if (sendContext?.sendSource === 'clear') {
+                track(SHARED_EVENTS.BoardLightsCleared, boardAnalyticsProperties);
+              }
+              return true;
+            }
+            track(SHARED_EVENTS.ClimbSentToBoardSuccess, {
+              ...boardAnalyticsProperties,
+              ...bleWriteDiagnosticsProperties(await fetchWriteDiagnostics()),
+            });
+            return true;
+          }
+
+          if (boardName === 'woods') {
+            const woodsSize = woodsSizeIdToDimension(sizeId);
+            if (!woodsSize) {
+              console.error(`[BLE] Unknown Woods board size_id ${sizeId}; cannot map to an LED table.`);
+              Alert.alert(t('ble.sendFailedTitle'), t('ble.errorLedMissing'));
+              track(SHARED_EVENTS.ClimbSentToBoardFailure, {
+                ...boardAnalyticsProperties,
+                failureReason: 'missing_led_placements',
+              });
+              return false;
+            }
+
+            // Woods encodes "clear" as an empty hold list (a bare `,!`), so empty
+            // frames flow through the same path.
+            const woodsResult = getWoodsBluetoothPacket(frames, woodsSize);
+            const woodsSkipped = woodsResult.skippedRoleCount + woodsResult.skippedPositionCount;
+            if (frames !== '' && woodsResult.totalPlacements > 0 && woodsSkipped === woodsResult.totalPlacements) {
+              console.warn('[BLE] All Woods placements skipped — climb has unrecognised hold data');
+              Alert.alert(t('ble.sendFailedTitle'), t('ble.errorIncompatible'));
+              track(SHARED_EVENTS.ClimbSentToBoardFailure, {
+                ...boardAnalyticsProperties,
+                failureReason: 'incompatible_climb',
+              });
+              return false;
+            }
+
+            // A partial skip still lights the wall, just short a hold or two, so it
+            // must not fail the send — but it means the climb's frames disagree with
+            // the board's LED table, and the only other trace is a console.warn
+            // inside the encoder. Record it so a real wall reporting "two holds
+            // missing" is diagnosable from the field. Matches the web MoonBoard
+            // branch's partial-skip report.
+            if (woodsSkipped > 0) {
+              reportHandledError(
+                new Error(
+                  `[BLE] ${woodsSkipped} of ${woodsResult.totalPlacements} Woods placements skipped (${woodsSize})`,
+                ),
+                {
+                  level: 'warning',
+                  tags: { source: 'ble-send', board: 'woods' },
+                  extra: {
+                    skippedRoleCount: woodsResult.skippedRoleCount,
+                    skippedPositionCount: woodsResult.skippedPositionCount,
+                    totalPlacements: woodsResult.totalPlacements,
+                  },
+                },
+              );
+            }
+
+            await adapterRef.current.write(woodsResult.packet, combinedSignal);
+            if (frames === '') {
+              // The bare `,!` just cleared the wall. Only a user-initiated clear
+              // counts as one; an auto-sent empty climb darks the board without
+              // being a clear action (MoonBoard/Aurora parity above).
               if (sendContext?.sendSource === 'clear') {
                 track(SHARED_EVENTS.BoardLightsCleared, boardAnalyticsProperties);
               }

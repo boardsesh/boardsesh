@@ -153,6 +153,15 @@ function makePlacement(id: number, mirroredHoldId: number | null): HoldPlacement
 
 type FakeAdapterOverrides = Partial<Record<'isAvailable' | 'requestAndConnect' | 'disconnect' | 'write', unknown>>;
 
+/**
+ * A `write` spy typed with the adapter's real signature, so a test can decode the
+ * bytes that reached the board. `makeFakeAdapter`'s override map is `unknown`-typed
+ * (it takes any shape of stub), which erases that on the returned object.
+ */
+function makeWriteSpy() {
+  return vi.fn<(data: Uint8Array, signal?: AbortSignal) => Promise<void>>().mockResolvedValue(undefined);
+}
+
 function makeFakeAdapter(overrides: FakeAdapterOverrides = {}) {
   return {
     isAvailable: vi.fn().mockResolvedValue(true),
@@ -1113,6 +1122,142 @@ describe('useBoardBluetooth', () => {
     expect(fakeAdapter.write).toHaveBeenCalled();
     expect(mockTrack.mock.calls.find(([name]) => name === 'Board Lights Cleared')).toBeUndefined();
     expect(mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Success')).toBeUndefined();
+  });
+
+  // ── Woods ─────────────────────────────────────────────────────────────────
+  // Mobile is the only surface that drives a Woods board (the web Web-Bluetooth
+  // path has no Woods encoder), so the branch is pinned here against the real
+  // encoder and the real 8×10 LED map rather than a mocked packet builder.
+  // 8×10 maps baseHoldLocation 0 → LED 24 and 1 → LED 25; 485+ has no LED.
+
+  it('encodes a Woods climb as the ASCII led,role command and reports success', async () => {
+    const woodsWrite = makeWriteSpy();
+    const fakeAdapter = {
+      ...makeFakeAdapter({ write: woodsWrite }),
+      getLastWriteDiagnostics: vi.fn().mockResolvedValue({ negotiatedMtu: 23, chunkSize: 20, chunkCount: 1 }),
+    };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'woods', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    let sent: boolean | undefined;
+    await act(async () => {
+      // p0r4 = Start on LED 24, p1r2 = Hand on LED 25.
+      sent = await result.current.sendFramesToBoard('p0r4p1r2');
+    });
+
+    expect(sent).toBe(true);
+    expect(new TextDecoder().decode(woodsWrite.mock.calls[0]![0])).toBe('24,4,25,2,!');
+    const successCall = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Success');
+    expect(successCall?.[1]).toMatchObject({
+      boardName: 'woods',
+      bleNegotiatedMtu: 23,
+      bleChunkSize: 20,
+      bleChunkCount: 1,
+    });
+  });
+
+  it('fires Board Lights Cleared (not a climb send) on a Woods deliberate clear', async () => {
+    // Woods encodes "clear" as the bare terminator, so the clear rides the same
+    // branch as a climb — the sendSource gate is the only thing separating them.
+    const woodsWrite = makeWriteSpy();
+    const fakeAdapter = makeFakeAdapter({ write: woodsWrite });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'woods', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    let cleared: boolean | undefined;
+    await act(async () => {
+      cleared = await result.current.sendFramesToBoard('', false, undefined, { sendSource: 'clear' });
+    });
+
+    expect(cleared).toBe(true);
+    expect(new TextDecoder().decode(woodsWrite.mock.calls[0]![0])).toBe(',!');
+    const clearedCall = mockTrack.mock.calls.find(([name]) => name === 'Board Lights Cleared');
+    expect(clearedCall?.[1]).toMatchObject({ boardName: 'woods', sendSource: 'clear' });
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Success')).toBeUndefined();
+  });
+
+  it('still lights a partially unmapped Woods climb but records the skip', async () => {
+    // Two holds land, one has no LED on the 8×10 board. The wall must still light
+    // what it can; the skip is only otherwise visible as a console.warn.
+    const woodsWrite = makeWriteSpy();
+    const fakeAdapter = makeFakeAdapter({ write: woodsWrite });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'woods', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    let sent: boolean | undefined;
+    await act(async () => {
+      sent = await result.current.sendFramesToBoard('p0r4p485r2p1r2');
+    });
+
+    expect(sent).toBe(true);
+    expect(new TextDecoder().decode(woodsWrite.mock.calls[0]![0])).toBe('24,4,25,2,!');
+    const [reportedError, reportContext] = vi.mocked(reportHandledError).mock.calls[0] ?? [];
+    expect((reportedError as Error).message).toContain('1 of 3 Woods placements skipped');
+    expect(reportContext).toMatchObject({
+      level: 'warning',
+      tags: { board: 'woods' },
+      extra: { skippedPositionCount: 1, skippedRoleCount: 0, totalPlacements: 3 },
+    });
+  });
+
+  it('refuses a Woods climb whose every hold is unmapped instead of darking the wall', async () => {
+    // An all-skipped climb would encode to the bare `,!` — the clear command —
+    // so sending it would blank the board while reporting success.
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'woods', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    let sent: boolean | undefined;
+    await act(async () => {
+      sent = await result.current.sendFramesToBoard('p485r2p486r4');
+    });
+
+    expect(sent).toBe(false);
+    expect(fakeAdapter.write).not.toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledWith('ble.sendFailedTitle', 'ble.errorIncompatible');
+    const failureCall = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Failure');
+    expect(failureCall?.[1]).toMatchObject({ boardName: 'woods', failureReason: 'incompatible_climb' });
+  });
+
+  it('refuses a Woods send when the size id maps to no LED table', async () => {
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'woods', layoutId: 1, sizeId: 99 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    let sent: boolean | undefined;
+    await act(async () => {
+      sent = await result.current.sendFramesToBoard('p0r4');
+    });
+
+    expect(sent).toBe(false);
+    expect(fakeAdapter.write).not.toHaveBeenCalled();
+    const failureCall = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Failure');
+    expect(failureCall?.[1]).toMatchObject({ boardName: 'woods', failureReason: 'missing_led_placements' });
   });
 
   it('attaches write diagnostics alongside failureReason on a failed send (#3230)', async () => {
