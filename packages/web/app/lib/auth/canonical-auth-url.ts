@@ -136,7 +136,12 @@ export const ALLOW_MISSING_CANONICAL_ORIGIN_ENV_VAR = 'AUTH_ALLOW_MISSING_CANONI
 function isProductionServerRuntime(env: AuthEnv): boolean {
   if (env.NODE_ENV !== 'production') return false;
   // A vitest worker handed NODE_ENV=production by a fixture is still a test run.
-  return env.VITEST !== 'true';
+  if (env.VITEST === 'true') return false;
+  // `next build` sets NODE_ENV=production too. Measured on Next 16.2.12: it does
+  // not invoke the instrumentation hook, so this branch is belt-and-braces — but
+  // a build has no visitors and no cookies, so if that ever changes it must not
+  // become a build failure.
+  return !env.NEXT_PHASE?.startsWith('phase-production-build');
 }
 
 function namesAnyOrigin(env: AuthEnv): boolean {

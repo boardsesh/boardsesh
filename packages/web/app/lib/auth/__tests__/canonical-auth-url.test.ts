@@ -303,6 +303,16 @@ describe('diagnoseCanonicalOrigin', () => {
     expect(diagnoseCanonicalOrigin({ ...PRODUCTION_SERVER, VITEST: 'true' })).toEqual({ level: 'ok' });
   });
 
+  it('never fails a build', () => {
+    // `next build` runs with NODE_ENV=production. Measured on Next 16.2.12 it
+    // does not call the instrumentation hook at all, so this is belt-and-braces
+    // — but a build serves no requests and writes no cookies, so it must never
+    // be the thing this guard stops.
+    expect(diagnoseCanonicalOrigin({ ...PRODUCTION_SERVER, NEXT_PHASE: 'phase-production-build' })).toEqual({
+      level: 'ok',
+    });
+  });
+
   it('downgrades the fatal to a warning when the operator sets the bypass', () => {
     for (const bypassValue of ['1', 'true', 'TRUE']) {
       const diagnosis = diagnoseCanonicalOrigin({
