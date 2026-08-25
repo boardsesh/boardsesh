@@ -229,7 +229,7 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
       surface="solid"
       footerSurface="flush"
       // See the identical fix on the create-tick sheet (`LogAscentSheet`,
-      // #4231): the edit sheet has the same pinned-footer-under-Android's-
+      // #4723): the edit sheet has the same pinned-footer-under-Android's-
       // partial-state shape, so it gets the same opt-in.
       androidOpensExpanded
       onClose={onClose}
@@ -316,7 +316,8 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
         />
       </TickFormRow>
 
-      <TickFormRow label={tTick('mobile.tick.noteLabel')} showSeparator={false}>
+      {/* `alignTop` for the same reason as the create sheet's note row (#4642). */}
+      <TickFormRow label={tTick('mobile.tick.noteLabel')} alignTop showSeparator={false} testID="tick-row-note">
         <TickNoteField
           value={comment}
           onChangeText={setComment}

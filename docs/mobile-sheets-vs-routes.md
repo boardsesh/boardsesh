@@ -146,7 +146,7 @@ and which index is requested — it has a fixed ~50% "partial" state and a conte
 "expanded" state, nothing in between (see `androidSafeSnapPoints` in
 `src/components/sheet-snap-points.ts`). A sheet whose detents are tuned against iOS's real first
 fraction (e.g. `65%`/`80%`, sized so a pinned footer fits under the form) can be TALLER than
-Android's ~50% partial state, stranding that footer below the fold (#4231). For a multi-detent
+Android's ~50% partial state, stranding that footer below the fold (#4723). For a multi-detent
 sheet with a pinned footer, pass `androidOpensExpanded` to `Sheet` / `ModalSheet` — `LogAscentSheet`
 and `LogbookEditSheet` opt in. It collapses the sheet to its single LAST detent on Android (via
 `androidSafeSnapPoints`) rather than requesting the last index of a multi-detent config: a single
