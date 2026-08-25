@@ -26,6 +26,14 @@ on:
     # No paths filter — detect-changes decides per-side. Web deploys on
     # essentially any app change; backend only on backend-affecting paths.
   workflow_dispatch:
+    inputs:
+      cloudflare_allow_zone_ssl:
+        description: >-
+          One-off: let cf:apply set the ZONE-WIDE SSL/TLS mode. Off by default and
+          deliberately not wired to push, because the setting affects every hostname
+          on boardsesh.com (ws, app, www), not just the one being deployed.
+        type: boolean
+        default: false
 
 concurrency:
   group: production-deploy
@@ -575,7 +583,11 @@ jobs:
       - name: Apply Cloudflare config
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: vp run cf:apply -- --apply
+          # Only a manual dispatch can carry this; a push always resolves to ''.
+          # That is the point: an SSL drift should be a decision someone makes,
+          # not something a routine merge applies zone-wide on their behalf.
+          ALLOW_ZONE_SSL: ${{ inputs.cloudflare_allow_zone_ssl && '--allow-zone-ssl' || '' }}
+        run: vp run cf:apply -- --apply $ALLOW_ZONE_SSL
 
   # Manual deploy freeze for app.boardsesh.com, the Cloudflare Pages analogue of
   # check-rollback. deploy-web and deploy-production-backend both honour a pinned

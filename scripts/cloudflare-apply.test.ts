@@ -1,5 +1,6 @@
 /// <reference types="node" />
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -442,5 +443,42 @@ describe('managed rule ordering and foreign-rule safety', () => {
     expect(changed).toBe(false);
     expect(rules).toBe(inSync);
     expect(diffManagedRules(inSync, desired.wafRules, 'waf-rule')).toEqual([]);
+  });
+});
+
+describe('deploy-cloudflare workflow wiring', () => {
+  const workflow = readFileSync('.github/workflows/production-deploy.yml', 'utf8');
+  const applyStep = workflow.slice(
+    workflow.indexOf('- name: Apply Cloudflare config'),
+    workflow.indexOf('deploy-app-web:'),
+  );
+
+  it('never hard-codes --allow-zone-ssl into the apply command', () => {
+    // The zone-wide SSL/TLS mode affects every hostname on boardsesh.com — ws,
+    // app and www. A routine merge must not be able to change it; only a
+    // deliberate manual dispatch can.
+    expect(applyStep).toContain('vp run cf:apply -- --apply $ALLOW_ZONE_SSL');
+    expect(applyStep).not.toMatch(/run:.*--apply\s+--allow-zone-ssl/);
+  });
+
+  it('gates the flag on a workflow_dispatch input, so a push resolves it to empty', () => {
+    // `inputs` is null on a push event, so the expression falls through to ''.
+    // If this were ever keyed on a repo variable or a secret instead, every
+    // merge would start applying zone-wide SSL changes silently.
+    expect(applyStep).toMatch(
+      /ALLOW_ZONE_SSL: \$\{\{ inputs\.cloudflare_allow_zone_ssl && '--allow-zone-ssl' \|\| '' \}\}/,
+    );
+  });
+
+  it('declares the input as a boolean defaulting to off', () => {
+    const dispatchBlock = workflow.slice(workflow.indexOf('workflow_dispatch:'), workflow.indexOf('concurrency:'));
+    expect(dispatchBlock).toContain('cloudflare_allow_zone_ssl:');
+    expect(dispatchBlock).toContain('type: boolean');
+    expect(dispatchBlock).toContain('default: false');
+  });
+
+  it('parses the exact argv the workflow produces, both with and without the flag', () => {
+    expect(parseArgs(['--apply'])).toEqual({ apply: true, allowZoneSsl: false, help: false });
+    expect(parseArgs(['--apply', '--allow-zone-ssl'])).toEqual({ apply: true, allowZoneSsl: true, help: false });
   });
 });
