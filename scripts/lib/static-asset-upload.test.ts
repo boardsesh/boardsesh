@@ -12,6 +12,7 @@ import {
   isNonRetryablePublicStatus,
   planStaticAssetUploads,
   putImmutableObjectIfMissing,
+  readResponseBodyWithinLimit,
   STATIC_ASSET_AUDIT_CACHE_CONTROL,
   STATIC_ASSET_AUDIT_MANIFEST_KEY,
   STATIC_ASSET_CACHE_CONTROL,
@@ -57,6 +58,7 @@ describe('public static asset validation', () => {
   it('accepts the required browser-visible headers', () => {
     const headers = new Headers({
       'content-type': 'image/webp',
+      'content-length': String(asset.bytes),
       'cache-control': 'public, max-age=31536000, immutable',
       'access-control-allow-origin': '*',
     });
@@ -64,13 +66,18 @@ describe('public static asset validation', () => {
   });
 
   it('rejects missing CORS and unsafe cache metadata', () => {
-    const headers = new Headers({ 'content-type': 'image/webp', 'cache-control': 'public, max-age=300' });
+    const headers = new Headers({
+      'content-type': 'image/webp',
+      'content-length': String(asset.bytes),
+      'cache-control': 'public, max-age=300',
+    });
     expect(() => assertPublicStaticAssetHeaders(asset, headers)).toThrow('immutable one-year caching');
   });
 
   it('rejects missing CORS even when the cache metadata is valid', () => {
     const headers = new Headers({
       'content-type': 'image/webp',
+      'content-length': String(asset.bytes),
       'cache-control': 'public, max-age=31536000, immutable',
     });
     expect(() => assertPublicStaticAssetHeaders(asset, headers)).toThrow('Access-Control-Allow-Origin');
@@ -84,14 +91,31 @@ describe('public static asset validation', () => {
     expect(isNonRetryablePublicStatus(503)).toBe(false);
   });
 
-  it('uses bounded exponential full jitter for retryable propagation failures', () => {
-    expect(calculatePublicValidationDelay(1, () => 0.5)).toBe(250);
-    expect(calculatePublicValidationDelay(2, () => 0.5)).toBe(500);
-    expect(calculatePublicValidationDelay(6, () => 0.5)).toBe(4_000);
+  it('uses bounded exponential jitter with a non-zero propagation floor', () => {
+    expect(calculatePublicValidationDelay(1, () => 0.5)).toBe(750);
+    expect(calculatePublicValidationDelay(2, () => 0.5)).toBe(1_500);
+    expect(calculatePublicValidationDelay(6, () => 0.5)).toBe(6_000);
     expect(calculatePublicValidationDelay(20, () => 1)).toBe(8_000);
   });
 
+  it('bounds public response reads even when the server understates the body', async () => {
+    await expect(readResponseBodyWithinLimit(new Response(new Uint8Array([1, 2, 3])), 3)).resolves.toEqual(
+      new Uint8Array([1, 2, 3]),
+    );
+    await expect(readResponseBodyWithinLimit(new Response(new Uint8Array([1, 2, 3])), 2)).rejects.toThrow(
+      'exceeds the expected 2 bytes',
+    );
+  });
+
   it('validates signed S3 HEAD metadata including checksums', () => {
+    expect(() =>
+      assertRemoteStaticAssetMetadata(asset, {
+        bytes: undefined,
+        contentType: asset.contentType,
+        cacheControl: STATIC_ASSET_CACHE_CONTROL,
+        checksumSha256: Buffer.from(asset.sha256, 'hex').toString('base64'),
+      }),
+    ).toThrow('size mismatch');
     expect(() =>
       assertRemoteStaticAssetMetadata(asset, {
         bytes: asset.bytes,

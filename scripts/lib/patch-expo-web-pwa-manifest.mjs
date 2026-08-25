@@ -85,10 +85,12 @@ function patchShellIcon(shellHtml, relation, iconUrl, shellPath) {
     fail(`index.html has ${links.length} <link rel="${relation}"> tags (${shellPath}) — expected exactly one`);
   }
   const originalLink = links[0];
-  const patchedLink = originalLink.replace(/\bhref=["'][^"']*["']/i, `href="${iconUrl}"`);
-  if (patchedLink === originalLink && hrefOf(originalLink) !== iconUrl) {
+  const originalHref = hrefOf(originalLink);
+  if (originalHref === null) {
     fail(`<link rel="${relation}"> has no href (${shellPath})`);
   }
+  if (originalHref === iconUrl) return shellHtml;
+  const patchedLink = originalLink.replace(/\bhref=["'][^"']*["']/i, `href="${iconUrl}"`);
   return shellHtml.replace(originalLink, patchedLink);
 }
 

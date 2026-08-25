@@ -21,6 +21,7 @@ import {
   isNonRetryablePublicStatus,
   planStaticAssetUploads,
   putImmutableObjectIfMissing,
+  readResponseBodyWithinLimit,
   STATIC_ASSET_AUDIT_CACHE_CONTROL,
   STATIC_ASSET_AUDIT_MANIFEST_KEY,
   STATIC_ASSET_CACHE_CONTROL,
@@ -137,7 +138,10 @@ async function validatePublicAsset(asset: StaticAssetRecord, beforeRequest: Requ
         throw httpError;
       }
       assertPublicStaticAssetHeaders(asset, response.headers);
-      const contents = new Uint8Array(await response.arrayBuffer());
+      const contents = await readResponseBodyWithinLimit(response, asset.bytes);
+      if (contents.byteLength !== asset.bytes) {
+        throw new Error(`Byte-length mismatch: expected ${asset.bytes}, received ${contents.byteLength}`);
+      }
       const sha256 = createHash('sha256').update(contents).digest('hex');
       if (sha256 !== asset.sha256) throw new Error(`SHA-256 mismatch: expected ${asset.sha256}, received ${sha256}`);
       return;
@@ -203,7 +207,6 @@ async function main(): Promise<void> {
     endpoint,
     region,
     credentials: { accessKeyId, secretAccessKey },
-    forcePathStyle: true,
     maxAttempts: 5,
     retryMode: 'adaptive',
   });

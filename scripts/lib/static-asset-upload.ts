@@ -67,8 +67,39 @@ export function calculatePublicValidationDelay(failedAttempt: number, random: ()
   if (!Number.isInteger(failedAttempt) || failedAttempt < 1) {
     throw new Error('failedAttempt must be a positive integer');
   }
-  const maximumDelayMilliseconds = Math.min(8_000, 500 * 2 ** (failedAttempt - 1));
-  return Math.floor(random() * maximumDelayMilliseconds);
+  const maximumDelayMilliseconds = Math.min(8_000, 1_000 * 2 ** (failedAttempt - 1));
+  const minimumDelayMilliseconds = maximumDelayMilliseconds / 2;
+  return Math.floor(minimumDelayMilliseconds + random() * minimumDelayMilliseconds);
+}
+
+export async function readResponseBodyWithinLimit(response: Response, maximumBytes: number): Promise<Uint8Array> {
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 0) {
+    throw new Error('maximumBytes must be a non-negative safe integer');
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) return new Uint8Array();
+
+  const chunks: Uint8Array[] = [];
+  let receivedBytes = 0;
+  while (true) {
+    const { done, value: chunk } = await reader.read();
+    if (done) break;
+    receivedBytes += chunk.byteLength;
+    if (receivedBytes > maximumBytes) {
+      await reader.cancel();
+      throw new Error(`Public asset body exceeds the expected ${maximumBytes} bytes`);
+    }
+    chunks.push(chunk);
+  }
+
+  const contents = new Uint8Array(receivedBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    contents.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return contents;
 }
 
 export function hasStaticAssetUploadFlag(arguments_: readonly string[], flag: string): boolean {
@@ -183,6 +214,12 @@ export function assertPublicStaticAssetHeaders(asset: StaticAssetRecord, headers
   const contentType = headers.get('content-type')?.split(';')[0]?.trim();
   if (contentType !== asset.contentType) {
     throw new Error(`Public asset ${asset.logicalPath} has Content-Type ${contentType ?? '(missing)'}`);
+  }
+  const contentLength = headers.get('content-length');
+  if (contentLength !== String(asset.bytes)) {
+    throw new Error(
+      `Public asset ${asset.logicalPath} has Content-Length ${contentLength ?? '(missing)'}; expected ${asset.bytes}`,
+    );
   }
   const cacheControl = headers.get('cache-control') ?? '';
   if (!cacheControl.includes('max-age=31536000') || !cacheControl.includes('immutable')) {

@@ -55,6 +55,16 @@ Set these secrets on GitHub's protected `Production` environment:
 - `STATIC_ASSETS_AWS_ENDPOINT_URL`
 - `STATIC_ASSETS_AWS_REGION` (`auto` for Tigris)
 
+Use Tigris's standard `https://t3.storage.dev` S3 endpoint. The publisher follows Tigris's virtual-hosted request
+style, so the bucket name becomes part of the signed request host. The production workflow keeps both public build
+origins pinned to the same catalog origin:
+
+- `NEXT_PUBLIC_STATIC_ASSET_BASE_URL=https://assets.boardsesh.com` for Next.js;
+- `EXPO_PUBLIC_STATIC_ASSET_BASE_URL=https://assets.boardsesh.com` for Expo web.
+
+Those values are public build inputs, not credentials. A CI contract test keeps them aligned with
+`STATIC_ASSET_ORIGIN` in `@boardsesh/static-assets`.
+
 ## Main deployment
 
 The serialized `production-deploy.yml` change detector selects `sync-static-assets` only when a catalog input or
@@ -76,6 +86,13 @@ vp run upload:static-assets -- --dry-run
 
 Main is the only publisher. PR and branch previews stay on same-origin/local assets and never receive production
 bucket credentials.
+
+### First deployment
+
+Provision the empty bucket, public-read policy, CORS, custom domain, and Production secrets before merging the first
+catalog change. The first main deployment uploads and validates the complete catalog before either web build starts.
+Until that job succeeds, previews continue using their committed same-origin files and production remains on the
+previous deployment. Later runs upload only new content hashes but still validate the complete published catalog.
 
 ## Recovery and retention
 
