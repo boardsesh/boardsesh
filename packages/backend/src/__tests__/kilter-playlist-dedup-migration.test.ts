@@ -1,0 +1,271 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vite-plus/test';
+import { sql } from 'drizzle-orm';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import postgres from 'postgres';
+
+import { db } from '../db/client';
+import { getWorkerDatabaseUrl } from './worker-db';
+
+// ---------------------------------------------------------------------------
+// 0205_kilter_playlist_dedup_backfill — the one-time merge of the duplicate
+// Kilter playlists the pre-#4707 sync created.
+//
+// This drives the SHIPPED migration file verbatim against a real Postgres. The
+// pairing logic is a multi-CTE degree filter (unambiguous 1:1 inside a single
+// sole owner) and it DELETES rows, so "I read it and it looks right" is not
+// enough — a wrong merge silently destroys a user's playlist. `packages/db`
+// runs on `tsx --test` and is not part of CI's vitest projects, so the
+// regression test lives here, in the backend project, which is.
+//
+// The file is located by suffix rather than by number: `vp run db:renumber`
+// moves the migration when main takes 0205, and a hardcoded name would then
+// silently test nothing.
+// ---------------------------------------------------------------------------
+
+const MIGRATION_SUFFIX = '_kilter_playlist_dedup_backfill.sql';
+const GUARD_TAG_PREFIX = '';
+
+const DRIZZLE_DIR = join(import.meta.dirname, '../../../db/drizzle');
+
+function readMigration(): { tag: string; body: string } {
+  const file = readdirSync(DRIZZLE_DIR).find((name) => name.endsWith(MIGRATION_SUFFIX));
+  if (!file) throw new Error(`no migration ending in ${MIGRATION_SUFFIX} under ${DRIZZLE_DIR}`);
+  return {
+    tag: `${GUARD_TAG_PREFIX}${file.replace(/\.sql$/, '')}`,
+    body: readFileSync(join(DRIZZLE_DIR, file), 'utf8'),
+  };
+}
+
+/**
+ * Run the migration exactly as the migrator does — one multi-statement simple
+ * query. Drizzle's `execute` uses the extended protocol, which refuses more
+ * than one statement, so this borrows worker-db's `postgres().unsafe()`.
+ */
+async function applyMigration(body: string): Promise<void> {
+  const client = postgres(getWorkerDatabaseUrl(), { max: 1, onnotice: () => {} });
+  try {
+    await client.unsafe(body);
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
+const USERS = ['dedup-u1', 'dedup-u2', 'dedup-u3', 'dedup-u4', 'dedup-u4-other', 'dedup-u5'];
+const UUIDS = ['L1', 'T1', 'L2', 'T2', 'L3a', 'L3b', 'T3', 'L4', 'T4', 'N5', 'T5'].map((u) => `dedup-${u}`);
+
+/** drizzle expands an interpolated JS array into a tuple, not an array literal. */
+function sqlList(values: string[]) {
+  return sql.join(
+    values.map((value) => sql`${value}`),
+    sql`, `,
+  );
+}
+
+type Row = { uuid: string; name: string; aurora_id: string | null; kilter_id: string | null; marker_carried: boolean };
+
+async function readRows(): Promise<Map<string, Row>> {
+  const result = await db.execute(sql`
+    SELECT uuid, name, aurora_id, kilter_id,
+           (kilter_synced_at = COALESCE(aurora_synced_at, created_at)) AS marker_carried
+    FROM playlists WHERE uuid IN (${sqlList(UUIDS)})
+  `);
+  return new Map(Array.from(result as Iterable<Row>).map((row) => [row.uuid, row]));
+}
+
+async function cleanup(): Promise<void> {
+  await db.execute(sql`DELETE FROM playlists WHERE uuid IN (${sqlList(UUIDS)})`);
+  await db.execute(sql`DELETE FROM "users" WHERE id IN (${sqlList(USERS)})`);
+  await db.execute(sql`DELETE FROM sync_deletions WHERE record_id IN (${sqlList(UUIDS)})`);
+  // The migration is guarded by a durable row so a re-application is a no-op.
+  // Drop it between tests so each one actually exercises the SQL.
+  await db.execute(sql`
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '_bs_migration_guards') THEN
+        DELETE FROM _bs_migration_guards WHERE tag LIKE '%_kilter_playlist_dedup_backfill';
+      END IF;
+    END $$
+  `);
+}
+
+/** A legacy pre-split row: upstream origin in aurora_id, kilter_id still NULL. */
+async function seedLegacy(args: {
+  uuid: string;
+  userId: string;
+  auroraId: string;
+  name: string;
+  climbUuid?: string;
+}): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO playlists (uuid, board_type, name, aurora_type, aurora_id, aurora_synced_at, created_at, updated_at)
+    VALUES (${args.uuid}, 'kilter', ${args.name}, 'circuits', ${args.auroraId},
+            now() - interval '200 days', now() - interval '200 days', now() - interval '30 days')
+  `);
+  await db.execute(sql`
+    INSERT INTO playlist_ownership (playlist_id, user_id, role)
+    SELECT id, ${args.userId}, 'owner' FROM playlists WHERE uuid = ${args.uuid}
+  `);
+  if (args.climbUuid) {
+    await db.execute(sql`
+      INSERT INTO playlist_climbs (playlist_id, climb_uuid, angle, position)
+      SELECT id, ${args.climbUuid}, 40, 0 FROM playlists WHERE uuid = ${args.uuid}
+    `);
+  }
+}
+
+/** The twin the buggy sync inserted: kilter_id set, no aurora origin. */
+async function seedTwin(args: { uuid: string; userIds: string[]; kilterId: string; name: string }): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO playlists (uuid, board_type, name, kilter_type, kilter_id, kilter_synced_at)
+    VALUES (${args.uuid}, 'kilter', ${args.name}, 'circuits', ${args.kilterId}, now())
+  `);
+  for (const userId of args.userIds) {
+    await db.execute(sql`
+      INSERT INTO playlist_ownership (playlist_id, user_id, role)
+      SELECT id, ${userId}, 'owner' FROM playlists WHERE uuid = ${args.uuid}
+    `);
+  }
+}
+
+async function seedUsers(): Promise<void> {
+  for (const id of USERS) {
+    await db.execute(sql`
+      INSERT INTO "users" (id, email, name, created_at, updated_at)
+      VALUES (${id}, ${`${id}@test.com`}, ${id}, now(), now())
+      ON CONFLICT (id) DO NOTHING
+    `);
+  }
+}
+
+describe('0205 kilter playlist dedup backfill (real DB)', () => {
+  beforeEach(cleanup);
+  afterEach(cleanup);
+
+  it('merges only unambiguous 1:1 pairs and leaves every other shape untouched', async () => {
+    await seedUsers();
+
+    // u1 — tier 1: the legacy row's aurora_id IS the circuit uuid.
+    await seedLegacy({
+      uuid: 'dedup-L1',
+      userId: 'dedup-u1',
+      auroraId: 'dedup-circ-1',
+      name: 'Warmups',
+      climbUuid: 'climb-A',
+    });
+    await seedTwin({ uuid: 'dedup-T1', userIds: ['dedup-u1'], kilterId: 'dedup-circ-1', name: 'Warmups' });
+
+    // u2 — tier 2: a JSON import rotated the id, only the name matches.
+    await seedLegacy({ uuid: 'dedup-L2', userId: 'dedup-u2', auroraId: 'dedup-json-x', name: '  Projects ' });
+    await seedTwin({ uuid: 'dedup-T2', userIds: ['dedup-u2'], kilterId: 'dedup-circ-2', name: 'projects' });
+
+    // u3 — ambiguous: two legacy rows share the twin's name.
+    await seedLegacy({ uuid: 'dedup-L3a', userId: 'dedup-u3', auroraId: 'dedup-json-a', name: 'Dupe' });
+    await seedLegacy({ uuid: 'dedup-L3b', userId: 'dedup-u3', auroraId: 'dedup-json-b', name: 'dupe' });
+    await seedTwin({ uuid: 'dedup-T3', userIds: ['dedup-u3'], kilterId: 'dedup-circ-3', name: 'Dupe' });
+
+    // u4 — the cross-linked shape (#3541): the twin carries two owner edges.
+    await seedLegacy({ uuid: 'dedup-L4', userId: 'dedup-u4', auroraId: 'dedup-circ-4', name: 'Shared' });
+    await seedTwin({
+      uuid: 'dedup-T4',
+      userIds: ['dedup-u4', 'dedup-u4-other'],
+      kilterId: 'dedup-circ-4b',
+      name: 'Shared',
+    });
+
+    // u5 — a Boardsesh-native playlist sharing a name with a Kilter circuit.
+    await db.execute(sql`
+      INSERT INTO playlists (uuid, board_type, name) VALUES ('dedup-N5', 'kilter', 'Native')
+    `);
+    await db.execute(sql`
+      INSERT INTO playlist_ownership (playlist_id, user_id, role)
+      SELECT id, 'dedup-u5', 'owner' FROM playlists WHERE uuid = 'dedup-N5'
+    `);
+    await seedTwin({ uuid: 'dedup-T5', userIds: ['dedup-u5'], kilterId: 'dedup-circ-5', name: 'Native' });
+
+    await applyMigration(readMigration().body);
+
+    const rows = await readRows();
+
+    // Merged: the LEGACY row survives (it owns the uuid pins/follows point at),
+    // gains the twin's kilter_id, and keeps its own name and climbs.
+    for (const [legacy, twin, kilterId] of [
+      ['dedup-L1', 'dedup-T1', 'dedup-circ-1'],
+      ['dedup-L2', 'dedup-T2', 'dedup-circ-2'],
+    ] as const) {
+      expect(rows.get(legacy)?.kilter_id, legacy).toBe(kilterId);
+      // kilter_synced_at carries the legacy upstream content marker rather than
+      // now(), or the edit-clobber guard stops reading the user's edits as local.
+      expect(rows.get(legacy)?.marker_carried, legacy).toBe(true);
+      expect(rows.has(twin), twin).toBe(false);
+    }
+    expect(rows.get('dedup-L1')?.name).toBe('Warmups');
+    expect(rows.get('dedup-L2')?.name).toBe('  Projects ');
+
+    // Untouched: ambiguous, cross-linked, and Boardsesh-native.
+    for (const uuid of ['dedup-L3a', 'dedup-L3b', 'dedup-L4', 'dedup-N5']) {
+      expect(rows.get(uuid)?.kilter_id, uuid).toBeNull();
+    }
+    for (const uuid of ['dedup-T3', 'dedup-T4', 'dedup-T5']) {
+      expect(rows.has(uuid), uuid).toBe(true);
+    }
+  });
+
+  it('keeps the surviving row’s climbs', async () => {
+    await seedUsers();
+    await seedLegacy({
+      uuid: 'dedup-L1',
+      userId: 'dedup-u1',
+      auroraId: 'dedup-circ-1',
+      name: 'Warmups',
+      climbUuid: 'climb-A',
+    });
+    await seedTwin({ uuid: 'dedup-T1', userIds: ['dedup-u1'], kilterId: 'dedup-circ-1', name: 'Warmups' });
+
+    await applyMigration(readMigration().body);
+
+    const climbs = await db.execute(sql`
+      SELECT pc.climb_uuid FROM playlist_climbs pc
+      JOIN playlists p ON p.id = pc.playlist_id
+      WHERE p.uuid = 'dedup-L1'
+    `);
+    expect(Array.from(climbs as Iterable<{ climb_uuid: string }>).map((row) => row.climb_uuid)).toEqual(['climb-A']);
+  });
+
+  it('tombstones the deleted twin so offline clients drop it', async () => {
+    await seedUsers();
+    await seedLegacy({ uuid: 'dedup-L1', userId: 'dedup-u1', auroraId: 'dedup-circ-1', name: 'Warmups' });
+    await seedTwin({ uuid: 'dedup-T1', userIds: ['dedup-u1'], kilterId: 'dedup-circ-1', name: 'Warmups' });
+
+    await applyMigration(readMigration().body);
+
+    const tombstones = await db.execute(sql`
+      SELECT record_id, user_id FROM sync_deletions WHERE record_id = 'dedup-T1'
+    `);
+    const rows = Array.from(tombstones as Iterable<{ record_id: string; user_id: string }>);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.user_id).toBe('dedup-u1');
+  });
+
+  it('is a no-op on re-application thanks to the guard row', async () => {
+    await seedUsers();
+    await seedLegacy({ uuid: 'dedup-L1', userId: 'dedup-u1', auroraId: 'dedup-circ-1', name: 'Warmups' });
+    await seedTwin({ uuid: 'dedup-T1', userIds: ['dedup-u1'], kilterId: 'dedup-circ-1', name: 'Warmups' });
+
+    const { body, tag } = readMigration();
+    await applyMigration(body);
+
+    // A second pair appears AFTER the migration ran (exactly the shape the file
+    // warns is not value-idempotent). The guard row must stop it being merged.
+    await seedLegacy({ uuid: 'dedup-L2', userId: 'dedup-u2', auroraId: 'dedup-circ-2', name: 'Later' });
+    await seedTwin({ uuid: 'dedup-T2', userIds: ['dedup-u2'], kilterId: 'dedup-circ-2', name: 'Later' });
+
+    await applyMigration(body);
+
+    const rows = await readRows();
+    expect(rows.has('dedup-T2')).toBe(true);
+    expect(rows.get('dedup-L2')?.kilter_id).toBeNull();
+
+    const guards = await db.execute(sql`SELECT tag FROM _bs_migration_guards WHERE tag = ${tag}`);
+    expect(Array.from(guards as Iterable<{ tag: string }>)).toHaveLength(1);
+  });
+});
