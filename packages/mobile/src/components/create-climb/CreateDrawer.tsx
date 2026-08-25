@@ -221,7 +221,7 @@ export function CreateDrawer({
   // native grabber reserve + content paddingTop + above-fold (header + board +
   // action bar) + bottom safe area + a reveal margin so a hint of the below-fold
   // form peeks.
-  const maxPeek = (windowHeight - insets.top) * MAX_PEEK_FRACTION;
+  const maxPeek = Math.round((windowHeight - insets.top) * MAX_PEEK_FRACTION);
   const peekHeight =
     aboveFoldHeight > 0
       ? Math.min(NATIVE_HANDLE_RESERVE + spacing[2] + aboveFoldHeight + windowInsetBottom + spacing[3], maxPeek)

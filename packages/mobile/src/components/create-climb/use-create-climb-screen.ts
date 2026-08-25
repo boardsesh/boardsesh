@@ -944,17 +944,21 @@ export function useCreateClimbScreen({
     deleteFrame();
   }, [deleteFrame, reclaimWall]);
 
+  const playbackPlay = playback.play;
+  const playbackPause = playback.pause;
+  const playbackSeek = playback.seek;
+
   const handlePlay = useCallback(() => {
     reclaimWall();
-    playback.play();
-  }, [playback, reclaimWall]);
+    playbackPlay();
+  }, [playbackPlay, reclaimWall]);
 
   const handleSeek = useCallback(
     (index: number) => {
       reclaimWall();
-      playback.seek(index);
+      playbackSeek(index);
     },
-    [playback, reclaimWall],
+    [playbackSeek, reclaimWall],
   );
 
   const playbackControls = useMemo(
@@ -963,11 +967,11 @@ export function useCreateClimbScreen({
       speed: playback.speed,
       paceMs: playback.paceMs,
       play: handlePlay,
-      pause: playback.pause,
+      pause: playbackPause,
       seek: handleSeek,
       setSpeed: playback.setSpeed,
     }),
-    [playback.isPlaying, playback.speed, playback.paceMs, playback.pause, playback.setSpeed, handlePlay, handleSeek],
+    [playback.isPlaying, playback.speed, playback.paceMs, playbackPause, playback.setSpeed, handlePlay, handleSeek],
   );
 
   // ---- Clear holds vs. start a new climb. ----
@@ -1143,11 +1147,11 @@ export function useCreateClimbScreen({
     if (!framesString) return;
     // Stop the transport first: a running clock would race the auto-sender's
     // write, and the wall is about to show the whole route rather than a frame.
-    playback.pause();
+    playbackPause();
     setHandedOff(true);
     const uuid = savedClimb?.uuid ?? previewUuidRef.current ?? randomUUID();
     setCurrentClimb(climbToQueueItem(buildProvisionalClimb(uuid, framesString), { uuid }));
-  }, [generateFramesString, savedClimb, buildProvisionalClimb, setCurrentClimb, playback]);
+  }, [generateFramesString, savedClimb, buildProvisionalClimb, setCurrentClimb, playbackPause]);
 
   // ---- BLE toggle (drives the header lightbulb): connect lights the wall with
   // the current holds; tapping again disconnects. ----
@@ -1225,7 +1229,7 @@ export function useCreateClimbScreen({
     saveInFlightRef.current = true;
     // Stop the transport before the save pushes the climb into the queue — a
     // running clock would race the auto-sender for the wall.
-    playback.pause();
+    playbackPause();
     setIsSaving(true);
     setPublishDuplicateError(null);
     // Captured BEFORE the mutation fires. Anything typed during the round trip
@@ -1410,7 +1414,7 @@ export function useCreateClimbScreen({
     t,
     queryClient,
     onPublished,
-    playback,
+    playbackPause,
   ]);
 
   const dismissDuplicateError = useCallback(() => setPublishDuplicateError(null), []);
