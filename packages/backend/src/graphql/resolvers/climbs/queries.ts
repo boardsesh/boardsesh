@@ -203,7 +203,8 @@ export const climbQueries = {
     // Woods stays cacheable despite also being code-driven: its catalog is a
     // static import with no in-app creation or import flow writing to it, so a
     // cached anonymous search can't go stale between requests the way MoonBoard's
-    // can.
+    // can. Revisit this line when Woods gets a create path (#4750) — a board
+    // users can write to has to leave the cacheable set.
     const hasUserSpecificFilters = USER_SPECIFIC_SEARCH_PARAMS.some(
       (param) => !!searchParams[param as keyof typeof searchParams],
     );
