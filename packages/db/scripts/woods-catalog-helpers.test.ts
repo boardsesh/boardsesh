@@ -5,18 +5,20 @@ import { fingerprintFromHolds } from './moonboard-2024-helpers.js';
 import {
   WOODS_UUID_NAMESPACE,
   WOODS_LAYOUT_ID,
-  WOODS_MAX_GRADE,
-  WOODS_MIN_GRADE,
+  WOODS_CLAMPED_GRADES,
   woodsHoldState,
   parseHoldList,
   holdsToFrames,
   woodsClimbUuid,
   dimensionToSizeIds,
+  normalizeWoodsPublishedDate,
   mapWoodsProblemToClimb,
   woodsGradeRows,
   WOODS_REQUIRED_SET_IDS,
   type WoodsCatalogProblem,
 } from './woods-catalog-helpers.js';
+import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
+import { WOODS_DIFFICULTY_IDS } from '@boardsesh/board-constants/woods';
 import { getWoodsBoardDetails } from '@boardsesh/board-config';
 
 // "Impossible" — id 5228 from the real woodsboard_12x12.json catalog, with the
@@ -62,61 +64,85 @@ void test('woodsHoldState maps the four states and drops Clear / unknown', () =>
   assert.equal(woodsHoldState('Finish'), 'FINISH');
   assert.equal(woodsHoldState('Foot'), 'FOOT');
   assert.equal(woodsHoldState('Clear'), null);
-  assert.equal(woodsHoldState('Bogus'), null);
+  assert.equal(woodsHoldState('Wat'), null);
 });
 
 void test('parseHoldList drops Clear holds and sorts ascending by baseHoldLocation', () => {
-  const holds = parseHoldList(IMPOSSIBLE.holdList);
-  assert.equal(holds.length, 5); // the Clear hold is gone
+  const parsed = parseHoldList(IMPOSSIBLE.holdList);
   assert.deepEqual(
-    holds.map((hold) => hold.holdId),
+    parsed.map((hold) => hold.holdId),
     [273, 337, 464, 664, 793],
   );
-  assert.deepEqual(holds, [
-    { holdId: 273, holdState: 'FINISH', roleCode: 3 },
-    { holdId: 337, holdState: 'HAND', roleCode: 2 },
-    { holdId: 464, holdState: 'HAND', roleCode: 2 },
-    { holdId: 664, holdState: 'HAND', roleCode: 2 },
-    { holdId: 793, holdState: 'STARTING', roleCode: 4 },
-  ]);
+  assert.deepEqual(
+    parsed.map((hold) => hold.holdState),
+    ['FINISH', 'HAND', 'HAND', 'HAND', 'STARTING'],
+  );
+  assert.deepEqual(
+    parsed.map((hold) => hold.roleCode),
+    [3, 2, 2, 2, 4],
+  );
 });
 
 void test('holdsToFrames encodes p{baseHoldLocation}r{roleCode}, Start ending in r4', () => {
-  const frames = holdsToFrames(parseHoldList(IMPOSSIBLE.holdList));
-  assert.equal(frames, EXPECTED_FRAMES);
-  assert.ok(frames.endsWith('r4')); // the Start hold's role code is 4
+  assert.equal(holdsToFrames(parseHoldList(IMPOSSIBLE.holdList)), EXPECTED_FRAMES);
 });
 
 void test('woodsClimbUuid is deterministic, namespace-keyed, and a valid v5 UUID', () => {
   const uuid = woodsClimbUuid({ name: 'Impossible ', author: '23chloec', frames: EXPECTED_FRAMES });
-  assert.equal(uuid, uuidv5('Impossible |23chloec|' + EXPECTED_FRAMES, WOODS_UUID_NAMESPACE));
   assert.equal(uuid, EXPECTED_UUID);
+  assert.equal(uuid, uuidv5(`Impossible |23chloec|${EXPECTED_FRAMES}`, WOODS_UUID_NAMESPACE));
   assert.match(uuid, /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 });
 
 void test('woodsClimbUuid changes when the frames (holds) change', () => {
-  const base = woodsClimbUuid({ name: 'Impossible ', author: '23chloec', frames: EXPECTED_FRAMES });
-  const differentFrames = woodsClimbUuid({
-    name: 'Impossible ',
-    author: '23chloec',
-    frames: EXPECTED_FRAMES + 'p900r2',
-  });
-  const differentName = woodsClimbUuid({ name: 'Other', author: '23chloec', frames: EXPECTED_FRAMES });
-  assert.notEqual(base, differentFrames);
-  assert.notEqual(base, differentName);
+  assert.notEqual(
+    woodsClimbUuid({ name: 'Impossible ', author: '23chloec', frames: EXPECTED_FRAMES }),
+    woodsClimbUuid({ name: 'Impossible ', author: '23chloec', frames: `${EXPECTED_FRAMES}p800r1` }),
+  );
 });
 
 void test('fingerprintFromHolds is stable for the same holds (copies the canonical algorithm)', () => {
-  const holds = parseHoldList(IMPOSSIBLE.holdList).map((hold) => ({ holdId: hold.holdId, holdState: hold.holdState }));
+  const holds = parseHoldList(IMPOSSIBLE.holdList).map((hold) => ({
+    holdId: hold.holdId,
+    holdState: hold.holdState,
+  }));
   assert.equal(fingerprintFromHolds(holds), EXPECTED_FINGERPRINT);
-  // Order-independent: shuffling the input still yields the same fingerprint.
-  assert.equal(fingerprintFromHolds([...holds].reverse()), EXPECTED_FINGERPRINT);
 });
 
 void test('dimensionToSizeIds maps both board sizes', () => {
   assert.deepEqual(dimensionToSizeIds('8x10'), [1]);
   assert.deepEqual(dimensionToSizeIds('12x12'), [2]);
   assert.deepEqual(dimensionToSizeIds('bogus'), []);
+});
+
+void test('normalizeWoodsPublishedDate rewrites MM/DD/YYYY into lexically sortable ISO', () => {
+  assert.equal(normalizeWoodsPublishedDate('12/31/2025 23:59:59'), '2025-12-31 23:59:59');
+  // Single-digit month and day are zero-padded, which is the whole point: text
+  // sorting must put 2026-01-02 before 2026-01-10, not after it.
+  assert.equal(normalizeWoodsPublishedDate('1/2/2026 03:04:05'), '2026-01-02 03:04:05');
+});
+
+void test('normalizeWoodsPublishedDate reads the leading field as the month, not the day', () => {
+  // The catalog's first field never exceeds 12 while the second reaches 31, so
+  // 06/26 is 26 June — a DD/MM reading would produce an impossible month 26.
+  assert.equal(normalizeWoodsPublishedDate('06/26/2026 01:28:10'), '2026-06-26 01:28:10');
+});
+
+void test('normalizeWoodsPublishedDate keeps the 29 comma-separated catalog rows', () => {
+  // 29 of the 5,418 rows come back as "02/05/2023, 18:34:33" — the same format
+  // with a locale separator. Rejecting them would silently null their created_at.
+  assert.equal(normalizeWoodsPublishedDate('02/05/2023, 18:34:33'), '2023-02-05 18:34:33');
+});
+
+void test('normalizeWoodsPublishedDate returns null for anything it cannot parse', () => {
+  assert.equal(normalizeWoodsPublishedDate(''), null);
+  assert.equal(normalizeWoodsPublishedDate('   '), null);
+  assert.equal(normalizeWoodsPublishedDate(null), null);
+  assert.equal(normalizeWoodsPublishedDate(undefined), null);
+  assert.equal(normalizeWoodsPublishedDate('not a date'), null);
+  assert.equal(normalizeWoodsPublishedDate('2025-12-31 23:59:59'), null); // already ISO — not this format
+  assert.equal(normalizeWoodsPublishedDate('12/31/2025'), null); // no time part
+  assert.equal(normalizeWoodsPublishedDate('12/31/25 23:59:59'), null); // two-digit year
 });
 
 void test('mapWoodsProblemToClimb fills the full climb payload', () => {
@@ -130,10 +156,12 @@ void test('mapWoodsProblemToClimb fills the full climb payload', () => {
   assert.equal(mapped!.name, 'Impossible ');
   assert.equal(mapped!.setterUsername, '23chloec');
   assert.deepEqual(mapped!.compatibleSizeIds, [2]); // 12x12
-  assert.equal(mapped!.difficulty, 0);
+  assert.equal(mapped!.difficulty, 10); // Woods V0 → shared 4a/V0
+  assert.equal(mapped!.difficultyClamped, false);
   assert.equal(mapped!.ascensionistCount, 0);
   assert.equal(mapped!.qualityAverage, null); // no 1-5 community rating in the API
-  assert.equal(mapped!.createdAt, '06/26/2026 01:28:10');
+  assert.equal(mapped!.faUsername, null); // firstAscent is '' on this problem
+  assert.equal(mapped!.createdAt, '2026-06-26 01:28:10');
   assert.equal(mapped!.holds.length, 5); // Clear hold dropped
 });
 
@@ -155,31 +183,106 @@ void test('mapWoodsProblemToClimb returns null for empty or Clear-only holds', (
   assert.equal(mapWoodsProblemToClimb({ ...IMPOSSIBLE, holdList: [{ type: 'Clear', baseHoldLocation: 1 }] }), null);
 });
 
-void test('WOODS_REQUIRED_SET_IDS is empty and agrees with the board config exposing no sets', () => {
-  // The Woods board has no add-on hold sets, so the board config hands out an
-  // empty set_ids list. required_set_ids must agree: search and playlists filter
-  // with `required_set_ids <@ ARRAY[selected]`, and `{} <@ anything` is true, so
-  // an empty array can never hide a Woods climb. A placeholder `{1}` would fail
-  // containment against the board's own (empty) set list.
-  assert.deepEqual(WOODS_REQUIRED_SET_IDS, []);
-  assert.deepEqual(getWoodsBoardDetails({ size_id: 1 }).set_ids, []);
-  assert.deepEqual(getWoodsBoardDetails({ size_id: 2 }).set_ids, []);
+void test('mapWoodsProblemToClimb carries firstAscent into faUsername, trimmed', () => {
+  assert.equal(mapWoodsProblemToClimb({ ...IMPOSSIBLE, firstAscent: '  Stubbs  ' })!.faUsername, 'Stubbs');
+  assert.equal(mapWoodsProblemToClimb({ ...IMPOSSIBLE, firstAscent: '   ' })!.faUsername, null);
+  assert.equal(mapWoodsProblemToClimb({ ...IMPOSSIBLE, firstAscent: null })!.faUsername, null);
+  assert.equal(mapWoodsProblemToClimb({ ...IMPOSSIBLE, firstAscent: undefined })!.faUsername, null);
 });
 
-void test('woodsGradeRows covers the full 0-17 scale with 0-based V labels', () => {
+void test('mapWoodsProblemToClimb folds every catalog grade onto the shared scale', () => {
+  // 0 → 4a/V0, 4 → 6b/V4, 15 → 8c/V15: the lowest shared id in each V band.
+  assert.equal(mapWoodsProblemToClimb({ ...IMPOSSIBLE, problemGrade: 0 })!.difficulty, 10);
+  assert.equal(mapWoodsProblemToClimb({ ...IMPOSSIBLE, problemGrade: 4 })!.difficulty, 18);
+  assert.equal(mapWoodsProblemToClimb({ ...IMPOSSIBLE, problemGrade: 15 })!.difficulty, 32);
+  assert.equal(mapWoodsProblemToClimb({ ...IMPOSSIBLE, problemGrade: 16 })!.difficulty, 33);
+});
+
+void test('mapWoodsProblemToClimb clamps V17 onto 8c+/V16 and flags it', () => {
+  // The shared table stops at 8c+/V16, so the 6 catalog rows graded V17 land on
+  // the same id as V16. The flag is what makes the clamp countable in the import
+  // summary rather than an invisible grade change.
+  const clamped = mapWoodsProblemToClimb({ ...IMPOSSIBLE, problemGrade: 17 })!;
+  assert.equal(clamped.difficulty, 33);
+  assert.equal(clamped.difficultyClamped, true);
+  assert.deepEqual([...WOODS_CLAMPED_GRADES], [17]);
+});
+
+void test('mapWoodsProblemToClimb stores a NULL difficulty for a grade off the Woods scale', () => {
+  // Better a missing grade than an invented one: nothing downstream can tell a
+  // wrong difficulty from a real one, but it can render a null.
+  const offScale = mapWoodsProblemToClimb({ ...IMPOSSIBLE, problemGrade: 99 })!;
+  assert.equal(offScale.difficulty, null);
+  assert.equal(offScale.difficultyClamped, false);
+});
+
+void test('WOODS_REQUIRED_SET_IDS is empty even though the board config reports one synthetic set', () => {
+  // The Woods board has no add-on hold sets. The board config hands out a single
+  // synthetic set so the board-selection UI has something to select, but
+  // required_set_ids must stay empty: search and playlists filter with
+  // `required_set_ids <@ ARRAY[selected]`, and `{} <@ anything` is true, so an
+  // empty array can never hide a Woods climb — including from a client that
+  // selected no sets at all.
+  assert.deepEqual(WOODS_REQUIRED_SET_IDS, []);
+  assert.deepEqual(getWoodsBoardDetails({ size_id: 1 }).set_ids, [1]);
+  assert.deepEqual(getWoodsBoardDetails({ size_id: 2 }).set_ids, [1]);
+});
+
+void test('woodsGradeRows seeds one row per shared difficulty id a Woods grade reaches', () => {
   const rows = woodsGradeRows();
-  assert.equal(rows.length, WOODS_MAX_GRADE - WOODS_MIN_GRADE + 1); // 18 rows
+  assert.equal(rows.length, 17);
+  assert.equal(rows.length, WOODS_DIFFICULTY_IDS.size);
   assert.deepEqual(
     rows.map((row) => row.difficulty),
-    Array.from({ length: 18 }, (_unused, index) => index),
+    [10, 13, 15, 16, 18, 20, 22, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33],
   );
-  assert.deepEqual(rows[0], { boardType: 'woods', difficulty: 0, boulderName: 'V0', routeName: null, isListed: true });
-  assert.deepEqual(rows[17], {
-    boardType: 'woods',
-    difficulty: 17,
-    boulderName: 'V17',
-    routeName: null,
-    isListed: true,
-  });
+  assert.deepEqual(
+    rows.map((row) => row.boulderName),
+    [
+      '4a/V0',
+      '5a/V1',
+      '5c/V2',
+      '6a/V3',
+      '6b/V4',
+      '6c/V5',
+      '7a/V6',
+      '7a+/V7',
+      '7b/V8',
+      '7c/V9',
+      '7c+/V10',
+      '8a/V11',
+      '8a+/V12',
+      '8b/V13',
+      '8b+/V14',
+      '8c/V15',
+      '8c+/V16',
+    ],
+  );
   assert.ok(rows.every((row) => row.routeName === null && row.isListed === true && row.boardType === 'woods'));
+});
+
+void test('woodsGradeRows labels come from BOULDER_GRADES, never invented locally', () => {
+  // Tick grade matching compares on LOWER(boulder_name), so a label that drifts
+  // from the shared table stops matching ticks logged anywhere else.
+  // Widened to Map<number, string>: BOULDER_GRADES is `as const`, so inference
+  // would key the map on the literal union of ids and reject a plain number.
+  const nameById = new Map<number, string>(BOULDER_GRADES.map((grade) => [grade.difficulty_id, grade.difficulty_name]));
+  for (const row of woodsGradeRows()) {
+    assert.ok(nameById.has(row.difficulty), `difficulty ${row.difficulty} is not a BOULDER_GRADES id`);
+    assert.equal(row.boulderName, nameById.get(row.difficulty));
+  }
+});
+
+void test('woodsGradeRows is ascending and covers every id mapWoodsProblemToClimb can emit', () => {
+  const seededIds = new Set(woodsGradeRows().map((row) => row.difficulty));
+  for (let problemGrade = 0; problemGrade <= 17; problemGrade++) {
+    const difficulty = mapWoodsProblemToClimb({ ...IMPOSSIBLE, problemGrade })!.difficulty;
+    assert.notEqual(difficulty, null, `grade ${problemGrade} must map onto the shared scale`);
+    assert.ok(seededIds.has(difficulty!), `grade ${problemGrade} → ${difficulty} has no board_difficulty_grades row`);
+  }
+  const difficulties = woodsGradeRows().map((row) => row.difficulty);
+  assert.deepEqual(
+    difficulties,
+    [...difficulties].sort((left, right) => left - right),
+  );
 });

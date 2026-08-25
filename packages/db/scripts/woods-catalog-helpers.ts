@@ -1,6 +1,12 @@
 import { uuidv5 } from './moonboard-helpers.js';
 import { fingerprintFromHolds } from './moonboard-2024-helpers.js';
-import { WOODS_WIRE_ROLE } from '@boardsesh/board-constants/woods';
+import {
+  WOODS_WIRE_ROLE,
+  WOODS_GRADE_TO_DIFFICULTY,
+  WOODS_DIFFICULTY_IDS,
+  woodsGradeToDifficulty,
+} from '@boardsesh/board-constants/woods';
+import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
 
 // =============================================================================
 // Woods Board catalog (boardsesh/woodsboard-scraper)
@@ -26,20 +32,16 @@ export const WOODS_UUID_NAMESPACE = '8d5c391a-3b86-4960-a706-91c95602e214';
 // (8x10, 12x12) are product sizes, not separate layouts.
 export const WOODS_LAYOUT_ID = 1;
 
-// The Woods board ships one fixed hold layout — there is no add-on set to buy or
-// leave off the wall, so `WOODS_SIZES`/`getWoodsBoardDetails` expose no set ids at
-// all. `required_set_ids` is the denormalised "which sets must be installed" column
-// that search and playlists filter with `required_set_ids <@ ARRAY[selected]`, and
-// the empty array is the honest answer: a Woods climb requires no sets, and `{} <@
-// anything` is true in Postgres, so a Woods climb can never be filtered out by a
-// set list. NULL would read as "not backfilled yet" (and `NULL <@ …` drops the row
-// wherever the filter does run), and `{1}` would invent a set the board has no
-// concept of and disappear the whole catalog against the empty configured list.
+// The Woods board ships one fixed hold layout. The board config reports a single
+// synthetic set so the board-selection UI has something to select, but there is
+// no add-on set to buy or leave off the wall. `required_set_ids` is the
+// denormalised "which sets must be installed" column that search and playlists
+// filter with `required_set_ids <@ ARRAY[selected]`, and the empty array is the
+// honest answer: a Woods climb requires no sets, and `{} <@ anything` is true in
+// Postgres, so a Woods climb can never be filtered out by a set list. NULL would
+// read as "not backfilled yet" (and `NULL <@ …` drops the row wherever the filter
+// does run).
 export const WOODS_REQUIRED_SET_IDS: number[] = [];
-
-// Integer grade scale is 0-17 (WOODS_APP_API.md). Both ends inclusive → 18 rows.
-export const WOODS_MIN_GRADE = 0;
-export const WOODS_MAX_GRADE = 17;
 
 // boardDimension → compatible product-size ids. 8x10 is product size 1, 12x12 is
 // product size 2 (matching the WOODS_BOARD_SIZES ordering in board-constants).
@@ -47,6 +49,23 @@ export const WOODS_DIMENSION_TO_SIZE_IDS: Record<string, number[]> = {
   '8x10': [1],
   '12x12': [2],
 };
+
+// Woods grades that fold onto a lower grade's shared difficulty id because the
+// shared BOULDER_GRADES table has no distinct id left for them. Derived from
+// WOODS_GRADE_TO_DIFFICULTY rather than hardcoded, so extending the shared table
+// past 8c+/V16 would stop counting V17 as clamped on its own. Today: {17}.
+export const WOODS_CLAMPED_GRADES: ReadonlySet<number> = (() => {
+  const grades = Object.keys(WOODS_GRADE_TO_DIFFICULTY)
+    .map(Number)
+    .sort((left, right) => left - right);
+  return new Set(
+    grades.filter((grade, index) =>
+      grades
+        .slice(0, index)
+        .some((lowerGrade) => WOODS_GRADE_TO_DIFFICULTY[lowerGrade] === WOODS_GRADE_TO_DIFFICULTY[grade]),
+    ),
+  );
+})();
 
 export type WoodsHoldState = 'STARTING' | 'HAND' | 'FINISH' | 'FOOT';
 
@@ -67,6 +86,14 @@ const TYPE_TO_ROLE_CODE: Record<string, number> = {
   Finish: WOODS_WIRE_ROLE.FINISH,
   Foot: WOODS_WIRE_ROLE.FOOT,
 };
+
+// `datePublished` as the Woods API publishes it: US-ordered MM/DD/YYYY plus a
+// 24-hour clock. Proven against the full catalog (5,418 rows): the first field
+// never exceeds 12 while the second reaches 31, so the leading number is the
+// month, not the day. 29 rows put a comma after the year ("02/05/2023, 18:34:33")
+// — the same format with a locale separator, so the comma is optional here rather
+// than those rows silently losing their date. `T` is accepted for the same reason.
+const WOODS_PUBLISHED_DATE_PATTERN = /^(\d{1,2})\/(\d{1,2})\/(\d{4}),?[ T](\d{2}):(\d{2}):(\d{2})$/;
 
 export type WoodsHoldListItem = { type: string; baseHoldLocation: number };
 
@@ -111,12 +138,21 @@ export type MappedWoodsClimb = {
   frames: string;
   holdFingerprint: string;
   compatibleSizeIds: number[];
-  // The 0-17 integer difficulty, stored directly as the board_climb_stats difficulty.
-  difficulty: number;
+  // The shared BOULDER_GRADES difficulty id (10-33) the Woods 0-17 grade folds
+  // onto, or null when the Woods app emitted a grade outside its own scale — the
+  // importer then stores NULL rather than inventing a difficulty for the climb.
+  difficulty: number | null;
+  // True when `difficulty` had to fold onto a lower grade's id (V17 → 8c+/V16).
+  // Counted by the importer so the clamp stays visible in the run summary.
+  difficultyClamped: boolean;
   ascensionistCount: number;
   // The Woods API has no 1-5 community rating (only like/dislike counts), so
   // quality is left null rather than invented onto the 1-5 scale.
   qualityAverage: number | null;
+  // The Woods app's free-text first-ascensionist credit (non-empty on 611 of the
+  // 5,418 catalog rows). It is a display name, not a Boardsesh account, so it
+  // lands in fa_username with fa_at left null — the API publishes no FA date.
+  faUsername: string | null;
   createdAt: string | null;
   holds: WoodsClimbHold[];
 };
@@ -174,6 +210,26 @@ export function dimensionToSizeIds(boardDimension: string): number[] {
 }
 
 /**
+ * Rewrite the Woods API's `datePublished` as the `YYYY-MM-DD HH:mm:ss` string
+ * `board_climbs.created_at` wants, or null when the value doesn't parse.
+ *
+ * `created_at` is a plain text column and every consumer sorts it LEXICALLY, so
+ * "05/04/2025 17:23:17" would sort by month-of-year and file a 12/2023 climb
+ * after a 01/2026 one. Zero-padding into ISO ordering is what makes "newest
+ * first" actually mean newest. MoonBoard has the same column and stores its
+ * `dateInserted` in ISO for exactly this reason.
+ *
+ * The API publishes MM/DD, not DD/MM — proven against the full catalog, where the
+ * first field never exceeds 12 while the second reaches 31.
+ */
+export function normalizeWoodsPublishedDate(raw: string | null | undefined): string | null {
+  const match = WOODS_PUBLISHED_DATE_PATTERN.exec((raw ?? '').trim());
+  if (!match) return null;
+  const [, month, day, year, hours, minutes, seconds] = match;
+  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')} ${hours}:${minutes}:${seconds}`;
+}
+
+/**
  * Map a raw catalog problem to the climb/stats/holds payload, or null when the
  * problem has no real holds (empty or Clear-only) and so can't be imported.
  */
@@ -182,8 +238,9 @@ export function mapWoodsProblemToClimb(problem: WoodsCatalogProblem): MappedWood
   if (parsedHolds.length === 0) return null;
   const frames = holdsToFrames(parsedHolds);
   const holds: WoodsClimbHold[] = parsedHolds.map((hold) => ({ holdId: hold.holdId, holdState: hold.holdState }));
-  const publishedDate = (problem.datePublished ?? '').trim();
   const author = (problem.author ?? '').trim();
+  const firstAscent = (problem.firstAscent ?? '').trim();
+  const difficulty = woodsGradeToDifficulty(problem.problemGrade);
   return {
     // Key the UUID off the same trimmed author that lands in setter_username —
     // keying off the raw value would mint a different UUID for " ada" and "ada"
@@ -196,25 +253,34 @@ export function mapWoodsProblemToClimb(problem: WoodsCatalogProblem): MappedWood
     frames,
     holdFingerprint: fingerprintFromHolds(holds),
     compatibleSizeIds: dimensionToSizeIds(problem.boardDimension),
-    difficulty: problem.problemGrade,
+    difficulty,
+    difficultyClamped: difficulty !== null && WOODS_CLAMPED_GRADES.has(problem.problemGrade),
     ascensionistCount: problem.repeats ?? 0,
     qualityAverage: null,
-    createdAt: publishedDate.length > 0 ? publishedDate : null,
+    faUsername: firstAscent.length > 0 ? firstAscent : null,
+    createdAt: normalizeWoodsPublishedDate(problem.datePublished),
     holds,
   };
 }
 
 /**
- * board_difficulty_grades rows for the Woods board. WOODS_APP_API.md documents
- * the grade as an "integer scale, 0-17" with no explicit labels; the Daniel
- * Woods Board app presents a 0-based V-scale, so we map difficulty n → "Vn"
- * (0→V0 … 17→V17). ASSUMPTION: this 0-based V mapping — adjust here if a labelled
- * scale is ever published.
+ * board_difficulty_grades rows for the Woods board: one row per distinct shared
+ * difficulty id a Woods grade can fold onto (17 of the 24 BOULDER_GRADES ids),
+ * ascending, labelled with the shared table's own `difficulty_name`.
+ *
+ * The Woods app grades on its own 0-17 V scale, but storing those raw numbers
+ * would misalign every grade surface in the app — filters, colours, the offline
+ * grade rail and tick grade matching all speak the shared difficulty-id scale.
+ * WOODS_GRADE_TO_DIFFICULTY does the folding; this seeds the labels for it.
  */
 export function woodsGradeRows(): WoodsGradeRow[] {
-  const rows: WoodsGradeRow[] = [];
-  for (let difficulty = WOODS_MIN_GRADE; difficulty <= WOODS_MAX_GRADE; difficulty++) {
-    rows.push({ boardType: 'woods', difficulty, boulderName: `V${difficulty}`, routeName: null, isListed: true });
-  }
-  return rows;
+  return BOULDER_GRADES.filter((grade) => WOODS_DIFFICULTY_IDS.has(grade.difficulty_id))
+    .map((grade) => ({
+      boardType: 'woods' as const,
+      difficulty: grade.difficulty_id,
+      boulderName: grade.difficulty_name,
+      routeName: null,
+      isListed: true,
+    }))
+    .sort((left, right) => left.difficulty - right.difficulty);
 }
