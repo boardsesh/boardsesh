@@ -32,6 +32,7 @@ import HomeGymCard from '@/app/components/home-gym-card/home-gym-card';
 import StartClimbingButton from '@/app/components/start-climbing-button';
 import { track } from '@/app/lib/analytics';
 import { APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties } from '@/app/lib/app-install-event';
+import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
 
 const DISCORD_INVITE_URL = 'https://discord.gg/YXA8GsXfQK';
 
@@ -268,7 +269,7 @@ function InstallAppCard({ platform }: { platform: InstallPlatform }) {
     <OnboardingCard
       icon={
         <Image
-          src="/brand/boardsesh-mark.png"
+          src={resolveStaticAssetUrl('/brand/boardsesh-mark.png')}
           width={44}
           height={44}
           alt=""
@@ -391,8 +392,14 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             py: 1,
           }}
         >
-          {/* i18n-ignore-next-line -- brand name, not translated */}
-          <Image src="/brand/boardsesh-mark.png" width={130} height={130} alt="Boardsesh" priority />
+          <Image
+            src={resolveStaticAssetUrl('/brand/boardsesh-mark.png')}
+            width={130}
+            height={130}
+            // i18n-ignore-next-line -- brand name, not translated
+            alt="Boardsesh"
+            priority
+          />
           {/* `variant` keeps the visual size; `component` fixes the semantics.
               MUI maps variant="h5" to a literal <h5>, so before this the
               homepage server-rendered no <h1> at all — the highest-traffic

@@ -20,6 +20,7 @@ import { getServerTranslation } from './lib/i18n/server';
 import { LOCALE_HTML_LANG, LOCALE_OG } from './lib/i18n/config';
 import { SITE_URL } from './lib/seo/base-url';
 import { THEME_INIT_SCRIPT } from './theme/theme-init-script';
+import { resolveStaticAssetUrl } from './lib/static-asset-url';
 import './components/index.css';
 import type { Viewport, Metadata } from 'next';
 
@@ -42,10 +43,10 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     icons: {
       icon: [
-        { url: '/favicon.ico', sizes: '32x32' },
-        { url: '/icon.png', type: 'image/png' },
+        { url: resolveStaticAssetUrl('/favicon.ico'), sizes: '32x32' },
+        { url: resolveStaticAssetUrl('/icon.png'), type: 'image/png' },
       ],
-      apple: '/icons/apple-touch-icon.png',
+      apple: resolveStaticAssetUrl('/icons/apple-touch-icon.png'),
     },
   };
 }

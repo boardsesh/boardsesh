@@ -2,6 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { getGridPosition, getMoonBoardGeometryByFolder, MOONBOARD_HOLD_STATES } from '@/app/lib/moonboard-config';
+import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
 import type { MoonBoardRendererProps } from './types';
 
 const MoonBoardRenderer: React.FC<MoonBoardRendererProps> = ({
@@ -26,7 +27,7 @@ const MoonBoardRenderer: React.FC<MoonBoardRendererProps> = ({
   // Background image for this layout (.webp; thumbs/ variant in thumbnail mode).
   const backgroundHref = useMemo(() => {
     const webp = geometry.backgroundImage.replace(/\.png$/, '.webp');
-    return thumbnail ? `/images/moonboard/thumbs/${webp}` : `/images/moonboard/${webp}`;
+    return resolveStaticAssetUrl(thumbnail ? `/images/moonboard/thumbs/${webp}` : `/images/moonboard/${webp}`);
   }, [geometry, thumbnail]);
 
   // Generate all grid positions for the layout (198 standard, 132 Mini).
@@ -99,7 +100,9 @@ const MoonBoardRenderer: React.FC<MoonBoardRendererProps> = ({
       {holdSetImages.map((imageFile) => (
         <image
           key={imageFile}
-          href={`/images/moonboard/${layoutFolder}/${thumbnail ? 'thumbs/' : ''}${imageFile.replace(/\.png$/, '.webp')}`}
+          href={resolveStaticAssetUrl(
+            `/images/moonboard/${layoutFolder}/${thumbnail ? 'thumbs/' : ''}${imageFile.replace(/\.png$/, '.webp')}`,
+          )}
           width="100%"
           height="100%"
         />
