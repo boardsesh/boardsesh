@@ -1,5 +1,5 @@
 import React from 'react';
-import { Circle, G, Rect } from 'react-native-svg';
+import { Circle, G, Line } from 'react-native-svg';
 import type { HoldState } from '@boardsesh/shared-schema';
 import { SPIKE_TUNING } from './spike-config';
 
@@ -7,73 +7,100 @@ type RoleGlyphProps = {
   role: HoldState;
   cx: number;
   cy: number;
-  /** Marker outer diameter the glyph is sized against — the placement diameter, in every arm. */
-  diameter: number;
-  color: string;
+  /** Half-extent to draw the bars out to before clipping, in board pixels. */
+  reach: number;
+  /** One line width for every marker on the board. */
+  lineWidth: number;
+  /** Clip that trims the bars to the hold's own silhouette, when one exists. */
+  clipId?: string;
 };
 
 /**
- * A second, non-colour channel for the hold's role (issue #2202).
+ * The role of a lit hold, carried by something other than hue (issue #2202).
  *
- * Every treatment in the spike carries role in hue alone, and hue is exactly the
- * channel that fails: under protanopia HAND `#4455FF` and FOOT `#FF00FF` land
- * 7.7 ΔE apart, which is one colour, not two. That is already true of what
- * ships, so it is not a regression in any candidate — but it is cheap to fix,
- * and fixing it inside the existing footprint costs no extra area on a wall that
- * is already dense.
+ * Hue is exactly the channel that fails: under protanopia HAND `#4455FF` and
+ * FOOT `#FF00FF` land 7.7 ΔE apart, which is one colour. That is already true of
+ * what ships, so it is not a regression in any candidate — but it means a
+ * climber with the commonest form of colour-vision deficiency cannot tell a hand
+ * from a foot on any board today.
  *
- * The channel is silhouette: none / dot / bar / cross. HAND — the most numerous
- * role — gets nothing, so the majority of marks stay clean and the glyph reads
- * as "this one is special" rather than as texture.
+ * Every role carries a mark, so the absence of one is never meaningful:
+ *
+ *   FOOT   a dot          START  a horizontal bar
+ *   HAND   a vertical bar FINISH an X
+ *
+ * The bars run edge to edge and segment the hold rather than floating inside it,
+ * and every marker uses the same line width — including the foot dot, whose
+ * diameter *is* that line width. Sizing a marker by the hold it sits on makes
+ * the vocabulary harder to learn, not easier: the mark has to mean the same
+ * thing on a jug and on a foot chip.
+ *
+ * X rather than a plus for FINISH, so it cannot be read as the START and HAND
+ * bars drawn together.
  */
-export function RoleGlyph({ role, cx, cy, diameter, color }: RoleGlyphProps) {
+export function RoleGlyph({ role, cx, cy, reach, lineWidth, clipId }: RoleGlyphProps) {
+  // Two passes, dark under light, rather than picking one colour per hold from
+  // the art beneath it. The per-hold classifier flipped polarity between two
+  // visually identical hand holds on the same climb — the same salt-and-pepper
+  // the unlit-hold casing had. A marker has to look the same everywhere or it
+  // is not a vocabulary.
+  const passes = [
+    {
+      color: SPIKE_TUNING.glyphCasingColor,
+      width: lineWidth * SPIKE_TUNING.glyphCasingWidthFactor,
+      opacity: SPIKE_TUNING.glyphCasingOpacity,
+    },
+    { color: SPIKE_TUNING.glyphCoreColor, width: lineWidth, opacity: SPIKE_TUNING.glyphOpacity },
+  ];
+
   if (role === 'FOOT') {
-    return <Circle cx={cx} cy={cy} r={(diameter * SPIKE_TUNING.glyphDotFraction) / 2} fill={color} />;
-  }
-
-  const barLength = diameter * SPIKE_TUNING.glyphBarLengthFraction;
-  const barThickness = diameter * SPIKE_TUNING.glyphBarThicknessFraction;
-  const radius = barThickness / 2;
-
-  if (role === 'STARTING') {
-    return (
-      <Rect
-        x={cx - barLength / 2}
-        y={cy - barThickness / 2}
-        width={barLength}
-        height={barThickness}
-        rx={radius}
-        ry={radius}
-        fill={color}
-      />
-    );
-  }
-
-  if (role === 'FINISH') {
+    // Diameter == the line width the bars use, so a foot reads as the same
+    // weight of mark as everything else.
     return (
       <G>
-        <Rect
-          x={cx - barLength / 2}
-          y={cy - barThickness / 2}
-          width={barLength}
-          height={barThickness}
-          rx={radius}
-          ry={radius}
-          fill={color}
-        />
-        <Rect
-          x={cx - barThickness / 2}
-          y={cy - barLength / 2}
-          width={barThickness}
-          height={barLength}
-          rx={radius}
-          ry={radius}
-          fill={color}
-        />
+        {passes.map((pass) => (
+          <Circle key={pass.color} cx={cx} cy={cy} r={pass.width / 2} fill={pass.color} fillOpacity={pass.opacity} />
+        ))}
       </G>
     );
   }
 
-  // HAND, and anything without a role of its own, stays clean.
-  return null;
+  const line = (x1: number, y1: number, x2: number, y2: number) => (
+    <G key={`${x1},${y1}`}>
+      {passes.map((pass) => (
+        <Line
+          key={pass.color}
+          x1={x1}
+          y1={y1}
+          x2={x2}
+          y2={y2}
+          stroke={pass.color}
+          strokeWidth={pass.width}
+          strokeLinecap="butt"
+          strokeOpacity={pass.opacity}
+        />
+      ))}
+    </G>
+  );
+
+  const body = (() => {
+    if (role === 'STARTING') return line(cx - reach, cy, cx + reach, cy);
+    if (role === 'HAND') return line(cx, cy - reach, cx, cy + reach);
+    if (role === 'FINISH') {
+      const diagonal = reach * Math.SQRT1_2;
+      return (
+        <G>
+          {line(cx - diagonal, cy - diagonal, cx + diagonal, cy + diagonal)}
+          {line(cx - diagonal, cy + diagonal, cx + diagonal, cy - diagonal)}
+        </G>
+      );
+    }
+    return null;
+  })();
+
+  if (body === null) return null;
+  // Clipped to the silhouette so the bars stop exactly at the hold's edge. Without
+  // a traced silhouette (a bare MoonBoard grid cell) they are drawn unclipped at
+  // the placement's own reach.
+  return clipId === undefined ? body : <G clipPath={`url(#${clipId})`}>{body}</G>;
 }

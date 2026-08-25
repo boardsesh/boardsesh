@@ -316,9 +316,28 @@ export const SPIKE_TUNING = {
    * without growing the mark: none / dot / bar / cross. Identical in every arm,
    * so an experiment measures treatments and not glyph sets.
    */
-  glyphDotFraction: 0.3,
-  glyphBarLengthFraction: 0.62,
-  glyphBarThicknessFraction: 0.2,
+  /**
+   * One line width for every accessibility marker on a board, as a fraction of
+   * the placement radius — so it is constant within a board and scales between
+   * boards with their hold pitch. Deliberately NOT scaled by the hold it sits
+   * on: a marker has to mean the same thing on a jug and on a foot chip, and a
+   * vocabulary whose weight changes per hold is harder to learn, not easier.
+   */
+  glyphLineWidthFraction: 0.11,
+  glyphOpacity: 0.95,
+  glyphCoreColor: '#FFFFFF',
+  glyphCasingColor: '#0B0B10',
+  glyphCasingWidthFactor: 1.9,
+  glyphCasingOpacity: 0.8,
+  /**
+   * The LED the board art paints, taken over by the renderer: role colour where
+   * the hold is lit, dark where it is not. Grasshopper paints 234 of its 332 LED
+   * locations bright and the rest dark, which makes an unlit hold look lit and a
+   * lit one look dead — see scripts/spike-led-dots.ts.
+   */
+  ledDotRadiusFraction: 0.1,
+  ledDarkColor: '#0B0B10',
+  ledDarkOpacity: 0.85,
 } as const;
 
 export type SpikeLitHold = {

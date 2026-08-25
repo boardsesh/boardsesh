@@ -4,6 +4,7 @@ import type { HoldPlacement } from '../board-renderer/types';
 import { plainRingPath, polygonPath, spikyRingPath, splinePath, wavyRingPath } from './spike-shapes';
 import { SPIKE_HOLD_ART_LIGHTNESS } from './spike-hold-lightness';
 import { SPIKE_HOLD_OUTLINES } from './spike-hold-outlines';
+import { SPIKE_LED_DOTS } from './spike-led-dots';
 import { RoleGlyph } from './RoleGlyph';
 import {
   SPIKE_PALETTES,
@@ -115,17 +116,19 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   const outwardOnly = selector === 'shape-glow-out';
   const drawsTint = selector === 'tint';
   const drawsHybrid = selector === 'glow-tint';
-  /**
-   * Glyph colour where the mark underneath is already the role colour (glow,
-   * tint): a neutral picked from the art, not the role hue — a role-coloured
-   * glyph on a role-coloured mark is invisible, which is exactly what the first
-   * pass shipped.
-   */
-  const neutralGlyph = (holdId: number): string =>
-    (lightness[holdId] ?? 0) >= SPIKE_TUNING.casingLightnessThreshold ? '#101018' : '#FFFFFF';
   const drawsTracedRing = selector === 'traced-ring';
   const drawsShape = selector === 'shape' || selector === 'glow-shape';
   const outlineWidth = selector === 'glow-shape' ? SPIKE_TUNING.strokeWidth * 0.7 : SPIKE_TUNING.strokeWidth;
+
+  // One line width and one LED size per board: both are keyed to the placement
+  // radius, which is constant within a board and carries its hold pitch.
+  const placementRadius = placements[0]?.r ?? 0;
+  const glyphLineWidth = Math.max(1.5, placementRadius * SPIKE_TUNING.glyphLineWidthFraction);
+  const ledDotRadius = Math.max(1.5, placementRadius * SPIKE_TUNING.ledDotRadiusFraction);
+  const ledData = SPIKE_LED_DOTS[boardKey];
+  const ledHolds = useMemo(() => new Set(ledData?.hasLed ?? []), [ledData]);
+  const artBrightLeds = useMemo(() => new Set(ledData?.brightInArt ?? []), [ledData]);
+  const litIds = useMemo(() => new Set(litHolds.map((hold) => hold.id)), [litHolds]);
 
   return (
     <Svg
@@ -150,20 +153,19 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
             </RadialGradient>
           );
         })}
-        {(drawsTint || drawsHybrid) &&
-          litHolds.map((hold) => {
-            const path = outlinePath(hold.id, hold.cx, hold.cy);
-            if (path === null) return null;
-            // The silhouette edge is stroked at double width through this clip so
-            // only its inner half survives. A centred stroke sits proud of the art
-            // on every edge and blunts tapers into lozenges — and taper is how you
-            // recognise a hold on the wall.
-            return (
-              <ClipPath key={`inside-${hold.id}`} id={`spike-inside-${hold.id}`}>
-                <Path d={path} />
-              </ClipPath>
-            );
-          })}
+        {litHolds.map((hold) => {
+          const path = outlinePath(hold.id, hold.cx, hold.cy);
+          if (path === null) return null;
+          // The silhouette edge is stroked at double width through this clip so
+          // only its inner half survives. A centred stroke sits proud of the art
+          // on every edge and blunts tapers into lozenges — and taper is how you
+          // recognise a hold on the wall.
+          return (
+            <ClipPath key={`inside-${hold.id}`} id={`spike-inside-${hold.id}`}>
+              <Path d={path} />
+            </ClipPath>
+          );
+        })}
         {outwardOnly &&
           litHolds.map((hold) => {
             const path = outlinePath(hold.id, hold.cx, hold.cy);
@@ -228,6 +230,32 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
         })}
       </G>
 
+      {/* The LED the board art paints, taken over by the renderer. Grasshopper
+          brightens 234 of its 332 LED locations and leaves the rest dark, so an
+          unlit hold can look lit and a lit one can look dead. Role colour where
+          the hold is lit, dark where it is not — and nothing at all on a board
+          whose LEDs we have no placement data for (both MoonBoards). */}
+      <G>
+        {placements.map((placement) => {
+          const isLit = litIds.has(placement.id);
+          const carriesLed = ledHolds.has(placement.id);
+          if (isLit && !carriesLed) return null;
+          if (!isLit && !artBrightLeds.has(placement.id)) return null;
+          const litHold = isLit ? litHolds.find((hold) => hold.id === placement.id) : undefined;
+          const fill = litHold ? (colors[litHold.role] ?? '#FFFFFF') : SPIKE_TUNING.ledDarkColor;
+          return (
+            <Circle
+              key={`led-${placement.id}`}
+              cx={placement.cx}
+              cy={placement.cy}
+              r={ledDotRadius}
+              fill={fill}
+              fillOpacity={litHold ? 1 : SPIKE_TUNING.ledDarkOpacity}
+            />
+          );
+        })}
+      </G>
+
       <G>
         {drawsCasing &&
           litHolds.map((hold) => (
@@ -287,13 +315,6 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                 strokeWidth={SPIKE_TUNING.sizeFloorRingWidth}
               />
             ) : null;
-            // Sized on the placement circle so the glyph is identical across arms
-            // — except where the real hold is smaller than that, where it has to
-            // fit inside the hold or it stops reading as a mark on the hold and
-            // starts reading as a blob over it. Measured on the hold's SHORTEST
-            // axis: sizing on the longest put a bar the full height of a thin
-            // elongated rail, which is the same failure in the other direction.
-            const glyphDiameter = Math.min(hold.radius * 2, outlineExtent(hold.id, boardKey, 'shortest'));
             if (drawsHybrid) {
               // Normalise the art under the hold toward a common lightness before
               // the role colour goes on, so the same role hex composites to the
@@ -346,8 +367,9 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                     role={hold.role}
                     cx={hold.cx}
                     cy={hold.cy}
-                    diameter={glyphDiameter}
-                    color={neutralGlyph(hold.id)}
+                    reach={hold.radius * 1.6}
+                    lineWidth={glyphLineWidth}
+                    clipId={path === null ? undefined : `spike-inside-${hold.id}`}
                   />
                 </G>
               );
@@ -363,7 +385,14 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                     strokeWidth={SPIKE_TUNING.strokeWidth}
                     strokeLinejoin="round"
                   />
-                  <RoleGlyph role={hold.role} cx={hold.cx} cy={hold.cy} diameter={glyphDiameter} color={color} />
+                  <RoleGlyph
+                    role={hold.role}
+                    cx={hold.cx}
+                    cy={hold.cy}
+                    reach={hold.radius * 1.6}
+                    lineWidth={glyphLineWidth}
+                    clipId={path === null ? undefined : `spike-inside-${hold.id}`}
+                  />
                 </G>
               );
             }
@@ -383,8 +412,9 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                     role={hold.role}
                     cx={hold.cx}
                     cy={hold.cy}
-                    diameter={glyphDiameter}
-                    color={neutralGlyph(hold.id)}
+                    reach={hold.radius * 1.6}
+                    lineWidth={glyphLineWidth}
+                    clipId={path === null ? undefined : `spike-inside-${hold.id}`}
                   />
                 </G>
               );
@@ -413,8 +443,9 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                   role={hold.role}
                   cx={hold.cx}
                   cy={hold.cy}
-                  diameter={glyphDiameter}
-                  color={neutralGlyph(hold.id)}
+                  reach={hold.radius * 1.6}
+                  lineWidth={glyphLineWidth}
+                  clipId={path === null ? undefined : `spike-inside-${hold.id}`}
                 />
               </G>
             );

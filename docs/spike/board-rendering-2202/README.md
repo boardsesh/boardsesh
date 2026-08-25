@@ -142,12 +142,48 @@ Two implementation notes that differ from the review's text, both deliberate:
   than a per-hold black-or-white choice. The classifier flipped polarity on visually identical
   neighbours whose measured lightness straddled the threshold, which reads as salt-and-pepper.
 
-### Open, and worth a decision
+### Those white dots are LEDs, and the renderer now owns them
 
-On Grasshopper and Tension the board art draws a **white bolt-hole dot at the centre of every
-hold**, so the white FOOT dot glyph reads as a bolt hole rather than as a mark. The bar and cross
-are unaffected, and so is Kilter (its bolt marks are dark). Either FOOT needs a shape that is not
-a dot, or the glyph needs an edge that separates it from the art.
+They are not bolt holes. Physically the LED sits centrally on Grasshopper, Tension and Woods;
+MoonBoard puts it in the gap above or below the hold; Kilter lights the translucent hold base so
+the rim glows. Measured over the composited art (`scripts/spike-led-dots.ts`):
+
+| Board | Placements with an LED | Art paints the LED bright | Median centre-vs-hold brightness |
+| --- | --- | --- | --- |
+| Grasshopper Master | 332/332 | 234 | **10.19×** |
+| Tension Original | 303/303 | 0 | **0.29×** (drawn *dark*) |
+| TB2 Mirror | 498/498 | 0 | 1.15× |
+| Kilter Homewall | 499/499 | 0 | 0.42× (bolt hole) |
+| Kilter Original | 476/476 | 10 | 0.64× |
+| MoonBoard 2016 / Masters | **0**/198 | 23 / 13 | 0.77× / 0.89× |
+
+So Grasshopper paints roughly two thirds of its LEDs bright and leaves the rest dark, and Tension
+paints all of them darker than the hold. An unlit hold with a bright LED competes with a lit mark;
+a lit hold with a dark LED does not look lit. The renderer now takes the LED over from the art:
+**role colour where the hold is lit, dark where it is not**, and nothing at all on a board with no
+LED placement data (both MoonBoards).
+
+### The accessibility vocabulary
+
+Every role carries a mark, so the absence of one is never meaningful — which also removes the
+FOOT-dot-versus-LED collision, because the LED is now a rendered element rather than art:
+
+| Role | Mark |
+| --- | --- |
+| FOOT | dot, diameter == the line width |
+| STARTING | horizontal bar |
+| HAND | vertical bar |
+| FINISH | X |
+
+One line width for every marker on a board, keyed to the placement radius so it is constant within
+a board and scales between boards with hold pitch — **not** scaled by the hold it sits on. A marker
+has to mean the same thing on a jug and on a foot chip. The bars run edge to edge and segment the
+hold, clipped to its traced silhouette so they stop exactly at its edge. X rather than a plus for
+FINISH so it cannot be read as the START and HAND bars drawn together.
+
+Drawn in two passes — a dark casing under a light core — rather than picking a colour per hold from
+the art beneath. The per-hold classifier flipped polarity between two visually identical hand holds
+on the same climb, the same salt-and-pepper the unlit-hold casing had.
 
 ## Regenerating the derived data
 

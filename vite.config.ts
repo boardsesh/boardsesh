@@ -485,6 +485,10 @@ export default defineConfig({
         command: 'node --import tsx packages/mobile/scripts/spike-hold-outlines.ts',
         cache: false,
       },
+      'spike:led-dots': {
+        command: 'node --import tsx packages/mobile/scripts/spike-led-dots.ts',
+        cache: false,
+      },
       'generate:oss-licenses': {
         command: 'node --import tsx scripts/generate-oss-licenses.ts',
         cache: false,
