@@ -1,9 +1,11 @@
-import { ActivityIndicator as RNActivityIndicator, type ActivityIndicatorProps } from 'react-native';
+import { ActivityIndicator as RNActivityIndicator, type ActivityIndicatorProps, type ColorValue } from 'react-native';
 import { brandColors } from '../theme/colors';
 import { useOptionalTheme } from '../providers/theme-provider';
 
 type Props = Omit<ActivityIndicatorProps, 'color'> & {
-  color?: string;
+  // `ColorValue`, not `string`: on Liquid Glass every `systemColors.*` read is an
+  // opaque iOS `PlatformColor` object, so callers were casting a lie to pass one.
+  color?: ColorValue;
 };
 
 export function ActivityIndicator({ color, ...props }: Props) {
