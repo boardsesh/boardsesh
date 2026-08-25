@@ -302,7 +302,8 @@
       "doneEditing": "Listo"
     },
     "queueSnackbar": {
-      "added": "Bloque añadido a la cola",
+      "added_one": "Bloque añadido a la cola",
+      "added_other": "{{count}} bloques añadidos a la cola",
       "playingNext": "El bloque va a continuación",
       "open": "Abrir",
       "openAria": "Abrir cola"

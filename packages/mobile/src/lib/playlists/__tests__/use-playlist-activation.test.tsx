@@ -942,8 +942,10 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       });
 
       // The bulk append bypasses `commitQueueAdd`, which is what fires this for a
-      // single add — so it fires here, once, not once per climb.
+      // single add — so it fires here, once, not once per climb, and it carries
+      // the count so the confirmation reads "2 climbs added to queue".
       await waitFor(() => expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledTimes(1));
+      expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'added', count: 2 });
       expect(mocks.showToast).not.toHaveBeenCalled();
     });
 
@@ -968,8 +970,11 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         layoutId: 1,
         angle: 40,
       });
-      // Climbs still landed, so it is still the snackbar — not an error toast.
+      // Climbs still landed, so it is still the snackbar — not an error toast —
+      // and the count is what LANDED (1), not what was fetched (2), so a batch
+      // clamped at the wire cap confirms the honest number.
       expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledTimes(1);
+      expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'added', count: 1 });
     });
 
     it('shows the queue-full error and adds nothing when the provider takes none of the batch', async () => {

@@ -568,13 +568,10 @@ export function usePlaylistActivation({
         // one confirmation in the app whose "Open" takes you to the result —
         // fired ONCE for the whole batch (the bulk append bypasses
         // `commitQueueAdd`, which is what fires it for a single add).
-        // TODO(#4712): pass `{ kind: 'added', count: appendedCount }` once the
-        // parametric `showQueueAddedSnackbar` from PR #4712 is on main; today's
-        // signature takes no arguments and its copy is hardcoded singular, so a
-        // 12-climb append currently confirms without the count. A partial append
-        // (`appendedCount < queueItems.length`, only reachable at the 500-item
-        // cap) is covered by the same call for the same reason.
-        showQueueAddedSnackbar();
+        //
+        // The count is what actually landed, not what was fetched, so a batch
+        // clamped at the wire cap confirms the honest number.
+        showQueueAddedSnackbar({ kind: 'added', count: appendedCount });
       } catch (error) {
         if (isAbortError(error)) return;
         console.error('Playlist queue append failed:', error);

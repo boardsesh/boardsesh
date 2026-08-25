@@ -302,7 +302,8 @@
       "doneEditing": "Done editing"
     },
     "queueSnackbar": {
-      "added": "Climb added to queue",
+      "added_one": "Climb added to queue",
+      "added_other": "{{count}} climbs added to queue",
       "playingNext": "Climb is up next",
       "open": "Open",
       "openAria": "Open queue"
