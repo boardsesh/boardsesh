@@ -7,6 +7,7 @@ import { CreateClimbScreen } from '../../../src/components/create-climb/CreateCl
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { createClimbScreenKey } from '../../../src/lib/create-climb-screen-key';
+import { supportsClimbCreation } from '../../../src/lib/boards/supports-climb-creation';
 
 type CreateClimbParams = {
   boardName?: string;
@@ -29,9 +30,16 @@ type CreateClimbParams = {
  * `BoardName` and indexed into `STATE_TO_PRIMARY_CODE`, which throws during
  * render on the remix/edit path (#3804). Treating an unsupported value as absent
  * makes it fall back to the active board, exactly like a missing param.
+ *
+ * A board that cannot have climbs set on it (Woods) is rejected the same way: the
+ * Create/Fork/Edit entry points are already hidden for it, so anything arriving
+ * here names it only via a hand-built link — and the editor cannot paint its
+ * holds. Falling through to the active board keeps the route from rendering an
+ * empty wall.
  */
 function supportedBoardName(candidate: string | undefined): BoardName | undefined {
   if (candidate == null) return undefined;
+  if (!supportsClimbCreation(candidate)) return undefined;
   return (SUPPORTED_BOARDS as readonly string[]).includes(candidate) ? (candidate as BoardName) : undefined;
 }
 

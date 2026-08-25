@@ -101,6 +101,7 @@
   "boardseshGrade": {
     "title": "Boardsesh-Grad",
     "moonboardBody": "Für MoonBoard haben wir noch keine Grad-Daten aus der Community. Trag deine Moon-Begehungen auf Boardsesh ein, damit es losgehen kann.",
+    "woodsBody": "Für das Woods Board haben wir noch keine Grad-Daten aus der Community. Trag deine Woods-Begehungen auf Boardsesh ein, damit es losgehen kann.",
     "loadError": "Der Grad konnte gerade nicht geladen werden.",
     "byAngle": "Wie er sich je Winkel klettert",
     "summaryLocal": "lokal",

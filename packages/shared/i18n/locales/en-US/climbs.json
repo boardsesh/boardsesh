@@ -101,6 +101,7 @@
   "boardseshGrade": {
     "title": "Boardsesh grade",
     "moonboardBody": "We don't have community grade data for MoonBoard yet. Log your Moon sends on Boardsesh to help unlock it.",
+    "woodsBody": "We don't have community grade data for the Woods Board yet. Log your Woods sends on Boardsesh to help unlock it.",
     "loadError": "Couldn't load the grade right now.",
     "byAngle": "How it climbs by angle",
     "summaryLocal": "local",

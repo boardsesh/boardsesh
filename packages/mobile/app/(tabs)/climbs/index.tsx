@@ -76,6 +76,7 @@ import {
   publishScreenshotWallClimbs,
 } from '../../../src/lib/board-presence/screenshot-wall-seed';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../../../src/lib/create-board-holds';
+import { supportsClimbCreation } from '../../../src/lib/boards/supports-climb-creation';
 import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { OnboardingTipBanner } from '../../../src/components/onboarding/OnboardingTipBanner';
 import {
@@ -1547,7 +1548,7 @@ function ClimbListInner() {
         // tab itself names the screen, so the centre title is dropped entirely —
         // the redundant "All climbs" label added nothing.
         title={showFilterChips ? undefined : searchTitle}
-        canCreate={isAuthenticated && hasBoardConfig}
+        canCreate={isAuthenticated && hasBoardConfig && supportsClimbCreation(boardName)}
         onCreate={handleCreateClimb}
         onOpenBoardDetail={handleOpenBoardDetail}
         showBoardBadge={showRevealTip}

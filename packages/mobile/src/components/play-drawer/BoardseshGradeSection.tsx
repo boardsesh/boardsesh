@@ -12,7 +12,7 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useTheme } from '../../providers/theme-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
-import { buildBoardseshGradeView, buildCorrection, buildTrustBand, isMoonBoard } from './boardsesh-grade-utils';
+import { buildBoardseshGradeView, buildCorrection, buildTrustBand, lacksCrowdGrade } from './boardsesh-grade-utils';
 
 type BoardseshGradeSectionProps = {
   climbUuid: string;
@@ -29,15 +29,15 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
   const { gradeFormat } = useGradeFormat();
   const { brandColors } = useTheme();
 
-  // MoonBoard has no community grade data in our feed yet, so skip the fetch.
-  const moonboard = isMoonBoard(boardName);
+  // MoonBoard and Woods have no community grade data in our feed, so skip the fetch.
+  const noCrowdGrade = lacksCrowdGrade(boardName);
   const {
     data: grade,
     isLoading,
     isError,
     refetch,
   } = useBoardseshGrade(boardName, climbUuid, angle, {
-    enabled: !moonboard,
+    enabled: !noCrowdGrade,
   });
 
   const view = useMemo(
@@ -48,7 +48,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
   // Progressive enhancement — the crowd (community) series feeds the hero's
   // "this board" number and the dumbbell's rings. Loading/error render nothing;
   // the section's own loading/error stays owned by the singular grade above.
-  const { data: history } = useClimbStatsHistory(boardName, moonboard ? null : climbUuid);
+  const { data: history } = useClimbStatsHistory(boardName, noCrowdGrade ? null : climbUuid);
   const crowdBars = useMemo(() => buildAngleGradeBars(history, gradeFormat), [history, gradeFormat]);
   const crowdDifficulty = useMemo(
     () => crowdBars.find((bar) => bar.angle === angle)?.difficulty ?? null,
@@ -56,14 +56,14 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
   );
 
   // The cross-board Boardsesh series per angle → the dumbbell's diamonds.
-  const { data: angleRows } = useBoardseshGradesForAngles(boardName, climbUuid, { enabled: !moonboard });
+  const { data: angleRows } = useBoardseshGradesForAngles(boardName, climbUuid, { enabled: !noCrowdGrade });
   const dumbbellRows = useMemo(
     () => buildDumbbellByAngleModel(angleRows ?? [], crowdBars, gradeFormat),
     [angleRows, crowdBars, gradeFormat],
   );
 
   // The correction only exists for a real cross-board grade with a crowd number
-  // at this angle. Setter-only / moonboard / local-only never carry one.
+  // at this angle. Setter-only / no-crowd-grade / local-only never carry one.
   const correction = useMemo(() => {
     if (view.kind !== 'confirmed' && view.kind !== 'provisional') return null;
     if (!view.universal) return null;
@@ -75,11 +75,11 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
     void refetch();
   }, [refetch]);
 
-  if (!moonboard && isLoading) {
+  if (!noCrowdGrade && isLoading) {
     return <View style={[styles.skeleton, styles.skeletonBlock]} />;
   }
 
-  if (!moonboard && isError) {
+  if (!noCrowdGrade && isError) {
     return (
       <Pressable
         onPress={handleRetry}
@@ -95,12 +95,13 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
     );
   }
 
-  if (view.kind === 'moonboard') {
+  if (view.kind === 'noCrowdGrade') {
     return (
       <View style={styles.row}>
         <Icon name="info" size={20} color={iosSystemColors.systemGray} />
         <Text variant="subheadline" color={iosSystemColors.systemGray} style={styles.flexText}>
-          {t('boardseshGrade.moonboardBody')}
+          {/* Literal keys per board — the i18n linter rejects a computed t() key. */}
+          {view.boardName === 'woods' ? t('boardseshGrade.woodsBody') : t('boardseshGrade.moonboardBody')}
         </Text>
       </View>
     );

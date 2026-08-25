@@ -15,7 +15,7 @@ import type { OpaqueColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { randomUUID } from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
-import type { Climb } from '@boardsesh/shared-schema';
+import { AURORA_BOARDS, type Climb } from '@boardsesh/shared-schema';
 import { computeCanUpdate, type SavedClimbSnapshot } from '@boardsesh/create-climb-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { IconName } from '../icon-map';
@@ -24,6 +24,7 @@ import { useDrawerHost, boardConfigsMatch, type BoardConfig } from '../../provid
 import { useQueueActions } from '../../providers/queue-provider';
 import { useToggleFavorite, useFavoriteStatus } from '../../lib/graphql/hooks';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
+import { supportsClimbCreation } from '../../lib/boards/supports-climb-creation';
 import { useTheme } from '../../providers/theme-provider';
 import { useShareClimb } from '../../hooks/use-share-climb';
 import { track } from '../../lib/analytics';
@@ -105,6 +106,10 @@ type UseClimbActionsArgs = {
 
 // Mirrors web's constructClimbInfoUrl: Kilter no longer has a public app URL.
 function buildAuroraAppUrl(boardName: string, climbUuid: string): string | null {
+  // Only the Aurora boards have a `<board>boardapp.com` site. Without this gate a
+  // code-driven board (MoonBoard, Woods) gets an invented domain and the row opens
+  // a browser on an error page.
+  if (!(AURORA_BOARDS as readonly string[]).includes(boardName)) return null;
   if (boardName === 'kilter') return null;
   const suffix = boardName === 'tension' ? '2' : '';
   return `https://${boardName}boardapp${suffix}.com/climbs/${climbUuid}`;
@@ -163,6 +168,7 @@ export function useClimbActions({
     // first publish (the backend enforces the same window). `userId` is null for
     // Aurora-synced climbs that predate Boardsesh accounts.
     const canEdit = (() => {
+      if (!supportsClimbCreation(boardName)) return false;
       if (!currentUserId || !climb.userId || climb.userId !== currentUserId) return false;
       const snapshot: SavedClimbSnapshot = {
         uuid: climb.uuid,
@@ -315,16 +321,20 @@ export function useClimbActions({
       });
     }
 
-    items.push({
-      id: 'fork',
-      title: t('mobile.climbActions.fork'),
-      icon: 'branch',
-      color: accentColor,
-      // Same serialized handoff as Edit.
-      run: () => {
-        openRemix(climb, boardConfig, after);
-      },
-    });
+    // Fork drops into the create-climb editor, so it only appears on boards that
+    // can have climbs set on them.
+    if (supportsClimbCreation(boardName)) {
+      items.push({
+        id: 'fork',
+        title: t('mobile.climbActions.fork'),
+        icon: 'branch',
+        color: accentColor,
+        // Same serialized handoff as Edit.
+        run: () => {
+          openRemix(climb, boardConfig, after);
+        },
+      });
+    }
 
     items.push({
       id: 'share',

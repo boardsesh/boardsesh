@@ -32,13 +32,19 @@ const TEASER_ARROW = '▸';
 const TEASER_CONFIRMED = '✓';
 const TEASER_PROVISIONAL = '~';
 
-/** MoonBoard has no standardized community grade in our feed yet. */
-export function isMoonBoard(boardName: string): boolean {
-  return boardName.toLowerCase() === 'moonboard';
+// Boards whose climbs carry no crowd grade in our feed: MoonBoard has no
+// standardized community grade, and Woods ships only the setter's V number from
+// its own app. Neither has ascent data behind it, so the nightly Boardsesh-grade
+// job has nothing to compute and the section explains that instead.
+const BOARDS_WITHOUT_CROWD_GRADE: ReadonlySet<string> = new Set(['moonboard', 'woods']);
+
+/** True when this board has no community grade data behind it (see the set above). */
+export function lacksCrowdGrade(boardName: string): boolean {
+  return BOARDS_WITHOUT_CROWD_GRADE.has(boardName.toLowerCase());
 }
 
 export type BoardseshGradeView =
-  | { kind: 'moonboard' }
+  | { kind: 'noCrowdGrade'; boardName: string }
   | {
       kind: 'setterOnly';
       /** The setter's grade to show muted ("Setter's call: V4"), or null when there's none at all. */
@@ -101,7 +107,7 @@ export function buildBoardseshGradeView(
   grade: BoardseshGrade | null,
   gradeFormat: GradeDisplayFormat,
 ): BoardseshGradeView {
-  if (isMoonBoard(boardName)) return { kind: 'moonboard' };
+  if (lacksCrowdGrade(boardName)) return { kind: 'noCrowdGrade', boardName: boardName.toLowerCase() };
   if (!grade) return { kind: 'setterOnly', grade: null, count: 0 };
 
   // Prefer the cross-board universal grade; fall back to the board-local grade
@@ -219,7 +225,7 @@ export function buildCorrection(
  * string leading with the correction. When a crowd label is supplied and it
  * differs from the confirmed cross-board grade, shows "{crowd} ▸ {bs} ✓"; a
  * confident cross-board grade alone reads "{bs} ✓"; provisional "{bs} ~";
- * local-only "{bs} · {localWord}". Null for moonboard / setter-only.
+ * local-only "{bs} · {localWord}". Null for a no-crowd-grade board / setter-only.
  */
 export function buildBoardseshGradeSummary(
   view: BoardseshGradeView,

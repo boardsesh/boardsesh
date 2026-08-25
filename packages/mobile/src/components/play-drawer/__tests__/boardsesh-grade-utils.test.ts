@@ -7,7 +7,7 @@ import {
   buildTrustBand,
   formatHalfGrades,
   renderDifficulty,
-  isMoonBoard,
+  lacksCrowdGrade,
 } from '../boardsesh-grade-utils';
 
 function makeGrade(overrides: Partial<BoardseshGrade> = {}): BoardseshGrade {
@@ -42,17 +42,28 @@ describe('renderDifficulty', () => {
   });
 });
 
-describe('isMoonBoard', () => {
-  it('matches case-insensitively', () => {
-    expect(isMoonBoard('moonboard')).toBe(true);
-    expect(isMoonBoard('MoonBoard')).toBe(true);
-    expect(isMoonBoard('kilter')).toBe(false);
+describe('lacksCrowdGrade', () => {
+  it('matches the no-crowd-grade boards case-insensitively', () => {
+    expect(lacksCrowdGrade('moonboard')).toBe(true);
+    expect(lacksCrowdGrade('MoonBoard')).toBe(true);
+    expect(lacksCrowdGrade('woods')).toBe(true);
+    expect(lacksCrowdGrade('Woods')).toBe(true);
+    expect(lacksCrowdGrade('kilter')).toBe(false);
+    expect(lacksCrowdGrade('tension')).toBe(false);
   });
 });
 
 describe('buildBoardseshGradeView', () => {
-  it('returns the moonboard tier without a grade', () => {
-    expect(buildBoardseshGradeView('moonboard', makeGrade(), 'v-grade')).toEqual({ kind: 'moonboard' });
+  it('returns the no-crowd-grade tier without a grade, naming the board', () => {
+    // The board name rides along so the section can pick the right body copy.
+    expect(buildBoardseshGradeView('moonboard', makeGrade(), 'v-grade')).toEqual({
+      kind: 'noCrowdGrade',
+      boardName: 'moonboard',
+    });
+    expect(buildBoardseshGradeView('Woods', makeGrade(), 'v-grade')).toEqual({
+      kind: 'noCrowdGrade',
+      boardName: 'woods',
+    });
   });
 
   it('falls back to setter-only (no grade) when there is no grade row', () => {
@@ -278,8 +289,9 @@ describe('buildBoardseshGradeSummary', () => {
     expect(buildBoardseshGradeSummary(view)).toBe('V5–V6 ~');
   });
 
-  it('returns null for moonboard and setter-only tiers', () => {
-    expect(buildBoardseshGradeSummary({ kind: 'moonboard' })).toBeNull();
+  it('returns null for no-crowd-grade and setter-only tiers', () => {
+    expect(buildBoardseshGradeSummary({ kind: 'noCrowdGrade', boardName: 'moonboard' })).toBeNull();
+    expect(buildBoardseshGradeSummary({ kind: 'noCrowdGrade', boardName: 'woods' })).toBeNull();
     expect(buildBoardseshGradeSummary({ kind: 'setterOnly', grade: null, count: 0 })).toBeNull();
   });
 });

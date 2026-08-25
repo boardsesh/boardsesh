@@ -11,7 +11,7 @@ import { LogbookSection } from './LogbookSection';
 import { SimilarClimbsSection } from './SimilarClimbsSection';
 import { CommunitySection } from './CommunitySection';
 import { BoardseshGradeSection } from './BoardseshGradeSection';
-import { buildBoardseshGradeView, buildBoardseshGradeSummary, isMoonBoard } from './boardsesh-grade-utils';
+import { buildBoardseshGradeView, buildBoardseshGradeSummary, lacksCrowdGrade } from './boardsesh-grade-utils';
 import { buildAngleGradeBars } from './community-utils';
 import { BetaVideosSection } from './BetaVideosSection';
 import { SetterNotesSection } from './SetterNotesSection';
@@ -157,8 +157,10 @@ export const DeferredSections = memo(function DeferredSections({
   // (rather than read from BoardseshGradeSection) because that section
   // unmounts while collapsed — React Query dedupes this fetch with the
   // section's identical-key one once it expands, so this costs no extra request.
-  const moonboard = isMoonBoard(boardName);
-  const boardseshReady = boardseshGradeEnabled && !moonboard && readyToRender;
+  // MoonBoard and Woods carry no crowd grade, so the Boardsesh-grade, stats-history
+  // and by-angle queries have nothing to answer with — skip them for both.
+  const noCrowdGrade = lacksCrowdGrade(boardName);
+  const boardseshReady = boardseshGradeEnabled && !noCrowdGrade && readyToRender;
   const { data: boardseshGrade } = useBoardseshGrade(boardName, climb.uuid, angle, {
     enabled: boardseshReady,
   });
