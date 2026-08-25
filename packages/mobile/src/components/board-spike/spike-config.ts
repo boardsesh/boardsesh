@@ -192,14 +192,20 @@ export const SPIKE_TUNING = {
   casingWidthMultiplier: 2,
   casingOpacity: 0.7,
   casingLightnessThreshold: 0.5,
-  /** Traced silhouettes are drawn thinner than the circular rings — they are longer. */
-  outlineHaloStrokeWidth: 2.2,
+  /**
+   * Traced silhouettes. First pass used 2.2px at 0.2 opacity and the answer from
+   * review was "that's just the baseline" — a hairline at a fifth opacity, drawn
+   * at board resolution and then scaled down to a phone, is not a visible
+   * treatment. Weight and opacity both up until it reads as a decision.
+   */
+  outlineHaloStrokeWidth: 4,
+  outlineHaloOpacity: 0.55,
   /**
    * A dark outline on pale art needs more weight than a light one on dark art to
    * read as the same strength, because the surrounding play field is dark either
    * way and a black line has less to separate it from.
    */
-  outlineHaloDarkOpacity: 0.45,
+  outlineHaloDarkOpacity: 0.7,
   /**
    * Shape-following glow, built out of concentric strokes along the traced
    * outline from `glowSpreadWidth` down to `glowCoreWidth`.
@@ -213,8 +219,15 @@ export const SPIKE_TUNING = {
    * rings; twelve on a squared falloff reads as a smooth fade.
    */
   glowBandCount: 12,
-  glowSpreadWidth: 40,
-  glowCoreWidth: 11,
+  /**
+   * Spread is halved from the first pass (40): at 40 the light reached most of
+   * the way to the neighbouring placement — the pitch between placements is only
+   * ~50px in board space — so lit holds bled into each other and the glow read as
+   * a blob rather than as an edge. The outward-only variant doubles whatever this
+   * is, since the clip discards the inner half of the stroke.
+   */
+  glowSpreadWidth: 21,
+  glowCoreWidth: 8,
   glowPeakOpacity: 0.95,
   /** Whole-hold tint: fill opacity over the hold, plus a crisp edge on its outline. */
   tintFillOpacity: 0.55,

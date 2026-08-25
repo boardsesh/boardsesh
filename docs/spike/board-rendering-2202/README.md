@@ -62,6 +62,14 @@ Four independent axes, each a row of chips:
   0.511, Tension Original 0.563, Kilter Homewall 0.626, TB2 Mirror 0.713. A white neutral outline
   is invisible on the top half of that list, which is why the traced halo picks black or white per
   hold rather than being a fixed colour.
+- **Three numbers came from review, not from measurement, and they mattered.** The traced halo
+  first shipped at 2.2px and 0.2 opacity and read as "that's just the baseline" — a hairline at a
+  fifth opacity, drawn at board resolution then scaled to a phone, is not a visible treatment; it
+  is 4px at 0.55 (0.7 for the dark-on-pale case) now. The glow spread was 40px, which is most of
+  the ~50px pitch between placements, so lit holds bled into each other; it is 21px now. And the
+  outlines were splined with *uniform* Catmull-Rom, which bulges wherever a long segment meets a
+  short one — on a hold outline that bulge is a tint spilling past the edge of the hold it is
+  supposed to trace. Centripetal parameterisation fixes it and cannot cusp or self-intersect.
 - **`FeGaussianBlur` is broken in react-native-svg 15.15.5 on Android.** A stroke through it paints
   the filter region as a solid rectangle of the stroke colour. `FeColorMatrix` in the same version
   is fine (the Desat toggle uses it), so the glow falloff is twelve concentric strokes on a squared

@@ -59,42 +59,59 @@ export function polygonPath(points: readonly number[], cx: number, cy: number): 
 }
 
 /**
- * Closed Catmull-Rom spline through flat [x0, y0, x1, y1, …] points, converted
- * to cubic Béziers.
+ * Closed centripetal Catmull-Rom spline through flat [x0, y0, x1, y1, …] points,
+ * converted to cubic Béziers.
  *
  * The traced silhouettes are Douglas-Peucker output, so their vertices are the
  * corners of a polygon — legible, but visibly faceted on a big hold. Curving
- * through the same points costs nothing extra to store and only lengthens the
- * path string.
+ * through the same points costs nothing to store and only lengthens the path.
  *
- * `tension` is held below 1 because the points are unevenly spaced: uniform
- * Catmull-Rom overshoots where a long segment meets a short one, and on a hold
- * outline an overshoot reads as a dent. 0.8 keeps the curve inside the silhouette
- * on every board the spike draws.
+ * Centripetal (alpha = 0.5) rather than uniform parameterisation, because the
+ * points are unevenly spaced by construction: uniform Catmull-Rom bulges outward
+ * wherever a long segment meets a short one, and on a hold outline that bulge is
+ * a tint or a glow spilling past the edge of the hold it is supposed to be
+ * tracing. Centripetal is the standard fix — it cannot cusp or self-intersect.
  */
-export function splinePath(points: readonly number[], cx: number, cy: number, tension = 0.8): string {
+export function splinePath(points: readonly number[], cx: number, cy: number): string {
   const count = points.length / 2;
   if (count < 3) return polygonPath(points, cx, cy);
   const at = (index: number): [number, number] => {
     const wrapped = ((index % count) + count) % count;
     return [cx + points[wrapped * 2], cy + points[wrapped * 2 + 1]];
   };
+  /** Centripetal knot spacing: the square root of the chord length. */
+  const knot = (from: [number, number], to: [number, number]): number =>
+    Math.max(1e-4, Math.sqrt(Math.hypot(to[0] - from[0], to[1] - from[1])));
 
   const [startX, startY] = at(0);
   let path = `M ${startX.toFixed(1)} ${startY.toFixed(1)} `;
   for (let index = 0; index < count; index += 1) {
-    const [previousX, previousY] = at(index - 1);
-    const [currentX, currentY] = at(index);
-    const [nextX, nextY] = at(index + 1);
-    const [afterX, afterY] = at(index + 2);
-    const control1X = currentX + ((nextX - previousX) / 6) * tension;
-    const control1Y = currentY + ((nextY - previousY) / 6) * tension;
-    const control2X = nextX - ((afterX - currentX) / 6) * tension;
-    const control2Y = nextY - ((afterY - currentY) / 6) * tension;
+    const previous = at(index - 1);
+    const current = at(index);
+    const next = at(index + 1);
+    const after = at(index + 2);
+
+    const d1 = knot(previous, current);
+    const d2 = knot(current, next);
+    const d3 = knot(next, after);
+
+    const control1: [number, number] = [0, 1].map((axis) => {
+      const tangent =
+        (current[axis] - previous[axis]) / d1 -
+        (next[axis] - previous[axis]) / (d1 + d2) +
+        (next[axis] - current[axis]) / d2;
+      return current[axis] + (d2 * tangent) / 3;
+    }) as [number, number];
+    const control2: [number, number] = [0, 1].map((axis) => {
+      const tangent =
+        (next[axis] - current[axis]) / d2 - (after[axis] - current[axis]) / (d2 + d3) + (after[axis] - next[axis]) / d3;
+      return next[axis] - (d2 * tangent) / 3;
+    }) as [number, number];
+
     path +=
-      `C ${control1X.toFixed(1)} ${control1Y.toFixed(1)} ` +
-      `${control2X.toFixed(1)} ${control2Y.toFixed(1)} ` +
-      `${nextX.toFixed(1)} ${nextY.toFixed(1)} `;
+      `C ${control1[0].toFixed(1)} ${control1[1].toFixed(1)} ` +
+      `${control2[0].toFixed(1)} ${control2[1].toFixed(1)} ` +
+      `${next[0].toFixed(1)} ${next[1].toFixed(1)} `;
   }
   return `${path}Z`;
 }

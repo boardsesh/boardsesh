@@ -152,7 +152,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                 d={path}
                 fill="none"
                 stroke={onPaleArt ? '#000000' : '#FFFFFF'}
-                strokeOpacity={onPaleArt ? SPIKE_TUNING.outlineHaloDarkOpacity : haloOpacity}
+                strokeOpacity={onPaleArt ? SPIKE_TUNING.outlineHaloDarkOpacity : SPIKE_TUNING.outlineHaloOpacity}
                 strokeWidth={SPIKE_TUNING.outlineHaloStrokeWidth}
                 strokeLinejoin="round"
               />
