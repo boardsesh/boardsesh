@@ -6,15 +6,23 @@ vi.mock('@boardsesh/board-constants/product-sizes', () => ({
   getHolePlacements: vi.fn(),
 }));
 
-vi.mock('@boardsesh/board-config', () => ({
-  BOARD_IMAGE_DIMENSIONS: {
-    kilter: {},
-    tension: {},
-    moonboard: {},
-  },
-  MOONBOARD_SIZE: { id: 1 },
-  getMoonBoardDetails: vi.fn(),
-}));
+// `getWoodsBoardDetails` is deliberately NOT mocked: the Woods cases below assert
+// against the real hold tables (485 / 894 detected centres) and the real board-art
+// dimensions, which is what makes them catch a regenerated hold table or a renamed
+// background image.
+vi.mock('@boardsesh/board-config', async () => {
+  const actual = await vi.importActual<typeof import('@boardsesh/board-config')>('@boardsesh/board-config');
+  return {
+    BOARD_IMAGE_DIMENSIONS: {
+      kilter: {},
+      tension: {},
+      moonboard: {},
+    },
+    MOONBOARD_SIZE: { id: 1 },
+    getMoonBoardDetails: vi.fn(),
+    getWoodsBoardDetails: actual.getWoodsBoardDetails,
+  };
+});
 
 vi.mock('../env', () => ({
   WEB_BASE_URL: 'https://example.com',
@@ -82,6 +90,14 @@ describe('getBoardAspectRatio', () => {
 
     expect(result).toBeCloseTo(650 / 1000);
   });
+
+  // Woods has no board_images row, so the ratio has to come off the render data.
+  // The two sizes are shaped differently — 8x10 is markedly more portrait — so a
+  // shared ratio would letterbox one of them.
+  it('uses the real Woods board-art dimensions per size', () => {
+    expect(getBoardAspectRatio({ boardName: 'woods', layoutId: 1, sizeId: 2, setIds: [1] })).toBeCloseTo(1225 / 1400);
+    expect(getBoardAspectRatio({ boardName: 'woods', layoutId: 1, sizeId: 1, setIds: [1] })).toBeCloseTo(720 / 1000);
+  });
 });
 
 describe('getBoardRenderData', () => {
@@ -145,6 +161,53 @@ describe('getBoardRenderData', () => {
         }),
       ).toBeNull();
       expect(warnSpy).toHaveBeenCalledWith('[board-details] MoonBoard render data unavailable:', 'layout missing');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('builds 12x12 Woods render data with one hold per detected centre', () => {
+    const result = getBoardRenderData({ boardName: 'woods', layoutId: 1, sizeId: 2, setIds: [1] });
+
+    expect(result).toMatchObject({
+      boardWidth: 1225,
+      boardHeight: 1400,
+      edgeLeft: 0,
+      edgeRight: 33,
+      edgeBottom: 0,
+      edgeTop: 31,
+      backgroundImageKeys: ['woods/woods-12x12-bg.webp'],
+    });
+    expect(result?.holdsData).toHaveLength(894);
+    expect(result?.holdsData.every((hold) => hold.r === 13.5)).toBe(true);
+  });
+
+  it('builds 8x10 Woods render data off the smaller board art', () => {
+    const result = getBoardRenderData({ boardName: 'woods', layoutId: 1, sizeId: 1, setIds: [1] });
+
+    expect(result).toMatchObject({
+      boardWidth: 720,
+      boardHeight: 1000,
+      edgeRight: 21,
+      edgeTop: 25,
+      backgroundImageKeys: ['woods/woods-8x10-bg.webp'],
+    });
+    expect(result?.holdsData).toHaveLength(485);
+    expect(result?.holdsData.every((hold) => hold.r === 11.5)).toBe(true);
+  });
+
+  // The layout and set ids are fixed for Woods, so an unknown SIZE is the only
+  // config that can miss — and it must degrade to "no board" rather than throw
+  // out of a render.
+  it('warns and returns null for an unknown Woods size', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      expect(getBoardRenderData({ boardName: 'woods', layoutId: 1, sizeId: 99, setIds: [1] })).toBeNull();
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[board-details] Woods render data unavailable:',
+        'Woods board size not found: 99',
+      );
     } finally {
       warnSpy.mockRestore();
     }

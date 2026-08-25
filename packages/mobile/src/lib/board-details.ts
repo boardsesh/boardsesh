@@ -1,5 +1,10 @@
 import { getProductSize, getImageFilename, getHolePlacements } from '@boardsesh/board-constants/product-sizes';
-import { BOARD_IMAGE_DIMENSIONS, MOONBOARD_SIZE, getMoonBoardDetails } from '@boardsesh/board-config';
+import {
+  BOARD_IMAGE_DIMENSIONS,
+  MOONBOARD_SIZE,
+  getMoonBoardDetails,
+  getWoodsBoardDetails,
+} from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
 import type { HoldPlacement } from '../components/board-renderer/types';
 
@@ -71,6 +76,10 @@ function computeBoardRenderData(params: {
 
   if (boardName === 'moonboard') {
     return getMoonBoardRenderData({ layoutId, sizeId, setIds });
+  }
+
+  if (boardName === 'woods') {
+    return getWoodsRenderData({ sizeId });
   }
 
   const sizeData = getProductSize(boardName, sizeId);
@@ -156,6 +165,50 @@ function getMoonBoardRenderData(params: {
   }
 }
 
+/**
+ * Woods render data. Woods is code-driven like MoonBoard — no placement rows and
+ * no `board_images` — so the geometry comes from `getWoodsBoardDetails`, which
+ * carries a hold centre per detected hold (in board-art pixels) for the size.
+ * There is one layout and one synthetic hold set, so only the size id selects
+ * anything: the 8x10 and 12x12 boards have different art AND different hold
+ * numbering, so drawing one on the other's art would light the wrong holds.
+ */
+function getWoodsRenderData(params: { sizeId: number }): BoardRenderData | null {
+  const { sizeId } = params;
+
+  try {
+    const details = getWoodsBoardDetails({ size_id: sizeId });
+    const backgroundImageKeys = Object.keys(details.images_to_holds).map((filename) =>
+      `woods/${filename}`.replace(/\.png$/, '.webp'),
+    );
+    const holdsData: HoldPlacement[] = details.holdsData.map((hold) => ({
+      id: hold.id,
+      mirroredHoldId: hold.mirroredHoldId,
+      cx: hold.cx,
+      cy: hold.cy,
+      r: hold.r,
+    }));
+
+    return {
+      boardWidth: details.boardWidth,
+      boardHeight: details.boardHeight,
+      edgeLeft: details.edge_left,
+      edgeRight: details.edge_right,
+      edgeBottom: details.edge_bottom,
+      edgeTop: details.edge_top,
+      backgroundImageKeys,
+      holdsData,
+    };
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[board-details] Woods render data unavailable:',
+      error instanceof Error ? error.message : String(error),
+    );
+    return null;
+  }
+}
+
 export function getBoardAspectRatio(params: {
   boardName: BoardName;
   layoutId: number;
@@ -164,7 +217,9 @@ export function getBoardAspectRatio(params: {
 }): number {
   const { boardName, layoutId, sizeId, setIds } = params;
 
-  if (boardName === 'moonboard') {
+  // Code-driven boards have no `board_images` row to read dimensions from, so
+  // their aspect ratio comes off the render data (which is memoized anyway).
+  if (boardName === 'moonboard' || boardName === 'woods') {
     const renderData = getBoardRenderData(params);
     return renderData ? renderData.boardWidth / renderData.boardHeight : 1080 / 1920;
   }
