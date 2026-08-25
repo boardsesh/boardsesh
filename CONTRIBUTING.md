@@ -332,3 +332,5 @@ Official self-hosting support is planned but still involved to set up. For now t
 ## Thanks
 
 This app started as a fork of [Climbdex](https://github.com/lemeryfertitta/Climbdex), and we use [BoardLib](https://github.com/lemeryfertitta/BoardLib) to build the database. Thanks to @lemeryfertitta for making this project possible.
+
+Thanks also to [Mercure Technologies](https://github.com/mercuretechnologies) for granting Boardsesh an enterprise license for [xprem](https://github.com/mercuretechnologies/xprem). It's the OTA server behind our releases, and the reason a reviewer can try your pull request from a store build via the channel switcher described above.
