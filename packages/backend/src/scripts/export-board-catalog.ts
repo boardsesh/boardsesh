@@ -146,6 +146,9 @@ async function streamTableIntoSqlite(
   tableName: string,
   columns: readonly CatalogColumn[],
 ): Promise<number> {
+  if (!SAFE_IDENTIFIER.test(tableName)) {
+    throw new Error(`Refusing to build catalog SQL with unsafe table identifier: ${tableName}`);
+  }
   const columnNames = columns.map((column) => column.name);
   db.exec(
     `CREATE TABLE IF NOT EXISTS ${tableName} (\n${columns
@@ -273,6 +276,10 @@ export async function runCatalogExport(argv: string[]): Promise<void> {
   const builtAt = new Date(startedAt).toISOString();
   const workDir = mkdtempSync(join(tmpdir(), 'board-catalog-'));
   const filePath = join(workDir, 'catalog.db');
+  // Closed by the CLI entry below, not here — tests share the cached pool, and
+  // `db` in packages/backend/src/db/client.ts holds a reference to the drizzle
+  // wrapper built over it, so ending it here would break every later caller in
+  // the process. Same contract as export-board-snapshots.ts.
   const sqlClient = createPool();
 
   try {
@@ -330,15 +337,18 @@ export async function runCatalogExport(argv: string[]): Promise<void> {
 
     await pruneStaleArtifacts(manifest, Date.now(), options.keyPrefix);
   } finally {
-    await closePool();
     if (!options.dryRun) rmSync(workDir, { recursive: true, force: true });
   }
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
 if (invokedPath === import.meta.url) {
-  runCatalogExport(process.argv.slice(2)).catch((error) => {
-    logger.error('[export-catalog] failed', { error: error instanceof Error ? error.message : String(error) });
-    process.exitCode = 1;
-  });
+  runCatalogExport(process.argv.slice(2))
+    .catch((error) => {
+      logger.error('[export-catalog] failed', { error: error instanceof Error ? error.message : String(error) });
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await closePool();
+    });
 }

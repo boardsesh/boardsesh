@@ -2,7 +2,8 @@ name: Export Board Snapshots
 
 # Nightly: build every per-(board, layout) SQLite snapshot of board_climbs +
 # board_climb_stats, plus one whole-catalogue artifact of the board hardware
-# tables (board-snapshots/v1-catalog, read only by the seeded dev-db image). Every 15 minutes: cheaply probe the live gzip manifest's
+# tables (board-snapshots/v1-catalog, read only by the seeded dev-db image).
+# Every 15 minutes: cheaply probe the live gzip manifest's
 # watermarks and rebuild only layouts once they have >=500 stable delta rows,
 # keeping prolonged bulk gaps out of fresh downloads. Idempotent — each
 # refresh mints new content-addressed artifacts and rewrites the manifest last.
@@ -169,7 +170,8 @@ jobs:
         if: >-
           ${{
             (github.event_name == 'schedule' && github.event.schedule == '15 7 * * *') ||
-            (github.event_name == 'workflow_dispatch' && inputs.refresh_threshold == '' && inputs.board == '')
+            (github.event_name == 'workflow_dispatch' && inputs.refresh_threshold == '' &&
+             inputs.board == '' && inputs.layout == '')
           }}
         working-directory: packages/backend
         env:

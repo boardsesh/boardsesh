@@ -27,8 +27,9 @@ import {
   catalogSnapshotBaseTables,
   catalogSnapshotDeferredTables,
 } from '@boardsesh/db/catalog-snapshot';
+import { uploadToS3, deleteFromS3, listS3Objects } from '../storage/s3';
 import { db } from '../db/client';
-import { buildCatalogArtifact, catalogColumnsFor, parseArgs } from '../scripts/export-board-catalog';
+import { buildCatalogArtifact, catalogColumnsFor, parseArgs, runCatalogExport } from '../scripts/export-board-catalog';
 
 const BUILT_AT = '2026-08-26T07:15:58.102Z';
 
@@ -177,5 +178,67 @@ describe('board catalogue export', () => {
   it('defers exactly the tables whose rows reference board_climbs', () => {
     expect(catalogSnapshotDeferredTables()).toEqual(['board_climb_aliases', 'board_beta_links']);
     expect(catalogSnapshotBaseTables()).not.toContain('board_climb_aliases');
+  });
+});
+
+describe('runCatalogExport', () => {
+  const CATALOG_PREFIX = 'board-snapshots/v1-catalog';
+  const MANIFEST_KEY = `${CATALOG_PREFIX}/manifest.json`;
+  const THIRTY_DAYS_AGO = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const ONE_DAY_AGO = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await resetCatalogTables();
+    await seedMinimalCatalog();
+  });
+
+  // A reader must never see a manifest naming a key that is not on S3 yet, so
+  // the artifact has to be uploaded before the manifest that references it.
+  it('uploads the artifact before the manifest that names it', async () => {
+    vi.mocked(listS3Objects).mockResolvedValue([]);
+    await runCatalogExport([]);
+
+    const keys = vi.mocked(uploadToS3).mock.calls.map(([, key]) => key);
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toMatch(new RegExp(`^${CATALOG_PREFIX}/.*\\.db$`));
+    expect(keys[1]).toBe(MANIFEST_KEY);
+
+    const manifest = JSON.parse(vi.mocked(uploadToS3).mock.calls[1][0].toString('utf8'));
+    expect(manifest.formatVersion).toBe(1);
+    expect(manifest.artifact.key).toBe(keys[0]);
+    expect(manifest.artifact.contentEncoding).toBe('gzip');
+    expect(Object.keys(manifest.artifact.tables).sort()).toEqual(
+      CATALOG_SNAPSHOT_TABLES.map((table) => table.name).sort(),
+    );
+  });
+
+  it('prunes superseded artifacts past the grace window, and nothing else', async () => {
+    vi.mocked(listS3Objects).mockImplementation(async () => [
+      { key: `${CATALOG_PREFIX}/ancient.db`, size: 10, lastModified: THIRTY_DAYS_AGO },
+      // Superseded but inside the 14-day grace: a client may still be holding
+      // the manifest that names it.
+      { key: `${CATALOG_PREFIX}/yesterday.db`, size: 10, lastModified: ONE_DAY_AGO },
+      { key: MANIFEST_KEY, size: 10, lastModified: THIRTY_DAYS_AGO },
+    ]);
+
+    await runCatalogExport([]);
+
+    const deleted = vi.mocked(deleteFromS3).mock.calls.map(([key]) => key);
+    expect(deleted).toEqual([`${CATALOG_PREFIX}/ancient.db`]);
+  });
+
+  // Storage costs are worth less than a published artifact, so a failing prune
+  // is logged and swallowed rather than failing the run.
+  it('does not fail the run when pruning throws', async () => {
+    vi.mocked(listS3Objects).mockRejectedValue(new Error('S3 list exploded'));
+    await expect(runCatalogExport([])).resolves.toBeUndefined();
+    expect(vi.mocked(uploadToS3).mock.calls.map(([, key]) => key)).toContain(MANIFEST_KEY);
+  });
+
+  it('builds without uploading anything on a dry run', async () => {
+    await runCatalogExport(['--dry-run']);
+    expect(uploadToS3).not.toHaveBeenCalled();
+    expect(deleteFromS3).not.toHaveBeenCalled();
   });
 });

@@ -51,7 +51,7 @@ only care about one size.
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `boardType`, `layoutId`                                 | Which catalog this artifact holds                                                               |
 | `url`                                                   | Public download URL (valid until pruned — always re-resolve via the manifest)                   |
-| `key`                                                   | Object key under `board-snapshots/v1/`                                                          |
+| `key`                                                   | Object key under `board-snapshots/v1-gzip/`                                                     |
 | `bytes`                                                 | Stored size                                                                                     |
 | `contentEncoding`                                       | `identity` (a plain SQLite file) or `gzip` (gunzip before opening)                              |
 | `builtAt`                                               | When the export built this artifact                                                             |
