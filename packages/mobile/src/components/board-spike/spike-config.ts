@@ -434,18 +434,25 @@ export const SPIKE_TUNING = {
    * taken before the solve landed; those captures are of the plateau the solve
    * exists to remove.
    *
-   * Raised 0.43 -> 0.55 after the third pass. Tying the spread to the placement
-   * radius fixed the cross-board unit problem and shrank the mark doing it: the
-   * three boards carrying 476-499 placements came out at 12.9-16.6 board px of
-   * reach against 19.4-21.1 on the two carrying 303-332, and the outward glow
-   * ended up putting LESS coloured ink on a lit hold than the baseline ring does
-   * on six of the seven boards. 0.55 is the knee — it lifts the dense boards to
-   * 16.0-21.2 while the hold cap below still binds on at most 15 of any board's
-   * traced holds. 0.65 was measured too and is past it: the cap fires on 67 of
-   * Kilter Original's 476 and 32 of MoonBoard 2016's 140, which is the glow
-   * giving up on tracing the hold and turning into a disc.
+   * Raised 0.43 -> 0.55 -> 0.7 over two rounds of looking at it on a phone.
+   * Tying the spread to the placement radius fixed the cross-board unit problem
+   * and shrank the mark doing it: the three boards carrying 476-499 placements
+   * came out at 12.9-16.6 board px of reach against 19.4-21.1 on the two
+   * carrying 303-332, and the outward glow ended up putting LESS coloured ink on
+   * a lit hold than the baseline ring does on six of the seven boards.
+   *
+   * 0.7 with the 1.8 cap below gives, per board: grasshopper 34.4,
+   * Tension Original 31.5, Kilter Homewall 27.0, TB2 Mirror 22.2, Kilter
+   * Original 21.0, both MoonBoards 20.4. Measured against every traced hold, the
+   * cap then clips 3 of grasshopper's 332, 1 each on Kilter Original and
+   * MoonBoard 2016 and none anywhere else — so the fraction, not the cap, is
+   * what decides the mark on all seven boards, which is the point.
+   *
+   * 0.85 is past the knee even at the raised cap: 11 of TB2 Mirror's 498, 13 of
+   * Kilter Original's 476 and 15 of MoonBoard 2016's 140 clip, and a clipped
+   * glow has stopped tracing the hold and become a disc around it.
    */
-  glowSpreadFraction: 0.55,
+  glowSpreadFraction: 0.7,
   glowCoreFraction: 0.0215,
   /**
    * Ceiling on the glow's one-sided RENDERED reach as a multiple of the hold's
@@ -463,15 +470,26 @@ export const SPIKE_TUNING = {
    * Original 41, MoonBoard 2016 27, TB2 Mirror 13, Masters 1. Nothing sits near
    * the line: the closest hold the cap leaves alone reaches 0.97 of it.
    *
-   * Raised 1.2 -> 1.4 with the spread, and for the same reason. On the boards
-   * with the smallest holds this cap, not the fraction, is what decides the
-   * mark: MoonBoard 2016's p10 short extent is 13 board px, so at 1.2 the reach
-   * was ceilinged at 15.6 no matter what the spread said. 1.4 stays under the
-   * ~1.5x the third pass measured as the point the glow reads as a plain disc
-   * rather than as the hold's own outline, and it is what lets the raised spread
-   * actually reach the holds it was raised for.
+   * Raised 1.2 -> 1.4 -> 1.8 alongside the spread. On the boards with the
+   * smallest holds this cap, not the fraction, was deciding the mark: MoonBoard
+   * 2016's p10 short extent is 13 board px, so at 1.2 the reach was ceilinged at
+   * 15.6 whatever the spread said, and raising the spread alone changed nothing
+   * on exactly the holds it was raised for. TB2 Mirror is the same shape of
+   * problem — 498 placements, a 26 board px median short extent, and the hardest
+   * board in the set to pick a lit hold out of.
+   *
+   * The reason a bigger cap is safe on those two and not obviously safe
+   * everywhere is that they have the room. Measured silhouette-to-silhouette,
+   * the median gutter is 21.7 board px on MoonBoard 2016 and 20.4 on Masters —
+   * the only two boards where the glow's reach was SMALLER than the space around
+   * the hold — against 6.0 on Kilter Homewall and 8.7 on TB2 Mirror. Kilter
+   * Homewall's glow has always overrun its gutter and that is fine: measured
+   * over the unlit holds' own art the glow buries less of it than the baseline
+   * circle does. What the cap is really protecting is the hold's shape, and at
+   * 1.8 it still clips at most 3 of any board's traced holds, so it has stopped
+   * being the thing that decides the mark on any of them.
    */
-  glowHoldExtentCap: 1.4,
+  glowHoldExtentCap: 1.8,
   /**
    * Neighbour clearance. Two lit holds 14.5 board px apart merge into one
    * envelope against a combined 42 px of reach, so the glow gives up its outer
