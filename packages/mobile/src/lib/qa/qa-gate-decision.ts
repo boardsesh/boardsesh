@@ -14,7 +14,12 @@ export type QaGateInput = {
   isTester: boolean | undefined;
   /** This binary can surf OTA branches at all (fingerprint-bound headers present). */
   surfingBuild: boolean;
-  /** xprem's one-time legacy-override migration has settled, so a reload is not pending. */
+  /**
+   * The root layout has published its answer AND xprem's one-time
+   * legacy-override migration has settled, so a reload is not pending. False
+   * both while that migration runs and before anything has been published at
+   * all — `wait` covers each.
+   */
   surfingReady: boolean;
   screenshotMode: boolean;
   /** The cold start came in through a deep link, so the user has intent elsewhere. */
@@ -63,7 +68,17 @@ export function decideQaGate(input: QaGateInput): QaGateDecision {
   // A surfing-capable binary runs a one-time migration that ends in
   // Updates.reloadAsync(). Prompting before it settles would push a route the
   // reload immediately throws away.
-  if (input.surfingBuild && !input.surfingReady) return 'wait';
+  //
+  // Waiting on `surfingReady` ALONE, not on `surfingBuild && !surfingReady`:
+  // `{ surfingBuild: false, surfingReady: false }` is also the state of the
+  // store BEFORE the root layout has published anything, and resolving that to
+  // `none` is a silent kill switch — the caller marks the session decided on a
+  // `none` and never asks again, so one reordering of the mount effects would
+  // switch QA off with nothing said anywhere. A build that cannot surf publishes
+  // `{ false, true }` from its very first effect (`migrationComplete` starts at
+  // `!branchSurfingBuild`), so "not ready" only ever means "nobody has answered
+  // yet" or "the migration is still running" — and both are `wait`.
+  if (!input.surfingReady) return 'wait';
 
   if (input.screenshotMode) return 'none';
   if (!input.isTester) return 'none';

@@ -18,7 +18,9 @@ headers, gets one prompt per cold start:
 
 The user drawer keeps both reachable afterwards: **Finish testing #N** / **Test plan #N** while on a
 preview, **Test a PR preview** on production. Finishing opens a sheet with Approve / Decline plus
-notes, files the verdict, and clears the branch pin.
+notes, files the verdict, and clears the branch pin. Once a verdict is filed for the running bundle
+the drawer drops back to **Test a PR preview**, even though the app is usually still running that
+preview — see the second gotcha below.
 
 Everyone else — every non-tester, every dev client, every binary without the surfing headers — sees
 none of it, ever.
@@ -33,6 +35,7 @@ none of it, ever.
 | Verdict sheet                                   | `src/components/user-drawer/QaVerdictSheet.tsx`                                  |
 | xprem wrapper (the only deep-import site)       | `src/lib/qa/qa-surf.ts`                                                          |
 | Branch-name parsing, session keys, row ordering | `src/lib/qa/{pr-branch,qa-keys,qa-pick-rows}.ts`                                 |
+| Which QA rows the drawer offers                 | `src/lib/qa/qa-drawer-rows.ts`                                                   |
 | GraphQL hooks                                   | `src/lib/qa/use-qa-previews.ts`                                                  |
 | Event names                                     | `src/lib/qa/qa-analytics.ts`                                                     |
 
@@ -55,7 +58,11 @@ would silently switch QA off for anyone whose profile lands a second late.
 **Nothing prompts before xprem's migration settles.** A surfing-capable binary's first launch clears
 a retired channel override and calls `Updates.reloadAsync()`. `app/_layout.tsx` publishes that state
 through `src/lib/ota-branch-surfing-state.ts`; the gate waits for `ready` so it never pushes a route
-the reload throws away.
+the reload throws away. `ready` also covers the store's pre-launch state — `OtaBranchControlCenter`
+is the LAST root sibling, so its publishing effect runs after the gate's — which is why
+`decideQaGate` waits on `surfingReady` alone rather than on `surfingBuild && !surfingReady`. Reading
+an unpublished store as "this build cannot surf" would resolve to `none`, and the gate marks the
+session decided on a `none`: QA would switch itself off with nothing said anywhere.
 
 ## The two settings keys
 

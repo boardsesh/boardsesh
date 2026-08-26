@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const browser = vi.hoisted(() => ({ openBrowserAsync: vi.fn().mockResolvedValue(undefined) }));
@@ -18,7 +18,11 @@ const feedbackPresent = vi.hoisted(() => vi.fn());
 const qaVerdictPresent = vi.hoisted(() => vi.fn());
 // Crowdsourced-QA rows: mutable so a test can put the drawer on a surfing-capable
 // build (and on a preview branch) without touching expo-updates.
-const qaState = vi.hoisted(() => ({ surfingBuild: false, runningPrNumber: null as number | null }));
+const qaState = vi.hoisted(() => ({
+  surfingBuild: false,
+  runningPrNumber: null as number | null,
+  verdictSubmittedKey: null as string | null,
+}));
 const profileState = vi.hoisted(() => ({ isTester: false }));
 const signOutFailureAlertMock = vi.hoisted(() => vi.fn());
 
@@ -128,6 +132,13 @@ vi.mock('../../../lib/ota-branch-surfing-state', () => ({
 vi.mock('../../../lib/qa/qa-surf', () => ({
   readRunningPrNumber: () => qaState.runningPrNumber,
 }));
+// `runningQaPrNumberToOffer` itself is NOT mocked — the join between the running
+// branch and the persisted verdict marker is the thing under test here. Only its
+// two device reads are.
+vi.mock('expo-updates', () => ({ updateId: 'bundle-a' }));
+vi.mock('../../../settings', () => ({
+  getSetting: (key: string) => (key === 'qaVerdictSubmittedKey' ? qaState.verdictSubmittedKey : null),
+}));
 vi.mock('../../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true, signOut: signOutMock }),
 }));
@@ -234,6 +245,7 @@ beforeEach(() => {
   qaVerdictPresent.mockClear();
   qaState.surfingBuild = false;
   qaState.runningPrNumber = null;
+  qaState.verdictSubmittedKey = null;
   profileState.isTester = false;
   reanimated.closeCallbacks.length = 0;
   segmentsMock.current = [];
@@ -500,6 +512,32 @@ describe('user-drawer crowdsourced-QA rows', () => {
 
     rerender(<Harness showScreen={false} />);
     expect(qaVerdictPresent).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops offering to finish a bundle whose verdict is already filed', () => {
+    // Leaving a preview usually answers `nothing-to-load`, so the tester is
+    // still running the branch they just signed off. Without the marker the
+    // drawer would keep asking them to finish it — over and over.
+    profileState.isTester = true;
+    qaState.surfingBuild = true;
+    qaState.runningPrNumber = 4792;
+    qaState.verdictSubmittedKey = 'pr-4792:bundle-a';
+    const { container } = render(<Harness showScreen />);
+
+    const titles = rowTitles(container);
+    expect(titles).not.toContain('Finish testing #4792');
+    expect(titles).toContain('Test a PR preview');
+  });
+
+  it('offers to finish again once the author publishes a new bundle', () => {
+    // Same branch, different updateId: a different thing to test.
+    profileState.isTester = true;
+    qaState.surfingBuild = true;
+    qaState.runningPrNumber = 4792;
+    qaState.verdictSubmittedKey = 'pr-4792:bundle-zero';
+    const { container } = render(<Harness showScreen />);
+
+    expect(rowTitles(container)).toContain('Finish testing #4792');
   });
 
   it('pushes the brief from the test-plan row once the route unmounts', () => {

@@ -21,6 +21,7 @@ import { useOfflineDownloadsEnabled, useOfflineNudgesEnabled } from '../src/prov
 import { useActiveBoard } from '../src/lib/graphql/use-active-board';
 import { useOtaBranchSurfingState } from '../src/lib/ota-branch-surfing-state';
 import { readRunningPrNumber } from '../src/lib/qa/qa-surf';
+import { runningQaPrNumberToOffer } from '../src/lib/qa/qa-drawer-rows';
 
 const DRAWER_MAX_WIDTH = 320;
 const DRAWER_SCREEN_FRACTION = 0.86;
@@ -104,7 +105,11 @@ export default function UserDrawerScreen() {
   // without a reload, so a mount-time read is the whole story.
   const { surfingBuild: qaSurfingBuild } = useOtaBranchSurfingState();
   const showQaRows = Boolean(profile?.isTester) && qaSurfingBuild;
-  const [qaPrNumber] = useState(() => readRunningPrNumber());
+  // Null once a verdict has been filed for THIS bundle, which switches the group
+  // back to "Test a PR preview": leaving a preview usually cannot reload the app
+  // (docs/crowdsourced-qa-mobile.md), so without the marker the drawer would keep
+  // offering to finish testing something already signed off.
+  const [qaPrNumber] = useState(() => runningQaPrNumberToOffer(readRunningPrNumber()));
 
   const profileDisplayName = profile?.displayName ?? profile?.email ?? t('header.you');
   const profileEmail = profile?.email ?? null;

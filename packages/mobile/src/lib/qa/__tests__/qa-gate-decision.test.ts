@@ -54,10 +54,20 @@ describe('decideQaGate — waiting', () => {
     expect(decideQaGate(productionTester({ surfingReady: false }))).toBe('wait');
   });
 
-  it('does not wait on surfingReady when the build cannot surf at all', () => {
-    // No migration runs on such a build, so `ready` never flips and waiting on it
-    // would hang the gate forever.
-    expect(decideQaGate(productionTester({ surfingBuild: false, surfingReady: false }))).toBe('none');
+  it('waits while the root layout has published nothing at all', () => {
+    // `{ surfingBuild: false, surfingReady: false }` is the store's PRE-LAUNCH
+    // state, not an answer. Reading it as "this build cannot surf" is a silent
+    // kill switch: the gate marks the session decided on a `none` and never asks
+    // again, so one reordering of the mount effects would switch QA off with
+    // nothing said anywhere.
+    expect(decideQaGate(productionTester({ surfingBuild: false, surfingReady: false }))).toBe('wait');
+  });
+
+  it('stops — not waits — once a non-surfing build has actually said so', () => {
+    // Such a build publishes `{ false, true }` from its first effect
+    // (`migrationComplete` starts at `!branchSurfingBuild`), so `ready` DOES
+    // flip and the gate cannot hang on it.
+    expect(decideQaGate(productionTester({ surfingBuild: false, surfingReady: true }))).toBe('none');
   });
 
   it('waits ahead of every other reason to stop', () => {
