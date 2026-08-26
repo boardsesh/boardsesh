@@ -15,7 +15,7 @@ import type { FeatureFlagChoice, FeatureFlagRow } from './FeatureFlagsForm.types
 const NO_BASE_FLAGS: Record<string, boolean> = {};
 
 // Tester-only screen — all copy is hardcoded English with `i18n-ignore`, matching
-// ChannelSwitcherScreen. It lets a tester force any catalog flag On/Off (or back
+// the other development screens. It lets a tester force any catalog flag On/Off (or back
 // to Default) on-device; the choice is the highest-precedence layer in the
 // FeatureFlagsProvider merge and persists across restarts.
 //

@@ -17,9 +17,8 @@ import { OTA_APP_ID } from './ota-app-id';
 // (e.g. EAS-hosted builds); callers catch and surface that. `null` clears the override
 // and reverts to the build-time headers.
 //
-// Shared by the tester OTA channel switcher and the preview branch switcher: both
-// repoint the running build at a different update target device-locally, with no API
-// token and no project-wide channel mutation.
+// Used by the separate EAS preview-build branch switcher. Production self-hosted
+// previews use xprem's ControlCenter and override `xprem-branch` instead.
 export function applyChannelOverride(channel: string | null): void {
   Updates.setUpdateRequestHeadersOverride(
     channel === null ? null : { 'expo-app-id': OTA_APP_ID, 'expo-channel-name': channel },

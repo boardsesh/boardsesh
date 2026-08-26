@@ -29,7 +29,6 @@ import {
   flushSentry,
   isExpoUiSheetNoHandlerRejection,
   normalizeCapturedValueForSentry,
-  setOtaChannelTag,
   setOtaSentryTags,
   wrapWithSentry,
   isSentryEnabled,
@@ -133,12 +132,13 @@ describe('flushSentry (disabled build)', () => {
 
 describe('OTA tag setters (disabled build)', () => {
   it('setOtaSentryTags is a no-op — never reaches Sentry.setTag', () => {
-    setOtaSentryTags({ channel: 'preview-2', updateId: 'abc', runtimeVersion: 'fp', isEmbeddedLaunch: false });
-    expect(Sentry.setTag).not.toHaveBeenCalled();
-  });
-
-  it('setOtaChannelTag is a no-op — never reaches Sentry.setTag', () => {
-    setOtaChannelTag('pr-123');
+    setOtaSentryTags({
+      channel: 'production',
+      branch: 'pr-123',
+      updateId: 'abc',
+      runtimeVersion: 'fp',
+      isEmbeddedLaunch: false,
+    });
     expect(Sentry.setTag).not.toHaveBeenCalled();
   });
 });
@@ -257,11 +257,13 @@ describe('applyOtaTagsToScope', () => {
     const scope = makeScope();
     applyOtaTagsToScope(scope, {
       channel: 'preview-2',
+      branch: 'pr-123',
       updateId: 'abc-123',
       runtimeVersion: 'fp-9f',
       isEmbeddedLaunch: false,
     });
     expect(scope.setTag).toHaveBeenCalledWith('ota_channel', 'preview-2');
+    expect(scope.setTag).toHaveBeenCalledWith('ota_branch', 'pr-123');
     expect(scope.setTag).toHaveBeenCalledWith('ota_update_id', 'abc-123');
     expect(scope.setTag).toHaveBeenCalledWith('ota_runtime_version', 'fp-9f');
     expect(scope.setTag).toHaveBeenCalledWith('ota_is_embedded', 'false'); // string, not boolean
@@ -271,6 +273,7 @@ describe('applyOtaTagsToScope', () => {
     const scope = makeScope();
     applyOtaTagsToScope(scope, { channel: null, updateId: undefined, runtimeVersion: 'fp-9f' });
     expect(scope.setTag).toHaveBeenCalledWith('ota_channel', undefined);
+    expect(scope.setTag).toHaveBeenCalledWith('ota_branch', undefined);
     expect(scope.setTag).toHaveBeenCalledWith('ota_update_id', undefined);
     expect(scope.setTag).toHaveBeenCalledWith('ota_runtime_version', 'fp-9f');
     // isEmbeddedLaunch was omitted here too, so its tag clears alongside the others.

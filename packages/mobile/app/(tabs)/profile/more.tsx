@@ -236,8 +236,8 @@ export default function MoreScreen() {
   const showOfflineWrites = __DEV__ || Boolean(profile?.isTester);
 
   // Don't render an empty "Development" section header when no tool applies.
-  // (The OTA channel switcher moved to an everyone-facing "Try a preview" entry
-  // on the changelog screen, so it's no longer listed here.)
+  // Store-build previews now use xprem's everyone-facing blue edge marker, so
+  // the retired OTA channel switcher is no longer listed here.
   const showDevSection =
     (__DEV__ || Boolean(profile?.isTester)) && (showDevServerSwitcher || showFeatureFlags || showOfflineWrites);
 
@@ -785,6 +785,18 @@ export default function MoreScreen() {
         subtitle: 'Hold the SQLite write lock, inject faults, inspect the outbox',
         icon: 'featureFlags',
         onPress: navAction(() => router.push('/(tabs)/profile/dev-offline-writes')),
+      });
+    }
+    if (profile?.isTester) {
+      devRows.push({
+        kind: 'nav',
+        key: 'sentryDiagnostics',
+        // i18n-ignore-next-line — tester-only dev tooling
+        label: 'Sentry Diagnostics',
+        // i18n-ignore-next-line
+        subtitle: 'Verify handled, uncaught, and native crash reporting',
+        icon: 'otaChannel',
+        onPress: navAction(() => router.push('/(tabs)/profile/sentry-diagnostics')),
       });
     }
     sections.push({ key: 'development', title: t('mobile.more.development'), rows: devRows });

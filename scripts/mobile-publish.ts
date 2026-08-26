@@ -12,9 +12,8 @@
  *     endpoint — eoas derives the upload host from updates.url in app.config)
  *     and EOO_TOKEN (the app-scoped expo-open-ota API key; the V3 control-plane
  *     server rejects Expo tokens). The `--channel <name>` value is used as the
- *     server BRANCH name; the channel→branch mapping is a separate step
- *     (a one-time dashboard action for production; scripts/ota-channel-map.ts
- *     for per-PR previews).
+ *     server BRANCH name. Production has a one-time dashboard channel mapping;
+ *     per-PR previews are selected through xprem branch surfing.
  *
  * Usage:
  *   vp run mobile:publish                              # preview: current git branch
@@ -75,12 +74,12 @@ function getCommitSubject(): string {
 }
 
 export function buildSelfHostedEoasArgs(
-  channelName: string,
+  branchName: string,
   platform: OtaPublishPlatform,
   updateMessage: string,
 ): string[] {
   const sourceMapArgs =
-    channelName === 'production'
+    branchName === 'production'
       ? [
           // Keep the exact production export that eoas uploads on disk with
           // external source maps. The platform-specific workflow uploads this
@@ -94,7 +93,7 @@ export function buildSelfHostedEoasArgs(
     EOAS_PACKAGE_SPEC,
     'publish',
     '--branch',
-    channelName,
+    branchName,
     '--platform',
     platform,
     '--message',
@@ -128,8 +127,8 @@ function summarizePlatformOutcome(outcome: PlatformPublishOutcome): string {
   return `${outcome.platform}=failed (${outcome.attempts} attempt${outcome.attempts === 1 ? '' : 's'}, ${outcome.failureKind ?? 'unknown'})`;
 }
 
-async function publishToSelfHostedChannel(
-  channelName: string,
+async function publishToSelfHostedBranch(
+  branchName: string,
   platform: string,
   explicitMessage: string | null,
 ): Promise<number> {
@@ -157,18 +156,17 @@ async function publishToSelfHostedChannel(
   // update). We deliberately do NOT pass --channel: in eoas@3 it's a DEPRECATED
   // client-side no-op — it only sets RELEASE_CHANNEL during config resolution; it
   // is NOT sent to the server, does NOT create a channel, and does NOT drive
-  // rollouts. Channel creation + channel→branch mapping is a separate step
-  // (scripts/ota-channel-map.ts for per-PR previews; a one-time dashboard action
-  // for production). Progressive rollouts are branch + runtimeVersion scoped
+  // rollouts. Production's channel→branch mapping is a one-time dashboard action;
+  // per-PR previews use branch surfing. Progressive rollouts are branch + runtimeVersion scoped
   // (--rollout-percentage targets a branch's runtimeVersion), not channel scoped.
   // EOAS_PACKAGE_SPEC pins the CLI (it may lead the deployed server, never trail
   // it); see scripts/lib/eoas.ts. From 3.1.2 the CLI paces its own asset uploads
   // (--upload-rate) and retries 429/5xx itself, so the whole-command retry ladder
   // in lib/mobile-publish-retry.ts is now a backstop rather than the first line
   // of defence against storage throttling.
-  console.log(`[mobile:publish] Mode:     production (self-hosted expo-open-ota)`);
+  console.log(`[mobile:publish] Mode:     ${selfHostedPublishModeLabel(branchName)}`);
   console.log(`[mobile:publish] Server:   ${serverUrl}`);
-  console.log(`[mobile:publish] Branch:   ${channelName}`);
+  console.log(`[mobile:publish] Branch:   ${branchName}`);
   console.log(`[mobile:publish] Message:  ${updateMessage}`);
   console.log(`[mobile:publish] Platform: ${platform}`);
 
@@ -186,7 +184,7 @@ async function publishToSelfHostedChannel(
   const outcomes = await publishPlatformsSequentially(platforms, async (requestedPlatform) => {
     const platformEnv = { ...eoasEnv };
     if (requestedPlatform === 'ios') delete platformEnv.GOOGLE_MAPS_API_KEY;
-    const eoasArgs = buildSelfHostedEoasArgs(channelName, requestedPlatform, updateMessage);
+    const eoasArgs = buildSelfHostedEoasArgs(branchName, requestedPlatform, updateMessage);
     console.log('');
     console.log(`[mobile:publish] Running ${requestedPlatform}: bunx ${eoasArgs.join(' ')}`);
     console.log('');
@@ -206,9 +204,20 @@ async function publishToSelfHostedChannel(
     return 1;
   }
 
-  console.log(`[mobile:publish] Published every requested platform to self-hosted channel "${channelName}".`);
-  console.log(`[mobile:publish] Testers on a build baked with this channel receive it on next launch.`);
+  for (const line of selfHostedPublishSuccessMessages(branchName)) console.log(line);
   return 0;
+}
+
+export function selfHostedPublishSuccessMessages(branchName: string): string[] {
+  const published = `[mobile:publish] Published every requested platform to self-hosted branch "${branchName}".`;
+  if (branchName === 'production') {
+    return [published, '[mobile:publish] Production builds receive it on their next update check.'];
+  }
+  return [published, `[mobile:publish] Select "${branchName}" in xprem Branch Surfing to load this preview.`];
+}
+
+export function selfHostedPublishModeLabel(branchName: string): string {
+  return branchName === 'production' ? 'production (self-hosted expo-open-ota)' : 'preview (self-hosted expo-open-ota)';
 }
 
 export function parseArgs(args: string[]): {
@@ -283,17 +292,17 @@ export function buildEasUpdateArgs(sanitizedBranch: string, updateMessage: strin
 }
 
 export async function main(args: string[] = process.argv.slice(2)): Promise<number> {
-  const { branch: explicitBranch, message: explicitMessage, platform, channel } = parseArgs(args);
+  const { branch: explicitBranch, message: explicitMessage, platform, channel: selfHostedBranch } = parseArgs(args);
 
   if (!VALID_PLATFORMS.includes(platform as (typeof VALID_PLATFORMS)[number])) {
     console.error(`[mobile:publish] Invalid platform "${platform}". Must be one of: ${VALID_PLATFORMS.join(', ')}`);
     return 1;
   }
 
-  // Production path: publish to the self-hosted expo-open-ota server via eoas.
-  // The channel name maps to a same-named branch on the server.
-  if (channel) {
-    return publishToSelfHostedChannel(channel, platform, explicitMessage);
+  // Self-hosted path: the legacy wrapper flag is still named --channel for CLI
+  // compatibility, but its value is passed only as the eoas branch selector.
+  if (selfHostedBranch) {
+    return publishToSelfHostedBranch(selfHostedBranch, platform, explicitMessage);
   }
 
   const branchName = explicitBranch ?? resolveCurrentBranchName();

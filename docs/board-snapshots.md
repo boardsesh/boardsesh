@@ -406,7 +406,7 @@ checkpoint moves forward to W with the strict-`>` delta covering (W, head].
 **Rollback safety: the legacy dual-write.** `bootstrap-retry:<scopeKey>` (a JSON `BootstrapRetryState`) is
 the source of truth, but `writeBootstrapRetryState` also mirrors the legacy `bootstrap-attempts:` /
 `bootstrap-attempts-healed:` / `bootstrap-paged-fallback:` rows and **never deletes them**. Production
-channel rollback and `pr-<n>` preview channels are live paths here: an older bundle that read no legacy row
+branch rollback and `pr-<n>` preview branches are live paths here: an older bundle that read no legacy row
 would re-arm a fresh 2-attempt round plus another one-shot heal. Reads reconcile the other way too — if the
 legacy counter moved past what we last mirrored (`mirroredAttempts`), an older bundle counted something
 real and the difference is folded back into `structuralFailures`. On first touch,
@@ -1264,7 +1264,7 @@ fleet was never regressed while transparent decode was unverified:
    six** mobile fingerprint workflows — `mobile-ota-production.yml`, `ios-testflight-rn.yml`,
    `android-apk-rn.yml`, `mobile-ota-check.yml`, `mobile-ota-preview.yml`, `mobile-ota-backport.yml`. They
    must move together: `scripts/mobile-ci-env-parity.test.ts` requires the var byte-identical across them
-   (a single-workflow change fails CI, and the `pr-<number>` preview channel bakes the same env as
+   (a single-workflow change fails CI, and the `pr-<number>` preview branch bakes the same env as
    production, so there is no "preview-only" pointer). It's a bundle-only var, so the cutover rode the
    production OTA rather than a native release; any straggler where decode fails degrades to the paged
    crawl, never a crash.

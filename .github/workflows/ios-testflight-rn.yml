@@ -31,7 +31,7 @@ concurrency:
 # and can't drift. MUST stay identical to android-apk-rn.yml /
 # mobile-ota-production.yml — scripts/mobile-ci-env-parity.test.ts fails the
 # build if they do. Config-affecting vars (EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-# EXPO_UPDATES_URL, EXPO_UPDATES_CHANNEL) move the fingerprint runtimeVersion
+# EXPO_UPDATES_URL) move the fingerprint runtimeVersion
 # directly; the rest reach it via the hashed .env file the jobs write. Don't add
 # other fingerprint-affecting vars here (EAS_BUILD, EAS_BUILD_PROFILE,
 # BOARDSESH_APP_VARIANT, …) — they're unset in the native build too.
@@ -45,9 +45,8 @@ env:
   # Self-hosted OTA (expo-open-ota). EXPO_UPDATES_URL is the server's manifest
   # endpoint (e.g. https://updates.boardsesh.com/manifest), set as a repo variable
   # so the domain isn't hardcoded; until it's set, app.config.ts falls back to
-  # the EAS URL and OTA stays inert (harmless). The channel is baked into the
-  # binary via Expo.plist by `expo prebuild`. See docs/mobile-ota-updates.md.
-  EXPO_UPDATES_CHANNEL: production
+  # the EAS URL and OTA stays inert (harmless). The production + xprem headers
+  # are literals in app.config.ts. See docs/mobile-ota-updates.md.
   EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
   # Read at runtime by src/lib/sentry.ts (Sentry.init) — Sentry is the mobile
   # error + native-crash sink (PostHog is product analytics only). Same DSN/
