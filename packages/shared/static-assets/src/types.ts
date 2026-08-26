@@ -8,3 +8,6 @@ export type StaticAssetRecord = Readonly<{
 }>;
 
 export type StaticAssetManifest = Readonly<Record<string, StaticAssetRecord>>;
+
+/** The browser-facing catalog: logical public path to immutable CDN object key. */
+export type StaticAssetObjectKeyCatalog = Readonly<Record<string, string>>;

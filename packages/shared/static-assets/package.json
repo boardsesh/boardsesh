@@ -11,6 +11,11 @@
       "import": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./shell": {
+      "types": "./src/generated/shell.ts",
+      "import": "./src/generated/shell.ts",
+      "default": "./src/generated/shell.ts"
+    },
     "./catalog.json": "./src/generated/catalog.json"
   },
   "scripts": {

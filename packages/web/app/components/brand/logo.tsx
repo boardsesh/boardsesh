@@ -4,7 +4,7 @@ import React from 'react';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import Image from 'next/image';
 import { themeTokens } from '@/app/theme/theme-config';
-import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
+import { resolveShellStaticAssetUrl } from '@/app/lib/shell-static-asset-url';
 
 type LogoProps = {
   size?: 'sm' | 'md' | 'lg';
@@ -32,7 +32,7 @@ const Logo = ({ size = 'md', showText = true, linkToHome = true }: LogoProps) =>
       }}
     >
       <Image
-        src={resolveStaticAssetUrl('/brand/boardsesh-mark.png')}
+        src={resolveShellStaticAssetUrl('/brand/boardsesh-mark.png')}
         width={icon}
         height={icon}
         // i18n-ignore-next-line -- brand name, not translated

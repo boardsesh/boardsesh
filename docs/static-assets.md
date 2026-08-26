@@ -16,9 +16,14 @@ The original board PNG files remain local build inputs for server-side board and
 deliberately excluded from the CDN catalog. Dynamic/user images, generated Open Graph cards, gym media, avatars,
 and third-party thumbnails keep their existing storage paths.
 
-Each record is keyed by its leading-slash logical path and names an object at
-`static/v1/<full-sha256>.<extension>`. Changing bytes in place creates a new URL; old objects remain valid for old
-deployments. Objects use their real image content type and
+The checked-in runtime catalog is a compact mapping from each leading-slash logical path to an object key at
+`static/v1/<full-sha256>.<extension>`. It deliberately contains no byte sizes, MIME types, hashes, source paths, or
+native-bundle flags: the publisher derives that rich metadata directly from the source files, while web clients ship
+only what URL resolution needs. Board art is exactly the `/images/**/*.webp` portion of the map, so native packaging
+can derive its inputs without a separate flag. A tiny generated shell catalog duplicates only the seven logo and app
+icon keys so global chrome does not pull the complete board-image map into every browser route.
+
+Changing bytes in place creates a new URL; old objects remain valid for old deployments. Objects use their real image content type and
 `Cache-Control: public, max-age=31536000, immutable`.
 
 After adding or changing an image, run:
@@ -28,7 +33,8 @@ vp run generate:static-assets
 vp run check:static-assets
 ```
 
-Commit both generated catalog files. CI runs the check and fails when an input or generated catalog is stale.
+Commit both generated catalog files. CI regenerates the compact map and shell keys and fails when an input or either
+generated artifact is stale.
 Checked-in Expo public files retain their existing URLs for local and PR exports. The Expo export patcher switches
 its shell and PWA manifest icons to cataloged CDN URLs only when `EXPO_PUBLIC_STATIC_ASSET_BASE_URL` is set, as it
 is in the production workflow.
@@ -70,8 +76,10 @@ Those values are public build inputs, not credentials. A CI contract test keeps 
 The serialized `production-deploy.yml` change detector selects `sync-static-assets` only when a catalog input or
 publisher changes. The job lists existing immutable keys, uploads only missing hashes at no more than five request
 starts per second, and validates every unique catalog object through both signed S3 `HEAD` and a public CDN `GET` (including
-SHA-256, MIME type, immutable caching, and CORS). CDN propagation failures (404, 429, 5xx, network errors, or stale
-headers/body) retry up to six times with bounded exponential jitter; permanent 4xx responses fail immediately.
+SHA-256, MIME type, immutable caching, and CORS). Each public CDN attempt has a 30-second deadline. CDN propagation
+failures (404, 429, 5xx, network errors, timeouts, or stale headers/body) retry up to six times with bounded
+exponential jitter; permanent 4xx responses fail immediately. The complete `sync-static-assets` job has a 10-minute
+timeout so a stalled storage or CDN connection cannot hold the serialized production deployment indefinitely.
 
 After every object passes, it writes `static/v1/manifest.json` as a short-cached audit record. Seeing a new audit
 manifest therefore means all assets it names passed publication QA. A failed upload blocks web/Expo-web artifacts

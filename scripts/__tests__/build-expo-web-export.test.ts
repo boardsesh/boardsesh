@@ -41,7 +41,7 @@ const PUBLIC_MANIFEST = `{
 
 const STATIC_ASSET_MANIFEST = Object.fromEntries(
   ['/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png'].map(
-    (logicalPath, index) => [logicalPath, { logicalPath, objectKey: `static/v1/${String(index + 1).repeat(64)}.png` }],
+    (logicalPath, index) => [logicalPath, `static/v1/${String(index + 1).repeat(64)}.png`],
   ),
 );
 
@@ -158,7 +158,7 @@ describe('build-expo-web-export.sh PWA manifest patching', () => {
     expect(result.status).toBe(0);
     const outputDir = join(fixtureRoot, 'packages', 'web', 'public', 'app-standalone');
     const shell = readFileSync(join(outputDir, 'index.html'), 'utf8');
-    expect(shell).toContain(`https://assets.boardsesh.com/${STATIC_ASSET_MANIFEST['/icons/icon-192.png'].objectKey}`);
+    expect(shell).toContain(`https://assets.boardsesh.com/${STATIC_ASSET_MANIFEST['/icons/icon-192.png']}`);
     const manifest = JSON.parse(readFileSync(join(outputDir, 'manifest.json'), 'utf8')) as {
       icons: Array<{ src: string }>;
     };

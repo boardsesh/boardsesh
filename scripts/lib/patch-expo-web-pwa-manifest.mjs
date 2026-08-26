@@ -74,9 +74,9 @@ function findLinkByRel(shellHtml, relation) {
 }
 
 function staticAssetUrl(staticAssetManifest, staticAssetBaseUrl, logicalPath) {
-  const asset = staticAssetManifest?.[logicalPath];
-  if (!asset?.objectKey) fail(`static asset catalog has no ${logicalPath}`);
-  return `${staticAssetBaseUrl.replace(/\/$/, '')}/${asset.objectKey}`;
+  const objectKey = staticAssetManifest?.[logicalPath];
+  if (typeof objectKey !== 'string' || objectKey === '') fail(`static asset catalog has no ${logicalPath}`);
+  return `${staticAssetBaseUrl.replace(/\/$/, '')}/${objectKey}`;
 }
 
 function patchShellIcon(shellHtml, relation, iconUrl, shellPath) {
@@ -96,16 +96,23 @@ function patchShellIcon(shellHtml, relation, iconUrl, shellPath) {
 
 function patchManifestIcons(manifest, staticAssetManifest, staticAssetBaseUrl) {
   if (!Array.isArray(manifest.icons)) fail('manifest.json has no icons array');
+  const catalogUrls = new Set(
+    Object.keys(staticAssetManifest ?? {}).map((logicalPath) =>
+      staticAssetUrl(staticAssetManifest, staticAssetBaseUrl, logicalPath),
+    ),
+  );
   for (const icon of manifest.icons) {
-    const logicalPath =
-      icon?.purpose === 'maskable'
-        ? '/icons/icon-maskable-512.png'
-        : icon?.sizes === '192x192'
-          ? '/icons/icon-192.png'
-          : icon?.sizes === '512x512'
-            ? '/icons/icon-512.png'
-            : null;
-    if (!logicalPath) fail(`unsupported manifest icon metadata: ${JSON.stringify(icon)}`);
+    if (typeof icon?.src !== 'string' || icon.src.trim() === '') {
+      fail(`manifest icon has no source: ${JSON.stringify(icon)}`);
+    }
+    if (catalogUrls.has(icon.src)) continue;
+
+    let logicalPath;
+    try {
+      logicalPath = new URL(icon.src, 'https://www.boardsesh.com').pathname;
+    } catch {
+      fail(`manifest icon has an invalid source URL: ${JSON.stringify(icon.src)}`);
+    }
     icon.src = staticAssetUrl(staticAssetManifest, staticAssetBaseUrl, logicalPath);
   }
 }

@@ -3,11 +3,12 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { STATIC_ASSET_MANIFEST, STATIC_ASSET_ORIGIN } from '../packages/shared/static-assets/src';
-import type { StaticAssetRecord } from '../packages/shared/static-assets/src';
+import { STATIC_ASSET_OBJECT_KEYS, STATIC_ASSET_ORIGIN } from '../packages/shared/static-assets/src';
+import type { StaticAssetManifest, StaticAssetRecord } from '../packages/shared/static-assets/src';
 import {
   buildStaticAssetManifest,
   discoverStaticAssetSources,
+  renderStaticAssetObjectKeyCatalogJson,
   renderStaticAssetJson,
   STATIC_ASSET_KEY_PREFIX,
 } from './lib/static-asset-catalog';
@@ -33,6 +34,7 @@ import {
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC_VALIDATION_ATTEMPTS = 6;
+const PUBLIC_VALIDATION_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_REQUEST_STARTS_PER_SECOND = 5;
 
 function requiredEnvironment(name: string): string {
@@ -41,11 +43,16 @@ function requiredEnvironment(name: string): string {
   return value;
 }
 
-function assertGeneratedManifestIsCurrent(): void {
+function currentGeneratedCatalogJson(): string {
+  return `${JSON.stringify(STATIC_ASSET_OBJECT_KEYS, null, 2)}\n`;
+}
+
+function loadCurrentStaticAssetManifest(): StaticAssetManifest {
   const freshManifest = buildStaticAssetManifest(repoRoot);
-  if (renderStaticAssetJson(freshManifest) !== renderStaticAssetJson(STATIC_ASSET_MANIFEST)) {
+  if (renderStaticAssetObjectKeyCatalogJson(freshManifest) !== currentGeneratedCatalogJson()) {
     throw new Error('Generated static asset catalog is stale; run `vp run generate:static-assets`');
   }
+  return freshManifest;
 }
 
 async function listRemoteStaticAssets(
@@ -131,6 +138,10 @@ async function validatePublicAsset(asset: StaticAssetRecord, beforeRequest: Requ
       await beforeRequest();
       const response = await fetch(url, {
         headers: { Origin: 'https://www.boardsesh.com' },
+        // A half-open CDN connection must not hold the serialized production
+        // deployment indefinitely. Each aborted attempt follows the same
+        // bounded retry path as other transient network failures.
+        signal: AbortSignal.timeout(PUBLIC_VALIDATION_REQUEST_TIMEOUT_MS),
       });
       if (!response.ok) {
         const httpError = new Error(`HTTP ${response.status}`);
@@ -159,9 +170,10 @@ async function validatePublicAsset(asset: StaticAssetRecord, beforeRequest: Requ
 async function uploadAuditManifest(
   client: S3Client,
   bucket: string,
+  manifest: StaticAssetManifest,
   beforeRequest: RequestStartLimiter,
 ): Promise<void> {
-  const contents = Buffer.from(renderStaticAssetJson(STATIC_ASSET_MANIFEST));
+  const contents = Buffer.from(renderStaticAssetJson(manifest));
   const checksumSha256 = createHash('sha256').update(contents).digest('base64');
   await beforeRequest();
   await client.send(
@@ -190,9 +202,9 @@ async function uploadAuditManifest(
 }
 
 async function main(): Promise<void> {
-  assertGeneratedManifestIsCurrent();
+  const manifest = loadCurrentStaticAssetManifest();
   if (hasStaticAssetUploadFlag(process.argv, '--dry-run')) {
-    const summary = summarizeStaticAssetManifest(STATIC_ASSET_MANIFEST);
+    const summary = summarizeStaticAssetManifest(manifest);
     console.log(
       `Dry run: catalog is current (${summary.records} records, ${summary.uniqueObjects} unique objects, ${summary.uniqueBytes} unique bytes); no remote requests performed.`,
     );
@@ -213,7 +225,7 @@ async function main(): Promise<void> {
   const beforeRequest = createRequestStartLimiter(MAX_REQUEST_STARTS_PER_SECOND);
 
   const remoteObjects = await listRemoteStaticAssets(client, bucket, beforeRequest);
-  const plan = planStaticAssetUploads(STATIC_ASSET_MANIFEST, remoteObjects);
+  const plan = planStaticAssetUploads(manifest, remoteObjects);
   if (plan.corrupt.length > 0) {
     const detail = plan.corrupt
       .map(({ asset, remoteBytes }) => `${asset.objectKey}: local=${asset.bytes}, remote=${remoteBytes ?? 'unknown'}`)
@@ -232,7 +244,7 @@ async function main(): Promise<void> {
     else console.log(`${asset.logicalPath} appeared during sync; validating the existing object.`);
   }
 
-  const validationAssets = uniqueStaticAssets(STATIC_ASSET_MANIFEST);
+  const validationAssets = uniqueStaticAssets(manifest);
   if (validationAssets.length === 0) throw new Error('Static asset catalog is empty');
   for (const [assetIndex, asset] of validationAssets.entries()) {
     if (assetIndex % 25 === 0 || assetIndex === validationAssets.length - 1) {
@@ -243,7 +255,7 @@ async function main(): Promise<void> {
   }
   // Publication marker is deliberately last: seeing this audit catalog means
   // every newly referenced immutable object passed both S3 and public-CDN QA.
-  await uploadAuditManifest(client, bucket, beforeRequest);
+  await uploadAuditManifest(client, bucket, manifest, beforeRequest);
   console.log(`Static asset sync complete: ${uploadedCount} uploaded, ${remoteObjects.length} already stored.`);
 }
 

@@ -3,8 +3,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   buildStaticAssetManifest,
-  renderStaticAssetJson,
-  renderStaticAssetTypeScript,
+  renderStaticAssetObjectKeyCatalogJson,
+  renderStaticAssetShellTypeScript,
 } from './lib/static-asset-catalog';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -12,12 +12,12 @@ const generatedRoot = resolve(repoRoot, 'packages/shared/static-assets/src/gener
 const manifest = buildStaticAssetManifest(repoRoot);
 const outputs = [
   {
-    path: resolve(generatedRoot, 'catalog.ts'),
-    contents: renderStaticAssetTypeScript(manifest),
+    path: resolve(generatedRoot, 'catalog.json'),
+    contents: renderStaticAssetObjectKeyCatalogJson(manifest),
   },
   {
-    path: resolve(generatedRoot, 'catalog.json'),
-    contents: renderStaticAssetJson(manifest),
+    path: resolve(generatedRoot, 'shell.ts'),
+    contents: renderStaticAssetShellTypeScript(manifest),
   },
 ];
 
@@ -42,6 +42,6 @@ for (const output of outputs) {
 }
 
 if (stale) {
-  console.error('Run `vp run generate:static-assets` and commit both generated catalog files.');
+  console.error('Run `vp run generate:static-assets` and commit the generated catalog files.');
   process.exit(1);
 }

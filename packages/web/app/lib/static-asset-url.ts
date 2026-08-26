@@ -1,4 +1,4 @@
-import { getStaticAsset } from '@boardsesh/static-assets';
+import { getStaticAssetObjectKey } from '@boardsesh/static-assets';
 
 /**
  * Resolve a repository-owned runtime image.
@@ -15,10 +15,10 @@ export function resolveStaticAssetUrl(
   const normalizedPath = logicalPath.startsWith('/') ? logicalPath : `/${logicalPath}`;
   if (!baseUrl) return normalizedPath;
 
-  const asset = getStaticAsset(normalizedPath);
-  if (!asset) {
+  const objectKey = getStaticAssetObjectKey(normalizedPath);
+  if (!objectKey) {
     throw new Error(`Static asset is missing from the generated catalog: ${normalizedPath}`);
   }
 
-  return `${baseUrl.replace(/\/+$/, '')}/${asset.objectKey}`;
+  return `${baseUrl.replace(/\/+$/, '')}/${objectKey}`;
 }

@@ -3,7 +3,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
 import { JsonLd } from '@/app/lib/seo/json-ld';
 import { SITE_NAME } from '@/app/lib/seo/metadata';
-import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
+import { resolveShellStaticAssetUrl } from '@/app/lib/shell-static-asset-url';
 
 /**
  * The only two external profiles Boardsesh actually publishes — the repo linked
@@ -25,7 +25,7 @@ export default async function SiteJsonLd() {
   const { t, locale } = await getServerTranslation('marketing');
 
   const siteUrl = absoluteUrl('/');
-  const logoUrl = resolveStaticAssetUrl('/brand/boardsesh-mark.png');
+  const logoUrl = resolveShellStaticAssetUrl('/brand/boardsesh-mark.png');
 
   return (
     <JsonLd

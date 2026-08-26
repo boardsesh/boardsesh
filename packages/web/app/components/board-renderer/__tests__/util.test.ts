@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vite-plus/test';
 import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
-import { STATIC_ASSET_MANIFEST } from '@boardsesh/static-assets';
+import { STATIC_ASSET_OBJECT_KEYS } from '@boardsesh/static-assets';
 import { getImageUrl, buildBoardRenderUrl, buildOverlayUrl, buildOgBoardRenderUrl } from '../util';
 import type { BoardDetails } from '@/app/lib/types';
 
@@ -39,7 +39,7 @@ describe('getImageUrl', () => {
       const logicalPath = '/images/kilter/product_sizes_layouts_sets/36-1.webp';
 
       expect(getImageUrl('product_sizes_layouts_sets/36-1.png', 'kilter')).toBe(
-        `https://assets.boardsesh.com/${STATIC_ASSET_MANIFEST[logicalPath]?.objectKey}`,
+        `https://assets.boardsesh.com/${STATIC_ASSET_OBJECT_KEYS[logicalPath]}`,
       );
     });
 

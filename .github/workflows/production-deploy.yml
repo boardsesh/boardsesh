@@ -184,6 +184,10 @@ jobs:
     needs: [detect-changes]
     if: needs.detect-changes.outputs.static_assets_changed == 'true'
     runs-on: ubuntu-latest
+    # A stuck S3/CDN socket must release the serialized production-deploy
+    # concurrency group. A healthy full-catalog validation takes about three
+    # minutes, leaving ample headroom for bounded propagation retries.
+    timeout-minutes: 10
     environment: Production
     steps:
       - uses: actions/checkout@v6

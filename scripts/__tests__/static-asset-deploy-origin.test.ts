@@ -11,4 +11,15 @@ describe('static asset production origin', () => {
     expect(workflow).toContain(`EXPO_PUBLIC_STATIC_ASSET_BASE_URL: ${STATIC_ASSET_ORIGIN}`);
     expect(workflow).toContain(`NEXT_PUBLIC_STATIC_ASSET_BASE_URL: ${STATIC_ASSET_ORIGIN}`);
   });
+
+  it('bounds the serialized static asset publication job', () => {
+    const workflow = readFileSync('.github/workflows/production-deploy.yml', 'utf8');
+    const jobStart = workflow.indexOf('\n  sync-static-assets:\n');
+    expect(jobStart).toBeGreaterThanOrEqual(0);
+    const remainingWorkflow = workflow.slice(jobStart + 1);
+    const nextJobOffset = remainingWorkflow.slice(1).search(/^  [a-z][\w-]+:\n/m);
+    const job = nextJobOffset < 0 ? remainingWorkflow : remainingWorkflow.slice(0, nextJobOffset + 1);
+
+    expect(job).toContain('timeout-minutes: 10');
+  });
 });

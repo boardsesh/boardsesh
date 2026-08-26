@@ -22,13 +22,6 @@ export type RemoteStaticAssetMetadata = Readonly<{
   checksumSha256: string | undefined;
 }>;
 
-export type RemoteStaticAssetAuditMetadata = Readonly<{
-  bytes: number | undefined;
-  contentType: string | undefined;
-  cacheControl: string | undefined;
-  checksumSha256: string | undefined;
-}>;
-
 export type StaticAssetManifestSummary = Readonly<{
   records: number;
   uniqueObjects: number;
@@ -159,7 +152,7 @@ export function assertRemoteStaticAssetMetadata(asset: StaticAssetRecord, metada
 
 export function assertRemoteStaticAssetAuditMetadata(
   expected: Readonly<{ bytes: number; checksumSha256: string }>,
-  metadata: RemoteStaticAssetAuditMetadata,
+  metadata: RemoteStaticAssetMetadata,
 ): void {
   if (metadata.bytes === undefined) {
     throw new Error('S3 HEAD size missing for static asset audit manifest');

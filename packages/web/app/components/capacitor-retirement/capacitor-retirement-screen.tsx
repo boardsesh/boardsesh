@@ -10,7 +10,7 @@ import { openExternalUrl } from '@/app/lib/open-external-url';
 import { storeHttpsUrlForPlatform, storeSchemeUrlForPlatform } from '@/app/lib/store-urls';
 import { track } from '@/app/lib/analytics';
 import { APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties } from '@/app/lib/app-install-event';
-import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
+import { resolveShellStaticAssetUrl } from '@/app/lib/shell-static-asset-url';
 import styles from './capacitor-retirement-screen.module.css';
 
 /**
@@ -44,7 +44,7 @@ export const CapacitorRetirementScreen: React.FC = () => {
     <div className={styles.overlay} role="dialog" aria-modal="true" aria-labelledby="capacitor-retirement-title">
       <div className={styles.panel}>
         <Image
-          src={resolveStaticAssetUrl('/brand/boardsesh-mark.png')}
+          src={resolveShellStaticAssetUrl('/brand/boardsesh-mark.png')}
           width={72}
           height={72}
           alt=""

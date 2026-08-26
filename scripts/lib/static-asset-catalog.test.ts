@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createStaticAssetRecord, renderStaticAssetJson, renderStaticAssetTypeScript } from './static-asset-catalog';
+import {
+  createStaticAssetRecord,
+  renderStaticAssetJson,
+  renderStaticAssetObjectKeyCatalogJson,
+  renderStaticAssetShellTypeScript,
+} from './static-asset-catalog';
 
 describe('static asset catalog generation', () => {
   it('changes the immutable object key when bytes change in place', () => {
@@ -16,7 +21,7 @@ describe('static asset catalog generation', () => {
     expect(before.objectKey).toMatch(/^static\/v1\/[a-f0-9]{64}\.webp$/);
   });
 
-  it('renders deterministic JSON and TypeScript catalogs', () => {
+  it('renders deterministic upload, runtime, and shell catalogs', () => {
     const iconRecord = createStaticAssetRecord(
       { logicalPath: '/icon.png', sourcePath: 'packages/web/app/icon.png', nativeBundle: false },
       Buffer.from('icon'),
@@ -29,7 +34,29 @@ describe('static asset catalog generation', () => {
     const reverseManifest = { '/icon.png': iconRecord, '/favicon.ico': faviconRecord };
 
     expect(renderStaticAssetJson(reverseManifest)).toBe(renderStaticAssetJson(forwardManifest));
-    expect(renderStaticAssetTypeScript(reverseManifest)).toBe(renderStaticAssetTypeScript(forwardManifest));
-    expect(renderStaticAssetTypeScript(forwardManifest)).toContain('satisfies StaticAssetManifest');
+    expect(renderStaticAssetObjectKeyCatalogJson(reverseManifest)).toBe(
+      renderStaticAssetObjectKeyCatalogJson(forwardManifest),
+    );
+    expect(JSON.parse(renderStaticAssetObjectKeyCatalogJson(forwardManifest))).toEqual({
+      '/favicon.ico': faviconRecord.objectKey,
+      '/icon.png': iconRecord.objectKey,
+    });
+    expect(renderStaticAssetShellTypeScript(reverseManifest)).toBe(renderStaticAssetShellTypeScript(forwardManifest));
+    expect(renderStaticAssetShellTypeScript(forwardManifest)).toContain('satisfies StaticAssetObjectKeyCatalog');
+  });
+
+  it('keeps native board art out of the shell catalog', () => {
+    const boardRecord = createStaticAssetRecord(
+      {
+        logicalPath: '/images/kilter/wall.webp',
+        sourcePath: 'packages/web/public/images/kilter/wall.webp',
+        nativeBundle: true,
+      },
+      Buffer.from('wall'),
+    );
+
+    expect(renderStaticAssetShellTypeScript({ [boardRecord.logicalPath]: boardRecord })).not.toContain(
+      boardRecord.logicalPath,
+    );
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getStaticAsset, STATIC_ASSET_MANIFEST } from '@boardsesh/static-assets';
+import { getStaticAssetObjectKey, STATIC_ASSET_OBJECT_KEYS } from '@boardsesh/static-assets';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, getMoonBoardGeometryByFolder } from '../moonboard-config';
 import { resolveStaticAssetUrl } from '../static-asset-url';
 
@@ -11,7 +11,7 @@ describe('resolveStaticAssetUrl', () => {
   it('resolves catalog entries to immutable CDN keys', () => {
     const logicalPath = '/brand/boardsesh-mark.png';
     expect(resolveStaticAssetUrl(logicalPath, 'https://assets.boardsesh.com/')).toBe(
-      `https://assets.boardsesh.com/${STATIC_ASSET_MANIFEST[logicalPath]?.objectKey}`,
+      `https://assets.boardsesh.com/${STATIC_ASSET_OBJECT_KEYS[logicalPath]}`,
     );
   });
 
@@ -35,6 +35,6 @@ describe('resolveStaticAssetUrl', () => {
       }
     }
 
-    expect([...generatedPaths].filter((logicalPath) => !getStaticAsset(logicalPath))).toEqual([]);
+    expect([...generatedPaths].filter((logicalPath) => !getStaticAssetObjectKey(logicalPath))).toEqual([]);
   });
 });
