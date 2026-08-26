@@ -24,7 +24,7 @@ import {
   upsertCacheRule,
 } from '../infra/cloudflare/plan';
 import type { LiveDnsRecord, LiveState, RulesetRule } from '../infra/cloudflare/plan';
-import { RELATED_TOKENS, TOKEN_SCOPES, parseArgs } from './cloudflare-apply';
+import { SHARED_TOKEN_SCOPES, TOKEN_SCOPES, parseArgs } from './cloudflare-apply';
 
 const desired = desiredCloudflareState;
 /** The og cache rule — the one the pre-existing cases in this file were written against. */
@@ -484,9 +484,9 @@ describe('deploy-cloudflare workflow wiring', () => {
 });
 
 describe('token scope guidance', () => {
-  // printTokenScopes() is the only place a maintainer sees this list, so it has
-  // to keep pace with the requests the tool makes — and has to steer a Pages
-  // failure toward the right secret instead of toward re-scoping this one.
+  // printTokenScopes() is the only place a maintainer sees these lists, so they
+  // have to keep pace with the requests the tool makes — and with the other job
+  // reading the same Production-environment CLOUDFLARE_API_TOKEN.
   it('names every zone permission the tool calls', () => {
     // One entry per request, reads included: a token missing a read scope fails
     // just as hard as one missing a write. Zone.WAF Edit went missing from this
@@ -501,31 +501,24 @@ describe('token scope guidance', () => {
     expect(printed).toContain('Zone.Zone Settings Edit'); // PATCH /settings/ssl
   });
 
-  it('claims no account-level scope for the zone token', () => {
-    // The inverse guard, and the one that matches the incident: answering a Pages
-    // 10000 by adding an account policy to THIS token is what dropped the zone
-    // grants on 2026-08-25. Account permissions live in a different resource
-    // namespace and cannot ride along here, so nothing account-level belongs in
-    // this list — Pages is deploy-app-web's PAGES_TOKEN.
-    for (const scope of TOKEN_SCOPES) expect(scope).toMatch(/^Zone\./);
-  });
-
-  it('points a Pages failure at the separate secret by name', () => {
-    // Without the secret's name the printout sends a maintainer back to the same
-    // wrong token, since the symptom (Authentication error [code: 10000] while
-    // `wrangler whoami` succeeds) reads as a bad credential, not a missing scope.
-    const printed = RELATED_TOKENS.join('\n');
-    expect(printed).toContain('PAGES_TOKEN');
-    expect(printed).toContain('Cloudflare Pages Edit');
+  it('keeps the Pages scope deploy-app-web needs, and marks it Account-level', () => {
+    // The `Account.` prefix is the load-bearing part, not decoration. Cloudflare's
+    // permission picker is grouped by resource type, and Cloudflare Pages appears
+    // ONLY under Account — never under the zone/domain group where the rest of
+    // this token's scopes live. Searching the domain section for it turns up
+    // Custom Pages, Page Shield and Page Rules, none of which is Pages, and the
+    // resulting token fails `wrangler pages deploy` with
+    // Authentication error [code: 10000] while `wrangler whoami` still succeeds.
+    expect(SHARED_TOKEN_SCOPES.join('\n')).toContain('Account.Cloudflare Pages Edit');
   });
 
   it('holds scopes, not prose, so the printed columns stay aligned', () => {
     // Guards shape rather than wording: an explanation parked in either array
     // prints ragged against the indent, and a blank spacer entry prints as
     // trailing whitespace. Reasons belong in comments above the list.
-    for (const entry of [...TOKEN_SCOPES, ...RELATED_TOKENS]) {
-      expect(entry).toMatch(/^(Zone\.|Account\.|[A-Z_]+ )\S/);
-      expect(entry).toContain('—');
+    for (const scope of [...TOKEN_SCOPES, ...SHARED_TOKEN_SCOPES]) {
+      expect(scope).toMatch(/^(Zone|Account)\.\S/);
+      expect(scope).toContain('—');
     }
   });
 });

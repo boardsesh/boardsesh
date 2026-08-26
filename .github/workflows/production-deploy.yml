@@ -685,18 +685,14 @@ jobs:
           # publish with `--cwd "$RUNNER_TEMP"` so wrangler finds it there.
           cp -R deploy/app-subdomain/functions "$RUNNER_TEMP/functions"
 
-      # PAGES_TOKEN, not CLOUDFLARE_API_TOKEN. Cloudflare Pages is an ACCOUNT-level
-      # permission, and CLOUDFLARE_API_TOKEN is zone-scoped for deploy-cloudflare —
-      # its policies map `…account.<id>: {…account.zone.*: "*"}` (all zones), never
-      # `…account.<id>: "*"` (the account), which is the only shape a Pages grant
-      # attaches to. Editing one token to serve both kept dropping the other's
-      # scope, so they are split. Symptom of getting it wrong:
-      # `Authentication error [code: 10000]` on /pages/projects/… while
-      # `wrangler whoami` still succeeds and names the account, which reads as a
-      # bad credential rather than a missing scope. See docs/cloudflare.md.
+      # Needs Account.Cloudflare Pages Edit on the shared Production-environment
+      # token. It is the same secret deploy-cloudflare uses for the zone, so a
+      # rotation that grants only the zone scopes lands here as
+      # `Authentication error [code: 10000]` while `wrangler whoami` still works.
+      # See the token section of docs/cloudflare.md.
       - name: Publish to Cloudflare Pages
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.PAGES_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           bunx wrangler@4 pages deploy "$RUNNER_TEMP/app-standalone" \
