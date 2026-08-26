@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-26T14:35:38.809Z",
+  "generatedAt": "2026-08-26T14:57:26.169Z",
   "entries": [
+    {
+      "prNumber": 4815,
+      "category": "fixed",
+      "title": "Read toast messages clearly in light and dark mode.",
+      "mergedAt": "2026-08-26T14:54:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4815"
+    },
     {
       "prNumber": 4780,
       "category": "fixed",

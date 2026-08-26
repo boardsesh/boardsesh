@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Read toast messages clearly in light and dark mode. ([#4815](https://github.com/boardsesh/boardsesh/pull/4815))
 - Board images now refresh when we improve the renderer, instead of showing you last month's version for up to a year. ([#4780](https://github.com/boardsesh/boardsesh/pull/4780))
   Every board photo, hold overlay and share card on the site now carries a version stamp, so a fix to how holds are drawn reaches you on the next page load.
 - Gym TVs and website embeds light up straight away — no login check standing between the screen and the wall. ([#4589](https://github.com/boardsesh/boardsesh/pull/4589))
