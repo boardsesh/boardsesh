@@ -43,3 +43,48 @@ export function createWebBoardPresenceClient(getClient: () => Client): WebBoardP
     },
   });
 }
+
+/**
+ * Thrown when kiosk/embed code calls a write or board-binding method on the
+ * read-only presence client the display routes use. Those routes run with no
+ * session at all, so the call could only ever fail server-side on an
+ * unattended screen — failing here names the caller instead.
+ */
+export class KioskReadOnlyPresenceError extends Error {
+  readonly method: string;
+
+  constructor(method: string) {
+    super(`${method} is not available on the read-only kiosk presence client`);
+    this.name = 'KioskReadOnlyPresenceError';
+    this.method = method;
+  }
+}
+
+function rejectAsReadOnly(method: string): () => Promise<never> {
+  return () => Promise.reject(new KioskReadOnlyPresenceError(method));
+}
+
+/**
+ * A `WebBoardPresenceClient` with every write / board-binding method replaced
+ * by a rejecting stub. The kiosk and embed routes only ever read (subscribe,
+ * backfill, stats), and since #4408 they connect anonymously — so a stray
+ * `reportClimb` from a future widget would silently bounce off the backend's
+ * auth gate on a TV nobody is watching. This makes that a named failure.
+ *
+ * The stubs REJECT rather than throw synchronously so an unattended screen
+ * degrades instead of white-screening, and the return type stays
+ * `WebBoardPresenceClient` so `BoardPresenceProvider`'s prop type — and the
+ * shared `@boardsesh/board-presence-react` package the mobile app also
+ * consumes — are untouched.
+ */
+export function createReadOnlyWebBoardPresenceClient(getClient: () => Client): WebBoardPresenceClient {
+  return {
+    ...createWebBoardPresenceClient(getClient),
+    reportClimb: rejectAsReadOnly('reportClimb'),
+    reportDisconnect: rejectAsReadOnly('reportDisconnect'),
+    resolveBoardForSerial: rejectAsReadOnly('resolveBoardForSerial'),
+    resolveBoardForConfig: rejectAsReadOnly('resolveBoardForConfig'),
+    resolveBoardForUuid: rejectAsReadOnly('resolveBoardForUuid'),
+    chooseBoardForSerial: rejectAsReadOnly('chooseBoardForSerial'),
+  };
+}
