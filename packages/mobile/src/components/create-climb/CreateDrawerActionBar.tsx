@@ -174,7 +174,7 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
         </Pressable>
       </View>
 
-      <View style={[drawerActionBarStyles.rowSecondary, draftStatus ? styles.rowSecondaryWithStatus : null]}>
+      <View style={[drawerActionBarStyles.rowSecondary, styles.rowSecondaryWithStatus]}>
         {/* Pinned outside the scroller: undo has to stay reachable on a
             multi-frame climb, where the editing cluster is wider than the row. */}
         <ActionButton
@@ -267,7 +267,8 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
         <SaveButton saveState={saveState} onSave={onSave} publishBlocked={publishBlocked} />
       </View>
 
-      {draftStatus ? <CreateDraftStatusRow status={draftStatus} announce={announce} /> : null}
+      {/* Always rendered, even with nothing to say — see CreateDraftStatusRow. */}
+      <CreateDraftStatusRow status={draftStatus} announce={announce} />
     </View>
   );
 });
@@ -339,8 +340,8 @@ const styles = StyleSheet.create({
     minWidth: 44,
     textAlign: 'center',
   },
-  // The status row carries the bar's bottom padding when it's showing, so the
-  // line sits 4dp under the Save pill rather than a full gap below it.
+  // The status row carries the bar's bottom padding, so the line sits 4dp under
+  // the Save pill rather than a full gap below it.
   rowSecondaryWithStatus: {
     paddingBottom: spacing[1],
   },

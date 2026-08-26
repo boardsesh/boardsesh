@@ -15,7 +15,6 @@ const board = vi.hoisted(() => ({
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
 const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
 const router = vi.hoisted(() => ({ push: vi.fn() }));
-const dialog = vi.hoisted(() => ({ confirm: vi.fn(async () => true) }));
 const draftStore = vi.hoisted(() => ({
   loadDraft: vi.fn(async () => null),
   saveDraft: vi.fn(async (_key: string, _draft: Record<string, unknown>) => {}),
@@ -131,9 +130,7 @@ vi.mock('../../../lib/create-climb-draft-store', () => ({
   createClimbForkDraftKey: (boardKey: string) => `fork:${boardKey}`,
   isDraftStorageAvailable: () => true,
 }));
-vi.mock('../../../providers/dialog-provider', () => ({
-  useConfirm: () => dialog.confirm,
-}));
+
 vi.mock('../brush-roles', () => ({
   getPaintRoles: () => ['HAND', 'STARTING', 'FINISH'],
 }));
@@ -153,8 +150,6 @@ beforeEach(() => {
   board.updateClimb.mockReset();
   toast.showToast.mockClear();
   queue.setCurrentClimb.mockClear();
-  dialog.confirm.mockReset();
-  dialog.confirm.mockResolvedValue(true);
   draftStore.clearDraft.mockClear();
   draftStore.saveDraft.mockClear();
   createClimb.resetHolds.mockClear();
@@ -170,10 +165,10 @@ describe('useCreateClimbScreen handleNewClimb', () => {
     act(() => result.current.setNoMatch(true));
     await waitFor(() => expect(result.current.noMatch).toBe(true));
 
-    // Start fresh.
-    await act(async () => {
-      await result.current.handleNewClimb();
-    });
+    // Start fresh. Holds are painted and nothing is saved, so this raises the
+    // inline confirm first; accept it.
+    act(() => result.current.handleNewClimb());
+    act(() => result.current.confirmNewClimb());
 
     // A brand-new climb must start without any rule markers.
     expect(result.current.noMatch).toBe(false);
@@ -250,31 +245,49 @@ describe('useCreateClimbScreen handleNewClimb', () => {
     });
     draftStore.clearDraft.mockClear();
 
-    await act(async () => {
-      await result.current.handleNewClimb();
-    });
+    act(() => result.current.handleNewClimb());
 
     // Nothing is at risk: the row is in Open drafts. Only the new-climb slot goes,
     // never an `edit:` slot.
-    expect(dialog.confirm).not.toHaveBeenCalled();
+    expect(result.current.pendingNewClimb).toBe(false);
     expect(draftStore.clearDraft).toHaveBeenCalledWith('draft-key');
     expect(result.current.name).toBe('');
   });
 
-  it('prompts before dropping unsaved work, and a declined prompt changes nothing', async () => {
-    dialog.confirm.mockResolvedValue(false);
+  it('asks inline before dropping unsaved work, and cancelling changes nothing', async () => {
+    // The ask is sheet CONTENT, not a dialog. `useConfirm` renders a Paper Dialog
+    // in a JS Portal on Android, which paints behind this native sheet — its
+    // promise never resolves, so this button did nothing at all.
     const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
     act(() => result.current.setName('Never saved'));
     draftStore.clearDraft.mockClear();
     createClimb.resetHolds.mockClear();
 
-    await act(async () => {
-      await result.current.handleNewClimb();
-    });
+    act(() => result.current.handleNewClimb());
 
-    expect(dialog.confirm).toHaveBeenCalledTimes(1);
+    expect(result.current.pendingNewClimb).toBe(true);
+    expect(result.current.name).toBe('Never saved');
+    expect(createClimb.resetHolds).not.toHaveBeenCalled();
+
+    act(() => result.current.cancelNewClimb());
+    expect(result.current.pendingNewClimb).toBe(false);
     expect(result.current.name).toBe('Never saved');
     expect(createClimb.resetHolds).not.toHaveBeenCalled();
     expect(draftStore.clearDraft).not.toHaveBeenCalled();
+  });
+
+  it('resets once the inline confirm is accepted', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    act(() => result.current.setName('Never saved'));
+    draftStore.clearDraft.mockClear();
+    createClimb.resetHolds.mockClear();
+
+    act(() => result.current.handleNewClimb());
+    act(() => result.current.confirmNewClimb());
+
+    expect(result.current.pendingNewClimb).toBe(false);
+    expect(result.current.name).toBe('');
+    expect(createClimb.resetHolds).toHaveBeenCalledTimes(1);
+    expect(draftStore.clearDraft).toHaveBeenCalledWith('draft-key');
   });
 });

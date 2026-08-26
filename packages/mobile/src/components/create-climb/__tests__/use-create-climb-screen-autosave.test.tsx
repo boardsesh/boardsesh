@@ -619,9 +619,9 @@ describe('useCreateClimbScreen autosave flush', () => {
     await waitFor(() => expect(result.current.name).toBe('Original remix'));
     draftStore.clearDraft.mockClear();
 
-    await act(async () => {
-      await result.current.handleNewClimb();
-    });
+    // A fork carries content and no saved row, so this asks inline first.
+    act(() => result.current.handleNewClimb());
+    act(() => result.current.confirmNewClimb());
 
     expect(draftStore.clearDraft).toHaveBeenCalledWith('fork:draft-key');
     expect(draftStore.clearDraft).not.toHaveBeenCalledWith('draft-key');

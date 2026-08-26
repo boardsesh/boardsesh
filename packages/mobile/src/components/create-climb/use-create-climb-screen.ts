@@ -29,7 +29,6 @@ import { useProfile, useClimb } from '../../lib/graphql/hooks';
 import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useToast } from '../../providers/toast-provider';
-import { useConfirm } from '../../providers/dialog-provider';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import {
   loadDraft,
@@ -163,7 +162,6 @@ export function useCreateClimbScreen({
   const { setCurrentClimb } = useQueueActions();
   const bluetooth = useOptionalBluetoothContext();
   const { showToast } = useToast();
-  const confirm = useConfirm();
   const queryClient = useQueryClient();
 
   const isForking = !!forkFrames;
@@ -231,6 +229,8 @@ export function useCreateClimbScreen({
   // Payload signature at the last SUCCESSFUL explicit save, and at the last
   // FAILED one. Both are compared against the live signature below, which is how
   // "edited since you saved" and "that save failed" stay true without a timer.
+  // Inline "Start over?" confirm, rendered as sheet content — see handleNewClimb.
+  const [pendingNewClimb, setPendingNewClimb] = useState(false);
   const [savedSignature, setSavedSignature] = useState<string | null>(null);
   const [failedSignature, setFailedSignature] = useState<string | null>(null);
 
@@ -532,22 +532,8 @@ export function useCreateClimbScreen({
     resetHolds();
   }, [resetHolds]);
 
-  /**
-   * Park this climb and start a blank one. A saved climb keeps its row in Open
-   * drafts (only the new-climb slot is dropped, never an `edit:` slot). An unsaved
-   * one genuinely is not recoverable, so that case — and only that case — confirms.
-   */
-  const handleNewClimb = useCallback(async () => {
-    if (savedClimb == null && hasContent) {
-      const confirmed = await confirm({
-        title: t('mobile.create.newClimb.confirm.title'),
-        message: t('mobile.create.newClimb.confirm.message'),
-        confirmLabel: t('mobile.create.newClimb.confirm.action'),
-        cancelLabel: t('createClimbForm.dismiss'),
-        destructive: true,
-      });
-      if (!confirmed) return;
-    }
+  const resetToBlankClimb = useCallback(() => {
+    setPendingNewClimb(false);
     resetHolds();
     setName('');
     setDescription('');
@@ -568,7 +554,25 @@ export function useCreateClimbScreen({
     // server draft is untouched either way: it lives in board_climbs, not here,
     // so an edit session still leaves its row in Open drafts.
     void clearDraft(autosaveSlotKey);
-  }, [resetHolds, autosaveSlotKey, savedClimb, hasContent, confirm, t]);
+  }, [resetHolds, autosaveSlotKey]);
+
+  /**
+   * Park this climb and start a blank one. A saved climb keeps its row in Open
+   * drafts (only the working slot is dropped), so that case goes straight
+   * through. An unsaved one genuinely is not recoverable, so it asks first —
+   * INLINE, not through `useConfirm`: a dialog raised from inside this native
+   * sheet is invisible on Android and its promise never resolves, which left this
+   * button doing nothing at all. See InlineConfirmBanner.
+   */
+  const handleNewClimb = useCallback(() => {
+    if (savedClimb == null && hasContent) {
+      setPendingNewClimb(true);
+      return;
+    }
+    resetToBlankClimb();
+  }, [savedClimb, hasContent, resetToBlankClimb]);
+
+  const cancelNewClimb = useCallback(() => setPendingNewClimb(false), []);
 
   // Build a minimal Climb the queue can hold for a not-yet-saved or just-saved
   // climb. The mutation input (`ClimbInput`) is a strict subset of Climb, so
@@ -918,6 +922,9 @@ export function useCreateClimbScreen({
     handleAssignRole,
     handleClearHolds,
     handleNewClimb,
+    pendingNewClimb,
+    confirmNewClimb: resetToBlankClimb,
+    cancelNewClimb,
     showAllHolds,
     setShowAllHolds,
     // frames (route/circuit editing)

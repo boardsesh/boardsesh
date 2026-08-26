@@ -16,6 +16,8 @@ import { CreateDrawerActionBar } from './CreateDrawerActionBar';
 import { CreateDrawerForm } from './CreateDrawerForm';
 import { OpenDraftsSection } from './OpenDraftsSection';
 import { DuplicateBanner } from './DuplicateBanner';
+import { InlineConfirmBanner } from './InlineConfirmBanner';
+import { useTranslation } from 'react-i18next';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
 
 type Controller = ReturnType<typeof useCreateClimbScreen>;
@@ -44,10 +46,16 @@ type CreateDrawerProps = {
 // Space the header + action bar + draft-status line + handle + safe areas need,
 // so the board is sized to leave them on-screen at the peek (a rough reserve —
 // the peek snap itself is measured from the real above-fold height, so erring
-// high only costs a few dp of board). Raised from 300 when the status line
-// landed under the Save row: it adds a 16dp caption plus its padding, minus the
-// 8dp the action row gives back.
-const ABOVE_FOLD_CHROME = 320;
+// high only costs a few dp of board).
+//
+// Raised from 300 by exactly what the status line costs the action bar: +32 for
+// its line box and padding, −8 from the action row's bottom padding, so +24. The
+// board shrinks by the same 24, which makes the peek height IDENTICAL to what it
+// was before the line existed — the status line is free at the peek, in every
+// state (the row reserves its height even when empty, so this doesn't drift as
+// you paint). Deliberately not rounded: a round number here would silently make
+// the peek taller and eat into an already-tight budget on a tall board.
+const ABOVE_FOLD_CHROME = 324;
 
 // The native sheet's drag grabber sits in the sheet chrome above the content;
 // reserve a small fixed amount for it in the peek snap-point (replaces the old
@@ -71,6 +79,7 @@ export function CreateDrawer({
   onViewDuplicate,
 }: CreateDrawerProps) {
   const { systemColors } = useTheme();
+  const { t } = useTranslation('climbs');
   const insets = useSafeAreaInsets();
   // Bottom terms use the WINDOW inset: this drawer is a route inside the climbs
   // tab, whose per-tab provider folds iOS 26 tab chrome the sheet covers into
@@ -167,6 +176,17 @@ export function CreateDrawer({
             onToggleBle={controller.handleToggleBle}
           />
 
+          {controller.pendingNewClimb ? (
+            <InlineConfirmBanner
+              title={t('mobile.create.newClimb.confirm.title')}
+              message={t('mobile.create.newClimb.confirm.message')}
+              confirmLabel={t('mobile.create.newClimb.confirm.action')}
+              cancelLabel={t('createClimbForm.dismiss')}
+              onConfirm={controller.confirmNewClimb}
+              onCancel={controller.cancelNewClimb}
+            />
+          ) : null}
+
           {controller.publishDuplicateError ? (
             <DuplicateBanner
               name={controller.publishDuplicateError.existingClimbName}
@@ -209,7 +229,7 @@ export function CreateDrawer({
             onUndo={controller.undo}
             onRedo={controller.redo}
             onClearHolds={controller.handleClearHolds}
-            onNewClimb={() => void controller.handleNewClimb()}
+            onNewClimb={controller.handleNewClimb}
             frameCount={controller.frameCount}
             currentFrameIndex={controller.currentFrameIndex}
             onDuplicateFrame={controller.duplicateFrame}

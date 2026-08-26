@@ -9,7 +9,8 @@ import { createElement, type ReactNode } from 'react';
 type PressMockProps = { children?: ReactNode; onPress?: () => void; accessibilityLabel?: string };
 const announceSpy = vi.hoisted(() => vi.fn());
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
+    createElement('div', { 'data-testid': testID }, children),
   Pressable: ({ children, onPress, accessibilityLabel }: PressMockProps) =>
     createElement('button', { onClick: onPress, 'data-label': accessibilityLabel }, children),
   ScrollView: ({ children, horizontal }: { children?: ReactNode; horizontal?: boolean }) =>
@@ -90,6 +91,7 @@ function renderBar(frameCount: number, overrides: Partial<typeof baseProps> = {}
   const { container } = render(createElement(CreateDrawerActionBar, { ...baseProps, frameCount, ...overrides }));
   return {
     container,
+    statusRow: container.querySelector('[data-testid="create-draft-status-row"]') as HTMLElement,
     scroller: container.querySelector('[data-scroll="true"]') as HTMLElement,
     undo: container.querySelector('[data-action="undo"]') as HTMLElement,
     setActive: container.querySelector('[data-action="play.circle"]') as HTMLElement,
@@ -158,9 +160,29 @@ describe('CreateDrawerActionBar', () => {
     expect(container.textContent).toContain('mobile.create.publish.blocked');
   });
 
-  it('renders no status line for an empty editor', () => {
-    const { container } = renderBar(1);
+  it('renders no status TEXT for an empty editor, but still holds the row', () => {
+    // The words are absent by design — an empty editor has nothing to report.
+    // The ROW is not, and that distinction is load-bearing: the drawer sizes the
+    // board against the chrome and derives its peek snap-point from the measured
+    // above-fold height. When this row appeared only once content existed,
+    // painting the FIRST hold grew the chrome, moved `peekHeight`, and re-snapped
+    // an expanded sheet back down to peek — a one-shot jolt at exactly the moment
+    // someone starts working. Make this row conditional again and that returns.
+    const { container, statusRow } = renderBar(1);
     expect(container.textContent).not.toContain('mobile.create.autosave');
+    expect(statusRow).toBeTruthy();
+  });
+
+  it('holds the same status row whether or not there is anything to say', () => {
+    // The chrome height must not depend on content — see above.
+    const empty = renderBar(1);
+    const withStatus = renderBar(1, {
+      draftStatus: { text: 'mobile.create.autosave.onDevice', tone: 'muted', announce: false },
+    });
+
+    expect(empty.statusRow).toBeTruthy();
+    expect(withStatus.statusRow).toBeTruthy();
+    expect(withStatus.statusRow.textContent).toContain('mobile.create.autosave.onDevice');
   });
 
   it('puts the multi-frame stepper in the scroller rather than pushing Save off the row', () => {
