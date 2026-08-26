@@ -64,13 +64,14 @@ export const qaQueries = {
       .map((prNumber) => openByNumber.get(prNumber))
       .filter((pullRequest): pullRequest is NonNullable<typeof pullRequest> => pullRequest !== undefined);
     if (requested.length === 0) return [];
+    const requestedNumbers = requested.map((pullRequest) => pullRequest.number);
 
     // One query for every verdict this tester filed on the requested PRs,
     // newest first; the first row seen per PR is that PR's latest.
     const verdictRows = await db
       .select()
       .from(dbSchema.qaVerdicts)
-      .where(and(eq(dbSchema.qaVerdicts.userId, ctx.userId!), inArray(dbSchema.qaVerdicts.prNumber, prNumbers)))
+      .where(and(eq(dbSchema.qaVerdicts.userId, ctx.userId!), inArray(dbSchema.qaVerdicts.prNumber, requestedNumbers)))
       .orderBy(desc(dbSchema.qaVerdicts.createdAt), desc(dbSchema.qaVerdicts.id));
 
     const latestVerdictByPr = new Map<number, QaVerdict>();
