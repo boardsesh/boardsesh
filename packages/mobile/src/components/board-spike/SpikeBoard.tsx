@@ -211,6 +211,11 @@ export function SpikeBoard({
         leds={leds}
         glyphs={glyphs}
         veil={treatment.veil ?? false}
+        veilStrong={treatment.veilStrong ?? false}
+        reachScale={treatment.reachScale ?? 1}
+        plateau={treatment.plateau ?? false}
+        softDisc={treatment.softDisc ?? false}
+        tintFill={treatment.tintFill}
         // The veil is a wash of the field, so it has to be the field the board is
         // actually sitting on — including the grey and plywood chips, where the
         // whole point is that the wall it is quieting is a different colour.

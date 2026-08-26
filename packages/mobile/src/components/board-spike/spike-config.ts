@@ -60,6 +60,21 @@ export type SpikeTreatment = {
    * of marking a hold, so it sits alongside a selector instead of being one.
    */
   veil?: boolean;
+  /**
+   * The glow-size and fill experiments run after the blue was settled (fourth
+   * pass, "What the capture said"): each is `veil-glow` or `veil-tint` with
+   * exactly one rule changed, so a difference between two panels is that rule.
+   */
+  /** Multiply the glow's reach (spread and hold cap alike): a plainly bigger glow. */
+  reachScale?: number;
+  /** Hold the glow at full alpha over the inner part of its extent (`glowPlateauStops`) instead of fading from the edge. */
+  plateau?: boolean;
+  /** A soft placement-centred disc under the glow: the ring's footprint at low alpha, silhouette punched out. */
+  softDisc?: boolean;
+  /** Veil at `veilStrongerOpacity` instead of `veilStrongOpacity` on the boards in the strong bucket. */
+  veilStrong?: boolean;
+  /** Fill alpha for the filled arms, overriding `tintFillOpacity`. */
+  tintFill?: number;
 };
 
 export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
@@ -128,6 +143,85 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
     halos: 'none',
     selector: 'glow-tint',
     veil: true,
+  },
+  // After the blue was settled at #6980FF the mark on TB2 Mirror still reads
+  // weaker than the baseline ring did, and it is not reach: measured against
+  // each board's real placement radius (TB2 31.8, MoonBoard 29.2, Grasshopper
+  // 49.1) the glow's outer edge already sits 1.15-1.25x the ring's radius out.
+  // What the ring had was a thick band at full alpha; on TB2 only 1 px of the
+  // glow's 8.5 px extent holds 3:1 against the field. Levers that stack with
+  // the hex, each as veil + glow (or veil + tint) with one rule changed, so the
+  // panels differ by that rule alone.
+  {
+    key: 'veil-glow-x15',
+    chip: 'Reach x1.5',
+    label: 'Veil + glow, reach x1.5',
+    note: "Veil + glow with the glow's reach and its hold cap both multiplied by 1.5 — simply a bigger glow. Overruns unlit neighbours on the dense boards; the question is whether they then read as lit.",
+    halos: 'none',
+    selector: 'shape-glow-out',
+    veil: true,
+    reachScale: 1.5,
+  },
+  {
+    key: 'veil-glow-plateau',
+    chip: 'Plateau',
+    label: 'Veil + glow, plateau',
+    note: 'Veil + glow holding full alpha over the inner 40% of its extent before fading — the thick saturated band the baseline ring had, on the silhouette instead of a circle.',
+    halos: 'none',
+    selector: 'shape-glow-out',
+    veil: true,
+    plateau: true,
+  },
+  {
+    key: 'veil-glow-x15-plateau',
+    chip: 'x1.5+plateau',
+    label: 'Veil + glow, reach x1.5 and plateau',
+    note: 'Both: the bigger glow with the flat inner band, in case they compound.',
+    halos: 'none',
+    selector: 'shape-glow-out',
+    veil: true,
+    reachScale: 1.5,
+    plateau: true,
+  },
+  {
+    key: 'veil-glow-disc',
+    chip: 'Disc',
+    label: 'Veil + glow, soft disc',
+    note: "Veil + glow over a soft placement-centred disc at low alpha — the ring's footprint says 'here', the silhouette glow says 'this hold'. The hold's own surface is punched out of the disc.",
+    halos: 'none',
+    selector: 'shape-glow-out',
+    veil: true,
+    softDisc: true,
+  },
+  {
+    key: 'veil60-glow',
+    chip: 'Veil 0.60',
+    label: 'Veil 0.60 + glow',
+    note: 'Veil + glow with the strong bucket at 0.60 instead of 0.45 — TB2 Mirror, Tension Original, Kilter Homewall, Masters. Targets the wall competing with the glow; the unlit holds pay for it.',
+    halos: 'none',
+    selector: 'shape-glow-out',
+    veil: true,
+    veilStrong: true,
+  },
+  {
+    key: 'veil-tint-70',
+    chip: 'Tint 0.70',
+    label: 'Veil + tint, fill 0.70',
+    note: 'Veil + tint with the fill at alpha 0.70 instead of 0.55 — the hold itself lit, for the thumbnail surfaces where a fill is what survives the downsample.',
+    halos: 'none',
+    selector: 'glow-tint',
+    veil: true,
+    tintFill: 0.7,
+  },
+  {
+    key: 'veil-tint-90',
+    chip: 'Tint 0.90',
+    label: 'Veil + tint, fill 0.90',
+    note: 'Veil + tint with the fill at alpha 0.90: the hold painted in its role colour, shading all but gone.',
+    halos: 'none',
+    selector: 'glow-tint',
+    veil: true,
+    tintFill: 0.9,
   },
   {
     key: 'piece-halos',
@@ -691,6 +785,33 @@ export const SPIKE_TUNING = {
    */
   veilStrongOpacity: 0.45,
   veilSoftOpacity: 0.3,
+  /**
+   * The `veilStrong` modifier's bucket: what the strong-bucket boards get
+   * instead of 0.45. 0.60 takes TB2 Mirror's unlit holds from 3.08 to 2.22
+   * against the field (the field lens's number) — the trade this arm exists to
+   * look at.
+   */
+  veilStrongerOpacity: 0.6,
+  /**
+   * The `softDisc` modifier: peak alpha of the placement-centred disc under the
+   * glow, flat to 0.6 of the placement radius and fading to 0 at the radius.
+   * Low on purpose — it is the ring's footprint as a hint, not a second mark,
+   * and it never reaches the hold's own surface.
+   */
+  softDiscOpacity: 0.3,
+  /**
+   * The `plateau` modifier's falloff: full alpha over the inner 0.4 of the
+   * extent, then the fade. Against `glowFalloffStops` (0.831 at 0.15, 0.365 at
+   * 0.40) this is what the baseline ring's 6-8 px full-alpha stroke had and the
+   * glow gave up: a band, not an edge.
+   */
+  glowPlateauStops: [
+    [0.0, 1.0],
+    [0.4, 0.97],
+    [0.6, 0.6],
+    [0.8, 0.22],
+    [1.0, 0.0],
+  ] as ReadonlyArray<readonly [number, number]>,
   veilStrongGap: 0.34,
   veilSoftGap: 0.175,
   /**

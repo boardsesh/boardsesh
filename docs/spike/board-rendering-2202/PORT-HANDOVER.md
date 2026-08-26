@@ -114,6 +114,15 @@ _identical_ p95 luminance (209/209/209 on Kilter Homewall, 213×3 on Tension Ori
 Mirror). The veil takes them to 126/129/113 with the mark itself unchanged. Every other arm competes
 with the wall; only the veil changes what the mark competes against.
 
+**The falloff, after the blue was settled: a plateau.** Measured at 1080 px on four boards
+(`design-review-4-blue-hand.md`, "Bigger, not further"), holding the glow at full alpha over the
+inner 40% of its extent (`SPIKE_TUNING.glowPlateauStops`) doubles the share of every HAND mark at
+3:1, lifts its peak to 5.2 on every board and removes the wall as a competitor (TB2 Mirror 36% of
+the annulus brighter than the glow to 4%) without dimming an unlit hold. A x1.5 reach on top is the
+most findable mark on TB2 and the heaviest on Grasshopper; if reach moves, move it as a floor in
+device px (~30) so only the small-hold boards get it. Pending Marco's pick; the port draws whichever
+stops table is chosen, and a floor is one `max()` in the spread rule.
+
 **Thumbnails: veil + filled mark.** At 152 device px — the 76×96 dp list cell at 2× — a hollow ring
 and a soft glow both lose their signal to downsampling and a filled shape does not. The app already
 believes this: `ClimbListThumbnail` passes `filledStyle: true` and `renderer.rs:151/:201` switches

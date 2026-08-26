@@ -243,6 +243,54 @@ Two finalists survive the capture, and the choice between them is a policy call,
 Either way `#707BBB` is out, `state.color` does not move, and the shipping path is the one under
 "Finalists".
 
+## Bigger, not further: the glow after the blue
+
+With the hex settled, TB2 Mirror's HAND still read weaker than the baseline ring had, and Marco's
+read was that the glow should be bigger. Measured against each board's real placement radius (TB2
+31.8, Kilter Original 30.0, MoonBoard 29.2, Kilter Homewall 38.6, Tension 45.0, Grasshopper 49.1
+board px) the glow's outer edge already sat 1.15-1.25x the ring's radius out on every board, so
+reach was not what the ring had over it. What the ring had was a 6-8 px band at full alpha; on TB2
+only 1 px of the glow's 8.5 px extent held 3:1 against the field. So the experiment was four arms
+that each change one rule of veil + glow, on the four boards where it matters, at 1080 px:
+`veil-glow-x15` (reach and hold cap x1.5), `veil-glow-plateau` (full alpha over the inner 40% of the
+extent, `glowPlateauStops`), both together, `veil-glow-disc` (a ring-sized disc at alpha 0.3 under
+the glow), `veil60-glow` (the strong veil bucket at 0.60), and the filled arm at three alphas for the
+thumbnail question. Sheets: `boards/glow-size.webp`, `boards/glow-size-detail.webp`,
+`boards/fill.webp`, `boards/fill-detail.webp`. HAND per board: p95 against the field / share of the
+mark's pixels at or above 3:1 / median mark footprint in px / share of the veiled wall in the 1.5-3x
+annulus brighter than the glow's median (`scratchpad/blue-hand/measure-arms.py`):
+
+| Arm | TB2 Mirror p95 / share 3:1 / footprint / wall>glow | Tension Original p95 / share 3:1 / footprint / wall>glow | MoonBoard 2016 p95 / share 3:1 / footprint / wall>glow | Grasshopper p95 / share 3:1 / footprint / wall>glow |
+|---|---|---|---|---|
+| veil + glow (control) | 4.83 / 0.34 / 2018 / 0.36 | 4.89 / 0.31 / 4993 / 0.31 | 4.85 / 0.26 / 4977 / 0.14 | 4.92 / 0.30 / 5297 / 0.06 |
+| reach x1.5 | 4.89 / 0.40 / 3168 / 0.26 | 4.83 / 0.30 / 8849 / 0.33 | 4.76 / 0.24 / 8749 / 0.14 | 4.85 / 0.30 / 8689 / 0.05 |
+| plateau | 5.21 / 0.65 / 2697 / 0.04 | 5.19 / 0.60 / 6605 / 0.11 | 5.18 / 0.51 / 7088 / 0.05 | 5.19 / 0.57 / 7144 / 0.00 |
+| x1.5 + plateau | 5.18 / 0.72 / 4622 / 0.01 | 5.18 / 0.67 / 11149 / 0.07 | 5.12 / 0.50 / 12772 / 0.06 | 5.18 / 0.58 / 12493 / 0.00 |
+| soft disc | 4.95 / 0.39 / 2264 / 0.30 | 4.93 / 0.35 / 5160 / 0.29 | 4.92 / 0.29 / 5958 / 0.09 | 4.99 / 0.35 / 5706 / 0.03 |
+| veil 0.60 | 4.82 / 0.32 / 1970 / 0.19 | 4.85 / 0.32 / 4938 / 0.27 | 4.85 / 0.26 / 4977 / 0.14 | 4.92 / 0.30 / 5297 / 0.06 |
+| tint 0.55 | 6.86 / 0.49 / 2531 / 0.20 | 7.6 / 0.49 / 6834 / 0.22 | 6.49 / 0.37 / 5481 / 0.11 | 5.32 / 0.47 / 7044 / 0.01 |
+| tint 0.70 | 6.34 / 0.50 / 2531 / 0.20 | 6.77 / 0.49 / 6834 / 0.22 | 6.08 / 0.39 / 5803 / 0.10 | 5.32 / 0.48 / 7046 / 0.01 |
+| tint 0.90 | 6.02 / 0.50 / 2531 / 0.20 | 5.73 / 0.49 / 6836 / 0.22 | 5.57 / 0.39 / 5804 / 0.10 | 5.32 / 0.48 / 7046 / 0.01 |
+
+**The plateau is the lever.** It doubles the share of every HAND mark at 3:1 (0.26-0.34 to
+0.51-0.65), grows the footprint 35-45%, lifts the peak to 5.2 on every board, and takes the wall
+out of the picture (TB2 0.36 to 0.04, Tension 0.31 to 0.11) without dimming a single unlit hold.
+Reach x1.5 alone makes the mark bigger (footprint +57-76%) but not brighter (share unchanged, peak
+0.05-0.09 lower); together with the plateau it is the most findable mark on TB2 (share 0.72,
+footprint 2.3x) and the heaviest on Grasshopper, where the marks were already 1.16x the ring. x1.5 is
+reach 1.05 r on every board against 0.7 r today; if the extra reach is wanted only where holds are
+small, the honest rule is a floor in device px (about 30) rather than a multiplier, which lifts TB2
+and Kilter Original and leaves the rest. The disc at 0.3 is barely visible (footprint +7-12%, share
++0.03-0.05). Veil 0.60 leaves the mark untouched and only dims the wall (TB2 wall-brighter 0.36 to
+0.19), which the plateau does better as a side effect. The fill: at full size the filled hold peaks
+higher on the pale boards (6.9-7.6 at 0.55, because the pale art shows through) and lower as the
+alpha rises (5.7-6.0 at 0.90, the hold becoming a flat `#6980FF` shape); on Grasshopper's dark holds
+all three alphas measure 5.32. The 152 / 228 / 384 px fill sweep was not captured (the run was
+stopped twice), so the thumbnail alpha is still open.
+
+What it costs in the port: nothing new. `glowPlateauStops` is a different stops table for the
+falloff `renderer.rs` has to draw anyway; a reach floor is one `max()` in the spread rule.
+
 ## Rejected
 
 Every idea that lost, with the number that killed it. Items an earlier pass rejected and a lens re-tried

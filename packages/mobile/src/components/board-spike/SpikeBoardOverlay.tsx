@@ -53,6 +53,16 @@ type SpikeBoardOverlayProps = {
   glyphs: boolean;
   /** Dim the unlit wall with the play field colour, lit silhouettes punched out. */
   veil: boolean;
+  /** The 0.60 bucket instead of 0.45 on the strong-bucket boards (`veilStrong` on the treatment). */
+  veilStrong: boolean;
+  /** Multiply the glow's reach and hold cap (`reachScale` on the treatment; 1 is the shipped glow). */
+  reachScale: number;
+  /** Use `glowPlateauStops` for the falloff (`plateau` on the treatment). */
+  plateau: boolean;
+  /** A soft ring-sized disc under the glow, silhouette punched out (`softDisc` on the treatment). */
+  softDisc: boolean;
+  /** Fill alpha for the filled arms; `tintFillOpacity` when undefined. */
+  tintFill: number | undefined;
   /** The play field behind the art — what the veil is a wash of. */
   playFieldColor: string;
 };
@@ -159,7 +169,7 @@ function oklabLightness(hexColor: string): number {
  * paint their A-K / 1-18 grid labels into the board art, and those go down with
  * the wall.
  */
-function veilOpacityFor(boardKey: string, playFieldColor: string): number {
+function veilOpacityFor(boardKey: string, playFieldColor: string, strong: boolean): number {
   const readings = Object.values(SPIKE_HOLD_ART_LIGHTNESS[boardKey] ?? {});
   const withArt = readings.filter((lightness) => lightness > 0);
   if (withArt.length === 0) return 0;
@@ -167,7 +177,9 @@ function veilOpacityFor(boardKey: string, playFieldColor: string): number {
   const gap = wallLightness - oklabLightness(playFieldColor);
   const bucket =
     gap >= SPIKE_TUNING.veilStrongGap
-      ? SPIKE_TUNING.veilStrongOpacity
+      ? strong
+        ? SPIKE_TUNING.veilStrongerOpacity
+        : SPIKE_TUNING.veilStrongOpacity
       : gap >= SPIKE_TUNING.veilSoftGap
         ? SPIKE_TUNING.veilSoftOpacity
         : 0;
@@ -183,8 +195,7 @@ function roleRingPath(role: HoldState, cx: number, cy: number, radius: number): 
 }
 
 /** Target cumulative alpha at a fraction of the glow's full extent. */
-function glowFalloff(fraction: number): number {
-  const stops = SPIKE_TUNING.glowFalloffStops;
+function glowFalloff(fraction: number, stops: ReadonlyArray<readonly [number, number]>): number {
   for (let index = 1; index < stops.length; index += 1) {
     const [previousAt, previousAlpha] = stops[index - 1];
     const [nextAt, nextAlpha] = stops[index];
@@ -224,13 +235,18 @@ type GlowBand = { width: number; opacity: number };
  * alpha are dropped rather than painted, which is the outermost one whenever the
  * curve ends at 0.
  */
-function solveGlowBands(spread: number, core: number, count: number): GlowBand[] {
+function solveGlowBands(
+  spread: number,
+  core: number,
+  count: number,
+  stops: ReadonlyArray<readonly [number, number]>,
+): GlowBand[] {
   const bands: GlowBand[] = [];
   let previousTarget = 0;
   for (let index = 0; index < count; index += 1) {
     const position = index / (count - 1);
     const width = spread + (core - spread) * position;
-    const target = glowFalloff(width / spread);
+    const target = glowFalloff(width / spread, stops);
     const alpha = target >= 1 || previousTarget >= 1 ? 1 : 1 - (1 - target) / (1 - previousTarget);
     previousTarget = target;
     if (alpha < 0.001) continue;
@@ -320,6 +336,11 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   leds,
   glyphs,
   veil,
+  veilStrong,
+  reachScale,
+  plateau,
+  softDisc,
+  tintFill,
   playFieldColor,
 }: SpikeBoardOverlayProps) {
   // The generated tables are keyed by board key; the role hues and the stroke
@@ -351,8 +372,8 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   // path. A lit hold the tracer could not read falls back to its placement
   // circle, which is the shape its own mark is drawn as.
   const veilOpacity = useMemo(
-    () => (veil ? veilOpacityFor(boardKey, playFieldColor) : 0),
-    [veil, boardKey, playFieldColor],
+    () => (veil ? veilOpacityFor(boardKey, playFieldColor, veilStrong) : 0),
+    [veil, veilStrong, boardKey, playFieldColor],
   );
   const veilPath = useMemo(() => {
     if (veilOpacity <= 0) return null;
@@ -400,6 +421,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   const insideClipId = (holdId: number) => `spike-inside-${boardKey}-${holdId}`;
   const outsideClipId = (holdId: number) => `spike-outside-${boardKey}-${holdId}`;
   const litCellClipId = (holdId: number) => `spike-cell-${boardKey}-${holdId}`;
+  const discGradientId = (holdId: number) => `spike-disc-${boardKey}-${holdId}`;
   // A climb with one lit hold has no other hold to be nearer to, so there is no
   // cell to clip against and the def is not emitted.
   const cellClip = (holdId: number) => (litHolds.length > 1 ? `url(#${litCellClipId(holdId)})` : undefined);
@@ -493,20 +515,26 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
     // about. On the un-clipped `shaped-glow` chip the stroke straddles the path,
     // so reach there is half that and both caps bind twice as tight as asked —
     // conservative, and that arm is not one of the four captured.
-    const spread = Math.min(scaled(SPIKE_TUNING.glowSpreadFraction), holdCap / boost);
+    // `reachScale` multiplies the spread and the hold cap alike, so the bigger
+    // glow keeps the same shape rule and is simply bigger; the neighbour cell
+    // clip still decides what happens where two lit glows meet.
+    const spread = Math.min(scaled(SPIKE_TUNING.glowSpreadFraction), holdCap / boost) * reachScale;
+    const coreRatio = SPIKE_TUNING.glowCoreFraction / SPIKE_TUNING.glowSpreadFraction;
     // Keeping core/spread constant keeps the falloff's shape when the spread is
     // capped, instead of collapsing the ramp into the innermost band.
-    const core = Math.min(
-      scaled(SPIKE_TUNING.glowCoreFraction),
-      spread * (SPIKE_TUNING.glowCoreFraction / SPIKE_TUNING.glowSpreadFraction),
-    );
+    const core = Math.min(scaled(SPIKE_TUNING.glowCoreFraction), spread * coreRatio);
     const reachSpan = ((spread - core) * boost * scale) / 2;
     const devicePxPerBoardPx = SPIKE_TUNING.glowStepReferenceWidth / boardWidth;
     const bandCount = Math.max(
       SPIKE_TUNING.glowBandCount,
       Math.ceil((reachSpan * devicePxPerBoardPx) / SPIKE_TUNING.glowStepMaxDevicePx) + 1,
     );
-    return solveGlowBands(spread, core, bandCount);
+    return solveGlowBands(
+      spread,
+      core,
+      bandCount,
+      plateau ? SPIKE_TUNING.glowPlateauStops : SPIKE_TUNING.glowFalloffStops,
+    );
   };
 
   return (
@@ -564,6 +592,19 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
               </ClipPath>
             );
           })}
+        {softDisc &&
+          litHolds.map((hold) => {
+            const color = colors[hold.role] ?? '#FFFFFF';
+            // Flat to 0.6 of the placement radius, gone at the radius: the
+            // ring's footprint as a soft hint under the glow, in the role hue.
+            return (
+              <RadialGradient key={`disc-grad-${hold.id}`} id={discGradientId(hold.id)} cx="50%" cy="50%" r="50%">
+                <Stop offset="0" stopColor={color} stopOpacity={SPIKE_TUNING.softDiscOpacity} />
+                <Stop offset="0.6" stopColor={color} stopOpacity={SPIKE_TUNING.softDiscOpacity} />
+                <Stop offset="1" stopColor={color} stopOpacity={0} />
+              </RadialGradient>
+            );
+          })}
         {litHolds.length > 1 &&
           litHolds.map((hold) => {
             const cell = litCellPath(hold, litHolds, boardWidth, boardHeight);
@@ -581,6 +622,25 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
           placements of 303 to 499, 10 of 198 on the MoonBoards, and the rest is
           left alone; this one quiets that other 95-97% instead. */}
       {veilPath !== null && <Path d={veilPath} fill={playFieldColor} fillOpacity={veilOpacity} fillRule="evenodd" />}
+
+      {/* The soft disc sits over the veil and under everything the mark draws,
+          clipped to the hold's own cell so two discs never blend into a third
+          role's colour, and to the outside of the silhouette so the hold's own
+          surface stays clean the way the outward glow keeps it. */}
+      {softDisc &&
+        litHolds.map((hold) => (
+          <G key={`disc-${hold.id}`} clipPath={cellClip(hold.id)}>
+            <G
+              clipPath={
+                (outwardOnly || drawsHybrid) && outlinePath(hold.id, hold.cx, hold.cy) !== null
+                  ? `url(#${outsideClipId(hold.id)})`
+                  : undefined
+              }
+            >
+              <Circle cx={hold.cx} cy={hold.cy} r={hold.radius} fill={`url(#${discGradientId(hold.id)})`} />
+            </G>
+          </G>
+        ))}
 
       <G>
         {targets.map((placement) => {
@@ -782,7 +842,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                     </G>
                   </G>
                   {liftsArt && <Path d={path} fill="#FFFFFF" fillOpacity={Math.min(0.9, normaliseOpacity)} />}
-                  <Path d={path} fill={color} fillOpacity={SPIKE_TUNING.tintFillOpacity} />
+                  <Path d={path} fill={color} fillOpacity={tintFill ?? SPIKE_TUNING.tintFillOpacity} />
                   <G clipPath={`url(#${insideClipId(hold.id)})`}>
                     <Path
                       d={path}
@@ -807,7 +867,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
             if (drawsTint) {
               return (
                 <G key={`sel-${hold.id}`}>
-                  <Path d={path} fill={color} fillOpacity={SPIKE_TUNING.tintFillOpacity} />
+                  <Path d={path} fill={color} fillOpacity={tintFill ?? SPIKE_TUNING.tintFillOpacity} />
                   <Path
                     d={path}
                     fill="none"

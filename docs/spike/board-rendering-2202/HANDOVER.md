@@ -38,8 +38,17 @@ $ADB shell am start -a android.intent.action.VIEW \
   com.boardsesh.app.dev
 ```
 
-Wait for `Android Bundled` in the Metro log before deep-linking. Fast Refresh
-works from here, so code edits land without a relaunch — give it ~12s.
+Wait for `Android Bundled` in the Metro log before deep-linking.
+
+**Do not trust Fast Refresh for a capture.** It has now silently not delivered
+an edit twice: a run taken after changing `spike-config.ts` without a relaunch
+reproduced the previous run byte for byte (13 of 14 sheets identical), and
+nothing in the capture said so. Before any capture, force-stop the dev client
+and relaunch it through the `expo-development-client` link above — a cold
+bundle — then deep-link one panel that shows the edit and screenshot it. The
+first launch shows the dev-client's own menu sheet over the app; `input
+keyevent 4` dismisses it. Edits landing mid-capture are the other half of the
+same rule: change nothing Metro bundles while `capture-boards.sh` is running.
 
 ## 2. Open the spike
 

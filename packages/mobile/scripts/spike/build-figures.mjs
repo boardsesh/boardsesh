@@ -15,6 +15,7 @@
  *   accessibility-glyphs.webp    the opt-in role glyphs off against on, normal and protan
  *   thumbnails-<size>px.webp     the arms at the widths the app actually draws
  *   blue-hand-candidates*.webp   shipped HAND hex against each `PALETTES=` candidate, whole and 1:1
+ *   <SHEET_NAME>*.webp           any `SHEET_ARMS=` arms side by side on the narrowed boards (+ `SHEET_SIZES=`)
  *
  * The last two need captures the default run does not take — `GLYPHS='off on'`
  * and `THUMBS=1` — and say so, with the command, if the file is missing.
@@ -120,6 +121,15 @@ const ARM_SUBTITLE = {
   'glow-tint': 'Fill for shape, crisp silhouette edge, glow for reach',
   'veil-glow': 'Unlit wall washed down in the field colour',
   'veil-tint': 'The same quiet wall, under the filled mark',
+  // The glow-size and fill experiments after the blue was settled (issue #2202,
+  // fourth pass): each is veil + glow or veil + tint with one rule changed.
+  'veil-glow-x15': 'Glow reach and hold cap x1.5',
+  'veil-glow-plateau': 'Full alpha over the inner 40% of the glow',
+  'veil-glow-x15-plateau': 'Reach x1.5 and the plateau together',
+  'veil-glow-disc': 'A soft ring-sized disc under the glow',
+  'veil60-glow': 'Veil at 0.60 on the pale dense walls',
+  'veil-tint-70': 'Filled mark at alpha 0.70',
+  'veil-tint-90': 'Filled mark at alpha 0.90',
 };
 
 function armOrDie(key, source) {
@@ -729,66 +739,25 @@ async function thumbnailFigure(sizeKey) {
   console.log(`wrote thumbnails-${sizeKey}px.webp`);
 }
 
-// ---- the blue HAND candidates -------------------------------------------------
+// ---- arms x boards sheets --------------------------------------------------
 
 /**
- * The §0 contrast job: shipped against each candidate role palette, on the
- * boards whose HAND is the dark blue. Needs the `PALETTES='<keys>'` sweep of
- * `capture-boards.sh` on `baseline veil-glow` — the shipped shots sit in the run
- * root, each candidate's under `palette-<key>/`. Columns are baseline and veil +
- * glow on the shipped palette, then veil + glow on every candidate; one row per
- * board. `PALETTES=` here names which candidate keys to lay out, in order, and
- * every key has to be one the screen has (`SPIKE_PALETTE_LABEL`), the same rule
- * `capture-boards.sh` enforces before shooting.
- *
- * Two sheets: the whole board at panel width, and a 1:1 crop of the middle of
- * the board where the synthesised climb's HAND holds sit, because a hex
- * judgement made on a 360 px downsample is a judgement about the downsample.
+ * One grid: a column per (arm, axes) and a row per board, in three kinds —
+ * `whole` (the board at column width), `detail` (a 1:1 crop of the middle of
+ * the board, where the synthesised climb's HAND holds sit, because a judgement
+ * made on a 300 px downsample is a judgement about the downsample) and `thumb`
+ * (the `size-<n>` capture, shown at 2x nearest so a 152 px tile is legible).
  */
-async function blueHandFigure(kind) {
-  const paletteKeys = (process.env.PALETTES ?? '').split(/\s+/).filter((word) => word.length > 0);
-  if (paletteKeys.length === 0) {
-    throw new Error(
-      `no capture at <PALETTES unset>\n  take it with: PALETTES='<keys>' capture-boards.sh <dir> baseline veil-glow, then PALETTES='<keys>' build-figures.mjs`,
-    );
-  }
-  for (const key of paletteKeys) {
-    if (SPIKE_PALETTE_LABEL[key] === undefined) {
-      throw new Error(`PALETTES names '${key}', which spike-config.ts does not have`);
-    }
-  }
+async function gridSheet({ name, title, subtitle, columns, kind, sizeKey }) {
   const detail = kind === 'detail';
   const thumb = kind === 'thumb';
-  // The 152 px row is shown at 2x nearest-neighbour: the list cell is 76x96 dp
-  // at 2x, and a 152 px tile on a 1920 px sheet is unreadable at 1x.
-  const COLUMN = detail ? 420 : thumb ? 304 : 300;
-  const sizeAxis = thumb ? { size: '152' } : {};
-  const columns = [
-    {
-      title: thumb ? 'Thumb baseline' : 'Baseline',
-      subtitle: 'shipped palette',
-      arm: thumb ? 'thumb-baseline' : 'baseline',
-      palette: undefined,
-    },
-    { title: 'Veil + glow', subtitle: 'shipped palette', arm: 'veil-glow', palette: undefined },
-    ...paletteKeys.map((key) => ({
-      title: 'Veil + glow',
-      subtitle: SPIKE_PALETTE_LABEL[key],
-      arm: 'veil-glow',
-      palette: key,
-    })),
-  ];
+  const COLUMN = detail ? 420 : thumb ? Number(sizeKey) * 2 : 300;
   const rows = [];
   for (const board of BOARDS) {
     const tiles = [];
     for (const column of columns) {
-      const axes = { ...sizeAxis, ...(column.palette === undefined ? {} : { palette: column.palette }) };
-      const file = requireShot(
-        shotPath(board.key, column.arm, axes),
-        thumb
-          ? `THUMBS=1 SIZES=152 PALETTES='${paletteKeys.join(' ')}' capture-boards.sh <dir> thumb-baseline veil-glow`
-          : `PALETTES='${paletteKeys.join(' ')}' capture-boards.sh <dir> baseline veil-glow`,
-      );
+      const axes = { ...(thumb ? { size: sizeKey } : {}), ...column.axes };
+      const file = requireShot(shotPath(board.key, column.arm, axes), column.howToCapture);
       const box = await boardBox(file);
       const region = detail ? boxFraction(box, 0.18, 0.18, 0.82, 0.62) : box;
       tiles.push(
@@ -805,21 +774,7 @@ async function blueHandFigure(kind) {
   const LABEL = 24 + 17 + 18;
   const ROW_LABEL = 30;
   const sheetWidth = columns.length * COLUMN + GAP * (columns.length - 1);
-  const composites = [
-    {
-      input: header(
-        sheetWidth,
-        detail
-          ? 'Blue HAND candidates, 1:1 detail'
-          : thumb
-            ? 'Blue HAND candidates, 152 px thumbnail'
-            : 'Blue HAND candidates',
-        `Shipped display hex against each candidate, ${FIELD_HEX} play field, glyphs off — ${detail ? 'middle of the board at capture resolution' : thumb ? 'the list cell at 2x, shown at 2x nearest' : 'whole board'}`,
-      ),
-      left: GAP,
-      top: GAP,
-    },
-  ];
+  const composites = [{ input: header(sheetWidth, title, subtitle), left: GAP, top: GAP }];
   columns.forEach((column, index) => {
     composites.push({
       input: strip(COLUMN, LABEL, fitText(column.title, COLUMN, 24), fitText(column.subtitle, COLUMN, 17), 24, 17),
@@ -835,18 +790,104 @@ async function blueHandFigure(kind) {
     });
     top += ROW_LABEL + 6 + row.height + GAP;
   }
-  const name = detail
-    ? 'blue-hand-candidates-detail.webp'
-    : thumb
-      ? 'blue-hand-candidates-152px.webp'
-      : 'blue-hand-candidates.webp';
-  await sharp({
-    create: { width: GAP + sheetWidth + GAP, height: top, channels: 4, background: INK },
-  })
+  await sharp({ create: { width: GAP + sheetWidth + GAP, height: top, channels: 4, background: INK } })
     .composite(composites)
     .webp({ quality: 88 })
     .toFile(path.join(OUT, name));
   console.log(`wrote ${name}`);
+}
+
+const kindSuffix = (kind, sizeKey) => (kind === 'detail' ? '-detail' : kind === 'thumb' ? `-${sizeKey}px` : '');
+const kindGloss = (kind) =>
+  kind === 'detail'
+    ? 'middle of the board at capture resolution'
+    : kind === 'thumb'
+      ? 'the list cell, shown at 2x nearest'
+      : 'whole board';
+
+/**
+ * The §0 contrast job: shipped against each candidate role palette, on the
+ * boards whose HAND is the dark blue. Needs the `PALETTES='<keys>'` sweep of
+ * `capture-boards.sh` on `baseline veil-glow` — the shipped shots sit in the run
+ * root, each candidate's under `palette-<key>/`. Columns are baseline and veil +
+ * glow on the shipped palette, then veil + glow on every candidate; one row per
+ * board. `PALETTES=` here names which candidate keys to lay out, in order, and
+ * every key has to be one the screen has (`SPIKE_PALETTE_LABEL`), the same rule
+ * `capture-boards.sh` enforces before shooting.
+ */
+async function blueHandFigure(kind) {
+  const paletteKeys = (process.env.PALETTES ?? '').split(/\s+/).filter((word) => word.length > 0);
+  if (paletteKeys.length === 0) {
+    throw new Error(
+      `no capture at <PALETTES unset>\n  take it with: PALETTES='<keys>' capture-boards.sh <dir> baseline veil-glow, then PALETTES='<keys>' build-figures.mjs`,
+    );
+  }
+  for (const key of paletteKeys) {
+    if (SPIKE_PALETTE_LABEL[key] === undefined) {
+      throw new Error(`PALETTES names '${key}', which spike-config.ts does not have`);
+    }
+  }
+  const thumb = kind === 'thumb';
+  const howToCapture = thumb
+    ? `THUMBS=1 SIZES=152 PALETTES='${paletteKeys.join(' ')}' capture-boards.sh <dir> thumb-baseline veil-glow`
+    : `PALETTES='${paletteKeys.join(' ')}' capture-boards.sh <dir> baseline veil-glow`;
+  const columns = [
+    {
+      title: thumb ? 'Thumb baseline' : 'Baseline',
+      subtitle: 'shipped palette',
+      arm: thumb ? 'thumb-baseline' : 'baseline',
+      axes: {},
+      howToCapture,
+    },
+    { title: 'Veil + glow', subtitle: 'shipped palette', arm: 'veil-glow', axes: {}, howToCapture },
+    ...paletteKeys.map((key) => ({
+      title: 'Veil + glow',
+      subtitle: SPIKE_PALETTE_LABEL[key],
+      arm: 'veil-glow',
+      axes: { palette: key },
+      howToCapture,
+    })),
+  ];
+  await gridSheet({
+    name: `blue-hand-candidates${kindSuffix(kind, '152')}.webp`,
+    title: `Blue HAND candidates${kind === 'detail' ? ', 1:1 detail' : thumb ? ', 152 px thumbnail' : ''}`,
+    subtitle: `Shipped display hex against each candidate, ${FIELD_HEX} play field, glyphs off — ${kindGloss(kind)}`,
+    columns,
+    kind,
+    sizeKey: '152',
+  });
+}
+
+/**
+ * Any set of arms side by side on the narrowed boards: `SHEET_ARMS='<keys>'`
+ * names the columns (every key an arm `spike-config.ts` has, with a gloss in
+ * `ARM_SUBTITLE`), `SHEET_NAME` the output basename (default `arms`), and
+ * `SHEET_SIZES` which `size-<n>` captures to lay out as thumbnail sheets beside
+ * the full-size whole and detail ones (default none). The full-size shots come
+ * from `BOARDS='…' capture-boards.sh <dir> <arms…>`, the thumbnail ones from the
+ * same with `THUMBS=1 SIZES='…'`. This is how a tuning experiment — a bigger
+ * glow, a stronger veil, a heavier fill — gets its own sheet without touching
+ * the default matrix.
+ */
+async function armsSheetFigure(kind, sizeKey) {
+  const armKeys = (process.env.SHEET_ARMS ?? '').split(/\s+/).filter((word) => word.length > 0);
+  if (armKeys.length === 0) {
+    throw new Error(`no capture at <SHEET_ARMS unset>\n  take it with: SHEET_ARMS='<arms>' build-figures.mjs`);
+  }
+  const arms = armKeys.map((key) => armOrDie(key, 'SHEET_ARMS'));
+  const name = process.env.SHEET_NAME ?? 'arms';
+  const howToCapture =
+    kind === 'thumb'
+      ? `THUMBS=1 SIZES='${sizeKey}' BOARDS='${BOARD_KEYS.join(' ')}' capture-boards.sh <dir> ${armKeys.join(' ')}`
+      : `BOARDS='${BOARD_KEYS.join(' ')}' capture-boards.sh <dir> ${armKeys.join(' ')}`;
+  await gridSheet({
+    name: `${name}${kindSuffix(kind, sizeKey)}.webp`,
+    title: `${name}${kind === 'detail' ? ', 1:1 detail' : kind === 'thumb' ? `, ${sizeKey} px` : ''}`,
+    subtitle: `${armKeys.join(' · ')} — ${FIELD_HEX} play field, glyphs off — ${kindGloss(kind)}`,
+    columns: arms.map((arm) => ({ title: arm.title, subtitle: arm.subtitle, arm: arm.key, axes: {}, howToCapture })),
+    kind,
+    sizeKey,
+  });
 }
 
 // ---- run --------------------------------------------------------------------
@@ -875,6 +916,12 @@ for (const sheet of [
   { name: 'blue-hand-candidates.webp', build: () => blueHandFigure('whole') },
   { name: 'blue-hand-candidates-detail.webp', build: () => blueHandFigure('detail') },
   { name: 'blue-hand-candidates-152px.webp', build: () => blueHandFigure('thumb') },
+  { name: 'arms sheet (whole)', build: () => armsSheetFigure('whole') },
+  { name: 'arms sheet (detail)', build: () => armsSheetFigure('detail') },
+  ...(process.env.SHEET_SIZES ?? '')
+    .split(/\s+/)
+    .filter((word) => word.length > 0)
+    .map((sizeKey) => ({ name: `arms sheet (${sizeKey} px)`, build: () => armsSheetFigure('thumb', sizeKey) })),
 ]) {
   try {
     await sheet.build();
