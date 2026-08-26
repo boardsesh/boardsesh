@@ -24,7 +24,7 @@ import {
   upsertCacheRule,
 } from '../infra/cloudflare/plan';
 import type { LiveDnsRecord, LiveState, RulesetRule } from '../infra/cloudflare/plan';
-import { parseArgs } from './cloudflare-apply';
+import { RELATED_TOKENS, TOKEN_SCOPES, parseArgs } from './cloudflare-apply';
 
 const desired = desiredCloudflareState;
 /** The og cache rule — the one the pre-existing cases in this file were written against. */
@@ -480,5 +480,52 @@ describe('deploy-cloudflare workflow wiring', () => {
   it('parses the exact argv the workflow produces, both with and without the flag', () => {
     expect(parseArgs(['--apply'])).toEqual({ apply: true, allowZoneSsl: false, help: false });
     expect(parseArgs(['--apply', '--allow-zone-ssl'])).toEqual({ apply: true, allowZoneSsl: true, help: false });
+  });
+});
+
+describe('token scope guidance', () => {
+  // printTokenScopes() is the only place a maintainer sees this list, so it has
+  // to keep pace with the requests the tool makes — and has to steer a Pages
+  // failure toward the right secret instead of toward re-scoping this one.
+  it('names every zone permission the tool calls', () => {
+    // One entry per request, reads included: a token missing a read scope fails
+    // just as hard as one missing a write. Zone.WAF Edit went missing from this
+    // list once while the crawler rules depended on it, so a partially-converged
+    // zone was the failure mode rather than a clean error.
+    const printed = TOKEN_SCOPES.join('\n');
+    expect(printed).toContain('Zone.Zone Read'); // GET /zones?name= (resolve the zone id)
+    expect(printed).toContain('Zone.DNS Edit'); // PATCH the ws record's proxied flag
+    expect(printed).toContain('Zone.Cache Rules Edit'); // PUT the cache-settings phase
+    expect(printed).toContain('Zone.WAF Edit'); // PUT the firewall-custom phase
+    expect(printed).toContain('Zone.Zone Settings Read'); // GET /settings/ssl
+    expect(printed).toContain('Zone.Zone Settings Edit'); // PATCH /settings/ssl
+  });
+
+  it('claims no account-level scope for the zone token', () => {
+    // The inverse guard, and the one that matches the incident: answering a Pages
+    // 10000 by adding an account policy to THIS token is what dropped the zone
+    // grants on 2026-08-25. Account permissions live in a different resource
+    // namespace and cannot ride along here, so nothing account-level belongs in
+    // this list — Pages is deploy-app-web's PAGES_TOKEN.
+    for (const scope of TOKEN_SCOPES) expect(scope).toMatch(/^Zone\./);
+  });
+
+  it('points a Pages failure at the separate secret by name', () => {
+    // Without the secret's name the printout sends a maintainer back to the same
+    // wrong token, since the symptom (Authentication error [code: 10000] while
+    // `wrangler whoami` succeeds) reads as a bad credential, not a missing scope.
+    const printed = RELATED_TOKENS.join('\n');
+    expect(printed).toContain('PAGES_TOKEN');
+    expect(printed).toContain('Cloudflare Pages Edit');
+  });
+
+  it('holds scopes, not prose, so the printed columns stay aligned', () => {
+    // Guards shape rather than wording: an explanation parked in either array
+    // prints ragged against the indent, and a blank spacer entry prints as
+    // trailing whitespace. Reasons belong in comments above the list.
+    for (const entry of [...TOKEN_SCOPES, ...RELATED_TOKENS]) {
+      expect(entry).toMatch(/^(Zone\.|Account\.|[A-Z_]+ )\S/);
+      expect(entry).toContain('—');
+    }
   });
 });
