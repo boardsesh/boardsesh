@@ -25,15 +25,15 @@ Reported off a device: on the boards whose HAND is a dark blue the glow is hard 
 every other role on the same board reads fine. That is measurable and it is not subtle. WCAG
 contrast against the default `#181225` play field, per board:
 
-| Board | STARTING | HAND | FINISH | FOOT |
-| --- | --- | --- | --- | --- |
-| Grasshopper Master | `#00DD00` 9.85 | **`#4455FF` 3.46** | `#FF0000` 4.56 | `#FF00FF` 5.81 |
-| Tension Original | `#00DD00` 9.85 | **`#4444FF` 3.05** | `#FF0000` 4.56 | `#FF00FF` 5.81 |
-| TB2 Mirror | `#00DD00` 9.85 | **`#4444FF` 3.05** | `#FF0000` 4.56 | `#FF00FF` 5.81 |
-| MoonBoard 2016 | `#44FF44` 13.57 | **`#4444FF` 3.05** | `#FF3333` 5.01 | — (no FOOT role) |
-| MoonBoard Masters | `#44FF44` 13.57 | **`#4444FF` 3.05** | `#FF3333` 5.01 | — |
-| Kilter Homewall | `#00FF00` 13.28 | `#00FFFF` 14.54 | `#FF00FF` 5.81 | `#FFAA00` 9.55 |
-| Kilter Original | `#00FF00` 13.28 | `#00FFFF` 14.54 | `#FF00FF` 5.81 | `#FFAA00` 9.55 |
+| Board              | STARTING        | HAND               | FINISH         | FOOT             |
+| ------------------ | --------------- | ------------------ | -------------- | ---------------- |
+| Grasshopper Master | `#00DD00` 9.85  | **`#4455FF` 3.46** | `#FF0000` 4.56 | `#FF00FF` 5.81   |
+| Tension Original   | `#00DD00` 9.85  | **`#4444FF` 3.05** | `#FF0000` 4.56 | `#FF00FF` 5.81   |
+| TB2 Mirror         | `#00DD00` 9.85  | **`#4444FF` 3.05** | `#FF0000` 4.56 | `#FF00FF` 5.81   |
+| MoonBoard 2016     | `#44FF44` 13.57 | **`#4444FF` 3.05** | `#FF3333` 5.01 | — (no FOOT role) |
+| MoonBoard Masters  | `#44FF44` 13.57 | **`#4444FF` 3.05** | `#FF3333` 5.01 | —                |
+| Kilter Homewall    | `#00FF00` 13.28 | `#00FFFF` 14.54    | `#FF00FF` 5.81 | `#FFAA00` 9.55   |
+| Kilter Original    | `#00FF00` 13.28 | `#00FFFF` 14.54    | `#FF00FF` 5.81 | `#FFAA00` 9.55   |
 
 HAND is the worst role on all five blue boards and the only role anywhere below 4.5:1. On Kilter,
 whose HAND is cyan, it is the **best** role on the board at 14.54:1. So this is a property of that
@@ -67,7 +67,7 @@ make the plywood field worse than it already is.
 
 Worth checking early, because it may be most of the answer on its own: the veil already lifts every
 board's weakest role from 27–87% of the wall being brighter than it to under 1%. The remaining
-problem may be the glow's own colour against the *field* rather than against the wall, in which case
+problem may be the glow's own colour against the _field_ rather than against the wall, in which case
 the fix is the mark's inner edge and not the palette at all.
 
 Measure with `spikeRolePalette('shipped', boardName)` — the per-board resolver added in this branch —
