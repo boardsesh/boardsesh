@@ -3,6 +3,10 @@
 For whoever takes this next. The spike is settled; this is what to build, what it costs, and the
 three decisions that are not mine to make.
 
+**There is a separate open job before the port: the blue HAND does not have enough contrast against
+the play field on five of the seven boards. It is scoped in §0 and can be worked independently of
+everything else in this file.**
+
 Read [`README.md`](./README.md) for what the treatments are, and the three design passes
 ([`design-review.md`](./design-review.md), [`design-review-2.md`](./design-review-2.md),
 [`design-review-3.md`](./design-review-3.md)) for why the losers lost. This file does not repeat them.
@@ -12,6 +16,63 @@ Rust binary in `packages/board-renderer/core/src/renderer.rs` as a cached PNG. T
 `react-native-svg` overlay all the arms are drawn in
 (`packages/mobile/src/components/board-spike/SpikeBoardOverlay.tsx`) is a dev screen and is
 imported by nothing else. Nothing here reaches a user until it is Rust.
+
+---
+
+## 0. Open job: the blue HAND is the only role that fails on contrast
+
+Reported off a device: on the boards whose HAND is a dark blue the glow is hard to pick out, while
+every other role on the same board reads fine. That is measurable and it is not subtle. WCAG
+contrast against the default `#181225` play field, per board:
+
+| Board | STARTING | HAND | FINISH | FOOT |
+| --- | --- | --- | --- | --- |
+| Grasshopper Master | `#00DD00` 9.85 | **`#4455FF` 3.46** | `#FF0000` 4.56 | `#FF00FF` 5.81 |
+| Tension Original | `#00DD00` 9.85 | **`#4444FF` 3.05** | `#FF0000` 4.56 | `#FF00FF` 5.81 |
+| TB2 Mirror | `#00DD00` 9.85 | **`#4444FF` 3.05** | `#FF0000` 4.56 | `#FF00FF` 5.81 |
+| MoonBoard 2016 | `#44FF44` 13.57 | **`#4444FF` 3.05** | `#FF3333` 5.01 | — (no FOOT role) |
+| MoonBoard Masters | `#44FF44` 13.57 | **`#4444FF` 3.05** | `#FF3333` 5.01 | — |
+| Kilter Homewall | `#00FF00` 13.28 | `#00FFFF` 14.54 | `#FF00FF` 5.81 | `#FFAA00` 9.55 |
+| Kilter Original | `#00FF00` 13.28 | `#00FFFF` 14.54 | `#FF00FF` 5.81 | `#FFAA00` 9.55 |
+
+HAND is the worst role on all five blue boards and the only role anywhere below 4.5:1. On Kilter,
+whose HAND is cyan, it is the **best** role on the board at 14.54:1. So this is a property of that
+one hex, not of the treatment, and not of the role.
+
+It is worse on the other play fields, which matters because the field is a user setting: Grasshopper's
+HAND is 2.16:1 on the grey chip and **1.43:1 on plywood**, and MoonBoard's is 1.90:1 and 1.26:1.
+
+**The important constraint, and it is more permissive than it looks.** The role hex a board lights
+its LEDs with is NOT the one drawn on screen. `packages/shared/ble-protocol/src/aurora.ts:270`
+resolves `sanitizedOverride ?? state.color` — it never reads `displayColor`. Every blue HAND above
+is a `displayColor` (`HOLD_STATE_MAP` gives Grasshopper `displayColor #4455FF` over `color #0000FF`),
+so changing what the screen draws does not change what the wall does. A `color` change would, and
+that needs the Fable review `CLAUDE.md` requires for anything touching BLE.
+
+**Two things that have already been tried and rejected, with measurements — do not redo them.**
+
+- The equal-lightness palette (`SPIKE_PALETTES.equalL`, still a chip on the spike screen). Computed
+  correctly under both Viénot 1999 and Machado 2009 in linear RGB, it fixes protan HAND/FOOT
+  (ΔE00 3.2 → 16.5) and creates three worse collisions: deutan HAND/FOOT 1.3 against the shipped
+  20.6, deutan STARTING/FINISH 4.7 against 12.6, tritan STARTING/HAND 3.3 against 24.7. See
+  `design-review-3.md`'s "leave alone" list.
+- Carrying role on hue alone and fixing CVD with a brighter palette. The current answer is the
+  opt-in glyph mode, which is off by default; a contrast fix has to work for the default render.
+
+**What a fix has to satisfy**, in rough priority order: HAND at or above the other roles' worst
+(≈4.5:1) on `#181225`; no new CVD collision under Viénot **and** Machado in linear RGB, checked
+against each board's real palette rather than Grasshopper's; still recognisably "the blue one",
+because the LED on the wall stays blue and the screen should agree with the wall; and it should not
+make the plywood field worse than it already is.
+
+Worth checking early, because it may be most of the answer on its own: the veil already lifts every
+board's weakest role from 27–87% of the wall being brighter than it to under 1%. The remaining
+problem may be the glow's own colour against the *field* rather than against the wall, in which case
+the fix is the mark's inner edge and not the palette at all.
+
+Measure with `spikeRolePalette('shipped', boardName)` — the per-board resolver added in this branch —
+not with a hardcoded set. Painting Grasshopper's palette on all seven boards is a mistake this spike
+already made once and it invalidated sixteen of twenty-eight panels.
 
 ---
 
