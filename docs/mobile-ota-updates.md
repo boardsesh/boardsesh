@@ -18,16 +18,16 @@ cutting a new native build anyway, so instead we stood up a fresh V3 server on a
 Postgres and left V2 running untouched while its fleet drained. The URL cutover landed 2026-07-27
 (#3969) and V2 was torn down 2026-08-25. Only V3 remains:
 
-| Server             | Host                    | Version                                                                                           | Who hits it                                                                                     |
-| ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Server             | Host                    | Version                                                                                            | Who hits it                                                                                      |
+| ------------------ | ----------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | **V3 (live)**      | `updates.boardsesh.com` | mercuretechnologies xprem, control-plane ([which tag](#versions-the-cli-pin-and-the-server-image)) | Every current binary (V3 URL + V3 cert + `expo-app-id` header baked in). CI publishes only here. |
-| **V2 (destroyed)** | `ota.boardsesh.com`     | axelmarciano V2, stateless — **gone**                                                             | Nothing. Service + bucket deleted 2026-08-25.                                                   |
+| **V2 (destroyed)** | `ota.boardsesh.com`     | axelmarciano V2, stateless — **gone**                                                              | Nothing. Service + bucket deleted 2026-08-25.                                                    |
 
 - **A pre-V3 binary now gets no OTA at all.** Binaries built between 2026-06-10 (when V2 went live)
   and the 2026-07-27 cutover baked in `ota.boardsesh.com`. That Railway service is deleted, so the
   CNAME still resolves but Railway answers with its default `*.up.railway.app` wildcard cert — the
   TLS handshake fails before any HTTP happens. `expo-updates` can't fetch a manifest and silently
-  runs the **embedded** bundle. That is *not* an emergency launch, so `vp run mobile:ota-health-check`
+  runs the **embedded** bundle. That is _not_ an emergency launch, so `vp run mobile:ota-health-check`
   will not flag it: the fleet looks healthy while those installs sit frozen on the JS baked into
   their binary. Only a **store update** recovers one.
 - There is no cross-server backport and V2 cannot be revived — its bucket is gone. Recovery for a
