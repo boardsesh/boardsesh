@@ -2,7 +2,7 @@ name: iOS TestFlight Deploy (React Native)
 
 on:
   push:
-    branches: [main]
+    branches: [release/next]
     paths:
       - 'packages/mobile/**'
       - 'packages/shared/**'
@@ -20,8 +20,10 @@ on:
         default: '100000'
 
 concurrency:
-  group: ios-testflight-rn-${{ github.ref }}
-  cancel-in-progress: true
+  # Platform-global so App Store build-number reads/uploads cannot race across a
+  # scheduled release build and an emergency manual dispatch.
+  group: ios-testflight-rn
+  cancel-in-progress: false
 
 # ─── SHARED BUILD ENV (workflow-level) ───────────────────────────────────────
 # Declared at the workflow level so the cheap `gate` job (fingerprint resolve)
@@ -79,11 +81,10 @@ jobs:
   # it, so binary-rv == tag == the OTA-published rv by construction — no cross-OS
   # divergence to over-build around or strand OTAs over. See docs/mobile-ota-updates.md.
   gate:
-    # main-only: the iOS build is main-only by design (it uploads to TestFlight),
-    # so a dispatch forces a build only from main — there's no point running the
-    # gate off a feature branch where build-and-upload would skip anyway. (Android
-    # additionally builds artifacts from a feature-branch dispatch; iOS does not.)
-    if: github.ref == 'refs/heads/main'
+    # Automatic uploads come only from the canonical native release train. A
+    # manual dispatch may use main for an emergency rebuild, but arbitrary feature
+    # refs never receive Native Release credentials.
+    if: github.ref == 'refs/heads/release/next' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -149,18 +150,16 @@ jobs:
 
   build-and-upload:
     needs: gate
-    if: github.ref == 'refs/heads/main' && needs.gate.outputs.should_build == 'true'
+    if: needs.gate.outputs.should_build == 'true' && (github.ref == 'refs/heads/release/next' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     permissions:
-      contents: write # push the fingerprint-ios-<hash> tag on a successful upload
+      contents: read # protected release tags are pushed with the repository App token
     # macos-26 = Xcode 26 + iOS 26 SDK, which App Store Connect now requires
     # for all uploads. Expo SDK 57 / RN 0.86 ships a fmt that compiles cleanly
     # under Xcode 26's strict C++20 constexpr evaluator.
     runs-on: macos-26
     timeout-minutes: 60
-    # Scopes the job to the Production GitHub Environment so it can read the
-    # Production-scoped SENTRY_AUTH_TOKEN secret. Mirrors production-deploy.yml;
-    # the Production environment has a branch policy only (no approval gate).
-    environment: Production
+    # Native signing/store credentials are isolated from web/OTA production.
+    environment: Native Release
 
     env:
       WORKSPACE_PATH: packages/mobile/ios/Boardsesh.xcworkspace
@@ -577,7 +576,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Notify deployments channel
-        if: github.ref == 'refs/heads/main' && steps.testflight_upload.outcome == 'success'
+        if: steps.testflight_upload.outcome == 'success'
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -595,7 +594,7 @@ jobs:
               echo "::warning::Failed to post Discord notification (see status above)"
 
       - name: Notify deployments channel of failure
-        if: github.ref == 'refs/heads/main' && failure()
+        if: failure()
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -612,52 +611,38 @@ jobs:
             | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
               echo "::warning::Failed to post Discord notification (see status above)"
 
-      # Record that a binary with this fingerprint shipped, so future JS-only
-      # pushes with the same fingerprint skip this build (the gate checks for the
-      # tag). Only on a successful TestFlight upload — a failed build must not
-      # create the tag or the next push would wrongly skip. Idempotent: a
-      # concurrent run that already pushed the tag is treated as success.
-      - name: Tag the shipped iOS fingerprint
-        if: github.ref == 'refs/heads/main' && steps.testflight_upload.outcome == 'success' && env.FINGERPRINT_IOS != ''
-        run: |
-          set -uo pipefail
-          tag="fingerprint-ios-${FINGERPRINT_IOS}"
-          git tag "$tag" "$GITHUB_SHA" 2>/dev/null || true
-          if git push origin "refs/tags/$tag"; then
-            echo "::notice::Tagged $tag — future JS-only pushes with this fingerprint skip the iOS native build."
-          elif git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
-            echo "::notice::$tag already exists (concurrent run) — nothing to do."
-          else
-            echo "::error::Failed to push $tag."
-            exit 1
-          fi
+      - name: Mint repository App token for protected release tags
+        id: tag_token
+        if: steps.testflight_upload.outcome == 'success' && env.FINGERPRINT_IOS != '' && steps.build_number.outputs.value != '' && env.BOARDSESH_MOBILE_VERSION != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+          permission-contents: write
 
-      # Map the STORE BUILD NUMBER back to this commit + fingerprint. App Store
-      # Connect later tells the approval workflow only the APPROVED build number
-      # (not its commit or runtimeVersion), so this tag is the lookup that lets
-      # mobile-auto-version-bump cut the release/ios-v<version>-<shortfp> anchor at
-      # exactly the commit the approved binary was built from. <shortfp> is the
-      # first 12 chars of the canonical gate fingerprint (same value the binary
-      # embeds), so the anchor records the fingerprint OTAs must match. Same
-      # idempotent push as the fingerprint tag above. See docs/mobile-ota-updates.md.
-      - name: Tag the uploaded iOS build number
-        if: github.ref == 'refs/heads/main' && steps.testflight_upload.outcome == 'success' && env.FINGERPRINT_IOS != '' && steps.build_number.outputs.value != '' && env.BOARDSESH_MOBILE_VERSION != ''
+      # Publish the exact build-number lookup and fingerprint gate atomically.
+      # A fingerprint tag without its build tag would make later JS-only pushes
+      # skip while leaving the acceptance monitor unable to identify the binary.
+      - name: Tag the uploaded iOS build and fingerprint
+        if: steps.tag_token.outcome == 'success'
         env:
           BUILD_NUMBER: ${{ steps.build_number.outputs.value }}
+          GH_APP_TOKEN: ${{ steps.tag_token.outputs.token }}
         run: |
-          set -uo pipefail
-          # Lowercase the short fingerprint so the tag always matches the lowercase
-          # hex the tag parsers expect (macOS bash lacks ${var,,}, so use tr).
+          set -euo pipefail
+          remote="https://x-access-token:${GH_APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           shortfp="$(printf '%s' "${FINGERPRINT_IOS:0:12}" | tr '[:upper:]' '[:lower:]')"
-          tag="build-ios-v${BOARDSESH_MOBILE_VERSION}-${BUILD_NUMBER}-${shortfp}"
-          git tag "$tag" "$GITHUB_SHA" 2>/dev/null || true
-          if git push origin "refs/tags/$tag"; then
-            echo "::notice::Tagged $tag — maps App Store build $BUILD_NUMBER to this commit + fingerprint for the approval anchor."
-          elif git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
-            echo "::notice::$tag already exists (concurrent run) — nothing to do."
+          build_tag="build-ios-v${BOARDSESH_MOBILE_VERSION}-${BUILD_NUMBER}-${shortfp}"
+          fingerprint_tag="fingerprint-ios-${FINGERPRINT_IOS}"
+          git tag "$build_tag" "$GITHUB_SHA"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$fingerprint_tag" >/dev/null 2>&1; then
+            git push "$remote" "refs/tags/$build_tag"
+            echo "::notice::Tagged $build_tag; $fingerprint_tag already records this native fingerprint."
           else
-            echo "::error::Failed to push $tag."
-            exit 1
+            git tag "$fingerprint_tag" "$GITHUB_SHA"
+            git push --atomic "$remote" "refs/tags/$build_tag" "refs/tags/$fingerprint_tag"
+            echo "::notice::Atomically tagged $build_tag and $fingerprint_tag."
           fi
 
       - name: Clean up keychain and credentials

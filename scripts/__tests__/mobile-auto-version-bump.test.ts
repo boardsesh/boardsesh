@@ -1,109 +1,192 @@
 import { describe, expect, it } from 'vitest';
 
-import { mapAcceptedVersions } from '../mobile-auto-version-bump';
+import {
+  mapAcceptedGoogleProductionReleases,
+  mapAcceptedVersions,
+  parseGoogleServiceAccount,
+} from '../mobile-auto-version-bump';
 
 describe('mapAcceptedVersions', () => {
-  it('maps an attached build to its build number', () => {
-    const out = mapAcceptedVersions({
-      data: [
-        {
-          type: 'appStoreVersions',
-          id: 'v1',
-          attributes: { versionString: '2.1.0', appStoreState: 'READY_FOR_SALE' },
-          relationships: { build: { data: { type: 'builds', id: 'b1' } } },
-        },
-      ],
-      included: [{ type: 'builds', id: 'b1', attributes: { version: '42' } }],
-    });
-    expect(out).toEqual([{ versionString: '2.1.0', buildNumber: 42 }]);
+  it.each([
+    'ACCEPTED',
+    'PENDING_DEVELOPER_RELEASE',
+    'PENDING_APPLE_RELEASE',
+    'PROCESSING_FOR_DISTRIBUTION',
+    'READY_FOR_DISTRIBUTION',
+  ])('maps exact iOS build in accepted state %s', (state) => {
+    expect(
+      mapAcceptedVersions({
+        data: [
+          {
+            type: 'appStoreVersions',
+            id: 'v1',
+            attributes: { versionString: '2.1.0', appVersionState: state },
+            relationships: { build: { data: { type: 'builds', id: 'b1' } } },
+          },
+        ],
+        included: [{ type: 'builds', id: 'b1', attributes: { version: '42' } }],
+      }),
+    ).toEqual([{ platform: 'ios', versionString: '2.1.0', buildNumber: 42, state }]);
   });
 
-  it('yields buildNumber null when the relationship is explicitly null or absent', () => {
-    const out = mapAcceptedVersions({
-      data: [
-        {
-          type: 'appStoreVersions',
-          id: 'v2',
-          attributes: { versionString: '2.0.9', appStoreState: 'PROCESSING_FOR_APP_STORE' },
-          relationships: { build: { data: null } },
-        },
-        {
-          type: 'appStoreVersions',
-          id: 'v3',
-          attributes: { versionString: '2.2.0', appStoreState: 'PENDING_APPLE_RELEASE' },
-        },
-      ],
-      included: [],
-    });
-    expect(out).toEqual([
-      { versionString: '2.0.9', buildNumber: null },
-      { versionString: '2.2.0', buildNumber: null },
+  it('drops pending, rejected, and deprecated legacy accepted states', () => {
+    expect(
+      mapAcceptedVersions({
+        data: [
+          {
+            type: 'appStoreVersions',
+            id: 'v1',
+            attributes: { versionString: '2.1.0', appVersionState: 'IN_REVIEW' },
+            relationships: { build: { data: { type: 'builds', id: 'b1' } } },
+          },
+          {
+            type: 'appStoreVersions',
+            id: 'v2',
+            attributes: { versionString: '2.1.0', appVersionState: 'REJECTED' },
+            relationships: { build: { data: { type: 'builds', id: 'b1' } } },
+          },
+          {
+            type: 'appStoreVersions',
+            id: 'v3',
+            attributes: { versionString: '2.1.0', appVersionState: 'READY_FOR_SALE' },
+            relationships: { build: { data: { type: 'builds', id: 'b1' } } },
+          },
+        ],
+        included: [{ type: 'builds', id: 'b1', attributes: { version: '42' } }],
+      }),
+    ).toEqual([]);
+  });
+
+  it('drops versions without an exact attached numeric build', () => {
+    expect(
+      mapAcceptedVersions({
+        data: [
+          {
+            type: 'appStoreVersions',
+            id: 'v1',
+            attributes: { versionString: '2.1.0', appVersionState: 'READY_FOR_DISTRIBUTION' },
+            relationships: { build: { data: null } },
+          },
+          {
+            type: 'appStoreVersions',
+            id: 'v2',
+            attributes: { versionString: '2.1.0', appVersionState: 'READY_FOR_DISTRIBUTION' },
+            relationships: { build: { data: { type: 'builds', id: 'missing' } } },
+          },
+          {
+            type: 'appStoreVersions',
+            id: 'v3',
+            attributes: { versionString: '2.1.0', appVersionState: 'READY_FOR_DISTRIBUTION' },
+            relationships: { build: { data: { type: 'builds', id: 'bad' } } },
+          },
+        ],
+        included: [{ type: 'builds', id: 'bad', attributes: { version: 'not-a-number' } }],
+      }),
+    ).toEqual([]);
+  });
+
+  it('ignores non-build included resources sharing the build id', () => {
+    expect(
+      mapAcceptedVersions({
+        data: [
+          {
+            type: 'appStoreVersions',
+            id: 'v1',
+            attributes: { versionString: '2.1.0', appVersionState: 'READY_FOR_DISTRIBUTION' },
+            relationships: { build: { data: { type: 'builds', id: 'shared-id' } } },
+          },
+        ],
+        included: [
+          { type: 'appStoreVersionSubmissions', id: 'shared-id', attributes: { version: '999' } },
+          { type: 'builds', id: 'shared-id', attributes: { version: '42' } },
+        ],
+      }),
+    ).toEqual([
+      {
+        platform: 'ios',
+        versionString: '2.1.0',
+        buildNumber: 42,
+        state: 'READY_FOR_DISTRIBUTION',
+      },
     ]);
   });
+});
 
-  it('yields buildNumber null when the referenced build is missing from included', () => {
-    const out = mapAcceptedVersions({
-      data: [
+describe('mapAcceptedGoogleProductionReleases', () => {
+  it.each(['RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED', 'RELEASE_LIFECYCLE_STATE_PUBLISHED'])(
+    'maps exact Android versionCodes in accepted state %s',
+    (state) => {
+      expect(
+        mapAcceptedGoogleProductionReleases([
+          { releaseLifecycleState: state, activeArtifacts: [{ versionCode: 2_000_041 }, { versionCode: '2000042' }] },
+        ]),
+      ).toEqual([
+        { platform: 'android', versionString: null, buildNumber: 2_000_041, state },
+        { platform: 'android', versionString: null, buildNumber: 2_000_042, state },
+      ]);
+    },
+  );
+
+  it('drops draft, review, rejected, and malformed artifacts', () => {
+    expect(
+      mapAcceptedGoogleProductionReleases([
         {
-          type: 'appStoreVersions',
-          id: 'v1',
-          attributes: { versionString: '2.1.0', appStoreState: 'READY_FOR_SALE' },
-          relationships: { build: { data: { type: 'builds', id: 'ghost' } } },
+          releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_DRAFT',
+          activeArtifacts: [{ versionCode: 2_000_041 }],
         },
-      ],
-      included: [],
-    });
-    expect(out).toEqual([{ versionString: '2.1.0', buildNumber: null }]);
+        {
+          releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_IN_REVIEW',
+          activeArtifacts: [{ versionCode: 2_000_042 }],
+        },
+        {
+          releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_NOT_APPROVED',
+          activeArtifacts: [{ versionCode: 2_000_043 }],
+        },
+        {
+          releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_PUBLISHED',
+          activeArtifacts: [{ versionCode: 'nope' }, { versionCode: 0 }, {}],
+        },
+      ]),
+    ).toEqual([]);
   });
 
-  it('ignores non-build included resources (their ids must not shadow build ids)', () => {
-    const out = mapAcceptedVersions({
-      data: [
+  it('deduplicates a versionCode and keeps its latest accepted lifecycle state', () => {
+    expect(
+      mapAcceptedGoogleProductionReleases([
         {
-          type: 'appStoreVersions',
-          id: 'v1',
-          attributes: { versionString: '2.1.0', appStoreState: 'READY_FOR_SALE' },
-          relationships: { build: { data: { type: 'builds', id: 'shared-id' } } },
+          releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED',
+          activeArtifacts: [{ versionCode: 2_000_041 }],
         },
-      ],
-      // A non-build resource sharing the build's id must not be mapped as a build.
-      included: [
-        { type: 'appStoreVersionSubmissions', id: 'shared-id', attributes: { version: '999' } },
-        { type: 'builds', id: 'shared-id', attributes: { version: '42' } },
-      ],
-    });
-    expect(out).toEqual([{ versionString: '2.1.0', buildNumber: 42 }]);
+        {
+          releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_PUBLISHED',
+          activeArtifacts: [{ versionCode: 2_000_041 }],
+        },
+      ]),
+    ).toEqual([
+      {
+        platform: 'android',
+        versionString: null,
+        buildNumber: 2_000_041,
+        state: 'RELEASE_LIFECYCLE_STATE_PUBLISHED',
+      },
+    ]);
+  });
+});
+
+describe('parseGoogleServiceAccount', () => {
+  const serviceAccount = {
+    client_email: 'release@example.iam.gserviceaccount.com',
+    private_key: 'private-key',
+    token_uri: 'https://oauth2.googleapis.com/token',
+  };
+
+  it('accepts plain or base64 JSON', () => {
+    const json = JSON.stringify(serviceAccount);
+    expect(parseGoogleServiceAccount(json)).toEqual(serviceAccount);
+    expect(parseGoogleServiceAccount(Buffer.from(json).toString('base64'))).toEqual(serviceAccount);
   });
 
-  it('treats a non-numeric build version as null', () => {
-    const out = mapAcceptedVersions({
-      data: [
-        {
-          type: 'appStoreVersions',
-          id: 'v1',
-          attributes: { versionString: '2.1.0', appStoreState: 'READY_FOR_SALE' },
-          relationships: { build: { data: { type: 'builds', id: 'b1' } } },
-        },
-      ],
-      included: [{ type: 'builds', id: 'b1', attributes: { version: 'abc' } }],
-    });
-    expect(out).toEqual([{ versionString: '2.1.0', buildNumber: null }]);
-  });
-
-  it('drops versions without a usable versionString', () => {
-    const out = mapAcceptedVersions({
-      data: [
-        { type: 'appStoreVersions', id: 'v0', attributes: { versionString: '', appStoreState: 'READY_FOR_SALE' } },
-        { type: 'appStoreVersions', id: 'v1', attributes: { appStoreState: 'READY_FOR_SALE' } },
-        {
-          type: 'appStoreVersions',
-          id: 'v2',
-          attributes: { versionString: '3.0.0', appStoreState: 'READY_FOR_SALE' },
-          relationships: { build: { data: { type: 'builds', id: 'b9' } } },
-        },
-      ],
-      included: [{ type: 'builds', id: 'b9', attributes: { version: '7' } }],
-    });
-    expect(out).toEqual([{ versionString: '3.0.0', buildNumber: 7 }]);
+  it('rejects missing credential fields', () => {
+    expect(() => parseGoogleServiceAccount('{}')).toThrow(/missing client_email/);
   });
 });

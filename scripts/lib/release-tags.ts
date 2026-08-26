@@ -13,7 +13,7 @@
  *
  *   release/<platform>-v<version>-<shortfp>
  *     Cut by the approval workflow (mobile-auto-version-bump) when App Store
- *     Connect reports a version accepted. Points at the commit the approved binary
+ *     Connect or Google Play reports a version accepted. Points at the commit the approved binary
  *     was built from; the <shortfp> in the name is the fingerprint an OTA must
  *     resolve to reach that release's installs. This frozen tag is the backport
  *     anchor: check it out, cherry-pick a JS fix, and publish an OTA under its
@@ -45,6 +45,33 @@ export type ReleaseTag = {
   version: string;
   shortFp: string;
 };
+
+export type AcceptedBuildReference = {
+  platform: Platform;
+  versionString: string | null;
+  buildNumber: number;
+  state: string;
+};
+
+export type ReleaseCandidate = {
+  ios: BuildTag;
+  android: BuildTag;
+};
+
+/**
+ * Find the highest build tag for each platform at one marketing version, then
+ * require that exact build to be accepted. A newer pending build blocks instead
+ * of falling back to an older accepted binary. This deliberately makes no claim
+ * about native equivalence to release HEAD; an unprivileged workflow resolves
+ * and compares the real Expo fingerprints at these commits before merge.
+ */
+export function selectHighestAcceptedBuildTags(
+  tags: readonly string[],
+  acceptedBuilds: readonly AcceptedBuildReference[],
+  version: string,
+): ReleaseCandidate | null {
+  return selectReleaseCandidateFromEquivalentTags(tags, acceptedBuilds, version);
+}
 
 /** Truncate a full fingerprint to the tag-name form. Throws on a non-hex or
  * too-short input so a malformed gate value can't silently produce a bad tag. */
@@ -92,10 +119,9 @@ export function parseReleaseTag(tag: string): ReleaseTag | null {
  * publishing backports that never reach it; returning null lets the caller warn
  * and skip, and a later run retries once the exact build tag exists.
  *
- * When `preferredBuildNumber` is omitted — the sibling platform, for which the
- * store reports no approved number (see the Android caveat in
- * mobile-cut-release-tags.ts) — it best-effort returns the highest build number
- * for that version, i.e. the most recent build of it.
+ * When `preferredBuildNumber` is omitted, it best-effort returns the highest build
+ * number for that version. Release acceptance must use `pickExactBuildTag`,
+ * because both stores now report exact build numbers.
  *
  * Returns `null` when no build tag matches the (platform, version) at all.
  */
@@ -118,6 +144,84 @@ export function pickBuildTagForVersion(
   }
 
   return candidates.reduce((best, candidate) => (candidate.buildNumber > best.buildNumber ? candidate : best));
+}
+
+/**
+ * Resolve the tag for one exact store-approved build. Google Play's production
+ * release lifecycle endpoint reports versionCode but not a canonical versionName,
+ * so `version` is optional. Build numbers are unique within an app; if malformed
+ * duplicate tags disagree about the binary, fail closed instead of anchoring an
+ * arbitrary commit.
+ */
+export function pickExactBuildTag(
+  tags: readonly string[],
+  platform: Platform,
+  buildNumber: number,
+  version?: string,
+): BuildTag | null {
+  const candidates = tags
+    .map(parseBuildTag)
+    .filter(
+      (parsed): parsed is BuildTag =>
+        parsed !== null &&
+        parsed.platform === platform &&
+        parsed.buildNumber === buildNumber &&
+        (version === undefined || parsed.version === version),
+    );
+
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+/**
+ * Select the exact accepted binaries whose marketing version and embedded native
+ * fingerprints match the current release/next HEAD. Commit equality is
+ * deliberately not required: JS/backend-only rebases retain the fingerprint and
+ * may ride OTA after merge. Any missing or ambiguous platform match fails closed.
+ */
+export function selectReleaseCandidate(
+  tags: readonly string[],
+  acceptedBuilds: readonly AcceptedBuildReference[],
+  version: string,
+  fingerprints: Readonly<Record<Platform, string>>,
+): ReleaseCandidate | null {
+  const equivalentTags = tags.filter((tagName) => {
+    const tag = parseBuildTag(tagName);
+    return tag !== null && tag.shortFp === shortFingerprint(fingerprints[tag.platform]);
+  });
+  return selectReleaseCandidateFromEquivalentTags(equivalentTags, acceptedBuilds, version);
+}
+
+/**
+ * Select the highest build per platform from build tags already proven native-
+ * equivalent to release HEAD. The I/O shell can establish equivalence using a
+ * trusted `git diff` over canonical native inputs without executing branch code.
+ */
+export function selectReleaseCandidateFromEquivalentTags(
+  equivalentTags: readonly string[],
+  acceptedBuilds: readonly AcceptedBuildReference[],
+  version: string,
+): ReleaseCandidate | null {
+  const parsedTags = equivalentTags.map(parseBuildTag).filter((tag): tag is BuildTag => tag !== null);
+
+  const selectPlatform = (platform: Platform): BuildTag | null => {
+    const headCandidates = parsedTags.filter((tag) => tag.platform === platform && tag.version === version);
+    if (headCandidates.length === 0) return null;
+    const highestBuildNumber = Math.max(...headCandidates.map((tag) => tag.buildNumber));
+    const highestBuildTags = headCandidates.filter((tag) => tag.buildNumber === highestBuildNumber);
+    if (highestBuildTags.length !== 1) return null;
+
+    const accepted = acceptedBuilds.some(
+      (acceptedBuild) =>
+        acceptedBuild.platform === platform &&
+        acceptedBuild.buildNumber === highestBuildNumber &&
+        (acceptedBuild.versionString === null || acceptedBuild.versionString === version),
+    );
+    return accepted ? highestBuildTags[0] : null;
+  };
+
+  const ios = selectPlatform('ios');
+  const android = selectPlatform('android');
+  return ios && android ? { ios, android } : null;
 }
 
 /** Bump the patch component of an x.y.z version string. */

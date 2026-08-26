@@ -46,6 +46,8 @@ const OTA_PREVIEW = 'mobile-ota-preview.yml';
 // native builds too, or the assertion diverges from the value the shipped binary
 // actually embeds.
 const OTA_BACKPORT = 'mobile-ota-backport.yml';
+const RELEASE_MONITOR = 'release-next-monitor.yml';
+const STORE_DRAFT = 'mobile-store-draft.yml';
 const ANDROID_PR = 'android-pr-rn.yml';
 const IOS_PR = 'ios-rn-ci.yml';
 const CI = 'ci.yml';
@@ -131,7 +133,16 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
   // The PR-time OTA-compat check + the per-PR preview publish resolve the same
   // fingerprint as the native builds + OTA publish, so they must share the same
   // fingerprint-affecting env.
-  const workflows = [NATIVE_IOS, NATIVE_ANDROID, OTA, OTA_CHECK, OTA_PREVIEW, OTA_BACKPORT];
+  const workflows = [
+    NATIVE_IOS,
+    NATIVE_ANDROID,
+    OTA,
+    OTA_CHECK,
+    OTA_PREVIEW,
+    OTA_BACKPORT,
+    RELEASE_MONITOR,
+    STORE_DRAFT,
+  ];
 
   it.each(SHARED_ENV_KEYS)('declares %s identically across all mobile fingerprint workflows', (key) => {
     const values = workflows.map((name) => ({ name, value: workflowEnvValue(readWorkflow(name), key) }));
@@ -260,6 +271,10 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
         'packages/mobile/fingerprint.config.js',
         'packages/mobile/plugins',
         'packages/mobile/modules',
+        'packages/mobile/locales',
+        'packages/mobile/eas.json',
+        'packages/mobile/assets',
+        'packages/mobile/targets',
         'patches',
       ]),
     );

@@ -2,9 +2,9 @@ name: Mobile Store Draft Submission
 
 # Best-effort preparation of a DRAFT store submission for the current marketing
 # version, so a human only has to review and hit Submit — we never auto-submit for
-# review. iOS: create/prepare the 'Prepare for Submission' App Store version and
-# attach the latest processed TestFlight build. Android: create a DRAFT production
-# release referencing the latest uploaded build. No binary upload, no screenshots,
+# review. Each platform is pinned to the exact highest uploaded build tag for the
+# validated version and must fingerprint-match release/next. No
+# binary upload, no screenshots,
 # no metadata (those are owned by mobile-store-metadata.yml / the screenshot
 # workflows), no review submission, no rollout.
 #
@@ -41,19 +41,242 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
+  EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
+  EXPO_PUBLIC_WEB_URL: https://www.boardsesh.com
+  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+  EXPO_UPDATES_CHANNEL: production
+  EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
+  EXPO_PUBLIC_SENTRY_DSN: https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400
+  EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+  EXPO_PUBLIC_SNAPSHOT_BASE_URL: https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip
+  EXPO_PUBLIC_USE_RN_FETCH: '1'
+
 jobs:
+  release-next:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      exists: ${{ steps.ref.outputs.exists }}
+      sha: ${{ steps.ref.outputs.sha }}
+      candidate_ready: ${{ steps.stable.outputs.ready }}
+      version: ${{ steps.candidate.outputs.version }}
+      ios_build_number: ${{ steps.candidate.outputs.ios_build_number }}
+      android_version_code: ${{ steps.candidate.outputs.android_version_code }}
+    steps:
+      - name: Resolve release/next
+        id: ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/release%2Fnext" --jq '.object.sha' 2>/dev/null || true)"
+          if [ -z "$sha" ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::release/next does not exist; there is no store draft to prepare."
+            exit 0
+          fi
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout trusted main tooling
+        if: steps.ref.outputs.exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Select exact uploaded builds for release/next version
+        id: candidate
+        if: steps.ref.outputs.exists == 'true'
+        env:
+          RELEASE_HEAD_SHA: ${{ steps.ref.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$RELEASE_HEAD_SHA"
+          config="$(git show "$RELEASE_HEAD_SHA:packages/mobile/app.config.ts")"
+          version="$(sed -nE "s/.*version:[[:space:]]*'([0-9]+\.[0-9]+\.[0-9]+)'.*/\1/p" <<<"$config" | head -n 1)"
+          printf '%s' "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo '::error::Invalid release version.'; exit 1; }
+          HEAD_VERSION="$version" node <<'NODE'
+          const { appendFileSync } = require('node:fs');
+          const { execFileSync } = require('node:child_process');
+          const version = process.env.HEAD_VERSION;
+          const tags = execFileSync('git', ['tag', '--list'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean);
+          const pattern = /^build-(ios|android)-v(\d+\.\d+\.\d+)-(\d+)-([0-9a-f]{12})$/;
+          function highest(platform) {
+            const candidates = tags.map((tag) => ({ tag, match: pattern.exec(tag) })).filter(({ match }) =>
+              match && match[1] === platform && match[2] === version
+            ).sort((left, right) => Number(right.match[3]) - Number(left.match[3]));
+            if (candidates.length === 0) return null;
+            const highestBuild = Number(candidates[0].match[3]);
+            if (candidates.filter(({ match }) => Number(match[3]) === highestBuild).length !== 1) {
+              throw new Error(`Ambiguous ${platform} tags for ${version} build ${highestBuild}`);
+            }
+            const selected = candidates[0];
+            const sha = execFileSync('git', ['rev-list', '-n', '1', selected.tag], { encoding: 'utf8' }).trim();
+            if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`Invalid commit for ${selected.tag}`);
+            return { buildNumber: highestBuild, sha };
+          }
+          const ios = highest('ios');
+          const android = highest('android');
+          appendFileSync(process.env.GITHUB_OUTPUT, `found=${ios !== null && android !== null}\n`);
+          if (ios !== null && android !== null) {
+            appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
+            appendFileSync(process.env.GITHUB_OUTPUT, `ios_build_number=${ios.buildNumber}\n`);
+            appendFileSync(process.env.GITHUB_OUTPUT, `ios_sha=${ios.sha}\n`);
+            appendFileSync(process.env.GITHUB_OUTPUT, `android_version_code=${android.buildNumber}\n`);
+            appendFileSync(process.env.GITHUB_OUTPUT, `android_sha=${android.sha}\n`);
+          }
+          NODE
+
+      - name: Checkout release head without credentials
+        if: steps.candidate.outputs.found == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ref.outputs.sha }}
+          path: release-head
+          persist-credentials: false
+
+      - name: Checkout tagged iOS build without credentials
+        if: steps.candidate.outputs.found == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.candidate.outputs.ios_sha }}
+          path: ios-build
+          persist-credentials: false
+
+      - name: Checkout tagged Android build without credentials
+        if: steps.candidate.outputs.found == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.candidate.outputs.android_sha }}
+          path: android-build
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.candidate.outputs.found == 'true'
+
+      - name: Install fingerprint dependencies without lifecycle scripts
+        if: steps.candidate.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+          for tree in release-head ios-build android-build; do
+            (cd "$tree" && bun install --frozen-lockfile --ignore-scripts)
+          done
+
+      - name: Write identical public build environment
+        if: steps.candidate.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+          for tree in release-head ios-build android-build; do
+            cat > "$tree/packages/mobile/.env" <<EOF
+          EXPO_PUBLIC_BACKEND_URL=$EXPO_PUBLIC_BACKEND_URL
+          EXPO_PUBLIC_WS_URL=$EXPO_PUBLIC_WS_URL
+          EXPO_PUBLIC_WEB_URL=$EXPO_PUBLIC_WEB_URL
+          EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+          EXPO_PUBLIC_SENTRY_DSN=$EXPO_PUBLIC_SENTRY_DSN
+          EXPO_PUBLIC_POSTHOG_KEY=$EXPO_PUBLIC_POSTHOG_KEY
+          EXPO_PUBLIC_SNAPSHOT_BASE_URL=$EXPO_PUBLIC_SNAPSHOT_BASE_URL
+          EXPO_PUBLIC_USE_RN_FETCH=$EXPO_PUBLIC_USE_RN_FETCH
+          EOF
+          done
+
+      - name: Verify tagged builds match release/next native state
+        id: compare
+        if: steps.candidate.outputs.found == 'true'
+        env:
+          GOOGLE_MAPS_API_KEY: boardsesh-release-monitor-placeholder
+        run: |
+          set -euo pipefail
+          resolve() {
+            local tree="$1"
+            local platform="$2"
+            local raw
+            if [ "$platform" = ios ]; then
+              raw="$(cd "$tree/packages/mobile" && env -u GOOGLE_MAPS_API_KEY bunx expo-updates runtimeversion:resolve --platform ios 2>/dev/null || true)"
+            else
+              raw="$(cd "$tree/packages/mobile" && bunx expo-updates runtimeversion:resolve --platform android 2>/dev/null || true)"
+            fi
+            jq -r '.runtimeVersion // empty' <<<"$raw"
+          }
+          compare_platform() {
+            local platform="$1"
+            local build_tree="$2"
+            for attempt in 1 2 3; do
+              head_fp="$(resolve release-head "$platform")"
+              build_fp="$(resolve "$build_tree" "$platform")"
+              if printf '%s' "$head_fp" | grep -qiE '^[0-9a-f]{8,}$' && [ "$head_fp" = "$build_fp" ]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+          matches=true
+          compare_platform ios ios-build || matches=false
+          compare_platform android android-build || matches=false
+          echo "matches=$matches" >> "$GITHUB_OUTPUT"
+
+      - name: Recheck release/next after fingerprint comparison
+        id: stable
+        if: steps.compare.outputs.matches == 'true'
+        env:
+          EXPECTED_RELEASE_SHA: ${{ steps.ref.outputs.sha }}
+          HEAD_VERSION: ${{ steps.candidate.outputs.version }}
+          EXPECTED_IOS_BUILD: ${{ steps.candidate.outputs.ios_build_number }}
+          EXPECTED_ANDROID_BUILD: ${{ steps.candidate.outputs.android_version_code }}
+        run: |
+          set -euo pipefail
+          git fetch --force --tags origin '+refs/heads/release/next:refs/remotes/origin/release/next'
+          if [ "$(git rev-parse origin/release/next)" != "$EXPECTED_RELEASE_SHA" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::release/next moved during fingerprint comparison; waiting for the next run."
+            exit 0
+          fi
+          if ! node <<'NODE'
+          const { execFileSync } = require('node:child_process');
+          const version = process.env.HEAD_VERSION;
+          const pattern = /^build-(ios|android)-v(\d+\.\d+\.\d+)-(\d+)-([0-9a-f]{12})$/;
+          const tags = execFileSync('git', ['tag', '--list'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean);
+          function assertLatest(platform, expected) {
+            const builds = tags.map((tag) => pattern.exec(tag)).filter((match) =>
+              match && match[1] === platform && match[2] === version
+            ).map((match) => Number(match[3])).sort((left, right) => right - left);
+            if (builds.length === 0 || builds[0] !== Number(expected) || builds.filter((build) => build === builds[0]).length !== 1) {
+              throw new Error(`${platform} build ${expected} is no longer the unique highest tag for ${version}`);
+            }
+          }
+          assertLatest('ios', process.env.EXPECTED_IOS_BUILD);
+          assertLatest('android', process.env.EXPECTED_ANDROID_BUILD);
+          NODE
+          then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::A newer or ambiguous build tag appeared during fingerprint comparison; waiting for the next run."
+            exit 0
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
   ios:
+    needs: release-next
     if: >-
+      needs.release-next.outputs.candidate_ready == 'true' &&
       vars.ENABLE_STORE_DRAFT_SUBMISSION == 'true' &&
       (github.event_name != 'workflow_dispatch' || github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all')
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Production environment for the App Store Connect credentials.
-    environment: Production
+    environment: Native Release
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Setup Ruby and fastlane
         uses: ruby/setup-ruby@v1
@@ -85,6 +308,8 @@ jobs:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           FASTLANE_SKIP_UPDATE_CHECK: '1'
           FASTLANE_DISABLE_ANIMATION: '1'
+          RELEASE_VERSION: ${{ needs.release-next.outputs.version }}
+          IOS_BUILD_NUMBER: ${{ needs.release-next.outputs.ios_build_number }}
         run: |
           set -euo pipefail
           [ -n "$APP_STORE_CONNECT_ISSUER_ID" ] || { echo "::error::Missing APP_STORE_CONNECT_ISSUER_ID."; exit 1; }
@@ -101,16 +326,20 @@ jobs:
         run: rm -f "$HOME/.private_keys/AuthKey_"*.p8 2>/dev/null || true
 
   android:
+    needs: release-next
     if: >-
+      needs.release-next.outputs.candidate_ready == 'true' &&
       vars.ENABLE_STORE_DRAFT_SUBMISSION == 'true' &&
       (github.event_name != 'workflow_dispatch' || github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all')
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: Production
+    environment: Native Release
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Setup Ruby and fastlane
         uses: ruby/setup-ruby@v1
@@ -127,6 +356,8 @@ jobs:
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
           FASTLANE_SKIP_UPDATE_CHECK: '1'
           FASTLANE_DISABLE_ANIMATION: '1'
+          RELEASE_VERSION: ${{ needs.release-next.outputs.version }}
+          ANDROID_VERSION_CODE: ${{ needs.release-next.outputs.android_version_code }}
         run: |
           set -euo pipefail
           [ -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ] || { echo "::error::Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON."; exit 1; }
