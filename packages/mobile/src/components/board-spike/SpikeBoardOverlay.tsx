@@ -240,45 +240,64 @@ function solveGlowBands(spread: number, core: number, count: number): GlowBand[]
 }
 
 /**
- * Closest approach between two lit holds' marks, in board pixels — silhouette to
- * silhouette where both are traced, and off the placement circle where one is
- * not, so an untraced MoonBoard cell still keeps its neighbours at arm's length.
+ * The region of the board closer to this lit hold than to any other lit hold —
+ * its Voronoi cell over the LIT set, as a path.
+ *
+ * Two glows are allowed to reach into each other now, and this is what decides
+ * what happens where they meet: each one is clipped to its own cell, so the
+ * nearer hold wins every pixel and both keep their own hue. Without it the
+ * overlap resolves by draw order, so which of two roles survives is an accident
+ * of array position, and the seam moves when the climb's hold order changes.
+ *
+ * Blending was the other option and it is worse: `Lighten(#FF0000, #4455FF)` is
+ * `#FF55FF`, which is the FOOT magenta — mixing two role colours does not make a
+ * soft colour, it makes a third role's colour.
+ *
+ * This is not the cell clip the second design pass rejected. That one was over
+ * every PLACEMENT, where Kilter Homewall's 3.6 board px median gutter puts the
+ * midline about 1.8 px off the silhouette and shaves every mark down to a rim.
+ * Over the lit set the closest pair on any board is 14.5 px apart, so a boundary
+ * appears only where two glows would genuinely have collided, and on a climb
+ * whose lit holds are spread out no cell edge is reachable at all.
  */
-function markOutlinePoints(hold: SpikeLitHold, outlines: Record<number, number[]>): number[] {
-  const flat = outlines[hold.id];
-  if (flat !== undefined && flat.length >= 6) {
-    return flat.map((value, index) => (index % 2 === 0 ? hold.cx + value : hold.cy + value));
-  }
-  const samples: number[] = [];
-  for (let step = 0; step < 16; step += 1) {
-    const angle = (step / 16) * Math.PI * 2;
-    samples.push(hold.cx + hold.radius * Math.cos(angle), hold.cy + hold.radius * Math.sin(angle));
-  }
-  return samples;
-}
+function litCellPath(hold: SpikeLitHold, litHolds: SpikeLitHold[], boardWidth: number, boardHeight: number): string {
+  // Sutherland-Hodgman, starting from the whole board and cutting once per
+  // other lit hold. Sixteen lit holds is fifteen cuts on a polygon that stays
+  // convex, so this stays small enough to run on every render.
+  let polygon: Array<[number, number]> = [
+    [0, 0],
+    [boardWidth, 0],
+    [boardWidth, boardHeight],
+    [0, boardHeight],
+  ];
 
-function nearestLitGaps(litHolds: SpikeLitHold[], outlines: Record<number, number[]>): Map<number, number> {
-  const shapes = litHolds.map((hold) => ({ id: hold.id, points: markOutlinePoints(hold, outlines) }));
-  const gaps = new Map<number, number>(shapes.map((shape) => [shape.id, Infinity]));
-  for (let first = 0; first < shapes.length; first += 1) {
-    for (let second = first + 1; second < shapes.length; second += 1) {
-      const left = shapes[first].points;
-      const right = shapes[second].points;
-      let closest = Infinity;
-      for (let leftIndex = 0; leftIndex < left.length; leftIndex += 2) {
-        for (let rightIndex = 0; rightIndex < right.length; rightIndex += 2) {
-          const dx = left[leftIndex] - right[rightIndex];
-          const dy = left[leftIndex + 1] - right[rightIndex + 1];
-          const distance = dx * dx + dy * dy;
-          if (distance < closest) closest = distance;
-        }
+  for (const other of litHolds) {
+    if (other.id === hold.id) continue;
+    const normalX = other.cx - hold.cx;
+    const normalY = other.cy - hold.cy;
+    const midX = (hold.cx + other.cx) / 2;
+    const midY = (hold.cy + other.cy) / 2;
+    // Negative is the side this hold is on, so that is the side we keep.
+    const side = (point: [number, number]) => (point[0] - midX) * normalX + (point[1] - midY) * normalY;
+
+    const clipped: Array<[number, number]> = [];
+    for (let index = 0; index < polygon.length; index += 1) {
+      const current = polygon[index];
+      const next = polygon[(index + 1) % polygon.length];
+      const currentSide = side(current);
+      const nextSide = side(next);
+      if (currentSide <= 0) clipped.push(current);
+      if (currentSide <= 0 !== nextSide <= 0) {
+        const t = currentSide / (currentSide - nextSide);
+        clipped.push([current[0] + (next[0] - current[0]) * t, current[1] + (next[1] - current[1]) * t]);
       }
-      const gap = Math.sqrt(closest);
-      gaps.set(shapes[first].id, Math.min(gaps.get(shapes[first].id) ?? Infinity, gap));
-      gaps.set(shapes[second].id, Math.min(gaps.get(shapes[second].id) ?? Infinity, gap));
     }
+    polygon = clipped;
+    if (polygon.length === 0) break;
   }
-  return gaps;
+
+  if (polygon.length === 0) return '';
+  return `${polygon.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point[0].toFixed(2)} ${point[1].toFixed(2)}`).join(' ')} Z`;
 }
 
 /**
@@ -323,7 +342,6 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   );
 
   const targets = useMemo(() => haloTargets(halos, placements, litHolds), [halos, placements, litHolds]);
-  const litGaps = useMemo(() => nearestLitGaps(litHolds, outlines), [litHolds, outlines]);
   const litRoles = useMemo(() => [...new Set(litHolds.map((hold) => hold.role))], [litHolds]);
 
   // The veil, as one even-odd path: the whole board rect with every lit hold's
@@ -381,6 +399,10 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
 
   const insideClipId = (holdId: number) => `spike-inside-${boardKey}-${holdId}`;
   const outsideClipId = (holdId: number) => `spike-outside-${boardKey}-${holdId}`;
+  const litCellClipId = (holdId: number) => `spike-cell-${boardKey}-${holdId}`;
+  // A climb with one lit hold has no other hold to be nearer to, so there is no
+  // cell to clip against and the def is not emitted.
+  const cellClip = (holdId: number) => (litHolds.length > 1 ? `url(#${litCellClipId(holdId)})` : undefined);
 
   /**
    * The un-traced arms' mark: the baseline's role ring, the thumbnail
@@ -453,11 +475,15 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
    */
   const glowBandsFor = (hold: SpikeLitHold, bounds: OutlineBounds | null, boost: number, scale: number) => {
     const holdCap = bounds === null ? Infinity : bounds.shortest * SPIKE_TUNING.glowHoldExtentCap;
-    const neighbourCap = Math.max(
-      SPIKE_TUNING.glowNeighbourFloorWidth,
-      SPIKE_TUNING.glowNeighbourFraction * (litGaps.get(hold.id) ?? Infinity),
-    );
-    // Both caps are on the CLIPPED arms' rendered reach, which is `spread * boost`
+    // The neighbour cap is gone. It shrank BOTH glows of a close pair for the
+    // whole of their circumference to stop them meeting on the one side where
+    // they would have, which cost the most reach on the boards with the least to
+    // spare — Kilter Homewall's nearest lit pair is 14.5 board px apart, so the
+    // cap held every mark on that board to 8. Overlap is allowed now and
+    // `litCellPath` decides what happens in it: each glow is clipped to the half
+    // of the board nearer its own hold, so the two meet at their midline, each
+    // keeps its hue, and neither gives up reach anywhere else.
+    // The cap on the CLIPPED arms' rendered reach, which is `spread * boost`
     // at scale 2, and the boost multiplies reach, so both divide it back out here.
     // Capping the band WIDTH instead let the boost carry the mark straight back
     // past the cap: across the 2,360 committed outlines a width cap fired on none
@@ -467,7 +493,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
     // about. On the un-clipped `shaped-glow` chip the stroke straddles the path,
     // so reach there is half that and both caps bind twice as tight as asked —
     // conservative, and that arm is not one of the four captured.
-    const spread = Math.min(scaled(SPIKE_TUNING.glowSpreadFraction), holdCap / boost, neighbourCap / boost);
+    const spread = Math.min(scaled(SPIKE_TUNING.glowSpreadFraction), holdCap / boost);
     // Keeping core/spread constant keeps the falloff's shape when the spread is
     // capped, instead of collapsing the ramp into the innermost band.
     const core = Math.min(
@@ -535,6 +561,16 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
               // behind the hold does.
               <ClipPath key={`clip-${hold.id}`} id={outsideClipId(hold.id)}>
                 <Path d={`M 0 0 H ${boardWidth} V ${boardHeight} H 0 Z ${path}`} clipRule="evenodd" />
+              </ClipPath>
+            );
+          })}
+        {litHolds.length > 1 &&
+          litHolds.map((hold) => {
+            const cell = litCellPath(hold, litHolds, boardWidth, boardHeight);
+            if (cell === '') return null;
+            return (
+              <ClipPath key={`cell-${hold.id}`} id={litCellClipId(hold.id)}>
+                <Path d={cell} />
               </ClipPath>
             );
           })}
@@ -730,18 +766,20 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
               const normaliseOpacity = liftsArt ? (target - artLightness) / Math.max(1e-3, 1 - artLightness) : 0;
               return (
                 <G key={`sel-${hold.id}`}>
-                  <G clipPath={`url(#${outsideClipId(hold.id)})`}>
-                    {glowBandsFor(hold, bounds, smallHoldBoost, 2).map((band) => (
-                      <Path
-                        key={band.width}
-                        d={path}
-                        fill="none"
-                        stroke={color}
-                        strokeOpacity={band.opacity}
-                        strokeWidth={band.width * 2 * smallHoldBoost}
-                        strokeLinejoin="round"
-                      />
-                    ))}
+                  <G clipPath={cellClip(hold.id)}>
+                    <G clipPath={`url(#${outsideClipId(hold.id)})`}>
+                      {glowBandsFor(hold, bounds, smallHoldBoost, 2).map((band) => (
+                        <Path
+                          key={band.width}
+                          d={path}
+                          fill="none"
+                          stroke={color}
+                          strokeOpacity={band.opacity}
+                          strokeWidth={band.width * 2 * smallHoldBoost}
+                          strokeLinejoin="round"
+                        />
+                      ))}
+                    </G>
                   </G>
                   {liftsArt && <Path d={path} fill="#FFFFFF" fillOpacity={Math.min(0.9, normaliseOpacity)} />}
                   <Path d={path} fill={color} fillOpacity={SPIKE_TUNING.tintFillOpacity} />
@@ -787,18 +825,20 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
             const scale = outwardOnly ? 2 : 1;
             return (
               <G key={`sel-${hold.id}`}>
-                <G clipPath={outwardOnly ? `url(#${outsideClipId(hold.id)})` : undefined}>
-                  {glowBandsFor(hold, bounds, smallHoldBoost, scale).map((band) => (
-                    <Path
-                      key={band.width}
-                      d={path}
-                      fill="none"
-                      stroke={color}
-                      strokeOpacity={band.opacity}
-                      strokeWidth={band.width * scale * smallHoldBoost}
-                      strokeLinejoin="round"
-                    />
-                  ))}
+                <G clipPath={cellClip(hold.id)}>
+                  <G clipPath={outwardOnly ? `url(#${outsideClipId(hold.id)})` : undefined}>
+                    {glowBandsFor(hold, bounds, smallHoldBoost, scale).map((band) => (
+                      <Path
+                        key={band.width}
+                        d={path}
+                        fill="none"
+                        stroke={color}
+                        strokeOpacity={band.opacity}
+                        strokeWidth={band.width * scale * smallHoldBoost}
+                        strokeLinejoin="round"
+                      />
+                    ))}
+                  </G>
                 </G>
                 {roleGlyph(hold, bounds)}
               </G>

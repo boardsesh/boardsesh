@@ -340,9 +340,7 @@ export type SpikeSizeKey = (typeof SPIKE_SIZES)[number]['key'];
  * own key. `strokeWidthBase` is absolute board pixels because the baseline arm's
  * job is to draw exactly what `renderer.rs:150` draws — `6.0 * scale_x *
  * getBoardStrokeWidthMultiplier(board)` — and a control expressed in some other
- * unit is no longer the thing that ships. `glowNeighbourFloorWidth` is absolute
- * because it is a floor below which there is no glow left to read at all, which
- * is a property of the screen rather than of the board's pitch.
+ * unit is no longer the thing that ships.
  */
 export const SPIKE_TUNING = {
   /**
@@ -490,29 +488,6 @@ export const SPIKE_TUNING = {
    * being the thing that decides the mark on any of them.
    */
   glowHoldExtentCap: 1.8,
-  /**
-   * Neighbour clearance. Two lit holds 14.5 board px apart merge into one
-   * envelope against a combined 42 px of reach, so the glow gives up its outer
-   * reach in proportion to the gap to the nearest LIT silhouette. The lit set is
-   * known at render time, so this needs no baked data.
-   *
-   * Deliberately NOT a Voronoi cell clip: at Kilter Homewall's 3.6 board px
-   * median gutter the midline sits ~1.8 px off the silhouette, and a cell clip
-   * leaves a 2 px rim — which is approximately the traced-outline arm, the one
-   * that visibly loses at glance zoom on that exact board.
-   */
-  glowNeighbourFraction: 0.45,
-  /**
-   * Floor on that clearance, in absolute BOARD pixels: below this there is no
-   * glow left to read. Absolute because it is a property of the screen rather
-   * than of the board's pitch — but it is stored in board pixels and the boards
-   * do not share a coordinate space, so on MoonBoard's 650 px art box it renders
-   * 1.66x larger, 13.3 device px against 8.0 on the five 1080-wide boards. That
-   * is a real inconsistency; it is left alone because the floor is only reached
-   * by four marks in a hundred (see the second pass's "leave alone" list) and
-   * moving it re-opens every glow capture.
-   */
-  glowNeighbourFloorWidth: 8,
   /**
    * Cumulative alpha the glow should reach at a given fraction of its full
    * extent, measured outward from the silhouette edge. Per-band alphas are
