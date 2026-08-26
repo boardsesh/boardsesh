@@ -36,7 +36,7 @@ External contributors: fork the repo, clone your fork, branch, make the change, 
 
 ### Testing a pull request without building anything
 
-Every pull request that touches the mobile app gets its own over-the-air update channel named `pr-<number>`, published automatically when the pull request opens. If you have the `tester` role, you can point a normal App Store or TestFlight build at that channel from inside the app and try the change without compiling anything. Whether the channel will work for a given pull request is shown by the OTA compatibility comment on the pull request: a JavaScript-only change rides the channel, and a native change needs a real build instead. Full steps are in [Path A](#path-a-small-changes-through-the-ota-channel-switcher) below.
+Every pull request that touches the mobile app can get its own over-the-air update branch named `pr-<number>`. Same-repository PRs publish automatically; a fork PR needs a maintainer with repository write access to comment `/ota-preview`. Anyone on a compatible App Store or TestFlight build can select that branch from xprem's blue edge marker without a tester role or a local build. The OTA compatibility comment says whether each platform can receive the change: JavaScript-only changes ride the branch, while native changes need a real build. Full steps are in [Path A](#path-a-small-changes-through-xprem-branch-surfing) below.
 
 ## The vp toolchain
 
@@ -105,18 +105,17 @@ After mobile changes, run the validation sequence:
 
 Read [docs/react-native-performance.md](./docs/react-native-performance.md) before touching any list, provider, gesture, or board-art code, and [docs/mobile-sheets-vs-routes.md](./docs/mobile-sheets-vs-routes.md) before adding a screen or sheet.
 
-### Path A: small changes through the OTA channel switcher
+### Path A: small changes through xprem Branch Surfing
 
-For a small fix you can test your pull request on a regular App Store or TestFlight build, with no local build at all. Every pull request that touches React Native code publishes its JavaScript bundle to its own update channel named `pr-<number>` (the `mobile-ota-preview.yml` workflow does this), and a build can switch to that channel at runtime.
+For a small fix you can test your pull request on a regular App Store or TestFlight build, with no local build at all. Every pull request that touches React Native code publishes its JavaScript bundle to its own update branch named `pr-<number>` (the `mobile-ota-preview.yml` workflow does this), and a build can switch to that branch at runtime.
 
 To use it:
 
 1. Install a current store or TestFlight build of Boardsesh.
-2. Get the `tester` role on your Boardsesh account. Ask a maintainer on Discord; an admin grants it in the admin panel under Roles (admins count as testers automatically).
-3. Open More, then Development, then OTA Channel Switcher.
-4. Enter `pr-<number>` for the pull request you want. The app pulls that pull request's JavaScript and reloads into it.
+2. Tap xprem's blue branch marker.
+3. Select the `pr-<number>` branch for the pull request. The app downloads that branch and reloads into it.
 
-To know whether the `pr-<number>` channel will actually work for a pull request, read the OTA compatibility comment it posts. The channel only delivers to a store build when the pull request is JavaScript-only and its native fingerprint matches the store binary. A pull request that changes native code (a new Expo plugin, a native module, an SDK bump) gets a new fingerprint that the store binary can't load, so its channel is skipped and the comment says so. For those, use Path B. The switcher lives at `src/components/ChannelSwitcherScreen.tsx`, with the channel logic in `src/lib/channel-switch.ts`; it shows only when `isTester && !__DEV__ && Updates.isEnabled`. Background: [docs/mobile-ota-updates.md](./docs/mobile-ota-updates.md).
+To know whether the `pr-<number>` branch will actually work for a pull request, read the OTA compatibility comment it posts. The branch only delivers to a store build when the pull request is JavaScript-only and its native fingerprint matches the store binary. A pull request that changes native code (a new Expo plugin, a native module, an SDK bump) gets a new fingerprint that the store binary can't load, so its branch is skipped and the comment says so. For those, use Path B. The official picker is mounted from `app/_layout.tsx` with `@xprem/control-center`; it is available on compatible production builds without a tester role. Background: [docs/mobile-ota-updates.md](./docs/mobile-ota-updates.md).
 
 ### Path B: larger work through a dev build and the Metro switcher
 
@@ -130,7 +129,7 @@ Build a dev client:
 
 Then run the bundler with `vp run dev:mobile` and connect the dev client to it. In a dev build, open More, then Development, then Metro Servers (`src/components/DevServerSwitcherScreen.tsx`). It lists Metro bundlers it discovered on local ports and across your Tailscale peers (`src/lib/metro-discovery.ts`), each labeled with its branch, worktree, and commit. Pick one, or add a target by URL (`http://host:port`), and the app reloads its JavaScript from that bundler. The branch and QA notes for the selected bundler show in the dev metadata panel at the top of the More tab (`src/components/DevMetadataPanel.tsx`).
 
-A new dev build is only needed when native dependencies change. JavaScript and TypeScript changes ride the bundler (or, on store builds, the OTA channel from Path A).
+A new dev build is only needed when native dependencies change. JavaScript and TypeScript changes ride the bundler (or, on store builds, the OTA branch from Path A).
 
 ### Screenshots
 

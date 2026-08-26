@@ -66,7 +66,7 @@ concurrency:
 #      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID (→ google-signin iosUrlScheme, a native
 #      CFBundleURLScheme), GOOGLE_MAPS_API_KEY (→ android.config; set per-platform
 #      on the Android publish step below), and — once the committed cert activates
-#      the self-hosted updates block — EXPO_UPDATES_URL + EXPO_UPDATES_CHANNEL.
+#      the self-hosted updates block — EXPO_UPDATES_URL.
 #   2. Bundle correctness. The remaining EXPO_PUBLIC_* are inlined into the JS
 #      bundle (and hashed via .env); drift there ships an OTA pointing at the
 #      wrong backend/analytics. Both classes are enforced by
@@ -86,9 +86,6 @@ env:
   # effect). Public Tigris bucket; keep in sync with SNAPSHOT_PUBLIC_BASE_URL in
   # export-board-snapshots.yml.
   EXPO_PUBLIC_SNAPSHOT_BASE_URL: https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip
-  # Baked into the binary by `expo prebuild`; the server maps this channel to a
-  # same-named branch. Part of the resolved config, so it's fingerprint-relevant.
-  EXPO_UPDATES_CHANNEL: production
   EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
   # Pin React Native's fetch as the global `fetch` instead of expo/fetch. Expo 57's
   # WinterCG runtime installs expo/fetch as the global unless this is '1'; expo/fetch's

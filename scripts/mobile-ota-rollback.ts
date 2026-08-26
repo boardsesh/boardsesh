@@ -22,8 +22,6 @@
  * the rollback only lands if it resolves the SAME fingerprint the shipped binary
  * embeds. That means the fingerprint-affecting env must match the production
  * build's per-platform split (see docs/mobile-ota-updates.md → Rollback):
- *   - EXPO_UPDATES_CHANNEL must be set (e.g. production) — it feeds
- *     updates.requestHeaders and thus the fingerprint.
  *   - Android needs GOOGLE_MAPS_API_KEY (it changes android.config); iOS must run
  *     WITHOUT it (Apple Maps). A single --platform all can't satisfy both, so the
  *     helper rejects it — run one platform at a time.
@@ -41,8 +39,8 @@
  *   vp run mobile:ota-rollback -- --platform ios --mode republish   # re-point to a previous update (interactive, local)
  *
  * Env: EXPO_UPDATES_URL (server manifest endpoint) + EOO_TOKEN (the app-scoped
- * expo-open-ota API key) + EXPO_UPDATES_CHANNEL (fingerprint), same as the
- * production publish; plus GOOGLE_MAPS_API_KEY for --platform android.
+ * expo-open-ota API key), same as the production publish; plus
+ * GOOGLE_MAPS_API_KEY for --platform android.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -131,13 +129,6 @@ function main(): number {
   if (!process.env.EOO_TOKEN) {
     console.error('[ota-rollback] Requires EOO_TOKEN (an app-scoped expo-open-ota API key — the V3 server rejects');
     console.error('[ota-rollback] Expo tokens). Mint one in the dashboard and set it. See docs/mobile-ota-updates.md.');
-    return 1;
-  }
-  if (!process.env.EXPO_UPDATES_CHANNEL) {
-    console.error('[ota-rollback] Requires EXPO_UPDATES_CHANNEL (e.g. production). eoas resolves the target');
-    console.error('[ota-rollback] runtimeVersion (fingerprint) from the local config, which reads this channel');
-    console.error('[ota-rollback] header — unset, it resolves a fingerprint no shipped binary has and the');
-    console.error('[ota-rollback] rollback directive lands nowhere (silent no-op). See docs/mobile-ota-updates.md.');
     return 1;
   }
   // The fingerprint depends on GOOGLE_MAPS_API_KEY per platform (it changes

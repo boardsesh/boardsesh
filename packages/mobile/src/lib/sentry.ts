@@ -391,6 +391,7 @@ export function clearBleDiagnosticsTags(): void {
 export type OtaTagFields = {
   // Updates.channel is string | null (null on embedded / dev-server launches).
   channel?: string | null;
+  branch?: string | null;
   updateId?: string | null;
   runtimeVersion?: string | null;
   isEmbeddedLaunch?: boolean;
@@ -408,6 +409,7 @@ export type OtaTagFields = {
  */
 export function applyOtaTagsToScope(scope: TagScope, fields: OtaTagFields): void {
   scope.setTag('ota_channel', fields.channel || undefined);
+  scope.setTag('ota_branch', fields.branch || undefined);
   scope.setTag('ota_update_id', fields.updateId || undefined);
   scope.setTag('ota_runtime_version', fields.runtimeVersion || undefined);
   scope.setTag('ota_is_embedded', fields.isEmbeddedLaunch === undefined ? undefined : String(fields.isEmbeddedLaunch));
@@ -425,18 +427,6 @@ export function setOtaSentryTags(fields: OtaTagFields): void {
   applyOtaTagsToScope(tagScope, fields);
 }
 
-/**
- * Overwrite only the `ota_channel` tag with a tester's active channel override.
- * A dedicated single-key setter (not setOtaSentryTags) because the override path
- * only knows the channel — passing the other fields as undefined would clear the
- * ota_update_id / ota_runtime_version / ota_is_embedded tags the launch stamp
- * just set. No-op when Sentry is disabled.
- */
-export function setOtaChannelTag(channel: string): void {
-  if (!isSentryEnabled) return;
-  Sentry.setTag('ota_channel', channel);
-}
-
 /** Best-effort flush so a report survives a later hard crash. */
 export function flushSentry(): Promise<boolean> {
   return isSentryEnabled ? Sentry.flush() : Promise.resolve(true);
@@ -446,7 +436,7 @@ export function flushSentry(): Promise<boolean> {
  * Force a native crash to verify the native crash handler on a real binary — the
  * event is persisted across the crash and uploaded on the next launch. No-op
  * when Sentry is disabled so it can never hard-crash a dev / no-DSN build. Wired
- * behind the tester-only channel switcher; not for production code paths.
+ * behind the tester-only Sentry diagnostics screen; not for regular app paths.
  */
 export function nativeSentryCrash(): void {
   if (!isSentryEnabled) return;

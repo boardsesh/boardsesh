@@ -6,7 +6,7 @@ import type { SwitchRowState, SwitcherRow } from './SwitcherForm.types';
 
 /**
  * Resolve the render/interaction state of one switch-target row, matching the
- * behaviour ChannelSwitcherScreen and BranchSwitcherScreen hand-rolled inline:
+ * behaviour BranchSwitcherScreen previously hand-rolled inline:
  *
  * - the row currently switching → `switching` (spinner),
  * - else the live target → `active` (checkmark),

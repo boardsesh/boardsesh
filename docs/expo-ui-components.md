@@ -159,14 +159,13 @@ differs from a standalone control:** a Form/LazyColumn is a scrolling container,
 Host uses `style={{ flex: 1 }}` + (iOS) `useViewportSizeMeasurement` — NOT `matchContents`
 (which sizes to content and clips the scroll).
 
-`SwitcherForm` (`src/components/SwitcherForm.*`) backs **both** the OTA Channel and Branch
-switcher screens (`ChannelSwitcherScreen`, `BranchSwitcherScreen`) from one generic
+`SwitcherForm` (`src/components/SwitcherForm.*`) backs the EAS preview-build branch switcher and
+tester-only Sentry diagnostics (`BranchSwitcherScreen`, `SentryDiagnosticsScreen`) from one generic
 sections-of-typed-rows model (`info`/`status`/`target`/`field`/`action`), the same shape
-MoreForm uses — the two screens are the same OTA-target switcher, so they share one form
-rather than duplicating two near-identical native trees. Its inline text field is a bare
+MoreForm uses. Its inline text field is a bare
 native `TextField`/`OutlinedTextField` placed directly in the form (the standalone
 `AuthTextInput` renders its own `Host` and can't nest inside another), reusing
-`AuthTextInput.logic`'s pure prop→modifier mappers + `textFieldBrandColors`. Row state is
+`AuthTextInput.logic`'s pure prop→modifier mappers + `textFieldBrandColors`. Branch-row state is
 derived once by `deriveSwitchRowState` (`SwitcherForm.logic.ts`) so iOS/Android can't drift.
 
 ## Buttons

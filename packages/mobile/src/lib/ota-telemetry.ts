@@ -22,6 +22,7 @@ export type OtaUpdateFields = {
   isEmbeddedLaunch: boolean;
   updateId: string | null | undefined;
   channel: string | null | undefined;
+  branch: string | null | undefined;
   runtimeVersion: string | null | undefined;
   createdAt: Date | null | undefined;
   isEmergencyLaunch: boolean;
@@ -33,6 +34,7 @@ export type OtaStatusProperties = {
   isEmbeddedLaunch: boolean;
   updateId: string | null;
   channel: string | null;
+  branch: string | null;
   runtimeVersion: string | null;
   createdAtIso: string | null;
   isEmergencyLaunch: boolean;
@@ -48,9 +50,19 @@ export function buildOtaStatusProperties(fields: OtaUpdateFields): OtaStatusProp
     isEmbeddedLaunch: fields.isEmbeddedLaunch,
     updateId: fields.updateId ?? null,
     channel: fields.channel ?? null,
+    branch: fields.branch ?? null,
     runtimeVersion: fields.runtimeVersion ?? null,
     createdAtIso: fields.createdAt ? fields.createdAt.toISOString() : null,
     isEmergencyLaunch: fields.isEmergencyLaunch,
     emergencyLaunchReason: fields.emergencyLaunchReason ?? null,
   };
+}
+
+/** Read xprem's running branch marker without depending on native manifest types. */
+export function readOtaBranch(manifest: unknown): string | null {
+  if (typeof manifest !== 'object' || manifest === null) return null;
+  const extra = (manifest as Record<string, unknown>).extra;
+  if (typeof extra !== 'object' || extra === null) return null;
+  const branch = (extra as Record<string, unknown>).branch;
+  return typeof branch === 'string' && branch.length > 0 ? branch : null;
 }
