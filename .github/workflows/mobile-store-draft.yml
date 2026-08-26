@@ -105,6 +105,7 @@ jobs:
           config="$(git show "$RELEASE_HEAD_SHA:packages/mobile/app.config.ts")"
           version="$(sed -nE "s/.*version:[[:space:]]*'([0-9]+\.[0-9]+\.[0-9]+)'.*/\1/p" <<<"$config" | head -n 1)"
           printf '%s' "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo '::error::Invalid release version.'; exit 1; }
+          version_pattern="${version//./\\.}"
           result="$RUNNER_TEMP/uploaded-candidates"
           : > "$result"
           CHECK_ONLY=true CANDIDATE_ONLY=true UPLOADED_ONLY=true HEAD_VERSION="$version" \
@@ -116,13 +117,13 @@ jobs:
 
           ios_tag="$(sed -n 's/^ios_build_tag=//p' "$result" | tail -n 1)"
           android_tag="$(sed -n 's/^android_build_tag=//p' "$result" | tail -n 1)"
-          if [[ "$ios_tag" =~ ^build-ios-v${version}-([0-9]+)-[0-9a-f]{12}$ ]]; then
+          if [[ "$ios_tag" =~ ^build-ios-v${version_pattern}-([0-9]+)-[0-9a-f]{12}$ ]]; then
             ios_build_number="${BASH_REMATCH[1]}"
           else
             echo "::error::Cutter returned an invalid iOS build tag: $ios_tag"
             exit 1
           fi
-          if [[ "$android_tag" =~ ^build-android-v${version}-([0-9]+)-[0-9a-f]{12}$ ]]; then
+          if [[ "$android_tag" =~ ^build-android-v${version_pattern}-([0-9]+)-[0-9a-f]{12}$ ]]; then
             android_version_code="${BASH_REMATCH[1]}"
           else
             echo "::error::Cutter returned an invalid Android build tag: $android_tag"

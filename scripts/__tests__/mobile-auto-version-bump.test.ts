@@ -227,15 +227,15 @@ describe('mapAcceptedGoogleProductionReleases', () => {
     ).toEqual([]);
   });
 
-  it('deduplicates a versionCode and keeps its latest accepted lifecycle state', () => {
+  it('deduplicates a versionCode and prefers PUBLISHED regardless of response order', () => {
     expect(
       mapAcceptedGoogleProductionReleases([
         {
-          releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED',
+          releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_PUBLISHED',
           activeArtifacts: [{ versionCode: 2_000_041 }],
         },
         {
-          releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_PUBLISHED',
+          releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED',
           activeArtifacts: [{ versionCode: 2_000_041 }],
         },
       ]),

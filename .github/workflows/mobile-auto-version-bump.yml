@@ -36,7 +36,9 @@ jobs:
   anchor-release:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: Native Release
+    # Keep the established main-only anchor on Production so merging the train
+    # tooling cannot interrupt it before Native Release credentials are loaded.
+    environment: Production
     permissions:
       contents: read # release/* tags are pushed only with the repository App token
     steps:

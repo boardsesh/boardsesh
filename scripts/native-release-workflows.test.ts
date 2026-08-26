@@ -89,6 +89,7 @@ describe('native release train workflow contracts', () => {
     expect(draft).toContain('Resolve release/next');
     expect(draft).toContain('exists=false');
     expect(draft).toContain('Select exact uploaded builds for release/next version');
+    expect(draft).toContain('version_pattern="${version//./\\\\.}"');
     expect(draft.match(/UPLOADED_ONLY=true/g)).toHaveLength(2);
     expect(draft).not.toContain('function highest(platform)');
     expect(draft).toContain('Verify tagged builds match release/next native state');
@@ -144,5 +145,11 @@ describe('native release train workflow contracts', () => {
     expect(monitor).toContain('changed after anchor creation; merge stopped');
     expect(monitor.indexOf('final_merge_gates_ready')).toBeLessThan(monitor.indexOf('result="$(gh api --method PUT'));
     expect(monitor).not.toContain('reviewThreads');
+  });
+
+  it('keeps the established main anchor on Production during Native Release rollout', () => {
+    const anchor = workflow('mobile-auto-version-bump.yml');
+    expect(anchor).toContain('environment: Production');
+    expect(anchor).not.toContain('environment: Native Release');
   });
 });

@@ -259,6 +259,8 @@ export function mapAcceptedGoogleProductionReleases(releases: readonly GooglePro
     if (!acceptedGooglePlayStateSet.has(state)) continue;
     for (const artifact of release.activeArtifacts) {
       const versionCode = artifact.versionCode;
+      const existing = acceptedByVersionCode.get(versionCode);
+      if (existing?.state === 'RELEASE_LIFECYCLE_STATE_PUBLISHED') continue;
       acceptedByVersionCode.set(versionCode, {
         platform: 'android',
         versionString: null,
