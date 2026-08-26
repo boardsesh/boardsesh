@@ -23,6 +23,15 @@ describe('parseRisk', () => {
     });
   });
 
+  it('accepts a real score under Summary when the ## Risk section still holds the placeholder', () => {
+    // Section first, then anywhere: the score is present, just not where the
+    // template put it. The gate wants a score, not a location.
+    expect(parseRisk('## Summary\nRisk: 2/5 — copy only\n## Risk\nRisk: /5 —')).toEqual({
+      level: 2,
+      reason: 'copy only',
+    });
+  });
+
   it('ignores the template placeholder and commented-out examples', () => {
     expect(parseRisk('## Risk\n<!-- Risk: 3/5 — example -->\nRisk: /5 —')).toBeNull();
     expect(parseRisk(null)).toBeNull();
