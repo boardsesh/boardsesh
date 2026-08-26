@@ -32,14 +32,14 @@ network, no login and no seeded database.
 Four independent axes, each a chip. The treatment list is `SPIKE_TREATMENTS` in
 `spike-config.ts`; the arms below are the subset the captures use.
 
-| Axis              | Options                                                                                 |
-| ----------------- | --------------------------------------------------------------------------------------- |
-| Overlay treatment | Baseline · Outward · Hybrid · Veil, plus the modifier chips the arms were chosen out of |
-| LED layer         | on · off — on for every arm, baseline included, so it never varies between two panels   |
-| Role colours      | the board's own hues · Grasshopper's hues on every board · equal OkLab lightness        |
-| Play field        | dark `#181225` · neutral grey · near-black · plywood · white                            |
-| Role glyphs       | **off** · on — the opt-in accessibility mode, off in every default capture              |
-| Render width      | full · 152 · 228 · 384 device px — the play view, then the surfaces that outnumber it   |
+| Axis              | Options                                                                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Overlay treatment | Baseline · Outward · Hybrid · Veil, plus the modifier chips the arms were chosen out of                                                    |
+| LED layer         | on · off — on for every arm, baseline included, so it never varies between two panels                                                      |
+| Role colours      | the board's own hues · Grasshopper's hues on every board · equal OkLab lightness · the four blue-HAND candidate hexes from the fourth pass |
+| Play field        | dark `#181225` · neutral grey · near-black · plywood · white                                                                               |
+| Role glyphs       | **off** · on — the opt-in accessibility mode, off in every default capture                                                                 |
+| Render width      | full · 152 · 228 · 384 device px — the play view, then the surfaces that outnumber it                                                      |
 
 `capture-boards.sh` pins **every** axis in the deep link, none inherited: the
 screen keeps whatever it was last handed, so one stale chip press silently

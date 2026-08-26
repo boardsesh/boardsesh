@@ -14,6 +14,7 @@
  *   colour-vision.webp           the two controls under protanopia and deuteranopia
  *   accessibility-glyphs.webp    the opt-in role glyphs off against on, normal and protan
  *   thumbnails-<size>px.webp     the arms at the widths the app actually draws
+ *   blue-hand-candidates*.webp   shipped HAND hex against each `PALETTES=` candidate, whole and 1:1
  *
  * The last two need captures the default run does not take — `GLYPHS='off on'`
  * and `THUMBS=1` — and say so, with the command, if the file is missing.
@@ -728,14 +729,138 @@ async function thumbnailFigure(sizeKey) {
   console.log(`wrote thumbnails-${sizeKey}px.webp`);
 }
 
+// ---- the blue HAND candidates -------------------------------------------------
+
+/**
+ * The §0 contrast job: shipped against each candidate role palette, on the
+ * boards whose HAND is the dark blue. Needs the `PALETTES='<keys>'` sweep of
+ * `capture-boards.sh` on `baseline veil-glow` — the shipped shots sit in the run
+ * root, each candidate's under `palette-<key>/`. Columns are baseline and veil +
+ * glow on the shipped palette, then veil + glow on every candidate; one row per
+ * board. `PALETTES=` here names which candidate keys to lay out, in order, and
+ * every key has to be one the screen has (`SPIKE_PALETTE_LABEL`), the same rule
+ * `capture-boards.sh` enforces before shooting.
+ *
+ * Two sheets: the whole board at panel width, and a 1:1 crop of the middle of
+ * the board where the synthesised climb's HAND holds sit, because a hex
+ * judgement made on a 360 px downsample is a judgement about the downsample.
+ */
+async function blueHandFigure(kind) {
+  const paletteKeys = (process.env.PALETTES ?? '').split(/\s+/).filter((word) => word.length > 0);
+  if (paletteKeys.length === 0) {
+    throw new Error(
+      `no capture at <PALETTES unset>\n  take it with: PALETTES='<keys>' capture-boards.sh <dir> baseline veil-glow, then PALETTES='<keys>' build-figures.mjs`,
+    );
+  }
+  for (const key of paletteKeys) {
+    if (SPIKE_PALETTE_LABEL[key] === undefined) {
+      throw new Error(`PALETTES names '${key}', which spike-config.ts does not have`);
+    }
+  }
+  const detail = kind === 'detail';
+  const thumb = kind === 'thumb';
+  // The 152 px row is shown at 2x nearest-neighbour: the list cell is 76x96 dp
+  // at 2x, and a 152 px tile on a 1920 px sheet is unreadable at 1x.
+  const COLUMN = detail ? 420 : thumb ? 304 : 300;
+  const sizeAxis = thumb ? { size: '152' } : {};
+  const columns = [
+    {
+      title: thumb ? 'Thumb baseline' : 'Baseline',
+      subtitle: 'shipped palette',
+      arm: thumb ? 'thumb-baseline' : 'baseline',
+      palette: undefined,
+    },
+    { title: 'Veil + glow', subtitle: 'shipped palette', arm: 'veil-glow', palette: undefined },
+    ...paletteKeys.map((key) => ({
+      title: 'Veil + glow',
+      subtitle: SPIKE_PALETTE_LABEL[key],
+      arm: 'veil-glow',
+      palette: key,
+    })),
+  ];
+  const rows = [];
+  for (const board of BOARDS) {
+    const tiles = [];
+    for (const column of columns) {
+      const axes = { ...sizeAxis, ...(column.palette === undefined ? {} : { palette: column.palette }) };
+      const file = requireShot(
+        shotPath(board.key, column.arm, axes),
+        thumb
+          ? `THUMBS=1 SIZES=152 PALETTES='${paletteKeys.join(' ')}' capture-boards.sh <dir> thumb-baseline veil-glow`
+          : `PALETTES='${paletteKeys.join(' ')}' capture-boards.sh <dir> baseline veil-glow`,
+      );
+      const box = await boardBox(file);
+      const region = detail ? boxFraction(box, 0.18, 0.18, 0.82, 0.62) : box;
+      tiles.push(
+        await sharp(file)
+          .extract(region)
+          .resize(COLUMN, null, thumb ? { kernel: 'nearest' } : {})
+          .png()
+          .toBuffer(),
+      );
+    }
+    const height = (await sharp(tiles[0]).metadata()).height;
+    rows.push({ board, tiles, height });
+  }
+  const LABEL = 24 + 17 + 18;
+  const ROW_LABEL = 30;
+  const sheetWidth = columns.length * COLUMN + GAP * (columns.length - 1);
+  const composites = [
+    {
+      input: header(
+        sheetWidth,
+        detail
+          ? 'Blue HAND candidates, 1:1 detail'
+          : thumb
+            ? 'Blue HAND candidates, 152 px thumbnail'
+            : 'Blue HAND candidates',
+        `Shipped display hex against each candidate, ${FIELD_HEX} play field, glyphs off — ${detail ? 'middle of the board at capture resolution' : thumb ? 'the list cell at 2x, shown at 2x nearest' : 'whole board'}`,
+      ),
+      left: GAP,
+      top: GAP,
+    },
+  ];
+  columns.forEach((column, index) => {
+    composites.push({
+      input: strip(COLUMN, LABEL, fitText(column.title, COLUMN, 24), fitText(column.subtitle, COLUMN, 17), 24, 17),
+      left: GAP + index * (COLUMN + GAP),
+      top: GAP + 96 + GAP,
+    });
+  });
+  let top = GAP + 96 + GAP + LABEL + 8;
+  for (const row of rows) {
+    composites.push({ input: strip(sheetWidth, ROW_LABEL, row.board.label, '', 22, 0), left: GAP, top });
+    row.tiles.forEach((tile, index) => {
+      composites.push({ input: tile, left: GAP + index * (COLUMN + GAP), top: top + ROW_LABEL + 6 });
+    });
+    top += ROW_LABEL + 6 + row.height + GAP;
+  }
+  const name = detail
+    ? 'blue-hand-candidates-detail.webp'
+    : thumb
+      ? 'blue-hand-candidates-152px.webp'
+      : 'blue-hand-candidates.webp';
+  await sharp({
+    create: { width: GAP + sheetWidth + GAP, height: top, channels: 4, background: INK },
+  })
+    .composite(composites)
+    .webp({ quality: 88 })
+    .toFile(path.join(OUT, name));
+  console.log(`wrote ${name}`);
+}
+
 // ---- run --------------------------------------------------------------------
 
 for (const board of BOARDS) await perBoardFigure(board);
 // Both leading arms get an every-board sheet: the glow is the one that wins on
 // the most boards, the veil is the one that changes the most on the pale dense
-// ones, and comparing them across seven boards at once is the whole point.
-await allBoardsFigure('outward-glow');
-await allBoardsFigure('veil-glow');
+// ones, and comparing them across seven boards at once is the whole point. A
+// run narrowed with `ARMS=` to a subset that left one of them out skips that
+// sheet, the way the optional sheets below skip, rather than dying on it.
+for (const armKey of ['outward-glow', 'veil-glow']) {
+  if (CAPTURED_ARMS.includes(armKey)) await allBoardsFigure(armKey);
+  else console.log(`skipped all-boards-${armKey}.webp\n  ARMS='${CAPTURED_ARMS.join(' ')}' does not include it`);
+}
 // The sheets a given run may not have the captures for — the two dichromat ones
 // want Grasshopper, the thumbnail ones want the `THUMBS=1` sweep. Skipped with
 // the command that takes them rather than failing the whole run, so a narrowed
@@ -747,6 +872,9 @@ for (const sheet of [
     name: `thumbnails-${sizeKey}px.webp`,
     build: () => thumbnailFigure(sizeKey),
   })),
+  { name: 'blue-hand-candidates.webp', build: () => blueHandFigure('whole') },
+  { name: 'blue-hand-candidates-detail.webp', build: () => blueHandFigure('detail') },
+  { name: 'blue-hand-candidates-152px.webp', build: () => blueHandFigure('thumb') },
 ]) {
   try {
     await sheet.build();

@@ -229,7 +229,32 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
  * not a proposal: computed correctly it fixes protan HAND/FOOT and creates three
  * worse collisions, and the role hex is what the app streams to the wall's LEDs.
  */
-export type SpikePaletteKey = 'shipped' | 'grasshopper' | 'equalL';
+export type SpikePaletteKey = 'shipped' | 'grasshopper' | 'equalL' | BlueHandCandidateKey;
+
+/**
+ * The fourth design pass's finalists for the blue HAND
+ * (`docs/spike/board-rendering-2202/design-review-4-blue-hand.md`): the board's
+ * own palette with HAND's *display* hex swapped and nothing else moved. One chip
+ * per hex, applied to whichever board is showing, so a `PALETTES=` capture puts
+ * every hex on every blue board and the sheet decides. The pass recommends
+ * `#1C8AFF` on the FOOT boards and `#667CFF` on MoonBoard (the shipped hue at
+ * OkLab L 0.64); `#707BBB` is the deutan-preserving alternative it could not
+ * call blue by the numbers, and `#6980FF` is one step up the MoonBoard line.
+ * The LED hex is untouched by all four — `aurora.ts:270` never reads
+ * `displayColor`.
+ */
+export type BlueHandCandidateKey = 'hand-1C8AFF' | 'hand-707BBB' | 'hand-667CFF' | 'hand-6980FF';
+
+const BLUE_HAND_CANDIDATES: Record<BlueHandCandidateKey, string> = {
+  'hand-1C8AFF': '#1C8AFF',
+  'hand-707BBB': '#707BBB',
+  'hand-667CFF': '#667CFF',
+  'hand-6980FF': '#6980FF',
+};
+
+function isBlueHandCandidate(palette: SpikePaletteKey): palette is BlueHandCandidateKey {
+  return palette in BLUE_HAND_CANDIDATES;
+}
 
 /** Role colours for one board. Partial: MoonBoard has no FOOT role at all. */
 export type SpikeRolePalette = Partial<Record<HoldState, string>>;
@@ -273,6 +298,7 @@ function boardRoleColors(boardName: BoardName): SpikeRolePalette {
 export function spikeRolePalette(palette: SpikePaletteKey, boardName: BoardName): SpikeRolePalette {
   if (palette === 'grasshopper') return GRASSHOPPER_ROLE_COLORS;
   if (palette === 'equalL') return EQUAL_L_ROLE_COLORS;
+  if (isBlueHandCandidate(palette)) return { ...boardRoleColors(boardName), HAND: BLUE_HAND_CANDIDATES[palette] };
   return boardRoleColors(boardName);
 }
 
@@ -280,6 +306,10 @@ export const SPIKE_PALETTE_LABEL: Record<SpikePaletteKey, string> = {
   shipped: 'Hues: board',
   grasshopper: 'Hues: grass',
   equalL: 'Hues: equal L',
+  'hand-1C8AFF': 'HAND #1C8AFF',
+  'hand-707BBB': 'HAND #707BBB',
+  'hand-667CFF': 'HAND #667CFF',
+  'hand-6980FF': 'HAND #6980FF',
 };
 
 /**

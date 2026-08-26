@@ -3,9 +3,8 @@
 For whoever takes this next. The spike is settled; this is what to build, what it costs, and the
 three decisions that are not mine to make.
 
-**There is a separate open job before the port: the blue HAND does not have enough contrast against
-the play field on five of the seven boards. It is scoped in §0 and can be worked independently of
-everything else in this file.**
+**The blue HAND's contrast is settled in §0, pending one pick. It is a `displayColor` edit and a
+`RENDERER_VERSION` bump, not renderer work, and it ships on its own before or beside the port.**
 
 Read [`README.md`](./README.md) for what the treatments are, and the three design passes
 ([`design-review.md`](./design-review.md), [`design-review-2.md`](./design-review-2.md),
@@ -19,11 +18,11 @@ imported by nothing else. Nothing here reaches a user until it is Rust.
 
 ---
 
-## 0. Open job: the blue HAND is the only role that fails on contrast
+## 0. The blue HAND: decided, one hex to pick
 
 Reported off a device: on the boards whose HAND is a dark blue the glow is hard to pick out, while
-every other role on the same board reads fine. That is measurable and it is not subtle. WCAG
-contrast against the default `#181225` play field, per board:
+every other role on the same board reads fine. WCAG contrast against the default `#181225` play
+field, per board, as shipped:
 
 | Board              | STARTING        | HAND               | FINISH         | FOOT             |
 | ------------------ | --------------- | ------------------ | -------------- | ---------------- |
@@ -35,44 +34,69 @@ contrast against the default `#181225` play field, per board:
 | Kilter Homewall    | `#00FF00` 13.28 | `#00FFFF` 14.54    | `#FF00FF` 5.81 | `#FFAA00` 9.55   |
 | Kilter Original    | `#00FF00` 13.28 | `#00FFFF` 14.54    | `#FF00FF` 5.81 | `#FFAA00` 9.55   |
 
-HAND is the worst role on all five blue boards and the only role anywhere below 4.5:1. On Kilter,
-whose HAND is cyan, it is the **best** role on the board at 14.54:1. So this is a property of that
-one hex, not of the treatment, and not of the role.
+HAND is the worst role on all five blue boards and the only role anywhere below 4.5:1; on Kilter,
+whose HAND is cyan, it is the best role on the board. So it is a property of that one hex.
 
-It is worse on the other play fields, which matters because the field is a user setting: Grasshopper's
-HAND is 2.16:1 on the grey chip and **1.43:1 on plywood**, and MoonBoard's is 1.90:1 and 1.26:1.
+**What the fourth pass found** ([`design-review-4-blue-hand.md`](./design-review-4-blue-hand.md):
+five lenses, a skeptic each, every number through `packages/mobile/scripts/spike/role-contrast.mjs`,
+then a device capture). Nothing that keeps the hex gets HAND out of last place: anything drawn in
+`#4444FF` caps at the hex's own 3.05:1 (alpha plateau 3.33 / 3.08 / 2.99, dark casing identical to
+shipped, spread x1.3 3.03 / 2.97 / 2.69), the darkest field the app could paint caps it at 3.52
+because a field scales every role alike, and a lighter same-hue edge tint is a palette change with a
+palette's CVD cost. So the fix is the display hex, which is screen-only
+(`packages/shared/ble-protocol/src/aurora.ts:270` sends `sanitizedOverride ?? state.color` to the
+wall and never reads `displayColor`), and the LED stays `#0000FF`. The "standard colour" on screen was
+already a band, not a hex: Aurora's own `screen_color` is `#0066FF` on Tension and `#4455FF` on
+Grasshopper, the TB2 app draws `#3B3BFF`, the MoonBoard app `#2962FF`, and Boardsesh moved this blue
+9.5 / 13.7 dE00 on 2026-07-17 (`39c7eb65e`) with no reaction in 19 issue comments.
 
-**The important constraint, and it is more permissive than it looks.** The role hex a board lights
-its LEDs with is NOT the one drawn on screen. `packages/shared/ble-protocol/src/aurora.ts:270`
-resolves `sanitizedOverride ?? state.color` — it never reads `displayColor`. Every blue HAND above
-is a `displayColor` (`HOLD_STATE_MAP` gives Grasshopper `displayColor #4455FF` over `color #0000FF`),
-so changing what the screen draws does not change what the wall does. A `color` change would, and
-that needs the Fable review `CLAUDE.md` requires for anything touching BLE.
+**What the device said** (`boards/blue-hand-candidates.webp`, `-detail.webp`, `-152px.webp`; HAND p95
+against the field on the 1080 px veil + glow capture, rendered FINISH on the same capture as the bar):
 
-**Two things that have already been tried and rejected, with measurements — do not redo them.**
+| Board             | shipped | `#1C8AFF` | `#6980FF` | `#667CFF` | `#707BBB` | FINISH |
+| ----------------- | ------- | --------- | --------- | --------- | --------- | ------ |
+| Grasshopper       | 3.17    | 4.83      | 4.92      | 4.58      | 4.17      | 4.18   |
+| Tension Original  | 2.84    | 4.85      | 4.89      | 4.64      | 4.12      | 4.18   |
+| TB2 Mirror        | 2.83    | 4.79      | 4.83      | 4.65      | 4.18      | 4.12   |
+| MoonBoard 2016    | 2.76    | 4.80      | 4.85      | 4.57      | 4.13      | 4.58   |
+| MoonBoard Masters | 2.79    | 4.80      | 4.90      | 4.61      | 4.14      | 4.61   |
 
-- The equal-lightness palette (`SPIKE_PALETTES.equalL`, still a chip on the spike screen). Computed
-  correctly under both Viénot 1999 and Machado 2009 in linear RGB, it fixes protan HAND/FOOT
-  (ΔE00 3.2 → 16.5) and creates three worse collisions: deutan HAND/FOOT 1.3 against the shipped
-  20.6, deutan STARTING/FINISH 4.7 against 12.6, tritan STARTING/HAND 3.3 against 24.7. See
-  `design-review-3.md`'s "leave alone" list.
-- Carrying role on hue alone and fixing CVD with a brighter palette. The current answer is the
-  opt-in glyph mode, which is off by default; a contrast fix has to work for the default render.
+`#707BBB` fails the bar on four boards and reads grey-lavender: out. `#667CFF` misses MoonBoard
+2016's bar by 0.01. **Two survive, and the pick between them is policy, not measurement:**
 
-**What a fix has to satisfy**, in rough priority order: HAND at or above the other roles' worst
-(≈4.5:1) on `#181225`; no new CVD collision under Viénot **and** Machado in linear RGB, checked
-against each board's real palette rather than Grasshopper's; still recognisably "the blue one",
-because the LED on the wall stays blue and the screen should agree with the wall; and it should not
-make the plywood field worse than it already is.
+- **`#6980FF` on all five blue boards** — the shipped hue (OkLCh h 272.3 vs 272.6) at OkLab L 0.65,
+  one hex, the brightest rendered HAND everywhere, dE00 13.5 / 17.9 from today on Grasshopper /
+  Tension. Costs the Tension-class Machado protan HAND/FOOT pair 6.8 to 5.8 and the deutan HAND/FOOT
+  pairs about 7.8 / 8.1 (from a board worst of 12.6 / 12.2 that was a STARTING/FINISH pair).
+- **`#1C8AFF` on the six FOOT boards and `#6980FF` on MoonBoard** — the pass's own pick: Machado
+  protan held at 6.9, deutan 8.8 / 9.0, for an 18-degree hue shift toward cyan (2.0 dE00 from iOS
+  system blue), a second hex, and a mark in the same family as Grasshopper's unlit cyan holds.
 
-Worth checking early, because it may be most of the answer on its own: the veil already lifts every
-board's weakest role from 27–87% of the wall being brighter than it to under 1%. The remaining
-problem may be the glow's own colour against the _field_ rather than against the wall, in which case
-the fix is the mark's inner edge and not the palette at all.
+Both lift Grasshopper's protan HAND/FOOT pair, the one the glyph mode exists for, from 3.2 / 3.8 to
+9.9 / 5.8 or 11.5 / 6.9. Neither touches Kilter, `state.color`, or any BLE file.
 
-Measure with `spikeRolePalette('shipped', boardName)` — the per-board resolver added in this branch —
-not with a hardcoded set. Painting Grasshopper's palette on all seven boards is a mistake this spike
-already made once and it invalidated sixteen of twenty-eight panels.
+**What the port does with it: nothing.** `renderer.rs` takes the role hex from `RenderConfig`, which
+`use-native-climb-render.ts:701`, `worker-manager.ts:328` and `render-config.ts:65` all fill with
+`displayColor ?? color`. The shipping edit is its own PR, OTA-able, and small: the HAND `displayColor`
+entries in `packages/board-constants/src/hold-states.ts` (tension codes 2 and 6, touchstone, soill,
+woods, grasshopper, decoy — which today displays the raw `#0000FF` — and moonboard 43, mirrored at
+`packages/shared/board-config/src/moonboard-config.ts:150` and drift-tested), `RENDERER_VERSION` 6 to
+7 (`use-native-climb-render.ts:443-448` reuses any cached PNG under the old prefix, so without it
+nothing visibly changes), the `#4455FF` expectation at `use-native-climb-render.test.ts:271`, and the
+selftest pins in `role-contrast.mjs`. The OG card and the web `board-render` route the iOS Live
+Activity fetches sit behind one-year immutable caches until their URLs carry a version. A user with a
+HAND colour override never sees the change: the override wins on screen and on the wall.
+
+**Already tried and rejected, with measurements — do not redo.** The equal-lightness palette
+(`SPIKE_PALETTES.equalL`: deutan HAND/FOOT 1.3 against shipped 20.6). Carrying role on hue alone with
+a brighter palette. Every mark-structure idea (rim, two-tone falloff, casing, brighter pip, plateau,
+wider spread) and every field (ink, cooler, warmer, per-board, a third veil bucket): the numbers are
+in the review's "Rejected" list, 41 items. Measure with `spikeRolePalette('shipped', boardName)`
+(`spike-config.ts`) and the oracle, never with Grasshopper's set on all seven boards.
+
+One caution for anyone quoting CVD numbers: the tritan figures in the earlier reviews (24.7 / 3.3)
+reproduce under no known matrix; the oracle's selftest lists them as unreproduced. Nothing here gates
+on tritan.
 
 ---
 

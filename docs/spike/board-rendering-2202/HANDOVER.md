@@ -93,7 +93,11 @@ caption.
 
 `build-figures.mjs` crops each capture to the board and writes the per-board
 sheets, the all-boards sheets, the colour-vision simulation, the accessibility
-glyph sheet and one thumbnail sheet per width. It finds the board by scanning for
+glyph sheet, one thumbnail sheet per width, and — when `PALETTES='<keys>'` is
+set on both the capture and the build — `blue-hand-candidates.webp` plus its
+1:1 detail sheet: shipped baseline and veil + glow beside veil + glow on each
+candidate role palette, one row per board (the §0 contrast job in
+`PORT-HANDOVER.md`). It finds the board by scanning for
 the play field, which is **argv[4]** — a `SPIKE_BACKGROUNDS` key or a raw hex,
 defaulting to `field`. Give it the field the run was taken on or every crop fails
 loudly. `BOARDS=` and `ARMS=` narrow it to a run that did not shoot the full
