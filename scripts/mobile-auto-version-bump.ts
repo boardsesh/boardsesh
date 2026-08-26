@@ -95,6 +95,7 @@ type IncludedResource = {
 type JsonApiCollectionResponse<T> = {
   data: T[];
   included?: IncludedResource[];
+  links?: { next?: string | null };
 };
 
 // Store acceptance is always tied to one exact binary. Google reports versionCode
@@ -269,23 +270,42 @@ export function mapAcceptedGoogleProductionReleases(releases: readonly GooglePro
   return [...acceptedByVersionCode.values()].sort((left, right) => left.buildNumber - right.buildNumber);
 }
 
-async function getAcceptedVersions(token: string, appId: string): Promise<AcceptedBuild[]> {
-  const data = await ascFetch<JsonApiCollectionResponse<AppStoreVersionResource>>(
-    `/v1/apps/${appId}/appStoreVersions`,
-    token,
-    {
-      'filter[appVersionState]': ACCEPTED_APP_STORE_STATES.join(','),
-      'filter[platform]': 'IOS',
-      'fields[appStoreVersions]': 'versionString,appVersionState,build',
-      // Pull the attached build inline so we learn its build number without a
-      // second round-trip per version.
-      include: 'build',
-      'fields[builds]': 'version',
-      limit: '200',
-    },
-  );
+export async function getAcceptedVersions(token: string, appId: string): Promise<AcceptedBuild[]> {
+  const endpointPath = `/v1/apps/${appId}/appStoreVersions`;
+  let nextPage: string | undefined = endpointPath;
+  let params: Record<string, string> | undefined = {
+    'filter[appVersionState]': ACCEPTED_APP_STORE_STATES.join(','),
+    'filter[platform]': 'IOS',
+    'fields[appStoreVersions]': 'versionString,appVersionState,build',
+    // Pull the attached build inline so we learn its build number without a
+    // second round-trip per version.
+    include: 'build',
+    'fields[builds]': 'version',
+    limit: '200',
+  };
+  const combined: JsonApiCollectionResponse<AppStoreVersionResource> = { data: [], included: [] };
+  const visitedPages = new Set<string>();
 
-  return mapAcceptedVersions(data);
+  while (nextPage) {
+    const page = await ascFetch<JsonApiCollectionResponse<AppStoreVersionResource>>(nextPage, token, params);
+    combined.data.push(...page.data);
+    combined.included?.push(...(page.included ?? []));
+    const nextLink = page.links?.next;
+    if (!nextLink) break;
+
+    const nextUrl = new URL(nextLink, APP_STORE_CONNECT_API_BASE);
+    if (nextUrl.origin !== APP_STORE_CONNECT_API_BASE || nextUrl.pathname !== endpointPath) {
+      throw new Error(`ASC returned an untrusted pagination link: ${nextUrl.href}`);
+    }
+    if (visitedPages.has(nextUrl.href)) {
+      throw new Error(`ASC returned a repeated pagination link: ${nextUrl.href}`);
+    }
+    visitedPages.add(nextUrl.href);
+    nextPage = nextUrl.href;
+    params = undefined;
+  }
+
+  return mapAcceptedVersions(combined);
 }
 
 function createGoogleServiceAccountJwt(

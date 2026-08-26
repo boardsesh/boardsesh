@@ -30,8 +30,8 @@ the repository secret and the environment is not a credential boundary. Keep
 `OTA_PUSH_APP_PRIVATE_KEY` repository-scoped because trusted OTA and maintenance
 workflows also use it.
 
-The repository App used by `OTA_PUSH_APP_ID` needs Contents, Actions, Workflows
-and Pull requests write access. Workflows is required to rebase commits that
+The repository App used by `OTA_PUSH_APP_ID` needs Contents, Workflows and Pull
+requests write access. Workflows is required to rebase commits that
 touch `.github/workflows`; Pull requests is required for the acceptance monitor
 to merge with the App token so the resulting `main` push triggers production
 OTA.

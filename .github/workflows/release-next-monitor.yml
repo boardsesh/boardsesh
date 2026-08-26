@@ -19,8 +19,10 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  checks: read
   contents: read
   pull-requests: read
+  statuses: read
 
 env:
   EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
@@ -316,7 +318,7 @@ jobs:
         if: >-
           steps.gates.outputs.ready == 'true' &&
           !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
         with:
           app-id: ${{ vars.OTA_PUSH_APP_ID }}
           private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
@@ -329,6 +331,7 @@ jobs:
         if: steps.app_token.outcome == 'success'
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          GATE_READ_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ needs.discover.outputs.pr_number }}
           EXPECTED_HEAD_SHA: ${{ needs.discover.outputs.release_sha }}
           HEAD_VERSION: ${{ needs.discover.outputs.version }}
@@ -342,7 +345,10 @@ jobs:
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           set -euo pipefail
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $git_auth"
+          git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          unset git_auth
 
           # Re-query both stores before creating any release anchor. A changed
           # acceptance decision or highest build tag aborts without side effects.
@@ -412,7 +418,7 @@ jobs:
           query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state isDraft headRefName baseRefName headRepository{nameWithOwner} baseRepository{nameWithOwner} headRefOid mergeable reviewDecision commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){pageInfo{hasNextPage} nodes{__typename ... on CheckRun{status conclusion} ... on StatusContext{state}}}}}}}}}}'
           owner="${GITHUB_REPOSITORY%%/*}"
           repo="${GITHUB_REPOSITORY#*/}"
-          pr="$(gh api graphql -f query="$query" -f owner="$owner" -f repo="$repo" -F number="$PR_NUMBER")"
+          pr="$(GH_TOKEN="$GATE_READ_TOKEN" gh api graphql -f query="$query" -f owner="$owner" -f repo="$repo" -F number="$PR_NUMBER")"
           checks_green="$(jq -r '
             [.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[] |
               if .__typename == "CheckRun" then
@@ -530,7 +536,7 @@ jobs:
             local final_checks_green
             local final_checks_paginated
             local final_refs_valid
-            final_pr="$(gh api graphql -f query="$query" -f owner="$owner" -f repo="$repo" -F number="$PR_NUMBER")" || return 1
+            final_pr="$(GH_TOKEN="$GATE_READ_TOKEN" gh api graphql -f query="$query" -f owner="$owner" -f repo="$repo" -F number="$PR_NUMBER")" || return 1
             final_checks_green="$(jq -r '
               [.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[] |
                 if .__typename == "CheckRun" then

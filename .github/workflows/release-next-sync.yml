@@ -64,7 +64,7 @@ jobs:
       - name: Mint repository App token
         id: push_token
         if: steps.target.outputs.attempted == 'true'
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
         with:
           app-id: ${{ vars.OTA_PUSH_APP_ID }}
           private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
@@ -141,8 +141,11 @@ jobs:
           test "$(jq -r '.base.repo.full_name' <<<"$current_pr")" = "$GITHUB_REPOSITORY"
           test "$(jq -r '.head.repo.full_name' <<<"$current_pr")" = "$GITHUB_REPOSITORY"
 
+          git_auth="$(printf 'x-access-token:%s' "$GH_APP_TOKEN" | base64 | tr -d '\n')"
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $git_auth"
+          unset git_auth
           git push --force-with-lease="release/next:$EXPECTED_RELEASE_SHA" \
-            "https://x-access-token:${GH_APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "https://github.com/${GITHUB_REPOSITORY}.git" \
             'HEAD:refs/heads/release/next'
 
       - name: Preserve sync failure details

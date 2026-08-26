@@ -47,6 +47,8 @@ describe('native release train workflow contracts', () => {
     expect(ios).toContain('git push --atomic "$remote" "refs/tags/$build_tag" "refs/tags/$fingerprint_tag"');
     expect(android).toContain('git push --atomic "$remote" "refs/tags/$build_tag" "refs/tags/$fingerprint_tag"');
     for (const source of [ios, android]) {
+      expect(source).toContain('actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547');
+      expect(source).not.toContain('https://x-access-token:${GH_APP_TOKEN}@github.com');
       expect(source).toContain('assert_missing_or_exact');
       expect(source).toContain('already point to this build; nothing to push');
       expect(source).toContain('A concurrent retry already published');
@@ -61,17 +63,19 @@ describe('native release train workflow contracts', () => {
     expect(android).toContain('actions/upload-artifact@v4');
     expect(android).toContain('tracks: internal');
     expect(android).toContain('Require Play upload credentials');
+    expect(android.indexOf('Require Play upload credentials')).toBeLessThan(android.indexOf('Expo prebuild'));
   });
 
   it('rebases with the repository App, an explicit lease, and Discord failure reporting', () => {
     expect(sync).toContain('branches: [main]');
-    expect(sync).toContain('actions/create-github-app-token@v1');
+    expect(sync).toContain('actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547');
     expect(sync).toContain('git rebase --rebase-merges origin/main');
     expect(sync).toContain('--force-with-lease="release/next:$EXPECTED_RELEASE_SHA"');
     expect(sync).toContain('DISCORD_DEPLOY_WEBHOOK');
     expect(sync).toContain('git rebase --abort');
     expect(sync).toContain("'.head.repo.full_name'");
     expect(sync).toContain('permission-workflows: write');
+    expect(sync).not.toContain('https://x-access-token:${GH_APP_TOKEN}@github.com');
     const rebaseJob = sync.slice(sync.indexOf('  rebase:'), sync.indexOf('  notify-failure:'));
     expect(rebaseJob).not.toContain('environment: Native Release');
     expect(sync).toContain('notify-failure:');
@@ -114,6 +118,10 @@ describe('native release train workflow contracts', () => {
     expect(monitor).toContain('bun install --frozen-lockfile --ignore-scripts');
     expect(monitor).toContain('reviewDecision');
     expect(monitor).toContain('statusCheckRollup');
+    expect(monitor).toContain('checks: read');
+    expect(monitor).toContain('statuses: read');
+    expect(monitor.match(/GH_TOKEN="\$GATE_READ_TOKEN" gh api graphql/g)).toHaveLength(2);
+    expect(monitor).not.toContain('https://x-access-token:${GH_TOKEN}@github.com');
     expect(monitor.match(/pageInfo\{hasNextPage\}/g)).toHaveLength(2);
     expect(monitor.match(/more than 100 status checks/g)).toHaveLength(3);
     expect(monitor).toContain('headRepository{nameWithOwner}');

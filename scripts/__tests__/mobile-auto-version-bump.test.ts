@@ -1,11 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  getAcceptedVersions,
   mapAcceptedGoogleProductionReleases,
   mapAcceptedVersions,
   parseGoogleProductionReleasesResponse,
   parseGoogleServiceAccount,
 } from '../mobile-auto-version-bump';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('mapAcceptedVersions', () => {
   it.each([
@@ -126,6 +131,65 @@ describe('mapAcceptedVersions', () => {
         state: 'READY_FOR_DISTRIBUTION',
       },
     ]);
+  });
+});
+
+describe('getAcceptedVersions', () => {
+  const acceptedVersion = (id: string, buildId: string, buildNumber: string) => ({
+    data: [
+      {
+        type: 'appStoreVersions' as const,
+        id,
+        attributes: { versionString: '2.1.0', appVersionState: 'READY_FOR_DISTRIBUTION' },
+        relationships: { build: { data: { type: 'builds' as const, id: buildId } } },
+      },
+    ],
+    included: [{ type: 'builds', id: buildId, attributes: { version: buildNumber } }],
+  });
+
+  it('follows trusted ASC pagination and maps builds from every page', async () => {
+    const firstPage = acceptedVersion('v1', 'b1', '41');
+    const secondPage = acceptedVersion('v2', 'b2', '42');
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...firstPage,
+            links: {
+              next: 'https://api.appstoreconnect.apple.com/v1/apps/app-id/appStoreVersions?cursor=second',
+            },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(secondPage), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getAcceptedVersions('token', 'app-id')).resolves.toEqual([
+      { platform: 'ios', versionString: '2.1.0', buildNumber: 41, state: 'READY_FOR_DISTRIBUTION' },
+      { platform: 'ios', versionString: '2.1.0', buildNumber: 42, state: 'READY_FOR_DISTRIBUTION' },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toEqual(
+      new URL('https://api.appstoreconnect.apple.com/v1/apps/app-id/appStoreVersions?cursor=second'),
+    );
+  });
+
+  it('rejects a cross-origin ASC pagination link before sending the token', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ...acceptedVersion('v1', 'b1', '41'),
+          links: { next: 'https://attacker.example/v1/apps/app-id/appStoreVersions?cursor=second' },
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getAcceptedVersions('token', 'app-id')).rejects.toThrow(/untrusted pagination link/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

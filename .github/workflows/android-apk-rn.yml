@@ -125,6 +125,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Require Play upload credentials
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          [ -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ] || {
+            echo "::error::Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON; a release/next build must reach Play internal before it can be tagged."
+            exit 1
+          }
+
       - uses: oven-sh/setup-bun@v2
 
       - name: Install Node.js dependencies (workspace root)
@@ -516,16 +526,6 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-      - name: Require Play upload credentials
-        env:
-          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
-        run: |
-          set -euo pipefail
-          [ -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ] || {
-            echo "::error::Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON; a release/next build must reach Play internal before it can be tagged."
-            exit 1
-          }
-
       # Play "What's new" for this release, from the source-controlled changelogs
       # (fastlane/metadata/android/<locale>/changelogs/default.txt). r0adkll expects
       # <dir>/whatsnew-<locale>; Play caps each note at 500 characters and falls
@@ -583,7 +583,7 @@ jobs:
       - name: Mint repository App token for protected release tags
         id: tag_token
         if: steps.play_upload.outcome == 'success' && steps.build_aab.outcome == 'success' && env.FINGERPRINT_ANDROID != '' && steps.version_code.outputs.value != '' && env.BOARDSESH_MOBILE_VERSION != ''
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
         with:
           app-id: ${{ vars.OTA_PUSH_APP_ID }}
           private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
@@ -598,7 +598,10 @@ jobs:
           GH_APP_TOKEN: ${{ steps.tag_token.outputs.token }}
         run: |
           set -euo pipefail
-          remote="https://x-access-token:${GH_APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git_auth="$(printf 'x-access-token:%s' "$GH_APP_TOKEN" | base64 | tr -d '\n')"
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $git_auth"
+          unset git_auth
+          remote="https://github.com/${GITHUB_REPOSITORY}.git"
           shortfp="$(printf '%s' "${FINGERPRINT_ANDROID:0:12}" | tr '[:upper:]' '[:lower:]')"
           build_tag="build-android-v${BOARDSESH_MOBILE_VERSION}-${VERSION_CODE}-${shortfp}"
           fingerprint_tag="fingerprint-android-${FINGERPRINT_ANDROID}"

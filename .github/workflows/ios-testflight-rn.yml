@@ -614,7 +614,7 @@ jobs:
       - name: Mint repository App token for protected release tags
         id: tag_token
         if: steps.testflight_upload.outcome == 'success' && env.FINGERPRINT_IOS != '' && steps.build_number.outputs.value != '' && env.BOARDSESH_MOBILE_VERSION != ''
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
         with:
           app-id: ${{ vars.OTA_PUSH_APP_ID }}
           private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
@@ -630,7 +630,10 @@ jobs:
           GH_APP_TOKEN: ${{ steps.tag_token.outputs.token }}
         run: |
           set -euo pipefail
-          remote="https://x-access-token:${GH_APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git_auth="$(printf 'x-access-token:%s' "$GH_APP_TOKEN" | base64 | tr -d '\n')"
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $git_auth"
+          unset git_auth
+          remote="https://github.com/${GITHUB_REPOSITORY}.git"
           shortfp="$(printf '%s' "${FINGERPRINT_IOS:0:12}" | tr '[:upper:]' '[:lower:]')"
           build_tag="build-ios-v${BOARDSESH_MOBILE_VERSION}-${BUILD_NUMBER}-${shortfp}"
           fingerprint_tag="fingerprint-ios-${FINGERPRINT_IOS}"

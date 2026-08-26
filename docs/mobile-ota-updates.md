@@ -495,14 +495,16 @@ Two tag families do this:
   (`ios-testflight-rn.yml` / `android-apk-rn.yml`) on a successful store upload. Maps a store build
   number (iOS `CFBundleVersion` / Android `versionCode`) to the commit and the canonical gate
   fingerprint the binary embeds. `<shortfp>` is the first 12 hex chars of the fingerprint.
-- `release/<platform>-v<version>-<shortfp>` — cut by `mobile-auto-version-bump.yml` when that
-  platform's store reports the exact build accepted (`scripts/mobile-cut-release-tags.ts`). It points at the commit
-  the approved binary was built from; its `<shortfp>` records the fingerprint an OTA must resolve to
-  reach that release. This is the frozen **backport anchor**.
+- `release/<platform>-v<version>-<shortfp>` — cut by `mobile-auto-version-bump.yml`, or by
+  `release-next-monitor.yml` immediately before it promotes the native train, when that platform's store reports
+  the exact build accepted (`scripts/mobile-cut-release-tags.ts`). It points at the commit the approved binary was
+  built from; its `<shortfp>` records the fingerprint an OTA must resolve to reach that release. This is the frozen
+  **backport anchor**.
 
 `mobile-auto-version-bump.yml` runs on a schedule and looks up each store's
-exact approved build number before cutting that platform's anchor. The same
-monitor discovers the open `release/next` PR and merges it only when the latest
+exact approved build number before cutting that platform's anchor. The separate
+`release-next-monitor.yml` repeats that exact lookup before cutting/verifying the
+same idempotent anchors. It discovers the open `release/next` PR and merges it only when the latest
 matching iOS and Android candidate numbers are both approved, the PR is ready,
 approved, green, current and conflict-free. Unresolved review threads are not a
 merge gate.
