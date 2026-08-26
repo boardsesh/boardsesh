@@ -64,17 +64,25 @@ satisfy too). Schema in `packages/shared-schema/src/schema/qa.ts`, resolvers in
 **`qaPreviews(prNumbers: [Int!]!): [QaPreview!]!`** — the app passes every `pr-<n>` branch it can
 load; the backend answers with the ones that are still open PRs, each carrying the title, author,
 draft flag, head SHA, the `## Test plan` steps, the `Risk: N/5` score, and the caller's own last
-verdict. Closed and unknown numbers are dropped, so the app never has to pre-filter. At most 50
-numbers per call. The PR list is cached for three minutes and negative-cached for 30 seconds, so
-one backend serving every tester costs GitHub two calls per refill; head-commit dates are cached
-per SHA. GitHub being unreachable returns an empty list, never an error — a tester should see
-"nothing to test", not a broken screen.
+verdict. Closed and unknown numbers are dropped, so the app never has to pre-filter, and an empty
+request answers `[]` rather than erroring. At most 50 numbers per call. The PR list is cached for
+three minutes and negative-cached for 30 seconds, so one backend serving every tester costs GitHub
+two calls per refill; head-commit dates are cached per SHA and looked up five at a time, so a cold
+50-PR call can't spend a whole anonymous rate-limit budget at once. GitHub being unreachable returns
+an empty list, never an error — a tester should see "nothing to test", not a broken screen.
 
 **`submitQaVerdict(input: SubmitQaVerdictInput!): QaVerdict!`** — records the verdict in
 `qa_verdicts` and returns it. The branch must equal `pr-<prNumber>`, the PR must be open, and a
 `declined` verdict needs a comment of 10 characters or more: a decline is a request for work, so it
 has to say what broke. The head SHA and its commit date are stamped from GitHub at write time, which
 is what lets the comment flag a verdict filed on a bundle older than the current head.
+
+A verdict does need GitHub, because it has to be placed against a head commit. `readOpenPullRequests`
+returns a `failed` flag rather than making the caller guess from an empty list — an unreachable
+GitHub says "could not reach GitHub, try again in a minute", while a repo that genuinely has no open
+PR says "pull request is not open". Timestamps the app sends (`bundleCreatedAt`) are normalised to
+UTC on the way in, since the columns are zone-less and would otherwise store `+02:00` as wall clock
+and invert the staleness comparison.
 
 ### What lands on the PR
 
@@ -96,7 +104,7 @@ Filed from the Boardsesh app.
 | Runtime | fingerprint-1 |
 | Bundle published | 2026-08-26T09:30:00Z |
 | Head SHA at verdict | abcdef1 |
-| Verdict id | qa_verdicts #17 |
+| Verdict id | qa_verdicts.id 17 |
 ```
 
 Plus, when they apply: `⚠️ Tested an older revision — the bundle was published before the current
@@ -106,6 +114,13 @@ The repo is public, so the comment names the tester by Boardsesh display name �
 author is worth nothing to the PR author — and carries no email and no user id. Free text goes
 through `redactSensitiveText` (`@boardsesh/text-redaction`) first, the same net the bug-report
 issues use.
+
+Everything a tester can type — their notes, their display name, the version strings the app reports
+— is also de-fanged before it goes in, because the comment is Markdown on a public repo. `<!--`
+would otherwise open an HTML comment and swallow the device table, `@handle` would notify someone
+from an account that isn't theirs, and `#123` would leave a cross-reference on an unrelated issue.
+Angle brackets that start a tag are escaped, `@`/`#` tokens are wrapped in a code span, and the
+verdict id is written `qa_verdicts.id 17` rather than `#17` for the same reason.
 
 **Labels: latest verdict wins.** Each verdict adds `qa-approved` or `qa-declined` and removes the
 other, so the label on a PR is always the most recent call, not a tally. Read the comments for the
@@ -122,6 +137,10 @@ The token is a fine-grained PAT on `boardsesh/boardsesh` with **Pull requests re
 read+write**, and **Contents read**. Issues write is not optional and not sufficient on its own: PR
 comments live on the issues endpoint (so they need Issues), and the PR list and commit lookups need
 Pull requests and Contents. An Issues-only token 403s.
+
+Empty counts as unset for both variables — `.env.development` ships `QA_GITHUB_TOKEN=`, and a
+dashboard hands back `''` for a variable someone cleared. Either would otherwise shadow the
+`FEEDBACK_*` fallback, and an empty repo would leave the reader asking GitHub for `/repos//pulls`.
 
 ### Runbook
 

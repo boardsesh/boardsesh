@@ -31,6 +31,11 @@ const ERROR_CACHE_TTL_MS = 30 * 1000;
 // new commits. Bound it anyway — a long-lived process watching a busy repo
 // would otherwise keep every SHA it ever saw.
 const COMMIT_DATE_CACHE_MAX = 200;
+// Cold-cache fan-out bound for the per-SHA commit lookups (see getHeadCommitDates).
+const COMMIT_DATE_CONCURRENCY = 5;
+// A display name is user-typed and lands in the comment's heading line, so it
+// gets the same treatment as any other free text plus a hard length cap.
+const DISPLAY_NAME_MAX = 60;
 const QA_LABELS = { approved: 'qa-approved', declined: 'qa-declined' } as const;
 
 /** An open pull request, reduced to what a tester needs to see. */
@@ -151,7 +156,8 @@ async function fetchOpenPullRequests(): Promise<QaPullRequest[]> {
  * Every open pull request, cached for {@link CACHE_TTL_MS} (or {@link
  * ERROR_CACHE_TTL_MS} after a failure). At most two GitHub calls per refill,
  * however many testers are asking. Throws on a GitHub failure so the caller can
- * decide how to degrade — `qaPreviews` returns an empty list.
+ * decide how to degrade — resolvers go through {@link readOpenPullRequests},
+ * which turns both the throw and the negative-cached `[]` into one flag.
  */
 export async function getOpenPullRequests(now: number = Date.now()): Promise<QaPullRequest[]> {
   const ttl = pullRequestCache?.isError ? ERROR_CACHE_TTL_MS : CACHE_TTL_MS;
@@ -172,6 +178,34 @@ export async function getOpenPullRequests(now: number = Date.now()): Promise<QaP
   })();
 
   return inFlightPullRequests;
+}
+
+/** The open-PR list plus whether it is standing in for a GitHub failure. */
+export type OpenPullRequestsRead = {
+  pullRequests: QaPullRequest[];
+  /**
+   * True when GitHub could not be read — either this call failed or a recent
+   * one did and the negative cache is still serving its empty list. It is the
+   * only way to tell "GitHub is down" from "this repo genuinely has no open
+   * pull requests", which are the same `[]` to a caller.
+   */
+  failed: boolean;
+};
+
+/**
+ * {@link getOpenPullRequests} for resolvers: never throws, and says whether the
+ * list it returns is real. A raw throw would otherwise reach the client as
+ * `GitHub GET /repos/... responded 403` on the first failure and as a bare `[]`
+ * for the next 30 seconds — two different behaviours for one outage.
+ */
+export async function readOpenPullRequests(now: number = Date.now()): Promise<OpenPullRequestsRead> {
+  try {
+    const pullRequests = await getOpenPullRequests(now);
+    return { pullRequests, failed: pullRequestCache?.isError === true };
+  } catch (error) {
+    logger.warn('[qa] open pull request lookup failed; serving no previews:', error);
+    return { pullRequests: [], failed: true };
+  }
 }
 
 /**
@@ -206,6 +240,33 @@ export async function getHeadCommitDate(sha: string): Promise<string | null> {
 }
 
 /**
+ * Committer dates for a batch of SHAs, `sha -> date | null`.
+ *
+ * One `qaPreviews` call may carry 50 pull requests, and on a cold cache each
+ * distinct head is its own GitHub call. Firing all 50 at once would open 50
+ * sockets and, on a deploy with no token, spend most of the anonymous 60/hr
+ * budget in a single request — so they run {@link COMMIT_DATE_CONCURRENCY} at a
+ * time. Steady state is still zero calls: every SHA is cached.
+ */
+export async function getHeadCommitDates(shas: readonly string[]): Promise<Map<string, string | null>> {
+  const distinctShas = [...new Set(shas)];
+  const committedAtBySha = new Map<string, string | null>();
+  let nextIndex = 0;
+
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const sha = distinctShas[nextIndex];
+      nextIndex += 1;
+      if (sha === undefined) return;
+      committedAtBySha.set(sha, await getHeadCommitDate(sha));
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(COMMIT_DATE_CONCURRENCY, distinctShas.length) }, () => worker()));
+  return committedAtBySha;
+}
+
+/**
  * A pull request as the tester's app renders it: the title, the `## Test plan`
  * steps, the `Risk: N/5` score, and whatever verdict this tester already filed.
  * Pure — every input is passed in.
@@ -235,8 +296,41 @@ export function buildQaPreview(
   };
 }
 
+// Everything a tester can type reaches this comment: their notes, their display
+// name, and the version strings the app reports. GitHub renders all of it as
+// Markdown with a permissive HTML subset, so unfiltered text can do three things
+// we don't want:
+//
+//   - `<!--` opens an HTML comment that swallows the rest of the body — the
+//     device table simply disappears;
+//   - `@handle` notifies that person, from an account that isn't theirs;
+//   - `#123` back-links an unrelated issue, leaving a cross-reference on it.
+//
+// `<` is escaped only where it starts an HTML-ish token, so prose like `a < b`
+// still reads as typed; `@`/`#` tokens are wrapped in a code span, which GitHub
+// does not linkify. (Inside a fenced block a tester pasted, the entity shows
+// literally — an acceptable trade for never losing the table.)
+const HTML_TOKEN_START = /<(?=[!/?a-zA-Z])/g;
+const MENTION_OR_ISSUE_REFERENCE = /(^|[^\w`/])([@#])([A-Za-z0-9][\w-]*)/g;
+
+function neutralizeMarkdown(text: string): string {
+  return text.replace(HTML_TOKEN_START, '&lt;').replace(MENTION_OR_ISSUE_REFERENCE, '$1`$2$3`');
+}
+
 function escapeTableCell(value: string): string {
-  return value.replaceAll('|', '\\|').replace(/\r?\n/g, '<br>');
+  return neutralizeMarkdown(value).replaceAll('|', '\\|').replace(/\r?\n/g, '<br>');
+}
+
+/**
+ * The tester's name as it can safely appear in the comment heading: one line,
+ * capped, run through the same redaction as free text (a display name someone
+ * set to their email must not reach a public repo), and de-fanged.
+ */
+function safeDisplayName(displayName: string | null): string {
+  const collapsed = (displayName ?? '').replace(/\s+/g, ' ').trim();
+  if (!collapsed) return 'a Boardsesh tester';
+  const neutralized = neutralizeMarkdown(redactSensitiveText(collapsed).slice(0, DISPLAY_NAME_MAX)).trim();
+  return neutralized || 'a Boardsesh tester';
 }
 
 function shortSha(sha: string | null): string | null {
@@ -262,9 +356,9 @@ function testedAnOlderRevision(bundleCreatedAt: string | null, headCommittedAt: 
  */
 export function buildVerdictComment(payload: VerdictCommentPayload): string {
   const approved = payload.verdict === 'approved';
-  const testerName = payload.displayName?.trim() || 'a Boardsesh tester';
+  const testerName = safeDisplayName(payload.displayName);
   const rawComment = payload.comment?.trim() ?? '';
-  const redactedComment = rawComment ? redactSensitiveText(rawComment) : '';
+  const redactedComment = rawComment ? neutralizeMarkdown(redactSensitiveText(rawComment)) : '';
 
   const rows: Array<[string, string | null]> = [
     ['Platform', payload.platform],
@@ -273,7 +367,9 @@ export function buildVerdictComment(payload: VerdictCommentPayload): string {
     ['Runtime', payload.runtimeVersion],
     ['Bundle published', payload.bundleCreatedAt],
     ['Head SHA at verdict', shortSha(payload.headSha)],
-    ['Verdict id', `qa_verdicts #${payload.verdictId}`],
+    // Deliberately not `#17`: GitHub would read that as an issue reference and
+    // leave a cross-link on whatever issue happens to carry that number.
+    ['Verdict id', `qa_verdicts.id ${payload.verdictId}`],
   ];
 
   const lines: string[] = [

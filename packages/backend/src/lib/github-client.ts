@@ -94,16 +94,34 @@ export async function githubRequest<T>(path: string, init?: RequestInit, token?:
 }
 
 /**
+ * First env var that actually holds something.
+ *
+ * `??` is the wrong operator for this: `.env.development` ships `QA_GITHUB_TOKEN=`
+ * and a deploy dashboard hands back `''` for a variable someone cleared, both of
+ * which are "set" to `??` and would shadow the fallback — an empty
+ * `QA_GITHUB_REPO` would leave the reader asking GitHub for `/repos//pulls`
+ * forever. Trimmed too, because a pasted secret carries a trailing newline more
+ * often than anyone would like.
+ */
+function firstConfiguredValue(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
+}
+
+/**
  * The token the crowdsourced-QA writer uses. `QA_GITHUB_TOKEN` when set, else
  * the bug-report token — they need the same repo and overlapping scopes, so a
  * single-token deploy keeps working. Undefined when neither is configured, in
  * which case the GitHub mirror no-ops (local dev; the verdict row still lands).
  */
 export function resolveQaGithubToken(): string | undefined {
-  return process.env.QA_GITHUB_TOKEN ?? process.env.FEEDBACK_GITHUB_TOKEN;
+  return firstConfiguredValue(process.env.QA_GITHUB_TOKEN, process.env.FEEDBACK_GITHUB_TOKEN);
 }
 
 /** `owner/name` the QA reader/writer targets. Overridable for forks. */
 export function resolveQaGithubRepo(): string {
-  return process.env.QA_GITHUB_REPO ?? process.env.FEEDBACK_GITHUB_REPO ?? DEFAULT_GITHUB_REPO;
+  return firstConfiguredValue(process.env.QA_GITHUB_REPO, process.env.FEEDBACK_GITHUB_REPO) ?? DEFAULT_GITHUB_REPO;
 }

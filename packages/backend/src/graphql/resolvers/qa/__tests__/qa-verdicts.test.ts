@@ -15,9 +15,16 @@ import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import type { QaPullRequest } from '../../../../services/github-qa';
 
-const { getOpenPullRequestsMock, getHeadCommitDateMock, postVerdictCommentMock, applyQaLabelMock } = vi.hoisted(() => ({
-  getOpenPullRequestsMock: vi.fn(),
+const {
+  readOpenPullRequestsMock,
+  getHeadCommitDateMock,
+  getHeadCommitDatesMock,
+  postVerdictCommentMock,
+  applyQaLabelMock,
+} = vi.hoisted(() => ({
+  readOpenPullRequestsMock: vi.fn(),
   getHeadCommitDateMock: vi.fn(),
+  getHeadCommitDatesMock: vi.fn(),
   postVerdictCommentMock: vi.fn(),
   applyQaLabelMock: vi.fn(),
 }));
@@ -26,8 +33,9 @@ vi.mock('../../../../services/github-qa', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../services/github-qa')>();
   return {
     ...actual,
-    getOpenPullRequests: getOpenPullRequestsMock,
+    readOpenPullRequests: readOpenPullRequestsMock,
     getHeadCommitDate: getHeadCommitDateMock,
+    getHeadCommitDates: getHeadCommitDatesMock,
     postVerdictComment: postVerdictCommentMock,
     applyQaLabel: applyQaLabelMock,
   };
@@ -89,8 +97,12 @@ const insertProfile = (userId: string, displayName: string) =>
   `);
 
 const readVerdictRow = async (id: string) => {
+  // The timestamps come back as text so the assertions read the stored wall
+  // clock exactly, without a driver's Date parsing in the middle.
   const result = await db.execute(sql`
-    SELECT github_comment_id, github_comment_url, head_sha, head_committed_at, verdict, comment
+    SELECT github_comment_id, github_comment_url, head_sha, verdict, comment,
+           to_char(head_committed_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS head_committed_at_text,
+           to_char(bundle_created_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS bundle_created_at_text
     FROM qa_verdicts WHERE id = ${Number(id)} LIMIT 1
   `);
   return Array.from(
@@ -98,9 +110,10 @@ const readVerdictRow = async (id: string) => {
       github_comment_id: string | number | null;
       github_comment_url: string | null;
       head_sha: string | null;
-      head_committed_at: string | null;
       verdict: string;
       comment: string | null;
+      head_committed_at_text: string | null;
+      bundle_created_at_text: string | null;
     }>,
   )[0];
 };
@@ -126,8 +139,11 @@ beforeEach(async () => {
   await insertRole(TESTER, 'tester', null);
   await insertProfile(TESTER, 'Nic');
 
-  getOpenPullRequestsMock.mockReset().mockResolvedValue([openPullRequest()]);
+  readOpenPullRequestsMock.mockReset().mockResolvedValue({ pullRequests: [openPullRequest()], failed: false });
   getHeadCommitDateMock.mockReset().mockResolvedValue('2026-08-26T09:00:00Z');
+  getHeadCommitDatesMock
+    .mockReset()
+    .mockImplementation(async (shas: string[]) => new Map(shas.map((sha) => [sha, '2026-08-26T09:00:00Z'])));
   postVerdictCommentMock
     .mockReset()
     .mockResolvedValue({ id: 555, htmlUrl: 'https://github.com/boardsesh/boardsesh/pull/4792#issuecomment-555' });
@@ -177,14 +193,32 @@ describe('qaPreviews', () => {
   });
 
   it('returns an empty list when GitHub is unreachable rather than failing', async () => {
-    getOpenPullRequestsMock.mockRejectedValue(new Error('GitHub /pulls responded 403'));
+    readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [], failed: true });
 
     await expect(qaQueries.qaPreviews(null, { prNumbers: [4792] }, authCtx(TESTER))).resolves.toEqual([]);
   });
 
+  it('answers an empty request with an empty list instead of an error', async () => {
+    await expect(qaQueries.qaPreviews(null, { prNumbers: [] }, authCtx(TESTER))).resolves.toEqual([]);
+    expect(readOpenPullRequestsMock).not.toHaveBeenCalled();
+  });
+
   it('rejects an out-of-bounds request', async () => {
-    await expect(qaQueries.qaPreviews(null, { prNumbers: [] }, authCtx(TESTER))).rejects.toThrow('Invalid prNumbers');
     await expect(qaQueries.qaPreviews(null, { prNumbers: [-3] }, authCtx(TESTER))).rejects.toThrow('Invalid prNumbers');
+    await expect(
+      qaQueries.qaPreviews(null, { prNumbers: Array.from({ length: 51 }, (_, index) => index + 1) }, authCtx(TESTER)),
+    ).rejects.toThrow('Invalid prNumbers');
+  });
+
+  it('answers in the order the tester asked, dropping the closed numbers', async () => {
+    readOpenPullRequestsMock.mockResolvedValue({
+      pullRequests: [openPullRequest({ number: 10 }), openPullRequest({ number: 20 }), openPullRequest({ number: 30 })],
+      failed: false,
+    });
+
+    const previews = await qaQueries.qaPreviews(null, { prNumbers: [30, 9999, 10, 20] }, authCtx(TESTER));
+
+    expect(previews.map((preview) => preview.prNumber)).toEqual([30, 10, 20]);
   });
 
   it('round-trips the caller’s latest verdict, and shows it only to them', async () => {
@@ -224,7 +258,7 @@ describe('submitQaVerdict', () => {
     });
     const row = await readVerdictRow(verdict.id);
     expect(row.head_sha).toBe('abcdef1234567890');
-    expect(row.head_committed_at).not.toBeNull();
+    expect(row.head_committed_at_text).toBe('2026-08-26T09:00:00');
   });
 
   it('refuses a decline with no explanation', async () => {
@@ -248,7 +282,7 @@ describe('submitQaVerdict', () => {
   });
 
   it('refuses a PR that is not open', async () => {
-    getOpenPullRequestsMock.mockResolvedValue([openPullRequest({ number: 5000 })]);
+    readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [openPullRequest({ number: 5000 })], failed: false });
 
     await expect(qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER))).rejects.toThrow(
       'Pull request is not open',
@@ -256,11 +290,31 @@ describe('submitQaVerdict', () => {
   });
 
   it('says GitHub is unreachable instead of claiming the PR is closed', async () => {
-    getOpenPullRequestsMock.mockResolvedValue([]);
+    readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [], failed: true });
 
     await expect(qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER))).rejects.toThrow(
       'Could not reach GitHub',
     );
+  });
+
+  it('still says "not open" when the repo really has no open pull requests', async () => {
+    readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [], failed: false });
+
+    await expect(qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER))).rejects.toThrow(
+      'Pull request is not open',
+    );
+  });
+
+  it('stores a bundle timestamp with an offset in UTC, so staleness compares like for like', async () => {
+    const verdict = await qaMutations.submitQaVerdict(
+      null,
+      // 09:30+02:00 is 07:30Z — half an hour BEFORE the 08:00Z head commit.
+      { input: validInput({ bundleCreatedAt: '2026-08-26T09:30:00+02:00' }) },
+      authCtx(TESTER),
+    );
+
+    const row = await readVerdictRow(verdict.id);
+    expect(row.bundle_created_at_text).toBe('2026-08-26T07:30:00');
   });
 
   it('mirrors the verdict to GitHub and writes the comment id back onto the row', async () => {
@@ -289,5 +343,24 @@ describe('submitQaVerdict', () => {
     expect(verdict.prNumber).toBe(4792);
     const row = await readVerdictRow(verdict.id);
     expect(row.github_comment_id).toBeNull();
+  });
+
+  it('records a comment that did post even when the label swap then blows up', async () => {
+    applyQaLabelMock.mockRejectedValue(new Error('403'));
+
+    const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+
+    // github_comment_id IS NULL is the runbook's "replay by hand" signal, so a
+    // comment that landed must never be left looking un-mirrored.
+    await vi.waitFor(async () => {
+      expect(Number((await readVerdictRow(verdict.id)).github_comment_id)).toBe(555);
+    });
+  });
+
+  it('returns createdAt as an instant the app can parse', async () => {
+    const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+
+    expect(verdict.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+(Z|[+-]\d{2}:\d{2})$/);
+    expect(Math.abs(Date.now() - Date.parse(verdict.createdAt))).toBeLessThan(60_000);
   });
 });

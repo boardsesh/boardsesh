@@ -14,8 +14,10 @@ import {
   buildQaPreview,
   buildVerdictComment,
   getHeadCommitDate,
+  getHeadCommitDates,
   getOpenPullRequests,
   postVerdictComment,
+  readOpenPullRequests,
   resetGithubQaCaches,
   type QaPullRequest,
   type VerdictCommentPayload,
@@ -90,6 +92,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 let originalQaToken: string | undefined;
 let originalFeedbackToken: string | undefined;
 let originalRepo: string | undefined;
+let originalFeedbackRepo: string | undefined;
 
 beforeEach(() => {
   resetGithubQaCaches();
@@ -98,8 +101,10 @@ beforeEach(() => {
   originalQaToken = process.env.QA_GITHUB_TOKEN;
   originalFeedbackToken = process.env.FEEDBACK_GITHUB_TOKEN;
   originalRepo = process.env.QA_GITHUB_REPO;
+  originalFeedbackRepo = process.env.FEEDBACK_GITHUB_REPO;
   process.env.QA_GITHUB_TOKEN = 'qa-token';
   delete process.env.FEEDBACK_GITHUB_TOKEN;
+  delete process.env.FEEDBACK_GITHUB_REPO;
   process.env.QA_GITHUB_REPO = 'boardsesh/boardsesh';
 });
 
@@ -112,6 +117,8 @@ afterEach(() => {
   else process.env.FEEDBACK_GITHUB_TOKEN = originalFeedbackToken;
   if (originalRepo === undefined) delete process.env.QA_GITHUB_REPO;
   else process.env.QA_GITHUB_REPO = originalRepo;
+  if (originalFeedbackRepo === undefined) delete process.env.FEEDBACK_GITHUB_REPO;
+  else process.env.FEEDBACK_GITHUB_REPO = originalFeedbackRepo;
 });
 
 describe('buildQaPreview', () => {
@@ -162,7 +169,9 @@ describe('buildVerdictComment', () => {
 
     expect(body.split('\n')[0]).toBe('<!-- boardsesh-qa-verdict:17 -->');
     expect(body).toContain('### ✅ QA approved by Nic');
-    expect(body).toContain('| Verdict id | qa_verdicts #17 |');
+    // Deliberately not `#17`: that would cross-link issue 17 on every verdict.
+    expect(body).toContain('| Verdict id | qa_verdicts.id 17 |');
+    expect(body).not.toContain('qa_verdicts #17');
     expect(body).toContain('| Head SHA at verdict | abcdef1 |');
     expect(body).toContain('_No notes._');
   });
@@ -190,6 +199,57 @@ describe('buildVerdictComment', () => {
     expect(body).toContain('[redacted email]');
     expect(body).not.toContain('tester@example.com');
     expect(body).not.toContain('@example.com');
+  });
+
+  it('keeps a hostile comment from breaking the structure or pinging anyone', () => {
+    const hostile = [
+      '<!-- swallow the table',
+      'ping @marcodejongh and see #1',
+      '| a | b |',
+      '# shouty heading',
+      '```js',
+      'const x = 1;',
+      '```',
+      'still --> here',
+    ].join('\n');
+    const body = buildVerdictComment(commentPayload({ verdict: 'declined', comment: hostile }));
+    const lines = body.split('\n');
+
+    // The HTML comment never opens, so everything after it still renders.
+    expect(body).not.toContain('<!-- swallow');
+    expect(body).toContain('&lt;!-- swallow');
+    // No live mention and no issue cross-reference.
+    expect(body).not.toMatch(/(^|[^`\w])@marcodejongh/);
+    expect(body).toContain('`@marcodejongh`');
+    expect(body).toContain('`#1`');
+    // Every line of the note stays inside the blockquote…
+    expect(lines.filter((line) => line.includes('swallow the table'))[0]).toMatch(/^> /);
+    expect(lines.filter((line) => line.includes('shouty heading'))[0]).toMatch(/^> /);
+    // …and the device table is still intact underneath it.
+    expect(body).toContain('| Field | Value |');
+    expect(body).toContain('| Platform | ios |');
+  });
+
+  it('escapes a pipe in the notes instead of forging a table row', () => {
+    const body = buildVerdictComment(commentPayload({ verdict: 'declined', comment: 'columns | like | this' }));
+
+    expect(body).toContain('> columns | like | this');
+    expect(body).toContain('| Field | Value |');
+  });
+
+  it('will not let a display name break the heading or ping a maintainer', () => {
+    const body = buildVerdictComment(commentPayload({ displayName: 'Nic\n\n### Fake heading\n@marcodejongh <!-- x' }));
+    const heading = body.split('\n').find((line) => line.startsWith('### '));
+
+    expect(heading).toBe('### ✅ QA approved by Nic ### Fake heading `@marcodejongh` &lt;!-- x');
+    expect(body.split('\n').filter((line) => line.startsWith('### '))).toHaveLength(1);
+  });
+
+  it('redacts an email a tester used as their display name', () => {
+    const body = buildVerdictComment(commentPayload({ displayName: 'tester@example.com' }));
+
+    expect(body).toContain('QA approved by [redacted email]');
+    expect(body).not.toContain('tester@example.com');
   });
 
   it('warns when the tested bundle predates the current head commit', () => {
@@ -298,6 +358,101 @@ describe('getOpenPullRequests', () => {
     const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
     expect(headers.Authorization).toBeUndefined();
     expect(headers['User-Agent']).toBe('boardsesh-backend');
+  });
+
+  it('falls back to the feedback token and repo when the QA ones are set but empty', async () => {
+    // `.env.development` ships `QA_GITHUB_TOKEN=`, and a deploy dashboard hands
+    // back '' for a cleared variable — neither may shadow the fallback.
+    process.env.QA_GITHUB_TOKEN = '';
+    process.env.QA_GITHUB_REPO = '';
+    process.env.FEEDBACK_GITHUB_TOKEN = 'feedback-token';
+    process.env.FEEDBACK_GITHUB_REPO = 'someone/fork';
+    fetchMock.mockResolvedValue(jsonResponse([githubPull()]));
+
+    await getOpenPullRequests(1_000);
+
+    expect(fetchMock.mock.calls[0][0]).toContain('/repos/someone/fork/pulls');
+    const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer feedback-token');
+  });
+
+  it('trims a token pasted with a trailing newline', async () => {
+    process.env.QA_GITHUB_TOKEN = 'qa-token\n';
+    fetchMock.mockResolvedValue(jsonResponse([githubPull()]));
+
+    await getOpenPullRequests(1_000);
+
+    const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer qa-token');
+  });
+});
+
+describe('readOpenPullRequests', () => {
+  it('reports a real empty repo as a success, not a failure', async () => {
+    fetchMock.mockResolvedValue(jsonResponse([]));
+
+    await expect(readOpenPullRequests(1_000)).resolves.toEqual({ pullRequests: [], failed: false });
+  });
+
+  it('flags the first failure instead of throwing it at the caller', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    fetchMock.mockResolvedValue(jsonResponse({ message: 'rate limited' }, 403));
+
+    await expect(readOpenPullRequests(1_000)).resolves.toEqual({ pullRequests: [], failed: true });
+  });
+
+  it('flags the negative-cached window the same way as the failure that filled it', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    fetchMock.mockResolvedValue(jsonResponse({ message: 'rate limited' }, 403));
+
+    await readOpenPullRequests(1_000);
+    // Served from the 30s negative cache: no second call, still flagged failed.
+    await expect(readOpenPullRequests(1_000 + 10_000)).resolves.toEqual({ pullRequests: [], failed: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the flag once GitHub answers again', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    fetchMock.mockResolvedValue(jsonResponse({ message: 'rate limited' }, 403));
+    await readOpenPullRequests(1_000);
+
+    fetchMock.mockResolvedValue(jsonResponse([githubPull()]));
+    const read = await readOpenPullRequests(1_000 + 31_000);
+
+    expect(read.failed).toBe(false);
+    expect(read.pullRequests).toHaveLength(1);
+  });
+});
+
+describe('getHeadCommitDates', () => {
+  it('looks each distinct SHA up once and returns them all', async () => {
+    fetchMock.mockImplementation(async (url: string) =>
+      jsonResponse({ commit: { committer: { date: `2026-08-26T09:00:00Z#${url.slice(-3)}` } } }),
+    );
+
+    const dates = await getHeadCommitDates(['sha-a', 'sha-b', 'sha-a']);
+
+    expect([...dates.keys()]).toEqual(['sha-a', 'sha-b']);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('never has more than five lookups in flight at once', async () => {
+    let inFlight = 0;
+    let peakInFlight = 0;
+    fetchMock.mockImplementation(async () => {
+      inFlight += 1;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      inFlight -= 1;
+      return jsonResponse({ commit: { committer: { date: '2026-08-26T09:00:00Z' } } });
+    });
+
+    const shas = Array.from({ length: 25 }, (_, index) => `sha-${index}`);
+    const dates = await getHeadCommitDates(shas);
+
+    expect(dates.size).toBe(25);
+    expect(fetchMock).toHaveBeenCalledTimes(25);
+    expect(peakInFlight).toBeLessThanOrEqual(5);
   });
 });
 

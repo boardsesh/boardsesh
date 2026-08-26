@@ -19,7 +19,10 @@ const DECLINE_COMMENT_MIN = 10;
 export const QaPreviewsArgsSchema = z.object({
   prNumbers: z
     .array(z.number().int().positive())
-    .min(1)
+    // No minimum: an app that can't load any preview yet asks with `[]` and
+    // gets `[]` back. Rejecting that would put a failure banner on an empty
+    // screen — and the mobile client is written against the frozen SDL, which
+    // says nothing about a minimum.
     .max(MAX_PREVIEW_PR_NUMBERS)
     // Duplicates would fan out into duplicate previews for one PR; collapse
     // them rather than reject a client that de-duped badly.
