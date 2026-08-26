@@ -413,8 +413,22 @@ export function candidate({ board, role = 'HAND', hex, fields = FIELDS }) {
 const GRASSHOPPER = 'grasshopper';
 const EQUAL_L = { STARTING: '#00C000', HAND: '#7B96FF', FINISH: '#FF6553', FOOT: '#FE00FE' };
 
+/**
+ * The display hexes the published figures were computed against. The checks
+ * pin these, not the live map: the fourth pass moved every blue HAND to
+ * `#6980FF`, and a selftest that read the live palette would then "fail" on
+ * numbers that were right when they were published. `table` and `candidate`
+ * keep reading the live map; only the calibration is frozen.
+ */
+const PUBLISHED_DISPLAY = {
+  grasshopper: { HAND: '#4455FF' },
+  tension: { HAND: '#4444FF' },
+  moonboard: { HAND: '#4444FF' },
+  kilter: {},
+};
+
 function buildChecks() {
-  const display = (board, role) => boardPalette(board)[role].display;
+  const display = (board, role) => PUBLISHED_DISPLAY[board]?.[role] ?? boardPalette(board)[role].display;
   const wcag = (name, board, role, field, published) => ({
     kind: 'wcag',
     name,
@@ -513,7 +527,7 @@ export function selftest() {
   // matrix this file knows, so the reader can see none of them lands on 24.7 / 3.3.
   const grasshopper = boardPalette(GRASSHOPPER);
   const tritanPairs = {
-    'grasshopper STARTING/HAND (published 24.7)': [grasshopper.STARTING.display, grasshopper.HAND.display],
+    'grasshopper STARTING/HAND (published 24.7)': [grasshopper.STARTING.display, PUBLISHED_DISPLAY.grasshopper.HAND],
     'equalL STARTING/HAND (published 3.3)': [EQUAL_L.STARTING, EQUAL_L.HAND],
   };
   const tritanNote = {};
