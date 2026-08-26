@@ -2344,3 +2344,61 @@ describe('native auth gate parity (this PR auto-OTAs to the store fleet)', () =>
     expect(redirectMock).not.toHaveBeenCalledWith(expect.stringContaining('next='));
   });
 });
+
+describe('AuthProvider dev-only spike exemption', () => {
+  beforeEach(() => {
+    // Signed out: no token, so the provider resolves into its redirect branches.
+    getAuthTokenMock.mockResolvedValue(null);
+    isTokenExpiringSoonMock.mockResolvedValue(false);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    routerState.segments = [];
+  });
+
+  const renderSignedOut = () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <span data-testid="spike-children">spike</span>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+  };
+
+  it('renders the #2202 spike signed out in a dev build, so a wiped emulator can still be captured', async () => {
+    vi.stubGlobal('__DEV__', true);
+    routerState.segments = ['board-spike'];
+
+    renderSignedOut();
+
+    await waitFor(() => expect(screen.queryByTestId('spike-children')).not.toBeNull());
+    expect(redirectMock).not.toHaveBeenCalledWith('/auth/login');
+  });
+
+  // The control for the test above. Without it an exemption that matched every
+  // route would pass just as happily, and this is the branch the fleet runs.
+  it('still sends every other signed-out route to login in a dev build', async () => {
+    vi.stubGlobal('__DEV__', true);
+    routerState.segments = ['(tabs)'];
+
+    renderSignedOut();
+
+    await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/auth/login'));
+    expect(screen.queryByTestId('spike-children')).toBeNull();
+  });
+
+  // `__DEV__` is compiled out of release builds, so the spike route has to fall
+  // back to the ordinary redirect there rather than become a signed-out hole.
+  it('sends the spike route to login in a release build', async () => {
+    vi.stubGlobal('__DEV__', false);
+    routerState.segments = ['board-spike'];
+
+    renderSignedOut();
+
+    await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/auth/login'));
+    expect(screen.queryByTestId('spike-children')).toBeNull();
+  });
+});

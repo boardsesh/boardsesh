@@ -207,7 +207,7 @@ async function allBoardsFigure(treatmentKey) {
     {
       input: header(
         COLUMN * BOARDS.length + GAP * (BOARDS.length - 1),
-        'Outward glow, every board',
+        `${TREATMENTS.find((entry) => entry.key === treatmentKey)?.title ?? treatmentKey}, every board`,
         `Same synthesised climb, shipped art, ${FIELD_HEX} play field`,
       ),
       left: GAP,
@@ -328,5 +328,9 @@ async function colourVisionFigure() {
 }
 
 for (const board of BOARDS) await perBoardFigure(board);
+// Both leading arms get an every-board sheet: the glow is the one that wins on
+// the most boards, the veil is the one that changes the most on the pale dense
+// ones, and comparing them across seven boards at once is the whole point.
 await allBoardsFigure('outward-glow');
+await allBoardsFigure('veil-glow');
 await colourVisionFigure();

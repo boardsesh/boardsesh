@@ -1044,6 +1044,13 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
 
   const inAuthGroup = segments[0] === 'auth';
   const inSessionUnavailableRoute = segments.join('/') === 'auth/session-unavailable';
+  // The #2202 rendering spike draws from bundled assets only — no session, no
+  // network, no seeded database — and the route gates itself to dev and testers.
+  // Letting it past the signed-out redirect is what makes that true on a freshly
+  // wiped emulator, where a capture run otherwise lands on the login screen and
+  // the deep link looks broken instead. `__DEV__` is compiled out of release
+  // builds, so the store fleet keeps exactly the redirect below.
+  const inDevOnlySpike = __DEV__ && segments[0] === 'board-spike';
 
   if (isSessionUnavailable && !inSessionUnavailableRoute) {
     return <Redirect href="/auth/session-unavailable" />;
@@ -1060,7 +1067,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // `readPostLoginReturnHref()` a constant `null` — so both branches below are
   // exactly what ships today on the store fleet. Asserted by test, because this
   // change auto-OTAs to every installed binary.
-  if (!isAuthenticated && !inAuthGroup && !isAnonymousReadOnlyLocation()) {
+  if (!isAuthenticated && !inAuthGroup && !inDevOnlySpike && !isAnonymousReadOnlyLocation()) {
     return <Redirect href="/auth/login" />;
   }
   if (isAuthenticated && inAuthGroup) {
