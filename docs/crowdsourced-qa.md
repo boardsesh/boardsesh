@@ -66,8 +66,8 @@ load; the backend answers with the ones that are still open PRs, each carrying t
 draft flag, head SHA, the `## Test plan` steps, the `Risk: N/5` score, and the caller's own last
 verdict. Closed and unknown numbers are dropped, so the app never has to pre-filter, and an empty
 request answers `[]` rather than erroring. At most 50 numbers per call. The PR list is cached for
-three minutes and negative-cached for 30 seconds, so one backend serving every tester costs GitHub
-two calls per refill; head-commit dates are cached per SHA and looked up five at a time, so a cold
+three minutes and negative-cached for 30 seconds, so each backend instance costs GitHub two calls
+per refill (every Railway replica warms its own cache); head-commit dates are cached per SHA and looked up five at a time, so a cold
 50-PR call can't spend a whole anonymous rate-limit budget at once. GitHub being unreachable returns
 an empty list, never an error — a tester should see "nothing to test", not a broken screen.
 
