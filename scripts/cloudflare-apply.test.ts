@@ -24,7 +24,7 @@ import {
   upsertCacheRule,
 } from '../infra/cloudflare/plan';
 import type { LiveDnsRecord, LiveState, RulesetRule } from '../infra/cloudflare/plan';
-import { parseArgs } from './cloudflare-apply';
+import { SHARED_TOKEN_SCOPES, TOKEN_SCOPES, parseArgs } from './cloudflare-apply';
 
 const desired = desiredCloudflareState;
 /** The og cache rule — the one the pre-existing cases in this file were written against. */
@@ -480,5 +480,37 @@ describe('deploy-cloudflare workflow wiring', () => {
   it('parses the exact argv the workflow produces, both with and without the flag', () => {
     expect(parseArgs(['--apply'])).toEqual({ apply: true, allowZoneSsl: false, help: false });
     expect(parseArgs(['--apply', '--allow-zone-ssl'])).toEqual({ apply: true, allowZoneSsl: true, help: false });
+  });
+});
+
+describe('token scope guidance', () => {
+  // printTokenScopes() is the only place a maintainer sees these lists, so they
+  // have to keep pace with the API calls the tool actually makes — and with the
+  // OTHER jobs reading the same Production-environment CLOUDFLARE_API_TOKEN.
+  it('names every zone permission the tool calls', () => {
+    const printed = TOKEN_SCOPES.join('\n');
+    // Zone.WAF Edit went missing from this list once while the crawler rules
+    // depended on it, so a partially-converged zone was the failure mode.
+    expect(printed).toContain('Zone.WAF Edit');
+    expect(printed).toContain('Zone.Cache Rules Edit');
+    expect(printed).toContain('Zone.DNS Edit');
+    expect(printed).toContain('Zone.Zone Settings Edit');
+  });
+
+  it('keeps the Pages scope deploy-app-web needs from the shared token', () => {
+    // A token built from TOKEN_SCOPES alone converges this zone perfectly and
+    // then fails `wrangler pages deploy` with Authentication error [code: 10000]
+    // — which is what took app.boardsesh.com off the deploy train on 2026-08-25.
+    expect(SHARED_TOKEN_SCOPES.join('\n')).toContain('Cloudflare Pages Edit');
+  });
+
+  it('holds scopes, not prose, so the printed columns stay aligned', () => {
+    // Guards the shape rather than the wording: an explanation parked in either
+    // array prints as a ragged line against the indent, and a blank spacer entry
+    // prints as trailing whitespace. Reasons belong in comments above the list.
+    for (const scope of [...TOKEN_SCOPES, ...SHARED_TOKEN_SCOPES]) {
+      expect(scope).toMatch(/^(Zone|Account)\.\S/);
+      expect(scope).toContain('—');
+    }
   });
 });
