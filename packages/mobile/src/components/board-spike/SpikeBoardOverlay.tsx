@@ -126,6 +126,9 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   const glyphLineWidth = Math.max(1.5, placementRadius * SPIKE_TUNING.glyphLineWidthFraction);
   const ledDotRadius = Math.max(1.5, placementRadius * SPIKE_TUNING.ledDotRadiusFraction);
   const ledData = SPIKE_LED_DOTS[boardKey];
+  // MoonBoard's LED sits half a row below its hold rather than on it, so the dot
+  // has to move with the board rather than always being drawn at the centre.
+  const ledOffsetY = ledData?.ledOffsetY ?? 0;
   const ledHolds = useMemo(() => new Set(ledData?.hasLed ?? []), [ledData]);
   const artBrightLeds = useMemo(() => new Set(ledData?.brightInArt ?? []), [ledData]);
   const litIds = useMemo(() => new Set(litHolds.map((hold) => hold.id)), [litHolds]);
@@ -230,11 +233,12 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
         })}
       </G>
 
-      {/* The LED the board art paints, taken over by the renderer. Grasshopper
-          brightens 234 of its 332 LED locations and leaves the rest dark, so an
-          unlit hold can look lit and a lit one can look dead. Role colour where
-          the hold is lit, dark where it is not — and nothing at all on a board
-          whose LEDs we have no placement data for (both MoonBoards). */}
+      {/* The LED, taken over from the board art. Grasshopper brightens 234 of its
+          332 LED locations and leaves the rest dark, so an unlit hold can look lit
+          and a lit one can look dead; Tension draws all of its darker than the
+          hold. Role colour where the hold is lit, dark where it is not. Central on
+          Grasshopper, Tension and Woods; the bolt hole on Kilter; and half a row
+          below the hold on MoonBoard, whose LED grid is offset down. */}
       <G>
         {placements.map((placement) => {
           const isLit = litIds.has(placement.id);
@@ -247,7 +251,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
             <Circle
               key={`led-${placement.id}`}
               cx={placement.cx}
-              cy={placement.cy}
+              cy={placement.cy + ledOffsetY}
               r={ledDotRadius}
               fill={fill}
               fillOpacity={litHold ? 1 : SPIKE_TUNING.ledDarkOpacity}
@@ -286,18 +290,29 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
             const color = colors[hold.role] ?? '#FFFFFF';
             const path = outlinePath(hold.id, hold.cx, hold.cy);
             // No traced silhouette (a bare MoonBoard grid cell, say) — fall back
-            // to a ring rather than leaving a lit hold unmarked.
+            // to a ring rather than leaving a lit hold unmarked. The role mark
+            // still goes on: the vocabulary has to be complete, or the absence of
+            // a glyph becomes meaningful, and on MoonBoard the fallback is common
+            // enough that dropping it would leave a third of a climb unlabelled.
             if (path === null) {
               return (
-                <Circle
-                  key={`sel-${hold.id}`}
-                  cx={hold.cx}
-                  cy={hold.cy}
-                  r={hold.radius}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth={SPIKE_TUNING.strokeWidth}
-                />
+                <G key={`sel-${hold.id}`}>
+                  <Circle
+                    cx={hold.cx}
+                    cy={hold.cy}
+                    r={hold.radius}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={SPIKE_TUNING.strokeWidth}
+                  />
+                  <RoleGlyph
+                    role={hold.role}
+                    cx={hold.cx}
+                    cy={hold.cy}
+                    reach={hold.radius}
+                    lineWidth={glyphLineWidth}
+                  />
+                </G>
               );
             }
             // Size floor: keep the ring when the real hold is much smaller than

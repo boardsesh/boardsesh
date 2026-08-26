@@ -65,38 +65,49 @@ export function RoleGlyph({ role, cx, cy, reach, lineWidth, clipId }: RoleGlyphP
     );
   }
 
-  const line = (x1: number, y1: number, x2: number, y2: number) => (
-    <G key={`${x1},${y1}`}>
-      {passes.map((pass) => (
-        <Line
-          key={pass.color}
-          x1={x1}
-          y1={y1}
-          x2={x2}
-          y2={y2}
-          stroke={pass.color}
-          strokeWidth={pass.width}
-          strokeLinecap="butt"
-          strokeOpacity={pass.opacity}
-        />
-      ))}
-    </G>
-  );
+  /**
+   * One pass of a shape, at a given colour and width. The passes are ordered
+   * casing-then-core ACROSS the whole glyph, not per line: drawing each line as
+   * casing+core in turn puts the second line's dark casing over the first line's
+   * light core, which cut visible dark stripes through the middle of the FINISH
+   * X where the diagonals cross.
+   */
+  const strokePass = (pass: (typeof passes)[number], key: string, segments: Array<[number, number, number, number]>) =>
+    segments.map(([x1, y1, x2, y2], index) => (
+      <Line
+        key={`${key}-${index}`}
+        x1={x1}
+        y1={y1}
+        x2={x2}
+        y2={y2}
+        stroke={pass.color}
+        strokeWidth={pass.width}
+        strokeLinecap="butt"
+        strokeOpacity={pass.opacity}
+      />
+    ));
 
-  const body = (() => {
-    if (role === 'STARTING') return line(cx - reach, cy, cx + reach, cy);
-    if (role === 'HAND') return line(cx, cy - reach, cx, cy + reach);
+  const segments = ((): Array<[number, number, number, number]> => {
+    if (role === 'STARTING') return [[cx - reach, cy, cx + reach, cy]];
+    if (role === 'HAND') return [[cx, cy - reach, cx, cy + reach]];
     if (role === 'FINISH') {
       const diagonal = reach * Math.SQRT1_2;
-      return (
-        <G>
-          {line(cx - diagonal, cy - diagonal, cx + diagonal, cy + diagonal)}
-          {line(cx - diagonal, cy + diagonal, cx + diagonal, cy - diagonal)}
-        </G>
-      );
+      return [
+        [cx - diagonal, cy - diagonal, cx + diagonal, cy + diagonal],
+        [cx - diagonal, cy + diagonal, cx + diagonal, cy - diagonal],
+      ];
     }
-    return null;
+    return [];
   })();
+
+  const body =
+    segments.length === 0 ? null : (
+      <G>
+        {passes.map((pass, passIndex) => (
+          <G key={pass.color}>{strokePass(pass, `p${passIndex}`, segments)}</G>
+        ))}
+      </G>
+    );
 
   if (body === null) return null;
   // Clipped to the silhouette so the bars stop exactly at the hold's edge. Without

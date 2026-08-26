@@ -155,13 +155,18 @@ the rim glows. Measured over the composited art (`scripts/spike-led-dots.ts`):
 | TB2 Mirror | 498/498 | 0 | 1.15× |
 | Kilter Homewall | 499/499 | 0 | 0.42× (bolt hole) |
 | Kilter Original | 476/476 | 10 | 0.64× |
-| MoonBoard 2016 / Masters | **0**/198 | 23 / 13 | 0.77× / 0.89× |
+| MoonBoard 2016 / Masters | 198/198 (derived) | 23 / 13 | 0.77× / 0.89× |
 
 So Grasshopper paints roughly two thirds of its LEDs bright and leaves the rest dark, and Tension
 paints all of them darker than the hold. An unlit hold with a bright LED competes with a lit mark;
 a lit hold with a dark LED does not look lit. The renderer now takes the LED over from the art:
-**role colour where the hold is lit, dark where it is not**, and nothing at all on a board with no
-LED placement data (both MoonBoards).
+**role colour where the hold is lit, dark where it is not**.
+
+MoonBoard has no LED table in `@boardsesh/board-constants`, but it does not need one. Its holds and
+LEDs are both on a regular grid with the LED grid offset down by half a row, so an LED sits halfway
+between each vertically adjacent pair of holds — none above the top row, one below the bottom row,
+and therefore one below every hold. The generator derives that offset from the placement spacing
+(25.0px on both MoonBoard layouts) rather than hardcoding it.
 
 ### The accessibility vocabulary
 
@@ -184,6 +189,14 @@ FINISH so it cannot be read as the START and HAND bars drawn together.
 Drawn in two passes — a dark casing under a light core — rather than picking a colour per hold from
 the art beneath. The per-hold classifier flipped polarity between two visually identical hand holds
 on the same climb, the same salt-and-pepper the unlit-hold casing had.
+
+The passes run casing-then-core across the **whole glyph**, not per line. Drawing each line as
+casing-then-core in turn put the second diagonal's dark casing over the first one's light core, and
+cut dark stripes through the middle of the FINISH X where they cross.
+
+The mark also goes on the **ring fallback**, not just on traced holds. On MoonBoard a third of a
+climb can land on cells with no traceable art, and if those rings carried no glyph the absence of
+one would start to mean something.
 
 ## Regenerating the derived data
 
