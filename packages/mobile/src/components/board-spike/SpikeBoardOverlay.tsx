@@ -315,21 +315,18 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                 </G>
               );
             }
-            // Size floor: keep the ring when the real hold is much smaller than
-            // the placement circle, so a correct-but-tiny mark does not cost
-            // findability against the baseline.
-            const needsSizeFloor = outlineExtent(hold.id, boardKey) < hold.radius * 2 * SPIKE_TUNING.sizeFloorFraction;
-            const floorRing = needsSizeFloor ? (
-              <Circle
-                cx={hold.cx}
-                cy={hold.cy}
-                r={hold.radius}
-                fill="none"
-                stroke={color}
-                strokeOpacity={SPIKE_TUNING.sizeFloorRingOpacity}
-                strokeWidth={SPIKE_TUNING.sizeFloorRingWidth}
-              />
-            ) : null;
+            // Small holds get a bigger mark, not a second one. The first pass
+            // drew the baseline circle on top of the traced silhouette whenever
+            // the hold was narrow, which reads as two marks disagreeing about
+            // where the hold is — a precise outline and a circle that is not it.
+            // Boosting the light instead keeps one shape and still stops a
+            // correct-but-tiny mark from losing findability against baseline.
+            const sizeFloor = hold.radius * 2 * SPIKE_TUNING.sizeFloorFraction;
+            const holdExtent = outlineExtent(hold.id, boardKey);
+            const smallHoldBoost = Math.min(
+              SPIKE_TUNING.smallHoldMaxBoost,
+              Math.max(1, sizeFloor / Math.max(1, holdExtent)),
+            );
             if (drawsHybrid) {
               // Normalise the art under the hold toward a common lightness before
               // the role colour goes on, so the same role hex composites to the
@@ -345,7 +342,6 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                   : (artLightness - target) / Math.max(1e-3, artLightness);
               return (
                 <G key={`sel-${hold.id}`}>
-                  {floorRing}
                   <G clipPath={`url(#spike-outside-${hold.id})`}>
                     {glowBands.map((band) => (
                       <Path
@@ -392,12 +388,11 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
             if (drawsTracedRing) {
               return (
                 <G key={`sel-${hold.id}`}>
-                  {floorRing}
                   <Path
                     d={path}
                     fill="none"
                     stroke={color}
-                    strokeWidth={SPIKE_TUNING.strokeWidth}
+                    strokeWidth={SPIKE_TUNING.strokeWidth * smallHoldBoost}
                     strokeLinejoin="round"
                   />
                   <RoleGlyph
@@ -414,7 +409,6 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
             if (drawsTint) {
               return (
                 <G key={`sel-${hold.id}`}>
-                  {floorRing}
                   <Path d={path} fill={color} fillOpacity={SPIKE_TUNING.tintFillOpacity} />
                   <Path
                     d={path}
@@ -440,7 +434,6 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
             const scale = outwardOnly ? 2 : 1;
             return (
               <G key={`sel-${hold.id}`}>
-                {floorRing}
                 <G clipPath={outwardOnly ? `url(#spike-outside-${hold.id})` : undefined}>
                   {glowBands.map((band) => (
                     <Path
@@ -449,7 +442,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                       fill="none"
                       stroke={color}
                       strokeOpacity={band.opacity}
-                      strokeWidth={band.width * scale}
+                      strokeWidth={band.width * scale * smallHoldBoost}
                       strokeLinejoin="round"
                     />
                   ))}

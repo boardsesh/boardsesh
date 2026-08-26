@@ -104,8 +104,18 @@ export function SpikeBoard({
 
   const frames = useMemo(() => {
     if (!renderData) return '';
-    return synthesiseSpikeFrames(board.boardName, renderData.holdsData, renderData.boardWidth, renderData.boardHeight);
-  }, [board.boardName, renderData]);
+    // Only light placements that actually carry a hold. A real climb can never
+    // reference a placement with no hold in the selected sets, so neither should
+    // the synthesised one.
+    const eligible = new Set(Object.keys(SPIKE_HOLD_OUTLINES[board.key] ?? {}).map(Number));
+    return synthesiseSpikeFrames(
+      board.boardName,
+      renderData.holdsData,
+      renderData.boardWidth,
+      renderData.boardHeight,
+      eligible.size > 0 ? eligible : undefined,
+    );
+  }, [board.boardName, board.key, renderData]);
 
   const litHolds = useMemo<SpikeLitHold[]>(() => {
     if (!renderData || frames === '') return [];

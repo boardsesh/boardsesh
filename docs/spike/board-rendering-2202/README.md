@@ -5,6 +5,9 @@ switchable dev screen, so the options can be compared on a real device instead o
 in the abstract. **This is a spike, not a shipping design** — see "What would have to change"
 below before treating any of it as a plan.
 
+**Regenerating the images: see [`HANDOVER.md`](./HANDOVER.md).** It has the emulator and Metro
+sequence, the capture and figure scripts, the deep-link traps, and how to post to the issue.
+
 ## Running it
 
 ```
@@ -194,9 +197,19 @@ The passes run casing-then-core across the **whole glyph**, not per line. Drawin
 casing-then-core in turn put the second diagonal's dark casing over the first one's light core, and
 cut dark stripes through the middle of the FINISH X where they cross.
 
-The mark also goes on the **ring fallback**, not just on traced holds. On MoonBoard a third of a
-climb can land on cells with no traceable art, and if those rings carried no glyph the absence of
-one would start to mean something.
+The mark also goes on the **ring fallback**, not just on traced holds — the vocabulary has to be
+complete, or the absence of a glyph starts to mean something.
+
+### Why there are two accessibility systems
+
+The app already ships per-role marker **shapes** — circle, triangle-up, triangle-down, square,
+diamond, octagon — user-configurable with brush-thickness and shape-size sliders, implemented in
+both the SVG and Rust renderers and kept in sync with equal-area scaling (#3204).
+
+That system works by changing the whole marker's shape, which a traced arm cannot do: its shape is
+the hold's silhouette. So the traced arms carry an inside-the-hold **glyph** instead. The two are
+complementary rather than duplicates — but an arm that goes back to drawing a fixed circle should
+use the shipped shape system, not the glyph.
 
 ## Regenerating the derived data
 

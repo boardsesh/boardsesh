@@ -280,8 +280,12 @@ export const SPIKE_TUNING = {
    * ring carries findability.
    */
   sizeFloorFraction: 0.45,
-  sizeFloorRingWidth: 6 * 1.35 * 0.8,
-  sizeFloorRingOpacity: 0.85,
+  /**
+   * How much wider a small hold's mark may grow to make up the area it loses by
+   * being traced rather than circled. Capped, because past this the light starts
+   * reaching its neighbours on a dense board.
+   */
+  smallHoldMaxBoost: 1.7,
   /** Whole-hold tint: fill opacity over the hold, plus a crisp edge on its outline. */
   tintFillOpacity: 0.55,
   tintEdgeWidth: 4,

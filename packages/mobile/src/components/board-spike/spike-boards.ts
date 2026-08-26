@@ -157,12 +157,21 @@ const CLIMB_TARGETS: ReadonlyArray<{ role: 'STARTING' | 'HAND' | 'FINISH' | 'FOO
  * shape of climb — which is the only way the boards are comparable to each
  * other. A board with no FOOT code in `STATE_TO_PRIMARY_CODE` (MoonBoard)
  * simply skips those targets.
+ *
+ * `eligibleHoldIds` restricts the pick to placements that actually have a hold
+ * on them. MoonBoard's placements are a synthetic 11x18 grid and most cells are
+ * empty, so without this the synthesiser lit cells with no hold in the selected
+ * sets — a climb a real user could never select, since the catalogue only
+ * contains climbs whose holds exist. Those were the "missing holds" showing as
+ * bare rings in the MoonBoard captures: a fault in the test climb, not in the
+ * renderer.
  */
 export function synthesiseSpikeFrames(
   boardName: BoardName,
   holdsData: HoldPlacement[],
   boardWidth: number,
   boardHeight: number,
+  eligibleHoldIds?: ReadonlySet<number>,
 ): string {
   const roleCodes = STATE_TO_PRIMARY_CODE[boardName] ?? {};
   const used = new Set<number>();
@@ -178,6 +187,7 @@ export function synthesiseSpikeFrames(
     let bestDistance = Infinity;
     for (const placement of holdsData) {
       if (used.has(placement.id)) continue;
+      if (eligibleHoldIds !== undefined && !eligibleHoldIds.has(placement.id)) continue;
       const distance = (placement.cx - targetX) ** 2 + (placement.cy - targetY) ** 2;
       if (distance < bestDistance) {
         bestDistance = distance;
