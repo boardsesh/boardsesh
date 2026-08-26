@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
 import type { UsePlaylistClimbActivationOptions } from '@boardsesh/playlists-react';
+import { MAX_PLAYLIST_QUEUE_REPLACE_PAGES } from '@boardsesh/playlists-react/fetch-playlist-suggestion-climbs';
 import { usePlaylistActivation, _resetEmptyBoardFetchReportsForTests } from '../use-playlist-activation';
 
 // The shared `usePlaylistClimbActivation` is exercised by @boardsesh/playlists-react's
@@ -36,15 +37,25 @@ const mocks = vi.hoisted(() => ({
 
 const VIEW_ONLY_BOARD = { boardName: 'tension', layoutId: 9, sizeId: 5, setIds: '1,2', angle: 35 };
 
-vi.mock('@boardsesh/playlists-react', () => ({
-  usePlaylistClimbActivation: (options: UsePlaylistClimbActivationOptions) => {
-    mocks.captured = options;
-    return mocks.activate;
-  },
-  fetchPlaylistSuggestionClimbs: (args: unknown) => mocks.fetchSuggestion(args),
-  isAbortError: (error: unknown) => error instanceof Error && error.name === 'AbortError',
-  PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE: 100,
-}));
+// Only the React hook is stubbed. The paged drain is the pure-TS half of the
+// package, and stubbing it would make every assertion below about page fetching
+// vacuous — so it comes from the real module via its subpath export.
+vi.mock('@boardsesh/playlists-react', async () => {
+  const drain = await vi.importActual<typeof import('@boardsesh/playlists-react/fetch-playlist-suggestion-climbs')>(
+    '@boardsesh/playlists-react/fetch-playlist-suggestion-climbs',
+  );
+  return {
+    usePlaylistClimbActivation: (options: UsePlaylistClimbActivationOptions) => {
+      mocks.captured = options;
+      return mocks.activate;
+    },
+    fetchPlaylistSuggestionClimbs: (args: unknown) => mocks.fetchSuggestion(args),
+    isAbortError: drain.isAbortError,
+    drainPlaylistPages: drain.drainPlaylistPages,
+    MAX_PLAYLIST_QUEUE_REPLACE_PAGES: drain.MAX_PLAYLIST_QUEUE_REPLACE_PAGES,
+    PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE: drain.PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
+  };
+});
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({
     setCurrentClimb: mocks.setCurrentClimb,
@@ -78,6 +89,20 @@ vi.mock('../../climb-to-queue-item', () => ({
     climb,
   }),
 }));
+
+/** The shape graphql-request 7.4.0 actually throws for a rate-limited operation. */
+function makeRateLimitClientError(retryAfterSeconds: number): Error {
+  return Object.assign(new Error(`Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`), {
+    response: {
+      errors: [
+        {
+          message: `Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`,
+          extensions: { code: 'RATE_LIMITED', operation: 'smartPlaylist', retryAfterSeconds },
+        },
+      ],
+    },
+  });
+}
 
 function makeClimb(uuid: string, overrides: Partial<Climb> = {}): Climb {
   return {
@@ -736,6 +761,202 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       await waitFor(() => {
         expect(mocks.showToast).toHaveBeenCalledWith('detail.queueReplace.loadFailed', 'error');
       });
+      errorSpy.mockRestore();
+    });
+
+    // A plain Error is a server verdict, not a blip. Retrying it would only make
+    // the climber wait longer for the same toast, so the page is issued once.
+    it('does not retry a non-transport failure', async () => {
+      const fetchPage = vi.fn().mockRejectedValue(new Error('User not found'));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+
+      await act(async () => {
+        await result.current.activate(makeClimb('b'));
+      });
+
+      await waitFor(() => {
+        expect(mocks.showToast).toHaveBeenCalledWith('detail.queueReplace.loadFailed', 'error');
+      });
+      expect(fetchPage).toHaveBeenCalledTimes(1);
+      errorSpy.mockRestore();
+    });
+
+    // The half of #4622 still firing in Sentry: one dropped fetch used to kill
+    // the whole replacement. Pins that the hook injects a retry predicate that
+    // actually recognises `TypeError: Network request failed`.
+    it('retries a dropped page and still fills the queue', async () => {
+      const tapped = makeClimb('b');
+      const fetchPage = vi
+        .fn()
+        .mockRejectedValueOnce(new TypeError('Network request failed'))
+        .mockResolvedValue({ climbs: [makeClimb('a'), tapped, makeClimb('c')], hasMore: false });
+      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+
+      await waitFor(() => {
+        expect(fetchPage).toHaveBeenCalledTimes(2);
+      });
+      await waitFor(() => {
+        const lastSetQueue = mocks.setQueue.mock.calls.at(-1);
+        expect(lastSetQueue?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['a', 'b', 'c']);
+      });
+      expect(mocks.showToast).not.toHaveBeenCalled();
+    });
+
+    // The runaway bound. Truncation is silent for the climber and loud for us.
+    it('stops at the page cap, still replaces the queue, and reports it', async () => {
+      let pageCounter = 0;
+      const fetchPage = vi.fn(async () => ({ climbs: [makeClimb(`cap-${pageCounter++}`)], hasMore: true }));
+      const { result } = renderActivation(fetchPage, {
+        replaceQueueOnActivate: true,
+        sourceId: 'playlist:capped-1',
+      });
+
+      await act(async () => {
+        await result.current.activate(makeClimb('b'));
+      });
+
+      await waitFor(() => {
+        expect(mocks.reportHandledError).toHaveBeenCalledWith(
+          expect.any(Error),
+          expect.objectContaining({ tags: { source: 'playlist', op: 'replace-queue-page-cap' } }),
+        );
+      });
+      // Exactly one call per page: the mock never rejects, so no retry inflates this.
+      expect(fetchPage).toHaveBeenCalledTimes(MAX_PLAYLIST_QUEUE_REPLACE_PAGES);
+      // Truncated, not failed: the climber still gets a circuit and no toast.
+      expect(mocks.setQueue).toHaveBeenCalled();
+      expect(mocks.showToast).not.toHaveBeenCalled();
+    });
+
+    // A server that repeats a page is a paging defect, not the #3891 empty-fetch
+    // defect. Firing that canary here would poison the signal it exists to give.
+    it('does not fire the #3891 empty-fetch canary when the drain stopped on no-progress', async () => {
+      const tapped = makeClimb('b');
+      // Empty page that still claims there is more — the shape `52d9a631f` fixed.
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: true });
+      const { result } = renderActivation(fetchPage, {
+        replaceQueueOnActivate: true,
+        sourceId: 'playlist:no-progress-1',
+        allClimbs: [makeClimb('a'), tapped, makeClimb('c')],
+      });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+
+      await waitFor(() => expect(fetchPage).toHaveBeenCalled());
+      expect(mocks.reportHandledError).not.toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({ tags: { source: 'playlist', op: 'replace-queue-empty' } }),
+      );
+      // And it does not spin: one page is enough to know the server is stuck.
+      expect(fetchPage).toHaveBeenCalledTimes(1);
+    });
+
+    // The reachable half of the guard, and the one that used to be silent: a
+    // logbook playlist whose refs all fail to hydrate returns `climbs: []` with
+    // `hasMore: true`. The climber still gets a one-item queue either way, so
+    // this Sentry report is the only signal anyone gets.
+    it('reports a no-progress stop under its own op so triage can tell it from the page cap', async () => {
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: true });
+      const { result } = renderActivation(fetchPage, {
+        replaceQueueOnActivate: true,
+        sourceId: 'playlist:no-progress-2',
+        allClimbs: [makeClimb('a'), makeClimb('b')],
+      });
+
+      await act(async () => {
+        await result.current.activate(makeClimb('b'));
+      });
+
+      await waitFor(() => {
+        expect(mocks.reportHandledError).toHaveBeenCalledWith(
+          expect.any(Error),
+          expect.objectContaining({
+            tags: { source: 'playlist', op: 'replace-queue-no-progress' },
+            extra: { sourceId: 'playlist:no-progress-2', pagesFetched: 1, climbCount: 0 },
+          }),
+        );
+      });
+      // Still silent for the climber.
+      expect(mocks.showToast).not.toHaveBeenCalled();
+    });
+
+    // The rate-limit path runs through the REAL parseRateLimitError from
+    // @boardsesh/graphql-client (this file does not mock it). Without these two,
+    // renaming `retryAfterSeconds` or breaking the ClientError shape match would
+    // leave every suite green while every rate limit became a hard failure.
+    it('waits out a short rate limit read by the real parser and still fills the queue', async () => {
+      const tapped = makeClimb('b');
+      const fetchPage = vi
+        .fn()
+        .mockRejectedValueOnce(makeRateLimitClientError(1))
+        .mockResolvedValue({ climbs: [makeClimb('a'), tapped], hasMore: false });
+      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+
+      expect(fetchPage).toHaveBeenCalledTimes(2);
+      expect(mocks.showToast).not.toHaveBeenCalled();
+      const lastSetQueue = mocks.setQueue.mock.calls.at(-1);
+      expect(lastSetQueue?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['a', 'b']);
+    }, 10_000);
+
+    it('fails fast on a long rate limit and hands the original error to Sentry', async () => {
+      const fetchPage = vi.fn().mockRejectedValue(makeRateLimitClientError(46));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+
+      await act(async () => {
+        await result.current.activate(makeClimb('b'));
+      });
+
+      await waitFor(() => {
+        expect(mocks.showToast).toHaveBeenCalledWith('detail.queueReplace.loadFailed', 'error');
+      });
+      // No spinner held for 46 seconds, and no retry spent on it.
+      expect(fetchPage).toHaveBeenCalledTimes(1);
+      // The ORIGINAL error is what reaches reportHandledError, so
+      // isGraphqlRateLimitedError can still read extensions.code and downgrade
+      // the event to warning + rate_limited instead of paging someone.
+      const reported = mocks.reportHandledError.mock.calls.at(-1);
+      expect(reported?.[0]).toMatchObject({
+        response: { errors: [{ extensions: { code: 'RATE_LIMITED', retryAfterSeconds: 46 } }] },
+      });
+      errorSpy.mockRestore();
+    });
+
+    // The toast overlay renders BEHIND a native @expo/ui sheet, so a failure on
+    // the confirm path used to leave the sheet up with an invisible error under
+    // it. The sheet must be gone by the time the toast is on screen.
+    it('dismisses the confirm sheet when the confirmed replacement fails', async () => {
+      const current = makeQueueItem('q-current', 'current');
+      const future = makeQueueItem('q-future', 'future');
+      mocks.queueState = { queue: [current, future], currentClimbQueueItem: current };
+      const fetchPage = vi.fn().mockRejectedValue(new Error('boom'));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+
+      await act(async () => {
+        await result.current.activate(makeClimb('b'));
+      });
+      expect(result.current.queueReplaceSheet.visible).toBe(true);
+
+      await act(async () => {
+        result.current.queueReplaceSheet.onConfirm();
+      });
+
+      await waitFor(() => {
+        expect(mocks.showToast).toHaveBeenCalledWith('detail.queueReplace.loadFailed', 'error');
+      });
+      expect(result.current.queueReplaceSheet.visible).toBe(false);
       errorSpy.mockRestore();
     });
   });

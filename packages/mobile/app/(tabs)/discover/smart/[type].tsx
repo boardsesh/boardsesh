@@ -51,7 +51,17 @@ export default function SmartPlaylistDetail() {
   // Suggestion-refresh fetcher pages the smart playlist scoped to the active
   // board name so the play-drawer swipe walks the full computed list.
   const fetchPage = useCallback(
-    async ({ page, pageSize, board }: { page: number; pageSize: number; board: { boardName: string } }) => {
+    async ({
+      page,
+      pageSize,
+      board,
+      signal,
+    }: {
+      page: number;
+      pageSize: number;
+      board: { boardName: string };
+      signal: AbortSignal;
+    }) => {
       const input: GetSmartPlaylistInput = {
         type: smartType,
         userId,
@@ -59,10 +69,14 @@ export default function SmartPlaylistDetail() {
         page,
         pageSize,
       };
-      const response = await getHttpClient().request<GetSmartPlaylistQueryResponse, { input: GetSmartPlaylistInput }>(
-        GET_SMART_PLAYLIST,
-        { input },
-      );
+      // `signal` is what makes backing out of a playlist actually cancel the
+      // load. Without it the drain only skipped the NEXT page; the in-flight
+      // request ran to completion and could still replace the queue late.
+      const response = await getHttpClient().request<GetSmartPlaylistQueryResponse, { input: GetSmartPlaylistInput }>({
+        document: GET_SMART_PLAYLIST,
+        variables: { input },
+        signal,
+      });
       return {
         climbs: toQueueClimbs(response.smartPlaylist.climbs),
         hasMore: response.smartPlaylist.hasMore,
