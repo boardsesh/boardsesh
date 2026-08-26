@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
 import { resetBoardRenderCaches } from '@/app/lib/board-render-cache';
+import { createOgImageHeaders } from '@/app/lib/seo/og';
 import { GET } from '../route';
 
 // The route builds its semaphore once, at module load, from this env var —
@@ -843,5 +844,56 @@ describe('board-render API route', () => {
 
     const response = await GET(makeRequest({ ...validParams, layout_id: '5', size_id: '15', set_ids: '24' }));
     expect(response.status).toBe(200);
+  });
+
+  // #4773: the route used to hard-code `version: 'immutable'`, which claimed a
+  // year of cache lifetime for a URL that did not identify its bytes.
+  describe('cache version', () => {
+    const lastHeaderCall = () => {
+      const calls = vi.mocked(createOgImageHeaders).mock.calls;
+      return calls[calls.length - 1][0];
+    };
+
+    it('passes a well-formed v through as the cache version', async () => {
+      const response = await GET(makeRequest({ ...validParams, v: 'ddff19e91ac6' }));
+      expect(response.status).toBe(200);
+      expect(lastHeaderCall()).toMatchObject({ version: 'ddff19e91ac6', unversionedTier: 'daily' });
+    });
+
+    it('treats a missing v as unversioned on the daily tier', async () => {
+      const response = await GET(makeRequest(validParams));
+      expect(response.status).toBe(200);
+      expect(lastHeaderCall()).toMatchObject({ version: null, unversionedTier: 'daily' });
+    });
+
+    it.each([
+      ['a path traversal attempt', '../../etc/passwd'],
+      ['non-hex characters', 'ZZZZZZZZ'],
+      ['too short to be a digest', 'abc'],
+      ['absurdly long', 'a'.repeat(500)],
+      ['the empty string', ''],
+    ])('rejects %s as a version without failing the request', async (_label, versionParam) => {
+      const response = await GET(makeRequest({ ...validParams, v: versionParam }));
+      expect(response.status).toBe(200);
+      expect(lastHeaderCall()).toMatchObject({ version: null });
+    });
+
+    it('does not fragment the byte cache on v', async () => {
+      // Two requests for the same pixels during a rolling deploy carry different
+      // versions. One process only ever runs one renderer, so the second must be
+      // a byte-cache hit rather than a second WASM + sharp pass.
+      await GET(makeRequest({ ...validParams, v: 'aaaaaaaaaaaa' }));
+      const second = await GET(makeRequest({ ...validParams, v: 'bbbbbbbbbbbb' }));
+      expect(second.headers.get('Server-Timing')).toContain('cache;desc=hit');
+      expect(lastHeaderCall()).toMatchObject({ version: 'bbbbbbbbbbbb' });
+    });
+
+    it('still renders an unknown param it does not recognise', async () => {
+      // embedded/projects/moonboard-dev-server already ships `revision=<n>` to
+      // production. Unknown params must stay inert, not 400.
+      const response = await GET(makeRequest({ ...validParams, revision: '7' }));
+      expect(response.status).toBe(200);
+      expect(lastHeaderCall()).toMatchObject({ version: null });
+    });
   });
 });

@@ -498,6 +498,27 @@ jobs:
             exit 1
           fi
 
+  # No `if:` path gate and no `needs: [changes]` on purpose. The version is derived
+  # from the whole board catalogue plus the compiled renderer and every board photo
+  # the catalogue composites — a paths-filter listing those would drift from the
+  # generator's real input set, and a guard that silently stops guarding is worse
+  # than none (see the `check:db-migrations` / `large-files` precedents). Since it
+  # reads no `changes` output, waiting on that job would only add latency.
+  board-render-version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Verify the committed board-render version matches the tree
+        run: vp run check:board-render-version
+
   i18n:
     needs: [changes]
     # `mobile` is in the filter because check:i18n:orphans scans
@@ -1185,6 +1206,7 @@ jobs:
       - typecheck
       - db-migrations
       - codegen-drift
+      - board-render-version
       - i18n
       - test-default
       - test-backend
