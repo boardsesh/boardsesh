@@ -234,7 +234,10 @@ if [[ "$WEB_BASE_URL" == "/" ]]; then
 else
   MANIFEST_BASE="${WEB_BASE_URL%/}"
 fi
-node "$ROOT_DIR/scripts/lib/patch-expo-web-pwa-manifest.mjs" "$OUTPUT_DIR" "$MANIFEST_BASE"
+node "$ROOT_DIR/scripts/lib/patch-expo-web-pwa-manifest.mjs" \
+  "$OUTPUT_DIR" \
+  "$MANIFEST_BASE" \
+  "$ROOT_DIR/packages/shared/static-assets/src/generated/catalog.json"
 
 # BOARDSESH_EXPORT_EXPECT_URLS (space-separated substrings, e.g.
 # "https://ws.boardsesh.com https://www.boardsesh.com") is the direct detector

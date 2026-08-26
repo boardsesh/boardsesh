@@ -70,6 +70,7 @@ env:
   # is init-only, so this build-time var is the only place it can be set
   # (src/lib/app-environment.ts `resolveAppEnvironment`).
   EXPO_PUBLIC_SENTRY_ENVIRONMENT: production-web
+  EXPO_PUBLIC_STATIC_ASSET_BASE_URL: https://assets.boardsesh.com
 
 jobs:
   detect-changes:
@@ -83,6 +84,7 @@ jobs:
       app_changed: ${{ steps.changes.outputs.app }}
       deployment_base_sha: ${{ steps.changes.outputs.deployment_base_sha }}
       cloudflare_changed: ${{ steps.changes.outputs.cloudflare }}
+      static_assets_changed: ${{ steps.changes.outputs.static_assets }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -175,9 +177,47 @@ jobs:
             echo "No rollback signal detected (autoAssignCustomDomains=true, lastRollbackTarget=null) — deploy will promote to production."
           fi
 
+  # Publish immutable images before any build that can reference their hashed
+  # URLs. The uploader lists the dedicated bucket and PUTs only missing hashes;
+  # it never deletes or overwrites objects needed by an older deployment.
+  sync-static-assets:
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.static_assets_changed == 'true'
+    runs-on: ubuntu-latest
+    # A stuck S3/CDN socket must release the serialized production-deploy
+    # concurrency group. A healthy full-catalog validation takes about three
+    # minutes, leaving ample headroom for bounded propagation retries.
+    timeout-minutes: 10
+    environment: Production
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Upload missing immutable static assets
+        env:
+          STATIC_ASSETS_S3_BUCKET_NAME: ${{ secrets.STATIC_ASSETS_S3_BUCKET_NAME }}
+          STATIC_ASSETS_AWS_ACCESS_KEY_ID: ${{ secrets.STATIC_ASSETS_AWS_ACCESS_KEY_ID }}
+          STATIC_ASSETS_AWS_SECRET_ACCESS_KEY: ${{ secrets.STATIC_ASSETS_AWS_SECRET_ACCESS_KEY }}
+          STATIC_ASSETS_AWS_ENDPOINT_URL: ${{ secrets.STATIC_ASSETS_AWS_ENDPOINT_URL }}
+          STATIC_ASSETS_AWS_REGION: ${{ secrets.STATIC_ASSETS_AWS_REGION }}
+        run: vp run upload:static-assets
+
   build-web:
-    needs: [detect-changes, check-rollback]
-    if: needs.detect-changes.outputs.web_changed == 'true'
+    needs: [detect-changes, check-rollback, sync-static-assets]
+    if: >-
+      always()
+      && needs.detect-changes.outputs.web_changed == 'true'
+      && needs.check-rollback.result == 'success'
+      && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped')
     runs-on: ubuntu-latest
     environment: Production
     steps:
@@ -223,6 +263,7 @@ jobs:
           # derivation now protects boardsesh.com, but this keeps every caller
           # that still reads the baked env on the right backend.
           NEXT_PUBLIC_WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL || 'wss://ws.boardsesh.com/graphql' }}
+          NEXT_PUBLIC_STATIC_ASSET_BASE_URL: https://assets.boardsesh.com
         run: vercel build --prod
 
       - name: Package prebuilt output
@@ -313,11 +354,12 @@ jobs:
   # build that ran and FAILED is 'failure' (not 'skipped') and fails this check,
   # which in turn skips both production deploy jobs below.
   migrate:
-    needs: [detect-changes, build-web, build-backend]
+    needs: [detect-changes, build-web, build-backend, sync-static-assets]
     if: >-
       always()
       && (needs.build-web.result == 'success' || needs.build-web.result == 'skipped')
       && (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped')
+      && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped')
       && !(needs.build-web.result == 'skipped' && needs.build-backend.result == 'skipped')
     runs-on: ubuntu-latest
     environment: Production
@@ -597,8 +639,8 @@ jobs:
   # script, or deploy/app-subdomain. Set the repo variable APP_WEB_DEPLOY_HOLD to
   # any non-empty value to hold the subdomain where it is; clear it to resume.
   deploy-app-web:
-    needs: [detect-changes]
-    if: needs.detect-changes.outputs.app_changed == 'true' && vars.APP_WEB_DEPLOY_HOLD == ''
+    needs: [detect-changes, sync-static-assets]
+    if: always() && needs.detect-changes.outputs.app_changed == 'true' && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped') && vars.APP_WEB_DEPLOY_HOLD == ''
     runs-on: ubuntu-latest
     environment: Production
     steps:
@@ -914,8 +956,8 @@ jobs:
   # summary, so a forgotten APP_WEB_DEPLOY_HOLD would quietly strand the
   # subdomain on an old bundle. No-ops if DISCORD_DEPLOY_WEBHOOK is unset.
   notify-app-web-held:
-    needs: [detect-changes]
-    if: needs.detect-changes.outputs.app_changed == 'true' && vars.APP_WEB_DEPLOY_HOLD != ''
+    needs: [detect-changes, sync-static-assets]
+    if: always() && needs.detect-changes.outputs.app_changed == 'true' && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped') && vars.APP_WEB_DEPLOY_HOLD != ''
     runs-on: ubuntu-latest
     environment: Production
     steps:
@@ -991,6 +1033,7 @@ jobs:
       [
         detect-changes,
         check-rollback,
+        sync-static-assets,
         build-web,
         build-backend,
         migrate,
@@ -1009,6 +1052,7 @@ jobs:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           CHECK_ROLLBACK: ${{ needs.check-rollback.result }}
           DETECT_CHANGES: ${{ needs.detect-changes.result }}
+          SYNC_STATIC_ASSETS: ${{ needs.sync-static-assets.result }}
           BUILD_WEB: ${{ needs.build-web.result }}
           BUILD_BACKEND: ${{ needs.build-backend.result }}
           MIGRATE: ${{ needs.migrate.result }}
@@ -1023,8 +1067,8 @@ jobs:
             exit 0
           fi
           # URL wrapped in <…> so Discord suppresses the inline preview embed.
-          CONTENT=$(printf '🚨 **Production deploy failed** on \`%s\`\n• detect-changes: %s\n• check-rollback: %s\n• build-web: %s\n• build-backend: %s\n• migrate: %s\n• deploy-web: %s\n• deploy-production-backend: %s\n• deploy-app-web: %s\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$CHECK_ROLLBACK" "$BUILD_WEB" "$BUILD_BACKEND" "$MIGRATE" "$DEPLOY_WEB" "$DEPLOY_BACKEND" "$DEPLOY_APP_WEB" "$RUN_URL")
+          CONTENT=$(printf '🚨 **Production deploy failed** on \`%s\`\n• detect-changes: %s\n• check-rollback: %s\n• sync-static-assets: %s\n• build-web: %s\n• build-backend: %s\n• migrate: %s\n• deploy-web: %s\n• deploy-production-backend: %s\n• deploy-app-web: %s\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$CHECK_ROLLBACK" "$SYNC_STATIC_ASSETS" "$BUILD_WEB" "$BUILD_BACKEND" "$MIGRATE" "$DEPLOY_WEB" "$DEPLOY_BACKEND" "$DEPLOY_APP_WEB" "$RUN_URL")
           # --fail-with-body surfaces Discord's status + error body (e.g. 429,
           # rotated webhook) in the log instead of failing silently. Don't let a
           # webhook hiccup fail the job — the alert is best-effort.
@@ -1043,6 +1087,7 @@ jobs:
       [
         check-rollback,
         detect-changes,
+        sync-static-assets,
         build-web,
         build-backend,
         migrate,

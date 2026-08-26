@@ -69,6 +69,7 @@ describe('location-sync CI integration contract', () => {
     expect(runAny).toContain("steps.filter.outputs.sharedDeps == 'true'");
     expect(runAny).toContain("steps.filter.outputs.sharedSchema == 'true'");
     expect(runAny).toContain("steps.filter.outputs.rootCi == 'true'");
+    expect(runAny).toContain("steps.filter.outputs.staticAssets == 'true'");
   });
 
   it('runs the full project against the pinned migrated dev database', () => {

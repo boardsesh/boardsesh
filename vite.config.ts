@@ -156,6 +156,7 @@ export default defineConfig({
       './packages/shared/graphql/vite.config.ts',
       './packages/shared/graphql-client/vite.config.ts',
       './packages/shared/email/vite.config.ts',
+      './packages/shared/static-assets/vite.config.ts',
       './packages/shared-schema/vite.config.ts',
       './packages/mobile/vite.config.ts',
       './scripts/vite.config.ts',
@@ -482,6 +483,18 @@ export default defineConfig({
         command: 'bun scripts/mobile-board-art-network-check.ts',
         cache: false,
       },
+      'generate:static-assets': {
+        command: 'bun scripts/generate-static-assets.ts',
+        cache: false,
+      },
+      'check:static-assets': {
+        command: 'bun scripts/generate-static-assets.ts --check',
+        cache: false,
+      },
+      'upload:static-assets': {
+        command: 'bun scripts/upload-static-assets.ts',
+        cache: false,
+      },
       'generate:acknowledgements': {
         command: 'node --import tsx scripts/fetch-acknowledgements.ts',
         cache: false,
@@ -635,6 +648,9 @@ export default defineConfig({
       },
       'typecheck:analytics': {
         command: 'bun run --filter=@boardsesh/analytics typecheck',
+      },
+      'typecheck:static-assets': {
+        command: 'bun run --filter=@boardsesh/static-assets typecheck',
       },
       'typecheck:climb-actions': {
         command: 'bun run --filter=@boardsesh/climb-actions typecheck',

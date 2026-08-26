@@ -1,9 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vite-plus/test';
 import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
+import { STATIC_ASSET_OBJECT_KEYS } from '@boardsesh/static-assets';
 import { getImageUrl, buildBoardRenderUrl, buildOverlayUrl, buildOgBoardRenderUrl } from '../util';
 import type { BoardDetails } from '@/app/lib/types';
 
 describe('getImageUrl', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   describe('self-hosted board images (relative paths)', () => {
     it('converts PNG to WebP', () => {
       expect(getImageUrl('product_sizes_layouts_sets/36-1.png', 'kilter')).toBe(
@@ -26,6 +31,15 @@ describe('getImageUrl', () => {
     it('works for tension board', () => {
       expect(getImageUrl('product_sizes_layouts_sets/1.png', 'tension', true)).toBe(
         '/images/tension/product_sizes_layouts_sets/thumbs/1.webp',
+      );
+    });
+
+    it('uses the immutable CDN object when the production asset origin is configured', () => {
+      vi.stubEnv('NEXT_PUBLIC_STATIC_ASSET_BASE_URL', 'https://assets.boardsesh.com');
+      const logicalPath = '/images/kilter/product_sizes_layouts_sets/36-1.webp';
+
+      expect(getImageUrl('product_sizes_layouts_sets/36-1.png', 'kilter')).toBe(
+        `https://assets.boardsesh.com/${STATIC_ASSET_OBJECT_KEYS[logicalPath]}`,
       );
     });
 

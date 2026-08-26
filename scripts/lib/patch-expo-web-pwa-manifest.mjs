@@ -16,7 +16,10 @@
 // never offers the install prompt — all at HTTP 200, invisible to a status-code
 // check. This rewrites both files from the export's baseUrl, then re-reads them
 // from disk and asserts the rewrite landed, because a silent no-op here is the
-// exact failure mode being fixed. See W-24 / #4438.
+// exact failure mode being fixed. When production provides
+// EXPO_PUBLIC_STATIC_ASSET_BASE_URL, it also replaces the checked-in www icon
+// URLs with the content-addressed catalog objects. Local/PR exports leave those
+// URLs alone because main is the only CDN publisher. See W-24 / #4438.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -62,16 +65,68 @@ function hrefOf(linkTag) {
   return matched ? matched[1] : null;
 }
 
+function findLinkByRel(shellHtml, relation) {
+  const links = shellHtml.match(/<link\b[^>]*>/gi) ?? [];
+  return links.filter((link) => {
+    const matched = /\brel=["']([^"']*)["']/i.exec(link);
+    return matched?.[1].split(/\s+/).includes(relation);
+  });
+}
+
+function staticAssetUrl(staticAssetManifest, staticAssetBaseUrl, logicalPath) {
+  const objectKey = staticAssetManifest?.[logicalPath];
+  if (typeof objectKey !== 'string' || objectKey === '') fail(`static asset catalog has no ${logicalPath}`);
+  return `${staticAssetBaseUrl.replace(/\/$/, '')}/${objectKey}`;
+}
+
+function patchShellIcon(shellHtml, relation, iconUrl, shellPath) {
+  const links = findLinkByRel(shellHtml, relation);
+  if (links.length !== 1) {
+    fail(`index.html has ${links.length} <link rel="${relation}"> tags (${shellPath}) — expected exactly one`);
+  }
+  const originalLink = links[0];
+  const originalHref = hrefOf(originalLink);
+  if (originalHref === null) {
+    fail(`<link rel="${relation}"> has no href (${shellPath})`);
+  }
+  if (originalHref === iconUrl) return shellHtml;
+  const patchedLink = originalLink.replace(/\bhref=["'][^"']*["']/i, `href="${iconUrl}"`);
+  return shellHtml.replace(originalLink, patchedLink);
+}
+
+function patchManifestIcons(manifest, staticAssetManifest, staticAssetBaseUrl) {
+  if (!Array.isArray(manifest.icons)) fail('manifest.json has no icons array');
+  const catalogUrls = new Set(
+    Object.keys(staticAssetManifest ?? {}).map((logicalPath) =>
+      staticAssetUrl(staticAssetManifest, staticAssetBaseUrl, logicalPath),
+    ),
+  );
+  for (const icon of manifest.icons) {
+    if (typeof icon?.src !== 'string' || icon.src.trim() === '') {
+      fail(`manifest icon has no source: ${JSON.stringify(icon)}`);
+    }
+    if (catalogUrls.has(icon.src)) continue;
+
+    let logicalPath;
+    try {
+      logicalPath = new URL(icon.src, 'https://www.boardsesh.com').pathname;
+    } catch {
+      fail(`manifest icon has an invalid source URL: ${JSON.stringify(icon.src)}`);
+    }
+    icon.src = staticAssetUrl(staticAssetManifest, staticAssetBaseUrl, logicalPath);
+  }
+}
+
 /**
  * Rewrite an Expo web export's manifest href, start_url and scope from the
  * export's baseUrl.
  *
- * @param {{ exportDir: string, basePrefix: string }} options
+ * @param {{ exportDir: string, basePrefix: string, staticAssetBaseUrl?: string, staticAssetManifest?: object }} options
  *   `basePrefix` is the baseUrl with no trailing slash: '/app' for the default
  *   export, '' for the root-served --subdomain export.
  * @returns {{ href: string, startUrl: string }}
  */
-export function patchExpoWebPwaManifest({ exportDir, basePrefix }) {
+export function patchExpoWebPwaManifest({ exportDir, basePrefix, staticAssetBaseUrl, staticAssetManifest }) {
   const shellPath = join(exportDir, 'index.html');
   const manifestPath = join(exportDir, 'manifest.json');
   const expectedHref = `${basePrefix}/manifest.json`;
@@ -112,10 +167,27 @@ export function patchExpoWebPwaManifest({ exportDir, basePrefix }) {
 
   const originalLink = manifestLinks[0];
   const patchedLink = originalLink.replace(/\bhref=["'][^"']*["']/i, `href="${expectedHref}"`);
-  writeFileSync(shellPath, shellHtml.replace(originalLink, patchedLink));
+  let patchedShell = shellHtml.replace(originalLink, patchedLink);
 
   manifest.start_url = expectedStartUrl;
   manifest.scope = expectedStartUrl;
+  if (staticAssetBaseUrl) {
+    patchedShell = patchShellIcon(
+      patchedShell,
+      'icon',
+      staticAssetUrl(staticAssetManifest, staticAssetBaseUrl, '/icons/icon-192.png'),
+      shellPath,
+    );
+    patchedShell = patchShellIcon(
+      patchedShell,
+      'apple-touch-icon',
+      staticAssetUrl(staticAssetManifest, staticAssetBaseUrl, '/icons/apple-touch-icon.png'),
+      shellPath,
+    );
+    patchManifestIcons(manifest, staticAssetManifest, staticAssetBaseUrl);
+  }
+
+  writeFileSync(shellPath, patchedShell);
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   // Re-read from disk. Everything above operated on in-memory strings; only a
@@ -138,16 +210,43 @@ export function patchExpoWebPwaManifest({ exportDir, basePrefix }) {
     );
   }
 
-  return { href: expectedHref, startUrl: expectedStartUrl };
+  if (staticAssetBaseUrl) {
+    const expectedIconUrl = staticAssetUrl(staticAssetManifest, staticAssetBaseUrl, '/icons/icon-192.png');
+    if (!writtenShell.includes(expectedIconUrl)) fail(`post-write check: index.html is missing ${expectedIconUrl}`);
+    for (const icon of writtenManifest.icons ?? []) {
+      if (typeof icon.src !== 'string' || !icon.src.startsWith(`${staticAssetBaseUrl.replace(/\/$/, '')}/`)) {
+        fail(`post-write check: manifest icon did not use ${staticAssetBaseUrl}`);
+      }
+    }
+  }
+
+  return { href: expectedHref, startUrl: expectedStartUrl, staticAssetsPatched: Boolean(staticAssetBaseUrl) };
 }
 
 function main(argv) {
-  const [exportDir, basePrefix = ''] = argv;
+  const [exportDir, basePrefix = '', staticAssetManifestPath] = argv;
   if (!exportDir) {
     fail('usage: node scripts/lib/patch-expo-web-pwa-manifest.mjs <export-dir> [base-prefix]');
   }
-  const { href, startUrl } = patchExpoWebPwaManifest({ exportDir, basePrefix });
-  console.log(`${LOG_PREFIX} index.html manifest href → "${href}"; manifest.json start_url/scope → "${startUrl}"`);
+  const staticAssetBaseUrl = process.env.EXPO_PUBLIC_STATIC_ASSET_BASE_URL?.trim();
+  let staticAssetManifest;
+  if (staticAssetBaseUrl) {
+    if (!staticAssetManifestPath) fail('static asset base URL is set but no catalog path was provided');
+    try {
+      staticAssetManifest = JSON.parse(readRequired(staticAssetManifestPath, 'static asset catalog'));
+    } catch (error) {
+      fail(`static asset catalog is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  const { href, startUrl, staticAssetsPatched } = patchExpoWebPwaManifest({
+    exportDir,
+    basePrefix,
+    staticAssetBaseUrl,
+    staticAssetManifest,
+  });
+  console.log(
+    `${LOG_PREFIX} index.html manifest href → "${href}"; manifest.json start_url/scope → "${startUrl}"; CDN icons ${staticAssetsPatched ? 'patched' : 'unchanged'}`,
+  );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

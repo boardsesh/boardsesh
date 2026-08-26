@@ -5,6 +5,7 @@ import { toFlatFrames as toFlatFramesShared } from '@boardsesh/board-constants/h
 import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 import type { BoardDetails, BoardName } from '@/app/lib/types';
 import { getPublicBackendHttpUrl } from '@/app/lib/backend-url';
+import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
 import { BOARD_IMAGE_DIMENSIONS } from '../../lib/board-data';
 export { convertLitUpHoldsStringToMap } from './types';
 // Multi-frame playback primitives now live in the shared, renderer-agnostic
@@ -151,12 +152,12 @@ export const getImageUrl = (imageUrl: string, board: BoardName, thumbnail?: bool
   // Absolute path (e.g. MoonBoard images already prefixed with /images/moonboard/...)
   if (imageUrl.startsWith('/')) {
     const webpUrl = imageUrl.replace(/\.png$/, '.webp');
-    return thumbnail ? toThumbUrl(webpUrl) : webpUrl;
+    return resolveStaticAssetUrl(thumbnail ? toThumbUrl(webpUrl) : webpUrl);
   }
 
   if (USE_SELF_HOSTED_IMAGES) {
     const webpUrl = `/images/${board}/${imageUrl}`.replace(/\.png$/, '.webp');
-    return thumbnail ? toThumbUrl(webpUrl) : webpUrl;
+    return resolveStaticAssetUrl(thumbnail ? toThumbUrl(webpUrl) : webpUrl);
   }
 
   return `https://api.${board}boardapp${board === 'tension' ? '2' : ''}.com/img/${imageUrl}`;
