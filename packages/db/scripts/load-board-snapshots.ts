@@ -491,33 +491,41 @@ async function loadArtifactTable(params: {
  * importer did (`deriveClimbHoldsFromFrames`), which is why multi-frame climbs
  * have hold rows in the image today.
  */
+export function holdRowsForClimb(boardType: string, climbUuid: string, frames: string): (readonly (string | null)[])[] {
+  let frameMap: ReturnType<typeof convertLitUpHoldsStringToMap>;
+  try {
+    frameMap = convertLitUpHoldsStringToMap(frames, boardType as BoardName);
+  } catch {
+    // An unparseable frames string is upstream data we cannot fix here; the
+    // climb still loads, it just gets no hold rows (as with today's importer).
+    return [];
+  }
+  const holds = new Map<number, { frameNumber: number; state: string }>();
+  for (const [frameKey, holdsMap] of Object.entries(frameMap)) {
+    const frameNumber = Number(frameKey);
+    for (const [holdKey, hold] of Object.entries(holdsMap)) {
+      if (isSentinelHoldState(hold.state)) continue;
+      const holdId = Number(holdKey);
+      if (!Number.isFinite(holdId)) continue;
+      holds.set(holdId, { frameNumber, state: hold.state });
+    }
+  }
+  return [...holds].map(([holdId, hold]) => [
+    boardType,
+    climbUuid,
+    String(holdId),
+    String(hold.frameNumber),
+    hold.state,
+  ]);
+}
+
 function* deriveHoldRows(db: DatabaseSync): Generator<readonly (string | null)[]> {
   const rows = db
     .prepare("SELECT uuid, board_type, frames FROM board_climbs WHERE frames IS NOT NULL AND frames != ''")
     .iterate() as Iterable<{ uuid: string; board_type: string; frames: string }>;
 
   for (const climb of rows) {
-    let frameMap: ReturnType<typeof convertLitUpHoldsStringToMap>;
-    try {
-      frameMap = convertLitUpHoldsStringToMap(climb.frames, climb.board_type as BoardName);
-    } catch {
-      // An unparseable frames string is upstream data we cannot fix here; the
-      // climb still loads, it just gets no hold rows (as with today's importer).
-      continue;
-    }
-    const holds = new Map<number, { frameNumber: number; state: string }>();
-    for (const [frameKey, holdsMap] of Object.entries(frameMap)) {
-      const frameNumber = Number(frameKey);
-      for (const [holdKey, hold] of Object.entries(holdsMap)) {
-        if (isSentinelHoldState(hold.state)) continue;
-        const holdId = Number(holdKey);
-        if (!Number.isFinite(holdId)) continue;
-        holds.set(holdId, { frameNumber, state: hold.state });
-      }
-    }
-    for (const [holdId, hold] of holds) {
-      yield [climb.board_type, climb.uuid, String(holdId), String(hold.frameNumber), hold.state];
-    }
+    yield* holdRowsForClimb(climb.board_type, climb.uuid, climb.frames);
   }
 }
 

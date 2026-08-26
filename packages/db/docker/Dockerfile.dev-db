@@ -173,9 +173,13 @@ RUN set -e && \
     echo ">>> Loading board snapshots..." && \
     cd /app && \
     mkdir -p /opt/boardsesh && \
-    load_args="--snapshot-base-url $SNAPSHOT_BASE_URL --sources-out /opt/boardsesh/snapshot-sources.json" && \
-    if [ -n "$CATALOG_MANIFEST_URL" ]; then load_args="$load_args --catalog-manifest-url $CATALOG_MANIFEST_URL"; fi && \
-    DATABASE_URL=postgresql://postgres@localhost/main bunx tsx scripts/load-board-snapshots.ts $load_args && \
+    # Positional parameters, not a flat string: both URLs come from build ARGs, \
+    # and a space in one would word-split a `$load_args`-style string into \
+    # garbage arguments. Quoting the string instead would collapse every flag \
+    # into a single argument, so neither half of that shape is safe. \
+    set -- --snapshot-base-url "$SNAPSHOT_BASE_URL" --sources-out /opt/boardsesh/snapshot-sources.json && \
+    if [ -n "$CATALOG_MANIFEST_URL" ]; then set -- "$@" --catalog-manifest-url "$CATALOG_MANIFEST_URL"; fi && \
+    DATABASE_URL=postgresql://postgres@localhost/main bunx tsx scripts/load-board-snapshots.ts "$@" && \
     \
     # ── Create test user ─────────────────────────────────────────────── \
     echo ">>> Creating test user..." && \

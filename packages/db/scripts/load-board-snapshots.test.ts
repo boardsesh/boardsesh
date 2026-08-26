@@ -8,6 +8,7 @@ import {
   DEFERRED_CATALOG_TABLES,
   encodeCopyField,
   encodeCopyRow,
+  holdRowsForClimb,
   jsonArrayToPgArray,
   parseArgs,
   readerFor,
@@ -131,7 +132,10 @@ describe('buildColumnPlans', () => {
     column('synced', 'boolean', 'boolean', 'bool'),
   ];
 
-  it('keeps only columns the artifact also has, in Postgres ordinal order', () => {
+  // `user_id` is in the list despite being absent from the artifact because it
+  // is forced-null; the shared-column rule and the forced-null rule are separate,
+  // and both are asserted below.
+  it('orders columns by the Postgres ordinal, not the artifact order', () => {
     const plans = buildColumnPlans(pgCols, ['name', 'uuid'], 'board_climbs');
     assert.deepEqual(
       plans.map((plan) => plan.name),
@@ -287,5 +291,67 @@ describe('parseArgs', () => {
 
   it('rejects a flag with no value', () => {
     assert.throws(() => parseArgs(['--board']), /--board requires a value/);
+  });
+});
+
+describe('holdRowsForClimb', () => {
+  // board_climb_holds is not published — every one of its ~10M rows is derived
+  // from this parse, so it is the load's largest single trust assumption.
+  const holdIds = (rows: readonly (readonly (string | null)[])[]) => rows.map((row) => row[2]);
+
+  it('derives one row per lit hold of a single-frame climb', () => {
+    const rows = holdRowsForClimb('kilter', 'climb-1', 'p2476r35p2537r33p2543r32');
+    assert.deepEqual(holdIds(rows), ['2476', '2537', '2543']);
+    for (const row of rows) {
+      assert.equal(row[0], 'kilter');
+      assert.equal(row[1], 'climb-1');
+      assert.equal(row[3], '0');
+      // The four roles board_climb_holds actually carries; an unmapped state
+      // would mean the board's hold-state table drifted from the frames.
+      assert.ok(['STARTING', 'HAND', 'FOOT', 'FINISH'].includes(String(row[4])));
+    }
+  });
+
+  // board_climb_holds is keyed (board_type, climb_uuid, hold_id), so a hold lit
+  // in two frames must contribute ONE row or the COPY hits a duplicate key.
+  it('collapses a hold repeated across frames to a single row', () => {
+    const rows = holdRowsForClimb('kilter', 'climb-2', 'p1143r12p1175r12,p1143r13p1198r13');
+    assert.deepEqual(holdIds(rows).sort(), ['1143', '1175', '1198']);
+    assert.equal(new Set(holdIds(rows)).size, holdIds(rows).length);
+  });
+
+  it('lets the last frame win the role and frame number of a repeated hold', () => {
+    const rows = holdRowsForClimb('kilter', 'climb-3', 'p1143r12,p1143r13');
+    assert.equal(rows.length, 1);
+    // Frame 1 is the later frame, so its frame number and role are what land.
+    assert.equal(rows[0][3], '1');
+    assert.equal(rows[0][4], 'HAND');
+  });
+
+  // `x<id>` is an un-light marker in the frames string. This parser ignores it
+  // rather than emitting an OFF row, so a hold lit earlier keeps its earlier
+  // state. That matches what the published image already contains — neither it
+  // nor a snapshot-seeded one holds a single OFF row — so the behaviour is
+  // pinned here rather than "fixed" into a difference.
+  it('ignores un-light markers rather than emitting an OFF row', () => {
+    const rows = holdRowsForClimb('kilter', 'climb-4', 'p1143r12p1175r12,x1143p1198r13');
+    assert.deepEqual(holdIds(rows).sort(), ['1143', '1175', '1198']);
+    assert.equal(rows.find((row) => row[2] === '1143')?.[4], 'STARTING');
+    assert.equal(
+      rows.some((row) => row[4] === 'OFF'),
+      false,
+    );
+    assert.deepEqual(holdRowsForClimb('kilter', 'climb-4b', 'x1143'), []);
+  });
+
+  it('returns nothing for an empty or unparseable frames string', () => {
+    assert.deepEqual(holdRowsForClimb('kilter', 'climb-5', ''), []);
+    assert.deepEqual(holdRowsForClimb('kilter', 'climb-6', 'not-a-frames-string'), []);
+  });
+
+  it('emits exactly the five columns the COPY declares', () => {
+    for (const row of holdRowsForClimb('tension', 'climb-7', 'p1143r12p1175r12')) {
+      assert.equal(row.length, 5);
+    }
   });
 });
