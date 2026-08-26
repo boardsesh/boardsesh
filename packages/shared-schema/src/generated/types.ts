@@ -3454,6 +3454,14 @@ export type Mutation = {
    * associated with the user.
    */
   submitAppFeedback: Scalars['Boolean']['output'];
+  /**
+   * Crowdsourced QA: file a verdict on a pull-request preview. Tester role
+   * required; the PR must be open; a `declined` verdict needs a comment of
+   * 10+ characters. Stores the row, then (best effort, never failing the
+   * mutation) posts a comment on the PR and swaps the qa-approved/qa-declined
+   * label.
+   */
+  submitQaVerdict: QaVerdict;
   /** Subscribe to new climbs for a board type and layout. */
   subscribeNewClimbs: Scalars['Boolean']['output'];
   /**
@@ -4025,6 +4033,11 @@ export type MutationSetterOverrideCommunityStatusArgs = {
 /** Root mutation type for all write operations. */
 export type MutationSubmitAppFeedbackArgs = {
   input: SubmitAppFeedbackInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSubmitQaVerdictArgs = {
+  input: SubmitQaVerdictInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4648,6 +4661,62 @@ export type PublicUserProfile = {
   isFollowedByMe: Scalars['Boolean']['output'];
 };
 
+/**
+ * An open pull request with a published OTA preview branch, as a tester sees it:
+ * what to test (the PR body's `## Test plan`), how risky it is (`Risk: N/5`),
+ * and whether this tester already filed a verdict.
+ */
+export type QaPreview = {
+  __typename?: 'QaPreview';
+  /** GitHub login of the PR author. */
+  author: Scalars['String']['output'];
+  /** `pr-<number>` — the xprem branch a compatible build can surf to. */
+  branch: Scalars['String']['output'];
+  /** Committer date of `headSha` (ISO 8601). Null when the lookup failed. */
+  headCommittedAt?: Maybe<Scalars['String']['output']>;
+  headSha: Scalars['String']['output'];
+  isDraft: Scalars['Boolean']['output'];
+  /** The calling tester's most recent verdict on this PR, if any. */
+  myLatestVerdict?: Maybe<QaVerdict>;
+  prNumber: Scalars['Int']['output'];
+  /** 1–5 from the PR body's `Risk: N/5` line; null when the PR predates the rule. */
+  risk?: Maybe<Scalars['Int']['output']>;
+  riskReason?: Maybe<Scalars['String']['output']>;
+  /** The `## Test plan` section as written (comments stripped); null when absent. */
+  testPlan?: Maybe<Scalars['String']['output']>;
+  /** The plan's numbered steps, one string each. Empty when the plan has none. */
+  testPlanSteps: Array<Scalars['String']['output']>;
+  title: Scalars['String']['output'];
+  /** ISO 8601 — when the PR was last updated on GitHub. */
+  updatedAt: Scalars['String']['output'];
+  url: Scalars['String']['output'];
+};
+
+/**
+ * One verdict a tester filed from the mobile app. Mirrored to GitHub as a PR
+ * comment plus a `qa-approved` / `qa-declined` label; `githubCommentUrl` is
+ * null until that side effect lands (or when it failed — the row is the record).
+ */
+export type QaVerdict = {
+  __typename?: 'QaVerdict';
+  /** The OTA preview branch the tester was running, e.g. `pr-4792`. */
+  branch: Scalars['String']['output'];
+  comment?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['String']['output'];
+  githubCommentUrl?: Maybe<Scalars['String']['output']>;
+  /** The PR's head commit when the verdict was filed. */
+  headSha?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  prNumber: Scalars['Int']['output'];
+  verdict: QaVerdictKind;
+};
+
+/**
+ * A tester's verdict on a pull-request preview (crowdsourced QA; see
+ * docs/crowdsourced-qa.md).
+ */
+export type QaVerdictKind = 'approved' | 'declined';
+
 /** Root query type for all read operations. */
 export type Query = {
   __typename?: 'Query';
@@ -5034,6 +5103,13 @@ export type Query = {
   profile?: Maybe<UserProfile>;
   /** Get a public user profile by ID. */
   publicProfile?: Maybe<PublicUserProfile>;
+  /**
+   * Crowdsourced QA: the open pull requests among `prNumbers` (the tester's
+   * loadable `pr-<n>` OTA branches), each with its title, `## Test plan`
+   * steps, `Risk: N/5`, and the caller's latest verdict. Tester role required.
+   * Closed/unknown numbers are omitted; at most 50 per call.
+   */
+  qaPreviews: Array<QaPreview>;
   /**
    * Most recent beta videos across all climbs. Returns only rows whose
    * thumbnails are already cached in our S3; no live IG/TikTok enrichment.
@@ -5618,6 +5694,11 @@ export type QueryPopularBoardConfigsArgs = {
 /** Root query type for all read operations. */
 export type QueryPublicProfileArgs = {
   userId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryQaPreviewsArgs = {
+  prNumbers: Array<Scalars['Int']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -7254,6 +7335,30 @@ export type SubmitAppFeedbackInput = {
   source: Scalars['String']['input'];
 };
 
+/**
+ * Input for submitQaVerdict. Everything but the verdict is device context the
+ * app fills in so the GitHub comment can say what was tested where.
+ */
+export type SubmitQaVerdictInput = {
+  appVersion?: InputMaybe<Scalars['String']['input']>;
+  /** Must equal `pr-<prNumber>` — the branch the tester actually ran. */
+  branch: Scalars['String']['input'];
+  /**
+   * expo-updates `createdAt` of the running bundle (ISO 8601). Compared with
+   * the PR head's commit date to flag a verdict filed on an older revision.
+   */
+  bundleCreatedAt?: InputMaybe<Scalars['String']['input']>;
+  /** Free text, up to 2000 characters. Required (10+ characters) for `declined`. */
+  comment?: InputMaybe<Scalars['String']['input']>;
+  /** 'ios' | 'android' | 'web'. */
+  platform: Scalars['String']['input'];
+  prNumber: Scalars['Int']['input'];
+  runtimeVersion?: InputMaybe<Scalars['String']['input']>;
+  /** expo-updates `updateId` of the running bundle. */
+  updateId?: InputMaybe<Scalars['String']['input']>;
+  verdict: QaVerdictKind;
+};
+
 /** Root subscription type for real-time updates. */
 export type Subscription = {
   __typename?: 'Subscription';
@@ -8346,6 +8451,9 @@ export type ResolversTypes = ResolversObject<{
   ProposalType: ProposalType;
   ProposalVoteSummary: ResolverTypeWrapper<ProposalVoteSummary>;
   PublicUserProfile: ResolverTypeWrapper<PublicUserProfile>;
+  QaPreview: ResolverTypeWrapper<QaPreview>;
+  QaVerdict: ResolverTypeWrapper<QaVerdict>;
+  QaVerdictKind: QaVerdictKind;
   Query: ResolverTypeWrapper<{}>;
   QueueEvent: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['QueueEvent']>;
   QueueItemAdded: ResolverTypeWrapper<QueueItemAdded>;
@@ -8436,6 +8544,7 @@ export type ResolversTypes = ResolversObject<{
   StrayBoardReason: StrayBoardReason;
   String: ResolverTypeWrapper<Scalars['String']['output']>;
   SubmitAppFeedbackInput: SubmitAppFeedbackInput;
+  SubmitQaVerdictInput: SubmitQaVerdictInput;
   Subscription: ResolverTypeWrapper<{}>;
   SyncCursor: ResolverTypeWrapper<SyncCursor>;
   SyncCursorInput: SyncCursorInput;
@@ -8699,6 +8808,8 @@ export type ResolversParentTypes = ResolversObject<{
   ProposalConnection: ProposalConnection;
   ProposalVoteSummary: ProposalVoteSummary;
   PublicUserProfile: PublicUserProfile;
+  QaPreview: QaPreview;
+  QaVerdict: QaVerdict;
   Query: {};
   QueueEvent: ResolversUnionTypes<ResolversParentTypes>['QueueEvent'];
   QueueItemAdded: QueueItemAdded;
@@ -8782,6 +8893,7 @@ export type ResolversParentTypes = ResolversObject<{
   StrayBoard: StrayBoard;
   String: Scalars['String']['output'];
   SubmitAppFeedbackInput: SubmitAppFeedbackInput;
+  SubmitQaVerdictInput: SubmitQaVerdictInput;
   Subscription: {};
   SyncCursor: SyncCursor;
   SyncCursorInput: SyncCursorInput;
@@ -10899,6 +11011,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationSubmitAppFeedbackArgs, 'input'>
   >;
+  submitQaVerdict?: Resolver<
+    ResolversTypes['QaVerdict'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationSubmitQaVerdictArgs, 'input'>
+  >;
   subscribeNewClimbs?: Resolver<
     ResolversTypes['Boolean'],
     ParentType,
@@ -11351,6 +11469,42 @@ export type PublicUserProfileResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type QaPreviewResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['QaPreview'] = ResolversParentTypes['QaPreview'],
+> = ResolversObject<{
+  author?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  branch?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  headCommittedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  headSha?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  isDraft?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  myLatestVerdict?: Resolver<Maybe<ResolversTypes['QaVerdict']>, ParentType, ContextType>;
+  prNumber?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  risk?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  riskReason?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  testPlan?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  testPlanSteps?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
+  title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  url?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type QaVerdictResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['QaVerdict'] = ResolversParentTypes['QaVerdict'],
+> = ResolversObject<{
+  branch?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  comment?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  githubCommentUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  headSha?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  prNumber?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  verdict?: Resolver<ResolversTypes['QaVerdictKind'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type QueryResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['Query'] = ResolversParentTypes['Query'],
@@ -11765,6 +11919,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryPublicProfileArgs, 'userId'>
+  >;
+  qaPreviews?: Resolver<
+    Array<ResolversTypes['QaPreview']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryQaPreviewsArgs, 'prNumbers'>
   >;
   recentBetaLinks?: Resolver<
     Array<ResolversTypes['RecentBetaLink']>,
@@ -13240,6 +13400,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ProposalConnection?: ProposalConnectionResolvers<ContextType>;
   ProposalVoteSummary?: ProposalVoteSummaryResolvers<ContextType>;
   PublicUserProfile?: PublicUserProfileResolvers<ContextType>;
+  QaPreview?: QaPreviewResolvers<ContextType>;
+  QaVerdict?: QaVerdictResolvers<ContextType>;
   Query?: QueryResolvers<ContextType>;
   QueueEvent?: QueueEventResolvers<ContextType>;
   QueueItemAdded?: QueueItemAddedResolvers<ContextType>;

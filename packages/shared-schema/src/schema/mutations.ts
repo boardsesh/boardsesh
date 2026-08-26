@@ -772,6 +772,15 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     updateAppFeedbackStatus(input: UpdateAppFeedbackStatusInput!): AppFeedbackReport!
 
+    """
+    Crowdsourced QA: file a verdict on a pull-request preview. Tester role
+    required; the PR must be open; a \`declined\` verdict needs a comment of
+    10+ characters. Stores the row, then (best effort, never failing the
+    mutation) posts a comment on the PR and swaps the qa-approved/qa-declined
+    label.
+    """
+    submitQaVerdict(input: SubmitQaVerdictInput!): QaVerdict!
+
     # ============================================
     # External Platform Integration Mutations
     # ============================================
