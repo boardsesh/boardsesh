@@ -28,6 +28,15 @@ describe('parseRisk', () => {
     expect(parseRisk(null)).toBeNull();
   });
 
+  it('ignores a risk line inside a code fence, in the section and in the body', () => {
+    expect(parseRisk('## Risk\n```\nRisk: 3/5 — example\n```')).toBeNull();
+    expect(parseRisk('## Summary\n```md\nRisk: 2/5 — copy only\n```\n## Risk\nRisk: /5 —')).toBeNull();
+    expect(parseRisk('## Summary\n```\nRisk: 1/5 — fenced\n```\nRisk: 4/5 — real')).toEqual({
+      level: 4,
+      reason: 'real',
+    });
+  });
+
   it('rejects out-of-range scores', () => {
     expect(parseRisk('## Risk\nRisk: 6/5 — too much')).toBeNull();
     expect(parseRisk('## Risk\nRisk: 0/5')).toBeNull();

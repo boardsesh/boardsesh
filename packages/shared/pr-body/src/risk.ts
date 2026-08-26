@@ -1,4 +1,4 @@
-import { LIST_MARKER, extractSection, stripHtmlComments } from './sections';
+import { CODE_FENCE, LIST_MARKER, extractSection, linesOutsideFences } from './sections';
 
 // The heading that marks the risk score. Case-insensitive, `##` or `###`.
 export const RISK_HEADING = /^#{2,3}\s+risk\s*$/i;
@@ -18,11 +18,25 @@ export type Risk = {
   reason: string | null;
 };
 
+function withoutFences(lines: readonly string[]): string[] {
+  const kept: string[] = [];
+  let insideFence = false;
+  for (const line of lines) {
+    if (CODE_FENCE.test(line)) {
+      insideFence = !insideFence;
+      continue;
+    }
+    if (!insideFence) kept.push(line);
+  }
+  return kept;
+}
+
 function candidateLines(body: string): string[] {
   // The `## Risk` section first; then the whole body, so a `Risk: 3/5` line
-  // under Summary still counts.
-  const section = extractSection(body, RISK_HEADING) ?? [];
-  const everywhere = stripHtmlComments(body).split(/\r?\n/);
+  // under Summary still counts. Fenced code never counts anywhere — a
+  // `Risk: 3/5 — example` inside a code sample must not satisfy the gate.
+  const section = withoutFences(extractSection(body, RISK_HEADING) ?? []);
+  const everywhere = linesOutsideFences(body);
   return [...section, ...everywhere].map((line) => line.trim().replace(LIST_MARKER, '').trim());
 }
 

@@ -8,6 +8,7 @@ export {
   SECTION_BREAK,
   extractSection,
   isJunkLine,
+  linesOutsideFences,
   stripHtmlComments,
 } from './sections';
 export { TEST_PLAN_HEADING, parseTestPlan, type TestPlan } from './test-plan';
