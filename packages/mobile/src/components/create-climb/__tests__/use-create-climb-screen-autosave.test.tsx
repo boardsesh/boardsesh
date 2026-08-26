@@ -626,4 +626,29 @@ describe('useCreateClimbScreen autosave flush', () => {
     expect(draftStore.clearDraft).toHaveBeenCalledWith('fork:draft-key');
     expect(draftStore.clearDraft).not.toHaveBeenCalledWith('draft-key');
   });
+
+  it('cannot show a stale save failure once the draft toggle moves', async () => {
+    // Review raised the case where `saveFailed` and `publishBlocked` are both
+    // true and the failure hides the publish reason. It is unreachable, and this
+    // pins WHY: `isDraft` is part of the payload signature, so flipping the
+    // toggle moves the signature and retires the recorded failure with it.
+    // Drop `isDraft` from the signature and this goes red.
+    boardActions.saveClimb.mockRejectedValue(new Error('network down'));
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    await waitFor(() => expect(draftStore.loadDraft).toHaveBeenCalled());
+
+    act(() => result.current.setName('Will fail'));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(result.current.draftStatus).toEqual({
+      text: 'mobile.create.autosave.saveFailed',
+      tone: 'error',
+      announce: true,
+    });
+
+    // Switching to publish is a payload change, so the failure does not linger.
+    act(() => result.current.setIsDraft(false));
+    expect(result.current.draftStatus?.text).not.toBe('mobile.create.autosave.saveFailed');
+  });
 });
