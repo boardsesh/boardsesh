@@ -49,8 +49,14 @@ const TOKEN_SCOPES = [
   'Zone.Zone Read           — resolve the zone id by name + read zone list',
   'Zone.DNS Edit            — patch the ws.boardsesh.com record proxied flag',
   'Zone.Cache Rules Edit    — create/update the /og/ cache rule',
+  'Zone.WAF Edit            — create/update the two crawler rules',
   'Zone.Zone Settings Read  — read the SSL/TLS mode',
   'Zone.Zone Settings Edit  — ONLY needed with --allow-zone-ssl (to set the zone SSL mode)',
+  '',
+  'The SAME Production-environment CLOUDFLARE_API_TOKEN also publishes app.boardsesh.com',
+  'from the deploy-app-web job, so a token built from the zone list above ALONE will',
+  'authenticate here and 10000 there. Keep this scope on it too:',
+  'Account.Cloudflare Pages Edit — wrangler pages deploy (deploy-app-web); unused by this tool',
 ];
 
 export interface CliOptions {
