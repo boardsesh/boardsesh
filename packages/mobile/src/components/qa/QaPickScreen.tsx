@@ -87,7 +87,7 @@ export function QaPickScreen() {
 
   const branchesQuery = useQuery({
     queryKey: ['qaPrBranches'],
-    queryFn: () => listPrBranches(),
+    queryFn: ({ signal }) => listPrBranches(signal),
     staleTime: 30_000,
     retry: 1,
   });
