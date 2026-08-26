@@ -352,10 +352,10 @@ are marked (re-tried).
 
 ## What we still do not know
 
-1. **What the capture did not answer.** The capture (see "What the capture said") settled (a) and the
-   `#707BBB` question; what it cannot settle is the policy call between `#6980FF` everywhere and
-   `#1C8AFF` on the FOOT boards, and whether either reads as the same hold colour as a `#0000FF` light
-   2-4 m away, which only a climber at a wall can say.
+1. **The pick.** Made: `#6980FF` on all five blue boards (Marco, 2026-08-26, on the capture above).
+   The spike's `shipped` palette draws it from `777b3d1a0`; `HOLD_STATE_MAP` has not moved. What no
+   capture can settle is whether it reads as the same hold colour as a `#0000FF` light 2-4 m away,
+   which only a climber at a wall can say.
 2. **The 4x pinch.** The capture settled the 1x sheet-to-device ratio (the device renders 0.3-0.5
    brighter than the 460 px sheets); the 4x pinch has still not been captured with any arm.
 3. **Deuteranopia.** The 6.81 floor is a policy, not a measurement; F2 lands at 8.75 / 9.00 where today's

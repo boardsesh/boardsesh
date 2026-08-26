@@ -215,7 +215,10 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
  * `shipped` is what the wall in front of you actually lights, resolved per board
  * out of `HOLD_STATE_MAP` at the board's canonical role code as
  * `displayColor ?? color` — the same expression `use-native-climb-render.ts:701`
- * and the web's `worker-manager.ts:328` use. The boards genuinely differ, and
+ * and the web's `worker-manager.ts:328` use — with one deliberate difference:
+ * a dark-blue HAND is drawn as the fourth pass's `#6980FF` (see
+ * `RECOMMENDED_HAND_DISPLAY`), so every capture from here on starts from the
+ * recommendation rather than from the hex it replaces. The boards genuinely differ, and
  * the first pass of this spike drew Grasshopper's set on all seven: Kilter's
  * HAND is cyan `#00FFFF` where Grasshopper's is blue `#4455FF`, and Kilter
  * spends on FINISH the magenta Grasshopper spends on FOOT — so a magenta mark
@@ -236,12 +239,12 @@ export type SpikePaletteKey = 'shipped' | 'grasshopper' | 'equalL' | BlueHandCan
  * (`docs/spike/board-rendering-2202/design-review-4-blue-hand.md`): the board's
  * own palette with HAND's *display* hex swapped and nothing else moved. One chip
  * per hex, applied to whichever board is showing, so a `PALETTES=` capture puts
- * every hex on every blue board and the sheet decides. The pass recommends
- * `#1C8AFF` on the FOOT boards and `#667CFF` on MoonBoard (the shipped hue at
- * OkLab L 0.64); `#707BBB` is the deutan-preserving alternative it could not
- * call blue by the numbers, and `#6980FF` is one step up the MoonBoard line.
- * The LED hex is untouched by all four — `aurora.ts:270` never reads
- * `displayColor`.
+ * every hex on every blue board and the sheet decides. The capture picked
+ * `#6980FF` on all five blue boards, and `shipped` now draws it, so the
+ * `hand-6980FF` chip equals `shipped` on those boards and stays only so the
+ * capture that decided it can be re-run as taken; `hand-1C8AFF` is the
+ * runner-up (hue 255), `hand-707BBB` and `hand-667CFF` the two that lost. The
+ * LED hex is untouched by all four — `aurora.ts:270` never reads `displayColor`.
  */
 export type BlueHandCandidateKey = 'hand-1C8AFF' | 'hand-707BBB' | 'hand-667CFF' | 'hand-6980FF';
 
@@ -275,6 +278,18 @@ const EQUAL_L_ROLE_COLORS: SpikeRolePalette = {
 
 const boardRoleColorCache = new Map<BoardName, SpikeRolePalette>();
 
+/**
+ * The blue HAND the fourth pass settled on, drawn by the spike ahead of the
+ * `HOLD_STATE_MAP` change: `#6980FF` is the shipped hue (OkLCh h 272) at OkLab
+ * L 0.65, rendered 4.83-4.92:1 against the field on every blue board where the
+ * app's own `#4444FF` / `#4455FF` render 2.8-3.2 (`design-review-4-blue-hand.md`,
+ * "What the capture said"). Applied wherever a board's HAND displays one of the
+ * dark blues, so Kilter's cyan is untouched and a board that has already moved
+ * is left alone. The LED hex is not read here and does not move.
+ */
+const RECOMMENDED_HAND_DISPLAY = '#6980FF';
+const DARK_BLUE_HANDS = new Set(['#0000FF', '#4444FF', '#4455FF']);
+
 function boardRoleColors(boardName: BoardName): SpikeRolePalette {
   const cached = boardRoleColorCache.get(boardName);
   if (cached !== undefined) return cached;
@@ -289,7 +304,8 @@ function boardRoleColors(boardName: BoardName): SpikeRolePalette {
     if (code === undefined) continue;
     const info = stateInfo[code];
     if (info === undefined) continue;
-    resolved[role] = info.displayColor ?? info.color;
+    const display = info.displayColor ?? info.color;
+    resolved[role] = role === 'HAND' && DARK_BLUE_HANDS.has(display.toUpperCase()) ? RECOMMENDED_HAND_DISPLAY : display;
   }
   boardRoleColorCache.set(boardName, resolved);
   return resolved;

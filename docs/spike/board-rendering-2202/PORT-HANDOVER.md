@@ -3,8 +3,9 @@
 For whoever takes this next. The spike is settled; this is what to build, what it costs, and the
 three decisions that are not mine to make.
 
-**The blue HAND's contrast is settled in §0, pending one pick. It is a `displayColor` edit and a
-`RENDERER_VERSION` bump, not renderer work, and it ships on its own before or beside the port.**
+**The blue HAND's contrast is settled in §0: `#6980FF` on every blue board, display only. It is a
+`displayColor` edit and a `RENDERER_VERSION` bump, not renderer work, and it ships on its own before
+or beside the port. The spike already draws it; the app does not yet.**
 
 Read [`README.md`](./README.md) for what the treatments are, and the three design passes
 ([`design-review.md`](./design-review.md), [`design-review-2.md`](./design-review-2.md),
@@ -18,7 +19,7 @@ imported by nothing else. Nothing here reaches a user until it is Rust.
 
 ---
 
-## 0. The blue HAND: decided, one hex to pick
+## 0. The blue HAND: `#6980FF`, decided 2026-08-26, not yet in `HOLD_STATE_MAP`
 
 Reported off a device: on the boards whose HAND is a dark blue the glow is hard to pick out, while
 every other role on the same board reads fine. WCAG contrast against the default `#181225` play
@@ -62,7 +63,10 @@ against the field on the 1080 px veil + glow capture, rendered FINISH on the sam
 | MoonBoard Masters | 2.79    | 4.80      | 4.90      | 4.61      | 4.14      | 4.61   |
 
 `#707BBB` fails the bar on four boards and reads grey-lavender: out. `#667CFF` misses MoonBoard
-2016's bar by 0.01. **Two survive, and the pick between them is policy, not measurement:**
+2016's bar by 0.01. Two survived, and the pick between them was policy, not measurement. **Marco
+picked `#6980FF` on all five blue boards.** The spike screen's `shipped` palette draws it from
+`777b3d1a0` on (`RECOMMENDED_HAND_DISPLAY` in `spike-config.ts`), so every capture after that
+starts from the recommendation; `HOLD_STATE_MAP` itself has not moved. The two, for the record:
 
 - **`#6980FF` on all five blue boards** — the shipped hue (OkLCh h 272.3 vs 272.6) at OkLab L 0.65,
   one hex, the brightest rendered HAND everywhere, dE00 13.5 / 17.9 from today on Grasshopper /
