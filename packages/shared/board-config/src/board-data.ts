@@ -248,14 +248,19 @@ export function getBoardAngleOptions(boardName: BoardName, wideAnglesEnabled: bo
   return ANGLES[boardName];
 }
 
+const NON_NEGATIVE_ROUTABLE_ANGLES: Angle[] = Array.from({ length: 91 }, (_, angle) => angle);
+
 /**
  * Every angle that may appear as a canonical URL segment for a board.
  *
- * MoonBoard's wide angles remain feature-gated in the picker, but already
- * published wide-angle URLs must stay routable regardless of that flag.
+ * Picker options use practical 5-degree steps, but existing write contracts
+ * accept every integer from 0° through 90°. Keep those stored board and climb
+ * URLs routable; Grasshopper additionally supports its real -5° slab setting.
  */
 export function getRoutableBoardAngles(boardName: BoardName): Angle[] {
-  return getBoardAngleOptions(boardName, true);
+  return boardName === 'grasshopper'
+    ? [ANGLES.grasshopper[0], ...NON_NEGATIVE_ROUTABLE_ANGLES]
+    : NON_NEGATIVE_ROUTABLE_ANGLES;
 }
 
 /**
@@ -265,7 +270,9 @@ export function getRoutableBoardAngles(boardName: BoardName): Angle[] {
  * numeric aliases such as `040`, `40.0`, `+40`, and surrounding whitespace.
  */
 export function parseBoardAngleSegment(boardName: BoardName, segment: string): Angle | null {
-  return getRoutableBoardAngles(boardName).find((angle) => segment === String(angle)) ?? null;
+  const parsedAngle = Number(segment);
+  if (!Number.isInteger(parsedAngle) || String(parsedAngle) !== segment) return null;
+  return getRoutableBoardAngles(boardName).includes(parsedAngle) ? parsedAngle : null;
 }
 
 // BOULDER_GRADES + BoulderGrade live in @boardsesh/board-constants so display

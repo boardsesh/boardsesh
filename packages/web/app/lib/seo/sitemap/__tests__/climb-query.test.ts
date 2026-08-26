@@ -12,12 +12,11 @@ const { buildTier2ClimbQuery, buildTier2ClimbSummaryQuery, TIER_2_MIN_ASCENTS } 
 
 const db = drizzle({} as never);
 
-// sizeId 27 / setIds [26, 31] deliberately: the Kilter angle list bound into the
-// same params array is 0,5,…,70, so a fixture using size 10 and set 20 makes
-// `params).toContain(10)` / `toContain(20)` pass even with the size and set
-// predicates deleted. These three ids appear nowhere else in the rendered params.
-const KILTER: ClimbConfigGroup = { boardType: 'kilter', layoutId: 1, sizeId: 27, setIds: [26, 31] };
+// Use size/set ids above the routable 0–90° range so their bindings cannot be
+// mistaken for angle bindings if the size/set predicates are deleted.
+const KILTER: ClimbConfigGroup = { boardType: 'kilter', layoutId: 1, sizeId: 127, setIds: [126, 131] };
 const MOONBOARD: ClimbConfigGroup = { boardType: 'moonboard', layoutId: 8, sizeId: 17, setIds: [24] };
+const GRASSHOPPER: ClimbConfigGroup = { boardType: 'grasshopper', layoutId: 101, sizeId: 127, setIds: [126, 131] };
 
 function render(group: ClimbConfigGroup) {
   const { sql, params } = buildTier2ClimbQuery(db, group).toSQL();
@@ -60,20 +59,22 @@ describe('the tier-2 climbs query', () => {
     expect(normalised).toMatch(/coalesce\("board_climb_stats"\."angle" = "board_climbs"\."angle", false\) desc/);
   });
 
-  it('constrains the angle to the ones the route tables carry', () => {
+  it('constrains the angle to the canonical routable range', () => {
     expect(normalised).toMatch(/"board_climb_stats"\."angle" in \(/);
     expect(params).toContain(40);
-    expect(params).not.toContain(41);
+    expect(params).toContain(41);
+    expect(params).toContain(90);
+    expect(params).not.toContain(91);
+    expect(params).not.toContain(-5);
+    expect(render(GRASSHOPPER).params).toContain(-5);
   });
 
   it('applies the same size and set predicates the /list front door filters on', () => {
     expect(normalised).toContain('"board_climbs"."compatible_size_ids" @> array[');
     expect(normalised).toContain('"board_climbs"."required_set_ids" <@ array[');
-    // 27, 26 and 31 are not Kilter angles, so these bindings cannot be satisfied
-    // by the angle list the way `10` and `20` were.
-    expect(params).toContain(27);
-    expect(params).toContain(26);
-    expect(params).toContain(31);
+    expect(params).toContain(127);
+    expect(params).toContain(126);
+    expect(params).toContain(131);
   });
 
   it('excludes GENUINE alias uuids only, never the self-aliases every Kilter climb has', () => {

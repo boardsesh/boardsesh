@@ -15,6 +15,19 @@ describe('selectCanonicalClimbAngle', () => {
     ).toBe(45);
   });
 
+  it('keeps accepted non-picker angles eligible for the canonical', () => {
+    expect(
+      selectCanonicalClimbAngle({
+        boardName: 'kilter',
+        catalogAngle: 40,
+        angleStats: [
+          { angle: 40, ascensionist_count: '12' },
+          { angle: 41, ascensionist_count: '20' },
+        ],
+      }),
+    ).toBe(41);
+  });
+
   it('prefers the catalog angle and then the lower angle on ties', () => {
     const tiedStats = [
       { angle: 35, ascensionist_count: '12' },
