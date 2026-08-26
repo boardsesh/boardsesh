@@ -1,6 +1,7 @@
 import { View, Pressable, StyleSheet } from 'react-native';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
+import { glassSize } from '../../theme/layout';
 import { spacing, borderRadius } from '../../theme/tokens';
 
 type InlineConfirmBannerProps = {
@@ -82,9 +83,14 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     gap: spacing[4],
   },
-  // 44dp effective target via hitSlop on a compact text action.
+  // The NODE has to clear the 44dp touch floor, not just the effective area:
+  // `hitSlop` is invisible to an accessibility scanner and to anyone aiming at
+  // the glyph, and the measured node is what an audit reports. Padding alone
+  // lands at ~42 (footnote line box + 2x12), so the floor is explicit.
   action: {
-    paddingVertical: spacing[2],
-    paddingHorizontal: spacing[1],
+    minHeight: glassSize.inline,
+    justifyContent: 'center',
+    paddingVertical: spacing[3],
+    paddingHorizontal: spacing[2],
   },
 });

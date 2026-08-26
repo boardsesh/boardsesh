@@ -90,7 +90,11 @@ export function CreateDrawer({
 
   // Measured above-fold height drives the peek snap-point (the native grabber is
   // a fixed reserve now, not a measured custom handle).
-  const [aboveFoldHeight, setAboveFoldHeight] = useState(0);
+  // Measured in two pieces, with the transient banners sitting BETWEEN them and
+  // measured by neither — see the note on the JSX below.
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const [boardBlockHeight, setBoardBlockHeight] = useState(0);
+  const aboveFoldHeight = headerHeight > 0 && boardBlockHeight > 0 ? headerHeight + boardBlockHeight : 0;
   // Live snap index, kept current via onChange so the re-snap below targets the
   // index the user is actually at (not a one-shot reset that breaks on rotation).
   const indexRef = useRef(0);
@@ -113,8 +117,11 @@ export function CreateDrawer({
   const setHeightIfChanged = (setter: (updater: (prev: number) => number) => void, measured: number) => {
     setter((prev) => (Math.abs(prev - measured) > 2 ? Math.round(measured) : prev));
   };
-  const handleAboveFoldLayout = useCallback((event: LayoutChangeEvent) => {
-    setHeightIfChanged(setAboveFoldHeight, event.nativeEvent.layout.height);
+  const handleHeaderLayout = useCallback((event: LayoutChangeEvent) => {
+    setHeightIfChanged(setHeaderHeight, event.nativeEvent.layout.height);
+  }, []);
+  const handleBoardBlockLayout = useCallback((event: LayoutChangeEvent) => {
+    setHeightIfChanged(setBoardBlockHeight, event.nativeEvent.layout.height);
   }, []);
 
   // native grabber reserve + content paddingTop + above-fold (header + board +
@@ -163,7 +170,7 @@ export function CreateDrawer({
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-        <View onLayout={handleAboveFoldLayout}>
+        <View onLayout={handleHeaderLayout} testID="create-drawer-measured-header">
           <CreateDrawerHeader
             name={controller.name}
             onChangeName={controller.setName}
@@ -175,33 +182,47 @@ export function CreateDrawer({
             bleConnecting={controller.bleConnecting}
             onToggleBle={controller.handleToggleBle}
           />
+        </View>
 
-          {controller.pendingNewClimb ? (
-            <InlineConfirmBanner
-              title={t('mobile.create.newClimb.confirm.title')}
-              message={t('mobile.create.newClimb.confirm.message')}
-              confirmLabel={t('mobile.create.newClimb.confirm.action')}
-              cancelLabel={t('createClimbForm.dismiss')}
-              onConfirm={controller.confirmNewClimb}
-              onCancel={controller.cancelNewClimb}
-            />
-          ) : null}
+        {/* Transient, and deliberately measured by NEITHER block above or below.
+            The peek snap-point is derived from the measured above-fold height, so
+            anything that mounts inside a measured region moves `peekHeight` and
+            re-snaps the sheet — which collapsed an expanded drawer the instant a
+            banner appeared, hiding the very climb the banner is asking about. The
+            status row solved the same problem by reserving a constant line box;
+            these can't, because reserving ~100dp permanently for something rarely
+            on screen would cost more above-fold budget than the board can spare.
+            So they push content instead of resizing the sheet: the drawer stays
+            exactly where the climber put it. Pinned by "keeps the transient
+            banners out of the measured above-fold region" in
+            create-drawer-measured-region.test.tsx. */}
+        {controller.pendingNewClimb ? (
+          <InlineConfirmBanner
+            title={t('mobile.create.newClimb.confirm.title')}
+            message={t('mobile.create.newClimb.confirm.message')}
+            confirmLabel={t('mobile.create.newClimb.confirm.action')}
+            cancelLabel={t('createClimbForm.dismiss')}
+            onConfirm={controller.confirmNewClimb}
+            onCancel={controller.cancelNewClimb}
+          />
+        ) : null}
 
-          {controller.publishDuplicateError ? (
-            <DuplicateBanner
-              name={controller.publishDuplicateError.existingClimbName}
-              onView={
-                controller.publishDuplicateError.existingClimbUuid
-                  ? () => {
-                      const uuid = controller.publishDuplicateError?.existingClimbUuid;
-                      if (uuid) onViewDuplicate(uuid);
-                    }
-                  : undefined
-              }
-              onDismiss={controller.dismissDuplicateError}
-            />
-          ) : null}
+        {controller.publishDuplicateError ? (
+          <DuplicateBanner
+            name={controller.publishDuplicateError.existingClimbName}
+            onView={
+              controller.publishDuplicateError.existingClimbUuid
+                ? () => {
+                    const uuid = controller.publishDuplicateError?.existingClimbUuid;
+                    if (uuid) onViewDuplicate(uuid);
+                  }
+                : undefined
+            }
+            onDismiss={controller.dismissDuplicateError}
+          />
+        ) : null}
 
+        <View onLayout={handleBoardBlockLayout} testID="create-drawer-measured-board-block">
           <View style={styles.boardSection}>
             <InteractiveCreateBoard
               boardName={board.boardName as BoardName}
