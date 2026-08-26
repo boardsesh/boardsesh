@@ -8,7 +8,7 @@
  * `fetch` is stubbed throughout — no test in this file touches the network.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 import {
   applyQaLabel,
   buildQaPreview,
@@ -348,6 +348,34 @@ describe('getOpenPullRequests', () => {
     await Promise.all([getOpenPullRequests(1_000), getOpenPullRequests(1_000), getOpenPullRequests(1_000)]);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('joins a caller that arrives while the first fetch is still pending', async () => {
+    // The cache is only written once the fetch settles, so the second caller
+    // lands in the window where there is nothing to serve and a request is
+    // already out. It must join that request, not start its own.
+    let releaseFetch: (() => void) | undefined;
+    const fetchPending = new Promise<void>((resolve) => {
+      releaseFetch = resolve;
+    });
+    fetchMock.mockImplementation(async () => {
+      await fetchPending;
+      return jsonResponse([githubPull()]);
+    });
+
+    const firstCall = getOpenPullRequests(1_000);
+    // Yield twice so the first call has definitely reached its await on fetch.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const secondCall = getOpenPullRequests(1_000);
+    releaseFetch?.();
+    const [first, second] = await Promise.all([firstCall, secondCall]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(first).toHaveLength(1);
+    expect(second).toEqual(first);
   });
 
   it('reads anonymously when no token is configured', async () => {

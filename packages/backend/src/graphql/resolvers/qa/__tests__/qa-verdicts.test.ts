@@ -101,6 +101,7 @@ const readVerdictRow = async (id: string) => {
   // clock exactly, without a driver's Date parsing in the middle.
   const result = await db.execute(sql`
     SELECT github_comment_id, github_comment_url, head_sha, verdict, comment,
+           app_version, update_id, runtime_version,
            to_char(head_committed_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS head_committed_at_text,
            to_char(bundle_created_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS bundle_created_at_text
     FROM qa_verdicts WHERE id = ${Number(id)} LIMIT 1
@@ -112,6 +113,9 @@ const readVerdictRow = async (id: string) => {
       head_sha: string | null;
       verdict: string;
       comment: string | null;
+      app_version: string | null;
+      update_id: string | null;
+      runtime_version: string | null;
       head_committed_at_text: string | null;
       bundle_created_at_text: string | null;
     }>,
@@ -355,6 +359,51 @@ describe('submitQaVerdict', () => {
     await vi.waitFor(async () => {
       expect(Number((await readVerdictRow(verdict.id)).github_comment_id)).toBe(555);
     });
+  });
+
+  it('takes an approve with no device context at all and still builds a comment', async () => {
+    // The app fills device context in on a best effort — an approve with none
+    // of it, and no note, is the leanest thing a tester can file.
+    const verdict = await qaMutations.submitQaVerdict(
+      null,
+      {
+        input: {
+          prNumber: 4792,
+          branch: 'pr-4792',
+          verdict: 'approved',
+          comment: null,
+          platform: 'ios',
+          appVersion: null,
+          updateId: null,
+          runtimeVersion: null,
+          bundleCreatedAt: null,
+        },
+      },
+      authCtx(TESTER),
+    );
+
+    expect(verdict).toMatchObject({ prNumber: 4792, verdict: 'approved', comment: null });
+
+    const row = await readVerdictRow(verdict.id);
+    expect(row.comment).toBeNull();
+    expect(row.app_version).toBeNull();
+    expect(row.update_id).toBeNull();
+    expect(row.runtime_version).toBeNull();
+    expect(row.bundle_created_at_text).toBeNull();
+
+    // The mirror must render the gaps rather than throw on them.
+    await vi.waitFor(() => {
+      expect(postVerdictCommentMock).toHaveBeenCalledTimes(1);
+    });
+    const [, body] = postVerdictCommentMock.mock.calls[0];
+    expect(body).toContain('### ✅ QA approved by Nic');
+    expect(body).toContain('_No notes._');
+    expect(body).toContain('| App version | unknown |');
+    expect(body).toContain('| Update id | unknown |');
+    expect(body).toContain('| Runtime | unknown |');
+    expect(body).toContain('| Bundle published | unknown |');
+    expect(body).toContain('| Platform | ios |');
+    expect(body).not.toContain('Tested an older revision');
   });
 
   it('returns createdAt as an instant the app can parse', async () => {
