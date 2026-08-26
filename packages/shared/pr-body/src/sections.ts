@@ -43,6 +43,43 @@ export function stripHtmlComments(body: string): string {
 }
 
 /**
+ * Index of the first line matching `heading` that is not inside a fenced code
+ * block — a `## Test plan` quoted as an example in a Summary fence must not be
+ * mistaken for the real section (the gate would validate the example, or stop at
+ * its next heading and never see the tester-facing plan).
+ */
+function findHeadingOutsideFences(lines: readonly string[], heading: RegExp): number {
+  let insideFence = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (CODE_FENCE.test(line)) {
+      insideFence = !insideFence;
+      continue;
+    }
+    if (!insideFence && heading.test(line)) return index;
+  }
+  return -1;
+}
+
+/**
+ * Lines of `body` that sit outside fenced code blocks (fence delimiters
+ * dropped too), comments stripped. For readers that scan a whole body rather
+ * than one section.
+ */
+export function linesOutsideFences(body: string): string[] {
+  const kept: string[] = [];
+  let insideFence = false;
+  for (const line of stripHtmlComments(body).split(/\r?\n/)) {
+    if (CODE_FENCE.test(line)) {
+      insideFence = !insideFence;
+      continue;
+    }
+    if (!insideFence) kept.push(line);
+  }
+  return kept;
+}
+
+/**
  * Returns the raw lines of the section under the first heading matching
  * `heading`: everything up to the next markdown heading, horizontal rule, or
  * bot footer (or EOF), ignoring boundaries inside fenced code blocks. Fence
@@ -54,7 +91,7 @@ export function extractSection(body: string | null | undefined, heading: RegExp)
   if (!body) return null;
 
   const lines = stripHtmlComments(body).split(/\r?\n/);
-  const headingIndex = lines.findIndex((line) => heading.test(line));
+  const headingIndex = findHeadingOutsideFences(lines, heading);
   if (headingIndex === -1) return null;
 
   const sectionLines: string[] = [];

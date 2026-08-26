@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractSection, isJunkLine, stripHtmlComments } from '../sections';
+import { extractSection, isJunkLine, linesOutsideFences, stripHtmlComments } from '../sections';
 
 const HEADING = /^#{2,3}\s+test plan\s*$/i;
 
@@ -26,6 +26,21 @@ describe('extractSection', () => {
   it('ignores headings inside a code fence and keeps the fence lines', () => {
     const body = ['## Test plan', '```', '# not a heading', '```', '1. step', '## Risk'].join('\n');
     expect(extractSection(body, HEADING)).toEqual(['```', '# not a heading', '```', '1. step']);
+  });
+
+  it('skips a heading quoted inside a code fence and finds the real one', () => {
+    const body = [
+      '## Summary',
+      '```md',
+      '## Test plan',
+      '1. example only',
+      '```',
+      '## Test plan',
+      '1. real step',
+      '## Risk',
+    ].join('\n');
+    expect(extractSection(body, HEADING)).toEqual(['1. real step']);
+    expect(extractSection('## Summary\n```\n## Test plan\n1. fenced\n```', HEADING)).toBeNull();
   });
 
   it('stops at a horizontal rule or a bot footer', () => {
@@ -56,5 +71,11 @@ describe('isJunkLine', () => {
     expect(isJunkLine('https://claude.ai/code/session_123')).toBe(true);
     expect(isJunkLine('Faster search: results in half the time')).toBe(false);
     expect(isJunkLine('See https://example.com for the flow')).toBe(false);
+  });
+});
+
+describe('linesOutsideFences', () => {
+  it('drops fenced blocks and their delimiters, keeping the rest in order', () => {
+    expect(linesOutsideFences('a\n```\nb\n```\nc<!-- x -->')).toEqual(['a', 'c']);
   });
 });
