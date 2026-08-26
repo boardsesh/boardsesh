@@ -19,3 +19,14 @@ docs/embedded-architecture.md
 # scripts/__tests__/mobile-screenshots.test.ts (exact quote style included) —
 # a formatting pass that rewrites quotes breaks those tests.
 packages/mobile/.maestro/
+
+# Markdown is not formatted. The formatter's emphasis pairing does not follow
+# CommonMark's intraword-underscore rule: on docs/websocket-implementation.md it
+# paired the `_` inside the bare identifier NOT_FOUND with a later `_signed-in_`
+# and emitted NOT*FOUND + \_signed-in*, corrupting an identifier in prose on
+# every run. Prose gains little from auto-formatting and has content the
+# formatter can get wrong. Mirrored in vite.config.ts fmt.ignore.
+# The CHANGELOG.md and docs/embedded-architecture.md entries above are now
+# subsumed by this, but stay: they document why those two must never be
+# formatted even if markdown formatting is ever reinstated.
+*.md

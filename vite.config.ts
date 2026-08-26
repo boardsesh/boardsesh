@@ -25,7 +25,17 @@ export default defineConfig({
     // packages/mobile/src/data/changelog.generated.json) or by nested dir
     // (drizzle/meta/) live in .prettierignore — this `ignore` glob list does not
     // reliably match those forms in `vp check`, but .prettierignore does.
-    ignore: ['design/**', '**/generated/**', '**/board-controller/**', 'CHANGELOG.md'],
+    //
+    // Markdown is not formatted at all. The formatter rewrites emphasis spans,
+    // and its pairing does not follow CommonMark's intraword-underscore rule:
+    // on docs/websocket-implementation.md it paired the `_` inside the bare
+    // identifier `NOT_FOUND` with a later `_signed-in_` and emitted
+    // `NOT*FOUND` + `\_signed-in*`, silently corrupting an identifier in prose.
+    // Reproducible on every run. Prose gains little from auto-formatting and
+    // has content the formatter can get wrong, so `.md` is out of scope —
+    // mirrored in .prettierignore because a full-repo `vp check` only honours
+    // that file for some path forms.
+    ignore: ['design/**', '**/generated/**', '**/board-controller/**', 'CHANGELOG.md', '**/*.md'],
   },
   lint: {
     // Keep this list in lock-step with `ignorePatterns` in .oxlintrc.json.

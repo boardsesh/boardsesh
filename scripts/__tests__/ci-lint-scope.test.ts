@@ -109,3 +109,35 @@ describe('lint ignore scope', () => {
     }
   });
 });
+
+describe('markdown is out of formatting scope', () => {
+  /**
+   * The formatter's emphasis pairing does not follow CommonMark's
+   * intraword-underscore rule. On `docs/websocket-implementation.md` it paired
+   * the `_` inside the bare identifier `NOT_FOUND` with a later `_signed-in_`
+   * and emitted `NOT*FOUND` + `\_signed-in*` — corrupting an identifier in
+   * prose, reproducibly, on every `vp check --fix`.
+   *
+   * Prose gains little from auto-formatting and carries content the formatter
+   * can get wrong, so `.md` is excluded. It has to be excluded in BOTH places:
+   * `vp check` reads the `fmt.ignore` block, but a full-repo run only honours
+   * `.prettierignore` for some path forms (see the note above that list).
+   */
+  const MARKDOWN_GLOB = '**/*.md';
+  const PRETTIERIGNORE_PATH = '.prettierignore';
+
+  it('excludes markdown in vite.config.ts fmt.ignore', () => {
+    const fmtIgnores = stringArrayLiteral(readFileSync(VITE_CONFIG_PATH, 'utf8'), 'ignore');
+    expect(fmtIgnores).toContain(MARKDOWN_GLOB);
+  });
+
+  it('excludes markdown in .prettierignore too', () => {
+    // Belt and braces on purpose: dropping either one silently reinstates
+    // formatting for the path forms the other does not cover.
+    const patterns = readFileSync(PRETTIERIGNORE_PATH, 'utf8')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#'));
+    expect(patterns).toContain('*.md');
+  });
+});
