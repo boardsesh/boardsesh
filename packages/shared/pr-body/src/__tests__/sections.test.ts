@@ -43,6 +43,11 @@ describe('extractSection', () => {
     expect(extractSection('## Summary\n```\n## Test plan\n1. fenced\n```', HEADING)).toBeNull();
   });
 
+  it('treats tilde fences like backtick fences', () => {
+    const body = ['## Test plan', '~~~', '# not a heading', '~~~', '1. step', '## Risk'].join('\n');
+    expect(extractSection(body, HEADING)).toEqual(['~~~', '# not a heading', '~~~', '1. step']);
+  });
+
   it('stops at a horizontal rule or a bot footer', () => {
     expect(extractSection('## Test plan\n1. step\n---\ntrailing', HEADING)).toEqual(['1. step']);
     expect(extractSection('## Test plan\n1. step\n🤖 Generated with Claude Code', HEADING)).toEqual(['1. step']);
