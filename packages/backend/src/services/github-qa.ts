@@ -54,6 +54,8 @@ export type QaPullRequest = {
 // The subset of GitHub's pull-request payload this module reads.
 type GitHubPullRequestPayload = {
   number?: number;
+  /** 'open' | 'closed'. Only the single-PR endpoint is read for this. */
+  state?: string;
   title?: string;
   body?: string | null;
   html_url?: string;
@@ -208,6 +210,42 @@ export async function readOpenPullRequests(now: number = Date.now()): Promise<Op
   }
 }
 
+/** One pull request, read fresh — see {@link getPullRequest}. */
+export type FreshPullRequestLookup =
+  | { status: 'open'; pullRequest: QaPullRequest }
+  | { status: 'closed' }
+  | { status: 'unavailable' };
+
+/**
+ * One pull request, read straight from GitHub with no cache in the way.
+ *
+ * The three-minute list cache is right for `qaPreviews` — a slightly stale
+ * browse screen costs nothing. It is wrong for filing a verdict: inside that
+ * window a PR can pick up a new head commit (so the verdict would be recorded
+ * against a revision the tester never ran, and skip the "older revision"
+ * warning) or be closed outright (so a verdict would be accepted, and
+ * `qa-approved` stamped, on a PR nobody can act on).
+ *
+ * Never throws. `unavailable` means GitHub could not be reached — including a
+ * 404, which is indistinguishable here from a permissions blip — and the caller
+ * decides how to degrade; `submitQaVerdict` falls back to the cached list.
+ */
+export async function getPullRequest(prNumber: number): Promise<FreshPullRequestLookup> {
+  try {
+    const payload = await githubRequest<GitHubPullRequestPayload>(
+      `/repos/${resolveQaGithubRepo()}/pulls/${prNumber}`,
+      undefined,
+      resolveQaGithubToken(),
+    );
+    if (payload.state !== 'open') return { status: 'closed' };
+    const pullRequest = normalizePullRequest(payload);
+    return pullRequest ? { status: 'open', pullRequest } : { status: 'unavailable' };
+  } catch (error) {
+    logger.warn(`[qa] fresh lookup of #${prNumber} failed; falling back to the cached list:`, error);
+    return { status: 'unavailable' };
+  }
+}
+
 /**
  * Committer date (ISO 8601) of a commit, or null when the lookup fails — the
  * staleness warning is a nicety, never a reason to reject a verdict.
@@ -311,10 +349,53 @@ export function buildQaPreview(
 // does not linkify. (Inside a fenced block a tester pasted, the entity shows
 // literally — an acceptable trade for never losing the table.)
 const HTML_TOKEN_START = /<(?=[!/?a-zA-Z])/g;
-const MENTION_OR_ISSUE_REFERENCE = /(^|[^\w`/])([@#])([A-Za-z0-9][\w-]*)/g;
+const MENTION_OR_ISSUE_TOKEN = /[@#][A-Za-z0-9][\w-]*/g;
+// A token only fires at a boundary, which is what keeps `a@b.com` and the
+// `#issuecomment-555` tail of a pasted URL intact.
+const TOKEN_BLOCKING_PREFIX = /[\w`/]/;
+
+/**
+ * Wrap every `@handle` / `#123` that GitHub would linkify in a code span.
+ *
+ * Scanning by hand rather than with one `replace`, because a boundary the
+ * replacement itself creates still counts: in `@alice@bob` only `@alice` sits at
+ * a boundary in the source, but wrapping it leaves `@bob` sitting right after a
+ * backtick — where GitHub *would* linkify it. So a token that begins exactly
+ * where the previous wrapped one ended joins that same span (`@alice@bob` →
+ * one span, not two adjacent ones, whose backtick runs would fight).
+ */
+function neutralizeMentions(text: string): string {
+  const spans: Array<{ start: number; end: number }> = [];
+
+  for (const match of text.matchAll(MENTION_OR_ISSUE_TOKEN)) {
+    const start = match.index;
+    if (start === undefined) continue;
+    const end = start + match[0].length;
+
+    const previousSpan = spans.at(-1);
+    if (previousSpan?.end === start) {
+      previousSpan.end = end;
+      continue;
+    }
+    const precedingCharacter = start > 0 ? text[start - 1] : undefined;
+    if (precedingCharacter === undefined || !TOKEN_BLOCKING_PREFIX.test(precedingCharacter)) {
+      spans.push({ start, end });
+    }
+  }
+
+  if (spans.length === 0) return text;
+
+  let neutralized = '';
+  let copiedUpTo = 0;
+  for (const span of spans) {
+    neutralized += `${text.slice(copiedUpTo, span.start)}\`${text.slice(span.start, span.end)}\``;
+    copiedUpTo = span.end;
+  }
+  return neutralized + text.slice(copiedUpTo);
+}
 
 function neutralizeMarkdown(text: string): string {
-  return text.replace(HTML_TOKEN_START, '&lt;').replace(MENTION_OR_ISSUE_REFERENCE, '$1`$2$3`');
+  return neutralizeMentions(text.replace(HTML_TOKEN_START, '&lt;'));
 }
 
 function escapeTableCell(value: string): string {

@@ -1,5 +1,5 @@
 import type { ConnectionContext, QaVerdict } from '@boardsesh/shared-schema';
-import { and, count, eq, ne } from 'drizzle-orm';
+import { and, count, desc, eq, ne } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { applyRateLimit, validateInput } from '../shared/helpers';
@@ -9,9 +9,11 @@ import {
   applyQaLabel,
   buildVerdictComment,
   getHeadCommitDate,
+  getPullRequest,
   postVerdictComment,
   readOpenPullRequests,
 } from '../../../services/github-qa';
+import type { QaPullRequest } from '../../../services/github-qa';
 import { toQaVerdict } from './queries';
 import { logger } from '../../../utils/logger';
 
@@ -58,17 +60,35 @@ export const qaMutations = {
     const validated = validateInput(SubmitQaVerdictInputSchema, input, 'input');
     const comment = validated.comment?.trim() ? validated.comment.trim() : null;
 
-    // `failed` is the reader's own flag, not a guess from an empty list: the
-    // first failure throws and the next 30 seconds are negative-cached as `[]`,
-    // and both must read the same way here. Don't tell a tester their still-open
-    // PR was closed, and don't record a verdict we can't place against a head.
-    const { pullRequests: openPullRequests, failed } = await readOpenPullRequests();
-    if (failed) {
-      throw new Error('Could not reach GitHub to check the pull request; try again in a minute');
-    }
-    const pullRequest = openPullRequests.find((candidate) => candidate.number === validated.prNumber);
-    if (!pullRequest) {
+    // Read this PR fresh rather than off the three-minute list cache. Inside
+    // that window a PR can pick up a new head commit — recording the verdict
+    // against a revision the tester never ran, and silently skipping the
+    // "older revision" warning — or be closed, which would take a verdict and
+    // a qa-approved label on a PR nobody can act on.
+    const fresh = await getPullRequest(validated.prNumber);
+    if (fresh.status === 'closed') {
       throw new Error('Pull request is not open');
+    }
+
+    let pullRequest: QaPullRequest;
+    if (fresh.status === 'open') {
+      pullRequest = fresh.pullRequest;
+    } else {
+      // GitHub didn't answer the single-PR read. The cached list is a worse
+      // answer than a fresh one but a much better one than losing the verdict,
+      // so fall back to it — and only give up when it has nothing either.
+      // `failed` is the reader's own flag, not a guess from an empty list: the
+      // first failure throws and the next 30 seconds are negative-cached as
+      // `[]`, and both must read the same way here.
+      const { pullRequests: openPullRequests, failed } = await readOpenPullRequests();
+      if (failed) {
+        throw new Error('Could not reach GitHub to verify the pull request');
+      }
+      const cached = openPullRequests.find((candidate) => candidate.number === validated.prNumber);
+      if (!cached) {
+        throw new Error('Pull request is not open');
+      }
+      pullRequest = cached;
     }
 
     const headCommittedAt = toUtcTimestamp(await getHeadCommitDate(pullRequest.headSha));
@@ -143,8 +163,17 @@ export const qaMutations = {
             .where(eq(dbSchema.qaVerdicts.id, row.id));
         }
 
-        // Latest verdict wins: the label always ends up matching this row.
-        await applyQaLabel(row.prNumber, row.verdict);
+        // Latest verdict wins — but "latest" is whatever the table says, not
+        // whatever this job is carrying. Two verdicts filed seconds apart run
+        // independent side effects that can finish in either order, so an older
+        // approval could otherwise stamp qa-approved over a newer decline.
+        const [newestVerdict] = await db
+          .select({ verdict: dbSchema.qaVerdicts.verdict })
+          .from(dbSchema.qaVerdicts)
+          .where(eq(dbSchema.qaVerdicts.prNumber, row.prNumber))
+          .orderBy(desc(dbSchema.qaVerdicts.createdAt), desc(dbSchema.qaVerdicts.id))
+          .limit(1);
+        await applyQaLabel(row.prNumber, newestVerdict?.verdict ?? row.verdict);
       } catch (error) {
         logger.error('[qa] verdict mirror side-effect failed:', error);
       }

@@ -16,6 +16,7 @@ import {
   getHeadCommitDate,
   getHeadCommitDates,
   getOpenPullRequests,
+  getPullRequest,
   postVerdictComment,
   readOpenPullRequests,
   resetGithubQaCaches,
@@ -237,6 +238,44 @@ describe('buildVerdictComment', () => {
     expect(body).toContain('| Field | Value |');
   });
 
+  it('neutralises both halves of adjacent tokens', () => {
+    // Only the first token sits at a boundary in the source; wrapping it is
+    // what puts the second one right after a backtick, where GitHub would
+    // linkify it. Both have to end up inert.
+    const body = buildVerdictComment(
+      commentPayload({ verdict: 'declined', comment: 'cc @alice@bob about #1#2 please' }),
+    );
+
+    expect(body).toContain('`@alice@bob`');
+    expect(body).toContain('`#1#2`');
+    expect(body).not.toMatch(/(^|[^`\w])@bob/);
+    expect(body).not.toMatch(/(^|[^`\w])#2/);
+  });
+
+  it('leaves a redacted email readable instead of mangling it further', () => {
+    const body = buildVerdictComment(
+      commentPayload({ verdict: 'declined', comment: 'mail a@b.com or tester@example.com' }),
+    );
+
+    // Upstream redaction already took both; neutralising must not chew on what
+    // is left, and must not wrap the sigil of an address it did not catch.
+    expect(body).toContain('[redacted email]');
+    expect(body).not.toContain('tester@example.com');
+    expect(body).not.toContain('`[redacted');
+  });
+
+  it('leaves the anchor of a pasted URL clickable', () => {
+    const body = buildVerdictComment(
+      commentPayload({
+        verdict: 'declined',
+        comment: 'see https://github.com/boardsesh/boardsesh/pull/4792#issuecomment-555 for context',
+      }),
+    );
+
+    expect(body).toContain('/pull/4792#issuecomment-555');
+    expect(body).not.toContain('`#issuecomment-555`');
+  });
+
   it('will not let a display name break the heading or ping a maintainer', () => {
     const body = buildVerdictComment(commentPayload({ displayName: 'Nic\n\n### Fake heading\n@marcodejongh <!-- x' }));
     const heading = body.split('\n').find((line) => line.startsWith('### '));
@@ -450,6 +489,43 @@ describe('readOpenPullRequests', () => {
 
     expect(read.failed).toBe(false);
     expect(read.pullRequests).toHaveLength(1);
+  });
+});
+
+describe('getPullRequest', () => {
+  it('reads the PR straight from GitHub, with no cache in the way', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(githubPull({ state: 'open', head: { sha: 'freshsha0000000' } })));
+
+    const lookup = await getPullRequest(4792);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/boardsesh/boardsesh/pulls/4792');
+    expect(lookup).toEqual({
+      status: 'open',
+      pullRequest: expect.objectContaining({ number: 4792, headSha: 'freshsha0000000' }),
+    });
+  });
+
+  it('reports a closed PR as closed', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(githubPull({ state: 'closed' })));
+
+    await expect(getPullRequest(4792)).resolves.toEqual({ status: 'closed' });
+  });
+
+  it('reports unavailable, not closed, when GitHub will not answer', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    fetchMock.mockResolvedValue(jsonResponse({ message: 'rate limited' }, 403));
+
+    await expect(getPullRequest(4792)).resolves.toEqual({ status: 'unavailable' });
+  });
+
+  it('sends the token when one is configured', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(githubPull({ state: 'open' })));
+
+    await getPullRequest(4792);
+
+    const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer qa-token');
   });
 });
 

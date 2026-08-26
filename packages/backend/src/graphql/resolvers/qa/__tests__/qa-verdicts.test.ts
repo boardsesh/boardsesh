@@ -17,12 +17,14 @@ import type { QaPullRequest } from '../../../../services/github-qa';
 
 const {
   readOpenPullRequestsMock,
+  getPullRequestMock,
   getHeadCommitDateMock,
   getHeadCommitDatesMock,
   postVerdictCommentMock,
   applyQaLabelMock,
 } = vi.hoisted(() => ({
   readOpenPullRequestsMock: vi.fn(),
+  getPullRequestMock: vi.fn(),
   getHeadCommitDateMock: vi.fn(),
   getHeadCommitDatesMock: vi.fn(),
   postVerdictCommentMock: vi.fn(),
@@ -34,6 +36,7 @@ vi.mock('../../../../services/github-qa', async (importOriginal) => {
   return {
     ...actual,
     readOpenPullRequests: readOpenPullRequestsMock,
+    getPullRequest: getPullRequestMock,
     getHeadCommitDate: getHeadCommitDateMock,
     getHeadCommitDates: getHeadCommitDatesMock,
     postVerdictComment: postVerdictCommentMock,
@@ -153,6 +156,7 @@ beforeEach(async () => {
   await insertProfile(TESTER, 'Nic');
 
   readOpenPullRequestsMock.mockReset().mockResolvedValue({ pullRequests: [openPullRequest()], failed: false });
+  getPullRequestMock.mockReset().mockResolvedValue({ status: 'open', pullRequest: openPullRequest() });
   getHeadCommitDateMock.mockReset().mockResolvedValue('2026-08-26T09:00:00Z');
   getHeadCommitDatesMock
     .mockReset()
@@ -295,6 +299,7 @@ describe('submitQaVerdict', () => {
   });
 
   it('refuses a PR that is not open', async () => {
+    getPullRequestMock.mockResolvedValue({ status: 'unavailable' });
     readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [openPullRequest({ number: 5000 })], failed: false });
 
     await expect(qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER))).rejects.toThrow(
@@ -302,15 +307,58 @@ describe('submitQaVerdict', () => {
     );
   });
 
+  it('believes a PR closed on GitHub over a cache that still lists it as open', async () => {
+    getPullRequestMock.mockResolvedValue({ status: 'closed' });
+    // The list cache is up to three minutes stale, and a PR closed inside that
+    // window must not still take a verdict (or a qa-approved label).
+    readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [openPullRequest()], failed: false });
+
+    await expect(qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER))).rejects.toThrow(
+      'Pull request is not open',
+    );
+    expect(readOpenPullRequestsMock).not.toHaveBeenCalled();
+  });
+
+  it('records the head the fresh read reports, not the one the cache still holds', async () => {
+    getPullRequestMock.mockResolvedValue({
+      status: 'open',
+      pullRequest: openPullRequest({ headSha: 'freshsha0000000' }),
+    });
+    readOpenPullRequestsMock.mockResolvedValue({
+      pullRequests: [openPullRequest({ headSha: 'stalesha0000000' })],
+      failed: false,
+    });
+
+    const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+
+    expect(verdict.headSha).toBe('freshsha0000000');
+    expect((await readVerdictRow(verdict.id)).head_sha).toBe('freshsha0000000');
+    expect(getHeadCommitDateMock).toHaveBeenCalledWith('freshsha0000000');
+  });
+
+  it('falls back to the cached entry when the fresh read fails', async () => {
+    getPullRequestMock.mockResolvedValue({ status: 'unavailable' });
+    readOpenPullRequestsMock.mockResolvedValue({
+      pullRequests: [openPullRequest({ headSha: 'cachedsha000000' })],
+      failed: false,
+    });
+
+    const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+
+    expect(verdict.headSha).toBe('cachedsha000000');
+  });
+
   it('says GitHub is unreachable instead of claiming the PR is closed', async () => {
+    getPullRequestMock.mockResolvedValue({ status: 'unavailable' });
     readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [], failed: true });
 
     await expect(qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER))).rejects.toThrow(
-      'Could not reach GitHub',
+      'Could not reach GitHub to verify the pull request',
     );
   });
 
   it('still says "not open" when the repo really has no open pull requests', async () => {
+    getPullRequestMock.mockResolvedValue({ status: 'unavailable' });
     readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [], failed: false });
 
     await expect(qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER))).rejects.toThrow(
@@ -370,6 +418,37 @@ describe('submitQaVerdict', () => {
     // own row excluded (it would read 2 approved), and the stale head ignored.
     expect(body).toContain('Other verdicts on this head: 1 approved · 1 declined');
     expect(body).toContain(`<!-- boardsesh-qa-verdict:${verdict.id} -->`);
+  });
+
+  it('applies the label the newest row calls for, not the one this job carries', async () => {
+    // Two verdicts filed seconds apart run independent fire-and-forget jobs
+    // that can finish in either order. Parking this one on its comment post
+    // lets a newer decline land first, exactly as a race would.
+    const LATER_TESTER = 'qa-later-tester';
+    await insertUser(LATER_TESTER);
+
+    let releasePost: (() => void) | undefined;
+    const postPending = new Promise<void>((resolve) => {
+      releasePost = resolve;
+    });
+    postVerdictCommentMock.mockImplementation(async () => {
+      await postPending;
+      return { id: 556, htmlUrl: 'https://github.com/boardsesh/boardsesh/pull/4792#issuecomment-556' };
+    });
+
+    const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+    expect(verdict.verdict).toBe('approved');
+
+    await vi.waitFor(() => {
+      expect(postVerdictCommentMock).toHaveBeenCalledTimes(1);
+    });
+    await insertExistingVerdict(LATER_TESTER, 'declined', 'abcdef1234567890');
+    releasePost?.();
+
+    await vi.waitFor(() => {
+      expect(applyQaLabelMock).toHaveBeenCalledWith(4792, 'declined');
+    });
+    expect(applyQaLabelMock).not.toHaveBeenCalledWith(4792, 'approved');
   });
 
   it('still returns the verdict when the GitHub mirror fails', async () => {
