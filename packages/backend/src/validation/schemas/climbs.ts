@@ -45,7 +45,12 @@ export const ClimbInputSchema = z.object({
     .max(10000)
     .nullish()
     .transform((v) => v ?? ''),
-  angle: z.number().min(0).max(90),
+  // Live board angle; Aurora supports negative tilt. ClimbInputSchema is only
+  // consumed by the presence/queue climb payload (ClimbQueueItemSchema,
+  // ReportBoardClimbInputSchema) — catalogue-write schemas (SaveClimbInputSchema,
+  // UpdateClimbInputSchema, SaveMoonBoardClimbInputSchema) define their own
+  // angle bound independently and stay strict.
+  angle: z.number().min(-90).max(90),
   ascensionist_count: z
     .number()
     .min(0)
@@ -310,7 +315,9 @@ export const SetterStatsInputSchema = z.object({
   layoutId: z.number().int().positive('Layout ID must be positive'),
   sizeId: z.number().int().positive('Size ID must be positive'),
   setIds: z.string().min(1, 'Set IDs cannot be empty'),
-  angle: z.number().int().min(0).max(90),
+  // Live board angle; Aurora supports negative tilt. Mobile's setter filter
+  // sends the live angle here.
+  angle: z.number().int().min(-90).max(90),
   search: z.string().max(200).optional(),
 });
 
@@ -324,7 +331,9 @@ export const SimilarClimbsInputSchema = z
     // (favorites, playlists, etc.) and length-bounds them so a malformed
     // string can't reach the underlying SQL.
     excludeClimbUuid: ExternalUUIDSchema.optional(),
-    angle: z.number().int().min(0).max(90).optional(),
+    // Aurora boards support negative tilt (e.g. -5°); angle is only an optional
+    // stats-join key here, so a non-matching value nulls the join rather than erroring.
+    angle: z.number().int().min(-90).max(90).optional(),
     climbUuid: ExternalUUIDSchema.optional(),
     frames: z.string().min(1).max(10000).optional(),
   })

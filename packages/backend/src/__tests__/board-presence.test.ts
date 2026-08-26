@@ -1137,6 +1137,62 @@ describe('board-presence resolvers', () => {
       ).rejects.toThrow('Unknown climb');
     });
 
+    it('accepts a negative board angle (Aurora boards support negative tilt) and publishes it verbatim', async () => {
+      // reportBoardClimb fires on EVERY climb-light event from a connected/kiosk
+      // board, so a negative-tilt board (e.g. -5°) must not error here. There's
+      // no board_climb_stats row at -5° for TEST_CLIMB_UUID, so the grade join
+      // simply misses (grade: null) rather than rejecting the report.
+      const boardId = await makeBoard();
+      const received: BoardPresenceEvent[] = [];
+      const unsubscribe = await pubsub.subscribeBoardPresence(String(boardId), (event) => received.push(event));
+
+      const ok = await boardPresenceMutations.reportBoardClimb(
+        undefined,
+        { boardId, climb: makeQueueItemInput(), angle: -5 },
+        authCtx(),
+      );
+      expect(ok).toBe(true);
+
+      const climbSet = received.find((event): event is BoardClimbSet => event.__typename === 'BoardClimbSet');
+      expect(climbSet).toBeDefined();
+      expect(climbSet!.climb.angle).toBe(-5);
+      expect(climbSet!.climb.grade).toBeNull();
+      unsubscribe();
+    });
+
+    it('rejects angle -91 (outside the -90..90 board-tilt range) before touching the board', async () => {
+      const boardId = await makeBoard();
+      await expect(
+        boardPresenceMutations.reportBoardClimb(
+          undefined,
+          { boardId, climb: makeQueueItemInput(), angle: -91 },
+          authCtx(),
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('accepts a negative climb.angle (ClimbInputSchema) as the fallback when no top-level angle is sent', async () => {
+      // ReportBoardClimbInputSchema.climb extends ClimbInputSchema — this proves
+      // ITS angle bound (not just BoardPresenceAngleSchema's) accepts negative
+      // tilt: the top-level `angle` arg is omitted, so effectiveAngle falls back
+      // to validatedClimb.climb.angle.
+      const boardId = await makeBoard();
+      const received: BoardPresenceEvent[] = [];
+      const unsubscribe = await pubsub.subscribeBoardPresence(String(boardId), (event) => received.push(event));
+
+      const ok = await boardPresenceMutations.reportBoardClimb(
+        undefined,
+        { boardId, climb: makeQueueItemInput({ angle: -5 }) },
+        authCtx(),
+      );
+      expect(ok).toBe(true);
+
+      const climbSet = received.find((event): event is BoardClimbSet => event.__typename === 'BoardClimbSet');
+      expect(climbSet).toBeDefined();
+      expect(climbSet!.climb.angle).toBe(-5);
+      unsubscribe();
+    });
+
     it('rejects a report from a user who never connected to the board (proof-of-presence)', async () => {
       // makeBoard() resolves as TEST_USER_ID, stamping that user's membership.
       // A different authenticated user who never connected must not be able to

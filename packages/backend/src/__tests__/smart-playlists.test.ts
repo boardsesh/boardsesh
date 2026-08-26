@@ -423,6 +423,36 @@ describe('smartPlaylist resolver', () => {
     expect(resolveTargetMock).not.toHaveBeenCalled();
   });
 
+  it('accepts a negative angle (Aurora boards support negative tilt) instead of rejecting the input', async () => {
+    // Non-owner short-circuit keeps this cheap (no DB/board-resolution mocks
+    // needed) while still proving angle: -5 clears GetSmartPlaylistInputSchema
+    // validation rather than throwing.
+    const ctx = makeCtx({ userId: 'someone-else' });
+
+    const result = await playlistQueries.smartPlaylist(
+      null,
+      { input: { type: 'RECOMMENDED_CROWD_FAVORITES', userId: 'user-123', angle: -5 } },
+      ctx,
+    );
+
+    expect(result.climbs).toEqual([]);
+    expect(result.totalCount).toBe(0);
+  });
+
+  it('rejects angle -91 (outside the -90..90 board-tilt range) before any DB or board-resolution work', async () => {
+    const ctx = makeCtx({ userId: 'someone-else' });
+
+    await expect(
+      playlistQueries.smartPlaylist(
+        null,
+        { input: { type: 'RECOMMENDED_CROWD_FAVORITES', userId: 'user-123', angle: -91 } },
+        ctx,
+      ),
+    ).rejects.toThrow();
+    expect(mockDb.select).not.toHaveBeenCalled();
+    expect(resolveTargetMock).not.toHaveBeenCalled();
+  });
+
   it('RECOMMENDED_* returns an empty result (not a throw) when no board resolves', async () => {
     const ctx = makeCtx();
     resolveTargetMock.mockResolvedValueOnce(null);

@@ -93,6 +93,34 @@ describe('climbQueries.similarClimbs', () => {
     expect(findSimilarClimbsMock).not.toHaveBeenCalled();
   });
 
+  it('accepts angle -5 and forwards it to the similarity helper as statsAngle: -5', async () => {
+    // Aurora boards support negative tilt (e.g. grasshopper at -5°). angle is
+    // only an optional stats-join key, so a negative value must pass
+    // validation and flow straight through to findSimilarClimbs.
+    mockDb.select.mockReturnValueOnce(mockSelectChain([{ holdId: 1, holdState: 'STARTING' }]));
+
+    await climbQueries.similarClimbs(
+      {},
+      { input: { boardType: 'kilter', layoutId: 8, climbUuid: 'target-uuid', angle: -5 } },
+      makeCtx(),
+    );
+
+    expect(findSimilarClimbsMock).toHaveBeenCalledTimes(1);
+    const args = findSimilarClimbsMock.mock.calls[0][0];
+    expect(args).toMatchObject({ statsAngle: -5 });
+  });
+
+  it('rejects angle -95 before reaching the helper', async () => {
+    await expect(
+      climbQueries.similarClimbs(
+        {},
+        { input: { boardType: 'kilter', layoutId: 8, climbUuid: 'target-uuid', angle: -95 } },
+        makeCtx(),
+      ),
+    ).rejects.toThrow();
+    expect(findSimilarClimbsMock).not.toHaveBeenCalled();
+  });
+
   it('climbUuid path reads the target climbs holds and passes them through with excludeUuid set to the target', async () => {
     mockDb.select.mockReturnValueOnce(
       mockSelectChain([
