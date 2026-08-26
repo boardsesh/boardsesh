@@ -4,6 +4,14 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-26
+
+### Fixed
+
+- Starting a big playlist no longer dies on one dropped page: a flaky page retries on its own, and backing out of a playlist actually cancels the load. ([#4713](https://github.com/boardsesh/boardsesh/pull/4713))
+- Kilter playlists that got cloned when you re-linked your account are merged back into one. Your edited version is the one that survives, with its pins and follows intact. ([#4747](https://github.com/boardsesh/boardsesh/pull/4747))
+- Similar climbs, climb details, board-presence live sends, playlists, and the setter filter now all work on boards set to a negative tilt ([#4677](https://github.com/boardsesh/boardsesh/pull/4677))
+
 ## 2026-08-25
 
 ### New
