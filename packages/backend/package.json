@@ -38,6 +38,7 @@
     "@boardsesh/kilter-sync": "*",
     "@boardsesh/kiosk": "*",
     "@boardsesh/offline-sync": "*",
+    "@boardsesh/pr-body": "*",
     "@boardsesh/queue": "*",
     "@boardsesh/shared-schema": "*",
     "@boardsesh/text-redaction": "*",

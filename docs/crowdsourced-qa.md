@@ -53,3 +53,87 @@ PR unchecked.
 (`extractSection`, `parseTestPlan`, `parseRisk`, `validatePrBody`). The changelog generator's
 `## Release Notes` extraction (`scripts/lib/changelog-transform.ts`), the CI gate, and the backend
 all read PR bodies through it, so a body that passes CI renders the same plan in the app.
+
+## The backend
+
+Two GraphQL operations, both gated on the `tester` community role (`requireTester`, which admins
+satisfy too). Schema in `packages/shared-schema/src/schema/qa.ts`, resolvers in
+`packages/backend/src/graphql/resolvers/qa/`, GitHub I/O in
+`packages/backend/src/services/github-qa.ts`.
+
+**`qaPreviews(prNumbers: [Int!]!): [QaPreview!]!`** — the app passes every `pr-<n>` branch it can
+load; the backend answers with the ones that are still open PRs, each carrying the title, author,
+draft flag, head SHA, the `## Test plan` steps, the `Risk: N/5` score, and the caller's own last
+verdict. Closed and unknown numbers are dropped, so the app never has to pre-filter. At most 50
+numbers per call. The PR list is cached for three minutes and negative-cached for 30 seconds, so
+one backend serving every tester costs GitHub two calls per refill; head-commit dates are cached
+per SHA. GitHub being unreachable returns an empty list, never an error — a tester should see
+"nothing to test", not a broken screen.
+
+**`submitQaVerdict(input: SubmitQaVerdictInput!): QaVerdict!`** — records the verdict in
+`qa_verdicts` and returns it. The branch must equal `pr-<prNumber>`, the PR must be open, and a
+`declined` verdict needs a comment of 10 characters or more: a decline is a request for work, so it
+has to say what broke. The head SHA and its commit date are stamped from GitHub at write time, which
+is what lets the comment flag a verdict filed on a bundle older than the current head.
+
+### What lands on the PR
+
+The GitHub mirror runs fire-and-forget after the row is committed. It posts one comment:
+
+```markdown
+<!-- boardsesh-qa-verdict:17 -->
+### ✅ QA approved by Nic
+
+Filed from the Boardsesh app.
+
+> LEDs light up on every climb
+
+| Field | Value |
+| --- | --- |
+| Platform | ios |
+| App version | 2.3.1 |
+| Update id | update-abc |
+| Runtime | fingerprint-1 |
+| Bundle published | 2026-08-26T09:30:00Z |
+| Head SHA at verdict | abcdef1 |
+| Verdict id | qa_verdicts #17 |
+```
+
+Plus, when they apply: `⚠️ Tested an older revision — the bundle was published before the current
+head commit.` and `Other verdicts on this head: 2 approved · 1 declined`.
+
+The repo is public, so the comment names the tester by Boardsesh display name — a verdict with no
+author is worth nothing to the PR author — and carries no email and no user id. Free text goes
+through `redactSensitiveText` (`@boardsesh/text-redaction`) first, the same net the bug-report
+issues use.
+
+**Labels: latest verdict wins.** Each verdict adds `qa-approved` or `qa-declined` and removes the
+other, so the label on a PR is always the most recent call, not a tally. Read the comments for the
+history.
+
+### Environment
+
+| Variable          | Default                          | What it does                                                                |
+| ----------------- | -------------------------------- | --------------------------------------------------------------------------- |
+| `QA_GITHUB_TOKEN` | `FEEDBACK_GITHUB_TOKEN`          | Auth for both halves. Unset → reads go anonymous (60/hr per IP), writes no-op. |
+| `QA_GITHUB_REPO`  | `FEEDBACK_GITHUB_REPO`, else `boardsesh/boardsesh` | Which repo to read PRs from and comment on.               |
+
+The token is a fine-grained PAT on `boardsesh/boardsesh` with **Pull requests read+write**, **Issues
+read+write**, and **Contents read**. Issues write is not optional and not sufficient on its own: PR
+comments live on the issues endpoint (so they need Issues), and the PR list and commit lookups need
+Pull requests and Contents. An Issues-only token 403s.
+
+### Runbook
+
+Every backend log line for this feature is tagged `[qa]`.
+
+- **A verdict is missing from a PR.** `SELECT * FROM qa_verdicts WHERE github_comment_id IS NULL` —
+  those rows were recorded but never mirrored. The row is the record; the comment is a copy. The
+  usual cause is a missing or under-scoped token (grep `[qa] no QA_GITHUB_TOKEN`) or a 403
+  (`[qa] posting the verdict comment`). There is no retry queue: fix the token, and new verdicts
+  mirror again. Older rows can be replayed by hand from the table.
+- **Testers see an empty list.** `[qa] open pull request lookup failed` means GitHub said no —
+  usually the anonymous 60/hr ceiling on a deploy with no token. It self-heals in 30 seconds once
+  GitHub answers.
+- **The label disagrees with the comments.** Expected when a PR has several verdicts: the label is
+  the latest one only.
