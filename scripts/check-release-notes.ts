@@ -22,6 +22,7 @@
 
 import { readFileSync } from 'node:fs';
 import { extractReleaseNotes, isNoReleaseNoteBoxChecked, SKIP_LABEL } from './lib/changelog-transform';
+import { parseLabels } from './lib/pr-labels';
 
 function readBody(): string {
   const args = process.argv.slice(2);
@@ -40,35 +41,6 @@ function readBody(): string {
   } catch {
     return '';
   }
-}
-
-function parseLabels(raw: string | undefined): string[] {
-  if (!raw || !raw.trim()) return [];
-  const trimmed = raw.trim();
-  // GitHub's labels payload is a JSON array of objects with a `name`. Accept that
-  // shape, a JSON array of strings, or a plain comma-separated list.
-  if (trimmed.startsWith('[')) {
-    try {
-      const parsed = JSON.parse(trimmed) as unknown;
-      if (Array.isArray(parsed)) {
-        return parsed
-          .map((label) =>
-            typeof label === 'string'
-              ? label
-              : typeof (label as { name?: unknown }).name === 'string'
-                ? (label as { name: string }).name
-                : '',
-          )
-          .filter(Boolean);
-      }
-    } catch {
-      // Fall through to comma-split on malformed JSON.
-    }
-  }
-  return trimmed
-    .split(',')
-    .map((label) => label.trim())
-    .filter(Boolean);
 }
 
 function main(): void {
