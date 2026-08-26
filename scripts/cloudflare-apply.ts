@@ -54,16 +54,13 @@ const TOKEN_SCOPES = [
   'Zone.Zone Settings Edit  — ONLY needed with --allow-zone-ssl (to set the zone SSL mode)',
 ];
 
-// Named here so nobody answers a Pages `Authentication error [code: 10000]` by
-// bolting an account policy onto the zone token this tool reads. Cloudflare keeps
-// account and zone permissions in different resource namespaces, so one grant
-// cannot serve both: an account-level scope attaches only to
-// `{"com.cloudflare.api.account.<id>": "*"}`, never to the all-zones form
-// `{"com.cloudflare.api.account.<id>": {"com.cloudflare.api.account.zone.*": "*"}}`
-// that the dashboard renders almost identically. Re-scoping one token to cover
-// both dropped the other's grant twice over on 2026-08-25, which is why they are
-// split. See the token section of docs/cloudflare.md.
-const RELATED_TOKENS = ['PAGES_TOKEN — Account.Cloudflare Pages Edit, read by deploy-app-web (not this tool)'];
+// Scopes another consumer of the SAME Production-environment CLOUDFLARE_API_TOKEN
+// needs. Printed alongside the list above because a token built from that list
+// ALONE authenticates here and fails with `Authentication error [code: 10000]`
+// there — which reads as a bad credential, not a missing scope, since
+// `wrangler whoami` still succeeds. That regression took app.boardsesh.com off
+// the deploy train on 2026-08-25. See the token section of docs/cloudflare.md.
+const SHARED_TOKEN_SCOPES = ['Account.Cloudflare Pages Edit — wrangler pages deploy (deploy-app-web)'];
 
 export interface CliOptions {
   apply: boolean;
@@ -244,8 +241,8 @@ function printPlan(changes: PlannedChange[]): void {
 function printTokenScopes(): void {
   console.error('[cf-apply] CLOUDFLARE_API_TOKEN is required. Create a token with these scopes on the zone:');
   for (const scope of TOKEN_SCOPES) console.error(`             ${scope}`);
-  console.error('           Zone scopes only — Cloudflare Pages lives on a separate secret:');
-  for (const related of RELATED_TOKENS) console.error(`             ${related}`);
+  console.error('           The same token is shared with other jobs. Keep their scopes on it too:');
+  for (const scope of SHARED_TOKEN_SCOPES) console.error(`             ${scope}`);
   console.error('           https://dash.cloudflare.com/profile/api-tokens');
 }
 
@@ -348,7 +345,7 @@ async function main(): Promise<number> {
 }
 
 // Exported for docs/tests: the module can be imported without running the CLI.
-export { CF_API_BASE, RELATED_TOKENS, TOKEN_SCOPES, ZONE_NAME };
+export { CF_API_BASE, SHARED_TOKEN_SCOPES, TOKEN_SCOPES, ZONE_NAME };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main()
