@@ -19,12 +19,14 @@
  * Coordinates are emitted as integers relative to the placement centre, so the
  * renderer adds cx/cy and strokes.
  *
- * Known limits, both visible in the output: where a hold's art touches a
- * neighbour's, whatever falls on this placement's side of the partition and is
- * joined by a neck wider than the trim radius stays, and a placement with no art
- * under it yields nothing and is simply absent from the table. The second is not an edge
- * case on MoonBoard — its placements are a synthetic 11x18 grid, and most cells
- * genuinely have no hold — so consumers must fall back to a ring.
+ * Known limits, both visible in the output. Where a hold's art touches a
+ * neighbour's, the pair is cut at the midline between the two bolts, so a rim
+ * that genuinely belongs to the neighbour but sits nearer this bolt stays —
+ * whatever survives the neck trim of it, which is anything joined to this hold's
+ * body by 5 board px or more. And a placement with no art under it yields
+ * nothing and is simply absent from the table; that is not an edge case on
+ * MoonBoard — its placements are a synthetic 11x18 grid and most cells genuinely
+ * have no hold — so consumers must fall back to a ring.
  */
 
 import { writeFileSync } from 'node:fs';
@@ -73,10 +75,11 @@ const MIN_PERIMETER_POINTS = 24;
  */
 const NECK_TRIM_RADIUS = 3;
 /**
- * Board pixels a trim has to drop before the run reports it. Design review 2's
- * gate 5 fails an outline that loses more than this to an open at
- * `NECK_TRIM_RADIUS`, so counting the same thing here makes the run's own line
- * comparable with the gate.
+ * Board pixels a trim has to drop before the run reports it, on the same
+ * threshold design review 2's gate 5 fails an outline at. The two measures are
+ * not the same — the run counts what `trimThinNecks` took off the raw region,
+ * the gate counts what a plain open takes off the emitted polygon — so the run
+ * line runs higher; sharing the threshold is what makes them comparable.
  */
 const NOTABLE_TRIM_AREA = 20;
 
@@ -94,6 +97,15 @@ const ORTHOGONAL: readonly Point[] = [
  * pixels around each pixel is exactly a Euclidean distance transform thresholded
  * at the radius, without a chamfer pass's approximation error — at a radius of 3
  * the error would be most of the decision.
+ *
+ * The `<` on the erosion against `<=` on the dilation is deliberate, and it is
+ * what sets the neck cut-off. The open disc is 25 offsets reaching 2 px along
+ * the axes, so a straight limb keeps a core from 5 px wide up; the closed disc
+ * is 29 offsets reaching 3, which would demand 7 and cut real 5- and 6-px rails.
+ * Design review 2 asked for necks narrower than 4 px to go, so 5 is the wanted
+ * cut-off. The dilation then has to be the wider of the two: it strictly
+ * contains the erosion disc, so every pixel a core pixel needed filled to
+ * qualify comes back, and no straight edge is shaved by the round trip.
  */
 const NECK_EROSION_OFFSETS: Point[] = [];
 const NECK_DILATION_OFFSETS: Point[] = [];
@@ -269,28 +281,42 @@ function floodComponent(
  * paint across the unlit hold above it. Two more on that board and one on TB2
  * Mirror.
  *
- * Erode to the pixels sitting `NECK_TRIM_RADIUS` clear of the art's edge, grow
- * every core back over the mask it came from, and keep the part of that the seed
- * can still reach. A neck thinner than the radius carries no core, so anything
- * beyond one is cut adrift and dropped; everything else survives.
+ * Erode to the pixels sitting `NECK_TRIM_RADIUS` clear of the art's edge, keep
+ * the one core the seed sits on, grow that core alone back over the mask it came
+ * from, and keep what the seed can still reach. A neck thinner than the radius
+ * carries no core of its own, so a limb behind one is never in the kept core and
+ * never grows back; everything joined by real body survives.
+ *
+ * Growing only the seed's core is the order design review 2 change 2 asks for,
+ * and it is the whole point. Dilating every core first and flooding afterwards
+ * is `open(mask) ∩ seedComponent`, which re-bridges a limb carrying a core of
+ * its own: the seed's dilation and the limb's meet inside the neck and the flood
+ * walks across. Measured against this order, that kept 2,782 board px² on 37
+ * outlines and dropped nothing extra anywhere — 1,301 of it on tension-mirror,
+ * one of the two boards the change names, where hold 396's 1,225 px² region
+ * carries a 484 px² lobe on a neck too thin to hold a core.
  *
  * The mask is hole-filled first, because the outer border is the only thing this
  * script emits. Without that, the punched-out bolt hole a placement usually sits
  * on counts as edge: the erosion eats the rim around it from both sides at once,
  * and on a small hold with a big hole the whole rim goes, leaving a C the border
  * follower walks into and out of. Eleven MoonBoard silhouettes came back as
- * self-crossing polygons that no longer contained their own placement.
+ * self-crossing polygons that no longer contained their own placement. With the
+ * hole-fill in place this order is cheap on the boards it was once said to
+ * wreck: four MoonBoard 2016 outlines differ from the dilate-all order, by 6 to
+ * 40 px², and gate 1 — "every outline contains its own placement" — is zero on
+ * all seven boards.
  *
- * This is not a plain morphological open, which design review S1 ruled out for
- * breaking thin necks on tension-mirror. Two things stop it being one. A mask
- * with no core at all comes back untouched — MoonBoard 2016's hold 148 is a
- * 12x35 rail, and an open would delete the whole hold rather than a limb of it.
- * And the reach is judged after the growing back, not before: eroding a small
- * hold at this radius shatters it into several cores that are all the same hold,
- * so flooding the *cores* from the seed and growing only that one back — the
- * literal reading of design review 2 change 2 — halved 25 of MoonBoard 2016's
- * 138 silhouettes and left 49 outlines across three boards no longer containing
- * their own placement, which is gate 1 of the first review's set.
+ * Two fallbacks keep it off holds that have no body to judge a limb against. A
+ * mask with no core at all comes back untouched; that is defensive and fires on
+ * none of the 2,360 placements the trim runs over, but it is what fixes the
+ * radius at 3 rather than higher — MoonBoard 2016's hold 148, the narrowest rail
+ * on any of the seven boards, survives on a core of roughly 6 px, and a wider
+ * disc would take the whole hold instead of a limb of it. And where the seed's
+ * own pixel is not core, which happens on 13 of those 2,360, the largest core
+ * stands in for it; if even that grows back without covering the seed, the mask
+ * is returned untouched — a guard, not a measured behaviour: it too fires on
+ * none of the seven boards.
  */
 function trimThinNecks(mask: Uint8Array, width: number, height: number, seedIndex: number): Uint8Array {
   const background = new Uint8Array(mask.length);
@@ -329,9 +355,24 @@ function trimThinNecks(mask: Uint8Array, width: number, height: number, seedInde
   }
   if (!hasCore) return mask;
 
+  // The hold's body is the core the bolt sits on. Where the bolt sits on a bolt
+  // hole's rim or on art thinner than the radius it is on no core at all, and
+  // the largest core stands in — design review 2 change 2's "keep the largest
+  // component", which is not a tie-break but the only anchor those holds have.
+  const coreVisited = new Uint8Array(core.length);
+  let body: number[] = [];
+  if (core[seedIndex] === 1) {
+    body = floodComponent(core, width, height, seedIndex, coreVisited);
+  } else {
+    for (let index = 0; index < core.length; index += 1) {
+      if (core[index] !== 1 || coreVisited[index] === 1) continue;
+      const component = floodComponent(core, width, height, index, coreVisited);
+      if (component.length > body.length) body = component;
+    }
+  }
+
   const grown = new Uint8Array(solid.length);
-  for (let index = 0; index < core.length; index += 1) {
-    if (core[index] !== 1) continue;
+  for (const index of body) {
     const x = index % width;
     const y = (index - x) / width;
     for (const [dx, dy] of NECK_DILATION_OFFSETS) {
@@ -342,9 +383,8 @@ function trimThinNecks(mask: Uint8Array, width: number, height: number, seedInde
       if (solid[neighbour] === 1) grown[neighbour] = 1;
     }
   }
-  // The bolt itself sitting on art thinner than the radius means this hold has
-  // no body to judge a limb against, so nothing is trimmed rather than trimming
-  // towards whichever lobe happens to be biggest.
+  // A body that grows back without reaching the bolt is not this hold's body, so
+  // nothing is trimmed rather than trimming towards whichever lobe is biggest.
   if (grown[seedIndex] !== 1) return mask;
 
   const trimmed = new Uint8Array(grown.length);
@@ -385,7 +425,16 @@ function boxEdgeShare(flat: number[], box: number): number {
   return perimeter === 0 ? 1 : onEdge / perimeter;
 }
 
-async function traceBoard(boardKey: string, boardName: string, layoutId: number, sizeId: number, setIds: number[]) {
+/** One board's silhouettes, plus the one-line count the generated file carries. */
+type TracedBoard = { outlines: Map<number, number[]>; summary: string };
+
+async function traceBoard(
+  boardKey: string,
+  boardName: string,
+  layoutId: number,
+  sizeId: number,
+  setIds: number[],
+): Promise<TracedBoard> {
   const renderData = getBoardRenderData({ boardName: boardName as never, layoutId, sizeId, setIds });
   if (!renderData) throw new Error(`${boardKey}: no render data`);
   const { boardWidth, boardHeight, holdsData, backgroundImageKeys } = renderData;
@@ -423,7 +472,6 @@ async function traceBoard(boardKey: string, boardName: string, layoutId: number,
   let missing = 0;
   let rejectedBox = 0;
   let neckTrimmed = 0;
-  let pointTotal = 0;
 
   for (const [placementIndex, placement] of holdsData.entries()) {
     if (outlines.has(placement.id)) continue;
@@ -483,11 +531,10 @@ async function traceBoard(boardKey: string, boardName: string, layoutId: number,
     floodComponent(local, localWidth, localHeight, seedIndex, region);
 
     const traced = trimThinNecks(region, localWidth, localHeight, seedIndex);
-    let dropped = 0;
+    let droppedArea = 0;
     for (let index = 0; index < region.length; index += 1) {
-      if (region[index] === 1 && traced[index] !== 1) dropped += 1;
+      if (region[index] === 1 && traced[index] !== 1) droppedArea += 1;
     }
-    if (dropped > NOTABLE_TRIM_AREA) neckTrimmed += 1;
 
     // Row-major, so the first filled pixel is the topmost-leftmost one — where
     // the Moore follower has to start.
@@ -516,8 +563,10 @@ async function traceBoard(boardKey: string, boardName: string, layoutId: number,
       missing += 1;
       continue;
     }
+    // Counted here, not at the trim: an outline that then fell back is not in
+    // the table, and the gate measures the table.
+    if (droppedArea > NOTABLE_TRIM_AREA) neckTrimmed += 1;
     outlines.set(placement.id, flat);
-    pointTotal += simplified.length;
   }
 
   // No area backstop. Before the partition, a flood fill could walk through a
@@ -530,17 +579,17 @@ async function traceBoard(boardKey: string, boardName: string, layoutId: number,
   // not merges. A board with a 6x spread of hold sizes has no safe global area
   // threshold; keeping one costs real holds to catch nothing.
 
-  console.log(
-    `[spike] ${boardKey.padEnd(24)} ${outlines.size}/${holdsData.length} traced ` +
-      `(${missing} fell back: ${rejectedBox} hit the search box, ` +
-      `${missing - rejectedBox} had no art of their own; ` +
-      `${neckTrimmed} lost more than ${NOTABLE_TRIM_AREA} px² to a thin-necked limb)`,
-  );
-  return outlines;
+  const summary =
+    `${outlines.size}/${holdsData.length} traced ` +
+    `(${missing} fell back: ${rejectedBox} hit the search box, ` +
+    `${missing - rejectedBox} had no art of their own; ` +
+    `${neckTrimmed} lost more than ${NOTABLE_TRIM_AREA} px² to a thin-necked limb)`;
+  console.log(`[spike] ${boardKey.padEnd(24)} ${summary}`);
+  return { outlines, summary };
 }
 
 async function main(): Promise<number> {
-  const perBoard: Array<[string, Map<number, number[]>]> = [];
+  const perBoard: Array<[string, TracedBoard]> = [];
   for (const board of SPIKE_BOARDS) {
     perBoard.push([
       board.key,
@@ -549,11 +598,17 @@ async function main(): Promise<number> {
   }
 
   const body = perBoard
-    .map(([boardKey, outlines]) => {
+    .map(([boardKey, { outlines }]) => {
       const entries = [...outlines.entries()].sort((a, b) => a[0] - b[0]);
       return `  '${boardKey}': {\n${entries.map(([holdId, flat]) => `    ${holdId}: [${flat.join(',')}],`).join('\n')}\n  },`;
     })
     .join('\n');
+
+  // The run's own counts, written into the file rather than left in a terminal
+  // scrollback: the traced-vs-placements split is quoted in the review and in
+  // docs/spike/board-rendering-2202/, and a table that carries the numbers of the
+  // run that wrote it cannot drift from them.
+  const counts = perBoard.map(([boardKey, { summary }]) => `// ${boardKey.padEnd(24)} ${summary}`).join('\n');
 
   writeFileSync(
     OUTPUT_FILE,
@@ -561,6 +616,9 @@ async function main(): Promise<number> {
       `// Each hold's real silhouette, traced out of the board art's alpha channel, as flat\n` +
       `// [x0, y0, x1, y1, ...] board pixels RELATIVE to the placement centre, keyed by the\n` +
       `// board keys in spike-boards.ts. A placement with no traceable art is absent.\n` +
+      `//\n` +
+      `// What the run that wrote this file counted:\n` +
+      `${counts}\n` +
       `export const SPIKE_HOLD_OUTLINES: Record<string, Record<number, number[]>> = {\n${body}\n};\n`,
   );
   console.log(`[spike] wrote ${path.relative(ROOT_DIR, OUTPUT_FILE)}`);

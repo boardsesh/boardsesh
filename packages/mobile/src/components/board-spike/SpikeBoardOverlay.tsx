@@ -35,6 +35,18 @@ type SpikeBoardOverlayProps = {
   palette: SpikePaletteKey;
   /** Curve the traced outlines through their points instead of joining them straight. */
   smooth: boolean;
+  /**
+   * Take the LED over from the board art. Its own axis rather than something a
+   * treatment carries: while it was gated on the selector it put 234 near-black
+   * discs on grasshopper's candidate panels, over the brightest pixels in the
+   * art, that the control panel did not carry — a second variable between arms
+   * that are supposed to differ by one.
+   */
+  leds: boolean;
+  /** Dim the unlit wall with the play field colour, lit silhouettes punched out. */
+  veil: boolean;
+  /** The play field behind the art — what the veil is a wash of. */
+  playFieldColor: string;
 };
 
 /**
@@ -89,6 +101,25 @@ function haloTargets(scope: HaloScope, placements: HoldPlacement[], litHolds: Sp
   );
 }
 
+/**
+ * How hard the field-colour veil quiets this board's unlit wall, or 0 where the
+ * board has no wall worth quieting.
+ *
+ * Bucketed on the mean art lightness in the ring annulus over EVERY placement,
+ * the zero readings included: a 0 there means no art anywhere in the band, which
+ * is bare play field, which is exactly the surface the veil exists to darken.
+ * Dropping those would read a MoonBoard — half of whose grid is empty cells — as
+ * a bright wall.
+ */
+function veilOpacityFor(boardKey: string): number {
+  const lightness = Object.values(SPIKE_HOLD_ART_LIGHTNESS[boardKey] ?? {});
+  if (lightness.length === 0) return 0;
+  const mean = lightness.reduce((total, value) => total + value, 0) / lightness.length;
+  if (mean >= SPIKE_TUNING.veilBrightWallLightness) return SPIKE_TUNING.veilStrongOpacity;
+  if (mean >= SPIKE_TUNING.veilDimWallLightness) return SPIKE_TUNING.veilSoftOpacity;
+  return 0;
+}
+
 /** Shape-coded arm: dashed start, wavy hand, spiky finish, plain foot. */
 function roleRingPath(role: HoldState, cx: number, cy: number, radius: number): string {
   if (role === 'HAND' || role === 'STARTING') return wavyRingPath(cx, cy, radius);
@@ -123,10 +154,20 @@ type GlowBand = { width: number; opacity: number };
  * A(w_{k-1}))` — makes each band contribute exactly the alpha the band inside it
  * still needs.
  *
+ * A band of width `w` reaches half its width past the path, so `w / spread` is
+ * the fraction of the glow's extent it covers and `glowFalloffStops` can be read
+ * at it directly. The stops carry the peak themselves — a separate 0.95
+ * multiplier over the top of them scaled the whole solved curve down, so the
+ * innermost band could never composite to the 1.0 the stops ask for at the
+ * silhouette edge.
+ *
  * Bands whose target is already fully opaque are pinned at 1.0 rather than
  * solved, because the recursion divides by `1 - A(w_{k-1})`; the solve starts at
- * the first band under 1. Bands that come out at zero alpha are dropped rather
- * than painted, which is the outermost one whenever the curve ends at 0.
+ * the first band under 1. Nothing hits that with the stops as they stand — a
+ * band at target 1.0 would have to be zero-width — but a stops table with a flat
+ * top is legal and would otherwise divide by zero. Bands that come out at zero
+ * alpha are dropped rather than painted, which is the outermost one whenever the
+ * curve ends at 0.
  */
 function solveGlowBands(spread: number, core: number, count: number): GlowBand[] {
   const bands: GlowBand[] = [];
@@ -134,7 +175,7 @@ function solveGlowBands(spread: number, core: number, count: number): GlowBand[]
   for (let index = 0; index < count; index += 1) {
     const position = index / (count - 1);
     const width = spread + (core - spread) * position;
-    const target = SPIKE_TUNING.glowPeakOpacity * glowFalloff(width / spread);
+    const target = glowFalloff(width / spread);
     const alpha = target >= 1 || previousTarget >= 1 ? 1 : 1 - (1 - target) / (1 - previousTarget);
     previousTarget = target;
     if (alpha < 0.001) continue;
@@ -202,6 +243,9 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   selector,
   palette,
   smooth,
+  leds,
+  veil,
+  playFieldColor,
 }: SpikeBoardOverlayProps) {
   // The generated tables are keyed by board key; the role hues and the stroke
   // multiplier are per PRODUCT. Every caller passes a key out of SPIKE_BOARDS —
@@ -226,6 +270,21 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   const targets = useMemo(() => haloTargets(halos, placements, litHolds), [halos, placements, litHolds]);
   const litGaps = useMemo(() => nearestLitGaps(litHolds, outlines), [litHolds, outlines]);
   const litRoles = useMemo(() => [...new Set(litHolds.map((hold) => hold.role))], [litHolds]);
+
+  // The veil, as one even-odd path: the whole board rect with every lit hold's
+  // own silhouette punched out of it, so the wash quiets the wall and never the
+  // mark. One element, and no <Mask>, <Filter> or <Image href> anywhere in it —
+  // the board-art guard stays clear and renderer.rs draws it as a single filled
+  // path. A lit hold the tracer could not read falls back to its placement
+  // circle, which is the shape its own mark is drawn as.
+  const veilOpacity = useMemo(() => (veil ? veilOpacityFor(boardKey) : 0), [veil, boardKey]);
+  const veilPath = useMemo(() => {
+    if (veilOpacity <= 0) return null;
+    const holes = litHolds.map(
+      (hold) => outlinePath(hold.id, hold.cx, hold.cy) ?? plainRingPath(hold.cx, hold.cy, hold.radius),
+    );
+    return `M 0 0 H ${boardWidth} V ${boardHeight} H 0 Z ${holes.join(' ')}`;
+  }, [veilOpacity, litHolds, outlinePath, boardWidth, boardHeight]);
 
   const haloOpacity = halos === 'near' ? SPIKE_TUNING.nearHaloOpacity : SPIKE_TUNING.haloOpacity;
   const drawsGlow = selector === 'glow' || selector === 'glow-shape';
@@ -257,10 +316,6 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   // off the point the dot is drawn at — enough that a dot the same size as the
   // blob leaves a bright crescent uncovered on 206 of grasshopper's 234.
   const ledOffsets: Partial<Record<number, readonly [number, number]>> = ledData?.brightOffsets ?? {};
-  // The LED takeover is a candidate treatment, not part of the control: renderer.rs
-  // draws neither the dark discs on unlit holds nor the role-coloured centre dot,
-  // so the panel captioned "what ships today" must not carry 234 of them.
-  const drawsLedTakeover = selector !== 'ring';
   // A lit LED only reads as belonging to its hold when it is drawn ON it.
   // MoonBoard's grid puts it 25 board px below a silhouette that reaches at most
   // 25, so it lands in a gap — and on a board where an empty cell is the normal
@@ -324,9 +379,17 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
       SPIKE_TUNING.glowNeighbourFloorWidth,
       SPIKE_TUNING.glowNeighbourFraction * (litGaps.get(hold.id) ?? Infinity),
     );
-    // The neighbour cap is on rendered reach and the boost multiplies reach, so
-    // it divides back out here; the hold cap is on the band width itself.
-    const spread = Math.min(scaled(SPIKE_TUNING.glowSpreadFraction), holdCap, neighbourCap / boost);
+    // Both caps are on the CLIPPED arms' rendered reach, which is `spread * boost`
+    // at scale 2, and the boost multiplies reach, so both divide it back out here.
+    // Capping the band WIDTH instead let the boost carry the mark straight back
+    // past the cap: across the 2,360 committed outlines a width cap fired on none
+    // of them while 136 still rendered past 1.2x their own short extent — 54 on
+    // Tension Original, 41 on Kilter Original, 27 on MoonBoard 2016, 13 on TB2
+    // Mirror and 1 on Masters. MoonBoard 2016 is the board change 6 was written
+    // about. On the un-clipped `shaped-glow` chip the stroke straddles the path,
+    // so reach there is half that and both caps bind twice as tight as asked —
+    // conservative, and that arm is not one of the four captured.
+    const spread = Math.min(scaled(SPIKE_TUNING.glowSpreadFraction), holdCap / boost, neighbourCap / boost);
     // Keeping core/spread constant keeps the falloff's shape when the spread is
     // capped, instead of collapsing the ramp into the innermost band.
     const core = Math.min(
@@ -399,6 +462,12 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
           })}
       </Defs>
 
+      {/* First thing painted, so everything else in the overlay sits on top of
+          it. Every other arm here is additive — the synthesised climb lights 16
+          placements of 303 to 499, 10 of 198 on the MoonBoards, and the rest is
+          left alone; this one quiets that other 95-97% instead. */}
+      {veilPath !== null && <Path d={veilPath} fill={playFieldColor} fillOpacity={veilOpacity} fillRule="evenodd" />}
+
       <G>
         {targets.map((placement) => {
           if (haloShape === 'outline') {
@@ -450,8 +519,15 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
           332 LED locations and leaves the rest dark, so an unlit hold can look lit
           and a lit one can look dead; Tension draws all of its darker than the
           hold. Role colour where the hold is lit, dark where it is not. Central on
-          Grasshopper, Tension and Woods, and the bolt hole on Kilter. */}
-      {drawsLedTakeover && (
+          Grasshopper, Tension and Woods, and the bolt hole on Kilter.
+
+          On its own axis, and on in every arm including the control. renderer.rs
+          draws none of this, so the control panel is not literally what ships
+          today — but a layer that is on in the candidates and off in the control
+          is a second variable between the arms, and 234 near-black discs over the
+          brightest pixels in grasshopper's art is a large one. The chip turns it
+          off for all four arms together. */}
+      {leds && (
         <G>
           {placements.map((placement) => {
             const litHold = litById.get(placement.id);

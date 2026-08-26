@@ -29,15 +29,19 @@ One climb on one board: Grasshopper "Master 8 x 12 with Tweeners" (layout 1, siz
 is synthesised from real placements rather than pulled from the catalogue, so the screen needs no
 network, no login and no seeded database.
 
-Three independent axes, each a row of chips. The chip list is
-`SPIKE_TREATMENTS` in `spike-config.ts`; the arms below are the subset the
-captures use.
+Four independent axes, each a chip. The treatment list is `SPIKE_TREATMENTS` in
+`spike-config.ts`; the arms below are the subset the captures use.
 
-| Axis              | Options                                                                          |
-| ----------------- | -------------------------------------------------------------------------------- |
-| Overlay treatment | Baseline · Outward · Hybrid, plus the modifier chips the arms were chosen out of |
-| Role colours      | the board's own hues · Grasshopper's hues on every board · equal OkLab lightness |
-| Play field        | dark `#181225` · neutral grey · near-black · plywood                             |
+| Axis              | Options                                                                                 |
+| ----------------- | --------------------------------------------------------------------------------------- |
+| Overlay treatment | Baseline · Outward · Hybrid · Veil, plus the modifier chips the arms were chosen out of |
+| LED layer         | on · off — on for every arm, baseline included, so it never varies between two panels   |
+| Role colours      | the board's own hues · Grasshopper's hues on every board · equal OkLab lightness        |
+| Play field        | dark `#181225` · neutral grey · near-black · plywood                                    |
+
+`capture-boards.sh` names the treatment and the LED axis in the deep link and
+leaves the other two to the screen unless `FIELDS=` / `PALETTES=` is set, because
+the screen keeps whatever it was last handed.
 
 The board-art axis (an OkLab contrast stretch, Grasshopper only) is gone: it was
 never one of the arms, never appeared in a capture, and it was the only reason
@@ -81,8 +85,8 @@ the board art was drawn through react-native-svg instead of `expo-image`.
 - **`FeGaussianBlur` is broken in react-native-svg 15.15.5 on Android.** A stroke through it paints
   the filter region as a solid rectangle of the stroke colour. `FeColorMatrix` in the same version
   renders correctly on the same device, so the glow falloff is concentric strokes instead of one
-  blurred stroke. Four bands read as visible rings; twelve is the floor and the band count is
-  raised wherever the step between two of them would render wider than 1.5 device px.
+  blurred stroke. Four bands read as visible rings; fifteen is the floor and the band count is
+  raised per hold wherever the step between two of them would render wider than 1.5 device px.
 
 ## The design review, and the three bugs it found
 
@@ -124,18 +128,30 @@ reads as two marks disagreeing about where the hold is: a precise outline and a 
 it. The boost fires on 7/16 lit holds on TB2 Mirror and 6/10 on MoonBoard 2016, and on 0/16 on
 Kilter Homewall, whose holds are already 70% of the circle.
 
-## Acting on the review: three arms
+## Acting on the review: four arms
 
-The arm set is **Baseline · Outward glow · Glow + tint**. Traced outline was an arm for one round
+The arm set is **Baseline · Outward glow · Glow + tint · Veil + glow**. Traced outline was an arm for one round
 and the second design pass dropped it: at glance zoom it is last on all seven boards, because its
 stroke is wider than the hold on every board with small holds, so the arm whose premise is "the
 mark is the shape of the hold" paints a featureless blob on 6 of 10 lit holds on MoonBoard 2016.
 The silhouette itself stays — it is the glow's path, the hybrid's fill boundary and the glyph's
-clip. The calls behind the three that remain:
+clip. The calls behind the four that remain:
 
+- **Baseline is the control, not literally what ships.** It carries the LED layer like the other
+  three, so the only thing that changes across a row is the mark on the lit holds. Left off one arm
+  it was a second variable: Grasshopper paints 234 of its 332 LED locations bright, and those discs
+  are the difference between a wall that looks lit and one that does not.
 - **Outward glow leads.** The only treatment that beat baseline on every board compared, and the
   only one where the wall's own bright holds cannot be mistaken for lit ones — a halo is something
   photographic hold art cannot produce.
+- **Veil + glow is outward glow with the wall quieted.** Every other arm is additive — the climb
+  lights 16 placements of the 303 to 499 on a board, 10 of 198 on the MoonBoards, and the rest is
+  left alone. This one washes that other 95-97% down in the play field colour with the lit
+  silhouettes punched out of a single even-odd path, at a strength bucketed on how bright the
+  board's own wall is (mean OkLab L in the ring annulus over every placement): 0.45 on TB2 Mirror
+  0.713, Kilter Homewall 0.626 and Tension Original 0.563; 0.30 on Kilter Original 0.511 and
+  Grasshopper 0.411; nothing on Masters 0.337 or MoonBoard 2016 0.301, where roughly half the grid
+  is bare field already and there is no wall to quiet.
 - **Traced halos is not an arm.** Its lit mark is byte-identical to baseline, so as an arm it can
   only lose on lit visibility. It is the per-board modifier described above, and nothing else.
 - **Plain whole-hold tint is out, replaced by Glow + tint.** Plain tint lost to baseline on three

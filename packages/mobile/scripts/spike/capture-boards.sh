@@ -30,7 +30,7 @@ OUT="${1:?usage: capture-boards.sh <output-dir> [treatments...]}"
 shift || true
 
 BOARDS="${BOARDS:-grasshopper-master tension-classic tension-mirror-12x12 kilter-homewall-10x12 kilter-original-12x12 moonboard-2016 moonboard-masters-2019}"
-TREATMENTS="${*:-baseline outward-glow glow-tint}"
+TREATMENTS="${*:-baseline outward-glow glow-tint veil-glow}"
 # `none` is the sentinel for "leave this axis to the screen" — no board or
 # palette key is called that — and it is the default, so an unset FIELDS still
 # runs the loop once with the parameter omitted.
@@ -54,7 +54,11 @@ for field in $FIELDS; do
     mkdir -p "$dir"
     for board in $BOARDS; do
       for treatment in $TREATMENTS; do
-        uri="com.boardsesh.app:///board-spike?board=${board}&treatment=${treatment}${axes}"
+        # `leds=on` is named rather than left to the screen: the LED layer is an
+        # axis of its own now, every captured arm draws it, and the screen keeps
+        # whatever it was last handed — so an unnamed axis would shoot the whole
+        # matrix dark after any one `leds=off` link or chip press.
+        uri="com.boardsesh.app:///board-spike?board=${board}&treatment=${treatment}&leds=on${axes}"
         # Single-quote the URI for the DEVICE shell: adb concatenates arguments into
         # one command string, so an unquoted & backgrounds the command there and every
         # query parameter after the first is silently dropped.

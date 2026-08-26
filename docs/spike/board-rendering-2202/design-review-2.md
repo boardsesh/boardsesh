@@ -37,29 +37,29 @@ graphic as a bolt highlight.
 
 ## Change list
 
-| # | Change | Kind | Boards | File |
-|---|---|---|---|---|
-| **Blockers** ||||
-| 1 | Role hues are grasshopper's on all seven boards | structural | kilter x2, moonboard x2 | `spike-config.ts` |
-| 2 | Silhouette spurs paint the mark across the neighbouring hold | structural | kilter-homewall, tension-mirror | `scripts/spike-hold-outlines.ts` |
-| 3 | The four arms differ by three variables, not one | structural | all seven | `SpikeBoardOverlay.tsx`, `spike-config.ts`, `SpikeBoard.tsx` |
-| 4 | The hybrid has never rendered correctly from cold, and is smaller than the arm it is compared with | structural | all seven | `SpikeBoardOverlay.tsx`, `scripts/spike-hold-lightness.ts` |
-| **Worth doing** ||||
-| 5 | Drop `traced-ring` as an arm; keep the silhouette | structural | all seven | `spike-config.ts` |
-| 6 | `glowSpreadWidth` is absolute board px on boards whose space differs 1.66x | tuning | moonboard x2 | `spike-config.ts`, `SpikeBoardOverlay.tsx` |
-| 7 | The FOOT glyph is the same graphic as an LED | structural | grasshopper + 4 | `RoleGlyph.tsx`, `spike-config.ts` |
-| 8 | The LED takeover misses the LED | tuning | grasshopper, kilter-original, moonboard x2 | `scripts/spike-led-dots.ts` |
-| 9 | The glow falloff is a plateau with countable steps | tuning | all seven | `SpikeBoardOverlay.tsx`, `spike-config.ts` |
-| 10 | Adjacent lit holds fuse into one envelope | tuning | kilter-homewall, tension-mirror | `SpikeBoardOverlay.tsx` |
-| 11 | MoonBoard draws a second detached mark under every lit hold | structural | moonboard x2 | `SpikeBoardOverlay.tsx`, `spike-led-dots.ts` |
-| 12 | The glyph is anchored on the bolt, not on the hold | tuning | all seven | `SpikeBoardOverlay.tsx` |
-| 13 | Correct the record, commit the gates | process | moonboard x2 | `README.md`, `HANDOVER.md`, `__tests__/` |
-| 14 | Get the branch green without `--no-verify` | process | grasshopper | `SpikeBoard.tsx`, `spike-art.ts` |
-| **If there is time** ||||
-| 15 | Capture the axes that have never been captured | process | all seven | `app/board-spike.tsx`, `scripts/spike/` |
-| 16 | Score the arms at 400 px, the size the small surfaces use | process | all seven | `scripts/spike/capture-boards.sh` |
-| 17 | Try a field-colour veil over the unlit wall | structural | 5 of 7 | `SpikeBoardOverlay.tsx` |
-| 18 | Budget the renderer.rs port | process | all seven | `renderer.rs`, `renderer-version.ts` |
+| #                    | Change                                                                                             | Kind       | Boards                                     | File                                                         |
+| -------------------- | -------------------------------------------------------------------------------------------------- | ---------- | ------------------------------------------ | ------------------------------------------------------------ |
+| **Blockers**         |                                                                                                    |            |                                            |
+| 1                    | Role hues are grasshopper's on all seven boards                                                    | structural | kilter x2, moonboard x2                    | `spike-config.ts`                                            |
+| 2                    | Silhouette spurs paint the mark across the neighbouring hold                                       | structural | kilter-homewall, tension-mirror            | `scripts/spike-hold-outlines.ts`                             |
+| 3                    | The four arms differ by three variables, not one                                                   | structural | all seven                                  | `SpikeBoardOverlay.tsx`, `spike-config.ts`, `SpikeBoard.tsx` |
+| 4                    | The hybrid has never rendered correctly from cold, and is smaller than the arm it is compared with | structural | all seven                                  | `SpikeBoardOverlay.tsx`, `scripts/spike-hold-lightness.ts`   |
+| **Worth doing**      |                                                                                                    |            |                                            |
+| 5                    | Drop `traced-ring` as an arm; keep the silhouette                                                  | structural | all seven                                  | `spike-config.ts`                                            |
+| 6                    | `glowSpreadWidth` is absolute board px on boards whose space differs 1.66x                         | tuning     | moonboard x2                               | `spike-config.ts`, `SpikeBoardOverlay.tsx`                   |
+| 7                    | The FOOT glyph is the same graphic as an LED                                                       | structural | grasshopper + 4                            | `RoleGlyph.tsx`, `spike-config.ts`                           |
+| 8                    | The LED takeover misses the LED                                                                    | tuning     | grasshopper, kilter-original, moonboard x2 | `scripts/spike-led-dots.ts`                                  |
+| 9                    | The glow falloff is a plateau with countable steps                                                 | tuning     | all seven                                  | `SpikeBoardOverlay.tsx`, `spike-config.ts`                   |
+| 10                   | Adjacent lit holds fuse into one envelope                                                          | tuning     | kilter-homewall, tension-mirror            | `SpikeBoardOverlay.tsx`                                      |
+| 11                   | MoonBoard draws a second detached mark under every lit hold                                        | structural | moonboard x2                               | `SpikeBoardOverlay.tsx`, `spike-led-dots.ts`                 |
+| 12                   | The glyph is anchored on the bolt, not on the hold                                                 | tuning     | all seven                                  | `SpikeBoardOverlay.tsx`                                      |
+| 13                   | Correct the record, commit the gates                                                               | process    | moonboard x2                               | `README.md`, `HANDOVER.md`, `__tests__/`                     |
+| 14                   | Get the branch green without `--no-verify`                                                         | process    | grasshopper                                | `SpikeBoard.tsx`, `spike-art.ts`                             |
+| **If there is time** |                                                                                                    |            |                                            |
+| 15                   | Capture the axes that have never been captured                                                     | process    | all seven                                  | `app/board-spike.tsx`, `scripts/spike/`                      |
+| 16                   | Score the arms at 400 px, the size the small surfaces use                                          | process    | all seven                                  | `scripts/spike/capture-boards.sh`                            |
+| 17                   | Try a field-colour veil over the unlit wall                                                        | structural | 5 of 7                                     | `SpikeBoardOverlay.tsx`                                      |
+| 18                   | Budget the renderer.rs port                                                                        | process    | all seven                                  | `renderer.rs`, `renderer-version.ts`                         |
 
 ---
 
@@ -194,7 +194,7 @@ same capture. (`smallHoldBoost` is already computed above the `if (drawsHybrid)`
 needs moving.)
 
 **(c) The lightness table carries a zero sentinel and measures the wrong region.**
-`scripts/spike-hold-lightness.ts` samples the 0.85r–1.15r annulus — the band the *ring* is drawn in,
+`scripts/spike-hold-lightness.ts` samples the 0.85r–1.15r annulus — the band the _ring_ is drawn in,
 mostly outside the hold — and ends `weight === 0 ? 0` when no art falls in it. The `drawsHybrid`
 branch reads that table as "the art under this hold" and derives `normaliseOpacity` from it. Zeros
 in the committed table: 45 of 303 on tension-classic, 94 of 198 on each MoonBoard, 19 on
@@ -220,13 +220,13 @@ At ~300 px per panel it is last on all seven boards. The mechanism is visible at
 is 8.1 board px times `smallHoldBoost` (up to 1.7), centred on the path, so on a hold narrower than
 about 26 board px the stroke closes the shape completely.
 
-| Board | Lit holds ≥79% covered by their own stroke | Worst case |
-|---|---|---|
-| moonboard-2016 | 6 of 10 | hold 26, 17x16 hold, 12.5 px stroke, 100% |
-| moonboard-masters-2019 | 4 of 10 | hold 27, 96% |
-| tension-mirror-12x12 | 2 of 16 | hold 612, 19x14, 12.2 px stroke, 99% |
-| kilter-original-12x12 | 2 of 16 | hold 1477, 18x17, 12.2 px stroke, 100% |
-| tension-classic | 2 of 16 | holds 269/270, 25x25, 13.1 px stroke |
+| Board                  | Lit holds ≥79% covered by their own stroke | Worst case                                |
+| ---------------------- | ------------------------------------------ | ----------------------------------------- |
+| moonboard-2016         | 6 of 10                                    | hold 26, 17x16 hold, 12.5 px stroke, 100% |
+| moonboard-masters-2019 | 4 of 10                                    | hold 27, 96%                              |
+| tension-mirror-12x12   | 2 of 16                                    | hold 612, 19x14, 12.2 px stroke, 99%      |
+| kilter-original-12x12  | 2 of 16                                    | hold 1477, 18x17, 12.2 px stroke, 100%    |
+| tension-classic        | 2 of 16                                    | holds 269/270, 25x25, 13.1 px stroke      |
 
 Tension Original 269 at board (270,1575) is the clearest single frame: panel 1 shows an olive washer
 inside a ring, panel 2 shows a solid magenta disc. MoonBoard 2016 hold 26 at board (241,835) is the
@@ -237,7 +237,7 @@ lost.
 
 What dropping it costs, and this belongs on the record: `traced-ring` is the only arm that keeps 16
 separate coloured regions for 16 lit holds on Kilter Homewall and TB2 Mirror — baseline, glow and
-hybrid all fuse the same HAND/FOOT pairs — and at 1:1 it is the clearest arm about *which* hold is
+hybrid all fuse the same HAND/FOOT pairs — and at 1:1 it is the clearest arm about _which_ hold is
 lit. It loses on findability, which is what #2202 is about, not on identity.
 
 **Change.** Remove `traced-ring` from the captured arm set in `spike-config.ts`. Keep
@@ -291,7 +291,7 @@ kilter-original the FOOT glyph is a 2x2 block at capture resolution.
 
 This is not a polish item. Under correctly computed Viénot protanopia (matrix applied in linear RGB,
 which `build-figures.mjs` already does) HAND and FOOT are dE00 3.2 apart — Machado agrees at 3.8 —
-so the glyph is the *only* channel separating those two roles for a protanope, and the one carrying
+so the glyph is the _only_ channel separating those two roles for a protanope, and the one carrying
 it is a 2–5 px pip. In the protan glow panel of `colour-vision.webp` the two STARTs and one HAND read
 by their bars; four blue glows carry nothing but a pip and are identified by the absence of a bar.
 
@@ -353,7 +353,7 @@ from x=2637, gives green plateaus 2–3 px wide at 185, 181, 159, 153, 130, 124,
 hold 26. `spike-config.ts` claims "four bands showed visible rings; twelve on a squared falloff reads
 as a smooth fade"; at MoonBoard's rendered width it does not.
 
-**Change.** Solve the per-band alphas from a target *cumulative* curve instead of setting each band's
+**Change.** Solve the per-band alphas from a target _cumulative_ curve instead of setting each band's
 own alpha. Stops as a fraction of extent: `0.00 -> 1.00, 0.15 -> 0.90, 0.40 -> 0.42, 0.70 -> 0.13,
 1.00 -> 0.00`, with `a_k = 1 - (1 - A(w_k)) / (1 - A(w_{k-1}))`. Pin the plateau bands at 1.0
 explicitly — the recursion divides by zero wherever the target is 1.0 — and start the solve at the
@@ -388,7 +388,7 @@ Do **not** clip each glow to its nearest-placement Voronoi cell. Kilter Homewall
 3.6 board px, so the midline sits about 1.8 px off the silhouette and a cell clip leaves a 2 px rim —
 which is approximately the traced arm, the panel that visibly loses at glance zoom on that exact
 board. And the thing the cell clip was proposed to fix does not need fixing: measured over the unlit
-holds' own art pixels, the glow buries *less* neighbouring art than the baseline circle does (2.67%
+holds' own art pixels, the glow buries _less_ neighbouring art than the baseline circle does (2.67%
 against 2.84% on Kilter Homewall, 1.64% against 2.26% on TB2 Mirror).
 
 ### 11. MoonBoard draws a second detached mark under every lit hold
@@ -417,7 +417,7 @@ median 5–11% off the bbox centre, p90 10–21%, and 19 of 476 Kilter Original 
 Homewall placements fall outside the middle half of their own silhouette.
 
 Because the bars are clipped to the silhouette, an off-centre anchor changes the glyph's rendered
-*shape*, not just its position. On the MoonBoard 2016 12x35 rail the HAND bar is shoved hard against
+_shape_, not just its position. On the MoonBoard 2016 12x35 rail the HAND bar is shoved hard against
 the left edge with the whole right half of the photograph surviving; the same vocabulary on the next
 hold draws a centred bar. A fixed vocabulary cannot afford that. The masters FINISH at (391,85) is
 the visible case: the X sits in the lower-left lobe of a donut hold with one arm crossing off the art.
@@ -508,11 +508,11 @@ ships at `renderWidth 400` in `ClimbListThumbnail` (displayed at 76x96 dp) and 3
 Activity. Downsampling `whole__grasshopper-master.png` and counting role-coloured pixels
 (max channel ≥ 90, chroma ≥ 70) per panel, baseline / traced / glow / hybrid:
 
-| Panel width | Baseline | Traced | Glow | Hybrid | Glow vs baseline |
-|---|---|---|---|---|---|
-| 1080 px (capture) | 51,479 | 31,893 | 59,690 | 72,760 | +16% |
-| 228 px (76 dp at 3x) | 2,531 | 1,550 | 2,762 | 3,323 | +9% |
-| 152 px (76 dp at 2x) | 1,247 | 737 | 1,250 | 1,479 | +0.2% |
+| Panel width          | Baseline | Traced | Glow   | Hybrid | Glow vs baseline |
+| -------------------- | -------- | ------ | ------ | ------ | ---------------- |
+| 1080 px (capture)    | 51,479   | 31,893 | 59,690 | 72,760 | +16%             |
+| 228 px (76 dp at 3x) | 2,531    | 1,550  | 2,762  | 3,323  | +9%              |
+| 152 px (76 dp at 2x) | 1,247    | 737    | 1,250  | 1,479  | +0.2%            |
 
 The glow's margin over baseline is a function of render size and is gone by 152 px. The hybrid keeps
 a +19% lead at every size, which is the one place its fill earns something the glow cannot. The app
@@ -528,7 +528,7 @@ the arms there too. Whichever arm wins needs its own small-surface branch next t
 
 Nobody built the obvious counterpart to every arm here. All four are additive: they spend ink on the
 roughly 3% of the board that is lit and leave the rest alone, and on four boards arms 3 and 4 make
-the wall *brighter*. Simulated at α0.45 over `whole__kilter-homewall-10x12.png` panel 3 (leaving
+the wall _brighter_. Simulated at α0.45 over `whole__kilter-homewall-10x12.png` panel 3 (leaving
 pixels with chroma > 55 alone), the wall's mean Rec.709 luminance falls 79.1 to 52.8 and the sixteen
 marks visibly gain; TB2 Mirror falls 66.5 to 45.9.
 
@@ -582,14 +582,14 @@ would otherwise trace the wrong shapes.
    be described that way.
 3. **The 2.2x-median area backstop.** Do not re-add it. It deleted 14 real grasshopper holds to catch
    nothing, and every defect found this round is thin, not large.
-4. **`ALPHA_FLOOR` and the erosion direction.** The emitted polygon already sits *inside* the art — a
+4. **`ALPHA_FLOOR` and the erosion direction.** The emitted polygon already sits _inside_ the art — a
    median 9% of each hold's alpha≥96 mask falls outside it on grasshopper and Tension Original, 13%
    on the MoonBoards, 20% on TB2 Mirror, 35% on Kilter Homewall — so eroding the mask or raising the
    floor pushes the systematic error the wrong way.
 5. **`smallHoldBoost` in the glow.** It is the only thing keeping a mark on TB2 Mirror's 19x14 chip
    above the 64 board-px ring baseline draws there, and `README.md` records that unboosted tracing
    lost to baseline once already. Fix the asymmetry between the two glow arms (change 4b); do not
-   delete it. Do not feed it the *shortest* axis either: `boost = sizeFloor / extent`, so the short
+   delete it. Do not feed it the _shortest_ axis either: `boost = sizeFloor / extent`, so the short
    axis would widen the stroke on exactly the thin rails it is meant to protect.
 6. **The twelve-stroke glow mechanism.** `FeGaussianBlur` paints the filter region as a solid
    rectangle of the stroke colour in react-native-svg 15.15.5 on Android. And do not replace the
@@ -637,7 +637,7 @@ would otherwise trace the wrong shapes.
 7. **User marker settings.** The app ships six per-role marker shapes, a 0.5–2.0 shape-size slider, a
    0.5–2.0 brush-thickness slider and a free-hex per-role colour override, none of which the spike
    reads. Nobody has decided what a traced arm does to a user who set "diamond at size 2.0": the
-   silhouette *is* the shape, so that setting has no meaning in three of the four arms.
+   silhouette _is_ the shape, so that setting has no meaning in three of the four arms.
 8. **Render cost.** Whole-board painted-element counts are roughly 255 for baseline, 289 for traced,
    1,129 for the glow and 1,193 for the hybrid on grasshopper. Design review estimated "four to six
    paths per lit hold plus a clip", a 3x undercount. Nothing has been measured on a mid-tier Android

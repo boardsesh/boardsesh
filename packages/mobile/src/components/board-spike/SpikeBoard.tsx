@@ -19,6 +19,12 @@ type SpikeBoardProps = {
   palette: SpikePaletteKey;
   /** Force the every-hold neutral outline on or off, or leave it to the board. */
   halosOverride: SpikeOverride;
+  /**
+   * Draw the LED layer. Its own axis, on in every arm the capture script shoots,
+   * so the arms differ by their treatment and not by whether the board's LEDs
+   * have been taken over.
+   */
+  leds: boolean;
 };
 
 /**
@@ -56,7 +62,15 @@ function resolveHalos(treatment: SpikeTreatment, board: SpikeBoardConfig, overri
  * Deliberately does NOT go through BoardImageNative / the Rust renderer: the
  * point is to try overlays the renderer cannot draw yet.
  */
-export function SpikeBoard({ board, treatment, backgroundColor, smooth, palette, halosOverride }: SpikeBoardProps) {
+export function SpikeBoard({
+  board,
+  treatment,
+  backgroundColor,
+  smooth,
+  palette,
+  halosOverride,
+  leds,
+}: SpikeBoardProps) {
   const renderData = useMemo(
     () =>
       getBoardRenderData({
@@ -156,6 +170,12 @@ export function SpikeBoard({ board, treatment, backgroundColor, smooth, palette,
         selector={treatment.selector}
         palette={palette}
         smooth={smooth}
+        leds={leds}
+        veil={treatment.veil ?? false}
+        // The veil is a wash of the field, so it has to be the field the board is
+        // actually sitting on — including the grey and plywood chips, where the
+        // whole point is that the wall it is quieting is a different colour.
+        playFieldColor={backgroundColor}
       />
     </View>
   );

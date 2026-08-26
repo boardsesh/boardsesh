@@ -53,6 +53,12 @@ export type SpikeTreatment = {
   /** Defaults to `circle` when absent. */
   haloShape?: HaloShape;
   selector: SelectorStyle;
+  /**
+   * Wash the unlit wall with the play field colour, lit silhouettes punched out
+   * of it. Defaults to off when absent. A modifier on the wall rather than a way
+   * of marking a hold, so it sits alongside a selector instead of being one.
+   */
+  veil?: boolean;
 };
 
 export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
@@ -60,7 +66,7 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
     key: 'baseline',
     chip: 'Base',
     label: 'Baseline',
-    note: 'What ships today: stroke-only role rings, no outline on unlit holds.',
+    note: 'Stroke-only role rings, no outline on unlit holds. Carries the LED layer, so it is the control and not literally what ships.',
     halos: 'none',
     selector: 'ring',
   },
@@ -84,6 +90,15 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
     note: 'Lightness-normalised fill for shape, a crisp silhouette edge, and an outward glow for reach.',
     halos: 'none',
     selector: 'glow-tint',
+  },
+  {
+    key: 'veil-glow',
+    chip: 'Veil',
+    label: 'Veil + glow',
+    note: 'The unlit wall is washed down in the field colour with the lit holds punched out, under the same outward glow.',
+    halos: 'none',
+    selector: 'shape-glow-out',
+    veil: true,
   },
   {
     key: 'piece-halos',
@@ -311,12 +326,16 @@ export const SPIKE_TUNING = {
    * renders correctly on the same device, so this is a gap in that one primitive
    * rather than filters being unavailable.
    *
-   * Twelve is the floor, not the count: `solveGlowBands` adds bands wherever the
-   * step between two of them would render wider than `glowStepMaxDevicePx`. On a
-   * boosted MoonBoard hold twelve bands stepped 2 device px and the concentric
+   * Fifteen is the floor, not the count: `solveGlowBands` adds bands wherever the
+   * step between two of them would render wider than `glowStepMaxDevicePx`. The
+   * floor is what the widest board needs at the reference width with no size
+   * boost — Grasshopper's outward arm spans 20.1 device px there, which is 15
+   * bands at 1.5 px a step; MoonBoard 2016 lands on 15 too, from a smaller spread
+   * blown up 1.66x by its narrower board box. Twelve was chosen before the solve
+   * and stepped 2 device px on a boosted MoonBoard hold, where the concentric
    * arcs were countable in a 3.4x crop.
    */
-  glowBandCount: 12,
+  glowBandCount: 15,
   /**
    * Spread is halved from the first pass (40): at 40 the light reached most of
    * the way to the neighbouring placement — the pitch between placements is only
@@ -324,19 +343,35 @@ export const SPIKE_TUNING = {
    * a blob rather than as an edge. The outward-only variant doubles whatever this
    * is, since the clip discards the inner half of the stroke.
    *
-   * 0.43 r and 0.163 r are the 21 and 8 board px this used to be, on Grasshopper.
-   * On MoonBoard they are 12.5 and 4.8 instead of 21 and 8, which is the point:
-   * at 21 board px on a 650-wide board the light reached 35 device px and the
-   * glow stopped tracing the silhouette and read as a plain disc.
+   * 0.43 r is the 21 board px this used to be, on Grasshopper. On MoonBoard it is
+   * 12.5 instead of 21, which is the point: at 21 board px on a 650-wide board the
+   * light reached 35 device px and the glow stopped tracing the silhouette and
+   * read as a plain disc.
+   *
+   * The core is the innermost band's width, so `core / spread` is where on the
+   * falloff curve the glow's brightest ink sits — everything inside it is the
+   * composite of every band and cannot be brighter. At 0.163 r that landed at
+   * 0.379 of the extent, two thirds of the way down the ramp, and the leading
+   * arm's peak came out at 0.438 instead of the 1.00 the stops ask for at the
+   * silhouette edge. 0.0215 r is 0.05 of the spread, inside the curve's flat top,
+   * and composites to 0.967. It costs the byte-for-byte match with the captures
+   * taken before the solve landed; those captures are of the plateau the solve
+   * exists to remove.
    */
   glowSpreadFraction: 0.43,
-  glowCoreFraction: 0.163,
-  glowPeakOpacity: 0.95,
+  glowCoreFraction: 0.0215,
   /**
-   * Ceiling on the spread as a multiple of the hold's own SHORT extent. Past
-   * roughly 1.5x the hold's width the glow stops being an outline of anything
-   * and becomes a disc with a chip in the middle — two holds in one climb, 250 px
-   * apart, then carry visibly different marks.
+   * Ceiling on the glow's RENDERED reach as a multiple of the hold's own SHORT
+   * extent. Past roughly 1.5x the hold's width the glow stops being an outline of
+   * anything and becomes a disc with a chip in the middle — two holds in one
+   * climb, 250 px apart, then carry visibly different marks.
+   *
+   * On the reach and not on the band width, because `smallHoldMaxBoost` multiplies
+   * the reach afterwards and small holds are exactly the ones being capped: as a
+   * width cap it fired on 0 of the 2,360 committed outlines while 136 of them
+   * still rendered past 1.2x their short extent — Tension Original 54, Kilter
+   * Original 41, MoonBoard 2016 27, TB2 Mirror 13, Masters 1. Nothing sits near
+   * the line: the closest hold the cap leaves alone reaches 0.97 of it.
    */
   glowHoldExtentCap: 1.2,
   /**
@@ -360,6 +395,19 @@ export const SPIKE_TUNING = {
    * on a squared ramp composited to 1.000 all the way out to the core, so the
    * inner two-fifths of the glow was a flat plateau of saturated role colour and
    * the falloff only started where the review asked for it to be half gone.
+   *
+   * The first stop carries the peak. A separate multiplier over the top of these
+   * scaled the solved curve to 95% of every stop, which is a second knob on the
+   * same quantity and put the arm's brightest ink below what the curve says.
+   *
+   * Bands are discrete, so what renders is a staircase that holds each band's
+   * target out to the next band in, and the composite is decided by the band
+   * count alone. Read at 0.00 / 0.15 / 0.40 / 0.70 / 1.00 of the extent: at the
+   * 15-band floor it is 0.967 / 0.831 / 0.365 / 0.117 / 0.000, and at the 20
+   * bands Grasshopper's smallest holds ask for, 0.967 / 0.900 / 0.421 / 0.130 /
+   * 0.000. The shortfall between stops is one step of the staircase, and 0.967
+   * rather than 1.000 at the edge is the innermost band sitting at 0.05 of the
+   * extent rather than at 0.
    */
   glowFalloffStops: [
     [0.0, 1.0],
@@ -463,6 +511,30 @@ export const SPIKE_TUNING = {
   ledDotRadiusFraction: 0.1,
   ledDarkColor: '#0B0B10',
   ledDarkOpacity: 0.85,
+  /**
+   * Field-colour veil over the unlit wall: the board rect filled with the play
+   * field colour and every lit silhouette punched out of it as an even-odd hole.
+   * Every other arm in this spike is additive — it spends ink on the 16 lit
+   * placements out of 303 to 499, 10 out of 198 on the MoonBoards, and leaves the
+   * rest alone — and this is the counterpart that quiets the other 95-97%
+   * instead. One path, no mask and no filter, so the board-art guard stays clear
+   * and `renderer.rs` draws it as a single even-odd fill — against the 632
+   * stroked paths the every-hold casing costs on Grasshopper, two per unlit
+   * placement, and 966 on Kilter Homewall.
+   *
+   * Strength is bucketed on the mean art lightness in the ring annulus over EVERY
+   * placement, the zero readings included: a 0 is "no art in the band", i.e. bare
+   * play field, which is the wall being quieted. Over the committed table that is
+   * TB2 Mirror 0.713, Kilter Homewall 0.626, Tension Original 0.563, Kilter
+   * Original 0.511, Grasshopper 0.411, MoonBoard Masters 0.337, MoonBoard 2016
+   * 0.301. The thresholds sit midway between the boards they separate. Both
+   * MoonBoards fall through to nothing: roughly half of each grid is bare field
+   * already, so there is no wall there to quiet.
+   */
+  veilStrongOpacity: 0.45,
+  veilSoftOpacity: 0.3,
+  veilBrightWallLightness: 0.54,
+  veilDimWallLightness: 0.375,
 } as const;
 
 export type SpikeLitHold = {

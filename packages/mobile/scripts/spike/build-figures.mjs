@@ -81,10 +81,23 @@ const BOARDS = [
   },
 ];
 
+/**
+ * The captured arm set, and it has to stay the same four keys as
+ * `capture-boards.sh`'s TREATMENTS default and the first four entries of
+ * `SPIKE_TREATMENTS` in `spike-config.ts` — every panel here reads a file named
+ * `<board>__<key>.png`, so a key this list has and the capture run does not
+ * throws, and a key the capture run has and this list does not is shot and then
+ * silently dropped under the remaining captions.
+ *
+ * Baseline is the control rather than literally what ships: it carries the LED
+ * layer like the other three, so the only thing that varies across a row is the
+ * mark on the lit holds.
+ */
 const TREATMENTS = [
-  { key: 'baseline', title: 'Baseline', subtitle: 'What ships today: a fixed circle' },
+  { key: 'baseline', title: 'Baseline', subtitle: 'Control: a fixed circle, LED layer on' },
   { key: 'outward-glow', title: 'Outward glow', subtitle: 'Light off the edge, hold surface left clean' },
   { key: 'glow-tint', title: 'Glow + tint', subtitle: 'Fill for shape, glow for reach, role glyph' },
+  { key: 'veil-glow', title: 'Veil + glow', subtitle: 'Unlit wall washed down in the field colour' },
 ];
 
 /** The spike screen paints the play field behind the board, so its rows are the board. */

@@ -27,7 +27,7 @@ import { spacing } from '../src/theme/tokens';
  *
  * Not reachable from app navigation. Open it with
  * `com.boardsesh.app:///board-spike`, optionally
- * `?board=<key>&treatment=<key>&field=<key>&palette=<key>&halos=auto|on|off`
+ * `?board=<key>&treatment=<key>&field=<key>&palette=<key>&halos=auto|on|off&leds=on|off`
  * so a capture script can land directly on one cell of the matrix — every axis
  * a capture varies is on the link, because a chip cannot be pressed by `adb`.
  * (`Smooth` is the exception: it is a rendering switch nobody captures against.)
@@ -43,6 +43,7 @@ export default function BoardSpikeScreen() {
     field?: string;
     palette?: string;
     halos?: string;
+    leds?: string;
   }>();
 
   const initialBoardIndex = Math.max(
@@ -61,6 +62,11 @@ export default function BoardSpikeScreen() {
   const [palette, setPalette] = useState<SpikePaletteKey>(paletteKeyOf(params.palette) ?? 'shipped');
   const [smooth, setSmooth] = useState(true);
   const [halosOverride, setHalosOverride] = useState<SpikeOverride>(overrideOf(params.halos) ?? 'auto');
+  // On by default and on in every captured arm, the baseline included. It is a
+  // layer over the board's own art rather than a way of marking a lit hold, so
+  // holding it constant is what keeps the arms one variable apart — see the
+  // baseline treatment's note.
+  const [leds, setLeds] = useState(switchOf(params.leds) ?? true);
 
   // Expo Router reuses this screen when the same route is deep-linked again, so
   // the useState initialisers above only ever run once per JS launch. Without
@@ -83,7 +89,9 @@ export default function BoardSpikeScreen() {
     if (nextPalette !== undefined) setPalette(nextPalette);
     const nextHalos = overrideOf(params.halos);
     if (nextHalos !== undefined) setHalosOverride(nextHalos);
-  }, [params.board, params.treatment, params.field, params.palette, params.halos]);
+    const nextLeds = switchOf(params.leds);
+    if (nextLeds !== undefined) setLeds(nextLeds);
+  }, [params.board, params.treatment, params.field, params.palette, params.halos, params.leds]);
 
   const board = SPIKE_BOARDS[boardIndex];
   const treatment = SPIKE_TREATMENTS[treatmentIndex];
@@ -132,6 +140,7 @@ export default function BoardSpikeScreen() {
           palette={palette}
           smooth={smooth}
           halosOverride={halosOverride}
+          leds={leds}
         />
 
         <View style={[styles.controls, { paddingBottom: insets.bottom + spacing[2] }]}>
@@ -139,6 +148,7 @@ export default function BoardSpikeScreen() {
             <SpikeChip label="◀  Previous" selected={false} onPress={() => step(-1)} />
             <SpikeChip label="Next  ▶" selected onPress={() => step(1)} />
             <SpikeChip label="Smooth" selected={smooth} onPress={() => setSmooth((on) => !on)} />
+            <SpikeChip label={`LEDs: ${leds ? 'on' : 'off'}`} selected={leds} onPress={() => setLeds((on) => !on)} />
             <SpikeChip
               label={`Halos: ${halosOverride}`}
               selected={halosOverride !== 'auto'}
@@ -223,6 +233,13 @@ function paletteKeyOf(value: string | undefined): SpikePaletteKey | undefined {
 
 function overrideOf(value: string | undefined): SpikeOverride | undefined {
   return (['auto', 'on', 'off'] as const).find((key) => key === value);
+}
+
+/** Two-state axes take the same on/off words as the three-state ones. */
+function switchOf(value: string | undefined): boolean | undefined {
+  if (value === 'on') return true;
+  if (value === 'off') return false;
+  return undefined;
 }
 
 const styles = StyleSheet.create({

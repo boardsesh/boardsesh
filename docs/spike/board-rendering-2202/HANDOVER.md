@@ -75,9 +75,13 @@ node --import tsx packages/mobile/scripts/spike/build-figures.mjs "$CAPTURES" "$
 cp "$FIGURES"/*.webp docs/spike/board-rendering-2202/boards/
 ```
 
-`capture-boards.sh` walks 7 boards × 4 treatments (~2.5 min) and takes a
-full-screen PNG of each. Override with `BOARDS=... TREATMENTS` — the treatment
-list is the script's remaining arguments.
+`capture-boards.sh` walks 7 boards × 4 treatments — baseline, outward-glow,
+glow-tint, veil-glow, the same four `build-figures.mjs` captions — and takes a
+full-screen PNG of each (~2.5 min). Override with `BOARDS=... TREATMENTS`; the
+treatment list is the script's remaining arguments. The link pins `leds=on`
+rather than leaving that axis to the screen, which keeps whatever it was last
+handed — otherwise one `LEDs: off` chip press before a run shoots the whole
+matrix dark.
 
 `build-figures.mjs` crops each capture to the board and writes the per-board
 sheets, the all-boards sheet and the colour-vision simulation. It finds the board
@@ -155,15 +159,22 @@ vp run test:mobile
 5. no outline loses more than 20 board px² to an open at 3 board px. Stated on
    that spur measure and not on perimeter: a 37-px tail running up a neighbour's
    rim barely moves the perimeter share, because the tail brings perimeter of its
-   own. Kilter Homewall 4135 and 4634 are pinned as known failures —
-   `trimThinNecks` runs on the raster mask and Douglas-Peucker at 1.6 px narrows
-   the neck afterwards, so a limb that kept a core in the mask can lose one in the
-   polygon. Neither placement is lit by the synthesised climb, so neither has ever
-   been painted; the fix, if it is wanted, is to open before simplifying.
+   own. The gate measures the shipped polygons with a plain open — erode, dilate
+   every core back inside the mask, count what never came back — deliberately not
+   the tracer's own order, which grows the seed's core alone and is the stricter
+   of the two. A gate that replays the generator passes whatever the generator
+   emits. Zero outlines trip it on all seven boards, with no exceptions pinned;
+   the worst survivor is Kilter Homewall 4219 at 16 px² of the 20 allowed, and the
+   per-board worsts run 9 / 10 / 12 / 16 / 8 / 13 / 14.
 
-Each gate carries a fixture that must trip it. Four of the five now pass on every
-board, and a check that has never failed is indistinguishable from one that
-cannot fail.
+Each gate carries a fixture that must trip it, including the one branch no board
+reaches — the exemption for a hold too thin to core at all. A check that has never
+failed is indistinguishable from one that cannot fail.
+
+The run line the tracer prints, and now writes into the head of
+`spike-hold-outlines.ts`, counts something different from gate 5: it is what the
+trim took off the raw region, before Douglas-Peucker, and only the 20 px²
+threshold is shared with the gate.
 
 ## 6. Posting to the issue
 
