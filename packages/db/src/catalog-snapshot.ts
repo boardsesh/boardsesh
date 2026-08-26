@@ -51,6 +51,25 @@ export const CATALOG_SNAPSHOT_EXCLUDED_COLUMNS: Partial<Record<CatalogSnapshotTa
 };
 
 /**
+ * Columns exported as a presence marker instead of their value.
+ *
+ * Aurora gates some products and layouts behind a password, and the only thing
+ * Boardsesh ever asks about that column is whether it is set —
+ * `packages/web/app/lib/slug-utils.ts` filters public slugs with
+ * `isNull(layouts.password)` and nothing anywhere reads the value. The artifact
+ * is world-readable, so it carries a fixed sentinel where production has a
+ * password and NULL where it does not: `IS NULL` behaves identically in a
+ * database seeded from it, and the credential never leaves production.
+ */
+export const CATALOG_SNAPSHOT_REDACTED_COLUMNS: Partial<Record<CatalogSnapshotTableName, readonly string[]>> = {
+  board_products: ['password'],
+  board_layouts: ['password'],
+};
+
+/** What a redacted column holds when production has a value there. */
+export const CATALOG_SNAPSHOT_REDACTED_VALUE = 'redacted';
+
+/**
  * For a deferred table, the column carrying a `board_climbs.uuid` that a
  * foreign key enforces. The loader filters on it: a climb updated inside the
  * export's stability window is absent from its layout artifact, and an alias

@@ -15,7 +15,7 @@ vi.mock('../storage/s3', () => ({
   listS3Objects: vi.fn(async () => []),
 }));
 
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -24,6 +24,8 @@ import { createPool } from '@boardsesh/db/client';
 import {
   CATALOG_SNAPSHOT_TABLES,
   CATALOG_SNAPSHOT_EXCLUDED_COLUMNS,
+  CATALOG_SNAPSHOT_REDACTED_COLUMNS,
+  CATALOG_SNAPSHOT_REDACTED_VALUE,
   catalogSnapshotBaseTables,
   catalogSnapshotDeferredTables,
 } from '@boardsesh/db/catalog-snapshot';
@@ -32,6 +34,8 @@ import { db } from '../db/client';
 import { buildCatalogArtifact, catalogColumnsFor, parseArgs, runCatalogExport } from '../scripts/export-board-catalog';
 
 const BUILT_AT = '2026-08-26T07:15:58.102Z';
+// A value that must never appear in a published artifact.
+const GATED_LAYOUT_PASSWORD = 'super-secret-aurora-password';
 
 async function resetCatalogTables(): Promise<void> {
   for (const table of [...catalogSnapshotDeferredTables()].reverse()) {
@@ -45,12 +49,17 @@ async function resetCatalogTables(): Promise<void> {
 
 async function seedMinimalCatalog(): Promise<void> {
   await db.execute(sql`
-    INSERT INTO board_products (board_type, id, name, is_listed, min_count_in_frame, max_count_in_frame)
-    VALUES ('kilter', 1, 'Kilter Board', true, 1, 1)
+    INSERT INTO board_products (board_type, id, name, is_listed, min_count_in_frame, max_count_in_frame, password)
+    VALUES ('kilter', 1, 'Kilter Board', true, 1, 1, NULL)
   `);
   await db.execute(sql`
-    INSERT INTO board_layouts (board_type, id, product_id, name, is_mirrored, is_listed)
-    VALUES ('kilter', 1, 1, 'Original', false, true)
+    INSERT INTO board_layouts (board_type, id, product_id, name, is_mirrored, is_listed, password)
+    VALUES ('kilter', 1, 1, 'Original', false, true, NULL)
+  `);
+  // A password-gated layout, so the redaction below has a real secret to hide.
+  await db.execute(sql`
+    INSERT INTO board_layouts (board_type, id, product_id, name, is_mirrored, is_listed, password)
+    VALUES ('kilter', 2, 1, 'Gated', false, false, ${GATED_LAYOUT_PASSWORD})
   `);
   await db.execute(sql`
     INSERT INTO board_kits (board_type, serial_number, name, is_autoconnect, is_listed, created_at, updated_at)
@@ -145,6 +154,21 @@ describe('board catalogue export', () => {
         expect(betaLinkColumns).not.toContain('created_by_user_id');
         expect(betaLinkColumns).not.toContain('tick_uuid');
         expect(betaLinkColumns).not.toContain('board_id');
+
+        // The artifact is world-readable. `slug-utils.ts` only ever asks whether
+        // a layout has a password (`isNull`), so nullness must survive the export
+        // while the value must not.
+        const layoutPasswords = artifact.prepare('SELECT id, password FROM board_layouts ORDER BY id').all() as {
+          id: number;
+          password: string | null;
+        }[];
+        expect(layoutPasswords).toEqual([
+          { id: 1, password: null },
+          { id: 2, password: CATALOG_SNAPSHOT_REDACTED_VALUE },
+        ]);
+        // Belt and braces: the secret must not appear anywhere in the bytes,
+        // including any index or free page the column list would not reveal.
+        expect(readFileSync(filePath, 'latin1')).not.toContain(GATED_LAYOUT_PASSWORD);
       } finally {
         artifact.close();
       }
@@ -240,5 +264,23 @@ describe('runCatalogExport', () => {
     await runCatalogExport(['--dry-run']);
     expect(uploadToS3).not.toHaveBeenCalled();
     expect(deleteFromS3).not.toHaveBeenCalled();
+  });
+});
+
+describe('catalogue redaction contract', () => {
+  it('redacts every password column the schema exposes', () => {
+    // A new password-bearing catalogue column must be added to the contract, not
+    // silently published. These are the only two the schema has today.
+    expect(CATALOG_SNAPSHOT_REDACTED_COLUMNS).toEqual({
+      board_products: ['password'],
+      board_layouts: ['password'],
+    });
+  });
+
+  it('marks redacted columns on the resolved column list', async () => {
+    const columns = await catalogColumnsFor(createPool(), 'board_layouts');
+    const password = columns.find((column) => column.name === 'password');
+    expect(password?.redacted).toBe(true);
+    expect(columns.find((column) => column.name === 'name')?.redacted).toBe(false);
   });
 });

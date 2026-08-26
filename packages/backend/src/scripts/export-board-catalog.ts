@@ -33,7 +33,7 @@ import { gzipSync } from 'node:zlib';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Sql } from 'postgres';
+import type { Sql, TransactionSql } from 'postgres';
 import { createPool, closePool } from '@boardsesh/db/client';
 import { normalizeRow, type RawRow } from '../graphql/resolvers/sync/row-normalize';
 import { uploadToS3, isS3Configured, deleteFromS3, listS3Objects } from '../storage/s3';
@@ -41,6 +41,8 @@ import { logger } from '../utils/logger';
 import {
   CATALOG_SNAPSHOT_TABLES,
   CATALOG_SNAPSHOT_EXCLUDED_COLUMNS,
+  CATALOG_SNAPSHOT_REDACTED_COLUMNS,
+  CATALOG_SNAPSHOT_REDACTED_VALUE,
   type CatalogSnapshotTableName,
 } from '@boardsesh/db/catalog-snapshot';
 import { publicUrlForKey, snapshotPublicBaseUrl } from './export-board-snapshots';
@@ -97,9 +99,14 @@ function sqliteTypeFor(dataType: string): string {
   }
 }
 
-export type CatalogColumn = { name: string; dataType: string };
+export type CatalogColumn = {
+  name: string;
+  dataType: string;
+  /** Export a presence marker rather than the value. See CATALOG_SNAPSHOT_REDACTED_COLUMNS. */
+  redacted: boolean;
+};
 
-export async function catalogColumnsFor(sqlClient: Sql, tableName: string): Promise<CatalogColumn[]> {
+export async function catalogColumnsFor(sqlClient: Sql | TransactionSql, tableName: string): Promise<CatalogColumn[]> {
   const rows = await sqlClient<{ column_name: string; data_type: string }[]>`
     SELECT column_name, data_type
     FROM information_schema.columns
@@ -110,9 +117,10 @@ export async function catalogColumnsFor(sqlClient: Sql, tableName: string): Prom
     throw new Error(`catalog table ${tableName} has no columns — is the schema migrated?`);
   }
   const excluded = new Set(CATALOG_SNAPSHOT_EXCLUDED_COLUMNS[tableName as CatalogSnapshotTableName] ?? []);
+  const redacted = new Set(CATALOG_SNAPSHOT_REDACTED_COLUMNS[tableName as CatalogSnapshotTableName] ?? []);
   const columns = rows
     .filter((row) => !excluded.has(row.column_name))
-    .map((row) => ({ name: row.column_name, dataType: row.data_type }));
+    .map((row) => ({ name: row.column_name, dataType: row.data_type, redacted: redacted.has(row.column_name) }));
   for (const column of columns) {
     if (!SAFE_IDENTIFIER.test(column.name)) {
       throw new Error(`Refusing to build catalog SELECT with unsafe column identifier: ${column.name}`);
@@ -141,7 +149,7 @@ function toSqliteValue(value: unknown): string | number | null {
 }
 
 async function streamTableIntoSqlite(
-  sqlClient: Sql,
+  tx: TransactionSql,
   db: DatabaseSync,
   tableName: string,
   columns: readonly CatalogColumn[],
@@ -161,8 +169,17 @@ async function streamTableIntoSqlite(
   );
 
   let rowCount = 0;
-  const selectSql = `SELECT ${columnNames.join(', ')} FROM ${tableName}`;
-  for await (const batch of sqlClient.unsafe(selectSql).cursor(2000)) {
+  // A redacted column is read as a presence marker, never as its value — the
+  // CASE runs in Postgres so the secret is never even fetched over the wire.
+  const selectList = columns
+    .map((column) =>
+      column.redacted
+        ? `CASE WHEN ${column.name} IS NULL THEN NULL ELSE '${CATALOG_SNAPSHOT_REDACTED_VALUE}' END AS ${column.name}`
+        : column.name,
+    )
+    .join(', ');
+  const selectSql = `SELECT ${selectList} FROM ${tableName}`;
+  for await (const batch of tx.unsafe(selectSql).cursor(2000)) {
     for (const row of batch as RawRow[]) {
       const normalized = normalizeRow(row);
       insert.run(...columnNames.map((column) => toSqliteValue(normalized[column])));
@@ -185,11 +202,21 @@ export async function buildCatalogArtifact(params: {
   try {
     db.exec(SNAPSHOT_META_DDL);
     db.exec('BEGIN');
-    for (const table of CATALOG_SNAPSHOT_TABLES) {
-      const columns = await catalogColumnsFor(sqlClient, table.name);
-      const rowCount = await streamTableIntoSqlite(sqlClient, db, table.name, columns);
-      tables[table.name] = { rowCount };
-    }
+    // ONE Postgres snapshot for every table. The catalogue's foreign keys point
+    // between the tables being exported, so reading each under its own snapshot
+    // lets an Aurora import that commits mid-export land a child here whose
+    // parent is not — an artifact that only fails much later, when the seeded
+    // image loads it under real constraints. READ ONLY makes the intent explicit
+    // and lets Postgres skip assigning a transaction id. Same rule the
+    // per-layout exporter follows.
+    await sqlClient.begin(async (tx) => {
+      await tx.unsafe('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      for (const table of CATALOG_SNAPSHOT_TABLES) {
+        const columns = await catalogColumnsFor(tx, table.name);
+        const rowCount = await streamTableIntoSqlite(tx, db, table.name, columns);
+        tables[table.name] = { rowCount };
+      }
+    });
 
     const insertMeta = db.prepare(
       'INSERT OR REPLACE INTO snapshot_meta (table_name, row_count, built_at, schema_version, format_version) VALUES (?, ?, ?, ?, ?)',
