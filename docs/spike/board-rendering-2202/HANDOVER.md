@@ -5,9 +5,9 @@ Everything needed to produce a fresh set of review images for
 `spike/board-rendering-dark-2202` branch. Read `README.md` first for what the
 treatments are and why; this file is only the mechanics.
 
-**The spike is a dev screen, not a shipping change.** It is committed with
-`--no-verify` and CI is red on `check:mobile-board-art-network` — see the last
-section.
+**The spike is a dev screen, not a shipping change.** It is gated on
+`__DEV__ || profile?.isTester` and reachable only by deep link, and it lands
+green — commit it normally, never with `--no-verify`.
 
 ---
 
@@ -117,23 +117,53 @@ three write committed TypeScript tables and take a couple of minutes.
 
 ```bash
 vp run spike:hold-outlines    # every hold's silhouette, traced from the art's alpha
-vp run spike:hold-lightness   # art lightness under each ring, per hold
+vp run spike:hold-lightness   # art lightness in the ring's annulus AND inside the silhouette
 vp run spike:led-dots         # which holds have an LED, and where the art already paints one
-vp run spike:oklab-board-art  # contrast-stretched art (Grasshopper only, writes webp assets)
 ```
+
+Run them in that order. `spike:hold-lightness` measures inside the polygons
+`spike:hold-outlines` emits, so re-running the tracer without re-running it
+leaves every silhouette lightness stale against a table that still lines up
+key-for-key.
 
 **Audit the tracer after changing it.** Three defects were shipped once already
 and are invisible unless measured — outlines that ran into the search box and
 traced its straight edge (215/499 on Kilter Homewall), lit holds whose silhouette
 came from a _neighbouring_ hold (31/143 on MoonBoard Masters), and merged blobs
-spanning two holds. All three are zero now. The checks worth re-running, as
-throwaway scripts against `SPIKE_HOLD_OUTLINES`:
+spanning two holds. All three are zero now.
+
+Those checks used to live here as "worth re-running as throwaway scripts", and
+that is how the counts in `README.md` stayed two rounds of fixes out of date.
+They are committed now, in
+`packages/mobile/src/components/board-spike/__tests__/spike-hold-outlines.test.ts`,
+and run against the table in about two seconds:
+
+```bash
+vp run test:mobile
+```
 
 1. every emitted outline contains its own placement point;
 2. no emitted region contains a second placement point;
-3. zero polygons with >10% of perimeter on a search-box edge;
-4. outline count per board versus placement count — a sudden drop means the seed
-   containment got too tight.
+3. zero polygons with more than 10% of perimeter on a search-box edge, and none
+   with four or more axis-aligned runs carrying over 80% of it — that pair is the
+   rejected crop rectangle's signature and no real hold's;
+4. traced outlines per board against placements: 332/332 Grasshopper, 303/303
+   Tension Original, 498/498 TB2 Mirror, 499/499 Kilter Homewall, 476/476 Kilter
+   Original, 140/198 MoonBoard 2016, 112/198 Masters 2019. Pinned in both
+   directions — a drop means the seed containment got too tight, and a jump on
+   MoonBoard means the tracer started finding holds that are not there;
+5. no outline loses more than 20 board px² to an open at 3 board px. Stated on
+   that spur measure and not on perimeter: a 37-px tail running up a neighbour's
+   rim barely moves the perimeter share, because the tail brings perimeter of its
+   own. Kilter Homewall 4135 and 4634 are pinned as known failures —
+   `trimThinNecks` runs on the raster mask and Douglas-Peucker at 1.6 px narrows
+   the neck afterwards, so a limb that kept a core in the mask can lose one in the
+   polygon. Neither placement is lit by the synthesised climb, so neither has ever
+   been painted; the fix, if it is wanted, is to open before simplifying.
+
+Each gate carries a fixture that must trip it. Four of the five now pass on every
+board, and a check that has never failed is indistinguishable from one that
+cannot fail.
 
 ## 6. Posting to the issue
 
@@ -142,7 +172,7 @@ a commit SHA** — GitHub has no API for uploading images to a comment, and a
 branch-relative URL rots. The repo is public so the raw URLs render.
 
 ```bash
-git add -A && git commit --no-verify -m "..." && git push
+git add -A && git commit -m "..." && git push
 SHA=$(git rev-parse HEAD)
 RAW="https://raw.githubusercontent.com/boardsesh/boardsesh/$SHA/docs/spike/board-rendering-2202/boards"
 curl -s -o /dev/null -w "%{http_code}\n" "$RAW/board-grasshopper-master.webp"   # expect 200
@@ -151,16 +181,19 @@ gh issue comment 2202 --repo boardsesh/boardsesh --body-file <file>
 
 ## 7. Known state and traps
 
-- **CI is red and that is expected.** `check:mobile-board-art-network` forbids
-  rendering board art through react-native-svg `<Image href>`, and the desaturate
-  toggle needs the art inside the SVG so an `FeColorMatrix` can act on it.
-  Nothing fetches over the network — the hrefs are the same bundled `file://`
-  paths — but it is the shape the rule exists to stop, so this cannot merge as
-  written. Commits use `--no-verify` by the maintainer's call.
+- **The board-art guard is green, and has to stay green.**
+  `check:mobile-board-art-network` forbids rendering board art through
+  react-native-svg `<Image href>`; the spike drew it that way so an
+  `FeColorMatrix` could desaturate it, and that axis is gone. The art goes
+  through `expo-image` on the same bundled `file://` paths the shipping stack
+  resolves, and react-native-svg is the overlay only. A contrast variant, if one
+  is ever wanted, is a second committed suffix in
+  `scripts/generate-dark-board-art.ts` — not an SVG image layer. Do not commit
+  with `--no-verify`.
 - **`FeGaussianBlur` is broken** in react-native-svg 15.15.5 on Android: a stroke
   through it paints the filter region as a solid rectangle of the stroke colour.
-  `FeColorMatrix` in the same version is fine. The glow falloff is twelve
-  concentric strokes because of this — do not "simplify" it back to a blur.
+  `FeColorMatrix` in the same version renders correctly on the same device. The
+  glow falloff is concentric strokes because of this — do not "simplify" it back to a blur.
 - **Two accessibility systems now coexist, deliberately.** The app already ships
   per-role marker _shapes_ (circle/triangle/square/diamond/octagon, user-
   configurable, in both the SVG and Rust renderers). Those work by changing the

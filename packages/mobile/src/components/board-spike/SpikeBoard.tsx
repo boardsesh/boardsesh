@@ -1,69 +1,62 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Svg, { ClipPath, Defs, FeColorMatrix, Filter, G, Image as SvgImage, Path } from 'react-native-svg';
+import { Image } from 'expo-image';
 import { convertLitUpHoldsStringToMap } from '@boardsesh/board-constants/hold-states';
+import { backgroundImageUri } from '../LayeredClimbImage';
 import { getBoardRenderData } from '../../lib/board-details';
 import { ensureBackgroundsCached, tryGetBackgroundPathsSync } from '../../lib/background-image-cache';
-import { SPIKE_OKLAB_ART, type SpikeArtLevel } from './spike-art';
 import { SpikeBoardOverlay } from './SpikeBoardOverlay';
 import { SPIKE_HOLD_OUTLINES } from './spike-hold-outlines';
-import { polygonPath, splinePath } from './spike-shapes';
 import { boardWantsNeutralHalos, synthesiseSpikeFrames, type SpikeBoardConfig } from './spike-boards';
 import type { HaloScope, SpikeLitHold, SpikeOverride, SpikePaletteKey, SpikeTreatment } from './spike-config';
 
 type SpikeBoardProps = {
   board: SpikeBoardConfig;
   treatment: SpikeTreatment;
-  art: SpikeArtLevel;
   backgroundColor: string;
-  palette: SpikePaletteKey;
-  /** Drain the colour out of the board art, leaving the lit holds as the only hue. */
-  desaturate: boolean;
   /** Curve the traced outlines instead of joining their points straight. */
   smooth: boolean;
+  palette: SpikePaletteKey;
   /** Force the every-hold neutral outline on or off, or leave it to the board. */
   halosOverride: SpikeOverride;
 };
 
 /**
  * Whether this board, under this treatment, draws the neutral outline on unlit
- * holds. A treatment with `haloPolicy: 'never'` is defined without it and is
- * never given one; everything else defers to the board's measured share of
- * low-contrast holds unless the override says otherwise.
+ * holds. The override wins outright; left on `auto`, a treatment with
+ * `haloPolicy: 'never'` keeps the scope it was defined with and everything else
+ * defers to the board's measured share of low-contrast holds.
+ *
+ * The override has to be read FIRST. Reading the policy first made the chip
+ * one-way — it could subtract the casing from a treatment that carried one and
+ * could never add it to a treatment defined without one — and since the casing
+ * became its own chip none of the captured arms carries one, so the control was
+ * inert on every panel it was there to vary.
  */
 function resolveHalos(treatment: SpikeTreatment, board: SpikeBoardConfig, override: SpikeOverride): HaloScope {
-  if ((treatment.haloPolicy ?? 'never') === 'never') return treatment.halos;
   if (override === 'on') return treatment.halos === 'near' ? 'near' : 'all';
   if (override === 'off') return 'none';
+  if ((treatment.haloPolicy ?? 'never') === 'never') return treatment.halos;
   if (treatment.halos === 'near') return 'near';
   return boardWantsNeutralHalos(board) ? 'all' : 'none';
 }
 
 /**
- * The spike's board surface: a solid play field, the board-art layers over it,
- * and one overlay treatment on top.
+ * The spike's board surface: a solid play field, the board art over it, and one
+ * overlay treatment on top.
  *
- * The art is drawn as SVG images rather than `expo-image` layers (which is what
- * the shipping renderer stack uses) for one reason: an SVG `<Filter>` can drain
- * the saturation out of them, and the lit holds can then be redrawn in full
- * colour through a clip of their own silhouettes. That is the "desaturate the
- * unselected holds" idea with no new assets and no per-board preprocessing —
- * bright blue set holds stop competing with lit ones, and the lit ones keep
- * their real colour.
+ * The art goes through `expo-image` on the same bundled `file://` paths the
+ * shipping stack resolves, so the spike adds no assets, no network and no
+ * per-board preprocessing; react-native-svg is the overlay only. Contrast
+ * variants of the art, if they are ever wanted, belong in
+ * `scripts/generate-dark-board-art.ts` as a second committed suffix — that
+ * pipeline already has a `--check` mode and a golden test, and
+ * `background-image-cache.ts` already prefers a sibling when one is bundled.
  *
  * Deliberately does NOT go through BoardImageNative / the Rust renderer: the
  * point is to try overlays the renderer cannot draw yet.
  */
-export function SpikeBoard({
-  board,
-  treatment,
-  art,
-  backgroundColor,
-  palette,
-  desaturate,
-  smooth,
-  halosOverride,
-}: SpikeBoardProps) {
+export function SpikeBoard({ board, treatment, backgroundColor, smooth, palette, halosOverride }: SpikeBoardProps) {
   const renderData = useMemo(
     () =>
       getBoardRenderData({
@@ -131,58 +124,27 @@ export function SpikeBoard({
     return holds;
   }, [board.boardName, renderData, frames]);
 
-  // The lit holds' silhouettes, as one clip region, so the full-colour art can
-  // be punched back through the desaturated stack.
-  const litClipPaths = useMemo(() => {
-    if (!renderData) return [];
-    const outlines = SPIKE_HOLD_OUTLINES[board.key] ?? {};
-    return litHolds
-      .map((hold) => {
-        const points = outlines[hold.id];
-        if (points === undefined || points.length < 6) return null;
-        return smooth ? splinePath(points, hold.cx, hold.cy) : polygonPath(points, hold.cx, hold.cy);
-      })
-      .filter((path): path is string => path !== null);
-  }, [board.key, litHolds, renderData, smooth]);
-
-  // The OkLab-stretched art exists for one board only; every other board falls
-  // back to its shipped art rather than silently rendering nothing.
-  const oklabPaths = art === 'original' ? null : (SPIKE_OKLAB_ART[board.key]?.[art] ?? null);
-  const sources = oklabPaths ?? artPaths.map((path) => ({ uri: `file://${path}` }));
-
   if (!renderData) return <View style={[styles.board, { backgroundColor }]} />;
 
   const { boardWidth, boardHeight } = renderData;
-  const artLayers = sources.map((source, index) => (
-    <SvgImage
-      // Layer order is fixed for a board config and the layers have no state.
-      // eslint-disable-next-line react/no-array-index-key
-      key={`${board.key}-${art}-${index}`}
-      href={source}
-      x={0}
-      y={0}
-      width={boardWidth}
-      height={boardHeight}
-      preserveAspectRatio="none"
-    />
-  ));
 
   return (
     <View style={[styles.board, { backgroundColor, aspectRatio: boardWidth / boardHeight }]}>
-      <Svg width="100%" height="100%" viewBox={`0 0 ${boardWidth} ${boardHeight}`} style={styles.layer}>
-        <Defs>
-          <Filter id="spike-desaturate">
-            <FeColorMatrix type="saturate" values="0" />
-          </Filter>
-          <ClipPath id="spike-lit-holds">
-            {litClipPaths.map((path) => (
-              <Path key={path} d={path} />
-            ))}
-          </ClipPath>
-        </Defs>
-        <G filter={desaturate ? 'url(#spike-desaturate)' : undefined}>{artLayers}</G>
-        {desaturate && litClipPaths.length > 0 && <G clipPath="url(#spike-lit-holds)">{artLayers}</G>}
-      </Svg>
+      {artPaths.map((path) => (
+        <Image
+          key={path}
+          // The same helper the shipping stack uses: a bare `file://` prefix
+          // blanks the board in the browser build, where the path is an http URL.
+          source={{ uri: backgroundImageUri(path) }}
+          style={styles.layer}
+          contentFit="contain"
+          cachePolicy="memory-disk"
+          // The layers are native-resolution art drawn into a full-width board,
+          // so there is nothing to downscale — skip expo-image's main-thread
+          // resample, same as LayeredClimbImage.
+          allowDownscaling={false}
+        />
+      ))}
       <SpikeBoardOverlay
         boardKey={board.key}
         boardWidth={boardWidth}

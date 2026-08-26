@@ -123,6 +123,18 @@ export const SPIKE_BOARDS: readonly SpikeBoardConfig[] = [
 
 export const DEFAULT_SPIKE_BOARD_KEY = 'grasshopper-master';
 
+const SPIKE_BOARD_BY_KEY = new Map(SPIKE_BOARDS.map((board) => [board.key, board]));
+
+/**
+ * The board behind a `boardKey`. The overlay is handed the key (it is what the
+ * generated tables are keyed by) but has to know which *product* it is drawing:
+ * role hues and the stroke-width multiplier are both per board, and Kilter's
+ * hues are not Grasshopper's.
+ */
+export function spikeBoardByKey(key: string): SpikeBoardConfig | undefined {
+  return SPIKE_BOARD_BY_KEY.get(key);
+}
+
 /**
  * Where a synthesised climb puts each role, as fractions of the board box with
  * the origin top-left. A left-trending hand line with a start pair low and a

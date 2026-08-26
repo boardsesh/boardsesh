@@ -14,13 +14,15 @@
  *
  * Per placement: flood-fill the opaque region under the placement centre
  * (bounded to a box around it so a hold that touches its neighbour cannot run
- * away across the board), follow the outer border of that region, then simplify
- * with Douglas-Peucker. Coordinates are emitted as integers relative to the
- * placement centre, so the renderer adds cx/cy and strokes.
+ * away across the board), drop the limbs joined to it only through a thin neck,
+ * follow the outer border of what is left, then simplify with Douglas-Peucker.
+ * Coordinates are emitted as integers relative to the placement centre, so the
+ * renderer adds cx/cy and strokes.
  *
- * Known limits, both visible in the output: a hold whose art touches a
- * neighbour's yields the merged blob, and a placement with no art under it
- * yields nothing and is simply absent from the table. The second is not an edge
+ * Known limits, both visible in the output: where a hold's art touches a
+ * neighbour's, whatever falls on this placement's side of the partition and is
+ * joined by a neck wider than the trim radius stays, and a placement with no art
+ * under it yields nothing and is simply absent from the table. The second is not an edge
  * case on MoonBoard — its placements are a synthetic 11x18 grid, and most cells
  * genuinely have no hold — so consumers must fall back to a ring.
  */
@@ -63,8 +65,45 @@ const MAX_BOX_EDGE_SHARE = 0.1;
 const SIMPLIFY_EPSILON = 1.6;
 /** Outlines shorter than this many pixels of perimeter are noise, not a hold. */
 const MIN_PERIMETER_POINTS = 24;
+/**
+ * How far inside the art a pixel has to sit to count as the hold's core, in
+ * board pixels. A limb that reaches the rest of the mask only through a neck too
+ * thin to hold a pixel this far clear of the art's edge is not part of this
+ * hold — see `trimThinNecks`.
+ */
+const NECK_TRIM_RADIUS = 3;
+/**
+ * Board pixels a trim has to drop before the run reports it. Design review 2's
+ * gate 5 fails an outline that loses more than this to an open at
+ * `NECK_TRIM_RADIUS`, so counting the same thing here makes the run's own line
+ * comparable with the gate.
+ */
+const NOTABLE_TRIM_AREA = 20;
 
 type Point = [number, number];
+
+const ORTHOGONAL: readonly Point[] = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+];
+
+/**
+ * Discs of radius `NECK_TRIM_RADIUS`, as offsets. Testing a disc of background
+ * pixels around each pixel is exactly a Euclidean distance transform thresholded
+ * at the radius, without a chamfer pass's approximation error — at a radius of 3
+ * the error would be most of the decision.
+ */
+const NECK_EROSION_OFFSETS: Point[] = [];
+const NECK_DILATION_OFFSETS: Point[] = [];
+for (let dy = -NECK_TRIM_RADIUS; dy <= NECK_TRIM_RADIUS; dy += 1) {
+  for (let dx = -NECK_TRIM_RADIUS; dx <= NECK_TRIM_RADIUS; dx += 1) {
+    const squared = dx * dx + dy * dy;
+    if (squared < NECK_TRIM_RADIUS * NECK_TRIM_RADIUS) NECK_EROSION_OFFSETS.push([dx, dy]);
+    if (squared <= NECK_TRIM_RADIUS * NECK_TRIM_RADIUS) NECK_DILATION_OFFSETS.push([dx, dy]);
+  }
+}
 
 /** Moore-neighbour border following, clockwise, from the leftmost-topmost filled pixel. */
 function traceBorder(filled: Uint8Array, width: number, height: number, start: Point): Point[] {
@@ -185,6 +224,134 @@ function buildLabelMap(
   return label;
 }
 
+/**
+ * The 4-connected component of `filled` containing `start`, as flat indices.
+ * `visited` is marked for every member, so passing a fresh array in makes it the
+ * component's own mask.
+ */
+function floodComponent(
+  filled: Uint8Array,
+  width: number,
+  height: number,
+  start: number,
+  visited: Uint8Array,
+): number[] {
+  const component: number[] = [start];
+  const stack: number[] = [start];
+  visited[start] = 1;
+  while (stack.length > 0) {
+    const index = stack.pop() as number;
+    const x = index % width;
+    const y = (index - x) / width;
+    for (const [dx, dy] of ORTHOGONAL) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+      const neighbour = ny * width + nx;
+      if (visited[neighbour] === 1 || filled[neighbour] !== 1) continue;
+      visited[neighbour] = 1;
+      component.push(neighbour);
+      stack.push(neighbour);
+    }
+  }
+  return component;
+}
+
+/**
+ * Drop whatever the seed can reach only through a neck too thin to be a hold.
+ *
+ * The partition above is exact where two bolts are the arbiter, and this is the
+ * failure it cannot see: where a small hold's bolt is closer to a strip of a
+ * neighbour's rim than the neighbour's own bolt is, that strip stays 4-connected
+ * to the small hold and the border follower traces it. Kilter Homewall's
+ * STARTING 4628 came out as a numeral 6 — a body on the lit hold plus a 37
+ * board-px tail running up-left along a pale sliver, which the glow arms then
+ * paint across the unlit hold above it. Two more on that board and one on TB2
+ * Mirror.
+ *
+ * Erode to the pixels sitting `NECK_TRIM_RADIUS` clear of the art's edge, grow
+ * every core back over the mask it came from, and keep the part of that the seed
+ * can still reach. A neck thinner than the radius carries no core, so anything
+ * beyond one is cut adrift and dropped; everything else survives.
+ *
+ * The mask is hole-filled first, because the outer border is the only thing this
+ * script emits. Without that, the punched-out bolt hole a placement usually sits
+ * on counts as edge: the erosion eats the rim around it from both sides at once,
+ * and on a small hold with a big hole the whole rim goes, leaving a C the border
+ * follower walks into and out of. Eleven MoonBoard silhouettes came back as
+ * self-crossing polygons that no longer contained their own placement.
+ *
+ * This is not a plain morphological open, which design review S1 ruled out for
+ * breaking thin necks on tension-mirror. Two things stop it being one. A mask
+ * with no core at all comes back untouched — MoonBoard 2016's hold 148 is a
+ * 12x35 rail, and an open would delete the whole hold rather than a limb of it.
+ * And the reach is judged after the growing back, not before: eroding a small
+ * hold at this radius shatters it into several cores that are all the same hold,
+ * so flooding the *cores* from the seed and growing only that one back — the
+ * literal reading of design review 2 change 2 — halved 25 of MoonBoard 2016's
+ * 138 silhouettes and left 49 outlines across three boards no longer containing
+ * their own placement, which is gate 1 of the first review's set.
+ */
+function trimThinNecks(mask: Uint8Array, width: number, height: number, seedIndex: number): Uint8Array {
+  const background = new Uint8Array(mask.length);
+  for (let index = 0; index < mask.length; index += 1) background[index] = mask[index] === 1 ? 0 : 1;
+  const outside = new Uint8Array(mask.length);
+  for (let index = 0; index < mask.length; index += 1) {
+    const x = index % width;
+    const y = (index - x) / width;
+    if (x !== 0 && y !== 0 && x !== width - 1 && y !== height - 1) continue;
+    if (background[index] !== 1 || outside[index] === 1) continue;
+    floodComponent(background, width, height, index, outside);
+  }
+  const solid = new Uint8Array(mask.length);
+  for (let index = 0; index < mask.length; index += 1) solid[index] = outside[index] === 1 ? 0 : 1;
+
+  const core = new Uint8Array(solid.length);
+  let hasCore = false;
+  for (let index = 0; index < solid.length; index += 1) {
+    if (solid[index] !== 1) continue;
+    const x = index % width;
+    const y = (index - x) / width;
+    let clear = true;
+    for (const [dx, dy] of NECK_EROSION_OFFSETS) {
+      const nx = x + dx;
+      const ny = y + dy;
+      // Off the search box counts as background: art cut by the box has been cut
+      // somewhere arbitrary, and an arbitrary cut is not a core.
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height || solid[ny * width + nx] !== 1) {
+        clear = false;
+        break;
+      }
+    }
+    if (!clear) continue;
+    core[index] = 1;
+    hasCore = true;
+  }
+  if (!hasCore) return mask;
+
+  const grown = new Uint8Array(solid.length);
+  for (let index = 0; index < core.length; index += 1) {
+    if (core[index] !== 1) continue;
+    const x = index % width;
+    const y = (index - x) / width;
+    for (const [dx, dy] of NECK_DILATION_OFFSETS) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+      const neighbour = ny * width + nx;
+      if (solid[neighbour] === 1) grown[neighbour] = 1;
+    }
+  }
+  // The bolt itself sitting on art thinner than the radius means this hold has
+  // no body to judge a limb against, so nothing is trimmed rather than trimming
+  // towards whichever lobe happens to be biggest.
+  if (grown[seedIndex] !== 1) return mask;
+
+  const trimmed = new Uint8Array(grown.length);
+  floodComponent(grown, width, height, seedIndex, trimmed);
+  return trimmed;
+}
+
 /** Distance from each placement to its nearest neighbour, used to size the seed disc. */
 function nearestPitch(placements: Array<{ cx: number; cy: number }>): number[] {
   return placements.map((placement, index) => {
@@ -255,6 +422,7 @@ async function traceBoard(boardKey: string, boardName: string, layoutId: number,
   const outlines = new Map<number, number[]>();
   let missing = 0;
   let rejectedBox = 0;
+  let neckTrimmed = 0;
   let pointTotal = 0;
 
   for (const [placementIndex, placement] of holdsData.entries()) {
@@ -310,32 +478,28 @@ async function traceBoard(boardKey: string, boardName: string, layoutId: number,
       continue;
     }
 
+    const seedIndex = seed[1] * localWidth + seed[0];
     const region = new Uint8Array(localWidth * localHeight);
-    const stack: number[] = [seed[1] * localWidth + seed[0]];
-    region[stack[0]] = 1;
+    floodComponent(local, localWidth, localHeight, seedIndex, region);
+
+    const traced = trimThinNecks(region, localWidth, localHeight, seedIndex);
+    let dropped = 0;
+    for (let index = 0; index < region.length; index += 1) {
+      if (region[index] === 1 && traced[index] !== 1) dropped += 1;
+    }
+    if (dropped > NOTABLE_TRIM_AREA) neckTrimmed += 1;
+
+    // Row-major, so the first filled pixel is the topmost-leftmost one — where
+    // the Moore follower has to start.
     let topmost = seed;
-    while (stack.length > 0) {
-      const index = stack.pop() as number;
+    for (let index = 0; index < traced.length; index += 1) {
+      if (traced[index] !== 1) continue;
       const x = index % localWidth;
-      const y = (index - x) / localWidth;
-      if (y < topmost[1] || (y === topmost[1] && x < topmost[0])) topmost = [x, y];
-      for (const [dx, dy] of [
-        [1, 0],
-        [-1, 0],
-        [0, 1],
-        [0, -1],
-      ] as Point[]) {
-        const nx = x + dx;
-        const ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= localWidth || ny >= localHeight) continue;
-        const neighbour = ny * localWidth + nx;
-        if (region[neighbour] === 1 || local[neighbour] !== 1) continue;
-        region[neighbour] = 1;
-        stack.push(neighbour);
-      }
+      topmost = [x, (index - x) / localWidth];
+      break;
     }
 
-    const border = traceBorder(region, localWidth, localHeight, topmost);
+    const border = traceBorder(traced, localWidth, localHeight, topmost);
     if (border.length < MIN_PERIMETER_POINTS) {
       missing += 1;
       continue;
@@ -369,7 +533,8 @@ async function traceBoard(boardKey: string, boardName: string, layoutId: number,
   console.log(
     `[spike] ${boardKey.padEnd(24)} ${outlines.size}/${holdsData.length} traced ` +
       `(${missing} fell back: ${rejectedBox} hit the search box, ` +
-      `${missing - rejectedBox} had no art of their own)`,
+      `${missing - rejectedBox} had no art of their own; ` +
+      `${neckTrimmed} lost more than ${NOTABLE_TRIM_AREA} px² to a thin-necked limb)`,
   );
   return outlines;
 }

@@ -473,10 +473,6 @@ export default defineConfig({
         command: 'node --import tsx scripts/generate-dark-board-art.ts',
         cache: false,
       },
-      'spike:oklab-board-art': {
-        command: 'node --import tsx scripts/spike-oklab-board-art.ts',
-        cache: false,
-      },
       'spike:hold-lightness': {
         command: 'node --import tsx packages/mobile/scripts/spike-hold-lightness.ts',
         cache: false,

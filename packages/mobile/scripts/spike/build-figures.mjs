@@ -1,7 +1,7 @@
 /**
  * Build the #2202 review figures from a directory of device captures.
  *
- *   node --import tsx packages/mobile/scripts/spike/build-figures.mjs <captures-dir> <output-dir>
+ *   node --import tsx packages/mobile/scripts/spike/build-figures.mjs <captures-dir> <output-dir> [field-hex]
  *
  * Captures come from `capture-boards.sh`, one full-screen PNG per
  * board × treatment. This crops each to the board itself (found by scanning for
@@ -24,16 +24,22 @@ const sharp = require('sharp');
 
 const SHOTS = process.argv[2];
 const OUT = process.argv[3];
-if (!SHOTS || !OUT) {
-  console.error('usage: build-figures.mjs <captures-dir> <output-dir>');
+/**
+ * The play field the spike screen paints behind the board — how the crop finds
+ * the board, so it has to be the colour the capture was taken on. Defaults to
+ * the dark field; pass the hex of `SPIKE_BACKGROUNDS` grey, ink or ply to crop
+ * a run captured with `FIELDS=…`.
+ */
+const FIELD_HEX = process.argv[4] ?? '#181225';
+if (!SHOTS || !OUT || !/^#?[0-9a-fA-F]{6}$/.test(FIELD_HEX)) {
+  console.error('usage: build-figures.mjs <captures-dir> <output-dir> [field-hex, default #181225]');
   process.exit(1);
 }
 mkdirSync(OUT, { recursive: true });
 
 const FONT = 'Liberation Sans, DejaVu Sans, sans-serif';
 const INK = '#0C0A11';
-/** The play field the spike screen paints behind the board — how the crop finds the board. */
-const FIELD = [0x18, 0x12, 0x25];
+const FIELD = [0, 2, 4].map((offset) => parseInt(FIELD_HEX.replace('#', '').slice(offset, offset + 2), 16));
 const GAP = 16;
 const escape = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -77,7 +83,6 @@ const BOARDS = [
 
 const TREATMENTS = [
   { key: 'baseline', title: 'Baseline', subtitle: 'What ships today: a fixed circle' },
-  { key: 'traced-ring', title: 'Traced outline', subtitle: "The lit hold's own silhouette, no glow, no fill" },
   { key: 'outward-glow', title: 'Outward glow', subtitle: 'Light off the edge, hold surface left clean' },
   { key: 'glow-tint', title: 'Glow + tint', subtitle: 'Fill for shape, glow for reach, role glyph' },
 ];
@@ -95,7 +100,9 @@ async function boardRect(file) {
       bottom = y;
     }
   }
-  if (top === null) throw new Error(`no board rect found in ${file} — is the play field still ${FIELD.join(',')}?`);
+  if (top === null) {
+    throw new Error(`no ${FIELD_HEX} rows in ${file} — pass the field the capture was taken on as the third argument`);
+  }
   return { left: 0, top, width: info.width, height: bottom - top + 1 };
 }
 
@@ -135,7 +142,13 @@ async function perBoardFigure(board) {
   }
   const meta = await sharp(panels[0]).metadata();
   const labelHeight = TITLE + SUB + 18;
-  const composites = [{ input: header(PANEL * 4 + GAP * 3, board.label, board.note), left: GAP, top: GAP }];
+  const composites = [
+    {
+      input: header(PANEL * TREATMENTS.length + GAP * (TREATMENTS.length - 1), board.label, board.note),
+      left: GAP,
+      top: GAP,
+    },
+  ];
   for (const [index, panel] of panels.entries()) {
     const left = GAP + index * (meta.width + GAP);
     const top = GAP + 96 + GAP;
@@ -148,7 +161,7 @@ async function perBoardFigure(board) {
   }
   await sharp({
     create: {
-      width: GAP + 4 * (meta.width + GAP),
+      width: GAP + TREATMENTS.length * (meta.width + GAP),
       height: GAP + 96 + GAP + labelHeight + 8 + meta.height + GAP,
       channels: 4,
       background: INK,
@@ -182,7 +195,7 @@ async function allBoardsFigure(treatmentKey) {
       input: header(
         COLUMN * BOARDS.length + GAP * (BOARDS.length - 1),
         'Outward glow, every board',
-        'Same synthesised climb, shipped art, dark play field',
+        `Same synthesised climb, shipped art, ${FIELD_HEX} play field`,
       ),
       left: GAP,
       top: GAP,

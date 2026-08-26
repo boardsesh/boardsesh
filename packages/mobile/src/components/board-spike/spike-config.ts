@@ -1,4 +1,5 @@
-import type { HoldState } from '@boardsesh/shared-schema';
+import type { BoardName, HoldState } from '@boardsesh/shared-schema';
+import { HOLD_STATE_MAP, STATE_TO_PRIMARY_CODE } from '@boardsesh/board-constants/hold-states';
 
 /** Which holds get a neutral outline: none, every placement, or only the ones near a lit hold. */
 export type HaloScope = 'none' | 'all' | 'near';
@@ -25,7 +26,6 @@ export type SelectorStyle =
   | 'casing'
   | 'shape-glow'
   | 'shape-glow-out'
-  | 'traced-ring'
   | 'glow-tint'
   | 'tint';
 
@@ -64,33 +64,25 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
     halos: 'none',
     selector: 'ring',
   },
+  // The two candidate arms carry NO casing on unlit holds. They used to, and the
+  // baseline did not, so every comparison between them was a comparison of two
+  // variables: on grasshopper the wall-only mean luminance went 36.2 to 39.3 and
+  // the bright-pixel share 0.50% to 2.32% purely from the casing. `shaped-halos`
+  // below is the casing as its own chip, which is where it belongs.
   {
     key: 'outward-glow',
-    haloPolicy: 'auto',
     chip: 'Outward',
     label: 'Outward glow',
     note: 'The glow is clipped to outside the hold, so the light comes off the edge and the surface stays clean.',
-    halos: 'all',
-    haloShape: 'outline',
-    selector: 'shape-glow-out',
-  },
-  {
-    key: 'traced-ring',
-    chip: 'Outline',
-    label: 'Traced outline',
-    note: "The lit hold's own silhouette in its role colour — no glow, no fill, nothing on unlit holds.",
     halos: 'none',
-    haloShape: 'outline',
-    selector: 'traced-ring',
+    selector: 'shape-glow-out',
   },
   {
     key: 'glow-tint',
     chip: 'Hybrid',
     label: 'Glow + tint',
     note: 'Lightness-normalised fill for shape, a crisp silhouette edge, and an outward glow for reach.',
-    halos: 'all',
-    haloPolicy: 'auto',
-    haloShape: 'outline',
+    halos: 'none',
     selector: 'glow-tint',
   },
   {
@@ -176,22 +168,74 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
 /**
  * Role palettes.
  *
- * `shipped` is HOLD_STATE_MAP's grasshopper displayColor. Measured in OkLab it
- * spans L 0.551 (HAND) to 0.778 (STARTING) — a 23-point lightness spread, which
- * is why the blue hand rings are the first thing to vanish into the board photo.
+ * `shipped` is what the wall in front of you actually lights, resolved per board
+ * out of `HOLD_STATE_MAP` at the board's canonical role code as
+ * `displayColor ?? color` — the same expression `use-native-climb-render.ts:701`
+ * and the web's `worker-manager.ts:328` use. The boards genuinely differ, and
+ * the first pass of this spike drew Grasshopper's set on all seven: Kilter's
+ * HAND is cyan `#00FFFF` where Grasshopper's is blue `#4455FF`, and Kilter
+ * spends on FINISH the magenta Grasshopper spends on FOOT — so a magenta mark
+ * meant two different things depending on which panel you were looking at.
+ *
+ * `grasshopper` pins Grasshopper's set on every board anyway, so the boards can
+ * still be compared to each other with hue held constant.
+ *
  * `equalL` lifts every role to L 0.70 and bisects chroma down to whatever still
- * fits sRGB (HAND keeps 63% of its chroma, FOOT 100%).
+ * fits sRGB (HAND keeps 63% of its chroma, FOOT 100%). It is a comparison chip,
+ * not a proposal: computed correctly it fixes protan HAND/FOOT and creates three
+ * worse collisions, and the role hex is what the app streams to the wall's LEDs.
  */
-export type SpikePaletteKey = 'shipped' | 'equalL';
+export type SpikePaletteKey = 'shipped' | 'grasshopper' | 'equalL';
 
-export const SPIKE_PALETTES: Record<SpikePaletteKey, Record<string, string>> = {
-  shipped: { STARTING: '#00DD00', HAND: '#4455FF', FINISH: '#FF0000', FOOT: '#FF00FF' },
-  equalL: { STARTING: '#00C000', HAND: '#7B96FF', FINISH: '#FF6553', FOOT: '#FE00FE' },
+/** Role colours for one board. Partial: MoonBoard has no FOOT role at all. */
+export type SpikeRolePalette = Partial<Record<HoldState, string>>;
+
+const GRASSHOPPER_ROLE_COLORS: SpikeRolePalette = {
+  STARTING: '#00DD00',
+  HAND: '#4455FF',
+  FINISH: '#FF0000',
+  FOOT: '#FF00FF',
 };
 
+const EQUAL_L_ROLE_COLORS: SpikeRolePalette = {
+  STARTING: '#00C000',
+  HAND: '#7B96FF',
+  FINISH: '#FF6553',
+  FOOT: '#FE00FE',
+};
+
+const boardRoleColorCache = new Map<BoardName, SpikeRolePalette>();
+
+function boardRoleColors(boardName: BoardName): SpikeRolePalette {
+  const cached = boardRoleColorCache.get(boardName);
+  if (cached !== undefined) return cached;
+
+  const stateInfo = HOLD_STATE_MAP[boardName];
+  const resolved: SpikeRolePalette = {};
+  for (const [role, code] of Object.entries(STATE_TO_PRIMARY_CODE[boardName]) as Array<
+    [HoldState, number | undefined]
+  >) {
+    // A board without a role — MoonBoard has no FOOT — simply has no entry, and
+    // the overlay falls back to white for a role it cannot colour.
+    if (code === undefined) continue;
+    const info = stateInfo[code];
+    if (info === undefined) continue;
+    resolved[role] = info.displayColor ?? info.color;
+  }
+  boardRoleColorCache.set(boardName, resolved);
+  return resolved;
+}
+
+export function spikeRolePalette(palette: SpikePaletteKey, boardName: BoardName): SpikeRolePalette {
+  if (palette === 'grasshopper') return GRASSHOPPER_ROLE_COLORS;
+  if (palette === 'equalL') return EQUAL_L_ROLE_COLORS;
+  return boardRoleColors(boardName);
+}
+
 export const SPIKE_PALETTE_LABEL: Record<SpikePaletteKey, string> = {
-  shipped: 'L: shipped',
-  equalL: 'L: equal',
+  shipped: 'Hues: board',
+  grasshopper: 'Hues: grass',
+  equalL: 'Hues: equal L',
 };
 
 /**
@@ -207,7 +251,25 @@ export const SPIKE_BACKGROUNDS = [
 
 export type SpikeBackgroundKey = (typeof SPIKE_BACKGROUNDS)[number]['key'];
 
-/** Neutral-outline and halo geometry, all as fractions of the placement radius. */
+/**
+ * Overlay geometry.
+ *
+ * Every width here is a FRACTION of the placement radius, which is the one
+ * length a board carries with it: constant within a board, and proportional to
+ * its hold pitch. That matters because the boards do not share a coordinate
+ * space — MoonBoard's art box is 650 board px wide against 1080 for the other
+ * five, and both are width-fit to the same screen, so an absolute board-pixel
+ * width renders 1.66x larger there. The fractions are calibrated on Grasshopper
+ * (r 49.091), where each one reproduces the absolute constant it replaced.
+ *
+ * Anything not named `*Fraction` is not one, and documents its own unit at its
+ * own key. `strokeWidthBase` is absolute board pixels because the baseline arm's
+ * job is to draw exactly what `renderer.rs:150` draws — `6.0 * scale_x *
+ * getBoardStrokeWidthMultiplier(board)` — and a control expressed in some other
+ * unit is no longer the thing that ships. `glowNeighbourFloorWidth` is absolute
+ * because it is a floor below which there is no glow left to read at all, which
+ * is a property of the screen rather than of the board's pitch.
+ */
 export const SPIKE_TUNING = {
   /**
    * Placements sit one radius apart on this board, so a neutral ring at the full
@@ -215,15 +277,20 @@ export const SPIKE_TUNING = {
    * cell while still tracing roughly a hold's worth of area.
    */
   haloRadius: 0.58,
-  haloStrokeWidth: 2.6,
+  haloStrokeWidthFraction: 0.053,
   haloOpacity: 0.2,
   /** The `near` scope draws far fewer rings, so it can afford to be more visible. */
   nearHaloOpacity: 0.34,
   /** Centre distance (in placement radii) that counts as "next to a lit hold". */
   nearRadius: 2.3,
   glowRadius: 1.7,
-  /** Renderer base stroke (6.0) times grasshopper's 1.35 board multiplier. */
-  strokeWidth: 6 * 1.35,
+  /**
+   * The renderer's base hold-outline stroke, in board pixels, before the board's
+   * own multiplier. Hardcoding Grasshopper's 1.35 into this drew the control ring
+   * at 8.1 board px on all seven boards, 35% over what the app draws on the six
+   * that have no multiplier.
+   */
+  strokeWidthBase: 6,
   /**
    * Contrast casing: a stroke drawn under the role ring, wide enough to leave a
    * visible edge on both sides of it. Its colour flips at this OkLab lightness —
@@ -234,30 +301,20 @@ export const SPIKE_TUNING = {
   casingOpacity: 0.7,
   casingLightnessThreshold: 0.5,
   /**
-   * Traced silhouettes. First pass used 2.2px at 0.2 opacity and the answer from
-   * review was "that's just the baseline" — a hairline at a fifth opacity, drawn
-   * at board resolution and then scaled down to a phone, is not a visible
-   * treatment. Weight and opacity both up until it reads as a decision.
-   */
-  outlineHaloStrokeWidth: 4,
-  outlineHaloOpacity: 0.55,
-  /**
-   * A dark outline on pale art needs more weight than a light one on dark art to
-   * read as the same strength, because the surrounding play field is dark either
-   * way and a black line has less to separate it from.
-   */
-  outlineHaloDarkOpacity: 0.7,
-  /**
    * Shape-following glow, built out of concentric strokes along the traced
-   * outline from `glowSpreadWidth` down to `glowCoreWidth`.
+   * outline from `glowSpreadFraction` down to `glowCoreFraction`.
    *
    * The obvious implementation — one wide stroke through an `FeGaussianBlur` —
    * does not work: react-native-svg's Android backend paints the filter region
    * as a solid rectangle of the stroke colour instead of blurring it (verified
-   * on device, react-native-svg 15.15.5). `FeColorMatrix` in the same version is
-   * fine, which is what the desaturate toggle uses, so this is a gap in that one
-   * primitive rather than filters being unavailable. Four bands showed visible
-   * rings; twelve on a squared falloff reads as a smooth fade.
+   * on device, react-native-svg 15.15.5). `FeColorMatrix` in the same version
+   * renders correctly on the same device, so this is a gap in that one primitive
+   * rather than filters being unavailable.
+   *
+   * Twelve is the floor, not the count: `solveGlowBands` adds bands wherever the
+   * step between two of them would render wider than `glowStepMaxDevicePx`. On a
+   * boosted MoonBoard hold twelve bands stepped 2 device px and the concentric
+   * arcs were countable in a 3.4x crop.
    */
   glowBandCount: 12,
   /**
@@ -266,10 +323,61 @@ export const SPIKE_TUNING = {
    * ~50px in board space — so lit holds bled into each other and the glow read as
    * a blob rather than as an edge. The outward-only variant doubles whatever this
    * is, since the clip discards the inner half of the stroke.
+   *
+   * 0.43 r and 0.163 r are the 21 and 8 board px this used to be, on Grasshopper.
+   * On MoonBoard they are 12.5 and 4.8 instead of 21 and 8, which is the point:
+   * at 21 board px on a 650-wide board the light reached 35 device px and the
+   * glow stopped tracing the silhouette and read as a plain disc.
    */
-  glowSpreadWidth: 21,
-  glowCoreWidth: 8,
+  glowSpreadFraction: 0.43,
+  glowCoreFraction: 0.163,
   glowPeakOpacity: 0.95,
+  /**
+   * Ceiling on the spread as a multiple of the hold's own SHORT extent. Past
+   * roughly 1.5x the hold's width the glow stops being an outline of anything
+   * and becomes a disc with a chip in the middle — two holds in one climb, 250 px
+   * apart, then carry visibly different marks.
+   */
+  glowHoldExtentCap: 1.2,
+  /**
+   * Neighbour clearance. Two lit holds 14.5 board px apart merge into one
+   * envelope against a combined 42 px of reach, so the glow gives up its outer
+   * reach in proportion to the gap to the nearest LIT silhouette. The lit set is
+   * known at render time, so this needs no baked data.
+   *
+   * Deliberately NOT a Voronoi cell clip: at Kilter Homewall's 3.6 board px
+   * median gutter the midline sits ~1.8 px off the silhouette, and a cell clip
+   * leaves a 2 px rim — which is approximately the traced-outline arm, the one
+   * that visibly loses at glance zoom on that exact board.
+   */
+  glowNeighbourFraction: 0.45,
+  /** Floor on that clearance, in board pixels: below this there is no glow left to read. */
+  glowNeighbourFloorWidth: 8,
+  /**
+   * Cumulative alpha the glow should reach at a given fraction of its full
+   * extent, measured outward from the silhouette edge. Per-band alphas are
+   * solved from this rather than set individually: setting each band's own alpha
+   * on a squared ramp composited to 1.000 all the way out to the core, so the
+   * inner two-fifths of the glow was a flat plateau of saturated role colour and
+   * the falloff only started where the review asked for it to be half gone.
+   */
+  glowFalloffStops: [
+    [0.0, 1.0],
+    [0.15, 0.9],
+    [0.4, 0.42],
+    [0.7, 0.13],
+    [1.0, 0.0],
+  ] as ReadonlyArray<readonly [number, number]>,
+  /**
+   * The one quantity here in device pixels rather than board units, because it is
+   * about the display raster and not about the mark: a step between two bands
+   * finer than this is below the point where the arcs become countable. Board
+   * pixels reach the screen through the viewBox, so the conversion needs a
+   * reference width — 1080, the capture width and the widest surface the app
+   * renders a board at.
+   */
+  glowStepMaxDevicePx: 1.5,
+  glowStepReferenceWidth: 1080,
   /**
    * Size floor. A traced silhouette is the real hold, and on boards like Kilter
    * Homewall the real hold is much smaller than the placement circle the baseline
@@ -288,7 +396,7 @@ export const SPIKE_TUNING = {
   smallHoldMaxBoost: 1.7,
   /** Whole-hold tint: fill opacity over the hold, plus a crisp edge on its outline. */
   tintFillOpacity: 0.55,
-  tintEdgeWidth: 4,
+  tintEdgeWidthFraction: 0.081,
   /**
    * Target OkLab lightness the hold's art is normalised toward before the role
    * colour goes on. Without it the same role hex composites to a different
@@ -299,26 +407,33 @@ export const SPIKE_TUNING = {
    */
   tintNormaliseTarget: 0.588,
   /** Crisp saturated silhouette-exact edges are the thing photographic hold art cannot fake. */
-  tintBandWidth: 3,
-  tintOuterEdgeWidth: 1,
+  tintBandWidthFraction: 0.061,
+  tintOuterEdgeWidthFraction: 0.02,
   /**
    * Two-tone casing for the every-hold outline: a dark pass with a lighter core
    * on top. One unconditional language instead of a per-hold black-or-white
    * classifier, which produced visible salt-and-pepper where neighbouring holds
    * happened to land either side of the threshold.
+   *
+   * The first pass drew this at a 2.2 board px hairline at 0.2 opacity and the
+   * answer from review was "that's just the baseline": a hairline at a fifth
+   * opacity, drawn at board resolution and then scaled down to a phone, is not a
+   * visible treatment. Weight and opacity both up until it reads as a decision,
+   * and the dark pass carries more of both than the light one — the play field is
+   * dark either way, so a dark line has less to separate it from.
    */
-  casingDarkWidth: 3,
+  casingDarkWidthFraction: 0.061,
   casingDarkColor: '#10101A',
   casingDarkOpacity: 0.55,
-  casingLightWidth: 1.25,
+  casingLightWidthFraction: 0.025,
   casingLightColor: '#FFFFFF',
   casingLightOpacity: 0.6,
   /**
    * Role glyphs. Role is carried by hue alone in every treatment here, and under
-   * protanopia HAND #4455FF and FOOT #FF00FF collapse to one colour (7.7 dE).
+   * protanopia HAND #4455FF and FOOT #FF00FF land 3.2 dE00 apart — one colour.
    * A glyph inside the existing footprint adds a second channel — silhouette —
-   * without growing the mark: none / dot / bar / cross. Identical in every arm,
-   * so an experiment measures treatments and not glyph sets.
+   * without growing the mark: bar / bar / ring / X. Drawn in EVERY arm, the
+   * baseline included, so an experiment measures treatments and not glyph sets.
    */
   /**
    * One line width for every accessibility marker on a board, as a fraction of
@@ -328,6 +443,12 @@ export const SPIKE_TUNING = {
    * vocabulary whose weight changes per hold is harder to learn, not easier.
    */
   glyphLineWidthFraction: 0.11,
+  /**
+   * How far the bars run out before the silhouette clip trims them, in placement
+   * radii. Past the hold's own edge on purpose: the clip is what decides the
+   * length, so the bar always spans the whole hold whatever shape it is.
+   */
+  glyphReachRadii: 1.6,
   glyphOpacity: 0.95,
   glyphCoreColor: '#FFFFFF',
   glyphCasingColor: '#0B0B10',
