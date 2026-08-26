@@ -85,11 +85,13 @@ import { OtaUpdateTracker } from '../src/components/analytics/OtaUpdateTracker';
 import { InstallReferrerTracker } from '../src/components/analytics/InstallReferrerTracker';
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
+import { QaTesterGate } from '../src/components/qa/QaTesterGate';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
 import { BottomChromeDebugOverlay } from '../src/components/BottomChromeDebugOverlay';
 import { WindowInsetPublisher } from '../src/hooks/use-window-bottom-inset';
 import { LiveActivityIntentDiagnostics } from '../src/components/LiveActivityIntentDiagnostics';
 import { isBranchSurfingBuild, prepareOtaBranchSurfing } from '../src/lib/legacy-ota-channel-migration';
+import { setOtaBranchSurfingState } from '../src/lib/ota-branch-surfing-state';
 import { getPreference, removePreference, setPreference } from '../src/lib/preference-store';
 // Side-effect import: instantiates the Android-only MemoryTrim native module
 // (expo-modules-core creates modules lazily on first JS access), whose Kotlin
@@ -167,6 +169,14 @@ function OtaBranchControlCenter() {
       cancelled = true;
     };
   }, [branchSurfingBuild]);
+
+  // Publish what we resolved so surfaces outside this subtree (the QA launch
+  // gate, the user drawer) can read it without redoing the work or racing the
+  // migration's reload. Written in an effect, not during render, so a subscriber
+  // is never notified mid-render.
+  useEffect(() => {
+    setOtaBranchSurfingState({ surfingBuild: branchSurfingBuild, ready: migrationComplete });
+  }, [branchSurfingBuild, migrationComplete]);
 
   return branchSurfingBuild && migrationComplete ? <ControlCenter /> : null;
 }
@@ -709,6 +719,24 @@ function RootLayout() {
                                                       runs its OWN reanimated slide (app/user-drawer.tsx).
                                                       gestureEnabled off so the only dismiss is the panel's
                                                       own animated close (backdrop tap / a row). */}
+                                                                      {/* Crowdsourced QA (tester-only). Plain modals: each
+                                                      screen paints its own header so it reads as a
+                                                      self-contained prompt rather than a pushed settings
+                                                      page, and a swipe-dismiss on the picker is a Skip. */}
+                                                                      <Stack.Screen
+                                                                        name="qa/pick"
+                                                                        options={{
+                                                                          presentation: 'modal',
+                                                                          headerShown: false,
+                                                                        }}
+                                                                      />
+                                                                      <Stack.Screen
+                                                                        name="qa/brief"
+                                                                        options={{
+                                                                          presentation: 'modal',
+                                                                          headerShown: false,
+                                                                        }}
+                                                                      />
                                                                       <Stack.Screen
                                                                         name="user-drawer"
                                                                         options={{
@@ -742,6 +770,11 @@ function RootLayout() {
                                                             JS bottom-bar variants. */}
                                                                   <AccessoryOnboardingTip />
                                                                   <OnboardingGate ready={authReady && fontsReady} />
+                                                                  {/* Asks a tester to try a PR preview (or shows what to
+                                                            test on the one already running). No-op for everyone
+                                                            else. Mounted after OnboardingGate so the first-run
+                                                            walkthrough always wins a cold start. */}
+                                                                  <QaTesterGate ready={authReady && fontsReady} />
                                                                   {/* Tester-only diagnostic for the Android-16 edge-to-edge
                                                             touch-dead bug; a root sibling (stays tappable while the
                                                             <Stack> hit-region is frozen). No-op unless built with
