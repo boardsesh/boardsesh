@@ -153,6 +153,13 @@ Create a token at <https://dash.cloudflare.com/profile/api-tokens> scoped to the
   while `wrangler whoami` still succeeds — it reads as a bad token, but it is a
   missing scope.
 
+  In the token editor this is the **left-hand dropdown set to Account**, not
+  Zone, plus the account named under **Account Resources**. Ticking every
+  permission the zone offers cannot supply it — that is exactly how the token
+  ended up without it in 2026-08. Quickest check on an existing token: open its
+  summary, and if every row sits under `boardsesh.com` with no Account resource
+  section, Pages is missing no matter how long the list is.
+
 **Add now for the OpenNext migration (wrangler deploy of packages/web):**
 
 - **Account.Workers Scripts Edit** — deploy the Worker
