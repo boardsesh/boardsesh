@@ -135,6 +135,7 @@ export const schemaSQL = `
 
   DROP TABLE IF EXISTS "board_climb_ratings" CASCADE;
   DROP TABLE IF EXISTS "board_climb_aliases" CASCADE;
+  DROP TABLE IF EXISTS "board_kits" CASCADE;
   DROP TABLE IF EXISTS "board_climb_stats" CASCADE;
   DROP TABLE IF EXISTS "board_climbs" CASCADE;
   DROP TABLE IF EXISTS "board_difficulty_grades" CASCADE;
@@ -407,6 +408,17 @@ export const schemaSQL = `
     "position" integer,
     "name" text,
     PRIMARY KEY ("board_type", "id")
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_kits" (
+    "board_type" text NOT NULL,
+    "serial_number" text NOT NULL,
+    "name" text,
+    "is_autoconnect" boolean NOT NULL,
+    "is_listed" boolean NOT NULL,
+    "created_at" text NOT NULL,
+    "updated_at" text NOT NULL,
+    PRIMARY KEY ("board_type", "serial_number")
   );
 
   CREATE TABLE IF NOT EXISTS "board_products" (

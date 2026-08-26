@@ -1148,6 +1148,65 @@ snapshot path stays healthy this is rarely hot, but any sustained drop in the `m
 (see the failure-rate check above) puts more traffic through the correlated `EXISTS` on every fallback
 page — that's the trigger to prioritize the fix.
 
+## Catalogue artifact (`board-snapshots/v1-catalog`)
+
+A third prefix, published by the same nightly run and read by nobody in the mobile fleet.
+
+The per-layout artifacts carry the climb catalogue. They deliberately do not carry the **hardware
+catalogue** — the t-nut holes, placements, LED positions, hold sets, product sizes, layouts, grade
+scales and attempt enums that every board render and every grade lookup needs. That data is small
+(~30k rows across the six Aurora boards; MoonBoard and Woods geometry lives in
+`@boardsesh/board-constants`, not Postgres), it changes a handful of times a year, and it is
+board-scoped rather than layout-scoped, so it does not fit the per-layout shape at all.
+
+The seeded developer database image needs it, though. That image used to scrape six Aurora APKs and
+run pgloader at build time to get it (issue #4508). Publishing the same rows as one more artifact
+lets the image be built entirely from public, production-derived, nightly-verified files.
+
+|          |                                                                                             |
+| -------- | ------------------------------------------------------------------------------------------- |
+| Script   | `packages/backend/src/scripts/export-board-catalog.ts`                                      |
+| Prefix   | `board-snapshots/v1-catalog` — one gzip artifact + its own `manifest.json`                  |
+| Cadence  | The 07:15 UTC nightly only. Never the 15-minute scan; never a `--board`/`--layout` dispatch |
+| Size     | ~12 MB gzipped (~63 MB on disk), dominated by `board_climb_aliases`                         |
+| Consumer | The seeded developer database image (`packages/db/docker/Dockerfile.dev-db`) — issue #4508  |
+
+Tables, in the order a consumer must load them (foreign keys point backwards):
+
+`board_products`, `board_layouts`, `board_product_sizes`, `board_sets`, `board_placement_roles`,
+`board_holes`, `board_placements`, `board_leds`, `board_product_sizes_layouts_sets`, `board_kits`,
+`board_difficulty_grades`, `board_attempts`, then — after every layout artifact has loaded, because
+their rows reference `board_climbs` — `board_climb_aliases` and `board_beta_links`.
+
+`board_beta_links` drops `created_by_user_id`, `tick_uuid` and `board_id` at export: they are
+per-user links to production rows that mean nothing in another database.
+
+**This prefix has its own manifest on purpose.** It is not an entry in the fleet-facing manifest and
+it does not widen `SNAPSHOT_TABLES`. A shipped binary verifies a downloaded artifact against a
+two-table `snapshot_meta` and counts an unexpected table as an import _failure_; two of those and the
+scope falls back to the paged crawl. Keeping the catalogue in its own prefix means no shipped client
+can ever see it.
+
+```json
+{
+  "formatVersion": 1,
+  "generatedAt": "2026-08-26T07:16:04.221Z",
+  "artifact": {
+    "key": "board-snapshots/v1-catalog/2026-08-26T07-15-58-102Z.db",
+    "url": "https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-catalog/...",
+    "bytes": 12685503,
+    "uncompressedBytes": 63229952,
+    "contentEncoding": "gzip",
+    "builtAt": "2026-08-26T07:15:58.102Z",
+    "schemaVersion": 1,
+    "tables": { "board_holes": { "rowCount": 6405 }, "...": {} }
+  }
+}
+```
+
+Same 14-day prune grace as the other prefixes, and the manifest is written last, so a reader never
+sees a key that is not on S3 yet.
+
 ## Rollout plan
 
 1. **Build configuration**: confirm `EXPO_PUBLIC_SNAPSHOT_BASE_URL` is set to the real Tigris bucket URL
