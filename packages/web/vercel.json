@@ -6,7 +6,7 @@
   "git": { "deploymentEnabled": false },
   "functions": {
     "app/api/internal/board-render/route.ts": {
-      "memory": 3009,
+      "memory": 1769,
       "maxDuration": 30
     }
   },
