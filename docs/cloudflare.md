@@ -118,8 +118,18 @@ needs an edge rate-limit rule, which is not managed here yet.
 
 ### One-time: create the API token
 
-Create ONE token covering both today's zone tooling and the upcoming OpenNext
-deploy, so this setup never has to be repeated:
+Create ONE token covering today's zone tooling, the Pages deploy of
+`app.boardsesh.com`, and the upcoming OpenNext deploy, so this setup never has to
+be repeated.
+
+> **One token, three consumers.** `CLOUDFLARE_API_TOKEN` in the GitHub Production
+> environment is read by `deploy-cloudflare` (zone config), `deploy-app-web`
+> (`wrangler pages deploy`), and later the OpenNext web deploy. **Rotating or
+> re-scoping it for one of them silently breaks the others** — a token carrying
+> only the zone scopes below authenticates fine against the zone and returns
+> `Authentication error [code: 10000]` on `/pages/projects/boardsesh-app`. That
+> exact regression took `app.boardsesh.com` off the deploy train on 2026-08-25.
+> Grant every section below, not just the one you came here for.
 
 **Needed now (zone tooling, `vp run cf:apply`):**
 
@@ -134,6 +144,21 @@ Create a token at <https://dash.cloudflare.com/profile/api-tokens> scoped to the
   so a partially-converged zone is the failure mode, not a silent skip.
 - **Zone.Zone Settings Read** — read the SSL/TLS mode
 - **Zone.Zone Settings Edit** — only if you'll run `--allow-zone-ssl`
+
+**Needed now (Pages deploy of app.boardsesh.com, `deploy-app-web`):**
+
+- **Account.Cloudflare Pages Edit** — `wrangler pages deploy` against the
+  `boardsesh-app` project. Account-scoped, so the token cannot be zone-only.
+  Without it the publish step fails with `Authentication error [code: 10000]`
+  while `wrangler whoami` still succeeds — it reads as a bad token, but it is a
+  missing scope.
+
+  In the token editor this is the **left-hand dropdown set to Account**, not
+  Zone, plus the account named under **Account Resources**. Ticking every
+  permission the zone offers cannot supply it — that is exactly how the token
+  ended up without it in 2026-08. Quickest check on an existing token: open its
+  summary, and if every row sits under `boardsesh.com` with no Account resource
+  section, Pages is missing no matter how long the list is.
 
 **Add now for the OpenNext migration (wrangler deploy of packages/web):**
 
@@ -208,8 +233,45 @@ get_runtime_logs since=6h group_by=route source=["serverless"] environment=produ
 that touch `infra/cloudflare/` or the apply script (and on manual dispatch),
 reading `CLOUDFLARE_API_TOKEN` from the GitHub **Production** environment
 secrets: `gh secret set CLOUDFLARE_API_TOKEN --env Production`. A failing job
-means unapplied drift (often a blocked zone-SSL change) — run the dry-run
-locally to see the plan.
+means unapplied drift — run the dry-run locally to see the plan.
+
+A **blocked** zone-SSL change is the one failure a merge cannot clear: pushes
+deliberately resolve `--allow-zone-ssl` to empty, so `cf:apply` re-plans the same
+change, skips it, and exits non-zero on every subsequent push. Clear it once, by
+hand — either `Actions → Production Deploy → Run workflow` with
+**cloudflare_allow_zone_ssl** ticked, or by setting the mode in the dashboard.
+Before flipping the zone, check that every **proxied** hostname's origin serves a
+publicly-trusted cert for its exact name, since the mode is zone-wide:
+
+```bash
+# Proxied hosts resolve to Cloudflare IPs (104.21.x / 172.67.x); DNS-only hosts
+# resolve straight to the origin and the zone SSL mode does not govern them.
+for H in www ws updates app; do
+  echo "$H: $(dig +short "$H.boardsesh.com" A | tr '\n' ' ')"
+done
+
+# For each proxied host, ask its origin for the cert it would show Cloudflare.
+# Railway's edge selects the cert by SNI, so any Railway hostname reaches the
+# right one — the app name below is not load-bearing, `-servername` is.
+openssl s_client -connect backend-production.up.railway.app:443 \
+  -servername ws.boardsesh.com </dev/null 2>/dev/null |
+  openssl x509 -noout -subject -issuer -dates
+
+# Vercel-backed hosts answer on their CNAME target the same way.
+openssl s_client -connect cname.vercel-dns.com:443 \
+  -servername www.boardsesh.com </dev/null 2>/dev/null |
+  openssl x509 -noout -subject -issuer -dates
+```
+
+`updates.boardsesh.com` is Railway too, so it takes the first form with its own
+`-servername`. `app.boardsesh.com` is Pages — the origin is Cloudflare itself, so
+there is nothing to check.
+
+Measured 2026-08-25: `www` (Vercel), `ws` and `updates` (Railway) are the only
+proxied origins and each serves a Let's Encrypt cert for its exact hostname, so
+`strict` is safe. The apex and `ota.boardsesh.com` are DNS-only and unaffected;
+`*.preview.boardsesh.com` rides a Cloudflare Tunnel, which does not use the
+zone's origin-encryption mode.
 
 ### Rollback
 

@@ -685,6 +685,11 @@ jobs:
           # publish with `--cwd "$RUNNER_TEMP"` so wrangler finds it there.
           cp -R deploy/app-subdomain/functions "$RUNNER_TEMP/functions"
 
+      # Needs Account.Cloudflare Pages Edit on the shared Production-environment
+      # token. It is the same secret deploy-cloudflare uses for the zone, so a
+      # rotation that grants only the zone scopes lands here as
+      # `Authentication error [code: 10000]` while `wrangler whoami` still works.
+      # See the token section of docs/cloudflare.md.
       - name: Publish to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

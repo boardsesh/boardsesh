@@ -49,9 +49,18 @@ const TOKEN_SCOPES = [
   'Zone.Zone Read           — resolve the zone id by name + read zone list',
   'Zone.DNS Edit            — patch the ws.boardsesh.com record proxied flag',
   'Zone.Cache Rules Edit    — create/update the /og/ cache rule',
+  'Zone.WAF Edit            — create/update the two crawler rules',
   'Zone.Zone Settings Read  — read the SSL/TLS mode',
   'Zone.Zone Settings Edit  — ONLY needed with --allow-zone-ssl (to set the zone SSL mode)',
 ];
+
+// Scopes another consumer of the SAME Production-environment CLOUDFLARE_API_TOKEN
+// needs. Printed alongside the list above because a token built from that list
+// ALONE authenticates here and fails with `Authentication error [code: 10000]`
+// there — which reads as a bad credential, not a missing scope, since
+// `wrangler whoami` still succeeds. That regression took app.boardsesh.com off
+// the deploy train on 2026-08-25. See the token section of docs/cloudflare.md.
+const SHARED_TOKEN_SCOPES = ['Account.Cloudflare Pages Edit — wrangler pages deploy (deploy-app-web)'];
 
 export interface CliOptions {
   apply: boolean;
@@ -232,6 +241,8 @@ function printPlan(changes: PlannedChange[]): void {
 function printTokenScopes(): void {
   console.error('[cf-apply] CLOUDFLARE_API_TOKEN is required. Create a token with these scopes on the zone:');
   for (const scope of TOKEN_SCOPES) console.error(`             ${scope}`);
+  console.error('           The same token is shared with other jobs. Keep their scopes on it too:');
+  for (const scope of SHARED_TOKEN_SCOPES) console.error(`             ${scope}`);
   console.error('           https://dash.cloudflare.com/profile/api-tokens');
 }
 
@@ -334,7 +345,7 @@ async function main(): Promise<number> {
 }
 
 // Exported for docs/tests: the module can be imported without running the CLI.
-export { CF_API_BASE, TOKEN_SCOPES, ZONE_NAME };
+export { CF_API_BASE, SHARED_TOKEN_SCOPES, TOKEN_SCOPES, ZONE_NAME };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main()
