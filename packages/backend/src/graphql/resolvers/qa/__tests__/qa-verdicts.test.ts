@@ -96,6 +96,15 @@ const insertProfile = (userId: string, displayName: string) =>
     ON CONFLICT (user_id) DO UPDATE SET display_name = EXCLUDED.display_name
   `);
 
+// A verdict already on the books when the caller files theirs. Seeded straight
+// into the table: the tally is a plain query over qa_verdicts, so who wrote the
+// row and how it got there is exactly the part that must not matter.
+const insertExistingVerdict = (userId: string, verdict: string, headSha: string) =>
+  db.execute(sql`
+    INSERT INTO qa_verdicts (user_id, pr_number, branch, head_sha, verdict, platform, created_at)
+    VALUES (${userId}, 4792, 'pr-4792', ${headSha}, ${verdict}, 'ios', now())
+  `);
+
 const readVerdictRow = async (id: string) => {
   // The timestamps come back as text so the assertions read the stored wall
   // clock exactly, without a driver's Date parsing in the middle.
@@ -336,6 +345,31 @@ describe('submitQaVerdict', () => {
     expect(body).toContain(`<!-- boardsesh-qa-verdict:${verdict.id} -->`);
     expect(body).not.toContain(`${TESTER}@test.com`);
     expect(body).not.toContain(TESTER);
+  });
+
+  it('counts the other verdicts on this head and leaves the caller’s own out', async () => {
+    const OTHER_APPROVER = 'qa-other-approver';
+    const OTHER_DECLINER = 'qa-other-decliner';
+    const OTHER_HEAD_TESTER = 'qa-other-head';
+    await Promise.all([insertUser(OTHER_APPROVER), insertUser(OTHER_DECLINER), insertUser(OTHER_HEAD_TESTER)]);
+    await Promise.all([
+      insertExistingVerdict(OTHER_APPROVER, 'approved', 'abcdef1234567890'),
+      insertExistingVerdict(OTHER_DECLINER, 'declined', 'abcdef1234567890'),
+      // Same PR, superseded head: the PR author cares what the CURRENT revision
+      // scored, so this one must not be counted.
+      insertExistingVerdict(OTHER_HEAD_TESTER, 'approved', '0000000000000000'),
+    ]);
+
+    const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+
+    await vi.waitFor(() => {
+      expect(postVerdictCommentMock).toHaveBeenCalledTimes(1);
+    });
+    const [, body] = postVerdictCommentMock.mock.calls[0];
+    // One line proves three things: both other verdicts counted, the caller's
+    // own row excluded (it would read 2 approved), and the stale head ignored.
+    expect(body).toContain('Other verdicts on this head: 1 approved · 1 declined');
+    expect(body).toContain(`<!-- boardsesh-qa-verdict:${verdict.id} -->`);
   });
 
   it('still returns the verdict when the GitHub mirror fails', async () => {
