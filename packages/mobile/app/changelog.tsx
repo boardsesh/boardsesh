@@ -5,8 +5,6 @@ import { FlashList } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
 import * as Updates from 'expo-updates';
 import * as Application from 'expo-application';
-import { openControlCenter } from '@xprem/control-center';
-import { isPreviewBuild } from '../src/lib/preview-build';
 import { Button } from '../src/components/Button';
 import { Icon } from '../src/components/Icon';
 import { PressableSurface } from '../src/components/PressableSurface';
@@ -225,25 +223,6 @@ const CheckForUpdatesButton = memo(function CheckForUpdatesButton() {
   );
 });
 
-// Visible entry into xprem's official branch picker — open to everyone, not
-// just testers. Shown only on real OTA builds where switching actually works
-// (overrides are inert in dev / Expo Go), the same gate as Check-for-updates, so
-// it never appears where it can't function.
-const TryPreviewButton = memo(function TryPreviewButton() {
-  const { t } = useTranslation('common');
-  if (__DEV__ || !Updates.isEnabled || isPreviewBuild()) return null;
-  return (
-    <Button
-      title={t('mobile.previewChannels.entryTitle')}
-      onPress={openControlCenter}
-      variant="text"
-      size="small"
-      icon="branch"
-      style={styles.checkButton}
-    />
-  );
-});
-
 const keyExtractor = (item: TimelineItem) => (isNativeRelease(item) ? `native-${item.sha}` : `pr-${item.prNumber}`);
 
 export default function ChangelogScreen() {
@@ -287,7 +266,6 @@ export default function ChangelogScreen() {
           <View style={styles.emptyWrap}>
             <CurrentBuildChip />
             <CheckForUpdatesButton />
-            <TryPreviewButton />
             <Text variant="body" color={systemColors.secondaryLabel} style={styles.emptyText}>
               {t('mobile.changelog.empty')}
             </Text>
@@ -317,7 +295,6 @@ export default function ChangelogScreen() {
                 <View style={styles.headerMeta}>
                   <CurrentBuildChip />
                   <CheckForUpdatesButton />
-                  <TryPreviewButton />
                 </View>
               </View>
             }

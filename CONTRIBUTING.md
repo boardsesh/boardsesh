@@ -36,7 +36,7 @@ External contributors: fork the repo, clone your fork, branch, make the change, 
 
 ### Testing a pull request without building anything
 
-Every pull request that touches the mobile app gets its own over-the-air update channel named `pr-<number>`, published automatically when the pull request opens. If you have the `tester` role, you can point a normal App Store or TestFlight build at that channel from inside the app and try the change without compiling anything. Whether the channel will work for a given pull request is shown by the OTA compatibility comment on the pull request: a JavaScript-only change rides the channel, and a native change needs a real build instead. Full steps are in [Path A](#path-a-small-changes-through-the-ota-channel-switcher) below.
+Every pull request that touches the mobile app can get its own over-the-air update branch named `pr-<number>`. Same-repository PRs publish automatically; a fork PR needs a maintainer with repository write access to comment `/ota-preview`. Anyone on a compatible App Store or TestFlight build can select that branch from xprem's blue edge marker without a tester role or a local build. The OTA compatibility comment says whether each platform can receive the change: JavaScript-only changes ride the branch, while native changes need a real build. Full steps are in [Path A](#path-a-small-changes-through-xprem-branch-surfing) below.
 
 ## The vp toolchain
 
@@ -112,7 +112,7 @@ For a small fix you can test your pull request on a regular App Store or TestFli
 To use it:
 
 1. Install a current store or TestFlight build of Boardsesh.
-2. Tap xprem's blue branch marker, or open What's New → Try a preview.
+2. Tap xprem's blue branch marker.
 3. Select the `pr-<number>` branch for the pull request. The app downloads that branch and reloads into it.
 
 To know whether the `pr-<number>` branch will actually work for a pull request, read the OTA compatibility comment it posts. The branch only delivers to a store build when the pull request is JavaScript-only and its native fingerprint matches the store binary. A pull request that changes native code (a new Expo plugin, a native module, an SDK bump) gets a new fingerprint that the store binary can't load, so its branch is skipped and the comment says so. For those, use Path B. The official picker is mounted from `app/_layout.tsx` with `@xprem/control-center`; it is available on compatible production builds without a tester role. Background: [docs/mobile-ota-updates.md](./docs/mobile-ota-updates.md).

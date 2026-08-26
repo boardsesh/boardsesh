@@ -88,12 +88,13 @@ jobs:
 
           # --limit 1000: the gh default is 30, so with 30+ open PRs the unseen ones
           # would read as "not open" and their pr-<n> channels/branches would be
-          # mass-deleted. Fail CLOSED: if we can't list open PRs at all, skip —
-          # otherwise OPEN_PRS is empty and EVERY pr-<number> reads as "not open".
+          # mass-deleted. Fail CLOSED and RED if we can't list open PRs at all —
+          # otherwise OPEN_PRS is empty and EVERY pr-<number> reads as "not open",
+          # while a green run would hide that no cleanup happened.
           OPEN_PR_LIMIT=1000
           if ! OPEN_PRS="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit "$OPEN_PR_LIMIT" --json number --jq '.[].number' | sort -u)"; then
-            echo "::warning::Could not list open PRs — skipping sweep this run."
-            exit 0
+            echo "::error::Could not list open PRs — refusing to sweep without a trustworthy inventory."
+            exit 1
           fi
 
           # If we filled the page, the list is untrustworthy (there may be more open PRs
@@ -137,8 +138,8 @@ jobs:
             -H "Authorization: Bearer $EOO_TOKEN" \
             -H 'Use-Cli-Auth: true' \
             "$BASE_URL/api/apps/$OTA_APP_ID/channels")"; then
-            echo "::warning::Could not list channels from the V3 server — skipping sweep this run."
-            exit 0
+            echo "::error::Could not list channels from the V3 server — refusing to sweep without a trustworthy inventory."
+            exit 1
           fi
           # List branches too — a pr-<n> branch can outlive its channel when a prior
           # delete reaped the channel but the branch delete didn't land.
@@ -146,14 +147,30 @@ jobs:
             -H "Authorization: Bearer $EOO_TOKEN" \
             -H 'Use-Cli-Auth: true' \
             "$BASE_URL/api/apps/$OTA_APP_ID/branches")"; then
-            echo "::warning::Could not list branches from the V3 server — skipping sweep this run."
-            exit 0
+            echo "::error::Could not list branches from the V3 server — refusing to sweep without a trustworthy inventory."
+            exit 1
+          fi
+
+          # A 200 with an error object or changed schema is not an empty inventory.
+          # Validate before filtering so server/API regressions make the scheduled
+          # run red instead of silently retaining every stale preview.
+          if ! printf '%s' "$CHANNELS_JSON" | jq -e \
+            'type == "array" and all(.[]; type == "object" and (.releaseChannelName | type == "string"))' \
+            >/dev/null; then
+            echo "::error::Channel inventory had an unexpected shape — refusing to sweep."
+            exit 1
+          fi
+          if ! printf '%s' "$BRANCHES_JSON" | jq -e \
+            'type == "array" and all(.[]; type == "object" and (.branchName | type == "string"))' \
+            >/dev/null; then
+            echo "::error::Branch inventory had an unexpected shape — refusing to sweep."
+            exit 1
           fi
 
           # Union of pr-<number> names from transitional channels + current branches;
           # production and any non-preview name drop out.
-          PREVIEW_CHANNELS="$(printf '%s' "$CHANNELS_JSON" | jq -r '.[].releaseChannelName' 2>/dev/null | grep -E '^pr-[0-9]+$' || true)"
-          PREVIEW_BRANCHES="$(printf '%s' "$BRANCHES_JSON" | jq -r '.[].branchName' 2>/dev/null | grep -E '^pr-[0-9]+$' || true)"
+          PREVIEW_CHANNELS="$(printf '%s' "$CHANNELS_JSON" | jq -r '.[].releaseChannelName' | grep -E '^pr-[0-9]+$' || true)"
+          PREVIEW_BRANCHES="$(printf '%s' "$BRANCHES_JSON" | jq -r '.[].branchName' | grep -E '^pr-[0-9]+$' || true)"
           PREVIEW_NAMES="$(printf '%s\n%s\n' "$PREVIEW_CHANNELS" "$PREVIEW_BRANCHES" | grep -E '^pr-[0-9]+$' | sort -u || true)"
           echo "Preview channels: ${PREVIEW_CHANNELS:-none}"
           echo "Preview branches: ${PREVIEW_BRANCHES:-none}"
@@ -187,9 +204,9 @@ jobs:
           done < <(printf '%s\n' "$PREVIEW_NAMES")
 
           echo "Sweep complete: attempted=$ATTEMPTED failed=$FAILED."
-          # If we tried to delete something and EVERY delete failed, the sweep reclaimed
-          # nothing — surface it instead of reporting a false green.
-          if [ "$ATTEMPTED" -gt 0 ] && [ "$FAILED" -eq "$ATTEMPTED" ]; then
-            echo "::error::Every preview delete failed ($FAILED/$ATTEMPTED) — reclaimed nothing. Check OTA_ADMIN_* creds / the V3 server."
+          # Any failed deletion needs an operator-visible retry signal; a partial
+          # cleanup is still incomplete and must not leave the scheduled run green.
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED/$ATTEMPTED preview deletes failed. Check OTA_ADMIN_* creds / the V3 server."
             exit 1
           fi

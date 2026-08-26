@@ -829,15 +829,16 @@ EXPO_UPDATES_URL=https://example.test/manifest bunx expo prebuild
    `packages/mobile/src/...` source lines, their Debug IDs match the uploaded OTA maps, and the
    events' native release/dist still identify the installed store binaries rather than the OTA.
 
-## Official branch picker ("Try a preview")
+## Official branch picker
 
 Production/TestFlight builds follow xprem's
 [official Branch Surfing integration](https://mercure-technologies.gitbook.io/xprem/concepts/branch-surfing)
 and mount `ControlCenter` from `@xprem/control-center@3.1.2`. Xprem probes
 `/branch_lists` once per JS session and renders its built-in blue edge marker only when Branch
-Surfing is enabled for the production channel and a compatible branch exists. **What's New → Try a
-preview** calls `openControlCenter()` as a second entry point. The picker is available to every app
-user; it shows xprem's raw branch names such as `pr-4613`.
+Surfing is enabled for the production channel and a compatible branch exists. That official marker
+is the single entry point, so the app never shows a button that can silently do nothing while the
+server feature is off or the binary fell back to EAS. The picker is available to every app user and
+shows xprem's raw branch names such as `pr-4613`.
 
 The native request headers are fixed in `app.config.ts`:
 
@@ -851,14 +852,20 @@ When a tester picks a branch, the official package overrides `xprem-branch`, dow
 update, and reloads. Returning to the build's branch clears that header. Runtime compatibility and
 manifest signing remain enforced by expo-updates.
 
-Old builds may have a native `expo-channel-name` override and an AsyncStorage mirror under
-`dev_ota_channel_override`. On the first production launch after this migration, Boardsesh clears
-both before mounting `ControlCenter`. The migration deliberately skips EAS preview builds, whose
-separate tester-only `BranchSwitcherScreen` remains available under More → Preview Build.
+Old builds may have a native `expo-channel-name` override and a best-effort AsyncStorage mirror under
+`dev_ota_channel_override`. On the first launch in the fingerprint cohort carrying the required
+Branch Surfing headers, Boardsesh clears the native override unconditionally, removes the mirror, persists a
+dedicated migration-complete marker, and reloads before mounting `ControlCenter`. The marker matters:
+the mirror can be absent even when the native override exists, while later launches must preserve
+xprem's own selected branch. A failed read/clear/write leaves the picker disabled and retries later.
+EAS preview builds skip this migration; their separate tester-only `BranchSwitcherScreen` remains
+available under More → Preview Build.
 
-The retired custom channel switcher, GraphQL GitHub proxy, preview deep links, web QR page, and
-Android `/preview` intent filter were removed. Sentry crash tools now live at More → Development →
-Sentry Diagnostics for tester accounts.
+The retired custom channel switcher, GraphQL GitHub proxy, preview route, and web QR page were
+removed. The Android `/preview` intent filter remains only as a compatibility ingress, so existing
+`/preview/pr-N` links still land safely on What's New, including after login; branch selection happens
+only through xprem's marker. Sentry crash tools now live at More → Development → Sentry
+Diagnostics for tester accounts.
 
 Telemetry keeps `ota_channel=production` and reads the selected branch from
 `Updates.manifest.extra.branch`, recording it as `branch` on the OTA status event and `ota_branch`
@@ -871,11 +878,14 @@ Every PR with React Native changes can publish its JS bundle to its own self-hos
 above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.yml` (sweep:
 `mobile-ota-preview-sweep.yml`).
 
-- **Publish only.** For each compatible platform the wrapper runs
-  `eoas publish --branch pr-<number>`. The production channel stays baked in app config and no
-  same-named channel or map job is created. Xprem's server exposes the branch through `/branch_lists`
-  when it matches the production channel's `pr-*` surfing pattern and the running binary's exact
-  runtimeVersion/platform.
+- **Reconcile, then publish.** Every same-repository PR synchronization runs, even after the last
+  mobile file leaves the diff. A no-longer-mobile revision removes its preview. A mobile revision
+  first deletes the mutable `pr-<number>` branch, then runs `eoas publish --branch pr-<number>` for
+  each compatible platform. That reset prevents an older compatible update from remaining surfable
+  when a newer commit is native-only on one or both platforms. The production channel stays baked in
+  app config and no same-named channel or map job is created. Xprem exposes the branch through
+  `/branch_lists` when it matches the production channel's `pr-*` surfing pattern and the running
+  binary's exact runtimeVersion/platform.
 - **Source maps stay local to the runner.** The shared publisher generates external maps for these
   exports, but the preview workflow intentionally has no `SENTRY_AUTH_TOKEN` and never uploads them.
   It runs PR-authored code, so granting a Sentry upload credential would cross the preview security
@@ -884,47 +894,54 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   that platform is **skipped** — `vp run check:mobile-ota-compat` (the same engine as
   `mobile-ota-check.yml`) gates each platform, and the PR comment says so. The env is held
   byte-identical to the native builds + production publish by `scripts/mobile-ci-env-parity.test.ts`.
-- **Who can publish (security).** The publish uses the app-scoped **`EOO_TOKEN`**, which lives in the
-  gated **`ota-preview`** environment. Dashboard admin credentials (`OTA_ADMIN_EMAIL` +
+- **Who can publish (security).** The publish uses the app-scoped **`EOO_TOKEN`**, which is scoped to
+  the **`ota-preview`** environment. Dashboard admin credentials (`OTA_ADMIN_EMAIL` +
   `OTA_ADMIN_PASSWORD`) live in a SEPARATE **`ota-preview-unattended`** environment and are used only
   by trusted-base cleanup jobs. The publish job runs
   PR-author code (`app.config.ts` calls `execSync`; workspace postinstall) with `EOO_TOKEN` in scope
   but never the admin creds. The boundary that protects `production`:
-  - **Forks get NO secrets** on `pull_request` (we never use `pull_request_target`), so a fork can't
-    publish or exfiltrate the token regardless of what it edits. This is the hard boundary for
-    external contributors.
-  - **Fork / on-demand previews** run only from a maintainer **`/ota-preview` comment**
-    (`author_association` OWNER/MEMBER/COLLABORATOR) or `workflow_dispatch`. Those events run the
-    **default-branch (main)** copy of the workflow, so their maintainer gate is not PR-editable; the
-    publish then waits on the `ota-preview` environment. To make that path discoverable, a fork PR now
-    gets an **auto-posted nudge**: the skipped fork run uploads a `mobile-ota-fork-prompt` artifact
-    with the PR number, and the companion `mobile-ota-preview-prompt.yml` (`workflow_run`, base-repo
-    context so it can comment on forks) posts a sticky "a maintainer can `/ota-preview`" comment. That
-    file only comments — it holds no OTA secret and never checks out fork code — so the boundary above
-    is unchanged; `/ota-preview` still does the actual publish. The nudge is removed once a real
-    preview is published.
+  - **Forks get NO secrets** in the publisher's `pull_request` job, so a fork cannot publish or
+    exfiltrate the token regardless of what it edits. This is the hard boundary for external
+    contributors. A separate `pull_request_target` workflow handles metadata and cleanup only: it
+    uses the trusted default-branch definition, checks out trusted main explicitly, and never runs
+    fork code or holds `EOO_TOKEN`.
+  - **Fork / on-demand previews** run only from a **`/ota-preview` comment** whose author currently
+    has `write`, `maintain`, or `admin` repository permission, or from `workflow_dispatch`. A broad
+    `author_association: COLLABORATOR` label is not enough. Those events run the **default-branch
+    (main)** copy of the workflow, so the permission gate is not PR-editable. An accepted comment
+    dispatches a trusted default-branch run into the per-PR lifecycle lane; rejected comments never
+    enter that lane or evict pending reconciliation. To make that path discoverable,
+    `mobile-ota-preview-prompt.yml` reacts directly to trusted `pull_request_target`
+    metadata, verifies the PR is a fork, and reads its current file list. It removes an older fork
+    preview before posting a sticky "a maintainer can `/ota-preview`" comment; on close or removal of
+    the last mobile diff it deletes the branch instead. An Actions-created deployment keyed by the
+    full head SHA prevents a delayed follow-up from deleting a preview a maintainer just published;
+    contributor-authored marker comments are never trusted as state. These trusted-base actions never
+    run fork code; `/ota-preview` still performs the actual publish.
   - **Same-repo collaborators are trusted.** For `pull_request`, GitHub runs the PR's **own** copy of
-    the workflow with repo secrets. Any same-repo PR touching the relevant paths auto-publishes; the
-    **`ota-preview` environment** reviewer gate (if required reviewers are configured) is the human
-    checkpoint — not a hard wall against a malicious insider, who already holds the repo's secrets via
-    other workflows. `^pr-[0-9]+$` guards every branch mutation (defense-in-depth).
+    the workflow with repo secrets. Any same-repo PR touching the relevant paths auto-publishes.
+    Environment reviewers can add defense-in-depth, but correctness does not assume they are
+    configured. A malicious insider already holds the repo's secrets through other workflows.
+    `^pr-[0-9]+$` guards every branch mutation (defense-in-depth).
   - **Hardening (optional).** The admin-cred split is already done: `OTA_ADMIN_EMAIL` +
     `OTA_ADMIN_PASSWORD` live only in **`ota-preview-unattended`**, whose jobs check out the trusted
     base and carry no required reviewers, so PR-author code never runs with the admin creds. The only
     residual hardening concerns **`EOO_TOKEN`**: it's currently also a plain repo secret (the
     production publish on `main` needs it), which any same-repo PR workflow can read. For hard
-    same-repo enforcement, make `EOO_TOKEN` environment-scoped instead — hold it on `ota-preview` (and
-    on the `main` production environment) and drop the repo-level copy, so a PR can't reach it without
-    the `ota-preview` gate. Production channel mapping stays a one-time dashboard action, so no admin
-    creds ever touch `main`.
+    same-repo enforcement, keep `EOO_TOKEN` only on `ota-preview` and the `main` production
+    environment, drop the repo-level copy, and configure required reviewers on `ota-preview`.
+    Production channel mapping stays a one-time dashboard action, so no admin creds ever touch
+    `main`.
 - **Readiness signal.** Each publish posts a sticky PR comment (branch name + picker steps) and a
   GitHub **Deployment** to the `pr-preview` environment so the PR shows a green "ready" marker; the
   cleanup marks it inactive on close.
-- **Cleanup + storage.** On PR close the `pr-<number>` branch is deleted via
-  `scripts/ota-preview-cleanup.ts delete --branch pr-<number>`, and a daily sweep reaps preview
-  branches whose PR is no longer open (the backstop for fork closes, which get no secrets). During
-  migration the helper first deletes a same-named legacy channel when present. Server-side branch
-  deletion is the **primary** garbage collector. The S3 bytes are the
+- **Cleanup + storage.** The per-PR concurrency lane serializes reset/publish/close so a late upload
+  cannot recreate a branch after cleanup. On PR close, or whenever the current diff no longer affects
+  mobile, `pr-<number>` is deleted via `scripts/ota-preview-cleanup.ts delete --branch pr-<number>`.
+  The trusted fork follow-up performs the same reconciliation for fork pushes and closes. A daily
+  sweep reaps preview branches whose PR is no longer open and fails red on an unavailable or
+  malformed inventory. During migration the helper first deletes a same-named legacy channel when
+  present. Server-side branch deletion is the **primary** garbage collector. The S3 bytes are the
   orphan backstop: V3 keys updates as `{appId}/{branch}/{runtimeVersion}/{timestamp}/…`, so the
   bucket lifecycle rule is scoped to the appId-scoped prefix
   **`007e6fd7-f200-448c-9449-8d48ba5d51fc/pr-`** — it ends with the workflow's branch prefix `pr-`,

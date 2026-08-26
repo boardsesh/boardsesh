@@ -3,6 +3,7 @@ import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { reportHandledError } from '../lib/error-reporting';
+import { isLegacyPreviewLink } from '../lib/legacy-preview-link';
 import { useAuth } from './auth-provider';
 
 // Stash for a join that arrived before the user was signed in. The auth gate
@@ -10,6 +11,7 @@ import { useAuth } from './auth-provider';
 // swallows the deep link's intended route, so we persist the target sessionId
 // and replay it once auth flips to authenticated.
 const PENDING_JOIN_KEY = 'boardsesh_pending_join_session_id';
+const PENDING_LEGACY_PREVIEW_KEY = 'boardsesh_pending_legacy_preview';
 
 // Loose UUID-ish guard: 8-4-4-4-12 hex, the shape our session ids take. Rejects
 // obvious garbage (`http`, `..`, empty) before we push a route that would just
@@ -111,6 +113,23 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
     [navigateToJoin],
   );
 
+  const navigateToLegacyPreviewDestination = useCallback(() => {
+    router.navigate('/changelog');
+  }, [router]);
+
+  const handleLegacyPreview = useCallback(async () => {
+    if (isAuthenticatedRef.current) {
+      navigateToLegacyPreviewDestination();
+      return;
+    }
+    try {
+      await AsyncStorage.setItem(PENDING_LEGACY_PREVIEW_KEY, '1');
+    } catch (error) {
+      if (__DEV__) console.warn('[deep-link] failed to stash pending legacy preview', error);
+      reportHandledError(error, { tags: { source: 'deep-link', op: 'stash-pending-legacy-preview' } });
+    }
+  }, [navigateToLegacyPreviewDestination]);
+
   const handleUrl = useCallback(
     (url: string | null) => {
       if (!url) return;
@@ -119,8 +138,9 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
         void handleSessionId(sessionId);
         return;
       }
+      if (isLegacyPreviewLink(url)) void handleLegacyPreview();
     },
-    [handleSessionId],
+    [handleLegacyPreview, handleSessionId],
   );
 
   // Cold start + warm links.
@@ -159,6 +179,29 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [isAuthenticated, navigateToJoin]);
+
+  // Preserve retired /preview/pr-N links through the auth gate. The original
+  // route no longer exists, so replay the safe What's New destination after
+  // login; xprem's official edge marker is globally available there when the
+  // server allows Branch Surfing.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const pendingLegacyPreview = await AsyncStorage.getItem(PENDING_LEGACY_PREVIEW_KEY);
+        if (cancelled || pendingLegacyPreview !== '1') return;
+        await AsyncStorage.removeItem(PENDING_LEGACY_PREVIEW_KEY);
+        if (!cancelled) navigateToLegacyPreviewDestination();
+      } catch (error) {
+        if (__DEV__) console.warn('[deep-link] failed to consume pending legacy preview', error);
+        reportHandledError(error, { tags: { source: 'deep-link', op: 'consume-pending-legacy-preview' } });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, navigateToLegacyPreviewDestination]);
 
   return <>{children}</>;
 }

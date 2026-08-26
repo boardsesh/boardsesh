@@ -187,6 +187,20 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
     expect(appConfig).not.toContain('EXPO_UPDATES_CHANNEL');
   });
 
+  it('keeps retired Android preview links as a compatibility ingress', () => {
+    const appConfig = readFileSync(resolve(REPO_ROOT, 'packages/mobile/app.config.ts'), 'utf8');
+    expect(appConfig).toContain("host: 'www.boardsesh.com', pathPrefix: '/preview'");
+    expect(appConfig).toContain("host: 'boardsesh.com', pathPrefix: '/preview'");
+  });
+
+  it('preserves the legacy channel env when resolving frozen release anchors', () => {
+    // The backport workflow checks out the old release anchor before resolving
+    // its fingerprint. Those app.config.ts versions only emit
+    // expo-channel-name when this variable is present. Current app.config.ts
+    // ignores it, so keeping it here is safe for both generations.
+    expect(workflowEnvValue(readWorkflow(OTA_BACKPORT), 'EXPO_UPDATES_CHANNEL')).toBe('production');
+  });
+
   it('gates each native build on its platform fingerprint (resolve + per-platform tag)', () => {
     // The gate resolves the runtimeVersion fingerprint and skips the native build
     // when a fingerprint-<platform>-<hash> tag already exists; the build records
@@ -236,9 +250,18 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
     const automaticFingerprintWorkflows = [NATIVE_IOS, NATIVE_ANDROID, OTA, OTA_CHECK, OTA_PREVIEW, ANDROID_PR, IOS_PR];
     for (const name of automaticFingerprintWorkflows) {
       const source = readWorkflow(name);
-      expect(source, `${name} must react to root patchedDependencies edits`).toContain("- 'package.json'");
-      expect(source, `${name} must react to isolated-linker lock changes`).toContain("- 'bun.lock'");
-      expect(source, `${name} must react to native patch body changes`).toContain("- 'patches/**'");
+      if (name === OTA_PREVIEW) {
+        // Preview runs on every PR synchronization so it can delete a stale
+        // branch when the last mobile diff disappears. Its in-job classifier,
+        // rather than a trigger paths filter, must retain the fingerprint inputs.
+        expect(source, `${name} must react to root patchedDependencies edits`).toContain("path === 'package.json'");
+        expect(source, `${name} must react to isolated-linker lock changes`).toContain("path === 'bun.lock'");
+        expect(source, `${name} must react to native patch body changes`).toContain("path.startsWith('patches/')");
+      } else {
+        expect(source, `${name} must react to root patchedDependencies edits`).toContain("- 'package.json'");
+        expect(source, `${name} must react to isolated-linker lock changes`).toContain("- 'bun.lock'");
+        expect(source, `${name} must react to native patch body changes`).toContain("- 'patches/**'");
+      }
     }
 
     expect(readWorkflow(OTA_CHECK), 'OTA compatibility must react to fingerprint config edits').toContain(
@@ -365,8 +388,109 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
 // the cleanup boundary (the branch name's prefix must equal the S3 lifecycle
 // prefix, or previews never expire).
 const OTA_PREVIEW_SWEEP = 'mobile-ota-preview-sweep.yml';
+const OTA_PREVIEW_PROMPT = 'mobile-ota-preview-prompt.yml';
 
 describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
+  it('runs fork reconciliation from trusted pull_request_target metadata only', () => {
+    const prompt = readWorkflow(OTA_PREVIEW_PROMPT);
+    expect(prompt).toMatch(/^\s+pull_request_target:/m);
+    expect(prompt).not.toMatch(/^\s+workflow_run:/m);
+    expect(prompt).not.toContain('actions/download-artifact');
+    expect(prompt).not.toContain('actions/upload-artifact');
+    expect(prompt).toContain('ref: ${{ github.event.repository.default_branch }}');
+    expect(prompt).not.toContain('ref: ${{ github.event.pull_request.head.sha }}');
+  });
+
+  it('reconciles every PR revision in one per-PR lifecycle lane', () => {
+    const preview = readWorkflow(OTA_PREVIEW);
+    const triggerBlock = preview.match(/^on:[\s\S]*?^permissions:/m)?.[0] ?? '';
+
+    // A paths filter would suppress the synchronization that removes the final
+    // mobile file, leaving the previous preview live indefinitely.
+    expect(triggerBlock).not.toMatch(/^\s+paths:/m);
+    expect(preview).toContain('github.paginate(github.rest.pulls.listFiles');
+    expect(preview).toContain("mobileChanges ? 'publish' : 'cleanup'");
+    expect(preview).toContain('mobile-ota-preview-lifecycle-${{');
+    expect(preview).toContain("github.event.comment.body == '/ota-preview'");
+    expect(preview).toContain('github.run_id }}');
+    expect(preview).not.toMatch(/^\s*cancel-in-progress:\s*true$/m);
+    expect(readWorkflow(OTA_PREVIEW_PROMPT)).not.toMatch(/^\s*cancel-in-progress:\s*true$/m);
+    expect(preview).not.toContain('mobile-ota-preview-publish-');
+    expect(preview).not.toContain('mobile-ota-preview-cleanup-');
+  });
+
+  it('resets a mutable preview branch before publishing the current compatible platforms', () => {
+    const preview = readWorkflow(OTA_PREVIEW);
+    const resetOffset = preview.indexOf('\n  reset:');
+    const publishOffset = preview.indexOf('\n  publish:');
+
+    expect(resetOffset).toBeGreaterThan(0);
+    expect(publishOffset).toBeGreaterThan(resetOffset);
+    expect(preview).toMatch(/^  publish:\n\s+needs: \[gate, reset\]/m);
+    expect(preview).toContain("['legacy channel', `/api/apps/${appId}/channels/${encoded}`]");
+    expect(preview).toContain("['branch', `/api/apps/${appId}/branches/${encoded}`]");
+  });
+
+  it('authorizes comments before dispatching them into the trusted PR lifecycle lane', () => {
+    const preview = readWorkflow(OTA_PREVIEW);
+    expect(preview).toContain('github.rest.repos.getCollaboratorPermissionLevel');
+    expect(preview).toContain("['admin', 'maintain', 'write'].includes(permission.permission)");
+    expect(preview).not.toContain('context.payload.comment.author_association');
+    expect(preview).toContain("const isCommand = body === '/ota-preview';");
+    expect(preview).toContain("const body = context.payload.comment.body || '';");
+    expect(preview).toContain('github.rest.actions.createWorkflowDispatch');
+    expect(preview).toContain("workflow_id: 'mobile-ota-preview.yml'");
+    expect(preview).toContain('ref: context.payload.repository.default_branch');
+    expect(preview).toContain('core.notice(`Authorized /ota-preview for PR #${prNumber}; queued trusted dispatch.`)');
+    expect((preview.match(/group: mobile-ota-preview-mutation-/g) ?? []).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('reconciles trusted fork metadata from authoritative full-SHA deployment state', () => {
+    const prompt = readWorkflow(OTA_PREVIEW_PROMPT);
+    const preview = readWorkflow(OTA_PREVIEW);
+    expect(prompt).toContain('if: github.event.pull_request.head.repo.full_name != github.repository');
+    expect(prompt).toContain("core.setOutput('head_sha', pr.head.sha)");
+    expect(prompt).toContain('github.paginate(github.rest.pulls.listFiles');
+    expect(prompt).toContain('ref: ${{ github.event.repository.default_branch }}');
+    expect(prompt).toContain('bun scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"');
+    expect(prompt).toContain('group: mobile-ota-preview-mutation-${{ needs.inspect.outputs.pr_number }}');
+
+    const currentHeadCheck = prompt.indexOf('Check whether this head is already reconciled');
+    const deletePrevious = prompt.indexOf('Remove previous fork preview revision');
+    expect(currentHeadCheck).toBeGreaterThan(0);
+    expect(deletePrevious).toBeGreaterThan(currentHeadCheck);
+    expect(prompt).toContain("if: steps.published.outputs.current != 'true'");
+    expect(prompt).toContain('deployment.ref === process.env.HEAD_SHA');
+    expect(prompt).toContain("deployment.creator?.login === 'github-actions[bot]'");
+    expect(prompt).toContain('github.rest.repos.listDeploymentStatuses');
+    expect(preview).toContain('Finalize authoritative deployment state');
+    expect(preview).toContain('GitHub did not return the authoritative preview deployment id.');
+    expect(preview).not.toContain('Deployment is a visibility nicety');
+    expect(preview).toContain("comment.user?.login === 'github-actions[bot]'");
+    expect(prompt).toContain("comment.user?.login === 'github-actions[bot]'");
+  });
+
+  it('reconciles sticky comments and deployments when a preview becomes pending or removed', () => {
+    const preview = readWorkflow(OTA_PREVIEW);
+    const prompt = readWorkflow(OTA_PREVIEW_PROMPT);
+    expect(preview).toContain("const promptMarker = '<!-- mobile-ota-preview-prompt -->';");
+    expect(preview).toContain('candidate.description === `OTA preview ${branch}`');
+    expect(preview).toContain("const reasonText = reason === 'closed'");
+    expect(prompt).toContain('candidate.description === `OTA preview ${branch}`');
+    expect(prompt).toContain('waiting for a maintainer publish');
+    expect(prompt).toContain('this fork PR no longer changes mobile');
+  });
+
+  it('fails the scheduled sweep on unavailable or malformed inventories', () => {
+    const sweep = readWorkflow(OTA_PREVIEW_SWEEP);
+    expect(sweep).toContain('Could not list open PRs — refusing to sweep');
+    expect(sweep).toContain('Could not list channels from the V3 server — refusing to sweep');
+    expect(sweep).toContain('Could not list branches from the V3 server — refusing to sweep');
+    expect(sweep).toContain('Channel inventory had an unexpected shape — refusing to sweep');
+    expect(sweep).toContain('Branch inventory had an unexpected shape — refusing to sweep');
+    expect(sweep).toMatch(/Could not list open PRs[^\n]*\n\s*exit 1/);
+  });
+
   it('publishes the preview to a pr-<number> branch, never production', () => {
     const preview = readWorkflow(OTA_PREVIEW);
     expect(preview).toMatch(/--channel "\$BRANCH" --platform ios/);
@@ -451,9 +575,9 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     expect(preview).not.toMatch(/^\s*pull_request_target:/m);
   });
 
-  it('gates the token-bearing publish behind the ota-preview environment', () => {
-    // The publish job runs PR-author code with EOO_TOKEN, so it must sit in a
-    // protected environment (configured with required reviewers) — not run free.
+  it('scopes the token-bearing publish to the ota-preview environment', () => {
+    // The publish job runs PR-author code with EOO_TOKEN, so the secret stays
+    // environment-scoped. Fork authorization is enforced separately above.
     const preview = readWorkflow(OTA_PREVIEW);
     expect(preview).toMatch(/^\s+environment:\s*ota-preview\s*$/m);
   });

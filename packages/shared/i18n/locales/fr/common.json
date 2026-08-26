@@ -311,9 +311,6 @@
         "message": "Une erreur s'est produite lors de la récupération de la dernière version. Réessayez dans un instant."
       }
     },
-    "previewChannels": {
-      "entryTitle": "Essayer une préversion"
-    },
     "offlineState": {
       "title": "Pas de réseau",
       "body": "Il faut du réseau pour ça. Les boards que tu as téléchargées se parcourent, se cherchent et s'enregistrent toujours hors ligne.",

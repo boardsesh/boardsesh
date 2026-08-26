@@ -311,9 +311,6 @@
         "message": "Something went wrong getting the latest version. Try again in a bit."
       }
     },
-    "previewChannels": {
-      "entryTitle": "Try a preview"
-    },
     "offlineState": {
       "title": "No signal",
       "body": "This one needs a connection. Boards you've downloaded still browse, search and log offline.",

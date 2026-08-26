@@ -234,8 +234,8 @@ export default function MoreScreen() {
   const showOfflineWrites = __DEV__ || Boolean(profile?.isTester);
 
   // Don't render an empty "Development" section header when no tool applies.
-  // (The OTA channel switcher moved to an everyone-facing "Try a preview" entry
-  // on the changelog screen, so it's no longer listed here.)
+  // Store-build previews now use xprem's everyone-facing blue edge marker, so
+  // the retired OTA channel switcher is no longer listed here.
   const showDevSection =
     (__DEV__ || Boolean(profile?.isTester)) && (showDevServerSwitcher || showFeatureFlags || showOfflineWrites);
 

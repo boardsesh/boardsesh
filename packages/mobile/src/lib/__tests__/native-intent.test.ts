@@ -71,8 +71,8 @@ describe('redirectSystemPath', () => {
   });
 
   // Existing OTA-preview PR comments outlive the retired custom preview route.
-  // New builds land each old link on What's New, whose "Try a preview" action
-  // opens xprem's official branch picker.
+  // New builds land each old link on What's New while xprem's official edge
+  // marker remains the picker entry point.
   it.each([
     'com.boardsesh.app://preview/pr-1234',
     'com.boardsesh.app:///preview/pr-1234',

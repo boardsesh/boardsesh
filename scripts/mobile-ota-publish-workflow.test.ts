@@ -120,7 +120,9 @@ describe('production OTA workflow reliability', () => {
       'scripts/lib/eoas.ts',
     ]) {
       expect(production).toContain(`- '${implementationPath}'`);
-      expect(preview).toContain(`- '${implementationPath}'`);
+      // Preview intentionally has no trigger paths filter: every synchronize
+      // must run so removing the final mobile change tears down the old branch.
+      expect(preview).toContain(`path === '${implementationPath}'`);
     }
   });
 

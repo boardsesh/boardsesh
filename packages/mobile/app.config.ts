@@ -423,8 +423,11 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     android: {
       package: androidPackage,
       playStoreUrl: ANDROID_PLAY_STORE_URL,
-      // App Links for the multiplayer join flow:
-      // https://www.boardsesh.com/join/{sessionId} (and the apex domain).
+      // App Links for the multiplayer join flow and retired OTA preview links:
+      // https://www.boardsesh.com/join/{sessionId} and
+      // https://www.boardsesh.com/preview/pr-N (plus the apex domain).
+      // The preview ingress remains for old shared links; +native-intent maps it
+      // to What's New, where xprem's marker is the only branch picker.
       // autoVerify lets Android open the link directly in the app once the
       // Digital Asset Links file (served by packages/web at
       // /.well-known/assetlinks.json) verifies the package signature. The web
@@ -437,6 +440,8 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
           data: [
             { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/join' },
             { scheme: 'https', host: 'boardsesh.com', pathPrefix: '/join' },
+            { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/preview' },
+            { scheme: 'https', host: 'boardsesh.com', pathPrefix: '/preview' },
           ],
           category: ['BROWSABLE', 'DEFAULT'],
         },

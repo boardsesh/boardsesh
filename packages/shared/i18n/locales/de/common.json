@@ -311,9 +311,6 @@
         "message": "Beim Abrufen der neuesten Version ging etwas schief. Versuch es gleich nochmal."
       }
     },
-    "previewChannels": {
-      "entryTitle": "Preview ausprobieren"
-    },
     "offlineState": {
       "title": "Kein Empfang",
       "body": "Dafür brauchst du Empfang. Heruntergeladene Boards kannst du weiter durchstöbern, durchsuchen und offline eintragen.",

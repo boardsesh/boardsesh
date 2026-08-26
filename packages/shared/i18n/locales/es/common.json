@@ -491,9 +491,6 @@
         "message": "Algo salió mal al obtener la última versión. Inténtalo de nuevo en un rato."
       }
     },
-    "previewChannels": {
-      "entryTitle": "Prueba una versión previa"
-    },
     "offlineState": {
       "title": "Sin conexión",
       "body": "Esto necesita conexión. Los plafones que has descargado se siguen explorando, buscando y registrando sin conexión.",

@@ -54,10 +54,13 @@ permissions:
   contents: read
 
 # ─── SHARED BUILD ENV (workflow-level) ───────────────────────────────────────
-# Byte-identical to ios-testflight-rn.yml / android-apk-rn.yml / mobile-ota-production.yml
-# — scripts/mobile-ci-env-parity.test.ts fails the build if these drift. The
-# fingerprint check below only means anything if this resolves under the same env
-# the shipped binary did. GOOGLE_MAPS_API_KEY is Android-only and set per-step.
+# The shared keys are byte-identical to ios-testflight-rn.yml /
+# android-apk-rn.yml / mobile-ota-production.yml —
+# scripts/mobile-ci-env-parity.test.ts fails the build if they drift. This
+# workflow also preserves EXPO_UPDATES_CHANNEL for release anchors whose older
+# app.config.ts still reads it. The fingerprint check below only means anything
+# if this resolves under the same env the shipped binary did.
+# GOOGLE_MAPS_API_KEY is Android-only and set per-step.
 env:
   EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
   EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
@@ -71,6 +74,10 @@ env:
   # effect). Public Tigris bucket; keep in sync with SNAPSHOT_PUBLIC_BASE_URL in
   # export-board-snapshots.yml.
   EXPO_PUBLIC_SNAPSHOT_BASE_URL: https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip
+  # Compatibility input for frozen V3 release anchors. Their app.config.ts reads
+  # this variable to emit expo-channel-name; the current config ignores it and
+  # bakes the production header literally.
+  EXPO_UPDATES_CHANNEL: production
   EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
   # Pin RN's fetch as the global `fetch` (not expo/fetch), which crashes Hermes by
   # tearing down JSI promises off-thread (Sentry 7595562195). Bundle-only flag — it

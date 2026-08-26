@@ -27,6 +27,7 @@ import { SystemBars } from 'react-native-edge-to-edge';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@expo/ui/community/bottom-sheet';
 import { ControlCenter } from '@xprem/control-center';
+import Constants from 'expo-constants';
 import { QueryProvider } from '../src/providers/query-provider';
 import { ThemeProvider, useTheme } from '../src/providers/theme-provider';
 import { MaterialThemeProvider } from '../src/providers/material-theme-provider';
@@ -72,7 +73,6 @@ import { glassStackScreenOptions } from '../src/theme/navigation';
 import { reportError, reportHandledError } from '../src/lib/error-reporting';
 import { track, getAnalyticsClient } from '../src/lib/analytics';
 import { performOtaRecovery, type OtaRecoveryPhase } from '../src/lib/ota-recovery';
-import { isPreviewBuild } from '../src/lib/preview-build';
 import { loadRequiredFonts } from '../src/lib/required-fonts';
 import { loadSectionExpandState } from '../src/lib/section-expand-store';
 import { useImageCacheMemoryManagement } from '../src/hooks/use-image-cache-memory-management';
@@ -89,8 +89,8 @@ import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
 import { BottomChromeDebugOverlay } from '../src/components/BottomChromeDebugOverlay';
 import { WindowInsetPublisher } from '../src/hooks/use-window-bottom-inset';
 import { LiveActivityIntentDiagnostics } from '../src/components/LiveActivityIntentDiagnostics';
-import { clearLegacyOtaChannelOverride } from '../src/lib/legacy-ota-channel-migration';
-import { getPreference, removePreference } from '../src/lib/preference-store';
+import { isBranchSurfingBuild, prepareOtaBranchSurfing } from '../src/lib/legacy-ota-channel-migration';
+import { getPreference, removePreference, setPreference } from '../src/lib/preference-store';
 // Side-effect import: instantiates the Android-only MemoryTrim native module
 // (expo-modules-core creates modules lazily on first JS access), whose Kotlin
 // OnCreate registers the Glide trim-on-UI_HIDDEN callback. No-op on iOS.
@@ -127,26 +127,36 @@ function buildStaticFeatureFlags(): FeatureFlags | undefined {
 const STATIC_FEATURE_FLAGS = buildStaticFeatureFlags();
 
 function OtaBranchControlCenter() {
-  // Updates.channel can be null on a real Android production build, so identify
-  // branch-surfing builds by capability/build kind instead of that value.
-  const branchSurfingBuild = !__DEV__ && Updates.isEnabled && !isPreviewBuild();
+  // Fingerprint-bound required headers distinguish Branch Surfing-capable
+  // binaries from EAS previews. Updates.channel cannot do that: a legacy
+  // persisted override changes the value exposed for this launch.
+  const branchSurfingBuild = isBranchSurfingBuild({
+    development: __DEV__,
+    updatesEnabled: Updates.isEnabled,
+    updatesConfig: Constants.expoConfig?.updates,
+  });
   const [migrationComplete, setMigrationComplete] = useState(!branchSurfingBuild);
 
   useEffect(() => {
     if (!branchSurfingBuild) return;
 
     let cancelled = false;
-    void clearLegacyOtaChannelOverride({
+    void prepareOtaBranchSurfing({
       branchSurfingBuild,
-      readOverride: getPreference,
+      readMigrationComplete: getPreference,
       clearRequestHeadersOverride: () => Updates.setUpdateRequestHeadersOverride(null),
-      removeOverride: removePreference,
+      removeLegacyMirror: removePreference,
+      markMigrationComplete: setPreference,
+      reload: Updates.reloadAsync,
     })
+      .then((preparation) => {
+        // A cleared native override requires a new JS runtime before xprem reads
+        // Updates.channel. reloadAsync normally never returns to this tree; if it
+        // does, keep the picker disabled rather than mounting against stale data.
+        if (!cancelled && preparation === 'ready') setMigrationComplete(true);
+      })
       .catch((error: unknown) => {
         reportHandledError(error, { tags: { source: 'ota', op: 'clear-legacy-channel-override' } });
-      })
-      .finally(() => {
-        if (!cancelled) setMigrationComplete(true);
       });
 
     return () => {
@@ -515,10 +525,6 @@ function RootLayout() {
           iOS LiveActivityIntent background launch mounted React, then consumes
           eligible interrupted markers when the app is foregrounded. */}
       <LiveActivityIntentDiagnostics />
-      {/* Official xprem branch picker. A one-time migration clears request
-          headers left by the retired Boardsesh channel picker before this
-          mounts, so the two override formats can never compete. */}
-      <OtaBranchControlCenter />
       {/* PostHogProvider sits at the top so touch autocapture covers the whole
           app. It owns the single PostHog client; manual events go through the
           imperative wrapper in src/lib/analytics. No-ops (renders children
@@ -778,6 +784,12 @@ function RootLayout() {
           </QueryProvider>
         </I18nProvider>
       </AnalyticsProvider>
+      {/* Final sibling by design, matching xprem's documented composition. RN
+          paints later siblings above earlier ones; placing the ControlCenter
+          here keeps its absolute edge marker above the full-screen app tree.
+          A one-time migration clears retired Boardsesh channel overrides and
+          reloads before this component becomes eligible to mount. */}
+      <OtaBranchControlCenter />
     </GestureHandlerRootView>
   );
 }
