@@ -388,6 +388,14 @@ async function copyIntoStaging(
   const chunks = function* (): Generator<Buffer> {
     let buffer = '';
     for (const row of rows) {
+      // A row whose width does not match the column list is the one data error
+      // the staging table cannot absorb — the server rejects the whole COPY,
+      // which this client cannot report (see the note above). Catch it here,
+      // before any bytes go out, so it surfaces as a plain throw naming the
+      // table rather than a stall.
+      if (row.length !== columns.length) {
+        throw new Error(`${stagingTable}: row has ${row.length} values but ${columns.length} columns were declared`);
+      }
       buffer += encodeCopyRow(row);
       rowCount += 1;
       // ~1 MB per socket write: one write per row would put 10 million
@@ -654,7 +662,10 @@ async function main(): Promise<void> {
 
   const sqlClient = postgres(databaseUrl, {
     max: 1,
-    idle_timeout: 0,
+    // Not 0 (never close): a held-open socket keeps the event loop alive, so a
+    // stalled COPY would hang forever instead of reaching the `beforeExit`
+    // guard. 120s is far longer than any single step here takes.
+    idle_timeout: 120,
     prepare: false,
     // `DROP TABLE IF EXISTS` on a staging table that is not there emits a NOTICE
     // per table, and postgres.js prints the whole protocol object by default,
