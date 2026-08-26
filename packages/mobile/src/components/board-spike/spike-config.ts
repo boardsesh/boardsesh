@@ -20,6 +20,7 @@ export type SpikeOverride = 'auto' | 'on' | 'off';
 /** How a lit hold is marked. */
 export type SelectorStyle =
   | 'ring'
+  | 'thumb-ring'
   | 'glow'
   | 'shape'
   | 'glow-shape'
@@ -70,6 +71,14 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
     halos: 'none',
     selector: 'ring',
   },
+  {
+    key: 'thumb-baseline',
+    chip: 'Base thumb',
+    label: 'Baseline (thumbnail)',
+    note: 'What renderer.rs draws under filledStyle: the same ring at an 8.0 base stroke, filled at alpha 0.302. The control for any size below full.',
+    halos: 'none',
+    selector: 'thumb-ring',
+  },
   // The two candidate arms carry NO casing on unlit holds. They used to, and the
   // baseline did not, so every comparison between them was a comparison of two
   // variables: on grasshopper the wall-only mean luminance went 36.2 to 39.3 and
@@ -98,6 +107,26 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
     note: 'The unlit wall is washed down in the field colour with the lit holds punched out, under the same outward glow.',
     halos: 'none',
     selector: 'shape-glow-out',
+    veil: true,
+  },
+  // Composed from pieces that already exist — the `glow-tint` selector with the
+  // veil modifier beside it — because the question it answers is whether the
+  // fill still earns anything once the wall has been turned down, and that is a
+  // combination rather than a new drawing.
+  //
+  // The hypothesis it tests is that the answer differs by SURFACE: a fill
+  // survives a downsample where a hollow ring and a soft glow do not, so what
+  // wins on a 1080 px play view need not win in a 76 dp list cell. The app
+  // already behaves that way — `ClimbListThumbnail` passes `filledStyle` and
+  // `renderer.rs` switches to a heavier stroke and a translucent fill for it —
+  // so a per-surface answer is a tuning change there, not a new mechanism.
+  {
+    key: 'veil-tint',
+    chip: 'Veil+tint',
+    label: 'Veil + tint',
+    note: 'The quiet wall under the filled arm. A fill survives downsampling where a hollow ring and a soft glow do not, so the arm that wins at 152 px need not be the one that wins full size.',
+    halos: 'none',
+    selector: 'glow-tint',
     veil: true,
   },
   {
@@ -262,9 +291,39 @@ export const SPIKE_BACKGROUNDS = [
   { key: 'grey', label: 'Grey', color: '#3A3A3C' },
   { key: 'ink', label: 'Ink', color: '#0B0B0C' },
   { key: 'wood', label: 'Ply', color: '#6B4F33' },
+  // Not a proposal — the shipping play view paints `secondaryBackground`, which
+  // is white in the Android light fallback, so this is the field anyone whose
+  // phone is in light mode already has. Every arm here was captured on `field`.
+  { key: 'light', label: 'Light', color: '#FFFFFF' },
 ] as const;
 
 export type SpikeBackgroundKey = (typeof SPIKE_BACKGROUNDS)[number]['key'];
+
+/**
+ * The widths the app actually draws a board at, in DEVICE pixels.
+ *
+ * `full` is the play view — the only size any arm in this spike has been
+ * captured at, and the widest the app renders. The rest are the surfaces that
+ * outnumber it:
+ *
+ *   152  a 76 dp climb-list cell on a 2x screen (`climb-list-thumbnail-metrics.ts`)
+ *   228  the same cell on a 3x screen
+ *   384  the iOS Live Activity's `maxCompositeDimension`
+ *
+ * Rendering the board at the size instead of scaling a full-size render down is
+ * the whole point: what is being asked is which marks survive that few pixels,
+ * and a browser-scaled 1080 px raster answers a different question. The list
+ * cell also passes `filledStyle`, so at these sizes the control is
+ * `thumb-baseline` and not `baseline` — they are two different drawings.
+ */
+export const SPIKE_SIZES = [
+  { key: 'full', label: 'Full', deviceWidth: null },
+  { key: '152', label: '152 px', deviceWidth: 152 },
+  { key: '228', label: '228 px', deviceWidth: 228 },
+  { key: '384', label: '384 px', deviceWidth: 384 },
+] as const;
+
+export type SpikeSizeKey = (typeof SPIKE_SIZES)[number]['key'];
 
 /**
  * Overlay geometry.
@@ -306,6 +365,23 @@ export const SPIKE_TUNING = {
    * that have no multiplier.
    */
   strokeWidthBase: 6,
+  /**
+   * The same stroke on the thumbnail path. `renderer.rs:151` swaps the 6.0 for
+   * an 8.0 whenever `config.thumbnail` is set, and `:201` fills the marker at
+   * alpha 77 of 255 — 0.302 — first, "so lit holds read as solid dots once
+   * scaled". `ClimbListThumbnail` passes `filledStyle: true`, so every list row
+   * in the app is that second drawing and not the one the play view gets. Both
+   * are in board pixels for the same reason `strokeWidthBase` is: the renderer
+   * multiplies them by `scale_x`, which is exactly what the viewBox does here.
+   *
+   * The renderer's other branch — `HoldRenderStyle::AboveMarker`, a filled dot
+   * at r * 0.62 sitting r * 1.28 above the placement under `thumbnail`
+   * (`:210-211`) — is not drawn here because nothing can reach it: it belongs to
+   * MoonBoard's AUX role, and `STATE_TO_PRIMARY_CODE` assigns no code to AUX, so
+   * neither a saved climb nor this spike's synthesised one ever carries it.
+   */
+  thumbStrokeWidthBase: 8,
+  thumbFillOpacity: 77 / 255,
   /**
    * Contrast casing: a stroke drawn under the role ring, wide enough to leave a
    * visible edge on both sides of it. Its colour flips at this OkLab lightness —
@@ -361,10 +437,13 @@ export const SPIKE_TUNING = {
   glowSpreadFraction: 0.43,
   glowCoreFraction: 0.0215,
   /**
-   * Ceiling on the glow's RENDERED reach as a multiple of the hold's own SHORT
-   * extent. Past roughly 1.5x the hold's width the glow stops being an outline of
-   * anything and becomes a disc with a chip in the middle — two holds in one
-   * climb, 250 px apart, then carry visibly different marks.
+   * Ceiling on the glow's one-sided RENDERED reach as a multiple of the hold's
+   * own SHORT extent. It is a reach, so the MARK it permits is
+   * `shortest x (1 + 2 x cap)` = **3.4x** the hold's short extent, not 1.2x —
+   * which is what the round magenta discs on Tension Original's bottom foot row
+   * are. Past that the glow stops being an outline of anything and becomes a
+   * disc with a chip in the middle, and two holds in one climb 250 px apart
+   * carry visibly different marks.
    *
    * On the reach and not on the band width, because `smallHoldMaxBoost` multiplies
    * the reach afterwards and small holds are exactly the ones being capped: as a
@@ -386,7 +465,16 @@ export const SPIKE_TUNING = {
    * that visibly loses at glance zoom on that exact board.
    */
   glowNeighbourFraction: 0.45,
-  /** Floor on that clearance, in board pixels: below this there is no glow left to read. */
+  /**
+   * Floor on that clearance, in absolute BOARD pixels: below this there is no
+   * glow left to read. Absolute because it is a property of the screen rather
+   * than of the board's pitch — but it is stored in board pixels and the boards
+   * do not share a coordinate space, so on MoonBoard's 650 px art box it renders
+   * 1.66x larger, 13.3 device px against 8.0 on the five 1080-wide boards. That
+   * is a real inconsistency; it is left alone because the floor is only reached
+   * by four marks in a hundred (see the second pass's "leave alone" list) and
+   * moving it re-opens every glow capture.
+   */
   glowNeighbourFloorWidth: 8,
   /**
    * Cumulative alpha the glow should reach at a given fraction of its full
@@ -480,8 +568,15 @@ export const SPIKE_TUNING = {
    * Role glyphs. Role is carried by hue alone in every treatment here, and under
    * protanopia HAND #4455FF and FOOT #FF00FF land 3.2 dE00 apart — one colour.
    * A glyph inside the existing footprint adds a second channel — silhouette —
-   * without growing the mark: bar / bar / ring / X. Drawn in EVERY arm, the
-   * baseline included, so an experiment measures treatments and not glyph sets.
+   * without growing the mark: bar / bar / ring / X.
+   *
+   * Their own axis, DEFAULT OFF, because that is what they are in the product:
+   * an accessibility mode a climber turns on, which REPLACES the per-role marker
+   * shapes the app ships today (#3204) rather than layering over them. The
+   * default render carries no glyph on any arm, so nothing measured about an arm
+   * here is measuring the glyph — and anything measured with `glyphs=on` is a
+   * measurement of the accessibility mode, to be judged on whether it serves
+   * someone who needs it.
    */
   /**
    * One line width for every accessibility marker on a board, as a fraction of
@@ -522,19 +617,32 @@ export const SPIKE_TUNING = {
    * stroked paths the every-hold casing costs on Grasshopper, two per unlit
    * placement, and 966 on Kilter Homewall.
    *
-   * Strength is bucketed on the mean art lightness in the ring annulus over EVERY
-   * placement, the zero readings included: a 0 is "no art in the band", i.e. bare
-   * play field, which is the wall being quieted. Over the committed table that is
-   * TB2 Mirror 0.713, Kilter Homewall 0.626, Tension Original 0.563, Kilter
-   * Original 0.511, Grasshopper 0.411, MoonBoard Masters 0.337, MoonBoard 2016
-   * 0.301. The thresholds sit midway between the boards they separate. Both
-   * MoonBoards fall through to nothing: roughly half of each grid is bare field
-   * already, so there is no wall there to quiet.
+   * Strength is bucketed on the GAP between the wall and the field it is being
+   * washed toward, in OkLab lightness — see `veilOpacityFor`, which owns the
+   * arithmetic and the reason the annulus table's 0 sentinel is filtered out
+   * first. Over the committed table on the default field `#181225` (L 0.200)
+   * that gap is TB2 Mirror 0.541, Tension Original 0.461, MoonBoard Masters
+   * 0.441, Kilter Homewall 0.426, MoonBoard 2016 0.373, Kilter Original 0.325,
+   * Grasshopper 0.216.
+   *
+   * The two thresholds are the wall-lightness ones they replace minus that
+   * 0.200, so on the default field the seven boards keep the strength they were
+   * captured with. What changes is the two boards the old sentinel-fed mean read
+   * as empty rather than bright — both MoonBoards go from no veil at all to the
+   * soft bucket — and every field that is not `#181225`.
    */
   veilStrongOpacity: 0.45,
   veilSoftOpacity: 0.3,
-  veilBrightWallLightness: 0.54,
-  veilDimWallLightness: 0.375,
+  veilStrongGap: 0.34,
+  veilSoftGap: 0.175,
+  /**
+   * Share of a board's placements that must carry an art reading before the
+   * strong bucket is allowed. Under it the board is mostly bare grid, and what
+   * the veil dims there is the field's own furniture rather than hold art —
+   * on both MoonBoards the A-K / 1-18 grid labels, which are painted into the
+   * art and go down with the wall.
+   */
+  veilMinCoverage: 0.6,
 } as const;
 
 export type SpikeLitHold = {

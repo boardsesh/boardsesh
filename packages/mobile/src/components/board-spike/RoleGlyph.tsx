@@ -29,8 +29,19 @@ const FOOT_RING_REACH_FRACTION = 0.15;
 /**
  * The role of a lit hold, carried by something other than hue (issue #2202).
  *
+ * An OPT-IN accessibility mode, and the replacement for the per-role marker
+ * shapes the app ships today (circle / triangle / square / diamond / octagon
+ * with their two sliders, #3204) rather than a second layer beside them: those
+ * work by changing the whole marker's shape, which a traced silhouette cannot
+ * do, because its shape is the hold. Nothing here is in the default render, so
+ * judge it on whether it serves a climber who turns it on — not on what it does
+ * to a picture nobody with it switched off will ever see.
+ *
  * Hue is exactly the channel that fails: under protanopia HAND `#4455FF` and
- * FOOT `#FF00FF` land 7.7 ΔE apart, which is one colour. That is already true of
+ * FOOT `#FF00FF` land 3.2 ΔE00 apart, which is one colour. (That is CIEDE2000,
+ * the same metric the rest of this spike quotes; the plain CIE76 distance for
+ * the same pair is 7.6, which is what this line used to carry and which read as
+ * a second, larger measurement of the same thing.) That is already true of
  * what ships, so it is not a regression in any candidate — but it means a
  * climber with the commonest form of colour-vision deficiency cannot tell a hand
  * from a foot on any board today.

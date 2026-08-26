@@ -76,18 +76,28 @@ cp "$FIGURES"/*.webp docs/spike/board-rendering-2202/boards/
 ```
 
 `capture-boards.sh` walks 7 boards × 4 treatments — baseline, outward-glow,
-glow-tint, veil-glow, the same four `build-figures.mjs` captions — and takes a
-full-screen PNG of each (~2.5 min). Override with `BOARDS=... TREATMENTS`; the
-treatment list is the script's remaining arguments. The link pins `leds=on`
-rather than leaving that axis to the screen, which keeps whatever it was last
-handed — otherwise one `LEDs: off` chip press before a run shoots the whole
-matrix dark.
+veil-tint, veil-glow, the same four `build-figures.mjs` captions — and takes a
+full-screen PNG of each (~2.5 min). Narrow it with `BOARDS=` and the script's
+remaining arguments; vary an axis with `FIELDS=`, `PALETTES=`, `GLYPHS=` or
+`SIZES=`, or take the whole thumbnail sweep with `THUMBS=1`. The link pins every
+axis — board, treatment, `leds`, `halos`, `field`, `palette`, `glyphs`, `size` —
+rather than leaving any of them to the screen, which keeps whatever it was last
+handed. One `LEDs: off` or `Halos: on` chip press before an unpinned run rewrites
+the whole matrix and the caption in the shot does not say so.
+
+The arm list lives in `capture-boards.sh`'s `*_DEFAULT` lines and nowhere else:
+`build-figures.mjs` parses them out of the script, and `spike-config.ts` owns
+what each arm is called. A key that disagrees now throws before a figure is
+written — it used to resolve to index 0 and shoot the wrong panel under the right
+caption.
 
 `build-figures.mjs` crops each capture to the board and writes the per-board
-sheets, the all-boards sheet and the colour-vision simulation. It finds the board
-by scanning for the play-field colour `#181225`, so it copes with any aspect
-ratio — **but if you change the default play field, update `FIELD` in that
-script or every crop fails loudly.**
+sheets, the all-boards sheets, the colour-vision simulation, the accessibility
+glyph sheet and one thumbnail sheet per width. It finds the board by scanning for
+the play field, which is **argv[4]** — a `SPIKE_BACKGROUNDS` key or a raw hex,
+defaulting to `field`. Give it the field the run was taken on or every crop fails
+loudly. `BOARDS=` and `ARMS=` narrow it to a run that did not shoot the full
+matrix.
 
 ## 4. Sanity-check before posting
 
@@ -128,7 +138,9 @@ vp run spike:led-dots         # which holds have an LED, and where the art alrea
 Run them in that order. `spike:hold-lightness` measures inside the polygons
 `spike:hold-outlines` emits, so re-running the tracer without re-running it
 leaves every silhouette lightness stale against a table that still lines up
-key-for-key.
+key-for-key. `spike:led-dots` reads the art and the placements only, so the
+tracer cannot stale it — re-run it when the art or the board set changes, not
+when the tracer does.
 
 **Audit the tracer after changing it.** Three defects were shipped once already
 and are invisible unless measured — outlines that ran into the search box and
@@ -140,7 +152,8 @@ Those checks used to live here as "worth re-running as throwaway scripts", and
 that is how the counts in `README.md` stayed two rounds of fixes out of date.
 They are committed now, in
 `packages/mobile/src/components/board-spike/__tests__/spike-hold-outlines.test.ts`,
-and run against the table in about two seconds:
+and run against the table in about five seconds, of which gate 6's art decode and
+boundary walk is 1.6 and most of the rest is module import:
 
 ```bash
 vp run test:mobile
@@ -156,25 +169,44 @@ vp run test:mobile
    Original, 140/198 MoonBoard 2016, 112/198 Masters 2019. Pinned in both
    directions — a drop means the seed containment got too tight, and a jump on
    MoonBoard means the tracer started finding holds that are not there;
-5. no outline loses more than 20 board px² to an open at 3 board px. Stated on
-   that spur measure and not on perimeter: a 37-px tail running up a neighbour's
-   rim barely moves the perimeter share, because the tail brings perimeter of its
-   own. The gate measures the shipped polygons with a plain open — erode, dilate
-   every core back inside the mask, count what never came back — deliberately not
-   the tracer's own order, which grows the seed's core alone and is the stricter
-   of the two. A gate that replays the generator passes whatever the generator
+5. no outline loses more than 20 board px² to an open at the board's own neck
+   radius — 3 board px on the five 1080-wide boards, 2 on the two MoonBoards,
+   whose art box is 650 px wide. Stated on that spur measure and not on
+   perimeter: a 37-px tail running up a neighbour's rim barely moves the
+   perimeter share, because the tail brings perimeter of its own. The gate
+   measures the shipped polygons with a plain open — erode, dilate every core
+   back inside the mask, count what never came back — deliberately not the
+   tracer's own order, which grows the seed's core alone and is the stricter of
+   the two. A gate that replays the generator passes whatever the generator
    emits. Zero outlines trip it on all seven boards, with no exceptions pinned;
-   the worst survivor is Kilter Homewall 4219 at 16 px² of the 20 allowed, and the
-   per-board worsts run 9 / 10 / 12 / 16 / 8 / 13 / 14.
+   the worst survivor is Kilter Homewall 4163 at 15 px² of the 20 allowed, and
+   the per-board worsts run 12 / 12 / 11 / 15 / 9 / 6 / 4;
+6. no silhouette boundary sits on a neighbour's art. Walk each polygon a board
+   pixel at a time, step 2.5 px out along the outward normal, and ask what is
+   there: opaque art whose nearest placement is a _different_ bolt means the
+   silhouette ends on someone else's hold, which is where the partition cut the
+   pair apart through solid art rather than at an edge. This is the only gate
+   that needs the art, and the only one that can see the wedge design review 3
+   sent the tracer after — the pullback that fixes it took Kilter Homewall from
+   11.1% of boundary on a neighbour to 0.2%, and 233 outlines over 5% to 2. Both
+   halves are pinned per board: the neighbour share and the count over 5% are
+   the defect, and the plain "not an art edge at all" share is a _ceiling_ that
+   stops the clearance being widened until the mark is a shrunk blob inside its
+   own hold (Kilter Homewall 19.8%, the cost of pulling 369 of 499 holds back).
 
 Each gate carries a fixture that must trip it, including the one branch no board
 reaches — the exemption for a hold too thin to core at all. A check that has never
-failed is indistinguishable from one that cannot fail.
+failed is indistinguishable from one that cannot fail. Both new branches were
+mutation-tested: dropping the neighbour attribution reddens gate 6 and its
+fixture, and running gate 6 against the pre-pullback table reddens it on the
+first board (30 Grasshopper outlines over 5%, against a pinned 0).
 
 The run line the tracer prints, and now writes into the head of
 `spike-hold-outlines.ts`, counts something different from gate 5: it is what the
 trim took off the raw region, before Douglas-Peucker, and only the 20 px²
-threshold is shared with the gate.
+threshold is shared with the gate. It also carries the pullback's own count —
+how many outlines had art touching a neighbour's at all, which is 369 of 499 on
+Kilter Homewall and 8 of 140 on MoonBoard 2016.
 
 ## 6. Posting to the issue
 
@@ -205,13 +237,19 @@ gh issue comment 2202 --repo boardsesh/boardsesh --body-file <file>
   through it paints the filter region as a solid rectangle of the stroke colour.
   `FeColorMatrix` in the same version renders correctly on the same device. The
   glow falloff is concentric strokes because of this — do not "simplify" it back to a blur.
-- **Two accessibility systems now coexist, deliberately.** The app already ships
-  per-role marker _shapes_ (circle/triangle/square/diamond/octagon, user-
-  configurable, in both the SVG and Rust renderers). Those work by changing the
-  whole marker's shape — which a traced outline cannot do, because its shape is
-  the hold. So the traced arms carry an inside-the-hold _glyph_ instead
-  (`RoleGlyph.tsx`). If an arm goes back to a fixed circle, prefer the shipped
-  shape system over the glyph.
+- **The role glyph REPLACES the shipped marker shapes; it does not join them.**
+  The app already ships per-role marker _shapes_ (circle/triangle/square/diamond/
+  octagon, user-configurable, in both the SVG and Rust renderers). Those work by
+  changing the whole marker's shape — which a traced outline cannot do, because
+  its shape is the hold — so the glyph (`RoleGlyph.tsx`) is the same
+  accessibility feature drawn a way a silhouette can carry, and a climber gets
+  one or the other, never both. It is opt-in and **off by default**: the
+  `glyphs` axis on the spike screen defaults off, and the default render on
+  every arm carries no glyph. A finding about glyph weight or ink is a finding
+  about the accessibility mode, to be judged on whether it serves someone who
+  needs it — not on what it does to the default picture. Every capture through
+  `7179ffa07` was taken with the glyph unconditionally on, so those panels are
+  all of a non-default state.
 - **The synthesised climb only lights placements that have a traced silhouette.**
   MoonBoard's placements are a synthetic 11x18 grid where most cells are empty,
   and lighting those produced bare rings for holds that do not exist — a climb no

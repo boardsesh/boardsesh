@@ -1,38 +1,180 @@
 /**
  * Build the #2202 review figures from a directory of device captures.
  *
- *   node --import tsx packages/mobile/scripts/spike/build-figures.mjs <captures-dir> <output-dir> [field-hex]
+ *   node --import tsx packages/mobile/scripts/spike/build-figures.mjs <captures-dir> <output-dir> [field]
+ *   node --import tsx packages/mobile/scripts/spike/build-figures.mjs --keys
  *
  * Captures come from `capture-boards.sh`, one full-screen PNG per
  * board × treatment. This crops each to the board itself (found by scanning for
  * the play-field colour, so it works whatever a board's aspect ratio is),
  * labels it, and writes:
  *
- *   board-<key>.webp            four treatments side by side, one board
- *   all-boards-outward-glow.webp the leading treatment on every board
- *   colour-vision.webp          protan/deutan simulation, baseline vs glyphs
+ *   board-<key>.webp             the captured arms side by side, one board
+ *   all-boards-<arm>.webp        one arm on every board, for the two leading arms
+ *   colour-vision.webp           the two controls under protanopia and deuteranopia
+ *   accessibility-glyphs.webp    the opt-in role glyphs off against on, normal and protan
+ *   thumbnails-<size>px.webp     the arms at the widths the app actually draws
+ *
+ * The last two need captures the default run does not take — `GLYPHS='off on'`
+ * and `THUMBS=1` — and say so, with the command, if the file is missing.
+ *
+ * `--keys` prints the board, treatment, background, palette and size keys the
+ * spike screen has, one `<kind> <key>` per line. `capture-boards.sh` checks its
+ * matrix against that before shooting, because `board-spike.tsx` resolves an
+ * unknown key to index 0 rather than failing.
  *
  * See docs/spike/board-rendering-2202/HANDOVER.md.
  */
 import { createRequire } from 'node:module';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import {
+  SPIKE_BACKGROUNDS,
+  SPIKE_PALETTE_LABEL,
+  SPIKE_SIZES,
+  SPIKE_TREATMENTS,
+} from '../../src/components/board-spike/spike-config.ts';
+import { SPIKE_BOARDS, boardWantsNeutralHalos } from '../../src/components/board-spike/spike-boards.ts';
+
+// Before `sharp` is loaded: `capture-boards.sh` runs `--keys` to check its own
+// axis values against the screen, and a capture host has no reason to carry an
+// image library.
+if (process.argv[2] === '--keys') {
+  const lines = [
+    ...SPIKE_BOARDS.map((board) => `board ${board.key}`),
+    ...SPIKE_TREATMENTS.map((treatment) => `treatment ${treatment.key}`),
+    ...SPIKE_BACKGROUNDS.map((background) => `background ${background.key}`),
+    ...Object.keys(SPIKE_PALETTE_LABEL).map((key) => `palette ${key}`),
+    ...SPIKE_SIZES.map((size) => `size ${size.key}`),
+  ];
+  console.log(lines.join('\n'));
+  process.exit(0);
+}
 
 const require = createRequire(path.resolve(import.meta.dirname, '../../../../package.json'));
 const sharp = require('sharp');
 
 const SHOTS = process.argv[2];
 const OUT = process.argv[3];
+
+// ---- the matrix, read from the one file that decides it ---------------------
+
 /**
- * The play field the spike screen paints behind the board — how the crop finds
- * the board, so it has to be the colour the capture was taken on. Defaults to
- * the dark field; pass the hex of `SPIKE_BACKGROUNDS` grey, ink or ply to crop
- * a run captured with `FIELDS=…`.
+ * The arm list used to live here, in `capture-boards.sh` and in
+ * `spike-config.ts` at once, and a disagreement did not error: the screen
+ * resolves an unknown treatment key to index 0, so a run shot the wrong panel
+ * under the right caption — which has already happened on this branch. So the
+ * capture script owns WHICH arms and sizes get shot, `spike-config.ts` owns what
+ * an arm is called, and this file owns only its own one-line gloss.
  */
-const FIELD_HEX = process.argv[4] ?? '#181225';
+const CAPTURE_SCRIPT = path.resolve(import.meta.dirname, 'capture-boards.sh');
+const captureScriptSource = readFileSync(CAPTURE_SCRIPT, 'utf8');
+
+function captureDefault(name) {
+  const match = captureScriptSource.match(new RegExp(`^${name}_DEFAULT='([^']*)'`, 'm'));
+  if (match === null) {
+    throw new Error(
+      `capture-boards.sh no longer defines ${name}_DEFAULT as a single-quoted list — fix one or the other`,
+    );
+  }
+  return match[1].split(/\s+/).filter((word) => word.length > 0);
+}
+
+/**
+ * `ARMS=` narrows the sheet to a run that did not shoot the whole matrix — the
+ * field and glyph axes are shot on two or three arms, not four, and without this
+ * the first per-board sheet demanded a capture that run never took and the build
+ * wrote nothing at all. It can only NARROW: every name still has to be one of
+ * the arms the capture script's default shoots, so this is not a second place
+ * the matrix is decided.
+ */
+function narrowed(fullSet, environmentValue, name) {
+  if (environmentValue === undefined) return fullSet;
+  const wanted = environmentValue.split(/\s+/).filter((word) => word.length > 0);
+  for (const key of wanted) {
+    if (!fullSet.includes(key)) {
+      throw new Error(`${name}='${environmentValue}' names '${key}', which the default run does not shoot`);
+    }
+  }
+  return wanted;
+}
+
+const CAPTURED_ARMS = narrowed(captureDefault('TREATMENTS'), process.env.ARMS, 'ARMS');
+const THUMBNAIL_ARMS = captureDefault('THUMBNAIL_ARMS');
+const THUMBNAIL_SIZES = captureDefault('THUMBNAIL_SIZES');
+
+const TREATMENT_BY_KEY = new Map(SPIKE_TREATMENTS.map((treatment) => [treatment.key, treatment]));
+
+/**
+ * One line on what each arm is testing, at strip width. `spike-config.ts`'s own
+ * `note` is the screen's caption and runs two to three times too long to set as
+ * a subtitle here, so the gloss is local — but the key, the order and the title
+ * are not.
+ */
+const ARM_SUBTITLE = {
+  baseline: 'Control: a fixed circle, LED layer on',
+  'thumb-baseline': 'Control at this width: the filled circle `filledStyle` draws',
+  'outward-glow': 'Light off the edge, hold surface left clean',
+  'glow-tint': 'Fill for shape, crisp silhouette edge, glow for reach',
+  'veil-glow': 'Unlit wall washed down in the field colour',
+  'veil-tint': 'The same quiet wall, under the filled mark',
+};
+
+function armOrDie(key, source) {
+  const treatment = TREATMENT_BY_KEY.get(key);
+  if (treatment === undefined) {
+    throw new Error(
+      `${source} names treatment '${key}', which spike-config.ts does not have — the screen would shoot ${SPIKE_TREATMENTS[0].key} under that caption`,
+    );
+  }
+  if (ARM_SUBTITLE[key] === undefined) {
+    throw new Error(`${source} names treatment '${key}' with no entry in ARM_SUBTITLE — add its one-line gloss here`);
+  }
+  return { key, title: treatment.label, subtitle: ARM_SUBTITLE[key] };
+}
+
+const TREATMENTS = CAPTURED_ARMS.map((key) => armOrDie(key, 'capture-boards.sh TREATMENTS_DEFAULT'));
+const THUMBNAILS = THUMBNAIL_ARMS.map((key) => armOrDie(key, 'capture-boards.sh THUMBNAIL_ARMS_DEFAULT'));
+
+const SIZE_KEYS = new Set(SPIKE_SIZES.map((size) => size.key));
+for (const size of THUMBNAIL_SIZES) {
+  if (!SIZE_KEYS.has(size)) {
+    throw new Error(
+      `capture-boards.sh THUMBNAIL_SIZES_DEFAULT names size '${size}', which spike-config.ts does not have`,
+    );
+  }
+}
+
+/**
+ * The boards, in the screen's own order, with their labels and their measured
+ * share of holds that vanish into the field. Both came from a copy here that
+ * went two rounds of fixes out of date before anyone noticed.
+ */
+const BOARD_KEYS = narrowed(
+  SPIKE_BOARDS.map((board) => board.key),
+  process.env.BOARDS,
+  'BOARDS',
+);
+const BOARDS = SPIKE_BOARDS.filter((board) => BOARD_KEYS.includes(board.key)).map((board) => ({
+  key: board.key,
+  label: board.label,
+  note: `${(board.lowContrastHoldShare * 100).toFixed(1)}% of holds sit within 0.18 OkLab L of the play field — every-hold outline ${boardWantsNeutralHalos(board) ? 'ON' : 'OFF'}`,
+}));
+
+// ---- the play field the captures were taken on ------------------------------
+
+/**
+ * How the crop finds the board, so it has to be the colour the capture was taken
+ * on. Takes a `SPIKE_BACKGROUNDS` key (`grey`, `light`, `wood`) or a raw hex,
+ * and defaults to the dark field the default run pins.
+ */
+const fieldArgument = process.argv[4] ?? 'field';
+const namedBackground = SPIKE_BACKGROUNDS.find((background) => background.key === fieldArgument);
+const FIELD_HEX = namedBackground?.color ?? fieldArgument;
 if (!SHOTS || !OUT || !/^#?[0-9a-fA-F]{6}$/.test(FIELD_HEX)) {
-  console.error('usage: build-figures.mjs <captures-dir> <output-dir> [field-hex, default #181225]');
+  const names = SPIKE_BACKGROUNDS.map((background) => background.key).join('|');
+  console.error(`usage: build-figures.mjs <captures-dir> <output-dir> [${names}|#rrggbb, default field]`);
   process.exit(1);
 }
 mkdirSync(OUT, { recursive: true });
@@ -43,81 +185,125 @@ const FIELD = [0, 2, 4].map((offset) => parseInt(FIELD_HEX.replace('#', '').slic
 const GAP = 16;
 const escape = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-const BOARDS = [
-  {
-    key: 'grasshopper-master',
-    label: 'Grasshopper Master 8x12',
-    note: '11.6% of holds sit within 0.18 OkLab L of the play field — every-hold outline ON',
-  },
-  {
-    key: 'tension-classic',
-    label: 'Tension Original Full Wall',
-    note: '6.2% low-contrast holds — every-hold outline ON (marginal)',
-  },
-  {
-    key: 'tension-mirror-12x12',
-    label: 'Tension Board 2 Mirror 12x12',
-    note: '0.0% low-contrast holds — every-hold outline OFF',
-  },
-  {
-    key: 'kilter-homewall-10x12',
-    label: 'Kilter Homewall 10x12',
-    note: '0.2% low-contrast holds — every-hold outline OFF',
-  },
-  {
-    key: 'kilter-original-12x12',
-    label: 'Kilter Original 12x12',
-    note: '0.2% low-contrast holds — every-hold outline OFF',
-  },
-  {
-    key: 'moonboard-2016',
-    label: 'MoonBoard 2016',
-    note: '34.6% low-contrast holds, the worst here — every-hold outline ON',
-  },
-  {
-    key: 'moonboard-masters-2019',
-    label: 'MoonBoard Masters 2019',
-    note: '24.0% low-contrast holds — every-hold outline ON',
-  },
-];
+// ---- finding a capture, and finding the board in it -------------------------
 
 /**
- * The captured arm set, and it has to stay the same four keys as
- * `capture-boards.sh`'s TREATMENTS default and the first four entries of
- * `SPIKE_TREATMENTS` in `spike-config.ts` — every panel here reads a file named
- * `<board>__<key>.png`, so a key this list has and the capture run does not
- * throws, and a key the capture run has and this list does not is shot and then
- * silently dropped under the remaining captions.
- *
- * Baseline is the control rather than literally what ships: it carries the LED
- * layer like the other three, so the only thing that varies across a row is the
- * mark on the lit holds.
+ * Where `capture-boards.sh` puts a shot: the run's root for every axis at its
+ * default, a subdirectory named after each axis that is not. Both halves of the
+ * rule are written twice, once in each language; a shot this cannot find says
+ * which command takes it.
  */
-const TREATMENTS = [
-  { key: 'baseline', title: 'Baseline', subtitle: 'Control: a fixed circle, LED layer on' },
-  { key: 'outward-glow', title: 'Outward glow', subtitle: 'Light off the edge, hold surface left clean' },
-  { key: 'glow-tint', title: 'Glow + tint', subtitle: 'Fill for shape, glow for reach, role glyph' },
-  { key: 'veil-glow', title: 'Veil + glow', subtitle: 'Unlit wall washed down in the field colour' },
-];
+function shotPath(boardKey, armKey, axes = {}) {
+  const parts = [];
+  if (axes.field !== undefined) parts.push(`field-${axes.field}`);
+  if (axes.palette !== undefined) parts.push(`palette-${axes.palette}`);
+  if (axes.glyphs !== undefined && axes.glyphs !== 'off') parts.push(`glyphs-${axes.glyphs}`);
+  if (axes.size !== undefined && axes.size !== 'full') parts.push(`size-${axes.size}`);
+  return path.join(SHOTS, parts.join('__'), `${boardKey}__${armKey}.png`);
+}
 
-/** The spike screen paints the play field behind the board, so its rows are the board. */
-async function boardRect(file) {
-  const { data, info } = await sharp(file).raw().toBuffer({ resolveWithObject: true });
-  const x = 3;
-  let top = null;
-  let bottom = null;
+function requireShot(file, howToCapture) {
+  if (!existsSync(file)) {
+    throw new Error(`no capture at ${file}\n  take it with: ${howToCapture}`);
+  }
+  return file;
+}
+
+/**
+ * One capture's raw pixels, kept for as long as the next call wants the same
+ * file. A 1080x2400 screenshot is ~7.8 MB raw and a run reads dozens of them, so
+ * this is a window rather than a cache — the two scans below both want the same
+ * buffer, and nothing else asks twice.
+ */
+let lastRaw = { file: null, pixels: null, info: null };
+async function rawOf(file) {
+  if (lastRaw.file !== file) {
+    const { data, info } = await sharp(file).raw().toBuffer({ resolveWithObject: true });
+    lastRaw = { file, pixels: data, info };
+  }
+  return lastRaw;
+}
+
+/**
+ * The board's box in a full-screen capture, found from the play field the spike
+ * screen paints behind it.
+ *
+ * At full width the field spans the screen and the board's own art is
+ * transparent at its left and right margins, so the field shows there. At the
+ * thumbnail widths the field container is only as wide as the board
+ * (`SpikeBoard.tsx` sets `alignSelf: 'center'`), so the same scan finds a
+ * ~152 px box in the middle of the screen instead. Either way the answer is the
+ * board as drawn, at capture resolution and with no resampling.
+ *
+ * Three field pixels to count a line, and the longest unbroken run of lines to
+ * pick the band: a single antialiased pixel of chip or caption text that happens
+ * to land on the field colour would otherwise stretch the box over the whole
+ * screen.
+ */
+async function boardBox(file) {
+  const { pixels, info } = await rawOf(file);
+  const isField = (offset) =>
+    pixels[offset] === FIELD[0] && pixels[offset + 1] === FIELD[1] && pixels[offset + 2] === FIELD[2];
+
+  const perRow = Array.from({ length: info.height }, () => 0);
+  const perColumn = Array.from({ length: info.width }, () => 0);
   for (let y = 0; y < info.height; y += 1) {
-    const offset = (y * info.width + x) * info.channels;
-    if (data[offset] === FIELD[0] && data[offset + 1] === FIELD[1] && data[offset + 2] === FIELD[2]) {
-      if (top === null) top = y;
-      bottom = y;
+    for (let x = 0; x < info.width; x += 1) {
+      if (isField((y * info.width + x) * info.channels)) {
+        perRow[y] += 1;
+        perColumn[x] += 1;
+      }
     }
   }
-  if (top === null) {
-    throw new Error(`no ${FIELD_HEX} rows in ${file} — pass the field the capture was taken on as the third argument`);
+
+  const longestRun = (counts) => {
+    let bestStart = null;
+    let bestEnd = null;
+    let start = null;
+    for (let index = 0; index <= counts.length; index += 1) {
+      const inRun = index < counts.length && counts[index] >= 3;
+      if (inRun && start === null) start = index;
+      if (!inRun && start !== null) {
+        if (bestStart === null || index - start > bestEnd - bestStart + 1) {
+          bestStart = start;
+          bestEnd = index - 1;
+        }
+        start = null;
+      }
+    }
+    return bestStart === null ? null : { start: bestStart, end: bestEnd };
+  };
+
+  const rows = longestRun(perRow);
+  if (rows === null) {
+    throw new Error(
+      `no ${FIELD_HEX} play field in ${file} — name the field the capture was taken on as the third argument`,
+    );
   }
-  return { left: 0, top, width: info.width, height: bottom - top + 1 };
+  // Columns are the outer bounds rather than a run: at full width the field's
+  // two margins are separate runs with the board between them.
+  let left = null;
+  let right = null;
+  for (let x = 0; x < info.width; x += 1) {
+    if (perColumn[x] >= 3) {
+      if (left === null) left = x;
+      right = x;
+    }
+  }
+  return { left, top: rows.start, width: right - left + 1, height: rows.end - rows.start + 1 };
 }
+
+/** A rectangle inside the board box, given as fractions of it. */
+function boxFraction(box, x0, y0, x1, y1) {
+  return {
+    left: box.left + Math.round(x0 * box.width),
+    top: box.top + Math.round(y0 * box.height),
+    width: Math.round((x1 - x0) * box.width),
+    height: Math.round((y1 - y0) * box.height),
+  };
+}
+
+// ---- labels -----------------------------------------------------------------
 
 function strip(width, height, title, subtitle, titleSize, subSize) {
   return Buffer.from(
@@ -129,25 +315,43 @@ function strip(width, height, title, subtitle, titleSize, subSize) {
   );
 }
 
-const header = (width, title, subtitle) =>
+/**
+ * `subSize` drops for the narrow sheets. SVG text neither wraps nor ellipsises
+ * and the viewport clips what runs past it, so a subtitle set at 24 on a
+ * 1112 px thumbnail sheet loses its last third with no sign that it did.
+ */
+const header = (width, title, subtitle, subSize = 24) =>
   Buffer.from(
     `<svg width="${width}" height="96" xmlns="http://www.w3.org/2000/svg">
       <rect width="${width}" height="96" fill="${INK}"/>
       <text x="0" y="40" font-family="${FONT}" font-size="40" font-weight="bold" fill="#F5F2FB">${escape(title)}</text>
-      <text x="0" y="76" font-family="${FONT}" font-size="24" fill="#A9A2B6">${escape(subtitle)}</text>
+      <text x="0" y="${52 + subSize}" font-family="${FONT}" font-size="${subSize}" fill="#A9A2B6">${escape(subtitle)}</text>
     </svg>`,
   );
+
+/**
+ * Trim a label to what fits a column. SVG text neither wraps nor ellipsises, and
+ * a thumbnail column is 152 px wide — a board name set past its edge would run
+ * over the next board's tile. 0.55 em per character is the usual approximation
+ * for this font at these sizes; it only has to be close enough not to overlap.
+ */
+function fitText(text, width, fontSize) {
+  const characters = Math.floor(width / (fontSize * 0.55));
+  return text.length <= characters ? text : `${text.slice(0, Math.max(1, characters - 1))}…`;
+}
+
+// ---- the full-size figures --------------------------------------------------
 
 async function perBoardFigure(board) {
   const PANEL = 460;
   const TITLE = 24;
   const SUB = 17;
   const panels = [];
-  for (const treatment of TREATMENTS) {
-    const file = path.join(SHOTS, `${board.key}__${treatment.key}.png`);
+  for (const arm of TREATMENTS) {
+    const file = requireShot(shotPath(board.key, arm.key), `capture-boards.sh <dir>`);
     panels.push(
       await sharp(file)
-        .extract(await boardRect(file))
+        .extract(await boardBox(file))
         .resize(PANEL)
         .png()
         .toBuffer(),
@@ -186,15 +390,15 @@ async function perBoardFigure(board) {
   console.log(`wrote board-${board.key}.webp`);
 }
 
-async function allBoardsFigure(treatmentKey) {
+async function allBoardsFigure(armKey) {
   const COLUMN = 360;
   const panels = [];
   for (const board of BOARDS) {
-    const file = path.join(SHOTS, `${board.key}__${treatmentKey}.png`);
+    const file = requireShot(shotPath(board.key, armKey), `capture-boards.sh <dir>`);
     panels.push({
       board,
       image: await sharp(file)
-        .extract(await boardRect(file))
+        .extract(await boardBox(file))
         .resize(COLUMN)
         .png()
         .toBuffer(),
@@ -207,8 +411,8 @@ async function allBoardsFigure(treatmentKey) {
     {
       input: header(
         COLUMN * BOARDS.length + GAP * (BOARDS.length - 1),
-        `${TREATMENTS.find((entry) => entry.key === treatmentKey)?.title ?? treatmentKey}, every board`,
-        `Same synthesised climb, shipped art, ${FIELD_HEX} play field`,
+        `${TREATMENT_BY_KEY.get(armKey)?.label ?? armKey}, every board`,
+        `Same synthesised climb, shipped art, ${FIELD_HEX} play field, glyphs off`,
       ),
       left: GAP,
       top: GAP,
@@ -230,8 +434,8 @@ async function allBoardsFigure(treatmentKey) {
   })
     .composite(composites)
     .webp({ quality: 88 })
-    .toFile(path.join(OUT, `all-boards-${treatmentKey}.webp`));
-  console.log(`wrote all-boards-${treatmentKey}.webp`);
+    .toFile(path.join(OUT, `all-boards-${armKey}.webp`));
+  console.log(`wrote all-boards-${armKey}.webp`);
 }
 
 // ---- colour-vision simulation ------------------------------------------------
@@ -249,18 +453,23 @@ const MATRICES = {
   deuteranopia: [0.29275, 0.70725, 0, 0.29275, 0.70725, 0, -0.02234, 0.02234, 1],
 };
 
+/** `kind` of `null` is the normal-vision panel: crop and scale, no transform. */
 async function simulate(file, kind, region, width) {
   const { data, info } = await sharp(file).extract(region).raw().toBuffer({ resolveWithObject: true });
-  const matrix = MATRICES[kind];
   const out = Buffer.alloc(data.length);
-  for (let i = 0; i < data.length; i += info.channels) {
-    const r = toLinear(data[i]);
-    const g = toLinear(data[i + 1]);
-    const b = toLinear(data[i + 2]);
-    out[i] = toSrgb(matrix[0] * r + matrix[1] * g + matrix[2] * b);
-    out[i + 1] = toSrgb(matrix[3] * r + matrix[4] * g + matrix[5] * b);
-    out[i + 2] = toSrgb(matrix[6] * r + matrix[7] * g + matrix[8] * b);
-    if (info.channels === 4) out[i + 3] = data[i + 3];
+  if (kind === null) {
+    data.copy(out);
+  } else {
+    const matrix = MATRICES[kind];
+    for (let index = 0; index < data.length; index += info.channels) {
+      const red = toLinear(data[index]);
+      const green = toLinear(data[index + 1]);
+      const blue = toLinear(data[index + 2]);
+      out[index] = toSrgb(matrix[0] * red + matrix[1] * green + matrix[2] * blue);
+      out[index + 1] = toSrgb(matrix[3] * red + matrix[4] * green + matrix[5] * blue);
+      out[index + 2] = toSrgb(matrix[6] * red + matrix[7] * green + matrix[8] * blue);
+      if (info.channels === 4) out[index + 3] = data[index + 3];
+    }
   }
   return sharp(out, { raw: { width: info.width, height: info.height, channels: info.channels } })
     .resize(width)
@@ -268,64 +477,258 @@ async function simulate(file, kind, region, width) {
     .toBuffer();
 }
 
-async function colourVisionFigure() {
-  const REGION = { left: 60, top: 1150, width: 960, height: 700 };
-  const WIDTH = 620;
-  const panels = [
-    {
-      file: 'grasshopper-master__baseline.png',
-      kind: 'protanopia',
-      title: 'Baseline, protanopia',
-      sub: 'HAND blue and FOOT magenta are one colour',
-    },
-    {
-      file: 'grasshopper-master__outward-glow.png',
-      kind: 'protanopia',
-      title: 'Outward glow + role glyph, protanopia',
-      sub: 'FOOT a dot, START a bar, HAND a vertical bar, FINISH an X',
-    },
-    { file: 'grasshopper-master__baseline.png', kind: 'deuteranopia', title: 'Baseline, deuteranopia', sub: '' },
-    {
-      file: 'grasshopper-master__outward-glow.png',
-      kind: 'deuteranopia',
-      title: 'Outward glow + role glyph, deuteranopia',
-      sub: '',
-    },
-  ];
+/**
+ * Two-by-two of panels that share a crop: `columns` across, `rows` down.
+ * `panels` is row-major, each `{ file, kind, title, sub }`.
+ */
+async function dichromatSheet({ output, title, subtitle, crop, panelWidth, panels, columns }) {
   const images = [];
-  for (const panel of panels) images.push(await simulate(path.join(SHOTS, panel.file), panel.kind, REGION, WIDTH));
+  for (const panel of panels) {
+    const region = boxFraction(await boardBox(panel.file), ...crop);
+    images.push(await simulate(panel.file, panel.kind, region, panelWidth));
+  }
   const meta = await sharp(images[0]).metadata();
   const labelHeight = 24 + 17 + 18;
   const composites = [
-    {
-      input: header(
-        WIDTH * 2 + GAP,
-        'Colour-vision check: role by hue alone vs role by glyph',
-        'Grasshopper, Viénot 1999 dichromat transform',
-      ),
-      left: GAP,
-      top: GAP,
-    },
+    { input: header(meta.width * columns + GAP * (columns - 1), title, subtitle), left: GAP, top: GAP },
   ];
   panels.forEach((panel, index) => {
-    const left = GAP + (index % 2) * (meta.width + GAP);
-    const top = GAP + 96 + GAP + Math.floor(index / 2) * (labelHeight + 8 + meta.height + GAP);
+    const left = GAP + (index % columns) * (meta.width + GAP);
+    const top = GAP + 96 + GAP + Math.floor(index / columns) * (labelHeight + 8 + meta.height + GAP);
     composites.push({ input: strip(meta.width, labelHeight, panel.title, panel.sub, 24, 17), left, top });
     composites.push({ input: images[index], left, top: top + labelHeight + 8 });
   });
   await sharp({
     create: {
-      width: GAP + 2 * (meta.width + GAP),
-      height: GAP + 96 + GAP + 2 * (labelHeight + 8 + meta.height + GAP),
+      width: GAP + columns * (meta.width + GAP),
+      height: GAP + 96 + GAP + Math.ceil(panels.length / columns) * (labelHeight + 8 + meta.height + GAP),
       channels: 4,
       background: INK,
     },
   })
     .composite(composites)
     .webp({ quality: 88 })
-    .toFile(path.join(OUT, 'colour-vision.webp'));
-  console.log('wrote colour-vision.webp');
+    .toFile(path.join(OUT, output));
+  console.log(`wrote ${output}`);
 }
+
+/**
+ * The crop both dichromat sheets use: Grasshopper's lower two thirds.
+ *
+ * Grasshopper because it is the board #2202 was filed against and the board with
+ * the least room between two roles: over `spikeRolePalette('shipped', …)` — which
+ * is STARTING `#00DD00`, HAND `#4455FF`, FINISH `#FF0000`, FOOT `#FF00FF` — the
+ * Viénot protan transform above puts HAND and FOOT 3.2 ΔE00 apart (sRGB→Lab D65,
+ * CIEDE2000). That is the tightest pair on the board under either transform, and
+ * far tighter than the same pair's 20.6 under deutan, which is why the sheet's
+ * dichromat row is protanopia.
+ *
+ * It is NOT the only pair worth a look, and this crop deliberately excludes the
+ * other one: STARTING against FINISH is 39.1 under protan but **12.6 under
+ * deutan**, closer than HAND/FOOT's own deutan 20.6. Everything else runs 64 to
+ * 85 under both. So FINISH is not the safe colour it looks like in a protan
+ * panel — it is half of the board's tightest deuteranopia pair.
+ *
+ * This band because the HAND/FOOT pair is what is in it: the synthesised climb
+ * puts both STARTING holds, all six FOOT holds and the two lowest HAND holds
+ * below 0.52 of the board (`CLIMB_TARGETS` in `spike-boards.ts`), so the
+ * collapsing pair sits side by side three times over. The climb's one FINISH is
+ * at 0.06, above the crop.
+ */
+const GRASSHOPPER_CROP = [0.14, 0.52, 0.88, 0.99];
+
+async function colourVisionFigure() {
+  // Baseline and Outward glow, the two controls, with the glyphs OFF as they
+  // ship: this sheet is about what hue alone does across the two arms, and the
+  // glyph's own answer is the sheet below.
+  const baseline = requireShot(shotPath('grasshopper-master', 'baseline'), 'capture-boards.sh <dir>');
+  const glow = requireShot(shotPath('grasshopper-master', 'outward-glow'), 'capture-boards.sh <dir>');
+  await dichromatSheet({
+    output: 'colour-vision.webp',
+    title: 'The two controls under protanopia and deuteranopia',
+    subtitle: 'Grasshopper, glyphs off — Viénot 1999 dichromat transform, role is hue alone',
+    crop: GRASSHOPPER_CROP,
+    panelWidth: 620,
+    columns: 2,
+    panels: [
+      {
+        file: baseline,
+        kind: 'protanopia',
+        title: 'Baseline, protanopia',
+        sub: 'HAND blue and FOOT magenta are one colour, 3.2 ΔE00 apart',
+      },
+      {
+        file: glow,
+        kind: 'protanopia',
+        title: 'Outward glow, protanopia',
+        sub: 'The glow finds the hold; it says nothing about which role it is',
+      },
+      { file: baseline, kind: 'deuteranopia', title: 'Baseline, deuteranopia', sub: '' },
+      { file: glow, kind: 'deuteranopia', title: 'Outward glow, deuteranopia', sub: '' },
+    ],
+  });
+}
+
+async function accessibilityGlyphFigure() {
+  // Outward glow rather than a veil arm: the veil turns the whole wall down, so
+  // on a veil panel some of what the glyph appears to buy is the veil's contrast.
+  // Outward glow leaves the wall exactly as the art painted it, which makes the
+  // glyph the only thing that changes between the two columns.
+  const capture = 'capture-boards.sh <dir> && GLYPHS=on capture-boards.sh <dir> outward-glow';
+  const off = requireShot(shotPath('grasshopper-master', 'outward-glow'), capture);
+  const on = requireShot(shotPath('grasshopper-master', 'outward-glow', { glyphs: 'on' }), capture);
+  await dichromatSheet({
+    output: 'accessibility-glyphs.webp',
+    title: 'Accessibility mode: role by hue alone against role by glyph',
+    subtitle: 'Grasshopper, outward glow, glyphs off vs on — the lower row is the Viénot 1999 protan transform',
+    crop: GRASSHOPPER_CROP,
+    panelWidth: 700,
+    columns: 2,
+    panels: [
+      {
+        file: off,
+        kind: null,
+        title: 'Glyphs off — what the app renders',
+        sub: 'The default. Role is hue: blue HAND, magenta FOOT, green START',
+      },
+      {
+        file: on,
+        kind: null,
+        title: 'Glyphs on — the accessibility mode',
+        sub: 'FOOT a ring, START a horizontal bar, HAND a vertical bar — the FINISH X is above this crop',
+      },
+      {
+        file: off,
+        kind: 'protanopia',
+        title: 'Glyphs off, protanopia',
+        sub: 'HAND and FOOT are 3.2 ΔE00 apart — one colour, and nothing else',
+      },
+      {
+        file: on,
+        kind: 'protanopia',
+        title: 'Glyphs on, protanopia',
+        sub: 'Same two hues; the ring and the bar carry the role now',
+      },
+    ],
+  });
+}
+
+// ---- the sizes the app actually draws ---------------------------------------
+
+/**
+ * What each captured width stands for in the app. Every one of these surfaces
+ * outnumbers the play view, and none of them has ever been in a spike figure.
+ */
+const SIZE_SURFACE = {
+  152: 'a 76 dp climb-list cell at 2x DPR (climb-list-thumbnail-metrics.ts)',
+  228: 'the same climb-list cell at 3x DPR',
+  // `maxCompositeDimension` caps the composite's LONG side, not its width
+  // (ThumbnailFetcher.swift's `min(1, 384 / max(width, height))`), and every
+  // board here is portrait or square — so 384 is the tallest the Live Activity
+  // composite ever is, and the widget draws it at roughly 240 px wide inside an
+  // 80x100pt lock-screen image. This row is the cap, not what the widget shows.
+  384: "the iOS Live Activity composite's 384 px long-side cap (ThumbnailFetcher.swift)",
+};
+
+/**
+ * One sheet per width: the arms down the page, the seven boards across it, every
+ * tile at 1:1 out of a capture taken at that width.
+ *
+ * A strip and not a single tile because the open question at 152 px is what the
+ * veil's whole-thumbnail darkening does at list density — whether it reads as
+ * elegant or as muddy when a scroll puts twenty of them on screen — and one
+ * thumbnail in isolation cannot answer that. A real list is one board repeated;
+ * seven different boards is the harder version of the same question, and it is
+ * the only version this spike's captures can honestly show.
+ *
+ * Nothing here is resampled. `renderer.rs` draws a different picture for a
+ * thumbnail than for the play view — an 8.0 base stroke and a 0.3-alpha fill
+ * under `filledStyle`, which `ClimbListThumbnail` passes — so a downscaled
+ * full-size capture is not the control. `thumb-baseline` is.
+ */
+async function thumbnailFigure(sizeKey) {
+  // The board is laid out in dp and the device rounds dp x density back to whole
+  // pixels, so a tile can land a pixel either side of its nominal width. Columns
+  // are set to the widest tile in the sheet rather than to the nominal number.
+  const capture = `THUMBS=1 capture-boards.sh <dir>`;
+  const rows = [];
+  for (const arm of THUMBNAILS) {
+    const tiles = [];
+    for (const board of BOARDS) {
+      const file = requireShot(shotPath(board.key, arm.key, { size: sizeKey }), capture);
+      tiles.push(
+        await sharp(file)
+          .extract(await boardBox(file))
+          .png()
+          .toBuffer(),
+      );
+    }
+    rows.push({ arm, tiles });
+  }
+
+  const metas = [];
+  for (const row of rows) for (const tile of row.tiles) metas.push(await sharp(tile).metadata());
+  const column = Math.max(...metas.map((meta) => meta.width));
+  const tallest = Math.max(...metas.map((meta) => meta.height));
+
+  // List density, not figure density: the tiles have to sit as close together as
+  // climb rows do or the question the sheet asks changes.
+  const TILE_GAP = 8;
+  const LABEL = 24;
+  const ARM_LABEL = 24 + 17 + 18;
+  const sheetWidth = BOARDS.length * column + (BOARDS.length - 1) * TILE_GAP;
+  const rowHeight = ARM_LABEL + 8 + tallest + GAP;
+
+  const composites = [
+    {
+      input: header(
+        sheetWidth,
+        `${sizeKey} px board — ${THUMBNAILS.length} arms, ${BOARDS.length} boards, 1:1`,
+        `${SIZE_SURFACE[sizeKey] ?? 'a width the app draws'} · overlay drawn at this width, not a scaled-down 1080 px render`,
+        18,
+      ),
+      left: GAP,
+      top: GAP,
+    },
+  ];
+  BOARDS.forEach((board, index) => {
+    composites.push({
+      input: strip(column, LABEL, fitText(board.label, column, 15), '', 15, 0),
+      left: GAP + index * (column + TILE_GAP),
+      top: GAP + 96 + GAP,
+    });
+  });
+  rows.forEach((row, rowIndex) => {
+    const top = GAP + 96 + GAP + LABEL + 8 + rowIndex * rowHeight;
+    composites.push({
+      input: strip(sheetWidth, ARM_LABEL, row.arm.title, row.arm.subtitle, 24, 17),
+      left: GAP,
+      top,
+    });
+    row.tiles.forEach((tile, index) => {
+      composites.push({
+        input: tile,
+        left: GAP + index * (column + TILE_GAP),
+        top: top + ARM_LABEL + 8,
+      });
+    });
+  });
+
+  await sharp({
+    create: {
+      width: GAP + sheetWidth + GAP,
+      height: GAP + 96 + GAP + LABEL + 8 + rows.length * rowHeight,
+      channels: 4,
+      background: INK,
+    },
+  })
+    .composite(composites)
+    .webp({ quality: 88 })
+    .toFile(path.join(OUT, `thumbnails-${sizeKey}px.webp`));
+  console.log(`wrote thumbnails-${sizeKey}px.webp`);
+}
+
+// ---- run --------------------------------------------------------------------
 
 for (const board of BOARDS) await perBoardFigure(board);
 // Both leading arms get an every-board sheet: the glow is the one that wins on
@@ -333,4 +736,22 @@ for (const board of BOARDS) await perBoardFigure(board);
 // ones, and comparing them across seven boards at once is the whole point.
 await allBoardsFigure('outward-glow');
 await allBoardsFigure('veil-glow');
-await colourVisionFigure();
+// The sheets a given run may not have the captures for — the two dichromat ones
+// want Grasshopper, the thumbnail ones want the `THUMBS=1` sweep. Skipped with
+// the command that takes them rather than failing the whole run, so a narrowed
+// run still produces the figures it can.
+for (const sheet of [
+  { name: 'colour-vision.webp', build: colourVisionFigure },
+  { name: 'accessibility-glyphs.webp', build: accessibilityGlyphFigure },
+  ...THUMBNAIL_SIZES.map((sizeKey) => ({
+    name: `thumbnails-${sizeKey}px.webp`,
+    build: () => thumbnailFigure(sizeKey),
+  })),
+]) {
+  try {
+    await sheet.build();
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.startsWith('no capture at')) throw error;
+    console.log(`skipped ${sheet.name}\n  ${error.message.split('\n').join('\n  ')}`);
+  }
+}

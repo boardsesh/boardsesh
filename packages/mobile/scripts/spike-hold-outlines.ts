@@ -15,7 +15,8 @@
  * Per placement: flood-fill the opaque region under the placement centre
  * (bounded to a box around it so a hold that touches its neighbour cannot run
  * away across the board), drop the limbs joined to it only through a thin neck,
- * follow the outer border of what is left, then simplify with Douglas-Peucker.
+ * pull the result back off any boundary it shares with a neighbour's art, follow
+ * the outer border of what is left, then simplify with Douglas-Peucker.
  * Coordinates are emitted as integers relative to the placement centre, so the
  * renderer adds cx/cy and strokes.
  *
@@ -23,10 +24,10 @@
  * neighbour's, the pair is cut at the midline between the two bolts, so a rim
  * that genuinely belongs to the neighbour but sits nearer this bolt stays —
  * whatever survives the neck trim of it, which is anything joined to this hold's
- * body by 5 board px or more. And a placement with no art under it yields
- * nothing and is simply absent from the table; that is not an edge case on
- * MoonBoard — its placements are a synthetic 11x18 grid and most cells genuinely
- * have no hold — so consumers must fall back to a ring.
+ * body by a neck the trim radius wide or more. And a placement with no art under
+ * it yields nothing and is simply absent from the table; that is not an edge
+ * case on MoonBoard — its placements are a synthetic 11x18 grid and most cells
+ * genuinely have no hold — so consumers must fall back to a ring.
  */
 
 import { writeFileSync } from 'node:fs';
@@ -68,12 +69,36 @@ const SIMPLIFY_EPSILON = 1.6;
 /** Outlines shorter than this many pixels of perimeter are noise, not a hold. */
 const MIN_PERIMETER_POINTS = 24;
 /**
- * How far inside the art a pixel has to sit to count as the hold's core, in
- * board pixels. A limb that reaches the rest of the mask only through a neck too
- * thin to hold a pixel this far clear of the art's edge is not part of this
- * hold — see `trimThinNecks`.
+ * The board width both radii below are quoted at, and the one the play view
+ * renders at. MoonBoard's art box is 650 px wide against 1080 for the other
+ * five, so an absolute board-pixel radius bites 1.66x harder there — the same
+ * unit mistake design review 2 fixed for `glowSpreadWidth`.
  */
-const NECK_TRIM_RADIUS = 3;
+const RADIUS_REFERENCE_WIDTH = 1080;
+
+/**
+ * A radius quoted at `RADIUS_REFERENCE_WIDTH`, in this board's own pixels. The
+ * floor of 2 is where a disc stops being one: at radius 1 the erosion disc is a
+ * single pixel and the neck trim can never fire.
+ */
+function radiusForBoard(atReferenceWidth: number, boardWidth: number): number {
+  return Math.max(2, Math.round((atReferenceWidth * boardWidth) / RADIUS_REFERENCE_WIDTH));
+}
+
+/**
+ * How far inside the art a pixel has to sit to count as the hold's core, at the
+ * reference width. A limb that reaches the rest of the mask only through a neck
+ * too thin to hold a pixel this far clear of the art's edge is not part of this
+ * hold — see `trimThinNecks`. Both MoonBoards come out at 2, which is the same
+ * 5 board px of neck at 1080 that the five wider boards get; design review 3
+ * change 7 found two MoonBoard 2016 holds with a real lobe cut off at a flat 3.
+ */
+const NECK_TRIM_AT_REFERENCE = 3;
+/**
+ * How far the emitted silhouette keeps clear of a neighbour's art, at the
+ * reference width — see `pullBackFromCuts`.
+ */
+const CUT_CLEARANCE_AT_REFERENCE = 3;
 /**
  * Board pixels a trim has to drop before the run reports it, on the same
  * threshold design review 2's gate 5 fails an outline at. The two measures are
@@ -93,28 +118,34 @@ const ORTHOGONAL: readonly Point[] = [
 ];
 
 /**
- * Discs of radius `NECK_TRIM_RADIUS`, as offsets. Testing a disc of background
+ * Open and closed discs of a radius, as offsets. Testing a disc of background
  * pixels around each pixel is exactly a Euclidean distance transform thresholded
- * at the radius, without a chamfer pass's approximation error — at a radius of 3
- * the error would be most of the decision.
+ * at the radius, without a chamfer pass's approximation error — at a radius of 2
+ * or 3 the error would be most of the decision.
  *
  * The `<` on the erosion against `<=` on the dilation is deliberate, and it is
- * what sets the neck cut-off. The open disc is 25 offsets reaching 2 px along
- * the axes, so a straight limb keeps a core from 5 px wide up; the closed disc
- * is 29 offsets reaching 3, which would demand 7 and cut real 5- and 6-px rails.
- * Design review 2 asked for necks narrower than 4 px to go, so 5 is the wanted
- * cut-off. The dilation then has to be the wider of the two: it strictly
- * contains the erosion disc, so every pixel a core pixel needed filled to
- * qualify comes back, and no straight edge is shaved by the round trip.
+ * what sets the neck cut-off. At radius 3 the open disc is 25 offsets reaching
+ * 2 px along the axes, so a straight limb keeps a core from 5 px wide up; the
+ * closed disc is 29 offsets reaching 3, which would demand 7 and cut real 5- and
+ * 6-px rails. Design review 2 asked for necks narrower than 4 px to go, so 5 is
+ * the wanted cut-off. At radius 2 — the MoonBoards — the same pair is 9 offsets
+ * reaching 1 against 13 reaching 2, so the cut-off is 3 of that board's pixels,
+ * which is the 5 px at 1080 the wider boards get. The dilation has to be the
+ * wider of the two either way: it strictly contains the erosion disc, so every
+ * pixel a core pixel needed filled to qualify comes back, and no straight edge
+ * is shaved by the round trip.
  */
-const NECK_EROSION_OFFSETS: Point[] = [];
-const NECK_DILATION_OFFSETS: Point[] = [];
-for (let dy = -NECK_TRIM_RADIUS; dy <= NECK_TRIM_RADIUS; dy += 1) {
-  for (let dx = -NECK_TRIM_RADIUS; dx <= NECK_TRIM_RADIUS; dx += 1) {
-    const squared = dx * dx + dy * dy;
-    if (squared < NECK_TRIM_RADIUS * NECK_TRIM_RADIUS) NECK_EROSION_OFFSETS.push([dx, dy]);
-    if (squared <= NECK_TRIM_RADIUS * NECK_TRIM_RADIUS) NECK_DILATION_OFFSETS.push([dx, dy]);
+function discOffsets(radius: number): { erosion: Point[]; dilation: Point[] } {
+  const erosion: Point[] = [];
+  const dilation: Point[] = [];
+  for (let dy = -radius; dy <= radius; dy += 1) {
+    for (let dx = -radius; dx <= radius; dx += 1) {
+      const squared = dx * dx + dy * dy;
+      if (squared < radius * radius) erosion.push([dx, dy]);
+      if (squared <= radius * radius) dilation.push([dx, dy]);
+    }
   }
+  return { erosion, dilation };
 }
 
 /** Moore-neighbour border following, clockwise, from the leftmost-topmost filled pixel. */
@@ -281,7 +312,7 @@ function floodComponent(
  * paint across the unlit hold above it. Two more on that board and one on TB2
  * Mirror.
  *
- * Erode to the pixels sitting `NECK_TRIM_RADIUS` clear of the art's edge, keep
+ * Erode to the pixels sitting a neck-trim radius clear of the art's edge, keep
  * the one core the seed sits on, grow that core alone back over the mask it came
  * from, and keep what the seed can still reach. A neck thinner than the radius
  * carries no core of its own, so a limb behind one is never in the kept core and
@@ -309,16 +340,23 @@ function floodComponent(
  *
  * Two fallbacks keep it off holds that have no body to judge a limb against. A
  * mask with no core at all comes back untouched; that is defensive and fires on
- * none of the 2,360 placements the trim runs over, but it is what fixes the
- * radius at 3 rather than higher — MoonBoard 2016's hold 148, the narrowest rail
- * on any of the seven boards, survives on a core of roughly 6 px, and a wider
- * disc would take the whole hold instead of a limb of it. And where the seed's
+ * none of the 2,360 placements the trim runs over, but it is what keeps the
+ * reference radius at 3 rather than higher — MoonBoard 2016's hold 148, the
+ * narrowest rail on any of the seven boards, cores on 315 pixels at that board's
+ * own radius of 2 and only 185 at 3, and a wider disc would take the whole hold
+ * instead of a limb of it. And where the seed's
  * own pixel is not core, which happens on 13 of those 2,360, the largest core
  * stands in for it; if even that grows back without covering the seed, the mask
  * is returned untouched — a guard, not a measured behaviour: it too fires on
  * none of the seven boards.
  */
-function trimThinNecks(mask: Uint8Array, width: number, height: number, seedIndex: number): Uint8Array {
+function trimThinNecks(
+  mask: Uint8Array,
+  width: number,
+  height: number,
+  seedIndex: number,
+  discs: { erosion: Point[]; dilation: Point[] },
+): Uint8Array {
   const background = new Uint8Array(mask.length);
   for (let index = 0; index < mask.length; index += 1) background[index] = mask[index] === 1 ? 0 : 1;
   const outside = new Uint8Array(mask.length);
@@ -339,7 +377,7 @@ function trimThinNecks(mask: Uint8Array, width: number, height: number, seedInde
     const x = index % width;
     const y = (index - x) / width;
     let clear = true;
-    for (const [dx, dy] of NECK_EROSION_OFFSETS) {
+    for (const [dx, dy] of discs.erosion) {
       const nx = x + dx;
       const ny = y + dy;
       // Off the search box counts as background: art cut by the box has been cut
@@ -375,7 +413,7 @@ function trimThinNecks(mask: Uint8Array, width: number, height: number, seedInde
   for (const index of body) {
     const x = index % width;
     const y = (index - x) / width;
-    for (const [dx, dy] of NECK_DILATION_OFFSETS) {
+    for (const [dx, dy] of discs.dilation) {
       const nx = x + dx;
       const ny = y + dy;
       if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
@@ -390,6 +428,102 @@ function trimThinNecks(mask: Uint8Array, width: number, height: number, seedInde
   const trimmed = new Uint8Array(grown.length);
   floodComponent(grown, width, height, seedIndex, trimmed);
   return trimmed;
+}
+
+/**
+ * Pull the mask back off every boundary it shares with a neighbour's art.
+ *
+ * The partition is exact and the neck trim is exact, and this is the third
+ * failure, which neither can see. Where two holds' art genuinely touches, the
+ * mask ends on the midline between the two bolts — and that midline is not an
+ * edge of anything, it runs through solid art. Whatever the renderer draws from
+ * the silhouette then starts *on the neighbouring hold*: a straight cut with the
+ * glow's brightest band laid along it, which reads as a wedge of the neighbour
+ * belonging to the lit hold. The maintainer spotted it by eye on Kilter
+ * Homewall, on a lit HAND whose glow has a lobe over the hold to its right; the
+ * trim cannot catch it because a wedge joined by wide contact carries a core of
+ * its own, and neither can gate 2 (there is no second placement inside) nor gate
+ * 5 (a 3 px open takes nothing off it).
+ *
+ * So: mark every mask pixel that has a neighbour-owned art pixel in its 8
+ * neighbourhood, delete everything within `CUT_CLEARANCE_AT_REFERENCE` of one,
+ * and keep the component the bolt is still in. Holds whose art touches nothing
+ * have no contact pixel and come back untouched, which is why the boards that do
+ * not have the problem do not pay for the fix: the pullback leaves 283 of 332
+ * Grasshopper outlines, 265 of 303 Tension Original, 333 of 476 Kilter Original
+ * and 233 of 252 MoonBoard outlines exactly as it found them.
+ *
+ * The clearance is 3 board px at 1080 because that covers the glow's own
+ * shoulder. `glowFalloffStops` holds alpha at or above 0.9 out to 0.15 of an
+ * extent of `glowSpreadFraction` 0.43 r, which is 1.9 to 3.2 board px across the
+ * seven boards, so at 3 the mark's brightest ink lands on the hold's own art
+ * everywhere. Measured against the same run with the pullback off, the shoulder
+ * ink sitting on a neighbour goes 29,455 board px² to 25 over the seven boards,
+ * all 25 of it on Kilter Homewall. A clearance of 2 leaves 731 of it; 4 saves 3
+ * more and costs another 22,148 px² of hold.
+ *
+ * The two alternatives lose on the same measure. Replacing each cut with a
+ * straight chord leaves 14,992 px², and is worse than doing nothing on two
+ * boards — straightening a ragged cut pushes as much boundary outward as inward.
+ * Bowing that chord inward by the same clearance leaves 5,290. Both take up to
+ * 99% of a hold on TB2 Mirror, where a cut run wraps a corner and the chord's
+ * two ends end up on opposite sides of the body; the worst the pullback does is
+ * 33%.
+ *
+ * The seed guard is the same shape as the trim's: a hold small enough that the
+ * clearance swallows its bolt keeps its untouched mask rather than collapsing,
+ * and that fires on none of the 2,360 placements. The largest loss anywhere is
+ * TB2 Mirror 716, 1,852 board px² to 1,233 — the hold whose boundary was 85% on
+ * a neighbour's art before. Per-board mean loss runs 1.0 / 0.5 / 2.3 / 6.3 /
+ * 2.0% on the five 1080-wide boards; both MoonBoards come out net *larger*
+ * (-1.9% and -0.7%), because the relative neck trim gives back more than the
+ * pullback takes.
+ */
+function pullBackFromCuts(
+  mask: Uint8Array,
+  neighbourArt: Uint8Array,
+  width: number,
+  height: number,
+  seedIndex: number,
+  clearanceOffsets: readonly Point[],
+): { mask: Uint8Array; contacted: boolean } {
+  const contact: number[] = [];
+  for (let index = 0; index < mask.length; index += 1) {
+    if (mask[index] !== 1) continue;
+    const x = index % width;
+    const y = (index - x) / width;
+    let touches = false;
+    for (let dy = -1; dy <= 1 && !touches; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        if (neighbourArt[ny * width + nx] === 1) {
+          touches = true;
+          break;
+        }
+      }
+    }
+    if (touches) contact.push(index);
+  }
+  if (contact.length === 0) return { mask, contacted: false };
+
+  const kept = new Uint8Array(mask);
+  for (const index of contact) {
+    const x = index % width;
+    const y = (index - x) / width;
+    for (const [dx, dy] of clearanceOffsets) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+      kept[ny * width + nx] = 0;
+    }
+  }
+  if (kept[seedIndex] !== 1) return { mask, contacted: true };
+
+  const pulled = new Uint8Array(kept.length);
+  floodComponent(kept, width, height, seedIndex, pulled);
+  return { mask: pulled, contacted: true };
 }
 
 /** Distance from each placement to its nearest neighbour, used to size the seed disc. */
@@ -467,11 +601,14 @@ async function traceBoard(
   const placementList = holdsData.map((hold) => ({ id: hold.id, cx: hold.cx, cy: hold.cy }));
   const label = buildLabelMap(boardWidth, boardHeight, placementList);
   const pitches = nearestPitch(placementList);
+  const neckDiscs = discOffsets(radiusForBoard(NECK_TRIM_AT_REFERENCE, boardWidth));
+  const clearanceOffsets = discOffsets(radiusForBoard(CUT_CLEARANCE_AT_REFERENCE, boardWidth)).dilation;
 
   const outlines = new Map<number, number[]>();
   let missing = 0;
   let rejectedBox = 0;
   let neckTrimmed = 0;
+  let pulledBack = 0;
 
   for (const [placementIndex, placement] of holdsData.entries()) {
     if (outlines.has(placement.id)) continue;
@@ -491,12 +628,18 @@ async function traceBoard(
     const localHeight = bottom - top + 1;
 
     // The mask is this placement's own territory only: opaque art whose nearest
-    // placement is this one.
+    // placement is this one. Everything else the box holds that is opaque is a
+    // neighbour's art, and `pullBackFromCuts` needs it by name — the two masks
+    // are complementary within the box, but only inside the art, so a hold's own
+    // background cannot be told from a neighbour's without keeping both.
     const local = new Uint8Array(localWidth * localHeight);
+    const neighbourArt = new Uint8Array(localWidth * localHeight);
     for (let y = 0; y < localHeight; y += 1) {
       for (let x = 0; x < localWidth; x += 1) {
         const global = (top + y) * boardWidth + (left + x);
-        local[y * localWidth + x] = opaque[global] === 1 && label[global] === placementIndex ? 1 : 0;
+        if (opaque[global] !== 1) continue;
+        if (label[global] === placementIndex) local[y * localWidth + x] = 1;
+        else neighbourArt[y * localWidth + x] = 1;
       }
     }
 
@@ -530,7 +673,23 @@ async function traceBoard(
     const region = new Uint8Array(localWidth * localHeight);
     floodComponent(local, localWidth, localHeight, seedIndex, region);
 
-    const traced = trimThinNecks(region, localWidth, localHeight, seedIndex);
+    const trimmed = trimThinNecks(region, localWidth, localHeight, seedIndex, neckDiscs);
+    const pulled = pullBackFromCuts(trimmed, neighbourArt, localWidth, localHeight, seedIndex, clearanceOffsets);
+    // Trim again, because the pullback makes necks of its own: a hold in contact
+    // along two sides comes back joined through whatever the two clearance discs
+    // left between them. Thirteen outlines on two boards failed gate 5 with a
+    // single trim — TB2 Mirror 591 at 36 board px² and Kilter Homewall 4595 at
+    // 71 — and every one of them is a sliver the first trim never saw because it
+    // did not exist yet.
+    const traced = pulled.contacted
+      ? trimThinNecks(pulled.mask, localWidth, localHeight, seedIndex, neckDiscs)
+      : pulled.mask;
+
+    // Everything the three passes above removed from the flood-filled region:
+    // the first neck trim, the pullback off a neighbour's art, and the second
+    // trim the pullback makes necessary. Measured across all three rather than
+    // at the first trim, which is where it used to be counted — that read the
+    // pullback's own cost as zero on all 720 holds it touched.
     let droppedArea = 0;
     for (let index = 0; index < region.length; index += 1) {
       if (region[index] === 1 && traced[index] !== 1) droppedArea += 1;
@@ -563,9 +722,10 @@ async function traceBoard(
       missing += 1;
       continue;
     }
-    // Counted here, not at the trim: an outline that then fell back is not in
-    // the table, and the gate measures the table.
+    // Counted here, not where it was measured: an outline that then fell back is
+    // not in the table, and the gate measures the table.
     if (droppedArea > NOTABLE_TRIM_AREA) neckTrimmed += 1;
+    if (pulled.contacted) pulledBack += 1;
     outlines.set(placement.id, flat);
   }
 
@@ -583,7 +743,8 @@ async function traceBoard(
     `${outlines.size}/${holdsData.length} traced ` +
     `(${missing} fell back: ${rejectedBox} hit the search box, ` +
     `${missing - rejectedBox} had no art of their own; ` +
-    `${neckTrimmed} lost more than ${NOTABLE_TRIM_AREA} px² to a thin-necked limb)`;
+    `${neckTrimmed} lost more than ${NOTABLE_TRIM_AREA} px² to the neck trim and the pullback together; ` +
+    `${pulledBack} pulled back off a neighbour's art)`;
   console.log(`[spike] ${boardKey.padEnd(24)} ${summary}`);
   return { outlines, summary };
 }

@@ -1,3 +1,6 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 import { getBoardRenderData } from '../../../lib/board-details';
 import { SPIKE_BOARDS, type SpikeBoardConfig } from '../spike-boards';
@@ -10,13 +13,16 @@ import { SPIKE_HOLD_OUTLINES } from '../spike-hold-outlines';
  * They were written as "throwaway scripts to re-run after changing the tracer",
  * and that is exactly why the record drifted: nobody re-ran them, and the
  * README's traced counts stayed on a pre-fix run for two rounds of fixes. The
- * whole table is 2,360 polygons of at most ~40 points, so all five gates cost a
- * couple of seconds — cheap enough that they belong in CI rather than in a
- * paragraph telling the next person to write them again.
+ * whole table is 2,360 polygons of at most ~40 points, so gates 1 to 5 are
+ * milliseconds; gate 6 decodes the seven boards' art to tell an art edge from a
+ * partition cut, and costs 1.6s of the file's ~4.9s wall (the rest is the
+ * module import the table itself forces). Cheap enough that
+ * they belong in CI rather than in a paragraph telling the next person to write
+ * them again.
  *
  * Every gate carries a fixture that must trip it. A silhouette gate that has
- * never failed is indistinguishable from one that cannot fail, and three of the
- * five were originally reported against defects that are now zero everywhere.
+ * never failed is indistinguishable from one that cannot fail, and four of the
+ * six were originally reported against defects that are now zero everywhere.
  */
 
 /**
@@ -27,7 +33,19 @@ import { SPIKE_HOLD_OUTLINES } from '../spike-hold-outlines';
  */
 const SEARCH_RADII = 2.6;
 const MAX_BOX_EDGE_SHARE = 0.1;
-const NECK_TRIM_RADIUS = 3;
+const ALPHA_FLOOR = 96;
+const RADIUS_REFERENCE_WIDTH = 1080;
+const NECK_TRIM_AT_REFERENCE = 3;
+
+/**
+ * The generator's per-board radius rule, restated. Both MoonBoards draw their
+ * art in a 650 px box against 1080 for the other five, so a flat board-pixel
+ * radius is 1.66x the mark there; gate 5 has to open at the radius the tracer
+ * trimmed at or it measures a different hold to the one that shipped.
+ */
+function radiusForBoard(atReferenceWidth: number, boardWidth: number): number {
+  return Math.max(2, Math.round((atReferenceWidth * boardWidth) / RADIUS_REFERENCE_WIDTH));
+}
 
 /** Within this of an image axis, a segment is straight enough to be a crop-box side. */
 const AXIS_TOLERANCE = Math.tan((2 * Math.PI) / 180);
@@ -191,14 +209,17 @@ function rasterise(flat: number[]): Raster {
   return { filled, width, height, area };
 }
 
-const NECK_EROSION_OFFSETS: Array<[number, number]> = [];
-const NECK_DILATION_OFFSETS: Array<[number, number]> = [];
-for (let dy = -NECK_TRIM_RADIUS; dy <= NECK_TRIM_RADIUS; dy += 1) {
-  for (let dx = -NECK_TRIM_RADIUS; dx <= NECK_TRIM_RADIUS; dx += 1) {
-    const squared = dx * dx + dy * dy;
-    if (squared < NECK_TRIM_RADIUS * NECK_TRIM_RADIUS) NECK_EROSION_OFFSETS.push([dx, dy]);
-    if (squared <= NECK_TRIM_RADIUS * NECK_TRIM_RADIUS) NECK_DILATION_OFFSETS.push([dx, dy]);
+function discOffsets(radius: number): { erosion: Array<[number, number]>; dilation: Array<[number, number]> } {
+  const erosion: Array<[number, number]> = [];
+  const dilation: Array<[number, number]> = [];
+  for (let dy = -radius; dy <= radius; dy += 1) {
+    for (let dx = -radius; dx <= radius; dx += 1) {
+      const squared = dx * dx + dy * dy;
+      if (squared < radius * radius) erosion.push([dx, dy]);
+      if (squared <= radius * radius) dilation.push([dx, dy]);
+    }
   }
+  return { erosion, dilation };
 }
 
 /**
@@ -220,8 +241,9 @@ for (let dy = -NECK_TRIM_RADIUS; dy <= NECK_TRIM_RADIUS; dy += 1) {
  * roughly 6 px — so the branch has no board to pin it and carries a fixture
  * instead.
  */
-function openedArea(flat: number[]): number {
+function openedArea(flat: number[], radius: number): number {
   const { filled, width, height } = rasterise(flat);
+  const { erosion, dilation } = discOffsets(radius);
 
   const core = new Uint8Array(filled.length);
   for (let index = 0; index < filled.length; index += 1) {
@@ -229,7 +251,7 @@ function openedArea(flat: number[]): number {
     const x = index % width;
     const y = (index - x) / width;
     let clear = true;
-    for (const [dx, dy] of NECK_EROSION_OFFSETS) {
+    for (const [dx, dy] of erosion) {
       const nx = x + dx;
       const ny = y + dy;
       if (nx < 0 || ny < 0 || nx >= width || ny >= height || filled[ny * width + nx] !== 1) {
@@ -245,7 +267,7 @@ function openedArea(flat: number[]): number {
     if (core[index] !== 1) continue;
     const x = index % width;
     const y = (index - x) / width;
-    for (const [dx, dy] of NECK_DILATION_OFFSETS) {
+    for (const [dx, dy] of dilation) {
       const nx = x + dx;
       const ny = y + dy;
       if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
@@ -257,8 +279,8 @@ function openedArea(flat: number[]): number {
   return survived;
 }
 
-function spurArea(flat: number[]): number {
-  const survived = openedArea(flat);
+function spurArea(flat: number[], radius: number): number {
+  const survived = openedArea(flat, radius);
   // Change 2's own "keep the raw mask if nothing survives the erosion". Split
   // out from the measure rather than folded into it so a fixture can show the
   // unexempted open deleting the shape, which a `spurArea === 0` alone cannot:
@@ -266,6 +288,164 @@ function spurArea(flat: number[]): number {
   if (survived === 0) return 0;
   return rasterise(flat).area - survived;
 }
+
+/**
+ * Gate 6's ground truth: the same composited alpha channel the tracer reads.
+ *
+ * Every other gate here is geometry against geometry, and none of them can see
+ * the defect gate 6 is for — a silhouette boundary that is not an edge of
+ * anything, because the nearest-placement partition cut the pair apart through
+ * solid art. Telling that from a real art edge takes the art, so this gate pays
+ * for decoding it: about 3.5s for all seven boards, once.
+ */
+const IMAGES_DIR = fileURLToPath(new URL('../../../../../web/public/images/', import.meta.url));
+
+type BoardArt = { opaque: Uint8Array; width: number; height: number };
+
+async function loadBoardArt(width: number, height: number, backgroundImageKeys: string[]): Promise<BoardArt> {
+  const rawLayer = { width, height, channels: 4 as const };
+  let composite: Buffer | null = null;
+  for (const key of backgroundImageKeys) {
+    const layer = await sharp(path.join(IMAGES_DIR, key))
+      .resize(width, height, { fit: 'fill' })
+      .ensureAlpha()
+      .raw()
+      .toBuffer();
+    composite =
+      composite === null
+        ? layer
+        : await sharp(composite, { raw: rawLayer })
+            .composite([{ input: layer, raw: rawLayer, blend: 'over' }])
+            .raw()
+            .toBuffer();
+  }
+  if (composite === null) throw new Error('no layers');
+  const opaque = new Uint8Array(width * height);
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    opaque[pixel] = composite[pixel * 4 + 3] >= ALPHA_FLOOR ? 1 : 0;
+  }
+  return { opaque, width, height };
+}
+
+/**
+ * Board pixels to step along the outward normal when asking what is on the other
+ * side of the boundary. Far enough to clear the antialiased rim the alpha floor
+ * already cut, short enough that it cannot cross a gutter: Kilter Homewall's
+ * median gutter between two holds is 3.6 board px, so a probe at 2.5 lands in
+ * the gutter rather than on the far hold whenever there is one.
+ */
+const CUT_PROBE_DISTANCE = 2.5;
+
+/** The nearest placement to a board point — the partition the generator cuts on. */
+function nearestPlacementId(candidates: Placement[], pointX: number, pointY: number): number {
+  let bestId = candidates[0].id;
+  let bestDistance = Infinity;
+  for (const candidate of candidates) {
+    const distance = (candidate.cx - pointX) ** 2 + (candidate.cy - pointY) ** 2;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestId = candidate.id;
+    }
+  }
+  return bestId;
+}
+
+/**
+ * Walk the polygon a board pixel at a time and probe outward at every step.
+ *
+ * `opaque` is the share of the boundary that is not an art edge at all — the
+ * measure design review 3 asked for. It reads high by design once the tracer
+ * pulls back from a contact, because the pullback puts the boundary inside the
+ * hold's *own* art, so it is a ceiling on how far that pullback may run rather
+ * than a defect count. `neighbour` is the half that matters: boundary whose
+ * outside is art the partition gives to a different placement, which is exactly
+ * the wedge — a mark ending on someone else's hold with the glow's brightest
+ * band laid along it.
+ *
+ * Sampled per pixel and not per vertex: Douglas-Peucker leaves a long straight
+ * cut carrying two vertices and a curved art edge carrying twenty, so a
+ * per-vertex share understates a cut by roughly the ratio of the two.
+ */
+function cutShares(
+  art: BoardArt,
+  candidates: Placement[],
+  placement: Placement,
+  flat: number[],
+): { opaque: number; neighbour: number } {
+  const centreX = Math.round(placement.cx);
+  const centreY = Math.round(placement.cy);
+  const count = flat.length / 2;
+  let samples = 0;
+  let opaqueOutside = 0;
+  let neighbourOutside = 0;
+
+  for (let index = 0; index < count; index += 1) {
+    const next = (index + 1) % count;
+    const fromX = flat[index * 2];
+    const fromY = flat[index * 2 + 1];
+    const toX = flat[next * 2];
+    const toY = flat[next * 2 + 1];
+    const edgeLength = Math.hypot(toX - fromX, toY - fromY);
+    if (edgeLength === 0) continue;
+    let normalX = -(toY - fromY) / edgeLength;
+    let normalY = (toX - fromX) / edgeLength;
+    // Either winding gives a consistent side; containment decides which is out.
+    if (containsPoint(flat, (fromX + toX) / 2 + normalX * 1.5, (fromY + toY) / 2 + normalY * 1.5)) {
+      normalX = -normalX;
+      normalY = -normalY;
+    }
+    const steps = Math.max(1, Math.round(edgeLength));
+    for (let step = 0; step < steps; step += 1) {
+      samples += 1;
+      const alongX = fromX + ((toX - fromX) * step) / steps;
+      const alongY = fromY + ((toY - fromY) * step) / steps;
+      const probeX = Math.round(centreX + alongX + normalX * CUT_PROBE_DISTANCE);
+      const probeY = Math.round(centreY + alongY + normalY * CUT_PROBE_DISTANCE);
+      if (probeX < 0 || probeY < 0 || probeX >= art.width || probeY >= art.height) continue;
+      if (art.opaque[probeY * art.width + probeX] !== 1) continue;
+      opaqueOutside += 1;
+      if (nearestPlacementId(candidates, probeX, probeY) !== placement.id) neighbourOutside += 1;
+    }
+  }
+  if (samples === 0) return { opaque: 0, neighbour: 0 };
+  return { opaque: opaqueOutside / samples, neighbour: neighbourOutside / samples };
+}
+
+/**
+ * Gate 6's pins, from the run that wrote the committed table.
+ *
+ * `neighbourMean` and `opaqueMean` are ceilings in percent, one decimal;
+ * `overFivePercent` is an exact count of outlines whose boundary is more than 5%
+ * on a neighbour's art. Before the tracer pulled back from contacts the same
+ * three read 11.1% / 233 over 5% / 12.7% on Kilter Homewall and 3.1% / 53 / 3.4%
+ * on TB2 Mirror, so this gate has a two-order-of-magnitude fall to hold.
+ *
+ * The `opaqueMean` ceilings run the other way. They are what stops the clearance
+ * being widened until the silhouette is a shrunk blob floating inside its own
+ * hold, which nothing else here would notice — Kilter Homewall's 19.8% is the
+ * price of pulling 369 of its 499 holds off a contact, and it is the number to
+ * watch if that clearance is ever raised.
+ *
+ * Six outlines still cross 5%, two each on Kilter Homewall and the two
+ * MoonBoards, and all six are the generator's partition rather than its
+ * pullback. `buildLabelMap` propagates a chamfer distance, which is up to ~4%
+ * long on a diagonal, so a strip a pixel or two wide either side of a midline is
+ * labelled this hold's when the exact nearest placement is the neighbour's; this
+ * gate takes the exact answer, so it sees a boundary the tracer had no reason to
+ * pull back from. Counted over all seven boards it is 278 probe pixels of
+ * roughly 260,000, and 208 of those 278 are ones the chamfer calls ours. An
+ * exact Euclidean transform in the generator would close it; the partition is
+ * otherwise clean and design review 3 asked for it to be left alone.
+ */
+const PINNED_CUT_SHARES: Record<string, { neighbourMean: number; overFivePercent: number; opaqueMean: number }> = {
+  'grasshopper-master': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 3.4 },
+  'tension-classic': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 1.7 },
+  'tension-mirror-12x12': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 5.5 },
+  'kilter-homewall-10x12': { neighbourMean: 0.2, overFivePercent: 2, opaqueMean: 19.8 },
+  'kilter-original-12x12': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 5.2 },
+  'moonboard-2016': { neighbourMean: 0.2, overFivePercent: 2, opaqueMean: 0.7 },
+  'moonboard-masters-2019': { neighbourMean: 0.2, overFivePercent: 2, opaqueMean: 1.2 },
+};
 
 type BoardAudit = {
   boardKey: string;
@@ -290,6 +470,7 @@ function auditBoard(board: SpikeBoardConfig) {
   }));
   const placementById = new Map(placements.map((placement) => [placement.id, placement]));
   const outlines = SPIKE_HOLD_OUTLINES[boardKey] ?? {};
+  const openRadius = radiusForBoard(NECK_TRIM_AT_REFERENCE, renderData.boardWidth);
 
   const audit: BoardAudit = {
     boardKey,
@@ -333,7 +514,7 @@ function auditBoard(board: SpikeBoardConfig) {
     if (boxEdgeShare(flat, box) > MAX_BOX_EDGE_SHARE) audit.onSearchBoxEdge.push(holdId);
     const { runs, share } = axisAlignedRuns(flat);
     if (runs >= CROP_BOX_MIN_RUNS && share > CROP_BOX_PERIMETER_SHARE) audit.cropBoxShaped.push(holdId);
-    if (spurArea(flat) > MAX_SPUR_AREA) audit.spurred.push(holdId);
+    if (spurArea(flat, openRadius) > MAX_SPUR_AREA) audit.spurred.push(holdId);
   }
   return audit;
 }
@@ -365,11 +546,69 @@ describe('SPIKE_HOLD_OUTLINES gates', () => {
 
   // Zero, with no exceptions. Kilter Homewall 4135 and 4634 were pinned here as
   // known failures while the tracer grew every core at once; growing only the
-  // seed's core dropped both limbs, and the worst outline on any board now loses
-  // 16 px² of the 20 allowed, on kilter-homewall 4219.
+  // seed's core dropped both limbs. The cut pullback then made necks of its own —
+  // thirteen outlines on two boards tripped this gate with a single trim — which
+  // is why the tracer trims a second time after pulling back. The worst outline
+  // on any board now loses 15 px² of the 20 allowed, on kilter-homewall 4163,
+  // and the per-board worsts run 12 / 12 / 11 / 15 / 9 / 6 / 4.
   it('gate 5: no outline loses more than 20 board px² to a thin-necked limb', () => {
     for (const audit of AUDITS) {
       expect([audit.boardKey, audit.spurred]).toEqual([audit.boardKey, []]);
+    }
+  });
+
+  it("gate 6: no silhouette boundary sits on a neighbour's art", async () => {
+    for (const board of SPIKE_BOARDS) {
+      const renderData = getBoardRenderData(board);
+      if (renderData === null) throw new Error(`${board.key}: no render data`);
+      const art = await loadBoardArt(renderData.boardWidth, renderData.boardHeight, renderData.backgroundImageKeys);
+      const placements: Placement[] = renderData.holdsData.map((hold) => ({
+        id: hold.id,
+        cx: hold.cx,
+        cy: hold.cy,
+        r: hold.r,
+      }));
+      const outlines = SPIKE_HOLD_OUTLINES[board.key] ?? {};
+
+      let neighbourSum = 0;
+      let opaqueSum = 0;
+      let overFivePercent = 0;
+      let counted = 0;
+      for (const [holdIdText, flat] of Object.entries(outlines)) {
+        const holdId = Number(holdIdText);
+        const placement = placements.find((entry) => entry.id === holdId);
+        if (placement === undefined) throw new Error(`${board.key}: outline ${holdId} has no placement`);
+        // Only placements that could win a probe point: the probe never leaves
+        // the hold's own search box, so twice the box is a generous cut-off and
+        // keeps the nearest-placement search off the board's other 490 bolts.
+        const reach = placement.r * SEARCH_RADII * 2;
+        const candidates = placements.filter(
+          (entry) => Math.abs(entry.cx - placement.cx) <= reach && Math.abs(entry.cy - placement.cy) <= reach,
+        );
+        const shares = cutShares(art, candidates, placement, flat);
+        neighbourSum += shares.neighbour;
+        opaqueSum += shares.opaque;
+        if (shares.neighbour > 0.05) overFivePercent += 1;
+        counted += 1;
+      }
+
+      const measured = {
+        neighbourMean: Math.round((neighbourSum / counted) * 1000) / 10,
+        overFivePercent,
+        opaqueMean: Math.round((opaqueSum / counted) * 1000) / 10,
+      };
+      const pinned = PINNED_CUT_SHARES[board.key];
+      expect([board.key, measured.overFivePercent]).toEqual([board.key, pinned.overFivePercent]);
+      expect([board.key, measured.neighbourMean <= pinned.neighbourMean, measured.neighbourMean]).toEqual([
+        board.key,
+        true,
+        measured.neighbourMean,
+      ]);
+      expect([board.key, measured.opaqueMean <= pinned.opaqueMean, measured.opaqueMean]).toEqual([
+        board.key,
+        true,
+        measured.opaqueMean,
+      ]);
     }
   });
 });
@@ -405,17 +644,51 @@ describe('SPIKE_HOLD_OUTLINES gate fixtures', () => {
   });
 
   it('gate 5 catches a thin-necked limb and leaves a plain hold alone', () => {
-    expect(spurArea(SPURRED)).toBeGreaterThan(MAX_SPUR_AREA);
-    expect(spurArea(CROP_BOX)).toBe(0);
+    expect(spurArea(SPURRED, 3)).toBeGreaterThan(MAX_SPUR_AREA);
+    expect(spurArea(CROP_BOX, 3)).toBe(0);
+  });
+
+  // Gate 6's fixture board: one 35x17 slab of art with two bolts in it, 18 board
+  // px apart, so the partition splits the slab down the middle at x = 18 with
+  // solid art on both sides — the geometry the tracer meets wherever two holds
+  // touch, with nothing else in the frame.
+  const FIXTURE_ART: BoardArt = (() => {
+    const width = 40;
+    const height = 20;
+    const opaque = new Uint8Array(width * height);
+    for (let y = 2; y <= 17; y += 1) for (let x = 2; x <= 36; x += 1) opaque[y * width + x] = 1;
+    return { opaque, width, height };
+  })();
+  const FIXTURE_PLACEMENTS: Placement[] = [
+    { id: 1, cx: 9, cy: 9, r: 8 },
+    { id: 2, cx: 27, cy: 9, r: 8 },
+  ];
+  // Bolt 1's half of the slab, cut on the partition at x = 18: the right-hand
+  // side is 16 of the polygon's 62 boundary pixels, and every one of them has
+  // bolt 2's art behind it.
+  const ON_THE_CUT = [-7, -7, 9, -7, 9, 8, -7, 8];
+  // The same silhouette pulled 3 px back off that cut.
+  const PULLED_BACK = [-7, -7, 6, -7, 6, 8, -7, 8];
+
+  it('gate 6 catches a silhouette that ends on a neighbour and clears one that does not', () => {
+    const onTheCut = cutShares(FIXTURE_ART, FIXTURE_PLACEMENTS, FIXTURE_PLACEMENTS[0], ON_THE_CUT);
+    expect(onTheCut.neighbour).toBeGreaterThan(0.2);
+    const pulledBack = cutShares(FIXTURE_ART, FIXTURE_PLACEMENTS, FIXTURE_PLACEMENTS[0], PULLED_BACK);
+    expect(pulledBack.neighbour).toBe(0);
+    // Both boundaries are inside the slab, so the `opaque` half cannot tell them
+    // apart — which is why the pins above carry it as a ceiling and not as the
+    // defect count.
+    expect(onTheCut.opaque).toBeGreaterThan(0.2);
+    expect(pulledBack.opaque).toBeGreaterThan(0.2);
   });
 
   it('gate 5 exempts a hold too thin to core rather than deleting it', () => {
     // Nothing survives the erosion, so an unexempted open takes the whole rail.
-    expect(openedArea(RAIL)).toBe(0);
-    expect(spurArea(RAIL)).toBe(0);
+    expect(openedArea(RAIL, 3)).toBe(0);
+    expect(spurArea(RAIL, 3)).toBe(0);
     // One column wider it cores and comes back whole, so the exemption is not
     // what a plain 5-px rail is relying on.
-    expect(openedArea([-2, -17, 2, -17, 2, 17, -2, 17])).toBeGreaterThan(0);
-    expect(spurArea([-2, -17, 2, -17, 2, 17, -2, 17])).toBe(0);
+    expect(openedArea([-2, -17, 2, -17, 2, 17, -2, 17], 3)).toBeGreaterThan(0);
+    expect(spurArea([-2, -17, 2, -17, 2, 17, -2, 17], 3)).toBe(0);
   });
 });

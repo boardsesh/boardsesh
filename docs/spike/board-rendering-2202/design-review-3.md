@@ -112,7 +112,7 @@ luma 200).
 silhouette lightness exceeds `tintNormaliseTarget` 0.588. That fires on 16 of 16 lit holds on TB2
 Mirror and 12 of 16 on Tension Original — the two boards with the brightest walls — and takes the lit
 hold's interior luminance from 146 to 120 and from 159 to 122, which is why the runner-up is the one
-arm that scores *below* the control on TB2 Mirror.
+arm that scores _below_ the control on TB2 Mirror.
 
 **Change.** Skip the pass entirely when `artLightness >= tintNormaliseTarget`, so the fill only ever
 lifts dark art (one conditional around lines 632-637). Accept that a HAND on Tension's pale wood and
@@ -121,7 +121,7 @@ than the contrast it costs on the two densest wooden boards. Then in `spike-conf
 `{ key: 'veil-tint', chip: 'Veil+tint', selector: 'glow-tint', veil: true }` and put it in
 `capture-boards.sh`'s default `TREATMENTS` in place of `glow-tint`. `veil` is already a modifier
 beside a selector rather than a selector itself, so this is one entry, not a new code path. Capture
-it *after* the normalise fix or the panel measures the black wash rather than the combination.
+it _after_ the normalise fix or the panel measures the black wash rather than the combination.
 
 ### 5. Shoot the field axis, and pin the halo chip in the capture link
 
@@ -169,7 +169,7 @@ Six documented facts no longer match the code, all in files that are read as the
   display/wire split. So the palette is not frozen by the BLE path. It is frozen by deuteranopia
   instead — lifting Tension's HAND toward FOOT magenta's lightness takes their deutan ΔE00 24.3 to
   8.6 to 1.3 — and that is the reason to record.
-- **`spike-config.ts:363-376` and `:284`.** `glowHoldExtentCap` is 1.2 on the one-sided *reach*, so
+- **`spike-config.ts:363-376` and `:284`.** `glowHoldExtentCap` is 1.2 on the one-sided _reach_, so
   the mark it permits is `shortest × (1 + 2 × 1.2)` = **3.4x** the hold's short extent, not the
   "roughly 1.5x" the prose implies — visible as the round magenta discs on Tension Original's bottom
   foot row in panels 2, 3 and 4. And `glowNeighbourFloorWidth` is documented as "a property of the
@@ -199,7 +199,7 @@ Real, verified, and not worth the last slot.
    the silhouette on 12 of the 30 lit FOOT holds, covering 70-78% of eight of them; the HAND bar
    covers 74% of MoonBoard 2016's 11x13 hold 83 and the STARTING bar 50% of Kilter Original 1477. The
    fix is one line — clamp the line width, `lineWidth = min(0.11 r, 0.15 × shortest)`, which takes
-   Grasshopper 51 from 70.5% to 51.2% and TB2 Mirror 612 from 69.9% to 49.0% — and it is *not* to
+   Grasshopper 51 from 70.5% to 51.2% and TB2 Mirror 612 from 69.9% to 49.0% — and it is _not_ to
    clamp the ring's radius, which closes the hole into a filled disc on 8 of those 12. Deferred
    because it moves hold identity and not findability, which is what #2202 is about.
 2. **The veil's fallback punch.** `SpikeBoardOverlay.tsx:284` falls back to
@@ -215,14 +215,14 @@ Real, verified, and not worth the last slot.
    (`use-native-climb-render.ts:607-635`) hashes no field token, so a veil baked into the overlay PNG
    is cached against a field nothing keys on and is served to the play view, the 400 px thumbnail,
    the Live Activity, the OG card and web alike. But the veil carries no colour at all: compositing
-   the field at alpha *a* over (art over field) is algebraically identical to compositing the art at
-   alpha *(1-a)* over the same field — I verified the identity, and the captures are exactly that
+   the field at alpha _a_ over (art over field) is algebraically identical to compositing the art at
+   alpha _(1-a)_ over the same field — I verified the identity, and the captures are exactly that
    blend. So "the board art at (1-a) opacity with the lit silhouettes at full opacity" is the same
    pixels with no hex to plumb. Decide which shape the port takes before budgeting it.
 4. **Six surfaces mount this overlay, not two.** `BoardImageNative` is used by `SwipeBoardCarousel`
    (play), `InteractiveCreateBoard`, `InteractiveFilterBoard`, `WallHeroStage` (the gym kiosk) and
    `BoardForm`, and `ClimbListThumbnail` mounts `LayeredClimbImage` directly. The two hold-picking
-   boards exist so the user can choose among the *unlit* holds, which is the content the veil dims,
+   boards exist so the user can choose among the _unlit_ holds, which is the content the veil dims,
    and `WallHeroStage`'s own docstring says nothing is ever rendered over it. Whatever ships, the
    veil is a play-view flag, never a layer inside `LayeredClimbImage`.
 5. **Nothing has been scored above 1x or below 1080 px.** `MAX_SCALE` is 4
@@ -274,14 +274,14 @@ Real, verified, and not worth the last slot.
    so do not raise it to 0.7. The cost is four marks of 100 rendering at the 8 px floor; record it.
 3. **`smallHoldBoost` and `glowHoldExtentCap` 1.2.** Lowering the cap to 0.8 inverts the size floor:
    once the cap binds, rendered reach is `shortest × cap` regardless of the boost, so MoonBoard's
-   smallest holds would end up with the *least* light. Raising it makes the discs wider. Fix the
+   smallest holds would end up with the _least_ light. Raising it makes the discs wider. Fix the
    comment (change 6), not the number.
 4. **The FOOT ring's radius, and the ring itself.** Clamping the radius to fit the hold drives the
    casing's inner edge negative on 8 of 12 holds — the ring becomes a filled disc, which is the
    LED-lookalike blob the ring replaced. If the ring is ever narrowed it is the line width.
 5. **The role hexes.** Grasshopper's HAND/FOOT pair is ΔE00 3.2 under protanopia, which is why the
    glyph exists; `equalL` and any lightness lift on blue HAND each collapse a different dichromat
-   pair. `displayColor` being screen-only makes a change *possible*; deuteranopia is what makes it
+   pair. `displayColor` being screen-only makes a change _possible_; deuteranopia is what makes it
    wrong.
 6. **The nearest-placement partition, the eligibility filter, and the annulus lightness table.** The
    partition is clean against the committed data. The eligibility filter is what keeps the captures
@@ -319,7 +319,7 @@ Real, verified, and not worth the last slot.
    coordinates. The fallback rate, the lit-hold density and the role mix on catalogue climbs are all
    unmeasured.
 7. **User marker settings.** Six per-role shapes, two sliders and a free-hex per-role override, none
-   of which the spike reads, and the silhouette *is* the shape in three of the four arms.
+   of which the spike reads, and the silhouette _is_ the shape in three of the four arms.
 8. **Render cost.** Whole-board painted objects run 288 (baseline) to 500 (veil) on Grasshopper and
    66 to 275 on Kilter Homewall, of which the veil is exactly one path more than the glow. Nothing
    has been measured on a mid-tier Android device or in `renderer.rs`.

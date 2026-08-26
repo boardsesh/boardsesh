@@ -88,8 +88,12 @@ Three conclusions in the current write-up rest on that error:
 - The "no luminance step against the art" measurement — HAND blue at 1.24:1 against Kilter
   Homewall's cream art — is a measurement of the wrong colour. Re-measure after the fix before
   proposing any luminance-step change; it may simply evaporate on those boards.
-- Every CVD delta in this review is for a blue/magenta pair. Kilter's real pair is cyan/orange,
-  which dichromacy separates well; Kilter's real green-vs-cyan START/HAND pair is worse.
+- Every CVD delta in this review is for a blue/magenta pair. **Correction (third pass):** the two
+  pairs this line named are the safest on the board, not the worst — computed with the repo's own
+  Viénot matrix, HAND/FOOT is 39.6 protan / 48.9 deutan and STARTING/HAND is 38.7 / 48.5. Kilter's
+  collapsing pair is STARTING `#00FF00` against FOOT `#FFAA00` at deutan ΔE00 **4.6** (protan 14.6).
+  So on both Kilter boards the two starts and the four feet of every climb are one yellow for a
+  deuteranope, and the START bar and the FOOT ring are the only thing separating them.
 
 And magenta means FOOT in all 28 panels while meaning FINISH on a real Kilter board.
 
@@ -98,10 +102,13 @@ And magenta means FOOT in all 28 panels while meaning FINISH on a real Kilter bo
 uses. Keep grasshopper's set as an explicit extra chip so cross-board comparisons are still possible.
 Re-capture the sixteen Kilter and MoonBoard panels before scoring anything on those boards.
 
-Related and worth writing down once: the role hex is not a design variable. `aurora.ts` builds each
-LED entry as `colorSource = sanitizedOverride ?? state.color`, and the settings copy says so —
-"Colour changes also light up your board (except for MoonBoards)". Any palette proposal is a change
-to what the wall does, and per `CLAUDE.md` that needs a Fable review.
+Related, and **corrected by the third pass**: the role hex is not frozen by the BLE path. `aurora.ts`
+builds each LED entry as `colorSource = sanitizedOverride ?? state.color` — `state.color`, never
+`displayColor` — and `hold-color-overrides.ts` already carries the display/wire split, so a
+`displayColor` change moves the screen and leaves the wall alone. What freezes the palette is
+deuteranopia: lifting Tension's HAND toward FOOT magenta's lightness takes their deutan ΔE00 from
+24.3 to 8.6 to 1.3. A change to `state.color` is still a change to what the wall does and still
+needs a Fable review per `CLAUDE.md`; a `displayColor` change does not.
 
 ### 2. Every traced arm can paint a mark whose shape spans two holds
 
@@ -642,9 +649,11 @@ would otherwise trace the wrong shapes.
    1,129 for the glow and 1,193 for the hybrid on grasshopper. Design review estimated "four to six
    paths per lit hold plus a clip", a 3x undercount. Nothing has been measured on a mid-tier Android
    device or in `renderer.rs`.
-9. **Whether the role hex can move at all.** It is what the app streams to the wall's LEDs. The
-   hybrid's α0.55 fill already desynchronises the screen from the wall by 15–25% in value, and any
-   palette change is a change to what the hardware does.
+9. **Whether the role hex can move at all.** **Corrected by the third pass:** `displayColor` is
+   screen-only — the BLE path resolves `sanitizedOverride ?? state.color` — so moving a hue on the
+   screen without touching the wall is possible. It is deuteranopia that pins the palette, not the
+   hardware: every lift tried collapses a different dichromat pair. The hybrid's α0.55 fill already
+   desynchronises the screen from the wall by 15–25% in value either way.
 10. **Whether the every-hold casing helps.** It has never been captured on the three boards where it
     is off, and never captured off on the four where it is on. The only thing measured about it is
     that it lifts grasshopper's unlit wall by 8%.

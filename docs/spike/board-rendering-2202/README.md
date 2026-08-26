@@ -37,11 +37,17 @@ Four independent axes, each a chip. The treatment list is `SPIKE_TREATMENTS` in
 | Overlay treatment | Baseline · Outward · Hybrid · Veil, plus the modifier chips the arms were chosen out of |
 | LED layer         | on · off — on for every arm, baseline included, so it never varies between two panels   |
 | Role colours      | the board's own hues · Grasshopper's hues on every board · equal OkLab lightness        |
-| Play field        | dark `#181225` · neutral grey · near-black · plywood                                    |
+| Play field        | dark `#181225` · neutral grey · near-black · plywood · white                            |
+| Role glyphs       | **off** · on — the opt-in accessibility mode, off in every default capture              |
+| Render width      | full · 152 · 228 · 384 device px — the play view, then the surfaces that outnumber it   |
 
-`capture-boards.sh` names the treatment and the LED axis in the deep link and
-leaves the other two to the screen unless `FIELDS=` / `PALETTES=` is set, because
-the screen keeps whatever it was last handed.
+`capture-boards.sh` pins **every** axis in the deep link, none inherited: the
+screen keeps whatever it was last handed, so one stale chip press silently
+rewrites a whole run and the caption in the shot does not say so. `FIELDS=`,
+`PALETTES=`, `GLYPHS=` and `SIZES=` vary an axis; a non-default value lands in
+its own subdirectory (`glyphs-on`, `size-152`, `field-grey__palette-equalL`) and
+the default writes into the run root, so a run that varies one axis keeps its own
+control beside it. `THUMBS=1` is the thumbnail sweep.
 
 The board-art axis (an OkLab contrast stretch, Grasshopper only) is gone: it was
 never one of the arms, never appeared in a capture, and it was the only reason
@@ -147,11 +153,17 @@ clip. The calls behind the four that remain:
 - **Veil + glow is outward glow with the wall quieted.** Every other arm is additive — the climb
   lights 16 placements of the 303 to 499 on a board, 10 of 198 on the MoonBoards, and the rest is
   left alone. This one washes that other 95-97% down in the play field colour with the lit
-  silhouettes punched out of a single even-odd path, at a strength bucketed on how bright the
-  board's own wall is (mean OkLab L in the ring annulus over every placement): 0.45 on TB2 Mirror
-  0.713, Kilter Homewall 0.626 and Tension Original 0.563; 0.30 on Kilter Original 0.511 and
-  Grasshopper 0.411; nothing on Masters 0.337 or MoonBoard 2016 0.301, where roughly half the grid
-  is bare field already and there is no wall to quiet.
+  silhouettes punched out of a single even-odd path, at a strength bucketed on the GAP between the
+  wall and the field it is washed toward — both in OkLab lightness, the wall being the mean in the
+  ring annulus over every placement that has art in it. On the default field `#181225` (L 0.200)
+  that gap is TB2 Mirror 0.541, Tension Original 0.461, Masters 0.441, Kilter Homewall 0.426,
+  MoonBoard 2016 0.373, Kilter Original 0.325, Grasshopper 0.216, giving 0.45 on the first four and
+  0.30 on the rest. Two things the third pass fixed: the annulus table's 0 sentinel means "no art in
+  the band", not "dark wall", and averaging it in read both MoonBoards as empty (0.301 / 0.337) and
+  returned no veil at all — filtered they are 0.573 and 0.641, the two loudest walls left once the
+  other five are quieted, and both now get 0.30. And the wash is toward the FIELD, so a board whose
+  wall is not meaningfully darker than the field gets 0 rather than being brightened: on the plywood
+  chip Grasshopper and Kilter Original return 0, and on white every board does.
 - **Traced halos is not an arm.** Its lit mark is byte-identical to baseline, so as an arm it can
   only lose on lit visibility. It is the per-board modifier described above, and nothing else.
 - **Plain whole-hold tint is out, replaced by Glow + tint.** Plain tint lost to baseline on three
@@ -159,14 +171,18 @@ clip. The calls behind the four that remain:
   wall's own cyan art. The hybrid normalises the art under the hold toward a common lightness
   (translucent, so the hold's shading and bolt hole survive), fills at α0.55, puts a crisp
   inside-clipped silhouette edge on it, and keeps the outward glow for reach.
-- **Role glyphs, identical in every arm, the baseline included.** Role was carried by hue alone,
-  and hue is the channel that fails: under protanopia HAND `#4455FF` and FOOT `#FF00FF` land
-  3.2 ΔE00 apart — one colour. The second channel is silhouette: START a horizontal bar, HAND a
+- **Role glyphs are an opt-in accessibility mode, off in the default render.** They REPLACE the
+  per-role marker shapes the app ships (#3204); a climber gets one system or the other, never both.
+  Hue is the channel that fails: under protanopia Grasshopper's HAND `#4455FF` and FOOT `#FF00FF`
+  land 3.2 ΔE00 apart — one colour. The second channel is silhouette: START a horizontal bar, HAND a
   vertical bar, FINISH an X, FOOT a ring, all stroked at one line width and sized inside the
   existing footprint so the mark does not grow. FOOT was a dot until the second pass measured it
   at a tenth of a bar's ink and noticed it was the same graphic the art paints on every hold that
-  carries an LED. `boards/colour-vision.webp` is the
-  Viénot 1999 protan/deutan simulation of the captures, baseline against glyphs.
+  carries an LED. `boards/colour-vision.webp` simulates the two CONTROLS — baseline and outward
+  glow, glyphs off — under Viénot 1999 protanopia and deuteranopia; `boards/accessibility-glyphs.webp`
+  is the mode itself, the same arm with the glyphs off and on.
+  **Every capture taken before this pass had the glyph unconditionally on**, so those panels are of
+  a state no default render produces.
 
 Two implementation notes worth pinning down:
 
@@ -193,8 +209,15 @@ the rim glows. Measured over the composited art (`scripts/spike-led-dots.ts`):
 | Tension Original         | 303/303                | 0                         | **0.29×** (drawn _dark_)         |
 | TB2 Mirror               | 498/498                | 0                         | 1.15×                            |
 | Kilter Homewall          | 499/499                | 0                         | 0.42× (bolt hole)                |
-| Kilter Original          | 476/476                | 10                        | 0.64×                            |
-| MoonBoard 2016 / Masters | 198/198 (derived)      | 23 / 13                   | 0.77× / 0.89×                    |
+| Kilter Original          | 476/476                | 0                         | 0.64×                            |
+| MoonBoard 2016 / Masters | 198/198 (derived)      | 0 / 0                     | 0.77× / 0.89×                    |
+
+Grasshopper is the only board with a non-zero `brightInArt` — Kilter Original's 10 and the
+MoonBoards' 23 / 13 were a pre-fix run, zeroed once the generator got an absolute-luma floor. Two
+consequences worth carrying into the port: the unlit dark disc is drawn on Grasshopper and nowhere
+else, since it only ever renders over a bright blob the art already paints; and the lit dot is drawn
+only where `ledOffsetY === 0`, which is five boards of seven — on the two MoonBoards the LED sits a
+half-row below the hold, where a role-coloured pip would read as a second, smaller mark.
 
 So Grasshopper paints roughly two thirds of its LEDs bright and leaves the rest dark, and Tension
 paints all of them darker than the hold. An unlit hold with a bright LED competes with a lit mark;
@@ -212,12 +235,16 @@ and therefore one below every hold. The generator derives that offset from the p
 Every role carries a mark, so the absence of one is never meaningful — which also removes the
 FOOT-dot-versus-LED collision, because the LED is now a rendered element rather than art:
 
-| Role     | Mark                            |
-| -------- | ------------------------------- |
-| FOOT     | dot, diameter == the line width |
-| STARTING | horizontal bar                  |
-| HAND     | vertical bar                    |
-| FINISH   | X                               |
+| Role     | Mark                                      |
+| -------- | ----------------------------------------- |
+| FOOT     | ring, radius 0.24 r, one line width thick |
+| STARTING | horizontal bar                            |
+| HAND     | vertical bar                              |
+| FINISH   | X                                         |
+
+FOOT was a dot whose diameter was the line width until the second pass measured it at a tenth of a
+bar's ink and noticed it was the same graphic the art paints over every LED. It has been a ring
+since `ef0153125`.
 
 One line width for every marker on a board, keyed to the placement radius so it is constant within
 a board and scales between boards with hold pitch — **not** scaled by the hold it sits on. A marker
@@ -236,16 +263,18 @@ cut dark stripes through the middle of the FINISH X where they cross.
 The mark also goes on the **ring fallback**, not just on traced holds — the vocabulary has to be
 complete, or the absence of a glyph starts to mean something.
 
-### Why there are two accessibility systems
+### The glyph replaces the shipped marker shapes
 
 The app already ships per-role marker **shapes** — circle, triangle-up, triangle-down, square,
 diamond, octagon — user-configurable with brush-thickness and shape-size sliders, implemented in
 both the SVG and Rust renderers and kept in sync with equal-area scaling (#3204).
 
 That system works by changing the whole marker's shape, which a traced arm cannot do: its shape is
-the hold's silhouette. So the traced arms carry an inside-the-hold **glyph** instead. The two are
-complementary rather than duplicates — but an arm that goes back to drawing a fixed circle should
-use the shipped shape system, not the glyph.
+the hold's silhouette. So the glyph is what that setting becomes on a traced arm — the same
+accessibility job, done inside the hold instead of by reshaping the marker. One replaces the other:
+a climber who turns the accessibility mode on gets glyphs, and one who leaves it off gets neither
+glyphs nor a second layer. It is off by default (`app/board-spike.tsx`, `&glyphs=on|off`), so judge
+it on whether it serves someone who needs it, not on what it does to the default picture.
 
 ## Regenerating the derived data
 

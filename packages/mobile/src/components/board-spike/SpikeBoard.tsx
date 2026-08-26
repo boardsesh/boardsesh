@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { PixelRatio, StyleSheet, View, type ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { convertLitUpHoldsStringToMap } from '@boardsesh/board-constants/hold-states';
 import { backgroundImageUri } from '../LayeredClimbImage';
@@ -25,6 +25,19 @@ type SpikeBoardProps = {
    * have been taken over.
    */
   leds: boolean;
+  /**
+   * Draw the role glyph inside every mark. Off by default: it is an opt-in
+   * accessibility mode that replaces the shipped per-role marker shapes, not
+   * part of the default render.
+   */
+  glyphs: boolean;
+  /**
+   * Width to draw the board at, in DEVICE pixels, or null for the full-width
+   * play view. The board is laid out at that size rather than scaled down from
+   * full width, because the question a thumbnail panel asks is which marks
+   * survive at that many pixels.
+   */
+  renderDeviceWidth: number | null;
 };
 
 /**
@@ -70,6 +83,8 @@ export function SpikeBoard({
   palette,
   halosOverride,
   leds,
+  glyphs,
+  renderDeviceWidth,
 }: SpikeBoardProps) {
   const renderData = useMemo(
     () =>
@@ -138,12 +153,22 @@ export function SpikeBoard({
     return holds;
   }, [board.boardName, renderData, frames]);
 
-  if (!renderData) return <View style={[styles.board, { backgroundColor }]} />;
+  // React Native lays out in dp and the screen rasterises in device pixels, so
+  // asking for N device pixels means asking for N / density dp. Layout rounds
+  // that back to whole pixels, which can land a pixel either side of N — the
+  // alternative is to give up on the sizes the app actually uses and pick ones
+  // that happen to divide by this device's density.
+  const sizeStyle: ViewStyle =
+    renderDeviceWidth === null
+      ? { width: '100%' }
+      : { width: renderDeviceWidth / PixelRatio.get(), alignSelf: 'center' };
+
+  if (!renderData) return <View style={[sizeStyle, { backgroundColor }]} />;
 
   const { boardWidth, boardHeight } = renderData;
 
   return (
-    <View style={[styles.board, { backgroundColor, aspectRatio: boardWidth / boardHeight }]}>
+    <View style={[sizeStyle, { backgroundColor, aspectRatio: boardWidth / boardHeight }]}>
       {artPaths.map((path) => (
         <Image
           key={path}
@@ -153,10 +178,23 @@ export function SpikeBoard({
           style={styles.layer}
           contentFit="contain"
           cachePolicy="memory-disk"
-          // The layers are native-resolution art drawn into a full-width board,
-          // so there is nothing to downscale — skip expo-image's main-thread
-          // resample, same as LayeredClimbImage.
-          allowDownscaling={false}
+          // At full width the layers are native-resolution art in a native-width
+          // board, so there is nothing to downscale and the main-thread resample
+          // is skipped, same as LayeredClimbImage. At a thumbnail width there is
+          // a great deal to downscale, and letting the GPU minify a 1080 px
+          // texture to 152 answers with its own aliasing rather than with the
+          // treatment.
+          //
+          // Two known deviations from the shipping list cell, both in the
+          // spike's favour and neither varying between arms, so an arm-against-
+          // arm read within one sheet still holds. ClimbListThumbnail composites
+          // its overlay at `max(400, cellWidth * 5)` and lets the view scale
+          // that down, where the marks here are vector-drawn at the target
+          // width; and it resolves the bundled `thumb` art variant where this
+          // takes `full` and resamples. Both make the shipped thumbnail a
+          // little rougher than these tiles, so read them as the ceiling at
+          // each width rather than as a screenshot of the list.
+          allowDownscaling={renderDeviceWidth !== null}
         />
       ))}
       <SpikeBoardOverlay
@@ -171,6 +209,7 @@ export function SpikeBoard({
         palette={palette}
         smooth={smooth}
         leds={leds}
+        glyphs={glyphs}
         veil={treatment.veil ?? false}
         // The veil is a wash of the field, so it has to be the field the board is
         // actually sitting on — including the grey and plywood chips, where the
@@ -182,9 +221,6 @@ export function SpikeBoard({
 }
 
 const styles = StyleSheet.create({
-  board: {
-    width: '100%',
-  },
   layer: {
     position: 'absolute',
     top: 0,

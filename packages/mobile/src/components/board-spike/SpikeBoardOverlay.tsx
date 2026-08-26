@@ -43,6 +43,14 @@ type SpikeBoardOverlayProps = {
    * that are supposed to differ by one.
    */
   leds: boolean;
+  /**
+   * Draw the role glyph inside every mark. Its own axis and OFF by default,
+   * because that is what it is in the product: an accessibility mode that
+   * REPLACES the shipped per-role marker shapes, not a layer the default render
+   * carries. Every arm can be captured either way, so a glyph finding is a
+   * finding about the accessibility mode and never about the default picture.
+   */
+  glyphs: boolean;
   /** Dim the unlit wall with the play field colour, lit silhouettes punched out. */
   veil: boolean;
   /** The play field behind the art — what the veil is a wash of. */
@@ -101,23 +109,70 @@ function haloTargets(scope: HaloScope, placements: HoldPlacement[], litHolds: Sp
   );
 }
 
+/** OkLab lightness of a `#rrggbb` colour — the same expression the lightness generator measures the art with. */
+function oklabLightness(hexColor: string): number {
+  const hex = hexColor.startsWith('#') ? hexColor.slice(1) : hexColor;
+  // Only the six-digit form, which is what every entry in SPIKE_BACKGROUNDS is.
+  // A colour this cannot read reports mid-grey rather than falling through to a
+  // NaN, which compares false against both thresholds and would silently turn
+  // the veil off — the weakest outcome, reached by a typo rather than by a
+  // measurement. Digits and length both, since `parseInt('zz', 16)` is NaN.
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return 0.5;
+  const toLinear = (channel: number) => {
+    const normalised = channel / 255;
+    return normalised <= 0.04045 ? normalised / 12.92 : ((normalised + 0.055) / 1.055) ** 2.4;
+  };
+  const red = toLinear(parseInt(hex.slice(0, 2), 16));
+  const green = toLinear(parseInt(hex.slice(2, 4), 16));
+  const blue = toLinear(parseInt(hex.slice(4, 6), 16));
+  const long = Math.cbrt(0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue);
+  const medium = Math.cbrt(0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue);
+  const short = Math.cbrt(0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue);
+  return 0.2104542553 * long + 0.793617785 * medium - 0.0040720468 * short;
+}
+
 /**
- * How hard the field-colour veil quiets this board's unlit wall, or 0 where the
- * board has no wall worth quieting.
+ * How hard the field-colour veil quiets this board's unlit wall, or 0 where
+ * there is no wall worth quieting.
  *
- * Bucketed on the mean art lightness in the ring annulus over EVERY placement,
- * the zero readings included: a 0 there means no art anywhere in the band, which
- * is bare play field, which is exactly the surface the veil exists to darken.
- * Dropping those would read a MoonBoard — half of whose grid is empty cells — as
- * a bright wall.
+ * Two things decide it, and the first version of this function saw neither.
+ *
+ * The veil is a wash of the PLAY FIELD over the wall, so all it can buy is the
+ * gap between the two — bucket that, not the wall on its own. On the plywood
+ * chip `#6B4F33` (OkLab L 0.450) Grasshopper's wall is darker than the field, so
+ * a wash there makes the wall brighter than the hold it is meant to be quieting
+ * behind; that case returns 0 now and the arm degrades to plain outward glow.
+ * This is not a chip-only problem: the shipping play view paints
+ * `secondaryBackground`, which is white in the Android light fallback.
+ *
+ * And the annulus table's 0 sentinel is not a dark wall, it is NO ART IN THE
+ * BAND — bare play field, where the veil composites the field onto the field and
+ * changes nothing. Averaging those in measures how empty a board is rather than
+ * how bright: 94 of each MoonBoard's 198 placements are that sentinel, which
+ * dragged both boards' means to 0.301 and 0.337 and returned 0, so their veil
+ * panel was a byte-identical republish of the outward-glow panel. Filtered, the
+ * art that is actually there reads 0.573 and 0.641 — the two loudest walls left
+ * once the other five are washed down.
+ *
+ * A board that is mostly bare grid is still capped at the soft bucket. What the
+ * veil dims there is the field's own furniture, not hold art: both MoonBoards
+ * paint their A-K / 1-18 grid labels into the board art, and those go down with
+ * the wall.
  */
-function veilOpacityFor(boardKey: string): number {
-  const lightness = Object.values(SPIKE_HOLD_ART_LIGHTNESS[boardKey] ?? {});
-  if (lightness.length === 0) return 0;
-  const mean = lightness.reduce((total, value) => total + value, 0) / lightness.length;
-  if (mean >= SPIKE_TUNING.veilBrightWallLightness) return SPIKE_TUNING.veilStrongOpacity;
-  if (mean >= SPIKE_TUNING.veilDimWallLightness) return SPIKE_TUNING.veilSoftOpacity;
-  return 0;
+function veilOpacityFor(boardKey: string, playFieldColor: string): number {
+  const readings = Object.values(SPIKE_HOLD_ART_LIGHTNESS[boardKey] ?? {});
+  const withArt = readings.filter((lightness) => lightness > 0);
+  if (withArt.length === 0) return 0;
+  const wallLightness = withArt.reduce((total, value) => total + value, 0) / withArt.length;
+  const gap = wallLightness - oklabLightness(playFieldColor);
+  const bucket =
+    gap >= SPIKE_TUNING.veilStrongGap
+      ? SPIKE_TUNING.veilStrongOpacity
+      : gap >= SPIKE_TUNING.veilSoftGap
+        ? SPIKE_TUNING.veilSoftOpacity
+        : 0;
+  const coverage = withArt.length / readings.length;
+  return coverage < SPIKE_TUNING.veilMinCoverage ? Math.min(bucket, SPIKE_TUNING.veilSoftOpacity) : bucket;
 }
 
 /** Shape-coded arm: dashed start, wavy hand, spiky finish, plain foot. */
@@ -244,6 +299,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   palette,
   smooth,
   leds,
+  glyphs,
   veil,
   playFieldColor,
 }: SpikeBoardOverlayProps) {
@@ -277,7 +333,10 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   // the board-art guard stays clear and renderer.rs draws it as a single filled
   // path. A lit hold the tracer could not read falls back to its placement
   // circle, which is the shape its own mark is drawn as.
-  const veilOpacity = useMemo(() => (veil ? veilOpacityFor(boardKey) : 0), [veil, boardKey]);
+  const veilOpacity = useMemo(
+    () => (veil ? veilOpacityFor(boardKey, playFieldColor) : 0),
+    [veil, boardKey, playFieldColor],
+  );
   const veilPath = useMemo(() => {
     if (veilOpacity <= 0) return null;
     const holes = litHolds.map(
@@ -294,6 +353,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   const drawsTint = selector === 'tint';
   const drawsHybrid = selector === 'glow-tint';
   const drawsShape = selector === 'shape' || selector === 'glow-shape';
+  const drawsThumbRing = selector === 'thumb-ring';
 
   // One line width and one LED size per board: both are keyed to the placement
   // radius, which is constant within a board and carries its hold pitch.
@@ -303,7 +363,11 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   const ledDotRadius = Math.max(1.5, scaled(SPIKE_TUNING.ledDotRadiusFraction));
   // The board's own stroke multiplier, not Grasshopper's: 1.35 on Grasshopper and
   // 1.0 on Kilter, Tension and MoonBoard, which is what renderer.rs draws there.
-  const strokeWidth = SPIKE_TUNING.strokeWidthBase * getBoardStrokeWidthMultiplier(boardName);
+  // The thumbnail control takes the 8.0 base the renderer swaps in under
+  // `filledStyle` rather than the play view's 6.0.
+  const strokeWidth =
+    (drawsThumbRing ? SPIKE_TUNING.thumbStrokeWidthBase : SPIKE_TUNING.strokeWidthBase) *
+    getBoardStrokeWidthMultiplier(boardName);
   const outlineWidth = selector === 'glow-shape' ? strokeWidth * 0.7 : strokeWidth;
 
   const ledData = SPIKE_LED_DOTS[boardKey];
@@ -329,12 +393,31 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   const outsideClipId = (holdId: number) => `spike-outside-${boardKey}-${holdId}`;
 
   /**
-   * The un-traced arms' mark: the baseline's role ring, or the shape-coded arm's
-   * role-shaped ring, or nothing at all where a radial-gradient halo is the whole
-   * treatment.
+   * The un-traced arms' mark: the baseline's role ring, the thumbnail
+   * baseline's filled one, the shape-coded arm's role-shaped ring, or nothing at
+   * all where a radial-gradient halo is the whole treatment.
    */
   const ringMark = (hold: SpikeLitHold) => {
     const color = colors[hold.role] ?? '#FFFFFF';
+    // What the list row and the accessory thumbnail actually get today: the same
+    // placement circle, filled at 0.302 under a heavier stroke. It is a
+    // different drawing from the play view's, so it is the only honest control
+    // for a panel rendered at a thumbnail width — measuring a candidate at 152
+    // px against a downsampled 6.0-stroke hollow ring compares it to something
+    // the app never draws at that size.
+    if (drawsThumbRing) {
+      return (
+        <Circle
+          cx={hold.cx}
+          cy={hold.cy}
+          r={hold.radius}
+          fill={color}
+          fillOpacity={SPIKE_TUNING.thumbFillOpacity}
+          stroke={color}
+          strokeWidth={strokeWidth}
+        />
+      );
+    }
     if (!drawsShape) {
       if (drawsGlow) return null;
       return <Circle cx={hold.cx} cy={hold.cy} r={hold.radius} fill="none" stroke={color} strokeWidth={outlineWidth} />;
@@ -354,16 +437,21 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
     );
   };
 
-  const roleGlyph = (hold: SpikeLitHold, bounds: OutlineBounds | null) => (
-    <RoleGlyph
-      role={hold.role}
-      cx={hold.cx + (bounds?.centreX ?? 0)}
-      cy={hold.cy + (bounds?.centreY ?? 0)}
-      reach={bounds === null ? hold.radius : hold.radius * SPIKE_TUNING.glyphReachRadii}
-      lineWidth={glyphLineWidth}
-      clipId={bounds === null ? undefined : insideClipId(hold.id)}
-    />
-  );
+  // Gated in the one place every arm draws it through, so no arm can carry the
+  // accessibility mode while another does not.
+  const roleGlyph = (hold: SpikeLitHold, bounds: OutlineBounds | null) => {
+    if (!glyphs) return null;
+    return (
+      <RoleGlyph
+        role={hold.role}
+        cx={hold.cx + (bounds?.centreX ?? 0)}
+        cy={hold.cy + (bounds?.centreY ?? 0)}
+        reach={bounds === null ? hold.radius : hold.radius * SPIKE_TUNING.glyphReachRadii}
+        lineWidth={glyphLineWidth}
+        clipId={bounds === null ? undefined : insideClipId(hold.id)}
+      />
+    );
+  };
 
   /**
    * The glow's bands for one hold. Its extent gives up reach twice over: to the
@@ -535,12 +623,24 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
             if (isLit && (!ledHolds.has(placement.id) || !drawsLitLedDot)) return null;
             if (!isLit && !artBrightLeds.has(placement.id)) return null;
             const [blobDx, blobDy] = ledOffsets[placement.id] ?? [0, 0];
+            // Where the dot goes depends on what it is there to be. Over one of
+            // the art's own bright blobs it is a cover, so it stays on the blob
+            // — that offset is what stopped 206 of grasshopper's 234 from
+            // keeping a bright crescent. Everywhere else it is the hold's light,
+            // and it has to agree with the mark, which is anchored on the traced
+            // silhouette: the placement centre is a median 2.1 to 4.1 board px
+            // off that box's centre (kilter-homewall p90 7.6, max 13.8 over the
+            // committed outlines), which is enough to squeeze a second
+            // role-coloured pip out from behind a bar, and enough to put the
+            // FOOT ring's hole — the place the ring is designed to show role
+            // colour through — over the hold's own dark bolt hole instead.
+            const silhouette = artBrightLeds.has(placement.id) ? null : outlineBounds(boardKey, placement.id);
             const fill = litHold ? (colors[litHold.role] ?? '#FFFFFF') : SPIKE_TUNING.ledDarkColor;
             return (
               <Circle
                 key={`led-${placement.id}`}
-                cx={placement.cx + blobDx}
-                cy={placement.cy + ledOffsetY + blobDy}
+                cx={placement.cx + (silhouette?.centreX ?? blobDx)}
+                cy={placement.cy + ledOffsetY + (silhouette?.centreY ?? blobDy)}
                 r={ledDotRadius}
                 fill={fill}
                 fillOpacity={litHold ? 1 : SPIKE_TUNING.ledDarkOpacity}
@@ -613,11 +713,10 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
               Math.max(1, sizeFloor / Math.max(1, bounds?.longest ?? Infinity)),
             );
             if (drawsHybrid) {
-              // Normalise the art under the hold toward a common lightness before
-              // the role colour goes on, so the same role hex composites to the
-              // same colour on Grasshopper's near-black holds and Kilter
-              // Homewall's cream ones. Translucent, not an opaque underlay — the
-              // hold's own shading and bolt hole have to survive.
+              // Lift the art under the hold toward a common lightness before the
+              // role colour goes on, so the role hex still reads on
+              // Grasshopper's near-black holds. Translucent, not an opaque
+              // underlay — the hold's own shading and bolt hole have to survive.
               //
               // Measured INSIDE the silhouette, which is the art this fill
               // actually covers. The ring's annulus table reads 0 wherever no art
@@ -630,11 +729,17 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                   ? SPIKE_TUNING.tintNormaliseTarget
                   : measured;
               const target = SPIKE_TUNING.tintNormaliseTarget;
-              const normaliseColor = artLightness < target ? '#FFFFFF' : '#000000';
-              const normaliseOpacity =
-                artLightness < target
-                  ? (target - artLightness) / Math.max(1e-3, 1 - artLightness)
-                  : (artLightness - target) / Math.max(1e-3, artLightness);
+              // One-way: lift dark art toward the target, never push bright art
+              // down to it. The downward half fired on 78% to 100% of the traced
+              // holds on the three palest walls — every one of TB2 Mirror's 498,
+              // 239 of Tension Original's 303, 387 of Kilter Homewall's 499 —
+              // and a black wash under a translucent role fill is why the filled
+              // arm scored BELOW the control on the board with the brightest
+              // wall in the set. The cost is that a HAND on pale wood and a HAND
+              // on near-black holds are no longer exactly the same blue; that
+              // consistency is worth less than the contrast it was taking.
+              const liftsArt = artLightness < target;
+              const normaliseOpacity = liftsArt ? (target - artLightness) / Math.max(1e-3, 1 - artLightness) : 0;
               return (
                 <G key={`sel-${hold.id}`}>
                   <G clipPath={`url(#${outsideClipId(hold.id)})`}>
@@ -650,7 +755,7 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
                       />
                     ))}
                   </G>
-                  <Path d={path} fill={normaliseColor} fillOpacity={Math.min(0.9, normaliseOpacity)} />
+                  {liftsArt && <Path d={path} fill="#FFFFFF" fillOpacity={Math.min(0.9, normaliseOpacity)} />}
                   <Path d={path} fill={color} fillOpacity={SPIKE_TUNING.tintFillOpacity} />
                   <G clipPath={`url(#${insideClipId(hold.id)})`}>
                     <Path
@@ -716,11 +821,11 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
           !drawsTint &&
           !drawsHybrid &&
           litHolds.map((hold) => {
-            // The glyph goes on here too. It used to be the one thing the
-            // baseline panel did not carry, which made every comparison against
-            // it a comparison of the treatment AND the glyph set — and in a
-            // luminance-only render of grasshopper the glyph is the strongest
-            // element on a mark.
+            // The glyph goes through the same gate here as on every other arm,
+            // so `glyphs=on` moves all of them together. It used to be drawn
+            // unconditionally, and in a luminance-only render of grasshopper it
+            // is the strongest element on a mark — which made every capture a
+            // picture of the accessibility mode rather than of the default.
             return (
               <G key={`sel-${hold.id}`}>
                 {ringMark(hold)}

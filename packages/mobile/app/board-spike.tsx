@@ -8,10 +8,12 @@ import { DEFAULT_SPIKE_BOARD_KEY, SPIKE_BOARDS } from '../src/components/board-s
 import {
   SPIKE_BACKGROUNDS,
   SPIKE_PALETTE_LABEL,
+  SPIKE_SIZES,
   SPIKE_TREATMENTS,
   type SpikeBackgroundKey,
   type SpikeOverride,
   type SpikePaletteKey,
+  type SpikeSizeKey,
 } from '../src/components/board-spike/spike-config';
 import { Text } from '../src/components/Text';
 import { spacing } from '../src/theme/tokens';
@@ -27,7 +29,8 @@ import { spacing } from '../src/theme/tokens';
  *
  * Not reachable from app navigation. Open it with
  * `com.boardsesh.app:///board-spike`, optionally
- * `?board=<key>&treatment=<key>&field=<key>&palette=<key>&halos=auto|on|off&leds=on|off`
+ * `?board=<key>&treatment=<key>&field=<key>&palette=<key>&halos=auto|on|off`
+ * `&leds=on|off&glyphs=on|off&size=full|152|228|384`
  * so a capture script can land directly on one cell of the matrix — every axis
  * a capture varies is on the link, because a chip cannot be pressed by `adb`.
  * (`Smooth` is the exception: it is a rendering switch nobody captures against.)
@@ -44,6 +47,8 @@ export default function BoardSpikeScreen() {
     palette?: string;
     halos?: string;
     leds?: string;
+    glyphs?: string;
+    size?: string;
   }>();
 
   const initialBoardIndex = Math.max(
@@ -67,6 +72,12 @@ export default function BoardSpikeScreen() {
   // holding it constant is what keeps the arms one variable apart — see the
   // baseline treatment's note.
   const [leds, setLeds] = useState(switchOf(params.leds) ?? true);
+  // Off by default, and the one axis whose default is a product decision rather
+  // than an experiment-hygiene one: the glyphs are an opt-in accessibility mode
+  // that REPLACES the app's per-role marker shapes, so the render a climber gets
+  // unless they ask for them carries none.
+  const [glyphs, setGlyphs] = useState(switchOf(params.glyphs) ?? false);
+  const [size, setSize] = useState<SpikeSizeKey>(sizeKeyOf(params.size) ?? 'full');
 
   // Expo Router reuses this screen when the same route is deep-linked again, so
   // the useState initialisers above only ever run once per JS launch. Without
@@ -91,11 +102,25 @@ export default function BoardSpikeScreen() {
     if (nextHalos !== undefined) setHalosOverride(nextHalos);
     const nextLeds = switchOf(params.leds);
     if (nextLeds !== undefined) setLeds(nextLeds);
-  }, [params.board, params.treatment, params.field, params.palette, params.halos, params.leds]);
+    const nextGlyphs = switchOf(params.glyphs);
+    if (nextGlyphs !== undefined) setGlyphs(nextGlyphs);
+    const nextSize = sizeKeyOf(params.size);
+    if (nextSize !== undefined) setSize(nextSize);
+  }, [
+    params.board,
+    params.treatment,
+    params.field,
+    params.palette,
+    params.halos,
+    params.leds,
+    params.glyphs,
+    params.size,
+  ]);
 
   const board = SPIKE_BOARDS[boardIndex];
   const treatment = SPIKE_TREATMENTS[treatmentIndex];
   const backgroundColor = SPIKE_BACKGROUNDS.find((option) => option.key === background)?.color ?? '#181225';
+  const sizeOption = SPIKE_SIZES.find((option) => option.key === size) ?? SPIKE_SIZES[0];
 
   const step = (delta: number) =>
     setTreatmentIndex((index) => (index + delta + SPIKE_TREATMENTS.length) % SPIKE_TREATMENTS.length);
@@ -126,7 +151,9 @@ export default function BoardSpikeScreen() {
       <View style={[styles.screen, { paddingTop: insets.top }]} testID="board-spike-screen">
         <View style={styles.caption}>
           <Text variant="subheadline" style={styles.captionTitle}>
-            {`${treatmentIndex + 1}/${SPIKE_TREATMENTS.length}  ${treatment.label}`}
+            {`${treatmentIndex + 1}/${SPIKE_TREATMENTS.length}  ${treatment.label}${
+              sizeOption.deviceWidth === null ? '' : `  ·  ${sizeOption.label}`
+            }`}
           </Text>
           <Text variant="caption1" color="#A9A2B6" numberOfLines={2}>
             {`${board.label} · ${treatment.note}`}
@@ -141,6 +168,8 @@ export default function BoardSpikeScreen() {
           smooth={smooth}
           halosOverride={halosOverride}
           leds={leds}
+          glyphs={glyphs}
+          renderDeviceWidth={sizeOption.deviceWidth}
         />
 
         <View style={[styles.controls, { paddingBottom: insets.bottom + spacing[2] }]}>
@@ -149,6 +178,11 @@ export default function BoardSpikeScreen() {
             <SpikeChip label="Next  ▶" selected onPress={() => step(1)} />
             <SpikeChip label="Smooth" selected={smooth} onPress={() => setSmooth((on) => !on)} />
             <SpikeChip label={`LEDs: ${leds ? 'on' : 'off'}`} selected={leds} onPress={() => setLeds((on) => !on)} />
+            <SpikeChip
+              label={`Glyphs: ${glyphs ? 'on' : 'off'}`}
+              selected={glyphs}
+              onPress={() => setGlyphs((on) => !on)}
+            />
             <SpikeChip
               label={`Halos: ${halosOverride}`}
               selected={halosOverride !== 'auto'}
@@ -176,6 +210,14 @@ export default function BoardSpikeScreen() {
                 label={SPIKE_PALETTE_LABEL[key]}
                 selected={key === palette}
                 onPress={() => setPalette(key)}
+              />
+            ))}
+            {SPIKE_SIZES.map((option) => (
+              <SpikeChip
+                key={option.key}
+                label={option.label}
+                selected={option.key === size}
+                onPress={() => setSize(option.key)}
               />
             ))}
             {SPIKE_BACKGROUNDS.map((option) => (
@@ -229,6 +271,10 @@ function paletteKeyOf(value: string | undefined): SpikePaletteKey | undefined {
   // palette is added.
   const paletteKeys = Object.keys(SPIKE_PALETTE_LABEL) as SpikePaletteKey[];
   return paletteKeys.find((key) => key === value);
+}
+
+function sizeKeyOf(value: string | undefined): SpikeSizeKey | undefined {
+  return SPIKE_SIZES.find((option) => option.key === value)?.key;
 }
 
 function overrideOf(value: string | undefined): SpikeOverride | undefined {
