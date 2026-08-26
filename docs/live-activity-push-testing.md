@@ -400,7 +400,7 @@ If you see `0 sent, N failed`, check the [Common Issues](#common-issues) section
 
 For the 2.0 release the thumbnail is the **server-composited** board image, matching the
 legacy Capacitor app (which renders correctly). `ThumbnailFetcher` fetches
-`/api/internal/board-render?...&thumbnail=1&include_background=1` — the server (`sharp`)
+`/api/internal/board-render?...&thumbnail=1&include_background=1` — the Railway backend (`sharp`)
 draws the board photo behind this climb's holds overlay and returns a finished image,
 which `ThumbnailFetcher` writes straight to the App Group `thumbnails/` dir for the widget
 to display. No on-device webp decode or compositing.

@@ -2,7 +2,7 @@
 
 /**
  * Generate the committed `BOARD_RENDER_VERSION` constant that `buildBoardRenderUrl`
- * appends to every `/api/internal/board-render` URL as `&v=` (issue #4773).
+ * appends to every `/render/board` URL as `&v=` (issue #4773).
  *
  * Usage:
  *   vp run generate:board-render-version            # write the constant
@@ -130,7 +130,7 @@ export function renderVersionModuleSource(version: string): string {
   return `// GENERATED FILE - DO NOT EDIT.
 // Run \`vp run generate:board-render-version\` to refresh it.
 //
-// Cache version for /api/internal/board-render URLs. Derived from the shipped board
+// Cache version for /render/board URLs. Derived from the shipped board
 // catalogue plus the compiled renderer and sharp pipeline, so a change that alters
 // what the route draws mints new URLs and the old ones age out of Cloudflare instead
 // of being served for a year (#4773).

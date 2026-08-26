@@ -1,20 +1,40 @@
-import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
-import { BoundedLru, buildRenderConfig, getBoardDetailsForBoard, type OutputFormat } from '@boardsesh/board-render';
-import { composeOgBaseBuffer, encodeOgImage, type OgBaseResult } from '@boardsesh/board-render/pipeline';
+import {
+  BoundedLru,
+  MAX_RENDER_OUTPUT_PIXELS,
+  buildRenderConfig,
+  createSemaphore,
+  getBackgroundRelPaths,
+  getBoardDetailsForBoard,
+  type OutputFormat,
+  type RenderableBoardDetails,
+  type WasmRenderConfig,
+} from '@boardsesh/board-render';
+import {
+  composeOgBaseBuffer,
+  renderBoardImageBuffer,
+  type OgBaseResult,
+  type RenderTimings,
+} from '@boardsesh/board-render/pipeline';
 import { createOverlayRenderer, type OverlayRenderer } from '@boardsesh/board-render/wasm';
 import type { BoardName } from '@boardsesh/shared-schema';
+import sharp from 'sharp';
 import { logger } from '../utils/logger';
 
 /**
- * Default board configs used to warm the OG base cache at boot. Mirrors web's
- * FALLBACK_BOARD_PREVIEW_CONFIGS (not imported — the backend must not depend
- * on packages/web) plus a MoonBoard 2016 entry so every supported board gets a
- * warm base.
+ * libvips is process-global, so configure it before the renderer can initialise.
+ * These conservative limits also apply to avatar, gym-photo, and beta-thumbnail
+ * resizing in this backend. Those paths trade some throughput for the bounded
+ * memory footprint required by full-size board renders.
  */
+sharp.cache({ memory: 16, files: 4, items: 100 });
+sharp.concurrency(1);
+
+/** Default configs warmed sequentially after WASM initialisation. */
 const FALLBACK_BOARD_PREVIEW_CONFIGS: Record<string, { layout_id: number; size_id: number; set_ids: number[] }> = {
   kilter: { layout_id: 1, size_id: 10, set_ids: [1, 20] },
   tension: { layout_id: 1, size_id: 10, set_ids: [1] },
@@ -23,55 +43,93 @@ const FALLBACK_BOARD_PREVIEW_CONFIGS: Record<string, { layout_id: number; size_i
   touchstone: { layout_id: 1, size_id: 1, set_ids: [1] },
   grasshopper: { layout_id: 1, size_id: 4, set_ids: [1, 2] },
   soill: { layout_id: 1, size_id: 1, set_ids: [1] },
-  // Woods: the one layout, its 12x12 size and the single synthetic hold set.
   woods: { layout_id: 1, size_id: 2, set_ids: [1] },
 };
 
-const OG_BYTE_CACHE_MB = Number(process.env.OG_BYTE_CACHE_MB) || 32;
-const OG_BASE_CACHE_ENTRIES = Number(process.env.OG_BASE_CACHE_ENTRIES) || 24;
+const MIB = 1024 * 1024;
+const BOARD_BASE_CACHE_MAX_BYTES = 64 * MIB;
+const OG_BASE_CACHE_MAX_BYTES = 32 * MIB;
+const BYTE_CACHE_MAX_BYTES = 32 * MIB;
 
-// Final encoded bytes, keyed by the full canonical param string. Bytes-budgeted
-// so a burst of unique climbs can't grow memory without bound.
+// Exactly three process-lifetime LRUs serve both public render endpoints.
+const boardBaseCache = new BoundedLru<Buffer>({
+  maxEntries: 24,
+  maxBytes: BOARD_BASE_CACHE_MAX_BYTES,
+  sizeOf: (buffer) => buffer.length,
+});
+const ogBaseCache = new BoundedLru<OgBaseResult>({
+  maxEntries: 8,
+  maxBytes: OG_BASE_CACHE_MAX_BYTES,
+  sizeOf: (value) => value.base.length,
+});
 const byteCache = new BoundedLru<{ buffer: Buffer; contentType: string }>({
-  maxEntries: 10_000,
-  maxBytes: OG_BYTE_CACHE_MB * 1024 * 1024,
+  maxEntries: 2_000,
+  maxBytes: BYTE_CACHE_MAX_BYTES,
   sizeOf: (value) => value.buffer.length,
 });
 
-// Pre-composited OG backdrop + board photos (raw RGBA), keyed by board config.
-// Every climb on the same board reuses it, so only the cheap overlay composite
-// + encode runs per climb. Entry-bounded (each base is ~3 MB raw), so no byte
-// budget applies.
-const baseCache = new BoundedLru<OgBaseResult>({
-  maxEntries: OG_BASE_CACHE_ENTRIES,
-  maxBytes: Infinity,
-  sizeOf: (value) => value.base.length,
-});
+// Both endpoint families share final-render and base-composition coalescing.
+const inFlightRenders = new Map<string, Promise<BoardImageRenderResult>>();
+const boardBaseInFlight = new Map<string, Promise<Buffer | null>>();
+const ogBaseInFlight = new Map<string, Promise<OgBaseResult>>();
 
-// Coalesces concurrent requests for the same uncached climb into one render —
-// simultaneous crawler fetches (FB + Twitter + WhatsApp) must not each pay
-// WASM + sharp for identical bytes.
-const inFlightRenders = new Map<string, Promise<OgClimbRenderResult>>();
+function positiveIntegerFromEnv(name: string, fallback: number): number {
+  const parsed = Number(process.env[name]);
+  return Number.isFinite(parsed) && parsed >= 1 ? Math.floor(parsed) : fallback;
+}
 
+const RENDER_CONCURRENCY = positiveIntegerFromEnv('BOARD_RENDER_CONCURRENCY', 2);
+const renderSemaphore = createSemaphore(RENDER_CONCURRENCY);
+const MAX_QUEUED_RENDERS = positiveIntegerFromEnv('BOARD_RENDER_MAX_QUEUE', 40);
 const INIT_RETRY_INTERVAL_MS = 30_000;
 
 let overlayRenderer: OverlayRenderer | null = null;
 let rendererAvailable = false;
 let lastInitAttemptAtMs = 0;
 let imagesRoot = '';
+let initPromise: Promise<void> | null = null;
+let warmupPromise: Promise<void> | null = null;
+let initializationAttempts = 0;
+let warmupRuns = 0;
 
-function resolveImagePath(relPath: string): string | null {
-  const absolutePath = join(imagesRoot, relPath);
+export class RenderQueueSaturatedError extends Error {
+  constructor() {
+    super('Render queue is saturated');
+    this.name = 'RenderQueueSaturatedError';
+  }
+}
+
+export class RenderOutputTooLargeError extends Error {
+  constructor(
+    readonly width: number,
+    readonly height: number,
+  ) {
+    super(`Requested render is ${width}x${height}, over the ${MAX_RENDER_OUTPUT_PIXELS}px limit`);
+    this.name = 'RenderOutputTooLargeError';
+  }
+}
+
+function resolveImagePath(relativePath: string): string | null {
+  const absolutePath = join(imagesRoot, relativePath);
   return existsSync(absolutePath) ? absolutePath : null;
 }
 
 /**
- * Eagerly initialise the OG climb renderer at boot: resolve + load the WASM
- * binary, initialise the shared overlay renderer, and locate the board images
- * root. On any failure the renderer is marked unavailable (the endpoint returns
- * 503) — this never throws, so a missing asset can't crash the server.
+ * Resolve and initialise the renderer eagerly. Failure is recorded rather than
+ * thrown so the rest of the GraphQL/WebSocket service can still start.
  */
-export async function initBoardRenderer(): Promise<void> {
+export function initBoardRenderer(): Promise<void> {
+  if (rendererAvailable) return Promise.resolve();
+  if (initPromise) return initPromise;
+
+  initPromise = initializeBoardRenderer().finally(() => {
+    initPromise = null;
+  });
+  return initPromise;
+}
+
+async function initializeBoardRenderer(): Promise<void> {
+  initializationAttempts += 1;
   lastInitAttemptAtMs = Date.now();
   try {
     const require = createRequire(import.meta.url);
@@ -85,7 +143,7 @@ export async function initBoardRenderer(): Promise<void> {
     const imagesDir = join(imagesRoot, 'images');
     if (!existsSync(imagesDir)) {
       logger.error(
-        `[OGClimb] Board images directory missing at ${imagesDir} — OG cards will render without board photos. ` +
+        `[BoardRender] Board images directory missing at ${imagesDir} — renders will omit board photos. ` +
           'Set BOARD_IMAGES_ROOT to the directory that contains images/.',
       );
     }
@@ -93,34 +151,36 @@ export async function initBoardRenderer(): Promise<void> {
     overlayRenderer = createOverlayRenderer(async () => readFile(wasmBinaryPath));
     await overlayRenderer.ensureInitialized();
     rendererAvailable = true;
-    logger.info(`[OGClimb] Board renderer initialised (images root: ${imagesRoot})`);
+    logger.info(`[BoardRender] Renderer initialised (images root: ${imagesRoot})`);
 
-    // Warm the fallback board bases in the background — never block boot.
-    void warmFallbackBoardPreviews();
+    // Warm in the background, one config at a time through the same semaphore
+    // as requests. Boot and request work can therefore never exceed the cap.
+    warmupRuns += 1;
+    warmupPromise = warmFallbackBoardPreviews();
+    void warmupPromise;
   } catch (error) {
     rendererAvailable = false;
-    logger.error('[OGClimb] Board renderer init failed — /og/climb will return 503:', error);
+    logger.error('[BoardRender] Renderer init failed — image endpoints will return 503:', error);
   }
 }
 
-/**
- * True when the renderer is ready. When boot-time init failed (e.g. a transient
- * I/O error), re-attempts init at most once per INIT_RETRY_INTERVAL_MS so the
- * endpoint recovers without a process restart.
- */
 export async function ensureBoardRendererAvailable(): Promise<boolean> {
   if (rendererAvailable) return true;
+  if (initPromise) {
+    await initPromise;
+    return rendererAvailable;
+  }
   if (Date.now() - lastInitAttemptAtMs >= INIT_RETRY_INTERVAL_MS) {
     await initBoardRenderer();
   }
   return rendererAvailable;
 }
 
-export type OgClimbRenderParams = {
+export type BoardImageRenderParams = {
   boardName: string;
   layoutId: number;
   sizeId: number;
-  /** Canonical comma-separated set ids, e.g. "1,20". */
+  /** Query-order comma-separated set ids, preserved for compatibility. */
   setIds: string;
   frames: string;
   format: OutputFormat;
@@ -132,13 +192,39 @@ export type OgClimbRenderParams = {
   glyphs?: boolean;
   /** `boardsesh` mode only: feeds the placeholder veil color (see renderOgClimbUncached). */
   fieldColor?: string;
+  thumbnail: boolean;
+  includeBackground: boolean;
+  dimBackground: number;
+  isOgVariant: boolean;
 };
+
+export type BoardImageRenderResult = {
+  buffer: Buffer;
+  contentType: string;
+  cache: 'hit' | 'base-hit' | 'miss' | 'none';
+  timings: RenderTimings & { wasmMs: number; baseMs: number };
+  queueMs: number;
+};
+
+export type OgClimbRenderParams = Pick<
+  BoardImageRenderParams,
+  | 'boardName'
+  | 'layoutId'
+  | 'sizeId'
+  | 'setIds'
+  | 'frames'
+  | 'format'
+  | 'renderMode'
+  | 'glowFalloff'
+  | 'glyphs'
+  | 'fieldColor'
+>;
 
 export type OgClimbRenderResult = {
   buffer: Buffer;
   contentType: string;
   cache: 'hit' | 'base-hit' | 'miss';
-  timings: { wasmMs: number; baseMs: number; encodeMs: number };
+  timings: { wasmMs: number; baseMs: number; encodeMs: number; composeMs?: number };
 };
 
 /**
@@ -162,56 +248,34 @@ function renderOptionsCacheKeySuffix(options: {
   return `boardsesh:${options.glowFalloff ?? 'soft'}:${options.glyphs ? '1' : '0'}:${options.fieldColor ?? 'unset'}`;
 }
 
-function byteCacheKey(params: OgClimbRenderParams): string {
-  return `${params.boardName}:${params.layoutId}:${params.sizeId}:${params.setIds}:${params.frames}:${params.format}:${renderOptionsCacheKeySuffix(params)}`;
+export function buildBoardRenderByteCacheKey(params: BoardImageRenderParams): string {
+  // `v` intentionally is not a render param: one process has one renderer, so
+  // cache-version aliases name identical bytes during a rolling deployment.
+  return [
+    params.boardName,
+    params.layoutId,
+    params.sizeId,
+    params.setIds,
+    params.frames,
+    params.thumbnail ? '1' : '0',
+    params.includeBackground ? '1' : '0',
+    params.dimBackground,
+    params.isOgVariant ? 'og' : 'std',
+    params.format,
+    renderOptionsCacheKeySuffix(params),
+  ].join(':');
 }
 
-function baseCacheKey(boardName: string, layoutId: number, sizeId: number, setIds: string): string {
-  return `${boardName}:${layoutId}:${sizeId}:${setIds}`;
-}
-
-/**
- * Render a climb OG card. Serves from the final-bytes cache when possible,
- * otherwise renders the WASM overlay, composites it onto a (cached or freshly
- * built) OG base, encodes, and stores both caches.
- */
-export async function renderOgClimb(params: OgClimbRenderParams): Promise<OgClimbRenderResult> {
-  if (!overlayRenderer) {
-    throw new Error('Board renderer is not initialised');
-  }
-
-  const cacheKey = byteCacheKey(params);
-  const cached = byteCache.get(cacheKey);
-  if (cached) {
-    return { ...cached, cache: 'hit', timings: { wasmMs: 0, baseMs: 0, encodeMs: 0 } };
-  }
-
-  const inFlight = inFlightRenders.get(cacheKey);
-  if (inFlight) {
-    return inFlight;
-  }
-
-  const renderPromise = renderOgClimbUncached(params, cacheKey).finally(() => {
-    inFlightRenders.delete(cacheKey);
-  });
-  inFlightRenders.set(cacheKey, renderPromise);
-  return renderPromise;
-}
-
-async function renderOgClimbUncached(params: OgClimbRenderParams, cacheKey: string): Promise<OgClimbRenderResult> {
-  if (!overlayRenderer) {
-    throw new Error('Board renderer is not initialised');
-  }
-
+function prepareRender(params: BoardImageRenderParams): {
+  boardDetails: RenderableBoardDetails;
+  config: WasmRenderConfig;
+} {
   const parsedSetIds = params.setIds
     .split(',')
     .map(Number)
     .filter((setId) => !Number.isNaN(setId));
-
   const boardStates = HOLD_STATE_MAP[params.boardName as BoardName];
-  if (!boardStates) {
-    throw new Error(`No hold states defined for board ${params.boardName}`);
-  }
+  if (!boardStates) throw new Error(`No hold states defined for board ${params.boardName}`);
 
   const boardDetails = getBoardDetailsForBoard({
     board_name: params.boardName,
@@ -219,13 +283,12 @@ async function renderOgClimbUncached(params: OgClimbRenderParams, cacheKey: stri
     size_id: params.sizeId,
     set_ids: parsedSetIds,
   });
-
   const { config } = buildRenderConfig({
     boardName: params.boardName,
     boardDetails,
     frames: params.frames,
-    thumbnail: false,
-    isOgVariant: true,
+    thumbnail: params.thumbnail,
+    isOgVariant: params.isOgVariant,
     boardStates,
     renderMode: params.renderMode,
     glowFalloff: params.glowFalloff,
@@ -235,86 +298,121 @@ async function renderOgClimbUncached(params: OgClimbRenderParams, cacheKey: stri
     // (opacity 0) veil until that package lands.
     ...(params.renderMode === 'boardsesh' ? { veil: { color: params.fieldColor ?? '#181225', opacity: 0 } } : {}),
   });
-
-  const wasmT0 = performance.now();
-  const overlay = await overlayRenderer.render(JSON.stringify(config));
-  const wasmMs = performance.now() - wasmT0;
-
-  const baseKey = baseCacheKey(params.boardName, params.layoutId, params.sizeId, params.setIds);
-  let base = baseCache.get(baseKey);
-  let cache: OgClimbRenderResult['cache'];
-  let baseMs = 0;
-  if (base) {
-    cache = 'base-hit';
-  } else {
-    const baseT0 = performance.now();
-    base = await composeOgBaseBuffer({
-      boardDetails,
-      boardWidth: overlay.width,
-      boardHeight: overlay.height,
-      resolveImagePath,
-    });
-    baseMs = performance.now() - baseT0;
-    baseCache.set(baseKey, base);
-    cache = 'miss';
+  const outputHeight = Math.round((config.output_width * config.board_height) / config.board_width);
+  if (config.output_width * outputHeight > MAX_RENDER_OUTPUT_PIXELS) {
+    throw new RenderOutputTooLargeError(config.output_width, outputHeight);
   }
-
-  const overlayBuffer = Buffer.from(overlay.rgba.buffer, overlay.rgba.byteOffset, overlay.rgba.byteLength);
-  const encodeT0 = performance.now();
-  const { buffer, contentType } = await encodeOgImage({
-    base: base.base,
-    overlay: { buffer: overlayBuffer, width: overlay.width, height: overlay.height, left: base.left, top: base.top },
-    format: params.format,
-  });
-  const encodeMs = performance.now() - encodeT0;
-
-  byteCache.set(cacheKey, { buffer, contentType });
-
-  return { buffer, contentType, cache, timings: { wasmMs, baseMs, encodeMs } };
+  return { boardDetails, config };
 }
 
 /**
- * Non-blocking warm of the fallback board bases so the first real crawler fetch
- * for a common board is a cheap base-hit. Composes bases directly into the base
- * cache — no byte-cache entries, which real requests could never hit (the
- * handler requires non-empty frames). Failures are logged, never thrown.
+ * Render either a plain board image or an OG canvas through the shared caches,
+ * in-flight maps, and concurrency limiter. Cache and coalesced hits never take
+ * a semaphore slot and remain available even while the render queue is full.
  */
+export async function renderBoardImage(params: BoardImageRenderParams): Promise<BoardImageRenderResult> {
+  if (!overlayRenderer) throw new Error('Board renderer is not initialised');
+
+  const cacheKey = buildBoardRenderByteCacheKey(params);
+  const cached = byteCache.get(cacheKey);
+  if (cached) {
+    return {
+      ...cached,
+      cache: 'hit',
+      timings: { wasmMs: 0, baseMs: 0, sharpMs: 0, composeMs: 0, encodeMs: 0, bgMs: 0 },
+      queueMs: 0,
+    };
+  }
+
+  const alreadyRendering = inFlightRenders.get(cacheKey);
+  if (alreadyRendering) return alreadyRendering;
+
+  // Geometry is pure and must be checked before a request can consume a slot.
+  const prepared = prepareRender(params);
+  if (renderSemaphore.pending >= MAX_QUEUED_RENDERS) {
+    throw new RenderQueueSaturatedError();
+  }
+
+  const queuedAt = performance.now();
+  const renderPromise = renderSemaphore
+    .run(async () => {
+      const queueMs = performance.now() - queuedAt;
+      const renderer = overlayRenderer;
+      if (!renderer) throw new Error('Board renderer is not initialised');
+
+      const wasmT0 = performance.now();
+      const overlay = await renderer.render(JSON.stringify(prepared.config));
+      const wasmMs = performance.now() - wasmT0;
+      const overlayBuffer = Buffer.from(overlay.rgba.buffer, overlay.rgba.byteOffset, overlay.rgba.byteLength);
+      const rendered = await renderBoardImageBuffer({
+        overlayBuffer,
+        width: overlay.width,
+        height: overlay.height,
+        isOgVariant: params.isOgVariant,
+        format: params.format,
+        thumbnail: params.thumbnail,
+        includeBackground: params.includeBackground,
+        dimBackground: params.dimBackground,
+        boardDetails: prepared.boardDetails,
+        resolveImagePath,
+        caches: { boardBase: boardBaseCache, ogBase: ogBaseCache, boardBaseInFlight, ogBaseInFlight },
+      });
+      const cache = rendered.cache === 'hit' ? 'base-hit' : (rendered.cache ?? 'none');
+      const result: BoardImageRenderResult = {
+        buffer: rendered.buffer,
+        contentType: rendered.contentType,
+        cache,
+        timings: { ...rendered.timings, wasmMs, baseMs: rendered.timings.bgMs },
+        queueMs,
+      };
+      byteCache.set(cacheKey, { buffer: result.buffer, contentType: result.contentType });
+      return result;
+    })
+    .finally(() => {
+      inFlightRenders.delete(cacheKey);
+    });
+  inFlightRenders.set(cacheKey, renderPromise);
+  return renderPromise;
+}
+
+/** `/og/climb` compatibility wrapper over the canonical renderer. */
+export function renderOgClimb(params: OgClimbRenderParams): Promise<OgClimbRenderResult> {
+  return renderBoardImage({
+    ...params,
+    thumbnail: false,
+    includeBackground: true,
+    dimBackground: 0,
+    isOgVariant: true,
+  }) as Promise<OgClimbRenderResult>;
+}
+
 async function warmFallbackBoardPreviews(): Promise<void> {
-  await Promise.allSettled(
-    Object.entries(FALLBACK_BOARD_PREVIEW_CONFIGS).map(async ([boardName, config]) => {
-      try {
-        await warmBoardBase(boardName, config);
-      } catch (error) {
-        logger.warn(`[OGClimb] Warm-up failed for ${boardName}:`, error instanceof Error ? error.message : error);
-      }
-    }),
-  );
-  logger.info('[OGClimb] Fallback board preview warm-up complete');
+  for (const [boardName, config] of Object.entries(FALLBACK_BOARD_PREVIEW_CONFIGS)) {
+    try {
+      await renderSemaphore.run(() => warmBoardBase(boardName, config));
+    } catch (error) {
+      logger.warn(`[BoardRender] Warm-up failed for ${boardName}:`, error instanceof Error ? error.message : error);
+    }
+  }
+  logger.info('[BoardRender] Fallback board preview warm-up complete');
 }
 
 async function warmBoardBase(
   boardName: string,
-  config: { layout_id: number; size_id: number; set_ids: number[] },
+  fallback: { layout_id: number; size_id: number; set_ids: number[] },
 ): Promise<void> {
-  if (!overlayRenderer) return;
-
-  const setIds = config.set_ids.join(',');
-  const baseKey = baseCacheKey(boardName, config.layout_id, config.size_id, setIds);
-  if (baseCache.has(baseKey)) return;
-
+  const renderer = overlayRenderer;
+  if (!renderer) return;
   const boardStates = HOLD_STATE_MAP[boardName as BoardName];
   if (!boardStates) return;
 
   const boardDetails = getBoardDetailsForBoard({
     board_name: boardName,
-    layout_id: config.layout_id,
-    size_id: config.size_id,
-    set_ids: config.set_ids,
+    layout_id: fallback.layout_id,
+    size_id: fallback.size_id,
+    set_ids: fallback.set_ids,
   });
-
-  // An empty-frames overlay render is the cheap way to learn the board's
-  // output dimensions, which the base composite is sized to.
-  const { config: renderConfig } = buildRenderConfig({
+  const { config } = buildRenderConfig({
     boardName,
     boardDetails,
     frames: '',
@@ -322,13 +420,70 @@ async function warmBoardBase(
     isOgVariant: true,
     boardStates,
   });
-  const overlay = await overlayRenderer.render(JSON.stringify(renderConfig));
+  const overlay = await renderer.render(JSON.stringify(config));
+  const ogKey = `${getBackgroundRelPaths(boardDetails, false).join('|')}:${overlay.width}x${overlay.height}:og`;
+  if (ogBaseCache.has(ogKey)) return;
 
-  const base = await composeOgBaseBuffer({
-    boardDetails,
-    boardWidth: overlay.width,
-    boardHeight: overlay.height,
-    resolveImagePath,
-  });
-  baseCache.set(baseKey, base);
+  const alreadyComposing = ogBaseInFlight.get(ogKey);
+  const composePromise =
+    alreadyComposing ??
+    composeOgBaseBuffer({
+      boardDetails,
+      boardWidth: overlay.width,
+      boardHeight: overlay.height,
+      resolveImagePath,
+    }).finally(() => {
+      ogBaseInFlight.delete(ogKey);
+    });
+  if (!alreadyComposing) ogBaseInFlight.set(ogKey, composePromise);
+  ogBaseCache.set(ogKey, await composePromise);
+}
+
+/** Test-only reset for process-lifetime render state. */
+export function resetBoardRenderCaches(): void {
+  boardBaseCache.clear();
+  ogBaseCache.clear();
+  byteCache.clear();
+  boardBaseInFlight.clear();
+  ogBaseInFlight.clear();
+  inFlightRenders.clear();
+}
+
+/** Resolve after the current boot warm-up, if one exists. */
+export function waitForBoardRenderWarmup(): Promise<void> {
+  return warmupPromise ?? Promise.resolve();
+}
+
+export function getBoardRenderRuntimeStats(): {
+  active: number;
+  pending: number;
+  boardBaseBytes: number;
+  ogBaseBytes: number;
+  byteCacheBytes: number;
+  boardBaseMaxBytes: number;
+  ogBaseMaxBytes: number;
+  byteCacheMaxBytes: number;
+  inFlightRenders: number;
+  concurrency: number;
+  queueLimit: number;
+  initializing: boolean;
+  initializationAttempts: number;
+  warmupRuns: number;
+} {
+  return {
+    active: renderSemaphore.active,
+    pending: renderSemaphore.pending,
+    boardBaseBytes: boardBaseCache.byteSize,
+    ogBaseBytes: ogBaseCache.byteSize,
+    byteCacheBytes: byteCache.byteSize,
+    boardBaseMaxBytes: BOARD_BASE_CACHE_MAX_BYTES,
+    ogBaseMaxBytes: OG_BASE_CACHE_MAX_BYTES,
+    byteCacheMaxBytes: BYTE_CACHE_MAX_BYTES,
+    inFlightRenders: inFlightRenders.size,
+    concurrency: RENDER_CONCURRENCY,
+    queueLimit: MAX_QUEUED_RENDERS,
+    initializing: initPromise !== null,
+    initializationAttempts,
+    warmupRuns,
+  };
 }

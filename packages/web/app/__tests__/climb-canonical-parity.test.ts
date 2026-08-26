@@ -152,7 +152,7 @@ vi.mock('@/app/components/board-renderer/util', () => ({
   ),
   buildOverlayUrl: vi.fn(() => '/api/internal/board-render'),
 }));
-vi.mock('@/app/lib/warm-overlay-cache', () => ({ scheduleOverlayWarming: vi.fn() }));
+vi.mock('@/app/lib/warm-overlay-cache', () => ({ scheduleOgImageWarming: vi.fn() }));
 // Recorded rather than discarded: the `noindex` prop is what stops the
 // CreativeWork JSON-LD from naming the indexable twin on a hidden `/b` page, and
 // the prop is the only place that decision is made.

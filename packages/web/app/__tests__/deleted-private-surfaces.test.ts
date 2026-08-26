@@ -75,12 +75,11 @@ const KEPT_PATHS = [
   'app/lib/server-popular-configs.ts',
   'app/components/activity-feed/activity-feed.tsx',
   'app/components/activity-feed/social-feed-item.tsx',
-  // The three assets the epic marks never-touch. `board-render` is carved out
-  // of `robots.ts`'s allow list as the climb page's LCP image for
-  // Googlebot-Image; `ws-auth` is the party-session handshake; `climb-card/` is
-  // the shared card the board lists and the social feeds both render.
+  // The assets the epic marks never-touch. `ws-auth` is the party-session
+  // handshake; `climb-card/` is the shared card the board lists and the social
+  // feeds both render. The legacy board-render URL is now an unconditional
+  // external rewrite in next.config.mjs, not a Next route file.
   'app/api/internal/ws-auth/route.ts',
-  'app/api/internal/board-render/route.ts',
   'app/components/climb-card/climb-title.tsx',
 ];
 

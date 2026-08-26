@@ -4,6 +4,26 @@ import createWithVercelToolbar from '@vercel/toolbar/plugins/next';
 
 const withVercelToolbar = createWithVercelToolbar();
 
+export function resolveBoardRenderBackendUrl(rawWsUrl) {
+  const configuredWsUrl = rawWsUrl || 'ws://localhost:8080/graphql';
+  let backendUrl;
+  try {
+    backendUrl = new URL(configuredWsUrl);
+  } catch {
+    throw new Error(`NEXT_PUBLIC_WS_URL is not a valid URL: ${JSON.stringify(configuredWsUrl)}`);
+  }
+
+  if (!['ws:', 'wss:', 'http:', 'https:'].includes(backendUrl.protocol)) {
+    throw new Error('NEXT_PUBLIC_WS_URL must use ws, wss, http, or https');
+  }
+
+  backendUrl.protocol = backendUrl.protocol === 'wss:' || backendUrl.protocol === 'https:' ? 'https:' : 'http:';
+  backendUrl.pathname = '/render/board';
+  backendUrl.search = '';
+  backendUrl.hash = '';
+  return backendUrl.toString();
+}
+
 export function resolveExpoWebDevOrigin(rawOrigin) {
   if (!rawOrigin) return null;
 
@@ -361,17 +381,8 @@ const nextConfig = {
       ],
     ],
   },
-  // Include WASM binary in standalone output for serverless functions.
-  // Both paths needed: monorepo root (hoisted deps) and local node_modules (symlink).
   outputFileTracingExcludes: {
     '/**': ['./e2e/**', './**/*.test.*', './**/*.spec.*'],
-  },
-  outputFileTracingIncludes: {
-    '/api/internal/board-render': [
-      './node_modules/@boardsesh/board-renderer-wasm/pkg/*.wasm',
-      '../../node_modules/@boardsesh/board-renderer-wasm/pkg/*.wasm',
-      './public/images/**',
-    ],
   },
   async headers() {
     return [
@@ -426,7 +437,17 @@ const nextConfig = {
     ];
   },
   async rewrites() {
-    if (process.env.BOARDSESH_WEB !== '1') return [];
+    // Released Live Activities, ESP32 firmware and already-crawled HTML still
+    // request this path. Keep it as a routing-layer proxy so they receive the
+    // Railway image bytes without invoking a Next.js function.
+    const boardRenderCompatibilityRewrite = {
+      source: '/api/internal/board-render',
+      destination: resolveBoardRenderBackendUrl(process.env.NEXT_PUBLIC_WS_URL),
+    };
+
+    if (process.env.BOARDSESH_WEB !== '1') {
+      return { beforeFiles: [boardRenderCompatibilityRewrite] };
+    }
 
     const expoWebOrigin = resolveExpoWebDevOrigin(process.env.BOARDSESH_EXPO_WEB_ORIGIN);
     if (!expoWebOrigin) {
@@ -439,19 +460,24 @@ const nextConfig = {
       // or Dockerfile.web — can ever bake an /app route again. That guarantee
       // is what makes #3795 (web → Railway, whose image DOES build from
       // Dockerfile.web) safe to land after this.
-      if (process.env.NODE_ENV !== 'development') return [];
+      if (process.env.NODE_ENV !== 'development') {
+        return { beforeFiles: [boardRenderCompatibilityRewrite] };
+      }
 
       console.warn(
         '[next.config] BOARDSESH_WEB=1 but BOARDSESH_EXPO_WEB_ORIGIN is unset — serving the static export from public/app if present (development only; production never serves /app).',
       );
-      return [
-        { source: '/app', destination: '/app/index.html' },
-        // SPA fallback for Expo Router routes ONLY. The content-hashed
-        // namespaces (_expo/, assets/) and the fixed-name WASM glue (wasm/) stay
-        // excluded so a request for a missing hashed bundle 404s instead of
-        // silently serving the HTML shell at a .js/.wasm URL.
-        { source: '/app/:path((?!_expo/|assets/|wasm/).*)', destination: '/app/index.html' },
-      ];
+      return {
+        beforeFiles: [
+          boardRenderCompatibilityRewrite,
+          { source: '/app', destination: '/app/index.html' },
+          // SPA fallback for Expo Router routes ONLY. The content-hashed
+          // namespaces (_expo/, assets/) and the fixed-name WASM glue (wasm/) stay
+          // excluded so a request for a missing hashed bundle 404s instead of
+          // silently serving the HTML shell at a .js/.wasm URL.
+          { source: '/app/:path((?!_expo/|assets/|wasm/).*)', destination: '/app/index.html' },
+        ],
+      };
     }
 
     // Development: proxy /app (and Metro's support namespaces) to the Expo dev
@@ -459,6 +485,7 @@ const nextConfig = {
     // sitting in public/app can never shadow Metro while the proxy is active.
     return {
       beforeFiles: [
+        boardRenderCompatibilityRewrite,
         {
           source: '/app',
           destination: `${expoWebOrigin}/app`,

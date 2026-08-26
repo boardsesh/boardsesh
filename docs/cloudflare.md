@@ -49,7 +49,7 @@ One-time setup order:
 4. Wait for Tigris to report the custom domain and certificate active, then run
    the verification commands below before publishing the first catalog.
 
-## ws.boardsesh.com edge caching (og images)
+## ws.boardsesh.com edge caching (OG and board images)
 
 `ws.boardsesh.com` is a single-region Railway origin; distant clients (and the
 iOS share sheet, which fetches previews from the sender's phone) pay full RTT
@@ -71,9 +71,12 @@ What it manages (and nothing else on the zone):
     missing and its owned fields (including disabled CNAME flattening) are
     corrected when drifted. The tool refuses to apply while zone-wide CNAME
     flattening would override that record.
-- **Cache** — one rule in the `http_request_cache_settings` phase, expression
+- **Cache** — two rules in the `http_request_cache_settings` phase, one for
   `(http.host eq "ws.boardsesh.com" and starts_with(http.request.uri.path, "/og/"))`
-  → eligible for cache, edge TTL "use cache-control if present, bypass if not"
+  and one for the exact path
+  `(http.host eq "ws.boardsesh.com" and http.request.uri.path eq "/render/board")`.
+  Both make successful responses eligible for cache, with edge TTL
+  "use cache-control if present, bypass if not"
   so error responses (400/429/503 — sent without Cache-Control) are never
   edge-cached, and browser TTL "respect origin" (successful responses are `immutable`,
   1y). Every other rule already in that phase is preserved verbatim (the tool
@@ -109,17 +112,20 @@ URLs and ~2,000 homepage hits. That shape is a crawl, not an audience.
 > other and the 24 h one does not. Derive daily rates from a 6 h or 30 min window
 > and scale, or you will under-report by ~2×.
 
-Two more rules, managed the same way (declared in `infra/cloudflare/config.ts`,
-converged by `vp run cf:apply`):
+Additional policies are managed the same way (declared in
+`infra/cloudflare/config.ts`, converged by `vp run cf:apply`):
 
-- **Board-render cache rule** — `http_request_cache_settings`, expression
+- **Legacy www board-render cache rule** — `http_request_cache_settings`, expression
   `(http.host eq "www.boardsesh.com" and starts_with(http.request.uri.path, "/api/internal/board-render"))`.
-  The route already sends `cache-control: public, max-age=31536000, immutable`
+  This path is retained for released ESP32 firmware, iOS Live Activities, and
+  already-crawled URLs. Next.js now externally rewrites it to
+  `https://ws.boardsesh.com/render/board`, so it no longer invokes a Vercel
+  function. The backend sends `cache-control: public, max-age=31536000, immutable`
   and a matching `CDN-Cache-Control`, but **Cloudflare caches by file extension
   by default** and this path has none, so it measured `cf-cache-status: DYNAMIC`
   while `/_next/static/*.js` on the same zone was a `HIT`. Every image byte was
-  transiting Cloudflare to Vercel (~54 GB/day). The rule is the entire fix — no
-  origin header change is needed or wanted.
+  transiting Cloudflare to Vercel (~54 GB/day). Keeping the rule protects old
+  URLs and makes a Vercel Instant Rollback safe.
 
   Because the rule makes Cloudflare honour that year-long TTL, the URL has to
   identify the bytes it names. Every web-built board-render URL now carries a
@@ -132,12 +138,20 @@ converged by `vp run cf:apply`):
   purge is a manual dashboard action (Caching → Configuration → Purge Everything)
   if one is ever needed.
 
-  Requests _without_ `v` — the ESP32 firmware, the iOS Live Activity widget, and
+  Requests _without_ `v` — older ESP32 firmware, iOS Live Activity builds, and
   URLs Googlebot-Image crawled before this shipped (`app/robots.ts` allows the
   path) — get `s-maxage=86400, stale-while-revalidate=604800` instead of the
   one-year immutable branch. A day of staleness rather than a year, at 1/288th
   the origin cost a 300 s TTL would have carried on the route that is 48.7% of
   all function invocations.
+
+The web emits new board-image URLs directly on `ws.boardsesh.com/render/board`.
+The production workflow deploys and smokes Railway first, applies the new exact
+path cache rule second, and only then promotes the web build. Roll back a
+Railway image that lacks `/render/board` together with the Vercel web deployment;
+removing only the new Cloudflare rule is safe but sends every image to Railway.
+Never disable the `ws` proxy to roll this route back because GraphQL, WebSockets,
+and `/og` share that hostname.
 
 - **Crawler rules** — two rules in `http_request_firewall_custom`, in this order:
   1. `skip` (all remaining custom rules) for search engines and share-card

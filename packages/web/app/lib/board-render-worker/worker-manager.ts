@@ -321,7 +321,7 @@ export function renderBoard(options: RenderBoardOptions): Promise<ImageBitmap> {
 
   // Build hold state map for this board. Prefer each role's calibrated
   // on-screen displayColor over its raw LED color — see the matching
-  // comment in api/internal/board-render/route.ts (issue #2202).
+  // backend board-render service (issue #2202).
   const holdStateMap: Record<number, { color: string }> = {};
   const boardStates = HOLD_STATE_MAP[boardDetails.board_name];
   for (const [code, info] of Object.entries(boardStates)) {

@@ -382,4 +382,33 @@ describe('renderBoardImageBuffer with caches', () => {
     expect(resolveCalls).toHaveLength(resolveCallsAfterFirst);
     expect(second.buffer.equals(first.buffer)).toBe(true);
   });
+
+  it('coalesces concurrent OG base composition across different overlays', async () => {
+    filesByRelPath.set(relPathFor('layer-a.png'), await writeLayer('og-coalesced.png', { r: 80, g: 90, b: 100 }));
+    const ogBase = new BoundedLru<OgBaseResult>({
+      maxEntries: 2,
+      maxBytes: 8 * 1024 * 1024,
+      sizeOf: (value) => value.base.length,
+    });
+    const ogBaseInFlight = new Map<string, Promise<OgBaseResult>>();
+    const paramsFor = (overlayFill: number) => ({
+      ...baseParams,
+      overlayBuffer: Buffer.alloc(PIXELS * 4, overlayFill),
+      isOgVariant: true,
+      format: 'png' as const,
+      boardDetails: boardWithLayers(['layer-a.png']),
+      caches: { ogBase, ogBaseInFlight },
+    });
+
+    const [first, second] = await Promise.all([
+      renderBoardImageBuffer(paramsFor(0x00)),
+      renderBoardImageBuffer(paramsFor(0xff)),
+    ]);
+
+    expect(resolveCalls).toHaveLength(1);
+    expect(new Set([first.cache, second.cache])).toEqual(new Set(['hit', 'miss']));
+    expect(first.buffer.equals(second.buffer)).toBe(false);
+    expect(ogBase.size).toBe(1);
+    expect(ogBaseInFlight.size).toBe(0);
+  });
 });

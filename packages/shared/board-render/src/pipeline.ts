@@ -65,6 +65,8 @@ export type RenderBoardImageCaches = {
   boardBase?: BoundedLru<Buffer>;
   /** Gradient backdrop + board photos (raw RGBA) for the OG social-card path. */
   ogBase?: BoundedLru<OgBaseResult>;
+  /** Coalesces identical OG base compositions, analogous to `boardBaseInFlight`. */
+  ogBaseInFlight?: Map<string, Promise<OgBaseResult>>;
   /**
    * Composes of `boardBase` entries currently running, so two climbs on the
    * same board arriving together fold that board's photos once instead of
@@ -221,7 +223,7 @@ export async function composeBoardBaseBuffer(params: {
 }
 
 /**
- * Single-shot render used by the web `board-render` route: takes the WASM
+ * Single-shot render used by the backend board-render service: takes the WASM
  * overlay RGBA and produces the final encoded image, optionally compositing
  * background board photos and (for the OG variant) the social-card backdrop.
  *
@@ -265,12 +267,27 @@ export async function renderBoardImageBuffer({
     // not on `bgRelPaths`, which honours `thumbnail`.
     const ogKey = `${getBackgroundRelPaths(boardDetails, false).join('|')}:${width}x${height}:og`;
     let ogBase = caches?.ogBase?.get(ogKey);
+    let reusedInFlightBase = false;
     if (ogBase) {
       cache = 'hit';
     } else {
-      ogBase = await composeOgBaseBuffer({ boardDetails, boardWidth: width, boardHeight: height, resolveImagePath });
+      const composeParams = { boardDetails, boardWidth: width, boardHeight: height, resolveImagePath };
+      const inFlightBases = caches?.ogBaseInFlight;
+      if (inFlightBases) {
+        const alreadyComposing = inFlightBases.get(ogKey);
+        reusedInFlightBase = alreadyComposing !== undefined;
+        const composePromise =
+          alreadyComposing ??
+          composeOgBaseBuffer(composeParams).finally(() => {
+            inFlightBases.delete(ogKey);
+          });
+        if (!alreadyComposing) inFlightBases.set(ogKey, composePromise);
+        ogBase = await composePromise;
+      } else {
+        ogBase = await composeOgBaseBuffer(composeParams);
+      }
       caches?.ogBase?.set(ogKey, ogBase);
-      cache = caches?.ogBase ? 'miss' : 'none';
+      cache = caches?.ogBase ? (reusedInFlightBase ? 'hit' : 'miss') : 'none';
     }
     bgMs = performance.now() - bgT0;
 

@@ -6,6 +6,7 @@ const DEFAULT_BASE_URL = 'https://ws.boardsesh.com';
 const DEFAULT_ATTEMPTS = 12;
 const DEFAULT_RETRY_DELAY_MS = 5_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
+const BOARD_RENDER_VERSION = '00000000';
 const REQUIRED_GROUPED_NOTIFICATION_FIELDS = Object.freeze(['climbLayoutId', 'climbAngle']);
 const INTROSPECTION_QUERY = `
   query ProductionBackendSchemaSmoke {
@@ -66,6 +67,28 @@ function graphqlEndpoint(baseUrl) {
   return parsedUrl.toString();
 }
 
+function boardRenderEndpoint(baseUrl, cacheBuster = Date.now()) {
+  const parsedUrl = new URL(baseUrl);
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    throw new Error(`--base must use http or https (received ${parsedUrl.protocol})`);
+  }
+  parsedUrl.pathname = '/render/board';
+  parsedUrl.search = new URLSearchParams({
+    board_name: 'kilter',
+    layout_id: '1',
+    size_id: '10',
+    set_ids: '1,20',
+    frames: '',
+    thumbnail: '1',
+    include_background: '1',
+    format: 'webp',
+    v: BOARD_RENDER_VERSION,
+    smoke: String(cacheBuster),
+  }).toString();
+  parsedUrl.hash = '';
+  return parsedUrl.toString();
+}
+
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -110,6 +133,63 @@ async function checkBackendSchemaOnce({
   }
 }
 
+async function checkBoardRenderOnce({
+  baseUrl = DEFAULT_BASE_URL,
+  fetchImpl = globalThis.fetch,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  cacheBuster = Date.now(),
+}) {
+  requirePositiveInteger('timeoutMs', timeoutMs);
+  const endpoint = boardRenderEndpoint(baseUrl, cacheBuster);
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), timeoutMs);
+
+  try {
+    const response = await fetchImpl(endpoint, {
+      method: 'GET',
+      cache: 'no-store',
+      headers: {
+        Accept: 'image/webp',
+        'Cache-Control': 'no-cache, no-store, max-age=0',
+        Pragma: 'no-cache',
+      },
+      signal: abortController.signal,
+    });
+    if (!response.ok) {
+      const responseText = await response.text();
+      throw new Error(`board render returned HTTP ${response.status}: ${responseText.slice(0, 300)}`);
+    }
+
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.toLowerCase().startsWith('image/webp')) {
+      throw new Error(`board render returned unexpected Content-Type: ${contentType || '(missing)'}`);
+    }
+    const cacheControl = response.headers.get('cache-control') ?? '';
+    if (!cacheControl.includes('public') || !cacheControl.includes('immutable')) {
+      throw new Error(`versioned board render returned unexpected Cache-Control: ${cacheControl || '(missing)'}`);
+    }
+    if (!response.headers.get('x-railway-request-id')) {
+      throw new Error('board render response is missing x-railway-request-id');
+    }
+    if (response.headers.get('x-vercel-cache')) {
+      throw new Error('board render unexpectedly passed through a Vercel origin');
+    }
+
+    const imageBytes = new Uint8Array(await response.arrayBuffer());
+    if (
+      imageBytes.length < 12 ||
+      Buffer.from(imageBytes.subarray(0, 4)).toString('ascii') !== 'RIFF' ||
+      Buffer.from(imageBytes.subarray(8, 12)).toString('ascii') !== 'WEBP'
+    ) {
+      throw new Error(`board render returned invalid WebP bytes (${imageBytes.length} bytes)`);
+    }
+
+    return { byteLength: imageBytes.length, contentType, cacheControl };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function runBackendSmoke({
   baseUrl = DEFAULT_BASE_URL,
   attempts = DEFAULT_ATTEMPTS,
@@ -127,8 +207,15 @@ async function runBackendSmoke({
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const fieldNames = await checkBackendSchemaOnce({ baseUrl, fetchImpl, timeoutMs });
+      const renderResult = await checkBoardRenderOnce({
+        baseUrl,
+        fetchImpl,
+        timeoutMs,
+        cacheBuster: `${Date.now()}-${attempt}`,
+      });
       log.info(
-        `Production backend schema smoke passed on attempt ${attempt}: ${REQUIRED_GROUPED_NOTIFICATION_FIELDS.join(', ')}`,
+        `Production backend smoke passed on attempt ${attempt}: ${REQUIRED_GROUPED_NOTIFICATION_FIELDS.join(', ')}; ` +
+          `board render ${renderResult.byteLength} bytes (${renderResult.contentType})`,
       );
       return fieldNames;
     } catch (error) {
@@ -194,6 +281,8 @@ export {
   INTROSPECTION_QUERY,
   REQUIRED_GROUPED_NOTIFICATION_FIELDS,
   assertGroupedNotificationSchema,
+  boardRenderEndpoint,
+  checkBoardRenderOnce,
   checkBackendSchemaOnce,
   graphqlEndpoint,
   parseCliArguments,

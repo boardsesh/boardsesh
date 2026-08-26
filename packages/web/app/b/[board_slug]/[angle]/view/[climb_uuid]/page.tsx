@@ -8,7 +8,7 @@ import { getFrontDoorBetaLinks, getFrontDoorSimilarClimbs } from '@/app/lib/data
 import ClimbFrontDoor from '@/app/components/climb-front-door/climb-front-door';
 import { buildCanonicalClimbViewUrl, extractUuidFromSlug } from '@/app/lib/url-utils';
 import { buildOgBoardRenderUrl, buildOverlayPreloadUrls } from '@/app/components/board-renderer/util';
-import { scheduleOverlayWarming } from '@/app/lib/warm-overlay-cache';
+import { scheduleOgImageWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
@@ -125,7 +125,7 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
       getFrontDoorBetaLinks({ boardType: parsedParams.board_name, climbUuid: parsedParams.climb_uuid }),
     ]);
 
-    scheduleOverlayWarming({ boardDetails, climbs: [currentClimb], variant: 'full' });
+    scheduleOgImageWarming({ boardDetails, climb: currentClimb });
     const preloadUrls = buildOverlayPreloadUrls(boardDetails, currentClimb.frames, false);
 
     return (

@@ -170,7 +170,7 @@ jobs:
               --label "traefik.http.routers.backend-pr-${PR_NUM}.rule=Host(\`${PR_NUM}.ws.preview.boardsesh.com\`)" \
               --label "traefik.http.routers.backend-pr-${PR_NUM}.priority=100" \
               --label "traefik.http.services.backend-pr-${PR_NUM}.loadbalancer.server.port=8080" \
-              --memory=256m \
+              --memory=768m \
               --restart unless-stopped \
               ghcr.io/boardsesh/boardsesh-daemon:pr-${PR_NUM}
           else

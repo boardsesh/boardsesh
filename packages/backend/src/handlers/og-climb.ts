@@ -8,7 +8,7 @@ import {
 import { applyCorsHeaders } from './cors';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 import { RateLimitError } from '../utils/rate-limiter';
-import { ensureBoardRendererAvailable, renderOgClimb } from '../services/board-render';
+import { RenderQueueSaturatedError, ensureBoardRendererAvailable, renderOgClimb } from '../services/board-render';
 import { logger } from '../utils/logger';
 
 const RATE_LIMIT_MAX = 120;
@@ -117,12 +117,13 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
       fieldColor: query.field_color,
     });
     const totalMs = performance.now() - totalT0;
+    const totalEncodeMs = (timings.composeMs ?? 0) + timings.encodeMs;
 
     const serverTiming = [
       `total;dur=${totalMs.toFixed(1)}`,
       `wasm;dur=${timings.wasmMs.toFixed(1)}`,
       `base;dur=${timings.baseMs.toFixed(1)}`,
-      `encode;dur=${timings.encodeMs.toFixed(1)}`,
+      `encode;dur=${totalEncodeMs.toFixed(1)}`,
       `cache;desc=${cache}`,
     ].join(', ');
 
@@ -147,7 +148,7 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
       cache,
       totalMs: Math.round(totalMs),
       wasmMs: Math.round(timings.wasmMs),
-      encodeMs: Math.round(timings.encodeMs),
+      encodeMs: Math.round(totalEncodeMs),
       bytes: buffer.length,
       format,
     };
@@ -157,6 +158,15 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
       logger.info('[OGClimb] served', logPayload);
     }
   } catch (error) {
+    if (error instanceof RenderQueueSaturatedError) {
+      res.writeHead(503, {
+        'Content-Type': 'application/json',
+        'Retry-After': '5',
+        'Cache-Control': 'no-store',
+      });
+      res.end(JSON.stringify({ error: error.message }));
+      return;
+    }
     logger.error('[OGClimb] render failed:', error);
     sendJson(res, 500, { error: 'Render failed' });
   }

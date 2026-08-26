@@ -32,6 +32,28 @@ afterEach(() => {
 });
 
 describe('Expo web Next proxy', () => {
+  it('derives the board-render HTTP endpoint from the public WebSocket URL', () => {
+    expect(configModule.resolveBoardRenderBackendUrl('wss://ws.boardsesh.com/graphql')).toBe(
+      'https://ws.boardsesh.com/render/board',
+    );
+    expect(configModule.resolveBoardRenderBackendUrl('ws://localhost:8080/graphql')).toBe(
+      'http://localhost:8080/render/board',
+    );
+    expect(() => configModule.resolveBoardRenderBackendUrl('file:///tmp/socket')).toThrow(/ws, wss, http, or https/);
+  });
+
+  it('always installs the legacy board-render compatibility rewrite', async () => {
+    delete process.env.BOARDSESH_WEB;
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://ws.boardsesh.com/graphql');
+
+    const rewrites = flattenRewrites((await nextConfig.rewrites?.()) ?? []);
+
+    expect(rewrites).toContainEqual({
+      source: '/api/internal/board-render',
+      destination: 'https://ws.boardsesh.com/render/board',
+    });
+  });
+
   it('normalizes an HTTP(S) proxy origin and rejects other protocols', () => {
     expect(configModule.resolveExpoWebDevOrigin('http://localhost:8082/path')).toBe('http://localhost:8082');
     expect(configModule.resolveExpoWebDevOrigin(undefined)).toBeNull();
@@ -125,11 +147,9 @@ describe('Expo web Next proxy', () => {
 
     const rewriteResult = (await nextConfig.rewrites?.()) ?? [];
 
-    // Array form = afterFiles: real export files under public/app (the _expo
-    // bundles, assets, wasm) win before the SPA fallback is consulted. The
-    // Sentry tunnel wrapper appends unrelated /monitoring rewrites, so scope
-    // the exact-shape assertion to the /app namespace.
-    expect(Array.isArray(rewriteResult)).toBe(true);
+    // The compatibility proxy makes the result phased; scope the assertion to
+    // the /app namespace because Sentry adds unrelated rewrites too.
+    expect(Array.isArray(rewriteResult)).toBe(false);
     const appRewrites = flattenRewrites(rewriteResult).filter(
       ({ source }) => source === '/app' || source.startsWith('/app/'),
     );

@@ -228,11 +228,10 @@ Two things to watch when comparing windows:
   the image at its own edge either. Every Vercel-CDN miss _and_ every Cloudflare pass-through reaches
   the origin. That is a lever [#4652] owns.
 
-Moving `/api/internal/board-render` to the Railway backend is the biggest remaining CPU lever —
-`packages/backend/src/handlers/og-climb.ts` already proves the pattern with a warm process and an
-LRU. Filed as [#4715] rather than done here: [#4648] relocates all of www to Railway anyway, so a
-partial port pays the integration cost twice. [#4715] leads with the `cache_result` pull, because how
-much the port is worth depends on a hit ratio nobody has measured.
+Resolved by [#4715]: new web URLs point directly at Railway `/render/board`, while the old www URL
+is an external compatibility rewrite for released clients. The Vercel function, its 3009 MB
+override, and its route-specific file tracing are gone. Railway shares the renderer caches and
+load-shedding semaphore with `/og/climb`, and Cloudflare edge-caches the new exact path.
 
 ### Routes ruled out, with the arithmetic
 
@@ -387,9 +386,9 @@ What would unblock it, in order of preference:
 
 Three things will move the answer materially even once the CPU number lands:
 
-- Whether `/api/internal/board-render` stays in the same container ([#4715]). It is the only route
-  with a `memory: 3009` override in `vercel.json`, so moving it changes both the CPU and the memory
-  answer — and it is now 32% of invocations rather than 49%.
+- The `/api/internal/board-render` work moved to Railway in [#4715], so the next sizing pass must
+  refresh the Vercel measurements after that cutover instead of treating the pre-cutover route as
+  part of the web container.
 - **Postgres connection slots, which are the binding constraint today, not vCPU** (§2b, [#4842]).
   ~3,090 500s/day are `53300` connection-slot exhaustion, in bursts at crawl peak. Sizing this
   container on CPU alone reproduces it on Railway.
@@ -398,9 +397,8 @@ Three things will move the answer materially even once the CPU number lands:
 
 ## 6. Follow-ups filed from this write-up
 
-- **[#4715] — move `/api/internal/board-render` off the Vercel function.** Filed outright rather
-  than held conditionally on [#4648] stalling, because all three [#4648] migration PRs ([#3798],
-  [#3795], [#4271]) have been open and untouched since 2026-08-21. See §3.
+- **[#4715] — move `/api/internal/board-render` off the Vercel function.** Implemented: Railway now
+  serves `/render/board`; www retains a routing-only compatibility rewrite. See §3.
 - **Cloudflare bot rule for the headless swarm** (§4) → [#4652].
 - **`NEXTAUTH_URL` is still `http://localhost:3000` in the Vercel prod env** — dashboard,
   @marcodejongh. Logs a warning on every cold start.

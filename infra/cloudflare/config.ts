@@ -8,8 +8,9 @@
 // Why this exists, in three parts:
 //
 // 1. ws.boardsesh.com (a single-region Railway origin) sits behind the Cloudflare
-//    proxy so the immutable /og/* share-card images edge-cache globally. Everything
-//    else on that host (/graphql, REST, WebSocket upgrades) must bypass the cache.
+//    proxy so /og/* share cards and /render/board images edge-cache globally.
+//    Everything else on that host (/graphql, other REST, WebSocket upgrades)
+//    must bypass the cache.
 //    The manual runbook this replaces lives in docs/og-climb.md.
 //
 // 2. www.boardsesh.com is the Vercel-backed marketing/SEO surface, and the two rules
@@ -41,15 +42,18 @@ export const OG_PATH_PREFIX = '/og/';
 export const WWW_HOSTNAME = 'www.boardsesh.com';
 
 /**
- * The WASM+sharp board-image renderer on www. Its responses already carry
+ * The legacy board-image URL on www, now externally rewritten to Railway. Its responses carry
  * `cache-control: public, max-age=31536000, immutable` and a matching
  * `CDN-Cache-Control`, but Cloudflare caches by FILE EXTENSION by default and this
  * path has none — so it was measured at `cf-cache-status: DYNAMIC` on 2026-08-25
  * while `/_next/static/*.js` on the same zone was a HIT. Every image byte was
- * therefore transiting Cloudflare to Vercel (~54 GB/day). A cache rule is the whole
- * fix; no origin header change is needed or wanted.
+ * therefore transiting Cloudflare to Vercel (~54 GB/day). Keep this rule for
+ * released clients and rollback deployments that still request the old shape.
  */
 export const BOARD_RENDER_PATH_PREFIX = '/api/internal/board-render';
+
+/** Canonical Railway board-render path emitted by current web clients. */
+export const BACKEND_BOARD_RENDER_PATH = '/render/board';
 
 /**
  * Stable marker identifying the one cache rule this tool owns. The apply script
@@ -63,6 +67,10 @@ export const CACHE_RULE_DESCRIPTION = 'boardsesh:og-edge-cache (managed by scrip
 /** Marker for the www board-render cache rule. Same never-rename contract as above. */
 export const BOARD_RENDER_CACHE_RULE_DESCRIPTION =
   'boardsesh:board-render-edge-cache (managed by scripts/cloudflare-apply.ts)';
+
+/** Marker for the Railway board-render cache rule. Never rename without migrating the live rule. */
+export const BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION =
+  'boardsesh:backend-board-render-edge-cache (managed by scripts/cloudflare-apply.ts)';
 
 /** Markers for the two WAF custom rules. Same never-rename contract as above. */
 export const CRAWLER_ALLOW_RULE_DESCRIPTION =
@@ -168,6 +176,9 @@ export const OG_CACHE_EXPRESSION = `(http.host eq "${WS_HOSTNAME}" and starts_wi
 
 /** Board-image renders on www. Host-scoped so a future origin on another hostname can't inherit it silently. */
 export const BOARD_RENDER_CACHE_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and starts_with(http.request.uri.path, "${BOARD_RENDER_PATH_PREFIX}"))`;
+
+/** Canonical Railway renders only; adjacent REST and GraphQL routes stay dynamic. */
+export const BACKEND_BOARD_RENDER_CACHE_EXPRESSION = `(http.host eq "${WS_HOSTNAME}" and http.request.uri.path eq "${BACKEND_BOARD_RENDER_PATH}")`;
 
 /**
  * Search engines and social unfurlers that must never be blocked. Brave runs its
@@ -287,6 +298,17 @@ export const desiredCloudflareState: CloudflareDesiredState = {
         // year, while a 503 from the render semaphore's load-shedding path sends
         // `Cache-Control: no-store` and a 400 sends none at all. bypass_by_default
         // caches the first and never the others.
+        edge_ttl: { mode: 'bypass_by_default' },
+        browser_ttl: { mode: 'respect_origin' },
+      },
+      enabled: true,
+    },
+    {
+      description: BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION,
+      expression: BACKEND_BOARD_RENDER_CACHE_EXPRESSION,
+      action: 'set_cache_settings',
+      action_parameters: {
+        cache: true,
         edge_ttl: { mode: 'bypass_by_default' },
         browser_ttl: { mode: 'respect_origin' },
       },

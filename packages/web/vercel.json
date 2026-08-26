@@ -4,12 +4,6 @@
   "buildCommand": "bun run --filter=@boardsesh/web build",
   "framework": "nextjs",
   "git": { "deploymentEnabled": false },
-  "functions": {
-    "app/api/internal/board-render/route.ts": {
-      "memory": 1769,
-      "maxDuration": 30
-    }
-  },
   "crons": [
     {
       "path": "/api/internal/prewarm-heatmap/kilter",

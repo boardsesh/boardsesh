@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
@@ -202,10 +202,18 @@ describe('buildOverlayUrl', () => {
     boardHeight: 1350,
   } as unknown as BoardDetails;
 
-  it('builds a correctly structured URL', () => {
+  beforeEach(() => {
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://ws.boardsesh.com/graphql');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('builds a correctly structured Railway URL', () => {
     // Single-frame strings pass through verbatim (no commas, no `x` tokens).
     const url = buildOverlayUrl(boardDetails, 'p1r12p2r13');
-    expect(url).toContain('/api/internal/board-render');
+    expect(url).toContain('https://ws.boardsesh.com/render/board');
     expect(url).toContain('board_name=kilter');
     expect(url).toContain('layout_id=1');
     expect(url).toContain('size_id=7');
@@ -243,6 +251,22 @@ describe('buildOverlayUrl', () => {
   it('omits thumbnail param when false', () => {
     const url = buildOverlayUrl(boardDetails, 'p1r12', false);
     expect(url).not.toContain('thumbnail');
+  });
+
+  it.each(['', 'ws://localhost:8080/graphql', 'ws://127.0.0.1:8080/graphql'])(
+    'keeps the same-origin compatibility path for local backend %j',
+    (configuredWsUrl) => {
+      vi.stubEnv('NEXT_PUBLIC_WS_URL', configuredWsUrl);
+
+      expect(buildOverlayUrl(boardDetails, 'p1r12')).toContain('/api/internal/board-render');
+    },
+  );
+
+  it('keeps the same-origin path in Tailscale development', () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://vibetunnel-dev-1.example.ts.net:8081/graphql');
+
+    expect(buildOverlayUrl(boardDetails, 'p1r12')).toContain('/api/internal/board-render');
   });
 });
 
@@ -324,6 +348,14 @@ describe('board-render cache version', () => {
     boardWidth: 1080,
     boardHeight: 1350,
   } as unknown as BoardDetails;
+
+  beforeEach(() => {
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://ws.boardsesh.com/graphql');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
 
   it('is a lowercase hex digest the route will accept as well-formed', () => {
     // Same shape as `isWellFormedRenderVersion` in the route handler. If these
