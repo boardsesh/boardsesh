@@ -329,7 +329,13 @@ function escapeTableCell(value: string): string {
 function safeDisplayName(displayName: string | null): string {
   const collapsed = (displayName ?? '').replace(/\s+/g, ' ').trim();
   if (!collapsed) return 'a Boardsesh tester';
-  const neutralized = neutralizeMarkdown(redactSensitiveText(collapsed).slice(0, DISPLAY_NAME_MAX)).trim();
+  // A name that IS an email/phone (accounts imported from Aurora often carry
+  // the email as the name) would render as "[redacted email]" on a public
+  // PR — ugly, and it still says "this person had no real name set". Use the
+  // anonymous fallback instead of the redaction marker.
+  const redacted = redactSensitiveText(collapsed);
+  if (redacted !== collapsed) return 'a Boardsesh tester';
+  const neutralized = neutralizeMarkdown(redacted.slice(0, DISPLAY_NAME_MAX)).trim();
   return neutralized || 'a Boardsesh tester';
 }
 

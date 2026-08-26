@@ -245,11 +245,12 @@ describe('buildVerdictComment', () => {
     expect(body.split('\n').filter((line) => line.startsWith('### '))).toHaveLength(1);
   });
 
-  it('redacts an email a tester used as their display name', () => {
+  it('falls back to the anonymous name when the display name is an email', () => {
     const body = buildVerdictComment(commentPayload({ displayName: 'tester@example.com' }));
 
-    expect(body).toContain('QA approved by [redacted email]');
+    expect(body).toContain('QA approved by a Boardsesh tester');
     expect(body).not.toContain('tester@example.com');
+    expect(body).not.toContain('[redacted');
   });
 
   it('warns when the tested bundle predates the current head commit', () => {
