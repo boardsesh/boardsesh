@@ -461,9 +461,10 @@ Automatic store uploads never run from `main` or an arbitrary feature branch.
   `main` normally ships OTA-only. If an orphaned cohort needs another store
   binary, deliberately dispatch the native workflow from the trusted release
   ref after preparing that release train.
-- Force a rebuild of a fingerprint that already has a tag:
-  `git push --delete origin fingerprint-<platform>-<hash>`, then re-push `release/next` (or run the
-  workflow via dispatch).
+- **Force a rebuild of a fingerprint that already has a tag.** Dispatch the
+  platform workflow from `release/next` (or trusted `main` for an emergency).
+  Manual dispatch bypasses the fingerprint gate, so the protected tag does not
+  need to be deleted.
 - Android candidate APK/AAB files stay in private Actions artifacts. The build
   and fingerprint tags are recorded only after the Play internal upload
   succeeds; no public GitHub Release is created.
