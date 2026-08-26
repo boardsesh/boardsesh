@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import * as Updates from 'expo-updates';
 import type { QaVerdictKind } from '@boardsesh/shared-schema';
+import { useProfile } from '../../lib/graphql/hooks';
 import { ModalSheet } from '../ModalSheet';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -19,7 +20,12 @@ import { qaSurfingAvailable, readRunningPrNumber, surfToProduction } from '../..
 import { prBranchName } from '../../lib/qa/pr-branch';
 import { qaSessionKey } from '../../lib/qa/qa-keys';
 import { useQaPreviews, useSubmitQaVerdict } from '../../lib/qa/use-qa-previews';
-import { QA_PREVIEW_LEFT_EVENT, QA_SURF_FAILED_EVENT, QA_VERDICT_SUBMITTED_EVENT } from '../../lib/qa/qa-analytics';
+import {
+  QA_PREVIEW_LEFT_EVENT,
+  QA_SURF_FAILED_EVENT,
+  QA_VERDICT_SUBMITTED_EVENT,
+  surfFailureReason,
+} from '../../lib/qa/qa-analytics';
 import type { ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
 
 // Tester-only surface: hardcoded English with `i18n-ignore`, like the other QA
@@ -47,6 +53,12 @@ const LEAVE_LABEL = 'Leave preview without feedback';
 const SUBMIT_ERROR = 'Could not send that verdict — try again';
 // i18n-ignore-next-line
 const BACK_ON_PRODUCTION_TOAST = 'Back on production at the next update';
+// Only the surf back failed; on the submit path the verdict has already landed
+// and been toasted, so saying "could not send that verdict" here would be a lie
+// about which half broke. The thrown message itself goes to Sentry and to the
+// event's `reason` rather than into the tester's face.
+// i18n-ignore-next-line
+const LEAVE_FAILED_TOAST = 'Could not switch off this preview — try again';
 // i18n-ignore-next-line
 const NOT_ON_PREVIEW = "You're on production — nothing to file a verdict on.";
 // i18n-ignore-next-line
@@ -83,7 +95,13 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
 
   const runningPrNumber = useMemo(() => readRunningPrNumber(), []);
   const prNumbers = useMemo(() => (runningPrNumber === null ? [] : [runningPrNumber]), [runningPrNumber]);
-  const previewsQuery = useQaPreviews(prNumbers);
+  // This sheet is mounted at the provider root for the whole app session, so its
+  // query runs at launch whether or not anyone opens it. `qaPreviews` needs the
+  // tester role, and the xprem branch picker is open to EVERY app user — so
+  // without this gate a non-tester who surfed a `pr-<n>` bundle themselves fires
+  // two rejected requests on every cold start.
+  const { data: profile } = useProfile();
+  const previewsQuery = useQaPreviews(prNumbers, { enabled: Boolean(profile?.isTester) });
   const preview = previewsQuery.data?.find((entry) => entry.prNumber === runningPrNumber) ?? null;
 
   const [verdict, setVerdict] = useState<QaVerdictKind>('approved');
@@ -108,8 +126,8 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
       })
       .catch((error: unknown) => {
         reportHandledError(error, { tags: { source: 'qa', op: 'surf-to-production' } });
-        track(QA_SURF_FAILED_EVENT, { prNumber: null });
-        showToast(error instanceof Error ? error.message : SUBMIT_ERROR, 'error');
+        track(QA_SURF_FAILED_EVENT, { prNumber: null, reason: surfFailureReason(error) });
+        showToast(LEAVE_FAILED_TOAST, 'error');
       });
   }, [showToast, surfingAvailable]);
 

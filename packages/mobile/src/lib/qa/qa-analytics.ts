@@ -29,5 +29,16 @@ export const QA_VERDICT_SUBMITTED_EVENT = 'QA Verdict Submitted';
  */
 export const QA_SURF_FAILED_EVENT = 'QA Surf Failed';
 
+/**
+ * The `reason` property of `QA_SURF_FAILED_EVENT`. The thrown message is the
+ * whole triage value here — "Branch surfing is unavailable on this build" and
+ * "Could not reach the update server (502)" are entirely different bugs — so it
+ * is carried verbatim, capped so one pathological error can't bloat the event.
+ */
+export function surfFailureReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.slice(0, 200);
+}
+
 /** The tester left a preview without filing a verdict. Properties: `prNumber`. */
 export const QA_PREVIEW_LEFT_EVENT = 'QA Preview Left';

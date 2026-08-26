@@ -25,7 +25,12 @@ import {
   type QaRiskTone,
 } from '../../lib/qa/qa-pick-rows';
 import { useQaPreviews } from '../../lib/qa/use-qa-previews';
-import { QA_PREVIEW_PICKED_EVENT, QA_PREVIEW_SKIPPED_EVENT, QA_SURF_FAILED_EVENT } from '../../lib/qa/qa-analytics';
+import {
+  QA_PREVIEW_PICKED_EVENT,
+  QA_PREVIEW_SKIPPED_EVENT,
+  QA_SURF_FAILED_EVENT,
+  surfFailureReason,
+} from '../../lib/qa/qa-analytics';
 
 // Tester-only screen: every string is hardcoded English with `i18n-ignore`,
 // matching Feature Flags and the branch switcher.
@@ -133,8 +138,13 @@ export function QaPickScreen() {
           setSurfingPrNumber(null);
           pickedRef.current = false;
           reportHandledError(error, { tags: { source: 'qa', op: 'surf-to-pr' } });
-          track(QA_SURF_FAILED_EVENT, { prNumber: row.prNumber });
-          showToast(error instanceof Error ? error.message : UNREACHABLE_TITLE, 'error');
+          track(QA_SURF_FAILED_EVENT, { prNumber: row.prNumber, reason: surfFailureReason(error) });
+          // The thrown message names the actual problem ("Could not reach the
+          // update server (502)", "Branch surfing is unavailable on this build"),
+          // which is worth showing — but an Error can carry an empty message, and
+          // an empty toast tells the tester nothing.
+          const message = error instanceof Error && error.message.length > 0 ? error.message : UNREACHABLE_TITLE;
+          showToast(message, 'error');
         });
     },
     [showToast, surfingAvailable],

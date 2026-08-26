@@ -16,7 +16,7 @@ import { reportHandledError } from '../../lib/error-reporting';
 import { qaSurfingAvailable, readRunningPrNumber, surfToProduction } from '../../lib/qa/qa-surf';
 import { riskTone, type QaRiskTone } from '../../lib/qa/qa-pick-rows';
 import { useQaPreviews } from '../../lib/qa/use-qa-previews';
-import { QA_PREVIEW_LEFT_EVENT, QA_SURF_FAILED_EVENT } from '../../lib/qa/qa-analytics';
+import { QA_PREVIEW_LEFT_EVENT, QA_SURF_FAILED_EVENT, surfFailureReason } from '../../lib/qa/qa-analytics';
 
 // Tester-only screen: hardcoded English with `i18n-ignore`, like Feature Flags.
 
@@ -44,6 +44,11 @@ const PICK_LABEL = 'Test a PR preview';
 const DEV_HINT = 'Surfing is unavailable in a dev build — Leave preview is disabled here.';
 // i18n-ignore-next-line
 const BACK_ON_PRODUCTION_TOAST = 'Back on production at the next update';
+// The thrown message goes to Sentry and to the event's `reason`; the tester gets
+// the one sentence that tells them what to do. (Before this, an empty-message
+// Error surfaced as an empty toast and a non-Error surfaced the button label.)
+// i18n-ignore-next-line
+const LEAVE_FAILED_TOAST = 'Could not switch off this preview — try again';
 
 /**
  * What this preview is and what to try — shown once per surfed bundle by
@@ -102,8 +107,8 @@ export function QaBriefScreen() {
       .catch((error: unknown) => {
         setLeaving(false);
         reportHandledError(error, { tags: { source: 'qa', op: 'surf-to-production' } });
-        track(QA_SURF_FAILED_EVENT, { prNumber: null });
-        showToast(error instanceof Error ? error.message : LEAVE_LABEL, 'error');
+        track(QA_SURF_FAILED_EVENT, { prNumber: null, reason: surfFailureReason(error) });
+        showToast(LEAVE_FAILED_TOAST, 'error');
       });
   }, [leaving, runningPrNumber, showToast, surfingAvailable]);
 
@@ -186,8 +191,11 @@ export function QaBriefScreen() {
 
         {planSteps.length > 0 ? (
           <View style={[styles.planCard, { backgroundColor: systemColors.elevatedSurface }]}>
+            {/* Keyed on the position, not the text: a test plan may legitimately
+                repeat a step ("Relaunch the app"), and duplicate keys drop the
+                second copy from the render. */}
             {planSteps.map((step, index) => (
-              <View key={step} style={styles.planRow}>
+              <View key={`${String(index)}-${step}`} style={styles.planRow}>
                 <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.planNumber}>
                   {`${index + 1}.`}
                 </Text>

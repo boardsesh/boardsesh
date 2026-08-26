@@ -115,10 +115,21 @@ vi.mock('../../../lib/qa/qa-surf', () => ({
 const previews = vi.hoisted(() => ({
   data: [{ prNumber: 4792, title: 'Ask testers to try a PR preview', risk: 3 }] as unknown[],
   mutateAsync: vi.fn(),
+  // Records the `enabled` option so a test can assert the sheet does not query a
+  // tester-only field for a non-tester.
+  lastOptions: undefined as { enabled?: boolean } | undefined,
 }));
 vi.mock('../../../lib/qa/use-qa-previews', () => ({
-  useQaPreviews: () => ({ data: previews.data, isPending: false }),
+  useQaPreviews: (_prNumbers: number[], options?: { enabled?: boolean }) => {
+    previews.lastOptions = options;
+    return { data: previews.data, isPending: false };
+  },
   useSubmitQaVerdict: () => ({ mutateAsync: previews.mutateAsync, isPending: false }),
+}));
+
+const profileState = vi.hoisted(() => ({ isTester: true as boolean | undefined }));
+vi.mock('../../../lib/graphql/hooks', () => ({
+  useProfile: () => ({ data: { id: 'user-1', isTester: profileState.isTester } }),
 }));
 
 vi.mock('expo-updates', () => ({ updateId: 'bundle-a' }));
@@ -152,6 +163,8 @@ beforeEach(() => {
   qa.surfToProduction.mockReset().mockResolvedValue('nothing-to-load');
   previews.data = [{ prNumber: 4792, title: 'Ask testers to try a PR preview', risk: 3 }];
   previews.mutateAsync.mockReset().mockResolvedValue({ id: 'verdict-1' });
+  previews.lastOptions = undefined;
+  profileState.isTester = true;
 });
 
 describe('QaVerdictSheet approve path', () => {
@@ -268,5 +281,46 @@ describe('QaVerdictSheet on production', () => {
     qa.runningPrNumber = null;
     const { container } = renderSheet();
     expect(submitButton(container).disabled).toBe(true);
+  });
+});
+
+// This sheet is mounted at the UserDrawerProvider root for the whole app session,
+// so its query runs at launch whether or not anyone opens it.
+describe('QaVerdictSheet query gating', () => {
+  it('asks for PR metadata for a tester', () => {
+    renderSheet();
+    expect(previews.lastOptions).toEqual({ enabled: true });
+  });
+
+  it('asks for nothing for a non-tester who surfed a branch themselves', () => {
+    // `qaPreviews` needs the tester role and xprem's branch picker is open to
+    // EVERY app user, so an ungated query is two rejected requests per cold
+    // start for anyone who used it.
+    profileState.isTester = false;
+    renderSheet();
+    expect(previews.lastOptions).toEqual({ enabled: false });
+  });
+});
+
+describe('QaVerdictSheet when the surf back fails', () => {
+  it('blames the pin, not the verdict, and carries the reason to the event', async () => {
+    // The verdict is already filed and toasted by the time this can fire —
+    // "could not send that verdict" would be a lie about which half broke. The
+    // raw message goes to the event, never into the tester's face.
+    qa.surfToProduction.mockRejectedValue(new Error('Could not reach the update server (502).'));
+    const { container } = renderSheet();
+    fireEvent.click(submitButton(container));
+
+    await vi.waitFor(() => expect(sheet.dismiss).toHaveBeenCalled());
+    sheet.fullyDismissed?.();
+
+    await vi.waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('Could not switch off this preview — try again', 'error'),
+    );
+    expect(showToast).not.toHaveBeenCalledWith('Could not send that verdict — try again', 'error');
+    expect(trackMock).toHaveBeenCalledWith('QA Surf Failed', {
+      prNumber: null,
+      reason: 'Could not reach the update server (502).',
+    });
   });
 });
