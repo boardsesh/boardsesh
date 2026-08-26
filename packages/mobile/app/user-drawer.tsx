@@ -19,6 +19,8 @@ import { getLastSeenChangelogDate, hasUnseenChangelog } from '../src/lib/changel
 import { hasUnseenOfflineSpotlight } from '../src/lib/offline-nudges/spotlight-unseen';
 import { useOfflineDownloadsEnabled, useOfflineNudgesEnabled } from '../src/providers/feature-flags-provider';
 import { useActiveBoard } from '../src/lib/graphql/use-active-board';
+import { useOtaBranchSurfingState } from '../src/lib/ota-branch-surfing-state';
+import { readRunningPrNumber } from '../src/lib/qa/qa-surf';
 
 const DRAWER_MAX_WIDTH = 320;
 const DRAWER_SCREEN_FRACTION = 0.86;
@@ -91,7 +93,18 @@ export default function UserDrawerScreen() {
     signOutAction,
     setFeedbackMode,
     presentFeedback,
+    navigateToQaPick,
+    navigateToQaBrief,
+    presentQaVerdict,
   } = useUserDrawer();
+
+  // Crowdsourced QA (docs/crowdsourced-qa-mobile.md). Testers only, and only on a
+  // binary that can actually load a PR preview — on any other build the rows
+  // would offer something the app cannot do. The running branch cannot change
+  // without a reload, so a mount-time read is the whole story.
+  const { surfingBuild: qaSurfingBuild } = useOtaBranchSurfingState();
+  const showQaRows = Boolean(profile?.isTester) && qaSurfingBuild;
+  const [qaPrNumber] = useState(() => readRunningPrNumber());
 
   const profileDisplayName = profile?.displayName ?? profile?.email ?? t('header.you');
   const profileEmail = profile?.email ?? null;
@@ -277,6 +290,44 @@ export default function UserDrawerScreen() {
               showSeparator={false}
             />
           </View>
+
+          {showQaRows ? (
+            <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
+              {qaPrNumber !== null ? (
+                <>
+                  <DrawerRow
+                    icon="checkmark.circle.fill"
+                    // i18n-ignore-next-line — tester-only QA flow
+                    title={`Finish testing #${qaPrNumber}`}
+                    onPress={() => close(() => presentQaVerdict())}
+                    trailing={
+                      <View style={[styles.newPill, { backgroundColor: brandColors.primaryFill }]}>
+                        <Text variant="caption2" color={brandColors.onPrimary} style={styles.newPillLabel}>
+                          {/* i18n-ignore-next-line */}
+                          QA
+                        </Text>
+                      </View>
+                    }
+                  />
+                  <DrawerRow
+                    icon="doc.text"
+                    // i18n-ignore-next-line
+                    title={`Test plan #${qaPrNumber}`}
+                    onPress={() => close(() => navigateToQaBrief())}
+                    showSeparator={false}
+                  />
+                </>
+              ) : (
+                <DrawerRow
+                  icon="branch"
+                  // i18n-ignore-next-line
+                  title="Test a PR preview"
+                  onPress={() => close(() => navigateToQaPick())}
+                  showSeparator={false}
+                />
+              )}
+            </View>
+          ) : null}
 
           <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
             <DrawerRow icon="star" title={t('userDrawer.rateBoardsesh')} onPress={handleRate} />
