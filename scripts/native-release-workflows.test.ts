@@ -115,6 +115,7 @@ describe('native release train workflow contracts', () => {
     expect(monitor).toContain('reviewDecision');
     expect(monitor).toContain('statusCheckRollup');
     expect(monitor.match(/pageInfo\{hasNextPage\}/g)).toHaveLength(2);
+    expect(monitor.match(/more than 100 status checks/g)).toHaveLength(3);
     expect(monitor).toContain('headRepository{nameWithOwner}');
     expect(monitor).toContain('-f sha="$EXPECTED_HEAD_SHA"');
     expect(monitor).toContain('permission-workflows: write');

@@ -58,6 +58,22 @@ describe('mapAcceptedVersions', () => {
     ).toEqual([]);
   });
 
+  it('fails loudly when ASC omits the official appVersionState attribute', () => {
+    expect(() =>
+      mapAcceptedVersions({
+        data: [
+          {
+            type: 'appStoreVersions',
+            id: 'legacy-v1',
+            attributes: { versionString: '2.1.0' },
+            relationships: { build: { data: { type: 'builds', id: 'b1' } } },
+          },
+        ],
+        included: [{ type: 'builds', id: 'b1', attributes: { version: '42' } }],
+      }),
+    ).toThrow(/missing the required appVersionState/);
+  });
+
   it('drops versions without an exact attached numeric build', () => {
     expect(
       mapAcceptedVersions({

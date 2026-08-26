@@ -295,6 +295,10 @@ jobs:
               else .state == "SUCCESS" end] as $checks |
             (.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage == false and
              ($checks | length) > 0 and ($checks | all))' <<<"$pr")"
+          checks_paginated="$(jq -r '.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage' <<<"$pr")"
+          if [ "$checks_paginated" = true ]; then
+            echo '::warning::Release PR has more than 100 status checks; merge readiness fails closed until pagination is implemented.'
+          fi
           refs_valid="$(jq -r --arg repo "$GITHUB_REPOSITORY" '
             .data.repository.pullRequest |
             (.headRefName == "release/next" and .baseRefName == "main" and
@@ -416,6 +420,10 @@ jobs:
               else .state == "SUCCESS" end] as $checks |
             (.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage == false and
              ($checks | length) > 0 and ($checks | all))' <<<"$pr")"
+          checks_paginated="$(jq -r '.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage' <<<"$pr")"
+          if [ "$checks_paginated" = true ]; then
+            echo '::warning::Release PR has more than 100 status checks; merge readiness fails closed until pagination is implemented.'
+          fi
           test "$(jq -r '.data.repository.pullRequest.state' <<<"$pr")" = OPEN
           test "$(jq -r '.data.repository.pullRequest.isDraft' <<<"$pr")" = false
           test "$(jq -r '.data.repository.pullRequest.headRefOid' <<<"$pr")" = "$EXPECTED_HEAD_SHA"
@@ -498,7 +506,6 @@ jobs:
           anchor_status=$?
           set -e
           if [ "$anchor_status" -ne 0 ]; then
-            git fetch --force --tags origin || true
             cleanup_new_anchors || echo '::warning::Failed to clean up an anchor after anchor creation failed.'
             exit "$anchor_status"
           fi
@@ -521,6 +528,7 @@ jobs:
 
             local final_pr
             local final_checks_green
+            local final_checks_paginated
             local final_refs_valid
             final_pr="$(gh api graphql -f query="$query" -f owner="$owner" -f repo="$repo" -F number="$PR_NUMBER")" || return 1
             final_checks_green="$(jq -r '
@@ -530,6 +538,11 @@ jobs:
                 else .state == "SUCCESS" end] as $checks |
               (.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage == false and
                ($checks | length) > 0 and ($checks | all))' <<<"$final_pr")" || return 1
+            final_checks_paginated="$(jq -r '.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage' <<<"$final_pr")" || return 1
+            if [ "$final_checks_paginated" = true ]; then
+              echo '::warning::Release PR has more than 100 status checks; merge readiness fails closed until pagination is implemented.'
+              return 1
+            fi
             final_refs_valid="$(jq -r --arg repo "$GITHUB_REPOSITORY" '
               .data.repository.pullRequest |
               (.headRefName == "release/next" and .baseRefName == "main" and

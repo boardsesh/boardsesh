@@ -239,7 +239,10 @@ export function mapAcceptedVersions(data: JsonApiCollectionResponse<AppStoreVers
       const versionString = version.attributes?.versionString;
       if (typeof versionString !== 'string' || versionString.length === 0) return null;
       const state = version.attributes?.appVersionState;
-      if (typeof state !== 'string' || !acceptedAppStoreStateSet.has(state)) return null;
+      if (typeof state !== 'string') {
+        throw new Error(`ASC appStoreVersions ${version.id} is missing the required appVersionState attribute`);
+      }
+      if (!acceptedAppStoreStateSet.has(state)) return null;
       const buildId = version.relationships?.build?.data?.id;
       const buildNumber = buildId ? buildNumberById.get(buildId) : undefined;
       if (buildNumber === undefined) return null;
