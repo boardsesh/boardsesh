@@ -10,35 +10,38 @@ Postgres-backed server that owns channel↔branch mapping, code-signing keys, an
 rollouts itself, so there's no dependency on Expo's API and no MAU/bandwidth billing. The only thing
 we still keep from Expo is a free account/token for the EAS free-tier _preview_ path (below).
 
-## Two servers: V2 frozen, V3 live (green-field migration)
+## One server: V3 live (V2 destroyed 2026-08-25)
 
 We migrated to V3 green-field rather than upgrading V2 in place, because a V2→V3 upgrade needs a
 destructive storage re-path and an in-place stateless→control-plane key-sealing migration. We were
 cutting a new native build anyway, so instead we stood up a fresh V3 server on an empty bucket + new
-Postgres and left V2 untouched. Two servers now run in parallel:
+Postgres and left V2 running untouched while its fleet drained. The URL cutover landed 2026-07-27
+(#3969) and V2 was torn down 2026-08-25. Only V3 remains:
 
-| Server          | Host                    | Version                                                                                            | Who hits it                                                                                                                                                                     |
-| --------------- | ----------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **V2 (frozen)** | `ota.boardsesh.com`     | axelmarciano V2, stateless                                                                         | Old store/TestFlight binaries built before the V3 cutover. They have `ota.boardsesh.com` + the old cert baked in, so V2 keeps serving them unchanged. **Do not publish to it.** |
-| **V3 (live)**   | `updates.boardsesh.com` | mercuretechnologies xprem, control-plane ([which tag](#versions-the-cli-pin-and-the-server-image)) | New/updated binaries (V3 URL + V3 cert + `expo-app-id` header baked in). CI publishes only here.                                                                                |
+| Server             | Host                    | Version                                                                                           | Who hits it                                                                                     |
+| ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **V3 (live)**      | `updates.boardsesh.com` | mercuretechnologies xprem, control-plane ([which tag](#versions-the-cli-pin-and-the-server-image)) | Every current binary (V3 URL + V3 cert + `expo-app-id` header baked in). CI publishes only here. |
+| **V2 (destroyed)** | `ota.boardsesh.com`     | axelmarciano V2, stateless — **gone**                                                             | Nothing. Service + bucket deleted 2026-08-25.                                                   |
 
-- Old installs migrate to V3 by store-updating to a V3 build; there's no cross-server backport.
-- **Rollback before the store rollout is free:** the V3 build bakes the V3 URL, so V3 must be proven
-  good on TestFlight/internal track before wide release. If V3 misbehaves pre-rollout, fix it — the
-  old fleet is untouched on V2. Post-rollout recovery is forward-only (publish a fixed OTA / roll
-  back on V3).
+- **A pre-V3 binary now gets no OTA at all.** Binaries built between 2026-06-10 (when V2 went live)
+  and the 2026-07-27 cutover baked in `ota.boardsesh.com`. That Railway service is deleted, so the
+  CNAME still resolves but Railway answers with its default `*.up.railway.app` wildcard cert — the
+  TLS handshake fails before any HTTP happens. `expo-updates` can't fetch a manifest and silently
+  runs the **embedded** bundle. That is *not* an emergency launch, so `vp run mobile:ota-health-check`
+  will not flag it: the fleet looks healthy while those installs sit frozen on the JS baked into
+  their binary. Only a **store update** recovers one.
+- There is no cross-server backport and V2 cannot be revived — its bucket is gone. Recovery for a
+  stranded install is store-side only.
 - V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/xprem:v3.1.2` —
   see [Versions](#versions-the-cli-pin-and-the-server-image)), backed by a dedicated Railway Postgres
   and a Tigris bucket `boardsesh-ota-v3`.
-- **Retire V2 later**, telemetry-gated: watch the old-build share in PostHog (below); when it's
-  negligible, decommission the `boardsesh-ota` service + its bucket. Until then it's one small idle
-  service.
-- **The URL cutover happens at merge, not before.** The repo variable `EXPO_UPDATES_URL` (consumed by
-  the native build workflows + the OTA publish workflow) flips from the V2 `https://ota.boardsesh.com/manifest`
-  to the V3 `https://updates.boardsesh.com/manifest` **when the V3 client PR merges** — no earlier, no
-  later. Flip it early and V2-era publishes from `main` break; flip it late and the first V3 native
-  build bakes the stale V2 URL into the binary. Already-open PR branches keep pinning `eoas@2` and
-  targeting the old URL until they're rebased onto the merged change.
+- **Recovery on V3 is forward-only:** publish a fixed OTA, or roll back on V3.
+- **The URL cutover already happened (2026-07-27).** The repo variable `EXPO_UPDATES_URL` (consumed
+  by the native build workflows + the OTA publish workflow) now reads
+  `https://updates.boardsesh.com/manifest`. It flipped **when the V3 client PR merged** — no earlier,
+  no later. Keep that ordering for any future server move: flip it early and publishes from `main`
+  break against the old server; flip it late and the first native build on the new server bakes the
+  stale URL into the binary.
 
 ### Versions: the CLI pin and the server image
 
@@ -313,7 +316,7 @@ client requesting an unmapped channel gets `No branch mapping found`. Mapping is
   Delete the channel/mapping before the branch, or the branch delete is refused.
 - **Green-field consequence:** a legacy v1 client that sends **no** `expo-app-id` header gets an
   HTTP 400 from V3. That's correct — only new header-carrying V3 builds ever hit V3; old binaries
-  stay on V2.
+  pointed at V2, which no longer exists.
 
 ### Fingerprint parity — the one rule that matters
 
