@@ -602,8 +602,16 @@ otherwise. `board_climbs.uuid` is the primary key and the join is on
 group, NULLs sort equal, and the ordering falls through to `asc(stats.angle)`
 either way. Measured over kilter layout 1 (16,233 tier-2 climbs with a null
 `board_climbs.angle`): zero differing rows. It is kept because it is free and
-survives a future join that does compare across climbs. Other angles stay
-self-canonical and reachable through W-15's cross-links.
+survives a future join that does compare across climbs. Other routable angles
+stay reachable through W-15's cross-links but emit the chosen sitemap angle as
+their canonical. Page metadata uses the same ordering and a deterministic
+catalog/default fallback when a climb has no eligible stats.
+
+Angle segments are exact catalog values, not arbitrary integers. Both the
+config-tuple and `/b` route trees reject unsupported angles and numeric aliases
+such as `040`, `40.0`, or `5e1` with a 404. MoonBoard's full published angle set
+remains routable regardless of its picker feature flag; Grasshopper includes its
+real -5° setting without widening negative-angle support on other boards.
 
 **Genuine alias uuids are excluded — self-aliases are not.**
 `board_climb_aliases` maps duplicate uuids onto a canonical one, and an alias URL

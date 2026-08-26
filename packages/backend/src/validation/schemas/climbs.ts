@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { CONFIDENCE, MAX_SEARCH_PAGE } from '@boardsesh/db/queries';
 import { CLIMB_CHARACTERISTICS, TOGGLEABLE_CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
+import { BOARD_ANGLE_VALIDATION_MESSAGE, isBoardAngleSupported } from './board-angles';
 
 // Cap holdsFilter entries: each ANY entry becomes a LIKE scan over board_climbs.frames
 // (no trigram index there), so an unbounded record is a cheap amplification vector on
@@ -265,31 +266,41 @@ const ToggleableCharacteristicsSchema = z
   .optional()
   .nullable();
 
-export const SaveClimbInputSchema = z.object({
-  boardType: BoardNameSchema,
-  layoutId: z.number().int().positive('Layout ID must be positive'),
-  name: z.string().min(1).max(200),
-  description: z.string().max(2000).optional().default(''),
-  isDraft: z.boolean(),
-  frames: z.string().min(1).max(10000),
-  framesCount: z.number().int().min(1).optional(),
-  framesPace: z.number().int().min(0).optional(),
-  angle: z.number().int().min(0).max(90),
-  characteristics: ToggleableCharacteristicsSchema,
-});
+export const SaveClimbInputSchema = z
+  .object({
+    boardType: BoardNameSchema,
+    layoutId: z.number().int().positive('Layout ID must be positive'),
+    name: z.string().min(1).max(200),
+    description: z.string().max(2000).optional().default(''),
+    isDraft: z.boolean(),
+    frames: z.string().min(1).max(10000),
+    framesCount: z.number().int().min(1).optional(),
+    framesPace: z.number().int().min(0).optional(),
+    angle: z.number().int().min(-5).max(90),
+    characteristics: ToggleableCharacteristicsSchema,
+  })
+  .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
+    message: BOARD_ANGLE_VALIDATION_MESSAGE,
+    path: ['angle'],
+  });
 
-export const UpdateClimbInputSchema = z.object({
-  uuid: z.string().min(1).max(100),
-  boardType: BoardNameSchema,
-  name: z.string().min(1).max(200).optional(),
-  description: z.string().max(2000).optional(),
-  frames: z.string().min(1).max(10000).optional(),
-  angle: z.number().int().min(0).max(90).optional(),
-  isDraft: z.boolean().optional(),
-  framesCount: z.number().int().min(1).optional(),
-  framesPace: z.number().int().min(0).optional(),
-  characteristics: ToggleableCharacteristicsSchema,
-});
+export const UpdateClimbInputSchema = z
+  .object({
+    uuid: z.string().min(1).max(100),
+    boardType: BoardNameSchema,
+    name: z.string().min(1).max(200).optional(),
+    description: z.string().max(2000).optional(),
+    frames: z.string().min(1).max(10000).optional(),
+    angle: z.number().int().min(-5).max(90).optional(),
+    isDraft: z.boolean().optional(),
+    framesCount: z.number().int().min(1).optional(),
+    framesPace: z.number().int().min(0).optional(),
+    characteristics: ToggleableCharacteristicsSchema,
+  })
+  .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
+    message: BOARD_ANGLE_VALIDATION_MESSAGE,
+    path: ['angle'],
+  });
 
 export const MoonBoardHoldsInputSchema = z.object({
   start: z.array(z.string()).default([]),

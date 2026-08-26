@@ -26,7 +26,7 @@ describe('logbook-prefs-store', () => {
       sort: { preset: 'bogus' },
     });
     const prefs = await loadLogbookPrefs();
-    expect(prefs?.filters.angleRange).toEqual([0, 70]);
+    expect(prefs?.filters.angleRange).toEqual([-5, 70]);
     expect(prefs?.filters.minGrade).toBe(12);
     expect(prefs?.sort.preset).toBe('recent');
   });
@@ -73,11 +73,35 @@ describe('logbook-prefs-store', () => {
     store.get.mockResolvedValue({
       version: 2,
       // The v2 resting default: sends only, everything else at defaults.
-      filters: { ...DEFAULT_LOGBOOK_FILTERS, includeSends: true, includeAttempts: false },
+      filters: {
+        ...DEFAULT_LOGBOOK_FILTERS,
+        includeSends: true,
+        includeAttempts: false,
+        angleRange: [0, 70],
+      },
       sort: DEFAULT_LOGBOOK_SORT,
     });
     const prefs = await loadLogbookPrefs();
     expect(prefs?.filters.includeAttempts).toBe(true);
+  });
+
+  it('migrates partial pre-v3 payloads whose historical angle range was omitted', async () => {
+    store.get.mockResolvedValue({
+      version: 2,
+      filters: { includeSends: true, includeAttempts: false },
+      sort: DEFAULT_LOGBOOK_SORT,
+    });
+    const versionTwoPrefs = await loadLogbookPrefs();
+    expect(versionTwoPrefs?.filters.includeAttempts).toBe(true);
+    expect(versionTwoPrefs?.filters.angleRange).toEqual([-5, 70]);
+
+    store.get.mockResolvedValue({
+      filters: { includeSends: true, includeAttempts: true },
+      sort: DEFAULT_LOGBOOK_SORT,
+    });
+    const versionlessPrefs = await loadLogbookPrefs();
+    expect(versionlessPrefs?.filters.includeAttempts).toBe(true);
+    expect(versionlessPrefs?.filters.angleRange).toEqual([-5, 70]);
   });
 
   it('keeps an explicit v2 "sends only" choice when the user diverged elsewhere', async () => {
@@ -92,20 +116,37 @@ describe('logbook-prefs-store', () => {
     expect(prefs?.filters.minGrade).toBe(12);
   });
 
-  it('leaves an already-v3 payload untouched', async () => {
+  it('migrates a v3 angle default without changing its status choice', async () => {
     store.get.mockResolvedValue({
       version: 3,
-      filters: { ...DEFAULT_LOGBOOK_FILTERS, includeSends: true, includeAttempts: false },
+      filters: { ...DEFAULT_LOGBOOK_FILTERS, includeSends: true, includeAttempts: false, angleRange: [0, 70] },
       sort: DEFAULT_LOGBOOK_SORT,
     });
     const prefs = await loadLogbookPrefs();
     // v3 install that turned attempts off — respected, not re-defaulted.
     expect(prefs?.filters.includeAttempts).toBe(false);
+    expect(prefs?.filters.angleRange).toEqual([-5, 70]);
+  });
+
+  it('preserves an explicit v4 zero lower bound and a pre-v4 positive lower bound', async () => {
+    store.get.mockResolvedValue({
+      version: 4,
+      filters: { ...DEFAULT_LOGBOOK_FILTERS, angleRange: [0, 70] },
+      sort: DEFAULT_LOGBOOK_SORT,
+    });
+    expect((await loadLogbookPrefs())?.filters.angleRange).toEqual([0, 70]);
+
+    store.get.mockResolvedValue({
+      version: 3,
+      filters: { ...DEFAULT_LOGBOOK_FILTERS, angleRange: [20, 50] },
+      sort: DEFAULT_LOGBOOK_SORT,
+    });
+    expect((await loadLogbookPrefs())?.filters.angleRange).toEqual([20, 50]);
   });
 
   it('stamps the schema version when saving', async () => {
     store.set.mockResolvedValue(undefined);
     await saveLogbookPrefs({ filters: DEFAULT_LOGBOOK_FILTERS, sort: DEFAULT_LOGBOOK_SORT });
-    expect(store.set).toHaveBeenCalledWith('logbookSearchPrefs', expect.objectContaining({ version: 3 }));
+    expect(store.set).toHaveBeenCalledWith('logbookSearchPrefs', expect.objectContaining({ version: 4 }));
   });
 });

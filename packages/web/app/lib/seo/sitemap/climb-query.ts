@@ -1,7 +1,7 @@
 import 'server-only';
 import { unstable_cache } from 'next/cache';
 import { and, asc, desc, eq, gte, inArray, ne, notExists, sql } from 'drizzle-orm';
-import { ANGLES, toBoardName } from '@boardsesh/board-config';
+import { getRoutableBoardAngles, toBoardName } from '@boardsesh/board-config';
 import { withSerialPlan, type SerialPlanDb } from '@boardsesh/db/queries';
 import { dbzRead } from '@/app/lib/db/db';
 import { boardClimbAliases, boardClimbStats, boardClimbs } from '@/app/lib/db/schema';
@@ -48,10 +48,9 @@ function setIdArray(setIds: readonly number[]) {
 /**
  * The tier-2 selection for one board configuration, one row per climb.
  *
- * `DISTINCT ON (climb_uuid)` keeps the angle with the most ascents. Other angles
- * of the same climb stay self-canonical and reachable through W-15's angle
- * cross-links — they are just not submitted, because submitting fifteen URLs per
- * climb spends the crawl budget on near-duplicates.
+ * `DISTINCT ON (climb_uuid)` keeps the angle with the most ascents. Other valid
+ * angles remain reachable through W-15's angle cross-links, but canonicalise to
+ * this chosen URL and are not submitted as duplicate sitemap entries.
  *
  * Three raw `sql` fragments, all of them things Drizzle has no operator for and
  * all of them copied from the predicate the `/list` front door already runs
@@ -89,7 +88,7 @@ function buildChosenSubquery(db: SerialPlanDb, group: ClimbConfigGroup) {
         eq(boardClimbs.isDraft, false),
         gte(boardClimbStats.ascensionistCount, TIER_2_MIN_ASCENTS),
         // Never publish an angle the route tables don't carry — that URL 404s.
-        inArray(boardClimbStats.angle, [...ANGLES[boardName]]),
+        inArray(boardClimbStats.angle, [...getRoutableBoardAngles(boardName)]),
         // The same two predicates the /list front door filters on, so the climb
         // genuinely renders on the configuration we are about to name in its URL.
         // MoonBoard has one fixed size, so it has no size predicate at all.

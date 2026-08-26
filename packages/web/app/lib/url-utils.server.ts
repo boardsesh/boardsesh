@@ -24,6 +24,7 @@ import {
 } from '@boardsesh/play-view/readable-url-utils';
 import { type MoonBoardLayoutKey, MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from './moonboard-config';
 import { WOODS_LAYOUTS, WOODS_SETS, WOODS_SIZES } from './woods-config';
+import { parseBoardAngleSegment, toBoardName } from '@boardsesh/board-config';
 
 // Helper to parse MoonBoard size slug (always returns the single size)
 function getMoonBoardSizeBySlug(): { id: number; name: string } {
@@ -69,6 +70,11 @@ export async function parseBoardRouteParamsWithSlugs<T extends BoardRouteParamet
   params: T,
 ): Promise<T extends BoardRouteParametersWithUuid ? ParsedBoardRouteParametersWithUuid : ParsedBoardRouteParameters> {
   const { board_name, layout_id, size_id, set_ids, angle, climb_uuid } = params;
+  const parsedBoardName = toBoardName(board_name);
+  const parsedAngle = parsedBoardName ? parseBoardAngleSegment(parsedBoardName, angle) : null;
+  if (!parsedBoardName || parsedAngle === null) {
+    return notFound();
+  }
   const isFullyNumericFormat = hasOnlyNumericBoardRouteSegments(params);
 
   let parsedLayoutId: number;
@@ -122,7 +128,7 @@ export async function parseBoardRouteParamsWithSlugs<T extends BoardRouteParamet
       layout_id: parsedLayoutId,
       size_id: parsedSizeId,
       set_ids: parsedSetIds,
-      angle: Number(angle),
+      angle: parsedAngle,
     };
 
     if (climb_uuid) {
@@ -192,7 +198,7 @@ export async function parseBoardRouteParamsWithSlugs<T extends BoardRouteParamet
       layout_id: parsedLayoutId,
       size_id: parsedSizeId,
       set_ids: parsedSetIds,
-      angle: Number(angle),
+      angle: parsedAngle,
     };
 
     if (climb_uuid) {
@@ -254,7 +260,7 @@ export async function parseBoardRouteParamsWithSlugs<T extends BoardRouteParamet
     layout_id: parsedLayoutId,
     size_id: parsedSizeId,
     set_ids: parsedSetIds,
-    angle: Number(angle),
+    angle: parsedAngle,
   };
 
   if (climb_uuid) {
@@ -281,6 +287,11 @@ async function parseRouteParamsImpl<T extends BoardRouteParameters>(
     : ParsedBoardRouteParameters;
   isNumericFormat: boolean;
 }> {
+  const boardName = toBoardName(params.board_name);
+  const angle = boardName ? parseBoardAngleSegment(boardName, params.angle) : null;
+  if (!boardName || angle === null) {
+    return notFound();
+  }
   const isNumericFormat = hasOnlyNumericBoardRouteSegments(params);
 
   if (isNumericFormat) {

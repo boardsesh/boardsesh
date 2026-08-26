@@ -66,7 +66,7 @@ export const SubmitAppFeedbackInputSchema = z
         .array(z.number().int())
         .transform((setIds) => (setIds.length > SET_IDS_MAX ? setIds.slice(0, SET_IDS_MAX) : setIds)),
     ),
-    angle: bestEffort(z.number().int().min(0).max(180)),
+    angle: bestEffort(z.number().int().min(-5).max(180)),
     context: bestEffort(FeedbackContextInputSchema),
     contactConsent: bestEffort(z.boolean()),
   })

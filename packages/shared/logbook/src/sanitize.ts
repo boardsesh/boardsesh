@@ -38,8 +38,8 @@ function sanitizeAngleRange(value: unknown): [number, number] {
   }
   const rawMin = typeof value[0] === 'number' ? value[0] : DEFAULT_LOGBOOK_ANGLE_RANGE[0];
   const rawMax = typeof value[1] === 'number' ? value[1] : DEFAULT_LOGBOOK_ANGLE_RANGE[1];
-  const min = Math.max(0, Math.min(70, rawMin));
-  const max = Math.max(min, Math.min(70, rawMax));
+  const min = Math.max(DEFAULT_LOGBOOK_ANGLE_RANGE[0], Math.min(DEFAULT_LOGBOOK_ANGLE_RANGE[1], rawMin));
+  const max = Math.max(min, Math.min(DEFAULT_LOGBOOK_ANGLE_RANGE[1], rawMax));
   return [min, max];
 }
 

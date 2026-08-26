@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { resolveBoardBySlug, boardToRouteParams } from '@/app/lib/board-slug-utils';
+import { resolveBoardBySlug, boardToRouteParamsFromAngleSegment } from '@/app/lib/board-slug-utils';
 import { getClimb } from '@/app/lib/data/queries';
 import { constructBoardSlugViewUrl, extractUuidFromSlug, isUuidOnly } from '@/app/lib/url-utils';
 import { redirectWithQuery } from '@/app/lib/url-utils.server';
@@ -19,7 +19,9 @@ export default async function BoardSlugPlayRedirectPage(props: {
   const board = await resolveBoardBySlug(params.board_slug);
   if (!board) return notFound();
 
-  const angle = Number(params.angle);
+  const parsedBoardParams = boardToRouteParamsFromAngleSegment(board, params.angle);
+  if (!parsedBoardParams) return notFound();
+  const angle = parsedBoardParams.angle;
   const climbUuid = extractUuidFromSlug(params.climb_uuid);
 
   // `extractUuidFromSlug` returns its input verbatim when no 32-hex-char UUID
@@ -32,7 +34,7 @@ export default async function BoardSlugPlayRedirectPage(props: {
   // Look up the climb name so the slug-prefixed view URL is preserved.
   let climbName: string | undefined;
   try {
-    const parsedParams = { ...boardToRouteParams(board, angle), climb_uuid: climbUuid };
+    const parsedParams = { ...parsedBoardParams, climb_uuid: climbUuid };
     const climb = await getClimb(parsedParams);
     climbName = climb?.name ?? undefined;
   } catch {

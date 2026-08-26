@@ -6,6 +6,7 @@ import { requireAuthenticated, applyRateLimit, validateInput } from '../../share
 import { SetterOverrideInputSchema, FreezeClimbInputSchema } from '../../../../validation/schemas';
 import { requireAdminOrLeader } from '../roles';
 import { notifyClimbRevalidated } from '../../../../lib/web-revalidate';
+import { assertClimbBoardType } from './climb-board-type';
 
 /**
  * Setter override: directly set community grade/benchmark status on a climb.
@@ -33,6 +34,7 @@ export async function setterOverrideCommunityStatus(_: unknown, { input }: { inp
   if (!climb) {
     throw new Error('Climb not found');
   }
+  assertClimbBoardType(climb.climbBoardType, boardType);
 
   // Check if caller is the setter
   let isSetter = false;

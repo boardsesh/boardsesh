@@ -21,6 +21,7 @@ import { enrichProposal } from './enrichment';
 import { applyProposalEffect, revertProposalEffect } from './effects';
 import { checkAutoApproval } from './grade-analysis';
 import { setterOverrideCommunityStatus, freezeClimb } from './setter-overrides';
+import { assertClimbBoardType } from './climb-board-type';
 
 export const socialProposalMutations = {
   createProposal: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
@@ -38,6 +39,20 @@ export const socialProposalMutations = {
     if (type === 'classic' && angle != null) {
       throw new Error('Angle must not be set for classic proposals');
     }
+
+    // `boardType` is client input, while climb UUIDs are globally unique. Check
+    // the stored climb before using that pair as an unfenced proposal/status
+    // key; otherwise a Kilter UUID declared as Grasshopper could smuggle -5°
+    // into rows that have no FK back to board_climbs.
+    const [targetClimb] = await db
+      .select({ boardType: dbSchema.boardClimbs.boardType })
+      .from(dbSchema.boardClimbs)
+      .where(eq(dbSchema.boardClimbs.uuid, climbUuid))
+      .limit(1);
+    if (!targetClimb) {
+      throw new Error('Climb not found');
+    }
+    assertClimbBoardType(targetClimb.boardType, boardType);
 
     // Check not frozen
     const frozenSetting = await resolveCommunitySetting('climb_frozen', climbUuid, angle, boardType);

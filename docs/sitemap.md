@@ -357,7 +357,8 @@ while `MAX_ITEMS_PER_SHARD` lets it reach 11,250. Tracked separately.
 - **After enabling, a deploy that changes climb URL shape needs a manual refresh.**
   `sitemap_climb_urls.path` is rendered at refresh time, so new URL logic keeps
   serving the old shape until the store is stale enough for the self-heal or someone
-  runs the curl above. The old URLs still resolve (the pages self-canonicalise), so
+  runs the curl above. The old URLs still resolve and point at the climb's selected
+  canonical angle, so
   this is a staleness window, not an outage.
 - **`scripts/production-smoke.ts` pins the paused state.** It fails if climb URLs
   or source headers return, and it requires the direct shard's cacheable 410. The

@@ -95,7 +95,7 @@ function isGradeActive(filters: LogbookFilterState): boolean {
   return filters.minGrade !== '' || filters.maxGrade !== '';
 }
 
-/** Whether the angle facet is narrowed off its [0, 70] default. */
+/** Whether the angle facet is narrowed off the shared full-board default. */
 function isAngleActive(filters: LogbookFilterState): boolean {
   return (
     filters.angleRange[0] !== DEFAULT_LOGBOOK_ANGLE_RANGE[0] || filters.angleRange[1] !== DEFAULT_LOGBOOK_ANGLE_RANGE[1]

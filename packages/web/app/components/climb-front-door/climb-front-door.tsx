@@ -24,6 +24,7 @@ type ClimbFrontDoorProps = {
   climb: Climb;
   boardDetails: BoardDetails;
   angle: number;
+  canonicalAngle: number;
   angleStats: ClimbStatsForAngle[];
   similarClimbs: SimilarClimb[];
   betaLinks: BetaLink[];
@@ -104,6 +105,7 @@ export default async function ClimbFrontDoor({
   climb,
   boardDetails,
   angle,
+  canonicalAngle,
   angleStats,
   similarClimbs,
   betaLinks,
@@ -117,7 +119,8 @@ export default async function ClimbFrontDoor({
   const climbName = resolveClimbDisplayName(climb.name, boardDetails.board_name);
   // The breadcrumb's leaf is the page's CANONICAL, not `handoffPath`: on `/b`
   // those differ, and the JSON-LD has to name the URL the page claims.
-  const canonicalClimbUrl = buildCanonicalClimbViewUrl(boardDetails, angle, climb.uuid, climbName);
+  const canonicalClimbUrl = buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, climb.uuid, climbName);
+  const isCanonicalAngle = angle === canonicalAngle;
   // Woods art has a white ground that glares in dark mode, so it ships a dark sibling. Rather
   // than render the whole composite twice — one WASM + sharp job per theme, per climb — the
   // board photo splits out as static layers the stylesheet picks between, and the holds
@@ -158,9 +161,10 @@ export default async function ClimbFrontDoor({
         boardListUrl={boardListUrl}
         currentLabel={climbName}
         currentUrl={canonicalClimbUrl}
+        emitJsonLd={!noindex && isCanonicalAngle}
       />
 
-      {noindex ? null : (
+      {noindex || !isCanonicalAngle ? null : (
         <ClimbCreativeWorkJsonLd
           climb={climb}
           climbName={climbName}

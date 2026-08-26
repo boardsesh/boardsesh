@@ -13,6 +13,8 @@ import {
   SaveTickInputSchema,
   UpdateTickInputSchema,
   AttachBetaLinkInputSchema,
+  BOARD_ANGLE_VALIDATION_MESSAGE,
+  isBoardAngleSupported,
   readTimestampFractionalSeconds,
 } from '../../../validation/schemas';
 import { resolveBoardFromPath } from '../social/boards';
@@ -1344,6 +1346,12 @@ export const tickMutations = {
       const existingTicks = await selectTickMutationGroupForUpdate(tx, uuid, userId, 'update');
       const targetTick = existingTicks.find((tick) => tick.uuid === uuid)!;
       const affectedUuids = existingTicks.map((tick) => tick.uuid);
+
+      if (!isBoardAngleSupported(targetTick.boardType, validatedInput.angle)) {
+        throw new GraphQLError(BOARD_ANGLE_VALIDATION_MESSAGE, {
+          extensions: { code: 'BAD_USER_INPUT' },
+        });
+      }
 
       const updates: Partial<typeof dbSchema.boardseshTicks.$inferInsert> = {
         updatedAt: new Date().toISOString(),

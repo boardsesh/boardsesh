@@ -228,7 +228,7 @@ export const ANGLES: Record<BoardName, Angle[]> = {
   // New Aurora boards use the same angle range as Kilter/Tension
   decoy: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70],
   touchstone: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70],
-  grasshopper: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70],
+  grasshopper: [-5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70],
   soill: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70],
   woods: [...WOODS_ANGLES],
 };
@@ -246,6 +246,26 @@ export function getBoardAngleOptions(boardName: BoardName, wideAnglesEnabled: bo
     return MOONBOARD_WIDE_ANGLE_OPTIONS;
   }
   return ANGLES[boardName];
+}
+
+/**
+ * Every angle that may appear as a canonical URL segment for a board.
+ *
+ * MoonBoard's wide angles remain feature-gated in the picker, but already
+ * published wide-angle URLs must stay routable regardless of that flag.
+ */
+export function getRoutableBoardAngles(boardName: BoardName): Angle[] {
+  return getBoardAngleOptions(boardName, true);
+}
+
+/**
+ * Parse an exact, canonical board-angle route segment.
+ *
+ * Comparing against the decimal spelling of known angles deliberately rejects
+ * numeric aliases such as `040`, `40.0`, `+40`, and surrounding whitespace.
+ */
+export function parseBoardAngleSegment(boardName: BoardName, segment: string): Angle | null {
+  return getRoutableBoardAngles(boardName).find((angle) => segment === String(angle)) ?? null;
 }
 
 // BOULDER_GRADES + BoulderGrade live in @boardsesh/board-constants so display
