@@ -277,7 +277,7 @@ function setupPreview(): void {
   log('job set that carries the dashboard admin creds (OTA_ADMIN_*) — and those jobs must never hang.');
   log('So they declare `ota-preview-unattended`, which MUST stay WITHOUT required reviewers: reviewers');
   log('there would pause a PR close or the scheduled sweep forever. It is safe unattended because every');
-  log('one of those jobs checks out the TRUSTED BASE (never PR head) and only mutates a ^pr-[0-9]+$');
+  log('one of those jobs checks out the TRUSTED BASE (never PR head) and only mutates a ^pr-[1-9][0-9]*$');
   log('branch — PR-author code never runs with the admin creds. Keep the two environments split.');
 }
 

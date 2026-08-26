@@ -60,7 +60,7 @@ async function deleteResource(baseUrl: string, token: string, path: string, labe
 }
 
 async function deletePreview(baseUrl: string, appId: string, branch: string): Promise<void> {
-  if (!/^pr-[0-9]+$/.test(branch)) fail(`Refusing to delete non-preview branch "${branch}".`);
+  if (!/^pr-[1-9][0-9]*$/.test(branch)) fail(`Refusing to delete non-preview branch "${branch}".`);
   const token = await login(baseUrl);
 
   // Transitional cleanup for previews created by the retired channel-mapping

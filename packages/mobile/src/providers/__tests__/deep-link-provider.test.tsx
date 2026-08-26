@@ -63,6 +63,17 @@ describe('DeepLinkProvider — legacy OTA preview links', () => {
     expect(store.has(PENDING_LEGACY_PREVIEW_KEY)).toBe(false);
   });
 
+  it('handles a warm legacy preview link while already signed in', async () => {
+    authState.isAuthenticated = true;
+
+    render(createElement(DeepLinkProvider, { children: null }));
+
+    await waitFor(() => expect(linkState.listener).not.toBeNull());
+    linkState.listener?.({ url: 'https://www.boardsesh.com/preview/pr-99' });
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/changelog'));
+  });
+
   it('stashes the destination while signed out', async () => {
     linkState.initialUrl = LEGACY_PREVIEW_LINK;
 

@@ -922,7 +922,7 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
     the workflow with repo secrets. Any same-repo PR touching the relevant paths auto-publishes.
     Environment reviewers can add defense-in-depth, but correctness does not assume they are
     configured. A malicious insider already holds the repo's secrets through other workflows.
-    `^pr-[0-9]+$` guards every branch mutation (defense-in-depth).
+    `^pr-[1-9][0-9]*$` guards every branch mutation (defense-in-depth).
   - **Hardening (optional).** The admin-cred split is already done: `OTA_ADMIN_EMAIL` +
     `OTA_ADMIN_PASSWORD` live only in **`ota-preview-unattended`**, whose jobs check out the trusted
     base and carry no required reviewers, so PR-author code never runs with the admin creds. The only

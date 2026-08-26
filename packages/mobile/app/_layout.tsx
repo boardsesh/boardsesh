@@ -130,11 +130,15 @@ function OtaBranchControlCenter() {
   // Fingerprint-bound required headers distinguish Branch Surfing-capable
   // binaries from EAS previews. Updates.channel cannot do that: a legacy
   // persisted override changes the value exposed for this launch.
-  const branchSurfingBuild = isBranchSurfingBuild({
-    development: __DEV__,
-    updatesEnabled: Updates.isEnabled,
-    updatesConfig: Constants.expoConfig?.updates,
-  });
+  const branchSurfingBuild = useMemo(
+    () =>
+      isBranchSurfingBuild({
+        development: __DEV__,
+        updatesEnabled: Updates.isEnabled,
+        updatesConfig: Constants.expoConfig?.updates,
+      }),
+    [],
+  );
   const [migrationComplete, setMigrationComplete] = useState(!branchSurfingBuild);
 
   useEffect(() => {

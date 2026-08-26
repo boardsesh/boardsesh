@@ -20,7 +20,7 @@ name: Mobile OTA Preview (Per-PR Branch)
 #   * `ota-preview-unattended` — holds OTA_ADMIN_EMAIL / OTA_ADMIN_PASSWORD, with NO
 #     required reviewers. Only the `cleanup` and scheduled sweep jobs declare
 #     it, and every one of them checks out the TRUSTED BASE (never PR head) and only
-#     ever mutates a hardcoded `^pr-[0-9]+$` branch. PR-author code never runs with
+#     ever mutates a hardcoded `^pr-[1-9][0-9]*$` branch. PR-author code never runs with
 #     the admin creds, so a fork/PR can't exfiltrate them or delete `production`. No
 #     reviewers means a PR close or the daily sweep can't hang waiting on approval.
 #
@@ -40,7 +40,7 @@ name: Mobile OTA Preview (Per-PR Branch)
 #     relevant paths auto-publishes. The environment can add a reviewer checkpoint,
 #     but it is not a hard wall against a malicious insider, who already holds the
 #     repo's secrets via other workflows.
-#   * `^pr-[0-9]+$` guards every branch mutation (defense-in-depth, not the control).
+#   * `^pr-[1-9][0-9]*$` guards every branch mutation (defense-in-depth, not the control).
 #
 # Fork PRs are SKIPPED here (no secrets). A separate metadata-only
 # `pull_request_target` workflow uses the trusted default-branch definition to
@@ -330,7 +330,7 @@ jobs:
         with:
           script: |
             const branch = process.env.BRANCH;
-            if (!/^pr-[0-9]+$/.test(branch || '')) {
+            if (!/^pr-[1-9][0-9]*$/.test(branch || '')) {
               core.setFailed(`Refusing to reset non-preview branch '${branch || ''}'.`);
               return;
             }
@@ -451,8 +451,8 @@ jobs:
 
       - name: Assert preview branch name
         run: |
-          if ! printf '%s' "$BRANCH" | grep -Eq '^pr-[0-9]+$'; then
-            echo "::error::Refusing to publish to non-preview branch '$BRANCH' (must match ^pr-[0-9]+\$)."
+          if ! printf '%s' "$BRANCH" | grep -Eq '^pr-[1-9][0-9]*$'; then
+            echo "::error::Refusing to publish to non-preview branch '$BRANCH' (must match ^pr-[1-9][0-9]*\$)."
             exit 1
           fi
           echo "::notice::This job holds EOO_TOKEN and runs PR-author code. Fork publishes require a /ota-preview comment from a repository write/maintain/admin user."
@@ -743,7 +743,7 @@ jobs:
             }
 
   # ── Tear down pr-<number> when the PR closes. Runs NO PR-author code with a secret
-  # (checks out the trusted base commit, deletes a hardcoded ^pr-[0-9]+$ branch via
+  # (checks out the trusted base commit, deletes a hardcoded ^pr-[1-9][0-9]*$ branch via
   # the admin-authed management API). Fork-PR closes/no-mobile transitions are handled
   # by the trusted pull_request_target companion; the scheduled sweep remains the backstop.
   cleanup:
@@ -764,7 +764,7 @@ jobs:
     # Branch teardown is a dashboard-admin action (the eoo_ key can't do it),
     # so this job needs the OTA_ADMIN_* creds — which live in the ota-preview-unattended
     # environment (NO required reviewers, so a PR close can't hang on approval). It runs
-    # NO PR-author code (trusted base checkout, hardcoded ^pr-[0-9]+$ target), so the
+    # NO PR-author code (trusted base checkout, hardcoded ^pr-[1-9][0-9]*$ target), so the
     # environment is only reached for the secret.
     environment: ota-preview-unattended
     env:
@@ -795,7 +795,7 @@ jobs:
 
       - name: Assert preview branch name
         run: |
-          if ! printf '%s' "$BRANCH" | grep -Eq '^pr-[0-9]+$'; then
+          if ! printf '%s' "$BRANCH" | grep -Eq '^pr-[1-9][0-9]*$'; then
             echo "::error::Refusing to delete non-preview branch '$BRANCH'."
             exit 1
           fi

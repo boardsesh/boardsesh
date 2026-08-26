@@ -106,4 +106,16 @@ describe('ota-preview-cleanup CLI', () => {
     expect(result.stderr).toContain('Refusing to delete non-preview branch "production"');
     expect(result.stderr).not.toContain('Admin login failed');
   });
+
+  it.each(['pr-0', 'pr-01'])('refuses an impossible GitHub PR branch before authentication: %s', async (branch) => {
+    const result = await runCleanup(branch, {
+      OTA_BASE_URL: 'http://127.0.0.1:1',
+      OTA_ADMIN_EMAIL: 'admin@example.test',
+      OTA_ADMIN_PASSWORD: 'secret',
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain(`Refusing to delete non-preview branch "${branch}"`);
+    expect(result.stderr).not.toContain('Admin login failed');
+  });
 });

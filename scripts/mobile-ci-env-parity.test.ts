@@ -498,15 +498,15 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     expect(preview).not.toMatch(/^  map:/m);
   });
 
-  it('guards every branch mutation behind ^pr-[0-9]+$', () => {
+  it('guards every branch mutation behind ^pr-[1-9][0-9]*$', () => {
     // Defense-in-depth: even if the resolved branch were wrong, the publish,
     // cleanup, and sweep all refuse anything that isn't a numeric PR branch — so
     // none of them can ever delete or overwrite `production`.
     const preview = readWorkflow(OTA_PREVIEW);
     const sweep = readWorkflow(OTA_PREVIEW_SWEEP);
     // publish-side assert + cleanup-side assert.
-    expect((preview.match(/\^pr-\[0-9\]\+\$/g) ?? []).length).toBeGreaterThanOrEqual(2);
-    expect(sweep).toMatch(/\^pr-\[0-9\]\+\$/);
+    expect((preview.match(/\^pr-\[1-9\]\[0-9\]\*\$/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(sweep).toMatch(/\^pr-\[1-9\]\[0-9\]\*\$/);
   });
 
   it('scopes the S3 lifecycle prefix to <appId>/pr- (ends with the branch prefix, and documented)', () => {
@@ -519,8 +519,8 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     // (storage leak) or the rule hits production. The docs must document the exact
     // appId-scoped prefix.
     const preview = readWorkflow(OTA_PREVIEW);
-    const guard = preview.match(/\^(pr-)\[0-9\]\+\$/);
-    expect(guard, 'preview workflow must guard branches as ^pr-[0-9]+$').not.toBeNull();
+    const guard = preview.match(/\^(pr-)\[1-9\]\[0-9\]\*\$/);
+    expect(guard, 'preview workflow must guard branches as ^pr-[1-9][0-9]*$').not.toBeNull();
     const branchPrefix = guard![1];
 
     const setup = readFileSync(resolve(REPO_ROOT, 'scripts/mobile-ota-setup.ts'), 'utf8');
