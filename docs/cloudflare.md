@@ -122,14 +122,13 @@ Create ONE token covering today's zone tooling, the Pages deploy of
 `app.boardsesh.com`, and the upcoming OpenNext deploy, so this setup never has to
 be repeated.
 
-> **One token, three consumers.** `CLOUDFLARE_API_TOKEN` in the GitHub Production
-> environment is read by `deploy-cloudflare` (zone config), `deploy-app-web`
-> (`wrangler pages deploy`), and later the OpenNext web deploy. **Rotating or
-> re-scoping it for one of them silently breaks the others** — a token carrying
-> only the zone scopes below authenticates fine against the zone and returns
-> `Authentication error [code: 10000]` on `/pages/projects/boardsesh-app`. That
-> exact regression took `app.boardsesh.com` off the deploy train on 2026-08-25.
-> Grant every section below, not just the one you came here for.
+> **Two tokens, split by scope level.** `CLOUDFLARE_API_TOKEN` (zone-scoped) is
+> read by `deploy-cloudflare`; `PAGES_TOKEN` (account-scoped) is read by
+> `deploy-app-web`. Both live in the GitHub **Production** environment. They are
+> separate on purpose: Cloudflare Pages is an **account**-level permission and the
+> zone tooling needs none, so serving both from one token means every re-scope
+> risks dropping the other's grant — which is exactly what took
+> `app.boardsesh.com` off the deploy train on 2026-08-25. Keep them apart.
 
 **Needed now (zone tooling, `vp run cf:apply`):**
 
@@ -145,32 +144,43 @@ Create a token at <https://dash.cloudflare.com/profile/api-tokens> scoped to the
 - **Zone.Zone Settings Read** — read the SSL/TLS mode
 - **Zone.Zone Settings Edit** — only if you'll run `--allow-zone-ssl`
 
-**Needed now (Pages deploy of app.boardsesh.com, `deploy-app-web`):**
+**`PAGES_TOKEN` — a SEPARATE token for `deploy-app-web`:**
 
 - **Account.Cloudflare Pages Edit** — `wrangler pages deploy` against the
-  `boardsesh-app` project. Account-scoped, so the token cannot be zone-only.
-  Without it the publish step fails with `Authentication error [code: 10000]`
-  while `wrangler whoami` still succeeds — it reads as a bad token, but it is a
-  missing scope.
+  `boardsesh-app` project. This is the token's only required scope.
 
-  In the token editor this is the **left-hand dropdown set to Account**, not
-  Zone, plus the account named under **Account Resources**. Ticking every
-  permission the zone offers cannot supply it — that is exactly how the token
-  ended up without it in 2026-08. Quickest check on an existing token: open its
-  summary, and if every row sits under `boardsesh.com` with no Account resource
-  section, Pages is missing no matter how long the list is.
+  In the token editor it is the **left-hand dropdown set to Account**, not Zone,
+  plus the account named under **Account Resources**. Ticking every permission
+  the zone offers cannot supply it, because the two live in different resource
+  namespaces. Read the token back from
+  `GET /user/tokens/{id}` and compare the `resources` shape — that is the only
+  unambiguous check, since the dashboard renders all three forms similarly:
 
-**Add now for the OpenNext migration (wrangler deploy of packages/web):**
+  ```jsonc
+  { "com.cloudflare.api.account.<id>": "*" }                              // account — Pages attaches here
+  { "com.cloudflare.api.account.<id>": { "com.cloudflare.api.account.zone.*": "*" } } // all zones — it does NOT
+  { "com.cloudflare.api.account.zone.<id>": "*" }                          // one zone — it does NOT
+  ```
+
+  A permission added to either of the lower two forms silently does nothing for
+  Pages. Beware `Custom Pages` (branded error pages, zone-level) and `Page Shield`
+  / `Page Rules` — none is Cloudflare Pages, and searching the picker for "Pages"
+  surfaces them first.
+
+**For the OpenNext migration (wrangler deploy of packages/web)** — these are
+account-level too, so they belong on `PAGES_TOKEN` (or a third token); the
+zone-scoped `CLOUDFLARE_API_TOKEN` cannot carry them:
 
 - **Account.Workers Scripts Edit** — deploy the Worker
 - **Account.Workers KV Storage Edit** — OpenNext incremental cache (if KV-backed)
 - **Account.Workers R2 Storage Edit** — only if the OpenNext cache uses R2
 - **Zone.Workers Routes Edit** — attach the Worker to www/apex routes
 
-Then store both values in the GitHub Production environment:
+Then store the values in the GitHub Production environment:
 
 ```
-gh secret set CLOUDFLARE_API_TOKEN --env Production
+gh secret set CLOUDFLARE_API_TOKEN --env Production   # zone-scoped, deploy-cloudflare
+gh secret set PAGES_TOKEN          --env Production   # account-scoped, deploy-app-web
 gh secret set CLOUDFLARE_ACCOUNT_ID --env Production
 ```
 
