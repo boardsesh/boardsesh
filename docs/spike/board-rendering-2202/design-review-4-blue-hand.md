@@ -285,11 +285,35 @@ and Kilter Original and leaves the rest. The disc at 0.3 is barely visible (foot
 0.19), which the plateau does better as a side effect. The fill: at full size the filled hold peaks
 higher on the pale boards (6.9-7.6 at 0.55, because the pale art shows through) and lower as the
 alpha rises (5.7-6.0 at 0.90, the hold becoming a flat `#6980FF` shape); on Grasshopper's dark holds
-all three alphas measure 5.32. The 152 / 228 / 384 px fill sweep was not captured (the run was
-stopped twice), so the thumbnail alpha is still open.
+all three alphas measure 5.32.
+
+**At the thumbnail sizes the plateau beats the filled mark**, which reverses the per-surface split
+§1 of the handover inherited. At 152 px (`boards/thumb-fill-152px.webp`; 228 and 384 are the same
+ordering, `thumb-fill-228px.webp`, `thumb-fill-384px.webp`), HAND share at 3:1 / median footprint
+px / wall brighter than the glow:
+
+| 152 px arm | TB2 share 3:1 / footprint / wall>glow | Tension share 3:1 / footprint / wall>glow | MB 2016 share 3:1 / footprint / wall>glow | Grasshopper share 3:1 / footprint / wall>glow |
+|---|---|---|---|---|
+| filled ring (renderer.rs today) | 0.54 / 80 / 0.42 | 0.35 / 126 / 0.37 | 0.42 / 187 / 0.11 | 0.37 / 186 / 0.09 |
+| veil + glow | 0.38 / 44 / 0.28 | 0.32 / 113 / 0.30 | 0.27 / 108 / 0.14 | 0.28 / 118 / 0.06 |
+| plateau | 0.67 / 59 / 0.02 | 0.60 / 139 / 0.08 | 0.51 / 145 / 0.02 | 0.56 / 154 / 0.00 |
+| x1.5 + plateau | 0.71 / 95 / 0.01 | 0.65 / 232 / 0.06 | 0.49 / 255 / 0.03 | 0.56 / 255 / 0.00 |
+| tint 0.55 | 0.49 / 52 / 0.19 | 0.47 / 143 / 0.20 | 0.36 / 118 / 0.11 | 0.45 / 142 / 0.02 |
+| tint 0.70 | 0.49 / 52 / 0.19 | 0.47 / 143 / 0.20 | 0.37 / 121 / 0.11 | 0.45 / 147 / 0.01 |
+| tint 0.90 | 0.49 / 52 / 0.19 | 0.47 / 143 / 0.20 | 0.37 / 121 / 0.11 | 0.45 / 147 / 0.01 |
+
+The fill's alpha is not a lever: 0.55, 0.70 and 0.90 give the same share to two decimals on every
+board, and the peak falls as the alpha rises on the pale boards because the art under the fill is
+brighter than the blue. The plateau glow has the highest share at every size, takes the wall out of
+the picture (the filled ring today leaves 9-42% of the annulus brighter than the mark), and with
+x1.5 reach matches the ring's footprint at 152 px. So one treatment, veil + plateau glow, serves the
+play view and the list cell alike; the `filledStyle` branch in `renderer.rs` becomes the same
+drawing at a smaller width rather than a different one.
 
 What it costs in the port: nothing new. `glowPlateauStops` is a different stops table for the
 falloff `renderer.rs` has to draw anyway; a reach floor is one `max()` in the spread rule.
+**Marco picked the plateau alone, at today's reach** (2026-08-26); it is recorded in
+`PORT-HANDOVER.md` §1 and §2.
 
 ## Rejected
 

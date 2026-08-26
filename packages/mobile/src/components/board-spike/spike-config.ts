@@ -649,11 +649,20 @@ export const SPIKE_TUNING = {
    * rather than 1.000 at the edge is the innermost band sitting at 0.05 of the
    * extent rather than at 0.
    */
+  // The plateau is the default from 2026-08-26 (Marco's pick off the glow-size
+  // capture, design-review-4-blue-hand.md "Bigger, not further"): full alpha
+  // over the inner 0.4 of the extent, then the fade. The table it replaced —
+  // [0, 1] [0.15, 0.83] [0.4, 0.37] [0.7, 0.12] [1, 0] — faded from the edge and
+  // left TB2 Mirror's HAND with 1 px of its 8.5 px extent at 3:1; this one
+  // doubles every board's share at 3:1 and takes the wall out of the picture
+  // (TB2 36% of the annulus brighter than the glow to 4%) without dimming an
+  // unlit hold. `glowPlateauStops` below is the same table, kept so the arms
+  // that were captured under that name still resolve.
   glowFalloffStops: [
     [0.0, 1.0],
-    [0.15, 0.9],
-    [0.4, 0.42],
-    [0.7, 0.13],
+    [0.4, 0.97],
+    [0.6, 0.6],
+    [0.8, 0.22],
     [1.0, 0.0],
   ] as ReadonlyArray<readonly [number, number]>,
   /**
@@ -800,10 +809,9 @@ export const SPIKE_TUNING = {
    */
   softDiscOpacity: 0.3,
   /**
-   * The `plateau` modifier's falloff: full alpha over the inner 0.4 of the
-   * extent, then the fade. Against `glowFalloffStops` (0.831 at 0.15, 0.365 at
-   * 0.40) this is what the baseline ring's 6-8 px full-alpha stroke had and the
-   * glow gave up: a band, not an edge.
+   * The `plateau` modifier's falloff, now identical to `glowFalloffStops`: the
+   * `veil-glow-plateau` and `veil-glow-x15-plateau` arms were captured under
+   * this name and stay resolvable; `veil-glow` draws the same thing.
    */
   glowPlateauStops: [
     [0.0, 1.0],

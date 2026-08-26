@@ -47,8 +47,15 @@ nothing in the capture said so. Before any capture, force-stop the dev client
 and relaunch it through the `expo-development-client` link above — a cold
 bundle — then deep-link one panel that shows the edit and screenshot it. The
 first launch shows the dev-client's own menu sheet over the app; `input
-keyevent 4` dismisses it. Edits landing mid-capture are the other half of the
-same rule: change nothing Metro bundles while `capture-boards.sh` is running.
+keyevent 4` dismisses it — but only once JS is up: a Back key sent while the
+bundle is still loading crashes the app (`NullPointerException` in
+`ReactActivityDelegate.onKeyDown`), after which the dev launcher shows its own
+home and ignores the `url=` link until `pm clear`. Poll a screenshot for the
+sheet (white bottom, dark top) rather than sleeping a fixed time. And send the
+first spike deep link a few seconds after the sheet is gone: one sent while the
+router is still mounting lands on the sign-in screen. Edits landing mid-capture
+are the other half of the same rule: change nothing Metro bundles while
+`capture-boards.sh` is running.
 
 ## 2. Open the spike
 

@@ -119,18 +119,27 @@ with the wall; only the veil changes what the mark competes against.
 inner 40% of its extent (`SPIKE_TUNING.glowPlateauStops`) doubles the share of every HAND mark at
 3:1, lifts its peak to 5.2 on every board and removes the wall as a competitor (TB2 Mirror 36% of
 the annulus brighter than the glow to 4%) without dimming an unlit hold. A x1.5 reach on top is the
-most findable mark on TB2 and the heaviest on Grasshopper; if reach moves, move it as a floor in
-device px (~30) so only the small-hold boards get it. Pending Marco's pick; the port draws whichever
-stops table is chosen, and a floor is one `max()` in the spread rule.
+most findable mark on TB2 and the heaviest on Grasshopper; if reach ever moves, move it as a floor in
+device px (~30) so only the small-hold boards get it. **Marco picked the plateau alone** (2026-08-26):
+the port draws `glowPlateauStops` — 1.0 at the silhouette edge, 0.97 at 0.4 of the extent, 0.6 at
+0.6, 0.22 at 0.8, 0 at the end — at today's reach.
 
-**Thumbnails: veil + filled mark.** At 152 device px — the 76×96 dp list cell at 2× — a hollow ring
+**Thumbnails: veil + plateau glow, the same drawing as the play view — superseding the filled mark
+this section used to pick.** Measured at 152 / 228 / 384 px after the plateau was chosen
+(`design-review-4-blue-hand.md`, "At the thumbnail sizes the plateau beats the filled mark"): the
+plateau glow's share of the HAND mark at 3:1 is 0.51-0.67 against 0.36-0.49 for the filled
+silhouette at any alpha and 0.35-0.57 for the filled ring `renderer.rs` draws today, and it leaves
+under 8% of the surrounding wall brighter than the mark where the ring leaves 9-42%. The fill's
+alpha is not a lever (0.55 / 0.70 / 0.90 measure the same). What follows is the reasoning that
+picked the filled mark before that capture, kept for the record. At 152 device px — the 76×96 dp
+list cell at 2× — a hollow ring
 and a soft glow both lose their signal to downsampling and a filled shape does not. The app already
 believes this: `ClimbListThumbnail` passes `filledStyle: true` and `renderer.rs:151/:201` switches
 to an 8.0 base stroke plus a 0.3-alpha fill "so lit holds read as solid dots once scaled". The
 winner keeps that filled marker and adds the veil.
 
-So the treatment differs by surface. That is not a compromise — it is what the codebase already
-does, and the split should be made explicit rather than inherited.
+So the treatment was going to differ by surface; with the plateau it no longer has to, and the
+`filledStyle` switch in `renderer.rs` becomes the same drawing at a smaller width.
 
 **The role glyphs are opt-in and out of scope for a first port.** They replace the shipped per-role
 marker shapes (#3204) as an accessibility mode, default off. Ship the default render first.
@@ -151,7 +160,8 @@ radial gradient and no non-circular outline. Both are needed.
 **Do not port the twelve-to-twenty concentric strokes.** They exist only because
 `FeGaussianBlur` is broken in `react-native-svg` 15.15.5 on Android — a stroke through it paints
 the filter region as a solid rectangle of the stroke colour. Rust has no such constraint. Draw the
-falloff directly.
+falloff directly, and draw the **plateau** one: `SPIKE_TUNING.glowPlateauStops`, not
+`glowFalloffStops` (§1).
 
 **Do not replace the silhouette-clipped glow with a placement-centred radial gradient.** The hard
 inner step where the glow stops on the hold's own edge _is_ the arm. Median silhouette
