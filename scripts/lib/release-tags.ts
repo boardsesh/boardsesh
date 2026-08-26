@@ -197,11 +197,11 @@ export function selectReleaseCandidate(
  * trusted `git diff` over canonical native inputs without executing branch code.
  */
 export function selectReleaseCandidateFromEquivalentTags(
-  equivalentTags: readonly string[],
+  candidateTags: readonly string[],
   acceptedBuilds: readonly AcceptedBuildReference[],
   version: string,
 ): ReleaseCandidate | null {
-  const parsedTags = equivalentTags.map(parseBuildTag).filter((tag): tag is BuildTag => tag !== null);
+  const parsedTags = candidateTags.map(parseBuildTag).filter((tag): tag is BuildTag => tag !== null);
 
   const selectPlatform = (platform: Platform): BuildTag | null => {
     const headCandidates = parsedTags.filter((tag) => tag.platform === platform && tag.version === version);

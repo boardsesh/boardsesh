@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   mapAcceptedGoogleProductionReleases,
   mapAcceptedVersions,
+  parseGoogleProductionReleasesResponse,
   parseGoogleServiceAccount,
 } from '../mobile-auto-version-bump';
 
@@ -118,7 +119,7 @@ describe('mapAcceptedGoogleProductionReleases', () => {
     (state) => {
       expect(
         mapAcceptedGoogleProductionReleases([
-          { releaseLifecycleState: state, activeArtifacts: [{ versionCode: 2_000_041 }, { versionCode: '2000042' }] },
+          { releaseLifecycleState: state, activeArtifacts: [{ versionCode: 2_000_041 }, { versionCode: 2_000_042 }] },
         ]),
       ).toEqual([
         { platform: 'android', versionString: null, buildNumber: 2_000_041, state },
@@ -127,7 +128,7 @@ describe('mapAcceptedGoogleProductionReleases', () => {
     },
   );
 
-  it('drops draft, review, rejected, and malformed artifacts', () => {
+  it('drops draft, review, and rejected releases', () => {
     expect(
       mapAcceptedGoogleProductionReleases([
         {
@@ -141,10 +142,6 @@ describe('mapAcceptedGoogleProductionReleases', () => {
         {
           releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_NOT_APPROVED',
           activeArtifacts: [{ versionCode: 2_000_043 }],
-        },
-        {
-          releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_PUBLISHED',
-          activeArtifacts: [{ versionCode: 'nope' }, { versionCode: 0 }, {}],
         },
       ]),
     ).toEqual([]);
@@ -173,6 +170,45 @@ describe('mapAcceptedGoogleProductionReleases', () => {
   });
 });
 
+describe('parseGoogleProductionReleasesResponse', () => {
+  it('parses the official production release lifecycle shape', () => {
+    expect(
+      parseGoogleProductionReleasesResponse({
+        releases: [
+          {
+            releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED',
+            activeArtifacts: [{ versionCode: 2_000_042 }],
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED',
+        activeArtifacts: [{ versionCode: 2_000_042 }],
+      },
+    ]);
+  });
+
+  it.each([
+    null,
+    [],
+    {},
+    { releases: null },
+    { releases: [{}] },
+    { releases: [{ releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_PUBLISHED' }] },
+    { releases: [{ releaseLifecycleState: 'FUTURE_UNKNOWN_STATE', activeArtifacts: [] }] },
+    { releases: [{ releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_PUBLISHED', activeArtifacts: null }] },
+    { releases: [{ releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_PUBLISHED', activeArtifacts: [{}] }] },
+    {
+      releases: [
+        { releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_PUBLISHED', activeArtifacts: [{ versionCode: '2000042' }] },
+      ],
+    },
+  ])('fails closed on unexpected response shape %#', (response) => {
+    expect(() => parseGoogleProductionReleasesResponse(response)).toThrow(/Google Play/);
+  });
+});
+
 describe('parseGoogleServiceAccount', () => {
   const serviceAccount = {
     client_email: 'release@example.iam.gserviceaccount.com',
@@ -188,5 +224,17 @@ describe('parseGoogleServiceAccount', () => {
 
   it('rejects missing credential fields', () => {
     expect(() => parseGoogleServiceAccount('{}')).toThrow(/missing client_email/);
+  });
+
+  it.each([
+    'http://oauth2.googleapis.com/token',
+    'https://oauth2.googleapis.com/other',
+    'https://oauth2.googleapis.com/token?redirect=https://evil.example',
+    'https://oauth2.googleapis.com.evil.example/token',
+    'https://evil.example/token',
+  ])('rejects untrusted token_uri %s', (tokenUri) => {
+    expect(() => parseGoogleServiceAccount(JSON.stringify({ ...serviceAccount, token_uri: tokenUri }))).toThrow(
+      /token_uri must be https:\/\/oauth2.googleapis.com\/token/,
+    );
   });
 });

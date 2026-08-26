@@ -2,10 +2,33 @@ import { describe, expect, it } from 'vitest';
 
 import {
   assertAnchorTarget,
+  buildTagsAsUploadedBuilds,
   NATIVE_FINGERPRINT_INPUT_PATHS,
   parseAcceptedBuilds,
   parseMarketingVersion,
+  readinessOutputForMode,
+  resolveExecutionMode,
+  shouldSkipAnchorWrites,
 } from '../mobile-cut-release-tags';
+
+describe('buildTagsAsUploadedBuilds', () => {
+  it('turns only exact build tags for one version into candidate records', () => {
+    expect(
+      buildTagsAsUploadedBuilds(
+        [
+          'build-ios-v2.1.0-42-aaaaaaaaaaaa',
+          'build-android-v2.1.0-2000042-bbbbbbbbbbbb',
+          'build-ios-v2.2.0-43-cccccccccccc',
+          'fingerprint-ios-aaaaaaaaaaaaaaaa',
+        ],
+        '2.1.0',
+      ),
+    ).toEqual([
+      { platform: 'ios', versionString: '2.1.0', buildNumber: 42, state: 'UPLOADED_BUILD_TAG' },
+      { platform: 'android', versionString: null, buildNumber: 2_000_042, state: 'UPLOADED_BUILD_TAG' },
+    ]);
+  });
+});
 
 describe('parseAcceptedBuilds', () => {
   it('parses exact platform-qualified store builds', () => {
@@ -88,5 +111,22 @@ describe('assertAnchorTarget', () => {
     expect(() => assertAnchorTarget('wrong-sha', 'accepted-sha', 'release/ios-v2.1.0-aaaaaaaaaaaa')).toThrow(
       /already points to wrong-sha, expected exact accepted build accepted-sha/,
     );
+  });
+});
+
+describe('CANDIDATE_ONLY entrypoint mode', () => {
+  it('emits candidate discovery and suppresses anchor writes even without CHECK_ONLY', () => {
+    expect(resolveExecutionMode({ CANDIDATE_ONLY: 'true', CHECK_ONLY: 'false' })).toEqual({
+      candidateOnly: true,
+      checkOnly: false,
+      readinessOutput: 'candidates_found',
+      skipAnchorWrites: true,
+    });
+  });
+
+  it('keeps normal readiness output and allows anchors only when neither no-write mode is active', () => {
+    expect(readinessOutputForMode(false)).toBe('release_ready');
+    expect(shouldSkipAnchorWrites(true, false)).toBe(true);
+    expect(shouldSkipAnchorWrites(false, false)).toBe(false);
   });
 });

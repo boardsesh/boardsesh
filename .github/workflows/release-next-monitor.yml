@@ -223,6 +223,8 @@ jobs:
           compare_platform() {
             local platform="$1"
             local build_tree="$2"
+            local head_fp=''
+            local build_fp=''
             for attempt in 1 2 3; do
               head_fp="$(resolve release-head "$platform")"
               build_fp="$(resolve "$build_tree" "$platform")"
@@ -231,6 +233,9 @@ jobs:
                 return 0
               fi
             done
+            printf '%s' "$head_fp" | grep -qiE '^[0-9a-f]{8,}$' || head_fp='<unresolved>'
+            printf '%s' "$build_fp" | grep -qiE '^[0-9a-f]{8,}$' || build_fp='<unresolved>'
+            echo "::notice::$platform native state mismatch: release_head=$head_fp accepted_build=$build_fp"
             return 1
           }
           matches=true
@@ -315,25 +320,80 @@ jobs:
           permission-pull-requests: write
           permission-workflows: write
 
-      - name: Cut exact accepted release anchors
-        if: steps.app_token.outcome == 'success'
-        env:
-          ACCEPTED_BUILDS: ${{ needs.accepted-builds.outputs.accepted_builds }}
-          GH_APP_TOKEN: ${{ steps.app_token.outputs.token }}
-        run: |
-          set -euo pipefail
-          git remote set-url origin "https://x-access-token:${GH_APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          DRY_RUN=false bun scripts/mobile-cut-release-tags.ts
-
-      - name: Recheck refs and merge the exact accepted release head
+      - name: Revalidate, cut recoverable anchors, and merge the exact release head
         id: merge
         if: steps.app_token.outcome == 'success'
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
           PR_NUMBER: ${{ needs.discover.outputs.pr_number }}
           EXPECTED_HEAD_SHA: ${{ needs.discover.outputs.release_sha }}
+          HEAD_VERSION: ${{ needs.discover.outputs.version }}
+          EXPECTED_IOS_TAG: ${{ needs.accepted-builds.outputs.ios_tag }}
+          EXPECTED_IOS_SHA: ${{ needs.accepted-builds.outputs.ios_sha }}
+          EXPECTED_ANDROID_TAG: ${{ needs.accepted-builds.outputs.android_tag }}
+          EXPECTED_ANDROID_SHA: ${{ needs.accepted-builds.outputs.android_sha }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           set -euo pipefail
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          # Re-query both stores before creating any release anchor. A changed
+          # acceptance decision or highest build tag aborts without side effects.
+          accepted_result="$RUNNER_TEMP/final-accepted-builds"
+          candidate_result="$RUNNER_TEMP/final-release-candidates"
+          : > "$accepted_result"
+          : > "$candidate_result"
+          GITHUB_OUTPUT="$accepted_result" bun scripts/mobile-auto-version-bump.ts
+          accepted_builds="$(sed -n 's/^accepted_builds=//p' "$accepted_result" | tail -n 1)"
+          [ -n "$accepted_builds" ] || {
+            echo '::error::The final store query returned no accepted-build output.'
+            exit 1
+          }
+          git fetch --force --tags origin
+          ACCEPTED_BUILDS="$accepted_builds" CHECK_ONLY=true CANDIDATE_ONLY=true HEAD_VERSION="$HEAD_VERSION" \
+            GITHUB_OUTPUT="$candidate_result" bun scripts/mobile-cut-release-tags.ts
+          output_value() {
+            sed -n "s/^$1=//p" "$candidate_result" | tail -n 1
+          }
+          [ "$(output_value candidates_found)" = true ] && \
+            [ "$(output_value ios_build_tag)" = "$EXPECTED_IOS_TAG" ] && \
+            [ "$(output_value ios_build_sha)" = "$EXPECTED_IOS_SHA" ] && \
+            [ "$(output_value android_build_tag)" = "$EXPECTED_ANDROID_TAG" ] && \
+            [ "$(output_value android_build_sha)" = "$EXPECTED_ANDROID_SHA" ] || {
+              echo '::error::Accepted store builds or their exact build tags moved before merge; waiting for the next monitor run.'
+              exit 1
+            }
+
+          if [[ "$EXPECTED_IOS_TAG" =~ ^build-ios-v([0-9]+\.[0-9]+\.[0-9]+)-[0-9]+-([0-9a-f]{12})$ ]] && \
+             [ "${BASH_REMATCH[1]}" = "$HEAD_VERSION" ]; then
+            ios_short_fp="${BASH_REMATCH[2]}"
+          else
+            echo '::error::The selected iOS build tag is malformed or has the wrong version.'
+            exit 1
+          fi
+          if [[ "$EXPECTED_ANDROID_TAG" =~ ^build-android-v([0-9]+\.[0-9]+\.[0-9]+)-[0-9]+-([0-9a-f]{12})$ ]] && \
+             [ "${BASH_REMATCH[1]}" = "$HEAD_VERSION" ]; then
+            android_short_fp="${BASH_REMATCH[2]}"
+          else
+            echo '::error::The selected Android build tag is malformed or has the wrong version.'
+            exit 1
+          fi
+          assert_tag_target() {
+            local tag="$1"
+            local expected="$2"
+            local actual
+            actual="$(git rev-list -n 1 "$tag" 2>/dev/null || true)"
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::$tag points to ${actual:-<missing>}, expected $expected."
+              return 1
+            fi
+          }
+          assert_tag_target "$EXPECTED_IOS_TAG" "$EXPECTED_IOS_SHA"
+          assert_tag_target "$EXPECTED_ANDROID_TAG" "$EXPECTED_ANDROID_SHA"
+
           git fetch origin \
             '+refs/heads/main:refs/remotes/origin/main' \
             '+refs/heads/release/next:refs/remotes/origin/release/next'
@@ -366,9 +426,168 @@ jobs:
             (.headRefName == "release/next" and .baseRefName == "main" and
              .headRepository.nameWithOwner == $repo and .baseRepository.nameWithOwner == $repo)' <<<"$pr")" = true
           test "$checks_green" = true
+
+          ios_anchor="release/ios-v${HEAD_VERSION}-${ios_short_fp}"
+          android_anchor="release/android-v${HEAD_VERSION}-${android_short_fp}"
+          remote_tag_target() {
+            local tag="$1"
+            git ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}" | \
+              awk -v direct="refs/tags/$tag" -v peeled="refs/tags/$tag^{}" \
+                '$2 == direct { direct_sha = $1 } $2 == peeled { peeled_sha = $1 } END { print peeled_sha ? peeled_sha : direct_sha }'
+          }
+          assert_remote_tag_target() {
+            local tag="$1"
+            local expected="$2"
+            local actual
+            actual="$(remote_tag_target "$tag")"
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::$tag points to ${actual:-<missing>} on the remote, expected $expected."
+              return 1
+            fi
+          }
+          ios_anchor_before="$(remote_tag_target "$ios_anchor")"
+          android_anchor_before="$(remote_tag_target "$android_anchor")"
+          [ -z "$ios_anchor_before" ] || [ "$ios_anchor_before" = "$EXPECTED_IOS_SHA" ] || {
+            echo "::error::$ios_anchor already points to $ios_anchor_before, expected $EXPECTED_IOS_SHA."
+            exit 1
+          }
+          [ -z "$android_anchor_before" ] || [ "$android_anchor_before" = "$EXPECTED_ANDROID_SHA" ] || {
+            echo "::error::$android_anchor already points to $android_anchor_before, expected $EXPECTED_ANDROID_SHA."
+            exit 1
+          }
+          ios_build_number="$(sed -nE 's/^build-ios-v[0-9]+\.[0-9]+\.[0-9]+-([0-9]+)-[0-9a-f]{12}$/\1/p' <<<"$EXPECTED_IOS_TAG")"
+          android_build_number="$(sed -nE 's/^build-android-v[0-9]+\.[0-9]+\.[0-9]+-([0-9]+)-[0-9a-f]{12}$/\1/p' <<<"$EXPECTED_ANDROID_TAG")"
+          selected_accepted_builds="$(jq -ce \
+            --arg version "$HEAD_VERSION" \
+            --argjson ios_build "$ios_build_number" \
+            --argjson android_build "$android_build_number" '
+              [
+                (.[] | select(.platform == "ios" and .versionString == $version and .buildNumber == $ios_build)),
+                (.[] | select(.platform == "android" and .buildNumber == $android_build))
+              ] | if length == 2 then . else error("selected exact accepted builds are missing") end
+            ' <<<"$accepted_builds")"
+
+          cleanup_new_anchors() {
+            local cleanup_failed=false
+            cleanup_anchor() {
+              local tag="$1"
+              local expected="$2"
+              local current
+              grep -Fxq "created_anchor=$tag" "$anchor_result" || return 0
+              if ! current="$(remote_tag_target "$tag")"; then
+                echo "::warning::Could not resolve $tag before cleanup."
+                return 1
+              fi
+              [ -n "$current" ] || return 0
+              if [ "$current" != "$expected" ]; then
+                echo "::warning::Refusing to delete $tag because it moved to $current."
+                return 1
+              fi
+              git push --force-with-lease="refs/tags/${tag}:${expected}" origin ":refs/tags/${tag}"
+            }
+            cleanup_anchor "$ios_anchor" "$EXPECTED_IOS_SHA" || cleanup_failed=true
+            cleanup_anchor "$android_anchor" "$EXPECTED_ANDROID_SHA" || cleanup_failed=true
+            [ "$cleanup_failed" = false ]
+          }
+
+          anchor_result="$RUNNER_TEMP/final-anchor-cut"
+          : > "$anchor_result"
+          set +e
+          ACCEPTED_BUILDS="$selected_accepted_builds" GITHUB_OUTPUT="$anchor_result" \
+            DRY_RUN=false bun scripts/mobile-cut-release-tags.ts
+          anchor_status=$?
+          set -e
+          if [ "$anchor_status" -ne 0 ]; then
+            git fetch --force --tags origin || true
+            cleanup_new_anchors || echo '::warning::Failed to clean up an anchor after anchor creation failed.'
+            exit "$anchor_status"
+          fi
+          if ! assert_remote_tag_target "$ios_anchor" "$EXPECTED_IOS_SHA" || \
+             ! assert_remote_tag_target "$android_anchor" "$EXPECTED_ANDROID_SHA"; then
+            cleanup_new_anchors || echo '::warning::Failed to clean up an incomplete anchor set.'
+            exit 1
+          fi
+
+          # The App can bypass main protection, so anchor creation must not leave
+          # a stale approval/check snapshot as the final merge gate. Re-fetch and
+          # re-query every gate immediately before the REST merge; roll back only
+          # anchors created by this run if anything changed.
+          final_merge_gates_ready() {
+            git fetch origin \
+              '+refs/heads/main:refs/remotes/origin/main' \
+              '+refs/heads/release/next:refs/remotes/origin/release/next' || return 1
+            [ "$(git rev-parse origin/release/next)" = "$EXPECTED_HEAD_SHA" ] || return 1
+            git merge-base --is-ancestor origin/main "$EXPECTED_HEAD_SHA" || return 1
+
+            local final_pr
+            local final_checks_green
+            local final_refs_valid
+            final_pr="$(gh api graphql -f query="$query" -f owner="$owner" -f repo="$repo" -F number="$PR_NUMBER")" || return 1
+            final_checks_green="$(jq -r '
+              [.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[] |
+                if .__typename == "CheckRun" then
+                  (.status == "COMPLETED" and (.conclusion == "SUCCESS" or .conclusion == "NEUTRAL" or .conclusion == "SKIPPED"))
+                else .state == "SUCCESS" end] as $checks |
+              (.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage == false and
+               ($checks | length) > 0 and ($checks | all))' <<<"$final_pr")" || return 1
+            final_refs_valid="$(jq -r --arg repo "$GITHUB_REPOSITORY" '
+              .data.repository.pullRequest |
+              (.headRefName == "release/next" and .baseRefName == "main" and
+               .headRepository.nameWithOwner == $repo and .baseRepository.nameWithOwner == $repo)' <<<"$final_pr")" || return 1
+            [ "$(jq -r '.data.repository.pullRequest.state' <<<"$final_pr")" = OPEN ] &&
+              [ "$(jq -r '.data.repository.pullRequest.isDraft' <<<"$final_pr")" = false ] &&
+              [ "$(jq -r '.data.repository.pullRequest.headRefOid' <<<"$final_pr")" = "$EXPECTED_HEAD_SHA" ] &&
+              [ "$(jq -r '.data.repository.pullRequest.mergeable' <<<"$final_pr")" = MERGEABLE ] &&
+              [ "$(jq -r '.data.repository.pullRequest.reviewDecision' <<<"$final_pr")" = APPROVED ] &&
+              [ "$final_checks_green" = true ] && [ "$final_refs_valid" = true ]
+          }
+          if ! final_merge_gates_ready; then
+            cleanup_new_anchors || echo '::warning::Failed to clean up one or more newly-created release anchors.'
+            echo '::error::Release refs, approval, checks, or mergeability changed after anchor creation; merge stopped.'
+            exit 1
+          fi
+
+          set +e
           result="$(gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/merge" \
-            -f merge_method=merge -f sha="$EXPECTED_HEAD_SHA")"
-          jq -e '.merged == true' <<<"$result" >/dev/null
+            -f merge_method=merge -f sha="$EXPECTED_HEAD_SHA" 2>"$RUNNER_TEMP/release-merge-error")"
+          merge_status=$?
+          set -e
+          if [ "$merge_status" -eq 0 ] && jq -e '.merged == true' <<<"$result" >/dev/null 2>&1; then
+            exit 0
+          fi
+
+          # Resolve a failed/ambiguous API response before considering cleanup.
+          # If GitHub cannot confirm the PR is still unmerged, retain anchors.
+          set +e
+          current_pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" 2>/dev/null)"
+          current_pr_status=$?
+          set -e
+          exact_merged=false
+          if [ "$current_pr_status" -eq 0 ]; then
+            exact_merged="$(jq -r --arg repo "$GITHUB_REPOSITORY" --arg sha "$EXPECTED_HEAD_SHA" '
+              (.merged == true and .head.sha == $sha and .head.ref == "release/next" and .base.ref == "main" and
+               .head.repo.full_name == $repo and .base.repo.full_name == $repo)' <<<"$current_pr")"
+          fi
+          if [ "$exact_merged" = true ]; then
+            echo '::notice::The release PR merged despite an ambiguous merge API response.'
+            exit 0
+          fi
+          exact_unmerged=false
+          if [ "$current_pr_status" -eq 0 ]; then
+            exact_unmerged="$(jq -r --arg repo "$GITHUB_REPOSITORY" --arg sha "$EXPECTED_HEAD_SHA" '
+              (.merged == false and .head.sha == $sha and .head.ref == "release/next" and .base.ref == "main" and
+               .head.repo.full_name == $repo and .base.repo.full_name == $repo)' <<<"$current_pr")"
+          fi
+          if [ "$exact_unmerged" = true ]; then
+            if cleanup_new_anchors; then
+              echo '::error::The exact release PR remains unmerged; newly-created anchors were cleaned up.'
+            else
+              echo '::error::The exact release PR remains unmerged, and one or more new anchors could not be cleaned up.'
+            fi
+          else
+            echo '::error::The merge outcome is unknown; release anchors were retained for safety.'
+          fi
+          exit 1
 
       - name: Notify deployments channel of release merge
         if: steps.merge.outcome == 'success'

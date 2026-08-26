@@ -91,6 +91,9 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
+      - uses: oven-sh/setup-bun@v2
+        if: steps.ref.outputs.exists == 'true'
+
       - name: Select exact uploaded builds for release/next version
         id: candidate
         if: steps.ref.outputs.exists == 'true'
@@ -102,37 +105,32 @@ jobs:
           config="$(git show "$RELEASE_HEAD_SHA:packages/mobile/app.config.ts")"
           version="$(sed -nE "s/.*version:[[:space:]]*'([0-9]+\.[0-9]+\.[0-9]+)'.*/\1/p" <<<"$config" | head -n 1)"
           printf '%s' "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo '::error::Invalid release version.'; exit 1; }
-          HEAD_VERSION="$version" node <<'NODE'
-          const { appendFileSync } = require('node:fs');
-          const { execFileSync } = require('node:child_process');
-          const version = process.env.HEAD_VERSION;
-          const tags = execFileSync('git', ['tag', '--list'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean);
-          const pattern = /^build-(ios|android)-v(\d+\.\d+\.\d+)-(\d+)-([0-9a-f]{12})$/;
-          function highest(platform) {
-            const candidates = tags.map((tag) => ({ tag, match: pattern.exec(tag) })).filter(({ match }) =>
-              match && match[1] === platform && match[2] === version
-            ).sort((left, right) => Number(right.match[3]) - Number(left.match[3]));
-            if (candidates.length === 0) return null;
-            const highestBuild = Number(candidates[0].match[3]);
-            if (candidates.filter(({ match }) => Number(match[3]) === highestBuild).length !== 1) {
-              throw new Error(`Ambiguous ${platform} tags for ${version} build ${highestBuild}`);
-            }
-            const selected = candidates[0];
-            const sha = execFileSync('git', ['rev-list', '-n', '1', selected.tag], { encoding: 'utf8' }).trim();
-            if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`Invalid commit for ${selected.tag}`);
-            return { buildNumber: highestBuild, sha };
-          }
-          const ios = highest('ios');
-          const android = highest('android');
-          appendFileSync(process.env.GITHUB_OUTPUT, `found=${ios !== null && android !== null}\n`);
-          if (ios !== null && android !== null) {
-            appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
-            appendFileSync(process.env.GITHUB_OUTPUT, `ios_build_number=${ios.buildNumber}\n`);
-            appendFileSync(process.env.GITHUB_OUTPUT, `ios_sha=${ios.sha}\n`);
-            appendFileSync(process.env.GITHUB_OUTPUT, `android_version_code=${android.buildNumber}\n`);
-            appendFileSync(process.env.GITHUB_OUTPUT, `android_sha=${android.sha}\n`);
-          }
-          NODE
+          result="$RUNNER_TEMP/uploaded-candidates"
+          : > "$result"
+          CHECK_ONLY=true CANDIDATE_ONLY=true UPLOADED_ONLY=true HEAD_VERSION="$version" \
+            GITHUB_OUTPUT="$result" bun scripts/mobile-cut-release-tags.ts
+          cat "$result" >> "$GITHUB_OUTPUT"
+          found="$(sed -n 's/^candidates_found=//p' "$result" | tail -n 1)"
+          echo "found=$found" >> "$GITHUB_OUTPUT"
+          [ "$found" = true ] || exit 0
+
+          ios_tag="$(sed -n 's/^ios_build_tag=//p' "$result" | tail -n 1)"
+          android_tag="$(sed -n 's/^android_build_tag=//p' "$result" | tail -n 1)"
+          if [[ "$ios_tag" =~ ^build-ios-v${version}-([0-9]+)-[0-9a-f]{12}$ ]]; then
+            ios_build_number="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Cutter returned an invalid iOS build tag: $ios_tag"
+            exit 1
+          fi
+          if [[ "$android_tag" =~ ^build-android-v${version}-([0-9]+)-[0-9a-f]{12}$ ]]; then
+            android_version_code="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Cutter returned an invalid Android build tag: $android_tag"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "ios_build_number=$ios_build_number" >> "$GITHUB_OUTPUT"
+          echo "android_version_code=$android_version_code" >> "$GITHUB_OUTPUT"
 
       - name: Checkout release head without credentials
         if: steps.candidate.outputs.found == 'true'
@@ -146,7 +144,7 @@ jobs:
         if: steps.candidate.outputs.found == 'true'
         uses: actions/checkout@v4
         with:
-          ref: ${{ steps.candidate.outputs.ios_sha }}
+          ref: ${{ steps.candidate.outputs.ios_build_sha }}
           path: ios-build
           persist-credentials: false
 
@@ -154,12 +152,9 @@ jobs:
         if: steps.candidate.outputs.found == 'true'
         uses: actions/checkout@v4
         with:
-          ref: ${{ steps.candidate.outputs.android_sha }}
+          ref: ${{ steps.candidate.outputs.android_build_sha }}
           path: android-build
           persist-credentials: false
-
-      - uses: oven-sh/setup-bun@v2
-        if: steps.candidate.outputs.found == 'true'
 
       - name: Install fingerprint dependencies without lifecycle scripts
         if: steps.candidate.outputs.found == 'true'
@@ -209,6 +204,8 @@ jobs:
           compare_platform() {
             local platform="$1"
             local build_tree="$2"
+            local head_fp=''
+            local build_fp=''
             for attempt in 1 2 3; do
               head_fp="$(resolve release-head "$platform")"
               build_fp="$(resolve "$build_tree" "$platform")"
@@ -216,6 +213,9 @@ jobs:
                 return 0
               fi
             done
+            printf '%s' "$head_fp" | grep -qiE '^[0-9a-f]{8,}$' || head_fp='<unresolved>'
+            printf '%s' "$build_fp" | grep -qiE '^[0-9a-f]{8,}$' || build_fp='<unresolved>'
+            echo "::notice::$platform native state mismatch: release_head=$head_fp uploaded_build=$build_fp"
             return 1
           }
           matches=true
@@ -229,8 +229,10 @@ jobs:
         env:
           EXPECTED_RELEASE_SHA: ${{ steps.ref.outputs.sha }}
           HEAD_VERSION: ${{ steps.candidate.outputs.version }}
-          EXPECTED_IOS_BUILD: ${{ steps.candidate.outputs.ios_build_number }}
-          EXPECTED_ANDROID_BUILD: ${{ steps.candidate.outputs.android_version_code }}
+          EXPECTED_IOS_TAG: ${{ steps.candidate.outputs.ios_build_tag }}
+          EXPECTED_IOS_SHA: ${{ steps.candidate.outputs.ios_build_sha }}
+          EXPECTED_ANDROID_TAG: ${{ steps.candidate.outputs.android_build_tag }}
+          EXPECTED_ANDROID_SHA: ${{ steps.candidate.outputs.android_build_sha }}
         run: |
           set -euo pipefail
           git fetch --force --tags origin '+refs/heads/release/next:refs/remotes/origin/release/next'
@@ -239,25 +241,20 @@ jobs:
             echo "::notice::release/next moved during fingerprint comparison; waiting for the next run."
             exit 0
           fi
-          if ! node <<'NODE'
-          const { execFileSync } = require('node:child_process');
-          const version = process.env.HEAD_VERSION;
-          const pattern = /^build-(ios|android)-v(\d+\.\d+\.\d+)-(\d+)-([0-9a-f]{12})$/;
-          const tags = execFileSync('git', ['tag', '--list'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean);
-          function assertLatest(platform, expected) {
-            const builds = tags.map((tag) => pattern.exec(tag)).filter((match) =>
-              match && match[1] === platform && match[2] === version
-            ).map((match) => Number(match[3])).sort((left, right) => right - left);
-            if (builds.length === 0 || builds[0] !== Number(expected) || builds.filter((build) => build === builds[0]).length !== 1) {
-              throw new Error(`${platform} build ${expected} is no longer the unique highest tag for ${version}`);
-            }
-          }
-          assertLatest('ios', process.env.EXPECTED_IOS_BUILD);
-          assertLatest('android', process.env.EXPECTED_ANDROID_BUILD);
-          NODE
-          then
+          result="$RUNNER_TEMP/rechecked-uploaded-candidates"
+          : > "$result"
+          CHECK_ONLY=true CANDIDATE_ONLY=true UPLOADED_ONLY=true HEAD_VERSION="$HEAD_VERSION" \
+            GITHUB_OUTPUT="$result" bun scripts/mobile-cut-release-tags.ts
+          found="$(sed -n 's/^candidates_found=//p' "$result" | tail -n 1)"
+          ios_tag="$(sed -n 's/^ios_build_tag=//p' "$result" | tail -n 1)"
+          ios_sha="$(sed -n 's/^ios_build_sha=//p' "$result" | tail -n 1)"
+          android_tag="$(sed -n 's/^android_build_tag=//p' "$result" | tail -n 1)"
+          android_sha="$(sed -n 's/^android_build_sha=//p' "$result" | tail -n 1)"
+          if [ "$found" != true ] || [ "$ios_tag" != "$EXPECTED_IOS_TAG" ] || \
+             [ "$ios_sha" != "$EXPECTED_IOS_SHA" ] || [ "$android_tag" != "$EXPECTED_ANDROID_TAG" ] || \
+             [ "$android_sha" != "$EXPECTED_ANDROID_SHA" ]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::A newer or ambiguous build tag appeared during fingerprint comparison; waiting for the next run."
+            echo "::notice::A newer or ambiguous build tag appeared during fingerprint comparison; the selected builds are no longer the unique highest tags for $HEAD_VERSION."
             exit 0
           fi
           echo "ready=true" >> "$GITHUB_OUTPUT"

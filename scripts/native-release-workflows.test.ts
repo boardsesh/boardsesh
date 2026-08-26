@@ -46,6 +46,11 @@ describe('native release train workflow contracts', () => {
     expect(android).not.toContain('continue-on-error: true\n        uses: r0adkll/upload-google-play');
     expect(ios).toContain('git push --atomic "$remote" "refs/tags/$build_tag" "refs/tags/$fingerprint_tag"');
     expect(android).toContain('git push --atomic "$remote" "refs/tags/$build_tag" "refs/tags/$fingerprint_tag"');
+    for (const source of [ios, android]) {
+      expect(source).toContain('assert_missing_or_exact');
+      expect(source).toContain('already point to this build; nothing to push');
+      expect(source).toContain('A concurrent retry already published');
+    }
     expect(ios).toContain('Mint repository App token for protected release tags');
     expect(android).toContain('Mint repository App token for protected release tags');
   });
@@ -67,18 +72,28 @@ describe('native release train workflow contracts', () => {
     expect(sync).toContain('git rebase --abort');
     expect(sync).toContain("'.head.repo.full_name'");
     expect(sync).toContain('permission-workflows: write');
+    const rebaseJob = sync.slice(sync.indexOf('  rebase:'), sync.indexOf('  notify-failure:'));
+    expect(rebaseJob).not.toContain('environment: Native Release');
+    expect(sync).toContain('notify-failure:');
+    expect(sync).toContain('environment: Native Release');
+    expect(sync).toContain('actions/upload-artifact@v4');
+    expect(sync).toContain('actions/download-artifact@v4');
+    expect(sync).toContain('details="${details:0:1200}"');
   });
 
   it('prepares drafts from release/next and treats a missing branch as a no-op', () => {
     expect(draft).toContain('Resolve release/next');
     expect(draft).toContain('exists=false');
     expect(draft).toContain('Select exact uploaded builds for release/next version');
+    expect(draft.match(/UPLOADED_ONLY=true/g)).toHaveLength(2);
+    expect(draft).not.toContain('function highest(platform)');
     expect(draft).toContain('Verify tagged builds match release/next native state');
     expect(draft).toContain('Recheck release/next after fingerprint comparison');
     expect(draft).toContain(
       "git fetch --force --tags origin '+refs/heads/release/next:refs/remotes/origin/release/next'",
     );
-    expect(draft).toContain('is no longer the unique highest tag');
+    expect(draft).toContain('are no longer the unique highest tags');
+    expect(draft).toContain('uploaded_build=$build_fp');
     expect(draft).toContain('bun install --frozen-lockfile --ignore-scripts');
     expect(draft).toContain('IOS_BUILD_NUMBER');
     expect(draft).toContain('ANDROID_VERSION_CODE');
@@ -95,6 +110,7 @@ describe('native release train workflow contracts', () => {
     expect(monitor).toContain('bun scripts/mobile-cut-release-tags.ts');
     expect(monitor).toContain("CANDIDATE_ONLY: 'true'");
     expect(monitor).toContain('Compare native fingerprints with identical placeholder inputs');
+    expect(monitor).toContain('accepted_build=$build_fp');
     expect(monitor).toContain('bun install --frozen-lockfile --ignore-scripts');
     expect(monitor).toContain('reviewDecision');
     expect(monitor).toContain('statusCheckRollup');
@@ -102,6 +118,22 @@ describe('native release train workflow contracts', () => {
     expect(monitor).toContain('headRepository{nameWithOwner}');
     expect(monitor).toContain('-f sha="$EXPECTED_HEAD_SHA"');
     expect(monitor).toContain('permission-workflows: write');
+    expect(monitor.match(/bun scripts\/mobile-auto-version-bump\.ts/g)).toHaveLength(2);
+    expect(monitor).toContain('Accepted store builds or their exact build tags moved before merge');
+    expect(monitor).toContain('cleanup_new_anchors');
+    expect(monitor).toContain('grep -Fxq "created_anchor=$tag"');
+    expect(monitor).toContain('--force-with-lease="refs/tags/${tag}:${expected}"');
+    expect(monitor).toContain('The merge outcome is unknown; release anchors were retained for safety');
+    expect(monitor.indexOf('Accepted store builds or their exact build tags moved before merge')).toBeLessThan(
+      monitor.indexOf('DRY_RUN=false bun scripts/mobile-cut-release-tags.ts'),
+    );
+    expect(monitor.indexOf('test "$checks_green" = true')).toBeLessThan(
+      monitor.indexOf('DRY_RUN=false bun scripts/mobile-cut-release-tags.ts'),
+    );
+    expect(monitor).toContain('Failed to clean up an incomplete anchor set');
+    expect(monitor).toContain('final_merge_gates_ready');
+    expect(monitor).toContain('changed after anchor creation; merge stopped');
+    expect(monitor.indexOf('final_merge_gates_ready')).toBeLessThan(monitor.indexOf('result="$(gh api --method PUT'));
     expect(monitor).not.toContain('reviewThreads');
   });
 });

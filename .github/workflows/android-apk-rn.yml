@@ -602,15 +602,44 @@ jobs:
           shortfp="$(printf '%s' "${FINGERPRINT_ANDROID:0:12}" | tr '[:upper:]' '[:lower:]')"
           build_tag="build-android-v${BOARDSESH_MOBILE_VERSION}-${VERSION_CODE}-${shortfp}"
           fingerprint_tag="fingerprint-android-${FINGERPRINT_ANDROID}"
-          git tag "$build_tag" "$GITHUB_SHA"
+          remote_target() {
+            local tag="$1"
+            git ls-remote --tags "$remote" "refs/tags/$tag" "refs/tags/$tag^{}" | \
+              awk -v direct="refs/tags/$tag" -v peeled="refs/tags/$tag^{}" \
+                '$2 == direct { direct_sha = $1 } $2 == peeled { peeled_sha = $1 } END { print peeled_sha ? peeled_sha : direct_sha }'
+          }
+          assert_missing_or_exact() {
+            local tag="$1"
+            local target="$2"
+            if [ -n "$target" ] && [ "$target" != "$GITHUB_SHA" ]; then
+              echo "::error::$tag already points to $target, expected $GITHUB_SHA."
+              exit 1
+            fi
+          }
 
-          if git ls-remote --exit-code --tags origin "refs/tags/$fingerprint_tag" >/dev/null 2>&1; then
-            git push "$remote" "refs/tags/$build_tag"
-            echo "::notice::Tagged $build_tag; $fingerprint_tag already records this native fingerprint."
+          build_target="$(remote_target "$build_tag")"
+          fingerprint_target="$(remote_target "$fingerprint_tag")"
+          assert_missing_or_exact "$build_tag" "$build_target"
+          assert_missing_or_exact "$fingerprint_tag" "$fingerprint_target"
+          if [ "$build_target" = "$GITHUB_SHA" ] && [ "$fingerprint_target" = "$GITHUB_SHA" ]; then
+            echo "::notice::$build_tag and $fingerprint_tag already point to this build; nothing to push."
           else
-            git tag "$fingerprint_tag" "$GITHUB_SHA"
-            git push --atomic "$remote" "refs/tags/$build_tag" "refs/tags/$fingerprint_tag"
-            echo "::notice::Atomically tagged $build_tag and $fingerprint_tag."
+            git tag --force "$build_tag" "$GITHUB_SHA"
+            git tag --force "$fingerprint_tag" "$GITHUB_SHA"
+            if git push --atomic "$remote" "refs/tags/$build_tag" "refs/tags/$fingerprint_tag"; then
+              echo "::notice::Atomically tagged $build_tag and $fingerprint_tag."
+            else
+              # A concurrent retry is success only when it published this exact build.
+              build_target="$(remote_target "$build_tag")"
+              fingerprint_target="$(remote_target "$fingerprint_tag")"
+              assert_missing_or_exact "$build_tag" "$build_target"
+              assert_missing_or_exact "$fingerprint_tag" "$fingerprint_target"
+              if [ "$build_target" != "$GITHUB_SHA" ] || [ "$fingerprint_target" != "$GITHUB_SHA" ]; then
+                echo '::error::Atomic tag push failed without publishing both exact tags.'
+                exit 1
+              fi
+              echo "::notice::A concurrent retry already published $build_tag and $fingerprint_tag at this build."
+            fi
           fi
 
       - name: Notify deployments channel

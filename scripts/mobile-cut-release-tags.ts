@@ -18,7 +18,9 @@
  * CHECK_ONLY=true skips anchors. CANDIDATE_ONLY=true selects the highest exact
  * accepted build tag/SHA for HEAD_VERSION but makes no equivalence claim; an
  * unprivileged workflow compares real Expo fingerprints before merging. A
- * conservative data-only caller may supply RELEASE_HEAD_SHA + HEAD_VERSION to
+ * CANDIDATE_ONLY caller may also set UPLOADED_ONLY=true to select the highest
+ * uniquely tagged upload per platform without fabricating store-acceptance data.
+ * A conservative data-only caller may supply RELEASE_HEAD_SHA + HEAD_VERSION to
  * compare canonical native inputs without executing the release tree. Explicit
  * HEAD_IOS_FINGERPRINT + HEAD_ANDROID_FINGERPRINT remain available to trusted
  * local callers. Readiness mode emits `release_ready`; candidate mode emits
@@ -125,6 +127,21 @@ export function parseAcceptedBuilds(raw: string | undefined): AcceptedBuildRefer
   });
 }
 
+export function buildTagsAsUploadedBuilds(tags: readonly string[], version: string): AcceptedBuildReference[] {
+  return tags.flatMap((tagName) => {
+    const tag = parseBuildTag(tagName);
+    if (!tag || tag.version !== version) return [];
+    return [
+      {
+        platform: tag.platform,
+        versionString: tag.platform === 'ios' ? version : null,
+        buildNumber: tag.buildNumber,
+        state: 'UPLOADED_BUILD_TAG',
+      },
+    ];
+  });
+}
+
 export function parseMarketingVersion(value: string, source: string): string {
   if (!/^\d+\.\d+\.\d+$/.test(value)) throw new Error(`${source} must be x.y.z, got: ${value}`);
   return value;
@@ -200,11 +217,39 @@ function emitCandidate(
   emitOutput('android_build_sha', androidCommit);
 }
 
-function emitReleaseReadiness(allTags: readonly string[], acceptedBuilds: readonly AcceptedBuildReference[]): void {
-  if (process.env['CANDIDATE_ONLY'] === 'true') {
+export function shouldSkipAnchorWrites(checkOnly: boolean, candidateOnly: boolean): boolean {
+  return checkOnly || candidateOnly;
+}
+
+export function readinessOutputForMode(candidateOnly: boolean): 'release_ready' | 'candidates_found' {
+  return candidateOnly ? 'candidates_found' : 'release_ready';
+}
+
+export function resolveExecutionMode(env: Readonly<Record<string, string | undefined>>): {
+  candidateOnly: boolean;
+  checkOnly: boolean;
+  readinessOutput: 'release_ready' | 'candidates_found';
+  skipAnchorWrites: boolean;
+} {
+  const candidateOnly = env['CANDIDATE_ONLY'] === 'true';
+  const checkOnly = env['CHECK_ONLY'] === 'true';
+  return {
+    candidateOnly,
+    checkOnly,
+    readinessOutput: readinessOutputForMode(candidateOnly),
+    skipAnchorWrites: shouldSkipAnchorWrites(checkOnly, candidateOnly),
+  };
+}
+
+function emitReleaseReadiness(
+  allTags: readonly string[],
+  acceptedBuilds: readonly AcceptedBuildReference[],
+  candidateOnly: boolean,
+): void {
+  if (candidateOnly) {
     emitCandidate(
       selectHighestAcceptedBuildTags(allTags, acceptedBuilds, readCurrentMarketingVersion()),
-      'candidates_found',
+      readinessOutputForMode(candidateOnly),
     );
     return;
   }
@@ -232,15 +277,20 @@ function emitReleaseReadiness(allTags: readonly string[], acceptedBuilds: readon
 
 function main(): number {
   const dryRun = process.env['DRY_RUN'] === 'true';
-  const checkOnly = process.env['CHECK_ONLY'] === 'true';
-  const candidateOnly = process.env['CANDIDATE_ONLY'] === 'true';
-  const accepted = parseAcceptedBuilds(process.env['ACCEPTED_BUILDS']);
+  const executionMode = resolveExecutionMode(process.env);
+  const uploadedOnly = process.env['UPLOADED_ONLY'] === 'true';
+  if (uploadedOnly && !executionMode.candidateOnly) {
+    throw new Error('UPLOADED_ONLY requires CANDIDATE_ONLY=true');
+  }
 
   // Refresh tags so the build-* lookups and existence checks see the latest state.
   git(['fetch', 'origin', '--tags', '--force'], { allowFail: true });
   const allTags = git(['tag', '--list']).split('\n').filter(Boolean);
+  const accepted = uploadedOnly
+    ? buildTagsAsUploadedBuilds(allTags, readCurrentMarketingVersion())
+    : parseAcceptedBuilds(process.env['ACCEPTED_BUILDS']);
 
-  emitReleaseReadiness(allTags, accepted);
+  emitReleaseReadiness(allTags, accepted, executionMode.candidateOnly);
 
   if (accepted.length === 0) {
     console.log('No accepted builds reported — nothing to anchor.');
@@ -248,7 +298,7 @@ function main(): number {
     return 0;
   }
 
-  if (checkOnly || candidateOnly) {
+  if (executionMode.skipAnchorWrites) {
     console.log('Candidate/readiness evaluation completed without cutting anchor tags.');
     emitOutput('cut_count', '0');
     return 0;
@@ -286,18 +336,27 @@ function main(): number {
     }
 
     git(['tag', releaseTag, commit]);
+    let createdByThisRun = false;
     try {
       git(['push', 'origin', `refs/tags/${releaseTag}`]);
+      createdByThisRun = true;
     } catch (error) {
       // A concurrent run may have pushed it between the check and here.
       const concurrentCommit = remoteTagCommit(releaseTag);
       if (!concurrentCommit) throw error;
       assertAnchorTarget(concurrentCommit, commit, releaseTag);
     }
-    console.log(
-      `::notice::Cut ${releaseTag} at ${commit.slice(0, 12)} — backport anchor for ${platform} ${buildTag.version}.`,
-    );
-    cut.push(releaseTag);
+    if (createdByThisRun) {
+      // Emit immediately so a caller can safely roll back a partial multi-anchor
+      // operation even if a later platform fails before the summary outputs.
+      emitOutput('created_anchor', releaseTag);
+      console.log(
+        `::notice::Cut ${releaseTag} at ${commit.slice(0, 12)} — backport anchor for ${platform} ${buildTag.version}.`,
+      );
+      cut.push(releaseTag);
+    } else {
+      console.log(`${releaseTag} was concurrently created at the exact accepted build — leaving it untouched.`);
+    }
   }
 
   emitOutput('cut_count', String(cut.length));

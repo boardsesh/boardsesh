@@ -20,7 +20,6 @@ jobs:
   rebase:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: Native Release
     outputs:
       attempted: ${{ steps.target.outputs.attempted }}
       pr_number: ${{ steps.target.outputs.pr_number }}
@@ -146,12 +145,34 @@ jobs:
             "https://x-access-token:${GH_APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             'HEAD:refs/heads/release/next'
 
-      - name: Notify deployments channel of sync failure
+      - name: Preserve sync failure details
         if: failure() && steps.target.outputs.attempted == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-next-sync-failure-${{ github.run_id }}
+          path: ${{ runner.temp }}/release-next-sync-error.txt
+          if-no-files-found: ignore
+          retention-days: 1
+
+  notify-failure:
+    needs: rebase
+    if: always() && needs.rebase.result == 'failure' && needs.rebase.outputs.attempted == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: Native Release
+    steps:
+      - name: Download sync failure details
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: release-next-sync-failure-${{ github.run_id }}
+          path: ${{ runner.temp }}/release-next-sync-failure
+
+      - name: Notify deployments channel of sync failure
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
-          PR_NUMBER: ${{ steps.target.outputs.pr_number }}
-          RELEASE_SHA: ${{ steps.target.outputs.release_sha }}
+          PR_NUMBER: ${{ needs.rebase.outputs.pr_number }}
+          RELEASE_SHA: ${{ needs.rebase.outputs.release_sha }}
           MAIN_SHA: ${{ github.event.after || github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -159,7 +180,10 @@ jobs:
             echo "::warning::DISCORD_DEPLOY_WEBHOOK is not configured; release/next sync failure was not posted."
             exit 0
           fi
-          details="$(cat "$RUNNER_TEMP/release-next-sync-error.txt" 2>/dev/null || printf 'See the failed workflow step.')"
+          details="$(cat "$RUNNER_TEMP/release-next-sync-failure/release-next-sync-error.txt" 2>/dev/null || printf 'See the failed workflow step.')"
+          # Leave room below Discord's 2,000-character content limit for the
+          # heading, PR/ref fields, and run URL even when conflict paths are long.
+          details="${details:0:1200}"
           content="$(printf '🚨 **release/next rebase failed**\n• PR: #%s\n• release: `%s`\n• main: `%s`\n• error: %s\n<%s>' \
             "$PR_NUMBER" "${RELEASE_SHA:0:12}" "${MAIN_SHA:0:12}" "$details" "$RUN_URL")"
           jq -n --arg content "$content" '{content: $content, allowed_mentions: {parse: []}}' \

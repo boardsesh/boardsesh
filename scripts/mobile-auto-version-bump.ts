@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const APP_STORE_CONNECT_API_BASE = 'https://api.appstoreconnect.apple.com';
 const GOOGLE_PLAY_API_BASE = 'https://androidpublisher.googleapis.com';
 const GOOGLE_PLAY_SCOPE = 'https://www.googleapis.com/auth/androidpublisher';
+const GOOGLE_OAUTH_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 const BUNDLE_ID = 'com.boardsesh.app';
 const ANDROID_PACKAGE_NAME = 'com.boardsesh.app';
 
@@ -27,6 +28,16 @@ export const ACCEPTED_GOOGLE_PLAY_STATES = [
   'RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED',
   'RELEASE_LIFECYCLE_STATE_PUBLISHED',
 ] as const;
+
+const GOOGLE_PLAY_RELEASE_STATES = new Set([
+  'RELEASE_LIFECYCLE_STATE_UNSPECIFIED',
+  'RELEASE_LIFECYCLE_STATE_DRAFT',
+  'RELEASE_LIFECYCLE_STATE_NOT_SENT_FOR_REVIEW',
+  'RELEASE_LIFECYCLE_STATE_IN_REVIEW',
+  'RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED',
+  'RELEASE_LIFECYCLE_STATE_NOT_APPROVED',
+  'RELEASE_LIFECYCLE_STATE_PUBLISHED',
+]);
 
 const acceptedAppStoreStateSet = new Set<string>(ACCEPTED_APP_STORE_STATES);
 const acceptedGooglePlayStateSet = new Set<string>(ACCEPTED_GOOGLE_PLAY_STATES);
@@ -68,12 +79,8 @@ type GoogleAccessTokenResponse = {
 };
 
 export type GoogleProductionRelease = {
-  releaseLifecycleState?: string;
-  activeArtifacts?: Array<{ versionCode?: number | string }>;
-};
-
-type GoogleProductionReleasesResponse = {
-  releases?: GoogleProductionRelease[];
+  releaseLifecycleState: string;
+  activeArtifacts: Array<{ versionCode: number }>;
 };
 
 // A side-loaded resource in the JSON:API `included` array. Typed loosely on
@@ -137,11 +144,51 @@ export function parseGoogleServiceAccount(secret: string): GoogleServiceAccount 
   const record = parsed as Record<string, unknown>;
   const clientEmail = record['client_email'];
   const privateKey = record['private_key'];
-  const tokenUri = record['token_uri'] ?? 'https://oauth2.googleapis.com/token';
+  const tokenUri = record['token_uri'] ?? GOOGLE_OAUTH_TOKEN_ENDPOINT;
   if (typeof clientEmail !== 'string' || typeof privateKey !== 'string' || typeof tokenUri !== 'string') {
     throw new Error('GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is missing client_email, private_key, or token_uri');
   }
+  if (tokenUri !== GOOGLE_OAUTH_TOKEN_ENDPOINT) {
+    throw new Error(`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON token_uri must be ${GOOGLE_OAUTH_TOKEN_ENDPOINT}`);
+  }
   return { client_email: clientEmail, private_key: privateKey, token_uri: tokenUri };
+}
+
+export function parseGoogleProductionReleasesResponse(input: unknown): GoogleProductionRelease[] {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    throw new Error('Google Play production releases response must be a JSON object');
+  }
+  const releases = (input as Record<string, unknown>)['releases'];
+  if (!Array.isArray(releases)) {
+    throw new Error('Google Play production releases response must contain a releases array');
+  }
+
+  return releases.map((release, releaseIndex) => {
+    if (typeof release !== 'object' || release === null || Array.isArray(release)) {
+      throw new Error(`Google Play release ${releaseIndex} must be a JSON object`);
+    }
+    const releaseRecord = release as Record<string, unknown>;
+    const releaseLifecycleState = releaseRecord['releaseLifecycleState'];
+    const activeArtifacts = releaseRecord['activeArtifacts'];
+    if (
+      typeof releaseLifecycleState !== 'string' ||
+      !GOOGLE_PLAY_RELEASE_STATES.has(releaseLifecycleState) ||
+      !Array.isArray(activeArtifacts)
+    ) {
+      throw new Error(`Google Play release ${releaseIndex} must contain releaseLifecycleState and activeArtifacts`);
+    }
+    const parsedArtifacts = activeArtifacts.map((artifact, artifactIndex) => {
+      if (typeof artifact !== 'object' || artifact === null || Array.isArray(artifact)) {
+        throw new Error(`Google Play release ${releaseIndex} artifact ${artifactIndex} must be a JSON object`);
+      }
+      const versionCode = (artifact as Record<string, unknown>)['versionCode'];
+      if (!Number.isSafeInteger(versionCode) || (versionCode as number) <= 0) {
+        throw new Error(`Google Play release ${releaseIndex} artifact ${artifactIndex} has invalid versionCode`);
+      }
+      return { versionCode: versionCode as number };
+    });
+    return { releaseLifecycleState, activeArtifacts: parsedArtifacts };
+  });
 }
 
 function getRequiredEnv(name: string): string {
@@ -205,16 +252,9 @@ export function mapAcceptedGoogleProductionReleases(releases: readonly GooglePro
   const acceptedByVersionCode = new Map<number, AcceptedBuild>();
   for (const release of releases) {
     const state = release.releaseLifecycleState;
-    if (typeof state !== 'string' || !acceptedGooglePlayStateSet.has(state)) continue;
-    for (const artifact of release.activeArtifacts ?? []) {
-      const rawVersionCode = artifact.versionCode;
-      const versionCode =
-        typeof rawVersionCode === 'number'
-          ? rawVersionCode
-          : typeof rawVersionCode === 'string' && /^\d+$/.test(rawVersionCode)
-            ? Number.parseInt(rawVersionCode, 10)
-            : Number.NaN;
-      if (!Number.isSafeInteger(versionCode) || versionCode <= 0) continue;
+    if (!acceptedGooglePlayStateSet.has(state)) continue;
+    for (const artifact of release.activeArtifacts) {
+      const versionCode = artifact.versionCode;
       acceptedByVersionCode.set(versionCode, {
         platform: 'android',
         versionString: null,
@@ -290,8 +330,8 @@ async function getAcceptedGoogleProductionBuilds(serviceAccount: GoogleServiceAc
   const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   const body = await response.text();
   if (!response.ok) throw new Error(`Google Play production releases → ${response.status}: ${body.slice(0, 500)}`);
-  const parsed = JSON.parse(body) as GoogleProductionReleasesResponse;
-  return mapAcceptedGoogleProductionReleases(parsed.releases ?? []);
+  const parsed: unknown = JSON.parse(body);
+  return mapAcceptedGoogleProductionReleases(parseGoogleProductionReleasesResponse(parsed));
 }
 
 function emitOutput(name: string, value: string): void {
