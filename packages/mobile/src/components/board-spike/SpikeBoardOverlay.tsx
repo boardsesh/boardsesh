@@ -322,7 +322,6 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
     [outlines, smooth],
   );
 
-  const litById = useMemo(() => new Map(litHolds.map((hold) => [hold.id, hold])), [litHolds]);
   const targets = useMemo(() => haloTargets(halos, placements, litHolds), [halos, placements, litHolds]);
   const litGaps = useMemo(() => nearestLitGaps(litHolds, outlines), [litHolds, outlines]);
   const litRoles = useMemo(() => [...new Set(litHolds.map((hold) => hold.role))], [litHolds]);
@@ -374,20 +373,11 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
   // MoonBoard's LED sits half a row below its hold rather than on it, so the dot
   // has to move with the board rather than always being drawn at the centre.
   const ledOffsetY = ledData?.ledOffsetY ?? 0;
-  const ledHolds = useMemo(() => new Set(ledData?.hasLed ?? []), [ledData]);
   const artBrightLeds = useMemo(() => new Set(ledData?.brightInArt ?? []), [ledData]);
   // Where the art actually paints the bright blob, which is a median 2.15 board px
   // off the point the dot is drawn at — enough that a dot the same size as the
   // blob leaves a bright crescent uncovered on 206 of grasshopper's 234.
   const ledOffsets: Partial<Record<number, readonly [number, number]>> = ledData?.brightOffsets ?? {};
-  // A lit LED only reads as belonging to its hold when it is drawn ON it.
-  // MoonBoard's grid puts it 25 board px below a silhouette that reaches at most
-  // 25, so it lands in a gap — and on a board where an empty cell is the normal
-  // case, a saturated role dot in a gap reads as a light on a hold that is not
-  // there. Dropped rather than stemmed: `led-placements-data.ts` has
-  // `moonboard: {}`, so nothing in the data even confirms the downward sign, and
-  // the mark already carries the role.
-  const drawsLitLedDot = ledOffsetY === 0;
 
   const insideClipId = (holdId: number) => `spike-inside-${boardKey}-${holdId}`;
   const outsideClipId = (holdId: number) => `spike-outside-${boardKey}-${holdId}`;
@@ -603,11 +593,22 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
         })}
       </G>
 
-      {/* The LED, taken over from the board art. Grasshopper brightens 234 of its
-          332 LED locations and leaves the rest dark, so an unlit hold can look lit
-          and a lit one can look dead; Tension draws all of its darker than the
-          hold. Role colour where the hold is lit, dark where it is not. Central on
-          Grasshopper, Tension and Woods, and the bolt hole on Kilter.
+      {/* The art's own LED, covered where it lies. Grasshopper brightens 234 of
+          its 332 LED locations and leaves the rest dark, so an unlit hold can
+          look lit — a bright white pip on a dark hold is the same cue a mark is,
+          and there are 234 of them. A dark disc on the blob removes it.
+
+          Lit holds get the cover too, and nothing else. A lit hold used to get
+          its LED back in the role colour, on the theory that the renderer should
+          own the light rather than inherit whatever the photograph painted. On
+          the board that reads as a speck: the mark is already the role colour,
+          so a role-coloured dot inside it carries nothing the mark does not, and
+          on the filled arms it is a blemish in the middle of a solid shape. But
+          dropping it alone left the art's own white pip showing through the
+          translucent fill, which is the same speck by another route — so the
+          cover runs on every hold the art brightens, and the mark sits on an
+          even surface. Covering is about the photograph; lighting is about the
+          climb, and the mark already does that.
 
           On its own axis, and on in every arm including the control. renderer.rs
           draws none of this, so the control panel is not literally what ships
@@ -618,32 +619,19 @@ export const SpikeBoardOverlay = React.memo(function SpikeBoardOverlay({
       {leds && (
         <G>
           {placements.map((placement) => {
-            const litHold = litById.get(placement.id);
-            const isLit = litHold !== undefined;
-            if (isLit && (!ledHolds.has(placement.id) || !drawsLitLedDot)) return null;
-            if (!isLit && !artBrightLeds.has(placement.id)) return null;
+            if (!artBrightLeds.has(placement.id)) return null;
+            // The dot is a cover, so it goes on the blob it is covering rather
+            // than on the placement — that offset is what stopped 206 of
+            // grasshopper's 234 from keeping a bright crescent around it.
             const [blobDx, blobDy] = ledOffsets[placement.id] ?? [0, 0];
-            // Where the dot goes depends on what it is there to be. Over one of
-            // the art's own bright blobs it is a cover, so it stays on the blob
-            // — that offset is what stopped 206 of grasshopper's 234 from
-            // keeping a bright crescent. Everywhere else it is the hold's light,
-            // and it has to agree with the mark, which is anchored on the traced
-            // silhouette: the placement centre is a median 2.1 to 4.1 board px
-            // off that box's centre (kilter-homewall p90 7.6, max 13.8 over the
-            // committed outlines), which is enough to squeeze a second
-            // role-coloured pip out from behind a bar, and enough to put the
-            // FOOT ring's hole — the place the ring is designed to show role
-            // colour through — over the hold's own dark bolt hole instead.
-            const silhouette = artBrightLeds.has(placement.id) ? null : outlineBounds(boardKey, placement.id);
-            const fill = litHold ? (colors[litHold.role] ?? '#FFFFFF') : SPIKE_TUNING.ledDarkColor;
             return (
               <Circle
                 key={`led-${placement.id}`}
-                cx={placement.cx + (silhouette?.centreX ?? blobDx)}
-                cy={placement.cy + ledOffsetY + (silhouette?.centreY ?? blobDy)}
+                cx={placement.cx + blobDx}
+                cy={placement.cy + ledOffsetY + blobDy}
                 r={ledDotRadius}
-                fill={fill}
-                fillOpacity={litHold ? 1 : SPIKE_TUNING.ledDarkOpacity}
+                fill={SPIKE_TUNING.ledDarkColor}
+                fillOpacity={SPIKE_TUNING.ledDarkOpacity}
               />
             );
           })}

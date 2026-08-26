@@ -433,8 +433,19 @@ export const SPIKE_TUNING = {
    * and composites to 0.967. It costs the byte-for-byte match with the captures
    * taken before the solve landed; those captures are of the plateau the solve
    * exists to remove.
+   *
+   * Raised 0.43 -> 0.55 after the third pass. Tying the spread to the placement
+   * radius fixed the cross-board unit problem and shrank the mark doing it: the
+   * three boards carrying 476-499 placements came out at 12.9-16.6 board px of
+   * reach against 19.4-21.1 on the two carrying 303-332, and the outward glow
+   * ended up putting LESS coloured ink on a lit hold than the baseline ring does
+   * on six of the seven boards. 0.55 is the knee — it lifts the dense boards to
+   * 16.0-21.2 while the hold cap below still binds on at most 15 of any board's
+   * traced holds. 0.65 was measured too and is past it: the cap fires on 67 of
+   * Kilter Original's 476 and 32 of MoonBoard 2016's 140, which is the glow
+   * giving up on tracing the hold and turning into a disc.
    */
-  glowSpreadFraction: 0.43,
+  glowSpreadFraction: 0.55,
   glowCoreFraction: 0.0215,
   /**
    * Ceiling on the glow's one-sided RENDERED reach as a multiple of the hold's
@@ -451,8 +462,16 @@ export const SPIKE_TUNING = {
    * still rendered past 1.2x their short extent — Tension Original 54, Kilter
    * Original 41, MoonBoard 2016 27, TB2 Mirror 13, Masters 1. Nothing sits near
    * the line: the closest hold the cap leaves alone reaches 0.97 of it.
+   *
+   * Raised 1.2 -> 1.4 with the spread, and for the same reason. On the boards
+   * with the smallest holds this cap, not the fraction, is what decides the
+   * mark: MoonBoard 2016's p10 short extent is 13 board px, so at 1.2 the reach
+   * was ceilinged at 15.6 no matter what the spread said. 1.4 stays under the
+   * ~1.5x the third pass measured as the point the glow reads as a plain disc
+   * rather than as the hold's own outline, and it is what lets the raised spread
+   * actually reach the holds it was raised for.
    */
-  glowHoldExtentCap: 1.2,
+  glowHoldExtentCap: 1.4,
   /**
    * Neighbour clearance. Two lit holds 14.5 board px apart merge into one
    * envelope against a combined 42 px of reach, so the glow gives up its outer
