@@ -15,6 +15,8 @@ export type Climb = {
   description?: string | null;
   frames: string;
   angle: number;
+  /** Stored board_climbs.angle, used internally for canonical-angle tie-breaking. */
+  catalogAngle?: number | null;
   ascensionist_count: number;
   difficulty: string;
   quality_average: string;

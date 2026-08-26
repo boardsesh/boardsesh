@@ -19,6 +19,8 @@ import {
   SerialNumberLookupSchema,
   RecordBoardSerialInputSchema,
   UUIDSchema,
+  BOARD_ANGLE_VALIDATION_MESSAGE,
+  isBoardAngleSupported,
 } from '../../../validation/schemas';
 import { generateUniqueGymSlug, requireBoardGymLinkAccess, userCanEditGym } from './gyms';
 import { resolveAutoGymForBoard } from './gym-matching';
@@ -2154,6 +2156,12 @@ export const socialBoardMutations = {
     // Owner, community admin/leader (for this board type), or the linked gym's
     // owner/admin may edit. Community moderators can fix outdated catalog boards.
     await requireBoardEditAccess(ctx, board);
+
+    if (!isBoardAngleSupported(board.boardType, validatedInput.angle)) {
+      throw new GraphQLError(BOARD_ANGLE_VALIDATION_MESSAGE, {
+        extensions: { code: 'BAD_USER_INPUT' },
+      });
+    }
 
     // Editing a soft-deleted board restores it (see `updateValues.deletedAt`
     // below), and the cap counts live rows only — so a restore is +1 live board

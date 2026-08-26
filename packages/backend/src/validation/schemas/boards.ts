@@ -10,6 +10,7 @@ import {
   NumericCsvSchema,
   normalizeSerial,
 } from './primitives';
+import { BOARD_ANGLE_VALIDATION_MESSAGE, isBoardAngleSupported } from './board-angles';
 
 const OptionalBoardSerialInputSchema = z.preprocess((value) => {
   if (typeof value !== 'string') return value;
@@ -26,37 +27,42 @@ const NullableBoardSerialInputSchema = z.preprocess((value) => {
 /**
  * Create board input validation schema
  */
-export const CreateBoardInputSchema = z.object({
-  boardType: BoardNameSchema,
-  layoutId: z.number().int().positive('Layout ID must be positive'),
-  sizeId: z.number().int().positive('Size ID must be positive'),
-  setIds: NumericCsvSchema,
-  name: z.string().min(1, 'Board name cannot be empty').max(100, 'Board name too long'),
-  description: z.string().max(500, 'Description too long').optional(),
-  locationName: z.string().max(200, 'Location name too long').optional(),
-  latitude: LatitudeSchema.optional(),
-  longitude: LongitudeSchema.optional(),
-  isPublic: z.boolean().optional(),
-  isUnlisted: z.boolean().optional(),
-  hideLocation: z.boolean().optional(),
-  isOwned: z.boolean().optional(),
-  gymUuid: UUIDSchema.optional(),
-  angle: z.number().int().min(0).max(70).optional(),
-  isAngleAdjustable: z.boolean().optional(),
-  serialNumber: OptionalBoardSerialInputSchema,
-  // Min 1: a paired timer is stored by its advertised BLE name; an empty string
-  // is meaningless (the "no timer" sentinel is null/absent, and the mobile
-  // builder already coerces blank → omitted).
-  timerName: z.string().min(1).max(200, 'Timer name too long').optional(),
-  // Set only by a client that has shown the user the duplicate prompt and had
-  // them confirm this is a different physical wall. Skips the duplicate-config
-  // guard entirely — see board-duplicates.ts.
-  allowDuplicateConfig: z.boolean().optional(),
-  // Escape hatch for the cross-owner duplicate-serial backstop: when the caller
-  // has confirmed this really is a separate physical wall that happens to reuse
-  // a serial, they pass true to skip the BOARD_SERIAL_EXISTS guard.
-  allowDuplicateSerial: z.boolean().optional(),
-});
+export const CreateBoardInputSchema = z
+  .object({
+    boardType: BoardNameSchema,
+    layoutId: z.number().int().positive('Layout ID must be positive'),
+    sizeId: z.number().int().positive('Size ID must be positive'),
+    setIds: NumericCsvSchema,
+    name: z.string().min(1, 'Board name cannot be empty').max(100, 'Board name too long'),
+    description: z.string().max(500, 'Description too long').optional(),
+    locationName: z.string().max(200, 'Location name too long').optional(),
+    latitude: LatitudeSchema.optional(),
+    longitude: LongitudeSchema.optional(),
+    isPublic: z.boolean().optional(),
+    isUnlisted: z.boolean().optional(),
+    hideLocation: z.boolean().optional(),
+    isOwned: z.boolean().optional(),
+    gymUuid: UUIDSchema.optional(),
+    angle: z.number().int().min(-5).max(70).optional(),
+    isAngleAdjustable: z.boolean().optional(),
+    serialNumber: OptionalBoardSerialInputSchema,
+    // Min 1: a paired timer is stored by its advertised BLE name; an empty string
+    // is meaningless (the "no timer" sentinel is null/absent, and the mobile
+    // builder already coerces blank → omitted).
+    timerName: z.string().min(1).max(200, 'Timer name too long').optional(),
+    // Set only by a client that has shown the user the duplicate prompt and had
+    // them confirm this is a different physical wall. Skips the duplicate-config
+    // guard entirely — see board-duplicates.ts.
+    allowDuplicateConfig: z.boolean().optional(),
+    // Escape hatch for the cross-owner duplicate-serial backstop: when the caller
+    // has confirmed this really is a separate physical wall that happens to reuse
+    // a serial, they pass true to skip the BOARD_SERIAL_EXISTS guard.
+    allowDuplicateSerial: z.boolean().optional(),
+  })
+  .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
+    message: BOARD_ANGLE_VALIDATION_MESSAGE,
+    path: ['angle'],
+  });
 
 /**
  * Update board input validation schema
@@ -73,7 +79,9 @@ export const UpdateBoardInputSchema = z.object({
   isUnlisted: z.boolean().optional(),
   hideLocation: z.boolean().optional(),
   isOwned: z.boolean().optional(),
-  angle: z.number().int().min(0).max(70).optional(),
+  // The board type comes from the stored board, so the resolver performs the
+  // board-aware check after lookup.
+  angle: z.number().int().min(-5).max(70).optional(),
   isAngleAdjustable: z.boolean().optional(),
   layoutId: z.number().int().positive('Layout ID must be positive').optional(),
   sizeId: z.number().int().positive('Size ID must be positive').optional(),

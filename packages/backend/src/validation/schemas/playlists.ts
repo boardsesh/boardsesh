@@ -38,7 +38,9 @@ export const UpdatePlaylistInputSchema = z.object({
 export const AddClimbToPlaylistInputSchema = z.object({
   playlistId: z.string().min(1),
   climbUuid: ExternalUUIDSchema,
-  angle: z.number().int().min(0).max(90),
+  // The board type comes from the stored playlist, so the resolver performs
+  // the board-aware check after lookup.
+  angle: z.number().int().min(-5).max(90),
 });
 
 export const RemoveClimbFromPlaylistInputSchema = z.object({

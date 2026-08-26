@@ -31,7 +31,7 @@ export {
 export type BoardFilter = 'all' | 'moonboard' | AuroraBoardName;
 
 export type LogbookPreferences = {
-  version: 3;
+  version: 4;
   boardFilter: BoardFilter;
   layoutSelections: Record<Exclude<BoardFilter, 'all'>, number[]>;
   filters: LogbookFilterState;
@@ -80,7 +80,7 @@ export const ALL_LAYOUT_SELECTIONS: Record<Exclude<BoardFilter, 'all'>, number[]
 };
 
 export const DEFAULT_LOGBOOK_PREFERENCES: LogbookPreferences = {
-  version: 3,
+  version: 4,
   boardFilter: 'all',
   layoutSelections: ALL_LAYOUT_SELECTIONS,
   filters: DEFAULT_LOGBOOK_FILTERS,
@@ -144,6 +144,12 @@ export function sanitizeLogbookPreferences(value: unknown): LogbookPreferences {
   // Filter/sort sanitization is delegated to the shared package so web and
   // mobile coerce persisted state identically.
   const filters = sanitizeLogbookFilters(source.filters);
+  const storedFilters =
+    source.filters && typeof source.filters === 'object' ? (source.filters as Partial<LogbookFilterState>) : null;
+  const filtersForStatusMigration =
+    (storedVersion == null || storedVersion < 3) && storedFilters?.angleRange === undefined
+      ? { ...filters, angleRange: [0, 70] as [number, number] }
+      : filters;
 
   // →v3: attempts show by default again. The obsolete v1→v2 attempts-drop is
   // gone — chaining it would strand never-touched legacy payloads on
@@ -158,14 +164,22 @@ export function sanitizeLogbookPreferences(value: unknown): LogbookPreferences {
   // told apart from a genuine sends-only choice, so they keep sends-only.
   if (
     (storedVersion == null || storedVersion < 3) &&
-    (filtersEqualV2Defaults(filters) || filtersEqualV1Defaults(filters))
+    (filtersEqualV2Defaults(filtersForStatusMigration) || filtersEqualV1Defaults(filtersForStatusMigration))
   ) {
     filters.includeAttempts = DEFAULT_LOGBOOK_FILTERS.includeAttempts;
     filters.includeSends = DEFAULT_LOGBOOK_FILTERS.includeSends;
   }
 
+  // v4 widens the shared board-angle range for Grasshopper's real -5° data.
+  // A lower bound of 0 in an older payload represented the historical default,
+  // so carry it forward to -5 while preserving an intentionally narrower
+  // positive lower bound. Once stamped v4, [0, 70] is an explicit user choice.
+  if ((storedVersion == null || storedVersion < 4) && filters.angleRange[0] === 0) {
+    filters.angleRange = [DEFAULT_LOGBOOK_ANGLE_RANGE[0], filters.angleRange[1]];
+  }
+
   return {
-    version: 3,
+    version: 4,
     boardFilter,
     layoutSelections: sanitizeLayoutSelections(source.layoutSelections),
     filters,

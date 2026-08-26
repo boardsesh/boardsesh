@@ -15,6 +15,8 @@ type FrontDoorBreadcrumbProps = {
   currentLabel: string;
   /** The climb's own canonical path — the JSON-LD leaf's `item`. */
   currentUrl: string;
+  /** Alternate-angle and noindex pages keep visible crumbs but omit schema data. */
+  emitJsonLd?: boolean;
 };
 
 const listSx = {
@@ -41,6 +43,7 @@ export default async function FrontDoorBreadcrumb({
   boardListUrl,
   currentLabel,
   currentUrl,
+  emitJsonLd = true,
 }: FrontDoorBreadcrumbProps) {
   const { t } = await getServerTranslation('climbs');
 
@@ -60,7 +63,7 @@ export default async function FrontDoorBreadcrumb({
 
   return (
     <Box component="nav" aria-label={t('frontDoor.breadcrumb.aria')}>
-      <JsonLd data={breadcrumbJsonLd} />
+      {emitJsonLd ? <JsonLd data={breadcrumbJsonLd} /> : null}
       <Box component="ol" sx={listSx}>
         <li>
           <LocaleLink href="/">{t('frontDoor.breadcrumb.home')}</LocaleLink>

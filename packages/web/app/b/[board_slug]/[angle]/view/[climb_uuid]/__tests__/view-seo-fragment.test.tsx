@@ -59,6 +59,13 @@ vi.mock('@/app/lib/board-slug-utils', () => ({
     set_ids: [1, 20],
     angle: 40,
   })),
+  boardToRouteParamsFromAngleSegment: vi.fn((_board: unknown, angleSegment: string) => ({
+    board_name: 'kilter',
+    layout_id: 1,
+    size_id: 7,
+    set_ids: [1, 20],
+    angle: Number(angleSegment),
+  })),
 }));
 
 vi.mock('@/app/lib/board-utils', () => ({
@@ -205,8 +212,8 @@ async function resolveServerTree(
   return React.cloneElement(element, undefined, await resolveServerTree(children, stopAt));
 }
 
-async function renderFrontDoor(): Promise<string> {
-  const element = (await pageModule.default({ params: Promise.resolve(PARAMS) })) as React.ReactElement;
+async function renderFrontDoor(params = PARAMS): Promise<string> {
+  const element = (await pageModule.default({ params: Promise.resolve(params) })) as React.ReactElement;
   return renderToString(<>{await resolveServerTree(element)}</>);
 }
 
@@ -277,6 +284,14 @@ describe('climb front door server HTML', () => {
     expect(html).toMatch(/href="\/kilter\/[^"]*\/25\/view\//);
     expect(html).not.toMatch(/href="\/kilter\/[^"]*\/40\/view\//);
     expect(html).toContain('aria-current="page"');
+  });
+
+  it('keeps an alternate angle at 200 but omits entity and breadcrumb JSON-LD', async () => {
+    const html = await renderFrontDoor({ ...PARAMS, angle: '25' });
+
+    expect(html).toContain('<h1>');
+    expect(html).not.toContain('"@type":"CreativeWork"');
+    expect(html).not.toContain('"@type":"BreadcrumbList"');
   });
 
   it('emits at least three internal links', async () => {

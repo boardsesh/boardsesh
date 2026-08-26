@@ -119,6 +119,13 @@ vi.mock('@/app/lib/board-slug-utils', () => ({
     isUnlisted: false,
   })),
   boardToRouteParams: vi.fn(() => ({ board_name: 'kilter', layout_id: 1, size_id: 10, set_ids: [1, 20], angle: 40 })),
+  boardToRouteParamsFromAngleSegment: vi.fn(() => ({
+    board_name: 'kilter',
+    layout_id: 1,
+    size_id: 10,
+    set_ids: [1, 20],
+    angle: 40,
+  })),
 }));
 
 vi.mock('@/app/lib/warm-overlay-cache', () => ({ scheduleOgImageWarming: vi.fn() }));

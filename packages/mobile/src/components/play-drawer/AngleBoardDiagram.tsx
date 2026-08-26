@@ -3,6 +3,7 @@ import { AccessibilityInfo } from 'react-native';
 import { Svg, Line, Path, Text as SvgText } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedProps, withSpring } from 'react-native-reanimated';
 import { useTheme } from '../../providers/theme-provider';
+import { getAngleArcSweepFlag } from './angle-board-diagram-geometry';
 
 type AngleBoardDiagramProps = {
   angle: number;
@@ -68,7 +69,7 @@ export function AngleBoardDiagram({
     rotation.value = withSpring(angle, springs.gentle);
   }, [angle, reduceMotion, rotation, springs.gentle]);
 
-  // Geometry — pivot near the bottom. Board angles run 0–70°; at 70° a centred
+  // Geometry — pivot near the bottom. Board angles run -5–70°; at 70° a centred
   // pivot would push the board-edge tip off the right of the viewBox, so the
   // pivot sits left of centre and the arm is short enough that the worst-case
   // reach (sin(70°)·armLength) plus the label stays inside `size`.
@@ -86,9 +87,10 @@ export function AngleBoardDiagram({
   const arcStartY = pivotY - arcRadius;
   const arcEndX = pivotX + Math.sin(radians) * arcRadius;
   const arcEndY = pivotY - Math.cos(radians) * arcRadius;
-  // Arc spans <180° for any board angle (0–70°), so the large-arc flag is 0;
-  // sweep flag 1 draws clockwise from vertical out to the tilted edge.
-  const arcPath = `M ${arcStartX} ${arcStartY} A ${arcRadius} ${arcRadius} 0 0 1 ${arcEndX} ${arcEndY}`;
+  // Arc spans <180° for every supported angle, so the large-arc flag is 0.
+  // Slab angles sweep left/counter-clockwise; overhangs sweep right/clockwise.
+  const arcSweepFlag = getAngleArcSweepFlag(angle);
+  const arcPath = `M ${arcStartX} ${arcStartY} A ${arcRadius} ${arcRadius} 0 0 ${arcSweepFlag} ${arcEndX} ${arcEndY}`;
 
   // Label sits just outside the arc, bisecting the angle.
   const labelRadians = radians / 2;

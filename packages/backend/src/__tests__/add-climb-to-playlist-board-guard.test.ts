@@ -24,10 +24,12 @@ const OWNER_ID = `bg4015-owner-${FIXTURE_RUN_ID}`;
 
 const KILTER_LAYOUT_8_PLAYLIST = `bg4015-kilter-l8-${FIXTURE_RUN_ID}`;
 const KILTER_NULL_LAYOUT_PLAYLIST = `bg4015-kilter-null-${FIXTURE_RUN_ID}`;
+const GRASSHOPPER_LAYOUT_8_PLAYLIST = `bg4015-grasshopper-l8-${FIXTURE_RUN_ID}`;
 
 const KILTER_L8_CLIMB = `bg4015-ck8-${FIXTURE_RUN_ID}`;
 const KILTER_L9_CLIMB = `bg4015-ck9-${FIXTURE_RUN_ID}`;
 const TENSION_L8_CLIMB = `bg4015-ct8-${FIXTURE_RUN_ID}`;
+const GRASSHOPPER_L8_CLIMB = `bg4015-cg8-${FIXTURE_RUN_ID}`;
 const UNKNOWN_CLIMB = `bg4015-cunk-${FIXTURE_RUN_ID}`;
 
 const ALIAS_UUID = `bg4015-calias-${FIXTURE_RUN_ID}`;
@@ -78,7 +80,8 @@ describe('addClimbToPlaylist — board-compatibility guard (#4015)', () => {
       VALUES
         (${KILTER_L8_CLIMB}, 'kilter', 8, 'setter', 'Kilter layout 8 climb', 'p1', true),
         (${KILTER_L9_CLIMB}, 'kilter', 9, 'setter', 'Kilter layout 9 climb', 'p1', true),
-        (${TENSION_L8_CLIMB}, 'tension', 8, 'setter', 'Tension layout 8 climb', 'p1', true)
+        (${TENSION_L8_CLIMB}, 'tension', 8, 'setter', 'Tension layout 8 climb', 'p1', true),
+        (${GRASSHOPPER_L8_CLIMB}, 'grasshopper', 8, 'setter', 'Grasshopper layout 8 climb', 'p1', true)
       ON CONFLICT (uuid) DO NOTHING
     `);
 
@@ -97,14 +100,15 @@ describe('addClimbToPlaylist — board-compatibility guard (#4015)', () => {
       INSERT INTO playlists (uuid, board_type, layout_id, name, is_public)
       VALUES
         (${KILTER_LAYOUT_8_PLAYLIST}, 'kilter', 8, 'Kilter layout 8 playlist', false),
-        (${KILTER_NULL_LAYOUT_PLAYLIST}, 'kilter', NULL, 'Kilter any-layout playlist', false)
+        (${KILTER_NULL_LAYOUT_PLAYLIST}, 'kilter', NULL, 'Kilter any-layout playlist', false),
+        (${GRASSHOPPER_LAYOUT_8_PLAYLIST}, 'grasshopper', 8, 'Grasshopper layout 8 playlist', false)
       ON CONFLICT (uuid) DO NOTHING
     `);
 
     await db.execute(sql`
       INSERT INTO playlist_ownership (playlist_id, user_id, role)
       SELECT id, ${OWNER_ID}, 'owner' FROM playlists
-      WHERE uuid IN (${KILTER_LAYOUT_8_PLAYLIST}, ${KILTER_NULL_LAYOUT_PLAYLIST})
+      WHERE uuid IN (${KILTER_LAYOUT_8_PLAYLIST}, ${KILTER_NULL_LAYOUT_PLAYLIST}, ${GRASSHOPPER_LAYOUT_8_PLAYLIST})
       ON CONFLICT (playlist_id, user_id) DO NOTHING
     `);
   });
@@ -114,11 +118,11 @@ describe('addClimbToPlaylist — board-compatibility guard (#4015)', () => {
     // (packages/db/src/schema/app/playlists.ts), so dropping the playlists
     // takes every membership row these tests added with them.
     await db.execute(
-      sql`DELETE FROM playlists WHERE uuid IN (${KILTER_LAYOUT_8_PLAYLIST}, ${KILTER_NULL_LAYOUT_PLAYLIST})`,
+      sql`DELETE FROM playlists WHERE uuid IN (${KILTER_LAYOUT_8_PLAYLIST}, ${KILTER_NULL_LAYOUT_PLAYLIST}, ${GRASSHOPPER_LAYOUT_8_PLAYLIST})`,
     );
     await db.execute(sql`DELETE FROM board_climb_aliases WHERE alias_uuid IN (${ALIAS_UUID}, ${AMBIGUOUS_ALIAS_UUID})`);
     await db.execute(
-      sql`DELETE FROM board_climbs WHERE uuid IN (${KILTER_L8_CLIMB}, ${KILTER_L9_CLIMB}, ${TENSION_L8_CLIMB})`,
+      sql`DELETE FROM board_climbs WHERE uuid IN (${KILTER_L8_CLIMB}, ${KILTER_L9_CLIMB}, ${TENSION_L8_CLIMB}, ${GRASSHOPPER_L8_CLIMB})`,
     );
     await db.execute(sql`DELETE FROM users WHERE id = ${OWNER_ID}`);
   });
@@ -132,6 +136,32 @@ describe('addClimbToPlaylist — board-compatibility guard (#4015)', () => {
 
     expect(result.climbUuid).toBe(KILTER_L8_CLIMB);
     expect(await climbUuidsInPlaylist(KILTER_LAYOUT_8_PLAYLIST)).toContain(KILTER_L8_CLIMB);
+  });
+
+  it('rejects -5 when the stored playlist is Kilter', async () => {
+    await expect(
+      playlistMutations.addClimbToPlaylist(
+        null,
+        { input: { playlistId: KILTER_LAYOUT_8_PLAYLIST, climbUuid: KILTER_L8_CLIMB, angle: -5 } },
+        makeCtx(),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: 'BAD_USER_INPUT' } });
+  });
+
+  it('accepts -5 when the stored playlist is Grasshopper', async () => {
+    const result = (await playlistMutations.addClimbToPlaylist(
+      null,
+      {
+        input: {
+          playlistId: GRASSHOPPER_LAYOUT_8_PLAYLIST,
+          climbUuid: GRASSHOPPER_L8_CLIMB,
+          angle: -5,
+        },
+      },
+      makeCtx(),
+    )) as { climbUuid: string };
+
+    expect(result.climbUuid).toBe(GRASSHOPPER_L8_CLIMB);
   });
 
   it('rejects a cross-board add (different boardType)', async () => {

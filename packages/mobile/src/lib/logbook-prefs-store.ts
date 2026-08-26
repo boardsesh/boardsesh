@@ -19,12 +19,13 @@ const STORAGE_KEY = 'logbookSearchPrefs';
 // Persisted-schema version.
 //   v2 = the sends-only status default.
 //   v3 = the sends+attempts default (a climber's projects show next to sends).
+//   v4 = the full angle range starts at Grasshopper's -5° setting.
 // There is no chained v1→v2 step anymore: ONE rule migrates every pre-v3
 // payload. A filter set still deep-equal to EITHER historical resting default
 // (v1 both-on or v2 sends-only) means the user never diverged and is refreshed
 // to the v3 defaults; anything the user changed is left as-is. The migration
 // stamps v3 either way.
-const LOGBOOK_PREFS_VERSION = 3;
+const LOGBOOK_PREFS_VERSION = 4;
 
 // The v2 resting filter (sends-only) — the value a v2 install persisted when the
 // user never touched a filter. Frozen here so the v3 "did the user diverge?"
@@ -83,6 +84,12 @@ export async function loadLogbookPrefs(): Promise<StoredLogbookPrefs | null> {
     const sort = sanitizeLogbookSort(stored.sort);
     const storedVersion = stored.version;
     const needsMigration = storedVersion !== LOGBOOK_PREFS_VERSION;
+    const storedFilters =
+      stored.filters && typeof stored.filters === 'object' ? (stored.filters as Partial<LogbookFilterState>) : null;
+    const filtersForStatusMigration =
+      (storedVersion == null || storedVersion < 3) && storedFilters?.angleRange === undefined
+        ? { ...filters, angleRange: [0, 70] as [number, number] }
+        : filters;
     // →v3: attempts show by default again. The obsolete v1→v2 attempts-drop is
     // GONE — chaining it would strand never-touched legacy payloads on
     // sends-only, the opposite of the new default (v1's "both" resting state
@@ -96,11 +103,17 @@ export async function loadLogbookPrefs(): Promise<StoredLogbookPrefs | null> {
     // v2 state — sends-only plus their filters. Their attempts-on intent was
     // destroyed by that migration before v3 existed and is indistinguishable
     // from a genuine sends-only choice, so they keep sends-only here.
-    if (storedVersion == null || storedVersion < LOGBOOK_PREFS_VERSION) {
-      if (equalsV2Defaults(filters) || equalsV1Defaults(filters)) {
+    if (storedVersion == null || storedVersion < 3) {
+      if (equalsV2Defaults(filtersForStatusMigration) || equalsV1Defaults(filtersForStatusMigration)) {
         filters.includeAttempts = DEFAULT_LOGBOOK_FILTERS.includeAttempts;
         filters.includeSends = DEFAULT_LOGBOOK_FILTERS.includeSends;
       }
+    }
+    // Before v4, 0 was the default lower bound. Expand that historical default
+    // to include Grasshopper -5° while preserving deliberately positive minima.
+    // A v4 [0, 70] remains an explicit user choice.
+    if ((storedVersion == null || storedVersion < 4) && filters.angleRange[0] === 0) {
+      filters.angleRange = [DEFAULT_LOGBOOK_FILTERS.angleRange[0], filters.angleRange[1]];
     }
     // Stamp the current version now rather than waiting for the next filter change,
     // so the migration check doesn't re-run on every cold launch for users who

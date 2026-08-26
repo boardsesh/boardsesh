@@ -51,6 +51,13 @@ vi.mock('@/app/lib/board-slug-utils', () => ({
     set_ids: [1, 20],
     angle: 40,
   })),
+  boardToRouteParamsFromAngleSegment: vi.fn(() => ({
+    board_name: 'kilter',
+    layout_id: 1,
+    size_id: 7,
+    set_ids: [1, 20],
+    angle: 40,
+  })),
 }));
 
 vi.mock('@/app/lib/board-utils', () => ({

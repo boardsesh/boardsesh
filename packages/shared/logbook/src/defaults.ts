@@ -1,7 +1,7 @@
 import type { LogbookFilterState, LogbookSortState } from './types';
 
 /** Full board-angle span; angle filters at these bounds are treated as "unset". */
-export const DEFAULT_LOGBOOK_ANGLE_RANGE: [number, number] = [0, 70];
+export const DEFAULT_LOGBOOK_ANGLE_RANGE: [number, number] = [-5, 70];
 
 // The resting logbook filter. Status defaults to sends AND attempts: a climber's
 // projects belong in the logbook next to their sends by default, and the Show

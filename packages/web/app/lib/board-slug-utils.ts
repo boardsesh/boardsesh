@@ -4,6 +4,7 @@ import type { ParsedBoardRouteParameters, BoardName } from '@/app/lib/types';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { getGraphQLHttpUrl } from '@/app/lib/graphql/client';
 import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
+import { parseBoardAngleSegment, toBoardName } from '@boardsesh/board-config';
 
 export type ResolvedBoard = {
   uuid: string;
@@ -124,4 +125,15 @@ export function boardToRouteParams(board: ResolvedBoard, angle: number): ParsedB
     set_ids: board.setIds.split(',').map(Number),
     angle,
   };
+}
+
+/** Convert a `/b` angle segment only when it is canonical and supported. */
+export function boardToRouteParamsFromAngleSegment(
+  board: ResolvedBoard,
+  angleSegment: string,
+): ParsedBoardRouteParameters | null {
+  const boardName = toBoardName(board.boardType);
+  if (!boardName) return null;
+  const angle = parseBoardAngleSegment(boardName, angleSegment);
+  return angle === null ? null : boardToRouteParams(board, angle);
 }

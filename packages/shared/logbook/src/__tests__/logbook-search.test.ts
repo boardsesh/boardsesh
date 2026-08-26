@@ -118,9 +118,18 @@ describe('sanitizeLogbookFilters', () => {
     expect(sanitizeLogbookFilters('nope')).toEqual(DEFAULT_LOGBOOK_FILTERS);
   });
 
-  it('clamps the angle range to 0..70 and keeps min <= max', () => {
-    expect(sanitizeLogbookFilters({ angleRange: [-10, 200] }).angleRange).toEqual([0, 70]);
+  it('clamps the angle range to -5..70 and keeps min <= max', () => {
+    expect(sanitizeLogbookFilters({ angleRange: [-10, 200] }).angleRange).toEqual([-5, 70]);
     expect(sanitizeLogbookFilters({ angleRange: [50, 20] }).angleRange).toEqual([50, 50]);
+  });
+
+  it('emits an explicit zero minimum when the user excludes Grasshopper slab ascents', () => {
+    const input = toAscentFeedInput({
+      filters: { ...DEFAULT_LOGBOOK_FILTERS, angleRange: [0, 70] },
+      sort: DEFAULT_LOGBOOK_SORT,
+    });
+    expect(input.minAngle).toBe(0);
+    expect(input.maxAngle).toBeUndefined();
   });
 
   it('keeps at least one status on and clears flashOnly without sends', () => {

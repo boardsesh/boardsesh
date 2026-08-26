@@ -13,6 +13,8 @@ import {
   ReorderPlaylistClimbInputSchema,
   FollowPlaylistInputSchema,
   PinPlaylistInputSchema,
+  BOARD_ANGLE_VALIDATION_MESSAGE,
+  isBoardAngleSupported,
 } from '../../../validation/schemas';
 import { UNIFIED_TABLES } from '../../../db/queries/util/table-select';
 import { getPlaylistFollowStats } from './queries';
@@ -368,6 +370,12 @@ export const playlistMutations = {
 
     if (ownership.length === 0) {
       throw new Error('Playlist not found or you do not have permission to edit it');
+    }
+
+    if (!isBoardAngleSupported(ownership[0].boardType, validatedInput.angle)) {
+      throw new GraphQLError(BOARD_ANGLE_VALIDATION_MESSAGE, {
+        extensions: { code: 'BAD_USER_INPUT' },
+      });
     }
 
     const playlistId = ownership[0].id;

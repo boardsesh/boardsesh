@@ -2,7 +2,7 @@ import React from 'react';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import type { SearchRequestPagination } from '@/app/lib/types';
-import { resolveBoardBySlug, boardToRouteParams } from '@/app/lib/board-slug-utils';
+import { resolveBoardBySlug, boardToRouteParamsFromAngleSegment } from '@/app/lib/board-slug-utils';
 import StaticListFrontDoor from '@/app/components/climb-front-door/static-list-front-door';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { fetchFrontDoorListPage } from '@/app/lib/data/list-page-data.server';
@@ -37,9 +37,17 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
     }
 
     const boardName = formatBoardDisplayName(board.boardType);
-    const angle = Number(params.angle);
+    const parsedParams = boardToRouteParamsFromAngleSegment(board, params.angle);
+    if (!parsedParams) {
+      return createPageMetadata({
+        title: t('metadata.list.fallbackTitle'),
+        description: t('metadata.list.fallbackDescription'),
+        locale,
+        robots: { index: false, follow: true },
+      });
+    }
+    const angle = parsedParams.angle;
     const page = parseFrontDoorPage(searchParams.page);
-    const parsedParams = boardToRouteParams(board, angle);
 
     // A1: canonicalise into the config-tuple tree via the same builder that
     // tree's own `/list` page calls, so one board config emits one canonical.
@@ -89,7 +97,8 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
   // guess and gets a 404 rather than a deep `OFFSET`.
   if (isFrontDoorPageOutOfRange(searchParams.page)) return notFound();
 
-  const parsedParams = boardToRouteParams(board, Number(params.angle));
+  const parsedParams = boardToRouteParamsFromAngleSegment(board, params.angle);
+  if (!parsedParams) return notFound();
   const page = parseFrontDoorPage(searchParams.page);
   const listData = await fetchFrontDoorListPage(parsedParams, page);
   if (!listData) return notFound();

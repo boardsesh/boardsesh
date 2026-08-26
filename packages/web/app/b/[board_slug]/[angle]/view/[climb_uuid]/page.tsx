@@ -1,7 +1,7 @@
 import React from 'react';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { resolveBoardBySlug, boardToRouteParams } from '@/app/lib/board-slug-utils';
+import { resolveBoardBySlug, boardToRouteParamsFromAngleSegment } from '@/app/lib/board-slug-utils';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { getClimb, getClimbStatsForAllAngles } from '@/app/lib/data/queries';
 import { getFrontDoorBetaLinks, getFrontDoorSimilarClimbs } from '@/app/lib/data/front-door-data.server';
@@ -12,6 +12,7 @@ import { scheduleOgImageWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
+import { selectCanonicalClimbAngle } from '@/app/lib/seo/canonical-climb-angle';
 
 type BoardSlugViewRouteParams = { board_slug: string; angle: string; climb_uuid: string };
 
@@ -34,13 +35,22 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
       });
     }
 
-    const parsedParams = {
-      ...boardToRouteParams(board, Number(params.angle)),
-      climb_uuid: extractUuidFromSlug(params.climb_uuid),
-    };
+    const parsedBoardParams = boardToRouteParamsFromAngleSegment(board, params.angle);
+    if (!parsedBoardParams) {
+      return createPageMetadata({
+        title: t('metadata.view.fallbackTitle'),
+        description: t('metadata.view.fallbackDescription'),
+        locale,
+        robots: { index: false, follow: true },
+      });
+    }
+    const parsedParams = { ...parsedBoardParams, climb_uuid: extractUuidFromSlug(params.climb_uuid) };
 
     const boardDetails = getBoardDetailsForBoard(parsedParams);
-    const currentClimb = await getClimb(parsedParams);
+    const [currentClimb, angleStats] = await Promise.all([
+      getClimb(parsedParams),
+      getClimbStatsForAllAngles(parsedParams),
+    ]);
     if (!currentClimb) {
       return createPageMetadata({
         title: t('metadata.view.fallbackTitle'),
@@ -72,9 +82,14 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
     // twin is a conflicting signal Google can resolve by propagating the
     // noindex — deindexing a public config-tuple climb page because one private
     // board happens to share its configuration.
+    const canonicalAngle = selectCanonicalClimbAngle({
+      boardName: parsedParams.board_name,
+      catalogAngle: currentClimb.catalogAngle,
+      angleStats,
+    });
     const canonicalPath = shouldNoindex
       ? undefined
-      : buildCanonicalClimbViewUrl(boardDetails, Number(params.angle), parsedParams.climb_uuid, climbName);
+      : buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, parsedParams.climb_uuid, climbName);
 
     return createPageMetadata({
       title: t('metadata.view.title', { climbName, grade: climbGrade }),
@@ -103,10 +118,9 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
     return notFound();
   }
 
-  const parsedParams = {
-    ...boardToRouteParams(board, Number(params.angle)),
-    climb_uuid: extractUuidFromSlug(params.climb_uuid),
-  };
+  const parsedBoardParams = boardToRouteParamsFromAngleSegment(board, params.angle);
+  if (!parsedBoardParams) return notFound();
+  const parsedParams = { ...parsedBoardParams, climb_uuid: extractUuidFromSlug(params.climb_uuid) };
 
   try {
     const currentClimb = await getClimb(parsedParams);
@@ -124,6 +138,11 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
       }),
       getFrontDoorBetaLinks({ boardType: parsedParams.board_name, climbUuid: parsedParams.climb_uuid }),
     ]);
+    const canonicalAngle = selectCanonicalClimbAngle({
+      boardName: parsedParams.board_name,
+      catalogAngle: currentClimb.catalogAngle,
+      angleStats,
+    });
 
     scheduleOgImageWarming({ boardDetails, climb: currentClimb });
     const preloadUrls = buildOverlayPreloadUrls(boardDetails, currentClimb.frames, false);
@@ -137,6 +156,7 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
           climb={currentClimb}
           boardDetails={boardDetails}
           angle={parsedParams.angle}
+          canonicalAngle={canonicalAngle}
           angleStats={angleStats}
           similarClimbs={similarClimbs}
           betaLinks={betaLinks}

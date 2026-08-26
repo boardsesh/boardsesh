@@ -20,8 +20,11 @@ export async function GET(
 
     // TODO: Multiframe support should remove the hardcoded [0]
     const litUpHoldsMap = convertLitUpHoldsStringToMap(result.frames, parsedParams.board_name)[0];
+    // catalogAngle only exists to break canonical-angle ties on the server. Do
+    // not grow the public v1 response with that internal implementation field.
+    const { catalogAngle: _catalogAngle, ...publicClimb } = result;
     // Include both the rows and the total count in the response
-    return NextResponse.json({ ...result, litUpHoldsMap });
+    return NextResponse.json({ ...publicClimb, litUpHoldsMap });
   } catch (error) {
     console.error('Error fetching data:', error);
     return NextResponse.json({ error: 'Failed to fetch board details' }, { status: 500 });

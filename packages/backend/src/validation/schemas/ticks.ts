@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { BETA_VIDEO_URL_REGEX, BETA_VIDEO_URL_VALIDATION_MESSAGE } from '@boardsesh/shared-schema';
 import { ExternalUUIDSchema, BoardNameSchema, UUIDSchema } from './primitives';
+import { BOARD_ANGLE_VALIDATION_MESSAGE, isBoardAngleSupported } from './board-angles';
 
 const CLIMBED_AT_FUTURE_TOLERANCE_MS = 60_000;
 
@@ -40,7 +41,7 @@ export const SaveTickInputSchema = z
     uuid: z.string().uuid('Invalid UUID format').optional(),
     boardType: BoardNameSchema,
     climbUuid: ExternalUUIDSchema,
-    angle: z.number().int().min(0).max(90),
+    angle: z.number().int().min(-5).max(90),
     isMirror: z.boolean(),
     status: TickStatusSchema,
     attemptCount: z.number().int().min(1).max(999),
@@ -59,6 +60,10 @@ export const SaveTickInputSchema = z
     boardUuid: UUIDSchema.optional(),
     boardId: z.number().int().positive().optional().nullable(),
     videoUrl: z.string().max(500).regex(BETA_VIDEO_URL_REGEX, BETA_VIDEO_URL_VALIDATION_MESSAGE).optional().nullable(),
+  })
+  .refine((data) => isBoardAngleSupported(data.boardType, data.angle), {
+    message: BOARD_ANGLE_VALIDATION_MESSAGE,
+    path: ['angle'],
   })
   .refine(
     (data) => {
@@ -84,16 +89,21 @@ export const GetTicksInputSchema = z.object({
 /**
  * Attach beta link input validation schema
  */
-export const AttachBetaLinkInputSchema = z.object({
-  boardType: BoardNameSchema,
-  climbUuid: ExternalUUIDSchema,
-  link: z.string().max(500).regex(BETA_VIDEO_URL_REGEX, BETA_VIDEO_URL_VALIDATION_MESSAGE),
-  // When tickUuid is provided the stored angle comes from the resolved tick,
-  // not from this field. Clients may omit angle in that case. If both are
-  // supplied and disagree, the resolver throws BETA_LINK_TICK_MISMATCH.
-  angle: z.number().int().min(0).max(90).optional().nullable(),
-  tickUuid: UUIDSchema.optional().nullable(),
-});
+export const AttachBetaLinkInputSchema = z
+  .object({
+    boardType: BoardNameSchema,
+    climbUuid: ExternalUUIDSchema,
+    link: z.string().max(500).regex(BETA_VIDEO_URL_REGEX, BETA_VIDEO_URL_VALIDATION_MESSAGE),
+    // When tickUuid is provided the stored angle comes from the resolved tick,
+    // not from this field. Clients may omit angle in that case. If both are
+    // supplied and disagree, the resolver throws BETA_LINK_TICK_MISMATCH.
+    angle: z.number().int().min(-5).max(90).optional().nullable(),
+    tickUuid: UUIDSchema.optional().nullable(),
+  })
+  .refine((data) => isBoardAngleSupported(data.boardType, data.angle), {
+    message: BOARD_ANGLE_VALIDATION_MESSAGE,
+    path: ['angle'],
+  });
 
 /**
  * instagramBetaScan input validation schema.
@@ -155,8 +165,8 @@ export const AscentFeedInputSchema = z.object({
   secondarySortOrder: z.enum(['asc', 'desc']).optional(),
   minDifficulty: z.number().int().min(0).optional(),
   maxDifficulty: z.number().int().min(0).optional(),
-  minAngle: z.number().int().min(0).max(90).optional(),
-  maxAngle: z.number().int().min(0).max(90).optional(),
+  minAngle: z.number().int().min(-5).max(90).optional(),
+  maxAngle: z.number().int().min(-5).max(90).optional(),
   benchmarkOnly: z.boolean().optional(),
   fromDate: z.string().regex(ISO_DATE_PATTERN).optional(),
   toDate: z.string().regex(ISO_DATE_PATTERN).optional(),
@@ -182,7 +192,9 @@ export const UpdateTickInputSchema = z
         'Climbed at cannot be in the future',
       )
       .optional(),
-    angle: z.number().int().min(0).max(90).optional(),
+    // The board type comes from the stored tick, so the resolver performs the
+    // board-aware check after lookup.
+    angle: z.number().int().min(-5).max(90).optional(),
   })
   .refine(
     (data) => {

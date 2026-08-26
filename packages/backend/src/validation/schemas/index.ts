@@ -1,5 +1,6 @@
 // Barrel re-export for all validation schemas
 export * from './primitives';
+export * from './board-angles';
 export * from './sessions';
 export * from './climbs';
 export * from './users';

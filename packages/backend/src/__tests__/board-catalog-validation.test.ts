@@ -75,6 +75,7 @@ async function insertTestBoard({
   setIds,
   name = 'Catalog validation board',
   serialNumber = null,
+  boardType = 'kilter',
 }: {
   ownerId: string;
   layoutId: number;
@@ -82,6 +83,7 @@ async function insertTestBoard({
   setIds: string;
   name?: string;
   serialNumber?: string | null;
+  boardType?: string;
 }): Promise<typeof dbSchema.userBoards.$inferSelect> {
   const uuid = uuidv4();
   const [board] = await db
@@ -90,7 +92,7 @@ async function insertTestBoard({
       uuid,
       slug: uuid,
       ownerId,
-      boardType: 'kilter',
+      boardType,
       layoutId,
       sizeId,
       setIds,
@@ -897,5 +899,46 @@ describe('social board update catalog gate', () => {
     expect(updated.layoutId).toBe(UNKNOWN_LAYOUT_ID);
     expect(updated.sizeId).toBe(UNKNOWN_SIZE_ID);
     expect(updated.setIds).toBe(String(UNKNOWN_SET_ID));
+  });
+
+  it('rejects -5 for a stored Kilter board and preserves its angle', async () => {
+    const board = await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: LAYOUT_ID,
+      sizeId: SIZE_ID,
+      setIds: String(SET_A_ID),
+    });
+
+    await expect(
+      socialBoardMutations.updateBoard(
+        undefined,
+        { input: { boardUuid: board.uuid, angle: -5 } },
+        authCtx(UPDATE_USER_ID),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: 'BAD_USER_INPUT' } });
+
+    const [storedBoard] = await db
+      .select({ angle: dbSchema.userBoards.angle })
+      .from(dbSchema.userBoards)
+      .where(eq(dbSchema.userBoards.id, board.id));
+    expect(storedBoard?.angle).toBe(board.angle);
+  });
+
+  it('accepts -5 for a stored Grasshopper board', async () => {
+    const board = await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: UNKNOWN_LAYOUT_ID,
+      sizeId: UNKNOWN_SIZE_ID,
+      setIds: String(UNKNOWN_SET_ID),
+      boardType: 'grasshopper',
+    });
+
+    const updated = await socialBoardMutations.updateBoard(
+      undefined,
+      { input: { boardUuid: board.uuid, angle: -5 } },
+      authCtx(UPDATE_USER_ID),
+    );
+
+    expect(updated.angle).toBe(-5);
   });
 });

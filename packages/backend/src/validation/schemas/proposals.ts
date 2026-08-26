@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { UUIDSchema, ExternalUUIDSchema, BoardNameSchema } from './primitives';
+import { BOARD_ANGLE_VALIDATION_MESSAGE, isBoardAngleSupported } from './board-angles';
 
 /**
  * Proposal type validation schema
@@ -16,14 +17,19 @@ export const ProposalStatusSchema = z.enum(['open', 'approved', 'rejected', 'sup
  */
 export const CommunityRoleTypeSchema = z.enum(['admin', 'community_leader', 'tester']);
 
-export const CreateProposalInputSchema = z.object({
-  climbUuid: ExternalUUIDSchema,
-  boardType: BoardNameSchema,
-  angle: z.number().int().min(0).max(90).optional().nullable(),
-  type: ProposalTypeSchema,
-  proposedValue: z.string().min(1, 'Proposed value cannot be empty').max(100),
-  reason: z.string().max(500).optional().nullable(),
-});
+export const CreateProposalInputSchema = z
+  .object({
+    climbUuid: ExternalUUIDSchema,
+    boardType: BoardNameSchema,
+    angle: z.number().int().min(-5).max(90).optional().nullable(),
+    type: ProposalTypeSchema,
+    proposedValue: z.string().min(1, 'Proposed value cannot be empty').max(100),
+    reason: z.string().max(500).optional().nullable(),
+  })
+  .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
+    message: BOARD_ANGLE_VALIDATION_MESSAGE,
+    path: ['angle'],
+  });
 
 export const VoteOnProposalInputSchema = z.object({
   proposalUuid: UUIDSchema,
@@ -45,13 +51,18 @@ export const DeleteProposalInputSchema = z.object({
   proposalUuid: UUIDSchema,
 });
 
-export const SetterOverrideInputSchema = z.object({
-  climbUuid: ExternalUUIDSchema,
-  boardType: BoardNameSchema,
-  angle: z.number().int().min(0).max(90),
-  communityGrade: z.string().max(100).optional().nullable(),
-  isBenchmark: z.boolean().optional().nullable(),
-});
+export const SetterOverrideInputSchema = z
+  .object({
+    climbUuid: ExternalUUIDSchema,
+    boardType: BoardNameSchema,
+    angle: z.number().int().min(-5).max(90),
+    communityGrade: z.string().max(100).optional().nullable(),
+    isBenchmark: z.boolean().optional().nullable(),
+  })
+  .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
+    message: BOARD_ANGLE_VALIDATION_MESSAGE,
+    path: ['angle'],
+  });
 
 export const FreezeClimbInputSchema = z.object({
   climbUuid: ExternalUUIDSchema,
@@ -87,15 +98,20 @@ export const SetCommunitySettingInputSchema = z.object({
   value: z.string().max(1000),
 });
 
-export const GetClimbProposalsInputSchema = z.object({
-  climbUuid: ExternalUUIDSchema,
-  boardType: BoardNameSchema,
-  angle: z.number().int().min(0).max(90).optional().nullable(),
-  type: ProposalTypeSchema.optional().nullable(),
-  status: ProposalStatusSchema.optional().nullable(),
-  limit: z.number().int().min(1).max(50).optional().default(20),
-  offset: z.number().int().min(0).optional().default(0),
-});
+export const GetClimbProposalsInputSchema = z
+  .object({
+    climbUuid: ExternalUUIDSchema,
+    boardType: BoardNameSchema,
+    angle: z.number().int().min(-5).max(90).optional().nullable(),
+    type: ProposalTypeSchema.optional().nullable(),
+    status: ProposalStatusSchema.optional().nullable(),
+    limit: z.number().int().min(1).max(50).optional().default(20),
+    offset: z.number().int().min(0).optional().default(0),
+  })
+  .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
+    message: BOARD_ANGLE_VALIDATION_MESSAGE,
+    path: ['angle'],
+  });
 
 export const BrowseProposalsInputSchema = z.object({
   boardType: BoardNameSchema.optional().nullable(),

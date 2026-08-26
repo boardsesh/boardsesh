@@ -19,6 +19,7 @@ import { scheduleOgImageWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
+import { selectCanonicalClimbAngle } from '@/app/lib/seo/canonical-climb-angle';
 
 export async function generateMetadata(props: { params: Promise<BoardRouteParametersWithUuid> }): Promise<Metadata> {
   const params = await props.params;
@@ -27,7 +28,10 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
   try {
     const { parsedParams } = await parseRouteParams(params);
     const boardDetails = getBoardDetailsForBoard(parsedParams);
-    const currentClimb = await getClimb(parsedParams);
+    const [currentClimb, angleStats] = await Promise.all([
+      getClimb(parsedParams),
+      getClimbStatsForAllAngles(parsedParams),
+    ]);
     if (!currentClimb) {
       return createPageMetadata({
         title: t('metadata.view.fallbackTitle'),
@@ -44,7 +48,12 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
     const ascents = currentClimb.ascensionist_count || 0;
     // ONE builder, shared with `/b/{slug}/{angle}/view` — that is what makes
     // the two trees' canonicals provably identical (A1).
-    const climbUrl = buildCanonicalClimbViewUrl(boardDetails, parsedParams.angle, parsedParams.climb_uuid, climbName);
+    const canonicalAngle = selectCanonicalClimbAngle({
+      boardName: parsedParams.board_name,
+      catalogAngle: currentClimb.catalogAngle,
+      angleStats,
+    });
+    const climbUrl = buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, parsedParams.climb_uuid, climbName);
 
     const ogImagePath = buildOgBoardRenderUrl(boardDetails, currentClimb.frames);
 
@@ -82,9 +91,9 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
     if (needsSlugRedirect) {
       const queries = await import('@/app/lib/data/queries');
       const [layouts, sizes, sets] = await Promise.all([
-        queries.getLayouts(parsedParams.board_name),
-        queries.getSizes(parsedParams.board_name, parsedParams.layout_id),
-        queries.getSets(parsedParams.board_name, parsedParams.layout_id, parsedParams.size_id),
+        Promise.resolve(queries.getLayouts(parsedParams.board_name)),
+        Promise.resolve(queries.getSizes(parsedParams.board_name, parsedParams.layout_id)),
+        Promise.resolve(queries.getSets(parsedParams.board_name, parsedParams.layout_id, parsedParams.size_id)),
       ]);
 
       const layout = layouts.find((l) => l.id === parsedParams.layout_id);
@@ -163,6 +172,11 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
       parsedParams.climb_uuid,
       resolveClimbDisplayName(currentClimb.name, boardDetails.board_name),
     );
+    const canonicalAngle = selectCanonicalClimbAngle({
+      boardName: parsedParams.board_name,
+      catalogAngle: currentClimb.catalogAngle,
+      angleStats,
+    });
 
     return (
       <>
@@ -173,6 +187,7 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
           climb={currentClimb}
           boardDetails={boardDetails}
           angle={parsedParams.angle}
+          canonicalAngle={canonicalAngle}
           angleStats={angleStats}
           similarClimbs={similarClimbs}
           betaLinks={betaLinks}

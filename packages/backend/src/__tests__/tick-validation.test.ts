@@ -68,6 +68,7 @@ async function insertTickValidationTick(params: {
   status: 'flash' | 'send' | 'attempt';
   attemptCount: number;
   climbedAt?: string;
+  boardType?: string;
 }) {
   await db.execute(sql`
     INSERT INTO boardsesh_ticks (
@@ -87,7 +88,7 @@ async function insertTickValidationTick(params: {
     VALUES (
       ${params.uuid},
       ${TEST_USER_ID},
-      'kilter',
+      ${params.boardType ?? 'kilter'},
       ${TEST_CLIMB_UUID},
       40,
       ${params.status},
@@ -164,10 +165,18 @@ describe('UpdateTickInputSchema', () => {
     ).not.toThrow();
   });
 
-  it('rejects a negative angle', () => {
+  it('accepts -5 for deferred board-aware resolver validation', () => {
     expect(() =>
       UpdateTickInputSchema.parse({
         angle: -5,
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects an angle below the supported negative bound', () => {
+    expect(() =>
+      UpdateTickInputSchema.parse({
+        angle: -10,
       }),
     ).toThrow();
   });
@@ -367,6 +376,35 @@ describeWithDatabase('tickMutations.updateTick', () => {
 
     expect(queueMocks.queueClimbStatsRecompute).toHaveBeenCalledTimes(1);
     expect(queueMocks.queueClimbStatsRecompute).toHaveBeenCalledWith('kilter', TEST_CLIMB_UUID, 40);
+  });
+
+  it('rejects -5 for a stored Kilter tick before updating it', async () => {
+    const tickUuid = `${TEST_TICK_UUID_PREFIX}-kilter-negative`;
+    await insertTickValidationTick({ uuid: tickUuid, attemptCount: 1, status: 'send' });
+
+    await expect(
+      tickMutations.updateTick(null, { uuid: tickUuid, input: { angle: -5 } }, authenticatedContext),
+    ).rejects.toMatchObject({ extensions: { code: 'BAD_USER_INPUT' } });
+
+    const [storedTick] = await db
+      .select({ angle: dbSchema.boardseshTicks.angle })
+      .from(dbSchema.boardseshTicks)
+      .where(eq(dbSchema.boardseshTicks.uuid, tickUuid));
+    expect(storedTick?.angle).toBe(40);
+  });
+
+  it('accepts -5 for a stored Grasshopper tick', async () => {
+    const tickUuid = `${TEST_TICK_UUID_PREFIX}-grasshopper-negative`;
+    await insertTickValidationTick({
+      uuid: tickUuid,
+      attemptCount: 1,
+      status: 'send',
+      boardType: 'grasshopper',
+    });
+
+    const result = await tickMutations.updateTick(null, { uuid: tickUuid, input: { angle: -5 } }, authenticatedContext);
+
+    expect(result).toMatchObject({ uuid: tickUuid, angle: -5 });
   });
 
   it('an angle edit follows through to a directly linked beta video', async () => {

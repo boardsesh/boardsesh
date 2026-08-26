@@ -143,6 +143,13 @@ vi.mock('@/app/lib/board-slug-utils', () => ({
     set_ids: boardConfig.setIds,
     angle: boardConfig.angle,
   })),
+  boardToRouteParamsFromAngleSegment: vi.fn(() => ({
+    board_name: 'kilter',
+    layout_id: boardConfig.layoutId,
+    size_id: boardConfig.sizeId,
+    set_ids: boardConfig.setIds,
+    angle: boardConfig.angle,
+  })),
 }));
 
 vi.mock('@/app/components/board-renderer/util', () => ({
@@ -176,6 +183,7 @@ const legacyViewPage =
 const slugViewPage = await import('@/app/b/[board_slug]/[angle]/view/[climb_uuid]/page');
 const legacyListPage = await import('@/app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/page');
 const slugListPage = await import('@/app/b/[board_slug]/[angle]/list/page');
+const { getClimbStatsForAllAngles } = await import('@/app/lib/data/queries');
 
 function canonicalPath(canonical: string | URL | { url: string | URL } | null | undefined): string {
   if (!canonical) throw new Error('expected generateMetadata to set alternates.canonical');
@@ -242,6 +250,9 @@ function slugListMetadata(searchParams: Record<string, string> = {}) {
 
 beforeEach(() => {
   boardConfig.sizeId = 10;
+  boardConfig.angle = 40;
+  vi.mocked(getClimbStatsForAllAngles).mockReset();
+  vi.mocked(getClimbStatsForAllAngles).mockResolvedValue([]);
 });
 
 describe('climb-view canonical parity (A1 landed in W-15)', () => {
@@ -265,6 +276,20 @@ describe('climb-view canonical parity (A1 landed in W-15)', () => {
     expect(path.startsWith('/b/')).toBe(false);
     expect(path.startsWith('/kilter/')).toBe(true);
     expect(path).toContain(CLIMB_UUID);
+  });
+
+  it('canonicalizes valid angle variants to the most-ascended angle in both trees', async () => {
+    boardConfig.angle = 45;
+    vi.mocked(getClimbStatsForAllAngles).mockResolvedValue([
+      { angle: 40, ascensionist_count: '20' },
+      { angle: 45, ascensionist_count: '12' },
+    ] as never);
+
+    const [legacy, slug] = await Promise.all([legacyViewMetadata(), slugViewMetadata()]);
+    const legacyCanonical = canonicalPath(legacy.alternates?.canonical);
+
+    expect(legacyCanonical).toMatch(/\/40\/view\//);
+    expect(canonicalPath(slug.alternates?.canonical)).toBe(legacyCanonical);
   });
 
   it('agrees on the shadowed size (Kilter layout 1 size 27) and keeps it distinct from size 10', async () => {
