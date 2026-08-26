@@ -21,7 +21,7 @@ imported by nothing else. Nothing here reaches a user until it is Rust.
 lit hold's silhouette punched out, then draw the glow off the outside edge of each lit silhouette.
 
 The measurement that decided it: baseline, outward glow and glow+tint all leave the unlit wall at
-*identical* p95 luminance (209/209/209 on Kilter Homewall, 213×3 on Tension Original, 186×3 on TB2
+_identical_ p95 luminance (209/209/209 on Kilter Homewall, 213×3 on Tension Original, 186×3 on TB2
 Mirror). The veil takes them to 126/129/113 with the mark itself unchanged. Every other arm competes
 with the wall; only the veil changes what the mark competes against.
 
@@ -44,11 +44,11 @@ marker shapes (#3204) as an accessibility mode, default off. Ship the default re
 `render_overlay` (`renderer.rs:119`) draws circles and marker shapes from geometry. It has no
 radial gradient and no non-circular outline. Both are needed.
 
-| Piece | Needed | Cheapest expression |
-| --- | --- | --- |
-| The veil | one even-odd filled path: board rect, minus every lit silhouette | one path, no per-hold cost |
-| The glow | a falloff band outside each lit silhouette | see below |
-| The silhouette | each lit hold's real outline | a committed table, see §4 |
+| Piece          | Needed                                                           | Cheapest expression        |
+| -------------- | ---------------------------------------------------------------- | -------------------------- |
+| The veil       | one even-odd filled path: board rect, minus every lit silhouette | one path, no per-hold cost |
+| The glow       | a falloff band outside each lit silhouette                       | see below                  |
+| The silhouette | each lit hold's real outline                                     | a committed table, see §4  |
 
 **Do not port the twelve-to-twenty concentric strokes.** They exist only because
 `FeGaussianBlur` is broken in `react-native-svg` 15.15.5 on Android — a stroke through it paints
@@ -56,7 +56,7 @@ the filter region as a solid rectangle of the stroke colour. Rust has no such co
 falloff directly.
 
 **Do not replace the silhouette-clipped glow with a placement-centred radial gradient.** The hard
-inner step where the glow stops on the hold's own edge *is* the arm. Median silhouette
+inner step where the glow stops on the hold's own edge _is_ the arm. Median silhouette
 `rmax/rmin` about the placement centre runs 1.74–2.00, and p90 3.18–3.24 on the MoonBoards, so no
 circular or bbox-elliptical gradient reproduces it.
 
@@ -152,7 +152,7 @@ on — the way `renderHoldsOverlayWithMarkers` already does — rather than exte
    carrying >80% of it (the rejected crop rectangle's signature);
 4. traced outlines per board against placements — 332/303/498/499/476/140/112;
 5. no outline loses more than 20 board px² to an open at the board's trim radius;
-6. **cut share** — no silhouette boundary running through a *neighbour's* art. This is the one that
+6. **cut share** — no silhouette boundary running through a _neighbour's_ art. This is the one that
    catches the defect where a mark wraps a wedge of the hold next to it. Post-fix the neighbour mean
    is 0/0/0/0.2/0/0.2/0.2% per board.
 
@@ -174,7 +174,7 @@ that property; the round before shipped a gate whose fixture could not reach the
    vary in lit-hold count and role mix, and role mix is what decides how much the glyph work matters.
 5. **The user's marker settings.** The app ships six per-role marker shapes, a shape-size slider, a
    brush-thickness slider and per-role colour overrides. Nobody has decided what a silhouette-based
-   treatment does to a climber who set "diamond at size 2.0" — the silhouette *is* the shape, so
+   treatment does to a climber who set "diamond at size 2.0" — the silhouette _is_ the shape, so
    that setting has no meaning in the winning arm.
 6. **Render cost on a mid-tier Android device.** Counted, never profiled.
 
