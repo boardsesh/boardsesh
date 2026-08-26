@@ -9,6 +9,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
+import { setTimeout as setNodeTimeout } from 'node:timers';
 
 import { extractExpoWebEntryBundleSource } from './lib/expo-web-readiness';
 
@@ -35,9 +36,10 @@ function terminate(child: ChildProcess): Promise<void> {
     child.once('exit', () => resolve());
     // The orchestrator terminates its full child tree on SIGTERM.
     child.kill('SIGTERM');
-    setTimeout(() => {
+    const forceKillTimeout = setNodeTimeout(() => {
       if (!hasExited(child)) child.kill('SIGKILL');
-    }, 15_000).unref();
+    }, 15_000) as unknown as NodeJS.Timeout;
+    forceKillTimeout.unref();
   });
 }
 
@@ -77,10 +79,10 @@ async function main(): Promise<number> {
   });
 
   const appUrl = await new Promise<string>((resolve, reject) => {
-    const bootTimeout = setTimeout(
+    const bootTimeout = setNodeTimeout(
       () => reject(new Error('dev orchestrator never printed the Expo web app URL')),
       APP_READY_TIMEOUT_MS,
-    );
+    ) as unknown as NodeJS.Timeout;
     bootTimeout.unref();
     orchestrator.stdout?.on('data', (chunk: Buffer) => {
       const text = chunk.toString();

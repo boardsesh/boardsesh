@@ -115,7 +115,7 @@ function ToastMaterial({ toast, onDismiss }: ToastProps) {
 
   // Carry the same variant cue as the glass pill: an opaque brand-hued wash over
   // the surface (legible while floating over content) plus a leading icon and
-  // brand-coloured label. Passing our own content node lets us own the icon and
+  // adaptive system label. Passing our own content node lets us own the icon and
   // text colour rather than inheriting Paper's inverse-surface text colour.
   // `secondaryBackground as string`: on the Material path themed colours resolve
   // from materialSurfaces (hex strings on every platform), never a PlatformColor
@@ -141,7 +141,7 @@ function ToastMaterial({ toast, onDismiss }: ToastProps) {
           announced node, so TalkBack reads the message assertively either way. */}
       <View style={styles.materialContent} accessibilityRole="alert" accessibilityLiveRegion="assertive">
         <Icon name={config.icon} size={18} color={variantColor} />
-        <Text variant="subheadline" color={variantColor} style={styles.message} numberOfLines={2}>
+        <Text variant="subheadline" color={systemColors.label} style={styles.message} numberOfLines={2}>
           {toast.message}
         </Text>
       </View>
@@ -149,7 +149,7 @@ function ToastMaterial({ toast, onDismiss }: ToastProps) {
   );
 }
 
-// Liquid Glass / HIG toast — the original implementation, unchanged.
+// Liquid Glass / HIG toast.
 function ToastGlass({ toast, onDismiss }: ToastProps) {
   const { systemColors, colorScheme, brandColors, variant: uiVariant } = useTheme();
   const bottomOffset = useToastBottomOffset(uiVariant);
@@ -185,7 +185,7 @@ function ToastGlass({ toast, onDismiss }: ToastProps) {
     >
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: tintColor }]} />
       <Icon name={config.icon} size={18} color={variantColor} />
-      <Text variant="subheadline" color={variantColor} style={styles.message} numberOfLines={2}>
+      <Text variant="subheadline" color={systemColors.label} style={styles.message} numberOfLines={2}>
         {toast.message}
       </Text>
     </Animated.View>

@@ -6,6 +6,7 @@ import { createElement, type ReactNode } from 'react';
 // Controls the resolved UI variant the Toast branches on.
 const ctrl = vi.hoisted(() => ({
   variant: 'material' as 'material' | 'liquidGlass',
+  colorScheme: 'light' as 'light' | 'dark',
   nativeTabBar: false,
   nativeBottomAccessoryAvailable: true,
   insetsBottom: 34,
@@ -13,11 +14,22 @@ const ctrl = vi.hoisted(() => ({
   segments: ['(tabs)', 'climbs'] as readonly string[],
 }));
 
-type ViewMockProps = { children?: ReactNode; accessibilityRole?: string };
+type ViewMockProps = { children?: ReactNode; accessibilityRole?: string; pointerEvents?: string; style?: unknown };
 vi.mock('react-native', () => ({
-  View: ({ children, accessibilityRole }: ViewMockProps) =>
-    createElement('div', { 'data-view': 'true', 'data-role': accessibilityRole ?? '' }, children),
+  View: ({ children, accessibilityRole, pointerEvents, style }: ViewMockProps) =>
+    createElement(
+      'div',
+      {
+        'data-view': 'true',
+        'data-role': accessibilityRole ?? '',
+        'data-pointer-events': pointerEvents ?? '',
+        'data-style': JSON.stringify(style),
+      },
+      children,
+    ),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {} },
+  Platform: { OS: 'android' },
+  PlatformColor: (color: string) => color,
 }));
 
 // Reanimated Animated.View → div exposing accessibility props (glass path).
@@ -80,17 +92,18 @@ vi.mock('../../lib/native-tab-content-inset-store', () => ({
 }));
 
 vi.mock('../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', { 'data-text': 'true' }, children),
+  Text: ({ children, color }: { children?: ReactNode; color?: string }) =>
+    createElement('span', { 'data-text': 'true', 'data-color': color ?? '' }, children),
 }));
-vi.mock('../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
+vi.mock('../Icon', () => ({
+  Icon: ({ name, color }: { name: string; color?: string }) =>
+    createElement('i', { 'data-icon': name, 'data-color': color ?? '' }),
+}));
 vi.mock('../../theme/colors', () => ({
-  // Real light-scheme brandColors values (the component reads these from useTheme;
-  // kept here in sync so the mock can't drift from the source palette).
-  brandColors: { success: '#047857', error: '#C81E1E', primary: '#6D28D9', warning: '#B45309' },
-  withAlpha: (color: string) => color,
+  withAlpha: (color: string, alpha: number) => `${color}|${alpha}`,
   // Encode both args so tests can assert the variant colour (foreground) and the
   // surface (background) both reach blendOpaque — i.e. the colour-selection logic.
-  blendOpaque: (foreground: string, background: string) => `${foreground}|${background}`,
+  blendOpaque: (foreground: string, background: string, alpha: number) => `${foreground}|${background}|${alpha}`,
 }));
 vi.mock('../../theme/tokens', () => ({ borderRadius: { full: 999 }, spacing: { 2: 8, 3: 12, 4: 16 } }));
 vi.mock('../../theme/layout', () => ({
@@ -101,12 +114,28 @@ vi.mock('../../theme/layout', () => ({
   TOOLBAR_RESERVE: 66,
 }));
 vi.mock('../../providers/theme-provider', () => ({
-  useTheme: () => ({
-    variant: ctrl.variant,
-    colorScheme: 'light',
-    brandColors: { success: '#047857', error: '#C81E1E', primary: '#6D28D9', warning: '#B45309' },
-    systemColors: { secondaryBackground: '#EEE', label: '#000' },
-  }),
+  useTheme: () => {
+    const brandColorsByScheme = {
+      light: { success: '#047857', error: '#C81E1E', primary: '#6D28D9', warning: '#B45309' },
+      dark: { success: '#34D399', error: '#F87171', primary: '#A78BFA', warning: '#FBBF24' },
+    } as const;
+    const systemColorsByVariant = {
+      material: {
+        light: { secondaryBackground: '#FFFFFF', label: '#16111F' },
+        dark: { secondaryBackground: '#221A33', label: '#F5F2FB' },
+      },
+      liquidGlass: {
+        light: { secondaryBackground: '#FFFFFF', label: '#16111F' },
+        dark: { secondaryBackground: '#181225', label: '#F5F2FB' },
+      },
+    } as const;
+    return {
+      variant: ctrl.variant,
+      colorScheme: ctrl.colorScheme,
+      brandColors: brandColorsByScheme[ctrl.colorScheme],
+      systemColors: systemColorsByVariant[ctrl.variant][ctrl.colorScheme],
+    };
+  },
 }));
 
 import { Toast } from '../Toast';
@@ -118,9 +147,37 @@ const toast = { id: 't1', message: 'Saved tick', variant: 'success' as const, du
 // NativeTabContentInsetProbe. Realistic arithmetic, INFERRED not device-verified.
 const NATIVE_TAB_ONLY_INSET = 34 + TAB_BAR_HEIGHT;
 
+type HexChannels = [red: number, green: number, blue: number];
+
+function parseHex(color: string): HexChannels {
+  const channels = color.replace('#', '');
+  return [
+    Number.parseInt(channels.slice(0, 2), 16),
+    Number.parseInt(channels.slice(2, 4), 16),
+    Number.parseInt(channels.slice(4, 6), 16),
+  ];
+}
+
+function relativeLuminance(color: string): number {
+  const linearChannels = parseHex(color).map((channel) => {
+    const normalizedChannel = channel / 255;
+    return normalizedChannel <= 0.03928 ? normalizedChannel / 12.92 : ((normalizedChannel + 0.055) / 1.055) ** 2.4;
+  });
+  return linearChannels[0]! * 0.2126 + linearChannels[1]! * 0.7152 + linearChannels[2]! * 0.0722;
+}
+
+function contrastRatio(firstColor: string, secondColor: string): number {
+  const firstLuminance = relativeLuminance(firstColor);
+  const secondLuminance = relativeLuminance(secondColor);
+  const lighterLuminance = Math.max(firstLuminance, secondLuminance);
+  const darkerLuminance = Math.min(firstLuminance, secondLuminance);
+  return (lighterLuminance + 0.05) / (darkerLuminance + 0.05);
+}
+
 describe('Toast', () => {
   beforeEach(() => {
     ctrl.variant = 'material';
+    ctrl.colorScheme = 'light';
     ctrl.nativeTabBar = false;
     ctrl.nativeBottomAccessoryAvailable = true;
     ctrl.insetsBottom = 34;
@@ -139,7 +196,9 @@ describe('Toast', () => {
     // Variant cue carries through: leading icon, brand-tinted surface, alert role.
     expect(container.querySelector('[data-icon="success"]')).not.toBeNull();
     // blendOpaque(config.color, secondaryBackground): success → brand success hue.
-    expect(snackbar?.getAttribute('data-bg')).toBe('#047857|#EEE');
+    expect(snackbar?.getAttribute('data-bg')).toBe('#047857|#FFFFFF|0.15');
+    expect(container.querySelector('[data-icon="success"]')?.getAttribute('data-color')).toBe('#047857');
+    expect(container.querySelector('[data-text]')?.getAttribute('data-color')).toBe('#16111F');
     expect(container.querySelector('[data-view][data-role="alert"]')).not.toBeNull();
     // The glass animated pill must not render on Material.
     expect(container.querySelector('[data-animated]')).toBeNull();
@@ -157,19 +216,82 @@ describe('Toast', () => {
     );
   });
 
-  it('selects the matching icon + tint per variant on the Material variant', () => {
-    ctrl.variant = 'material';
-    const cases = [
-      { variant: 'error' as const, icon: 'error', color: '#C81E1E' },
-      { variant: 'warning' as const, icon: 'warning', color: '#B45309' },
-      { variant: 'info' as const, icon: 'info', color: '#6D28D9' },
-    ];
-    for (const { variant, icon, color } of cases) {
-      const { container } = render(
-        <Toast toast={{ id: variant, message: 'msg', variant, duration: 3000 }} onDismiss={() => {}} />,
-      );
-      expect(container.querySelector(`[data-icon="${icon}"]`)).not.toBeNull();
-      expect(container.querySelector('[data-paper-snackbar]')?.getAttribute('data-bg')).toBe(`${color}|#EEE`);
+  it.each([
+    { uiVariant: 'material' as const, colorScheme: 'light' as const },
+    { uiVariant: 'material' as const, colorScheme: 'dark' as const },
+    { uiVariant: 'liquidGlass' as const, colorScheme: 'light' as const },
+    { uiVariant: 'liquidGlass' as const, colorScheme: 'dark' as const },
+  ])(
+    'uses an adaptive label while preserving every icon + tint on $uiVariant in $colorScheme mode',
+    ({ uiVariant, colorScheme }) => {
+      ctrl.variant = uiVariant;
+      ctrl.colorScheme = colorScheme;
+      const expectedPalette =
+        colorScheme === 'dark'
+          ? { success: '#34D399', error: '#F87171', warning: '#FBBF24', info: '#A78BFA' }
+          : { success: '#047857', error: '#C81E1E', warning: '#B45309', info: '#6D28D9' };
+      const expectedLabel = colorScheme === 'dark' ? '#F5F2FB' : '#16111F';
+      const expectedSurface =
+        uiVariant === 'material'
+          ? colorScheme === 'dark'
+            ? '#221A33'
+            : '#FFFFFF'
+          : colorScheme === 'dark'
+            ? '#181225'
+            : '#FFFFFF';
+      const tintAlpha = colorScheme === 'dark' ? 0.24 : 0.15;
+      const cases = [
+        { variant: 'success' as const, icon: 'success' },
+        { variant: 'error' as const, icon: 'error' },
+        { variant: 'warning' as const, icon: 'warning' },
+        { variant: 'info' as const, icon: 'info' },
+      ];
+
+      for (const { variant, icon } of cases) {
+        const expectedVariantColor = expectedPalette[variant];
+        const { container } = render(
+          <Toast toast={{ id: variant, message: 'msg', variant, duration: 3000 }} onDismiss={() => {}} />,
+        );
+        expect(container.querySelector(`[data-icon="${icon}"]`)?.getAttribute('data-color')).toBe(expectedVariantColor);
+        expect(container.querySelector('[data-text]')?.getAttribute('data-color')).toBe(expectedLabel);
+        if (uiVariant === 'material') {
+          expect(container.querySelector('[data-paper-snackbar]')?.getAttribute('data-bg')).toBe(
+            `${expectedVariantColor}|${expectedSurface}|${tintAlpha}`,
+          );
+        } else {
+          expect(container.querySelector('[data-view][data-pointer-events="none"]')?.getAttribute('data-style')).toBe(
+            JSON.stringify([{}, { backgroundColor: `${expectedVariantColor}|${tintAlpha}` }]),
+          );
+        }
+      }
+    },
+  );
+
+  it('keeps toast message contrast at WCAG AA across real Material and Android Liquid Glass tokens', async () => {
+    const { androidFallbackColors, blendOpaque, brandColors, brandColorsDark, materialSurfaces } =
+      await vi.importActual<typeof import('../../theme/colors')>('../../theme/colors');
+    const schemes = ['light', 'dark'] as const;
+    const toastSurfaces = ['material', 'androidLiquidGlass'] as const;
+    const variants = [
+      { variant: 'success', colorKey: 'success' },
+      { variant: 'error', colorKey: 'error' },
+      { variant: 'info', colorKey: 'primary' },
+      { variant: 'warning', colorKey: 'warning' },
+    ] as const;
+
+    for (const scheme of schemes) {
+      const palette = scheme === 'dark' ? brandColorsDark : brandColors;
+      const tintAlpha = scheme === 'dark' ? 0.24 : 0.15;
+      for (const toastSurface of toastSurfaces) {
+        const surfaceTokens = toastSurface === 'material' ? materialSurfaces[scheme] : androidFallbackColors[scheme];
+        for (const { variant, colorKey } of variants) {
+          const composedBackground = blendOpaque(palette[colorKey], surfaceTokens.secondaryBackground, tintAlpha);
+          expect(
+            contrastRatio(surfaceTokens.label, composedBackground),
+            `${scheme} ${toastSurface} ${variant} toast`,
+          ).toBeGreaterThanOrEqual(4.5);
+        }
+      }
     }
   });
 
@@ -188,6 +310,8 @@ describe('Toast', () => {
     expect(animated).not.toBeNull();
     expect(animated?.getAttribute('data-role')).toBe('alert');
     expect(container.querySelector('[data-icon="success"]')).not.toBeNull();
+    expect(container.querySelector('[data-icon="success"]')?.getAttribute('data-color')).toBe('#047857');
+    expect(container.querySelector('[data-text]')?.getAttribute('data-color')).toBe('#16111F');
     expect(container.textContent).toContain('Saved tick');
     expect(container.querySelector('[data-paper-snackbar]')).toBeNull();
   });
