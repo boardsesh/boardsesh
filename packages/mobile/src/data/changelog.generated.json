@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-08-26T05:13:53.070Z",
+  "generatedAt": "2026-08-26T14:35:38.809Z",
   "entries": [
+    {
+      "prNumber": 4780,
+      "category": "fixed",
+      "title": "Board images now refresh when we improve the renderer, instead of showing you last month's version for up to a year.",
+      "mergedAt": "2026-08-26T14:34:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4780",
+      "body": "Every board photo, hold overlay and share card on the site now carries a version stamp, so a fix to how holds are drawn reaches you on the next page load."
+    },
+    {
+      "prNumber": 4589,
+      "category": "fixed",
+      "title": "Gym TVs and website embeds light up straight away — no login check standing between the screen and the wall.",
+      "mergedAt": "2026-08-26T06:16:49Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4589"
+    },
     {
       "prNumber": 4713,
       "category": "fixed",

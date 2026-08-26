@@ -8,6 +8,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Board images now refresh when we improve the renderer, instead of showing you last month's version for up to a year. ([#4780](https://github.com/boardsesh/boardsesh/pull/4780))
+  Every board photo, hold overlay and share card on the site now carries a version stamp, so a fix to how holds are drawn reaches you on the next page load.
+- Gym TVs and website embeds light up straight away — no login check standing between the screen and the wall. ([#4589](https://github.com/boardsesh/boardsesh/pull/4589))
 - Starting a big playlist no longer dies on one dropped page: a flaky page retries on its own, and backing out of a playlist actually cancels the load. ([#4713](https://github.com/boardsesh/boardsesh/pull/4713))
 - Kilter playlists that got cloned when you re-linked your account are merged back into one. Your edited version is the one that survives, with its pins and follows intact. ([#4747](https://github.com/boardsesh/boardsesh/pull/4747))
 - Similar climbs, climb details, board-presence live sends, playlists, and the setter filter now all work on boards set to a negative tilt ([#4677](https://github.com/boardsesh/boardsesh/pull/4677))
