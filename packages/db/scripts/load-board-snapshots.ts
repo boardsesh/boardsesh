@@ -64,6 +64,19 @@ const DEFAULT_SNAPSHOT_BASE_URL = 'https://boardsesh-board-snapshots.t3.tigrisfi
 const CLIMBS_MANIFEST_PATH = 'board-snapshots/v1-gzip/manifest.json';
 const CATALOG_MANIFEST_PATH = 'board-snapshots/v1-catalog/manifest.json';
 
+// Every table and column spliced into SQL below comes from the shared catalogue
+// contract or from information_schema, never from input — but the splice is
+// string concatenation, so the guard stays next to it rather than resting on
+// where today's callers happen to get their values.
+const SAFE_IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
+
+function assertSafeIdentifier(identifier: string, what: string): string {
+  if (!SAFE_IDENTIFIER.test(identifier)) {
+    throw new Error(`Refusing to build SQL with unsafe ${what}: ${identifier}`);
+  }
+  return identifier;
+}
+
 /** Deliberate opt-in to load into a non-local database. Never set by automation. */
 const ALLOW_REMOTE_ENV_VAR = 'LOAD_BOARD_SNAPSHOTS_ALLOW_REMOTE';
 
@@ -196,7 +209,9 @@ async function withRetry<T>(label: string, attempt: () => Promise<T>): Promise<T
     } catch (error) {
       lastError = error;
       if (tries === maxAttempts) break;
-      const delayMs = tries * 2000;
+      // Exponential: 2s, 4s, 8s. Linear gave a 12s total window, which is tight
+      // against a CDN that just refused a 100 MB transfer.
+      const delayMs = 2000 * 2 ** (tries - 1);
       console.warn(
         `  ${label} failed (attempt ${tries}/${maxAttempts}): ` +
           `${error instanceof Error ? error.message : String(error)} — retrying in ${delayMs / 1000}s`,
@@ -227,7 +242,7 @@ async function fetchManifest<T>(url: string, requiredKey: string): Promise<T> {
 const GZIP_MAGIC = Buffer.from([0x1f, 0x8b]);
 
 /** True when the file still holds a raw gzip stream (the fetch did not decode it). */
-async function looksGzipCompressed(filePath: string): Promise<boolean> {
+export async function looksGzipCompressed(filePath: string): Promise<boolean> {
   const handle = await open(filePath, 'r');
   try {
     const header = Buffer.alloc(2);
@@ -258,7 +273,15 @@ async function downloadArtifact(url: string, destPath: string): Promise<void> {
 
   if (await looksGzipCompressed(destPath)) {
     const decodedPath = `${destPath}.decoded`;
-    await pipeline(createReadStream(destPath), createGunzip(), createWriteStream(decodedPath));
+    try {
+      await pipeline(createReadStream(destPath), createGunzip(), createWriteStream(decodedPath));
+    } catch (error) {
+      // The download itself is still on disk — the decode is what failed — so
+      // drop the half-written decode rather than leave it to be mistaken for a
+      // complete artifact, and let the real zlib error surface.
+      await rm(decodedPath, { force: true });
+      throw error;
+    }
     await rm(destPath, { force: true });
     await rename(decodedPath, destPath);
   }
@@ -379,6 +402,8 @@ async function copyIntoStaging(
   columns: readonly string[],
   rows: Iterable<readonly (string | null)[]>,
 ): Promise<number> {
+  assertSafeIdentifier(stagingTable, 'staging table');
+  for (const column of columns) assertSafeIdentifier(column, 'column');
   await sqlClient.unsafe(`DROP TABLE IF EXISTS ${stagingTable}`);
   await sqlClient.unsafe(
     `CREATE UNLOGGED TABLE ${stagingTable} (${columns.map((column) => `${column} text`).join(', ')})`,
@@ -428,6 +453,7 @@ async function loadRows(params: {
   extraWhere?: string;
 }): Promise<LoadResult> {
   const { sqlClient, targetTable, plans, rows, extraWhere } = params;
+  assertSafeIdentifier(targetTable, 'target table');
   const stagingTable = `bs_stage_${targetTable}`;
   const columnList = plans.map((plan) => plan.name).join(', ');
   try {
@@ -477,7 +503,7 @@ async function loadArtifactTable(params: {
     plans,
     rows: mapSqliteRows(db, `SELECT ${artifactCols.join(', ')} FROM ${table}`, plans),
     extraWhere: requiresClimb
-      ? `EXISTS (SELECT 1 FROM board_climbs climb WHERE climb.board_type = staging.board_type AND climb.uuid = staging.${requiresClimb})`
+      ? `EXISTS (SELECT 1 FROM board_climbs climb WHERE climb.board_type = staging.board_type AND climb.uuid = staging.${assertSafeIdentifier(requiresClimb, 'climb reference column')})`
       : undefined,
   });
 }
@@ -531,12 +557,23 @@ function* deriveHoldRows(db: DatabaseSync): Generator<readonly (string | null)[]
 
 // deriveHoldRows yields values positionally, so these plans only carry the
 // column name and its cast; `read` is never called for them.
-const HOLD_COLUMN_PLANS: ColumnPlan[] = [
-  { name: 'board_type', formatType: 'text', read: () => null },
-  { name: 'climb_uuid', formatType: 'text', read: () => null },
-  { name: 'hold_id', formatType: 'integer', read: () => null },
-  { name: 'frame_number', formatType: 'integer', read: () => null },
-  { name: 'hold_state', formatType: 'text', read: () => null },
+// `read` throws rather than returning null: routing these through
+// `mapSqliteRows` would otherwise emit ~10M all-NULL rows that fail on the first
+// NOT NULL column, with nothing pointing back to the cause.
+const positionalPlan = (name: string, formatType: string): ColumnPlan => ({
+  name,
+  formatType,
+  read: () => {
+    throw new Error(`${name} is supplied positionally by deriveHoldRows; its plan has no reader`);
+  },
+});
+
+export const HOLD_COLUMN_PLANS: ColumnPlan[] = [
+  positionalPlan('board_type', 'text'),
+  positionalPlan('climb_uuid', 'text'),
+  positionalPlan('hold_id', 'integer'),
+  positionalPlan('frame_number', 'integer'),
+  positionalPlan('hold_state', 'text'),
 ];
 
 /**

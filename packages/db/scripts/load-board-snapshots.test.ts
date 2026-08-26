@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   booleanToPg,
   buildColumnPlans,
@@ -8,8 +11,10 @@ import {
   DEFERRED_CATALOG_TABLES,
   encodeCopyField,
   encodeCopyRow,
+  HOLD_COLUMN_PLANS,
   holdRowsForClimb,
   jsonArrayToPgArray,
+  looksGzipCompressed,
   parseArgs,
   readerFor,
   STATS_ACCOUNTING_PLANS,
@@ -353,5 +358,54 @@ describe('holdRowsForClimb', () => {
     for (const row of holdRowsForClimb('tension', 'climb-7', 'p1143r12p1175r12')) {
       assert.equal(row.length, 5);
     }
+  });
+});
+
+describe('looksGzipCompressed', () => {
+  // Whether the bytes on disk are still gzip depends on the HTTP stack, so this
+  // sniff decides whether the artifact is decoded before SQLite ever opens it.
+  // Getting it wrong means every artifact fails `PRAGMA quick_check`.
+  const withTempFile = async (bytes: Buffer, assertion: (isGzip: boolean) => void) => {
+    const dir = mkdtempSync(join(tmpdir(), 'gzip-sniff-'));
+    const file = join(dir, 'artifact.db');
+    try {
+      writeFileSync(file, bytes);
+      assertion(await looksGzipCompressed(file));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it('detects the gzip magic bytes', async () => {
+    await withTempFile(Buffer.from([0x1f, 0x8b, 0x08, 0x00]), (isGzip) => assert.equal(isGzip, true));
+  });
+
+  it('does not mistake a plain SQLite header for gzip', async () => {
+    await withTempFile(Buffer.from('SQLite format 3\0', 'latin1'), (isGzip) => assert.equal(isGzip, false));
+  });
+
+  it('reports a file shorter than the magic as not gzip', async () => {
+    await withTempFile(Buffer.from([0x1f]), (isGzip) => assert.equal(isGzip, false));
+    await withTempFile(Buffer.alloc(0), (isGzip) => assert.equal(isGzip, false));
+  });
+});
+
+describe('positional hold plans', () => {
+  // deriveHoldRows supplies these values by position. If a future change routed
+  // them through mapSqliteRows instead, a silent reader would emit ~10M all-NULL
+  // rows; this makes that a loud failure at the first row.
+  it('refuse to be read, rather than yielding null', () => {
+    for (const plan of HOLD_COLUMN_PLANS) {
+      assert.throws(() => plan.read({}), /supplied positionally/);
+    }
+  });
+
+  it('declare exactly the columns deriveHoldRows yields', () => {
+    const [row] = holdRowsForClimb('kilter', 'c', 'p1143r12');
+    assert.equal(row.length, HOLD_COLUMN_PLANS.length);
+    assert.deepEqual(
+      HOLD_COLUMN_PLANS.map((plan) => plan.name),
+      ['board_type', 'climb_uuid', 'hold_id', 'frame_number', 'hold_state'],
+    );
   });
 });
