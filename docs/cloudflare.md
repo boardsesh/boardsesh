@@ -240,12 +240,19 @@ publicly-trusted cert for its exact name, since the mode is zone-wide:
 # Proxied hosts resolve to Cloudflare IPs (104.21.x / 172.67.x); DNS-only hosts
 # resolve straight to the origin and the zone SSL mode does not govern them.
 for H in www ws updates app; do
-  echo "$H: $(getent ahostsv4 "$H.boardsesh.com" | awk '{print $1}' | sort -u | tr '\n' ' ')"
+  echo "$H: $(dig +short "$H.boardsesh.com" A | tr '\n' ' ')"
 done
 
 # For each proxied host, ask its origin for the cert it would show Cloudflare.
+# Railway's edge selects the cert by SNI, so any Railway hostname reaches the
+# right one — the app name below is not load-bearing, `-servername` is.
 openssl s_client -connect backend-production.up.railway.app:443 \
   -servername ws.boardsesh.com </dev/null 2>/dev/null |
+  openssl x509 -noout -subject -issuer -dates
+
+# Vercel-backed hosts answer on their CNAME target the same way.
+openssl s_client -connect cname.vercel-dns.com:443 \
+  -servername www.boardsesh.com </dev/null 2>/dev/null |
   openssl x509 -noout -subject -issuer -dates
 ```
 
