@@ -1169,7 +1169,7 @@ lets the image be built entirely from public, production-derived, nightly-verifi
 | Prefix   | `board-snapshots/v1-catalog` — one gzip artifact + its own `manifest.json`                  |
 | Cadence  | The 07:15 UTC nightly only. Never the 15-minute scan; never a `--board`/`--layout` dispatch |
 | Size     | ~12 MB gzipped (~63 MB on disk), dominated by `board_climb_aliases`                         |
-| Consumer | The seeded developer database image (`packages/db/docker/Dockerfile.dev-db`) — issue #4508  |
+| Consumer | `packages/db/scripts/load-board-snapshots.ts`, run by `Dockerfile.dev-db`                   |
 
 Tables, in the order a consumer must load them (foreign keys point backwards):
 

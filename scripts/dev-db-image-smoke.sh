@@ -78,6 +78,10 @@ SELECT set_config('boardsesh.expected_migration_count', :'expected_migration_cou
 SELECT set_config('boardsesh.expected_postgis_version', :'expected_postgis_version', false);
 DO $$
 DECLARE
+  board_type_name text;
+  catalog_table text;
+  catalog_count bigint;
+  climb_count bigint;
   fence_membership_count integer;
   fence_owner pg_roles%ROWTYPE;
   fence_owner_oid oid;
@@ -106,8 +110,67 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM users WHERE email = 'test@boardsesh.com') THEN
     RAISE EXCEPTION 'seeded test user is missing';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM board_climbs) THEN
-    RAISE EXCEPTION 'seeded board_climbs data is missing';
+  -- Catalogue coverage. The image is seeded from the published board snapshots
+  -- (docs/board-snapshots.md), so "board_climbs is not empty" no longer says
+  -- much: a load that stopped after the first layout would still pass it. Assert
+  -- the shape a developer actually needs instead.
+  SELECT count(*) INTO climb_count FROM board_climbs;
+  IF climb_count < 800000 THEN
+    RAISE EXCEPTION 'seeded board_climbs has only % rows; expected at least 800000', climb_count;
+  END IF;
+
+  FOREACH board_type_name IN ARRAY ARRAY[
+    'kilter', 'tension', 'moonboard', 'decoy', 'touchstone', 'grasshopper', 'soill', 'woods'
+  ] LOOP
+    IF NOT EXISTS (SELECT 1 FROM board_climbs WHERE board_type = board_type_name) THEN
+      RAISE EXCEPTION 'seeded board_climbs has no % climbs', board_type_name;
+    END IF;
+  END LOOP;
+
+  -- Hardware geometry, which only the Aurora boards keep in Postgres (MoonBoard
+  -- and Woods geometry lives in @boardsesh/board-constants). Without these no
+  -- board renders and no grade resolves.
+  FOREACH board_type_name IN ARRAY ARRAY[
+    'kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill'
+  ] LOOP
+    FOREACH catalog_table IN ARRAY ARRAY[
+      'board_products', 'board_layouts', 'board_product_sizes', 'board_sets',
+      'board_placement_roles', 'board_holes', 'board_placements', 'board_leds',
+      'board_product_sizes_layouts_sets', 'board_difficulty_grades'
+    ] LOOP
+      EXECUTE format('SELECT count(*) FROM %I WHERE board_type = $1', catalog_table)
+        INTO catalog_count USING board_type_name;
+      IF catalog_count = 0 THEN
+        RAISE EXCEPTION 'seeded % has no % rows', catalog_table, board_type_name;
+      END IF;
+    END LOOP;
+  END LOOP;
+
+  -- Derived and secondary tables the load is responsible for.
+  IF NOT EXISTS (SELECT 1 FROM board_climb_holds) THEN
+    RAISE EXCEPTION 'seeded board_climb_holds data is missing';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM board_climb_stats) THEN
+    RAISE EXCEPTION 'seeded board_climb_stats data is missing';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM board_climb_grades) THEN
+    RAISE EXCEPTION 'seeded board_climb_grades data is missing';
+  END IF;
+
+  -- recomputeClimbStatsBulk derives ascensionist_count as upstream + boardsesh,
+  -- so a NULL upstream term would turn every seeded tick into a NULL count.
+  IF EXISTS (SELECT 1 FROM board_climb_stats WHERE upstream_ascensionist_count IS NULL) THEN
+    RAISE EXCEPTION 'seeded board_climb_stats has NULL upstream_ascensionist_count rows';
+  END IF;
+
+  -- The legacy Aurora tables exist only as empty stubs during the build, so the
+  -- journal can apply to a bare cluster; 0038 must have dropped every one.
+  IF EXISTS (
+    SELECT 1 FROM pg_tables
+    WHERE schemaname = 'public'
+      AND (tablename LIKE 'kilter\_%' OR tablename LIKE 'tension\_%')
+  ) THEN
+    RAISE EXCEPTION 'legacy kilter_*/tension_* tables survived into the image';
   END IF;
 
   SELECT * INTO STRICT fence_owner

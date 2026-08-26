@@ -1,9 +1,17 @@
 # =============================================================================
 # Dockerfile.dev-db
-# Multi-stage build that produces a PostgreSQL + PostGIS image with all
-# Kilter/Tension/Decoy/Touchstone/Grasshopper/So-iLL/MoonBoard board data,
-# a test user, and social seed data
-# pre-loaded with drizzle migrations applied. Developers just pull & run.
+# Multi-stage build that produces a PostgreSQL + PostGIS image with the whole
+# Kilter/Tension/Decoy/Touchstone/Grasshopper/So-iLL/MoonBoard/Woods board
+# catalogue, a test user, and social seed data pre-loaded with drizzle
+# migrations applied. Developers just pull & run.
+#
+# The catalogue comes from the nightly board snapshots we already publish for
+# offline mode (docs/board-snapshots.md) — not from scraping Aurora APKs and
+# running pgloader, which is what this image used to do (issue #4508). The
+# snapshots are built from production, so the image ships last night's catalogue
+# instead of whatever an APK mirror happened to serve, and dropping pgloader
+# (which needs TCP during the build and cannot complete under GitHub's ARM
+# emulation) is what lets this image be built for linux/arm64.
 #
 # Build context: repository root so we can access packages/db/docker scripts,
 # packages/db/drizzle migrations, and shared package sources.
@@ -34,20 +42,20 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------
-# Stage 2: Builder — download APKs, extract SQLite DBs, fix compat, import
+# Stage 2: Builder — migrate an empty cluster, then fill it from the snapshots
 # ---------------------------------------------------------------------------
 FROM postgres-postgis AS builder
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      pgloader \
-      sqlite3 \
       ca-certificates \
       curl \
-      unzip \
       jq \
-      gnupg && \
-    # Install Node.js 22 LTS for TypeScript import/seed scripts
+      gnupg \
+      unzip && \
+    # unzip is bun's installer requirement, not ours.
+    # Install Node.js 22 LTS for the TypeScript load/seed scripts. `node:sqlite`
+    # (which the snapshot loader reads artifacts with) needs 22.5+.
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     apt-get clean && \
@@ -57,52 +65,51 @@ RUN apt-get update && \
 # below a declared volume during docker build is not a portable image layer.
 ENV PGDATA=/opt/boardsesh/dev-db-seed/18/docker
 
+# Where the loader resolves the manifests from. Overridable so a build can be
+# pointed at a staging bucket; the default is the public snapshot host.
+ARG SNAPSHOT_BASE_URL=https://boardsesh-board-snapshots.t3.tigrisfiles.io
+ENV SNAPSHOT_BASE_URL=${SNAPSHOT_BASE_URL}
+# Full-URL override for the catalogue manifest alone, so a build can be pointed
+# at a locally served artifact while the climb artifacts still come from the
+# public host. Empty (the default) resolves it under SNAPSHOT_BASE_URL.
+ARG CATALOG_MANIFEST_URL=
+ENV CATALOG_MANIFEST_URL=${CATALOG_MANIFEST_URL}
+
 # Build context is the repo root (see dev-db-docker.yml) so we can also reach
 # packages/shared-schema below. All paths here are repo-root-relative.
 
-# Copy pgloader configs and scripts (from docker/ subdirectory)
-COPY packages/db/docker/cleanup_sqlite_db_problems.sh \
-     packages/db/docker/*.load \
-     packages/db/docker/*.sql \
+COPY packages/db/docker/legacy-aurora-schema-stub.sql \
+     packages/db/docker/bootstrap-pg18-development-roles.sql \
      /db/
 COPY packages/db/docker/apply-drizzle-migrations.sh \
      /usr/local/bin/boardsesh-apply-drizzle-migrations
-COPY packages/db/docker/bootstrap-pg18-development-roles.sql \
-     /db/bootstrap-pg18-development-roles.sql
-RUN chmod +x /db/cleanup_sqlite_db_problems.sh \
-             /usr/local/bin/boardsesh-apply-drizzle-migrations
+RUN chmod +x /usr/local/bin/boardsesh-apply-drizzle-migrations
 
 # Copy drizzle migration files
 COPY packages/db/drizzle/ /drizzle/
 
-# Copy Node.js project files for import/seed scripts
+# Copy Node.js project files for load/seed scripts
 COPY packages/db/package.json /app/package.json
 COPY packages/db/scripts/ /app/scripts/
 COPY packages/db/src/ /app/src/
 COPY packages/db/tsconfig.json /app/tsconfig.json
 
-# The import scripts use @boardsesh/shared-schema (the climb-characteristics
-# helper). This isolated image can't do a monorepo workspace install, so: strip
-# the workspace dep from package.json (a standalone `bun install` can't resolve
-# it), install packages/db's own deps, then drop the shared-schema package
-# straight into node_modules. The scripts import only the dependency-free
-# `@boardsesh/shared-schema/characteristics` subpath, so graphql is never loaded.
+# The scripts use several @boardsesh/* workspace packages. This isolated image
+# can't do a monorepo workspace install, so: strip every workspace dep from
+# package.json (a standalone `bun install` can't resolve a "*" version), install
+# packages/db's own deps, then drop the packages that ARE loaded at runtime
+# straight into node_modules.
 #
-# @boardsesh/board-config (used by the runtime required_set_ids helpers),
-# @boardsesh/board-constants (grade/size helpers used by create-climb-filters
-# and recommendations), @boardsesh/kiosk (only a type-only import for the
-# gym_kiosks.layout $type<KioskLayout>, never loaded at runtime) and sharp (used
-# only by the cell-set generator) are stripped too — none is loaded by the
-# scripts this build runs (import-aurora-board-unified + import-moonboard-problems
-# + create-test-user + seed-social + migrate), and the workspace "*" / native
-# sharp dep would otherwise break the standalone install. MoonBoard
-# required_set_ids are populated by the backfill, run from the full monorepo
-# against the live DB, not in this image.
+# Loaded at runtime, so copied in below:
+#   @boardsesh/shared-schema    the climb-characteristics helper + BoardName
+#   @boardsesh/sync-runtime     the fa_at range guard (issue #3536)
+#   @boardsesh/board-constants  convertLitUpHoldsStringToMap, which the snapshot
+#                               loader derives board_climb_holds with
 #
-# @boardsesh/sync-runtime (dependency-free; the fa_at range guard used by
-# import-aurora-board-unified, issue #3536) IS loaded at runtime, so like
-# shared-schema it is stripped from package.json and copied straight into
-# node_modules below.
+# Stripped and NOT copied, because nothing this build runs loads them:
+#   @boardsesh/board-config     runtime required_set_ids helpers
+#   @boardsesh/kiosk            type-only import for gym_kiosks.layout
+#   sharp                       native; only the cell-set generator uses it
 RUN cd /app && \
     sed -i -e '/"@boardsesh\/shared-schema"/d' -e '/"@boardsesh\/board-config"/d' -e '/"@boardsesh\/board-constants"/d' -e '/"@boardsesh\/kiosk"/d' -e '/"@boardsesh\/sync-runtime"/d' -e '/"sharp"/d' package.json && \
     curl -fsSL https://bun.sh/install | bash && \
@@ -111,121 +118,19 @@ RUN cd /app && \
     bun install --ignore-scripts
 COPY packages/shared-schema/ /app/node_modules/@boardsesh/shared-schema/
 COPY packages/sync-runtime/ /app/node_modules/@boardsesh/sync-runtime/
+COPY packages/board-constants/ /app/node_modules/@boardsesh/board-constants/
 
-# Single RUN: download → extract → fix → start PG → import → migrate → stop PG → clean
+# Single RUN: start PG → migrate → load snapshots → seed → stop PG → clean
 RUN set -e && \
-    mkdir -p /db/tmp && \
-    \
-    # ── Download APKs ────────────────────────────────────────────────── \
-    echo ">>> Downloading Kilterboard APK..." && \
-    curl -o /tmp/kilterboard.apk -L \
-      -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36" \
-      "https://d.apkpure.net/b/APK/com.auroraclimbing.kilterboard?version=latest" && \
-    echo ">>> Downloading Tensionboard APK..." && \
-    curl -o /tmp/tensionboard.apk -L \
-      -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36" \
-      "https://d.apkpure.net/b/APK/com.auroraclimbing.tensionboard2?version=latest" && \
-    echo ">>> Downloading Decoyboard APK..." && \
-    curl -o /tmp/decoyboard.apk -L \
-      -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36" \
-      "https://d.apkpure.net/b/APK/com.auroraclimbing.decoyboard?version=latest" && \
-    echo ">>> Downloading Touchstoneboard APK..." && \
-    curl -o /tmp/touchstoneboard.apk -L \
-      -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36" \
-      "https://d.apkpure.net/b/APK/com.auroraclimbing.touchstoneboard?version=latest" && \
-    echo ">>> Downloading Grasshopperboard APK..." && \
-    curl -o /tmp/grasshopperboard.apk -L \
-      -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36" \
-      "https://d.apkpure.net/b/APK/com.auroraclimbing.grasshopperboard?version=latest" && \
-    echo ">>> Downloading So-iLL Board APK..." && \
-    curl -o /tmp/soillboard.apk -L \
-      -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36" \
-      "https://d.apkpure.net/b/APK/com.auroraclimbing.soillboard?version=latest" && \
-    \
-    # ── Extract SQLite databases from APKs ───────────────────────────── \
-    echo ">>> Extracting Kilter database..." && \
-    unzip -o -j /tmp/kilterboard.apk assets/db.sqlite3 -d /db/tmp/ && \
-    mv /db/tmp/db.sqlite3 /db/tmp/kilter.db && \
-    \
-    echo ">>> Extracting Tension database..." && \
-    (unzip -o -j /tmp/tensionboard.apk assets/db.sqlite3 -d /db/tmp/ > /dev/null 2>&1 || \
-     (echo ">>> Direct extraction failed, trying nested APK..." && \
-      unzip -o -j /tmp/tensionboard.apk 'com.auroraclimbing.tensionboard2.apk' -d /tmp/ && \
-      unzip -o -j /tmp/com.auroraclimbing.tensionboard2.apk assets/db.sqlite3 -d /db/tmp/)) && \
-    { test -f /db/tmp/db.sqlite3 || \
-      (echo "ERROR: Failed to extract Tension database from APK" && false); } && \
-    mv /db/tmp/db.sqlite3 /db/tmp/tension.db && \
-    \
-    echo ">>> Extracting Decoy database..." && \
-    rm -f /db/tmp/db.sqlite3 /tmp/com.auroraclimbing.decoyboard.apk && \
-    (unzip -o -j /tmp/decoyboard.apk assets/db.sqlite3 -d /db/tmp/ > /dev/null 2>&1 || \
-     (echo ">>> Direct extraction failed, trying nested APK..." && \
-      unzip -o -j /tmp/decoyboard.apk 'com.auroraclimbing.decoyboard.apk' -d /tmp/ && \
-      unzip -o -j /tmp/com.auroraclimbing.decoyboard.apk assets/db.sqlite3 -d /db/tmp/)) && \
-    { test -f /db/tmp/db.sqlite3 || \
-      (echo "ERROR: Failed to extract Decoy database from APK" && false); } && \
-    mv /db/tmp/db.sqlite3 /db/tmp/decoy.db && \
-    \
-    echo ">>> Extracting Touchstone database..." && \
-    rm -f /db/tmp/db.sqlite3 /tmp/com.auroraclimbing.touchstoneboard.apk && \
-    (unzip -o -j /tmp/touchstoneboard.apk assets/db.sqlite3 -d /db/tmp/ > /dev/null 2>&1 || \
-     (echo ">>> Direct extraction failed, trying nested APK..." && \
-      unzip -o -j /tmp/touchstoneboard.apk 'com.auroraclimbing.touchstoneboard.apk' -d /tmp/ && \
-      unzip -o -j /tmp/com.auroraclimbing.touchstoneboard.apk assets/db.sqlite3 -d /db/tmp/)) && \
-    { test -f /db/tmp/db.sqlite3 || \
-      (echo "ERROR: Failed to extract Touchstone database from APK" && false); } && \
-    mv /db/tmp/db.sqlite3 /db/tmp/touchstone.db && \
-    \
-    echo ">>> Extracting Grasshopper database..." && \
-    rm -f /db/tmp/db.sqlite3 /tmp/com.auroraclimbing.grasshopperboard.apk && \
-    (unzip -o -j /tmp/grasshopperboard.apk assets/db.sqlite3 -d /db/tmp/ > /dev/null 2>&1 || \
-     (echo ">>> Direct extraction failed, trying nested APK..." && \
-      unzip -o -j /tmp/grasshopperboard.apk 'com.auroraclimbing.grasshopperboard.apk' -d /tmp/ && \
-      unzip -o -j /tmp/com.auroraclimbing.grasshopperboard.apk assets/db.sqlite3 -d /db/tmp/)) && \
-    { test -f /db/tmp/db.sqlite3 || \
-      (echo "ERROR: Failed to extract Grasshopper database from APK" && false); } && \
-    mv /db/tmp/db.sqlite3 /db/tmp/grasshopper.db && \
-    \
-    echo ">>> Extracting So-iLL database..." && \
-    rm -f /db/tmp/db.sqlite3 /tmp/com.auroraclimbing.soillboard.apk && \
-    (unzip -o -j /tmp/soillboard.apk assets/db.sqlite3 -d /db/tmp/ > /dev/null 2>&1 || \
-     (echo ">>> Direct extraction failed, trying nested APK..." && \
-      unzip -o -j /tmp/soillboard.apk 'com.auroraclimbing.soillboard.apk' -d /tmp/ && \
-      unzip -o -j /tmp/com.auroraclimbing.soillboard.apk assets/db.sqlite3 -d /db/tmp/)) && \
-    { test -f /db/tmp/db.sqlite3 || \
-      (echo "ERROR: Failed to extract So-iLL database from APK" && false); } && \
-    mv /db/tmp/db.sqlite3 /db/tmp/soill.db && \
-    \
-    # ── Fix SQLite compatibility (FLOAT UNSIGNED → FLOAT, orphans) ──── \
-    echo ">>> Fixing Kilter SQLite compatibility..." && \
-    cp /db/tmp/kilter.db /db/tmp/kilter.modified.db && \
-    cp /db/tmp/tension.db /db/tmp/tension.modified.db && \
-    cp /db/tmp/decoy.db /db/tmp/decoy.modified.db && \
-    cp /db/tmp/touchstone.db /db/tmp/touchstone.modified.db && \
-    cp /db/tmp/grasshopper.db /db/tmp/grasshopper.modified.db && \
-    cp /db/tmp/soill.db /db/tmp/soill.modified.db && \
-    DB_FILE=/db/tmp/kilter.modified.db /db/cleanup_sqlite_db_problems.sh && \
-    echo ">>> Fixing Tension SQLite compatibility..." && \
-    DB_FILE=/db/tmp/tension.modified.db /db/cleanup_sqlite_db_problems.sh && \
-    echo ">>> Fixing Decoy SQLite compatibility..." && \
-    DB_FILE=/db/tmp/decoy.modified.db /db/cleanup_sqlite_db_problems.sh && \
-    echo ">>> Fixing Touchstone SQLite compatibility..." && \
-    DB_FILE=/db/tmp/touchstone.modified.db /db/cleanup_sqlite_db_problems.sh && \
-    echo ">>> Fixing Grasshopper SQLite compatibility..." && \
-    DB_FILE=/db/tmp/grasshopper.modified.db /db/cleanup_sqlite_db_problems.sh && \
-    echo ">>> Fixing So-iLL SQLite compatibility..." && \
-    DB_FILE=/db/tmp/soill.modified.db /db/cleanup_sqlite_db_problems.sh && \
     \
     # ── Initialize and start PostgreSQL ────────────────────────────────── \
-    # Listen on localhost TCP (for pgloader, which can't parse Unix socket URLs) \
-    # and Unix sockets (for psql). \
     echo ">>> Initializing PostgreSQL..." && \
     mkdir -p "$PGDATA" /var/run/postgresql && \
     chown postgres:postgres "$PGDATA" /var/run/postgresql && \
     gosu postgres initdb -D "$PGDATA" --auth-local=trust --auth-host=trust && \
     echo "host all all 0.0.0.0/0 md5" >> "$PGDATA/pg_hba.conf" && \
     gosu postgres pg_ctl -D "$PGDATA" start \
-      -o "-c listen_addresses='localhost' -c unix_socket_directories='/var/run/postgresql' -c log_min_messages=warning -c max_wal_size=2GB" && \
+      -o "-c listen_addresses='localhost' -c unix_socket_directories='/var/run/postgresql' -c log_min_messages=warning -c max_wal_size=4GB" && \
     until gosu postgres pg_isready -h /var/run/postgresql; do sleep 1; done && \
     \
     # ── Create database and neon proxy schema ────────────────────────── \
@@ -235,17 +140,13 @@ RUN set -e && \
     gosu postgres psql -h /var/run/postgresql main -c "CREATE TABLE IF NOT EXISTS neon_control_plane.endpoints (endpoint_id VARCHAR(255) NOT NULL PRIMARY KEY, allowed_ips VARCHAR(255))" && \
     gosu postgres psql -h /var/run/postgresql main -c "ALTER USER postgres WITH PASSWORD 'password'" && \
     \
-    # ── Import board data via pgloader ───────────────────────────────── \
-    # pgloader uses {{DB_FILE}} / {{DB_URL}} mustache templates → env vars \
-    # Must cd /db so AFTER LOAD EXECUTE ./kilter_table_rename.sql resolves \
-    # FK constraint errors are expected (create no indexes → no PKs to reference) \
-    # pgloader connects via TCP (it can't parse Unix socket URLs with %2F encoding). \
-    export DB_URL="postgresql://postgres@localhost/main" && \
-    cd /db && \
-    echo ">>> Importing Tension board data..." && \
-    DB_FILE=/db/tmp/tension.modified.db pgloader /db/tension_db.load && \
-    echo ">>> Importing Kilter board data..." && \
-    DB_FILE=/db/tmp/kilter.modified.db pgloader /db/kilter_db.load && \
+    # ── Create the empty legacy Aurora tables ───────────────────────────── \
+    # 0000 ALTERs kilter_climbs/tension_climbs and 0025 opens with an unguarded \
+    # DELETE FROM kilter_beta_links. pgloader used to create those tables; now \
+    # they are created empty and 0038 drops them again. \
+    echo ">>> Creating legacy Aurora table stubs..." && \
+    gosu postgres psql -X -v ON_ERROR_STOP=1 -h /var/run/postgresql -d main \
+      -f /db/legacy-aurora-schema-stub.sql && \
     \
     # ── Apply drizzle migrations via psql ─────────────────────────────── \
     # The helper applies each migration and both exact-time ledger rows in one \
@@ -268,26 +169,13 @@ RUN set -e && \
       echo "ERROR: Migration count mismatch! Expected $migration_count, got $recorded" && false; \
     fi && \
     \
-    # ── Import direct Aurora boards into unified tables ──────────────── \
-    echo ">>> Importing Decoy board data into unified tables..." && \
+    # ── Load the board catalogue from the published snapshots ─────────── \
+    echo ">>> Loading board snapshots..." && \
     cd /app && \
-    DATABASE_URL=postgresql://postgres@localhost/main bunx tsx scripts/import-aurora-board-unified.ts decoy /db/tmp/decoy.modified.db && \
-    echo ">>> Importing Touchstone board data into unified tables..." && \
-    DATABASE_URL=postgresql://postgres@localhost/main bunx tsx scripts/import-aurora-board-unified.ts touchstone /db/tmp/touchstone.modified.db && \
-    echo ">>> Importing Grasshopper board data into unified tables..." && \
-    DATABASE_URL=postgresql://postgres@localhost/main bunx tsx scripts/import-aurora-board-unified.ts grasshopper /db/tmp/grasshopper.modified.db && \
-    echo ">>> Importing So-iLL board data into unified tables..." && \
-    DATABASE_URL=postgresql://postgres@localhost/main bunx tsx scripts/import-aurora-board-unified.ts soill /db/tmp/soill.modified.db && \
-    \
-    # ── Download and import MoonBoard data ────────────────────────────── \
-    echo ">>> Downloading MoonBoard problem data..." && \
-    mkdir -p /tmp/moonboard && \
-    curl -o /tmp/moonboard/problems_2023_01_30.zip -L \
-      "https://github.com/spookykat/MoonBoard/files/13193317/problems_2023_01_30.zip" && \
-    unzip -o /tmp/moonboard/problems_2023_01_30.zip -d /tmp/moonboard/problems_2023_01_30 && \
-    echo ">>> Importing MoonBoard problems via Node.js..." && \
-    cd /app && \
-    DATABASE_URL=postgresql://postgres@localhost/main bunx tsx scripts/import-moonboard-problems.ts /tmp/moonboard/problems_2023_01_30 && \
+    mkdir -p /opt/boardsesh && \
+    load_args="--snapshot-base-url $SNAPSHOT_BASE_URL --sources-out /opt/boardsesh/snapshot-sources.json" && \
+    if [ -n "$CATALOG_MANIFEST_URL" ]; then load_args="$load_args --catalog-manifest-url $CATALOG_MANIFEST_URL"; fi && \
+    DATABASE_URL=postgresql://postgres@localhost/main bunx tsx scripts/load-board-snapshots.ts $load_args && \
     \
     # ── Create test user ─────────────────────────────────────────────── \
     echo ">>> Creating test user..." && \
@@ -297,13 +185,40 @@ RUN set -e && \
     echo ">>> Seeding social data..." && \
     DATABASE_URL=postgresql://postgres@localhost/main bunx tsx scripts/seed-social.ts && \
     \
+    # ── Compact and refresh planner statistics ───────────────────────── \
+    # The seed scripts UPDATE stats rows in place; without this the image ships \
+    # the dead tuples and stale statistics those updates leave behind. \
+    echo ">>> VACUUM FULL ANALYZE..." && \
+    gosu postgres psql -X -v ON_ERROR_STOP=1 -h /var/run/postgresql -d main -c "VACUUM (FULL, ANALYZE)" && \
+    \
     # ── Stop PostgreSQL ──────────────────────────────────────────────── \
     echo ">>> Stopping PostgreSQL..." && \
     gosu postgres pg_ctl -D "$PGDATA" stop -m fast && \
+    \
+    # ── Trim the write-ahead log ─────────────────────────────────────── \
+    # The load runs with a large max_wal_size so checkpoints stay out of its \
+    # way, and Postgres RECYCLES spent segments — renaming them to future \
+    # names rather than deleting them — so the frozen seed would otherwise \
+    # ship 4 GB of empty WAL (the image published before this change carries \
+    # 2 GB of it). Checkpointing does not help: a recycled segment's name is \
+    # in the FUTURE, so RemoveOldXlogFiles never considers it old. \
+    # \
+    # After a clean shutdown the cluster needs exactly one segment — the one \
+    # holding the shutdown checkpoint's redo point, which is also where \
+    # recovery would start and stop. Every other segment is either already \
+    # replayed or an empty recycled placeholder, so deleting them is safe and \
+    # Postgres reallocates as it needs them. Verified by booting the trimmed \
+    # seed and writing to it. \
+    echo ">>> Trimming recycled write-ahead log segments..." && \
+    redo_file=$(gosu postgres pg_controldata -D "$PGDATA" | awk -F': *' '/REDO WAL file/ {print $2}' | tr -d ' ') && \
+    test -n "$redo_file" && \
+    test -f "$PGDATA/pg_wal/$redo_file" && \
+    find "$PGDATA/pg_wal" -maxdepth 1 -type f -name '[0-9A-F]*' ! -name "$redo_file" -delete && \
+    du -sh "$PGDATA" "$PGDATA/pg_wal" && \
     touch /opt/boardsesh/dev-db-seed.complete && \
     \
     # ── Clean up temporary files ─────────────────────────────────────── \
-    rm -rf /db/tmp /tmp/*.apk /tmp/com.auroraclimbing.*.apk /tmp/moonboard /drizzle /app && \
+    rm -rf /drizzle /app && \
     echo ">>> Build complete — database is pre-populated with all board data."
 
 # ---------------------------------------------------------------------------
@@ -318,6 +233,10 @@ ENV PGDATA=/var/lib/postgresql/18/docker \
 COPY --from=builder --chown=postgres:postgres \
      /opt/boardsesh/dev-db-seed/18/docker /usr/local/share/boardsesh-dev-db/18/docker
 COPY --from=builder /opt/boardsesh/dev-db-seed.complete /usr/local/share/boardsesh-dev-db/SEED_COMPLETE
+# Exactly which snapshot artifacts this image was built from: keys, sizes, build
+# stamps and loaded row counts. The build resolves the live manifests, so this
+# is what makes a given image digest traceable back to its inputs.
+COPY --from=builder /opt/boardsesh/snapshot-sources.json /usr/local/share/boardsesh-dev-db/SNAPSHOT_SOURCES.json
 
 COPY packages/db/docker/dev-db-entrypoint.sh /usr/local/bin/boardsesh-dev-db-entrypoint
 RUN chmod +x /usr/local/bin/boardsesh-dev-db-entrypoint
