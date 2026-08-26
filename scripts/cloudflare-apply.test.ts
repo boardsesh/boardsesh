@@ -488,13 +488,18 @@ describe('token scope guidance', () => {
   // have to keep pace with the API calls the tool actually makes — and with the
   // OTHER jobs reading the same Production-environment CLOUDFLARE_API_TOKEN.
   it('names every zone permission the tool calls', () => {
-    const printed = TOKEN_SCOPES.join('\n');
+    // One entry per request the tool makes, reads included — a token missing a
+    // read scope fails just as hard as one missing a write, and listing all six
+    // keeps the set obviously complete instead of an unexplained subset.
     // Zone.WAF Edit went missing from this list once while the crawler rules
     // depended on it, so a partially-converged zone was the failure mode.
-    expect(printed).toContain('Zone.WAF Edit');
-    expect(printed).toContain('Zone.Cache Rules Edit');
-    expect(printed).toContain('Zone.DNS Edit');
-    expect(printed).toContain('Zone.Zone Settings Edit');
+    const printed = TOKEN_SCOPES.join('\n');
+    expect(printed).toContain('Zone.Zone Read'); // GET /zones?name= (resolve the zone id)
+    expect(printed).toContain('Zone.DNS Edit'); // PATCH the ws record's proxied flag
+    expect(printed).toContain('Zone.Cache Rules Edit'); // PUT the cache-settings phase
+    expect(printed).toContain('Zone.WAF Edit'); // PUT the firewall-custom phase
+    expect(printed).toContain('Zone.Zone Settings Read'); // GET /settings/ssl
+    expect(printed).toContain('Zone.Zone Settings Edit'); // PATCH /settings/ssl
   });
 
   it('keeps the Pages scope deploy-app-web needs from the shared token', () => {
