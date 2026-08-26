@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { router } from 'expo-router';
@@ -105,11 +105,19 @@ export default function UserDrawerScreen() {
   // without a reload, so a mount-time read is the whole story.
   const { surfingBuild: qaSurfingBuild } = useOtaBranchSurfingState();
   const showQaRows = Boolean(profile?.isTester) && qaSurfingBuild;
-  // Null once a verdict has been filed for THIS bundle, which switches the group
-  // back to "Test a PR preview": leaving a preview usually cannot reload the app
-  // (docs/crowdsourced-qa-mobile.md), so without the marker the drawer would keep
-  // offering to finish testing something already signed off.
-  const [qaPrNumber] = useState(() => runningQaPrNumberToOffer(readRunningPrNumber()));
+  // The running branch cannot change without a reload, so it is read once. Which
+  // rows it earns is re-derived from the signed-in account: the markers are
+  // account-scoped, so tester A's sign-off must not follow tester B onto the
+  // same device.
+  const [qaRunningPrNumber] = useState(() => readRunningPrNumber());
+  // Null once THIS account has filed a verdict for THIS bundle, which switches
+  // the group back to "Test a PR preview": leaving a preview usually cannot
+  // reload the app (docs/crowdsourced-qa-mobile.md), so without the marker the
+  // drawer would keep offering to finish testing something already signed off.
+  const qaPrNumber = useMemo(
+    () => runningQaPrNumberToOffer(qaRunningPrNumber, profile?.id),
+    [qaRunningPrNumber, profile?.id],
+  );
 
   const profileDisplayName = profile?.displayName ?? profile?.email ?? t('header.you');
   const profileEmail = profile?.email ?? null;

@@ -67,20 +67,33 @@ session decided on a `none`: QA would switch itself off with nothing said anywhe
 ## The two settings keys
 
 Both live in `src/settings/types.ts`, both default to `null`, and both hold a
-`qaSessionKey(branch, updateId)` — `pr-4792:abc123`, or `pr-4792:embedded` for a launch with no
-update id.
+`qaSessionKey(userId, branch, updateId)` — `9f3c…:pr-4792:abc123`, or `9f3c…:pr-4792:embedded` for a
+launch with no update id.
 
-- `qaBriefSeenKey` — the brief has been shown for this branch + bundle.
-- `qaVerdictSubmittedKey` — a verdict has been filed for this branch + bundle.
+- `qaBriefSeenKey` — the brief has been shown to this account for this branch + bundle.
+- `qaVerdictSubmittedKey` — this account has filed a verdict for this branch + bundle.
 
 Keying on the bundle rather than the branch is deliberate: when the author pushes again, that is a
 different thing to test, so the brief shows again and a second verdict is possible.
+
+Keying on the account is not tidiness either. The settings store is device-wide and a phone at a gym
+gets shared: without the user id, tester A signing off `pr-4792` swallowed tester B's brief and hid
+B's "Finish testing" row the moment B signed in. Every read passes the current profile id, and while
+that id is unknown the markers read as **wait**, never as "unseen" — `decideQaGate` returns `wait`,
+`runningQaPrNumberToOffer` returns `null`, and the verdict sheet refuses to submit. Nothing migrates
+the old two-part keys; they stop matching, which re-arms the brief once per branch + bundle.
 
 ## Telemetry
 
 `QA Preview Prompted` → `QA Preview Picked` (or `QA Preview Skipped`) → `QA Brief Shown` →
 `QA Verdict Submitted`. `QA Surf Failed` and `QA Preview Left` are the two ways out without a
 verdict, and telling them apart is the point: a surf failure is our bug, leaving on purpose is not.
+
+`QA Preview Skipped` fires only for the **launch prompt**, which the gate marks by pushing
+`/qa/pick` with `origin=launch` (`LAUNCH_ORIGIN`). The same screen opened by hand — the drawer's
+"Test a PR preview", the dev row on More — emits nothing when it is closed, and a non-tester bounced
+off the route guard emits nothing either. Otherwise the denominator counted prompts that were never
+shown and prompted → picked/skipped stopped adding up.
 
 ## In a dev build
 

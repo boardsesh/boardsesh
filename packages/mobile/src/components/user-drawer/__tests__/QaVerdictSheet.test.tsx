@@ -127,9 +127,9 @@ vi.mock('../../../lib/qa/use-qa-previews', () => ({
   useSubmitQaVerdict: () => ({ mutateAsync: previews.mutateAsync, isPending: false }),
 }));
 
-const profileState = vi.hoisted(() => ({ isTester: true as boolean | undefined }));
+const profileState = vi.hoisted(() => ({ id: 'user-1' as string | undefined, isTester: true as boolean | undefined }));
 vi.mock('../../../lib/graphql/hooks', () => ({
-  useProfile: () => ({ data: { id: 'user-1', isTester: profileState.isTester } }),
+  useProfile: () => ({ data: { id: profileState.id, isTester: profileState.isTester } }),
 }));
 
 vi.mock('expo-updates', () => ({ updateId: 'bundle-a' }));
@@ -164,6 +164,7 @@ beforeEach(() => {
   previews.data = [{ prNumber: 4792, title: 'Ask testers to try a PR preview', risk: 3 }];
   previews.mutateAsync.mockReset().mockResolvedValue({ id: 'verdict-1' });
   previews.lastOptions = undefined;
+  profileState.id = 'user-1';
   profileState.isTester = true;
 });
 
@@ -187,7 +188,11 @@ describe('QaVerdictSheet approve path', () => {
     const { container } = renderSheet();
     fireEvent.click(submitButton(container));
 
-    await vi.waitFor(() => expect(setSettingMock).toHaveBeenCalledWith('qaVerdictSubmittedKey', 'pr-4792:bundle-a'));
+    await vi.waitFor(() =>
+      // Account-scoped: the settings store is device-wide, so a marker that
+      // named only the branch and bundle hid the row from the next tester too.
+      expect(setSettingMock).toHaveBeenCalledWith('qaVerdictSubmittedKey', 'user-1:pr-4792:bundle-a'),
+    );
     expect(trackMock).toHaveBeenCalledWith('QA Verdict Submitted', { prNumber: 4792, verdict: 'approved', risk: 3 });
     expect(showToast).toHaveBeenCalledWith('Verdict sent to #4792', 'success');
   });
@@ -273,6 +278,17 @@ describe('QaVerdictSheet leaving without a verdict', () => {
     expect(
       (container.querySelector('[data-button="Leave preview without feedback"]') as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+});
+
+describe('QaVerdictSheet without an account', () => {
+  it('will not file a verdict it could not attribute', () => {
+    // `myLatestVerdict` is per-caller and the "already signed off" marker is
+    // account-scoped, so a verdict filed before we know who is signed in would
+    // leave a marker nobody owns.
+    profileState.id = undefined;
+    const { container } = renderSheet();
+    expect(submitButton(container).disabled).toBe(true);
   });
 });
 

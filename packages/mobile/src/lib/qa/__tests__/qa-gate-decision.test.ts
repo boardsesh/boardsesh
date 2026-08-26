@@ -7,6 +7,7 @@ function productionTester(overrides: Partial<QaGateInput> = {}): QaGateInput {
   return {
     ready: true,
     isTester: true,
+    userId: 'user-a',
     surfingBuild: true,
     surfingReady: true,
     screenshotMode: false,
@@ -27,7 +28,7 @@ function previewTester(overrides: Partial<QaGateInput> = {}): QaGateInput {
   return productionTester({
     runningPrNumber: 4792,
     prBranchCount: null,
-    currentKey: 'pr-4792:bundle-a',
+    currentKey: 'user-a:pr-4792:bundle-a',
     ...overrides,
   });
 }
@@ -42,6 +43,13 @@ describe('decideQaGate — waiting', () => {
     // network-only). Reading that as "not a tester" would silently switch QA off
     // for everyone whose profile lands a second late.
     expect(decideQaGate(productionTester({ isTester: undefined }))).toBe('wait');
+  });
+
+  it('waits while the signed-in account is unknown', () => {
+    // The markers are account-scoped and the settings store is device-wide, so a
+    // marker read without an owner is a marker read for whoever used this device
+    // last. `wait` — never "unseen".
+    expect(decideQaGate(previewTester({ userId: undefined }))).toBe('wait');
   });
 
   it('waits while the onboarding flag has not been read', () => {
@@ -135,32 +143,54 @@ describe('decideQaGate — already on a preview', () => {
   });
 
   it('does not show the brief twice for the same bundle', () => {
-    expect(decideQaGate(previewTester({ briefSeenKey: 'pr-4792:bundle-a' }))).toBe('none');
+    expect(decideQaGate(previewTester({ briefSeenKey: 'user-a:pr-4792:bundle-a' }))).toBe('none');
   });
 
   it('shows the brief again after the author pushes a new bundle', () => {
     // Same branch, different updateId: a different thing to test.
-    expect(decideQaGate(previewTester({ briefSeenKey: 'pr-4792:bundle-a', currentKey: 'pr-4792:bundle-b' }))).toBe(
-      'brief',
-    );
+    expect(
+      decideQaGate(previewTester({ briefSeenKey: 'user-a:pr-4792:bundle-a', currentKey: 'user-a:pr-4792:bundle-b' })),
+    ).toBe('brief');
   });
 
   it('stays quiet once a verdict has been filed for this bundle', () => {
     // Leaving a preview usually answers `nothing-to-load`, so the tester keeps
     // running it; without this they would be re-briefed on every launch.
-    expect(decideQaGate(previewTester({ verdictSubmittedKey: 'pr-4792:bundle-a' }))).toBe('none');
+    expect(decideQaGate(previewTester({ verdictSubmittedKey: 'user-a:pr-4792:bundle-a' }))).toBe('none');
   });
 
   it('re-briefs when the verdict was filed against an earlier bundle', () => {
     expect(
-      decideQaGate(previewTester({ verdictSubmittedKey: 'pr-4792:bundle-a', currentKey: 'pr-4792:bundle-b' })),
+      decideQaGate(
+        previewTester({ verdictSubmittedKey: 'user-a:pr-4792:bundle-a', currentKey: 'user-a:pr-4792:bundle-b' }),
+      ),
     ).toBe('brief');
   });
 
+  it('re-briefs a different tester on the same device and bundle', () => {
+    // user-a signed pr-4792 off on this phone; user-b has still never seen it.
+    expect(
+      decideQaGate(
+        previewTester({
+          userId: 'user-b',
+          currentKey: 'user-b:pr-4792:bundle-a',
+          briefSeenKey: 'user-a:pr-4792:bundle-a',
+          verdictSubmittedKey: 'user-a:pr-4792:bundle-a',
+        }),
+      ),
+    ).toBe('brief');
+  });
+
+  it('ignores an unscoped marker left by a build before account scoping', () => {
+    expect(decideQaGate(previewTester({ briefSeenKey: 'pr-4792:bundle-a' }))).toBe('brief');
+  });
+
   it('ignores a stale marker from a different branch', () => {
-    expect(decideQaGate(previewTester({ briefSeenKey: 'pr-1:bundle-a', verdictSubmittedKey: 'pr-2:bundle-a' }))).toBe(
-      'brief',
-    );
+    expect(
+      decideQaGate(
+        previewTester({ briefSeenKey: 'user-a:pr-1:bundle-a', verdictSubmittedKey: 'user-a:pr-2:bundle-a' }),
+      ),
+    ).toBe('brief');
   });
 
   it('prefers the brief over the pick list even when branches are listed', () => {
@@ -170,6 +200,6 @@ describe('decideQaGate — already on a preview', () => {
   it('shows the brief when the session key could not be built', () => {
     // No updateId AND no branch marker is not a reason to hide what to test —
     // it just means the seen-markers cannot suppress it.
-    expect(decideQaGate(previewTester({ currentKey: null, briefSeenKey: 'pr-4792:bundle-a' }))).toBe('brief');
+    expect(decideQaGate(previewTester({ currentKey: null, briefSeenKey: 'user-a:pr-4792:bundle-a' }))).toBe('brief');
   });
 });

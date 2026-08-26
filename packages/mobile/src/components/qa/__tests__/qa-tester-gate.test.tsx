@@ -87,7 +87,12 @@ describe('QaTesterGate on production', () => {
   it('offers the pick list, seeded with the branches it just listed', async () => {
     render(<QaTesterGate ready />);
     await waitFor(() =>
-      expect(pushMock).toHaveBeenCalledWith({ pathname: '/qa/pick', params: { prNumbers: '4792,4800' } }),
+      expect(pushMock).toHaveBeenCalledWith({
+        pathname: '/qa/pick',
+        // `origin` is what lets the pick screen tell this dismissal (a skipped
+        // prompt) from the same screen opened by hand off the drawer.
+        params: { prNumbers: '4792,4800', origin: 'launch' },
+      }),
     );
     expect(trackMock).toHaveBeenCalledWith('QA Preview Prompted', { count: 2 });
   });
@@ -226,7 +231,7 @@ describe('QaTesterGate on a preview bundle', () => {
   it('shows the brief and remembers it for this bundle', async () => {
     render(<QaTesterGate ready />);
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/qa/brief'));
-    expect(setSettingMock).toHaveBeenCalledWith('qaBriefSeenKey', 'pr-4792:bundle-a');
+    expect(setSettingMock).toHaveBeenCalledWith('qaBriefSeenKey', 'user-a:pr-4792:bundle-a');
     expect(trackMock).toHaveBeenCalledWith('QA Brief Shown', { prNumber: 4792 });
   });
 
@@ -237,15 +242,26 @@ describe('QaTesterGate on a preview bundle', () => {
     expect(listPrBranchesMock).not.toHaveBeenCalled();
   });
 
+  it('re-briefs a second tester on a device where someone else already saw it', async () => {
+    // The settings store is device-wide; the markers are account-scoped, so
+    // user-a signing pr-4792 off must not cost user-b their brief.
+    settingsStore.values.qaBriefSeenKey = 'user-a:pr-4792:bundle-a';
+    settingsStore.values.qaVerdictSubmittedKey = 'user-a:pr-4792:bundle-a';
+    profileCtrl.id = 'user-b';
+    render(<QaTesterGate ready />);
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/qa/brief'));
+    expect(setSettingMock).toHaveBeenCalledWith('qaBriefSeenKey', 'user-b:pr-4792:bundle-a');
+  });
+
   it('does not show the brief twice for the same bundle', async () => {
-    settingsStore.values.qaBriefSeenKey = 'pr-4792:bundle-a';
+    settingsStore.values.qaBriefSeenKey = 'user-a:pr-4792:bundle-a';
     render(<QaTesterGate ready />);
     await Promise.resolve();
     expect(pushMock).not.toHaveBeenCalled();
   });
 
   it('shows the brief again after the author pushes a new bundle', async () => {
-    settingsStore.values.qaBriefSeenKey = 'pr-4792:bundle-a';
+    settingsStore.values.qaBriefSeenKey = 'user-a:pr-4792:bundle-a';
     updatesCtrl.updateId = 'bundle-b';
     render(<QaTesterGate ready />);
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/qa/brief'));
@@ -254,7 +270,7 @@ describe('QaTesterGate on a preview bundle', () => {
   it('stays quiet once a verdict has been filed for this bundle', async () => {
     // Leaving a preview usually can't reload the app, so the tester keeps
     // running it — without this marker they would be re-briefed every launch.
-    settingsStore.values.qaVerdictSubmittedKey = 'pr-4792:bundle-a';
+    settingsStore.values.qaVerdictSubmittedKey = 'user-a:pr-4792:bundle-a';
     render(<QaTesterGate ready />);
     await Promise.resolve();
     expect(pushMock).not.toHaveBeenCalled();

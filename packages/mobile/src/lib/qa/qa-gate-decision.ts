@@ -12,6 +12,12 @@ export type QaGateInput = {
   ready: boolean;
   /** `undefined` while the profile query is in flight — never treat that as false. */
   isTester: boolean | undefined;
+  /**
+   * The signed-in account the persisted markers belong to. `undefined` while the
+   * profile query is in flight — and a marker whose owner is unknown cannot be
+   * read, since the settings store is device-wide and shared between testers.
+   */
+  userId: string | undefined;
   /** This binary can surf OTA branches at all (fingerprint-bound headers present). */
   surfingBuild: boolean;
   /**
@@ -33,7 +39,7 @@ export type QaGateInput = {
   prBranchCount: number | null;
   briefSeenKey: string | null;
   verdictSubmittedKey: string | null;
-  /** `qaSessionKey(branch, updateId)` for the running bundle; null on production. */
+  /** `qaSessionKey(userId, branch, updateId)` for the running bundle; null on production. */
   currentKey: string | null;
 };
 
@@ -64,6 +70,10 @@ export function decideQaGate(input: QaGateInput): QaGateDecision {
   // silently disable QA for everyone with no signal at launch.
   if (!input.ready) return 'wait';
   if (input.isTester === undefined) return 'wait';
+  // Without the account there is no way to tell "this tester already signed this
+  // bundle off" from "someone else on this device did". `wait`, not "unseen":
+  // guessing wrong re-briefs tester A for tester B's work, or worse, silences B.
+  if (input.userId === undefined) return 'wait';
   if (input.onboardingSeen === undefined) return 'wait';
   // A surfing-capable binary runs a one-time migration that ends in
   // Updates.reloadAsync(). Prompting before it settles would push a route the

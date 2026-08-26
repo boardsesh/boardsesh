@@ -26,6 +26,7 @@ import {
 } from '../../lib/qa/qa-pick-rows';
 import { useQaPreviews } from '../../lib/qa/use-qa-previews';
 import {
+  LAUNCH_ORIGIN,
   QA_PREVIEW_PICKED_EVENT,
   QA_PREVIEW_SKIPPED_EVENT,
   QA_SURF_FAILED_EVENT,
@@ -77,7 +78,7 @@ export function QaPickScreen() {
   const insets = useSafeAreaInsets();
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
-  const params = useLocalSearchParams<{ prNumbers?: string }>();
+  const params = useLocalSearchParams<{ prNumbers?: string; origin?: string }>();
   const { data: profile, isLoading: profileLoading } = useProfile();
 
   // Seed from the gate's already-paid-for listing so the metadata request starts
@@ -106,9 +107,27 @@ export function QaPickScreen() {
   // choosing" signal is recorded on unmount — one place, both exits, no
   // double-count when a pick did happen.
   const pickedRef = useRef(false);
+  const surfInFlightRef = useRef(false);
+
+  // `QA Preview Skipped` is the other half of `QA Preview Prompted`, so it may
+  // only fire for a launch that was actually prompted. The drawer's "Test a PR
+  // preview" row and the dev More row open the same screen on purpose — counting
+  // those as skips inflated the denominator and made the funnel unreadable.
+  const isLaunchPrompt = params.origin === LAUNCH_ORIGIN;
+  // Armed on "a tester actually saw the list", not on the route guard below: the
+  // guard waves `__DEV__` through, and `__DEV__` is substituted textually, so
+  // hanging this off it would arm the event for a redirected non-tester in every
+  // test and dev build. Somebody who was bounced straight back out never saw a
+  // list and cannot have skipped one.
+  const launchPromptShown = isLaunchPrompt && !profileLoading && Boolean(profile?.isTester);
+  const guardBlocked = !__DEV__ && (profileLoading || !profile?.isTester);
+  const skipArmedRef = useRef(false);
+  useEffect(() => {
+    if (launchPromptShown) skipArmedRef.current = true;
+  }, [launchPromptShown]);
   useEffect(
     () => () => {
-      if (!pickedRef.current) track(QA_PREVIEW_SKIPPED_EVENT, {});
+      if (skipArmedRef.current && !pickedRef.current) track(QA_PREVIEW_SKIPPED_EVENT, {});
     },
     [],
   );
@@ -117,7 +136,14 @@ export function QaPickScreen() {
 
   const handlePick = useCallback(
     (row: QaPickRow) => {
-      if (!surfingAvailable) return;
+      // A ref, not `surfingPrNumber`: two taps inside one React batch both see
+      // the pre-render state, and a second `surfToPr` would race the first —
+      // competing header overrides and two reloads, so the bundle that actually
+      // boots is whichever won, and the verdict would be filed against the PR
+      // the tester did NOT choose. The disabled rows below are the visible half
+      // of the same guard; this is the half that cannot be out-raced.
+      if (!surfingAvailable || surfInFlightRef.current) return;
+      surfInFlightRef.current = true;
       setSurfingPrNumber(row.prNumber);
       pickedRef.current = true;
       track(QA_PREVIEW_PICKED_EVENT, { prNumber: row.prNumber, risk: row.risk });
@@ -126,6 +152,7 @@ export function QaPickScreen() {
           // 'reloading' never gets here in practice — the app restarts onto the
           // new bundle mid-promise.
           if (outcome === 'nothing-to-load') {
+            surfInFlightRef.current = false;
             setSurfingPrNumber(null);
             showToast(
               // i18n-ignore-next-line
@@ -135,6 +162,7 @@ export function QaPickScreen() {
           }
         })
         .catch((error: unknown) => {
+          surfInFlightRef.current = false;
           setSurfingPrNumber(null);
           pickedRef.current = false;
           reportHandledError(error, { tags: { source: 'qa', op: 'surf-to-pr' } });
@@ -150,22 +178,22 @@ export function QaPickScreen() {
     [showToast, surfingAvailable],
   );
 
+  // Every row goes flat while a surf is in flight, not just the one that was
+  // tapped: the app is on its way to another bundle and a second choice cannot
+  // be honoured, so offering it would be a lie.
+  const rowsDisabled = !surfingAvailable || surfingPrNumber !== null;
+
   const renderItem = useCallback(
     ({ item }: { item: QaPickRow }) => (
-      <QaPickRowItem
-        row={item}
-        disabled={!surfingAvailable}
-        busy={surfingPrNumber === item.prNumber}
-        onPress={handlePick}
-      />
+      <QaPickRowItem row={item} disabled={rowsDisabled} busy={surfingPrNumber === item.prNumber} onPress={handlePick} />
     ),
-    [handlePick, surfingAvailable, surfingPrNumber],
+    [handlePick, rowsDisabled, surfingPrNumber],
   );
 
   // Route guard: hiding the drawer row is not a guard, since the route is
   // reachable directly. __DEV__ always passes (the profile may not resolve in a
   // dev build), otherwise wait for the profile and keep non-testers out.
-  if (!__DEV__) {
+  if (guardBlocked) {
     if (profileLoading) {
       return (
         <View style={[styles.centered, { backgroundColor: systemColors.groupedBackground }]}>
@@ -275,7 +303,13 @@ const QaPickRowItem = memo(function QaPickRowItem({ row, disabled, busy, onPress
       disabled={disabled || busy}
       accessibilityRole="button"
       accessibilityLabel={`#${row.prNumber} ${title}`}
-      style={[styles.row, { backgroundColor: systemColors.elevatedSurface }]}
+      style={[
+        styles.row,
+        { backgroundColor: systemColors.elevatedSurface },
+        // The busy row keeps full contrast — it is the one thing still
+        // happening; everything it is blocking goes flat.
+        disabled && !busy ? styles.rowDimmed : null,
+      ]}
     >
       <View style={styles.rowBody}>
         <View style={styles.rowTitleLine}>
@@ -376,6 +410,9 @@ const styles = StyleSheet.create({
     padding: spacing[3],
     marginBottom: spacing[2],
     borderRadius: borderRadius.lg,
+  },
+  rowDimmed: {
+    opacity: 0.4,
   },
   rowBody: {
     flex: 1,

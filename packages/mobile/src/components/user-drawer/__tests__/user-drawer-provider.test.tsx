@@ -521,7 +521,7 @@ describe('user-drawer crowdsourced-QA rows', () => {
     profileState.isTester = true;
     qaState.surfingBuild = true;
     qaState.runningPrNumber = 4792;
-    qaState.verdictSubmittedKey = 'pr-4792:bundle-a';
+    qaState.verdictSubmittedKey = 'user-1:pr-4792:bundle-a';
     const { container } = render(<Harness showScreen />);
 
     const titles = rowTitles(container);
@@ -534,7 +534,19 @@ describe('user-drawer crowdsourced-QA rows', () => {
     profileState.isTester = true;
     qaState.surfingBuild = true;
     qaState.runningPrNumber = 4792;
-    qaState.verdictSubmittedKey = 'pr-4792:bundle-zero';
+    qaState.verdictSubmittedKey = 'user-1:pr-4792:bundle-zero';
+    const { container } = render(<Harness showScreen />);
+
+    expect(rowTitles(container)).toContain('Finish testing #4792');
+  });
+
+  it('keeps offering a bundle a DIFFERENT tester signed off on this device', () => {
+    // The settings store is device-wide, the markers are account-scoped: the
+    // signed-in user here is user-1, so user-a's sign-off is not theirs.
+    profileState.isTester = true;
+    qaState.surfingBuild = true;
+    qaState.runningPrNumber = 4792;
+    qaState.verdictSubmittedKey = 'user-a:pr-4792:bundle-a';
     const { container } = render(<Harness showScreen />);
 
     expect(rowTitles(container)).toContain('Finish testing #4792');

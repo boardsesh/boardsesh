@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -30,7 +30,10 @@ vi.mock('@shopify/flash-list', () => ({
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 
 const routerMock = vi.hoisted(() => ({ back: vi.fn(), push: vi.fn() }));
-const params = vi.hoisted(() => ({ prNumbers: undefined as string | undefined }));
+const params = vi.hoisted(() => ({
+  prNumbers: undefined as string | undefined,
+  origin: 'launch' as string | undefined,
+}));
 vi.mock('expo-router', () => ({
   router: routerMock,
   useLocalSearchParams: () => params,
@@ -77,8 +80,9 @@ vi.mock('../../../lib/format-relative-time', () => ({ formatRelativeTime: () => 
 const trackMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../lib/analytics', () => ({ track: trackMock }));
 vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
+const profileState = vi.hoisted(() => ({ isTester: true, isLoading: false }));
 vi.mock('../../../lib/graphql/hooks', () => ({
-  useProfile: () => ({ data: { id: 'user-1', isTester: true }, isLoading: false }),
+  useProfile: () => ({ data: { id: 'user-1', isTester: profileState.isTester }, isLoading: profileState.isLoading }),
 }));
 
 const qa = vi.hoisted(() => ({
@@ -119,6 +123,9 @@ beforeEach(() => {
   showToast.mockClear();
   trackMock.mockClear();
   params.prNumbers = undefined;
+  params.origin = 'launch';
+  profileState.isTester = true;
+  profileState.isLoading = false;
   previews.data = [];
   qa.surfingAvailable = true;
   qa.refusedPrNumber = null;
@@ -201,12 +208,70 @@ describe('QaPickScreen', () => {
     expect(screen.getByText('Could not reach the update server (502).')).toBeTruthy();
   });
 
-  it('records a skip when the tester leaves without choosing', async () => {
+  it('takes only the first of two rapid picks', async () => {
+    // Both taps land inside one React batch, so neither sees the other's render
+    // — the disabled rows cannot help here and only the ref guard can. Two
+    // `surfToPr` calls would race: competing header overrides, two reloads, and
+    // a verdict filed against the PR the tester did not choose.
+    renderScreen();
+    const first = await screen.findByLabelText('#4792 pr-4792');
+    const second = await screen.findByLabelText('#4800 pr-4800');
+
+    await act(async () => {
+      fireEvent.click(first);
+      fireEvent.click(second);
+    });
+
+    expect(qa.surfToPr).toHaveBeenCalledTimes(1);
+    expect(qa.surfToPr).toHaveBeenCalledWith(4792);
+  });
+
+  it('flattens every row while a surf is in flight', async () => {
+    // The app is on its way to another bundle; a second choice cannot be
+    // honoured, so offering one would be a lie.
+    renderScreen();
+    fireEvent.click(await screen.findByLabelText('#4792 pr-4792'));
+
+    expect(screen.getByLabelText('#4800 pr-4800').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByLabelText('#4792 pr-4792').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('re-arms the rows when the surf throws', async () => {
+    qa.surfToPr.mockRejectedValue(new Error('Could not reach the update server (502).'));
+    renderScreen();
+    fireEvent.click(await screen.findByLabelText('#4792 pr-4792'));
+
+    await vi.waitFor(() => expect(screen.getByLabelText('#4800 pr-4800').hasAttribute('disabled')).toBe(false));
+    fireEvent.click(screen.getByLabelText('#4800 pr-4800'));
+    expect(qa.surfToPr).toHaveBeenCalledTimes(2);
+  });
+
+  it('records a skip when the tester leaves the launch prompt without choosing', async () => {
     const { unmount } = renderScreen();
     await screen.findByText('pr-4792');
 
     unmount();
     expect(trackMock).toHaveBeenCalledWith('QA Preview Skipped', {});
+  });
+
+  it('records no skip for the picker opened by hand from the drawer', async () => {
+    // Same screen, no launch prompt behind it: counting this as a skipped prompt
+    // inflated the denominator and made prompted → picked/skipped unreadable.
+    params.origin = undefined;
+    const { unmount } = renderScreen();
+    await screen.findByText('pr-4792');
+
+    unmount();
+    expect(trackMock).not.toHaveBeenCalledWith('QA Preview Skipped', {});
+  });
+
+  it('records no skip when a non-tester is redirected straight back out', async () => {
+    // They never saw a list, so they cannot have skipped one.
+    profileState.isTester = false;
+    const { unmount } = renderScreen();
+
+    unmount();
+    expect(trackMock).not.toHaveBeenCalledWith('QA Preview Skipped', {});
   });
 
   it('does not record a skip when a pick is in flight', async () => {

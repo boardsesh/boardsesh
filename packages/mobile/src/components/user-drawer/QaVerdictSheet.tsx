@@ -101,6 +101,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
   // without this gate a non-tester who surfed a `pr-<n>` bundle themselves fires
   // two rejected requests on every cold start.
   const { data: profile } = useProfile();
+  const userId = profile?.id;
   const previewsQuery = useQaPreviews(prNumbers, { enabled: Boolean(profile?.isTester) });
   const preview = previewsQuery.data?.find((entry) => entry.prNumber === runningPrNumber) ?? null;
 
@@ -110,7 +111,11 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
 
   const trimmedComment = comment.trim();
   const remainingDeclineChars = Math.max(0, DECLINE_COMMENT_MIN_LENGTH - trimmedComment.length);
-  const canSubmit = runningPrNumber !== null && (verdict === 'approved' || remainingDeclineChars === 0);
+  // The account is part of the verdict, not decoration: `myLatestVerdict` is
+  // per-caller and the "already signed off" marker is account-scoped, so filing
+  // one before we know who is signed in would leave an unattributable marker.
+  const canSubmit =
+    runningPrNumber !== null && userId !== undefined && (verdict === 'approved' || remainingDeclineChars === 0);
 
   // Set before dismissing, read after the dismissal has really settled.
   const leaveAfterDismissRef = useRef(false);
@@ -138,7 +143,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
   }, [leavePreview]);
 
   const handleSubmit = async () => {
-    if (!canSubmit || isPending || runningPrNumber === null) return;
+    if (!canSubmit || isPending || runningPrNumber === null || userId === undefined) return;
     const branch = prBranchName(runningPrNumber);
 
     try {
@@ -151,7 +156,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
       // Written before the dismissal so a relaunch that beats the surf still
       // knows this bundle is signed off — leaving usually can't reload the app,
       // so the marker is what stops the gate re-prompting.
-      setSetting('qaVerdictSubmittedKey', qaSessionKey(branch, Updates.updateId));
+      setSetting('qaVerdictSubmittedKey', qaSessionKey(userId, branch, Updates.updateId));
       track(QA_VERDICT_SUBMITTED_EVENT, { prNumber: runningPrNumber, verdict, risk: preview?.risk ?? null });
       // i18n-ignore-next-line
       showToast(`Verdict sent to #${runningPrNumber}`, 'success');

@@ -8,10 +8,25 @@
 // two ways a tester exits it without a verdict, and telling them apart is the
 // point: a surf failure is our bug, leaving on purpose is not.
 
+/**
+ * The `origin` route param the launch gate puts on `/qa/pick`, and the only
+ * thing that arms `QA_PREVIEW_SKIPPED_EVENT`.
+ *
+ * The pick list is reachable three ways — the launch prompt, the user drawer's
+ * "Test a PR preview" row, and the dev row on More — but only the first is the
+ * prompt whose skips the funnel is about. Without this marker, a tester opening
+ * the picker from the drawer and closing it again counted as a skipped prompt
+ * that was never shown, and prompted → picked/skipped stopped adding up.
+ */
+export const LAUNCH_ORIGIN = 'launch';
+
 /** The pick list was presented on launch. Properties: `count`. */
 export const QA_PREVIEW_PROMPTED_EVENT = 'QA Preview Prompted';
 
-/** The tester dismissed the pick list without choosing a PR. */
+/**
+ * The tester dismissed the LAUNCH prompt without choosing a PR. Never fired for
+ * the picker opened by hand — see `LAUNCH_ORIGIN`.
+ */
 export const QA_PREVIEW_SKIPPED_EVENT = 'QA Preview Skipped';
 
 /** A PR was chosen from the pick list. Properties: `prNumber`, `risk`. */

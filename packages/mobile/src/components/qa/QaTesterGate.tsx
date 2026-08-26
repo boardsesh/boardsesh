@@ -13,7 +13,7 @@ import { decideQaGate, type QaGateInput } from '../../lib/qa/qa-gate-decision';
 import { listPrBranches, readRunningPrNumber } from '../../lib/qa/qa-surf';
 import { qaSessionKey } from '../../lib/qa/qa-keys';
 import { prBranchName } from '../../lib/qa/pr-branch';
-import { QA_BRIEF_SHOWN_EVENT, QA_PREVIEW_PROMPTED_EVENT } from '../../lib/qa/qa-analytics';
+import { LAUNCH_ORIGIN, QA_BRIEF_SHOWN_EVENT, QA_PREVIEW_PROMPTED_EVENT } from '../../lib/qa/qa-analytics';
 
 type QaTesterGateProps = {
   /** True once auth + fonts are resolved and the splash has hidden. */
@@ -71,10 +71,16 @@ export function QaTesterGate({ ready }: QaTesterGateProps) {
     if (promptedThisSession) return;
 
     const runningPrNumber = readRunningPrNumber();
-    const currentKey = runningPrNumber === null ? null : qaSessionKey(prBranchName(runningPrNumber), Updates.updateId);
+    // Null until BOTH are known: the markers are account-scoped, so a key built
+    // without the signed-in id would read another tester's decisions.
+    const currentKey =
+      runningPrNumber === null || userId === undefined
+        ? null
+        : qaSessionKey(userId, prBranchName(runningPrNumber), Updates.updateId);
     const sharedInput = {
       ready,
       isTester: profile?.isTester,
+      userId,
       surfingBuild,
       surfingReady,
       screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
@@ -148,8 +154,13 @@ export function QaTesterGate({ ready }: QaTesterGateProps) {
         if (decision === 'pick') {
           track(QA_PREVIEW_PROMPTED_EVENT, { count: prBranchCount });
           // Hand the screen the numbers we just listed so it renders straight
-          // away instead of repeating the round-trip we already paid for.
-          router.push({ pathname: '/qa/pick', params: { prNumbers: prNumbers.join(',') } });
+          // away instead of repeating the round-trip we already paid for, and
+          // mark this as the launch prompt so a dismissal counts as a skip —
+          // the same screen opened by hand from the drawer must not.
+          router.push({
+            pathname: '/qa/pick',
+            params: { prNumbers: prNumbers.join(','), origin: LAUNCH_ORIGIN },
+          });
           return;
         }
         if (decision === 'brief' && runningPrNumber !== null) {
