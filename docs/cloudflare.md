@@ -256,6 +256,10 @@ openssl s_client -connect cname.vercel-dns.com:443 \
   openssl x509 -noout -subject -issuer -dates
 ```
 
+`updates.boardsesh.com` is Railway too, so it takes the first form with its own
+`-servername`. `app.boardsesh.com` is Pages — the origin is Cloudflare itself, so
+there is nothing to check.
+
 Measured 2026-08-25: `www` (Vercel), `ws` and `updates` (Railway) are the only
 proxied origins and each serves a Let's Encrypt cert for its exact hostname, so
 `strict` is safe. The apex and `ota.boardsesh.com` are DNS-only and unaffected;
