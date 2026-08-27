@@ -109,10 +109,19 @@ pub enum HoldRole {
 /// silhouette punched out. The caller computes `opacity` from the wall-vs-field
 /// lightness gap (0.60 / 0.30 / 0); `<= 0` draws nothing.
 #[derive(Debug, Deserialize, Clone, PartialEq)]
+#[serde(default)]
 pub struct Veil {
     pub color: String,
-    #[serde(default)]
     pub opacity: f32,
+}
+
+impl Default for Veil {
+    fn default() -> Self {
+        Self {
+            color: "#181225".into(),
+            opacity: 0.0,
+        }
+    }
 }
 
 /// The glow's geometry. Every fraction is of the hold's placement radius `r`.
@@ -183,7 +192,8 @@ impl Default for FillTuning {
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 #[serde(default)]
 pub struct GlyphTuning {
-    /// One line width per board, × r — not scaled by the hold it sits on.
+    /// Line width × r. The catalogue gives every placement on a board the same
+    /// r, so this is one line width per board, not one per hold.
     pub line_width_fraction: f32,
     /// Bar half-length before the silhouette clip, × r.
     pub reach_radii: f32,

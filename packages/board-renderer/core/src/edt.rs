@@ -51,7 +51,8 @@ fn transform_1d(f: &[f64], d: &mut [f64], arg: &mut [usize], v: &mut [usize], z:
         }
         if s <= z[k] {
             // Only reachable when k == 0 and this parabola dominates the first
-            // one everywhere: replace it rather than stack under it.
+            // one everywhere. With a finite INF the intersection is always above
+            // -INF, so this is belt-and-braces for a future f that admits it.
             v[0] = q;
             z[0] = -INF;
             z[1] = INF;
@@ -78,7 +79,7 @@ fn transform_1d(f: &[f64], d: &mut [f64], arg: &mut [usize], v: &mut [usize], z:
 /// Labelled EDT over a `width × height` grid where `labels[i] != NO_SITE`
 /// marks a site pixel carrying that label.
 pub fn labelled_edt(width: usize, height: usize, labels: &[u16]) -> LabelledDistanceField {
-    debug_assert_eq!(labels.len(), width * height);
+    assert_eq!(labels.len(), width * height, "labels must cover the grid");
     let size = width * height;
     let mut dist2 = vec![NO_DISTANCE; size];
     let mut site_label = vec![NO_SITE; size];

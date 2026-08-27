@@ -119,19 +119,36 @@ fn marker_shape_path(
     }
 }
 
+/// Largest overlay either mode will allocate: 64 megapixels (256 MB RGBA),
+/// far above any board at any device width, and far below the 6.9 TB a
+/// `board_width` of 0 used to ask for before aborting the process.
+const MAX_OUTPUT_PIXELS: u64 = 64 * 1024 * 1024;
+
+/// The overlay's pixel size for a config, or why it cannot be rendered.
+pub fn output_size(config: &RenderConfig) -> Result<(u32, u32), String> {
+    let positive = |value: f32| value.is_finite() && value > 0.0;
+    if !positive(config.board_width) || !positive(config.board_height) {
+        return Err("Board dimensions must be finite and positive".into());
+    }
+    let output_width = config.output_width;
+    let output_height =
+        (output_width as f32 * config.board_height / config.board_width).round() as u32;
+    if output_width == 0 || output_height == 0 {
+        return Err("Output dimensions must be non-zero".into());
+    }
+    if output_width as u64 * output_height as u64 > MAX_OUTPUT_PIXELS {
+        return Err("Output dimensions exceed the renderer's limit".into());
+    }
+    Ok((output_width, output_height))
+}
+
 /// Render a transparent overlay with hold circles drawn on it.
 /// Returns RGBA pixel data and dimensions (width, height).
 pub fn render_overlay(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
     if config.render_mode == BoardRenderMode::Boardsesh {
         return crate::boardsesh::render(config);
     }
-    let output_width = config.output_width;
-    let output_height =
-        (output_width as f32 * config.board_height / config.board_width).round() as u32;
-
-    if output_width == 0 || output_height == 0 {
-        return Err("Output dimensions must be non-zero".into());
-    }
+    let (output_width, output_height) = output_size(config)?;
 
     let mut pixmap = Pixmap::new(output_width, output_height).ok_or("Failed to create pixmap")?;
 
@@ -369,6 +386,25 @@ mod tests {
         let mut config = test_config();
         config.output_width = 0;
         assert!(render_overlay(&config).is_err());
+    }
+
+    #[test]
+    fn test_render_rejects_degenerate_board_dimensions_instead_of_aborting() {
+        let mut zero_width = test_config();
+        zero_width.board_width = 0.0;
+        assert!(render_overlay(&zero_width).is_err());
+        let mut negative_height = test_config();
+        negative_height.board_height = -10.0;
+        assert!(render_overlay(&negative_height).is_err());
+        let mut absurd = test_config();
+        absurd.output_width = 100_000;
+        absurd.board_height = 100_000.0;
+        absurd.board_width = 100.0;
+        assert!(render_overlay(&absurd).is_err());
+        let mut boardsesh = test_config();
+        boardsesh.render_mode = BoardRenderMode::Boardsesh;
+        boardsesh.board_width = 0.0;
+        assert!(render_overlay(&boardsesh).is_err());
     }
 
     #[test]

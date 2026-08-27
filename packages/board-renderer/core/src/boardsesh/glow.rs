@@ -1,10 +1,10 @@
 //! The outward glow: alpha = falloff(distance outside the silhouette / reach),
 //! in the colour of the nearest lit hold, zero on the hold itself.
 //!
-//! Drawn from a labelled distance field rather than the spike's concentric
-//! strokes: one O(pixels) pass gives the exact curve at every pixel, the hard
-//! inner edge (the treatment), a per-hold reach, and a midline split between
-//! neighbouring glows — the nearest-silhouette partition — with no clip paths.
+//! Drawn from labelled distance fields rather than the spike's concentric
+//! strokes: exact curve at every pixel, the hard inner edge (the treatment), a
+//! per-hold reach, and a midline split between neighbouring glows — the
+//! nearest-silhouette partition — with no clip paths.
 
 use tiny_skia::{FillRule, Mask, Pixmap, Transform};
 
@@ -162,15 +162,16 @@ pub fn paint_glow(pixmap: &mut Pixmap, lit: &[LitHold], reaches: &[f32], lut: &F
     let mut best_dist2 = vec![NO_DISTANCE; roi_width * roi_height];
     let mut best_label = vec![NO_SITE; roi_width * roi_height];
 
+    // Every hold's box is dilated by the WIDEST reach, not its own: a pixel
+    // nearer to a short-reach hold than to a long-reach one must still find the
+    // short-reach hold in the merge (and get nothing, since it is beyond that
+    // hold's reach) rather than the long-reach hold's glow. With equal reaches
+    // — the common case, one placement radius per board — the boxes are the
+    // same size either way.
+    let dilate = max_reach.ceil() + 2.0;
     for (index, hold) in lit.iter().enumerate() {
-        if index >= u16::MAX as usize {
-            break;
-        }
         let reach = reaches[index].max(0.0);
         let bounds = hold.bounds();
-        // The hold's own box carries its coverage; the box dilated by its reach
-        // is everywhere its glow can land.
-        let dilate = reach.ceil() + 2.0;
         let box_x0 = (bounds.left() - dilate)
             .floor()
             .clamp(roi_x0 as f32, roi_x1 as f32) as usize;
@@ -216,7 +217,9 @@ pub fn paint_glow(pixmap: &mut Pixmap, lit: &[LitHold], reaches: &[f32], lut: &F
                 }
             }
         }
-        if !any_site || reach <= 0.0 {
+        // Coverage is recorded for every hold; only the first 65 535 can label a
+        // pixel, which no climb approaches.
+        if !any_site || reach <= 0.0 || index >= u16::MAX as usize {
             continue;
         }
         let field = labelled_edt(box_width, box_height, &sites);
@@ -251,11 +254,7 @@ pub fn paint_glow(pixmap: &mut Pixmap, lit: &[LitHold], reaches: &[f32], lut: &F
             let dist2 = best_dist2[roi_index];
             // Pixel centres: the nearest site pixel's centre sits half a pixel
             // inside the edge, so the edge itself is d = 0.
-            let distance = if dist2 == 0 {
-                0.0
-            } else {
-                ((dist2 as f32).sqrt() - 0.5).max(0.0)
-            };
+            let distance = ((dist2 as f32).sqrt() - 0.5).max(0.0);
             let fraction = distance / reach;
             if fraction >= 1.0 {
                 continue;
