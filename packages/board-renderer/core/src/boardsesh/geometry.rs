@@ -75,9 +75,10 @@ impl LitHold {
             let mut builder = PathBuilder::new();
             let (mut min_x, mut min_y, mut max_x, mut max_y) =
                 (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
-            for (index, pair) in outline.chunks_exact(2).enumerate() {
-                let x = cx + pair[0] * r_px;
-                let y = cy + pair[1] * r_px;
+            let (pairs, _) = outline.as_chunks::<2>();
+            for (index, [outline_x, outline_y]) in pairs.iter().enumerate() {
+                let x = cx + outline_x * r_px;
+                let y = cy + outline_y * r_px;
                 min_x = min_x.min(x);
                 min_y = min_y.min(y);
                 max_x = max_x.max(x);
