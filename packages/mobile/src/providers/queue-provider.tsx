@@ -380,6 +380,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   effectiveRenderSettingsRef.current = effectiveRenderSettings;
   const renderSettingsPendingRef = useRef(renderSettingsPending);
   renderSettingsPendingRef.current = renderSettingsPending;
+  // Must run before the view-firing effect below: PostHog's in-memory
+  // `register` is synchronous, so by the time that effect's `markClimbViewed`
+  // call reaches PostHog, these super properties are already registered on it.
   useEffect(() => {
     registerRenderSuperProperties(effectiveRenderSettings);
   }, [effectiveRenderSettings]);

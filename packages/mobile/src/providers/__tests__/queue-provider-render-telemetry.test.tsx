@@ -457,5 +457,43 @@ describe('QueueProvider board-render view telemetry', () => {
       });
       expect(climbViewSession.markClimbViewed).not.toHaveBeenCalled();
     });
+
+    it('fires the deferred view once, with the resolved mode, once the climber settings finish loading', async () => {
+      // Same setup as above: support already resolved, only the climber's
+      // stored settings are still pending.
+      boardRenderSettingsState.loaded = false;
+      renderFlags.values = { 'board-render-mode-default': 'classic', 'board-glow-falloff': 'soft' };
+      setBoardseshRendererSupport(true);
+
+      queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
+        queue: THREE_ITEM_QUEUE,
+        currentClimbQueueItem: THREE_ITEM_QUEUE[1],
+        playlistSuggestionSource: null,
+        savedAt: '2026-08-27T00:00:00.000Z',
+      });
+      const { rerender } = renderProvider();
+      await waitFor(() => {
+        expect(latest().state.currentClimbQueueItem?.uuid).toBe('item-2');
+      });
+      expect(climbViewSession.markClimbViewed).not.toHaveBeenCalled();
+
+      // The settings store answers. Nothing subscribes queue-provider to this
+      // mock the way `setBoardseshRendererSupport` does for the probe, so a
+      // rerender is what stands in for the real hook re-evaluating.
+      act(() => {
+        boardRenderSettingsState.loaded = true;
+        rerender(
+          createElement(QueueProvider, null, createElement(Probe, { onSnapshot: (s: Snapshot) => snapshots.push(s) })),
+        );
+      });
+
+      await waitFor(() => {
+        expect(climbViewSession.markClimbViewed).toHaveBeenCalledOnce();
+      });
+      expect(climbViewSession.markClimbViewed).toHaveBeenCalledWith(
+        'climb-2',
+        expect.objectContaining({ render_mode: 'classic', glow_falloff: 'soft' }),
+      );
+    });
   });
 });

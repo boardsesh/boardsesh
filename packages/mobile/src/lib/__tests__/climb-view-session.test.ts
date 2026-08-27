@@ -243,6 +243,16 @@ describe('climb-view-session', () => {
       expect(analyticsMocks.track).toHaveBeenCalledOnce();
     });
 
+    it('fires exactly at the negative gate boundary (zoom-out magnitude must meet 0.15, not exceed it)', () => {
+      noteBoardPinch(COMMON_PROPS, { scaleMax: 1, scaleMin: 0.85, scaleDelta: -0.15 });
+      expect(analyticsMocks.track).toHaveBeenCalledOnce();
+    });
+
+    it('does not fire just short of the negative gate boundary (-0.14)', () => {
+      noteBoardPinch(COMMON_PROPS, { scaleMax: 1, scaleMin: 0.86, scaleDelta: -0.14 });
+      expect(analyticsMocks.track).not.toHaveBeenCalled();
+    });
+
     it('counts a zoom-out: the delta is negative and clears the gate on magnitude', () => {
       noteBoardPinch(COMMON_PROPS, { scaleMax: 2.5, scaleMin: 1.2, scaleDelta: -1.3 });
       expect(analyticsMocks.track).toHaveBeenCalledExactlyOnceWith('Board Pinch', {
