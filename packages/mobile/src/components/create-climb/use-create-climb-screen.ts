@@ -38,7 +38,7 @@ import {
   createClimbDraftKey,
   type CreateClimbDraft,
 } from '../../lib/create-climb-draft-store';
-import { getPaintRoles, type BrushRole } from './brush-roles';
+import { getNextBrushRole, getPaintRoles, type BrushRole } from './brush-roles';
 
 // The save button's visual state, derived from auth + the saved-climb snapshot +
 // in-flight state. Lives here (the controller computes it) so the UI imports it.
@@ -422,11 +422,15 @@ export function useCreateClimbScreen({
   }, [holdsJson, bleConnected, currentFrameBleString]);
 
   // ---- Painting + role assignment. ----
+  // A tap cycles the tapped hold through the board's paint roles, starting
+  // from the currently selected brush, rather than always overwriting it with
+  // that brush — so fixing a mis-painted hold no longer requires a long press.
   const handlePaint = useCallback(
     (holdId: number) => {
-      setHoldState(holdId, selectedBrush);
+      const currentState = litUpHoldsMap[holdId]?.state ?? 'OFF';
+      setHoldState(holdId, getNextBrushRole(board.boardName, currentState, selectedBrush));
     },
-    [setHoldState, selectedBrush],
+    [setHoldState, selectedBrush, litUpHoldsMap, board.boardName],
   );
 
   const handleAssignRole = useCallback(
