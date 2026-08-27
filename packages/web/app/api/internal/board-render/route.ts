@@ -285,11 +285,10 @@ export async function GET(request: NextRequest) {
       isOgVariant ? 'og' : 'std',
       format,
       // A boardsesh render must never be served under a classic key — see
-      // buildRenderConfig's renderMode/glowFalloff/glyphs/veil params.
-      renderMode,
-      glowFalloff,
-      glyphs ? '1' : '0',
-      fieldColor ?? '',
+      // buildRenderConfig's renderMode/glowFalloff/glyphs/veil params. Classic
+      // ignores the other three, so it keys as plain `classic` whatever a
+      // caller passed alongside it.
+      ...(renderMode === 'boardsesh' ? ['boardsesh', glowFalloff, glyphs ? '1' : '0', fieldColor ?? ''] : ['classic']),
     ].join(':');
 
     const cachedBytes = byteCache.get(byteKey);

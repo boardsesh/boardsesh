@@ -36,7 +36,7 @@ keys, so a boardsesh render can never be served under a classic key.
 | `render_mode`  | `classic` | `classic` (today's marker-only overlay) or `boardsesh` (veil + glow on traced silhouettes).                                                      |
 | `glow_falloff` | `soft`    | `boardsesh` mode only: glow edge treatment, `soft` or `plateau`.                                                                                 |
 | `glyphs`       | off       | `boardsesh` mode only: `0`\|`1`\|`true`\|`false` — role glyphs inside the glow.                                                                   |
-| `field_color`  | unset     | `#rrggbb`; feeds the veil color. Opacity is hardcoded to 0 for now — see the `TODO(#2202)` in the callers of `buildRenderConfig` — until `@boardsesh/board-art-geometry` supplies real wall-lightness data. |
+| `field_color`  | unset     | `#rrggbb`; feeds the veil color. **No visible effect yet:** opacity is hardcoded to 0 for now — see the `TODO(#2202)` in the callers of `buildRenderConfig` — until `@boardsesh/board-art-geometry` supplies real wall-lightness data. |
 
 ## How a render works
 

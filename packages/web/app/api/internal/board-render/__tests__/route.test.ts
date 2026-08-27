@@ -727,13 +727,13 @@ describe('board-render API route', () => {
     ['dim_background', {}, { dim_background: '0.18' }, false],
     ['variant', { format: 'png' }, { variant: 'og' }, false],
     // issue #2202: a boardsesh render must never be served under a classic
-    // key, so all four render-option params are in the byte-cache key too —
-    // even glow_falloff/glyphs/field_color alone, which only take visible
-    // effect once render_mode=boardsesh.
+    // key, and within boardsesh mode every option that moves a pixel is in
+    // the key. (Classic ignores the other three, so they are keyed only once
+    // render_mode=boardsesh — see the collapse test below.)
     ['render_mode', {}, { render_mode: 'boardsesh' }, false],
-    ['glow_falloff', {}, { glow_falloff: 'plateau' }, false],
-    ['glyphs', {}, { glyphs: '1' }, false],
-    ['field_color', {}, { field_color: '#123456' }, false],
+    ['glow_falloff', { render_mode: 'boardsesh' }, { glow_falloff: 'plateau' }, false],
+    ['glyphs', { render_mode: 'boardsesh' }, { glyphs: '1' }, false],
+    ['field_color', { render_mode: 'boardsesh' }, { field_color: '#123456' }, false],
   ] as Array<[string, Record<string, string>, Record<string, string>, boolean]>)(
     'keys the byte cache on %s',
     async (_label, shared, override, expectDistinctBody) => {
@@ -756,6 +756,25 @@ describe('board-render API route', () => {
           !secondBytes.equals(firstBytes) || second.headers.get('Content-Type') !== first.headers.get('Content-Type');
         expect(differs).toBe(true);
       }
+    },
+  );
+
+  it.each([
+    ['glow_falloff', { glow_falloff: 'plateau' }],
+    ['glyphs', { glyphs: '1' }],
+    ['field_color', { field_color: '#123456' }],
+  ] as Array<[string, Record<string, string>]>)(
+    'does not fragment the classic byte cache on %s, which classic ignores',
+    async (_label, override) => {
+      const params = { ...validParams, include_background: '1' };
+      const first = await GET(makeRequest(params));
+      expect(first.status).toBe(200);
+      expect(mockRenderOverlay).toHaveBeenCalledTimes(1);
+
+      const second = await GET(makeRequest({ ...params, ...override }));
+      expect(second.status).toBe(200);
+      expect(mockRenderOverlay).toHaveBeenCalledTimes(1);
+      expect(second.headers.get('Server-Timing')).toContain('cache;desc=hit');
     },
   );
 
