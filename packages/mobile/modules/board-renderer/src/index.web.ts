@@ -48,6 +48,9 @@ export const boardRendererNative: { readonly platform: 'web' } = { platform: 'we
 export const MARKER_RENDERER_UNAVAILABLE_MESSAGE =
   'Marker shape, size, and brush overrides require a rebuilt BoardRenderer native binary';
 
+export const BOARDSESH_RENDERER_UNAVAILABLE_MESSAGE =
+  'The Boardsesh render mode requires a rebuilt BoardRenderer native binary';
+
 /**
  * Shape of the wasm-bindgen glue module (packages/board-renderer/wasm/pkg,
  * copied verbatim into public/wasm — see public/wasm/README.md). `default` is
@@ -288,7 +291,96 @@ function decodeRenderOutput(rawBytes: Uint8Array): {
   return { width, height, rgba: new Uint8ClampedArray(rawBytes.subarray(8)) };
 }
 
+// ── Boardsesh capability probe (issue #2202) ───────────────────────────────
+// The web twin of index.ts's probe, and it asks the identical question for the
+// identical reason: RenderConfig has no `deny_unknown_fields` and every
+// Boardsesh field is `#[serde(default)]`, so a wasm artifact built before the
+// mode existed accepts the same config, drops every key, and returns a classic
+// render with no error to notice. The committed pkg IS rebuilt from the
+// Boardsesh core, so this should always answer true — running it anyway keeps
+// web and native on ONE code path, and turns a stale artifact (the exact mistake
+// board-renderer-wasm-runtime.test.ts exists to catch) into a refusal instead of
+// a silently wrong drawing.
+//
+// Nothing here touches the overlay cache: it renders PNG blobs directly, below
+// the cache layer renderHoldsOverlay owns, so there are no probe artifacts to
+// clean up.
+
+const PROBE_CONFIG_BASE = {
+  board_width: 8,
+  board_height: 8,
+  output_width: 8,
+  frames: '',
+  thumbnail: false,
+  holds: [],
+  hold_state_map: {},
+} as const;
+
+const CLASSIC_PROBE_CONFIG_JSON = JSON.stringify({ ...PROBE_CONFIG_BASE, render_mode: 'classic' });
+const BOARDSESH_PROBE_CONFIG_JSON = JSON.stringify({
+  ...PROBE_CONFIG_BASE,
+  render_mode: 'boardsesh',
+  veil: { color: '#FFFFFF', opacity: 1 },
+});
+
+/** True when the two probe PNGs are not the same image. */
+async function pngBlobsDiffer(first: Blob, second: Blob): Promise<boolean> {
+  if (first.size !== second.size) return true;
+  const [firstBytes, secondBytes] = await Promise.all([first.arrayBuffer(), second.arrayBuffer()]);
+  const firstView = new Uint8Array(firstBytes);
+  const secondView = new Uint8Array(secondBytes);
+  for (let index = 0; index < firstView.length; index += 1) {
+    if (firstView[index] !== secondView[index]) return true;
+  }
+  return false;
+}
+
+let boardseshSupportProbe: Promise<boolean> | null = null;
+
+async function runBoardseshSupportProbe(): Promise<boolean> {
+  try {
+    const classicPng = await renderPngBlob(CLASSIC_PROBE_CONFIG_JSON);
+    const boardseshPng = await renderPngBlob(BOARDSESH_PROBE_CONFIG_JSON);
+    return await pngBlobsDiffer(classicPng, boardseshPng);
+  } catch {
+    // A wasm core that can't load or render at all is not a Boardsesh-capable
+    // one; the classic path surfaces the underlying failure on its own.
+    return false;
+  }
+}
+
+/**
+ * Does the loaded wasm core actually implement the Boardsesh render mode?
+ * Memoised for the page's lifetime — the artifact can't change without a reload.
+ */
+export function probeBoardseshRendererSupport(): Promise<boolean> {
+  boardseshSupportProbe ??= runBoardseshSupportProbe();
+  return boardseshSupportProbe;
+}
+
+/** Test-only handle: forget the memoised probe result so the next call re-runs it. */
+export function _resetBoardseshProbeForTests(): void {
+  boardseshSupportProbe = null;
+}
+
+function configRequestsBoardseshMode(configJson: string): boolean {
+  try {
+    const parsedConfig: unknown = JSON.parse(configJson);
+    if (!parsedConfig || typeof parsedConfig !== 'object' || Array.isArray(parsedConfig)) return false;
+    return (parsedConfig as Record<string, unknown>).render_mode === 'boardsesh';
+  } catch {
+    return false;
+  }
+}
+
 export async function renderHoldsOverlay(configJson: string, cacheKey: string): Promise<string> {
+  // 0. Boardsesh gate, ahead of the caches so a stale artifact can't serve a
+  //    Boardsesh overlay it never drew. Classic configs skip it entirely and
+  //    never wait on the probe.
+  if (configRequestsBoardseshMode(configJson) && !(await probeBoardseshRendererSupport())) {
+    throw new Error(BOARDSESH_RENDERER_UNAVAILABLE_MESSAGE);
+  }
+
   // 1. Live in-session object URL — the fast path once a climb has rendered.
   const cached = getRenderedObjectUrl(cacheKey);
   if (cached) return cached;
