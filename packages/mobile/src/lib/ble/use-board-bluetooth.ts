@@ -44,6 +44,7 @@ import type {
 } from './types';
 import type { HoldPlacement } from '../../components/board-renderer/types';
 import { track } from '../analytics';
+import { markClimbAction } from '../climb-view-session';
 import { reportHandledError } from '../error-reporting';
 import { clearBleDiagnosticsTags, setBleDiagnosticsTags } from '../sentry';
 import { buildHoldColorOverrideSignature, type HoldColorOverrides } from '../hold-color-overrides';
@@ -901,6 +902,10 @@ export function useBoardBluetooth({
               ...boardAnalyticsProperties,
               ...bleWriteDiagnosticsProperties(await fetchWriteDiagnostics()),
             });
+            // Board-render A/B telemetry (issue #2202): a no-op unless this
+            // climb has an open view from markClimbViewed (queue-provider's
+            // setCurrentClimb).
+            if (sendContext?.climbUuid) markClimbAction(sendContext.climbUuid, 'ble');
             return true;
           }
 
@@ -970,6 +975,10 @@ export function useBoardBluetooth({
               ...boardAnalyticsProperties,
               ...bleWriteDiagnosticsProperties(await fetchWriteDiagnostics()),
             });
+            // Board-render A/B telemetry (issue #2202): a no-op unless this
+            // climb has an open view from markClimbViewed (queue-provider's
+            // setCurrentClimb).
+            if (sendContext?.climbUuid) markClimbAction(sendContext.climbUuid, 'ble');
             return true;
           }
 
@@ -1058,6 +1067,10 @@ export function useBoardBluetooth({
             ...boardAnalyticsProperties,
             ...bleWriteDiagnosticsProperties(await fetchWriteDiagnostics()),
           });
+          // Board-render A/B telemetry (issue #2202): a no-op unless this
+          // climb has an open view from markClimbViewed (queue-provider's
+          // setCurrentClimb).
+          if (sendContext?.climbUuid) markClimbAction(sendContext.climbUuid, 'ble');
           return true;
         } catch (error) {
           // An aborted write (unmount, or a reconnect cancelling the old

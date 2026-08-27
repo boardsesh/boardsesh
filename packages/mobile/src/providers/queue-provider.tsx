@@ -1,4 +1,13 @@
-import { useReducer, useState, useCallback, useEffect, useRef, useMemo, type ReactNode } from 'react';
+import {
+  useReducer,
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  useMemo,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   queueReducer,
@@ -22,7 +31,7 @@ import type { QueueItemAttribution } from '@boardsesh/queue-react/queue-item-inp
 import type { PlaybackStateChangedEvent, SessionUser } from '@boardsesh/shared-schema';
 import { execute, isRateLimitedError } from '@boardsesh/graphql-client';
 import { buildBoardPath, classifyClimbBoardCompatibility, toBoardName } from '@boardsesh/board-config';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, buildBoardRenderTelemetryProps } from '@boardsesh/analytics';
 import { JOIN_SESSION, UPDATE_USERNAME } from '@boardsesh/graphql/operations/queue-session';
 import { getWsClient } from '../lib/graphql/ws-client';
 import { getHttpClient } from '../lib/graphql/client';
@@ -36,7 +45,19 @@ import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-boa
 import { findPreviousQueueItem, findNextQueueItemWithSuggestions } from '@boardsesh/play-view';
 import { toClimbQueueItem } from '../lib/queue-conversion';
 import { climbToQueueItem, toQueueItemWireInput, isClimbResolved } from '../lib/climb-to-queue-item';
-import { track } from '../lib/analytics';
+import { track, registerRenderSuperProperties } from '../lib/analytics';
+import { markClimbAction, markClimbViewed } from '../lib/climb-view-session';
+import {
+  resolveEffectiveRenderSettings,
+  useBoardRenderSettings,
+  type BoardRenderFlags,
+} from '../lib/board-render-settings';
+import {
+  getBoardseshRendererSupport,
+  getBoardseshSupportRevision,
+  subscribeToBoardseshSupport,
+} from '../hooks/boardsesh-renderer-support';
+import { useFeatureFlagVariant } from './feature-flags-provider';
 import { reportHandledError } from '../lib/error-reporting';
 import { useAuthTransportRevision } from '../lib/auth-transport-revision';
 import { useToast } from './toast-provider';
@@ -304,6 +325,49 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // callbacks on every board switch — mirror it into a ref the handlers read.
   const activeBoardRef = useRef(activeBoard);
   activeBoardRef.current = activeBoard;
+
+  // Board-render A/B telemetry (issue #2202). QueueProvider mounts once near
+  // the app root, so this is the one place that registers `render_mode` /
+  // `glow_falloff` / `glow_falloff_source` as PostHog super properties —
+  // rather than every virtualized board row re-registering the same values.
+  //
+  // Deliberately NOT `useEffectiveBoardRenderSettings` from
+  // use-native-climb-render.ts: that file's other imports (board-details,
+  // background-image-cache) eagerly import `expo-asset`, which crashes any
+  // test environment that hasn't mocked it — every queue-provider-*.test.tsx
+  // suite, none of which had a reason to before. This reads the SAME
+  // capability state through ../hooks/boardsesh-renderer-support (a plain,
+  // dependency-free module) instead, and — the one behavioural difference —
+  // does not itself TRIGGER the capability probe. In practice that never
+  // matters: a board is always rendering (list thumbnails, the play view)
+  // well before a climb becomes "active" here, and that render is what starts
+  // the probe. The one cold-start edge case (a deep link straight into a
+  // climb before any board has rendered) reports `classic` for that single
+  // first event and self-corrects on the next.
+  const { settings: boardRenderSettings } = useBoardRenderSettings();
+  const defaultRenderMode = useFeatureFlagVariant<'classic' | 'boardsesh'>('board-render-mode-default', [
+    'classic',
+    'boardsesh',
+  ]);
+  const defaultGlowFalloff = useFeatureFlagVariant<'soft' | 'plateau'>('board-glow-falloff', ['soft', 'plateau']);
+  const boardseshSupportTick = useSyncExternalStore(
+    subscribeToBoardseshSupport,
+    getBoardseshSupportRevision,
+    getBoardseshSupportRevision,
+  );
+  const effectiveRenderSettings = useMemo(() => {
+    void boardseshSupportTick;
+    const flags: BoardRenderFlags = { defaultMode: defaultRenderMode, glowFalloff: defaultGlowFalloff };
+    return resolveEffectiveRenderSettings(boardRenderSettings, flags, getBoardseshRendererSupport() === true);
+  }, [boardRenderSettings, defaultRenderMode, defaultGlowFalloff, boardseshSupportTick]);
+  // Mirrored into a ref for the same reason activeBoardRef is: callbacks below
+  // (setCurrentClimb) read the CURRENT resolved settings without needing to be
+  // rebuilt every time they change.
+  const effectiveRenderSettingsRef = useRef(effectiveRenderSettings);
+  effectiveRenderSettingsRef.current = effectiveRenderSettings;
+  useEffect(() => {
+    registerRenderSuperProperties(effectiveRenderSettings);
+  }, [effectiveRenderSettings]);
 
   // "This climb is on another board — add anyway / switch / cancel". Stable
   // identity, so `addToQueue` (and the memoized actions context) never churns.
@@ -848,6 +912,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         currentQueueLength: stateRef.current.queue.length + 1,
         partyMode: countDistinctSessionUsers(sessionRuntimeStateRef.current?.users) > 1,
       });
+      // Board-render A/B telemetry (issue #2202): a no-op unless this climb has
+      // an open view from markClimbViewed (setCurrentClimb) — e.g. a queue add
+      // straight from search never opened one, and correctly fires nothing.
+      markClimbAction(item.climb.uuid, 'queue');
       // No unresolved-climb guard here: addToQueue is only ever called with a
       // fully-resolved climb from search / detail / playlist (a real user tap),
       // never a peer placeholder. The re-broadcast vectors that need guarding are
@@ -1304,6 +1372,21 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         layoutId: activeBoardRef.current?.layoutId,
         source: 'mobile',
       });
+      // Board-render A/B telemetry (issue #2202): this climb is now the one
+      // being viewed. `markClimbAction` sites (queue add, BLE send) read the
+      // view this opens to fire `Climb First Action` at most once per view.
+      const activeBoard = activeBoardRef.current;
+      const activeBoardName = activeBoard ? toBoardName(activeBoard.boardType) : null;
+      if (activeBoard && activeBoardName) {
+        markClimbViewed(
+          item.climb.uuid,
+          buildBoardRenderTelemetryProps(effectiveRenderSettingsRef.current, {
+            boardName: activeBoardName,
+            layoutId: activeBoard.layoutId,
+            sizeId: activeBoard.sizeId,
+          }),
+        );
+      }
       // Activating a climb slots it right after the current climb (issue #2217),
       // pushing the current climb into history — matching the local "set climb
       // active" intent instead of bumping the new climb to the bottom. Fresh-uuid
