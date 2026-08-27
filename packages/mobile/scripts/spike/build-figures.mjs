@@ -751,7 +751,9 @@ async function thumbnailFigure(sizeKey) {
 async function gridSheet({ name, title, subtitle, columns, kind, sizeKey }) {
   const detail = kind === 'detail';
   const thumb = kind === 'thumb';
-  const COLUMN = detail ? 420 : thumb ? Number(sizeKey) * 2 : 300;
+  // `SHEET_COLUMN` sets the whole-board column width, for a sheet at the size
+  // a phone draws the board (an iPhone 16 Pro is 1206 px across at 3x).
+  const COLUMN = detail ? 420 : thumb ? Number(sizeKey) * 2 : Number(process.env.SHEET_COLUMN ?? 300);
   const rows = [];
   for (const board of BOARDS) {
     const tiles = [];
@@ -867,7 +869,8 @@ async function blueHandFigure(kind) {
  * from `BOARDS='…' capture-boards.sh <dir> <arms…>`, the thumbnail ones from the
  * same with `THUMBS=1 SIZES='…'`. This is how a tuning experiment — a bigger
  * glow, a stronger veil, a heavier fill — gets its own sheet without touching
- * the default matrix. `SHEET_NOTE` is appended to the header, for when a column
+ * the default matrix. `SHEET_COLUMN` sets the whole-board column width in px
+ * (default 300); `SHEET_NOTE` is appended to the header, for when a column
  * was shot under a different state than the rest and the sheet has to say so.
  */
 async function armsSheetFigure(kind, sizeKey) {
