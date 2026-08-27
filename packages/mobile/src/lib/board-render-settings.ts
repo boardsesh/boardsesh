@@ -33,7 +33,13 @@ export type GlowFalloffSetting = 'default' | 'soft' | 'plateau';
 export type VeilSetting = 'auto' | 'off' | 'soft' | 'strong' | 'custom';
 /** What the Boardsesh drawing puts on a lit hold at full size. */
 export type MarkStyleSetting = 'glow' | 'glow-fill' | 'fill';
-/** The same choice for a list thumbnail, where a bare glow reads faint at ~76px. */
+/**
+ * The same choice for a list thumbnail, where a bare glow reads faint at
+ * ~76px. `fill` renders as `glow-fill`, not a bare fill — the spike's
+ * winning thumbnail arm was the filled mark WITH its own small glow
+ * ("veil + tint"), so that pairing is what this maps to (see
+ * `buildBoardseshFields` in `use-native-climb-render.ts`).
+ */
 export type ThumbnailStyleSetting = 'fill' | 'glow';
 
 export type BoardseshRenderSettings = {

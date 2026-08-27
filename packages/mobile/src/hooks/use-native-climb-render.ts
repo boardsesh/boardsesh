@@ -808,6 +808,19 @@ function canonicalizeSetIds(setIds: string): string {
     .join(',');
 }
 
+/**
+ * The board-render half of a composed `[overrideHalf, boardHalf].join('.')`
+ * signature (see the `effectiveRenderSignature` memo further down), or `''`
+ * for a classic render. The override half is never empty — it is `'default'`
+ * at minimum — so the board half, when present, always starts at the
+ * `mode-boardsesh` token `buildBoardRenderSignature` always leads with, right
+ * after that separating dot.
+ */
+function boardRenderSignatureHalf(renderSignature: string): string {
+  const markerIndex = renderSignature.indexOf('.mode-boardsesh');
+  return markerIndex === -1 ? '' : renderSignature.slice(markerIndex + 1);
+}
+
 export function buildCacheKey(
   boardName: string,
   layoutId: number,
@@ -818,7 +831,17 @@ export function buildCacheKey(
   renderWidth?: number,
   renderSignature = DEFAULT_HOLD_COLOR_SIGNATURE,
 ): string {
-  const effectiveRenderSignature = frames.length === 0 ? DEFAULT_HOLD_COLOR_SIGNATURE : renderSignature;
+  // With no frames there are no lit holds to colour- or shape-override, so
+  // that half of the signature is meaningless and collapses to the default —
+  // but a Boardsesh render with no frames still paints the veil and the field
+  // wash, so THAT half must survive rather than being thrown away with it.
+  const boardHalf = boardRenderSignatureHalf(renderSignature);
+  const effectiveRenderSignature =
+    frames.length === 0
+      ? boardHalf
+        ? `${DEFAULT_HOLD_COLOR_SIGNATURE}.${boardHalf}`
+        : DEFAULT_HOLD_COLOR_SIGNATURE
+      : renderSignature;
   const framesHash =
     effectiveRenderSignature === DEFAULT_HOLD_COLOR_SIGNATURE
       ? fnv1aHex(frames)
@@ -1016,6 +1039,9 @@ function buildBoardseshFields(
     ...(veilOpacity > 0 ? { veil: { color: fieldColor, opacity: veilOpacity } } : {}),
     // A bare glow reads faint once a thumbnail is scaled to ~76px, so the small
     // surface takes the fill under it unless the climber asked for the glow.
+    // `'fill'` maps to `'glow-fill'`, not a bare fill, on purpose: the spike
+    // measured the filled thumbnail WITH its own small glow (the "veil + tint"
+    // arm) as the winner, not the fill alone.
     mark_style: filledStyle ? (settings.thumbnailStyle === 'glow' ? 'glow' : 'glow-fill') : settings.markStyle,
     glow_falloff: glowFalloff,
     glow: {

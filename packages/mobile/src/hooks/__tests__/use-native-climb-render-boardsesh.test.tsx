@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
-import { getWallLightness } from '@boardsesh/board-art-geometry';
+import { getWallLightness, loadBoardArtGeometry } from '@boardsesh/board-art-geometry';
 
 // Issue #2202: the Boardsesh drawing — a wash of the play field over the unlit
 // wall, a glow clipped to each lit hold's traced silhouette, and a HAND blue
@@ -433,6 +433,126 @@ describe('per-hold geometry', () => {
   });
 });
 
+describe('per-hold geometry, joined against the real shard data', () => {
+  // Every case above proves withLitHoldGeometry's `geometry.outlines[hold.id]`
+  // lookup against hand-picked mock holds, mocked through `getBoardRenderData`.
+  // Both the mock ids and the shard's ids come from fixtures written for this
+  // file, so a mismatch between the two REAL catalogues — the placement ids
+  // `@boardsesh/board-constants` hands out and the ids
+  // `@boardsesh/board-art-geometry` traced outlines against — would still
+  // pass. This proves the same lookup with the real `getBoardRenderData` and
+  // the real shards.
+  //
+  // Tension Board 2 Mirror 12x12 (tension, layout 10, size 6 — the same
+  // `TB2_MIRROR` fixture the veil tests below use) is fully traced today
+  // (498/498, per the generated `outline-counts` table), so any two of its
+  // real placement ids are traced ones. Kilter's `1-10` (12x12 with
+  // kickboard) is fully traced too (476/476) — the real board with untraced
+  // placements today is Kilter's `1-7` (12 x 14, Commercial: 476/527, 51
+  // untraced), so that shard stands in for the "lit but untraced" case.
+  // `TB2_MIRROR.setIds` ('20') is only ever fed to the MOCKED
+  // `getBoardRenderData` elsewhere in this file, so it was never checked
+  // against a real set for this layout+size — set 12 is ('10-6-12' in the
+  // generated product-sizes table).
+  const TB2_MIRROR_REAL_SET_IDS = '12';
+  const KILTER_UNTRACED = { boardName: 'kilter' as const, layoutId: 1, sizeId: 7, setIds: '1,20' };
+
+  // The board-details module is mocked at the top of this file, so
+  // `_getBoardConfigForTests` never reaches the real `getBoardRenderData`
+  // unless the mock is told to hand it back. `vi.importActual` gets the real
+  // implementation past that mock for these two cases only; loading it once
+  // up front and pinning it with `mockReturnValue` (rather than delegating
+  // through `mockImplementation`, whose declared type here is the zero-arg
+  // canned-fixture shape every other case in this file uses) sidesteps that
+  // mismatch entirely, since a fixed return value never needs a matching
+  // parameter list.
+  async function loadRealRenderData(query: {
+    boardName: 'tension' | 'kilter';
+    layoutId: number;
+    sizeId: number;
+    setIds: number[];
+  }): Promise<{ holdsData: { id: number }[] }> {
+    const actual = await vi.importActual<typeof import('../../lib/board-details')>('../../lib/board-details');
+    const renderData = actual.getBoardRenderData(query);
+    if (renderData === null) throw new Error(`no real render data for ${JSON.stringify(query)}`);
+    getBoardRenderDataMock.mockReturnValue(renderData);
+    return renderData;
+  }
+
+  function expectRealOutline(litHold: Record<string, unknown>): void {
+    expect(Array.isArray(litHold.outline)).toBe(true);
+    const outline = litHold.outline as number[];
+    expect(outline.length % 2).toBe(0);
+    expect(outline.length).toBeGreaterThanOrEqual(6);
+    expect(outline.every((coordinate) => Number.isFinite(coordinate))).toBe(true);
+  }
+
+  it('attaches the real traced outline on Tension Board 2 Mirror 12x12, and nothing on an unlit hold', async () => {
+    const geometry = loadBoardArtGeometry(TB2_MIRROR);
+    expect(geometry).not.toBeNull();
+
+    const { holdsData } = await loadRealRenderData({
+      boardName: TB2_MIRROR.boardName,
+      layoutId: TB2_MIRROR.layoutId,
+      sizeId: TB2_MIRROR.sizeId,
+      setIds: [Number(TB2_MIRROR_REAL_SET_IDS)],
+    });
+    expect(holdsData.length).toBeGreaterThan(2);
+
+    // Fully traced (498/498): any two real ids are traced ones.
+    const [litA, litB, unlit] = holdsData;
+    expect(geometry?.outlines[litA.id]).toBeDefined();
+    expect(geometry?.outlines[litB.id]).toBeDefined();
+
+    const configBase = buildConfig(
+      { ...TB2_MIRROR, setIds: TB2_MIRROR_REAL_SET_IDS },
+      {
+        frames: `p${litA.id}r2p${litB.id}r2`,
+        boardsesh: boardseshInputs(),
+        renderSignature: 'real-shard-tb2-mirror',
+      },
+    );
+
+    expectRealOutline(holdById(configBase, litA.id));
+    expectRealOutline(holdById(configBase, litB.id));
+    // A real placement this climb does not light gets no outline at all.
+    expect('outline' in holdById(configBase, unlit.id)).toBe(false);
+  });
+
+  it('leaves a real untraced Kilter placement without an outline, even when it is lit', async () => {
+    const geometry = loadBoardArtGeometry(KILTER_UNTRACED);
+    expect(geometry).not.toBeNull();
+
+    const { holdsData } = await loadRealRenderData({
+      boardName: KILTER_UNTRACED.boardName,
+      layoutId: KILTER_UNTRACED.layoutId,
+      sizeId: KILTER_UNTRACED.sizeId,
+      setIds: [1, 20],
+    });
+
+    const traced = holdsData.filter((hold) => geometry?.outlines[hold.id] !== undefined);
+    const untracedHold = holdsData.find((hold) => geometry?.outlines[hold.id] === undefined);
+    expect(traced.length).toBeGreaterThanOrEqual(2);
+    // The 51 untraced placements gate-4 pins for this shard (527 - 476): at
+    // least one real id the tracer skipped.
+    expect(untracedHold).toBeDefined();
+    const untracedId = (untracedHold as { id: number }).id;
+
+    const [tracedA, tracedB] = traced;
+    const configBase = buildConfig(KILTER_UNTRACED, {
+      frames: `p${tracedA.id}r43p${tracedB.id}r43p${untracedId}r43`,
+      boardsesh: boardseshInputs(),
+      renderSignature: 'real-shard-kilter-untraced',
+    });
+
+    expectRealOutline(holdById(configBase, tracedA.id));
+    expectRealOutline(holdById(configBase, tracedB.id));
+    // Lit, but no traced art: the renderer's own ring fallback, not a
+    // fabricated outline.
+    expect('outline' in holdById(configBase, untracedId)).toBe(false);
+  });
+});
+
 describe('the veil, measured against the real shards', () => {
   it.each([
     ['Tension Board 2 Mirror 12x12', TB2_MIRROR],
@@ -453,14 +573,14 @@ describe('the veil, measured against the real shards', () => {
 describe('the cache key', () => {
   const CLIMB = { boardName: 'grasshopper', layoutId: 1, sizeId: 5, setIds: '1' };
 
-  function keyFor(boardSignature: string): string {
+  function keyFor(boardSignature: string, frames: string = GRASSHOPPER_FRAMES): string {
     const composed = ['default', boardSignature].filter(Boolean).join('.');
     return buildCacheKey(
       CLIMB.boardName,
       CLIMB.layoutId,
       CLIMB.sizeId,
       CLIMB.setIds,
-      GRASSHOPPER_FRAMES,
+      frames,
       false,
       undefined,
       composed,
@@ -495,25 +615,80 @@ describe('the cache key', () => {
     expect(keyFor(signatureFor({}))).not.toBe(keyFor(''));
   });
 
-  it.each([
-    ['glowFalloff', { glowFalloff: 'plateau' as const }],
-    ['glowReach', { glowReach: 1.5 }],
-    ['plateauShare', { plateauShare: 0.55 }],
-    ['markStyle', { markStyle: 'fill' as const }],
-    ['fillOpacity', { fillOpacity: 0.8 }],
-    ['softDisc', { softDisc: true }],
-    ['smallHoldBoost', { smallHoldBoost: false }],
-    ['ledDots', { ledDots: false }],
-    ['roleGlyphs', { roleGlyphs: true }],
-    ['thumbnailStyle', { thumbnailStyle: 'glow' as const }],
-  ])('changes when %s changes', (_field, overrides) => {
-    expect(keyFor(signatureFor(overrides))).not.toBe(keyFor(signatureFor({})));
-  });
+  /**
+   * One non-default value per `BoardseshRenderSettings` field, keyed by the
+   * type itself — a 13th field is a compile error here until it is listed, so
+   * the it.each below (driven off `DEFAULT_BOARDSESH_RENDER_SETTINGS`'s own
+   * keys) can never silently skip a token that should split the cache.
+   */
+  const MOVED_OFF_DEFAULT: { [K in keyof BoardseshRenderSettings]: BoardseshRenderSettings[K] } = {
+    glowFalloff: 'plateau',
+    glowReach: 1.2,
+    plateauShare: 0.55,
+    veil: 'strong',
+    veilOpacity: 0.5,
+    markStyle: 'glow-fill',
+    fillOpacity: 0.8,
+    softDisc: true,
+    smallHoldBoost: false,
+    ledDots: false,
+    roleGlyphs: true,
+    thumbnailStyle: 'glow',
+  };
+
+  /**
+   * `veilOpacity` only reaches `resolveVeilOpacity` when `veil` is `'custom'`
+   * — paired here so moving this field alone actually changes the resolved
+   * opacity, rather than silently doing nothing under the still-`'auto'`
+   * default the raw override would otherwise leave in place.
+   */
+  function overrideFor(field: keyof BoardseshRenderSettings): Partial<BoardseshRenderSettings> {
+    if (field === 'veilOpacity') return { veil: 'custom', veilOpacity: MOVED_OFF_DEFAULT.veilOpacity };
+    return { [field]: MOVED_OFF_DEFAULT[field] } as Partial<BoardseshRenderSettings>;
+  }
+
+  // Gap to the dark field lands in the soft bucket (0.175-0.34), so `auto`
+  // resolves to 0.3 here — different from both `strong` (always 0.6) and a
+  // `custom` 0.5, which is what lets `veil` and `veilOpacity` prove they move
+  // the key too, resolved the way the hook resolves them rather than as a raw,
+  // unresolved override.
+  const WALL_ROW = { mean: 0.45, coverage: 1 };
+
+  function resolvedSignatureFor(overrides: Partial<BoardseshRenderSettings>): string {
+    const boardsesh = { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, ...overrides };
+    const effective = resolveEffectiveRenderSettings({ mode: 'boardsesh', boardsesh }, undefined, true);
+    const veilOpacity = resolveVeilOpacity(boardsesh, WALL_ROW, DARK_FIELD);
+    return buildBoardRenderSignature(effective, DARK_FIELD, veilOpacity);
+  }
+
+  it.each(Object.keys(DEFAULT_BOARDSESH_RENDER_SETTINGS) as (keyof BoardseshRenderSettings)[])(
+    'changes when %s changes',
+    (field) => {
+      expect(keyFor(resolvedSignatureFor(overrideFor(field)))).not.toBe(keyFor(resolvedSignatureFor({})));
+    },
+  );
 
   it('changes when the theme flips the play field under the veil', () => {
     // Both halves of the flip move: the field colour the veil washes toward,
     // and the strength the measurement gives it on that field.
     expect(keyFor(signatureFor({}, LIGHT_FIELD, 0))).not.toBe(keyFor(signatureFor({}, DARK_FIELD, 0.6)));
+  });
+
+  it('keeps the Boardsesh half of the key alive across an empty-frames render', () => {
+    // No frames means nothing to colour- or shape-override, but a Boardsesh
+    // render with zero frames still paints the veil and the field wash — the
+    // key must still tell the two themes apart, not collapse to one classic
+    // key the way it used to.
+    const lightKey = keyFor(signatureFor({}, LIGHT_FIELD, 0), '');
+    const darkKey = keyFor(signatureFor({}, DARK_FIELD, 0.6), '');
+    expect(lightKey).not.toBe(darkKey);
+  });
+
+  it('still collapses a classic render with empty frames to the default key', () => {
+    // Unchanged from before the fix: with no frames, there is nothing lit for
+    // a marker override to apply to, so a classic signature (no
+    // `mode-boardsesh` token at all) still ignores it.
+    expect(keyFor('hand-123456', '')).toBe(keyFor('', ''));
   });
 });
 
