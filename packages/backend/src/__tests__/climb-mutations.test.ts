@@ -346,6 +346,48 @@ describe('climb mutations', () => {
     ).rejects.toThrow(/duplicate/i);
   });
 
+  it('rejects an unknown characteristic token', async () => {
+    await expect(
+      climbMutations.saveClimb(
+        {},
+        {
+          input: {
+            boardType: 'kilter',
+            layoutId: 1,
+            name: 'Unknown Token Climb',
+            description: '',
+            isDraft: false,
+            frames: 'p1r43',
+            angle: 40,
+            characteristics: ['some_unknown_token'],
+          },
+        },
+        makeCtx(),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('rejects no_match sent through the characteristics field (it must ride the description instead)', async () => {
+    await expect(
+      climbMutations.saveClimb(
+        {},
+        {
+          input: {
+            boardType: 'kilter',
+            layoutId: 1,
+            name: 'No Match Via Wrong Field',
+            description: '',
+            isDraft: false,
+            frames: 'p1r43',
+            angle: 40,
+            characteristics: ['no_match'],
+          },
+        },
+        makeCtx(),
+      ),
+    ).rejects.toThrow();
+  });
+
   it('derives no_match from the description and merges it with a client-supplied toggle on creation', async () => {
     // Regression: saveClimb used to store ONLY the client-supplied toggleable
     // tokens, so a climb created with no_match (via the description prefix) AND
