@@ -20,6 +20,28 @@ export function getPaintRoles(boardName: BoardName): ReadonlyArray<Exclude<Brush
 }
 
 /**
+ * The role a tap should advance a hold to. Cycles through the board's paint
+ * roles starting at the selected brush, then OFF, then back to the selected
+ * brush — so tapping a hold repeatedly walks every role without needing the
+ * long-press sheet. The eraser brush ('OFF' selected) skips the cycle and
+ * always clears, matching its role as a dedicated erase tool rather than a
+ * cycle anchor.
+ */
+export function getNextBrushRole(
+  boardName: BoardName,
+  currentState: HoldState | 'OFF',
+  selectedBrush: BrushRole,
+): BrushRole {
+  if (selectedBrush === 'OFF') return 'OFF';
+  const supportedRoles = getPaintRoles(boardName);
+  if (supportedRoles.length === 0) return 'OFF';
+  const startIndex = Math.max(supportedRoles.indexOf(selectedBrush), 0);
+  const cycle: BrushRole[] = [...supportedRoles.slice(startIndex), ...supportedRoles.slice(0, startIndex), 'OFF'];
+  const currentIndex = cycle.findIndex((role) => role === currentState);
+  return cycle[(currentIndex + 1) % cycle.length];
+}
+
+/**
  * The swatch colour for a role on a given board, taken from the board's
  * canonical role code (the same code the frame string and BLE encoder use).
  * Falls back to a neutral grey when a board doesn't define the role (e.g. a

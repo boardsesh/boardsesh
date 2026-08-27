@@ -225,6 +225,10 @@ export function CreateDrawer({
             onChangeDescription={controller.setDescription}
             noMatch={controller.noMatch}
             onChangeNoMatch={controller.setNoMatch}
+            noKickboard={controller.noKickboard}
+            onChangeNoKickboard={controller.setNoKickboard}
+            campus={controller.campus}
+            onChangeCampus={controller.setCampus}
             isDraft={controller.isDraft}
             onChangeIsDraft={controller.setIsDraft}
             showAllHolds={controller.showAllHolds}

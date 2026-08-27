@@ -1,5 +1,5 @@
 {
-  "//": "Typechecks the repo-root scripts, which were previously never validated by CI — `vp run typecheck` only covered packages/*. Wired in via the `typecheck:scripts` task. Scoped to the Discord feedback pipeline and the dev-db discovery watchdog for now; widen `include` as other scripts are made type-clean.",
+  "//": "Typechecks the repo-root scripts, which were previously never validated by CI — `vp run typecheck` only covered packages/*. Wired in via the `typecheck:scripts` task. Scoped to the Discord feedback pipeline, the dev-db discovery watchdog and the board-art geometry generator for now; widen `include` as other scripts are made type-clean.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -22,6 +22,7 @@
     "check-pr-test-plan.ts",
     "lib/pr-labels.ts",
     "__tests__/pr-test-plan-workflow.test.ts",
-    "__tests__/pr-labels.test.ts"
+    "__tests__/pr-labels.test.ts",
+    "generate-board-art-geometry.ts"
   ]
 }

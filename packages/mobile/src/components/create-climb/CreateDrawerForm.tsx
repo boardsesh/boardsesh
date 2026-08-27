@@ -14,6 +14,10 @@ type CreateDrawerFormProps = {
   onChangeDescription: (next: string) => void;
   noMatch: boolean;
   onChangeNoMatch: (next: boolean) => void;
+  noKickboard: boolean;
+  onChangeNoKickboard: (next: boolean) => void;
+  campus: boolean;
+  onChangeCampus: (next: boolean) => void;
   isDraft: boolean;
   onChangeIsDraft: (next: boolean) => void;
   showAllHolds: boolean;
@@ -31,6 +35,10 @@ export function CreateDrawerForm({
   onChangeDescription,
   noMatch,
   onChangeNoMatch,
+  noKickboard,
+  onChangeNoKickboard,
+  campus,
+  onChangeCampus,
   isDraft,
   onChangeIsDraft,
   showAllHolds,
@@ -72,6 +80,18 @@ export function CreateDrawerForm({
           description={t('mobile.create.settings.noMatchDescription')}
           value={noMatch}
           onValueChange={onChangeNoMatch}
+        />
+        <SwitchRow
+          label={t('mobile.create.settings.noKickboardLabel')}
+          description={t('mobile.create.settings.noKickboardDescription')}
+          value={noKickboard}
+          onValueChange={onChangeNoKickboard}
+        />
+        <SwitchRow
+          label={t('mobile.create.settings.campusLabel')}
+          description={t('mobile.create.settings.campusDescription')}
+          value={campus}
+          onValueChange={onChangeCampus}
         />
         <SwitchRow
           label={t('mobile.create.settings.draftLabel')}

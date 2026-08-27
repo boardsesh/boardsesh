@@ -2,7 +2,13 @@ import { memo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { CLIMB_CHARACTERISTICS, getMoonBoardMethod, isNoMatch } from '@boardsesh/shared-schema';
+import {
+  CLIMB_CHARACTERISTICS,
+  getMoonBoardMethod,
+  isCampus,
+  isNoKickboard,
+  isNoMatch,
+} from '@boardsesh/shared-schema';
 import { Icon } from './Icon';
 import { useTheme } from '../providers/theme-provider';
 
@@ -39,6 +45,18 @@ function methodLabel(characteristics: string[] | null | undefined, t: TFunction<
 }
 
 /**
+ * Text badges for the freely-toggleable no-kickboard / campus characteristics —
+ * same reasoning as `methodLabel` above: no clean SF-Symbol exists for either
+ * rule, so they render as text rather than joining the icon-map.
+ */
+function extraCharacteristicLabels(characteristics: string[] | null | undefined, t: TFunction<'climbs'>): string[] {
+  const labels: string[] = [];
+  if (isCampus(characteristics)) labels.push(t('mobile.climbRow.campus'));
+  if (isNoKickboard(characteristics)) labels.push(t('mobile.climbRow.noKickboard'));
+  return labels;
+}
+
+/**
  * Grey glyph cluster for a climb's intrinsic attributes, rendered inline after a
  * climb name (web parity: `packages/web/.../climb-card/climb-icons.tsx`).
  * Order matches web — © benchmark/classic, then ⊘ no-match. Monochrome so it
@@ -60,8 +78,9 @@ export const ClimbAttributeIcons = memo(function ClimbAttributeIcons({
   // tick-sourced rows that carry the flag but not the full characteristics array.
   const isNoMatchClimb = characteristics != null ? isNoMatch(characteristics) : (isNoMatchFallback ?? false);
   const method = methodLabel(characteristics, t);
+  const extraLabels = extraCharacteristicLabels(characteristics, t);
 
-  if (!isBenchmark && !isNoMatchClimb && !method) return null;
+  if (!isBenchmark && !isNoMatchClimb && !method && extraLabels.length === 0) return null;
 
   return (
     <>
@@ -77,6 +96,11 @@ export const ClimbAttributeIcons = memo(function ClimbAttributeIcons({
       ) : null}
       {method ? (
         <Text style={[styles.method, { fontSize: size - 2, color: theme.systemColors.secondaryLabel }]}>{method}</Text>
+      ) : null}
+      {extraLabels.length > 0 ? (
+        <Text style={[styles.method, { fontSize: size - 2, color: theme.systemColors.secondaryLabel }]}>
+          {extraLabels.join(' · ')}
+        </Text>
       ) : null}
     </>
   );

@@ -64,6 +64,8 @@ These are already used consistently in the catalogs — keep using them so we do
 | queue                   | cola                   |
 | climber                 | escalador / escaladora |
 | Party Mode              | Modo Fiesta            |
+| kickboard (climb rule)  | repisa (inferior)      |
+| campus (no feet)        | Campus (kept in English) |
 
 Kept in English by convention (technical board-config terms): **layout**, **set / sets**, **logbook**, **setter**, **beta**.
 

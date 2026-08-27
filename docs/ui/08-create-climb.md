@@ -140,7 +140,7 @@
 **Mobile adaptation notes:**
 
 - `ZoomableBoard` maps to `react-native-gesture-handler` pinch/pan gestures + `react-native-reanimated` transforms
-- Hold type picker: bottom sheet instead of popover (finger occlusion on small screens)
+- Hold type picker: no popover. A brush toolbar (`CreateDrawerActionBar`) selects the paint role; tapping a hold cycles it through the board's roles starting at the selected brush, then OFF (`getNextBrushRole` in `brush-roles.ts`). Long-pressing a hold opens `HoldRoleSheet`, a bottom sheet to jump straight to a specific role.
 - File input for OCR: `expo-image-picker` or `expo-document-picker`
 - BLE via `react-native-ble-plx` -- direct connection, no browser API
 - Autosave to AsyncStorage instead of IndexedDB
