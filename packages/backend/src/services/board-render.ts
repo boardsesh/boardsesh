@@ -142,9 +142,12 @@ export type OgClimbRenderResult = {
 };
 
 /**
- * Render-option suffix shared by the byte and base cache keys, so a
- * boardsesh render — and any combination of its options — can never be
- * served under a classic (or a different boardsesh option's) key.
+ * Render-option suffix on the byte cache key, so a boardsesh render — and any
+ * combination of its options — can never be served under a classic (or a
+ * different boardsesh option's) key. The base cache does NOT carry it: the
+ * base is the board-photo backdrop the overlay is composited onto, which no
+ * overlay option can change, so one base serves every mode and the boot
+ * warm-up is not wasted on the first boardsesh request.
  */
 function renderOptionsCacheKeySuffix(options: {
   renderMode?: 'classic' | 'boardsesh';
@@ -159,19 +162,8 @@ function byteCacheKey(params: OgClimbRenderParams): string {
   return `${params.boardName}:${params.layoutId}:${params.sizeId}:${params.setIds}:${params.frames}:${params.format}:${renderOptionsCacheKeySuffix(params)}`;
 }
 
-function baseCacheKey(
-  boardName: string,
-  layoutId: number,
-  sizeId: number,
-  setIds: string,
-  renderOptions: {
-    renderMode?: 'classic' | 'boardsesh';
-    glowFalloff?: 'soft' | 'plateau';
-    glyphs?: boolean;
-    fieldColor?: string;
-  } = {},
-): string {
-  return `${boardName}:${layoutId}:${sizeId}:${setIds}:${renderOptionsCacheKeySuffix(renderOptions)}`;
+function baseCacheKey(boardName: string, layoutId: number, sizeId: number, setIds: string): string {
+  return `${boardName}:${layoutId}:${sizeId}:${setIds}`;
 }
 
 /**
@@ -244,7 +236,7 @@ async function renderOgClimbUncached(params: OgClimbRenderParams, cacheKey: stri
   const overlay = await overlayRenderer.render(JSON.stringify(config));
   const wasmMs = performance.now() - wasmT0;
 
-  const baseKey = baseCacheKey(params.boardName, params.layoutId, params.sizeId, params.setIds, params);
+  const baseKey = baseCacheKey(params.boardName, params.layoutId, params.sizeId, params.setIds);
   let base = baseCache.get(baseKey);
   let cache: OgClimbRenderResult['cache'];
   let baseMs = 0;
