@@ -3,18 +3,23 @@
 // optional `flags` prop as a local/dev/emergency override, and falls back to an
 // empty bag.
 //
-// Typed as `Record<string, boolean | undefined>` (vs web's old
+// Typed as `Record<string, boolean | string | undefined>` (vs web's old
 // `Record<string, never>` which made `useFeatureFlag` resolve to `never` and
 // was therefore unusable). Consumers can call
-// `useFeatureFlag('foo')` and get a `boolean` back; the live value is
+// `useFeatureFlag('foo')` and get a `boolean | string` back; the live value is
 // undefined when PostHog has no value.
+//
+// Multivariate flags (a `variants` list on the definition, e.g.
+// `board-render-mode-default`) resolve to one of their declared variant
+// strings rather than a boolean — read those with `useFeatureFlagVariant`,
+// which additionally narrows away anything outside the declared set.
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { readPosthogFeatureFlags, subscribePosthogFeatureFlags } from '../lib/analytics';
 import { useFeatureFlagOverrides } from '../lib/feature-flag-overrides';
 import { isOfflineDownloadsEnabled } from './offline-downloads-enabled';
 
-export type FeatureFlags = Record<string, boolean | undefined>;
+export type FeatureFlags = Record<string, boolean | string | undefined>;
 
 const DEFAULT_FEATURE_FLAGS: FeatureFlags = {};
 // The catalog of flags the app knows about. It drives the live PostHog read and
@@ -25,6 +30,12 @@ export type FeatureFlagDefinition = {
   key: string;
   label: string;
   description: string;
+  /**
+   * Declares this a multivariate flag: PostHog resolves it to one of these
+   * strings (or nothing, when unresolved) instead of a boolean. Omit for a
+   * plain on/off flag.
+   */
+  variants?: readonly string[];
 };
 
 export const FEATURE_FLAG_DEFINITIONS = [
@@ -77,6 +88,20 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description:
       'Offer the full 0-70° MoonBoard angle range (matching Kilter/Tension) in angle pickers instead of just the 25°/40° Moon Climbing grades. Nothing server-side enforces the narrow range, so this is purely a UI rollout control.',
   },
+  {
+    key: 'board-render-mode-default',
+    label: 'Boardsesh render mode default',
+    variants: ['classic', 'boardsesh'],
+    description:
+      'Which drawing a climber who has never chosen a mode themselves gets: the classic marker overlay, or the new Boardsesh glow drawing (issue #2202). A climber’s own Settings choice always wins over this. Unresolved reads as classic.',
+  },
+  {
+    key: 'board-glow-falloff',
+    label: 'Boardsesh glow falloff',
+    variants: ['soft', 'plateau'],
+    description:
+      "The Boardsesh drawing's glow-falloff A/B: soft (smooth radial fade) vs plateau (full alpha held over a share of the reach, then fading). Only reaches climbers actually on the Boardsesh drawing. A climber's own Settings choice always wins over this. Unresolved reads as soft.",
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
@@ -103,7 +128,7 @@ export function FeatureFlagsProvider({
   useEffect(() => {
     let mounted = true;
     const refreshFlags = () => {
-      const nextFlags = readPosthogFeatureFlags(FEATURE_FLAG_KEYS);
+      const nextFlags = readPosthogFeatureFlags(FEATURE_FLAG_DEFINITIONS);
       if (!mounted) return;
       setPosthogFlags((previousFlags) => (featureFlagsEqual(previousFlags, nextFlags) ? previousFlags : nextFlags));
     };
@@ -135,6 +160,21 @@ export function useFeatureFlags(): FeatureFlags {
 
 export function useFeatureFlag<K extends keyof FeatureFlags>(key: K): FeatureFlags[K] {
   return useFeatureFlags()[key];
+}
+
+/**
+ * Read a multivariate flag, narrowed to one of its declared variants.
+ *
+ * Returns `undefined` — never a boolean, never an arbitrary string — whenever
+ * the resolved value isn't a member of `variants`: unresolved (PostHog hasn't
+ * answered, or the flag doesn't exist), a stale boolean from before the flag
+ * became multivariate, or a variant this build doesn't know about. Every one
+ * of those must read as "fall back to the shipped default", the same
+ * unresolved-means-default contract every other flag in this file follows.
+ */
+export function useFeatureFlagVariant<V extends string>(key: string, variants: readonly V[]): V | undefined {
+  const value = useFeatureFlags()[key];
+  return typeof value === 'string' && (variants as readonly string[]).includes(value) ? (value as V) : undefined;
 }
 
 /**

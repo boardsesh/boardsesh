@@ -4,15 +4,15 @@ import { Redirect } from 'expo-router';
 import { useTheme } from '../providers/theme-provider';
 import { hapticLight, hapticSelection } from '../lib/haptics';
 import { spacing } from '../theme/tokens';
-import { FEATURE_FLAG_DEFINITIONS, FEATURE_FLAG_KEYS } from '../providers/feature-flags-provider';
+import { FEATURE_FLAG_DEFINITIONS, type FeatureFlagDefinition } from '../providers/feature-flags-provider';
 import { useFeatureFlagOverrides } from '../lib/feature-flag-overrides';
 import { readPosthogFeatureFlags, subscribePosthogFeatureFlags } from '../lib/analytics';
 import { useProfile } from '../lib/graphql/hooks';
 import { buildFeatureFlagRows } from './feature-flag-rows';
 import { FeatureFlagsForm } from './FeatureFlagsForm';
-import type { FeatureFlagChoice, FeatureFlagRow } from './FeatureFlagsForm.types';
+import type { FeatureFlagRow } from './FeatureFlagsForm.types';
 
-const NO_BASE_FLAGS: Record<string, boolean> = {};
+const NO_BASE_FLAGS: Record<string, boolean | string> = {};
 
 // Tester-only screen — all copy is hardcoded English with `i18n-ignore`, matching
 // ChannelSwitcherScreen. It lets a tester force any catalog flag On/Off (or back
@@ -45,11 +45,11 @@ export function FeatureFlagsScreen() {
   // that genuinely never resolves, the one thing a tester opens this screen to
   // check. subscribePosthogFeatureFlags also kicks a reload, same as
   // FeatureFlagsProvider does.
-  const [baseFlags, setBaseFlags] = useState<Record<string, boolean>>(NO_BASE_FLAGS);
+  const [baseFlags, setBaseFlags] = useState<Record<string, boolean | string>>(NO_BASE_FLAGS);
   useEffect(() => {
     let mounted = true;
     const refreshBaseFlags = () => {
-      const nextFlags = readPosthogFeatureFlags(FEATURE_FLAG_KEYS);
+      const nextFlags = readPosthogFeatureFlags(FEATURE_FLAG_DEFINITIONS);
       if (!mounted) return;
       setBaseFlags((previousFlags) => (baseFlagsEqual(previousFlags, nextFlags) ? previousFlags : nextFlags));
     };
@@ -72,15 +72,23 @@ export function FeatureFlagsScreen() {
   );
 
   const handleSelect = useCallback(
-    (key: string, choice: FeatureFlagChoice) => {
+    (key: string, choice: string) => {
       // The native segmented controls don't fire a selection haptic on their own,
       // so keep the tactile feedback the old SegmentedControl provided.
       hapticSelection();
       if (choice === 'default') {
         clearOverride(key);
-      } else {
-        setOverride(key, choice === 'on');
+        return;
       }
+      // A multivariate flag's choice is the variant string itself; a boolean
+      // flag's is 'on' or 'off'. Look the definition up rather than trusting
+      // the choice's shape, so a row can only ever set the kind of override its
+      // own flag declares. Widened to `FeatureFlagDefinition` up front — the
+      // catalog's own `as const` type only gives `.variants` to the union
+      // members that declare it, which `.find()` can't narrow across.
+      const definitions: readonly FeatureFlagDefinition[] = FEATURE_FLAG_DEFINITIONS;
+      const definition = definitions.find((candidate) => candidate.key === key);
+      setOverride(key, definition?.variants ? choice : choice === 'on');
     },
     [clearOverride, setOverride],
   );
@@ -132,7 +140,10 @@ export function FeatureFlagsScreen() {
   );
 }
 
-function baseFlagsEqual(leftFlags: Record<string, boolean>, rightFlags: Record<string, boolean>): boolean {
+function baseFlagsEqual(
+  leftFlags: Record<string, boolean | string>,
+  rightFlags: Record<string, boolean | string>,
+): boolean {
   const leftKeys = Object.keys(leftFlags);
   const rightKeys = Object.keys(rightFlags);
   if (leftKeys.length !== rightKeys.length) return false;

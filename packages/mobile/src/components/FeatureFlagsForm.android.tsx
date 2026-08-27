@@ -30,7 +30,6 @@ import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { segmentedBrandColors } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
-import { FEATURE_FLAG_CHOICES } from './FeatureFlagsForm.logic';
 import type { FeatureFlagsFormProps } from './FeatureFlagsForm.types';
 
 export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText, title }: FeatureFlagsFormProps) {
@@ -63,18 +62,18 @@ export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText
                 {row.description}
               </Text>
               <SingleChoiceSegmentedButtonRow modifiers={[fillMaxWidth()]}>
-                {FEATURE_FLAG_CHOICES.map((choice) => (
+                {row.options.map((option) => (
                   <SegmentedButton
-                    key={choice.key}
-                    selected={choice.key === row.choice}
-                    onClick={() => onSelect(row.key, choice.key)}
+                    key={option.key}
+                    selected={option.key === row.choice}
+                    onClick={() => onSelect(row.key, option.key)}
                     colors={segmentColors}
                   >
                     {/* The label slot is a native composable SLOT — its child must be
                         a Compose `Text`, not a raw string, or it doesn't render and
                         isn't exposed to the a11y tree. */}
                     <SegmentedButton.Label>
-                      <Text>{choice.label}</Text>
+                      <Text>{option.label}</Text>
                     </SegmentedButton.Label>
                   </SegmentedButton>
                 ))}
