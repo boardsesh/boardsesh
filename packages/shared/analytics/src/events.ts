@@ -745,6 +745,35 @@ export const SHARED_EVENTS = {
   OfflineNudgeAccepted: 'Offline Nudge Accepted',
   // Plus { dismissKind: 'once' | 'forever' }.
   OfflineNudgeDismissed: 'Offline Nudge Dismissed',
+  // Board render mode (issue #2202) — the classic-vs-Boardsesh drawing A/B and
+  // the Boardsesh glow-falloff A/B (soft vs plateau). Full contract, property
+  // tables and the stratification rule (never pool across boardName or
+  // glowFalloffSource): docs/board-render-analytics.md. Builders live in
+  // board-render-events.ts, re-exported from @boardsesh/analytics.
+  //
+  // Fired once per climb becoming the active/viewed climb (mobile: beside
+  // `Set Active Climb`). `reopenedInSession` distinguishes a genuinely fresh
+  // view from a climber navigating back to a climb already open once this app
+  // run.
+  ClimbViewOpened: 'Climb View Opened',
+  // Fired once per 2-finger pinch gesture END on the board (never per frame),
+  // gated on a minimum absolute scale delta so incidental finger jitter
+  // doesn't count as a deliberate zoom.
+  BoardPinch: 'Board Pinch',
+  // Fired at most once per `Climb View Opened`, on whichever of "added to
+  // queue" or "sent to board" happens first. `msSinceOpen` is the gap between
+  // the view opening and this action — the funnel this exists to answer is
+  // whether the Boardsesh drawing changes how fast a climber commits to a
+  // climb.
+  ClimbFirstAction: 'Climb First Action',
+  // The climber changed a Boardsesh render setting from the settings screen
+  // (issue #2202, settings-screen PR). `field` names the setting; `value` is
+  // its new value stringified.
+  BoardRenderSettingsChanged: 'Board Render Settings Changed',
+  // A saved render preset or CVD palette preset was applied (issue #2202,
+  // settings-screen PR). No extra props beyond the common ones — the event IS
+  // "the common props now carry a presetId/paletteId".
+  BoardRenderPresetApplied: 'Board Render Preset Applied',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;
