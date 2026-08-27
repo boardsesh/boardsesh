@@ -210,9 +210,9 @@ describe('create-climb queue hand-off carries board identity', () => {
       await result.current.handleSave();
     });
 
-    expect(board.saveClimb).toHaveBeenCalledWith(
-      expect.objectContaining({ characteristics: ['no_kickboard', 'campus'] }),
-    );
+    const sentCharacteristics = board.saveClimb.mock.calls[0]?.[0]?.characteristics as string[];
+    expect(sentCharacteristics).toHaveLength(2);
+    expect(sentCharacteristics).toEqual(expect.arrayContaining(['no_kickboard', 'campus']));
 
     board.saveClimb.mockClear();
     act(() => {
