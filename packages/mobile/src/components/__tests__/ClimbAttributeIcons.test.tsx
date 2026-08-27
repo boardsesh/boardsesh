@@ -3,11 +3,13 @@ import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
-// react-native View → a div that surfaces the a11y label; StyleSheet passthrough.
+// react-native View → a div that surfaces the a11y label; Text → a plain span
+// (the method / extra-characteristic text badges); StyleSheet passthrough.
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children, accessibilityLabel }: { children?: ReactNode; accessibilityLabel?: string }) =>
     createElement('div', { 'data-a11y': accessibilityLabel }, children),
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 
 // Icon → a span exposing the glyph name + size + colour so we can assert which
@@ -95,5 +97,33 @@ describe('ClimbAttributeIcons', () => {
     // characteristics=[] (no no_match token) takes precedence over isNoMatch=true
     const { container } = render(<ClimbAttributeIcons characteristics={[]} isNoMatch />);
     expect(icons(container)).toEqual([]);
+  });
+
+  const badgeTexts = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('span:not([data-icon])'))
+      .map((node) => node.textContent)
+      .filter((text): text is string => !!text);
+
+  it('renders a "Campus" text badge when characteristics includes campus', () => {
+    const { container } = render(<ClimbAttributeIcons characteristics={['campus']} />);
+    expect(badgeTexts(container)).toEqual(['mobile.climbRow.campus']);
+  });
+
+  it('renders a "No KB" text badge when characteristics includes no_kickboard', () => {
+    const { container } = render(<ClimbAttributeIcons characteristics={['no_kickboard']} />);
+    expect(badgeTexts(container)).toEqual(['mobile.climbRow.noKickboard']);
+  });
+
+  it('joins both badges with " · " when both characteristics are present', () => {
+    const { container } = render(<ClimbAttributeIcons characteristics={['no_kickboard', 'campus']} />);
+    expect(badgeTexts(container)).toEqual(['mobile.climbRow.campus · mobile.climbRow.noKickboard']);
+  });
+
+  it('coexists with no-match and benchmark when all three apply at once', () => {
+    const { container } = render(
+      <ClimbAttributeIcons characteristics={['no_match', 'no_kickboard', 'campus']} benchmarkDifficulty="5" />,
+    );
+    expect(icons(container)).toEqual(['benchmark', 'no.match']);
+    expect(badgeTexts(container)).toEqual(['mobile.climbRow.campus · mobile.climbRow.noKickboard']);
   });
 });

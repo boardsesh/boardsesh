@@ -465,6 +465,8 @@
         "attempt": "Versucht"
       },
       "noMatch": "Kein Matchen",
+      "campus": "Campus",
+      "noKickboard": "Ohne FL",
       "benchmark": "Benchmark",
       "method": {
         "footless": "Ohne Füße",
@@ -522,7 +524,11 @@
         "showAllHoldsLabel": "Alle Griffe zeigen",
         "showAllHoldsDescription": "Hebt jeden antippbaren Griff auf dem Board hervor.",
         "noMatchLabel": "Kein Matchen",
-        "noMatchDescription": "Hände dürfen nicht am selben Griff matchen"
+        "noMatchDescription": "Hände dürfen nicht am selben Griff matchen",
+        "noKickboardLabel": "Ohne Fußleiste",
+        "noKickboardDescription": "Füße dürfen die Fußleiste nicht benutzen",
+        "campusLabel": "Campus (ohne Füße)",
+        "campusDescription": "Nur Hände, keine Füße"
       },
       "drafts": {
         "holds_one": "{{count}} Griff",

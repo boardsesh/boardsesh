@@ -48,6 +48,8 @@ Use instead:
 | project (unsent climb)  | projet (verb: travailler)             |
 | redpoint                | après travail                         |
 | climber                 | grimpeur / grimpeuse                  |
+| kickboard (climb rule)  | kickboard (anglicism — see below)     |
+| campus (no feet)        | campus (anglicism — see below)        |
 
 « Tentative » is not a go on a climb — keep it for non-climbing attempts (login attempts, retries, rate limits). A go on a climb is « un essai ».
 
@@ -55,6 +57,7 @@ Use instead:
 
 - **Brand product names:** `Kilter Board`, `Tension Board`, `MoonBoard`, `Kilter Homewall`, `Boardsesh` (trademarks — see `LEGAL.md` and the `/legal` page).
 - **beta**, **flash**, **crew**, **playlist** — anglicisms French climbers use as-is.
+- **kickboard**, **campus** — climb-rule characteristics (« Sans kickboard », « Campus (sans pieds) »). No established French climbing-gym translation; do **not** render "kickboard" as « planche » or « planche du bas » — that reintroduces the « planche »/board-device ambiguity this glossary bans above.
 - **JSON keys** (`send`, `sends`, `statSent`, …) and **ICU placeholders** (`{{board}}`, `{{sends}}`). Only translate values.
 
 ## The board device is « la board » (feminine)

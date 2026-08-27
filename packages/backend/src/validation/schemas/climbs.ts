@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { CONFIDENCE, MAX_SEARCH_PAGE } from '@boardsesh/db/queries';
-import { CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
+import { CLIMB_CHARACTERISTICS, TOGGLEABLE_CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
 
 // Cap holdsFilter entries: each ANY entry becomes a LIKE scan over board_climbs.frames
@@ -243,6 +243,26 @@ export const ClimbSearchInputSchema = z.object({
   zoneMode: z.enum(['allHolds', 'anyHold']).optional(),
 });
 
+// Only the freely-toggleable characteristics (no_kickboard, campus) are settable
+// through the SaveClimbInput/UpdateClimbInput `characteristics` field — no_match
+// is derived from `description` (see the resolver), and MoonBoard method tokens
+// are creation-time-only via SaveMoonBoardClimbInput.
+// .nullable(): the GraphQL field is a nullable list, and clients (mobile's
+// buildToggleableCharacteristics) send explicit `null` when both toggles are off —
+// `.optional()` alone rejects that literal null and 400s every ordinary
+// save/update, not just ones touching these two characteristics.
+// .refine: a client can only mean one thing by repeating a token twice, and
+// `withCharacteristic` is idempotent either way, but rejecting the duplicate
+// up front is cheaper to reason about than silently tolerating malformed input.
+const ToggleableCharacteristicsSchema = z
+  .array(z.enum([...TOGGLEABLE_CLIMB_CHARACTERISTICS]))
+  .max(TOGGLEABLE_CLIMB_CHARACTERISTICS.length)
+  .refine((tokens) => new Set(tokens).size === tokens.length, {
+    message: 'characteristics must not contain duplicate tokens',
+  })
+  .optional()
+  .nullable();
+
 export const SaveClimbInputSchema = z.object({
   boardType: BoardNameSchema,
   layoutId: z.number().int().positive('Layout ID must be positive'),
@@ -253,6 +273,7 @@ export const SaveClimbInputSchema = z.object({
   framesCount: z.number().int().min(1).optional(),
   framesPace: z.number().int().min(0).optional(),
   angle: z.number().int().min(0).max(90),
+  characteristics: ToggleableCharacteristicsSchema,
 });
 
 export const UpdateClimbInputSchema = z.object({
@@ -265,6 +286,7 @@ export const UpdateClimbInputSchema = z.object({
   isDraft: z.boolean().optional(),
   framesCount: z.number().int().min(1).optional(),
   framesPace: z.number().int().min(0).optional(),
+  characteristics: ToggleableCharacteristicsSchema,
 });
 
 export const MoonBoardHoldsInputSchema = z.object({

@@ -5,7 +5,14 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
-import { isNoMatchClimb, withNoMatch } from '@boardsesh/shared-schema';
+import {
+  isNoMatchClimb,
+  withNoMatch,
+  CLIMB_CHARACTERISTICS,
+  isNoKickboard,
+  isCampus,
+  withCharacteristic,
+} from '@boardsesh/shared-schema';
 import {
   useCreateClimb,
   computeCanUpdate,
@@ -80,6 +87,35 @@ function readDuplicateExtensions(err: unknown): PublishDuplicateError {
 }
 
 /**
+ * Compute the full desired boolean state of the freely-toggleable climb
+ * characteristics (no_kickboard / campus) from the editor's two switches. The
+ * server merges this array onto whatever else is already on the row (no_match,
+ * MoonBoard method tokens), so only these two tokens are ever represented here.
+ */
+function buildToggleableCharacteristics(noKickboard: boolean, campus: boolean): string[] | null {
+  let characteristics: string[] = [];
+  characteristics = withCharacteristic(characteristics, CLIMB_CHARACTERISTICS.NO_KICKBOARD, noKickboard);
+  characteristics = withCharacteristic(characteristics, CLIMB_CHARACTERISTICS.CAMPUS, campus);
+  return characteristics.length > 0 ? characteristics : null;
+}
+
+/**
+ * Same as {@link buildToggleableCharacteristics}, but also folds in no_match —
+ * used only for the LOCAL provisional queue-item display (buildProvisionalClimb),
+ * never for the save/update payload. `ClimbAttributeIcons` prefers the
+ * `characteristics` array over the legacy `is_no_match` bool the moment the array
+ * is non-null, so a provisional row with, say, campus=true and noMatch=true would
+ * otherwise show the campus badge but silently drop the no-match one. The real
+ * saved row doesn't have this problem: the server derives no_match from
+ * `description` independently of the client-supplied `characteristics` field.
+ */
+function buildProvisionalCharacteristics(noMatch: boolean, noKickboard: boolean, campus: boolean): string[] | null {
+  const toggleable = buildToggleableCharacteristics(noKickboard, campus) ?? [];
+  const withNoMatchToken = withCharacteristic(toggleable, CLIMB_CHARACTERISTICS.NO_MATCH, noMatch);
+  return withNoMatchToken.length > 0 ? withNoMatchToken : null;
+}
+
+/**
  * The create-climb screen controller. Composes the shared hold-state machine
  * with auth, the board provider's save/update mutations, the per-board local
  * autosave, BLE preview, and the queue, and exposes a save state machine the
@@ -149,6 +185,13 @@ export function useCreateClimbScreen({
   // save time, so the editable description field stays clean and the toggle never
   // gets stuck on a fuzzy match. A follow-up migrates this to a real column.
   const [noMatch, setNoMatch] = useState(isForking && forkDescription ? isNoMatchClimb(forkDescription) : false);
+  // Forking doesn't currently carry characteristics through (no forkCharacteristics
+  // param exists, unlike forkFrames/forkName/forkDescription) — a pre-existing,
+  // acceptable gap consistent with how forking already works for everything except
+  // no_match, which rides in the description text. Both default false on a fork.
+  // Tracked in https://github.com/boardsesh/boardsesh/issues/4832.
+  const [noKickboard, setNoKickboard] = useState(false);
+  const [campus, setCampus] = useState(false);
   const [isDraft, setIsDraft] = useState(true);
   const [showAllHolds, setShowAllHolds] = useState(false);
 
@@ -232,6 +275,8 @@ export function useCreateClimbScreen({
     setName(editClimb.name);
     setDescription(withNoMatch(editClimb.description ?? '', false));
     setNoMatch(isNoMatchClimb(editClimb.description));
+    setNoKickboard(isNoKickboard(editClimb.characteristics));
+    setCampus(isCampus(editClimb.characteristics));
     setIsDraft(editClimb.is_draft ?? false);
     setSavedClimb({
       uuid: editClimb.uuid,
@@ -265,6 +310,8 @@ export function useCreateClimbScreen({
       setName(draft.name);
       setDescription(withNoMatch(draft.description, false));
       setNoMatch(isNoMatchClimb(draft.description));
+      setNoKickboard(draft.noKickboard ?? false);
+      setCampus(draft.campus ?? false);
       setIsDraft(draft.isDraft);
       restoredRef.current = true;
     });
@@ -307,6 +354,8 @@ export function useCreateClimbScreen({
       name,
       description: withNoMatch(description, noMatch),
       isDraft,
+      noKickboard,
+      campus,
     };
     // Mirror the latest payload so a flush (unmount/background) can persist the
     // pending edit even before the debounce fires.
@@ -321,7 +370,19 @@ export function useCreateClimbScreen({
       pendingDraftRef.current.dirty = false;
     }, AUTOSAVE_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [holdsJson, framesJson, frameCount, name, description, noMatch, isDraft, draftKey, autosaveDisabled]);
+  }, [
+    holdsJson,
+    framesJson,
+    frameCount,
+    name,
+    description,
+    noMatch,
+    noKickboard,
+    campus,
+    isDraft,
+    draftKey,
+    autosaveDisabled,
+  ]);
 
   // ---- Flush the pending draft on unmount / background. ----
   // JS timers are suspended when the app is backgrounded and the cleanup's
@@ -382,6 +443,8 @@ export function useCreateClimbScreen({
     setName('');
     setDescription('');
     setNoMatch(false);
+    setNoKickboard(false);
+    setCampus(false);
     setIsDraft(true);
     setSavedClimb(null);
     setPublishDuplicateError(null);
@@ -428,6 +491,7 @@ export function useCreateClimbScreen({
       difficulty_error: '0',
       benchmark_difficulty: null,
       is_no_match: noMatch,
+      characteristics: buildProvisionalCharacteristics(noMatch, noKickboard, campus),
       // Not-yet-saved climbs are drafts by definition; once saved, mirror the
       // tracked row so a published climb doesn't queue as a draft.
       is_draft: savedClimb?.isDraft ?? true,
@@ -439,7 +503,20 @@ export function useCreateClimbScreen({
       // DEFAULT_PACE_MS whenever framesPace isn't a positive number.
       framesPace: null,
     }),
-    [name, description, noMatch, profile, savedClimb, board.angle, board.boardName, board.layoutId, t, frameCount],
+    [
+      name,
+      description,
+      noMatch,
+      noKickboard,
+      campus,
+      profile,
+      savedClimb,
+      board.angle,
+      board.boardName,
+      board.layoutId,
+      t,
+      frameCount,
+    ],
   );
 
   // Push the freshly saved climb into the queue as the current climb so the
@@ -516,6 +593,7 @@ export function useCreateClimbScreen({
     // to the same name via the shared board-constants table. PostHog groups by
     // exact value, so the string must match web for these create-climb events.
     const boardLayout = getLayoutName(board.boardName, board.layoutId);
+    const characteristics = buildToggleableCharacteristics(noKickboard, campus);
     try {
       if (canUpdate && savedClimb) {
         const result = await updateClimb({
@@ -528,6 +606,7 @@ export function useCreateClimbScreen({
           framesCount: frameCount,
           framesPace: 0,
           isDraft,
+          characteristics,
         });
         setSavedClimb({
           uuid: result.uuid,
@@ -555,6 +634,7 @@ export function useCreateClimbScreen({
           frames_count: frameCount,
           frames_pace: 0,
           angle: board.angle,
+          characteristics,
         });
         setSavedClimb({
           uuid: result.uuid,
@@ -618,6 +698,8 @@ export function useCreateClimbScreen({
     board,
     description,
     noMatch,
+    noKickboard,
+    campus,
     isDraft,
     draftKey,
     requestFocusName,
@@ -666,6 +748,10 @@ export function useCreateClimbScreen({
     setIsDraft,
     noMatch,
     setNoMatch,
+    noKickboard,
+    setNoKickboard,
+    campus,
+    setCampus,
     // save
     saveState,
     handleSave,

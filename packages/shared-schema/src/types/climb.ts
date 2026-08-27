@@ -247,6 +247,11 @@ export type SaveClimbInput = {
   framesCount?: number | null;
   framesPace?: number | null;
   angle: number;
+  // Freely-toggleable characteristics to set at creation. Only
+  // CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS are accepted here — no_match is
+  // server-derived from description, and MoonBoard method is creation-time-only
+  // via SaveMoonBoardClimbInput.
+  characteristics?: string[] | null;
 };
 
 export type SaveMoonBoardClimbInput = {
@@ -293,6 +298,10 @@ export type UpdateClimbInput = {
   isDraft?: boolean | null;
   framesCount?: number | null;
   framesPace?: number | null;
+  // Freely-toggleable characteristics: the full desired boolean state of
+  // CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS. Any other characteristic
+  // already on the row (no_match, MoonBoard method) is left untouched.
+  characteristics?: string[] | null;
 };
 
 export type UpdateClimbResult = {

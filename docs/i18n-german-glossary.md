@@ -62,6 +62,8 @@ Every string names the board device **Board**, neuter in grammar: _das Board, ei
 | playlist                | Playlist                                    |
 | Party Mode              | Party-Modus                                 |
 | Boardsesh grade         | Boardsesh-Grad                              |
+| kickboard (climb rule)  | Fußleiste (abbreviated "FL" in badges)       |
+| campus (no feet)        | Campus (kept in English)                    |
 
 « Tentative »-style false friends: a go on a climb is **Versuch**, not a login/retry "attempt" calqued oddly. Login/rate-limit attempts can still use Versuch where natural German already does.
 
