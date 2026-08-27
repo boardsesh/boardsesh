@@ -867,7 +867,8 @@ async function blueHandFigure(kind) {
  * from `BOARDS='…' capture-boards.sh <dir> <arms…>`, the thumbnail ones from the
  * same with `THUMBS=1 SIZES='…'`. This is how a tuning experiment — a bigger
  * glow, a stronger veil, a heavier fill — gets its own sheet without touching
- * the default matrix.
+ * the default matrix. `SHEET_NOTE` is appended to the header, for when a column
+ * was shot under a different state than the rest and the sheet has to say so.
  */
 async function armsSheetFigure(kind, sizeKey) {
   const armKeys = (process.env.SHEET_ARMS ?? '').split(/\s+/).filter((word) => word.length > 0);
@@ -883,7 +884,7 @@ async function armsSheetFigure(kind, sizeKey) {
   await gridSheet({
     name: `${name}${kindSuffix(kind, sizeKey)}.webp`,
     title: `${name}${kind === 'detail' ? ', 1:1 detail' : kind === 'thumb' ? `, ${sizeKey} px` : ''}`,
-    subtitle: `${armKeys.join(' · ')} — ${FIELD_HEX} play field, glyphs off — ${kindGloss(kind)}`,
+    subtitle: `${armKeys.join(' · ')} — ${FIELD_HEX} play field, glyphs off — ${kindGloss(kind)}${process.env.SHEET_NOTE ? ` — ${process.env.SHEET_NOTE}` : ''}`,
     columns: arms.map((arm) => ({ title: arm.title, subtitle: arm.subtitle, arm: arm.key, axes: {}, howToCapture })),
     kind,
     sizeKey,
