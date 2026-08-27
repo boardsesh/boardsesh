@@ -4,11 +4,15 @@ import { Redirect } from 'expo-router';
 import { useTheme } from '../providers/theme-provider';
 import { hapticLight, hapticSelection } from '../lib/haptics';
 import { spacing } from '../theme/tokens';
-import { FEATURE_FLAG_DEFINITIONS, type FeatureFlagDefinition } from '../providers/feature-flags-provider';
+import { FEATURE_FLAG_DEFINITIONS } from '../providers/feature-flags-provider';
 import { useFeatureFlagOverrides } from '../lib/feature-flag-overrides';
 import { readPosthogFeatureFlags, subscribePosthogFeatureFlags } from '../lib/analytics';
 import { useProfile } from '../lib/graphql/hooks';
-import { buildFeatureFlagRows } from './feature-flag-rows';
+import {
+  buildFeatureFlagRows,
+  findStaleFeatureFlagOverrideKeys,
+  resolveFeatureFlagOverrideAction,
+} from './feature-flag-rows';
 import { FeatureFlagsForm } from './FeatureFlagsForm';
 import type { FeatureFlagRow } from './FeatureFlagsForm.types';
 
@@ -71,24 +75,27 @@ export function FeatureFlagsScreen() {
     [overrides, baseFlags],
   );
 
+  // Drop overrides a flag can no longer honour — a boolean forced on a flag
+  // that has since become multivariate. The row already renders at 'Default',
+  // which is exactly why the tester can't clear it by hand: re-selecting the
+  // segment it's already on fires nothing. See findStaleFeatureFlagOverrideKeys.
+  useEffect(() => {
+    for (const key of findStaleFeatureFlagOverrideKeys(FEATURE_FLAG_DEFINITIONS, overrides)) {
+      clearOverride(key);
+    }
+  }, [overrides, clearOverride]);
+
   const handleSelect = useCallback(
     (key: string, choice: string) => {
       // The native segmented controls don't fire a selection haptic on their own,
       // so keep the tactile feedback the old SegmentedControl provided.
       hapticSelection();
-      if (choice === 'default') {
+      const resolved = resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, key, choice);
+      if (resolved.action === 'clear') {
         clearOverride(key);
         return;
       }
-      // A multivariate flag's choice is the variant string itself; a boolean
-      // flag's is 'on' or 'off'. Look the definition up rather than trusting
-      // the choice's shape, so a row can only ever set the kind of override its
-      // own flag declares. Widened to `FeatureFlagDefinition` up front — the
-      // catalog's own `as const` type only gives `.variants` to the union
-      // members that declare it, which `.find()` can't narrow across.
-      const definitions: readonly FeatureFlagDefinition[] = FEATURE_FLAG_DEFINITIONS;
-      const definition = definitions.find((candidate) => candidate.key === key);
-      setOverride(key, definition?.variants ? choice : choice === 'on');
+      setOverride(key, resolved.value);
     },
     [clearOverride, setOverride],
   );

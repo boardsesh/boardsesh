@@ -109,9 +109,17 @@ export const FEATURE_FLAG_DEFINITIONS = [
 // silently widening to `string`.
 export type FeatureFlagKey = (typeof FEATURE_FLAG_DEFINITIONS)[number]['key'];
 
-export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = FEATURE_FLAG_DEFINITIONS.map(
-  (definition) => definition.key,
-);
+/** The catalog entries that declare `variants` — i.e. the multivariate flags. */
+type VariantFeatureFlagDefinition = Extract<(typeof FEATURE_FLAG_DEFINITIONS)[number], { variants: readonly string[] }>;
+
+/** Just the multivariate flags' keys (`'board-render-mode-default' | ...`). */
+export type VariantFeatureFlagKey = VariantFeatureFlagDefinition['key'];
+
+/** The exact variant strings one multivariate flag declares in the catalog. */
+export type FeatureFlagVariant<K extends VariantFeatureFlagKey> = Extract<
+  VariantFeatureFlagDefinition,
+  { key: K }
+>['variants'][number];
 
 const FeatureFlagsContext = createContext<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
 
@@ -165,6 +173,12 @@ export function useFeatureFlag<K extends keyof FeatureFlags>(key: K): FeatureFla
 /**
  * Read a multivariate flag, narrowed to one of its declared variants.
  *
+ * Both the key AND the variant set come from the catalog above: `key` is
+ * restricted to the flags that actually declare `variants` (a typo, or reading
+ * a plain boolean flag through here, is a compile error), and `variants` is
+ * restricted to that one flag's own strings — so a call site cannot quietly
+ * accept a set the catalog disagrees with and then never match a live value.
+ *
  * Returns `undefined` — never a boolean, never an arbitrary string — whenever
  * the resolved value isn't a member of `variants`: unresolved (PostHog hasn't
  * answered, or the flag doesn't exist), a stale boolean from before the flag
@@ -172,9 +186,15 @@ export function useFeatureFlag<K extends keyof FeatureFlags>(key: K): FeatureFla
  * of those must read as "fall back to the shipped default", the same
  * unresolved-means-default contract every other flag in this file follows.
  */
-export function useFeatureFlagVariant<V extends string>(key: string, variants: readonly V[]): V | undefined {
+export function useFeatureFlagVariant<K extends VariantFeatureFlagKey>(
+  key: K,
+  variants: readonly FeatureFlagVariant<K>[],
+): FeatureFlagVariant<K> | undefined {
   const value = useFeatureFlags()[key];
-  return typeof value === 'string' && (variants as readonly string[]).includes(value) ? (value as V) : undefined;
+  // `find` rather than `includes` + a cast: it returns the declared variant
+  // type directly, so narrowing a live `string` to this flag's own union needs
+  // no assertion at all.
+  return typeof value === 'string' ? variants.find((variant) => variant === value) : undefined;
 }
 
 /**

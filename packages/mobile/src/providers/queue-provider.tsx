@@ -48,6 +48,7 @@ import { climbToQueueItem, toQueueItemWireInput, isClimbResolved } from '../lib/
 import { track, registerRenderSuperProperties } from '../lib/analytics';
 import { markClimbAction, markClimbViewed } from '../lib/climb-view-session';
 import {
+  requestedBoardRenderMode,
   resolveEffectiveRenderSettings,
   useBoardRenderSettings,
   type BoardRenderFlags,
@@ -341,33 +342,100 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // does not itself TRIGGER the capability probe. In practice that never
   // matters: a board is always rendering (list thumbnails, the play view)
   // well before a climb becomes "active" here, and that render is what starts
-  // the probe. The one cold-start edge case (a deep link straight into a
-  // climb before any board has rendered) reports `classic` for that single
-  // first event and self-corrects on the next.
-  const { settings: boardRenderSettings } = useBoardRenderSettings();
-  const defaultRenderMode = useFeatureFlagVariant<'classic' | 'boardsesh'>('board-render-mode-default', [
-    'classic',
-    'boardsesh',
-  ]);
-  const defaultGlowFalloff = useFeatureFlagVariant<'soft' | 'plateau'>('board-glow-falloff', ['soft', 'plateau']);
+  // the probe. `renderSettingsPending` below covers the cold-start window
+  // where it hasn't answered yet.
+  const { settings: boardRenderSettings, loaded: boardRenderSettingsLoaded } = useBoardRenderSettings();
+  const defaultRenderMode = useFeatureFlagVariant('board-render-mode-default', ['classic', 'boardsesh']);
+  const defaultGlowFalloff = useFeatureFlagVariant('board-glow-falloff', ['soft', 'plateau']);
   const boardseshSupportTick = useSyncExternalStore(
     subscribeToBoardseshSupport,
     getBoardseshSupportRevision,
     getBoardseshSupportRevision,
   );
-  const effectiveRenderSettings = useMemo(() => {
+  const { effectiveRenderSettings, renderSettingsPending } = useMemo(() => {
     void boardseshSupportTick;
     const flags: BoardRenderFlags = { defaultMode: defaultRenderMode, glowFalloff: defaultGlowFalloff };
-    return resolveEffectiveRenderSettings(boardRenderSettings, flags, getBoardseshRendererSupport() === true);
-  }, [boardRenderSettings, defaultRenderMode, defaultGlowFalloff, boardseshSupportTick]);
-  // Mirrored into a ref for the same reason activeBoardRef is: callbacks below
-  // (setCurrentClimb) read the CURRENT resolved settings without needing to be
-  // rebuilt every time they change.
+    const rendererSupport = getBoardseshRendererSupport();
+    return {
+      effectiveRenderSettings: resolveEffectiveRenderSettings(boardRenderSettings, flags, rendererSupport === true),
+      // "We cannot yet say which drawing this climber is looking at." Two
+      // sources, both cold-start-only and both self-clearing:
+      //  - the climber's own stored settings haven't come back from
+      //    AsyncStorage, so a stored `boardsesh` still reads as `default`;
+      //  - the mode being asked for IS `boardsesh` but the capability probe
+      //    has not answered (`null`), which resolves to `classic` for safety.
+      // Firing a `Climb View Opened` in either window labels the view with the
+      // wrong `render_mode`, and a mislabelled view is worse than a late one:
+      // it lands in the other arm of the A/B this whole event exists to
+      // measure. So the view waits — see the markClimbViewed effect below.
+      renderSettingsPending:
+        !boardRenderSettingsLoaded ||
+        (rendererSupport === null && requestedBoardRenderMode(boardRenderSettings, flags) === 'boardsesh'),
+    };
+  }, [boardRenderSettings, boardRenderSettingsLoaded, defaultRenderMode, defaultGlowFalloff, boardseshSupportTick]);
+  // Mirrored into refs for the same reason activeBoardRef is: callbacks below
+  // read the CURRENT resolved settings without needing to be rebuilt every
+  // time they change.
   const effectiveRenderSettingsRef = useRef(effectiveRenderSettings);
   effectiveRenderSettingsRef.current = effectiveRenderSettings;
+  const renderSettingsPendingRef = useRef(renderSettingsPending);
+  renderSettingsPendingRef.current = renderSettingsPending;
   useEffect(() => {
     registerRenderSuperProperties(effectiveRenderSettings);
   }, [effectiveRenderSettings]);
+
+  /**
+   * Fire `Climb View Opened` for a climb that is now drawn on the board.
+   *
+   * Stable identity (everything it needs is read from a ref), so it can be
+   * handed to the play drawer through the actions context without churning it.
+   * A no-op while `renderSettingsPending`, and a no-op with no active board —
+   * an event with no `board_name` cannot be stratified, and the stratification
+   * rule (docs/board-render-analytics.md) says never pool across boards.
+   */
+  const noteClimbViewed = useCallback((climbUuid: string) => {
+    if (renderSettingsPendingRef.current) return;
+    const activeBoard = activeBoardRef.current;
+    const activeBoardName = activeBoard ? toBoardName(activeBoard.boardType) : null;
+    if (!activeBoard || !activeBoardName) return;
+    markClimbViewed(
+      climbUuid,
+      buildBoardRenderTelemetryProps(effectiveRenderSettingsRef.current, {
+        boardName: activeBoardName,
+        layoutId: activeBoard.layoutId,
+        sizeId: activeBoard.sizeId,
+      }),
+    );
+  }, []);
+
+  // A view is the CLIMB CHANGING, not the call that changed it. Keying off
+  // `setCurrentClimb` (the first cut of this) missed most of them: `nextClimb`
+  // and `previousClimb` dispatch to the reducer directly, so every swipe
+  // through the queue — the single most common way a climber moves between
+  // climbs — fired nothing, and the A/B would have been measured almost
+  // entirely on taps.
+  //
+  // Keyed on the current queue item's uuid AND its climb uuid, because either
+  // one changing means a different climb is drawn: re-tapping the current
+  // climb mints a fresh queue-item uuid (a deliberate fresh pass), while a peer
+  // replacing the slot's contents changes the climb uuid under a stable item
+  // uuid. Neither key changes when a thin peer item merely hydrates, so
+  // hydration doesn't double-count.
+  //
+  // Peer-originated changes count too, on purpose: a party member advancing the
+  // queue puts a climb on THIS climber's board, and it is that drawn climb the
+  // A/B is measuring. Same for a hydrated queue on app open — the restored
+  // climb is what they see when the drawer comes up.
+  const currentQueueItemUuid = state.currentClimbQueueItem?.uuid ?? null;
+  const currentClimbUuid = state.currentClimbQueueItem?.climb.uuid ?? null;
+  useEffect(() => {
+    if (!currentQueueItemUuid || !currentClimbUuid) return;
+    // Still resolving which drawing this climber is on. `renderSettingsPending`
+    // is a dep, so this effect re-runs (and fires, once) the moment the settings
+    // load or the capability probe answers — the view is deferred, not dropped.
+    if (renderSettingsPending) return;
+    noteClimbViewed(currentClimbUuid);
+  }, [currentQueueItemUuid, currentClimbUuid, renderSettingsPending, noteClimbViewed]);
 
   // "This climb is on another board — add anyway / switch / cancel". Stable
   // identity, so `addToQueue` (and the memoized actions context) never churns.
@@ -1372,21 +1440,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         layoutId: activeBoardRef.current?.layoutId,
         source: 'mobile',
       });
-      // Board-render A/B telemetry (issue #2202): this climb is now the one
-      // being viewed. `markClimbAction` sites (queue add, BLE send) read the
-      // view this opens to fire `Climb First Action` at most once per view.
-      const activeBoard = activeBoardRef.current;
-      const activeBoardName = activeBoard ? toBoardName(activeBoard.boardType) : null;
-      if (activeBoard && activeBoardName) {
-        markClimbViewed(
-          item.climb.uuid,
-          buildBoardRenderTelemetryProps(effectiveRenderSettingsRef.current, {
-            boardName: activeBoardName,
-            layoutId: activeBoard.layoutId,
-            sizeId: activeBoard.sizeId,
-          }),
-        );
-      }
+      // Board-render A/B telemetry (issue #2202) is NOT fired here: the
+      // `Climb View Opened` effect above keys off the current climb changing,
+      // which covers this dispatch as well as the swipe paths that never come
+      // through here at all.
+      //
       // Activating a climb slots it right after the current climb (issue #2217),
       // pushing the current climb into history — matching the local "set climb
       // active" intent instead of bumping the new climb to the bottom. Fresh-uuid
@@ -1478,6 +1536,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       setCurrentClimb,
       nextClimb,
       previousClimb,
+      noteClimbViewed,
       dispatchWidgetNavigation,
       setPlaylistSuggestionSource,
       refreshPlaylistSuggestionSource,
@@ -1503,6 +1562,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       setCurrentClimb,
       nextClimb,
       previousClimb,
+      noteClimbViewed,
       dispatchWidgetNavigation,
       setPlaylistSuggestionSource,
       refreshPlaylistSuggestionSource,

@@ -129,10 +129,19 @@ export function useZoomPanGesture({
 
   const pinchFocalX = useSharedValue(0);
   const pinchFocalY = useSharedValue(0);
-  // Peak absolute scale reached during the CURRENT pinch gesture, reset at
-  // onStart. UI-thread-only arithmetic (no bridge crossing), so tracking it on
-  // every onUpdate frame is cheap — the bridge hop only happens once, at onEnd.
+  // Extremes of the absolute scale reached during the CURRENT pinch gesture,
+  // both reset to the starting scale at onStart. UI-thread-only arithmetic (no
+  // bridge crossing), so tracking them on every onUpdate frame is cheap — the
+  // bridge hop only happens once, at onEnd.
+  //
+  // The MIN is not decoration. The reported delta has to be signed end-minus-
+  // start, because a pinch that only zooms OUT never exceeds its own starting
+  // scale: a max-minus-start delta is exactly 0 for every one of them, and the
+  // 0.15 jitter gate then throws the whole gesture away. Keeping both extremes
+  // also lets a query tell "zoomed in, then released back out" apart from
+  // "pulled straight out", which one signed number cannot.
   const pinchScaleMaxSV = useSharedValue(MIN_SCALE);
+  const pinchScaleMinSV = useSharedValue(MIN_SCALE);
   // Read on the JS thread from handlePinchEnd (never from a worklet), so a
   // plain ref kept current during render is enough — no shared value needed,
   // and its identity is why handlePinchEnd itself never needs to change.
@@ -178,10 +187,10 @@ export function useZoomPanGesture({
   // above). No-op when the caller passed no telemetry props (the boards this
   // A/B doesn't cover); `noteBoardPinch` itself gates on the minimum scale
   // delta, so every gesture end can call this unconditionally.
-  const handlePinchEnd = useCallback((scaleMax: number, scaleDelta: number) => {
+  const handlePinchEnd = useCallback((scaleMax: number, scaleMin: number, scaleDelta: number) => {
     const commonProps = boardRenderTelemetryPropsRef.current;
     if (!commonProps) return;
-    noteBoardPinch(commonProps, { scaleMax, scaleDelta });
+    noteBoardPinch(commonProps, { scaleMax, scaleMin, scaleDelta });
   }, []);
 
   const resetZoom = useCallback(() => {
@@ -210,10 +219,11 @@ export function useZoomPanGesture({
         savedTranslateY.value = translateY.value;
         pinchFocalX.value = event.focalX;
         pinchFocalY.value = event.focalY;
-        // Reset the peak tracker to this gesture's starting scale — the peak
-        // is "how far this gesture pushed it", not a running max across
-        // gestures.
+        // Reset both extreme trackers to this gesture's starting scale — they
+        // describe "how far this gesture pushed it", not a running range
+        // across gestures.
         pinchScaleMaxSV.value = savedScale.value;
+        pinchScaleMinSV.value = savedScale.value;
       })
       .onUpdate((event) => {
         'worklet';
@@ -240,16 +250,19 @@ export function useZoomPanGesture({
         translateX.value = clamped.x;
         translateY.value = clamped.y;
         // Cheap UI-thread arithmetic — no runOnJS here. Telemetry only reads
-        // this once, at onEnd.
+        // these once, at onEnd.
         if (newScale > pinchScaleMaxSV.value) pinchScaleMaxSV.value = newScale;
+        if (newScale < pinchScaleMinSV.value) pinchScaleMinSV.value = newScale;
       })
       .onEnd(() => {
         'worklet';
         if (!enabledSV.value) return;
-        // Snapshot before either branch below overwrites savedScale — this is
-        // the one and only JS-thread hop this gesture makes for telemetry
-        // (issue #2202), matching the existing updateZoomState pattern.
-        runOnJS(handlePinchEnd)(pinchScaleMaxSV.value, pinchScaleMaxSV.value - savedScale.value);
+        // Snapshot before either branch below overwrites savedScale/scale —
+        // this is the one and only JS-thread hop this gesture makes for
+        // telemetry (issue #2202), matching the existing updateZoomState
+        // pattern. The delta is END minus START (signed), not peak minus
+        // start, so a zoom-out reports its real magnitude instead of 0.
+        runOnJS(handlePinchEnd)(pinchScaleMaxSV.value, pinchScaleMinSV.value, scale.value - savedScale.value);
         if (scale.value < ZOOM_THRESHOLD) {
           scale.value = withTiming(MIN_SCALE, { duration: timing.fast });
           translateX.value = withTiming(0, { duration: timing.fast });
@@ -305,6 +318,7 @@ export function useZoomPanGesture({
     pinchFocalX,
     pinchFocalY,
     pinchScaleMaxSV,
+    pinchScaleMinSV,
     isZoomedSV,
     isPinchingSV,
     enabledSV,

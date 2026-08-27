@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildFeatureFlagRows } from '../feature-flag-rows';
+import {
+  buildFeatureFlagRows,
+  findStaleFeatureFlagOverrideKeys,
+  resolveFeatureFlagOverrideAction,
+} from '../feature-flag-rows';
 import { FEATURE_FLAG_DEFINITIONS } from '../../providers/feature-flags-provider';
 
 function captionFor(key: string, overrides: Record<string, boolean>, baseFlags: Record<string, boolean>): string {
@@ -76,5 +80,98 @@ describe('buildFeatureFlagRows', () => {
         'Live default: not set · Effective: not set',
       );
     });
+  });
+});
+
+// The branch FeatureFlagsScreen.handleSelect runs on every segment tap. It is
+// extracted for the same reason buildFeatureFlagRows is: the screen renders a
+// platform-split native @expo/ui form that a node test cannot mount.
+describe('resolveFeatureFlagOverrideAction', () => {
+  it('clears the override on the Default segment', () => {
+    expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'garmin-watch', 'default')).toEqual({
+      action: 'clear',
+    });
+  });
+
+  it('stores a boolean for a plain on/off flag', () => {
+    expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'garmin-watch', 'on')).toEqual({
+      action: 'set',
+      value: true,
+    });
+    expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'garmin-watch', 'off')).toEqual({
+      action: 'set',
+      value: false,
+    });
+  });
+
+  it('stores the variant string verbatim for a multivariate flag', () => {
+    expect(
+      resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'board-render-mode-default', 'boardsesh'),
+    ).toEqual({ action: 'set', value: 'boardsesh' });
+    expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'board-glow-falloff', 'plateau')).toEqual({
+      action: 'set',
+      value: 'plateau',
+    });
+  });
+
+  it('keys the branch off the definition, not the shape of the choice', () => {
+    // 'classic' is a legal variant of board-render-mode-default; on a boolean
+    // flag the same string could only ever mean "not 'on'". Nothing about the
+    // choice string decides which kind of value gets written.
+    expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'board-render-mode-default', 'classic')).toEqual({
+      action: 'set',
+      value: 'classic',
+    });
+    expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'garmin-watch', 'classic')).toEqual({
+      action: 'set',
+      value: false,
+    });
+  });
+});
+
+describe('findStaleFeatureFlagOverrideKeys', () => {
+  it('finds a legacy boolean left on a flag that has since become multivariate', () => {
+    // The row already renders at Default (buildFeatureFlagRows ignores a
+    // non-variant override), which is exactly why the tester cannot clear it by
+    // hand — re-selecting the segment it is already on fires nothing.
+    const overrides = { 'board-render-mode-default': true };
+    expect(
+      buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, overrides, {}).find(
+        (row) => row.key === 'board-render-mode-default',
+      )?.choice,
+    ).toBe('default');
+    expect(findStaleFeatureFlagOverrideKeys(FEATURE_FLAG_DEFINITIONS, overrides)).toEqual([
+      'board-render-mode-default',
+    ]);
+  });
+
+  it('finds a variant this build no longer declares', () => {
+    expect(
+      findStaleFeatureFlagOverrideKeys(FEATURE_FLAG_DEFINITIONS, { 'board-glow-falloff': 'retired-variant' }),
+    ).toEqual(['board-glow-falloff']);
+  });
+
+  it('finds a string left on a plain boolean flag', () => {
+    expect(findStaleFeatureFlagOverrideKeys(FEATURE_FLAG_DEFINITIONS, { 'garmin-watch': 'on' })).toEqual([
+      'garmin-watch',
+    ]);
+  });
+
+  it('leaves every well-formed override alone', () => {
+    expect(
+      findStaleFeatureFlagOverrideKeys(FEATURE_FLAG_DEFINITIONS, {
+        'garmin-watch': true,
+        'strava-integration': false,
+        'board-render-mode-default': 'boardsesh',
+        'board-glow-falloff': 'soft',
+      }),
+    ).toEqual([]);
+  });
+
+  it('leaves a key the catalog no longer lists alone', () => {
+    // A flag can be removed and restored across branches; "Reset all overrides"
+    // already clears an inert entry, and dropping a tester's choice silently is
+    // worse than keeping it.
+    expect(findStaleFeatureFlagOverrideKeys(FEATURE_FLAG_DEFINITIONS, { 'retired-flag': true })).toEqual([]);
   });
 });

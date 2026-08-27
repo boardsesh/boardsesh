@@ -126,15 +126,68 @@ export type ClimbViewOpenedInput = BoardRenderTelemetryProps & {
   reopened_in_session: boolean;
 };
 
+/**
+ * The PostHog flag key the glow-falloff experiment runs on — the same string
+ * the mobile flag catalog uses (`feature-flags-provider.tsx`).
+ */
+export const GLOW_FALLOFF_EXPERIMENT_FLAG = 'board-glow-falloff';
+
+/**
+ * `Climb View Opened` doubles as the glow-falloff experiment's EXPOSURE event,
+ * so it carries PostHog's two reserved exposure properties on top of its own.
+ *
+ * Why an event we already send, rather than PostHog's usual
+ * `$feature_flag_called`: mobile reads every flag with `sendEvent: false`
+ * (`READ_WITHOUT_EXPOSURE_EVENT` in `packages/mobile/src/lib/analytics.ts`),
+ * because FeatureFlagsProvider re-reads the WHOLE catalog on every
+ * flags-changed tick and leaving exposures on cost ~173k events / 30 days —
+ * 13% of the project's volume. Turning that back on for one experiment re-buys
+ * the whole bill. A custom exposure event costs nothing extra, and this is the
+ * honest one to pick: a climber is exposed to the glow-falloff A/B exactly when
+ * a climb is drawn in front of them on the Boardsesh drawing.
+ */
+export type ClimbViewOpenedProperties = ClimbViewOpenedInput & {
+  $feature_flag?: typeof GLOW_FALLOFF_EXPERIMENT_FLAG;
+  $feature_flag_response?: GlowFalloff;
+};
+
+/**
+ * Whether this view is an exposure for the glow-falloff experiment.
+ *
+ * Both halves are required. `render_mode: 'boardsesh'` because a `classic`
+ * render draws no glow at all — counting it would dilute the experiment with
+ * climbers who cannot see the thing being tested. `glow_falloff_source:
+ * 'flag'` because a climber who picked a falloff in Settings is self-selected,
+ * not randomised, and PostHog would otherwise attribute their outcomes to the
+ * variant they chose for themselves. Same rule the stratification section of
+ * docs/board-render-analytics.md spells out, applied where the exposure is
+ * minted rather than left to a dashboard filter someone can forget.
+ */
+function isGlowFalloffExposure(input: BoardRenderTelemetryProps): boolean {
+  return input.render_mode === 'boardsesh' && input.glow_falloff_source === 'flag';
+}
+
 export function climbViewOpened(
   input: ClimbViewOpenedInput,
-): BoardRenderPayload<typeof SHARED_EVENTS.ClimbViewOpened, ClimbViewOpenedInput> {
-  return { name: SHARED_EVENTS.ClimbViewOpened, properties: input };
+): BoardRenderPayload<typeof SHARED_EVENTS.ClimbViewOpened, ClimbViewOpenedProperties> {
+  const properties: ClimbViewOpenedProperties = isGlowFalloffExposure(input)
+    ? { ...input, $feature_flag: GLOW_FALLOFF_EXPERIMENT_FLAG, $feature_flag_response: input.glow_falloff }
+    : input;
+  return { name: SHARED_EVENTS.ClimbViewOpened, properties };
 }
 
 export type BoardPinchInput = BoardRenderTelemetryProps & {
   /** Peak absolute board scale reached during the gesture (not the raw pinch ratio). */
   scale_max: number;
+  /** Lowest absolute board scale reached during the gesture. */
+  scale_min: number;
+  /**
+   * SIGNED end-minus-start scale change: positive for a zoom in, negative for a
+   * zoom out. `scale_max` alone cannot tell those apart — a gesture that only
+   * zooms out never exceeds its own starting scale, so a max-minus-start delta
+   * is exactly 0 for every zoom-out and the whole gesture reads as jitter.
+   */
+  scale_delta: number;
 };
 
 export function boardPinch(

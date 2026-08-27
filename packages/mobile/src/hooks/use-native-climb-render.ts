@@ -1106,11 +1106,12 @@ function getNativeModule() {
  * two flags the same way and can't drift.
  */
 function useBoardRenderFlags(): BoardRenderFlags {
-  const defaultMode = useFeatureFlagVariant<'classic' | 'boardsesh'>('board-render-mode-default', [
-    'classic',
-    'boardsesh',
-  ]);
-  const glowFalloff = useFeatureFlagVariant<'soft' | 'plateau'>('board-glow-falloff', ['soft', 'plateau']);
+  // No explicit type arguments: `useFeatureFlagVariant` derives both the key
+  // and the legal variant strings from the flag catalog itself, so naming a
+  // flag that isn't multivariate — or a variant it never declares — is a
+  // compile error rather than a hook that silently never matches.
+  const defaultMode = useFeatureFlagVariant('board-render-mode-default', ['classic', 'boardsesh']);
+  const glowFalloff = useFeatureFlagVariant('board-glow-falloff', ['soft', 'plateau']);
   return useMemo(() => ({ defaultMode, glowFalloff }), [defaultMode, glowFalloff]);
 }
 
