@@ -189,6 +189,7 @@ export function useCreateClimbScreen({
   // param exists, unlike forkFrames/forkName/forkDescription) — a pre-existing,
   // acceptable gap consistent with how forking already works for everything except
   // no_match, which rides in the description text. Both default false on a fork.
+  // Tracked in https://github.com/boardsesh/boardsesh/issues/4832.
   const [noKickboard, setNoKickboard] = useState(false);
   const [campus, setCampus] = useState(false);
   const [isDraft, setIsDraft] = useState(true);
