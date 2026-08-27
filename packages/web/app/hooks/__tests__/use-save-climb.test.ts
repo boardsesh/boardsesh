@@ -183,6 +183,7 @@ describe('useSaveClimb', () => {
           framesCount: 1,
           framesPace: 0,
           angle: 40,
+          characteristics: null,
         },
       },
     });

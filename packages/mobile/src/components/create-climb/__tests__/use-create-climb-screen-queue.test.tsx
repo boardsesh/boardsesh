@@ -66,6 +66,14 @@ vi.mock('@tanstack/react-query', () => ({
 vi.mock('@boardsesh/shared-schema', () => ({
   isNoMatchClimb: () => false,
   withNoMatch: (description: string) => description,
+  CLIMB_CHARACTERISTICS: { NO_KICKBOARD: 'no_kickboard', CAMPUS: 'campus', NO_MATCH: 'no_match' },
+  hasCharacteristic: (characteristics: string[] | null | undefined, token: string) =>
+    !!characteristics && characteristics.includes(token),
+  withCharacteristic: (characteristics: string[] | null | undefined, token: string, enabled: boolean) => {
+    const current = characteristics ? [...characteristics] : [];
+    if (!enabled) return current.filter((existing) => existing !== token);
+    return current.includes(token) ? current : [...current, token];
+  },
 }));
 vi.mock('@boardsesh/create-climb-react', () => ({
   useCreateClimb: () => createClimb,
@@ -187,6 +195,48 @@ describe('create-climb queue hand-off carries board identity', () => {
     expect(climb.uuid).toBe('saved-1');
     expect(climb.boardType).toBe('kilter');
     expect(climb.layoutId).toBe(8);
+  });
+
+  it('sends both toggled characteristics to saveClimb, and null when neither is set', async () => {
+    board.saveClimb.mockResolvedValue({ uuid: 'saved-2', createdAt: null, publishedAt: null, isDraft: true });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.setName('Both Toggles'));
+    act(() => {
+      result.current.setNoKickboard(true);
+      result.current.setCampus(true);
+    });
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(board.saveClimb).toHaveBeenCalledWith(
+      expect.objectContaining({ characteristics: ['no_kickboard', 'campus'] }),
+    );
+
+    board.saveClimb.mockClear();
+    act(() => {
+      result.current.setNoKickboard(false);
+      result.current.setCampus(false);
+    });
+    // Re-save as a fresh (unsaved) climb is not exercised here — this hook instance
+    // already has a savedClimb row, so the next save goes through updateClimb.
+    board.updateClimb.mockResolvedValue({ uuid: 'saved-2', createdAt: null, publishedAt: null, isDraft: true });
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(board.updateClimb).toHaveBeenCalledWith(expect.objectContaining({ characteristics: null }));
+  });
+
+  it('carries the campus characteristic through the real boundary', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.setName('Campus Only'));
+    act(() => result.current.setCampus(true));
+    act(() => result.current.handleSetActive());
+
+    const { climb } = lastQueuedItem();
+    expect(climb.characteristics).toContain('campus');
   });
 
   it('marks the provisional climb single-frame so playback does not wait on a pace', () => {

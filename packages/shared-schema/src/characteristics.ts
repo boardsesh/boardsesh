@@ -14,6 +14,10 @@
 export const CLIMB_CHARACTERISTICS = {
   /** Matching (both hands on the same hold) is disallowed. Aurora convention. */
   NO_MATCH: 'no_match',
+  /** Feet may be used, but not the kickboard. Independent toggle — any board type. */
+  NO_KICKBOARD: 'no_kickboard',
+  /** No feet allowed at all (hands only). Independent toggle — any board type. */
+  CAMPUS: 'campus',
   /** MoonBoard "Footless": no foot holds, kickboard not used. */
   METHOD_FOOTLESS: 'method_footless',
   /** MoonBoard "Footless + kickboard": no foot holds, the kickboard may be used. */
@@ -51,6 +55,27 @@ export function hasCharacteristic(
 export function isNoMatch(characteristics: readonly string[] | null | undefined): boolean {
   return hasCharacteristic(characteristics, CLIMB_CHARACTERISTICS.NO_MATCH);
 }
+
+/** Whether this climb disallows the kickboard as a foot hold. */
+export function isNoKickboard(characteristics: readonly string[] | null | undefined): boolean {
+  return hasCharacteristic(characteristics, CLIMB_CHARACTERISTICS.NO_KICKBOARD);
+}
+
+/** Whether this climb is campus-only (no feet at all). */
+export function isCampus(characteristics: readonly string[] | null | undefined): boolean {
+  return hasCharacteristic(characteristics, CLIMB_CHARACTERISTICS.CAMPUS);
+}
+
+/**
+ * Tokens that are freely toggleable and independent of each other (unlike the
+ * mutually-exclusive METHOD_* group). A client sends the full desired boolean
+ * state of each of these; the server merges them in without touching any other
+ * characteristic (no_match, MoonBoard method) already on the row.
+ */
+export const TOGGLEABLE_CLIMB_CHARACTERISTICS = [
+  CLIMB_CHARACTERISTICS.NO_KICKBOARD,
+  CLIMB_CHARACTERISTICS.CAMPUS,
+] as const;
 
 /** The MoonBoard method token on a climb, or null for the "feet follow hands" default. */
 export function getMoonBoardMethod(characteristics: readonly string[] | null | undefined): ClimbCharacteristic | null {

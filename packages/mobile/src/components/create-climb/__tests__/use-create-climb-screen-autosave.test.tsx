@@ -65,6 +65,14 @@ vi.mock('react-native', () => ({
 vi.mock('@boardsesh/shared-schema', () => ({
   isNoMatchClimb: () => false,
   withNoMatch: (description: string) => description,
+  CLIMB_CHARACTERISTICS: { NO_KICKBOARD: 'no_kickboard', CAMPUS: 'campus', NO_MATCH: 'no_match' },
+  hasCharacteristic: (characteristics: string[] | null | undefined, token: string) =>
+    !!characteristics && characteristics.includes(token),
+  withCharacteristic: (characteristics: string[] | null | undefined, token: string, enabled: boolean) => {
+    const current = characteristics ? [...characteristics] : [];
+    if (!enabled) return current.filter((existing) => existing !== token);
+    return current.includes(token) ? current : [...current, token];
+  },
 }));
 vi.mock('@boardsesh/create-climb-react', () => ({
   useCreateClimb: () => createClimb,

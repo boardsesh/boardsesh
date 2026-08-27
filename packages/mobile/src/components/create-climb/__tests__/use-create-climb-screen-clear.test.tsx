@@ -64,6 +64,14 @@ vi.mock('@boardsesh/shared-schema', () => ({
     if (enabled) return /^no match/i.test(current) ? current : `${NO_MATCH_PREFIX}${current}`;
     return current.replace(/^no match(?:\r?\n|$)/i, '');
   },
+  CLIMB_CHARACTERISTICS: { NO_KICKBOARD: 'no_kickboard', CAMPUS: 'campus', NO_MATCH: 'no_match' },
+  hasCharacteristic: (characteristics: string[] | null | undefined, token: string) =>
+    !!characteristics && characteristics.includes(token),
+  withCharacteristic: (characteristics: string[] | null | undefined, token: string, enabled: boolean) => {
+    const current = characteristics ? [...characteristics] : [];
+    if (!enabled) return current.filter((existing) => existing !== token);
+    return current.includes(token) ? current : [...current, token];
+  },
 }));
 
 vi.mock('@boardsesh/create-climb-react', () => ({
@@ -155,5 +163,31 @@ describe('useCreateClimbScreen handleClear', () => {
     expect(board.saveClimb).toHaveBeenCalledTimes(1);
     const savedDescription = board.saveClimb.mock.calls[0]?.[0]?.description ?? '';
     expect(savedDescription.startsWith('No match')).toBe(false);
+  });
+
+  it('resets the no-kickboard / campus toggles so a brand-new climb starts without either', async () => {
+    board.saveClimb.mockResolvedValue({ uuid: 'fresh-2', createdAt: null, publishedAt: null, isDraft: true });
+
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+
+    act(() => {
+      result.current.setNoKickboard(true);
+      result.current.setCampus(true);
+    });
+    await waitFor(() => expect(result.current.noKickboard).toBe(true));
+    expect(result.current.campus).toBe(true);
+
+    act(() => result.current.handleClear());
+
+    expect(result.current.noKickboard).toBe(false);
+    expect(result.current.campus).toBe(false);
+
+    act(() => result.current.setName('Fresh Problem 2'));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(board.saveClimb).toHaveBeenCalledTimes(1);
+    expect(board.saveClimb.mock.calls[0]?.[0]?.characteristics).toBeNull();
   });
 });

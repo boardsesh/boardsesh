@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { CONFIDENCE, MAX_SEARCH_PAGE } from '@boardsesh/db/queries';
-import { CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
+import { CLIMB_CHARACTERISTICS, TOGGLEABLE_CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
 
 // Cap holdsFilter entries: each ANY entry becomes a LIKE scan over board_climbs.frames
@@ -253,6 +253,18 @@ export const SaveClimbInputSchema = z.object({
   framesCount: z.number().int().min(1).optional(),
   framesPace: z.number().int().min(0).optional(),
   angle: z.number().int().min(0).max(90),
+  // Only the freely-toggleable characteristics (no_kickboard, campus) are settable
+  // through this field — no_match is derived from `description` (see the resolver),
+  // and MoonBoard method tokens are creation-time-only via SaveMoonBoardClimbInput.
+  // .nullable(): the GraphQL field is a nullable list, and clients (mobile's
+  // buildToggleableCharacteristics) send explicit `null` when both toggles are
+  // off — `.optional()` alone rejects that literal null and 400s every ordinary
+  // save/update, not just ones touching these two characteristics.
+  characteristics: z
+    .array(z.enum([...TOGGLEABLE_CLIMB_CHARACTERISTICS]))
+    .max(TOGGLEABLE_CLIMB_CHARACTERISTICS.length)
+    .optional()
+    .nullable(),
 });
 
 export const UpdateClimbInputSchema = z.object({
@@ -265,6 +277,15 @@ export const UpdateClimbInputSchema = z.object({
   isDraft: z.boolean().optional(),
   framesCount: z.number().int().min(1).optional(),
   framesPace: z.number().int().min(0).optional(),
+  // Only the freely-toggleable characteristics (no_kickboard, campus) are settable
+  // through this field — no_match is derived from `description` (see the resolver),
+  // and MoonBoard method tokens are creation-time-only via SaveMoonBoardClimbInput.
+  // .nullable(): see SaveClimbInputSchema above — clients send explicit null.
+  characteristics: z
+    .array(z.enum([...TOGGLEABLE_CLIMB_CHARACTERISTICS]))
+    .max(TOGGLEABLE_CLIMB_CHARACTERISTICS.length)
+    .optional()
+    .nullable(),
 });
 
 export const MoonBoardHoldsInputSchema = z.object({

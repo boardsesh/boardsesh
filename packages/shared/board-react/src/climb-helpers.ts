@@ -13,6 +13,8 @@ export type SaveClimbOptions = {
   frames_count?: number;
   frames_pace?: number;
   angle: number;
+  // Freely-toggleable characteristics to set at creation (no_kickboard / campus).
+  characteristics?: string[] | null;
 };
 
 export type SaveClimbResponse = {
@@ -40,6 +42,7 @@ export function toSaveClimbInput(boardName: BoardName, options: SaveClimbOptions
     framesCount: options.frames_count,
     framesPace: options.frames_pace,
     angle: options.angle,
+    characteristics: options.characteristics ?? null,
   };
 }
 

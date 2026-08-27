@@ -3,6 +3,8 @@ import {
   CLIMB_CHARACTERISTICS,
   hasCharacteristic,
   isNoMatch,
+  isNoKickboard,
+  isCampus,
   getMoonBoardMethod,
   withCharacteristic,
   isMethodCharacteristic,
@@ -23,6 +25,24 @@ describe('hasCharacteristic / isNoMatch', () => {
   });
 });
 
+describe('isNoKickboard / isCampus', () => {
+  it('detects the new independent toggle tokens', () => {
+    expect(isNoKickboard(['no_kickboard'])).toBe(true);
+    expect(isNoKickboard(['campus'])).toBe(false);
+    expect(isCampus(['campus'])).toBe(true);
+    expect(isCampus(['no_kickboard'])).toBe(false);
+  });
+
+  it('handles null/undefined/empty', () => {
+    expect(isNoKickboard(null)).toBe(false);
+    expect(isNoKickboard(undefined)).toBe(false);
+    expect(isNoKickboard([])).toBe(false);
+    expect(isCampus(null)).toBe(false);
+    expect(isCampus(undefined)).toBe(false);
+    expect(isCampus([])).toBe(false);
+  });
+});
+
 describe('getMoonBoardMethod', () => {
   it('returns the single method token, or null for the default', () => {
     expect(getMoonBoardMethod(['method_footless'])).toBe('method_footless');
@@ -38,6 +58,11 @@ describe('isMethodCharacteristic', () => {
     expect(isMethodCharacteristic('method_footless')).toBe(true);
     expect(isMethodCharacteristic('method_no_kickboard')).toBe(true);
     expect(isMethodCharacteristic('no_match')).toBe(false);
+  });
+
+  it('the new independent toggle tokens are not methods', () => {
+    expect(isMethodCharacteristic('no_kickboard')).toBe(false);
+    expect(isMethodCharacteristic('campus')).toBe(false);
   });
 });
 
@@ -66,6 +91,26 @@ describe('withCharacteristic', () => {
   it('handles null/undefined input', () => {
     expect(withCharacteristic(null, CLIMB_CHARACTERISTICS.NO_MATCH, true)).toEqual(['no_match']);
     expect(withCharacteristic(undefined, CLIMB_CHARACTERISTICS.METHOD_FOOTLESS, true)).toEqual(['method_footless']);
+  });
+
+  it('no_kickboard/campus survive enabling a method_* token (not in the mutual-exclusivity set)', () => {
+    expect(withCharacteristic(['no_kickboard', 'campus'], CLIMB_CHARACTERISTICS.METHOD_FOOTLESS, true)).toEqual([
+      'no_kickboard',
+      'campus',
+      'method_footless',
+    ]);
+  });
+
+  it('enabling no_kickboard and campus together keeps both (no mutual exclusion between them)', () => {
+    let characteristics = withCharacteristic([], CLIMB_CHARACTERISTICS.NO_KICKBOARD, true);
+    characteristics = withCharacteristic(characteristics, CLIMB_CHARACTERISTICS.CAMPUS, true);
+    expect(characteristics).toEqual(['no_kickboard', 'campus']);
+  });
+
+  it('toggles no_kickboard/campus off independently of each other and of method tokens', () => {
+    const start = ['method_footless', 'no_kickboard', 'campus'];
+    expect(withCharacteristic(start, CLIMB_CHARACTERISTICS.NO_KICKBOARD, false)).toEqual(['method_footless', 'campus']);
+    expect(withCharacteristic(start, CLIMB_CHARACTERISTICS.CAMPUS, false)).toEqual(['method_footless', 'no_kickboard']);
   });
 });
 

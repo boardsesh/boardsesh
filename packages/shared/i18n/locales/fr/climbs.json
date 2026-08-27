@@ -465,6 +465,8 @@
         "attempt": "Essayé"
       },
       "noMatch": "Une main par prise",
+      "campus": "Campus",
+      "noKickboard": "Sans planche",
       "benchmark": "Benchmark",
       "method": {
         "footless": "Sans pieds",
@@ -522,7 +524,11 @@
         "showAllHoldsLabel": "Afficher toutes les prises",
         "showAllHoldsDescription": "Met en évidence chaque prise cliquable de la board.",
         "noMatchLabel": "Une main par prise",
-        "noMatchDescription": "Les mains ne peuvent pas se rejoindre sur la même prise"
+        "noMatchDescription": "Les mains ne peuvent pas se rejoindre sur la même prise",
+        "noKickboardLabel": "Sans planche du bas",
+        "noKickboardDescription": "Les pieds ne peuvent pas utiliser la planche du bas",
+        "campusLabel": "Campus (sans pieds)",
+        "campusDescription": "Mains seulement, sans les pieds"
       },
       "drafts": {
         "holds_one": "{{count}} prise",

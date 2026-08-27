@@ -237,6 +237,94 @@ describe('climb mutations', () => {
     ]);
   });
 
+  it('stores client-supplied toggleable characteristics on a new Aurora climb', async () => {
+    mockDb.execute.mockResolvedValueOnce([]);
+    mockDb.select.mockReturnValueOnce(
+      createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
+    );
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'kilter',
+          layoutId: 1,
+          name: 'No Kickboard Climb',
+          description: '',
+          isDraft: false,
+          frames: 'p1r43',
+          angle: 40,
+          characteristics: ['no_kickboard'],
+        },
+      },
+      makeCtx(),
+    );
+
+    expect(insertCalls[0].values).toMatchObject({ characteristics: ['no_kickboard'] });
+  });
+
+  it('stores null characteristics on a new Aurora climb when the field is omitted', async () => {
+    mockDb.execute.mockResolvedValueOnce([]);
+    mockDb.select.mockReturnValueOnce(
+      createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
+    );
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'kilter',
+          layoutId: 1,
+          name: 'Plain Climb',
+          description: '',
+          isDraft: false,
+          frames: 'p1r43',
+          angle: 40,
+        },
+      },
+      makeCtx(),
+    );
+
+    expect(insertCalls[0].values).toMatchObject({ characteristics: null });
+  });
+
+  it('accepts an explicit null characteristics field on saveClimb (mobile always sends the field, not omission)', async () => {
+    mockDb.execute.mockResolvedValueOnce([]);
+    mockDb.select.mockReturnValueOnce(
+      createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
+    );
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await expect(
+      climbMutations.saveClimb(
+        {},
+        {
+          input: {
+            boardType: 'kilter',
+            layoutId: 1,
+            name: 'Plain Climb',
+            description: '',
+            isDraft: false,
+            frames: 'p1r43',
+            angle: 40,
+            characteristics: null,
+          },
+        },
+        makeCtx(),
+      ),
+    ).resolves.toBeDefined();
+
+    expect(insertCalls[0].values).toMatchObject({ characteristics: null });
+  });
+
   it('stores non-draft MoonBoard climbs as listed', async () => {
     mockDb.execute.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
     mockDb.select
@@ -743,6 +831,191 @@ describe('climb mutations', () => {
     // in the update set, so the stored method_footless token is untouched.
     expect(updateSet).toBeDefined();
     expect(updateSet).not.toHaveProperty('characteristics');
+  });
+
+  // MoonBoard problems have no updateClimb-based edit path today: there is no
+  // saveMoonBoardClimb caller in web/mobile UI that later calls updateClimb on
+  // the same row, and the MoonBoard "method" field is only ever set once, at
+  // creation, via SaveMoonBoardClimbInput. So a
+  // `boardType: 'moonboard'` + `characteristics: [...]` updateClimb call isn't
+  // a real flow to test today — the toggleable-tokens loop below doesn't gate
+  // on boardType (unlike the no_match-from-description derivation), so if a
+  // MoonBoard row *were* ever routed through updateClimb with a `characteristics`
+  // field, the requested no_kickboard/campus tokens would still merge in
+  // (leaving any method_* token untouched, since the loop only ever touches the
+  // two TOGGLEABLE_CLIMB_CHARACTERISTICS tokens).
+
+  it('updateClimb merges a client-supplied characteristic onto an existing no_match row', async () => {
+    let updateSet: Record<string, unknown> | undefined;
+    mockDb.select.mockReturnValueOnce(
+      createMockChain([
+        {
+          uuid: 'climb-3',
+          userId: 'user-123',
+          isDraft: true,
+          publishedAt: null,
+          createdAt: '2026-05-14T20:00:00.000Z',
+          angle: 35,
+          layoutId: 8,
+          frames: 'p1r1',
+          framesCount: 1,
+          setterUsername: 'Alice Setter',
+          characteristics: ['no_match'],
+        },
+      ]),
+    );
+    const updateChain: Record<string, unknown> = {
+      set: vi.fn((values: Record<string, unknown>) => {
+        updateSet = values;
+        return updateChain;
+      }),
+      where: vi.fn(() => updateChain),
+    };
+    mockDb.update = vi.fn().mockReturnValue(updateChain);
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.updateClimb(
+      {},
+      { input: { boardType: 'kilter', uuid: 'climb-3', characteristics: ['campus'] } },
+      makeCtx(),
+    );
+
+    expect(updateSet?.characteristics).toEqual(expect.arrayContaining(['no_match', 'campus']));
+    expect((updateSet?.characteristics as string[]).sort()).toEqual(['campus', 'no_match']);
+  });
+
+  it('updateClimb composes a description-driven no_match flip with a client-supplied characteristic in the same call', async () => {
+    let updateSet: Record<string, unknown> | undefined;
+    mockDb.select.mockReturnValueOnce(
+      createMockChain([
+        {
+          uuid: 'climb-4',
+          userId: 'user-123',
+          isDraft: true,
+          publishedAt: null,
+          createdAt: '2026-05-14T20:00:00.000Z',
+          angle: 35,
+          layoutId: 8,
+          frames: 'p1r1',
+          framesCount: 1,
+          setterUsername: 'Alice Setter',
+          characteristics: null,
+        },
+      ]),
+    );
+    const updateChain: Record<string, unknown> = {
+      set: vi.fn((values: Record<string, unknown>) => {
+        updateSet = values;
+        return updateChain;
+      }),
+      where: vi.fn(() => updateChain),
+    };
+    mockDb.update = vi.fn().mockReturnValue(updateChain);
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.updateClimb(
+      {},
+      {
+        input: {
+          boardType: 'kilter',
+          uuid: 'climb-4',
+          description: 'No match\nbeta',
+          characteristics: ['no_kickboard'],
+        },
+      },
+      makeCtx(),
+    );
+
+    // This is the exact "one clobbering the other" case: without the
+    // restructure, only the last-applied branch's characteristics write would
+    // have survived.
+    expect((updateSet?.characteristics as string[]).sort()).toEqual(['no_kickboard', 'no_match']);
+  });
+
+  it('updateClimb sending an empty characteristics array turns off previously-set toggleable tokens, leaving no_match/method alone', async () => {
+    let updateSet: Record<string, unknown> | undefined;
+    mockDb.select.mockReturnValueOnce(
+      createMockChain([
+        {
+          uuid: 'climb-5',
+          userId: 'user-123',
+          isDraft: true,
+          publishedAt: null,
+          createdAt: '2026-05-14T20:00:00.000Z',
+          angle: 35,
+          layoutId: 8,
+          frames: 'p1r1',
+          framesCount: 1,
+          setterUsername: 'Alice Setter',
+          characteristics: ['no_match', 'no_kickboard', 'campus'],
+        },
+      ]),
+    );
+    const updateChain: Record<string, unknown> = {
+      set: vi.fn((values: Record<string, unknown>) => {
+        updateSet = values;
+        return updateChain;
+      }),
+      where: vi.fn(() => updateChain),
+    };
+    mockDb.update = vi.fn().mockReturnValue(updateChain);
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.updateClimb(
+      {},
+      { input: { boardType: 'kilter', uuid: 'climb-5', characteristics: [] } },
+      makeCtx(),
+    );
+
+    expect(updateSet?.characteristics).toEqual(['no_match']);
+  });
+
+  it('updateClimb sending an explicit null characteristics field behaves like an empty array (mobile sends null, not [])', async () => {
+    let updateSet: Record<string, unknown> | undefined;
+    mockDb.select.mockReturnValueOnce(
+      createMockChain([
+        {
+          uuid: 'climb-6',
+          userId: 'user-123',
+          isDraft: true,
+          publishedAt: null,
+          createdAt: '2026-05-14T20:00:00.000Z',
+          angle: 35,
+          layoutId: 8,
+          frames: 'p1r1',
+          framesCount: 1,
+          setterUsername: 'Alice Setter',
+          characteristics: ['no_match', 'no_kickboard', 'campus'],
+        },
+      ]),
+    );
+    const updateChain: Record<string, unknown> = {
+      set: vi.fn((values: Record<string, unknown>) => {
+        updateSet = values;
+        return updateChain;
+      }),
+      where: vi.fn(() => updateChain),
+    };
+    mockDb.update = vi.fn().mockReturnValue(updateChain);
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await expect(
+      climbMutations.updateClimb(
+        {},
+        { input: { boardType: 'kilter', uuid: 'climb-6', characteristics: null } },
+        makeCtx(),
+      ),
+    ).resolves.toBeDefined();
+
+    expect(updateSet?.characteristics).toEqual(['no_match']);
   });
 
   it('throws when publishing a draft without an angle', async () => {
