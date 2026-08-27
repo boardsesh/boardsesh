@@ -325,6 +325,27 @@ describe('climb mutations', () => {
     expect(insertCalls[0].values).toMatchObject({ characteristics: null });
   });
 
+  it('rejects a characteristics array with a duplicate token', async () => {
+    await expect(
+      climbMutations.saveClimb(
+        {},
+        {
+          input: {
+            boardType: 'kilter',
+            layoutId: 1,
+            name: 'Duplicate Token Climb',
+            description: '',
+            isDraft: false,
+            frames: 'p1r43',
+            angle: 40,
+            characteristics: ['no_kickboard', 'no_kickboard'],
+          },
+        },
+        makeCtx(),
+      ),
+    ).rejects.toThrow(/duplicate/i);
+  });
+
   it('stores non-draft MoonBoard climbs as listed', async () => {
     mockDb.execute.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
     mockDb.select
