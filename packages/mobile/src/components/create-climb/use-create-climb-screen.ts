@@ -99,6 +99,22 @@ function buildToggleableCharacteristics(noKickboard: boolean, campus: boolean): 
 }
 
 /**
+ * Same as {@link buildToggleableCharacteristics}, but also folds in no_match —
+ * used only for the LOCAL provisional queue-item display (buildProvisionalClimb),
+ * never for the save/update payload. `ClimbAttributeIcons` prefers the
+ * `characteristics` array over the legacy `is_no_match` bool the moment the array
+ * is non-null, so a provisional row with, say, campus=true and noMatch=true would
+ * otherwise show the campus badge but silently drop the no-match one. The real
+ * saved row doesn't have this problem: the server derives no_match from
+ * `description` independently of the client-supplied `characteristics` field.
+ */
+function buildProvisionalCharacteristics(noMatch: boolean, noKickboard: boolean, campus: boolean): string[] | null {
+  const toggleable = buildToggleableCharacteristics(noKickboard, campus) ?? [];
+  const withNoMatchToken = withCharacteristic(toggleable, CLIMB_CHARACTERISTICS.NO_MATCH, noMatch);
+  return withNoMatchToken.length > 0 ? withNoMatchToken : null;
+}
+
+/**
  * The create-climb screen controller. Composes the shared hold-state machine
  * with auth, the board provider's save/update mutations, the per-board local
  * autosave, BLE preview, and the queue, and exposes a save state machine the
@@ -473,7 +489,7 @@ export function useCreateClimbScreen({
       difficulty_error: '0',
       benchmark_difficulty: null,
       is_no_match: noMatch,
-      characteristics: buildToggleableCharacteristics(noKickboard, campus),
+      characteristics: buildProvisionalCharacteristics(noMatch, noKickboard, campus),
       // Not-yet-saved climbs are drafts by definition; once saved, mirror the
       // tracked row so a published climb doesn't queue as a draft.
       is_draft: savedClimb?.isDraft ?? true,

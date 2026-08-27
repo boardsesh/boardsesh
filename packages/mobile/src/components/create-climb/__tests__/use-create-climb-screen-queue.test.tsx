@@ -239,6 +239,25 @@ describe('create-climb queue hand-off carries board identity', () => {
     expect(climb.characteristics).toContain('campus');
   });
 
+  it('keeps the no-match badge alongside campus/no-kickboard in the provisional queue row', () => {
+    // Regression: ClimbAttributeIcons prefers `characteristics` over `is_no_match`
+    // the moment the array is non-null, so a provisional climb that only put
+    // campus/no_kickboard into that array (and left no_match to the separate
+    // is_no_match bool) would silently drop the no-match badge from the queue.
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.setName('No Match Campus'));
+    act(() => {
+      result.current.setNoMatch(true);
+      result.current.setCampus(true);
+    });
+    act(() => result.current.handleSetActive());
+
+    const { climb } = lastQueuedItem();
+    expect(climb.is_no_match).toBe(true);
+    expect(climb.characteristics).toEqual(expect.arrayContaining(['no_match', 'campus']));
+  });
+
   it('marks the provisional climb single-frame so playback does not wait on a pace', () => {
     const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
 
