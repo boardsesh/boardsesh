@@ -1197,7 +1197,7 @@ function renderOutlineCounts(results: ConfigResult[]): string {
     `${DO_NOT_EDIT}\n` +
     `// Traced outlines against total placements, per shard, as counted by the run that wrote\n` +
     `// the tables. Gate 4 pins these: a drop means the seed containment got too tight, and a\n` +
-    `// jump on a MoonBoard means the tracer started finding holds that are not there (those\n` +
+    `// jump on a MoonBoard means a set joined its composite (every shard mounts them all) (those\n` +
     `// layouts are a synthetic 11x18 grid and most cells genuinely carry no hold).\n` +
     `module.exports = {\n${rows}\n};\n`
   );
