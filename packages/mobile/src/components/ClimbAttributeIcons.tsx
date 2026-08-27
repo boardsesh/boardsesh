@@ -2,7 +2,13 @@ import { memo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { CLIMB_CHARACTERISTICS, getMoonBoardMethod, hasCharacteristic, isNoMatch } from '@boardsesh/shared-schema';
+import {
+  CLIMB_CHARACTERISTICS,
+  getMoonBoardMethod,
+  isCampus,
+  isNoKickboard,
+  isNoMatch,
+} from '@boardsesh/shared-schema';
 import { Icon } from './Icon';
 import { useTheme } from '../providers/theme-provider';
 
@@ -45,9 +51,8 @@ function methodLabel(characteristics: string[] | null | undefined, t: TFunction<
  */
 function extraCharacteristicLabels(characteristics: string[] | null | undefined, t: TFunction<'climbs'>): string[] {
   const labels: string[] = [];
-  if (hasCharacteristic(characteristics, CLIMB_CHARACTERISTICS.CAMPUS)) labels.push(t('mobile.climbRow.campus'));
-  if (hasCharacteristic(characteristics, CLIMB_CHARACTERISTICS.NO_KICKBOARD))
-    labels.push(t('mobile.climbRow.noKickboard'));
+  if (isCampus(characteristics)) labels.push(t('mobile.climbRow.campus'));
+  if (isNoKickboard(characteristics)) labels.push(t('mobile.climbRow.noKickboard'));
   return labels;
 }
 

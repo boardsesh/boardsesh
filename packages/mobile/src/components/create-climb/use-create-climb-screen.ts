@@ -9,7 +9,8 @@ import {
   isNoMatchClimb,
   withNoMatch,
   CLIMB_CHARACTERISTICS,
-  hasCharacteristic,
+  isNoKickboard,
+  isCampus,
   withCharacteristic,
 } from '@boardsesh/shared-schema';
 import {
@@ -273,8 +274,8 @@ export function useCreateClimbScreen({
     setName(editClimb.name);
     setDescription(withNoMatch(editClimb.description ?? '', false));
     setNoMatch(isNoMatchClimb(editClimb.description));
-    setNoKickboard(hasCharacteristic(editClimb.characteristics, CLIMB_CHARACTERISTICS.NO_KICKBOARD));
-    setCampus(hasCharacteristic(editClimb.characteristics, CLIMB_CHARACTERISTICS.CAMPUS));
+    setNoKickboard(isNoKickboard(editClimb.characteristics));
+    setCampus(isCampus(editClimb.characteristics));
     setIsDraft(editClimb.is_draft ?? false);
     setSavedClimb({
       uuid: editClimb.uuid,

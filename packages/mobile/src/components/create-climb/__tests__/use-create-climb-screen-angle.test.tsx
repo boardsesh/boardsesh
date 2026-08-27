@@ -68,6 +68,9 @@ vi.mock('@boardsesh/shared-schema', () => ({
   CLIMB_CHARACTERISTICS: { NO_KICKBOARD: 'no_kickboard', CAMPUS: 'campus', NO_MATCH: 'no_match' },
   hasCharacteristic: (characteristics: string[] | null | undefined, token: string) =>
     !!characteristics && characteristics.includes(token),
+  isNoKickboard: (characteristics: string[] | null | undefined) =>
+    !!characteristics && characteristics.includes('no_kickboard'),
+  isCampus: (characteristics: string[] | null | undefined) => !!characteristics && characteristics.includes('campus'),
   withCharacteristic: (characteristics: string[] | null | undefined, token: string, enabled: boolean) => {
     const current = characteristics ? [...characteristics] : [];
     if (!enabled) return current.filter((existing) => existing !== token);
