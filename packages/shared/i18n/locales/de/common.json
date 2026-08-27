@@ -16,10 +16,123 @@
       "development": "Entwicklung",
       "metroServersTitle": "Metro-Server",
       "metroServersSubtitle": "Zwischen Tailnet-Bundlern wechseln",
+      "boardLook": {
+        "title": "Board-Look",
+        "rowSubtitleShort": "Wie dein Board aussieht, plus Farben und Formen",
+        "description": "Leg fest, wie beleuchtete Griffe auf deinem Board aussehen, und stelle jedes Detail ein.",
+        "rendererUnavailable": {
+          "title": "App aktualisieren",
+          "body": "Diese Version kann den Boardsesh-Look noch nicht zeichnen. Aktualisiere Boardsesh, um ihn freizuschalten — bis dahin zeigt dein Board den klassischen Look."
+        },
+        "mode": {
+          "title": "Darstellung",
+          "options": {
+            "automatic": "Automatisch",
+            "classic": "Klassisch",
+            "boardsesh": "Boardsesh"
+          },
+          "captionAutomaticClassic": "Automatisch: aktuell Klassisch",
+          "captionAutomaticBoardsesh": "Automatisch: aktuell Boardsesh"
+        },
+        "presets": {
+          "title": "Vorgaben",
+          "custom": "Eigene",
+          "boardsesh": "Boardsesh",
+          "bold": "Kräftig",
+          "subtle": "Dezent",
+          "maxContrast": "Maximaler Kontrast",
+          "classic": "Klassisch"
+        },
+        "glowVeil": {
+          "title": "Leuchten & Schleier",
+          "falloff": {
+            "title": "Leuchtverlauf",
+            "options": {
+              "default": "Standard",
+              "soft": "Weich",
+              "plateau": "Plateau"
+            }
+          },
+          "reach": {
+            "title": "Leuchtreichweite",
+            "value": "{{value}}x"
+          },
+          "plateauShare": {
+            "title": "Plateau-Anteil",
+            "value": "{{value}}%"
+          },
+          "veil": {
+            "title": "Board-Schleier",
+            "options": {
+              "auto": "Automatisch",
+              "off": "Aus",
+              "soft": "Weich",
+              "strong": "Stark",
+              "custom": "Eigene"
+            }
+          },
+          "veilOpacity": {
+            "title": "Schleierstärke",
+            "value": "{{value}}%"
+          }
+        },
+        "marks": {
+          "title": "Markierungen",
+          "style": {
+            "title": "Markierungsstil",
+            "options": {
+              "glow": "Leuchten",
+              "glowFill": "Leuchten + Füllung",
+              "fill": "Füllung"
+            }
+          },
+          "fillOpacity": {
+            "title": "Füllstärke",
+            "value": "{{value}}%"
+          },
+          "softDisc": {
+            "label": "Weiche Scheibe",
+            "subtitle": "Fügt unter jeder Markierung eine weiche Leuchtscheibe hinzu."
+          },
+          "smallHoldBoost": {
+            "label": "Boost für kleine Griffe",
+            "subtitle": "Gibt winzigen Griffen ein stärkeres Leuchten, damit sie nicht verschwinden."
+          },
+          "ledDots": {
+            "label": "LED-Punkte abdecken",
+            "subtitle": "Blendet die hellen LED-Punkte der Board-Grafik auf unbeleuchteten Griffen aus."
+          },
+          "thumbnailStyle": {
+            "title": "Listen-Vorschaustil",
+            "options": {
+              "fill": "Füllung",
+              "glow": "Leuchten"
+            }
+          }
+        },
+        "accessibility": {
+          "title": "Barrierefreiheit",
+          "classicOnlyNote": "Markerform, Strichstärke und Größe gelten nur für die klassische Darstellung. Bei Boardsesh ist die Silhouette des beleuchteten Griffs selbst die Form — aktiviere unten die Rollen-Symbole für einen formbasierten Hinweis.",
+          "roleGlyphs": {
+            "label": "Rollen-Symbole",
+            "note": "Fügt jedem beleuchteten Griff eine Form hinzu — einen Ring, einen Balken oder ein X — damit sich die Rollen auch ohne Farbe unterscheiden lassen."
+          },
+          "cvdPalette": {
+            "title": "Farbsehschwäche-Paletten",
+            "subtitle": "Wende eine für Farbsehschwächen geeignete Palette auf alle vier Griff-Rollen gleichzeitig an.",
+            "note": "Das beleuchtet auch dein Board in diesen Farben — genau wie wenn du jede Farbe von Hand einstellst.",
+            "presets": {
+              "protanopia": "Protanopie",
+              "deuteranopia": "Deuteranopie",
+              "tritanopia": "Tritanopie",
+              "monochrome": "Monochrom"
+            }
+          }
+        },
+        "resetAll": "Board-Look zurücksetzen"
+      },
       "accessibility": {
         "title": "Barrierefreiheit",
-        "description": "Wähle Griff-Farben und Marker-Formen, die sich leichter unterscheiden lassen. Farbänderungen wirken sich auch auf die Beleuchtung deines Boards aus (außer bei MoonBoards); Form, Größe und Strichstärke ändern nur die Anzeige in der App.",
-        "rowSubtitleShort": "Griff-Farben und -Formen für Farbsehschwächen",
         "markersTitle": "Griff-Marker",
         "resetAll": "Griff-Marker zurücksetzen",
         "save": "Marker speichern",

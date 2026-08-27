@@ -16,10 +16,123 @@
       "development": "Development",
       "metroServersTitle": "Metro servers",
       "metroServersSubtitle": "Switch between Tailnet bundlers",
+      "boardLook": {
+        "title": "Board look",
+        "rowSubtitleShort": "How your board renders, plus colours and shapes",
+        "description": "Choose how lit holds render on your board, and dial in every part of the look.",
+        "rendererUnavailable": {
+          "title": "Update the app",
+          "body": "This build can't draw the Boardsesh look yet. Update Boardsesh to unlock it — for now your board renders in Classic."
+        },
+        "mode": {
+          "title": "Render",
+          "options": {
+            "automatic": "Automatic",
+            "classic": "Classic",
+            "boardsesh": "Boardsesh"
+          },
+          "captionAutomaticClassic": "Automatic: currently Classic",
+          "captionAutomaticBoardsesh": "Automatic: currently Boardsesh"
+        },
+        "presets": {
+          "title": "Presets",
+          "custom": "Custom",
+          "boardsesh": "Boardsesh",
+          "bold": "Bold",
+          "subtle": "Subtle",
+          "maxContrast": "Max contrast",
+          "classic": "Classic"
+        },
+        "glowVeil": {
+          "title": "Glow & veil",
+          "falloff": {
+            "title": "Glow falloff",
+            "options": {
+              "default": "Default",
+              "soft": "Soft",
+              "plateau": "Plateau"
+            }
+          },
+          "reach": {
+            "title": "Glow reach",
+            "value": "{{value}}x"
+          },
+          "plateauShare": {
+            "title": "Plateau share",
+            "value": "{{value}}%"
+          },
+          "veil": {
+            "title": "Board veil",
+            "options": {
+              "auto": "Auto",
+              "off": "Off",
+              "soft": "Soft",
+              "strong": "Strong",
+              "custom": "Custom"
+            }
+          },
+          "veilOpacity": {
+            "title": "Veil strength",
+            "value": "{{value}}%"
+          }
+        },
+        "marks": {
+          "title": "Marks",
+          "style": {
+            "title": "Mark style",
+            "options": {
+              "glow": "Glow",
+              "glowFill": "Glow + fill",
+              "fill": "Fill"
+            }
+          },
+          "fillOpacity": {
+            "title": "Fill strength",
+            "value": "{{value}}%"
+          },
+          "softDisc": {
+            "label": "Soft disc",
+            "subtitle": "Add a soft glow disc under each mark."
+          },
+          "smallHoldBoost": {
+            "label": "Small-hold boost",
+            "subtitle": "Give tiny holds a bigger glow so they don't disappear."
+          },
+          "ledDots": {
+            "label": "Cover LED dots",
+            "subtitle": "Hide the board art's own bright LED dots on unlit holds."
+          },
+          "thumbnailStyle": {
+            "title": "List thumbnail style",
+            "options": {
+              "fill": "Fill",
+              "glow": "Glow"
+            }
+          }
+        },
+        "accessibility": {
+          "title": "Accessibility",
+          "classicOnlyNote": "Marker shape, brush, and size only apply to the Classic render. In Boardsesh, the lit hold's own silhouette is the shape — turn on role glyphs below for a shape-based cue instead.",
+          "roleGlyphs": {
+            "label": "Role glyphs",
+            "note": "Adds a shape to each lit hold — a ring, bar, or X — so roles stay easy to tell apart without colour."
+          },
+          "cvdPalette": {
+            "title": "Colour-vision palettes",
+            "subtitle": "Apply a colour-blind-friendly palette to all four hold roles at once.",
+            "note": "This also lights your board in these colours, just like setting each colour by hand.",
+            "presets": {
+              "protanopia": "Protanopia",
+              "deuteranopia": "Deuteranopia",
+              "tritanopia": "Tritanopia",
+              "monochrome": "Monochrome"
+            }
+          }
+        },
+        "resetAll": "Reset board look"
+      },
       "accessibility": {
         "title": "Accessibility",
-        "description": "Pick hold colours and marker shapes that are easier to tell apart. Colour changes also light up your board (except for MoonBoards); shape, size, and brush only change the in-app overlay.",
-        "rowSubtitleShort": "Hold colours and shapes for colour vision",
         "markersTitle": "Hold markers",
         "resetAll": "Reset hold markers",
         "save": "Save marker",

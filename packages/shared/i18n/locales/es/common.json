@@ -195,10 +195,123 @@
       "development": "Desarrollo",
       "metroServersTitle": "Servidores Metro",
       "metroServersSubtitle": "Cambia entre bundlers de Tailnet",
+      "boardLook": {
+        "title": "Aspecto del plafón",
+        "rowSubtitleShort": "Cómo se ve tu plafón, además de colores y formas",
+        "description": "Elige cómo se ven las presas encendidas en tu plafón y ajusta cada detalle del aspecto.",
+        "rendererUnavailable": {
+          "title": "Actualiza la app",
+          "body": "Esta versión todavía no puede dibujar el aspecto Boardsesh. Actualiza Boardsesh para desbloquearlo — por ahora tu plafón se ve en modo Clásico."
+        },
+        "mode": {
+          "title": "Renderizado",
+          "options": {
+            "automatic": "Automático",
+            "classic": "Clásico",
+            "boardsesh": "Boardsesh"
+          },
+          "captionAutomaticClassic": "Automático: actualmente Clásico",
+          "captionAutomaticBoardsesh": "Automático: actualmente Boardsesh"
+        },
+        "presets": {
+          "title": "Preajustes",
+          "custom": "Personalizado",
+          "boardsesh": "Boardsesh",
+          "bold": "Intenso",
+          "subtle": "Sutil",
+          "maxContrast": "Máximo contraste",
+          "classic": "Clásico"
+        },
+        "glowVeil": {
+          "title": "Resplandor y velo",
+          "falloff": {
+            "title": "Caída del resplandor",
+            "options": {
+              "default": "Predeterminado",
+              "soft": "Suave",
+              "plateau": "Meseta"
+            }
+          },
+          "reach": {
+            "title": "Alcance del resplandor",
+            "value": "{{value}}x"
+          },
+          "plateauShare": {
+            "title": "Parte plana",
+            "value": "{{value}}%"
+          },
+          "veil": {
+            "title": "Velo del plafón",
+            "options": {
+              "auto": "Automático",
+              "off": "Desactivado",
+              "soft": "Suave",
+              "strong": "Intenso",
+              "custom": "Personalizado"
+            }
+          },
+          "veilOpacity": {
+            "title": "Intensidad del velo",
+            "value": "{{value}}%"
+          }
+        },
+        "marks": {
+          "title": "Marcas",
+          "style": {
+            "title": "Estilo de marca",
+            "options": {
+              "glow": "Resplandor",
+              "glowFill": "Resplandor + relleno",
+              "fill": "Relleno"
+            }
+          },
+          "fillOpacity": {
+            "title": "Intensidad del relleno",
+            "value": "{{value}}%"
+          },
+          "softDisc": {
+            "label": "Disco suave",
+            "subtitle": "Añade un disco de resplandor suave debajo de cada marca."
+          },
+          "smallHoldBoost": {
+            "label": "Refuerzo para presas pequeñas",
+            "subtitle": "Dales a las presas diminutas un resplandor más grande para que no desaparezcan."
+          },
+          "ledDots": {
+            "label": "Cubrir puntos LED",
+            "subtitle": "Oculta los puntos LED brillantes del propio dibujo del plafón en las presas apagadas."
+          },
+          "thumbnailStyle": {
+            "title": "Estilo de miniatura en listas",
+            "options": {
+              "fill": "Relleno",
+              "glow": "Resplandor"
+            }
+          }
+        },
+        "accessibility": {
+          "title": "Accesibilidad",
+          "classicOnlyNote": "La forma, el grosor y el tamaño del marcador solo se aplican al renderizado Clásico. En Boardsesh, la silueta de la propia presa encendida es la forma — activa los glifos de rol de abajo para tener una pista basada en formas.",
+          "roleGlyphs": {
+            "label": "Glifos de rol",
+            "note": "Añade una forma a cada presa encendida — un anillo, una barra o una X — para que los roles se sigan distinguiendo sin depender del color."
+          },
+          "cvdPalette": {
+            "title": "Paletas para daltonismo",
+            "subtitle": "Aplica una paleta apta para daltonismo a los cuatro roles de presa a la vez.",
+            "note": "Esto también enciende tu plafón con estos colores, igual que si ajustaras cada color a mano.",
+            "presets": {
+              "protanopia": "Protanopía",
+              "deuteranopia": "Deuteranopía",
+              "tritanopia": "Tritanopía",
+              "monochrome": "Monocromo"
+            }
+          }
+        },
+        "resetAll": "Restablecer aspecto del plafón"
+      },
       "accessibility": {
         "title": "Accesibilidad",
-        "description": "Elige colores de presas y formas de marcadores más fáciles de distinguir. Los cambios de color también encienden tu plafón; la forma, el tamaño y el grosor solo cambian la superposición de la app.",
-        "rowSubtitleShort": "Colores y formas de presas para la visión del color",
         "markersTitle": "Marcadores de presa",
         "resetAll": "Restablecer marcadores de presa",
         "save": "Guardar marcador",
