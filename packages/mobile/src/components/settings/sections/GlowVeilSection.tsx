@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SectionHeader } from '../../SectionHeader';
@@ -49,13 +49,22 @@ export function GlowVeilSection({ boardsesh, effectiveGlowFalloff, setBoardseshF
     [t],
   );
 
-  const reach = useCommittedSliderValue(boardsesh.glowReach, (value) => setBoardseshField('glowReach', value));
-  const plateauShare = useCommittedSliderValue(boardsesh.plateauShare, (value) =>
-    setBoardseshField('plateauShare', value),
+  // Hoisted (not inline) so `commit`'s identity is stable across renders —
+  // `useCommittedSliderValue`'s `handleChangeEnd` memoizes on `commit`, and an
+  // inline arrow here would recreate that memo (and the slider's PanResponder,
+  // which depends on `onChangeEnd`) every render for nothing.
+  const commitGlowReach = useCallback((value: number) => setBoardseshField('glowReach', value), [setBoardseshField]);
+  const commitPlateauShare = useCallback(
+    (value: number) => setBoardseshField('plateauShare', value),
+    [setBoardseshField],
   );
-  const veilOpacity = useCommittedSliderValue(boardsesh.veilOpacity, (value) =>
-    setBoardseshField('veilOpacity', value),
+  const commitVeilOpacity = useCallback(
+    (value: number) => setBoardseshField('veilOpacity', value),
+    [setBoardseshField],
   );
+  const reach = useCommittedSliderValue(boardsesh.glowReach, commitGlowReach);
+  const plateauShare = useCommittedSliderValue(boardsesh.plateauShare, commitPlateauShare);
+  const veilOpacity = useCommittedSliderValue(boardsesh.veilOpacity, commitVeilOpacity);
 
   return (
     <View style={styles.section}>

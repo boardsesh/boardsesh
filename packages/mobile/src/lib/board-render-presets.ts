@@ -14,7 +14,7 @@ import {
  * uses — so applying one always lands on an exact, reproducible bundle rather
  * than layering on top of whatever the climber had before.
  */
-export type BoardRenderPresetId = 'boardsesh' | 'bold' | 'subtle' | 'max-contrast' | 'classic';
+export type BoardRenderPresetId = 'boardsesh' | 'bold' | 'subtle' | 'max-contrast';
 
 export type BoardRenderPreset = {
   id: BoardRenderPresetId;
@@ -62,11 +62,6 @@ export const BOARD_RENDER_PRESETS: readonly BoardRenderPreset[] = [
         roleGlyphs: true,
       }),
     },
-  },
-  {
-    id: 'classic',
-    labelI18nKey: 'mobile.more.boardLook.presets.classic',
-    values: { mode: 'classic', boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS },
   },
 ] as const;
 

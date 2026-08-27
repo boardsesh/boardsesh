@@ -219,8 +219,7 @@
           "boardsesh": "Boardsesh",
           "bold": "Intenso",
           "subtle": "Sutil",
-          "maxContrast": "Máximo contraste",
-          "classic": "Clásico"
+          "maxContrast": "Máximo contraste"
         },
         "glowVeil": {
           "title": "Resplandor y velo",
@@ -299,7 +298,7 @@
           "cvdPalette": {
             "title": "Paletas para daltonismo",
             "subtitle": "Aplica una paleta apta para daltonismo a los cuatro roles de presa a la vez.",
-            "note": "Esto también enciende tu plafón con estos colores, igual que si ajustaras cada color a mano.",
+            "note": "Esto también enciende tu plafón con estos colores, igual que si ajustaras cada color a mano, excepto los MoonBoard, que conservan sus propios LED.",
             "presets": {
               "protanopia": "Protanopía",
               "deuteranopia": "Deuteranopía",

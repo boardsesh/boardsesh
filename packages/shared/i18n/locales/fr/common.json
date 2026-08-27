@@ -17,7 +17,7 @@
       "metroServersTitle": "Serveurs Metro",
       "metroServersSubtitle": "Basculer entre les bundlers Tailnet",
       "boardLook": {
-        "title": "Look du board",
+        "title": "Look de la board",
         "rowSubtitleShort": "Le rendu de ta board, plus les couleurs et les formes",
         "description": "Choisis comment les prises allumées s'affichent sur ta board, et règle chaque détail du rendu.",
         "rendererUnavailable": {
@@ -40,8 +40,7 @@
           "boardsesh": "Boardsesh",
           "bold": "Intense",
           "subtle": "Discret",
-          "maxContrast": "Contraste max",
-          "classic": "Classique"
+          "maxContrast": "Contraste max"
         },
         "glowVeil": {
           "title": "Lueur et voile",
@@ -120,7 +119,7 @@
           "cvdPalette": {
             "title": "Palettes daltonisme",
             "subtitle": "Applique une palette adaptée au daltonisme aux quatre rôles de prise à la fois.",
-            "note": "Ça allume aussi ta board dans ces couleurs, exactement comme si tu réglais chaque couleur à la main.",
+            "note": "Ça allume aussi ta board dans ces couleurs, exactement comme si tu réglais chaque couleur à la main — sauf les MoonBoard, qui gardent leurs propres LED.",
             "presets": {
               "protanopia": "Protanopie",
               "deuteranopia": "Deutéranopie",
@@ -129,7 +128,7 @@
             }
           }
         },
-        "resetAll": "Réinitialiser le look du board"
+        "resetAll": "Réinitialiser le look de la board"
       },
       "accessibility": {
         "title": "Accessibilité",

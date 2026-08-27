@@ -59,6 +59,7 @@ describe('color-contrast-oracle CVD ΔE00 (vs spike selftest)', () => {
     ['grasshopper HAND/FOOT Viénot protan', '#4455FF', '#FF00FF', 'vienot.protan' as const, 3.2],
     ['grasshopper HAND/FOOT Machado protan', '#4455FF', '#FF00FF', 'machado.protan' as const, 3.8],
     ['grasshopper HAND/FOOT Viénot deutan', '#4455FF', '#FF00FF', 'vienot.deutan' as const, 20.6],
+    ['tension HAND/FOOT Viénot deutan', '#4444FF', '#FF00FF', 'vienot.deutan' as const, 24.3],
     ['grasshopper STARTING/FINISH Viénot deutan', '#00DD00', '#FF0000', 'vienot.deutan' as const, 12.6],
     ['kilter STARTING/FOOT Viénot deutan', '#00FF00', '#FFAA00', 'vienot.deutan' as const, 4.6],
     ['kilter STARTING/FOOT Viénot protan', '#00FF00', '#FFAA00', 'vienot.protan' as const, 14.6],

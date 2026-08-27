@@ -36,13 +36,7 @@ afterEach(() => {
 
 describe('BOARD_RENDER_PRESETS', () => {
   it('has one entry per documented preset id', () => {
-    expect(BOARD_RENDER_PRESETS.map((preset) => preset.id)).toEqual([
-      'boardsesh',
-      'bold',
-      'subtle',
-      'max-contrast',
-      'classic',
-    ]);
+    expect(BOARD_RENDER_PRESETS.map((preset) => preset.id)).toEqual(['boardsesh', 'bold', 'subtle', 'max-contrast']);
   });
 
   it('boardsesh preset is the mode switch plus untouched Boardsesh defaults', () => {
@@ -83,11 +77,6 @@ describe('BOARD_RENDER_PRESETS', () => {
       fillOpacity: 0.85,
       roleGlyphs: true,
     });
-  });
-
-  it('classic preset: mode classic, Boardsesh block reset to defaults', () => {
-    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'classic')!;
-    expect(preset.values).toEqual({ mode: 'classic', boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS });
   });
 
   it('every preset value is already sanitary — applying one never gets silently altered on write', async () => {
@@ -133,8 +122,8 @@ describe('matchingPresetId', () => {
     expect(matchingPresetId({ mode: 'boardsesh', boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS })).toBe('boardsesh');
   });
 
-  it('matches classic against the plain defaults with mode set to classic', () => {
-    expect(matchingPresetId({ mode: 'classic', boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS })).toBe('classic');
+  it('is custom for Classic mode — dropping the classic preset means no preset row ever needs to highlight it (the row only shows in Boardsesh)', () => {
+    expect(matchingPresetId({ mode: 'classic', boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS })).toBe('custom');
   });
 
   it('does not match "automatic" (mode: default) to any preset even with default fields', () => {

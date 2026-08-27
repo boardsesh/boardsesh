@@ -82,7 +82,7 @@ export function ModeAndPresetsSection({
         ) : null}
       </View>
 
-      {settings.mode === 'boardsesh' ? (
+      {effectiveMode === 'boardsesh' ? (
         <View style={styles.presetsSection}>
           <SectionHeader title={t('mobile.more.boardLook.presets.title')} />
           <View style={styles.presetRow}>

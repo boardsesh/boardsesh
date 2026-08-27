@@ -40,8 +40,7 @@
           "boardsesh": "Boardsesh",
           "bold": "Bold",
           "subtle": "Subtle",
-          "maxContrast": "Max contrast",
-          "classic": "Classic"
+          "maxContrast": "Max contrast"
         },
         "glowVeil": {
           "title": "Glow & veil",
@@ -120,7 +119,7 @@
           "cvdPalette": {
             "title": "Colour-vision palettes",
             "subtitle": "Apply a colour-blind-friendly palette to all four hold roles at once.",
-            "note": "This also lights your board in these colours, just like setting each colour by hand.",
+            "note": "This also lights your board in these colours, just like setting each colour by hand — except MoonBoards, which keep their own LEDs.",
             "presets": {
               "protanopia": "Protanopia",
               "deuteranopia": "Deuteranopia",

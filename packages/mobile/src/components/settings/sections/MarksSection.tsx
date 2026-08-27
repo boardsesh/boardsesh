@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SectionHeader } from '../../SectionHeader';
@@ -45,9 +45,15 @@ export function MarksSection({ boardsesh, setBoardseshField }: MarksSectionProps
     [t],
   );
 
-  const fillOpacity = useCommittedSliderValue(boardsesh.fillOpacity, (value) =>
-    setBoardseshField('fillOpacity', value),
+  // Hoisted (not inline) so `commit`'s identity is stable across renders —
+  // `useCommittedSliderValue`'s `handleChangeEnd` memoizes on `commit`, and an
+  // inline arrow here would recreate that memo (and the slider's PanResponder,
+  // which depends on `onChangeEnd`) every render for nothing.
+  const commitFillOpacity = useCallback(
+    (value: number) => setBoardseshField('fillOpacity', value),
+    [setBoardseshField],
   );
+  const fillOpacity = useCommittedSliderValue(boardsesh.fillOpacity, commitFillOpacity);
 
   return (
     <View style={styles.section}>

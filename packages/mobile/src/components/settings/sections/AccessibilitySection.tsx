@@ -451,7 +451,7 @@ export function AccessibilitySection({ effectiveMode, boardsesh, setBoardseshFie
             </>
           ) : null}
         </View>
-        {hasMarkerOverrides && isClassic ? (
+        {hasMarkerOverrides ? (
           <Pressable accessibilityRole="button" onPress={resetOverrides} style={styles.resetButton}>
             <Text variant="footnote" color={systemColors.accent}>
               {t('mobile.more.accessibility.resetAll')}

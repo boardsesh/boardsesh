@@ -40,8 +40,7 @@
           "boardsesh": "Boardsesh",
           "bold": "Kräftig",
           "subtle": "Dezent",
-          "maxContrast": "Maximaler Kontrast",
-          "classic": "Klassisch"
+          "maxContrast": "Maximaler Kontrast"
         },
         "glowVeil": {
           "title": "Leuchten & Schleier",
@@ -120,7 +119,7 @@
           "cvdPalette": {
             "title": "Farbsehschwäche-Paletten",
             "subtitle": "Wende eine für Farbsehschwächen geeignete Palette auf alle vier Griff-Rollen gleichzeitig an.",
-            "note": "Das beleuchtet auch dein Board in diesen Farben — genau wie wenn du jede Farbe von Hand einstellst.",
+            "note": "Das beleuchtet auch dein Board in diesen Farben — genau wie wenn du jede Farbe von Hand einstellst. Nur MoonBoards behalten dabei ihre eigenen LEDs.",
             "presets": {
               "protanopia": "Protanopie",
               "deuteranopia": "Deuteranopie",

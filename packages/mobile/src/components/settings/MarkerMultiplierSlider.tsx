@@ -55,6 +55,14 @@ export function MarkerMultiplierSlider({
   const { systemColors } = useTheme();
   const trackRef = useRef<View>(null);
   const trackLayoutRef = useRef<{ pageLeft: number; width: number } | null>(null);
+  // The last value `applyPageX` actually applied via `onChange`. RN seeds
+  // `gestureState.moveX` at 0 and only updates it on a touch-move, so a tap
+  // that releases (or is interrupted) without ever moving reports
+  // `moveX === 0` — recomputing the release/terminate value from that
+  // coordinate would silently commit `min`. Committing this ref instead means
+  // release and terminate always land on wherever the gesture actually left
+  // the thumb (the grant coordinate, if the touch never moved).
+  const lastAppliedValueRef = useRef<number | null>(null);
   const ratio = (value - min) / (max - min);
 
   const valueFromPageX = useCallback(
@@ -69,7 +77,9 @@ export function MarkerMultiplierSlider({
   const applyPageX = useCallback(
     (pageX: number, trackLayout: { pageLeft: number; width: number }) => {
       const nextValue = valueFromPageX(pageX, trackLayout);
-      if (nextValue !== null) onChange(nextValue);
+      if (nextValue === null) return;
+      lastAppliedValueRef.current = nextValue;
+      onChange(nextValue);
     },
     [onChange, valueFromPageX],
   );
@@ -98,16 +108,11 @@ export function MarkerMultiplierSlider({
     [applyPageX, measureTrackAndSetFromPageX],
   );
 
-  const commitFromPageX = useCallback(
-    (pageX: number) => {
-      if (!onChangeEnd) return;
-      const trackLayout = trackLayoutRef.current;
-      if (!trackLayout) return;
-      const finalValue = valueFromPageX(pageX, trackLayout);
-      if (finalValue !== null) onChangeEnd(finalValue);
-    },
-    [onChangeEnd, valueFromPageX],
-  );
+  const commitLastAppliedValue = useCallback(() => {
+    if (!onChangeEnd) return;
+    const finalValue = lastAppliedValueRef.current;
+    if (finalValue !== null) onChangeEnd(finalValue);
+  }, [onChangeEnd]);
 
   const panResponder = useMemo(
     () =>
@@ -116,10 +121,10 @@ export function MarkerMultiplierSlider({
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: (event: GestureResponderEvent) => measureTrackAndSetFromPageX(event.nativeEvent.pageX),
         onPanResponderMove: (_event, gestureState) => setFromPageX(gestureState.moveX),
-        onPanResponderRelease: (_event, gestureState) => commitFromPageX(gestureState.moveX),
-        onPanResponderTerminate: (_event, gestureState) => commitFromPageX(gestureState.moveX),
+        onPanResponderRelease: () => commitLastAppliedValue(),
+        onPanResponderTerminate: () => commitLastAppliedValue(),
       }),
-    [commitFromPageX, measureTrackAndSetFromPageX, setFromPageX],
+    [commitLastAppliedValue, measureTrackAndSetFromPageX, setFromPageX],
   );
 
   const handleAccessibilityAction = useCallback(

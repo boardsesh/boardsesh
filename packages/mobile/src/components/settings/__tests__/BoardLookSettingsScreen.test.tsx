@@ -9,7 +9,7 @@
 // Classic controls that actually apply). Glow & veil and Marks stay visible in
 // every mode so a climber can tune Boardsesh before switching to it.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { BoardRenderSettings, EffectiveBoardRenderSettings } from '../../../lib/board-render-settings';
 
@@ -252,17 +252,19 @@ describe('BoardLookSettingsScreen — Boardsesh mode (renderer available)', () =
 });
 
 describe('BoardLookSettingsScreen — Boardsesh requested but the renderer cannot draw it', () => {
-  it('shows the banner and disables the Boardsesh segment, but still shows Classic rows (effective mode wins)', () => {
+  it('shows the banner and disables the Boardsesh segment, but still shows Classic rows and hides presets (effective mode wins)', () => {
     setState({ mode: 'boardsesh', effectiveMode: 'classic', boardseshRendererAvailable: false });
     const { queryByText } = render(<BoardLookSettingsScreen />);
 
     expect(queryByText('mobile.more.boardLook.rendererUnavailable.title')).not.toBeNull();
-    // The picker itself still reads "Boardsesh", so the preset row (gated on
-    // the raw setting) stays up even though nothing Boardsesh is drawing yet.
-    expect(queryByText('mobile.more.boardLook.presets.title')).not.toBeNull();
-    // But the marker rows are gated on the EFFECTIVE mode, which fell back to
-    // classic — they must come back, not stay hidden under a mode that isn't
-    // actually rendering.
+    // The preset row is gated on the EFFECTIVE mode, not the raw picker: the
+    // picker still reads "Boardsesh", but nothing Boardsesh is actually
+    // drawing, so the row that only makes sense while it's on screen stays
+    // hidden.
+    expect(queryByText('mobile.more.boardLook.presets.title')).toBeNull();
+    // The marker rows are also gated on the EFFECTIVE mode, which fell back
+    // to classic — they must come back, not stay hidden under a mode that
+    // isn't actually rendering.
     expect(queryByText('mobile.more.accessibility.brush.title')).not.toBeNull();
     expect(queryByText('mobile.more.boardLook.accessibility.classicOnlyNote')).toBeNull();
 
@@ -272,12 +274,33 @@ describe('BoardLookSettingsScreen — Boardsesh requested but the renderer canno
 });
 
 describe('BoardLookSettingsScreen — Automatic mode', () => {
-  it('captions which drawing Automatic currently resolves to, and hides the preset row', () => {
+  it('captions which drawing Automatic currently resolves to, and hides the preset row when it resolves to Classic', () => {
     setState({ mode: 'default', effectiveMode: 'classic', boardseshRendererAvailable: true });
     const { queryByText } = render(<BoardLookSettingsScreen />);
 
     expect(queryByText('mobile.more.boardLook.mode.captionAutomaticClassic')).not.toBeNull();
     expect(queryByText('mobile.more.boardLook.mode.captionAutomaticBoardsesh')).toBeNull();
     expect(queryByText('mobile.more.boardLook.presets.title')).toBeNull();
+  });
+
+  it('shows the preset row when Automatic resolves to Boardsesh (e.g. the rollout flag is on)', () => {
+    setState({ mode: 'default', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
+    const { queryByText } = render(<BoardLookSettingsScreen />);
+
+    expect(queryByText('mobile.more.boardLook.mode.captionAutomaticBoardsesh')).not.toBeNull();
+    expect(queryByText('mobile.more.boardLook.mode.captionAutomaticClassic')).toBeNull();
+    expect(queryByText('mobile.more.boardLook.presets.title')).not.toBeNull();
+  });
+});
+
+describe('BoardLookSettingsScreen — Reset all', () => {
+  it('resets both the render settings store and the hold colour/shape overrides', () => {
+    setState({ mode: 'boardsesh', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
+    const { getByText } = render(<BoardLookSettingsScreen />);
+
+    fireEvent.click(getByText('mobile.more.boardLook.resetAll'));
+
+    expect(boardRenderSettingsState.reset).toHaveBeenCalledTimes(1);
+    expect(holdColorOverridesState.resetOverrides).toHaveBeenCalledTimes(1);
   });
 });
