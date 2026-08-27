@@ -1,6 +1,6 @@
-use wasm_bindgen::prelude::*;
 use board_renderer_core::renderer::render_overlay as render_overlay_impl;
 use board_renderer_core::types::RenderConfig;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub fn render_overlay(config_json: &str) -> Result<Vec<u8>, JsValue> {

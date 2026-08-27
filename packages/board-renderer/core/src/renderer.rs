@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use tiny_skia::{Color as SkiaColor, FillRule, Paint, PathBuilder, Pixmap, Stroke, Transform};
 
 use crate::frames_parser::parse_frames;
-use crate::types::{HoldData, HoldMarkerShape, HoldRenderStyle, RenderConfig};
+use crate::types::{BoardRenderMode, HoldData, HoldMarkerShape, HoldRenderStyle, RenderConfig};
 
 // Per-shape scale so every shape covers the same filled AREA as a circle of the
 // given radius (issue #3204). MUST stay in sync with SHAPE_AREA_SCALE in
@@ -52,7 +52,12 @@ fn rounded_polygon_path(vertices: &[(f32, f32)], corner_radius: f32) -> Option<t
     builder.finish()
 }
 
-fn marker_shape_path(shape: HoldMarkerShape, cx: f32, cy: f32, base_r: f32) -> Option<tiny_skia::Path> {
+fn marker_shape_path(
+    shape: HoldMarkerShape,
+    cx: f32,
+    cy: f32,
+    base_r: f32,
+) -> Option<tiny_skia::Path> {
     // Equal-area scaling — circle is the reference (scale 1.0), others grow.
     let r = base_r * shape_area_scale(shape);
     match shape {
@@ -117,6 +122,9 @@ fn marker_shape_path(shape: HoldMarkerShape, cx: f32, cy: f32, base_r: f32) -> O
 /// Render a transparent overlay with hold circles drawn on it.
 /// Returns RGBA pixel data and dimensions (width, height).
 pub fn render_overlay(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
+    if config.render_mode == BoardRenderMode::Boardsesh {
+        return crate::boardsesh::render(config);
+    }
     let output_width = config.output_width;
     let output_height =
         (output_width as f32 * config.board_height / config.board_width).round() as u32;
@@ -155,11 +163,15 @@ pub fn render_overlay(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), Stri
         1.0
     };
 
-    let mut paint = Paint::default();
-    paint.anti_alias = true;
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Paint::default()
+    };
 
-    let mut stroke_style = Stroke::default();
-    stroke_style.width = stroke_width;
+    let stroke_style = Stroke {
+        width: stroke_width,
+        ..Stroke::default()
+    };
 
     for parsed in &parsed_holds {
         let hold = match holds_by_id.get(&parsed.hold_id) {
@@ -217,8 +229,10 @@ pub fn render_overlay(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), Stri
                 paint.set_color(SkiaColor::from_rgba8(color.r, color.g, color.b, 255));
                 pixmap.fill_path(&path, &paint, FillRule::Winding, transform, None);
 
-                let mut marker_stroke = Stroke::default();
-                marker_stroke.width = (stroke_width * 0.45).max(2.0);
+                let marker_stroke = Stroke {
+                    width: (stroke_width * 0.45).max(2.0),
+                    ..Stroke::default()
+                };
                 pixmap.stroke_path(&path, &paint, &marker_stroke, transform, None);
             }
         }
@@ -241,6 +255,7 @@ mod tests {
                 color: "#00FF00".into(),
                 render_style: Default::default(),
                 shape: Default::default(),
+                role: Default::default(),
             },
         );
         hold_state_map.insert(
@@ -249,6 +264,7 @@ mod tests {
                 color: "#00FFFF".into(),
                 render_style: Default::default(),
                 shape: Default::default(),
+                role: Default::default(),
             },
         );
         hold_state_map.insert(
@@ -257,6 +273,7 @@ mod tests {
                 color: "#FF00FF".into(),
                 render_style: Default::default(),
                 shape: Default::default(),
+                role: Default::default(),
             },
         );
 
@@ -276,6 +293,9 @@ mod tests {
                     cx: 200.0,
                     cy: 300.0,
                     r: 20.0,
+                    outline: None,
+                    led: None,
+                    silhouette_lightness: None,
                 },
                 HoldData {
                     id: 2,
@@ -283,6 +303,9 @@ mod tests {
                     cx: 500.0,
                     cy: 600.0,
                     r: 20.0,
+                    outline: None,
+                    led: None,
+                    silhouette_lightness: None,
                 },
                 HoldData {
                     id: 3,
@@ -290,9 +313,21 @@ mod tests {
                     cx: 800.0,
                     cy: 900.0,
                     r: 20.0,
+                    outline: None,
+                    led: None,
+                    silhouette_lightness: None,
                 },
             ],
             hold_state_map,
+            render_mode: Default::default(),
+            veil: None,
+            mark_style: None,
+            glow_falloff: Default::default(),
+            glow: Default::default(),
+            fill: Default::default(),
+            glyphs: Default::default(),
+            glyph: Default::default(),
+            led_cover: None,
         }
     }
 
@@ -346,6 +381,7 @@ mod tests {
                 color: "#FFE066".into(),
                 render_style: HoldRenderStyle::AboveMarker,
                 shape: Default::default(),
+                role: Default::default(),
             },
         );
 
@@ -357,6 +393,7 @@ mod tests {
                 color: "#FFE066".into(),
                 render_style: HoldRenderStyle::Circle,
                 shape: Default::default(),
+                role: Default::default(),
             },
         );
 
@@ -423,7 +460,8 @@ mod tests {
 
     #[test]
     fn test_octagon_shape_deserialises() {
-        let info: HoldStateInfo = serde_json::from_str(r##"{"color":"#00FF00","shape":"octagon"}"##).unwrap();
+        let info: HoldStateInfo =
+            serde_json::from_str(r##"{"color":"#00FF00","shape":"octagon"}"##).unwrap();
         assert_eq!(info.shape, HoldMarkerShape::Octagon);
     }
 
@@ -432,7 +470,8 @@ mod tests {
         // A newer JS bundle could send a shape this binary doesn't know; it must
         // deserialise to Unknown (rendered as a circle), not error the whole config.
         let info: HoldStateInfo =
-            serde_json::from_str(r##"{"color":"#00FF00","shape":"hexagram-from-the-future"}"##).unwrap();
+            serde_json::from_str(r##"{"color":"#00FF00","shape":"hexagram-from-the-future"}"##)
+                .unwrap();
         assert_eq!(info.shape, HoldMarkerShape::Unknown);
         let data = render_single_shape(HoldMarkerShape::Unknown);
         assert!(data.chunks(4).any(|pixel| pixel[3] > 0));
@@ -461,9 +500,66 @@ mod tests {
                 color: "#00FF00".into(),
                 render_style: HoldRenderStyle::Circle,
                 shape,
+                role: Default::default(),
             },
         );
         let (data, _, _) = render_overlay(&config).unwrap();
         data
+    }
+
+    fn fnv1a(data: &[u8]) -> u64 {
+        let mut hash: u64 = 0xcbf29ce484222325;
+        for byte in data {
+            hash ^= *byte as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        hash
+    }
+
+    // The classic renderer's pixels are pinned to what origin/main drew before
+    // the Boardsesh mode landed (issue #2202): the new mode dispatches away
+    // before the first classic line runs, so any drift here is a regression in
+    // the drawing every existing overlay cache was built from.
+    #[test]
+    fn classic_render_is_byte_identical_to_the_pre_boardsesh_renderer() {
+        let default = test_config();
+        let mut thumb = test_config();
+        thumb.thumbnail = true;
+        let mut brush = test_config();
+        brush.stroke_width_multiplier = 2.0;
+        let mut sized = test_config();
+        sized.shape_size_multiplier = 1.5;
+        sized.hold_state_map.insert(
+            42,
+            HoldStateInfo {
+                color: "#00FF00".into(),
+                render_style: Default::default(),
+                shape: HoldMarkerShape::Diamond,
+                role: Default::default(),
+            },
+        );
+        let mut aux = test_config();
+        aux.frames = "p1r46p2r43".into();
+        aux.hold_state_map.insert(
+            46,
+            HoldStateInfo {
+                color: "#FFE066".into(),
+                render_style: HoldRenderStyle::AboveMarker,
+                shape: Default::default(),
+                role: Default::default(),
+            },
+        );
+        let pinned: [(&str, RenderConfig, u64); 5] = [
+            ("default", default, 0xa7021078f6d3e015),
+            ("thumb", thumb, 0xcd47e4f3ae20c93c),
+            ("brush", brush, 0xfa54a72bfcfd94f5),
+            ("sized-diamond", sized, 0xd1d311fa3c34b54f),
+            ("above-marker", aux, 0x21a3dcdd48ed8a98),
+        ];
+        for (name, config, expected) in pinned {
+            let (data, width, height) = render_overlay(&config).unwrap();
+            assert_eq!((width, height), (300, 375), "{name}");
+            assert_eq!(fnv1a(&data), expected, "{name}: classic pixels drifted");
+        }
     }
 }
