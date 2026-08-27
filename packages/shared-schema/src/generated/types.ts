@@ -6449,6 +6449,8 @@ export type SaveAuroraCredentialInput = {
 export type SaveClimbInput = {
   angle: Scalars['Int']['input'];
   boardType: Scalars['String']['input'];
+  /** Freely-toggleable characteristics to set at creation. Only CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS are accepted here — no_match is server-derived from description, and MoonBoard method is creation-time-only via SaveMoonBoardClimbInput. */
+  characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
   description?: InputMaybe<Scalars['String']['input']>;
   frames: Scalars['String']['input'];
   framesCount?: InputMaybe<Scalars['Int']['input']>;
@@ -7862,6 +7864,8 @@ export type UpdateBoardInput = {
 export type UpdateClimbInput = {
   angle?: InputMaybe<Scalars['Int']['input']>;
   boardType: Scalars['String']['input'];
+  /** Freely-toggleable characteristics: the full desired boolean state of CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS. Any other characteristic already on the row (no_match, MoonBoard method) is left untouched. */
+  characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
   description?: InputMaybe<Scalars['String']['input']>;
   frames?: InputMaybe<Scalars['String']['input']>;
   framesCount?: InputMaybe<Scalars['Int']['input']>;

@@ -7,6 +7,7 @@ import {
   type UpdateClimbResult,
   SUPPORTED_BOARDS,
   CLIMB_CHARACTERISTICS,
+  TOGGLEABLE_CLIMB_CHARACTERISTICS,
   isNoMatchClimb,
   withCharacteristic,
   withNoMatch,
@@ -155,6 +156,23 @@ export const climbMutations = {
         }
       }
 
+      // Derive no_match from the raw incoming description (may carry the Aurora
+      // "No match\n" prefix) the same way updateClimb does, and merge it with any
+      // client-supplied toggleable tokens (no_kickboard/campus). Without this, a
+      // climb created with no_match AND a toggle stored characteristics=['no_kickboard']
+      // — non-null, so readers that prefer the array over the description fallback
+      // (ClimbAttributeIcons, the is_no_match resolver) silently dropped the
+      // no-match badge until the next edit. no_match is Aurora-family only — this
+      // resolver never serves MoonBoard (that's saveMoonBoardClimb), but the guard
+      // mirrors updateClimb's for the same reason: a "no match" description prefix
+      // on MoonBoard would just be user prose.
+      const isNoMatchFromDesc = validated.boardType !== 'moonboard' && isNoMatchClimb(validated.description);
+      const nextCharacteristics = withCharacteristic(
+        validated.characteristics ?? [],
+        CLIMB_CHARACTERISTICS.NO_MATCH,
+        isNoMatchFromDesc,
+      );
+
       await tx.insert(UNIFIED_TABLES.climbs).values({
         boardType: validated.boardType,
         uuid,
@@ -163,7 +181,7 @@ export const climbMutations = {
         setterId: null,
         setterUsername: preferredSetter,
         name: validated.name,
-        description: validated.description ?? '',
+        description: withNoMatch(validated.description ?? '', false),
         angle: validated.angle,
         framesCount,
         framesPace: validated.framesPace ?? 0,
@@ -174,6 +192,7 @@ export const climbMutations = {
         publishedAt,
         synced: false,
         syncError: null,
+        characteristics: nextCharacteristics.length > 0 ? nextCharacteristics : null,
       });
 
       // Aurora's sync-back round-trip eventually populates board_climb_holds for
@@ -570,24 +589,46 @@ export const climbMutations = {
         publishedAt: nextPublishedAt,
       };
       if (validated.name !== undefined) updateSet.name = validated.name;
+      // Build the characteristics array once so a no_match-from-description
+      // derivation and an explicit characteristics update (no_kickboard/campus)
+      // in the same call compose instead of one clobbering the other. Starts
+      // from the existing row so any other token (MoonBoard method) survives
+      // untouched unless explicitly touched below.
+      let nextCharacteristics = existing.characteristics ? [...existing.characteristics] : [];
+      let characteristicsChanged = false;
+
       if (validated.description !== undefined) {
         // Derive no_match from the raw incoming description (may still carry the
         // Aurora "No match\n" prefix), then strip the prefix from the stored value
         // so characteristics is the sole source of truth going forward.
         const isNoMatchFromDesc = isNoMatchClimb(validated.description);
         updateSet.description = withNoMatch(validated.description, false);
-        // Keep the no_match characteristic in sync, preserving any other tokens
-        // (e.g. a MoonBoard method). no_match is an Aurora-family concept — never
-        // derive it for MoonBoard, where a description starting with "no match" is
-        // just user prose and would otherwise clobber the climb's method token.
+        // no_match is an Aurora-family concept — never derive it for MoonBoard,
+        // where a description starting with "no match" is just user prose and
+        // would otherwise clobber the climb's method token.
         if (validated.boardType !== 'moonboard') {
-          const nextCharacteristics = withCharacteristic(
-            existing.characteristics,
+          nextCharacteristics = withCharacteristic(
+            nextCharacteristics,
             CLIMB_CHARACTERISTICS.NO_MATCH,
             isNoMatchFromDesc,
           );
-          updateSet.characteristics = nextCharacteristics.length > 0 ? nextCharacteristics : null;
+          characteristicsChanged = true;
         }
+      }
+      if (validated.characteristics !== undefined) {
+        // Client sends the full desired boolean state of each freely-toggleable
+        // token; anything else already on the row (no_match, MoonBoard method)
+        // is left alone. `null` (both toggles off) is equivalent to `[]` here —
+        // the field is nullable because clients send explicit null, not omission,
+        // when nothing is toggled on.
+        const desiredCharacteristics = validated.characteristics ?? [];
+        for (const token of TOGGLEABLE_CLIMB_CHARACTERISTICS) {
+          nextCharacteristics = withCharacteristic(nextCharacteristics, token, desiredCharacteristics.includes(token));
+        }
+        characteristicsChanged = true;
+      }
+      if (characteristicsChanged) {
+        updateSet.characteristics = nextCharacteristics.length > 0 ? nextCharacteristics : null;
       }
       if (validated.frames !== undefined) updateSet.frames = validated.frames;
       if (validated.angle !== undefined) updateSet.angle = validated.angle;

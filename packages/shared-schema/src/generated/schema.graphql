@@ -4670,6 +4670,8 @@ input SaveClimbInput {
   framesCount: Int
   framesPace: Int
   angle: Int!
+  "Freely-toggleable characteristics to set at creation. Only CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS are accepted here — no_match is server-derived from description, and MoonBoard method is creation-time-only via SaveMoonBoardClimbInput."
+  characteristics: [String!]
 }
 
 """
@@ -4726,6 +4728,8 @@ input UpdateClimbInput {
   isDraft: Boolean
   framesCount: Int
   framesPace: Int
+  "Freely-toggleable characteristics: the full desired boolean state of CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS. Any other characteristic already on the row (no_match, MoonBoard method) is left untouched."
+  characteristics: [String!]
 }
 
 type UpdateClimbResult {

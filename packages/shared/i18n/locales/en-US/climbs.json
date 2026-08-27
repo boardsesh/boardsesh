@@ -465,6 +465,8 @@
         "attempt": "Tried"
       },
       "noMatch": "No matching",
+      "campus": "Campus",
+      "noKickboard": "No KB",
       "benchmark": "Benchmark",
       "method": {
         "footless": "Footless",
@@ -522,7 +524,11 @@
         "showAllHoldsLabel": "Show all holds",
         "showAllHoldsDescription": "Highlight every tappable hold on the board.",
         "noMatchLabel": "No matching",
-        "noMatchDescription": "Hands can't match on the same hold"
+        "noMatchDescription": "Hands can't match on the same hold",
+        "noKickboardLabel": "No kickboard",
+        "noKickboardDescription": "Feet can't use the kickboard",
+        "campusLabel": "Campus (no feet)",
+        "campusDescription": "Hands only — no feet allowed"
       },
       "drafts": {
         "holds_one": "{{count}} hold",
