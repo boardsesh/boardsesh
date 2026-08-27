@@ -346,6 +346,44 @@ describe('climb mutations', () => {
     ).rejects.toThrow(/duplicate/i);
   });
 
+  it('derives no_match from the description and merges it with a client-supplied toggle on creation', async () => {
+    // Regression: saveClimb used to store ONLY the client-supplied toggleable
+    // tokens, so a climb created with no_match (via the description prefix) AND
+    // a toggle stored characteristics=['no_kickboard'] — non-null, so readers
+    // that prefer the array over the description fallback silently dropped the
+    // no-match badge until the next edit.
+    mockDb.execute.mockResolvedValueOnce([]);
+    mockDb.select.mockReturnValueOnce(
+      createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
+    );
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'kilter',
+          layoutId: 1,
+          name: 'No Match No Kickboard',
+          description: 'No match\nbeta',
+          isDraft: false,
+          frames: 'p1r43',
+          angle: 40,
+          characteristics: ['no_kickboard'],
+        },
+      },
+      makeCtx(),
+    );
+
+    const stored = insertCalls[0].values as { characteristics: string[]; description: string };
+    expect(stored.characteristics.sort()).toEqual(['no_kickboard', 'no_match']);
+    // The prefix is stripped from the stored description — characteristics is
+    // the sole source of truth going forward, matching updateClimb's behavior.
+    expect(stored.description).toBe('beta');
+  });
+
   it('stores non-draft MoonBoard climbs as listed', async () => {
     mockDb.execute.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
     mockDb.select

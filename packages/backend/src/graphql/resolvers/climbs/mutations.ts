@@ -156,6 +156,23 @@ export const climbMutations = {
         }
       }
 
+      // Derive no_match from the raw incoming description (may carry the Aurora
+      // "No match\n" prefix) the same way updateClimb does, and merge it with any
+      // client-supplied toggleable tokens (no_kickboard/campus). Without this, a
+      // climb created with no_match AND a toggle stored characteristics=['no_kickboard']
+      // — non-null, so readers that prefer the array over the description fallback
+      // (ClimbAttributeIcons, the is_no_match resolver) silently dropped the
+      // no-match badge until the next edit. no_match is Aurora-family only — this
+      // resolver never serves MoonBoard (that's saveMoonBoardClimb), but the guard
+      // mirrors updateClimb's for the same reason: a "no match" description prefix
+      // on MoonBoard would just be user prose.
+      const isNoMatchFromDesc = validated.boardType !== 'moonboard' && isNoMatchClimb(validated.description);
+      const nextCharacteristics = withCharacteristic(
+        validated.characteristics ?? [],
+        CLIMB_CHARACTERISTICS.NO_MATCH,
+        isNoMatchFromDesc,
+      );
+
       await tx.insert(UNIFIED_TABLES.climbs).values({
         boardType: validated.boardType,
         uuid,
@@ -164,7 +181,7 @@ export const climbMutations = {
         setterId: null,
         setterUsername: preferredSetter,
         name: validated.name,
-        description: validated.description ?? '',
+        description: withNoMatch(validated.description ?? '', false),
         angle: validated.angle,
         framesCount,
         framesPace: validated.framesPace ?? 0,
@@ -175,8 +192,7 @@ export const climbMutations = {
         publishedAt,
         synced: false,
         syncError: null,
-        characteristics:
-          validated.characteristics && validated.characteristics.length > 0 ? validated.characteristics : null,
+        characteristics: nextCharacteristics.length > 0 ? nextCharacteristics : null,
       });
 
       // Aurora's sync-back round-trip eventually populates board_climb_holds for
