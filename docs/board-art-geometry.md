@@ -59,8 +59,8 @@ against 1080 for most of the catalogue.
 
 `ledBright[placementId]` is `[dx, dy]` in the same units, from the **placement centre** to
 the bright blob's centroid. The board's own LED offset is folded in (on MoonBoard the LED
-sits half a row below the hold (a guarantee for future art: no shipped MoonBoard shard has a bright pixel there, so every MoonBoard `ledBright` is empty), derived from the placement spacing rather than
-hardcoded), so no second table is needed to place the dot.
+sits half a row below the hold, derived from the placement spacing rather than
+hardcoded), so no second table is needed to place the dot. The MoonBoard fold is a guarantee for future art, not a path any shard uses: no shipped MoonBoard shard has a bright pixel there, so every MoonBoard `ledBright` table is empty.
 
 `silhouetteLightness[placementId]` is the alpha-weighted mean OkLab lightness of the art
 inside the traced polygon, 0..1.
