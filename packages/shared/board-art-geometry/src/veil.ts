@@ -41,6 +41,11 @@ export const VEIL_TUNING = {
    * go down with the wall.
    */
   veilMinCoverage: 0.6,
+  /**
+   * Under this share of placements with a reading the mean is a handful of
+   * samples, not a wall (MoonBoard 1-1 has 4 of 198): no veil at all.
+   */
+  veilCoverageFloor: 0.1,
 } as const;
 
 /**
@@ -84,13 +89,14 @@ export type VeilInput = {
  * worth quieting.
  *
  * On the shipped field `#181225` (L 0.200) the catalogue's spike boards come out
- * TB2 Mirror 0.541, Tension Original 0.461, MoonBoard Masters 0.441, Kilter
- * Homewall 0.426, MoonBoard 2016 0.373, Kilter Original 0.325, Grasshopper
- * 0.216 — so the first four take the strong bucket, and the last three the soft
- * one. On a white field every gap is negative and the veil is off.
+ * TB2 Mirror 0.541, Tension Original 0.461, MoonBoard Masters 0.469 (0.441 in the
+ * spike, which traced three of its eight sets), Kilter Homewall 0.426, MoonBoard
+ * 2016 0.373, Kilter Original 0.325, Grasshopper 0.216 — so the first four take
+ * the strong bucket, and the last three the soft one. On a white field every gap is negative and the veil is off.
  */
 export function veilOpacityFor({ wallLightness, coverage, fieldColor }: VeilInput): number {
   if (!Number.isFinite(wallLightness) || !Number.isFinite(coverage) || coverage <= 0) return 0;
+  if (coverage < VEIL_TUNING.veilCoverageFloor) return 0;
   const gap = wallLightness - oklabLightness(fieldColor);
   const bucket =
     gap >= VEIL_TUNING.veilStrongGap

@@ -1289,6 +1289,7 @@ jobs:
       - db-migrations
       - codegen-drift
       - board-render-version
+      - board-art-geometry
       - i18n
       - test-default
       - test-backend

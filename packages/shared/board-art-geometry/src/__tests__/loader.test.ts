@@ -124,6 +124,8 @@ describe('shard contract', () => {
         // text, so the count is read back as a plain array rather than trusted.
         const components = offset as number[];
         if (components.length !== 2) offenders.push(`${key}#${holdId}: ${components.length} components`);
+        if (geometry.outlines[Number(holdId)] === undefined)
+          offenders.push(`${key}#${holdId}: LED on an untraced placement`);
         if (components.some((value) => !Number.isFinite(value))) offenders.push(`${key}#${holdId}: non-finite offset`);
       }
     }

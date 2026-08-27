@@ -72,6 +72,10 @@ export type BoardArtGeometry = {
    * offset is folded in — on MoonBoard the LED sits half a row below the hold —
    * so `[dx, dy]` is always measured from the placement centre and needs no
    * second table.
+   *
+   * The MoonBoard fold is a guarantee for future art, not a path any shard
+   * uses: no shipped MoonBoard shard has a bright pixel there, so every
+   * MoonBoard `ledBright` table is empty.
    */
   ledBright: Record<number, [number, number]>;
 };

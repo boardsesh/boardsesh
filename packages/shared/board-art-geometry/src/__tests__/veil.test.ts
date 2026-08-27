@@ -68,6 +68,24 @@ describe('veilOpacityFor', () => {
     // Kilter Homewall 10x12.
     expect(gapOn(PLAY_FIELD, 'kilter', 8, 25)).toBe(0.426);
     expect(veilOn(PLAY_FIELD, 'kilter', 8, 25)).toBe(VEIL_TUNING.veilStrongOpacity);
+    // MoonBoard Masters 2019: the spike published 0.441 off a three-set trace;
+    // every shard mounts all eight sets, which brightens the annulus to 0.469.
+    // Same bucket, so nothing downstream moved — pinned so the next move shows.
+    expect(gapOn(PLAY_FIELD, 'moonboard', 5, 1)).toBe(0.469);
+    expect(veilOn(PLAY_FIELD, 'moonboard', 5, 1)).toBe(VEIL_TUNING.veilStrongOpacity);
+  });
+
+  it('pins the two MoonBoards that sit on a coverage edge', () => {
+    // 6-1 has readings on 59.8% of its placements — 0.002 under the soft cap —
+    // so a strong-bucket gap still ships soft. A re-trace that nudges it over
+    // flips the veil from 0.30 to 0.60; this is where that shows up.
+    const edge = getWallLightness({ boardName: 'moonboard', layoutId: 6, sizeId: 1 });
+    expect(edge?.coverage).toBe(0.598);
+    expect(veilOn(PLAY_FIELD, 'moonboard', 6, 1)).toBe(VEIL_TUNING.veilSoftOpacity);
+    // 1-1 averages four placements of 198: not a wall reading, so no veil.
+    const sparse = getWallLightness({ boardName: 'moonboard', layoutId: 1, sizeId: 1 });
+    expect(sparse?.coverage).toBe(0.02);
+    expect(veilOn(PLAY_FIELD, 'moonboard', 1, 1)).toBe(0);
   });
 
   it('caps a board that is mostly bare grid at the soft bucket', () => {
