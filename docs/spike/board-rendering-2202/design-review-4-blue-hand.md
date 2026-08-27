@@ -306,14 +306,21 @@ The fill's alpha is not a lever: 0.55, 0.70 and 0.90 give the same share to two 
 board, and the peak falls as the alpha rises on the pale boards because the art under the fill is
 brighter than the blue. The plateau glow has the highest share at every size, takes the wall out of
 the picture (the filled ring today leaves 9-42% of the annulus brighter than the mark), and with
-x1.5 reach matches the ring's footprint at 152 px. So one treatment, veil + plateau glow, serves the
-play view and the list cell alike; the `filledStyle` branch in `renderer.rs` becomes the same
-drawing at a smaller width rather than a different one.
+x1.5 reach matches the ring's footprint at 152 px. With the falloff going to an A/B on the play view (above), the thumbnail pick stays the filled mark
+at 0.55 and outside the experiment: the soft glow is the weakest arm at the list-cell size, and the
+0.60 veil does not change the glow.
 
 What it costs in the port: nothing new. `glowPlateauStops` is a different stops table for the
 falloff `renderer.rs` has to draw anyway; a reach floor is one `max()` in the spread rule.
-**Marco picked the plateau alone, at today's reach** (2026-08-26); it is recorded in
-`PORT-HANDOVER.md` §1 and §2.
+**Decision, revised 2026-08-27.** The plateau was picked on these numbers on the 26th; on the 27th,
+on the per-board sheets at the width the phone draws the board (`boards/glow-size-phone-*.webp`,
+every column at 1206 px, the app's current rings beside them), it read as too heavy and the soft
+falloff under the 0.60 veil read best. Rather than pick by eye against the numbers, **both ship as
+an A/B**: variant A is veil 0.60 + the soft glow (the default; TB2 wall-brighter-than-glow 0.36 to
+0.19, the glow unchanged), variant B is the plateau. `PORT-HANDOVER.md` §1 lists what the A/B needs
+before it can say anything: a client flag, the variant in the overlay cache key, and the three
+metrics the first review asked for and nobody has instrumented. The thumbnail pick stays the
+filled mark (below) and sits outside the experiment.
 
 ## Rejected
 

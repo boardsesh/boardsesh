@@ -114,32 +114,40 @@ _identical_ p95 luminance (209/209/209 on Kilter Homewall, 213×3 on Tension Ori
 Mirror). The veil takes them to 126/129/113 with the mark itself unchanged. Every other arm competes
 with the wall; only the veil changes what the mark competes against.
 
-**The falloff, after the blue was settled: a plateau.** Measured at 1080 px on four boards
-(`design-review-4-blue-hand.md`, "Bigger, not further"), holding the glow at full alpha over the
-inner 40% of its extent (`SPIKE_TUNING.glowPlateauStops`) doubles the share of every HAND mark at
-3:1, lifts its peak to 5.2 on every board and removes the wall as a competitor (TB2 Mirror 36% of
-the annulus brighter than the glow to 4%) without dimming an unlit hold. A x1.5 reach on top is the
-most findable mark on TB2 and the heaviest on Grasshopper; if reach ever moves, move it as a floor in
-device px (~30) so only the small-hold boards get it. **Marco picked the plateau alone** (2026-08-26):
-the port draws `glowPlateauStops` — 1.0 at the silhouette edge, 0.97 at 0.4 of the extent, 0.6 at
-0.6, 0.22 at 0.8, 0 at the end — at today's reach.
+**The veil's strong bucket is 0.60; the falloff ships twice, as an A/B.** After the blue was
+settled, six glow arms were captured at 1080 px on four boards (`design-review-4-blue-hand.md`,
+"Bigger, not further"). The plateau falloff measured best on every number — double the share of each
+HAND mark at 3:1, TB2 Mirror's wall competition 36% to 4% — and read as too heavy by eye at the width
+the phone draws the board (`boards/glow-size-phone-*.webp`). Marco's call on 2026-08-27: **ship both
+and let the climbers decide.** Variant A, the default, is veil + glow with the soft falloff
+(`glowFalloffStops`) and the strong veil bucket at 0.60 instead of 0.45 (`veilStrongOpacity`; TB2
+Mirror, Tension Original, Kilter Homewall, Masters — TB2's unlit holds 3.08 to 2.22 against the
+field, the wall brighter than a HAND glow 36% to 19%, the glow itself unchanged at 4.8:1). Variant B
+is the same with the plateau (`glowPlateauStops`). Same reach, same veil, same everything else.
+Reach x1.5 was measured as bigger-not-brighter and the soft disc as barely visible; neither ships.
 
-**Thumbnails: veil + plateau glow, the same drawing as the play view — superseding the filled mark
-this section used to pick.** Measured at 152 / 228 / 384 px after the plateau was chosen
-(`design-review-4-blue-hand.md`, "At the thumbnail sizes the plateau beats the filled mark"): the
-plateau glow's share of the HAND mark at 3:1 is 0.51-0.67 against 0.36-0.49 for the filled
-silhouette at any alpha and 0.35-0.57 for the filled ring `renderer.rs` draws today, and it leaves
-under 8% of the surrounding wall brighter than the mark where the ring leaves 9-42%. The fill's
-alpha is not a lever (0.55 / 0.70 / 0.90 measure the same). What follows is the reasoning that
-picked the filled mark before that capture, kept for the record. At 152 device px — the 76×96 dp
-list cell at 2× — a hollow ring
-and a soft glow both lose their signal to downsampling and a filled shape does not. The app already
-believes this: `ClimbListThumbnail` passes `filledStyle: true` and `renderer.rs:151/:201` switches
-to an 8.0 base stroke plus a 0.3-alpha fill "so lit holds read as solid dots once scaled". The
-winner keeps that filled marker and adds the veil.
+**What the A/B needs, none of which exists yet.** (1) A multivariate PostHog client flag on mobile
+(`packages/mobile/src/providers/feature-flags-provider.tsx`), say `board-glow-falloff` with
+`soft` / `plateau`, read as "unresolved means `soft`" — the default rule in `docs/feature-flags.md`;
+a render is a client choice, so no server flag. (2) The variant in the overlay cache key: the PNG
+cache hashes the climb and the render signature (`use-native-climb-render.ts`, the `signature` that
+already carries `brush-N` and the marker shapes), so the falloff has to join that signature or a
+climber whose bucket flips keeps the other bucket's overlays until `RENDERER_VERSION` moves. The
+OG card and the web `board-render` route are one render for everyone and draw variant A. (3) The
+metrics: pinch events per climb view, time from climb open to the first queue or BLE action, and
+same-climb re-open rate within a session, stratified by board and never pooled — the telemetry the
+first review specified and none of the four passes found in the codebase. Without it the A/B is two
+looks and no verdict. Thumbnails stay out of the experiment: one surface, one question.
 
-So the treatment was going to differ by surface; with the plateau it no longer has to, and the
-`filledStyle` switch in `renderer.rs` becomes the same drawing at a smaller width.
+**Thumbnails: veil + filled mark.** Measured at 152 / 228 / 384 px
+(`design-review-4-blue-hand.md`, "At the thumbnail sizes"): the soft glow is the weakest mark at the
+list-cell size (HAND share at 3:1 0.27-0.38, against 0.36-0.49 for the filled silhouette and
+0.35-0.57 for the filled ring `renderer.rs` draws today), and the 0.60 veil does not change the glow.
+The plateau glow would have beaten the fill there (0.51-0.67) but is out. The fill's alpha is not a
+lever (0.55 / 0.70 / 0.90 measure the same), so 0.55 stays. At 152 device px — the 76×96 dp list
+cell at 2× — a hollow ring
+and a soft glow both lose their signal to downsampling and a filled shape does not.So the treatment differs by surface. That is not a compromise — it is what the codebase already
+does, and the split should be made explicit rather than inherited.
 
 **The role glyphs are opt-in and out of scope for a first port.** They replace the shipped per-role
 marker shapes (#3204) as an accessibility mode, default off. Ship the default render first.
@@ -160,8 +168,10 @@ radial gradient and no non-circular outline. Both are needed.
 **Do not port the twelve-to-twenty concentric strokes.** They exist only because
 `FeGaussianBlur` is broken in `react-native-svg` 15.15.5 on Android — a stroke through it paints
 the filter region as a solid rectangle of the stroke colour. Rust has no such constraint. Draw the
-falloff directly, and draw the **plateau** one: `SPIKE_TUNING.glowPlateauStops`, not
-`glowFalloffStops` (§1).
+falloff directly, from whichever stops table the A/B hands it: `SPIKE_TUNING.glowFalloffStops`
+(soft, the default) or `glowPlateauStops` (§1). That is one more field on the new bridged call —
+`glow_falloff: 'soft' | 'plateau'` — and it goes into the render signature (§1, "What the A/B
+needs").
 
 **Do not replace the silhouette-clipped glow with a placement-centred radial gradient.** The hard
 inner step where the glow stops on the hold's own edge _is_ the arm. Median silhouette

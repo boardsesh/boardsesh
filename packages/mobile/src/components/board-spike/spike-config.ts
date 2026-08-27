@@ -144,14 +144,16 @@ export const SPIKE_TREATMENTS: readonly SpikeTreatment[] = [
     selector: 'glow-tint',
     veil: true,
   },
-  // After the blue was settled at #6980FF the mark on TB2 Mirror still reads
+  // After the blue was settled at #6980FF the mark on TB2 Mirror still read
   // weaker than the baseline ring did, and it is not reach: measured against
   // each board's real placement radius (TB2 31.8, MoonBoard 29.2, Grasshopper
   // 49.1) the glow's outer edge already sits 1.15-1.25x the ring's radius out.
   // What the ring had was a thick band at full alpha; on TB2 only 1 px of the
   // glow's 8.5 px extent holds 3:1 against the field. Levers that stack with
   // the hex, each as veil + glow (or veil + tint) with one rule changed, so the
-  // panels differ by that rule alone.
+  // panels differ by that rule alone. Outcome: `veil60-glow` is the default
+  // (`veil-glow` now draws it) and `veil-glow-plateau` ships beside it as the
+  // B of an A/B; reach x1.5 and the disc do not ship.
   {
     key: 'veil-glow-x15',
     chip: 'Reach x1.5',
@@ -649,20 +651,18 @@ export const SPIKE_TUNING = {
    * rather than 1.000 at the edge is the innermost band sitting at 0.05 of the
    * extent rather than at 0.
    */
-  // The plateau is the default from 2026-08-26 (Marco's pick off the glow-size
-  // capture, design-review-4-blue-hand.md "Bigger, not further"): full alpha
-  // over the inner 0.4 of the extent, then the fade. The table it replaced —
-  // [0, 1] [0.15, 0.83] [0.4, 0.37] [0.7, 0.12] [1, 0] — faded from the edge and
-  // left TB2 Mirror's HAND with 1 px of its 8.5 px extent at 3:1; this one
-  // doubles every board's share at 3:1 and takes the wall out of the picture
-  // (TB2 36% of the annulus brighter than the glow to 4%) without dimming an
-  // unlit hold. `glowPlateauStops` below is the same table, kept so the arms
-  // that were captured under that name still resolve.
+  // The soft falloff is the default and variant A of the A/B the port ships
+  // (PORT-HANDOVER §1). The plateau (`glowPlateauStops`, full alpha over the
+  // inner 0.4 of the extent) is variant B: it measured best on 2026-08-26 —
+  // double the share of every HAND mark at 3:1, TB2 Mirror's wall competition
+  // 36% to 4% — and read heavier by eye the next day at the size the phone
+  // draws the board, so the climbers decide. Both sit under the 0.60 veil
+  // bucket (`veilStrongOpacity`).
   glowFalloffStops: [
     [0.0, 1.0],
-    [0.4, 0.97],
-    [0.6, 0.6],
-    [0.8, 0.22],
+    [0.15, 0.9],
+    [0.4, 0.42],
+    [0.7, 0.13],
     [1.0, 0.0],
   ] as ReadonlyArray<readonly [number, number]>,
   /**
@@ -792,13 +792,17 @@ export const SPIKE_TUNING = {
    * as empty rather than bright — both MoonBoards go from no veil at all to the
    * soft bucket — and every field that is not `#181225`.
    */
-  veilStrongOpacity: 0.45,
+  // 0.60 on the strong bucket is the lock-in of 2026-08-27 (Marco, off the
+  // phone-size glow sheets): TB2 Mirror's unlit holds go from 3.08 to 2.22
+  // against the field and the share of the wall brighter than a HAND glow from
+  // 36% to 19%, with the glow itself untouched. It was 0.45 through the third
+  // pass, which is what every capture before `veil60-glow` shows.
+  veilStrongOpacity: 0.6,
   veilSoftOpacity: 0.3,
   /**
-   * The `veilStrong` modifier's bucket: what the strong-bucket boards get
-   * instead of 0.45. 0.60 takes TB2 Mirror's unlit holds from 3.08 to 2.22
-   * against the field (the field lens's number) — the trade this arm exists to
-   * look at.
+   * The `veilStrong` modifier's bucket, now identical to `veilStrongOpacity`:
+   * the `veil60-glow` arm was captured under this name and stays resolvable;
+   * `veil-glow` draws the same thing.
    */
   veilStrongerOpacity: 0.6,
   /**
@@ -809,9 +813,10 @@ export const SPIKE_TUNING = {
    */
   softDiscOpacity: 0.3,
   /**
-   * The `plateau` modifier's falloff, now identical to `glowFalloffStops`: the
-   * `veil-glow-plateau` and `veil-glow-x15-plateau` arms were captured under
-   * this name and stay resolvable; `veil-glow` draws the same thing.
+   * The `plateau` modifier's falloff and variant B of the port's A/B: full
+   * alpha over the inner 0.4 of the extent, then the fade. Measured best
+   * (design-review-4, "Bigger, not further"), heavier by eye at phone size;
+   * `veil-glow-plateau` is the arm to capture it under.
    */
   glowPlateauStops: [
     [0.0, 1.0],
