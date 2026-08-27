@@ -306,12 +306,10 @@ pub fn paint_glyphs(pixmap: &mut Pixmap, lit: &[LitHold], glyph: &GlyphTuning, l
         if !positive(line_width) {
             continue;
         }
-        let mask = if hold.traced {
-            silhouette_mask(&mut inside, hold);
-            Some(&inside)
-        } else {
-            None
-        };
+        // Clipped to the silhouette on traced holds AND to the circle on the
+        // fallback, so a bar's end never pokes past the mark it labels.
+        silhouette_mask(&mut inside, hold);
+        let mask = Some(&inside);
         for (color, width_factor, opacity) in [
             (casing, glyph.casing_width_factor, glyph.casing_opacity),
             (core, 1.0, glyph.opacity),

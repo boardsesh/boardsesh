@@ -175,6 +175,19 @@ fn veil_covers_the_wall_and_punches_out_every_lit_hold() {
         opacity: 0.0,
     });
     assert_eq!(total_alpha(&render(&cfg)), 0, "opacity 0 paints nothing");
+    // And a zero-opacity veil is a no-op on a full render, not just an empty one.
+    let mut glow_no_veil = config("p1r42p2r43");
+    glow_no_veil.veil = None;
+    let mut glow_zero_veil = config("p1r42p2r43");
+    glow_zero_veil.veil = Some(Veil {
+        color: "#181225".into(),
+        opacity: 0.0,
+    });
+    assert_eq!(
+        render(&glow_zero_veil),
+        render(&glow_no_veil),
+        "opacity 0 == no veil"
+    );
 }
 
 #[test]
@@ -480,6 +493,26 @@ fn glyphs_differ_per_role_and_never_leave_the_silhouette() {
     }
     // Bars run edge to edge: the STARTING bar reaches x = 81 and x = 119.
     assert!(alpha(&renders[0], 81, 100) > 0 && alpha(&renders[0], 119, 100) > 0);
+    // The circle fallback is clipped too: a HAND bar on hold 2 (r = 20 at
+    // 300,100) stays inside the circle, so nothing lands at the bar's ends
+    // outside it or beside its ends where the circle curves in.
+    let mut circle = config("p2r43");
+    circle.mark_style = Some(MarkStyle::NoMark);
+    circle.glyphs = GlyphMode::Role;
+    let circle_data = render(&circle);
+    assert!(total_alpha(&circle_data) > 0);
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            if alpha(&circle_data, x, y) > 0 {
+                let dx = x as f32 - 300.0;
+                let dy = y as f32 - 100.0;
+                assert!(
+                    dx * dx + dy * dy <= 21.0 * 21.0,
+                    "circle glyph painted outside r at ({x},{y})"
+                );
+            }
+        }
+    }
     assert_eq!(
         alpha(&renders[0], 100, 90),
         0,
