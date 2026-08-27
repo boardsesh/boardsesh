@@ -26,6 +26,7 @@ pub fn parse_frames(frames: &str, hold_state_map: &HashMap<u32, HoldStateInfo>) 
                 color,
                 render_style: state_info.render_style,
                 shape: state_info.shape,
+                role: state_info.role,
             })
         })
         .collect()
@@ -43,6 +44,7 @@ mod tests {
                 color: "#00FF00".into(),
                 render_style: Default::default(),
                 shape: Default::default(),
+                role: Default::default(),
             },
         );
         map.insert(
@@ -51,6 +53,7 @@ mod tests {
                 color: "#00FFFF".into(),
                 render_style: Default::default(),
                 shape: Default::default(),
+                role: Default::default(),
             },
         );
         map.insert(
@@ -59,6 +62,7 @@ mod tests {
                 color: "#FF00FF".into(),
                 render_style: Default::default(),
                 shape: Default::default(),
+                role: Default::default(),
             },
         );
         map.insert(
@@ -67,6 +71,7 @@ mod tests {
                 color: "#FFAA00".into(),
                 render_style: Default::default(),
                 shape: Default::default(),
+                role: Default::default(),
             },
         );
         map
@@ -114,6 +119,7 @@ mod tests {
                 color: "#FFE066".into(),
                 render_style: crate::types::HoldRenderStyle::AboveMarker,
                 shape: Default::default(),
+                role: Default::default(),
             },
         );
 
