@@ -4,6 +4,13 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-27
+
+### New
+
+- Tap a hold in the climb editor to cycle through its role (hand, start, finish, foot) instead of needing a long press to change it once it's set. ([#4830](https://github.com/boardsesh/boardsesh/pull/4830))
+- Tag climbs as "no kickboard" or "campus" (no feet) right in the climb editor, alongside no-matching. ([#4831](https://github.com/boardsesh/boardsesh/pull/4831))
+
 ## 2026-08-26
 
 ### Fixed

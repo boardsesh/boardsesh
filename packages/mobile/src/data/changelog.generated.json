@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-08-26T14:57:26.169Z",
+  "generatedAt": "2026-08-27T16:31:43.232Z",
   "entries": [
+    {
+      "prNumber": 4830,
+      "category": "new",
+      "title": "Tap a hold in the climb editor to cycle through its role (hand, start, finish, foot) instead of needing a long press to change it once it's set.",
+      "mergedAt": "2026-08-27T16:30:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4830"
+    },
+    {
+      "prNumber": 4831,
+      "category": "new",
+      "title": "Tag climbs as \"no kickboard\" or \"campus\" (no feet) right in the climb editor, alongside no-matching.",
+      "mergedAt": "2026-08-27T16:30:19Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4831"
+    },
     {
       "prNumber": 4815,
       "category": "fixed",
