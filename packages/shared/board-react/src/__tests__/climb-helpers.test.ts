@@ -25,12 +25,18 @@ describe('toSaveClimbInput', () => {
       framesCount: 1,
       framesPace: 0,
       angle: 40,
+      characteristics: null,
     });
   });
 
   it('defaults a missing description to an empty string', () => {
     const result = toSaveClimbInput('tension', { ...options, description: '' });
     expect(result.description).toBe('');
+  });
+
+  it('passes through explicit characteristics', () => {
+    const result = toSaveClimbInput('kilter', { ...options, characteristics: ['no_kickboard', 'campus'] });
+    expect(result.characteristics).toEqual(['no_kickboard', 'campus']);
   });
 });
 
