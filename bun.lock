@@ -101,7 +101,7 @@
         "posthog-node": "^5.47.3",
         "sharp": "^0.34.5",
         "tsx": "^4.23.1",
-        "uuid": "^14.0.1",
+        "uuid": "^14.0.2",
         "winston": "^3.19.0",
         "winston-transport": "^4.9.0",
         "ws": "^8.21.1",
@@ -158,7 +158,7 @@
         "@boardsesh/sync-runtime": "*",
         "drizzle-orm": "^0.45.2",
         "postgres": "^3.4.9",
-        "uuid": "^14.0.1",
+        "uuid": "^14.0.2",
       },
       "devDependencies": {
         "@faker-js/faker": "^10.5.0",
@@ -894,7 +894,7 @@
         "swagger-ui-react": "^5.32.11",
         "undici": "^7.29.0",
         "use-debounce": "^10.1.1",
-        "uuid": "^14.0.1",
+        "uuid": "^14.0.2",
         "web-vitals": "^6.0.1",
         "ws": "^8.21.1",
         "yup": "^1.7.1",
@@ -4414,7 +4414,7 @@
 
     "utils-merge": ["utils-merge@1.0.1", "", {}, "sha512-pMZTvIkT1d+TFGvDOqodOclx0QWkkgi6Tdoa8gC8ffGAAqz9pzPTZWAybbsHHoED/ztMtkv/VoYTYyShUn81hA=="],
 
-    "uuid": ["uuid@14.0.1", "", { "bin": { "uuid": "dist-node/bin/uuid" } }, "sha512-6ZxzVpzDXDa3bJWaHilVayA+BH/1zmxCJoVgvmqJnid/gPoKHxUrS/aC/T6LGQtNHT+XHG9fXPJB4d+IrU30Ew=="],
+    "uuid": ["uuid@14.0.2", "", { "bin": { "uuid": "dist-node/bin/uuid" } }, "sha512-xZe/16rV4aa+HGSOCiY2YeLT1OybRLrrkL/Rqaq7p7GMVXjFh+6wN4oMYgjFmnSnhY8t6Xpdl2l9qmnHYuMHwQ=="],
 
     "validate-npm-package-name": ["validate-npm-package-name@5.0.1", "", {}, "sha512-OljLrQ9SQdOUqTaQxqL5dEfZWrXExyyWsozYlAWFawPVNuD83igl7uJD2RTkNMbniIYgt8l81eCJGIdQF7avLQ=="],
 
