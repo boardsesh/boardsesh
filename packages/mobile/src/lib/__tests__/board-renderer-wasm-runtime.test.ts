@@ -36,6 +36,23 @@ function opaquePixelCount(config: Record<string, unknown>): number {
   return opaque;
 }
 
+/**
+ * Sum of every pixel's alpha channel. `soft` and `plateau` glow falloff reach
+ * the same outer radius (measured: opaquePixelCount is identical to within
+ * antialiasing noise between the two), so `opaquePixelCount` can't see the
+ * difference — it's the falloff *shape* inside that radius (plateau holds
+ * near-max alpha longer before dropping) that differs, which only shows up
+ * in the total alpha weight.
+ */
+function alphaWeight(config: Record<string, unknown>): number {
+  const { rgba } = _webRendererForTests.decodeRenderOutput(renderOverlay(JSON.stringify(config)));
+  let sum = 0;
+  for (let pixelOffset = 3; pixelOffset < rgba.length; pixelOffset += 4) {
+    sum += rgba[pixelOffset];
+  }
+  return sum;
+}
+
 /** KNOWN_RENDER_CONFIG with the same marker `shape` stamped on every hold state. */
 function withHoldShape(shape: string): Record<string, unknown> {
   return {
@@ -133,6 +150,54 @@ describe('committed web board renderer WASM', () => {
       // `#[serde(other)]` on HoldMarkerShape — a newer JS bundle naming a shape
       // this binary has never heard of must still render.
       expect(opaquePixelCount(withHoldShape('pentagram'))).toBe(opaquePixelCount(KNOWN_RENDER_CONFIG));
+    });
+  });
+
+  // Issue #2202: the "boardsesh" render mode (veil + glow on traced hold
+  // silhouettes) is new Rust-core surface. As of this test the committed
+  // wasm artifact has already been rebuilt with it, so these currently pass —
+  // but keep them un-skipped: the next time this artifact drifts behind the
+  // Rust core (issue #4495's exact failure mode), a red here is the only
+  // signal, and the wasm rebuild + re-sync is
+  // packages/mobile/public/wasm/README.md's job, not this test's.
+  describe('boardsesh render mode', () => {
+    const BOARDSESH_SQUARE_HOLD_CONFIG = {
+      ...KNOWN_RENDER_CONFIG,
+      render_mode: 'boardsesh',
+      holds: KNOWN_RENDER_CONFIG.holds.map((hold) =>
+        hold.id === 1 ? { ...hold, outline: [-1, -1, 1, -1, 1, 1, -1, 1] } : hold,
+      ),
+    };
+
+    it('renders a different opaque-pixel count in boardsesh mode with a traced outline hold', async () => {
+      await initCommittedWasm();
+
+      const classicCount = opaquePixelCount(KNOWN_RENDER_CONFIG);
+      const boardseshCount = opaquePixelCount(BOARDSESH_SQUARE_HOLD_CONFIG);
+      expect(boardseshCount).not.toBe(classicCount);
+    });
+
+    it('renders a different total alpha weight for plateau glow falloff than soft', async () => {
+      await initCommittedWasm();
+
+      // opaquePixelCount is the wrong metric here: soft and plateau reach the
+      // same outer radius, so the alpha>0 pixel count barely moves. The two
+      // falloffs differ in *how quickly* alpha drops off inside that radius
+      // (plateau holds near-max longer), which shows up as total alpha weight.
+      const soft = alphaWeight({ ...BOARDSESH_SQUARE_HOLD_CONFIG, glow_falloff: 'soft' });
+      const plateau = alphaWeight({ ...BOARDSESH_SQUARE_HOLD_CONFIG, glow_falloff: 'plateau' });
+      expect(plateau).not.toBe(soft);
+    });
+
+    it('raises the opaque-pixel count when a veil is applied', async () => {
+      await initCommittedWasm();
+
+      const withoutVeil = opaquePixelCount(BOARDSESH_SQUARE_HOLD_CONFIG);
+      const withVeil = opaquePixelCount({
+        ...BOARDSESH_SQUARE_HOLD_CONFIG,
+        veil: { color: '#181225', opacity: 0.6 },
+      });
+      expect(withVeil).toBeGreaterThan(withoutVeil);
     });
   });
 });

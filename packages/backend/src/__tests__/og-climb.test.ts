@@ -131,6 +131,38 @@ describe('handleOgClimb', () => {
       expect(res.statusCode).toBe(400);
       expect(renderOgClimb).not.toHaveBeenCalled();
     });
+
+    it('rejects an invalid render_mode, glow_falloff, or field_color with 400', async () => {
+      expect((await run({ ...validParams, render_mode: 'neon' })).statusCode).toBe(400);
+      expect((await run({ ...validParams, glow_falloff: 'hard' })).statusCode).toBe(400);
+      expect((await run({ ...validParams, field_color: 'blue' })).statusCode).toBe(400);
+      expect(renderOgClimb).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('boardsesh render options (issue #2202)', () => {
+    it('defaults render_mode/glow_falloff/glyphs to classic/soft/off when omitted', async () => {
+      await run(validParams);
+      const [callArgs] = vi.mocked(renderOgClimb).mock.calls[0];
+      expect(callArgs.renderMode).toBe('classic');
+      expect(callArgs.glowFalloff).toBe('soft');
+      expect(callArgs.glyphs).toBe(false);
+      expect(callArgs.fieldColor).toBeUndefined();
+    });
+
+    it('reaches the service with render_mode=boardsesh and glow_falloff=plateau', async () => {
+      await run({ ...validParams, render_mode: 'boardsesh', glow_falloff: 'plateau' });
+      const [callArgs] = vi.mocked(renderOgClimb).mock.calls[0];
+      expect(callArgs.renderMode).toBe('boardsesh');
+      expect(callArgs.glowFalloff).toBe('plateau');
+    });
+
+    it('maps glyphs=1 to true and passes field_color through', async () => {
+      await run({ ...validParams, render_mode: 'boardsesh', glyphs: '1', field_color: '#123456' });
+      const [callArgs] = vi.mocked(renderOgClimb).mock.calls[0];
+      expect(callArgs.glyphs).toBe(true);
+      expect(callArgs.fieldColor).toBe('#123456');
+    });
   });
 
   describe('rate limiting', () => {
@@ -280,5 +312,52 @@ describe('renderOgClimb (real render)', () => {
       service.renderOgClimb(uncachedParams),
     ]);
     expect(concurrentSecond).toBe(concurrentFirst);
+  }, 30_000);
+
+  // issue #2202: a boardsesh render must never be served under a classic
+  // byte-cache key. `cache` module state is shared with the earlier test in
+  // this describe block (ES modules are singletons), so this only asserts on
+  // `!== 'hit'` vs `=== 'hit'` — never on `'miss'` vs `'base-hit'`, which
+  // depends on which board bases a previous test already warmed.
+  it('keys the byte cache on render_mode/glow_falloff/glyphs/field_color', async () => {
+    process.env.BOARD_IMAGES_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../web/public');
+    const service = await vi.importActual<typeof import('../services/board-render')>('../services/board-render');
+    await service.initBoardRenderer();
+
+    const baseParams = {
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1,20',
+      // Frames unique to this test, so its byte-cache entries can't collide
+      // with the earlier test's.
+      frames: 'p1080r15p1202r44',
+      format: 'jpeg' as const,
+    };
+
+    const classic = await service.renderOgClimb(baseParams);
+    expect(classic.cache).not.toBe('hit');
+
+    // Same board/frames/format, but boardsesh mode — a byte-cache key
+    // missing these params would have served the classic bytes here.
+    const boardsesh = await service.renderOgClimb({
+      ...baseParams,
+      renderMode: 'boardsesh' as const,
+      glowFalloff: 'plateau' as const,
+      glyphs: true,
+      fieldColor: '#123456',
+    });
+    expect(boardsesh.cache).not.toBe('hit');
+
+    // Repeating the exact boardsesh request IS a byte-cache hit — the key is
+    // internally consistent, not just "always different".
+    const boardseshRepeat = await service.renderOgClimb({
+      ...baseParams,
+      renderMode: 'boardsesh' as const,
+      glowFalloff: 'plateau' as const,
+      glyphs: true,
+      fieldColor: '#123456',
+    });
+    expect(boardseshRepeat.cache).toBe('hit');
   }, 30_000);
 });

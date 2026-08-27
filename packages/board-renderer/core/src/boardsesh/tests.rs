@@ -212,7 +212,11 @@ fn glow_is_bright_at_the_edge_fades_monotonically_and_ends_at_reach() {
         );
         previous = current;
     }
-    assert_eq!(alpha(&data, 136, 100), 0, "zero at reach + 2");
+    assert!(
+        alpha(&data, 133, 100) > 0,
+        "reach 14: the last lit pixel is x = 133"
+    );
+    assert_eq!(alpha(&data, 134, 100), 0, "and nothing past it");
     assert_eq!(alpha(&data, 150, 100), 0);
     let edge = pixel(&data, 121, 100);
     assert!(
@@ -250,17 +254,63 @@ fn neighbouring_glows_split_at_the_midline_and_keep_their_own_hue() {
 }
 
 #[test]
+fn a_nearer_short_reach_hold_wins_the_partition_over_a_farther_long_reach_one() {
+    // Sliver at x 298..302 (extent cap 7.2, ×2 = reach 14.4 → last lit x ≈ 316)
+    // and a square whose left edge sits at x = 342 (reach 14 ×2 = 28 → its glow
+    // would reach left to x = 314). The midline is x = 322: pixels 318..321
+    // are nearer the sliver but beyond its reach, so they must stay EMPTY
+    // rather than take the square's magenta — that is the partition.
+    let mut cfg = config("p4r45p9r44");
+    cfg.holds.push(hold(9, 362.0, 300.0, Some(&SQUARE)));
+    cfg.glow.reach_scale = 2.0;
+    let data = render(&cfg);
+    for x in 318..=321 {
+        assert_eq!(
+            alpha(&data, x, 300),
+            0,
+            "x = {x} belongs to the sliver, which cannot reach it"
+        );
+    }
+    let orange = pixel(&data, 310, 300);
+    assert!(
+        orange[3] > 0 && orange[0] > 0 && orange[2] == 0,
+        "the sliver's FOOT orange within its reach: {orange:?}"
+    );
+    let magenta = pixel(&data, 325, 300);
+    assert!(
+        magenta[3] > 0 && magenta[0] > 0 && magenta[2] > 0,
+        "past the midline the square's FINISH magenta: {magenta:?}"
+    );
+}
+
+#[test]
+fn veil_without_a_colour_parses_and_paints_the_default_field() {
+    let parsed: RenderConfig = serde_json::from_str(
+        r##"{"board_width":10,"board_height":10,"output_width":10,"frames":"","thumbnail":false,"holds":[],"hold_state_map":{},
+             "render_mode":"boardsesh","veil":{"opacity":0.5}}"##,
+    )
+    .unwrap();
+    assert_eq!(parsed.veil.as_ref().unwrap().color, "#181225");
+    let (data, _, _) = render_overlay(&parsed).unwrap();
+    assert_eq!(data[3], 128);
+}
+
+#[test]
 fn small_hold_boost_widens_the_reach_and_the_extent_cap_clips_it() {
-    // Tiny blob spans 94..106; unboosted reach 14 → alpha ends by x = 121.
+    // Tiny blob spans 94..106; boost 1.5 → reach 21 (last lit x = 126),
+    // unboosted reach 14 (last lit x = 119).
     let boosted = render(&config("p3r43"));
     assert!(
-        alpha(&boosted, 124, 300) > 0,
+        alpha(&boosted, 126, 300) > 0,
         "boost 1.5 carries the glow to 21 px"
     );
+    assert_eq!(alpha(&boosted, 128, 300), 0);
     let mut unboosted = config("p3r43");
     unboosted.glow.small_hold_max_boost = 1.0;
+    let unboosted_data = render(&unboosted);
+    assert!(alpha(&unboosted_data, 119, 300) > 0);
     assert_eq!(
-        alpha(&render(&unboosted), 124, 300),
+        alpha(&unboosted_data, 121, 300),
         0,
         "without the boost it stops at 14"
     );

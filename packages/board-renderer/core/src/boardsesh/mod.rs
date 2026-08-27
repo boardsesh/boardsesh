@@ -51,12 +51,7 @@ pub fn effective_mark_style(config: &RenderConfig) -> MarkStyle {
 }
 
 pub fn render(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
-    let output_width = config.output_width;
-    let output_height =
-        (output_width as f32 * config.board_height / config.board_width).round() as u32;
-    if output_width == 0 || output_height == 0 {
-        return Err("Output dimensions must be non-zero".into());
-    }
+    let (output_width, output_height) = crate::renderer::output_size(config)?;
     let mut pixmap = Pixmap::new(output_width, output_height).ok_or("Failed to create pixmap")?;
     let scale_x = output_width as f32 / config.board_width;
     let scale_y = output_height as f32 / config.board_height;

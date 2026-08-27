@@ -124,6 +124,14 @@ export type OgClimbRenderParams = {
   setIds: string;
   frames: string;
   format: OutputFormat;
+  /** "boardsesh" draws the veil + glow treatment; omitted/"classic" renders exactly as today (issue #2202). */
+  renderMode?: 'classic' | 'boardsesh';
+  /** `boardsesh` mode only. Renderer defaults to "soft" when omitted. */
+  glowFalloff?: 'soft' | 'plateau';
+  /** `boardsesh` mode only: role glyphs inside the glow. */
+  glyphs?: boolean;
+  /** `boardsesh` mode only: feeds the placeholder veil color (see renderOgClimbUncached). */
+  fieldColor?: string;
 };
 
 export type OgClimbRenderResult = {
@@ -133,12 +141,37 @@ export type OgClimbRenderResult = {
   timings: { wasmMs: number; baseMs: number; encodeMs: number };
 };
 
-function byteCacheKey(params: OgClimbRenderParams): string {
-  return `${params.boardName}:${params.layoutId}:${params.sizeId}:${params.setIds}:${params.frames}:${params.format}`;
+/**
+ * Render-option suffix shared by the byte and base cache keys, so a
+ * boardsesh render — and any combination of its options — can never be
+ * served under a classic (or a different boardsesh option's) key.
+ */
+function renderOptionsCacheKeySuffix(options: {
+  renderMode?: 'classic' | 'boardsesh';
+  glowFalloff?: 'soft' | 'plateau';
+  glyphs?: boolean;
+  fieldColor?: string;
+}): string {
+  return `${options.renderMode ?? 'classic'}:${options.glowFalloff ?? 'soft'}:${options.glyphs ? '1' : '0'}:${options.fieldColor ?? ''}`;
 }
 
-function baseCacheKey(boardName: string, layoutId: number, sizeId: number, setIds: string): string {
-  return `${boardName}:${layoutId}:${sizeId}:${setIds}`;
+function byteCacheKey(params: OgClimbRenderParams): string {
+  return `${params.boardName}:${params.layoutId}:${params.sizeId}:${params.setIds}:${params.frames}:${params.format}:${renderOptionsCacheKeySuffix(params)}`;
+}
+
+function baseCacheKey(
+  boardName: string,
+  layoutId: number,
+  sizeId: number,
+  setIds: string,
+  renderOptions: {
+    renderMode?: 'classic' | 'boardsesh';
+    glowFalloff?: 'soft' | 'plateau';
+    glyphs?: boolean;
+    fieldColor?: string;
+  } = {},
+): string {
+  return `${boardName}:${layoutId}:${sizeId}:${setIds}:${renderOptionsCacheKeySuffix(renderOptions)}`;
 }
 
 /**
@@ -198,13 +231,20 @@ async function renderOgClimbUncached(params: OgClimbRenderParams, cacheKey: stri
     thumbnail: false,
     isOgVariant: true,
     boardStates,
+    renderMode: params.renderMode,
+    glowFalloff: params.glowFalloff,
+    glyphs: params.glyphs,
+    // TODO(#2202): veil opacity from @boardsesh/board-art-geometry — nothing
+    // computes real wall-lightness data yet, so boardsesh mode ships a no-op
+    // (opacity 0) veil until that package lands.
+    ...(params.renderMode === 'boardsesh' ? { veil: { color: params.fieldColor ?? '#181225', opacity: 0 } } : {}),
   });
 
   const wasmT0 = performance.now();
   const overlay = await overlayRenderer.render(JSON.stringify(config));
   const wasmMs = performance.now() - wasmT0;
 
-  const baseKey = baseCacheKey(params.boardName, params.layoutId, params.sizeId, params.setIds);
+  const baseKey = baseCacheKey(params.boardName, params.layoutId, params.sizeId, params.setIds, params);
   let base = baseCache.get(baseKey);
   let cache: OgClimbRenderResult['cache'];
   let baseMs = 0;

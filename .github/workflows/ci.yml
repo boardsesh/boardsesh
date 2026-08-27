@@ -73,6 +73,12 @@ jobs:
       # of a workflow pin or of a file the patch's context depends on. No other
       # filter matches docs/** at all. Gates the `pg18-artifacts` job below.
       pg18Artifacts: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.pg18Artifacts }}
+      # The board-renderer Rust crate (packages/board-renderer/{core,ffi,wasm}/src,
+      # its workspace Cargo.toml/Cargo.lock) — matches neither anyJs (not
+      # TS/JS) nor mobile (which only covers the built wasm/pkg/** artifact),
+      # so a Rust-only PR would otherwise run zero jobs. Gates the
+      # `renderer-rust` job (see below).
+      boardRenderer: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.boardRenderer }}
       # True if any downstream job's gate would fire. This used to gate the
       # `setup` job (bun install + build:db + a `built-packages` artifact every
       # heavy job downloaded); that job was deleted because @boardsesh/db and
@@ -84,10 +90,11 @@ jobs:
       # ci-location-sync-workflow.test.ts asserts on its terms; keep it in sync
       # with the job `if:`s below so a future job can gate on it again.
       runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.locationSync == 'true' || steps.filter.outputs.rootCi == 'true' || steps.filter.outputs.staticAssets == 'true' }}
-      # NOTE: deployConfig, storeMetadata, mobileLocales, restSurface and
-      # pg18Artifacts are deliberately NOT part of runAny — the deploy-config,
-      # listing-guards, rest-surface and pg18-artifacts jobs below gate on their
-      # own filters, so a PR touching only their files runs nothing else.
+      # NOTE: deployConfig, storeMetadata, mobileLocales, restSurface,
+      # pg18Artifacts and boardRenderer are deliberately NOT part of runAny —
+      # the deploy-config, listing-guards, rest-surface, pg18-artifacts and
+      # renderer-rust jobs below gate on their own filters, so a PR touching
+      # only their files runs nothing else.
     steps:
       # No actions/checkout here on purpose: on `pull_request` dorny/paths-filter
       # reads the changed-file list from the REST API (no working tree needed),
@@ -141,6 +148,14 @@ jobs:
               # editing only their logic must still trigger that job.
               - 'scripts/mobile-fingerprint-inputs-check.ts'
               - 'scripts/mobile-patches-check.ts'
+            # The Rust crate itself (packages/board-renderer/{core,ffi,wasm}/src,
+            # the workspace Cargo.toml/Cargo.lock). Deliberately separate from
+            # `mobile`, which only covers the *built* `wasm/pkg/**` artifact —
+            # a PR touching only `.rs` sources matches neither `anyJs` nor
+            # `mobile`, so without this filter it would run zero jobs. Gates
+            # the `renderer-rust` job (see below).
+            boardRenderer:
+              - 'packages/board-renderer/**'
             ocr:
               - 'packages/moonboard-ocr/**'
             locationSync:
@@ -665,6 +680,38 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Validate published image digest pins and committed patches
         run: vp test run --project scripts scripts/__tests__/pg18-artifact-drift.test.ts
+
+  renderer-rust:
+    needs: [changes]
+    # The board-renderer Rust crate has no `vp` task and isn't part of the bun
+    # workspace graph, so it gates on its own dedicated `boardRenderer` filter
+    # (packages/board-renderer/**) rather than anyJs/sharedDeps.
+    if: needs.changes.outputs.boardRenderer == 'true' || needs.changes.outputs.rootCi == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: packages/board-renderer
+    steps:
+      - uses: actions/checkout@v6
+      # dtolnay/rust-toolchain and Swatinem/rust-cache are third-party, not the
+      # first-party GitHub/oven-sh/voidzero-dev actions the rest of this
+      # workflow uses — pinned by full commit SHA (see e.g.
+      # .github/workflows/dev-db-docker.yml for the repo's established
+      # SHA-pin convention for actions like these).
+      - name: Install Rust stable (rustfmt + clippy)
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: packages/board-renderer -> target
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: cargo test
+        run: cargo test --workspace
 
   rest-surface:
     needs: [changes]
@@ -1256,6 +1303,7 @@ jobs:
       - listing-guards
       - rest-surface
       - pg18-artifacts
+      - renderer-rust
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2

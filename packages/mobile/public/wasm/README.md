@@ -16,7 +16,10 @@ middleware and `expo export` only see real files under `public/`.
 
 CI has no Rust toolchain, so it cannot rebuild or verify this binary — it is
 trusted on commit. Record what built it every time you regenerate, and keep the
-runtime test below honest.
+runtime test below honest. (The `renderer-rust` CI job added for issue #2202
+runs `cargo fmt`/`clippy`/`test` against the crate itself, but doesn't run
+`wasm-pack build`, so it still can't catch a stale committed artifact — that's
+still this file's runtime test's job.)
 
 - Source of truth: `packages/board-renderer/wasm/pkg/` (git-tracked).
 - Regenerate the pkg from Rust: `vp run build:wasm`
