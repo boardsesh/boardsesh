@@ -29,7 +29,7 @@ const MORE_ICON: Record<MoreIconName, string> = {
   gyms: 'office-building',
   integrations: 'puzzle-outline',
   watch: 'link-variant',
-  accessibility: 'human',
+  boardLook: 'tune',
   storage: 'database-outline',
   translate: 'translate',
   replay: 'replay',

@@ -1,33 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  PanResponder,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-  type ColorValue,
-  type GestureResponderEvent,
-} from 'react-native';
+import { Pressable, StyleSheet, View, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { toBoardName } from '@boardsesh/board-config';
 import type { BoardName, ClimbSearchInput } from '@boardsesh/shared-schema';
-import { Button } from '../Button';
-import { Icon } from '../Icon';
-import { ListRow } from '../ListRow';
-import { ModalSheet } from '../ModalSheet';
-import { SectionHeader } from '../SectionHeader';
-import { SegmentedControl } from '../SegmentedControl';
-import { Text } from '../Text';
-import { BoardImageNative } from '../BoardImageNative';
-import { HoldMarkerShapeSvg } from '../board-renderer/HoldMarkerShape';
-import { useTheme } from '../../providers/theme-provider';
-import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
-import { useActiveBoard } from '../../lib/graphql/use-active-board';
-import { useInfiniteSearchClimbs } from '../../lib/graphql/hooks/use-infinite-search-climbs';
-import { getBoardRenderData } from '../../lib/board-details';
-import { simulateCvd, type CvdType } from '../../lib/cvd-simulation';
-import { OkhslColorPicker } from './OkhslColorPicker';
+import { Button } from '../../Button';
+import { Icon } from '../../Icon';
+import { ListRow } from '../../ListRow';
+import { ModalSheet } from '../../ModalSheet';
+import { SectionHeader } from '../../SectionHeader';
+import { SegmentedControl } from '../../SegmentedControl';
+import { SwitchRow } from '../../SwitchRow';
+import { Text } from '../../Text';
+import { BoardImageNative } from '../../BoardImageNative';
+import { HoldMarkerShapeSvg } from '../../board-renderer/HoldMarkerShape';
+import { useTheme } from '../../../providers/theme-provider';
+import { useActiveBoard } from '../../../lib/graphql/use-active-board';
+import { useInfiniteSearchClimbs } from '../../../lib/graphql/hooks/use-infinite-search-climbs';
+import { getBoardRenderData } from '../../../lib/board-details';
+import { simulateCvd, type CvdType } from '../../../lib/cvd-simulation';
+import {
+  CVD_PALETTE_PRESETS,
+  applyCvdPalette,
+  matchingCvdPaletteId,
+  type CvdPaletteId,
+} from '../../../lib/cvd-palette-presets';
+import type { BoardseshRenderSettings } from '../../../lib/board-render-settings';
+import { OkhslColorPicker } from '../OkhslColorPicker';
+import { MarkerMultiplierSlider } from '../MarkerMultiplierSlider';
 import {
   DEFAULT_HOLD_COLOR_SIGNATURE,
   DEFAULT_HOLD_BRUSH_THICKNESS,
@@ -47,11 +47,24 @@ import {
   useHoldColorOverrides,
   type HoldColorOverrideRole,
   type HoldMarkerShape,
-} from '../../lib/hold-color-overrides';
-import { borderRadius, spacing } from '../../theme/tokens';
+} from '../../../lib/hold-color-overrides';
+import { borderRadius, spacing } from '../../../theme/tokens';
 
 type ColorMode = 'default' | 'user';
 type CvdMode = 'none' | CvdType;
+
+type AccessibilitySectionProps = {
+  /** The mode this render actually uses right now (`default` resolved). Marker
+   *  shape, brush, and size only draw in Classic — the Boardsesh silhouette
+   *  itself is the shape — so those rows hide once the effective mode isn't
+   *  Classic, gated on what actually renders rather than the raw picker. */
+  effectiveMode: 'classic' | 'boardsesh';
+  boardsesh: BoardseshRenderSettings;
+  setBoardseshField: <Field extends keyof BoardseshRenderSettings>(
+    field: Field,
+    value: BoardseshRenderSettings[Field],
+  ) => void;
+};
 
 function labelForRole(t: TFunction<'common'>, role: HoldColorOverrideRole): string {
   switch (role) {
@@ -123,10 +136,35 @@ function MarkerSwatch({
   );
 }
 
-export function AccessibilitySettingsScreen() {
+/** A small four-swatch strip previewing one palette under its own CVD matrix. */
+function PalettePreviewStrip({ palette }: { palette: (typeof CVD_PALETTE_PRESETS)[number] }) {
+  return (
+    <View style={styles.paletteSwatchRow}>
+      {HOLD_COLOR_OVERRIDE_ROLES.map((role) => {
+        const hex = palette.roles[role];
+        const previewColor = palette.cvdType ? simulateCvd(hex, palette.cvdType) : hex;
+        return <View key={role} style={[styles.paletteSwatch, { backgroundColor: previewColor }]} />;
+      })}
+    </View>
+  );
+}
+
+function cvdPaletteLabel(t: TFunction<'common'>, id: CvdPaletteId): string {
+  switch (id) {
+    case 'protanopia':
+      return t('mobile.more.boardLook.accessibility.cvdPalette.presets.protanopia');
+    case 'deuteranopia':
+      return t('mobile.more.boardLook.accessibility.cvdPalette.presets.deuteranopia');
+    case 'tritanopia':
+      return t('mobile.more.boardLook.accessibility.cvdPalette.presets.tritanopia');
+    case 'monochrome':
+      return t('mobile.more.boardLook.accessibility.cvdPalette.presets.monochrome');
+  }
+}
+
+export function AccessibilitySection({ effectiveMode, boardsesh, setBoardseshField }: AccessibilitySectionProps) {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
-  const { scrollBottomPadding } = useBottomChromeMetrics();
   const { data: activeBoard } = useActiveBoard();
   const boardName = boardNameFromActiveBoard(activeBoard?.boardType);
   const {
@@ -134,6 +172,7 @@ export function AccessibilitySettingsScreen() {
     shapes,
     brushThickness,
     shapeSize,
+    setRoleOverride,
     setRoleMarkerOverride,
     setBrushThickness,
     setShapeSize,
@@ -144,9 +183,11 @@ export function AccessibilitySettingsScreen() {
   const [thicknessSheetOpen, setThicknessSheetOpen] = useState(false);
   const [sizeSheetOpen, setSizeSheetOpen] = useState(false);
   const [cvdMode, setCvdMode] = useState<CvdMode>('none');
+  const isClassic = effectiveMode === 'classic';
   // renderSignature is buildHoldRenderOverrideSignature(markerOverrides), so this
   // alone is equivalent to hasHoldMarkerOverrides(markerOverrides).
-  const hasOverrides = renderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE;
+  const hasMarkerOverrides = renderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE;
+  const activeCvdPaletteId = matchingCvdPaletteId(overrides);
 
   const cvdOptions = useMemo<{ key: CvdMode; label: string }[]>(
     () => [
@@ -161,9 +202,10 @@ export function AccessibilitySettingsScreen() {
   // Live board preview: render the active board with a real, well-known climb —
   // the most-climbed boulder for this exact layout/size/set/angle (so hold IDs
   // line up), which naturally lights all four roles. The overlay colours/shapes
-  // come from the global override store (BoardImageNative → useNativeClimbRender)
-  // so the preview reflects edits live. The board photo can't be CVD-simulated,
-  // so the simulation toggle drives the compare strip below instead.
+  // come from the global override store (BoardImageNative -> useNativeClimbRender)
+  // so the preview reflects edits live, in whichever render mode is active. The
+  // board photo can't be CVD-simulated, so the simulation toggle drives the
+  // compare strip below instead.
   const climbSearchInput = useMemo<ClimbSearchInput>(
     () => ({
       boardName,
@@ -209,21 +251,19 @@ export function AccessibilitySettingsScreen() {
     [setRoleMarkerOverride],
   );
 
-  return (
-    <ScrollView
-      contentInsetAdjustmentBehavior="automatic"
-      contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollBottomPadding + spacing[4] }]}
-    >
-      <View style={styles.intro}>
-        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.description}>
-          {t('mobile.more.accessibility.description')}
-        </Text>
-      </View>
+  const handleApplyCvdPalette = useCallback(
+    (id: CvdPaletteId) => {
+      applyCvdPalette(id, { setRoleOverride, setBoardseshField });
+    },
+    [setBoardseshField, setRoleOverride],
+  );
 
+  return (
+    <>
       {boardPreview ? (
-        <View style={styles.previewSection}>
+        <View style={styles.section}>
           <SectionHeader title={t('mobile.more.accessibility.preview.title')} />
-          <View style={[styles.previewCard, { backgroundColor: systemColors.secondaryBackground }]}>
+          <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryBackground }]}>
             <BoardImageNative
               frames={boardPreview.frames}
               boardName={boardName}
@@ -235,7 +275,7 @@ export function AccessibilitySettingsScreen() {
               renderWidth={600}
               style={styles.previewBoard}
             />
-            <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.previewCaption}>
+            <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.description}>
               {t('mobile.more.accessibility.preview.caption')}
             </Text>
           </View>
@@ -244,34 +284,80 @@ export function AccessibilitySettingsScreen() {
 
       <View style={styles.section}>
         <SectionHeader title={t('mobile.more.accessibility.cvd.title')} />
-        <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
-          <View style={styles.cardPadded}>
+        <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryBackground }]}>
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.description}>
+            {t('mobile.more.accessibility.cvd.subtitle')}
+          </Text>
+          <SegmentedControl
+            options={cvdOptions}
+            selectedKey={cvdMode}
+            onSelect={setCvdMode}
+            trackColor={systemColors.fill}
+            accessibilityLabel={t('mobile.more.accessibility.cvd.title')}
+          />
+          <View style={styles.roleStrip} accessibilityLabel={t('mobile.more.accessibility.compare.accessibility')}>
+            {HOLD_COLOR_OVERRIDE_ROLES.map((role) => {
+              const swatchColor = applyCvd(getEffectiveHoldRoleColor(boardName, role, overrides), cvdMode);
+              const roleShape = getEffectiveHoldRoleShape(role, shapes);
+              return (
+                <View key={role} style={styles.roleStripItem}>
+                  <MarkerSwatch color={swatchColor} shape={roleShape} size={shapeSize} thickness={brushThickness} />
+                  <Text variant="caption2" color={systemColors.secondaryLabel} numberOfLines={1}>
+                    {labelForRole(t, role)}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+          <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.description}>
+            {t('mobile.more.accessibility.cvd.compareHint')}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <SectionHeader title={t('mobile.more.boardLook.accessibility.title')} />
+        <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryBackground }]}>
+          <SwitchRow
+            label={t('mobile.more.boardLook.accessibility.roleGlyphs.label')}
+            description={t('mobile.more.boardLook.accessibility.roleGlyphs.note')}
+            value={boardsesh.roleGlyphs}
+            onValueChange={(value) => setBoardseshField('roleGlyphs', value)}
+          />
+
+          <View style={styles.paletteSection}>
+            <Text variant="subheadline">{t('mobile.more.boardLook.accessibility.cvdPalette.title')}</Text>
             <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.description}>
-              {t('mobile.more.accessibility.cvd.subtitle')}
+              {t('mobile.more.boardLook.accessibility.cvdPalette.subtitle')}
             </Text>
-            <SegmentedControl
-              options={cvdOptions}
-              selectedKey={cvdMode}
-              onSelect={setCvdMode}
-              trackColor={systemColors.fill}
-              accessibilityLabel={t('mobile.more.accessibility.cvd.title')}
-            />
-            <View style={styles.roleStrip} accessibilityLabel={t('mobile.more.accessibility.compare.accessibility')}>
-              {HOLD_COLOR_OVERRIDE_ROLES.map((role) => {
-                const swatchColor = applyCvd(getEffectiveHoldRoleColor(boardName, role, overrides), cvdMode);
-                const roleShape = getEffectiveHoldRoleShape(role, shapes);
+            <View style={styles.paletteRow}>
+              {CVD_PALETTE_PRESETS.map((palette) => {
+                const selected = activeCvdPaletteId === palette.id;
                 return (
-                  <View key={role} style={styles.roleStripItem}>
-                    <MarkerSwatch color={swatchColor} shape={roleShape} size={shapeSize} thickness={brushThickness} />
-                    <Text variant="caption2" color={systemColors.secondaryLabel} numberOfLines={1}>
-                      {labelForRole(t, role)}
+                  <Pressable
+                    key={palette.id}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    onPress={() => handleApplyCvdPalette(palette.id)}
+                    style={[
+                      styles.paletteChip,
+                      {
+                        backgroundColor: systemColors.fill,
+                        borderColor: selected ? systemColors.accent : systemColors.separator,
+                      },
+                      selected && styles.paletteChipSelected,
+                    ]}
+                  >
+                    <PalettePreviewStrip palette={palette} />
+                    <Text variant="caption1" color={systemColors.label} numberOfLines={1}>
+                      {cvdPaletteLabel(t, palette.id)}
                     </Text>
-                  </View>
+                  </Pressable>
                 );
               })}
             </View>
             <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.description}>
-              {t('mobile.more.accessibility.cvd.compareHint')}
+              {t('mobile.more.boardLook.accessibility.cvdPalette.note')}
             </Text>
           </View>
         </View>
@@ -279,6 +365,15 @@ export function AccessibilitySettingsScreen() {
 
       <View style={styles.section}>
         <SectionHeader title={t('mobile.more.accessibility.markersTitle')} />
+        {!isClassic ? (
+          <Text
+            variant="footnote"
+            color={systemColors.secondaryLabel}
+            style={[styles.description, styles.classicOnlyNote]}
+          >
+            {t('mobile.more.boardLook.accessibility.classicOnlyNote')}
+          </Text>
+        ) : null}
         <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
           {HOLD_COLOR_OVERRIDE_ROLES.map((role) => {
             const roleOverride = overrides[role];
@@ -288,7 +383,9 @@ export function AccessibilitySettingsScreen() {
               ? t('mobile.more.accessibility.mode.user')
               : t('mobile.more.accessibility.mode.default');
             const shapeLabel = labelForShape(t, roleShape);
-            const subtitle = t('mobile.more.accessibility.rowSubtitle', { colorMode: modeLabel, shape: shapeLabel });
+            const subtitle = isClassic
+              ? t('mobile.more.accessibility.rowSubtitle', { colorMode: modeLabel, shape: shapeLabel })
+              : modeLabel;
             const swatchColor = applyCvd(getEffectiveHoldRoleColor(boardName, role, overrides), cvdMode);
             const hasRoleOverride = !!roleOverride || roleShape !== DEFAULT_HOLD_MARKER_SHAPE;
             return (
@@ -300,7 +397,7 @@ export function AccessibilitySettingsScreen() {
                   role: roleLabel,
                   mode: subtitle,
                 })}
-                leading={<MarkerSwatch color={swatchColor} shape={roleShape} size={shapeSize} />}
+                leading={<MarkerSwatch color={swatchColor} shape={isClassic ? roleShape : 'circle'} size={shapeSize} />}
                 trailing={
                   hasRoleOverride ? <Icon name="check.small" size={20} color={systemColors.accent} /> : undefined
                 }
@@ -310,42 +407,51 @@ export function AccessibilitySettingsScreen() {
               />
             );
           })}
-          <ListRow
-            title={t('mobile.more.accessibility.brush.title')}
-            subtitle={t('mobile.more.accessibility.brush.value', { value: brushThickness.toFixed(1) })}
-            accessibilityLabel={t('mobile.more.accessibility.brush.rowAccessibility', {
-              value: brushThickness.toFixed(1),
-            })}
-            leading={
-              <MarkerSwatch color={systemColors.accent} shape="circle" thickness={brushThickness} size={shapeSize} />
-            }
-            trailing={
-              brushThickness !== DEFAULT_HOLD_BRUSH_THICKNESS ? (
-                <Icon name="check.small" size={20} color={systemColors.accent} />
-              ) : undefined
-            }
-            showChevron
-            showSeparator
-            onPress={() => setThicknessSheetOpen(true)}
-          />
-          <ListRow
-            title={t('mobile.more.accessibility.size.title')}
-            subtitle={t('mobile.more.accessibility.size.value', { value: shapeSize.toFixed(1) })}
-            accessibilityLabel={t('mobile.more.accessibility.size.rowAccessibility', {
-              value: shapeSize.toFixed(1),
-            })}
-            leading={<MarkerSwatch color={systemColors.accent} shape="diamond" size={shapeSize} />}
-            trailing={
-              shapeSize !== DEFAULT_HOLD_SHAPE_SIZE ? (
-                <Icon name="check.small" size={20} color={systemColors.accent} />
-              ) : undefined
-            }
-            showChevron
-            showSeparator={false}
-            onPress={() => setSizeSheetOpen(true)}
-          />
+          {isClassic ? (
+            <>
+              <ListRow
+                title={t('mobile.more.accessibility.brush.title')}
+                subtitle={t('mobile.more.accessibility.brush.value', { value: brushThickness.toFixed(1) })}
+                accessibilityLabel={t('mobile.more.accessibility.brush.rowAccessibility', {
+                  value: brushThickness.toFixed(1),
+                })}
+                leading={
+                  <MarkerSwatch
+                    color={systemColors.accent}
+                    shape="circle"
+                    thickness={brushThickness}
+                    size={shapeSize}
+                  />
+                }
+                trailing={
+                  brushThickness !== DEFAULT_HOLD_BRUSH_THICKNESS ? (
+                    <Icon name="check.small" size={20} color={systemColors.accent} />
+                  ) : undefined
+                }
+                showChevron
+                showSeparator
+                onPress={() => setThicknessSheetOpen(true)}
+              />
+              <ListRow
+                title={t('mobile.more.accessibility.size.title')}
+                subtitle={t('mobile.more.accessibility.size.value', { value: shapeSize.toFixed(1) })}
+                accessibilityLabel={t('mobile.more.accessibility.size.rowAccessibility', {
+                  value: shapeSize.toFixed(1),
+                })}
+                leading={<MarkerSwatch color={systemColors.accent} shape="diamond" size={shapeSize} />}
+                trailing={
+                  shapeSize !== DEFAULT_HOLD_SHAPE_SIZE ? (
+                    <Icon name="check.small" size={20} color={systemColors.accent} />
+                  ) : undefined
+                }
+                showChevron
+                showSeparator={false}
+                onPress={() => setSizeSheetOpen(true)}
+              />
+            </>
+          ) : null}
         </View>
-        {hasOverrides ? (
+        {hasMarkerOverrides && isClassic ? (
           <Pressable accessibilityRole="button" onPress={resetOverrides} style={styles.resetButton}>
             <Text variant="footnote" color={systemColors.accent}>
               {t('mobile.more.accessibility.resetAll')}
@@ -360,6 +466,7 @@ export function AccessibilitySettingsScreen() {
         currentColor={selectedRole ? (overrides[selectedRole] ?? null) : null}
         currentShape={selectedRole ? getEffectiveHoldRoleShape(selectedRole, shapes) : DEFAULT_HOLD_MARKER_SHAPE}
         shapeSize={shapeSize}
+        showShapePicker={isClassic}
         onSave={handleSaveRole}
         onClose={() => setSelectedRole(null)}
       />
@@ -377,7 +484,7 @@ export function AccessibilitySettingsScreen() {
         onSave={setShapeSize}
         onClose={() => setSizeSheetOpen(false)}
       />
-    </ScrollView>
+    </>
   );
 }
 
@@ -387,6 +494,8 @@ type HoldColorPickerSheetProps = {
   currentColor: string | null;
   currentShape: HoldMarkerShape;
   shapeSize: number;
+  /** Classic only — Boardsesh draws the lit hold's own silhouette, so there's no shape to pick. */
+  showShapePicker: boolean;
   onSave: (role: HoldColorOverrideRole, color: string | null, shape: HoldMarkerShape) => void;
   onClose: () => void;
 };
@@ -397,6 +506,7 @@ function HoldColorPickerSheet({
   currentColor,
   currentShape,
   shapeSize,
+  showShapePicker,
   onSave,
   onClose,
 }: HoldColorPickerSheetProps) {
@@ -406,7 +516,7 @@ function HoldColorPickerSheet({
   const [userColor, setUserColor] = useState<string>('#00ff00');
   const [shape, setShape] = useState<HoldMarkerShape>(DEFAULT_HOLD_MARKER_SHAPE);
   const [seedCounter, setSeedCounter] = useState(0);
-  // Tracks the closed→open transition so the fields re-seed each time the picker
+  // Tracks the closed->open transition so the fields re-seed each time the picker
   // opens; the ModalSheet is driven declaratively off `role != null`.
   const wasOpenRef = useRef(false);
 
@@ -478,38 +588,40 @@ function HoldColorPickerSheet({
           </Text>
         )}
 
-        <View style={styles.shapeSection}>
-          <Text variant="subheadline" color={systemColors.label}>
-            {t('mobile.more.accessibility.shapeLabel')}
-          </Text>
-          <View style={styles.shapeGrid}>
-            {HOLD_MARKER_SHAPES.map((option) => {
-              const selected = shape === option;
-              return (
-                <Pressable
-                  key={option}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  accessibilityLabel={labelForShape(t, option)}
-                  onPress={() => setShape(option)}
-                  style={[
-                    styles.shapeButton,
-                    {
-                      backgroundColor: systemColors.fill,
-                      borderColor: selected ? systemColors.accent : systemColors.separator,
-                    },
-                    selected && styles.shapeButtonSelected,
-                  ]}
-                >
-                  <MarkerSwatch color={previewColor} shape={option} size={shapeSize} />
-                  <Text variant="caption1" color={systemColors.label} style={styles.shapeLabel} numberOfLines={2}>
-                    {labelForShape(t, option)}
-                  </Text>
-                </Pressable>
-              );
-            })}
+        {showShapePicker ? (
+          <View style={styles.shapeSection}>
+            <Text variant="subheadline" color={systemColors.label}>
+              {t('mobile.more.accessibility.shapeLabel')}
+            </Text>
+            <View style={styles.shapeGrid}>
+              {HOLD_MARKER_SHAPES.map((option) => {
+                const selected = shape === option;
+                return (
+                  <Pressable
+                    key={option}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={labelForShape(t, option)}
+                    onPress={() => setShape(option)}
+                    style={[
+                      styles.shapeButton,
+                      {
+                        backgroundColor: systemColors.fill,
+                        borderColor: selected ? systemColors.accent : systemColors.separator,
+                      },
+                      selected && styles.shapeButtonSelected,
+                    ]}
+                  >
+                    <MarkerSwatch color={previewColor} shape={option} size={shapeSize} />
+                    <Text variant="caption1" color={systemColors.label} style={styles.shapeLabel} numberOfLines={2}>
+                      {labelForShape(t, option)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
-        </View>
+        ) : null}
       </View>
     </ModalSheet>
   );
@@ -526,7 +638,7 @@ type BrushThicknessSheetProps = {
 function BrushThicknessSheet({ open, value, shapeSize, onSave, onClose }: BrushThicknessSheetProps) {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
-  // Tracks the closed→open transition so the draft re-seeds each time the sheet
+  // Tracks the closed->open transition so the draft re-seeds each time the sheet
   // opens; the ModalSheet is driven declaratively off `open`.
   const wasOpenRef = useRef(false);
   const [draftValue, setDraftValue] = useState(value);
@@ -560,10 +672,12 @@ function BrushThicknessSheet({ open, value, shapeSize, onSave, onClose }: BrushT
         <MarkerMultiplierSlider
           accessibilityLabel={t('mobile.more.accessibility.brush.title')}
           value={draftValue}
-          valueText={t('mobile.more.accessibility.brush.value', { value: draftValue.toFixed(1) })}
           min={MIN_HOLD_BRUSH_THICKNESS}
           max={MAX_HOLD_BRUSH_THICKNESS}
-          normalizeValue={normalizeBrushThickness}
+          step={0.1}
+          format={(multiplier) =>
+            t('mobile.more.accessibility.brush.value', { value: normalizeBrushThickness(multiplier).toFixed(1) })
+          }
           onChange={setDraftValue}
         />
       </View>
@@ -582,7 +696,7 @@ type ShapeSizeSheetProps = {
 function ShapeSizeSheet({ open, value, brushThickness, onSave, onClose }: ShapeSizeSheetProps) {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
-  // Tracks the closed→open transition so the draft re-seeds each time the sheet
+  // Tracks the closed->open transition so the draft re-seeds each time the sheet
   // opens; the ModalSheet is driven declaratively off `open`.
   const wasOpenRef = useRef(false);
   const [draftValue, setDraftValue] = useState(value);
@@ -616,10 +730,12 @@ function ShapeSizeSheet({ open, value, brushThickness, onSave, onClose }: ShapeS
         <MarkerMultiplierSlider
           accessibilityLabel={t('mobile.more.accessibility.size.title')}
           value={draftValue}
-          valueText={t('mobile.more.accessibility.size.value', { value: draftValue.toFixed(1) })}
           min={MIN_HOLD_SHAPE_SIZE}
           max={MAX_HOLD_SHAPE_SIZE}
-          normalizeValue={normalizeHoldShapeSize}
+          step={0.1}
+          format={(multiplier) =>
+            t('mobile.more.accessibility.size.value', { value: normalizeHoldShapeSize(multiplier).toFixed(1) })
+          }
           onChange={setDraftValue}
         />
       </View>
@@ -627,163 +743,19 @@ function ShapeSizeSheet({ open, value, brushThickness, onSave, onClose }: ShapeS
   );
 }
 
-function MarkerMultiplierSlider({
-  accessibilityLabel,
-  value,
-  valueText,
-  min,
-  max,
-  normalizeValue,
-  onChange,
-}: {
-  accessibilityLabel: string;
-  value: number;
-  valueText: string;
-  min: number;
-  max: number;
-  normalizeValue: (value: unknown) => number;
-  onChange: (multiplier: number) => void;
-}) {
-  const { systemColors } = useTheme();
-  const trackRef = useRef<View>(null);
-  const trackLayoutRef = useRef<{ pageLeft: number; width: number } | null>(null);
-  const ratio = (value - min) / (max - min);
-
-  const applyPageX = useCallback(
-    (pageX: number, trackLayout: { pageLeft: number; width: number }) => {
-      if (trackLayout.width <= 0) return;
-      const nextRatio = Math.max(0, Math.min(1, (pageX - trackLayout.pageLeft) / trackLayout.width));
-      const nextValue = min + nextRatio * (max - min);
-      onChange(normalizeValue(nextValue));
-    },
-    [max, min, normalizeValue, onChange],
-  );
-
-  const measureTrackAndSetFromPageX = useCallback(
-    (pageX: number) => {
-      trackRef.current?.measure((_x, _y, width, _height, pageLeft) => {
-        if (width <= 0) return;
-        const trackLayout = { pageLeft, width };
-        trackLayoutRef.current = trackLayout;
-        applyPageX(pageX, trackLayout);
-      });
-    },
-    [applyPageX],
-  );
-
-  const setFromPageX = useCallback(
-    (pageX: number) => {
-      const trackLayout = trackLayoutRef.current;
-      if (trackLayout) {
-        applyPageX(pageX, trackLayout);
-        return;
-      }
-      measureTrackAndSetFromPageX(pageX);
-    },
-    [applyPageX, measureTrackAndSetFromPageX],
-  );
-
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: (event: GestureResponderEvent) => measureTrackAndSetFromPageX(event.nativeEvent.pageX),
-        onPanResponderMove: (_event, gestureState) => setFromPageX(gestureState.moveX),
-      }),
-    [measureTrackAndSetFromPageX, setFromPageX],
-  );
-
-  const handleAccessibilityAction = useCallback(
-    (event: { nativeEvent: { actionName: string } }) => {
-      const delta = event.nativeEvent.actionName === 'increment' ? 0.1 : -0.1;
-      onChange(normalizeValue(value + delta));
-    },
-    [normalizeValue, onChange, value],
-  );
-
-  return (
-    <View
-      accessible
-      accessibilityRole="adjustable"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityValue={{ text: valueText }}
-      accessibilityActions={accessibilityActions}
-      onAccessibilityAction={handleAccessibilityAction}
-      style={styles.sliderContainer}
-      {...panResponder.panHandlers}
-    >
-      <View style={styles.sliderLabels}>
-        <Text variant="caption1" color={systemColors.secondaryLabel}>
-          {min.toFixed(1)}
-        </Text>
-        <Text variant="headline">{valueText}</Text>
-        <Text variant="caption1" color={systemColors.secondaryLabel}>
-          {max.toFixed(1)}
-        </Text>
-      </View>
-      <View
-        ref={trackRef}
-        onLayout={() => {
-          trackLayoutRef.current = null;
-        }}
-        style={[styles.sliderTrack, { backgroundColor: systemColors.separator }]}
-      >
-        <View
-          style={[
-            styles.sliderFill,
-            {
-              backgroundColor: systemColors.accent,
-              width: `${Math.max(0, Math.min(1, ratio)) * 100}%`,
-            },
-          ]}
-        />
-        <View
-          style={[
-            styles.sliderThumb,
-            {
-              backgroundColor: systemColors.background,
-              borderColor: systemColors.accent,
-              left: `${Math.max(0, Math.min(1, ratio)) * 100}%`,
-            },
-          ]}
-        />
-      </View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  scrollContent: {
-    flexGrow: 1,
-    paddingTop: spacing[4],
-    gap: spacing[6],
-  },
-  intro: {
-    paddingHorizontal: spacing[4],
+  section: {
+    gap: spacing[2],
   },
   description: {
     lineHeight: 18,
   },
-  previewSection: {
-    gap: spacing[2],
-  },
-  previewCard: {
-    borderRadius: borderRadius.lg,
-    overflow: 'hidden',
-    marginHorizontal: spacing[4],
-    padding: spacing[3],
-    gap: spacing[2],
+  classicOnlyNote: {
+    paddingHorizontal: spacing[4],
   },
   previewBoard: {
     borderRadius: borderRadius.md,
     overflow: 'hidden',
-  },
-  previewCaption: {
-    lineHeight: 16,
-  },
-  section: {
-    gap: spacing[2],
   },
   card: {
     borderRadius: borderRadius.lg,
@@ -804,6 +776,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing[1],
     flex: 1,
+  },
+  paletteSection: {
+    gap: spacing[2],
+  },
+  paletteRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing[2],
+  },
+  paletteChip: {
+    alignItems: 'center',
+    gap: spacing[1],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    borderRadius: borderRadius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  paletteChipSelected: {
+    borderWidth: 2,
+  },
+  paletteSwatchRow: {
+    flexDirection: 'row',
+  },
+  paletteSwatch: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    marginLeft: -4,
   },
   resetButton: {
     alignSelf: 'flex-start',
@@ -859,33 +859,4 @@ const styles = StyleSheet.create({
   shapeLabel: {
     textAlign: 'center',
   },
-  sliderContainer: {
-    gap: spacing[3],
-    paddingVertical: spacing[2],
-  },
-  sliderLabels: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing[2],
-  },
-  sliderTrack: {
-    height: 6,
-    borderRadius: 3,
-  },
-  sliderFill: {
-    height: 6,
-    borderRadius: 3,
-  },
-  sliderThumb: {
-    position: 'absolute',
-    top: -9,
-    width: 24,
-    height: 24,
-    marginLeft: -12,
-    borderRadius: 12,
-    borderWidth: 2,
-  },
 });
-
-const accessibilityActions = [{ name: 'increment' }, { name: 'decrement' }] as const;

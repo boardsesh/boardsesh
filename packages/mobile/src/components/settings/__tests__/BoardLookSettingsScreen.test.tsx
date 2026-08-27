@@ -1,0 +1,283 @@
+// @vitest-environment jsdom
+//
+// Section-visibility regression guard for the "Board look" screen (issue
+// #2202): renders the whole screen with the settings store stubbed to each
+// mode and asserts which rows exist. The screen is mode-gated in two places —
+// the preset chip row (only in Boardsesh mode, keyed off the raw picker) and
+// the Classic marker shape/brush/size rows (keyed off the EFFECTIVE mode, so a
+// "Boardsesh" pick that the installed renderer can't honour still shows the
+// Classic controls that actually apply). Glow & veil and Marks stay visible in
+// every mode so a climber can tune Boardsesh before switching to it.
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { render, cleanup } from '@testing-library/react';
+import { createElement, type ReactNode } from 'react';
+import type { BoardRenderSettings, EffectiveBoardRenderSettings } from '../../../lib/board-render-settings';
+
+type SegmentedControlOption = { key: string; label: string };
+type SegmentedControlMockProps = {
+  options: SegmentedControlOption[];
+  selectedKey: string;
+  onSelect: (key: string) => void;
+  disabledKeys?: ReadonlySet<string>;
+  accessibilityLabel?: string;
+};
+
+// Literal copies of the module's own defaults, not imports: `vi.hoisted()`
+// initializers run before the top-level imports below are bound, so reading
+// an imported const in here would hit the temporal dead zone. The real
+// defaults are asserted against directly in board-render-settings.test.ts;
+// this file only needs a stable, valid BoardseshRenderSettings shape to seed
+// state that `setState()` immediately overwrites per test anyway.
+const TEST_DEFAULT_BOARDSESH_SETTINGS = {
+  glowFalloff: 'default',
+  glowReach: 1,
+  plateauShare: 0.4,
+  veil: 'auto',
+  veilOpacity: 0.6,
+  markStyle: 'glow',
+  fillOpacity: 0.55,
+  softDisc: false,
+  smallHoldBoost: true,
+  ledDots: true,
+  roleGlyphs: false,
+  thumbnailStyle: 'fill',
+} as const;
+
+const boardRenderSettingsState = vi.hoisted(() => ({
+  settings: { mode: 'default', boardsesh: {} } as BoardRenderSettings,
+  setMode: vi.fn(),
+  setBoardseshField: vi.fn(),
+  reset: vi.fn(),
+}));
+
+const effectiveRenderState = vi.hoisted(() => ({
+  effectiveRenderSettings: {} as EffectiveBoardRenderSettings,
+  boardseshRendererAvailable: true as boolean | null,
+}));
+
+const holdColorOverridesState = vi.hoisted(() => ({
+  overrides: {},
+  shapes: {},
+  brushThickness: 1,
+  shapeSize: 1,
+  loaded: true,
+  signature: 'default',
+  renderSignature: 'default',
+  setRoleOverride: vi.fn(),
+  setRoleShapeOverride: vi.fn(),
+  setRoleMarkerOverride: vi.fn(),
+  setBrushThickness: vi.fn(),
+  setShapeSize: vi.fn(),
+  setOverrides: vi.fn(),
+  resetOverrides: vi.fn(),
+}));
+
+const segmentedControlCalls = vi.hoisted(() => ({ byLabel: new Map<string, SegmentedControlMockProps>() }));
+
+vi.mock('react-native', () => ({
+  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
+    createElement('button', { onClick: onPress }, children),
+  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  PanResponder: { create: () => ({ panHandlers: {} }) },
+  // Something in the render tree reaches `theme/ios-colors.ts`, which reads
+  // `Platform.OS` at module top level (outside any component body) — needed
+  // even though nothing in this suite exercises a platform branch directly.
+  Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios },
+  PlatformColor: (color: string) => color,
+}));
+
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }) }));
+
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({
+    systemColors: {
+      accent: '#6D28D9',
+      background: '#ffffff',
+      fill: '#eeeeee',
+      label: '#000000',
+      secondaryBackground: '#f5f5f5',
+      secondaryLabel: '#888888',
+      separator: '#cccccc',
+    },
+  }),
+}));
+
+vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
+  useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
+}));
+
+vi.mock('../../../hooks/use-native-climb-render', () => ({
+  useEffectiveBoardRenderSettings: () => effectiveRenderState,
+}));
+
+vi.mock('../../../lib/board-render-settings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../lib/board-render-settings')>();
+  return { ...actual, useBoardRenderSettings: () => boardRenderSettingsState };
+});
+
+vi.mock('../../../lib/hold-color-overrides', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../lib/hold-color-overrides')>();
+  return { ...actual, useHoldColorOverrides: () => holdColorOverridesState };
+});
+
+vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: undefined }) }));
+vi.mock('../../../lib/graphql/hooks/use-infinite-search-climbs', () => ({
+  useInfiniteSearchClimbs: () => ({ data: undefined }),
+}));
+vi.mock('../../../lib/board-details', () => ({ getBoardRenderData: () => null }));
+
+vi.mock('../../Text', () => ({
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+}));
+vi.mock('../../Icon', () => ({ Icon: () => createElement('span', { 'data-testid': 'icon' }) }));
+vi.mock('../../ListRow', () => ({
+  ListRow: ({ title, subtitle, onPress }: { title: string; subtitle?: string; onPress?: () => void }) =>
+    createElement(
+      'button',
+      { onClick: onPress },
+      createElement('span', { key: 'title' }, title),
+      subtitle ? createElement('span', { key: 'subtitle' }, subtitle) : null,
+    ),
+}));
+vi.mock('../../SectionHeader', () => ({
+  SectionHeader: ({ title }: { title: string }) => createElement('h3', null, title),
+}));
+vi.mock('../../SegmentedControl', () => ({
+  SegmentedControl: (props: SegmentedControlMockProps) => {
+    if (props.accessibilityLabel) segmentedControlCalls.byLabel.set(props.accessibilityLabel, props);
+    return createElement(
+      'div',
+      { role: 'group', 'aria-label': props.accessibilityLabel },
+      props.options.map((option) =>
+        createElement(
+          'button',
+          {
+            key: option.key,
+            disabled: props.disabledKeys?.has(option.key) ?? false,
+            onClick: () => props.onSelect(option.key),
+          },
+          option.label,
+        ),
+      ),
+    );
+  },
+}));
+vi.mock('../../SwitchRow', () => ({
+  SwitchRow: ({
+    label,
+    value,
+    onValueChange,
+  }: {
+    label: string;
+    description?: string;
+    value: boolean;
+    onValueChange: (value: boolean) => void;
+  }) => createElement('button', { onClick: () => onValueChange(!value) }, label),
+}));
+vi.mock('../../ModalSheet', () => ({
+  ModalSheet: ({ visible, children, footer }: { visible?: boolean; children?: ReactNode; footer?: ReactNode }) =>
+    visible ? createElement('div', { 'data-testid': 'modal-sheet' }, children, footer) : null,
+}));
+vi.mock('../../Button', () => ({
+  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
+    createElement('button', { onClick: onPress }, title),
+}));
+vi.mock('../../BoardImageNative', () => ({
+  BoardImageNative: () => createElement('div', { 'data-testid': 'board-image' }),
+}));
+vi.mock('../../board-renderer/HoldMarkerShape', () => ({
+  HoldMarkerShapeSvg: () => createElement('div', { 'data-testid': 'marker-shape' }),
+}));
+vi.mock('../OkhslColorPicker', () => ({
+  OkhslColorPicker: () => createElement('div', { 'data-testid': 'color-picker' }),
+}));
+
+const { BoardLookSettingsScreen } = await import('../BoardLookSettingsScreen');
+
+function setState(params: {
+  mode: BoardRenderSettings['mode'];
+  effectiveMode: 'classic' | 'boardsesh';
+  boardseshRendererAvailable: boolean | null;
+}) {
+  boardRenderSettingsState.settings = { mode: params.mode, boardsesh: TEST_DEFAULT_BOARDSESH_SETTINGS };
+  effectiveRenderState.effectiveRenderSettings = {
+    mode: params.effectiveMode,
+    glowFalloff: 'soft',
+    glowFalloffSource: 'default',
+    boardsesh: TEST_DEFAULT_BOARDSESH_SETTINGS,
+    rendererAvailable: params.boardseshRendererAvailable === true,
+  };
+  effectiveRenderState.boardseshRendererAvailable = params.boardseshRendererAvailable;
+}
+
+afterEach(() => {
+  cleanup();
+  segmentedControlCalls.byLabel.clear();
+  vi.clearAllMocks();
+});
+
+describe('BoardLookSettingsScreen — Classic mode', () => {
+  it('shows the Classic marker rows, hides the preset row and the renderer banner', () => {
+    setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
+    const { queryByText } = render(<BoardLookSettingsScreen />);
+
+    expect(queryByText('mobile.more.accessibility.brush.title')).not.toBeNull();
+    expect(queryByText('mobile.more.accessibility.size.title')).not.toBeNull();
+    expect(queryByText('mobile.more.boardLook.accessibility.classicOnlyNote')).toBeNull();
+    expect(queryByText('mobile.more.boardLook.presets.title')).toBeNull();
+    expect(queryByText('mobile.more.boardLook.rendererUnavailable.title')).toBeNull();
+    // Glow & veil and Marks are not mode-gated — a climber can tune them
+    // before ever switching out of Classic.
+    expect(queryByText('mobile.more.boardLook.glowVeil.title')).not.toBeNull();
+    expect(queryByText('mobile.more.boardLook.marks.title')).not.toBeNull();
+    // Colour overrides stay visible in every mode.
+    expect(queryByText('mobile.more.boardLook.accessibility.cvdPalette.title')).not.toBeNull();
+    expect(queryByText('mobile.more.boardLook.resetAll')).not.toBeNull();
+  });
+});
+
+describe('BoardLookSettingsScreen — Boardsesh mode (renderer available)', () => {
+  it('shows the preset row and the classic-only note, hides the Classic marker rows', () => {
+    setState({ mode: 'boardsesh', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
+    const { queryByText } = render(<BoardLookSettingsScreen />);
+
+    expect(queryByText('mobile.more.boardLook.presets.title')).not.toBeNull();
+    expect(queryByText('mobile.more.boardLook.accessibility.classicOnlyNote')).not.toBeNull();
+    expect(queryByText('mobile.more.accessibility.brush.title')).toBeNull();
+    expect(queryByText('mobile.more.accessibility.size.title')).toBeNull();
+    expect(queryByText('mobile.more.boardLook.rendererUnavailable.title')).toBeNull();
+  });
+});
+
+describe('BoardLookSettingsScreen — Boardsesh requested but the renderer cannot draw it', () => {
+  it('shows the banner and disables the Boardsesh segment, but still shows Classic rows (effective mode wins)', () => {
+    setState({ mode: 'boardsesh', effectiveMode: 'classic', boardseshRendererAvailable: false });
+    const { queryByText } = render(<BoardLookSettingsScreen />);
+
+    expect(queryByText('mobile.more.boardLook.rendererUnavailable.title')).not.toBeNull();
+    // The picker itself still reads "Boardsesh", so the preset row (gated on
+    // the raw setting) stays up even though nothing Boardsesh is drawing yet.
+    expect(queryByText('mobile.more.boardLook.presets.title')).not.toBeNull();
+    // But the marker rows are gated on the EFFECTIVE mode, which fell back to
+    // classic — they must come back, not stay hidden under a mode that isn't
+    // actually rendering.
+    expect(queryByText('mobile.more.accessibility.brush.title')).not.toBeNull();
+    expect(queryByText('mobile.more.boardLook.accessibility.classicOnlyNote')).toBeNull();
+
+    const modeControl = segmentedControlCalls.byLabel.get('mobile.more.boardLook.mode.title');
+    expect(modeControl?.disabledKeys?.has('boardsesh')).toBe(true);
+  });
+});
+
+describe('BoardLookSettingsScreen — Automatic mode', () => {
+  it('captions which drawing Automatic currently resolves to, and hides the preset row', () => {
+    setState({ mode: 'default', effectiveMode: 'classic', boardseshRendererAvailable: true });
+    const { queryByText } = render(<BoardLookSettingsScreen />);
+
+    expect(queryByText('mobile.more.boardLook.mode.captionAutomaticClassic')).not.toBeNull();
+    expect(queryByText('mobile.more.boardLook.mode.captionAutomaticBoardsesh')).toBeNull();
+    expect(queryByText('mobile.more.boardLook.presets.title')).toBeNull();
+  });
+});
