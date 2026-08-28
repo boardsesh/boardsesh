@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vite-plus/test';
-import { resolveCanonicalAuthUrl, applyCanonicalAuthUrl, type AuthEnv } from '../canonical-auth-url';
+import {
+  ALLOW_MISSING_CANONICAL_ORIGIN_ENV_VAR,
+  applyCanonicalAuthUrl,
+  type AuthEnv,
+  diagnoseCanonicalOrigin,
+  resolveCanonicalAuthUrl,
+} from '../canonical-auth-url';
 
 // Every case drives an explicit env object, so nothing here depends on the
 // ambient process env.
@@ -213,5 +219,124 @@ describe('applyCanonicalAuthUrl', () => {
       applyCanonicalAuthUrl(env);
       if (env.NEXTAUTH_URL) expectNotLoopback(env.NEXTAUTH_URL, hostedEnv);
     }
+  });
+
+  it('says nothing at all when a hosted deployment names no origin and NEXTAUTH_URL is simply absent', () => {
+    // The gap diagnoseCanonicalOrigin exists to close: the backstop needs a
+    // PARSEABLE loopback value before it warns, so an absent NEXTAUTH_URL is
+    // total silence — which is precisely the state Dockerfile.web's runner
+    // stage shipped before #4651.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const env: AuthEnv = { NODE_ENV: 'production' };
+
+    expect(applyCanonicalAuthUrl(env)).toBeUndefined();
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe('diagnoseCanonicalOrigin', () => {
+  const PRODUCTION_SERVER: AuthEnv = { NODE_ENV: 'production' };
+
+  it('is fatal on a production server that names no origin at all (the Railway container bug)', () => {
+    const diagnosis = diagnoseCanonicalOrigin({ ...PRODUCTION_SERVER, DATABASE_URL: 'postgres://db/main' });
+
+    expect(diagnosis.level).toBe('fatal');
+    // The message has to name what to set; an operator reading a crashed boot
+    // log gets one shot at understanding it.
+    expect(diagnosis.level === 'fatal' && diagnosis.message).toContain('NEXTAUTH_URL');
+    expect(diagnosis.level === 'fatal' && diagnosis.message).toContain('BASE_URL');
+  });
+
+  it('is ok on Railway production once the canonical origin is set', () => {
+    expect(diagnoseCanonicalOrigin({ ...PRODUCTION_SERVER, NEXTAUTH_URL: PROD_ORIGIN })).toEqual({ level: 'ok' });
+    expect(diagnoseCanonicalOrigin({ ...PRODUCTION_SERVER, BASE_URL: PROD_ORIGIN })).toEqual({ level: 'ok' });
+  });
+
+  it('is ok on Vercel production, where the loopback env file is overridden by the resolver', () => {
+    // Measured production state: .env.local supplies loopback values and
+    // VERCEL_ENV resolves the canonical origin over the top of them. Booting
+    // must not become conditional on Vercel project env being fixed first.
+    expect(
+      diagnoseCanonicalOrigin({
+        ...PRODUCTION_SERVER,
+        VERCEL: '1',
+        VERCEL_ENV: 'production',
+        VERCEL_URL: 'boardsesh-abc.vercel.app',
+        NEXTAUTH_URL: 'http://localhost:3000',
+        BASE_URL: 'http://localhost:3000',
+      }),
+    ).toEqual({ level: 'ok' });
+  });
+
+  it('is ok on a Vercel preview', () => {
+    expect(
+      diagnoseCanonicalOrigin({
+        ...PRODUCTION_SERVER,
+        VERCEL_ENV: 'preview',
+        VERCEL_URL: 'boardsesh-abc.vercel.app',
+      }),
+    ).toEqual({ level: 'ok' });
+  });
+
+  it('is ok on the homelab branch-deploy container', () => {
+    expect(diagnoseCanonicalOrigin({ ...PRODUCTION_SERVER, NEXTAUTH_URL: 'https://42.preview.boardsesh.com' })).toEqual(
+      { level: 'ok' },
+    );
+  });
+
+  it('only warns when a production server names a loopback origin', () => {
+    // `next start` on a laptop and the CI e2e server (which sets
+    // NEXTAUTH_URL=http://localhost:3000) are indistinguishable at boot from a
+    // host handed a copy of .env.local. Failing those closed would brick both.
+    const diagnosis = diagnoseCanonicalOrigin({ ...PRODUCTION_SERVER, ...LOCAL_DEV_ENV });
+
+    expect(diagnosis.level).toBe('warn');
+    expect(diagnosis.level === 'warn' && diagnosis.message).toContain('http://localhost:3000');
+  });
+
+  it('is silent on a developer machine and in a test runner', () => {
+    expect(diagnoseCanonicalOrigin({})).toEqual({ level: 'ok' });
+    expect(diagnoseCanonicalOrigin(LOCAL_DEV_ENV)).toEqual({ level: 'ok' });
+    expect(diagnoseCanonicalOrigin({ NODE_ENV: 'development' })).toEqual({ level: 'ok' });
+    expect(diagnoseCanonicalOrigin({ NODE_ENV: 'test' })).toEqual({ level: 'ok' });
+    // A fixture that forces NODE_ENV=production inside vitest is still a test.
+    expect(diagnoseCanonicalOrigin({ ...PRODUCTION_SERVER, VITEST: 'true' })).toEqual({ level: 'ok' });
+  });
+
+  it('never fails a build', () => {
+    // `next build` runs with NODE_ENV=production. Measured on Next 16.2.12 it
+    // does not call the instrumentation hook at all, so this is belt-and-braces
+    // — but a build serves no requests and writes no cookies, so it must never
+    // be the thing this guard stops.
+    expect(diagnoseCanonicalOrigin({ ...PRODUCTION_SERVER, NEXT_PHASE: 'phase-production-build' })).toEqual({
+      level: 'ok',
+    });
+  });
+
+  it('downgrades the fatal to a warning when the operator sets the bypass', () => {
+    for (const bypassValue of ['1', 'true', 'TRUE']) {
+      const diagnosis = diagnoseCanonicalOrigin({
+        ...PRODUCTION_SERVER,
+        [ALLOW_MISSING_CANONICAL_ORIGIN_ENV_VAR]: bypassValue,
+      });
+      expect(diagnosis.level, bypassValue).toBe('warn');
+    }
+    // Anything else is not a bypass — a stray empty value must not disarm it.
+    expect(diagnoseCanonicalOrigin({ ...PRODUCTION_SERVER, [ALLOW_MISSING_CANONICAL_ORIGIN_ENV_VAR]: '' }).level).toBe(
+      'fatal',
+    );
+  });
+
+  it('does not fire for an empty-string origin variable', () => {
+    // Dockerfile.web's runner declares `ENV BASE_URL=$BASE_URL`, which is the
+    // empty string when the image is built without the build arg. An empty
+    // value names nothing, so it must still be fatal rather than pass the check.
+    expect(diagnoseCanonicalOrigin({ ...PRODUCTION_SERVER, BASE_URL: '', NEXTAUTH_URL: '' }).level).toBe('fatal');
+  });
+
+  it('mutates nothing', () => {
+    const env: AuthEnv = { ...PRODUCTION_SERVER };
+    diagnoseCanonicalOrigin(env);
+    expect(env).toEqual({ NODE_ENV: 'production' });
   });
 });

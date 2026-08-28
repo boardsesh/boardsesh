@@ -93,4 +93,21 @@ describe('POST /api/auth/register', () => {
       if (savedBaseUrl !== undefined) process.env.BASE_URL = savedBaseUrl;
     }
   });
+
+  it('falls back to the request origin when BASE_URL is present but empty', async () => {
+    // Dockerfile.web's runner stage declares `ENV BASE_URL=$BASE_URL`, which is
+    // the empty string in an image built without the build arg — present, not
+    // absent. With `??` that empty string wins and every link in the email
+    // loses its origin.
+    const savedBaseUrl = process.env.BASE_URL;
+    process.env.BASE_URL = '';
+    try {
+      await POST(createRequest({ email: 'test@example.com', password: 'password123' }, 'https://www.boardsesh.com'));
+      const [, , baseUrl] = mockSendVerificationEmail.mock.calls[0] as [string, string, string];
+      expect(baseUrl).toBe('https://www.boardsesh.com');
+    } finally {
+      if (savedBaseUrl === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = savedBaseUrl;
+    }
+  });
 });
