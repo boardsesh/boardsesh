@@ -549,10 +549,23 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
       .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
       .limit(MAX_CREDENTIAL_CANDIDATES + 1);
 
-    if (credentialCandidates.length === 0 || credentialCandidates.length > MAX_CREDENTIAL_CANDIDATES) {
-      // Unknown emails, OAuth-only accounts, and oversized ambiguous groups all
-      // take one dummy comparison and return the same generic response.
+    if (credentialCandidates.length === 0) {
+      // Unknown emails and OAuth-only accounts take one dummy comparison and
+      // return the same generic response.
       await compare(password, DUMMY_PASSWORD_HASH);
+      sendJson(res, 401, { error: INVALID_CREDENTIALS_ERROR });
+      return;
+    }
+
+    if (credentialCandidates.length > MAX_CREDENTIAL_CANDIDATES) {
+      // Keep oversized groups bounded while matching the work performed for
+      // the largest supported group, so the limit sentinel is not observable
+      // through a sudden drop to one bcrypt comparison.
+      await Promise.all(
+        credentialCandidates
+          .slice(0, MAX_CREDENTIAL_CANDIDATES)
+          .map((candidate) => compare(password, candidate.passwordHash)),
+      );
       sendJson(res, 401, { error: INVALID_CREDENTIALS_ERROR });
       return;
     }

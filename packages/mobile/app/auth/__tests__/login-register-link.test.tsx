@@ -26,7 +26,8 @@ vi.mock('react-native', () => ({
   },
   KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, accessibilityRole }: { children?: ReactNode; accessibilityRole?: string }) =>
+    createElement('div', { role: accessibilityRole }, children),
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
   Pressable: ({ onPress, children }: { onPress?: () => void; children?: ReactNode }) =>
     createElement('button', { onClick: onPress }, children),
@@ -91,6 +92,7 @@ describe('LoginScreen', () => {
 
     const { container } = render(<LoginScreen />);
 
+    expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(container.textContent).not.toContain('login.splitScreenNotice');
   });
 

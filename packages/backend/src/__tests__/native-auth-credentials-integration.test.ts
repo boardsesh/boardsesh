@@ -5,7 +5,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import { afterAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { hash } from 'bcryptjs';
-import { eq } from 'drizzle-orm';
+import { inArray } from 'drizzle-orm';
 import { users, userCredentials } from '@boardsesh/db/schema/auth';
 import { db } from '../db/client';
 
@@ -72,6 +72,8 @@ function parseJwtSubject(response: MockResponse): unknown {
 }
 
 const testUserId = crypto.randomUUID();
+const oversizedUserIds = Array.from({ length: 9 }, () => crypto.randomUUID());
+const allTestUserIds = [testUserId, ...oversizedUserIds];
 
 describe('native credentials auth against Postgres', () => {
   beforeEach(() => {
@@ -79,7 +81,7 @@ describe('native credentials auth against Postgres', () => {
   });
 
   afterAll(async () => {
-    await db.delete(users).where(eq(users.id, testUserId));
+    await db.delete(users).where(inArray(users.id, allTestUserIds));
   });
 
   it('authenticates a lower-case submission against a legacy mixed-case email row', async () => {
@@ -103,5 +105,33 @@ describe('native credentials auth against Postgres', () => {
 
     expect(response.statusCode).toBe(200);
     expect(parseJwtSubject(response)).toBe(testUserId);
+  });
+
+  it('rejects a case-insensitive group above the credential candidate limit', async () => {
+    const passwordHash = await hash('oversized-group-password', 10);
+    await db.insert(users).values(
+      oversizedUserIds.map((id, index) => ({
+        id,
+        email: 'Oversized.Native.Group@example.com',
+        name: `Oversized Native Login ${index}`,
+      })),
+    );
+    await db.insert(userCredentials).values(
+      oversizedUserIds.map((userId) => ({
+        userId,
+        passwordHash,
+      })),
+    );
+
+    const request = makeRequest({
+      email: 'oversized.native.group@example.com',
+      password: 'oversized-group-password',
+    });
+    const response = makeResponse();
+
+    await handleNativeAuthCredentials(request as unknown as IncomingMessage, response as unknown as ServerResponse);
+
+    expect(response.statusCode).toBe(401);
+    expect(JSON.parse(response.body)).toEqual({ error: 'Invalid email or password' });
   });
 });
