@@ -358,7 +358,7 @@ describe('iOS TestFlight workflow wiring', () => {
     const uploadIndex = workflow.indexOf('- name: Upload iOS dSYMs to Sentry');
     expect(uploadIndex).toBeGreaterThan(workflow.indexOf('- name: Archive'));
     expect(uploadIndex).toBeLessThan(workflow.indexOf('- name: Export archive (uploads to TestFlight)'));
-    expect(uploadIndex).toBeLessThan(workflow.indexOf('- name: Tag the shipped iOS fingerprint'));
+    expect(uploadIndex).toBeLessThan(workflow.indexOf('- name: Tag the uploaded iOS build and fingerprint'));
   });
 
   it('registers the vp task the workflow calls', () => {

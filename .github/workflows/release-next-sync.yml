@@ -1,0 +1,207 @@
+name: Sync release/next with main
+
+# release/next is an ephemeral native release train. Keep its open PR rebased on
+# the exact current main while never overwriting a maintainer's concurrent push.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-next-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  rebase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      attempted: ${{ steps.target.outputs.attempted }}
+      pr_number: ${{ steps.target.outputs.pr_number }}
+      release_sha: ${{ steps.target.outputs.release_sha }}
+    steps:
+      - name: Find the open release PR
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/release%2Fnext" --jq '.object.sha' 2>/dev/null || true)"
+          if [ -z "$release_sha" ]; then
+            echo "attempted=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::release/next does not exist; nothing to rebase."
+            exit 0
+          fi
+
+          owner="${GITHUB_REPOSITORY%%/*}"
+          pr="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/pulls" \
+            -f state=open -f base=main -f "head=${owner}:release/next" \
+            --jq '.[0] // empty')"
+          pr_number="$(jq -r '.number // empty' <<<"$pr")"
+          if [ -z "$pr_number" ]; then
+            echo "attempted=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::release/next has no open PR to main; nothing to rebase."
+            exit 0
+          fi
+          [ "$(jq -r '.base.ref' <<<"$pr")" = main ] && \
+            [ "$(jq -r '.head.ref' <<<"$pr")" = release/next ] && \
+            [ "$(jq -r '.head.sha' <<<"$pr")" = "$release_sha" ] && \
+            [ "$(jq -r '.base.repo.full_name' <<<"$pr")" = "$GITHUB_REPOSITORY" ] && \
+            [ "$(jq -r '.head.repo.full_name' <<<"$pr")" = "$GITHUB_REPOSITORY" ] || {
+              echo '::error::Release PR is not the exact same-repository release/next → main PR.'
+              exit 1
+            }
+
+          echo "attempted=true" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Mint repository App token
+        id: push_token
+        if: steps.target.outputs.attempted == 'true'
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+          permission-contents: write
+          # Required when the rebased train contains .github/workflows changes.
+          # The App installation must grant this before sync can be enabled.
+          permission-workflows: write
+
+      - name: Checkout release/next
+        if: steps.target.outputs.attempted == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: release/next
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Rebase release/next onto current main
+        id: rebase
+        if: steps.target.outputs.attempted == 'true'
+        env:
+          EXPECTED_RELEASE_SHA: ${{ steps.target.outputs.release_sha }}
+        run: |
+          set -euo pipefail
+          git config user.name 'boardsesh-repo-bot[bot]'
+          git config user.email 'boardsesh-repo-bot[bot]@users.noreply.github.com'
+          git fetch origin \
+            '+refs/heads/main:refs/remotes/origin/main' \
+            '+refs/heads/release/next:refs/remotes/origin/release/next'
+
+          current_release_sha="$(git rev-parse origin/release/next)"
+          if [ "$current_release_sha" != "$EXPECTED_RELEASE_SHA" ]; then
+            printf 'release/next moved before rebase: expected %s, found %s\n' \
+              "$EXPECTED_RELEASE_SHA" "$current_release_sha" > "$RUNNER_TEMP/release-next-sync-error.txt"
+            echo "::error::release/next moved before rebase; refusing to overwrite it."
+            exit 1
+          fi
+
+          git reset --hard "$EXPECTED_RELEASE_SHA"
+          set +e
+          git rebase --rebase-merges origin/main
+          rebase_status=$?
+          set -e
+          if [ "$rebase_status" -ne 0 ]; then
+            {
+              echo 'Rebase conflicts:'
+              git diff --name-only --diff-filter=U | head -n 20
+            } > "$RUNNER_TEMP/release-next-sync-error.txt"
+            git rebase --abort
+            echo "::error::release/next could not be rebased onto main."
+            exit "$rebase_status"
+          fi
+          echo "rebased_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Recheck the PR and push with an explicit lease
+        if: steps.target.outputs.attempted == 'true'
+        env:
+          EXPECTED_RELEASE_SHA: ${{ steps.target.outputs.release_sha }}
+          GH_APP_TOKEN: ${{ steps.push_token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.target.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          current_pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+          test "$(jq -r '.state' <<<"$current_pr")" = open || {
+            echo 'The release PR closed during rebase.' > "$RUNNER_TEMP/release-next-sync-error.txt"
+            exit 1
+          }
+          test "$(jq -r '.head.sha' <<<"$current_pr")" = "$EXPECTED_RELEASE_SHA" || {
+            echo 'release/next moved during rebase; the lease-protected push was skipped.' > "$RUNNER_TEMP/release-next-sync-error.txt"
+            exit 1
+          }
+          test "$(jq -r '.base.ref' <<<"$current_pr")" = main
+          test "$(jq -r '.head.ref' <<<"$current_pr")" = release/next
+          test "$(jq -r '.base.repo.full_name' <<<"$current_pr")" = "$GITHUB_REPOSITORY"
+          test "$(jq -r '.head.repo.full_name' <<<"$current_pr")" = "$GITHUB_REPOSITORY"
+
+          git_auth="$(printf 'x-access-token:%s' "$GH_APP_TOKEN" | base64 | tr -d '\n')"
+          clear_git_auth() {
+            git config --local --unset-all http.https://github.com/.extraheader >/dev/null 2>&1 || true
+          }
+          trap clear_git_auth EXIT
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $git_auth"
+          set +e
+          git push --force-with-lease="release/next:$EXPECTED_RELEASE_SHA" \
+            "https://github.com/${GITHUB_REPOSITORY}.git" \
+            'HEAD:refs/heads/release/next'
+          push_status=$?
+          set -e
+          clear_git_auth
+          unset git_auth
+          if [ "$push_status" -ne 0 ]; then
+            echo 'Repository App push failed. Confirm Contents and Workflows write permissions, then retry.' > "$RUNNER_TEMP/release-next-sync-error.txt"
+            echo '::error::Repository App could not update release/next; check Contents/Workflows write permissions and branch bypass.'
+            exit "$push_status"
+          fi
+
+      - name: Preserve sync failure details
+        if: failure() && steps.target.outputs.attempted == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-next-sync-failure-${{ github.run_id }}
+          path: ${{ runner.temp }}/release-next-sync-error.txt
+          if-no-files-found: ignore
+          retention-days: 1
+
+  notify-failure:
+    needs: rebase
+    if: always() && needs.rebase.result == 'failure' && needs.rebase.outputs.attempted == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: Native Release
+    steps:
+      - name: Download sync failure details
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: release-next-sync-failure-${{ github.run_id }}
+          path: ${{ runner.temp }}/release-next-sync-failure
+
+      - name: Notify deployments channel of sync failure
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          PR_NUMBER: ${{ needs.rebase.outputs.pr_number }}
+          RELEASE_SHA: ${{ needs.rebase.outputs.release_sha }}
+          MAIN_SHA: ${{ github.event.after || github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
+            echo "::warning::DISCORD_DEPLOY_WEBHOOK is not configured; release/next sync failure was not posted."
+            exit 0
+          fi
+          details="$(cat "$RUNNER_TEMP/release-next-sync-failure/release-next-sync-error.txt" 2>/dev/null || printf 'See the failed workflow step.')"
+          # Leave room below Discord's 2,000-character content limit for the
+          # heading, PR/ref fields, and run URL even when conflict paths are long.
+          details="${details:0:1200}"
+          content="$(printf '🚨 **release/next rebase failed**\n• PR: #%s\n• release: `%s`\n• main: `%s`\n• error: %s\n<%s>' \
+            "$PR_NUMBER" "${RELEASE_SHA:0:12}" "${MAIN_SHA:0:12}" "$details" "$RUN_URL")"
+          jq -n --arg content "$content" '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H 'Content-Type: application/json' -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post Discord notification (see status above)"

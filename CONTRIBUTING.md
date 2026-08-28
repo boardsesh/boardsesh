@@ -105,6 +105,13 @@ After mobile changes, run the validation sequence:
 
 Read [docs/react-native-performance.md](./docs/react-native-performance.md) before touching any list, provider, gesture, or board-art code, and [docs/mobile-sheets-vs-routes.md](./docs/mobile-sheets-vs-routes.md) before adding a screen or sheet.
 
+### Choose the PR base before coding
+
+- JavaScript-only mobile changes target `main`; the production OTA pipeline ships them to compatible store builds.
+- Changes that move the Expo native fingerprint target `release/next`, the TestFlight and Play-internal release train.
+- Split a mixed backend/native change into two PRs. Land a backward-compatible backend or shared-schema foundation on `main` first, then base the native mobile PR on `release/next` after it rebases.
+- Keep server behavior compatible with the currently shipped mobile app until the new store release has been adopted. If `release/next` is absent, ask a maintainer to start the next train from current `main`.
+
 ### Path A: small changes through the OTA channel switcher
 
 For a small fix you can test your pull request on a regular App Store or TestFlight build, with no local build at all. Every pull request that touches React Native code publishes its JavaScript bundle to its own update channel named `pr-<number>` (the `mobile-ota-preview.yml` workflow does this), and a build can switch to that channel at runtime.

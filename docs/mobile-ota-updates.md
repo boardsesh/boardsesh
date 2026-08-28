@@ -411,13 +411,20 @@ plain OTA to already-installed binaries. It's part of the `mobile-ci-env-parity.
 it can't silently drop out of one channel (which would revert that channel to the crashing
 `expo/fetch`), and `scripts/mobile-ota-compat-check.ts` writes it into the preview/`.env` too.
 
-## Native-build gating (OTA-only when the fingerprint is unchanged)
+## Native release train and build gating
 
-The OTA publish is cheap and runs on every push, but the native builds (`ios-testflight-rn`,
-~60 min on macOS; `android-apk-rn`, on Linux) only need to run when the fingerprint actually
-changes. A JS/TS-only change keeps the same fingerprint, so installed binaries pull the new JS over
-the air and a fresh native build is wasted. Each native workflow gates itself on the fingerprint —
-the self-hosted equivalent of Expo's `continuous-deploy-fingerprint`:
+`main` owns production OTA delivery; `release/next` owns automatic native
+TestFlight and Play-internal builds. Keeping native changes off `main` preserves
+the fingerprint requested by the current store fleet, so ordinary OTA fixes can
+continue while the next binary is tested and reviewed. A native change targets
+`release/next`; a JS-only mobile change targets `main`. Split mixed
+backend/native work so the backward-compatible backend or schema foundation can
+land on `main` before its mobile client targets the release train.
+
+The native builds (`ios-testflight-rn`, ~60 min on macOS;
+`android-apk-rn`, on Linux) only run when the fingerprint changes. A JS/TS-only
+change keeps the same fingerprint, so a fresh store build is wasted. Each native
+workflow gates itself on the fingerprint:
 
 1. A cheap Linux **`gate` job** resolves the platform fingerprint with `bunx expo-updates
 runtimeversion:resolve` using the same **workflow-level** env the build uses (iOS without
@@ -425,7 +432,7 @@ runtimeversion:resolve` using the same **workflow-level** env the build uses (iO
    and build can't drift, and the gate writes the same `.env` the build does — the `.env` is itself
    hashed into the fingerprint, so an absent or different one would resolve a different hash.
 2. If a git tag `fingerprint-<platform>-<hash>` already exists, a binary with that fingerprint has
-   already shipped → the native build **skips** (the OTA delivers the JS). Otherwise it **runs**.
+   already uploaded → the native build **skips**. Otherwise it **runs**.
 3. On a successful build + store upload, the build job pushes `fingerprint-<platform>-<hash>` — the
    gate value the binary embeds (see the pin below), not a re-resolved one.
 
@@ -438,44 +445,46 @@ worse — let the Linux OTA publish strand JS under a runtimeVersion the macOS b
 Android builds on Linux like its gate, so it was never divergent; it pins the same way for a uniform
 invariant.
 
-The OTA publish stays on the `fingerprint` policy (it does **not** read a tag or an override): it
-resolves the current commit's fingerprint and serves the JS under it. On a native-change commit it
-resolves the **new** fingerprint, so the new JS only reaches a binary built from that same commit —
-old binaries (still on the previous fingerprint) keep their embedded bundle until they store-update.
-That's the fingerprint policy working as intended; pinning the publish to the last shipped tag would
-instead serve native-dependent JS to old binaries and crash them.
+The production OTA publish stays `main`-only and on the `fingerprint` policy. It
+does not publish from `release/next`. Once both exact store candidates are
+approved and the release PR merges, the resulting `main` OTA resolves the
+accepted fingerprint and can deliver any JS-only drift accumulated during store
+review.
 
-**Fail-safe.** If the gate can't resolve the fingerprint, it builds. A manual `workflow_dispatch`
-bypasses the tag check and builds — for iOS that means dispatching on `main` (the iOS build is
-`main`-only by design, since it uploads to TestFlight). The Android workflow drives this with a
-`force_native` input (default **on**): on, it builds regardless of the fingerprint (the urgent-fix
-escape hatch below); off, it falls through to the same tag check as a push, so a dispatch can also be
-a no-op rebuild. A dispatch on any branch still produces an artifact-only APK, matching its
-pre-existing behavior.
+The acceptance monitor and store-draft verifier resolve each checkout with its
+own frozen historical lockfile and disabled lifecycle scripts. They run in the
+restricted `Native Release` environment but expose only `GOOGLE_MAPS_API_KEY` to
+release-tree code, because that key is a native Android fingerprint input. iOS
+explicitly removes it. Both the release-head and build-checkout fingerprints must
+match each other and the immutable 12-character fingerprint in the selected
+`build-<platform>-...` tag. This catches a fingerprint-affecting environment
+change after a binary upload instead of approving two equally drifted resolutions.
+
+**Fail-safe.** If the gate can't resolve the fingerprint, it builds. A manual
+`workflow_dispatch` on a trusted release ref bypasses the tag check and builds.
+Automatic store uploads never run from `main` or an arbitrary feature branch.
 
 **Manual overrides.**
 
-- **Ship an urgent JS-only fix to OTA-orphaned binaries.** A JS fix merged to `main` is delivered
-  OTA-only and skips the native build when its fingerprint already shipped — but a binary whose
-  fingerprint has since drifted (heavy native churn orphans older binaries, the root cause behind
-  issue #3098) can't pull that OTA. Dispatch `android-apk-rn.yml` with `force_native` on to rebuild
-  the native app so those installs get the fix via a store update.
-- Force a rebuild of a fingerprint that already has a tag:
-  `git push --delete origin fingerprint-<platform>-<hash>`, then re-push to `main` (or run the
-  workflow via dispatch).
-- The Android tag is recorded once the **sideload APK (GitHub Release) and the AAB build** succeed
-  — the reliable signal that a binary with this fingerprint exists. It is **not** gated on the Play
-  upload: that step is best-effort and can fail for Console-policy reasons (e.g. the
-  Foreground-services declaration) unrelated to the binary, and coupling the tag to it would let a
-  persistent Play issue rebuild Android forever. A failed Play upload is recovered by re-uploading
-  the retained AAB artifact (or rerunning the workflow), not by withholding the fingerprint tag.
-- The Android **gate** job runs in the `Production` environment so it can read
-  `GOOGLE_MAPS_API_KEY` (a Production-scoped secret that changes the Android fingerprint) and
+- **Ship an urgent JS-only fix to OTA-orphaned binaries.** A JS fix merged to
+  `main` normally ships OTA-only. If an orphaned cohort needs another store
+  binary, deliberately dispatch the native workflow from the trusted release
+  ref after preparing that release train.
+- **Force a rebuild of a fingerprint that already has a tag.** Dispatch the
+  platform workflow from `release/next` (or trusted `main` for an emergency).
+  Manual dispatch bypasses the fingerprint gate. The protected fingerprint tag
+  stays at the first build that established it, while the successful rebuild gets
+  a fresh build-number tag. Do not delete or move the fingerprint tag.
+- Android candidate APK/AAB files stay in private Actions artifacts. The build
+  and fingerprint tags are recorded only after the Play internal upload
+  succeeds; no public GitHub Release is created.
+- The Android **gate** job runs in the restricted `Native Release` environment so it can read
+  `GOOGLE_MAPS_API_KEY` (a secret that changes the Android fingerprint) and
   resolve the same hash the build bakes. Without it the gate computes a map-less fingerprint that
   never matches the binary, and Android never skips.
 
 Resolve the current fingerprint locally to predict what the gate will see: `cd packages/mobile &&
-bunx expo-updates runtimeversion:resolve --platform ios` (add the production env to match CI
+bunx expo-updates runtimeversion:resolve --platform ios` (add the Native Release env to match CI
 exactly — see the parity check above).
 
 ## Backporting a JS fix to an approved release (release anchors)
@@ -486,11 +495,9 @@ OTA-orphaned: a fix published from `main` goes out under the new fingerprint tha
 requests (issue #3098). The remedy is to publish an OTA under the _old_ release's fingerprint. We
 make that reproducible by anchoring each approved release with a tag.
 
-**Anchoring is tied to App Store approval, not to merge.** `main` iterates through many fingerprints
-between releases; we only care about the ones that actually shipped and were approved (an approved
-binary is frozen forever). The marketing `version` _is_ part of the fingerprint, so bumping it moves
-the fingerprint — which is fine, because we never rely on an intermediate fingerprint staying
-OTA-compatible; we only anchor approved ones.
+**Anchoring is tied to each store's approval, not to merge.** We only care
+about binaries that each platform actually accepted. The marketing `version`
+is part of the fingerprint, so bumping it moves the fingerprint.
 
 Two tag families do this:
 
@@ -498,15 +505,19 @@ Two tag families do this:
   (`ios-testflight-rn.yml` / `android-apk-rn.yml`) on a successful store upload. Maps a store build
   number (iOS `CFBundleVersion` / Android `versionCode`) to the commit and the canonical gate
   fingerprint the binary embeds. `<shortfp>` is the first 12 hex chars of the fingerprint.
-- `release/<platform>-v<version>-<shortfp>` — cut by `mobile-auto-version-bump.yml` when App Store
-  Connect reports a version accepted (`scripts/mobile-cut-release-tags.ts`). It points at the commit
-  the approved binary was built from; its `<shortfp>` records the fingerprint an OTA must resolve to
-  reach that release. This is the frozen **backport anchor**.
+- `release/<platform>-v<version>-<shortfp>` — cut by `mobile-auto-version-bump.yml`, or by
+  `release-next-monitor.yml` immediately before it promotes the native train, when that platform's store reports
+  the exact build accepted (`scripts/mobile-cut-release-tags.ts`). It points at the commit the approved binary was
+  built from; its `<shortfp>` records the fingerprint an OTA must resolve to reach that release. This is the frozen
+  **backport anchor**.
 
-`mobile-auto-version-bump.yml` runs on a schedule (every 6h) and, per accepted version, looks up the
-approved build's `build-*` tag (iOS by the approved build number, Android by the latest build of the
-same marketing version) and cuts the `release/*` anchor at that commit. It is idempotent, so the
-second platform's approval and any re-run are safe.
+`mobile-auto-version-bump.yml` runs on a schedule and looks up each store's
+exact approved build number before cutting that platform's anchor. The separate
+`release-next-monitor.yml` repeats that exact lookup before cutting/verifying the
+same idempotent anchors. It discovers the open `release/next` PR and merges it only when the latest
+matching iOS and Android candidate numbers are both approved, the PR is ready,
+approved, green, current and conflict-free. Unresolved review threads are not a
+merge gate.
 
 **It does not bump the marketing version.** An earlier revision auto-bumped the patch on `main` the
 moment App Store Connect reported a version accepted, on the theory that anchoring only approved
@@ -521,12 +532,10 @@ Release Anchor`) and file name are kept; only the bump was removed.
 `build-ios-v<version>-<buildNumber>-*` tag matches it, it skips (rather than anchoring a different
 build's commit + fingerprint) and retries on the next run once the tag exists.
 
-**Android caveat:** approval is detected from App Store Connect only — there is no Google Play query.
-The Android anchor is cut alongside the iOS approval, pointing at the _latest_ Android build of the
-same marketing version. If Android hasn't actually shipped that version to the store, the anchor is
-premature; a backport under it would just reach whatever installs hold that fingerprint (and the
-backport re-verifies the fingerprint before publishing), so it is ineffective rather than incorrect.
-Confirm the Android release actually shipped before relying on an Android backport.
+**Android anchoring is strict:** Google Play's production release lifecycle API
+must report the exact `versionCode` as approved-but-held or published. The
+monitor never infers Android approval from Apple's state and never falls back to
+the latest Android build.
 
 ### Backport runbook
 
