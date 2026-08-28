@@ -105,6 +105,8 @@ type Documents = {
   '\n  mutation RevokeRole($input: RevokeRoleInput!) {\n    revokeRole(input: $input)\n  }\n': typeof types.RevokeRoleDocument;
   '\n  query GetCommunitySettings($scope: String!, $scopeKey: String!) {\n    communitySettings(scope: $scope, scopeKey: $scopeKey) {\n      id\n      scope\n      scopeKey\n      key\n      value\n      setBy\n      createdAt\n      updatedAt\n    }\n  }\n': typeof types.GetCommunitySettingsDocument;
   '\n  mutation SetCommunitySettings($input: SetCommunitySettingInput!) {\n    setCommunitySettings(input: $input) {\n      id\n      scope\n      scopeKey\n      key\n      value\n      setBy\n      createdAt\n      updatedAt\n    }\n  }\n': typeof types.SetCommunitySettingsDocument;
+  '\n  query QaPreviews($prNumbers: [Int!]!) {\n    qaPreviews(prNumbers: $prNumbers) {\n      prNumber\n      branch\n      title\n      url\n      author\n      isDraft\n      headSha\n      headCommittedAt\n      updatedAt\n      risk\n      riskReason\n      testPlan\n      testPlanSteps\n      myLatestVerdict {\n        id\n        prNumber\n        branch\n        verdict\n        comment\n        headSha\n        createdAt\n        githubCommentUrl\n      }\n    }\n  }\n': typeof types.QaPreviewsDocument;
+  '\n  mutation SubmitQaVerdict($input: SubmitQaVerdictInput!) {\n    submitQaVerdict(input: $input) {\n      id\n      prNumber\n      branch\n      verdict\n      comment\n      headSha\n      createdAt\n      githubCommentUrl\n    }\n  }\n': typeof types.SubmitQaVerdictDocument;
   '\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n    notes\n  }\n': typeof types.SessionSummaryFieldsFragmentDoc;
   '\n  \n  mutation EndSession($sessionId: ID!, $timezone: String, $notes: String) {\n    endSession(sessionId: $sessionId, timezone: $timezone, notes: $notes) {\n      ...SessionSummaryFields\n    }\n  }\n': typeof types.EndSessionDocument;
   '\n  mutation UpdateSession($input: UpdateSessionInput!) {\n    updateSession(input: $input) {\n      sessionId\n      name\n      notes\n    }\n  }\n': typeof types.UpdateSessionDocument;
@@ -318,6 +320,10 @@ const documents: Documents = {
     types.GetCommunitySettingsDocument,
   '\n  mutation SetCommunitySettings($input: SetCommunitySettingInput!) {\n    setCommunitySettings(input: $input) {\n      id\n      scope\n      scopeKey\n      key\n      value\n      setBy\n      createdAt\n      updatedAt\n    }\n  }\n':
     types.SetCommunitySettingsDocument,
+  '\n  query QaPreviews($prNumbers: [Int!]!) {\n    qaPreviews(prNumbers: $prNumbers) {\n      prNumber\n      branch\n      title\n      url\n      author\n      isDraft\n      headSha\n      headCommittedAt\n      updatedAt\n      risk\n      riskReason\n      testPlan\n      testPlanSteps\n      myLatestVerdict {\n        id\n        prNumber\n        branch\n        verdict\n        comment\n        headSha\n        createdAt\n        githubCommentUrl\n      }\n    }\n  }\n':
+    types.QaPreviewsDocument,
+  '\n  mutation SubmitQaVerdict($input: SubmitQaVerdictInput!) {\n    submitQaVerdict(input: $input) {\n      id\n      prNumber\n      branch\n      verdict\n      comment\n      headSha\n      createdAt\n      githubCommentUrl\n    }\n  }\n':
+    types.SubmitQaVerdictDocument,
   '\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n    notes\n  }\n':
     types.SessionSummaryFieldsFragmentDoc,
   '\n  \n  mutation EndSession($sessionId: ID!, $timezone: String, $notes: String) {\n    endSession(sessionId: $sessionId, timezone: $timezone, notes: $notes) {\n      ...SessionSummaryFields\n    }\n  }\n':
@@ -939,6 +945,18 @@ export function graphql(
 export function graphql(
   source: '\n  mutation SetCommunitySettings($input: SetCommunitySettingInput!) {\n    setCommunitySettings(input: $input) {\n      id\n      scope\n      scopeKey\n      key\n      value\n      setBy\n      createdAt\n      updatedAt\n    }\n  }\n',
 ): (typeof documents)['\n  mutation SetCommunitySettings($input: SetCommunitySettingInput!) {\n    setCommunitySettings(input: $input) {\n      id\n      scope\n      scopeKey\n      key\n      value\n      setBy\n      createdAt\n      updatedAt\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query QaPreviews($prNumbers: [Int!]!) {\n    qaPreviews(prNumbers: $prNumbers) {\n      prNumber\n      branch\n      title\n      url\n      author\n      isDraft\n      headSha\n      headCommittedAt\n      updatedAt\n      risk\n      riskReason\n      testPlan\n      testPlanSteps\n      myLatestVerdict {\n        id\n        prNumber\n        branch\n        verdict\n        comment\n        headSha\n        createdAt\n        githubCommentUrl\n      }\n    }\n  }\n',
+): (typeof documents)['\n  query QaPreviews($prNumbers: [Int!]!) {\n    qaPreviews(prNumbers: $prNumbers) {\n      prNumber\n      branch\n      title\n      url\n      author\n      isDraft\n      headSha\n      headCommittedAt\n      updatedAt\n      risk\n      riskReason\n      testPlan\n      testPlanSteps\n      myLatestVerdict {\n        id\n        prNumber\n        branch\n        verdict\n        comment\n        headSha\n        createdAt\n        githubCommentUrl\n      }\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation SubmitQaVerdict($input: SubmitQaVerdictInput!) {\n    submitQaVerdict(input: $input) {\n      id\n      prNumber\n      branch\n      verdict\n      comment\n      headSha\n      createdAt\n      githubCommentUrl\n    }\n  }\n',
+): (typeof documents)['\n  mutation SubmitQaVerdict($input: SubmitQaVerdictInput!) {\n    submitQaVerdict(input: $input) {\n      id\n      prNumber\n      branch\n      verdict\n      comment\n      headSha\n      createdAt\n      githubCommentUrl\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

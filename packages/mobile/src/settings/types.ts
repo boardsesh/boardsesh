@@ -49,6 +49,22 @@ export type AppSettings = {
   kioskHintSeen: boolean;
   /** Show the live bottom-chrome geometry overlay (dev / preview / pr-channel only). */
   bottomChromeDiagnostics: boolean;
+  /**
+   * Crowdsourced QA: the `<branch>:<updateId>` whose test plan has already been
+   * shown on launch. Keyed on the bundle, not the branch, so the author's next
+   * push to the same PR shows the brief again — that is a different thing to
+   * test. Null until a tester surfs onto a preview.
+   */
+  qaBriefSeenKey: string | null;
+  /**
+   * Crowdsourced QA: the `<branch>:<updateId>` a verdict has been filed for.
+   * Load-bearing, not just tidy: leaving a preview usually answers
+   * `nothing-to-load` (production is not newer than a fresh `pr-N` bundle), so
+   * the tester keeps running the preview until production publishes again. Without
+   * this the gate would re-prompt and the drawer would keep offering to finish
+   * testing something already signed off.
+   */
+  qaVerdictSubmittedKey: string | null;
 };
 
 export type SettingsKey = keyof AppSettings;
