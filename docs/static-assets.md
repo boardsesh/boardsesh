@@ -50,8 +50,23 @@ buckets. Configure it with:
 - a CI key allowed to list the bucket and put/head objects under `static/v1/`, without delete permission;
 - deletion protection or an equivalent operator guard. The publisher never deletes an object.
 
-Map the custom domain only after its TLS certificate and public reads work. Tigris's S3 API endpoint is for signed
-publishing; browsers must use `assets.boardsesh.com`.
+Register `assets.boardsesh.com` as the bucket's custom domain in Tigris, then let the repo-managed Cloudflare apply
+create its verification/delivery record:
+
+```text
+assets.boardsesh.com CNAME boardsesh-static-assets.t3.tigrisbucket.io
+TTL: automatic
+Proxy status: DNS only
+CNAME flattening: disabled
+```
+
+The desired DNS state lives in `infra/cloudflare/config.ts` and is converged by `vp run cf:apply -- --apply`. It
+creates the record when missing and repairs its type, target, TTL, or proxy flag when drifted. Keep the record
+DNS-only: Tigris owns TLS and global object delivery, and there is intentionally no Cloudflare cache rule for this
+hostname. It also disables per-record CNAME flattening and fails closed if Cloudflare's zone-wide **Flatten all
+CNAMEs** setting would override that record. Wait for Tigris to report the custom-domain certificate active and
+verify public reads before the first catalog publication. Tigris's S3 API endpoint is for signed publishing;
+browsers must use `assets.boardsesh.com`.
 
 Set these secrets on GitHub's protected `Production` environment:
 
@@ -80,6 +95,10 @@ SHA-256, MIME type, immutable caching, and CORS). Each public CDN attempt has a 
 failures (404, 429, 5xx, network errors, timeouts, or stale headers/body) retry up to six times with bounded
 exponential jitter; permanent 4xx responses fail immediately. The complete `sync-static-assets` job has a 10-minute
 timeout so a stalled storage or CDN connection cannot hold the serialized production deployment indefinitely.
+When Cloudflare desired state changes in the same deployment, `sync-static-assets` waits for `deploy-cloudflare`,
+preventing public validation from racing DNS convergence. A successful or legitimately skipped Cloudflare job allows
+publication; a failed or cancelled prerequisite explicitly fails `sync-static-assets` so downstream builds cannot
+mistake a dependency skip for permission to deploy unvalidated catalog URLs.
 
 After every object passes, it writes `static/v1/manifest.json` as a short-cached audit record. Seeing a new audit
 manifest therefore means all assets it names passed publication QA. A failed upload blocks web/Expo-web artifacts
@@ -97,8 +116,10 @@ bucket credentials.
 
 ### First deployment
 
-Provision the empty bucket, public-read policy, CORS, custom domain, and Production secrets before merging the first
-catalog change. The first main deployment uploads and validates the complete catalog before either web build starts.
+Provision the empty bucket, public-read policy, CORS, Tigris custom-domain registration, repo-managed DNS, and
+Production secrets before merging the first catalog change. Confirm the Tigris custom-domain certificate is active
+before rerunning the deployment. The first main deployment uploads and validates the complete catalog before either
+web build starts.
 Until that job succeeds, previews continue using their committed same-origin files and production remains on the
 previous deployment. Later runs upload only new content hashes but still validate the complete published catalog.
 

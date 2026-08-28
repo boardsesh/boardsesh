@@ -181,8 +181,10 @@ jobs:
   # URLs. The uploader lists the dedicated bucket and PUTs only missing hashes;
   # it never deletes or overwrites objects needed by an older deployment.
   sync-static-assets:
-    needs: [detect-changes]
-    if: needs.detect-changes.outputs.static_assets_changed == 'true'
+    needs: [detect-changes, deploy-cloudflare]
+    if: >-
+      always()
+      && needs.detect-changes.outputs.static_assets_changed == 'true'
     runs-on: ubuntu-latest
     # A stuck S3/CDN socket must release the serialized production-deploy
     # concurrency group. A healthy full-catalog validation takes about three
@@ -190,6 +192,22 @@ jobs:
     timeout-minutes: 10
     environment: Production
     steps:
+      # Run this job even when its Cloudflare dependency failed, then fail it
+      # explicitly. Otherwise GitHub reports the dependency-blocked job as
+      # "skipped", which downstream build gates legitimately accept when no
+      # static assets changed.
+      - name: Require successful Cloudflare prerequisite
+        env:
+          CLOUDFLARE_DEPLOY_RESULT: ${{ needs.deploy-cloudflare.result }}
+        run: |
+          case "$CLOUDFLARE_DEPLOY_RESULT" in
+            success|skipped) ;;
+            *)
+              echo "::error::Cloudflare prerequisite finished with result: $CLOUDFLARE_DEPLOY_RESULT"
+              exit 1
+              ;;
+          esac
+
       - uses: actions/checkout@v6
 
       - uses: oven-sh/setup-bun@v2
@@ -592,9 +610,10 @@ jobs:
   # is too heavy here (this file has no such gate for web/backend either); the
   # expo-web-smoke suite stays the dispatch-only gate in e2e-tests.yml.
   # Converges the Cloudflare zone config (infra/cloudflare) on main. Runs only
-  # when the desired state or apply tooling changes (or on manual dispatch);
-  # nothing else depends on it, so a Cloudflare API hiccup never blocks the
-  # web/backend deploys. A non-zero exit = unapplied drift (e.g. a blocked
+  # when the desired state or apply tooling changes (or on manual dispatch).
+  # Static-asset publication waits for this job when both targets change, so it
+  # cannot validate the public hostname before its DNS record is converged. A
+  # non-zero exit = unapplied drift (e.g. a blocked
   # zone-SSL change) and should be investigated, not retried blindly.
   # The planned OpenNext (Cloudflare Workers) deploy of packages/web will be a
   # sibling job reusing the same Production-environment CLOUDFLARE_API_TOKEN
