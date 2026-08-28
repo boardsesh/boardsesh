@@ -87,8 +87,9 @@ Observability — that needs the token. `vercel metrics schema` is authoritative
 ## 2b. What the Vercel MCP could and could not answer (2026-08-28)
 
 The MCP path is cheaper than the token path and worth trying first, so this records what it actually
-returns. Session anchored at **2026-08-28T04:25:54Z**, project `prj_ZdnXNPebnrzeRH4hUvqkQze5U3iQ`,
-team `team_ZS1BOFgCwSC5I4KQHVaM9A3C`, `environment: production` on every call.
+returns. Session anchored at **2026-08-28T04:25:54Z**, project `boardsesh`, team
+`marcodejonghs-projects`, `environment: production` on every call. (Both MCP tools accept the slug in
+place of the `prj_…` / `team_…` id, so the ids are not reproduced here.)
 
 **Tools that exist:** `get_runtime_logs`, `get_runtime_errors`, `get_web_analytics`,
 `list_deployments`, `get_project`, `list_projects`, `list_teams`, plus documentation/purchase/toolbar
@@ -160,16 +161,21 @@ trough, not the new steady state, and any sizing done off that single figure wou
 | `Error fetching results or climb: … too many clients` | 753   | 230   | 2026-08-10T04:05:17Z     |
 
 `sorry, too many clients already` is Postgres `53300` (`InitProcess`, `severity: FATAL`) —
-**connection-slot exhaustion**, not CPU. It appears on climb view and `/list`, it began at
-2026-08-27T23:35Z, and it tracks the traffic rise in the table above. `get_runtime_logs` with
-`statusCode: 500` over the 6 h window puts **761** 500s on climb view and 12 on `/list`, so roughly
-**3,090 user-visible 500s/day**.
+**connection-slot exhaustion**, not CPU. It appears on climb view and `/list`, and it tracks the
+traffic rise in the table above. `get_runtime_logs` with `statusCode: 500` over the 6 h window puts
+**761** 500s on climb view and 12 on `/list`, so roughly **3,090 user-visible 500s/day**.
+
+**It is a burst, not a continuous outage.** First seen 2026-08-27T23:35:52Z, last 2026-08-28T03:52:25Z
+— about 4h15m, inside the overnight crawl peak — and the 30 min window ending 04:25Z shows 1 error in
+5,528 invocations. That makes it worse to detect, not better: it will recur on the next peak and
+nothing alerts on it. The second cluster of 753 is very likely the same events logged at a wrapping
+call site, so the two do not sum.
 
 This matters for [#4648] Phase 2 well beyond this document: the binding constraint on the web tier
 right now is the **Postgres connection ceiling**, not vCPU. A Railway container sized purely on CPU
 would hit the same wall on day one. Sizing needs a pooler decision (PgBouncer / transaction pooling)
-alongside the CPU number. Not filed as an issue here — it is a live production incident and belongs
-in front of @marcodejongh directly.
+alongside the CPU number. Filed as **[#4842]** — and it is the scenario [#4461] predicted in writing
+before being closed on 2026-08-15 without the pool-sizing decision being made.
 
 ## 3. Where the compute goes
 
@@ -384,9 +390,9 @@ Three things will move the answer materially even once the CPU number lands:
 - Whether `/api/internal/board-render` stays in the same container ([#4715]). It is the only route
   with a `memory: 3009` override in `vercel.json`, so moving it changes both the CPU and the memory
   answer — and it is now 32% of invocations rather than 49%.
-- **Postgres connection slots, which are the binding constraint today, not vCPU** (§2b). ~3,090
-  500s/day are `53300` connection-slot exhaustion. Sizing this container on CPU alone reproduces the
-  incident on Railway.
+- **Postgres connection slots, which are the binding constraint today, not vCPU** (§2b, [#4842]).
+  ~3,090 500s/day are `53300` connection-slot exhaustion, in bursts at crawl peak. Sizing this
+  container on CPU alone reproduces it on Railway.
 - Traffic is trending back up — climb view rose 76% between the nights of Aug 25 and Aug 27 — so the
   post-wave figures are a moving target rather than a settled floor.
 
@@ -450,6 +456,7 @@ Still open with existing owners, cited here and not absorbed: [#4664] (WASM 3-co
 [#3798]: https://github.com/boardsesh/boardsesh/pull/3798
 [#3837]: https://github.com/boardsesh/boardsesh/pull/3837
 [#4271]: https://github.com/boardsesh/boardsesh/pull/4271
+[#4461]: https://github.com/boardsesh/boardsesh/issues/4461
 [#4552]: https://github.com/boardsesh/boardsesh/issues/4552
 [#4592]: https://github.com/boardsesh/boardsesh/pull/4592
 [#4648]: https://github.com/boardsesh/boardsesh/issues/4648
@@ -467,3 +474,4 @@ Still open with existing owners, cited here and not absorbed: [#4664] (WASM 3-co
 [#4764]: https://github.com/boardsesh/boardsesh/pull/4764
 [#4773]: https://github.com/boardsesh/boardsesh/issues/4773
 [#4802]: https://github.com/boardsesh/boardsesh/issues/4802
+[#4842]: https://github.com/boardsesh/boardsesh/issues/4842
