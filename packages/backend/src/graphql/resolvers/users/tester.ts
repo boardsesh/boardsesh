@@ -1,6 +1,8 @@
 import { and, eq, inArray } from 'drizzle-orm';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { requireAuthenticated } from '../shared/helpers';
 import { logger } from '../../../utils/logger';
 
 // Roles that unlock the tester-only developer tooling in the mobile app.
@@ -30,5 +32,18 @@ export async function userIsTester(userId: string): Promise<boolean> {
   } catch (error) {
     logger.error('[userIsTester] community_roles lookup failed; defaulting isTester=false', { userId, error });
     return false;
+  }
+}
+
+/**
+ * Gate for the tester-only operations (crowdsourced QA). Unlike
+ * {@link userIsTester} — a cosmetic flag that fails closed silently — this is
+ * an authorization check, so it throws. Mirrors `requireAdmin`.
+ */
+export async function requireTester(ctx: ConnectionContext): Promise<void> {
+  requireAuthenticated(ctx);
+
+  if (!(await userIsTester(ctx.userId!))) {
+    throw new Error('Tester role required for this operation');
   }
 }

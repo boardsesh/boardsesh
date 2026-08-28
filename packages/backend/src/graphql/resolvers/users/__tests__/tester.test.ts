@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
 
 const { limitMock } = vi.hoisted(() => ({
   limitMock: vi.fn(),
@@ -24,7 +25,7 @@ vi.mock('../../../../db/client', () => ({
   },
 }));
 
-import { userIsTester } from '../tester';
+import { requireTester, userIsTester } from '../tester';
 
 describe('userIsTester', () => {
   beforeEach(() => {
@@ -39,5 +40,29 @@ describe('userIsTester', () => {
   it('returns false when the user has no qualifying role', async () => {
     limitMock.mockReturnValue([]);
     await expect(userIsTester('user-2')).resolves.toBe(false);
+  });
+});
+
+describe('requireTester', () => {
+  const ctx = (isAuthenticated: boolean, userId?: string) =>
+    ({ connectionId: 'conn-1', isAuthenticated, userId }) as ConnectionContext;
+
+  beforeEach(() => {
+    limitMock.mockReset();
+  });
+
+  it('rejects an unauthenticated caller before touching the role table', async () => {
+    await expect(requireTester(ctx(false))).rejects.toThrow('Authentication required');
+    expect(limitMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a signed-in caller with no tester role', async () => {
+    limitMock.mockReturnValue([]);
+    await expect(requireTester(ctx(true, 'user-3'))).rejects.toThrow('Tester role required for this operation');
+  });
+
+  it('lets a tester through', async () => {
+    limitMock.mockReturnValue([{ id: 7 }]);
+    await expect(requireTester(ctx(true, 'user-4'))).resolves.toBeUndefined();
   });
 });
