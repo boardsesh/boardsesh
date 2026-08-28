@@ -10,7 +10,13 @@ import {
   type LedColorOverrides,
 } from '@boardsesh/ble-protocol/aurora';
 import { getMoonboardBluetoothPacket, isMoonboardDeviceName } from '@boardsesh/ble-protocol/moonboard';
-import { getWoodsBluetoothPacket, isWoodsDeviceName, type WoodsBoardSize } from '@boardsesh/ble-protocol/woods';
+import {
+  getWoodsBluetoothPacket,
+  isWoodsDeviceName,
+  WoodsMultiFrameError,
+  type WoodsBoardSize,
+  type WoodsPacketResult,
+} from '@boardsesh/ble-protocol/woods';
 import { getBoardCapabilities, getMoonBoardGeometryByLayoutId, woodsSizeIdToDimension } from '@boardsesh/board-config';
 import {
   blePlxErrorCodes,
@@ -182,8 +188,16 @@ export async function dispatchWoodsPacket(
   if (!size) return { kind: 'unknown_size' };
 
   // Woods encodes "clear" as an empty hold list (a bare `,!`), so empty frames
-  // flow through the same path.
-  const { packet, skippedRoleCount, skippedPositionCount, totalPlacements } = getWoodsBluetoothPacket(frames, size);
+  // flow through the same path. Reject only the encoder's explicit multi-frame
+  // incompatibility here; unrelated encoder failures must still surface.
+  let woodsPacketResult: WoodsPacketResult;
+  try {
+    woodsPacketResult = getWoodsBluetoothPacket(frames, size);
+  } catch (error) {
+    if (error instanceof WoodsMultiFrameError) return { kind: 'incompatible' };
+    throw error;
+  }
+  const { packet, skippedRoleCount, skippedPositionCount, totalPlacements } = woodsPacketResult;
   const skipped = skippedRoleCount + skippedPositionCount;
   if (frames !== '' && totalPlacements > 0 && skipped === totalPlacements) {
     return { kind: 'incompatible' };

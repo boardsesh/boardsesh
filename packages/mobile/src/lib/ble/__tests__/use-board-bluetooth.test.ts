@@ -3155,6 +3155,23 @@ describe('dispatchWoodsPacket', () => {
     expect(write).not.toHaveBeenCalled();
   });
 
+  it('returns incompatible and writes nothing for Aurora multi-frame input', async () => {
+    const write = makeWriteSpy();
+
+    const result = await dispatchWoodsPacket(`p${litPlacement}r2,p${litPlacement}r4`, TWELVE_BY_TWELVE_SIZE_ID, write);
+
+    expect(result).toEqual({ kind: 'incompatible' });
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('does not swallow unrelated write failures', async () => {
+    const writeFailure = new Error('unrelated write failure');
+    const write = makeWriteSpy();
+    write.mockRejectedValue(writeFailure);
+
+    await expect(dispatchWoodsPacket(`p${litPlacement}r2`, TWELVE_BY_TWELVE_SIZE_ID, write)).rejects.toBe(writeFailure);
+  });
+
   it('writes and reports the skip counts when only some placements are skipped', async () => {
     // A partial miss still lights what it can — the counts are what the hook
     // reports to Sentry so a wall missing two holds is diagnosable from the field.
