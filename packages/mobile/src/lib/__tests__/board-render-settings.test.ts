@@ -1,0 +1,338 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { VEIL_TUNING } from '@boardsesh/board-art-geometry';
+
+// The store hydrates from AsyncStorage once per JS lifetime, so every case that
+// cares about persistence drives it through a controllable mock rather than the
+// shared in-memory stub.
+const storage = vi.hoisted(() => new Map<string, string>());
+vi.mock('@react-native-async-storage/async-storage', () => ({
+  default: {
+    getItem: async (key: string) => storage.get(key) ?? null,
+    setItem: async (key: string, value: string) => {
+      storage.set(key, value);
+    },
+    removeItem: async (key: string) => {
+      storage.delete(key);
+    },
+  },
+}));
+
+const {
+  BOARD_FIELD_COLORS,
+  BOARD_RENDER_SETTING_BOUNDS,
+  DEFAULT_BOARDSESH_RENDER_SETTINGS,
+  DEFAULT_BOARD_RENDER_SETTINGS,
+  VEIL_SETTING_OPACITY,
+  _resetBoardRenderSettingsForTests,
+  boardFieldColorForScheme,
+  buildBoardRenderSignature,
+  loadBoardRenderSettings,
+  requestedBoardRenderMode,
+  resolveEffectiveRenderSettings,
+  resolveVeilOpacity,
+  sanitizeBoardRenderSettings,
+  setBoardRenderModePreference,
+  setBoardRenderSettingsPreference,
+  setBoardseshRenderFieldPreference,
+  resetBoardRenderSettings,
+} = await import('../board-render-settings');
+
+type BoardseshRenderSettings = typeof DEFAULT_BOARDSESH_RENDER_SETTINGS;
+type BoardRenderSettings = typeof DEFAULT_BOARD_RENDER_SETTINGS;
+
+const STORAGE_KEY = 'boardRenderSettings';
+const DARK_FIELD = BOARD_FIELD_COLORS.dark;
+
+function settingsWith(boardsesh: Partial<BoardseshRenderSettings>, mode: BoardRenderSettings['mode'] = 'boardsesh') {
+  return { mode, boardsesh: { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, ...boardsesh } };
+}
+
+// Sanitised on the way in, like every real caller: the hook reads its settings
+// out of the store, which clamps and rounds before anything sees them.
+function boardseshSignature(boardsesh: Partial<BoardseshRenderSettings>, veilOpacity = 0.6): string {
+  return buildBoardRenderSignature(
+    resolveEffectiveRenderSettings(sanitizeBoardRenderSettings(settingsWith(boardsesh)), undefined, true),
+    DARK_FIELD,
+    veilOpacity,
+  );
+}
+
+beforeEach(() => {
+  storage.clear();
+  _resetBoardRenderSettingsForTests();
+});
+
+describe('defaults', () => {
+  it('ships the classic drawing, the soft glow, and the measured veil', () => {
+    expect(DEFAULT_BOARD_RENDER_SETTINGS.mode).toBe('default');
+    expect(DEFAULT_BOARDSESH_RENDER_SETTINGS).toEqual({
+      glowFalloff: 'default',
+      glowReach: 1,
+      plateauShare: 0.4,
+      veil: 'auto',
+      veilOpacity: 0.6,
+      markStyle: 'glow',
+      fillOpacity: 0.55,
+      softDisc: false,
+      smallHoldBoost: true,
+      ledDots: true,
+      roleGlyphs: false,
+      thumbnailStyle: 'fill',
+    });
+  });
+
+  it('offers the same two washes `auto` would have measured', () => {
+    // A climber overriding the measurement picks one of the buckets, not a
+    // third strength the veil tuning has never been calibrated for.
+    expect(VEIL_SETTING_OPACITY.soft).toBe(VEIL_TUNING.veilSoftOpacity);
+    expect(VEIL_SETTING_OPACITY.strong).toBe(VEIL_TUNING.veilStrongOpacity);
+  });
+
+  it('paints the veil toward the theme’s own play field', () => {
+    // #181225 is androidFallbackColors.dark.secondaryBackground in
+    // packages/mobile/src/theme/colors.ts, restated as a hex the veil can
+    // subtract a lightness from (the theme resolves to a PlatformColor on iOS).
+    expect(boardFieldColorForScheme('dark')).toBe('#181225');
+    expect(boardFieldColorForScheme('light')).toBe('#FFFFFF');
+  });
+});
+
+describe('sanitizeBoardRenderSettings', () => {
+  it('clamps every slider into its published range', () => {
+    const sanitized = sanitizeBoardRenderSettings({
+      mode: 'boardsesh',
+      boardsesh: { glowReach: 99, plateauShare: -3, veilOpacity: 5, fillOpacity: 0 },
+    });
+
+    expect(sanitized.boardsesh.glowReach).toBe(BOARD_RENDER_SETTING_BOUNDS.glowReach.max);
+    expect(sanitized.boardsesh.plateauShare).toBe(BOARD_RENDER_SETTING_BOUNDS.plateauShare.min);
+    expect(sanitized.boardsesh.veilOpacity).toBe(BOARD_RENDER_SETTING_BOUNDS.veilOpacity.max);
+    expect(sanitized.boardsesh.fillOpacity).toBe(BOARD_RENDER_SETTING_BOUNDS.fillOpacity.min);
+  });
+
+  it('rounds a slider’s float noise away so it cannot mint a second cache key', () => {
+    const sanitized = sanitizeBoardRenderSettings({ boardsesh: { glowReach: 1.2000000000000002 } });
+    expect(sanitized.boardsesh.glowReach).toBe(1.2);
+    expect(boardseshSignature({ glowReach: 1.2000000000000002 })).toBe(boardseshSignature({ glowReach: 1.2 }));
+  });
+
+  it('falls back to the defaults for junk, not to a NaN the renderer would ignore', () => {
+    const sanitized = sanitizeBoardRenderSettings({
+      mode: 'psychedelic',
+      boardsesh: {
+        glowFalloff: 'strobe',
+        glowReach: 'wide',
+        plateauShare: Number.NaN,
+        veil: 42,
+        markStyle: null,
+        fillOpacity: Number.POSITIVE_INFINITY,
+        softDisc: 'yes',
+        smallHoldBoost: 0,
+        ledDots: undefined,
+        roleGlyphs: [],
+        thumbnailStyle: 'glow-fill',
+      },
+    });
+
+    expect(sanitized).toEqual(DEFAULT_BOARD_RENDER_SETTINGS);
+  });
+
+  it('reads a completely absent payload as the defaults', () => {
+    expect(sanitizeBoardRenderSettings(null)).toEqual(DEFAULT_BOARD_RENDER_SETTINGS);
+    expect(sanitizeBoardRenderSettings('boardsesh')).toEqual(DEFAULT_BOARD_RENDER_SETTINGS);
+    expect(sanitizeBoardRenderSettings({ boardsesh: 'all of them' })).toEqual(DEFAULT_BOARD_RENDER_SETTINGS);
+  });
+
+  it('keeps every value a climber could legitimately have chosen', () => {
+    const chosen = settingsWith({
+      glowFalloff: 'plateau',
+      glowReach: 1.4,
+      plateauShare: 0.55,
+      veil: 'custom',
+      veilOpacity: 0.75,
+      markStyle: 'fill',
+      fillOpacity: 0.8,
+      softDisc: true,
+      smallHoldBoost: false,
+      ledDots: false,
+      roleGlyphs: true,
+      thumbnailStyle: 'glow',
+    });
+
+    expect(sanitizeBoardRenderSettings(chosen)).toEqual(chosen);
+  });
+});
+
+describe('persistence', () => {
+  it('round-trips a chosen setting through storage', async () => {
+    await setBoardRenderModePreference('boardsesh');
+    await setBoardseshRenderFieldPreference('glowFalloff', 'plateau');
+    await setBoardseshRenderFieldPreference('glowReach', 1.4);
+
+    _resetBoardRenderSettingsForTests();
+    const reloaded = await loadBoardRenderSettings();
+
+    expect(reloaded.mode).toBe('boardsesh');
+    expect(reloaded.boardsesh.glowFalloff).toBe('plateau');
+    expect(reloaded.boardsesh.glowReach).toBe(1.4);
+    // Untouched fields come back as the current defaults, not as whatever the
+    // build that wrote the file happened to default to.
+    expect(reloaded.boardsesh.markStyle).toBe(DEFAULT_BOARDSESH_RENDER_SETTINGS.markStyle);
+  });
+
+  it('stores nothing at all for an untouched install', async () => {
+    await setBoardRenderSettingsPreference(DEFAULT_BOARD_RENDER_SETTINGS);
+    expect(storage.has(STORAGE_KEY)).toBe(false);
+  });
+
+  it('stores only the fields that moved', async () => {
+    await setBoardseshRenderFieldPreference('roleGlyphs', true);
+    expect(JSON.parse(storage.get(STORAGE_KEY) ?? 'null')).toEqual({ boardsesh: { roleGlyphs: true } });
+  });
+
+  it('clears the file when a climber resets', async () => {
+    await setBoardRenderModePreference('boardsesh');
+    expect(storage.has(STORAGE_KEY)).toBe(true);
+
+    await resetBoardRenderSettings();
+
+    expect(storage.has(STORAGE_KEY)).toBe(false);
+    expect((await loadBoardRenderSettings()).mode).toBe('default');
+  });
+
+  it('clamps a hand-edited preference file on the way in', async () => {
+    storage.set(STORAGE_KEY, JSON.stringify({ mode: 'boardsesh', boardsesh: { glowReach: 99, veil: 'shimmer' } }));
+
+    const loaded = await loadBoardRenderSettings();
+
+    expect(loaded.boardsesh.glowReach).toBe(BOARD_RENDER_SETTING_BOUNDS.glowReach.max);
+    expect(loaded.boardsesh.veil).toBe('auto');
+  });
+});
+
+describe('resolveEffectiveRenderSettings', () => {
+  it('resolves `default` to classic when nothing else decides', () => {
+    const effective = resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, undefined, true);
+    expect(effective.mode).toBe('classic');
+    expect(effective.glowFalloff).toBe('soft');
+    expect(effective.glowFalloffSource).toBe('default');
+  });
+
+  it('lets a rollout flag decide the `default` mode and falloff', () => {
+    const effective = resolveEffectiveRenderSettings(
+      DEFAULT_BOARD_RENDER_SETTINGS,
+      { defaultMode: 'boardsesh', glowFalloff: 'plateau' },
+      true,
+    );
+    expect(effective.mode).toBe('boardsesh');
+    expect(effective.glowFalloff).toBe('plateau');
+    expect(effective.glowFalloffSource).toBe('flag');
+  });
+
+  it('lets the climber overrule the flag in both directions', () => {
+    const flags = { defaultMode: 'boardsesh' as const, glowFalloff: 'plateau' as const };
+
+    const chosenClassic = resolveEffectiveRenderSettings(settingsWith({}, 'classic'), flags, true);
+    expect(chosenClassic.mode).toBe('classic');
+
+    const chosenSoft = resolveEffectiveRenderSettings(settingsWith({ glowFalloff: 'soft' }), flags, true);
+    expect(chosenSoft.glowFalloff).toBe('soft');
+    expect(chosenSoft.glowFalloffSource).toBe('user');
+  });
+
+  it('forces classic when the installed renderer cannot draw the mode', () => {
+    // The whole safety property of the probe: a library that predates the mode
+    // accepts the config, ignores every field, and hands back a classic render.
+    const effective = resolveEffectiveRenderSettings(settingsWith({}), { defaultMode: 'boardsesh' }, false);
+    expect(effective.mode).toBe('classic');
+    expect(effective.rendererAvailable).toBe(false);
+  });
+
+  it('answers the requested mode without allocating a settings object', () => {
+    expect(requestedBoardRenderMode(DEFAULT_BOARD_RENDER_SETTINGS, undefined)).toBe('classic');
+    expect(requestedBoardRenderMode(DEFAULT_BOARD_RENDER_SETTINGS, { defaultMode: 'boardsesh' })).toBe('boardsesh');
+    expect(requestedBoardRenderMode(settingsWith({}, 'classic'), { defaultMode: 'boardsesh' })).toBe('classic');
+    expect(requestedBoardRenderMode(settingsWith({}), undefined)).toBe('boardsesh');
+  });
+});
+
+describe('resolveVeilOpacity', () => {
+  const brightWall = { mean: 0.741, coverage: 0.962 };
+
+  it('measures the board’s own wall against the field under `auto`', () => {
+    expect(resolveVeilOpacity(DEFAULT_BOARDSESH_RENDER_SETTINGS, brightWall, DARK_FIELD)).toBe(0.6);
+    // Every board's wall is darker than a white field, so there is nothing to
+    // quiet and the veil turns itself off.
+    expect(resolveVeilOpacity(DEFAULT_BOARDSESH_RENDER_SETTINGS, brightWall, '#FFFFFF')).toBe(0);
+  });
+
+  it('is off for a board the tracer skipped rather than washing an unmeasured wall', () => {
+    expect(resolveVeilOpacity(DEFAULT_BOARDSESH_RENDER_SETTINGS, null, DARK_FIELD)).toBe(0);
+  });
+
+  it('honours each fixed choice over the measurement', () => {
+    const settings = DEFAULT_BOARDSESH_RENDER_SETTINGS;
+    expect(resolveVeilOpacity({ ...settings, veil: 'off' }, brightWall, DARK_FIELD)).toBe(0);
+    expect(resolveVeilOpacity({ ...settings, veil: 'soft' }, brightWall, DARK_FIELD)).toBe(0.3);
+    expect(resolveVeilOpacity({ ...settings, veil: 'strong' }, { mean: 0.2, coverage: 1 }, DARK_FIELD)).toBe(0.6);
+    expect(resolveVeilOpacity({ ...settings, veil: 'custom', veilOpacity: 0.42 }, null, DARK_FIELD)).toBe(0.42);
+  });
+});
+
+describe('buildBoardRenderSignature', () => {
+  it('is empty for a classic render, so the cache key is what it always was', () => {
+    const classic = resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, undefined, true);
+    expect(buildBoardRenderSignature(classic, DARK_FIELD, 0.6)).toBe('');
+  });
+
+  it('names the mode and the veil, and omits every setting still at its default', () => {
+    expect(boardseshSignature({})).toBe('mode-boardsesh.veil-181225-60');
+  });
+
+  it('says so out loud when the veil is off, rather than dropping the token', () => {
+    // A theme flip has to change the key: the wash is baked into the PNG, so a
+    // light-mode overlay reused in dark mode would show an unquieted wall.
+    expect(boardseshSignature({}, 0)).toBe('mode-boardsesh.veil-off');
+    expect(boardseshSignature({}, 0)).not.toBe(boardseshSignature({}, 0.6));
+  });
+
+  it('is deterministic for the same settings', () => {
+    const chosen = { glowFalloff: 'plateau' as const, glowReach: 1.2, softDisc: true };
+    expect(boardseshSignature(chosen)).toBe(boardseshSignature(chosen));
+  });
+
+  it.each([
+    ['glowFalloff', { glowFalloff: 'plateau' as const }, 'glow-plateau'],
+    ['glowReach', { glowReach: 1.2 }, 'reach-1.2'],
+    ['plateauShare', { plateauShare: 0.55 }, 'plateau-0.55'],
+    ['markStyle', { markStyle: 'glow-fill' as const }, 'marks-glow-fill'],
+    ['fillOpacity', { fillOpacity: 0.8 }, 'fill-0.8'],
+    ['softDisc', { softDisc: true }, 'disc'],
+    ['smallHoldBoost', { smallHoldBoost: false }, 'noboost'],
+    ['ledDots', { ledDots: false }, 'noleds'],
+    ['roleGlyphs', { roleGlyphs: true }, 'glyphs'],
+    ['thumbnailStyle', { thumbnailStyle: 'glow' as const }, 'thumb-glow'],
+  ])('changes the signature when %s moves off its default', (_field, override, token) => {
+    const moved = boardseshSignature(override);
+    expect(moved).not.toBe(boardseshSignature({}));
+    // Substring, not a split on '.': a numeric token carries its own decimal
+    // point. The signature is an opaque cache-key fragment and is never parsed
+    // back apart, so that costs nothing.
+    expect(moved).toContain(token);
+  });
+
+  it('spells the veil out as field colour and percent', () => {
+    expect(boardseshSignature({}, 0.3)).toContain('veil-181225-30');
+    expect(
+      buildBoardRenderSignature(resolveEffectiveRenderSettings(settingsWith({}), undefined, true), '#FFFFFF', 0.05),
+    ).toContain('veil-ffffff-05');
+  });
+
+  it('collapses two veil choices that resolve to the same wash', () => {
+    // `strong` and a `custom` 0.6 draw the same pixels; splitting the cache on
+    // the label rather than the wash would render the same PNG twice.
+    expect(boardseshSignature({ veil: 'strong' }, 0.6)).toBe(
+      boardseshSignature({ veil: 'custom', veilOpacity: 0.6 }, 0.6),
+    );
+  });
+});

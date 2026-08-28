@@ -222,6 +222,7 @@
       "dependencies": {
         "@boardsesh/analytics": "*",
         "@boardsesh/ble-protocol": "*",
+        "@boardsesh/board-art-geometry": "*",
         "@boardsesh/board-config": "*",
         "@boardsesh/board-constants": "*",
         "@boardsesh/board-presence-react": "*",
@@ -396,6 +397,22 @@
       },
       "devDependencies": {
         "typescript": "~7.0.2",
+      },
+    },
+    "packages/shared/board-art-geometry": {
+      "name": "@boardsesh/board-art-geometry",
+      "version": "1.0.0",
+      "dependencies": {
+        "@boardsesh/shared-schema": "*",
+      },
+      "devDependencies": {
+        "@boardsesh/board-config": "*",
+        "@boardsesh/board-constants": "*",
+        "@boardsesh/board-render": "*",
+        "@types/node": "^25.9.5",
+        "sharp": "^0.34.5",
+        "typescript": "~7.0.2",
+        "vitest": "^4.1.10",
       },
     },
     "packages/shared/board-config": {
@@ -1163,6 +1180,8 @@
     "@boardsesh/aurora-sync": ["@boardsesh/aurora-sync@workspace:packages/aurora-sync"],
 
     "@boardsesh/ble-protocol": ["@boardsesh/ble-protocol@workspace:packages/shared/ble-protocol"],
+
+    "@boardsesh/board-art-geometry": ["@boardsesh/board-art-geometry@workspace:packages/shared/board-art-geometry"],
 
     "@boardsesh/board-config": ["@boardsesh/board-config@workspace:packages/shared/board-config"],
 

@@ -314,6 +314,55 @@ describe('board-render API route', () => {
     expect(mockJpegOptions).not.toHaveBeenCalled();
   });
 
+  describe('boardsesh render options (issue #2202)', () => {
+    it('defaults to a classic config with no boardsesh-mode fields', async () => {
+      await GET(makeRequest(validParams));
+      const config = JSON.parse(mockRenderOverlay.mock.calls[0][0]);
+      expect(config.render_mode).toBeUndefined();
+      expect(config.glow_falloff).toBeUndefined();
+      expect(config.glyphs).toBeUndefined();
+      expect(config.veil).toBeUndefined();
+    });
+
+    it('reaches the builder with render_mode=boardsesh and glow_falloff=plateau', async () => {
+      await GET(makeRequest({ ...validParams, render_mode: 'boardsesh', glow_falloff: 'plateau' }));
+      const config = JSON.parse(mockRenderOverlay.mock.calls[0][0]);
+      expect(config.render_mode).toBe('boardsesh');
+      expect(config.glow_falloff).toBe('plateau');
+      expect(config.glyphs).toBe('off');
+    });
+
+    it('maps glyphs=1 to "role"', async () => {
+      await GET(makeRequest({ ...validParams, render_mode: 'boardsesh', glyphs: '1' }));
+      const config = JSON.parse(mockRenderOverlay.mock.calls[0][0]);
+      expect(config.glyphs).toBe('role');
+    });
+
+    it('passes field_color through as a no-op veil (opacity 0) in boardsesh mode', async () => {
+      await GET(makeRequest({ ...validParams, render_mode: 'boardsesh', field_color: '#123456' }));
+      const config = JSON.parse(mockRenderOverlay.mock.calls[0][0]);
+      expect(config.veil).toEqual({ color: '#123456', opacity: 0 });
+    });
+
+    it('returns 400 for an invalid render_mode', async () => {
+      const response = await GET(makeRequest({ ...validParams, render_mode: 'neon' }));
+      expect(response.status).toBe(400);
+      expect(mockRenderOverlay).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 for an invalid glow_falloff', async () => {
+      const response = await GET(makeRequest({ ...validParams, glow_falloff: 'hard' }));
+      expect(response.status).toBe(400);
+      expect(mockRenderOverlay).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 for an invalid field_color', async () => {
+      const response = await GET(makeRequest({ ...validParams, field_color: 'blue' }));
+      expect(response.status).toBe(400);
+      expect(mockRenderOverlay).not.toHaveBeenCalled();
+    });
+  });
+
   it.each(['decoy', 'touchstone', 'grasshopper', 'soill'])('accepts %s as a valid board_name', async (board) => {
     const response = await GET(makeRequest({ ...validParams, board_name: board }));
     expect(response.status).toBe(200);
@@ -677,6 +726,14 @@ describe('board-render API route', () => {
     ['include_background', {}, { include_background: '0' }, true],
     ['dim_background', {}, { dim_background: '0.18' }, false],
     ['variant', { format: 'png' }, { variant: 'og' }, false],
+    // issue #2202: a boardsesh render must never be served under a classic
+    // key, so all four render-option params are in the byte-cache key too —
+    // even glow_falloff/glyphs/field_color alone, which only take visible
+    // effect once render_mode=boardsesh.
+    ['render_mode', {}, { render_mode: 'boardsesh' }, false],
+    ['glow_falloff', {}, { glow_falloff: 'plateau' }, false],
+    ['glyphs', {}, { glyphs: '1' }, false],
+    ['field_color', {}, { field_color: '#123456' }, false],
   ] as Array<[string, Record<string, string>, Record<string, string>, boolean]>)(
     'keys the byte cache on %s',
     async (_label, shared, override, expectDistinctBody) => {

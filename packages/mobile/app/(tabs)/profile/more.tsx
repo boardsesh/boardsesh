@@ -618,18 +618,20 @@ export default function MoreScreen() {
     });
   }
 
-  // Accessibility (nav).
+  // Board look (nav) — render mode + every Boardsesh knob, plus the
+  // accessibility controls (hold colours, marker shapes, colour-vision check)
+  // the old Accessibility row used to open on their own (issue #2202).
   sections.push({
-    key: 'accessibility',
-    title: t('mobile.more.accessibility.title'),
+    key: 'boardLook',
+    title: t('mobile.more.boardLook.title'),
     rows: [
       {
         kind: 'nav',
-        key: 'accessibility',
-        label: t('mobile.more.accessibility.title'),
-        subtitle: t('mobile.more.accessibility.rowSubtitleShort'),
-        icon: 'accessibility',
-        onPress: navAction(() => router.push('/(tabs)/profile/accessibility')),
+        key: 'boardLook',
+        label: t('mobile.more.boardLook.title'),
+        subtitle: t('mobile.more.boardLook.rowSubtitleShort'),
+        icon: 'boardLook',
+        onPress: navAction(() => router.push('/(tabs)/profile/board-look')),
       },
     ],
   });

@@ -22,12 +22,25 @@
  * Shared with native like the v4 flush was: native overlays that were already
  * correct pay a one-time re-render, which is the same trade v4 made.
  *
+ * v7 (issue #2202) opens the Boardsesh drawing: a wash of the play field over
+ * the unlit wall, a glow clipped to each lit hold's traced silhouette, and a
+ * HAND blue lifted to #6980FF so it still reads once that wash lands. All three
+ * ride on cache-key tokens — `mode-boardsesh`, `veil-<field>-<pct>` — that did
+ * not exist before, so a Boardsesh render could never collide with a classic
+ * one on its own. What forces the bump is the same thing v4 and v6 hit: the
+ * cache key describes the SETTINGS a render was asked for, not the drawing that
+ * came back, and the rollout ran on dev binaries whose Boardsesh path was still
+ * moving. Those PNGs sit under keys the shipped renderer would happily reuse.
+ * Classic pixels are unchanged and pay a one-time re-render, exactly the trade
+ * v4 and v6 made, and one shared bump keeps native and Expo web on the same
+ * contract.
+ *
  * Lives in its own module so both the hook (use-native-climb-render.ts) and the
  * web overlay warm-up (overlay-cache-warmup.web.ts) can read it without a
  * circular import — the hook imports the warm-up, so the warm-up must not import
  * back from the hook.
  */
-export const RENDERER_VERSION = 6;
+export const RENDERER_VERSION = 7;
 
 /** Cache-key prefix stamped on every overlay produced by the current renderer. */
 export const currentOverlayVersionPrefix = (): string => `v${RENDERER_VERSION}_`;

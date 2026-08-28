@@ -26,6 +26,221 @@ pub enum HoldMarkerShape {
     Unknown,
 }
 
+/// Which drawing the overlay uses (issue #2202).
+///
+/// `classic` is the circle / marker-shape renderer that shipped first and is
+/// byte-for-byte unchanged by the Boardsesh mode. `boardsesh` is the veil +
+/// glow treatment drawn on each lit hold's traced silhouette. Anything this
+/// binary does not recognise falls back to `classic`, so a newer JS bundle
+/// never fails a render on an older native library.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum BoardRenderMode {
+    #[default]
+    Classic,
+    Boardsesh,
+    #[serde(other)]
+    Unknown,
+}
+
+/// What the Boardsesh mode draws on a lit hold.
+///
+/// `glow` is the outward glow off the silhouette edge (the play view's mark),
+/// `glow-fill` adds the lightness-normalised role fill under it (the treatment
+/// measured for thumbnails), `fill` is the fill without the glow, `none` draws
+/// only the veil, LED covers and glyphs. Unset: `glow-fill` when `thumbnail`,
+/// `glow` otherwise.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum MarkStyle {
+    Glow,
+    GlowFill,
+    Fill,
+    #[serde(rename = "none")]
+    NoMark,
+    #[serde(other)]
+    Unknown,
+}
+
+/// The glow's alpha curve over its reach: `soft` (variant A, the default) or
+/// `plateau` (variant B, full alpha over the inner `plateau_share`).
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum GlowFalloff {
+    #[default]
+    Soft,
+    Plateau,
+    #[serde(other)]
+    Unknown,
+}
+
+/// The opt-in accessibility glyphs (FOOT ring, STARTING bar, HAND bar, FINISH
+/// X) drawn inside each lit silhouette. They replace the classic marker shapes;
+/// `hold_state_map[].shape` is ignored in Boardsesh mode.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum GlyphMode {
+    #[default]
+    Off,
+    Role,
+    #[serde(other)]
+    Unknown,
+}
+
+/// The climbing role behind a hold-state code, for the glyph vocabulary.
+/// Accepts the kebab-case name or the upper-case `HOLD_STATE_MAP` name.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum HoldRole {
+    #[serde(alias = "STARTING")]
+    Starting,
+    #[serde(alias = "HAND")]
+    Hand,
+    #[serde(alias = "FINISH")]
+    Finish,
+    #[serde(alias = "FOOT")]
+    Foot,
+    #[default]
+    #[serde(other)]
+    Unknown,
+}
+
+/// A wash of the play-field colour over the unlit wall, with every lit
+/// silhouette punched out. The caller computes `opacity` from the wall-vs-field
+/// lightness gap (0.60 / 0.30 / 0); `<= 0` draws nothing.
+#[derive(Debug, Deserialize, Clone, PartialEq)]
+#[serde(default)]
+pub struct Veil {
+    pub color: String,
+    pub opacity: f32,
+}
+
+impl Default for Veil {
+    fn default() -> Self {
+        Self {
+            color: "#181225".into(),
+            opacity: 0.0,
+        }
+    }
+}
+
+/// The glow's geometry. Every fraction is of the hold's placement radius `r`.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+#[serde(default)]
+pub struct GlowTuning {
+    /// Outer reach of the glow past the silhouette edge, × r.
+    pub spread_fraction: f32,
+    /// Reach ceiling as a multiple of the silhouette's shortest extent, so a
+    /// sliver of a hold stays an outline instead of becoming a disc.
+    pub hold_extent_cap: f32,
+    /// A hold whose longest extent is under `size_floor_fraction × 2r` gets a
+    /// bigger glow instead of a second mark.
+    pub size_floor_fraction: f32,
+    /// Cap on that small-hold boost.
+    pub small_hold_max_boost: f32,
+    /// Overall reach multiplier (the rejected "reach ×1.5" arm is 1.5 here).
+    pub reach_scale: f32,
+    /// For the `plateau` falloff: the share of the reach held at full alpha.
+    pub plateau_share: f32,
+    /// The rejected soft disc under the glow: peak alpha, 0 = off.
+    pub disc_opacity: f32,
+}
+
+impl Default for GlowTuning {
+    fn default() -> Self {
+        Self {
+            spread_fraction: 0.7,
+            hold_extent_cap: 1.8,
+            size_floor_fraction: 0.45,
+            small_hold_max_boost: 1.7,
+            reach_scale: 1.0,
+            plateau_share: 0.4,
+            disc_opacity: 0.0,
+        }
+    }
+}
+
+/// The role-colour fill drawn over the silhouette (`fill` and `glow-fill`).
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+#[serde(default)]
+pub struct FillTuning {
+    /// Alpha of the role-colour fill.
+    pub opacity: f32,
+    /// Dark art under the fill is lifted toward this OkLab lightness first
+    /// (one-way: bright art is never pushed down).
+    pub normalise_target: f32,
+    /// Saturated inner edge band, × r, clipped inside the silhouette.
+    pub band_width_fraction: f32,
+    /// Thin white outer edge, × r.
+    pub outer_edge_width_fraction: f32,
+    pub outer_edge_opacity: f32,
+}
+
+impl Default for FillTuning {
+    fn default() -> Self {
+        Self {
+            opacity: 0.55,
+            normalise_target: 0.588,
+            band_width_fraction: 0.061,
+            outer_edge_width_fraction: 0.02,
+            outer_edge_opacity: 0.85,
+        }
+    }
+}
+
+/// The accessibility glyphs' geometry and two-pass casing.
+#[derive(Debug, Deserialize, Clone, PartialEq)]
+#[serde(default)]
+pub struct GlyphTuning {
+    /// Line width × r. The catalogue gives every placement on a board the same
+    /// r, so this is one line width per board, not one per hold.
+    pub line_width_fraction: f32,
+    /// Bar half-length before the silhouette clip, × r.
+    pub reach_radii: f32,
+    /// FOOT ring radius as a fraction of that reach.
+    pub foot_ring_reach_fraction: f32,
+    pub core_color: String,
+    pub opacity: f32,
+    pub casing_color: String,
+    pub casing_width_factor: f32,
+    pub casing_opacity: f32,
+}
+
+impl Default for GlyphTuning {
+    fn default() -> Self {
+        Self {
+            line_width_fraction: 0.11,
+            reach_radii: 1.6,
+            foot_ring_reach_fraction: 0.15,
+            core_color: "#FFFFFF".into(),
+            opacity: 0.95,
+            casing_color: "#0B0B10".into(),
+            casing_width_factor: 1.9,
+            casing_opacity: 0.8,
+        }
+    }
+}
+
+/// A dark disc over every LED the board art already paints bright, so an
+/// unlit hold's white pip cannot be mistaken for a mark. `None` draws nothing.
+#[derive(Debug, Deserialize, Clone, PartialEq)]
+#[serde(default)]
+pub struct LedCover {
+    pub radius_fraction: f32,
+    pub color: String,
+    pub opacity: f32,
+}
+
+impl Default for LedCover {
+    fn default() -> Self {
+        Self {
+            radius_fraction: 0.1,
+            color: "#0B0B10".into(),
+            opacity: 0.85,
+        }
+    }
+}
+
 fn default_stroke_width_multiplier() -> f32 {
     1.0
 }
@@ -52,9 +267,29 @@ pub struct RenderConfig {
     pub shape_size_multiplier: f32,
     pub holds: Vec<HoldData>,
     pub hold_state_map: HashMap<u32, HoldStateInfo>,
+    // Boardsesh mode (issue #2202). Every field defaults so a classic config —
+    // and every config an older JS bundle can produce — parses unchanged.
+    #[serde(default)]
+    pub render_mode: BoardRenderMode,
+    #[serde(default)]
+    pub veil: Option<Veil>,
+    #[serde(default)]
+    pub mark_style: Option<MarkStyle>,
+    #[serde(default)]
+    pub glow_falloff: GlowFalloff,
+    #[serde(default)]
+    pub glow: GlowTuning,
+    #[serde(default)]
+    pub fill: FillTuning,
+    #[serde(default)]
+    pub glyphs: GlyphMode,
+    #[serde(default)]
+    pub glyph: GlyphTuning,
+    #[serde(default)]
+    pub led_cover: Option<LedCover>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Default)]
 pub struct HoldData {
     pub id: u32,
     #[serde(rename = "mirroredHoldId")]
@@ -62,15 +297,31 @@ pub struct HoldData {
     pub cx: f32,
     pub cy: f32,
     pub r: f32,
+    /// The hold's traced silhouette as a flat `[x0, y0, x1, y1, …]` polygon in
+    /// units of `r`, relative to `(cx, cy)`. Absent, odd-length, shorter than
+    /// three points or non-finite → the hold is drawn as a circle of radius `r`.
+    #[serde(default)]
+    pub outline: Option<Vec<f32>>,
+    /// `[dx, dy]` in units of `r` from the placement centre to the bright LED
+    /// blob the board art paints for this placement. Present only where the art
+    /// paints it bright — lit or not.
+    #[serde(default)]
+    pub led: Option<[f32; 2]>,
+    /// OkLab lightness of the art inside the silhouette, for the fill's
+    /// one-way white lift. Absent → no lift.
+    #[serde(default)]
+    pub silhouette_lightness: Option<f32>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Default)]
 pub struct HoldStateInfo {
     pub color: String,
     #[serde(default, alias = "renderStyle")]
     pub render_style: HoldRenderStyle,
     #[serde(default)]
     pub shape: HoldMarkerShape,
+    #[serde(default)]
+    pub role: HoldRole,
 }
 
 pub struct ParsedHold {
@@ -78,9 +329,10 @@ pub struct ParsedHold {
     pub color: Color,
     pub render_style: HoldRenderStyle,
     pub shape: HoldMarkerShape,
+    pub role: HoldRole,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Color {
     pub r: u8,
     pub g: u8,

@@ -36,6 +36,23 @@ function opaquePixelCount(config: Record<string, unknown>): number {
   return opaque;
 }
 
+/**
+ * Sum of every pixel's alpha channel. `soft` and `plateau` glow falloff reach
+ * the same outer radius (measured: opaquePixelCount is identical to within
+ * antialiasing noise between the two), so `opaquePixelCount` can't see the
+ * difference — it's the falloff *shape* inside that radius (plateau holds
+ * near-max alpha longer before dropping) that differs, which only shows up
+ * in the total alpha weight.
+ */
+function alphaWeight(config: Record<string, unknown>): number {
+  const { rgba } = _webRendererForTests.decodeRenderOutput(renderOverlay(JSON.stringify(config)));
+  let sum = 0;
+  for (let pixelOffset = 3; pixelOffset < rgba.length; pixelOffset += 4) {
+    sum += rgba[pixelOffset];
+  }
+  return sum;
+}
+
 /** KNOWN_RENDER_CONFIG with the same marker `shape` stamped on every hold state. */
 function withHoldShape(shape: string): Record<string, unknown> {
   return {
@@ -133,6 +150,108 @@ describe('committed web board renderer WASM', () => {
       // `#[serde(other)]` on HoldMarkerShape — a newer JS bundle naming a shape
       // this binary has never heard of must still render.
       expect(opaquePixelCount(withHoldShape('pentagram'))).toBe(opaquePixelCount(KNOWN_RENDER_CONFIG));
+    });
+  });
+
+  // Issue #2202. `render_mode` is the same stale-artifact hazard one level up:
+  // every Boardsesh field is `#[serde(default)]` on a struct with no
+  // `deny_unknown_fields`, so an artifact predating the mode takes the config,
+  // drops it whole, and hands back a classic drawing. This asks the committed
+  // binary the exact question probeBoardseshRendererSupport asks the native
+  // library at runtime — same 8x8 config, same opaque white veil, same
+  // "did the two modes draw different things" comparison.
+  describe('implements the Boardsesh render mode', () => {
+    const PROBE_CONFIG_BASE = {
+      board_width: 8,
+      board_height: 8,
+      output_width: 8,
+      frames: '',
+      thumbnail: false,
+      holds: [],
+      hold_state_map: {},
+    };
+
+    it('draws the veil in boardsesh mode and nothing in classic mode', async () => {
+      await initCommittedWasm();
+
+      const classicOutput = renderOverlay(JSON.stringify({ ...PROBE_CONFIG_BASE, render_mode: 'classic' }));
+      const boardseshOutput = renderOverlay(
+        JSON.stringify({
+          ...PROBE_CONFIG_BASE,
+          render_mode: 'boardsesh',
+          veil: { color: '#FFFFFF', opacity: 1 },
+        }),
+      );
+
+      // The probe's own test: different bytes means the mode is real.
+      expect(Buffer.from(boardseshOutput).equals(Buffer.from(classicOutput))).toBe(false);
+
+      // And the specific answer behind that difference, so a merely-different
+      // artifact can't pass: classic paints an empty transparent pixmap, while
+      // the veil fills all 64 pixels opaque white (no lit silhouettes to punch
+      // out of it).
+      const classic = _webRendererForTests.decodeRenderOutput(classicOutput);
+      const boardsesh = _webRendererForTests.decodeRenderOutput(boardseshOutput);
+      expect(Array.from(classic.rgba).every((channel) => channel === 0)).toBe(true);
+      expect(Array.from(boardsesh.rgba).every((channel) => channel === 255)).toBe(true);
+    });
+
+    it('degrades an unrecognised render mode to classic rather than failing the parse', async () => {
+      await initCommittedWasm();
+
+      // `#[serde(other)]` on BoardRenderMode — a newer JS bundle naming a mode
+      // this binary has never heard of must still render, as classic.
+      const unknownMode = renderOverlay(JSON.stringify({ ...PROBE_CONFIG_BASE, render_mode: 'holographic' }));
+      const classic = renderOverlay(JSON.stringify({ ...PROBE_CONFIG_BASE, render_mode: 'classic' }));
+      expect(Buffer.from(unknownMode).equals(Buffer.from(classic))).toBe(true);
+    });
+  });
+
+  // Issue #2202: the "boardsesh" render mode (veil + glow on traced hold
+  // silhouettes) is new Rust-core surface. As of this test the committed
+  // wasm artifact has already been rebuilt with it, so these currently pass —
+  // but keep them un-skipped: the next time this artifact drifts behind the
+  // Rust core (issue #4495's exact failure mode), a red here is the only
+  // signal, and the wasm rebuild + re-sync is
+  // packages/mobile/public/wasm/README.md's job, not this test's.
+  describe('boardsesh render mode', () => {
+    const BOARDSESH_SQUARE_HOLD_CONFIG = {
+      ...KNOWN_RENDER_CONFIG,
+      render_mode: 'boardsesh',
+      holds: KNOWN_RENDER_CONFIG.holds.map((hold) =>
+        hold.id === 1 ? { ...hold, outline: [-1, -1, 1, -1, 1, 1, -1, 1] } : hold,
+      ),
+    };
+
+    it('renders a different opaque-pixel count in boardsesh mode with a traced outline hold', async () => {
+      await initCommittedWasm();
+
+      const classicCount = opaquePixelCount(KNOWN_RENDER_CONFIG);
+      const boardseshCount = opaquePixelCount(BOARDSESH_SQUARE_HOLD_CONFIG);
+      expect(boardseshCount).not.toBe(classicCount);
+    });
+
+    it('renders a different total alpha weight for plateau glow falloff than soft', async () => {
+      await initCommittedWasm();
+
+      // opaquePixelCount is the wrong metric here: soft and plateau reach the
+      // same outer radius, so the alpha>0 pixel count barely moves. The two
+      // falloffs differ in *how quickly* alpha drops off inside that radius
+      // (plateau holds near-max longer), which shows up as total alpha weight.
+      const soft = alphaWeight({ ...BOARDSESH_SQUARE_HOLD_CONFIG, glow_falloff: 'soft' });
+      const plateau = alphaWeight({ ...BOARDSESH_SQUARE_HOLD_CONFIG, glow_falloff: 'plateau' });
+      expect(plateau).not.toBe(soft);
+    });
+
+    it('raises the opaque-pixel count when a veil is applied', async () => {
+      await initCommittedWasm();
+
+      const withoutVeil = opaquePixelCount(BOARDSESH_SQUARE_HOLD_CONFIG);
+      const withVeil = opaquePixelCount({
+        ...BOARDSESH_SQUARE_HOLD_CONFIG,
+        veil: { color: '#181225', opacity: 0.6 },
+      });
+      expect(withVeil).toBeGreaterThan(withoutVeil);
     });
   });
 });

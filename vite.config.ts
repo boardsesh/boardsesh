@@ -127,6 +127,7 @@ export default defineConfig({
       './packages/crypto/vite.config.ts',
       './packages/shared/ble-protocol/vite.config.ts',
       './packages/shared/board-config/vite.config.ts',
+      './packages/shared/board-art-geometry/vite.config.ts',
       './packages/shared/board-render/vite.config.ts',
       './packages/shared/velvet-tokens/vite.config.ts',
       './packages/shared/text-redaction/vite.config.ts',
@@ -503,6 +504,18 @@ export default defineConfig({
         command: 'node --import tsx scripts/generate-dark-board-art.ts',
         cache: false,
       },
+      // Traced hold silhouettes, per-hold art lightness and painted-LED offsets
+      // for every board in the catalogue (#2202). Committed because nothing at
+      // runtime can decode the board art; `check:` is the drift gate. ~110s for
+      // the whole catalogue, so it is a CI job rather than a pre-commit hook.
+      'generate:board-art-geometry': {
+        command: 'node --import tsx scripts/generate-board-art-geometry.ts',
+        cache: false,
+      },
+      'check:board-art-geometry': {
+        command: 'node --import tsx scripts/generate-board-art-geometry.ts --check',
+        cache: false,
+      },
       'generate:oss-licenses': {
         command: 'node --import tsx scripts/generate-oss-licenses.ts',
         cache: false,
@@ -665,6 +678,10 @@ export default defineConfig({
         command: 'bun run --filter=@boardsesh/board-render typecheck',
         dependsOn: ['build:constants'],
       },
+      'typecheck:board-art-geometry': {
+        command: 'bun run --filter=@boardsesh/board-art-geometry typecheck',
+        dependsOn: ['build:constants'],
+      },
       'typecheck:play-view': {
         command: 'bun run --filter=@boardsesh/play-view typecheck',
       },
@@ -775,6 +792,7 @@ export default defineConfig({
           'typecheck:key-value-storage',
           'typecheck:board-config',
           'typecheck:board-render',
+          'typecheck:board-art-geometry',
           'typecheck:play-view',
           'typecheck:playback-react',
           'typecheck:profile-stats',

@@ -26,7 +26,9 @@ export default function ProfileLayout() {
           here too so a push from this tab keeps its own back stack. */}
         <Stack.Screen name="notifications" options={{ headerShown: true, title: tNotifications('title') }} />
         <Stack.Screen name="more" options={{ title: t('mobile.more.title') }} />
-        <Stack.Screen name="accessibility" options={{ title: t('mobile.more.accessibility.title') }} />
+        <Stack.Screen name="board-look" options={{ title: t('mobile.more.boardLook.title') }} />
+        {/* Redirects straight to "board-look" — no header of its own to flash. */}
+        <Stack.Screen name="accessibility" options={{ headerShown: false }} />
         <Stack.Screen name="storage" options={{ title: t('mobile.more.storage.title') }} />
         <Stack.Screen name="edit" options={{ title: tSettings('profile.editAction') }} />
         <Stack.Screen name="integrations" options={{ title: tSettings('integrations.title') }} />

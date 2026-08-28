@@ -147,7 +147,10 @@ export const MOONBOARD_SIZE = {
 // Green for start holds, Blue for hand/intermediate holds, Red for finish holds
 export const MOONBOARD_HOLD_STATES = {
   start: { name: 'STARTING' as const, color: '#00FF00', displayColor: '#44FF44' },
-  hand: { name: 'HAND' as const, color: '#0000FF', displayColor: '#4444FF' },
+  // boardseshDisplayColor mirrors HOLD_STATE_MAP.moonboard[43] (issue #2202):
+  // the Boardsesh render mode lifts the dark-blue HAND off the veiled wall.
+  // Pinned by moonboard-hold-state-drift.test.ts.
+  hand: { name: 'HAND' as const, color: '#0000FF', displayColor: '#4444FF', boardseshDisplayColor: '#6980FF' },
   finish: { name: 'FINISH' as const, color: '#FF0000', displayColor: '#FF3333' },
 } as const;
 
