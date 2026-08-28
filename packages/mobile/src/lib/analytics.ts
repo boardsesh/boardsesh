@@ -61,7 +61,26 @@ export function registerSuperProperties(properties: Record<string, string | numb
   void client.register(properties);
 }
 
-function coerceFeatureFlagBoolean(value: unknown): boolean | undefined {
+/**
+ * Coerce one raw PostHog flag read into the shape `FeatureFlags` wants.
+ *
+ * Without `variants` (a plain boolean flag) this is byte-identical to the old
+ * `coerceFeatureFlagBoolean`: real booleans pass through, and the SDK's own
+ * string-boolean quirk (`getFeatureFlag` can hand back `'true'`/`'false'`
+ * depending on payload shape) is normalised.
+ *
+ * With `variants` (a multivariate flag, e.g. `board-render-mode-default`) the
+ * value is kept ONLY when it is a string AND a member of the declared variant
+ * set — a boolean read (`false` for "flag doesn't match", stale `true` from a
+ * build that predates the variants), an unknown string, or anything else
+ * resolves to `undefined`, i.e. unresolved. This is deliberate: a caller reads
+ * "unresolved" as "fall back to the shipped default", so a value outside the
+ * declared set must never masquerade as a real variant.
+ */
+function coerceFeatureFlagValue(value: unknown, variants?: readonly string[]): boolean | string | undefined {
+  if (variants) {
+    return typeof value === 'string' && variants.includes(value) ? value : undefined;
+  }
   if (typeof value === 'boolean') return value;
   if (value === 'true') return true;
   if (value === 'false') return false;
@@ -87,22 +106,32 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 // analysis (an experiment reads these events to assign variants to outcomes).
 const READ_WITHOUT_EXPOSURE_EVENT: FeatureFlagReadOptions = { sendEvent: false };
 
-export function readPosthogFeatureFlags(keys: readonly string[]): Record<string, boolean> {
+/**
+ * The minimal shape `readPosthogFeatureFlags` needs from a flag definition.
+ * Declared locally (not imported from feature-flags-provider.tsx) because that
+ * module already imports this function — a type-only import back would form a
+ * circular dependency for no benefit.
+ */
+type FeatureFlagDefinitionLike = { key: string; variants?: readonly string[] };
+
+export function readPosthogFeatureFlags(
+  definitions: readonly FeatureFlagDefinitionLike[],
+): Record<string, boolean | string> {
   const posthog = getClient();
   if (!posthog) return {};
   const featureFlagClient = asFeatureFlagClient(posthog);
-  const flags: Record<string, boolean> = {};
+  const flags: Record<string, boolean | string> = {};
 
-  for (const key of keys) {
+  for (const definition of definitions) {
     let rawFlagValue: unknown;
     if (typeof featureFlagClient.getFeatureFlag === 'function') {
-      rawFlagValue = featureFlagClient.getFeatureFlag(key, READ_WITHOUT_EXPOSURE_EVENT);
+      rawFlagValue = featureFlagClient.getFeatureFlag(definition.key, READ_WITHOUT_EXPOSURE_EVENT);
     } else if (typeof featureFlagClient.isFeatureEnabled === 'function') {
-      rawFlagValue = featureFlagClient.isFeatureEnabled(key, READ_WITHOUT_EXPOSURE_EVENT);
+      rawFlagValue = featureFlagClient.isFeatureEnabled(definition.key, READ_WITHOUT_EXPOSURE_EVENT);
     }
-    const flagValue = coerceFeatureFlagBoolean(rawFlagValue);
+    const flagValue = coerceFeatureFlagValue(rawFlagValue, definition.variants);
     if (flagValue !== undefined) {
-      flags[key] = flagValue;
+      flags[definition.key] = flagValue;
     }
   }
 
@@ -138,6 +167,29 @@ const analytics = createAnalytics(getClient, {
 });
 
 export const { track, identify, setPersonProperties, alias } = analytics;
+
+/**
+ * Stamp the board-render A/B state (issue #2202) as PostHog super properties,
+ * so every event fired for the rest of the launch — not just the board-render
+ * events themselves — can be sliced by which drawing and which glow falloff
+ * this climber is on. Mirrors `registerConnectivitySuperProperty` /
+ * `registerOfflineEngineState`: best-effort, and a no-op when analytics is
+ * disabled (dev / no key).
+ *
+ * Call it whenever `effectiveRenderSettings` changes, not on every render —
+ * each call is a persisted `register()` write.
+ */
+export function registerRenderSuperProperties(effective: {
+  mode: 'classic' | 'boardsesh';
+  glowFalloff: 'soft' | 'plateau';
+  glowFalloffSource: 'user' | 'flag' | 'default';
+}): void {
+  registerSuperProperties({
+    render_mode: effective.mode,
+    glow_falloff: effective.glowFalloff,
+    glow_falloff_source: effective.glowFalloffSource,
+  });
+}
 
 // PostHog's reset() clears the distinct id AND every registered super property,
 // but getPostHogClient() caches the singleton, so the registrations it does at

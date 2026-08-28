@@ -383,7 +383,7 @@ export function PlayDrawer({
   }, []);
 
   const { queue, currentClimbQueueItem } = useQueueData();
-  const { setCurrentClimb, nextClimb, previousClimb, addToQueue } = useQueueActions();
+  const { setCurrentClimb, nextClimb, previousClimb, addToQueue, noteClimbViewed } = useQueueActions();
   const { sessionId } = useQueueSessionId();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   const bluetooth = useOptionalBluetoothContext();
@@ -717,6 +717,10 @@ export function PlayDrawer({
     if (previewTarget.viewOnly) {
       if (!previewTarget.targetItem) return;
       setDrawerPreviewItem(previewTarget.targetItem);
+      // A previewed climb is drawn on the board, so it is a view — but this
+      // branch never touches the queue, so the provider's current-climb effect
+      // will not see it. Report it here (issue #2202).
+      noteClimbViewed(previewTarget.targetItem.climb.uuid);
       // Swiping off the lit climb makes "this is the wall climb" false — the
       // flag means displayed-equals-wall, and the wall didn't move.
       setDrawerPreviewIsWallClimb(false);
@@ -730,7 +734,14 @@ export function PlayDrawer({
     previousClimb();
     setIsMirrored(false);
     // The favorite override is cleared by the climb-change effect.
-  }, [drawerPreviewSuggestionSource, drawerPreviewItem, navigationState.prevItem, previousClimb, lightOnSwipe]);
+  }, [
+    drawerPreviewSuggestionSource,
+    drawerPreviewItem,
+    navigationState.prevItem,
+    previousClimb,
+    lightOnSwipe,
+    noteClimbViewed,
+  ]);
 
   const handleNext = useCallback(() => {
     const previewTarget = getSwipeNavigationTarget({
@@ -742,6 +753,9 @@ export function PlayDrawer({
     if (previewTarget.viewOnly) {
       if (!previewTarget.targetItem) return;
       setDrawerPreviewItem(previewTarget.targetItem);
+      // See handlePrev: a previewed climb is on the board, and nothing in this
+      // branch reaches the queue, so the view is reported from here.
+      noteClimbViewed(previewTarget.targetItem.climb.uuid);
       // See handlePrev: displayed-equals-wall stops being true the moment the
       // swipe lands somewhere else.
       setDrawerPreviewIsWallClimb(false);
@@ -755,7 +769,14 @@ export function PlayDrawer({
     nextClimb();
     setIsMirrored(false);
     // The favorite override is cleared by the climb-change effect.
-  }, [drawerPreviewSuggestionSource, drawerPreviewItem, navigationState.nextItem, nextClimb, lightOnSwipe]);
+  }, [
+    drawerPreviewSuggestionSource,
+    drawerPreviewItem,
+    navigationState.nextItem,
+    nextClimb,
+    lightOnSwipe,
+    noteClimbViewed,
+  ]);
 
   // Commit the browse latch: the previewed climb becomes the current queue item,
   // the latch drops, and the lightbulb (which acts on the current climb) now
@@ -936,6 +957,9 @@ export function PlayDrawer({
       if (getSimilarClimbTapMode(viewer) === 'preview') {
         setDrawerPreviewItem(queueItem);
         setDrawerPreviewSuggestionSource(null);
+        // Same as the swipe preview branches: a previewed climb is drawn on the
+        // board but never reaches the queue, so report the view here (#2202).
+        noteClimbViewed(queueItem.climb.uuid);
         // A different climb is on screen now, so it is not the lit one.
         setDrawerPreviewIsWallClimb(false);
         setIsMirrored(false);
@@ -956,7 +980,7 @@ export function PlayDrawer({
       setIsTickBarActive(false);
       setCurrentClimb(queueItem, { playlistSuggestionSource: null });
     },
-    [addToQueue, setCurrentClimb, viewer],
+    [addToQueue, setCurrentClimb, viewer, noteClimbViewed],
   );
 
   // The first screen is sized so the action bar stays visible and the Logbook

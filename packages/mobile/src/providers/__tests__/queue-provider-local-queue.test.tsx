@@ -137,7 +137,7 @@ vi.mock('../../lib/graphql/use-active-board', () => ({
   useSetActiveBoard: () => vi.fn(async () => {}),
 }));
 vi.mock('../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: http.request }) }));
-vi.mock('../../lib/analytics', () => ({ track: vi.fn() }));
+vi.mock('../../lib/analytics', () => ({ track: vi.fn(), registerRenderSuperProperties: vi.fn() }));
 vi.mock('../../lib/error-reporting', () => ({
   reportError: errorReporter.reportError,
   reportHandledError: errorReporter.reportHandledError,

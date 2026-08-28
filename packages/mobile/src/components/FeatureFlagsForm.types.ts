@@ -10,19 +10,28 @@
 // piece of derived copy (the "Live default… Effective…" caption) is precomputed
 // here as `effectiveLabel`. No native imports.
 
-/** The three override states a tester can force a flag into. */
-export type FeatureFlagChoice = 'default' | 'on' | 'off';
+/** One option a row's picker can render — 'Default', plus each on/off or variant choice. */
+export type FeatureFlagOption = {
+  key: string;
+  label: string;
+};
 
 /**
- * One flag's fully-resolved view model. `choice` is the current segmented
- * selection; `effectiveLabel` is the precomputed "Live default: X · Effective: Y"
- * caption (built in the screen so the native tree stays dumb).
+ * One flag's fully-resolved view model. `options` is the exact set of segments
+ * to render, in order: `['default', 'on', 'off']` for a plain boolean flag, or
+ * `['default', ...variants]` for a multivariate one (see
+ * FeatureFlagsForm.logic.ts) — so iOS and Android render the same segments for
+ * the same row without either platform needing to know which kind a flag is.
+ * `choice` is the current selection (one of `options`' keys); `effectiveLabel`
+ * is the precomputed "Live default: X · Effective: Y" caption (built in the
+ * screen so the native tree stays dumb).
  */
 export type FeatureFlagRow = {
   key: string;
   label: string;
   description: string;
-  choice: FeatureFlagChoice;
+  options: readonly FeatureFlagOption[];
+  choice: string;
   effectiveLabel: string;
 };
 
@@ -30,7 +39,7 @@ export type FeatureFlagsFormProps = {
   /** One entry per catalog flag, in display order. */
   rows: FeatureFlagRow[];
   /** Fired when a row's segment changes. The screen maps it to set/clear override. */
-  onSelect: (key: string, choice: FeatureFlagChoice) => void;
+  onSelect: (key: string, choice: string) => void;
   /** Fired by the "Reset all overrides" button. */
   onReset: () => void;
   /** Enables the reset button — false greys it out when there are no overrides. */

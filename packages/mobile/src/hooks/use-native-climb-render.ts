@@ -50,9 +50,19 @@ import {
   resolveEffectiveRenderSettings,
   resolveVeilOpacity,
   useBoardRenderSettings,
+  type BoardRenderFlags,
   type BoardseshRenderSettings,
   type EffectiveBoardRenderSettings,
 } from '../lib/board-render-settings';
+import { useFeatureFlagVariant } from '../providers/feature-flags-provider';
+import {
+  getBoardseshRendererSupport,
+  getBoardseshSupportProbe,
+  getBoardseshSupportRevision,
+  setBoardseshRendererSupport,
+  setBoardseshSupportProbe,
+  subscribeToBoardseshSupport,
+} from './boardsesh-renderer-support';
 
 const MARKER_RENDERER_UNAVAILABLE_MESSAGE =
   'Marker shape, size, and brush overrides require a rebuilt BoardRenderer native binary';
@@ -242,37 +252,12 @@ function getUnsupportedSignatureRevision(): number {
 // signature would instead drop the climber's marker overrides, which the
 // binary can draw perfectly well.
 //
-// `null` is "not answered yet" and reads as unavailable: RenderConfig has no
-// `deny_unknown_fields`, so a library that predates the mode accepts a
-// Boardsesh config, ignores every field, and hands back a classic render
-// silently. The first render must never go out on an unverified library.
-let boardseshRendererSupport: boolean | null = null;
-const boardseshSupportListeners = new Set<() => void>();
-let boardseshSupportRevision = 0;
-let boardseshSupportProbe: Promise<void> | null = null;
-
-function setBoardseshRendererSupport(supported: boolean): void {
-  if (boardseshRendererSupport === supported) return;
-  boardseshRendererSupport = supported;
-  boardseshSupportRevision += 1;
-  for (const listener of boardseshSupportListeners) listener();
-}
-
-function subscribeToBoardseshSupport(onStoreChange: () => void): () => void {
-  boardseshSupportListeners.add(onStoreChange);
-  return () => {
-    boardseshSupportListeners.delete(onStoreChange);
-  };
-}
-
-function getBoardseshSupportRevision(): number {
-  return boardseshSupportRevision;
-}
-
-/** `null` until the probe answers — read as unavailable everywhere. */
-function getBoardseshRendererSupport(): boolean | null {
-  return boardseshRendererSupport;
-}
+// The state itself lives in ./boardsesh-renderer-support (a caller that only
+// needs to READ it — the board-render A/B telemetry in queue-provider.tsx —
+// can import just that, without this file's `expo-asset`-importing native
+// render graph); re-exported here unchanged for every existing call site and
+// test seam in this file.
+export { _resetBoardseshSupportForTests, _getBoardseshSupportForTests } from './boardsesh-renderer-support';
 
 /**
  * Ask the native library once per JS lifetime whether it can draw the Boardsesh
@@ -286,27 +271,19 @@ function getBoardseshRendererSupport(): boolean | null {
  * renders on an unverified library while we wait.
  */
 function ensureBoardseshSupportProbed(): void {
-  if (boardseshRendererSupport !== null || boardseshSupportProbe) return;
+  if (getBoardseshRendererSupport() !== null || getBoardseshSupportProbe()) return;
   const nativeModule = getNativeModule();
   if (!nativeModule) return;
   const probeSupport = nativeModule.probeBoardseshRendererSupport;
   // Always async, even for a wrapper with no probe (an injected test double):
   // a synchronous store notification here would fire during render.
-  boardseshSupportProbe = Promise.resolve(typeof probeSupport === 'function' ? probeSupport() : false).then(
-    (supported) => setBoardseshRendererSupport(supported === true),
-    () => setBoardseshRendererSupport(false),
+  setBoardseshSupportProbe(
+    Promise.resolve(typeof probeSupport === 'function' ? probeSupport() : false).then(
+      (supported) => setBoardseshRendererSupport(supported === true),
+      () => setBoardseshRendererSupport(false),
+    ),
   );
 }
-
-/** Test-only handles for the Boardsesh capability latch. */
-export function _resetBoardseshSupportForTests(): void {
-  boardseshRendererSupport = null;
-  boardseshSupportProbe = null;
-  boardseshSupportRevision += 1;
-  for (const listener of boardseshSupportListeners) listener();
-}
-
-export const _getBoardseshSupportForTests = getBoardseshRendererSupport;
 
 export const _BOARDSESH_RENDERER_UNAVAILABLE_MESSAGE_FOR_TESTS = BOARDSESH_RENDERER_UNAVAILABLE_MESSAGE;
 
@@ -1148,6 +1125,23 @@ function getNativeModule() {
 }
 
 /**
+ * Read the two board-render rollout flags (issue #2202) and shape them as the
+ * `BoardRenderFlags` the resolver expects. A tiny hook rather than inlining
+ * `useFeatureFlagVariant` twice at each of the two call sites below, so
+ * `useNativeClimbRender` and `useEffectiveBoardRenderSettings` read the same
+ * two flags the same way and can't drift.
+ */
+function useBoardRenderFlags(): BoardRenderFlags {
+  // No explicit type arguments: `useFeatureFlagVariant` derives both the key
+  // and the legal variant strings from the flag catalog itself, so naming a
+  // flag that isn't multivariate — or a variant it never declares — is a
+  // compile error rather than a hook that silently never matches.
+  const defaultMode = useFeatureFlagVariant('board-render-mode-default', ['classic', 'boardsesh']);
+  const glowFalloff = useFeatureFlagVariant('board-glow-falloff', ['soft', 'plateau']);
+  return useMemo(() => ({ defaultMode, glowFalloff }), [defaultMode, glowFalloff]);
+}
+
+/**
  * Hook that drives the layered climb image: bundled backgrounds plus a
  * native-rendered holds-only PNG overlaid on top. Always renders at the
  * board's native dimensions; consumers fit/scale via expo-image. No
@@ -1225,6 +1219,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
 
   // ── Which drawing this render uses (issue #2202) ────────────────────────
   const { settings: boardRenderSettings } = useBoardRenderSettings();
+  const boardRenderFlags = useBoardRenderFlags();
   // The probe answers from inside a promise, like the marker refusal does, so
   // subscribing is what lets a mounted surface pick the mode up at all.
   const boardseshSupportTick = useSyncExternalStore(
@@ -1232,14 +1227,20 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     getBoardseshSupportRevision,
     getBoardseshSupportRevision,
   );
-  // Two native renders per launch, so only for someone whose settings ask for
-  // the mode. Flags are `undefined` until the PostHog plumbing lands.
-  if (requestedBoardRenderMode(boardRenderSettings, undefined) === 'boardsesh') ensureBoardseshSupportProbed();
+  // Two native renders per launch, so only for someone whose settings or
+  // rollout flag ask for the mode.
+  if (requestedBoardRenderMode(boardRenderSettings, boardRenderFlags) === 'boardsesh') {
+    ensureBoardseshSupportProbed();
+  }
 
   const effectiveRenderSettings = useMemo(() => {
     void boardseshSupportTick;
-    return resolveEffectiveRenderSettings(boardRenderSettings, undefined, getBoardseshRendererSupport() === true);
-  }, [boardRenderSettings, boardseshSupportTick]);
+    return resolveEffectiveRenderSettings(
+      boardRenderSettings,
+      boardRenderFlags,
+      getBoardseshRendererSupport() === true,
+    );
+  }, [boardRenderSettings, boardRenderFlags, boardseshSupportTick]);
 
   // The play field the veil washes toward. Baked into the PNG, so it is part of
   // the cache key: a light-mode overlay reused in dark mode would show a wall
@@ -1833,18 +1834,19 @@ export function useEffectiveBoardRenderSettings(): {
   boardseshRendererAvailable: boolean | null;
 } {
   const { settings } = useBoardRenderSettings();
+  const boardRenderFlags = useBoardRenderFlags();
   const boardseshSupportTick = useSyncExternalStore(
     subscribeToBoardseshSupport,
     getBoardseshSupportRevision,
     getBoardseshSupportRevision,
   );
 
-  if (requestedBoardRenderMode(settings, undefined) === 'boardsesh') ensureBoardseshSupportProbed();
+  if (requestedBoardRenderMode(settings, boardRenderFlags) === 'boardsesh') ensureBoardseshSupportProbed();
 
   const effectiveRenderSettings = useMemo(() => {
     void boardseshSupportTick;
-    return resolveEffectiveRenderSettings(settings, undefined, getBoardseshRendererSupport() === true);
-  }, [settings, boardseshSupportTick]);
+    return resolveEffectiveRenderSettings(settings, boardRenderFlags, getBoardseshRendererSupport() === true);
+  }, [settings, boardRenderFlags, boardseshSupportTick]);
 
   return { effectiveRenderSettings, boardseshRendererAvailable: getBoardseshRendererSupport() };
 }
