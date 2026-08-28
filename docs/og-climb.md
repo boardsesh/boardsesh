@@ -23,6 +23,23 @@ render CPU runs; per-IP rate limit is 120/min (fails open to the in-memory
 limiter when Redis is down). `Server-Timing` breaks down wasm/base/encode ms
 and reports the cache outcome (`hit` | `base-hit` | `miss`).
 
+### Render-mode params (issue #2202)
+
+Optional, shared with the web `/api/internal/board-render` route via
+`boardseshRenderQuerySchema` (`@boardsesh/board-render`). All four default
+closed, so this endpoint (and web) stay classic-by-default until a later PR
+flips it. Every option that affects the output is part of the byte-cache key,
+so a boardsesh render can never be served under a classic key. The base cache
+is keyed only by board config because overlay options do not change its board
+photo backdrop.
+
+| Param          | Default   | Meaning                                                                                                                                       |
+| -------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `render_mode`  | `classic` | `classic` (today's marker-only overlay) or `boardsesh` (veil + glow on traced silhouettes).                                                      |
+| `glow_falloff` | `soft`    | `boardsesh` mode only: glow edge treatment, `soft` or `plateau`.                                                                                 |
+| `glyphs`       | off       | `boardsesh` mode only: `0`\|`1`\|`true`\|`false` — role glyphs inside the glow.                                                                   |
+| `field_color`  | unset     | `#rrggbb`; feeds the veil color. **No visible effect yet:** opacity is hardcoded to 0 for now — see the `TODO(#2202)` in the callers of `buildRenderConfig` — until `@boardsesh/board-art-geometry` supplies real wall-lightness data. |
+
 ## How a render works
 
 Implementation: `packages/backend/src/services/board-render.ts` +

@@ -8,6 +8,12 @@ use std::slice;
 /// On success, `out_data` points to heap-allocated RGBA pixel data,
 /// `out_len` is the byte length, and `out_width`/`out_height` are dimensions.
 /// The caller must free the data with `board_renderer_free`.
+///
+/// # Safety
+/// `config_json` must point to `config_json_len` readable bytes (or be null,
+/// which returns -1), and every `out_*` pointer must be null or valid for a
+/// write of its pointee type. The returned buffer is owned by the caller until
+/// it is handed back to `board_renderer_free` with the same `out_len`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn board_renderer_render(
     config_json: *const u8,
