@@ -131,6 +131,7 @@ export default defineConfig({
       './packages/shared/board-render/vite.config.ts',
       './packages/shared/velvet-tokens/vite.config.ts',
       './packages/shared/text-redaction/vite.config.ts',
+      './packages/shared/pr-body/vite.config.ts',
       './packages/shared/board-react/vite.config.ts',
       './packages/shared/create-climb-react/vite.config.ts',
       './packages/shared/queue/vite.config.ts',
@@ -556,6 +557,10 @@ export default defineConfig({
         command: 'tsx scripts/check-release-notes.ts',
         cache: false,
       },
+      'check:pr-test-plan': {
+        command: 'tsx scripts/check-pr-test-plan.ts',
+        cache: false,
+      },
       'test:large-files': {
         command: 'node --test scripts/check-large-files.test.mjs',
         cache: false,
@@ -661,6 +666,9 @@ export default defineConfig({
       },
       'typecheck:analytics': {
         command: 'bun run --filter=@boardsesh/analytics typecheck',
+      },
+      'typecheck:pr-body': {
+        command: 'bun run --filter=@boardsesh/pr-body typecheck',
       },
       'typecheck:static-assets': {
         command: 'bun run --filter=@boardsesh/static-assets typecheck',
@@ -771,6 +779,7 @@ export default defineConfig({
         command: 'true',
         dependsOn: [
           'typecheck:scripts',
+          'typecheck:pr-body',
           'build:shared',
           'build:db',
           'build:backend',

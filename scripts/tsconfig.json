@@ -18,7 +18,11 @@
     "lib/discord-feedback-issue.ts",
     "__tests__/discord-feedback-scan.test.ts",
     "dev-db-discover.ts",
-    "generate-board-art-geometry.ts",
-    "__tests__/dev-db-discover-watchdog.test.ts"
+    "__tests__/dev-db-discover-watchdog.test.ts",
+    "check-pr-test-plan.ts",
+    "lib/pr-labels.ts",
+    "__tests__/pr-test-plan-workflow.test.ts",
+    "__tests__/pr-labels.test.ts",
+    "generate-board-art-geometry.ts"
   ]
 }

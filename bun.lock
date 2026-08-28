@@ -10,6 +10,7 @@
       },
       "devDependencies": {
         "@aws-sdk/client-s3": "^3.1101.0",
+        "@boardsesh/pr-body": "*",
         "@boardsesh/text-redaction": "*",
         "@expo/cli": "^57.0.11",
         "@graphql-codegen/add": "^5.0.3",
@@ -696,6 +697,13 @@
         "react": "^19",
       },
     },
+    "packages/shared/pr-body": {
+      "name": "@boardsesh/pr-body",
+      "version": "1.0.0",
+      "devDependencies": {
+        "typescript": "~7.0.2",
+      },
+    },
     "packages/shared/profile-stats": {
       "name": "@boardsesh/profile-stats",
       "version": "1.0.0",
@@ -1243,6 +1251,8 @@
     "@boardsesh/playlist-generator": ["@boardsesh/playlist-generator@workspace:packages/shared/playlist-generator"],
 
     "@boardsesh/playlists-react": ["@boardsesh/playlists-react@workspace:packages/shared/playlists-react"],
+
+    "@boardsesh/pr-body": ["@boardsesh/pr-body@workspace:packages/shared/pr-body"],
 
     "@boardsesh/profile-stats": ["@boardsesh/profile-stats@workspace:packages/shared/profile-stats"],
 

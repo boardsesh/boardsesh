@@ -24,6 +24,7 @@ We'll always create a PR, never asks if a PR should be created, open as a draft.
 - **Merge conflicts**: rebase on `main` and `git push --force-with-lease` — don't ask first.
 - **Review feedback**: fix minor, cosmetic, and style comments autonomously and push. For correctness disagreements, architectural changes, or ambiguous instructions, use `AskUserQuestion` before acting.
 - **Release notes**: every PR description must include the `## Release Notes` section from the PR template. Write in climber voice — describe what the user gets, not what the code does. Internal-only changes (refactor, CI, deps, tests) get `none`.
+- **Test plan + Risk**: every PR description carries a `## Test plan` and a `## Risk` section (template). Testers read the plan word for word in the mobile app, so write it for a distracted reader on a phone: 1–5 numbered steps, each one action then what they should see ("You tab → Log a tick → field grows"), 12 words or fewer per step, no preamble. "1. CI green." is a valid plan for an internal change. Risk is `Risk: N/5 — why` (1 docs/CI/deps · 3 new screen or resolver · 5 BLE/OTA/migrations). `pr-test-plan.yml` fails without both; testers' verdicts come back as `qa-approved` / `qa-declined` labels. See `docs/crowdsourced-qa.md`.
 - **Ready to merge signal**: once CI is green, no unresolved review comments remain, and there are no conflicts, remove the draft status from the PR marking it ready for review.
 
 ## Monorepo Structure
@@ -119,6 +120,7 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/db-migrations.md` — migration numbering, `when`-not-number apply order, the collision/renumber bot, and when it hands work back
 - `docs/feature-flags.md` — client vs server flags, why a server gate fails closed, the resolution reasons, the `/api/internal/feature-flags` diagnostic, and the `FEATURE_FLAG_OVERRIDES` kill switch
 - `docs/logging.md` — backend structured logger (winston)
+- `docs/crowdsourced-qa.md` — the PR test-plan + risk gate (`@boardsesh/pr-body`, `pr-test-plan.yml`), and the tester loop that turns it into `qa-approved` / `qa-declined` labels
 - `docs/db-connectivity.md` — Postgres connect retries (what is retried and why it can't double-execute a write), the retry budgets, and the `/health` vs `/health/db` split
 - `docs/og-climb.md` — backend-served climb OG share cards (`GET /og/climb`: caches, env vars, timings)
 - `docs/cloudflare.md` — the boardsesh.com Cloudflare zone: config-as-code (`vp run cf:apply`), token scopes/secrets, CI auto-apply, og edge caching, planned OpenNext web deploy
