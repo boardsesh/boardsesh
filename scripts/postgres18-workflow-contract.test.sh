@@ -13,8 +13,11 @@ fail() {
 
 # Candidate-controlled pull-request and branch workflows are structurally
 # incapable of registry/package/OIDC mutation.
-[[ "$(grep -cE '^  (test-postgres-postgis|test-dev-db|test-db-setup):$' "$VALIDATION_WORKFLOW")" == '3' ]] ||
-  fail 'the three read-only image validation jobs must remain explicit'
+# `test-db-setup` is gone with the pgloader sidecar image it built: the seeded
+# image now loads its catalogue from the published board snapshots, so there is
+# no second Dockerfile left to validate.
+[[ "$(grep -cE '^  (test-postgres-postgis|test-dev-db):$' "$VALIDATION_WORKFLOW")" == '2' ]] ||
+  fail 'the two read-only image validation jobs must remain explicit'
 grep -Fq 'permissions:' "$VALIDATION_WORKFLOW"
 grep -Fq '  contents: read' "$VALIDATION_WORKFLOW"
 if grep -qE 'workflow_dispatch|packages: write|id-token: write|docker/login-action|attest-build-provenance|environment:' \
@@ -25,7 +28,7 @@ if grep -qE 'cache-to:|actions/cache|actions/upload-artifact|DOCKER_BUILD_RECORD
   "$VALIDATION_WORKFLOW"; then
   fail 'candidate-controlled validation must not write Actions caches or artifacts'
 fi
-[[ "$(grep -cF "DOCKER_BUILD_RECORD_UPLOAD: 'false'" "$VALIDATION_WORKFLOW")" == '3' ]] ||
+[[ "$(grep -cF "DOCKER_BUILD_RECORD_UPLOAD: 'false'" "$VALIDATION_WORKFLOW")" == '2' ]] ||
   fail 'every branch-controlled image build must disable build-record uploads'
 ! grep -qE '^  pull_request_target:' "$VALIDATION_WORKFLOW" || fail 'pull_request_target is forbidden'
 
@@ -37,10 +40,12 @@ if grep -E '^[[:space:]]*-?[[:space:]]*uses:' "$VALIDATION_WORKFLOW" |
 fi
 
 # Every branch-controlled validation job that builds or boots ARM64 installs
-# QEMU. Published-digest smoke and publisher trust are enforced by the separate
+# QEMU. Only the portable-image job does now — the seeded image is amd64-only
+# until the publisher gains a native ARM64 runner (docs/postgres-18-migration.md).
+# Published-digest smoke and publisher trust are enforced by the separate
 # prerequisite workflow after it lands on protected main.
-[[ "$(grep -cE 'docker/setup-qemu-action@[0-9a-f]{40}' "$VALIDATION_WORKFLOW")" == '2' ]] ||
-  fail 'both validation jobs that cover ARM64 must install QEMU'
+[[ "$(grep -cE 'docker/setup-qemu-action@[0-9a-f]{40}' "$VALIDATION_WORKFLOW")" == '1' ]] ||
+  fail 'the validation job that covers ARM64 must install QEMU'
 
 # `vp run test:postgres18-contract` runs on a pull request from exactly one
 # place: this workflow. Every file it executes or syntax-checks must therefore

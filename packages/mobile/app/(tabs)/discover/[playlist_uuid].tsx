@@ -116,10 +116,12 @@ export default function PlaylistDetail() {
       page,
       pageSize,
       board,
+      signal,
     }: {
       page: number;
       pageSize: number;
       board: { boardName: string; layoutId: number; sizeId: number; setIds: string; angle: number };
+      signal: AbortSignal;
     }) => {
       const input: GetPlaylistClimbsInput = {
         playlistId: playlistUuid,
@@ -131,9 +133,14 @@ export default function PlaylistDetail() {
         page,
         pageSize,
       };
+      // See the smart-playlist screen: passing the signal is what turns
+      // "stop paging" into "cancel the request that is already out".
       const response = await getHttpClient().request<GetPlaylistClimbsQueryResponse, { input: GetPlaylistClimbsInput }>(
-        GET_PLAYLIST_CLIMBS,
-        { input },
+        {
+          document: GET_PLAYLIST_CLIMBS,
+          variables: { input },
+          signal,
+        },
       );
       return {
         climbs: toQueueClimbs(response.playlistClimbs.climbs),

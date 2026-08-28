@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
 import { resetBoardRenderCaches } from '@/app/lib/board-render-cache';
+import { createOgImageHeaders } from '@/app/lib/seo/og';
 import { GET } from '../route';
 
 // The route builds its semaphore once, at module load, from this env var —
@@ -311,6 +312,55 @@ describe('board-render API route', () => {
     expect(body.error).toBe('Invalid format');
     expect(mockRenderOverlay).not.toHaveBeenCalled();
     expect(mockJpegOptions).not.toHaveBeenCalled();
+  });
+
+  describe('boardsesh render options (issue #2202)', () => {
+    it('defaults to a classic config with no boardsesh-mode fields', async () => {
+      await GET(makeRequest(validParams));
+      const config = JSON.parse(mockRenderOverlay.mock.calls[0][0]);
+      expect(config.render_mode).toBeUndefined();
+      expect(config.glow_falloff).toBeUndefined();
+      expect(config.glyphs).toBeUndefined();
+      expect(config.veil).toBeUndefined();
+    });
+
+    it('reaches the builder with render_mode=boardsesh and glow_falloff=plateau', async () => {
+      await GET(makeRequest({ ...validParams, render_mode: 'boardsesh', glow_falloff: 'plateau' }));
+      const config = JSON.parse(mockRenderOverlay.mock.calls[0][0]);
+      expect(config.render_mode).toBe('boardsesh');
+      expect(config.glow_falloff).toBe('plateau');
+      expect(config.glyphs).toBe('off');
+    });
+
+    it('maps glyphs=1 to "role"', async () => {
+      await GET(makeRequest({ ...validParams, render_mode: 'boardsesh', glyphs: '1' }));
+      const config = JSON.parse(mockRenderOverlay.mock.calls[0][0]);
+      expect(config.glyphs).toBe('role');
+    });
+
+    it('passes field_color through as a no-op veil (opacity 0) in boardsesh mode', async () => {
+      await GET(makeRequest({ ...validParams, render_mode: 'boardsesh', field_color: '#123456' }));
+      const config = JSON.parse(mockRenderOverlay.mock.calls[0][0]);
+      expect(config.veil).toEqual({ color: '#123456', opacity: 0 });
+    });
+
+    it('returns 400 for an invalid render_mode', async () => {
+      const response = await GET(makeRequest({ ...validParams, render_mode: 'neon' }));
+      expect(response.status).toBe(400);
+      expect(mockRenderOverlay).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 for an invalid glow_falloff', async () => {
+      const response = await GET(makeRequest({ ...validParams, glow_falloff: 'hard' }));
+      expect(response.status).toBe(400);
+      expect(mockRenderOverlay).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 for an invalid field_color', async () => {
+      const response = await GET(makeRequest({ ...validParams, field_color: 'blue' }));
+      expect(response.status).toBe(400);
+      expect(mockRenderOverlay).not.toHaveBeenCalled();
+    });
   });
 
   it.each(['decoy', 'touchstone', 'grasshopper', 'soill'])('accepts %s as a valid board_name', async (board) => {
@@ -676,6 +726,14 @@ describe('board-render API route', () => {
     ['include_background', {}, { include_background: '0' }, true],
     ['dim_background', {}, { dim_background: '0.18' }, false],
     ['variant', { format: 'png' }, { variant: 'og' }, false],
+    // issue #2202: a boardsesh render must never be served under a classic
+    // key, and within boardsesh mode every option that moves a pixel is in
+    // the key. (Classic ignores the other three, so they are keyed only once
+    // render_mode=boardsesh — see the collapse test below.)
+    ['render_mode', {}, { render_mode: 'boardsesh' }, false],
+    ['glow_falloff', { render_mode: 'boardsesh' }, { glow_falloff: 'plateau' }, false],
+    ['glyphs', { render_mode: 'boardsesh' }, { glyphs: '1' }, false],
+    ['field_color', { render_mode: 'boardsesh' }, { field_color: '#123456' }, false],
   ] as Array<[string, Record<string, string>, Record<string, string>, boolean]>)(
     'keys the byte cache on %s',
     async (_label, shared, override, expectDistinctBody) => {
@@ -698,6 +756,25 @@ describe('board-render API route', () => {
           !secondBytes.equals(firstBytes) || second.headers.get('Content-Type') !== first.headers.get('Content-Type');
         expect(differs).toBe(true);
       }
+    },
+  );
+
+  it.each([
+    ['glow_falloff', { glow_falloff: 'plateau' }],
+    ['glyphs', { glyphs: '1' }],
+    ['field_color', { field_color: '#123456' }],
+  ] as Array<[string, Record<string, string>]>)(
+    'does not fragment the classic byte cache on %s, which classic ignores',
+    async (_label, override) => {
+      const params = { ...validParams, include_background: '1' };
+      const first = await GET(makeRequest(params));
+      expect(first.status).toBe(200);
+      expect(mockRenderOverlay).toHaveBeenCalledTimes(1);
+
+      const second = await GET(makeRequest({ ...params, ...override }));
+      expect(second.status).toBe(200);
+      expect(mockRenderOverlay).toHaveBeenCalledTimes(1);
+      expect(second.headers.get('Server-Timing')).toContain('cache;desc=hit');
     },
   );
 
@@ -843,5 +920,56 @@ describe('board-render API route', () => {
 
     const response = await GET(makeRequest({ ...validParams, layout_id: '5', size_id: '15', set_ids: '24' }));
     expect(response.status).toBe(200);
+  });
+
+  // #4773: the route used to hard-code `version: 'immutable'`, which claimed a
+  // year of cache lifetime for a URL that did not identify its bytes.
+  describe('cache version', () => {
+    const lastHeaderCall = () => {
+      const calls = vi.mocked(createOgImageHeaders).mock.calls;
+      return calls[calls.length - 1][0];
+    };
+
+    it('passes a well-formed v through as the cache version', async () => {
+      const response = await GET(makeRequest({ ...validParams, v: 'ddff19e91ac6' }));
+      expect(response.status).toBe(200);
+      expect(lastHeaderCall()).toMatchObject({ version: 'ddff19e91ac6', unversionedTier: 'daily' });
+    });
+
+    it('treats a missing v as unversioned on the daily tier', async () => {
+      const response = await GET(makeRequest(validParams));
+      expect(response.status).toBe(200);
+      expect(lastHeaderCall()).toMatchObject({ version: null, unversionedTier: 'daily' });
+    });
+
+    it.each([
+      ['a path traversal attempt', '../../etc/passwd'],
+      ['non-hex characters', 'ZZZZZZZZ'],
+      ['too short to be a digest', 'abc'],
+      ['absurdly long', 'a'.repeat(500)],
+      ['the empty string', ''],
+    ])('rejects %s as a version without failing the request', async (_label, versionParam) => {
+      const response = await GET(makeRequest({ ...validParams, v: versionParam }));
+      expect(response.status).toBe(200);
+      expect(lastHeaderCall()).toMatchObject({ version: null });
+    });
+
+    it('does not fragment the byte cache on v', async () => {
+      // Two requests for the same pixels during a rolling deploy carry different
+      // versions. One process only ever runs one renderer, so the second must be
+      // a byte-cache hit rather than a second WASM + sharp pass.
+      await GET(makeRequest({ ...validParams, v: 'aaaaaaaaaaaa' }));
+      const second = await GET(makeRequest({ ...validParams, v: 'bbbbbbbbbbbb' }));
+      expect(second.headers.get('Server-Timing')).toContain('cache;desc=hit');
+      expect(lastHeaderCall()).toMatchObject({ version: 'bbbbbbbbbbbb' });
+    });
+
+    it('still renders an unknown param it does not recognise', async () => {
+      // embedded/projects/moonboard-dev-server already ships `revision=<n>` to
+      // production. Unknown params must stay inert, not 400.
+      const response = await GET(makeRequest({ ...validParams, revision: '7' }));
+      expect(response.status).toBe(200);
+      expect(lastHeaderCall()).toMatchObject({ version: null });
+    });
   });
 });

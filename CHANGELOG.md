@@ -4,6 +4,25 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-27
+
+### New
+
+- Tap a hold in the climb editor to cycle through its role (hand, start, finish, foot) instead of needing a long press to change it once it's set. ([#4830](https://github.com/boardsesh/boardsesh/pull/4830))
+- Tag climbs as "no kickboard" or "campus" (no feet) right in the climb editor, alongside no-matching. ([#4831](https://github.com/boardsesh/boardsesh/pull/4831))
+
+## 2026-08-26
+
+### Fixed
+
+- Read toast messages clearly in light and dark mode. ([#4815](https://github.com/boardsesh/boardsesh/pull/4815))
+- Board images now refresh when we improve the renderer, instead of showing you last month's version for up to a year. ([#4780](https://github.com/boardsesh/boardsesh/pull/4780))
+  Every board photo, hold overlay and share card on the site now carries a version stamp, so a fix to how holds are drawn reaches you on the next page load.
+- Gym TVs and website embeds light up straight away — no login check standing between the screen and the wall. ([#4589](https://github.com/boardsesh/boardsesh/pull/4589))
+- Starting a big playlist no longer dies on one dropped page: a flaky page retries on its own, and backing out of a playlist actually cancels the load. ([#4713](https://github.com/boardsesh/boardsesh/pull/4713))
+- Kilter playlists that got cloned when you re-linked your account are merged back into one. Your edited version is the one that survives, with its pins and follows intact. ([#4747](https://github.com/boardsesh/boardsesh/pull/4747))
+- Similar climbs, climb details, board-presence live sends, playlists, and the setter filter now all work on boards set to a negative tilt ([#4677](https://github.com/boardsesh/boardsesh/pull/4677))
+
 ## 2026-08-25
 
 ### New
@@ -17,6 +36,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Improved
 
+- Say thanks to xprem, the update server that gets fixes to your phone without an app store wait ([#4784](https://github.com/boardsesh/boardsesh/pull/4784))
 - Tapping and swiping through climbs in a shared session puts them on the wall again, the way it did before the last update. ([#4745](https://github.com/boardsesh/boardsesh/pull/4745))
 
 ### Fixed

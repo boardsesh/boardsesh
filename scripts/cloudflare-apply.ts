@@ -9,6 +9,10 @@
  * What it manages (and nothing else on the zone):
  *   - DNS: the `ws.boardsesh.com` record's proxied flag → true (orange cloud). The
  *     record's target/type/content are NOT managed — the record already exists.
+ *     The `assets.boardsesh.com` record is fully managed and created when absent:
+ *     CNAME → the Tigris bucket target, automatic TTL, DNS-only, with per-record
+ *     CNAME flattening disabled. Zone-wide CNAME flattening fails closed because
+ *     it would hide the literal answer Tigris verifies.
  *   - Cache: one rule in the http_request_cache_settings phase that makes
  *     ws.boardsesh.com/og/* eligible for cache and respects the origin TTL. Any OTHER
  *     rule already in that phase is preserved verbatim.
@@ -37,7 +41,7 @@
 
 import { pathToFileURL } from 'node:url';
 import { CACHE_RULE_PHASE, WAF_RULE_PHASE, ZONE_NAME, desiredCloudflareState } from '../infra/cloudflare/config';
-import type { SslMode } from '../infra/cloudflare/config';
+import type { DnsRecordDesired, FullyManagedDnsRecordDesired, SslMode } from '../infra/cloudflare/config';
 import { buildPlan, upsertCacheRule } from '../infra/cloudflare/plan';
 import type { LiveDnsRecord, LiveState, PlannedChange, RulesetRule } from '../infra/cloudflare/plan';
 
@@ -47,11 +51,20 @@ const CF_API_BASE = 'https://api.cloudflare.com/client/v4';
 // missing so a maintainer can create one with the right (minimal) permissions.
 const TOKEN_SCOPES = [
   'Zone.Zone Read           — resolve the zone id by name + read zone list',
-  'Zone.DNS Edit            — patch the ws.boardsesh.com record proxied flag',
+  'Zone.DNS Edit            — manage DNS records + read zone CNAME-flattening settings',
   'Zone.Cache Rules Edit    — create/update the /og/ cache rule',
+  'Zone.WAF Edit            — create/update the two crawler rules',
   'Zone.Zone Settings Read  — read the SSL/TLS mode',
   'Zone.Zone Settings Edit  — ONLY needed with --allow-zone-ssl (to set the zone SSL mode)',
 ];
+
+// Scopes another consumer of the SAME Production-environment CLOUDFLARE_API_TOKEN
+// needs. Printed alongside the list above because a token built from that list
+// ALONE authenticates here and fails with `Authentication error [code: 10000]`
+// there — which reads as a bad credential, not a missing scope, since
+// `wrangler whoami` still succeeds. That regression took app.boardsesh.com off
+// the deploy train on 2026-08-25. See the token section of docs/cloudflare.md.
+const SHARED_TOKEN_SCOPES = ['Account.Cloudflare Pages Edit — wrangler pages deploy (deploy-app-web)'];
 
 export interface CliOptions {
   apply: boolean;
@@ -155,20 +168,17 @@ async function resolveZoneId(token: string, zoneName: string): Promise<string> {
   return zone.id;
 }
 
-async function fetchDnsRecord(token: string, zoneId: string, name: string): Promise<LiveDnsRecord> {
+async function fetchDnsRecord(token: string, zoneId: string, name: string): Promise<LiveDnsRecord | null> {
   const records = await cfRequest<LiveDnsRecord[]>(
     token,
     'GET',
     `/zones/${zoneId}/dns_records?name=${encodeURIComponent(name)}`,
   );
-  const record = records.find((candidate) => candidate.name === name);
-  if (!record) {
-    throw new Error(
-      `DNS record "${name}" not found in zone ${zoneId}. This tool only patches the existing ` +
-        `record's proxied flag — create the record first (in the dashboard or your DNS pipeline).`,
-    );
+  const exactRecords = records.filter((candidate) => candidate.name === name);
+  if (exactRecords.length > 1) {
+    throw new Error(`DNS name "${name}" is ambiguous: Cloudflare returned ${exactRecords.length} exact records`);
   }
-  return record;
+  return exactRecords[0] ?? null;
 }
 
 /** A phase's entrypoint ruleset. Returns an empty rule set when the phase has no ruleset yet (404). */
@@ -192,18 +202,72 @@ async function fetchSslMode(token: string, zoneId: string): Promise<string> {
   return setting.value;
 }
 
-async function fetchLiveState(token: string, zoneId: string, dnsName: string): Promise<LiveState> {
-  const [dnsRecord, cacheRules, wafRules, sslMode] = await Promise.all([
-    fetchDnsRecord(token, zoneId, dnsName),
+async function fetchFlattenAllCnames(token: string, zoneId: string): Promise<boolean> {
+  const settings = await cfRequest<{ flatten_all_cnames: boolean }>(token, 'GET', `/zones/${zoneId}/dns_settings`);
+  if (typeof settings.flatten_all_cnames !== 'boolean') {
+    throw new Error(
+      `Cloudflare API returned an invalid flatten_all_cnames value for zone ${zoneId}; refusing to apply DNS changes`,
+    );
+  }
+  return settings.flatten_all_cnames;
+}
+
+async function fetchLiveState(
+  token: string,
+  zoneId: string,
+  desiredDnsRecords: DnsRecordDesired[],
+): Promise<LiveState> {
+  const [fetchedDnsRecords, cacheRules, wafRules, sslMode, flattenAllCnames] = await Promise.all([
+    Promise.all(
+      desiredDnsRecords.map(
+        async (desiredRecord) => [desiredRecord, await fetchDnsRecord(token, zoneId, desiredRecord.name)] as const,
+      ),
+    ),
     fetchPhaseRules(token, zoneId, CACHE_RULE_PHASE),
     fetchPhaseRules(token, zoneId, WAF_RULE_PHASE),
     fetchSslMode(token, zoneId),
+    fetchFlattenAllCnames(token, zoneId),
   ]);
-  return { dnsRecord, cacheRules, wafRules, sslMode };
+  const dnsRecords: Record<string, LiveDnsRecord | null> = {};
+  for (const [desiredRecord, liveRecord] of fetchedDnsRecords) {
+    if (!liveRecord && desiredRecord.management === 'proxied-only') {
+      throw new Error(
+        `DNS record "${desiredRecord.name}" not found in zone ${zoneId}. This tool manages only its proxied flag; ` +
+          `create the record first in the system that owns its target.`,
+      );
+    }
+    dnsRecords[desiredRecord.name] = liveRecord;
+  }
+  return { dnsRecords, cacheRules, wafRules, sslMode, flattenAllCnames };
 }
 
-async function applyDnsProxied(token: string, zoneId: string, recordId: string, proxied: boolean): Promise<void> {
-  await cfRequest(token, 'PATCH', `/zones/${zoneId}/dns_records/${recordId}`, { proxied });
+export function fullyManagedDnsBody(desired: FullyManagedDnsRecordDesired): Record<string, unknown> {
+  return {
+    type: desired.type,
+    name: desired.name,
+    content: desired.content,
+    ttl: desired.ttl,
+    proxied: desired.proxied,
+    settings: desired.settings,
+  };
+}
+
+async function applyDnsRecord(
+  token: string,
+  zoneId: string,
+  desired: DnsRecordDesired,
+  liveRecord: LiveDnsRecord | null,
+): Promise<void> {
+  if (!liveRecord) {
+    if (desired.management === 'proxied-only') {
+      throw new Error(`Cannot create proxy-only DNS record "${desired.name}"; its target is intentionally unmanaged`);
+    }
+    await cfRequest(token, 'POST', `/zones/${zoneId}/dns_records`, fullyManagedDnsBody(desired));
+    return;
+  }
+
+  const body = desired.management === 'proxied-only' ? { proxied: desired.proxied } : fullyManagedDnsBody(desired);
+  await cfRequest(token, 'PATCH', `/zones/${zoneId}/dns_records/${liveRecord.id}`, body);
 }
 
 async function applyPhaseRules(token: string, zoneId: string, phase: string, rules: RulesetRule[]): Promise<void> {
@@ -232,6 +296,8 @@ function printPlan(changes: PlannedChange[]): void {
 function printTokenScopes(): void {
   console.error('[cf-apply] CLOUDFLARE_API_TOKEN is required. Create a token with these scopes on the zone:');
   for (const scope of TOKEN_SCOPES) console.error(`             ${scope}`);
+  console.error('           The same token is shared with other jobs. Keep their scopes on it too:');
+  for (const scope of SHARED_TOKEN_SCOPES) console.error(`             ${scope}`);
   console.error('           https://dash.cloudflare.com/profile/api-tokens');
 }
 
@@ -266,7 +332,7 @@ async function main(): Promise<number> {
   console.log('');
 
   const zoneId = await resolveZoneId(token, desired.zoneName);
-  const live = await fetchLiveState(token, zoneId, desired.dns.name);
+  const live = await fetchLiveState(token, zoneId, desired.dnsRecords);
   const changes = buildPlan(desired, live, { allowZoneSsl: options.allowZoneSsl });
 
   if (changes.length === 0) {
@@ -299,7 +365,9 @@ async function main(): Promise<number> {
     }
 
     if (change.resource === 'dns') {
-      await applyDnsProxied(token, zoneId, live.dnsRecord.id, desired.dns.proxied);
+      const desiredRecord = desired.dnsRecords.find((record) => record.name === change.dnsName);
+      if (!desiredRecord) throw new Error(`No desired DNS record found for planned change "${change.dnsName}"`);
+      await applyDnsRecord(token, zoneId, desiredRecord, live.dnsRecords[desiredRecord.name] ?? null);
       console.log(`[cf-apply] applied: ${change.summary}`);
     } else if (change.resource === 'cache-rule' || change.resource === 'waf-rule') {
       // One PUT per phase, not per planned change. The plan reports each drifted
@@ -334,7 +402,7 @@ async function main(): Promise<number> {
 }
 
 // Exported for docs/tests: the module can be imported without running the CLI.
-export { CF_API_BASE, TOKEN_SCOPES, ZONE_NAME };
+export { CF_API_BASE, SHARED_TOKEN_SCOPES, TOKEN_SCOPES, ZONE_NAME };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main()

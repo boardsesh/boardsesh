@@ -40,6 +40,12 @@ If you find Boardsesh useful and can spare it, sponsorship helps us keep the lig
 
 [![Sponsor Boardsesh](https://img.shields.io/badge/Sponsor-Boardsesh-ea4aaa?logo=github-sponsors&style=for-the-badge)](https://github.com/sponsors/boardsesh)
 
+## Thanks
+
+Most Boardsesh updates reach your phone without an app store release, and that's down to [xprem](https://github.com/mercuretechnologies/xprem) — the self-hosted Expo OTA update server built by [Mercure Technologies](https://github.com/mercuretechnologies), who gave Boardsesh an enterprise license for it.
+
+Between mid-June and late August 2026 we shipped 552 user-facing changes to the mobile app, and only 64 of them needed a new App Store or Play build. xprem also runs our per-PR preview channels, so anyone on a store build can switch to a pull request's bundle from What's New and tell us whether it works before it merges.
+
 ## Join the Community
 
 We're always looking to collaborate with climbers, developers, and anyone passionate about improving the board climbing experience. Whether you want to contribute code, suggest features, or just say hello—we'd love to hear from you.

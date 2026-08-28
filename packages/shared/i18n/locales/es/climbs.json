@@ -465,6 +465,8 @@
         "attempt": "Intentado"
       },
       "noMatch": "Sin igualar",
+      "campus": "Campus",
+      "noKickboard": "Sin repisa",
       "benchmark": "Benchmark",
       "method": {
         "footless": "Sin pies",
@@ -522,7 +524,11 @@
         "showAllHoldsLabel": "Mostrar todas las presas",
         "showAllHoldsDescription": "Resalta todas las presas pulsables del panel.",
         "noMatchLabel": "Sin igualar",
-        "noMatchDescription": "No se pueden igualar las manos en la misma presa"
+        "noMatchDescription": "No se pueden igualar las manos en la misma presa",
+        "noKickboardLabel": "Sin repisa inferior",
+        "noKickboardDescription": "Los pies no pueden apoyarse en la repisa inferior",
+        "campusLabel": "Campus (sin pies)",
+        "campusDescription": "Solo manos, sin apoyar los pies"
       },
       "drafts": {
         "holds_one": "{{count}} presa",

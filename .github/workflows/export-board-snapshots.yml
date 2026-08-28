@@ -1,7 +1,9 @@
 name: Export Board Snapshots
 
 # Nightly: build every per-(board, layout) SQLite snapshot of board_climbs +
-# board_climb_stats. Every 15 minutes: cheaply probe the live gzip manifest's
+# board_climb_stats, plus one whole-catalogue artifact of the board hardware
+# tables (board-snapshots/v1-catalog, read only by the seeded dev-db image).
+# Every 15 minutes: cheaply probe the live gzip manifest's
 # watermarks and rebuild only layouts once they have >=500 stable delta rows,
 # keeping prolonged bulk gaps out of fresh downloads. Idempotent — each
 # refresh mints new content-addressed artifacts and rewrites the manifest last.
@@ -151,3 +153,32 @@ jobs:
           if [ -n "$LAYOUT" ]; then args+=("--layout=$LAYOUT"); fi
           if [ -n "$REFRESH_THRESHOLD" ]; then args+=("--refresh-threshold=$REFRESH_THRESHOLD"); fi
           node --import tsx src/scripts/export-board-snapshots.ts "${args[@]}"
+
+      # Catalogue pass → board-snapshots/v1-catalog. The hardware geometry and
+      # reference tables the per-layout artifacts deliberately do not carry
+      # (holes, placements, LEDs, sets, sizes, layouts, grade scales, aliases,
+      # beta links). Its consumer is the seeded developer database image, which
+      # used to scrape six Aurora APKs for exactly this data (issue #4508); the
+      # mobile fleet never reads this prefix.
+      #
+      # Nightly only, and never on the 15-minute scan or a --board/--layout
+      # dispatch: it is one whole-catalogue artifact, ~30k geometry rows that
+      # change a handful of times a year, so a frequent rebuild would only churn
+      # S3. A failure here must not fail the fleet-facing passes above, which is
+      # why it runs last.
+      - name: Export board catalogue (gzip → board-snapshots/v1-catalog)
+        if: >-
+          ${{
+            (github.event_name == 'schedule' && github.event.schedule == '15 7 * * *') ||
+            (github.event_name == 'workflow_dispatch' && inputs.refresh_threshold == '' &&
+             inputs.board == '' && inputs.layout == '')
+          }}
+        working-directory: packages/backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          AWS_S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL_S3 || secrets.AWS_ENDPOINT_URL }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || secrets.AWS_DEFAULT_REGION }}
+        run: node --import tsx src/scripts/export-board-catalog.ts

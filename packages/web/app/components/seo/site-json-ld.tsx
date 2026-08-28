@@ -3,6 +3,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
 import { JsonLd } from '@/app/lib/seo/json-ld';
 import { SITE_NAME } from '@/app/lib/seo/metadata';
+import { resolveShellStaticAssetUrl } from '@/app/lib/shell-static-asset-url';
 
 /**
  * The only two external profiles Boardsesh actually publishes — the repo linked
@@ -24,6 +25,7 @@ export default async function SiteJsonLd() {
   const { t, locale } = await getServerTranslation('marketing');
 
   const siteUrl = absoluteUrl('/');
+  const logoUrl = resolveShellStaticAssetUrl('/brand/boardsesh-mark.png');
 
   return (
     <JsonLd
@@ -38,7 +40,7 @@ export default async function SiteJsonLd() {
             // The brand mark the site itself renders (`components/brand/logo.tsx`),
             // not `/opengraph-image` — a social card is a composed banner, and
             // Google's logo guidelines want the mark on its own.
-            logo: absoluteUrl('/brand/boardsesh-mark.png'),
+            logo: logoUrl.startsWith('http') ? logoUrl : absoluteUrl(logoUrl),
             sameAs: SAME_AS,
           },
           {

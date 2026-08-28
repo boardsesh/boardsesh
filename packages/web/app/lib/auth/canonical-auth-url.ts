@@ -113,6 +113,117 @@ export function resolveCanonicalAuthUrl(env: AuthEnv = process.env): string | un
   return undefined;
 }
 
+// The env vars an operator can set to name this deployment's canonical origin,
+// in the order resolveCanonicalAuthUrl consults them. Exported so the boot
+// guard's message, its tests and the deployment docs cannot drift from what the
+// resolver actually reads.
+export const CANONICAL_ORIGIN_ENV_VARS = ['NEXTAUTH_URL', 'BASE_URL'] as const;
+
+// Emergency bypass for the fatal branch of diagnoseCanonicalOrigin(). Booting
+// past a missing canonical origin means shipping the mass logout the guard
+// exists to stop, so this only ever downgrades the failure to a warning — it is
+// for an operator who has decided that a degraded site beats no site.
+export const ALLOW_MISSING_CANONICAL_ORIGIN_ENV_VAR = 'AUTH_ALLOW_MISSING_CANONICAL_ORIGIN';
+
+// True when this process is a built production server — `next start`, or the
+// standalone server Dockerfile.web's runner stage launches — rather than
+// `vp run dev`, a vitest worker, or a build step.
+//
+// Deliberately NOT keyed on a hosting vendor: VERCEL_ENV / VERCEL_URL are absent
+// on Railway and on every other host, which is the whole reason issue #4651
+// exists. `NODE_ENV === 'production'` is the host-agnostic form of the same
+// question, and it is exactly what the runner stage bakes in (ENV NODE_ENV=production).
+function isProductionServerRuntime(env: AuthEnv): boolean {
+  if (env.NODE_ENV !== 'production') return false;
+  // A vitest worker handed NODE_ENV=production by a fixture is still a test run.
+  if (env.VITEST === 'true') return false;
+  // `next build` sets NODE_ENV=production too. Measured on Next 16.2.12: it does
+  // not invoke the instrumentation hook, so this branch is belt-and-braces — but
+  // a build has no visitors and no cookies, so if that ever changes it must not
+  // become a build failure.
+  return !env.NEXT_PHASE?.startsWith('phase-production-build');
+}
+
+function namesAnyOrigin(env: AuthEnv): boolean {
+  return CANONICAL_ORIGIN_ENV_VARS.some((variableName) => parseAbsoluteHttpUrl(env[variableName]) !== undefined);
+}
+
+function isBypassEnabled(env: AuthEnv): boolean {
+  const bypass = env[ALLOW_MISSING_CANONICAL_ORIGIN_ENV_VAR]?.trim().toLowerCase();
+  return bypass === '1' || bypass === 'true';
+}
+
+/**
+ * What to tell the operator about this deployment's canonical origin at boot.
+ *
+ * `fatal` is reserved for the one state that is unambiguously broken and cannot
+ * occur on a developer machine: a production server on which NEITHER
+ * NEXTAUTH_URL NOR BASE_URL names any http(s) origin at all. Every local and CI
+ * path names one — the tracked `packages/web/.env.local` supplies both, and
+ * `.github/workflows/e2e-tests.yml` sets NEXTAUTH_URL explicitly — while
+ * Dockerfile.web's runner stage carried neither before #4651, because Next's
+ * standalone writer copies only `.env` / `.env.production`, never `.env.local`.
+ *
+ * That state used to be SILENT: applyCanonicalAuthUrl's backstop below needs a
+ * *parseable loopback* NEXTAUTH_URL before it says anything, so an absent one
+ * produced no warning while the deployment quietly served plain-named,
+ * Domain-less session cookies and localhost OAuth redirects.
+ *
+ * A loopback origin on a production server only ever warns: `next start` on a
+ * laptop and the CI e2e server are indistinguishable at boot from a host that
+ * was handed a copy of `.env.local`, and failing those closed would be worse
+ * than the warning.
+ *
+ * Pure: reads only the passed env, mutates nothing. Call it BEFORE
+ * applyCanonicalAuthUrl(), which can delete a loopback NEXTAUTH_URL and so turn
+ * a warn into a spurious fatal.
+ *
+ * Full rationale and the deployment checklist: docs/web-canonical-origin.md.
+ */
+export type CanonicalOriginDiagnosis =
+  | { level: 'ok' }
+  | { level: 'warn'; message: string }
+  | { level: 'fatal'; message: string };
+
+export function diagnoseCanonicalOrigin(env: AuthEnv = process.env): CanonicalOriginDiagnosis {
+  if (!isProductionServerRuntime(env)) return { level: 'ok' };
+  if (resolveCanonicalAuthUrl(env)) return { level: 'ok' };
+
+  if (namesAnyOrigin(env)) {
+    const named = CANONICAL_ORIGIN_ENV_VARS.filter((variableName) => env[variableName]?.trim())
+      .map((variableName) => `${variableName}="${env[variableName]}"`)
+      .join(', ');
+    return {
+      level: 'warn',
+      message:
+        `[auth] NODE_ENV=production but the only origin this deployment names is a loopback one (${named}). ` +
+        'That is correct for `next start` on a laptop and for the CI e2e server. On a real deployment it means ' +
+        'session cookies lose the `__Secure-` prefix and the `.boardsesh.com` domain scope, and OAuth redirects ' +
+        "to localhost — set NEXTAUTH_URL to this deployment's canonical https origin.",
+    };
+  }
+
+  const message =
+    '[auth] No canonical origin is configured. This process is running as a production server ' +
+    `(NODE_ENV=production) and neither ${CANONICAL_ORIGIN_ENV_VARS.join(' nor ')} names an http(s) origin, so ` +
+    'next-auth falls back to http://localhost:3000: every session cookie loses its `__Secure-` name and its ' +
+    '`Domain=.boardsesh.com` scope — which logs out every signed-in user — and OAuth sends people to a dead ' +
+    "localhost page. Set NEXTAUTH_URL to this deployment's canonical https origin (and BASE_URL to the same " +
+    'value; it also builds the links in verification and password-reset email), e.g. ' +
+    'NEXTAUTH_URL=https://www.boardsesh.com.';
+
+  if (isBypassEnabled(env)) {
+    return {
+      level: 'warn',
+      message: `${message} Booting anyway because ${ALLOW_MISSING_CANONICAL_ORIGIN_ENV_VAR} is set.`,
+    };
+  }
+  return {
+    level: 'fatal',
+    message: `${message} To boot anyway and accept that logout, set ${ALLOW_MISSING_CANONICAL_ORIGIN_ENV_VAR}=1.`,
+  };
+}
+
 /**
  * Writes the canonical origin into `env.NEXTAUTH_URL` when it differs from what
  * is already there, so next-auth (and our cookie-domain helpers) read a correct
@@ -128,6 +239,11 @@ export function applyCanonicalAuthUrl(env: AuthEnv = process.env): string | unde
     // from the (platform-set) forwarded host when VERCEL is present, instead of
     // hard-coding a loopback redirect URI. This is a backstop for a
     // misconfigured deployment, not a supported configuration.
+    //
+    // It needs a PARSEABLE loopback value to say anything, so a deployment with
+    // NEXTAUTH_URL simply absent falls straight through in silence. That gap is
+    // covered by diagnoseCanonicalOrigin() above, which instrumentation.ts runs
+    // at boot.
     const loopback = parseAbsoluteHttpUrl(env.NEXTAUTH_URL);
     if (loopback && isLoopbackHostname(loopback.hostname) && isHostedDeployment(env)) {
       console.warn(

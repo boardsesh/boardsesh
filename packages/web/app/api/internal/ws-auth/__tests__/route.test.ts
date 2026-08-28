@@ -8,9 +8,11 @@ vi.mock('next-auth/jwt', () => ({
   decode: (...args: unknown[]) => decodeMock(...args),
 }));
 
+// Real names, stubbed predicate: the route's job here is to try BOTH, and a
+// stub that invented names would not prove that.
 vi.mock('@/app/lib/auth/secure-cookies', () => ({
   isSecureCookieContext: () => true,
-  sessionCookieName: () => '__Secure-next-auth.session-token',
+  sessionCookieNameCandidates: () => ['__Secure-next-auth.session-token', 'next-auth.session-token'],
 }));
 
 import { GET } from '../route';
@@ -54,15 +56,49 @@ describe('GET /api/internal/ws-auth', () => {
     expect(decodeMock).toHaveBeenCalledWith(expect.objectContaining({ token: 'encrypted-session-token' }));
   });
 
-  it('returns a no-store anonymous result when the cookie is absent', async () => {
+  it('returns a no-store anonymous result when neither cookie name is present', async () => {
     getTokenMock.mockResolvedValue(null);
 
     const response = await GET(request());
 
     await expect(response.json()).resolves.toEqual({ token: null, authenticated: false });
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
-    expect(getTokenMock).toHaveBeenCalledTimes(1);
+    // Both names tried, and no decrypt on either — next-auth returns before
+    // `decode` when the cookie is absent, so the fallback is free.
+    expect(getTokenMock).toHaveBeenCalledTimes(2);
     expect(decodeMock).not.toHaveBeenCalled();
+  });
+
+  it('resolves a session stored under the other cookie name', async () => {
+    // The #4651 safety net: a host change that flips isSecureCookieContext()
+    // must not make a live session unreadable. Here the secure name misses and
+    // the plain one hits.
+    getTokenMock.mockResolvedValueOnce(null).mockResolvedValueOnce('plain-named-session-token');
+    decodeMock.mockResolvedValue({ sub: 'user-1', authSessionId: 'login-1' });
+
+    const response = await GET(request());
+
+    await expect(response.json()).resolves.toEqual({
+      token: 'plain-named-session-token',
+      authenticated: true,
+      userId: 'user-1',
+      authSessionId: 'login-1',
+    });
+    expect(getTokenMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ cookieName: '__Secure-next-auth.session-token' }),
+    );
+    expect(getTokenMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ cookieName: 'next-auth.session-token' }));
+    expect(decodeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not read the second name when the preferred one resolves', async () => {
+    getTokenMock.mockResolvedValue('encrypted-session-token');
+    decodeMock.mockResolvedValue({ sub: 'user-1' });
+
+    await GET(request());
+
+    expect(getTokenMock).toHaveBeenCalledTimes(1);
   });
 
   it('does not expose a raw cookie whose decoded token has no subject', async () => {

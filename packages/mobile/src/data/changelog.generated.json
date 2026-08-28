@@ -1,6 +1,70 @@
 {
-  "generatedAt": "2026-08-25T14:14:56.813Z",
+  "generatedAt": "2026-08-27T16:31:43.232Z",
   "entries": [
+    {
+      "prNumber": 4830,
+      "category": "new",
+      "title": "Tap a hold in the climb editor to cycle through its role (hand, start, finish, foot) instead of needing a long press to change it once it's set.",
+      "mergedAt": "2026-08-27T16:30:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4830"
+    },
+    {
+      "prNumber": 4831,
+      "category": "new",
+      "title": "Tag climbs as \"no kickboard\" or \"campus\" (no feet) right in the climb editor, alongside no-matching.",
+      "mergedAt": "2026-08-27T16:30:19Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4831"
+    },
+    {
+      "prNumber": 4815,
+      "category": "fixed",
+      "title": "Read toast messages clearly in light and dark mode.",
+      "mergedAt": "2026-08-26T14:54:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4815"
+    },
+    {
+      "prNumber": 4780,
+      "category": "fixed",
+      "title": "Board images now refresh when we improve the renderer, instead of showing you last month's version for up to a year.",
+      "mergedAt": "2026-08-26T14:34:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4780",
+      "body": "Every board photo, hold overlay and share card on the site now carries a version stamp, so a fix to how holds are drawn reaches you on the next page load."
+    },
+    {
+      "prNumber": 4589,
+      "category": "fixed",
+      "title": "Gym TVs and website embeds light up straight away — no login check standing between the screen and the wall.",
+      "mergedAt": "2026-08-26T06:16:49Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4589"
+    },
+    {
+      "prNumber": 4713,
+      "category": "fixed",
+      "title": "Starting a big playlist no longer dies on one dropped page: a flaky page retries on its own, and backing out of a playlist actually cancels the load.",
+      "mergedAt": "2026-08-26T05:11:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4713"
+    },
+    {
+      "prNumber": 4747,
+      "category": "fixed",
+      "title": "Kilter playlists that got cloned when you re-linked your account are merged back into one. Your edited version is the one that survives, with its pins and follows intact.",
+      "mergedAt": "2026-08-26T05:09:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4747"
+    },
+    {
+      "prNumber": 4677,
+      "category": "fixed",
+      "title": "Similar climbs, climb details, board-presence live sends, playlists, and the setter filter now all work on boards set to a negative tilt",
+      "mergedAt": "2026-08-26T02:17:56Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4677"
+    },
+    {
+      "prNumber": 4784,
+      "category": "improved",
+      "title": "Say thanks to xprem, the update server that gets fixes to your phone without an app store wait",
+      "mergedAt": "2026-08-25T15:45:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4784"
+    },
     {
       "prNumber": 4718,
       "category": "fixed",

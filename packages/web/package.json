@@ -60,6 +60,7 @@
     "@boardsesh/queue-react": "*",
     "@boardsesh/queue-runtime": "*",
     "@boardsesh/shared-schema": "*",
+    "@boardsesh/static-assets": "*",
     "@boardsesh/sync-runtime": "*",
     "@boardsesh/velvet-tokens": "*",
     "@boardsesh/watch-pairing": "*",

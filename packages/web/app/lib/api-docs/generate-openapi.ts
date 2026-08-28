@@ -16,6 +16,12 @@ import { registry } from './openapi-registry';
 // Import routes to register them with the registry
 import './openapi-routes';
 
+/** The value when it names an https origin, otherwise undefined. */
+function httpsOrigin(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed?.startsWith('https://') ? trimmed : undefined;
+}
+
 // Register security scheme
 registry.registerComponent('securitySchemes', 'session', {
   type: 'apiKey',
@@ -87,9 +93,18 @@ Layout, size, and set IDs can be either numeric IDs or human-readable slugs.
     },
     servers: [
       {
-        url: process.env.VERCEL_URL
-          ? `https://${process.env.VERCEL_URL}`
-          : process.env.NEXTAUTH_URL || 'http://localhost:3000',
+        // The deployment's canonical origin first — VERCEL_URL is the
+        // per-deployment hostname, which is neither stable nor present off
+        // Vercel (#4651). The https gate matters: this file runs under
+        // `bun run generate:openapi` at BUILD time, which loads the tracked
+        // packages/web/.env.local, and that file supplies a loopback BASE_URL and
+        // NEXTAUTH_URL. Without the gate a production build would bake
+        // `http://localhost:3000` into the public /docs schema.
+        // TODO(#4656): drop the VERCEL_URL term with the project.
+        url:
+          httpsOrigin(process.env.BASE_URL) ??
+          httpsOrigin(process.env.NEXTAUTH_URL) ??
+          (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'),
         description: 'Current server',
       },
     ],

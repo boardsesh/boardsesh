@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { decode, getToken, type JWT } from 'next-auth/jwt';
-import { isSecureCookieContext, sessionCookieName } from '@/app/lib/auth/secure-cookies';
+import { isSecureCookieContext, sessionCookieNameCandidates } from '@/app/lib/auth/secure-cookies';
 
 const PRIVATE_NO_STORE_HEADERS = { 'Cache-Control': 'private, no-store' } as const;
 
@@ -10,22 +10,35 @@ const PRIVATE_NO_STORE_HEADERS = { 'Cache-Control': 'private, no-store' } as con
  */
 export async function GET(request: NextRequest) {
   try {
-    const secureCookie = isSecureCookieContext();
     // Pass cookieName + secureCookie explicitly: next-auth's internal derivation
     // breaks if NEXTAUTH_URL is set to an http:// value (the `??` only falls back
-    // when NEXTAUTH_URL is unset, not when it's wrong).
+    // when NEXTAUTH_URL is unset, not when it's wrong). `secureCookie` only
+    // steers next-auth's DEFAULT cookie name, which the explicit `cookieName`
+    // always overrides — it stays here to document the context, not to select.
     const tokenOptions = {
       req: request,
       secret: process.env.NEXTAUTH_SECRET,
-      secureCookie,
-      cookieName: sessionCookieName(),
-    };
+      secureCookie: isSecureCookieContext(),
+      raw: true,
+    } as const;
 
-    // Read the raw cookie bytes once (`raw: true` does not decrypt), then run a
+    // Read the raw cookie bytes (`raw: true` does not decrypt), then run a
     // single decrypt/decode to validate it. This is the same work `raw: false`
     // does internally, so decoding here directly avoids the second cookie read
     // and keeps the JWE decrypted exactly once per handshake.
-    const token = await getToken({ ...tokenOptions, raw: true });
+    //
+    // Try both cookie names, preferred first: this module never loads
+    // auth-options, so it depends entirely on the instrumentation hook having
+    // patched NEXTAUTH_URL. Accepting either name means a session written under
+    // the other one still authenticates the WebSocket handshake even if that
+    // patch, or isSecureCookieContext() itself, is wrong (issue #4651). The
+    // fallback costs nothing on the hit path and no extra decrypt on the miss
+    // path — next-auth returns before `decode` when the cookie is absent.
+    const [preferredCookieName, fallbackCookieName] = sessionCookieNameCandidates();
+    let token = await getToken({ ...tokenOptions, cookieName: preferredCookieName });
+    if (typeof token !== 'string' || !token.trim()) {
+      token = await getToken({ ...tokenOptions, cookieName: fallbackCookieName });
+    }
     if (typeof token !== 'string' || !token.trim()) {
       // User is not authenticated - this is OK, just return null
       return NextResponse.json({ token: null, authenticated: false }, { headers: PRIVATE_NO_STORE_HEADERS });

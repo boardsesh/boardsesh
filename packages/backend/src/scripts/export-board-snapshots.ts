@@ -78,11 +78,11 @@ const ARTIFACT_CONTENT_TYPE = 'application/x-sqlite3';
 // needed), entry URLs become `${base}/${key}`; unset falls back to getPublicUrl
 // for S3-compatible stores whose endpoint serves public reads directly. Read
 // lazily (not at module load) so tests can set it per-run.
-function snapshotPublicBaseUrl(): string {
+export function snapshotPublicBaseUrl(): string {
   return (process.env.SNAPSHOT_PUBLIC_BASE_URL ?? '').trim().replace(/\/+$/, '');
 }
 
-function publicUrlForKey(key: string): string {
+export function publicUrlForKey(key: string): string {
   const publicBase = snapshotPublicBaseUrl();
   return publicBase ? `${publicBase}/${key}` : getPublicUrl(key);
 }

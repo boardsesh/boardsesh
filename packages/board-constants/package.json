@@ -50,6 +50,11 @@
       "import": "./src/moonboard.ts",
       "default": "./src/moonboard.ts"
     },
+    "./stable-json": {
+      "types": "./src/stable-json.ts",
+      "import": "./src/stable-json.ts",
+      "default": "./src/stable-json.ts"
+    },
     "./readable-text-color": {
       "types": "./src/readable-text-color.ts",
       "import": "./src/readable-text-color.ts",

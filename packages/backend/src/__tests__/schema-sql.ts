@@ -135,6 +135,7 @@ export const schemaSQL = `
 
   DROP TABLE IF EXISTS "board_climb_ratings" CASCADE;
   DROP TABLE IF EXISTS "board_climb_aliases" CASCADE;
+  DROP TABLE IF EXISTS "board_kits" CASCADE;
   DROP TABLE IF EXISTS "board_climb_stats" CASCADE;
   DROP TABLE IF EXISTS "board_climbs" CASCADE;
   DROP TABLE IF EXISTS "board_difficulty_grades" CASCADE;
@@ -407,6 +408,17 @@ export const schemaSQL = `
     "position" integer,
     "name" text,
     PRIMARY KEY ("board_type", "id")
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_kits" (
+    "board_type" text NOT NULL,
+    "serial_number" text NOT NULL,
+    "name" text,
+    "is_autoconnect" boolean NOT NULL,
+    "is_listed" boolean NOT NULL,
+    "created_at" text NOT NULL,
+    "updated_at" text NOT NULL,
+    PRIMARY KEY ("board_type", "serial_number")
   );
 
   CREATE TABLE IF NOT EXISTS "board_products" (
@@ -1162,6 +1174,32 @@ export const schemaSQL = `
   CREATE INDEX IF NOT EXISTS "app_feedback_user_idx" ON "app_feedback" ("user_id");
   CREATE INDEX IF NOT EXISTS "app_feedback_board_idx" ON "app_feedback" ("board_name");
   CREATE INDEX IF NOT EXISTS "app_feedback_status_idx" ON "app_feedback" ("status");
+
+  -- Crowdsourced-QA verdicts a tester filed on a PR preview. Mirrors
+  -- packages/db/src/schema/app/qa-verdicts.ts (migration 0206). verdict is
+  -- plain text here (prod uses the qa_verdict_kind enum) with a CHECK; the
+  -- resolvers only ever compare the string value.
+  DROP TABLE IF EXISTS "qa_verdicts" CASCADE;
+  CREATE TABLE IF NOT EXISTS "qa_verdicts" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "user_id" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "pr_number" integer NOT NULL,
+    "branch" text NOT NULL,
+    "head_sha" text,
+    "head_committed_at" timestamp,
+    "verdict" text NOT NULL CHECK ("verdict" IN ('approved', 'declined')),
+    "comment" text,
+    "platform" text NOT NULL,
+    "app_version" text,
+    "update_id" text,
+    "runtime_version" text,
+    "bundle_created_at" timestamp,
+    "github_comment_id" bigint,
+    "github_comment_url" text,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS "qa_verdicts_pr_created_idx" ON "qa_verdicts" ("pr_number", "created_at");
+  CREATE INDEX IF NOT EXISTS "qa_verdicts_user_idx" ON "qa_verdicts" ("user_id");
   CREATE INDEX IF NOT EXISTS "gym_kiosks_gym_idx" ON "gym_kiosks" ("gym_id") WHERE "deleted_at" IS NULL;
 
   -- Maps upstream location-provider source keys (kilter:..., tension:...) to the

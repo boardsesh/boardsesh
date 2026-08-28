@@ -81,7 +81,7 @@ Branch deploys stopped working after migrating from Vercel Postgres (which was a
   ```
 - The join handler already uses a `backendUrl` query param pattern (`packages/backend/src/handlers/join.ts:56`)
 - GitHub Actions CI runs on PRs (typecheck, lint, tests)
-- The `boardsesh-dev-db` Docker image contains all board data and is rebuilt automatically
+- The `boardsesh-dev-db` Docker image contains all board data (seeded from the nightly board snapshots) and is republished by a manual dispatch of `postgres-image-publisher.yml`
 
 ---
 

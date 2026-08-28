@@ -292,7 +292,8 @@ export const climbQueries = {
     // Validate all parameters
     if (layoutId <= 0) throw new Error('Invalid layoutId: must be positive');
     if (sizeId <= 0) throw new Error('Invalid sizeId: must be positive');
-    if (angle < 0 || angle > 90) throw new Error('Invalid angle: must be between 0 and 90');
+    // Aurora boards support negative tilt (e.g. -5°); mobile sends the live board angle here.
+    if (angle < -90 || angle > 90) throw new Error('Invalid angle: must be between -90 and 90');
     validateInput(ExternalUUIDSchema, climbUuid, 'climbUuid');
 
     if (DEBUG) logger.info('[climb] Fetching:', { boardName, layoutId, sizeId, setIds, angle, climbUuid });

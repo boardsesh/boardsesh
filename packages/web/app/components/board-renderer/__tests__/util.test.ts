@@ -1,8 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vite-plus/test';
+import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
+import { STATIC_ASSET_OBJECT_KEYS } from '@boardsesh/static-assets';
 import { getImageUrl, buildBoardRenderUrl, buildOverlayUrl, buildOgBoardRenderUrl } from '../util';
 import type { BoardDetails } from '@/app/lib/types';
 
 describe('getImageUrl', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   describe('self-hosted board images (relative paths)', () => {
     it('converts PNG to WebP', () => {
       expect(getImageUrl('product_sizes_layouts_sets/36-1.png', 'kilter')).toBe(
@@ -25,6 +31,15 @@ describe('getImageUrl', () => {
     it('works for tension board', () => {
       expect(getImageUrl('product_sizes_layouts_sets/1.png', 'tension', true)).toBe(
         '/images/tension/product_sizes_layouts_sets/thumbs/1.webp',
+      );
+    });
+
+    it('uses the immutable CDN object when the production asset origin is configured', () => {
+      vi.stubEnv('NEXT_PUBLIC_STATIC_ASSET_BASE_URL', 'https://assets.boardsesh.com');
+      const logicalPath = '/images/kilter/product_sizes_layouts_sets/36-1.webp';
+
+      expect(getImageUrl('product_sizes_layouts_sets/36-1.png', 'kilter')).toBe(
+        `https://assets.boardsesh.com/${STATIC_ASSET_OBJECT_KEYS[logicalPath]}`,
       );
     });
 
@@ -177,5 +192,65 @@ describe('buildOgBoardRenderUrl', () => {
     expect(url).toContain('format=png');
     expect(url).not.toContain('ws.boardsesh.com');
     expect(url).not.toContain('/api/og/climb');
+    // The fallback goes through buildBoardRenderUrl, so it is versioned like
+    // every other web producer.
+    expect(url).toContain(`&v=${BOARD_RENDER_VERSION}`);
+  });
+
+  it('leaves the backend /og/climb URL unversioned', () => {
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://ws.boardsesh.com/graphql');
+
+    const url = buildOgBoardRenderUrl(boardDetails, 'p1r12');
+
+    // Mobile builds this exact URL independently from a shipped binary
+    // (packages/mobile/src/hooks/use-share-climb.ts), so a `v` on this side
+    // alone would split the Cloudflare entry instead of versioning it.
+    expect(url).not.toContain('v=');
+  });
+});
+
+// #4773. Cloudflare does not purge on deploy, so a board-render URL that does
+// not name its renderer version can be served stale for a year.
+describe('board-render cache version', () => {
+  const boardDetails: BoardDetails = {
+    board_name: 'kilter',
+    layout_id: 1,
+    size_id: 7,
+    set_ids: [1, 20],
+    images_to_holds: {},
+    holdsData: [],
+    edge_left: 0,
+    edge_right: 144,
+    edge_bottom: 0,
+    edge_top: 180,
+    boardWidth: 1080,
+    boardHeight: 1350,
+  } as unknown as BoardDetails;
+
+  it('is a lowercase hex digest the route will accept as well-formed', () => {
+    // Same shape as `isWellFormedRenderVersion` in the route handler. If these
+    // two ever disagree, every web URL silently drops to the bounded tier.
+    expect(BOARD_RENDER_VERSION).toMatch(/^[0-9a-f]{12}$/);
+    expect(BOARD_RENDER_VERSION).toMatch(/^[0-9a-f]{8,64}$/);
+  });
+
+  it.each([
+    ['bare', {}],
+    ['thumbnail', { thumbnail: true }],
+    ['with background', { includeBackground: true }],
+    ['og variant', { includeBackground: true, variant: 'og' as const, format: 'png' as const }],
+    ['explicit format', { format: 'jpg' as const }],
+  ])('appends the version on the %s path', (_label, options) => {
+    expect(buildBoardRenderUrl(boardDetails, 'p1r12', options)).toContain(`&v=${BOARD_RENDER_VERSION}`);
+  });
+
+  it('appends the version through buildOverlayUrl', () => {
+    expect(buildOverlayUrl(boardDetails, 'p1r12')).toContain(`&v=${BOARD_RENDER_VERSION}`);
+    expect(buildOverlayUrl(boardDetails, 'p1r12', true)).toContain(`&v=${BOARD_RENDER_VERSION}`);
+  });
+
+  it('puts the version last so a log line reads as URL-then-version', () => {
+    const url = buildBoardRenderUrl(boardDetails, 'p1r12', { thumbnail: true, includeBackground: true });
+    expect(url.endsWith(`&v=${BOARD_RENDER_VERSION}`)).toBe(true);
   });
 });

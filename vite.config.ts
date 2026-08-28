@@ -25,7 +25,17 @@ export default defineConfig({
     // packages/mobile/src/data/changelog.generated.json) or by nested dir
     // (drizzle/meta/) live in .prettierignore — this `ignore` glob list does not
     // reliably match those forms in `vp check`, but .prettierignore does.
-    ignore: ['design/**', '**/generated/**', '**/board-controller/**', 'CHANGELOG.md'],
+    //
+    // Markdown is not formatted at all. The formatter rewrites emphasis spans,
+    // and its pairing does not follow CommonMark's intraword-underscore rule:
+    // on docs/websocket-implementation.md it paired the `_` inside the bare
+    // identifier `NOT_FOUND` with a later `_signed-in_` and emitted
+    // `NOT*FOUND` + `\_signed-in*`, silently corrupting an identifier in prose.
+    // Reproducible on every run. Prose gains little from auto-formatting and
+    // has content the formatter can get wrong, so `.md` is out of scope —
+    // mirrored in .prettierignore because a full-repo `vp check` only honours
+    // that file for some path forms.
+    ignore: ['design/**', '**/generated/**', '**/board-controller/**', 'CHANGELOG.md', '**/*.md'],
   },
   lint: {
     // Keep this list in lock-step with `ignorePatterns` in .oxlintrc.json.
@@ -117,9 +127,11 @@ export default defineConfig({
       './packages/crypto/vite.config.ts',
       './packages/shared/ble-protocol/vite.config.ts',
       './packages/shared/board-config/vite.config.ts',
+      './packages/shared/board-art-geometry/vite.config.ts',
       './packages/shared/board-render/vite.config.ts',
       './packages/shared/velvet-tokens/vite.config.ts',
       './packages/shared/text-redaction/vite.config.ts',
+      './packages/shared/pr-body/vite.config.ts',
       './packages/shared/board-react/vite.config.ts',
       './packages/shared/create-climb-react/vite.config.ts',
       './packages/shared/queue/vite.config.ts',
@@ -146,6 +158,7 @@ export default defineConfig({
       './packages/shared/graphql/vite.config.ts',
       './packages/shared/graphql-client/vite.config.ts',
       './packages/shared/email/vite.config.ts',
+      './packages/shared/static-assets/vite.config.ts',
       './packages/shared-schema/vite.config.ts',
       './packages/mobile/vite.config.ts',
       './scripts/vite.config.ts',
@@ -163,6 +176,13 @@ export default defineConfig({
     'packages/mobile/{src,app}/**/*.{ts,tsx}': () => 'vp run check:i18n:orphans',
     'packages/mobile/**/*.{ts,tsx,swift}': () => 'vp run check:mobile-board-art-network',
     'packages/shared/i18n/locales/**/*.json': () => 'vp run check:i18n:orphans',
+    // Anything that can change what /api/internal/board-render draws has to move
+    // the committed `&v=` constant with it, or Cloudflare keeps serving the old
+    // pixels `immutable` for a year (#4773). Broad globs on purpose: the generator
+    // derives its inputs from the board catalogue, so a narrow paths list here
+    // would be a guard that silently stops guarding.
+    '{packages/board-renderer/wasm/pkg/**,packages/shared/board-render/src/**,packages/shared/board-config/src/**,packages/board-constants/src/**,packages/web/public/images/**}':
+      () => 'vp run check:board-render-version',
   },
   run: {
     tasks: {
@@ -255,7 +275,7 @@ export default defineConfig({
       },
       'test:postgres18-contract': {
         command:
-          'node --import tsx --test packages/db/scripts/migration-owner-role.test.ts && bash packages/db/docker/dev-db-entrypoint.test.sh && bash packages/db/docker/apply-drizzle-migrations.test.sh && bash scripts/postgres-credentials.test.sh && bash scripts/neon-to-railway-replication.test.sh && bash scripts/postgres18-workflow-contract.test.sh && bash scripts/postgres18-spatial-surface.test.sh && bash -n packages/db/docker/dev-db-entrypoint.sh packages/db/docker/apply-drizzle-migrations.sh scripts/dev-db-up.sh scripts/dev-db-image-smoke.sh scripts/lib/postgres-credentials.sh scripts/postgres16-role-transition-smoke.sh scripts/postgres18-image-smoke.sh scripts/postgres18-architecture-smoke.sh scripts/postgres18-spatial-rehearsal.sh scripts/postgres18-spatial-surface.test.sh scripts/postgres18-production-role-transition.sh scripts/postgres18-workflow-contract.test.sh scripts/postgres-migration-audit.sh scripts/postgres-migration-verify-data.sh scripts/neon-to-railway-replication.sh scripts/neon-to-railway-replication.test.sh scripts/postgres-credentials.test.sh packages/db/docker/setup-development-db.sh packages/web/db/setup-development-db.sh',
+          'node --import tsx --test packages/db/scripts/migration-owner-role.test.ts && bash packages/db/docker/dev-db-entrypoint.test.sh && bash packages/db/docker/apply-drizzle-migrations.test.sh && bash scripts/postgres-credentials.test.sh && bash scripts/neon-to-railway-replication.test.sh && bash scripts/postgres18-workflow-contract.test.sh && bash scripts/postgres18-spatial-surface.test.sh && bash -n packages/db/docker/dev-db-entrypoint.sh packages/db/docker/apply-drizzle-migrations.sh scripts/dev-db-up.sh scripts/dev-db-image-smoke.sh scripts/lib/postgres-credentials.sh scripts/postgres16-role-transition-smoke.sh scripts/postgres18-image-smoke.sh scripts/postgres18-architecture-smoke.sh scripts/postgres18-spatial-rehearsal.sh scripts/postgres18-spatial-surface.test.sh scripts/postgres18-production-role-transition.sh scripts/postgres18-workflow-contract.test.sh scripts/postgres-migration-audit.sh scripts/postgres-migration-verify-data.sh scripts/neon-to-railway-replication.sh scripts/neon-to-railway-replication.test.sh scripts/postgres-credentials.test.sh',
         cache: false,
       },
       'test:postgres16-role-transition': {
@@ -465,6 +485,18 @@ export default defineConfig({
         command: 'bun scripts/mobile-board-art-network-check.ts',
         cache: false,
       },
+      'generate:static-assets': {
+        command: 'bun scripts/generate-static-assets.ts',
+        cache: false,
+      },
+      'check:static-assets': {
+        command: 'bun scripts/generate-static-assets.ts --check',
+        cache: false,
+      },
+      'upload:static-assets': {
+        command: 'bun scripts/upload-static-assets.ts',
+        cache: false,
+      },
       'generate:acknowledgements': {
         command: 'node --import tsx scripts/fetch-acknowledgements.ts',
         cache: false,
@@ -473,12 +505,36 @@ export default defineConfig({
         command: 'node --import tsx scripts/generate-dark-board-art.ts',
         cache: false,
       },
+      // Traced hold silhouettes, per-hold art lightness and painted-LED offsets
+      // for every board in the catalogue (#2202). Committed because nothing at
+      // runtime can decode the board art; `check:` is the drift gate. ~110s for
+      // the whole catalogue, so it is a CI job rather than a pre-commit hook.
+      'generate:board-art-geometry': {
+        command: 'node --import tsx scripts/generate-board-art-geometry.ts',
+        cache: false,
+      },
+      'check:board-art-geometry': {
+        command: 'node --import tsx scripts/generate-board-art-geometry.ts --check',
+        cache: false,
+      },
       'generate:oss-licenses': {
         command: 'node --import tsx scripts/generate-oss-licenses.ts',
         cache: false,
       },
       'generate:changelog': {
         command: 'node --import tsx scripts/generate-changelog.ts',
+        cache: false,
+      },
+      // The `&v=` cache version in every /api/internal/board-render URL. Committed
+      // (not computed at build time) because the value has to be byte-identical in
+      // web's client bundle, the RSC graph and the Node route handler — see the
+      // header comment in the generator. `check:` is the drift gate.
+      'generate:board-render-version': {
+        command: 'node --import tsx scripts/generate-board-render-version.ts',
+        cache: false,
+      },
+      'check:board-render-version': {
+        command: 'node --import tsx scripts/generate-board-render-version.ts --check',
         cache: false,
       },
       'check:changelog': {
@@ -499,6 +555,10 @@ export default defineConfig({
       },
       'check:release-notes': {
         command: 'tsx scripts/check-release-notes.ts',
+        cache: false,
+      },
+      'check:pr-test-plan': {
+        command: 'tsx scripts/check-pr-test-plan.ts',
         cache: false,
       },
       'test:large-files': {
@@ -607,6 +667,12 @@ export default defineConfig({
       'typecheck:analytics': {
         command: 'bun run --filter=@boardsesh/analytics typecheck',
       },
+      'typecheck:pr-body': {
+        command: 'bun run --filter=@boardsesh/pr-body typecheck',
+      },
+      'typecheck:static-assets': {
+        command: 'bun run --filter=@boardsesh/static-assets typecheck',
+      },
       'typecheck:climb-actions': {
         command: 'bun run --filter=@boardsesh/climb-actions typecheck',
       },
@@ -618,6 +684,10 @@ export default defineConfig({
       },
       'typecheck:board-render': {
         command: 'bun run --filter=@boardsesh/board-render typecheck',
+        dependsOn: ['build:constants'],
+      },
+      'typecheck:board-art-geometry': {
+        command: 'bun run --filter=@boardsesh/board-art-geometry typecheck',
         dependsOn: ['build:constants'],
       },
       'typecheck:play-view': {
@@ -709,6 +779,7 @@ export default defineConfig({
         command: 'true',
         dependsOn: [
           'typecheck:scripts',
+          'typecheck:pr-body',
           'build:shared',
           'build:db',
           'build:backend',
@@ -730,6 +801,7 @@ export default defineConfig({
           'typecheck:key-value-storage',
           'typecheck:board-config',
           'typecheck:board-render',
+          'typecheck:board-art-geometry',
           'typecheck:play-view',
           'typecheck:playback-react',
           'typecheck:profile-stats',

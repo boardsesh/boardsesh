@@ -284,6 +284,15 @@ export function expandLocaleRedirects(rules) {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'assets.boardsesh.com',
+        pathname: '/static/v1/**',
+      },
+    ],
+  },
   // Dev-only: let the HMR + RSC-debug WebSockets complete when the page is
   // opened via the machine's Tailscale hostname. Next dev only allows
   // localhost origins by default and hangs the WS handshake for anything else;
@@ -301,6 +310,7 @@ const nextConfig = {
     '@boardsesh/board-constants',
     '@boardsesh/aurora-sync',
     '@boardsesh/shared-schema',
+    '@boardsesh/static-assets',
     '@boardsesh/db',
     '@boardsesh/crypto',
     '@boardsesh/moonboard-ocr',

@@ -3546,6 +3546,14 @@ export type Mutation = {
    * associated with the user.
    */
   submitAppFeedback: Scalars['Boolean']['output'];
+  /**
+   * Crowdsourced QA: file a verdict on a pull-request preview. Tester role
+   * required; the PR must be open; a `declined` verdict needs a comment of
+   * 10+ characters. Stores the row, then (best effort, never failing the
+   * mutation) posts a comment on the PR and swaps the qa-approved/qa-declined
+   * label.
+   */
+  submitQaVerdict: QaVerdict;
   /** Subscribe to new climbs for a board type and layout. */
   subscribeNewClimbs: Scalars['Boolean']['output'];
   /**
@@ -4123,6 +4131,11 @@ export type MutationSetterOverrideCommunityStatusArgs = {
 /** Root mutation type for all write operations. */
 export type MutationSubmitAppFeedbackArgs = {
   input: SubmitAppFeedbackInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSubmitQaVerdictArgs = {
+  input: SubmitQaVerdictInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4779,6 +4792,62 @@ export type PublicUserProfile = {
   isFollowedByMe: Scalars['Boolean']['output'];
 };
 
+/**
+ * An open pull request with a published OTA preview branch, as a tester sees it:
+ * what to test (the PR body's `## Test plan`), how risky it is (`Risk: N/5`),
+ * and whether this tester already filed a verdict.
+ */
+export type QaPreview = {
+  __typename?: 'QaPreview';
+  /** GitHub login of the PR author. */
+  author: Scalars['String']['output'];
+  /** `pr-<number>` — the xprem branch a compatible build can surf to. */
+  branch: Scalars['String']['output'];
+  /** Committer date of `headSha` (ISO 8601). Null when the lookup failed. */
+  headCommittedAt?: Maybe<Scalars['String']['output']>;
+  headSha: Scalars['String']['output'];
+  isDraft: Scalars['Boolean']['output'];
+  /** The calling tester's most recent verdict on this PR, if any. */
+  myLatestVerdict?: Maybe<QaVerdict>;
+  prNumber: Scalars['Int']['output'];
+  /** 1–5 from the PR body's `Risk: N/5` line; null when the PR predates the rule. */
+  risk?: Maybe<Scalars['Int']['output']>;
+  riskReason?: Maybe<Scalars['String']['output']>;
+  /** The `## Test plan` section as written (comments stripped); null when absent. */
+  testPlan?: Maybe<Scalars['String']['output']>;
+  /** The plan's numbered steps, one string each. Empty when the plan has none. */
+  testPlanSteps: Array<Scalars['String']['output']>;
+  title: Scalars['String']['output'];
+  /** ISO 8601 — when the PR was last updated on GitHub. */
+  updatedAt: Scalars['String']['output'];
+  url: Scalars['String']['output'];
+};
+
+/**
+ * One verdict a tester filed from the mobile app. Mirrored to GitHub as a PR
+ * comment plus a `qa-approved` / `qa-declined` label; `githubCommentUrl` is
+ * null until that side effect lands (or when it failed — the row is the record).
+ */
+export type QaVerdict = {
+  __typename?: 'QaVerdict';
+  /** The OTA preview branch the tester was running, e.g. `pr-4792`. */
+  branch: Scalars['String']['output'];
+  comment?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['String']['output'];
+  githubCommentUrl?: Maybe<Scalars['String']['output']>;
+  /** The PR's head commit when the verdict was filed. */
+  headSha?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  prNumber: Scalars['Int']['output'];
+  verdict: QaVerdictKind;
+};
+
+/**
+ * A tester's verdict on a pull-request preview (crowdsourced QA; see
+ * docs/crowdsourced-qa.md).
+ */
+export type QaVerdictKind = 'approved' | 'declined';
+
 /** Root query type for all read operations. */
 export type Query = {
   __typename?: 'Query';
@@ -5179,6 +5248,13 @@ export type Query = {
   profile?: Maybe<UserProfile>;
   /** Get a public user profile by ID. */
   publicProfile?: Maybe<PublicUserProfile>;
+  /**
+   * Crowdsourced QA: the open pull requests among `prNumbers` (the tester's
+   * loadable `pr-<n>` OTA branches), each with its title, `## Test plan`
+   * steps, `Risk: N/5`, and the caller's latest verdict. Tester role required.
+   * Closed/unknown numbers are omitted; at most 50 per call.
+   */
+  qaPreviews: Array<QaPreview>;
   /**
    * Most recent beta videos across all climbs. Returns only rows whose
    * thumbnails are already cached in our S3; no live IG/TikTok enrichment.
@@ -5768,6 +5844,11 @@ export type QueryPopularBoardConfigsArgs = {
 /** Root query type for all read operations. */
 export type QueryPublicProfileArgs = {
   userId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryQaPreviewsArgs = {
+  prNumbers: Array<Scalars['Int']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -6365,6 +6446,8 @@ export type SaveAuroraCredentialInput = {
 export type SaveClimbInput = {
   angle: Scalars['Int']['input'];
   boardType: Scalars['String']['input'];
+  /** Freely-toggleable characteristics to set at creation. Only CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS are accepted here — no_match is server-derived from description, and MoonBoard method is creation-time-only via SaveMoonBoardClimbInput. */
+  characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
   description?: InputMaybe<Scalars['String']['input']>;
   frames: Scalars['String']['input'];
   framesCount?: InputMaybe<Scalars['Int']['input']>;
@@ -7425,6 +7508,30 @@ export type SubmitAppFeedbackInput = {
   source: Scalars['String']['input'];
 };
 
+/**
+ * Input for submitQaVerdict. Everything but the verdict is device context the
+ * app fills in so the GitHub comment can say what was tested where.
+ */
+export type SubmitQaVerdictInput = {
+  appVersion?: InputMaybe<Scalars['String']['input']>;
+  /** Must equal `pr-<prNumber>` — the branch the tester actually ran. */
+  branch: Scalars['String']['input'];
+  /**
+   * expo-updates `createdAt` of the running bundle (ISO 8601). Compared with
+   * the PR head's commit date to flag a verdict filed on an older revision.
+   */
+  bundleCreatedAt?: InputMaybe<Scalars['String']['input']>;
+  /** Free text, up to 2000 characters. Required (10+ characters) for `declined`. */
+  comment?: InputMaybe<Scalars['String']['input']>;
+  /** 'ios' | 'android' | 'web'. */
+  platform: Scalars['String']['input'];
+  prNumber: Scalars['Int']['input'];
+  runtimeVersion?: InputMaybe<Scalars['String']['input']>;
+  /** expo-updates `updateId` of the running bundle. */
+  updateId?: InputMaybe<Scalars['String']['input']>;
+  verdict: QaVerdictKind;
+};
+
 /** Root subscription type for real-time updates. */
 export type Subscription = {
   __typename?: 'Subscription';
@@ -7754,6 +7861,8 @@ export type UpdateBoardInput = {
 export type UpdateClimbInput = {
   angle?: InputMaybe<Scalars['Int']['input']>;
   boardType: Scalars['String']['input'];
+  /** Freely-toggleable characteristics: the full desired boolean state of CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS. Any other characteristic already on the row (no_match, MoonBoard method) is left untouched. */
+  characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
   description?: InputMaybe<Scalars['String']['input']>;
   frames?: InputMaybe<Scalars['String']['input']>;
   framesCount?: InputMaybe<Scalars['Int']['input']>;
@@ -10005,6 +10114,60 @@ export type SetCommunitySettingsMutation = {
     setBy?: string | null;
     createdAt: string;
     updatedAt: string;
+  };
+};
+
+export type QaPreviewsQueryVariables = Exact<{
+  prNumbers: Array<Scalars['Int']['input']> | Scalars['Int']['input'];
+}>;
+
+export type QaPreviewsQuery = {
+  __typename?: 'Query';
+  qaPreviews: Array<{
+    __typename?: 'QaPreview';
+    prNumber: number;
+    branch: string;
+    title: string;
+    url: string;
+    author: string;
+    isDraft: boolean;
+    headSha: string;
+    headCommittedAt?: string | null;
+    updatedAt: string;
+    risk?: number | null;
+    riskReason?: string | null;
+    testPlan?: string | null;
+    testPlanSteps: Array<string>;
+    myLatestVerdict?: {
+      __typename?: 'QaVerdict';
+      id: string;
+      prNumber: number;
+      branch: string;
+      verdict: QaVerdictKind;
+      comment?: string | null;
+      headSha?: string | null;
+      createdAt: string;
+      githubCommentUrl?: string | null;
+    } | null;
+  }>;
+};
+
+export type SubmitQaVerdictMutationVariables = Exact<{
+  input: SubmitQaVerdictInput;
+}>;
+
+export type SubmitQaVerdictMutation = {
+  __typename?: 'Mutation';
+  submitQaVerdict: {
+    __typename?: 'QaVerdict';
+    id: string;
+    prNumber: number;
+    branch: string;
+    verdict: QaVerdictKind;
+    comment?: string | null;
+    headSha?: string | null;
+    createdAt: string;
+    githubCommentUrl?: string | null;
   };
 };
 
@@ -15757,6 +15920,129 @@ export const SetCommunitySettingsDocument = {
     },
   ],
 } as unknown as DocumentNode<SetCommunitySettingsMutation, SetCommunitySettingsMutationVariables>;
+export const QaPreviewsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'QaPreviews' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'prNumbers' } },
+          type: {
+            kind: 'NonNullType',
+            type: {
+              kind: 'ListType',
+              type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } } },
+            },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'qaPreviews' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'prNumbers' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'prNumbers' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'prNumber' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'branch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'title' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'url' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'author' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isDraft' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'headSha' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'headCommittedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'risk' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'riskReason' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'testPlan' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'testPlanSteps' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'myLatestVerdict' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'prNumber' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'branch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'verdict' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'headSha' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'githubCommentUrl' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<QaPreviewsQuery, QaPreviewsQueryVariables>;
+export const SubmitQaVerdictDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'SubmitQaVerdict' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'SubmitQaVerdictInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'submitQaVerdict' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'prNumber' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'branch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'verdict' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'headSha' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'githubCommentUrl' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SubmitQaVerdictMutation, SubmitQaVerdictMutationVariables>;
 export const EndSessionDocument = {
   kind: 'Document',
   definitions: [

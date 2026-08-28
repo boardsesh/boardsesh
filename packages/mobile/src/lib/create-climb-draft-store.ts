@@ -22,6 +22,11 @@ export type CreateClimbDraft = {
   name: string;
   description: string;
   isDraft: boolean;
+  /** "No kickboard" toggle — feet allowed, kickboard off-limits. Optional so old
+   *  persisted drafts without it still pass the type guard and default to false. */
+  noKickboard?: boolean;
+  /** "Campus" toggle — no feet at all. Optional for the same back-compat reason. */
+  campus?: boolean;
 };
 
 const KEY_PREFIX = 'boardsesh_create_climb_draft:';

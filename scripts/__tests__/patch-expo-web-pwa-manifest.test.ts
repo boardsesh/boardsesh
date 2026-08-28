@@ -16,6 +16,7 @@ const SHELL_WITH_APP_HREF = `<!doctype html>
     <title>Boardsesh</title>
     <link rel="manifest" href="/app/manifest.json" />
     <link rel="icon" href="https://www.boardsesh.com/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="https://www.boardsesh.com/icons/apple-touch-icon.png" />
   </head>
   <body><div id="root"></div></body>
 </html>
@@ -27,7 +28,27 @@ const MANIFEST = {
   start_url: '/',
   scope: '/',
   display: 'standalone',
+  icons: [
+    { src: 'https://www.boardsesh.com/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+    { src: 'https://www.boardsesh.com/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+    {
+      src: 'https://www.boardsesh.com/icons/icon-maskable-512.png',
+      sizes: '512x512',
+      type: 'image/png',
+      purpose: 'maskable',
+    },
+  ],
 };
+
+const STATIC_ASSET_MANIFEST = Object.fromEntries(
+  [
+    '/icons/icon-192.png',
+    '/icons/icon-256.png',
+    '/icons/icon-512.png',
+    '/icons/icon-maskable-512.png',
+    '/icons/apple-touch-icon.png',
+  ].map((logicalPath, index) => [logicalPath, `static/v1/${String(index + 1).repeat(64)}.png`]),
+);
 
 describe('patch-expo-web-pwa-manifest', () => {
   let exportDir: string;
@@ -59,6 +80,52 @@ describe('patch-expo-web-pwa-manifest', () => {
     // string compare, and "/app" is not a prefix-match inside "/app/".
     expect(readManifest().start_url).toBe('/app/');
     expect(readManifest().scope).toBe('/app/');
+    expect(readShell()).toContain('https://www.boardsesh.com/icons/icon-192.png');
+  });
+
+  it('rewrites shell and manifest icons only when a static asset base URL is supplied', () => {
+    const options = {
+      exportDir,
+      basePrefix: '',
+      staticAssetBaseUrl: 'https://assets.boardsesh.com/',
+      staticAssetManifest: STATIC_ASSET_MANIFEST,
+    };
+    patchExpoWebPwaManifest(options);
+
+    expect(readShell()).toContain(`https://assets.boardsesh.com/${STATIC_ASSET_MANIFEST['/icons/icon-192.png']}`);
+    expect(readShell()).toContain(
+      `https://assets.boardsesh.com/${STATIC_ASSET_MANIFEST['/icons/apple-touch-icon.png']}`,
+    );
+    const manifest = readManifest() as { icons: Array<{ src: string; sizes: string; purpose?: string }> };
+    expect(manifest.icons.map(({ src }) => src)).toEqual([
+      `https://assets.boardsesh.com/${STATIC_ASSET_MANIFEST['/icons/icon-192.png']}`,
+      `https://assets.boardsesh.com/${STATIC_ASSET_MANIFEST['/icons/icon-512.png']}`,
+      `https://assets.boardsesh.com/${STATIC_ASSET_MANIFEST['/icons/icon-maskable-512.png']}`,
+    ]);
+
+    const firstShell = readShell();
+    const firstManifest = readFileSync(join(exportDir, 'manifest.json'), 'utf8');
+    patchExpoWebPwaManifest(options);
+    expect(readShell()).toBe(firstShell);
+    expect(readFileSync(join(exportDir, 'manifest.json'), 'utf8')).toBe(firstManifest);
+  });
+
+  it('resolves manifest icons from their source path instead of a sizes or purpose table', () => {
+    const manifestWithNewSize = {
+      ...MANIFEST,
+      icons: [{ src: 'https://www.boardsesh.com/icons/icon-256.png', sizes: '256x256', type: 'image/png' }],
+    };
+    writeFileSync(join(exportDir, 'manifest.json'), `${JSON.stringify(manifestWithNewSize, null, 2)}\n`);
+
+    patchExpoWebPwaManifest({
+      exportDir,
+      basePrefix: '',
+      staticAssetBaseUrl: 'https://assets.boardsesh.com',
+      staticAssetManifest: STATIC_ASSET_MANIFEST,
+    });
+
+    const manifest = readManifest() as { icons: Array<{ src: string }> };
+    expect(manifest.icons[0]?.src).toBe(`https://assets.boardsesh.com/${STATIC_ASSET_MANIFEST['/icons/icon-256.png']}`);
   });
 
   it('rewrites the subdomain export to a root-relative manifest (the shipped bug)', () => {

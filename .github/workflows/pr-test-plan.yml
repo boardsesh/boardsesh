@@ -1,0 +1,56 @@
+name: PR Test Plan
+
+# Fails a PR whose description has no usable `## Test plan` (1–5 numbered steps)
+# or no `Risk: N/5 — why` line. Testers read the plan verbatim in the mobile app
+# (the crowdsourced-QA flow, docs/crowdsourced-qa.md), so the rules are the
+# reader's: short, numbered, one action and one expected result per step. The
+# rule set is `validatePrBody` in @boardsesh/pr-body, run by
+# scripts/check-pr-test-plan.ts — the same parser the backend uses to serve the
+# plan, so a body that passes here renders in-app.
+#
+# Deliberately its own workflow rather than a job in ci.yml, for two reasons:
+#   * It listens to `edited`. Fixing a description must re-run the gate without a
+#     push; ci.yml has no `types:` (so it never sees body edits), and giving it
+#     `edited` would re-run the whole matrix on every description tweak.
+#   * ci.yml's `ci-status` aggregator fails the run on any non-success job, and a
+#     PR-metadata check should surface as its own status, not redden CI (same
+#     reasoning as pr-labels.yml).
+#
+# Bot PRs (dependabot and friends) have no template body and are exempt. A
+# maintainer can exempt a human PR with the `skip-qa-gate` label — the script
+# honours it, and `labeled`/`unlabeled` re-run the check when it's applied.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-test-plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    if: ${{ !endsWith(github.event.pull_request.user.login, '[bot]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Check PR has a test plan and a risk score
+        env:
+          # Write the body to a file (via env, not interpolated into the script) so
+          # a markdown body with backticks/quotes can't break the shell.
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels) }}
+        run: |
+          printf '%s' "$PR_BODY" > pr-body.txt
+          vp run check:pr-test-plan -- --body-file pr-body.txt

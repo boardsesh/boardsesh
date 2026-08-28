@@ -1,0 +1,44 @@
+{
+  "name": "@boardsesh/board-art-geometry",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./loader": {
+      "types": "./src/loader.ts",
+      "import": "./src/loader.ts",
+      "default": "./src/loader.ts"
+    },
+    "./veil": {
+      "types": "./src/veil.ts",
+      "import": "./src/veil.ts",
+      "default": "./src/veil.ts"
+    },
+    "./types": {
+      "types": "./src/types.ts",
+      "import": "./src/types.ts",
+      "default": "./src/types.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@boardsesh/shared-schema": "*"
+  },
+  "devDependencies": {
+    "@boardsesh/board-config": "*",
+    "@boardsesh/board-constants": "*",
+    "@boardsesh/board-render": "*",
+    "@types/node": "^25.9.5",
+    "sharp": "^0.34.5",
+    "typescript": "~7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

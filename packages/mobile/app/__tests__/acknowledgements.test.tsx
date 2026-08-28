@@ -46,6 +46,7 @@ vi.mock('../../src/lib/acknowledgements', () => ({
   friends: ['Gabby', 'Caz', 'Joz'],
   dogName: 'Scout',
   SPONSORS_URL: 'https://github.com/sponsors/boardsesh',
+  XPREM_URL: 'https://github.com/mercuretechnologies/xprem',
 }));
 vi.mock('../../src/lib/open-url', () => openUrl);
 vi.mock('../../src/lib/discord', () => discord);
@@ -139,6 +140,17 @@ describe('AcknowledgementsScreen', () => {
     expect(routerMock.push).toHaveBeenCalledWith('/licenses');
   });
 
+  it('opens the xprem repo from the powered-by card', () => {
+    render(<AcknowledgementsScreen />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'xprem' }));
+
+    expect(openUrl.openExternalUrl).toHaveBeenCalledWith(
+      'https://github.com/mercuretechnologies/xprem',
+      'acknowledgements-xprem',
+    );
+  });
+
   it('opens the Scout easter-egg page from the dog card', () => {
     render(<AcknowledgementsScreen />);
 
@@ -158,6 +170,7 @@ describe('AcknowledgementsScreen', () => {
       friends: ['Gabby'],
       dogName: 'Scout',
       SPONSORS_URL: 'https://github.com/sponsors/boardsesh',
+      XPREM_URL: 'https://github.com/mercuretechnologies/xprem',
     }));
     const { default: EmptySponsorsScreen } = await import('../acknowledgements');
 

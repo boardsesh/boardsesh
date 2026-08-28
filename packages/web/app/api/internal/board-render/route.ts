@@ -7,6 +7,7 @@ import { HOLD_STATE_MAP, THUMBNAIL_WIDTH } from '@/app/components/board-renderer
 import type { BoardName } from '@/app/lib/types';
 import { createOgImageHeaders } from '@/app/lib/seo/og';
 import {
+  boardseshRenderQuerySchema,
   buildRenderConfig,
   createSemaphore,
   isValidFramesString,
@@ -119,13 +120,39 @@ const findPublicImagePath: ResolveImagePath = (relPath) => {
   return null;
 };
 
-/** Wrap encoded image bytes in the shared immutable-cache response. */
-function imageResponse(buffer: Buffer, contentType: string, timingParts: string[]): NextResponse {
+/**
+ * Shape a `v` parameter must have before its response is marked immutable for a
+ * year. Any well-formed version wins the immutable branch — not only the one this
+ * deploy emits — because a URL minted by an earlier deploy still names a fixed set
+ * of bytes; downgrading it would send every already-crawled OG card and open tab
+ * back to the origin. Malformed junk gets the bounded branch, so a crawler cannot
+ * mint unlimited year-long edge objects out of a query string.
+ */
+function isWellFormedRenderVersion(value: string | null): value is string {
+  return value !== null && /^[0-9a-f]{8,64}$/.test(value);
+}
+
+/**
+ * Wrap encoded image bytes in the shared cache response.
+ *
+ * `renderVersion` is the request's own `v` — the route used to hard-code the
+ * string `'immutable'` here, which claimed a year of cache lifetime for a URL that
+ * did not identify its bytes (#4773). Unversioned requests (the ESP32 firmware,
+ * the iOS Live Activity widget, already-crawled URLs) fall to the bounded daily
+ * tier instead of pinning a year.
+ */
+function imageResponse(
+  buffer: Buffer,
+  contentType: string,
+  timingParts: string[],
+  renderVersion: string | null,
+): NextResponse {
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       ...createOgImageHeaders({
         contentType,
-        version: 'immutable',
+        version: renderVersion,
+        unversionedTier: 'daily',
         serverTiming: timingParts.join(', '),
       }),
     },
@@ -185,6 +212,9 @@ export async function GET(request: NextRequest) {
     const format = normalizeOutputFormat(searchParams.get('format') ?? (isOgVariant ? 'png' : 'webp'));
     // Mirroring is handled client-side via CSS scaleX(-1) to maximize cache hit rate
 
+    const versionParam = searchParams.get('v');
+    const renderVersion = isWellFormedRenderVersion(versionParam) ? versionParam : null;
+
     if (!boardName || !layoutId || !sizeId || !setIds || frames === null) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
     }
@@ -205,6 +235,28 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid frames' }, { status: 400 });
     }
 
+    // boardsesh-mode render options (issue #2202). Defaults keep this route
+    // classic — see docs/og-climb.md for the param contract, shared with the
+    // backend's GET /og/climb.
+    const boardseshOptions = boardseshRenderQuerySchema.safeParse({
+      render_mode: searchParams.get('render_mode') ?? undefined,
+      glow_falloff: searchParams.get('glow_falloff') ?? undefined,
+      glyphs: searchParams.get('glyphs') ?? undefined,
+      field_color: searchParams.get('field_color') ?? undefined,
+    });
+    if (!boardseshOptions.success) {
+      return NextResponse.json(
+        { error: 'Invalid render options', details: boardseshOptions.error.issues.map((issue) => issue.message) },
+        { status: 400 },
+      );
+    }
+    const {
+      render_mode: renderMode,
+      glow_falloff: glowFalloff,
+      glyphs,
+      field_color: fieldColor,
+    } = boardseshOptions.data;
+
     // Optional dim scrim over the board photo (0–1 opacity), applied only with
     // include_background. Darkens the board behind the holds so the lit climb
     // reads clearly at thumbnail size — the server equivalent of the mobile climb
@@ -217,7 +269,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Final-bytes cache first: a hit costs nothing and never enters the render
-    // queue. Keyed on every param that changes a pixel.
+    // queue. Keyed on every param that changes a pixel. `v` is deliberately NOT
+    // in the key: one process only ever runs one renderer, so two versions of the
+    // same URL produce identical bytes and keying on it would halve the cache for
+    // nothing during a rolling deploy.
     const byteKey = [
       boardName,
       layoutId,
@@ -229,11 +284,23 @@ export async function GET(request: NextRequest) {
       dimBackground,
       isOgVariant ? 'og' : 'std',
       format,
+      // A boardsesh render must never be served under a classic key — see
+      // buildRenderConfig's renderMode/glowFalloff/glyphs/veil params. Classic
+      // ignores the other three, so it keys as plain `classic` whatever a
+      // caller passed alongside it.
+      ...(renderMode === 'boardsesh'
+        ? ['boardsesh', glowFalloff, glyphs ? '1' : '0', fieldColor ?? 'unset']
+        : ['classic']),
     ].join(':');
 
     const cachedBytes = byteCache.get(byteKey);
     if (cachedBytes) {
-      return imageResponse(cachedBytes.buffer, cachedBytes.contentType, ['cache;desc=hit', 'queue;dur=0.0']);
+      return imageResponse(
+        cachedBytes.buffer,
+        cachedBytes.contentType,
+        ['cache;desc=hit', 'queue;dur=0.0'],
+        renderVersion,
+      );
     }
 
     const parsedSetIds = setIds
@@ -257,6 +324,13 @@ export async function GET(request: NextRequest) {
       isOgVariant,
       boardStates: HOLD_STATE_MAP[boardName as BoardName],
       thumbnailWidth: THUMBNAIL_WIDTH,
+      renderMode,
+      glowFalloff,
+      glyphs,
+      // TODO(#2202): veil opacity from @boardsesh/board-art-geometry — nothing
+      // computes real wall-lightness data yet, so boardsesh mode ships a
+      // no-op (opacity 0) veil until that package lands.
+      ...(renderMode === 'boardsesh' ? { veil: { color: fieldColor ?? '#181225', opacity: 0 } } : {}),
     });
 
     // Reject oversized renders before allocating anything for them.
@@ -320,7 +394,7 @@ export async function GET(request: NextRequest) {
     if (rendered.timings.bgMs > 0) timingParts.push(`bg;dur=${rendered.timings.bgMs.toFixed(1)}`);
     timingParts.push(`cache;desc=${rendered.cache}`, `queue;dur=${Math.max(0, queueMs).toFixed(1)}`);
 
-    return imageResponse(rendered.buffer, rendered.contentType, timingParts);
+    return imageResponse(rendered.buffer, rendered.contentType, timingParts, renderVersion);
   } catch (error) {
     console.error('Board render error:', error);
     const message = error instanceof Error ? error.message : String(error);

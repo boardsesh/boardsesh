@@ -95,6 +95,7 @@ We'll always create a PR, never asks if a PR should be created, open as a draft.
 - **Merge conflicts**: rebase on `main` and `git push --force-with-lease` — don't ask first.
 - **Review feedback**: fix minor, cosmetic, and style comments autonomously and push. For correctness disagreements, architectural changes, or ambiguous instructions, use `AskUserQuestion` before acting.
 - **Release notes**: every PR description must include the `## Release Notes` section from the PR template. Write in climber voice — describe what the user gets, not what the code does. Internal-only changes (refactor, CI, deps, tests) get `none`.
+- **Test plan + Risk**: every PR description carries a `## Test plan` and a `## Risk` section (template). Testers read the plan word for word in the mobile app, so write it for a distracted reader on a phone: 1–5 numbered steps, each one action then what they should see ("You tab → Log a tick → field grows"), 12 words or fewer per step, no preamble. "1. CI green." is a valid plan for an internal change. Risk is `Risk: N/5 — why` (1 docs/CI/deps · 3 new screen or resolver · 5 BLE/OTA/migrations). `pr-test-plan.yml` fails without both; testers' verdicts come back as `qa-approved` / `qa-declined` labels. See `docs/crowdsourced-qa.md`.
 - **Ready to merge signal**: once CI is green, no unresolved review comments remain, and there are no conflicts, remove the draft status from the PR marking it ready for review.
 
 ## Monorepo Structure
@@ -183,6 +184,7 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/ai-design-guidelines.md` — Velvet Send design system (mobile-canonical: palette, typography, tokens, Liquid Glass / Material variants; web still on the legacy rose/sage palette, pending migration)
 - `docs/live-activity-push-testing.md` — APNs Live Activity push testing
 - `docs/logging.md` — backend structured logger (winston)
+- `docs/crowdsourced-qa.md` — the PR test-plan + risk gate (`@boardsesh/pr-body`, `pr-test-plan.yml`), and the tester loop that turns it into `qa-approved` / `qa-declined` labels
 - `docs/mobile-sheets-vs-routes.md` — mobile: which surface to use (bottom sheet vs route), with the decision tree + the hard rules (incl. why `fullScreenModal` breaks the iOS 26 native tab bar)
 
 ## Architecture Overview
