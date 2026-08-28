@@ -186,6 +186,11 @@ export function upsertCacheRule(
   return { rules: changed ? rules : existingRules, changed };
 }
 
+/** Render Cloudflare's special automatic-TTL value without mislabelling future explicit TTLs. */
+function describeDnsTtl(ttl: number): string {
+  return ttl === 1 ? 'automatic' : String(ttl);
+}
+
 /** Plan creation or owned-field convergence for one DNS record. */
 export function diffDnsRecord(desired: DnsRecordDesired, liveRecord: LiveDnsRecord | null): PlannedChange | null {
   if (!liveRecord) {
@@ -199,7 +204,8 @@ export function diffDnsRecord(desired: DnsRecordDesired, liveRecord: LiveDnsReco
       dnsName: desired.name,
       summary: `DNS ${desired.name}: missing — will create`,
       detail:
-        `${desired.type} ${desired.name} → ${desired.content}, ttl automatic, proxied ${desired.proxied}, ` +
+        `${desired.type} ${desired.name} → ${desired.content}, ttl ${describeDnsTtl(desired.ttl)}, ` +
+        `proxied ${desired.proxied}, ` +
         `CNAME flattening disabled`,
     };
   }
@@ -217,7 +223,9 @@ export function diffDnsRecord(desired: DnsRecordDesired, liveRecord: LiveDnsReco
   const driftedFields: string[] = [];
   if (liveRecord.type !== desired.type) driftedFields.push(`type ${liveRecord.type} → ${desired.type}`);
   if (liveRecord.content !== desired.content) driftedFields.push(`content ${liveRecord.content} → ${desired.content}`);
-  if (liveRecord.ttl !== desired.ttl) driftedFields.push(`ttl ${liveRecord.ttl} → automatic`);
+  if (liveRecord.ttl !== desired.ttl) {
+    driftedFields.push(`ttl ${describeDnsTtl(liveRecord.ttl)} → ${describeDnsTtl(desired.ttl)}`);
+  }
   if (liveRecord.proxied !== desired.proxied) {
     driftedFields.push(`proxied ${liveRecord.proxied} → ${desired.proxied}`);
   }

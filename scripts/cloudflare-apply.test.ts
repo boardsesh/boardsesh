@@ -211,6 +211,13 @@ describe('diffDnsRecord', () => {
 
     expect(change?.detail).toContain('flatten_cname true → false');
   });
+
+  it('reports explicit desired TTLs without calling them automatic', () => {
+    const explicitTtl = { ...assetsDnsRecord, ttl: 300 };
+    const change = diffDnsRecord(explicitTtl, liveAssetsDnsRecord({ ttl: 1 }));
+
+    expect(change?.detail).toContain('ttl automatic → 300');
+  });
 });
 
 describe('diffSslMode (SSL weaker warning)', () => {
