@@ -159,7 +159,7 @@ function renderOptionsCacheKeySuffix(options: {
   // `classic` whatever a caller happened to pass — an explicit `glow_falloff`
   // on a classic request must hit the same entry as the request without it.
   if (options.renderMode !== 'boardsesh') return 'classic';
-  return `boardsesh:${options.glowFalloff ?? 'soft'}:${options.glyphs ? '1' : '0'}:${options.fieldColor ?? ''}`;
+  return `boardsesh:${options.glowFalloff ?? 'soft'}:${options.glyphs ? '1' : '0'}:${options.fieldColor ?? 'unset'}`;
 }
 
 function byteCacheKey(params: OgClimbRenderParams): string {

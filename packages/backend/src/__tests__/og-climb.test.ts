@@ -315,10 +315,8 @@ describe('renderOgClimb (real render)', () => {
   }, 30_000);
 
   // issue #2202: a boardsesh render must never be served under a classic
-  // byte-cache key. `cache` module state is shared with the earlier test in
-  // this describe block (ES modules are singletons), so this only asserts on
-  // `!== 'hit'` vs `=== 'hit'` — never on `'miss'` vs `'base-hit'`, which
-  // depends on which board bases a previous test already warmed.
+  // byte-cache key. The board-photo base is independent of render options,
+  // so switching modes must still reuse the base populated by the first call.
   it('keys the byte cache on render_mode/glow_falloff/glyphs/field_color', async () => {
     process.env.BOARD_IMAGES_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../web/public');
     const service = await vi.importActual<typeof import('../services/board-render')>('../services/board-render');
@@ -347,7 +345,7 @@ describe('renderOgClimb (real render)', () => {
       glyphs: true,
       fieldColor: '#123456',
     });
-    expect(boardsesh.cache).not.toBe('hit');
+    expect(boardsesh.cache).toBe('base-hit');
 
     // Repeating the exact boardsesh request IS a byte-cache hit — the key is
     // internally consistent, not just "always different".

@@ -28,8 +28,10 @@ and reports the cache outcome (`hit` | `base-hit` | `miss`).
 Optional, shared with the web `/api/internal/board-render` route via
 `boardseshRenderQuerySchema` (`@boardsesh/board-render`). All four default
 closed, so this endpoint (and web) stay classic-by-default until a later PR
-flips it; every one of the four is part of both the byte-cache and base-cache
-keys, so a boardsesh render can never be served under a classic key.
+flips it. Every option that affects the output is part of the byte-cache key,
+so a boardsesh render can never be served under a classic key. The base cache
+is keyed only by board config because overlay options do not change its board
+photo backdrop.
 
 | Param          | Default   | Meaning                                                                                                                                       |
 | -------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |

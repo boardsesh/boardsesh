@@ -58,12 +58,12 @@ pub fn clear_silhouettes(pixmap: &mut Pixmap, lit: &[LitHold]) {
 /// The veil: the whole overlay washed in the field colour, lit holes punched
 /// out. Painted first, so it is a plain fill rather than a rect-minus-paths.
 pub fn paint_veil(pixmap: &mut Pixmap, veil: &Veil, lit: &[LitHold]) {
-    let Some(color) = Color::from_hex(&veil.color) else {
-        return;
-    };
     if !positive(veil.opacity) {
         return;
     }
+    let Some(color) = Color::from_hex(&veil.color) else {
+        return;
+    };
     pixmap.fill(SkiaColor::from_rgba8(
         color.r,
         color.g,
