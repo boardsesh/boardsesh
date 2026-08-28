@@ -217,8 +217,14 @@ describe('native release train workflow contracts', () => {
   const stepsOf = (source: string): { name?: string; run?: string; uses?: string; with?: Record<string, unknown> }[] =>
     Object.values((parse(source) as { jobs: Record<string, { steps?: [] }> }).jobs).flatMap((job) => job.steps ?? []);
 
+  const runsCommand = (script: string, command: string): boolean =>
+    script
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('#'))
+      .some((line) => line.includes(command));
+
   const indexOfStepRunning = (source: string, command: string): number =>
-    stepsOf(source).findIndex((step) => typeof step.run === 'string' && step.run.includes(command));
+    stepsOf(source).findIndex((step) => typeof step.run === 'string' && runsCommand(step.run, command));
 
   it('checks the embedded framework ABI before anything leaves the runner', () => {
     const ci = workflow('ios-rn-ci.yml');

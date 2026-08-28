@@ -146,8 +146,9 @@ describe('findAbiBreaks', () => {
 });
 
 describe('main', () => {
-  const darwin = process.platform === 'darwin';
-
+  // These inject a MachOInspector and never invoke `nm`, so they run everywhere.
+  // That matters: the per-PR gate has no macOS runner, and the guard that stops
+  // a silent false green is the last thing that should go unexercised.
   function inspectorFor(binaries: Map<string, string>, symbols: Record<string, string>): MachOInspector {
     return {
       listBinaries: () => binaries,
@@ -155,22 +156,8 @@ describe('main', () => {
     };
   }
 
-  it.skipIf(!darwin)('fails when no Mach-O binaries are found', () => {
-    const exitCode = main(['--app', process.cwd()], inspectorFor(new Map(), {}));
-    expect(exitCode).toBe(1);
-  });
-
-  it.skipIf(!darwin)('fails when it compared nothing, rather than reporting a false green', () => {
-    // One binary whose only import is a system library: nothing to compare.
-    const inspector = inspectorFor(new Map([['Boardsesh', '/app/Boardsesh']]), {
-      '/app/Boardsesh': '                 (undefined) external _NSLog (from Foundation)\n',
-    });
-
-    expect(main(['--app', process.cwd()], inspector)).toBe(1);
-  });
-
-  it.skipIf(!darwin)('fails on the assumeIsolated skew', () => {
-    const inspector = inspectorFor(
+  const skewedInspector = () =>
+    inspectorFor(
       new Map([
         ['ExpoModulesCore', '/app/Frameworks/ExpoModulesCore.framework/ExpoModulesCore'],
         ['ExpoModulesJSI', '/app/Frameworks/ExpoModulesJSI.framework/ExpoModulesJSI'],
@@ -182,10 +169,24 @@ describe('main', () => {
       },
     );
 
-    expect(main(['--app', process.cwd()], inspector)).toBe(1);
+  it('fails when no Mach-O binaries are found', () => {
+    expect(main(['--app', process.cwd()], inspectorFor(new Map(), {}), 'darwin')).toBe(1);
   });
 
-  it.skipIf(!darwin)('passes when the pair agrees', () => {
+  it('fails when it compared nothing, rather than reporting a false green', () => {
+    // One binary whose only import is a system library: nothing to compare.
+    const inspector = inspectorFor(new Map([['Boardsesh', '/app/Boardsesh']]), {
+      '/app/Boardsesh': '                 (undefined) external _NSLog (from Foundation)\n',
+    });
+
+    expect(main(['--app', process.cwd()], inspector, 'darwin')).toBe(1);
+  });
+
+  it('fails on the assumeIsolated skew', () => {
+    expect(main(['--app', process.cwd()], skewedInspector(), 'darwin')).toBe(1);
+  });
+
+  it('passes when the pair agrees', () => {
     const inspector = inspectorFor(
       new Map([
         ['ExpoModulesCore', '/app/Frameworks/ExpoModulesCore.framework/ExpoModulesCore'],
@@ -197,15 +198,23 @@ describe('main', () => {
       },
     );
 
-    expect(main(['--app', process.cwd()], inspector)).toBe(0);
+    expect(main(['--app', process.cwd()], inspector, 'darwin')).toBe(0);
   });
 
-  it.skipIf(!darwin)('requires the --app argument', () => {
-    expect(main([], inspectorFor(new Map(), {}))).toBe(1);
+  it('requires the --app argument', () => {
+    expect(main([], inspectorFor(new Map(), {}), 'darwin')).toBe(1);
   });
 
-  it.skipIf(darwin)('skips off macOS instead of failing the Linux PR runner', () => {
-    expect(main([], inspectorFor(new Map(), {}))).toBe(0);
+  it('accepts the --app=<path> form as well as --app <path>', () => {
+    expect(main([`--app=${process.cwd()}`], skewedInspector(), 'darwin')).toBe(1);
+  });
+
+  it('fails when --app points at something that does not exist', () => {
+    expect(main(['--app', '/nonexistent/Boardsesh.app'], skewedInspector(), 'darwin')).toBe(1);
+  });
+
+  it('skips off macOS instead of failing the Linux PR runner', () => {
+    expect(main([], inspectorFor(new Map(), {}), 'linux')).toBe(0);
   });
 });
 

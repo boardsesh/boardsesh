@@ -247,7 +247,7 @@ export const nmInspector: MachOInspector = {
   readSymbols(binaryPath) {
     return execFileSync('nm', ['-arch', 'arm64', '-m', binaryPath], {
       encoding: 'utf8',
-      maxBuffer: 256 * 1024 * 1024,
+      maxBuffer: 64 * 1024 * 1024,
     });
   },
 };
@@ -259,11 +259,22 @@ function parseAppArg(argv: readonly string[]): string | null {
   return inline ? inline.slice('--app='.length) : null;
 }
 
-/** Wire the real toolchain and run the check. Returns the process exit code. */
-export function main(argv: readonly string[] = process.argv.slice(2), inspector: MachOInspector = nmInspector): number {
+/**
+ * Wire the real toolchain and run the check. Returns the process exit code.
+ *
+ * `platform` is a parameter rather than a direct `process.platform` read so the
+ * tests can drive everything below the skip on any host: they inject a
+ * MachOInspector and never invoke `nm`, and the per-PR gate has no macOS runner,
+ * so an inline read would leave the false-green guard with no coverage at all.
+ */
+export function main(
+  argv: readonly string[] = process.argv.slice(2),
+  inspector: MachOInspector = nmInspector,
+  platform: string = process.platform,
+): number {
   // macOS-only: there is no `nm` that reads Mach-O on the Linux PR runners, so
   // skip the way scripts/mobile-simulator-check.sh does rather than fail.
-  if (process.platform !== 'darwin') {
+  if (platform !== 'darwin') {
     console.log('[mobile-abi] Skipped: Mach-O inspection needs macOS `nm`.');
     return 0;
   }
