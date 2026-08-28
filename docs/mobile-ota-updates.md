@@ -473,9 +473,11 @@ Automatic store uploads never run from `main` or an arbitrary feature branch.
   Manual dispatch bypasses the fingerprint gate. The protected fingerprint tag
   stays at the first build that established it, while the successful rebuild gets
   a fresh build-number tag. Do not delete or move the fingerprint tag.
-- Android candidate APK/AAB files stay in private Actions artifacts. The build
-  and fingerprint tags are recorded only after the Play internal upload
-  succeeds; no public GitHub Release is created.
+- Android candidate APK/AAB files stay in Actions artifacts. After Play accepts
+  the internal upload, the exact signed arm64 APK is also published as a public
+  **Boardsesh Next for Android** prerelease on its immutable `build-android-*`
+  tag. Manual emergency builds from `main` never publish or replace that
+  prerelease channel.
 - The Android **gate** job runs in the restricted `Native Release` environment so it can read
   `GOOGLE_MAPS_API_KEY` (a secret that changes the Android fingerprint) and
   resolve the same hash the build bakes. Without it the gate computes a map-less fingerprint that

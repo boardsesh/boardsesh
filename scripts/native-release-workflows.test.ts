@@ -67,13 +67,35 @@ describe('native release train workflow contracts', () => {
     expect(android).toContain('Mint repository App token for protected release tags');
   });
 
-  it('keeps Android candidates private and makes Play internal authoritative', () => {
-    expect(android).not.toContain('softprops/action-gh-release');
-    expect(android).not.toContain('Create GitHub Release');
+  it('publishes the exact Android candidate after Play internal accepts it', () => {
+    expect(android).toContain('Stage Android APK GitHub prerelease');
+    expect(android).toContain('Publish verified Android APK prerelease');
+    expect(android).toContain('softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65');
+    expect(android).toContain('boardsesh-next-android-arm64-v8a.apk');
+    expect(android).toContain('token: ${{ steps.tag_token.outputs.token }}');
+    expect(android).toContain('tag_name: ${{ env.ANDROID_BUILD_TAG }}');
+    expect(android).toContain('target_commitish: ${{ github.sha }}');
+    expect(android).not.toContain('GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}');
+    expect(android).toContain('if [ "$GITHUB_REF" != \'refs/heads/release/next\' ]');
+    expect(android).toContain('fail_on_unmatched_files: true');
+    expect(android).toContain('draft: true');
+    expect(android).toContain('prerelease: true');
+    expect(android).toContain('make_latest: false');
+    expect(android).toContain('--draft=false');
+    expect(android).toContain('do not install this APK over a Play-installed copy');
+    expect(android).toContain('APK SHA-256: `${{ env.ANDROID_APK_SHA256 }}`');
     expect(android).toContain('actions/upload-artifact@v4');
+    expect(android).toContain('actions/download-artifact@v4');
     expect(android).toContain('tracks: internal');
     expect(android).toContain('Require Play upload credentials');
+    expect(android).toContain('rerun failed jobs to repair tags or the APK prerelease');
     expect(android.indexOf('Require Play upload credentials')).toBeLessThan(android.indexOf('Expo prebuild'));
+    expect(android.indexOf('Upload AAB to Play internal track')).toBeLessThan(
+      android.indexOf('Tag the uploaded Android build and fingerprint'),
+    );
+    expect(android.indexOf('Tag the uploaded Android build and fingerprint')).toBeLessThan(
+      android.indexOf('Stage Android APK GitHub prerelease'),
+    );
   });
 
   it('rebases with the repository App, an explicit lease, and Discord failure reporting', () => {
