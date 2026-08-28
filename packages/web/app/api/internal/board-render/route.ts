@@ -288,7 +288,9 @@ export async function GET(request: NextRequest) {
       // buildRenderConfig's renderMode/glowFalloff/glyphs/veil params. Classic
       // ignores the other three, so it keys as plain `classic` whatever a
       // caller passed alongside it.
-      ...(renderMode === 'boardsesh' ? ['boardsesh', glowFalloff, glyphs ? '1' : '0', fieldColor ?? ''] : ['classic']),
+      ...(renderMode === 'boardsesh'
+        ? ['boardsesh', glowFalloff, glyphs ? '1' : '0', fieldColor ?? 'unset']
+        : ['classic']),
     ].join(':');
 
     const cachedBytes = byteCache.get(byteKey);

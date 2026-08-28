@@ -41,6 +41,11 @@ type BoardArtGeometry = {
 change units, or grow a sentinel without that renderer changing with it; anything
 genuinely new goes in a new field.
 
+The renderer injection boundary is `HoldGeometryInput` in
+`packages/shared/board-render/src/render-config.ts`. A caller passes a loaded
+`BoardArtGeometry` as `holdGeometry`; `buildRenderConfig` copies these tables onto the
+per-hold WASM config consumed by the Rust renderer.
+
 ### Coordinates
 
 `outlines[placementId]` is a flat `[x0, y0, x1, y1, …]` ring — closed implicitly, the
