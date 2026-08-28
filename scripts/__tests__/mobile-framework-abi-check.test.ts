@@ -1,5 +1,8 @@
 /// <reference types="node" />
 
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   findAbiBreaks,
@@ -104,9 +107,7 @@ describe('findAbiBreaks', () => {
   });
 
   it('ignores symbols bound to libraries that are not embedded in the app', () => {
-    const tables = new Map([
-      ['ExpoModulesCore', table([], [importOf('_OBJC_CLASS_$_NSString', 'Foundation')])],
-    ]);
+    const tables = new Map([['ExpoModulesCore', table([], [importOf('_OBJC_CLASS_$_NSString', 'Foundation')])]]);
 
     const { checkedEdges, breaks } = findAbiBreaks(tables);
 
@@ -211,5 +212,42 @@ describe('main', () => {
 describe('listAppBinaries', () => {
   it('returns nothing for a path that is not an app bundle', () => {
     expect(listAppBinaries('/nonexistent/Boardsesh.app').size).toBe(0);
+  });
+
+  // The bundle walk is plain directory traversal, so a synthetic tree exercises
+  // it anywhere — the macOS-only part is `nm`, which this never reaches.
+  it('collects the app executable and every embedded framework, keyed as nm names them', () => {
+    const root = mkdtempSync(join(tmpdir(), 'abi-check-'));
+    const app = join(root, 'Boardsesh.app');
+    try {
+      mkdirSync(join(app, 'Frameworks', 'ExpoModulesCore.framework'), { recursive: true });
+      mkdirSync(join(app, 'Frameworks', 'ExpoModulesJSI.framework'), { recursive: true });
+      mkdirSync(join(app, 'PlugIns', 'Widgets.appex'), { recursive: true });
+      writeFileSync(join(app, 'Boardsesh'), '');
+      writeFileSync(join(app, 'Frameworks', 'ExpoModulesCore.framework', 'ExpoModulesCore'), '');
+      writeFileSync(join(app, 'Frameworks', 'ExpoModulesJSI.framework', 'ExpoModulesJSI'), '');
+      writeFileSync(join(app, 'Frameworks', 'libswiftCore.dylib'), '');
+      // A framework directory with no binary inside must not be registered.
+      mkdirSync(join(app, 'Frameworks', 'Empty.framework'), { recursive: true });
+      writeFileSync(join(app, 'PlugIns', 'Widgets.appex', 'Widgets'), '');
+
+      const binaries = listAppBinaries(app);
+
+      expect(binaries.get('Boardsesh')).toBe(join(app, 'Boardsesh'));
+      expect(binaries.get('ExpoModulesCore')).toBe(
+        join(app, 'Frameworks', 'ExpoModulesCore.framework', 'ExpoModulesCore'),
+      );
+      expect(binaries.get('ExpoModulesJSI')).toBe(
+        join(app, 'Frameworks', 'ExpoModulesJSI.framework', 'ExpoModulesJSI'),
+      );
+      expect(binaries.has('Empty')).toBe(false);
+      // A dylib is registered under both spellings nm might print.
+      expect(binaries.get('libswiftCore.dylib')).toBe(join(app, 'Frameworks', 'libswiftCore.dylib'));
+      expect(binaries.get('libswiftCore')).toBe(join(app, 'Frameworks', 'libswiftCore.dylib'));
+      // PlugIns/*.appex are their own images and are out of scope for now.
+      expect(binaries.has('Widgets')).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

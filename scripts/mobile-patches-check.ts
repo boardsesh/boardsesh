@@ -97,13 +97,13 @@ export const RULES: readonly PatchRule[] = [
     package: '@expo/fingerprint',
     file: 'build/utils/Path.js',
     sentinels: ['normalizeBunIsolatedModulePath', 'BUN_ISOLATED_MODULE_ROOT_REGEX'],
-    patchedKey: '@expo/fingerprint@0.20.7',
+    patchedKey: '@expo/fingerprint@0.20.11',
   },
   {
     package: '@expo/fingerprint',
     file: 'build/hash/Hash.js',
     sentinels: ['normalizeBunIsolatedModulePath'],
-    patchedKey: '@expo/fingerprint@0.20.7',
+    patchedKey: '@expo/fingerprint@0.20.11',
   },
   {
     package: 'react-native-screens',
@@ -171,7 +171,7 @@ export const RULES: readonly PatchRule[] = [
       'hideSwallowingMissingNativeHandler();',
       'const close = hideSwallowingMissingNativeHandler;',
     ],
-    patchedKey: '@expo/ui@57.0.11',
+    patchedKey: '@expo/ui@57.0.14',
   },
   // The iOS half wires the native post-animation dismiss signal through to the
   // `onFullyDismissed` prop. Drop it and the prop still TYPE-checks (the types
@@ -182,7 +182,7 @@ export const RULES: readonly PatchRule[] = [
     file: 'src/community/bottom-sheet/BottomSheet.ios.tsx',
     sentinels: ['onFullyDismissedRef', 'onDismiss={fireCloseCallbacks}', 'coordinator must observe index -1'],
     orderedSentinels: ['onChangeRef.current?.(-1);', 'onFullyDismissedRef.current?.();'],
-    patchedKey: '@expo/ui@57.0.11',
+    patchedKey: '@expo/ui@57.0.14',
   },
   // ExpoModulesCore uses relative file URLs for xcasset names, so
   // `localAssetName` must keep those while rejecting absolute/hosted file URLs
@@ -211,7 +211,7 @@ export const RULES: readonly PatchRule[] = [
  * of quietly landing unguarded.
  */
 export const UNGUARDED_PATCHES: Readonly<Record<string, string>> = {
-  'expo-dev-launcher@57.0.12':
+  'expo-dev-launcher@57.0.16':
     "raises the iOS dev-launcher request timeout from 10s to 120s. Under Bun's isolated linker the package is " +
     'only reachable through expo-dev-client, so createNodeEnv cannot resolve it from packages/mobile. It is also ' +
     'dev-client-only — it never ships in a store binary.',

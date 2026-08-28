@@ -209,18 +209,33 @@ describe('native release train workflow contracts', () => {
   // version skew is visible, since a prebuilt xcframework's undefined symbols
   // are resolved for the first time by dyld at launch. See
   // scripts/mobile-framework-abi-check.ts.
+  //
+  // Asserted against the PARSED workflow, not raw-string offsets: `vp run
+  // mobile:upload-dsyms` and `restore-keys` both appear in prose comments long
+  // before (or instead of) the steps they name, so an indexOf/toContain version
+  // of these checks reports on the comments rather than the pipeline.
+  const stepsOf = (source: string): { name?: string; run?: string; uses?: string; with?: Record<string, unknown> }[] =>
+    Object.values((parse(source) as { jobs: Record<string, { steps?: [] }> }).jobs).flatMap((job) => job.steps ?? []);
+
+  const indexOfStepRunning = (source: string, command: string): number =>
+    stepsOf(source).findIndex((step) => typeof step.run === 'string' && step.run.includes(command));
+
   it('checks the embedded framework ABI before anything leaves the runner', () => {
     const ci = workflow('ios-rn-ci.yml');
     for (const source of [ios, ci]) {
-      expect(source).toContain('vp run mobile:abi-check');
+      expect(indexOfStepRunning(source, 'vp run mobile:abi-check')).toBeGreaterThanOrEqual(0);
     }
 
     // Ordering is the whole point on the release train: after the export the
     // binary is already in TestFlight and the fingerprint tag makes the next
     // push skip the native build, so a later failure is unfixable without a
     // manual rebuild. A reorder is exactly what this assertion catches.
-    expect(ios.indexOf('vp run mobile:abi-check')).toBeLessThan(ios.indexOf('xcodebuild -exportArchive'));
-    expect(ios.indexOf('vp run mobile:abi-check')).toBeLessThan(ios.indexOf('vp run mobile:upload-dsyms'));
+    const abiCheck = indexOfStepRunning(ios, 'vp run mobile:abi-check');
+    for (const later of ['xcodebuild -exportArchive', 'vp run mobile:upload-dsyms']) {
+      const step = indexOfStepRunning(ios, later);
+      expect(step).toBeGreaterThanOrEqual(0);
+      expect(abiCheck).toBeLessThan(step);
+    }
 
     // The PR job needs a deterministic product path for the check to point at.
     expect(ci).toContain('-derivedDataPath packages/mobile/ios/build');
@@ -232,8 +247,12 @@ describe('native release train workflow contracts', () => {
   // bucket, so a PR could build against a release build's Pods.
   it('never restores a stale Pods tree from a prefix key', () => {
     for (const source of [ios, workflow('ios-rn-ci.yml')]) {
-      expect(source).toContain('packages/mobile/ios/Pods');
-      expect(source).not.toContain('restore-keys');
+      const podsCaches = stepsOf(source).filter(
+        (step) =>
+          step.uses?.startsWith('actions/cache') && String(step.with?.path).includes('packages/mobile/ios/Pods'),
+      );
+      expect(podsCaches).toHaveLength(1);
+      for (const cache of podsCaches) expect(cache.with).not.toHaveProperty('restore-keys');
     }
   });
 });
