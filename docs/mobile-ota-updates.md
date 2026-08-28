@@ -47,36 +47,6 @@ Postgres and left V2 running untouched while its fleet drained. The URL cutover 
 
 One version governs both halves of the self-hosted path, and it lives in exactly one place:
 `EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts`, currently **`eoas@3.1.2`**. The matching server image is
-`ghcr.io/mercuretechnologies/xprem:v3.1.2` — **which Railway is not on yet**: the deployed tag is
-still 3.0.5 until the hand-off below, and that is fine (see the CLI-leads-server rule). `scripts/__tests__/eoas-version-parity.test.ts` fails CI
-if this doc, the setup runbook or the rollback helper drifts off the pin — root `scripts/` has no
-typecheck task, so nothing else would catch it.
-
-**The CLI may lead the server; it must never trail it.** The old rule here demanded an exact match,
-but that was our own convention, not a protocol requirement — neither side exchanges a version, and
-there is no version endpoint on the server (the deployed tag is only visible in the Railway
-dashboard). 3.1.2 was checked against the still-3.0.5 server before the pin moved: the three routes
-a publish uses (`/{appId}/requestUploadUrl/{branch}`, `/uploadLocalFile`,
-`/markUpdateAsUploaded/{branch}`) are unchanged, and the `markUpdateAsUploaded` block is
-byte-identical between the two builds.
-
-Two things need the **Railway image on v3.1.2** and do not work before it:
-
-- server-side reuse of the previous update's assets (xprem #165) — see
-  [The throttle](#the-throttle-and-what-actually-fixes-it) for what that is worth;
-- `vp run mobile:ota-rollback -- --mode republish`: 3.1.2 lists republish candidates through a new
-  `.../runtimeVersion/<rv>/publish-groups` route that 3.0.5 does not serve, and can pass
-  `?publishGroup=` on the republish call itself; back-compat for older clients is server-side
-  (xprem #168). The helper prints a warning before running it. `--mode embedded` — the mode the
-  incident runbook uses — is unaffected.
-
-After any bump: re-verify `/hc` = 200, `/ready` = 200, a header-carrying manifest + asset probe, and
-run `eoas doctor`.
-
-### Versions: the CLI pin and the server image
-
-One version governs both halves of the self-hosted path, and it lives in exactly one place:
-`EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts`, currently **`eoas@3.1.2`**. The matching server image is
 `ghcr.io/mercuretechnologies/xprem:v3.1.2`, which is deployed on Railway. `scripts/__tests__/eoas-version-parity.test.ts` fails CI
 if this doc, the setup runbook or the rollback helper drifts off the pin — root `scripts/` has no
 typecheck task, so nothing else would catch it.
