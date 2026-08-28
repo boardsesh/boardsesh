@@ -74,6 +74,8 @@ function parseJwtSubject(response: MockResponse): unknown {
 const testUserId = crypto.randomUUID();
 const oversizedUserIds = Array.from({ length: 9 }, () => crypto.randomUUID());
 const allTestUserIds = [testUserId, ...oversizedUserIds];
+const legacyTestEmail = `Legacy.Native.Login.${testUserId}@example.com`;
+const oversizedTestEmail = `Oversized.Native.Group.${oversizedUserIds[0]}@example.com`;
 
 describe('native credentials auth against Postgres', () => {
   beforeEach(() => {
@@ -87,7 +89,7 @@ describe('native credentials auth against Postgres', () => {
   it('authenticates a lower-case submission against a legacy mixed-case email row', async () => {
     await db.insert(users).values({
       id: testUserId,
-      email: 'Legacy.Native.Login@example.com',
+      email: legacyTestEmail,
       name: 'Legacy Native Login',
     });
     await db.insert(userCredentials).values({
@@ -96,7 +98,7 @@ describe('native credentials auth against Postgres', () => {
     });
 
     const request = makeRequest({
-      email: 'legacy.native.login@example.com',
+      email: legacyTestEmail.toLowerCase(),
       password: 'mixed-case-password',
     });
     const response = makeResponse();
@@ -112,7 +114,7 @@ describe('native credentials auth against Postgres', () => {
     await db.insert(users).values(
       oversizedUserIds.map((id, index) => ({
         id,
-        email: 'Oversized.Native.Group@example.com',
+        email: oversizedTestEmail,
         name: `Oversized Native Login ${index}`,
       })),
     );
@@ -124,7 +126,7 @@ describe('native credentials auth against Postgres', () => {
     );
 
     const request = makeRequest({
-      email: 'oversized.native.group@example.com',
+      email: oversizedTestEmail.toLowerCase(),
       password: 'oversized-group-password',
     });
     const response = makeResponse();

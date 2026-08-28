@@ -5,7 +5,12 @@ import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { hash } from 'bcryptjs';
+import { compare, hash } from 'bcryptjs';
+
+vi.mock('bcryptjs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('bcryptjs')>();
+  return { ...actual, compare: vi.fn(actual.compare) };
+});
 
 // ---------------------------------------------------------------------------
 // Test secret — must match what generateTokenPair reads from env
@@ -325,6 +330,7 @@ describe('handleNativeAuthCredentials', () => {
 
     expect(res.statusCode).toBe(401);
     expect(parseBody(res).error).toBe('Invalid email or password');
+    expect(vi.mocked(compare)).toHaveBeenCalledTimes(8);
     expect(mockDbInsertValues).not.toHaveBeenCalled();
   });
 
