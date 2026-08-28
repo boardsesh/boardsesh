@@ -44,8 +44,9 @@
 // Worst-case lifetime artifact downloads per scope: 3 (transport) + 2
 // (structural) + 2 (the one re-armed structural round) = 7, each separated by at
 // least one cooldown rung. `database-locked` adds no downloads at all — it fires
-// on bytes already on disk, and the retained-artifact path does not delete them. `snapshot-bootstrap.test.ts` pins that number so any
-// future loosening shows up in a diff.
+// on bytes already on disk, and the retained-artifact path does not delete
+// them. `snapshot-bootstrap.test.ts` pins that number so any future loosening
+// shows up in a diff.
 //
 // ROLLBACK SAFETY. `bootstrap-retry:<scopeKey>` is the source of truth, but every
 // write ALSO mirrors the legacy `bootstrap-attempts:` / `-healed:` /
@@ -246,8 +247,8 @@ export const EMPTY_BOOTSTRAP_RETRY_STATE: BootstrapRetryState = {
  * is the conservative default because a plain `Error` from an adapter's
  * downloader cannot be told apart from a disk-full or cache-dir fault.
  *
- * THE LOCK ESCAPE (issue #4310). A "database is locked" at the import stage says
- * nothing about the artifact — a rebuilt one would lose the same race. Before
+ * THE LOCK ESCAPE (issue #4310). A "database is locked" says nothing about the
+ * artifact — a rebuilt one would lose the same race. Before
  * batching that barely mattered: the import took the lock once, for the whole
  * import. Now it takes it once per batch (~143 times for a Kilter layout)
  * against writers that genuinely exist, including a `removeBoardScopeData` for a
@@ -264,6 +265,15 @@ export const EMPTY_BOOTSTRAP_RETRY_STATE: BootstrapRetryState = {
  * reuse, charge 1 again, and never reach the cap — while `shouldSkipPagedPull`
  * kept skipping the crawl on the ~2-minute cooldown, leaving the board
  * unreachable by both paths forever. See `MAX_BOOTSTRAP_LOCK_FAILURES`.
+ *
+ * DELIBERATELY NOT GATED ON `stage === 'import'`, even though the import is the
+ * only stage that takes a write lock today. The bucket is named by CAUSE, not by
+ * stage, and the fallthrough for an ungated lock error is `structural-device` —
+ * the harshest bucket there is: two strikes, never re-armed by a new `builtAt`.
+ * Charging transient contention there would be strictly worse than charging the
+ * lock budget, which costs no downloads and re-tries three times. So if a future
+ * change ever does put a write on the manifest or download stage, landing here is
+ * the outcome to want, not the one to guard against.
  */
 export function classifyBootstrapFailure(input: {
   cause: unknown;

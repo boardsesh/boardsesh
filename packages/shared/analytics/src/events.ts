@@ -464,8 +464,8 @@ export const SHARED_EVENTS = {
   //    grades artifact, whose transfer and (still unbatched) exclusive
   //    transaction were invisible to every phase field — most of the ~11s p50
   //    gap between `durationMs` and the sum of the phases.
-  // Mobile-only today (the engine
-  // is shared, so a future web offline consumer would fire this too).
+  // Mobile-only today (the engine is shared, so a future web offline consumer
+  // would fire this too).
   OfflineBoardDownloadCompleted: 'Offline Board Download Completed',
   // A bootstrap stage failed, or was cut short. Props: { scopeKey, stage:
   // 'manifest' | 'download' | 'import' | 'grades-download' | 'grades-import' |

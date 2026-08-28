@@ -125,10 +125,14 @@ export async function applyBusyTimeout(db: SqlExecutor, timeoutMs = OFFLINE_DB_B
  * than a regression, so the two ship together.
  *
  * Why it is safe here, in the order the questions get asked:
- *  - PER CONNECTION, not persisted. Unlike `journal_mode`, which lives in the
- *    database file header (see the module header above), `synchronous` is a
- *    connection setting. Applying it to the import task's own connection leaves
- *    every other connection — the app's main one included — at FULL.
+ *  - PER CONNECTION, not persisted, and that connection is short-lived. Unlike
+ *    `journal_mode`, which lives in the database file header (see the module
+ *    header above), `synchronous` is a connection setting — and the only caller
+ *    applies it inside `withExclusiveTransactionAsync`, which expo-sqlite runs
+ *    on a connection it opens (`useNewConnection: true`) and tears down when the
+ *    task returns. So there is no pooled slot to leave loosened: every other
+ *    connection, the app's main one included, stays at FULL, and the loosened
+ *    one stops existing when the import ends.
  *  - IN WAL, NORMAL CANNOT CORRUPT. It only stops fsyncing the WAL on each
  *    commit, so a power loss or OS crash can lose transactions committed in the
  *    last moments before it. The WAL is replayed to its last VALID frame, so a

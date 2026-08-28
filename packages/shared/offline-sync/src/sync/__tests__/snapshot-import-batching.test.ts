@@ -363,8 +363,13 @@ describe('stats keyset query plan', () => {
         .prepare(`EXPLAIN QUERY PLAN ${statsInsert as string}`)
         .all(...Array.from({ length: bindCount }, () => null)) as Array<{ detail: string }>;
       const detail = plan.map((row) => row.detail).join(' | ');
-      expect(detail).toContain('(climb_uuid,angle)>');
-      expect(detail).toContain('board_type=?');
+      // Whitespace-tolerant, but NOT weakened to a row-set check: SQLite renders
+      // the row-value seek without spaces today, and a future release that adds
+      // them should not fail this. What must not change is that the plan names a
+      // (climb_uuid, angle) range seek under the board_type equality — if SQLite
+      // ever stops emitting that shape, this failing loudly is the point.
+      expect(detail).toMatch(/\(\s*climb_uuid\s*,\s*angle\s*\)\s*>/);
+      expect(detail).toMatch(/board_type\s*=\s*\?/);
     } finally {
       planDb.close();
     }
@@ -410,6 +415,39 @@ describe('batch accounting', () => {
       expect(timing).toBeGreaterThanOrEqual(0);
     }
     expect(result.importRowsMs).toBeGreaterThanOrEqual(result.importLockMaxMs);
+  });
+
+  // Dropping the `applyBulkImportPragmas` call would pass every other test in
+  // this file and every row-set assertion in it: the import would still move
+  // exactly the same rows, just paying ~142 fsyncs to do it, and the regression
+  // would surface only as an `importLockMaxMs` shift in the field weeks later.
+  // pragmas.test.ts proves the pragma works in isolation; this proves the import
+  // asks for it — and that it asks in AUTOCOMMIT, before the first transaction,
+  // which is the only place SQLite accepts it.
+  it('drops the import connection to synchronous = NORMAL before it takes any lock', async () => {
+    const { db } = await freshClientDb('pragma');
+    const executedSql: string[] = [];
+    const adapterPrototype = Object.getPrototypeOf(db) as { execAsync: typeof db.execAsync };
+    const realExecAsync = adapterPrototype.execAsync;
+    vi.spyOn(adapterPrototype, 'execAsync').mockImplementation(async function (this: unknown, source: string) {
+      executedSql.push(source);
+      return realExecAsync.call(this, source);
+    } as typeof db.execAsync);
+
+    await bootstrapScopeFromSnapshot({
+      db,
+      scope: KILTER_SCOPE,
+      scopeKey: KILTER_SCOPE_KEY,
+      filePath: artifactPath,
+      batchRows: 3,
+    });
+
+    const pragmaAt = executedSql.findIndex((source) => /PRAGMA\s+synchronous\s*=\s*NORMAL/i.test(source));
+    expect(pragmaAt).toBeGreaterThanOrEqual(0);
+
+    const firstExclusiveAt = executedSql.findIndex((source) => /BEGIN\s+EXCLUSIVE/i.test(source));
+    expect(firstExclusiveAt).toBeGreaterThanOrEqual(0);
+    expect(pragmaAt).toBeLessThan(firstExclusiveAt);
   });
 });
 
