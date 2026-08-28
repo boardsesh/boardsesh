@@ -263,6 +263,28 @@ describe('auth-store over the v2 namespace', () => {
     });
   });
 
+  it('treats a surviving tombstone as already cleared on a second sign-out', async () => {
+    const store = await secureStore();
+    store.__seed(LEGACY_SERVICE, 'boardsesh_jwt', 'legacy-jwt');
+    // A keychain that refuses deletion: the first sign-out cannot remove the
+    // credential, so it overwrites it with the tombstone instead.
+    store.__makeUndeletable(LEGACY_SERVICE);
+    store.__makeUndeletable(V2_SERVICE);
+    const { clearTokens, getAuthToken } = await import('../auth-store');
+
+    await expect(clearTokens()).resolves.toBeUndefined();
+    expect(store.__get(LEGACY_SERVICE, 'boardsesh_jwt')).toBe('__boardsesh_auth_credential_cleared__');
+
+    // Now the device has not been unlocked since boot, so writes reject too. The
+    // stored state is already correct, and the second sign-out has to recognise
+    // that instead of re-writing an identical tombstone and failing on it.
+    store.__failWriteFor(V2_SERVICE, 'boardsesh_jwt');
+    store.__failWriteFor(LEGACY_SERVICE, 'boardsesh_jwt');
+
+    await expect(clearTokens()).resolves.toBeUndefined();
+    await expect(getAuthToken()).resolves.toBeNull();
+  });
+
   it('does not resurrect the session when sign-out races the first-read migration', async () => {
     const store = await secureStore();
     store.__seed(LEGACY_SERVICE, 'boardsesh_jwt', 'legacy-jwt');
