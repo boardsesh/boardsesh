@@ -85,7 +85,7 @@ Common commands:
 
 - `bunx drizzle-kit generate` from `packages/db/` to create migrations. **Never hand-write migration SQL** — it must be in `_journal.json`, which `drizzle-kit generate` updates for you.
 - **When main takes your migration number, run `vp run db:renumber`** — it rebases onto main, moves the migration to the next free number and keeps your SQL. CI usually does it for you: PRs adding a migration get the `db-migration` label, and a merge to main fans out a renumber for every stranded PR. `vp run check:db-migrations` guards the folder on every PR. Full details, including why the bot sometimes hands it back: `docs/db-migrations.md`.
-- Dev DB is a pre-built image (`ghcr.io/boardsesh/boardsesh-dev-db`) with all board data, a test user (`test@boardsesh.com` / `test`), and seed data. Reset: `docker compose down -v && vp run db:up`.
+- Dev DB is a pre-built image (`ghcr.io/boardsesh/boardsesh-dev-db`) with all board data, a test user (`test@boardsesh.com` / `test`), and seed data. Reset: `docker compose down -v && vp run db:up`. Its board catalogue is loaded from the nightly board snapshots at build time (`packages/db/scripts/load-board-snapshots.ts`), not from Aurora APKs — see `docs/board-snapshots.md`.
 
 ### Database hosting (Railway)
 

@@ -1092,6 +1092,31 @@ switches. Recover by fixing or withdrawing the published snapshot inputs:
   filtered entries, temporarily hiding every untouched layout until an unfiltered run restores the full
   index.
 
+### When the catalogue pass fails
+
+The `board-snapshots/v1-catalog` step runs last and touches nothing the fleet reads, so a failure
+there is not a fleet incident — every mobile client keeps bootstrapping from the artifacts the two
+passes before it already published.
+
+What it does break is the seeded developer database image: `Dockerfile.dev-db` resolves that
+manifest and fails the build outright if it is missing, rather than producing an image with no board
+geometry. Consequences, in order of who notices:
+
+- **Nobody, for a while.** The image is only rebuilt by a manual dispatch of
+  `postgres-image-publisher.yml`, so a failed catalogue pass sits unnoticed until someone rebuilds.
+- **`test-dev-db`** on any PR touching `packages/db/**` — that job builds the image, so it is the
+  first automated signal.
+
+The artifact is immutable and content-addressed, and the manifest is only rewritten on success, so a
+failed pass leaves the previous artifact serving. Recovery is a re-dispatch: it is one whole-catalogue
+build with no incremental state, so re-running it is always safe and always sufficient. There is no
+partial-catalogue mode to get stuck in — the export either publishes a complete artifact or leaves
+the last one in place.
+
+If it fails repeatedly, the likely causes are the ones the per-layout passes share (Production
+secrets, the Tigris endpoint) rather than anything catalogue-specific — it reads ~816k rows from
+fourteen tables in one REPEATABLE READ transaction and writes a single ~12 MB object.
+
 ### Format-version bump procedure
 
 Bump `SNAPSHOT_MANIFEST_FORMAT_VERSION` in `snapshot-manifest.ts` (and its `formatVersion: 1` literal type)
@@ -1169,7 +1194,7 @@ lets the image be built entirely from public, production-derived, nightly-verifi
 | Prefix   | `board-snapshots/v1-catalog` — one gzip artifact + its own `manifest.json`                  |
 | Cadence  | The 07:15 UTC nightly only. Never the 15-minute scan; never a `--board`/`--layout` dispatch |
 | Size     | ~12 MB gzipped (~63 MB on disk), dominated by `board_climb_aliases`                         |
-| Consumer | The seeded developer database image (`packages/db/docker/Dockerfile.dev-db`) — issue #4508  |
+| Consumer | `packages/db/scripts/load-board-snapshots.ts`, run by `Dockerfile.dev-db`                   |
 
 Tables, in the order a consumer must load them (foreign keys point backwards):
 

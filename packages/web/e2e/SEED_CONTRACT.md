@@ -55,7 +55,11 @@ When adding a new spec:
 3. If the contract entry is broad enough that `global-setup.ts` could verify
    it cheaply, add the check there too.
 
-The dev-DB image is rebuilt automatically when files in `packages/db/docker/`,
-`packages/db/scripts/`, `packages/db/src/schema/`, `packages/db/drizzle/`, or
-`packages/db/package.json` change on `main` (see CLAUDE.md → "Pre-built
-database image").
+Changes to `packages/db/docker/`, `packages/db/scripts/`, `packages/db/src/schema/`,
+`packages/db/drizzle/` or `packages/db/package.json` are _validated_ on every PR
+by `.github/workflows/dev-db-docker.yml`, but the published image is **not**
+rebuilt automatically: that takes a manual dispatch of
+`.github/workflows/postgres-image-publisher.yml` with the exact `main` SHA, plus
+an environment approval, and then bumping the pinned digest where it is
+referenced (`docker-compose.yml`, `ci.yml`, `e2e-tests.yml`,
+`db-migration-renumber.yml`, `docs/postgres-image-digests.json`).

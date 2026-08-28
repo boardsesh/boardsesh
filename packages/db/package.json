@@ -101,7 +101,8 @@
     "db:refresh-climb-grades": "tsx scripts/refresh-climb-grades.ts",
     "db:seed-social": "tsx scripts/seed-social.ts",
     "db:create-test-user": "tsx scripts/create-test-user.ts",
-    "db:seed-beta-links": "tsx scripts/seed-dev-beta-links.ts"
+    "db:seed-beta-links": "tsx scripts/seed-dev-beta-links.ts",
+    "db:load-snapshots": "tsx scripts/load-board-snapshots.ts"
   },
   "dependencies": {
     "@boardsesh/board-config": "*",

@@ -53,12 +53,25 @@ the full catalog/logical-replication rehearsal, and QEMU boots the actual
 PG18 parent volume, and asserts the exact PostgreSQL 18.4, PostGIS 3.6.4,
 HypoPG 1.4.3, base-image digest, checksum, and PGDATA contracts. A manifest-only
 ARM build is not enough.
-The seeded developer image remains `linux/amd64` because pgloader needs TCP
-during its image build and cannot complete under GitHub's ARM emulation. It is
-not a production database artifact; Apple Silicon development uses Rosetta or a
-native local build. Do not roll the portable image onto ARM hardware unless the
-ARM boot gate passed for the exact workflow revision and the published manifest
-contains both `linux/amd64` and `linux/arm64`.
+
+The seeded developer image is still published `linux/amd64` only, but no longer
+because it cannot be built for ARM. pgloader was the blocker — it needs TCP
+during the image build and cannot complete under GitHub's ARM emulation — and
+the image no longer runs it: the board catalogue now comes from the published
+snapshots (issue #4508).
+
+What is still missing is a runner. The build loads ~900k climbs and derives
+~10M hold rows, which is CPU-bound work that QEMU makes impractical. The
+repository is public, so GitHub's free `ubuntu-24.04-arm` runners are available;
+what an ARM64 seeded image needs is for `postgres-image-publisher.yml` to build
+on one and combine the two single-platform OCI layouts into a manifest list
+before `oras cp`. Until that exists, Apple Silicon development uses Rosetta or a
+native local build.
+
+The seeded image is not a production database artifact. Do not roll the
+_portable_ image onto ARM hardware unless the ARM boot gate passed for the exact
+workflow revision and the published manifest contains both `linux/amd64` and
+`linux/arm64`.
 
 Record the resulting **Boardsesh image digest**, not just a tag. Railway and the
 homelab must use that same digest. Before either is started, verify its OCI
