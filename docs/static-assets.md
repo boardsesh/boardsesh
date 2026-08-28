@@ -95,8 +95,10 @@ SHA-256, MIME type, immutable caching, and CORS). Each public CDN attempt has a 
 failures (404, 429, 5xx, network errors, timeouts, or stale headers/body) retry up to six times with bounded
 exponential jitter; permanent 4xx responses fail immediately. The complete `sync-static-assets` job has a 10-minute
 timeout so a stalled storage or CDN connection cannot hold the serialized production deployment indefinitely.
-When Cloudflare desired state changes in the same deployment, `sync-static-assets` waits for `deploy-cloudflare` to
-succeed (or skip when there is no Cloudflare change), preventing public validation from racing DNS convergence.
+When Cloudflare desired state changes in the same deployment, `sync-static-assets` waits for `deploy-cloudflare`,
+preventing public validation from racing DNS convergence. A successful or legitimately skipped Cloudflare job allows
+publication; a failed or cancelled prerequisite explicitly fails `sync-static-assets` so downstream builds cannot
+mistake a dependency skip for permission to deploy unvalidated catalog URLs.
 
 After every object passes, it writes `static/v1/manifest.json` as a short-cached audit record. Seeing a new audit
 manifest therefore means all assets it names passed publication QA. A failed upload blocks web/Expo-web artifacts

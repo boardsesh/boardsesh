@@ -648,8 +648,15 @@ describe('deploy-cloudflare workflow wiring', () => {
 
     expect(syncJob).toContain('needs: [detect-changes, deploy-cloudflare]');
     expect(syncJob).toContain('always()');
-    expect(syncJob).toContain("needs.deploy-cloudflare.result == 'success'");
-    expect(syncJob).toContain("needs.deploy-cloudflare.result == 'skipped'");
+    const syncJobCondition = syncJob.slice(0, syncJob.indexOf('    runs-on:'));
+    expect(syncJobCondition).not.toContain('needs.deploy-cloudflare.result');
+    const prerequisiteStep = syncJob.slice(
+      syncJob.indexOf('      - name: Require successful Cloudflare prerequisite'),
+      syncJob.indexOf('      - uses: actions/checkout@v6'),
+    );
+    expect(prerequisiteStep).toContain('CLOUDFLARE_DEPLOY_RESULT: ${{ needs.deploy-cloudflare.result }}');
+    expect(prerequisiteStep).toContain('success|skipped)');
+    expect(prerequisiteStep).toContain('exit 1');
   });
 });
 

@@ -185,7 +185,6 @@ jobs:
     if: >-
       always()
       && needs.detect-changes.outputs.static_assets_changed == 'true'
-      && (needs.deploy-cloudflare.result == 'success' || needs.deploy-cloudflare.result == 'skipped')
     runs-on: ubuntu-latest
     # A stuck S3/CDN socket must release the serialized production-deploy
     # concurrency group. A healthy full-catalog validation takes about three
@@ -193,6 +192,22 @@ jobs:
     timeout-minutes: 10
     environment: Production
     steps:
+      # Run this job even when its Cloudflare dependency failed, then fail it
+      # explicitly. Otherwise GitHub reports the dependency-blocked job as
+      # "skipped", which downstream build gates legitimately accept when no
+      # static assets changed.
+      - name: Require successful Cloudflare prerequisite
+        env:
+          CLOUDFLARE_DEPLOY_RESULT: ${{ needs.deploy-cloudflare.result }}
+        run: |
+          case "$CLOUDFLARE_DEPLOY_RESULT" in
+            success|skipped) ;;
+            *)
+              echo "::error::Cloudflare prerequisite finished with result: $CLOUDFLARE_DEPLOY_RESULT"
+              exit 1
+              ;;
+          esac
+
       - uses: actions/checkout@v6
 
       - uses: oven-sh/setup-bun@v2
