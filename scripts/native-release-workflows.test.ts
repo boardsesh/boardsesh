@@ -86,6 +86,8 @@ describe('native release train workflow contracts', () => {
     expect(android).toContain('APK SHA-256: `${{ env.ANDROID_APK_SHA256 }}`');
     expect(android).toContain('actions/upload-artifact@v4');
     expect(android).toContain('actions/download-artifact@v4');
+    expect(android).toContain('name: boardsesh-rn-android-${{ github.run_number }}');
+    expect(android).not.toContain('outputs.apk_artifact_name');
     expect(android).toContain('tracks: internal');
     expect(android).toContain('Require Play upload credentials');
     expect(android).toContain('rerun failed jobs to repair tags or the APK prerelease');

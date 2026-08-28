@@ -201,7 +201,6 @@ jobs:
     environment: Native Release
     outputs:
       candidate_ready: ${{ steps.candidate_metadata.outputs.ready }}
-      apk_artifact_name: ${{ steps.candidate_metadata.outputs.apk_artifact_name }}
       apk_sha256: ${{ steps.candidate_metadata.outputs.apk_sha256 }}
       apk_size: ${{ steps.candidate_metadata.outputs.apk_size }}
       build_tag: ${{ steps.candidate_metadata.outputs.build_tag }}
@@ -623,7 +622,6 @@ jobs:
           echo "ANDROID_BUILD_TAG=$build_tag" >> "$GITHUB_ENV"
           echo "ANDROID_APK_SHA256=$apk_sha256" >> "$GITHUB_ENV"
           echo "ANDROID_APK_SIZE=$apk_size" >> "$GITHUB_ENV"
-          echo "apk_artifact_name=boardsesh-rn-android-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "apk_sha256=$apk_sha256" >> "$GITHUB_OUTPUT"
           echo "apk_size=$apk_size" >> "$GITHUB_OUTPUT"
           echo "build_tag=$build_tag" >> "$GITHUB_OUTPUT"
@@ -698,7 +696,7 @@ jobs:
       - name: Download signed APK from the Play-upload job
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.build-and-release.outputs.apk_artifact_name }}
+          name: boardsesh-rn-android-${{ github.run_number }}
           path: candidate-apk
 
       - name: Verify retained APK provenance
