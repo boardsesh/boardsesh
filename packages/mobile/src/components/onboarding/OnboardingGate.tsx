@@ -2,19 +2,13 @@ import { useEffect, useRef } from 'react';
 import { router, useSegments } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { hasSeenOnboarding } from '../../lib/onboarding/onboarding-storage';
+import { DEEP_LINK_SEGMENTS } from '../../lib/deep-link-segments';
 import { useProfile } from '../../lib/graphql/hooks';
 
 type OnboardingGateProps = {
   /** True once auth + fonts are resolved and the splash has hidden. */
   ready: boolean;
 };
-
-// Route groups the gate must NOT interrupt: a cold start that landed on a
-// join/share/session deep link, the auth flow, or the onboarding screen itself.
-// On those the user has explicit intent elsewhere; the walkthrough would steal
-// focus. The Climbs tab (the launcher's default landing) is the only surface we
-// push over.
-const DEEP_LINK_SEGMENTS = new Set(['join', 'share-beta', 'session', 'auth', 'onboarding', 'boards']);
 
 /**
  * First-run gate. Once the app is ready (auth + fonts loaded, splash hidden) it

@@ -787,6 +787,18 @@ export default function MoreScreen() {
         onPress: navAction(() => router.push('/(tabs)/profile/dev-offline-writes')),
       });
     }
+    if (__DEV__) {
+      devRows.push({
+        kind: 'nav',
+        key: 'qaPick',
+        // i18n-ignore-next-line — tester-only dev tooling
+        label: 'QA: pick a PR (dev)',
+        // i18n-ignore-next-line
+        subtitle: 'Open the tester PR picker; surfing itself only works in a store build',
+        icon: 'otaChannel',
+        onPress: navAction(() => router.push('/qa/pick?prNumbers=1')),
+      });
+    }
     if (profile?.isTester) {
       devRows.push({
         kind: 'nav',

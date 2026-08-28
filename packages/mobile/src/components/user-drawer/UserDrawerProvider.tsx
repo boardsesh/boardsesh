@@ -4,6 +4,7 @@ import { openDiscordInvite } from '../../lib/discord';
 import { useConfirmSignOut } from '../../hooks/use-confirm-sign-out';
 import type { ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
 import { FeedbackSheet, type FeedbackSheetMode } from './FeedbackSheet';
+import { QaVerdictSheet } from './QaVerdictSheet';
 
 type BoardReturnTo = '/(tabs)/discover' | '/(tabs)/climbs';
 
@@ -29,6 +30,12 @@ type UserDrawerContextValue = {
   signOutAction: () => void;
   setFeedbackMode: (mode: FeedbackSheetMode) => void;
   presentFeedback: () => void;
+  /** Crowdsourced QA (tester-only): the list of PR previews this build can load. */
+  navigateToQaPick: () => void;
+  /** Crowdsourced QA (tester-only): what to test on the preview already running. */
+  navigateToQaBrief: () => void;
+  /** Crowdsourced QA (tester-only): approve / decline the running preview. */
+  presentQaVerdict: () => void;
 };
 
 const UserDrawerContext = createContext<UserDrawerContextValue | null>(null);
@@ -47,6 +54,7 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
   const confirmSignOut = useConfirmSignOut();
   const segments = useSegments();
   const feedbackSheetRef = useRef<ManagedSheetHandle>(null);
+  const qaVerdictSheetRef = useRef<ManagedSheetHandle>(null);
   const [feedbackMode, setFeedbackMode] = useState<FeedbackSheetMode>('rating');
 
   // Mirror the latest focused-route segments into a ref so the callbacks below
@@ -119,6 +127,18 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
     feedbackSheetRef.current?.present();
   }, []);
 
+  const navigateToQaPick = useCallback(() => {
+    router.push('/qa/pick');
+  }, []);
+
+  const navigateToQaBrief = useCallback(() => {
+    router.push('/qa/brief');
+  }, []);
+
+  const presentQaVerdict = useCallback(() => {
+    qaVerdictSheetRef.current?.present();
+  }, []);
+
   const contextValue = useMemo(
     () => ({
       openUserDrawer,
@@ -134,6 +154,9 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
       signOutAction,
       setFeedbackMode,
       presentFeedback,
+      navigateToQaPick,
+      navigateToQaBrief,
+      presentQaVerdict,
     }),
     [
       openUserDrawer,
@@ -149,6 +172,9 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
       signOutAction,
       setFeedbackMode,
       presentFeedback,
+      navigateToQaPick,
+      navigateToQaBrief,
+      presentQaVerdict,
     ],
   );
 
@@ -163,6 +189,9 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
           close(after) sequencing) keeps it on top with no concurrent-presentation
           deadlock. */}
       <FeedbackSheet sheetRef={feedbackSheetRef} mode={feedbackMode} />
+      {/* Same root-hosting rule as FeedbackSheet above: a native sheet rendered
+          inside the transparentModal drawer route would present behind it. */}
+      <QaVerdictSheet sheetRef={qaVerdictSheetRef} />
     </UserDrawerContext.Provider>
   );
 }

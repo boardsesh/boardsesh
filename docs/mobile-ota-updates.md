@@ -898,6 +898,13 @@ is the single entry point, so the app never shows a button that can silently do 
 server feature is off or the binary fell back to EAS. The picker is available to every app user and
 shows xprem's raw branch names such as `pr-4613`.
 
+On top of that marker, a user whose profile has `isTester` gets the in-app **crowdsourced QA** flow:
+on every cold start the app either asks them to pick a PR preview from a list (title, risk, how
+fresh) or, if they are already on a `pr-<n>` bundle, shows that PR's `## Test plan`. Finishing sends
+an approve/decline verdict back to the PR and clears the branch pin. The marker stays the escape
+hatch for everyone else and for any branch the QA list does not cover. See
+`docs/crowdsourced-qa-mobile.md` (mobile) and `docs/crowdsourced-qa.md` (backend + GitHub side).
+
 The native request headers are fixed in `app.config.ts`:
 
 ```text

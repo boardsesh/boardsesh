@@ -356,6 +356,12 @@ waits out the whole transition and is disabled in screenshot mode.
   pushes them (rule 1, the suspend→push→re-present pattern). Hold/zone are full-screen interactive
   boards → pushed routes (rule 3); setters is a searchable list route.
 - **Onboarding** — immersive cover, not over the live tab bar → `fullScreenModal`.
+- **Crowdsourced-QA verdict sheet** (`QaVerdictSheet`) — opened from a user-drawer row, so it
+  follows the same root-hosting rule as `FeedbackSheet`: mounted at the `UserDrawerProvider` root,
+  **never** inside the `user-drawer` transparentModal route, and presented only through the route's
+  `close(after)` once that route's view controller is gone (#3211). Its two QA screens
+  (`app/qa/pick`, `app/qa/brief`) are plain `modal` cards — self-contained flows, so rule 1 applies
+  unchanged.
 - **Canonical climb URLs** (`app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/{list,view,play}`
   and `app/b/[board_slug]/...`) — a third category the decision tree above doesn't cover:
   **redirectors**, not surfaces. They exist so the browser build serves the same URLs the Next.js
