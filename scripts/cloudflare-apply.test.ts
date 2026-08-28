@@ -177,6 +177,10 @@ describe('diffDnsRecord', () => {
     ).toBeNull();
   });
 
+  it('fails closed when the proxy-only ws record is missing', () => {
+    expect(() => diffDnsRecord(wsDnsRecord, null)).toThrow('proxy-only managed');
+  });
+
   it('plans creation of the fully managed assets record when it is missing', () => {
     const change = diffDnsRecord(assetsDnsRecord, null);
     expect(change).toMatchObject({
@@ -636,7 +640,11 @@ describe('deploy-cloudflare workflow wiring', () => {
   });
 
   it('converges Cloudflare before publishing assets when both targets change', () => {
-    const syncJob = workflow.slice(workflow.indexOf('  sync-static-assets:'), workflow.indexOf('  build-web:'));
+    const syncJobStart = workflow.indexOf('  sync-static-assets:');
+    const buildWebStart = workflow.indexOf('  build-web:');
+    expect(syncJobStart).toBeGreaterThan(-1);
+    expect(buildWebStart).toBeGreaterThan(syncJobStart);
+    const syncJob = workflow.slice(syncJobStart, buildWebStart);
 
     expect(syncJob).toContain('needs: [detect-changes, deploy-cloudflare]');
     expect(syncJob).toContain('always()');
