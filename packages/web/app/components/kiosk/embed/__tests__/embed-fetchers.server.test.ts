@@ -9,13 +9,14 @@
 // working embeds; one that flips ok/null into error would mask the security
 // gates behind the retry screen — both directions matter.
 
-import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/app/lib/graphql/client', () => ({
   getGraphQLHttpUrl: () => 'http://backend.test/graphql',
 }));
 
+import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
 import { fetchBoardForEmbed, fetchGymBoardsForEmbed, fetchGymForEmbed } from '../embed-fetchers';
 
 const mockFetch = vi.fn();
@@ -38,6 +39,48 @@ function nextUuid(): string {
 
 beforeEach(() => {
   mockFetch.mockReset();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+// An unbounded SSR fetch is what turns a stalled backend into a blank iframe:
+// Node's fetch has no default timeout, so nothing else in this file's contract
+// gets a chance to run. These pin that the deadline is actually attached to the
+// request — not merely declared as a constant somewhere.
+describe('every embed fetch carries the SSR deadline', () => {
+  it('passes the AbortSignal built from SSR_BACKEND_FETCH_TIMEOUT_MS to fetch', async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    mockFetch.mockResolvedValueOnce(jsonResponse({ data: { board: null } }));
+
+    await fetchBoardForEmbed(nextUuid());
+
+    expect(timeoutSpy).toHaveBeenCalledWith(SSR_BACKEND_FETCH_TIMEOUT_MS);
+    const [, requestInit] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(requestInit.signal).toBe(timeoutSpy.mock.results[0].value);
+    expect(requestInit.signal?.aborted).toBe(false);
+  });
+
+  it('holds the deadline for the gym and gym-boards queries too', async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    mockFetch.mockResolvedValueOnce(jsonResponse({ data: { gym: null } }));
+    mockFetch.mockResolvedValueOnce(jsonResponse({ data: { gymBoards: [] } }));
+
+    await fetchGymForEmbed(nextUuid());
+    await fetchGymBoardsForEmbed(nextUuid());
+
+    expect(timeoutSpy.mock.calls).toEqual([[SSR_BACKEND_FETCH_TIMEOUT_MS], [SSR_BACKEND_FETCH_TIMEOUT_MS]]);
+    for (const [, requestInit] of mockFetch.mock.calls as [string, RequestInit][]) {
+      expect(requestInit.signal).toBeInstanceOf(AbortSignal);
+    }
+  });
+
+  it('maps a fired deadline to error, so the widget paints the retry screen', async () => {
+    mockFetch.mockRejectedValueOnce(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
+
+    expect(await fetchBoardForEmbed(nextUuid())).toEqual({ status: 'error' });
+  });
 });
 
 describe('fetchBoardForEmbed — transient failures are errors, never ok/null', () => {

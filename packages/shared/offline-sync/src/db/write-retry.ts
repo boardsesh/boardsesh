@@ -8,17 +8,23 @@
 // saves.
 //
 // SIZING, from measurement rather than assertion:
-//   - Attempt 1 keeps the shipped 5s `busy_timeout` (OFFLINE_DB_BUSY_TIMEOUT_MS),
-//     so a first-attempt failure already means a real holder sat on the file for
-//     five seconds.
+//   - Attempt 1 of a user-facing write takes 2.5s
+//     (OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS). NOTE what a first-attempt failure
+//     did and did not mean: until #4332 the busy handler was never reached on this
+//     path at all, because the task opened a deferred transaction with a SELECT.
+//     Every one of the 17 `Offline Local Write Attempt Failed` events over 30 days
+//     ran the WHOLE two-attempt ladder — a 150ms sleep included — in 174-342ms,
+//     which an honoured 5s timeout makes arithmetically impossible. With
+//     `beginImmediateWrite` the wait is real for the first time, and 2.5s carries
+//     a 7x margin over the longest window ever observed.
 //   - Attempt 2 gets a shortened 1.5s timeout after a 150ms gap. Measured
 //     `Offline Board Download Completed.importMs` over 60 days is p50 806ms,
 //     p90 2.3s, max 3.2s — every observed import fits inside attempt 1's window,
-//     so a second FULL 5s wait buys almost nothing. Attempt 2 is a "did the lock
+//     so a second full wait buys almost nothing. Attempt 2 is a "did the lock
 //     clear in the gap" probe.
 //   - A caller may then run a smaller fallback write (mobile's outbox-only tick
 //     degrade) on the remaining budget.
-// Worst case 5000 + 150 + 1500 + 1000 + 150 + 1000 = 8.8s, under the hard
+// Worst case 2500 + 150 + 1500 + 1000 + 150 + 1000 = 6.3s, under the hard
 // OFFLINE_LOCAL_WRITE_BUDGET_MS wall-clock cap, so no composition of per-attempt
 // timeouts can overrun it.
 //
@@ -27,7 +33,8 @@
 // db/vacuum.ts), and it is reachable from the UI (remove a downloaded board).
 // Waiting that out would freeze the log-ascent sheet for twenty seconds. That
 // case exits as a localized error instead, and `onSettled`'s `elapsedMs` is what
-// will finally measure how long these locks really are.
+// measures how long these locks really are — it is the number that refuted the
+// "holders are minutes long" theory in #4332.
 
 import { isDatabaseLockedError } from './lock-errors';
 

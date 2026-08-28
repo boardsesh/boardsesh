@@ -55,7 +55,7 @@ function putOp({ rating, difficulty_grade_id, comment, created_at }: RatingPaylo
 }
 
 async function syncRating(payload: RatingPayload): Promise<void> {
-  await applyClimbRatings(db, USER_ID, [putOp(payload)], new Map<string, string>());
+  await applyClimbRatings(db, USER_ID, [putOp(payload)], new Map<string, string>(), () => {});
 }
 
 async function readRating() {
@@ -216,13 +216,13 @@ describe('applyClimbRatings timestamps (real Postgres)', () => {
         }) as unknown as PowerSyncOp,
     );
 
-    await applyClimbRatings(db, USER_ID, ops, new Map<string, string>());
+    await applyClimbRatings(db, USER_ID, ops, new Map<string, string>(), () => {});
     await db
       .update(boardClimbRatings)
       .set({ updatedAt: BACKDATED_UPDATED_AT })
       .where(eq(boardClimbRatings.userId, USER_ID));
 
-    await applyClimbRatings(db, USER_ID, ops, new Map<string, string>());
+    await applyClimbRatings(db, USER_ID, ops, new Map<string, string>(), () => {});
 
     const rows = await db
       .select({ updatedAt: boardClimbRatings.updatedAt, createdAt: boardClimbRatings.createdAt })

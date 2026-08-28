@@ -57,6 +57,10 @@ vi.mock('@boardsesh/board-react', () => ({
 // hook; mock it so the test doesn't need a QueryClientProvider.
 vi.mock('../../../hooks/use-local-ticks', () => ({ useLocalPendingTicks: () => ({ data: 0 }) }));
 
+// The section's first branch is the signed-out prompt; every case here is about
+// a member's own entries, so the session is signed in.
+vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
+
 import { LogbookSection } from '../LogbookSection';
 
 function makeEntry(overrides: Partial<LogbookEntry>): LogbookEntry {

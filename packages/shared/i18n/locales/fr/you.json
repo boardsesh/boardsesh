@@ -1,12 +1,7 @@
 {
   "metadata": {
     "dashboard": {
-      "title": "Vous",
-      "description": "Votre tableau de bord d'escalade sur Boardsesh"
-    },
-    "sessions": {
-      "title": "Sessions",
-      "description": "Vos sessions de grimpe sur Boardsesh"
+      "title": "Vous"
     }
   },
   "tabs": {
@@ -15,9 +10,6 @@
     "logbook": "Carnet",
     "social": "Social",
     "climbs": "Blocs"
-  },
-  "progress": {
-    "title": "Progression"
   },
   "mobile": {
     "unknownName": "Grimpeur",

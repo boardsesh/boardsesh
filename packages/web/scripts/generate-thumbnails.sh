@@ -120,6 +120,13 @@ while IFS= read -r -d '' f; do
 done < <(find "$PUBLIC_DIR/images/moonboard" -name "*.png" -print0)
 echo ""
 
+# Woods board images
+echo "Woods:"
+for f in "$PUBLIC_DIR"/images/woods/*.png; do
+  [[ -f "$f" ]] && convert_thumbnail "$f"
+done
+echo ""
+
 # Summary
 echo "---"
 echo "Converted: $converted files"

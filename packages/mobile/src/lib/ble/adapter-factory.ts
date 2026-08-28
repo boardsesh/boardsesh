@@ -6,7 +6,7 @@ import {
 } from '../../../modules/live-activity/src/index';
 import { RNBleAdapter } from './adapter';
 import { NativeIosBleAdapter, nativeBleSupportsConnectionAdoption } from './native-ios-adapter';
-import type { BluetoothAdapter, BoardScanFamily, DevicePickerFn } from './types';
+import type { BleAdapterOptions, BluetoothAdapter, BoardScanFamily, DevicePickerFn } from './types';
 
 // Returns the BluetoothAdapter implementation appropriate for the current
 // platform. iOS uses the native Swift BoardBleManager (so widget Live
@@ -17,11 +17,21 @@ import type { BluetoothAdapter, BoardScanFamily, DevicePickerFn } from './types'
 // into the running binary — covers Expo Go and any preview build older than
 // the one that bundled the live-activity module. Production preview builds
 // always take the native path.
-export function createBluetoothAdapter(devicePicker: DevicePickerFn, scanFamily: BoardScanFamily): BluetoothAdapter {
-  if (Platform.OS === 'ios' && boardBleNative) {
-    return new NativeIosBleAdapter(devicePicker, scanFamily);
+//
+// A board that demands acknowledged writes (options.preferWriteWithResponse —
+// Woods, per its protocol spec §8) also stays on RNBleAdapter on iOS: the
+// native path's write type is fixed in Swift until #3314, and routing through
+// ble-plx additionally keeps the Swift encoder — which would treat a Woods
+// board as Aurora — from ever seeing a Woods configuration.
+export function createBluetoothAdapter(
+  devicePicker: DevicePickerFn,
+  scanFamily: BoardScanFamily,
+  options?: BleAdapterOptions,
+): BluetoothAdapter {
+  if (Platform.OS === 'ios' && boardBleNative && !options?.preferWriteWithResponse) {
+    return new NativeIosBleAdapter(devicePicker, scanFamily, options);
   }
-  return new RNBleAdapter(devicePicker, scanFamily);
+  return new RNBleAdapter(devicePicker, scanFamily, options);
 }
 
 // `true` iff the runtime adapter is the native iOS one — used by the

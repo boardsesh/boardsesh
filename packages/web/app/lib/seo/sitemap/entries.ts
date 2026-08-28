@@ -57,6 +57,49 @@ export function expandAllLocales(items: readonly SitemapItem[]): SitemapUrlEntry
   return items.flatMap((item) => expandLocales(item));
 }
 
+/**
+ * How many `<url>` entries `expandAllLocales` would produce, without building
+ * them. The index checks every shard against the URL budget on a `force-dynamic`
+ * route, and materialising up to 45,000 entries — each carrying a five-key
+ * alternates record — only to read `.length` turns a guard into a cost.
+ * `expandLocales` emits exactly one entry per supported locale for every item,
+ * which is what makes this arithmetic exact rather than an estimate; a unit test
+ * pins the two against each other so a future expansion rule cannot drift.
+ */
+export function allLocalesUrlCount(items: readonly SitemapItem[]): number {
+  return items.length * SUPPORTED_LOCALES.length;
+}
+
+/**
+ * One `<url>` per item — default locale only, and no `xhtml:link` block.
+ *
+ * The climb shards' expansion, and a deliberate inconsistency with the boards
+ * shard (which does fan out to all four locales). The difference is volume:
+ * boards is 690 items → 2,760 URLs; production emits 52,842 climb items, which
+ * would fan out to 211,368 locale URLs with a 5-entry alternates block on each.
+ * Even one 10,000-item page would expand to 40,000 URL entries and exceed
+ * Vercel's 4.5 MB response ceiling. Do not "fix" the inconsistency by fanning
+ * climbs out.
+ *
+ * Dropping the sitemap-side hreflang costs nothing: `createPageMetadata` already
+ * emits `alternates.languages` for en-US/es/fr/de/x-default on both climb-view
+ * trees, so every locale twin carries reciprocal HTML annotations — one of
+ * Google's three supported hreflang methods, and the one that is symmetric by
+ * construction. A partial sitemap-side annotation would be a second,
+ * non-reciprocal signal for the same cluster: strictly worse than none.
+ *
+ * Nothing is noindexed. `/es`, `/fr` and `/de` climb pages stay indexable and
+ * link-discovered — the same treatment `/profile/[user_id]` already gets.
+ */
+export function expandDefaultLocaleOnly(items: readonly SitemapItem[]): SitemapUrlEntry[] {
+  return items.map((item) => ({
+    loc: absoluteUrl(localeHref(item.path, DEFAULT_LOCALE)),
+    lastModified: item.lastModified ?? null,
+    changeFrequency: item.changeFrequency,
+    priority: item.priority,
+  }));
+}
+
 /** Newest real timestamp across a shard's items, or null when none carries one. */
 export function latestLastModified(items: readonly SitemapItem[]): Date | null {
   let latest: Date | null = null;

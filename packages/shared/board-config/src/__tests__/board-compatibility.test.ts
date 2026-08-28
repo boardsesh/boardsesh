@@ -182,3 +182,56 @@ describe('canAddClimbToBoard — MoonBoard hold-set containment', () => {
     });
   });
 });
+
+/**
+ * Rule 5. Woods' two boards number their holds from their own origins — the 8x10
+ * runs 0-484, the 12x12 runs 0-893 — so every 8x10 climb's hold ids exist on the
+ * 12x12 as different holds and rule 3 waves it straight through. Size
+ * containment is the only thing that can separate them.
+ */
+describe('canAddClimbToBoard — size containment', () => {
+  const WOODS_12X12_HOLDS = Array.from({ length: 894 }, (_, index) => ({ id: index }));
+
+  function woodsWall(sizeId: number): BoardCompatibilityTarget {
+    return { board_name: 'woods', layout_id: 1, size_id: sizeId, set_ids: [1], holdsData: WOODS_12X12_HOLDS };
+  }
+
+  // Hold ids well inside the 8x10's 0-484 range, so rule 3 cannot reject it.
+  const EIGHT_BY_TEN_CLIMB = {
+    boardType: 'woods',
+    layoutId: 1,
+    frames: 'p12r4p207r2p418r3',
+    compatibleSizeIds: [1],
+  };
+
+  it('rejects an 8x10 climb on the 12x12, which hold-id containment lets through', () => {
+    expect(canAddClimbToBoard({ ...EIGHT_BY_TEN_CLIMB, compatibleSizeIds: undefined }, woodsWall(2))).toEqual({
+      ok: true,
+    });
+    expect(canAddClimbToBoard(EIGHT_BY_TEN_CLIMB, woodsWall(2))).toEqual({ ok: false, reason: 'size' });
+  });
+
+  it('accepts the same climb on the 8x10 it was set on', () => {
+    expect(canAddClimbToBoard(EIGHT_BY_TEN_CLIMB, woodsWall(1))).toEqual({ ok: true });
+  });
+
+  it('accepts a climb that names several sizes when the wall is one of them', () => {
+    expect(canAddClimbToBoard({ ...EIGHT_BY_TEN_CLIMB, compatibleSizeIds: [1, 2] }, woodsWall(2))).toEqual({
+      ok: true,
+    });
+  });
+
+  it('skips the check when either half is unknown, so Aurora and MoonBoard are unchanged', () => {
+    // The wall names no size (every caller that never knew about sizes).
+    expect(
+      canAddClimbToBoard(EIGHT_BY_TEN_CLIMB, { board_name: 'woods', layout_id: 1, holdsData: WOODS_12X12_HOLDS }),
+    ).toEqual({ ok: true });
+    // A Kilter climb with no denormalised sizes on a wall that does name one.
+    expect(
+      canAddClimbToBoard(
+        { boardType: 'kilter', layoutId: 1, frames: 'p1r42' },
+        { board_name: 'kilter', layout_id: 1, size_id: 10, holdsData: [{ id: 1 }] },
+      ),
+    ).toEqual({ ok: true });
+  });
+});

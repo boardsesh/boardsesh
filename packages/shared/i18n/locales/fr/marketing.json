@@ -60,10 +60,6 @@
       "manage": "Gérer",
       "viewPage": "Voir la page"
     },
-    "feed": {
-      "callout": "Vos potes sont en train de grimper.",
-      "cta": "Voir le feed"
-    },
     "recentBeta": {
       "title": "Beta fraîche"
     }
@@ -250,7 +246,7 @@
         "feature1": "Récupérer les données et statistiques de blocs",
         "feature2": "Inscription et authentification des utilisateurs",
         "feature3": "Gestion de profil",
-        "feature4": "Intégration avec la plateforme Aurora",
+        "feature4": "Résolution des slugs d'URL en identifiants",
         "baseUrlLabel": "URL de base :"
       },
       "ws": {
@@ -349,11 +345,11 @@
       "title": "Suppression du compte",
       "intro": "Vous pouvez supprimer votre compte et toutes les données associées à tout moment. Il y a deux façons de le faire :",
       "inApp": "Dans l'app :",
-      "inAppBody": " Allez dans Paramètres, descendez tout en bas et touchez Supprimer le compte. Une confirmation vous sera demandée avant toute suppression.",
+      "inAppBody": " Ouvrez Plus depuis votre profil, descendez tout en bas et touchez Supprimer le compte. Une confirmation vous sera demandée avant toute suppression.",
       "onWeb": "Sur le web :",
       "onWebBody": " Connectez-vous sur ",
-      "onWebLink": "boardsesh.com/settings",
-      "onWebBodyEnd": " et descendez tout en bas de la page pour trouver le même bouton Supprimer le compte.",
+      "onWebLink": "app.boardsesh.com",
+      "onWebBodyEnd": " et ouvrez Plus depuis votre profil pour trouver le même bouton Supprimer le compte.",
       "permanent": "La suppression est immédiate et définitive. Une fois confirmée, nous retirons de nos serveurs votre adresse e-mail, votre nom d'utilisateur, vos entrées de carnet, vos données de file et l'historique de vos sessions party. Cela ne peut pas être annulé."
     },
     "children": {

@@ -12,7 +12,13 @@ import { recordDbConnectRetry } from './services/db-health';
 import { handleSessionJoin } from './handlers/join';
 import { handleAvatarUpload } from './handlers/avatars';
 import { handleGymLogoUpload } from './handlers/gym-logos';
-import { handleStaticAvatar, handleStaticBetaThumbnail, handleStaticGymLogo } from './handlers/static';
+import { handleGymPhotoDelete, handleGymPhotoUpload } from './handlers/gym-photos';
+import {
+  handleStaticAvatar,
+  handleStaticBetaThumbnail,
+  handleStaticGymLogo,
+  handleStaticGymPhoto,
+} from './handlers/static';
 import { handleOgClimb } from './handlers/og-climb';
 import { initBoardRenderer } from './services/board-render';
 import { parseSizeParam } from './lib/image-resize';
@@ -68,6 +74,7 @@ import { registerBoardQueuePreviewHook } from './services/board-queue-preview';
 import { logger, setInstanceIdProvider } from './utils/logger';
 import { isClientAbortError } from './utils/http-errors';
 import { setDbConnectObserver } from '@boardsesh/db/client';
+import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boardsesh/db/client/config';
 import type { QueueEvent } from '@boardsesh/shared-schema';
 
 /**
@@ -372,6 +379,17 @@ export async function startServer(): Promise<ServerResources> {
         return;
       }
 
+      // Gym photo upload / removal endpoint (handle OPTIONS for CORS preflight)
+      if (pathname === '/api/gym-photos' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        await handleGymPhotoUpload(req, res);
+        return;
+      }
+
+      if (pathname === '/api/gym-photos' && req.method === 'DELETE') {
+        await handleGymPhotoDelete(req, res);
+        return;
+      }
+
       // OCR test data upload endpoint (handle OPTIONS for CORS preflight)
       if (pathname === '/api/ocr-test-data' && (req.method === 'POST' || req.method === 'OPTIONS')) {
         await handleOcrTestDataUpload(req, res);
@@ -467,6 +485,15 @@ export async function startServer(): Promise<ServerResources> {
         const fileName = pathname.slice('/static/gym-logos/'.length);
         if (fileName) {
           await handleStaticGymLogo(req, res, fileName, parseSizeParam(url.searchParams.get('size')));
+          return;
+        }
+      }
+
+      // Static gym-photo files (optional ?size= for a resized variant)
+      if (pathname.startsWith('/static/gym-photos/')) {
+        const fileName = pathname.slice('/static/gym-photos/'.length);
+        if (fileName) {
+          await handleStaticGymPhoto(req, res, fileName, parseSizeParam(url.searchParams.get('size')));
           return;
         }
       }
@@ -637,6 +664,16 @@ export async function startServer(): Promise<ServerResources> {
   const intervals: NodeJS.Timeout[] = [pingInterval];
 
   logger.info(`Boardsesh Backend starting on port ${PORT}...`);
+  // Whether this process reports to the production Sentry/PostHog projects is
+  // inferred, not configured (see @boardsesh/db/client/config), so say the answer
+  // out loud at boot: a developer chasing a missing event shouldn't have to guess
+  // whether the SDK is off or the event never fired.
+  const sentryEnvironment = resolveSentryEnvironment();
+  logger.info(
+    isProductionSentryEnvironment()
+      ? `Sentry environment: ${sentryEnvironment}`
+      : `Sentry environment: ${sentryEnvironment} (reporting disabled — not the production runtime)`,
+  );
 
   // Start HTTP server (WebSocket server is attached to it)
   const httpScheme = tlsEnabled ? 'https' : 'http';
@@ -652,6 +689,8 @@ export async function startServer(): Promise<ServerResources> {
     logger.info(`  Avatar files: ${httpScheme}://0.0.0.0:${PORT}/static/avatars/`);
     logger.info(`  Gym logo upload: ${httpScheme}://0.0.0.0:${PORT}/api/gym-logos`);
     logger.info(`  Gym logo files: ${httpScheme}://0.0.0.0:${PORT}/static/gym-logos/`);
+    logger.info(`  Gym photo upload: ${httpScheme}://0.0.0.0:${PORT}/api/gym-photos`);
+    logger.info(`  Gym photo files: ${httpScheme}://0.0.0.0:${PORT}/static/gym-photos/`);
     logger.info(`  OCR test data: ${httpScheme}://0.0.0.0:${PORT}/api/ocr-test-data`);
     logger.info(`  PostHog proxy: ${httpScheme}://0.0.0.0:${PORT}/api/posthog/*`);
     logger.info(`  User data export: ${httpScheme}://0.0.0.0:${PORT}/api/user-data-export`);

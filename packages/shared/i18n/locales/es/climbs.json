@@ -101,6 +101,7 @@
   "boardseshGrade": {
     "title": "Grado Boardsesh",
     "moonboardBody": "Aún no tenemos datos de grado de la comunidad para MoonBoard. Registra tus encadenes en Moon con Boardsesh para ayudar a desbloquearlo.",
+    "woodsBody": "Aún no tenemos datos de grado de la comunidad para el Woods Board. Registra tus encadenes en el plafón Woods con Boardsesh para ayudar a desbloquearlo.",
     "loadError": "No se pudo cargar el grado ahora mismo.",
     "byAngle": "Cómo cuesta según el ángulo",
     "summaryLocal": "local",
@@ -464,6 +465,8 @@
         "attempt": "Intentado"
       },
       "noMatch": "Sin igualar",
+      "campus": "Campus",
+      "noKickboard": "Sin repisa",
       "benchmark": "Benchmark",
       "method": {
         "footless": "Sin pies",
@@ -521,7 +524,11 @@
         "showAllHoldsLabel": "Mostrar todas las presas",
         "showAllHoldsDescription": "Resalta todas las presas pulsables del panel.",
         "noMatchLabel": "Sin igualar",
-        "noMatchDescription": "No se pueden igualar las manos en la misma presa"
+        "noMatchDescription": "No se pueden igualar las manos en la misma presa",
+        "noKickboardLabel": "Sin repisa inferior",
+        "noKickboardDescription": "Los pies no pueden apoyarse en la repisa inferior",
+        "campusLabel": "Campus (sin pies)",
+        "campusDescription": "Solo manos, sin apoyar los pies"
       },
       "drafts": {
         "holds_one": "{{count}} presa",
@@ -592,6 +599,9 @@
       "switchBoard": "Cambiar a {{board}}",
       "switchFailed": "No se pudo cambiar a {{board}}. Inténtalo de nuevo.",
       "cancel": "Cancelar"
+    },
+    "setterNotes": {
+      "title": "Notas del setter"
     }
   },
   "frontDoor": {
@@ -616,6 +626,9 @@
       "angleValue": "{{angle}}°",
       "qualityValue": "{{quality}} de 5",
       "firstAscentValue": "{{setter}}, {{date}}"
+    },
+    "setterNotes": {
+      "heading": "Notas del setter"
     },
     "angles": {
       "heading": "El mismo bloque en otros ángulos",

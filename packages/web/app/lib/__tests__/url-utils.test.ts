@@ -1056,6 +1056,20 @@ describe('Utility functions', () => {
       expect(isUuidOnly('ABC123')).toBe(false);
       expect(isUuidOnly('')).toBe(false);
     });
+
+    it('stays false for a dashed MoonBoard uuid, on purpose', () => {
+      // `extractUuidFromSlug` DOES understand the dashed form, so it is tempting
+      // to widen this too. Do not: the only caller that gains anything is the
+      // slug-redirect branch in `/[board_name]/…/view/[climb_uuid]`, which
+      // resolves its layout through `getLayouts(board_name)` — the Aurora
+      // `board-constants` tables, which carry no MoonBoard rows at all
+      // (`getAllLayouts('moonboard')` is `[]`). Returning true here sends every
+      // bare-uuid MoonBoard climb URL into that branch, where `layout` is
+      // undefined and the page calls `notFound()`. Today those URLs render and
+      // carry a canonical pointing at their slug form, which is the consolidation
+      // Google needs; a 308 would cost a working page to gain nothing.
+      expect(isUuidOnly('9fe54099-6fdd-5adb-b82f-2d7bcb10d4ad')).toBe(false);
+    });
   });
 
   describe('isNumericId', () => {

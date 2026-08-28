@@ -12,6 +12,11 @@ type PlaylistActionsMenuProps = {
   visible: boolean;
   isPinned: boolean;
   onTogglePin: () => void;
+  /** Head to the Climbs tab to pick something to add. Omit to hide the row (the
+   *  playlist belongs to another board, or the viewer is not the owner). */
+  onAddClimbs?: () => void;
+  /** Open the edit-details sheet — name, description, colour, icon, visibility. */
+  onEditDetails: () => void;
   /** Enter the climbs edit mode (reorder + remove). */
   onEdit: () => void;
   onDelete: () => void;
@@ -20,22 +25,30 @@ type PlaylistActionsMenuProps = {
 
 /**
  * Owner overflow sheet — the collapsed form of the hero's pin · edit · delete
- * toolbar, shown once the hero scrolls away (and always on Material). The parent
- * wires Pin → toggle pin, Edit → enter the climbs reorder/remove mode, and
- * Delete → the confirm Alert.
+ * toolbar, shown once the hero scrolls away (and ALWAYS on Material, where it is
+ * the only owner affordance). Rows: pin · add climbs · edit details · reorder &
+ * remove climbs · delete.
+ *
+ * Every row's handler must do its work immediately. `onClose` only fires on a
+ * user pan-down or backdrop tap — the sheet coordinator suppresses it for a
+ * controlled `visible: true -> false` — so a handler that defers to `onClose`
+ * silently does nothing (#3966).
  */
 export function PlaylistActionsMenu({
   visible,
   isPinned,
   onTogglePin,
+  onAddClimbs,
+  onEditDetails,
   onEdit,
   onDelete,
   onClose,
 }: PlaylistActionsMenuProps) {
   const { t } = useTranslation('playlists');
   const { actionColors } = useTheme();
-  // 36% leaves room for the three rows on short screens (e.g. iPhone SE landscape).
-  const snapPoints = useMemo(() => ['36%'], []);
+  // Room for four rows, or five when the add-climbs row is shown, on short
+  // screens (e.g. iPhone SE landscape).
+  const snapPoints = useMemo(() => [onAddClimbs ? '56%' : '46%'], [onAddClimbs]);
   // Monochrome on Liquid Glass, semantic on Material — resolved once as a token.
   const { accent: accentActionIconColor, pin: pinActionIconColor } = actionColors;
 
@@ -52,6 +65,20 @@ export function PlaylistActionsMenu({
             />
           }
           onPress={onTogglePin}
+          showSeparator
+        />
+        {onAddClimbs ? (
+          <ListRow
+            title={t('detail.menu.addClimbs')}
+            leading={<Icon name="add" size={22} color={accentActionIconColor} />}
+            onPress={onAddClimbs}
+            showSeparator
+          />
+        ) : null}
+        <ListRow
+          title={t('detail.menu.editDetails')}
+          leading={<Icon name="settings" size={22} color={accentActionIconColor} />}
+          onPress={onEditDetails}
           showSeparator
         />
         <ListRow

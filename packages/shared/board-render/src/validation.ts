@@ -1,16 +1,15 @@
 import { z } from 'zod';
+import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import type { OutputFormat } from './types';
 
-/** Board names the render pipeline accepts. Single source for the Set and the zod enum. */
-const VALID_BOARD_NAME_LIST = [
-  'kilter',
-  'tension',
-  'moonboard',
-  'decoy',
-  'touchstone',
-  'grasshopper',
-  'soill',
-] as const;
+/**
+ * Board names the render pipeline accepts. Single source for the Set and the zod
+ * enum, and derived from `SUPPORTED_BOARDS` rather than restated: this list gates
+ * `/api/internal/board-render` and the backend's `GET /og/climb`, so a board
+ * missing from a hand-kept copy is a silent 400 on every share card and preview
+ * for that board — the failure Woods would have shipped with.
+ */
+const VALID_BOARD_NAME_LIST = SUPPORTED_BOARDS;
 
 export const VALID_BOARD_NAMES: ReadonlySet<string> = new Set(VALID_BOARD_NAME_LIST);
 
@@ -18,6 +17,16 @@ export const VALID_BOARD_NAMES: ReadonlySet<string> = new Set(VALID_BOARD_NAME_L
 export const MAX_FRAMES_LENGTH = 16_384;
 
 export const MAX_SET_IDS = 10;
+
+/**
+ * Hard ceiling on the rendered pixel count. Every in-flight plane costs 4 bytes
+ * a pixel, so this is what stops a hand-crafted request from sizing a render
+ * past what the process can hold. The largest real board is Kilter's 1080×2498
+ * (~2.70 MP) — `board-dimensions.test.ts` fails if a board ever grows past this
+ * number, so a new board shows up as a red test rather than a 400 in
+ * production. Oversized requests are rejected, never resampled.
+ */
+export const MAX_RENDER_OUTPUT_PIXELS = 3_000_000;
 
 export function normalizeOutputFormat(format: string): OutputFormat | null {
   if (format === 'jpg') return 'jpeg';
@@ -77,28 +86,59 @@ export function isValidFramesString(frames: string): boolean {
 }
 
 /**
+ * `render_mode`, `glow_falloff`, `glyphs` and `field_color` query params,
+ * shared by the web `board-render` route and the backend's `GET /og/climb` —
+ * see docs/og-climb.md. All four default closed (classic/soft/off/unset), so
+ * an endpoint that never reads a value from this schema still renders
+ * classic (issue #2202: web and OG stay classic-by-default in this PR; a
+ * later PR flips the default).
+ */
+export const renderModeSchema = z.enum(['classic', 'boardsesh']).default('classic');
+export const glowFalloffSchema = z.enum(['soft', 'plateau']).default('soft');
+/** Accepts the query-string spellings of a boolean flag; unset -> off. */
+export const glyphsQuerySchema = z
+  .enum(['0', '1', 'true', 'false'])
+  .optional()
+  .transform((value) => value === '1' || value === 'true');
+export const fieldColorSchema = z
+  .string()
+  .regex(/^#[0-9a-fA-F]{6}$/, 'field_color must be a #rrggbb hex color')
+  .optional();
+
+export const boardseshRenderQuerySchema = z.object({
+  render_mode: renderModeSchema,
+  glow_falloff: glowFalloffSchema,
+  glyphs: glyphsQuerySchema,
+  field_color: fieldColorSchema,
+});
+
+export type BoardseshRenderQuery = z.infer<typeof boardseshRenderQuerySchema>;
+
+/**
  * Strict query validation for the public `GET /og/climb` endpoint. Runs before
  * any CPU-heavy work: rejects bad input cheaply with a 400 so a crawler can't
  * push the backend into wasted WASM/sharp renders.
  */
-export const ogClimbQuerySchema = z.object({
-  board_name: z.enum(VALID_BOARD_NAME_LIST),
-  layout_id: z.coerce.number().int().nonnegative(),
-  size_id: z.coerce.number().int().nonnegative(),
-  set_ids: z
-    .string()
-    .regex(/^\d+(,\d+)*$/, 'set_ids must be a comma-separated list of integers')
-    .refine((setIdsCsv) => setIdsCsv.split(',').length <= MAX_SET_IDS, `set_ids accepts at most ${MAX_SET_IDS} ids`)
-    // Canonicalise (sort + dedupe) so equivalent queries render and cache identically.
-    .transform((setIdsCsv) => [...new Set(setIdsCsv.split(',').map(Number))].sort((a, b) => a - b).join(',')),
-  frames: z
-    .string()
-    // Required: an empty frames string would render a blank board and cache it
-    // with immutable headers as if it were a real climb card.
-    .min(1, 'frames is required')
-    .max(MAX_FRAMES_LENGTH, 'frames string is too large')
-    .refine(isValidFramesString, 'frames contains invalid syntax'),
-  format: z.enum(['webp', 'png', 'jpeg', 'jpg']).optional(),
-});
+export const ogClimbQuerySchema = z
+  .object({
+    board_name: z.enum(VALID_BOARD_NAME_LIST),
+    layout_id: z.coerce.number().int().nonnegative(),
+    size_id: z.coerce.number().int().nonnegative(),
+    set_ids: z
+      .string()
+      .regex(/^\d+(,\d+)*$/, 'set_ids must be a comma-separated list of integers')
+      .refine((setIdsCsv) => setIdsCsv.split(',').length <= MAX_SET_IDS, `set_ids accepts at most ${MAX_SET_IDS} ids`)
+      // Canonicalise (sort + dedupe) so equivalent queries render and cache identically.
+      .transform((setIdsCsv) => [...new Set(setIdsCsv.split(',').map(Number))].sort((a, b) => a - b).join(',')),
+    frames: z
+      .string()
+      // Required: an empty frames string would render a blank board and cache it
+      // with immutable headers as if it were a real climb card.
+      .min(1, 'frames is required')
+      .max(MAX_FRAMES_LENGTH, 'frames string is too large')
+      .refine(isValidFramesString, 'frames contains invalid syntax'),
+    format: z.enum(['webp', 'png', 'jpeg', 'jpg']).optional(),
+  })
+  .extend(boardseshRenderQuerySchema.shape);
 
 export type OgClimbQuery = z.infer<typeof ogClimbQuerySchema>;

@@ -1,21 +1,4 @@
 {
-  "metadata": {
-    "feed": {
-      "title": "Actividad",
-      "description": "Mira lo que están escalando los que sigues."
-    },
-    "importBeta": {
-      "title": "Importa beta desde Instagram",
-      "description": "Vincula tus reels de escalada de Instagram con bloques de Boardsesh y adjúntalos como beta en unos clics."
-    }
-  },
-  "title": "Actividad",
-  "tabs": {
-    "label": "Pestañas de actividad",
-    "sessions": "Sesiones",
-    "proposals": "Propuestas",
-    "comments": "Comentarios"
-  },
   "activityFeed": {
     "signInPrompt": "Inicia sesión para ver un feed de los escaladores que sigues."
   },
@@ -41,13 +24,14 @@
       "scope": {
         "myCrew": "Mi crew",
         "everyone": "Todos",
-        "findGym": "Busca un gimnasio cerca",
+        "findGym": "Busca un rocódromo cerca",
         "hint": "Cambia de quién ves las vías"
       }
     }
   },
   "ascentsFeed": {
     "mirrored": "Espejo",
+    "setBy": "Creado por {{name}}",
     "benchmark": "Referencia",
     "empty": "Aún no hay ascensos"
   },
@@ -71,77 +55,6 @@
     "instagramCopiedAndOpened": "Descripción copiada — pégala en Instagram.",
     "instagramCopiedOnly": "Descripción copiada al portapapeles."
   },
-  "importBeta": {
-    "title": "Importa beta desde Instagram",
-    "intro": "Recupera los bloques que ya grabaste en Instagram y adjúntalos como beta. Haz un escaneo rápido en tu navegador, pega el resultado y emparejamos cada reel con el bloque correcto.",
-    "signInPrompt": "Inicia sesión para emparejar tus reels de Instagram con bloques de Boardsesh.",
-    "signInCta": "Iniciar sesión",
-    "authUnavailable": "No pudimos verificar tu sesión. Recarga e inténtalo de nuevo.",
-    "scriptCopied": "Script copiado. Pégalo en la consola de Instagram.",
-    "scriptCopyFailed": "No se pudo copiar el script. Selecciónalo y cópialo a mano.",
-    "pasteEmpty": "Primero pega el JSON que copió el script.",
-    "parseError": "Esto no parece el resultado del escaneo. Vuelve a ejecutar el script y pega exactamente lo que copia.",
-    "noPosts": "No se encontraron publicaciones en lo que pegaste. Asegúrate de ejecutar el script en un perfil.",
-    "scanError": "El escaneo falló. Inténtalo de nuevo en un momento.",
-    "angle": "{{angle}}°",
-    "openOnInstagram": "Abrir en Instagram",
-    "board": {
-      "label": "¿Qué plafón?",
-      "kilter": "Kilter",
-      "tension": "Tension"
-    },
-    "scan": {
-      "title": "Paso 1 · Escanea tus publicaciones",
-      "subtitle": "Esto se ejecuta en tu propio navegador en Instagram. Nada sale de tu sesión y Boardsesh nunca ve tu inicio de sesión de Instagram. Una advertencia: usa la API de feed de Instagram, así que escanear demasiado en poco tiempo podría hacer que Instagram limite temporalmente tu cuenta.",
-      "step1": "Abre tu perfil de Instagram en otra pestaña e inicia sesión.",
-      "step2": "Abre la consola del navegador (clic derecho, Inspeccionar y luego Consola).",
-      "step3": "Pega el script de abajo y pulsa Enter. En una cuenta grande puede tardar un minuto. Muestra el progreso en la consola, indica cuántas encontró y las copia al portapapeles.",
-      "copyScript": "Copiar script"
-    },
-    "paste": {
-      "title": "Paso 2 · Pega y busca",
-      "subtitle": "Pega lo que copió el script. Leeremos las descripciones y las emparejaremos con bloques.",
-      "label": "Resultado del escaneo",
-      "placeholder": "Pega aquí el JSON que copió el script",
-      "submit": "Buscar bloques"
-    },
-    "review": {
-      "title": "Paso 3 · Revisa y adjunta",
-      "summary": "Se escanearon {{scanned}} publicaciones y se leyeron {{parsed}} descripciones: {{found}} nuevas por adjuntar, {{already}} ya en Boardsesh, {{ambiguous}} necesitan elección, {{skipped}} omitidas."
-    },
-    "missing": {
-      "empty": "Nada nuevo que adjuntar. Todo lo que emparejamos ya está en Boardsesh.",
-      "heading": "Beta nueva por adjuntar ({{count}})",
-      "attachSelected": "Adjuntar {{count}} seleccionadas",
-      "attachAllDone": "Se adjuntaron {{count}} vídeos de beta.",
-      "attachSomeFailed": "Se adjuntaron {{attached}}, {{failed}} fallaron. Revisa las marcadas como fallidas.",
-      "attachFailedGeneric": "No se pudo adjuntar esta. La publicación puede ser privada o estar eliminada."
-    },
-    "ambiguous": {
-      "heading": "Necesitan elección ({{count}})",
-      "subtitle": "Más de un bloque coincidió con estas descripciones. Elige el correcto y adjúntalo.",
-      "selectPlaceholder": "Elige el bloque",
-      "candidateLabel": "{{setter}} · layout {{layoutId}}",
-      "unknownSetter": "Aperturista desconocido",
-      "attach": "Adjuntar",
-      "attachedToast": "Beta adjuntada."
-    },
-    "alreadyLinked": {
-      "heading": "Ya en Boardsesh ({{count}})"
-    },
-    "unmatched": {
-      "heading": "Omitidas ({{count}})",
-      "noName": "Sin nombre de bloque en la descripción"
-    },
-    "status": {
-      "attached": "Adjuntada",
-      "failed": "Fallida"
-    }
-  },
-  "commentFeed": {
-    "empty": "Sin comentarios todavía",
-    "commentedOn": "comentó en {{entity}}"
-  },
   "emptyStates": {
     "followClimbers": "Sigue a algunos escaladores para llenar esto",
     "findClimbers": "Buscar escaladores",
@@ -149,9 +62,7 @@
   },
   "errors": {
     "loadFeed": "No se pudo cargar la actividad. Inténtalo de nuevo.",
-    "loadActivity": "No se pudo cargar la actividad",
-    "loadComments": "No se pudieron cargar los comentarios. Inténtalo de nuevo.",
-    "loadProposals": "No se pudieron cargar las propuestas. Inténtalo de nuevo."
+    "loadActivity": "No se pudo cargar la actividad"
   },
   "feedCommentButton": {
     "commentsTitle": "Comentarios"
@@ -184,9 +95,6 @@
       "title": "Eliminar propuesta aceptada",
       "description": "Esto revertirá los efectos de esta propuesta (p. ej., cambio de grado, estado de referencia/clásico) y la eliminará permanentemente. No se puede deshacer."
     }
-  },
-  "proposalFeed": {
-    "empty": "Sin propuestas todavía"
   },
   "proposalSection": {
     "title": "Propuestas de la comunidad",

@@ -97,6 +97,8 @@ const DELETED_COMPONENT_DIRS = [
   'grade-picker',
   'board-presence',
   'connection-manager',
+  'notifications',
+  'settings',
 ];
 
 /**
@@ -117,7 +119,10 @@ const DELETED_CLIMB_CARD_STEMS = [
   'heart-animation-overlay',
 ];
 
-/** Hooks that only exist to serve the classic client climbing UI. */
+/**
+ * Hooks that only existed to serve deleted web surfaces — the classic client
+ * climbing UI, and the notification centre W-20b (#4439) moved to the app.
+ */
 const DELETED_HOOK_STEMS = [
   'use-tick-save',
   'use-effective-angle',
@@ -125,6 +130,10 @@ const DELETED_HOOK_STEMS = [
   'use-submit-app-feedback',
   'use-create-session',
   'use-climb-actions-data',
+  'use-notification-subscription',
+  'use-unread-notification-count',
+  'use-grouped-notifications',
+  'use-mark-notifications-read',
 ];
 
 /**
@@ -142,9 +151,13 @@ const DELETED_HOOK_STEMS = [
 const KEPT_BLE_FILES = new Set(['app/lib/ble/capacitor-utils.ts', 'app/lib/ble/capacitor-types.d.ts']);
 
 /**
- * `components/settings` is deliberately absent: a later PR keeps two of its
- * sections, so it is not an unconditional delete and this test must not
- * pre-judge it.
+ * `components/settings` joined `DELETED_COMPONENT_DIRS` in W-21 (#4440): the
+ * directory is gone. `controllers-section` and `set-password-section` moved to
+ * `components/account/` back in W-11, and the two exports `board-import-prompt`
+ * still renders — `BoardCredentialCard` and `ImportProgressSteps` — were lifted
+ * to `components/board-entity/board-credential-card.tsx`. The delete set has no
+ * existence check, so listing it is a forward guard: if the directory is ever
+ * re-created and a keep root imports it, `deleteSetLabel` flags that edge.
  */
 function deleteSetLabel(webRelativePath: string): string | null {
   for (const componentDir of DELETED_COMPONENT_DIRS) {
@@ -199,11 +212,8 @@ const KEPT_ROUTE_DIRS = [
   'b',
   'session',
   'join',
-  'import-beta',
   'moonboard-import',
   'settings',
-  'notifications',
-  'discover',
   // W-22's sitemap index + shard routes. Both are directories (`sitemap.xml/`,
   // `sitemaps/`), so they live here rather than in the filename scan the old
   // single-file `app/sitemap.ts` needed.
@@ -225,7 +235,6 @@ const KEPT_COMPONENT_DIRS = [
   'beta-videos',
   'charts',
   'home-gym-card',
-  'notifications',
   'board-renderer',
   'moonboard-renderer',
   'ui',

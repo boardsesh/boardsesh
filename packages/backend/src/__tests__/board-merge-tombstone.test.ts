@@ -9,6 +9,7 @@ import { boardPresenceMutations } from '../graphql/resolvers/board-presence/muta
 import { findChosenBoardForSerial } from '../graphql/resolvers/board-presence/shared';
 import { lockBoardSerialWrite } from '../graphql/resolvers/board-serial-write-lock';
 import { seedAuroraCatalogFixtures } from './helpers/board-catalog-fixture';
+import { createBarrier, createValueBarrier, handleLater } from './helpers/concurrency';
 
 /**
  * Real-DB coverage for issue #3407's merge-tombstone following and the
@@ -155,22 +156,6 @@ async function serialPointerUuid(userId: string, serial: string): Promise<string
     `),
   );
   return rows[0]?.board_uuid ?? null;
-}
-
-function createBarrier(): { promise: Promise<void>; release: () => void } {
-  let release = (): void => undefined;
-  const promise = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  return { promise, release };
-}
-
-function createValueBarrier<Result>(): { promise: Promise<Result>; release: (result: Result) => void } {
-  let release = (_result: Result): void => undefined;
-  const promise = new Promise<Result>((resolve) => {
-    release = resolve;
-  });
-  return { promise, release };
 }
 
 async function waitForAdvisoryWaitBlockedBy(blockingPid: number): Promise<number> {
@@ -516,6 +501,7 @@ describe('followBoard during a board merge', () => {
         },
         { isolationLevel: 'read committed' },
       );
+      handleLater(mergePromise);
       const mergePid = await mergeReady.promise;
 
       followPromise = socialBoardMutations.followBoard(
@@ -523,6 +509,7 @@ describe('followBoard during a board merge', () => {
         { input: { boardUuid: loserUuid } },
         authCtx(followerId),
       );
+      handleLater(followPromise);
       await waitForRowWaitBlockedBy(mergePid);
 
       releaseMerge.release();
@@ -593,6 +580,7 @@ describe('followBoard during a board merge', () => {
         userRowLocked.release(Number(session.pid));
         await releaseUserRow.promise;
       });
+      handleLater(userRowHolderPromise);
       const userRowHolderPid = await userRowLocked.promise;
 
       followPromise = socialBoardMutations.followBoard(
@@ -600,6 +588,7 @@ describe('followBoard during a board merge', () => {
         { input: { boardUuid: loserUuid } },
         authCtx(followerId),
       );
+      handleLater(followPromise);
       const followerPid = await waitForRowWaitBlockedBy(userRowHolderPid);
 
       // This is the follow-repoint portion of the real dedupe transaction. It
@@ -635,6 +624,7 @@ describe('followBoard during a board merge', () => {
         },
         { isolationLevel: 'read committed' },
       );
+      handleLater(mergePromise);
       const mergePid = await mergeStarted.promise;
       expect(await waitForRowWaitBlockedBy(followerPid)).toBe(mergePid);
 
@@ -749,9 +739,11 @@ describe('findChosenBoardForSerial pointer healing', () => {
       await insertSerialPointer(pointerOwner, serial, oldLoserUuid);
 
       mergePromise = tombstoneBoardUnderSerialLock(serial, loserUuid, canonicalUuid, mergeReady, releaseMerge.promise);
+      handleLater(mergePromise);
       const mergePid = await mergeReady.promise;
 
       healPromise = findChosenBoardForSerial(pointerOwner, serial);
+      handleLater(healPromise);
       await waitForAdvisoryWaitBlockedBy(mergePid);
 
       releaseMerge.release();
@@ -1345,6 +1337,7 @@ describe('serial pointer lock ordering', () => {
         }
         await releaseRowHolder.promise;
       });
+      handleLater(rowHolderPromise);
       const rowHolderPid = await rowHolderReady.promise;
 
       choosePromise = boardPresenceMutations.chooseBoardForSerial(
@@ -1352,6 +1345,7 @@ describe('serial pointer lock ordering', () => {
         { boardId: Number(chosenBoard.id), serial },
         authCtx(userId),
       );
+      handleLater(choosePromise);
       const choosingPid = await waitForRowWaitBlockedBy(rowHolderPid);
 
       // Before the fix, the FK check on user_board_serials.board_uuid waited
@@ -1424,6 +1418,7 @@ describe('serial pointer lock ordering', () => {
         }
         await releaseRowHolder.promise;
       });
+      handleLater(rowHolderPromise);
       const rowHolderPid = await rowHolderReady.promise;
 
       resolvePromise = boardPresenceMutations.resolveBoardForSerial(
@@ -1431,6 +1426,7 @@ describe('serial pointer lock ordering', () => {
         { serial, boardType: 'kilter', layoutId: 99, sizeId: 10, setIds: '1,2' },
         authCtx(userId),
       );
+      handleLater(resolvePromise);
       const resolvingPid = await waitForRowWaitBlockedBy(rowHolderPid);
 
       // Planning is serial-only and read-only. The write phase must wait on the
@@ -1522,9 +1518,11 @@ describe('serial pointer lock ordering', () => {
         }
         await releaseRowHolder.promise;
       });
+      handleLater(rowHolderPromise);
       const rowHolderPid = await rowHolderReady.promise;
 
       lookupPromise = findChosenBoardForSerial(userId, serial);
+      handleLater(lookupPromise);
       const healingPid = await waitForRowWaitBlockedBy(rowHolderPid);
 
       // The serial-first lookup is read-only. Its separate healer must be
@@ -1595,6 +1593,7 @@ describe('serial pointer lock ordering', () => {
         }
         await releaseRowHolder.promise;
       });
+      handleLater(rowHolderPromise);
       const rowHolderPid = await rowHolderReady.promise;
 
       recordPromise = socialBoardMutations.recordBoardSerial(
@@ -1611,6 +1610,7 @@ describe('serial pointer lock ordering', () => {
         },
         authCtx(userId),
       );
+      handleLater(recordPromise);
       const recordingPid = await waitForRowWaitBlockedBy(rowHolderPid);
 
       // Waiting on the board row while holding nothing else. The serial advisory
@@ -1662,6 +1662,7 @@ describe('serial choices during a board merge', () => {
       });
 
       mergePromise = tombstoneBoardUnderSerialLock(serial, loserUuid, canonicalUuid, mergeReady, releaseMerge.promise);
+      handleLater(mergePromise);
       const mergePid = await mergeReady.promise;
 
       resolvePromise = boardPresenceMutations.resolveBoardForSerial(
@@ -1669,6 +1670,7 @@ describe('serial choices during a board merge', () => {
         { serial, boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2' },
         authCtx(userId),
       );
+      handleLater(resolvePromise);
       await waitForAdvisoryWaitBlockedBy(mergePid);
 
       releaseMerge.release();
@@ -1715,6 +1717,7 @@ describe('serial choices during a board merge', () => {
       );
 
       mergePromise = tombstoneBoardUnderSerialLock(serial, loserUuid, canonicalUuid, mergeReady, releaseMerge.promise);
+      handleLater(mergePromise);
       const mergePid = await mergeReady.promise;
 
       choosePromise = boardPresenceMutations.chooseBoardForSerial(
@@ -1722,6 +1725,7 @@ describe('serial choices during a board merge', () => {
         { boardId: Number(loser.id), serial },
         authCtx(userId),
       );
+      handleLater(choosePromise);
       const choosingPid = await waitForRowWaitBlockedBy(mergePid);
       expect(await grantedAdvisoryLockCount(choosingPid)).toBe(0);
 

@@ -170,6 +170,7 @@
       "subtitle": "Tipp auf eine Halle, um ihr Board zu nutzen",
       "locationNeeded": "Teil deinen Standort, um Hallen in der Nähe zu finden",
       "grantLocation": "Meinen Standort nutzen",
+      "locationBlocked": "Dein Browser gibt deinen Standort nicht raus. Tipp stattdessen einen Ort ins Suchfeld, das geht überall.",
       "empty": "Noch keine Hallen in der Nähe",
       "noBoards": "Hier noch keine Boards",
       "boardCount_one": "{{count}} Board",
@@ -254,12 +255,16 @@
         "messageLabel": "Nachricht (optional)",
         "messagePlaceholder": "Alles, was uns hilft zu prüfen, dass du diese Halle leitest",
         "submit": "Prüfung anfragen",
-        "sent": "Wir haben unser Team benachrichtigt. Wir melden uns bald."
+        "sent": "Dein Anspruch liegt in der Prüf-Warteschlange. Wir schreiben dir, sobald entschieden ist."
       },
       "approved": {
         "sent": "{{gym}} gehört jetzt dir.",
         "manageCta": "Halle einrichten",
         "manageError": "Die Halle-Einrichtung ließ sich nicht öffnen. Probier es im Browser."
+      },
+      "protections": {
+        "syncFreeze": "Sobald sie dir gehört, bleiben deine Angaben stehen — die Standort-Synchronisierung überschreibt nie das, was du als Inhaber*in einträgst.",
+        "transfer": "Gibst du die Halle später ab? Schreib an {{email}}, wir übertragen sie."
       }
     },
     "offline": {
@@ -466,13 +471,6 @@
       "hardest": "Schwerste"
     }
   },
-  "boardConfigSelects": {
-    "board": "Board",
-    "layout": "Layout",
-    "size": "Größe",
-    "holdSets": "Hold-Sets",
-    "angle": "Winkel"
-  },
   "boardPill": {
     "switchHint": "Öffnet die Board-Auswahl"
   },
@@ -578,6 +576,7 @@
       "name": "Hallenname",
       "slug": "URL-Slug",
       "description": "Beschreibung",
+      "hours": "Öffnungszeiten",
       "address": "Adresse",
       "contactEmail": "Kontakt-E-Mail",
       "contactPhone": "Kontakt-Telefon",
@@ -587,6 +586,7 @@
     "placeholders": {
       "name": "z. B. Boulderwelt, Kletterfabrik",
       "description": "Beschreibung (optional)",
+      "hours": "z. B. Mo-Fr 7-23 Uhr, Sa-So 9-20 Uhr",
       "address": "z. B. Hauptstraße 123, Stadt",
       "contactEmail": "Kontakt-E-Mail (optional)",
       "contactPhone": "Kontakt-Telefon (optional)",
@@ -604,7 +604,8 @@
       "createdNamed": "Halle „{{name}}“ angelegt!"
     },
     "helpers": {
-      "website": "Damit prüfen wir die Inhaberschaft, wenn jemand diese Halle beansprucht"
+      "website": "Damit prüfen wir die Inhaberschaft, wenn jemand diese Halle beansprucht",
+      "hours": "Eine Zeile, so wie du sie schreibst. Deine Seite zeigt, wann du sie zuletzt bestätigt hast."
     }
   },
   "claimGym": {
@@ -614,7 +615,8 @@
     "switchToAdmin": "Keine Arbeits-E-Mail? Prüfung anfragen",
     "switchToDomain": "Stattdessen mit Arbeits-E-Mail bestätigen",
     "errors": {
-      "generic": "Da ging etwas schief. Versuch es nochmal."
+      "generic": "Da ging etwas schief. Versuch es nochmal.",
+      "tokenUnavailable": "Wir konnten deine Anmeldung nicht bestätigen. Lade die Seite neu und versuch es nochmal."
     },
     "domain": {
       "description": "Du verwaltest {{gym}}? Gib deine E-Mail-Adresse bei {{domain}} ein und wir schicken dir einen Bestätigungslink.",
@@ -629,11 +631,15 @@
       "messageLabel": "Nachricht (optional)",
       "messagePlaceholder": "Alles, was uns hilft zu prüfen, dass du diese Halle leitest",
       "submit": "Prüfung anfragen",
-      "sent": "Wir haben unser Team benachrichtigt. Wir melden uns bald."
+      "sent": "Dein Anspruch liegt in der Prüf-Warteschlange. Wir schreiben dir, sobald entschieden ist."
     },
     "approved": {
       "body": "{{gym}} gehört jetzt dir. Richte sie ein, wann du willst.",
       "manageCta": "Halle einrichten"
+    },
+    "protections": {
+      "syncFreeze": "Sobald sie dir gehört, bleiben deine Angaben stehen — die Standort-Synchronisierung überschreibt nie das, was du als Inhaber*in einträgst.",
+      "transfer": "Gibst du die Halle später ab? Schreib an {{email}}, wir übertragen sie."
     }
   },
   "claimLanding": {

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const scriptPath = fileURLToPath(import.meta.url);
 const ZERO_SHA = '0000000000000000000000000000000000000000';
-const ALL_TARGETS = Object.freeze({ web: true, backend: true, app: true });
+const ALL_TARGETS = Object.freeze({ web: true, backend: true, app: true, cloudflare: true, staticAssets: true });
 const FULL_COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i;
 
 function fullDeploy(reason) {
@@ -45,10 +45,48 @@ function isProductionDeployControlFile(filePath) {
   return filePath === '.github/workflows/production-deploy.yml' || filePath === 'scripts/production-deploy-changes.mjs';
 }
 
+// CI-only files that never reach production: the deploy watchdog is a
+// scheduled janitor for the concurrency group, not shipped code, so editing it
+// must not queue a web deploy of its own.
+function isProductionDeployWatchdogFile(filePath) {
+  return (
+    filePath === '.github/workflows/production-deploy-watchdog.yml' ||
+    filePath === 'scripts/production-deploy-watchdog.mjs' ||
+    filePath === 'scripts/production-deploy-watchdog.test.mjs'
+  );
+}
+
 function isProductionDeployTestFile(filePath) {
   return (
     filePath === 'scripts/production-backend-smoke.test.mjs' ||
     filePath === 'scripts/production-deploy-changes.test.mjs'
+  );
+}
+
+// Cloudflare zone config-as-code: the desired state and the script that
+// converges it. Deliberately NOT web-affecting (see isWebAffecting) — a cache
+// rule or WAF edit changes the edge, not the Next build, so it must not queue a
+// web deploy of its own.
+function isCloudflareAffecting(filePath) {
+  return (
+    filePath.startsWith('infra/cloudflare/') ||
+    filePath === 'scripts/cloudflare-apply.ts' ||
+    filePath === 'scripts/cloudflare-apply.test.ts'
+  );
+}
+
+function isStaticAssetsAffecting(filePath) {
+  return (
+    (filePath.startsWith('packages/web/public/images/') && filePath.endsWith('.webp')) ||
+    filePath === 'packages/web/public/brand/boardsesh-mark.png' ||
+    (filePath.startsWith('packages/web/public/icons/') && filePath.endsWith('.png')) ||
+    filePath === 'packages/web/app/favicon.ico' ||
+    filePath === 'packages/web/app/icon.png' ||
+    filePath.startsWith('packages/shared/static-assets/') ||
+    filePath === 'scripts/generate-static-assets.ts' ||
+    filePath === 'scripts/lib/static-asset-catalog.ts' ||
+    filePath === 'scripts/upload-static-assets.ts' ||
+    filePath === 'scripts/lib/static-asset-upload.ts'
   );
 }
 
@@ -73,7 +111,9 @@ function isWebAffecting(filePath) {
     filePath.startsWith('docs/') ||
     filePath.endsWith('.md') ||
     filePath === 'scripts/production-backend-smoke.mjs' ||
-    isProductionDeployTestFile(filePath)
+    isProductionDeployTestFile(filePath) ||
+    isProductionDeployWatchdogFile(filePath) ||
+    isCloudflareAffecting(filePath)
   );
 }
 
@@ -83,20 +123,34 @@ function isAppAffecting(filePath) {
     filePath.startsWith('packages/shared/') ||
     filePath.startsWith('packages/shared-schema/') ||
     filePath === 'scripts/build-expo-web-export.sh' ||
+    // The export recipe shells out to this: it rewrites the shipped shell's
+    // manifest href and the manifest's start_url/scope from the export's
+    // baseUrl (W-24, #4438). A patcher-only change alters the artifact
+    // app.boardsesh.com serves, so it has to redeploy the subdomain — and run
+    // the post-deploy manifest smoke that would catch a bad patch.
+    filePath === 'scripts/lib/patch-expo-web-pwa-manifest.mjs' ||
+    // Everything deploy-app-web ships to the Pages project. Listed file by file
+    // rather than as a `deploy/app-subdomain/` prefix because the rest of that
+    // directory — README, tsconfig, vite config, __tests__ — is not deployed,
+    // and a README edit should not redeploy the subdomain.
     filePath === 'deploy/app-subdomain/_headers' ||
-    filePath === 'deploy/app-subdomain/_redirects'
+    filePath === 'deploy/app-subdomain/_redirects' ||
+    filePath === 'deploy/app-subdomain/_routes.json' ||
+    filePath.startsWith('deploy/app-subdomain/functions/')
   );
 }
 
 function classifyChangedFiles(changedFiles) {
-  const targets = { web: false, backend: false, app: false };
+  const targets = { web: false, backend: false, app: false, cloudflare: false, staticAssets: false };
 
   for (const filePath of changedFiles) {
-    if (isProductionDeployTestFile(filePath)) continue;
+    if (isProductionDeployTestFile(filePath) || isProductionDeployWatchdogFile(filePath)) continue;
     if (isProductionDeployControlFile(filePath)) return { ...ALL_TARGETS };
     if (isBackendAffecting(filePath)) targets.backend = true;
     if (isWebAffecting(filePath)) targets.web = true;
     if (isAppAffecting(filePath)) targets.app = true;
+    if (isCloudflareAffecting(filePath)) targets.cloudflare = true;
+    if (isStaticAssetsAffecting(filePath)) targets.staticAssets = true;
   }
 
   return targets;
@@ -223,8 +277,18 @@ function formatGitHubOutputs(result) {
     `web=${result.web}`,
     `backend=${result.backend}`,
     `app=${result.app}`,
+    `cloudflare=${result.cloudflare}`,
+    `static_assets=${result.staticAssets}`,
     `deployment_base_sha=${result.deploymentBaseSha}`,
   ].join('\n');
+}
+
+/** Human-readable target summary, derived from the emitted outputs so the two can't drift. */
+function summariseTargets(result) {
+  return formatGitHubOutputs(result)
+    .split('\n')
+    .filter((line) => !line.startsWith('deployment_base_sha='))
+    .join('; ');
 }
 
 function runCli(argv) {
@@ -243,7 +307,12 @@ function runCli(argv) {
 
   console.error(
     `production-deploy-changes: ${result.reason}; base=${result.deploymentBaseSha || 'none'}; ` +
-      `web=${result.web}; backend=${result.backend}; app=${result.app}`,
+      // Derived from formatGitHubOutputs, not hand-listed: the two drifted apart
+      // when `cloudflare` was added (#3837) and the deploy log then could not
+      // say whether the Cloudflare apply had been targeted — precisely the
+      // question you ask when that job misbehaves. Deriving it means a new
+      // target shows up here for free.
+      summariseTargets(result),
   );
   if (result.changedFiles.length > 0) {
     console.error(`Changed files since deployment baseline:\n${result.changedFiles.join('\n')}`);
@@ -262,6 +331,7 @@ if (process.argv[1] === scriptPath) {
 
 export {
   classifyChangedFiles,
+  summariseTargets,
   createCliGit,
   determineProductionDeployChanges,
   formatGitHubOutputs,
@@ -269,6 +339,8 @@ export {
   isBackendAffecting,
   isProductionDeployControlFile,
   isProductionDeployTestFile,
+  isProductionDeployWatchdogFile,
+  isStaticAssetsAffecting,
   isWebAffecting,
   readRunsPayload,
   selectLatestSuccessfulPriorRun,

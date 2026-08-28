@@ -60,10 +60,6 @@
       "manage": "Manage",
       "viewPage": "View page"
     },
-    "feed": {
-      "callout": "Your friends are climbing.",
-      "cta": "See the feed"
-    },
     "recentBeta": {
       "title": "Fresh beta"
     }
@@ -250,7 +246,7 @@
         "feature1": "Fetching climb data and statistics",
         "feature2": "User registration and authentication",
         "feature3": "Profile management",
-        "feature4": "Aurora platform integration",
+        "feature4": "Resolving URL slugs to numeric IDs",
         "baseUrlLabel": "Base URL:"
       },
       "ws": {
@@ -349,11 +345,11 @@
       "title": "Account deletion",
       "intro": "You can delete your account and all associated data at any time. There are two ways to do it:",
       "inApp": "In the app:",
-      "inAppBody": " Go to Settings, scroll to the bottom, and tap Delete Account. You will be asked to confirm before anything is removed.",
+      "inAppBody": " Open More from your profile, scroll to the bottom, and tap Delete Account. You will be asked to confirm before anything is removed.",
       "onWeb": "On the web:",
       "onWebBody": " Log in at ",
-      "onWebLink": "boardsesh.com/settings",
-      "onWebBodyEnd": " and scroll to the bottom of the page to find the same Delete Account button.",
+      "onWebLink": "app.boardsesh.com",
+      "onWebBodyEnd": " and open More from your profile to find the same Delete Account button.",
       "permanent": "Deletion is immediate and permanent. Once confirmed, we remove your email address, username, logbook entries, queue data, and party session history from our servers. This cannot be undone."
     },
     "children": {

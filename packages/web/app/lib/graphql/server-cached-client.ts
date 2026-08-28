@@ -2,9 +2,8 @@ import 'server-only';
 import { unstable_cache } from 'next/cache';
 import { type RequestDocument, type Variables, GraphQLClient } from 'graphql-request';
 import { sortObjectKeys } from '@/app/lib/cache-utils';
+import { compactErrorMessage } from '@/app/lib/observability/compact-error';
 import { getGraphQLHttpUrl } from './client';
-import { executeAuthenticatedGraphQL } from './server-graphql';
-import type { SessionFeedResult } from '@boardsesh/shared-schema';
 import type { DiscoverablePlaylist, DiscoverPlaylistsQueryResponse } from '@boardsesh/graphql/operations/playlists';
 import type {
   GetUserClimbPercentileQueryResponse,
@@ -14,13 +13,7 @@ import type {
 
 // Re-export uncached authenticated server functions so existing imports
 // from this file continue to work without changes.
-export {
-  serverMyBoards,
-  serverUserPlaylists,
-  serverGroupedNotifications,
-  serverPlaylist,
-  serverPlaylistClimbs,
-} from './server-graphql';
+export { serverMyBoards, serverUserPlaylists, serverPlaylist, serverPlaylistClimbs } from './server-graphql';
 
 export const USER_CLIMB_PERCENTILE_CACHE_TAG = 'user-climb-percentile';
 
@@ -66,15 +59,43 @@ function createCacheKeyFromVariables(variables: Variables | undefined): string[]
  * @param variables - Query variables
  * @param cacheTag - Tag for cache invalidation (e.g., 'climb-search')
  * @param revalidate - Cache duration in seconds
+ * @param timeoutMs - Optional wall-clock ceiling. Without one a wedged backend
+ *   hangs the caller indefinitely; `graphql-request` honours the signal, so the
+ *   call rejects with an abort error the caller can degrade on.
  */
 export function createCachedGraphQLQuery<T = unknown, V extends Variables = Variables>(
   document: RequestDocument,
   cacheTag: string,
   revalidate: number,
+  timeoutMs?: number,
 ) {
   return async (variables?: V): Promise<T> => {
     const cachedFn = unstable_cache(
-      async () => executeGraphQLInternal<T, V>(document, variables),
+      async () => {
+        try {
+          if (!timeoutMs) {
+            return await executeGraphQLInternal<T, V>(document, variables);
+          }
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), timeoutMs);
+          try {
+            return await executeGraphQLInternal<T, V>(document, variables, controller.signal);
+          } finally {
+            clearTimeout(timer);
+          }
+        } catch (error) {
+          // Next's `unstable_cache` console.errors the WHOLE rejection itself
+          // during stale-while-revalidate — a call site inside next/dist we
+          // cannot intercept. Rethrowing a compact error here bounds the SIZE
+          // of that unavoidable log event (a graphql-request ClientError or a
+          // DrizzleQueryError otherwise embeds the whole query/SQL). Every
+          // consumer of this function already catches and degrades without
+          // inspecting the error's shape, and `unstable_cache` never caches a
+          // rejection, so failure semantics are unchanged — only the log size
+          // shrinks.
+          throw new Error(compactErrorMessage(error));
+        }
+      },
       ['graphql', cacheTag, ...createCacheKeyFromVariables(variables)],
       {
         revalidate,
@@ -84,54 +105,6 @@ export function createCachedGraphQLQuery<T = unknown, V extends Variables = Vari
 
     return cachedFn();
   };
-}
-
-/**
- * Cached server-side session-grouped feed query.
- * Used for SSR on the home page for both authenticated and unauthenticated users.
- */
-export async function cachedSessionGroupedFeed(boardUuid?: string, isAuthenticated: boolean = false) {
-  const { GET_SESSION_GROUPED_FEED } = await import('@boardsesh/graphql/operations/activity-feed');
-
-  const revalidate = isAuthenticated ? 300 : 86400;
-
-  const query = createCachedGraphQLQuery<{
-    sessionGroupedFeed: SessionFeedResult;
-  }>(
-    GET_SESSION_GROUPED_FEED,
-    isAuthenticated ? 'session-grouped-feed-auth' : 'session-grouped-feed-public',
-    revalidate,
-  );
-
-  const result = await query({ input: { boardUuid, limit: 20 } });
-  return result.sessionGroupedFeed;
-}
-
-/**
- * Cached, authenticated server-side session feed for a specific user.
- * Used for SSR on the /you/sessions page.
- * Cache is per-user (tag includes userId) with a 2-minute TTL.
- */
-export async function cachedUserSessionGroupedFeed(authToken: string, userId: string) {
-  const { GET_SESSION_GROUPED_FEED } = await import('@boardsesh/graphql/operations/activity-feed');
-
-  type Response = { sessionGroupedFeed: SessionFeedResult };
-  const tag = `user-session-feed-${userId}`;
-
-  const cachedFn = unstable_cache(
-    async () => {
-      const result = await executeAuthenticatedGraphQL<Response>(
-        GET_SESSION_GROUPED_FEED,
-        { input: { userId, limit: 20 } },
-        authToken,
-      );
-      return result.sessionGroupedFeed;
-    },
-    ['graphql', tag, JSON.stringify({ userId })],
-    { revalidate: 120, tags: [tag] },
-  );
-
-  return cachedFn();
 }
 
 /**

@@ -229,6 +229,8 @@
       "sponsorsEmpty": "No sponsors yet — want to be the first?",
       "privateSponsorsThanks": "and {{count}} more sponsoring privately — thank you too",
       "becomeSponsor": "Become a sponsor",
+      "poweredByTitle": "Powered by",
+      "xpremBody": "Mercure Technologies gave Boardsesh an enterprise license for xprem, the server behind our over-the-air updates. It's why fixes reach your phone without waiting on an app store review, and why you can try a preview build from What's New.",
       "personalTitle": "Personal thanks",
       "discordTitle": "Everyone on our Discord",
       "discordBody": "Thanks for the beta, the psyche, and the bug reports. Tap to join.",
@@ -336,6 +338,7 @@
     "yes": "Yes",
     "no": "No",
     "cancel": "Cancel",
+    "clear": "Clear",
     "delete": "Delete",
     "edit": "Edit",
     "close": "Close",
@@ -354,8 +357,7 @@
     "userMenu": "User menu",
     "startClimbing": "Start climbing in the app",
     "home": "Boardsesh home",
-    "yourProfile": "Your profile",
-    "yourDashboard": "Your dashboard"
+    "yourProfile": "Your profile"
   },
   "header": {
     "you": "You",
@@ -370,7 +372,6 @@
   "share": {
     "profileTitle": "{{name}}'s climbing profile",
     "profileText": "Check out {{name}}'s climbing profile on Boardsesh",
-    "fallbackName": "My",
     "viewedFallbackName": "Climber",
     "linkCopied": "Link copied to clipboard!",
     "shareFailed": "Failed to share"

@@ -26,6 +26,9 @@ const isDev = process.env.NODE_ENV !== 'production';
  * - `primaryFill`: brand colour for a FILLED surface/button background.
  * - `onPrimary`: text/icon colour sitting on `primaryFill`.
  * - `accent`: warm amber spark for highlights — FILL-ONLY, always pair with dark text.
+ * - `onAccent`: the ink that pairs with `accent`. Same value in both schemes because
+ *   `accent` itself doesn't change per scheme — a filled amber chip reads identically
+ *   in light and dark, so its text must too.
  * - `live`: the "this climb is physically lit / now on the wall" status hue. A
  *   dedicated role (not `warning`) so a future warning retune can't silently shift
  *   the board-presence affordance. Resolves to the warm amber per scheme.
@@ -41,6 +44,7 @@ export const brandColors = {
   primaryFill: '#6D28D9',
   onPrimary: '#FFFFFF',
   accent: '#FF8A3D',
+  onAccent: '#16111F',
   success: '#047857',
   warning: '#B45309',
   error: '#C81E1E',
@@ -63,6 +67,7 @@ export const brandColorsDark = {
   primaryFill: '#7C3AED',
   onPrimary: '#FFFFFF',
   accent: '#FF8A3D',
+  onAccent: '#16111F',
   success: '#34D399',
   warning: '#FBBF24',
   error: '#F87171',

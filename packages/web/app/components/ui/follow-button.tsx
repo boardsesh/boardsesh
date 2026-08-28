@@ -15,6 +15,8 @@ type FollowButtonProps = {
   entityLabel: string;
   getFollowVariables: (entityId: string) => Record<string, unknown>;
   onFollowChange?: (isFollowing: boolean) => void;
+  /** Optional click hook — see `useFollowToggle`. Only the gym page passes one. */
+  onToggleClick?: () => void;
 };
 
 export default function FollowButton({
@@ -25,6 +27,7 @@ export default function FollowButton({
   entityLabel,
   getFollowVariables,
   onFollowChange,
+  onToggleClick,
 }: FollowButtonProps) {
   const { t } = useTranslation('common');
   const { isFollowing, isLoading, isHovered, isAuthenticated, handleToggle, setIsHovered } = useFollowToggle({
@@ -35,6 +38,7 @@ export default function FollowButton({
     entityLabel,
     getFollowVariables,
     onFollowChange,
+    onToggleClick,
   });
 
   if (!isAuthenticated) {

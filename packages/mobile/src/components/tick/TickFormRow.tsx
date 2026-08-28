@@ -28,6 +28,12 @@ type TickFormRowProps = {
   /** Let the control run to the screen edge (a horizontal rail), dropping the
    *  row's trailing gutter so the rail reads as scrollable rather than clipped. */
   bleed?: boolean;
+  /** Top-align the label against a control that is much taller than the 56pt
+   *  beat — the note field, which grows to 160pt. Centred, its label floats
+   *  ~31pt below the first line of the climber's own text and reads as broken.
+   *  Opt-in, so every other row keeps the centred beat. NOT `stacked`: that
+   *  flips the row to a column and is a different layout. */
+  alignTop?: boolean;
   /** Dim + inert, without unmounting: the edit sheet's Tries row when the tick
    *  is a flash. Keeping the row mounted preserves the form's vertical rhythm
    *  and the control's state. */
@@ -43,6 +49,7 @@ export const TickFormRow = React.memo(function TickFormRow({
   children,
   height,
   bleed = false,
+  alignTop = false,
   disabled = false,
   showSeparator = true,
   testID,
@@ -54,6 +61,9 @@ export const TickFormRow = React.memo(function TickFormRow({
   const stacked = fontScale > TICK_STACK_FONT_SCALE;
 
   const dimmed = disabled ? { opacity: opacity.disabled } : undefined;
+  // Stacked already puts the label on its own line above the control, so
+  // top-alignment is moot there and its insets would just double the gap.
+  const topAligned = alignTop && !stacked;
 
   return (
     <View testID={testID}>
@@ -64,11 +74,18 @@ export const TickFormRow = React.memo(function TickFormRow({
             paddingRight: bleed ? 0 : TICK_GUTTER,
             minHeight: height ?? TICK_ROW_HEIGHT,
             gap: stacked ? spacing[2] : TICK_LABEL_GAP,
+            paddingTop: topAligned ? spacing[1] : 0,
           },
+          topAligned ? styles.rowAlignTop : null,
           stacked ? styles.rowStacked : null,
         ]}
       >
-        <Text variant="body" color={systemColors.secondaryLabel} numberOfLines={2} style={[styles.label, dimmed]}>
+        <Text
+          variant="body"
+          color={systemColors.secondaryLabel}
+          numberOfLines={2}
+          style={[styles.label, { paddingTop: topAligned ? spacing[2] : 0 }, dimmed]}
+        >
           {label}
         </Text>
         <View
@@ -101,6 +118,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingLeft: TICK_GUTTER,
+  },
+  rowAlignTop: {
+    // Paired with the row's `paddingTop` and the label's, this sits the label's
+    // cap-height on the field's first line of text rather than on its border.
+    alignItems: 'flex-start',
   },
   rowStacked: {
     flexDirection: 'column',

@@ -20,9 +20,11 @@ type ClimbPreviewCardProps = {
  * the climbs-list row visual (`ClimbListItemContent`) and layout
  * (`climbListRowStyles`) so it reads as a lifted copy of the list row — minus the
  * swipe actions, press gestures and selected-state overlay, which live in
- * `ClimbListRow`, not here. The row sits transparent on the sheet's glass so it
- * stays cohesive with the action rows below; a hairline separator divides it from
- * them.
+ * `ClimbListRow`, not here. Painted with the same `systemColors.background` as
+ * `ClimbListRow` itself (not left transparent): the sheet's `glass` material is
+ * always opaque on iOS, but Android's sheet backing isn't guaranteed to be, so
+ * the row needs its own opaque ground rather than relying on the sheet under it.
+ * A hairline separator divides it from the action rows below.
  *
  * Memoized: its host sheets subscribe to route info (`ClimbActionsSheet` reaches
  * `useSegments` through `useCreateClimbNavigation`), so the sheet re-renders on every
@@ -32,7 +34,7 @@ type ClimbPreviewCardProps = {
 function ClimbPreviewCardComponent({ climb, boardName, layoutId, sizeId, setIds, angle }: ClimbPreviewCardProps) {
   const { systemColors } = useTheme();
   return (
-    <View>
+    <View style={{ backgroundColor: systemColors.background }}>
       <View style={climbListRowStyles.contentRow}>
         <ClimbListItemContent
           climb={climb}

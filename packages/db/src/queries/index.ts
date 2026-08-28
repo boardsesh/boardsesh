@@ -3,6 +3,7 @@ export * from './boards/index';
 export * from './climbs/index';
 export * from './climb-stats/index';
 export * from './sync/credential-backoff';
+export * from './sync/credential-fleet-snapshot';
 export * from './sync/weekly-gate';
 export * from './sync/upstream-playlist-owners';
 export * from './sync/claim-credential';

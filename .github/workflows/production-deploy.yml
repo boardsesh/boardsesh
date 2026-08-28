@@ -26,6 +26,14 @@ on:
     # No paths filter — detect-changes decides per-side. Web deploys on
     # essentially any app change; backend only on backend-affecting paths.
   workflow_dispatch:
+    inputs:
+      cloudflare_allow_zone_ssl:
+        description: >-
+          One-off: let cf:apply set the ZONE-WIDE SSL/TLS mode. Off by default and
+          deliberately not wired to push, because the setting affects every hostname
+          on boardsesh.com (ws, app, www), not just the one being deployed.
+        type: boolean
+        default: false
 
 concurrency:
   group: production-deploy
@@ -62,6 +70,7 @@ env:
   # is init-only, so this build-time var is the only place it can be set
   # (src/lib/app-environment.ts `resolveAppEnvironment`).
   EXPO_PUBLIC_SENTRY_ENVIRONMENT: production-web
+  EXPO_PUBLIC_STATIC_ASSET_BASE_URL: https://assets.boardsesh.com
 
 jobs:
   detect-changes:
@@ -74,6 +83,8 @@ jobs:
       backend_changed: ${{ steps.changes.outputs.backend }}
       app_changed: ${{ steps.changes.outputs.app }}
       deployment_base_sha: ${{ steps.changes.outputs.deployment_base_sha }}
+      cloudflare_changed: ${{ steps.changes.outputs.cloudflare }}
+      static_assets_changed: ${{ steps.changes.outputs.static_assets }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -166,9 +177,65 @@ jobs:
             echo "No rollback signal detected (autoAssignCustomDomains=true, lastRollbackTarget=null) — deploy will promote to production."
           fi
 
+  # Publish immutable images before any build that can reference their hashed
+  # URLs. The uploader lists the dedicated bucket and PUTs only missing hashes;
+  # it never deletes or overwrites objects needed by an older deployment.
+  sync-static-assets:
+    needs: [detect-changes, deploy-cloudflare]
+    if: >-
+      always()
+      && needs.detect-changes.outputs.static_assets_changed == 'true'
+    runs-on: ubuntu-latest
+    # A stuck S3/CDN socket must release the serialized production-deploy
+    # concurrency group. A healthy full-catalog validation takes about three
+    # minutes, leaving ample headroom for bounded propagation retries.
+    timeout-minutes: 10
+    environment: Production
+    steps:
+      # Run this job even when its Cloudflare dependency failed, then fail it
+      # explicitly. Otherwise GitHub reports the dependency-blocked job as
+      # "skipped", which downstream build gates legitimately accept when no
+      # static assets changed.
+      - name: Require successful Cloudflare prerequisite
+        env:
+          CLOUDFLARE_DEPLOY_RESULT: ${{ needs.deploy-cloudflare.result }}
+        run: |
+          case "$CLOUDFLARE_DEPLOY_RESULT" in
+            success|skipped) ;;
+            *)
+              echo "::error::Cloudflare prerequisite finished with result: $CLOUDFLARE_DEPLOY_RESULT"
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Upload missing immutable static assets
+        env:
+          STATIC_ASSETS_S3_BUCKET_NAME: ${{ secrets.STATIC_ASSETS_S3_BUCKET_NAME }}
+          STATIC_ASSETS_AWS_ACCESS_KEY_ID: ${{ secrets.STATIC_ASSETS_AWS_ACCESS_KEY_ID }}
+          STATIC_ASSETS_AWS_SECRET_ACCESS_KEY: ${{ secrets.STATIC_ASSETS_AWS_SECRET_ACCESS_KEY }}
+          STATIC_ASSETS_AWS_ENDPOINT_URL: ${{ secrets.STATIC_ASSETS_AWS_ENDPOINT_URL }}
+          STATIC_ASSETS_AWS_REGION: ${{ secrets.STATIC_ASSETS_AWS_REGION }}
+        run: vp run upload:static-assets
+
   build-web:
-    needs: [detect-changes, check-rollback]
-    if: needs.detect-changes.outputs.web_changed == 'true'
+    needs: [detect-changes, check-rollback, sync-static-assets]
+    if: >-
+      always()
+      && needs.detect-changes.outputs.web_changed == 'true'
+      && needs.check-rollback.result == 'success'
+      && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped')
     runs-on: ubuntu-latest
     environment: Production
     steps:
@@ -214,6 +281,7 @@ jobs:
           # derivation now protects boardsesh.com, but this keeps every caller
           # that still reads the baked env on the right backend.
           NEXT_PUBLIC_WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL || 'wss://ws.boardsesh.com/graphql' }}
+          NEXT_PUBLIC_STATIC_ASSET_BASE_URL: https://assets.boardsesh.com
         run: vercel build --prod
 
       - name: Package prebuilt output
@@ -304,11 +372,12 @@ jobs:
   # build that ran and FAILED is 'failure' (not 'skipped') and fails this check,
   # which in turn skips both production deploy jobs below.
   migrate:
-    needs: [detect-changes, build-web, build-backend]
+    needs: [detect-changes, build-web, build-backend, sync-static-assets]
     if: >-
       always()
       && (needs.build-web.result == 'success' || needs.build-web.result == 'skipped')
       && (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped')
+      && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped')
       && !(needs.build-web.result == 'skipped' && needs.build-backend.result == 'skipped')
     runs-on: ubuntu-latest
     environment: Production
@@ -540,6 +609,47 @@ jobs:
   # detect-changes. No inline Playwright smoke gate — a per-deploy expo-web boot
   # is too heavy here (this file has no such gate for web/backend either); the
   # expo-web-smoke suite stays the dispatch-only gate in e2e-tests.yml.
+  # Converges the Cloudflare zone config (infra/cloudflare) on main. Runs only
+  # when the desired state or apply tooling changes (or on manual dispatch).
+  # Static-asset publication waits for this job when both targets change, so it
+  # cannot validate the public hostname before its DNS record is converged. A
+  # non-zero exit = unapplied drift (e.g. a blocked
+  # zone-SSL change) and should be investigated, not retried blindly.
+  # The planned OpenNext (Cloudflare Workers) deploy of packages/web will be a
+  # sibling job reusing the same Production-environment CLOUDFLARE_API_TOKEN
+  # (+ CLOUDFLARE_ACCOUNT_ID) — see docs/cloudflare.md for the token scopes.
+  deploy-cloudflare:
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.cloudflare_changed == 'true'
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+
+      # `vp` does not come from `bun install` — it is a separate toolchain the
+      # action puts on PATH. Without this step the apply step dies on
+      # `vp: command not found` AFTER the Production environment has already
+      # handed it the Cloudflare token, which reads as a credentials problem
+      # and is not. Every other `vp run` step in this workflow pairs with it.
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Apply Cloudflare config
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # Only a manual dispatch can carry this; a push always resolves to ''.
+          # That is the point: an SSL drift should be a decision someone makes,
+          # not something a routine merge applies zone-wide on their behalf.
+          ALLOW_ZONE_SSL: ${{ inputs.cloudflare_allow_zone_ssl && '--allow-zone-ssl' || '' }}
+        run: vp run cf:apply -- --apply $ALLOW_ZONE_SSL
+
   # Manual deploy freeze for app.boardsesh.com, the Cloudflare Pages analogue of
   # check-rollback. deploy-web and deploy-production-backend both honour a pinned
   # Vercel Instant Rollback; Pages has no equivalent signal here, so without this
@@ -548,8 +658,8 @@ jobs:
   # script, or deploy/app-subdomain. Set the repo variable APP_WEB_DEPLOY_HOLD to
   # any non-empty value to hold the subdomain where it is; clear it to resume.
   deploy-app-web:
-    needs: [detect-changes]
-    if: needs.detect-changes.outputs.app_changed == 'true' && vars.APP_WEB_DEPLOY_HOLD == ''
+    needs: [detect-changes, sync-static-assets]
+    if: always() && needs.detect-changes.outputs.app_changed == 'true' && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped') && vars.APP_WEB_DEPLOY_HOLD == ''
     runs-on: ubuntu-latest
     environment: Production
     steps:
@@ -626,15 +736,28 @@ jobs:
         # config, not part of the export. Copy them into the publish dir.
         run: |
           set -euo pipefail
-          cp deploy/app-subdomain/_redirects "$RUNNER_TEMP/app-standalone/_redirects"
-          cp deploy/app-subdomain/_headers   "$RUNNER_TEMP/app-standalone/_headers"
+          cp deploy/app-subdomain/_redirects   "$RUNNER_TEMP/app-standalone/_redirects"
+          cp deploy/app-subdomain/_headers     "$RUNNER_TEMP/app-standalone/_headers"
+          # _routes.json scopes the Function below to the three asset prefixes,
+          # so the shell and every SPA route stay pure static assets.
+          cp deploy/app-subdomain/_routes.json "$RUNNER_TEMP/app-standalone/_routes.json"
+          # Pages discovers `functions/` relative to wrangler's cwd and requires
+          # it to sit OUTSIDE the static root — put it beside the export, and
+          # publish with `--cwd "$RUNNER_TEMP"` so wrangler finds it there.
+          cp -R deploy/app-subdomain/functions "$RUNNER_TEMP/functions"
 
+      # Needs Account.Cloudflare Pages Edit on the shared Production-environment
+      # token. It is the same secret deploy-cloudflare uses for the zone, so a
+      # rotation that grants only the zone scopes lands here as
+      # `Authentication error [code: 10000]` while `wrangler whoami` still works.
+      # See the token section of docs/cloudflare.md.
       - name: Publish to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           bunx wrangler@4 pages deploy "$RUNNER_TEMP/app-standalone" \
+            --cwd "$RUNNER_TEMP" \
             --project-name=boardsesh-app \
             --branch=main
 
@@ -692,16 +815,98 @@ jobs:
             ! echo "$cc" | grep -qi 'immutable'
           }
 
-          # A real content-hashed asset URL, parsed out of the served index.html,
-          # must come back immutable-cached.
-          check_hashed_asset_immutable() {
+          # The entry chunk named by the served index.html must come back as real
+          # JavaScript, immutable-cached.
+          #
+          # The content-type and body checks are the point, not decoration. This
+          # used to assert only `immutable` off a HEAD, which cannot fail: when a
+          # chunk is missing, `_redirects`' `/* /index.html 200` answers the .js
+          # URL with the HTML shell, and `_headers`' `/_expo/*` rule stamps
+          # `immutable` on it by path — so a chunk that does not exist passed this
+          # check. The browser is stricter than the smoke was: `nosniff` + a
+          # `text/html` script means Chrome refuses to execute it, React never
+          # mounts, and #root stays empty with no console error to explain it.
+          # That is the exact silent failure this now catches, one step earlier
+          # and with a message that says which part was wrong.
+          check_entry_chunk_is_js() {
             local asset_path
-            asset_path=$(curl -sS "$base/" \
+            asset_path=$(curl -sS --max-time 20 "$base/" \
               | grep -oE '/_expo/static/[^"'"'"']+\.js' | head -n1)
             [ -n "$asset_path" ] || { echo "  no /_expo asset found in index.html"; return 1; }
-            local cc; cc=$(curl -sSI "$base$asset_path" | tr -d '\r' \
-              | grep -i '^cache-control:' || true)
-            echo "$cc" | grep -qi 'immutable'
+
+            local head; head=$(curl -sSI --max-time 20 "$base$asset_path" | tr -d '\r')
+            echo "$head" | grep -qiE '^content-type:.*javascript' || {
+              echo "  $asset_path"
+              echo "    status:       $(echo "$head" | head -n1 || echo '(none)')"
+              echo "    content-type: $(echo "$head" | grep -i '^content-type:' || echo '(none)')"
+              echo "  the entry chunk index.html names is not being served as JavaScript."
+              echo "  404 → the chunk is missing from the deployment (or has not propagated yet)."
+              echo "  text/html → the SPA fallback answered it, which also means the asset-404"
+              echo "    Function is not in the path; see deploy/app-subdomain/functions/_middleware.ts."
+              return 1
+            }
+            echo "$head" | grep -qi '^cache-control:.*immutable' || {
+              echo "  $asset_path is not immutable-cached: $(echo "$head" | grep -i '^cache-control:' || echo '(none)')"
+              return 1
+            }
+
+            # Read the start of the body too. Content-type can be right while the
+            # body is the shell if a future header rule ever sets the type by
+            # path as well.
+            #
+            # `head -c` closes the pipe once it has enough, so curl stops early
+            # and this never pulls the whole ~10MB chunk. Curl then reports a
+            # write failure, which is expected here and is why stderr is
+            # dropped; a fetch that genuinely failed still arrives as an empty
+            # `first` and is caught on the next line. Deliberately not a range
+            # request: asset paths are served through a Pages Function now
+            # (deploy/app-subdomain/functions/_middleware.ts), which does not
+            # answer 206, so `-r` would silently read the whole body anyway.
+            local first
+            first=$(curl -sS --max-time 60 "$base$asset_path" 2>/dev/null | head -c 64) || true
+            [ -n "$first" ] || { echo "  $asset_path body is empty"; return 1; }
+            case "$first" in
+              '<!doctype'*|'<!DOCTYPE'*|'<html'*)
+                echo "  $asset_path served the HTML shell, not JavaScript"; return 1 ;;
+            esac
+          }
+
+          check_manifest_link() {
+            # The bug this guards (W-24, #4438): index.html asked for
+            # /app/manifest.json, _redirects' `/* /index.html 200` answered it
+            # with the SPA shell, and the browser silently got HTML where a
+            # manifest belongs — no install prompt, console error every load,
+            # HTTP 200 the whole way. scripts/lib/patch-expo-web-pwa-manifest.mjs
+            # rewrites the href from the export's baseUrl; this is the
+            # end-to-end proof it landed on the real deploy.
+            # --max-time so an unreachable edge fails this attempt and lets the
+            # retry loop above do its job, instead of hanging the release. The
+            # sibling checks predate this and are left alone here on purpose.
+            local href
+            href=$(curl -sS --max-time 20 "$base/" \
+              | grep -oE '<link[^>]*rel="manifest"[^>]*>' \
+              | grep -oE 'href="[^"]+"' | head -n1 | cut -d'"' -f2)
+            [ "$href" = "/manifest.json" ] || { echo "  manifest href is '$href', expected /manifest.json"; return 1; }
+            local out; out=$(curl -sS --max-time 20 -o /dev/null -w '%{http_code} %{content_type}' "$base$href")
+            echo "$out" | grep -q '^200 ' || { echo "  manifest fetch: $out"; return 1; }
+            echo "$out" | grep -qi 'application/json' || { echo "  manifest content-type: $out"; return 1; }
+            # Read the body too. The href and content-type can both be right
+            # while start_url sits outside scope — a manifest that parses
+            # cleanly and still never offers the install prompt.
+            # Fetch and check the body separately, so a timed-out or empty
+            # response reports as a fetch failure rather than a JSON parse
+            # error from node — the retry loop handles both, but only one of
+            # them tells you what actually went wrong.
+            local body
+            body=$(curl -sS --max-time 20 "$base$href") || { echo "  manifest body fetch failed"; return 1; }
+            [ -n "$body" ] || { echo "  manifest body is empty"; return 1; }
+            echo "$body" | node -e '
+              const manifest = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+              if (manifest.start_url !== "/" || manifest.scope !== "/") {
+                console.error(`  manifest start_url is "${manifest.start_url}" and scope is "${manifest.scope}"; expected "/" for both`);
+                process.exit(1);
+              }
+            '
           }
 
           retry "root / → 200 text/html"                 check_root
@@ -709,7 +914,8 @@ jobs:
           retry "X-Robots-Tag: noindex on /"              check_noindex
           retry "wasm binary → 200 wasm/octet-stream"     check_wasm
           retry "index.html is NOT immutable-cached"      check_index_not_immutable
-          retry "hashed _expo asset is immutable-cached"  check_hashed_asset_immutable
+          retry "entry chunk serves as immutable JavaScript"  check_entry_chunk_is_js
+          retry "PWA manifest → JSON with start_url/scope /"  check_manifest_link
 
       - name: Install Playwright chromium
         run: cd packages/web && bunx playwright install --with-deps chromium
@@ -730,6 +936,21 @@ jobs:
         env:
           PLAYWRIGHT_TEST_BASE_URL: https://app.boardsesh.com
         run: cd packages/web && bunx playwright test --config=playwright.production.config.ts
+
+      # The config already writes a trace on retry and a screenshot on failure,
+      # but nothing collected them, so a failed boot check left only the console
+      # output to work from — which for a blank #root says "element(s) not found"
+      # and nothing else. Keep them; this is the deploy that will need them.
+      - name: Upload boot-check artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-boot-check-failure
+          path: |
+            packages/web/test-results/
+            packages/web/playwright-report/
+          retention-days: 14
+          if-no-files-found: ignore
 
   # Homelab staging-backend deploy is currently broken — re-enable once the
   # self-hosted runner is healthy. It deploys the same :staging image and is
@@ -754,8 +975,8 @@ jobs:
   # summary, so a forgotten APP_WEB_DEPLOY_HOLD would quietly strand the
   # subdomain on an old bundle. No-ops if DISCORD_DEPLOY_WEBHOOK is unset.
   notify-app-web-held:
-    needs: [detect-changes]
-    if: needs.detect-changes.outputs.app_changed == 'true' && vars.APP_WEB_DEPLOY_HOLD != ''
+    needs: [detect-changes, sync-static-assets]
+    if: always() && needs.detect-changes.outputs.app_changed == 'true' && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped') && vars.APP_WEB_DEPLOY_HOLD != ''
     runs-on: ubuntu-latest
     environment: Production
     steps:
@@ -831,6 +1052,7 @@ jobs:
       [
         detect-changes,
         check-rollback,
+        sync-static-assets,
         build-web,
         build-backend,
         migrate,
@@ -849,6 +1071,7 @@ jobs:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           CHECK_ROLLBACK: ${{ needs.check-rollback.result }}
           DETECT_CHANGES: ${{ needs.detect-changes.result }}
+          SYNC_STATIC_ASSETS: ${{ needs.sync-static-assets.result }}
           BUILD_WEB: ${{ needs.build-web.result }}
           BUILD_BACKEND: ${{ needs.build-backend.result }}
           MIGRATE: ${{ needs.migrate.result }}
@@ -863,8 +1086,8 @@ jobs:
             exit 0
           fi
           # URL wrapped in <…> so Discord suppresses the inline preview embed.
-          CONTENT=$(printf '🚨 **Production deploy failed** on \`%s\`\n• detect-changes: %s\n• check-rollback: %s\n• build-web: %s\n• build-backend: %s\n• migrate: %s\n• deploy-web: %s\n• deploy-production-backend: %s\n• deploy-app-web: %s\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$CHECK_ROLLBACK" "$BUILD_WEB" "$BUILD_BACKEND" "$MIGRATE" "$DEPLOY_WEB" "$DEPLOY_BACKEND" "$DEPLOY_APP_WEB" "$RUN_URL")
+          CONTENT=$(printf '🚨 **Production deploy failed** on \`%s\`\n• detect-changes: %s\n• check-rollback: %s\n• sync-static-assets: %s\n• build-web: %s\n• build-backend: %s\n• migrate: %s\n• deploy-web: %s\n• deploy-production-backend: %s\n• deploy-app-web: %s\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$CHECK_ROLLBACK" "$SYNC_STATIC_ASSETS" "$BUILD_WEB" "$BUILD_BACKEND" "$MIGRATE" "$DEPLOY_WEB" "$DEPLOY_BACKEND" "$DEPLOY_APP_WEB" "$RUN_URL")
           # --fail-with-body surfaces Discord's status + error body (e.g. 429,
           # rotated webhook) in the log instead of failing silently. Don't let a
           # webhook hiccup fail the job — the alert is best-effort.
@@ -883,6 +1106,7 @@ jobs:
       [
         check-rollback,
         detect-changes,
+        sync-static-assets,
         build-web,
         build-backend,
         migrate,

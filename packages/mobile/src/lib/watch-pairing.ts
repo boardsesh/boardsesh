@@ -4,7 +4,7 @@ import { BACKEND_URL } from './env';
 
 // Re-export the shared pair-code type + pure countdown helper so consumers keep a
 // single import site (`from './watch-pairing'`). The helpers themselves live in
-// `@boardsesh/watch-pairing`, shared with the web settings section.
+// `@boardsesh/watch-pairing`; watch pairing is app-only since W-21 (#4440).
 export { remainingSeconds, type WatchPairingCode } from '@boardsesh/watch-pairing';
 
 /**

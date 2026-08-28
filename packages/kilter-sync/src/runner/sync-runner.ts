@@ -11,6 +11,7 @@ import {
   acquireOrRenewDaemonLease,
   claimNextCredentialForSync,
   claimSharedSyncSlot,
+  getCredentialFleetSnapshot,
   readSharedSyncCursor,
   releaseDaemonLease,
   snapshotClimbStatsHistoryIfDue,
@@ -23,6 +24,7 @@ import { decrypt, encrypt } from '@boardsesh/crypto';
 import {
   DEFAULT_DAEMON_OPTIONS,
   DaemonLease,
+  formatSyncHealthSummary,
   resolveDaemonOptions,
   runDaemonLoop,
   type ResolvedDaemonOptions,
@@ -48,9 +50,19 @@ import type { RunnerClient, RunnerDb, SyncRunnerConfig, SyncSummary, KilterCrede
 // via config.sharedSyncCooldownMs.
 const DEFAULT_CATALOG_SYNC_COOLDOWN_MS = 60 * 60 * 1000;
 
+/**
+ * Hourly gate for the read-only fleet health summary. Mirrors aurora-sync: the
+ * daemon had no staleness signal of its own, which is how a 30-day user-sync
+ * outage stayed invisible.
+ */
+const SYNC_HEALTH_SUMMARY_COOLDOWN_MS = 60 * 60 * 1000;
+
 export class SyncRunner {
   private config: SyncRunnerConfig;
   private daemonController: AbortController | null = null;
+
+  // In-memory hourly gate for the fleet health summary. Resets to 0 on restart.
+  private lastHealthSummaryAt = 0;
   private client: RunnerClient | null = null;
   private db: RunnerDb | null = null;
   private lease: DaemonLease | null = null;
@@ -302,6 +314,15 @@ export class SyncRunner {
         updatedAt: now,
       })
       .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, KILTER_BOARD_TYPE)));
+
+    // Greppable success line. The daemon had NONE until now: only failures and
+    // the duplicate-circuit case ever logged, so `grep 'Successfully synced'`
+    // over this service returned zero whether the sync was healthy or stone
+    // dead — which is precisely why a 30-day outage went unnoticed. Alerting on
+    // the ABSENCE of this line is the check that catches the next one; alerting
+    // on an error string would go quiet the moment the error is fixed.
+    // Matches aurora-sync's wording so one Loki rule can cover both daemons.
+    this.log(`[KilterSyncRunner] ✓ Successfully synced user ${cred.userId} for ${KILTER_BOARD_TYPE}`);
 
     // Piggyback: after the user-half succeeds and is stamped active, refresh
     // the shared catalog if its cooldown has elapsed. Reuses this user's token.
@@ -630,6 +651,30 @@ export class SyncRunner {
     return rows[0] ?? null;
   }
 
+  /**
+   * Log the fleet health summary once an hour (in-memory gate, mirroring
+   * aurora-sync). Read-only; a failure never breaks the daemon cycle.
+   */
+  private async maybeLogSyncHealth(): Promise<void> {
+    const now = Date.now();
+    if (this.lastHealthSummaryAt !== 0 && now - this.lastHealthSummaryAt < SYNC_HEALTH_SUMMARY_COOLDOWN_MS) {
+      return;
+    }
+    // Stamp before the query (not after) so a slow or erroring snapshot doesn't
+    // re-fire on the very next cycle — a summary is anti-spam by design.
+    this.lastHealthSummaryAt = now;
+    try {
+      const { db } = this.getClient();
+      const snapshot = await getCredentialFleetSnapshot(db, eq(auroraCredentials.boardType, KILTER_BOARD_TYPE));
+      this.log(formatSyncHealthSummary(snapshot, '[KilterSyncRunner]', 'kilter credentials'));
+    } catch (error) {
+      this.handleError(error instanceof Error ? error : new Error(String(error)), {});
+      this.log(
+        `[KilterSyncRunner] Sync health summary failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   async runDaemon(options: DaemonOptions = {}): Promise<void> {
     const resolved: ResolvedDaemonOptions = resolveDaemonOptions(options);
     this.daemonController = new AbortController();
@@ -638,6 +683,9 @@ export class SyncRunner {
       await runDaemonLoop(
         async () => {
           await this.syncNextUser();
+          // Hourly read-only fleet summary so a stuck / backing-off credential
+          // is visible without querying the DB by hand.
+          await this.maybeLogSyncHealth();
           // Checkpoint: if a heartbeat saw another instance take the lease over
           // while this cycle ran, stop here instead of continuing alongside the
           // new holder. The loop reports it and drops into standby.

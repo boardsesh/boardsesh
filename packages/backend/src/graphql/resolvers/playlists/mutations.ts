@@ -1,4 +1,5 @@
 import { eq, and, asc, inArray, sql } from 'drizzle-orm';
+import { GraphQLError } from 'graphql';
 import { v4 as uuidv4 } from 'uuid';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
@@ -13,9 +14,79 @@ import {
   FollowPlaylistInputSchema,
   PinPlaylistInputSchema,
 } from '../../../validation/schemas';
+import { UNIFIED_TABLES } from '../../../db/queries/util/table-select';
 import { getPlaylistFollowStats } from './queries';
 import { verifyPlaylistAccess } from './helpers/enrichment';
 import { computePlaylistReorderWrites } from './helpers/reorder';
+import { logger } from '../../../utils/logger';
+
+type ClimbBoardScope = { boardType: string; layoutId: number };
+
+// Resolves every board + layout a climb uuid can legitimately stand for,
+// following the same alias-read convention as the rest of the codebase (see
+// packages/db/src/queries/aliases.ts and docs' "Climb alias read-resolution"
+// note): board_climb_aliases dedups duplicate Kilter UUIDs onto a single
+// canonical board_climbs row, so a climbUuid that isn't itself a board_climbs
+// row may still be a non-canonical alias whose canonical row carries the real
+// board/layout.
+//
+// A LIST, not a single row, because the alias table's PK is
+// (board_type, alias_uuid): the same alias_uuid can in principle exist under
+// more than one board, pointing at different canonical climbs. Picking one of
+// those with an unordered LIMIT 1 would make the guard's verdict depend on
+// whichever row Postgres happened to return. Callers accept the add when ANY
+// resolved scope is compatible, so an ambiguous uuid can never be rejected on
+// a coin flip.
+//
+// Returns an empty list when the uuid resolves to no board_climbs row even
+// after alias resolution — callers fail OPEN on empty (see addClimbToPlaylist
+// below) rather than reject: the catalog row can legitimately lag behind
+// create-climb / offline-sync writes, and hard rejecting here would risk
+// breaking those flows for the sake of a guard that is defense-in-depth (the
+// mobile picker, per #4268, no longer offers mismatched playlists as add
+// targets in the first place).
+async function resolveClimbBoardScopes(climbUuid: string): Promise<ClimbBoardScope[]> {
+  const direct = await db
+    .select({ boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId })
+    .from(dbSchema.boardClimbs)
+    .where(eq(dbSchema.boardClimbs.uuid, climbUuid))
+    .limit(1);
+
+  if (direct.length > 0) return direct;
+
+  // Not a canonical row — check whether it's a non-canonical alias. We don't
+  // know the board up front, so join straight from alias_uuid to the canonical
+  // board_climbs row and take the board/layout from there. Bounded by the
+  // number of boards a single alias_uuid can appear under (one row per board
+  // at most, by the alias PK), so no LIMIT is needed.
+  const viaAlias = await db
+    .select({ boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId })
+    .from(dbSchema.boardClimbAliases)
+    .innerJoin(dbSchema.boardClimbs, eq(dbSchema.boardClimbs.uuid, dbSchema.boardClimbAliases.canonicalUuid))
+    .where(eq(dbSchema.boardClimbAliases.aliasUuid, climbUuid));
+
+  if (viaAlias.length > 0) return viaAlias;
+
+  logger.warn(
+    'addClimbToPlaylist: climb uuid not found in board_climbs or board_climb_aliases; allowing add (fail-open)',
+    {
+      climbUuid,
+    },
+  );
+  return [];
+}
+
+// The playlist side of the same rule playlistsForClimb / playlistsForClimbs
+// use to scope membership: the boards must match, and a playlist pinned to one
+// layout only takes climbs from that layout (a null layoutId — how Aurora- and
+// Kilter-synced circuits arrive — takes any layout of its own board).
+function climbFitsPlaylistBoard(
+  climbScope: ClimbBoardScope,
+  playlistScope: { boardType: string; layoutId: number | null },
+): boolean {
+  if (climbScope.boardType !== playlistScope.boardType) return false;
+  return playlistScope.layoutId === null || climbScope.layoutId === playlistScope.layoutId;
+}
 
 function playlistResult(playlist: dbSchema.Playlist, climbCount: number): Record<string, unknown> {
   return {
@@ -279,7 +350,11 @@ export const playlistMutations = {
     // Check owner role. Editors/viewers retain private read access, but cannot
     // mutate playlist contents.
     const ownership = await db
-      .select({ id: dbSchema.playlists.id })
+      .select({
+        id: dbSchema.playlists.id,
+        boardType: dbSchema.playlists.boardType,
+        layoutId: dbSchema.playlists.layoutId,
+      })
       .from(dbSchema.playlistOwnership)
       .innerJoin(dbSchema.playlists, eq(dbSchema.playlists.id, dbSchema.playlistOwnership.playlistId))
       .where(
@@ -296,6 +371,30 @@ export const playlistMutations = {
     }
 
     const playlistId = ownership[0].id;
+
+    // Board-compatibility guard (#4015): reject adds where the climb's own
+    // board/layout doesn't match the playlist's. This mirrors the exact rule
+    // playlistsForClimb / playlistsForClimbs already use to scope membership
+    // (board_type match + layout_id match-or-null) — without it, an add could
+    // succeed here while the membership refetch silently excludes it, making
+    // the UI checkmark vanish on the next fetch and leaving a row the climber
+    // can no longer untick. #4268 already stops the mobile picker from
+    // offering a mismatched playlist as a target; this is the server-side
+    // backstop for every client that predates it — OTA rollout takes days to
+    // reach the whole fleet, and offline queues can replay an add that was
+    // composed before the update landed.
+    const climbBoardScopes = await resolveClimbBoardScopes(validatedInput.climbUuid);
+    if (climbBoardScopes.length > 0 && !climbBoardScopes.some((scope) => climbFitsPlaylistBoard(scope, ownership[0]))) {
+      // A GraphQLError with a BAD_USER_INPUT code rather than a bare Error: the
+      // rejection is a client-input verdict the app can branch on, and it keeps
+      // the guard out of the "unexpected server failure" bucket. The message
+      // still reaches clients verbatim (mask-error.ts only sanitizes raw
+      // database errors), and the mobile picker turns any rejection into its
+      // own translated "couldn't add" line — the wire text is never shown.
+      throw new GraphQLError('This playlist is for a different board', {
+        extensions: { code: 'BAD_USER_INPUT' },
+      });
+    }
 
     // Insert-or-noop + position assignment share one transaction: a plain
     // pre-check SELECT followed by a separate INSERT leaves a window where
@@ -469,6 +568,17 @@ export const playlistMutations = {
    * never has to send a stale oldIndex), splices it to the clamped target index,
    * then renumbers positions to a dense 0..n-1. Only rows whose position actually
    * changed are written.
+   *
+   * `newIndex` is read in the client's index space — the rendered list, which
+   * excludes playlist rows whose climb_uuid doesn't resolve in board_climbs — and
+   * translated back to the full list before splicing (#4012).
+   *
+   * That index space is specifically the ALL-BOARDS `playlistClimbs` list, the
+   * one the only editor renders: the mobile playlist screen deliberately omits
+   * `boardName` so off-board climbs stay listed (dimmed) instead of being
+   * filtered out. A future editor that reordered from a board-SCOPED list would
+   * be numbering against a shorter list again, and this input carries no board
+   * argument to infer that from — it would have to start sending one.
    */
   reorderPlaylistClimb: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<boolean> => {
     requireAuthenticated(ctx);
@@ -512,9 +622,34 @@ export const playlistMutations = {
         .orderBy(asc(dbSchema.playlistClimbs.position), asc(dbSchema.playlistClimbs.addedAt))
         .for('update');
 
+      // `newIndex` is an index into the list the client RENDERS, and that list
+      // comes from the playlistClimbs query, which inner-joins board_climbs — a
+      // playlist row whose climb_uuid no longer resolves is dropped there while
+      // still holding a position here. Without translating index spaces, one such
+      // row ahead of the target silently shifts every move below it by one (#4012).
+      //
+      // Visibility is resolved with a second statement rather than a LEFT JOIN on
+      // the locked select above: Postgres rejects FOR UPDATE on the nullable side
+      // of an outer join. Playlists are small and board_climbs.uuid is the primary
+      // key, so this is an index scan over a handful of ids.
+      const rowClimbUuids = rows.map((row) => row.climbUuid);
+      const resolvableRows: Array<{ uuid: string }> =
+        rowClimbUuids.length === 0
+          ? []
+          : await tx
+              .select({ uuid: UNIFIED_TABLES.climbs.uuid })
+              .from(UNIFIED_TABLES.climbs)
+              .where(inArray(UNIFIED_TABLES.climbs.uuid, rowClimbUuids));
+      const resolvableClimbUuids = new Set(resolvableRows.map((row) => row.uuid));
+
       // Throws if the climb isn't in the playlist; returns only the rows whose
       // position actually shifts (dense 0..n-1 renumber).
-      const writes = computePlaylistReorderWrites(rows, validatedInput.climbUuid, validatedInput.newIndex);
+      const writes = computePlaylistReorderWrites(
+        rows,
+        validatedInput.climbUuid,
+        validatedInput.newIndex,
+        resolvableClimbUuids,
+      );
 
       // Persist every shifted row in ONE statement — a `CASE id WHEN … THEN …`
       // update — rather than a write per row. A move to the front of a 100-climb

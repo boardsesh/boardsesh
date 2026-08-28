@@ -1,10 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
+import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import {
+  boardseshRenderQuerySchema,
+  fieldColorSchema,
+  glowFalloffSchema,
+  glyphsQuerySchema,
   isValidFrameSegment,
   isValidFramesString,
   normalizeOutputFormat,
   ogClimbQuerySchema,
+  renderModeSchema,
   VALID_BOARD_NAMES,
   MAX_FRAMES_LENGTH,
 } from '../validation';
@@ -70,9 +76,13 @@ describe('isValidFramesString', () => {
 
 describe('VALID_BOARD_NAMES', () => {
   it('includes every supported board', () => {
-    for (const name of ['kilter', 'tension', 'moonboard', 'decoy', 'touchstone', 'grasshopper', 'soill']) {
+    for (const name of ['kilter', 'tension', 'moonboard', 'decoy', 'touchstone', 'grasshopper', 'soill', 'woods']) {
       expect(VALID_BOARD_NAMES.has(name)).toBe(true);
     }
+  });
+
+  it('is exactly SUPPORTED_BOARDS, so a new board can never be a silent 400', () => {
+    expect([...VALID_BOARD_NAMES].sort()).toEqual([...SUPPORTED_BOARDS].sort());
   });
 
   it('rejects unknown boards', () => {
@@ -116,6 +126,19 @@ describe('ogClimbQuerySchema', () => {
     expect(ogClimbQuerySchema.safeParse({ ...valid, board_name: 'evil' }).success).toBe(false);
   });
 
+  it('accepts a Woods share card', () => {
+    const parsed = ogClimbQuerySchema.parse({
+      ...valid,
+      board_name: 'woods',
+      layout_id: '1',
+      size_id: '2',
+      set_ids: '1',
+    });
+    expect(parsed.board_name).toBe('woods');
+    expect(parsed.size_id).toBe(2);
+    expect(parsed.set_ids).toBe('1');
+  });
+
   it('rejects non-numeric set_ids', () => {
     expect(ogClimbQuerySchema.safeParse({ ...valid, set_ids: '1,a' }).success).toBe(false);
     expect(ogClimbQuerySchema.safeParse({ ...valid, set_ids: '1,' }).success).toBe(false);
@@ -149,5 +172,61 @@ describe('ogClimbQuerySchema', () => {
 
   it('rejects an unknown format', () => {
     expect(ogClimbQuerySchema.safeParse({ ...valid, format: 'gif' }).success).toBe(false);
+  });
+
+  it('defaults render_mode, glow_falloff and glyphs to classic/soft/off when omitted', () => {
+    const parsed = ogClimbQuerySchema.parse(valid);
+    expect(parsed.render_mode).toBe('classic');
+    expect(parsed.glow_falloff).toBe('soft');
+    expect(parsed.glyphs).toBe(false);
+    expect(parsed.field_color).toBeUndefined();
+  });
+
+  it('accepts render_mode=boardsesh and glow_falloff=plateau', () => {
+    const parsed = ogClimbQuerySchema.parse({ ...valid, render_mode: 'boardsesh', glow_falloff: 'plateau' });
+    expect(parsed.render_mode).toBe('boardsesh');
+    expect(parsed.glow_falloff).toBe('plateau');
+  });
+
+  it('rejects an invalid render_mode, glow_falloff, or field_color', () => {
+    expect(ogClimbQuerySchema.safeParse({ ...valid, render_mode: 'neon' }).success).toBe(false);
+    expect(ogClimbQuerySchema.safeParse({ ...valid, glow_falloff: 'hard' }).success).toBe(false);
+    expect(ogClimbQuerySchema.safeParse({ ...valid, field_color: 'blue' }).success).toBe(false);
+    expect(ogClimbQuerySchema.safeParse({ ...valid, field_color: '#12345' }).success).toBe(false);
+  });
+});
+
+describe('renderModeSchema / glowFalloffSchema / glyphsQuerySchema / fieldColorSchema', () => {
+  it('renderModeSchema defaults to classic and accepts boardsesh', () => {
+    expect(renderModeSchema.parse(undefined)).toBe('classic');
+    expect(renderModeSchema.parse('boardsesh')).toBe('boardsesh');
+    expect(renderModeSchema.safeParse('evil').success).toBe(false);
+  });
+
+  it('glowFalloffSchema defaults to soft and accepts plateau', () => {
+    expect(glowFalloffSchema.parse(undefined)).toBe('soft');
+    expect(glowFalloffSchema.parse('plateau')).toBe('plateau');
+    expect(glowFalloffSchema.safeParse('hard').success).toBe(false);
+  });
+
+  it('glyphsQuerySchema accepts 0/1/true/false and defaults unset to false', () => {
+    expect(glyphsQuerySchema.parse(undefined)).toBe(false);
+    expect(glyphsQuerySchema.parse('0')).toBe(false);
+    expect(glyphsQuerySchema.parse('false')).toBe(false);
+    expect(glyphsQuerySchema.parse('1')).toBe(true);
+    expect(glyphsQuerySchema.parse('true')).toBe(true);
+    expect(glyphsQuerySchema.safeParse('yes').success).toBe(false);
+  });
+
+  it('fieldColorSchema accepts a #rrggbb hex color and leaves it unset when omitted', () => {
+    expect(fieldColorSchema.parse(undefined)).toBeUndefined();
+    expect(fieldColorSchema.parse('#181225')).toBe('#181225');
+    expect(fieldColorSchema.safeParse('#fff').success).toBe(false);
+    expect(fieldColorSchema.safeParse('181225').success).toBe(false);
+  });
+
+  it('boardseshRenderQuerySchema parses all four with defaults', () => {
+    const parsed = boardseshRenderQuerySchema.parse({});
+    expect(parsed).toEqual({ render_mode: 'classic', glow_falloff: 'soft', glyphs: false, field_color: undefined });
   });
 });

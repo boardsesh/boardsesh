@@ -11,6 +11,8 @@ SOURCE_GLUE="$ROOT_DIR/packages/board-renderer/wasm/pkg/board_renderer_wasm.js"
 SOURCE_WASM="$ROOT_DIR/packages/board-renderer/wasm/pkg/board_renderer_wasm_bg.wasm"
 PUBLIC_GLUE="$ROOT_DIR/packages/mobile/public/wasm/board_renderer_wasm.js"
 PUBLIC_WASM="$ROOT_DIR/packages/mobile/public/wasm/board_renderer_wasm_bg.wasm"
+WEB_PUBLIC_GLUE="$ROOT_DIR/packages/web/public/wasm/board_renderer_wasm.js"
+WEB_PUBLIC_WASM="$ROOT_DIR/packages/web/public/wasm/board_renderer_wasm_bg.wasm"
 
 cleanup() {
   rm -rf "$OUTPUT_DIR"
@@ -35,6 +37,13 @@ verify_synced_artifact() {
 
 verify_synced_artifact "$SOURCE_GLUE" "$PUBLIC_GLUE" "JavaScript glue"
 verify_synced_artifact "$SOURCE_WASM" "$PUBLIC_WASM" "WASM"
+
+# www serves a third copy to its own board-render worker. It has no build step of
+# its own, and before issue #4495 nothing checked it — which is how it drifted
+# onto an artifact that ignored stroke_width_multiplier. The sync script writes
+# it; this asserts someone ran the script.
+verify_synced_artifact "$SOURCE_GLUE" "$WEB_PUBLIC_GLUE" "www JavaScript glue"
+verify_synced_artifact "$SOURCE_WASM" "$WEB_PUBLIC_WASM" "www WASM"
 
 # Single export recipe shared with the production build path (Dockerfile.web /
 # `vp run build:expo-web`); it also asserts the shell and WASM assets landed.

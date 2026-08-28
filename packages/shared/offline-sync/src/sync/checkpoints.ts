@@ -204,6 +204,55 @@ export async function getDownloadedScopeKeys(db: SqlExecutor): Promise<string[]>
   return rows.map((row) => row.key.slice(SCOPE_COMPLETE_PREFIX.length));
 }
 
+/**
+ * The scopes with an OPEN download funnel: a `scope-started:` marker and no
+ * `scope-complete:` twin (issue #4452).
+ *
+ * `removeBoardScopeData` can ask this question one scope at a time because it
+ * already knows which board is going away. The paths this exists for cannot: a
+ * sign-out ends EVERY download at once, and the launch backstop is looking for
+ * markers whose board nobody named at the time. Both need the whole open set
+ * before they act, because the act is what destroys the evidence — the sign-out
+ * wipe deletes sync_meta wholesale, and de-listing a board means the pull
+ * client's `boardScopes` loop never visits that scope again.
+ *
+ * Two GLOB reads and a set difference rather than a `NOT EXISTS` subquery, so it
+ * keeps the literal-prefix index range-scan `getDownloadedScopeKeys` relies on
+ * (SQLite's default case-insensitive LIKE would scan the table instead).
+ */
+export async function getUnfinishedDownloadScopeKeys(db: SqlExecutor): Promise<string[]> {
+  const startedRows = await db.getAllAsync<{ key: string }>('SELECT key FROM sync_meta WHERE key GLOB ?', [
+    `${SCOPE_STARTED_PREFIX}*`,
+  ]);
+  if (startedRows.length === 0) return [];
+  const completedScopeKeys = new Set(await getDownloadedScopeKeys(db));
+  return startedRows
+    .map((row) => row.key.slice(SCOPE_STARTED_PREFIX.length))
+    .filter((scopeKey) => !completedScopeKeys.has(scopeKey));
+}
+
+/**
+ * Close one scope's funnel without touching anything else it owns (issue #4452).
+ *
+ * The de-listing paths — the My Boards toggle-off, and the selective sign-out
+ * that empties `syncEnabledBoards` — delete no catalog rows at all: the rows and
+ * their checkpoints stay so a re-enable resumes instantly. Only the funnel's own
+ * bookkeeping has to go, and only once a terminal event has been emitted for it.
+ * Left behind, the marker is what makes abandonment unmeasurable: this
+ * download's Started stays open forever, and the NEXT download emits Completed
+ * with no Started of its own.
+ *
+ * `scope-complete:` is deliberately NOT here — it describes rows that still
+ * exist, and dropping it would make `isBoardDownloadedLocally` deny a catalog
+ * sitting on disk. Neither is any `checkpoint:` key, for the same reason. An
+ * exact key list, like scope-teardown's `clearScopeSyncMeta`, never a prefix
+ * sweep.
+ */
+export async function clearScopeDownloadFunnelMarkers(db: SqlExecutor, scopeKey: string): Promise<void> {
+  const keys = [`${SCOPE_STARTED_PREFIX}${scopeKey}`, `${SCOPE_DOWNLOAD_STARTED_PREFIX}${scopeKey}`];
+  await db.runAsync(`DELETE FROM sync_meta WHERE key IN (${keys.map(() => '?').join(', ')})`, keys);
+}
+
 export async function getCheckpoint(db: SqlExecutor, key: string): Promise<SyncCheckpoint | null> {
   const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [key]);
   if (!row) return null;

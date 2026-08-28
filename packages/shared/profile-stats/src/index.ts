@@ -13,6 +13,8 @@ export {
   buildVPointsTimeline,
   buildStatisticsSummary,
   buildActivityHeatmap,
+  getComparisonWindows,
+  buildPeriodComparison,
 } from './chart-builders';
 export { difficultyMapping, getDifficultyMapping, sortGrades } from './grade-mapping';
 export {

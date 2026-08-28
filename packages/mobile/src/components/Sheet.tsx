@@ -69,6 +69,11 @@ type SheetProps = {
   /** Optional fixed header, rendered above the body and outside its scroll — so a
    * title and close affordance stay put while the body scrolls. */
   header?: ReactNode;
+  /** Collapses to a single, expanded-only detent on Android instead of the usual
+   * multi-detent config, so a pinned footer never strands below Android's ~50%
+   * partial state (#4723). See `androidSafeSnapPoints` for the full rationale;
+   * no effect on iOS/web, or on a single detent already at/above 75%. */
+  androidOpensExpanded?: boolean;
 };
 
 export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
@@ -88,6 +93,7 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
     surface = 'glass',
     footerSurface = 'plate',
     header,
+    androidOpensExpanded = false,
   },
   ref,
 ) {
@@ -96,6 +102,12 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
   const snapPoints = useMemo(() => customSnapPoints ?? ['50%', '90%'], [customSnapPoints]);
   // Plain string, never a PlatformColor — see the `surface` prop doc.
   const solidBackground = useMemo(() => ({ backgroundColor: sheetSurface }), [sheetSurface]);
+  // See `androidOpensExpanded` above: collapses to the single LAST detent on
+  // Android instead of picking an index into a multi-detent config.
+  const effectiveSnapPoints = useMemo(
+    () => androidSafeSnapPoints(snapPoints, androidOpensExpanded),
+    [snapPoints, androidOpensExpanded],
+  );
 
   const sheetRef = useRef<BottomSheetMethods>(null);
   const managed = useManagedSheet({
@@ -198,7 +210,7 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
     <BottomSheet
       ref={sheetRef}
       index={-1}
-      snapPoints={enableDynamicSizing ? undefined : androidSafeSnapPoints(snapPoints)}
+      snapPoints={enableDynamicSizing ? undefined : effectiveSnapPoints}
       enableDynamicSizing={enableDynamicSizing}
       enablePanDownToClose={enablePanDownToClose}
       onChange={handleChange}

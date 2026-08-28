@@ -2,6 +2,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { SUPPORTED_BOARDS } from './app/lib/board-data';
 import { getClimbViewPageCacheTTL, getListPageCacheTTL } from './app/lib/list-page-cache';
+import { isCrawlerUserAgent } from './app/lib/is-crawler';
 import { CLIMB_SESSION_COOKIE } from './app/lib/climb-session-cookie';
 import { PATHNAME_HEADER } from './app/lib/request-pathname-header';
 import { isSecureCookieContext } from './app/lib/auth/secure-cookies';
@@ -152,7 +153,6 @@ export function middleware(request: NextRequest) {
 
       // For all other routes, validate board name
       if (!(SUPPORTED_BOARDS as readonly string[]).includes(routeIdentifier)) {
-        console.info('Middleware board_name check returned 404');
         return new NextResponse(null, {
           status: 404,
           statusText: 'Not Found',
@@ -186,10 +186,27 @@ export function middleware(request: NextRequest) {
     ? { locale: DEFAULT_LOCALE, strippedPath: pathname, needsRewrite: false }
     : detectLocale(pathname);
 
+  // Classify once for the two sticky-locale gates below. Skipped outright for
+  // /api/*: the `/api/v1/:path*` and `/api/auth/:path*` matcher entries do
+  // reach this line, but `isApi` above pins their locale to DEFAULT_LOCALE, so
+  // neither gate can fire for them and classifying would be pure cost.
+  const isCrawler = isApi ? false : isCrawlerUserAgent(request.headers.get('user-agent'));
+
   // Cookie-driven sticky locale: when a page request arrives without a locale
   // prefix and the visitor previously chose a non-default locale, send them
   // to the prefixed URL so subsequent navigation stays in their language.
-  if (!isApi && locale === DEFAULT_LOCALE) {
+  //
+  // Crawlers are excluded: ones that persist cookies (observed in production
+  // logs) acquire the boardsesh-locale cookie by crawling a /de|/es|/fr page
+  // once, then bounce every subsequent unprefixed URL through a locale twin —
+  // ~15k of these 307s/day, plus the render MISS on the twin they land on.
+  // Crawlers get a default-locale 200 for the URL they requested instead.
+  //
+  // The classifier is ours, not Next's `userAgent(request).isBot`: Next's list
+  // names no scraper newer than ~2023, and AhrefsBot, SemrushBot, DataForSeoBot
+  // and MJ12bot were all still taking this 307 in production on 2026-08-24. See
+  // `app/lib/is-crawler.ts` for the token list and the probe behind it.
+  if (!isApi && locale === DEFAULT_LOCALE && !isCrawler) {
     const cookieLocale = request.cookies.get(LOCALE_COOKIE)?.value;
     if (isSupportedLocale(cookieLocale) && cookieLocale !== DEFAULT_LOCALE) {
       const target = new URL(`/${cookieLocale}${pathname}`, request.url);
@@ -225,7 +242,9 @@ export function middleware(request: NextRequest) {
 
   // Sticky cookie: any visit on a non-default locale URL writes the cookie so
   // a shared /es/... link from a friend persists for the recipient too.
-  if (locale !== DEFAULT_LOCALE) {
+  // Crawlers never acquire it — see the sticky-locale redirect gate above for
+  // why a cookie-persisting crawler must never be handed this cookie.
+  if (locale !== DEFAULT_LOCALE && !isCrawler) {
     response.cookies.set(LOCALE_COOKIE, locale, {
       path: '/',
       sameSite: 'lax',
@@ -260,10 +279,27 @@ export function middleware(request: NextRequest) {
   return response;
 }
 
+// Vercel bills and logs per middleware invocation. The previous catch-all
+// matcher (`/api/:path*`-shaped, via the page-routes negative-lookahead not
+// excluding /api/) ran this middleware on every /api/** request, including
+// ~50k+/day board-render image fetches that take nothing from it — the
+// function does no locale/session/CORS work for those paths and every
+// invocation was pure cost. Only three /api families actually need it:
+//   - /api/v1/:path* — board-name validation (404s an unsupported board).
+//   - /api/auth/:path* — all 9 CORS_AUTH_PATHS auth endpoints live here
+//     (see cross-subdomain-cors.ts) and need the credentialed-CORS handling.
+//   - /api/internal/ws-auth — the one /api/internal path in CORS_AUTH_PATHS;
+//     its OPTIONS preflight is answered by middleware itself, so it must stay
+//     matched even though the rest of /api/internal/** is now excluded.
+// Pre-verified safe: no route under packages/web/app/api reads the
+// locale/pathname headers middleware sets, and nothing excluded here accepts
+// a `?session=` query param that middleware needs to intercept.
 export const config = {
   matcher: [
     '/api/v1/:path*',
+    '/api/auth/:path*',
+    '/api/internal/ws-auth',
     // Match all page routes but skip static files, Next.js internals, and Vercel Flags Explorer
-    '/((?!_next/static|_next/image|favicon.ico|monitoring|\\.well-known/|.*\\..*).*)',
+    '/((?!api/|_next/static|_next/image|favicon.ico|monitoring|\\.well-known/|.*\\..*).*)',
   ],
 };

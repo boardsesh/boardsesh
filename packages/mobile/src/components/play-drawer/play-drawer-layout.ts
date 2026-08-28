@@ -4,6 +4,8 @@
  * aspect ratios and screen sizes (the board catalog has many variants).
  */
 
+import type { ClimbQueueItem } from '@boardsesh/queue';
+
 export type BoardBox = { width: number; height: number };
 
 /**
@@ -30,6 +32,27 @@ export function computeContainedBoardSize(boxWidth: number, boxHeight: number, a
  */
 export function computeFirstScreenHeight(windowHeight: number, reserve: number, minFraction = 0.5): number {
   return Math.max(windowHeight - reserve, windowHeight * minFraction);
+}
+
+/**
+ * The preview item a drawer should already be showing on its FIRST render.
+ *
+ * The open target is normally applied by an effect, which does not run until
+ * after the first commit — so a pane opened with a climb in hand still paints
+ * one frame of the "Pick a climb / Tap a climb to see it here" placeholder
+ * before the climb appears. Harmless on the iPad, where that copy is true and
+ * the pane really is waiting on a list selection. Wrong on the anonymous climb
+ * view, where there is no list to tap and the visitor followed a link to one
+ * specific climb — the first thing they would read is an instruction they
+ * cannot follow.
+ *
+ * Only a PREVIEW target seeds anything. A commit open has queue side effects
+ * (`setCurrentClimb`) that belong in the effect, not in a state initialiser.
+ */
+export function initialDrawerPreviewItem(
+  openTarget: { options?: { previewQueueItem?: ClimbQueueItem | null } } | null | undefined,
+): ClimbQueueItem | null {
+  return openTarget?.options?.previewQueueItem ?? null;
 }
 
 /** A persistent detail pane needs an explicit empty state; a modal route does not. */

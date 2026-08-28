@@ -11,6 +11,7 @@ import {
 } from '@boardsesh/offline-sync';
 import { startSyncScheduler, drainMutationQueue, startBackgroundTracking } from '../offline/offline-sync-adapter';
 import { reportOutboxBacklogOnce } from '../offline/outbox-telemetry';
+import { sweepDelistedDownloadTerminals } from '../offline/abandoned-download-terminals';
 import { getSetting } from '../settings';
 import { setupNotificationHandlers } from '../notifications';
 import { getOfflineSyncHttpClient } from '../lib/graphql/client';
@@ -124,6 +125,24 @@ export function OfflineSyncBridge() {
       cancelled = true;
     };
   }, [db, isAuthenticated, localUserId, schemaReady]);
+
+  // The download funnel's launch backstop (issue #4452). Every in-session
+  // de-listing path reports its own terminal now — the My Boards toggle-off and
+  // all three sign-outs — but a `scope-started:` marker whose scope is no longer
+  // in `syncEnabledBoards` is still reachable three ways: a crash between the
+  // de-list and the report, a device upgrading from a build that predates those
+  // reports, and any future de-listing path nobody instruments. Sweeping at
+  // launch makes the invariant structural rather than a list of remembered call
+  // sites (the lesson #4391 wrote down).
+  //
+  // Declared AFTER the owner-stamp effect so a mismatch wipe runs first, and
+  // gated on `isAuthenticated` so a signed-out cold start cannot re-report what
+  // sign-out already reported and cleared. Self-limiting across re-runs: it
+  // clears the markers it reports, so a second pass finds nothing.
+  useEffect(() => {
+    if (!isAuthenticated || !schemaReady) return;
+    void sweepDelistedDownloadTerminals(db);
+  }, [db, isAuthenticated, schemaReady]);
 
   // Unconditional (unlike the scheduler effect below): the offline-sync
   // engine's backgrounding guard must cover ad-hoc drainMutationQueue() calls

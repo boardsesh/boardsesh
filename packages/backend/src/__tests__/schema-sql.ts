@@ -135,6 +135,7 @@ export const schemaSQL = `
 
   DROP TABLE IF EXISTS "board_climb_ratings" CASCADE;
   DROP TABLE IF EXISTS "board_climb_aliases" CASCADE;
+  DROP TABLE IF EXISTS "board_kits" CASCADE;
   DROP TABLE IF EXISTS "board_climb_stats" CASCADE;
   DROP TABLE IF EXISTS "board_climbs" CASCADE;
   DROP TABLE IF EXISTS "board_difficulty_grades" CASCADE;
@@ -216,8 +217,24 @@ export const schemaSQL = `
     "upstream_synced_at" timestamp,
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "sync_seq" bigserial NOT NULL,
-    PRIMARY KEY ("board_type", "climb_uuid", "angle")
+    PRIMARY KEY ("board_type", "climb_uuid", "angle"),
+    CONSTRAINT "board_climb_stats_quality_average_range" CHECK ("board_climb_stats"."quality_average" IS NULL OR ("board_climb_stats"."quality_average" >= 0 AND "board_climb_stats"."quality_average" <= 5)),
+    CONSTRAINT "board_climb_stats_upstream_quality_average_range" CHECK ("board_climb_stats"."upstream_quality_average" IS NULL OR ("board_climb_stats"."upstream_quality_average" >= 0 AND "board_climb_stats"."upstream_quality_average" <= 5))
   );
+  -- Same trap as the "gyms" column backfill further down: "board_climb_stats" is
+  -- CREATE TABLE IF NOT EXISTS with no preceding DROP, and the per-worker test DBs
+  -- persist between runs, so the two CHECKs above never land on a DB that was
+  -- created before they existed. climb-stats-quality-range-check.test.ts asserts
+  -- on them by name, so re-add them idempotently for pre-existing worker DBs.
+  DO $$ BEGIN
+    ALTER TABLE "board_climb_stats" ADD CONSTRAINT "board_climb_stats_quality_average_range" CHECK ("board_climb_stats"."quality_average" IS NULL OR ("board_climb_stats"."quality_average" >= 0 AND "board_climb_stats"."quality_average" <= 5));
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
+
+  DO $$ BEGIN
+    ALTER TABLE "board_climb_stats" ADD CONSTRAINT "board_climb_stats_upstream_quality_average_range" CHECK ("board_climb_stats"."upstream_quality_average" IS NULL OR ("board_climb_stats"."upstream_quality_average" >= 0 AND "board_climb_stats"."upstream_quality_average" <= 5));
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
 
   CREATE TABLE IF NOT EXISTS "board_climb_grades" (
     "board_type" text NOT NULL,
@@ -261,6 +278,21 @@ export const schemaSQL = `
     CONSTRAINT "board_climb_ratings_rating_range" CHECK ("rating" IS NULL OR ("rating" >= 1 AND "rating" <= 5))
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "board_climb_ratings_user_climb_angle_idx" ON "board_climb_ratings" ("board_type", "climb_uuid", "angle", "user_id");
+  -- The two surrogate uniques are PARTIAL (NOT NULL only) so a Boardsesh-originated
+  -- rating can sit unsynced without colliding with every other unsynced row. They are
+  -- GLOBAL, not user-scoped: one climb_rating_uuid lives on at most one row table-wide.
+  -- kilter-sync's ratings upsert can only name ONE conflict target, so it has to make
+  -- these unreachable before the statement runs (see applyClimbRatings). Leaving them
+  -- out of this test schema is what let a duplicate-key regression reach production and
+  -- wedge the kilter user sync for 30+ days.
+  CREATE UNIQUE INDEX IF NOT EXISTS "board_climb_ratings_kilter_id_unique" ON "board_climb_ratings" ("kilter_id") WHERE "kilter_id" IS NOT NULL;
+  -- aurora_id has the same structural hazard as kilter_id, but no writer today:
+  -- board_climb_ratings is written ONLY by kilter-sync's applyClimbRatings, and
+  -- nothing anywhere sets aurora_id. The column and index exist so an Aurora
+  -- rating can be adopted later. Whoever adds that writer needs the same
+  -- reconcile-before-upsert treatment kilter_id got — a single-target
+  -- ON CONFLICT on the natural key does NOT cover this index.
+  CREATE UNIQUE INDEX IF NOT EXISTS "board_climb_ratings_aurora_id_unique" ON "board_climb_ratings" ("aurora_id") WHERE "aurora_id" IS NOT NULL;
 
   -- Mirrors packages/db schema/boards/unified.ts boardClimbStatsHistory. The
   -- weekly full-table snapshot (snapshotClimbStatsHistoryIfDue) appends the
@@ -376,6 +408,17 @@ export const schemaSQL = `
     "position" integer,
     "name" text,
     PRIMARY KEY ("board_type", "id")
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_kits" (
+    "board_type" text NOT NULL,
+    "serial_number" text NOT NULL,
+    "name" text,
+    "is_autoconnect" boolean NOT NULL,
+    "is_listed" boolean NOT NULL,
+    "created_at" text NOT NULL,
+    "updated_at" text NOT NULL,
+    PRIMARY KEY ("board_type", "serial_number")
   );
 
   CREATE TABLE IF NOT EXISTS "board_products" (
@@ -611,6 +654,12 @@ export const schemaSQL = `
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "last_accessed_at" timestamp
   );
+  -- The two GLOBAL (non-partial) uniques the sync writers conflict on. Without
+  -- them Postgres' "NULLs are distinct" behaviour — the whole cause of the
+  -- kilter playlist duplication in #4707 — is unreproducible in the test DB,
+  -- and an ON CONFLICT (kilter_id) would fail outright for want of an index.
+  CREATE UNIQUE INDEX IF NOT EXISTS "playlists_aurora_id_idx" ON "playlists" ("aurora_id");
+  CREATE UNIQUE INDEX IF NOT EXISTS "playlists_kilter_id_idx" ON "playlists" ("kilter_id");
 
   CREATE TABLE IF NOT EXISTS "playlist_ownership" (
     "id" bigserial PRIMARY KEY NOT NULL,
@@ -707,6 +756,8 @@ export const schemaSQL = `
     "longitude" double precision,
     "is_public" boolean DEFAULT true NOT NULL,
     "description" text,
+    "hours" text,
+    "hours_updated_at" timestamp,
     "image_url" text,
     "logo_url" text,
     "brand_primary_color" text,
@@ -720,6 +771,11 @@ export const schemaSQL = `
     "website_vouched_by_owner" boolean DEFAULT false NOT NULL
   );
   CREATE INDEX IF NOT EXISTS "gyms_merged_into_idx" ON "gyms" ("merged_into_gym_id") WHERE "merged_into_gym_id" IS NOT NULL;
+  -- "gyms" is CREATE TABLE IF NOT EXISTS with no preceding DROP, and the
+  -- per-worker test DBs persist between runs, so a column added to the block
+  -- above never lands on a DB that already exists. Backfill it here.
+  ALTER TABLE "gyms" ADD COLUMN IF NOT EXISTS "hours" text;
+  ALTER TABLE "gyms" ADD COLUMN IF NOT EXISTS "hours_updated_at" timestamp;
 
   DROP TABLE IF EXISTS "user_boards" CASCADE;
   CREATE TABLE IF NOT EXISTS "user_boards" (
@@ -1118,6 +1174,32 @@ export const schemaSQL = `
   CREATE INDEX IF NOT EXISTS "app_feedback_user_idx" ON "app_feedback" ("user_id");
   CREATE INDEX IF NOT EXISTS "app_feedback_board_idx" ON "app_feedback" ("board_name");
   CREATE INDEX IF NOT EXISTS "app_feedback_status_idx" ON "app_feedback" ("status");
+
+  -- Crowdsourced-QA verdicts a tester filed on a PR preview. Mirrors
+  -- packages/db/src/schema/app/qa-verdicts.ts (migration 0206). verdict is
+  -- plain text here (prod uses the qa_verdict_kind enum) with a CHECK; the
+  -- resolvers only ever compare the string value.
+  DROP TABLE IF EXISTS "qa_verdicts" CASCADE;
+  CREATE TABLE IF NOT EXISTS "qa_verdicts" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "user_id" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "pr_number" integer NOT NULL,
+    "branch" text NOT NULL,
+    "head_sha" text,
+    "head_committed_at" timestamp,
+    "verdict" text NOT NULL CHECK ("verdict" IN ('approved', 'declined')),
+    "comment" text,
+    "platform" text NOT NULL,
+    "app_version" text,
+    "update_id" text,
+    "runtime_version" text,
+    "bundle_created_at" timestamp,
+    "github_comment_id" bigint,
+    "github_comment_url" text,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS "qa_verdicts_pr_created_idx" ON "qa_verdicts" ("pr_number", "created_at");
+  CREATE INDEX IF NOT EXISTS "qa_verdicts_user_idx" ON "qa_verdicts" ("user_id");
   CREATE INDEX IF NOT EXISTS "gym_kiosks_gym_idx" ON "gym_kiosks" ("gym_id") WHERE "deleted_at" IS NULL;
 
   -- Maps upstream location-provider source keys (kilter:..., tension:...) to the
@@ -1172,6 +1254,25 @@ export const schemaSQL = `
     ON "location_sync_unfreeze_audit" ("entity_type", "entity_uuid", "created_at");
   CREATE INDEX IF NOT EXISTS "location_sync_unfreeze_audit_performed_by_idx"
     ON "location_sync_unfreeze_audit" ("performed_by");
+
+  -- Durable audit for the global-admin gym ownership handover (migration 0201).
+  -- No foreign keys anywhere: the record must outlive the gym and both accounts.
+  DROP TABLE IF EXISTS "gym_owner_reassignments" CASCADE;
+  CREATE TABLE IF NOT EXISTS "gym_owner_reassignments" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "gym_uuid" text NOT NULL,
+    "previous_owner_id" text NOT NULL,
+    "new_owner_id" text NOT NULL,
+    "sync_frozen_at_before" timestamp,
+    "sync_frozen_at_after" timestamp,
+    "reason" text NOT NULL,
+    "performed_by" text NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS "gym_owner_reassignments_gym_history_idx"
+    ON "gym_owner_reassignments" ("gym_uuid", "created_at");
+  CREATE INDEX IF NOT EXISTS "gym_owner_reassignments_performed_by_idx"
+    ON "gym_owner_reassignments" ("performed_by");
 
   -- Board followers (enrichBoard counts these per board).
   DROP TABLE IF EXISTS "board_follows" CASCADE;

@@ -7,9 +7,13 @@ import {
 } from '@boardsesh/board-constants/product-sizes';
 import {
   getMoonBoardDetails,
+  getWoodsBoardDetails,
   MOONBOARD_LAYOUTS,
   MOONBOARD_SETS,
   MOONBOARD_SIZE,
+  WOODS_LAYOUTS,
+  WOODS_SETS,
+  WOODS_SIZES,
   type MoonBoardLayoutKey,
 } from '@boardsesh/board-config';
 import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
@@ -159,16 +163,18 @@ export function resolveSizeSlug(boardName: BoardName, layoutId: number, sizeId: 
 }
 
 /**
- * Qualified size slugs that must keep resolving forever, keyed by board and then
- * by size id.
+ * Size slugs that must keep resolving forever, keyed by board and then by size
+ * id.
  *
- * The qualifier {@link sizeSlugsForLayout} appends is derived from the upstream
- * size *name*, and upstream renames sizes — the July 2026 sync audit caught
- * several. A rename re-mints the qualifier, so the slug generated after it and
- * the slug already sitting in every shared link, chat message and search index
- * are different strings. Nothing about a link in the wild changes when Aurora
- * edits a row, so pinning is the only thing that keeps it working: a qualified
- * form is recorded here by *id* the moment it ships, and resolves from then on
+ * A size slug is built from upstream text: the dimensions and description feed
+ * {@link generateSizeSlug}, and the qualifier {@link sizeSlugsForLayout} appends
+ * comes from the size *name*. That text moves — upstream renames sizes (the July
+ * 2026 sync audit caught several), and we ourselves correct upstream typos in
+ * the description (#4554). Either way the slug generated afterwards and the slug
+ * already sitting in every shared link, chat message and search index are
+ * different strings. Nothing about a link in the wild changes when the text
+ * moves, so pinning is the only thing that keeps it working: a shipped form is
+ * recorded here by *id* the moment it changes, and resolves from then on
  * whatever the size ends up being called.
  *
  * Consulted only after the generated slugs, so an alias can never shadow a live
@@ -176,6 +182,17 @@ export function resolveSizeSlug(boardName: BoardName, layoutId: number, sizeId: 
  */
 export const PERMANENT_SIZE_SLUG_ALIASES: Partial<Record<BoardName, Readonly<Record<number, readonly string[]>>>> = {
   kilter: {
+    // Kilter layout 1 size 7, "12 x 14": Aurora describes it "Commerical", and
+    // that misspelling was folded straight into the size slug, so every link
+    // minted before #4554 carries `12x14-commerical`. The description is now
+    // corrected at the generator, so the generated slug is `12x14-commercial`
+    // and the old form only keeps resolving from here. PostHog counted 629
+    // pageviews from 325 people on `12x14-commerical` URLs in the 180 days to
+    // 2026-08-16, across /list, /view, /playlists and the /es and /fr variants —
+    // delete this entry and all of those links 404. Unlike the pins below this
+    // is a BARE slug rather than a qualified one, which needs nothing special:
+    // generated slugs are still matched first, so it cannot shadow a live one.
+    7: ['12x14-commerical'],
     // Kilter layout 1 size 10, "12 x 12 with kickboard": owns the bare
     // `12x12-square` slug by being first on the layout. Pinned so an upstream
     // RENAME of the size (generated slug changes, bare form stops matching)
@@ -208,8 +225,8 @@ export function resolvePermanentSizeSlugAlias(boardName: BoardName, sizeSlug: st
 
 /**
  * Inverse of {@link resolveSizeSlug}. Accepts a qualified slug, the bare legacy
- * one (which keeps resolving to the first match), and any qualified form pinned
- * in {@link PERMANENT_SIZE_SLUG_ALIASES}. Exported so the web app's
+ * one (which keeps resolving to the first match), and any form pinned in
+ * {@link PERMANENT_SIZE_SLUG_ALIASES}. Exported so the web app's
  * `getSizeBySlug` resolves the qualified form identically — a link has to mean
  * the same board on both hosts.
  */
@@ -327,6 +344,29 @@ function resolveReadableBoardSegments({
     }
   }
 
+  if (boardType === 'woods') {
+    try {
+      const woodsDetails = getWoodsBoardDetails({ size_id: sizeId });
+      if (woodsDetails.layout_id !== layoutId) return null;
+      // Woods ships one synthetic hold set, so anything but exactly that set
+      // names holds the board doesn't have — emit the numeric form instead of a
+      // readable URL that would resolve back to a different config.
+      const woodsSetIds = new Set<number>(woodsDetails.set_ids);
+      if (woodsSetIds.size !== setIdValues.length || setIdValues.some((setId) => !woodsSetIds.has(setId))) {
+        return null;
+      }
+
+      return {
+        boardName: boardType,
+        layoutSlug: generateLayoutSlug(woodsDetails.layout_name),
+        sizeSlug: generateSizeSlug(woodsDetails.size_name),
+        setSlug: generateSetSlug(woodsDetails.set_names),
+      };
+    } catch {
+      return null;
+    }
+  }
+
   const layout = getLayout(boardType, layoutId);
   const size = getProductSize(boardType, sizeId);
   const availableSets = getSetsForLayoutAndSize(boardType, layoutId, sizeId);
@@ -430,8 +470,21 @@ const numericSegmentRegex = /^\d+$/;
  * perfectly valid shared link queried a uuid nobody has and rendered
  * not-found. A bare uuid still matches: the whole segment is then the run at
  * the end.
+ *
+ * Two shapes, because the catalogue holds two. Aurora climbs carry a 32-char
+ * unbroken hex uuid; every MoonBoard climb carries a dashed 36-char RFC-4122
+ * uuid (`9fe54099-6fdd-5adb-b82f-2d7bcb10d4ad`) — measured on the dev image:
+ * 142,566 MoonBoard rows, all dashed, and no other board has one. With only the
+ * 32-char form, no MoonBoard climb URL parsed: the whole `<name>-<uuid>` segment
+ * was handed on as the uuid, so the climb query missed and the page 404'd, while
+ * the same page reached by its bare uuid rendered a `<link rel="canonical">`
+ * pointing straight at that 404.
+ *
+ * The dashed alternative cannot steal a match from an Aurora segment: its final
+ * group must be preceded by a `-`, and the character 12 back from the end of a
+ * 32-hex uuid is always a hex digit.
  */
-const climbUuidRegex = /[0-9A-F]{32}$/i;
+const climbUuidRegex = /(?:[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}|[0-9A-F]{32})$/i;
 
 function isNumericSegment(value: string): boolean {
   return numericSegmentRegex.test(value);
@@ -567,6 +620,67 @@ function resolveMoonBoardSegmentsToIds({
 }
 
 /**
+ * The Woods half of the parse direction. Woods carries no rows in the generated
+ * layout/size/set tables, so the catalogue walk below finds nothing for it —
+ * everything resolves off the static `woods-config` constants instead.
+ *
+ * Both the readable form this app emits (`original` / `8x10` | `12x12` /
+ * `standard`) and the bare numeric ids resolve, because a URL can mix them: the
+ * all-numeric path never reaches here, but `/woods/original/2/standard/40` does.
+ * The accepted forms are kept in step with www's server-side parser
+ * (`packages/web/app/lib/url-utils.server.ts`) — same segments, same casing
+ * rules, same dashed size variants — so a link that opens on the website opens
+ * in the app too. The set segment stays exact for the same reason MoonBoard's
+ * does: a slug that doesn't rebuild is not a form either host emitted, so it
+ * isn't authoritative about what's on the wall.
+ */
+function resolveWoodsSegmentsToIds({
+  layoutSlug,
+  sizeSlug,
+  setSlug,
+}: {
+  layoutSlug: string;
+  sizeSlug: string;
+  setSlug: string;
+}): Omit<ParsedBoardConfigPath, 'angle'> | null {
+  // Slugs are lower-case by construction, but a hand-typed or link-shortened URL
+  // can arrive upper-cased; www lower-cases every Woods segment before matching.
+  const layoutSegment = layoutSlug.toLowerCase();
+  const sizeSegment = sizeSlug.toLowerCase();
+  const setSegment = setSlug.toLowerCase();
+
+  const woodsLayout = WOODS_LAYOUTS.woods;
+  if (layoutSegment !== generateLayoutSlug(woodsLayout.name) && layoutSegment !== String(woodsLayout.id)) return null;
+
+  // Size: the numeric id ('1' / '2'), the dimension slug ('8x10' / '12x12'), or
+  // its dashed variant ('8-10' / '12-12').
+  const size = Object.values(WOODS_SIZES).find((candidate) => {
+    const dimensionSlug = generateSizeSlug(candidate.name);
+    return (
+      sizeSegment === String(candidate.id) ||
+      sizeSegment === dimensionSlug ||
+      sizeSegment === dimensionSlug.replace('x', '-')
+    );
+  });
+  if (!size) return null;
+
+  const woodsSetIds = WOODS_SETS.map((woodsSet) => woodsSet.id);
+  const canonicalSetSlug = generateSetSlug(WOODS_SETS.map((woodsSet) => woodsSet.name));
+  // The one form www accepts that this resolver deliberately does not is the
+  // EMPTY set segment. www needs it because a board path can be built with no
+  // sets; here an empty segment can only come from a hand-edited slug URL, and
+  // resolving it would mean inventing a set list the URL never named.
+  if (setSegment !== canonicalSetSlug && setSegment !== woodsSetIds.join(',')) return null;
+
+  return {
+    boardName: 'woods',
+    layoutId: woodsLayout.id,
+    sizeId: size.id,
+    setIds: woodsSetIds.join(','),
+  };
+}
+
+/**
  * Inverse of {@link resolveReadableBoardSegments}: named URL slugs back to the
  * numeric board config. Resolution is generate-and-compare against the static
  * board tables — every candidate layout/size/set is slugified with the very
@@ -590,6 +704,10 @@ export function resolveBoardSegmentsToIds({
 
   if (boardType === 'moonboard') {
     return resolveMoonBoardSegmentsToIds({ layoutSlug, sizeSlug, setSlug });
+  }
+
+  if (boardType === 'woods') {
+    return resolveWoodsSegmentsToIds({ layoutSlug, sizeSlug, setSlug });
   }
 
   const layout = getAllLayouts(boardType).find((candidate) => generateLayoutSlug(candidate.name) === layoutSlug);

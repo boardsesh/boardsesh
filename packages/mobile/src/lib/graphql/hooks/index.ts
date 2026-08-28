@@ -37,7 +37,8 @@ import {
   type FavoritesQueryVariables,
   type FavoritesQueryResponse,
 } from '@boardsesh/graphql/operations/favorites';
-import { BOULDER_GRADES } from '@boardsesh/board-config';
+import { getGradesForBoard, toBoardName } from '@boardsesh/board-config';
+import { useBoardAdapter } from '@boardsesh/board-react';
 import { myBoardsQueryKey } from '../query-keys';
 import { getDatabaseHandle } from '../../../db';
 import { offlineAwareRequest } from '../offline-request';
@@ -709,28 +710,50 @@ export function useUnfollowBoard() {
 // Board Configuration
 // ============================================
 
-// Bundled grade taxonomy (ids 10-33) for the cold-offline case: grades are static
-// V↔Font data, so the grade-range rail works with no signal even if the network
-// grades were never fetched. Online refetches the board's real list.
-const OFFLINE_GRADES: Grade[] = BOULDER_GRADES.map((grade) => ({
-  difficultyId: grade.difficulty_id,
-  name: grade.difficulty_name,
-}));
+// Bundled grade taxonomy for the cold-offline case: grades are static V↔Font
+// data, so the grade-range rail works with no signal even if the network grades
+// were never fetched. Online refetches the board's real list.
+//
+// Board-aware, because the full 10-33 scale is not what every board offers:
+// MoonBoard starts at 6A and Woods only carries the V-bands its own app grades
+// in. Cold-offline used to hand every board the whole scale, so MoonBoard's rail
+// offered sub-6A stops its online list never had — the offline rail now matches
+// the online filter on both boards.
+//
+// Memoised per board name so the query's `placeholderData` is referentially
+// stable: a fresh object each render reads as new data to React Query and
+// re-runs `select` (and every grade consumer) on every render.
+const offlineGradesByBoard = new Map<string, { grades: Grade[] }>();
+
+function getOfflineGrades(boardName: string): { grades: Grade[] } {
+  const cached = offlineGradesByBoard.get(boardName);
+  if (cached) return cached;
+  // An unrecognised board falls back to Kilter's full scale — the same list the
+  // pre-board-aware code handed everyone, so an unknown board is never worse off.
+  const grades = getGradesForBoard(toBoardName(boardName) ?? 'kilter').map((grade) => ({
+    difficultyId: grade.difficulty_id,
+    name: grade.difficulty_name,
+  }));
+  const response = { grades };
+  offlineGradesByBoard.set(boardName, response);
+  return response;
+}
 
 export function useGrades(boardName: string, enabled = true) {
+  const offlineGrades = getOfflineGrades(boardName);
   return useQuery({
     queryKey: ['grades', boardName],
     queryFn: () => {
       // Grades are the same static data online/offline, so (unlike search) the
       // offline flag stays OUT of the key — no cache miss / refetch on every flip.
-      if (!onlineManager.isOnline()) return { grades: OFFLINE_GRADES };
+      if (!onlineManager.isOnline()) return offlineGrades;
       return getHttpClient().request<GetGradesQueryResponse>(GET_GRADES, { boardName });
     },
     select: (data) => data.grades,
     staleTime: 24 * 60 * 60 * 1000,
     // Bundled grades render immediately (and cover a cold-offline start); the
     // network refines the board's real list when online.
-    placeholderData: { grades: OFFLINE_GRADES },
+    placeholderData: offlineGrades,
     enabled: enabled && boardName.length > 0,
   });
 }
@@ -952,6 +975,20 @@ export function useToggleFavorite() {
  * angle matters — favoriting at 40° is distinct from 25°. Disabled until a
  * `climbUuid` is supplied (and via `enabled`, so callers can gate it on a sheet
  * being open). Returns `true` when the climb is favorited at this angle.
+ *
+ * The session is part of the gate, not just the caller's `enabled`. `favorites`
+ * is `requireAuthenticated` server-side, so for a signed-out reader this query
+ * has exactly one outcome: an error. That used to be theoretical — nothing
+ * signed-out could open the play drawer — and stopped being so when the web
+ * export began rendering read-only climb URLs anonymously, where the drawer
+ * opens with `enabled: isSheetOpen` and fires a guaranteed rejection on every
+ * open. Gating here rather than only at the call site means a future consumer
+ * cannot reintroduce it by forgetting.
+ *
+ * The cost is a provider dependency this hook did not used to have: it reads the
+ * session off `useBoardAdapter()`, so it must be called under a
+ * `BoardAdapterProvider` — mounted app-wide in `app/_layout.tsx` — and throws at
+ * the hook rather than at query time outside one.
  */
 export function useFavoriteStatus(
   boardName: string,
@@ -959,6 +996,7 @@ export function useFavoriteStatus(
   angle: number,
   options?: { enabled?: boolean },
 ) {
+  const { isAuthenticated } = useBoardAdapter();
   return useQuery({
     queryKey: ['favoriteStatus', boardName, climbUuid, angle],
     queryFn: () =>
@@ -968,7 +1006,7 @@ export function useFavoriteStatus(
         angle,
       }),
     select: (data) => data.favorites.includes(climbUuid!),
-    enabled: (options?.enabled ?? true) && !!climbUuid,
+    enabled: (options?.enabled ?? true) && !!climbUuid && isAuthenticated,
     staleTime: 5 * 60 * 1000,
   });
 }

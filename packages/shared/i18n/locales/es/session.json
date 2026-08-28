@@ -196,7 +196,14 @@
       "lifetimeSends_one": "{{count}} encadene",
       "lifetimeSends_other": "{{count}} encadenes",
       "lifetimeRecap": "{{tries}} {{sessions}}",
-      "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}"
+      "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}",
+      "signedOut": "Inicia sesión para ver tus intentos en este bloque."
+    },
+    "anonymous": {
+      "signInHeadline": "Registra este encadene",
+      "signInSubtitle": "Inicia sesión para guardar tus intentos, encadenes y beta en un solo sitio.",
+      "signInAction": "Iniciar sesión",
+      "tickAria": "Inicia sesión para registrar este encadene"
     },
     "similarClimbs": {
       "title": "Escaladas similares",
@@ -242,6 +249,7 @@
       "shareReadingCaption": "Leyendo la descripción…",
       "shareSuggestedTitle": "Encontrado en la descripción",
       "shareOtherAscents": "Tus otros ascensos",
+      "shareAscentLabel": "Adjunta tu beta a {{details}}",
       "shareTitle": "Comparte tu beta",
       "step1Title": "Copia tu descripción",
       "step2Title": "Publícalo como reel",
@@ -263,6 +271,7 @@
       "unknownClimb": "Bloque desconocido",
       "removeClimb": "Eliminar bloque",
       "positionLabel": "posición {{position}}",
+      "addedByAria": "Añadido por {{name}}",
       "syncError": "Error de sincronización de cola",
       "outOfSyncRefreshed": "La cola estaba desincronizada. Se actualizó con tu grupo.",
       "sessionCreateError": "No se pudo crear la sesión",
@@ -464,7 +473,29 @@
     }
   },
   "playView": {
-    "previewBadge": "Vista previa",
+    "wallState": {
+      "onWall": "En el muro",
+      "live": "En directo",
+      "browsing": "Explorando",
+      "onWallHint": "Este bloque está encendido en el muro ahora mismo.",
+      "liveHint": "El siguiente bloque que elijas se enciende en el muro.",
+      "browsingHint": "Solo estás mirando. El muro sigue como está.",
+      "pillHint": "Ver opciones del muro",
+      "browseFromHere": "Explorar desde aquí",
+      "backToLive": "Volver al muro",
+      "putOnWall": "Ponerlo en el muro",
+      "joinedBrowseNotice": "Estás explorando. El muro no cambia hasta que pongas un bloque.",
+      "commitOverride": {
+        "body": "Alguien acaba de encender {{name}}. ¿Pones el tuyo igualmente?",
+        "confirm": "Poner el mío",
+        "cancel": "Dejar el muro"
+      },
+      "a11y": {
+        "browseAnnounce": "Explorando. El muro sigue como está.",
+        "backToLive": "Volver al muro: {{name}}",
+        "committed": "{{name}} está en el muro"
+      }
+    },
     "setActive": "Activar",
     "paneEmpty": {
       "title": "Elige un bloque",

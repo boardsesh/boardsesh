@@ -29,7 +29,7 @@ import { roundedReportSpeed, shouldReportSpeed } from './playback-speed-report';
 
 // Continuous range; mirrors web's effective span. 1× is the natural default and
 // gets a gentle release-magnet (see commit()).
-const MIN_SPEED = 0.5;
+const MIN_SPEED = 0.1;
 const MAX_SPEED = 10;
 const THUMB_SIZE = 20;
 const TRACK_HEIGHT = 6;

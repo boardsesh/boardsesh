@@ -57,7 +57,7 @@ describe('revalidateClimbSearchTags', () => {
     await revalidateClimbSearchTags({
       boardName: 'kilter',
       requestHeaders: headers,
-      source: 'save-climb-proxy',
+      source: 'internal-route',
     });
 
     expect(mockRevalidateTag).toHaveBeenCalledTimes(1);
@@ -67,7 +67,7 @@ describe('revalidateClimbSearchTags', () => {
       {
         boardName: 'kilter',
         layoutId: null,
-        source: 'save-climb-proxy',
+        source: 'internal-route',
       },
       { headers },
     );

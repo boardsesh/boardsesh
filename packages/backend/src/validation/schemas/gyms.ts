@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { GYM_CLAIM_MESSAGE_MAX_LENGTH } from '@boardsesh/gym-claim';
+import { GYM_HOURS_MAX_LENGTH } from '@boardsesh/shared-schema';
 import { UUIDSchema, LatitudeSchema, LongitudeSchema, SlugSchema, BoardNameSchema } from './primitives';
 
 /**
@@ -58,6 +59,45 @@ export const GymLogoUrlSchema = z
   );
 
 /**
+ * Gym photo URL (`gyms.image_url`): exactly `/static/gym-photos/<uuid>.<ext>
+ * [?v=...]`, as written by POST /api/gym-photos. Nothing else — deliberately
+ * stricter than GymLogoUrlSchema, which also accepts an https URL.
+ *
+ * No off-site branch, because the photo renders as an `<img src>`, as
+ * `openGraph.images` and as the JSON-LD `image` on a PUBLIC page. An arbitrary
+ * https URL there makes every visitor's browser — plus the Slack, X and Facebook
+ * scrapers following a boardsesh.com link — fetch a third party's server and
+ * hand it their IP, and image moderation is explicitly out of scope for this
+ * feature. The column is NULL on all 4,740 live rows, so unlike the logo there
+ * is no legacy off-site data to preserve: an https branch would protect nothing
+ * and only widen what the column can hold.
+ *
+ * This replaced a plain `z.string().url()`, which was wrong in both directions:
+ * it ACCEPTED `javascript:` and `data:` URLs — which reach that same `<img src>`
+ * and JSON-LD — while REJECTING our own relative upload path, so every console
+ * upload would have 400'd on the follow-up updateGym and orphaned the object it
+ * had just stored.
+ */
+const STATIC_GYM_PHOTO_PATH_REGEX = /^\/static\/gym-photos\/[0-9a-f-]{36}\.(jpg|jpeg|png|gif|webp)(\?v=[\w-]+)?$/i;
+
+export const GymPhotoUrlSchema = z
+  .string()
+  .max(500)
+  .refine((value) => STATIC_GYM_PHOTO_PATH_REGEX.test(value), 'Photo URL must be a Boardsesh static gym-photo path');
+
+/**
+ * Opening hours are one free-text line the gym writes itself, so the only server
+ * rule is a length cap — enough room for a week of hours plus a holiday note,
+ * short enough that the public gym page can't be used as a text dump. The cap
+ * lives in @boardsesh/shared-schema so the form's maxLength and this validator
+ * can't drift apart.
+ *
+ * Blank-vs-null is NOT decided here: updateGym normalises a whitespace-only
+ * value to null so it clears the hours and their confirmation stamp together.
+ */
+export const GymHoursSchema = z.string().max(GYM_HOURS_MAX_LENGTH, 'Opening hours too long');
+
+/**
  * Create gym input validation schema
  */
 export const CreateGymInputSchema = z.object({
@@ -70,7 +110,7 @@ export const CreateGymInputSchema = z.object({
   latitude: LatitudeSchema.optional(),
   longitude: LongitudeSchema.optional(),
   isPublic: z.boolean().optional(),
-  imageUrl: z.string().url().max(500).optional(),
+  imageUrl: GymPhotoUrlSchema.optional(),
   boardUuid: UUIDSchema.optional(),
 });
 
@@ -82,6 +122,7 @@ export const UpdateGymInputSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   slug: SlugSchema.optional(),
   description: z.string().max(500).optional().nullable(),
+  hours: GymHoursSchema.optional().nullable(),
   address: z.string().max(300).optional().nullable(),
   website: GymWebsiteSchema.optional().nullable(),
   contactEmail: z.string().email().max(200).optional().nullable(),
@@ -89,7 +130,7 @@ export const UpdateGymInputSchema = z.object({
   latitude: LatitudeSchema.optional().nullable(),
   longitude: LongitudeSchema.optional().nullable(),
   isPublic: z.boolean().optional(),
-  imageUrl: z.string().url().max(500).optional().nullable(),
+  imageUrl: GymPhotoUrlSchema.optional().nullable(),
   logoUrl: GymLogoUrlSchema.optional().nullable(),
   brandPrimaryColor: HexColorSchema.optional().nullable(),
   brandAccentColor: HexColorSchema.optional().nullable(),
@@ -190,6 +231,10 @@ export const SearchGymsInputSchema = z.object({
   layoutIds: z.array(z.number().int().nonnegative()).max(50).optional(),
   sizeIds: z.array(z.number().int().nonnegative()).max(50).optional(),
   multiBoardTypeOnly: z.boolean().optional(),
+  // Deliberately no `.default(false)`: a default would make the resolver emit the
+  // slug predicate decision for every existing caller (mobile's useNearbyGyms,
+  // the gym picker) instead of leaving their rendered SQL byte-identical.
+  requireSlug: z.boolean().optional(),
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
   radiusKm: z.number().min(0.1).max(500).optional().default(50),

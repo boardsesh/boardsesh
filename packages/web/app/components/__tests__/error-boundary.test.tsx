@@ -1,12 +1,18 @@
 import React from 'react';
-import { render, screen, act, waitFor } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vite-plus/test';
 import ErrorBoundary from '../error-boundary';
 
 // Suppress React error boundary console noise in tests
 beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
-  vi.useFakeTimers({ shouldAdvanceTime: true });
+  // The clock is frozen on purpose. `shouldAdvanceTime: true` ticks the fake
+  // clock from real wall time, and Vitest fakes requestAnimationFrame, so the
+  // boundary's pending recovery frame fires between statements and silently
+  // spends one of its three retries. On a loaded CI shard that left the budget
+  // exhausted while the child was still throwing, the boundary gave up, and
+  // the test could never see "recovered". See #4470.
+  vi.useFakeTimers();
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -15,6 +21,18 @@ afterEach(() => {
 
 const AlwaysThrow = () => {
   throw new Error('persistent error');
+};
+
+const Conditional = ({ throwNow }: { throwNow: boolean }) => {
+  if (throwNow) throw new Error('transient');
+  return <div>recovered</div>;
+};
+
+/** Fire exactly one pending recovery frame, and nothing else. */
+const nextFrame = async () => {
+  await act(async () => {
+    vi.advanceTimersByTime(16);
+  });
 };
 
 describe('ErrorBoundary', () => {
@@ -46,30 +64,30 @@ describe('ErrorBoundary', () => {
   });
 
   describe('recoverable mode', () => {
+    /** A recoverable boundary whose child throws only while `throwNow` is set. */
+    const recoverableTree = (throwNow: boolean) => (
+      <ErrorBoundary recoverable fallback={<div>gave up</div>}>
+        <Conditional throwNow={throwNow} />
+      </ErrorBoundary>
+    );
+
     it('auto-resets after a transient error', async () => {
-      let shouldThrow = true;
-
-      const Conditional = () => {
-        if (shouldThrow) throw new Error('transient');
-        return <div>recovered</div>;
-      };
-
-      render(
+      const { rerender } = render(
         <ErrorBoundary recoverable>
-          <Conditional />
+          <Conditional throwNow />
         </ErrorBoundary>,
       );
 
       // Error caught, fallback rendered (null)
       expect(screen.queryByText('recovered')).toBeNull();
 
-      // Fix the error before the rAF fires
-      shouldThrow = false;
-
-      // Flush the requestAnimationFrame that triggers recovery
-      await act(async () => {
-        vi.advanceTimersByTime(16);
-      });
+      // Fix the error, then flush the recovery frame the boundary scheduled.
+      rerender(
+        <ErrorBoundary recoverable>
+          <Conditional throwNow={false} />
+        </ErrorBoundary>,
+      );
+      await nextFrame();
 
       expect(screen.getByText('recovered')).toBeTruthy();
     });
@@ -83,59 +101,54 @@ describe('ErrorBoundary', () => {
 
       // Flush multiple rAF cycles (more than the 3 retry limit)
       for (let i = 0; i < 5; i++) {
-        await act(async () => {
-          vi.advanceTimersByTime(16);
-        });
+        await nextFrame();
       }
 
       // Should have given up and show the fallback permanently
       expect(screen.getByText('gave up')).toBeTruthy();
     });
 
-    it('resets retry budget after quiet period', async () => {
-      let shouldThrow = true;
+    it('exhausts the budget after three recoveries', async () => {
+      const { rerender } = render(recoverableTree(true));
 
-      const Conditional = () => {
-        if (shouldThrow) throw new Error('transient');
-        return <div>recovered</div>;
-      };
-
-      render(
-        <ErrorBoundary recoverable>
-          <Conditional />
-        </ErrorBoundary>,
-      );
-
-      // Burn through 2 retries (still throwing)
-      for (let i = 0; i < 2; i++) {
-        await act(async () => {
-          vi.advanceTimersByTime(16);
-        });
+      // Three successful recoveries spend the whole budget.
+      for (let round = 0; round < 3; round++) {
+        rerender(recoverableTree(false));
+        await nextFrame();
+        expect(screen.getByText('recovered')).toBeTruthy();
+        rerender(recoverableTree(true));
       }
 
-      // Fix the error and let the 3rd retry succeed. `waitFor` gives React's
-      // commit phase room to flush even when the rAF advance lands on a tick
-      // that doesn't drain microtasks in one pass — locally this resolves
-      // immediately; CI occasionally needs a second pass before the
-      // child re-renders.
-      shouldThrow = false;
-      await act(async () => {
-        vi.advanceTimersByTime(16);
-      });
-      await waitFor(() => expect(screen.getByText('recovered')).toBeTruthy());
+      // Fourth error, budget spent, no quiet period: stuck on the fallback.
+      rerender(recoverableTree(false));
+      await nextFrame();
+      expect(screen.queryByText('recovered')).toBeNull();
+      expect(screen.getByText('gave up')).toBeTruthy();
+    });
 
-      // Wait for the 30 s reset timer to fire
+    it('resets retry budget after quiet period', async () => {
+      const { rerender } = render(recoverableTree(true));
+
+      // Spend the full budget on three recoveries, ending error-free.
+      for (let round = 0; round < 3; round++) {
+        rerender(recoverableTree(false));
+        await nextFrame();
+        expect(screen.getByText('recovered')).toBeTruthy();
+        if (round < 2) rerender(recoverableTree(true));
+      }
+
+      // 30 s error-free puts the budget back to zero.
       await act(async () => {
         vi.advanceTimersByTime(30_000);
       });
 
-      // Trigger a new error — should recover again (budget was reset)
-      shouldThrow = true;
-      // Force a re-render that throws
-      await act(async () => {
-        // Unmount and remount to trigger a fresh error
-        screen.getByText('recovered').textContent = '';
-      });
+      // A brand new error still recovers. Without the reset this would stay on
+      // the fallback, as 'exhausts the budget after three recoveries' shows.
+      rerender(recoverableTree(true));
+      expect(screen.getByText('gave up')).toBeTruthy();
+      rerender(recoverableTree(false));
+      await nextFrame();
+      expect(screen.getByText('recovered')).toBeTruthy();
     });
 
     it('does not auto-reset when recoverable is false', async () => {
@@ -148,9 +161,7 @@ describe('ErrorBoundary', () => {
       expect(screen.getByText('stuck')).toBeTruthy();
 
       // Flush rAF
-      await act(async () => {
-        vi.advanceTimersByTime(16);
-      });
+      await nextFrame();
 
       // Still stuck on fallback
       expect(screen.getByText('stuck')).toBeTruthy();

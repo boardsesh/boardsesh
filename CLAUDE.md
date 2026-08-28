@@ -24,6 +24,7 @@ We'll always create a PR, never asks if a PR should be created, open as a draft.
 - **Merge conflicts**: rebase on `main` and `git push --force-with-lease` — don't ask first.
 - **Review feedback**: fix minor, cosmetic, and style comments autonomously and push. For correctness disagreements, architectural changes, or ambiguous instructions, use `AskUserQuestion` before acting.
 - **Release notes**: every PR description must include the `## Release Notes` section from the PR template. Write in climber voice — describe what the user gets, not what the code does. Internal-only changes (refactor, CI, deps, tests) get `none`.
+- **Test plan + Risk**: every PR description carries a `## Test plan` and a `## Risk` section (template). Testers read the plan word for word in the mobile app, so write it for a distracted reader on a phone: 1–5 numbered steps, each one action then what they should see ("You tab → Log a tick → field grows"), 12 words or fewer per step, no preamble. "1. CI green." is a valid plan for an internal change. Risk is `Risk: N/5 — why` (1 docs/CI/deps · 3 new screen or resolver · 5 BLE/OTA/migrations). `pr-test-plan.yml` fails without both; testers' verdicts come back as `qa-approved` / `qa-declined` labels. See `docs/crowdsourced-qa.md`.
 - **Ready to merge signal**: once CI is green, no unresolved review comments remain, and there are no conflicts, remove the draft status from the PR marking it ready for review.
 
 ## Monorepo Structure
@@ -34,11 +35,11 @@ We'll always create a PR, never asks if a PR should be created, open as a draft.
   /mobile/          # React Native (Expo) mobile application
   /backend/         # WebSocket backend for party mode (graphql-ws)
   /shared-schema/   # Shared GraphQL schema and TypeScript types
+  /board-constants/ # Generated Aurora board catalogue (sizes, layouts, sets, holds), grade colours, difficulty bands
   /shared/
     /play-view/     # Play-drawer logic (queue nav, tick utils, grade display)
     /queue/         # Queue state machine (reducer, types, event utils)
     /board-config/  # Board metadata, hold maps, angle tables
-    /board-constants/ # Grade colours, difficulty bands
     /board-react/   # Renderer-agnostic BoardProvider + logbook/tick hooks (useSaveTick/useUpdateTick/useDeleteTick)
     /offline-sync/  # Offline sync engine: mutation outbox + drainer, pull client, SQLite DDL (platform I/O injected)
     /profile-stats/ # Pure climbing-stats aggregation for the You page / profile (chart builders, deriveProfileViewModel)
@@ -85,7 +86,7 @@ Common commands:
 
 - `bunx drizzle-kit generate` from `packages/db/` to create migrations. **Never hand-write migration SQL** — it must be in `_journal.json`, which `drizzle-kit generate` updates for you.
 - **When main takes your migration number, run `vp run db:renumber`** — it rebases onto main, moves the migration to the next free number and keeps your SQL. CI usually does it for you: PRs adding a migration get the `db-migration` label, and a merge to main fans out a renumber for every stranded PR. `vp run check:db-migrations` guards the folder on every PR. Full details, including why the bot sometimes hands it back: `docs/db-migrations.md`.
-- Dev DB is a pre-built image (`ghcr.io/boardsesh/boardsesh-dev-db`) with all board data, a test user (`test@boardsesh.com` / `test`), and seed data. Reset: `docker compose down -v && vp run db:up`.
+- Dev DB is a pre-built image (`ghcr.io/boardsesh/boardsesh-dev-db`) with all board data, a test user (`test@boardsesh.com` / `test`), and seed data. Reset: `docker compose down -v && vp run db:up`. Its board catalogue is loaded from the nightly board snapshots at build time (`packages/db/scripts/load-board-snapshots.ts`), not from Aurora APKs — see `docs/board-snapshots.md`.
 
 ### Database hosting (Railway)
 
@@ -98,7 +99,7 @@ When the request references an issue ("fix issue #N", "this GH issue", a bug lin
 1. **Work in a fresh git worktree branched off the latest `main`.** Fetch `origin/main` first.
 2. **Plan before implementing.**
 3. **Pre-commit hook must pass** — fix underlying issues, no `--no-verify`.
-4. **Write a QA notes file before starting the dev server.** `.boardsesh/qa-notes.md` is the default path the orchestrator auto-detects and surfaces in-app via `/api/internal/dev-metadata`. Include the specific pages/flows to exercise, expected behaviour, and edge cases. For an alternate path, pass `vp run dev -- --qa-notes-file <path>`. **Never start the dev server for an issue fix without QA notes.**
+4. **Write a QA notes file before starting the dev server.** `.boardsesh/qa-notes.md` is the default path the orchestrator auto-detects and injects for `curl http://localhost:3000/api/internal/dev-metadata` to confirm (dev-only; no in-app surface). Include the specific pages/flows to exercise, expected behaviour, and edge cases. For an alternate path, pass `vp run dev -- --qa-notes-file <path>`. **Never start the dev server for an issue fix without QA notes.**
 5. **Start the dev server with `vp run dev`** (web) or `vp run dev:mobile` (mobile). Confirm the startup log shows `[dev] QA notes: <path>`. For mobile, the orchestrator surfaces QA notes in the `DevMetadataPanel` (More tab); Metro output is tee'd to `.boardsesh/mobile-metro.log`.
 6. **Tell the user the URL in one message** — whatever the server prints (typically `http://localhost:3000`). Don't paste the QA plan into chat; it's already in the file and the app.
 7. **Always open a PR** once validated.
@@ -110,15 +111,22 @@ Ad-hoc edits and direct feature requests don't trigger this workflow. If the use
 Read relevant `docs/` before working on the matching area; update docs when the system changes.
 
 - `docs/websocket-implementation.md` — WebSocket party session architecture
+- `docs/production-deploy.md` — the production deploy concurrency group, how a run parked at the Production environment gate wedges every later push, the watchdog that breaks it, and the "main has not deployed" runbook
 - `docs/boardsesh-grade.md` — Boardsesh grade: the data-science-backed universal climb grade (data sources + quirks, the empirical-Bayes model and every coefficient, validation gates, limitations, rejected alternatives, contributor roadmap)
 - `docs/board-snapshots.md` — nightly SQLite board-catalog snapshots (export job, client bootstrap, ops runbook); `docs/board-snapshots-dataset.md` — the same snapshots as a public downloadable dataset
+- `docs/board-art-geometry.md` — `@boardsesh/board-art-geometry`: traced hold silhouettes per board config (the frozen coordinate contract, how to regenerate, the six capture gates, the Woods skip, and the ring fallback downstream)
 - `docs/ai-design-guidelines.md` — Velvet Send design system (mobile-canonical: palette, typography, tokens, Liquid Glass / Material variants; web now consumes it too via `@boardsesh/velvet-tokens` + the foreground/fill split — see the "Web (consuming Velvet Send)" section)
 - `docs/live-activity-push-testing.md` — APNs Live Activity push testing
 - `docs/db-migrations.md` — migration numbering, `when`-not-number apply order, the collision/renumber bot, and when it hands work back
+- `docs/feature-flags.md` — client vs server flags, why a server gate fails closed, the resolution reasons, the `/api/internal/feature-flags` diagnostic, and the `FEATURE_FLAG_OVERRIDES` kill switch
 - `docs/logging.md` — backend structured logger (winston)
+- `docs/crowdsourced-qa.md` — the PR test-plan + risk gate (`@boardsesh/pr-body`, `pr-test-plan.yml`), and the tester loop that turns it into `qa-approved` / `qa-declined` labels
 - `docs/db-connectivity.md` — Postgres connect retries (what is retried and why it can't double-execute a write), the retry budgets, and the `/health` vs `/health/db` split
 - `docs/og-climb.md` — backend-served climb OG share cards (`GET /og/climb`: caches, env vars, timings)
+- `docs/cloudflare.md` — the boardsesh.com Cloudflare zone: config-as-code (`vp run cf:apply`), token scopes/secrets, CI auto-apply, og edge caching, planned OpenNext web deploy
 - `docs/mobile-sheets-vs-routes.md` — mobile: which surface to use (bottom sheet vs route), with the decision tree + the hard rules (incl. why `fullScreenModal` breaks the iOS 26 native tab bar)
+- `docs/gym-funnel-analytics.md` — the www gym funnel event contract in `@boardsesh/analytics` (seven event names, their property sets, the QR `?src=qr&medium=` landing params, and why `boardTypes` must be a joined string)
+- `docs/sitemap.md` — the shard registry, the degrade-at-the-index / fail-closed-at-the-shard split, and the climb store (`sitemap_shard_refreshes` + the `sitemap_climb_urls` ordinal table the shard pages read): who refreshes it, the `?force=1` escape hatch, and why the write lock is transaction-scoped
 
 ## Architecture Overview
 
@@ -137,7 +145,7 @@ the Expo app in W-16 (#4435) — www keeps marketing, account and gym surfaces o
 
 - Server components fetch initial data.
 - Client components use React Query.
-- API: `/api/internal/...` for server-side ops; `/api/v1/[board]/proxy/...` for Aurora proxies.
+- API: `/api/internal/...` for server-side ops; `/api/v1/...` for the public read API (climbs, grades, heatmaps, slugs). The Aurora proxies are gone: W-25a (#4441) retired them, W-25b (#4443) deleted the URLs. Board login and tick logging run on GraphQL.
 - State: Context + `useReducer` for complex state; URL params as source of truth for board config.
 
 ### Integration points
@@ -236,7 +244,7 @@ React Native + Expo SDK 57, React Native 0.86, Expo Router 57.
 
 - **Lint via `vp check`** — runs for mobile just like other packages. Use `vp run typecheck:mobile` for type-only checks.
 - **Own i18n provider** at `packages/mobile/src/providers/i18n-provider.tsx`. No web i18n rules apply.
-- **No web dev-server workflow** — use `vp run dev:mobile` (Metro) instead. The QA-notes-into-`/api/internal/dev-metadata` flow is web-only; on mobile the `DevMetadataPanel` (More tab) reads `.boardsesh/qa-notes.md` via env injection.
+- **No web dev-server workflow** — use `vp run dev:mobile` (Metro) instead. The QA-notes-into-`/api/internal/dev-metadata` env injection is web-only (curl the route to confirm what a running dev server started with); on mobile the `DevMetadataPanel` (More tab) reads `.boardsesh/qa-notes.md` via env injection instead.
 - **Styling**: `StyleSheet.create` + theme provider. No MUI, no `style`-prop avoidance rule.
 - **Dev mode**: `__DEV__` global, not `process.env.NODE_ENV`.
 - **Storage**: `expo-secure-store` for credentials, not IndexedDB.
@@ -305,6 +313,13 @@ Use `vp run mobile:ios` for local `packages/mobile` iOS builds instead of raw `e
 
 For quick ad-hoc shots of the live app on an Android emulator (the fast KVM path on Linux/Intel), `vp run mobile:android-shots` (`scripts/mobile-android-shots.ts`) boots an x86*64 emulator, installs a cached **dev-client** APK (`com.boardsesh.app.dev`, universal `arm64-v8a`+`x86_64`), starts Metro, and captures with `adb exec-out screencap`. Same `EXPO_PUBLIC_SCREENSHOT*_`env as iOS; the deep-link scheme is`com.boardsesh.app://`for both variants (only the package differs). The APK comes from the latest`rn-android-dev-_`release (or a local Gradle fallback). One-time setup:`vp run mobile:android-doctor`(bootstraps the SDK + JDK 21 under`~/.cache/boardsesh/`). Full guide: `docs/android-emulator-screenshots.md`. This is distinct from `vp run mobile:screenshots --platform android`, which installs a standalone store APK with bundled JS.
 
+### Native release branch
+
+- `main` is the production OTA line. A mobile change whose Expo fingerprint is unchanged targets `main` and ships by OTA.
+- A mobile change that changes the native fingerprint targets `release/next`; that branch is the only automatic TestFlight and Play-internal build line.
+- Split mixed backend/native work. Merge a backward-compatible backend or schema foundation to `main` first, then open the native mobile PR against `release/next` so the backend can ship without moving the production mobile fingerprint.
+- Keep the backend compatible with the currently shipped app until the replacement store release has been adopted. If `release/next` does not exist, create the next release train from current `main` before targeting it.
+
 ### OTA preview distribution
 
 Two preview paths, by audience:
@@ -316,6 +331,6 @@ A new preview build is only needed when native deps change (new Expo plugin, new
 
 ### OTA production distribution (self-hosted expo-open-ota V3)
 
-Production/TestFlight builds use our **self-hosted V3 control-plane** server at `updates.boardsesh.com` (`xprem:v3.1.2`, Postgres-backed), not EAS hosting — see `docs/mobile-ota-updates.md`. The old V2 server at `ota.boardsesh.com` is **frozen**: it keeps serving already-shipped binaries and takes no new publishes; retire it later once its fleet drains. New/updated binaries bake literal `expo-channel-name: production`, `expo-app-id: 007e6fd7-…`, and empty `xprem-branch` request headers, and point `updates.url` at `updates.boardsesh.com` (`EXPO_UPDATES_URL`). Production OTAs **auto-publish on every push to `main`** via `.github/workflows/mobile-ota-production.yml` (manual: `vp run mobile:publish -- --channel production`; `eoas@3.1.2`, `EXPO_UPDATES_URL` + app-scoped `EOO_TOKEN`). The production channel↔branch mapping is a one-time dashboard action. Per-PR previews use official Branch Surfing with a narrow `pr-*` pattern and no per-PR channel mapping. Keep Branch Surfing off until native builds containing `@xprem/control-center` and the `xprem-branch` header are ready, then enable it on the production channel. V3 also supports progressive rollouts. EAS preview builds keep the separate BranchSwitcher path. One-time infra: `vp run mobile:ota-setup`.
+Production/TestFlight builds use our **self-hosted V3 control-plane** server at `updates.boardsesh.com` (`xprem:v3.1.2`, Postgres-backed), not EAS hosting — see `docs/mobile-ota-updates.md`. The old V2 server at `ota.boardsesh.com` was **destroyed on 2026-08-25**; binaries from before the V3 cutover now run their embedded bundle until updated through the store. New/updated binaries bake literal `expo-channel-name: production`, `expo-app-id: 007e6fd7-…`, and empty `xprem-branch` request headers, and point `updates.url` at `updates.boardsesh.com` (`EXPO_UPDATES_URL`). Production OTAs **auto-publish on every push to `main`** via `.github/workflows/mobile-ota-production.yml` (manual: `vp run mobile:publish -- --channel production`; `eoas@3.1.2`, `EXPO_UPDATES_URL` + app-scoped `EOO_TOKEN`). The production channel↔branch mapping is a one-time dashboard action. Per-PR previews use official Branch Surfing with a narrow `pr-*` pattern and no per-PR channel mapping. Keep Branch Surfing off until native builds containing `@xprem/control-center` and the `xprem-branch` header are ready, then enable it on the production channel. V3 also supports progressive rollouts. EAS preview builds keep the separate BranchSwitcher path. One-time infra: `vp run mobile:ota-setup`.
 
 runtimeVersion uses the **`fingerprint`** policy (a hash of the native project), so a JS-only change keeps the same fingerprint and the OTA lands, while any native change yields a new fingerprint that old binaries won't pull (no `appVersion` footgun, no manual `version` bump for OTA compatibility). **Fingerprint parity is the one rule:** the OTA publish must resolve `app.config.ts` to the same config the native build did, so `mobile-ota-production.yml` mirrors the native workflows' env (guarded by `scripts/mobile-ci-env-parity.test.ts`) and publishes per-platform (iOS without `GOOGLE_MAPS_API_KEY`, Android with it — the key perturbs both fingerprints). Resolve a fingerprint with `bunx expo-updates runtimeversion:resolve --platform ios|android`.

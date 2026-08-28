@@ -43,6 +43,9 @@ const layoutColors: Record<string, Record<ColorSchemeName, string>> = {
   'decoy-2': { light: '#3F7A1F', dark: '#A3E635' },
   'touchstone-1': { light: '#B45309', dark: '#FBBF24' },
   'grasshopper-1': { light: '#4D7C0F', dark: '#BEF264' },
+  // Woods is a plywood board — warm brown reads as its own family next to the
+  // blues/greens, and stays distinguishable from touchstone's amber.
+  'woods-1': { light: '#6B4423', dark: '#C89F6B' },
 };
 
 const fallbackLayoutPalette: Array<Record<ColorSchemeName, string>> = [

@@ -90,8 +90,18 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     Replace the entire queue state.
     Used for bulk operations or syncing from external sources.
+
+    \`baselineSequence\` is the last server sequence this client had APPLIED when it
+    composed \`queue\`. When supplied, the server replays its queue-event buffer from
+    that point and re-appends any climb a peer added inside the window instead of
+    silently overwriting it (issue #3933). Omit it for the historical wholesale
+    overwrite — old clients send nothing here.
     """
-    setQueue(queue: [ClimbQueueItemInput!]!, currentClimbQueueItem: ClimbQueueItemInput): QueueState!
+    setQueue(
+      queue: [ClimbQueueItemInput!]!
+      currentClimbQueueItem: ClimbQueueItemInput
+      baselineSequence: Int
+    ): QueueState!
 
     """
     Confirm to all session participants that a climb was successfully relayed to the wall
@@ -575,6 +585,15 @@ export const mutationsTypeDefs = /* GraphQL */ `
     only permits a later matching source refresh and writes an audit record.
     """
     clearLocationSyncFreeze(input: ClearLocationSyncFreezeInput!): ClearLocationSyncFreezeResult!
+
+    """
+    Move a gym's ownership to another account (global admin only) — a sold gym,
+    a departed committee member, a claim approved to the wrong person. The
+    listing's human-curation freeze is left exactly as it was, the outgoing
+    owner is kept on as a gym admin, and the handover is written to a durable
+    audit trail. No self-serve entry point exists.
+    """
+    reassignGymOwner(input: ReassignGymOwnerInput!): ReassignGymOwnerResult!
 
     """
     Report that two gym listings are the same gym (any signed-in user). Surfaces the

@@ -184,7 +184,7 @@ export default function LegalContent() {
                 <Typography variant="body1" component="p">
                   <strong>{t('legal.dmca.contactLabel')}</strong>{' '}
                   {/* i18n-ignore-next-line -- contact email, not translated */}
-                  <MuiLink href="mailto:legal@mdj.ac">legal@mdj.ac</MuiLink>
+                  <MuiLink href="mailto:legal@boardsesh.com">legal@boardsesh.com</MuiLink>
                 </Typography>
               </section>
 

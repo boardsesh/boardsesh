@@ -323,11 +323,13 @@ async function generateCohortPlaylists(db: Db): Promise<void> {
 
 // Weekly board_climb_stats_history catch-all for boards the sync daemons don't
 // snapshot: MoonBoard (no periodic sync daemon at all — it froze with no writer
-// since March) and Touchstone (an Aurora board with no linked user credential,
-// so the aurora daemon's shared sync — which the snapshot rides — never runs for
-// it). Each call is gated by the same 7-day per-board watermark, so a board the
-// daemons already snapshotted this week is a no-op here.
-const HISTORY_CATCHUP_BOARDS = ['moonboard', 'touchstone'];
+// since March), Woods (a code-driven board with no upstream API to sync from —
+// its catalog arrives through the one-off importer) and Touchstone (an Aurora
+// board with no linked user credential, so the aurora daemon's shared sync —
+// which the snapshot rides — never runs for it). Each call is gated by the same
+// 7-day per-board watermark, so a board the daemons already snapshotted this
+// week is a no-op here.
+const HISTORY_CATCHUP_BOARDS = ['moonboard', 'woods', 'touchstone'];
 
 async function snapshotWeeklyHistory(db: Db): Promise<void> {
   console.log('[recs] weekly climb-stats history snapshot (catch-all boards)…');

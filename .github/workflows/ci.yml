@@ -52,10 +52,40 @@ jobs:
       # `listing-guards` job (see below).
       storeMetadata: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.storeMetadata }}
       mobileLocales: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.mobileLocales }}
+      # The two REST-surface oracles walk packages/web/app/api/** and
+      # packages/web/vercel.json with readdirSync/readFileSync at run time, so
+      # Vitest's `--changed` module-graph analysis can never relate them to a
+      # diff that only adds or deletes a route file — the exact diff shape they
+      # exist to catch. Measured on #4663: adding app/api/internal/probe-route/
+      # route.ts, and separately deleting app/api/og/setter/route.tsx, each
+      # selected ZERO specs under `vp test run --project web --changed`. Gates
+      # the `rest-surface` job (see below).
+      restSurface: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.restSurface }}
       # PR-only guard signal: did this PR edit the OTA-owned changelog data file?
       # Defaults false off PRs (the OTA bot legitimately rewrites it on push).
       changelogData: ${{ github.event_name == 'pull_request' && steps.filter.outputs.changelogData || 'false' }}
       dbMigrations: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.dbMigrations }}
+      staticAssets: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.staticAssets }}
+      # docs/postgres-image-digests.json and docs/*.patch are checked-in PG18
+      # rollout artifacts that nothing reads at run time, so nothing notices
+      # when the tree drifts under them. Their guard reads every input with
+      # readFileSync/readdirSync, which `--changed` can never relate to a diff
+      # of a workflow pin or of a file the patch's context depends on. No other
+      # filter matches docs/** at all. Gates the `pg18-artifacts` job below.
+      pg18Artifacts: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.pg18Artifacts }}
+      # Inputs to the www production image (Dockerfile.web). Gates the
+      # `docker-web` job below — the only thing in CI that ever runs
+      # `next build` for web. Off PRs this hardcodes `true` like every output
+      # above, which is load-bearing here: an unconditional build on every push
+      # to main is the backstop for whatever the PR filter misses, and the
+      # filter is deliberately narrow (see the `dockerWeb:` block below). #4653.
+      dockerWeb: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.dockerWeb }}
+      # The board-renderer Rust crate (packages/board-renderer/{core,ffi,wasm}/src,
+      # its workspace Cargo.toml/Cargo.lock) — matches neither anyJs (not
+      # TS/JS) nor mobile (which only covers the built wasm/pkg/** artifact),
+      # so a Rust-only PR would otherwise run zero jobs. Gates the
+      # `renderer-rust` job (see below).
+      boardRenderer: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.boardRenderer }}
       # True if any downstream job's gate would fire. This used to gate the
       # `setup` job (bun install + build:db + a `built-packages` artifact every
       # heavy job downloaded); that job was deleted because @boardsesh/db and
@@ -66,11 +96,12 @@ jobs:
       # union of every downstream gate, and scripts/__tests__/
       # ci-location-sync-workflow.test.ts asserts on its terms; keep it in sync
       # with the job `if:`s below so a future job can gate on it again.
-      runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.locationSync == 'true' || steps.filter.outputs.rootCi == 'true' }}
-      # NOTE: deployConfig, storeMetadata, and mobileLocales are deliberately
-      # NOT part of runAny — the deploy-config and listing-guards jobs below
-      # gate on their own filters, so a PR touching only their files runs
-      # nothing else.
+      runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.locationSync == 'true' || steps.filter.outputs.rootCi == 'true' || steps.filter.outputs.staticAssets == 'true' }}
+      # NOTE: deployConfig, storeMetadata, mobileLocales, restSurface,
+      # pg18Artifacts and boardRenderer are deliberately NOT part of runAny —
+      # the deploy-config, listing-guards, rest-surface, pg18-artifacts and
+      # renderer-rust jobs below gate on their own filters, so a PR touching
+      # only their files runs nothing else.
     steps:
       # No actions/checkout here on purpose: on `pull_request` dorny/paths-filter
       # reads the changed-file list from the REST API (no working tree needed),
@@ -106,14 +137,32 @@ jobs:
             mobile:
               - 'packages/mobile/**'
               - 'packages/board-renderer/wasm/pkg/**'
+              # www serves its own copy of the same artifact. The byte-parity
+              # gate lives in the mobile-bundle job, so a www-only edit to it
+              # must still trigger that job (issue #4495).
+              - 'packages/web/public/wasm/**'
               - 'patches/**'
               - 'scripts/mobile-platform-imports-check.sh'
               - 'scripts/mobile-web-bundle-check.sh'
               - 'scripts/sync-mobile-board-renderer-wasm.sh'
+              # check:mobile-web-bundle drives the real Expo export, so these two
+              # only ever run against a genuinely rendered shell here. A
+              # unit-test fixture cannot catch a patcher that breaks on Expo's
+              # actual output. W-24 / #4438.
+              - 'scripts/build-expo-web-export.sh'
+              - 'scripts/lib/patch-expo-web-pwa-manifest.mjs'
               # The live fingerprint gates run in the mobile-bundle job; a PR
               # editing only their logic must still trigger that job.
               - 'scripts/mobile-fingerprint-inputs-check.ts'
               - 'scripts/mobile-patches-check.ts'
+            # The Rust crate itself (packages/board-renderer/{core,ffi,wasm}/src,
+            # the workspace Cargo.toml/Cargo.lock). Deliberately separate from
+            # `mobile`, which only covers the *built* `wasm/pkg/**` artifact —
+            # a PR touching only `.rs` sources matches neither `anyJs` nor
+            # `mobile`, so without this filter it would run zero jobs. Gates
+            # the `renderer-rust` job (see below).
+            boardRenderer:
+              - 'packages/board-renderer/**'
             ocr:
               - 'packages/moonboard-ocr/**'
             locationSync:
@@ -151,6 +200,7 @@ jobs:
             deployConfig:
               - 'deploy/app-subdomain/**'
               - 'scripts/build-expo-web-export.sh'
+              - 'scripts/lib/patch-expo-web-pwa-manifest.mjs'
               - 'Dockerfile.web'
               - '.github/workflows/production-deploy.yml'
             # Everything scripts/store-metadata-limits.test.ts reads via fs at
@@ -165,6 +215,108 @@ jobs:
             mobileLocales:
               - 'packages/mobile/locales/**'
               - 'scripts/mobile-locales-parity.test.ts'
+            # Everything the two REST-surface oracles read via fs at run time,
+            # plus the specs themselves and the api-docs module the OpenAPI one
+            # statically imports. `packages/web/app/api/**` is the load-bearing
+            # glob: a route-file-only diff matches anyJs (so test-default runs)
+            # but selects neither spec there, which is why this job exists.
+            restSurface:
+              - 'packages/web/app/api/**'
+              - 'packages/web/vercel.json'
+              - 'packages/web/app/lib/api-docs/**'
+              - 'packages/web/app/__tests__/rest-surface-inventory.test.ts'
+              - 'scripts/__tests__/ci-rest-surface-workflow.test.ts'
+            # Everything that decides what the www production image contains.
+            # Gates `docker-web` below, which is expensive (a full `next build`
+            # plus a three-stage image), so this list is the DERIVED closure
+            # rather than a convenient `packages/**`:
+            #
+            #   * `packages/web/**` — the app itself, next.config.mjs included.
+            #   * the 37 workspace packages @boardsesh/web transitively depends
+            #     on, taken from the same dependencies/optionalDependencies/
+            #     peerDependencies walk create-service-docker-context.mjs runs.
+            #     scripts/__tests__/ci-docker-web-workflow.test.ts re-derives
+            #     that walk and fails if this list stops covering it, so a new
+            #     workspace dep can't open a silent hole.
+            #   * the install inputs — Dockerfile.web, bun.lock, the root
+            #     package.json, patches/** (bun resolves patchedDependencies
+            #     before the deps stage can install at all).
+            #   * the three repo-root scripts services.web.extraSourceFiles
+            #     copies into the context. Only tailscale-hostname.ts is
+            #     load-bearing (packages/web/scripts imports it and Next's
+            #     production type-check compiles that directory); the other two
+            #     are listed because the context copies them and W-26/#4442 will
+            #     drop the set together.
+            #   * the generator itself and vite.config.ts, which defines the
+            #     `docker-context:web` script.
+            #   * `.github/workflows/ci.yml`. Not an image input — it is here so
+            #     a diff that narrows this filter, or edits the job, actually
+            #     runs the job it changes. ci-docker-web-workflow.test.ts reads
+            #     ci.yml with readFileSync, which `--changed` can never relate to
+            #     a diff, so without this entry a ci.yml-only PR could quietly
+            #     gut the gate and go green. Measured cost: ci.yml took 50 of the
+            #     last 4,941 commits (~1%).
+            #
+            # KNOWN BLIND SPOT, accepted deliberately: packages/mobile/**,
+            # packages/shared/offline-sync/** and packages/shared/
+            # key-value-storage/** ARE copied into the web context (services.web
+            # roots at @boardsesh/mobile too), but nothing in the image builds or
+            # runs them — W-24/#4438 deleted the Expo export step from the
+            # builder stage and W-26/#4442 drops them from the context. Mobile is
+            # by far the highest-churn tree in the repo, so gating a 4-minute
+            # build on it would make most PRs pay for bytes the runner never
+            # sees. The unconditional main-push build is the backstop.
+            dockerWeb:
+              - 'packages/web/**'
+              - 'packages/aurora-sync/**'
+              - 'packages/board-constants/**'
+              - 'packages/board-renderer/wasm/**'
+              - 'packages/crypto/**'
+              - 'packages/db/**'
+              - 'packages/location-sync/**'
+              - 'packages/moonboard-ocr/**'
+              - 'packages/shared-schema/**'
+              - 'packages/shared/analytics/**'
+              - 'packages/shared/ble-protocol/**'
+              - 'packages/shared/board-config/**'
+              - 'packages/shared/board-presence/**'
+              - 'packages/shared/board-presence-react/**'
+              - 'packages/shared/board-react/**'
+              - 'packages/shared/board-render/**'
+              - 'packages/shared/climb-actions/**'
+              - 'packages/shared/climb-filters/**'
+              - 'packages/shared/create-climb-react/**'
+              - 'packages/shared/email/**'
+              - 'packages/shared/graphql/**'
+              - 'packages/shared/graphql-client/**'
+              - 'packages/shared/gym-claim/**'
+              - 'packages/shared/i18n/**'
+              - 'packages/shared/kiosk/**'
+              - 'packages/shared/logbook/**'
+              - 'packages/shared/party-profile/**'
+              - 'packages/shared/play-view/**'
+              - 'packages/shared/playback-react/**'
+              - 'packages/shared/playlist-generator/**'
+              - 'packages/shared/playlists-react/**'
+              - 'packages/shared/profile-stats/**'
+              - 'packages/shared/queue/**'
+              - 'packages/shared/queue-react/**'
+              - 'packages/shared/queue-runtime/**'
+              - 'packages/shared/velvet-tokens/**'
+              - 'packages/shared/watch-pairing/**'
+              - 'packages/sync-runtime/**'
+              - 'Dockerfile.web'
+              - '.dockerignore'
+              - 'bun.lock'
+              - 'package.json'
+              - 'patches/**'
+              - 'scripts/create-service-docker-context.mjs'
+              - 'scripts/build-expo-web-export.sh'
+              - 'scripts/lib/patch-expo-web-pwa-manifest.mjs'
+              - 'scripts/lib/tailscale-hostname.ts'
+              - 'vite.config.ts'
+              - '.github/workflows/ci.yml'
+              - 'scripts/__tests__/ci-docker-web-workflow.test.ts'
             rootCi:
               - '.github/workflows/ci.yml'
               - 'vite.config.ts'
@@ -173,6 +325,27 @@ jobs:
             changelogData:
               - 'packages/mobile/src/data/changelog.generated.json'
               - 'CHANGELOG.md'
+            # Two PG18 rollout artifacts are checked into the repo and read by
+            # nothing at run time, so they drift silently: the handoff copy of
+            # the publisher digest manifest, and a prepared rename deferred
+            # until after the cutover. The guard reads all of these from disk,
+            # so this filter has to name every input it reads -- the manifest,
+            # the patch, every file the patch touches, and every consumer that
+            # pins a published digest.
+            pg18Artifacts:
+              - 'docs/postgres-image-digests.json'
+              - 'docs/*.patch'
+              - 'docs/neon-migration.md'
+              - 'docs/postgres-18-migration.md'
+              - 'scripts/neon-to-railway-replication.sh'
+              - 'scripts/neon-to-railway-replication.test.sh'
+              - 'scripts/postgres18-image-smoke.sh'
+              - 'docker-compose.yml'
+              - '.github/workflows/dev-db-docker.yml'
+              - '.github/workflows/e2e-tests.yml'
+              - '.github/workflows/db-migration-renumber.yml'
+              - 'scripts/__tests__/ci-location-sync-workflow.test.ts'
+              - 'scripts/__tests__/pg18-artifact-drift.test.ts'
             dbMigrations:
               - 'packages/db/drizzle/**'
               - 'packages/db/src/schema/**'
@@ -189,6 +362,19 @@ jobs:
               # Defines the test:migration-journal script this job's new step
               # invokes, so editing it has to run the job that depends on it.
               - 'packages/db/package.json'
+            staticAssets:
+              - 'packages/web/public/images/**/*.webp'
+              - 'packages/web/public/brand/boardsesh-mark.png'
+              - 'packages/web/public/icons/*.png'
+              - 'packages/web/app/favicon.ico'
+              - 'packages/web/app/icon.png'
+              - 'packages/shared/static-assets/**'
+              - 'scripts/generate-static-assets.ts'
+              - 'scripts/lib/static-asset-catalog.ts'
+              - 'scripts/lib/static-asset-catalog.test.ts'
+              - 'scripts/upload-static-assets.ts'
+              - 'scripts/lib/static-asset-upload.ts'
+              - 'scripts/lib/static-asset-upload.test.ts'
 
   lint:
     needs: [changes]
@@ -199,18 +385,13 @@ jobs:
     # packages/board-renderer/wasm/pkg/**, scripts/mobile-*.sh — so dropping
     # either term would silently stop running the patch and fingerprint guards
     # on exactly the PR shape they exist for. Only ever widen this.
-    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.sharedDeps == 'true'
+    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.staticAssets == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 50
-      - name: Fetch base ref
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: git fetch --depth=50 origin "$BASE_REF":"refs/remotes/origin/$BASE_REF"
       - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
@@ -219,10 +400,13 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Install Expo web lint dependencies
-        # Widened alongside the job gate above: lint now also runs for
-        # sharedDeps-only changes, and the expo-web runtime has to be present
-        # whenever we lint mobile sources.
-        if: needs.changes.outputs.mobile == 'true' || needs.changes.outputs.sharedDeps == 'true'
+        # Unconditional: the lint step below lints the WHOLE repo, so
+        # packages/mobile/src/web-shims/bottom-sheet.tsx is always in scope and
+        # its `@gorhom/bottom-sheet` types only resolve through the isolated
+        # web-runtime install (packages/mobile/tsconfig.json maps the path
+        # there). Gating this on the mobile/sharedDeps change filters made every
+        # main push that touched neither fail with two TS2307s that no PR run
+        # could reproduce. ~0.5s to install, so there is nothing to gate on.
         run: vp run mobile:web-runtime:install
       # The nine `check:mobile-*` guards below used to run in mobile-bundle, in
       # front of Metro — ~24s of the critical path (18s of it the fingerprint
@@ -232,6 +416,8 @@ jobs:
       # that a failing guard no longer short-circuits Metro's work.
       - name: Check mobile board art stays bundled
         run: vp run check:mobile-board-art-network
+      - name: Check static asset catalog is current
+        run: vp run check:static-assets
       # Catches iOS bundle-phase dep-resolution breaks (e.g. a transitive-only
       # @sentry/cli unresolvable from packages/mobile under Bun's isolated
       # linker) here on Linux, instead of in the macOS TestFlight archive on
@@ -284,34 +470,19 @@ jobs:
       # `vp check`, so this grep guard is the real backstop.
       - name: Check offline-sync adapter boundary
         run: vp run check:mobile-offline-sync-imports
-      - name: Lint changed files (PR)
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          # Match the staged-hook scope in root vite.config.ts: TS/JS files,
-          # excluding generated/, board-controller, and embedded firmware sources.
-          # xargs -r ensures no-op on empty input.
-          git diff --name-only --diff-filter=ACMR \
-            "origin/$BASE_REF...HEAD" \
-            -- '*.ts' '*.tsx' '*.js' '*.mjs' '*.cjs' \
-            | grep -vE '(/node_modules/|/generated/|^packages/board-controller/|^embedded/)' \
-            > changed-lintable.txt || true
-          if [ -s changed-lintable.txt ]; then
-            # Same stdout redirect as the full-repo step below, and for the same
-            # reason: vp panics on EAGAIN when it flushes a long warning list to the
-            # runner's non-blocking stdout, and xargs reports that crash as 123 with
-            # the diagnostics cut off mid-line. A PR touching one warning-heavy file
-            # is enough to hit it. Writing to a regular file never EAGAINs; vp's real
-            # exit code is preserved so lint errors still fail the job.
-            xargs -r vp check < changed-lintable.txt > vp-check.log 2>&1 && status=0 || status=$?
-            cat vp-check.log || true
-            exit $status
-          else
-            echo "No lintable files changed."
-          fi
-      - name: Lint full repo (main)
-        if: github.event_name != 'pull_request'
+      # PRs and main lint the SAME thing: the whole repo. This job used to lint
+      # only a PR's changed files and reserve the full-repo pass for push-to-main,
+      # which meant an error in a file no PR happened to touch could not be caught
+      # until it was already on main. 33 of them accumulated that way and broke
+      # every main run for days (issue #4488, fixed by #4521) while every PR that
+      # introduced them stayed green. Measured cost of closing that gap: ~26s per
+      # PR (step timings, job 96193441921), against a 109s job dominated by
+      # setup-vp. Scope is now identical on both sides by construction, so the
+      # only way to land a lint error is to be the PR that shows it.
+      #
+      # Effective config is the `lint` block in root vite.config.ts, NOT
+      # .oxlintrc.json — see issue #4548 and the comment on that block.
+      - name: Lint full repo
         # vp/Vite+ panics with "failed printing to stdout: Resource temporarily
         # unavailable (os error 11)" when it flushes the full-repo warning list to the
         # runner's non-blocking stdout. Write to a regular file (never EAGAIN), then
@@ -456,9 +627,53 @@ jobs:
             exit 1
           fi
 
+  # No `if:` path gate and no `needs: [changes]` on purpose. The version is derived
+  # from the whole board catalogue plus the compiled renderer and every board photo
+  # the catalogue composites — a paths-filter listing those would drift from the
+  # generator's real input set, and a guard that silently stops guarding is worse
+  # than none (see the `check:db-migrations` / `large-files` precedents). Since it
+  # reads no `changes` output, waiting on that job would only add latency.
+  board-render-version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Verify the committed board-render version matches the tree
+        run: vp run check:board-render-version
+
+  # Same no-path-gate reasoning as board-render-version above, and the same
+  # inputs: the tracer walks the whole board catalogue and every board photo the
+  # catalogue composites, so a paths-filter listing those would drift from the
+  # generator's real input set. ~2 minutes of sharp + geometry for 49 configs.
+  board-art-geometry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Verify the committed hold silhouettes match the board art
+        run: vp run check:board-art-geometry
+
   i18n:
     needs: [changes]
-    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.i18nCatalogs == 'true' || needs.changes.outputs.rootCi == 'true'
+    # `mobile` is in the filter because check:i18n:orphans scans
+    # packages/mobile/{src,app} too. #4416 shipped a raw `playView.resetZoom`
+    # label from a mobile-only commit — without this the guard would skip the
+    # exact class of PR that introduces the bug.
+    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.i18nCatalogs == 'true' || needs.changes.outputs.rootCi == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -472,7 +687,10 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Check hardcoded user-facing strings
         run: vp run check:i18n
-      - name: Check orphaned i18n keys
+      # Two-way: orphaned catalog keys, plus keys referenced from code that exist
+      # in no catalog (they ship as raw `playView.resetZoom` strings — #4416) and
+      # mobile files reading a namespace Metro never bundles.
+      - name: Check i18n keys (orphaned + missing)
         run: vp run check:i18n:orphans
 
   deploy-config:
@@ -496,8 +714,20 @@ jobs:
           cache: true
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Validate deploy/app-subdomain config (_headers, _redirects, no-CSP rule)
+      - name: Validate deploy/app-subdomain config (_headers, _redirects, _routes.json, asset-404 Function, no-CSP rule)
         run: vp test run --project deploy-app-subdomain
+      # Same fs-reading blind spot, one project over: both suites read
+      # Dockerfile.web / build-expo-web-export.sh / create-service-docker-context.mjs
+      # with readFileSync, so test-default's `--changed` never relates them to a
+      # diff that only touches those files — and a Dockerfile- or .sh-only PR
+      # matches no other job's gate at all. Nothing in CI builds Dockerfile.web
+      # (branch-deploy.yml is workflow_dispatch-only), so these pins are the only
+      # thing standing between #3795 and a restored /app export step. W-24 / #4438.
+      - name: Validate the retired /app export stays retired
+        run: >-
+          vp test run --project scripts
+          scripts/__tests__/dockerfile-web-no-expo-export.test.ts
+          scripts/__tests__/build-expo-web-export.test.ts
 
   listing-guards:
     needs: [changes]
@@ -524,6 +754,97 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Validate store listing copy and mobile locale parity
         run: vp test run --project scripts scripts/store-metadata-limits.test.ts scripts/mobile-locales-parity.test.ts
+
+  pg18-artifacts:
+    needs: [changes]
+    # Deliberately not `--changed`-filtered, same rationale as deploy-config and
+    # listing-guards: the spec reads docs/postgres-image-digests.json, every
+    # docs/*.patch, and each pinned consumer with readFileSync/readdirSync at run
+    # time, so Vitest's module-graph analysis never relates it to a diff that only
+    # edits a workflow pin or a file the patch's context depends on. That is
+    # exactly the diff it guards. Note `.github/workflows/ci.yml` reaches it via
+    # rootCi rather than the pg18Artifacts list.
+    if: needs.changes.outputs.pg18Artifacts == 'true' || needs.changes.outputs.rootCi == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Validate published image digest pins and committed patches
+        run: vp test run --project scripts scripts/__tests__/pg18-artifact-drift.test.ts
+
+  renderer-rust:
+    needs: [changes]
+    # The board-renderer Rust crate has no `vp` task and isn't part of the bun
+    # workspace graph, so it gates on its own dedicated `boardRenderer` filter
+    # (packages/board-renderer/**) rather than anyJs/sharedDeps.
+    if: needs.changes.outputs.boardRenderer == 'true' || needs.changes.outputs.rootCi == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: packages/board-renderer
+    steps:
+      - uses: actions/checkout@v6
+      # dtolnay/rust-toolchain and Swatinem/rust-cache are third-party, not the
+      # first-party GitHub/oven-sh/voidzero-dev actions the rest of this
+      # workflow uses — pinned by full commit SHA (see e.g.
+      # .github/workflows/dev-db-docker.yml for the repo's established
+      # SHA-pin convention for actions like these).
+      - name: Install Rust stable (rustfmt + clippy)
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: packages/board-renderer -> target
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: cargo test
+        run: cargo test --workspace
+
+  rest-surface:
+    needs: [changes]
+    # Deliberately not `--changed`-filtered, same rationale as deploy-config and
+    # listing-guards one job up: both specs reconcile the REST surface against
+    # the filesystem at run time (readdirSync over packages/web/app/api/**,
+    # readFileSync of vercel.json, existsSync per registered OpenAPI path), so
+    # Vitest's module-graph analysis in test-default never selects them for a
+    # diff that only adds or deletes a route file. That is precisely the diff
+    # each one guards, so inside test-default they were inert on PRs and only
+    # ever reddened post-merge on main. Run both unfiltered whenever the API
+    # tree, vercel.json, or the specs' own inputs change. Do not fold these into
+    # test-default and do not add `--changed` here.
+    if: needs.changes.outputs.restSurface == 'true' || needs.changes.outputs.rootCi == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Validate the REST surface inventory and the published OpenAPI spec
+        run: >-
+          vp test run --project web
+          packages/web/app/__tests__/rest-surface-inventory.test.ts
+          packages/web/app/lib/api-docs/__tests__/openapi-document.test.ts
+      # Same fs-reading blind spot one level up: this spec reads ci.yml itself,
+      # so nothing in test-default relates it to a diff that narrows this job.
+      # It is what stops the gate above from being quietly reverted.
+      - name: Validate this job's own gate
+        run: vp test run --project scripts scripts/__tests__/ci-rest-surface-workflow.test.ts
 
   test-default:
     needs: [changes]
@@ -627,7 +948,7 @@ jobs:
         include: ${{ fromJSON(github.event_name != 'pull_request' && '[{"shard":1,"total":2},{"shard":2,"total":2}]' || '[{"shard":1,"total":1}]') }}
     services:
       postgres:
-        image: ghcr.io/boardsesh/boardsesh-postgres-postgis:latest
+        image: ghcr.io/boardsesh/boardsesh-postgres-postgis@sha256:01c2671dbccd2104ec15534de1552d1e092301a5a77cad010795318d47f76796
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
@@ -777,7 +1098,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: ghcr.io/boardsesh/boardsesh-dev-db@sha256:ce32f2a70405112178f3b8b3e4b373175878539d8532f46dd313e04bbcb14cb4
+        image: ghcr.io/boardsesh/boardsesh-dev-db@sha256:d4574a27a639919b70d89c457e88f17bf672b358dd38dbdc3c2ba5f65ecc44e5
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
@@ -920,6 +1241,148 @@ jobs:
         with:
           path: ${{ runner.temp }}/metro-web
           key: metro-web-${{ runner.os }}-${{ hashFiles('bun.lock', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
+
+  # Builds Dockerfile.web — the image #3795 makes the www production artifact.
+  # Nothing else in per-PR CI runs `next build` for web (e2e-tests.yml is
+  # workflow_dispatch-only), so before this job a source change that broke the
+  # production build reached main un-caught. Build only: no registry login, no
+  # push, no attestation, no deploy. #4653.
+  #
+  # There is no `bun install` step on purpose. `vp run docker-context:web` is
+  # `node scripts/create-service-docker-context.mjs web`, which imports node
+  # builtins only, and every dependency the image needs is installed inside the
+  # build. production-deploy.yml's build-backend job runs the same shape.
+  docker-web:
+    needs: [changes]
+    if: needs.changes.outputs.dockerWeb == 'true'
+    runs-on: ubuntu-latest
+    # Measured on ubuntu-latest with a completely cold cache (`web-main` did not
+    # exist yet): 4m09s for the job, of which the image build is 2m53s. The
+    # 11m20s figure from branch-deploy.yml run 31797731863 is NOT the number to
+    # plan against — that job also pushed ~225 MB of layers to GHCR and wrote a
+    # 2.7 GB gha cache, and this one does neither. 30 minutes is deliberate slack
+    # for a slow runner or a cold dependency bump, so a hang fails loud instead
+    # of burning six hours.
+    timeout-minutes: 30
+    # Narrower than the workflow default: this job reads the repo and nothing
+    # else. No `packages: write` — it never publishes the image it builds.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Generate the web Docker context
+        run: vp run docker-context:web
+
+      # Pre-build because it is the cheapest of the three checks and the one
+      # whose failure mode is silent. next.config.mjs resolves the GraphQL SWC
+      # plugin's `artifactDirectory` against the workspace root, not
+      # packages/web; if that path is not in the generated context the plugin
+      # no-ops and the bundle silently keeps the whole gql.ts Documents map.
+      # The path is READ OUT of next.config.mjs rather than pinned here, so an
+      # edit to it is checked against reality instead of against a second copy
+      # of the same mistake.
+      - name: Verify the GraphQL artifactDirectory resolves inside the context
+        run: |
+          set -euo pipefail
+          artifact_directory=$(sed -n "s/.*artifactDirectory: *'\.\/\([^']*\)'.*/\1/p" packages/web/next.config.mjs)
+          if [ -z "$artifact_directory" ]; then
+            # Two different causes, so say both: the key is gone, or it no longer
+            # uses the single-quoted './'-prefixed form this pattern matches.
+            echo "::error file=packages/web/next.config.mjs::could not read artifactDirectory from next.config.mjs — either the swcPlugins entry is gone, or its value is no longer a single-quoted './'-prefixed path and this step's sed pattern needs updating"
+            exit 1
+          fi
+          if [ ! -s ".docker-context/web/source/$artifact_directory/gql.ts" ]; then
+            echo "::error file=packages/web/next.config.mjs::artifactDirectory '$artifact_directory' does not resolve inside the web Docker context; the GraphQL SWC plugin will silently no-op"
+            exit 1
+          fi
+          echo "artifactDirectory OK: $artifact_directory/gql.ts is in the build context"
+
+      # BASE_URL and NEXT_PUBLIC_WS_URL are baked into the client bundle, so
+      # they are passed in production SHAPE to exercise the real code path. This
+      # image is never pushed or served — do not treat these as deploy config.
+      #
+      # THERE IS NO `cache-to`, ON PURPOSE — do not add one back.
+      #
+      # A fully cold build of this image measured 2m53s (4m09s for the whole
+      # job) on ubuntu-latest, so a warm cache saves a minute or two at most.
+      # Writing it costs 2.72 GB against a repo cache that is already at 9.15 GB
+      # of GitHub's 10 GB ceiling (measured 2026-08-25, 69 entries), which means
+      # the write evicts other scopes by LRU — the gradle and vp toolchain
+      # caches among them, and those serve mobile PRs, the dominant PR shape in
+      # this repo. Spending someone else's cache to save 90 seconds here is
+      # net-negative.
+      #
+      # `cache-from` stays: it costs no quota, is a harmless no-op while nothing
+      # writes `web-main`, and turns into a free speedup the day #3795's
+      # build-web starts seeding that scope on main.
+      #
+      # If this ever does need a writable cache, note that the registry-backed
+      # option (type=registry on GHCR) requires push credentials, which would
+      # destroy this job's "never publishes anything" property — the one
+      # scripts/__tests__/ci-docker-web-workflow.test.ts guards. Weigh that
+      # first; it is worth more than the minute.
+      - name: Build the web image
+        uses: docker/build-push-action@v7
+        with:
+          context: .docker-context/web
+          file: .docker-context/web/Dockerfile
+          push: false
+          load: true
+          tags: boardsesh-web:ci-${{ github.sha }}
+          build-args: |
+            NEXT_PUBLIC_WS_URL=wss://ws.boardsesh.com/graphql
+            BASE_URL=https://www.boardsesh.com
+          cache-from: type=gha,scope=web-main
+
+      # packages/web/app/api/internal/board-render/route.ts probes four
+      # candidate paths against process.cwd(); the runner's WORKDIR is /app, so
+      # this is the one that hits. It gets there only through
+      # next.config.mjs's `outputFileTracingIncludes` — and Next's standalone
+      # tracer behaves differently from the Vercel builder that has been
+      # producing the current artifact, which is exactly why it is asserted.
+      #
+      # The size floor, not just `test -s`, is the assertion: a 0-byte or stub
+      # file passes a presence check. The artifact measured 473,535 bytes on
+      # 2026-08-25; the floor sits at 400,000 (~85% of that) so a legitimate
+      # wasm rebuild doesn't red the gate while a stub still does. Do NOT relax
+      # this to `find / -name '*.wasm'` — the image also carries the committed
+      # public/wasm copy, a Turbopack asset copy and two @vercel/og blobs, any
+      # of which would make a loose check pass while tracing is broken.
+      - name: Verify the board-renderer WASM is traced into the image
+        run: |
+          docker run --rm --entrypoint sh boardsesh-web:ci-${{ github.sha }} -c '
+            set -eu
+            wasm_path=/app/packages/web/node_modules/@boardsesh/board-renderer-wasm/pkg/board_renderer_wasm_bg.wasm
+            test -s "$wasm_path" || { echo "::error::board-renderer WASM missing at $wasm_path"; exit 1; }
+            wasm_bytes=$(wc -c < "$wasm_path")
+            [ "$wasm_bytes" -gt 400000 ] || { echo "::error::WASM at $wasm_path is $wasm_bytes bytes, expected >400000"; exit 1; }
+            echo "WASM OK: $wasm_path ($wasm_bytes bytes)"
+          '
+
+      # public/openapi.json is gitignored and written by the `generate:openapi`
+      # half of packages/web's build script, so its presence in the image is
+      # real proof that step ran. Parsing it and counting paths is the
+      # assertion: an empty or truncated document passes `test -s`. `node` is in
+      # the runner image; `bun` is not.
+      - name: Verify the generated OpenAPI document shipped in the image
+        run: |
+          docker run --rm --entrypoint sh boardsesh-web:ci-${{ github.sha }} -c '
+            set -eu
+            openapi_path=/app/packages/web/public/openapi.json
+            test -s "$openapi_path" || { echo "::error::$openapi_path missing from the image"; exit 1; }
+            node -e "
+              const spec = require(process.argv[1]);
+              const routeCount = Object.keys(spec.paths ?? {}).length;
+              if (routeCount === 0) throw new Error(\"openapi.json has no paths\");
+              console.log(\"openapi OK: \" + routeCount + \" paths\");
+            " "$openapi_path"
+          '
 
   commit-lint:
     needs: [changes]
@@ -1065,17 +1528,23 @@ jobs:
       - typecheck
       - db-migrations
       - codegen-drift
+      - board-render-version
+      - board-art-geometry
       - i18n
       - test-default
       - test-backend
       - test-ocr
       - test-location-sync-integration
       - mobile-bundle
+      - docker-web
       - commit-lint
       - release-notes
       - changelog-owned
       - deploy-config
       - listing-guards
+      - rest-surface
+      - pg18-artifacts
+      - renderer-rust
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2

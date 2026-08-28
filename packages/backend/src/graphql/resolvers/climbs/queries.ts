@@ -149,43 +149,43 @@ export const climbQueries = {
     // request per page, so the limit sits well above any interactive cadence while
     // capping abuse (deep-OFFSET pages, holdsFilter floods) on an anonymous endpoint.
     await applyRateLimit(ctx, 120, 'search-climbs');
-    validateInput(ClimbSearchInputSchema, input, 'input');
+    const parsedInput = validateInput(ClimbSearchInputSchema, input, 'input');
 
     // Validate board name
-    if (!isValidBoardName(input.boardName)) {
-      throw new Error(`Invalid board name: ${input.boardName}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
+    if (!isValidBoardName(parsedInput.boardName)) {
+      throw new Error(`Invalid board name: ${parsedInput.boardName}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
     }
 
     // Parse setIds from comma-separated string
-    const setIds = input.setIds
+    const setIds = parsedInput.setIds
       .split(',')
       .map((id) => parseInt(id.trim(), 10))
       .filter((id) => !isNaN(id));
 
     // Build route parameters
     const params: ParsedBoardRouteParameters = {
-      board_name: input.boardName,
-      layout_id: input.layoutId,
-      size_id: input.sizeId,
+      board_name: parsedInput.boardName,
+      layout_id: parsedInput.layoutId,
+      size_id: parsedInput.sizeId,
       set_ids: setIds,
-      angle: input.angle,
+      angle: parsedInput.angle,
     };
 
     // Build search parameters via the shared mapper — same falsy-collapse
     // rules as the web SSR path. Don't inline the field-by-field copy here.
-    const searchParams: ClimbSearchParams = mapSearchInputToParams(input);
+    const searchParams: ClimbSearchParams = mapSearchInputToParams(parsedInput);
 
     if (DEBUG) {
       logger.info(
         '[searchClimbs] onlyDrafts:',
-        input.onlyDrafts,
+        parsedInput.onlyDrafts,
         'userId:',
         ctx.isAuthenticated ? ctx.userId : 'not authenticated',
       );
     }
 
     // Drafts require authentication — return empty results if not signed in
-    if (input.onlyDrafts && !ctx.isAuthenticated) {
+    if (parsedInput.onlyDrafts && !ctx.isAuthenticated) {
       return {
         params,
         searchParams,
@@ -199,10 +199,16 @@ export const climbQueries = {
     // MoonBoard data changes frequently via local creation/import flows, so keep
     // GraphQL search results uncached there. Other boards can still use Redis
     // when the query is anonymous and has no user-specific filters.
+    //
+    // Woods stays cacheable despite also being code-driven: its catalog is a
+    // static import with no in-app creation or import flow writing to it, so a
+    // cached anonymous search can't go stale between requests the way MoonBoard's
+    // can. Revisit this line when Woods gets a create path (#4750) — a board
+    // users can write to has to leave the cacheable set.
     const hasUserSpecificFilters = USER_SPECIFIC_SEARCH_PARAMS.some(
       (param) => !!searchParams[param as keyof typeof searchParams],
     );
-    const isCacheableBoard = input.boardName !== 'moonboard';
+    const isCacheableBoard = parsedInput.boardName !== 'moonboard';
 
     // Only resolve userId when user-specific filters are active — otherwise the query
     // results are identical to anonymous and can be served from Redis cache.
@@ -286,7 +292,8 @@ export const climbQueries = {
     // Validate all parameters
     if (layoutId <= 0) throw new Error('Invalid layoutId: must be positive');
     if (sizeId <= 0) throw new Error('Invalid sizeId: must be positive');
-    if (angle < 0 || angle > 90) throw new Error('Invalid angle: must be between 0 and 90');
+    // Aurora boards support negative tilt (e.g. -5°); mobile sends the live board angle here.
+    if (angle < -90 || angle > 90) throw new Error('Invalid angle: must be between -90 and 90');
     validateInput(ExternalUUIDSchema, climbUuid, 'climbUuid');
 
     if (DEBUG) logger.info('[climb] Fetching:', { boardName, layoutId, sizeId, setIds, angle, climbUuid });

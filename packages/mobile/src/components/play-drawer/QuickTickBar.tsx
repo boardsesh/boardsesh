@@ -121,7 +121,10 @@ export const QuickTickBar = React.memo(function QuickTickBar({ form }: QuickTick
         />
       </TickFormRow>
 
-      <TickFormRow label={tClimbs('mobile.tick.noteLabel')} showSeparator={false} testID="tick-row-note">
+      {/* `alignTop`: the note is the one control that grows well past the 56pt
+          row beat, and a centred label floats ~31pt below the first line of
+          the climber's own text (#4642). */}
+      <TickFormRow label={tClimbs('mobile.tick.noteLabel')} alignTop showSeparator={false} testID="tick-row-note">
         <TickNoteField
           value={comment}
           onChangeText={onCommentChange}

@@ -13,23 +13,12 @@
 
 import type { AppFeedbackPlatform, AppFeedbackSource, FeedbackContextInput } from '@boardsesh/shared-schema';
 import { redactSensitiveText } from '@boardsesh/text-redaction';
+import { DEFAULT_GITHUB_REPO, GITHUB_API, ensureLabels, githubHeaders } from '../lib/github-client';
 import { logger } from '../utils/logger';
 
-const GITHUB_API = 'https://api.github.com';
-const DEFAULT_REPO = 'boardsesh/boardsesh';
 const TITLE_LIMIT = 120;
 
 const BUG_SOURCES: ReadonlySet<AppFeedbackSource> = new Set(['shake-bug', 'drawer-bug']);
-
-// Colors mirror the TestFlight→issues sync (scripts/testflight-feedback-to-issues.ts)
-// so labels created by either path look consistent.
-const LABEL_COLORS: Record<string, string> = {
-  bug: 'd73a4a',
-  'user-feedback': 'fbca04',
-  ios: '1d76db',
-  android: '0e8a16',
-  web: '5319e7',
-};
 
 export type FeedbackIssuePayload = {
   feedbackId: string | number | bigint;
@@ -155,36 +144,6 @@ export function buildFeedbackIssue(payload: FeedbackIssuePayload): FeedbackIssue
   };
 }
 
-function githubHeaders(token: string): Record<string, string> {
-  return {
-    Accept: 'application/vnd.github+json',
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-    'X-GitHub-Api-Version': '2022-11-28',
-    'User-Agent': 'boardsesh-backend',
-  };
-}
-
-// Best-effort: create each label if it doesn't exist. 422 = already exists (the
-// common case), which is fine. Failures here never block issue creation.
-async function ensureLabels(owner: string, repo: string, token: string, labels: string[]): Promise<void> {
-  for (const label of labels) {
-    try {
-      const response = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/labels`, {
-        method: 'POST',
-        headers: githubHeaders(token),
-        body: JSON.stringify({ name: label, color: LABEL_COLORS[label] ?? 'ededed' }),
-      });
-      if (!response.ok && response.status !== 422) {
-        const errorText = await response.text().catch(() => '<unreadable>');
-        logger.warn(`[GitHub feedback] ensureLabel ${label}: ${response.status} ${errorText}`);
-      }
-    } catch (error) {
-      logger.warn(`[GitHub feedback] ensureLabel ${label} error:`, error);
-    }
-  }
-}
-
 /**
  * Create a GitHub issue from a bug report. Never throws. Returns the created
  * issue's number + html_url, or null when it no-ops or fails:
@@ -199,7 +158,7 @@ export async function createFeedbackGithubIssue(payload: FeedbackIssuePayload): 
   const token = process.env.FEEDBACK_GITHUB_TOKEN;
   if (!token) return null;
 
-  const repo = process.env.FEEDBACK_GITHUB_REPO ?? DEFAULT_REPO;
+  const repo = process.env.FEEDBACK_GITHUB_REPO ?? DEFAULT_GITHUB_REPO;
   const [owner, name] = repo.split('/');
   if (!owner || !name) {
     logger.error(`[GitHub feedback] Invalid FEEDBACK_GITHUB_REPO "${repo}" (expected owner/name)`);

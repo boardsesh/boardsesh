@@ -28,6 +28,7 @@ import { betaLinksTypeDefs } from './beta-links';
 import { integrationsTypeDefs } from './integrations';
 import { syncTypeDefs } from './sync';
 import { locationSyncAdminTypeDefs } from './location-sync-admin';
+import { gymOwnerReassignTypeDefs } from './gym-owner-reassign';
 
 export const typeDefs = [
   scalarTypeDefs,
@@ -52,6 +53,7 @@ export const typeDefs = [
   integrationsTypeDefs,
   syncTypeDefs,
   locationSyncAdminTypeDefs,
+  gymOwnerReassignTypeDefs,
   queriesTypeDefs,
   mutationsTypeDefs,
   subscriptionsTypeDefs,

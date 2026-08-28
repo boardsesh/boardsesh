@@ -118,7 +118,9 @@
       "subtitle": "Faltan datos del plafón para este bloque."
     },
     "menu": {
-      "editClimbs": "Editar bloques",
+      "addClimbs": "Añadir bloques",
+      "editDetails": "Editar detalles",
+      "editClimbs": "Reordenar y quitar bloques",
       "delete": "Eliminar"
     },
     "visibility": {

@@ -196,7 +196,14 @@
       "lifetimeSends_one": "{{count}} Begehung",
       "lifetimeSends_other": "{{count}} Begehungen",
       "lifetimeRecap": "{{tries}} {{sessions}}",
-      "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}"
+      "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}",
+      "signedOut": "Melde dich an, um deine Versuche an diesem Boulder zu sehen."
+    },
+    "anonymous": {
+      "signInHeadline": "Begehung eintragen",
+      "signInSubtitle": "Melde dich an, um Versuche, Begehungen und Beta an einem Ort zu behalten.",
+      "signInAction": "Anmelden",
+      "tickAria": "Melde dich an, um diese Begehung einzutragen"
     },
     "similarClimbs": {
       "title": "Ähnliche Boulder",
@@ -242,6 +249,7 @@
       "shareReadingCaption": "Bildunterschrift wird gelesen…",
       "shareSuggestedTitle": "Aus der Bildunterschrift erkannt",
       "shareOtherAscents": "Deine anderen Begehungen",
+      "shareAscentLabel": "Häng deine Beta an {{details}} an",
       "shareTitle": "Teile deine Beta",
       "step1Title": "Bildunterschrift kopieren",
       "step2Title": "Als Reel posten",
@@ -263,6 +271,7 @@
       "unknownClimb": "Unbekannter Boulder",
       "removeClimb": "Boulder entfernen",
       "positionLabel": "Position {{position}}",
+      "addedByAria": "Hinzugefügt von {{name}}",
       "syncError": "Sync-Fehler in der Warteschlange",
       "outOfSyncRefreshed": "Die Warteschlange war nicht synchron. Von deiner Crew neu geladen.",
       "sessionCreateError": "Session konnte nicht erstellt werden",
@@ -464,7 +473,29 @@
     }
   },
   "playView": {
-    "previewBadge": "Vorschau",
+    "wallState": {
+      "onWall": "An der Wand",
+      "live": "Live",
+      "browsing": "Stöbern",
+      "onWallHint": "Dieser Boulder ist gerade am Board beleuchtet.",
+      "liveHint": "Dein nächster Boulder wird direkt am Board beleuchtet.",
+      "browsingHint": "Du schaust dich nur um. Die Wand bleibt, wie sie ist.",
+      "pillHint": "Wand-Optionen anzeigen",
+      "browseFromHere": "Von hier aus stöbern",
+      "backToLive": "Zurück zu live",
+      "putOnWall": "Am Board beleuchten",
+      "joinedBrowseNotice": "Du stöberst. Die Wand bleibt unverändert, bis du einen Boulder am Board beleuchtest.",
+      "commitOverride": {
+        "body": "Jemand hat gerade {{name}} beleuchtet. Trotzdem deinen beleuchten?",
+        "confirm": "Meinen beleuchten",
+        "cancel": "Wand so lassen"
+      },
+      "a11y": {
+        "browseAnnounce": "Stöbern. Die Wand bleibt, wie sie ist.",
+        "backToLive": "Zurück zu live: {{name}}",
+        "committed": "{{name}} ist an der Wand"
+      }
+    },
     "setActive": "Aktiv setzen",
     "paneEmpty": {
       "title": "Wähl einen Boulder",

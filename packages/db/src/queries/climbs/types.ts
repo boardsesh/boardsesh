@@ -241,4 +241,10 @@ export type ClimbRow = {
   /** Boardsesh grade confidence tier; null when no grade row (or a DB value outside
    *  the known tiers, narrowed by `toConfidenceTier` at the mapping site). */
   boardseshConfidence: ConfidenceTier | null;
+  /** `board_climbs.compatible_size_ids` — the product sizes this climb fits on.
+   *  Null when the denormalised columns haven't been populated (drafts, legacy
+   *  rows), which imposes no constraint. Carried so client-side size checks
+   *  (`canAddClimbToBoard`) can separate Woods' two sizes, whose hold ids
+   *  overlap without meaning the same holds. */
+  compatibleSizeIds: number[] | null;
 };

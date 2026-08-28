@@ -53,7 +53,10 @@ function createDbShim(opts: { owners?: Array<Record<string, unknown>>; returning
                 returning: () => Promise.resolve(opts.returning ?? [{ id: BigInt(1) }]),
               });
             },
-            onConflictDoNothing: () => Promise.resolve(),
+            onConflictDoNothing: (conflictArgs: unknown) => {
+              calls.push({ kind: 'conflict', table, args: [conflictArgs] });
+              return Promise.resolve();
+            },
           };
           return Object.assign(Promise.resolve(), chain);
         },
@@ -131,5 +134,66 @@ describe('web aurora proxy — circuits foreign-owner guard (#3526)', () => {
     expect(insertsInto(playlistOwnership)).toHaveLength(0);
     expect(insertsInto(playlistClimbs)).toHaveLength(0);
     expect(calls.filter((call) => call.kind === 'delete')).toHaveLength(0);
+  });
+});
+
+/**
+ * #4023: this legacy proxy route shares the same `unique_playlist_climb`
+ * (playlist_id, climb_uuid) index with the aurora-sync daemon, so it carries
+ * the identical dedupe + onConflictDoNothing fix.
+ */
+describe('web aurora proxy — playlist_climbs idempotency (#4023)', () => {
+  const circuitWithDupeClimb = {
+    ...circuit,
+    climbs: [
+      { climb_uuid: 'climb-A', angle: 40, position: 0 },
+      { climb_uuid: 'climb-A', angle: 55, position: 1 },
+      { climb_uuid: 'climb-B', angle: 40, position: 2 },
+    ],
+  };
+
+  it('dedupes a repeated climb_uuid within one circuit, keeping the first occurrence', async () => {
+    const { db, calls } = createDbShim({ owners: [{ upstreamId: 'circuit-1', ownerUserId: 'user-1' }] });
+
+    await upsertTableData(db as never, 'tension', 'circuits', 144574, 'user-1', [circuitWithDupeClimb] as never);
+
+    const climbInsert = calls.find((call) => call.kind === 'insert' && call.table === playlistClimbs);
+    const rows = climbInsert?.args[0] as Array<{ climbUuid: string; angle: number | null; position: number }>;
+    expect(rows).toHaveLength(2);
+    expect(rows).toEqual([
+      { playlistId: BigInt(1), climbUuid: 'climb-A', angle: 40, position: 0 },
+      { playlistId: BigInt(1), climbUuid: 'climb-B', angle: 40, position: 2 },
+    ]);
+  });
+
+  it('carries onConflictDoNothing targeting (playlist_id, climb_uuid) on the playlist_climbs insert', async () => {
+    const { db, calls } = createDbShim({ owners: [{ upstreamId: 'circuit-1', ownerUserId: 'user-1' }] });
+
+    await upsertTableData(db as never, 'tension', 'circuits', 144574, 'user-1', [circuit] as never);
+
+    const conflictClause = calls.find((call) => call.kind === 'conflict' && call.table === playlistClimbs)?.args[0] as
+      | { target?: unknown[] }
+      | undefined;
+    expect(conflictClause?.target).toEqual([playlistClimbs.playlistId, playlistClimbs.climbUuid]);
+  });
+
+  it('deletes playlist_climbs before inserting the new rows', async () => {
+    const { db, calls } = createDbShim({ owners: [{ upstreamId: 'circuit-1', ownerUserId: 'user-1' }] });
+
+    await upsertTableData(db as never, 'tension', 'circuits', 144574, 'user-1', [circuit] as never);
+
+    const deleteIdx = calls.findIndex((call) => call.kind === 'delete' && call.table === playlistClimbs);
+    const insertIdx = calls.findIndex((call) => call.kind === 'insert' && call.table === playlistClimbs);
+    expect(deleteIdx).toBeGreaterThanOrEqual(0);
+    expect(insertIdx).toBeGreaterThan(deleteIdx);
+  });
+
+  it('skips non-string climb entries and issues no insert when nothing survives', async () => {
+    const { db, insertsInto } = createDbShim({ owners: [{ upstreamId: 'circuit-1', ownerUserId: 'user-1' }] });
+    const circuitWithBadClimbs = { ...circuit, climbs: [{ climb_uuid: 42 }, { climb_uuid: null }] };
+
+    await upsertTableData(db as never, 'tension', 'circuits', 144574, 'user-1', [circuitWithBadClimbs] as never);
+
+    expect(insertsInto(playlistClimbs)).toHaveLength(0);
   });
 });

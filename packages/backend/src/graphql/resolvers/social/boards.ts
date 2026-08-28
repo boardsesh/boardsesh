@@ -37,6 +37,7 @@ import { publishBoardQueuePreviewTombstoneForBoard } from '../../../services/boa
 import { logger } from '../../../utils/logger';
 import { redisClientManager } from '../../../redis/client';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
+import { REDISLESS_FALLBACK_TTL_MS, singleFlight } from '../../../utils/single-flight';
 import { lockAndAssertBoardSerialAvailable } from '../board-serial-write-lock';
 
 // ============================================
@@ -690,6 +691,7 @@ const BOARD_TYPE_LABELS: Record<string, string> = {
   touchstone: 'Touchstone',
   grasshopper: 'Grasshopper',
   soill: 'So iLL',
+  woods: 'Woods',
 };
 
 const GENERIC_SETS = new Set(['bolt ons', 'screw ons', 'foot set', 'plastic', 'wood']);
@@ -740,6 +742,46 @@ const REDIS_CACHE_TTL_SECONDS = 365 * 24 * 60 * 60; // 1 year
 const REDIS_LOCK_KEY = 'boardsesh:popular-board-configs:lock';
 const REDIS_LOCK_TTL_SECONDS = 120; // 2 min lock to prevent duplicate queries across nodes
 
+/**
+ * Key for the in-process single-flight. The statement below is the heaviest
+ * read in the app — one LATERAL with a nested NOT EXISTS per listed config,
+ * 51 of them today — and it is the resolver behind the home page, so a cold
+ * cache used to mean one copy per concurrent visitor, each holding a pool
+ * connection until it finished. See utils/single-flight.ts for what that did
+ * to every other query in the process.
+ */
+const POPULAR_CONFIGS_FLIGHT_KEY = 'popular-board-configs';
+
+/**
+ * Last-resort cache for deployments with no Redis (local dev, the e2e CI
+ * stack). With a shared cache there is nothing to fall back to and this is
+ * never read or written, so production behaviour — including the deliberate
+ * cache DELETE in `warmPopularConfigsCache` on every deploy — is unchanged.
+ * Without one, single-flight alone would still re-run the statement for the
+ * first caller after each completion, forever.
+ */
+let localFallbackConfigs: { configs: CachedPopularConfig[]; expiresAt: number } | null = null;
+
+/**
+ * Bumped on every drop. The statement runs for tens of seconds, so a deploy
+ * warm-up can easily land while an earlier copy is still executing — and
+ * without this that copy would repopulate the fallback with pre-deploy data
+ * *after* the drop, which is the one thing the warm-up exists to prevent. A
+ * flight captures the counter before it starts and declines to cache its
+ * result if the number moved underneath it.
+ */
+let fallbackGeneration = 0;
+
+/**
+ * The Redis-less twin of deleting REDIS_CACHE_KEY: force the next read to
+ * re-query. Called by the deploy warm-up, and by tests so one case cannot
+ * answer the next from the previous one's fixture.
+ */
+export function dropPopularConfigsFallback(): void {
+  localFallbackConfigs = null;
+  fallbackGeneration += 1;
+}
+
 async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
   // Try Redis cache first
   if (redisClientManager.isRedisConnected()) {
@@ -752,12 +794,35 @@ async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
     } catch (err) {
       logger.error('[PopularConfigs] Redis read failed:', err);
     }
+  } else if (localFallbackConfigs && localFallbackConfigs.expiresAt > Date.now()) {
+    return localFallbackConfigs.configs;
   }
+
+  return singleFlight(POPULAR_CONFIGS_FLIGHT_KEY, runPopularConfigsQuery);
+}
+
+async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
+  const generationAtStart = fallbackGeneration;
 
   // Query all per-size configs with climb counts filtered by size edges AND set membership.
   // A climb counts for a config only if ALL its holds belong to placements in that config's sets.
   // board_climb_holds.hold_id = board_placements.id (placement ID).
-  // ~31 configs, ~750ms worst case per LATERAL, cached in Redis for 1 year (refreshed on deploy).
+  //
+  // Cached in Redis for 1 year (deliberately re-run on deploy). Cost, measured
+  // 2026-08-22 against the dev-db image (51 listed configs, 648k board_climbs,
+  // idle 10-core box): 82 s for one execution. The header on this block used to
+  // read "~31 configs, ~750ms worst case per LATERAL" — that is long stale, and
+  // the gap is why an uncached window mattered so much (#4463).
+  //
+  // Production is faster than the dev image but not fast: the only production
+  // observation on record is ~10 s cold, measured through the sitemap's copy of
+  // this same read (`packages/web/app/lib/server-popular-configs.ts`, which
+  // wraps it in an in-process TTL + single-flight for exactly this reason —
+  // prior art for what happens below). Ten seconds × one connection per
+  // concurrent visitor is still a pool.
+  //
+  // Making this statement cheap is its own piece of work; what is fixed here is
+  // that a cold window can no longer run more than one copy of it at a time.
   const result = await db.execute(sql`
     SELECT
       configs.board_type,
@@ -862,6 +927,8 @@ async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
     } catch (err) {
       logger.error('[PopularConfigs] Redis write failed:', err);
     }
+  } else if (fallbackGeneration === generationAtStart) {
+    localFallbackConfigs = { configs, expiresAt: Date.now() + REDISLESS_FALLBACK_TTL_MS };
   }
   return configs;
 }
@@ -873,6 +940,11 @@ async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
  * other nodes skip — they'll read from Redis when the resolver executes.
  */
 export async function warmPopularConfigsCache(): Promise<void> {
+  // Mirrors the cache DELETE below for a deployment with no Redis: the warm-up
+  // exists to re-run the query on deploy, so it must not be answered by the
+  // copy the previous run left behind.
+  dropPopularConfigsFallback();
+
   if (redisClientManager.isRedisConnected()) {
     try {
       const { publisher } = redisClientManager.getClients();

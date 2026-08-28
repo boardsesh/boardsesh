@@ -21,13 +21,7 @@ vi.mock('@/app/lib/graphql/client', () => ({
 }));
 
 // Import after vi.mock so the mocks are applied to the helpers' transitive deps.
-import {
-  serverGroupedNotifications,
-  serverMyBoards,
-  serverPlaylist,
-  serverPlaylistClimbs,
-  serverUserPlaylists,
-} from '../server-graphql';
+import { serverMyBoards, serverPlaylist, serverPlaylistClimbs, serverUserPlaylists } from '../server-graphql';
 
 describe('server-graphql helpers', () => {
   beforeEach(() => {
@@ -144,17 +138,6 @@ describe('server-graphql helpers', () => {
 
       expect(result).toBeNull();
       expect(errorSpy).toHaveBeenCalledWith('serverUserPlaylists failed:', expect.any(Error));
-      errorSpy.mockRestore();
-    });
-
-    it('serverGroupedNotifications logs + returns null on failure', async () => {
-      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      requestMock.mockRejectedValueOnce(new Error('boom'));
-
-      const result = await serverGroupedNotifications('auth-token');
-
-      expect(result).toBeNull();
-      expect(errorSpy).toHaveBeenCalledWith('serverGroupedNotifications failed:', expect.any(Error));
       errorSpy.mockRestore();
     });
   });

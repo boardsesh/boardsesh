@@ -11,6 +11,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoDisconnectBle: false,
   autoDisconnectTimeoutSeconds: 30,
   moonboardLightAdjacentHolds: false,
+  lightOnSwipe: true,
+  lightOnClimbTap: true,
   keepScreenAwake: true,
   theme: 'system',
   hapticFeedbackEnabled: true,

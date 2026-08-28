@@ -36,12 +36,24 @@ export default function EditGymForm({ gym, onSuccess, onCancel, onDirtyChange }:
         return;
       }
 
+      // Writing `hours` re-dates the public "Confirmed <date>" stamp, so the key
+      // goes out only when the line actually changed. Posting it on every save
+      // would make the stamp mean "last profile save" — a gym that fixed its
+      // phone number in March would advertise March-confirmed hours it last
+      // touched a year ago, which is the silent lie the date exists to expose.
+      //
+      // When it did change, an emptied field sends `null` (not `undefined`,
+      // updateGym's leave-untouched sentinel) so clearing actually clears.
+      const nextHours = values.hours?.trim() || null;
+      const currentHours = gym.hours?.trim() || null;
+
       const data = await execute({
         input: {
           gymUuid: gym.uuid,
           name: values.name,
           slug: values.slug || undefined,
           description: values.description || undefined,
+          ...(nextHours !== currentHours ? { hours: nextHours } : {}),
           address: values.address || undefined,
           website: values.website || null,
           contactEmail: values.contactEmail || undefined,
@@ -56,7 +68,7 @@ export default function EditGymForm({ gym, onSuccess, onCancel, onDirtyChange }:
         onSuccess?.(data.updateGym);
       }
     },
-    [execute, gym.uuid, showMessage, onSuccess, t],
+    [execute, gym.uuid, gym.hours, showMessage, onSuccess, t],
   );
 
   return (
@@ -67,6 +79,7 @@ export default function EditGymForm({ gym, onSuccess, onCancel, onDirtyChange }:
         name: gym.name,
         slug: gym.slug ?? '',
         description: gym.description ?? '',
+        hours: gym.hours ?? '',
         address: gym.address ?? '',
         website: gym.website ?? '',
         contactEmail: gym.contactEmail ?? '',
@@ -76,6 +89,7 @@ export default function EditGymForm({ gym, onSuccess, onCancel, onDirtyChange }:
         longitude: gym.longitude ?? null,
       }}
       showSlugField
+      showHoursField
       onSubmit={handleSubmit}
       onCancel={onCancel}
       onDirtyChange={onDirtyChange}

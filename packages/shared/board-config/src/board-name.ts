@@ -1,4 +1,4 @@
-import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
+import { AURORA_BOARDS, SUPPORTED_BOARDS, type AuroraBoardName, type BoardName } from '@boardsesh/shared-schema';
 
 // Validate against the SCHEMA list (not the MoonBoard-gated board-data list),
 // so a board the API legitimately returns is accepted regardless of the
@@ -15,6 +15,19 @@ export const MOONBOARD_BOARD_NAME = 'moonboard' satisfies BoardName;
  */
 export function toBoardName(value: string | null | undefined): BoardName | null {
   return value != null && SUPPORTED_BOARD_SET.has(value) ? (value as BoardName) : null;
+}
+
+const AURORA_BOARD_SET: ReadonlySet<string> = new Set(AURORA_BOARDS);
+
+/**
+ * Narrows a loose board string to the `AuroraBoardName` union, or `null` for a
+ * code-driven board (MoonBoard, Woods) or an unknown name. The partner of
+ * `getBoardCapabilities(...).auroraAppLink`: the capability decides whether an
+ * Aurora-only surface is offered at all, this turns the string into the type
+ * that surface's helpers assume.
+ */
+export function toAuroraBoardName(value: string | null | undefined): AuroraBoardName | null {
+  return value != null && AURORA_BOARD_SET.has(value) ? (value as AuroraBoardName) : null;
 }
 
 /**

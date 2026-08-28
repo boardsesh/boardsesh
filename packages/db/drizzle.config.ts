@@ -1,6 +1,10 @@
 import { config } from 'dotenv';
 import { defineConfig } from 'drizzle-kit';
 import path from 'path';
+// One definition of "this host can only be a developer machine", shared with the
+// runtime Sentry gate rather than re-listed here. That module is deliberately
+// import-free, so pulling it in costs nothing.
+import { isPrivateHostname } from './src/client/config';
 
 // Load environment from root or web package
 config({ path: path.resolve(process.cwd(), '../../.boardsesh/dev-db.env') });
@@ -21,7 +25,17 @@ const getDatabaseConfig = () => {
     user: process.env.POSTGRES_USER!,
     password: process.env.POSTGRES_PASSWORD!,
     database: process.env.POSTGRES_DATABASE!,
-    ssl: process.env.VERCEL_ENV === 'production' || process.env.IS_CI === 'true',
+    // Strictly additive: every case that used to get TLS still does, plus any
+    // host that is demonstrably not a developer machine. VERCEL_ENV was the only
+    // "this is a real database" signal before, which meant drizzle-kit against a
+    // remote database from anywhere that is not Vercel — a laptop included —
+    // silently ran without TLS (#4651). This branch only runs when DATABASE_URL
+    // is unset (the early return above), i.e. the local POSTGRES_* path.
+    ssl:
+      !isPrivateHostname((process.env.POSTGRES_HOST ?? '').trim().toLowerCase()) ||
+      process.env.IS_CI === 'true' ||
+      // TODO(#4656): retire with the Vercel project.
+      process.env.VERCEL_ENV === 'production',
   };
 };
 

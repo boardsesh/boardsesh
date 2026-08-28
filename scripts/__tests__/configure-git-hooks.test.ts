@@ -19,7 +19,12 @@ type Fixture = {
   vpLogPath: string;
 };
 
-function run(command: string, args: string[], cwd: string, extraEnvironment: NodeJS.ProcessEnv = {}) {
+// An override bag layered over process.env, not a complete environment — typing
+// it as NodeJS.ProcessEnv would demand the NODE_ENV the repo's Next global.d.ts
+// makes required, which no caller here wants to set.
+type EnvironmentOverrides = Record<string, string | undefined>;
+
+function run(command: string, args: string[], cwd: string, extraEnvironment: EnvironmentOverrides = {}) {
   return spawnSync(command, args, {
     cwd,
     encoding: 'utf8',

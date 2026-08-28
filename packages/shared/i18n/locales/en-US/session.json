@@ -196,7 +196,14 @@
       "lifetimeSends_one": "{{count}} send",
       "lifetimeSends_other": "{{count}} sends",
       "lifetimeRecap": "{{tries}} {{sessions}}",
-      "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}"
+      "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}",
+      "signedOut": "Sign in to see your tries on this climb."
+    },
+    "anonymous": {
+      "signInHeadline": "Log this send",
+      "signInSubtitle": "Sign in to keep your tries, sends and beta in one place.",
+      "signInAction": "Sign in",
+      "tickAria": "Sign in to log this send"
     },
     "similarClimbs": {
       "title": "Similar Climbs",
@@ -242,6 +249,7 @@
       "shareReadingCaption": "Reading the caption…",
       "shareSuggestedTitle": "Matched from the caption",
       "shareOtherAscents": "Your other ascents",
+      "shareAscentLabel": "Attach your beta to {{details}}",
       "shareTitle": "Share your beta",
       "step1Title": "Copy your caption",
       "step2Title": "Post it as a reel",
@@ -263,6 +271,7 @@
       "unknownClimb": "Unknown climb",
       "removeClimb": "Remove climb",
       "positionLabel": "position {{position}}",
+      "addedByAria": "Added by {{name}}",
       "syncError": "Queue sync error",
       "outOfSyncRefreshed": "Queue was out of sync. Refreshed from your crew.",
       "sessionCreateError": "Couldn't create session",
@@ -464,7 +473,29 @@
     }
   },
   "playView": {
-    "previewBadge": "Preview",
+    "wallState": {
+      "onWall": "On the wall",
+      "live": "Live",
+      "browsing": "Browsing",
+      "onWallHint": "This one's lit on the wall right now.",
+      "liveHint": "Your next climb goes up on the wall.",
+      "browsingHint": "You're just looking. The wall stays where it is.",
+      "pillHint": "See wall options",
+      "browseFromHere": "Browse from here",
+      "backToLive": "Back to live",
+      "putOnWall": "Put on the wall",
+      "joinedBrowseNotice": "You're browsing. The wall stays put until you put a climb up.",
+      "commitOverride": {
+        "body": "Someone just lit {{name}}. Put yours up instead?",
+        "confirm": "Put mine up",
+        "cancel": "Keep theirs"
+      },
+      "a11y": {
+        "browseAnnounce": "Browsing. The wall stays where it is.",
+        "backToLive": "Back to live: {{name}}",
+        "committed": "{{name}} is on the wall"
+      }
+    },
     "setActive": "Set active",
     "paneEmpty": {
       "title": "Pick a climb",

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { BoardseshGrade } from '@boardsesh/graphql/operations';
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import {
   buildBoardseshGradeView,
   buildBoardseshGradeSummary,
@@ -7,7 +8,6 @@ import {
   buildTrustBand,
   formatHalfGrades,
   renderDifficulty,
-  isMoonBoard,
 } from '../boardsesh-grade-utils';
 
 function makeGrade(overrides: Partial<BoardseshGrade> = {}): BoardseshGrade {
@@ -42,17 +42,30 @@ describe('renderDifficulty', () => {
   });
 });
 
-describe('isMoonBoard', () => {
-  it('matches case-insensitively', () => {
-    expect(isMoonBoard('moonboard')).toBe(true);
-    expect(isMoonBoard('MoonBoard')).toBe(true);
-    expect(isMoonBoard('kilter')).toBe(false);
+describe('the crowdGrade capability behind the view', () => {
+  it('matches the no-crowd-grade boards case-insensitively', () => {
+    // The view builder reads getBoardCapabilities(...).crowdGrade, so the whole
+    // section turns on and off from the board-capability table.
+    expect(getBoardCapabilities('moonboard').crowdGrade).toBe(false);
+    expect(getBoardCapabilities('MoonBoard').crowdGrade).toBe(false);
+    expect(getBoardCapabilities('woods').crowdGrade).toBe(false);
+    expect(getBoardCapabilities('Woods').crowdGrade).toBe(false);
+    expect(getBoardCapabilities('kilter').crowdGrade).toBe(true);
+    expect(getBoardCapabilities('tension').crowdGrade).toBe(true);
   });
 });
 
 describe('buildBoardseshGradeView', () => {
-  it('returns the moonboard tier without a grade', () => {
-    expect(buildBoardseshGradeView('moonboard', makeGrade(), 'v-grade')).toEqual({ kind: 'moonboard' });
+  it('returns the no-crowd-grade tier without a grade, naming the board', () => {
+    // The board name rides along so the section can pick the right body copy.
+    expect(buildBoardseshGradeView('moonboard', makeGrade(), 'v-grade')).toEqual({
+      kind: 'noCrowdGrade',
+      boardName: 'moonboard',
+    });
+    expect(buildBoardseshGradeView('Woods', makeGrade(), 'v-grade')).toEqual({
+      kind: 'noCrowdGrade',
+      boardName: 'woods',
+    });
   });
 
   it('falls back to setter-only (no grade) when there is no grade row', () => {
@@ -278,8 +291,9 @@ describe('buildBoardseshGradeSummary', () => {
     expect(buildBoardseshGradeSummary(view)).toBe('V5–V6 ~');
   });
 
-  it('returns null for moonboard and setter-only tiers', () => {
-    expect(buildBoardseshGradeSummary({ kind: 'moonboard' })).toBeNull();
+  it('returns null for no-crowd-grade and setter-only tiers', () => {
+    expect(buildBoardseshGradeSummary({ kind: 'noCrowdGrade', boardName: 'moonboard' })).toBeNull();
+    expect(buildBoardseshGradeSummary({ kind: 'noCrowdGrade', boardName: 'woods' })).toBeNull();
     expect(buildBoardseshGradeSummary({ kind: 'setterOnly', grade: null, count: 0 })).toBeNull();
   });
 });

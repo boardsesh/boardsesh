@@ -3,7 +3,11 @@ import { and, eq, isNotNull, or, sql } from 'drizzle-orm';
 
 import { db } from '../db/client';
 import { auroraCredentials } from '@boardsesh/db/schema';
-import { claimNextCredentialForSync, credentialRetryReadySql } from '@boardsesh/db/queries';
+import {
+  CREDENTIAL_MIN_RECLAIM_GAP_MS,
+  claimNextCredentialForSync,
+  credentialRetryReadySql,
+} from '@boardsesh/db/queries';
 
 // ---------------------------------------------------------------------------
 // Credential claiming under two concurrent daemon instances (real DB) — #3539
@@ -23,6 +27,15 @@ import { claimNextCredentialForSync, credentialRetryReadySql } from '@boardsesh/
 // the timing lands (a race that passes by luck is worse than no test), instance
 // A's transaction is opened by hand and deliberately parked mid-claim, so
 // instance B provably runs while A holds the row lock.
+//
+// #3987 added the reclaim-gap cases. SKIP LOCKED only skips a row whose lock is
+// currently held; if A commits between B's snapshot and B's lock attempt, the
+// lock is gone and Postgres runs an EvalPlanQual recheck of the WHERE quals
+// (never the ORDER BY) against the new row version. So the claim has to
+// FALSIFY a qual, not merely re-sort the row — CREDENTIAL_MIN_RECLAIM_GAP_MS is
+// that qual, and "a just-claimed credential is not claimable" below is what
+// pins it down deterministically. The parallel-claims test stays as a companion
+// but can only ever sample the interleaving, not force it.
 // ---------------------------------------------------------------------------
 
 const USER_A = 'claim-skip-a';
@@ -170,18 +183,51 @@ describe('credential claim under concurrent daemon instances (real DB)', () => {
     expect(next?.userId).toBe(USER_B);
   });
 
+  it('a just-claimed credential is not claimable again inside the reclaim gap', async () => {
+    // The state a losing claimer sees during an EvalPlanQual recheck: the row is
+    // committed, unlocked, healthy (consecutive_failures = 0, so the backoff
+    // predicate short-circuits to TRUE) and freshly stamped. Only the reclaim
+    // gap rejects it. Without that qual this claim hands back USER_A — the
+    // double-hand the flake in #3987 caught.
+    await seedCredential(USER_A, sql`now()`);
+
+    expect(await claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES })).toBeNull();
+  });
+
+  it('re-admits a credential once the reclaim gap has elapsed', async () => {
+    // Same row, stamped further back than the gap: the gap is a few seconds of
+    // race protection, not a throttle that parks work.
+    const staleSeconds = Math.round(CREDENTIAL_MIN_RECLAIM_GAP_MS / 1000) * 2;
+    await seedCredential(USER_A, sql`now() - make_interval(secs => ${staleSeconds})`);
+
+    const claimed = await claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES });
+    expect(claimed?.userId).toBe(USER_A);
+  });
+
   it('two parallel claims never return the same credential', async () => {
-    await seedCredential(USER_A, sql`now() - interval '30 minutes'`);
-    await seedCredential(USER_B, sql`now() - interval '10 minutes'`);
-
     // Genuine race on separate pool connections, as a companion to the
-    // deterministic cases above.
-    const [first, second] = await Promise.all([
-      claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES }),
-      claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES }),
-    ]);
+    // deterministic cases above. One pass samples one interleaving, so run a
+    // batch: the double-hand needs the loser's lock attempt to land just after
+    // the winner's commit, which no single pass can force.
+    for (let attempt = 0; attempt < 20; attempt++) {
+      await clearFixtures();
+      for (const id of ALL_USERS) await insertUser(id);
+      await seedCredential(USER_A, sql`now() - interval '30 minutes'`);
+      await seedCredential(USER_B, sql`now() - interval '10 minutes'`);
 
-    const claimedUserIds = [first?.userId, second?.userId].filter((userId): userId is string => Boolean(userId));
-    expect(new Set(claimedUserIds).size).toBe(claimedUserIds.length);
+      const [first, second] = await Promise.all([
+        claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES }),
+        claimNextCredentialForSync(db, { candidateFilter: KILTER_CANDIDATES }),
+      ]);
+
+      // Either claimer may legitimately come back empty (it lost the row and
+      // there was nothing left to fall through to). Only two claims of the SAME
+      // row is a bug, so name both rows in the message — a bare set-size
+      // assertion can't tell a double-hand from a null.
+      const claimReport = `attempt ${attempt}: first=${first?.userId ?? 'null'} second=${second?.userId ?? 'null'}`;
+      if (first && second) {
+        expect(first.userId, `double-claimed credential — ${claimReport}`).not.toBe(second.userId);
+      }
+    }
   });
 });

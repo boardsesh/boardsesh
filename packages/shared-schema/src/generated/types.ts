@@ -924,9 +924,19 @@ export type Climb = {
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
   /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod). */
   characteristics?: Maybe<Array<Scalars['String']['output']>>;
+  /**
+   * Product sizes this climb fits on (denormalised from edge bounds). Null when
+   * the server has no compatibility data for this climb — a legacy row, or a
+   * fetch path that doesn't project the column — which imposes no constraint.
+   * On Woods it is load-bearing rather than cosmetic: the 8x10 and the 12x12
+   * number their holds from their own origins, so an 8x10 climb's hold ids all
+   * exist on a 12x12 as different holds and only this field can tell the two
+   * apart (see canAddClimbToBoard rule 5).
+   */
+  compatibleSizeIds?: Maybe<Array<Scalars['Int']['output']>>;
   /** ISO timestamp of when this climb row was created */
   created_at?: Maybe<Scalars['String']['output']>;
-  /** Description or notes about the climb (nullable - omitted from search results, fetch separately via climb detail query) */
+  /** Setter-written notes about the climb (nullable). Carried on search results too — the play drawer and the www climb page both render it. */
   description?: Maybe<Scalars['String']['output']>;
   /** Difficulty grade of the climb (e.g., 'V5', '6B+') */
   difficulty: Scalars['String']['output'];
@@ -1006,6 +1016,8 @@ export type ClimbInput = {
   boardseshDifficulty?: InputMaybe<Scalars['Float']['input']>;
   /** Structured climb characteristics, round-tripped so the queue keeps method/no-match tags. */
   characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
+  /** Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them. */
+  compatibleSizeIds?: InputMaybe<Array<Scalars['Int']['input']>>;
   description?: InputMaybe<Scalars['String']['input']>;
   difficulty: Scalars['String']['input'];
   difficulty_error: Scalars['String']['input'];
@@ -1100,7 +1112,7 @@ export type ClimbSearchInput = {
   angle: Scalars['Int']['input'];
   /** Board type (e.g., 'kilter', 'tension') */
   boardName: Scalars['String']['input'];
-  /** Include single-frame climbs (boulders). Default true. Set to false (paired with routes=true) to filter to routes only. */
+  /** Include single-frame climbs (boulders). Omitting both boulders and routes matches all climb types; set boulders=true with routes=false (or omit routes) to filter to boulders only. */
   boulders?: InputMaybe<Scalars['Boolean']['input']>;
   /** Grade accuracy filter ('tight', 'moderate', 'loose') */
   gradeAccuracy?: InputMaybe<Scalars['String']['input']>;
@@ -1142,7 +1154,7 @@ export type ClimbSearchInput = {
   pageSize?: InputMaybe<Scalars['Int']['input']>;
   /** Show only unclimbed projects (climbs with 0 ascents) */
   projectsOnly?: InputMaybe<Scalars['Boolean']['input']>;
-  /** Include multi-frame climbs (routes). Default false. Set to true to include or filter to routes. */
+  /** Include multi-frame climbs (routes). Omitting both boulders and routes matches all climb types; set routes=true with boulders=false (or omit boulders) to filter to routes only. */
   routes?: InputMaybe<Scalars['Boolean']['input']>;
   /** Comma-separated set IDs */
   setIds: Scalars['String']['input'];
@@ -2358,7 +2370,6 @@ export type GroupedNotification = {
    * Layout the climb was set on. Clients need this to build a board URL that
    * actually resolves: the climb query filters on layoutId, so guessing the
    * board's first layout misses every Kilter Homewall / Tension Board 2 climb.
-   * Web reads the same column server-side in /api/internal/climb-redirect.
    */
   climbLayoutId?: Maybe<Scalars['Int']['output']>;
   /** Climb name */
@@ -2418,6 +2429,8 @@ export type Gym = {
   address?: Maybe<Scalars['String']['output']>;
   /** Number of linked boards */
   boardCount: Scalars['Int']['output'];
+  /** Distinct board-type + angle pairs at this gym, for directory board chips. Ordered by board type then angle and capped, so a gym with a wall of boards returns a bounded list. */
+  boardSummaries: Array<GymBoardSummary>;
   /** Distinct board types at this gym (kilter, tension, ...) — for filtering and badges */
   boardTypes: Array<Scalars['String']['output']>;
   /** Kiosk/embed brand accent colour as #RRGGBB (null when unset). */
@@ -2444,8 +2457,14 @@ export type Gym = {
   description?: Maybe<Scalars['String']['output']>;
   /** Number of followers */
   followerCount: Scalars['Int']['output'];
+  /** Opening hours as one free-text line the gym maintains itself (no structured per-day model). */
+  hours?: Maybe<Scalars['String']['output']>;
+  /** ISO timestamp of the last time someone with edit access confirmed the hours. Shown publicly so a stale schedule reads as stale. */
+  hoursUpdatedAt?: Maybe<Scalars['String']['output']>;
   /** Image URL */
   imageUrl?: Maybe<Scalars['String']['output']>;
+  /** Whether a real person owns this gym, as opposed to the system import user. Viewer-independent — unlike canClaim, which is false for every signed-out viewer. */
+  isClaimed: Scalars['Boolean']['output'];
   /** Whether the current user follows this gym */
   isFollowedByMe: Scalars['Boolean']['output'];
   /** Whether the current user is a member */
@@ -2460,6 +2479,15 @@ export type Gym = {
   longitude?: Maybe<Scalars['Float']['output']>;
   /** Number of members */
   memberCount: Scalars['Int']['output'];
+  /**
+   * The viewer's own unresolved claim on this gym, so a claimant who already
+   * filed sees "under review" instead of the claim call-out. A lazy field
+   * resolver with its own query — deliberately NOT part of enrichGym, which
+   * already fires ~9 round trips per gym and runs per row for up to 50 rows.
+   * Only the web gym page selects it; GYM_FIELDS leaves it out, which is why it
+   * is nullable.
+   */
+  myPendingClaim?: Maybe<MyGymClaim>;
   /** Current user's role (null if not a member/owner) */
   myRole?: Maybe<GymMemberRole>;
   /** Gym name */
@@ -2476,6 +2504,19 @@ export type Gym = {
   uuid: Scalars['ID']['output'];
   /** Website URL (used for domain-verified ownership claims) */
   website?: Maybe<Scalars['String']['output']>;
+};
+
+/**
+ * One board-type + angle pair present at a gym, for the directory's board chips.
+ * Deliberately minimal: a card renders "Kilter 40°", nothing else. Distinct pairs
+ * only, so two Kilter boards both at 40° collapse into one summary.
+ */
+export type GymBoardSummary = {
+  __typename?: 'GymBoardSummary';
+  /** Board angle in degrees */
+  angle: Scalars['Int']['output'];
+  /** Board type (kilter, tension, moonboard, ...) */
+  boardType: Scalars['String']['output'];
 };
 
 /** A pending or resolved gym ownership claim (admin queue). */
@@ -2527,7 +2568,7 @@ export type GymClaimMethod =
 
 /** Outcome of a requestGymClaim call, so clients can show the right next step. */
 export type GymClaimRequestStatus =
-  /** The claim was queued for admin review and our team was notified. */
+  /** The claim is queued for a Boardsesh admin to review, and the claimant gets emailed the outcome either way. Mailing the team is best-effort on top of that queue, not a guarantee, so don't promise the claimant a reply. */
   | 'admin_review'
   /** The claim was approved on the spot — the gym was an unclaimed listing and auto-approval is on. The claimant already manages the gym. */
   | 'approved'
@@ -2726,6 +2767,46 @@ export type GymOwnerType =
   | 'SYSTEM'
   /** Created by a Boardsesh user. */
   | 'USER';
+
+export type GymOwnershipLookupInput = {
+  /** Gym UUID, slug, or a case-insensitive name fragment. */
+  gymQuery: Scalars['String']['input'];
+  /** Account email or user id of the person the gym should move to. */
+  newOwnerQuery: Scalars['String']['input'];
+};
+
+/** Both sides of a proposed handover. Either half is null when nothing matched. */
+export type GymOwnershipLookupResult = {
+  __typename?: 'GymOwnershipLookupResult';
+  gym?: Maybe<GymOwnershipSummary>;
+  newOwner?: Maybe<GymOwnershipUserSummary>;
+};
+
+/** A gym resolved for the admin ownership-handover surface, with the state the confirm step must name. */
+export type GymOwnershipSummary = {
+  __typename?: 'GymOwnershipSummary';
+  /** Echoed back so the mutation can be sent with the exact owner the admin saw. */
+  currentOwnerId: Scalars['ID']['output'];
+  /** True when the listing is still parked on the import account and has no real owner yet. */
+  currentOwnerIsSystem: Scalars['Boolean']['output'];
+  /** Display name / account email of the current owner, or null when the account row is gone. */
+  currentOwnerLabel?: Maybe<Scalars['String']['output']>;
+  gymUuid: Scalars['ID']['output'];
+  isDeleted: Scalars['Boolean']['output'];
+  isMerged: Scalars['Boolean']['output'];
+  name: Scalars['String']['output'];
+  slug?: Maybe<Scalars['String']['output']>;
+  /** The listing's human-curation marker. A handover leaves it exactly as it is. */
+  syncFrozenAt?: Maybe<Scalars['String']['output']>;
+};
+
+/** The incoming owner resolved from an account email or user id. */
+export type GymOwnershipUserSummary = {
+  __typename?: 'GymOwnershipUserSummary';
+  email?: Maybe<Scalars['String']['output']>;
+  label: Scalars['String']['output'];
+  userId: Scalars['ID']['output'];
+};
 
 /**
  * A gym owner's activity snapshot for the current window and the window
@@ -3275,6 +3356,14 @@ export type Mutation = {
    */
   publishPlaybackState: Scalars['Boolean']['output'];
   /**
+   * Move a gym's ownership to another account (global admin only) — a sold gym,
+   * a departed committee member, a claim approved to the wrong person. The
+   * listing's human-curation freeze is left exactly as it was, the outgoing
+   * owner is kept on as a gym admin, and the handover is written to a durable
+   * audit trail. No self-serve entry point exists.
+   */
+  reassignGymOwner: ReassignGymOwnerResult;
+  /**
    * Record the board configuration seen when connecting to a controller over
    * BLE, keyed by serial. Upserts the current user's serial→config recording.
    * Returns null when a saved board already matches the connect (nothing to record).
@@ -3415,6 +3504,12 @@ export type Mutation = {
   /**
    * Replace the entire queue state.
    * Used for bulk operations or syncing from external sources.
+   *
+   * `baselineSequence` is the last server sequence this client had APPLIED when it
+   * composed `queue`. When supplied, the server replays its queue-event buffer from
+   * that point and re-appends any climb a peer added inside the window instead of
+   * silently overwriting it (issue #3933). Omit it for the historical wholesale
+   * overwrite — old clients send nothing here.
    */
   setQueue: QueueState;
   /**
@@ -3827,6 +3922,11 @@ export type MutationPublishPlaybackStateArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationReassignGymOwnerArgs = {
+  input: ReassignGymOwnerInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRecordBoardSerialArgs = {
   input: RecordBoardSerialInput;
 };
@@ -4005,6 +4105,7 @@ export type MutationSetIntegrationAutoSyncArgs = {
 
 /** Root mutation type for all write operations. */
 export type MutationSetQueueArgs = {
+  baselineSequence?: InputMaybe<Scalars['Int']['input']>;
   currentClimbQueueItem?: InputMaybe<ClimbQueueItemInput>;
   queue: Array<ClimbQueueItemInput>;
 };
@@ -4175,6 +4276,20 @@ export type MyBoardsInput = {
   limit?: InputMaybe<Scalars['Int']['input']>;
   /** Offset for pagination */
   offset?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/**
+ * The viewer's own ownership claim on a gym that hasn't been resolved yet.
+ * Viewer-scoped: null for signed-out viewers and for anyone with no live claim.
+ */
+export type MyGymClaim = {
+  __typename?: 'MyGymClaim';
+  /** ISO timestamp of when the claim was filed. */
+  createdAt: Scalars['String']['output'];
+  /** Claim row id. */
+  id: Scalars['ID']['output'];
+  /** How it gets verified: an emailed domain link, or a Boardsesh admin's review. */
+  method: GymClaimMethod;
 };
 
 /** Input for listing current user's gyms. */
@@ -5001,6 +5116,12 @@ export type Query = {
   /** Get members of a gym. */
   gymMembers: GymMemberConnection;
   /**
+   * Resolve both halves of a proposed gym ownership handover — the gym and the
+   * incoming owner — so the confirm step can name them (global admin only).
+   * Read-only; nothing moves until reassignGymOwner is called.
+   */
+  gymOwnershipLookup: GymOwnershipLookupResult;
+  /**
    * A gym owner's activity snapshot: unique climbers, ascents, top climbs, and
    * busiest weekdays for the current window plus the equally-long window before
    * it (for week-over-week deltas). Requires gym edit access (owner, gym
@@ -5598,6 +5719,11 @@ export type QueryGymMembersArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryGymOwnershipLookupArgs = {
+  input: GymOwnershipLookupInput;
+};
+
+/** Root query type for all read operations. */
 export type QueryGymStatsArgs = {
   input: GymStatsInput;
 };
@@ -6068,6 +6194,25 @@ export type QueueState = {
   stateHashOrdered?: Maybe<Scalars['String']['output']>;
 };
 
+export type ReassignGymOwnerInput = {
+  /** Owner the admin saw in the confirm step; a moved owner rejects the write. */
+  expectedCurrentOwnerId: Scalars['ID']['input'];
+  gymUuid: Scalars['ID']['input'];
+  newOwnerId: Scalars['ID']['input'];
+  /** Required operator explanation stored in the durable audit trail. */
+  reason: Scalars['String']['input'];
+};
+
+export type ReassignGymOwnerResult = {
+  __typename?: 'ReassignGymOwnerResult';
+  gymName: Scalars['String']['output'];
+  gymUuid: Scalars['ID']['output'];
+  newOwnerId: Scalars['ID']['output'];
+  previousOwnerId: Scalars['ID']['output'];
+  /** The human-curation marker after the write. A handover never changes it. */
+  syncFrozenAt?: Maybe<Scalars['String']['output']>;
+};
+
 /**
  * A recent beta link enriched with the parent climb's display name. Used
  * by the home-page slider where multiple climbs are aggregated together.
@@ -6277,6 +6422,8 @@ export type SaveAuroraCredentialInput = {
 export type SaveClimbInput = {
   angle: Scalars['Int']['input'];
   boardType: Scalars['String']['input'];
+  /** Freely-toggleable characteristics to set at creation. Only CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS are accepted here — no_match is server-derived from description, and MoonBoard method is creation-time-only via SaveMoonBoardClimbInput. */
+  characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
   description?: InputMaybe<Scalars['String']['input']>;
   frames: Scalars['String']['input'];
   framesCount?: InputMaybe<Scalars['Int']['input']>;
@@ -6397,6 +6544,8 @@ export type SearchGymsInput = {
   query?: InputMaybe<Scalars['String']['input']>;
   /** Radius in km for proximity search (default 50) */
   radiusKm?: InputMaybe<Scalars['Float']['input']>;
+  /** Only gyms that have a URL slug, i.e. that can be linked to at /gym/[slug]. Opt-in: omitting it leaves the emitted SQL untouched for existing callers. */
+  requireSlug?: InputMaybe<Scalars['Boolean']['input']>;
   /** Filter to gyms that have a board with one of these size ids (OR). Combined with boardTypes/layoutIds, all must match the same board. */
   sizeIds?: InputMaybe<Array<Scalars['Int']['input']>>;
 };
@@ -7688,6 +7837,8 @@ export type UpdateBoardInput = {
 export type UpdateClimbInput = {
   angle?: InputMaybe<Scalars['Int']['input']>;
   boardType: Scalars['String']['input'];
+  /** Freely-toggleable characteristics: the full desired boolean state of CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS. Any other characteristic already on the row (no_match, MoonBoard method) is left untouched. */
+  characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
   description?: InputMaybe<Scalars['String']['input']>;
   frames?: InputMaybe<Scalars['String']['input']>;
   framesCount?: InputMaybe<Scalars['Int']['input']>;
@@ -7732,6 +7883,8 @@ export type UpdateGymInput = {
   description?: InputMaybe<Scalars['String']['input']>;
   /** Gym UUID to update */
   gymUuid: Scalars['ID']['input'];
+  /** New free-text opening hours. Writing this stamps hoursUpdatedAt; pass null to clear both. */
+  hours?: InputMaybe<Scalars['String']['input']>;
   /** New image URL */
   imageUrl?: InputMaybe<Scalars['String']['input']>;
   /** New visibility */
@@ -8365,6 +8518,7 @@ export type ResolversTypes = ResolversObject<{
   GroupedNotificationActor: ResolverTypeWrapper<GroupedNotificationActor>;
   GroupedNotificationConnection: ResolverTypeWrapper<GroupedNotificationConnection>;
   Gym: ResolverTypeWrapper<Gym>;
+  GymBoardSummary: ResolverTypeWrapper<GymBoardSummary>;
   GymClaim: ResolverTypeWrapper<GymClaim>;
   GymClaimConnection: ResolverTypeWrapper<GymClaimConnection>;
   GymClaimDecision: GymClaimDecision;
@@ -8383,6 +8537,10 @@ export type ResolversTypes = ResolversObject<{
   GymMergeCounts: ResolverTypeWrapper<GymMergeCounts>;
   GymMergeDuplicateResult: ResolverTypeWrapper<GymMergeDuplicateResult>;
   GymOwnerType: GymOwnerType;
+  GymOwnershipLookupInput: GymOwnershipLookupInput;
+  GymOwnershipLookupResult: ResolverTypeWrapper<GymOwnershipLookupResult>;
+  GymOwnershipSummary: ResolverTypeWrapper<GymOwnershipSummary>;
+  GymOwnershipUserSummary: ResolverTypeWrapper<GymOwnershipUserSummary>;
   GymStats: ResolverTypeWrapper<GymStats>;
   GymStatsInput: GymStatsInput;
   GymStatsPeriod: GymStatsPeriod;
@@ -8418,6 +8576,7 @@ export type ResolversTypes = ResolversObject<{
   MoonBoardMethod: MoonBoardMethod;
   Mutation: ResolverTypeWrapper<{}>;
   MyBoardsInput: MyBoardsInput;
+  MyGymClaim: ResolverTypeWrapper<MyGymClaim>;
   MyGymsInput: MyGymsInput;
   NewClimbCreatedEvent: ResolverTypeWrapper<NewClimbCreatedEvent>;
   NewClimbFeedInput: NewClimbFeedInput;
@@ -8464,6 +8623,8 @@ export type ResolversTypes = ResolversObject<{
   QueueNavigationItem: ResolverTypeWrapper<QueueNavigationItem>;
   QueueReordered: ResolverTypeWrapper<QueueReordered>;
   QueueState: ResolverTypeWrapper<QueueState>;
+  ReassignGymOwnerInput: ReassignGymOwnerInput;
+  ReassignGymOwnerResult: ResolverTypeWrapper<ReassignGymOwnerResult>;
   RecentBetaLink: ResolverTypeWrapper<RecentBetaLink>;
   RecordBoardSerialInput: RecordBoardSerialInput;
   RegisterControllerInput: RegisterControllerInput;
@@ -8736,6 +8897,7 @@ export type ResolversParentTypes = ResolversObject<{
   GroupedNotificationActor: GroupedNotificationActor;
   GroupedNotificationConnection: GroupedNotificationConnection;
   Gym: Gym;
+  GymBoardSummary: GymBoardSummary;
   GymClaim: GymClaim;
   GymClaimConnection: GymClaimConnection;
   GymConnection: GymConnection;
@@ -8747,6 +8909,10 @@ export type ResolversParentTypes = ResolversObject<{
   GymMembersInput: GymMembersInput;
   GymMergeCounts: GymMergeCounts;
   GymMergeDuplicateResult: GymMergeDuplicateResult;
+  GymOwnershipLookupInput: GymOwnershipLookupInput;
+  GymOwnershipLookupResult: GymOwnershipLookupResult;
+  GymOwnershipSummary: GymOwnershipSummary;
+  GymOwnershipUserSummary: GymOwnershipUserSummary;
   GymStats: GymStats;
   GymStatsInput: GymStatsInput;
   GymStatsWindow: GymStatsWindow;
@@ -8778,6 +8944,7 @@ export type ResolversParentTypes = ResolversObject<{
   MoonBoardHoldsInput: MoonBoardHoldsInput;
   Mutation: {};
   MyBoardsInput: MyBoardsInput;
+  MyGymClaim: MyGymClaim;
   MyGymsInput: MyGymsInput;
   NewClimbCreatedEvent: NewClimbCreatedEvent;
   NewClimbFeedInput: NewClimbFeedInput;
@@ -8820,6 +8987,8 @@ export type ResolversParentTypes = ResolversObject<{
   QueueNavigationItem: QueueNavigationItem;
   QueueReordered: QueueReordered;
   QueueState: QueueState;
+  ReassignGymOwnerInput: ReassignGymOwnerInput;
+  ReassignGymOwnerResult: ReassignGymOwnerResult;
   RecentBetaLink: RecentBetaLink;
   RecordBoardSerialInput: RecordBoardSerialInput;
   RegisterControllerInput: RegisterControllerInput;
@@ -9425,6 +9594,7 @@ export type ClimbResolvers<
   boardseshConfidence?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   boardseshDifficulty?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   characteristics?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
+  compatibleSizeIds?: Resolver<Maybe<Array<ResolversTypes['Int']>>, ParentType, ContextType>;
   created_at?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   description?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   difficulty?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -10112,6 +10282,7 @@ export type GymResolvers<
 > = ResolversObject<{
   address?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   boardCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardSummaries?: Resolver<Array<ResolversTypes['GymBoardSummary']>, ParentType, ContextType>;
   boardTypes?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
   brandAccentColor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   brandBackgroundColor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -10125,7 +10296,10 @@ export type GymResolvers<
   createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   description?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   followerCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  hours?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  hoursUpdatedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   imageUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  isClaimed?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isFollowedByMe?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isMember?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isPublic?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
@@ -10133,6 +10307,7 @@ export type GymResolvers<
   logoUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   longitude?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   memberCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  myPendingClaim?: Resolver<Maybe<ResolversTypes['MyGymClaim']>, ParentType, ContextType>;
   myRole?: Resolver<Maybe<ResolversTypes['GymMemberRole']>, ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   ownerAvatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -10141,6 +10316,15 @@ export type GymResolvers<
   slug?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   website?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymBoardSummaryResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymBoardSummary'] = ResolversParentTypes['GymBoardSummary'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -10265,6 +10449,42 @@ export type GymMergeDuplicateResultResolvers<
   counts?: Resolver<ResolversTypes['GymMergeCounts'], ParentType, ContextType>;
   duplicateGymUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   warnings?: Resolver<Array<ResolversTypes['KioskSlugWarning']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymOwnershipLookupResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymOwnershipLookupResult'] =
+    ResolversParentTypes['GymOwnershipLookupResult'],
+> = ResolversObject<{
+  gym?: Resolver<Maybe<ResolversTypes['GymOwnershipSummary']>, ParentType, ContextType>;
+  newOwner?: Resolver<Maybe<ResolversTypes['GymOwnershipUserSummary']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymOwnershipSummaryResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymOwnershipSummary'] = ResolversParentTypes['GymOwnershipSummary'],
+> = ResolversObject<{
+  currentOwnerId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  currentOwnerIsSystem?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  currentOwnerLabel?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  gymUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  isDeleted?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isMerged?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  slug?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  syncFrozenAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymOwnershipUserSummaryResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymOwnershipUserSummary'] = ResolversParentTypes['GymOwnershipUserSummary'],
+> = ResolversObject<{
+  email?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  label?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -10790,6 +11010,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationPublishPlaybackStateArgs, 'input'>
   >;
+  reassignGymOwner?: Resolver<
+    ResolversTypes['ReassignGymOwnerResult'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationReassignGymOwnerArgs, 'input'>
+  >;
   recordBoardSerial?: Resolver<
     Maybe<ResolversTypes['BoardSerialConfig']>,
     ParentType,
@@ -11157,6 +11383,16 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationVoteOnProposalArgs, 'input'>
   >;
+}>;
+
+export type MyGymClaimResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['MyGymClaim'] = ResolversParentTypes['MyGymClaim'],
+> = ResolversObject<{
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  method?: Resolver<ResolversTypes['GymClaimMethod'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
 export type NewClimbCreatedEventResolvers<
@@ -11819,6 +12055,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryGymMembersArgs, 'input'>
   >;
+  gymOwnershipLookup?: Resolver<
+    ResolversTypes['GymOwnershipLookupResult'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryGymOwnershipLookupArgs, 'input'>
+  >;
   gymStats?: Resolver<ResolversTypes['GymStats'], ParentType, ContextType, RequireFields<QueryGymStatsArgs, 'input'>>;
   instagramBetaScan?: Resolver<
     ResolversTypes['InstagramBetaScanResult'],
@@ -12291,6 +12533,18 @@ export type QueueStateResolvers<
   sequence?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   stateHash?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   stateHashOrdered?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ReassignGymOwnerResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ReassignGymOwnerResult'] = ResolversParentTypes['ReassignGymOwnerResult'],
+> = ResolversObject<{
+  gymName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  gymUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  newOwnerId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  previousOwnerId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  syncFrozenAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -13349,6 +13603,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GroupedNotificationActor?: GroupedNotificationActorResolvers<ContextType>;
   GroupedNotificationConnection?: GroupedNotificationConnectionResolvers<ContextType>;
   Gym?: GymResolvers<ContextType>;
+  GymBoardSummary?: GymBoardSummaryResolvers<ContextType>;
   GymClaim?: GymClaimResolvers<ContextType>;
   GymClaimConnection?: GymClaimConnectionResolvers<ContextType>;
   GymConnection?: GymConnectionResolvers<ContextType>;
@@ -13359,6 +13614,9 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GymMemberConnection?: GymMemberConnectionResolvers<ContextType>;
   GymMergeCounts?: GymMergeCountsResolvers<ContextType>;
   GymMergeDuplicateResult?: GymMergeDuplicateResultResolvers<ContextType>;
+  GymOwnershipLookupResult?: GymOwnershipLookupResultResolvers<ContextType>;
+  GymOwnershipSummary?: GymOwnershipSummaryResolvers<ContextType>;
+  GymOwnershipUserSummary?: GymOwnershipUserSummaryResolvers<ContextType>;
   GymStats?: GymStatsResolvers<ContextType>;
   GymStatsWindow?: GymStatsWindowResolvers<ContextType>;
   GymTopClimb?: GymTopClimbResolvers<ContextType>;
@@ -13378,6 +13636,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   MergeGymsResult?: MergeGymsResultResolvers<ContextType>;
   MoonBoardClimbDuplicateMatch?: MoonBoardClimbDuplicateMatchResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
+  MyGymClaim?: MyGymClaimResolvers<ContextType>;
   NewClimbCreatedEvent?: NewClimbCreatedEventResolvers<ContextType>;
   NewClimbFeedItem?: NewClimbFeedItemResolvers<ContextType>;
   NewClimbFeedResult?: NewClimbFeedResultResolvers<ContextType>;
@@ -13411,6 +13670,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   QueueNavigationItem?: QueueNavigationItemResolvers<ContextType>;
   QueueReordered?: QueueReorderedResolvers<ContextType>;
   QueueState?: QueueStateResolvers<ContextType>;
+  ReassignGymOwnerResult?: ReassignGymOwnerResultResolvers<ContextType>;
   RecentBetaLink?: RecentBetaLinkResolvers<ContextType>;
   RenderBoardConfig?: RenderBoardConfigResolvers<ContextType>;
   ReportGymDuplicateResult?: ReportGymDuplicateResultResolvers<ContextType>;

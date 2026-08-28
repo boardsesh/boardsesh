@@ -201,13 +201,22 @@ export interface SnapshotSource {
 export type SnapshotBootstrapErrorReport = {
   scopeKey: string;
   /**
-   * How far the attempt got. `board-removed` is the one value no bootstrap stage
-   * produces: it is reported by the teardown when a board is removed mid-download
-   * (issue #4406), which can happen at any stage — including the paged delta
-   * crawl that runs long after the bootstrap phase has finished — so naming a
-   * bootstrap stage there would invent a precision the teardown does not have.
+   * How far the attempt got. `board-removed` and `abandoned` are the two values
+   * no bootstrap stage produces.
+   *
+   * `board-removed` is reported by the teardown when a board is removed
+   * mid-download (issue #4406), which can happen at any stage — including the
+   * paged delta crawl that runs long after the bootstrap phase has finished — so
+   * naming a bootstrap stage there would invent a precision the teardown does
+   * not have.
+   *
+   * `abandoned` is the same story for the de-listing paths (issue #4452):
+   * sign-out, and the My Boards toggle-off. It is a SEPARATE value rather than
+   * more `board-removed` on purpose — `board-removed` already ships in
+   * dashboards and means "the rows were deleted", which is exactly what these
+   * paths do NOT do. The `reason` says which de-listing it was.
    */
-  stage: 'manifest' | 'download' | 'import' | 'grades-download' | 'grades-import' | 'board-removed';
+  stage: 'manifest' | 'download' | 'import' | 'grades-download' | 'grades-import' | 'board-removed' | 'abandoned';
   attempt: number;
   cause: unknown;
   /**

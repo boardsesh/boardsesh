@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { SUPPORTED_LOCALES } from '@/app/lib/i18n/config';
-import { buildAlternates, expandAllLocales, expandLocales, latestLastModified } from '../entries';
+import {
+  allLocalesUrlCount,
+  buildAlternates,
+  expandAllLocales,
+  expandDefaultLocaleOnly,
+  expandLocales,
+  latestLastModified,
+} from '../entries';
+import { renderUrlset } from '../sitemap-xml';
 
 describe('expandLocales', () => {
   const entries = expandLocales({ path: '/playlists/abc', lastModified: new Date('2026-04-30T00:00:00.000Z') });
@@ -46,6 +54,44 @@ describe('expandLocales', () => {
     for (const entry of expandLocales({ path: '/about' })) {
       expect(entry.lastModified).toBeNull();
     }
+  });
+});
+
+describe('allLocalesUrlCount', () => {
+  it('matches what expandAllLocales would actually build', () => {
+    // The index checks the URL budget with the cheap count instead of building
+    // up to 45,000 entries it would throw away. That is only sound while the two
+    // agree, so pin them against each other rather than against a literal.
+    for (const items of [[], [{ path: '/about' }], [{ path: '/a' }, { path: '/b' }, { path: '/c' }]]) {
+      expect(allLocalesUrlCount(items)).toBe(expandAllLocales(items).length);
+    }
+  });
+});
+
+describe('expandDefaultLocaleOnly', () => {
+  const lastModified = new Date('2026-04-30T00:00:00.000Z');
+  const entries = expandDefaultLocaleOnly([
+    { path: '/kilter/original/12x12-square/screw_bolt/40/view/climb-abc', lastModified },
+    { path: '/kilter/original/12x12-square/screw_bolt/40/view/climb-def', lastModified },
+  ]);
+
+  it('emits exactly one url per item, on the unprefixed default locale', () => {
+    expect(entries).toHaveLength(2);
+    expect(entries[0].loc).toBe('https://www.boardsesh.com/kilter/original/12x12-square/screw_bolt/40/view/climb-abc');
+    expect(entries.some((entry) => entry.loc.includes('/es/'))).toBe(false);
+  });
+
+  it('emits no alternates at all — a partial hreflang set is worse than none', () => {
+    // A one-sided annotation is a non-reciprocal signal; the locale twins carry
+    // reciprocal HTML hreflang from createPageMetadata instead.
+    for (const entry of entries) {
+      expect(entry.alternates).toBeUndefined();
+    }
+    expect(renderUrlset(entries)).not.toContain('xmlns:xhtml');
+  });
+
+  it('passes the real timestamp through', () => {
+    expect(entries[0].lastModified).toBe(lastModified);
   });
 });
 

@@ -9,6 +9,8 @@ import { getPlatform } from '@/app/lib/ble/capacitor-utils';
 import { openExternalUrl } from '@/app/lib/open-external-url';
 import { storeHttpsUrlForPlatform, storeSchemeUrlForPlatform } from '@/app/lib/store-urls';
 import { track } from '@/app/lib/analytics';
+import { APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties } from '@/app/lib/app-install-event';
+import { resolveShellStaticAssetUrl } from '@/app/lib/shell-static-asset-url';
 import styles from './capacitor-retirement-screen.module.css';
 
 /**
@@ -21,7 +23,7 @@ export const CapacitorRetirementScreen: React.FC = () => {
 
   const openStoreApp = useCallback(() => {
     const platform = getPlatform();
-    track('App Install Click', { platform, source: 'capacitor-retirement' });
+    track(APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties({ platform, source: 'capacitor-retirement' }));
     // Scheme URL lands in the real App Store / Play Store app rather than an
     // in-WebView listing page — same hand-off requestInAppReview() uses.
     openExternalUrl(storeSchemeUrlForPlatform(platform));
@@ -31,14 +33,24 @@ export const CapacitorRetirementScreen: React.FC = () => {
   // out of a blocking screen, so offer the plain https listing too.
   const openStorePage = useCallback(() => {
     const platform = getPlatform();
-    track('App Install Click', { platform, source: 'capacitor-retirement-fallback' });
+    track(
+      APP_INSTALL_CLICK_EVENT,
+      buildAppInstallClickProperties({ platform, source: 'capacitor-retirement-fallback' }),
+    );
     openExternalUrl(storeHttpsUrlForPlatform(platform));
   }, []);
 
   return (
     <div className={styles.overlay} role="dialog" aria-modal="true" aria-labelledby="capacitor-retirement-title">
       <div className={styles.panel}>
-        <Image src="/brand/boardsesh-mark.png" width={72} height={72} alt="" className={styles.mark} priority />
+        <Image
+          src={resolveShellStaticAssetUrl('/brand/boardsesh-mark.png')}
+          width={72}
+          height={72}
+          alt=""
+          className={styles.mark}
+          priority
+        />
         <Typography id="capacitor-retirement-title" variant="h5" component="h1" className={styles.title}>
           {t('capacitorRetirement.title')}
         </Typography>

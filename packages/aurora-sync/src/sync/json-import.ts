@@ -262,6 +262,30 @@ export function generateJsonImportCircuitAuroraId(
   return `json-import-circuit-${hash}`;
 }
 
+/**
+ * Resolve an export circuit's climb NAMES to climb uuids, dropping unresolved
+ * names and collapsing repeats.
+ *
+ * The dedupe is load-bearing, not tidiness: `unique_playlist_climb` is
+ * (playlist_id, climb_uuid), so a circuit that lists the same climb twice — or
+ * two distinct names that resolve to one uuid — produced duplicate rows and a
+ * raw 23505 that rolled the whole circuit's transaction back. The climber saw a
+ * bumped `failed` count and a silently missing circuit. Same index exposure the
+ * user-sync circuits branch fixes in #4023; extracted so it is testable without
+ * a database.
+ */
+export function resolveCircuitClimbUuids(climbNames: string[], nameToUuid: Map<string, string>): string[] {
+  const resolved: string[] = [];
+  const seen = new Set<string>();
+  for (const name of climbNames) {
+    const uuid = nameToUuid.get(name);
+    if (uuid == null || seen.has(uuid)) continue;
+    seen.add(uuid);
+    resolved.push(uuid);
+  }
+  return resolved;
+}
+
 export type JsonImportTickRow = typeof boardseshTicks.$inferInsert;
 
 /**
@@ -1622,9 +1646,7 @@ export async function importJsonExportData(
   // so one failure doesn't roll back others or abort the tick transaction)
   for (let ci = 0; ci < data.circuits.length; ci++) {
     const circuit = data.circuits[ci];
-    const resolvedClimbs = circuit.climbs
-      .map((name) => nameToUuid.get(name))
-      .filter((uuid): uuid is string => uuid != null);
+    const resolvedClimbs = resolveCircuitClimbUuids(circuit.climbs, nameToUuid);
 
     // The key is user-scoped (see generateJsonImportCircuitAuroraId), so two
     // importers can no longer collide on the global `playlists_aurora_id_idx`.
@@ -1727,7 +1749,14 @@ export async function importJsonExportData(
           }));
 
           for (let i = 0; i < climbValues.length; i += BATCH_SIZE) {
-            await tx.insert(playlistClimbs).values(climbValues.slice(i, i + BATCH_SIZE));
+            // Belt to the dedupe's braces: a re-import racing a concurrent
+            // addClimbToPlaylist can still land a row between the delete and
+            // this insert, and DO NOTHING keeps that one instead of aborting
+            // the circuit. #4023.
+            await tx
+              .insert(playlistClimbs)
+              .values(climbValues.slice(i, i + BATCH_SIZE))
+              .onConflictDoNothing({ target: [playlistClimbs.playlistId, playlistClimbs.climbUuid] });
           }
         }
 

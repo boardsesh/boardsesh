@@ -170,6 +170,7 @@
       "subtitle": "Touche une salle pour utiliser sa board",
       "locationNeeded": "Partage ta position pour trouver des salles à proximité",
       "grantLocation": "Utiliser ma position",
+      "locationBlocked": "Ton navigateur garde ta position pour lui. Tape une ville dans la recherche : ça marche partout.",
       "empty": "Aucune salle à proximité pour l'instant",
       "noBoards": "Aucune board ici pour l'instant",
       "boardCount_one": "{{count}} board",
@@ -254,12 +255,16 @@
         "messageLabel": "Message (facultatif)",
         "messagePlaceholder": "Tout ce qui nous aide à vérifier que tu gères cette salle",
         "submit": "Demander une vérification",
-        "sent": "Nous avons prévenu notre équipe. Elle te contactera bientôt."
+        "sent": "Ta demande est dans la file d'examen. On t'écrit dès qu'elle est tranchée."
       },
       "approved": {
         "sent": "{{gym}} est à toi.",
         "manageCta": "Configurer ta salle",
         "manageError": "Impossible d'ouvrir la configuration de la salle. Ouvre-la dans un navigateur."
+      },
+      "protections": {
+        "syncFreeze": "Une fois la salle à toi, tes modifications restent : la synchronisation des lieux n'écrase jamais ce que le gestionnaire a saisi.",
+        "transfer": "Tu passeras la main un jour ? Écris à {{email}} et on transfère la propriété."
       }
     },
     "offline": {
@@ -466,13 +471,6 @@
       "hardest": "Plus dur"
     }
   },
-  "boardConfigSelects": {
-    "board": "Board",
-    "layout": "Layout",
-    "size": "Taille",
-    "holdSets": "Jeux de prises",
-    "angle": "Inclinaison"
-  },
   "boardPill": {
     "switchHint": "Ouvre le sélecteur de board"
   },
@@ -578,6 +576,7 @@
       "name": "Nom de la salle",
       "slug": "Slug d'URL",
       "description": "Description",
+      "hours": "Horaires d'ouverture",
       "address": "Adresse",
       "contactEmail": "E-mail de contact",
       "contactPhone": "Téléphone de contact",
@@ -587,6 +586,7 @@
     "placeholders": {
       "name": "ex. Boulder World, The Climbing Factory",
       "description": "Description facultative",
+      "hours": "ex. lun-ven 7h-23h, sam-dim 9h-20h",
       "address": "ex. 123 rue Principale, ville",
       "contactEmail": "E-mail de contact facultatif",
       "contactPhone": "Téléphone de contact facultatif",
@@ -604,7 +604,8 @@
       "createdNamed": "Salle « {{name}} » créée !"
     },
     "helpers": {
-      "website": "Sert à vérifier la propriété lorsque quelqu’un revendique cette salle"
+      "website": "Sert à vérifier la propriété lorsque quelqu’un revendique cette salle",
+      "hours": "Une ligne, comme tu veux l'écrire. Ta page affiche la date de ta dernière confirmation."
     }
   },
   "claimGym": {
@@ -614,7 +615,8 @@
     "switchToAdmin": "Pas d’e-mail professionnel ? Demandez une vérification",
     "switchToDomain": "Vérifier plutôt avec un e-mail professionnel",
     "errors": {
-      "generic": "Une erreur est survenue. Réessayez."
+      "generic": "Une erreur est survenue. Réessayez.",
+      "tokenUnavailable": "On n'arrive pas à confirmer ta connexion. Recharge la page et réessaie."
     },
     "domain": {
       "description": "Vous gérez {{gym}} ? Saisissez votre e-mail chez {{domain}} et nous enverrons un lien de confirmation.",
@@ -629,11 +631,15 @@
       "messageLabel": "Message (facultatif)",
       "messagePlaceholder": "Tout ce qui nous aide à vérifier que vous gérez cette salle",
       "submit": "Demander une vérification",
-      "sent": "Nous avons prévenu notre équipe. Elle vous contactera bientôt."
+      "sent": "Votre demande est dans la file d'examen. Nous vous écrirons dès qu'elle sera tranchée."
     },
     "approved": {
       "body": "{{gym}} est à vous. Configurez-la quand vous voulez.",
       "manageCta": "Configurer votre salle"
+    },
+    "protections": {
+      "syncFreeze": "Une fois la salle à vous, vos modifications restent : la synchronisation des lieux n'écrase jamais ce que le gestionnaire a saisi.",
+      "transfer": "Vous passerez la main un jour ? Écrivez à {{email}} et nous transférons la propriété."
     }
   },
   "claimLanding": {

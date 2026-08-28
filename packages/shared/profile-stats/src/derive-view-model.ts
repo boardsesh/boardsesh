@@ -7,6 +7,7 @@ import {
   buildStatisticsSummary,
   buildVPointsTimeline,
   buildActivityHeatmap,
+  buildPeriodComparison,
 } from './chart-builders';
 import { getDifficultyMapping } from './grade-mapping';
 import type {
@@ -20,6 +21,8 @@ import type {
   RawStatisticsSummary,
   RawGradeHighlight,
   RawActivityHeatmap,
+  PeriodComparisonMode,
+  RawPeriodComparison,
 } from './types';
 
 export type DeriveProfileViewModelInput = {
@@ -35,6 +38,10 @@ export type DeriveProfileViewModelInput = {
   gradeFormat: GradeDisplayFormat;
   /** `userProfileStats` response, or null while loading / for a fresh user. */
   profileStats: ProfileStatsData | null;
+  /** Trailing vs. year-over-year for the period comparison card. The caller
+   *  owns the default ('trailing') — this function is a pure pass-through, like
+   *  every other filter field. */
+  comparisonMode: PeriodComparisonMode;
 };
 
 export type ProfileViewModel = {
@@ -47,17 +54,21 @@ export type ProfileViewModel = {
   activityHeatmap: RawActivityHeatmap | null;
   hardestSend: RawGradeHighlight | null;
   hardestFlash: RawGradeHighlight | null;
+  periodComparison: RawPeriodComparison | null;
 };
 
 /**
- * Pure orchestration shared by web's `useProfileData` and mobile's
- * `useYouProfileData`. Given the raw per-board ticks plus the active board /
- * timeframe / grade-format filters, derives every chart's renderer-agnostic
- * data plus the hardest send/flash highlights. Color resolution happens at
- * each platform's component layer.
+ * Pure orchestration behind mobile's `useYouProfileData`. Given the raw
+ * per-board ticks plus the active board / timeframe / grade-format filters,
+ * derives every chart's renderer-agnostic data plus the hardest send/flash
+ * highlights. Color resolution happens at the component layer. Web's
+ * `useProfileData` does its own orchestration (calls the individual raw
+ * builders directly via a local color-adapter) rather than going through this
+ * function — see the web/mobile split noted on each raw builder.
  */
 export function deriveProfileViewModel(input: DeriveProfileViewModelInput): ProfileViewModel {
-  const { allBoardsTicks, selectedBoard, timeframe, fromDate, toDate, gradeFormat, profileStats } = input;
+  const { allBoardsTicks, selectedBoard, timeframe, fromDate, toDate, gradeFormat, profileStats, comparisonMode } =
+    input;
 
   const filteredBoardsTicks: Record<string, LogbookEntry[]> =
     selectedBoard === 'all' ? allBoardsTicks : { [selectedBoard]: allBoardsTicks[selectedBoard] || [] };
@@ -93,6 +104,8 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
 
   const activityHeatmap = buildActivityHeatmap(filteredLogbook);
 
+  const periodComparison = buildPeriodComparison(filteredBoardsTicks, timeframe, comparisonMode);
+
   const { hardestSend, hardestFlash } = computeHardest(filteredBoardsTicks, gradeFormat);
 
   return {
@@ -105,6 +118,7 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
     activityHeatmap,
     hardestSend,
     hardestFlash,
+    periodComparison,
   };
 }
 

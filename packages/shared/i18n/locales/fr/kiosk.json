@@ -81,16 +81,39 @@
     "boardsHeading": "Boards",
     "boardCount_one": "{{count}} board",
     "boardCount_other": "{{count}} boards",
+    "hoursHeading": "Horaires d'ouverture",
+    "hoursConfirmed": "Confirmé le {{date}}",
     "visitWebsite": "Visiter le site web",
+    "install": {
+      "heading": "Prends l'appli pour ce mur",
+      "body": "Allume les boards de {{gymName}} depuis ton téléphone et fais la croix sur chaque bloc.",
+      "googlePlay": "Disponible sur Google Play",
+      "appStore": "Télécharger dans l'App Store"
+    },
     "noBoardsYet": "Aucune board ici pour l'instant.",
-    "exploreFeed": "Voir ce que les grimpeurs enchaînent",
+    "explorePlaylists": "Découvre les playlists des grimpeurs",
     "claimTitle": "C'est ta salle ?",
     "claimBody": "Revendique-la pour gérer les boards, l'identité visuelle et ce qui s'affiche sur le mur.",
     "claimCta": "Revendiquer cette salle",
+    "claimCtaSignedOut": "Connecte-toi et revendique-la",
+    "claimPendingTitle": "Ta demande est en cours d'examen",
+    "claimPendingBody": "On vérifie que tu gères cette salle. On te répond par e-mail dans tous les cas, en général sous quelques jours.",
+    "claimPendingDomainTitle": "Regarde ta boîte mail",
+    "claimPendingDomainBody": "On a envoyé un lien à ton e-mail professionnel. Clique dessus et la salle est à toi.",
+    "claimAuthTitle": "Revendique ta salle",
+    "claimAuthBody": "Connecte-toi, on te ramène ici pour la revendiquer.",
     "owner": {
       "linkBoards": {
         "title": "Relie tes boards",
         "body": "Les grimpeurs ne voient encore aucun mur ici."
+      },
+      "addHours": {
+        "title": "Ajoute tes horaires",
+        "body": "Les grimpeurs qui veulent savoir s'ils peuvent venir ce soir n'en savent rien."
+      },
+      "addDescription": {
+        "title": "Raconte comment on grimpe ici",
+        "body": "Deux lignes sur les murs, l'ouverture et l'ambiance."
       },
       "putOnTv": {
         "title": "Mets ce mur sur une TV",
@@ -100,6 +123,18 @@
         "title": "Ajoute ton identité",
         "body": "Ajoute ton logo et tes couleurs pour que la page te ressemble."
       }
+    },
+    "photoAlt": "Le mur d'escalade de {{gymName}}",
+    "poster": {
+      "metaTitle": "Affiche QR pour {{gymName}}",
+      "metaDescription": "Un code prêt à imprimer que les grimpeurs scannent au pied du mur.",
+      "heading": "Scanne le code, allume le mur",
+      "pitch": "Prends Boardsesh, choisis un bloc et les prises s'allument sur la board devant toi. Et fais la croix dans la foulée.",
+      "typedUrlLabel": "Pas d'appareil photo ? Tape ceci :",
+      "compatibility": "Compatible avec Kilter, Tension et MoonBoard.",
+      "independence": "Boardsesh est une appli indépendante. Elle n'est ni affiliée à Aurora Climbing, à Moon Climbing ou à un fabricant de boards, ni approuvée par eux.",
+      "printAction": "Imprimer cette affiche",
+      "backToGym": "Retour à la salle"
     }
   },
   "manage": {
@@ -343,6 +378,7 @@
       "quickLinksHeading": "Gère ta salle",
       "viewPublicPage": "Voir la page publique",
       "embedAction": "Intégrer à ton site web",
+      "printPoster": "Imprime ton affiche",
       "stats": {
         "boards": "boards",
         "members": "membres",
@@ -378,7 +414,22 @@
     },
     "profile": {
       "heading": "Profil de la salle",
-      "description": "Le nom, l'adresse et ce que les grimpeurs voient sur la page publique."
+      "description": "Le nom, l'adresse et ce que les grimpeurs voient sur la page publique.",
+      "photo": {
+        "heading": "Photo de la salle",
+        "description": "Une photo de ton mur ou de la zone des boards. Elle ouvre ta page publique et suit le lien quand quelqu'un le partage.",
+        "upload": "Importer une photo",
+        "replace": "Changer la photo",
+        "remove": "Retirer",
+        "currentAlt": "Photo de {{gymName}}",
+        "emptyPlaceholder": "Pas encore de photo",
+        "formatsHint": "JPG, PNG ou WebP, jusqu'à {{maxMb}} Mo. Redimensionnée à {{maxDimension}} px. Prends une vraie photo de ton mur ou de la zone des boards, rien de généré par IA.",
+        "unsupportedType": "Utilise une image JPG, PNG ou WebP.",
+        "tooLarge": "Ce fichier dépasse {{maxMb}} Mo. Choisis une image plus légère.",
+        "uploadTooLarge": "Cette photo dépasse encore {{maxMb}} Mo après redimensionnement. Choisis-en une autre.",
+        "uploadFailed": "Impossible d'importer la photo.",
+        "saveFailed": "Impossible d'enregistrer la photo."
+      }
     },
     "comments": {
       "intro": "Réponds au fil de commentaires de ta salle sans quitter la console.",

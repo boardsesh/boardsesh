@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef, useSyncExternalStore } from 'react';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { listOverlayCacheEntries, onOverlayCacheHydrated, overlayCacheEntryExists } from './overlay-cache-warmup';
 import { RENDERER_VERSION } from './renderer-version';
@@ -27,6 +27,7 @@ import {
   DEFAULT_HOLD_BRUSH_THICKNESS,
   DEFAULT_HOLD_MARKER_SHAPE,
   DEFAULT_HOLD_SHAPE_SIZE,
+  buildHoldColorOverrideSignature,
   getEffectiveHoldStateColor,
   getEffectiveHoldStateShape,
   useHoldColorOverrides,
@@ -166,7 +167,96 @@ function isExactNativeRender(
 
 const inflightRenders = new Map<string, Promise<RenderedOverlayEntry>>();
 const INFLIGHT_RENDERS_MAX = 50;
+
+// Render signatures the installed renderer told us it cannot honour (an old
+// native binary that predates marker support throws
+// MARKER_RENDERER_UNAVAILABLE_MESSAGE). Module-scoped: one refusal is a
+// property of the binary, not of the climb, so every hook instance learns from
+// it. `unsupportedSignatureRevision` is the useSyncExternalStore tick — without
+// it a Set mutated inside a promise catch would never reach the components that
+// have to re-resolve which overrides they can still ask for.
 const unsupportedRenderSignatures = new Set<string>();
+const unsupportedSignatureListeners = new Set<() => void>();
+let unsupportedSignatureRevision = 0;
+
+function markRenderSignatureUnsupported(renderSignature: string): void {
+  if (unsupportedRenderSignatures.has(renderSignature)) return;
+  unsupportedRenderSignatures.add(renderSignature);
+  unsupportedSignatureRevision += 1;
+  for (const listener of unsupportedSignatureListeners) listener();
+}
+
+function subscribeToUnsupportedSignatures(onStoreChange: () => void): () => void {
+  unsupportedSignatureListeners.add(onStoreChange);
+  return () => {
+    unsupportedSignatureListeners.delete(onStoreChange);
+  };
+}
+
+function getUnsupportedSignatureRevision(): number {
+  return unsupportedSignatureRevision;
+}
+
+const EMPTY_HOLD_COLOR_OVERRIDES: HoldColorOverrides = {};
+const EMPTY_HOLD_SHAPE_OVERRIDES: HoldShapeOverrides = {};
+
+/** The override set the installed renderer can actually draw, plus its signature. */
+export type EffectiveRenderOverrides = {
+  signature: string;
+  colors: HoldColorOverrides;
+  shapes: HoldShapeOverrides;
+  brushThickness: number;
+  shapeSize: number;
+};
+
+/**
+ * Pick the richest override set the renderer has not refused.
+ *
+ * A refusal is about marker GEOMETRY — shape, size, brush — which only the
+ * marker-aware binaries draw. Colours are honoured by every binary ever
+ * shipped, so the fallback keeps them and drops the geometry, rather than
+ * dropping the overlay entirely. Before issue #4495 the caller simply stopped
+ * rendering on a refused signature, so one unsupported setting blanked the
+ * holds on every climb — the opposite of the "falls back to default rendering"
+ * this code has always claimed.
+ *
+ * The signature must stay in lock-step with the overrides it describes: it is
+ * the cache key, so returning a degraded config under the full signature would
+ * persist wrong pixels under a key a capable renderer later reuses.
+ */
+export function resolveEffectiveRenderOverrides(
+  colors: HoldColorOverrides,
+  shapes: HoldShapeOverrides,
+  brushThickness: number,
+  shapeSize: number,
+  renderSignature: string,
+): EffectiveRenderOverrides {
+  if (!unsupportedRenderSignatures.has(renderSignature)) {
+    return { signature: renderSignature, colors, shapes, brushThickness, shapeSize };
+  }
+
+  const colorSignature = buildHoldColorOverrideSignature(colors);
+  if (colorSignature !== renderSignature && !unsupportedRenderSignatures.has(colorSignature)) {
+    return {
+      signature: colorSignature,
+      colors,
+      shapes: EMPTY_HOLD_SHAPE_OVERRIDES,
+      brushThickness: DEFAULT_HOLD_BRUSH_THICKNESS,
+      shapeSize: DEFAULT_HOLD_SHAPE_SIZE,
+    };
+  }
+
+  // Colours alone were refused too (or there were none to keep). Fall all the
+  // way back to the board's own palette — DEFAULT_HOLD_COLOR_SIGNATURE is never
+  // recorded as unsupported, so this always renders something.
+  return {
+    signature: DEFAULT_HOLD_COLOR_SIGNATURE,
+    colors: EMPTY_HOLD_COLOR_OVERRIDES,
+    shapes: EMPTY_HOLD_SHAPE_OVERRIDES,
+    brushThickness: DEFAULT_HOLD_BRUSH_THICKNESS,
+    shapeSize: DEFAULT_HOLD_SHAPE_SIZE,
+  };
+}
 
 const BOARD_CONFIG_CACHE_MAX = 20;
 
@@ -453,6 +543,7 @@ export const _cacheRenderedOverlayForTests = cacheRenderedOverlay;
 export const _getRenderedOverlayForTests = getRenderedOverlay;
 export const _invalidateRenderedOverlayForTests = invalidateRenderedOverlay;
 export const _unsupportedRenderSignaturesForTests = unsupportedRenderSignatures;
+export const _markRenderSignatureUnsupportedForTests = markRenderSignatureUnsupported;
 export const _MARKER_RENDERER_UNAVAILABLE_MESSAGE_FOR_TESTS = MARKER_RENDERER_UNAVAILABLE_MESSAGE;
 
 /**
@@ -783,12 +874,38 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // render — the function self-guards via `warmupRun`.
   warmupRenderedOverlaysOnce();
 
+  // Subscribing to the refusal store is what makes the fallback take effect:
+  // the renderer only reports "I can't draw these markers" from inside a
+  // promise catch, long after this render committed.
+  const unsupportedRevision = useSyncExternalStore(
+    subscribeToUnsupportedSignatures,
+    getUnsupportedSignatureRevision,
+    getUnsupportedSignatureRevision,
+  );
+
+  // What we can actually ask the installed renderer for. Identical to the
+  // user's settings unless it has refused this signature, in which case the
+  // marker geometry is dropped and the colours are kept.
+  const effectiveOverrides = useMemo(() => {
+    // Re-resolve whenever the renderer refuses another signature.
+    void unsupportedRevision;
+    return resolveEffectiveRenderOverrides(
+      holdColorOverrides,
+      holdShapeOverrides,
+      brushThickness,
+      shapeSize,
+      holdRenderSignature,
+    );
+  }, [holdColorOverrides, holdShapeOverrides, brushThickness, shapeSize, holdRenderSignature, unsupportedRevision]);
+  const effectiveRenderSignature = effectiveOverrides.signature;
+
   // Both keys feed cache lookups on every FlashList row recycle; buildCacheKey
   // runs an fnv1a char-loop over the frames string. Memoize on exactly the
   // builders' inputs — a stale key would collide two climbs' overlays.
   const currentCacheKey = useMemo(
-    () => buildCacheKey(boardName, layoutId, sizeId, setIds, frames, filledStyle, renderWidth, holdRenderSignature),
-    [boardName, layoutId, sizeId, setIds, frames, filledStyle, renderWidth, holdRenderSignature],
+    () =>
+      buildCacheKey(boardName, layoutId, sizeId, setIds, frames, filledStyle, renderWidth, effectiveRenderSignature),
+    [boardName, layoutId, sizeId, setIds, frames, filledStyle, renderWidth, effectiveRenderSignature],
   );
   const currentBoardKey = useMemo(
     () => buildBoardKey(boardName, layoutId, sizeId, setIds, variant, colorScheme),
@@ -946,7 +1063,10 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // Overlay-render effect: kick off the native render if we don't already
   // have one for this cache key in the sync map.
   useEffect(() => {
-    if (!frames || unsupportedRenderSignatures.has(holdRenderSignature)) return;
+    // effectiveRenderSignature has already stepped away from anything the
+    // renderer refused, so this only trips on the pathological case where the
+    // fallback itself was somehow recorded.
+    if (!frames || unsupportedRenderSignatures.has(effectiveRenderSignature)) return;
 
     const cachedEntry = getRenderedOverlay(currentCacheKey);
     if (cachedEntry) {
@@ -980,11 +1100,11 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       setIds,
       filledStyle,
       renderWidth,
-      holdColorOverrides,
-      holdShapeOverrides,
-      brushThickness,
-      shapeSize,
-      holdRenderSignature,
+      effectiveOverrides.colors,
+      effectiveOverrides.shapes,
+      effectiveOverrides.brushThickness,
+      effectiveOverrides.shapeSize,
+      effectiveRenderSignature,
     );
     if (!boardConfig) return;
     // Backed off after a full-disk failure: the write cannot succeed, and every
@@ -1028,14 +1148,16 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
         // A renderer that cannot honour this config's marker overrides is a
-        // designed capability fallback (old native binary, or the overlay-only
-        // WASM core on web), not a defect: the overlay falls back to default
-        // rendering. Record the signature so we stop retrying it, but never
-        // record DEFAULT_HOLD_COLOR_SIGNATURE — that key is consulted for every
-        // render above, so poisoning it would blank the overlay on every board.
+        // designed capability fallback (a native binary that predates marker
+        // support), not a defect. Recording the signature makes
+        // resolveEffectiveRenderOverrides drop the marker geometry and re-render
+        // with colours only — the notification it fires is what re-runs this
+        // effect under the degraded cache key. Never record
+        // DEFAULT_HOLD_COLOR_SIGNATURE: it is the last fallback, so poisoning it
+        // would blank the overlay on every board.
         const isCapabilityFallback = message.includes(MARKER_RENDERER_UNAVAILABLE_MESSAGE);
-        if (isCapabilityFallback && holdRenderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE) {
-          unsupportedRenderSignatures.add(holdRenderSignature);
+        if (isCapabilityFallback && effectiveRenderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE) {
+          markRenderSignatureUnsupported(effectiveRenderSignature);
         }
         // Native render failed -- overlay stays null, backgrounds still show.
         // Surface the cause in Metro logs so we can diagnose; without this
@@ -1078,11 +1200,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     setIds,
     filledStyle,
     renderWidth,
-    holdColorOverrides,
-    holdShapeOverrides,
-    brushThickness,
-    shapeSize,
-    holdRenderSignature,
+    effectiveOverrides,
+    effectiveRenderSignature,
     recoveryRequest,
   ]);
 

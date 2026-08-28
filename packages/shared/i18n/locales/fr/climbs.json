@@ -100,7 +100,8 @@
   },
   "boardseshGrade": {
     "title": "Grade Boardsesh",
-    "moonboardBody": "Nous n'avons pas encore de données de grade communautaires pour le MoonBoard. Enregistre tes croix Moon sur Boardsesh pour aider à le débloquer.",
+    "moonboardBody": "Nous n'avons pas encore de données de cotation communautaires pour le MoonBoard. Enregistre tes croix Moon sur Boardsesh pour aider à la débloquer.",
+    "woodsBody": "Nous n'avons pas encore de données de cotation communautaires pour le Woods Board. Enregistre tes croix sur le Woods pour aider à la débloquer.",
     "loadError": "Impossible de charger le grade pour le moment.",
     "byAngle": "Sa difficulté selon l'angle",
     "summaryLocal": "local",
@@ -464,6 +465,8 @@
         "attempt": "Essayé"
       },
       "noMatch": "Une main par prise",
+      "campus": "Campus",
+      "noKickboard": "Sans KB",
       "benchmark": "Benchmark",
       "method": {
         "footless": "Sans pieds",
@@ -521,7 +524,11 @@
         "showAllHoldsLabel": "Afficher toutes les prises",
         "showAllHoldsDescription": "Met en évidence chaque prise cliquable de la board.",
         "noMatchLabel": "Une main par prise",
-        "noMatchDescription": "Les mains ne peuvent pas se rejoindre sur la même prise"
+        "noMatchDescription": "Les mains ne peuvent pas se rejoindre sur la même prise",
+        "noKickboardLabel": "Sans kickboard",
+        "noKickboardDescription": "Les pieds ne peuvent pas utiliser le kickboard",
+        "campusLabel": "Campus (sans pieds)",
+        "campusDescription": "Mains seulement, sans les pieds"
       },
       "drafts": {
         "holds_one": "{{count}} prise",
@@ -592,6 +599,9 @@
       "switchBoard": "Passer sur {{board}}",
       "switchFailed": "Impossible de passer sur {{board}}. Réessaie.",
       "cancel": "Annuler"
+    },
+    "setterNotes": {
+      "title": "Notes de l’ouvreur"
     }
   },
   "frontDoor": {
@@ -616,6 +626,9 @@
       "angleValue": "{{angle}}°",
       "qualityValue": "{{quality}} sur 5",
       "firstAscentValue": "{{setter}}, {{date}}"
+    },
+    "setterNotes": {
+      "heading": "Notes de l’ouvreur"
     },
     "angles": {
       "heading": "Le même bloc à d’autres inclinaisons",

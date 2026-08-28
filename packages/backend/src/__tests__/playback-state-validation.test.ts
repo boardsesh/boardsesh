@@ -44,7 +44,7 @@ describe('PlaybackStateInputSchema', () => {
     ['fractional frame count', { frameCount: 4.5 }],
     ['frame count above GraphQL Int maximum', { frameCount: GRAPHQL_INT_MAX + 1 }],
     ['frame index above GraphQL Int maximum', { frameIndex: GRAPHQL_INT_MAX + 1 }],
-    ['speed below the control minimum', { speed: 0.49 }],
+    ['speed below the control minimum', { speed: 0.09 }],
     ['speed above the control maximum', { speed: 10.01 }],
     ['pace below the engine floor', { paceMs: 199 }],
     ['fractional pace', { paceMs: 200.5 }],

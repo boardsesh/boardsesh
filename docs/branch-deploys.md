@@ -81,7 +81,7 @@ Branch deploys stopped working after migrating from Vercel Postgres (which was a
   ```
 - The join handler already uses a `backendUrl` query param pattern (`packages/backend/src/handlers/join.ts:56`)
 - GitHub Actions CI runs on PRs (typecheck, lint, tests)
-- The `boardsesh-dev-db` Docker image contains all board data and is rebuilt automatically
+- The `boardsesh-dev-db` Docker image contains all board data (seeded from the nightly board snapshots) and is republished by a manual dispatch of `postgres-image-publisher.yml`
 
 ---
 
@@ -1179,19 +1179,20 @@ Organized by migration priority (pure reads first, then mutations, then proxies)
 | `/api/v1/grades/[board]`                                      | `query gradeSystem(board)`      |
 | `/api/v1/[board]/slugs/**`                                    | `query slugs(board, ...)`       |
 | `/api/internal/profile/[userId]`                              | `query profile(userId)`         |
-| `/api/internal/favorites`                                     | `query favorites`               |
-| `/api/internal/hold-classifications`                          | `query holdClassifications`     |
-| `/api/internal/user-board-mapping`                            | `query userBoardMapping`        |
-| `/api/internal/climb-redirect`                                | `query climbRedirect(...)`      |
 
 #### Batch 2: Mutations
 
-| Current Route                           | GraphQL Mutation               |
-| --------------------------------------- | ------------------------------ |
-| `/api/internal/profile` (POST/PUT)      | `mutation updateProfile(...)`  |
-| `/api/internal/favorites` (POST/DELETE) | `mutation toggleFavorite(...)` |
+| Current Route                      | GraphQL Mutation              |
+| ---------------------------------- | ----------------------------- |
+| `/api/internal/profile` (POST/PUT) | `mutation updateProfile(...)` |
 
 #### Batch 3: Aurora API Proxies
+
+> **Retired 2026-08-15 (W-25a, #4441), deleted by W-25b (#4443).** `getLogbook`,
+> `saveClimb` and `user-sync` were deleted outright by W-25a. `login` and `saveAscent` answered
+> `410 Gone` from W-25a until W-25b removed the URLs ahead of the published `Sunset` date,
+> 2026-10-01 — both had answered 410 with no Aurora call behind them since W-25a, so W-25b changed
+> only how they were broken (410 → 404). The table below is kept as a record of the GraphQL migration.
 
 | Current Route                      | GraphQL Query/Mutation                  |
 | ---------------------------------- | --------------------------------------- |

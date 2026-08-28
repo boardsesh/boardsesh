@@ -24,6 +24,7 @@ import {
   type GradeAccuracyValue,
 } from '@boardsesh/climb-filters';
 import { getTallWideScope } from '@boardsesh/board-constants';
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import { ClimbListRow } from '../../../src/components/ClimbListRow';
 import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkeleton';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
@@ -50,6 +51,8 @@ import { useTheme, useAppColorScheme } from '../../../src/providers/theme-provid
 import { selectByVariant } from '../../../src/theme/variants';
 import { useActiveClimbUuid, useQueueActions } from '../../../src/providers/queue-provider';
 import { ClimbSearchProvider, useClimbSearch, type GradeBound } from '../../../src/providers/climb-search-provider';
+import { setSetting, useSetting } from '../../../src/settings';
+import { climbToQueueItem } from '../../../src/lib/climb-to-queue-item';
 import { useBoardActions } from '@boardsesh/board-react';
 import { randomUUID } from 'expo-crypto';
 import { type SearchHeaderHandle } from '../../../src/components/SearchHeader';
@@ -170,14 +173,25 @@ function ClimbListInner() {
   // (see the auto-open effect below). Absent on the plain `/climbs` list shot.
   // screenshotBoardIndex picks which followed board to render (default [0]); the
   // second board-view shot passes 1 to render myBoards[1].
-  const { screenshotOpenFirst, screenshotBoardIndex, screenshotOpenBoardSheet } = useLocalSearchParams<{
+  // screenshotOpenPreview / screenshotOpenWallPreview land the same first climb
+  // in the drawer's two wall-state shots — browsing, and on the wall.
+  const {
+    screenshotOpenFirst,
+    screenshotBoardIndex,
+    screenshotOpenBoardSheet,
+    screenshotOpenPreview,
+    screenshotOpenWallPreview,
+  } = useLocalSearchParams<{
     screenshotOpenFirst?: string;
     screenshotBoardIndex?: string;
     screenshotOpenBoardSheet?: string;
+    screenshotOpenPreview?: string;
+    screenshotOpenWallPreview?: string;
   }>();
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
-  const { openClimbActions, openAddToPlaylist, openBoardSheet, usesDetailPane } = useDrawerHost();
+  const { openClimbActions, openAddToPlaylist, openBoardSheet, openPlayDrawer, usesDetailPane } = useDrawerHost();
+  const [lightOnClimbTap] = useSetting('lightOnClimbTap');
   // One-time board-history reveal: armed when the user binds a board from the
   // onboarding hand-off and consumed on focus (see the useFocusEffect below).
   // Declared here so handleOpenBoardDetail can clear it — tapping the board
@@ -780,9 +794,17 @@ function ClimbListInner() {
   const handleClimbPress = useCallback(
     (climb: Climb) => {
       blurSearchInputs();
+      if (!lightOnClimbTap) {
+        // Board lighting off for taps: open view-only (the Browsing pill + the
+        // commit row) instead of committing — same landing as the explicit
+        // "Preview" climb action, so the tap doesn't light the board or touch
+        // the queue until the climber puts it up.
+        openPlayDrawer(climb, { previewQueueItem: climbToQueueItem(climb) });
+        return;
+      }
       void activateClimbListClimb.activate(toQueueClimb(climb));
     },
-    [activateClimbListClimb, blurSearchInputs],
+    [activateClimbListClimb, blurSearchInputs, lightOnClimbTap, openPlayDrawer],
   );
 
   // Screenshot mode: when a specific board index is requested, switch the active
@@ -816,18 +838,31 @@ function ClimbListInner() {
   // column in the App Store shot. Activating the first climb fills the pane
   // beside the list (and it stays lit for the later Home/Discover shots). Gated
   // on `usesDetailPane` because on iPhone the same activation opens the play
-  // drawer OVER the list; `screenshotOpenFirst` runs its own activation, so this
-  // yields to it. Dead-strips in normal builds.
+  // drawer OVER the list; every other capture that opens the first climb itself
+  // (`screenshotOpenFirst`, and the two wall-state shots below) runs its own
+  // activation, so this yields to all of them — otherwise it would COMMIT the
+  // climb the wall-state shot then previews, collapsing the commit row out of
+  // the frame. Dead-strips in normal builds.
   const screenshotPaneLitRef = useRef(false);
   useEffect(() => {
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1') return;
-    if (screenshotOpenFirst || !usesDetailPane || screenshotPaneLitRef.current) return;
+    if (screenshotOpenFirst || screenshotOpenPreview || screenshotOpenWallPreview) return;
+    if (!usesDetailPane || screenshotPaneLitRef.current) return;
     if (!activeBoard || !searchReady) return;
     const firstClimb = visibleClimbs[0];
     if (!firstClimb) return;
     screenshotPaneLitRef.current = true;
     handleClimbPress(firstClimb);
-  }, [screenshotOpenFirst, usesDetailPane, activeBoard, searchReady, visibleClimbs, handleClimbPress]);
+  }, [
+    screenshotOpenFirst,
+    screenshotOpenPreview,
+    screenshotOpenWallPreview,
+    usesDetailPane,
+    activeBoard,
+    searchReady,
+    visibleClimbs,
+    handleClimbPress,
+  ]);
 
   // Screenshot mode: deterministically open the board-presence "now on the wall"
   // sheet (the onboarding hero shot) once the active board resolves, instead of a
@@ -853,6 +888,44 @@ function ClimbListInner() {
     if (!activeBoard || !searchReady || visibleClimbs.length === 0) return;
     publishScreenshotWallClimbs(buildScreenshotWallSeed(visibleClimbs, activeBoard.angle ?? null), null);
   }, [activeBoard, searchReady, visibleClimbs]);
+
+  // Screenshot mode: open the first climb in one of the drawer's two wall-state
+  // shots. `screenshotOpenPreview` is the browse latch — the Browsing pill, the
+  // viewfinder brackets and the commit row — which is the same landing as the
+  // "Preview" climb action. `screenshotOpenWallPreview` adds `previewIsWallClimb`
+  // so the drawer says the displayed climb IS the lit one (the On-the-wall pill,
+  // no commit to offer). Declared AFTER the wall-seed effect above so the kiosk
+  // seed — which publishes this same first climb at index 0 — is already in the
+  // module store when the drawer reads board presence for the driver's face.
+  // Dead-strips in normal builds.
+  const screenshotPreviewOpenedRef = useRef(false);
+  useEffect(() => {
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1') return;
+    if (!screenshotOpenPreview && !screenshotOpenWallPreview) return;
+    if (screenshotTargetBoard && activeBoard?.uuid !== screenshotTargetBoard.uuid) return;
+    if (!activeBoard || !searchReady || screenshotPreviewOpenedRef.current) return;
+    const firstClimb = visibleClimbs[0];
+    if (!firstClimb) return;
+    screenshotPreviewOpenedRef.current = true;
+    // The drawer only claims "Browsing" while a swipe genuinely stays view-only,
+    // which for a preview with no suggestion source means lightOnSwipe off. The
+    // capture device is a throwaway simulator, so writing the setting is the
+    // honest way to reach the state — faking the chrome instead would ship a
+    // store screenshot of a promise the app doesn't keep.
+    if (screenshotOpenPreview) setSetting('lightOnSwipe', false);
+    openPlayDrawer(firstClimb, {
+      previewQueueItem: climbToQueueItem(firstClimb),
+      previewIsWallClimb: Boolean(screenshotOpenWallPreview),
+    });
+  }, [
+    screenshotOpenPreview,
+    screenshotOpenWallPreview,
+    screenshotTargetBoard,
+    activeBoard,
+    searchReady,
+    visibleClimbs,
+    openPlayDrawer,
+  ]);
 
   const handleAddToQueue = useCallback(
     (climb: Climb) => {
@@ -1475,7 +1548,7 @@ function ClimbListInner() {
         // tab itself names the screen, so the centre title is dropped entirely —
         // the redundant "All climbs" label added nothing.
         title={showFilterChips ? undefined : searchTitle}
-        canCreate={isAuthenticated && hasBoardConfig}
+        canCreate={isAuthenticated && hasBoardConfig && getBoardCapabilities(boardName).climbCreation}
         onCreate={handleCreateClimb}
         onOpenBoardDetail={handleOpenBoardDetail}
         showBoardBadge={showRevealTip}

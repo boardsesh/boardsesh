@@ -196,7 +196,14 @@
       "lifetimeRecap": "{{tries}} {{sessions}}",
       "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}",
       "pendingSync_one": "{{count}} en attente de synchronisation",
-      "pendingSync_other": "{{count}} en attente de synchronisation"
+      "pendingSync_other": "{{count}} en attente de synchronisation",
+      "signedOut": "Connecte-toi pour voir tes essais sur ce bloc."
+    },
+    "anonymous": {
+      "signInHeadline": "Fais la croix",
+      "signInSubtitle": "Connecte-toi pour garder tes essais, tes croix et ton beta au même endroit.",
+      "signInAction": "Se connecter",
+      "tickAria": "Connecte-toi pour enregistrer cette croix"
     },
     "similarClimbs": {
       "title": "Voies similaires",
@@ -242,6 +249,7 @@
       "shareReadingCaption": "Lecture de la description...",
       "shareSuggestedTitle": "Trouve dans la description",
       "shareOtherAscents": "Tes autres ascensions",
+      "shareAscentLabel": "Joins ta beta à {{details}}",
       "shareTitle": "Partage ton beta",
       "step1Title": "Copie ta légende",
       "step2Title": "Publie-le en reel",
@@ -263,6 +271,7 @@
       "unknownClimb": "Bloc inconnu",
       "removeClimb": "Supprimer le bloc",
       "positionLabel": "position {{position}}",
+      "addedByAria": "Ajouté par {{name}}",
       "syncError": "Erreur de synchronisation de la file",
       "outOfSyncRefreshed": "La file était désynchronisée. Actualisée depuis ton groupe.",
       "sessionCreateError": "Impossible de créer la session",
@@ -464,7 +473,29 @@
     }
   },
   "playView": {
-    "previewBadge": "Aperçu",
+    "wallState": {
+      "onWall": "Sur le mur",
+      "live": "En direct",
+      "browsing": "Exploration",
+      "onWallHint": "Ce bloc est allumé au mur en ce moment.",
+      "liveHint": "Le prochain bloc que tu choisis s'allume au mur.",
+      "browsingHint": "Tu regardes seulement. Le mur ne bouge pas.",
+      "pillHint": "Voir les options du mur",
+      "browseFromHere": "Explorer à partir d'ici",
+      "backToLive": "Revenir au mur",
+      "putOnWall": "Allumer au mur",
+      "joinedBrowseNotice": "Tu explores. Le mur ne change pas tant que tu n'allumes pas un bloc.",
+      "commitOverride": {
+        "body": "Quelqu'un vient d'allumer {{name}}. Allumer le tien quand même ?",
+        "confirm": "Allumer le mien",
+        "cancel": "Garder le mur"
+      },
+      "a11y": {
+        "browseAnnounce": "Exploration. Le mur ne bouge pas.",
+        "backToLive": "Retour au mur : {{name}}",
+        "committed": "{{name}} est sur le mur"
+      }
+    },
     "setActive": "Activer",
     "paneEmpty": {
       "title": "Choisis un bloc",

@@ -27,3 +27,4 @@ export * from './integrations';
 export * from './instagram-beta-import';
 export * from './sync';
 export * from './location-sync-admin';
+export * from './gym-owner-reassign';

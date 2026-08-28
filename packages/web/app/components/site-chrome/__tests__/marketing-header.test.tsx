@@ -10,10 +10,12 @@ import MarketingHeader from '../marketing-header';
  * Successor to `global-header/__tests__/global-header.test.tsx`.
  *
  * The search-field and board-route cases are gone with the search drawer and
- * the persistent-session bridge; everything the profile / `/you` / `/settings`
- * surfaces still depend on is re-asserted here, plus two new obligations this
- * header picked up: the account affordance that replaces the deleted UserDrawer
- * (the only sign-in entry point outside `/auth`) and the chrome-less bail.
+ * the persistent-session bridge, and W-19 (#4437) took the `/you` branches with
+ * the route; everything the profile / `/settings` surfaces still depend on is
+ * re-asserted here, plus two obligations this header picked up: the account
+ * affordance that replaces the deleted UserDrawer (the only sign-in entry point
+ * outside `/auth`, and now the only route to /settings) and the chrome-less
+ * bail.
  */
 
 vi.mock('react-i18next', () => ({
@@ -56,10 +58,6 @@ vi.mock('next/link', () => ({
 const mockShareWithFallback = vi.fn();
 vi.mock('@/app/lib/share-utils', () => ({
   shareWithFallback: (...args: unknown[]) => mockShareWithFallback(...args),
-}));
-
-vi.mock('@/app/hooks/use-unread-notification-count', () => ({
-  useUnreadNotificationCount: () => 3,
 }));
 
 let mockStatsFilterBridgeState = {
@@ -106,15 +104,7 @@ describe('MarketingHeader', () => {
   // e2e is workflow_dispatch-only (standing rule 6), so pin the contract here
   // where every PR runs it.
   it('tags every header branch with the marketing-header testid the e2e spec selects', () => {
-    for (const pathname of [
-      '/some-page',
-      '/',
-      '/you',
-      '/you/sessions',
-      '/settings',
-      '/profile/user-2',
-      '/aurora-migration',
-    ]) {
+    for (const pathname of ['/some-page', '/', '/settings', '/profile/user-2', '/aurora-migration']) {
       mockPathname = pathname;
       const { container, unmount } = render(<MarketingHeader />);
       expect(
@@ -151,13 +141,35 @@ describe('MarketingHeader', () => {
       expect(screen.getByLabelText('Your profile').closest('a')?.getAttribute('href')).toBe('/profile/user-1');
     });
 
-    // The bottom tab bar carried the only link to /you, and the /you header
-    // carries the only link to /notifications, so without this one both
-    // surfaces are live but unreachable.
-    it('links to /you when signed in — the only entry point left to the dashboard', () => {
-      render(<MarketingHeader />);
+    // W-19 (#4437) deleted /you, which carried the only link to /settings. The
+    // account affordance is now the sole entry point, and stays that way until
+    // W-21 decides what happens to /settings itself.
+    it('keeps settings reachable from the account affordance', () => {
+      const { container } = render(<MarketingHeader />);
 
-      expect(screen.getByLabelText('Your dashboard').closest('a')?.getAttribute('href')).toBe('/you');
+      expect(container.querySelector('a[href="/settings"]')).toBeTruthy();
+    });
+
+    // W-19 parked the notifications bell here so /notifications stayed reachable
+    // for one deploy. W-20b (#4439) deleted the page, so the link has to go too —
+    // otherwise a signed-in visitor taps a bell that looks local and gets bounced
+    // cross-origin by a 307.
+    it('links nowhere into /notifications — the surface moved to the app', () => {
+      for (const pathname of ['/some-page', '/', '/profile/user-2', '/settings']) {
+        mockPathname = pathname;
+        const { container, unmount } = render(<MarketingHeader />);
+        expect(container.querySelectorAll('a[href^="/notifications"]').length, pathname).toBe(0);
+        unmount();
+      }
+    });
+
+    it('links nowhere into /you', () => {
+      for (const pathname of ['/some-page', '/', '/profile/user-2', '/settings']) {
+        mockPathname = pathname;
+        const { container, unmount } = render(<MarketingHeader />);
+        expect(container.querySelectorAll('a[href^="/you"]').length, pathname).toBe(0);
+        unmount();
+      }
     });
   });
 
@@ -175,98 +187,6 @@ describe('MarketingHeader', () => {
       mockPathname = '/embed/gym/some-uuid/leaderboard';
       const { container } = render(<MarketingHeader />);
       expect(container.firstChild).toBeNull();
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // /you
-  // -----------------------------------------------------------------------
-  describe('on /you pages', () => {
-    it('renders a centered "You" title on the root /you page', () => {
-      mockPathname = '/you';
-      render(<MarketingHeader />);
-
-      expect(screen.getByText('You')).toBeTruthy();
-    });
-
-    it('renders the settings cog linking to /settings, before the title', () => {
-      mockPathname = '/you';
-      const { container } = render(<MarketingHeader />);
-
-      const settingsLink = screen.getByLabelText('Settings');
-      expect(settingsLink.closest('a')?.getAttribute('href')).toBe('/settings');
-      const title = screen.getByText('You');
-      expect(Boolean(settingsLink.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
-      expect(container.querySelectorAll('[aria-label="Settings"]').length).toBe(1);
-    });
-
-    it('renders the share button when the user is authenticated', () => {
-      mockPathname = '/you';
-      render(<MarketingHeader />);
-
-      expect(screen.getByLabelText('Share profile')).toBeTruthy();
-    });
-
-    it('renders no search bar', () => {
-      mockPathname = '/you';
-      render(<MarketingHeader />);
-
-      expect(screen.queryByPlaceholderText('What do you want to climb?')).toBeNull();
-    });
-
-    it('renders the brand link where the user drawer used to sit', () => {
-      mockPathname = '/you';
-      render(<MarketingHeader />);
-
-      expect(screen.getByLabelText('Boardsesh home')).toBeTruthy();
-    });
-
-    it('renders the settings cog on /you/sessions too', () => {
-      mockPathname = '/you/sessions';
-      render(<MarketingHeader />);
-
-      expect(screen.getByLabelText('Settings').closest('a')?.getAttribute('href')).toBe('/settings');
-    });
-
-    it('drops the share button when the user is not authenticated but keeps the cog', () => {
-      mockPathname = '/you';
-      mockSessionData = null;
-      mockSessionStatus = 'unauthenticated';
-      render(<MarketingHeader />);
-
-      expect(screen.queryByLabelText('Share profile')).toBeNull();
-      expect(screen.getByLabelText('Settings')).toBeTruthy();
-    });
-
-    it('shares the profile URL when the share button is clicked', () => {
-      mockPathname = '/you';
-      render(<MarketingHeader />);
-
-      fireEvent.click(screen.getByLabelText('Share profile'));
-
-      expect(mockShareWithFallback).toHaveBeenCalledWith(
-        expect.objectContaining({
-          url: expect.stringContaining('/profile/user-1'),
-          title: expect.stringContaining('Test User'),
-          trackingEvent: 'Profile Shared',
-        }),
-      );
-    });
-
-    it('renders the stats filter action on the root /you page when the bridge is active', () => {
-      mockPathname = '/you';
-      mockStatsFilterBridgeState = {
-        isActive: true,
-        pageTitle: 'Progress',
-        backUrl: null,
-        openFilterDrawer: vi.fn(),
-        hasActiveFilters: true,
-      };
-
-      const { container } = render(<MarketingHeader />);
-
-      expect(screen.getByLabelText('Open stats filters')).toBeTruthy();
-      expect(container.querySelector('[class*="filterActiveIndicator"]')).toBeTruthy();
     });
   });
 
@@ -352,7 +272,27 @@ describe('MarketingHeader', () => {
 
       expect(screen.getByLabelText('Boardsesh home')).toBeTruthy();
       expect(screen.getByLabelText('Start climbing in the app')).toBeTruthy();
-      expect(screen.queryByLabelText('Settings')).toBeNull();
+    });
+
+    // Accepted with W-19's Q3 ruling: the account icons ride the transparent
+    // hero bar too, because they are the only route to /settings now that /you
+    // is gone.
+    it('carries the account affordance for a signed-in visitor', () => {
+      mockPathname = '/';
+      const { container } = render(<MarketingHeader />);
+
+      expect(container.querySelector('a[href="/settings"]')).toBeTruthy();
+      expect(container.querySelector('a[href="/profile/user-1"]')).toBeTruthy();
+    });
+
+    it('shows a sign-in link and no account icons when signed out', () => {
+      mockPathname = '/';
+      mockSessionData = null;
+      mockSessionStatus = 'unauthenticated';
+      const { container } = render(<MarketingHeader />);
+
+      expect(screen.getByText('Sign in').closest('a')?.getAttribute('href')).toBe('/auth/login');
+      expect(container.querySelector('a[href="/settings"]')).toBeNull();
     });
   });
 

@@ -132,7 +132,19 @@ Two timestamp invariants are easy to break by accident (issue #3524). **`created
 
 ### Circuits → playlists
 
-Circuit rows upsert into `playlists` (`kilter_id` = `circuit_uuid`, `kilter_type = 'circuits'`). The climbs list is **full-replace per sync**: delete every `playlist_climbs` row for the playlist, re-insert from the snapshot, chunk inserts at 500 rows to stay under the 65535-parameter Postgres ceiling. Matches aurora-sync's circuit handling. Ownership is idempotent via `(playlist_id, user_id)` unique.
+Circuit rows land in `playlists` (`kilter_id` = `circuit_uuid`, `kilter_type = 'circuits'`) via a **three-way match**, the same shape the logs path uses and for the same reason — a plain `ON CONFLICT (kilter_id)` can't see a row whose `kilter_id` is still NULL:
+
+1. If a playlist with the same `kilter_id` already exists, upsert it in place. The lookup is **global**, not user-scoped: a `kilter_id` belonging to a **different** Boardsesh user (one Kilter account linked to two Boardsesh accounts) is skipped-and-logged rather than overwritten (#3526).
+2. Otherwise, look for a **legacy Kilter playlist** this user solely owns that has no `kilter_id` yet, and **adopt** it — stamp the surrogate keys onto the row that is already there instead of inserting a twin. Candidates must already carry an upstream origin (`aurora_id IS NOT NULL`), which is what keeps a playlist the user built by hand in Boardsesh from being swallowed by a same-named Kilter circuit. Two matching tiers, in order: `aurora_id = circuit_uuid` (Grips kept the uuid across the backend split), then the **normalized name** (`lower(btrim(name))`) when it appears exactly once among the candidates **and** exactly once among the incoming circuits. Anything ambiguous is left to insert — a wrong merge is worse than a duplicate.
+3. If nothing matches, insert a fresh playlist.
+
+Those legacy rows exist because Kilter used to be an ordinary Aurora board: aurora-sync wrote its circuits keyed on `aurora_id` until it was switched off for Kilter on 2026-03-30, and the mobile JSON import still writes the same shape with a synthetic `aurora_id = 'json-import-<hash>'`. No migration ever moved `aurora_id` → `kilter_id`, so before the adoption step every pre-split circuit got a second playlist row on the first sync after re-linking Kilter — carrying Kilter's stale content, stamped `created_at = now()`, sorted to the top of the list (#4707). Adoption rather than delete-and-reinsert is what preserves `playlists.uuid`, the offline-sync local PK that `user_playlist_pins`, `playlist_follows` and every mobile client already point at.
+
+**Adoption is link-only.** It stamps `kilter_id` / `kilter_type` / `kilter_synced_at` and leaves `name`, `description`, `is_public`, `color` and `playlist_climbs` exactly as the user left them, because circuit push-back is still stubbed behind `KILTER_SYNC_PUSH_ENABLED` (#3525) — Boardsesh-side edits are the only copy that exists. `kilter_synced_at` is set to `COALESCE(aurora_synced_at, created_at)`, not `now()`: the column means "Kilter's content was last written into this row", and claiming a content sync that never happened would make the guard below read "no local edits" and clobber those edits on the very next cycle.
+
+The upsert in (1) carries an **edit-clobber guard**, the twin of the ticks one: `DO UPDATE` only fires while `updated_at <= COALESCE(kilter_synced_at, updated_at)`. A playlist the user edited in Boardsesh since Kilter content last landed keeps both its metadata and its climbs — the guard suppresses the update, `.returning()` comes back empty and the diff-and-replace below is skipped with it. The tradeoff is deliberate: until push-back ships, an edited playlist is **frozen** against Kilter-side changes. A playlist the user has not edited syncs normally on the cycle after adoption.
+
+When the guard lets it through, the climbs list is **full-replace per sync**: delete every `playlist_climbs` row for the playlist, re-insert from the snapshot, chunk inserts at 500 rows to stay under the 65535-parameter Postgres ceiling. Matches aurora-sync's circuit handling. Ownership is idempotent via `(playlist_id, user_id)` unique.
 
 ### Defensive sub-scoping
 
@@ -363,7 +375,7 @@ than persisting an unrenewable credential.
 
 ### Access gate
 
-Account linking is gated client-side by the `kilter-oauth-linking` PostHog feature flag. The web and mobile settings UIs read the flag (`useFeatureFlag('kilter-oauth-linking')`) and only show the Kilter sign-in card when it's on (or when a Kilter account is already linked, so it stays manageable if the flag flips off). Toggling the flag in PostHog rolls the importer in or out without a redeploy. The backend OAuth/password endpoints stay authenticated and rate-limited but no longer enforce a user allowlist.
+Account linking is gated client-side by the `kilter-oauth-linking` PostHog feature flag. The app reads the flag (`useFeatureFlag('kilter-oauth-linking')`) and only shows the Kilter sign-in card when it's on (or when a Kilter account is already linked, so it stays manageable if the flag flips off). Toggling the flag in PostHog rolls the importer in or out without a redeploy. The backend OAuth/password endpoints stay authenticated and rate-limited but no longer enforce a user allowlist.
 
 ## Daemon
 
@@ -375,6 +387,8 @@ Same loop shape as aurora-sync's daemon: one user per cycle, random 1–15 min j
 - `last_sync_attempt_at` — last **attempt**, success or failure. This is the scheduler's fairness clock: `getNextCredentialToSync` orders by `last_sync_attempt_at ASC NULLS FIRST` (served by `aurora_credentials_sync_attempt_priority_idx`).
 
 The split exists because the error classifier fails open — a non-`KilterApiError` (a DB error, a bug) is treated transient. If the scheduler ordered by `last_sync_at` and we never advanced anything on failure, a credential that fails deterministically would keep its `NULL`/old timestamp and be re-selected first every cycle, monopolising the single-user-per-cycle queue and starving everyone else. Advancing `last_sync_attempt_at` on every outcome rotates a failing credential to the back while keeping `last_sync_at` honest; it still retries on its next turn. No data is lost: `last_sync_attempt_at` is a scheduling key, never a data cursor — each cycle re-pulls the full snapshot idempotently, so a failed cycle's rows land on the next successful turn.
+
+Selection also **claims**: the pick runs `SELECT ... FOR UPDATE SKIP LOCKED` and stamps `last_sync_attempt_at` inside one short transaction, so two overlapping daemon instances take disjoint work. Part of that claim is a 30-second reclaim gap (`CREDENTIAL_MIN_RECLAIM_GAP_MS`) in the WHERE — a credential is not re-selectable inside that window. It reads like a throttle but isn't one: under READ COMMITTED the claim has to falsify a predicate, because a racer whose lock attempt lands just after the winner's commit gets an EvalPlanQual recheck of the WHERE quals and never of the ORDER BY. The daemon's shortest cycle is 1 minute, so the gap never binds in practice. Full reasoning: the header comment on `claimNextCredentialForSync` in `packages/db/src/queries/sync/claim-credential.ts`.
 
 (aurora-sync still orders by `last_sync_at` and has the same latent starvation gap — adopting this attempt clock there is tracked in [#3331](https://github.com/boardsesh/boardsesh/issues/3331). The `last_sync_attempt_at` column and its index already cover aurora-sync's query shape; only its runner needs updating.)
 

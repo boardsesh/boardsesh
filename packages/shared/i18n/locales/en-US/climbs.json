@@ -101,6 +101,7 @@
   "boardseshGrade": {
     "title": "Boardsesh grade",
     "moonboardBody": "We don't have community grade data for MoonBoard yet. Log your Moon sends on Boardsesh to help unlock it.",
+    "woodsBody": "We don't have community grade data for the Woods Board yet. Log your Woods sends on Boardsesh to help unlock it.",
     "loadError": "Couldn't load the grade right now.",
     "byAngle": "How it climbs by angle",
     "summaryLocal": "local",
@@ -464,6 +465,8 @@
         "attempt": "Tried"
       },
       "noMatch": "No matching",
+      "campus": "Campus",
+      "noKickboard": "No KB",
       "benchmark": "Benchmark",
       "method": {
         "footless": "Footless",
@@ -521,7 +524,11 @@
         "showAllHoldsLabel": "Show all holds",
         "showAllHoldsDescription": "Highlight every tappable hold on the board.",
         "noMatchLabel": "No matching",
-        "noMatchDescription": "Hands can't match on the same hold"
+        "noMatchDescription": "Hands can't match on the same hold",
+        "noKickboardLabel": "No kickboard",
+        "noKickboardDescription": "Feet can't use the kickboard",
+        "campusLabel": "Campus (no feet)",
+        "campusDescription": "Hands only — no feet allowed"
       },
       "drafts": {
         "holds_one": "{{count}} hold",
@@ -592,6 +599,9 @@
       "switchBoard": "Switch to {{board}}",
       "switchFailed": "Couldn't switch to {{board}}. Try again.",
       "cancel": "Cancel"
+    },
+    "setterNotes": {
+      "title": "Setter's notes"
     }
   },
   "frontDoor": {
@@ -616,6 +626,9 @@
       "angleValue": "{{angle}}°",
       "qualityValue": "{{quality}} out of 5",
       "firstAscentValue": "{{setter}}, {{date}}"
+    },
+    "setterNotes": {
+      "heading": "Setter's notes"
     },
     "angles": {
       "heading": "Same climb, other angles",

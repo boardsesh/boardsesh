@@ -229,6 +229,8 @@
       "sponsorsEmpty": "Pas encore de sponsor — envie d'être le premier ?",
       "privateSponsorsThanks": "et {{count}} de plus en privé — merci à vous aussi",
       "becomeSponsor": "Devenir sponsor",
+      "poweredByTitle": "Propulsé par",
+      "xpremBody": "Mercure Technologies a offert à Boardsesh une licence entreprise pour xprem, le serveur derrière nos mises à jour over-the-air. C'est grâce à lui que les correctifs arrivent sur votre téléphone sans attendre la validation du store, et que vous pouvez essayer une préversion depuis Nouveautés.",
       "personalTitle": "Remerciements personnels",
       "discordTitle": "Tout le monde sur notre Discord",
       "discordBody": "Merci pour la beta, la motivation et les rapports de bugs. Touchez pour rejoindre.",
@@ -336,6 +338,7 @@
     "yes": "Oui",
     "no": "Non",
     "cancel": "Annuler",
+    "clear": "Effacer",
     "delete": "Supprimer",
     "edit": "Modifier",
     "close": "Fermer",
@@ -354,8 +357,7 @@
     "userMenu": "Menu utilisateur",
     "startClimbing": "Commencer à grimper dans l'appli",
     "home": "Accueil Boardsesh",
-    "yourProfile": "Votre profil",
-    "yourDashboard": "Votre tableau de bord"
+    "yourProfile": "Votre profil"
   },
   "header": {
     "you": "Vous",
@@ -370,7 +372,6 @@
   "share": {
     "profileTitle": "Profil de grimpeur de {{name}}",
     "profileText": "Le profil de grimpeur de {{name}} sur Boardsesh",
-    "fallbackName": "Mon",
     "viewedFallbackName": "Grimpeur",
     "linkCopied": "Lien copié !",
     "shareFailed": "Échec du partage"

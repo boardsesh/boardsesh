@@ -10,11 +10,7 @@ import {
   getRenderedObjectUrl,
   _overlayCacheStoreForTests,
 } from '../../../modules/board-renderer/src/overlay-cache-store.web';
-import {
-  renderHoldsOverlay,
-  MARKER_RENDERER_UNAVAILABLE_MESSAGE,
-  _webRendererForTests,
-} from '../../../modules/board-renderer/src/index.web';
+import { renderHoldsOverlay, _webRendererForTests } from '../../../modules/board-renderer/src/index.web';
 import { currentOverlayVersionPrefix } from '../../hooks/renderer-version';
 
 // --- Fakes for the browser storage/encoding APIs jsdom does not implement ---
@@ -158,15 +154,17 @@ describe('overlay-cache-store hydration + snapshot (warmup contract)', () => {
     expect(snapshotOverlayEntries()).toHaveLength(limit);
   });
 
-  it('flushes shared web v4 entries when the native and web renderer contract moves to v5', async () => {
+  it('flushes shared web entries when the native and web renderer contract moves to v6', async () => {
     const { store } = installCaches();
     await writeOverlayToCache('v2_s_wfull_kilter_1_2_25_old', new Blob() as Blob);
     await writeOverlayToCache('v4_s_wfull_kilter_1_2_25_pre_atomic', new Blob() as Blob);
-    await writeOverlayToCache('v5_s_wfull_kilter_1_2_25_keep', new Blob() as Blob);
+    // Drawn by the stale WASM artifact at the wrong stroke width (issue #4495).
+    await writeOverlayToCache('v5_s_wfull_kilter_1_2_25_wrong_stroke', new Blob() as Blob);
+    await writeOverlayToCache('v6_s_wfull_kilter_1_2_25_keep', new Blob() as Blob);
     await writeOverlayToCache('v1_f_w400_kilter_1_2_25_ancient', new Blob() as Blob);
     _overlayCacheStoreForTests.renderedObjectUrls.clear();
 
-    expect(currentOverlayVersionPrefix()).toBe('v5_');
+    expect(currentOverlayVersionPrefix()).toBe('v6_');
     await hydrateOverlayCache(currentOverlayVersionPrefix());
 
     // Stale-version PNGs are deleted from the Cache API, not hydrated — so they
@@ -174,11 +172,12 @@ describe('overlay-cache-store hydration + snapshot (warmup contract)', () => {
     // warm-up race.
     expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v2_s_wfull_kilter_1_2_25_old'))).toBe(false);
     expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v4_s_wfull_kilter_1_2_25_pre_atomic'))).toBe(false);
+    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v5_s_wfull_kilter_1_2_25_wrong_stroke'))).toBe(false);
     expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v1_f_w400_kilter_1_2_25_ancient'))).toBe(false);
-    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v5_s_wfull_kilter_1_2_25_keep'))).toBe(true);
+    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v6_s_wfull_kilter_1_2_25_keep'))).toBe(true);
     const entries = snapshotOverlayEntries();
     expect(entries).toHaveLength(1);
-    expect(entries[0].name).toBe('v5_s_wfull_kilter_1_2_25_keep.png');
+    expect(entries[0].name).toBe('v6_s_wfull_kilter_1_2_25_keep.png');
   });
 
   it('releaseAllObjectUrls revokes every retained URL', async () => {
@@ -277,14 +276,21 @@ describe('renderHoldsOverlay Cache-API integration', () => {
     expect(persistedKey).toContain(encodeURIComponent('v3_s_wfull_kilter_1_2_25_miss'));
   });
 
-  it('still throws for marker configs before touching the cache', async () => {
-    installCaches();
-    installFakeWorker();
-    await expect(
-      // shape_size_multiplier, not stroke_width_multiplier — the latter is
-      // tolerated by the committed WASM and must render (issue #4240).
-      renderHoldsOverlay(JSON.stringify({ shape_size_multiplier: 1.5, hold_state_map: {} }), 'marker'),
-    ).rejects.toThrow(MARKER_RENDERER_UNAVAILABLE_MESSAGE);
+  it('renders a marker config instead of refusing it', async () => {
+    const { cache } = installCaches();
+    const { postMessage } = installFakeWorker();
+
+    // shape_size_multiplier used to be refused outright because the committed
+    // WASM predated the field (issue #4495). The rebuilt artifact honours it,
+    // so this must render and persist like any other config.
+    const url = await renderHoldsOverlay(
+      JSON.stringify({ shape_size_multiplier: 1.5, hold_state_map: {} }),
+      'v6_s_wfull_kilter_1_2_25_marker',
+    );
+
+    expect(url).toMatch(/^blob:overlay\//);
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(cache.put).toHaveBeenCalled());
   });
 
   it('terminates and disables the worker after a render times out, so later misses skip it', async () => {

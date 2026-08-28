@@ -16,6 +16,7 @@ import {
   friends,
   dogName,
   SPONSORS_URL,
+  XPREM_URL,
 } from '../src/lib/acknowledgements';
 import { openDiscordInvite } from '../src/lib/discord';
 import { openExternalUrl } from '../src/lib/open-url';
@@ -102,6 +103,9 @@ export default function AcknowledgementsScreen() {
   }, []);
   const handleJoinDiscord = useCallback(() => {
     void openDiscordInvite('acknowledgements');
+  }, []);
+  const handleOpenXprem = useCallback(() => {
+    void openExternalUrl(XPREM_URL, 'acknowledgements-xprem');
   }, []);
   const handleOpenScout = useCallback(() => {
     router.push('/scout');
@@ -192,6 +196,18 @@ export default function AcknowledgementsScreen() {
               />
             </View>
           )}
+        </View>
+
+        <View style={styles.section}>
+          <SectionHeader title={t('mobile.acknowledgements.poweredByTitle')} />
+          <View style={styles.cardStack}>
+            <ThanksCard
+              icon="server"
+              title="xprem"
+              body={t('mobile.acknowledgements.xpremBody')}
+              onPress={handleOpenXprem}
+            />
+          </View>
         </View>
 
         <View style={styles.section}>

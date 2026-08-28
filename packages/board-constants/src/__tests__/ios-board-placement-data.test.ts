@@ -15,6 +15,16 @@ describe('stableStringify', () => {
     expect(stableStringify(firstPlacementMap)).toBe(stableStringify(secondPlacementMap));
   });
 
+  it('sorts board keys in the shared display order, not alphabetically', () => {
+    // The iOS placement data is compared byte-for-byte between runs, so this
+    // order is load-bearing: it comes from BOARD_DISPLAY_ORDER (Aurora boards
+    // first, then the code-driven ones), NOT from SUPPORTED_BOARDS, which puts
+    // moonboard second.
+    const placementMap = { woods: 1, moonboard: 2, tension: 3, kilter: 4, soill: 5 };
+
+    expect(stableStringify(placementMap)).toBe('{"kilter":4,"tension":3,"soill":5,"moonboard":2,"woods":1}');
+  });
+
   it('sorts nested object keys naturally while preserving array order', () => {
     const placementMap = {
       board: {

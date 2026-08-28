@@ -1,21 +1,4 @@
 {
-  "metadata": {
-    "feed": {
-      "title": "Aktivitäten-Feed",
-      "description": "Sieh, was die Leute klettern, denen du folgst."
-    },
-    "importBeta": {
-      "title": "Beta von Instagram importieren",
-      "description": "Ordne deine Kletter-Reels von Instagram den Bouldern auf Boardsesh zu und häng sie mit wenigen Klicks als Beta an."
-    }
-  },
-  "title": "Aktivitäten-Feed",
-  "tabs": {
-    "label": "Feed-Tabs",
-    "sessions": "Sessions",
-    "proposals": "Vorschläge",
-    "comments": "Kommentare"
-  },
   "activityFeed": {
     "signInPrompt": "Melde dich an für einen Feed von den Kletterer*innen, denen du folgst."
   },
@@ -48,6 +31,7 @@
   },
   "ascentsFeed": {
     "mirrored": "Gespiegelt",
+    "setBy": "Gebaut von {{name}}",
     "benchmark": "Benchmark",
     "empty": "Noch keine Begehungen eingetragen"
   },
@@ -71,77 +55,6 @@
       "step3Title": "Link unten einfügen"
     }
   },
-  "importBeta": {
-    "title": "Beta von Instagram importieren",
-    "intro": "Hol dir die Boulder, die du schon auf Instagram gefilmt hast, und häng sie als Beta an. Lass einen kurzen Scan in deinem Browser laufen, füg das Ergebnis ein, und wir ordnen jedes Reel dem richtigen Boulder zu.",
-    "signInPrompt": "Melde dich an, um deine Instagram-Reels den Bouldern auf Boardsesh zuzuordnen.",
-    "signInCta": "Anmelden",
-    "authUnavailable": "Wir konnten deine Sitzung nicht prüfen. Lad die Seite neu und versuch's nochmal.",
-    "scriptCopied": "Skript kopiert. Füg es in die Instagram-Konsole ein.",
-    "scriptCopyFailed": "Das Skript ließ sich nicht kopieren. Markier es und kopier es von Hand.",
-    "pasteEmpty": "Füg zuerst das JSON ein, das das Skript kopiert hat.",
-    "parseError": "Das sieht nicht nach der Scan-Ausgabe aus. Lass das Skript nochmal laufen und füg genau das ein, was es kopiert.",
-    "noPosts": "In dem Eingefügten stecken keine Posts. Prüf, ob du das Skript auf einem Profil ausgeführt hast.",
-    "scanError": "Der Scan ist fehlgeschlagen. Versuch's gleich nochmal.",
-    "angle": "{{angle}}°",
-    "openOnInstagram": "Auf Instagram öffnen",
-    "board": {
-      "label": "Welches Board?",
-      "kilter": "Kilter",
-      "tension": "Tension"
-    },
-    "scan": {
-      "title": "Schritt 1 · Posts scannen",
-      "subtitle": "Das läuft in deinem eigenen Browser auf Instagram. Nichts verlässt deine Sitzung, und Boardsesh sieht deinen Instagram-Login nie. Ein Haken: Es nutzt Instagrams eigene Feed-API, bei sehr viel Scannen kann Instagram dein Konto also vorübergehend ausbremsen.",
-      "step1": "Öffne dein Instagram-Profil in einem anderen Tab und melde dich an.",
-      "step2": "Öffne die Browser-Konsole (Rechtsklick, Untersuchen, dann Konsole).",
-      "step3": "Füg das Skript unten ein und drück Enter. Bei einem großen Konto kann das eine Minute dauern. Es zeigt den Fortschritt in der Konsole, sagt dir, wie viele es gefunden hat, und kopiert sie in die Zwischenablage.",
-      "copyScript": "Skript kopieren"
-    },
-    "paste": {
-      "title": "Schritt 2 · Einfügen und finden",
-      "subtitle": "Füg ein, was das Skript kopiert hat. Wir lesen die Bildunterschriften und ordnen sie Bouldern zu.",
-      "label": "Scan-Ausgabe",
-      "placeholder": "Hier das JSON einfügen, das das Skript kopiert hat",
-      "submit": "Boulder finden"
-    },
-    "review": {
-      "title": "Schritt 3 · Prüfen und anhängen",
-      "summary": "{{scanned}} Posts gescannt, {{parsed}} Bildunterschriften gelesen: {{found}} neu zum Anhängen, {{already}} schon auf Boardsesh, {{ambiguous}} brauchen eine Auswahl, {{skipped}} übersprungen."
-    },
-    "missing": {
-      "empty": "Nichts Neues zum Anhängen. Alles, was wir zuordnen konnten, ist schon auf Boardsesh.",
-      "heading": "Neue Beta zum Anhängen ({{count}})",
-      "attachSelected": "{{count}} ausgewählte anhängen",
-      "attachAllDone": "{{count}} Beta-Videos angehängt.",
-      "attachSomeFailed": "{{attached}} angehängt, {{failed}} fehlgeschlagen. Schau dir die fehlgeschlagenen an.",
-      "attachFailedGeneric": "Das ließ sich nicht anhängen. Der Post ist vielleicht privat oder gelöscht."
-    },
-    "ambiguous": {
-      "heading": "Auswahl nötig ({{count}})",
-      "subtitle": "Zu diesen Bildunterschriften passt mehr als ein Boulder. Wähl den richtigen und häng ihn an.",
-      "selectPlaceholder": "Boulder wählen",
-      "candidateLabel": "{{setter}} · Layout {{layoutId}}",
-      "unknownSetter": "Unbekannte*r Routenbauer*in",
-      "attach": "Anhängen",
-      "attachedToast": "Beta angehängt."
-    },
-    "alreadyLinked": {
-      "heading": "Schon auf Boardsesh ({{count}})"
-    },
-    "unmatched": {
-      "heading": "Übersprungen ({{count}})",
-      "noName": "Kein Bouldername in der Bildunterschrift"
-    },
-    "status": {
-      "attached": "Angehängt",
-      "failed": "Fehlgeschlagen"
-    }
-  },
-  "commentFeed": {
-    "empty": "Noch keine Kommentare",
-    "commentedOn": "hat {{entity}} kommentiert"
-  },
   "emptyStates": {
     "followClimbers": "Folg ein paar Kletterer*innen, dann füllt sich das hier",
     "findClimbers": "Kletterer*innen finden",
@@ -149,9 +62,7 @@
   },
   "errors": {
     "loadFeed": "Der Aktivitäten-Feed ließ sich nicht laden. Versuch's nochmal.",
-    "loadActivity": "Der Aktivitäten-Feed ließ sich nicht laden",
-    "loadComments": "Die Kommentare ließen sich nicht laden. Versuch's nochmal.",
-    "loadProposals": "Die Vorschläge ließen sich nicht laden. Versuch's nochmal."
+    "loadActivity": "Der Aktivitäten-Feed ließ sich nicht laden"
   },
   "feedCommentButton": {
     "commentsTitle": "Kommentare"
@@ -184,9 +95,6 @@
       "title": "Angenommenen Vorschlag löschen",
       "description": "Damit werden die Auswirkungen dieses Vorschlags rückgängig gemacht (z. B. Gradänderung, Benchmark- oder Classic-Status) und der Vorschlag endgültig gelöscht. Das lässt sich nicht rückgängig machen."
     }
-  },
-  "proposalFeed": {
-    "empty": "Noch keine Vorschläge"
   },
   "proposalSection": {
     "title": "Vorschläge aus der Community",

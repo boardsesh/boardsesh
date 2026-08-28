@@ -11,8 +11,13 @@ vi.mock('@/app/lib/server-popular-configs', () => ({
 vi.mock('../playlist-query', () => ({
   fetchPlaylistSitemapRows: async () => [],
 }));
+vi.mock('../climb-store', () => ({
+  fetchClimbShardSummary: async () => ({ itemCount: 0, lastModified: null }),
+  buildClimbShardPage: async () => ({ items: [], totalItems: 0 }),
+  fetchStoredClimbPageLastmods: async () => [],
+}));
 
-const { SHARD_REGISTRY } = await import('../shard-registry');
+const { PAGED_SHARD_REGISTRY, SHARD_REGISTRY } = await import('../shard-registry');
 
 const APP_ROOT = join(import.meta.dirname, '..', '..', '..', '..');
 
@@ -27,19 +32,28 @@ describe('SHARD_REGISTRY', () => {
 
   it('has no route directory on disk that the registry does not know about', () => {
     // Reads the real directory instead of restating the ids: an orphaned
-    // `app/sitemaps/climbs.xml/route.ts` — exactly what W-23 adds — is a route
-    // crawlers can reach that the index never lists, and only the filesystem
-    // knows it is there.
+    // `app/sitemaps/*/route.ts` is a route crawlers can reach that the index
+    // never lists, and only the filesystem knows it is there.
+    //
+    // The walk is split because W-23's paged shard is a directory that does NOT
+    // end in `.xml` (`sitemaps/climbs/[page]/route.ts`) — the exact hole the
+    // `.xml`-only version of this test left open.
     const onDisk = readdirSync(join(APP_ROOT, 'sitemaps'), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && entry.name.endsWith('.xml'))
+      .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name);
-    const registered = new Set(SHARD_REGISTRY.map((shard) => `${shard.id}.xml`));
+    const fixed = new Set(SHARD_REGISTRY.map((shard) => `${shard.id}.xml`));
+    const paged = new Set(PAGED_SHARD_REGISTRY.map((shard) => shard.routeDirectory));
 
     expect(onDisk.length).toBeGreaterThan(0);
     for (const directory of onDisk) {
-      expect(registered.has(directory)).toBe(true);
+      if (directory.endsWith('.xml')) {
+        expect(fixed.has(directory), `unregistered shard route ${directory}`).toBe(true);
+      } else {
+        expect(paged.has(directory), `unregistered paged shard route ${directory}`).toBe(true);
+        expect(existsSync(join(APP_ROOT, 'sitemaps', directory, '[page]', 'route.ts'))).toBe(true);
+      }
     }
-    expect(onDisk).toHaveLength(registered.size);
+    expect(onDisk).toHaveLength(fixed.size + paged.size);
   });
 
   it('uses unique ids', () => {
@@ -58,6 +72,21 @@ describe('SHARD_REGISTRY', () => {
       gyms: false,
       setters: false,
     });
+  });
+
+  it('marks the paged climbs shard as expecting URLs on the shard route', () => {
+    // Fail-closed at the SHARD, degrade at the INDEX: a climbs page that renders
+    // zero URLs is a regressed query (the summary already said items were
+    // there), but a failing climbs summary must not 503 the whole index.
+    expect(Object.fromEntries(PAGED_SHARD_REGISTRY.map((shard) => [shard.id, shard.expectsUrls]))).toEqual({
+      climbs: true,
+    });
+  });
+
+  it('keeps paged and fixed shard ids in one namespace', () => {
+    const fixed = SHARD_REGISTRY.map((shard) => String(shard.id));
+    const paged = PAGED_SHARD_REGISTRY.map((shard) => String(shard.id));
+    expect(new Set([...fixed, ...paged]).size).toBe(fixed.length + paged.length);
   });
 });
 

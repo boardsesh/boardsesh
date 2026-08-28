@@ -159,6 +159,86 @@ describe('POST /api/auth/[...nextauth]', () => {
     expect(getTokenMock).not.toHaveBeenCalled();
   });
 
+  it('resolves the sign-out identity from a session stored under the other cookie name', async () => {
+    // Without the fallback read, a session living under the name the predicate
+    // did NOT pick fails the identity comparison and every sign-out 409s.
+    getTokenMock.mockResolvedValueOnce(null).mockResolvedValueOnce({ sub: 'user-1', authSessionId: 'login-1' });
+    const signOutRequest = request('/api/auth/signout', {
+      csrfToken: 'csrf-token',
+      expectedUserId: 'user-1',
+      expectedAuthSessionId: 'login-1',
+    });
+
+    await expect(POST(signOutRequest, context)).resolves.toMatchObject({ status: 200 });
+
+    expect(getTokenMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ cookieName: '__Secure-next-auth.session-token' }),
+    );
+    expect(getTokenMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ cookieName: 'next-auth.session-token' }));
+  });
+
+  it('clears BOTH session cookie names on sign-out, in both scopes', async () => {
+    // The read paths accept either name (sessionCookieNameCandidates), so a
+    // sign-out that cleared only one would leave a cookie that still
+    // authenticates — a logout bypass. Delete a name from
+    // appendSignOutSessionCookieClears and this goes red.
+    getTokenMock.mockResolvedValue({ sub: 'user-1', authSessionId: 'login-1' });
+    nextAuthHandlerMock.mockResolvedValue(
+      new Response(null, {
+        status: 200,
+        headers: {
+          'Set-Cookie':
+            '__Secure-next-auth.session-token=; Path=/; Domain=.boardsesh.com; Max-Age=0; HttpOnly; SameSite=Lax; Secure',
+        },
+      }),
+    );
+    const signOutRequest = request('/api/auth/signout', {
+      csrfToken: 'csrf-token',
+      expectedUserId: 'user-1',
+      expectedAuthSessionId: 'login-1',
+    });
+
+    const response = await POST(signOutRequest, context);
+
+    const setCookies = response.headers.getSetCookie();
+    for (const name of ['__Secure-next-auth.session-token', 'next-auth.session-token']) {
+      const deletions = setCookies.filter((setCookie) => setCookie.startsWith(`${name}=;`));
+      expect(
+        deletions.some((setCookie) => /;\s*Domain=\.boardsesh\.com/i.test(setCookie)),
+        name,
+      ).toBe(true);
+      expect(
+        deletions.some((setCookie) => !/;\s*Domain=/i.test(setCookie)),
+        name,
+      ).toBe(true);
+      for (const deletion of deletions) expect(deletion, name).toMatch(/Max-Age=0/i);
+    }
+  });
+
+  it('clears both names on sign-out even where no cookie domain applies', async () => {
+    // A homelab preview / a mis-enved container is host-only. The legacy clear
+    // skips those on purpose (it would delete a freshly written login cookie);
+    // the sign-out clear must not inherit that, or the bypass reopens exactly
+    // where the fallback read is most likely to be doing the resolving.
+    vi.stubEnv('VERCEL_ENV', '');
+    vi.stubEnv('VERCEL_URL', '');
+    vi.stubEnv('NEXTAUTH_URL', 'https://42.preview.boardsesh.com');
+    getTokenMock.mockResolvedValue({ sub: 'user-1', authSessionId: 'login-1' });
+    nextAuthHandlerMock.mockResolvedValue(new Response(null, { status: 200 }));
+    const signOutRequest = request('/api/auth/signout', {
+      csrfToken: 'csrf-token',
+      expectedUserId: 'user-1',
+      expectedAuthSessionId: 'login-1',
+    });
+
+    const response = await POST(signOutRequest, context);
+
+    const clearedNames = response.headers.getSetCookie().map((setCookie) => setCookie.split('=', 1)[0]);
+    expect(clearedNames).toContain('__Secure-next-auth.session-token');
+    expect(clearedNames).toContain('next-auth.session-token');
+  });
+
   it('clears the legacy host-only cookie when signing out', async () => {
     getTokenMock.mockResolvedValue({ sub: 'user-1', authSessionId: 'login-1' });
     nextAuthHandlerMock.mockResolvedValue(

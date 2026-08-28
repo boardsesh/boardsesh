@@ -101,6 +101,7 @@
   "boardseshGrade": {
     "title": "Boardsesh-Grad",
     "moonboardBody": "Für MoonBoard haben wir noch keine Grad-Daten aus der Community. Trag deine Moon-Begehungen auf Boardsesh ein, damit es losgehen kann.",
+    "woodsBody": "Für das Woods Board haben wir noch keine Grad-Daten aus der Community. Trag deine Woods-Begehungen auf Boardsesh ein, damit es losgehen kann.",
     "loadError": "Der Grad konnte gerade nicht geladen werden.",
     "byAngle": "Wie er sich je Winkel klettert",
     "summaryLocal": "lokal",
@@ -464,6 +465,8 @@
         "attempt": "Versucht"
       },
       "noMatch": "Kein Matchen",
+      "campus": "Campus",
+      "noKickboard": "Ohne FL",
       "benchmark": "Benchmark",
       "method": {
         "footless": "Ohne Füße",
@@ -521,7 +524,11 @@
         "showAllHoldsLabel": "Alle Griffe zeigen",
         "showAllHoldsDescription": "Hebt jeden antippbaren Griff auf dem Board hervor.",
         "noMatchLabel": "Kein Matchen",
-        "noMatchDescription": "Hände dürfen nicht am selben Griff matchen"
+        "noMatchDescription": "Hände dürfen nicht am selben Griff matchen",
+        "noKickboardLabel": "Ohne Fußleiste",
+        "noKickboardDescription": "Füße dürfen die Fußleiste nicht benutzen",
+        "campusLabel": "Campus (ohne Füße)",
+        "campusDescription": "Nur Hände, keine Füße"
       },
       "drafts": {
         "holds_one": "{{count}} Griff",
@@ -592,6 +599,9 @@
       "switchBoard": "Zu {{board}} wechseln",
       "switchFailed": "Wechsel zu {{board}} hat nicht geklappt. Versuch es nochmal.",
       "cancel": "Abbrechen"
+    },
+    "setterNotes": {
+      "title": "Notizen vom Routenbau"
     }
   },
   "frontDoor": {
@@ -616,6 +626,9 @@
       "angleValue": "{{angle}}°",
       "qualityValue": "{{quality}} von 5",
       "firstAscentValue": "{{setter}}, {{date}}"
+    },
+    "setterNotes": {
+      "heading": "Notizen vom Routenbau"
     },
     "angles": {
       "heading": "Derselbe Boulder bei anderen Winkeln",

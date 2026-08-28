@@ -1,7 +1,8 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
 import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-fragment';
+import { getClimbStatsForAllAngles, type ClimbStatsForAngle } from '@/app/lib/data/queries';
 
 /**
  * The climb front door's acceptance suite — the vitest form of #4369's curl
@@ -16,6 +17,10 @@ import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-f
  *     with explicit dimensions, a setter link, angle cross-links, ≥3 internal
  *     links, and a CTA whose href is `APP_URL` + the same pathname.
  */
+
+// Mutable bits of the mocked climb row, so a test can vary what `getClimb`
+// returns without re-declaring the whole fixture.
+const climbRow = vi.hoisted(() => ({ description: null as string | null }));
 
 vi.mock('server-only', () => ({}));
 vi.mock('next/navigation', () => ({ notFound: vi.fn() }));
@@ -82,18 +87,9 @@ vi.mock('@/app/lib/data/queries', () => ({
     quality_average: '4.20',
     ascensionist_count: 12,
     frames: 'p1r12',
+    description: climbRow.description,
   })),
   getClimbStatsForAllAngles: vi.fn(async () => [
-    {
-      angle: 40,
-      ascensionist_count: '12',
-      quality_average: '4.20',
-      difficulty_average: 20,
-      display_difficulty: 20,
-      fa_username: 'first-ascensionist',
-      fa_at: '2024-03-01T00:00:00.000Z',
-      difficulty: 'V5',
-    },
     {
       angle: 25,
       ascensionist_count: '4',
@@ -103,6 +99,20 @@ vi.mock('@/app/lib/data/queries', () => ({
       fa_username: null,
       fa_at: null,
       difficulty: 'V3',
+      quality_normalized: true,
+      rating_count: '4',
+    },
+    {
+      angle: 40,
+      ascensionist_count: '12',
+      quality_average: '4.20',
+      difficulty_average: 20,
+      display_difficulty: 20,
+      fa_username: 'first-ascensionist',
+      fa_at: '2024-03-01T00:00:00.000Z',
+      difficulty: 'V5',
+      quality_normalized: true,
+      rating_count: '12',
     },
   ]),
 }));
@@ -184,6 +194,28 @@ async function renderFrontDoor(): Promise<string> {
   return renderToString(<>{await resolveServerTree(element)}</>);
 }
 
+const CURRENT_ANGLE_STATS: ClimbStatsForAngle = {
+  angle: 40,
+  ascensionist_count: '12',
+  quality_average: '4.20',
+  difficulty_average: 20,
+  display_difficulty: 20,
+  fa_username: 'first-ascensionist',
+  fa_at: '2024-03-01T00:00:00.000Z',
+  difficulty: 'V5',
+  quality_normalized: true,
+  rating_count: '12',
+};
+
+function creativeWorkPayload(html: string): Record<string, unknown> {
+  const payloads = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(
+    (match) => JSON.parse(match[1]) as Record<string, unknown>,
+  );
+  const creativeWork = payloads.find((payload) => payload['@type'] === 'CreativeWork');
+  if (!creativeWork) throw new Error(`no CreativeWork payload rendered: ${html}`);
+  return creativeWork;
+}
+
 describe('board slug climb view SEO fragment', () => {
   it('SSR-emits ClimbViewSeoFragment in the server output', async () => {
     const element = (await pageModule.default({ params: Promise.resolve(PARAMS) })) as React.ReactElement;
@@ -233,6 +265,85 @@ describe('climb front door server HTML', () => {
 
     expect(ctaHref).toBe('https://app.boardsesh.com/b/my-board/40/view/test-climb');
     expect(ctaHref).not.toContain('?');
+  });
+
+  it('describes a climb from its normalized current-angle quality and ascents', async () => {
+    const creativeWork = creativeWorkPayload(await renderFrontDoor());
+
+    expect(creativeWork.description).toBe(
+      'metadata.view.description(climbName=Test Climb,grade=V5,setter=setter-person,quality=4.20,ascents=12)',
+    );
+  });
+
+  it('omits the description when the current angle has no quality instead of inventing 0/5', async () => {
+    vi.mocked(getClimbStatsForAllAngles).mockResolvedValueOnce([
+      { ...CURRENT_ANGLE_STATS, quality_average: null, rating_count: '0' },
+    ]);
+
+    expect(creativeWorkPayload(await renderFrontDoor())).not.toHaveProperty('description');
+  });
+
+  it('omits the description when current-angle quality is not normalized to five stars', async () => {
+    vi.mocked(getClimbStatsForAllAngles).mockResolvedValueOnce([
+      { ...CURRENT_ANGLE_STATS, quality_average: '2.40', quality_normalized: false },
+    ]);
+
+    expect(creativeWorkPayload(await renderFrontDoor())).not.toHaveProperty('description');
+  });
+});
+
+// #4494: setter-written notes are the one genuinely unique piece of prose on a
+// climb page, and until now they were stored and rendered nowhere.
+describe('setter notes on the climb front door', () => {
+  afterEach(() => {
+    climbRow.description = null;
+  });
+
+  it('SSR-emits a heading and the setter prose, verbatim', async () => {
+    climbRow.description = 'Match the rail, then a big move to the jug.';
+    const html = await renderFrontDoor();
+
+    expect(html).toContain('frontDoor.setterNotes.heading');
+    expect(html).toContain('Match the rail, then a big move to the jug.');
+  });
+
+  it('emits neither the heading nor an empty block when the setter wrote nothing', async () => {
+    climbRow.description = '';
+    expect(await renderFrontDoor()).not.toContain('frontDoor.setterNotes.heading');
+
+    climbRow.description = null;
+    expect(await renderFrontDoor()).not.toContain('frontDoor.setterNotes.heading');
+  });
+
+  it('drops a description that is only a restatement of "no match"', async () => {
+    for (const restatement of ['No match', 'No match\n', 'No matching.']) {
+      climbRow.description = restatement;
+      expect(await renderFrontDoor()).not.toContain('frontDoor.setterNotes.heading');
+    }
+  });
+
+  it('keeps real setter beta that merely mentions matching', async () => {
+    climbRow.description = 'No Houdini swap, spin around pls:). No matching.';
+    const html = await renderFrontDoor();
+
+    expect(html).toContain('frontDoor.setterNotes.heading');
+    expect(html).toContain('No Houdini swap, spin around pls:). No matching.');
+  });
+
+  it('still carries exactly one <h1> with the notes rendered', async () => {
+    climbRow.description = 'Match the rail, then a big move to the jug.';
+    const html = await renderFrontDoor();
+
+    expect(html.match(/<h1[\s>]/g) ?? []).toHaveLength(1);
+  });
+
+  it('leaves the JSON-LD description as the synthesised catalogue string', async () => {
+    climbRow.description = 'Match the rail, then a big move to the jug.';
+    const creativeWork = creativeWorkPayload(await renderFrontDoor());
+
+    expect(creativeWork.description).toBe(
+      'metadata.view.description(climbName=Test Climb,grade=V5,setter=setter-person,quality=4.20,ascents=12)',
+    );
   });
 });
 

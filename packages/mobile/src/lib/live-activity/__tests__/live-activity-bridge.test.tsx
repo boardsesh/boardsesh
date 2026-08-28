@@ -177,6 +177,21 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
     );
   });
 
+  it('hides widget navigation for a board the native encoder cannot drive (Woods)', () => {
+    // Previous/Next write the wall from Swift App Intents, and BoardBleEncoding
+    // has no Woods encoder (#3314) — it would fall through to Aurora and light
+    // the wrong holds. Holding the board is not enough for these controls.
+    boardState.boardConnection = 'connectedByMe';
+    render(<LiveActivityBridge boardName="woods" layoutId={1} sizeId={2} setIds="1" />);
+
+    expect(widget.useLiveActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        boardConnection: 'connectedByMe',
+        widgetNavigationAllowed: false,
+      }),
+    );
+  });
+
   it('hides widget navigation when nobody is driving the board', () => {
     boardState.boardConnection = 'disconnected';
     renderBridge();

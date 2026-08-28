@@ -13,6 +13,24 @@ export const MAX_URLS_PER_SHARD = 45_000;
  */
 export const MAX_ITEMS_PER_SHARD = Math.floor(MAX_URLS_PER_SHARD / SUPPORTED_LOCALES.length);
 
+/**
+ * Climb shards are byte-bound long before they are URL-bound.
+ *
+ * A climb `<url>` is ~250 bytes at our path lengths (`/kilter/original/
+ * 12x12-square/screw_bolt/40/view/{slug}-{uuid}` plus the `<lastmod>`), so a
+ * 45,000-URL climb shard renders ~11 MB — past Vercel's 4.5 MB serverless
+ * response ceiling, where the platform truncates or 500s instead of serving it.
+ * 10,000 URLs lands around 2.5 MB with headroom for a long climb name.
+ */
+export const CLIMB_URLS_PER_SHARD = 10_000;
+
+/**
+ * Hard stop, enforced on the RENDERED BODY rather than on a row count — a
+ * constant alone is a comment. Vercel caps a serverless response at 4.5 MB and
+ * a truncated 200 is strictly worse than a 503 the crawler retries.
+ */
+export const MAX_SHARD_BYTES = 4_000_000;
+
 export type ChangeFrequency = 'always' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'never';
 
 export type SitemapUrlEntry = {

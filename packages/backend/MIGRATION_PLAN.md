@@ -8,7 +8,7 @@ Migrate the backend from Express to GraphQL Yoga, then reimplement Next.js REST 
 - **Server**: Pure GraphQL Yoga (replace Express entirely)
 - **Authentication**: JWT in Authorization header (same as WebSocket auth)
 - **Scope**: High priority APIs first, incremental implementation
-- **Exclusions**: Aurora proxy routes (`/api/v1/[board_name]/proxy/*`) stay in Next.js
+- **Exclusions**: Aurora proxy routes (`/api/v1/[board_name]/proxy/*`) stay in Next.js _(superseded — deleted: W-25a (#4441) removed three routes and put `login`/`saveAscent` behind 410, then W-25b (#4443) deleted the last two URLs ahead of the published sunset of 2026-10-01)_
 
 ---
 
@@ -47,7 +47,7 @@ Node.js HTTP Server
 
 ## Phase 2: REST API Reimplementation (IN PROGRESS)
 
-Reimplement Next.js REST APIs as GraphQL queries/mutations. Only endpoints that query our database - Aurora proxy routes stay in Next.js.
+Reimplement Next.js REST APIs as GraphQL queries/mutations. Only endpoints that query our database - Aurora proxy routes stay in Next.js _(superseded — deleted by W-25a (#4441) + W-25b (#4443); see §2.5)_.
 
 ### 2.1 Board Configuration Queries (High Priority)
 
@@ -94,30 +94,30 @@ Reimplement Next.js REST APIs as GraphQL queries/mutations. Only endpoints that 
 
 ### 2.4 User Management (High Priority)
 
-| REST Endpoint                           | Backend Operation                        | Status  |
-| --------------------------------------- | ---------------------------------------- | ------- |
-| `GET /api/internal/profile`             | `Query.profile`                          | ✅ DONE |
-| `PUT /api/internal/profile`             | `Mutation.updateProfile(...)`            | ✅ DONE |
-| `POST /api/internal/profile/avatar`     | `Mutation.uploadAvatar(...)`             | TODO    |
-| `GET /api/internal/favorites`           | `Query.favorites(...)`                   | ✅ DONE |
-| `POST /api/internal/favorites`          | `Mutation.toggleFavorite(...)`           | ✅ DONE |
-| `GET /api/aurora-credentials`           | Backend REST + `Query.auroraCredentials` | ✅ DONE |
-| `GET /api/aurora-credentials/unsynced`  | Backend REST                             | ✅ DONE |
-| `POST /api/aurora-credentials`          | Backend REST + shared credential service | ✅ DONE |
-| `DELETE /api/aurora-credentials`        | Backend REST + shared credential service | ✅ DONE |
-| `POST /api/board-credentials/kilter/*`  | Backend REST OAuth handoff/finalize      | ✅ DONE |
-| `GET /api/internal/user-board-mapping`  | `Query.userBoardMappings`                | TODO    |
-| `POST /api/internal/user-board-mapping` | `Mutation.createUserBoardMapping(...)`   | TODO    |
+| REST Endpoint                           | Backend Operation                        | Status                                                                                                                         |
+| --------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/internal/profile`             | `Query.profile`                          | ⚠️ GraphQL exists, REST still live — `/settings` (`settings-page-content.tsx`) has no GraphQL caller yet, not decommissionable |
+| `PUT /api/internal/profile`             | `Mutation.updateProfile(...)`            | ✅ DONE — zero REST callers, superseded (see #1889)                                                                            |
+| `POST /api/internal/profile/avatar`     | `Mutation.uploadAvatar(...)`             | TODO                                                                                                                           |
+| `GET /api/internal/favorites`           | `Query.favorites(...)`                   | ✅ DONE                                                                                                                        |
+| `POST /api/internal/favorites`          | `Mutation.toggleFavorite(...)`           | ✅ DONE                                                                                                                        |
+| `GET /api/aurora-credentials`           | Backend REST + `Query.auroraCredentials` | ✅ DONE                                                                                                                        |
+| `GET /api/aurora-credentials/unsynced`  | Backend REST                             | ✅ DONE                                                                                                                        |
+| `POST /api/aurora-credentials`          | Backend REST + shared credential service | ✅ DONE                                                                                                                        |
+| `DELETE /api/aurora-credentials`        | Backend REST + shared credential service | ✅ DONE                                                                                                                        |
+| `POST /api/board-credentials/kilter/*`  | Backend REST OAuth handoff/finalize      | ✅ DONE                                                                                                                        |
+| `GET /api/internal/user-board-mapping`  | n/a — route deleted in W-19 (#4437)      | ❌ GONE                                                                                                                        |
+| `POST /api/internal/user-board-mapping` | n/a — route deleted in W-19 (#4437)      | ❌ GONE                                                                                                                        |
 
 ### 2.5 Endpoints Staying in Next.js
 
-| Endpoint                                 | Reason                          |
-| ---------------------------------------- | ------------------------------- |
-| `/api/v1/[board_name]/proxy/*`           | Aurora API proxy (external API) |
-| `/api/auth/*`                            | NextAuth authentication         |
-| `/api/internal/ws-auth`                  | WebSocket auth token fetch      |
-| `/api/internal/shared-sync/[board_name]` | Cron job / server-side sync     |
-| `/api/og/climb`                          | Image generation (Edge runtime) |
+| Endpoint                                 | Reason                                             |
+| ---------------------------------------- | -------------------------------------------------- |
+| `/api/v1/[board_name]/proxy/*`           | ❌ GONE — deleted by W-25a (#4441) + W-25b (#4443) |
+| `/api/auth/*`                            | NextAuth authentication                            |
+| `/api/internal/ws-auth`                  | WebSocket auth token fetch                         |
+| `/api/internal/shared-sync/[board_name]` | Cron job / server-side sync                        |
+| `/api/og/climb`                          | Image generation (Edge runtime)                    |
 
 ---
 
@@ -226,14 +226,8 @@ curl http://localhost:8080/graphql -H "Content-Type: application/json" \
 
 ### Parity Tests
 
-REST vs GraphQL parity tests compare responses from the public REST API against the local GraphQL implementation.
-
-```bash
-# Run parity tests locally (requires dev database)
-bun run test -w boardsesh-backend -- --config vitest.parity.config.ts
-```
-
-**Note:** Parity tests are excluded from CI (`vitest.config.ts` excludes `*parity*.test.ts`). They require:
-
-- Local development database running (`bun run db:up`)
-- Access to public REST API at www.boardsesh.com
+Removed in #4663. The REST vs GraphQL parity suite fetched the live public API
+at www.boardsesh.com from a developer's machine, ran under its own vitest
+config, and was excluded from CI — nothing kept it honest and it had gone
+stale. Compare a resolver against its REST route by hand, or add a
+fixture-backed test to the normal `backend` project.

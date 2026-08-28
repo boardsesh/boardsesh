@@ -41,6 +41,14 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
 
     const boardDetails = getBoardDetailsForBoard(parsedParams);
     const currentClimb = await getClimb(parsedParams);
+    if (!currentClimb) {
+      return createPageMetadata({
+        title: t('metadata.view.fallbackTitle'),
+        description: t('metadata.view.fallbackDescription'),
+        locale,
+        robots: { index: false, follow: true },
+      });
+    }
 
     const climbName = resolveClimbDisplayName(currentClimb.name, boardDetails.board_name);
     const climbGrade = currentClimb.difficulty || 'Unknown Grade';
@@ -137,14 +145,23 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
           // config-tuple tree (A1).
           handoffPath={`/b/${params.board_slug}/${params.angle}/view/${params.climb_uuid}`}
           tree="slug"
+          // Same condition `generateMetadata` uses to withhold the canonical, for
+          // the same reason: on a noindex page a `CreativeWork.url` naming the
+          // indexable config-tuple twin re-introduces exactly the conflicting
+          // signal the missing `alternates` block avoids.
+          noindex={board.isUnlisted || !board.isPublic}
         />
       </>
     );
   } catch (error) {
-    if (error !== null && typeof error === 'object' && 'digest' in error) {
-      throw error;
+    // Same contract as the config-tuple twin: a missing climb is the
+    // `notFound()` above, a failed read is a 500. Swallowing a brownout into a
+    // 404 on an indexed URL reads as "delete this page". A digest is Next.js
+    // control flow (the `notFound()` above), not a failure — logging it would
+    // bury the brownout signal under routine 404s.
+    if (!(error !== null && typeof error === 'object' && 'digest' in error)) {
+      console.error('Error fetching climb view:', error);
     }
-    console.error('Error fetching climb view:', error);
-    notFound();
+    throw error;
   }
 }

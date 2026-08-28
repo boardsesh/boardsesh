@@ -1,0 +1,101 @@
+name: Production Deploy Watchdog
+
+# Keeps the `production-deploy` concurrency group moving.
+#
+# production-deploy.yml sets `cancel-in-progress: false` so a deploy that is
+# mid-migration is never killed. GitHub extends that same protection to a run
+# that is doing nothing at all — a job parked in the `waiting` state on the
+# Production environment gate holds the group for up to 30 days. Every later
+# push to main then queues as `pending`, GitHub keeps only the newest one, and
+# nothing ships. The wedge is silent, too: the parked run never fails, so
+# production-deploy's own notify-failure never fires.
+#
+# This watchdog cancels a run that has held the group without executing
+# anything, which hands the group to the queued run behind it, and says so in
+# Discord. See scripts/production-deploy-watchdog.mjs for the decision rules.
+
+on:
+  schedule:
+    # Every 15 minutes: with the script's 45-minute stall threshold, a wedge is
+    # broken within about an hour instead of sitting until someone notices.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Report what would be cancelled without cancelling it'
+        type: boolean
+        default: false
+
+concurrency:
+  group: production-deploy-watchdog
+  cancel-in-progress: false
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    # Deliberately NOT `environment: Production`. The gate this job exists to
+    # break is on that environment — running under it would park the watchdog
+    # exactly like the run it is meant to free. That also means it can only read
+    # repository-level secrets: if DISCORD_DEPLOY_WEBHOOK is scoped to the
+    # Production environment, the notify step no-ops and the job summary plus
+    # the run's own annotations carry the report instead.
+    # Belt and braces with the 30s per-call cap in the script: if the runner
+    # itself wedges, a watchdog inheriting GitHub's 6-hour default would be the
+    # same silent stall it exists to break.
+    timeout-minutes: 10
+    permissions:
+      actions: write # cancel a stalled run, dispatch the replacement
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Look for a stalled production deploy
+        id: watchdog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISCORD_FILE: ${{ runner.temp }}/production-deploy-watchdog-discord.txt
+          # A schedule trigger has no `inputs`, so this reads as empty there; the
+          # fallback makes that an explicit "false" rather than something the
+          # shell has to infer from an empty expansion.
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+          if [ "$DRY_RUN" = "true" ]; then
+            set -- --dry-run
+          else
+            set --
+          fi
+          # github.sha is main's head on both triggers, which is the commit the
+          # watchdog re-dispatches for when cancelling empties the group.
+          # Piped through tee so the report reaches the log and the job summary
+          # whether the script succeeds or fails.
+          node scripts/production-deploy-watchdog.mjs \
+            --head "$GITHUB_SHA" \
+            --discord-file "$DISCORD_FILE" \
+            "$@" \
+            2>&1 | tee "$RUNNER_TEMP/watchdog.log" && watchdog_status=0 || watchdog_status=$?
+          {
+            echo '### Production deploy watchdog'
+            echo ''
+            echo '```'
+            cat "$RUNNER_TEMP/watchdog.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$watchdog_status"
+
+      - name: Notify Discord
+        if: steps.watchdog.outputs.notify == 'true'
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          DISCORD_FILE: ${{ runner.temp }}/production-deploy-watchdog-discord.txt
+        run: |
+          set -euo pipefail
+          if [ -z "${DISCORD_DEPLOY_WEBHOOK:-}" ]; then
+            echo "::warning::The watchdog acted on a stalled production deploy but DISCORD_DEPLOY_WEBHOOK is not readable here — see the job summary."
+            exit 0
+          fi
+          # allowed_mentions.parse=[] blocks @everyone/@here/role/user pings from
+          # any text spliced in (commit messages, run titles).
+          jq -n --rawfile content "$DISCORD_FILE" '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post Discord notification (see status above)"

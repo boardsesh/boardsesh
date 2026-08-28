@@ -18,7 +18,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({
-  useWsAuthToken: () => ({ token: 'test-token' }),
+  useWsAuthToken: () => ({ token: 'test-token', isAuthenticated: true }),
 }));
 
 const mockRequest = vi.fn();
@@ -28,6 +28,12 @@ vi.mock('@/app/lib/graphql/client', () => ({
 
 vi.mock('@boardsesh/graphql/operations', () => ({
   FIND_SIMILAR_GYMS: 'FIND_SIMILAR_GYMS',
+}));
+
+const trackGymFunnelEvent = vi.hoisted(() => vi.fn());
+vi.mock('@/app/lib/gym-funnel-analytics', () => ({
+  trackGymFunnelEvent,
+  viewerStateFrom: (isAuthenticated: boolean) => (isAuthenticated ? 'signed-in' : 'signed-out'),
 }));
 
 // Stub the claim dialog so we can assert it opens without pulling in its own
@@ -63,6 +69,7 @@ function renderSuggestions(name = 'Bahnhof Bloc') {
 describe('SimilarGymSuggestions', () => {
   beforeEach(() => {
     mockRequest.mockReset();
+    trackGymFunnelEvent.mockReset();
   });
 
   it('renders suggestion cards with distance, provider badge, and view/claim actions', async () => {
@@ -97,6 +104,23 @@ describe('SimilarGymSuggestions', () => {
     fireEvent.click(screen.getByText('similarGyms.claim'));
 
     expect(screen.getByTestId('claim-dialog').textContent).toBe('claiming Bahnhof Bloc');
+  });
+
+  it('reports the claim CTA click under the similar-gyms placement', async () => {
+    mockRequest.mockResolvedValueOnce({ findSimilarGyms: [gymFixture()] });
+
+    renderSuggestions();
+
+    await waitFor(() => expect(screen.getByText('similarGyms.claim')).toBeTruthy(), { timeout: 3000 });
+    fireEvent.click(screen.getByText('similarGyms.claim'));
+
+    // The uuid is the SUGGESTED gym's, not the one being created — this list is
+    // the create-gym form's duplicate check.
+    expect(trackGymFunnelEvent).toHaveBeenCalledTimes(1);
+    expect(trackGymFunnelEvent).toHaveBeenCalledWith({
+      name: 'Gym Claim CTA Clicked',
+      properties: { placement: 'similar-gyms', viewerState: 'signed-in', gymUuid: 'gym-1' },
+    });
   });
 
   it('renders nothing while the name is too short to query', () => {

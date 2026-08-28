@@ -6,6 +6,7 @@ import {
   REORDER_QUEUE_ITEM,
   SET_CURRENT_CLIMB,
   SET_QUEUE,
+  SET_QUEUE_WITH_BASELINE,
   MIRROR_CURRENT_CLIMB,
   REPLACE_QUEUE_ITEM,
   CONFIRM_CLIMB_ON_WALL,
@@ -608,5 +609,256 @@ describe('setCurrentClimb coalescer', () => {
       shouldAddToQueue: true,
       correlationId: undefined,
     });
+  });
+});
+
+// A wholesale replace can silently overwrite a climb a party member added while
+// the payload was being composed (#3933). Callers that know the last server
+// sequence they applied send it so the backend can merge that add back in. Web
+// supplies no getter, so its document must stay byte-identical — an unknown
+// argument is a document-level GraphQL validation error, which would hard-fail
+// every setQueue against a backend that hasn't deployed the argument yet.
+describe('setQueue baseline sequence (#3933)', () => {
+  it('sends the legacy document when no baseline getter is injected (web)', async () => {
+    await make().setQueue([item('a')]);
+    expect(queriesFor(SET_QUEUE)).toHaveLength(1);
+    expect(queriesFor(SET_QUEUE_WITH_BASELINE)).toHaveLength(0);
+    expect(queriesFor(SET_QUEUE)[0][1].variables).not.toHaveProperty('baselineSequence');
+  });
+
+  it('sends the legacy document when the getter has no baseline yet', async () => {
+    await make({ getBaselineSequence: () => null }).setQueue([item('a')]);
+    expect(queriesFor(SET_QUEUE)).toHaveLength(1);
+    expect(queriesFor(SET_QUEUE_WITH_BASELINE)).toHaveLength(0);
+  });
+
+  it('sends the baseline document with the applied sequence when one is available', async () => {
+    await make({ getBaselineSequence: () => 42 }).setQueue([item('a')], item('a'));
+    expect(queriesFor(SET_QUEUE)).toHaveLength(0);
+    expect(queriesFor(SET_QUEUE_WITH_BASELINE)[0][1].variables).toEqual({
+      queue: [{ uuid: 'a', climb: { uuid: 'c-a' } }],
+      currentClimbQueueItem: { uuid: 'a', climb: { uuid: 'c-a' } },
+      baselineSequence: 42,
+    });
+  });
+
+  it('sends baseline 0 rather than dropping to the legacy document', async () => {
+    // 0 is a real applied sequence, not "no baseline" — a `?? null` on the
+    // wrong side of the falsy check would silently disable the merge for a
+    // client that has applied exactly the seed event.
+    await make({ getBaselineSequence: () => 0 }).setQueue([item('a')]);
+    expect(queriesFor(SET_QUEUE_WITH_BASELINE)[0][1].variables.baselineSequence).toBe(0);
+  });
+
+  it('reads the baseline at send time, not at factory construction', async () => {
+    let applied = 1;
+    const mutations = make({ getBaselineSequence: () => applied });
+    applied = 9;
+    await mutations.setQueue([item('a')]);
+    expect(queriesFor(SET_QUEUE_WITH_BASELINE)[0][1].variables.baselineSequence).toBe(9);
+  });
+
+  it('reads the baseline before awaiting the session join, not after', async () => {
+    // The payload is composed by the caller at CALL time. `ensureReady` can
+    // await a session join, and a peer add landing during that wait advances
+    // the sync gate past what the payload knows. Reading the baseline after the
+    // await would tell the server "I already had everything through sequence
+    // 12", it would find no window to merge, and the peer's climb would be
+    // dropped by the replace — the exact bug this exists to prevent.
+    let applied = 7;
+    let releaseJoin: (() => void) | undefined;
+    const joined = new Promise<void>((resolve) => {
+      releaseJoin = resolve;
+    });
+
+    const pending = make({
+      getBaselineSequence: () => applied,
+      ensureReady: async (capturedSessionId) => {
+        await joined;
+        return capturedSessionId;
+      },
+    }).setQueue([item('a')]);
+
+    // Peer add applied while the join is still in flight.
+    applied = 12;
+    releaseJoin?.();
+    await pending;
+
+    expect(queriesFor(SET_QUEUE_WITH_BASELINE)[0][1].variables.baselineSequence).toBe(7);
+  });
+
+  it('retries on the legacy document when the backend does not know the argument yet', async () => {
+    // Rolling deploy / web preview pointed at prod / a mobile preview channel
+    // running this branch — the old backend rejects the whole document at
+    // validation time. Nobody's Clear button may hard-fail on deploy skew.
+    executeMock.mockImplementation(async (_client: unknown, op: { query: string }) => {
+      if (op.query === SET_QUEUE_WITH_BASELINE) {
+        throw new Error('Unknown argument "baselineSequence" on field "Mutation.setQueue".');
+      }
+      return undefined;
+    });
+
+    await make({ getBaselineSequence: () => 42 }).setQueue([item('a')]);
+
+    expect(queriesFor(SET_QUEUE_WITH_BASELINE)).toHaveLength(1);
+    expect(queriesFor(SET_QUEUE)).toHaveLength(1);
+    expect(queriesFor(SET_QUEUE)[0][1].variables).not.toHaveProperty('baselineSequence');
+  });
+
+  it('propagates a real server failure instead of silently retrying', async () => {
+    executeMock.mockRejectedValue(new Error('Rate limit exceeded. Try again in 5 seconds.'));
+
+    await expect(make({ getBaselineSequence: () => 42 }).setQueue([item('a')])).rejects.toThrow(/Rate limit/);
+    expect(queriesFor(SET_QUEUE)).toHaveLength(0);
+  });
+});
+
+// The ledger is also read from OUTSIDE the coalescer: mobile's caller-side
+// burst-head recovery (recoverThrottledQueueAdd) faces the same "is this
+// absence intent or a wholesale sync?" fork and must reach the same verdict
+// (#4009). These pin the read-only action rather than the send branches.
+describe('wasUuidExplicitlyRemoved (#4009)', () => {
+  it('is false for a uuid nothing ever touched', () => {
+    expect(make().wasUuidExplicitlyRemoved('never-seen')).toBe(false);
+  });
+
+  it('is true after removeQueueItem', async () => {
+    const m = make();
+    await m.removeQueueItem('B');
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(true);
+    expect(m.wasUuidExplicitlyRemoved('C')).toBe(false);
+  });
+
+  // The remove records BEFORE the session guards, so a no-op remove (mobile,
+  // solo) still counts as the climber saying "drop this" — the same reason
+  // sendDeferredQueueAdd trusts it.
+  it('is true after a removeQueueItem that no-opped for want of a session', async () => {
+    const ensureReady = vi.fn(async (captured: string | null) => captured);
+    const m = make({ getSessionId: () => null, ensureReady });
+    await m.removeQueueItem('B');
+    expect(executeMock).not.toHaveBeenCalled();
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(true);
+  });
+
+  // Web's Clear button and mobile's playlist "replace my queue" never call
+  // removeQueueItem — setQueue diffs the remembered add-candidates instead.
+  it('is true after a wholesale setQueue replace discarded a remembered add-candidate', async () => {
+    const m = make();
+    await m.setCurrentClimb(item('B'), true); // remembers B as an add-candidate
+    await m.setQueue([item('X')]); // B is not in the new queue -> discarded
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(true);
+    // X survived the replace, so it was never discarded.
+    expect(m.wasUuidExplicitlyRemoved('X')).toBe(false);
+  });
+
+  // Only an activation that carried a queue-add can ever produce a deferred
+  // ADD, so a pointer-only activation is not an add-candidate and a later
+  // replace must not read as discarding it.
+  it('is false for an activation that carried no queue-add when a replace follows', async () => {
+    const m = make();
+    await m.setCurrentClimb(item('B'), false);
+    await m.setQueue([]);
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(false);
+  });
+
+  it('does not mutate the ledger when read', async () => {
+    const m = make();
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(false);
+    await m.setCurrentClimb(item('B'), true);
+    await m.setQueue([item('B')]); // still queued -> not discarded
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(false);
+  });
+});
+
+// The ledger records the climber's LATEST intent, not "ever dropped". It lives
+// as long as the factory — which `useQueueMutations` memoises for the
+// QueueProvider's whole lifetime — so an append-only answer would keep saying
+// "dropped" for the rest of the app process and re-open #4009 for every climb
+// the climber had cleared earlier. Re-queueing a project you cleared is
+// ordinary, and mobile's clear-queue drops EVERY queued uuid in one burst.
+describe('removal ledger retraction (#4009)', () => {
+  it('forgets a removed uuid once addQueueItem puts it back', async () => {
+    const m = make();
+    await m.removeQueueItem('B');
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(true);
+    await m.addQueueItem(item('B'), 0);
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(false);
+  });
+
+  it('forgets a removed uuid once an activation carrying a queue-add re-picks it', async () => {
+    const m = make();
+    await m.removeQueueItem('B');
+    await m.setCurrentClimb(item('B'), true);
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(false);
+  });
+
+  // A pointer move is navigation, not "put this back in my queue" — it must not
+  // retract the drop, or stepping past a removed climb would re-arm its add.
+  it('keeps the drop when the re-activation carries no queue-add', async () => {
+    const m = make();
+    await m.removeQueueItem('B');
+    await m.setCurrentClimb(item('B'), false);
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(true);
+  });
+
+  it('forgets every uuid a setQueue payload contains', async () => {
+    const m = make();
+    await m.removeQueueItem('B');
+    await m.removeQueueItem('C');
+    await m.setQueue([item('B')]);
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(false);
+    // C is still dropped: the payload does not contain it.
+    expect(m.wasUuidExplicitlyRemoved('C')).toBe(true);
+  });
+
+  // The retraction runs before the discard diff, so a uuid that is both a stale
+  // add-candidate and absent from the payload still ends up recorded.
+  it('still records an add-candidate the same setQueue payload discarded', async () => {
+    const m = make();
+    await m.setCurrentClimb(item('B'), true);
+    await m.setQueue([item('X')]);
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(true);
+  });
+
+  // End to end through the coalescer, which is what the ledger exists for: the
+  // climb was cleared earlier in the app session, re-picked, and then wiped from
+  // the local queue by a wholesale server sync. The stale entry must not
+  // suppress the deferred add — that is #4009 all over again.
+  it('sends the deferred add for a climb dropped earlier and since re-picked', async () => {
+    const m = make({ onBestEffortError: () => {} });
+    // Earlier in the session the climber cleared this climb away.
+    await m.removeQueueItem('B');
+    expect(m.wasUuidExplicitlyRemoved('B')).toBe(true);
+    executeMock.mockReset();
+    executeMock.mockResolvedValue(undefined);
+
+    localQueue = [item('cur'), item('A'), item('B')];
+    let firstResolve: (() => void) | undefined;
+    let setCurrentCalls = 0;
+    executeMock.mockImplementation((_c, op) => {
+      if (op.query !== SET_CURRENT_CLIMB) return Promise.resolve();
+      setCurrentCalls += 1;
+      if (setCurrentCalls === 1)
+        return new Promise<void>((resolve) => {
+          firstResolve = () => resolve();
+        });
+      return new Promise<void>((_resolve, reject) =>
+        setTimeout(() => {
+          // The burst head's own FullSync replaces the queue and wipes the
+          // not-yet-synced optimistic slot for B.
+          localQueue = [item('cur'), item('A')];
+          reject(new Error('RATE_LIMITED'));
+        }, 0),
+      );
+    });
+
+    const pA = m.setCurrentClimb(item('A'), true);
+    const pB = m.setCurrentClimb(item('B'), true);
+    firstResolve?.();
+    await Promise.all([pA, pB]);
+    await flush();
+
+    expect(queriesFor(ADD_QUEUE_ITEM)).toHaveLength(1);
+    expect(queriesFor(ADD_QUEUE_ITEM)[0][1].variables).toEqual({ item: { uuid: 'B', climb: { uuid: 'c-B' } } });
   });
 });

@@ -9,7 +9,7 @@ CDN miss, and platforms like Facebook drop embeds that respond slowly.
 
 ```
 GET https://ws.boardsesh.com/og/climb
-  ?board_name=kilter          # enum: kilter|tension|moonboard|decoy|touchstone|grasshopper|soill
+  ?board_name=kilter          # enum: kilter|tension|moonboard|decoy|touchstone|grasshopper|soill|woods
   &layout_id=1
   &size_id=10
   &set_ids=1,20               # canonicalised (sorted + deduped) by the zod schema
@@ -22,6 +22,23 @@ fully determines the bytes. Invalid params are rejected with 400 before any
 render CPU runs; per-IP rate limit is 120/min (fails open to the in-memory
 limiter when Redis is down). `Server-Timing` breaks down wasm/base/encode ms
 and reports the cache outcome (`hit` | `base-hit` | `miss`).
+
+### Render-mode params (issue #2202)
+
+Optional, shared with the web `/api/internal/board-render` route via
+`boardseshRenderQuerySchema` (`@boardsesh/board-render`). All four default
+closed, so this endpoint (and web) stay classic-by-default until a later PR
+flips it. Every option that affects the output is part of the byte-cache key,
+so a boardsesh render can never be served under a classic key. The base cache
+is keyed only by board config because overlay options do not change its board
+photo backdrop.
+
+| Param          | Default   | Meaning                                                                                                                                       |
+| -------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `render_mode`  | `classic` | `classic` (today's marker-only overlay) or `boardsesh` (veil + glow on traced silhouettes).                                                      |
+| `glow_falloff` | `soft`    | `boardsesh` mode only: glow edge treatment, `soft` or `plateau`.                                                                                 |
+| `glyphs`       | off       | `boardsesh` mode only: `0`\|`1`\|`true`\|`false` — role glyphs inside the glow.                                                                   |
+| `field_color`  | unset     | `#rrggbb`; feeds the veil color. **No visible effect yet:** opacity is hardcoded to 0 for now — see the `TODO(#2202)` in the callers of `buildRenderConfig` — until `@boardsesh/board-art-geometry` supplies real wall-lightness data. |
 
 ## How a render works
 
@@ -72,26 +89,13 @@ best-effort — failures are swallowed and never delay sharing.
 - Quick prod check:
   `curl -o /dev/null -s -w 'code=%{http_code} ttfb=%{time_starttransfer}s\n' 'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=10&set_ids=1,20&frames=p1080r15p1202r12'`
 
-## Cloudflare in front of ws.boardsesh.com (edge-caching the og image)
+## Cloudflare edge layer
 
-`ws.boardsesh.com` is a single-region Railway origin; distant clients (and the
-iOS share sheet, which fetches previews from the sender's phone) pay full RTT
-per image. Fronting it with Cloudflare edge-caches the immutable og responses
-globally. Flip runbook (dashboard):
-
-1. Code prerequisite (shipped): the og rate limiter prefers `CF-Connecting-IP`,
-   so per-client buckets survive the proxy hop.
-2. Cloudflare DNS: toggle the `ws` record to Proxied (orange cloud). SSL/TLS
-   mode must be Full (strict) — Flexible causes redirect loops with Railway.
-3. Cache Rule: host `ws.boardsesh.com` AND path starts with `/og/` → Eligible
-   for cache, respect origin TTL (responses are `immutable`, 1y). Leave every
-   other path default so `/graphql`, REST, and WebSocket upgrades bypass cache.
-4. Confirm WebSockets are enabled for the zone (Network tab; on by default on
-   current plans).
-5. Verify: `wss://ws.boardsesh.com/graphql` still connects (web party mode +
-   mobile app); `curl -sI 'https://ws.boardsesh.com/og/climb?...'` twice —
-   second response shows `cf-cache-status: HIT`. Rollback = grey-cloud the
-   record.
+`ws.boardsesh.com` is fronted by the Cloudflare proxy so og images edge-cache
+globally (distant clients and the iOS share sheet fetch from a nearby colo
+instead of the single-region Railway origin). The zone config, the apply
+tooling (`vp run cf:apply`), token setup, CI auto-apply, and the rollback
+runbook all live in **`docs/cloudflare.md`**.
 
 - Web points `og:image` here via `buildOgBoardRenderUrl`
   (`packages/web/app/components/board-renderer/util.ts`), which derives the

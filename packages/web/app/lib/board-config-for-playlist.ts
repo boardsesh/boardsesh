@@ -197,6 +197,11 @@ export function resolveBoardDetailsForClimb(
     sessionBoard.setIds,
   );
   if (exactDetails) {
+    // `BoardDetails` already carries `size_id`, which is what `canAddClimbToBoard`
+    // reads for its size-containment rule — nothing extra to thread here. It only
+    // bites when the climb also names its `compatibleSizeIds`, which is how a
+    // Woods 8x10 climb stops reading as an exact fit on a 12x12 wall whose hold
+    // ids happen to cover the same numbers.
     const fit = canAddClimbToBoard(climb, exactDetails);
     if (fit.ok) {
       return { details: exactDetails, status: 'exact' };

@@ -8,6 +8,12 @@ import { logger } from '../utils/logger';
 // via VERCEL_PREVIEW_ORIGIN_SUFFIX so a fork/other deployment can allow its own
 // preview origins without patching this file. Recomputed in initCors so the env
 // is read at startup (and in tests).
+// TODO(#4656): delete with the Vercel project, not before. Issue #4651 called
+// this dead code; it is not. The production deployment's own URL has the shape
+// `boardsesh-<hash>-marcodejonghs-projects.vercel.app`, which matches the regex
+// built below — and that is exactly the URL Instant Rollback verification hands
+// a human to browse. The env OVERRIDE is unused (grepped: nothing outside
+// cors.test.ts sets VERCEL_PREVIEW_ORIGIN_SUFFIX); the default suffix is not.
 const DEFAULT_VERCEL_PREVIEW_ORIGIN_SUFFIX = 'marcodejonghs-projects.vercel.app';
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

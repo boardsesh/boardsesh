@@ -5,6 +5,7 @@ import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import ProfilePageContent from './profile-page-content';
+import ProfileJsonLd from './profile-json-ld';
 import { getProfileData } from './server-profile-data';
 import { fetchProfileStatsData } from './server-profile-stats';
 import { getUserBetaLinks } from '@/app/lib/server-user-beta-links';
@@ -106,6 +107,13 @@ export default async function ProfilePage({ params }: PageProps) {
 
   return (
     <I18nProvider locale={locale} namespaces={['profile', 'feed']}>
+      {/* Success path only — the notFound() above and the metadata catch branch
+          are both `noindex, follow`, and neither reaches here. */}
+      <ProfileJsonLd
+        userId={user_id}
+        displayName={initialProfile.profile?.displayName || initialProfile.name || null}
+        locale={locale}
+      />
       <ProfilePageContent
         userId={user_id}
         initialProfile={initialProfile}

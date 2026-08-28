@@ -122,10 +122,12 @@ describe('HomePageContent', () => {
       fireEvent.click(button);
 
       expect(openSpy).toHaveBeenCalledWith(IOS_APP_STORE_URL, '_blank', 'noopener,noreferrer');
-      expect(mockTrack).toHaveBeenCalledWith(
-        'App Install Click',
-        expect.objectContaining({ platform: 'ios', source: 'app-store', placement: 'hero', mode: 'install' }),
-      );
+      expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
+        platform: 'ios',
+        source: 'app-store',
+        placement: 'hero',
+        mode: 'install',
+      });
       // The hero no longer starts a sesh, and nothing on this page navigates
       // imperatively any more — every destination is an anchor.
       expect(mockPush).not.toHaveBeenCalled();
@@ -139,10 +141,12 @@ describe('HomePageContent', () => {
       fireEvent.click(button);
 
       expect(openSpy).toHaveBeenCalledWith(ANDROID_PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
-      expect(mockTrack).toHaveBeenCalledWith(
-        'App Install Click',
-        expect.objectContaining({ platform: 'android', source: 'google-play', placement: 'hero', mode: 'install' }),
-      );
+      expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
+        platform: 'android',
+        source: 'google-play',
+        placement: 'hero',
+        mode: 'install',
+      });
     });
 
     it('shows an update CTA for a retired iOS native app, pointed at the App Store', async () => {
@@ -154,10 +158,12 @@ describe('HomePageContent', () => {
       fireEvent.click(button);
 
       expect(openSpy).toHaveBeenCalledWith(IOS_APP_STORE_URL, '_blank', 'noopener,noreferrer');
-      expect(mockTrack).toHaveBeenCalledWith(
-        'App Install Click',
-        expect.objectContaining({ platform: 'ios', source: 'app-store', placement: 'hero', mode: 'update' }),
-      );
+      expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
+        platform: 'ios',
+        source: 'app-store',
+        placement: 'hero',
+        mode: 'update',
+      });
     });
 
     it('shows an update CTA for a retired Android native app, pointed at Google Play', async () => {
@@ -169,10 +175,12 @@ describe('HomePageContent', () => {
       fireEvent.click(button);
 
       expect(openSpy).toHaveBeenCalledWith(ANDROID_PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
-      expect(mockTrack).toHaveBeenCalledWith(
-        'App Install Click',
-        expect.objectContaining({ platform: 'android', source: 'google-play', placement: 'hero', mode: 'update' }),
-      );
+      expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
+        platform: 'android',
+        source: 'google-play',
+        placement: 'hero',
+        mode: 'update',
+      });
     });
   });
 

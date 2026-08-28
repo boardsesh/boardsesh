@@ -19,6 +19,11 @@
       "types": "./src/wasm.ts",
       "import": "./src/wasm.ts",
       "default": "./src/wasm.ts"
+    },
+    "./version": {
+      "types": "./src/generated/render-version.ts",
+      "import": "./src/generated/render-version.ts",
+      "default": "./src/generated/render-version.ts"
     }
   },
   "scripts": {

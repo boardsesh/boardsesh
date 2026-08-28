@@ -262,6 +262,57 @@
     },
     "loadMore": "Mehr laden"
   },
+  "gymOwnerReassign": {
+    "title": "Hallen-Besitz übertragen",
+    "intro": "Übergib eine Halle an ein anderes Konto, wenn sie den Besitzer wechselt: verkauft, jemand aus dem Vorstand ist weg, ein Anspruch ging an die falsche Person. Die Sync-Sperre des Eintrags bleibt genau so, wie sie ist, und wer abgibt, bleibt als Hallen-Admin dabei.",
+    "form": {
+      "gymLabel": "Halle",
+      "gymPlaceholder": "UUID, Slug oder Name",
+      "ownerLabel": "Neue*r Besitzer*in",
+      "ownerPlaceholder": "Konto-E-Mail oder Nutzer-ID",
+      "submit": "Suchen",
+      "searching": "Wird gesucht…"
+    },
+    "result": {
+      "gymHeading": "Halle",
+      "ownerHeading": "Neue*r Besitzer*in",
+      "noGym": "Keine Halle passt zu dieser Suche.",
+      "noOwner": "Kein Konto passt zu dieser E-Mail oder ID.",
+      "currentOwner": "Gehört {{owner}}",
+      "unknownOwner": "einem Konto, das es nicht mehr gibt",
+      "systemOwned": "Eintrag ohne Anspruch",
+      "frozen": "Sync gesperrt",
+      "notFrozen": "Sync nicht gesperrt",
+      "deleted": "Dieser Eintrag ist gelöscht, es gibt also keinen Besitz zu übertragen.",
+      "merged": "Dieser Eintrag wurde mit einer anderen Halle zusammengeführt. Übertrage stattdessen den verbliebenen Eintrag.",
+      "sameOwner": "Diesem Konto gehört die Halle bereits."
+    },
+    "actions": {
+      "reassign": "Besitz übertragen"
+    },
+    "confirm": {
+      "title": "Diese Halle an jemand anderen übertragen?",
+      "body": "{{gym}} geht von {{from}} an {{to}}. Wer abgibt, behält den Hallen-Admin-Zugriff; wer übernimmt, bekommt die volle Kontrolle.",
+      "freezeNote": "Die Sync-Sperre des Eintrags bleibt genau so, wie sie ist — diese Übergabe setzt sie weder noch hebt sie sie auf.",
+      "reasonLabel": "Grund",
+      "reasonPlaceholder": "Warum wechselt diese Halle den Besitzer?",
+      "reasonRemaining": "Noch benötigte Zeichen: {{count}}",
+      "reasonStored": "Dieser Grund wird im Audit-Log gespeichert.",
+      "cancel": "Abbrechen",
+      "submit": "Besitz übertragen",
+      "submitting": "Wird übertragen…"
+    },
+    "snackbar": {
+      "moved": "{{gym}} hat jetzt neue Besitzer*innen",
+      "failed": "Der Besitz ließ sich nicht übertragen. Prüf die Halle und versuch's nochmal.",
+      "ownerChanged": "Diese Halle hat den Besitzer gewechselt, während die Bestätigung offen war. Such sie nochmal, um zu sehen, wem sie jetzt gehört.",
+      "newOwnerGone": "Dieses Konto gibt es nicht mehr. Such ein anderes.",
+      "merged": "Dieser Eintrag wurde mit einer anderen Halle zusammengeführt. Übertrage stattdessen den verbliebenen Eintrag.",
+      "gymGone": "Diese Halle lässt sich nicht mehr übertragen.",
+      "ownerUnchanged": "Diesem Konto gehört die Halle bereits.",
+      "lookupFailed": "Die Suche hat nicht geklappt. Versuch's nochmal."
+    }
+  },
   "locationSync": {
     "title": "Standort-Sync-Sperren",
     "backToAdmin": "Zurück zum Admin-Panel",

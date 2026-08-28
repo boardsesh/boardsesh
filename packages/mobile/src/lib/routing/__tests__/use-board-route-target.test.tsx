@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useLayoutEffect, useState } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import type { BoardRouteTarget } from '../board-route-target';
+import { buildBoardClimbTarget, type BoardRouteTarget } from '../board-route-target';
 
 const router = vi.hoisted(() => ({ replace: vi.fn(), back: vi.fn(), canGoBack: vi.fn(() => true), push: vi.fn() }));
 const openPlayDrawer = vi.hoisted(() => vi.fn());
@@ -152,16 +152,44 @@ function Harness({
   target,
   mode,
   onHandedOff,
+  anonymousClimbEnabled,
 }: {
   target: BoardRouteTarget | null;
   mode?: 'deep-link' | 'in-app';
   onHandedOff?: () => void;
+  anonymousClimbEnabled?: boolean;
 }) {
-  return createElement('span', { 'data-status': useBoardRouteTarget(target, { mode, onHandedOff }) });
+  const { status, climb, boardConfig, isAngleAdjustable } = useBoardRouteTarget(target, {
+    mode,
+    onHandedOff,
+    anonymousClimbEnabled,
+  });
+  return createElement('span', {
+    'data-status': status,
+    'data-climb': climb?.uuid ?? '',
+    'data-board-config': boardConfig ? JSON.stringify(boardConfig) : '',
+    'data-angle-adjustable': String(isAngleAdjustable),
+  });
 }
 
 function statusOf(container: HTMLElement): string | null {
   return container.querySelector('span')?.getAttribute('data-status') ?? null;
+}
+
+/** The climb the hook hands the route to draw — only ever set anonymously. */
+function climbOf(container: HTMLElement): string | null {
+  return container.querySelector('span')?.getAttribute('data-climb') ?? null;
+}
+
+/** Whether the drawer should offer the angle pill for this board. */
+function angleAdjustableOf(container: HTMLElement): string | null {
+  return container.querySelector('span')?.getAttribute('data-angle-adjustable') ?? null;
+}
+
+/** The board config it draws against, parsed back from the harness. */
+function boardConfigOf(container: HTMLElement): unknown {
+  const serialised = container.querySelector('span')?.getAttribute('data-board-config');
+  return serialised ? JSON.parse(serialised) : null;
 }
 
 beforeEach(() => {
@@ -770,10 +798,104 @@ describe('useBoardRouteTarget signed-out on web', () => {
     expect(router.replace).not.toHaveBeenCalled();
   });
 
-  it('short-circuits a slug climb URL the same way', async () => {
+  // A shared gym-board link is the same kind of arrival as a search result. It
+  // carries no config, so unlike the tuple form it does resolve — but by the
+  // public `boardBySlug` read, with nothing minted and nothing stored.
+  it('renders a slug climb URL anonymously off one public board read', async () => {
     gateState.relaxesRoutes = true;
     authState.current = { isAuthenticated: false, isLoading: false };
     climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    fetchBoardBySlug.mockResolvedValue(board({ uuid: 'gym-board', slug: 'the-gym', angle: 25 }));
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'the-gym', angle: 40, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('anonymous-climb'));
+    expect(fetchBoardBySlug).toHaveBeenCalledWith('the-gym');
+    // The URL's angle wins over the board's stored 25°.
+    expect(boardConfigOf(container)).toEqual({ ...KILTER_BOARD, angle: 40 });
+    expect(createBoardMutateAsync).not.toHaveBeenCalled();
+    expect(setActiveBoard).not.toHaveBeenCalled();
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  // The board's own stored angle when the URL carries none.
+  it('falls back to the board’s stored angle on a bare /b/{slug} climb URL', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    fetchBoardBySlug.mockResolvedValue(board({ uuid: 'gym-board', slug: 'the-gym', angle: 25 }));
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'the-gym', angle: null, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('anonymous-climb'));
+    expect(boardConfigOf(container)).toEqual({ ...KILTER_BOARD, angle: 25 });
+  });
+
+  // A PRIVATE board must not turn into a dead link. `boardBySlug` masks "you may
+  // not see this board" and "there is no such board" to the same null, so
+  // not-found here would tell a gym member their own board does not exist — on a
+  // URL that, before this branch existed, simply asked them to sign in and then
+  // showed them the climb. Sign-in is the only answer that is right either way,
+  // and the only one that resolves the ambiguity: signed in, the same URL either
+  // renders or reaches the route's own not-found.
+  it('asks a signed-out reader to sign in when the slug resolves to nothing', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    fetchBoardBySlug.mockResolvedValue(null);
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'private-gym', angle: 40, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('auth-required'));
+    expect(climbOf(container)).toBe('');
+  });
+
+  // The device's stored board belongs to whoever last signed in on this browser.
+  // Matching a slug against it would show an anonymous reader someone else's
+  // board, so the anonymous read is server-only.
+  it('never resolves an anonymous slug against the device’s stored boards', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    getStoredActiveBoard.mockResolvedValue(board({ uuid: 'someone-elses', slug: 'the-gym' }));
+    fetchBoardBySlug.mockResolvedValue(null);
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'the-gym', angle: 40, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    // The login wall, not the stranger's board: the stored one is never read on
+    // this path, so the server's null is the whole answer.
+    await waitFor(() => expect(statusOf(container)).toBe('auth-required'));
+    expect(boardConfigOf(container)).toBeNull();
+  });
+
+  // A transport failure lands in the same place as a masked board, on purpose:
+  // there is no offline healing on this path (it only exists on the web export,
+  // where a reload is the retry), and a failed read says nothing about whether
+  // the climb is there. What it must never be is a permanent spinner. Pinned
+  // because it is a deliberate choice — anyone adding a retry here should have to
+  // change a test that says so.
+  it('sends a failed slug lookup to the login wall rather than spinning', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    fetchBoardBySlug.mockRejectedValue(new Error('network down'));
 
     const { container } = render(
       createElement(Harness, {
@@ -782,15 +904,32 @@ describe('useBoardRouteTarget signed-out on web', () => {
     );
 
     await waitFor(() => expect(statusOf(container)).toBe('auth-required'));
-    expect(fetchBoardBySlug).not.toHaveBeenCalled();
-    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+    expect(climbOf(container)).toBe('');
   });
 
-  // The tuple form is the half that carries its whole board config in the URL,
-  // so nothing has to resolve before the climb query could arm itself. Leaving
-  // it armed would have a signed-out visitor pulling a climb from the server on
-  // the way to a login redirect.
-  it('asks the server for nothing on a tuple climb URL either', async () => {
+  // A slug LIST URL still needs a board it can adopt, so it keeps the login wall.
+  it('still hands a slug list URL to login', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-list', slug: 'the-gym', angle: 40 } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('auth-required'));
+    expect(fetchBoardBySlug).not.toHaveBeenCalled();
+  });
+
+  // A tuple climb URL is the one shape that renders with no account: it carries
+  // the whole board config, so the climb query can arm without resolving
+  // anything, and the board it would have adopted is not a render input.
+  //
+  // The positive assertions are the point. `status !== 'auth-required'` would
+  // stay green for a silently blank render, which is the failure this branch is
+  // most likely to produce.
+  it('renders a tuple climb URL in place for a signed-out reader, adopting nothing', async () => {
     gateState.relaxesRoutes = true;
     authState.current = { isAuthenticated: false, isLoading: false };
     climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
@@ -801,10 +940,220 @@ describe('useBoardRouteTarget signed-out on web', () => {
       }),
     );
 
+    await waitFor(() => expect(statusOf(container)).toBe('anonymous-climb'));
+    // The climb the route hands the drawer, and the config it draws it against —
+    // both straight off the URL.
+    expect(climbOf(container)).toBe(CLIMB_UUID);
+    expect(boardConfigOf(container)).toEqual(KILTER_BOARD);
+    expect(climbQueryVariables.current).toContainEqual({ ...KILTER_BOARD, climbUuid: CLIMB_UUID });
+    // Nothing was minted, walked, stored or navigated on their behalf.
+    expect(resolveBoardForSession).not.toHaveBeenCalled();
+    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+    expect(createBoardMutateAsync).not.toHaveBeenCalled();
+    expect(setActiveBoard).not.toHaveBeenCalled();
+    // `/climbs` and `/play` are both behind the login gate, and AuthProvider
+    // re-reads the location on every navigation — so a hand-off here IS the
+    // bounce back to login.
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  // A gym board bolted at a fixed angle resolves with `isAngleAdjustable: false`.
+  // The flag only exists on a board record, so the slug branch is the only place
+  // the anonymous view can learn it — dropping it at this boundary is invisible
+  // downstream, because the drawer's own default is an angle pill.
+  it('carries a fixed-angle gym board’s no-tilt setting through to the view', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    fetchBoardBySlug.mockResolvedValue(board({ uuid: 'gym-board', slug: 'the-gym', isAngleAdjustable: false }));
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'the-gym', angle: 40, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('anonymous-climb'));
+    expect(angleAdjustableOf(container)).toBe('false');
+  });
+
+  it('keeps the angle pill for a gym board that does tilt', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    fetchBoardBySlug.mockResolvedValue(board({ uuid: 'gym-board', slug: 'the-gym', isAngleAdjustable: true }));
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'the-gym', angle: 40, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('anonymous-climb'));
+    expect(angleAdjustableOf(container)).toBe('true');
+  });
+
+  // A tuple URL carries no board record, so there is nothing to read the flag
+  // off — it keeps the same default `createBoard` would have stored.
+  it('leaves a config-tuple URL adjustable', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('anonymous-climb'));
+    expect(angleAdjustableOf(container)).toBe('true');
+  });
+
+  // The anonymous branch has nothing to draw until the climb lands. Loosening
+  // this to the branch alone is not benign: `BoardRouteHandoff` only renders the
+  // view when it holds BOTH a climb and a config, so a still-loading anonymous
+  // climb would fall through to the redirector — and the existing
+  // "reports a missing climb as not-found" case stays green either way, because
+  // `climbIsGone` runs first and masks it.
+  it('sits on the spinner while an anonymous climb is still loading', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: undefined, isError: false, isSuccess: false };
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(climbQueryVariables.current.length).toBeGreaterThan(0));
+    expect(statusOf(container)).toBe('resolving');
+    expect(climbOf(container)).toBe('');
+  });
+
+  // `/…/{angle}/play/{segment}` opens anonymously too, and that is a decision
+  // rather than an accident. The two route files differ only in the surface they
+  // pass to `buildBoardClimbTarget`, which drops it — so both produce the same
+  // `kind: 'climb'` target and the predicate here cannot tell them apart. Left
+  // that way on purpose: `/play/…` is in the read-only allow-set, older shares
+  // and the web app's play view still emit it, and a reader who followed one
+  // would otherwise be the only arrival still meeting the login form.
+  //
+  // Built through the real builder rather than a literal, because the claim is
+  // about the ROUTE, not about a target shape a test made up. What stays gated is
+  // the app's own `/play` MODAL route — `read-only-routes.test.ts` pins that.
+  it('renders a /play climb URL anonymously as well, by the same target', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    const playTarget = buildBoardClimbTarget(
+      { boardName: 'kilter', layoutId: 'original', sizeId: '12x12-square', setIds: 'screw_bolt', angle: '40' },
+      'play',
+      CLIMB_UUID,
+    );
+
+    const { container } = render(createElement(Harness, { target: playTarget }));
+
+    await waitFor(() => expect(statusOf(container)).toBe('anonymous-climb'));
+    expect(climbOf(container)).toBe(CLIMB_UUID);
+    expect(boardConfigOf(container)).toEqual(KILTER_BOARD);
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  // THE FLEET-SAFETY ORACLE. Every merge to main touching packages/mobile
+  // auto-publishes a production OTA, and a JS-only diff keeps the fingerprint,
+  // so this lands on every installed binary within hours. One constant stands
+  // between the store fleet and an anonymous route tree.
+  //
+  // Phrased positively on purpose: the pre-existing `not.toBe('auth-required')`
+  // assertion stays GREEN under exactly the mutation it looks like it catches,
+  // because the anonymous branch is not 'auth-required' either.
+  it('still adopts and hands off on the native fork, byte for byte', async () => {
+    gateState.relaxesRoutes = false;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(RESOLVED_BOARD));
+    await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
+    expect(statusOf(container)).not.toBe('anonymous-climb');
+  });
+
+  // The kill switch. Flipping it in PostHog restores the login wall without a
+  // new binary or a new OTA.
+  it('falls back to the login wall when the anonymous view is killed', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+        anonymousClimbEnabled: false,
+      }),
+    );
+
     await waitFor(() => expect(statusOf(container)).toBe('auth-required'));
     expect(climbQueryVariables.current.every((variables) => variables === null)).toBe(true);
-    expect(resolveBoardForSession).not.toHaveBeenCalled();
     expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+  });
+
+  // The switch is for an emergency, so it has to work on a session already in
+  // flight — not only on one that starts killed. Flipping it mid-render must
+  // hand the reader back to the login wall.
+  it('hands the reader to login when the kill switch flips mid-session', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    const target = { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget;
+
+    const { container, rerender } = render(createElement(Harness, { target, anonymousClimbEnabled: true }));
+    await waitFor(() => expect(statusOf(container)).toBe('anonymous-climb'));
+
+    rerender(createElement(Harness, { target, anonymousClimbEnabled: false }));
+
+    await waitFor(() => expect(statusOf(container)).toBe('auth-required'));
+    // And it must not have handed off on the way out — `/play` is still gated.
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+    expect(setActiveBoard).not.toHaveBeenCalled();
+  });
+
+  // A climb URL relaxes; a list URL does not. The list surface needs a board,
+  // and minting one is `requireAuthenticated`.
+  it('still hands a list URL to login', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+
+    const { container } = render(
+      createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('auth-required'));
+    expect(resolveBoardForSession).not.toHaveBeenCalled();
+  });
+
+  // A dead climb uuid is a dead link for a signed-out reader too — the anonymous
+  // branch must not paper over it with a permanent spinner.
+  it('reports a missing climb as not-found rather than spinning anonymously', async () => {
+    gateState.relaxesRoutes = true;
+    authState.current = { isAuthenticated: false, isLoading: false };
+    climbQuery.current = { data: undefined, isError: false, isSuccess: true };
+
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
   });
 
   // The same URL signed IN still loads its climb — the gate above must not be a

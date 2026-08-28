@@ -734,6 +734,38 @@ export const boardClimbStats = pgTable(
     // Do NOT add an ascents/quality index here — it would conflict with those custom
     // migrations and make drizzle-kit generate emit destructive diffs.
     // Note: No FK to board_climbs - stats may arrive before their corresponding climbs during sync
+    // #3551: defense-in-depth guards mirroring board_climb_ratings_rating_range
+    // (above). quality_average and upstream_quality_average are only ever kept
+    // on the canonical 1-5 scale by in-code guards (blendedQualityAverageSql,
+    // recompute filters, upstream writers) — a future writer regression could
+    // silently store an out-of-range value again.
+    //
+    // Bound is `>= 0`, NOT the issue's originally-suggested `> 0`: a live
+    // check against the CI seed snapshot (ghcr.io/boardsesh/boardsesh-dev-db,
+    // the same image test-location-sync-integration migrates from scratch)
+    // found 22,232 real board_climb_stats rows — all board_type='moonboard' —
+    // with quality_average = upstream_quality_average = 0 and no Boardsesh
+    // votes. Migration 0151 already nulled this exact "unrated" 0-sentinel
+    // once ("Prod: 22,498 rows... moonboard 19,883") and the MoonBoard problems
+    // importer writes it straight back: import-moonboard-problems.ts passes the
+    // dump's `userRating` through verbatim, and MoonBoard uses 0 for "not rated
+    // yet" (see #4617). `> 0` therefore fails the migration outright (23514
+    // check_violation on ADD CONSTRAINT's table rewrite) against real data, so
+    // the lower bound is relaxed to admit 0.
+    //
+    // TIGHTEN TO `> 0` once #4617 lands: fix the importer, re-run a 0151-style
+    // backfill (0151 predates the 0166/0167 split, so upstream_quality_average
+    // was never cleaned), then narrow both bounds here. Until then this still
+    // catches the actually-impossible cases (negative, >5) a broken blend or
+    // upstream write could produce.
+    qualityAverageRangeCheck: check(
+      'board_climb_stats_quality_average_range',
+      sql`${table.qualityAverage} IS NULL OR (${table.qualityAverage} >= 0 AND ${table.qualityAverage} <= 5)`,
+    ),
+    upstreamQualityAverageRangeCheck: check(
+      'board_climb_stats_upstream_quality_average_range',
+      sql`${table.upstreamQualityAverage} IS NULL OR (${table.upstreamQualityAverage} >= 0 AND ${table.upstreamQualityAverage} <= 5)`,
+    ),
   }),
 );
 

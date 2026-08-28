@@ -66,6 +66,16 @@ describe('useBoardAngleOptions', () => {
     expect(onResult.current).toEqual(ANGLES.kilter);
   });
 
+  // Woods runs 20-70 in 5 degree steps off its own app's API. The MoonBoard flag
+  // must not reach it: a Woods board physically cannot sit at the angles the
+  // widening adds, and its catalog has no climbs there.
+  it('never widens Woods, flag on or off', () => {
+    const { result: offResult } = renderHook(() => useBoardAngleOptions('woods'), { wrapper: wrapper(false) });
+    const { result: onResult } = renderHook(() => useBoardAngleOptions('woods'), { wrapper: wrapper(true) });
+    expect(offResult.current).toEqual([20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70]);
+    expect(onResult.current).toEqual(ANGLES.woods);
+  });
+
   it('never widens Tension, flag on or off', () => {
     const { result: offResult } = renderHook(() => useBoardAngleOptions('tension'), { wrapper: wrapper(false) });
     const { result: onResult } = renderHook(() => useBoardAngleOptions('tension'), { wrapper: wrapper(true) });

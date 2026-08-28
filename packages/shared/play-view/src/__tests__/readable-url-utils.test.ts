@@ -31,6 +31,13 @@ const CLIMB_UUID = '0A1B2C3D4E5F60718293A4B5C6D7E8F9';
  */
 const HEX_RUN_CLIMB_NAME_SLUG = 'beefcafe0ff1cedeadbeefcafe0ff1ce';
 
+/**
+ * A real MoonBoard uuid, copied off the dev image. MoonBoard is the one board
+ * whose climbs carry the dashed 36-character RFC-4122 form; every Aurora board
+ * carries the 32-character unbroken form above.
+ */
+const MOONBOARD_CLIMB_UUID = '9fe54099-6fdd-5adb-b82f-2d7bcb10d4ad';
+
 describe('extractUuidFromClimbSegment', () => {
   it('pulls the uuid out of a name-slugged segment', () => {
     expect(extractUuidFromClimbSegment(`crimpy-thing-${CLIMB_UUID}`)).toBe(CLIMB_UUID);
@@ -55,6 +62,29 @@ describe('extractUuidFromClimbSegment', () => {
 
   it('takes the uuid at the end even when the name runs longer than a uuid', () => {
     expect(extractUuidFromClimbSegment(`${HEX_RUN_CLIMB_NAME_SLUG}deadbeef-${CLIMB_UUID}`)).toBe(CLIMB_UUID);
+  });
+
+  it('pulls a dashed MoonBoard uuid out of a name-slugged segment', () => {
+    expect(extractUuidFromClimbSegment(`to-dokids-yuito-${MOONBOARD_CLIMB_UUID}`)).toBe(MOONBOARD_CLIMB_UUID);
+  });
+
+  it('passes a bare dashed MoonBoard uuid through', () => {
+    expect(extractUuidFromClimbSegment(MOONBOARD_CLIMB_UUID)).toBe(MOONBOARD_CLIMB_UUID);
+  });
+
+  it('carries a dashed MoonBoard uuid through a whole route parse', () => {
+    expect(
+      parseClimbRoutePath(`/moonboard/2016/standard/hold-set-a/40/view/to-dokids-yuito-${MOONBOARD_CLIMB_UUID}`)
+        ?.climbUuid,
+    ).toBe(MOONBOARD_CLIMB_UUID);
+  });
+
+  it('does not let the dashed shape steal the tail of an Aurora uuid', () => {
+    // The dashed alternative must end at the segment end and its final group is
+    // preceded by a `-`; the character twelve back from the end of a 32-hex uuid
+    // is always a hex digit, so it can never match here. A name slug that looks
+    // like the head of a dashed uuid is the adversarial case.
+    expect(extractUuidFromClimbSegment(`deadbeef-cafe-babe-face-${CLIMB_UUID}`)).toBe(CLIMB_UUID);
   });
 
   it('carries the hex-named climb through a whole route parse', () => {
@@ -165,7 +195,10 @@ describe('parseBoardRoutePath', () => {
 });
 
 describe('round-trip across every real board config', () => {
-  const auroraBoards = SUPPORTED_BOARDS.filter((boardName) => boardName !== 'moonboard');
+  // MoonBoard and Woods are code-driven boards: they have no generated
+  // LAYOUTS/SETS rows, so this catalogue-walking loop finds nothing for them.
+  // Their readable URLs are covered by their own round-trip cases.
+  const auroraBoards = SUPPORTED_BOARDS.filter((boardName) => boardName !== 'moonboard' && boardName !== 'woods');
 
   /**
    * Exact round-trip: every real board config produces a URL that parses back to
@@ -355,6 +388,98 @@ describe('resolveBoardSegmentsToIds', () => {
   });
 });
 
+/**
+ * Woods. One layout ("Original"), two sizes, and one synthetic hold set — none
+ * of which appear in the generated layout/size/set tables, so both directions
+ * run off the static `woods-config` constants. Both sizes have to round-trip:
+ * the 8x10 and the 12x12 number their holds from their own origins, so landing
+ * on the wrong one draws a different climb rather than failing.
+ */
+describe('Woods readable URLs', () => {
+  const WOODS_SETS_CSV = '1';
+
+  it.each([
+    [1, '8x10'],
+    [2, '12x12'],
+  ])('size %i round-trips through its %s slug', (sizeId, sizeSlug) => {
+    const config = { boardName: 'woods' as const, layoutId: 1, sizeId, setIds: WOODS_SETS_CSV, angle: 40 };
+
+    const viewPath = buildReadableClimbViewPath({ ...config, climbUuid: CLIMB_UUID, climbName: 'Woodsy Thing' });
+    expect(viewPath).toBe(`/woods/original/${sizeSlug}/standard/40/view/woodsy-thing-${CLIMB_UUID}`);
+    expect(parseClimbRoutePath(viewPath)).toEqual({ ...config, climbUuid: CLIMB_UUID, surface: 'view' });
+
+    const listPath = buildReadableClimbListPath(config);
+    expect(listPath).toBe(`/woods/original/${sizeSlug}/standard/40/list`);
+    expect(parseBoardListPath(listPath)).toEqual(config);
+  });
+
+  it('parses the all-numeric form too', () => {
+    expect(parseBoardListPath('/woods/1/2/1/40/list')).toEqual({
+      boardName: 'woods',
+      layoutId: 1,
+      sizeId: 2,
+      setIds: WOODS_SETS_CSV,
+      angle: 40,
+    });
+  });
+
+  it('accepts numeric layout and size segments mixed into a slug path', () => {
+    // An all-numeric path never reaches the slug resolver, so these mixed shapes
+    // are the only way the numeric forms get exercised there.
+    expect(
+      resolveBoardSegmentsToIds({ boardName: 'woods', layoutSlug: '1', sizeSlug: '2', setSlug: 'standard' }),
+    ).toEqual({ boardName: 'woods', layoutId: 1, sizeId: 2, setIds: WOODS_SETS_CSV });
+    expect(
+      resolveBoardSegmentsToIds({ boardName: 'woods', layoutSlug: 'original', sizeSlug: '1', setSlug: '1' }),
+    ).toEqual({ boardName: 'woods', layoutId: 1, sizeId: 1, setIds: WOODS_SETS_CSV });
+  });
+
+  it("accepts the dashed size forms and any casing, matching www's parser", () => {
+    // www lower-cases every Woods segment and takes `8-10` / `12-12` alongside
+    // `8x10` / `12x12` (packages/web/app/lib/url-utils.server.ts). A link that
+    // opens on the website has to open in the app, so the two agree here.
+    for (const [sizeSlug, sizeId] of [
+      ['8-10', 1],
+      ['12-12', 2],
+      ['12X12', 2],
+    ] as const) {
+      expect(
+        resolveBoardSegmentsToIds({ boardName: 'woods', layoutSlug: 'original', sizeSlug, setSlug: 'standard' }),
+        sizeSlug,
+      ).toEqual({ boardName: 'woods', layoutId: 1, sizeId, setIds: WOODS_SETS_CSV });
+    }
+    expect(
+      resolveBoardSegmentsToIds({ boardName: 'woods', layoutSlug: 'ORIGINAL', sizeSlug: '8X10', setSlug: 'STANDARD' }),
+    ).toEqual({ boardName: 'woods', layoutId: 1, sizeId: 1, setIds: WOODS_SETS_CSV });
+  });
+
+  it('rejects a layout, size or set segment Woods does not have', () => {
+    for (const segments of [
+      { layoutSlug: 'two-original', sizeSlug: '12x12', setSlug: 'standard' },
+      { layoutSlug: 'original', sizeSlug: '10x10', setSlug: 'standard' },
+      // Only the two real dimensions get the dashed spelling, not any pair.
+      { layoutSlug: 'original', sizeSlug: '10-10', setSlug: 'standard' },
+      { layoutSlug: 'original', sizeSlug: '12x12', setSlug: 'bolt' },
+      { layoutSlug: 'original', sizeSlug: '12x12', setSlug: 'standard_standard' },
+      { layoutSlug: 'original', sizeSlug: '12x12', setSlug: '' },
+    ]) {
+      expect(resolveBoardSegmentsToIds({ boardName: 'woods', ...segments }), JSON.stringify(segments)).toBeNull();
+    }
+  });
+
+  it('falls back to the numeric path rather than emitting a URL for a set Woods has no holds for', () => {
+    const args = { boardName: 'woods', layoutId: 1, sizeId: 2, setIds: '2', angle: 40, climbUuid: CLIMB_UUID };
+    expect(tryBuildReadableClimbViewPath(args)).toBeNull();
+    expect(buildReadableClimbViewPath(args)).toBe(`/woods/1/2/2/40/view/${CLIMB_UUID}`);
+  });
+
+  it('falls back to the numeric path for a size Woods does not have', () => {
+    const args = { boardName: 'woods', layoutId: 1, sizeId: 3, setIds: '1', angle: 40, climbUuid: CLIMB_UUID };
+    expect(tryBuildReadableClimbViewPath(args)).toBeNull();
+    expect(buildReadableClimbViewPath(args)).toBe(`/woods/1/3/1/40/view/${CLIMB_UUID}`);
+  });
+});
+
 describe('legacy MoonBoard URL forms', () => {
   const canonicalMoonBoardSizeSlug = generateSizeSlug(MOONBOARD_SIZE.name, MOONBOARD_SIZE.description);
 
@@ -473,7 +598,7 @@ describe('legacy MoonBoard URL forms', () => {
   });
 });
 
-describe('permanently pinned qualified size slugs', () => {
+describe('permanently pinned size slugs', () => {
   const pinnedEntries = Object.entries(PERMANENT_SIZE_SLUG_ALIASES).flatMap(([boardName, aliasesBySizeId]) =>
     Object.entries(aliasesBySizeId ?? {}).flatMap(([sizeId, aliases]) =>
       aliases.map((alias) => ({ boardName: boardName as BoardName, sizeId: Number(sizeId), alias })),
@@ -481,7 +606,10 @@ describe('permanently pinned qualified size slugs', () => {
   );
 
   it('has exactly the forms we have shipped', () => {
+    // Integer-like keys enumerate ascending, so size 7 comes first however the
+    // source object is written.
     expect(pinnedEntries).toEqual([
+      { boardName: 'kilter', sizeId: 7, alias: '12x14-commerical' },
       { boardName: 'kilter', sizeId: 10, alias: '12x12-square' },
       { boardName: 'kilter', sizeId: 27, alias: '12x12-square-without-kickboard' },
     ]);
@@ -538,5 +666,44 @@ describe('permanently pinned qualified size slugs', () => {
         }
       }
     }
+  });
+});
+
+describe("the Kilter 12 x 14 'Commerical' spelling correction (#4554)", () => {
+  // Correcting Aurora's typo in the size description moved the generated URL
+  // segment from `12x14-commerical` to `12x14-commercial`. PostHog counted 629
+  // pageviews from 325 people on the old form in the 180 days to 2026-08-16 —
+  // /list, /view, /playlists, and the /es and /fr variants — and the Expo app's
+  // deep-link router resolves purely from board-constants with no database
+  // fallback. These cases are the proof those links still land.
+  it('mints the corrected slug for new links', () => {
+    expect(resolveSizeSlug('kilter', 1, 7)).toBe('12x14-commercial');
+    expect(generateSizeSlug('12 x 14', 'Commercial')).toBe('12x14-commercial');
+  });
+
+  it('still routes a climb link minted with the old spelling', () => {
+    expect(parseClimbRoutePath(`/kilter/original/12x14-commerical/screw_bolt/40/view/${CLIMB_UUID}`)).toEqual({
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 7,
+      setIds: '1,20',
+      angle: 40,
+      climbUuid: CLIMB_UUID,
+      surface: 'view',
+    });
+  });
+
+  it('still routes a climb-list link minted with the old spelling', () => {
+    expect(parseBoardListPath('/kilter/original/12x14-commerical/screw_bolt/40/list')).toEqual({
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 7,
+      setIds: '1,20',
+      angle: 40,
+    });
+  });
+
+  it('routes the corrected slug to the same board', () => {
+    expect(parseBoardListPath('/kilter/original/12x14-commercial/screw_bolt/40/list')?.sizeId).toBe(7);
   });
 });

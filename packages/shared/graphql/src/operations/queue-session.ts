@@ -35,6 +35,7 @@ const CLIMB_FIELDS = `
   published_at
   boardseshDifficulty
   boardseshConfidence
+  compatibleSizeIds
 `;
 
 const QUEUE_ITEM_USER_FIELDS = `
@@ -252,6 +253,33 @@ export const SET_SESSION_BOARD_PATH = `
 export const SET_QUEUE = `
   mutation SetQueue($queue: [ClimbQueueItemInput!]!, $currentClimbQueueItem: ClimbQueueItemInput) {
     setQueue(queue: $queue, currentClimbQueueItem: $currentClimbQueueItem) {
+      sequence
+      stateHash
+      stateHashOrdered
+      queue {
+        ${QUEUE_ITEM_FIELDS}
+      }
+      currentClimbQueueItem {
+        ${QUEUE_ITEM_FIELDS}
+      }
+    }
+  }
+`;
+
+// Same mutation, plus the caller's baseline sequence so the server can re-append
+// climbs a party member added while this payload was being composed (#3933).
+//
+// A SEPARATE document rather than an extra variable on SET_QUEUE above, because
+// an unknown argument is a document-level GraphQL validation error — passing the
+// variable as undefined does not help. One document naming `baselineSequence`
+// would hard-fail EVERY setQueue (web's Clear button included) against a backend
+// that hasn't deployed the argument yet: the Vercel-web/Railway-backend skew
+// window, web preview deploys pointed at prod, and mobile preview channels
+// running a branch build. Callers pick this document only when they actually
+// have a baseline, and fall back to SET_QUEUE if the server rejects it.
+export const SET_QUEUE_WITH_BASELINE = `
+  mutation SetQueueWithBaseline($queue: [ClimbQueueItemInput!]!, $currentClimbQueueItem: ClimbQueueItemInput, $baselineSequence: Int) {
+    setQueue(queue: $queue, currentClimbQueueItem: $currentClimbQueueItem, baselineSequence: $baselineSequence) {
       sequence
       stateHash
       stateHashOrdered

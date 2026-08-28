@@ -1,21 +1,4 @@
 {
-  "metadata": {
-    "feed": {
-      "title": "Fil d'activité",
-      "description": "Voyez ce que grimpent les personnes que vous suivez."
-    },
-    "importBeta": {
-      "title": "Importer une beta depuis Instagram",
-      "description": "Reliez vos reels d'escalade Instagram aux blocs Boardsesh et ajoutez-les comme beta en quelques clics."
-    }
-  },
-  "title": "Fil d'activité",
-  "tabs": {
-    "label": "Onglets du fil",
-    "sessions": "Sessions",
-    "proposals": "Propositions",
-    "comments": "Commentaires"
-  },
   "activityFeed": {
     "signInPrompt": "Connectez-vous pour suivre les grimpeurs de votre crew."
   },
@@ -48,6 +31,7 @@
   },
   "ascentsFeed": {
     "mirrored": "Miroir",
+    "setBy": "Ouvert par {{name}}",
     "benchmark": "Référence",
     "empty": "Aucune ascension pour le moment"
   },
@@ -71,77 +55,6 @@
       "step3Title": "Collez le lien ci-dessous"
     }
   },
-  "importBeta": {
-    "title": "Importer une beta depuis Instagram",
-    "intro": "Récupérez les blocs que vous avez déjà filmés sur Instagram et ajoutez-les comme beta. Lancez un scan rapide dans votre navigateur, collez le résultat et nous relions chaque reel au bon bloc.",
-    "signInPrompt": "Connectez-vous pour relier vos reels Instagram aux blocs Boardsesh.",
-    "signInCta": "Se connecter",
-    "authUnavailable": "Impossible de vérifier votre session. Rechargez et réessayez.",
-    "scriptCopied": "Script copié. Collez-le dans la console Instagram.",
-    "scriptCopyFailed": "Impossible de copier le script. Sélectionnez-le et copiez-le à la main.",
-    "pasteEmpty": "Collez d'abord le JSON copié par le script.",
-    "parseError": "Cela ne ressemble pas au résultat du scan. Relancez le script et collez exactement ce qu'il copie.",
-    "noPosts": "Aucune publication trouvée dans ce collage. Vérifiez que vous avez lancé le script sur un profil.",
-    "scanError": "Le scan a échoué. Réessayez dans un instant.",
-    "angle": "{{angle}}°",
-    "openOnInstagram": "Ouvrir sur Instagram",
-    "board": {
-      "label": "Quelle board ?",
-      "kilter": "Kilter",
-      "tension": "Tension"
-    },
-    "scan": {
-      "title": "Étape 1 · Scannez vos publications",
-      "subtitle": "Cela s'exécute dans votre propre navigateur sur Instagram. Rien ne quitte votre session et Boardsesh ne voit jamais votre connexion Instagram. Une réserve : il utilise l'API de feed d'Instagram, donc scanner énormément en peu de temps pourrait faire limiter temporairement votre compte par Instagram.",
-      "step1": "Ouvrez votre profil Instagram dans un autre onglet et connectez-vous.",
-      "step2": "Ouvrez la console du navigateur (clic droit, Inspecter, puis Console).",
-      "step3": "Collez le script ci-dessous et appuyez sur Entrée. Sur un grand compte, cela peut prendre une minute. Il affiche la progression dans la console, indique combien il en a trouvé et les copie dans le presse-papiers.",
-      "copyScript": "Copier le script"
-    },
-    "paste": {
-      "title": "Étape 2 · Collez et trouvez",
-      "subtitle": "Collez ce que le script a copié. Nous lirons les légendes et les relierons aux blocs.",
-      "label": "Résultat du scan",
-      "placeholder": "Collez ici le JSON copié par le script",
-      "submit": "Trouver les blocs"
-    },
-    "review": {
-      "title": "Étape 3 · Vérifiez et ajoutez",
-      "summary": "{{scanned}} publications scannées, {{parsed}} légendes lues : {{found}} nouvelles à ajouter, {{already}} déjà sur Boardsesh, {{ambiguous}} à choisir, {{skipped}} ignorées."
-    },
-    "missing": {
-      "empty": "Rien de nouveau à ajouter. Tout ce que nous avons relié est déjà sur Boardsesh.",
-      "heading": "Nouvelles beta à ajouter ({{count}})",
-      "attachSelected": "Ajouter {{count}} sélectionnées",
-      "attachAllDone": "{{count}} vidéos de beta ajoutées.",
-      "attachSomeFailed": "{{attached}} ajoutées, {{failed}} en échec. Vérifiez celles marquées en échec.",
-      "attachFailedGeneric": "Impossible d'ajouter celle-ci. La publication est peut-être privée ou supprimée."
-    },
-    "ambiguous": {
-      "heading": "À choisir ({{count}})",
-      "subtitle": "Plusieurs blocs correspondent à ces légendes. Choisissez le bon, puis ajoutez-le.",
-      "selectPlaceholder": "Choisissez le bloc",
-      "candidateLabel": "{{setter}} · layout {{layoutId}}",
-      "unknownSetter": "Ouvreur inconnu",
-      "attach": "Ajouter",
-      "attachedToast": "Beta ajoutée."
-    },
-    "alreadyLinked": {
-      "heading": "Déjà sur Boardsesh ({{count}})"
-    },
-    "unmatched": {
-      "heading": "Ignorées ({{count}})",
-      "noName": "Aucun nom de bloc dans la légende"
-    },
-    "status": {
-      "attached": "Ajoutée",
-      "failed": "Échec"
-    }
-  },
-  "commentFeed": {
-    "empty": "Aucun commentaire pour l'instant",
-    "commentedOn": "a commenté {{entity}}"
-  },
   "emptyStates": {
     "followClimbers": "Suivez des grimpeurs pour remplir votre fil",
     "findClimbers": "Trouver des grimpeurs",
@@ -149,9 +62,7 @@
   },
   "errors": {
     "loadFeed": "Impossible de charger le fil. Réessayez.",
-    "loadActivity": "Impossible de charger le fil",
-    "loadComments": "Impossible de charger les commentaires. Réessayez.",
-    "loadProposals": "Impossible de charger les propositions. Réessayez."
+    "loadActivity": "Impossible de charger le fil"
   },
   "feedCommentButton": {
     "commentsTitle": "Commentaires"
@@ -184,9 +95,6 @@
       "title": "Supprimer la proposition acceptée",
       "description": "Cela annulera les effets de cette proposition (changement de cotation, statut référence/classique) et la supprimera définitivement. C'est irréversible."
     }
-  },
-  "proposalFeed": {
-    "empty": "Aucune proposition pour l'instant"
   },
   "proposalSection": {
     "title": "Propositions de la communauté",

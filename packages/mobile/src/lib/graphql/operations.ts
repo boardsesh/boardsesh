@@ -79,6 +79,7 @@ const CLIMB_SEARCH_FIELDS = `
   setter_username
   userId
   name
+  description
   frames
   angle
   ascensionist_count
@@ -98,6 +99,7 @@ const CLIMB_SEARCH_FIELDS = `
   framesPace
   boardseshDifficulty
   boardseshConfidence
+  compatibleSizeIds
 `;
 
 const CLIMB_DETAIL_FIELDS = `
@@ -128,6 +130,7 @@ const CLIMB_DETAIL_FIELDS = `
   framesPace
   boardseshDifficulty
   boardseshConfidence
+  compatibleSizeIds
 `;
 
 // ============================================
@@ -1239,6 +1242,7 @@ export const SUBSCRIPTION_CLIMB_FIELDS = `
   framesPace
   boardseshDifficulty
   boardseshConfidence
+  compatibleSizeIds
 `;
 
 // The item-level fields that cross the wire alongside the climb. This client now

@@ -19,18 +19,35 @@ delete and how.
 ### API routes — what's safe to delete
 
 The mobile app reaches the climbing backend through **GraphQL**, not the Next.js
-web proxies. The only web endpoints `packages/mobile/src` fetches are
-`/api/auth/session`, `/api/internal/ws-auth`, and `/api/internal/beta-link-thumbnail`.
+web proxies. But it still fetches a handful of www-hosted Next.js routes for
+auth and two other flows: `/api/auth/session`, `/api/auth/providers-config`,
+`/api/auth/csrf`, `/api/auth/callback/credentials`, `/api/auth/register`,
+`/api/auth/forgot-password`, `/api/auth/reset-password`,
+`/api/auth/resend-verification` (native store fleet too, via the plain
+`app/auth/register.tsx`), `/api/auth/signout`, `/api/auth/native/callback`
+(native only), `/api/internal/ws-auth`, and `/api/internal/beta-link-thumbnail`.
+(`/api/aurora-credentials`, `/api/board-credentials/*`, `/api/aurora-import` and
+`/api/moonboard-import` are backend routes, not Next.js.)
 
-| Route                                                                     | Runtime callers                                                                                                   | Verdict                               |
-| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `/api/v1/[board]/proxy/{login,saveAscent,saveClimb,getLogbook,user-sync}` | **None** — already migrated to GraphQL (see `docs/branch-deploys.md`)                                             | delete (dead code)                    |
-| `/api/internal/{join,controllers,favorites}`                              | Only web session-app UI slated for teardown (`join/*` page, `account/controllers-section.tsx`, `climb-actions/*`) | delete with that UI                   |
-| `/api/internal/ws-auth`                                                   | `use-ws-auth-token.ts` → ~85 web files incl. kiosk presence; mobile `auth-store.web.ts:343`                       | **KEEP** — `/app` + kiosk auth bridge |
+| Route                                                                     | Runtime callers                                                                             | Verdict                                                       |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `/api/v1/[board]/proxy/{login,saveAscent,saveClimb,getLogbook,user-sync}` | **None** — already migrated to GraphQL (see `docs/branch-deploys.md`)                       | W-25a + W-25b: all five deleted, URLs 404 (see below)         |
+| `/api/internal/favorites`                                                 | Only web session-app UI slated for teardown (`climb-actions/*`)                             | deleted with that UI (see `deleted-private-surfaces.test.ts`) |
+| `/api/internal/join/[sessionId]`                                          | `app/join/[sessionId]/page.tsx`, `join-redirect.tsx`                                        | **KEEP** — session share links                                |
+| `/api/internal/controllers`                                               | `account/controllers-section.tsx`                                                           | **KEEP** — kept by W-21 (#4440)                               |
+| `/api/internal/ws-auth`                                                   | `use-ws-auth-token.ts` → ~85 web files incl. kiosk presence; mobile `auth-store.web.ts:343` | **KEEP** — `/app` + kiosk auth bridge                         |
 
 Loose ends to clean when the routes go (not runtime callers, but they'd go stale):
 `app/lib/api-docs/openapi-routes.ts` (documents `proxy/login`, `proxy/saveAscent`),
 `docs/branch-deploys.md` migration table, and the routes' own `__tests__`.
+**All three are discharged by W-25a (#4441)**, which also split the proxy row's
+verdict: `saveClimb`, `getLogbook` and `user-sync` are deleted, while `login` and
+`saveAscent` answered `410 Gone` from 2026-08-15. W-25b (#4443) then deleted the
+last two URLs outright, ahead of the published `Sunset: Thu, 01 Oct 2026` header — Marco's call, since the routes had already
+answered 410 with no Aurora call behind them since W-25a, so any caller still
+hitting them was already broken; W-25b changes only how (410 → 404). The four
+orphaned implementation modules W-25a left behind are tracked in #4574, not
+folded into either PR.
 
 ### Shipped hardware pins `www` URL shapes (two different ones)
 
@@ -59,16 +76,22 @@ things. Neither is fixable by us for the copies already in the field.
   persists `render_base_url`), so it is recoverable, but only by hand, one device
   at a time.
 
-### `/app` redirect destinations (for the route redirects in A6)
+### App redirect destinations (for the route redirects in A6)
 
-| Web route removed  | `/app` destination                                          | Status                                                                                                                                         |
-| ------------------ | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `join/[sessionId]` | `/app/join/{sessionId}`                                     | exists (`packages/mobile/app/join/[sessionId].tsx`; universal-link `/join` registered)                                                         |
-| `/you`             | `/app/profile`                                              | exists (`(tabs)/profile/index.tsx`)                                                                                                            |
-| `/settings`        | `/app/profile/more`                                         | no bare `/app/settings` — redirect to `/app/profile/more`                                                                                      |
-| `/notifications`   | —                                                           | **no mobile route** — point at `/app/profile` or defer                                                                                         |
-| climb view         | `/app/climbs/{uuid}?boardName&layoutId&sizeId&setIds&angle` | exists; **all five query params required**, numeric IDs                                                                                        |
-| `/list`            | `/app/climbs`                                               | exists, but the Climbs tab reads its board from the persisted active board, **not** the URL — board context is lost on a bare `/list` redirect |
+Destinations are paths on `${APP_ORIGIN}` (`app.boardsesh.com`), not on www. They
+used to be written with an `/app/` prefix, back when www proxied the Expo bundle
+at `/app`; W-24 (#4480) retired that static path, so the prefix is gone and the
+shipped rules read `` `${APP_ORIGIN}${path}` `` — see `BASE_REDIRECTS` in
+`packages/web/next.config.mjs`.
+
+| Web route removed  | `${APP_ORIGIN}` destination                             | Status                                                                                                                                         |
+| ------------------ | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `join/[sessionId]` | `/join/{sessionId}`                                     | exists (`packages/mobile/app/join/[sessionId].tsx`; universal-link `/join` registered)                                                         |
+| `/you`             | `/profile`                                              | shipped in W-19 (#4479)                                                                                                                        |
+| `/settings`        | `/profile/more`                                         | no bare `/settings` in the app — redirect to `/profile/more`                                                                                   |
+| `/notifications`   | `/home/notifications`                                   | shipped in W-20b (#4439); `packages/mobile/app/(tabs)/home/notifications.tsx`, and `(tabs)/profile/notifications.tsx` renders the same screen  |
+| climb view         | `/climbs/{uuid}?boardName&layoutId&sizeId&setIds&angle` | exists; **all five query params required**, numeric IDs                                                                                        |
+| `/list`            | `/climbs`                                               | exists, but the Climbs tab reads its board from the persisted active board, **not** the URL — board context is lost on a bare `/list` redirect |
 
 ### Board layout provider mounts (asymmetric — matters for A5)
 
@@ -370,14 +393,80 @@ tells Google the missing URLs were deleted. Three more cases fail the same way:
 a shard past its URL budget, a shard that `expectsUrls` but built none (a
 poisoned cache or a regressed query silently emptying `static` or `boards`), and
 a boards fetch whose `hasMore` says the 100-config API cap — the schema's hard
-max, so the fix is paging, not a bigger constant — dropped the tail. The index
-applies the same rule: it throws rather than publishing an index that quietly
-dropped a shard, and it lists only shards carrying at least one URL. For the
+max, so the fix is paging, not a bigger constant — dropped the tail. For the
 same reason the boards shard uses a _throwing_ popular-configs fetch, not the
 homepage's swallow-and-return-`[]` wrapper. `playlists` is deliberately **not**
 `expectsUrls` — zero public playlists holding a climb is a legitimate state, and
 failing closed there would take the whole index down over nobody having shared
 a list.
+
+**The index degrades; only the shard fails closed (#4476).** W-22 shipped the
+index under the same all-or-nothing rule, and production disagreed: `/sitemap.xml`
+503'd on a cold cache and failed the post-deploy smoke twice, while
+`/sitemaps/static.xml` passed in the same run. The index is the one path that runs
+_every_ builder, so one cold boards fetch took the four shards that were ready
+down with it. The split is now by layer — a shard route still 503s when its own
+builder throws, misses its budget or comes back unexpectedly empty, but the index
+logs loudly, omits that shard's `<sitemap>` entry and still answers 200 with
+whatever built. A partial sitemap beats no sitemap when every shard it does list
+is served fail-closed at its own URL, and Google keeps the copy of the omitted
+shard it already has. `buildSitemapIndexXml` throws only when nothing is left to
+publish; an empty `<sitemapindex>` under an hour of `s-maxage` is the harm the
+doctrine was written against.
+
+**A degraded index is cached for a minute, not for 25 hours.** This is the half
+that makes degradation safe rather than a worse bug. The full window is
+`s-maxage=3600` plus a day of `stale-while-revalidate`, and the 503 it replaced
+was `no-store` and therefore never cached at all — so before this change the copy
+the CDN eventually held was always complete. Serving a partial index under the
+full window would trade a self-healing 503 for a cacheable lie: one cold start
+pinning "boards.xml does not exist" at the edge for 25 hours while the URL serves
+perfectly the whole time. A degraded 200 gets `s-maxage=60, must-revalidate` and
+an `X-Sitemap-Degraded` header naming the shards it dropped, so the next crawl
+re-attempts and the degradation is visible on the response rather than only in a
+log line.
+
+The post-deploy smoke was widened in the same PR for the same reason. It asserted
+"any one shard `<loc>`", which a degraded index satisfies — and `static` is a
+hardcoded builder that cannot fail, so the detector that caught #4476 would have
+been permanently green afterwards. It now names both `expectsUrls` shards
+(`static.xml`, `boards.xml`); the three declared-empty ones are legitimately
+absent and stay out of it.
+
+**Slow is a failure mode, and a try/catch cannot see it.** Each fixed builder and
+paged-shard summary in the index walk is raced against `SHARD_DEADLINE_MS` (3 s,
+the value W-23 settled on for its summary, so both paths share one constant). Be
+precise about why: the two recorded production failures were _rejections_ — a 503
+is the route's own `unavailableResponse`, and `getAllBoardConfigsOrThrow`'s 10 s
+abort surfaces as a throw — so the try/catch alone covers what was measured. The
+deadline covers the mode a try/catch structurally cannot see, work that never
+settles (`fetchPlaylistSitemapRows` has no bound of its own), which would hold the
+index to the platform timeout and 5xx all six shards. The index's 3 s and the
+boards builder's own 10 s are _supposed_ to disagree: failing the shard route
+costs a working URL, while missing the index deadline costs one shard for sixty
+seconds. Cheap to be wrong, so be impatient.
+
+**Concurrent, with only a per-shard deadline.** An earlier draft of this fix
+sequenced the fixed walk under a total 8 s budget, and that made the tail of the
+registry the deterministic victim: five builders each a comfortable 1.9 s — every
+one inside its own deadline — spend the budget before `playlists` runs, so it is
+dropped for its position rather than its latency. The five fixed builders and the
+paged climbs summary now settle concurrently, so the walk is bounded by their
+maximum rather than their sum and no shard is dropped for its registry position.
+The fan-out is one GraphQL fetch, the playlists query, the cached climbs summary,
+and three hardcoded builders. The climbs summary still sequences its heavy
+per-board scans internally, which is where #4461's pool-starvation guard belongs.
+Sequencing at the registry would not bound pool load anyway: `withDeadline` stops
+waiting, it does not cancel.
+
+**Known follow-ups.** `withDeadline` bounds this request's latency, not the
+abandoned query still holding a connection — a real bound needs an `AbortSignal`
+threaded into `fetchPlaylistSitemapRows` or a statement timeout on its query.
+`getAllBoardConfigsOrThrow` is uncached (the `unstable_cache` in that file wraps
+`fetchPopularBoardConfigs`, the limit=12 homepage variant) and `/sitemap.xml` is
+`force-dynamic`, so every CDN miss re-runs the fixed builders live; caching those
+per-shard summaries is what would make 3 s comfortably attainable on a cold
+instance. The climbs summary already has Data Cache plus in-process caching.
 
 **Two shards ship declared-empty, and that is the point.** `gyms.xml` waits on
 #4381's public-gyms enumeration query, which the gym-discovery epic (#4372)
@@ -403,6 +492,237 @@ robots at all, so an errored profile was indexable. Profiles are not sitemapped
 — they stay link-discovered. Their titles also moved off the bare
 `{name} | Boardsesh` shape onto `{name}'s {board} Sessions`, driven by the
 climber's most-ticked board.
+
+## W-23 — the climb shards and JSON-LD (#4436)
+
+Tier 2 — listed, non-draft climbs with at least ten ascents — now ships as paged
+sitemap shards, and the five JSON-LD types the front doors were missing are
+emitted from one escaping helper.
+
+**The climb shards submit the default locale only.** This is a deliberate
+inconsistency with the boards shard, which does fan out to all four locales, and
+the difference is volume: boards is 690 items → 2,760 URLs; production emits
+52,842 climb items, which would fan out to 211,368 locale URLs, each carrying a
+five-entry `xhtml:link` block. Even one 10,000-item climb page would expand to
+40,000 URL entries and exceed Vercel's 4.5 MB serverless response ceiling.
+
+(Measured against production with the branch's exact angle, size, set, listing,
+ascent and alias predicates: 127,131 tier-2 climbs exist, while 52,842 resolve
+through a selected public board configuration → 6 pages. All 73,412 MoonBoard
+climbs are absent because there is no MoonBoard configuration, 69 Kilter layout-5
+climbs have no selected layout, and the chosen size/set predicates exclude 808
+more. An earlier 53,650 estimate stopped at the layout intersection and therefore
+overstated the emitted set by those 808. Nothing in the code depends on the
+snapshot count; the page count comes from the summary at request time.) Do not
+"fix" the inconsistency by fanning climbs out.
+Nothing is noindexed — the locked decision on `/es`, `/fr` and `/de` climbing
+pages is untouched. They stay indexable, they stay link-discovered, and they
+carry reciprocal HTML hreflang from `createPageMetadata`'s `alternates.languages`,
+which is one of Google's three supported annotation methods and the one that is
+symmetric by construction. A one-sided sitemap-side annotation would be a
+_second_, non-reciprocal signal for the same cluster — strictly worse than none.
+`/profile/[user_id]` already gets exactly this treatment.
+
+**The byte guard runs on the rendered body, not on a row count.**
+`CLIMB_URLS_PER_SHARD` is 10,000 (~2.5 MB at our path lengths) and
+`MAX_SHARD_BYTES` is 4,000,000. A constant that nothing measures is a comment, so
+`pagedShardRouteHandler` byte-lengths the XML it is about to serve and 503s
+instead of letting Vercel truncate a 200 into something that looks like a sitemap
+outage. `MAX_URLS_PER_SHARD` (45,000) stays as the protocol guard for the fixed
+shards.
+
+**Shard shape is count-driven.** `app/sitemaps/climbs/[page]/route.ts` serves
+`/sitemaps/climbs/1.xml … N.xml`; `N` comes from a cached summary at request
+time. Next has no partial dynamic segments, so a `climbs-1.xml` shape would need
+one directory per page and would freeze today's page count into the filesystem.
+A malformed or out-of-range page 404s (a page that was never valid is not
+transient); a page the summary listed that builds nothing 503s.
+
+**Fail-closed at the shard, degrade at the index.** A climbs page that renders
+zero URLs 503s — telling Google "no climbs exist" is worse than telling it to
+retry. But `/sitemap.xml` does **not** inherit that: if the climbs summary throws
+**or misses a three-second deadline**, the index logs loudly, omits the climb
+`<sitemap>` entries and still answers 200 with the other five shards. The
+deadline is the half that matters in practice: a try/catch only sees a summary
+that rejects, and the likelier failure — a saturated pool, a stalled aggregate,
+the #4461/#4476 condition — is a summary that never settles, which without a race
+hangs the request to the platform timeout and 5xxes all six shards. That is
+strictly worse than the 503 the doctrine was written to prevent. The six-hour
+`unstable_cache` on the summary is the first line of defence, the in-process
+single-flight is the second, and this is the third.
+
+**A summary-advertised page whose cached item slice is empty 503s.** The
+summary (Next Data Cache, global) and the item list (in-process TTL, per
+instance) have independent epochs, so a warm instance can hold 10,000 items while
+a refreshed summary reports 10,001 and the index publishes page 2. The route
+therefore treats an empty slice as transient cache disagreement and returns
+503/no-store until the item epoch catches up. A malformed page or one the current
+summary itself says is past the end still 404s. When the summary reports zero
+while `expectsUrls` is set, the index degrades under its one-minute cache window
+and names `climbs` in `X-Sitemap-Degraded` rather than quietly dropping the whole
+tier-2 surface.
+
+**Page numbers are canonical or they 404.** `Number('007')` is 7, so a `\d+`
+parser would give every real page an unbounded family of alias URLs — `01.xml`,
+`0000001.xml` — each serving page 1's body under the six-hour cache header and
+each looking to Search Console like a separate submission of the same URLs. The
+parser is `^([1-9]\d*)\.xml$`.
+
+**Config resolution.** A climb URL names a size and a set list, and neither is a
+property of a climb — `board_climbs` carries `board_type`, `layout_id`,
+`compatible_size_ids[]` and `required_set_ids[]`. The shard therefore picks one
+configuration per `(board_type, layout_id)` from `getAllBoardConfigsOrThrow()`,
+ranked by board count, then climb count, then lowest size id, then lowest set
+list. Determinism is the point: an unstable pick churns every URL between crawls.
+A group whose configuration has no readable URL is dropped whole (resolvability
+depends only on board/layout/size/sets, never on the angle, uuid or name), which
+is what keeps the count query and the item builder selecting one identical set. A
+layout with no listed board config contributes zero URLs — that is the expected
+gap against the addressable tier-2 universe.
+
+**Drop, never fall back.** `tryConstructSlugViewUrl` is the first branch of
+`buildCanonicalClimbViewUrl`, so anything it resolves is byte-identical to the
+page's own canonical. If it returns null the climb is dropped and counted, not
+published under the name-based or numeric fallback — a URL we cannot prove
+matches is the "alternate page with proper canonical" own-goal at shard scale.
+The name always goes through `resolveClimbDisplayName` first, so an unnamed
+climb's sitemap URL carries the same `-{board} Climb-` slug its canonical does.
+`static-climb-row.tsx` was fixed in the same PR for the same reason: its anchor
+used the raw name, which made a third URL for one page.
+
+**One angle per climb.** `DISTINCT ON (climb_uuid)` ordered by ascents desc, then
+the climb's own angle, then the lowest angle. The tie-break is
+`COALESCE(stats.angle = climbs.angle, false)` rather than a bare comparison —
+**defensive, not load-bearing**, and an earlier draft of this section claimed
+otherwise. `board_climbs.uuid` is the primary key and the join is on
+`(uuid, board_type)`, so every row inside one `DISTINCT ON` group joins the same
+`board_climbs` row: a null `climbs.angle` makes the comparison NULL for the whole
+group, NULLs sort equal, and the ordering falls through to `asc(stats.angle)`
+either way. Measured over kilter layout 1 (16,233 tier-2 climbs with a null
+`board_climbs.angle`): zero differing rows. It is kept because it is free and
+survives a future join that does compare across climbs. Other angles stay
+self-canonical and reachable through W-15's cross-links.
+
+**Genuine alias uuids are excluded — self-aliases are not.**
+`board_climb_aliases` maps duplicate uuids onto a canonical one, and an alias URL
+self-canonicalises to itself, so submitting both forms is duplicate content by
+construction. But the table is mostly **self**-aliases: every synced Kilter climb
+has a row mapping its uuid to itself, written by migration
+`0160_backfill_kilter_self_aliases` and by catalog-sync's identity path, because
+deletion reconciliation resolves upstream removals through this table. In
+production, the broken predicate matches **106,550 of 127,131** tier-2 climbs
+(84%), while zero genuine aliases currently reach tier 2. So the exclusion
+carries `alias_uuid <> canonical_uuid`; without it most of the sitemap vanishes
+silently while the remaining boards keep the shard non-empty.
+
+**MoonBoard configurations are held out of the shard.** `generateSetSlug` joins
+set-name slugs with `_`, while the MoonBoard page's parser
+(`getMoonBoardSetsBySlug`) splits the slug on `-` and substring-matches the parts
+— so the set slug the shard emits does not round-trip, and the page's own
+canonical comes back with a different set-id list. 212 of 227 layout×set
+combinations mismatch, the full set lists on masters-2017 and masters-2019
+included. `tryConstructSlugViewUrl` returns a URL for all 227, so the
+resolvability probe cannot see it; the hold-out is a separate, named exclusion.
+Costs nothing today (`getPopularConfigs()` emits no MoonBoard rows, excluding all
+73,412 production tier-2 MoonBoard climbs before this guard runs) and stops the
+shard going wrong the moment a `board_product_sizes_layouts_sets` seed lands.
+Lifting it means making `getMoonBoardSetsBySlug` an exact `generateSetNameSlug`
+match on `_`-split parts — a routing-parser change, not a sitemap one.
+
+**`<lastmod>` is the later of the climb-content and chosen-angle stats clocks.**
+Ascents and grades advance `board_climb_stats.updated_at`; name, description and
+frame edits independently advance `board_climbs.updated_at` through the live
+`trg_board_climbs_set_sync_fields` trigger. Both per-URL items and the summary pick
+the later clock (the summary through `GREATEST`) so a renamed climb cannot publish
+a new slug with an older timestamp.
+The known risk is that a bulk upstream stats refresh flattens the signal for one
+cycle; dropping the field remains a one-line fallback if that hurts crawling.
+
+**Four caching layers, because a 52,842-item grouped scan is not a playlists query.**
+`dbzRead` (the read pool), `withSerialPlan` (the parallel-hash-join guard behind
+the `could not resize shared memory segment` class), an in-process TTL plus
+single-flight promise so one instance builds the list once, and a six-hour CDN
+window with a seven-day stale-while-revalidate. Group queries run **sequentially**
+— a fan-out of concurrent heavy scans on a ten-connection pool is the
+pool-starvation failure #4461 describes, and the test that pins it asserts
+_concurrency depth_, not a call count, because a `Promise.all` rewrite leaves the
+call count identical. The index reads `summary()` and never `buildPage()`; a unit
+test asserts zero builder calls, and it is the assertion most likely to be
+quietly broken later. The full item list is **not** in `unstable_cache`: ~20 MB
+serialised is past the Data Cache's 2 MB entry ceiling, so it would silently
+never cache.
+
+The summary's **result** is two numbers; its **cost** is not. It is the same
+`DISTINCT ON` scan as the item build, once per `(board_type, layout_id)` group —
+measured on the full-board dev image at 9.2 s cold and 0.94 s warm for the single
+largest group; production currently resolves 12 groups. `unstable_cache` does not deduplicate
+concurrent misses, so on a cold Data Cache the index plus every shard page would
+each run their own full scan; the summary therefore carries the same in-process
+TTL and single-flight the item build does.
+
+**What none of this covers: a genuinely cold cross-instance crawl.** The item
+list is per-instance by construction, so if Googlebot fetches N shard pages that
+all miss the CDN and land on N lambdas, the cost really is N full builds. Per-page
+Data Cache entries would not help — building page N still needs the whole ordered
+list before it can slice. The real fix is a materialised tier-2 table, which is
+the tier-3 follow-up. State this plainly rather than letting the four layers read
+as more protection than they are.
+
+**Every climb page in the index carries the same `<lastmod>`** — the shard's
+global `max(GREATEST(climb_updated_at, stats_updated_at))` — so one content or
+stats update anywhere makes all N pages look changed. Bounded to ~4×/day by the
+summary cache. A per-page value would require
+building the items to know which page a climb fell on, which is the exact scan the
+summary/build split exists to avoid, so the uniform value is the deliberate trade.
+The aggregate is read through `to_char(..., 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` and
+not a bare `max()`: a raw `sql` aggregate bypasses drizzle's timestamp mapper, and
+`new Date()` reads the resulting pg text in the _process_ timezone, which would
+silently offset the index `<lastmod>` on any non-UTC runtime while the per-URL
+`<lastmod>` from the same clocks stayed correct.
+
+**JSON-LD.** `BreadcrumbList` already shipped in W-15. This wave adds
+`CreativeWork` (+ `aggregateRating`) on the climb front door, `Organization` +
+`WebSite` on `/`, `ProfilePage` on `/profile/[user_id]`, and `ItemList` on
+`/list`, all through one `JsonLd` component that escapes `<` so user content
+cannot close the script block.
+
+Every JSON-LD `url` is built with `absoluteLocaleUrl(path, locale)` — the same
+`localeHref` call `createPageMetadata` makes for the canonical — so on `/es`,
+`/fr` and `/de` the structured data names the locale-prefixed URL the page itself
+claims rather than the en-US twin. And on a `/b/{slug}` page for an unlisted or
+private board the `CreativeWork` is not emitted at all: `generateMetadata`
+withholds `alternates` there precisely so a noindex URL never names its indexable
+twin, and `CreativeWork.url` — the field Google uses for page association — would
+have walked straight around that guard. (The pre-existing `BreadcrumbList` leaf
+still emits it; that is W-15 code and is left for a follow-up.)
+
+`aggregateRating` is emitted only when three conditions hold: `quality_normalized`
+is true, `quality_average` is present and inside [1, 5], and the rating count is
+at least 1. The first is not paranoia — Aurora reports quality on 1-3 and ~235k
+JSON-imported Kilter rows are still on that scale, so publishing an unnormalized
+average with `bestRating: 5` understates every one of them. The count is the
+blend's **own** denominator (`upstream_ascensionist_count` where the upstream side
+actually supplied a quality, plus `boardsesh_quality_count`), not
+`ascensionist_count`. Stated precisely, because the loose version — "never
+ascents" — is not a promise the expression can make: on an upstream-sourced climb
+with no native ratings yet the denominator _is_ `upstream_ascensionist_count`, and
+that is right, since Aurora's quality average is itself taken over the ascents
+that rated the climb. What is excluded is the Boardsesh ascent count, and the
+upstream ascents of a climb upstream never rated at all.
+
+`Organization`/`WebSite` carry **no** `potentialAction` / `SearchAction`. www has
+no site search after the W-16 teardown, and pointing one at an endpoint that does
+not exist is a fabricated capability; a deep-scan test fails if anyone adds one.
+`sameAs` lists only the two external URLs the site already publishes.
+
+`ProfilePage` renders on the success path only — the `notFound()` and the
+metadata `catch` branch are both `noindex, follow`. Note the interaction with
+#4473: `/setter/[username]` is a client-only shell today, and no JSON-LD was added
+there.
+
+**Not in this wave, and pinned by tests:** no `VideoObject` (beta links are
+third-party embeds and need a policy call), and no tier 3 —
+`TIER_2_MIN_ASCENTS === 10` is asserted, so lowering it is a deliberate act.
 
 ## Phase A0 — blocking pre-delete QA gate (real devices)
 

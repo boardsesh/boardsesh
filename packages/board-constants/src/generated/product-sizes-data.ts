@@ -26,7 +26,7 @@ export const AURORA_PRODUCT_SIZES: Record<BoardName, Record<number, ProductSizeD
     7: {
       id: 7,
       name: '12 x 14',
-      description: 'Commerical',
+      description: 'Commercial',
       edgeLeft: 0,
       edgeRight: 144,
       edgeBottom: 0,
@@ -475,6 +475,7 @@ export const AURORA_PRODUCT_SIZES: Record<BoardName, Record<number, ProductSizeD
     },
   },
   moonboard: {},
+  woods: {},
 };
 
 export const LAYOUTS: Record<BoardName, Record<number, LayoutData>> = {
@@ -500,6 +501,7 @@ export const LAYOUTS: Record<BoardName, Record<number, LayoutData>> = {
     1: { id: 1, name: 'Summer 2024', productId: 1 },
   },
   moonboard: {},
+  woods: {},
 };
 
 export const SETS: Record<BoardName, Record<string, SetData[]>> = {
@@ -745,6 +747,7 @@ export const SETS: Record<BoardName, Record<string, SetData[]>> = {
     '1-2': [{ id: 1, name: 'The Set' }],
   },
   moonboard: {},
+  woods: {},
 };
 
 export const IMAGE_FILENAMES: Record<BoardName, Record<string, string>> = {
@@ -918,4 +921,5 @@ export const IMAGE_FILENAMES: Record<BoardName, Record<string, string>> = {
     '1-2-1': 'product_sizes_layouts_sets/2-v2.png',
   },
   moonboard: {},
+  woods: {},
 };

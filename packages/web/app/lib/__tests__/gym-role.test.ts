@@ -12,6 +12,7 @@ function makeGym(overrides?: Partial<Gym>): Gym {
     createdAt: '2024-01-01',
     boardCount: 3,
     boardTypes: ['kilter'],
+    boardSummaries: [{ boardType: 'kilter', angle: 40 }],
     memberCount: 12,
     followerCount: 8,
     commentCount: 0,
@@ -20,6 +21,7 @@ function makeGym(overrides?: Partial<Gym>): Gym {
     canEdit: true,
     canGrantAccess: true,
     canClaim: false,
+    isClaimed: true,
     ...overrides,
   };
 }

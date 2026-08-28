@@ -45,12 +45,13 @@ export const ALL_NAMESPACES = [
   'aurora',
   'boards',
   'kiosk',
+  'gyms',
 ] as const;
 export type Namespace = (typeof ALL_NAMESPACES)[number];
 
 /**
  * Namespaces available in the mobile app. Web-only namespaces (`marketing`,
- * `admin`) are excluded so Metro never bundles them.
+ * `admin`, `gyms`) are excluded so Metro never bundles them.
  */
 export const MOBILE_NAMESPACES = [
   'common',

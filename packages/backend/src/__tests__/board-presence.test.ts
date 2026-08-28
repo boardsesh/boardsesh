@@ -32,6 +32,7 @@ import { setCachedBoardPresenceStats } from '../graphql/resolvers/board-presence
 import { buildTickBoardLockQuery, tickMutations } from '../graphql/resolvers/ticks/mutations';
 import { seedAuroraCatalogFixtures } from './helpers/board-catalog-fixture';
 import { logger } from '../utils/logger';
+import { createBarrier, createValueBarrier, handleLater } from './helpers/concurrency';
 
 // Board presence is always-on (the BOARD_PRESENCE_ENABLED env gate and the
 // PostHog flag were removed when the feature went GA), so the suite needs no
@@ -90,22 +91,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await cleanupBoardPresenceCatalogFixtures();
 });
-
-function createBarrier(): { promise: Promise<void>; release: () => void } {
-  let release = (): void => undefined;
-  const promise = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  return { promise, release };
-}
-
-function createValueBarrier<Result>(): { promise: Promise<Result>; release: (result: Result) => void } {
-  let release = (_result: Result): void => undefined;
-  const promise = new Promise<Result>((resolve) => {
-    release = resolve;
-  });
-  return { promise, release };
-}
 
 async function waitForSessionBlockedBy(blockingPid: number): Promise<void> {
   const deadline = Date.now() + 5_000;
@@ -1152,6 +1137,62 @@ describe('board-presence resolvers', () => {
       ).rejects.toThrow('Unknown climb');
     });
 
+    it('accepts a negative board angle (Aurora boards support negative tilt) and publishes it verbatim', async () => {
+      // reportBoardClimb fires on EVERY climb-light event from a connected/kiosk
+      // board, so a negative-tilt board (e.g. -5°) must not error here. There's
+      // no board_climb_stats row at -5° for TEST_CLIMB_UUID, so the grade join
+      // simply misses (grade: null) rather than rejecting the report.
+      const boardId = await makeBoard();
+      const received: BoardPresenceEvent[] = [];
+      const unsubscribe = await pubsub.subscribeBoardPresence(String(boardId), (event) => received.push(event));
+
+      const ok = await boardPresenceMutations.reportBoardClimb(
+        undefined,
+        { boardId, climb: makeQueueItemInput(), angle: -5 },
+        authCtx(),
+      );
+      expect(ok).toBe(true);
+
+      const climbSet = received.find((event): event is BoardClimbSet => event.__typename === 'BoardClimbSet');
+      expect(climbSet).toBeDefined();
+      expect(climbSet!.climb.angle).toBe(-5);
+      expect(climbSet!.climb.grade).toBeNull();
+      unsubscribe();
+    });
+
+    it('rejects angle -91 (outside the -90..90 board-tilt range) before touching the board', async () => {
+      const boardId = await makeBoard();
+      await expect(
+        boardPresenceMutations.reportBoardClimb(
+          undefined,
+          { boardId, climb: makeQueueItemInput(), angle: -91 },
+          authCtx(),
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('accepts a negative climb.angle (ClimbInputSchema) as the fallback when no top-level angle is sent', async () => {
+      // ReportBoardClimbInputSchema.climb extends ClimbInputSchema — this proves
+      // ITS angle bound (not just BoardPresenceAngleSchema's) accepts negative
+      // tilt: the top-level `angle` arg is omitted, so effectiveAngle falls back
+      // to validatedClimb.climb.angle.
+      const boardId = await makeBoard();
+      const received: BoardPresenceEvent[] = [];
+      const unsubscribe = await pubsub.subscribeBoardPresence(String(boardId), (event) => received.push(event));
+
+      const ok = await boardPresenceMutations.reportBoardClimb(
+        undefined,
+        { boardId, climb: makeQueueItemInput({ angle: -5 }) },
+        authCtx(),
+      );
+      expect(ok).toBe(true);
+
+      const climbSet = received.find((event): event is BoardClimbSet => event.__typename === 'BoardClimbSet');
+      expect(climbSet).toBeDefined();
+      expect(climbSet!.climb.angle).toBe(-5);
+      unsubscribe();
+    });
+
     it('rejects a report from a user who never connected to the board (proof-of-presence)', async () => {
       // makeBoard() resolves as TEST_USER_ID, stamping that user's membership.
       // A different authenticated user who never connected must not be able to
@@ -1265,6 +1306,7 @@ describe('board-presence resolvers', () => {
       // Prime the iterator: kick off the first next() (this runs up to the
       // first `yield`, establishing the subscription) then report a climb.
       const nextPromise = iterator.next();
+      handleLater(nextPromise);
       // Give the eager subscribe a tick to settle.
       await new Promise((r) => setTimeout(r, 50));
 
@@ -1479,6 +1521,7 @@ describe('board-presence resolvers', () => {
           mergeReady.release(Number((session as { pid: number }).pid));
           await releaseMerge.promise;
         });
+        handleLater(mergePromise);
         const mergePid = await mergeReady.promise;
 
         savePromise = tickMutations.saveTick(
@@ -1486,6 +1529,7 @@ describe('board-presence resolvers', () => {
           { input: baseTickInput({ uuid: tickUuid, boardId: loserId }) },
           authCtx(),
         );
+        handleLater(savePromise);
         await waitForSessionBlockedBy(mergePid);
 
         releaseMerge.release();
@@ -1520,6 +1564,7 @@ describe('board-presence resolvers', () => {
           await releaseDelete.promise;
           await transaction.execute(sql`UPDATE user_boards SET deleted_at = now() WHERE id = ${boardId}`);
         });
+        handleLater(deletePromise);
         const deletePid = await deleteReady.promise;
 
         savePromise = tickMutations.saveTick(
@@ -1527,6 +1572,7 @@ describe('board-presence resolvers', () => {
           { input: baseTickInput({ uuid: tickUuid, boardId }) },
           authCtx(),
         );
+        handleLater(savePromise);
         await waitForSessionBlockedBy(deletePid);
 
         releaseDelete.release();

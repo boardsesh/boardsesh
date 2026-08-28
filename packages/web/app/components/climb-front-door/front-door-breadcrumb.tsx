@@ -3,6 +3,7 @@ import Box from '@mui/material/Box';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
+import { JsonLd } from '@/app/lib/seo/json-ld';
 import { themeTokens } from '@/app/theme/theme-config';
 
 type FrontDoorBreadcrumbProps = {
@@ -59,11 +60,7 @@ export default async function FrontDoorBreadcrumb({
 
   return (
     <Box component="nav" aria-label={t('frontDoor.breadcrumb.aria')}>
-      <script
-        type="application/ld+json"
-        // JSON.stringify escapes quotes; guard the one XSS vector for inline JSON-LD.
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd).replace(/</g, '\\u003c') }}
-      />
+      <JsonLd data={breadcrumbJsonLd} />
       <Box component="ol" sx={listSx}>
         <li>
           <LocaleLink href="/">{t('frontDoor.breadcrumb.home')}</LocaleLink>

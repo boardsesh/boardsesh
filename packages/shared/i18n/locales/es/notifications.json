@@ -1,10 +1,4 @@
 {
-  "metadata": {
-    "notifications": {
-      "title": "Notificaciones",
-      "description": "Tus notificaciones en Boardsesh"
-    }
-  },
   "title": "Notificaciones",
   "empty": "Sin notificaciones todavía",
   "markAllRead": "Marcar todo como leído",
@@ -33,14 +27,8 @@
     "newClimbsSyncedSetter": "{{setter}} montó nuevos bloques",
     "newClimbsSynced": "{{actor}} montó nuevos bloques",
     "gymClaimApproved": "Ahora gestionas {{gym}}",
-    "gymClaimApprovedGeneric": "Ya eres el propietario: se aprobó tu reclamación del gimnasio",
+    "gymClaimApprovedGeneric": "Ya eres el propietario: se aprobó tu reclamación del rocódromo",
     "default": "Tienes una nueva notificación"
-  },
-  "time": {
-    "justNow": "ahora mismo",
-    "minutes": "{{count}}m",
-    "hours": "{{count}}h",
-    "days": "{{count}}d"
   },
   "errors": {
     "load": "No se pudieron cargar tus notificaciones"

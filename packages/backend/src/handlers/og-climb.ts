@@ -62,6 +62,12 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
     set_ids: url.searchParams.get('set_ids'),
     frames: url.searchParams.get('frames') ?? '',
     format: url.searchParams.get('format') ?? undefined,
+    // boardsesh-mode render options (issue #2202) — see docs/og-climb.md.
+    // Defaults keep this endpoint classic.
+    render_mode: url.searchParams.get('render_mode') ?? undefined,
+    glow_falloff: url.searchParams.get('glow_falloff') ?? undefined,
+    glyphs: url.searchParams.get('glyphs') ?? undefined,
+    field_color: url.searchParams.get('field_color') ?? undefined,
   });
   if (!parsed.success) {
     sendJson(res, 400, { error: 'Invalid parameters', details: parsed.error.issues.map((issue) => issue.message) });
@@ -105,6 +111,10 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
       setIds: query.set_ids,
       frames: query.frames,
       format,
+      renderMode: query.render_mode,
+      glowFalloff: query.glow_falloff,
+      glyphs: query.glyphs,
+      fieldColor: query.field_color,
     });
     const totalMs = performance.now() - totalT0;
 

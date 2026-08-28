@@ -19,6 +19,7 @@ import {
 } from '../../../lib/beta-link-thumbnails';
 import { redisClientManager } from '../../../redis/client';
 import { logger } from '../../../utils/logger';
+import { REDISLESS_FALLBACK_TTL_MS, singleFlight } from '../../../utils/single-flight';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { applyRateLimit, requireAuthenticated } from '../shared/helpers';
 
@@ -351,6 +352,40 @@ async function runRecentBetaLinksQuery(): Promise<CachedRecentBetaLinkRow[]> {
  * and writes the result back. On Redis unavailable, runs the CTE inline
  * (same fall-through pattern as `getPopularConfigs` in social/boards.ts).
  */
+/**
+ * One key for every caller, deliberately: the CTE below fetches a fixed
+ * RECENT_BETA_LINKS_CACHE_SIZE rows regardless of the caller's `limit`, which
+ * the resolver then slices. So two concurrent callers asking for different
+ * limits are asking for the same statement — the same reason the Redis key
+ * isn't parameterised either.
+ */
+const RECENT_BETA_LINKS_FLIGHT_KEY = 'recent-beta-links';
+
+/**
+ * Redis-less fallback, mirroring `getPopularConfigs`. Never read or written
+ * when a shared cache is available, so production behaviour is unchanged.
+ */
+let localFallbackRows: { rows: CachedRecentBetaLinkRow[]; expiresAt: number } | null = null;
+
+/**
+ * Bumped on every invalidation. A CTE that was already running when a climber
+ * posted a link holds a pre-write snapshot, and without this it would repopulate
+ * the fallback *after* the drop and hide the new link for the full 10 minutes.
+ * A flight captures the counter before it starts and declines to cache its
+ * result if the number moved underneath it.
+ */
+let fallbackGeneration = 0;
+
+/**
+ * The Redis-less twin of deleting RECENT_BETA_LINKS_REDIS_KEY. Called by
+ * `invalidateRecentBetaLinksCache`, and by tests so one case cannot answer the
+ * next from the previous one's fixture.
+ */
+export function dropRecentBetaLinksFallback(): void {
+  localFallbackRows = null;
+  fallbackGeneration += 1;
+}
+
 async function getCachedRecentBetaLinks(): Promise<CachedRecentBetaLinkRow[]> {
   if (redisClientManager.isRedisConnected()) {
     try {
@@ -362,19 +397,34 @@ async function getCachedRecentBetaLinks(): Promise<CachedRecentBetaLinkRow[]> {
     } catch (err) {
       logger.error('[RecentBetaLinks] Redis read failed:', err);
     }
+  } else if (localFallbackRows && localFallbackRows.expiresAt > Date.now()) {
+    return localFallbackRows.rows;
   }
 
-  const rows = await runRecentBetaLinksQuery();
+  // Same pool-exhaustion hazard as popularBoardConfigs (#4463): the other half
+  // of the home page's cold read. One in-flight copy per process, joined by
+  // every concurrent caller.
+  return singleFlight(RECENT_BETA_LINKS_FLIGHT_KEY, async () => {
+    const generationAtStart = fallbackGeneration;
+    const rows = await runRecentBetaLinksQuery();
 
-  if (redisClientManager.isRedisConnected()) {
-    try {
-      const { publisher } = redisClientManager.getClients();
-      await publisher.set(RECENT_BETA_LINKS_REDIS_KEY, JSON.stringify(rows), 'EX', RECENT_BETA_LINKS_REDIS_TTL_SECONDS);
-    } catch (err) {
-      logger.error('[RecentBetaLinks] Redis write failed:', err);
+    if (redisClientManager.isRedisConnected()) {
+      try {
+        const { publisher } = redisClientManager.getClients();
+        await publisher.set(
+          RECENT_BETA_LINKS_REDIS_KEY,
+          JSON.stringify(rows),
+          'EX',
+          RECENT_BETA_LINKS_REDIS_TTL_SECONDS,
+        );
+      } catch (err) {
+        logger.error('[RecentBetaLinks] Redis write failed:', err);
+      }
+    } else if (fallbackGeneration === generationAtStart) {
+      localFallbackRows = { rows, expiresAt: Date.now() + REDISLESS_FALLBACK_TTL_MS };
     }
-  }
-  return rows;
+    return rows;
+  });
 }
 
 /**
@@ -387,6 +437,11 @@ export async function warmRecentBetaLinksCache(): Promise<void> {
   // No Redis means there's no cache to warm — running the CTE here would
   // just discard the result. Skip the work and the log so dev/test logs
   // stay honest.
+  //
+  // This is why there is no `dropRecentBetaLinksFallback()` here to mirror
+  // `warmPopularConfigsCache`'s drop: that one keeps going without Redis (it
+  // seeds the process-local copy), this one stops before it could read or
+  // write anything.
   if (!redisClientManager.isRedisConnected()) return;
 
   try {
@@ -424,6 +479,9 @@ export async function warmRecentBetaLinksCache(): Promise<void> {
  * never blocks the calling mutation.
  */
 export async function invalidateRecentBetaLinksCache(): Promise<void> {
+  // Drop the Redis-less copy too, or a dev/CI server would serve the pre-save
+  // strip for up to REDISLESS_FALLBACK_TTL_MS after a new link lands.
+  dropRecentBetaLinksFallback();
   if (!redisClientManager.isRedisConnected()) return;
   try {
     const { publisher } = redisClientManager.getClients();

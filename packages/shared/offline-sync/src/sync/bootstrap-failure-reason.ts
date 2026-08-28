@@ -33,6 +33,24 @@ export type SnapshotBootstrapFailureReason =
    * funnel is trying to size rather than another interruption.
    */
   | 'abandoned-removed'
+  /**
+   * Sign-out ended the download (issue #4452). Either the explicit sign-out's
+   * wipe deleted the marker along with every other sync_meta row, or a selective
+   * sign-out (forced 401, proactive expiry, identity change) emptied
+   * `syncEnabledBoards` — which orphans the Started just as thoroughly, because
+   * the pull client's board loop only ever visits ENABLED scopes. Same
+   * once-per-Started contract as `abandoned-removed`.
+   */
+  | 'abandoned-signed-out'
+  /**
+   * The climber turned the board OFF while its download was still running
+   * (issue #4452), from My Boards. Nothing is deleted — the rows and checkpoints
+   * stay so a re-enable resumes instantly — but the scope leaves
+   * `syncEnabledBoards`, so no future cycle will finish THIS download. A
+   * re-enable opens a fresh funnel rather than resuming this one, which is the
+   * only reading that keeps Started → Completed a real ratio.
+   */
+  | 'abandoned-disabled'
   /** The app went to the background mid-cycle. Resumes on the next foreground. */
   | 'aborted-background'
   /** SQLITE_BUSY / SQLITE_LOCKED — contention, not a broken database. */

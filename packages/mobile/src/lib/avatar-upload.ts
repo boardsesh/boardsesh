@@ -19,9 +19,8 @@ export type AvatarUploadFile = {
 
 /**
  * The avatar handler returns a backend-relative URL (`/static/avatars/{id}.{ext}`)
- * so the backend can proxy/resize it. Persisted profiles store the absolute URL,
- * matching the web client (settings-page-content.tsx). Third-party absolute URLs
- * pass through untouched.
+ * so the backend can proxy/resize it. Persisted profiles store the absolute URL.
+ * Third-party absolute URLs pass through untouched.
  */
 export function absolutizeAvatarUrl(url: string): string {
   return url.startsWith('/') ? `${BACKEND_URL}${url}` : url;

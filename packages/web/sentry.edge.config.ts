@@ -4,19 +4,21 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from '@sentry/nextjs';
-
-// Only enable Sentry on production deployments to avoid polluting error tracking
-const isProductionDomain = process.env.VERCEL_ENV === 'production';
+import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boardsesh/db/client/config';
 
 Sentry.init({
   dsn: 'https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400',
 
-  // Only send errors when running on boardsesh.com
-  enabled: isProductionDomain,
+  // Report only from a real production deployment. This used to be
+  // `VERCEL_ENV === 'production'`, which is unset on Railway and on every other
+  // host — the swap would have taken web Sentry dark at exactly the moment the
+  // telemetry mattered most (#4651). resolveSentryEnvironment() is the same
+  // helper the backend's instrument.ts uses, and it already covers a Railway
+  // deployment (NODE_ENV and SENTRY_ENVIRONMENT both unset, non-private
+  // DATABASE_URL) as well as branch deploys (SENTRY_ENVIRONMENT=preview).
+  enabled: isProductionSentryEnvironment(),
 
-  // Only initializes on VERCEL_ENV === 'production' (see the gate above), so tag
-  // events accordingly for the environment:production filter.
-  environment: 'production',
+  environment: resolveSentryEnvironment(),
 
   // Enable logs to be sent to Sentry
   enableLogs: true,

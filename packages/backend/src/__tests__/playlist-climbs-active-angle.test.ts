@@ -137,6 +137,31 @@ describe('playlistClimbs — active-angle override (real DB)', () => {
     expect(byUuid['climb-c'].difficulty).toBeTruthy();
   });
 
+  it('accepts a negative activeAngle (Aurora boards support negative tilt) and falls back like any other unmatched angle', async () => {
+    // No board_climb_stats row at -5° for any on-board climb, so the EXISTS
+    // guard drops the override and each on-board climb falls back to its
+    // most-ascended angle — same behaviour as a positive angle with no stats.
+    const result = await playlistQueries.playlistClimbs(
+      null,
+      { input: { playlistId: PLAYLIST_UUID, activeBoardName: 'kilter', activeAngle: -5 } },
+      makeCtx(),
+    );
+
+    const byUuid = Object.fromEntries(result.climbs.map((climb) => [climb.uuid, climb]));
+    expect(byUuid['climb-a'].angle).toBe(50);
+    expect(byUuid['climb-b'].angle).toBe(50);
+  });
+
+  it('rejects activeAngle -91 (outside the -90..90 board-tilt range)', async () => {
+    await expect(
+      playlistQueries.playlistClimbs(
+        null,
+        { input: { playlistId: PLAYLIST_UUID, activeBoardName: 'kilter', activeAngle: -91 } },
+        makeCtx(),
+      ),
+    ).rejects.toThrow();
+  });
+
   it('without an active board, on-board climbs still default to the most-ascents angle (unchanged behaviour)', async () => {
     const result = await playlistQueries.playlistClimbs(null, { input: { playlistId: PLAYLIST_UUID } }, makeCtx());
 

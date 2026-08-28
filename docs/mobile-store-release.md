@@ -1,10 +1,10 @@
 # Mobile store release runbook
 
 How a `packages/mobile` (React Native) release reaches the App Store and Google
-Play. Three layers: **builds are automatic on merge**, **store assets are a
-dispatch-when-changed workflow**, and **the final "go live" is a manual click in
-each store** (we deliberately do not automate review submission or production
-rollout).
+Play without moving `main` off the fingerprint used by the currently shipped
+binary. Native candidates live on the temporary `release/next` branch;
+production OTA updates continue from `main` until both stores approve the exact
+candidate and the release PR merges.
 
 Source of truth for everything uploaded:
 
@@ -13,24 +13,72 @@ Source of truth for everything uploaded:
 - Screenshots: captured fresh, not committed (see `packages/mobile/.maestro/`)
 - Lane details: `fastlane/README.md`
 
-## 1. Automatic on merge to `main`
+## One-time GitHub setup
 
-Merging anything under `packages/mobile/` or the shared packages triggers:
+Create a `Native Release` environment with a custom deployment-branch policy
+that allows exactly `main` and `release/next`. Copy the native signing, App Store
+Connect, Google Play, Maps, share-extension, Sentry and Discord secrets used by
+the workflows in this runbook into that environment. The four values that exist
+only in `Production` today (`DISCORD_DEPLOY_WEBHOOK`, `GOOGLE_MAPS_API_KEY`,
+`IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64`, and `SENTRY_AUTH_TOKEN`) must
+be transferred from their secure source; GitHub never returns secret values.
+
+After both `Production` and `Native Release` hold independent copies, remove the
+repository-level duplicates of the iOS/Android signing and store credentials.
+Otherwise a workflow that loses its environment binding silently falls back to
+the repository secret and the environment is not a credential boundary. Keep
+`OTA_PUSH_APP_PRIVATE_KEY` repository-scoped because trusted OTA and maintenance
+workflows also use it.
+
+The repository App used by `OTA_PUSH_APP_ID` needs Contents, Workflows and Pull
+requests write access. Workflows is required to rebase commits that
+touch `.github/workflows`; Pull requests is required for the acceptance monitor
+to merge with the App token so the resulting `main` push triggers production
+OTA.
+
+Protect `release/next` with the same pull-request approval rules as `main`, but
+give only that repository App a ruleset bypass so it can perform the
+lease-protected rebase force-push. Allow branch deletion: the train is ephemeral
+and is removed after its release PR merges.
+
+Add an active tag ruleset for `build-*`, `fingerprint-*`, and `release/*` that
+blocks creation, updates and deletion except through the same repository App.
+The acceptance monitor trusts these tags to map an immutable store build number
+to its commit and native fingerprint; allowing ordinary write tokens to replace
+them would make automatic merge unsafe.
+
+## 1. Route work to the right branch
+
+- JS-only mobile changes target `main` and ship through the production OTA.
+- Changes that move the Expo native fingerprint target `release/next`.
+- Split mixed backend/native work: land a backward-compatible backend or schema
+  foundation on `main`, then target the native mobile part at `release/next`.
+  Keep the server compatible with the current store app until the replacement
+  release has been adopted.
+
+`release/next` is rebased automatically after every `main` push. A conflict
+leaves the branch untouched and posts the failed rebase to `#deployments` for
+manual resolution.
+
+## 2. Automatic candidate builds from `release/next`
+
+A push that resolves to a new native fingerprint triggers:
 
 - **iOS TestFlight Deploy** (`ios-testflight-rn.yml`) — builds the app, resolves
   the build number from App Store Connect (latest TestFlight build for the
   marketing version + 1), uploads to **TestFlight**.
-- **Android APK Build** (`android-apk-rn.yml`) — builds the AAB, resolves
+- **Android Play Internal Deploy** (`android-apk-rn.yml`) — builds the AAB, resolves
   versionCode from Google Play (max across tracks + 1), uploads to the Play
-  **internal** track with the "What's new" from `changelogs/default.txt`, and
-  publishes the sideload APK as a GitHub Release.
+  **internal** track with the "What's new" from `changelogs/default.txt`.
+  Candidate APK/AAB files stay private as Actions artifacts; no public GitHub
+  Release is created.
 
-Both fall back to `offset + run_number` if the store query fails or a credential
-is missing; the `build_number_offset` / `version_code_offset` dispatch inputs
-feed that fallback. So the binary and the Android release notes ship with no
-action from you.
+Both workflows record the exact store build number, commit and fingerprint in a
+`build-<platform>-v<version>-<number>-<shortfp>` tag. A JS-only rebase keeps the
+fingerprint and skips a duplicate store build; its JavaScript ships by OTA after
+the accepted release merges.
 
-## 2. Dispatch when the listing changed
+## 3. Dispatch when the listing changed
 
 Run these from the Actions tab only when the relevant asset changed this release.
 Both write to the **editable App Store version / Play draft listing**, so a wrong
@@ -49,11 +97,26 @@ The Android "What's new" is **not** — it already shipped with the AAB in step 
 one `whatsnew-<locale>` per `fastlane/metadata/android/<locale>/changelogs/`
 folder.
 
-## 3. Manual "go live" in the stores
+## 4. Submit for review manually
 
 - **App Store Connect** — attach the TestFlight build to the version, confirm the
   metadata/screenshots, **Submit for Review**.
 - **Play Console** — **promote** the internal release to the production track.
+
+Review submission and rollout remain manual. The release monitor treats an
+approved-but-held build as accepted; public availability is not required.
+
+## 5. Automatic merge after both approvals
+
+The release monitor checks the exact attached Apple build and exact Google Play
+production `versionCode`. The build recorded for `release/next` must have the
+same marketing version and native fingerprint as the branch head. It then merges
+the PR only when it is ready, approved, green, current and conflict-free.
+Unresolved review threads are not a release gate.
+
+The merge triggers the normal `main` production OTA under the accepted native
+fingerprint. GitHub deletes `release/next`; recreate it from current `main` when
+the next native train starts.
 
 ## End-to-end checklist
 
@@ -66,18 +129,24 @@ folder.
    `changelog.generated.json`, so every locale here is hand-written and a locale
    you skip silently ships the previous release's notes. Play caps each
    changelog at 500 characters and German runs long — check before pushing.
-   Merge to `main`.
-2. Merge auto-builds TestFlight + Play internal (Android changelog rides along).
+   Commit these changes to `release/next`.
+2. Wait for the automatic TestFlight + Play internal builds (Android changelog
+   rides along) and complete native QA from the release PR.
 3. **In App Store Connect, create the new version first** — the `ios metadata`
    lane only writes into an existing _editable_ version. Then, if copy / icon /
    screenshots changed this release, dispatch **Mobile Store Metadata** (`all`)
    and **Mobile Screenshots** (`upload: true`).
-4. Submit for Review (iOS) and promote internal -> production (Play).
+4. Mark the release PR ready and obtain approval, then submit iOS and Android
+   for review. The release monitor merges when both exact builds are approved.
 
 ## Notes
 
-- **No new secrets.** Everything reuses the App Store Connect API key and Google
-  Play service-account secrets the build workflows already use.
+- Native builds, the release monitor, and store-draft fingerprint verification
+  use the restricted `Native Release` GitHub environment. Verification maps only
+  the Maps key into release-tree code, resolves each checkout from its own frozen
+  lockfile with lifecycle scripts disabled, and checks the immutable build-tag
+  fingerprint. Do not grant `release/next` access to the broader `Production`
+  environment.
 - **Not automated, on purpose:** review submission, phased/staged rollout, and
   iOS App Store icon upload (the iOS store icon comes from the uploaded build's
   1024x1024 marketing icon, never from fastlane).

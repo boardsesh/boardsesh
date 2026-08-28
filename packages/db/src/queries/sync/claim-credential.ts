@@ -9,6 +9,36 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 export type ClaimedCredential = typeof auroraCredentials.$inferSelect;
 
 /**
+ * A credential claimed less than this long ago is not claimable again.
+ *
+ * This is not a throttle, it is what makes the claim safe under READ COMMITTED
+ * — see the EvalPlanQual note on {@link claimNextCredentialForSync}. The
+ * daemon's shortest cycle is 1 minute (`DEFAULT_DAEMON_OPTIONS.minDelayMinutes`
+ * in @boardsesh/sync-runtime), so no real caller wants to re-claim inside this
+ * window. A future "sync now" path that calls the claim directly would, and
+ * would silently get nothing back — give it its own path rather than shrinking
+ * this gap.
+ */
+export const CREDENTIAL_MIN_RECLAIM_GAP_MS = 30_000;
+
+// Inlined as a numeric literal rather than a bound parameter so Postgres can
+// resolve `make_interval(secs => ...)` without an explicit cast.
+//
+// `sql.raw` is the injection-shaped escape hatch, so be explicit about why it
+// is safe here and not a pattern to copy: the argument is a module-level
+// number literal divided by 1000, never a request value. Anything that can
+// vary at runtime belongs in a bound `${}` parameter with a cast.
+const RECLAIM_GAP_SECONDS = sql.raw(String(CREDENTIAL_MIN_RECLAIM_GAP_MS / 1000));
+
+/** TRUE when the credential was last claimed more than {@link CREDENTIAL_MIN_RECLAIM_GAP_MS} ago (or never). */
+function credentialReclaimGapElapsedSql(): SQL {
+  return sql`(
+    ${auroraCredentials.lastSyncAttemptAt} IS NULL
+    OR ${auroraCredentials.lastSyncAttemptAt} <= now() - make_interval(secs => ${RECLAIM_GAP_SECONDS})
+  )`;
+}
+
+/**
  * Pick the next credential to sync AND claim it, so two daemon instances take
  * disjoint work instead of racing for the same row.
  *
@@ -32,6 +62,42 @@ export type ClaimedCredential = typeof auroraCredentials.$inferSelect;
  * safe under PgBouncer transaction pooling and never holds a row lock across
  * an Aurora/Kilter HTTP call.
  *
+ * ## Why the reclaim gap in the WHERE is load-bearing (#3987)
+ *
+ * Sorting the claimed row to the back is NOT sufficient on its own, and the gap
+ * predicate below is not redundant with the ordering. Under READ COMMITTED,
+ * SKIP LOCKED only skips rows whose lock is *currently held*. If claimer A
+ * locks row X, stamps it and COMMITs entirely inside the window between
+ * claimer B's statement snapshot and B's lock attempt on X, the lock is already
+ * gone by the time B reaches it. Postgres then follows the update chain and
+ * runs an EvalPlanQual recheck of the new row version — and EPQ re-evaluates
+ * only the WHERE quals, never the ORDER BY. `credentialRetryReadySql()`
+ * short-circuits to TRUE on `consecutive_failures <= 0` no matter how fresh the
+ * attempt stamp is, so before this predicate existed every qual still passed:
+ * B locked and returned the SAME row A had just claimed, and one user got
+ * synced twice by two instances.
+ *
+ * The fix is that claiming must falsify a qual. `last_sync_attempt_at <= now()
+ * - 30s` is exactly the qual the claim's own stamp breaks, so the EPQ recheck
+ * throws the row out and B either idles or takes the next candidate (both are
+ * correct). Do not drop it because "the ordering already handles that", and do
+ * not fold this into a single `UPDATE ... WHERE id IN (SELECT ... FOR UPDATE
+ * SKIP LOCKED)` — that has the identical EPQ hazard.
+ *
+ * Both statements stamp and compare against the DATABASE clock (`now()`), so
+ * app/DB skew cannot re-open the window.
+ *
+ * What the gap assumes: `now()` is `transaction_timestamp()`, so the guard
+ * holds as long as a claim transaction finishes well inside the gap. This one
+ * is BEGIN, one SELECT, one UPDATE, COMMIT with no application I/O between
+ * them, so 30s is a large margin. A claim that stayed open LONGER than the gap
+ * and then committed inside a racer's snapshot-to-lock window could still
+ * double-hand; no wall-clock gap can rule that out, only a claim-token column
+ * (`claimed_by`, or a 'syncing' status) would, and that is a schema change this
+ * fix deliberately does not make. The cost if it ever happens is one duplicated
+ * cycle, not corruption — the apply is idempotent (full snapshot re-pull, dedup
+ * + ON CONFLICT).
+ *
  * Deliberate semantics change: `last_sync_attempt_at` now advances when the
  * attempt STARTS rather than when it finishes, so a per-credential backoff
  * window is measured from attempt-start. The upside is that a process killed
@@ -50,7 +116,7 @@ export async function claimNextCredentialForSync(
     const candidates = await tx
       .select()
       .from(auroraCredentials)
-      .where(and(options.candidateFilter, credentialRetryReadySql()))
+      .where(and(options.candidateFilter, credentialRetryReadySql(), credentialReclaimGapElapsedSql()))
       // Order by the ATTEMPT clock (bumped on every attempt), not last_sync_at
       // (bumped only on success): a persistently failing credential must rotate
       // to the back rather than sorting to the front every cycle and wedging
@@ -63,12 +129,26 @@ export async function claimNextCredentialForSync(
     const candidate = candidates[0];
     if (!candidate) return null;
 
-    const claimedAt = new Date();
-    await tx
+    // Stamp with the DB clock, not `new Date()`: the gap predicate above reads
+    // the same clock, so a skewed app process cannot write a stamp that already
+    // looks older than the gap and hand the row straight back to a racer.
+    const stamped = await tx
       .update(auroraCredentials)
-      .set({ lastSyncAttemptAt: claimedAt, updatedAt: claimedAt })
-      .where(and(eq(auroraCredentials.userId, candidate.userId), eq(auroraCredentials.boardType, candidate.boardType)));
+      .set({ lastSyncAttemptAt: sql`now()`, updatedAt: sql`now()` })
+      .where(and(eq(auroraCredentials.userId, candidate.userId), eq(auroraCredentials.boardType, candidate.boardType)))
+      .returning({
+        lastSyncAttemptAt: auroraCredentials.lastSyncAttemptAt,
+        updatedAt: auroraCredentials.updatedAt,
+      });
 
-    return { ...candidate, lastSyncAttemptAt: claimedAt };
+    // Unreachable rather than merely unlikely: the row is locked by the SELECT
+    // above for the rest of this transaction, so nothing can delete it out from
+    // under the UPDATE. Returning null keeps the caller on its existing
+    // no-work-this-cycle path if that reasoning is ever wrong — a throw here
+    // would take down a daemon cycle over a row we did not claim anyway.
+    const claim = stamped[0];
+    if (!claim) return null;
+
+    return { ...candidate, lastSyncAttemptAt: claim.lastSyncAttemptAt, updatedAt: claim.updatedAt };
   });
 }

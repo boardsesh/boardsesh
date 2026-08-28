@@ -54,57 +54,33 @@ describe('web board renderer', () => {
     expect(() => _webRendererForTests.decodeRenderOutput(renderBytes(2, 2, 4))).toThrow('expected 24');
   });
 
-  it('rejects marker overrides that the committed WASM cannot render', async () => {
-    await expect(
-      renderHoldsOverlay(
-        JSON.stringify({ shape_size_multiplier: 1.5, hold_state_map: {}, holds: [], frames: '' }),
-        'marker-size-key',
-      ),
-    ).rejects.toThrow(MARKER_RENDERER_UNAVAILABLE_MESSAGE);
+  // Issues #4240 and #4495: this module used to refuse shape and marker-size
+  // overrides because the committed WASM predated them, which blanked every
+  // overlay the moment anyone touched the accessibility settings. Brush
+  // thickness was exempted in #4240 for the same reason (Grasshopper's 1.35
+  // board default would have blanked it with no user override at all). The pkg
+  // is now rebuilt and honours all three — proven against the committed binary
+  // in board-renderer-wasm-runtime.test.ts — so no config may be refused again.
+  //
+  // jsdom cannot instantiate the WASM glue, so every render here fails; what
+  // this asserts is HOW it fails: on the render, never on a capability refusal.
+  it('never refuses a marker override before it reaches the renderer', async () => {
+    const markerConfigs: Array<[string, Record<string, unknown>]> = [
+      ['marker-size-key', { shape_size_multiplier: 1.5 }],
+      ['marker-shape-key', { hold_state_map: { 2: { color: '#4455FF', shape: 'triangle-up' } } }],
+      ['marker-brush-key', { stroke_width_multiplier: 1.35 }],
+    ];
 
-    await expect(
-      renderHoldsOverlay(
-        JSON.stringify({
-          hold_state_map: { 2: { color: '#4455FF', shape: 'triangle-up' } },
-          holds: [],
-          frames: '',
-        }),
-        'marker-shape-key',
-      ),
-    ).rejects.toThrow(MARKER_RENDERER_UNAVAILABLE_MESSAGE);
-  });
-
-  // Issue #4240: Grasshopper's board-level stroke default (1.35, with zero user
-  // overrides) used to trip the guard, leaving the overlay permanently blank on
-  // Expo web. Native never gated on it (#2202) — web must not either.
-  it('renders a board-default stroke multiplier instead of refusing it', () => {
-    expect(
-      _webRendererForTests.configRequiresModernRenderer(
-        JSON.stringify({
-          stroke_width_multiplier: 1.35,
-          shape_size_multiplier: 1,
-          hold_state_map: { 2: { color: '#4455FF' } },
-          holds: [],
-          frames: '',
-        }),
-      ),
-    ).toBe(false);
-  });
-
-  it('still requires the modern renderer for shape size and non-circle hold shapes', () => {
-    expect(_webRendererForTests.configRequiresModernRenderer(JSON.stringify({ shape_size_multiplier: 1.5 }))).toBe(
-      true,
-    );
-    expect(
-      _webRendererForTests.configRequiresModernRenderer(
-        JSON.stringify({ hold_state_map: { 2: { color: '#4455FF', shape: 'square' } } }),
-      ),
-    ).toBe(true);
-    expect(
-      _webRendererForTests.configRequiresModernRenderer(
-        JSON.stringify({ hold_state_map: { 2: { color: '#4455FF', shape: 'circle' } } }),
-      ),
-    ).toBe(false);
+    for (const [cacheKey, overrides] of markerConfigs) {
+      const failure = await renderHoldsOverlay(
+        JSON.stringify({ hold_state_map: {}, holds: [], frames: '', ...overrides }),
+        cacheKey,
+      ).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(String(failure)).not.toContain(MARKER_RENDERER_UNAVAILABLE_MESSAGE);
+    }
   });
 
   it('revokes every owned object URL during cleanup', () => {

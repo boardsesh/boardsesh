@@ -51,7 +51,10 @@ import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boards
 // NODE_ENV=production) pollute the prod project, disguised as `environment:
 // production`. resolveSentryEnvironment() collapses both: prod resolves to
 // 'production' and stays on, while preview/staging declare SENTRY_ENVIRONMENT and
-// opt out. See @boardsesh/db/client/config.
+// opt out. It also treats a private DATABASE_URL and a GitHub Actions runner as
+// non-production, which is what keeps a laptop or an e2e job running
+// `bun run backend:start` (no NODE_ENV, so prod-shaped to every other check) from
+// filing its dev-database failures against prod. See @boardsesh/db/client/config.
 const dsn =
   process.env.SENTRY_DSN ??
   'https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400';

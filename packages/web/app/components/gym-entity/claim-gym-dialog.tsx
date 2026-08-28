@@ -13,6 +13,7 @@ import TextField from '@mui/material/TextField';
 import MuiButton from '@mui/material/Button';
 import MuiLink from '@mui/material/Link';
 import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
 import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutline';
@@ -21,9 +22,12 @@ import {
   isClaimableDomain,
   emailDomainMatchesWebsite,
   GYM_CLAIM_MESSAGE_MAX_LENGTH,
+  GYM_CLAIM_SUPPORT_EMAIL,
 } from '@boardsesh/gym-claim';
+import { gymClaimResult, gymClaimSubmitted } from '@boardsesh/analytics';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import {
   REQUEST_GYM_CLAIM,
@@ -48,7 +52,7 @@ function graphqlErrorMessage(error: unknown): string | null {
 
 export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClose }: ClaimGymDialogProps) {
   const { t } = useTranslation('boards');
-  const { token } = useWsAuthToken();
+  const { token, isLoading: tokenLoading } = useWsAuthToken();
   const router = useRouter();
   const queryClient = useQueryClient();
   const domain = extractDomain(website);
@@ -87,6 +91,15 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
 
   const submit = async (variables: RequestGymClaimMutationVariables) => {
     if (!token) return;
+
+    // `method` comes from what is actually on the wire, not from `mode` state.
+    // The two diverge: the admin branch is also what renders when `mode` is
+    // 'domain' but the gym has no claimable domain, and a submit built by an
+    // earlier render can outlive a mode switch. `gymUuid` is read from props at
+    // fire time for the same reason — one dialog instance is reused across gyms
+    // (see the re-init effect above).
+    trackGymFunnelEvent(gymClaimSubmitted({ method: variables.input.claimEmail ? 'domain' : 'admin', gymUuid }));
+
     setSubmitting(true);
     setError(null);
     try {
@@ -96,8 +109,10 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
         variables,
       );
       if (data.requestGymClaim.status === 'email_sent') {
+        trackGymFunnelEvent(gymClaimResult({ status: 'email_sent', gymUuid }));
         setSentTo(data.requestGymClaim.email ?? email);
       } else if (data.requestGymClaim.status === 'approved') {
+        trackGymFunnelEvent(gymClaimResult({ status: 'approved', gymUuid }));
         setApproved(true);
         // Ownership just moved, so everything the viewer sees about this gym is
         // stale. `canClaim` is computed server-side on the gym page, so a cache
@@ -107,9 +122,14 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
         router.refresh();
         void queryClient.invalidateQueries({ queryKey: ['myGyms'] });
       } else {
+        // The only remaining GymClaimRequestStatus the backend returns.
+        trackGymFunnelEvent(gymClaimResult({ status: 'admin_review', gymUuid }));
         setAdminSent(true);
       }
     } catch (err) {
+      // `error` is ours, not a backend status: the mutation threw or the
+      // network failed, so there is no claim status to report.
+      trackGymFunnelEvent(gymClaimResult({ status: 'error', gymUuid }));
       setError(graphqlErrorMessage(err) ?? t('claimGym.errors.generic'));
     } finally {
       setSubmitting(false);
@@ -128,6 +148,12 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
   };
 
   const succeeded = sentTo !== null || adminSent || approved;
+
+  // The submit buttons below are disabled without a token, and `useWsAuthToken`
+  // gives up after three retries — so a dead /api/internal/ws-auth would leave
+  // a permanently dead button with nothing on screen to explain it. Say so.
+  const tokenUnavailable = !token && !tokenLoading;
+  const blockingError = error ?? (tokenUnavailable ? t('claimGym.errors.tokenUnavailable') : null);
 
   let body: React.ReactNode;
   if (approved) {
@@ -164,7 +190,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
     body = (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <DialogContentText>{t('claimGym.domain.description', { gym: gymName, domain })}</DialogContentText>
-        {error && <Alert severity="error">{error}</Alert>}
+        {blockingError && <Alert severity="error">{blockingError}</Alert>}
         <TextField
           label={t('claimGym.domain.emailLabel')}
           value={email}
@@ -190,7 +216,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
     body = (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <DialogContentText>{t('claimGym.admin.description', { gym: gymName })}</DialogContentText>
-        {error && <Alert severity="error">{error}</Alert>}
+        {blockingError && <Alert severity="error">{blockingError}</Alert>}
         <TextField
           label={t('claimGym.admin.messageLabel')}
           value={message}
@@ -225,7 +251,11 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
         <MuiButton
           variant="contained"
           onClick={submitDomainClaim}
-          disabled={submitting || !email.trim()}
+          // `!token` matters here: `submit()` bails on a missing token, and
+          // useWsAuthToken's query key includes the session status, so right
+          // after signing in through the auth modal the token is still in
+          // flight. Without this the first tap is a silent no-op.
+          disabled={submitting || !token || !email.trim()}
           sx={{ textTransform: 'none' }}
         >
           {submitting ? <CircularProgress size={18} color="inherit" /> : t('claimGym.domain.submit')}
@@ -236,7 +266,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
         <MuiButton
           variant="contained"
           onClick={() => submit({ input: { gymUuid, message: message.trim() || undefined } })}
-          disabled={submitting}
+          disabled={submitting || !token}
           sx={{ textTransform: 'none' }}
         >
           {submitting ? <CircularProgress size={18} color="inherit" /> : t('claimGym.admin.submit')}
@@ -248,7 +278,24 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
       <DialogTitle>{t('claimGym.title', { gym: gymName })}</DialogTitle>
-      <DialogContent>{body}</DialogContent>
+      <DialogContent>
+        {body}
+        {/* Two things every claimant asks before they commit, so they sit under
+            both forms rather than in a confirmation nobody reads twice: what
+            taking the listing protects, and what happens when the gym changes
+            hands. Hidden once submitted — the confirmation is about what comes
+            next, not about the terms. */}
+        {!succeeded && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, mt: 2.5 }}>
+            <Typography variant="caption" color="text.secondary">
+              {t('claimGym.protections.syncFreeze')}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {t('claimGym.protections.transfer', { email: GYM_CLAIM_SUPPORT_EMAIL })}
+            </Typography>
+          </Box>
+        )}
+      </DialogContent>
       <DialogActions>
         <MuiButton onClick={handleClose} sx={{ textTransform: 'none' }}>
           {succeeded ? t('claimGym.done') : t('claimGym.cancel')}

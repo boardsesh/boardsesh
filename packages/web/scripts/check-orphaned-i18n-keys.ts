@@ -1,9 +1,21 @@
 #!/usr/bin/env bun
 /**
- * Static check that fails when a key in `packages/shared/i18n/locales/en-US/<ns>.json`
- * has no live reference under `packages/web/app/`, `packages/web/scripts/`, or
- * `packages/mobile/{src,app}/`. en-US is the source of truth — `es`, `fr`, and `de`
- * fall back through i18next, so an orphan in en-US is an orphan in every locale.
+ * Two-way static check over the i18n catalogs and the code that reads them,
+ * across `packages/web/app/`, `packages/web/scripts/`, and `packages/mobile/{src,app}/`:
+ *
+ *   - ORPHANS — a key in `packages/shared/i18n/locales/en-US/<ns>.json` with no
+ *     live reference. en-US is the source of truth — `es`, `fr`, and `de` fall
+ *     back through i18next, so an orphan in en-US is an orphan in every locale.
+ *   - MISSING — a `t()` / `<Trans>` reference to a key that exists in no catalog.
+ *     i18next has no `parseMissingKeyHandler` here, so it renders the raw key: a
+ *     button labelled `playView.resetZoom` instead of "Reset zoom" (#4416).
+ *   - MOBILE NAMESPACES — a file under `packages/mobile/` reading a namespace
+ *     that `MOBILE_NAMESPACES` leaves out of the mobile bundle, so every key in
+ *     it renders raw on device while resolving fine on web.
+ *
+ * The missing direction is deliberately lenient — it only reports a key when the
+ * reference is statically resolvable and no candidate namespace defines it (see
+ * `computeMissingKeys`). Template-literal globs are skipped entirely.
  *
  * What gets resolved as a reference:
  *   1. `t('foo.bar')` / `t('marketing:foo.bar')` with a static string literal,
@@ -41,6 +53,7 @@ import { fileURLToPath } from 'node:url';
 // source-text parser or `forEachChild`. The API returns in 7.1; until then this
 // AST walk runs on a pinned 6.x copy. See `typescript-compiler-api` in package.json.
 import ts from 'typescript-compiler-api';
+import { MOBILE_NAMESPACES } from '@boardsesh/i18n';
 import { DEFAULT_NAMESPACE } from '../app/lib/i18n/config';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -65,6 +78,13 @@ type GlobPattern = { segments: GlobSegment[] };
 type NsContext = { primary: string; bound: readonly string[] };
 type Binding = { start: number; aliasName: string; scope: ts.Node; ctx: NsContext };
 type UnanalyzableSite = { file: string; line: number; column: number; snippet: string };
+/**
+ * One statically-resolved `t()` / `<Trans>` reference. `namespaces` is the set
+ * of namespaces the key could land in: the bound list for `useTranslation([a, b])`,
+ * a single entry for `t('ns:key')`, or `[ANY_NAMESPACE]` when the `t` identifier
+ * couldn't be traced back to a binding.
+ */
+type KeyReference = { key: string; namespaces: readonly string[]; file: string; line: number; column: number };
 
 const ANY_CTX: NsContext = { primary: ANY_NAMESPACE, bound: [ANY_NAMESPACE] };
 
@@ -295,6 +315,8 @@ function pluralBaseKey(key: string): string | undefined {
 type FileAnalysis = {
   usedKeys: Map<string, Set<string>>;
   globs: Map<string, GlobPattern[]>;
+  references: KeyReference[];
+  referencedNamespaces: Set<string>;
   unanalyzable: UnanalyzableSite[];
   keepHints: Set<string>;
 };
@@ -310,6 +332,8 @@ function analyzeFile(filePath: string, sourceOverride?: string): FileAnalysis {
   );
   const usedKeys = new Map<string, Set<string>>();
   const globs = new Map<string, GlobPattern[]>();
+  const references: KeyReference[] = [];
+  const referencedNamespaces = new Set<string>();
   const unanalyzable: UnanalyzableSite[] = [];
   const keepHints = new Set<string>();
   const bindings: Binding[] = [];
@@ -321,6 +345,7 @@ function analyzeFile(filePath: string, sourceOverride?: string): FileAnalysis {
       usedKeys.set(ns, set);
     }
     set.add(key);
+    if (ns !== ANY_NAMESPACE) referencedNamespaces.add(ns);
   }
 
   function recordGlob(ns: string, pattern: GlobPattern) {
@@ -330,6 +355,12 @@ function analyzeFile(filePath: string, sourceOverride?: string): FileAnalysis {
       globs.set(ns, arr);
     }
     arr.push(pattern);
+    if (ns !== ANY_NAMESPACE) referencedNamespaces.add(ns);
+  }
+
+  function recordReference(namespaces: readonly string[], key: string, node: ts.Node) {
+    const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    references.push({ key, namespaces, file: filePath, line: line + 1, column: character + 1 });
   }
 
   function findApplicableCtx(callNode: ts.Node, identifierName: string): NsContext | undefined {
@@ -348,17 +379,19 @@ function analyzeFile(filePath: string, sourceOverride?: string): FileAnalysis {
     return best;
   }
 
-  function resolveStaticKey(rawKey: string, ctx: NsContext) {
+  function resolveStaticKey(rawKey: string, ctx: NsContext, node: ts.Node) {
     const colonIndex = rawKey.indexOf(':');
     if (colonIndex >= 0) {
       const ns = rawKey.slice(0, colonIndex);
       const key = rawKey.slice(colonIndex + 1);
       recordKey(ns, key);
+      recordReference([ns], key, node);
       return;
     }
     for (const ns of ctx.bound) {
       recordKey(ns, rawKey);
     }
+    recordReference(ctx.bound, rawKey, node);
   }
 
   // Returns true if the argument was statically resolvable (key recorded);
@@ -368,7 +401,7 @@ function analyzeFile(filePath: string, sourceOverride?: string): FileAnalysis {
   // every literal branch.
   function resolveArgument(arg: ts.Expression, ctx: NsContext): boolean {
     if (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) {
-      resolveStaticKey(arg.text, ctx);
+      resolveStaticKey(arg.text, ctx, arg);
       return true;
     }
     if (ts.isTemplateExpression(arg)) {
@@ -503,7 +536,7 @@ function analyzeFile(filePath: string, sourceOverride?: string): FileAnalysis {
       if (propertyName && propertyName.endsWith('I18nKey')) {
         const init = node.initializer;
         if (ts.isStringLiteral(init) || ts.isNoSubstitutionTemplateLiteral(init)) {
-          resolveStaticKey(init.text, ANY_CTX);
+          resolveStaticKey(init.text, ANY_CTX, init);
         }
       }
     }
@@ -535,7 +568,7 @@ function analyzeFile(filePath: string, sourceOverride?: string): FileAnalysis {
           }
         }
         const ctx = findApplicableCtx(node, tName) ?? ANY_CTX;
-        resolveStaticKey(key, ctx);
+        resolveStaticKey(key, ctx, node);
       }
     }
 
@@ -553,7 +586,7 @@ function analyzeFile(filePath: string, sourceOverride?: string): FileAnalysis {
     if (token) keepHints.add(token);
   }
 
-  return { usedKeys, globs, unanalyzable, keepHints };
+  return { usedKeys, globs, references, referencedNamespaces, unanalyzable, keepHints };
 }
 
 type Orphan = { namespace: string; key: string };
@@ -609,10 +642,107 @@ function computeOrphans(
   return orphans;
 }
 
+type MissingKey = { namespaces: readonly string[]; key: string; file: string; line: number; column: number };
+type ForeignMobileNamespace = { namespace: string; file: string };
+
+const MOBILE_PATH_MARKER = '/packages/mobile/';
+
+function isMobileFile(filePath: string): boolean {
+  return filePath.split(sep).join('/').includes(MOBILE_PATH_MARKER);
+}
+
+/**
+ * Does the catalog define this key? i18next resolves a `t('items', { count })`
+ * call against the suffixed forms (`items_one`, `items_other`, …) and the
+ * catalog only ever stores those, so the bare base counts as defined when any
+ * variant — plain or ordinal — is present.
+ */
+function catalogHasKey(catalog: Map<string, Set<string>>, namespace: string, key: string): boolean {
+  const keys = catalog.get(namespace);
+  if (!keys) return false;
+  if (keys.has(key)) return true;
+  for (const suffix of PLURAL_SUFFIXES) {
+    if (keys.has(`${key}${suffix}`)) return true;
+    if (keys.has(`${key}_ordinal${suffix}`)) return true;
+  }
+  return false;
+}
+
+/**
+ * The inverse of `computeOrphans`: every statically-resolved reference whose key
+ * exists in none of its candidate namespaces. That is the #4416 failure mode —
+ * i18next renders the raw key string into the UI.
+ *
+ * Leniency, so this can never redden CI for code that actually works:
+ *   - a reference the AST couldn't bind to a namespace (ANY_NAMESPACE) counts as
+ *     defined when the key exists in *any* namespace;
+ *   - a multi-namespace binding counts as defined when *any* bound namespace has it;
+ *   - plural variants count (see `catalogHasKey`);
+ *   - template-literal globs are never recorded as references, so `prefix.${x}`
+ *     is skipped rather than guessed at.
+ */
+function computeMissingKeys(catalog: Map<string, Set<string>>, references: readonly KeyReference[]): MissingKey[] {
+  const missing: MissingKey[] = [];
+  const seen = new Set<string>();
+
+  for (const reference of references) {
+    const anyNamespace = reference.namespaces.includes(ANY_NAMESPACE);
+    const candidates = anyNamespace ? [...catalog.keys()] : reference.namespaces;
+    const defined = candidates.some((namespace) => catalogHasKey(catalog, namespace, reference.key));
+    if (defined) continue;
+
+    const namespaces = anyNamespace ? [ANY_NAMESPACE] : reference.namespaces;
+    const dedupeKey = `${namespaces.join(',')}|${reference.key}|${reference.file}|${reference.line}|${reference.column}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    missing.push({
+      namespaces,
+      key: reference.key,
+      file: reference.file,
+      line: reference.line,
+      column: reference.column,
+    });
+  }
+
+  missing.sort((a, b) => {
+    if (a.file !== b.file) return a.file.localeCompare(b.file);
+    if (a.line !== b.line) return a.line - b.line;
+    return a.key.localeCompare(b.key);
+  });
+  return missing;
+}
+
+/**
+ * Namespaces read from a file under `packages/mobile/` that Metro never bundles,
+ * because `MOBILE_NAMESPACES` leaves them out. Those keys resolve on web and
+ * render raw on device, so the bug only shows up in a store build.
+ */
+function computeForeignMobileNamespaces(
+  namespacesByFile: ReadonlyMap<string, ReadonlySet<string>>,
+): ForeignMobileNamespace[] {
+  const foreign: ForeignMobileNamespace[] = [];
+  const mobileNamespaces = new Set<string>(MOBILE_NAMESPACES);
+  for (const [file, namespaces] of namespacesByFile) {
+    if (!isMobileFile(file)) continue;
+    for (const namespace of namespaces) {
+      if (mobileNamespaces.has(namespace)) continue;
+      foreign.push({ namespace, file });
+    }
+  }
+  foreign.sort((a, b) => {
+    if (a.file !== b.file) return a.file.localeCompare(b.file);
+    return a.namespace.localeCompare(b.namespace);
+  });
+  return foreign;
+}
+
 type Report = {
   totalFiles: number;
   totalKeys: number;
+  totalReferences: number;
   orphans: Orphan[];
+  missing: MissingKey[];
+  foreignMobileNamespaces: ForeignMobileNamespace[];
   unanalyzable: UnanalyzableSite[];
 };
 
@@ -622,11 +752,15 @@ function run(): Report {
   const files = discoverFiles([appRoot, scriptsRoot, mobileSrcRoot, mobileAppRoot]);
   const usedKeys = new Map<string, Set<string>>();
   const globs = new Map<string, GlobPattern[]>();
+  const references: KeyReference[] = [];
+  const namespacesByFile = new Map<string, ReadonlySet<string>>();
   const unanalyzable: UnanalyzableSite[] = [];
   const keepHints = new Set<string>();
 
   for (const file of files) {
     const analysis = analyzeFile(file);
+    references.push(...analysis.references);
+    namespacesByFile.set(file, analysis.referencedNamespaces);
     for (const [ns, keys] of analysis.usedKeys) {
       let target = usedKeys.get(ns);
       if (!target) {
@@ -651,13 +785,31 @@ function run(): Report {
   for (const keys of catalog.values()) totalKeys += keys.size;
 
   const orphans = computeOrphans(catalog, usedKeys, globs, keepHints);
-  return { totalFiles: files.length, totalKeys, orphans, unanalyzable };
+  const missing = computeMissingKeys(catalog, references);
+  const foreignMobileNamespaces = computeForeignMobileNamespaces(namespacesByFile);
+  return {
+    totalFiles: files.length,
+    totalKeys,
+    totalReferences: references.length,
+    orphans,
+    missing,
+    foreignMobileNamespaces,
+    unanalyzable,
+  };
+}
+
+function describeNamespaces(namespaces: readonly string[]): string {
+  if (namespaces.includes(ANY_NAMESPACE)) return 'any namespace';
+  if (namespaces.length === 1) return namespaces[0];
+  return namespaces.join(' | ');
 }
 
 function formatReport(report: Report): { exitCode: 0 | 1; lines: string[] } {
   const lines: string[] = [];
   const hasUnanalyzable = report.unanalyzable.length > 0;
   const hasOrphans = report.orphans.length > 0;
+  const hasMissing = report.missing.length > 0;
+  const hasForeignMobileNamespaces = report.foreignMobileNamespaces.length > 0;
 
   if (hasUnanalyzable) {
     for (const site of report.unanalyzable) {
@@ -691,12 +843,42 @@ function formatReport(report: Report): { exitCode: 0 | 1; lines: string[] } {
     );
   }
 
-  if (hasOrphans || hasUnanalyzable) {
+  if (hasMissing) {
+    if (hasUnanalyzable || hasOrphans) lines.push('');
+    for (const entry of report.missing) {
+      const rel = relative(repoRoot, entry.file);
+      lines.push(
+        `${rel}:${entry.line}:${entry.column}  missing key: ${describeNamespaces(entry.namespaces)} -> ${entry.key}`,
+      );
+    }
+    lines.push('');
+    lines.push(`Found ${report.missing.length} reference(s) to key(s) that exist in no catalog.`);
+    lines.push(
+      "i18next renders the raw key when it can't resolve one, so each of these ships as visible gibberish. Add the key to all four locale catalogs (en-US, es, fr, de) or point the call at a key that already exists.",
+    );
+  }
+
+  if (hasForeignMobileNamespaces) {
+    if (hasUnanalyzable || hasOrphans || hasMissing) lines.push('');
+    for (const entry of report.foreignMobileNamespaces) {
+      const rel = relative(repoRoot, entry.file);
+      lines.push(`${rel}  reads namespace '${entry.namespace}', which is not bundled on mobile`);
+    }
+    lines.push('');
+    lines.push(
+      `Found ${report.foreignMobileNamespaces.length} mobile file(s) reading a namespace outside MOBILE_NAMESPACES.`,
+    );
+    lines.push(
+      'Metro only bundles the MOBILE_NAMESPACES subset, so every key in those namespaces renders raw on device. Move the copy into a bundled namespace, or add the namespace to MOBILE_NAMESPACES in packages/shared/i18n/src/config.ts.',
+    );
+  }
+
+  if (hasOrphans || hasUnanalyzable || hasMissing || hasForeignMobileNamespaces) {
     return { exitCode: 1, lines };
   }
 
   lines.push(
-    `check-orphaned-i18n-keys: OK — scanned ${report.totalFiles} source file(s), every one of ${report.totalKeys} catalog key(s) has a live reference.`,
+    `check-orphaned-i18n-keys: OK — scanned ${report.totalFiles} source file(s): every one of ${report.totalKeys} catalog key(s) has a live reference, and all ${report.totalReferences} static key reference(s) resolve to a catalog entry in a mobile-safe namespace.`,
   );
   return { exitCode: 0, lines };
 }
@@ -713,5 +895,13 @@ if (import.meta.main) {
   main();
 }
 
-export { analyzeFile, computeOrphans, formatReport, loadCatalog, run };
-export type { Orphan, Report };
+export {
+  analyzeFile,
+  computeForeignMobileNamespaces,
+  computeMissingKeys,
+  computeOrphans,
+  formatReport,
+  loadCatalog,
+  run,
+};
+export type { ForeignMobileNamespace, KeyReference, MissingKey, Orphan, Report };

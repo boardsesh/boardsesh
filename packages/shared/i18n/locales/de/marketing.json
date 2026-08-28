@@ -60,10 +60,6 @@
       "manage": "Verwalten",
       "viewPage": "Seite ansehen"
     },
-    "feed": {
-      "callout": "Deine Leute klettern gerade.",
-      "cta": "Feed ansehen"
-    },
     "recentBeta": {
       "title": "Frische Beta"
     }
@@ -250,7 +246,7 @@
         "feature1": "Boulderdaten und Statistiken abrufen",
         "feature2": "Registrierung und Authentifizierung",
         "feature3": "Profilverwaltung",
-        "feature4": "Anbindung der Aurora-Plattform",
+        "feature4": "Auflösung von URL-Slugs zu IDs",
         "baseUrlLabel": "Basis-URL:"
       },
       "ws": {
@@ -349,11 +345,11 @@
       "title": "Konto löschen",
       "intro": "Du kannst dein Konto und alle zugehörigen Daten jederzeit löschen. Dafür gibt es zwei Wege:",
       "inApp": "In der App:",
-      "inAppBody": " Geh in die Einstellungen, scroll ganz nach unten und tipp auf „Konto löschen“. Vorher wirst du um Bestätigung gebeten.",
+      "inAppBody": " Öffne „Mehr“ in deinem Profil, scroll ganz nach unten und tipp auf „Konto löschen“. Vorher wirst du um Bestätigung gebeten.",
       "onWeb": "Im Web:",
       "onWebBody": " Melde dich an unter ",
-      "onWebLink": "boardsesh.com/settings",
-      "onWebBodyEnd": " und scroll ans Ende der Seite — dort steht derselbe Button „Konto löschen“.",
+      "onWebLink": "app.boardsesh.com",
+      "onWebBodyEnd": " und öffne „Mehr“ in deinem Profil — dort steht derselbe Button „Konto löschen“.",
       "permanent": "Das Löschen passiert sofort und ist endgültig. Nach der Bestätigung entfernen wir deine E-Mail-Adresse, deinen Benutzernamen, deine Routenbuch-Einträge, deine Warteschlangen-Daten und die Historie deiner Party-Sessions von unseren Servern. Das lässt sich nicht rückgängig machen."
     },
     "children": {

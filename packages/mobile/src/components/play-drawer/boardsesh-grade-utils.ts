@@ -11,6 +11,7 @@
 // Kept free of React so it unit-tests without a renderer.
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
 import type { BoardseshGrade } from '@boardsesh/graphql/operations';
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import {
   renderDifficulty,
   clampDifficultyId,
@@ -32,13 +33,8 @@ const TEASER_ARROW = '▸';
 const TEASER_CONFIRMED = '✓';
 const TEASER_PROVISIONAL = '~';
 
-/** MoonBoard has no standardized community grade in our feed yet. */
-export function isMoonBoard(boardName: string): boolean {
-  return boardName.toLowerCase() === 'moonboard';
-}
-
 export type BoardseshGradeView =
-  | { kind: 'moonboard' }
+  | { kind: 'noCrowdGrade'; boardName: string }
   | {
       kind: 'setterOnly';
       /** The setter's grade to show muted ("Setter's call: V4"), or null when there's none at all. */
@@ -101,7 +97,7 @@ export function buildBoardseshGradeView(
   grade: BoardseshGrade | null,
   gradeFormat: GradeDisplayFormat,
 ): BoardseshGradeView {
-  if (isMoonBoard(boardName)) return { kind: 'moonboard' };
+  if (!getBoardCapabilities(boardName).crowdGrade) return { kind: 'noCrowdGrade', boardName: boardName.toLowerCase() };
   if (!grade) return { kind: 'setterOnly', grade: null, count: 0 };
 
   // Prefer the cross-board universal grade; fall back to the board-local grade
@@ -219,7 +215,7 @@ export function buildCorrection(
  * string leading with the correction. When a crowd label is supplied and it
  * differs from the confirmed cross-board grade, shows "{crowd} ▸ {bs} ✓"; a
  * confident cross-board grade alone reads "{bs} ✓"; provisional "{bs} ~";
- * local-only "{bs} · {localWord}". Null for moonboard / setter-only.
+ * local-only "{bs} · {localWord}". Null for a no-crowd-grade board / setter-only.
  */
 export function buildBoardseshGradeSummary(
   view: BoardseshGradeView,

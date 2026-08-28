@@ -12,6 +12,15 @@ describe('brand palette anchors', () => {
     expect(brandColorsDark.primaryFill).toBe('#7C3AED'); // fill stays dark for white text
   });
 
+  it('pairs the amber accent with the same dark ink in both schemes', () => {
+    // The accent does not change per scheme, so its ink must not either — a filled
+    // amber chip is the same colour on a light page and a dark one, and mobile reads
+    // `brandColors.onAccent` off whichever set the scheme resolved.
+    expect(brandColors.onAccent).toBe('#16111F');
+    expect(brandColorsDark.onAccent).toBe(brandColors.onAccent);
+    expect(brandColorsDark.accent).toBe(brandColors.accent);
+  });
+
   it('exposes the surface anchors web reads', () => {
     expect(materialSurfaces.light.background).toBe('#F3EFFA');
     expect(materialSurfaces.dark.background).toBe('#15101E');

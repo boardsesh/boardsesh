@@ -252,6 +252,48 @@ export const reportScopeDownloadAbandoned = ({ scopeKey }: AbandonedDownloadInfo
   });
 };
 
+/**
+ * The same terminal for every OTHER way a download ends for good (issue #4452):
+ * the paths that de-list a board instead of deleting it.
+ *
+ * `removeBoardScopeData` was the only ender that reported, which left the funnel
+ * blind to every path that empties `syncEnabledBoards` — all three sign-outs and
+ * the My Boards toggle-off. The pull client's board loop iterates only ENABLED
+ * scopes, so a de-listed scope's `Offline Board Download Started` stays open
+ * forever even when nothing was deleted and the marker is still sitting there.
+ *
+ * One shape, one call site, same as #4406's: `stage: 'abandoned'` (no bootstrap
+ * stage produced this, and it is NOT `board-removed` — nothing was removed),
+ * `aborted: true` so it stays out of Sentry and out of any failure rate, and
+ * `attempt: 0` because no retry budget was spent. The reason is the only thing
+ * that varies, and it names which de-listing it was.
+ */
+const reportScopeDownloadAbandonedOnDelist = (
+  scopeKey: string,
+  reason: 'abandoned-signed-out' | 'abandoned-disabled',
+  what: string,
+): void => {
+  reportSnapshotBootstrapError({
+    scopeKey,
+    stage: 'abandoned',
+    attempt: 0,
+    cause: new Error(`Offline download for ${scopeKey} was ${what} before it finished`),
+    expected: true,
+    reason,
+    aborted: true,
+  });
+};
+
+/** Sign-out ended it — the explicit wipe, or any sign-out that de-listed the board. */
+export const reportScopeDownloadAbandonedOnSignOut = ({ scopeKey }: { scopeKey: string }): void => {
+  reportScopeDownloadAbandonedOnDelist(scopeKey, 'abandoned-signed-out', 'signed out from');
+};
+
+/** The climber turned the board off from My Boards, keeping the rows on disk. */
+export const reportScopeDownloadAbandonedOnDisable = ({ scopeKey }: { scopeKey: string }): void => {
+  reportScopeDownloadAbandonedOnDelist(scopeKey, 'abandoned-disabled', 'turned off');
+};
+
 // Fired once per board scope's initial download so the snapshot-bootstrap
 // warm-up can be compared against the plain paged crawl in the field (which
 // path actually got used, and how long it took).

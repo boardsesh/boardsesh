@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { deriveProfileViewModel, type UnifiedTimeframeType } from '@boardsesh/profile-stats';
+import { deriveProfileViewModel, type UnifiedTimeframeType, type PeriodComparisonMode } from '@boardsesh/profile-stats';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useOfflineQueryState } from '../../../hooks/use-offline-query-state';
 import { useAllBoardsTicks, useUserProfileStats, useUserClimbPercentile } from './use-you-data';
@@ -19,6 +19,7 @@ export function useYouProfileData(userId: string | undefined) {
 
   const [selectedBoard, setSelectedBoard] = useState<string>('all');
   const [timeframe, setTimeframe] = useState<UnifiedTimeframeType>('all');
+  const [comparisonMode, setComparisonMode] = useState<PeriodComparisonMode>('trailing');
   // Custom date-range filtering isn't surfaced yet — YouFilterSheet only offers
   // all/year/month/week. Kept as empty constants so deriveProfileViewModel gets
   // a stable range; not exposed until the custom-range UI lands.
@@ -42,8 +43,9 @@ export function useYouProfileData(userId: string | undefined) {
         toDate,
         gradeFormat,
         profileStats: profileStatsQuery.data ?? null,
+        comparisonMode,
       }),
-    [allBoardsTicks, selectedBoard, timeframe, fromDate, toDate, gradeFormat, profileStatsQuery.data],
+    [allBoardsTicks, selectedBoard, timeframe, fromDate, toDate, gradeFormat, profileStatsQuery.data, comparisonMode],
   );
 
   const refetch = useCallback(() => {
@@ -78,6 +80,8 @@ export function useYouProfileData(userId: string | undefined) {
     setSelectedBoard,
     timeframe,
     setTimeframe,
+    comparisonMode,
+    setComparisonMode,
     hasActiveFilters,
 
     // Derived view model (renderer-agnostic; colors applied in components)

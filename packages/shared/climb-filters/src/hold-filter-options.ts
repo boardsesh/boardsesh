@@ -30,6 +30,8 @@ const PICKER_STATES_BY_BOARD: Record<BoardName, readonly HoldFilterType[]> = {
   grasshopper: SETTER_STATE_ORDER,
   soill: SETTER_STATE_ORDER,
   moonboard: ['STARTING', 'HAND', 'FINISH'],
+  // Woods climbs use all four setting roles (Start / Hand / Finish / Foot).
+  woods: SETTER_STATE_ORDER,
 };
 
 /** Plain-white swatch colour for the `ANY` wildcard (no LED colour of its own). */

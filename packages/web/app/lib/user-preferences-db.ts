@@ -1,25 +1,9 @@
-import type { BoardName } from '@boardsesh/shared-schema';
-
 import { createIndexedDBStore, migrateFromLocalStorage } from './idb-helper';
 import type { LogbookPreferences } from './logbook-preferences';
 import type { GradeDisplayFormat } from './grade-colors';
 import type { ColorMode } from '../hooks/use-color-mode';
 
 const STORE_NAME = 'preferences';
-
-// Persisted ESP32 emulator connections for the dev-only /development page.
-export type Esp32Connection = {
-  id: string;
-  label: string;
-  ip: string;
-  board: BoardName;
-  serial: string;
-  apiLevel: 2 | 3;
-  layoutId: number;
-  sizeId: number;
-  setIds: number[];
-  angle: number;
-};
 
 export type UserPreferenceKeyMap = {
   libraryTab: 'playlists' | 'logbook';
@@ -58,7 +42,6 @@ export type UserPreferenceKeyMap = {
    * future visits. The owner variant of the card is not dismissible.
    */
   'homeGymCard:dismissed': boolean;
-  esp32Connections: Esp32Connection[];
   lastUsedGrade: number;
   /** Saved colour mode; mirrored to localStorage for the pre-paint theme script. */
   colorMode: ColorMode;
@@ -78,6 +61,10 @@ const ORPHANED_PREFERENCE_KEYS = [
   // Removed when the queue-control-bar pivot dropped the play-view drawer
   // peek-animation hint in favour of the lightbulb coachmark (`swipeHint:lightbulbSeen`).
   'swipeHint:playViewSeen',
+  // Persisted ESP32 emulator connections for the dev-only `/development` page,
+  // deleted with that page in W-19 (#4437). Anyone who ran the emulator locally
+  // still has a row for it, including their board serial numbers.
+  'esp32Connections',
 ] as const;
 
 const getDBRaw = createIndexedDBStore('boardsesh-user-preferences', STORE_NAME);

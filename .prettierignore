@@ -2,6 +2,13 @@
 # formatted copy (and the `changelog-owned` CI gate rejects changelog edits). See vite.config.ts.
 **/*.generated.json
 **/drizzle/meta/
+# Traced hold silhouettes (#2202). `scripts/generate-board-art-geometry.ts` emits one
+# polygon per line and `--check` byte-compares the result, so a formatting pass that
+# reflows the coordinate arrays would put the drift gate permanently red — and it triples
+# the file size for data nobody reads by eye. Nested dir, so the `**/generated/**` glob in
+# vite.config.ts fmt.ignore is not enough on its own.
+packages/shared/board-art-geometry/src/generated/
+
 # Local-only board-data exports (gitignored, see .gitignore). If an operator drops an
 # export here to run an importer, don't let `vp check` try to reformat the raw data.
 packages/db/data/
@@ -19,3 +26,14 @@ docs/embedded-architecture.md
 # scripts/__tests__/mobile-screenshots.test.ts (exact quote style included) —
 # a formatting pass that rewrites quotes breaks those tests.
 packages/mobile/.maestro/
+
+# Markdown is not formatted. The formatter's emphasis pairing does not follow
+# CommonMark's intraword-underscore rule: on docs/websocket-implementation.md it
+# paired the `_` inside the bare identifier NOT_FOUND with a later `_signed-in_`
+# and emitted NOT*FOUND + \_signed-in*, corrupting an identifier in prose on
+# every run. Prose gains little from auto-formatting and has content the
+# formatter can get wrong. Mirrored in vite.config.ts fmt.ignore.
+# The CHANGELOG.md and docs/embedded-architecture.md entries above are now
+# subsumed by this, but stay: they document why those two must never be
+# formatted even if markdown formatting is ever reinstated.
+*.md

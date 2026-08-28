@@ -61,6 +61,7 @@ export const favoriteClimbsQuery = {
         frames: tables.climbs.frames,
         frames_count: tables.climbs.framesCount,
         frames_pace: tables.climbs.framesPace,
+        compatible_size_ids: tables.climbs.compatibleSizeIds,
         // Stats data
         ascensionist_count: tables.climbStats.ascensionistCount,
         difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
@@ -111,6 +112,7 @@ export const favoriteClimbsQuery = {
       frames: result.frames || '',
       framesCount: result.frames_count ?? null,
       framesPace: result.frames_pace ?? null,
+      compatibleSizeIds: result.compatible_size_ids ?? null,
       angle: input.angle,
       ascensionist_count: Number(result.ascensionist_count || 0),
       difficulty: getGradeLabel(result.difficulty_id),

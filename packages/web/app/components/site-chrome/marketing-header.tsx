@@ -4,20 +4,16 @@ import React, { useCallback } from 'react';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import Button from '@mui/material/Button';
-import Badge from '@mui/material/Badge';
 import Typography from '@mui/material/Typography';
 import SettingsOutlined from '@mui/icons-material/SettingsOutlined';
 import IosShareOutlined from '@mui/icons-material/IosShare';
-import NotificationsOutlined from '@mui/icons-material/NotificationsOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
-import InsightsOutlined from '@mui/icons-material/InsightsOutlined';
 import TuneOutlined from '@mui/icons-material/TuneOutlined';
 import { useSession } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import BackButton from '@/app/components/back-button';
 import StartClimbingButton from '@/app/components/start-climbing-button';
-import { useUnreadNotificationCount } from '@/app/hooks/use-unread-notification-count';
 import { shareWithFallback } from '@/app/lib/share-utils';
 import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
 import { usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
@@ -26,8 +22,6 @@ import { useProfileHeaderShare } from '@/app/components/profile-header-bridge/pr
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { themeTokens } from '@/app/theme/theme-config';
 import styles from './marketing-header.module.css';
-
-const BADGE_SMALL_SX = { '& .MuiBadge-badge': themeTokens.badge.small } as const;
 
 // Compact brand-fill capsule for the persistent "Start climbing" CTA that hands
 // off to the Expo-web app. Matches the hero CTA's fill without the amber glow.
@@ -167,7 +161,7 @@ function getProfileHeaderConfig(pathname: string, t: (key: string) => string): P
  * The www header. Boardsesh's climbing surfaces live in the app now, so this
  * carries no search field, no board context and no session state — it is the
  * brand link, the hand-off to the app, and the small set of account affordances
- * the marketing site still owns (`/you`, `/profile`, `/settings`).
+ * the marketing site still owns (`/profile`, `/settings`).
  *
  * The deleted UserDrawer used to be the only sign-in entry point outside
  * `/auth`, so the account slot below replaces it: a "Sign in" link when signed
@@ -178,26 +172,10 @@ export default function MarketingHeader() {
   const { data: session } = useSession();
   const { showMessage } = useSnackbar();
 
-  const notificationUnreadCount = useUnreadNotificationCount();
   const statsFilterBridge = useStatsFilterBridge();
   const profileHeaderShare = useProfileHeaderShare();
   const pathname = usePathnameWithoutLocale();
   const profileHeaderConfig = getProfileHeaderConfig(pathname, t);
-
-  const handleShareOwnProfile = useCallback(() => {
-    if (!session?.user?.id) return;
-
-    const shareUrl = `${window.location.origin}/profile/${session.user.id}`;
-    const displayName = session.user.name || t('share.fallbackName');
-
-    void shareWithFallback({
-      url: shareUrl,
-      title: t('share.profileTitle', { name: displayName }),
-      text: t('share.profileText', { name: displayName }),
-      trackingEvent: 'Profile Shared',
-      trackingProps: { source: 'you-header' },
-    });
-  }, [session, t]);
 
   const handleShareViewedProfile = useCallback(async () => {
     if (!profileHeaderConfig?.isRoot || !profileHeaderShare.isActive) return;
@@ -226,15 +204,12 @@ export default function MarketingHeader() {
     </Button>
   );
 
-  // Signed-in climbers get two destinations here: the private dashboard and the
-  // public profile. The dashboard link is the only entry point to `/you` now
-  // that the bottom tab bar is gone, and `/you` is in turn the only place that
-  // carries the notification bell.
+  // Signed-in climbers get two destinations here: the public profile and
+  // settings. `/you` is gone and W-20b (#4439) moved notifications into the
+  // app, so this account slot is what keeps `/settings` reachable from www at
+  // all.
   const accountAction = session?.user?.id ? (
     <>
-      <IconButton component={LocaleLink} href="/you" aria-label={t('ariaLabels.yourDashboard')} size="small">
-        <InsightsOutlined />
-      </IconButton>
       <IconButton
         component={LocaleLink}
         href={`/profile/${session.user.id}`}
@@ -243,19 +218,14 @@ export default function MarketingHeader() {
       >
         <PersonOutlined />
       </IconButton>
+      <IconButton component={LocaleLink} href="/settings" aria-label={t('ariaLabels.settings')} size="small">
+        <SettingsOutlined />
+      </IconButton>
     </>
   ) : (
     <Button component={LocaleLink} href="/auth/login" size="small" sx={{ textTransform: 'none', flexShrink: 0 }}>
       {t('header.signIn')}
     </Button>
-  );
-
-  const notificationButton = (
-    <IconButton component={LocaleLink} href="/notifications" aria-label={t('ariaLabels.notifications')} size="small">
-      <Badge badgeContent={notificationUnreadCount} color="error" max={99} sx={BADGE_SMALL_SX}>
-        <NotificationsOutlined />
-      </Badge>
-    </IconButton>
   );
 
   // Chrome-less surfaces (kiosk TVs, embeds) render zero app chrome — the
@@ -299,64 +269,6 @@ export default function MarketingHeader() {
           </div>
         }
       />
-    );
-  }
-
-  // On the root /you page, show a centered title with the brand link anchored left.
-  if (pathname === '/you') {
-    return (
-      <CenteredHeader
-        left={
-          <div className={styles.headerActions}>
-            {brandLink}
-            <IconButton component={LocaleLink} href="/settings" aria-label={t('ariaLabels.settings')} size="small">
-              <SettingsOutlined />
-            </IconButton>
-          </div>
-        }
-        title={t('header.you')}
-        right={
-          <div className={styles.headerActions}>
-            {statsFilterBridge.isActive && (
-              <div className={styles.iconButtonWrapper}>
-                <IconButton
-                  onClick={() => statsFilterBridge.openFilterDrawer?.()}
-                  aria-label={t('ariaLabels.openStatsFilters')}
-                  size="small"
-                >
-                  <TuneOutlined />
-                </IconButton>
-                {statsFilterBridge.hasActiveFilters && <span className={styles.filterActiveIndicator} />}
-              </div>
-            )}
-            {session?.user?.id && (
-              <IconButton onClick={handleShareOwnProfile} aria-label={t('ariaLabels.shareProfile')} size="small">
-                <IosShareOutlined />
-              </IconButton>
-            )}
-            {notificationButton}
-          </div>
-        }
-      />
-    );
-  }
-
-  // On /you child pages: brand link + share + notifications + settings cog.
-  if (pathname.startsWith('/you')) {
-    return (
-      <header className={styles.header} data-testid="marketing-header">
-        {brandLink}
-        <Box sx={{ flex: 1 }} />
-        {session?.user?.id && (
-          <IconButton onClick={handleShareOwnProfile} aria-label={t('ariaLabels.shareProfile')} size="small">
-            <IosShareOutlined />
-          </IconButton>
-        )}
-        {notificationButton}
-        <IconButton component={LocaleLink} href="/settings" aria-label={t('ariaLabels.settings')} size="small">
-          <SettingsOutlined />
-        </IconButton>
-      </header>
     );
   }
 

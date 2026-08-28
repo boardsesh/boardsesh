@@ -763,8 +763,8 @@ Completed` — so abandonment was structurally unmeasurable and failures went on
 | ---------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `Offline Board Download Started`   | first time any cycle starts pulling a scope, once ever                                 | `scopeKey`, `pathIntent`, `artifactBytes`, `trigger`, `offlineEngineEnabled`          |
 | `Offline Board Download Completed` | both board tables reached the tail, once ever                                          | `scopeKey`, `method`, `durationMs`, `bytes?`, `rowCount?`, `downloadMs?`, `importMs?` |
-| `Offline Board Download Failed`    | a bootstrap attempt ended without succeeding, or a removal ended the download for good | `scopeKey`, `stage`, `attempt`, `expected`, `reason`, `aborted`, `errorMessage`       |
-| `Offline Board Download Cancelled` | the board was switched off mid-download                                                | `scopeKey`, `source`, `stage?`, `fraction?`, `bytesDone?`                             |
+| `Offline Board Download Failed`    | a bootstrap attempt ended without succeeding, or something ended the download for good | `scopeKey`, `stage`, `attempt`, `expected`, `reason`, `aborted`, `errorMessage`       |
+| `Offline Board Download Cancelled` | progress detail when a board is switched off mid-snapshot; 0 events in 180 days        | `scopeKey`, `source`, `stage?`, `fraction?`, `bytesDone?`                             |
 | `Offline Board Toggled`            | the offline switch was flipped, either way                                             | `scopeKey`, `enabled`, `source`                                                       |
 | `Offline Download All Tapped`      | the "download all my boards" switch was TAPPED                                         | `boardCount`                                                                          |
 
@@ -789,6 +789,12 @@ abandonment spike in exactly the window the baseline is read from.
 
 > **If a future change wipes board data on logout** (issue #3621), it must clear both markers in the
 > same transaction as the rows. Otherwise the next sign-in emits Completed with no Started.
+
+**A marker is not the only thing that can orphan a Started.** `pullSync`'s board loop iterates the
+scopes in `syncEnabledBoards` and nothing else, so a board that leaves that list is never visited
+again — its `scope-started:` marker can survive perfectly intact and still describe a download
+nothing will ever finish. Anything that de-lists a board therefore owes the funnel a terminal, even
+when it deletes no rows at all. See "every path that ends a download" below.
 
 **The terminal-event invariant: every Started has exactly one terminal event.** A snapshot bootstrap
 attempt ends in `Offline Board Download Completed` (its scope finished) or `Offline Board Download
@@ -838,6 +844,57 @@ makes "downloads the climber gave up on" a count rather than a subtraction. A re
 mid-**bootstrap** would otherwise produce two terminals for one Started — the phase's own
 `aborted-wipe` and this one — so both claim against the purge generation `beginScopePurge` bumped
 (`sync/download-terminal-registry.ts`), and only the first claim reports.
+
+### Every path that ends a download, and which reports
+
+Issue #4452 widened the removal terminal above to every other ender. The full list, so the next
+person can check it rather than re-derive it:
+
+| How a download ends                                                             | Reports today                                                                                                      |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| it finishes                                                                     | `Offline Board Download Completed`                                                                                 |
+| board removed from Storage (`removeBoardScopeData`)                             | `Failed { stage: 'board-removed', reason: 'abandoned-removed' }` (#4406)                                           |
+| explicit sign-out / account deletion (`purgeLocalDataForSignOut`)               | `Failed { stage: 'abandoned', reason: 'abandoned-signed-out' }` — read before the wipe transaction, emitted after  |
+| forced 401, proactive token expiry, identity change (`clearUserData` + de-list) | `Failed { stage: 'abandoned', reason: 'abandoned-signed-out' }` — from `runSignedOutCleanup`, markers then cleared |
+| My Boards toggle-off                                                            | `Failed { stage: 'abandoned', reason: 'abandoned-disabled' }`, plus `Offline Board Toggled { enabled: false }`     |
+| a de-list that crashed before reporting, or a device upgrading into this build  | the launch backstop in `offline-sync-bridge.tsx`, as `abandoned-disabled`                                          |
+| the owner-stamp mismatch wipe (`clearUserData` in the bridge)                   | nothing, and correctly: it de-lists nothing, so the scope keeps downloading                                        |
+| the app is backgrounded, or a sibling board's removal tears the cycle down      | `Failed { aborted: true, reason: 'aborted-background' / 'aborted-wipe' }` — an interruption, the download resumes  |
+| process death, uninstall, a climber who never opens the app again               | **nothing, and nothing can.** Per production this is the dominant unterminated bucket                              |
+
+The three `abandoned-*` reasons are the once-per-Started ones. The de-list paths **clear**
+`scope-started:` and `scope-download-started:` (`clearScopeDownloadFunnelMarkers`) and nothing else:
+the rows and the `checkpoint:` keys stay, so a re-enable still resumes instantly. Two Starteds for a
+toggle-off-then-on is the intended reading — as far as the funnel is concerned those are two
+downloads, and a durable marker outliving its download is what made abandonment unmeasurable in the
+first place.
+
+They clear **before** they report, and each scope's close is independently fault-tolerant. The clear
+is the only step that can fail (a locked database); `track()` cannot. Reporting first would emit the
+terminal and then leave the marker behind for the next launch's sweep to report a second time, so a
+failed clear now emits nothing and the sweep becomes the single reporter — exactly one terminal
+either way. Wrapping each scope separately keeps one locked write from silently dropping the rest of
+a sweep.
+
+Sign-out reports through **two** seams for one reason: the explicit wipe runs `deleteAllSyncMeta`, so
+only code inside that function can still see the markers, while the selective sign-outs keep every
+marker and are ended purely by `setSetting('syncEnabledBoards', [])`. The claim in
+`download-terminal-registry.ts` therefore keys on a **composite** `wipeEpoch:purgeEpoch` generation:
+`setSigningOut(true)` moves only the global wipe epoch and `beginScopePurge` only its namespace's, so
+a namespace-only key would let a stale `aborted-wipe` from an unrelated board removal suppress a real
+sign-out terminal. The de-list paths do **not** claim — nothing tore a cycle down for them, and the
+cleared marker is the durable dedup.
+
+`runSignedOutCleanup` also moved `resetAnalytics()` to **after** the offline cleanup. Every sign-out
+event — the discarded outbox, `Offline Data Wiped On Sign Out`, and these terminals — has to land on
+the account that is leaving; production showed every wipe event sitting on a different `person_id`
+from the `Logout` half a second earlier, which made all of them unjoinable.
+
+**What this still does not cover.** Started → Completed will not reach 100% and is not meant to. Over
+the funnel's first weeks in production, of the (person, scope) pairs with a Started and no Completed,
+the majority emitted _nothing at all_ after the Started — same first and last timestamp, no toggle,
+no logout. That is process death, uninstall, or a climber who moved on, and no code change can emit
+an event for it.
 
 **A removal also re-arms the scheduler.** A removal latches its namespace for the seconds its delete
 transaction runs, and every purge guard in the pull client reads that latch as "purged" — so a cycle
@@ -1035,6 +1092,31 @@ switches. Recover by fixing or withdrawing the published snapshot inputs:
   filtered entries, temporarily hiding every untouched layout until an unfiltered run restores the full
   index.
 
+### When the catalogue pass fails
+
+The `board-snapshots/v1-catalog` step runs last and touches nothing the fleet reads, so a failure
+there is not a fleet incident — every mobile client keeps bootstrapping from the artifacts the two
+passes before it already published.
+
+What it does break is the seeded developer database image: `Dockerfile.dev-db` resolves that
+manifest and fails the build outright if it is missing, rather than producing an image with no board
+geometry. Consequences, in order of who notices:
+
+- **Nobody, for a while.** The image is only rebuilt by a manual dispatch of
+  `postgres-image-publisher.yml`, so a failed catalogue pass sits unnoticed until someone rebuilds.
+- **`test-dev-db`** on any PR touching `packages/db/**` — that job builds the image, so it is the
+  first automated signal.
+
+The artifact is immutable and content-addressed, and the manifest is only rewritten on success, so a
+failed pass leaves the previous artifact serving. Recovery is a re-dispatch: it is one whole-catalogue
+build with no incremental state, so re-running it is always safe and always sufficient. There is no
+partial-catalogue mode to get stuck in — the export either publishes a complete artifact or leaves
+the last one in place.
+
+If it fails repeatedly, the likely causes are the ones the per-layout passes share (Production
+secrets, the Tigris endpoint) rather than anything catalogue-specific — it reads ~816k rows from
+fourteen tables in one REPEATABLE READ transaction and writes a single ~12 MB object.
+
 ### Format-version bump procedure
 
 Bump `SNAPSHOT_MANIFEST_FORMAT_VERSION` in `snapshot-manifest.ts` (and its `formatVersion: 1` literal type)
@@ -1090,6 +1172,65 @@ per night; the paged fallback pays it once per page, for every user paging that 
 snapshot path stays healthy this is rarely hot, but any sustained drop in the `method: 'snapshot'` share
 (see the failure-rate check above) puts more traffic through the correlated `EXISTS` on every fallback
 page — that's the trigger to prioritize the fix.
+
+## Catalogue artifact (`board-snapshots/v1-catalog`)
+
+A third prefix, published by the same nightly run and read by nobody in the mobile fleet.
+
+The per-layout artifacts carry the climb catalogue. They deliberately do not carry the **hardware
+catalogue** — the t-nut holes, placements, LED positions, hold sets, product sizes, layouts, grade
+scales and attempt enums that every board render and every grade lookup needs. That data is small
+(~30k rows across the six Aurora boards; MoonBoard and Woods geometry lives in
+`@boardsesh/board-constants`, not Postgres), it changes a handful of times a year, and it is
+board-scoped rather than layout-scoped, so it does not fit the per-layout shape at all.
+
+The seeded developer database image needs it, though. That image used to scrape six Aurora APKs and
+run pgloader at build time to get it (issue #4508). Publishing the same rows as one more artifact
+lets the image be built entirely from public, production-derived, nightly-verified files.
+
+|          |                                                                                             |
+| -------- | ------------------------------------------------------------------------------------------- |
+| Script   | `packages/backend/src/scripts/export-board-catalog.ts`                                      |
+| Prefix   | `board-snapshots/v1-catalog` — one gzip artifact + its own `manifest.json`                  |
+| Cadence  | The 07:15 UTC nightly only. Never the 15-minute scan; never a `--board`/`--layout` dispatch |
+| Size     | ~12 MB gzipped (~63 MB on disk), dominated by `board_climb_aliases`                         |
+| Consumer | `packages/db/scripts/load-board-snapshots.ts`, run by `Dockerfile.dev-db`                   |
+
+Tables, in the order a consumer must load them (foreign keys point backwards):
+
+`board_products`, `board_layouts`, `board_product_sizes`, `board_sets`, `board_placement_roles`,
+`board_holes`, `board_placements`, `board_leds`, `board_product_sizes_layouts_sets`, `board_kits`,
+`board_difficulty_grades`, `board_attempts`, then — after every layout artifact has loaded, because
+their rows reference `board_climbs` — `board_climb_aliases` and `board_beta_links`.
+
+`board_beta_links` drops `created_by_user_id`, `tick_uuid` and `board_id` at export: they are
+per-user links to production rows that mean nothing in another database.
+
+**This prefix has its own manifest on purpose.** It is not an entry in the fleet-facing manifest and
+it does not widen `SNAPSHOT_TABLES`. A shipped binary verifies a downloaded artifact against a
+two-table `snapshot_meta` and counts an unexpected table as an import _failure_; two of those and the
+scope falls back to the paged crawl. Keeping the catalogue in its own prefix means no shipped client
+can ever see it.
+
+```json
+{
+  "formatVersion": 1,
+  "generatedAt": "2026-08-26T07:16:04.221Z",
+  "artifact": {
+    "key": "board-snapshots/v1-catalog/2026-08-26T07-15-58-102Z.db",
+    "url": "https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-catalog/...",
+    "bytes": 12685503,
+    "uncompressedBytes": 63229952,
+    "contentEncoding": "gzip",
+    "builtAt": "2026-08-26T07:15:58.102Z",
+    "schemaVersion": 1,
+    "tables": { "board_holes": { "rowCount": 6405 }, "...": {} }
+  }
+}
+```
+
+Same 14-day prune grace as the other prefixes, and the manifest is written last, so a reader never
+sees a key that is not on S3 yet.
 
 ## Rollout plan
 

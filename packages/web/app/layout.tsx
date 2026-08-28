@@ -4,12 +4,12 @@ import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
 import ColorModeProvider from './components/providers/color-mode-provider';
 import { VercelAnalytics, VercelSpeedInsights } from './components/providers/vercel-telemetry';
 import AnalyticsClient from './components/analytics-client';
+import AnalyticsIdentity from './components/providers/analytics-identity';
 import SessionProviderWrapper from './components/providers/session-provider';
 import QueryClientProvider from './components/providers/query-client-provider';
 import SiteChrome from './components/providers/site-chrome';
 import { SnackbarProvider } from './components/providers/snackbar-provider';
 import { AuthModalProvider } from './components/providers/auth-modal-provider';
-import { NotificationSubscriptionManager } from './components/providers/notification-subscription-manager';
 import I18nProvider from './components/providers/i18n-provider';
 import { VercelToolbar } from '@vercel/toolbar/next';
 import { EMPTY_FEATURE_FLAGS } from './flags';
@@ -20,6 +20,7 @@ import { getServerTranslation } from './lib/i18n/server';
 import { LOCALE_HTML_LANG, LOCALE_OG } from './lib/i18n/config';
 import { SITE_URL } from './lib/seo/base-url';
 import { THEME_INIT_SCRIPT } from './theme/theme-init-script';
+import { resolveShellStaticAssetUrl } from './lib/shell-static-asset-url';
 import './components/index.css';
 import type { Viewport, Metadata } from 'next';
 
@@ -42,10 +43,10 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     icons: {
       icon: [
-        { url: '/favicon.ico', sizes: '32x32' },
-        { url: '/icon.png', type: 'image/png' },
+        { url: resolveShellStaticAssetUrl('/favicon.ico'), sizes: '32x32' },
+        { url: resolveShellStaticAssetUrl('/icon.png'), type: 'image/png' },
       ],
-      apple: '/icons/apple-touch-icon.png',
+      apple: resolveShellStaticAssetUrl('/icons/apple-touch-icon.png'),
     },
   };
 }
@@ -85,6 +86,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {/* QueryClientProvider sits inside SessionProviderWrapper so its
             PersistQueryClientProvider can read useSession() — do not reorder. */}
         <SessionProviderWrapper enableExpoAuthBridge={process.env.BOARDSESH_WEB === '1'}>
+          {/* Reads useSession() to tell PostHog which person this browser is,
+              so it has to sit inside SessionProviderWrapper — AnalyticsClient
+              above cannot host it. Renders nothing. */}
+          <AnalyticsIdentity />
           <QueryClientProvider>
             <AppRouterCacheProvider>
               <ColorModeProvider>
@@ -108,9 +113,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     <CapacitorRetirementGate>
                       <AuthModalProvider>
                         <FeatureFlagsProvider flags={EMPTY_FEATURE_FLAGS}>
-                          <SiteChrome>
-                            <NotificationSubscriptionManager>{children}</NotificationSubscriptionManager>
-                          </SiteChrome>
+                          <SiteChrome>{children}</SiteChrome>
                         </FeatureFlagsProvider>
                       </AuthModalProvider>
                     </CapacitorRetirementGate>

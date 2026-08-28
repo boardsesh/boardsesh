@@ -81,16 +81,39 @@
     "boardsHeading": "Boards",
     "boardCount_one": "{{count}} board",
     "boardCount_other": "{{count}} boards",
+    "hoursHeading": "Opening hours",
+    "hoursConfirmed": "Confirmed {{date}}",
     "visitWebsite": "Visit website",
+    "install": {
+      "heading": "Get the app for this wall",
+      "body": "Light up the boards at {{gymName}} from your phone and log every send.",
+      "googlePlay": "Get it on Google Play",
+      "appStore": "Download on the App Store"
+    },
     "noBoardsYet": "No boards listed here yet.",
-    "exploreFeed": "See what climbers are sending",
+    "explorePlaylists": "See what people are building",
     "claimTitle": "Is this your gym?",
     "claimBody": "Claim it to run the boards, the branding, and what shows up on the wall.",
     "claimCta": "Claim this gym",
+    "claimCtaSignedOut": "Log in and claim it",
+    "claimPendingTitle": "Your claim is under review",
+    "claimPendingBody": "We're checking that you run this gym. We'll email you either way, usually within a few days.",
+    "claimPendingDomainTitle": "Check your inbox",
+    "claimPendingDomainBody": "We sent a link to your work email. Click it and the gym is yours.",
+    "claimAuthTitle": "Claim your gym",
+    "claimAuthBody": "Log in and we'll drop you straight back here to claim it.",
     "owner": {
       "linkBoards": {
         "title": "Link your boards",
         "body": "Climbers can't see any walls here yet."
+      },
+      "addHours": {
+        "title": "Add your opening hours",
+        "body": "Climbers checking if they can get a session in tonight can't tell."
+      },
+      "addDescription": {
+        "title": "Say what climbing here is like",
+        "body": "A couple of lines on the walls, the setting, and the vibe."
       },
       "putOnTv": {
         "title": "Put this wall on a TV",
@@ -100,6 +123,18 @@
         "title": "Add your branding",
         "body": "Add your logo and colors so your page looks like you."
       }
+    },
+    "photoAlt": "The climbing wall at {{gymName}}",
+    "poster": {
+      "metaTitle": "QR poster for {{gymName}}",
+      "metaDescription": "A print-ready code climbers can scan at the wall.",
+      "heading": "Scan the code, light up the wall",
+      "pitch": "Get Boardsesh, pick a climb, and the holds light up on the board in front of you. Log every send while you're at it.",
+      "typedUrlLabel": "No camera? Type this in:",
+      "compatibility": "Works with Kilter, Tension and MoonBoard.",
+      "independence": "Boardsesh is an independent app. It is not affiliated with or endorsed by Aurora Climbing, Moon Climbing, or any board manufacturer.",
+      "printAction": "Print this poster",
+      "backToGym": "Back to the gym page"
     }
   },
   "manage": {
@@ -343,6 +378,7 @@
       "quickLinksHeading": "Run your gym",
       "viewPublicPage": "View public page",
       "embedAction": "Embed on your website",
+      "printPoster": "Print your poster",
       "stats": {
         "boards": "boards",
         "members": "members",
@@ -378,7 +414,22 @@
     },
     "profile": {
       "heading": "Gym profile",
-      "description": "Your gym's name, address, and what climbers see on the public page."
+      "description": "Your gym's name, address, and what climbers see on the public page.",
+      "photo": {
+        "heading": "Gym photo",
+        "description": "One shot of your wall or board area. It leads your public page and rides along when someone shares the link.",
+        "upload": "Upload photo",
+        "replace": "Replace photo",
+        "remove": "Remove",
+        "currentAlt": "Photo of {{gymName}}",
+        "emptyPlaceholder": "No photo yet",
+        "formatsHint": "JPG, PNG, or WebP, up to {{maxMb}}MB. Resized to {{maxDimension}}px. Use a real photo of your wall or board area, not an AI-generated one.",
+        "unsupportedType": "Use a JPG, PNG, or WebP image.",
+        "tooLarge": "That file is over {{maxMb}}MB. Pick a smaller image.",
+        "uploadTooLarge": "That photo is still over {{maxMb}}MB after resizing. Pick a different one.",
+        "uploadFailed": "Couldn't upload the photo.",
+        "saveFailed": "Couldn't save the photo."
+      }
     },
     "comments": {
       "intro": "Reply to your gym's comment thread without leaving the console.",

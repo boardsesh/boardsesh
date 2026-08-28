@@ -86,7 +86,7 @@ Puedes ver la aplicación y probarla en boardsesh.com
 - Turnos sin preguntas del tipo «¿quién es el siguiente?»: una cola compartida en los teléfonos de todos, para que la rotación se gestione sola.
 - Escalad juntos en tiempo real: el «Modo Grupo» comparte una sesión entre los teléfonos; la siguiente vía se ilumina para quien esté en el rocódromo.
 - Traslada tu Logbook de escalada desde Kilter: migración en un solo paso, sin perder el historial.
-- Crea una lista de proyectos antes de llegar: organiza tus proyectos en casa y envíalos al gimnasio.
+- Crea una lista de proyectos antes de llegar: organiza tus proyectos en casa y envíalos al rocódromo.
 - Un solo inicio de sesión para todas: Kilter, Tension, MoonBoard y más en camino.
 - Es gratis, sin anuncios, y sin pagos. Además, puede ser selfhosted si alguien quiere gestionar su propia instancia.
 

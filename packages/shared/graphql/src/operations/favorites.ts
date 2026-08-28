@@ -94,6 +94,7 @@ export const GET_USER_FAVORITE_CLIMBS = gql`
         benchmark_difficulty
         boardseshDifficulty
         boardseshConfidence
+        compatibleSizeIds
       }
       totalCount
       hasMore
@@ -134,6 +135,7 @@ export type UserFavoriteClimbsResult = {
     benchmark_difficulty: string | null;
     boardseshDifficulty?: number | null;
     boardseshConfidence?: string | null;
+    compatibleSizeIds?: number[] | null;
   }>;
   totalCount: number;
   hasMore: boolean;

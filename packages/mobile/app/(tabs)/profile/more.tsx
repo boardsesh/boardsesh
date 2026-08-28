@@ -104,6 +104,8 @@ export default function MoreScreen() {
   const [autoOfflineBoards] = useSetting('autoOfflineBoards');
   const [autoDisconnectBle, setAutoDisconnectBle] = useSetting('autoDisconnectBle');
   const [autoDisconnectTimeoutSeconds, setAutoDisconnectTimeoutSeconds] = useSetting('autoDisconnectTimeoutSeconds');
+  const [lightOnSwipe, setLightOnSwipe] = useSetting('lightOnSwipe');
+  const [lightOnClimbTap, setLightOnClimbTap] = useSetting('lightOnClimbTap');
   const autoDisconnectTimeoutLabels = useAutoDisconnectTimeoutLabels();
   const { enableBoardsOffline } = useBoardDownloads();
   const { data: myBoardsConnection } = useMyBoards(undefined, { enabled: offlineEnabled && !!profile });
@@ -537,6 +539,36 @@ export default function MoreScreen() {
             hapticSelection();
             setAutoDisconnectTimeoutSeconds(seconds);
           }
+        },
+      },
+    ],
+  });
+
+  sections.push({
+    key: 'ble-lighting',
+    title: tSettings('ble.lighting.title'),
+    footer: tSettings('ble.lighting.description'),
+    rows: [
+      {
+        kind: 'toggle',
+        key: 'lightOnSwipe',
+        label: tSettings('ble.lighting.onSwipeLabel'),
+        subtitle: tSettings('ble.lighting.onSwipeDescription'),
+        value: lightOnSwipe,
+        onValueChange: (next) => {
+          hapticSelection();
+          setLightOnSwipe(next);
+        },
+      },
+      {
+        kind: 'toggle',
+        key: 'lightOnClimbTap',
+        label: tSettings('ble.lighting.onTapLabel'),
+        subtitle: tSettings('ble.lighting.onTapDescription'),
+        value: lightOnClimbTap,
+        onValueChange: (next) => {
+          hapticSelection();
+          setLightOnClimbTap(next);
         },
       },
     ],
