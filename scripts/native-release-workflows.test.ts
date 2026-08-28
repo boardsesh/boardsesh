@@ -204,4 +204,78 @@ describe('native release train workflow contracts', () => {
     expect(anchor).toContain('environment: Production');
     expect(anchor).not.toContain('environment: Native Release');
   });
+
+  // The ABI check reads the built binary — the only place an embedded-framework
+  // version skew is visible, since a prebuilt xcframework's undefined symbols
+  // are resolved for the first time by dyld at launch. See
+  // scripts/mobile-framework-abi-check.ts.
+  //
+  // Asserted against the PARSED workflow, not raw-string offsets: `vp run
+  // mobile:upload-dsyms` and `restore-keys` both appear in prose comments long
+  // before (or instead of) the steps they name, so an indexOf/toContain version
+  // of these checks reports on the comments rather than the pipeline.
+  type WorkflowStep = { name?: string; run?: string; uses?: string; with?: Record<string, unknown> };
+  const jobsOf = (source: string): Record<string, { steps?: WorkflowStep[] }> =>
+    (parse(source) as { jobs: Record<string, { steps?: WorkflowStep[] }> }).jobs;
+
+  const stepsOf = (source: string): WorkflowStep[] => Object.values(jobsOf(source)).flatMap((job) => job.steps ?? []);
+
+  // Ordering is only meaningful WITHIN one job — steps in different jobs have
+  // no relative order at all. Scope the comparison to a named job so splitting
+  // the archive and the export apart fails this test instead of quietly making
+  // it compare nothing.
+  const stepsOfJob = (source: string, jobName: string): WorkflowStep[] => {
+    const job = jobsOf(source)[jobName];
+    expect(job, `workflow has no job named "${jobName}"`).toBeDefined();
+    return job.steps ?? [];
+  };
+
+  const runsCommand = (script: string, command: string): boolean =>
+    script
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('#'))
+      .some((line) => line.includes(command));
+
+  const indexOfStepRunning = (steps: readonly WorkflowStep[], command: string): number =>
+    steps.findIndex((step) => typeof step.run === 'string' && runsCommand(step.run, command));
+
+  it('checks the embedded framework ABI before anything leaves the runner', () => {
+    const ci = workflow('ios-rn-ci.yml');
+    for (const [source, job] of [
+      [ios, 'build-and-upload'],
+      [ci, 'build-and-test'],
+    ] as const) {
+      expect(indexOfStepRunning(stepsOfJob(source, job), 'vp run mobile:abi-check')).toBeGreaterThanOrEqual(0);
+    }
+
+    // Ordering is the whole point on the release train: after the export the
+    // binary is already in TestFlight and the fingerprint tag makes the next
+    // push skip the native build, so a later failure is unfixable without a
+    // manual rebuild. A reorder is exactly what this assertion catches.
+    const releaseSteps = stepsOfJob(ios, 'build-and-upload');
+    const abiCheck = indexOfStepRunning(releaseSteps, 'vp run mobile:abi-check');
+    for (const later of ['xcodebuild -exportArchive', 'vp run mobile:upload-dsyms']) {
+      const step = indexOfStepRunning(releaseSteps, later);
+      expect(step).toBeGreaterThanOrEqual(0);
+      expect(abiCheck).toBeLessThan(step);
+    }
+
+    // The PR job needs a deterministic product path for the check to point at.
+    expect(ci).toContain('-derivedDataPath packages/mobile/ios/build');
+  });
+
+  // A prefix fallback restores the previous Pods tree on exactly the runs where
+  // the dependencies moved, and there is no committed Podfile.lock to reconcile
+  // it against. ios-rn-ci additionally reached into the release workflow's
+  // bucket, so a PR could build against a release build's Pods.
+  it('never restores a stale Pods tree from a prefix key', () => {
+    for (const source of [ios, workflow('ios-rn-ci.yml')]) {
+      const podsCaches = stepsOf(source).filter(
+        (step) =>
+          step.uses?.startsWith('actions/cache') && String(step.with?.path).includes('packages/mobile/ios/Pods'),
+      );
+      expect(podsCaches).toHaveLength(1);
+      for (const cache of podsCaches) expect(cache.with).not.toHaveProperty('restore-keys');
+    }
+  });
 });

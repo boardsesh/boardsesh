@@ -959,6 +959,14 @@ export default defineConfig({
         command: 'tsx scripts/mobile-upload-dsyms.ts',
         cache: false,
       },
+      // Reads the BUILT app, not the manifests: asserts every embedded framework
+      // exports the symbols its siblings bind against. Needs a .app argument and
+      // macOS `nm`, so it lives here rather than in the check:mobile-* wall that
+      // `vp check` runs on Linux. See scripts/mobile-framework-abi-check.ts.
+      'mobile:abi-check': {
+        command: 'tsx scripts/mobile-framework-abi-check.ts',
+        cache: false,
+      },
       'mobile:ota-setup': {
         command: 'tsx scripts/mobile-ota-setup.ts',
         cache: false,

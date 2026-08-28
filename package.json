@@ -64,9 +64,9 @@
   },
   "packageManager": "bun@1.3.14",
   "patchedDependencies": {
-    "@expo/fingerprint@0.20.7": "patches/@expo%2Ffingerprint@0.20.7.patch",
-    "@expo/ui@57.0.11": "patches/@expo%2Fui@57.0.11.patch",
-    "expo-dev-launcher@57.0.12": "patches/expo-dev-launcher@57.0.12.patch",
+    "@expo/fingerprint@0.20.11": "patches/@expo%2Ffingerprint@0.20.11.patch",
+    "@expo/ui@57.0.14": "patches/@expo%2Fui@57.0.14.patch",
+    "expo-dev-launcher@57.0.16": "patches/expo-dev-launcher@57.0.16.patch",
     "expo-image@57.0.3": "patches/expo-image@57.0.3.patch",
     "react-native-screens@4.26.2": "patches/react-native-screens@4.26.2.patch"
   }
