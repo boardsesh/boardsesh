@@ -81,7 +81,17 @@ async function clearStoredCredential(key: string): Promise<void> {
       // tombstoning, lands the same correct end state either way. The cost of
       // being wrong here is one redundant tombstone write, not a session that
       // comes back.
-      if ((await readSecureValue(key)) === null) return;
+      //
+      // A surviving tombstone counts as cleared. It can only be there because an
+      // earlier sign-out already found deletion impossible and overwrote the
+      // credential with it, so the credential is gone and getStoredCredential
+      // already reads this as null. Treating it as "still present" would spend
+      // the second attempt re-deleting a value that is already inert and then
+      // re-write an identical tombstone — and on a device not unlocked since
+      // boot that write rejects, turning an already-correct state into an
+      // AuthCredentialCleanupError.
+      const remaining = await readSecureValue(key);
+      if (remaining === null || remaining === CLEARED_CREDENTIAL) return;
     } catch (error) {
       failures.push(error);
     }
