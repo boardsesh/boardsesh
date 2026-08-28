@@ -585,9 +585,25 @@ jobs:
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
+      - name: Require direct database connection
+        env:
+          DATABASE_DIRECT_URL: ${{ secrets.DATABASE_DIRECT_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_DIRECT_URL" ]; then
+            echo "::error::DATABASE_DIRECT_URL is required; migrations must bypass PgBouncer transaction pooling."
+            exit 1
+          fi
+          if [ "$DATABASE_DIRECT_URL" = "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_DIRECT_URL must differ from the pooled DATABASE_URL; migrations must connect directly."
+            exit 1
+          fi
+
       - name: Run database migrations
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Migrations use session features that transaction pooling cannot
+          # preserve. Never fall back to the pooled runtime connection.
+          DATABASE_URL: ${{ secrets.DATABASE_DIRECT_URL }}
           VERIFY_MIGRATION_JOURNAL: '1'
         run: vp exec pnpm --filter @boardsesh/db run db:migrate
 

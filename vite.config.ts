@@ -1134,6 +1134,10 @@ export default defineConfig({
         command: 'tsx scripts/production-smoke.ts',
         cache: false,
       },
+      'smoke:pgbouncer-cutover': {
+        command: 'tsx scripts/pgbouncer-cutover-smoke.ts',
+        cache: false,
+      },
       // Browser boot check for app.boardsesh.com — proves the bundle evaluates
       // and React mounts, which the curl smoke in production-deploy.yml cannot
       // see. Uses its own Playwright config (no globalSetup, no webServer) so

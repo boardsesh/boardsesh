@@ -30,35 +30,13 @@ class ClimbRowMissingError extends Error {
   }
 }
 
-// Resolves an old/bookmarked/shared climb link through board_climb_aliases:
-// a climb that's since been merged into another (e.g. the MoonBoard
-// angle-dedup migration 0193_moonboard_angle_dedup_backfill) must still
-// resolve to where its stats/ticks/favorites actually live now, not render an
-// empty husk. A miss returns the input uuid unchanged, mirroring
-// resolveCanonicalClimbUuid in
-// packages/db/src/queries/aliases.ts (not reused directly — that helper
-// takes a drizzle db handle and this file's queries are raw postgres-js sql).
-async function resolveCanonicalClimbUuidWeb(boardName: BoardName, climbUuid: string): Promise<string> {
-  const result = rowsFromResult<{ canonical_uuid: string }>(
-    await withReadDeadline(
-      'climb-alias',
-      sql`
-      SELECT canonical_uuid FROM board_climb_aliases
-      WHERE board_type = ${boardName} AND alias_uuid = ${climbUuid}
-      LIMIT 1
-    `,
-      remainingReadBudgetMs(),
-    ),
-  );
-  return result[0]?.canonical_uuid ?? climbUuid;
-}
-
 /**
  * Throws `ClimbRowMissingError` when no row matches — a genuinely missing climb,
  * which the caller turns back into `null`. Anything else (a saturated pool, a
  * read deadline, a dead database) throws its own error, so the page can tell
- * "this climb does not exist" from "we could not answer right now". The two used
- * to be indistinguishable, and both rendered a 404 on an indexed URL.
+ * "this climb does not exist" from "we could not answer right now". Alias
+ * resolution lives in the same statement as the climb select so one cold page
+ * holds one server connection for one round trip rather than two.
  */
 async function fetchClimbFromDb(
   boardName: BoardName,
@@ -66,8 +44,6 @@ async function fetchClimbFromDb(
   angle: number,
   requestedClimbUuid: string,
 ): Promise<Climb> {
-  const climbUuid = await resolveCanonicalClimbUuidWeb(boardName, requestedClimbUuid);
-
   // Direct-by-UUID lookups intentionally do NOT filter `frames_count = 1`.
   // Search/dedupe still skip multi-frame climbs (see queries/climbs/*),
   // but the player needs to be able to render them when a URL points at one.
@@ -75,6 +51,18 @@ async function fetchClimbFromDb(
     await withReadDeadline(
       'climb-select',
       sql`
+        WITH resolved_climb AS NOT MATERIALIZED (
+          SELECT COALESCE(
+            (
+              SELECT aliases.canonical_uuid
+              FROM board_climb_aliases aliases
+              WHERE aliases.board_type = ${boardName}
+                AND aliases.alias_uuid = ${requestedClimbUuid}
+              LIMIT 1
+            ),
+            ${requestedClimbUuid}
+          ) AS uuid
+        )
         SELECT climbs.uuid, climbs.setter_username, climbs.user_id as "userId", climbs.name, climbs.description,
         climbs.layout_id as "layoutId", climbs.board_type as "boardType",
         climbs.frames, climbs.frames_count as "framesCount", climbs.frames_pace as "framesPace",
@@ -86,21 +74,21 @@ async function fetchClimbFromDb(
         CASE WHEN climb_stats.benchmark_difficulty > 0 THEN climb_stats.benchmark_difficulty::text ELSE NULL END as benchmark_difficulty,
         climbs.is_draft, climbs.created_at, climbs.published_at, climbs.characteristics,
         climbs.compatible_size_ids as "compatibleSizeIds"
-        FROM board_climbs climbs
+        FROM resolved_climb
+        INNER JOIN board_climbs climbs ON climbs.uuid = resolved_climb.uuid
         LEFT JOIN board_climb_stats climb_stats
           ON climb_stats.climb_uuid = climbs.uuid
           AND climb_stats.angle = ${angle}
           AND climb_stats.board_type = ${boardName}
         WHERE climbs.board_type = ${boardName}
         AND climbs.layout_id = ${layoutId}
-        AND climbs.uuid = ${climbUuid}
         limit 1
       `,
       remainingReadBudgetMs(),
     ),
   );
   const row = result[0];
-  if (!row) throw new ClimbRowMissingError(climbUuid);
+  if (!row) throw new ClimbRowMissingError(requestedClimbUuid);
   return {
     ...row,
     difficulty: getGradeLabel(row.difficulty_id),
@@ -143,8 +131,7 @@ async function cachedClimbFetch(
  * React-`cache`d on primitives, so `generateMetadata` and the page body share
  * one read per request. `unstable_cache` has no in-flight single-flight and
  * Next renders the two concurrently, so on a cold key both used to miss and
- * both used to run the alias lookup and the climb select — four statements
- * where two would do.
+ * duplicate the climb select.
  * Keying on primitives (rather than the params object) makes the dedupe work in
  * the `/b/{slug}` tree too, where the two entry points build their own objects.
  *

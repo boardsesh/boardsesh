@@ -145,13 +145,13 @@ rather than an error.
 
 `packages/web/app/lib/db/read-deadline.ts` bounds one read client-side. It races
 the pending query against a timer and rejects with `DbReadTimeoutError`
-(`code: 'DB_READ_TIMEOUT'`) when the timer wins. It is wired at four
-front-door reads — the two statements behind `getClimb`, the all-angles
+(`code: 'DB_READ_TIMEOUT'`) when the timer wins. It is wired at three
+front-door reads — the alias-resolving `getClimb` statement, the all-angles
 stats select, and the shared climb search — and deliberately **not** inside
 `withConnectRetry` or `packages/db`, where it would change behaviour for the
 backend, the sync runners and every script.
 
-**Cancellation covers three of the four.** On a timeout the helper calls
+**Cancellation covers two of the three.** On a timeout the helper calls
 `query.cancel()` the way the health probe does, so a timed-out statement does not
 fire later against a recovered pool. That only works for raw postgres.js
 queries. The list front door's search is drizzle-issued and exposes no
@@ -167,8 +167,8 @@ internally (`Query.cancel()` returns `null`), so a failure to open it surfaces a
 an unhandled rejection the runtime logs. Accepted: a zombie statement firing
 against a recovered pool is worse than a log line.
 
-**One budget per request, not per statement.** The climb page issues three reads
-in sequence, so three independent 6 s deadlines would be an ~18 s request
+**One budget per request, not per statement.** The climb page issues two reads
+in sequence, so two independent 6 s deadlines would be a ~12 s request
 ceiling — the opposite of shedding load. `app/lib/db/request-read-budget.ts`
 puts one deadline timestamp in React's per-render `cache` scope and hands each
 read whatever the earlier ones left, floored at 500 ms. Outside a render scope
@@ -231,7 +231,8 @@ holds because the budget is per request — see the shared-budget note above.
 
 The pool knobs default to the values that used to be hard-coded — except on
 Vercel, where an unset knob now falls back to the serverless pair (`max` 3,
-idle 5 s; `process.env.VERCEL` selects it, an explicit env var still wins).
+idle 5 s; `VERCEL=1` or `VERCEL_ENV=production|preview` selects it, and an
+explicit env var still wins).
 The split exists because peak server-side connections scale with
 **instance count × connections held idle**, not with per-instance `max` — a
 fleet of serverless instances each sitting on a few idle connections for 30 s
@@ -241,6 +242,91 @@ bursts on climb-view SSR held ~10 idle connections per lambda) and starved the
 backend's `POST /graphql` alongside (BOARDSESH-A1). Lowering `DB_POOL_MAX` and
 `DB_POOL_IDLE_TIMEOUT_S` on a serverless deployment shrinks that footprint;
 raising `max` never helps.
+
+## Production PgBouncer topology (#4842)
+
+The production app/runtime `DATABASE_URL` points at the TLS listener on the
+single-replica PgBouncer service. Privileged workflows use
+`DATABASE_DIRECT_URL` to reach PostgreSQL without transaction pooling; the
+production migration job fails closed when that direct secret is absent. Do not
+put the direct URL in Vercel runtime settings.
+
+The image is published as `ghcr.io/boardsesh/boardsesh-pgbouncer`, built from
+`deploy/pgbouncer/` by `.github/workflows/pgbouncer-image.yml`. Deploy the
+attested digest behind the full-commit `sha-...` tag, never the mutable
+`:production` tag. Its fixed budget is 40 ordinary server connections plus 5
+reserve connections, capped at 45 for the database. It accepts up to 500
+clients and rejects a queued or incomplete-login client after 5 seconds. Run
+exactly one replica: two replicas double the database budget and can recreate
+the incident this service prevents.
+
+Production PostgreSQL exposes 197 application slots (`max_connections=200`
+minus 3 reserved slots). PgBouncer therefore consumes at most 45 and leaves 152
+for migrations, replication, administrator access, and services not yet cut
+over. Recheck that remainder before adding any direct client or pooler replica.
+
+### Deploy and cut over
+
+1. Provision `DATABASE_DIRECT_URL`, the three distinct identities, TLS material,
+   and `PGBOUNCER_CUTOVER_SMOKE_TOKEN` before changing any runtime URL.
+2. Verify the full-SHA image's GitHub attestation, resolve its OCI digest, and
+   deploy that digest with the environment in `deploy/pgbouncer/README.md`.
+3. Allow PgBouncer ingress only from approved Vercel egress and operator
+   sources; do not leave its TCP endpoint open to the public internet.
+4. Point a Vercel staging deployment at the pooled URL, then run the smoke below.
+5. Promote the pooled URL through two clean Vercel production deployments.
+
+Load `PGBOUNCER_CUTOVER_SMOKE_TOKEN` from the same secret store used by the
+target deployment, then run:
+
+```sh
+vp run smoke:pgbouncer-cutover -- --origin https://TARGET
+```
+
+The command requires zero failures from both 100 climb renders and 100 uncached
+database probes at concurrency 32. Keep `prepare: false` in every app client.
+Use a dedicated high-entropy token, never a database credential. Remove it from
+Vercel after the cutover so the probe returns 401, and provision a fresh token
+for a future cutover.
+
+Old Vercel deployments retain their old environment snapshot. The second
+deployment is mandatory: after the first clean pooled deployment, create an
+identical one before declaring the direct-connection fleet drained. Route the
+backend and sync daemons through PgBouncer separately after the crawl test and
+watch each change as its own connection-budget event.
+
+### Observe, alert, and roll back
+
+Connect to the PgBouncer admin database with its admin credentials, then run:
+
+```sql
+SHOW POOLS;
+SHOW STATS;
+SHOW CLIENTS;
+SHOW SERVERS;
+```
+
+`sv_active + sv_idle + sv_used + sv_tested + sv_login` must stay at or below 45
+for the application database. Success is zero load-test 500s, zero PostgreSQL
+`53300` events, and no more than 45 PgBouncer server connections.
+
+Server Sentry events carry `postgres.error_code`; `53300` also carries
+`postgres.resource_exhaustion:true`. Configure the production metric alert for
+at least one matching event in 5 minutes and require 30 clean minutes for
+recovery. Alert configuration remains manual because CI's Sentry access is
+read-only.
+
+Rollback by restoring the direct PostgreSQL `DATABASE_URL` and redeploying. Keep
+the safer Vercel 3/5 pool defaults during rollback. Do not stop PgBouncer until
+all deployments using its URL are drained.
+
+Rotate client credentials without an authentication gap: add a distinct
+`PGBOUNCER_CLIENT_USER_NEXT` and password, deploy PgBouncer with both client
+identities, update Vercel, complete two Vercel deployments, wait for old-client
+traffic to reach zero, then promote the next identity and remove the old one.
+Rotate upstream and admin credentials separately in controlled PgBouncer
+deployments and run health checks after each. Never reuse the PostgreSQL
+superuser as the client or admin login.
 
 ### The `statement_timeout` hazard
 

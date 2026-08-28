@@ -4,6 +4,12 @@
 auto-deploy is off). Every push to `main` starts a run; the run builds web and
 backend in parallel, gates on both builds passing, migrates, then deploys.
 
+The protected Production environment must define `DATABASE_DIRECT_URL` for the
+migration job. Runtime `DATABASE_URL` may point at PgBouncer, but migrations
+must bypass transaction pooling. The workflow fails before migration when the
+direct secret is absent or exactly equals the pooled `DATABASE_URL`; it never
+falls back to the pooled runtime connection.
+
 ## Architecture during the cut-over
 
 www (`packages/web`) is moving off Vercel onto a Railway container (epic
@@ -379,7 +385,6 @@ Production environment, not a personal or team API token. The rollback helper
 derives and checks its project/environment scope on every use. Rotate it in
 Railway first, replace the GitHub Production-environment secret, then revoke the
 old token after a green deploy.
-
 ## Why only one run moves at a time
 
 ```yaml

@@ -68,32 +68,69 @@ void describe('postgres client', () => {
       }
     }
 
-    void it('defaults to the values that were hard-coded before the knobs existed', async () => {
+    void it('keeps the previous defaults outside Vercel', async () => {
       const options = await poolOptionsWith({
         DB_POOL_MAX: undefined,
         DB_POOL_IDLE_TIMEOUT_S: undefined,
         VERCEL: undefined,
+        VERCEL_ENV: undefined,
       });
       assert.equal(options.max, 10);
       assert.equal(options.idle_timeout, 30);
     });
 
-    void it('shrinks the defaults on Vercel, where instance count is the term that grows', async () => {
-      // A crawl burst scales lambda count; instances × held-idle connections
-      // can exhaust the shared max_connections. See docs/db-connectivity.md.
+    void it('does not treat empty Vercel markers as a Vercel runtime', async () => {
+      const options = await poolOptionsWith({
+        DB_POOL_MAX: undefined,
+        DB_POOL_IDLE_TIMEOUT_S: undefined,
+        VERCEL: '',
+        VERCEL_ENV: '',
+      });
+      assert.equal(options.max, 10);
+      assert.equal(options.idle_timeout, 30);
+    });
+
+    void it('uses smaller defaults on Vercel', async () => {
       const options = await poolOptionsWith({
         DB_POOL_MAX: undefined,
         DB_POOL_IDLE_TIMEOUT_S: undefined,
         VERCEL: '1',
+        VERCEL_ENV: 'production',
       });
       assert.equal(options.max, 3);
       assert.equal(options.idle_timeout, 5);
     });
 
-    void it('lets explicit knobs override the serverless defaults', async () => {
-      const options = await poolOptionsWith({ DB_POOL_MAX: '6', DB_POOL_IDLE_TIMEOUT_S: '20', VERCEL: '1' });
+    void it('uses smaller defaults when VERCEL_ENV is the only runtime marker', async () => {
+      const options = await poolOptionsWith({
+        DB_POOL_MAX: undefined,
+        DB_POOL_IDLE_TIMEOUT_S: undefined,
+        VERCEL: undefined,
+        VERCEL_ENV: 'preview',
+      });
+      assert.equal(options.max, 3);
+      assert.equal(options.idle_timeout, 5);
+    });
+
+    void it('keeps non-Vercel defaults for local VERCEL_ENV=development', async () => {
+      const options = await poolOptionsWith({
+        DB_POOL_MAX: undefined,
+        DB_POOL_IDLE_TIMEOUT_S: undefined,
+        VERCEL: undefined,
+        VERCEL_ENV: 'development',
+      });
+      assert.equal(options.max, 10);
+      assert.equal(options.idle_timeout, 30);
+    });
+
+    void it('lets explicit pool knobs override the Vercel defaults', async () => {
+      const options = await poolOptionsWith({
+        DB_POOL_MAX: '6',
+        DB_POOL_IDLE_TIMEOUT_S: '15',
+        VERCEL: '1',
+      });
       assert.equal(options.max, 6);
-      assert.equal(options.idle_timeout, 20);
+      assert.equal(options.idle_timeout, 15);
     });
 
     void it('honours DB_POOL_MAX and DB_POOL_IDLE_TIMEOUT_S', async () => {
@@ -103,8 +140,7 @@ void describe('postgres client', () => {
     });
 
     void it('clamps DB_POOL_MAX to the two-connection floor', async () => {
-      // getClimb issues two sequential statements; a pool of one serialises
-      // every front-door render behind a single connection.
+      // A pool of one serialises every front-door render behind one connection.
       const options = await poolOptionsWith({ DB_POOL_MAX: '1' });
       assert.equal(options.max, 2);
     });
@@ -137,6 +173,11 @@ void describe('postgres client', () => {
       // direct. See docs/db-connectivity.md.
       const options = await poolOptionsWith({ DB_STATEMENT_TIMEOUT_MS: undefined });
       assert.equal(options.connection.statement_timeout, undefined);
+    });
+
+    void it('disables prepared statements for PgBouncer transaction pooling', async () => {
+      const options = await poolOptionsWith({});
+      assert.equal(options.prepare, false);
     });
 
     void it('emits statement_timeout when DB_STATEMENT_TIMEOUT_MS is set', async () => {
