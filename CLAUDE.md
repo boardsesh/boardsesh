@@ -283,7 +283,8 @@ After mobile changes:
 2. `vp run test:mobile` (or `vp test run --project mobile`) — always. Do **not** use `vp test --project mobile run` — the flag-before-`run` order runs ~1 file (false green).
 3. `vp run check:mobile-bundle` — Metro bundle check (Linux-safe; highest-value).
 4. `vp run check:mobile-simulator` — macOS only; skips on Linux.
-5. `vp run mobile:screenshot` — macOS only.
+5. `vp run mobile:abi-check -- --app <path-to-.app>` — macOS only; asserts the built app's embedded frameworks still export the symbols each other binds against. Needs a built `.app`, so it runs in `ios-rn-ci` and again between the TestFlight archive and its export, not as part of `vp check`.
+6. `vp run mobile:screenshot` — macOS only.
 
 ### Mobile performance checklist (PR review)
 
