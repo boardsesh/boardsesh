@@ -214,8 +214,21 @@ describe('native release train workflow contracts', () => {
   // mobile:upload-dsyms` and `restore-keys` both appear in prose comments long
   // before (or instead of) the steps they name, so an indexOf/toContain version
   // of these checks reports on the comments rather than the pipeline.
-  const stepsOf = (source: string): { name?: string; run?: string; uses?: string; with?: Record<string, unknown> }[] =>
-    Object.values((parse(source) as { jobs: Record<string, { steps?: [] }> }).jobs).flatMap((job) => job.steps ?? []);
+  type WorkflowStep = { name?: string; run?: string; uses?: string; with?: Record<string, unknown> };
+  const jobsOf = (source: string): Record<string, { steps?: WorkflowStep[] }> =>
+    (parse(source) as { jobs: Record<string, { steps?: WorkflowStep[] }> }).jobs;
+
+  const stepsOf = (source: string): WorkflowStep[] => Object.values(jobsOf(source)).flatMap((job) => job.steps ?? []);
+
+  // Ordering is only meaningful WITHIN one job — steps in different jobs have
+  // no relative order at all. Scope the comparison to a named job so splitting
+  // the archive and the export apart fails this test instead of quietly making
+  // it compare nothing.
+  const stepsOfJob = (source: string, jobName: string): WorkflowStep[] => {
+    const job = jobsOf(source)[jobName];
+    expect(job, `workflow has no job named "${jobName}"`).toBeDefined();
+    return job.steps ?? [];
+  };
 
   const runsCommand = (script: string, command: string): boolean =>
     script
@@ -223,22 +236,26 @@ describe('native release train workflow contracts', () => {
       .filter((line) => !line.trimStart().startsWith('#'))
       .some((line) => line.includes(command));
 
-  const indexOfStepRunning = (source: string, command: string): number =>
-    stepsOf(source).findIndex((step) => typeof step.run === 'string' && runsCommand(step.run, command));
+  const indexOfStepRunning = (steps: readonly WorkflowStep[], command: string): number =>
+    steps.findIndex((step) => typeof step.run === 'string' && runsCommand(step.run, command));
 
   it('checks the embedded framework ABI before anything leaves the runner', () => {
     const ci = workflow('ios-rn-ci.yml');
-    for (const source of [ios, ci]) {
-      expect(indexOfStepRunning(source, 'vp run mobile:abi-check')).toBeGreaterThanOrEqual(0);
+    for (const [source, job] of [
+      [ios, 'build-and-upload'],
+      [ci, 'build-and-test'],
+    ] as const) {
+      expect(indexOfStepRunning(stepsOfJob(source, job), 'vp run mobile:abi-check')).toBeGreaterThanOrEqual(0);
     }
 
     // Ordering is the whole point on the release train: after the export the
     // binary is already in TestFlight and the fingerprint tag makes the next
     // push skip the native build, so a later failure is unfixable without a
     // manual rebuild. A reorder is exactly what this assertion catches.
-    const abiCheck = indexOfStepRunning(ios, 'vp run mobile:abi-check');
+    const releaseSteps = stepsOfJob(ios, 'build-and-upload');
+    const abiCheck = indexOfStepRunning(releaseSteps, 'vp run mobile:abi-check');
     for (const later of ['xcodebuild -exportArchive', 'vp run mobile:upload-dsyms']) {
-      const step = indexOfStepRunning(ios, later);
+      const step = indexOfStepRunning(releaseSteps, later);
       expect(step).toBeGreaterThanOrEqual(0);
       expect(abiCheck).toBeLessThan(step);
     }
