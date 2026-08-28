@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
+  ASSETS_CNAME_TARGET,
+  ASSETS_HOSTNAME,
   BOARD_RENDER_CACHE_RULE_DESCRIPTION,
   CACHE_RULE_DESCRIPTION,
   CRAWLER_ALLOW_RULE_DESCRIPTION,
@@ -11,8 +13,10 @@ import {
   CRAWLER_BLOCK_RULE_DESCRIPTION,
   CRAWLER_BLOCK_TOKENS,
   WWW_HOSTNAME,
+  WS_HOSTNAME,
   desiredCloudflareState,
 } from '../infra/cloudflare/config';
+import type { DnsRecordDesired, FullyManagedDnsRecordDesired } from '../infra/cloudflare/config';
 import {
   buildPlan,
   cacheRuleMatches,
@@ -24,19 +28,48 @@ import {
   upsertCacheRule,
 } from '../infra/cloudflare/plan';
 import type { LiveDnsRecord, LiveState, RulesetRule } from '../infra/cloudflare/plan';
-import { SHARED_TOKEN_SCOPES, TOKEN_SCOPES, parseArgs } from './cloudflare-apply';
+import { SHARED_TOKEN_SCOPES, TOKEN_SCOPES, fullyManagedDnsBody, parseArgs } from './cloudflare-apply';
 
 const desired = desiredCloudflareState;
+
+function requiredDnsRecord(name: string): DnsRecordDesired {
+  const record = desired.dnsRecords.find((candidate) => candidate.name === name);
+  if (!record) throw new Error(`Expected ${name} in desired Cloudflare DNS state`);
+  return record;
+}
+
+function requiredFullyManagedDnsRecord(name: string): FullyManagedDnsRecordDesired {
+  const record = requiredDnsRecord(name);
+  if (record.management !== 'full') throw new Error(`Expected ${name} to be fully managed`);
+  return record;
+}
+
+const wsDnsRecord = requiredDnsRecord(WS_HOSTNAME);
+const assetsDnsRecord = requiredFullyManagedDnsRecord(ASSETS_HOSTNAME);
 /** The og cache rule — the one the pre-existing cases in this file were written against. */
 const ogCacheRule = desired.cacheRules[0];
 
 function liveDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord {
   return {
     id: 'dns-record-id',
-    name: desired.dns.name,
+    name: wsDnsRecord.name,
     type: 'CNAME',
     content: 'boardsesh-backend.up.railway.app',
+    ttl: 1,
     proxied: true,
+    ...overrides,
+  };
+}
+
+function liveAssetsDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord {
+  return {
+    id: 'assets-dns-record-id',
+    name: assetsDnsRecord.name,
+    type: assetsDnsRecord.type,
+    content: assetsDnsRecord.content,
+    ttl: assetsDnsRecord.ttl,
+    proxied: assetsDnsRecord.proxied,
+    settings: assetsDnsRecord.settings,
     ...overrides,
   };
 }
@@ -94,10 +127,14 @@ function matchingLiveRules(
 
 function inSyncLiveState(): LiveState {
   return {
-    dnsRecord: liveDnsRecord(),
+    dnsRecords: {
+      [wsDnsRecord.name]: liveDnsRecord(),
+      [assetsDnsRecord.name]: liveAssetsDnsRecord(),
+    },
     cacheRules: matchingLiveRules(desired.cacheRules),
     wafRules: matchingLiveRules(desired.wafRules),
     sslMode: 'strict',
+    flattenAllCnames: false,
   };
 }
 
@@ -123,14 +160,56 @@ describe('parseArgs', () => {
 
 describe('diffDnsRecord', () => {
   it('is a no-op when the record is already proxied', () => {
-    expect(diffDnsRecord(desired.dns, liveDnsRecord({ proxied: true }))).toBeNull();
+    expect(diffDnsRecord(wsDnsRecord, liveDnsRecord({ proxied: true }))).toBeNull();
   });
 
   it('plans a proxied flip when the record is grey-clouded', () => {
-    const change = diffDnsRecord(desired.dns, liveDnsRecord({ proxied: false }));
+    const change = diffDnsRecord(wsDnsRecord, liveDnsRecord({ proxied: false }));
     expect(change).not.toBeNull();
     expect(change?.resource).toBe('dns');
+    expect(change?.dnsName).toBe(WS_HOSTNAME);
     expect(change?.summary).toContain('proxied false → true');
+  });
+
+  it('does not take ownership of the existing ws record target, type, or TTL', () => {
+    expect(
+      diffDnsRecord(wsDnsRecord, liveDnsRecord({ type: 'A', content: '203.0.113.10', ttl: 300, proxied: true })),
+    ).toBeNull();
+  });
+
+  it('plans creation of the fully managed assets record when it is missing', () => {
+    const change = diffDnsRecord(assetsDnsRecord, null);
+    expect(change).toMatchObject({
+      resource: 'dns',
+      dnsName: ASSETS_HOSTNAME,
+      summary: expect.stringContaining('missing — will create'),
+    });
+    expect(change?.detail).toContain(ASSETS_CNAME_TARGET);
+    expect(change?.detail).toContain('ttl automatic');
+    expect(change?.detail).toContain('proxied false');
+    expect(change?.detail).toContain('CNAME flattening disabled');
+  });
+
+  it('is a no-op when every owned assets field matches', () => {
+    expect(diffDnsRecord(assetsDnsRecord, liveAssetsDnsRecord())).toBeNull();
+  });
+
+  it('plans correction of every owned assets field when it drifts', () => {
+    const change = diffDnsRecord(
+      assetsDnsRecord,
+      liveAssetsDnsRecord({ type: 'A', content: 'old.example.com', ttl: 300, proxied: true }),
+    );
+    expect(change?.summary).toContain('managed fields differ — will update');
+    expect(change?.detail).toContain('type A → CNAME');
+    expect(change?.detail).toContain(`content old.example.com → ${ASSETS_CNAME_TARGET}`);
+    expect(change?.detail).toContain('ttl 300 → automatic');
+    expect(change?.detail).toContain('proxied true → false');
+  });
+
+  it('plans disabling per-record CNAME flattening when it drifts', () => {
+    const change = diffDnsRecord(assetsDnsRecord, liveAssetsDnsRecord({ settings: { flatten_cname: true } }));
+
+    expect(change?.detail).toContain('flatten_cname true → false');
   });
 });
 
@@ -238,10 +317,14 @@ describe('buildPlan', () => {
 
   it('collects every drift (dns + cache + ssl) into one plan', () => {
     const drifted: LiveState = {
-      dnsRecord: liveDnsRecord({ proxied: false }),
+      dnsRecords: {
+        [wsDnsRecord.name]: liveDnsRecord({ proxied: false }),
+        [assetsDnsRecord.name]: liveAssetsDnsRecord(),
+      },
       cacheRules: [foreignRule('foreign-a')],
       wafRules: matchingLiveRules(desired.wafRules),
       sslMode: 'full',
+      flattenAllCnames: false,
     };
     const changes = buildPlan(desired, drifted, { allowZoneSsl: false });
     // Cutover-safe order: the proxied flip is planned last, after SSL + the rules.
@@ -259,14 +342,77 @@ describe('buildPlan', () => {
 
   it('does not hold back the proxied flip when SSL is already compliant', () => {
     const drifted: LiveState = {
-      dnsRecord: liveDnsRecord({ proxied: false }),
+      dnsRecords: {
+        [wsDnsRecord.name]: liveDnsRecord({ proxied: false }),
+        [assetsDnsRecord.name]: liveAssetsDnsRecord(),
+      },
       cacheRules: [],
       wafRules: [],
       sslMode: 'strict',
+      flattenAllCnames: false,
     };
     const changes = buildPlan(desired, drifted, { allowZoneSsl: false });
     const dnsChange = changes.find((change) => change.resource === 'dns');
     expect(dnsChange?.blocked).toBeUndefined();
+  });
+
+  it('plans multiple DNS records independently and does not SSL-block a DNS-only create', () => {
+    const drifted: LiveState = {
+      dnsRecords: {
+        [wsDnsRecord.name]: liveDnsRecord({ proxied: false }),
+        [assetsDnsRecord.name]: null,
+      },
+      cacheRules: matchingLiveRules(desired.cacheRules),
+      wafRules: matchingLiveRules(desired.wafRules),
+      sslMode: 'full',
+      flattenAllCnames: false,
+    };
+    const changes = buildPlan(desired, drifted, { allowZoneSsl: false });
+    const dnsChanges = changes.filter((change) => change.resource === 'dns');
+
+    expect(dnsChanges.map((change) => change.dnsName)).toEqual([WS_HOSTNAME, ASSETS_HOSTNAME]);
+    expect(dnsChanges.find((change) => change.dnsName === WS_HOSTNAME)?.blocked).toBe(true);
+    expect(dnsChanges.find((change) => change.dnsName === ASSETS_HOSTNAME)?.blocked).toBeUndefined();
+  });
+
+  it('fails closed when zone-wide flattening would hide the Tigris verification CNAME', () => {
+    const flattenedZone: LiveState = { ...inSyncLiveState(), flattenAllCnames: true };
+
+    expect(() => buildPlan(desired, flattenedZone, { allowZoneSsl: false })).toThrow('Disable "Flatten all CNAMEs"');
+  });
+});
+
+describe('assets.boardsesh.com desired state', () => {
+  it('declares the exact DNS-only Tigris CNAME with automatic TTL', () => {
+    expect(assetsDnsRecord).toEqual({
+      management: 'full',
+      name: 'assets.boardsesh.com',
+      type: 'CNAME',
+      content: 'boardsesh-static-assets.t3.tigrisbucket.io',
+      ttl: 1,
+      proxied: false,
+      settings: {
+        flatten_cname: false,
+      },
+    });
+  });
+
+  it('writes the complete Cloudflare create/update body including the anti-flattening guard', () => {
+    expect(fullyManagedDnsBody(assetsDnsRecord)).toEqual({
+      type: 'CNAME',
+      name: 'assets.boardsesh.com',
+      content: 'boardsesh-static-assets.t3.tigrisbucket.io',
+      ttl: 1,
+      proxied: false,
+      settings: {
+        flatten_cname: false,
+      },
+    });
+  });
+
+  it('keeps DNS record identities unique and adds no assets cache rule', () => {
+    expect(new Set(desired.dnsRecords.map((record) => record.name)).size).toBe(desired.dnsRecords.length);
+    expect(desired.cacheRules.every((rule) => !rule.expression.includes(ASSETS_HOSTNAME))).toBe(true);
   });
 });
 
@@ -481,6 +627,15 @@ describe('deploy-cloudflare workflow wiring', () => {
     expect(parseArgs(['--apply'])).toEqual({ apply: true, allowZoneSsl: false, help: false });
     expect(parseArgs(['--apply', '--allow-zone-ssl'])).toEqual({ apply: true, allowZoneSsl: true, help: false });
   });
+
+  it('converges Cloudflare before publishing assets when both targets change', () => {
+    const syncJob = workflow.slice(workflow.indexOf('  sync-static-assets:'), workflow.indexOf('  build-web:'));
+
+    expect(syncJob).toContain('needs: [detect-changes, deploy-cloudflare]');
+    expect(syncJob).toContain('always()');
+    expect(syncJob).toContain("needs.deploy-cloudflare.result == 'success'");
+    expect(syncJob).toContain("needs.deploy-cloudflare.result == 'skipped'");
+  });
 });
 
 describe('token scope guidance', () => {
@@ -494,7 +649,7 @@ describe('token scope guidance', () => {
     // zone was the failure mode rather than a clean error.
     const printed = TOKEN_SCOPES.join('\n');
     expect(printed).toContain('Zone.Zone Read'); // GET /zones?name= (resolve the zone id)
-    expect(printed).toContain('Zone.DNS Edit'); // PATCH the ws record's proxied flag
+    expect(printed).toContain('Zone.DNS Edit'); // PATCH ws; create/update the assets CNAME
     expect(printed).toContain('Zone.Cache Rules Edit'); // PUT the cache-settings phase
     expect(printed).toContain('Zone.WAF Edit'); // PUT the firewall-custom phase
     expect(printed).toContain('Zone.Zone Settings Read'); // GET /settings/ssl

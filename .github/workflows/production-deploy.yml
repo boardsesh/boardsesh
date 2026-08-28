@@ -181,8 +181,11 @@ jobs:
   # URLs. The uploader lists the dedicated bucket and PUTs only missing hashes;
   # it never deletes or overwrites objects needed by an older deployment.
   sync-static-assets:
-    needs: [detect-changes]
-    if: needs.detect-changes.outputs.static_assets_changed == 'true'
+    needs: [detect-changes, deploy-cloudflare]
+    if: >-
+      always()
+      && needs.detect-changes.outputs.static_assets_changed == 'true'
+      && (needs.deploy-cloudflare.result == 'success' || needs.deploy-cloudflare.result == 'skipped')
     runs-on: ubuntu-latest
     # A stuck S3/CDN socket must release the serialized production-deploy
     # concurrency group. A healthy full-catalog validation takes about three
@@ -592,9 +595,10 @@ jobs:
   # is too heavy here (this file has no such gate for web/backend either); the
   # expo-web-smoke suite stays the dispatch-only gate in e2e-tests.yml.
   # Converges the Cloudflare zone config (infra/cloudflare) on main. Runs only
-  # when the desired state or apply tooling changes (or on manual dispatch);
-  # nothing else depends on it, so a Cloudflare API hiccup never blocks the
-  # web/backend deploys. A non-zero exit = unapplied drift (e.g. a blocked
+  # when the desired state or apply tooling changes (or on manual dispatch).
+  # Static-asset publication waits for this job when both targets change, so it
+  # cannot validate the public hostname before its DNS record is converged. A
+  # non-zero exit = unapplied drift (e.g. a blocked
   # zone-SSL change) and should be investigated, not retried blindly.
   # The planned OpenNext (Cloudflare Workers) deploy of packages/web will be a
   # sibling job reusing the same Production-environment CLOUDFLARE_API_TOKEN

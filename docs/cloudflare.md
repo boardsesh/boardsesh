@@ -15,6 +15,40 @@ that migration too, so the deploy job can reuse them:
   the token (`gh secret set CLOUDFLARE_ACCOUNT_ID --env Production`); wrangler
   needs it and it never changes.
 
+## assets.boardsesh.com DNS-only Tigris domain
+
+The public static-assets hostname is repo-managed DNS. `vp run cf:apply` creates
+and maintains this complete record (not just its proxy flag):
+
+```text
+assets.boardsesh.com CNAME boardsesh-static-assets.t3.tigrisbucket.io
+TTL: automatic (Cloudflare API value 1)
+Proxy status: DNS only
+CNAME flattening: disabled
+```
+
+Keep it DNS-only. Tigris terminates TLS and serves the public objects globally;
+putting Cloudflare's proxy in front would add a second CDN/TLS layer and obscure
+the CNAME Tigris uses to verify the custom domain. There is deliberately no
+Cloudflare cache rule for `assets.boardsesh.com`.
+
+The apply also disables per-record CNAME flattening. It reads the zone DNS
+settings and fails closed if **Flatten all CNAMEs** is enabled, because that
+zone-wide option overrides the record and prevents Tigris from seeing the
+literal verification target. Turn that option off in Cloudflare DNS settings;
+do not bypass this guard.
+
+One-time setup order:
+
+1. In Tigris, create/configure the dedicated `boardsesh-static-assets` bucket,
+   public reads, CORS, CI access key, and deletion protection as documented in
+   [static-assets.md](./static-assets.md).
+2. Register `assets.boardsesh.com` as that bucket's custom domain in Tigris.
+3. Merge/apply the repo Cloudflare state. The apply creates the DNS-only CNAME
+   if absent and corrects its target, type, TTL, or proxy status if they drift.
+4. Wait for Tigris to report the custom domain and certificate active, then run
+   the verification commands below before publishing the first catalog.
+
 ## ws.boardsesh.com edge caching (og images)
 
 `ws.boardsesh.com` is a single-region Railway origin; distant clients (and the
@@ -30,8 +64,13 @@ second run is a no-op).
 
 What it manages (and nothing else on the zone):
 
-- **DNS** — the `ws` record's proxied flag → orange cloud. The record's
-  target/type/content are not managed; the record must already exist.
+- **DNS** — two records with different ownership boundaries:
+  - `ws`: only its proxied flag → orange cloud. Its target/type/content are not
+    managed and the record must already exist.
+  - `assets`: the full DNS-only CNAME shape shown above. It is created when
+    missing and its owned fields (including disabled CNAME flattening) are
+    corrected when drifted. The tool refuses to apply while zone-wide CNAME
+    flattening would override that record.
 - **Cache** — one rule in the `http_request_cache_settings` phase, expression
   `(http.host eq "ws.boardsesh.com" and starts_with(http.request.uri.path, "/og/"))`
   → eligible for cache, edge TTL "use cache-control if present, bypass if not"
@@ -155,7 +194,8 @@ Create a token at <https://dash.cloudflare.com/profile/api-tokens> scoped to the
 `boardsesh.com` zone with:
 
 - **Zone.Zone Read** — resolve the zone id by name + read the zone list
-- **Zone.DNS Edit** — patch the `ws` record proxied flag
+- **Zone.DNS Edit** — patch the `ws` proxy flag, create/update the `assets` CNAME,
+  and read the zone's CNAME-flattening settings
 - **Zone.Cache Rules Edit** — create/update the `/og/` and board-render cache rules
 - **Zone.WAF Edit** — create/update the two crawler rules (see below). Without
   this scope `cf:apply` fails on the WAF phase while the cache rules still apply,
@@ -221,6 +261,10 @@ CLOUDFLARE_API_TOKEN=... vp run cf:apply -- --apply
 CLOUDFLARE_API_TOKEN=... vp run cf:apply -- --apply --allow-zone-ssl
 ```
 
+That one apply covers both DNS records plus the cache/WAF phases. A missing
+`ws` record remains a hard error because this repo does not know its origin
+target; a missing `assets` record is an ordinary planned create.
+
 `CLOUDFLARE_ZONE_ID` is optional — when unset, the zone id is resolved by name.
 
 Confirm WebSockets are enabled for the zone (Network tab; on by default on
@@ -261,6 +305,25 @@ done
 Expect Ahrefs and Semrush at `403 reached-vercel:0`; Brave, Google and Bing at
 `200 reached-vercel:1`.
 
+For the static-assets custom domain, confirm the public DNS answer remains the
+Tigris target (not Cloudflare anycast), TLS is valid, listing is unavailable,
+and a catalog object supports both `HEAD` and cross-origin `GET`:
+
+```bash
+dig +short assets.boardsesh.com CNAME
+curl -sS -o /dev/null -w '%{http_code}\n' https://assets.boardsesh.com/
+curl -sSI -H 'Origin: https://www.boardsesh.com' \
+  https://assets.boardsesh.com/static/v1/<catalog-object>
+curl -sS -H 'Origin: https://www.boardsesh.com' -o /dev/null -D - \
+  https://assets.boardsesh.com/static/v1/<catalog-object>
+```
+
+The CNAME must be `boardsesh-static-assets.t3.tigrisbucket.io.` and the bucket
+root should return `403` rather than an object listing. The object
+responses must include the image's correct content type,
+`cache-control: public, max-age=31536000, immutable`, and a permissive CORS
+header.
+
 Then confirm the compute actually fell — the point of the exercise. Rerun the
 route breakdown a day later and compare against the table above:
 
@@ -275,6 +338,8 @@ that touch `infra/cloudflare/` or the apply script (and on manual dispatch),
 reading `CLOUDFLARE_API_TOKEN` from the GitHub **Production** environment
 secrets: `gh secret set CLOUDFLARE_API_TOKEN --env Production`. A failing job
 means unapplied drift — run the dry-run locally to see the plan.
+The assets DNS record is included in the same job; no dashboard DNS step is
+needed after the Tigris-side custom domain registration.
 
 A **blocked** zone-SSL change is the one failure a merge cannot clear: pushes
 deliberately resolve `--allow-zone-ssl` to empty, so `cf:apply` re-plans the same

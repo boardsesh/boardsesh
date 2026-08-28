@@ -5,7 +5,7 @@
 // reads it, diffs it against the live zone, and (only with --apply) converges the
 // delta.
 //
-// Why this exists, in two halves:
+// Why this exists, in three parts:
 //
 // 1. ws.boardsesh.com (a single-region Railway origin) sits behind the Cloudflare
 //    proxy so the immutable /og/* share-card images edge-cache globally. Everything
@@ -17,12 +17,22 @@
 //    ~442,600 Vercel function invocations/day, of which /api/internal/board-render
 //    was ~215,600 and the climb-view page ~203,900, against a published sitemap of
 //    only ~60k URLs and ~2,000 homepage hits. See docs/cloudflare.md.
+//
+// 3. assets.boardsesh.com is the public, DNS-only custom domain for the Tigris
+//    static-assets bucket. Unlike ws, this tool owns the record's complete shape
+//    and creates it when it is absent.
 
 /** The Cloudflare zone this config manages. Resolved to a zone id by name when CLOUDFLARE_ZONE_ID is unset. */
 export const ZONE_NAME = 'boardsesh.com';
 
 /** The Railway-backed host we put behind the Cloudflare proxy. */
 export const WS_HOSTNAME = 'ws.boardsesh.com';
+
+/** Public custom domain for the content-addressed static-assets bucket. */
+export const ASSETS_HOSTNAME = 'assets.boardsesh.com';
+
+/** Tigris custom-domain DNS target for the dedicated Boardsesh static-assets bucket. */
+export const ASSETS_CNAME_TARGET = 'boardsesh-static-assets.t3.tigrisbucket.io';
 
 /** Path prefix whose responses are immutable (`Cache-Control: … immutable`, 1y) and safe to edge-cache. */
 export const OG_PATH_PREFIX = '/og/';
@@ -72,12 +82,30 @@ export type SslMode = (typeof SSL_MODE_STRENGTH)[number];
 /** SSL/TLS mode we require for the zone. `strict` = Full (strict); Flexible causes redirect loops with Railway. */
 export const REQUIRED_SSL_MODE: SslMode = 'strict';
 
-export interface DnsRecordDesired {
-  /** DNS record name (host). We assert only the proxied flag on the existing record; content/type are not managed. */
+interface DnsRecordDesiredBase {
   name: string;
-  /** Orange-cloud the record so requests transit the Cloudflare edge. */
   proxied: boolean;
 }
+
+/** A pre-existing record for which this tool owns only Cloudflare's proxy flag. */
+export interface ProxyOnlyDnsRecordDesired extends DnsRecordDesiredBase {
+  management: 'proxied-only';
+}
+
+/** A record whose complete writable DNS shape is owned by this repo. */
+export interface FullyManagedDnsRecordDesired extends DnsRecordDesiredBase {
+  management: 'full';
+  type: 'CNAME';
+  content: string;
+  /** Cloudflare API value 1 means automatic TTL. */
+  ttl: number;
+  /** Keep the literal CNAME visible so the third-party provider can verify it. */
+  settings: {
+    flatten_cname: false;
+  };
+}
+
+export type DnsRecordDesired = ProxyOnlyDnsRecordDesired | FullyManagedDnsRecordDesired;
 
 export interface CacheRuleActionParameters {
   /** true = eligible for cache. */
@@ -123,7 +151,7 @@ export interface WafRuleDesired {
 
 export interface CloudflareDesiredState {
   zoneName: string;
-  dns: DnsRecordDesired;
+  dnsRecords: DnsRecordDesired[];
   /** Order is not significant: cache rules are matched by expression, not precedence. */
   cacheRules: CacheRuleDesired[];
   /**
@@ -217,10 +245,24 @@ export const CRAWLER_BLOCK_EXPRESSION = buildUserAgentExpression(CRAWLER_BLOCK_T
 
 export const desiredCloudflareState: CloudflareDesiredState = {
   zoneName: ZONE_NAME,
-  dns: {
-    name: WS_HOSTNAME,
-    proxied: true,
-  },
+  dnsRecords: [
+    {
+      management: 'proxied-only',
+      name: WS_HOSTNAME,
+      proxied: true,
+    },
+    {
+      management: 'full',
+      name: ASSETS_HOSTNAME,
+      type: 'CNAME',
+      content: ASSETS_CNAME_TARGET,
+      ttl: 1,
+      proxied: false,
+      settings: {
+        flatten_cname: false,
+      },
+    },
+  ],
   cacheRules: [
     {
       description: CACHE_RULE_DESCRIPTION,

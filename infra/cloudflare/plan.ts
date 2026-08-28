@@ -12,13 +12,17 @@ import type { CacheRuleDesired, DnsRecordDesired, SslDesired, SslMode, WafRuleDe
 /** Anything this tool owns inside a ruleset phase. Identity is the description marker. */
 export type ManagedRuleDesired = CacheRuleDesired | WafRuleDesired;
 
-/** A DNS record as Cloudflare returns it. We only manage `proxied`; the rest is context. */
+/** A DNS record as Cloudflare returns it. Which fields are owned depends on the desired record's management mode. */
 export interface LiveDnsRecord {
   id: string;
   name: string;
   type: string;
   content: string;
+  ttl: number;
   proxied: boolean;
+  settings?: {
+    flatten_cname?: boolean;
+  };
 }
 
 /**
@@ -43,11 +47,14 @@ export interface RulesetRule {
 
 /** Live zone state the plan diffs against, gathered by the apply script's read phase. */
 export interface LiveState {
-  dnsRecord: LiveDnsRecord;
+  /** One entry per desired hostname. Fully managed records may be null when they need creation. */
+  dnsRecords: Record<string, LiveDnsRecord | null>;
   cacheRules: RulesetRule[];
   /** Rules live in the WAF custom phase. Empty when the phase has no entrypoint ruleset yet. */
   wafRules: RulesetRule[];
   sslMode: string;
+  /** Zone-wide flattening overrides per-record settings and breaks Tigris CNAME verification. */
+  flattenAllCnames: boolean;
 }
 
 export interface PlanOptions {
@@ -61,6 +68,8 @@ export interface PlannedChange {
   summary: string;
   /** Optional extra context printed under the summary. */
   detail?: string;
+  /** Present for DNS changes so the apply layer can select the right desired/live record. */
+  dnsName?: string;
   /**
    * true = a change that is NOT auto-applied: the zone-wide SSL mutation
    * requires an explicit opt-in flag (it affects every host on the zone), and
@@ -177,13 +186,53 @@ export function upsertCacheRule(
   return { rules: changed ? rules : existingRules, changed };
 }
 
-/** Plan the DNS proxied-flag change, or null when already at the desired value. */
-export function diffDnsRecord(desired: DnsRecordDesired, liveRecord: LiveDnsRecord): PlannedChange | null {
-  if (liveRecord.proxied === desired.proxied) return null;
+/** Plan creation or owned-field convergence for one DNS record. */
+export function diffDnsRecord(desired: DnsRecordDesired, liveRecord: LiveDnsRecord | null): PlannedChange | null {
+  if (!liveRecord) {
+    if (desired.management === 'proxied-only') {
+      throw new Error(
+        `DNS record "${desired.name}" is missing. It is proxy-only managed and must be created outside this tool.`,
+      );
+    }
+    return {
+      resource: 'dns',
+      dnsName: desired.name,
+      summary: `DNS ${desired.name}: missing — will create`,
+      detail:
+        `${desired.type} ${desired.name} → ${desired.content}, ttl automatic, proxied ${desired.proxied}, ` +
+        `CNAME flattening disabled`,
+    };
+  }
+
+  if (desired.management === 'proxied-only') {
+    if (liveRecord.proxied === desired.proxied) return null;
+    return {
+      resource: 'dns',
+      dnsName: desired.name,
+      summary: `DNS ${desired.name}: set proxied ${liveRecord.proxied} → ${desired.proxied}`,
+      detail: `record ${liveRecord.type} ${liveRecord.name} → ${liveRecord.content} (target unchanged; only the proxied flag is managed)`,
+    };
+  }
+
+  const driftedFields: string[] = [];
+  if (liveRecord.type !== desired.type) driftedFields.push(`type ${liveRecord.type} → ${desired.type}`);
+  if (liveRecord.content !== desired.content) driftedFields.push(`content ${liveRecord.content} → ${desired.content}`);
+  if (liveRecord.ttl !== desired.ttl) driftedFields.push(`ttl ${liveRecord.ttl} → automatic`);
+  if (liveRecord.proxied !== desired.proxied) {
+    driftedFields.push(`proxied ${liveRecord.proxied} → ${desired.proxied}`);
+  }
+  if ((liveRecord.settings?.flatten_cname ?? false) !== desired.settings.flatten_cname) {
+    driftedFields.push(
+      `flatten_cname ${liveRecord.settings?.flatten_cname ?? false} → ${desired.settings.flatten_cname}`,
+    );
+  }
+  if (driftedFields.length === 0) return null;
+
   return {
     resource: 'dns',
-    summary: `DNS ${desired.name}: set proxied ${liveRecord.proxied} → ${desired.proxied}`,
-    detail: `record ${liveRecord.type} ${liveRecord.name} → ${liveRecord.content} (target unchanged; only the proxied flag is managed)`,
+    dnsName: desired.name,
+    summary: `DNS ${desired.name}: managed fields differ — will update`,
+    detail: driftedFields.join(', '),
   };
 }
 
@@ -282,7 +331,7 @@ export function diffSslMode(desiredMode: SslMode, liveMode: string, allowZoneSsl
 /** Full desired-vs-live diff: the ordered list of changes --apply would attempt. Empty = in sync. */
 export function buildPlan(
   desired: {
-    dns: DnsRecordDesired;
+    dnsRecords: DnsRecordDesired[];
     cacheRules: CacheRuleDesired[];
     wafRules: WafRuleDesired[];
     ssl: SslDesired;
@@ -290,9 +339,27 @@ export function buildPlan(
   live: LiveState,
   options: PlanOptions,
 ): PlannedChange[] {
+  const requiresLiteralCname = desired.dnsRecords.some(
+    (record) =>
+      record.management === 'full' &&
+      record.type === 'CNAME' &&
+      !record.proxied &&
+      record.settings.flatten_cname === false,
+  );
+  if (requiresLiteralCname && live.flattenAllCnames) {
+    throw new Error(
+      `Cloudflare zone-wide CNAME flattening is enabled for ${ZONE_NAME}. ` +
+        `Disable "Flatten all CNAMEs" before applying: it overrides the per-record setting and hides the literal ` +
+        `CNAME required for Tigris custom-domain verification.`,
+    );
+  }
+
   const changes: PlannedChange[] = [];
 
-  const dnsChange = diffDnsRecord(desired.dns, live.dnsRecord);
+  const dnsChanges = desired.dnsRecords.flatMap((desiredRecord) => {
+    const change = diffDnsRecord(desiredRecord, live.dnsRecords[desiredRecord.name] ?? null);
+    return change ? [change] : [];
+  });
 
   const cacheChanges = diffManagedRules(live.cacheRules, desired.cacheRules, 'cache-rule');
   const wafChanges = diffManagedRules(live.wafRules, desired.wafRules, 'waf-rule');
@@ -304,8 +371,10 @@ export function buildPlan(
   if (sslChange) changes.push(sslChange);
   changes.push(...cacheChanges);
   changes.push(...wafChanges);
-  if (dnsChange) {
-    if (desired.dns.proxied && sslChange?.blocked) {
+  for (const dnsChange of dnsChanges) {
+    const desiredRecord = desired.dnsRecords.find((record) => record.name === dnsChange.dnsName);
+    if (!desiredRecord) throw new Error(`No desired DNS record found for planned change "${dnsChange.dnsName}"`);
+    if (desiredRecord.proxied && sslChange?.blocked) {
       // Never turn the proxy on while the required SSL mode can't be applied:
       // Flexible SSL against the origin causes redirect loops on every host.
       changes.push({
