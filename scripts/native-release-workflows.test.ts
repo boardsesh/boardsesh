@@ -204,4 +204,36 @@ describe('native release train workflow contracts', () => {
     expect(anchor).toContain('environment: Production');
     expect(anchor).not.toContain('environment: Native Release');
   });
+
+  // The ABI check reads the built binary — the only place an embedded-framework
+  // version skew is visible, since a prebuilt xcframework's undefined symbols
+  // are resolved for the first time by dyld at launch. See
+  // scripts/mobile-framework-abi-check.ts.
+  it('checks the embedded framework ABI before anything leaves the runner', () => {
+    const ci = workflow('ios-rn-ci.yml');
+    for (const source of [ios, ci]) {
+      expect(source).toContain('vp run mobile:abi-check');
+    }
+
+    // Ordering is the whole point on the release train: after the export the
+    // binary is already in TestFlight and the fingerprint tag makes the next
+    // push skip the native build, so a later failure is unfixable without a
+    // manual rebuild. A reorder is exactly what this assertion catches.
+    expect(ios.indexOf('vp run mobile:abi-check')).toBeLessThan(ios.indexOf('xcodebuild -exportArchive'));
+    expect(ios.indexOf('vp run mobile:abi-check')).toBeLessThan(ios.indexOf('vp run mobile:upload-dsyms'));
+
+    // The PR job needs a deterministic product path for the check to point at.
+    expect(ci).toContain('-derivedDataPath packages/mobile/ios/build');
+  });
+
+  // A prefix fallback restores the previous Pods tree on exactly the runs where
+  // the dependencies moved, and there is no committed Podfile.lock to reconcile
+  // it against. ios-rn-ci additionally reached into the release workflow's
+  // bucket, so a PR could build against a release build's Pods.
+  it('never restores a stale Pods tree from a prefix key', () => {
+    for (const source of [ios, workflow('ios-rn-ci.yml')]) {
+      expect(source).toContain('packages/mobile/ios/Pods');
+      expect(source).not.toContain('restore-keys');
+    }
+  });
 });
