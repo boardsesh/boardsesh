@@ -97,7 +97,7 @@ vi.mock('../../lib/graphql/use-active-board', () => ({
   useSetActiveBoard: () => vi.fn(async () => {}),
 }));
 vi.mock('../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: http.request }) }));
-vi.mock('../../lib/analytics', () => ({ track: vi.fn() }));
+vi.mock('../../lib/analytics', () => ({ track: vi.fn(), registerRenderSuperProperties: vi.fn() }));
 vi.mock('../toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../queue-snackbar-provider', () => ({ useQueueSnackbar: () => ({ showQueueAddedSnackbar: vi.fn() }) }));
 // The cross-board add gate calls useChoose()/useQueryClient()/expo-router, none of

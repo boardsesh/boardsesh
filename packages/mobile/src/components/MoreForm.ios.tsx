@@ -58,7 +58,10 @@ const IOS_SF_SYMBOL: Record<MoreIconName, string> = {
   gyms: 'building.2',
   integrations: 'heart',
   watch: 'applewatch',
-  accessibility: 'accessibility',
+  // Sliders — a tuning glyph for the render + accessibility knobs, not the
+  // wheelchair accessibility symbol the row used to be (it isn't a system
+  // accessibility setting).
+  boardLook: 'slider.horizontal.3',
   // What iOS Settings itself uses for on-device storage. SF Symbols 2 (iOS 14+).
   storage: 'internaldrive',
   translate: 'character.bubble',

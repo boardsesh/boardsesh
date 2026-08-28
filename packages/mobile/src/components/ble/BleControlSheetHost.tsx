@@ -24,9 +24,9 @@ export function BleControlSheetHost({ visible, onClose }: BleControlSheetHostPro
   const bluetooth = useOptionalBluetoothContext();
   const isConnected = bluetooth?.isConnected ?? false;
   const [autoDisconnectEnabled, setAutoDisconnectEnabled] = useSetting('autoDisconnectBle');
+  const showLightAdjacentHolds = isMoonboardBoardName(bluetooth?.boardName);
   const [lightOnSwipe, setLightOnSwipe] = useSetting('lightOnSwipe');
   const [lightOnClimbTap, setLightOnClimbTap] = useSetting('lightOnClimbTap');
-  const showLightAdjacentHolds = isMoonboardBoardName(bluetooth?.boardName);
   const timeoutSeconds = bluetooth?.autoDisconnectTimeoutSeconds ?? 30;
   const timeoutLabels = useAutoDisconnectTimeoutLabels();
   const autoDisconnectTimeoutLabel = timeoutLabels[timeoutSeconds] ?? String(timeoutSeconds);
@@ -65,13 +65,13 @@ export function BleControlSheetHost({ visible, onClose }: BleControlSheetHostPro
       autoDisconnectEnabled={autoDisconnectEnabled}
       autoDisconnectTimeoutLabel={autoDisconnectTimeoutLabel}
       onToggleAutoDisconnect={setAutoDisconnectEnabled}
+      showLightAdjacentHolds={showLightAdjacentHolds}
+      lightAdjacentHoldsEnabled={bluetooth.moonboardLightAdjacentHolds}
+      onToggleLightAdjacentHolds={handleToggleLightAdjacentHolds}
       lightOnSwipe={lightOnSwipe}
       onToggleLightOnSwipe={setLightOnSwipe}
       lightOnClimbTap={lightOnClimbTap}
       onToggleLightOnClimbTap={setLightOnClimbTap}
-      showLightAdjacentHolds={showLightAdjacentHolds}
-      lightAdjacentHoldsEnabled={bluetooth.moonboardLightAdjacentHolds}
-      onToggleLightAdjacentHolds={handleToggleLightAdjacentHolds}
       onClose={onClose}
     />
   );

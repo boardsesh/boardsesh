@@ -8,8 +8,48 @@ export type HoldStateInfo = {
   name: HoldState;
   color: HoldColor;
   displayColor?: HoldColor;
+  /**
+   * Screen colour for the Boardsesh render mode only (issue #2202). Set on the
+   * dark-blue HAND codes, whose #0000FF / #4444FF / #4455FF sits too close to
+   * black to read as a lit hold once the veil darkens the wall around it — the
+   * glow needs a colour with lightness of its own to separate from the field.
+   * Absent means "Boardsesh draws this role exactly as classic does", which is
+   * every other role on every board.
+   *
+   * Deliberately NOT a `displayColor` change: classic renders — the web SVG
+   * surface, every already-cached overlay PNG, the hold-filter swatches — must
+   * stay what they are, so the two palettes live side by side and
+   * `getHoldDisplayColor` picks between them per render.
+   */
+  boardseshDisplayColor?: HoldColor;
   renderStyle?: HoldRenderStyle;
 };
+
+/** Which of the two hold palettes / drawings a render is asking for. */
+export type BoardRenderMode = 'classic' | 'boardsesh';
+
+/**
+ * The screen colour for a hold state under a given render mode.
+ *
+ * `classic` is the long-standing `displayColor ?? color` rule, unchanged.
+ * `boardsesh` prefers `boardseshDisplayColor` and falls back to that same rule,
+ * so a role without a Boardsesh-specific colour draws identically in both.
+ *
+ * `color` is the LED value the Bluetooth encoders send to the wall and is never
+ * the right thing to paint on screen where a display colour exists — it is the
+ * last resort here only because Kilter's entries carry no `displayColor`.
+ */
+export function getHoldDisplayColor(info: HoldStateInfo, mode: BoardRenderMode): string {
+  if (mode === 'boardsesh' && info.boardseshDisplayColor) return info.boardseshDisplayColor;
+  return info.displayColor ?? info.color;
+}
+
+/**
+ * The one Boardsesh-mode HAND blue (issue #2202). Every dark-blue HAND across
+ * the Aurora-style boards and MoonBoard resolves to this single hex, so the role
+ * reads the same whichever wall you are on.
+ */
+const BOARDSESH_HAND_BLUE = '#6980FF';
 
 // Canonical mapping of board-specific hold role codes to their state and LED colors.
 // Each board product has its own set of role codes.
@@ -55,11 +95,11 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
   },
   tension: {
     1: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
-    2: { name: 'HAND', displayColor: '#4444FF', color: '#0000FF' },
+    2: { name: 'HAND', displayColor: '#4444FF', boardseshDisplayColor: BOARDSESH_HAND_BLUE, color: '#0000FF' },
     3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     4: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
     5: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
-    6: { name: 'HAND', displayColor: '#4444FF', color: '#0000FF' },
+    6: { name: 'HAND', displayColor: '#4444FF', boardseshDisplayColor: BOARDSESH_HAND_BLUE, color: '#0000FF' },
     7: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     8: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
   },
@@ -68,7 +108,7 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
   // Values 45-48 are additional live-BLE preview roles emitted by the ESP32 dev firmware.
   moonboard: {
     42: { name: 'STARTING', color: '#00FF00', displayColor: '#44FF44' },
-    43: { name: 'HAND', color: '#0000FF', displayColor: '#4444FF' },
+    43: { name: 'HAND', color: '#0000FF', displayColor: '#4444FF', boardseshDisplayColor: BOARDSESH_HAND_BLUE },
     44: { name: 'FINISH', color: '#FF0000', displayColor: '#FF3333' },
     45: { name: 'FOOT', color: '#00FFFF', displayColor: '#66F0FF' },
     46: { name: 'AUX', color: '#FFE066', displayColor: '#FFE066', renderStyle: 'above-marker' },
@@ -78,25 +118,25 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
   // New Aurora boards use the same 1/2/3/4 role codes as Tension-style layouts.
   decoy: {
     1: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
-    2: { name: 'HAND', displayColor: '#0000FF', color: '#0000FF' },
+    2: { name: 'HAND', displayColor: '#0000FF', boardseshDisplayColor: BOARDSESH_HAND_BLUE, color: '#0000FF' },
     3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     4: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
   },
   touchstone: {
     1: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
-    2: { name: 'HAND', displayColor: '#4444FF', color: '#0000FF' },
+    2: { name: 'HAND', displayColor: '#4444FF', boardseshDisplayColor: BOARDSESH_HAND_BLUE, color: '#0000FF' },
     3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     4: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
   },
   grasshopper: {
     1: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
-    2: { name: 'HAND', displayColor: '#4455FF', color: '#0000FF' },
+    2: { name: 'HAND', displayColor: '#4455FF', boardseshDisplayColor: BOARDSESH_HAND_BLUE, color: '#0000FF' },
     3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     4: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
   },
   soill: {
     1: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
-    2: { name: 'HAND', displayColor: '#4444FF', color: '#0000FF' },
+    2: { name: 'HAND', displayColor: '#4444FF', boardseshDisplayColor: BOARDSESH_HAND_BLUE, color: '#0000FF' },
     3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     4: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
   },
@@ -106,7 +146,7 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
     // Magenta foot holds match every Aurora board — the hold-filter swatches read
     // their colour straight out of this map, and colour never goes on the wire.
     1: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
-    2: { name: 'HAND', displayColor: '#4444FF', color: '#0000FF' },
+    2: { name: 'HAND', displayColor: '#4444FF', boardseshDisplayColor: BOARDSESH_HAND_BLUE, color: '#0000FF' },
     3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     4: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
   },

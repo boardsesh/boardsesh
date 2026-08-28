@@ -19,15 +19,15 @@ type BleControlSheetProps = {
   autoDisconnectEnabled: boolean;
   autoDisconnectTimeoutLabel: string;
   onToggleAutoDisconnect: (enabled: boolean) => void;
-  lightOnSwipe: boolean;
-  onToggleLightOnSwipe: (enabled: boolean) => void;
-  lightOnClimbTap: boolean;
-  onToggleLightOnClimbTap: (enabled: boolean) => void;
   /** Show the MoonBoard "light hold above" row — only when the connected
    * board is a MoonBoard. */
   showLightAdjacentHolds: boolean;
   lightAdjacentHoldsEnabled: boolean;
   onToggleLightAdjacentHolds: (enabled: boolean) => void;
+  lightOnSwipe: boolean;
+  onToggleLightOnSwipe: (enabled: boolean) => void;
+  lightOnClimbTap: boolean;
+  onToggleLightOnClimbTap: (enabled: boolean) => void;
   onClose: () => void;
 };
 
@@ -42,13 +42,13 @@ function BleControlSheet({
   autoDisconnectEnabled,
   autoDisconnectTimeoutLabel,
   onToggleAutoDisconnect,
+  showLightAdjacentHolds,
+  lightAdjacentHoldsEnabled,
+  onToggleLightAdjacentHolds,
   lightOnSwipe,
   onToggleLightOnSwipe,
   lightOnClimbTap,
   onToggleLightOnClimbTap,
-  showLightAdjacentHolds,
-  lightAdjacentHoldsEnabled,
-  onToggleLightAdjacentHolds,
   onClose,
 }: BleControlSheetProps) {
   const { t: tSettings } = useTranslation('settings');

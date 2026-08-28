@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getWoodsBluetoothPacket, isWoodsDeviceName } from '../woods';
+import { getWoodsBluetoothPacket, isWoodsDeviceName, WoodsMultiFrameError } from '../woods';
 import { WOODS_LED_MAPS } from '@boardsesh/board-constants/woods';
 import { splitMessages, MAX_BLUETOOTH_MESSAGE_SIZE } from '../transport';
 
@@ -52,6 +52,10 @@ describe('getWoodsBluetoothPacket', () => {
     const result = getWoodsBluetoothPacket('', '12x12');
     expect(decode(result.packet)).toBe(',!');
     expect(result.totalPlacements).toBe(0);
+  });
+
+  it('rejects Aurora multi-frame separators before encoding a partial command', () => {
+    expect(() => getWoodsBluetoothPacket('p0r4,p5r2', '12x12')).toThrow(WoodsMultiFrameError);
   });
 
   it('maps every Woods role code (Foot/Hand/Finish/Start)', () => {

@@ -16,10 +16,122 @@
       "development": "Développement",
       "metroServersTitle": "Serveurs Metro",
       "metroServersSubtitle": "Basculer entre les bundlers Tailnet",
+      "boardLook": {
+        "title": "Look de la board",
+        "rowSubtitleShort": "Le rendu de ta board, plus les couleurs et les formes",
+        "description": "Choisis comment les prises allumées s'affichent sur ta board, et règle chaque détail du rendu.",
+        "rendererUnavailable": {
+          "title": "Mets à jour l'app",
+          "body": "Cette version ne sait pas encore dessiner le rendu Boardsesh. Mets à jour Boardsesh pour le débloquer — en attendant, ta board s'affiche en Classique."
+        },
+        "mode": {
+          "title": "Rendu",
+          "options": {
+            "automatic": "Automatique",
+            "classic": "Classique",
+            "boardsesh": "Boardsesh"
+          },
+          "captionAutomaticClassic": "Automatique : actuellement Classique",
+          "captionAutomaticBoardsesh": "Automatique : actuellement Boardsesh"
+        },
+        "presets": {
+          "title": "Préréglages",
+          "custom": "Personnalisé",
+          "boardsesh": "Boardsesh",
+          "bold": "Intense",
+          "subtle": "Discret",
+          "maxContrast": "Contraste max"
+        },
+        "glowVeil": {
+          "title": "Lueur et voile",
+          "falloff": {
+            "title": "Dégradé de la lueur",
+            "options": {
+              "default": "Par défaut",
+              "soft": "Doux",
+              "plateau": "Plateau"
+            }
+          },
+          "reach": {
+            "title": "Portée de la lueur",
+            "value": "{{value}}x"
+          },
+          "plateauShare": {
+            "title": "Part du plateau",
+            "value": "{{value}}%"
+          },
+          "veil": {
+            "title": "Voile de la board",
+            "options": {
+              "auto": "Auto",
+              "off": "Désactivé",
+              "soft": "Doux",
+              "strong": "Intense",
+              "custom": "Personnalisé"
+            }
+          },
+          "veilOpacity": {
+            "title": "Intensité du voile",
+            "value": "{{value}}%"
+          }
+        },
+        "marks": {
+          "title": "Marques",
+          "style": {
+            "title": "Style de marque",
+            "options": {
+              "glow": "Lueur",
+              "glowFill": "Lueur + remplissage",
+              "fill": "Remplissage"
+            }
+          },
+          "fillOpacity": {
+            "title": "Intensité du remplissage",
+            "value": "{{value}}%"
+          },
+          "softDisc": {
+            "label": "Disque doux",
+            "subtitle": "Ajoute un disque de lueur douce sous chaque marque."
+          },
+          "smallHoldBoost": {
+            "label": "Coup de pouce petites prises",
+            "subtitle": "Donne aux prises minuscules une lueur plus grande pour qu'elles ne disparaissent pas."
+          },
+          "ledDots": {
+            "label": "Masquer les points LED",
+            "subtitle": "Cache les points LED déjà lumineux du visuel de la board sur les prises éteintes."
+          },
+          "thumbnailStyle": {
+            "title": "Style des vignettes de liste",
+            "options": {
+              "fill": "Remplissage",
+              "glow": "Lueur"
+            }
+          }
+        },
+        "accessibility": {
+          "title": "Accessibilité",
+          "classicOnlyNote": "La forme, l'épaisseur et la taille du marqueur ne s'appliquent qu'au rendu Classique. En Boardsesh, la silhouette de la prise allumée fait déjà office de forme — active les glyphes de rôle ci-dessous pour un repère basé sur la forme.",
+          "roleGlyphs": {
+            "label": "Glyphes de rôle",
+            "note": "Ajoute une forme à chaque prise allumée — un anneau, une barre ou un repère en X — pour que les rôles restent faciles à distinguer sans les couleurs."
+          },
+          "cvdPalette": {
+            "title": "Palettes daltonisme",
+            "subtitle": "Applique une palette adaptée au daltonisme aux quatre rôles de prise à la fois.",
+            "note": "Ça allume aussi ta board dans ces couleurs, exactement comme si tu réglais chaque couleur à la main — sauf les MoonBoard, qui gardent leurs propres LED.",
+            "presets": {
+              "protanopia": "Protanopie",
+              "deuteranopia": "Deutéranopie",
+              "tritanopia": "Tritanopie",
+              "monochrome": "Monochrome"
+            }
+          }
+        },
+        "resetAll": "Réinitialiser le look de la board"
+      },
       "accessibility": {
         "title": "Accessibilité",
-        "description": "Choisis des couleurs de prises et des formes de marqueurs plus faciles à distinguer. Les changements de couleur allument aussi ta board ; la forme, la taille et l'épaisseur ne modifient que la superposition de l'app.",
-        "rowSubtitleShort": "Couleurs et formes des prises pour la vision des couleurs",
         "markersTitle": "Marqueurs de prise",
         "resetAll": "Réinitialiser les marqueurs de prise",
         "save": "Enregistrer le marqueur",

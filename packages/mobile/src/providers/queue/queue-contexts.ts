@@ -60,6 +60,21 @@ type QueueContextValue = {
   nextClimb: () => void;
   previousClimb: () => void;
   /**
+   * Board-render A/B telemetry (issue #2202): fire `Climb View Opened` for a
+   * climb drawn on the board WITHOUT being the queue's current climb.
+   *
+   * The provider fires views off its own current-climb change, which covers
+   * every path through the queue. The play drawer's preview latch is the one
+   * surface that puts a different climb on the board without touching the
+   * queue — swiping while a preview is pinned, or a signed-out reader tapping
+   * through Similar Climbs — so it reports those itself. Everything else
+   * should change the current climb and stay out of this.
+   *
+   * Stable identity; a no-op until the resolved render settings are known (see
+   * `renderSettingsPending` in queue-provider.tsx) and with no active board.
+   */
+  noteClimbViewed: (climbUuid: string) => void;
+  /**
    * Apply a widget Next/Previous navigation by absolute index. Dispatches the
    * current-climb change with the provided correlationId (so the racing
    * `CurrentClimbChanged` server echo is suppressed) WITHOUT sending a fresh JS

@@ -33,10 +33,6 @@ export type AppSettings = {
   autoConnectBle: boolean;
   autoDisconnectBle: boolean;
   autoDisconnectTimeoutSeconds: number;
-  /** Light the connected board when swiping to the next/previous climb in the play view. */
-  lightOnSwipe: boolean;
-  /** Light the connected board when tapping a climb to select it from a climbs list. */
-  lightOnClimbTap: boolean;
   /**
    * MoonBoard "V2" BLE feature: also light each active hold's firmware-defined
    * neighbour LED (typically the hold above), dimmer, alongside its role
@@ -44,6 +40,10 @@ export type AppSettings = {
    * `@boardsesh/ble-protocol/moonboard`. No-op on Aurora boards.
    */
   moonboardLightAdjacentHolds: boolean;
+  /** Light the connected board when swiping to the next/previous climb in the play view. */
+  lightOnSwipe: boolean;
+  /** Light the connected board when tapping a climb to select it from a climbs list. */
+  lightOnClimbTap: boolean;
   keepScreenAwake: boolean;
   theme: 'system' | 'light' | 'dark';
   hapticFeedbackEnabled: boolean;

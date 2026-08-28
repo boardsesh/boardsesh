@@ -45,13 +45,13 @@ const baseProps = {
   autoDisconnectEnabled: false,
   autoDisconnectTimeoutLabel: '30 seconds',
   onToggleAutoDisconnect: vi.fn(),
+  showLightAdjacentHolds: false,
+  lightAdjacentHoldsEnabled: false,
+  onToggleLightAdjacentHolds: vi.fn(),
   lightOnSwipe: true,
   onToggleLightOnSwipe: vi.fn(),
   lightOnClimbTap: true,
   onToggleLightOnClimbTap: vi.fn(),
-  showLightAdjacentHolds: false,
-  lightAdjacentHoldsEnabled: false,
-  onToggleLightAdjacentHolds: vi.fn(),
   onClose: vi.fn(),
 };
 
@@ -60,9 +60,9 @@ beforeEach(() => {
   baseProps.onClearLights.mockClear();
   baseProps.onDisconnect.mockClear();
   baseProps.onToggleAutoDisconnect.mockClear();
+  baseProps.onToggleLightAdjacentHolds.mockClear();
   baseProps.onToggleLightOnSwipe.mockClear();
   baseProps.onToggleLightOnClimbTap.mockClear();
-  baseProps.onToggleLightAdjacentHolds.mockClear();
   baseProps.onClose.mockClear();
 });
 
