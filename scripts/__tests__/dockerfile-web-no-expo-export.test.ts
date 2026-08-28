@@ -7,11 +7,11 @@ import { describe, expect, it } from 'vitest';
 
 import { ignoredRepoRelativePaths, services } from '../create-service-docker-context.mjs';
 
-// Nothing in CI builds Dockerfile.web: branch-deploy.yml's `pull_request`
-// trigger is commented out (workflow_dispatch only) and railway.toml carries a
-// `[deploy]` block for the backend image alone. So there is no build to fail if
-// the retired Expo export step comes back — this text pin is the only oracle.
-// W-24 / #4438.
+// ci.yml's `docker-web` job builds Dockerfile.web now (#4653), so a broken
+// image is caught by a real build. This text pin covers the other half: an
+// image that builds perfectly well but reintroduces the retired Expo export —
+// a second SPA copy served at www/app, built with different env, which no
+// green build would ever complain about. W-24 / #4438.
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const dockerfile = readFileSync(join(repositoryRoot, 'Dockerfile.web'), 'utf8');
 
