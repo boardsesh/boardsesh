@@ -45,6 +45,10 @@ const queueActions = vi.hoisted(() => ({
   nextClimb: vi.fn(),
   previousClimb: vi.fn(),
   addToQueue: vi.fn(async () => 'added'),
+  // Board-render A/B telemetry (issue #2202). The preview path writes nothing
+  // to the queue, so this is the only way the climb it puts on the board gets
+  // counted as a view.
+  noteClimbViewed: vi.fn(),
 }));
 
 // --- Host platform -----------------------------------------------------------
@@ -296,6 +300,9 @@ describe('PlayDrawer — the anonymous joins', () => {
     // It still swaps what the drawer shows — Similar Climbs is the best reason
     // a visitor has to keep looking, so a dead tap would be its own regression.
     expect((recorded.deferredSections.at(-1)?.climb as Climb).uuid).toBe(SIMILAR_CLIMB.uuid);
+    // And because it IS drawn on the board, it still counts as a climb view —
+    // the queue never sees it, so the drawer has to report it (issue #2202).
+    expect(queueActions.noteClimbViewed).toHaveBeenCalledExactlyOnceWith(SIMILAR_CLIMB.uuid);
   });
 
   it('still queues and activates a similar climb for a member', async () => {

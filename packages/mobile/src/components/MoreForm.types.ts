@@ -29,7 +29,7 @@ export type MoreIconName =
   | 'gyms'
   | 'integrations'
   | 'watch'
-  | 'accessibility'
+  | 'boardLook'
   | 'storage'
   | 'translate'
   | 'replay'

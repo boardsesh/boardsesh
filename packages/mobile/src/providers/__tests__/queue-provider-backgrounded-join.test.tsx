@@ -49,6 +49,7 @@ const http = vi.hoisted(() => ({
 
 const analytics = vi.hoisted(() => ({
   track: vi.fn(),
+  registerRenderSuperProperties: vi.fn(),
 }));
 
 const sessionStore = vi.hoisted(() => ({

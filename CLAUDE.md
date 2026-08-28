@@ -118,7 +118,8 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/ai-design-guidelines.md` — Velvet Send design system (mobile-canonical: palette, typography, tokens, Liquid Glass / Material variants; web now consumes it too via `@boardsesh/velvet-tokens` + the foreground/fill split — see the "Web (consuming Velvet Send)" section)
 - `docs/live-activity-push-testing.md` — APNs Live Activity push testing
 - `docs/db-migrations.md` — migration numbering, `when`-not-number apply order, the collision/renumber bot, and when it hands work back
-- `docs/feature-flags.md` — client vs server flags, why a server gate fails closed, the resolution reasons, the `/api/internal/feature-flags` diagnostic, and the `FEATURE_FLAG_OVERRIDES` kill switch
+- `docs/feature-flags.md` — client vs server flags, why a server gate fails closed, the resolution reasons, the `/api/internal/feature-flags` diagnostic, and the `FEATURE_FLAG_OVERRIDES` kill switch; the "Mobile flags" section covers the mobile-only catalog, multivariate flags, and precedence
+- `docs/board-render-analytics.md` — the classic-vs-Boardsesh / glow-falloff A/B event contract (issue #2202): the five events, the common-props builder, the `climb-view-session.ts` state machine, the stratification rule (never pool across `board_name` or `glow_falloff_source`), and the PostHog flag/experiment setup steps
 - `docs/logging.md` — backend structured logger (winston)
 - `docs/crowdsourced-qa.md` — the PR test-plan + risk gate (`@boardsesh/pr-body`, `pr-test-plan.yml`), and the tester loop that turns it into `qa-approved` / `qa-declined` labels
 - `docs/db-connectivity.md` — Postgres connect retries (what is retried and why it can't double-execute a write), the retry budgets, and the `/health` vs `/health/db` split

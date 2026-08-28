@@ -147,7 +147,7 @@ vi.mock('../../lib/graphql/use-active-board', () => ({
   useSetActiveBoard: () => activeBoard.setActiveBoard,
 }));
 vi.mock('../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: http.request }) }));
-vi.mock('../../lib/analytics', () => ({ track: vi.fn() }));
+vi.mock('../../lib/analytics', () => ({ track: vi.fn(), registerRenderSuperProperties: vi.fn() }));
 vi.mock('../toast-provider', () => ({ useToast: () => ({ showToast: toast.showToast }) }));
 vi.mock('../queue-snackbar-provider', () => ({ useQueueSnackbar: () => ({ showQueueAddedSnackbar: vi.fn() }) }));
 // A signed-in climber with a resolved party profile — the only state in which

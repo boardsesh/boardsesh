@@ -5,11 +5,38 @@ set -euo pipefail
 # Produces:
 #   - iOS: xcframework at packages/mobile/modules/board-renderer/ios/BoardRendererNative.xcframework
 #   - Android: .so files at packages/mobile/modules/board-renderer/android/src/main/jniLibs/{abi}/
+#
+# Usage: scripts/build-native-renderer.sh [ios|android|all]
+#
+# The optional first argument picks which platform to build; `all` (the default)
+# keeps the original behaviour of building both in one run. The iOS half needs
+# macOS — it shells out to `lipo` and `xcodebuild -create-xcframework`, neither of
+# which exists on Linux — so `android` is the argument that lets a Linux box
+# rebuild the four .so files without the run dying at the xcframework step, and
+# without touching the committed xcframework (which a maintainer rebuilds on a Mac
+# with `ios`). The Android half needs an NDK: set ANDROID_NDK_HOME, or leave it
+# unset and let the detection below find one under the usual SDK locations.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 FFI_DIR="$ROOT_DIR/packages/board-renderer/ffi"
 MODULE_DIR="$ROOT_DIR/packages/mobile/modules/board-renderer"
+
+PLATFORM="${1:-all}"
+case "$PLATFORM" in
+  ios | android | all) ;;
+  *)
+    echo "ERROR: unknown platform '$PLATFORM'. Usage: $0 [ios|android|all]" >&2
+    exit 2
+    ;;
+esac
+
+# Plain `if`s, not `[ … ] && VAR=true`: under `set -e` a false test would make the
+# whole line non-zero and abort the script.
+BUILD_IOS=false
+BUILD_ANDROID=false
+if [ "$PLATFORM" = "ios" ] || [ "$PLATFORM" = "all" ]; then BUILD_IOS=true; fi
+if [ "$PLATFORM" = "android" ] || [ "$PLATFORM" = "all" ]; then BUILD_ANDROID=true; fi
 
 # -- iOS targets --
 IOS_TARGETS=(
@@ -27,14 +54,23 @@ declare -A ANDROID_TARGETS=(
   ["i686-linux-android"]="x86"
 )
 
-echo "==> Installing Rust targets..."
-for target in "${IOS_TARGETS[@]}"; do
-  rustup target add "$target" 2>/dev/null || true
-done
-for target in "${!ANDROID_TARGETS[@]}"; do
-  rustup target add "$target" 2>/dev/null || true
-done
+echo "==> Installing Rust targets for '$PLATFORM'..."
+if [ "$BUILD_IOS" = true ]; then
+  for target in "${IOS_TARGETS[@]}"; do
+    rustup target add "$target" 2>/dev/null || true
+  done
+fi
+if [ "$BUILD_ANDROID" = true ]; then
+  for target in "${!ANDROID_TARGETS[@]}"; do
+    rustup target add "$target" 2>/dev/null || true
+  done
+fi
 
+XCFW_DIR="$MODULE_DIR/ios/BoardRendererNative.xcframework"
+# Shared by both halves: cargo's --target output tree.
+RELEASE_DIR="$ROOT_DIR/packages/board-renderer/target"
+
+if [ "$BUILD_IOS" = true ]; then
 # -- Build iOS static libraries --
 echo "==> Building iOS static libraries..."
 for target in "${IOS_TARGETS[@]}"; do
@@ -44,11 +80,9 @@ done
 
 # -- Create xcframework --
 echo "==> Creating xcframework..."
-XCFW_DIR="$MODULE_DIR/ios/BoardRendererNative.xcframework"
 rm -rf "$XCFW_DIR"
 
 # Combine simulator architectures into a fat library
-RELEASE_DIR="$ROOT_DIR/packages/board-renderer/target"
 SIM_FAT_DIR="$RELEASE_DIR/ios-sim-fat"
 mkdir -p "$SIM_FAT_DIR"
 
@@ -72,13 +106,19 @@ xcodebuild -create-xcframework \
   -output "$XCFW_DIR"
 
 echo "  xcframework created at $XCFW_DIR"
+fi
 
+if [ "$BUILD_ANDROID" = true ]; then
 # -- Build Android shared libraries --
 echo "==> Building Android shared libraries..."
 
 # Detect NDK
 if [ -z "${ANDROID_NDK_HOME:-}" ]; then
-  if [ -d "$HOME/Android/Sdk/ndk" ]; then
+  # `vp run mobile:android-doctor` bootstraps an SDK here on a clean Linux box
+  # (see scripts/lib/android-sdk.ts, DEFAULT_SDK_HOME), so check it first.
+  if [ -d "$HOME/.cache/boardsesh/android-sdk/ndk" ]; then
+    ANDROID_NDK_HOME="$(ls -d "$HOME/.cache/boardsesh/android-sdk/ndk"/*/ 2>/dev/null | sort -V | tail -1)"
+  elif [ -d "$HOME/Android/Sdk/ndk" ]; then
     ANDROID_NDK_HOME="$(ls -d "$HOME/Android/Sdk/ndk"/*/ 2>/dev/null | sort -V | tail -1)"
   elif [ -d "$HOME/Library/Android/sdk/ndk" ]; then
     ANDROID_NDK_HOME="$(ls -d "$HOME/Library/Android/sdk/ndk"/*/ 2>/dev/null | sort -V | tail -1)"
@@ -140,7 +180,12 @@ else
     echo "  Copied to $JNILIBS_DIR/"
   done
 fi
+fi
 
 echo "==> Build complete!"
-echo "iOS: $XCFW_DIR"
-echo "Android: $MODULE_DIR/android/src/main/jniLibs/"
+if [ "$BUILD_IOS" = true ]; then
+  echo "iOS: $XCFW_DIR"
+fi
+if [ "$BUILD_ANDROID" = true ]; then
+  echo "Android: $MODULE_DIR/android/src/main/jniLibs/"
+fi

@@ -11,6 +11,7 @@
   "dependencies": {
     "@boardsesh/analytics": "*",
     "@boardsesh/ble-protocol": "*",
+    "@boardsesh/board-art-geometry": "*",
     "@boardsesh/board-config": "*",
     "@boardsesh/board-constants": "*",
     "@boardsesh/board-presence-react": "*",
