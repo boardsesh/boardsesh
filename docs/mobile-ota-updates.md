@@ -451,6 +451,15 @@ approved and the release PR merges, the resulting `main` OTA resolves the
 accepted fingerprint and can deliver any JS-only drift accumulated during store
 review.
 
+The acceptance monitor and store-draft verifier resolve each checkout with its
+own frozen historical lockfile and disabled lifecycle scripts. They run in the
+restricted `Native Release` environment but expose only `GOOGLE_MAPS_API_KEY` to
+release-tree code, because that key is a native Android fingerprint input. iOS
+explicitly removes it. Both the release-head and build-checkout fingerprints must
+match each other and the immutable 12-character fingerprint in the selected
+`build-<platform>-...` tag. This catches a fingerprint-affecting environment
+change after a binary upload instead of approving two equally drifted resolutions.
+
 **Fail-safe.** If the gate can't resolve the fingerprint, it builds. A manual
 `workflow_dispatch` on a trusted release ref bypasses the tag check and builds.
 Automatic store uploads never run from `main` or an arbitrary feature branch.
@@ -463,8 +472,9 @@ Automatic store uploads never run from `main` or an arbitrary feature branch.
   ref after preparing that release train.
 - **Force a rebuild of a fingerprint that already has a tag.** Dispatch the
   platform workflow from `release/next` (or trusted `main` for an emergency).
-  Manual dispatch bypasses the fingerprint gate, so the protected tag does not
-  need to be deleted.
+  Manual dispatch bypasses the fingerprint gate. The protected fingerprint tag
+  stays at the first build that established it, while the successful rebuild gets
+  a fresh build-number tag. Do not delete or move the fingerprint tag.
 - Android candidate APK/AAB files stay in private Actions artifacts. The build
   and fingerprint tags are recorded only after the Play internal upload
   succeeds; no public GitHub Release is created.

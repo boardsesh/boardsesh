@@ -142,11 +142,24 @@ jobs:
           test "$(jq -r '.head.repo.full_name' <<<"$current_pr")" = "$GITHUB_REPOSITORY"
 
           git_auth="$(printf 'x-access-token:%s' "$GH_APP_TOKEN" | base64 | tr -d '\n')"
+          clear_git_auth() {
+            git config --local --unset-all http.https://github.com/.extraheader >/dev/null 2>&1 || true
+          }
+          trap clear_git_auth EXIT
           git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $git_auth"
-          unset git_auth
+          set +e
           git push --force-with-lease="release/next:$EXPECTED_RELEASE_SHA" \
             "https://github.com/${GITHUB_REPOSITORY}.git" \
             'HEAD:refs/heads/release/next'
+          push_status=$?
+          set -e
+          clear_git_auth
+          unset git_auth
+          if [ "$push_status" -ne 0 ]; then
+            echo 'Repository App push failed. Confirm Contents and Workflows write permissions, then retry.' > "$RUNNER_TEMP/release-next-sync-error.txt"
+            echo '::error::Repository App could not update release/next; check Contents/Workflows write permissions and branch bypass.'
+            exit "$push_status"
+          fi
 
       - name: Preserve sync failure details
         if: failure() && steps.target.outputs.attempted == 'true'

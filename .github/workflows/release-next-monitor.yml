@@ -1,8 +1,9 @@
 name: Monitor release/next acceptance
 
 # Trust is split across jobs: store credentials only run trusted main scripts;
-# release commits are fingerprinted without credentials; the repository App token
-# is minted only after the exact candidates and PR gates pass.
+# release commits receive only the Maps key needed to reproduce Android's native
+# fingerprint; the repository App token is minted only after the exact candidates
+# and PR gates pass.
 
 on:
   schedule:
@@ -153,6 +154,7 @@ jobs:
     if: needs.accepted-builds.outputs.candidates_found == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    environment: Native Release
     outputs:
       matches: ${{ steps.compare.outputs.matches }}
     steps:
@@ -204,13 +206,20 @@ jobs:
           EOF
           done
 
-      - name: Compare native fingerprints with identical placeholder inputs
+      - name: Compare native fingerprints with build-time inputs and immutable tags
         id: compare
         env:
-          # Equality is the signal; this deliberately is not the production key.
-          GOOGLE_MAPS_API_KEY: boardsesh-release-monitor-placeholder
+          # This is the only Native Release secret exposed to release-tree code.
+          # It is required to reproduce the fingerprint embedded in Android.
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          EXPECTED_IOS_TAG: ${{ needs.accepted-builds.outputs.ios_tag }}
+          EXPECTED_ANDROID_TAG: ${{ needs.accepted-builds.outputs.android_tag }}
         run: |
           set -euo pipefail
+          [ -n "${GOOGLE_MAPS_API_KEY:-}" ] || {
+            echo '::error::Missing GOOGLE_MAPS_API_KEY; Android fingerprint verification cannot reproduce the uploaded binary.'
+            exit 1
+          }
           resolve() {
             local tree="$1"
             local platform="$2"
@@ -225,24 +234,35 @@ jobs:
           compare_platform() {
             local platform="$1"
             local build_tree="$2"
+            local build_tag="$3"
+            local tagged_fp
             local head_fp=''
             local build_fp=''
+            tagged_fp="$(sed -nE "s/^build-${platform}-v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-([0-9a-f]{12})$/\1/p" <<<"$build_tag")"
+            if [ -z "$tagged_fp" ]; then
+              echo "::error::Invalid $platform build tag while comparing native state: $build_tag"
+              return 1
+            fi
             for attempt in 1 2 3; do
-              head_fp="$(resolve release-head "$platform")"
-              build_fp="$(resolve "$build_tree" "$platform")"
-              if printf '%s' "$head_fp" | grep -qiE '^[0-9a-f]{8,}$' && [ "$head_fp" = "$build_fp" ]; then
-                echo "::notice::$platform native state matches on attempt $attempt (${head_fp:0:12})."
+              head_fp="$(resolve release-head "$platform" | tr '[:upper:]' '[:lower:]')"
+              build_fp="$(resolve "$build_tree" "$platform" | tr '[:upper:]' '[:lower:]')"
+              if printf '%s' "$head_fp" | grep -qE '^[0-9a-f]{12,}$' && \
+                 printf '%s' "$build_fp" | grep -qE '^[0-9a-f]{12,}$' && \
+                 [ "$head_fp" = "$build_fp" ] && \
+                 [ "${head_fp:0:12}" = "$tagged_fp" ] && \
+                 [ "${build_fp:0:12}" = "$tagged_fp" ]; then
+                echo "::notice::$platform native state matches immutable build tag fingerprint $tagged_fp on attempt $attempt."
                 return 0
               fi
             done
-            printf '%s' "$head_fp" | grep -qiE '^[0-9a-f]{8,}$' || head_fp='<unresolved>'
-            printf '%s' "$build_fp" | grep -qiE '^[0-9a-f]{8,}$' || build_fp='<unresolved>'
-            echo "::notice::$platform native state mismatch: release_head=$head_fp accepted_build=$build_fp"
+            printf '%s' "$head_fp" | grep -qE '^[0-9a-f]{12,}$' || head_fp='<unresolved>'
+            printf '%s' "$build_fp" | grep -qE '^[0-9a-f]{12,}$' || build_fp='<unresolved>'
+            echo "::notice::$platform native state mismatch: release_head=$head_fp accepted_build=$build_fp build_tag_fingerprint=$tagged_fp"
             return 1
           }
           matches=true
-          compare_platform ios ios-build || matches=false
-          compare_platform android android-build || matches=false
+          compare_platform ios ios-build "$EXPECTED_IOS_TAG" || matches=false
+          compare_platform android android-build "$EXPECTED_ANDROID_TAG" || matches=false
           echo "matches=$matches" >> "$GITHUB_OUTPUT"
           if [ "$matches" != true ]; then
             echo "::notice::Accepted builds do not yet match release/next native state."
@@ -290,14 +310,20 @@ jobs:
           head="$(jq -r '.data.repository.pullRequest.headRefOid' <<<"$pr")"
           mergeable="$(jq -r '.data.repository.pullRequest.mergeable' <<<"$pr")"
           review="$(jq -r '.data.repository.pullRequest.reviewDecision // ""' <<<"$pr")"
+          checks_missing="$(jq -r '.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup == null' <<<"$pr")"
           checks_green="$(jq -r '
-            [.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[] |
-              if .__typename == "CheckRun" then
-                (.status == "COMPLETED" and (.conclusion == "SUCCESS" or .conclusion == "NEUTRAL" or .conclusion == "SKIPPED"))
-              else .state == "SUCCESS" end] as $checks |
-            (.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage == false and
-             ($checks | length) > 0 and ($checks | all))' <<<"$pr")"
-          checks_paginated="$(jq -r '.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage' <<<"$pr")"
+            .data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup as $rollup |
+            if $rollup == null then false else
+              [$rollup.contexts.nodes[] |
+                if .__typename == "CheckRun" then
+                  (.status == "COMPLETED" and (.conclusion == "SUCCESS" or .conclusion == "NEUTRAL" or .conclusion == "SKIPPED"))
+                else .state == "SUCCESS" end] as $checks |
+              ($rollup.contexts.pageInfo.hasNextPage == false and ($checks | length) > 0 and ($checks | all))
+            end' <<<"$pr")"
+          checks_paginated="$(jq -r '.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage // false' <<<"$pr")"
+          if [ "$checks_missing" = true ]; then
+            echo '::warning::Release PR has no status-check rollup yet; merge readiness fails closed.'
+          fi
           if [ "$checks_paginated" = true ]; then
             echo '::warning::Release PR has more than 100 status checks; merge readiness fails closed until pagination is implemented.'
           fi
@@ -345,10 +371,27 @@ jobs:
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           set -euo pipefail
-          git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
-          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $git_auth"
           git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          unset git_auth
+          clear_git_auth() {
+            git config --local --unset-all http.https://github.com/.extraheader >/dev/null 2>&1 || true
+          }
+          configure_git_auth() {
+            local encoded_auth
+            encoded_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+            clear_git_auth
+            git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $encoded_auth"
+          }
+          authenticated_push() {
+            local push_status
+            configure_git_auth
+            set +e
+            git push "$@"
+            push_status=$?
+            set -e
+            clear_git_auth
+            return "$push_status"
+          }
+          trap clear_git_auth EXIT
 
           # Re-query both stores before creating any release anchor. A changed
           # acceptance decision or highest build tag aborts without side effects.
@@ -419,14 +462,20 @@ jobs:
           owner="${GITHUB_REPOSITORY%%/*}"
           repo="${GITHUB_REPOSITORY#*/}"
           pr="$(GH_TOKEN="$GATE_READ_TOKEN" gh api graphql -f query="$query" -f owner="$owner" -f repo="$repo" -F number="$PR_NUMBER")"
+          checks_missing="$(jq -r '.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup == null' <<<"$pr")"
           checks_green="$(jq -r '
-            [.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[] |
-              if .__typename == "CheckRun" then
-                (.status == "COMPLETED" and (.conclusion == "SUCCESS" or .conclusion == "NEUTRAL" or .conclusion == "SKIPPED"))
-              else .state == "SUCCESS" end] as $checks |
-            (.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage == false and
-             ($checks | length) > 0 and ($checks | all))' <<<"$pr")"
-          checks_paginated="$(jq -r '.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage' <<<"$pr")"
+            .data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup as $rollup |
+            if $rollup == null then false else
+              [$rollup.contexts.nodes[] |
+                if .__typename == "CheckRun" then
+                  (.status == "COMPLETED" and (.conclusion == "SUCCESS" or .conclusion == "NEUTRAL" or .conclusion == "SKIPPED"))
+                else .state == "SUCCESS" end] as $checks |
+              ($rollup.contexts.pageInfo.hasNextPage == false and ($checks | length) > 0 and ($checks | all))
+            end' <<<"$pr")"
+          checks_paginated="$(jq -r '.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage // false' <<<"$pr")"
+          if [ "$checks_missing" = true ]; then
+            echo '::warning::Release PR has no status-check rollup yet; merge readiness fails closed.'
+          fi
           if [ "$checks_paginated" = true ]; then
             echo '::warning::Release PR has more than 100 status checks; merge readiness fails closed until pagination is implemented.'
           fi
@@ -497,7 +546,7 @@ jobs:
                 echo "::warning::Refusing to delete $tag because it moved to $current."
                 return 1
               fi
-              git push --force-with-lease="refs/tags/${tag}:${expected}" origin ":refs/tags/${tag}"
+              authenticated_push --force-with-lease="refs/tags/${tag}:${expected}" origin ":refs/tags/${tag}"
             }
             cleanup_anchor "$ios_anchor" "$EXPECTED_IOS_SHA" || cleanup_failed=true
             cleanup_anchor "$android_anchor" "$EXPECTED_ANDROID_SHA" || cleanup_failed=true
@@ -506,11 +555,13 @@ jobs:
 
           anchor_result="$RUNNER_TEMP/final-anchor-cut"
           : > "$anchor_result"
+          configure_git_auth
           set +e
           ACCEPTED_BUILDS="$selected_accepted_builds" GITHUB_OUTPUT="$anchor_result" \
             DRY_RUN=false bun scripts/mobile-cut-release-tags.ts
           anchor_status=$?
           set -e
+          clear_git_auth
           if [ "$anchor_status" -ne 0 ]; then
             cleanup_new_anchors || echo '::warning::Failed to clean up an anchor after anchor creation failed.'
             exit "$anchor_status"
@@ -533,18 +584,26 @@ jobs:
             git merge-base --is-ancestor origin/main "$EXPECTED_HEAD_SHA" || return 1
 
             local final_pr
+            local final_checks_missing
             local final_checks_green
             local final_checks_paginated
             local final_refs_valid
             final_pr="$(GH_TOKEN="$GATE_READ_TOKEN" gh api graphql -f query="$query" -f owner="$owner" -f repo="$repo" -F number="$PR_NUMBER")" || return 1
+            final_checks_missing="$(jq -r '.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup == null' <<<"$final_pr")" || return 1
             final_checks_green="$(jq -r '
-              [.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[] |
-                if .__typename == "CheckRun" then
-                  (.status == "COMPLETED" and (.conclusion == "SUCCESS" or .conclusion == "NEUTRAL" or .conclusion == "SKIPPED"))
-                else .state == "SUCCESS" end] as $checks |
-              (.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage == false and
-               ($checks | length) > 0 and ($checks | all))' <<<"$final_pr")" || return 1
-            final_checks_paginated="$(jq -r '.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage' <<<"$final_pr")" || return 1
+              .data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup as $rollup |
+              if $rollup == null then false else
+                [$rollup.contexts.nodes[] |
+                  if .__typename == "CheckRun" then
+                    (.status == "COMPLETED" and (.conclusion == "SUCCESS" or .conclusion == "NEUTRAL" or .conclusion == "SKIPPED"))
+                  else .state == "SUCCESS" end] as $checks |
+                ($rollup.contexts.pageInfo.hasNextPage == false and ($checks | length) > 0 and ($checks | all))
+              end' <<<"$final_pr")" || return 1
+            final_checks_paginated="$(jq -r '.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage // false' <<<"$final_pr")" || return 1
+            if [ "$final_checks_missing" = true ]; then
+              echo '::warning::Release PR has no status-check rollup yet; merge readiness fails closed.'
+              return 1
+            fi
             if [ "$final_checks_paginated" = true ]; then
               echo '::warning::Release PR has more than 100 status checks; merge readiness fails closed until pagination is implemented.'
               return 1

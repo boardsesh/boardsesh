@@ -141,9 +141,12 @@ the next native train starts.
 
 ## Notes
 
-- Native builds and the release monitor use the restricted `Native Release`
-  GitHub environment. Do not grant `release/next` access to the broader
-  `Production` environment.
+- Native builds, the release monitor, and store-draft fingerprint verification
+  use the restricted `Native Release` GitHub environment. Verification maps only
+  the Maps key into release-tree code, resolves each checkout from its own frozen
+  lockfile with lifecycle scripts disabled, and checks the immutable build-tag
+  fingerprint. Do not grant `release/next` access to the broader `Production`
+  environment.
 - **Not automated, on purpose:** review submission, phased/staged rollout, and
   iOS App Store icon upload (the iOS store icon comes from the uploaded build's
   1024x1024 marketing icon, never from fastlane).

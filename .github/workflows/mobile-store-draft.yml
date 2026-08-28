@@ -59,6 +59,9 @@ jobs:
   release-next:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Only the Maps key is mapped into release-tree code below. It is required
+    # to reproduce Android's immutable build-tag fingerprint.
+    environment: Native Release
     outputs:
       exists: ${{ steps.ref.outputs.exists }}
       sha: ${{ steps.ref.outputs.sha }}
@@ -188,9 +191,15 @@ jobs:
         id: compare
         if: steps.candidate.outputs.found == 'true'
         env:
-          GOOGLE_MAPS_API_KEY: boardsesh-release-monitor-placeholder
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          EXPECTED_IOS_TAG: ${{ steps.candidate.outputs.ios_build_tag }}
+          EXPECTED_ANDROID_TAG: ${{ steps.candidate.outputs.android_build_tag }}
         run: |
           set -euo pipefail
+          [ -n "${GOOGLE_MAPS_API_KEY:-}" ] || {
+            echo '::error::Missing GOOGLE_MAPS_API_KEY; Android fingerprint verification cannot reproduce the uploaded binary.'
+            exit 1
+          }
           resolve() {
             local tree="$1"
             local platform="$2"
@@ -205,23 +214,34 @@ jobs:
           compare_platform() {
             local platform="$1"
             local build_tree="$2"
+            local build_tag="$3"
+            local tagged_fp
             local head_fp=''
             local build_fp=''
+            tagged_fp="$(sed -nE "s/^build-${platform}-v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-([0-9a-f]{12})$/\1/p" <<<"$build_tag")"
+            if [ -z "$tagged_fp" ]; then
+              echo "::error::Invalid $platform build tag while comparing native state: $build_tag"
+              return 1
+            fi
             for attempt in 1 2 3; do
-              head_fp="$(resolve release-head "$platform")"
-              build_fp="$(resolve "$build_tree" "$platform")"
-              if printf '%s' "$head_fp" | grep -qiE '^[0-9a-f]{8,}$' && [ "$head_fp" = "$build_fp" ]; then
+              head_fp="$(resolve release-head "$platform" | tr '[:upper:]' '[:lower:]')"
+              build_fp="$(resolve "$build_tree" "$platform" | tr '[:upper:]' '[:lower:]')"
+              if printf '%s' "$head_fp" | grep -qE '^[0-9a-f]{12,}$' && \
+                 printf '%s' "$build_fp" | grep -qE '^[0-9a-f]{12,}$' && \
+                 [ "$head_fp" = "$build_fp" ] && \
+                 [ "${head_fp:0:12}" = "$tagged_fp" ] && \
+                 [ "${build_fp:0:12}" = "$tagged_fp" ]; then
                 return 0
               fi
             done
-            printf '%s' "$head_fp" | grep -qiE '^[0-9a-f]{8,}$' || head_fp='<unresolved>'
-            printf '%s' "$build_fp" | grep -qiE '^[0-9a-f]{8,}$' || build_fp='<unresolved>'
-            echo "::notice::$platform native state mismatch: release_head=$head_fp uploaded_build=$build_fp"
+            printf '%s' "$head_fp" | grep -qE '^[0-9a-f]{12,}$' || head_fp='<unresolved>'
+            printf '%s' "$build_fp" | grep -qE '^[0-9a-f]{12,}$' || build_fp='<unresolved>'
+            echo "::notice::$platform native state mismatch: release_head=$head_fp uploaded_build=$build_fp build_tag_fingerprint=$tagged_fp"
             return 1
           }
           matches=true
-          compare_platform ios ios-build || matches=false
-          compare_platform android android-build || matches=false
+          compare_platform ios ios-build "$EXPECTED_IOS_TAG" || matches=false
+          compare_platform android android-build "$EXPECTED_ANDROID_TAG" || matches=false
           echo "matches=$matches" >> "$GITHUB_OUTPUT"
 
       - name: Recheck release/next after fingerprint comparison

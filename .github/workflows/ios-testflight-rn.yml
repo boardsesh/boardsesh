@@ -620,9 +620,9 @@ jobs:
           private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
           permission-contents: write
 
-      # Publish the exact build-number lookup and fingerprint gate atomically.
-      # A fingerprint tag without its build tag would make later JS-only pushes
-      # skip while leaving the acceptance monitor unable to identify the binary.
+      # Publish the exact build-number lookup and fingerprint gate. A new
+      # fingerprint publishes both atomically; a forced rebuild preserves the
+      # existing fingerprint tag and adds only its new build-number tag.
       - name: Tag the uploaded iOS build and fingerprint
         if: steps.tag_token.outcome == 'success'
         env:
@@ -631,8 +631,6 @@ jobs:
         run: |
           set -euo pipefail
           git_auth="$(printf 'x-access-token:%s' "$GH_APP_TOKEN" | base64 | tr -d '\n')"
-          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $git_auth"
-          unset git_auth
           remote="https://github.com/${GITHUB_REPOSITORY}.git"
           shortfp="$(printf '%s' "${FINGERPRINT_IOS:0:12}" | tr '[:upper:]' '[:lower:]')"
           build_tag="build-ios-v${BOARDSESH_MOBILE_VERSION}-${BUILD_NUMBER}-${shortfp}"
@@ -651,31 +649,65 @@ jobs:
               exit 1
             fi
           }
+          clear_git_auth() {
+            git config --local --unset-all http.https://github.com/.extraheader >/dev/null 2>&1 || true
+          }
+          authenticated_push() {
+            local push_status
+            clear_git_auth
+            git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $git_auth"
+            set +e
+            git push "$@"
+            push_status=$?
+            set -e
+            clear_git_auth
+            return "$push_status"
+          }
+          publish_build_tag() {
+            local target
+            target="$(remote_target "$build_tag")"
+            assert_missing_or_exact "$build_tag" "$target"
+            if [ "$target" = "$GITHUB_SHA" ]; then
+              echo "::notice::$build_tag already points to this build."
+              return 0
+            fi
+            git tag --force "$build_tag" "$GITHUB_SHA"
+            if authenticated_push "$remote" "refs/tags/$build_tag"; then
+              echo "::notice::Tagged exact uploaded build $build_tag."
+              return 0
+            fi
+            target="$(remote_target "$build_tag")"
+            assert_missing_or_exact "$build_tag" "$target"
+            [ "$target" = "$GITHUB_SHA" ] || {
+              echo "::error::Failed to publish exact uploaded build tag $build_tag."
+              return 1
+            }
+            echo "::notice::A concurrent retry already published $build_tag at this build."
+          }
+          trap clear_git_auth EXIT
 
           build_target="$(remote_target "$build_tag")"
           fingerprint_target="$(remote_target "$fingerprint_tag")"
           assert_missing_or_exact "$build_tag" "$build_target"
-          assert_missing_or_exact "$fingerprint_tag" "$fingerprint_target"
-          if [ "$build_target" = "$GITHUB_SHA" ] && [ "$fingerprint_target" = "$GITHUB_SHA" ]; then
-            echo "::notice::$build_tag and $fingerprint_tag already point to this build; nothing to push."
+          if [ -n "$fingerprint_target" ]; then
+            publish_build_tag
+            echo "::notice::Preserved immutable $fingerprint_tag at $fingerprint_target."
           else
             git tag --force "$build_tag" "$GITHUB_SHA"
             git tag --force "$fingerprint_tag" "$GITHUB_SHA"
-            if git push --atomic "$remote" "refs/tags/$build_tag" "refs/tags/$fingerprint_tag"; then
+            if authenticated_push --atomic "$remote" "refs/tags/$build_tag" "refs/tags/$fingerprint_tag"; then
               echo "::notice::Atomically tagged $build_tag and $fingerprint_tag."
             else
-              # A concurrent retry is success only when it published this exact build.
-              build_target="$(remote_target "$build_tag")"
               fingerprint_target="$(remote_target "$fingerprint_tag")"
-              assert_missing_or_exact "$build_tag" "$build_target"
-              assert_missing_or_exact "$fingerprint_tag" "$fingerprint_target"
-              if [ "$build_target" != "$GITHUB_SHA" ] || [ "$fingerprint_target" != "$GITHUB_SHA" ]; then
-                echo '::error::Atomic tag push failed without publishing both exact tags.'
+              if [ -z "$fingerprint_target" ]; then
+                echo '::error::Atomic tag push failed without publishing the fingerprint gate.'
                 exit 1
               fi
-              echo "::notice::A concurrent retry already published $build_tag and $fingerprint_tag at this build."
+              publish_build_tag
+              echo "::notice::A concurrent build established $fingerprint_tag; preserved it and published $build_tag."
             fi
           fi
+          unset git_auth
 
       - name: Clean up keychain and credentials
         if: always()

@@ -17,7 +17,8 @@
  * DRY_RUN=true logs what it would cut without creating or pushing tags.
  * CHECK_ONLY=true skips anchors. CANDIDATE_ONLY=true selects the highest exact
  * accepted build tag/SHA for HEAD_VERSION but makes no equivalence claim; an
- * unprivileged workflow compares real Expo fingerprints before merging. A
+ * environment-gated workflow compares real Expo fingerprints and their immutable
+ * build-tag prefixes before merging. A
  * CANDIDATE_ONLY caller may also set UPLOADED_ONLY=true to select the highest
  * uniquely tagged upload per platform without fabricating store-acceptance data.
  * A conservative data-only caller may supply RELEASE_HEAD_SHA + HEAD_VERSION to
