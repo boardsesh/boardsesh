@@ -301,25 +301,81 @@ describe('buildBoardRenderSignature', () => {
     expect(boardseshSignature(chosen)).toBe(boardseshSignature(chosen));
   });
 
-  it.each([
-    ['glowFalloff', { glowFalloff: 'plateau' as const }, 'glow-plateau'],
-    ['glowReach', { glowReach: 1.2 }, 'reach-1.2'],
-    ['plateauShare', { plateauShare: 0.55 }, 'plateau-0.55'],
-    ['markStyle', { markStyle: 'glow-fill' as const }, 'marks-glow-fill'],
-    ['fillOpacity', { fillOpacity: 0.8 }, 'fill-0.8'],
-    ['softDisc', { softDisc: true }, 'disc'],
-    ['smallHoldBoost', { smallHoldBoost: false }, 'noboost'],
-    ['ledDots', { ledDots: false }, 'noleds'],
-    ['roleGlyphs', { roleGlyphs: true }, 'glyphs'],
-    ['thumbnailStyle', { thumbnailStyle: 'glow' as const }, 'thumb-glow'],
-  ])('changes the signature when %s moves off its default', (_field, override, token) => {
-    const moved = boardseshSignature(override);
-    expect(moved).not.toBe(boardseshSignature({}));
-    // Substring, not a split on '.': a numeric token carries its own decimal
-    // point. The signature is an opaque cache-key fragment and is never parsed
-    // back apart, so that costs nothing.
-    expect(moved).toContain(token);
-  });
+  /**
+   * One non-default value per `BoardseshRenderSettings` field, keyed by the
+   * type itself — a 13th field is a compile error here until it is listed, so
+   * the it.each below (driven off `DEFAULT_BOARDSESH_RENDER_SETTINGS`'s own
+   * keys) can never silently skip a token the renderer reads.
+   */
+  const MOVED_OFF_DEFAULT: { [K in keyof BoardseshRenderSettings]: BoardseshRenderSettings[K] } = {
+    glowFalloff: 'plateau',
+    glowReach: 1.2,
+    plateauShare: 0.55,
+    veil: 'strong',
+    veilOpacity: 0.5,
+    markStyle: 'glow-fill',
+    fillOpacity: 0.8,
+    softDisc: true,
+    smallHoldBoost: false,
+    ledDots: false,
+    roleGlyphs: true,
+    thumbnailStyle: 'glow',
+  };
+
+  /** The substring `buildBoardRenderSignature` mints for each field above. */
+  const EXPECTED_TOKEN: { [K in keyof BoardseshRenderSettings]: string } = {
+    glowFalloff: 'glow-plateau',
+    glowReach: 'reach-1.2',
+    plateauShare: 'plateau-0.55',
+    // `strong` always resolves to 0.6, against `auto`'s 0.3 under WALL_ROW.
+    veil: 'veil-181225-60',
+    // Paired with `veil: 'custom'` below — 0.5 only reaches the resolver then.
+    veilOpacity: 'veil-181225-50',
+    markStyle: 'marks-glow-fill',
+    fillOpacity: 'fill-0.8',
+    softDisc: 'disc',
+    smallHoldBoost: 'noboost',
+    ledDots: 'noleds',
+    roleGlyphs: 'glyphs',
+    thumbnailStyle: 'thumb-glow',
+  };
+
+  /**
+   * `veilOpacity` only reaches `resolveVeilOpacity` when `veil` is `'custom'`
+   * — paired here so moving this field alone actually changes the resolved
+   * opacity, rather than silently doing nothing under the still-`'auto'`
+   * default a raw override would otherwise leave in place.
+   */
+  function overrideFor(field: keyof BoardseshRenderSettings): Partial<BoardseshRenderSettings> {
+    if (field === 'veilOpacity') return { veil: 'custom', veilOpacity: MOVED_OFF_DEFAULT.veilOpacity };
+    return { [field]: MOVED_OFF_DEFAULT[field] } as Partial<BoardseshRenderSettings>;
+  }
+
+  // Gap to the dark field lands in the soft bucket (0.175-0.34), so `auto`
+  // resolves to 0.3 here — different from both `strong` (always 0.6) and a
+  // `custom` 0.5, which is what lets `veil` and `veilOpacity` prove they move
+  // the signature too, resolved through `resolveVeilOpacity` the way a real
+  // render resolves them rather than as a raw, unresolved override.
+  const WALL_ROW = { mean: 0.45, coverage: 1 };
+
+  function resolvedBoardseshSignature(overrides: Partial<BoardseshRenderSettings>): string {
+    const settings = sanitizeBoardRenderSettings(settingsWith(overrides));
+    const effective = resolveEffectiveRenderSettings(settings, undefined, true);
+    const veilOpacity = resolveVeilOpacity(effective.boardsesh, WALL_ROW, DARK_FIELD);
+    return buildBoardRenderSignature(effective, DARK_FIELD, veilOpacity);
+  }
+
+  it.each(Object.keys(DEFAULT_BOARDSESH_RENDER_SETTINGS) as (keyof BoardseshRenderSettings)[])(
+    'changes the signature when %s moves off its default',
+    (field) => {
+      const moved = resolvedBoardseshSignature(overrideFor(field));
+      expect(moved).not.toBe(resolvedBoardseshSignature({}));
+      // Substring, not a split on '.': a numeric token carries its own decimal
+      // point. The signature is an opaque cache-key fragment and is never
+      // parsed back apart, so that costs nothing.
+      expect(moved).toContain(EXPECTED_TOKEN[field]);
+    },
+  );
 
   it('spells the veil out as field colour and percent', () => {
     expect(boardseshSignature({}, 0.3)).toContain('veil-181225-30');
