@@ -16,7 +16,7 @@
 // The screen (more.tsx) precomputes every string + handler (incl. haptics); this
 // tree renders props and invokes handlers.
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Host } from '@expo/ui';
 import {
   LazyColumn,
@@ -34,12 +34,15 @@ import {
   SegmentedButton,
   DropdownMenu,
   DropdownMenuItem,
+  BasicTextField,
+  useNativeState,
 } from '@expo/ui/jetpack-compose';
 import { fillMaxWidth, padding, alpha, weight, clickable } from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet, type ColorValue, type ImageSourcePropType } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { segmentedBrandColors, switchBrandColors, type BrandControlColors } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
+import { materialTextStyles } from '../theme/typography';
 import { assertNeverRow, selectedOptionLabel } from './MoreForm.logic';
 import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow } from './MoreForm.types';
 
@@ -116,6 +119,23 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
         ))}
       </DropdownMenu.Items>
     </DropdownMenu>
+  );
+}
+
+function SelectableInfoText({ text, detail = false }: { text: string; detail?: boolean }) {
+  const textState = useNativeState(text);
+
+  useEffect(() => {
+    textState.set(text);
+  }, [text, textState]);
+
+  return (
+    <BasicTextField
+      value={textState}
+      readOnly
+      textStyle={detail ? materialTextStyles.caption1 : materialTextStyles.subheadline}
+      modifiers={[fillMaxWidth(), ...(detail ? [alpha(0.6)] : [])]}
+    />
   );
 }
 
@@ -196,11 +216,19 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
           <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
             {row.label}
           </Text>
-          <Text style={{ typography: 'bodyMedium' }}>{row.body}</Text>
+          {row.selectable ? (
+            <SelectableInfoText text={row.body} />
+          ) : (
+            <Text style={{ typography: 'bodyMedium' }}>{row.body}</Text>
+          )}
           {row.detail ? (
-            <Text style={{ typography: 'labelSmall' }} modifiers={[alpha(0.6)]}>
-              {row.detail}
-            </Text>
+            row.selectable ? (
+              <SelectableInfoText text={row.detail} detail />
+            ) : (
+              <Text style={{ typography: 'labelSmall' }} modifiers={[alpha(0.6)]}>
+                {row.detail}
+              </Text>
+            )
           ) : null}
         </Column>
       );

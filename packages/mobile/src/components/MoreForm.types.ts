@@ -101,6 +101,8 @@ export type MoreInfoRow = {
   label: string;
   body: string;
   detail?: string;
+  /** Allow developers to select/copy diagnostic text and its optional detail. */
+  selectable?: boolean;
 };
 
 /** A standalone action button (Sign Out, Delete Account). */

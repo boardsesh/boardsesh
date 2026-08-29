@@ -320,7 +320,7 @@ export default function MoreScreen() {
   ];
 
   const sections: MoreSection[] = [];
-  const devMetadataSection = getDevMetadataSection();
+  const devMetadataSection = useMemo(() => getDevMetadataSection(), []);
   if (devMetadataSection) {
     sections.push(devMetadataSection);
   }

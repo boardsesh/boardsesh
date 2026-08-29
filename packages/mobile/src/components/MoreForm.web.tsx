@@ -120,8 +120,14 @@ function renderRow(row: MoreRow): ReactNode {
       return (
         <View key={row.key} style={styles.infoRow}>
           <Text style={styles.infoLabel}>{row.label}</Text>
-          <Text style={styles.infoBody}>{row.body}</Text>
-          {row.detail ? <Text style={styles.infoDetail}>{row.detail}</Text> : null}
+          <Text style={styles.infoBody} selectable={row.selectable}>
+            {row.body}
+          </Text>
+          {row.detail ? (
+            <Text style={styles.infoDetail} selectable={row.selectable}>
+              {row.detail}
+            </Text>
+          ) : null}
         </View>
       );
     case 'button': {

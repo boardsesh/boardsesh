@@ -35,6 +35,7 @@ export function buildDevMetadataSection(value: unknown): MoreSection | null {
       // i18n-ignore-next-line — dev-only metadata, never shown in production builds
       label: 'Branch',
       body: branchName,
+      selectable: true,
     });
   }
 
@@ -46,6 +47,7 @@ export function buildDevMetadataSection(value: unknown): MoreSection | null {
       label: 'QA Notes',
       body: qaNotes,
       detail: qaNotesFilePath ?? undefined,
+      selectable: true,
     });
   }
 

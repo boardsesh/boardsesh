@@ -223,7 +223,7 @@ fn assert_contract_markers(artifact_label: &str, artifact_path: &Path, artifact_
             })
             .unwrap_or_else(|| {
                 panic!(
-                    "committed {artifact_label} renderer archive at {} has no object member containing the exported render symbol and complete Boardsesh RenderConfig contract; rebuild it from the current Rust source",
+                    "committed {artifact_label} renderer archive at {} has no object member containing the exported render symbol and complete Boardsesh RenderConfig contract; RenderConfig field-count changes intentionally require rebuilding every committed native renderer artifact from the current Rust source",
                     artifact_path.display()
                 )
             })
@@ -234,7 +234,7 @@ fn assert_contract_markers(artifact_label: &str, artifact_path: &Path, artifact_
     for contract_marker in BOARDSESH_CONTRACT_MARKERS {
         assert!(
             contains_marker(contract_container, contract_marker),
-            "committed {artifact_label} renderer artifact at {} does not contain `{}`; rebuild the native renderer artifacts from the current Rust source",
+            "committed {artifact_label} renderer artifact at {} does not contain `{}`; RenderConfig field-count changes intentionally require rebuilding every committed native renderer artifact from the current Rust source",
             artifact_path.display(),
             String::from_utf8_lossy(contract_marker),
         );
