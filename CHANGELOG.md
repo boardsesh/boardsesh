@@ -6,6 +6,11 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-08-29
 
+### New
+
+- Woods boards stop glowing in dark mode — the white wall drops away and the holds sit ([#4778](https://github.com/boardsesh/boardsesh/pull/4778))
+  straight on the dark background, in the app and on the site.
+
 ### Fixed
 
 - Email sign-in now works when your account email contains uppercase letters. ([#4846](https://github.com/boardsesh/boardsesh/pull/4846))

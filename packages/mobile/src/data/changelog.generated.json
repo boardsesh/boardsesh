@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-29T04:04:46.518Z",
+  "generatedAt": "2026-08-29T06:30:16.607Z",
   "entries": [
+    {
+      "prNumber": 4778,
+      "category": "new",
+      "title": "Woods boards stop glowing in dark mode — the white wall drops away and the holds sit",
+      "mergedAt": "2026-08-29T06:28:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4778",
+      "body": "straight on the dark background, in the app and on the site."
+    },
     {
       "prNumber": 4846,
       "category": "fixed",
