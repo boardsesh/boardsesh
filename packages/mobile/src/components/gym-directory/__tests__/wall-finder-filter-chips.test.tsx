@@ -9,7 +9,7 @@ type PressProps = { children?: ReactNode; onPress?: () => void; accessibilityLab
 const hapticSelection = vi.fn();
 
 vi.mock('@boardsesh/board-config', () => ({
-  SUPPORTED_BOARDS: ['kilter', 'tension', 'moonboard'],
+  SUPPORTED_BOARDS: ['kilter', 'tension', 'moonboard', 'woods'],
   formatBoardDisplayName: (boardType: string) => boardType.charAt(0).toUpperCase() + boardType.slice(1),
 }));
 
@@ -67,6 +67,38 @@ describe('WallFinderFilterChips', () => {
     expect(getByText('Kilter')).toBeTruthy();
     expect(getByText('Tension')).toBeTruthy();
     expect(getByText('Moonboard')).toBeTruthy();
+  });
+
+  // Woods rides the same generic chip row, but it's the board whose layout/size
+  // tiers used to come up empty (#4751) — so pin the whole cascade end to end.
+  it('renders the Woods chip and its layout + size chips', () => {
+    const onToggle = vi.fn();
+    const onToggleLayout = vi.fn();
+    const onToggleSize = vi.fn();
+    const { getByText, getByLabelText } = render(
+      <WallFinderFilterChips
+        {...baseProps({
+          selected: ['woods'],
+          onToggle,
+          onToggleLayout,
+          onToggleSize,
+          layoutOptions: [{ id: 1, label: 'Original' }],
+          sizeOptions: [
+            { label: '8 x 10', sizeIds: [1] },
+            { label: '12 x 12', sizeIds: [2] },
+          ],
+        })}
+      />,
+    );
+
+    fireEvent.click(getByLabelText('Woods'));
+    expect(onToggle).toHaveBeenCalledWith('woods');
+
+    fireEvent.click(getByText('Original'));
+    expect(onToggleLayout).toHaveBeenCalledWith(1);
+
+    fireEvent.click(getByText('12 x 12'));
+    expect(onToggleSize).toHaveBeenCalledWith([2]);
   });
 
   it('toggles a board type (with a haptic) when its chip is tapped', () => {
