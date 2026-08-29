@@ -128,6 +128,45 @@ Metro, webpack, bare Node ESM and vitest at once.
 690 holds) — well under `scripts/check-large-files.mjs`'s 2 MB per-file limit, so no
 allowlist entry is needed.
 
+### `@boardsesh/board-art-geometry/ring`
+
+Ring maths — `simplifyRing` (the tracer's own Douglas-Peucker, plus `SIMPLIFY_EPSILON`),
+`closeRing`, `roundRing`, `pointInRing`, `isValidOutlineRing` — lives on its own subpath
+that imports nothing from `loader`, `types` or `generated`:
+
+```ts
+import { pointInRing, roundRing, isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
+```
+
+The isolation is the point. Metro bundles what a module can reach, so importing the
+package index to run a point-in-polygon test would put all 3.0 MB of polygons into the
+mobile bundle. The subpath is ~2 KB and reaches nothing else.
+
+`simplifyRing` and `SIMPLIFY_EPSILON` are the tracer's own Douglas-Peucker, copied verbatim
+so a ring an editor redraws is decimated by exactly the algorithm that produced the ring
+beside it. `scripts/generate-board-art-geometry.ts` still holds its own copy and switches to
+importing this one; until it does, a change to either has to be made to both.
+
+## Hand-corrected outlines (`hold_outline_overrides`)
+
+The tracer gets most holds right; the ones it does not are fixed as database rows rather
+than by regenerating and redeploying 3.0 MB of shards. `hold_outline_overrides` is keyed by
+the shard's own merge key plus a placement — `(board_name, layout_id, size_id, placement_id)`
+— with the same flat, implicitly-closed, 4-decimal ring in the same radius units, so a
+consumer swaps one for the other with no conversion. Latest write wins; `author_id`,
+`updated_at` and `note` are the record of who changed it and why, and there is no history
+table.
+
+Editing runs over GraphQL: `holdOutlines(input:)` returns the deployed shard's outlines
+beside the live overrides (side by side, not merged, so an editor can show both and offer a
+revert), and `upsertHoldOutlineOverride` / `deleteHoldOutlineOverride` write them. All three
+are admin-only and BOARD-SCOPED — a community admin scoped to Kilter corrects Kilter's art
+and nothing else. A write is checked three ways: the ring's shape against
+`isValidOutlineRing`'s bounds, the placement against every set of the config (the composite
+the shard was traced on), and the ring against its own placement centre. That last rule is
+marginally stricter than the tracer, whose output misses its own centre on 5 of 15,501
+shipped outlines, so a correction for one of those has to be drawn to include the bolt.
+
 ## Regenerating
 
 ```bash
