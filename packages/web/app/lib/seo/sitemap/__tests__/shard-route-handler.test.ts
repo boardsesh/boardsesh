@@ -123,6 +123,7 @@ let errors: string[] = [];
 let warnings: string[] = [];
 
 beforeEach(() => {
+  vi.stubEnv('CLIMB_SITEMAPS_ENABLED', 'true');
   errors = [];
   warnings = [];
   vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {

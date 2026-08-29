@@ -70,6 +70,8 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/internal/cleanup/route.ts': 'keep-external',
   'app/api/internal/prewarm-heatmap/[board_name]/route.ts': 'keep-external',
   'app/api/internal/profile-percentiles/route.ts': 'keep-external',
+  // Retained for a manual initial refresh when Railway takes over scheduling.
+  // It must remain absent from Vercel's scheduler while climb sitemaps are paused.
   'app/api/internal/refresh-sitemap-climbs/route.ts': 'keep-external',
   'app/api/internal/beta-link-thumbnail/route.ts': 'keep-caller',
   'app/api/internal/revalidate-climb/route.ts': 'keep-caller',
@@ -190,6 +192,10 @@ describe('REST surface inventory (issue #1889)', () => {
     });
 
     expect(classified).toEqual(cronPaths.map((cronPath) => ({ cronPath, verdict: 'keep-external' })));
+  });
+
+  it('keeps the paused climb sitemap refresh out of Vercel cron', () => {
+    expect(readCronPaths()).not.toContain('/api/internal/refresh-sitemap-climbs');
   });
 
   it('counts exactly the audited surface', () => {

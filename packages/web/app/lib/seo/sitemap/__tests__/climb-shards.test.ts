@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { CLIMB_URLS_PER_SHARD, MAX_SHARD_BYTES } from '../sitemap-xml';
 import type { SitemapItem } from '../entries';
@@ -38,6 +38,7 @@ const climbs = vi.hoisted(() => ({
   buildThrows: false,
   buildsEmpty: false,
   pathLength: 0,
+  summaryCalls: 0,
   buildCalls: 0,
   /** What the per-page lastmod aggregate answers; empty means "store empty, use the uniform value". */
   pageLastmods: [] as (Date | null)[],
@@ -56,6 +57,7 @@ const climbs = vi.hoisted(() => ({
 // real fallback does, so the handler's slice/epoch checks stay exercised.
 vi.mock('../climb-store', () => ({
   fetchClimbShardSummary: async () => {
+    climbs.summaryCalls += 1;
     if (climbs.summaryThrows) throw new Error('climbs summary unavailable');
     // A summary that never settles: the failure a try/catch cannot see.
     if (climbs.summaryHangs) return new Promise<never>(() => {});
@@ -89,11 +91,13 @@ const {
   CLIMB_SOURCE_HEADER,
   PAGED_SHARD_REGISTRY,
   buildSitemapIndexXml,
+  pagedSitemapShardEnabled,
   pagedShardRouteHandler,
   sitemapIndexRouteHandler,
 } = await import('../shard-registry');
 
 beforeEach(() => {
+  vi.stubEnv('CLIMB_SITEMAPS_ENABLED', 'true');
   climbs.itemCount = 3;
   climbs.builtCount = null;
   climbs.summaryThrows = false;
@@ -101,6 +105,7 @@ beforeEach(() => {
   climbs.buildThrows = false;
   climbs.buildsEmpty = false;
   climbs.pathLength = 0;
+  climbs.summaryCalls = 0;
   climbs.buildCalls = 0;
   climbs.pageLastmods = [];
   climbs.pageLastmodsThrow = false;
@@ -108,7 +113,15 @@ beforeEach(() => {
   climbs.pageSource = 'store';
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe('the paged climbs shard', () => {
+  it('leaves future paged shards enabled unless they opt into a gate', () => {
+    expect(pagedSitemapShardEnabled({})).toBe(true);
+  });
+
   it('registers one paged shard, default-locale-only, on its own cache window', () => {
     expect(PAGED_SHARD_REGISTRY).toHaveLength(1);
     const [shard] = PAGED_SHARD_REGISTRY;
@@ -118,6 +131,18 @@ describe('the paged climbs shard', () => {
     expect(shard.urlsPerShard).toBe(CLIMB_URLS_PER_SHARD);
     expect(shard.expectsUrls).toBe(true);
     expect(shard.pagePath(2)).toBe('/sitemaps/climbs/2.xml');
+  });
+
+  it('returns a cacheable 410 without reading the store when the switch is not exactly true', async () => {
+    vi.stubEnv('CLIMB_SITEMAPS_ENABLED', 'TRUE');
+
+    const response = await pagedShardRouteHandler('climbs', '1.xml');
+
+    expect(response.status).toBe(410);
+    expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    expect(response.headers.get('cache-control')).toBe('public, s-maxage=3600, must-revalidate');
+    expect(climbs.summaryCalls).toBe(0);
+    expect(climbs.buildCalls).toBe(0);
   });
 
   it('serves a page as application/xml on the long climb cache window', async () => {
@@ -216,6 +241,21 @@ describe('the paged climbs shard', () => {
 });
 
 describe('the index and the climbs shard', () => {
+  it('omits disabled climbs intentionally without a store read or degradation', async () => {
+    vi.stubEnv('CLIMB_SITEMAPS_ENABLED', '');
+
+    const response = await sitemapIndexRouteHandler();
+    const xml = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(xml).not.toContain('/sitemaps/climbs/');
+    expect(response.headers.get('x-sitemap-degraded')).toBeNull();
+    expect(response.headers.get(CLIMB_SOURCE_HEADER)).toBeNull();
+    expect(response.headers.get('cache-control')).toBe('public, s-maxage=3600, stale-while-revalidate=86400');
+    expect(climbs.summaryCalls).toBe(0);
+    expect(climbs.buildCalls).toBe(0);
+  });
+
   it('lists one <sitemap> per derived page and stamps the summary timestamp', async () => {
     climbs.itemCount = CLIMB_URLS_PER_SHARD + 1;
 
