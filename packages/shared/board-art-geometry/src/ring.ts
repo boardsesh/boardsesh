@@ -8,10 +8,11 @@
  * it can reach, so a single import of the package index would put every board's
  * polygons in the mobile bundle to run a point-in-polygon test.
  *
- * `simplifyRing` and `SIMPLIFY_EPSILON` are the tracer's own, moved here
- * verbatim from `scripts/generate-board-art-geometry.ts` so that a ring an
- * editor redraws is decimated by exactly the algorithm that produced the ring
- * next to it. The generator re-imports them from here.
+ * `simplifyRing` and `SIMPLIFY_EPSILON` are the tracer's own, copied verbatim
+ * from `scripts/generate-board-art-geometry.ts` so that a ring an editor redraws
+ * is decimated by exactly the algorithm that produced the ring next to it. The
+ * generator still holds its own copy today and switches to importing this one;
+ * until then, a change here has to be made there too or the two drift apart.
  */
 
 /** A point as `[x, y]`, in whatever units the caller's ring is in. */
@@ -47,9 +48,9 @@ function perpendicularDistance(point: RingPoint, lineStart: RingPoint, lineEnd: 
 }
 
 /**
- * Douglas-Peucker decimation. Moved verbatim from the tracer — behaviour here is
- * a contract, not an implementation detail, because the generator calls this to
- * produce the shards an override has to sit alongside.
+ * Douglas-Peucker decimation. Copied verbatim from the tracer — behaviour here
+ * is a contract, not an implementation detail, because the shards an override
+ * sits alongside were produced by this exact algorithm.
  */
 export function simplifyRing(points: RingPoint[], epsilon: number): RingPoint[] {
   if (points.length < 3) return points;
