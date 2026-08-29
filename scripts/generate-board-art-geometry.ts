@@ -49,6 +49,11 @@ import sharp from 'sharp';
 import { listCatalogueEntries } from '../packages/shared/board-render/src/render-version-projection';
 import { getBoardDetailsForBoard } from '../packages/shared/board-render/src/board-details';
 import { getBackgroundRelPaths } from '../packages/shared/board-render/src/background';
+// Relative, like the board-render imports above: the repo's isolated linker
+// leaves workspace packages out of the root `node_modules`, so a bare specifier
+// does not resolve for a script run from the repo root.
+import { MOONBOARD_CELL_SETS } from '../packages/shared/board-config/src/generated/moonboard-cell-sets';
+import { MOONBOARD_LAYOUTS, MOONBOARD_SETS } from '../packages/shared/board-config/src/moonboard-config';
 import type { BoardRenderDetails, RenderableHold } from '../packages/shared/board-render/src/types';
 
 const ROOT_DIR = path.resolve(import.meta.dirname, '..');
@@ -85,6 +90,18 @@ const SEARCH_RADII = 2.6;
  */
 const SEED_PITCH_FRACTION = 0.15;
 const MIN_SEED_RADIUS = 4;
+/**
+ * Hard ceiling on the seed disc, in placement radii, whatever the pitch says.
+ *
+ * The pitch-scaled rule assumes a placement's nearest neighbour is about a hold
+ * away, which is true on a composited board and false on a single set's layer.
+ * Kilter Homewall's two screw-on layers carry 13 and 14 placements across the
+ * whole 1080x1920 board, so their nearest-neighbour pitch is hundreds of pixels
+ * and an uncapped seed disc reaches clean off the hold onto art the layer draws
+ * for somebody else. At 0.75 the disc still steps off a punched-out bolt hole on
+ * every board in the catalogue and cannot leave the placement's own radius.
+ */
+const SEED_MAX_RADII = 0.75;
 /** Fraction of perimeter allowed on the search-box boundary before the trace is junk. */
 const MAX_BOX_EDGE_SHARE = 0.1;
 /** Douglas-Peucker tolerance in board pixels. Bigger = fewer points, blockier outline. */
@@ -985,32 +1002,111 @@ type TraceField = {
 /**
  * How a config's decoded art becomes fields to trace.
  *
- * The composite is passed in rather than re-derived because `measureConfig`
- * needs it anyway for every colour reading — silhouette lightness, the ring
- * annulus and the painted LEDs all measure what a climber SEES, which is the
- * stack rather than any one layer.
+ * Deliberately takes the LAYERS and not the composite. Every colour reading in
+ * this script measures the composite, because what a mark has to be legible
+ * against is the stack a climber sees; what a hold's silhouette is, is a
+ * question about the one image that draws it.
  */
-type MaskProvider = (details: BoardRenderDetails, layers: DecodedLayer[], composite: BoardArt) => TraceField[];
+type MaskProvider = (details: BoardRenderDetails, layers: DecodedLayer[]) => TraceField[];
 
 /**
- * One field over the composited alpha channel: the whole board's art, the whole
- * board's placements, one partition.
+ * Which art layer draws each placement, as an index into the layer list.
  *
- * This is what the tracer did before the seam existed, kept as a provider so the
- * seam can be shown to change nothing.
+ * `-1` for a placement no layer draws — MoonBoard's grid has cells that carry no
+ * hold in any set, and those have nothing to trace on any image.
+ *
+ * The index is the position in `images_to_holds`, because `getBackgroundRelPaths`
+ * walks exactly those keys in exactly that order, so key `i` is layer `i`.
+ *
+ * Aurora boards state it outright: `images_to_holds` IS image -> hold tuples, so
+ * the map is that relation inverted. MoonBoard's map has empty values (its
+ * geometry is a synthetic grid, not a per-image placement table), so the routing
+ * goes through `MOONBOARD_CELL_SETS`: grid cell -> hold set -> that set's image.
+ *
+ * A placement drawn by two layers would make the disjoint-union contract a lie,
+ * so it is asserted rather than assumed. No config in the catalogue has one.
  */
-const compositeAlphaMaskProvider: MaskProvider = (details, _layers, composite) => {
-  const placements = details.holdsData;
-  return [
-    {
-      sourceKey: 'composite',
-      width: composite.width,
-      height: composite.height,
-      mask: buildOpaqueMask(composite),
+function placementFieldIndex(details: BoardRenderDetails): Map<number, number> {
+  const imageKeys = Object.keys(details.images_to_holds);
+  const fieldOf = new Map<number, number>();
+
+  if (details.board_name === 'moonboard') {
+    const layoutEntry = Object.entries(MOONBOARD_LAYOUTS).find(([, layout]) => layout.id === details.layout_id);
+    if (layoutEntry === undefined) throw new Error(`moonboard layout ${details.layout_id} has no entry`);
+    const sets = MOONBOARD_SETS[layoutEntry[0] as keyof typeof MOONBOARD_SETS] ?? [];
+    const layerOfSet = new Map<number, number>();
+    for (const set of sets) {
+      const index = imageKeys.indexOf(`${details.layoutFolder}/${set.imageFile}`);
+      // A set the config did not mount has no layer, which is not an error: the
+      // shard is traced with every set of the layout, but the lookup is by name.
+      if (index >= 0) layerOfSet.set(set.id, index);
+    }
+    const cells = MOONBOARD_CELL_SETS[details.layout_id] ?? {};
+    for (const placement of details.holdsData) {
+      const setId = cells[placement.id];
+      const index = setId === undefined ? undefined : layerOfSet.get(setId);
+      fieldOf.set(placement.id, index ?? -1);
+    }
+    return fieldOf;
+  }
+
+  for (const [index, imageKey] of imageKeys.entries()) {
+    for (const [holdId] of details.images_to_holds[imageKey]) {
+      const existing = fieldOf.get(holdId);
+      if (existing !== undefined && existing !== index) {
+        throw new Error(`placement ${holdId} is drawn by two layers (${imageKeys[existing]} and ${imageKey})`);
+      }
+      fieldOf.set(holdId, index);
+    }
+  }
+  for (const placement of details.holdsData) {
+    if (!fieldOf.has(placement.id)) fieldOf.set(placement.id, -1);
+  }
+  return fieldOf;
+}
+
+/**
+ * One field per art layer: each set's own alpha channel, partitioned only over
+ * the placements that set draws.
+ *
+ * WHY NOT THE COMPOSITE
+ * ---------------------
+ * The composite is what a climber sees, and it is the wrong thing to trace
+ * against. Two holds from different sets are mounted in different bolt holes and
+ * their art overlaps by almost nothing (0.06% of opaque pixels catalogue-wide),
+ * but on the composite they touch — and "touching" is what drives the whole
+ * chopping machinery. On Kilter Homewall 12x12, 439 of 499 placements are
+ * art-adjacent to a differently-labelled hold on the composite and only 64 are
+ * when each layer is measured on its own. The other 375 were being cut apart at
+ * a boundary that only exists because two sets were stacked into one bitmap.
+ *
+ * Every colour measurement stays on the composite, because those measure what
+ * the mark has to be legible against, which is the stack.
+ */
+const perImageMaskProvider: MaskProvider = (details, layers) => {
+  const fieldOf = placementFieldIndex(details);
+  const perLayer: RenderableHold[][] = layers.map(() => []);
+  for (const placement of details.holdsData) {
+    const index = fieldOf.get(placement.id) ?? -1;
+    if (index >= 0) perLayer[index].push(placement);
+  }
+
+  const fields: TraceField[] = [];
+  for (const [index, layer] of layers.entries()) {
+    const placements = perLayer[index];
+    // A layer nothing is placed on — MoonBoard's wall photograph — is not a
+    // field. There is no partition to build and nothing to trace.
+    if (placements.length === 0) continue;
+    fields.push({
+      sourceKey: layer.relativePath,
+      width: layer.art.width,
+      height: layer.art.height,
+      mask: buildOpaqueMask(layer.art),
       placements,
-      label: buildLabelMap(composite.width, composite.height, placements),
-    },
-  ];
+      label: buildLabelMap(layer.art.width, layer.art.height, placements),
+    });
+  }
+  return fields;
 };
 
 /**
@@ -1120,8 +1216,13 @@ function traceOutlines(field: TraceField): {
     let cellAlphaArea = 0;
     for (let index = 0; index < local.length; index += 1) cellAlphaArea += local[index];
 
-    // Seed strictly near the placement, never "nearest filled pixel in the box".
-    const seedRadius = Math.max(MIN_SEED_RADIUS, pitches[placementIndex] * SEED_PITCH_FRACTION);
+    // Seed strictly near the placement, never "nearest filled pixel in the box",
+    // and never further out than the placement's own radius even on a layer so
+    // sparse that its nearest-neighbour pitch spans half the board.
+    const seedRadius = Math.max(
+      MIN_SEED_RADIUS,
+      Math.min(pitches[placementIndex] * SEED_PITCH_FRACTION, placement.r * SEED_MAX_RADII),
+    );
     const localCentre: Point = [centreX - left, centreY - top];
     let seed: Point | null = null;
     let bestDistance = Infinity;
@@ -1451,7 +1552,7 @@ async function measureConfig(
   }
 
   const placements = details.holdsData;
-  const { outlines, summary, stats } = mergeFieldTraces(maskProvider(details, layers, art), placements);
+  const { outlines, summary, stats } = mergeFieldTraces(maskProvider(details, layers), placements);
   const uniquePlacements = new Set(placements.map((placement) => placement.id)).size;
   const reportRow = reportRowFor(key, uniquePlacements, stats);
   if (reportDir !== null) await writeConfigReport(reportDir, reportRow, art, placements, outlines, stats);
@@ -1809,7 +1910,7 @@ async function main(): Promise<number> {
   const startedAt = Date.now();
 
   for (const entry of entries) {
-    const measured = await measureConfig(entry, reportDir, compositeAlphaMaskProvider);
+    const measured = await measureConfig(entry, reportDir, perImageMaskProvider);
     if ('skipped' in measured) {
       skipped.push(measured.skipped);
       console.warn(`[board-art-geometry] SKIP ${measured.skipped}`);
