@@ -10,6 +10,7 @@ import type {
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
+import { userIsAdmin } from './admin';
 import { userIsTester } from './tester';
 import { FAVORITE_COUNT_SUBQUERY } from './favorite-count';
 import { logger } from '../../../utils/logger';
@@ -108,6 +109,7 @@ export const userMutations = {
         displayName: row.displayName || row.name || undefined,
         avatarUrl: row.avatarUrl || row.image || undefined,
         isTester: await userIsTester(row.id),
+        isAdmin: await userIsAdmin(row.id),
         createdAt: row.createdAt.toISOString(),
         favoriteCount: row.favoriteCount,
       };
