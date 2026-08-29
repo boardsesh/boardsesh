@@ -8,15 +8,15 @@
 // which per-row controls use to report intrinsic height back to RN).
 //
 // Each section becomes: an optional title `Text`, then either a Material `Card`
-// wrapping its rows (nav / toggle / segmented / select) OR standalone `Button`s
-// (an all-button section like the account actions), then an optional footer
-// `Text`. Brand colours come from the `expo-ui-modifiers` bridge; M3
+// wrapping its rows (nav / toggle / segmented / select / info) OR standalone
+// `Button`s (an all-button section like the account actions), then an optional
+// footer `Text`. Brand colours come from the `expo-ui-modifiers` bridge; M3
 // surface/label colours come from the Compose Material theme the Host sets up.
 //
 // The screen (more.tsx) precomputes every string + handler (incl. haptics); this
 // tree renders props and invokes handlers.
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Host } from '@expo/ui';
 import {
   LazyColumn,
@@ -34,12 +34,15 @@ import {
   SegmentedButton,
   DropdownMenu,
   DropdownMenuItem,
+  BasicTextField,
+  useNativeState,
 } from '@expo/ui/jetpack-compose';
 import { fillMaxWidth, padding, alpha, weight, clickable } from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet, type ColorValue, type ImageSourcePropType } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { segmentedBrandColors, switchBrandColors, type BrandControlColors } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
+import { materialTextStyles } from '../theme/typography';
 import { assertNeverRow, selectedOptionLabel } from './MoreForm.logic';
 import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow } from './MoreForm.types';
 
@@ -119,6 +122,23 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
   );
 }
 
+function SelectableInfoText({ text, detail = false }: { text: string; detail?: boolean }) {
+  const textState = useNativeState(text);
+
+  useEffect(() => {
+    textState.set(text);
+  }, [text, textState]);
+
+  return (
+    <BasicTextField
+      value={textState}
+      readOnly
+      textStyle={detail ? materialTextStyles.caption1 : materialTextStyles.subheadline}
+      modifiers={[fillMaxWidth(), ...(detail ? [alpha(0.6)] : [])]}
+    />
+  );
+}
+
 function renderRow(row: MoreRow, colors: RowColors): ReactNode {
   switch (row.kind) {
     case 'nav':
@@ -190,6 +210,28 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
       );
     case 'select':
       return <SelectRow key={row.key} row={row} />;
+    case 'info':
+      return (
+        <Column key={row.key} modifiers={[fillMaxWidth(), ROW_PADDING]} verticalArrangement={{ spacedBy: spacing[1] }}>
+          <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
+            {row.label}
+          </Text>
+          {row.selectable ? (
+            <SelectableInfoText text={row.body} />
+          ) : (
+            <Text style={{ typography: 'bodyMedium' }}>{row.body}</Text>
+          )}
+          {row.detail ? (
+            row.selectable ? (
+              <SelectableInfoText text={row.detail} detail />
+            ) : (
+              <Text style={{ typography: 'labelSmall' }} modifiers={[alpha(0.6)]}>
+                {row.detail}
+              </Text>
+            )
+          ) : null}
+        </Column>
+      );
     case 'button':
       // A `subtle` destructive action (Delete Account) renders as a TEXT button
       // whose label is the error colour — a quieter, secondary affordance — so it

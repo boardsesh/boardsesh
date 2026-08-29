@@ -116,6 +116,20 @@ function renderRow(row: MoreRow): ReactNode {
       );
     case 'select':
       return <SelectRow key={row.key} row={row} />;
+    case 'info':
+      return (
+        <View key={row.key} style={styles.infoRow}>
+          <Text style={styles.infoLabel}>{row.label}</Text>
+          <Text style={styles.infoBody} selectable={row.selectable}>
+            {row.body}
+          </Text>
+          {row.detail ? (
+            <Text style={styles.infoDetail} selectable={row.selectable}>
+              {row.detail}
+            </Text>
+          ) : null}
+        </View>
+      );
     case 'button': {
       const isSubtleDestructive = row.role === 'destructive' && row.emphasis === 'subtle';
       return (
@@ -214,6 +228,22 @@ const styles = StyleSheet.create({
   segmentedRow: {
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[3],
+  },
+  infoRow: {
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+    gap: spacing[1],
+  },
+  infoLabel: {
+    fontSize: 12,
+    opacity: 0.6,
+  },
+  infoBody: {
+    fontSize: 14,
+  },
+  infoDetail: {
+    fontSize: 11,
+    opacity: 0.6,
   },
   buttonRow: {
     paddingVertical: spacing[1],

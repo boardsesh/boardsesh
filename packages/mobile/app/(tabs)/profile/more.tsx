@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { router } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -38,7 +37,7 @@ import { drainMutationQueue } from '../../../src/offline/offline-sync-adapter';
 import { useDownloadedScopeKeys } from '../../../src/offline/use-downloaded-scope-keys';
 import { getHttpClient } from '../../../src/lib/graphql/client';
 import { hapticLight, hapticSelection } from '../../../src/lib/haptics';
-import { DevMetadataPanel } from '../../../src/components/DevMetadataPanel';
+import { getDevMetadataSection } from '../../../src/components/dev-metadata-section';
 import { useBottomChromeDiagnosticsEligible } from '../../../src/components/BottomChromeDebugOverlay';
 import { MoreForm } from '../../../src/components/MoreForm';
 import type { MoreButtonRow, MoreFormModel, MoreRow, MoreSection } from '../../../src/components/MoreForm.types';
@@ -321,6 +320,10 @@ export default function MoreScreen() {
   ];
 
   const sections: MoreSection[] = [];
+  const devMetadataSection = useMemo(() => getDevMetadataSection(), []);
+  if (devMetadataSection) {
+    sections.push(devMetadataSection);
+  }
 
   // Sync issues — surfaced high and only when online with writes stuck failing, so
   // it's noticeable when it matters and invisible otherwise. Retry only; there is no
@@ -862,17 +865,5 @@ export default function MoreScreen() {
 
   const model: MoreFormModel = { sections };
 
-  return (
-    <View style={styles.root}>
-      {/* Dev-only QA panel (null in production); the Form fills the rest. */}
-      <DevMetadataPanel />
-      <MoreForm model={model} />
-    </View>
-  );
+  return <MoreForm model={model} />;
 }
-
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-});

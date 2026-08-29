@@ -156,13 +156,15 @@ jobs:
               - 'scripts/mobile-fingerprint-inputs-check.ts'
               - 'scripts/mobile-patches-check.ts'
             # The Rust crate itself (packages/board-renderer/{core,ffi,wasm}/src,
-            # the workspace Cargo.toml/Cargo.lock). Deliberately separate from
-            # `mobile`, which only covers the *built* `wasm/pkg/**` artifact —
-            # a PR touching only `.rs` sources matches neither `anyJs` nor
-            # `mobile`, so without this filter it would run zero jobs. Gates
-            # the `renderer-rust` job (see below).
+            # the workspace Cargo.toml/Cargo.lock) plus every committed native
+            # renderer artifact inspected by its integration test. Deliberately
+            # separate from `mobile`, which covers built artifacts but does not
+            # otherwise run cargo: a source-only OR artifact-only renderer PR
+            # must reach the `renderer-rust` job (see below).
             boardRenderer:
               - 'packages/board-renderer/**'
+              - 'packages/mobile/modules/board-renderer/ios/BoardRendererNative.xcframework/**'
+              - 'packages/mobile/modules/board-renderer/android/src/main/jniLibs/**'
             ocr:
               - 'packages/moonboard-ocr/**'
             locationSync:

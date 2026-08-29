@@ -94,6 +94,17 @@ export type MoreSelectRow = {
   onSelect: (key: string) => void;
 };
 
+/** Read-only copy that belongs inside the form's single scrolling surface. */
+export type MoreInfoRow = {
+  kind: 'info';
+  key: string;
+  label: string;
+  body: string;
+  detail?: string;
+  /** Allow developers to select/copy diagnostic text and its optional detail. */
+  selectable?: boolean;
+};
+
 /** A standalone action button (Sign Out, Delete Account). */
 export type MoreButtonRow = {
   kind: 'button';
@@ -112,7 +123,7 @@ export type MoreButtonRow = {
 };
 
 /** Discriminated union of every row kind the More screen needs. */
-export type MoreRow = MoreNavRow | MoreToggleRow | MoreSegmentedRow | MoreSelectRow | MoreButtonRow;
+export type MoreRow = MoreNavRow | MoreToggleRow | MoreSegmentedRow | MoreSelectRow | MoreInfoRow | MoreButtonRow;
 
 /** One grouped section: an optional header title, optional footer note, and its rows. */
 export type MoreSection = {

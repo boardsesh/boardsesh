@@ -14,7 +14,8 @@
 // this tree only renders props. Each row kind maps to the idiomatic SwiftUI
 // control: nav → a Button row with a leading symbol, title/subtitle, optional
 // badge, and a trailing chevron; toggle → Toggle; segmented → segmented Picker;
-// select → menu-style Picker; button → Button (destructive colours it red).
+// select → menu-style Picker; info → read-only copy; button → Button
+// (destructive colours it red).
 
 import type { ComponentProps } from 'react';
 import { Host } from '@expo/ui';
@@ -25,6 +26,7 @@ import {
   tag,
   font,
   foregroundStyle,
+  textSelection,
   badge as badgeModifier,
   accessibilityLabel as accessibilityLabelModifier,
 } from '@expo/ui/swift-ui/modifiers';
@@ -41,6 +43,7 @@ const PRIMARY_LABEL = foregroundStyle({ type: 'hierarchical', style: 'primary' }
 const SECONDARY_LABEL = foregroundStyle({ type: 'hierarchical', style: 'secondary' });
 const TERTIARY_LABEL = foregroundStyle({ type: 'hierarchical', style: 'tertiary' });
 const FOOTNOTE = font({ textStyle: 'footnote' });
+const SELECTABLE_TEXT = textSelection(true);
 
 // The SFSymbol union the Image `systemName` prop accepts. The model carries a
 // semantic `MoreIconName`; map it to the SF Symbol here (the symbol union isn't
@@ -152,6 +155,18 @@ function renderRow(row: MoreRow, accent: string) {
             </Text>
           ))}
         </Picker>
+      );
+    case 'info':
+      return (
+        <VStack key={row.key} alignment="leading" spacing={spacing[1]}>
+          <Text modifiers={[FOOTNOTE, SECONDARY_LABEL]}>{row.label}</Text>
+          <Text modifiers={[PRIMARY_LABEL, ...(row.selectable ? [SELECTABLE_TEXT] : [])]}>{row.body}</Text>
+          {row.detail ? (
+            <Text modifiers={[FOOTNOTE, TERTIARY_LABEL, ...(row.selectable ? [SELECTABLE_TEXT] : [])]}>
+              {row.detail}
+            </Text>
+          ) : null}
+        </VStack>
       );
     case 'button':
       // `destructive` colours the label red; the action lives in the screen. A
