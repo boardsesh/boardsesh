@@ -6,20 +6,27 @@ import sharp from 'sharp';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { getBackgroundRelPaths, getBoardDetailsForBoard } from '@boardsesh/board-render';
 import { getSetsForLayoutAndSize } from '@boardsesh/board-constants/product-sizes';
-import { MOONBOARD_CELL_SETS, MOONBOARD_LAYOUTS, MOONBOARD_SETS, WOODS_LAYOUTS, WOODS_SETS } from '@boardsesh/board-config';
+import {
+  MOONBOARD_CELL_SETS,
+  MOONBOARD_LAYOUTS,
+  MOONBOARD_SETS,
+  WOODS_LAYOUTS,
+  WOODS_SETS,
+} from '@boardsesh/board-config';
 
 /**
- * The measurements the six capture gates are built out of (issue #2202).
+ * The measurements the seven capture gates are built out of (issue #2202).
  *
  * A separate module from the gates themselves so the assertions read as
  * assertions, and so the pin tables in `geometry-gates.test.ts` can be
  * re-derived with the same code that checks them.
  *
  * EVERY CONSTANT HERE IS DELIBERATELY RESTATED, not imported from
- * `scripts/generate-board-art-geometry.ts`. A gate that shares its constants
- * with the code it audits stops being a check on anything the moment one of them
- * moves — and the generator is a Node script that pulls in the whole catalogue,
- * which a package test should not.
+ * `scripts/generate-board-art-geometry.ts` — and so is the placement->image
+ * routing the per-image gates need. A gate that shares its inputs with the code
+ * it audits stops being a check on anything the moment one of them moves, and
+ * the generator is a Node script that pulls in the whole catalogue, which a
+ * package test should not.
  */
 
 /** Mirrors the generator's search box, in placement radii. */

@@ -22,23 +22,33 @@
  *
  * WHAT ONE SHARD IS
  * -----------------
- * One `(board, layout, size)` with EVERY set of that layout and size mounted.
- * The nearest-placement partition below is only conservative when all the
- * neighbours are present: trace a subset and a hold whose neighbour is missing
- * grows into the space that neighbour would have occupied. Per-subset shards
- * would also be combinatorial (Decoy 2-1 mounts 19 layers) for a difference no
- * renderer draws.
+ * One `(board, layout, size)` with every set of that layout and size mounted.
+ * Set ids are not part of the key, and since the tracer went per-image that is
+ * exact rather than merely adequate: each placement is traced against the ONE
+ * layer that draws it, partitioned only over the other placements on that layer,
+ * so nothing about a hold's silhouette depends on which other sets are mounted.
+ * Per-subset shards would be combinatorial (Decoy 2-1 mounts 19 layers) for a
+ * difference that provably does not exist.
  *
- * THE THREE BUGS THE DESIGN REVIEW FOUND, and the rule each one bought:
+ * THE FOUR BUGS, and the rule each one bought:
  *   1. A flood fill walks through a contact patch into the neighbouring hold and
  *      the pair traces as one blob — one glow covering three holds on Kilter
- *      Homewall. Fixed by the nearest-placement partition (`buildLabelMap`).
+ *      Homewall. Fixed by the nearest-placement partition (`buildLabelMap`),
+ *      which is an exact Euclidean transform: the chamfer it replaced was ~4%
+ *      long on a diagonal and mislabelled a strip either side of every diagonal
+ *      midline.
  *   2. A hold keeps a limb joined to it only through a thin neck of a
  *      neighbour's rim — Kilter Homewall's STARTING 4628 traced as a numeral 6.
  *      Fixed by the erosion/dilation neck trim (`trimThinNecks`).
  *   3. Where two holds' art genuinely touches, the partition cut runs through
  *      solid art, so the mark's brightest band lands ON the neighbour. Fixed by
  *      the contact pullback (`pullBackFromCuts`).
+ *   4. Two holds from different SETS do not touch on the wall and barely overlap
+ *      in the art (0.06% of opaque pixels), but flatten their layers into one
+ *      bitmap and they do — and 3 and 2 then chop apart holds that had nothing
+ *      wrong with them: 375 of Kilter Homewall's 499. Fixed by tracing per
+ *      image (`perImageMaskProvider`). Every COLOUR reading still measures the
+ *      composite, because what a mark competes with is the stack.
  * Every one of those is restated as a gate in the package's tests.
  */
 
@@ -412,8 +422,7 @@ function buildLabelMap(
       let denominator = 1;
       for (;;) {
         const previous = envelopeColumn[top];
-        numerator =
-          height2 + column * column - (columnDistance[rowOffset + previous] + previous * previous);
+        numerator = height2 + column * column - (columnDistance[rowOffset + previous] + previous * previous);
         denominator = 2 * (column - previous);
         // `<=` pops a previous parabola whose span has closed to nothing, which
         // is what leaves the LOWER column owning an exact tie.

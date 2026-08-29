@@ -101,7 +101,7 @@ const ART_GATE_KEYS = RUN_EVERY_CONFIG ? ALL_SHARD_KEYS : SPIKE_SAMPLE_KEYS;
  * numbers to weigh it against are these.
  */
 const PINNED_CUT_SHARES: Record<string, { neighbourMean: number; overFivePercent: number; opaqueMean: number }> = {
-'decoy/2-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
+  'decoy/2-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'decoy/2-2': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'decoy/2-3': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'grasshopper/1-2': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.5 },
@@ -327,9 +327,11 @@ describe('board-art-geometry gates', () => {
  * the outer border, so a hold with a punched-out bolt hole ships a polygon
  * covering art the partition never counted.
  */
-const PINNED_AREA_RECOVERY: Record<string, { recoveryMeanFloor: number; recoveryP10Floor: number; choppedCeiling: number }> =
-  {
-'decoy/2-1': { recoveryMeanFloor: 0.979, recoveryP10Floor: 0.964, choppedCeiling: 2 },
+const PINNED_AREA_RECOVERY: Record<
+  string,
+  { recoveryMeanFloor: number; recoveryP10Floor: number; choppedCeiling: number }
+> = {
+  'decoy/2-1': { recoveryMeanFloor: 0.979, recoveryP10Floor: 0.964, choppedCeiling: 2 },
   'decoy/2-2': { recoveryMeanFloor: 0.995, recoveryP10Floor: 0.982, choppedCeiling: 0 },
   'decoy/2-3': { recoveryMeanFloor: 0.994, recoveryP10Floor: 0.984, choppedCeiling: 0 },
   'grasshopper/1-2': { recoveryMeanFloor: 0.971, recoveryP10Floor: 0.955, choppedCeiling: 2 },

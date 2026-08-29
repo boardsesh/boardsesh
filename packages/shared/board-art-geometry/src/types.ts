@@ -19,14 +19,13 @@ export type BoardArtGeometryQuery = {
  * `"<boardName>/<layoutId>-<sizeId>"` — the shard key and the `wallLightness`
  * row key.
  *
- * There is no set-id component on purpose. Every shard is traced on the
- * composite with EVERY set of that layout and size mounted, because the
- * nearest-placement partition that separates two touching holds is only
- * conservative when both holds' art is present: trace a subset and a hold whose
- * neighbour is missing grows into the space the neighbour would have occupied.
- * A per-subset table would also be combinatorial (Decoy 2-1 alone mounts 19
- * layers) for a difference no renderer draws — it only ever asks for the
- * silhouette of a placement it is already lighting.
+ * There is no set-id component on purpose, and the tracer makes that exact
+ * rather than merely adequate: each placement is traced against the ONE art
+ * layer that draws it, partitioned only over the other placements on that same
+ * layer, so nothing about a hold's silhouette depends on which other sets are
+ * mounted. Mount three sets or nineteen and the holds you get back are the ones
+ * this table already holds. A per-subset table would be combinatorial (Decoy 2-1
+ * alone mounts 19 layers) for a difference that provably does not exist.
  */
 export type BoardArtGeometryKey = string;
 
