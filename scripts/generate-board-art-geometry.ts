@@ -294,55 +294,136 @@ function simplify(points: Point[], epsilon: number): Point[] {
 }
 
 /**
- * Nearest-placement label for every pixel, by two-pass chamfer propagation from
- * the placement centres.
+ * Nearest-placement label for every pixel, by an EXACT Euclidean distance
+ * transform (Felzenszwalb–Huttenlocher, separable) carrying the label along.
  *
  * This is what makes touching holds separable. Without it a flood fill started on
  * one hold walks straight through the contact patch into its neighbour and the
  * pair traces as one blob. With it, each hold's mask is clipped at the midline
  * between its own bolt and the next one, which is where a climber would say the
  * hold ends anyway.
+ *
+ * WHY NOT THE CHAMFER IT REPLACES
+ * -------------------------------
+ * Two-pass chamfer propagation is up to ~4% long on a diagonal, and 4% of a
+ * bolt-to-bolt pitch is a strip a pixel or two wide either side of every
+ * midline that runs diagonally. Those strips were labelled the wrong hold, so
+ * the tracer had no reason to pull back from a boundary that was in fact sitting
+ * on a neighbour — which is exactly the handful of outlines gate 6 still counted
+ * over 5% on a neighbour's art after the pullback landed. The gate measures the
+ * exact nearest placement; now so does the generator.
+ *
+ * DETERMINISM
+ * -----------
+ * Distances are integer squared distances throughout, and every envelope
+ * comparison is done by cross-multiplying the intersection's exact integer
+ * numerator and denominator rather than dividing — the magnitudes involved
+ * (about 2e10 at the catalogue's largest board) are exact in a double, so no
+ * comparison is ever decided by rounding. Ties resolve in one fixed order:
+ * lower column, then lower row, then lower placement index.
  */
 function buildLabelMap(
   width: number,
   height: number,
   placements: ReadonlyArray<{ cx: number; cy: number }>,
 ): Int32Array {
-  const label = new Int32Array(width * height).fill(-1);
-  const distance = new Float64Array(width * height).fill(Infinity);
+  const UNLABELLED = -1;
+  const seedLabel = new Int32Array(width * height).fill(UNLABELLED);
   for (const [index, placement] of placements.entries()) {
     const x = Math.round(placement.cx);
     const y = Math.round(placement.cy);
     if (x < 0 || y < 0 || x >= width || y >= height) continue;
-    label[y * width + x] = index;
-    distance[y * width + x] = 0;
+    // Lowest placement index keeps a shared pixel, so two placements rounding to
+    // the same board pixel is a stable outcome rather than a load-order one.
+    if (seedLabel[y * width + x] === UNLABELLED) seedLabel[y * width + x] = index;
   }
 
-  const relax = (from: number, to: number, step: number): void => {
-    const candidate = distance[from] + step;
-    if (candidate < distance[to]) {
-      distance[to] = candidate;
-      label[to] = label[from];
+  // Pass 1, down each column: the squared distance to the nearest seed IN THAT
+  // COLUMN, and whose it is. Two sweeps, the second replacing only on a strictly
+  // shorter distance, so the lower row keeps an exact tie.
+  const NO_SEED_IN_COLUMN = Number.MAX_SAFE_INTEGER;
+  const columnDistance = new Float64Array(width * height);
+  const columnLabel = new Int32Array(width * height).fill(UNLABELLED);
+  for (let x = 0; x < width; x += 1) {
+    let seedAbove = -1;
+    for (let y = 0; y < height; y += 1) {
+      const here = y * width + x;
+      if (seedLabel[here] !== UNLABELLED) seedAbove = y;
+      if (seedAbove < 0) {
+        columnDistance[here] = NO_SEED_IN_COLUMN;
+        continue;
+      }
+      columnDistance[here] = (y - seedAbove) * (y - seedAbove);
+      columnLabel[here] = seedLabel[seedAbove * width + x];
     }
-  };
-  const DIAGONAL = Math.SQRT2;
+    let seedBelow = -1;
+    for (let y = height - 1; y >= 0; y -= 1) {
+      const here = y * width + x;
+      if (seedLabel[here] !== UNLABELLED) seedBelow = y;
+      if (seedBelow < 0) continue;
+      const distance = (seedBelow - y) * (seedBelow - y);
+      if (distance >= columnDistance[here]) continue;
+      columnDistance[here] = distance;
+      columnLabel[here] = seedLabel[seedBelow * width + x];
+    }
+  }
+
+  // Pass 2, along each row: the lower envelope of the parabolas
+  // `(x - column)² + columnDistance[column]`. The winning column's own label is
+  // the pixel's label, because that column's nearest seed IS the nearest seed.
+  const label = new Int32Array(width * height).fill(UNLABELLED);
+  const envelopeColumn = new Int32Array(width);
+  // Boundary between envelope entries `k` and `k+1`, as an exact rational
+  // `boundaryNumerator / boundaryDenominator` with a positive denominator.
+  const boundaryNumerator = new Float64Array(width + 1);
+  const boundaryDenominator = new Float64Array(width + 1);
 
   for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const here = y * width + x;
-      if (x > 0) relax(here - 1, here, 1);
-      if (y > 0) relax(here - width, here, 1);
-      if (y > 0 && x > 0) relax(here - width - 1, here, DIAGONAL);
-      if (y > 0 && x < width - 1) relax(here - width + 1, here, DIAGONAL);
+    const rowOffset = y * width;
+    let top = -1;
+    for (let column = 0; column < width; column += 1) {
+      const height2 = columnDistance[rowOffset + column];
+      // A column holding no seed can never win, and carrying its infinity into
+      // the intersection arithmetic would poison the exact comparison.
+      if (height2 === NO_SEED_IN_COLUMN) continue;
+      if (top < 0) {
+        top = 0;
+        envelopeColumn[0] = column;
+        boundaryNumerator[0] = -Infinity;
+        boundaryDenominator[0] = 1;
+        boundaryNumerator[1] = Infinity;
+        boundaryDenominator[1] = 1;
+        continue;
+      }
+      let numerator = 0;
+      let denominator = 1;
+      for (;;) {
+        const previous = envelopeColumn[top];
+        numerator =
+          height2 + column * column - (columnDistance[rowOffset + previous] + previous * previous);
+        denominator = 2 * (column - previous);
+        // `<=` pops a previous parabola whose span has closed to nothing, which
+        // is what leaves the LOWER column owning an exact tie.
+        if (top > 0 && numerator * boundaryDenominator[top] <= boundaryNumerator[top] * denominator) {
+          top -= 1;
+          continue;
+        }
+        break;
+      }
+      top += 1;
+      envelopeColumn[top] = column;
+      boundaryNumerator[top] = numerator;
+      boundaryDenominator[top] = denominator;
+      boundaryNumerator[top + 1] = Infinity;
+      boundaryDenominator[top + 1] = 1;
     }
-  }
-  for (let y = height - 1; y >= 0; y -= 1) {
-    for (let x = width - 1; x >= 0; x -= 1) {
-      const here = y * width + x;
-      if (x < width - 1) relax(here + 1, here, 1);
-      if (y < height - 1) relax(here + width, here, 1);
-      if (y < height - 1 && x < width - 1) relax(here + width + 1, here, DIAGONAL);
-      if (y < height - 1 && x > 0) relax(here + width - 1, here, DIAGONAL);
+    // A row with no seeded column anywhere on the board leaves every pixel
+    // unowned, which the field contract allows.
+    if (top < 0) continue;
+    let entry = 0;
+    for (let column = 0; column < width; column += 1) {
+      while (boundaryNumerator[entry + 1] < column * boundaryDenominator[entry + 1]) entry += 1;
+      label[rowOffset + column] = columnLabel[rowOffset + envelopeColumn[entry]];
     }
   }
   return label;
