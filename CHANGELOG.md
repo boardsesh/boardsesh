@@ -4,6 +4,19 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-29
+
+### Fixed
+
+- Email sign-in now works when your account email contains uppercase letters. ([#4846](https://github.com/boardsesh/boardsesh/pull/4846))
+  The old Android split-screen sign-in warning is gone.
+
+## 2026-08-28
+
+### App update
+
+A new version shipped to the App Store and Play Store.
+
 ## 2026-08-27
 
 ### New
