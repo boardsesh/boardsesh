@@ -8,9 +8,9 @@
 // which per-row controls use to report intrinsic height back to RN).
 //
 // Each section becomes: an optional title `Text`, then either a Material `Card`
-// wrapping its rows (nav / toggle / segmented / select) OR standalone `Button`s
-// (an all-button section like the account actions), then an optional footer
-// `Text`. Brand colours come from the `expo-ui-modifiers` bridge; M3
+// wrapping its rows (nav / toggle / segmented / select / info) OR standalone
+// `Button`s (an all-button section like the account actions), then an optional
+// footer `Text`. Brand colours come from the `expo-ui-modifiers` bridge; M3
 // surface/label colours come from the Compose Material theme the Host sets up.
 //
 // The screen (more.tsx) precomputes every string + handler (incl. haptics); this
@@ -190,6 +190,20 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
       );
     case 'select':
       return <SelectRow key={row.key} row={row} />;
+    case 'info':
+      return (
+        <Column key={row.key} modifiers={[fillMaxWidth(), ROW_PADDING]} verticalArrangement={{ spacedBy: spacing[1] }}>
+          <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
+            {row.label}
+          </Text>
+          <Text style={{ typography: 'bodyMedium' }}>{row.body}</Text>
+          {row.detail ? (
+            <Text style={{ typography: 'labelSmall' }} modifiers={[alpha(0.6)]}>
+              {row.detail}
+            </Text>
+          ) : null}
+        </Column>
+      );
     case 'button':
       // A `subtle` destructive action (Delete Account) renders as a TEXT button
       // whose label is the error colour — a quieter, secondary affordance — so it

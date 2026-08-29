@@ -14,7 +14,8 @@
 // this tree only renders props. Each row kind maps to the idiomatic SwiftUI
 // control: nav → a Button row with a leading symbol, title/subtitle, optional
 // badge, and a trailing chevron; toggle → Toggle; segmented → segmented Picker;
-// select → menu-style Picker; button → Button (destructive colours it red).
+// select → menu-style Picker; info → read-only copy; button → Button
+// (destructive colours it red).
 
 import type { ComponentProps } from 'react';
 import { Host } from '@expo/ui';
@@ -152,6 +153,14 @@ function renderRow(row: MoreRow, accent: string) {
             </Text>
           ))}
         </Picker>
+      );
+    case 'info':
+      return (
+        <VStack key={row.key} alignment="leading" spacing={spacing[1]}>
+          <Text modifiers={[FOOTNOTE, SECONDARY_LABEL]}>{row.label}</Text>
+          <Text modifiers={[PRIMARY_LABEL]}>{row.body}</Text>
+          {row.detail ? <Text modifiers={[FOOTNOTE, TERTIARY_LABEL]}>{row.detail}</Text> : null}
+        </VStack>
       );
     case 'button':
       // `destructive` colours the label red; the action lives in the screen. A

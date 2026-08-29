@@ -53,6 +53,14 @@ function StubRow({ row }: { row: MoreRow }) {
           ))}
         </View>
       );
+    case 'info':
+      return (
+        <View>
+          <Text>{row.label}</Text>
+          <Text>{row.body}</Text>
+          {row.detail ? <Text>{row.detail}</Text> : null}
+        </View>
+      );
     case 'button':
       return (
         <Pressable onPress={row.onPress} accessibilityRole="button" accessibilityLabel={row.label}>

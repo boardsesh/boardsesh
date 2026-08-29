@@ -1,7 +1,13 @@
 use std::{fs, path::Path};
 
-const BOARDSESH_CONTRACT_FIELDS: [&[u8]; 3] =
-    [b"render_mode", b"glow_falloff", b"silhouette_lightness"];
+const BOARDSESH_CONTRACT_MARKERS: [&[u8]; 5] = [
+    b"board_renderer_render",
+    b"struct RenderConfig with 19 elements",
+    b"render_mode",
+    b"glow_falloff",
+    b"silhouette_lightness",
+];
+const STATIC_ARCHIVE_MAGIC: &[u8] = b"!<arch>\n";
 
 struct NativeArtifact {
     label: &'static str,
@@ -80,7 +86,7 @@ fn read_big_endian_u64(bytes: &[u8], offset: usize) -> Result<u64, String> {
     ))
 }
 
-/** Parse Apple's big-endian 32- or 64-bit universal-binary header without host tools. */
+/// Parse Apple's big-endian 32- or 64-bit universal-binary header without host tools.
 fn parse_macho_fat_slices(bytes: &[u8]) -> Result<Vec<MachOFatSlice<'_>>, String> {
     let magic = read_big_endian_u32(bytes, 0)?;
     let (architecture_entry_size, uses_64_bit_ranges) = match magic {
@@ -144,15 +150,93 @@ fn parse_macho_fat_slices(bytes: &[u8]) -> Result<Vec<MachOFatSlice<'_>>, String
     Ok(slices)
 }
 
-fn assert_contract_fields(artifact_label: &str, artifact_path: &Path, artifact_bytes: &[u8]) {
-    for contract_field in BOARDSESH_CONTRACT_FIELDS {
+/// Parse the members of an `ar` static library without relying on a host `ar`/`nm`
+/// that may not understand object files produced by the pinned Rust LLVM version.
+fn parse_static_archive_members(bytes: &[u8]) -> Result<Vec<&[u8]>, String> {
+    if !bytes.starts_with(STATIC_ARCHIVE_MAGIC) {
+        return Err("missing static archive magic".to_owned());
+    }
+
+    let mut members = Vec::new();
+    let mut header_offset = STATIC_ARCHIVE_MAGIC.len();
+    while header_offset < bytes.len() {
+        let header_end = header_offset
+            .checked_add(60)
+            .ok_or_else(|| "archive member header offset overflowed".to_owned())?;
+        let header = bytes.get(header_offset..header_end).ok_or_else(|| {
+            format!(
+                "archive member header at byte {header_offset} extends past {} bytes",
+                bytes.len()
+            )
+        })?;
+        if &header[58..60] != b"`\n" {
+            return Err(format!(
+                "archive member at byte {header_offset} has an invalid header terminator"
+            ));
+        }
+        let size_text = std::str::from_utf8(&header[48..58])
+            .map_err(|error| format!("archive member size is not UTF-8: {error}"))?
+            .trim();
+        let member_size = size_text
+            .parse::<usize>()
+            .map_err(|error| format!("archive member size `{size_text}` is invalid: {error}"))?;
+        let member_end = header_end
+            .checked_add(member_size)
+            .ok_or_else(|| "archive member range overflowed".to_owned())?;
+        let member = bytes.get(header_end..member_end).ok_or_else(|| {
+            format!(
+                "archive member at byte {header_offset} ends at {member_end}, past the {}-byte artifact",
+                bytes.len()
+            )
+        })?;
+        members.push(member);
+        header_offset = member_end
+            .checked_add(member_size % 2)
+            .ok_or_else(|| "archive member padding overflowed".to_owned())?;
+    }
+
+    if members.is_empty() {
+        return Err("static archive contains no members".to_owned());
+    }
+    Ok(members)
+}
+
+fn contains_marker(bytes: &[u8], marker: &[u8]) -> bool {
+    bytes.windows(marker.len()).any(|window| window == marker)
+}
+
+fn assert_contract_markers(artifact_label: &str, artifact_path: &Path, artifact_bytes: &[u8]) {
+    let contract_container = if artifact_bytes.starts_with(STATIC_ARCHIVE_MAGIC) {
+        let archive_members =
+            parse_static_archive_members(artifact_bytes).unwrap_or_else(|error| {
+                panic!(
+                    "could not parse committed {artifact_label} renderer archive at {}: {error}",
+                    artifact_path.display()
+                )
+            });
+        archive_members
+            .into_iter()
+            .find(|member| {
+                BOARDSESH_CONTRACT_MARKERS
+                    .iter()
+                    .all(|marker| contains_marker(member, marker))
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "committed {artifact_label} renderer archive at {} has no object member containing the exported render symbol and complete Boardsesh RenderConfig contract; rebuild it from the current Rust source",
+                    artifact_path.display()
+                )
+            })
+    } else {
+        artifact_bytes
+    };
+
+    for contract_marker in BOARDSESH_CONTRACT_MARKERS {
         assert!(
-            artifact_bytes
-                .windows(contract_field.len())
-                .any(|window| window == contract_field),
+            contains_marker(contract_container, contract_marker),
             "committed {artifact_label} renderer artifact at {} does not contain `{}`; rebuild the native renderer artifacts from the current Rust source",
             artifact_path.display(),
-            String::from_utf8_lossy(contract_field),
+            String::from_utf8_lossy(contract_marker),
         );
     }
 }
@@ -192,10 +276,10 @@ fn committed_native_artifacts_embed_the_boardsesh_render_contract() {
                     "{} architecture slice {slice_index} (CPU type 0x{:08x})",
                     artifact.label, slice.cpu_type
                 );
-                assert_contract_fields(&slice_label, &artifact_path, slice.bytes);
+                assert_contract_markers(&slice_label, &artifact_path, slice.bytes);
             }
         } else {
-            assert_contract_fields(artifact.label, &artifact_path, &artifact_bytes);
+            assert_contract_markers(artifact.label, &artifact_path, &artifact_bytes);
         }
     }
 }
