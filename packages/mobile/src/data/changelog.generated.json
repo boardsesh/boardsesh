@@ -1,6 +1,37 @@
 {
-  "generatedAt": "2026-08-27T16:31:43.232Z",
+  "generatedAt": "2026-08-29T21:54:52.339Z",
   "entries": [
+    {
+      "prNumber": 4775,
+      "category": "fixed",
+      "title": "Filter the gym map by Woods and MoonBoard boards for real — picking Woods now offers Original plus the 8×10 and 12×12 sizes instead of an empty row",
+      "mergedAt": "2026-08-29T21:54:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4775"
+    },
+    {
+      "prNumber": 4777,
+      "category": "fixed",
+      "title": "Filter Woods climbs by board region — draw a box on the wall and keep only the climbs that stay inside it, or the ones that reach into it",
+      "mergedAt": "2026-08-29T21:53:46Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4777",
+      "body": "Search Woods climbs by hold, including the bottom row that used to be ignored"
+    },
+    {
+      "prNumber": 4778,
+      "category": "new",
+      "title": "Woods boards stop glowing in dark mode — the white wall drops away and the holds sit",
+      "mergedAt": "2026-08-29T06:28:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4778",
+      "body": "straight on the dark background, in the app and on the site."
+    },
+    {
+      "prNumber": 4846,
+      "category": "fixed",
+      "title": "Email sign-in now works when your account email contains uppercase letters.",
+      "mergedAt": "2026-08-29T04:03:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4846",
+      "body": "The old Android split-screen sign-in warning is gone."
+    },
     {
       "prNumber": 4830,
       "category": "new",
@@ -4082,6 +4113,74 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-08-28T23:19:28-07:00",
+      "sha": "f2fec8a87577227dfd9af74cda82cab1d908eefd",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "2b44a98b94268985d42627bcc3eebf2b81eec1ee"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-08-28T21:03:29Z",
+      "sha": "a8f093d0a2de4abaf57179bca10a7dd7801dd661",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "8a4aeab75e7cb0f373756b83d0f93667ecff8249"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-08-28T18:45:09Z",
+      "sha": "669ef8af795cdf9c0de25b251be38974edc5c451",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "c54644aa9adec04c005a5dcb03d2d926dd05eb6b"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-08-28T18:06:23Z",
+      "sha": "f3321ed8ced123ec8fb97d5262f6d6b07f109ea2",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "c1a8fbe2bd436ff800e99e7a48658604248de4c4"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-08-28T16:27:16-07:00",
+      "sha": "20546b3497257d06a1a3b21520b08151b020185f",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "635e7d882c7ba5107b2824a6b16fde4a341f93c8",
+        "ios": "524424b00e7a4f1082bc4cf93c2739013860ffc5"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-08-28T13:31:21-07:00",
+      "sha": "c17828e3b17212548a4d1d420b16005f589eb8b0",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "23a410d7cb8f3909a48ed0e9a5dae63965d5e0a6"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-08-05T08:14:27+10:00",

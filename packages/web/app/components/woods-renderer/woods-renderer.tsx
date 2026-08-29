@@ -2,7 +2,8 @@
 
 import React, { useMemo } from 'react';
 import type { HoldRenderData, LitUpHoldsMap } from '../board-renderer/types';
-import { getImageUrl } from '../board-renderer/util';
+import { getImageUrl, toDarkArtUrl } from '../board-renderer/util';
+import styles from '../board-renderer/board-art-theme.module.css';
 
 // Props for the Woods renderer. Like the MoonBoard renderer it draws the board
 // art plus a circle per lit hold, but it consumes the precomputed `holdsData`
@@ -36,8 +37,11 @@ const WoodsBoardRenderer: React.FC<WoodsBoardRendererProps> = ({
 }) => {
   // Woods art ships the same three variants every other board does — full-size
   // .png, .webp, and a 416px thumbs/*.webp — so build the href the shared way:
-  // getImageUrl rewrites .png → .webp and splices /thumbs/ for thumbnails.
+  // getImageUrl rewrites .png → .webp and splices /thumbs/ for thumbnails. Woods is
+  // also the only board on web with a dark sibling; see woods-renderer.module.css for
+  // why both are rendered and CSS chooses.
   const backgroundHref = getImageUrl(backgroundImage, 'woods', thumbnail);
+  const darkBackgroundHref = toDarkArtUrl(backgroundHref);
 
   // Index holds by id for O(1) mirror lookups. Woods holds are distinctly shaped
   // and asymmetric, so a mirrored climb keeps the board art fixed and re-positions
@@ -75,10 +79,11 @@ const WoodsBoardRenderer: React.FC<WoodsBoardRendererProps> = ({
 
   return (
     <svg viewBox={`0 0 ${boardWidth} ${boardHeight}`} preserveAspectRatio="xMidYMid meet" style={svgStyle}>
-      {/* Board background art. The Fetch Priority API does not apply to inline SVG
-          images; LCP-critical cards should be preloaded via `<link rel="preload">`
-          from the page-level server component. */}
-      <image href={backgroundHref} width="100%" height="100%" />
+      {/* Board background art, light and dark. The Fetch Priority API does not apply to
+          inline SVG images; LCP-critical cards should be preloaded via `<link rel="preload">`
+          from the page-level server component (which still preloads the light file). */}
+      <image href={backgroundHref} width="100%" height="100%" className={styles.lightArt} />
+      <image href={darkBackgroundHref} width="100%" height="100%" className={styles.darkArt} />
 
       {/* Render hold circles - skip transparent ones when they serve no purpose */}
       {holdsData.map((hold) => {

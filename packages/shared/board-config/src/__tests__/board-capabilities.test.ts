@@ -5,34 +5,30 @@ import { getBoardCapabilities, type BoardCapabilities } from '../board-capabilit
 // The whole table in one place: change a row here and the reviewer sees exactly
 // which surface turns on or off.
 const EXPECTED: Record<string, BoardCapabilities> = {
-  kilter: { crowdGrade: true, holdFilters: true, climbCreation: true, nativeBoardControl: true, auroraAppLink: true },
-  tension: { crowdGrade: true, holdFilters: true, climbCreation: true, nativeBoardControl: true, auroraAppLink: true },
-  decoy: { crowdGrade: true, holdFilters: true, climbCreation: true, nativeBoardControl: true, auroraAppLink: true },
+  kilter: { crowdGrade: true, climbCreation: true, nativeBoardControl: true, auroraAppLink: true },
+  tension: { crowdGrade: true, climbCreation: true, nativeBoardControl: true, auroraAppLink: true },
+  decoy: { crowdGrade: true, climbCreation: true, nativeBoardControl: true, auroraAppLink: true },
   touchstone: {
     crowdGrade: true,
-    holdFilters: true,
     climbCreation: true,
     nativeBoardControl: true,
     auroraAppLink: true,
   },
   grasshopper: {
     crowdGrade: true,
-    holdFilters: true,
     climbCreation: true,
     nativeBoardControl: true,
     auroraAppLink: true,
   },
-  soill: { crowdGrade: true, holdFilters: true, climbCreation: true, nativeBoardControl: true, auroraAppLink: true },
+  soill: { crowdGrade: true, climbCreation: true, nativeBoardControl: true, auroraAppLink: true },
   moonboard: {
     crowdGrade: false,
-    holdFilters: true,
     climbCreation: true,
     nativeBoardControl: true,
     auroraAppLink: false,
   },
   woods: {
     crowdGrade: false,
-    holdFilters: false,
     climbCreation: false,
     nativeBoardControl: false,
     auroraAppLink: false,
@@ -54,7 +50,6 @@ describe('getBoardCapabilities', () => {
     for (const auroraBoard of AURORA_BOARDS) {
       expect(getBoardCapabilities(auroraBoard)).toEqual({
         crowdGrade: true,
-        holdFilters: true,
         climbCreation: true,
         nativeBoardControl: true,
         auroraAppLink: true,
@@ -75,7 +70,6 @@ describe('getBoardCapabilities', () => {
     // missing board guard on it separately.
     const auroraDefaults = {
       crowdGrade: true,
-      holdFilters: true,
       climbCreation: true,
       nativeBoardControl: true,
       auroraAppLink: true,

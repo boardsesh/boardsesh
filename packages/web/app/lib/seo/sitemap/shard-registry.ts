@@ -2,6 +2,7 @@ import 'server-only';
 import { getAllBoardConfigsOrThrow } from '@/app/lib/server-popular-configs';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
 import { boardConfigsToItems } from './board-entries';
+import { climbSitemapsEnabled } from './climb-sitemaps-enabled';
 import { buildClimbShardPage, fetchClimbShardSummary, fetchStoredClimbPageLastmods } from './climb-store';
 import {
   allLocalesUrlCount,
@@ -110,6 +111,7 @@ export const CLIMB_SOURCE_HEADER = 'X-Sitemap-Climbs-Source';
  * reaches a ten-connection pool.
  */
 const CLIMB_CACHE_CONTROL = 'public, s-maxage=21600, stale-while-revalidate=604800';
+const DISABLED_PAGED_SITEMAP_CACHE_CONTROL = 'public, s-maxage=3600, must-revalidate';
 
 function xmlResponse(
   body: string,
@@ -137,6 +139,21 @@ function notFoundResponse(): Response {
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',
       'Cache-Control': 'no-store',
+    },
+  });
+}
+
+/**
+ * A disabled paged sitemap is intentionally withdrawn, not temporarily broken.
+ * Cache the 410 for one hour so crawlers stop retrying without making a later
+ * re-enable wait on a long-lived edge response.
+ */
+function disabledPagedSitemapResponse(id: PagedShardId): Response {
+  return new Response(`${id} sitemaps are disabled`, {
+    status: 410,
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': DISABLED_PAGED_SITEMAP_CACHE_CONTROL,
     },
   });
 }
@@ -280,6 +297,8 @@ export type PagedShardSource = 'store' | 'live';
  */
 export type PagedSitemapShard = {
   id: PagedShardId;
+  /** Optional publication gate. Paged shards without one stay enabled. */
+  enabled?: () => boolean;
   /** Directory under `app/sitemaps/`, pinned against the on-disk walk. */
   routeDirectory: string;
   pagePath: (page: number) => string;
@@ -311,6 +330,7 @@ export type PagedSitemapShard = {
 export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
   {
     id: 'climbs',
+    enabled: climbSitemapsEnabled,
     routeDirectory: 'climbs',
     pagePath: (page: number) => `/sitemaps/climbs/${page}.xml`,
     expansion: 'default-locale-only',
@@ -329,6 +349,11 @@ export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
   },
 ];
 
+/** A future paged shard is published unless it explicitly opts into a gate. */
+export function pagedSitemapShardEnabled(shard: Pick<PagedSitemapShard, 'enabled'>): boolean {
+  return shard.enabled?.() ?? true;
+}
+
 function expandForShard(items: readonly SitemapItem[], expansion: ShardExpansion): SitemapUrlEntry[] {
   return expansion === 'all-locales' ? expandAllLocales(items) : expandDefaultLocaleOnly(items);
 }
@@ -341,6 +366,9 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
   const shard = PAGED_SHARD_REGISTRY.find((candidate) => candidate.id === id);
   if (!shard) {
     return unavailableResponse();
+  }
+  if (!pagedSitemapShardEnabled(shard)) {
+    return disabledPagedSitemapResponse(shard.id);
   }
 
   // `[1-9]\d*` and not `\d+`: `Number('007')` is 7, so a permissive parser gives
@@ -447,8 +475,8 @@ function sourceHeaders(shard: PagedSitemapShard, source: PagedShardSource | unde
  * `force-dynamic` and every CDN miss otherwise re-ran it live: the uncached boards
  * fetch took ~10 s cold and deterministically lost its shard on the first request
  * after a deploy (#4519). The climbs summary is no longer cached-expensive but
- * PRECOMPUTED: one row of `sitemap_shard_refreshes`, written by a cron and an
- * `after()` self-heal, because caching an expensive question only moves when you
+ * PRECOMPUTED: one row of `sitemap_shard_refreshes`, written by the authenticated
+ * refresh endpoint or an `after()` self-heal, because caching an expensive question only moves when you
  * pay for it — a cold miss on sixteen sequential `DISTINCT ON` scans could never
  * meet 3 s at any cache temperature (#4523). `fetchPlaylistSitemapRows` is cached
  * like boards rather than precomputed like climbs, because its answer is small
@@ -625,9 +653,13 @@ export type SitemapIndexResult = {
  * exact harm the fail-closed rule exists to avoid.
  */
 export async function buildSitemapIndexXml(): Promise<SitemapIndexResult> {
+  // Disabled is an intentional publication choice, not a failed builder. Keep
+  // climbs out of the settled walk entirely so the index performs no store read,
+  // carries no degradation header, and keeps its normal cache window.
+  const activePagedShards = PAGED_SHARD_REGISTRY.filter(pagedSitemapShardEnabled);
   const [fixedSettled, pagedSettled] = await Promise.all([
     Promise.allSettled(SHARD_REGISTRY.map((shard) => buildIndexEntry(shard))),
-    Promise.allSettled(PAGED_SHARD_REGISTRY.map((shard) => buildPagedIndexEntries(shard))),
+    Promise.allSettled(activePagedShards.map((shard) => buildPagedIndexEntries(shard))),
   ]);
 
   const entries: SitemapIndexEntry[] = [];
@@ -653,7 +685,7 @@ export async function buildSitemapIndexXml(): Promise<SitemapIndexResult> {
   });
 
   pagedSettled.forEach((outcome, index) => {
-    const shard = PAGED_SHARD_REGISTRY[index];
+    const shard = activePagedShards[index];
     if (outcome.status === 'rejected') {
       degradedShards.push(shard.id);
       // No source header on this branch, deliberately: a rejected or timed-out
@@ -681,7 +713,7 @@ export async function buildSitemapIndexXml(): Promise<SitemapIndexResult> {
   }
 
   if (entries.length === 0) {
-    const builderCount = SHARD_REGISTRY.length + PAGED_SHARD_REGISTRY.length;
+    const builderCount = SHARD_REGISTRY.length + activePagedShards.length;
     throw new Error(
       `[sitemap] index has no shards to publish (${degradedShards.length} of ${builderCount} builders failed) — refusing to publish an empty index`,
     );

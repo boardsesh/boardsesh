@@ -1,5 +1,5 @@
 import { type SQL, eq, gt, gte, sql, like, notLike, inArray, isNull, or, and } from 'drizzle-orm';
-import { getMoonBoardGeometryByLayoutId } from '@boardsesh/board-config';
+import { getMoonBoardGeometryByLayoutId, woodsHoldIdsInZone } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants/product-sizes';
 import {
   boardClimbs,
@@ -21,11 +21,14 @@ function escapeLikePattern(input: string): string {
   return input.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
-// A Postgres `ARRAY[...]::int[]` literal from a size-id list, for the tall/wide
-// `compatible_size_ids &&` overlap predicates.
-function sizeIdArrayLiteral(sizeIds: readonly number[]): SQL {
+// A Postgres `ARRAY[...]::int[]` literal from a number list, for the tall/wide
+// `compatible_size_ids &&` overlap predicates and the Woods zone `= ANY(...)`
+// probes. Built explicitly because drizzle's `sql` template expands a bare JS
+// array into a parenthesised parameter list — a ROW literal Postgres won't cast
+// to `int[]`.
+function intArrayLiteral(values: readonly number[]): SQL {
   return sql`ARRAY[${sql.join(
-    sizeIds.map((sizeId) => sql`${sizeId}`),
+    values.map((value) => sql`${value}`),
     sql`, `,
   )}]::int[]`;
 }
@@ -64,8 +67,14 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
   const holdStateFilters: Array<{ holdId: number; state: string; mode: 'include' | 'exclude' }> = [];
 
   for (const [keyRaw, entry] of Object.entries(searchParams.holdsFilter || {})) {
-    const holdId = Number(keyRaw.replace('hold_', ''));
-    if (!Number.isInteger(holdId) || holdId <= 0 || !entry || typeof entry !== 'object') continue;
+    // Hold ids are 0-based on Woods, so the guard can't reject non-positive ids the
+    // way it used to — the first hold of every Woods board would be unfilterable.
+    // `Number('')` is 0 too, so check the key really is digits instead of leaning
+    // on the parsed number alone. The offline mirror of this parser lives in
+    // packages/mobile/src/db/queries/search-climbs-local.ts and must agree.
+    const holdKey = keyRaw.replace('hold_', '');
+    const holdId = Number(holdKey);
+    if (!/^\d+$/.test(holdKey) || !Number.isSafeInteger(holdId) || !entry || typeof entry !== 'object') continue;
     for (const [type, mode] of Object.entries(entry as Record<string, unknown>)) {
       if (mode !== 'include' && mode !== 'exclude') continue;
       if (type === 'ANY') {
@@ -254,7 +263,9 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
   // Zone filter — restrict climbs by the user-defined box in board grid
   // coordinates. Aurora boards keep the denormalized `allHolds` path.
   // MoonBoard uses calibrated layout placements for both modes because its
-  // climbs intentionally do not carry denormalized edge columns.
+  // climbs intentionally do not carry denormalized edge columns. Woods has
+  // neither placements nor edge columns and resolves the box against its hold
+  // geometry in TypeScript (see the branch below).
   // Direct db-layer callers bypass GraphQL validation, so re-check the box.
   const zoneBox = searchParams.zoneBox;
   const hasZoneBox = !!zoneBox;
@@ -267,7 +278,65 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
     // closed like the tall/wide filters below rather than returning every climb.
     zoneConditions.push(sql`false`);
   } else if (validZoneBox) {
-    if (zoneMode === 'anyHold') {
+    if (params.board_name === 'woods') {
+      // Woods is code-driven: there are no `board_placements` / `board_holes`
+      // rows to read a hold's coordinates from, and its climbs carry no
+      // denormalized `edge_*`, so both paths below match nothing at all
+      // (boardsesh/boardsesh#4748). Resolve the box in TypeScript instead —
+      // `woodsHoldIdsInZone` walks the same detected hold centres the picker drew
+      // the box over — and filter on hold ids, which `board_climb_holds` stores
+      // directly. Its primary key is (board_type, climb_uuid, hold_id), so each
+      // probe below is an index lookup.
+      //
+      // The two Woods sizes reuse the same hold ids for different physical holds,
+      // so the id set is per-size; the `compatible_size_ids` filter above is what
+      // keeps the other size's climbs out of the results.
+      //
+      // The id list needs no cap the way `holdsFilter` does: it isn't user input,
+      // it's a subset of one board size's hold table, so it tops out at the 894
+      // holds of a 12x12 no matter what box arrives.
+      const zoneHoldIds = woodsHoldIdsInZone(params.size_id, validZoneBox);
+      if (!zoneHoldIds || zoneHoldIds.length === 0) {
+        // An unknown size id, or a box drawn over bare board. No climb can match
+        // either way, and returning everything would be worse than nothing — so
+        // fail closed like the degenerate-box case above.
+        zoneConditions.push(sql`false`);
+      } else if (zoneMode === 'anyHold') {
+        zoneConditions.push(sql`EXISTS (
+          SELECT 1
+          FROM ${boardClimbHolds} zone_ch
+          WHERE zone_ch.board_type = ${params.board_name}
+            AND zone_ch.climb_uuid = ${boardClimbs.uuid}
+            AND zone_ch.hold_id = ANY(${intArrayLiteral(zoneHoldIds)})
+        )`);
+      } else {
+        // allHolds: every hold of the climb must fit inside the box — i.e. the
+        // climb has holds, and none of them is outside it. Same shape as the
+        // MoonBoard containment branch, where the leading EXISTS is what stops a
+        // climb with no hold rows at all from matching vacuously.
+        //
+        // "Outside" is phrased as the complement of the in-box ids rather than as
+        // its own list, so a hold id the geometry doesn't know — a corrupt row, or
+        // one from a catalog newer than these constants — counts as outside rather
+        // than being silently waved through. It also binds the smaller array for
+        // the boxes people actually draw.
+        zoneConditions.push(
+          sql`EXISTS (
+            SELECT 1
+            FROM ${boardClimbHolds} zone_ch
+            WHERE zone_ch.board_type = ${params.board_name}
+              AND zone_ch.climb_uuid = ${boardClimbs.uuid}
+          )`,
+          sql`NOT EXISTS (
+            SELECT 1
+            FROM ${boardClimbHolds} zone_ch
+            WHERE zone_ch.board_type = ${params.board_name}
+              AND zone_ch.climb_uuid = ${boardClimbs.uuid}
+              AND NOT (zone_ch.hold_id = ANY(${intArrayLiteral(zoneHoldIds)}))
+          )`,
+        );
+      }
+    } else if (zoneMode === 'anyHold') {
       const zonePlacementMatch = climbHoldPlacementMatchSql({
         boardType: sql.raw('zone_ch.board_type'),
         climbHoldId: sql.raw('zone_ch.hold_id'),
@@ -375,7 +444,7 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
   if (searchParams.onlyTallClimbs) {
     tallClimbsConditions.push(
       hasShorter
-        ? sql`${boardClimbs.compatibleSizeIds} IS NOT NULL AND NOT (${boardClimbs.compatibleSizeIds} && ${sizeIdArrayLiteral(shorterSizeIds)})`
+        ? sql`${boardClimbs.compatibleSizeIds} IS NOT NULL AND NOT (${boardClimbs.compatibleSizeIds} && ${intArrayLiteral(shorterSizeIds)})`
         : sql`false`,
     );
   }
@@ -384,7 +453,7 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
   if (searchParams.onlyWideClimbs) {
     wideClimbsConditions.push(
       hasNarrower
-        ? sql`${boardClimbs.compatibleSizeIds} IS NOT NULL AND NOT (${boardClimbs.compatibleSizeIds} && ${sizeIdArrayLiteral(narrowerSizeIds)})`
+        ? sql`${boardClimbs.compatibleSizeIds} IS NOT NULL AND NOT (${boardClimbs.compatibleSizeIds} && ${intArrayLiteral(narrowerSizeIds)})`
         : sql`false`,
     );
   }

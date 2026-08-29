@@ -5,7 +5,12 @@ import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { hash } from 'bcryptjs';
+import { compare, hash } from 'bcryptjs';
+
+vi.mock('bcryptjs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('bcryptjs')>();
+  return { ...actual, compare: vi.fn(actual.compare) };
+});
 
 // ---------------------------------------------------------------------------
 // Test secret — must match what generateTokenPair reads from env
@@ -18,9 +23,8 @@ process.env.NEXTAUTH_SECRET = TEST_SECRET;
 // Mocks (must be hoisted before importing the handler)
 // ---------------------------------------------------------------------------
 
-// db.select() returns rows queued via mockDbSelectQueue. Every chained call
-// (.from / .where / .limit) is a no-op that returns the same chain object;
-// only the trailing await resolves to the queued result.
+// db.select() returns rows queued via mockDbSelectQueue. Every chained call is
+// a no-op that returns the same chain object; .limit() resolves the queued row.
 const mockDbSelectQueue: unknown[][] = [];
 const mockDbInsertValues = vi.fn(async () => []);
 
@@ -30,12 +34,14 @@ vi.mock('../db/client', () => {
       from() {
         return chain;
       },
+      innerJoin() {
+        return chain;
+      },
       where() {
         return chain;
       },
       limit() {
-        const rows = mockDbSelectQueue.shift() ?? [];
-        return Promise.resolve(rows);
+        return Promise.resolve(mockDbSelectQueue.shift() ?? []);
       },
     };
     return chain;
@@ -135,6 +141,15 @@ function parseBody(res: MockRes): Record<string, unknown> {
   return JSON.parse(res.body) as Record<string, unknown>;
 }
 
+function parseJwtSubject(res: MockRes): unknown {
+  const jwt = parseBody(res).jwt;
+  if (typeof jwt !== 'string') throw new Error('Expected JWT response');
+  const encodedPayload = jwt.split('.')[1];
+  if (!encodedPayload) throw new Error('Expected JWT payload');
+  const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as { sub?: unknown };
+  return payload.sub;
+}
+
 function queueSelect(rows: unknown[]): void {
   mockDbSelectQueue.push(rows);
 }
@@ -153,7 +168,6 @@ describe('handleNativeAuthCredentials', () => {
 
   it('returns JWT + refresh token for valid email + password', async () => {
     const passwordHash = await hash('correct-horse', 10);
-    queueSelect([{ id: 'user-1', email: 'test@example.com' }]);
     queueSelect([{ userId: 'user-1', passwordHash }]);
 
     const req = makeRequest({
@@ -175,7 +189,6 @@ describe('handleNativeAuthCredentials', () => {
 
   it('lower-cases and trims the submitted email before lookup', async () => {
     const passwordHash = await hash('correct-horse', 10);
-    queueSelect([{ id: 'user-1', email: 'test@example.com' }]);
     queueSelect([{ userId: 'user-1', passwordHash }]);
 
     const req = makeRequest({
@@ -187,6 +200,43 @@ describe('handleNativeAuthCredentials', () => {
     await handleNativeAuthCredentials(req as unknown as IncomingMessage, res as unknown as ServerResponse);
 
     expect(res.statusCode).toBe(200);
+  });
+
+  it('authenticates a legacy account whose stored email uses mixed casing', async () => {
+    const passwordHash = await hash('legacy-password', 10);
+    queueSelect([{ userId: 'legacy-user', passwordHash }]);
+
+    const req = makeRequest({
+      method: 'POST',
+      body: { email: 'legacy.user@example.com', password: 'legacy-password' },
+    });
+    const res = makeResponse();
+
+    await handleNativeAuthCredentials(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+
+    expect(res.statusCode).toBe(200);
+    expect(mockDbInsertValues).toHaveBeenCalledWith(expect.objectContaining({ userId: 'legacy-user' }));
+  });
+
+  it('authenticates a later password match among duplicate-by-case accounts', async () => {
+    const firstPasswordHash = await hash('first-password', 10);
+    const secondPasswordHash = await hash('second-password', 10);
+    queueSelect([
+      { userId: 'first-user', passwordHash: firstPasswordHash },
+      { userId: 'second-user', passwordHash: secondPasswordHash },
+    ]);
+
+    const req = makeRequest({
+      method: 'POST',
+      body: { email: 'DUPLICATE@example.com', password: 'second-password' },
+    });
+    const res = makeResponse();
+
+    await handleNativeAuthCredentials(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+
+    expect(res.statusCode).toBe(200);
+    expect(mockDbInsertValues).toHaveBeenCalledWith(expect.objectContaining({ userId: 'second-user' }));
+    expect(parseJwtSubject(res)).toBe('second-user');
   });
 
   it('returns 401 for an unknown email', async () => {
@@ -206,7 +256,6 @@ describe('handleNativeAuthCredentials', () => {
 
   it('returns 401 for a wrong password', async () => {
     const passwordHash = await hash('correct-horse', 10);
-    queueSelect([{ id: 'user-1', email: 'test@example.com' }]);
     queueSelect([{ userId: 'user-1', passwordHash }]);
 
     const req = makeRequest({
@@ -221,9 +270,72 @@ describe('handleNativeAuthCredentials', () => {
     expect(parseBody(res).error).toBe('Invalid email or password');
   });
 
+  it('returns the generic 401 when every duplicate-by-case password is wrong', async () => {
+    const firstPasswordHash = await hash('first-password', 10);
+    const secondPasswordHash = await hash('second-password', 10);
+    queueSelect([
+      { userId: 'first-user', passwordHash: firstPasswordHash },
+      { userId: 'second-user', passwordHash: secondPasswordHash },
+    ]);
+
+    const req = makeRequest({
+      method: 'POST',
+      body: { email: 'duplicate@example.com', password: 'wrong-password' },
+    });
+    const res = makeResponse();
+
+    await handleNativeAuthCredentials(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+
+    expect(res.statusCode).toBe(401);
+    expect(parseBody(res).error).toBe('Invalid email or password');
+    expect(mockDbInsertValues).not.toHaveBeenCalled();
+  });
+
+  it('returns the generic 401 when duplicate-by-case accounts share the submitted password', async () => {
+    const sharedPasswordHash = await hash('shared-password', 10);
+    queueSelect([
+      { userId: 'first-user', passwordHash: sharedPasswordHash },
+      { userId: 'second-user', passwordHash: sharedPasswordHash },
+    ]);
+
+    const req = makeRequest({
+      method: 'POST',
+      body: { email: 'duplicate@example.com', password: 'shared-password' },
+    });
+    const res = makeResponse();
+
+    await handleNativeAuthCredentials(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+
+    expect(res.statusCode).toBe(401);
+    expect(parseBody(res).error).toBe('Invalid email or password');
+    expect(mockDbInsertValues).not.toHaveBeenCalled();
+  });
+
+  it('bounds bcrypt work for an oversized duplicate-by-case account group', async () => {
+    const passwordHash = await hash('candidate-password', 10);
+    queueSelect(
+      Array.from({ length: 9 }, (_, index) => ({
+        userId: `candidate-${index}`,
+        passwordHash,
+      })),
+    );
+
+    const req = makeRequest({
+      method: 'POST',
+      body: { email: 'duplicate@example.com', password: 'candidate-password' },
+    });
+    const res = makeResponse();
+
+    await handleNativeAuthCredentials(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+
+    expect(res.statusCode).toBe(401);
+    expect(parseBody(res).error).toBe('Invalid email or password');
+    expect(vi.mocked(compare)).toHaveBeenCalledTimes(8);
+    expect(mockDbInsertValues).not.toHaveBeenCalled();
+  });
+
   it('returns 401 for an OAuth-only user (no userCredentials row)', async () => {
-    queueSelect([{ id: 'user-oauth', email: 'oauth@example.com' }]);
-    queueSelect([]); // no credentials row
+    queueSelect([]); // inner join excludes the user with no credentials row
 
     const req = makeRequest({
       method: 'POST',
@@ -287,7 +399,6 @@ describe('handleNativeAuthCredentials', () => {
 
     // Make 10 successful requests to fill the bucket (limit is 10/min/IP).
     for (let i = 0; i < 10; i++) {
-      queueSelect([{ id: 'user-1', email: 'test@example.com' }]);
       queueSelect([{ userId: 'user-1', passwordHash }]);
       const req = makeRequest({
         method: 'POST',

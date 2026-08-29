@@ -10,6 +10,10 @@
 // `boardName !== 'woods'` in the tree. They are one table now: read a capability
 // here, and a new board is one row.
 //
+// A capability leaves the table once every board answers yes to it — `holdFilters`
+// did, when Woods learned to answer a hold/zone search off its own geometry
+// (boardsesh/boardsesh#4748). A future board that can't reintroduces the row.
+//
 // Deliberately NOT in here:
 //  - `isSizeScopedBoard` — mirrored into offline-sync by design, so it stays
 //    where the sync engine can duplicate it without importing this package.
@@ -29,27 +33,6 @@ export type BoardCapabilities = {
    * entirely for those and explains the gap instead of showing an empty section.
    */
   crowdGrade: boolean;
-  /**
-   * The board can answer a hold-type or board-region (zone) search.
-   *
-   * False on Woods for two independent reasons:
-   *
-   * 1. Online hold search resolves the picked hold ids against
-   *    `board_placements`, and Woods has no rows there — it is code-driven
-   *    geometry, imported without hardware. Every Woods hold search would come
-   *    back empty with nothing on screen to explain why.
-   * 2. The zone box is expressed in placement-grid space (`edge_left`/`edge_top`
-   *    and friends). Woods hold centres are CV-detected board-art PIXELS, so a
-   *    box dragged over the art doesn't map to the coordinates the query filters
-   *    on.
-   *
-   * So the Holds and Zone rows are HIDDEN rather than left to return silent zero
-   * results, and the two full-screen picker routes bail out if a hand-built link
-   * reaches them anyway. Both light up for Woods the moment `board_placements`
-   * is seeded (the way `backfill-moonboard-hardware.ts` seeds MoonBoard) and the
-   * zone box gets a Woods-native pixel-space mapping — boardsesh/boardsesh#4748.
-   */
-  holdFilters: boolean;
   /**
    * New climbs can be set on the board from inside Boardsesh (create / fork /
    * edit).
@@ -103,7 +86,6 @@ export type BoardCapabilities = {
  */
 const AURORA_CAPABILITIES: BoardCapabilities = {
   crowdGrade: true,
-  holdFilters: true,
   climbCreation: true,
   nativeBoardControl: true,
   auroraAppLink: true,
@@ -117,20 +99,18 @@ const AURORA_CAPABILITIES: BoardCapabilities = {
  */
 const MOONBOARD_CAPABILITIES: BoardCapabilities = {
   crowdGrade: false,
-  holdFilters: true,
   climbCreation: true,
   nativeBoardControl: true,
   auroraAppLink: false,
 };
 
 /**
- * Woods: a static catalog import — browse, light up and tick all work, and
- * nothing else does yet. Each `false` has its own follow-up: #4748 (hold/zone
- * filters), #4750 (create), #3314 (the Swift encoder).
+ * Woods: a static catalog import — browse, search, light up and tick all work.
+ * Each remaining `false` has its own follow-up: #4750 (create), #3314 (the Swift
+ * encoder).
  */
 const WOODS_CAPABILITIES: BoardCapabilities = {
   crowdGrade: false,
-  holdFilters: false,
   climbCreation: false,
   nativeBoardControl: false,
   auroraAppLink: false,

@@ -25,7 +25,28 @@ type BuildBoardRenderUrlOptions = {
   includeBackground?: boolean;
   variant?: 'default' | 'og';
   format?: 'webp' | 'png' | 'jpg' | 'jpeg';
+  /** Ask for the dark art siblings. Only meaningful for boards in `BOARDS_WITH_DARK_ART`. */
+  colorScheme?: 'light' | 'dark';
 };
+
+/**
+ * Boards whose art has a dark-mode sibling committed under public/images.
+ *
+ * Woods is the only one on web: its art is hold sprites on an opaque white ground, which in
+ * dark mode renders as a lit rectangle, so scripts/generate-woods-dark-art.ts keys that
+ * ground out (issue #4753). MoonBoard has dark files too, but they were tuned against the
+ * mobile app's surfaces and are not wired up here yet.
+ *
+ * This gate is what keeps the theme swap from doubling requests and server renders for every
+ * other board — those would render identical bytes twice.
+ *
+ * Unlike mobile, which falls back when a key is absent from its bundle manifest, a missing
+ * file here is a 404 — so util.test.ts walks the listed boards' image directories and fails
+ * if any light `.webp` has lost its dark sibling.
+ */
+export const BOARDS_WITH_DARK_ART: ReadonlySet<string> = new Set(['woods']);
+
+export const hasDarkBoardArt = (board: BoardName) => BOARDS_WITH_DARK_ART.has(board);
 
 /**
  * Build the URL for the Rust/WASM-rendered board image.
@@ -41,7 +62,7 @@ type BuildBoardRenderUrlOptions = {
 export const buildBoardRenderUrl = (
   boardDetails: BoardDetails,
   frames: string,
-  { thumbnail, includeBackground, variant, format }: BuildBoardRenderUrlOptions = {},
+  { thumbnail, includeBackground, variant, format, colorScheme }: BuildBoardRenderUrlOptions = {},
 ) => {
   let url =
     `/api/internal/board-render?board_name=${boardDetails.board_name}` +
@@ -64,6 +85,10 @@ export const buildBoardRenderUrl = (
 
   if (format) {
     url += `&format=${format}`;
+  }
+
+  if (colorScheme === 'dark') {
+    url += '&color_scheme=dark';
   }
 
   // Last, always: it reads as the version stamp in a log line, and the route's
@@ -97,11 +122,87 @@ export const buildBoardRenderUrl = (
 export const toFlatFrames = (frames: string | null | undefined, boardName: BoardName): string =>
   toFlatFramesShared(frames, boardName);
 
-export const buildOverlayUrl = (boardDetails: BoardDetails, frames: string, thumbnail?: boolean) =>
+export const buildOverlayUrl = (
+  boardDetails: BoardDetails,
+  frames: string,
+  thumbnail?: boolean,
+  colorScheme?: 'light' | 'dark',
+) =>
   buildBoardRenderUrl(boardDetails, toFlatFrames(frames, boardDetails.board_name), {
     thumbnail,
     includeBackground: true,
+    colorScheme,
   });
+
+export type BoardArtLayers = {
+  /**
+   * Static board-art layers, as light URLs. Empty when the overlay already bakes the board
+   * photo in; non-empty means the caller must also render each URL's `toDarkArtUrl` twin and
+   * let the stylesheet pick.
+   */
+  backgroundUrls: string[];
+  /** The per-climb hold render. Includes the board photo only when `backgroundUrls` is empty. */
+  overlayUrl: string | null;
+};
+
+/**
+ * How to draw one climb's board art, split so a themed board never doubles the render cost.
+ *
+ * Boards without dark art keep the server-composited image they always had: one request,
+ * board photo and holds baked together, shared by every viewer.
+ *
+ * Boards with dark art cannot use that composite for both themes. Its URL carries the
+ * climb's frames, so a dark twin is a *second* WASM + sharp render per climb — 50 of them on
+ * a front-door list, which is exactly the work `warmOverlays` caps itself to avoid. The holds
+ * overlay is identical in both themes though; only the board photo behind it differs. So the
+ * photo splits back out as static art (two files per board size, shared by every card on the
+ * page) and the overlay renders once with no background baked in.
+ */
+export const buildBoardArtLayers = (
+  boardDetails: BoardDetails,
+  frames: string | null | undefined,
+  thumbnail?: boolean,
+): BoardArtLayers => {
+  if (!hasDarkBoardArt(boardDetails.board_name)) {
+    return {
+      backgroundUrls: [],
+      overlayUrl: frames ? buildOverlayUrl(boardDetails, frames, thumbnail) : null,
+    };
+  }
+
+  return {
+    backgroundUrls: Object.keys(boardDetails.images_to_holds).map((image) =>
+      getImageUrl(image, boardDetails.board_name, thumbnail),
+    ),
+    overlayUrl: frames
+      ? buildBoardRenderUrl(boardDetails, toFlatFrames(frames, boardDetails.board_name), { thumbnail })
+      : null,
+  };
+};
+
+/**
+ * The board images a page should preload when it treats one as its LCP element.
+ *
+ * One URL for most boards. Boards with dark art put both variants in the markup and let CSS
+ * choose, so both are preloaded: the browser fetches both either way, and hinting only the
+ * light one leaves a dark-mode reader's actual LCP element unprioritised.
+ */
+export const buildOverlayPreloadUrls = (
+  boardDetails: BoardDetails,
+  frames: string | null | undefined,
+  thumbnail?: boolean,
+): string[] => {
+  if (!frames) return [];
+
+  const { backgroundUrls, overlayUrl } = buildBoardArtLayers(boardDetails, frames, thumbnail);
+  if (!overlayUrl) return [];
+
+  // On a themed board the visible LCP element is the board photo plus the overlay stacked, so
+  // hint all of it. The photo layers are static files every card on the page shares, and both
+  // themes' copies are fetched regardless — hinting only the light one would leave a
+  // dark-mode reader's actual pixels unprioritised.
+  return [overlayUrl, ...backgroundUrls.flatMap((url) => [url, toDarkArtUrl(url)])];
+};
 
 /**
  * OG card image for a shared climb. Points at the backend `/og/climb` endpoint
@@ -147,6 +248,16 @@ const toThumbUrl = (webpUrl: string) => {
   const lastSlash = webpUrl.lastIndexOf('/');
   return `${webpUrl.substring(0, lastSlash)}/thumbs${webpUrl.substring(lastSlash)}`;
 };
+
+/**
+ * Dark-mode sibling of a WebP art path: `foo.webp` -> `foo.dark.webp`.
+ *
+ * Same convention as `DARK_VARIANT_SUFFIX` in the mobile app's background-image-cache.ts,
+ * written by scripts/generate-dark-board-art.ts and scripts/generate-woods-dark-art.ts. Only
+ * Woods ships these on web today — callers are responsible for knowing a sibling exists,
+ * because a missing one 404s rather than falling back the way the mobile manifest does.
+ */
+export const toDarkArtUrl = (webpUrl: string) => webpUrl.replace(/\.webp$/, '.dark.webp');
 
 export const getImageUrl = (imageUrl: string, board: BoardName, thumbnail?: boolean) => {
   // Absolute path (e.g. MoonBoard images already prefixed with /images/moonboard/...)

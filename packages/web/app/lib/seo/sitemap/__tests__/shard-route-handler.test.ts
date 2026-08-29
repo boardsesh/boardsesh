@@ -123,6 +123,7 @@ let errors: string[] = [];
 let warnings: string[] = [];
 
 beforeEach(() => {
+  vi.stubEnv('CLIMB_SITEMAPS_ENABLED', 'true');
   errors = [];
   warnings = [];
   vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
@@ -146,6 +147,7 @@ afterEach(() => {
   Object.assign(playlistRows, { count: 1, shouldThrow: false, hang: false, delayMs: 0 });
   Object.assign(climbSummary, { itemCount: 25_000, shouldThrow: false, hang: false, delayMs: 0 });
   Object.assign(pureBuilders, { shouldThrow: false, hang: false, delayMs: 0 });
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 

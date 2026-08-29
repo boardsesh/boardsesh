@@ -1,7 +1,18 @@
 import { describe, it, expect, vi, afterEach } from 'vite-plus/test';
+import { existsSync, readdirSync } from 'node:fs';
+import path from 'node:path';
 import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 import { STATIC_ASSET_OBJECT_KEYS } from '@boardsesh/static-assets';
-import { getImageUrl, buildBoardRenderUrl, buildOverlayUrl, buildOgBoardRenderUrl } from '../util';
+import {
+  getImageUrl,
+  toDarkArtUrl,
+  hasDarkBoardArt,
+  buildOverlayPreloadUrls,
+  BOARDS_WITH_DARK_ART,
+  buildBoardRenderUrl,
+  buildOverlayUrl,
+  buildOgBoardRenderUrl,
+} from '../util';
 import type { BoardDetails } from '@/app/lib/types';
 
 describe('getImageUrl', () => {
@@ -53,6 +64,93 @@ describe('getImageUrl', () => {
     it('inserts /thumbs/ for a Woods thumbnail', () => {
       expect(getImageUrl('woods-12x12-bg.png', 'woods', true)).toBe('/images/woods/thumbs/woods-12x12-bg.webp');
     });
+  });
+
+  describe('toDarkArtUrl', () => {
+    it('appends .dark before the extension', () => {
+      expect(toDarkArtUrl('/images/woods/woods-8x10-bg.webp')).toBe('/images/woods/woods-8x10-bg.dark.webp');
+    });
+
+    it('composes with a thumbnail path', () => {
+      expect(toDarkArtUrl(getImageUrl('woods-12x12-bg.png', 'woods', true))).toBe(
+        '/images/woods/thumbs/woods-12x12-bg.dark.webp',
+      );
+    });
+
+    it('leaves a path that is not .webp alone', () => {
+      // Guards the ordering: getImageUrl rewrites .png → .webp first, so a caller that
+      // reverses the two would silently ask for art that was never generated.
+      expect(toDarkArtUrl('/images/woods/woods-8x10-bg.png')).toBe('/images/woods/woods-8x10-bg.png');
+    });
+  });
+
+  describe('buildOverlayPreloadUrls', () => {
+    const boardDetails = (board_name: string) =>
+      ({
+        board_name,
+        layout_id: 1,
+        size_id: 1,
+        set_ids: [1],
+        images_to_holds: { 'woods-8x10-bg.png': [] },
+        boardWidth: 720,
+        boardHeight: 1000,
+      }) as never;
+
+    it('preloads one image for a board with no dark art', () => {
+      expect(buildOverlayPreloadUrls(boardDetails('kilter'), 'p1r42')).toHaveLength(1);
+    });
+
+    it('preloads the single overlay plus both photo layers for a themed board', () => {
+      // A themed board draws photo + overlay stacked, so all of it is the LCP element. There
+      // is still only ONE per-climb render in the list — the rest are static files.
+      const urls = buildOverlayPreloadUrls(boardDetails('woods'), 'p1r42');
+
+      expect(urls.filter((url) => url.includes('board-render'))).toHaveLength(1);
+      expect(urls).toContain('/images/woods/woods-8x10-bg.webp');
+      expect(urls).toContain('/images/woods/woods-8x10-bg.dark.webp');
+    });
+
+    it('preloads nothing when the climb has no frames', () => {
+      expect(buildOverlayPreloadUrls(boardDetails('woods'), null)).toEqual([]);
+      expect(buildOverlayPreloadUrls(boardDetails('woods'), '')).toEqual([]);
+    });
+  });
+
+  describe('hasDarkBoardArt', () => {
+    it('is Woods only', () => {
+      // The gate that keeps the theme swap from doubling requests and server renders for
+      // boards whose art has no dark sibling — they would render identical bytes twice.
+      expect(hasDarkBoardArt('woods')).toBe(true);
+      for (const board of ['kilter', 'tension', 'moonboard'] as const) {
+        expect(hasDarkBoardArt(board as never)).toBe(false);
+      }
+    });
+
+    // Web resolves these paths by URL, so unlike mobile — which falls back when a key is
+    // absent from its bundle manifest — a deleted or renamed dark file is a silent 404 for
+    // every dark-mode reader. Walk what the gate claims and check the bytes are really there.
+    const IMAGES_DIR = path.resolve(import.meta.dirname, '../../../../public/images');
+
+    const lightWebpPaths = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const entryPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) return lightWebpPaths(entryPath);
+        if (!entry.name.endsWith('.webp') || entry.name.endsWith('.dark.webp')) return [];
+        return [entryPath];
+      });
+
+    for (const board of BOARDS_WITH_DARK_ART) {
+      it(`${board} has a committed dark sibling for every one of its light images`, () => {
+        const boardDir = path.join(IMAGES_DIR, board);
+        expect(existsSync(boardDir)).toBe(true);
+
+        const lightPaths = lightWebpPaths(boardDir);
+        expect(lightPaths.length).toBeGreaterThan(0);
+
+        const missing = lightPaths.filter((lightPath) => !existsSync(toDarkArtUrl(lightPath)));
+        expect(missing.map((absolute) => path.relative(IMAGES_DIR, absolute))).toEqual([]);
+      });
+    }
   });
 
   describe('absolute paths (MoonBoard images starting with /)', () => {

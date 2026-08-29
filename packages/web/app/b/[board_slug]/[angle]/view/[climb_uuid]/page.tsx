@@ -7,7 +7,7 @@ import { getClimb, getClimbStatsForAllAngles } from '@/app/lib/data/queries';
 import { getFrontDoorBetaLinks, getFrontDoorSimilarClimbs } from '@/app/lib/data/front-door-data.server';
 import ClimbFrontDoor from '@/app/components/climb-front-door/climb-front-door';
 import { buildCanonicalClimbViewUrl, extractUuidFromSlug } from '@/app/lib/url-utils';
-import { buildOgBoardRenderUrl, buildOverlayUrl } from '@/app/components/board-renderer/util';
+import { buildOgBoardRenderUrl, buildOverlayPreloadUrls } from '@/app/components/board-renderer/util';
 import { scheduleOverlayWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
@@ -126,11 +126,13 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
     ]);
 
     scheduleOverlayWarming({ boardDetails, climbs: [currentClimb], variant: 'full' });
-    const preloadUrl = currentClimb.frames ? buildOverlayUrl(boardDetails, currentClimb.frames, false) : null;
+    const preloadUrls = buildOverlayPreloadUrls(boardDetails, currentClimb.frames, false);
 
     return (
       <>
-        {preloadUrl && <link rel="preload" as="image" href={preloadUrl} fetchPriority="high" />}
+        {preloadUrls.map((preloadUrl) => (
+          <link key={preloadUrl} rel="preload" as="image" href={preloadUrl} fetchPriority="high" />
+        ))}
         <ClimbFrontDoor
           climb={currentClimb}
           boardDetails={boardDetails}

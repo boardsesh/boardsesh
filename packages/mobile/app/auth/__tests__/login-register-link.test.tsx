@@ -13,12 +13,21 @@ import { createElement, type ReactNode } from 'react';
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }));
 const returnHrefState = vi.hoisted(() => ({ current: null as string | null }));
+const platformState = vi.hoisted(() => ({ os: 'web', version: undefined as number | undefined }));
 
 vi.mock('react-native', () => ({
-  Platform: { OS: 'web', Version: undefined },
+  Platform: {
+    get OS() {
+      return platformState.os;
+    },
+    get Version() {
+      return platformState.version;
+    },
+  },
   KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, accessibilityRole }: { children?: ReactNode; accessibilityRole?: string }) =>
+    createElement('div', { role: accessibilityRole }, children),
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
   Pressable: ({ onPress, children }: { onPress?: () => void; children?: ReactNode }) =>
     createElement('button', { onClick: onPress }, children),
@@ -45,7 +54,6 @@ vi.mock('../../../src/hooks/use-native-oauth-sign-in', () => ({
 }));
 vi.mock('../../../src/components/AuthFieldset', () => ({ AuthFieldset: () => null }));
 vi.mock('../../../src/components/Button', () => ({ Button: () => null }));
-vi.mock('../../../src/components/Icon', () => ({ Icon: () => null }));
 vi.mock('../../../src/components/auth/OAuthProviderButtons', () => ({
   OAuthProviderButtons: () => null,
   useOAuthProviders: () => ({ loading: false, error: null, apple: false, google: false }),
@@ -71,11 +79,23 @@ function linkByKey(container: HTMLElement, key: string): HTMLElement {
 beforeEach(() => {
   vi.clearAllMocks();
   returnHrefState.current = null;
+  platformState.os = 'web';
+  platformState.version = undefined;
 });
 
 const RETURN_PATH = '/b/the-gym/40/view/crimpy-thing-0A1B2C3D4E5F60718293A4B5C6D7E8F9';
 
-describe('LoginScreen sign-up link', () => {
+describe('LoginScreen', () => {
+  it('does not show the retired split-screen warning on Android 15+', () => {
+    platformState.os = 'android';
+    platformState.version = 35;
+
+    const { container } = render(<LoginScreen />);
+
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).not.toContain('login.splitScreenNotice');
+  });
+
   it('forwards a read-only return path to the register screen', () => {
     returnHrefState.current = RETURN_PATH;
 

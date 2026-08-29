@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import crypto from 'crypto';
 import { SignJWT, createRemoteJWKSet, jwtVerify } from 'jose';
 import { compare, hash } from 'bcryptjs';
-import { eq, and, isNull, lt, or, isNotNull } from 'drizzle-orm';
+import { eq, and, isNull, lt, or, isNotNull, sql } from 'drizzle-orm';
 import { mobileRefreshTokens, users, userCredentials, accounts, userProfiles } from '@boardsesh/db/schema/auth';
 import { db } from '../db/client';
 import { redisClientManager } from '../redis/client';
@@ -20,6 +20,14 @@ const DUMMY_PASSWORD_HASH = '$2b$10$CwTycUXWue0Thq9StjUM0uJ8/oQbk1Ec7T0p/7K8nXfR
 
 /** Generic error returned for all credential validation failures. */
 const INVALID_CREDENTIALS_ERROR = 'Invalid email or password';
+
+/**
+ * Bound duplicate-by-case password checks so malformed legacy account groups
+ * cannot turn one rate-limited login attempt into unbounded bcrypt work. The
+ * current production maximum is six; leave headroom while account cleanup and
+ * a case-insensitive unique index remain separate work.
+ */
+const MAX_CREDENTIAL_CANDIDATES = 8;
 
 /**
  * Registration field bounds — mirror the web register route's Zod schema
@@ -526,35 +534,63 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
   const normalizedEmail = email.trim().toLowerCase();
 
   try {
-    const userRows = await db.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
-    const user = userRows[0];
+    // Legacy web accounts may retain mixed-case emails, and users.email is not
+    // currently unique case-insensitively. Load every exact case-insensitive
+    // match so duplicate-by-case accounts can each authenticate with their own
+    // password. Using LOWER rather than ILIKE avoids treating valid email
+    // characters such as `_` as pattern wildcards.
+    const credentialCandidates = await db
+      .select({
+        userId: users.id,
+        passwordHash: userCredentials.passwordHash,
+      })
+      .from(users)
+      .innerJoin(userCredentials, eq(userCredentials.userId, users.id))
+      .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
+      .limit(MAX_CREDENTIAL_CANDIDATES + 1);
 
-    if (!user) {
-      // Dummy compare against a fixed hash to mask the user-lookup miss in
-      // response time. Result is intentionally discarded.
+    if (credentialCandidates.length === 0) {
+      // Unknown emails and OAuth-only accounts take one dummy comparison and
+      // return the same generic response.
       await compare(password, DUMMY_PASSWORD_HASH);
       sendJson(res, 401, { error: INVALID_CREDENTIALS_ERROR });
       return;
     }
 
-    const credentialRows = await db.select().from(userCredentials).where(eq(userCredentials.userId, user.id)).limit(1);
-    const credentials = credentialRows[0];
-
-    if (!credentials) {
-      // OAuth-only user with no password. Same dummy compare for timing parity.
-      await compare(password, DUMMY_PASSWORD_HASH);
+    if (credentialCandidates.length > MAX_CREDENTIAL_CANDIDATES) {
+      // Keep oversized groups bounded while matching the work performed for
+      // the largest supported group, so the limit sentinel is not observable
+      // through a sudden drop to one bcrypt comparison.
+      await Promise.all(
+        credentialCandidates
+          .slice(0, MAX_CREDENTIAL_CANDIDATES)
+          .map((candidate) => compare(password, candidate.passwordHash)),
+      );
       sendJson(res, 401, { error: INVALID_CREDENTIALS_ERROR });
       return;
     }
 
-    const passwordMatches = await compare(password, credentials.passwordHash);
-    if (!passwordMatches) {
+    // Check every available hash. Aside from supporting duplicate-by-case
+    // accounts, avoiding an early exit keeps success timing independent of a
+    // matching candidate's position in the result set.
+    const passwordMatchResults = await Promise.all(
+      credentialCandidates.map((candidate) => compare(password, candidate.passwordHash)),
+    );
+    const matchingCredentialIndexes = passwordMatchResults.reduce<number[]>((indexes, passwordMatches, index) => {
+      if (passwordMatches) indexes.push(index);
+      return indexes;
+    }, []);
+
+    // Duplicate-by-case accounts can share a password. Without an unambiguous
+    // match there is no safe account to issue the session for.
+    if (matchingCredentialIndexes.length !== 1) {
       sendJson(res, 401, { error: INVALID_CREDENTIALS_ERROR });
       return;
     }
 
-    const tokenPair = await generateTokenPair(user.id);
-    logger.info(`[NativeAuth] Credentials sign-in successful for user ${user.id}`);
+    const authenticatedUserId = credentialCandidates[matchingCredentialIndexes[0]].userId;
+    const tokenPair = await generateTokenPair(authenticatedUserId);
+    logger.info(`[NativeAuth] Credentials sign-in successful for user ${authenticatedUserId}`);
     sendJson(res, 200, tokenPair);
   } catch (error) {
     logger.error('[NativeAuth] Credentials sign-in failed:', error);
