@@ -557,6 +557,26 @@ export type BoardConnectionHolder = {
   userId?: Maybe<Scalars['ID']['output']>;
 };
 
+/**
+ * Everything the outline editor needs for one board config: the deployed shard's
+ * traced silhouettes, plus the live overrides that supersede them.
+ *
+ * The two lists are returned side by side rather than merged so the editor can
+ * show what the tracer produced next to what a human corrected, and offer a
+ * revert. A placement absent from both carries no art of its own — the renderer
+ * falls back to a ring at the placement radius.
+ */
+export type BoardHoldOutlines = {
+  __typename?: 'BoardHoldOutlines';
+  boardName: Scalars['String']['output'];
+  layoutId: Scalars['Int']['output'];
+  /** Live corrections, newest write per placement. */
+  overrides: Array<HoldOutlineOverride>;
+  /** Traced silhouettes from the geometry shard this backend ships. Empty when no shard covers the config. */
+  shardOutlines: Array<PlacementOutline>;
+  sizeId: Scalars['Int']['output'];
+};
+
 /** Board leaderboard result. */
 export type BoardLeaderboard = {
   __typename?: 'BoardLeaderboard';
@@ -1627,6 +1647,13 @@ export type DeleteAccountInfo = {
 export type DeleteAccountInput = {
   /** Whether to remove the setter name from published climbs */
   removeSetterName: Scalars['Boolean']['input'];
+};
+
+export type DeleteHoldOutlineOverrideInput = {
+  boardName: Scalars['String']['input'];
+  layoutId: Scalars['Int']['input'];
+  placementId: Scalars['Int']['input'];
+  sizeId: Scalars['Int']['input'];
 };
 
 export type DeleteProposalInput = {
@@ -2884,6 +2911,35 @@ export type GymTopClimb = {
   name?: Maybe<Scalars['String']['output']>;
 };
 
+/**
+ * A board config, identified the way a geometry shard is. Set ids are absent on
+ * purpose: every shard is traced with every set of its layout and size mounted,
+ * so an override never names one.
+ */
+export type HoldOutlineConfigInput = {
+  boardName: Scalars['String']['input'];
+  layoutId: Scalars['Int']['input'];
+  sizeId: Scalars['Int']['input'];
+};
+
+/** A hand-corrected hold silhouette, replacing what the tracer produced for one placement. */
+export type HoldOutlineOverride = {
+  __typename?: 'HoldOutlineOverride';
+  /** Display name of the account that last wrote this override, when it still exists. */
+  authorDisplayName?: Maybe<Scalars['String']['output']>;
+  authorId?: Maybe<Scalars['ID']['output']>;
+  boardName: Scalars['String']['output'];
+  layoutId: Scalars['Int']['output'];
+  /** Why the traced version was wrong, in the editor's own words. */
+  note?: Maybe<Scalars['String']['output']>;
+  /** Flat [x0, y0, x1, y1, ...] in units of the placement radius, rounded to 4 decimals. */
+  outline: Array<Scalars['Float']['output']>;
+  placementId: Scalars['Int']['output'];
+  sizeId: Scalars['Int']['output'];
+  /** When the override was last written (ISO 8601). */
+  updatedAt: Scalars['String']['output'];
+};
+
 /** A scanned post whose climb name matched multiple climbs — the user picks one. */
 export type InstagramBetaAmbiguous = {
   __typename?: 'InstagramBetaAmbiguous';
@@ -3248,6 +3304,12 @@ export type Mutation = {
   deleteGym: Scalars['Boolean']['output'];
   /** Soft-delete a kiosk. Requires gym edit access. The slug is freed for reuse. */
   deleteGymKiosk: Scalars['Boolean']['output'];
+  /**
+   * Drop a hold's correction and fall back to the traced silhouette (admin only,
+   * scoped to the board). True when a row was removed, false when there was
+   * nothing to remove.
+   */
+  deleteHoldOutlineOverride: Scalars['Boolean']['output'];
   /** Delete a playlist (owner only). */
   deletePlaylist: Scalars['Boolean']['output'];
   /** Delete an accepted proposal and revert its effects (admin/leader only). */
@@ -3645,6 +3707,12 @@ export type Mutation = {
   updateTick: Tick;
   /** Update display name and avatar in the current session. */
   updateUsername: Scalars['Boolean']['output'];
+  /**
+   * Store a hand-corrected silhouette for one hold, replacing whatever the tracer
+   * produced (admin only, scoped to the board). Latest write wins — there is no
+   * revision history, so the note is the record of why.
+   */
+  upsertHoldOutlineOverride: HoldOutlineOverride;
   /** Vote on an entity. Same value toggles (removes vote). */
   vote: VoteSummary;
   /** Vote on an open proposal. */
@@ -3789,6 +3857,11 @@ export type MutationDeleteGymArgs = {
 /** Root mutation type for all write operations. */
 export type MutationDeleteGymKioskArgs = {
   kioskUuid: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationDeleteHoldOutlineOverrideArgs = {
+  input: DeleteHoldOutlineOverrideInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4272,6 +4345,11 @@ export type MutationUpdateUsernameArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationUpsertHoldOutlineOverrideArgs = {
+  input: UpsertHoldOutlineOverrideInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationVoteArgs = {
   input: VoteInput;
 };
@@ -4515,6 +4593,14 @@ export type PendingGymClaimsInput = {
 export type PinPlaylistInput = {
   /** The playlist UUID */
   playlistUuid: Scalars['ID']['input'];
+};
+
+/** One placement's hold silhouette, as a flat implicitly-closed ring. */
+export type PlacementOutline = {
+  __typename?: 'PlacementOutline';
+  /** Flat [x0, y0, x1, y1, ...] in units of the placement radius, relative to its centre. */
+  outline: Array<Scalars['Float']['output']>;
+  placementId: Scalars['Int']['output'];
 };
 
 /**
@@ -5166,6 +5252,12 @@ export type Query = {
    */
   gymStats: GymStats;
   /**
+   * The traced hold silhouettes this backend ships for a board config, alongside
+   * the hand-drawn corrections that supersede them (admin only, scoped to the
+   * board). Read-only; the editor renders both and offers a revert.
+   */
+  holdOutlines: BoardHoldOutlines;
+  /**
    * Resolve scraped Instagram posts against Boardsesh: which beta videos are
    * missing, already linked, ambiguous, or unmatched. Read-only — the client
    * attaches the missing ones via the attachBetaLink mutation.
@@ -5771,6 +5863,11 @@ export type QueryGymOwnershipLookupArgs = {
 /** Root query type for all read operations. */
 export type QueryGymStatsArgs = {
   input: GymStatsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryHoldOutlinesArgs = {
+  input: HoldOutlineConfigInput;
 };
 
 /** Root query type for all read operations. */
@@ -8037,6 +8134,16 @@ export type UpdateTickInput = {
   status?: InputMaybe<TickStatus>;
 };
 
+export type UpsertHoldOutlineOverrideInput = {
+  boardName: Scalars['String']['input'];
+  layoutId: Scalars['Int']['input'];
+  note?: InputMaybe<Scalars['String']['input']>;
+  /** Flat [x0, y0, x1, y1, ...] in radius units. 3-150 points, every coordinate within 4 radii, and the ring must contain the placement centre. */
+  outline: Array<Scalars['Float']['input']>;
+  placementId: Scalars['Int']['input'];
+  sizeId: Scalars['Int']['input'];
+};
+
 /** A named physical board installation (board type + layout + size + hold sets). */
 export type UserBoard = {
   __typename?: 'UserBoard';
@@ -8191,6 +8298,8 @@ export type UserProfile = {
   favoriteCount: Scalars['Int']['output'];
   /** Unique user identifier */
   id: Scalars['ID']['output'];
+  /** Whether this user holds any admin community role (global or board-scoped), unlocking the admin-only tooling */
+  isAdmin: Scalars['Boolean']['output'];
   /** Whether this user can reach tester-only developer tooling (has the tester or admin community role) */
   isTester: Scalars['Boolean']['output'];
 };

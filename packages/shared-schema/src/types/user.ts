@@ -8,6 +8,7 @@ export type UserProfile = {
   displayName?: string;
   avatarUrl?: string;
   isTester: boolean;
+  isAdmin: boolean;
   createdAt: string;
   favoriteCount: number;
 };

@@ -610,6 +610,20 @@ export const mutationsTypeDefs = /* GraphQL */ `
     reassignGymOwner(input: ReassignGymOwnerInput!): ReassignGymOwnerResult!
 
     """
+    Store a hand-corrected silhouette for one hold, replacing whatever the tracer
+    produced (admin only, scoped to the board). Latest write wins — there is no
+    revision history, so the note is the record of why.
+    """
+    upsertHoldOutlineOverride(input: UpsertHoldOutlineOverrideInput!): HoldOutlineOverride!
+
+    """
+    Drop a hold's correction and fall back to the traced silhouette (admin only,
+    scoped to the board). True when a row was removed, false when there was
+    nothing to remove.
+    """
+    deleteHoldOutlineOverride(input: DeleteHoldOutlineOverrideInput!): Boolean!
+
+    """
     Report that two gym listings are the same gym (any signed-in user). Surfaces the
     pair to admins for review in the merge queue. Rate-limited and de-duplicated per
     pair so repeated reports don't spam the team.

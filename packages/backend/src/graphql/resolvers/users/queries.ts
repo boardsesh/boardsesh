@@ -10,6 +10,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { BoardNameSchema } from '../../../validation/schemas';
 import { getAuroraCredentialStatuses } from '../../../services/aurora-credentials';
+import { userIsAdmin } from './admin';
 import { userIsTester } from './tester';
 import { FAVORITE_COUNT_SUBQUERY } from './favorite-count';
 
@@ -48,6 +49,7 @@ export const userQueries = {
       displayName: row.displayName || row.name || undefined,
       avatarUrl: row.avatarUrl || row.image || undefined,
       isTester: await userIsTester(row.id),
+      isAdmin: await userIsAdmin(row.id),
       createdAt: row.createdAt.toISOString(),
       favoriteCount: row.favoriteCount,
     };

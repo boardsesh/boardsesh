@@ -3,6 +3,7 @@ import GraphQLJSON from 'graphql-type-json';
 
 // Import domain resolvers
 import { boardQueries } from './board/queries';
+import { holdOutlineMutations, holdOutlineQueries } from './board/hold-outline-overrides';
 import { tickQueries } from './ticks/queries';
 import { tickMutations } from './ticks/mutations';
 import { climbStatsSubscriptions } from './ticks/climb-stats-subscriptions';
@@ -79,6 +80,7 @@ export const resolvers = {
   Query: {
     ...sessionQueries,
     ...boardQueries,
+    ...holdOutlineQueries,
     ...climbQueries,
     ...tickQueries,
     ...userQueries,
@@ -121,6 +123,7 @@ export const resolvers = {
 
   Mutation: {
     ...sessionMutations,
+    ...holdOutlineMutations,
     ...pushTokenMutations,
     ...queueMutations,
     ...tickMutations,

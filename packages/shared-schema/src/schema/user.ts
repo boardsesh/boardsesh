@@ -17,6 +17,8 @@ export const userTypeDefs = /* GraphQL */ `
     avatarUrl: String
     "Whether this user can reach tester-only developer tooling (has the tester or admin community role)"
     isTester: Boolean!
+    "Whether this user holds any admin community role (global or board-scoped), unlocking the admin-only tooling"
+    isAdmin: Boolean!
     "When the account was created (ISO 8601)"
     createdAt: String!
     "Total number of climbs favourited by this user, across all boards"
