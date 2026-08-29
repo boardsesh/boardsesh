@@ -26,6 +26,7 @@ export * from './activity-push-tokens';
 export * from './recommendation-stats';
 export * from './climb-grades';
 export * from './hold-features';
+export * from './hold-outline-overrides';
 export * from './climb-embeddings';
 export * from './climb-similar';
 export * from './integration-exports';
