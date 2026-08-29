@@ -104,8 +104,13 @@ function parseHoldsFilter(holdsFilter: unknown): HoldFilters {
   let hasHoldState = false;
   if (holdsFilter && typeof holdsFilter === 'object') {
     for (const [keyRaw, entry] of Object.entries(holdsFilter as Record<string, unknown>)) {
-      const holdId = Number(String(keyRaw).replace('hold_', ''));
-      if (!Number.isInteger(holdId) || holdId <= 0 || !entry || typeof entry !== 'object') continue;
+      // Same shape as the online parser in
+      // packages/db/src/queries/climbs/create-climb-filters.ts — hold id 0 is a
+      // real hold on Woods, and the two must agree or an offline search answers a
+      // filter the online one drops.
+      const holdKey = String(keyRaw).replace('hold_', '');
+      const holdId = Number(holdKey);
+      if (!/^\d+$/.test(holdKey) || !Number.isSafeInteger(holdId) || !entry || typeof entry !== 'object') continue;
       for (const [type, mode] of Object.entries(entry as Record<string, unknown>)) {
         if (mode !== 'include' && mode !== 'exclude') continue;
         if (type === 'ANY') {
