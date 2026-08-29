@@ -49,7 +49,7 @@ import sharp from 'sharp';
 import { listCatalogueEntries } from '../packages/shared/board-render/src/render-version-projection';
 import { getBoardDetailsForBoard } from '../packages/shared/board-render/src/board-details';
 import { getBackgroundRelPaths } from '../packages/shared/board-render/src/background';
-import type { RenderableHold } from '../packages/shared/board-render/src/types';
+import type { BoardRenderDetails, RenderableHold } from '../packages/shared/board-render/src/types';
 
 const ROOT_DIR = path.resolve(import.meta.dirname, '..');
 /**
@@ -822,22 +822,40 @@ function roundTo(value: number, decimals: number): number {
   return rounded === 0 ? 0 : rounded;
 }
 
-async function compositeArt(relativePaths: string[], width: number, height: number): Promise<BoardArt> {
-  const rawLayer = { width, height, channels: 4 as const };
-  let composite: Buffer | null = null;
+/** One set's art, decoded once and resampled into board space. */
+type DecodedLayer = { relativePath: string; art: BoardArt };
+
+/**
+ * Every layer of a config's art, decoded once.
+ *
+ * Board art is authored at assorted sizes; the placement coordinates are in
+ * board space, so every layer is resampled to it here and nowhere else. Decoding
+ * once is what lets a mask provider read a single set's art without paying for a
+ * second pass over the files.
+ */
+async function decodeLayers(relativePaths: string[], width: number, height: number): Promise<DecodedLayer[]> {
+  const layers: DecodedLayer[] = [];
   for (const relativePath of relativePaths) {
-    // Board art is authored at assorted sizes; the placement coordinates are in
-    // board space, so every layer is resampled to it before compositing.
-    const layer = await sharp(path.join(PUBLIC_DIR, relativePath))
+    const pixels = await sharp(path.join(PUBLIC_DIR, relativePath))
       .resize(width, height, { fit: 'fill' })
       .ensureAlpha()
       .raw()
       .toBuffer();
+    layers.push({ relativePath, art: { pixels, width, height } });
+  }
+  return layers;
+}
+
+/** The layers stacked bottom-to-top, which is the board a climber looks at. */
+async function compositeLayers(layers: DecodedLayer[], width: number, height: number): Promise<BoardArt> {
+  const rawLayer = { width, height, channels: 4 as const };
+  let composite: Buffer | null = null;
+  for (const layer of layers) {
     composite =
       composite === null
-        ? layer
+        ? layer.art.pixels
         : await sharp(composite, { raw: rawLayer })
-            .composite([{ input: layer, raw: rawLayer, blend: 'over' }])
+            .composite([{ input: layer.art.pixels, raw: rawLayer, blend: 'over' }])
             .raw()
             .toBuffer();
   }
@@ -845,7 +863,7 @@ async function compositeArt(relativePaths: string[], width: number, height: numb
   return { pixels: composite, width, height };
 }
 
-/** The hold art, as a bitmap: the whole tracer reads the alpha channel and nothing else. */
+/** Hold substance, as a bitmap: an image's alpha channel and nothing else. */
 function buildOpaqueMask(art: BoardArt): Uint8Array {
   const opaque = new Uint8Array(art.width * art.height);
   for (let pixel = 0; pixel < art.width * art.height; pixel += 1) {
@@ -853,6 +871,66 @@ function buildOpaqueMask(art: BoardArt): Uint8Array {
   }
   return opaque;
 }
+
+// ---------------------------------------------------------------------------
+// The mask-provider seam
+// ---------------------------------------------------------------------------
+
+/**
+ * One image's worth of hold substance, with the placements that live in it and
+ * the nearest-placement partition over them.
+ *
+ * The tracer below reads NOTHING else — no alpha channel, no sharp, no file
+ * paths. That is the point of the seam: what counts as "hold substance" is a
+ * decision about the art and belongs to whoever decoded it, while the
+ * flood/trim/pullback/border pipeline is a decision about geometry and should be
+ * replaceable without touching it.
+ */
+type TraceField = {
+  /** Which art the mask came from. Reports and error messages only. */
+  sourceKey: string;
+  width: number;
+  height: number;
+  /** 1 = hold substance, 0 = not. */
+  mask: Uint8Array;
+  /** The placements this field owns. Every placement id is in at most one field. */
+  placements: RenderableHold[];
+  /** Pixel -> index into `placements`; -1 where no placement owns the pixel. */
+  label: Int32Array;
+  /** Half-width of a placement's search box in radii. `SEARCH_RADII` when absent. */
+  searchRadii?: number;
+};
+
+/**
+ * How a config's decoded art becomes fields to trace.
+ *
+ * The composite is passed in rather than re-derived because `measureConfig`
+ * needs it anyway for every colour reading — silhouette lightness, the ring
+ * annulus and the painted LEDs all measure what a climber SEES, which is the
+ * stack rather than any one layer.
+ */
+type MaskProvider = (details: BoardRenderDetails, layers: DecodedLayer[], composite: BoardArt) => TraceField[];
+
+/**
+ * One field over the composited alpha channel: the whole board's art, the whole
+ * board's placements, one partition.
+ *
+ * This is what the tracer did before the seam existed, kept as a provider so the
+ * seam can be shown to change nothing.
+ */
+const compositeAlphaMaskProvider: MaskProvider = (details, _layers, composite) => {
+  const placements = details.holdsData;
+  return [
+    {
+      sourceKey: 'composite',
+      width: composite.width,
+      height: composite.height,
+      mask: buildOpaqueMask(composite),
+      placements,
+      label: buildLabelMap(composite.width, composite.height, placements),
+    },
+  ];
+};
 
 /**
  * What one placement's trace cost, for the report and for gate 7.
@@ -880,20 +958,31 @@ type HoldTraceStats = {
   fallbackReason: 'search-box-degenerate' | 'no-art-of-its-own' | 'perimeter-too-short' | 'traced-the-box' | null;
 };
 
-function traceOutlines(
-  art: BoardArt,
-  opaque: Uint8Array,
-  placements: RenderableHold[],
-): { outlines: Map<number, number[]>; summary: string; stats: Map<number, HoldTraceStats> } {
-  const { width: boardWidth, height: boardHeight } = art;
-  const label = buildLabelMap(boardWidth, boardHeight, placements);
+/** The counters the run's one-line summary is built from, per field. */
+type TraceCounts = { attempted: number; rejectedBox: number; neckTrimmed: number; pulledBack: number };
+
+/**
+ * Trace every placement in one field.
+ *
+ * Provider-agnostic by construction: the only inputs are the field's mask, its
+ * partition and its placements, so what the mask MEANS — a composited alpha
+ * channel, one set's layer, something else entirely — is not this function's
+ * business.
+ */
+function traceOutlines(field: TraceField): {
+  outlines: Map<number, number[]>;
+  stats: Map<number, HoldTraceStats>;
+  counts: TraceCounts;
+} {
+  const { width: boardWidth, height: boardHeight, mask: opaque, label, placements } = field;
+  const searchRadii = field.searchRadii ?? SEARCH_RADII;
   const pitches = nearestPitch(placements);
   const neckDiscs = discOffsets(radiusForBoard(NECK_TRIM_AT_REFERENCE, boardWidth));
   const clearanceOffsets = discOffsets(radiusForBoard(CUT_CLEARANCE_AT_REFERENCE, boardWidth)).dilation;
 
   const outlines = new Map<number, number[]>();
   const stats = new Map<number, HoldTraceStats>();
-  let missing = 0;
+  let attempted = 0;
   let rejectedBox = 0;
   let neckTrimmed = 0;
   let pulledBack = 0;
@@ -916,16 +1005,16 @@ function traceOutlines(
     // placement under two sets, and where the first attempt fell back the second
     // is retried exactly as it always was. `stats` is overwritten to match.
     if (outlines.has(placement.id)) continue;
+    attempted += 1;
     const centreX = Math.round(placement.cx);
     const centreY = Math.round(placement.cy);
-    const box = Math.round(placement.r * SEARCH_RADII);
+    const box = Math.round(placement.r * searchRadii);
 
     const left = Math.max(0, centreX - box);
     const top = Math.max(0, centreY - box);
     const right = Math.min(boardWidth - 1, centreX + box);
     const bottom = Math.min(boardHeight - 1, centreY + box);
     if (right <= left || bottom <= top) {
-      missing += 1;
       recordFallback(placement.id, 'search-box-degenerate', 0);
       continue;
     }
@@ -972,7 +1061,6 @@ function traceOutlines(
     // fall back to a ring. On the synthetic MoonBoard grids this is the honest
     // answer for most cells.
     if (seed === null) {
-      missing += 1;
       recordFallback(placement.id, 'no-art-of-its-own', cellAlphaArea);
       continue;
     }
@@ -1011,7 +1099,6 @@ function traceOutlines(
 
     const border = traceBorder(traced, localWidth, localHeight, topmost);
     if (border.length < MIN_PERIMETER_POINTS) {
-      missing += 1;
       recordFallback(placement.id, 'perimeter-too-short', cellAlphaArea);
       continue;
     }
@@ -1024,7 +1111,6 @@ function traceOutlines(
     // silhouette, whatever it looks like.
     if (boxEdgeShare(flat, box) > MAX_BOX_EDGE_SHARE) {
       rejectedBox += 1;
-      missing += 1;
       recordFallback(placement.id, 'traced-the-box', cellAlphaArea);
       continue;
     }
@@ -1051,13 +1137,63 @@ function traceOutlines(
   // construction made only of pixels whose nearest placement is this one, so a
   // merge is not expressible — and the rule was deleting real outlines: on
   // Grasshopper it took 14, all of them the board's genuinely large square holds.
+  return { outlines, stats, counts: { attempted, rejectedBox, neckTrimmed, pulledBack } };
+}
+
+/**
+ * Every field's trace, as one config's tables.
+ *
+ * The union is disjoint by the field contract — each placement id lives in at
+ * most one field — and asserted rather than assumed, because a provider that
+ * handed the same hold to two images would silently emit whichever traced last.
+ * Placements no field claims are recorded as fallbacks here: a hold whose set
+ * carries no art for it has none to trace, which is the same answer the
+ * composite gave when it found nothing under the bolt.
+ */
+function mergeFieldTraces(
+  fields: TraceField[],
+  allPlacements: RenderableHold[],
+): { outlines: Map<number, number[]>; stats: Map<number, HoldTraceStats>; summary: string } {
+  const outlines = new Map<number, number[]>();
+  const stats = new Map<number, HoldTraceStats>();
+  const totals: TraceCounts = { attempted: 0, rejectedBox: 0, neckTrimmed: 0, pulledBack: 0 };
+
+  for (const field of fields) {
+    const traced = traceOutlines(field);
+    for (const [holdId, flat] of traced.outlines) {
+      if (outlines.has(holdId)) throw new Error(`placement ${holdId} traced by two fields (${field.sourceKey})`);
+      outlines.set(holdId, flat);
+    }
+    for (const [holdId, entry] of traced.stats) stats.set(holdId, entry);
+    totals.attempted += traced.counts.attempted;
+    totals.rejectedBox += traced.counts.rejectedBox;
+    totals.neckTrimmed += traced.counts.neckTrimmed;
+    totals.pulledBack += traced.counts.pulledBack;
+  }
+
+  for (const placement of allPlacements) {
+    if (stats.has(placement.id)) continue;
+    totals.attempted += 1;
+    stats.set(placement.id, {
+      holdId: placement.id,
+      traced: false,
+      tracedArea: 0,
+      cellAlphaArea: 0,
+      areaRecovery: 0,
+      droppedArea: 0,
+      pulledBack: false,
+      fallbackReason: 'no-art-of-its-own',
+    });
+  }
+
+  const missing = totals.attempted - outlines.size;
   const summary =
-    `${outlines.size}/${placements.length} traced ` +
-    `(${missing} fell back: ${rejectedBox} hit the search box, ` +
-    `${missing - rejectedBox} had no art of their own; ` +
-    `${neckTrimmed} lost more than ${NOTABLE_TRIM_AREA} px² to the neck trim and the pullback together; ` +
-    `${pulledBack} pulled back off a neighbour's art)`;
-  return { outlines, summary, stats };
+    `${outlines.size}/${totals.attempted} traced ` +
+    `(${missing} fell back: ${totals.rejectedBox} hit the search box, ` +
+    `${missing - totals.rejectedBox} had no art of their own; ` +
+    `${totals.neckTrimmed} lost more than ${NOTABLE_TRIM_AREA} px² to the neck trim and the pullback together; ` +
+    `${totals.pulledBack} pulled back off a neighbour's art)`;
+  return { outlines, stats, summary };
 }
 
 // ---------------------------------------------------------------------------
@@ -1194,6 +1330,7 @@ async function measureConfig(
     setIds: number[];
   },
   reportDir: string | null,
+  maskProvider: MaskProvider,
 ): Promise<ConfigResult | { skipped: string }> {
   const startedAt = Date.now();
   const key = `${entry.boardName}/${entry.layoutId}-${entry.sizeId}`;
@@ -1215,7 +1352,11 @@ async function measureConfig(
   if (relativePaths.length === 0) return { skipped: `${key}: no board art layers` };
   if (missingArt.length > 0) return { skipped: `${key}: missing art — ${missingArt.join(', ')}` };
 
-  const art = await compositeArt(relativePaths, details.boardWidth, details.boardHeight);
+  const layers = await decodeLayers(relativePaths, details.boardWidth, details.boardHeight);
+  const art = await compositeLayers(layers, details.boardWidth, details.boardHeight);
+  // The opaque-art ceiling is a question about the COMPOSITE and stays one: a
+  // board whose stack is a photograph has no alpha channel to read no matter how
+  // the tracer partitions it.
   const opaque = buildOpaqueMask(art);
   let opaqueCount = 0;
   for (let index = 0; index < opaque.length; index += 1) opaqueCount += opaque[index];
@@ -1229,7 +1370,7 @@ async function measureConfig(
   }
 
   const placements = details.holdsData;
-  const { outlines, summary, stats } = traceOutlines(art, opaque, placements);
+  const { outlines, summary, stats } = mergeFieldTraces(maskProvider(details, layers, art), placements);
   const uniquePlacements = new Set(placements.map((placement) => placement.id)).size;
   const reportRow = reportRowFor(key, uniquePlacements, stats);
   if (reportDir !== null) await writeConfigReport(reportDir, reportRow, art, placements, outlines, stats);
@@ -1587,7 +1728,7 @@ async function main(): Promise<number> {
   const startedAt = Date.now();
 
   for (const entry of entries) {
-    const measured = await measureConfig(entry, reportDir);
+    const measured = await measureConfig(entry, reportDir, compositeAlphaMaskProvider);
     if ('skipped' in measured) {
       skipped.push(measured.skipped);
       console.warn(`[board-art-geometry] SKIP ${measured.skipped}`);
