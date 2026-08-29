@@ -6,7 +6,7 @@ import sharp from 'sharp';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { getBackgroundRelPaths, getBoardDetailsForBoard } from '@boardsesh/board-render';
 import { getSetsForLayoutAndSize } from '@boardsesh/board-constants/product-sizes';
-import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, WOODS_LAYOUTS, WOODS_SETS } from '@boardsesh/board-config';
+import { MOONBOARD_CELL_SETS, MOONBOARD_LAYOUTS, MOONBOARD_SETS, WOODS_LAYOUTS, WOODS_SETS } from '@boardsesh/board-config';
 
 /**
  * The measurements the six capture gates are built out of (issue #2202).
@@ -28,10 +28,8 @@ export const SEARCH_RADII = 2.6;
 export const MAX_BOX_EDGE_SHARE = 0.1;
 /** A pixel counts as hold art if its alpha is at least this. */
 export const ALPHA_FLOOR = 96;
-/** The board width the neck-trim radius is quoted at. */
-export const RADIUS_REFERENCE_WIDTH = 1080;
-/** Neck-trim radius at the reference width — the radius gate 5 opens at. */
-export const NECK_TRIM_AT_REFERENCE = 3;
+/** Neck-trim radius as a fraction of the placement radius — the radius gate 5 opens at. */
+export const TRIM_RADIUS_PER_PLACEMENT_RADIUS = 0.078;
 /** Board px² a 3-px open may cost an outline before the trimmed part counts as a spur. */
 export const MAX_SPUR_AREA = 20;
 /** Within this of an image axis, a segment is straight enough to be a crop-box side. */
@@ -64,6 +62,19 @@ export type ShardBoard = {
   placements: Placement[];
   placementById: Map<number, Placement>;
   backgroundRelPaths: string[];
+  /**
+   * Which art layer draws each placement, as an index into
+   * `backgroundRelPaths`; `-1` for a placement no layer draws.
+   *
+   * Restated from the board data rather than taken from the generator, like
+   * everything else here. Aurora states it outright — `images_to_holds` IS image
+   * -> hold tuples — and MoonBoard routes through `MOONBOARD_CELL_SETS`, grid
+   * cell -> hold set -> that set's image, because its own map carries keys with
+   * empty values.
+   */
+  layerOfPlacement: Map<number, number>;
+  /** The placements each layer draws, in placement order. */
+  placementsByLayer: Placement[][];
 };
 
 /**
@@ -114,6 +125,36 @@ export function shardBoardForKey(key: string): ShardBoard {
     placementById.set(hold.id, placement);
   }
 
+  // `getBackgroundRelPaths` walks the `images_to_holds` keys in order, so key
+  // `i` is layer `i`.
+  const imageKeys = Object.keys(details.images_to_holds);
+  const layerOfPlacement = new Map<number, number>();
+  if (boardName === 'moonboard') {
+    const layoutKey = Object.entries(MOONBOARD_LAYOUTS).find(([, layout]) => layout.id === layoutId)?.[0];
+    const layerOfSet = new Map<number, number>();
+    for (const set of MOONBOARD_SETS[layoutKey as keyof typeof MOONBOARD_SETS] ?? []) {
+      const index = imageKeys.indexOf(`${details.layoutFolder}/${set.imageFile}`);
+      if (index >= 0) layerOfSet.set(set.id, index);
+    }
+    const cells = MOONBOARD_CELL_SETS[layoutId] ?? {};
+    for (const placement of placements) {
+      const setId = cells[placement.id];
+      layerOfPlacement.set(placement.id, (setId === undefined ? undefined : layerOfSet.get(setId)) ?? -1);
+    }
+  } else {
+    for (const [index, imageKey] of imageKeys.entries()) {
+      for (const [holdId] of details.images_to_holds[imageKey]) layerOfPlacement.set(holdId, index);
+    }
+    for (const placement of placements) {
+      if (!layerOfPlacement.has(placement.id)) layerOfPlacement.set(placement.id, -1);
+    }
+  }
+  const placementsByLayer: Placement[][] = imageKeys.map(() => []);
+  for (const placement of placements) {
+    const index = layerOfPlacement.get(placement.id) ?? -1;
+    if (index >= 0) placementsByLayer[index].push(placement);
+  }
+
   return {
     key,
     boardName: boardName as BoardName,
@@ -124,17 +165,24 @@ export function shardBoardForKey(key: string): ShardBoard {
     placements,
     placementById,
     backgroundRelPaths: getBackgroundRelPaths(details, false),
+    layerOfPlacement,
+    placementsByLayer,
   };
 }
 
 /**
- * The generator's per-board radius rule, restated. Both MoonBoards draw their art
- * in a 650 px box against 1080 for most of the catalogue, so a flat board-pixel
- * radius is 1.66x the mark there; gate 5 has to open at the radius the tracer
- * trimmed at or it measures a different hold to the one that shipped.
+ * The generator's per-placement radius rule, restated. A hold's neck is a
+ * fraction of the hold, so the trim radius is a fraction of the placement
+ * radius; gate 5 has to open at the radius the tracer trimmed at or it measures
+ * a different hold to the one that shipped.
+ *
+ * The rule this replaces scaled with the board's PIXEL width, which is not the
+ * same thing: TB2's 12x12 Wide is 1461 px across carrying the same 31.8 px
+ * placement radius as the 1080 px 12x12, and the extra pixel of trim it bought
+ * is what left the one outline that had to be pinned as a known gate-5 failure.
  */
-export function radiusForBoard(atReferenceWidth: number, boardWidth: number): number {
-  return Math.max(2, Math.round((atReferenceWidth * boardWidth) / RADIUS_REFERENCE_WIDTH));
+export function radiusForPlacement(placementRadius: number): number {
+  return Math.max(2, Math.round(TRIM_RADIUS_PER_PLACEMENT_RADIUS * placementRadius));
 }
 
 /**
@@ -464,6 +512,95 @@ export async function loadBoardArt(width: number, height: number, relativePaths:
     opaque[pixel] = composite[pixel * 4 + 3] >= ALPHA_FLOOR ? 1 : 0;
   }
   return { opaque, width, height };
+}
+
+/**
+ * Each art layer's own hold substance, one mask per `backgroundRelPaths` entry.
+ *
+ * The composite above is still what the colour tables measure; this is what a
+ * SILHOUETTE is measured against, because a hold's shape is a fact about the one
+ * image that draws it. Two holds from different sets are bolted into different
+ * holes and their art barely overlaps, but flatten the layers into one bitmap
+ * and they touch — and a boundary that only exists because two images were
+ * stacked is not a boundary of anything.
+ */
+export async function loadBoardArtLayers(width: number, height: number, relativePaths: string[]): Promise<BoardArt[]> {
+  const layers: BoardArt[] = [];
+  for (const relativePath of relativePaths) {
+    const pixels = await sharp(path.join(PUBLIC_DIR, relativePath))
+      .resize(width, height, { fit: 'fill' })
+      .ensureAlpha()
+      .raw()
+      .toBuffer();
+    const opaque = new Uint8Array(width * height);
+    for (let pixel = 0; pixel < width * height; pixel += 1) {
+      opaque[pixel] = pixels[pixel * 4 + 3] >= ALPHA_FLOOR ? 1 : 0;
+    }
+    layers.push({ opaque, width, height });
+  }
+  return layers;
+}
+
+/**
+ * The placements that could out-compete this one for a pixel in its search box.
+ *
+ * A pixel in the box is at most `box * sqrt(2)` from the placement, so nothing
+ * further than twice the box can win one; the cut-off keeps the exact
+ * nearest-placement scan off the board's other five hundred bolts.
+ */
+export function nearbyCandidates(candidates: Placement[], placement: Placement): Placement[] {
+  const reach = placement.r * SEARCH_RADII * 2;
+  return candidates.filter(
+    (entry) => Math.abs(entry.cx - placement.cx) <= reach && Math.abs(entry.cy - placement.cy) <= reach,
+  );
+}
+
+/**
+ * How much of a placement's own art the shipped silhouette actually kept.
+ *
+ * The denominator is every art pixel in the search box that the exact
+ * nearest-placement partition gives to this placement, on its OWN layer, before
+ * any trim or pullback. The numerator is the shipped polygon's area. Their ratio
+ * is the one measure that catches a hold that simply lost half of itself: gate 3
+ * clears a chopped silhouette, gate 5's open clears it, and gate 6 positively
+ * likes it, because a boundary well inside the hold's own art is exactly what a
+ * pullback is supposed to produce.
+ *
+ * It can exceed 1, and that is not a defect. The tracer fills holes before it
+ * takes the outer border, so a hold with a punched-out bolt hole ships a polygon
+ * covering art the partition never counted.
+ */
+export function areaRecovery(
+  layerArt: BoardArt,
+  sameLayerCandidates: Placement[],
+  placement: Placement,
+  flatBoardPx: number[],
+): number {
+  const centreX = Math.round(placement.cx);
+  const centreY = Math.round(placement.cy);
+  const box = Math.round(placement.r * SEARCH_RADII);
+  const left = Math.max(0, centreX - box);
+  const top = Math.max(0, centreY - box);
+  const right = Math.min(layerArt.width - 1, centreX + box);
+  const bottom = Math.min(layerArt.height - 1, centreY + box);
+
+  let cellArea = 0;
+  for (let y = top; y <= bottom; y += 1) {
+    for (let x = left; x <= right; x += 1) {
+      if (layerArt.opaque[y * layerArt.width + x] !== 1) continue;
+      const own = (placement.cx - x) ** 2 + (placement.cy - y) ** 2;
+      let beaten = false;
+      for (const candidate of sameLayerCandidates) {
+        if (candidate.id === placement.id) continue;
+        if ((candidate.cx - x) ** 2 + (candidate.cy - y) ** 2 < own) {
+          beaten = true;
+          break;
+        }
+      }
+      if (!beaten) cellArea += 1;
+    }
+  }
+  return cellArea === 0 ? 0 : rasterise(flatBoardPx).area / cellArea;
 }
 
 /** The nearest placement to a board point — the partition the generator cuts on. */
