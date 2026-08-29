@@ -13,6 +13,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Filter the gym map by Woods and MoonBoard boards for real — picking Woods now offers Original plus the 8×10 and 12×12 sizes instead of an empty row ([#4775](https://github.com/boardsesh/boardsesh/pull/4775))
+- Filter Woods climbs by board region — draw a box on the wall and keep only the climbs that stay inside it, or the ones that reach into it ([#4777](https://github.com/boardsesh/boardsesh/pull/4777))
+  Search Woods climbs by hold, including the bottom row that used to be ignored
 - Email sign-in now works when your account email contains uppercase letters. ([#4846](https://github.com/boardsesh/boardsesh/pull/4846))
   The old Android split-screen sign-in warning is gone.
 
