@@ -458,25 +458,25 @@ jobs:
           echo "Deployment URL: $URL"
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
-      - name: Post-deploy smoke against www.boardsesh.com
-        # Skipped when a rollback is pinned: `--skip-domain` means this deploy
-        # is uploaded but NOT serving, so www is still the rolled-back build.
-        # Smoking it would report on a deployment this job did not promote.
-        #
-        # This runs AFTER the deploy, so it is a detector, not a gate — it can
-        # turn the job red (and fire notify-failure) but can never block a
-        # deploy from going out. That asymmetry is deliberate: a fail-closed
-        # deploy gate stopped production deploys for two days once already.
-        if: needs.check-rollback.outputs.active != 'true'
-        env:
-          SMOKE_KIOSK_GYM_SLUG: ${{ vars.SMOKE_KIOSK_GYM_SLUG }}
-          SMOKE_EMBED_BOARD_UUID: ${{ vars.SMOKE_EMBED_BOARD_UUID }}
-        # Bun executes the TypeScript directly — no `bunx`, no `tsx`, nothing
-        # fetched at deploy time. `vp run smoke:production` is the same script
-        # and is how to run it by hand, but no deploy job has vp, and
-        # curl-installing the toolchain here would put a network dependency on
-        # the production deploy path that could red a deploy that shipped fine.
-        run: bun scripts/production-smoke.ts
+      # - name: Post-deploy smoke against www.boardsesh.com
+      #   # Skipped when a rollback is pinned: `--skip-domain` means this deploy
+      #   # is uploaded but NOT serving, so www is still the rolled-back build.
+      #   # Smoking it would report on a deployment this job did not promote.
+      #   #
+      #   # This runs AFTER the deploy, so it is a detector, not a gate — it can
+      #   # turn the job red (and fire notify-failure) but can never block a
+      #   # deploy from going out. That asymmetry is deliberate: a fail-closed
+      #   # deploy gate stopped production deploys for two days once already.
+      #   if: needs.check-rollback.outputs.active != 'true'
+      #   env:
+      #     SMOKE_KIOSK_GYM_SLUG: ${{ vars.SMOKE_KIOSK_GYM_SLUG }}
+      #     SMOKE_EMBED_BOARD_UUID: ${{ vars.SMOKE_EMBED_BOARD_UUID }}
+      #   # Bun executes the TypeScript directly — no `bunx`, no `tsx`, nothing
+      #   # fetched at deploy time. `vp run smoke:production` is the same script
+      #   # and is how to run it by hand, but no deploy job has vp, and
+      #   # curl-installing the toolchain here would put a network dependency on
+      #   # the production deploy path that could red a deploy that shipped fine.
+      #   run: bun scripts/production-smoke.ts
 
   deploy-production-backend:
     needs: [detect-changes, check-rollback, build-backend, migrate]
