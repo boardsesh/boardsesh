@@ -9,6 +9,7 @@
  *   vp run generate:board-art-geometry -- --check           # drift gate (CI)
  *   vp run generate:board-art-geometry -- --board=kilter    # one board
  *   vp run generate:board-art-geometry -- --config=8-25     # one layout-size
+ *   vp run generate:board-art-geometry -- --report=<dir>    # visual + metric report, writes no shards
  *
  * WHY THIS IS OFFLINE
  * -------------------
@@ -114,6 +115,18 @@ const NECK_TRIM_AT_REFERENCE = 3;
 const CUT_CLEARANCE_AT_REFERENCE = 3;
 /** Board px² a trim has to drop before the run reports it, on gate 5's threshold. */
 const NOTABLE_TRIM_AREA = 20;
+/**
+ * Share of a placement's own partition-cell art the emitted silhouette has to
+ * keep before the hold counts as chopped.
+ *
+ * Not a tuning knob on the tracer — nothing branches on it — but the single
+ * number the whole rework is measured by: `tracedArea / cellAlphaArea`, where the
+ * denominator is every art pixel in the search box the partition gave to this
+ * placement. A hold whose neck trim and pullback between them threw away more
+ * than a fifth of its own art is a hold whose glow no longer matches the shape on
+ * the wall, which is the defect this pipeline exists to avoid.
+ */
+const MIN_AREA_RECOVERY = 0.8;
 /**
  * Opaque share of the composited board above which the art carries no silhouette
  * information at all, and the config is skipped.
@@ -797,6 +810,7 @@ type ConfigResult = {
   wall: { mean: number; coverage: number };
   counts: { traced: number; placements: number };
   summary: string;
+  report: ConfigReportRow;
   elapsedMs: number;
 };
 
@@ -840,11 +854,37 @@ function buildOpaqueMask(art: BoardArt): Uint8Array {
   return opaque;
 }
 
+/**
+ * What one placement's trace cost, for the report and for gate 7.
+ *
+ * `cellAlphaArea` is the honest denominator: every art pixel inside the search
+ * box that the partition gave to THIS placement, before any trim, pullback or
+ * simplification. `tracedArea` is what survived to the emitted mask. Their ratio
+ * is the only number that says whether the silhouette is still the hold's shape
+ * or a fragment of it — perimeter measures and spur opens both read fine on a
+ * hold that simply lost half of itself to a cut.
+ */
+type HoldTraceStats = {
+  holdId: number;
+  traced: boolean;
+  /** Board px² of the emitted mask. 0 when the placement fell back to a ring. */
+  tracedArea: number;
+  /** Board px² of this placement's own art in the search box, pre-trim. */
+  cellAlphaArea: number;
+  /** `tracedArea / cellAlphaArea`, or 0 when there was no art to recover. */
+  areaRecovery: number;
+  /** Board px² the neck trim and the pullback dropped between them. */
+  droppedArea: number;
+  pulledBack: boolean;
+  /** Why the placement carries no outline, or `null` when it does. */
+  fallbackReason: 'search-box-degenerate' | 'no-art-of-its-own' | 'perimeter-too-short' | 'traced-the-box' | null;
+};
+
 function traceOutlines(
   art: BoardArt,
   opaque: Uint8Array,
   placements: RenderableHold[],
-): { outlines: Map<number, number[]>; summary: string } {
+): { outlines: Map<number, number[]>; summary: string; stats: Map<number, HoldTraceStats> } {
   const { width: boardWidth, height: boardHeight } = art;
   const label = buildLabelMap(boardWidth, boardHeight, placements);
   const pitches = nearestPitch(placements);
@@ -852,12 +892,29 @@ function traceOutlines(
   const clearanceOffsets = discOffsets(radiusForBoard(CUT_CLEARANCE_AT_REFERENCE, boardWidth)).dilation;
 
   const outlines = new Map<number, number[]>();
+  const stats = new Map<number, HoldTraceStats>();
   let missing = 0;
   let rejectedBox = 0;
   let neckTrimmed = 0;
   let pulledBack = 0;
 
+  const recordFallback = (holdId: number, reason: NonNullable<HoldTraceStats['fallbackReason']>, cellArea: number) => {
+    stats.set(holdId, {
+      holdId,
+      traced: false,
+      tracedArea: 0,
+      cellAlphaArea: cellArea,
+      areaRecovery: 0,
+      droppedArea: 0,
+      pulledBack: false,
+      fallbackReason: reason,
+    });
+  };
+
   for (const [placementIndex, placement] of placements.entries()) {
+    // Guarded on the outline table, not on `stats`: a board can list the same
+    // placement under two sets, and where the first attempt fell back the second
+    // is retried exactly as it always was. `stats` is overwritten to match.
     if (outlines.has(placement.id)) continue;
     const centreX = Math.round(placement.cx);
     const centreY = Math.round(placement.cy);
@@ -869,6 +926,7 @@ function traceOutlines(
     const bottom = Math.min(boardHeight - 1, centreY + box);
     if (right <= left || bottom <= top) {
       missing += 1;
+      recordFallback(placement.id, 'search-box-degenerate', 0);
       continue;
     }
     const localWidth = right - left + 1;
@@ -889,6 +947,8 @@ function traceOutlines(
         else neighbourArt[y * localWidth + x] = 1;
       }
     }
+    let cellAlphaArea = 0;
+    for (let index = 0; index < local.length; index += 1) cellAlphaArea += local[index];
 
     // Seed strictly near the placement, never "nearest filled pixel in the box".
     const seedRadius = Math.max(MIN_SEED_RADIUS, pitches[placementIndex] * SEED_PITCH_FRACTION);
@@ -913,6 +973,7 @@ function traceOutlines(
     // answer for most cells.
     if (seed === null) {
       missing += 1;
+      recordFallback(placement.id, 'no-art-of-its-own', cellAlphaArea);
       continue;
     }
 
@@ -935,6 +996,8 @@ function traceOutlines(
     for (let index = 0; index < region.length; index += 1) {
       if (region[index] === 1 && traced[index] !== 1) droppedArea += 1;
     }
+    let tracedArea = 0;
+    for (let index = 0; index < traced.length; index += 1) tracedArea += traced[index];
 
     // Row-major, so the first filled pixel is the topmost-leftmost one — where
     // the Moore follower has to start.
@@ -949,6 +1012,7 @@ function traceOutlines(
     const border = traceBorder(traced, localWidth, localHeight, topmost);
     if (border.length < MIN_PERIMETER_POINTS) {
       missing += 1;
+      recordFallback(placement.id, 'perimeter-too-short', cellAlphaArea);
       continue;
     }
     const simplified = simplify(border, SIMPLIFY_EPSILON);
@@ -961,6 +1025,7 @@ function traceOutlines(
     if (boxEdgeShare(flat, box) > MAX_BOX_EDGE_SHARE) {
       rejectedBox += 1;
       missing += 1;
+      recordFallback(placement.id, 'traced-the-box', cellAlphaArea);
       continue;
     }
     // Counted here, not where it was measured: an outline that then fell back is
@@ -968,6 +1033,16 @@ function traceOutlines(
     if (droppedArea > NOTABLE_TRIM_AREA) neckTrimmed += 1;
     if (pulled.contacted) pulledBack += 1;
     outlines.set(placement.id, flat);
+    stats.set(placement.id, {
+      holdId: placement.id,
+      traced: true,
+      tracedArea,
+      cellAlphaArea,
+      areaRecovery: cellAlphaArea === 0 ? 0 : tracedArea / cellAlphaArea,
+      droppedArea,
+      pulledBack: pulled.contacted,
+      fallbackReason: null,
+    });
   }
 
   // No area backstop. Before the partition, a flood fill could walk through a
@@ -982,15 +1057,144 @@ function traceOutlines(
     `${missing - rejectedBox} had no art of their own; ` +
     `${neckTrimmed} lost more than ${NOTABLE_TRIM_AREA} px² to the neck trim and the pullback together; ` +
     `${pulledBack} pulled back off a neighbour's art)`;
-  return { outlines, summary };
+  return { outlines, summary, stats };
 }
 
-async function measureConfig(entry: {
-  boardName: string;
-  layoutId: number;
-  sizeId: number;
-  setIds: number[];
-}): Promise<ConfigResult | { skipped: string }> {
+// ---------------------------------------------------------------------------
+// Report (`--report=<dir>`)
+// ---------------------------------------------------------------------------
+
+/**
+ * What one config's trace looks like in aggregate. Written to the report's
+ * `summary.txt`, and the row a before/after run is compared on.
+ */
+type ConfigReportRow = {
+  key: string;
+  placements: number;
+  traced: number;
+  pulledBack: number;
+  chopped: number;
+  recoveryMean: number;
+  recoveryP10: number;
+  recoveryMin: number;
+};
+
+/** Ground the report paints the art on, so a transparent gutter is visibly a gutter. */
+const REPORT_BACKDROP = '#141414';
+const REPORT_STROKE_TRACED = '#33FF99';
+const REPORT_STROKE_PULLED_BACK = '#FFB000';
+const REPORT_STROKE_CHOPPED = '#FF2D55';
+const REPORT_STROKE_UNTRACED = '#8A8A8A';
+
+function reportRowFor(key: string, placementCount: number, stats: Map<number, HoldTraceStats>): ConfigReportRow {
+  const recoveries = [...stats.values()].filter((entry) => entry.traced).map((entry) => entry.areaRecovery);
+  recoveries.sort((left, right) => left - right);
+  const percentile = (fraction: number): number =>
+    recoveries.length === 0 ? 0 : recoveries[Math.min(recoveries.length - 1, Math.floor(fraction * recoveries.length))];
+  return {
+    key,
+    placements: placementCount,
+    traced: recoveries.length,
+    pulledBack: [...stats.values()].filter((entry) => entry.pulledBack).length,
+    chopped: recoveries.filter((value) => value < MIN_AREA_RECOVERY).length,
+    recoveryMean:
+      recoveries.length === 0 ? 0 : recoveries.reduce((total, value) => total + value, 0) / recoveries.length,
+    recoveryP10: percentile(0.1),
+    recoveryMin: recoveries.length === 0 ? 0 : recoveries[0],
+  };
+}
+
+/**
+ * The board art with every traced silhouette stroked on it, plus a per-hold
+ * metric table beside it.
+ *
+ * The picture is the point: an area ratio says a hold lost a third of itself,
+ * and only the picture says whether the third it lost was a neighbour's rim it
+ * should never have had or the hold's own jug.
+ */
+async function writeConfigReport(
+  reportDir: string,
+  row: ConfigReportRow,
+  art: BoardArt,
+  placements: RenderableHold[],
+  outlines: Map<number, number[]>,
+  stats: Map<number, HoldTraceStats>,
+): Promise<void> {
+  const shapes: string[] = [];
+  const seen = new Set<number>();
+  for (const placement of placements) {
+    if (seen.has(placement.id)) continue;
+    seen.add(placement.id);
+    const flat = outlines.get(placement.id);
+    if (flat === undefined) {
+      shapes.push(
+        `<circle cx="${placement.cx.toFixed(1)}" cy="${placement.cy.toFixed(1)}" r="${placement.r.toFixed(1)}" ` +
+          `fill="none" stroke="${REPORT_STROKE_UNTRACED}" stroke-width="1" stroke-dasharray="4 4"/>`,
+      );
+      continue;
+    }
+    const holdStats = stats.get(placement.id);
+    const stroke =
+      holdStats !== undefined && holdStats.areaRecovery < MIN_AREA_RECOVERY
+        ? REPORT_STROKE_CHOPPED
+        : holdStats !== undefined && holdStats.pulledBack
+          ? REPORT_STROKE_PULLED_BACK
+          : REPORT_STROKE_TRACED;
+    const centreX = Math.round(placement.cx);
+    const centreY = Math.round(placement.cy);
+    const points: string[] = [];
+    for (let index = 0; index < flat.length; index += 2) {
+      points.push(`${centreX + flat[index]},${centreY + flat[index + 1]}`);
+    }
+    shapes.push(`<polygon points="${points.join(' ')}" fill="none" stroke="${stroke}" stroke-width="1.5"/>`);
+  }
+
+  const overlay = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${art.width}" height="${art.height}">${shapes.join('')}</svg>`,
+  );
+  const imagePath = path.join(reportDir, `${row.key}.png`);
+  mkdirSync(path.dirname(imagePath), { recursive: true });
+  await sharp(art.pixels, { raw: { width: art.width, height: art.height, channels: 4 } })
+    .flatten({ background: REPORT_BACKDROP })
+    .composite([{ input: overlay }])
+    .png()
+    .toFile(imagePath);
+
+  const rows = [...stats.values()]
+    .sort((left, right) => left.holdId - right.holdId)
+    .map((entry) =>
+      [
+        String(entry.holdId).padStart(6),
+        String(entry.tracedArea).padStart(8),
+        String(entry.cellAlphaArea).padStart(9),
+        entry.areaRecovery.toFixed(3).padStart(9),
+        String(entry.droppedArea).padStart(8),
+        (entry.pulledBack ? 'yes' : 'no').padStart(6),
+        entry.fallbackReason ?? '-',
+      ].join('  '),
+    );
+  writeFileSync(
+    path.join(reportDir, `${row.key}.txt`),
+    `${row.key}\n` +
+      `${row.traced}/${row.placements} traced, ${row.chopped} chopped (recovery < ${MIN_AREA_RECOVERY}), ` +
+      `${row.pulledBack} pulled back\n` +
+      `recovery mean ${row.recoveryMean.toFixed(3)}, p10 ${row.recoveryP10.toFixed(3)}, min ${row.recoveryMin.toFixed(3)}\n` +
+      `\n` +
+      `${'holdId'.padStart(6)}  ${'traced'.padStart(8)}  ${'cellArea'.padStart(9)}  ${'recovery'.padStart(9)}  ` +
+      `${'dropped'.padStart(8)}  ${'pulled'.padStart(6)}  fallback\n` +
+      `${rows.join('\n')}\n`,
+  );
+}
+
+async function measureConfig(
+  entry: {
+    boardName: string;
+    layoutId: number;
+    sizeId: number;
+    setIds: number[];
+  },
+  reportDir: string | null,
+): Promise<ConfigResult | { skipped: string }> {
   const startedAt = Date.now();
   const key = `${entry.boardName}/${entry.layoutId}-${entry.sizeId}`;
 
@@ -1025,7 +1229,10 @@ async function measureConfig(entry: {
   }
 
   const placements = details.holdsData;
-  const { outlines, summary } = traceOutlines(art, opaque, placements);
+  const { outlines, summary, stats } = traceOutlines(art, opaque, placements);
+  const uniquePlacements = new Set(placements.map((placement) => placement.id)).size;
+  const reportRow = reportRowFor(key, uniquePlacements, stats);
+  if (reportDir !== null) await writeConfigReport(reportDir, reportRow, art, placements, outlines, stats);
 
   const silhouetteLightness = new Map<number, number>();
   const ledBright = new Map<number, [number, number]>();
@@ -1131,6 +1338,7 @@ async function measureConfig(entry: {
     },
     counts: { traced: outlines.size, placements: annulusPlacements },
     summary,
+    report: reportRow,
     elapsedMs: Date.now() - startedAt,
   };
 }
@@ -1347,6 +1555,15 @@ async function main(): Promise<number> {
   const boardFilter = argumentValue('--board');
   const configFilter = argumentValue('--config');
   const filtered = boardFilter !== null || configFilter !== null;
+  // A report run writes pictures and tables and touches no generated file, so a
+  // before/after pair can be captured from a dirty tree without the drift gate
+  // ever seeing it.
+  const reportArgument = argumentValue('--report');
+  const reportDir = reportArgument === null ? null : path.resolve(reportArgument);
+  if (reportDir !== null) {
+    mkdirSync(reportDir, { recursive: true });
+    console.log(`[board-art-geometry] report run — writing to ${reportDir}, no generated files touched.`);
+  }
 
   const entries = listCatalogueEntries()
     .filter((entry) => boardFilter === null || entry.boardName === boardFilter)
@@ -1370,7 +1587,7 @@ async function main(): Promise<number> {
   const startedAt = Date.now();
 
   for (const entry of entries) {
-    const measured = await measureConfig(entry);
+    const measured = await measureConfig(entry, reportDir);
     if ('skipped' in measured) {
       skipped.push(measured.skipped);
       console.warn(`[board-art-geometry] SKIP ${measured.skipped}`);
@@ -1383,6 +1600,31 @@ async function main(): Promise<number> {
         `| wall L ${measured.wall.mean} coverage ${measured.wall.coverage} ` +
         `| ${measured.tables.ledBright.size} painted LEDs | ${(measured.elapsedMs / 1000).toFixed(1)}s`,
     );
+  }
+
+  if (reportDir !== null) {
+    const header =
+      `${'shard'.padEnd(16)}  ${'traced'.padStart(11)}  ${'chopped'.padStart(7)}  ${'pulled'.padStart(6)}  ` +
+      `${'recMean'.padStart(7)}  ${'recP10'.padStart(6)}  ${'recMin'.padStart(6)}`;
+    const rows = results.map(
+      (result) =>
+        `${result.report.key.padEnd(16)}  ` +
+        `${`${result.report.traced}/${result.report.placements}`.padStart(11)}  ` +
+        `${String(result.report.chopped).padStart(7)}  ${String(result.report.pulledBack).padStart(6)}  ` +
+        `${result.report.recoveryMean.toFixed(3).padStart(7)}  ${result.report.recoveryP10.toFixed(3).padStart(6)}  ` +
+        `${result.report.recoveryMin.toFixed(3).padStart(6)}`,
+    );
+    writeFileSync(
+      path.join(reportDir, 'summary.txt'),
+      `Board-art tracer report — ${results.length} config(s), ${skipped.length} skipped.\n` +
+        `chopped = traced outlines keeping less than ${MIN_AREA_RECOVERY} of their own partition-cell art.\n` +
+        `Stroke colours in the PNGs: green traced clean, amber pulled back off a neighbour,\n` +
+        `red chopped, dashed grey untraced (the renderer falls back to a ring).\n\n` +
+        `${header}\n${rows.join('\n')}\n` +
+        (skipped.length > 0 ? `\nskipped:\n${skipped.map((line) => `  - ${line}`).join('\n')}\n` : ''),
+    );
+    console.log(`[board-art-geometry] report written to ${reportDir}`);
+    return 0;
   }
 
   const stale: string[] = [];
