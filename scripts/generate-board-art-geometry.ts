@@ -109,27 +109,23 @@ const SIMPLIFY_EPSILON = 1.6;
 /** Outlines shorter than this many pixels of perimeter are noise, not a hold. */
 const MIN_PERIMETER_POINTS = 24;
 /**
- * The board width the two radii below are quoted at, and the width the play view
- * renders at. MoonBoard's art box is 650 px wide against 1080 for most of the
- * catalogue, so an absolute board-pixel radius bites 1.66x harder there.
+ * Neck-trim and cut-clearance radius, as a fraction of the placement radius.
+ *
+ * The rule this replaces scaled both radii by the board's PIXEL width against a
+ * 1080 px reference, on the assumption that hold size scales with board width.
+ * It does not. TB2's 12x12 Wide is 1461 px across carrying the same 31.8 px
+ * placement radius as the 1080 px 12x12, so it trimmed at 4 where the narrower
+ * board trimmed at 3 — and Douglas-Peucker then left a 3-px limb the wider disc
+ * would have taken, which is exactly the one outline in the catalogue that had
+ * to be pinned as a known gate-5 failure (tension/11-10's 952).
+ *
+ * A hold's neck is a fraction of the hold, so the radius is a fraction of the
+ * placement radius. 0.078 is not a new tuning pass: it is the number that keeps
+ * Kilter Homewall at the 3 it already trimmed at and both MoonBoards at the 2
+ * they already trimmed at, so the two boards the old rule was calibrated on do
+ * not move and only the boards it got wrong do.
  */
-const RADIUS_REFERENCE_WIDTH = 1080;
-/**
- * How far inside the art a pixel has to sit to count as the hold's core, at the
- * reference width. A limb reaching the rest of the mask only through a neck too
- * thin to hold a pixel this far clear of the art's edge is not part of this hold.
- * Both MoonBoards come out at 2, which is the same 5 board px of neck at 1080
- * the wider boards get; a flat 3 cut a real lobe off two MoonBoard 2016 holds.
- */
-const NECK_TRIM_AT_REFERENCE = 3;
-/**
- * How far the emitted silhouette keeps clear of a neighbour's art, at the
- * reference width. 3 covers the glow's own shoulder, so the mark's brightest ink
- * lands on the hold's own art everywhere. At 2 the shoulder ink sitting on a
- * neighbour is 731 board px² over the spike's seven boards against 25 at 3; at 4
- * it saves 3 more px² and costs another 22,148 px² of hold.
- */
-const CUT_CLEARANCE_AT_REFERENCE = 3;
+const TRIM_RADIUS_PER_PLACEMENT_RADIUS = 0.078;
 /** Board px² a trim has to drop before the run reports it, on gate 5's threshold. */
 const NOTABLE_TRIM_AREA = 20;
 /**
@@ -210,12 +206,12 @@ const ORTHOGONAL: readonly Point[] = [
 ];
 
 /**
- * A radius quoted at `RADIUS_REFERENCE_WIDTH`, in this board's own pixels. The
+ * The neck-trim and cut-clearance radius for a placement, in board pixels. The
  * floor of 2 is where a disc stops being one: at radius 1 the erosion disc is a
  * single pixel and the neck trim can never fire.
  */
-function radiusForBoard(atReferenceWidth: number, boardWidth: number): number {
-  return Math.max(2, Math.round((atReferenceWidth * boardWidth) / RADIUS_REFERENCE_WIDTH));
+function radiusForPlacement(placementRadius: number): number {
+  return Math.max(2, Math.round(TRIM_RADIUS_PER_PLACEMENT_RADIUS * placementRadius));
 }
 
 /**
@@ -1154,8 +1150,17 @@ function traceOutlines(field: TraceField): {
   const { width: boardWidth, height: boardHeight, mask: opaque, label, placements } = field;
   const searchRadii = field.searchRadii ?? SEARCH_RADII;
   const pitches = nearestPitch(placements);
-  const neckDiscs = discOffsets(radiusForBoard(NECK_TRIM_AT_REFERENCE, boardWidth));
-  const clearanceOffsets = discOffsets(radiusForBoard(CUT_CLEARANCE_AT_REFERENCE, boardWidth)).dilation;
+  // Cached per distinct radius: a config's placements almost always share one
+  // (`r` is `xSpacing * 4`), and building the discs is O(radius²).
+  const discCache = new Map<number, { erosion: Point[]; dilation: Point[] }>();
+  const discsFor = (placementRadius: number) => {
+    const radius = radiusForPlacement(placementRadius);
+    const cached = discCache.get(radius);
+    if (cached !== undefined) return cached;
+    const built = discOffsets(radius);
+    discCache.set(radius, built);
+    return built;
+  };
 
   const outlines = new Map<number, number[]>();
   const stats = new Map<number, HoldTraceStats>();
@@ -1251,15 +1256,16 @@ function traceOutlines(field: TraceField): {
     const region = new Uint8Array(localWidth * localHeight);
     floodComponent(local, localWidth, localHeight, seedIndex, region);
 
-    const trimmed = trimThinNecks(region, localWidth, localHeight, seedIndex, neckDiscs);
-    const pulled = pullBackFromCuts(trimmed, neighbourArt, localWidth, localHeight, seedIndex, clearanceOffsets);
+    const discs = discsFor(placement.r);
+    const trimmed = trimThinNecks(region, localWidth, localHeight, seedIndex, discs);
+    const pulled = pullBackFromCuts(trimmed, neighbourArt, localWidth, localHeight, seedIndex, discs.dilation);
     // Trim again, because the pullback makes necks of its own: a hold in contact
     // along two sides comes back joined through whatever the two clearance discs
     // left between them. Thirteen outlines on two boards failed gate 5 with a
     // single trim, and every one was a sliver the first trim never saw because it
     // did not exist yet.
     const traced = pulled.contacted
-      ? trimThinNecks(pulled.mask, localWidth, localHeight, seedIndex, neckDiscs)
+      ? trimThinNecks(pulled.mask, localWidth, localHeight, seedIndex, discs)
       : pulled.mask;
 
     let droppedArea = 0;
