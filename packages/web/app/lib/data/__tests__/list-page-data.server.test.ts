@@ -12,7 +12,9 @@ vi.mock('@/app/lib/board-utils', () => ({
 }));
 
 vi.mock('@/app/components/board-renderer/util', () => ({
-  buildOverlayUrl: vi.fn(() => '/api/internal/board-render?overlay'),
+  buildOverlayPreloadUrls: vi.fn((_bd: unknown, frames: string | null | undefined) =>
+    frames ? ['/api/internal/board-render?overlay'] : [],
+  ),
 }));
 
 vi.mock('@/app/lib/warm-overlay-cache', async (importOriginal) => {

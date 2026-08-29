@@ -1,5 +1,10 @@
 import sharp from 'sharp';
-import { createOgBackgroundBuffer, getBackgroundRelPaths } from './background';
+import {
+  createOgBackgroundBuffer,
+  getBackgroundRelPaths,
+  resolveArtPath,
+  type BoardArtColorScheme,
+} from './background';
 import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
 import type { BoundedLru } from './lru';
 import type { OutputFormat, RenderableBoardDetails } from './types';
@@ -84,6 +89,11 @@ export type RenderBoardImageParams = {
   dimBackground: number;
   boardDetails: RenderableBoardDetails;
   resolveImagePath: ResolveImagePath;
+  /**
+   * Which board art to composite. Defaults to light, so every existing caller renders the
+   * same bytes it always did. Dark only differs for boards that ship a `.dark.webp` sibling.
+   */
+  colorScheme?: BoardArtColorScheme;
   /** Optional background caches. Omitted = every render composes its own base. */
   caches?: RenderBoardImageCaches;
 };
@@ -167,12 +177,13 @@ export async function composeBoardBaseBuffer(params: {
   thumbnail: boolean;
   dimBackground: number;
   resolveImagePath: ResolveImagePath;
+  colorScheme?: BoardArtColorScheme;
 }): Promise<Buffer | null> {
-  const { boardDetails, width, height, thumbnail, dimBackground, resolveImagePath } = params;
+  const { boardDetails, width, height, thumbnail, dimBackground, resolveImagePath, colorScheme } = params;
   const rawLayer = { width, height, channels: 4 as const };
 
-  const bgFsPaths = getBackgroundRelPaths(boardDetails, thumbnail)
-    .map((relPath) => resolveImagePath(relPath))
+  const bgFsPaths = getBackgroundRelPaths(boardDetails, thumbnail, colorScheme)
+    .map((relPath) => resolveArtPath(relPath, resolveImagePath))
     .filter((fsPath): fsPath is string => fsPath !== null);
   if (bgFsPaths.length === 0) return null;
 
@@ -229,6 +240,7 @@ export async function renderBoardImageBuffer({
   dimBackground,
   boardDetails,
   resolveImagePath,
+  colorScheme,
   caches,
 }: RenderBoardImageParams): Promise<RenderBoardImageResult> {
   const sharpT0 = performance.now();
@@ -242,7 +254,7 @@ export async function renderBoardImageBuffer({
 
   const overlayOnlyImage = () => sharp(overlayBuffer, { raw: rawPlane });
   const overlayWebpOptions: sharp.WebpOptions = thumbnail ? THUMBNAIL_WEBP_OPTIONS : { lossless: true };
-  const bgRelPaths = includeBackground ? getBackgroundRelPaths(boardDetails, thumbnail) : [];
+  const bgRelPaths = includeBackground ? getBackgroundRelPaths(boardDetails, thumbnail, colorScheme) : [];
 
   if (includeBackground && isOgVariant && dimBackground === 0) {
     // OG social card: backdrop + board photos are identical for every climb on
@@ -276,7 +288,7 @@ export async function renderBoardImageBuffer({
     // uncached composite rather than growing a third cache key.
     const bgT0 = performance.now();
     const bgFsPaths = bgRelPaths
-      .map((relPath) => resolveImagePath(relPath))
+      .map((relPath) => resolveArtPath(relPath, resolveImagePath))
       .filter((fsPath): fsPath is string => fsPath !== null);
     bgMs = performance.now() - bgT0;
 
@@ -314,7 +326,7 @@ export async function renderBoardImageBuffer({
     if (base) {
       cache = 'hit';
     } else {
-      const composeParams = { boardDetails, width, height, thumbnail, dimBackground, resolveImagePath };
+      const composeParams = { boardDetails, width, height, thumbnail, dimBackground, resolveImagePath, colorScheme };
       const inFlightBases = caches?.boardBaseInFlight;
       let composed: Buffer | null;
       if (inFlightBases) {
