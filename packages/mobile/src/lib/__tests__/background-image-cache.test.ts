@@ -46,12 +46,17 @@ vi.mock('../board-backgrounds-manifest', () => ({
     'moonboard/moonboard2016/holdsetb.webp': 410,
     'moonboard/moonboard2016/holdsetb.dark.webp': 411,
     'moonboard/moonboard2016/holdseta.webp': 420,
-    // Woods ships an opaque photo of the real board — full-res + thumb per size,
-    // and deliberately no `.dark.webp` sibling.
+    // Woods: hold sprites on a white ground, so its `.dark.webp` siblings have the
+    // ground keyed out rather than lifted (issue #4753). Full-res + thumb per size,
+    // light and dark, which is the only board carrying the full four.
     'woods/woods-12x12-bg.webp': 500,
     'woods/thumbs/woods-12x12-bg.webp': 501,
+    'woods/woods-12x12-bg.dark.webp': 502,
+    'woods/thumbs/woods-12x12-bg.dark.webp': 503,
     'woods/woods-8x10-bg.webp': 510,
     'woods/thumbs/woods-8x10-bg.webp': 511,
+    'woods/woods-8x10-bg.dark.webp': 512,
+    'woods/thumbs/woods-8x10-bg.dark.webp': 513,
   },
 }));
 
@@ -475,13 +480,18 @@ describe('bundled Woods board art', () => {
   const manifestSource = readFileSync(new URL('../board-backgrounds-manifest.ts', import.meta.url), 'utf8');
   const manifestKeys = [...manifestSource.matchAll(/^\s*'([^']+)':/gm)].map((match) => match[1]);
 
-  it('bundles exactly the four Woods keys, with no dark variant', () => {
-    // No `.dark.webp`: the dark-art transforms exist for MoonBoard's near-black
-    // transparent hold sheets, and would only muddy an opaque board photo.
+  it('bundles a light and a dark key for each size and variant', () => {
+    // Woods' dark art comes from its own generator (scripts/generate-woods-dark-art.ts):
+    // MoonBoard's transforms lift a near-black transparent layer, and this art is hold
+    // sprites on an opaque white ground, so the ground is keyed out instead.
     expect(manifestKeys.filter((key) => key.startsWith('woods/')).sort()).toEqual([
+      'woods/thumbs/woods-12x12-bg.dark.webp',
       'woods/thumbs/woods-12x12-bg.webp',
+      'woods/thumbs/woods-8x10-bg.dark.webp',
       'woods/thumbs/woods-8x10-bg.webp',
+      'woods/woods-12x12-bg.dark.webp',
       'woods/woods-12x12-bg.webp',
+      'woods/woods-8x10-bg.dark.webp',
       'woods/woods-8x10-bg.webp',
     ]);
   });
@@ -505,9 +515,14 @@ describe('bundled Woods board art', () => {
       paths: ['/bundled/501.webp'],
       missingCount: 0,
     });
-    // No dark sibling => falls through to the same asset, and counts no gap.
     expect(tryGetBackgroundPathsSync({ ...woodsParams, colorScheme: 'dark' })).toEqual({
-      paths: ['/bundled/500.webp'],
+      paths: ['/bundled/502.webp'],
+      missingCount: 0,
+    });
+    // Thumb first, then the dark swap on top of it — a list cell gets the small dark
+    // file, not the full-res one.
+    expect(tryGetBackgroundPathsSync({ ...woodsParams, variant: 'thumb', colorScheme: 'dark' })).toEqual({
+      paths: ['/bundled/503.webp'],
       missingCount: 0,
     });
   });

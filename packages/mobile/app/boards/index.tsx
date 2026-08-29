@@ -1,15 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, ScrollView, StyleSheet } from 'react-native';
+import { View, ScrollView, StyleSheet, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type BottomSheet from '@expo/ui/community/bottom-sheet';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { useMyBoards, usePopularBoardConfigs, useNearbyBoards } from '../../src/lib/graphql/hooks';
-import { useActiveBoard, useSetActiveBoard } from '../../src/lib/graphql/use-active-board';
+import {
+  useMyBoards,
+  usePopularBoardConfigs,
+  useNearbyBoards,
+  useProfile,
+  useDeleteBoard,
+  useUnfollowBoard,
+} from '../../src/lib/graphql/hooks';
+import { useActiveBoard, useSetActiveBoard, useClearActiveBoard } from '../../src/lib/graphql/use-active-board';
 import { useAdoptFoundBoard } from '../../src/lib/board-discovery/use-adopt-found-board';
 import { useDeviceLocation } from '../../src/lib/use-device-location';
 import { useAuth } from '../../src/providers/auth-provider';
 import { useToast } from '../../src/providers/toast-provider';
+import { useConfirm } from '../../src/providers/dialog-provider';
+import { useTheme } from '../../src/providers/theme-provider';
 import { hapticSelection } from '../../src/lib/haptics';
 import { Text } from '../../src/components/Text';
 import { Icon } from '../../src/components/Icon';
@@ -19,11 +28,17 @@ import { BoardCarousel } from '../../src/components/board-discovery/BoardCarouse
 import { BoardModeCard, type ModeCardState } from '../../src/components/board-discovery/BoardModeCard';
 import { BluetoothQuickstartSheet } from '../../src/components/board-discovery/BluetoothQuickstartSheet';
 import { userBoardsToItems, popularConfigToItem } from '../../src/components/board-discovery/board-items';
+import {
+  boardCardAction,
+  sortViewerOwnedFirst,
+  type BoardCardAction,
+} from '../../src/components/board-discovery/board-card-actions';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
 import type { DiscoveryBoardItem } from '../../src/components/board-discovery/BoardDiscoveryCard';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
 import { useIsOffline } from '../../src/hooks/use-is-offline';
-import { offlineBoardKeyForBoard, useOfflineBoards, useSetting } from '../../src/settings';
+import { useStoredUserId } from '../../src/hooks/use-current-user-id';
+import { forgetOfflineBoard, offlineBoardKeyForBoard, useOfflineBoards, useSetting } from '../../src/settings';
 import { useRememberDownloadedBoards } from '../../src/offline/use-remember-downloaded-boards';
 import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
 import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-download';
@@ -54,7 +69,11 @@ export default function BoardSelection() {
   // pre-resolve location, show the framing header, and tag the board-bind.
   const fromOnboarding = source === 'onboarding';
   const { t } = useTranslation('boards');
+  // The drill-in reuses the manage screen's own title, so the two can never drift.
+  const { t: tCommon } = useTranslation('common');
   const { showToast } = useToast();
+  const confirm = useConfirm();
+  const { brandColors, systemColors } = useTheme();
 
   // Clear the bottom tab bar and whichever queue controls are actually visible.
   const scrollBottomPadding = bottomChrome.scrollBottomPadding;
@@ -62,6 +81,29 @@ export default function BoardSelection() {
   const setActiveBoard = useSetActiveBoard();
   const adoptFoundBoard = useAdoptFoundBoard();
   const { data: activeBoard } = useActiveBoard();
+  const clearActiveBoard = useClearActiveBoard();
+  const deleteBoard = useDeleteBoard();
+  const unfollowBoard = useUnfollowBoard();
+  // `useMutation` returns a fresh object literal on every render, so depending on
+  // the mutation objects would rebuild the action handler — and with it the
+  // carousel's `renderItem` and every card's memo — on every commit.
+  // `mutateAsync` is bound once by the MutationObserver, so it is the stable half
+  // to close over.
+  const deleteBoardAsync = deleteBoard.mutateAsync;
+  const unfollowBoardAsync = unfollowBoard.mutateAsync;
+
+  // Who is looking, so a card can tell your own wall from a gym you follow.
+  // Deliberately NOT a gate: unlike /boards/manage, a missing id must never stop
+  // you switching boards. It only removes the Edit control and the per-card
+  // ownership badge — degraded, never blocked.
+  const { data: profile } = useProfile({ enabled: isAuthenticated });
+  const { userId: storedUserId } = useStoredUserId(isAuthenticated && !profile?.id);
+  const currentUserId = profile?.id ?? storedUserId;
+
+  // iOS-style edit mode for the "Your boards" carousel. Local state inside a
+  // `presentation: 'modal'` route, so it cannot survive a dismiss: every one of
+  // the twelve places that open this picker gets it switched off.
+  const [isEditingBoards, setIsEditingBoards] = useState(false);
 
   const {
     data: boardConnection,
@@ -184,8 +226,17 @@ export default function BoardSelection() {
     [enabledScopeKeys, downloadedScopeKeys],
   );
   const myBoardItems = useMemo(
-    () => userBoardsToItems(myBoards, activeBoard?.uuid, boardOfflineState),
-    [myBoards, activeBoard?.uuid, boardOfflineState],
+    // Viewer-owned first (the server's `desc(isOwned)` means "a real wall", not
+    // "yours"), and `currentUserId` stamps `isViewerOwner` once per list build so
+    // no row ever scans back into `myBoards` for it.
+    () =>
+      userBoardsToItems(
+        sortViewerOwnedFirst(myBoards, currentUserId),
+        activeBoard?.uuid,
+        boardOfflineState,
+        currentUserId,
+      ),
+    [myBoards, activeBoard?.uuid, boardOfflineState, currentUserId],
   );
   const nearbyItems = useMemo(
     () => userBoardsToItems(nearby?.boards ?? [], activeBoard?.uuid),
@@ -260,15 +311,200 @@ export default function BoardSelection() {
     (item: DiscoveryBoardItem) => t('mobile.offline.makeAvailableAria', { name: item.title }),
     [t],
   );
+
+  // Ownership resolves off the flag the item already carries. `undefined` means
+  // we could not tell, and an unknown board gets no slot at all rather than a
+  // control offering to unfollow the user's own wall.
+  const myBoardActionFor = useCallback(
+    (item: DiscoveryBoardItem): BoardCardAction =>
+      item.isViewerOwner === undefined
+        ? null
+        : boardCardAction({ isViewerOwner: item.isViewerOwner, isEditing: isEditingBoards }),
+    [isEditingBoards],
+  );
+  const myBoardActionLabelFor = useCallback(
+    (item: DiscoveryBoardItem) => {
+      switch (myBoardActionFor(item)) {
+        case 'edit':
+          return t('mobile.manage.editAria', { name: item.title });
+        case 'delete':
+          return t('mobile.manage.deleteAria', { name: item.title });
+        case 'unfollow':
+          return t('mobile.manage.unfollowAria', { name: item.title });
+        // No slot renders for a board whose ownership did not resolve, so there
+        // is no action to label. Exhaustive rather than a fallthrough, so a
+        // future action can't inherit the wrong string.
+        case null:
+          return '';
+      }
+    },
+    [myBoardActionFor, t],
+  );
+
+  // One `find` per tap — the shape `onSelectMyBoard` already uses — never per row.
+  const runMyBoardAction = useCallback(
+    async (item: DiscoveryBoardItem) => {
+      const board = myBoards.find((candidate) => candidate.uuid === item.key);
+      if (!board) {
+        showToast(t('mobile.boardSwitchError'), 'error');
+        return;
+      }
+      // Unreachable from the UI — a board whose ownership did not resolve renders
+      // no slot at all — but bail explicitly rather than let a coercion collapse
+      // "unknown" into "followed" and offer to unfollow the user's own wall.
+      if (item.isViewerOwner === undefined) return;
+      const action = boardCardAction({ isViewerOwner: item.isViewerOwner, isEditing: isEditingBoards });
+      if (action === 'edit') {
+        router.push({ pathname: '/boards/edit', params: { boardUuid: board.uuid } });
+        return;
+      }
+      const wasActive = activeBoard?.uuid === board.uuid;
+      if (action === 'delete') {
+        const confirmed = await confirm({
+          title: t('mobile.manage.deleteTitle'),
+          message: t('mobile.manage.deleteMessage', { name: board.name }),
+          confirmLabel: t('mobile.manage.deleteConfirm'),
+          cancelLabel: t('mobile.manage.cancel'),
+          destructive: true,
+        });
+        if (!confirmed) return;
+        try {
+          await deleteBoardAsync(board.uuid);
+          // The offline picker's snapshot goes with it. The download itself stays
+          // (a sibling board can share the scope), but a card for a board the
+          // backend has dropped must never reach setActiveBoard.
+          forgetOfflineBoard(board.uuid);
+          if (wasActive) await clearActiveBoard();
+          // Leave edit mode after an irreversible removal: the carousel has just
+          // reflowed under a finger that is still over a red button.
+          setIsEditingBoards(false);
+        } catch {
+          showToast(t('mobile.manage.deleteError'), 'error');
+        }
+        return;
+      }
+      if (action === 'unfollow') {
+        // Unfollow is reversible and stays one tap — except on the active board,
+        // where it also clears the selection out from under a live session.
+        if (wasActive) {
+          const confirmed = await confirm({
+            title: t('mobile.manage.unfollowTitle'),
+            message: t('mobile.manage.unfollowMessage', { name: board.name }),
+            confirmLabel: t('mobile.manage.unfollowConfirm'),
+            cancelLabel: t('mobile.manage.cancel'),
+            destructive: true,
+          });
+          if (!confirmed) return;
+        }
+        try {
+          await unfollowBoardAsync(board.uuid);
+          forgetOfflineBoard(board.uuid);
+          if (wasActive) await clearActiveBoard();
+        } catch {
+          showToast(t('mobile.manage.unfollowError'), 'error');
+        }
+      }
+    },
+    [
+      myBoards,
+      isEditingBoards,
+      router,
+      activeBoard?.uuid,
+      confirm,
+      deleteBoardAsync,
+      unfollowBoardAsync,
+      clearActiveBoard,
+      showToast,
+      t,
+    ],
+  );
+  const onMyBoardAction = useCallback(
+    (item: DiscoveryBoardItem) => {
+      void runMyBoardAction(item);
+    },
+    [runMyBoardAction],
+  );
+  // Edit mode already disables the card body, but the handler guards it too: the
+  // same `onSelect` also serves Near you and the offline rows.
+  const onSelectMyBoardCard = useCallback(
+    (item: DiscoveryBoardItem) => {
+      if (isEditingBoards) return;
+      onSelectMyBoard(item);
+    },
+    [isEditingBoards, onSelectMyBoard],
+  );
+  // Read straight off the mutations, so there is no second copy of "which board
+  // is busy" to keep in sync.
+  const pendingActionKey = deleteBoard.isPending
+    ? (deleteBoard.variables ?? null)
+    : unfollowBoard.isPending
+      ? (unfollowBoard.variables ?? null)
+      : null;
+
+  // Gates the Edit/Done toggle AND the whole per-card action slot. Onboarding is
+  // the reason the two share a predicate: the first screen a new account ever
+  // sees must not carry a board action of any kind, and gating only the toggle
+  // would have left the followed-board glyph live there. Also off with no boards,
+  // with no resolvable identity, and offline — where every action behind it is a
+  // network mutation.
+  const canEditBoards = myBoardItems.length > 0 && currentUserId !== undefined && !isLocalOnly && !fromOnboarding;
+  useEffect(() => {
+    if (isEditingBoards && !canEditBoards) setIsEditingBoards(false);
+  }, [isEditingBoards, canEditBoards]);
+
+  const onManageBoards = useCallback(() => {
+    router.push('/boards/manage');
+  }, [router]);
+  // The full vertical list with the per-board download console. With the drawer's
+  // second board row gone this and OfflineSpotlightCard are the only routes to
+  // it, so it renders on the offline branch too: it is navigation, not a
+  // mutation, and the manage screen has its own offline list.
+  const manageBoardsRow = (
+    <Pressable onPress={onManageBoards} accessibilityRole="button" style={styles.manageRow}>
+      <Text variant="body" color={brandColors.primary} style={styles.manageRowLabel}>
+        {tCommon('myBoards.title')}
+      </Text>
+      <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
+    </Pressable>
+  );
+
   const myBoardsSection =
     myBoardItems.length > 0 ? (
-      <Section title={t('mobile.discovery.yourBoardsTitle')}>
+      <Section
+        title={t('mobile.discovery.yourBoardsTitle')}
+        trailing={
+          canEditBoards ? (
+            <Pressable
+              onPress={() => {
+                hapticSelection();
+                setIsEditingBoards((previous) => !previous);
+              }}
+              accessibilityRole="button"
+              style={styles.sectionAction}
+            >
+              <Text variant="body" color={brandColors.primary}>
+                {isEditingBoards ? t('mobile.manage.done') : t('mobile.manage.edit')}
+              </Text>
+            </Pressable>
+          ) : null
+        }
+      >
         <BoardCarousel
           items={myBoardItems}
-          onSelect={onSelectMyBoard}
+          onSelect={onSelectMyBoardCard}
           onDownload={offlineDownloadsEnabled ? onDownloadMyBoard : undefined}
           downloadLabelFor={downloadLabelFor}
+          actionFor={canEditBoards ? myBoardActionFor : undefined}
+          actionLabelFor={myBoardActionLabelFor}
+          onAction={canEditBoards ? onMyBoardAction : undefined}
+          deleteActionTitle={t('mobile.manage.deleteConfirm')}
+          unfollowActionTitle={t('mobile.manage.unfollowConfirm')}
+          isEditing={isEditingBoards}
+          pendingActionKey={pendingActionKey}
         />
+        {/* Inside the section because that is what it drills into; gone with the
+            section when there are no boards to manage or download. */}
+        {manageBoardsRow}
       </Section>
     ) : null;
 
@@ -375,6 +611,7 @@ export default function BoardSelection() {
         {offlineItems.length > 0 ? (
           <Section title={t('mobile.discovery.yourBoardsTitle')}>
             <BoardCarousel items={offlineItems} onSelect={onSelectMyBoard} />
+            {manageBoardsRow}
           </Section>
         ) : (
           <View style={styles.emptyState}>
@@ -465,7 +702,10 @@ export default function BoardSelection() {
           />
           <BoardModeCard icon="bluetooth" label={t('mobile.discovery.bluetooth')} onPress={onModeBluetooth} />
           <BoardModeCard icon="pin" label={t('mobile.discovery.findGym')} onPress={onModeFindGym} />
-          <BoardModeCard icon="plus" label={t('mobile.discovery.create')} onPress={onModeCreate} />
+          {/* The tile is 84 dp wide (68 dp of text): "Create board" truncated in
+              en-US and in all three other locales. The `+` glyph and the row's
+              context carry the noun here; the full-width CTAs keep it. */}
+          <BoardModeCard icon="plus" label={t('mobile.discovery.createTile')} onPress={onModeCreate} />
         </View>
 
         {nearbySection}
@@ -503,12 +743,24 @@ export default function BoardSelection() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  trailing,
+  children,
+}: {
+  title: string;
+  /** Right-aligned section control (the "Your boards" Edit/Done toggle). */
+  trailing?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <View style={styles.section}>
-      <Text variant="title3" style={styles.sectionTitle}>
-        {title}
-      </Text>
+      <View style={styles.sectionHeader}>
+        <Text variant="title3" style={styles.sectionTitle}>
+          {title}
+        </Text>
+        {trailing}
+      </View>
       {children}
     </View>
   );
@@ -538,8 +790,32 @@ const styles = StyleSheet.create({
   section: {
     gap: spacing[3],
   },
-  sectionTitle: {
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: spacing[4],
+    // Unconditional, so Near you / Your boards / Popular keep one baseline and
+    // the layout does not jump when the Edit control appears.
+    minHeight: 44,
+  },
+  sectionTitle: {
+    flex: 1,
+  },
+  sectionAction: {
+    minHeight: 44,
+    minWidth: 44,
+    paddingHorizontal: spacing[3],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  manageRow: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing[4],
+  },
+  manageRowLabel: {
+    flex: 1,
   },
   centered: {
     flexGrow: 1,

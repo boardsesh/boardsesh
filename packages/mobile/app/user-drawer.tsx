@@ -84,7 +84,6 @@ export default function UserDrawerScreen() {
 
   const {
     navigateToBoards,
-    navigateToManageBoards,
     navigateToSettings,
     navigateToEditProfile,
     navigateToPlaylists,
@@ -256,15 +255,14 @@ export default function UserDrawerScreen() {
           )}
 
           <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
+            {/* One row, not two: "Change board" and "My Boards" were adjacent
+                entries with the same glyph and the same chevron, and nothing on
+                screen said which one edited a board and which one switched to it
+                (#4623). /boards now does both. */}
             <DrawerRow
               icon="boards"
               title={t('userDrawer.changeBoard')}
               onPress={() => close(() => navigateToBoards())}
-            />
-            <DrawerRow
-              icon="boards.fill"
-              title={t('myBoards.title')}
-              onPress={() => close(() => navigateToManageBoards())}
             />
           </View>
 

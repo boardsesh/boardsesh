@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { createOgBackgroundBuffer, getBackgroundRelPaths, toWebpPath } from '../background';
+import {
+  createOgBackgroundBuffer,
+  getBackgroundRelPaths,
+  resolveArtPath,
+  toDarkArtPath,
+  toWebpPath,
+} from '../background';
 
 describe('toWebpPath', () => {
   it('rewrites a .png filename to .webp under the given dir', () => {
@@ -58,6 +64,50 @@ describe('getBackgroundRelPaths', () => {
 
   it('returns an empty list when there are no keys and no MoonBoard fallback', () => {
     expect(getBackgroundRelPaths({ board_name: 'kilter', images_to_holds: {} }, false)).toEqual([]);
+  });
+});
+
+describe('dark art', () => {
+  const woods = { board_name: 'woods', images_to_holds: { 'woods-8x10-bg.png': [] } };
+
+  it('leaves paths alone by default, so every existing caller renders what it always did', () => {
+    expect(getBackgroundRelPaths(woods, false)).toEqual(['images/woods/woods-8x10-bg.webp']);
+  });
+
+  it('swings full-size and thumbnail paths to the dark sibling', () => {
+    expect(getBackgroundRelPaths(woods, false, 'dark')).toEqual(['images/woods/woods-8x10-bg.dark.webp']);
+    expect(getBackgroundRelPaths(woods, true, 'dark')).toEqual(['images/woods/thumbs/woods-8x10-bg.dark.webp']);
+  });
+
+  it('gives light and dark different strings, which is what keys them apart in the render caches', () => {
+    // The pipeline builds its board-base cache key by joining these paths, so distinct
+    // strings are the whole mechanism — a dark render must not serve light bytes.
+    expect(getBackgroundRelPaths(woods, false, 'dark')).not.toEqual(getBackgroundRelPaths(woods, false, 'light'));
+  });
+
+  it('maps only the .webp extension', () => {
+    expect(toDarkArtPath('images/woods/woods-8x10-bg.webp')).toBe('images/woods/woods-8x10-bg.dark.webp');
+    expect(toDarkArtPath('images/woods/woods-8x10-bg.png')).toBe('images/woods/woods-8x10-bg.png');
+  });
+
+  describe('resolveArtPath', () => {
+    const onlyLight = (path: string) => (path.includes('.dark.') ? null : `/abs/${path}`);
+
+    it('uses the dark file when the board ships one', () => {
+      expect(resolveArtPath('images/woods/a.dark.webp', (path) => `/abs/${path}`)).toBe(
+        '/abs/images/woods/a.dark.webp',
+      );
+    });
+
+    it('falls back to the light sibling for a board with no dark art', () => {
+      // Kilter and Tension have no dark files. Without this a dark render of one would drop
+      // its background layers and come back as an overlay floating on nothing.
+      expect(resolveArtPath('images/kilter/a.dark.webp', onlyLight)).toBe('/abs/images/kilter/a.webp');
+    });
+
+    it('does not invent a fallback for a light path that is genuinely missing', () => {
+      expect(resolveArtPath('images/kilter/gone.webp', () => null)).toBeNull();
+    });
   });
 });
 

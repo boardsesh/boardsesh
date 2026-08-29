@@ -63,6 +63,9 @@
       "editAria": "Editar {{name}}",
       "deleteAria": "Eliminar {{name}}",
       "unfollowAria": "Dejar de seguir {{name}}",
+      "unfollowTitle": "¿Dejar de seguir?",
+      "unfollowMessage": "\"{{name}}\" es tu plafón activo. Al dejar de seguirlo, se quita de tus plafones y se borra la selección.",
+      "unfollowConfirm": "Dejar de seguir",
       "edit": "Editar",
       "done": "Listo"
     },
@@ -82,9 +85,13 @@
       "nearbyTitle": "Cerca de ti",
       "nearbyShowing": "Mostrando cercanos",
       "yourBoardsTitle": "Tus plafones",
+      "activeBadge": "Activo",
+      "ownedBadgeAria": "Tu plafón",
+      "followingBadgeAria": "Siguiendo",
       "popularTitle": "Configuraciones populares",
       "findGym": "Buscar rocódromo",
       "create": "Crear plafón",
+      "createTile": "Crear",
       "followed": "{{name}} añadido a tus plafones",
       "followError": "No se pudo añadir {{name}} a tus plafones"
     },

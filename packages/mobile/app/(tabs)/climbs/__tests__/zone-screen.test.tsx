@@ -323,18 +323,17 @@ describe('ZoneFilterScreen', () => {
     });
   });
 
-  // The filter sheet hides the Zone row for Woods, so only a hand-built link
-  // gets here — and its hold centres are board-art pixels, not the placement
-  // grid the box is expressed in, so a dragged region would filter nothing.
-  describe('a board whose holds are not in placement-grid space', () => {
-    it('leaves the route instead of offering a region to drag', () => {
+  // Woods reaches this route like any other board now: its zone box is projected
+  // from its own hold geometry rather than a placement grid
+  // (boardsesh/boardsesh#4748).
+  describe('a code-driven board', () => {
+    it('offers a region to drag instead of leaving the route', () => {
       routeParams.current = baseParams({ boardName: 'woods', sizeId: '1' });
 
       const { container } = render(<ZoneFilterScreen />);
 
-      expect(routerMock.replace).toHaveBeenCalledWith('/(tabs)/climbs');
-      expect(container.querySelector('[data-button="mobile.zoneFilter.enable"]')).toBeNull();
-      expect(container.querySelector('[data-spinner]')).not.toBeNull();
+      expect(routerMock.replace).not.toHaveBeenCalled();
+      expect(container.querySelector('[data-button="mobile.zoneFilter.enable"]')).not.toBeNull();
     });
   });
 });

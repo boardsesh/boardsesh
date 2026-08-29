@@ -3,7 +3,6 @@ import { AccessibilityInfo, Platform, Pressable, View, StyleSheet } from 'react-
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { toBoardName } from '@boardsesh/board-config';
-import { SwipeableRow } from '../SwipeableRow';
 import { BoardImageNative } from '../BoardImageNative';
 import { boardRowSubtitle } from './board-labels';
 import { BoardOfflineToggle } from './BoardOfflineToggle';
@@ -13,32 +12,20 @@ import { getBoardRenderData } from '../../lib/board-details';
 import { formatBytes } from '../../lib/format-bytes';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
-import { ActivityIndicator } from '../ActivityIndicator';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 
 const THUMB_SIZE = 56;
 
 type BoardManageRowProps = {
   board: UserBoard;
-  /** True when the user owns this board (edit/delete); false for followed boards (unfollow). */
+  /**
+   * True when the viewer owns this board. Still needed after the edit/delete
+   * affordances moved to the picker's cards: it is what decides whether the
+   * subtitle names the place or the owner.
+   */
   isOwned: boolean;
   isActive: boolean;
-  /**
-   * Edit mode (from the header "Edit" button): show a persistent leading remove
-   * control (Delete for owned, Unfollow for followed) and disable the swipe, so the
-   * destructive action never depends on the hard-to-hit swipe gesture.
-   */
-  isEditing?: boolean;
-  /**
-   * No network: hide every affordance that is a server mutation (tap-to-edit, the
-   * swipe delete/unfollow) and leave only the local offline toggle. The row still
-   * shows the board, its subtitle and its download status.
-   */
-  readOnly?: boolean;
-  /** A mutation targeting this row is in flight — show a spinner and disable the swipe. */
-  isMutating: boolean;
   /**
    * Offline download state for this board's (type, layout, size) scope.
    * `undefined` means offline downloads are unavailable (feature-flagged off) —
@@ -71,26 +58,21 @@ type BoardManageRowProps = {
    */
   canRetryFastDownload?: boolean;
   onRetryFastDownload?: (board: UserBoard) => void;
-  onEdit: (board: UserBoard) => void;
-  onDelete: (board: UserBoard) => void;
-  onUnfollow: (board: UserBoard) => void;
   onToggleOffline: (board: UserBoard) => void;
 };
 
 /**
- * One board in the management list. Owned boards open the edit form on tap and
- * reveal Delete on swipe; followed boards reveal Unfollow on swipe (no tap
- * target — switching/activating lives on the board picker, not here). Memoised;
- * its props are referentially stable from the screen except `board` (rebuilt on
- * refetch), so it re-renders only when its own board data changes.
+ * One board in the management list: name, what it is, and its offline-download
+ * console. Editing, deleting and unfollowing a board now live on the board cards
+ * in the /boards picker, so this row is read-only apart from the download
+ * toggle. Memoised; its props are referentially stable from the screen except
+ * `board` (rebuilt on refetch), so it re-renders only when its own board data
+ * changes.
  */
 function BoardManageRowComponent({
   board,
   isOwned,
   isActive,
-  isEditing = false,
-  readOnly = false,
-  isMutating,
   downloadState,
   downloadCount,
   isBootstrapping,
@@ -98,9 +80,6 @@ function BoardManageRowComponent({
   downloadNotice = null,
   canRetryFastDownload = false,
   onRetryFastDownload,
-  onEdit,
-  onDelete,
-  onUnfollow,
   onToggleOffline,
 }: BoardManageRowProps) {
   const { t, i18n } = useTranslation('boards');
@@ -125,7 +104,9 @@ function BoardManageRowComponent({
   }, [renderData]);
 
   // Owned: where the board is (or what it is) tells one of your walls apart.
-  // Followed: whose board it is.
+  // Followed: whose board it is — the group header only says "Following", it
+  // names nobody, and the picker's cards never show an owner either, so this is
+  // the one place in the app that answers "whose board is this".
   const subtitle = isOwned ? boardRowSubtitle(board) : (board.ownerDisplayName ?? boardRowSubtitle(board));
 
   // Live bootstrap always wins over persisted history: the engine may retry a
@@ -210,24 +191,8 @@ function BoardManageRowComponent({
       ? t('mobile.offline.removeAria', { name: board.name })
       : t('mobile.offline.makeAvailableAria', { name: board.name });
 
-  const content = (
+  return (
     <View style={[styles.row, { backgroundColor: systemColors.background, borderBottomColor: systemColors.separator }]}>
-      {isEditing ? (
-        <Pressable
-          onPress={isOwned ? () => onDelete(board) : () => onUnfollow(board)}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={
-            isOwned
-              ? t('mobile.manage.deleteAria', { name: board.name })
-              : t('mobile.manage.unfollowAria', { name: board.name })
-          }
-          style={({ pressed }) => [styles.removeControl, pressed && styles.pressed]}
-        >
-          <Icon name="minus.circle" size={24} color={iosSystemColors.systemRed} />
-        </Pressable>
-      ) : null}
-
       <View
         style={[
           styles.thumb,
@@ -319,34 +284,7 @@ function BoardManageRowComponent({
           </Text>
         </View>
       ) : null}
-
-      {isMutating ? (
-        <ActivityIndicator size="small" />
-      ) : !isEditing && !readOnly && isOwned ? (
-        <Icon name="chevron.right" size={14} color={iosSystemColors.systemGray4} />
-      ) : null}
     </View>
-  );
-
-  return (
-    <SwipeableRow
-      onPress={isOwned && !isEditing && !readOnly ? () => onEdit(board) : undefined}
-      pressAccessibilityLabel={
-        isOwned && !isEditing && !readOnly ? t('mobile.manage.editAria', { name: board.name }) : undefined
-      }
-      onAction={isOwned ? () => onDelete(board) : () => onUnfollow(board)}
-      actionLabel={
-        isOwned
-          ? t('mobile.manage.deleteAria', { name: board.name })
-          : t('mobile.manage.unfollowAria', { name: board.name })
-      }
-      actionIcon={isOwned ? 'delete' : 'minus.circle'}
-      actionColor={isOwned ? iosSystemColors.systemRed : iosSystemColors.systemOrange}
-      enabled={!isMutating && !isEditing && !readOnly}
-      resetKey={board.uuid}
-    >
-      {content}
-    </SwipeableRow>
   );
 }
 
@@ -360,11 +298,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[2],
     paddingHorizontal: spacing[4],
     borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  removeControl: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 28,
   },
   pressed: {
     opacity: 0.5,

@@ -298,6 +298,19 @@ describe('searchClimbsLocal', () => {
     ]);
   });
 
+  // Woods numbers its holds from 0, so hold 0 is a real hold. It used to be
+  // dropped by the key parser here and online both — boardsesh/boardsesh#4748.
+  it('filters on hold id 0 without matching p10r/p20r', async () => {
+    await insertClimb(db, { uuid: 'ground-up', name: 'Ground Up', frames: 'p0r4p18r2' });
+    await insertClimb(db, { uuid: 'high-start', name: 'High Start', frames: 'p10r4p203r2' });
+    await insertStat(db, { climbUuid: 'ground-up', ascensionistCount: 5 });
+    await insertStat(db, { climbUuid: 'high-start', ascensionistCount: 5 });
+
+    expect(uuids(await searchClimbsLocal(db, makeInput({ holdsFilter: { hold_0: { ANY: 'include' } } })))).toEqual([
+      'ground-up',
+    ]);
+  });
+
   it('applies personal-progress filters against local ticks and surfaces user counts', async () => {
     await insertClimb(db, { uuid: 'sent' });
     await insertClimb(db, { uuid: 'tried' });

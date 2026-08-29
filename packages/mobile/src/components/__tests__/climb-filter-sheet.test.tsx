@@ -694,10 +694,10 @@ describe('ClimbFilterSheet rows without a board config', () => {
   });
 });
 
-// Woods has no `board_placements` rows to resolve a hold search against, and its
-// hold centres are board-art pixels rather than placement-grid coordinates — so
-// both pickers would return silent zero results. The rows go away entirely
-// rather than sit there doing nothing.
+// Woods used to hide both pickers: it has no `board_placements` rows to resolve a
+// hold search against, and its zone box is projected from its own hold geometry
+// rather than a placement grid. The search answers both off that geometry now, so
+// the rows are offered on every board — boardsesh/boardsesh#4748.
 describe('ClimbFilterSheet hold + zone rows by board', () => {
   const woodsBoardConfig = { ...boardConfig, boardName: 'woods' };
 
@@ -708,23 +708,19 @@ describe('ClimbFilterSheet hold + zone rows by board', () => {
     expect(queryByLabelText('mobile.zoneFilter.title')).not.toBeNull();
   });
 
-  it('hides both rows for Woods', () => {
+  it('shows both rows on Woods too', () => {
     const { queryByLabelText } = renderFilterSheet({ boardConfig: woodsBoardConfig });
 
-    expect(queryByLabelText('mobile.holdFilter.title')).toBeNull();
-    expect(queryByLabelText('mobile.zoneFilter.title')).toBeNull();
+    expect(queryByLabelText('mobile.holdFilter.title')).not.toBeNull();
+    expect(queryByLabelText('mobile.zoneFilter.title')).not.toBeNull();
   });
 
-  it('keeps the Setters row on Woods — only the placement-backed filters go', () => {
-    const { queryByLabelText } = renderFilterSheet({ boardConfig: woodsBoardConfig });
-
-    expect(queryByLabelText('mobile.filter.setters')).not.toBeNull();
-  });
-
-  it('skips the hold-geometry prewarm when the Holds row is hidden', () => {
+  it('warms the hold geometry on Woods, the same as any other board', () => {
     renderFilterSheet({ boardConfig: woodsBoardConfig });
 
-    expect(createBoardHoldsMocks.prewarmCreateBoardHolds).not.toHaveBeenCalled();
+    expect(createBoardHoldsMocks.prewarmCreateBoardHolds).toHaveBeenCalledWith(
+      expect.objectContaining({ boardName: 'woods' }),
+    );
   });
 });
 

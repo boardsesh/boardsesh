@@ -1,5 +1,5 @@
 import { headers } from 'next/headers';
-import { buildOgBoardRenderUrl, buildOverlayUrl } from '@/app/components/board-renderer/util';
+import { buildBoardArtLayers, buildOgBoardRenderUrl } from '@/app/components/board-renderer/util';
 import { isCrawlerUserAgent } from '@/app/lib/is-crawler';
 import { SITE_URL } from '@/app/lib/seo/base-url';
 import type { BoardDetails, Climb } from '@/app/lib/types';
@@ -120,7 +120,11 @@ export async function warmOverlays(options: WarmOverlaysOptions): Promise<void> 
     const origin = warmOrigin();
     const warmTargets: string[] = [];
     for (const climb of toWarm) {
-      warmTargets.push(`${origin}${buildOverlayUrl(boardDetails, climb.frames, isThumbnail)}`);
+      // Through buildBoardArtLayers, not buildOverlayUrl: a themed board's page requests the
+      // background-less overlay, so warming the with-background composite would render bytes
+      // nobody fetches and leave the real request cold.
+      const { overlayUrl } = buildBoardArtLayers(boardDetails, climb.frames, isThumbnail);
+      if (overlayUrl) warmTargets.push(`${origin}${overlayUrl}`);
 
       // Only the full climb-view pages warm the og card. A thumbnail list would
       // fan out one backend og render per row for images no crawler fetches.

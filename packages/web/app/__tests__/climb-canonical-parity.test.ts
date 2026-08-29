@@ -80,7 +80,7 @@ vi.mock('@/app/lib/data/list-page-data.server', () => ({
     boardDetails: { board_name: 'kilter', layout_id: 1, size_id: 10, set_ids: [1, 20] },
     climbs: [],
     hasMore: false,
-    preloadUrl: null,
+    preloadUrls: [],
   })),
 }));
 
@@ -147,6 +147,9 @@ vi.mock('@/app/lib/board-slug-utils', () => ({
 
 vi.mock('@/app/components/board-renderer/util', () => ({
   buildOgBoardRenderUrl: vi.fn(() => 'https://ws.boardsesh.com/og/climb'),
+  buildOverlayPreloadUrls: vi.fn((_bd: unknown, frames: string | null | undefined) =>
+    frames ? ['/api/internal/board-render'] : [],
+  ),
   buildOverlayUrl: vi.fn(() => '/api/internal/board-render'),
 }));
 vi.mock('@/app/lib/warm-overlay-cache', () => ({ scheduleOverlayWarming: vi.fn() }));

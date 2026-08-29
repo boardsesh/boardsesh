@@ -124,8 +124,24 @@ vi.mock('@/app/lib/data/front-door-data.server', () => ({
 
 vi.mock('@/app/lib/warm-overlay-cache', () => ({ scheduleOverlayWarming: vi.fn() }));
 vi.mock('@/app/components/board-renderer/util', () => ({
-  buildOverlayUrl: vi.fn(() => '/api/internal/board-render?variant=overlay'),
+  // The fixtures here are Kilter, which has no dark art — one composite, no photo layers, so
+  // the assertions below keep counting a single board image.
+  buildBoardArtLayers: vi.fn((_bd: unknown, frames: string | null | undefined) => ({
+    backgroundUrls: [],
+    overlayUrl: frames ? '/api/internal/board-render?variant=overlay' : null,
+  })),
+  toDarkArtUrl: (url: string) => url.replace(/\.webp$/, '.dark.webp'),
+  buildOverlayUrl: vi.fn(
+    (_bd: unknown, _frames: string, _thumbnail?: boolean, colorScheme?: 'light' | 'dark') =>
+      `/api/internal/board-render?variant=overlay${colorScheme === 'dark' ? '&color_scheme=dark' : ''}`,
+  ),
+  buildOverlayPreloadUrls: vi.fn((_bd: unknown, frames: string | null | undefined) =>
+    frames ? ['/api/internal/board-render?variant=overlay'] : [],
+  ),
   buildOgBoardRenderUrl: vi.fn(() => 'https://ws.boardsesh.com/og/climb'),
+  // The fixtures here are Kilter, which has no dark art — so the front door emits its
+  // single board image and these assertions keep counting one.
+  hasDarkBoardArt: (board: string) => board === 'woods',
 }));
 
 // Below-the-fold client islands. They are not what this file asserts, and
@@ -238,6 +254,16 @@ describe('climb front door server HTML', () => {
     expect(html).toContain('/api/internal/board-render');
     expect(html).toMatch(/<img[^>]*width="1080"/);
     expect(html).toMatch(/<img[^>]*height="1350"/);
+  });
+
+  it('emits one board image for a board with no dark art', async () => {
+    // Woods ships a `.dark.webp` sibling and gets a light/dark pair the theme picks between
+    // (issue #4753). Every other board must keep its single image — pairing them would
+    // double both the request and the server render for identical bytes.
+    const html = await renderFrontDoor();
+    const boardImages = html.match(/<img[^>]*\/api\/internal\/board-render/g) ?? [];
+    expect(boardImages).toHaveLength(1);
+    expect(html).not.toContain('color_scheme=dark');
   });
 
   it('links the setter', async () => {

@@ -65,12 +65,15 @@ while IFS= read -r -d '' src_path; do
   fi
 done < <(find "$WEB_IMAGES" -type f \( -name '*.webp' -o -name '*.png' \) -print0)
 
-# Sort the chosen relative paths for stable diffs.
+# Sort the chosen relative paths for stable diffs. LC_ALL=C because the default collation
+# disagrees across platforms on where punctuation lands — glibc, macOS and the C locale each
+# order `moonboard-bg` against `moonboard2020` differently, so an unpinned sort reshuffles
+# the whole file depending on who last ran this.
 chosen_paths=()
 for logical_key in "${!chosen[@]}"; do
   chosen_paths+=("${chosen[$logical_key]}")
 done
-IFS=$'\n' sorted_paths=($(printf '%s\n' "${chosen_paths[@]}" | sort))
+IFS=$'\n' sorted_paths=($(printf '%s\n' "${chosen_paths[@]}" | LC_ALL=C sort))
 unset IFS
 
 count="${#sorted_paths[@]}"

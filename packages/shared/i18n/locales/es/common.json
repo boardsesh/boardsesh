@@ -48,7 +48,7 @@
     "shareFailed": "No se pudo compartir"
   },
   "myBoards": {
-    "title": "Mis plafones"
+    "title": "Gestionar tus plafones"
   },
   "myGyms": {
     "roleOwner": "Propietario",
@@ -58,7 +58,7 @@
   },
   "userDrawer": {
     "signIn": "Iniciar sesión",
-    "changeBoard": "Cambiar plafón",
+    "changeBoard": "Cambiar de plafón",
     "myPlaylists": "Mis listas",
     "about": "Sobre",
     "whatsNew": "Novedades",
