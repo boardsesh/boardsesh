@@ -111,7 +111,7 @@ export const CLIMB_SOURCE_HEADER = 'X-Sitemap-Climbs-Source';
  * reaches a ten-connection pool.
  */
 const CLIMB_CACHE_CONTROL = 'public, s-maxage=21600, stale-while-revalidate=604800';
-const DISABLED_CLIMB_CACHE_CONTROL = 'public, s-maxage=3600, must-revalidate';
+const DISABLED_PAGED_SITEMAP_CACHE_CONTROL = 'public, s-maxage=3600, must-revalidate';
 
 function xmlResponse(
   body: string,
@@ -144,16 +144,16 @@ function notFoundResponse(): Response {
 }
 
 /**
- * A disabled climb sitemap is intentionally withdrawn, not temporarily broken.
+ * A disabled paged sitemap is intentionally withdrawn, not temporarily broken.
  * Cache the 410 for one hour so crawlers stop retrying without making a later
- * `CLIMB_SITEMAPS_ENABLED=true` rollout wait on a long-lived edge response.
+ * re-enable wait on a long-lived edge response.
  */
-function disabledClimbSitemapResponse(): Response {
-  return new Response('climb sitemaps are disabled', {
+function disabledPagedSitemapResponse(id: PagedShardId): Response {
+  return new Response(`${id} sitemaps are disabled`, {
     status: 410,
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',
-      'Cache-Control': DISABLED_CLIMB_CACHE_CONTROL,
+      'Cache-Control': DISABLED_PAGED_SITEMAP_CACHE_CONTROL,
     },
   });
 }
@@ -368,7 +368,7 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
     return unavailableResponse();
   }
   if (!pagedSitemapShardEnabled(shard)) {
-    return disabledClimbSitemapResponse();
+    return disabledPagedSitemapResponse(shard.id);
   }
 
   // `[1-9]\d*` and not `\d+`: `Number('007')` is 7, so a permissive parser gives
