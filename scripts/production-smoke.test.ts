@@ -274,8 +274,8 @@ describe('www production smoke checks', () => {
     const healthy = response({
       status: 410,
       contentType: 'text/plain; charset=utf-8',
-      body: 'climb sitemaps are disabled',
-      headers: { 'cache-control': 'public, s-maxage=3600, must-revalidate' },
+      body: 'climbs sitemaps are disabled',
+      headers: { 'cache-control': 'public, must-revalidate' },
     });
     expect(check.assert(healthy)).toBeNull();
     expect(check.assert({ ...healthy, status: 200 })).toMatch(/410/);

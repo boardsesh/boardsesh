@@ -156,7 +156,12 @@ const SITEMAP_DEGRADED_HEADER = 'x-sitemap-degraded';
  */
 const SITEMAP_CLIMBS_SOURCE_HEADER = 'x-sitemap-climbs-source';
 const CLIMB_SITEMAP_PATH_PREFIX = '/sitemaps/climbs/';
-const DISABLED_CLIMB_CACHE_CONTROL = 'public, s-maxage=3600, must-revalidate';
+/**
+ * Vercel consumes `s-maxage=3600` as its private CDN instruction and removes it
+ * from the downstream header. The route-level test pins the full header before
+ * that transformation; production smoke pins what browsers and crawlers see.
+ */
+const DISABLED_CLIMB_CLIENT_CACHE_CONTROL = 'public, must-revalidate';
 
 /**
  * Shards the index must always list.
@@ -317,9 +322,9 @@ export const WWW_CHECKS: SmokeCheck[] = [
       firstFailure(
         expectStatus(response, 410),
         expectContentType(response, 'text/plain'),
-        response.headers['cache-control'] === DISABLED_CLIMB_CACHE_CONTROL
+        response.headers['cache-control'] === DISABLED_CLIMB_CLIENT_CACHE_CONTROL
           ? null
-          : `expected cache-control "${DISABLED_CLIMB_CACHE_CONTROL}", got "${response.headers['cache-control'] ?? ''}"`,
+          : `expected cache-control "${DISABLED_CLIMB_CLIENT_CACHE_CONTROL}", got "${response.headers['cache-control'] ?? ''}"`,
       ),
   },
   {
