@@ -81,6 +81,23 @@ describe('local profile backup provider integration', () => {
     expect(fixtures.closeAsync).toHaveBeenCalledOnce();
   });
 
+  it('does not report success until an asynchronous provider write finishes', async () => {
+    let finishWrite: (() => void) | undefined;
+    fixtures.backupFile.write.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishWrite = resolve;
+      }),
+    );
+
+    const backupPromise = createLocalProfileBackupFile({} as SQLiteDatabase);
+    await vi.waitFor(() => expect(fixtures.backupFile.write).toHaveBeenCalledOnce());
+    expect(fixtures.closeAsync).not.toHaveBeenCalled();
+
+    finishWrite?.();
+    await expect(backupPromise).resolves.toMatchObject({ uri: fixtures.backupFile.uri });
+    expect(fixtures.closeAsync).toHaveBeenCalledOnce();
+  });
+
   it.each(['ERR_PICKER_CANCELLED', 'ERR_FILE_PICKING_CANCELLED'])('recognizes %s as picker cancellation', (code) => {
     expect(isFilePickerCancellation({ code })).toBe(true);
   });

@@ -529,6 +529,34 @@ describe('local-only playlists', () => {
     expect(trackMock).not.toHaveBeenCalled();
   });
 
+  it('reorders a 500-climb playlist without exceeding SQLite bind limits', async () => {
+    await createPlaylistLocal(db, { boardType: 'kilter', layoutId: 1, name: 'Circuit' }, 'playlist-large');
+    await db.runAsync(
+      `WITH RECURSIVE climb_numbers(position) AS (
+         SELECT 0
+         UNION ALL
+         SELECT position + 1 FROM climb_numbers WHERE position < 499
+       )
+       INSERT INTO playlist_climbs (playlist_uuid, climb_uuid, position)
+       SELECT 'playlist-large', printf('climb-%03d', position), position FROM climb_numbers`,
+    );
+
+    await expect(
+      reorderPlaylistClimbLocal(db, { playlistId: 'playlist-large', climbUuid: 'climb-499', newIndex: 0 }),
+    ).resolves.toBe(true);
+
+    expect(
+      await db.getAllAsync<Row>(
+        `SELECT climb_uuid, position FROM playlist_climbs
+         WHERE playlist_uuid = ? ORDER BY position ASC LIMIT 2`,
+        ['playlist-large'],
+      ),
+    ).toEqual([
+      expect.objectContaining({ climb_uuid: 'climb-499', position: 0 }),
+      expect.objectContaining({ climb_uuid: 'climb-000', position: 1 }),
+    ]);
+  });
+
   it('deletes the playlist and its membership locally', async () => {
     await createPlaylistLocal(db, { boardType: 'kilter', layoutId: 1, name: 'Projects' }, 'playlist-local-1');
     await addClimbToPlaylistLocal(db, { playlistId: 'playlist-local-1', climbUuid: 'climb-1', angle: 40 });

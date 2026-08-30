@@ -20,6 +20,15 @@ function backupFileName(createdAt: Date): string {
 
 const MAX_BACKUP_FILE_BYTES = 25 * 1024 * 1024;
 
+function isThenable(result: unknown): result is PromiseLike<void> {
+  return (
+    (typeof result === 'object' || typeof result === 'function') &&
+    result !== null &&
+    'then' in result &&
+    typeof result.then === 'function'
+  );
+}
+
 export function isFilePickerCancellation(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const candidate = error as { code?: unknown; name?: unknown };
@@ -50,7 +59,11 @@ export async function createLocalProfileBackupFile(source: SQLiteDatabase): Prom
     // directories. File.create() rejects those URIs, while Directory.createFile()
     // delegates creation to the selected provider on both Android and iOS.
     const backupFile = destinationDirectory.createFile(fileName, 'application/vnd.sqlite3');
-    backupFile.write(serialized);
+    // Keep this awaited even though the current native API is synchronous.
+    // Provider-backed implementations and test doubles may finish the write
+    // asynchronously, and the success result must never race the final bytes.
+    const writeResult: unknown = backupFile.write(serialized);
+    if (isThenable(writeResult)) await writeResult;
     return { ...counts, fileName, uri: backupFile.uri };
   } finally {
     await destination.closeAsync();

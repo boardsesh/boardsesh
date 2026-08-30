@@ -353,6 +353,17 @@ describe('OfflineSyncBridge — local user-data owner stamp', () => {
     expect(closeLocalProfileDatabaseMock).toHaveBeenCalledOnce();
   });
 
+  it('stops automatically retrying a failed account import', async () => {
+    readPendingLocalProfileImportPromptMock.mockReturnValue(true);
+    importLocalProfileIntoAccountMock.mockRejectedValueOnce(new Error('database locked'));
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+
+    await waitFor(() => expect(writePendingLocalProfileImportPromptMock).toHaveBeenCalledWith(false));
+
+    expect(importLocalProfileIntoAccountMock).toHaveBeenCalledTimes(1);
+    expect(closeLocalProfileDatabaseMock).toHaveBeenCalledOnce();
+  });
+
   it('wipes and re-stamps when the rows belong to another account', async () => {
     assertLocalUserDataOwnerMock.mockResolvedValue('mismatch');
     render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);

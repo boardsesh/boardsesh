@@ -173,4 +173,40 @@ describe('local profile backup', () => {
 
     await expect(validateLocalProfileBackup(destination)).rejects.toThrow('personal-only');
   });
+
+  it('rejects a backup whose declared column types do not match', async () => {
+    await exportLocalProfileBackup(source, destination, '2026-08-30T01:02:03.000Z');
+    await destination.execAsync('DROP TABLE user_favorites');
+    await destination.execAsync(`CREATE TABLE user_favorites (
+      board_name BLOB NOT NULL, climb_uuid TEXT NOT NULL, angle INTEGER NOT NULL,
+      user_id TEXT, created_at TEXT, updated_at TEXT,
+      PRIMARY KEY (board_name, climb_uuid, angle)
+    )`);
+
+    await expect(validateLocalProfileBackup(destination)).rejects.toThrow('invalid user_favorites schema');
+  });
+
+  it('rejects oversized text values before restoring anything', async () => {
+    await exportLocalProfileBackup(source, destination, '2026-08-30T01:02:03.000Z');
+    await destination.runAsync('INSERT INTO playlists (uuid, layout_id, name, is_public) VALUES (?, ?, ?, ?)', [
+      'oversized-playlist',
+      1,
+      'x'.repeat(1_000_001),
+      0,
+    ]);
+
+    await expect(validateLocalProfileBackup(destination)).rejects.toThrow('invalid playlists.name value');
+  });
+
+  it('rejects invalid tick status values before restoring anything', async () => {
+    await exportLocalProfileBackup(source, destination, '2026-08-30T01:02:03.000Z');
+    await destination.runAsync(
+      `INSERT INTO boardsesh_ticks
+       (uuid, user_id, board_type, climb_uuid, angle, status, attempt_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ['invalid-status', 'local:profile-1', 'kilter', 'climb-1', 40, 'sent', 1],
+    );
+
+    await expect(validateLocalProfileBackup(destination)).rejects.toThrow('invalid row values');
+  });
 });

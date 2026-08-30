@@ -895,10 +895,25 @@ export async function reorderPlaylistClimbLocal(
       if (oldIndex === -1) return;
       const [moved] = rows.splice(oldIndex, 1);
       rows.splice(Math.max(0, Math.min(input.newIndex, rows.length)), 0, moved);
-      for (const [position, { climb_uuid: climbUuid }] of rows.entries()) {
+      const updatedAt = new Date().toISOString();
+      // Stay below SQLite's legacy 999-variable ceiling while reducing a
+      // 500-climb reorder from 500 awaited statements to two batched writes.
+      const reorderBatchSize = 300;
+      for (let batchStart = 0; batchStart < rows.length; batchStart += reorderBatchSize) {
+        const batch = rows.slice(batchStart, batchStart + reorderBatchSize);
+        const positionCases = batch.map(() => 'WHEN ? THEN ?').join(' ');
+        const climbPlaceholders = batch.map(() => '?').join(', ');
+        const positionParameters = batch.flatMap(({ climb_uuid: climbUuid }, batchIndex) => [
+          climbUuid,
+          batchStart + batchIndex,
+        ]);
+        const climbUuids = batch.map(({ climb_uuid: climbUuid }) => climbUuid);
         await txn.runAsync(
-          'UPDATE playlist_climbs SET position = ?, updated_at = ? WHERE playlist_uuid = ? AND climb_uuid = ?',
-          [position, new Date().toISOString(), input.playlistId, climbUuid],
+          `UPDATE playlist_climbs
+           SET position = CASE climb_uuid ${positionCases} ELSE position END,
+               updated_at = ?
+           WHERE playlist_uuid = ? AND climb_uuid IN (${climbPlaceholders})`,
+          [...positionParameters, updatedAt, input.playlistId, ...climbUuids],
         );
       }
       reordered = true;

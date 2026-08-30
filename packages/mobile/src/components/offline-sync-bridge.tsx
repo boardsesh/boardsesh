@@ -166,7 +166,15 @@ export function OfflineSyncBridge() {
             writePendingLocalProfileImportPrompt(false);
             return;
           }
-          await importLocalProfileIntoAccount(localProfileDatabase, db, localUserId);
+          try {
+            await importLocalProfileIntoAccount(localProfileDatabase, db, localUserId);
+          } catch (error) {
+            // The login-free database remains untouched, so clearing the
+            // automatic prompt prevents a persistent SQLite error from
+            // trapping every later account launch in the same retry loop.
+            writePendingLocalProfileImportPrompt(false);
+            throw error;
+          }
           writePendingLocalProfileImportPrompt(false);
           queryClient.removeQueries({ queryKey: ['logbook'] });
           await queryClient.invalidateQueries();
