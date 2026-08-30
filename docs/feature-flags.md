@@ -114,7 +114,14 @@ diagnostic) applies on native. The whole surface lives in three files:
 - **Live read**: `readPosthogFeatureFlags` in `packages/mobile/src/lib/analytics.ts`.
 - **Dev override**: `packages/mobile/src/lib/feature-flag-overrides.ts` — an
   on-device `Record<string, boolean | string>`, persisted to AsyncStorage,
-  settable from the Feature Flags screen.
+settable from the Feature Flags screen.
+
+Mobile flag reads also obey the app's network policy. `local-catalog-only`
+allows only the mandatory public board-catalog download; `account-offline`
+allows no new network requests. In either mode PostHog is not constructed or
+queried, so flags stay unresolved and consumers use their shipped defaults.
+These modes come from the persisted login-free / Work Offline choice, not a
+feature flag. See `docs/offline-sync-plan.md` for the access-mode contract.
 
 **Precedence, low to high**: PostHog < a static `flags` prop (build-time /
 emergency override) < the on-device dev override. `FeatureFlagsProvider`

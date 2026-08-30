@@ -101,6 +101,13 @@ inert. The cert gate matters: baking the self-hosted update URL into a binary _w
 signing would let a compromised manifest host (or a network MITM) push arbitrary JS to every
 install, since the device couldn't verify the manifest came from us.
 
+Every native build sets `updates.checkAutomatically` to `NEVER`. After JavaScript
+loads, `OtaUpdateController` checks on launch and foreground only for a signed-in,
+online account. This applies to EAS preview and production builds alike; a
+login-free profile or signed-in Work Offline session makes no OTA request.
+Preview testers therefore receive automatic checks after signing in and can use
+the branch switcher only while online.
+
 ## How the production path works
 
 1. **Build time** (`expo prebuild`): `app.config.ts` injects literal request headers

@@ -62,8 +62,6 @@ export function isExpoUiSheetNoHandlerRejection(event: SentryEventLike, original
   return EXPO_UI_SHEET_NO_HANDLER.test(fromEvent) || EXPO_UI_SHEET_NO_HANDLER.test(fromHint);
 }
 
-let sentryInitialized = false;
-
 /** Testable construction gate: a configured production SDK still stays absent. */
 export function initializeConfiguredSentryIfAllowed(configured: boolean, initialize: () => void): boolean {
   if (!configured || !isNetworkAllowed('telemetry')) return false;
@@ -71,15 +69,61 @@ export function initializeConfiguredSentryIfAllowed(configured: boolean, initial
   return true;
 }
 
-function initializeSentryIfAllowed(): void {
-  if (sentryInitialized) return;
-  const initialized = initializeConfiguredSentryIfAllowed(isSentryEnabled, () => {
+type SentryLifecycleController = {
+  reconcile: () => void;
+  isActive: () => boolean;
+};
+
+/**
+ * Keeps the native SDK absent in private modes, closes it when an online
+ * account goes offline, and reinitializes only after any close finishes.
+ */
+export function createSentryLifecycleController(options: {
+  configured: boolean;
+  isAllowed: () => boolean;
+  initialize: () => void;
+  close: () => PromiseLike<void>;
+}): SentryLifecycleController {
+  let active = false;
+  let closeInFlight: Promise<void> | null = null;
+
+  const reconcile = (): void => {
+    if (!options.configured) return;
+    if (!options.isAllowed()) {
+      if (!active || closeInFlight) return;
+      active = false;
+      let closeAttempt: PromiseLike<void>;
+      try {
+        closeAttempt = options.close();
+      } catch {
+        closeAttempt = Promise.resolve();
+      }
+      closeInFlight = Promise.resolve(closeAttempt)
+        .catch(() => undefined)
+        .finally(() => {
+          closeInFlight = null;
+          reconcile();
+        });
+      return;
+    }
+    if (active || closeInFlight) return;
+    options.initialize();
+    active = true;
+  };
+
+  return { reconcile, isActive: () => active };
+}
+
+const sentryLifecycle = createSentryLifecycleController({
+  configured: isSentryEnabled,
+  isAllowed: () => isNetworkAllowed('telemetry'),
+  initialize: () => {
     Sentry.init({
       dsn: sentryDsn,
-      // Keep delivery in the JS fetch transport, where the runtime network
-      // policy is enforceable. The native transport owns an independent offline
-      // queue that cannot be stopped when Work Offline flips mid-process.
-      enableNative: false,
+      // Native crashes and ANRs stay available for online account sessions.
+      // The lifecycle controller never initializes this client for login-free
+      // launches and closes both JS + native clients on Work Offline.
+      enableNative: true,
       // production for store/TestFlight bundles; 'preview' for pr-* OTA bundles so
       // their crashes are filterable out of the prod view. See resolveAppEnvironment
       // (shared with PostHog — app-environment.ts).
@@ -97,21 +141,18 @@ function initializeSentryIfAllowed(): void {
       beforeSendTransaction(event) {
         return isNetworkAllowed('telemetry') ? event : null;
       },
-      // Native crash/ANR delivery has its own offline cache and cannot obey a
-      // mid-process Work Offline transition, so it stays disabled with the native
-      // transport above. JS reports retain stacks and use the gated fetch path.
-      enableNativeCrashHandling: false,
+      enableNativeCrashHandling: true,
       attachStacktrace: true,
     });
-  });
-  if (initialized) sentryInitialized = true;
-}
+  },
+  close: () => Sentry.close(),
+});
 
-initializeSentryIfAllowed();
+sentryLifecycle.reconcile();
 // A login-free launch deliberately skips SDK construction. If the climber
-// signs in later, initialize then; capture methods still gate every call while
-// local or hard-offline mode is active.
-subscribeNetworkPolicy(initializeSentryIfAllowed);
+// signs in later, initialize then. Going offline closes the native SDK; going
+// online again waits for that close before constructing a fresh client.
+subscribeNetworkPolicy(sentryLifecycle.reconcile);
 
 // Sentry tags must be primitives; coerce non-scalar values to a readable string
 // rather than dropping them so triage data survives. Objects/arrays would

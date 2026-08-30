@@ -13,6 +13,7 @@ vi.mock('@sentry/react-native', () => ({
   captureException: vi.fn(),
   captureMessage: vi.fn(),
   flush: vi.fn(() => Promise.resolve(true)),
+  close: vi.fn(() => Promise.resolve()),
   wrap: vi.fn((component: unknown) => component),
   setTag: vi.fn(),
 }));
@@ -35,6 +36,7 @@ import {
   isSentryEnabled,
   toSentryTag,
   LIVE_ACTIVITY_INTENT_INTERRUPTED_FINGERPRINT,
+  createSentryLifecycleController,
   initializeConfiguredSentryIfAllowed,
 } from '../sentry';
 import { setNetworkPolicy } from '../network-policy';
@@ -71,6 +73,43 @@ describe('Sentry network policy', () => {
       setNetworkPolicy('online');
     },
   );
+
+  it('closes native reporting offline and reinitializes after close online', async () => {
+    let allowed = true;
+    let finishClose: (() => void) | undefined;
+    const initialize = vi.fn();
+    const close = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishClose = resolve;
+        }),
+    );
+    const lifecycle = createSentryLifecycleController({
+      configured: true,
+      isAllowed: () => allowed,
+      initialize,
+      close,
+    });
+
+    lifecycle.reconcile();
+    expect(lifecycle.isActive()).toBe(true);
+    expect(initialize).toHaveBeenCalledTimes(1);
+
+    allowed = false;
+    lifecycle.reconcile();
+    expect(lifecycle.isActive()).toBe(false);
+    expect(close).toHaveBeenCalledTimes(1);
+
+    allowed = true;
+    lifecycle.reconcile();
+    expect(initialize).toHaveBeenCalledTimes(1);
+    finishClose?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(lifecycle.isActive()).toBe(true);
+    expect(initialize).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('Live Activity intent diagnostic reporting', () => {

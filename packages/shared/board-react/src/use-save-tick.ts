@@ -203,6 +203,8 @@ export function useSaveTick(boardName: BoardName | null) {
             acknowledgedReadOwner.schedule(adapter, eagerlySettled.key, eagerlySettled.token);
           }
         } else if (delivery === 'acknowledged') {
+          // Queued writes keep their optimistic token until the outbox drainer
+          // confirms them; local-only writes never have a server acknowledgement.
           acknowledgeOptimisticAscent(context.statsToken, context.authEpoch);
           if (context.readLifecycleGeneration === readLifecycleGenerationRef.current) {
             acknowledgedReadOwner.schedule(adapter, context.statsKey, context.statsToken);

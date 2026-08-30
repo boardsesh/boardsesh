@@ -23,10 +23,12 @@ const REQUIRED_BACKUP_TABLES = new Set([
   'playlist_climbs',
 ]);
 const MAX_BACKUP_FIELD_BYTES = 1_000_000;
+const BACKUP_COPY_BATCH_SIZE = 500;
 
 type BackupTable = {
   name: 'boardsesh_ticks' | 'user_favorites' | 'playlists' | 'playlist_climbs';
   columns: readonly string[];
+  orderBy: string;
   sourceWhere?: string;
   ownerScoped?: boolean;
 };
@@ -74,12 +76,14 @@ const BACKUP_TABLES: readonly BackupTable[] = [
       'created_at',
       'updated_at',
     ],
+    orderBy: 'uuid',
     sourceWhere: 'user_id = ?',
     ownerScoped: true,
   },
   {
     name: 'user_favorites',
     columns: ['board_name', 'climb_uuid', 'angle', 'user_id', 'created_at', 'updated_at'],
+    orderBy: 'board_name, climb_uuid, angle',
     sourceWhere: 'user_id = ?',
     ownerScoped: true,
   },
@@ -98,10 +102,12 @@ const BACKUP_TABLES: readonly BackupTable[] = [
       'updated_at',
       'last_accessed_at',
     ],
+    orderBy: 'uuid',
   },
   {
     name: 'playlist_climbs',
     columns: ['playlist_uuid', 'climb_uuid', 'angle', 'position', 'added_at', 'updated_at'],
+    orderBy: 'playlist_uuid, climb_uuid',
     sourceWhere: 'EXISTS (SELECT 1 FROM playlists WHERE playlists.uuid = playlist_climbs.playlist_uuid)',
   },
 ];
@@ -120,6 +126,23 @@ const INTEGER_COLUMNS = new Set([
   'playlist_climbs.position',
 ]);
 
+async function readTableBatch(
+  source: SqlExecutor,
+  table: BackupTable,
+  offset: number,
+  ownerUserId?: string,
+): Promise<Array<Record<string, SqlValue>>> {
+  const sourceWhere = ownerUserId === undefined ? undefined : table.sourceWhere;
+  const parameters: SqlValue[] = [];
+  if (sourceWhere && table.ownerScoped) parameters.push(ownerUserId ?? null);
+  parameters.push(BACKUP_COPY_BATCH_SIZE, offset);
+  return source.getAllAsync<Record<string, SqlValue>>(
+    `SELECT ${table.columns.join(', ')} FROM ${table.name}${sourceWhere ? ` WHERE ${sourceWhere}` : ''}
+     ORDER BY ${table.orderBy} LIMIT ? OFFSET ?`,
+    parameters,
+  );
+}
+
 async function copyTable(
   source: SqlExecutor,
   destination: SqlExecutor,
@@ -127,18 +150,19 @@ async function copyTable(
   ownerUserId: string,
 ): Promise<number> {
   const columnList = table.columns.join(', ');
-  const rows = await source.getAllAsync<Record<string, SqlValue>>(
-    `SELECT ${columnList} FROM ${table.name}${table.sourceWhere ? ` WHERE ${table.sourceWhere}` : ''}`,
-    table.ownerScoped ? [ownerUserId] : [],
-  );
   const placeholders = table.columns.map(() => '?').join(', ');
-  for (const row of rows) {
-    await destination.runAsync(
-      `INSERT INTO ${table.name} (${columnList}) VALUES (${placeholders})`,
-      table.columns.map((column) => row[column] ?? null),
-    );
+  let copied = 0;
+  while (true) {
+    const rows = await readTableBatch(source, table, copied, ownerUserId);
+    for (const row of rows) {
+      await destination.runAsync(
+        `INSERT INTO ${table.name} (${columnList}) VALUES (${placeholders})`,
+        table.columns.map((column) => row[column] ?? null),
+      );
+    }
+    copied += rows.length;
+    if (rows.length < BACKUP_COPY_BATCH_SIZE) return copied;
   }
-  return rows.length;
 }
 
 async function readMetadata(backup: SqlExecutor, key: string): Promise<string | null> {
@@ -184,14 +208,13 @@ export async function validateLocalProfileBackup(backup: SqlExecutor): Promise<V
 
     for (const column of columns) {
       const allowedTypes = INTEGER_COLUMNS.has(`${tableName}.${column}`) ? "'null', 'integer'" : "'null', 'text'";
-      const invalidStorage = await backup.getFirstAsync<{ count: number }>(
-        `SELECT COUNT(*) AS count FROM ${tableName} WHERE typeof(${column}) NOT IN (${allowedTypes})`,
-      );
-      const oversized = await backup.getFirstAsync<{ count: number }>(
-        `SELECT COUNT(*) AS count FROM ${tableName} WHERE length(CAST(${column} AS BLOB)) > ?`,
+      const invalidValue = await backup.getFirstAsync<{ invalid: number }>(
+        `SELECT 1 AS invalid FROM ${tableName}
+         WHERE typeof(${column}) NOT IN (${allowedTypes}) OR length(CAST(${column} AS BLOB)) > ?
+         LIMIT 1`,
         [MAX_BACKUP_FIELD_BYTES],
       );
-      if ((invalidStorage?.count ?? 0) > 0 || (oversized?.count ?? 0) > 0) {
+      if (invalidValue) {
         throw new Error(`The selected backup contains an invalid ${tableName}.${column} value`);
       }
     }
@@ -283,14 +306,6 @@ export async function restoreLocalProfileBackup(
     throw new Error('A ready login-free profile is required to restore a backup');
   }
 
-  const backupRows = new Map<BackupTable['name'], Array<Record<string, SqlValue>>>();
-  for (const table of BACKUP_TABLES) {
-    backupRows.set(
-      table.name,
-      await backup.getAllAsync<Record<string, SqlValue>>(`SELECT ${table.columns.join(', ')} FROM ${table.name}`),
-    );
-  }
-
   const outcome: { counts: LocalProfileBackupCounts | null } = { counts: null };
   await destination.withExclusiveTransactionAsync(async (transaction) => {
     const inserted: number[] = [];
@@ -300,23 +315,31 @@ export async function restoreLocalProfileBackup(
       let tableInserted = 0;
       const columns = table.columns.join(', ');
       const placeholders = table.columns.map(() => '?').join(', ');
-      for (const row of backupRows.get(table.name) ?? []) {
-        if (
-          table.name === 'playlist_climbs' &&
-          !sourceAndDestinationOwnerMatch &&
-          !importedPlaylistUuids.has(String(row.playlist_uuid ?? ''))
-        ) {
-          continue;
+      let offset = 0;
+      while (true) {
+        const rows = await readTableBatch(backup, table, offset);
+        for (const row of rows) {
+          if (
+            table.name === 'playlist_climbs' &&
+            !sourceAndDestinationOwnerMatch &&
+            !importedPlaylistUuids.has(String(row.playlist_uuid ?? ''))
+          ) {
+            continue;
+          }
+          const parameters = table.columns.map((column) =>
+            column === 'user_id' ? destinationOwnerUserId : (row[column] ?? null),
+          );
+          const result = await transaction.runAsync(
+            `INSERT OR IGNORE INTO ${table.name} (${columns}) VALUES (${placeholders})`,
+            parameters,
+          );
+          tableInserted += result.changes;
+          if (table.name === 'playlists' && result.changes > 0) {
+            importedPlaylistUuids.add(String(row.uuid ?? ''));
+          }
         }
-        const parameters = table.columns.map((column) =>
-          column === 'user_id' ? destinationOwnerUserId : (row[column] ?? null),
-        );
-        const result = await transaction.runAsync(
-          `INSERT OR IGNORE INTO ${table.name} (${columns}) VALUES (${placeholders})`,
-          parameters,
-        );
-        tableInserted += result.changes;
-        if (table.name === 'playlists' && result.changes > 0) importedPlaylistUuids.add(String(row.uuid ?? ''));
+        offset += rows.length;
+        if (rows.length < BACKUP_COPY_BATCH_SIZE) break;
       }
       inserted.push(tableInserted);
     }
