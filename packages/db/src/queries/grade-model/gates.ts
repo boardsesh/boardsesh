@@ -6,7 +6,7 @@ import {
   GATE_RESIDUAL_PAIRED_GAP,
   GATE_TAIL_MAE_IMPROVEMENT,
 } from './constants';
-import { computePosteriorGrade } from './blend';
+import { computePosteriorGrade, echoFractionFor, effectiveN } from './blend';
 import type { BoardOffsetSampleRow } from './coefficients';
 import type { ClimbAngleObservation, GateResult, GradeCoefficients } from './types';
 
@@ -284,4 +284,228 @@ export function evaluateBacktest(rows: BacktestSampleRow[], coefficients: GradeC
       singleAngle: { n: single.n, rawMae: singleRawMae, shrunkMae: singleShrunkMae },
     },
   };
+}
+
+/**
+ * One offline Climb2Vec content-model estimate for a climb+angle. Mirrors the
+ * board_climb_embeddings columns the nightly refresh reads, so the file-injection
+ * path (candidate scoring) and the DB path share the same value shape and key.
+ */
+export interface ContentPriorEntry {
+  contentPrior: number;
+  contentSd: number | null;
+}
+
+/**
+ * Map key for a content prior. Deliberately board-less: callers hold a per-board
+ * map, so a climb+angle uniquely identifies a row within it. The NUL separator
+ * is safe because climb UUIDs never contain one.
+ */
+export function contentPriorKey(climbUuid: string, angle: number): string {
+  return `${climbUuid} ${angle}`;
+}
+
+/** n_eff strata for the content-prior backtest. Snapshot counts are 1–3, so on
+ * high-echo boards nearly all mass lands in [1,3); the wider buckets exist for
+ * low-echo boards (small λ) where n_eff(snap_count) can reach 3+. */
+const CONTENT_PRIOR_NEFF_BUCKETS = ['<1', '[1,3)', '[3,10)', '>=10'] as const;
+
+function contentPriorNEffBucket(nEff: number): (typeof CONTENT_PRIOR_NEFF_BUCKETS)[number] {
+  if (nEff < 1) return '<1';
+  if (nEff < 3) return '[1,3)';
+  if (nEff < 10) return '[3,10)';
+  return '>=10';
+}
+
+/** Per-bucket (and overall) error stats for the content-prior backtest report. */
+export interface ContentPriorBucketReport {
+  /** One of the n_eff buckets, or 'overall'. */
+  bucket: string;
+  /** Matched candidate rows in this bucket (the content/coverage denominator). */
+  n: number;
+  /** Mean |contentPrior − final_avg| over the n matched rows. */
+  contentMae: number;
+  /** Mean |snap_avg − final_avg| over display-comparable rows (raw early crowd). */
+  earlyCrowdMae: number;
+  /** Mean |snap_display − final_avg| over display-comparable rows (honest no-content baseline). */
+  earlyDisplayMae: number;
+  /** Matched rows with a non-null snap_display (the shared baseline denominator). */
+  displayComparableRows: number;
+  /** Matched rows whose snap_display was null (excluded from both baselines, counted here). */
+  displayNullRows: number;
+}
+
+export interface ContentPriorBacktestSummary {
+  boardType: string;
+  /** Backtest sample rows scored for this board (coverage denominator). */
+  totalRows: number;
+  /** Rows that had a candidate content prior in the file. */
+  matchedRows: number;
+  /** matchedRows / totalRows. */
+  coverage: number;
+  overall: ContentPriorBucketReport;
+  /** The four n_eff buckets in fixed order. */
+  buckets: ContentPriorBucketReport[];
+  /** Report-only gate ('content_prior_backtest', always passed) for the run's gate list. */
+  gate: GateResult;
+}
+
+interface ContentPriorAccumulator {
+  matched: number;
+  contentAbs: number;
+  displayComparable: number;
+  crowdAbs: number;
+  displayAbs: number;
+  displayNull: number;
+}
+
+function makeContentPriorAccumulator(): ContentPriorAccumulator {
+  return { matched: 0, contentAbs: 0, displayComparable: 0, crowdAbs: 0, displayAbs: 0, displayNull: 0 };
+}
+
+function toContentPriorBucketReport(bucket: string, acc: ContentPriorAccumulator): ContentPriorBucketReport {
+  return {
+    bucket,
+    n: acc.matched,
+    contentMae: acc.matched > 0 ? acc.contentAbs / acc.matched : 0,
+    earlyCrowdMae: acc.displayComparable > 0 ? acc.crowdAbs / acc.displayComparable : 0,
+    earlyDisplayMae: acc.displayComparable > 0 ? acc.displayAbs / acc.displayComparable : 0,
+    displayComparableRows: acc.displayComparable,
+    displayNullRows: acc.displayNull,
+  };
+}
+
+/**
+ * Score a CANDIDATE content-prior set against the same pre-registered backtest
+ * sample the crowd model is graded on. For every history snapshot whose series
+ * later reached ≥50 ascents (final_avg = truth), and for which the candidate
+ * file supplies a prior, we compare three errors against that truth:
+ *
+ *  - content: |contentPrior − final_avg| (the candidate)
+ *  - early-crowd: |snap_avg − final_avg| (the raw 1–3-ascent mean)
+ *  - display: |snap_display − final_avg| (what users saw pre-crowd — the honest
+ *    no-content baseline)
+ *
+ * The candidate is scored on every matched row; the two BASELINES share a
+ * denominator of rows with a non-null snap_display, so crowd-vs-display stays an
+ * apples-to-apples pair and null-display rows are reported separately rather than
+ * silently inflating either baseline. Errors are stratified by the snapshot's
+ * n_eff bucket (effectiveN(snap_count, echoFraction)).
+ *
+ * The map is keyed by contentPriorKey (board-less) — pass a per-board map and
+ * rows already filtered to that board (see refresh-climb-grades). The returned
+ * gate is REPORT-ONLY (never blocks): the backtest truth is itself herded toward
+ * the early label, so this is a diagnostic, not a pass/fail bar.
+ */
+export function evaluateContentPriorBacktest(
+  rows: BacktestSampleRow[],
+  contentPriors: Map<string, ContentPriorEntry>,
+  coefficients: GradeCoefficients,
+): ContentPriorBacktestSummary {
+  const boardType = rows[0]?.board_type ?? 'unknown';
+  const overall = makeContentPriorAccumulator();
+  const byBucket = new Map<string, ContentPriorAccumulator>();
+  for (const bucket of CONTENT_PRIOR_NEFF_BUCKETS) byBucket.set(bucket, makeContentPriorAccumulator());
+
+  let matchedRows = 0;
+  for (const row of rows) {
+    const entry = contentPriors.get(contentPriorKey(row.climb_uuid, Number(row.angle)));
+    if (!entry || !Number.isFinite(entry.contentPrior)) continue;
+    matchedRows += 1;
+
+    const finalAvg = Number(row.final_avg);
+    const contentError = Math.abs(Number(entry.contentPrior) - finalAvg);
+    const crowdError = Math.abs(Number(row.snap_avg) - finalAvg);
+    const hasDisplay = row.snap_display !== null && Number.isFinite(Number(row.snap_display));
+    const displayError = hasDisplay ? Math.abs(Number(row.snap_display) - finalAvg) : 0;
+
+    const nEff = effectiveN(Number(row.snap_count), echoFractionFor(coefficients, row.board_type));
+    const bucketKey = contentPriorNEffBucket(nEff);
+    let bucketAcc = byBucket.get(bucketKey);
+    if (!bucketAcc) {
+      bucketAcc = makeContentPriorAccumulator();
+      byBucket.set(bucketKey, bucketAcc);
+    }
+
+    for (const acc of [overall, bucketAcc]) {
+      acc.matched += 1;
+      acc.contentAbs += contentError;
+      if (hasDisplay) {
+        acc.displayComparable += 1;
+        acc.crowdAbs += crowdError;
+        acc.displayAbs += displayError;
+      } else {
+        acc.displayNull += 1;
+      }
+    }
+  }
+
+  const overallReport = toContentPriorBucketReport('overall', overall);
+  const buckets = CONTENT_PRIOR_NEFF_BUCKETS.map((bucket) =>
+    toContentPriorBucketReport(bucket, byBucket.get(bucket) ?? makeContentPriorAccumulator()),
+  );
+  const totalRows = rows.length;
+  const coverage = totalRows > 0 ? matchedRows / totalRows : 0;
+
+  const bucketTable =
+    buckets
+      .filter((bucket) => bucket.n > 0)
+      .map(
+        (bucket) =>
+          `${bucket.bucket} n=${bucket.n} c${bucket.contentMae.toFixed(2)}/d${bucket.earlyDisplayMae.toFixed(2)}/x${bucket.earlyCrowdMae.toFixed(2)}`,
+      )
+      .join(' | ') || 'none';
+
+  const gate: GateResult = {
+    gate: 'content_prior_backtest',
+    passed: true,
+    detail:
+      `${boardType}: coverage ${(coverage * 100).toFixed(1)}% (${matchedRows}/${totalRows}); ` +
+      `content MAE ${overallReport.contentMae.toFixed(3)} vs display ${overallReport.earlyDisplayMae.toFixed(3)} ` +
+      `vs early-crowd ${overallReport.earlyCrowdMae.toFixed(3)} over ${overallReport.displayComparableRows} ` +
+      `display-comparable rows (${overallReport.displayNullRows} null-display); buckets [${bucketTable}]`,
+    metrics: {
+      totalRows,
+      matchedRows,
+      coverage,
+      contentMae: overallReport.contentMae,
+      earlyCrowdMae: overallReport.earlyCrowdMae,
+      earlyDisplayMae: overallReport.earlyDisplayMae,
+      displayComparableRows: overallReport.displayComparableRows,
+      displayNullRows: overallReport.displayNullRows,
+    },
+  };
+
+  return { boardType, totalRows, matchedRows, coverage, overall: overallReport, buckets, gate };
+}
+
+/** Outcome of parsing one JSONL line of a candidate content-prior file. */
+export type ContentPriorLineResult =
+  | { status: 'ok'; key: string; entry: ContentPriorEntry }
+  | { status: 'skip' }
+  | { status: 'malformed' };
+
+/**
+ * Parse one JSONL record `{climbUuid, angle, contentPrior, contentSd?, board?}`
+ * from a candidate content-prior file. Bad JSON or a missing/invalid required
+ * field → 'malformed'; a well-formed record whose `board` names a different
+ * board → 'skip'; otherwise 'ok' with the map key + entry. Pure so the file
+ * loader (refresh-climb-grades) can stream lines through it and stay testable.
+ */
+export function parseContentPriorLine(line: string, boardType: string): ContentPriorLineResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return { status: 'malformed' };
+  }
+  if (typeof parsed !== 'object' || parsed === null) return { status: 'malformed' };
+  const record = parsed as Record<string, unknown>;
+  const { climbUuid, angle, contentPrior, contentSd, board } = record;
+  if (typeof climbUuid !== 'string' || climbUuid.length === 0) return { status: 'malformed' };
+  if (typeof angle !== 'number' || !Number.isFinite(angle)) return { status: 'malformed' };
+  if (typeof contentPrior !== 'number' || !Number.isFinite(contentPrior)) return { status: 'malformed' };
+  if (typeof board === 'string' && board !== boardType) return { status: 'skip' };
+  const sd = typeof contentSd === 'number' && Number.isFinite(contentSd) ? contentSd : null;
+  return { status: 'ok', key: contentPriorKey(climbUuid, angle), entry: { contentPrior, contentSd: sd } };
 }
