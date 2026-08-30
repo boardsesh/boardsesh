@@ -9,6 +9,7 @@
  *   vp run generate:board-art-geometry -- --check           # drift gate (CI)
  *   vp run generate:board-art-geometry -- --board=kilter    # one board
  *   vp run generate:board-art-geometry -- --config=8-25     # one layout-size
+ *   vp run generate:board-art-geometry -- --report=<dir>    # visual + metric report, writes no shards
  *
  * WHY THIS IS OFFLINE
  * -------------------
@@ -21,23 +22,33 @@
  *
  * WHAT ONE SHARD IS
  * -----------------
- * One `(board, layout, size)` with EVERY set of that layout and size mounted.
- * The nearest-placement partition below is only conservative when all the
- * neighbours are present: trace a subset and a hold whose neighbour is missing
- * grows into the space that neighbour would have occupied. Per-subset shards
- * would also be combinatorial (Decoy 2-1 mounts 19 layers) for a difference no
- * renderer draws.
+ * One `(board, layout, size)` with every set of that layout and size mounted.
+ * Set ids are not part of the key, and since the tracer went per-image that is
+ * exact rather than merely adequate: each placement is traced against the ONE
+ * layer that draws it, partitioned only over the other placements on that layer,
+ * so nothing about a hold's silhouette depends on which other sets are mounted.
+ * Per-subset shards would be combinatorial (Decoy 2-1 mounts 19 layers) for a
+ * difference that provably does not exist.
  *
- * THE THREE BUGS THE DESIGN REVIEW FOUND, and the rule each one bought:
+ * THE FOUR BUGS, and the rule each one bought:
  *   1. A flood fill walks through a contact patch into the neighbouring hold and
  *      the pair traces as one blob — one glow covering three holds on Kilter
- *      Homewall. Fixed by the nearest-placement partition (`buildLabelMap`).
+ *      Homewall. Fixed by the nearest-placement partition (`buildLabelMap`),
+ *      which is an exact Euclidean transform: the chamfer it replaced was ~4%
+ *      long on a diagonal and mislabelled a strip either side of every diagonal
+ *      midline.
  *   2. A hold keeps a limb joined to it only through a thin neck of a
  *      neighbour's rim — Kilter Homewall's STARTING 4628 traced as a numeral 6.
  *      Fixed by the erosion/dilation neck trim (`trimThinNecks`).
  *   3. Where two holds' art genuinely touches, the partition cut runs through
  *      solid art, so the mark's brightest band lands ON the neighbour. Fixed by
  *      the contact pullback (`pullBackFromCuts`).
+ *   4. Two holds from different SETS do not touch on the wall and barely overlap
+ *      in the art (0.06% of opaque pixels), but flatten their layers into one
+ *      bitmap and they do — and 3 and 2 then chop apart holds that had nothing
+ *      wrong with them: 375 of Kilter Homewall's 499. Fixed by tracing per
+ *      image (`perImageMaskProvider`). Every COLOUR reading still measures the
+ *      composite, because what a mark competes with is the stack.
  * Every one of those is restated as a gate in the package's tests.
  */
 
@@ -48,7 +59,13 @@ import sharp from 'sharp';
 import { listCatalogueEntries } from '../packages/shared/board-render/src/render-version-projection';
 import { getBoardDetailsForBoard } from '../packages/shared/board-render/src/board-details';
 import { getBackgroundRelPaths } from '../packages/shared/board-render/src/background';
-import type { RenderableHold } from '../packages/shared/board-render/src/types';
+// Relative, like the board-render imports above: the repo's isolated linker
+// leaves workspace packages out of the root `node_modules`, so a bare specifier
+// does not resolve for a script run from the repo root.
+import { MOONBOARD_CELL_SETS } from '../packages/shared/board-config/src/generated/moonboard-cell-sets';
+import { MOONBOARD_LAYOUTS, MOONBOARD_SETS } from '../packages/shared/board-config/src/moonboard-config';
+import type { BoardRenderDetails, RenderableHold } from '../packages/shared/board-render/src/types';
+import { loadOverridesFor } from './outline-overrides-merge';
 
 const ROOT_DIR = path.resolve(import.meta.dirname, '..');
 /**
@@ -84,6 +101,18 @@ const SEARCH_RADII = 2.6;
  */
 const SEED_PITCH_FRACTION = 0.15;
 const MIN_SEED_RADIUS = 4;
+/**
+ * Hard ceiling on the seed disc, in placement radii, whatever the pitch says.
+ *
+ * The pitch-scaled rule assumes a placement's nearest neighbour is about a hold
+ * away, which is true on a composited board and false on a single set's layer.
+ * Kilter Homewall's two screw-on layers carry 13 and 14 placements across the
+ * whole 1080x1920 board, so their nearest-neighbour pitch is hundreds of pixels
+ * and an uncapped seed disc reaches clean off the hold onto art the layer draws
+ * for somebody else. At 0.75 the disc still steps off a punched-out bolt hole on
+ * every board in the catalogue and cannot leave the placement's own radius.
+ */
+const SEED_MAX_RADII = 0.75;
 /** Fraction of perimeter allowed on the search-box boundary before the trace is junk. */
 const MAX_BOX_EDGE_SHARE = 0.1;
 /** Douglas-Peucker tolerance in board pixels. Bigger = fewer points, blockier outline. */
@@ -91,29 +120,55 @@ const SIMPLIFY_EPSILON = 1.6;
 /** Outlines shorter than this many pixels of perimeter are noise, not a hold. */
 const MIN_PERIMETER_POINTS = 24;
 /**
- * The board width the two radii below are quoted at, and the width the play view
- * renders at. MoonBoard's art box is 650 px wide against 1080 for most of the
- * catalogue, so an absolute board-pixel radius bites 1.66x harder there.
+ * Neck-trim and cut-clearance radius, as a fraction of the placement radius.
+ *
+ * The rule this replaces scaled both radii by the board's PIXEL width against a
+ * 1080 px reference, on the assumption that hold size scales with board width.
+ * It does not. TB2's 12x12 Wide is 1461 px across carrying the same 31.8 px
+ * placement radius as the 1080 px 12x12, so it trimmed at 4 where the narrower
+ * board trimmed at 3 — and Douglas-Peucker then left a 3-px limb the wider disc
+ * would have taken, which is exactly the one outline in the catalogue that had
+ * to be pinned as a known gate-5 failure (tension/11-10's 952).
+ *
+ * A hold's neck is a fraction of the hold, so the radius is a fraction of the
+ * placement radius. 0.078 is not a new tuning pass: it is the number that keeps
+ * Kilter Homewall at the 3 it already trimmed at and both MoonBoards at the 2
+ * they already trimmed at, so the two boards the old rule was calibrated on do
+ * not move and only the boards it got wrong do.
+ *
+ * IT SITS NEAR THE TOP OF ITS INTERVAL. Every c in [0.0648, 0.0786) rounds to
+ * exactly the radii this catalogue ships; at 0.07862 the TB2 12x12 and 12x12
+ * Wide, decoy/2-1 and grasshopper/1-4 all flip from clearance 2 to 3 and their
+ * output moves. So 0.078 is a choice inside a wide plateau rather than a knife
+ * edge that happened to land — but it is 0.0006 from the upper wall, and anyone
+ * nudging it upward should expect four configs to move rather than none.
+ *
+ * ONE COEFFICIENT FOR BOTH RADII, and that costs something the old code recorded.
+ * The rule this replaced carried a separate `CUT_CLEARANCE_AT_REFERENCE = 3` with
+ * a measurement attached: at a clearance of 2, shoulder ink sitting on a
+ * neighbour was 731 board px² across the spike's seven boards against 25 at 3.
+ * That measurement was taken on the COMPOSITE, where holds from different sets
+ * appear to touch — most of the 731 px² was ink landing on a neighbour that is
+ * not a neighbour once each set is traced on its own layer, and the boards it was
+ * taken on now clear 0.6% of their boundary against same-layer art. It is
+ * superseded, not refuted, and it is the reason to re-measure rather than assume
+ * if the clearance is ever decoupled from the trim radius again.
  */
-const RADIUS_REFERENCE_WIDTH = 1080;
-/**
- * How far inside the art a pixel has to sit to count as the hold's core, at the
- * reference width. A limb reaching the rest of the mask only through a neck too
- * thin to hold a pixel this far clear of the art's edge is not part of this hold.
- * Both MoonBoards come out at 2, which is the same 5 board px of neck at 1080
- * the wider boards get; a flat 3 cut a real lobe off two MoonBoard 2016 holds.
- */
-const NECK_TRIM_AT_REFERENCE = 3;
-/**
- * How far the emitted silhouette keeps clear of a neighbour's art, at the
- * reference width. 3 covers the glow's own shoulder, so the mark's brightest ink
- * lands on the hold's own art everywhere. At 2 the shoulder ink sitting on a
- * neighbour is 731 board px² over the spike's seven boards against 25 at 3; at 4
- * it saves 3 more px² and costs another 22,148 px² of hold.
- */
-const CUT_CLEARANCE_AT_REFERENCE = 3;
+const TRIM_RADIUS_PER_PLACEMENT_RADIUS = 0.078;
 /** Board px² a trim has to drop before the run reports it, on gate 5's threshold. */
 const NOTABLE_TRIM_AREA = 20;
+/**
+ * Share of its own art body the emitted silhouette has to keep before the hold
+ * counts as chopped.
+ *
+ * Not a tuning knob on the tracer — nothing branches on it — but the single
+ * number the whole rework is measured by: `tracedArea / cellAlphaArea`, where the
+ * denominator is the connected art body the seed sits on inside this placement's
+ * partition cell. A hold whose neck trim and pullback between them threw away
+ * more than a fifth of that body is a hold whose glow no longer matches the shape
+ * on the wall, which is the defect this pipeline exists to avoid.
+ */
+const MIN_AREA_RECOVERY = 0.8;
 /**
  * Opaque share of the composited board above which the art carries no silhouette
  * information at all, and the config is skipped.
@@ -180,12 +235,12 @@ const ORTHOGONAL: readonly Point[] = [
 ];
 
 /**
- * A radius quoted at `RADIUS_REFERENCE_WIDTH`, in this board's own pixels. The
+ * The neck-trim and cut-clearance radius for a placement, in board pixels. The
  * floor of 2 is where a disc stops being one: at radius 1 the erosion disc is a
  * single pixel and the neck trim can never fire.
  */
-function radiusForBoard(atReferenceWidth: number, boardWidth: number): number {
-  return Math.max(2, Math.round((atReferenceWidth * boardWidth) / RADIUS_REFERENCE_WIDTH));
+function radiusForPlacement(placementRadius: number): number {
+  return Math.max(2, Math.round(TRIM_RADIUS_PER_PLACEMENT_RADIUS * placementRadius));
 }
 
 /**
@@ -281,55 +336,135 @@ function simplify(points: Point[], epsilon: number): Point[] {
 }
 
 /**
- * Nearest-placement label for every pixel, by two-pass chamfer propagation from
- * the placement centres.
+ * Nearest-placement label for every pixel, by an EXACT Euclidean distance
+ * transform (Felzenszwalb–Huttenlocher, separable) carrying the label along.
  *
  * This is what makes touching holds separable. Without it a flood fill started on
  * one hold walks straight through the contact patch into its neighbour and the
  * pair traces as one blob. With it, each hold's mask is clipped at the midline
  * between its own bolt and the next one, which is where a climber would say the
  * hold ends anyway.
+ *
+ * WHY NOT THE CHAMFER IT REPLACES
+ * -------------------------------
+ * Two-pass chamfer propagation is up to ~4% long on a diagonal, and 4% of a
+ * bolt-to-bolt pitch is a strip a pixel or two wide either side of every
+ * midline that runs diagonally. Those strips were labelled the wrong hold, so
+ * the tracer had no reason to pull back from a boundary that was in fact sitting
+ * on a neighbour — which is exactly the handful of outlines gate 6 still counted
+ * over 5% on a neighbour's art after the pullback landed. The gate measures the
+ * exact nearest placement; now so does the generator.
+ *
+ * DETERMINISM
+ * -----------
+ * Distances are integer squared distances throughout, and every envelope
+ * comparison is done by cross-multiplying the intersection's exact integer
+ * numerator and denominator rather than dividing — the magnitudes involved
+ * (about 2e10 at the catalogue's largest board) are exact in a double, so no
+ * comparison is ever decided by rounding. Ties resolve in one fixed order:
+ * lower column, then lower row, then lower placement index.
  */
 function buildLabelMap(
   width: number,
   height: number,
   placements: ReadonlyArray<{ cx: number; cy: number }>,
 ): Int32Array {
-  const label = new Int32Array(width * height).fill(-1);
-  const distance = new Float64Array(width * height).fill(Infinity);
+  const UNLABELLED = -1;
+  const seedLabel = new Int32Array(width * height).fill(UNLABELLED);
   for (const [index, placement] of placements.entries()) {
     const x = Math.round(placement.cx);
     const y = Math.round(placement.cy);
     if (x < 0 || y < 0 || x >= width || y >= height) continue;
-    label[y * width + x] = index;
-    distance[y * width + x] = 0;
+    // Lowest placement index keeps a shared pixel, so two placements rounding to
+    // the same board pixel is a stable outcome rather than a load-order one.
+    if (seedLabel[y * width + x] === UNLABELLED) seedLabel[y * width + x] = index;
   }
 
-  const relax = (from: number, to: number, step: number): void => {
-    const candidate = distance[from] + step;
-    if (candidate < distance[to]) {
-      distance[to] = candidate;
-      label[to] = label[from];
+  // Pass 1, down each column: the squared distance to the nearest seed IN THAT
+  // COLUMN, and whose it is. Two sweeps, the second replacing only on a strictly
+  // shorter distance, so the lower row keeps an exact tie.
+  const NO_SEED_IN_COLUMN = Number.MAX_SAFE_INTEGER;
+  const columnDistance = new Float64Array(width * height);
+  const columnLabel = new Int32Array(width * height).fill(UNLABELLED);
+  for (let x = 0; x < width; x += 1) {
+    let seedAbove = -1;
+    for (let y = 0; y < height; y += 1) {
+      const here = y * width + x;
+      if (seedLabel[here] !== UNLABELLED) seedAbove = y;
+      if (seedAbove < 0) {
+        columnDistance[here] = NO_SEED_IN_COLUMN;
+        continue;
+      }
+      columnDistance[here] = (y - seedAbove) * (y - seedAbove);
+      columnLabel[here] = seedLabel[seedAbove * width + x];
     }
-  };
-  const DIAGONAL = Math.SQRT2;
+    let seedBelow = -1;
+    for (let y = height - 1; y >= 0; y -= 1) {
+      const here = y * width + x;
+      if (seedLabel[here] !== UNLABELLED) seedBelow = y;
+      if (seedBelow < 0) continue;
+      const distance = (seedBelow - y) * (seedBelow - y);
+      if (distance >= columnDistance[here]) continue;
+      columnDistance[here] = distance;
+      columnLabel[here] = seedLabel[seedBelow * width + x];
+    }
+  }
+
+  // Pass 2, along each row: the lower envelope of the parabolas
+  // `(x - column)² + columnDistance[column]`. The winning column's own label is
+  // the pixel's label, because that column's nearest seed IS the nearest seed.
+  const label = new Int32Array(width * height).fill(UNLABELLED);
+  const envelopeColumn = new Int32Array(width);
+  // Boundary between envelope entries `k` and `k+1`, as an exact rational
+  // `boundaryNumerator / boundaryDenominator` with a positive denominator.
+  const boundaryNumerator = new Float64Array(width + 1);
+  const boundaryDenominator = new Float64Array(width + 1);
 
   for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const here = y * width + x;
-      if (x > 0) relax(here - 1, here, 1);
-      if (y > 0) relax(here - width, here, 1);
-      if (y > 0 && x > 0) relax(here - width - 1, here, DIAGONAL);
-      if (y > 0 && x < width - 1) relax(here - width + 1, here, DIAGONAL);
+    const rowOffset = y * width;
+    let top = -1;
+    for (let column = 0; column < width; column += 1) {
+      const apexDistance = columnDistance[rowOffset + column];
+      // A column holding no seed can never win, and carrying its infinity into
+      // the intersection arithmetic would poison the exact comparison.
+      if (apexDistance === NO_SEED_IN_COLUMN) continue;
+      if (top < 0) {
+        top = 0;
+        envelopeColumn[0] = column;
+        boundaryNumerator[0] = -Infinity;
+        boundaryDenominator[0] = 1;
+        boundaryNumerator[1] = Infinity;
+        boundaryDenominator[1] = 1;
+        continue;
+      }
+      let numerator = 0;
+      let denominator = 1;
+      for (;;) {
+        const previous = envelopeColumn[top];
+        numerator = apexDistance + column * column - (columnDistance[rowOffset + previous] + previous * previous);
+        denominator = 2 * (column - previous);
+        // `<=` pops a previous parabola whose span has closed to nothing, which
+        // is what leaves the LOWER column owning an exact tie.
+        if (top > 0 && numerator * boundaryDenominator[top] <= boundaryNumerator[top] * denominator) {
+          top -= 1;
+          continue;
+        }
+        break;
+      }
+      top += 1;
+      envelopeColumn[top] = column;
+      boundaryNumerator[top] = numerator;
+      boundaryDenominator[top] = denominator;
+      boundaryNumerator[top + 1] = Infinity;
+      boundaryDenominator[top + 1] = 1;
     }
-  }
-  for (let y = height - 1; y >= 0; y -= 1) {
-    for (let x = width - 1; x >= 0; x -= 1) {
-      const here = y * width + x;
-      if (x < width - 1) relax(here + 1, here, 1);
-      if (y < height - 1) relax(here + width, here, 1);
-      if (y < height - 1 && x < width - 1) relax(here + width + 1, here, DIAGONAL);
-      if (y < height - 1 && x > 0) relax(here + width - 1, here, DIAGONAL);
+    // A row with no seeded column anywhere on the board leaves every pixel
+    // unowned, which the field contract allows.
+    if (top < 0) continue;
+    let entry = 0;
+    for (let column = 0; column < width; column += 1) {
+      while (boundaryNumerator[entry + 1] < column * boundaryDenominator[entry + 1]) entry += 1;
+      label[rowOffset + column] = columnLabel[rowOffset + envelopeColumn[entry]];
     }
   }
   return label;
@@ -786,6 +921,11 @@ type ShardTables = {
   outlines: Map<number, number[]>;
   silhouetteLightness: Map<number, number>;
   ledBright: Map<number, [number, number]>;
+  /**
+   * Hand-annotated LED base-plate inner boundaries. Never produced by the
+   * tracer — every entry comes from a committed `led_inner` override.
+   */
+  ledInner: Map<number, number[]>;
 };
 
 type ConfigResult = {
@@ -797,6 +937,7 @@ type ConfigResult = {
   wall: { mean: number; coverage: number };
   counts: { traced: number; placements: number };
   summary: string;
+  report: ConfigReportRow;
   elapsedMs: number;
 };
 
@@ -808,22 +949,40 @@ function roundTo(value: number, decimals: number): number {
   return rounded === 0 ? 0 : rounded;
 }
 
-async function compositeArt(relativePaths: string[], width: number, height: number): Promise<BoardArt> {
-  const rawLayer = { width, height, channels: 4 as const };
-  let composite: Buffer | null = null;
+/** One set's art, decoded once and resampled into board space. */
+type DecodedLayer = { relativePath: string; art: BoardArt };
+
+/**
+ * Every layer of a config's art, decoded once.
+ *
+ * Board art is authored at assorted sizes; the placement coordinates are in
+ * board space, so every layer is resampled to it here and nowhere else. Decoding
+ * once is what lets a mask provider read a single set's art without paying for a
+ * second pass over the files.
+ */
+async function decodeLayers(relativePaths: string[], width: number, height: number): Promise<DecodedLayer[]> {
+  const layers: DecodedLayer[] = [];
   for (const relativePath of relativePaths) {
-    // Board art is authored at assorted sizes; the placement coordinates are in
-    // board space, so every layer is resampled to it before compositing.
-    const layer = await sharp(path.join(PUBLIC_DIR, relativePath))
+    const pixels = await sharp(path.join(PUBLIC_DIR, relativePath))
       .resize(width, height, { fit: 'fill' })
       .ensureAlpha()
       .raw()
       .toBuffer();
+    layers.push({ relativePath, art: { pixels, width, height } });
+  }
+  return layers;
+}
+
+/** The layers stacked bottom-to-top, which is the board a climber looks at. */
+async function compositeLayers(layers: DecodedLayer[], width: number, height: number): Promise<BoardArt> {
+  const rawLayer = { width, height, channels: 4 as const };
+  let composite: Buffer | null = null;
+  for (const layer of layers) {
     composite =
       composite === null
-        ? layer
+        ? layer.art.pixels
         : await sharp(composite, { raw: rawLayer })
-            .composite([{ input: layer, raw: rawLayer, blend: 'over' }])
+            .composite([{ input: layer.art.pixels, raw: rawLayer, blend: 'over' }])
             .raw()
             .toBuffer();
   }
@@ -831,7 +990,7 @@ async function compositeArt(relativePaths: string[], width: number, height: numb
   return { pixels: composite, width, height };
 }
 
-/** The hold art, as a bitmap: the whole tracer reads the alpha channel and nothing else. */
+/** Hold substance, as a bitmap: an image's alpha channel and nothing else. */
 function buildOpaqueMask(art: BoardArt): Uint8Array {
   const opaque = new Uint8Array(art.width * art.height);
   for (let pixel = 0; pixel < art.width * art.height; pixel += 1) {
@@ -840,25 +999,238 @@ function buildOpaqueMask(art: BoardArt): Uint8Array {
   return opaque;
 }
 
-function traceOutlines(
-  art: BoardArt,
-  opaque: Uint8Array,
-  placements: RenderableHold[],
-): { outlines: Map<number, number[]>; summary: string } {
-  const { width: boardWidth, height: boardHeight } = art;
-  const label = buildLabelMap(boardWidth, boardHeight, placements);
+// ---------------------------------------------------------------------------
+// The mask-provider seam
+// ---------------------------------------------------------------------------
+
+/**
+ * One image's worth of hold substance, with the placements that live in it and
+ * the nearest-placement partition over them.
+ *
+ * The tracer below reads NOTHING else — no alpha channel, no sharp, no file
+ * paths. That is the point of the seam: what counts as "hold substance" is a
+ * decision about the art and belongs to whoever decoded it, while the
+ * flood/trim/pullback/border pipeline is a decision about geometry and should be
+ * replaceable without touching it.
+ */
+type TraceField = {
+  /** Which art the mask came from. Reports and error messages only. */
+  sourceKey: string;
+  width: number;
+  height: number;
+  /** 1 = hold substance, 0 = not. */
+  mask: Uint8Array;
+  /** The placements this field owns. Every placement id is in at most one field. */
+  placements: RenderableHold[];
+  /** Pixel -> index into `placements`; -1 where no placement owns the pixel. */
+  label: Int32Array;
+};
+
+/**
+ * How a config's decoded art becomes fields to trace.
+ *
+ * Deliberately takes the LAYERS and not the composite. Every colour reading in
+ * this script measures the composite, because what a mark has to be legible
+ * against is the stack a climber sees; what a hold's silhouette is, is a
+ * question about the one image that draws it.
+ */
+type MaskProvider = (details: BoardRenderDetails, layers: DecodedLayer[]) => TraceField[];
+
+/**
+ * Which art layer draws each placement, as an index into the layer list.
+ *
+ * `-1` for a placement no layer draws — MoonBoard's grid has cells that carry no
+ * hold in any set, and those have nothing to trace on any image.
+ *
+ * The index is the position in `images_to_holds`, because `getBackgroundRelPaths`
+ * walks exactly those keys in exactly that order, so key `i` is layer `i`.
+ *
+ * Aurora boards state it outright: `images_to_holds` IS image -> hold tuples, so
+ * the map is that relation inverted. MoonBoard's map has empty values (its
+ * geometry is a synthetic grid, not a per-image placement table), so the routing
+ * goes through `MOONBOARD_CELL_SETS`: grid cell -> hold set -> that set's image.
+ *
+ * A placement drawn by two layers would make the disjoint-union contract a lie,
+ * so it is asserted rather than assumed. No config in the catalogue has one.
+ */
+function placementFieldIndex(details: BoardRenderDetails): Map<number, number> {
+  const imageKeys = Object.keys(details.images_to_holds);
+  const fieldOf = new Map<number, number>();
+
+  if (details.board_name === 'moonboard') {
+    const layoutEntry = Object.entries(MOONBOARD_LAYOUTS).find(([, layout]) => layout.id === details.layout_id);
+    if (layoutEntry === undefined) throw new Error(`moonboard layout ${details.layout_id} has no entry`);
+    const sets = MOONBOARD_SETS[layoutEntry[0] as keyof typeof MOONBOARD_SETS] ?? [];
+    const layerOfSet = new Map<number, number>();
+    for (const set of sets) {
+      const index = imageKeys.indexOf(`${details.layoutFolder}/${set.imageFile}`);
+      // A set the config did not mount has no layer, which is not an error: the
+      // shard is traced with every set of the layout, but the lookup is by name.
+      if (index >= 0) layerOfSet.set(set.id, index);
+    }
+    const cells = MOONBOARD_CELL_SETS[details.layout_id] ?? {};
+    for (const placement of details.holdsData) {
+      const setId = cells[placement.id];
+      const index = setId === undefined ? undefined : layerOfSet.get(setId);
+      fieldOf.set(placement.id, index ?? -1);
+    }
+    return fieldOf;
+  }
+
+  for (const [index, imageKey] of imageKeys.entries()) {
+    for (const [holdId] of details.images_to_holds[imageKey]) {
+      const existing = fieldOf.get(holdId);
+      if (existing !== undefined && existing !== index) {
+        throw new Error(`placement ${holdId} is drawn by two layers (${imageKeys[existing]} and ${imageKey})`);
+      }
+      fieldOf.set(holdId, index);
+    }
+  }
+  for (const placement of details.holdsData) {
+    if (!fieldOf.has(placement.id)) fieldOf.set(placement.id, -1);
+  }
+  return fieldOf;
+}
+
+/**
+ * One field per art layer: each set's own alpha channel, partitioned only over
+ * the placements that set draws.
+ *
+ * WHY NOT THE COMPOSITE
+ * ---------------------
+ * The composite is what a climber sees, and it is the wrong thing to trace
+ * against. Two holds from different sets are mounted in different bolt holes and
+ * their art overlaps by almost nothing (0.06% of opaque pixels catalogue-wide),
+ * but on the composite they touch — and "touching" is what drives the whole
+ * chopping machinery. On Kilter Homewall 12x12, 439 of 499 placements are
+ * art-adjacent to a differently-labelled hold on the composite and only 64 are
+ * when each layer is measured on its own. The other 375 were being cut apart at
+ * a boundary that only exists because two sets were stacked into one bitmap.
+ *
+ * Every colour measurement stays on the composite, because those measure what
+ * the mark has to be legible against, which is the stack.
+ */
+const perImageMaskProvider: MaskProvider = (details, layers) => {
+  const fieldOf = placementFieldIndex(details);
+  const perLayer: RenderableHold[][] = layers.map(() => []);
+  for (const placement of details.holdsData) {
+    const index = fieldOf.get(placement.id) ?? -1;
+    if (index >= 0) perLayer[index].push(placement);
+  }
+
+  const fields: TraceField[] = [];
+  for (const [index, layer] of layers.entries()) {
+    const placements = perLayer[index];
+    // A layer nothing is placed on — MoonBoard's wall photograph — is not a
+    // field. There is no partition to build and nothing to trace.
+    if (placements.length === 0) continue;
+    fields.push({
+      sourceKey: layer.relativePath,
+      width: layer.art.width,
+      height: layer.art.height,
+      mask: buildOpaqueMask(layer.art),
+      placements,
+      label: buildLabelMap(layer.art.width, layer.art.height, placements),
+    });
+  }
+  return fields;
+};
+
+/**
+ * What one placement's trace cost, for the report and for gate 7.
+ *
+ * `cellAlphaArea` is the denominator: the seed's own 4-connected art body inside
+ * the search box, taken from this placement's partition cell before any trim,
+ * pullback or simplification. `tracedArea` is what survived to the emitted mask.
+ * Their ratio is the only number that says whether the silhouette is still the
+ * hold's shape or a fragment of it — perimeter measures and spur opens both read
+ * fine on a hold that simply lost half of itself to a cut.
+ *
+ * The CONNECTED body, not the whole cell. A partition cell routinely contains
+ * art that was never this hold's: a neighbouring macro's rim can sit closer to
+ * this bolt than to its own and land in the cell without ever touching the hold.
+ * Counting it read as a chop on 145 of 181 holds the tracer had removed nothing
+ * from.
+ */
+type HoldTraceStats = {
+  holdId: number;
+  traced: boolean;
+  /** Board px² of the emitted mask. 0 when the placement fell back to a ring. */
+  tracedArea: number;
+  /** Board px² of the seed's connected art body in this placement's cell, pre-trim. */
+  cellAlphaArea: number;
+  /** `tracedArea / cellAlphaArea`, or 0 when there was no art to recover. */
+  areaRecovery: number;
+  /** Board px² the neck trim and the pullback dropped between them. */
+  droppedArea: number;
+  pulledBack: boolean;
+  /** Why the placement carries no outline, or `null` when it does. */
+  fallbackReason: 'search-box-degenerate' | 'no-art-of-its-own' | 'perimeter-too-short' | 'traced-the-box' | null;
+};
+
+/** The counters the run's one-line summary is built from, per field. */
+type TraceCounts = { attempted: number; rejectedBox: number; neckTrimmed: number; pulledBack: number };
+
+/**
+ * Trace every placement in one field.
+ *
+ * Provider-agnostic by construction: the only inputs are the field's mask, its
+ * partition and its placements, so what the mask MEANS — a composited alpha
+ * channel, one set's layer, something else entirely — is not this function's
+ * business.
+ */
+function traceOutlines(field: TraceField): {
+  outlines: Map<number, number[]>;
+  stats: Map<number, HoldTraceStats>;
+  counts: TraceCounts;
+} {
+  const { width: boardWidth, height: boardHeight, mask: opaque, label, placements } = field;
   const pitches = nearestPitch(placements);
-  const neckDiscs = discOffsets(radiusForBoard(NECK_TRIM_AT_REFERENCE, boardWidth));
-  const clearanceOffsets = discOffsets(radiusForBoard(CUT_CLEARANCE_AT_REFERENCE, boardWidth)).dilation;
+  // Cached per distinct radius: a config's placements almost always share one
+  // (`r` is `xSpacing * 4`), and building the discs is O(radius²).
+  const discCache = new Map<number, { erosion: Point[]; dilation: Point[] }>();
+  const discsFor = (placementRadius: number) => {
+    const radius = radiusForPlacement(placementRadius);
+    const cached = discCache.get(radius);
+    if (cached !== undefined) return cached;
+    const built = discOffsets(radius);
+    discCache.set(radius, built);
+    return built;
+  };
 
   const outlines = new Map<number, number[]>();
-  let missing = 0;
+  const stats = new Map<number, HoldTraceStats>();
+  let attempted = 0;
   let rejectedBox = 0;
   let neckTrimmed = 0;
   let pulledBack = 0;
 
+  const recordFallback = (holdId: number, reason: NonNullable<HoldTraceStats['fallbackReason']>, cellArea: number) => {
+    stats.set(holdId, {
+      holdId,
+      traced: false,
+      tracedArea: 0,
+      cellAlphaArea: cellArea,
+      areaRecovery: 0,
+      droppedArea: 0,
+      pulledBack: false,
+      fallbackReason: reason,
+    });
+  };
+
+  const attemptedIds = new Set<number>();
   for (const [placementIndex, placement] of placements.entries()) {
+    // Guarded on the outline table, not on `stats`: a board can list the same
+    // placement under two sets, and where the first attempt fell back the second
+    // is retried exactly as it always was. `stats` is overwritten to match.
     if (outlines.has(placement.id)) continue;
+    // Counted per PLACEMENT, not per attempt. A duplicate id whose first attempt
+    // fell back is retried, and counting the retry would make the summary's
+    // denominator larger than the board has placements.
+    if (!attemptedIds.has(placement.id)) {
+      attemptedIds.add(placement.id);
+      attempted += 1;
+    }
     const centreX = Math.round(placement.cx);
     const centreY = Math.round(placement.cy);
     const box = Math.round(placement.r * SEARCH_RADII);
@@ -868,7 +1240,7 @@ function traceOutlines(
     const right = Math.min(boardWidth - 1, centreX + box);
     const bottom = Math.min(boardHeight - 1, centreY + box);
     if (right <= left || bottom <= top) {
-      missing += 1;
+      recordFallback(placement.id, 'search-box-degenerate', 0);
       continue;
     }
     const localWidth = right - left + 1;
@@ -889,9 +1261,13 @@ function traceOutlines(
         else neighbourArt[y * localWidth + x] = 1;
       }
     }
-
-    // Seed strictly near the placement, never "nearest filled pixel in the box".
-    const seedRadius = Math.max(MIN_SEED_RADIUS, pitches[placementIndex] * SEED_PITCH_FRACTION);
+    // Seed strictly near the placement, never "nearest filled pixel in the box",
+    // and never further out than the placement's own radius even on a layer so
+    // sparse that its nearest-neighbour pitch spans half the board.
+    const seedRadius = Math.max(
+      MIN_SEED_RADIUS,
+      Math.min(pitches[placementIndex] * SEED_PITCH_FRACTION, placement.r * SEED_MAX_RADII),
+    );
     const localCentre: Point = [centreX - left, centreY - top];
     let seed: Point | null = null;
     let bestDistance = Infinity;
@@ -912,29 +1288,41 @@ function traceOutlines(
     // fall back to a ring. On the synthetic MoonBoard grids this is the honest
     // answer for most cells.
     if (seed === null) {
-      missing += 1;
+      recordFallback(placement.id, 'no-art-of-its-own', 0);
       continue;
     }
 
     const seedIndex = seed[1] * localWidth + seed[0];
     const region = new Uint8Array(localWidth * localHeight);
     floodComponent(local, localWidth, localHeight, seedIndex, region);
+    // The denominator, and it is the seed's own connected art body — NOT every
+    // cell pixel in the box. A placement's partition cell routinely contains art
+    // that was never this hold's to keep: a neighbouring macro's rim can lie
+    // closer to this bolt than to its own, and it lands in the cell without ever
+    // touching the hold. Counting it made 145 of 181 "chopped" holds
+    // catalogue-wide holds the tracer had removed nothing from at all
+    // (grasshopper/1-4's 293 read 0.250 with a droppedArea of zero).
+    let cellAlphaArea = 0;
+    for (let index = 0; index < region.length; index += 1) cellAlphaArea += region[index];
 
-    const trimmed = trimThinNecks(region, localWidth, localHeight, seedIndex, neckDiscs);
-    const pulled = pullBackFromCuts(trimmed, neighbourArt, localWidth, localHeight, seedIndex, clearanceOffsets);
+    const discs = discsFor(placement.r);
+    const trimmed = trimThinNecks(region, localWidth, localHeight, seedIndex, discs);
+    const pulled = pullBackFromCuts(trimmed, neighbourArt, localWidth, localHeight, seedIndex, discs.dilation);
     // Trim again, because the pullback makes necks of its own: a hold in contact
     // along two sides comes back joined through whatever the two clearance discs
     // left between them. Thirteen outlines on two boards failed gate 5 with a
     // single trim, and every one was a sliver the first trim never saw because it
     // did not exist yet.
     const traced = pulled.contacted
-      ? trimThinNecks(pulled.mask, localWidth, localHeight, seedIndex, neckDiscs)
+      ? trimThinNecks(pulled.mask, localWidth, localHeight, seedIndex, discs)
       : pulled.mask;
 
     let droppedArea = 0;
     for (let index = 0; index < region.length; index += 1) {
       if (region[index] === 1 && traced[index] !== 1) droppedArea += 1;
     }
+    let tracedArea = 0;
+    for (let index = 0; index < traced.length; index += 1) tracedArea += traced[index];
 
     // Row-major, so the first filled pixel is the topmost-leftmost one — where
     // the Moore follower has to start.
@@ -948,7 +1336,7 @@ function traceOutlines(
 
     const border = traceBorder(traced, localWidth, localHeight, topmost);
     if (border.length < MIN_PERIMETER_POINTS) {
-      missing += 1;
+      recordFallback(placement.id, 'perimeter-too-short', cellAlphaArea);
       continue;
     }
     const simplified = simplify(border, SIMPLIFY_EPSILON);
@@ -960,7 +1348,7 @@ function traceOutlines(
     // silhouette, whatever it looks like.
     if (boxEdgeShare(flat, box) > MAX_BOX_EDGE_SHARE) {
       rejectedBox += 1;
-      missing += 1;
+      recordFallback(placement.id, 'traced-the-box', cellAlphaArea);
       continue;
     }
     // Counted here, not where it was measured: an outline that then fell back is
@@ -968,6 +1356,16 @@ function traceOutlines(
     if (droppedArea > NOTABLE_TRIM_AREA) neckTrimmed += 1;
     if (pulled.contacted) pulledBack += 1;
     outlines.set(placement.id, flat);
+    stats.set(placement.id, {
+      holdId: placement.id,
+      traced: true,
+      tracedArea,
+      cellAlphaArea,
+      areaRecovery: cellAlphaArea === 0 ? 0 : tracedArea / cellAlphaArea,
+      droppedArea,
+      pulledBack: pulled.contacted,
+      fallbackReason: null,
+    });
   }
 
   // No area backstop. Before the partition, a flood fill could walk through a
@@ -976,21 +1374,201 @@ function traceOutlines(
   // construction made only of pixels whose nearest placement is this one, so a
   // merge is not expressible — and the rule was deleting real outlines: on
   // Grasshopper it took 14, all of them the board's genuinely large square holds.
-  const summary =
-    `${outlines.size}/${placements.length} traced ` +
-    `(${missing} fell back: ${rejectedBox} hit the search box, ` +
-    `${missing - rejectedBox} had no art of their own; ` +
-    `${neckTrimmed} lost more than ${NOTABLE_TRIM_AREA} px² to the neck trim and the pullback together; ` +
-    `${pulledBack} pulled back off a neighbour's art)`;
-  return { outlines, summary };
+  return { outlines, stats, counts: { attempted, rejectedBox, neckTrimmed, pulledBack } };
 }
 
-async function measureConfig(entry: {
-  boardName: string;
-  layoutId: number;
-  sizeId: number;
-  setIds: number[];
-}): Promise<ConfigResult | { skipped: string }> {
+/**
+ * Every field's trace, as one config's tables.
+ *
+ * The union is disjoint by the field contract — each placement id lives in at
+ * most one field — and asserted rather than assumed, because a provider that
+ * handed the same hold to two images would silently emit whichever traced last.
+ * Placements no field claims are recorded as fallbacks here: a hold whose set
+ * carries no art for it has none to trace, which is the same answer the
+ * composite gave when it found nothing under the bolt.
+ */
+function mergeFieldTraces(
+  fields: TraceField[],
+  allPlacements: RenderableHold[],
+): { outlines: Map<number, number[]>; stats: Map<number, HoldTraceStats>; summary: string } {
+  const outlines = new Map<number, number[]>();
+  const stats = new Map<number, HoldTraceStats>();
+  const totals: TraceCounts = { attempted: 0, rejectedBox: 0, neckTrimmed: 0, pulledBack: 0 };
+
+  for (const field of fields) {
+    const traced = traceOutlines(field);
+    for (const [holdId, flat] of traced.outlines) {
+      if (outlines.has(holdId)) throw new Error(`placement ${holdId} traced by two fields (${field.sourceKey})`);
+      outlines.set(holdId, flat);
+    }
+    for (const [holdId, entry] of traced.stats) stats.set(holdId, entry);
+    totals.attempted += traced.counts.attempted;
+    totals.rejectedBox += traced.counts.rejectedBox;
+    totals.neckTrimmed += traced.counts.neckTrimmed;
+    totals.pulledBack += traced.counts.pulledBack;
+  }
+
+  for (const placement of allPlacements) {
+    if (stats.has(placement.id)) continue;
+    totals.attempted += 1;
+    stats.set(placement.id, {
+      holdId: placement.id,
+      traced: false,
+      tracedArea: 0,
+      cellAlphaArea: 0,
+      areaRecovery: 0,
+      droppedArea: 0,
+      pulledBack: false,
+      fallbackReason: 'no-art-of-its-own',
+    });
+  }
+
+  const missing = totals.attempted - outlines.size;
+  const summary =
+    `${outlines.size}/${totals.attempted} traced ` +
+    `(${missing} fell back: ${totals.rejectedBox} hit the search box, ` +
+    `${missing - totals.rejectedBox} had no art of their own; ` +
+    `${totals.neckTrimmed} lost more than ${NOTABLE_TRIM_AREA} px² to the neck trim and the pullback together; ` +
+    `${totals.pulledBack} pulled back off a neighbour's art)`;
+  return { outlines, stats, summary };
+}
+
+// ---------------------------------------------------------------------------
+// Report (`--report=<dir>`)
+// ---------------------------------------------------------------------------
+
+/**
+ * What one config's trace looks like in aggregate. Written to the report's
+ * `summary.txt`, and the row a before/after run is compared on.
+ */
+type ConfigReportRow = {
+  key: string;
+  placements: number;
+  traced: number;
+  pulledBack: number;
+  chopped: number;
+  recoveryMean: number;
+  recoveryP10: number;
+  recoveryMin: number;
+};
+
+/** Ground the report paints the art on, so a transparent gutter is visibly a gutter. */
+const REPORT_BACKDROP = '#141414';
+const REPORT_STROKE_TRACED = '#33FF99';
+const REPORT_STROKE_PULLED_BACK = '#FFB000';
+const REPORT_STROKE_CHOPPED = '#FF2D55';
+const REPORT_STROKE_UNTRACED = '#8A8A8A';
+
+function reportRowFor(key: string, placementCount: number, stats: Map<number, HoldTraceStats>): ConfigReportRow {
+  const recoveries = [...stats.values()].filter((entry) => entry.traced).map((entry) => entry.areaRecovery);
+  recoveries.sort((left, right) => left - right);
+  const percentile = (fraction: number): number =>
+    recoveries.length === 0 ? 0 : recoveries[Math.min(recoveries.length - 1, Math.floor(fraction * recoveries.length))];
+  return {
+    key,
+    placements: placementCount,
+    traced: recoveries.length,
+    pulledBack: [...stats.values()].filter((entry) => entry.pulledBack).length,
+    chopped: recoveries.filter((value) => value < MIN_AREA_RECOVERY).length,
+    recoveryMean:
+      recoveries.length === 0 ? 0 : recoveries.reduce((total, value) => total + value, 0) / recoveries.length,
+    recoveryP10: percentile(0.1),
+    recoveryMin: recoveries.length === 0 ? 0 : recoveries[0],
+  };
+}
+
+/**
+ * The board art with every traced silhouette stroked on it, plus a per-hold
+ * metric table beside it.
+ *
+ * The picture is the point: an area ratio says a hold lost a third of itself,
+ * and only the picture says whether the third it lost was a neighbour's rim it
+ * should never have had or the hold's own jug.
+ */
+async function writeConfigReport(
+  reportDir: string,
+  row: ConfigReportRow,
+  art: BoardArt,
+  placements: RenderableHold[],
+  outlines: Map<number, number[]>,
+  stats: Map<number, HoldTraceStats>,
+): Promise<void> {
+  const shapes: string[] = [];
+  const seen = new Set<number>();
+  for (const placement of placements) {
+    if (seen.has(placement.id)) continue;
+    seen.add(placement.id);
+    const flat = outlines.get(placement.id);
+    if (flat === undefined) {
+      shapes.push(
+        `<circle cx="${placement.cx.toFixed(1)}" cy="${placement.cy.toFixed(1)}" r="${placement.r.toFixed(1)}" ` +
+          `fill="none" stroke="${REPORT_STROKE_UNTRACED}" stroke-width="1" stroke-dasharray="4 4"/>`,
+      );
+      continue;
+    }
+    const holdStats = stats.get(placement.id);
+    const stroke =
+      holdStats !== undefined && holdStats.areaRecovery < MIN_AREA_RECOVERY
+        ? REPORT_STROKE_CHOPPED
+        : holdStats !== undefined && holdStats.pulledBack
+          ? REPORT_STROKE_PULLED_BACK
+          : REPORT_STROKE_TRACED;
+    const centreX = Math.round(placement.cx);
+    const centreY = Math.round(placement.cy);
+    const points: string[] = [];
+    for (let index = 0; index < flat.length; index += 2) {
+      points.push(`${centreX + flat[index]},${centreY + flat[index + 1]}`);
+    }
+    shapes.push(`<polygon points="${points.join(' ')}" fill="none" stroke="${stroke}" stroke-width="1.5"/>`);
+  }
+
+  const overlay = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${art.width}" height="${art.height}">${shapes.join('')}</svg>`,
+  );
+  const imagePath = path.join(reportDir, `${row.key}.png`);
+  mkdirSync(path.dirname(imagePath), { recursive: true });
+  await sharp(art.pixels, { raw: { width: art.width, height: art.height, channels: 4 } })
+    .flatten({ background: REPORT_BACKDROP })
+    .composite([{ input: overlay }])
+    .png()
+    .toFile(imagePath);
+
+  const rows = [...stats.values()]
+    .sort((left, right) => left.holdId - right.holdId)
+    .map((entry) =>
+      [
+        String(entry.holdId).padStart(6),
+        String(entry.tracedArea).padStart(8),
+        String(entry.cellAlphaArea).padStart(9),
+        entry.areaRecovery.toFixed(3).padStart(9),
+        String(entry.droppedArea).padStart(8),
+        (entry.pulledBack ? 'yes' : 'no').padStart(6),
+        entry.fallbackReason ?? '-',
+      ].join('  '),
+    );
+  writeFileSync(
+    path.join(reportDir, `${row.key}.txt`),
+    `${row.key}\n` +
+      `${row.traced}/${row.placements} traced, ${row.chopped} chopped (recovery < ${MIN_AREA_RECOVERY}), ` +
+      `${row.pulledBack} pulled back\n` +
+      `recovery mean ${row.recoveryMean.toFixed(3)}, p10 ${row.recoveryP10.toFixed(3)}, min ${row.recoveryMin.toFixed(3)}\n` +
+      `\n` +
+      `${'holdId'.padStart(6)}  ${'traced'.padStart(8)}  ${'cellArea'.padStart(9)}  ${'recovery'.padStart(9)}  ` +
+      `${'dropped'.padStart(8)}  ${'pulled'.padStart(6)}  fallback\n` +
+      `${rows.join('\n')}\n`,
+  );
+}
+
+async function measureConfig(
+  entry: {
+    boardName: string;
+    layoutId: number;
+    sizeId: number;
+    setIds: number[];
+  },
+  reportDir: string | null,
+  maskProvider: MaskProvider,
+): Promise<ConfigResult | { skipped: string }> {
   const startedAt = Date.now();
   const key = `${entry.boardName}/${entry.layoutId}-${entry.sizeId}`;
 
@@ -1011,7 +1589,11 @@ async function measureConfig(entry: {
   if (relativePaths.length === 0) return { skipped: `${key}: no board art layers` };
   if (missingArt.length > 0) return { skipped: `${key}: missing art — ${missingArt.join(', ')}` };
 
-  const art = await compositeArt(relativePaths, details.boardWidth, details.boardHeight);
+  const layers = await decodeLayers(relativePaths, details.boardWidth, details.boardHeight);
+  const art = await compositeLayers(layers, details.boardWidth, details.boardHeight);
+  // The opaque-art ceiling is a question about the COMPOSITE and stays one: a
+  // board whose stack is a photograph has no alpha channel to read no matter how
+  // the tracer partitions it.
   const opaque = buildOpaqueMask(art);
   let opaqueCount = 0;
   for (let index = 0; index < opaque.length; index += 1) opaqueCount += opaque[index];
@@ -1025,7 +1607,46 @@ async function measureConfig(entry: {
   }
 
   const placements = details.holdsData;
-  const { outlines, summary } = traceOutlines(art, opaque, placements);
+  const { outlines, summary, stats } = mergeFieldTraces(maskProvider(details, layers), placements);
+  const uniquePlacements = new Set(placements.map((placement) => placement.id)).size;
+
+  const radiusById = new Map<number, number>();
+  const centreById = new Map<number, [number, number]>();
+  for (const placement of placements) {
+    if (radiusById.has(placement.id)) continue;
+    radiusById.set(placement.id, placement.r);
+    centreById.set(placement.id, [placement.cx, placement.cy]);
+  }
+
+  // --- Override merge, point 1 of 3: put the hand-drawn silhouette in ---------
+  //
+  // At the emission boundary and nowhere else. The tracer has finished and its
+  // stats are already recorded; from here the overridden placements are simply
+  // placements that have an outline, so everything downstream — the lightness
+  // measurement, the counts, the report — reads the shape that ships rather than
+  // the shape a human already rejected.
+  //
+  // Converted back into the tracer's own frame (integer board pixels offset from
+  // the ROUNDED centre) because that is what `measureSilhouette` scans and what
+  // the radius-unit conversion below undoes. Exactly inverse: emission does
+  // `(px + rounding) / r`, so this does `v * r - rounding`. Floats are fine —
+  // the scanline fill takes them — and the stored 4-decimal values go into the
+  // shard verbatim at point 2 regardless, so nothing round-trips.
+  const overrides = loadOverridesFor(key, radiusById.keys());
+  for (const [holdId, ring] of overrides.outlines) {
+    const radius = radiusById.get(holdId) as number;
+    const [exactX, exactY] = centreById.get(holdId) as [number, number];
+    const roundingX = Math.round(exactX) - exactX;
+    const roundingY = Math.round(exactY) - exactY;
+    const tracerPixels: number[] = [];
+    for (let index = 0; index < ring.length; index += 2) {
+      tracerPixels.push(ring[index] * radius - roundingX, ring[index + 1] * radius - roundingY);
+    }
+    outlines.set(holdId, tracerPixels);
+  }
+
+  const reportRow = reportRowFor(key, uniquePlacements, stats);
+  if (reportDir !== null) await writeConfigReport(reportDir, reportRow, art, placements, outlines, stats);
 
   const silhouetteLightness = new Map<number, number>();
   const ledBright = new Map<number, [number, number]>();
@@ -1092,16 +1713,21 @@ async function measureConfig(entry: {
     ]);
   }
 
-  const radiusById = new Map<number, number>();
-  const centreById = new Map<number, [number, number]>();
-  for (const placement of placements) {
-    if (radiusById.has(placement.id)) continue;
-    radiusById.set(placement.id, placement.r);
-    centreById.set(placement.id, [placement.cx, placement.cy]);
-  }
-
   const radiusUnitOutlines = new Map<number, number[]>();
   for (const [holdId, flat] of outlines) {
+    // --- Override merge, point 2 of 3: emit the stored ring verbatim ----------
+    //
+    // Not `v * r - rounding` back through `(px + rounding) / r`. That round trip
+    // is algebraically the identity and numerically is not: it re-rounds a value
+    // that was already rounded to 4 decimals, so a ring could come out a digit
+    // different from the one the reviewer approved and the one the database
+    // holds. Verbatim makes the shard byte-predictable from the JSON alone,
+    // which is what lets `overrides.test.ts` prove the merge actually ran.
+    const stored = overrides.outlines.get(holdId);
+    if (stored !== undefined) {
+      radiusUnitOutlines.set(holdId, stored);
+      continue;
+    }
     const radius = radiusById.get(holdId) as number;
     const [exactX, exactY] = centreById.get(holdId) as [number, number];
     // The tracer works in integer board pixels offset from the ROUNDED centre.
@@ -1119,18 +1745,36 @@ async function measureConfig(entry: {
     radiusUnitOutlines.set(holdId, converted);
   }
 
+  // --- Override merge, point 3 of 3: counts and the shard header --------------
+  //
+  // `outlines.size` already includes the overridden placements — an override can
+  // ADD an outline to a placement the tracer never traced, and a hand-drawn
+  // silhouette is as traced as any other from a consumer's point of view — so
+  // gate 4's pin moves with the correction rather than against it. The header
+  // says how many, so a shard diff is self-explanatory; a config with no
+  // overrides gets no extra text and stays byte-identical.
+  //
+  // ROWS, not placements, and the wording says so: one hold carrying both a
+  // silhouette and an LED-inner annotation is two rows in the table, two entries
+  // in the JSON and two lines of shard diff, so counting it as one would
+  // under-report exactly what the reader is looking at.
+  const overrideCount = overrides.outlines.size + overrides.ledInner.size;
+  const summaryWithOverrides =
+    overrideCount === 0 ? summary : `${summary}; ${overrideCount} hand-corrected override row(s) applied`;
+
   return {
     key,
     boardName: entry.boardName,
     layoutId: entry.layoutId,
     sizeId: entry.sizeId,
-    tables: { outlines: radiusUnitOutlines, silhouetteLightness, ledBright },
+    tables: { outlines: radiusUnitOutlines, silhouetteLightness, ledBright, ledInner: overrides.ledInner },
     wall: {
       mean: annulusCount === 0 ? 0 : roundTo(annulusTotal / annulusCount, LIGHTNESS_DECIMALS),
       coverage: annulusPlacements === 0 ? 0 : roundTo(annulusCount / annulusPlacements, LIGHTNESS_DECIMALS),
     },
     counts: { traced: outlines.size, placements: annulusPlacements },
-    summary,
+    summary: summaryWithOverrides,
+    report: reportRow,
     elapsedMs: Date.now() - startedAt,
   };
 }
@@ -1155,6 +1799,20 @@ function renderShard(result: ConfigResult): string {
     .sort(numericAscending)
     .map(([holdId, [dx, dy]]) => `    ${holdId}: [${dx},${dy}],`)
     .join('\n');
+  const ledInnerRows = [...result.tables.ledInner.entries()]
+    .sort(numericAscending)
+    .map(([holdId, flat]) => `    ${holdId}: [${flat.join(',')}],`)
+    .join('\n');
+
+  // `ledInner` is written only where there is one. The field is optional in the
+  // contract precisely so that a shard with no LED annotations is the same bytes
+  // it was before this table existed, and 49 shards growing an empty `{}` would
+  // be a catalogue-wide diff saying nothing.
+  const ledInnerNote = ledInnerRows
+    ? `// ledInner:            placementId -> flat ring of the LED base plate's INNER edge, same\n` +
+      `//                      units. Hand-annotated; the lit region is the silhouette minus it.\n`
+    : '';
+  const ledInnerTable = ledInnerRows ? `  ledInner: {\n${ledInnerRows}\n  },\n` : '';
 
   return (
     `${DO_NOT_EDIT}\n` +
@@ -1165,10 +1823,12 @@ function renderShard(result: ConfigResult): string {
     `// silhouetteLightness: placementId -> OkLab L of the art inside the traced silhouette.\n` +
     `// ledBright:           placementId -> [dx,dy] radius units to the bright LED blob the art\n` +
     `//                      already paints, for the placements where it paints one.\n` +
+    ledInnerNote +
     `module.exports = {\n` +
     `  outlines: {\n${outlineRows}${outlineRows ? '\n' : ''}  },\n` +
     `  silhouetteLightness: {\n${lightnessRows}${lightnessRows ? '\n' : ''}  },\n` +
     `  ledBright: {\n${ledRows}${ledRows ? '\n' : ''}  },\n` +
+    ledInnerTable +
     `};\n`
   );
 }
@@ -1347,6 +2007,15 @@ async function main(): Promise<number> {
   const boardFilter = argumentValue('--board');
   const configFilter = argumentValue('--config');
   const filtered = boardFilter !== null || configFilter !== null;
+  // A report run writes pictures and tables and touches no generated file, so a
+  // before/after pair can be captured from a dirty tree without the drift gate
+  // ever seeing it.
+  const reportArgument = argumentValue('--report');
+  const reportDir = reportArgument === null ? null : path.resolve(reportArgument);
+  if (reportDir !== null) {
+    mkdirSync(reportDir, { recursive: true });
+    console.log(`[board-art-geometry] report run — writing to ${reportDir}, no generated files touched.`);
+  }
 
   const entries = listCatalogueEntries()
     .filter((entry) => boardFilter === null || entry.boardName === boardFilter)
@@ -1370,7 +2039,7 @@ async function main(): Promise<number> {
   const startedAt = Date.now();
 
   for (const entry of entries) {
-    const measured = await measureConfig(entry);
+    const measured = await measureConfig(entry, reportDir, perImageMaskProvider);
     if ('skipped' in measured) {
       skipped.push(measured.skipped);
       console.warn(`[board-art-geometry] SKIP ${measured.skipped}`);
@@ -1383,6 +2052,37 @@ async function main(): Promise<number> {
         `| wall L ${measured.wall.mean} coverage ${measured.wall.coverage} ` +
         `| ${measured.tables.ledBright.size} painted LEDs | ${(measured.elapsedMs / 1000).toFixed(1)}s`,
     );
+  }
+
+  if (reportDir !== null) {
+    const header =
+      `${'shard'.padEnd(16)}  ${'traced'.padStart(11)}  ${'chopped'.padStart(7)}  ${'pulled'.padStart(6)}  ` +
+      `${'recMean'.padStart(7)}  ${'recP10'.padStart(6)}  ${'recMin'.padStart(6)}`;
+    const rows = results.map(
+      (result) =>
+        `${result.report.key.padEnd(16)}  ` +
+        `${`${result.report.traced}/${result.report.placements}`.padStart(11)}  ` +
+        `${String(result.report.chopped).padStart(7)}  ${String(result.report.pulledBack).padStart(6)}  ` +
+        `${result.report.recoveryMean.toFixed(3).padStart(7)}  ${result.report.recoveryP10.toFixed(3).padStart(6)}  ` +
+        `${result.report.recoveryMin.toFixed(3).padStart(6)}`,
+    );
+    writeFileSync(
+      path.join(reportDir, 'summary.txt'),
+      `Board-art tracer report — ${results.length} config(s), ${skipped.length} skipped.\n` +
+        `chopped = traced outlines keeping less than ${MIN_AREA_RECOVERY} of the connected art body\n` +
+        `their seed sits on.\n` +
+        `Stroke colours in the PNGs: green traced clean, amber pulled back off a neighbour,\n` +
+        `red chopped, dashed grey untraced (the renderer falls back to a ring).\n\n` +
+        `${header}\n${rows.join('\n')}\n` +
+        (skipped.length > 0 ? `\nskipped:\n${skipped.map((line) => `  - ${line}`).join('\n')}\n` : ''),
+    );
+    console.log(`[board-art-geometry] report written to ${reportDir}`);
+    // Falls through deliberately when `--check` is also set. A report run that
+    // swallowed the drift comparison would let `--report --check` exit 0 on a
+    // stale tree, which is the one thing `--check` exists to prevent. Without
+    // `--check` the writes below are ordinary generation and a report run is
+    // meant to touch nothing, so it stops here.
+    if (!checkOnly) return 0;
   }
 
   const stale: string[] = [];

@@ -1,25 +1,33 @@
 /// <reference types="node" />
 
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { getBackgroundRelPaths, getBoardDetailsForBoard } from '@boardsesh/board-render';
 import { getSetsForLayoutAndSize } from '@boardsesh/board-constants/product-sizes';
-import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, WOODS_LAYOUTS, WOODS_SETS } from '@boardsesh/board-config';
+import {
+  MOONBOARD_CELL_SETS,
+  MOONBOARD_LAYOUTS,
+  MOONBOARD_SETS,
+  WOODS_LAYOUTS,
+  WOODS_SETS,
+} from '@boardsesh/board-config';
 
 /**
- * The measurements the six capture gates are built out of (issue #2202).
+ * The measurements the seven capture gates are built out of (issue #2202).
  *
  * A separate module from the gates themselves so the assertions read as
  * assertions, and so the pin tables in `geometry-gates.test.ts` can be
  * re-derived with the same code that checks them.
  *
  * EVERY CONSTANT HERE IS DELIBERATELY RESTATED, not imported from
- * `scripts/generate-board-art-geometry.ts`. A gate that shares its constants
- * with the code it audits stops being a check on anything the moment one of them
- * moves — and the generator is a Node script that pulls in the whole catalogue,
- * which a package test should not.
+ * `scripts/generate-board-art-geometry.ts` — and so is the placement->image
+ * routing the per-image gates need. A gate that shares its inputs with the code
+ * it audits stops being a check on anything the moment one of them moves, and
+ * the generator is a Node script that pulls in the whole catalogue, which a
+ * package test should not.
  */
 
 /** Mirrors the generator's search box, in placement radii. */
@@ -28,10 +36,8 @@ export const SEARCH_RADII = 2.6;
 export const MAX_BOX_EDGE_SHARE = 0.1;
 /** A pixel counts as hold art if its alpha is at least this. */
 export const ALPHA_FLOOR = 96;
-/** The board width the neck-trim radius is quoted at. */
-export const RADIUS_REFERENCE_WIDTH = 1080;
-/** Neck-trim radius at the reference width — the radius gate 5 opens at. */
-export const NECK_TRIM_AT_REFERENCE = 3;
+/** Neck-trim radius as a fraction of the placement radius — the radius gate 5 opens at. */
+export const TRIM_RADIUS_PER_PLACEMENT_RADIUS = 0.078;
 /** Board px² a 3-px open may cost an outline before the trimmed part counts as a spur. */
 export const MAX_SPUR_AREA = 20;
 /** Within this of an image axis, a segment is straight enough to be a crop-box side. */
@@ -45,12 +51,103 @@ export const SIMPLIFY_EPSILON = 1.6;
 const BOX_EDGE_TOLERANCE_PX = 1;
 /**
  * Board pixels to step along the outward normal when asking what is on the other
- * side of the boundary. Far enough to clear the antialiased rim the alpha floor
- * already cut, short enough that it cannot cross a gutter: Kilter Homewall's
- * median gutter between two holds is 3.6 board px, so a probe at 2.5 lands in the
- * gutter rather than on the far hold whenever there is one.
+ * side of the boundary, as an offset from the shard's own cut clearance.
+ *
+ * MUST scale with that clearance, and this is the bug it fixes. The probe was a
+ * flat 2.5 board px, chosen when every board's clearance was 3: the tracer had
+ * deleted everything within 3 px of a neighbour's art, so a compliant boundary
+ * could not have art 2.5 px beyond it and the measure meant something. Once the
+ * clearance became a fraction of the placement radius, a shard clearing 2 px was
+ * being probed 0.5 px BEYOND its own guarantee, and read as defective by
+ * construction. Sweeping touchstone/1-1 shows the whole effect is the probe:
+ * 6 outlines over 5% at a probe of 2.0, 32 at 2.5, 69 at 3.0, on identical
+ * geometry.
+ *
+ * Half a pixel inside the clearance is the honest question — "is there a
+ * neighbour's art immediately short of where the pullback was allowed to stop" —
+ * and it reproduces the original 2.5 exactly on the boards the original was
+ * calibrated against.
  */
-const CUT_PROBE_DISTANCE = 2.5;
+const CUT_PROBE_INSET_FROM_CLEARANCE = 0.5;
+
+/** The probe distance for one placement, in board pixels. */
+export function cutProbeDistance(placementRadius: number): number {
+  return radiusForPlacement(placementRadius) - CUT_PROBE_INSET_FROM_CLEARANCE;
+}
+
+// ---------------------------------------------------------------------------
+// Hand-corrected outlines
+// ---------------------------------------------------------------------------
+
+/** Where `vp run db:export-outline-overrides` writes the committed corrections. */
+export const OVERRIDES_DIR = fileURLToPath(new URL('../../overrides/', import.meta.url));
+
+/** The committed corrections for one shard, as the exporter writes them. */
+export type OverrideFile = {
+  outlines?: Record<string, number[]>;
+  ledInner?: Record<string, number[]>;
+};
+
+/**
+ * Read one config's committed overrides, or `null` where it has none.
+ *
+ * PARSED HERE rather than imported from the generator's merge module, like every
+ * other input in this file. Reading the JSON is not restating a measurement —
+ * it is data, and the whole point of these gates is that they reach the same
+ * files the generator did by their own route.
+ */
+export function overridesForKey(key: string): OverrideFile | null {
+  const filePath = path.join(OVERRIDES_DIR, `${key}.json`);
+  if (!existsSync(filePath)) return null;
+  return JSON.parse(readFileSync(filePath, 'utf8')) as OverrideFile;
+}
+
+/** Every shard key with a committed override file. */
+export function overriddenShardKeys(): string[] {
+  if (!existsSync(OVERRIDES_DIR)) return [];
+  const keys: string[] = [];
+  for (const boardEntry of readdirSync(OVERRIDES_DIR, { withFileTypes: true })) {
+    if (!boardEntry.isDirectory()) continue;
+    for (const fileEntry of readdirSync(path.join(OVERRIDES_DIR, boardEntry.name), { withFileTypes: true })) {
+      if (!fileEntry.isFile() || !fileEntry.name.endsWith('.json')) continue;
+      keys.push(`${boardEntry.name}/${fileEntry.name.slice(0, -'.json'.length)}`);
+    }
+  }
+  return keys.sort();
+}
+
+/**
+ * The placements of one shard whose SILHOUETTE a human drew.
+ *
+ * Gates 2, 3 and 7 still bind on these, and they are the invariants that matter
+ * for a drawing: it swallows no second placement, it is not the crop rectangle,
+ * it keeps its own hold.
+ *
+ * Gate 1, gate 5 and gate 6 do NOT. Gates 5 and 6 measure TRACER PATHOLOGIES — a
+ * limb joined through a thin neck, a boundary that is a partition cut rather
+ * than an art edge — and a human correcting exactly those defects trips them by
+ * construction. The commonest correction is a contact cut, where the fix is to
+ * draw the hold's real edge, and the hold's real edge is ON the neighbour's art:
+ * gate 6 would read that as the defect it was drawn to repair.
+ *
+ * Gate 1 is exempt for a different and sharper reason — a TOLERANCE MISMATCH.
+ * Its threshold is the 1.6 board px simplification tolerance, which on
+ * kilter/1-28 is 0.052 radii, while the rule a correction is actually held to —
+ * by the backend on write and by the merge on read — is `CENTRE_TOLERANCE_RADII`
+ * at 0.25 radii. Five times looser. A legal correction whose bolt sits 0.1 radii
+ * outside the drawn edge therefore passes the editor, the export and the merge
+ * and then reds this gate with no remedy available: the hold can neither be
+ * corrected nor left alone. The 0.25 rule binds instead on the committed ring,
+ * in `overrides.test.ts`, which is where it can actually be satisfied.
+ *
+ * `ledInner` rings are exempt from all seven — a base-plate boundary is not a
+ * silhouette and none of these measures mean anything about one — and get their
+ * own structural checks in `overrides.test.ts`.
+ */
+export function overriddenPlacementIds(key: string): Set<number> {
+  const file = overridesForKey(key);
+  return new Set(Object.keys(file?.outlines ?? {}).map(Number));
+}
 
 export type Placement = { id: number; cx: number; cy: number; r: number };
 
@@ -64,6 +161,19 @@ export type ShardBoard = {
   placements: Placement[];
   placementById: Map<number, Placement>;
   backgroundRelPaths: string[];
+  /**
+   * Which art layer draws each placement, as an index into
+   * `backgroundRelPaths`; `-1` for a placement no layer draws.
+   *
+   * Restated from the board data rather than taken from the generator, like
+   * everything else here. Aurora states it outright — `images_to_holds` IS image
+   * -> hold tuples — and MoonBoard routes through `MOONBOARD_CELL_SETS`, grid
+   * cell -> hold set -> that set's image, because its own map carries keys with
+   * empty values.
+   */
+  layerOfPlacement: Map<number, number>;
+  /** The placements each layer draws, in placement order. */
+  placementsByLayer: Placement[][];
 };
 
 /**
@@ -114,6 +224,36 @@ export function shardBoardForKey(key: string): ShardBoard {
     placementById.set(hold.id, placement);
   }
 
+  // `getBackgroundRelPaths` walks the `images_to_holds` keys in order, so key
+  // `i` is layer `i`.
+  const imageKeys = Object.keys(details.images_to_holds);
+  const layerOfPlacement = new Map<number, number>();
+  if (boardName === 'moonboard') {
+    const layoutKey = Object.entries(MOONBOARD_LAYOUTS).find(([, layout]) => layout.id === layoutId)?.[0];
+    const layerOfSet = new Map<number, number>();
+    for (const set of MOONBOARD_SETS[layoutKey as keyof typeof MOONBOARD_SETS] ?? []) {
+      const index = imageKeys.indexOf(`${details.layoutFolder}/${set.imageFile}`);
+      if (index >= 0) layerOfSet.set(set.id, index);
+    }
+    const cells = MOONBOARD_CELL_SETS[layoutId] ?? {};
+    for (const placement of placements) {
+      const setId = cells[placement.id];
+      layerOfPlacement.set(placement.id, (setId === undefined ? undefined : layerOfSet.get(setId)) ?? -1);
+    }
+  } else {
+    for (const [index, imageKey] of imageKeys.entries()) {
+      for (const [holdId] of details.images_to_holds[imageKey]) layerOfPlacement.set(holdId, index);
+    }
+    for (const placement of placements) {
+      if (!layerOfPlacement.has(placement.id)) layerOfPlacement.set(placement.id, -1);
+    }
+  }
+  const placementsByLayer: Placement[][] = imageKeys.map(() => []);
+  for (const placement of placements) {
+    const index = layerOfPlacement.get(placement.id) ?? -1;
+    if (index >= 0) placementsByLayer[index].push(placement);
+  }
+
   return {
     key,
     boardName: boardName as BoardName,
@@ -124,17 +264,24 @@ export function shardBoardForKey(key: string): ShardBoard {
     placements,
     placementById,
     backgroundRelPaths: getBackgroundRelPaths(details, false),
+    layerOfPlacement,
+    placementsByLayer,
   };
 }
 
 /**
- * The generator's per-board radius rule, restated. Both MoonBoards draw their art
- * in a 650 px box against 1080 for most of the catalogue, so a flat board-pixel
- * radius is 1.66x the mark there; gate 5 has to open at the radius the tracer
- * trimmed at or it measures a different hold to the one that shipped.
+ * The generator's per-placement radius rule, restated. A hold's neck is a
+ * fraction of the hold, so the trim radius is a fraction of the placement
+ * radius; gate 5 has to open at the radius the tracer trimmed at or it measures
+ * a different hold to the one that shipped.
+ *
+ * The rule this replaces scaled with the board's PIXEL width, which is not the
+ * same thing: TB2's 12x12 Wide is 1461 px across carrying the same 31.8 px
+ * placement radius as the 1080 px 12x12, and the extra pixel of trim it bought
+ * is what left the one outline that had to be pinned as a known gate-5 failure.
  */
-export function radiusForBoard(atReferenceWidth: number, boardWidth: number): number {
-  return Math.max(2, Math.round((atReferenceWidth * boardWidth) / RADIUS_REFERENCE_WIDTH));
+export function radiusForPlacement(placementRadius: number): number {
+  return Math.max(2, Math.round(TRIM_RADIUS_PER_PLACEMENT_RADIUS * placementRadius));
 }
 
 /**
@@ -244,7 +391,7 @@ export function distanceOutsidePolygon(flat: number[], pointX: number, pointY: n
  * inside a 256-pixel search box. A trace that followed the box is the box, so
  * requiring it to actually touch the box is what separates the two. The
  * `boxEdgeShare` measure above is the independent second reading, and it is 0 on
- * all 15,501 shipped outlines.
+ * all 15,499 shipped outlines.
  */
 export function reachesSearchBox(flatBoardPx: number[], box: number): boolean {
   let maxX = 0;
@@ -466,6 +613,164 @@ export async function loadBoardArt(width: number, height: number, relativePaths:
   return { opaque, width, height };
 }
 
+/**
+ * Each art layer's own hold substance, one mask per `backgroundRelPaths` entry.
+ *
+ * The composite above is still what the colour tables measure; this is what a
+ * SILHOUETTE is measured against, because a hold's shape is a fact about the one
+ * image that draws it. Two holds from different sets are bolted into different
+ * holes and their art barely overlaps, but flatten the layers into one bitmap
+ * and they touch — and a boundary that only exists because two images were
+ * stacked is not a boundary of anything.
+ */
+export async function loadBoardArtLayers(width: number, height: number, relativePaths: string[]): Promise<BoardArt[]> {
+  const layers: BoardArt[] = [];
+  for (const relativePath of relativePaths) {
+    const pixels = await sharp(path.join(PUBLIC_DIR, relativePath))
+      .resize(width, height, { fit: 'fill' })
+      .ensureAlpha()
+      .raw()
+      .toBuffer();
+    const opaque = new Uint8Array(width * height);
+    for (let pixel = 0; pixel < width * height; pixel += 1) {
+      opaque[pixel] = pixels[pixel * 4 + 3] >= ALPHA_FLOOR ? 1 : 0;
+    }
+    layers.push({ opaque, width, height });
+  }
+  return layers;
+}
+
+/**
+ * The placements that could out-compete this one for a pixel in its search box.
+ *
+ * A pixel in the box is at most `box * sqrt(2)` from the placement, so nothing
+ * further than twice the box can win one; the cut-off keeps the exact
+ * nearest-placement scan off the board's other five hundred bolts.
+ */
+export function nearbyCandidates(candidates: Placement[], placement: Placement): Placement[] {
+  const reach = placement.r * SEARCH_RADII * 2;
+  return candidates.filter(
+    (entry) => Math.abs(entry.cx - placement.cx) <= reach && Math.abs(entry.cy - placement.cy) <= reach,
+  );
+}
+
+/**
+ * How much of its own art body the shipped silhouette actually kept.
+ *
+ * The denominator is the CONNECTED art body the silhouette sits on: art pixels
+ * in the search box that the exact nearest-placement partition gives to this
+ * placement on its own layer, restricted to the 4-connected components the
+ * shipped polygon actually covers. The numerator is that polygon's area. Their
+ * ratio is the one measure that catches a hold that simply lost half of itself:
+ * gate 3 clears a chopped silhouette, gate 5's open clears it, and gate 6
+ * positively likes it, because a boundary well inside the hold's own art is
+ * exactly what a pullback is supposed to produce.
+ *
+ * THE CONNECTIVITY IS LOAD-BEARING. A partition cell is a region of the board,
+ * not a hold: a neighbouring macro's rim can lie closer to this bolt than to its
+ * own and fall inside this cell without ever touching this hold. Counting the
+ * whole cell read as a chop on 145 of 181 holds catalogue-wide that the tracer
+ * had removed nothing from — grasshopper/1-4's 293 came out at 0.250 recovery
+ * with a `droppedArea` of zero.
+ *
+ * Restated rather than imported, and deliberately anchored differently to the
+ * generator: the tracer floods from ITS seed rule, and this floods from the
+ * polygon that shipped. They agree on every well-formed hold and disagree on a
+ * trace anchored to the wrong body, which is a defect worth seeing.
+ *
+ * It can exceed 1, and that is not a defect. The tracer fills holes before it
+ * takes the outer border, so a hold with a punched-out bolt hole ships a polygon
+ * covering art the partition never counted.
+ */
+export function areaRecovery(
+  layerArt: BoardArt,
+  sameLayerCandidates: Placement[],
+  placement: Placement,
+  flatBoardPx: number[],
+): number {
+  const centreX = Math.round(placement.cx);
+  const centreY = Math.round(placement.cy);
+  const box = Math.round(placement.r * SEARCH_RADII);
+  const left = Math.max(0, centreX - box);
+  const top = Math.max(0, centreY - box);
+  const right = Math.min(layerArt.width - 1, centreX + box);
+  const bottom = Math.min(layerArt.height - 1, centreY + box);
+  const localWidth = right - left + 1;
+  const localHeight = bottom - top + 1;
+  if (localWidth <= 0 || localHeight <= 0) return 0;
+
+  const cell = new Uint8Array(localWidth * localHeight);
+  for (let y = 0; y < localHeight; y += 1) {
+    for (let x = 0; x < localWidth; x += 1) {
+      if (layerArt.opaque[(top + y) * layerArt.width + (left + x)] !== 1) continue;
+      const own = (placement.cx - (left + x)) ** 2 + (placement.cy - (top + y)) ** 2;
+      let beaten = false;
+      for (const candidate of sameLayerCandidates) {
+        if (candidate.id === placement.id) continue;
+        if ((candidate.cx - (left + x)) ** 2 + (candidate.cy - (top + y)) ** 2 < own) {
+          beaten = true;
+          break;
+        }
+      }
+      if (!beaten) cell[y * localWidth + x] = 1;
+    }
+  }
+
+  // Flood the cell from every pixel the shipped polygon covers, so the
+  // denominator is the body (or bodies) that silhouette belongs to and nothing
+  // else in the cell.
+  const raster = rasterise(flatBoardPx);
+  // `rasterise` anchors its bitmap one pixel outside the polygon's own bounds,
+  // and the polygon is offset from the ROUNDED centre.
+  let polygonMinX = Infinity;
+  let polygonMinY = Infinity;
+  for (let point = 0; point < flatBoardPx.length; point += 2) {
+    polygonMinX = Math.min(polygonMinX, flatBoardPx[point]);
+    polygonMinY = Math.min(polygonMinY, flatBoardPx[point + 1]);
+  }
+  const rasterOriginX = centreX + Math.floor(polygonMinX) - 1 - left;
+  const rasterOriginY = centreY + Math.floor(polygonMinY) - 1 - top;
+
+  const visited = new Uint8Array(cell.length);
+  const stack: number[] = [];
+  for (let index = 0; index < raster.filled.length; index += 1) {
+    if (raster.filled[index] !== 1) continue;
+    const rasterX = index % raster.width;
+    const rasterY = (index - rasterX) / raster.width;
+    const localX = rasterOriginX + rasterX;
+    const localY = rasterOriginY + rasterY;
+    if (localX < 0 || localY < 0 || localX >= localWidth || localY >= localHeight) continue;
+    const cellIndex = localY * localWidth + localX;
+    if (cell[cellIndex] !== 1 || visited[cellIndex] === 1) continue;
+    visited[cellIndex] = 1;
+    stack.push(cellIndex);
+  }
+
+  let bodyArea = 0;
+  while (stack.length > 0) {
+    const index = stack.pop() as number;
+    bodyArea += 1;
+    const x = index % localWidth;
+    const y = (index - x) / localWidth;
+    for (const [stepX, stepY] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const nextX = x + stepX;
+      const nextY = y + stepY;
+      if (nextX < 0 || nextY < 0 || nextX >= localWidth || nextY >= localHeight) continue;
+      const neighbour = nextY * localWidth + nextX;
+      if (cell[neighbour] !== 1 || visited[neighbour] === 1) continue;
+      visited[neighbour] = 1;
+      stack.push(neighbour);
+    }
+  }
+
+  return bodyArea === 0 ? 0 : raster.area / bodyArea;
+}
+
 /** The nearest placement to a board point — the partition the generator cuts on. */
 function nearestPlacementId(candidates: Placement[], pointX: number, pointY: number): number {
   let bestId = candidates[0].id;
@@ -494,12 +799,18 @@ function nearestPlacementId(candidates: Placement[], pointX: number, pointY: num
  * Sampled per pixel and not per vertex: Douglas-Peucker leaves a long straight
  * cut carrying two vertices and a curved art edge carrying twenty, so a
  * per-vertex share understates a cut by roughly the ratio of the two.
+ *
+ * `probeDistance` defaults to half a pixel inside the shard's own cut clearance,
+ * which is the only distance at which the question is about the geometry rather
+ * than about the probe — see `CUT_PROBE_INSET_FROM_CLEARANCE`. The fixtures pass
+ * an explicit one.
  */
 export function cutShares(
   art: BoardArt,
   candidates: Placement[],
   placement: Placement,
   flatBoardPx: number[],
+  probeDistance: number = cutProbeDistance(placement.r),
 ): { opaque: number; neighbour: number } {
   // `flatBoardPx` is offset from the rounded centre — the frame the tracer cut in.
   const centreX = Math.round(placement.cx);
@@ -529,8 +840,8 @@ export function cutShares(
       samples += 1;
       const alongX = fromX + ((toX - fromX) * step) / steps;
       const alongY = fromY + ((toY - fromY) * step) / steps;
-      const probeX = Math.round(centreX + alongX + normalX * CUT_PROBE_DISTANCE);
-      const probeY = Math.round(centreY + alongY + normalY * CUT_PROBE_DISTANCE);
+      const probeX = Math.round(centreX + alongX + normalX * probeDistance);
+      const probeY = Math.round(centreY + alongY + normalY * probeDistance);
       if (probeX < 0 || probeY < 0 || probeX >= art.width || probeY >= art.height) continue;
       if (art.opaque[probeY * art.width + probeX] !== 1) continue;
       opaqueOutside += 1;

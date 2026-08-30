@@ -1208,7 +1208,33 @@ export const schemaSQL = `
   );
   CREATE INDEX IF NOT EXISTS "qa_verdicts_pr_created_idx" ON "qa_verdicts" ("pr_number", "created_at");
   CREATE INDEX IF NOT EXISTS "qa_verdicts_user_idx" ON "qa_verdicts" ("user_id");
+
   CREATE INDEX IF NOT EXISTS "gym_kiosks_gym_idx" ON "gym_kiosks" ("gym_id") WHERE "deleted_at" IS NULL;
+
+  -- Hand-corrected hold outlines, overriding the traced geometry shard. Mirrors
+  -- packages/db/src/schema/app/hold-outline-overrides.ts (migration 0207). kind
+  -- is plain text here (prod uses the hold_outline_kind enum) with a CHECK, the
+  -- same shape qa_verdicts.verdict takes above; the resolvers only ever compare
+  -- the string value. The unique index is the upsert target, so it is not
+  -- optional here.
+  DROP TABLE IF EXISTS "hold_outline_overrides" CASCADE;
+  CREATE TABLE IF NOT EXISTS "hold_outline_overrides" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "board_name" text NOT NULL,
+    "layout_id" integer NOT NULL,
+    "size_id" integer NOT NULL,
+    "placement_id" integer NOT NULL,
+    "kind" text NOT NULL DEFAULT 'silhouette' CHECK ("kind" IN ('silhouette', 'led_inner')),
+    "outline" jsonb NOT NULL,
+    "note" text,
+    "author_id" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "hold_outline_overrides_placement_idx"
+    ON "hold_outline_overrides" ("board_name", "layout_id", "size_id", "placement_id", "kind");
+  CREATE INDEX IF NOT EXISTS "hold_outline_overrides_config_idx"
+    ON "hold_outline_overrides" ("board_name", "layout_id", "size_id");
 
   -- Maps upstream location-provider source keys (kilter:..., tension:...) to the
   -- canonical gym. The duplicate-review candidate query reads provider prefixes

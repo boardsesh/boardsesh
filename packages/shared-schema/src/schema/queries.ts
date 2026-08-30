@@ -677,6 +677,13 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     gymOwnershipLookup(input: GymOwnershipLookupInput!): GymOwnershipLookupResult!
 
+    """
+    The traced hold silhouettes this backend ships for a board config, alongside
+    the hand-drawn corrections that supersede them (admin only, scoped to the
+    board). Read-only; the editor renders both and offers a revert.
+    """
+    holdOutlines(input: HoldOutlineConfigInput!): BoardHoldOutlines!
+
     # ============================================
     # Gym Kiosk Queries
     # ============================================

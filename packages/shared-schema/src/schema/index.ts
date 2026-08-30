@@ -29,6 +29,7 @@ import { integrationsTypeDefs } from './integrations';
 import { syncTypeDefs } from './sync';
 import { locationSyncAdminTypeDefs } from './location-sync-admin';
 import { gymOwnerReassignTypeDefs } from './gym-owner-reassign';
+import { holdOutlineOverridesTypeDefs } from './hold-outline-overrides';
 
 export const typeDefs = [
   scalarTypeDefs,
@@ -54,6 +55,7 @@ export const typeDefs = [
   syncTypeDefs,
   locationSyncAdminTypeDefs,
   gymOwnerReassignTypeDefs,
+  holdOutlineOverridesTypeDefs,
   queriesTypeDefs,
   mutationsTypeDefs,
   subscriptionsTypeDefs,

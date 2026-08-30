@@ -4,7 +4,7 @@
 // jump on a MoonBoard means a set joined its composite (every shard mounts them all) (those
 // layouts are a synthetic 11x18 grid and most cells genuinely carry no hold).
 module.exports = {
-  'decoy/2-1': { traced: 458, placements: 458 },
+  'decoy/2-1': { traced: 456, placements: 458 },
   'decoy/2-2': { traced: 314, placements: 314 },
   'decoy/2-3': { traced: 263, placements: 263 },
   'grasshopper/1-2': { traced: 194, placements: 194 },
