@@ -372,10 +372,17 @@ export function useBoardsBySerialNumbers(serialNumbers: string[], advertisedType
         serialNumbers,
         boardType,
       }),
-    select: (data) =>
-      data.boardsBySerialNumbers.filter((board) =>
-        board.serialNumber ? matchesAdvertisedType(board.serialNumber, board.boardType, advertisedTypes) : true,
-      ),
+    // Memoized on `advertisedTypes` so the dependency is explicit: `select`
+    // re-runs when its own reference changes, so an unmemoized closure would
+    // re-filter the cached response whenever a caller handed over a new Map with
+    // the same contents.
+    select: useCallback(
+      (data: GetBoardsBySerialNumbersQueryResponse) =>
+        data.boardsBySerialNumbers.filter((board) =>
+          board.serialNumber ? matchesAdvertisedType(board.serialNumber, board.boardType, advertisedTypes) : true,
+        ),
+      [advertisedTypes],
+    ),
     enabled: serialNumbers.length > 0,
   });
 }

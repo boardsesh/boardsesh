@@ -302,7 +302,12 @@ describe('BluetoothQuickstartSheet board rows', () => {
 
     render(createElement(BluetoothQuickstartSheet, { active: true, onClose: () => {}, onSelect: () => {} }));
 
-    expect(resolveCalls.at(-1)).toMatchObject({ serialNumbers: ['12345'] });
-    expect([...(resolveCalls.at(-1)?.advertisedTypes ?? [])]).toEqual([['12345', 'tension']]);
+    const lastCall = resolveCalls.at(-1);
+    expect({ serialNumbers: lastCall?.serialNumbers, advertisedTypes: [...(lastCall?.advertisedTypes ?? [])] }).toEqual(
+      {
+        serialNumbers: ['12345'],
+        advertisedTypes: [['12345', 'tension']],
+      },
+    );
   });
 });
