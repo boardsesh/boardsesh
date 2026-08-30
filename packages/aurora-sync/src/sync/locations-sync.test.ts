@@ -133,6 +133,36 @@ describe('buildAuroraLocationRecords', () => {
     });
   });
 
+  it('reports the failed wall and the gym fallback as separate reasons', () => {
+    // The first wall shares the gym's source key, so a failure there reports
+    // twice against `tension:123`. Kept deliberately: the two entries say
+    // different things — which wall config was unsupported, and that the gym
+    // fell back to the default — and collapsing them would lose the first.
+    // What IS collapsed is the same (sourceKey, reason) pair repeating.
+    const { skipped } = buildAuroraLocationRecords('tension', [withWalls([makeWall({ layout_id: 4242 })])]);
+
+    expect(skipped.map((entry) => entry.reason)).toEqual([
+      'unsupported tension wall config layout 4242 size 6',
+      'no listed wall had a supported config',
+    ]);
+  });
+
+  it('collapses an identical skip reason repeated for one gym', () => {
+    // Two walls failing the same way used to report the same line twice.
+    const { skipped } = buildAuroraLocationRecords('tension', [
+      withWalls([
+        makeWall({ uuid: 'a', layout_id: 4242, created_at: '2026-01-01T00:00:00.000Z' }),
+        makeWall({ uuid: 'b', layout_id: 4242, created_at: '2026-02-01T00:00:00.000Z' }),
+      ]),
+    ]);
+
+    const unsupported = skipped.filter((entry) => entry.reason.startsWith('unsupported tension wall config'));
+    expect(unsupported).toHaveLength(2);
+    // Distinct source keys (gym key for wall a, per-wall key for wall b), so
+    // both survive — the dedupe only removes an exact repeat.
+    expect(new Set(unsupported.map((entry) => entry.sourceKey)).size).toBe(2);
+  });
+
   it('rejects a wall listing hold sets that do not belong to its layout and size', () => {
     const { records, skipped } = buildAuroraLocationRecords('tension', [withWalls([makeWall({ set_ids: [999] })])]);
 
@@ -244,22 +274,27 @@ describe('syncAllAuroraBoardLocations fetcher dispatch', () => {
       upsertPublicBoardLocations: () => Promise.resolve(upserted),
     }));
     vi.resetModules();
-    const { syncAllAuroraBoardLocations: syncAll } = await import('./locations-sync');
 
-    await syncAll({
-      db: {} as never,
-      fetchGymUser: (board, pin) => {
-        requested.push({ board, pinId: pin.id });
-        return Promise.resolve(undefined);
-      },
-    });
+    try {
+      const { syncAllAuroraBoardLocations: syncAll } = await import('./locations-sync');
 
-    // One request per board, each carrying that board's own pin id.
-    expect(requested).toEqual(AURORA_LOCATION_BOARDS.map((board) => ({ board, pinId: board.length })));
+      await syncAll({
+        db: {} as never,
+        fetchGymUser: (board, pin) => {
+          requested.push({ board, pinId: pin.id });
+          return Promise.resolve(undefined);
+        },
+      });
 
-    vi.doUnmock('../api/pins-api');
-    vi.doUnmock('@boardsesh/location-sync');
-    vi.resetModules();
+      // One request per board, each carrying that board's own pin id.
+      expect(requested).toEqual(AURORA_LOCATION_BOARDS.map((board) => ({ board, pinId: board.length })));
+    } finally {
+      // In a finally so a failed assertion can't leak these module mocks into
+      // every test that runs after it.
+      vi.doUnmock('../api/pins-api');
+      vi.doUnmock('@boardsesh/location-sync');
+      vi.resetModules();
+    }
   });
 
   it('is exported for every Aurora board except Kilter', () => {

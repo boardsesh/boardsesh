@@ -46,6 +46,26 @@ function formatAddress(gym: AuroraGymUser['gym']): string | null {
 }
 
 /**
+ * Collapse repeated (sourceKey, reason) pairs. The first wall shares the gym's
+ * source key, so when it is the wall that fails validation the per-wall skip and
+ * the whole-gym fallback both report against the same key — one gym, two lines
+ * in an operator's summary. Mirrors kilter-sync's dedupeSkipped.
+ */
+function dedupeSkipped(
+  skipped: Array<{ sourceKey: string; reason: string }>,
+): Array<{ sourceKey: string; reason: string }> {
+  const seen = new Set<string>();
+  return skipped.filter((entry) => {
+    // Newline can't appear in a source key or a reason, so it's an unambiguous
+    // composite separator.
+    const key = `${entry.sourceKey}\n${entry.reason}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
  * Deterministic wall order, so "the first wall" means the same thing on every
  * run. That matters because the first wall keeps the gym's original board
  * source key — see `wallSourceKey`.
@@ -157,7 +177,7 @@ export function buildAuroraLocationRecords(
     }
   }
 
-  return { records, skipped };
+  return { records, skipped: dedupeSkipped(skipped) };
 }
 
 export async function syncAuroraBoardLocations(args: {
@@ -185,8 +205,12 @@ export async function syncAuroraBoardLocations(args: {
     // healthy run looks identical to a stalled one.
     const user = args.fetchGymUser ? await args.fetchGymUser(pin) : undefined;
     pinsWithUsers.push({ pin, user });
-    if (args.fetchGymUser && (pinIndex + 1) % GYM_CRAWL_PROGRESS_INTERVAL === 0) {
-      args.log?.(`[aurora-locations] ${args.board}: read ${pinIndex + 1}/${pins.gyms.length} gym(s)`);
+    // Log on the interval AND on the last gym: a 476-gym run whose final line
+    // is "read 450/476" leaves an operator unable to tell completion from a
+    // stall on the last stretch.
+    const gymsRead = pinIndex + 1;
+    if (args.fetchGymUser && (gymsRead % GYM_CRAWL_PROGRESS_INTERVAL === 0 || gymsRead === pins.gyms.length)) {
+      args.log?.(`[aurora-locations] ${args.board}: read ${gymsRead}/${pins.gyms.length} gym(s)`);
     }
   }
 
