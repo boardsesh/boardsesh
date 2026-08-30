@@ -17,8 +17,8 @@ import type { Wall } from '../api/sync-api-types';
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 export type AuroraLocationBoardName = Exclude<AuroraBoardName, 'kilter'>;
 
-/** How often the sequential gym crawl reports progress. */
-const GYM_CRAWL_PROGRESS_INTERVAL = 50;
+/** How often the sequential gym crawl reports progress. Exported for tests. */
+export const GYM_CRAWL_PROGRESS_INTERVAL = 50;
 
 export const AURORA_LOCATION_BOARDS = AURORA_BOARDS.filter(
   (board): board is AuroraLocationBoardName => board !== 'kilter',
@@ -85,6 +85,13 @@ function orderedWalls(walls: readonly Wall[]): Wall[] {
  * The first wall therefore keeps the gym's original `{board}:{pin id}` key,
  * which is the only key this sync ever produced. Only additional walls, which
  * never had a row before, get a per-wall key.
+ *
+ * `wallIndex` MUST be the position among ALL of the gym's walls, not among the
+ * listed ones. Indexed within the listed subset, un-listing the first wall slid
+ * a sibling up to index 0, which silently rewrote the gym's long-lived board row
+ * to a different wall's config (and orphaned that sibling's own row). Ordering
+ * is by `created_at`, so a newly added wall always sorts last and can never
+ * displace the wall that currently holds the gym key.
  */
 function wallSourceKey(board: AuroraLocationBoardName, pinId: number, wall: Wall, wallIndex: number): string {
   const gymKey = `${board}:${pinId}`;
@@ -132,14 +139,23 @@ export function buildAuroraLocationRecords(
       skipped.push({ sourceKey: gymSourceKey, reason });
     };
 
-    const listedWalls = orderedWalls(user?.walls ?? []).filter((wall) => wall.is_listed !== false);
+    // Ordered over EVERY wall so each one's index — and therefore its source
+    // key — is independent of which siblings happen to be listed this run.
+    // `is_listed !== false` rather than `=== true` on purpose: the shared `Wall`
+    // type is modelled on the sync payload, and the `/users/{id}` payload is not
+    // guaranteed to carry every field, so a missing flag must mean "listed"
+    // rather than silently hiding the gym's only wall.
+    const allWalls = orderedWalls(user?.walls ?? []);
+    const listedWalls = allWalls
+      .map((wall, wallIndex) => ({ wall, wallIndex }))
+      .filter(({ wall }) => wall.is_listed !== false);
     if (listedWalls.length === 0) {
       pushDefaultConfigFallback(user ? 'gym has no listed walls' : 'gym walls unavailable');
       continue;
     }
 
     const recordsBeforeGym = records.length;
-    listedWalls.forEach((wall, wallIndex) => {
+    listedWalls.forEach(({ wall, wallIndex }) => {
       const sourceKey = wallSourceKey(board, pin.id, wall, wallIndex);
       const config = resolveAuroraWallConfig({
         boardType: board,

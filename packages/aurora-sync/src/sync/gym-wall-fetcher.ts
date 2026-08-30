@@ -117,6 +117,12 @@ export async function createAuroraGymUserFetcher(args: {
     }
   };
 
+  // `nextRequestAtMs` is closure state shared by every call, which paces a
+  // SEQUENTIAL caller correctly and nothing else: two overlapping calls can both
+  // read it before either writes, see no wait, and fire back to back. The only
+  // caller (`syncAuroraBoardLocations`) awaits each gym in turn precisely
+  // because Aurora rate-limits per board — keep it that way rather than adding a
+  // queue here.
   let nextRequestAtMs = 0;
   return async (pin: AuroraPin): Promise<AuroraGymUser | undefined> => {
     let sessionRefreshedForThisGym = false;
