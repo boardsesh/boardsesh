@@ -2,8 +2,8 @@ import util from 'node:util';
 import { createLogger, format, transports, type Logger, type LoggerOptions } from 'winston';
 import { SentryWinstonTransport } from './sentry-transport';
 
-// Explicit annotation prevents TS2742 from inferring a path through bun's
-// isolated `node_modules/.bun/logform@x.y/...` install layout.
+// Explicit annotation prevents TS2742 from inferring a path through the
+// package manager's isolated virtual-store install layout.
 type FormatFactory = ReturnType<typeof format>;
 
 type InstanceIdProvider = () => string | null;

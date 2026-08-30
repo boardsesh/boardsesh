@@ -99,7 +99,14 @@ function hashDir(dir: string, root: string, hash: Hash): void {
 /** Short hash over the inputs that change the native build (mirrors CI's cache key, broadened). */
 function nativeInputHash(): string {
   const hash = createHash('sha256');
-  const files = ['packages/mobile/app.config.ts', 'packages/mobile/package.json', 'package.json', 'bun.lock'];
+  const files = [
+    'packages/mobile/app.config.ts',
+    'packages/mobile/package.json',
+    'package.json',
+    'pnpm-lock.yaml',
+    // Patched dependencies and overrides also change the native tree.
+    'pnpm-workspace.yaml',
+  ];
   const dirs = ['packages/mobile/plugins', 'packages/mobile/modules', 'patches'];
   for (const rel of files) {
     const abs = join(ROOT_DIR, rel);
@@ -138,8 +145,10 @@ function buildDevApkLocally(): string {
   const mobileDir = join(ROOT_DIR, 'packages', 'mobile');
   console.log(`${LOG} expo prebuild (android, dev variant)...`);
   if (
-    runInherit('bunx', ['expo', 'prebuild', '--platform', 'android', '--clean'], { env: buildEnv, cwd: mobileDir }) !==
-    0
+    runInherit('vp', ['exec', 'expo', 'prebuild', '--platform', 'android', '--clean'], {
+      env: buildEnv,
+      cwd: mobileDir,
+    }) !== 0
   ) {
     throw new Error('expo prebuild --platform android failed');
   }

@@ -17,7 +17,7 @@ Per-user pull and catalog ingest both work end-to-end against the live Kilter ba
 
 The package can run as:
 
-1. **CLI** — `bunx kilter-sync …` for local debugging and forced syncs
+1. **CLI** — `vp exec kilter-sync …` for local debugging and forced syncs
 2. **Daemon CLI** — long-running `kilter-sync daemon` loop on a VM, one user per cycle, mirrors aurora-sync's daemon model
 
 There is no Vercel cron path. The web app only hosts the OAuth handshake and the access-control gate.
@@ -192,7 +192,7 @@ credential.
 Dedup keys on `(board_type, layout_id, hold_fingerprint)`, but the legacy Kilter catalog landed before that column existed — every existing kilter climb has `hold_fingerprint IS NULL` until backfilled. Run once before catalog sync so Grips climbs dedupe against the existing catalog instead of duplicating it:
 
 ```bash
-bun packages/db/scripts/backfill-hold-fingerprints.ts --board kilter
+vp exec tsx packages/db/scripts/backfill-hold-fingerprints.ts --board kilter
 ```
 
 Idempotent (re-running writes the same fingerprints; self-aliases use `ON CONFLICT DO UPDATE`).
@@ -237,9 +237,9 @@ Rows are upserted on `(board_type, climb_uuid)`: re-skipping refreshes `last_see
 Read it with:
 
 ```bash
-bunx kilter-sync backlog                                    # open skips, grouped by reason
-bunx kilter-sync backlog --reason unparsable_concat --raw   # with the raw payloads
-bunx kilter-sync backlog --include-resolved
+vp exec kilter-sync backlog                                    # open skips, grouped by reason
+vp exec kilter-sync backlog --reason unparsable_concat --raw   # with the raw payloads
+vp exec kilter-sync backlog --include-resolved
 ```
 
 A non-zero `unparsable_concat` count is the signal that Kilter changed the encoding — and the raw payloads needed to decode the new form are already sitting in the table.
@@ -269,7 +269,7 @@ A human edit or deletion freezes that row by setting `sync_frozen_at`, so later 
 The catalog sync refreshes locations after a successful catalog pull. You can also run the location-only path:
 
 ```bash
-bunx kilter-sync locations --user <nextauth-user-id>
+vp exec kilter-sync locations --user <nextauth-user-id>
 ```
 
 For local testing without a linked credential, set `KILTER_TEST_USERNAME` and `KILTER_TEST_PASSWORD`; the CLI will use the password token flow.
@@ -394,20 +394,20 @@ Selection also **claims**: the pick runs `SELECT ... FOR UPDATE SKIP LOCKED` and
 
 The daemon loop primitives (`resolveDaemonOptions`, `runDaemonLoop`, quiet-hours math) live in the neutral `@boardsesh/sync-runtime` package; both aurora-sync and kilter-sync consume them. Only the per-cycle work differs.
 
-It runs as a **long-lived CLI process on a VM** — `bunx kilter-sync daemon` (see [CLI](#cli)) — not as a backend HTTP endpoint. The catalog piggyback's cooldown is persisted in Postgres, so restarts and overlapping deploys share the same per-board gate. The earlier `/kilter-sync-cron` backend handler (and the aurora `/sync-cron`) were removed in favour of this model, so the backend no longer depends on the sync packages. `CRON_SECRET` is no longer needed for kilter sync — the daemon authenticates to Kilter with the stored per-user refresh token, nothing fronts it.
+It runs as a **long-lived CLI process on a VM** — `vp exec kilter-sync daemon` (see [CLI](#cli)) — not as a backend HTTP endpoint. The catalog piggyback's cooldown is persisted in Postgres, so restarts and overlapping deploys share the same per-board gate. The earlier `/kilter-sync-cron` backend handler (and the aurora `/sync-cron`) were removed in favour of this model, so the backend no longer depends on the sync packages. `CRON_SECRET` is no longer needed for kilter sync — the daemon authenticates to Kilter with the stored per-user refresh token, nothing fronts it.
 
 ## CLI
 
 ```bash
-bunx kilter-sync list                # List all stored kilter credentials
-bunx kilter-sync user <userId>       # Force a sync for one user
-bunx kilter-sync daemon              # Run the daemon (one-user-per-cycle, quiet hours)
-bunx kilter-sync catalog --user <id> # Sync the public climb catalog (Flow A)
-bunx kilter-sync repair-stats --user <id>          # Dry-run: report deduped Kilter counts vs DB (no writes)
-bunx kilter-sync repair-stats --user <id> --apply  # Write the deduped counts + recompute totals
-bunx kilter-sync repair-stats --user <id> --layouts <uuid,uuid>  # Scope to specific Grips product_layout_uuids
-bunx kilter-sync locations --user <id> # Sync public Kilter gym/board locations
-bunx kilter-sync locations --skip-if-missing-credentials # No-op when no token source is configured
+vp exec kilter-sync list                # List all stored kilter credentials
+vp exec kilter-sync user <userId>       # Force a sync for one user
+vp exec kilter-sync daemon              # Run the daemon (one-user-per-cycle, quiet hours)
+vp exec kilter-sync catalog --user <id> # Sync the public climb catalog (Flow A)
+vp exec kilter-sync repair-stats --user <id>          # Dry-run: report deduped Kilter counts vs DB (no writes)
+vp exec kilter-sync repair-stats --user <id> --apply  # Write the deduped counts + recompute totals
+vp exec kilter-sync repair-stats --user <id> --layouts <uuid,uuid>  # Scope to specific Grips product_layout_uuids
+vp exec kilter-sync locations --user <id> # Sync public Kilter gym/board locations
+vp exec kilter-sync locations --skip-if-missing-credentials # No-op when no token source is configured
 ```
 
 `repair-stats` is a one-time cleanup for the catalog-stats inflation (see [Stats repair](#stats-repair)). It defaults to a read-only dry-run; nothing is written without `--apply`.
@@ -415,7 +415,7 @@ bunx kilter-sync locations --skip-if-missing-credentials # No-op when no token s
 Run with 1Password like aurora-sync:
 
 ```bash
-op run --env-file=packages/kilter-sync/.env.1password -- bunx kilter-sync daemon
+op run --env-file=packages/kilter-sync/.env.1password -- vp exec kilter-sync daemon
 ```
 
 ## Environment variables

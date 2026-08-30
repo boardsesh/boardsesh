@@ -1199,7 +1199,7 @@ export function resolveAppPath(options: ScreenshotOptions): string {
     return options.appPath;
   }
   console.log(`${LOG} No --app-path given; building a Debug simulator app (slow — CI passes a cached .app)...`);
-  const status = runInherit('bunx', ['tsx', BUILD_SIM_APP_SCRIPT, '--', '--app-out', APP_CACHE_DIR], process.env);
+  const status = runInherit('tsx', [BUILD_SIM_APP_SCRIPT, '--', '--app-out', APP_CACHE_DIR], process.env);
   if (status !== 0) {
     throw new Error(`simulator app build failed (exit ${status})`);
   }
@@ -1322,14 +1322,14 @@ export function startMetro(env: NodeJS.ProcessEnv): ChildProcess {
   //     stdout, which throws ERR_STREAM_UNABLE_TO_PIPE when that stream hits
   //     backpressure/close and stalls the log mid-run — so the marker never lands and
   //     the slower-booting iPad shards time out. So use `stdio:'ignore'`.
-  //   - A plain `> FILE` redirect (which avoids the pipe) block-buffers `bunx`'s
+  //   - A plain `> FILE` redirect (which avoids the pipe) block-buffers the
   //     forwarded child output when the target is a regular file, so the file stays
   //     EMPTY until a flush that may never come during the wait → EVERY shard times
   //     out with an empty log. `| tee` keeps stdout a pipe, which stays line-buffered,
   //     so the marker appears promptly. `tee` (no `-a`) truncates for a clean run.
   // Trade-off: Metro no longer streams into the live CI run log — dumpMetroLogTail
   // surfaces it on a reach-home failure instead.
-  return spawn('sh', ['-c', `bunx expo start --port ${METRO_PORT} 2>&1 | tee ${METRO_LOG_PATH}`], {
+  return spawn('sh', ['-c', `vp exec expo start --port ${METRO_PORT} 2>&1 | tee ${METRO_LOG_PATH}`], {
     cwd: MOBILE_DIR,
     env: { ...env, CI: '1' },
     stdio: 'ignore',

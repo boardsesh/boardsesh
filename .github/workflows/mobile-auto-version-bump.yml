@@ -64,9 +64,16 @@ jobs:
           fetch-tags: true
           token: ${{ steps.push_token.outputs.token || github.token }}
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
 
-      # No bun install needed — both scripts use only built-in node modules + git.
+      # mobile-cut-release-tags.ts imports an extensionless local module, so use
+      # the installed tsx loader instead of Node's dependency-free type stripping.
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
       - name: Query exact accepted store builds
         id: accepted
         env:
@@ -74,7 +81,7 @@ jobs:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
-        run: bun scripts/mobile-auto-version-bump.ts
+        run: node --import tsx scripts/mobile-auto-version-bump.ts
 
       # Cut release/<platform>-v<version>-<shortfp> anchors for every exact
       # accepted build (independent of whether the CURRENT version is accepted —
@@ -95,7 +102,7 @@ jobs:
         run: |
           git config user.name "boardsesh-repo-bot[bot]"
           git config user.email "boardsesh-repo-bot[bot]@users.noreply.github.com"
-          bun scripts/mobile-cut-release-tags.ts
+          node --import tsx scripts/mobile-cut-release-tags.ts
 
       # Surface an anchor-cut failure loudly. continue-on-error keeps it from
       # blocking the run, but a persistent failure (e.g. a tag-push permission

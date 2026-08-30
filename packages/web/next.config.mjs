@@ -1,5 +1,6 @@
 import { withSentryConfig } from '@sentry/nextjs';
 import createWithVercelToolbar from '@vercel/toolbar/plugins/next';
+import path from 'node:path';
 // next.config.js
 
 const withVercelToolbar = createWithVercelToolbar();
@@ -307,6 +308,11 @@ export function expandLocaleRedirects(rules) {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // Pin this explicitly. Next otherwise discovers the tracing root by walking
+  // for a lockfile, but the isolated Expo web runtime has its own nested
+  // pnpm-lock.yaml. Trace paths and the standalone layout must stay rooted at
+  // the monorepo regardless of which lockfile Next encounters first.
+  outputFileTracingRoot: path.join(import.meta.dirname, '../../'),
   images: {
     remotePatterns: [
       {
@@ -369,9 +375,9 @@ const nextConfig = {
     // into direct imports of the matching *Document constant.
     // - Runs during `next build` (Turbopack production); does not run under
     //   `next dev`, so local dev still bundles the full map.
-    // - artifactDirectory is resolved against the workspace root (where
-    //   bun.lock lives), not packages/web — hence the `./packages/web/...`
-    //   prefix. A wrong path may either silently no-op or trip
+    // - artifactDirectory is resolved against the workspace root pinned by
+    //   outputFileTracingRoot, not packages/web — hence the
+    //   `./packages/web/...` prefix. A wrong path may either silently no-op or trip
     //   module-not-found, so changes here must be verified by running
     //   `vp run boardsesh-monorepo#verify:graphql-treeshake` after a build.
     swcPlugins: [

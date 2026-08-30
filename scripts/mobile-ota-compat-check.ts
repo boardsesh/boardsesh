@@ -36,10 +36,10 @@
  *   vp run check:mobile-ota-compat -- --base-fingerprint-ios <h> --base-fingerprint-android <h>
  *
  * The CI workflow (.github/workflows/mobile-ota-check.yml) materializes the
- * baseline as a git worktree of origin/main with its own `bun install`, then
+ * baseline as a git worktree of origin/main with its own `vp install`, then
  * passes it via --base-dir. Run locally the same way:
  *   git worktree add /tmp/main-baseline origin/main
- *   (cd /tmp/main-baseline && bun install --frozen-lockfile)
+ *   (cd /tmp/main-baseline && vp install --frozen-lockfile)
  *   vp run check:mobile-ota-compat -- --write-env --base-dir /tmp/main-baseline
  */
 
@@ -49,7 +49,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /**
- * `bunx expo-updates runtimeversion:resolve` is intermittently non-deterministic
+ * `vp exec expo-updates runtimeversion:resolve` is intermittently non-deterministic
  * (≈5% of invocations its autolinking step computes a hash off a different source
  * set, or fails outright and yields null), so a single resolve can't be trusted
  * to mean "the fingerprint changed". The check confirms a *difference* (and
@@ -312,7 +312,7 @@ function resolveFingerprint(mobileDir: string, platform: Platform): string | nul
   const childEnv = { ...process.env };
   if (platform === 'ios') delete childEnv.GOOGLE_MAPS_API_KEY;
   try {
-    const stdout = execFileSync('bunx', ['expo-updates', 'runtimeversion:resolve', '--platform', platform], {
+    const stdout = execFileSync('vp', ['exec', 'expo-updates', 'runtimeversion:resolve', '--platform', platform], {
       cwd: mobileDir,
       env: childEnv,
       encoding: 'utf8',

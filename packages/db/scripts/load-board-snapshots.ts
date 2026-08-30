@@ -33,7 +33,7 @@
  *    make that recompute produce nulls.
  *
  * Usage:
- *   bunx tsx scripts/load-board-snapshots.ts [--snapshot-base-url <url>]
+ *   vp exec tsx scripts/load-board-snapshots.ts [--snapshot-base-url <url>]
  *     [--climbs-manifest-url <url>] [--catalog-manifest-url <url>]
  *     [--board <type>] [--layout <id>] [--skip-catalog] [--skip-holds]
  *     [--sources-out <path>] [--work-dir <path>] [--database-url <url>]

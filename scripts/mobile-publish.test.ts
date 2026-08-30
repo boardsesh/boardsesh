@@ -31,7 +31,7 @@ describe('mobile publish argument routing', () => {
       String(SELF_HOSTED_UPLOAD_RATE_PER_SECOND),
       '--nonInteractive',
       '--packageRunner',
-      'bunx',
+      'vp exec',
     ]);
     expect(args).not.toContain('--channel');
   });

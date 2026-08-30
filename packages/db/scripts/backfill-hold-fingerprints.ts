@@ -12,7 +12,7 @@
  * a re-run still records the touch.
  *
  * Usage:
- *   bun run packages/db/scripts/backfill-hold-fingerprints.ts [--board kilter] [--batch-size 500] [--dry-run]
+ *   vp exec tsx packages/db/scripts/backfill-hold-fingerprints.ts [--board kilter] [--batch-size 500] [--dry-run]
  */
 
 import { createHash } from 'crypto';

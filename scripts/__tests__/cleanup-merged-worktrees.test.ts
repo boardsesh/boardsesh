@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import { spawnSync } from 'node:child_process';
-import { access, chmod, cp, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, cp, mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -61,7 +61,7 @@ async function writeExecutable(path: string, contents: string): Promise<void> {
 }
 
 async function createFixture(headAgeSeconds: number): Promise<Fixture> {
-  const rootDirectory = await mkdtemp(join(tmpdir(), 'boardsesh-worktree-cleanup-'));
+  const rootDirectory = await realpath(await mkdtemp(join(tmpdir(), 'boardsesh-worktree-cleanup-')));
   onTestFinished(() => rm(rootDirectory, { force: true, recursive: true }));
 
   const bareRepository = join(rootDirectory, 'origin.git');

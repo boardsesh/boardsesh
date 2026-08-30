@@ -79,7 +79,7 @@ export function isPrivateHostname(hostname: string): boolean {
 /**
  * Whether DATABASE_URL points at a developer machine or a private network. This
  * is the signal that catches a locally-run *production-shaped* backend — one
- * started with `bun run backend:start`, which (unlike the `dev` script) sets no
+ * started with `pnpm --filter boardsesh-backend run start`, which (unlike the `dev` script) sets no
  * NODE_ENV, so every other check reads it as prod. That is how a laptop's dev DB
  * ended up filing `write CONNECTION_CLOSED localhost:5440` against the
  * production Sentry project.

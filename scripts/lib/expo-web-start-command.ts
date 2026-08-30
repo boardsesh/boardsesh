@@ -1,9 +1,9 @@
 export function createExpoWebStartArgs(port: number): string[] {
   return [
+    '--filter',
+    '@boardsesh/mobile',
     'run',
-    '--filter=@boardsesh/mobile',
     'start',
-    '--',
     '--web',
     '--no-dev',
     // Expo public variables are inlined during Metro transforms, but Metro's

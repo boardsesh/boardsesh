@@ -95,7 +95,7 @@ export default defineConfig({
     // or vp run dev:mobile:web, then:
     //   PLAYWRIGHT_SKIP_CLASSIC_SETUP=1 \
     //   TEST_USER_EMAIL=test@boardsesh.com TEST_USER_PASSWORD=test \
-    //     cd packages/web && bunx playwright test --project=expo-web-smoke
+    //     cd packages/web && vp exec playwright test --project=expo-web-smoke
     // (PLAYWRIGHT_SKIP_CLASSIC_SETUP=1 stops global-setup from seeding and
     // prewarming the classic Next routes the smoke never visits — under the
     // expo-web stack a cold compile of those routes can blow the setup's 30s
@@ -139,13 +139,13 @@ export default defineConfig({
   /* Run your local dev server before starting the tests. Skipped in CI and
    * whenever PLAYWRIGHT_TEST_BASE_URL points at an externally managed server —
    * notably the expo-web stack (scripts/expo-web-e2e.ts), where auto-starting
-   * `bun run dev` here would race the orchestrator's Next instance for port
+   * `vp run dev` here would race the orchestrator's Next instance for port
    * 3000 and kill the whole stack mid-run. */
   webServer:
     process.env.CI || process.env.PLAYWRIGHT_TEST_BASE_URL
       ? undefined
       : {
-          command: 'bun run dev',
+          command: 'vp run dev',
           url: 'http://localhost:3000',
           reuseExistingServer: !process.env.CI,
           timeout: 120 * 1000,

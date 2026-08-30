@@ -9,7 +9,7 @@
  * 5. Negative role codes — unexpected negative values
  *
  * Usage:
- *   bun run packages/db/scripts/analyze-climbs.ts [--board kilter] [--limit 20] [--verbose]
+ *   vp exec tsx packages/db/scripts/analyze-climbs.ts [--board kilter] [--limit 20] [--verbose]
  */
 
 import { sql } from 'drizzle-orm';

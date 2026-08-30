@@ -14,7 +14,6 @@ const ACTIONS = {
   checkout: 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803',
   login: 'docker/login-action@dbcb813823bdd20940b903addbd779551569679f',
   setupBuildx: 'docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c',
-  setupBun: 'oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6',
   setupOras: 'oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d',
   setupQemu: 'docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130',
   setupVp: 'voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb',
@@ -27,7 +26,6 @@ const PUBLISHER_STEPS: Record<string, ExpectedStep[]> = {
     { name: 'Checkout exact current main commit', uses: ACTIONS.checkout },
     { name: 'Validate checkout and Docker inputs' },
     { name: 'Set up Vite+', uses: ACTIONS.setupVp },
-    { name: 'Set up Bun', uses: ACTIONS.setupBun },
     { name: 'Install locked dependencies' },
     { name: 'Run PostgreSQL 18 contracts' },
   ],
@@ -64,7 +62,6 @@ const PUBLISHER_STEPS: Record<string, ExpectedStep[]> = {
     { name: 'Pull exact portable digest and platform' },
     { name: 'Remove registry credentials before image smoke' },
     { name: 'Set up Vite+', uses: ACTIONS.setupVp },
-    { name: 'Set up Bun after registry credential removal', uses: ACTIONS.setupBun },
     { name: 'Install locked dependencies after registry credential removal' },
     { name: 'Verify labels and boot exact portable platform' },
   ],
@@ -76,7 +73,6 @@ const PUBLISHER_STEPS: Record<string, ExpectedStep[]> = {
     { name: 'Pull exact seeded digest' },
     { name: 'Remove registry credentials before image smoke' },
     { name: 'Set up Vite+', uses: ACTIONS.setupVp },
-    { name: 'Set up Bun after registry credential removal', uses: ACTIONS.setupBun },
     { name: 'Install locked dependencies after registry credential removal' },
     { name: 'Verify labels, architecture, and seeded database' },
   ],
@@ -149,7 +145,7 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
   },
   'validate-main': {
     'Validate checkout and Docker inputs': 'd93f8b5c79e732dfa0d06bb5469b9437d690374d7f92441f128f64053ba08245',
-    'Install locked dependencies': 'ed6ae2ba19763eb56c4691c7113c556bc1dc78a2b5868187f418bcb53ecd3ffd',
+    'Install locked dependencies': 'c10f4967f48d3183006f5e2c2f540d349fbad92f818a0e19ffa7e655ee8546aa',
     'Run PostgreSQL 18 contracts': '66196ae8703cb101dc49952e602bd24ee2a6e03d7f2902c738bcccafb1b0edf9',
   },
   'publish-images': {
@@ -183,7 +179,7 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
     'Remove registry credentials before image smoke':
       'd8e333a57b04ca27e1e2a74d8689cdfa14b8ce53619491f5e9d888fa2e5ff03c',
     'Install locked dependencies after registry credential removal':
-      'ed6ae2ba19763eb56c4691c7113c556bc1dc78a2b5868187f418bcb53ecd3ffd',
+      'c10f4967f48d3183006f5e2c2f540d349fbad92f818a0e19ffa7e655ee8546aa',
     'Verify labels and boot exact portable platform':
       '5b9c73161f472d49ebed0409acef7cd36f3aa0c0ddc6c11e02ce73a49f45356c',
   },
@@ -195,7 +191,7 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
     'Remove registry credentials before image smoke':
       '210b45c7e9c243d42c1180f419bc5183b425a71b78f018f01c19e7ea4402d60c',
     'Install locked dependencies after registry credential removal':
-      'ed6ae2ba19763eb56c4691c7113c556bc1dc78a2b5868187f418bcb53ecd3ffd',
+      'c10f4967f48d3183006f5e2c2f540d349fbad92f818a0e19ffa7e655ee8546aa',
     'Verify labels, architecture, and seeded database':
       '12bca356c5a765627cbc262f8c9fd987a1ac1b8b0d6c1c44976e8119baafa35d',
   },
@@ -225,11 +221,11 @@ const PRIVILEGED_RUN_SHA256: Record<string, Record<string, string>> = {
 // this makes the whole publisher an exact structural allowlist.
 const PRIVILEGED_JOB_SHA256: Record<string, string> = {
   'authorize-current-main': '012c58011b4370b349d5f7dcfe89171bcfdf3e0653b459ab9fcbd865d3fc54c7',
-  'validate-main': '79a3b6710f2f3268d467ae5a8d467d78fd212627f90f3da8c6505b1a4c51b29d',
+  'validate-main': '4ce118c69113ecc6b61980e8452c11478a1ec000f8fa82bbf4b734d5154f4569',
   'publish-images': '7230e1b43868539815cd52a82a3fa651647cd7b75a2d4f53ed976d75afa18002',
   'verify-published-images': '05f165fb989b0c7c920b470b19bf4f14b5f3dd1f0c2880bd79e3f2b79228e1c8',
-  'smoke-portable': 'b5061e0cb86febdc3216af60b967ddf3825b7c74b43016d006d0d1aa245351ba',
-  'smoke-seeded': '95bf708acbe676a46dde4981cc83ba978c37f6b6c3ca463ef2239647260ebdf9',
+  'smoke-portable': '9c2da7fd8294d98b009b0e36a94618ab8b9b10f3048355cc3d280a6b1747a879',
+  'smoke-seeded': '330d067442a0e8bf100230b2c57d8d2d6874e2e0c1d7c5e729802f9a2b5a9e9b',
   'attest-published-digests': 'f3815b58609bfc7c88061071e23ef1bdefe2c945613d79d15ae3ef3353b6bf5a',
   'verify-attestations': 'e3e536f61601ef9d8681dc5809065ff814612c227a70afbc14e1c3cb21a6ff8c',
   'record-published-digests': '8332efc25368a20c05a3ed6e4c79ecb7eef69b1886e41e9ff90963b765d9a5ed',
@@ -244,25 +240,24 @@ const CONTRACT_PATHS = [
   'scripts/vite.config.ts',
   'docs/postgres-image-publishing.md',
   'package.json',
-  'bun.lock',
+  'pnpm-lock.yaml',
+  'pnpm-workspace.yaml',
 ];
 
 const CONTRACT_STEPS: ExpectedStep[] = [
   { name: 'Checkout repository without persisted credentials', uses: ACTIONS.checkout },
-  { name: 'Set up Bun', uses: ACTIONS.setupBun },
   { name: 'Set up Vite+', uses: ACTIONS.setupVp },
   { name: 'Install locked dependencies' },
   { name: 'Verify publisher authority and artifact contracts' },
 ];
 
-const CONTRACT_WORKFLOW_METADATA_SHA256 = '8b86e2310a57709dbf30f9210611d1d47feea44395b6643ba6fa23afaf22b03d';
+const CONTRACT_WORKFLOW_METADATA_SHA256 = '9f53ade79a7ae06ae71c8938bb4476c2ad6905667ef34f8150c16caed55374af';
 const CONTRACT_JOB_METADATA_SHA256 = '9e0f951e6bceb41814be7e67f5cfe5cf5d808315af99a39bc312cbce1c7f0cfb';
 const CONTRACT_STEP_SHA256: Record<string, string> = {
   'Checkout repository without persisted credentials':
     '21d3640a58fa24bec3a2646f701ef5ce7da14567f1a979619cc77e2d942e3726',
-  'Set up Bun': '52cce4bc718eb16dd89360b915f63c3a1f464843e2d77f3c56fd82c57f9428d2',
-  'Set up Vite+': '40a4b08ab8203cbd60ae414ad927ba8f6bb95366bc8fe49bb4900fe7d5cc9cdd',
-  'Install locked dependencies': 'a90a77d14957fc0ffcc990ff99babb6641c2317df07d69759fca6ebae04cd981',
+  'Set up Vite+': '57fd2776408eb1ae058f9b97a601b4b7a336d02b1610914b946174e3cf0905ba',
+  'Install locked dependencies': '877a5faa147c1506c02de753889fa737d1ec66e8e05976ae106eeda1d77abcb9',
   'Verify publisher authority and artifact contracts':
     '6b2aee4c921df58aee7ab637c77324d131753c2e73e5d8a027529178077be67d',
 };
@@ -582,6 +577,11 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
       continue;
     }
     validateStepAllowlist(failures, jobName, job, PUBLISHER_STEPS[jobName]);
+    for (const step of stepsAt(job).filter((candidate) => candidate.uses === ACTIONS.setupVp)) {
+      if (!recordsEqual(recordAt(step, 'with'), { 'node-version': '22.x' })) {
+        failures.push(`${jobName} Vite+ setup must pin exactly Node 22.x with no additional inputs`);
+      }
+    }
     if (!recordsEqual(recordAt(job, 'permissions'), PUBLISHER_PERMISSIONS[jobName])) {
       failures.push(`${jobName} permissions must match its exact allowlist`);
     }
@@ -758,7 +758,7 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
   ) {
     failures.push('publisher must publish exact prevalidated OCI layouts under only their SHA tag');
   }
-  if (/\b(?:vp|bun|npm|npx)\b|source\/scripts|docker build/.test(publishRun)) {
+  if (/\b(?:vp|pnpm|npm|npx|bun)\b|source\/scripts|docker build/.test(publishRun)) {
     failures.push('publisher must not run checked-out helpers or rebuild after registry login');
   }
 
@@ -793,7 +793,7 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
       failures,
       smoke,
       'Install locked dependencies after registry credential removal',
-      /^bun install --frozen-lockfile$/,
+      /^vp install --frozen-lockfile$/,
       `${smokeName} must install only the reviewed lockfile graph before running candidate smoke code`,
     );
 
@@ -802,7 +802,6 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
       (step) => step.name === 'Remove registry credentials before image smoke',
     );
     const setupVpIndex = smokeSteps.findIndex((step) => step.name === 'Set up Vite+');
-    const setupBunIndex = smokeSteps.findIndex((step) => step.name === 'Set up Bun after registry credential removal');
     const dependencyInstallIndex = smokeSteps.findIndex(
       (step) => step.name === 'Install locked dependencies after registry credential removal',
     );
@@ -814,8 +813,7 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
     if (
       credentialRemovalIndex < 0 ||
       setupVpIndex <= credentialRemovalIndex ||
-      setupBunIndex <= setupVpIndex ||
-      dependencyInstallIndex <= setupBunIndex ||
+      dependencyInstallIndex <= setupVpIndex ||
       candidateSmokeIndex <= dependencyInstallIndex
     ) {
       failures.push(`${smokeName} tool and dependency setup must occur only after registry credentials are removed`);
@@ -1018,11 +1016,15 @@ function validateContractDocument(failures: string[], contract: UnknownRecord, c
       'contract checkout inputs must be exactly persist-credentials:false with no ref, repository, path, or token override',
     );
   }
+  const setupVp = stepByName(job, 'Set up Vite+');
+  if (!setupVp || !recordsEqual(recordAt(setupVp, 'with'), { 'node-version': '22.x' })) {
+    failures.push('contract Vite+ setup must pin exactly Node 22.x with no additional inputs');
+  }
   requireRunPattern(
     failures,
     job,
     'Install locked dependencies',
-    /^bun install --frozen-lockfile$/,
+    /^vp install --frozen-lockfile$/,
     'contract workflow must install only the reviewed lockfile graph',
   );
   requireRunPattern(

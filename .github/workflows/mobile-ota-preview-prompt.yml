@@ -59,7 +59,8 @@ jobs:
               path.startsWith('packages/shared-schema/') ||
               path.startsWith('patches/') ||
               path === 'package.json' ||
-              path === 'bun.lock' ||
+              path === 'pnpm-lock.yaml' ||
+              path === 'pnpm-workspace.yaml' ||
               path === 'scripts/mobile-publish.ts' ||
               path === 'scripts/lib/mobile-publish-retry.ts' ||
               path === 'scripts/lib/eoas.ts' ||
@@ -140,8 +141,11 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
         if: steps.published.outputs.current != 'true'
+        with:
+          node-version: '22.x'
+          cache: true
 
       # Remove the prior revision before prompting. This guarantees that a fork
       # push which becomes native-only cannot leave its older compatible JS live.
@@ -152,7 +156,7 @@ jobs:
           EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
           OTA_ADMIN_EMAIL: ${{ vars.OTA_ADMIN_EMAIL }}
           OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
-        run: bun scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"
+        run: node scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"
 
       - name: Mark current fork revision pending (sticky + deployments)
         if: steps.published.outputs.current != 'true'
@@ -261,7 +265,10 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
 
       - name: Delete stale fork preview branch
         env:
@@ -269,7 +276,7 @@ jobs:
           EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
           OTA_ADMIN_EMAIL: ${{ vars.OTA_ADMIN_EMAIL }}
           OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
-        run: bun scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"
+        run: node scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"
 
       - name: Mark fork preview removed (sticky + deployments)
         uses: actions/github-script@v7

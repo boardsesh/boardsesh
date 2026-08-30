@@ -17,7 +17,7 @@ import postgres from 'postgres';
  * otherwise so CI and dataless machines stay green. The backend test DB
  * (plain postgres:15, no PostGIS) cannot run this.
  *
- *   cd packages/db && LOCATION_TRIGGER_DB_URL=postgres://postgres:password@localhost:5432/main bun run test
+ *   LOCATION_TRIGGER_DB_URL=postgres://postgres:password@localhost:5432/main pnpm --filter @boardsesh/db run test
  */
 const DB_URL = process.env.LOCATION_TRIGGER_DB_URL;
 // Seeded test user present in the dev DB image.

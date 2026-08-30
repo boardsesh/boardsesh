@@ -60,7 +60,7 @@ void describe('resolveSentryEnvironment', () => {
     assert.equal(isProductionSentryEnvironment(), false);
   });
 
-  // A locally-run production-shaped backend (`bun run backend:start`, which sets
+  // A locally-run production-shaped backend (`pnpm --filter boardsesh-backend run start`, which sets
   // no NODE_ENV) used to resolve to 'production' and file its dev-DB failures
   // against the production project — "write CONNECTION_CLOSED localhost:5440".
   void it('is not production when the database is on localhost', () => {

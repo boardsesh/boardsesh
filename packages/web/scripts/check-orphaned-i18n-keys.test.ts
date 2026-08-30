@@ -1,11 +1,22 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   analyzeFile,
+  appRoot,
   computeForeignMobileNamespaces,
   computeMissingKeys,
   computeOrphans,
+  discoverFiles,
   formatReport,
+  isExcluded,
+  mobileAppRoot,
+  mobileSrcRoot,
+  scriptsRoot,
 } from './check-orphaned-i18n-keys';
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 const fakePath = '/tmp/fake-component.tsx';
 const fakeTsPath = '/tmp/fake-helper.ts';
@@ -675,5 +686,27 @@ describe('formatReport exit codes', () => {
     });
     expect(formatted.exitCode).toBe(1);
     expect(formatted.lines.join('\n')).toContain('not bundled on mobile');
+  });
+});
+
+describe('executable gate coverage', () => {
+  it('discovers every web and mobile source root', () => {
+    const files = discoverFiles([appRoot, scriptsRoot, mobileSrcRoot, mobileAppRoot]);
+    expect(files.length).toBeGreaterThan(200);
+    for (const root of [appRoot, scriptsRoot, mobileSrcRoot, mobileAppRoot]) {
+      expect(files.some((file) => file.startsWith(root))).toBe(true);
+    }
+  });
+
+  it('matches exclusions against the repo-relative path', () => {
+    const nestedRoot = join('/build', 'node_modules', 'boardsesh');
+    expect(isExcluded(join(nestedRoot, 'packages/web/app/page.tsx'), nestedRoot)).toBe(false);
+    expect(isExcluded(join(nestedRoot, 'node_modules/pkg/index.ts'), nestedRoot)).toBe(true);
+  });
+
+  it('does not use import.meta.main under the tsx CJS transform', () => {
+    const source = readFileSync(join(repoRoot, 'packages/web/scripts/check-orphaned-i18n-keys.ts'), 'utf8');
+    expect(source).not.toMatch(/if\s*\(\s*import\.meta\.main\s*\)/);
+    expect(source).toMatch(/if\s*\(\s*isEntryPoint\(\)\s*\)/);
   });
 });

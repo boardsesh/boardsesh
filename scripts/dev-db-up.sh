@@ -156,7 +156,7 @@ run_pending_drizzle_sql_migrations() {
 
   # This JavaScript is intentionally single-quoted.
   # shellcheck disable=SC2016
-  pending_migrations=$(DRIZZLE_DIR="$DRIZZLE_DIR" LAST_MIGRATION_CREATED_AT="$last_migration_created_at" bun --eval '
+  pending_migrations=$(DRIZZLE_DIR="$DRIZZLE_DIR" LAST_MIGRATION_CREATED_AT="$last_migration_created_at" node -e '
     const fs = require("node:fs");
     const path = require("node:path");
     const crypto = require("node:crypto");
@@ -248,7 +248,7 @@ fi
 # This lets smaller laptops use the pre-built DB stack from another machine
 # without starting Docker locally.
 set +e
-bun "$REPO_ROOT/scripts/dev-db-discover.ts"
+"$REPO_ROOT/node_modules/.bin/tsx" "$REPO_ROOT/scripts/dev-db-discover.ts"
 discover_status=$?
 set -e
 if [ "$discover_status" -eq 0 ]; then

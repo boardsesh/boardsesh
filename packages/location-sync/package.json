@@ -20,10 +20,10 @@
     "lint-fix": "vp lint --fix"
   },
   "dependencies": {
-    "@boardsesh/board-config": "*",
-    "@boardsesh/board-constants": "*",
-    "@boardsesh/db": "*",
-    "@boardsesh/shared-schema": "*",
+    "@boardsesh/board-config": "workspace:*",
+    "@boardsesh/board-constants": "workspace:*",
+    "@boardsesh/db": "workspace:*",
+    "@boardsesh/shared-schema": "workspace:*",
     "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {

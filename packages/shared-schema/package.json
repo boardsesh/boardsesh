@@ -51,7 +51,7 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
-    "print-schema": "bun run scripts/print-schema.ts",
+    "print-schema": "tsx scripts/print-schema.ts",
     "lint": "vp lint",
     "lint-fix": "vp lint --fix"
   },

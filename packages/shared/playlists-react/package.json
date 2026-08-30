@@ -20,8 +20,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@boardsesh/graphql": "*",
-    "@boardsesh/queue": "*"
+    "@boardsesh/graphql": "workspace:*",
+    "@boardsesh/queue": "workspace:*"
   },
   "devDependencies": {
     "@tanstack/react-query": "^5.101.4",

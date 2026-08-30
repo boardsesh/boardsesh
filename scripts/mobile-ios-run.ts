@@ -132,7 +132,7 @@ export function ensureIosProject(paths: MobileIosCachePaths, fs: FileSystemOps, 
   if (fs.exists(paths.iosDir)) return;
 
   console.log('[mobile:ios] packages/mobile/ios missing; running Expo prebuild for iOS...');
-  const status = runner.run('bunx', ['expo', 'prebuild', '--platform', 'ios'], {
+  const status = runner.run('vp', ['exec', 'expo', 'prebuild', '--platform', 'ios'], {
     cwd: paths.mobileDir,
     env: { ...process.env },
   });
@@ -237,7 +237,7 @@ export function main(): number {
 
     const lock = acquireBuildLock(paths, nodeFileSystem, systemClock);
     try {
-      const status = nodeRunner.run('bunx', ['expo', 'run:ios', ...passthroughArgs], {
+      const status = nodeRunner.run('vp', ['exec', 'expo', 'run:ios', ...passthroughArgs], {
         cwd: paths.mobileDir,
         env: { ...process.env },
       });

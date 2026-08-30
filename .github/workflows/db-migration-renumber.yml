@@ -12,7 +12,7 @@ name: DB Migration Renumber
 # gates cannot be edited from the PR it acts on (the property mobile-ota-preview.yml
 # relies on for the same reason). NEVER add `pull_request` or `pull_request_target`.
 #
-# This job runs PR-author code (`bun install` lifecycle scripts, `vp run build:db`)
+# This job runs PR-author code (`vp install` lifecycle scripts, `vp run build:db`)
 # and holds a repo-write App token, so:
 #   * SAME-REPO PRs only. The App is installed on this repo, so it could not push to
 #     a fork anyway, and running fork code next to a write token is not a trade we
@@ -180,23 +180,23 @@ jobs:
           path: .renumber-tooling
           persist-credentials: false
 
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Renumber onto main
         id: renumber
         run: |
           git config user.name 'boardsesh-repo-bot[bot]'
           git config user.email 'boardsesh-repo-bot[bot]@users.noreply.github.com'
-          # `bun <file>` rather than `vp run db:renumber`: bun executes TypeScript
-          # directly, so main's script runs without a second install.
-          bun .renumber-tooling/scripts/db-renumber-migration.ts \
+          # `node --import tsx <file>` rather than `vp run db:renumber`: tsx comes from the
+          # workspace install above, so main's pinned copy of the script runs without
+          # a second install (and without going through this PR's task graph).
+          node --import tsx .renumber-tooling/scripts/db-renumber-migration.ts \
             --repo "$GITHUB_WORKSPACE" \
             --strategy "${{ github.event.inputs.strategy || 'rebase' }}"
 
@@ -204,7 +204,7 @@ jobs:
         id: validate
         if: steps.renumber.outputs.status == 'renumbered'
         run: |
-          bun .renumber-tooling/scripts/check-db-migrations.ts \
+          node --import tsx .renumber-tooling/scripts/check-db-migrations.ts \
             --repo "$GITHUB_WORKSPACE" --base origin/main
 
       # The real gate. Nothing in per-PR CI applies migrations today, so this is the
@@ -216,12 +216,12 @@ jobs:
         if: steps.renumber.outputs.status == 'renumbered'
         env:
           VERIFY_MIGRATION_JOURNAL: '1'
-        run: bun run --filter=@boardsesh/db db:migrate
+        run: vp exec pnpm --filter @boardsesh/db run db:migrate
 
       - name: Verify re-applying is a no-op
         id: reapply
         if: steps.renumber.outputs.status == 'renumbered'
-        run: bun run --filter=@boardsesh/db db:migrate
+        run: vp exec pnpm --filter @boardsesh/db run db:migrate
 
       - name: Re-check the PR immediately before pushing
         id: recheck

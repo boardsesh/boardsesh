@@ -50,6 +50,7 @@ const STORE_DRAFT = 'mobile-store-draft.yml';
 const ANDROID_PR = 'android-pr-rn.yml';
 const IOS_PR = 'ios-rn-ci.yml';
 const CI = 'ci.yml';
+const MOBILE_SCREENSHOTS_IOS = 'mobile-screenshots-ios.yml';
 const NATIVE_GATE = resolve(REPO_ROOT, '.github/actions/mobile-native-gate/action.yml');
 const OTA_COMPAT_SCRIPT = resolve(REPO_ROOT, 'scripts/mobile-ota-compat-check.ts');
 
@@ -234,27 +235,29 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
     ];
     for (const { name, platform } of expectedWorkflowResolvers) {
       const source = readWorkflow(name);
-      const resolverCalls = source.match(/bunx expo-updates runtimeversion:resolve/g) ?? [];
+      const resolverCalls = source.match(/vp exec expo-updates runtimeversion:resolve/g) ?? [];
       expect(resolverCalls, `${name} must have exactly one explicit runtimeVersion resolver`).toHaveLength(1);
-      expect(source).toContain(`cd packages/mobile && bunx expo-updates runtimeversion:resolve --platform ${platform}`);
+      expect(source).toContain(
+        `cd packages/mobile && vp exec expo-updates runtimeversion:resolve --platform ${platform}`,
+      );
     }
 
     const nativeGate = readFileSync(NATIVE_GATE, 'utf8');
-    expect(nativeGate.match(/bunx expo-updates runtimeversion:resolve/g) ?? []).toHaveLength(1);
+    expect(nativeGate.match(/vp exec expo-updates runtimeversion:resolve/g) ?? []).toHaveLength(1);
     expect(nativeGate).toMatch(
-      /cd "\$1\/packages\/mobile"[\s\\]+&& TAILSCALE_HOSTS='' bunx expo-updates runtimeversion:resolve/,
+      /cd "\$1\/packages\/mobile"[\s\\]+&& TAILSCALE_HOSTS='' vp exec expo-updates runtimeversion:resolve/,
     );
 
     const otaCompat = readFileSync(OTA_COMPAT_SCRIPT, 'utf8');
     expect(otaCompat).toMatch(
-      /execFileSync\('bunx', \['expo-updates', 'runtimeversion:resolve', '--platform', platform\], \{\s*cwd: mobileDir,/,
+      /execFileSync\('vp', \['exec', 'expo-updates', 'runtimeversion:resolve', '--platform', platform\], \{\s*cwd: mobileDir,/,
     );
 
     const workflowSources = readdirSync(WORKFLOW_DIR)
       .filter((name) => name.endsWith('.yml'))
       .map(readWorkflow)
       .join('\n');
-    expect(workflowSources).not.toMatch(/(?:bunx|npx) (?:@expo\/fingerprint|fingerprint:generate)/);
+    expect(workflowSources).not.toMatch(/vp dlx (?:@expo\/fingerprint|fingerprint:generate)/);
   });
 
   it('runs every automatic fingerprint surface when root linker or patch inputs change', () => {
@@ -266,11 +269,13 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
         // branch when the last mobile diff disappears. Its in-job classifier,
         // rather than a trigger paths filter, must retain the fingerprint inputs.
         expect(source, `${name} must react to root patchedDependencies edits`).toContain("path === 'package.json'");
-        expect(source, `${name} must react to isolated-linker lock changes`).toContain("path === 'bun.lock'");
+        expect(source, `${name} must react to isolated-linker lock changes`).toContain("path === 'pnpm-lock.yaml'");
+        expect(source, `${name} must react to workspace policy changes`).toContain("path === 'pnpm-workspace.yaml'");
         expect(source, `${name} must react to native patch body changes`).toContain("path.startsWith('patches/')");
       } else {
         expect(source, `${name} must react to root patchedDependencies edits`).toContain("- 'package.json'");
-        expect(source, `${name} must react to isolated-linker lock changes`).toContain("- 'bun.lock'");
+        expect(source, `${name} must react to isolated-linker lock changes`).toContain("- 'pnpm-lock.yaml'");
+        expect(source, `${name} must react to workspace policy changes`).toContain("- 'pnpm-workspace.yaml'");
         expect(source, `${name} must react to native patch body changes`).toContain("- 'patches/**'");
       }
     }
@@ -293,7 +298,8 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
       expect.arrayContaining([
         'package.json',
         'packages/mobile/package.json',
-        'bun.lock',
+        'pnpm-lock.yaml',
+        'pnpm-workspace.yaml',
         'packages/mobile/app.config.ts',
         'packages/mobile/fingerprint.config.js',
         'packages/mobile/plugins',
@@ -345,6 +351,42 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
         '';
       expect(guardStep, `the ${guard} step must not carry its own narrowing if:`).not.toMatch(/^ {8}if:/m);
     }
+  });
+
+  it('keys the Expo-web Metro cache on its isolated pnpm runtime graph', () => {
+    const ci = readWorkflow(CI);
+    const nativeCacheStart = ci.indexOf("- name: Restore Metro's native transform cache");
+    const webCacheStart = ci.indexOf("- name: Restore Metro's Expo-web transform cache");
+    const webCacheEnd = ci.indexOf('\n  docker-web:', webCacheStart);
+
+    expect(nativeCacheStart).toBeGreaterThanOrEqual(0);
+    expect(webCacheStart).toBeGreaterThan(nativeCacheStart);
+    expect(webCacheEnd).toBeGreaterThan(webCacheStart);
+
+    const nativeCacheSteps = ci.slice(nativeCacheStart, webCacheStart);
+    const webCacheSteps = ci.slice(webCacheStart, webCacheEnd);
+
+    for (const runtimeInput of [
+      'packages/mobile/web-runtime/pnpm-lock.yaml',
+      'packages/mobile/web-runtime/pnpm-workspace.yaml',
+    ]) {
+      expect(nativeCacheSteps, `native Metro cache must stay independent of ${runtimeInput}`).not.toContain(
+        runtimeInput,
+      );
+      expect(
+        webCacheSteps.match(new RegExp(runtimeInput.replaceAll('.', '\\.'), 'g'))?.length ?? 0,
+        `all three Expo-web Metro cache keys must include ${runtimeInput}`,
+      ).toBe(3);
+    }
+  });
+
+  it('keys the cached screenshot app on native pnpm policy without lockfile churn', () => {
+    const workflow = readWorkflow(MOBILE_SCREENSHOTS_IOS);
+    const cacheKeyStep = workflow.split('\n').find((line) => line.includes('screenshot-sim-app-v1-${{ hashFiles('));
+
+    expect(cacheKeyStep, 'mobile screenshot workflow must retain its simulator app cache key').toBeTruthy();
+    expect(cacheKeyStep).toContain("'pnpm-workspace.yaml'");
+    expect(cacheKeyStep).not.toContain("'pnpm-lock.yaml'");
   });
 
   it('forces the binary onto the gate fingerprint, and the OTA publish resolves fresh (never pinned)', () => {
@@ -467,7 +509,7 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     expect(prompt).toContain("core.setOutput('head_sha', pr.head.sha)");
     expect(prompt).toContain('github.paginate(github.rest.pulls.listFiles');
     expect(prompt).toContain('ref: ${{ github.event.repository.default_branch }}');
-    expect(prompt).toContain('bun scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"');
+    expect(prompt).toContain('node scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"');
     expect(prompt).toContain('group: mobile-ota-preview-mutation-${{ needs.inspect.outputs.pr_number }}');
 
     const currentHeadCheck = prompt.indexOf('Check whether this head is already reconciled');

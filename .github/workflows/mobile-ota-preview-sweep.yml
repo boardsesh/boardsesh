@@ -35,7 +35,7 @@ jobs:
     # would hang this scheduled run forever waiting on approval.
     environment: ota-preview-unattended
     # EOO_TOKEN / OTA_ADMIN_* / GH_TOKEN are NOT job-level env: that would expose them
-    # to checkout, setup-bun, and `bun install`. Each is scoped to the step that uses
+    # to checkout, setup-vp, and `vp install`. Each is scoped to the step that uses
     # it — the gate + delete steps.
     steps:
       - name: Skip if OTA isn't wired
@@ -63,14 +63,17 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
         if: steps.gate.outputs.run == 'true'
+        with:
+          node-version: '22.x'
+          cache: true
 
       # Lists branches plus transitional legacy channels via the V3 read API, keeps
       # only ^pr-[1-9][0-9]*$ whose PR is closed, and deletes each via
       # scripts/ota-preview-cleanup.ts. The helper removes a same-named legacy channel
       # first when present, then the branch. The helper
-      # is dependency-free (only node built-ins), so no `bun install` is needed here.
+      # is dependency-free (only node built-ins), so no `vp install` is needed here.
       - name: Delete preview channels + branches for non-open PRs
         if: steps.gate.outputs.run == 'true'
         env:
@@ -197,7 +200,7 @@ jobs:
             fi
             echo "Deleting $name (PR #$pr_num is not open)"
             ATTEMPTED=$((ATTEMPTED + 1))
-            if ! bun scripts/ota-preview-cleanup.ts delete --branch "$name"; then
+            if ! node scripts/ota-preview-cleanup.ts delete --branch "$name"; then
               echo "::warning::Delete failed for $name (retries next sweep)."
               FAILED=$((FAILED + 1))
             fi

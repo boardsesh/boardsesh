@@ -121,8 +121,8 @@ attestation, and manifest recording:
    registry config and Buildx builder are removed on every outcome.
 4. Fresh package-read runners resolve the published tag to the expected digest,
    inspect the remote manifests, and pull every exact digest/platform. The smoke
-   jobs then erase their temporary registry credentials before setting up Vite+
-   or Bun, installing the locked dependency graph, or running either
+   jobs then erase their temporary registry credentials before setting up Vite+,
+   installing the locked dependency graph, or running either
    candidate-owned image smoke contract.
 5. `attest-published-digests` uses the dedicated environment and the official
    pinned GitHub attestation action in native provenance mode. Because source,

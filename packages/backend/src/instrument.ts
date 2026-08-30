@@ -53,7 +53,7 @@ import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boards
 // 'production' and stays on, while preview/staging declare SENTRY_ENVIRONMENT and
 // opt out. It also treats a private DATABASE_URL and a GitHub Actions runner as
 // non-production, which is what keeps a laptop or an e2e job running
-// `bun run backend:start` (no NODE_ENV, so prod-shaped to every other check) from
+// `pnpm --filter boardsesh-backend run start` (no NODE_ENV, so prod-shaped to every other check) from
 // filing its dev-database failures against prod. See @boardsesh/db/client/config.
 const dsn =
   process.env.SENTRY_DSN ??

@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,7 +45,7 @@ interface ArchiveFixture {
 }
 
 function createArchiveFixture(bundleNames: readonly string[] = ['Boardsesh.app.dSYM']): ArchiveFixture {
-  const fixtureRoot = mkdtempSync(join(tmpdir(), 'boardsesh-dsyms-test-'));
+  const fixtureRoot = realpathSync(mkdtempSync(join(tmpdir(), 'boardsesh-dsyms-test-')));
   createdDirectories.push(fixtureRoot);
   const archivePath = join(fixtureRoot, 'Boardsesh.xcarchive');
   const dsymsDir = join(archivePath, 'dSYMs');

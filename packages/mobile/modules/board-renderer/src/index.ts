@@ -166,7 +166,7 @@ async function renderThroughNative(
   //   WHEN:  safe to delete once every active EAS preview channel
   //          (`preview-1` through `preview-4`) has been rebuilt onto a
   //          binary that exports `renderHoldsOverlay`.
-  //   HOW:   run `bunx eas-cli@16 channel:view preview-N` for N=1..4 and
+  //   HOW:   run `vp dlx eas-cli@16 channel:view preview-N` for N=1..4 and
   //          confirm each channel's runtime version maps to a build SHA
   //          that postdates the overlay-only commit. Easiest path: run
   //          `vp run mobile:preview-build` for all four channels, then

@@ -184,10 +184,10 @@ choco install llvm
 
 ```bash
 # Format all C++ files in-place
-bun run controller:format
+vp run controller:format
 
 # Check formatting without modifying (useful for CI)
-bun run controller:format:check
+vp run controller:format:check
 ```
 
 ### Editor Integration
@@ -201,12 +201,12 @@ Most editors support clang-format:
 ## Convenience Scripts (from repo root)
 
 ```bash
-bun run controller:build         # Build board-controller
-bun run controller:upload        # Flash board-controller
-bun run controller:monitor       # Serial monitor
-bun run moonboard:build          # Build moonboard-dev-server
-bun run moonboard:upload         # Flash moonboard-dev-server
-bun run moonboard:monitor        # Serial monitor for moonboard-dev-server
-bun run controller:format        # Format all C++ code
-bun run controller:format:check  # Check C++ formatting
+vp run controller:build         # Build board-controller
+vp run controller:upload        # Flash board-controller
+vp run controller:monitor       # Serial monitor
+vp run moonboard:build          # Build moonboard-dev-server
+vp run moonboard:upload         # Flash moonboard-dev-server
+vp run moonboard:monitor        # Serial monitor for moonboard-dev-server
+vp run controller:format        # Format all C++ code
+vp run controller:format:check  # Check C++ formatting
 ```

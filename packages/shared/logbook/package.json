@@ -15,11 +15,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@boardsesh/graphql": "*",
+    "@boardsesh/graphql": "workspace:*",
     "dayjs": "^1.11.21"
   },
   "devDependencies": {
-    "@boardsesh/profile-stats": "*",
+    "@boardsesh/profile-stats": "workspace:*",
     "typescript": "~7.0.2"
   }
 }

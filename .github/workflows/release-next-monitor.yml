@@ -129,7 +129,13 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install trusted release tooling
+        run: vp install --frozen-lockfile --ignore-scripts
 
       - name: Query exact accepted store builds
         id: accepted
@@ -138,7 +144,7 @@ jobs:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
-        run: bun scripts/mobile-auto-version-bump.ts
+        run: node --import tsx scripts/mobile-auto-version-bump.ts
 
       - name: Select latest exact accepted build tags for this version
         id: candidate
@@ -147,7 +153,7 @@ jobs:
           CHECK_ONLY: 'true'
           CANDIDATE_ONLY: 'true'
           HEAD_VERSION: ${{ needs.discover.outputs.version }}
-        run: bun scripts/mobile-cut-release-tags.ts
+        run: node --import tsx scripts/mobile-cut-release-tags.ts
 
   compare-native-state:
     needs: [discover, accepted-builds]
@@ -179,13 +185,16 @@ jobs:
           path: android-build
           persist-credentials: false
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
 
       - name: Install fingerprint dependencies without lifecycle scripts
         run: |
           set -euo pipefail
           for tree in release-head ios-build android-build; do
-            (cd "$tree" && bun install --frozen-lockfile --ignore-scripts)
+            (cd "$tree" && vp install --frozen-lockfile --ignore-scripts)
           done
 
       - name: Write identical public build environment
@@ -225,9 +234,9 @@ jobs:
             local platform="$2"
             local raw
             if [ "$platform" = ios ]; then
-              raw="$(cd "$tree/packages/mobile" && env -u GOOGLE_MAPS_API_KEY bunx expo-updates runtimeversion:resolve --platform ios 2>/dev/null || true)"
+              raw="$(cd "$tree/packages/mobile" && env -u GOOGLE_MAPS_API_KEY vp exec expo-updates runtimeversion:resolve --platform ios 2>/dev/null || true)"
             else
-              raw="$(cd "$tree/packages/mobile" && bunx expo-updates runtimeversion:resolve --platform android 2>/dev/null || true)"
+              raw="$(cd "$tree/packages/mobile" && vp exec expo-updates runtimeversion:resolve --platform android 2>/dev/null || true)"
             fi
             jq -r '.runtimeVersion // empty' <<<"$raw"
           }
@@ -283,7 +292,13 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install trusted release tooling
+        run: vp install --frozen-lockfile --ignore-scripts
 
       - name: Check release PR merge gates
         id: gates
@@ -399,7 +414,7 @@ jobs:
           candidate_result="$RUNNER_TEMP/final-release-candidates"
           : > "$accepted_result"
           : > "$candidate_result"
-          GITHUB_OUTPUT="$accepted_result" bun scripts/mobile-auto-version-bump.ts
+          GITHUB_OUTPUT="$accepted_result" node --import tsx scripts/mobile-auto-version-bump.ts
           accepted_builds="$(sed -n 's/^accepted_builds=//p' "$accepted_result" | tail -n 1)"
           [ -n "$accepted_builds" ] || {
             echo '::error::The final store query returned no accepted-build output.'
@@ -407,7 +422,7 @@ jobs:
           }
           git fetch --force --tags origin
           ACCEPTED_BUILDS="$accepted_builds" CHECK_ONLY=true CANDIDATE_ONLY=true HEAD_VERSION="$HEAD_VERSION" \
-            GITHUB_OUTPUT="$candidate_result" bun scripts/mobile-cut-release-tags.ts
+            GITHUB_OUTPUT="$candidate_result" node --import tsx scripts/mobile-cut-release-tags.ts
           output_value() {
             sed -n "s/^$1=//p" "$candidate_result" | tail -n 1
           }
@@ -558,7 +573,7 @@ jobs:
           configure_git_auth
           set +e
           ACCEPTED_BUILDS="$selected_accepted_builds" GITHUB_OUTPUT="$anchor_result" \
-            DRY_RUN=false bun scripts/mobile-cut-release-tags.ts
+            DRY_RUN=false node --import tsx scripts/mobile-cut-release-tags.ts
           anchor_status=$?
           set -e
           clear_git_auth

@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -43,7 +44,7 @@ interface MobileFixture {
 }
 
 function createMobileFixture(platform: MobilePlatform = 'ios', bundleExtension: 'hbc' | 'js' = 'hbc'): MobileFixture {
-  const fixtureRoot = mkdtempSync(join(tmpdir(), 'boardsesh-mobile-sourcemaps-test-'));
+  const fixtureRoot = realpathSync(mkdtempSync(join(tmpdir(), 'boardsesh-mobile-sourcemaps-test-')));
   createdDirectories.push(fixtureRoot);
   const mobileDir = join(fixtureRoot, 'mobile');
   const outputDir = join(mobileDir, 'dist');
@@ -742,6 +743,11 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
     expect(snapshotStep).toContain('scripts/lib/eoas.ts');
     expect(snapshotStep).toContain('scripts/lib/mobile-publish-retry.ts');
     expect(snapshotStep).toContain('scripts/mobile-upload-sourcemaps.ts');
+    const trustedPublisher = readRepositoryFile('scripts/mobile-publish.ts');
+    expect(trustedPublisher).toContain("'vp exec'");
+    expect(trustedPublisher).toContain("spawnSync('vp', ['exec', 'expo', '--version']");
+    expect(trustedPublisher).not.toContain("'pnpm exec'");
+    expect(trustedPublisher).not.toContain("spawnSync('pnpm'");
     const overlayStep = workflowStep(workflow, 'Overlay trusted OTA publish tooling');
     expect(overlayStep).toContain(
       'cp "$tooling_root/scripts/lib/mobile-publish-retry.ts" scripts/lib/mobile-publish-retry.ts',
@@ -770,7 +776,7 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
     expect(uploadStep).toContain("!inputs.dry_run && steps.publish.outcome == 'success'");
     expect(uploadStep).toContain('continue-on-error: true');
     expect(uploadStep).toContain('timeout-minutes: 10');
-    expect(uploadStep).toContain('run: bun scripts/mobile-upload-sourcemaps.ts');
+    expect(uploadStep).toContain('run: node --import tsx scripts/mobile-upload-sourcemaps.ts');
     expect((workflow.match(/^\s+SENTRY_AUTH_TOKEN:/gm) ?? []).length).toBe(1);
     const backportGate = workflowStep(workflow, 'Require the published backport source-map upload');
     expect(backportGate).toContain('!inputs.dry_run');

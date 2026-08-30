@@ -51,9 +51,7 @@ RUN apt-get update && \
       ca-certificates \
       curl \
       jq \
-      gnupg \
-      unzip && \
-    # unzip is bun's installer requirement, not ours.
+      gnupg && \
     # Install Node.js 22 LTS for the TypeScript load/seed scripts. `node:sqlite`
     # (which the snapshot loader reads artifacts with) needs 22.5+.
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
@@ -96,7 +94,7 @@ COPY packages/db/tsconfig.json /app/tsconfig.json
 
 # The scripts use several @boardsesh/* workspace packages. This isolated image
 # can't do a monorepo workspace install, so: strip every workspace dep from
-# package.json (a standalone `bun install` can't resolve a "*" version), install
+# package.json (a standalone install can't resolve a workspace version), install
 # packages/db's own deps, then drop the packages that ARE loaded at runtime
 # straight into node_modules.
 #
@@ -112,10 +110,8 @@ COPY packages/db/tsconfig.json /app/tsconfig.json
 #   sharp                       native; only the cell-set generator uses it
 RUN cd /app && \
     sed -i -e '/"@boardsesh\/shared-schema"/d' -e '/"@boardsesh\/board-config"/d' -e '/"@boardsesh\/board-constants"/d' -e '/"@boardsesh\/kiosk"/d' -e '/"@boardsesh\/sync-runtime"/d' -e '/"sharp"/d' package.json && \
-    curl -fsSL https://bun.sh/install | bash && \
-    ln -s /root/.bun/bin/bun /usr/local/bin/bun && \
-    ln -s /root/.bun/bin/bunx /usr/local/bin/bunx && \
-    bun install --ignore-scripts
+    npm install --global --no-fund --no-audit pnpm@11.22.0 && \
+    pnpm install --ignore-workspace --ignore-scripts --no-frozen-lockfile
 COPY packages/shared-schema/ /app/node_modules/@boardsesh/shared-schema/
 COPY packages/sync-runtime/ /app/node_modules/@boardsesh/sync-runtime/
 COPY packages/board-constants/ /app/node_modules/@boardsesh/board-constants/
@@ -179,15 +175,15 @@ RUN set -e && \
     # into a single argument, so neither half of that shape is safe. \
     set -- --snapshot-base-url "$SNAPSHOT_BASE_URL" --sources-out /opt/boardsesh/snapshot-sources.json && \
     if [ -n "$CATALOG_MANIFEST_URL" ]; then set -- "$@" --catalog-manifest-url "$CATALOG_MANIFEST_URL"; fi && \
-    DATABASE_URL=postgresql://postgres@localhost/main bunx tsx scripts/load-board-snapshots.ts "$@" && \
+    DATABASE_URL=postgresql://postgres@localhost/main node --import tsx scripts/load-board-snapshots.ts "$@" && \
     \
     # ── Create test user ─────────────────────────────────────────────── \
     echo ">>> Creating test user..." && \
-    DATABASE_URL=postgresql://postgres@localhost/main bunx tsx scripts/create-test-user.ts && \
+    DATABASE_URL=postgresql://postgres@localhost/main node --import tsx scripts/create-test-user.ts && \
     \
     # ── Seed social data ─────────────────────────────────────────────── \
     echo ">>> Seeding social data..." && \
-    DATABASE_URL=postgresql://postgres@localhost/main bunx tsx scripts/seed-social.ts && \
+    DATABASE_URL=postgresql://postgres@localhost/main node --import tsx scripts/seed-social.ts && \
     \
     # ── Compact and refresh planner statistics ───────────────────────── \
     # The seed scripts UPDATE stats rows in place; without this the image ships \

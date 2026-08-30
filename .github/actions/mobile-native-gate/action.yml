@@ -29,8 +29,12 @@ runs:
   using: composite
   steps:
     # Self-contained (like android-rn-setup): a caller only has to `checkout`
-    # first, not also remember to set up bun.
-    - uses: oven-sh/setup-bun@v2
+    # first, not also remember to set up the toolchain. setup-vp installs the
+    # pnpm version pinned by the root package.json `packageManager` field.
+    - uses: voidzero-dev/setup-vp@v1
+      with:
+        node-version: '22.x'
+        cache: true
 
     - name: Decide whether to build
       id: decide
@@ -70,21 +74,27 @@ runs:
         # Path screen: nothing in the canonical native-input set (mirrors the
         # ios-rn-ci Pods cache key) changed → skip without paying for a resolve.
         if [ -z "$(changed \
-              package.json packages/mobile/package.json bun.lock packages/mobile/app.config.ts \
+              package.json packages/mobile/package.json pnpm-lock.yaml pnpm-workspace.yaml \
+              packages/mobile/app.config.ts \
               packages/mobile/fingerprint.config.js packages/mobile/plugins \
               packages/mobile/modules packages/mobile/locales packages/mobile/eas.json \
               packages/mobile/assets packages/mobile/targets patches)" ]; then
           skip "no native-input files changed vs main"
         fi
 
-        # A candidate changed, but that set includes bun.lock — which any
+        # pnpm-workspace.yaml is screened alongside the lockfile because under pnpm
+        # it carries `patchedDependencies` and `overrides` — both of which change the
+        # installed native tree. Omitting it here would let a patch change skip the
+        # native build.
+        #
+        # A candidate changed, but that set includes pnpm-lock.yaml — which any
         # web/backend dep bump churns without touching the mobile native shape.
         # Resolve the Expo fingerprint at HEAD and at main and skip when identical.
         # Fail open: any resolve/install/worktree trouble builds.
         resolve_fp() {
           # $1 = repo root to resolve the fingerprint in.
           ( cd "$1/packages/mobile" \
-            && TAILSCALE_HOSTS='' bunx expo-updates runtimeversion:resolve --platform "$PLATFORM" 2>/dev/null ) \
+            && TAILSCALE_HOSTS='' vp exec expo-updates runtimeversion:resolve --platform "$PLATFORM" 2>/dev/null ) \
             | jq -r '.runtimeVersion // empty' 2>/dev/null || true
         }
         write_env() {
@@ -100,23 +110,25 @@ runs:
         EOF
         }
 
-        bun install --frozen-lockfile || build "head bun install failed"
+        vp install --frozen-lockfile || build "head install failed"
         write_env .
         HEAD_FP="$(resolve_fp .)"
 
         # Resolve the main fingerprint in an ISOLATED worktree so the primary
         # checkout is never mutated (head files, incl. this action, stay in place —
-        # no ordering footgun for any later step). bun's global cache (~/.bun) is
-        # shared, so the base install re-uses already-downloaded packages. mktemp -d
-        # is collision-proof; the `wt` subdir doesn't exist yet, which git wants.
+        # no ordering footgun for any later step). pnpm's content-addressed store is
+        # shared across both trees AND it hardlinks into node_modules rather than
+        # copying, so the base install mostly relinks already-fetched packages and is
+        # much faster than a cold one. mktemp -d is collision-proof; the `wt` subdir
+        # doesn't exist yet, which git wants.
         BASE_PARENT="$(mktemp -d)"
         BASE_DIR="$BASE_PARENT/wt"
         git worktree add --detach "$BASE_DIR" "$BASE_SHA" 2>/dev/null || {
           rm -rf "$BASE_PARENT"; build "could not materialise main to diff the fingerprint"; }
         write_env "$BASE_DIR"
-        if ! ( cd "$BASE_DIR" && bun install --frozen-lockfile ); then
+        if ! ( cd "$BASE_DIR" && vp install --frozen-lockfile ); then
           git worktree remove --force "$BASE_DIR" 2>/dev/null || true; rm -rf "$BASE_PARENT"
-          build "base bun install failed"
+          build "base install failed"
         fi
         BASE_FP="$(resolve_fp "$BASE_DIR")"
         git worktree remove --force "$BASE_DIR" 2>/dev/null || true

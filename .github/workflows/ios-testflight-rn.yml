@@ -9,8 +9,9 @@ on:
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
       - 'package.json' # root patchedDependencies and linker inputs affect the mobile native graph
-      - 'bun.lock'
-      - 'patches/**' # bun patches to mobile deps live in root patches/, not under packages/mobile/**
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'patches/**' # pnpm patches to mobile deps live in root patches/, not under packages/mobile/**
       - '.github/workflows/ios-testflight-rn.yml'
   workflow_dispatch:
     inputs:
@@ -95,10 +96,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
 
       - name: Install Node.js dependencies (workspace root)
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       # The .env is hashed into the fingerprint, so it must be byte-identical to
       # the build job's (same heredoc + same workflow env) or the gate would
@@ -125,7 +129,7 @@ jobs:
           set -uo pipefail
           # No GOOGLE_MAPS_API_KEY here: iOS uses Apple Maps, so the iOS binary's
           # fingerprint is resolved without it (the Android gate sets it).
-          raw="$(cd packages/mobile && bunx expo-updates runtimeversion:resolve --platform ios 2>/dev/null || true)"
+          raw="$(cd packages/mobile && vp exec expo-updates runtimeversion:resolve --platform ios 2>/dev/null || true)"
           fp="$(printf '%s' "$raw" | jq -r '.runtimeVersion // empty' 2>/dev/null || true)"
           if ! printf '%s' "$fp" | grep -qiE '^[0-9a-f]{8,}$'; then
             echo "::warning::Could not resolve the iOS fingerprint — building to be safe."
@@ -182,17 +186,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
-
       # Needed by the post-archive `vp run mobile:upload-dsyms` step at the end
-      # of this job; the rest of the build shells out to bunx/xcodebuild directly.
+      # of this job; the rest of the build shells out to vp exec/xcodebuild directly.
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
       - name: Install Node.js dependencies (workspace root)
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Write .env for Expo build-time inlining
         working-directory: packages/mobile
@@ -229,7 +231,7 @@ jobs:
 
       - name: Expo prebuild (generate ios/)
         working-directory: packages/mobile
-        run: bunx expo prebuild --platform ios --clean --no-install
+        run: vp exec expo prebuild --platform ios --clean --no-install
 
       # Key on the native inputs that decide the Pods, NOT ios/Podfile.lock: there
       # is no committed ios/ (CNG — `expo prebuild` generates it), and this step
@@ -248,7 +250,7 @@ jobs:
           # likely. There is no committed Podfile.lock to reconcile it against
           # (.gitignore ignores packages/mobile/ios/), so a key miss must mean a
           # clean `pod install`, not a partially-stale one.
-          key: ${{ runner.os }}-pods-rn-${{ hashFiles('packages/mobile/package.json', 'bun.lock', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'patches/**') }}
+          key: ${{ runner.os }}-pods-rn-${{ hashFiles('packages/mobile/package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/eas.json', 'packages/mobile/assets/**', 'packages/mobile/targets/**', 'patches/**') }}
 
       - name: Install CocoaPods dependencies
         working-directory: packages/mobile/ios

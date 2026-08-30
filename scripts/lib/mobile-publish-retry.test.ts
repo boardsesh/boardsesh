@@ -116,7 +116,7 @@ describe('self-hosted publish retries', () => {
     const stderr = outputCollector();
 
     const outcome = await publishSelfHostedPlatformWithRetry(
-      { platform: 'ios', command: 'bunx', args: ['eoas', 'publish'], cwd: '/repo', env: emptyChildEnvironment },
+      { platform: 'ios', command: 'vp', args: ['dlx', 'eoas', 'publish'], cwd: '/repo', env: emptyChildEnvironment },
       { runner, sleeper, stdout: stdout.output, stderr: stderr.output },
     );
 
@@ -140,7 +140,7 @@ describe('self-hosted publish retries', () => {
     const stderr = outputCollector();
 
     const outcome = await publishSelfHostedPlatformWithRetry(
-      { platform: 'android', command: 'bunx', args: [], cwd: '/repo', env: emptyChildEnvironment },
+      { platform: 'android', command: 'vp', args: [], cwd: '/repo', env: emptyChildEnvironment },
       { runner, sleeper, stdout: outputCollector().output, stderr: stderr.output },
     );
 
@@ -160,7 +160,7 @@ describe('self-hosted publish retries', () => {
     const stderr = outputCollector();
 
     const outcome = await publishSelfHostedPlatformWithRetry(
-      { platform: 'ios', command: 'bunx', args: [], cwd: '/repo', env: emptyChildEnvironment },
+      { platform: 'ios', command: 'vp', args: [], cwd: '/repo', env: emptyChildEnvironment },
       { runner, sleeper, stdout: outputCollector().output, stderr: stderr.output },
     );
 
@@ -181,7 +181,7 @@ describe('self-hosted publish retries', () => {
     const stderr = outputCollector();
 
     await publishSelfHostedPlatformWithRetry(
-      { platform: 'ios', command: 'bunx', args: [], cwd: '/repo', env: emptyChildEnvironment },
+      { platform: 'ios', command: 'vp', args: [], cwd: '/repo', env: emptyChildEnvironment },
       { runner, stdout: outputCollector().output, stderr: stderr.output },
     );
 

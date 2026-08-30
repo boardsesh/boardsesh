@@ -74,7 +74,7 @@
     "generate": "node --import tsx scripts/generate-board-constants.ts"
   },
   "dependencies": {
-    "@boardsesh/shared-schema": "*"
+    "@boardsesh/shared-schema": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.9.5",

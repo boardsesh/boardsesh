@@ -124,7 +124,7 @@ install, since the device couldn't verify the manifest came from us.
    footgun where a native change without a manual `version` bump could push JS to a binary lacking
    the native capability it needs. The `version` field (`2.0.0`) is now just the store/marketing
    version, decoupled from OTA compatibility. Resolve the current value with
-   `bunx expo-updates runtimeversion:resolve --platform ios|android` (from `packages/mobile/`).
+   `vp exec expo-updates runtimeversion:resolve --platform ios|android` (from `packages/mobile/`).
 
 ### Invariant: OTA JS must not call native methods newer than the min shipped binary
 
@@ -338,7 +338,7 @@ correctly excluded. Two things make that hold:
   sets the override.
 
 The fingerprint hashes the **resolved Expo config**, native files, the fingerprint config, and root
-Bun patch bodies — **not** the JS bundle — so the publish must resolve `app.config.ts` to the same
+patch bodies — **not** the JS bundle — so the publish must resolve `app.config.ts` to the same
 config the native `expo prebuild` did. The
 config-affecting env that must match is `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` (drives the google-signin
 plugin's native `iosUrlScheme`), `GOOGLE_MAPS_API_KEY` (drives `android.config`), and
@@ -358,44 +358,57 @@ bug, not a delivery failure. Mechanisms, all enforced/handled in CI:
   the workflow publishes iOS **without** the key and Android **with** it, in separate steps. A single
   `--platform all` publish with one env could only ever match one side.
 
-### Bun isolated-linker normalization and complete native inputs
+### pnpm isolated-linker normalization and complete native inputs
 
-Bun's isolated linker stores a package at a path like
-`node_modules/.bun/expo@57.0.13+5d294320467232ea/node_modules/expo`. The terminal hex suffix identifies
-the package's peer-resolution set. A JS/devDependency change can alter that suffix without changing
-the package name, version, or native code. Raw Expo autolinking config includes these store paths, so
-hashing them verbatim made unrelated dependency changes move runtimeVersion.
+pnpm's isolated linker stores a package below
+`node_modules/.pnpm/<entry>/node_modules/<name>`. The entry encodes the lockfile dependency path:
+scoped package slashes become `+`, and pnpm flattens patch and peer-resolution suffixes into an
+underscore-separated tail. For example, a patched `@expo/ui` with a React peer is shaped like
+`.pnpm/@expo+ui@57.0.14_patch_hash=<hash>_react@19.2.3/node_modules/@expo/ui`.
+
+The peer portion describes the JavaScript install graph rather than native compatibility. An
+unrelated dependency change can move that suffix without changing the package name, version, patch,
+or native code. Raw Expo autolinking config contains these store paths, so hashing them verbatim
+would move `runtimeVersion` and force a native build train for install-graph noise.
 
 `packages/mobile/fingerprint.config.js` normalizes this without hiding real native changes:
 
 - Its content hook runs for exactly four serialized sources:
-  `expoAutolinkingConfig:{ios,android}` and `rncoreAutolinkingConfig:{ios,android}`. It parses the JSON,
-  walks nested objects and arrays, and removes only the final 16-hex Bun peer suffix from a
-  SemVer-shaped `.bun/<encoded-package>@<version>/node_modules/<matching-package>` boundary. Package
-  names, prereleases, and build metadata remain in the hash. A single terminal `+<16 hex>` token is
-  necessarily treated as Bun's peer token because a path alone cannot distinguish it from SemVer
-  build metadata; when build metadata precedes a peer token, it is preserved. Malformed store entries,
-  mismatched package paths, file sources, `expoConfig`, and every other contents source are untouched.
+  `expoAutolinkingConfig:{ios,android}` and `rncoreAutolinkingConfig:{ios,android}`. It parses the
+  JSON, walks nested objects and arrays, and removes only the peer tail from a SemVer-shaped
+  `.pnpm/<encoded-package>@<version>/node_modules/<matching-package>` boundary. Package names,
+  versions, prereleases, build metadata, and the content-addressed patch marker remain in the hash.
+  `_` is not legal in a SemVer version, so the peer tail has an unambiguous start. Malformed store
+  entries, mismatched package paths, file sources, `expoConfig`, and every other contents source are
+  untouched; the normalization fails closed.
 - Its `extraSources` hash `fingerprint.config.js` itself and the monorepo-root `../../patches`
   directory under stable keys. Expo's built-in patch discovery only checks
-  `packages/mobile/patches`, while this repo's Bun `patchedDependencies` live at the root; without
-  the explicit source, editing native iOS/Android patch code at an unchanged package version would
-  look OTA-compatible.
+  `packages/mobile/patches`, while this repo's `patchedDependencies` live in the root
+  `pnpm-workspace.yaml`; without the explicit source, editing native iOS/Android patch code at an
+  unchanged package version would look OTA-compatible.
 
-Expo's default `**/node_modules/**/node_modules/**` ignore also mistakes Bun's store wrapper for a
-genuine nested dependency. The exact-pinned Bun patch
-`patches/@expo%2Ffingerprint@0.20.7.patch` collapses only
-`node_modules/.bun/<entry>/node_modules/` wrappers when matching ignores and building file/directory
-hash ids. Autolinked native directories therefore contribute non-null hashes with stable logical
-ids, while a real `node_modules/package/node_modules/transitive` subtree stays ignored. The mobile
-patch check asserts both patch sentinels are installed, and the fingerprint tests assert that the
-direct mobile resolver and Expo's `expo/fingerprint` export reach the same real package path.
+Long pnpm store entries are truncated and end in a 32-hex digest. The digest is part of the peer tail
+and is removed with it. `virtualStoreDirMaxLength` is pinned to 120 in `pnpm-workspace.yaml`; pnpm's
+platform-specific defaults would otherwise truncate at different points and make a contributor's
+fingerprint disagree with CI. If truncation ever consumes the name or version prefix, the parser
+leaves the path untouched, over-triggering a build rather than hiding a native change.
 
-**Native-train boundary.** Adding this coverage intentionally moves both platform fingerprints once:
-previous binaries hashed null native directories and did not include the config or root patches.
-The landing PR must stay marked `native-fingerprint`, and matching iOS and Android store builds must
-ship before OTAs under the new hashes can reach users. Do not force or backport the new JS under an
-old runtimeVersion; old binaries keep their embedded bundle until they install the new store build.
+Expo's default `**/node_modules/**/node_modules/**` ignore also mistakes the isolated-store wrapper
+for a genuine nested dependency. The exact-pinned patch
+`patches/@expo__fingerprint@0.20.11.patch` collapses
+`node_modules/.<store>/<entry>/node_modules/` wrappers when matching ignores and building
+file/directory hash ids. Its dot-prefixed store match cannot collide with a real npm package name,
+and pnpm's hoisted-compat directory does not have the required `<entry>/node_modules/` shape.
+Autolinked native directories therefore contribute non-null hashes with stable logical ids, while a
+real `node_modules/package/node_modules/transitive` subtree stays ignored. The mobile patch check
+asserts both patch sentinels are installed, and the fingerprint tests assert that direct package
+resolution and Expo's `expo/fingerprint` export reach the same real package path.
+
+**Native-train boundary.** Moving from one isolated-store layout to another changes the serialized
+autolinking paths and intentionally moves both platform fingerprints once. The landing PR must stay
+marked `native-fingerprint`, and matching iOS and Android store builds must ship before OTAs under
+the new hashes can reach users. Do not force or backport the new JS under an old `runtimeVersion`;
+old binaries keep their embedded bundle until they install the new store build.
 
 **`EXPO_PUBLIC_USE_RN_FETCH=1` — pin RN's fetch, not expo/fetch.** Expo 57's WinterCG runtime installs
 `expo/fetch` as the global `fetch` unless this flag is `'1'`. `expo/fetch`'s native `NativeResponse`
@@ -424,7 +437,7 @@ The native builds (`ios-testflight-rn`, ~60 min on macOS;
 change keeps the same fingerprint, so a fresh store build is wasted. Each native
 workflow gates itself on the fingerprint:
 
-1. A cheap Linux **`gate` job** resolves the platform fingerprint with `bunx expo-updates
+1. A cheap Linux **`gate` job** resolves the platform fingerprint with `vp exec expo-updates
 runtimeversion:resolve` using the same **workflow-level** env the build uses (iOS without
    `GOOGLE_MAPS_API_KEY`, Android with it). The shared env sits at the workflow level so the gate
    and build can't drift, and the gate writes the same `.env` the build does — the `.env` is itself
@@ -484,7 +497,7 @@ Automatic store uploads never run from `main` or an arbitrary feature branch.
   never matches the binary, and Android never skips.
 
 Resolve the current fingerprint locally to predict what the gate will see: `cd packages/mobile &&
-bunx expo-updates runtimeversion:resolve --platform ios` (add the Native Release env to match CI
+vp exec expo-updates runtimeversion:resolve --platform ios` (add the Native Release env to match CI
 exactly — see the parity check above).
 
 ## Backporting a JS fix to an approved release (release anchors)
@@ -706,7 +719,7 @@ is legitimate, so it never blocks merge.
 The verdict is a **fingerprint diff of the branch versus `origin/main`**, resolved in one job under
 identical env (`scripts/mobile-ota-compat-check.ts`, run via `vp run check:mobile-ota-compat`): the
 job checks out the PR, materializes `origin/main` as a sibling `git worktree` with its own
-`bun install`, then resolves both per platform and compares — equal fingerprint → ships OTA,
+`vp install`, then resolves both per platform and compares — equal fingerprint → ships OTA,
 different → needs a native build.
 
 It diffs against `main` rather than looking up a shipped `fingerprint-<platform>-<hash>` tag on
@@ -723,7 +736,7 @@ intentionally omits `GOOGLE_MAPS_API_KEY`). Reproduce a verdict locally:
 
 ```bash
 git worktree add /tmp/main-baseline origin/main
-(cd /tmp/main-baseline && bun install --frozen-lockfile)
+(cd /tmp/main-baseline && vp install --frozen-lockfile)
 vp run check:mobile-ota-compat -- --write-env --base-dir /tmp/main-baseline
 ```
 
@@ -785,7 +798,7 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    build).
 9. **Verify** — a header-carrying `GET https://updates.boardsesh.com/manifest` (with `expo-app-id`,
    `expo-channel-name: production`, platform/runtime headers) returns 200 with signature `keyid
-main` after the first publish, and its assets load. `bunx eoas@3.1.2 doctor --channel=production`
+main` after the first publish, and its assets load. `vp dlx eoas@3.1.2 doctor --channel=production`
    should be clean.
 
 ### Durability: Postgres holds the only private key
@@ -851,7 +864,7 @@ itself still ships). A fine-grained PAT from a user who's in the bypass list wor
 1. Local config check — the V3 cert is already committed at `packages/mobile/certs/certificate.pem`,
    so the cert gate is satisfied and a local prebuild injects the headers (a missing cert would fall
    back to EAS and inject no channel header). Run `cd packages/mobile &&
-EXPO_UPDATES_URL=https://example.test/manifest bunx expo prebuild
+EXPO_UPDATES_URL=https://example.test/manifest vp exec expo prebuild
 --platform ios --clean --no-install`, then confirm `ios/Boardsesh/Supporting/Expo.plist` has
    `EXUpdatesRequestHeaders` → `expo-channel-name=production`, `xprem-branch=''`, **and**
    `expo-app-id=007e6fd7-…`, plus

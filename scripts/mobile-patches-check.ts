@@ -1,12 +1,12 @@
 /// <reference types="node" />
 
 /**
- * Guards against a silently-dropped Bun patch on a native module.
+ * Guards against a silently-dropped patch on a native module.
  *
- * `patchedDependencies` in the root package.json keys each patch by an EXACT
+ * `patchedDependencies` in pnpm-workspace.yaml keys each patch by an EXACT
  * version string (e.g. "react-native-screens@4.25.2"). The moment the resolved
- * version drifts off that key — an Expo SDK bump, `bun update`, or a transitive
- * floor raise from expo-router — Bun installs the dependency UNPATCHED and only
+ * version drifts off that key — an Expo SDK bump, `pnpm update`, or a transitive
+ * floor raise from expo-router — the dependency installs UNPATCHED and only
  * emits a warning. The app still installs, typechecks, and bundles; the only
  * symptom is a missing NATIVE behavior at runtime that no JS check can see.
  *
@@ -21,13 +21,13 @@
  * For @expo/ui, the patch adds the Android `expand()`/`partialExpand()`
  * rejection guard (#3478), the same guard on the `hide()` dismiss path (#4108),
  * and the iOS `onFullyDismissed` post-animation callback. All of it is plain TS
- * that Bun drops just as silently: the Android guards are pure runtime (a
+ * that a dropped patch loses just as silently: the Android guards are pure runtime (a
  * dropped patch turns a harmless re-snap into an unhandled rejection on older
  * store binaries, and leaves a dismissed sheet stuck open in JS state) and the
  * iOS wiring is what makes `onFullyDismissed` ever fire. None of it shows up in
  * a bundle.
  *
- * For @expo/fingerprint, the patch makes Bun's isolated-linker package roots
+ * For @expo/fingerprint, the patch makes isolated-linker package roots
  * hashable and gives their files stable logical ids. Without it, Expo mistakes
  * every autolinked native module for a nested node_modules directory and hashes
  * the source as null; peer-resolution store suffixes also leak into hash ids.
@@ -48,6 +48,7 @@ import { createRequire } from 'node:module';
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { parse as parseYaml } from 'yaml';
 
 /**
  * A substring that must NOT appear inside one specific Objective-C method body.
@@ -74,7 +75,7 @@ export interface PatchRule {
   sentinels: readonly string[];
   /** Source fragments that must all be present in this exact order. */
   orderedSentinels?: readonly string[];
-  /** The exact `patchedDependencies` key expected in the root package.json. */
+  /** The exact `patchedDependencies` key expected in pnpm-workspace.yaml. */
   patchedKey: string;
   /** Optional negative assertions scoped to a single method body. */
   forbiddenInMethod?: readonly ForbiddenInMethod[];
@@ -82,7 +83,7 @@ export interface PatchRule {
 
 /**
  * Rules are maintained by hand — one per patched file whose absence no other
- * check would catch. Add a rule when you `bun patch` a package and the effect
+ * check would catch. Add a rule when you `pnpm patch` a package and the effect
  * is native-only or runtime-only; a patch whose loss breaks a TYPE is already
  * caught by `typecheck:mobile`, so it doesn't need one.
  *
@@ -96,13 +97,13 @@ export const RULES: readonly PatchRule[] = [
   {
     package: '@expo/fingerprint',
     file: 'build/utils/Path.js',
-    sentinels: ['normalizeBunIsolatedModulePath', 'BUN_ISOLATED_MODULE_ROOT_REGEX'],
+    sentinels: ['normalizeIsolatedStoreModulePath', 'ISOLATED_STORE_MODULE_ROOT_REGEX'],
     patchedKey: '@expo/fingerprint@0.20.11',
   },
   {
     package: '@expo/fingerprint',
     file: 'build/hash/Hash.js',
-    sentinels: ['normalizeBunIsolatedModulePath'],
+    sentinels: ['normalizeIsolatedStoreModulePath'],
     patchedKey: '@expo/fingerprint@0.20.11',
   },
   {
@@ -212,8 +213,9 @@ export const RULES: readonly PatchRule[] = [
  */
 export const UNGUARDED_PATCHES: Readonly<Record<string, string>> = {
   'expo-dev-launcher@57.0.16':
-    "raises the iOS dev-launcher request timeout from 10s to 120s. Under Bun's isolated linker the package is " +
-    'only reachable through expo-dev-client, so createNodeEnv cannot resolve it from packages/mobile. It is also ' +
+    'raises the iOS dev-launcher request timeout from 10s to 120s. Under an isolated linker the package is ' +
+    'only reachable through expo-dev-client, so createNodeEnv cannot resolve it from packages/mobile — pnpm does ' +
+    "put it in node_modules/.pnpm/node_modules, but that directory is not on packages/mobile's resolution path. " +
     'dev-client-only — it never ships in a store binary.',
 };
 
@@ -287,7 +289,7 @@ export function extractObjCMethodBody(source: string, methodName: string): strin
 }
 
 export interface PatchInventoryInput {
-  /** The root package.json `patchedDependencies` map (key -> `patches/<file>`). */
+  /** The pnpm-workspace.yaml `patchedDependencies` map (key -> `patches/<file>`). */
   patchedDependencies: Record<string, string>;
   /** Filenames present in patches/ (basenames, not paths). */
   patchFilenames: readonly string[];
@@ -300,9 +302,9 @@ export interface PatchInventoryInput {
 /**
  * Cross-check `patchedDependencies` against the patches/ directory and RULES.
  *
- * Catches the three things Bun and the per-rule check both stay silent about:
+ * Catches the three things pnpm and the per-rule check do not both cover:
  * a key pointing at a file that isn't there, a patch file left orphaned by a
- * re-key (Bun never mentions unreferenced files), and a newly patched package
+ * re-key (pnpm never mentions unreferenced files), and a newly patched package
  * that nobody guarded.
  */
 export function checkPatchInventory(input: PatchInventoryInput): string[] {
@@ -317,7 +319,7 @@ export function checkPatchInventory(input: PatchInventoryInput): string[] {
     if (!present.has(filename)) {
       errors.push(
         `${patchedKey}: "patchedDependencies" points at ${patchPath}, but that file is not in patches/. ` +
-          `Bun cannot apply a patch it can't read — restore the file or drop the key.`,
+          `pnpm cannot apply a patch it can't read — restore the file or drop the key.`,
       );
     }
     if (!guarded.has(patchedKey) && !Object.prototype.hasOwnProperty.call(input.allowUnguarded, patchedKey)) {
@@ -331,7 +333,7 @@ export function checkPatchInventory(input: PatchInventoryInput): string[] {
   for (const filename of input.patchFilenames) {
     if (!referenced.has(filename)) {
       errors.push(
-        `patches/${filename}: orphaned — no "patchedDependencies" key references it, so Bun ignores it entirely. ` +
+        `patches/${filename}: orphaned — no "patchedDependencies" key references it, so nothing applies it. ` +
           `This is what a re-key leaves behind; delete the stale file or wire it up.`,
       );
     }
@@ -345,7 +347,7 @@ export function checkPatchInventory(input: PatchInventoryInput): string[] {
  * real node_modules tree. The real implementation is {@link createNodeEnv}.
  */
 export interface PatchCheckEnv {
-  /** The root package.json `patchedDependencies` map. */
+  /** The pnpm-workspace.yaml `patchedDependencies` map. */
   patchedDependencies: Record<string, string>;
   /** Installed `version` of `pkg` as resolved from packages/mobile. Throws if unresolvable. */
   readInstalledVersion(pkg: string): string;
@@ -380,14 +382,14 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
     // (1) The patch must still be configured at all.
     if (!Object.prototype.hasOwnProperty.call(env.patchedDependencies, rule.patchedKey)) {
       errors.push(
-        `${rule.package}: patch no longer configured — expected key "${rule.patchedKey}" in the root ` +
-          `package.json "patchedDependencies". If you intentionally removed it, also delete the rule in ` +
+        `${rule.package}: patch no longer configured — expected key "${rule.patchedKey}" in ` +
+          `pnpm-workspace.yaml "patchedDependencies". If you intentionally removed it, also delete the rule in ` +
           `scripts/mobile-patches-check.ts and patches/${rule.patchedKey}.patch.`,
       );
       continue;
     }
 
-    // (2) The configured key must match the installed version — Bun applies a
+    // (2) The configured key must match the installed version — pnpm applies a
     //     patch only to its exact key, so any drift means an UNPATCHED install.
     const expectedVersion = versionFromKey(rule.patchedKey);
     let installedVersion: string;
@@ -400,8 +402,9 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
     if (expectedVersion && installedVersion !== expectedVersion) {
       errors.push(
         `${rule.package}: version drift — installed ${installedVersion}, but "patchedDependencies" targets ` +
-          `${expectedVersion}. Bun keys patches by exact version, so this install is UNPATCHED. Regenerate the ` +
-          `patch for ${installedVersion} (\`bun patch ${rule.package}\`), update the key + patches/ filename, ` +
+          `${expectedVersion}. pnpm keys patches by exact version, so this install is UNPATCHED. Regenerate the ` +
+          `patch for ${installedVersion} (\`pnpm patch ${rule.package}@${installedVersion}\`, edit, then ` +
+          `\`pnpm patch-commit <dir>\`), update the key + patches/ filename, ` +
           `then re-run this check.`,
       );
       continue;
@@ -419,8 +422,8 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
     if (missing.length > 0) {
       errors.push(
         `${rule.package}: patch NOT applied — ${rule.file} is missing ${missing.map((s) => `"${s}"`).join(', ')}. ` +
-          `Run \`bun install\` to re-apply patches/${rule.patchedKey}.patch; if it no longer applies cleanly, ` +
-          `regenerate it with \`bun patch ${rule.package}\`.`,
+          `Run \`vp install\` to re-apply patches/${rule.patchedKey}.patch; if it no longer applies cleanly, ` +
+          `regenerate it with \`pnpm patch ${rule.package}\`.`,
       );
     }
 
@@ -496,12 +499,12 @@ export function main(): number {
 
   let patchedDependencies: Record<string, string>;
   try {
-    const rootPkg = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8')) as {
+    const workspaceManifest = parseYaml(readFileSync(resolve(repoRoot, 'pnpm-workspace.yaml'), 'utf8')) as {
       patchedDependencies?: Record<string, string>;
     };
-    patchedDependencies = rootPkg.patchedDependencies ?? {};
+    patchedDependencies = workspaceManifest.patchedDependencies ?? {};
   } catch (error) {
-    console.error(`[mobile-patches] FAILED — cannot read root package.json: ${(error as Error).message}`);
+    console.error(`[mobile-patches] FAILED — cannot read pnpm-workspace.yaml: ${(error as Error).message}`);
     return 1;
   }
 

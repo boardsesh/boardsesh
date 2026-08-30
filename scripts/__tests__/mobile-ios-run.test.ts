@@ -118,7 +118,7 @@ describe('ensureIosProject', () => {
 
     ensureIosProject(paths, nodeFileSystem, runner);
 
-    expect(run).toHaveBeenCalledWith('bunx', ['expo', 'prebuild', '--platform', 'ios'], {
+    expect(run).toHaveBeenCalledWith('vp', ['exec', 'expo', 'prebuild', '--platform', 'ios'], {
       cwd: paths.mobileDir,
       env: expect.any(Object),
     });

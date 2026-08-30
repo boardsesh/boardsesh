@@ -98,7 +98,8 @@ function isBackendAffecting(filePath) {
     filePath === 'scripts/production-backend-smoke.mjs' ||
     filePath === 'scripts/railway-deployment-status.mjs' ||
     filePath === 'railway.toml' ||
-    filePath === 'bun.lock' ||
+    filePath === 'pnpm-lock.yaml' ||
+    filePath === 'pnpm-workspace.yaml' ||
     filePath === 'package.json' ||
     filePath === '.github/workflows/production-deploy.yml'
   );
@@ -122,6 +123,14 @@ function isAppAffecting(filePath) {
     filePath.startsWith('packages/mobile/') ||
     filePath.startsWith('packages/shared/') ||
     filePath.startsWith('packages/shared-schema/') ||
+    // deploy-app-web installs the root graph before exporting Expo web. The
+    // workspace manifest owns linker policy, overrides and patch mappings, so
+    // these root inputs can change the shipped browser bundle even when no
+    // packages/mobile source file changed.
+    filePath === 'pnpm-lock.yaml' ||
+    filePath === 'pnpm-workspace.yaml' ||
+    filePath === 'package.json' ||
+    filePath.startsWith('patches/') ||
     filePath === 'scripts/build-expo-web-export.sh' ||
     // The export recipe shells out to this: it rewrites the shipped shell's
     // manifest href and the manifest's start_url/scope from the export's

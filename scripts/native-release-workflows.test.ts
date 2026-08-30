@@ -191,7 +191,7 @@ describe('native release train workflow contracts', () => {
     expect(draft).not.toContain('boardsesh-release-monitor-placeholder');
     expect(draft).toContain('compare_platform ios ios-build "$EXPECTED_IOS_TAG"');
     expect(draft).toContain('compare_platform android android-build "$EXPECTED_ANDROID_TAG"');
-    expect(draft).toContain('bun install --frozen-lockfile --ignore-scripts');
+    expect(draft).toContain('vp install --frozen-lockfile --ignore-scripts');
     expect(draft).toContain('IOS_BUILD_NUMBER');
     expect(draft).toContain('ANDROID_VERSION_CODE');
     const fastfile = readFileSync('fastlane/Fastfile', 'utf8');
@@ -203,8 +203,8 @@ describe('native release train workflow contracts', () => {
 
   it('requires exact accepted candidates and normal PR gates without review-thread resolution', () => {
     expect(monitor).toContain("cron: '*/15 * * * *'");
-    expect(monitor).toContain('bun scripts/mobile-auto-version-bump.ts');
-    expect(monitor).toContain('bun scripts/mobile-cut-release-tags.ts');
+    expect(monitor).toContain('node --import tsx scripts/mobile-auto-version-bump.ts');
+    expect(monitor).toContain('node --import tsx scripts/mobile-cut-release-tags.ts');
     expect(monitor).toContain("CANDIDATE_ONLY: 'true'");
     expect(monitor).toContain('Compare native fingerprints with build-time inputs and immutable tags');
     expect(monitor).toContain('accepted_build=$build_fp');
@@ -214,7 +214,7 @@ describe('native release train workflow contracts', () => {
     expect(monitor).not.toContain('boardsesh-release-monitor-placeholder');
     expect(monitor).toContain('compare_platform ios ios-build "$EXPECTED_IOS_TAG"');
     expect(monitor).toContain('compare_platform android android-build "$EXPECTED_ANDROID_TAG"');
-    expect(monitor).toContain('bun install --frozen-lockfile --ignore-scripts');
+    expect(monitor).toContain('vp install --frozen-lockfile --ignore-scripts');
     expect(monitor).toContain('reviewDecision');
     expect(monitor).toContain('statusCheckRollup');
     expect(monitor).toContain('checks: read');
@@ -228,7 +228,7 @@ describe('native release train workflow contracts', () => {
     expect(monitor).toContain('headRepository{nameWithOwner}');
     expect(monitor).toContain('-f sha="$EXPECTED_HEAD_SHA"');
     expect(monitor).toContain('permission-workflows: write');
-    expect(monitor.match(/bun scripts\/mobile-auto-version-bump\.ts/g)).toHaveLength(2);
+    expect(monitor.match(/node --import tsx scripts\/mobile-auto-version-bump\.ts/g)).toHaveLength(2);
     expect(monitor).toContain('Accepted store builds or their exact build tags moved before merge');
     expect(monitor).toContain('cleanup_new_anchors');
     expect(monitor).toContain('grep -Fxq "created_anchor=$tag"');
@@ -237,10 +237,10 @@ describe('native release train workflow contracts', () => {
     expect(monitor).toContain('authenticated_push --force-with-lease=');
     expect(monitor).toContain('The merge outcome is unknown; release anchors were retained for safety');
     expect(monitor.indexOf('Accepted store builds or their exact build tags moved before merge')).toBeLessThan(
-      monitor.indexOf('DRY_RUN=false bun scripts/mobile-cut-release-tags.ts'),
+      monitor.indexOf('DRY_RUN=false node --import tsx scripts/mobile-cut-release-tags.ts'),
     );
     expect(monitor.indexOf('test "$checks_green" = true')).toBeLessThan(
-      monitor.indexOf('DRY_RUN=false bun scripts/mobile-cut-release-tags.ts'),
+      monitor.indexOf('DRY_RUN=false node --import tsx scripts/mobile-cut-release-tags.ts'),
     );
     expect(monitor).toContain('Failed to clean up an incomplete anchor set');
     expect(monitor).toContain('final_merge_gates_ready');

@@ -14,7 +14,7 @@
  * (board_type, climb_uuid, hold_id).
  *
  * Usage:
- *   bun run packages/db/scripts/backfill-board-climb-holds.ts [--board kilter] [--batch-size 500] [--dry-run]
+ *   vp exec tsx packages/db/scripts/backfill-board-climb-holds.ts [--board kilter] [--batch-size 500] [--dry-run]
  */
 
 import { sql } from 'drizzle-orm';

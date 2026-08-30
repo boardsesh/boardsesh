@@ -327,10 +327,7 @@ describe('trusted PostgreSQL image publisher contract', () => {
         moveWorkflowStepsBefore(
           workflow,
           'smoke-portable',
-          [
-            'Set up Bun after registry credential removal',
-            'Install locked dependencies after registry credential removal',
-          ],
+          ['Set up Vite+', 'Install locked dependencies after registry credential removal'],
           'Remove registry credentials before image smoke',
         ),
       expected: /smoke-portable tool and dependency setup must occur only after registry credentials are removed/,
@@ -354,22 +351,22 @@ describe('trusted PostgreSQL image publisher contract', () => {
           'smoke-seeded',
           'Install locked dependencies after registry credential removal',
           (step) => {
-            if (step.run !== 'bun install --frozen-lockfile') throw new Error('seeded smoke install must be frozen');
-            step.run = 'bun install';
+            if (step.run !== 'vp install --frozen-lockfile') throw new Error('seeded smoke install must be frozen');
+            step.run = 'vp install';
           },
         ),
       expected: /smoke-seeded must install only the reviewed lockfile graph/,
     },
     {
-      name: 'unpinned portable smoke Bun setup',
+      name: 'unpinned portable smoke Vite+ setup',
       mutate: (workflow: string) =>
-        mutateWorkflowStep(workflow, 'smoke-portable', 'Set up Bun after registry credential removal', (step) => {
-          if (step.uses !== 'oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6') {
-            throw new Error('portable smoke Bun setup must start at its reviewed pin');
+        mutateWorkflowStep(workflow, 'smoke-portable', 'Set up Vite+', (step) => {
+          if (step.uses !== 'voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb') {
+            throw new Error('portable smoke Vite+ setup must start at its reviewed pin');
           }
-          step.uses = 'oven-sh/setup-bun@v2';
+          step.uses = 'voidzero-dev/setup-vp@v1';
         }),
-      expected: /must use only oven-sh\/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6/,
+      expected: /must use only voidzero-dev\/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb/,
     },
     {
       name: 'unpinned ORAS action',

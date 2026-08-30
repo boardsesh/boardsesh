@@ -183,7 +183,8 @@ jobs:
               path.startsWith('packages/shared-schema/') ||
               path.startsWith('patches/') ||
               path === 'package.json' ||
-              path === 'bun.lock' ||
+              path === 'pnpm-lock.yaml' ||
+              path === 'pnpm-workspace.yaml' ||
               path === 'scripts/mobile-publish.ts' ||
               path === 'scripts/lib/mobile-publish-retry.ts' ||
               path === 'scripts/lib/eoas.ts' ||
@@ -409,7 +410,7 @@ jobs:
       pull-requests: read
     environment: ota-preview
     # EOO_TOKEN is NOT job-level env: this job checks out PR-head and runs PR-author
-    # code (`bun install` on the PR tree, app.config execSync) — a job-level secret
+    # code (`vp install` on the PR tree, app.config execSync) — a job-level secret
     # would be live throughout that. EOO_TOKEN is scoped to the two publish steps. The
     # dashboard admin creds are NOT on this job at all. This is defense-in-depth on top
     # of the explicit fork permission gate and optional environment protections.
@@ -498,7 +499,7 @@ jobs:
           # before this checkout (this job holds EOO_TOKEN). The commit is fetchable in
           # the base repo for any PR (fork or not).
           ref: ${{ needs.gate.outputs.head_sha }}
-          # This job then runs PR-author code (bun install, app.config execSync). Don't
+          # This job then runs PR-author code (vp install, app.config execSync). Don't
           # leave a write-capable GITHUB_TOKEN in .git/config for it to reach; the
           # baseline fetch of public origin/main below works unauthenticated.
           persist-credentials: false
@@ -506,11 +507,12 @@ jobs:
           fetch-tags: true
 
       - uses: voidzero-dev/setup-vp@v1
-
-      - uses: oven-sh/setup-bun@v2
+        with:
+          node-version: '22.x'
+          cache: true
 
       - name: Install dependencies (PR tree)
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       # Materialize origin/main as a sibling worktree so the OTA-compat check can diff
       # the PR fingerprint against main (per platform) and skip publishing a platform
@@ -522,7 +524,7 @@ jobs:
 
       - name: Install dependencies (main baseline)
         working-directory: ${{ runner.temp }}/main-baseline
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       # Writes packages/mobile/.env (the 8 EXPO_PUBLIC_* vars — same as the production
       # publish) into both trees and emits verdict_ios / verdict_android. No maps key
@@ -769,7 +771,7 @@ jobs:
     environment: ota-preview-unattended
     env:
       # Presence flag only (a boolean, NOT the secret) so an incompletely configured
-      # environment does not expose the credential to checkout / setup-bun.
+      # environment does not expose the credential to checkout / setup-vp.
       HAS_OTA_ADMIN: ${{ secrets.OTA_ADMIN_PASSWORD != '' }}
       BRANCH: ${{ needs.gate.outputs.branch }}
     steps:
@@ -805,9 +807,12 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
 
-      # No `bun install`: ota-preview-cleanup.ts is dependency-free (node built-ins only).
+      # No `vp install`: ota-preview-cleanup.ts is dependency-free (node built-ins only).
       # Skipping the workspace install keeps this most-sensitive job (admin creds in
       # scope) from executing any dependency install/postinstall code.
       #
@@ -822,7 +827,7 @@ jobs:
           EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
           OTA_ADMIN_EMAIL: ${{ vars.OTA_ADMIN_EMAIL }}
           OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
-        run: bun scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"
+        run: node scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"
 
       - name: Mark preview removed (deployment + comment)
         if: always() && steps.fresh.outcome == 'success'

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,8 +27,8 @@ const maxTailscaleCandidates = 32;
 const probeCandidateBudgetMs = postgresProbeTimeoutMs + redisProbeTimeoutMs + 1_000;
 // See https://github.com/boardsesh/boardsesh/issues/3874: postgres.js
 // `client.end()` can leave a promise unsettled after its socket handle is
-// destroyed on a half-open connection. With no live timer/handle left, Bun
-// (and Node) treat the event loop as drained and exit 0 mid-`await` instead
+// destroyed on a half-open connection. With no live timer/handle left, Node
+// treats the event loop as drained and exits 0 mid-`await` instead
 // of hanging or throwing. This watchdog keeps a real timer alive around
 // discovery so that scenario surfaces as a loud, actionable timeout instead
 // of a silent premature exit.
@@ -450,10 +450,15 @@ async function main(): Promise<void> {
   console.info('  Test user: test@boardsesh.com / test');
 }
 
+function isEntryPoint(): boolean {
+  const entryPath = process.argv[1];
+  return entryPath !== undefined && realpathSync(entryPath) === realpathSync(fileURLToPath(import.meta.url));
+}
+
 // Guarded so importing this module (e.g. from Vitest) never runs main() or
-// triggers its process.exit() side effects; `bun scripts/dev-db-discover.ts`
-// still executes it because import.meta.main is true for the entry script.
-if (import.meta.main) {
+// triggers its process.exit() side effects. tsx compiles this file to CJS in
+// this repository, where import.meta.main is undefined, so compare real paths.
+if (isEntryPoint()) {
   main().catch((error: unknown) => {
     console.error('[dev-db] Failed to discover or prepare a dev database:', error);
     process.exit(1);

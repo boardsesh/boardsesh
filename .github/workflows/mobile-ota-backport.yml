@@ -123,8 +123,8 @@ jobs:
       matrix:
         platform: ${{ fromJSON(needs.setup.outputs.platforms) }}
     # EOO_TOKEN (the app-scoped expo-open-ota publish key) is NOT a job-level env:
-    # that would expose the publish-capable key to checkout, setup-vp/bun,
-    # `bun install`, and the cherry-pick before the publish. It's scoped to the
+    # that would expose the publish-capable key to checkout, setup-vp,
+    # `vp install`, and the cherry-pick before the publish. It's scoped to the
     # "Publish OTA" step below instead.
 
     steps:
@@ -137,8 +137,9 @@ jobs:
           fetch-tags: true
 
       - uses: voidzero-dev/setup-vp@v1
-
-      - uses: oven-sh/setup-bun@v2
+        with:
+          node-version: '22.x'
+          cache: true
 
       # The hotfix tree is about to move to an older release anchor, which may
       # predate OTA source-map support. Snapshot the exact trusted workflow commit
@@ -245,7 +246,7 @@ jobs:
       # main's deps would diverge from what the shipped binary embedded and cause
       # a spurious mismatch (or, worse, a false match).
       - name: Install Node.js dependencies (workspace root)
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       # The trusted wrapper deliberately invokes the official uploader installed
       # by the anchored app. Reject anchors that do not carry the audited 7.11.0
@@ -258,7 +259,10 @@ jobs:
             echo "::error::This anchor has @sentry/react-native $sentry_version; OTA source-map backports require exactly 7.11.0. Ship a native update instead."
             exit 1
           fi
-          uploader_path="$(cd packages/mobile && bun -e 'const path = require("node:path"); const packageJson = require.resolve("@sentry/react-native/package.json"); console.log(path.join(path.dirname(packageJson), "scripts", "expo-upload-sourcemaps.js"));')"
+          # createRequire anchored at packages/mobile/package.json: under pnpm's
+          # isolated linker `require.resolve` must start from the consuming package,
+          # not the process CWD, to reach the hoisted .pnpm store path.
+          uploader_path="$(cd packages/mobile && node -e 'const path = require("node:path"); const { createRequire } = require("node:module"); const requireFromMobile = createRequire(path.join(process.cwd(), "package.json")); const packageJson = requireFromMobile.resolve("@sentry/react-native/package.json"); console.log(path.join(path.dirname(packageJson), "scripts", "expo-upload-sourcemaps.js"));')"
           if [ ! -f "$uploader_path" ]; then
             echo "::error::The anchored @sentry/react-native install has no official Expo source-map uploader."
             exit 1
@@ -292,7 +296,7 @@ jobs:
           # Keep stderr visible: if the resolve fails for a reason other than a
           # fingerprint mismatch (missing dep, config/network error), surfacing it
           # beats the bare "Could not resolve" message below with no root cause.
-          raw="$(cd packages/mobile && bunx expo-updates runtimeversion:resolve --platform "$PLATFORM" || true)"
+          raw="$(cd packages/mobile && vp exec expo-updates runtimeversion:resolve --platform "$PLATFORM" || true)"
           fp="$(printf '%s' "$raw" | jq -r '.runtimeVersion // empty' 2>/dev/null || true)"
           # Require >= 12 hex chars: we compare the first 12 against the anchor's
           # shortfp, so anything shorter couldn't form a valid comparison anyway.
@@ -331,7 +335,7 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         # The old anchor's vite.config may not define the new task. The trusted,
         # dependency-light helper was overlaid above, so invoke it directly.
-        run: bun scripts/mobile-upload-sourcemaps.ts --platform "$PLATFORM"
+        run: node --import tsx scripts/mobile-upload-sourcemaps.ts --platform "$PLATFORM"
 
       - name: Dry-run note
         if: ${{ inputs.dry_run }}

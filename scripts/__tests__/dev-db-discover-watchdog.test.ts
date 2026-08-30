@@ -57,8 +57,17 @@ describe('dev-db-discover.ts module import', () => {
 describe('dev-db-discover.ts source invariants', () => {
   const source = readFileSync(join(__dirname, '..', 'dev-db-discover.ts'), 'utf8');
 
-  it('guards the main() invocation with import.meta.main so importing the module has no side effects', () => {
-    expect(source).toMatch(/if\s*\(\s*import\.meta\.main\s*\)\s*\{\s*\n\s*main\(\)/);
+  it('guards the main() invocation with an entry-point check so importing the module has no side effects', () => {
+    expect(source).toMatch(/if\s*\(\s*isEntryPoint\(\)\s*\)\s*\{\s*\n\s*main\(\)/);
+  });
+
+  it('does not gate main() on import.meta.main, which is undefined under tsx', () => {
+    const executableLines = source.split('\n').filter((line) => !line.trim().startsWith('//'));
+    expect(executableLines.join('\n')).not.toMatch(/import\.meta\.main/);
+  });
+
+  it('compares real entry-point paths so symlinked invocations still run main()', () => {
+    expect(source).toMatch(/realpathSync\(entryPath\)\s*===\s*realpathSync\(fileURLToPath\(import\.meta\.url\)\)/);
   });
 
   it('bounds every postgres.js client.end() call with an explicit force-close timeout', () => {

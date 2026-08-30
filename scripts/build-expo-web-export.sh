@@ -92,9 +92,10 @@ WEB_RUNTIME_DIR="$ROOT_DIR/packages/mobile/web-runtime"
 if [[ ! -d "$WEB_RUNTIME_DIR/node_modules/react-native-web" ]]; then
   # The web-only renderer lives in an isolated nested install so it never
   # enters the native fingerprint graph. `vp run build:expo-web` installs it
-  # via its task dependency; direct callers (Docker) land here.
+  # via its task dependency; direct callers land here and still let Vite+
+  # provide the pinned package manager.
   echo "[build-expo-web-export] installing packages/mobile/web-runtime dependencies"
-  bun install --cwd "$WEB_RUNTIME_DIR" --frozen-lockfile
+  vp exec pnpm --dir "$WEB_RUNTIME_DIR" install --frozen-lockfile
 fi
 
 rm -rf "$OUTPUT_DIR"
@@ -201,7 +202,7 @@ elif [[ "$KEEP_METRO_CACHE" == 1 ]]; then
 fi
 
 BOARDSESH_WEB=1 BOARDSESH_WEB_BASE_URL="$WEB_BASE_URL" EXPO_NO_WEB_SETUP=1 EXPO_NO_TELEMETRY=1 \
-  bunx expo export --platform web --output-dir "$OUTPUT_DIR" ${EXPORT_CLEAR_FLAG:+"$EXPORT_CLEAR_FLAG"}
+  vp exec expo export --platform web --output-dir "$OUTPUT_DIR" ${EXPORT_CLEAR_FLAG:+"$EXPORT_CLEAR_FLAG"}
 
 if [[ ! -f "$OUTPUT_DIR/index.html" ]]; then
   echo "[build-expo-web-export] missing index.html in $OUTPUT_DIR" >&2

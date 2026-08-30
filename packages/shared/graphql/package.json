@@ -42,7 +42,7 @@
     "test": "vp test"
   },
   "dependencies": {
-    "@boardsesh/shared-schema": "*",
+    "@boardsesh/shared-schema": "workspace:*",
     "@graphql-typed-document-node/core": "^3.2.0",
     "graphql": "^16.14.2",
     "graphql-request": "^7.4.0"

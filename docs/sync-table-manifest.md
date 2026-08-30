@@ -165,7 +165,7 @@ via `SET LOCAL boardsesh.suppress_sync_tombstones = 'on'` (see `clearBoardData`)
   `(updated_at, sync_seq)`.
 - **`sync_deletions`** table + per-table `AFTER DELETE` triggers, `record_id` encoded per the table below.
   Index `(user_id, deleted_at, id)`. Use the `0053_add_vote_counts.sql` trigger/function file as the precedent.
-- Generate with `bunx drizzle-kit generate --custom` from `packages/db/` (after `vp run build:db`) for the
+- Generate with `vp exec drizzle-kit generate --custom` from `packages/db/` (after `vp run build:db`) for the
   trigger/function SQL; paste SQL into the minted file (mirrors 0053/0091/0100). Never reference a table the
   migration point doesn't have.
 - **Test DB:** integration tests do NOT run migrations — mirror any new column/table/trigger you want exercised

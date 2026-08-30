@@ -192,7 +192,7 @@ export default defineConfig({
         cache: false,
       },
       'db:migrate': {
-        command: 'bun run --filter=@boardsesh/db db:migrate',
+        command: 'pnpm --filter @boardsesh/db run db:migrate',
         dependsOn: ['db:up'],
         cache: false,
       },
@@ -203,11 +203,11 @@ export default defineConfig({
       // dependency: it's normally run by hand against DB_URL, same pattern as
       // db:dedupe-gyms.
       'db:verify-journal': {
-        command: 'bun run --filter=@boardsesh/db db:verify-journal',
+        command: 'pnpm --filter @boardsesh/db run db:verify-journal',
         cache: false,
       },
       'db:studio': {
-        command: 'bun run --filter=@boardsesh/db db:studio',
+        command: 'pnpm --filter @boardsesh/db run db:studio',
         dependsOn: ['db:up'],
         cache: false,
       },
@@ -219,12 +219,12 @@ export default defineConfig({
         cache: false,
       },
       'db:seed-social': {
-        command: 'bun run --filter=@boardsesh/db db:seed-social',
+        command: 'pnpm --filter @boardsesh/db run db:seed-social',
         dependsOn: ['db:up'],
         cache: false,
       },
       'db:create-test-user': {
-        command: 'bun run --filter=@boardsesh/db db:create-test-user',
+        command: 'pnpm --filter @boardsesh/db run db:create-test-user',
         dependsOn: ['db:up'],
         cache: false,
       },
@@ -234,13 +234,13 @@ export default defineConfig({
         cache: false,
       },
       'db:dedupe-gyms': {
-        command: 'bun run --filter=@boardsesh/db db:dedupe-gyms',
+        command: 'pnpm --filter @boardsesh/db run db:dedupe-gyms',
         // Intentionally no db:up dependency: this maintenance/reporting command
         // often targets DB_URL against a remote database instead of local Docker.
         cache: false,
       },
       'db:dedupe-beta-links': {
-        command: 'bun run --filter=@boardsesh/db db:dedupe-beta-links',
+        command: 'pnpm --filter @boardsesh/db run db:dedupe-beta-links',
         // No db:up dependency, same rationale as db:dedupe-gyms: a maintainer
         // runs this by hand against DB_URL (often a remote database), not local
         // Docker. Dry-run by default; --apply is the only write path. Forward
@@ -248,13 +248,13 @@ export default defineConfig({
         cache: false,
       },
       'db:refresh-climb-grades': {
-        command: 'bun run --filter=@boardsesh/db db:refresh-climb-grades',
+        command: 'pnpm --filter @boardsesh/db run db:refresh-climb-grades',
         // No db:up dependency: this often targets a remote DB_URL and supports
         // read-only validation/dry-runs before writing published grade rows.
         cache: false,
       },
       'db:dedupe-serial-boards': {
-        command: 'bun run --filter=@boardsesh/db db:dedupe-serial-boards',
+        command: 'pnpm --filter @boardsesh/db run db:dedupe-serial-boards',
         // No db:up dependency, same rationale as db:dedupe-gyms: a maintainer
         // runs this by hand against DB_URL (often a remote database), not local
         // Docker. Dry-run by default; --apply is the only write path. Forward
@@ -262,7 +262,7 @@ export default defineConfig({
         cache: false,
       },
       'test:db': {
-        command: 'bun run --filter=@boardsesh/db test',
+        command: 'pnpm --filter @boardsesh/db run test',
       },
       // The one packages/db node:test file CI runs (from ci.yml's db-migrations
       // job, against its current PostgreSQL service). It builds its own throwaway
@@ -270,7 +270,7 @@ export default defineConfig({
       // Locally it skips unless DATABASE_URL/MIGRATION_JOURNAL_DB_URL points at
       // a local Postgres.
       'test:db:migration-journal': {
-        command: 'bun run --filter=@boardsesh/db test:migration-journal',
+        command: 'pnpm --filter @boardsesh/db run test:migration-journal',
         cache: false,
       },
       'test:postgres18-contract': {
@@ -304,27 +304,27 @@ export default defineConfig({
         cache: false,
       },
       'locations:aurora': {
-        command: 'bun run --filter=@boardsesh/aurora-sync sync:locations',
+        command: 'pnpm --filter @boardsesh/aurora-sync run sync:locations',
         dependsOn: ['db:up'],
         cache: false,
       },
       'locations:kilter': {
-        command: 'bun run --filter=@boardsesh/kilter-sync sync:locations',
+        command: 'pnpm --filter @boardsesh/kilter-sync run sync:locations',
         dependsOn: ['db:up'],
         cache: false,
       },
       'locations:moonboard': {
-        command: 'bun run --filter=@boardsesh/moonboard-sync sync:locations',
+        command: 'pnpm --filter @boardsesh/moonboard-sync run sync:locations',
         dependsOn: ['db:up'],
         cache: false,
       },
       'seed:beta-links': {
-        command: 'bun run --filter=@boardsesh/db db:seed-beta-links',
+        command: 'pnpm --filter @boardsesh/db run db:seed-beta-links',
         dependsOn: ['db:up'],
         cache: false,
       },
       'db:import-moonboard': {
-        command: 'bun run --filter=@boardsesh/db db:import-moonboard',
+        command: 'pnpm --filter @boardsesh/db run db:import-moonboard',
         dependsOn: ['db:up'],
         cache: false,
       },
@@ -336,7 +336,7 @@ export default defineConfig({
       // gates a non-local host — it refuses unless WOODS_IMPORT_ALLOW_REMOTE=1.
       // Booting local Docker first would only get in the way of that run.
       'db:import-woods-catalog': {
-        command: 'bun run --filter=@boardsesh/db db:import-woods-catalog',
+        command: 'pnpm --filter @boardsesh/db run db:import-woods-catalog',
         cache: false,
       },
       // Regenerates the committed MoonBoard cell->set map from the per-set board
@@ -344,7 +344,7 @@ export default defineConfig({
       // a drift check that fails instead of writing.
       'db:generate-moonboard-cell-sets': {
         command:
-          'bun run --filter=@boardsesh/db db:generate-moonboard-cell-sets && vp fmt packages/shared/board-config/src/generated/moonboard-cell-sets.ts',
+          'pnpm --filter @boardsesh/db run db:generate-moonboard-cell-sets && vp fmt packages/shared/board-config/src/generated/moonboard-cell-sets.ts',
         cache: false,
       },
       // Writes the `hold_outline_overrides` rows out to the committed JSON files
@@ -362,20 +362,20 @@ export default defineConfig({
       // the cell->set map. No db:up dependency: run by hand against DB_URL (prod)
       // or after db:up locally, same pattern as db:dedupe-gyms.
       'db:backfill-moonboard-set-ids': {
-        command: 'bun run --filter=@boardsesh/db db:backfill-moonboard-set-ids',
+        command: 'pnpm --filter @boardsesh/db run db:backfill-moonboard-set-ids',
         cache: false,
       },
       // Seeds the relational MoonBoard product/layout/set/hole/placement catalog.
       // Dry-run by default; pass `-- --apply` for the locked, validated write path.
       'db:backfill-moonboard-hardware': {
-        command: 'bun run --filter=@boardsesh/db db:backfill-moonboard-hardware',
+        command: 'pnpm --filter @boardsesh/db run db:backfill-moonboard-hardware',
         cache: false,
       },
       // Repairs only existing catalog-backed MoonBoard 8C/8C+ rows whose grade
       // columns are still NULL. Requires the full app catalog as input, reports
       // only by default, and writes only with an explicit `--apply`.
       'db:repair-moonboard-8c-grades': {
-        command: 'bun run --filter=@boardsesh/db db:repair-moonboard-8c-grades',
+        command: 'pnpm --filter @boardsesh/db run db:repair-moonboard-8c-grades',
         cache: false,
       },
       // Repairs ticks whose attempt count was floored to 2 by the mobile
@@ -384,17 +384,17 @@ export default defineConfig({
       // Run by hand against DB_URL with UPDATE rights, same pattern as
       // db:dedupe-gyms.
       'db:backfill-clamped-send-attempts': {
-        command: 'bun run --filter=@boardsesh/db db:backfill-clamped-send-attempts',
+        command: 'pnpm --filter @boardsesh/db run db:backfill-clamped-send-attempts',
         cache: false,
       },
 
       // --- Codegen (GraphQL types for client + backend resolvers) ---
-      // Direct binary invocation — no `bunx` (won't touch the lockfile).
+      // Direct workspace-binary invocation; no remote package runner.
       // print-schema concatenates the modular gql typeDefs into a single SDL
       // file that graphql-codegen reads as its schema input.
       codegen: {
         command:
-          'bun packages/shared-schema/scripts/print-schema.ts && graphql-codegen && vp fmt packages/shared-schema/src/generated/ packages/shared/graphql/src/generated/',
+          'tsx packages/shared-schema/scripts/print-schema.ts && graphql-codegen && vp fmt packages/shared-schema/src/generated/ packages/shared/graphql/src/generated/',
         input: [
           'codegen.ts',
           'packages/shared-schema/scripts/print-schema.ts',
@@ -410,45 +410,49 @@ export default defineConfig({
 
       // --- Build (topological order via dependsOn) ---
       'build:shared': {
-        command: 'bun run --filter=@boardsesh/shared-schema build',
+        command: 'pnpm --filter @boardsesh/shared-schema run build',
         dependsOn: ['codegen'],
       },
       'build:crypto': {
-        command: 'bun run --filter=@boardsesh/crypto build',
+        command: 'pnpm --filter @boardsesh/crypto run build',
       },
       'build:constants': {
-        command: 'bun run --filter=@boardsesh/board-constants build',
+        command: 'pnpm --filter @boardsesh/board-constants run build',
         dependsOn: ['build:shared'],
       },
+      'generate:board-constants': {
+        command: 'pnpm --filter @boardsesh/board-constants run generate',
+        cache: false,
+      },
       'build:db': {
-        command: 'bun run --filter=@boardsesh/db build',
+        command: 'pnpm --filter @boardsesh/db run build',
         dependsOn: ['build:shared'],
       },
       'build:sync-runtime': {
-        command: 'bun run --filter=@boardsesh/sync-runtime build',
+        command: 'pnpm --filter @boardsesh/sync-runtime run build',
       },
       'build:location-sync': {
-        command: 'bun run --filter=@boardsesh/location-sync build',
+        command: 'pnpm --filter @boardsesh/location-sync run build',
         dependsOn: ['build:shared', 'build:constants', 'build:db'],
       },
       'build:moonboard-sync': {
-        command: 'bun run --filter=@boardsesh/moonboard-sync build',
+        command: 'pnpm --filter @boardsesh/moonboard-sync run build',
         dependsOn: ['build:db', 'build:location-sync'],
       },
       'build:aurora': {
-        command: 'bun run --filter=@boardsesh/aurora-sync build',
+        command: 'pnpm --filter @boardsesh/aurora-sync run build',
         dependsOn: ['build:shared', 'build:crypto', 'build:db', 'build:location-sync', 'build:sync-runtime'],
       },
       'build:kilter': {
-        command: 'bun run --filter=@boardsesh/kilter-sync build',
+        command: 'pnpm --filter @boardsesh/kilter-sync run build',
         dependsOn: ['build:shared', 'build:crypto', 'build:db', 'build:location-sync', 'build:sync-runtime'],
       },
       'build:backend': {
-        command: 'bun run --filter=boardsesh-backend build',
+        command: 'pnpm --filter boardsesh-backend run build',
         dependsOn: ['build:shared', 'build:crypto', 'build:db', 'build:constants', 'build:aurora', 'build:kilter'],
       },
       'build:web': {
-        command: 'bun run --filter=@boardsesh/web build',
+        command: 'pnpm --filter @boardsesh/web run build',
         dependsOn: ['build:shared', 'build:crypto', 'build:db', 'build:constants'],
         // Forwarded into the task (vp runs tasks with a filtered environment)
         // and part of the cache key. Since W-24 (#4438) BOARDSESH_WEB no longer
@@ -470,7 +474,7 @@ export default defineConfig({
         cache: false,
       },
       'verify:graphql-treeshake': {
-        command: 'bun packages/web/scripts/verify-graphql-treeshake.ts',
+        command: 'tsx packages/web/scripts/verify-graphql-treeshake.ts',
         dependsOn: ['build:web'],
         cache: false,
       },
@@ -483,29 +487,29 @@ export default defineConfig({
         cache: false,
       },
       'check:i18n': {
-        command: 'bun packages/web/scripts/check-untranslated-strings.ts',
+        command: 'tsx packages/web/scripts/check-untranslated-strings.ts',
         cache: false,
       },
       // Two-way i18n guard: catalog keys with no reference, code references with
       // no catalog key (#4416), and mobile files reading an unbundled namespace.
       'check:i18n:orphans': {
-        command: 'bun packages/web/scripts/check-orphaned-i18n-keys.ts',
+        command: 'tsx packages/web/scripts/check-orphaned-i18n-keys.ts',
         cache: false,
       },
       'check:mobile-board-art-network': {
-        command: 'bun scripts/mobile-board-art-network-check.ts',
+        command: 'tsx scripts/mobile-board-art-network-check.ts',
         cache: false,
       },
       'generate:static-assets': {
-        command: 'bun scripts/generate-static-assets.ts',
+        command: 'tsx scripts/generate-static-assets.ts',
         cache: false,
       },
       'check:static-assets': {
-        command: 'bun scripts/generate-static-assets.ts --check',
+        command: 'tsx scripts/generate-static-assets.ts --check',
         cache: false,
       },
       'upload:static-assets': {
-        command: 'bun scripts/upload-static-assets.ts',
+        command: 'tsx scripts/upload-static-assets.ts',
         cache: false,
       },
       'generate:acknowledgements': {
@@ -626,141 +630,141 @@ export default defineConfig({
         command: 'tsc -p scripts/tsconfig.json',
       },
       'typecheck:shared': {
-        command: 'bun run --filter=@boardsesh/shared-schema typecheck',
+        command: 'pnpm --filter @boardsesh/shared-schema run typecheck',
         dependsOn: ['build:shared'],
       },
       'typecheck:db': {
-        command: 'bun run --filter=@boardsesh/db typecheck',
+        command: 'pnpm --filter @boardsesh/db run typecheck',
         dependsOn: ['build:db'],
       },
       'typecheck:backend': {
-        command: 'bun run --filter=boardsesh-backend typecheck',
+        command: 'pnpm --filter boardsesh-backend run typecheck',
         dependsOn: ['build:backend'],
       },
       'typecheck:web': {
-        command: 'bun run --filter=@boardsesh/web typecheck',
+        command: 'pnpm --filter @boardsesh/web run typecheck',
         dependsOn: ['build:web'],
       },
       'typecheck:ble-protocol': {
-        command: 'bun run --filter=@boardsesh/ble-protocol typecheck',
+        command: 'pnpm --filter @boardsesh/ble-protocol run typecheck',
       },
       'typecheck:queue': {
-        command: 'bun run --filter=@boardsesh/queue typecheck',
+        command: 'pnpm --filter @boardsesh/queue run typecheck',
       },
       'typecheck:queue-runtime': {
-        command: 'bun run --filter=@boardsesh/queue-runtime typecheck',
+        command: 'pnpm --filter @boardsesh/queue-runtime run typecheck',
       },
       'typecheck:offline-sync': {
-        command: 'bun run --filter=@boardsesh/offline-sync typecheck',
+        command: 'pnpm --filter @boardsesh/offline-sync run typecheck',
       },
       'typecheck:queue-react': {
-        command: 'bun run --filter=@boardsesh/queue-react typecheck',
+        command: 'pnpm --filter @boardsesh/queue-react run typecheck',
       },
       'typecheck:board-presence': {
-        command: 'bun run --filter=@boardsesh/board-presence typecheck',
+        command: 'pnpm --filter @boardsesh/board-presence run typecheck',
         dependsOn: ['build:shared'],
       },
       'typecheck:board-presence-react': {
-        command: 'bun run --filter=@boardsesh/board-presence-react typecheck',
+        command: 'pnpm --filter @boardsesh/board-presence-react run typecheck',
         dependsOn: ['build:shared'],
       },
       'typecheck:playlists-react': {
-        command: 'bun run --filter=@boardsesh/playlists-react typecheck',
+        command: 'pnpm --filter @boardsesh/playlists-react run typecheck',
       },
       'typecheck:board-react': {
-        command: 'bun run --filter=@boardsesh/board-react typecheck',
+        command: 'pnpm --filter @boardsesh/board-react run typecheck',
       },
       'typecheck:create-climb-react': {
-        command: 'bun run --filter=@boardsesh/create-climb-react typecheck',
+        command: 'pnpm --filter @boardsesh/create-climb-react run typecheck',
       },
       'typecheck:party-profile': {
-        command: 'bun run --filter=@boardsesh/party-profile typecheck',
+        command: 'pnpm --filter @boardsesh/party-profile run typecheck',
       },
       'typecheck:watch-pairing': {
-        command: 'bun run --filter=@boardsesh/watch-pairing typecheck',
+        command: 'pnpm --filter @boardsesh/watch-pairing run typecheck',
       },
       'typecheck:analytics': {
-        command: 'bun run --filter=@boardsesh/analytics typecheck',
+        command: 'pnpm --filter @boardsesh/analytics run typecheck',
       },
       'typecheck:pr-body': {
-        command: 'bun run --filter=@boardsesh/pr-body typecheck',
+        command: 'pnpm --filter @boardsesh/pr-body run typecheck',
       },
       'typecheck:static-assets': {
-        command: 'bun run --filter=@boardsesh/static-assets typecheck',
+        command: 'pnpm --filter @boardsesh/static-assets run typecheck',
       },
       'typecheck:climb-actions': {
-        command: 'bun run --filter=@boardsesh/climb-actions typecheck',
+        command: 'pnpm --filter @boardsesh/climb-actions run typecheck',
       },
       'typecheck:key-value-storage': {
-        command: 'bun run --filter=@boardsesh/key-value-storage typecheck',
+        command: 'pnpm --filter @boardsesh/key-value-storage run typecheck',
       },
       'typecheck:board-config': {
-        command: 'bun run --filter=@boardsesh/board-config typecheck',
+        command: 'pnpm --filter @boardsesh/board-config run typecheck',
       },
       'typecheck:board-render': {
-        command: 'bun run --filter=@boardsesh/board-render typecheck',
+        command: 'pnpm --filter @boardsesh/board-render run typecheck',
         dependsOn: ['build:constants'],
       },
       'typecheck:board-art-geometry': {
-        command: 'bun run --filter=@boardsesh/board-art-geometry typecheck',
+        command: 'pnpm --filter @boardsesh/board-art-geometry run typecheck',
         dependsOn: ['build:constants'],
       },
       'typecheck:play-view': {
-        command: 'bun run --filter=@boardsesh/play-view typecheck',
+        command: 'pnpm --filter @boardsesh/play-view run typecheck',
       },
       'typecheck:playback-react': {
-        command: 'bun run --filter=@boardsesh/playback-react typecheck',
+        command: 'pnpm --filter @boardsesh/playback-react run typecheck',
         dependsOn: ['build:constants'],
       },
       'typecheck:profile-stats': {
-        command: 'bun run --filter=@boardsesh/profile-stats typecheck',
+        command: 'pnpm --filter @boardsesh/profile-stats run typecheck',
         dependsOn: ['build:constants'],
       },
       'typecheck:playlist-generator': {
-        command: 'bun run --filter=@boardsesh/playlist-generator typecheck',
+        command: 'pnpm --filter @boardsesh/playlist-generator run typecheck',
       },
       'typecheck:climb-filters': {
-        command: 'bun run --filter=@boardsesh/climb-filters typecheck',
+        command: 'pnpm --filter @boardsesh/climb-filters run typecheck',
         dependsOn: ['codegen'],
       },
       'typecheck:kiosk': {
-        command: 'bun run --filter=@boardsesh/kiosk typecheck',
+        command: 'pnpm --filter @boardsesh/kiosk run typecheck',
       },
       'typecheck:i18n': {
-        command: 'bun run --filter=@boardsesh/i18n typecheck',
+        command: 'pnpm --filter @boardsesh/i18n run typecheck',
       },
       'typecheck:email': {
-        command: 'bun run --filter=@boardsesh/email typecheck',
+        command: 'pnpm --filter @boardsesh/email run typecheck',
       },
       'typecheck:graphql': {
-        command: 'bun run --filter=@boardsesh/graphql typecheck',
+        command: 'pnpm --filter @boardsesh/graphql run typecheck',
         dependsOn: ['codegen'],
       },
       'typecheck:graphql-client': {
-        command: 'bun run --filter=@boardsesh/graphql-client typecheck',
+        command: 'pnpm --filter @boardsesh/graphql-client run typecheck',
       },
       'typecheck:mobile': {
-        command: 'bun run --filter=@boardsesh/mobile typecheck',
+        command: 'pnpm --filter @boardsesh/mobile run typecheck',
         dependsOn: ['build:shared', 'build:constants', 'mobile:web-runtime:install'],
       },
       'typecheck:kilter': {
-        command: 'bun run --filter=@boardsesh/kilter-sync typecheck',
+        command: 'pnpm --filter @boardsesh/kilter-sync run typecheck',
         dependsOn: ['build:kilter'],
       },
       'typecheck:aurora': {
-        command: 'bun run --filter=@boardsesh/aurora-sync typecheck',
+        command: 'pnpm --filter @boardsesh/aurora-sync run typecheck',
         dependsOn: ['build:aurora'],
       },
       'typecheck:location-sync': {
-        command: 'bun run --filter=@boardsesh/location-sync typecheck',
+        command: 'pnpm --filter @boardsesh/location-sync run typecheck',
         dependsOn: ['build:location-sync'],
       },
       'typecheck:moonboard-sync': {
-        command: 'bun run --filter=@boardsesh/moonboard-sync typecheck',
+        command: 'pnpm --filter @boardsesh/moonboard-sync run typecheck',
         dependsOn: ['build:moonboard-sync'],
       },
       'typecheck:sync-runtime': {
-        command: 'bun run --filter=@boardsesh/sync-runtime typecheck',
+        command: 'pnpm --filter @boardsesh/sync-runtime run typecheck',
         dependsOn: ['build:sync-runtime'],
       },
       // The eight `build:*` entries in this list stand in for the `typecheck:*`
@@ -860,7 +864,7 @@ export default defineConfig({
 
       // --- Mobile validation ---
       'mobile:web-runtime:install': {
-        command: 'bun install --cwd packages/mobile/web-runtime --frozen-lockfile',
+        command: 'pnpm --dir packages/mobile/web-runtime install --frozen-lockfile',
         cache: false,
       },
       'check:mobile-native-deps': {
@@ -1047,12 +1051,12 @@ export default defineConfig({
         cache: false,
       },
       'dev:backend': {
-        command: 'bun run --filter=boardsesh-backend dev',
+        command: 'pnpm --filter boardsesh-backend run dev',
         dependsOn: ['db:up'],
         cache: false,
       },
       'dev:web': {
-        command: 'bun run --filter=@boardsesh/web dev',
+        command: 'pnpm --filter @boardsesh/web run dev',
         dependsOn: ['db:up'],
         cache: false,
       },
@@ -1064,7 +1068,7 @@ export default defineConfig({
 
       // --- E2E testing ---
       'test:e2e': {
-        command: 'TEST_USER_EMAIL=test@boardsesh.com TEST_USER_PASSWORD=test bun run --filter=@boardsesh/web test:e2e',
+        command: 'TEST_USER_EMAIL=test@boardsesh.com TEST_USER_PASSWORD=test pnpm --filter @boardsesh/web run test:e2e',
         dependsOn: ['db:up'],
         cache: false,
       },
@@ -1100,7 +1104,7 @@ export default defineConfig({
       // PLAYWRIGHT_TEST_BASE_URL set — the config requires it and says so.
       'smoke:app-boot': {
         command:
-          'cd packages/web && PLAYWRIGHT_TEST_BASE_URL=https://app.boardsesh.com bunx playwright test --config=playwright.production.config.ts',
+          'cd packages/web && PLAYWRIGHT_TEST_BASE_URL=https://app.boardsesh.com vp exec playwright test --config=playwright.production.config.ts',
         cache: false,
       },
     },

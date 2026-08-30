@@ -17,10 +17,10 @@
  * Screenshots are saved to e2e/screenshots/layouts/.
  *
  * Run:
- *   bunx playwright test e2e/layout-screenshots.spec.ts
+ *   vp exec playwright test e2e/layout-screenshots.spec.ts
  *
  * Prerequisites:
- *   - Dev server running (or use `bun run test:e2e:setup` first)
+ *   - Dev server running (or use `vp run test:e2e:setup` first)
  */
 import { test, expect } from '@playwright/test';
 import path from 'path';

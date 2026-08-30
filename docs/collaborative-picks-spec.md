@@ -122,7 +122,7 @@ INDEX (sessionId, climbUuid)
 Append-only. `boardSends` query reads `DISTINCT ON (climb_uuid)` ordered by
 `created_at DESC` for the dedup'd history view.
 
-Migrations via `bunx drizzle-kit generate` from `packages/db/`. The journal
+Migrations via `vp exec drizzle-kit generate` from `packages/db/`. The journal
 update is automatic (CLAUDE.md: "Never manually create migration SQL files").
 
 ### GraphQL schema (`packages/shared-schema/src/schema/queue.ts`)
@@ -488,7 +488,7 @@ Schema / DB:
 - `packages/db/src/schema/app/session-picks.ts` (new)
 - `packages/db/src/schema/app/session-sends.ts` (new)
 - `packages/db/src/schema/app/index.ts` (re-export)
-- `packages/db/drizzle/...` (generated via `bunx drizzle-kit generate`)
+- `packages/db/drizzle/...` (generated via `vp exec drizzle-kit generate`)
 
 Shared schema:
 
