@@ -10,6 +10,7 @@ import { MarqueeText } from '../MarqueeText';
 import { DrawerHeader } from '../DrawerHeader';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
 import { iosSystemColors } from '../../theme/ios-colors';
+import { WALL_STATE_PILL_TOUCH_HEIGHT } from '../../theme/layout';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 
 type PlayDrawerHeaderProps = {
@@ -32,7 +33,8 @@ type PlayDrawerHeaderProps = {
   /** Climb characteristics; no-match and MoonBoard method_* tokens render as glyphs/labels. */
   characteristics?: string[] | null;
   /** Left-aligned element on the name's row (e.g. the on-wall status). The header
-   *  balances both flanks so the name stays centered. */
+   *  balances both flanks so the name stays centered. The swipe peek passes a
+   *  reserve-only copy so the incoming header matches this one exactly. */
   leading?: ReactNode;
   /** Long-press handler on the name (copies it to the clipboard). When omitted the
    *  name is a plain, non-interactive label — used for the swipe "peek" header. */
@@ -67,6 +69,12 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   return (
     <DrawerHeader
       leading={leading}
+      // Reserve the wall-state pill's 44pt touch box unconditionally. The pill
+      // comes and goes with the wall (and the swipe peek carries only an
+      // invisible copy), so without a floor the header would breathe 64↔68pt on
+      // every change — visibly stepping the name and its attribute glyphs, and
+      // resizing the board art below inside the fixed-height first screen.
+      minRowHeight={WALL_STATE_PILL_TOUCH_HEIGHT}
       center={
         <>
           <View style={styles.nameRow}>

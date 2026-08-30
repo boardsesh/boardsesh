@@ -21,6 +21,14 @@ type DrawerHeaderProps = {
    *  stays centered regardless of the trailing element's width. */
   trailing?: ReactNode;
   trailingMinWidth?: number;
+  /**
+   * Floor for the flanked row's height. Pass it when the leading slot can come
+   * and go (the play drawer's wall-state pill) so the header keeps ONE height
+   * whether the slot is filled or empty: without it the row is as tall as its
+   * tallest child, so a 44pt pill beside a ~40pt centre column grows the whole
+   * header — and, in a fixed-height parent, shrinks whatever sits below it.
+   */
+  minRowHeight?: number;
 };
 
 /**
@@ -36,6 +44,7 @@ export const DrawerHeader = memo(function DrawerHeader({
   leading,
   trailing,
   trailingMinWidth = DEFAULT_TRAILING_MIN_WIDTH,
+  minRowHeight,
 }: DrawerHeaderProps) {
   const [trailingWidth, setTrailingWidth] = useState(trailingMinWidth);
   const [leadingWidth, setLeadingWidth] = useState(0);
@@ -60,7 +69,7 @@ export const DrawerHeader = memo(function DrawerHeader({
 
   return (
     <View style={styles.container}>
-      <View style={styles.headerRow}>
+      <View style={[styles.headerRow, minRowHeight != null && { minHeight: minRowHeight }]}>
         {hasLeading ? (
           <View style={[styles.side, { width: sideWidth }]}>
             <View style={styles.sideMeasure} onLayout={handleLeadingLayout}>

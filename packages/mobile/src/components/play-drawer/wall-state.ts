@@ -8,9 +8,11 @@
  * render test impractical, which is exactly why the drawer's other decisions
  * (`play-drawer-navigation.ts`) live in pure modules too.
  *
- * The whole feature keys on DISPLAYED-EQUALS-WALL, never on who holds the
- * Bluetooth link: what the climber sees on screen versus what is physically lit
- * is the only thing the chrome is allowed to claim.
+ * Which climb the chrome names keys on DISPLAYED-EQUALS-WALL, never on who holds
+ * the Bluetooth link: what the climber sees on screen versus what is physically
+ * lit is the only thing the chrome is allowed to claim. Whether a wall is
+ * REACHABLE at all is the separate `wallDriven` question — a promise about the
+ * next swipe, and the one thing the link is allowed to answer.
  */
 
 /**
@@ -40,10 +42,16 @@ export type WallPillStateInput = {
   browseLatchActive: boolean;
   /** The next swipe writes the shared queue / lights the wall. */
   navigationCommits: boolean;
-  /** In a shared (party) session, so navigation has an audience even with no BLE link. */
-  inSharedSession: boolean;
-  /** This device holds the Bluetooth link to the board. */
-  bleConnected: boolean;
+  /**
+   * A wall is genuinely being driven: this device holds the Bluetooth link, or a
+   * member of this session does. Fed from `useLightbulbControl().lit`, so the
+   * pill and the lightbulb can never disagree about whether a wall is reachable.
+   *
+   * Deliberately NOT "a session exists". The Start button creates a session solo
+   * (`use-session-commands.ts`), so keying on `sessionId != null` promised "your
+   * next climb goes up on the wall" to a climber with nothing connected at all.
+   */
+  wallDriven: boolean;
 };
 
 /**
@@ -54,10 +62,10 @@ export type WallPillStateInput = {
  * carrying the latch. The pill is a statement about the wall, not about how you
  * got here.
  *
- * `live` needs stakes — a known lit climb, a shared session, or this device's
- * own BLE link. Plain solo with none of those returns `null`: there is nothing
- * to promise, so the slot stays empty rather than shipping a badge that means
- * nothing. The moment stakes exist the pill appears and stays for the session.
+ * `live` needs stakes — a known lit climb, or a wall someone is actually driving
+ * (this device's own BLE link, or a session member's). Plain solo with neither
+ * returns `null`: there is nothing to promise, so the slot stays empty rather
+ * than shipping a badge that means nothing.
  */
 export function resolveWallPillState({
   isAnonymous,
@@ -65,13 +73,12 @@ export function resolveWallPillState({
   wallClimbUuid,
   browseLatchActive,
   navigationCommits,
-  inSharedSession,
-  bleConnected,
+  wallDriven,
 }: WallPillStateInput): WallPillState {
   if (isAnonymous) return null;
   if (wallClimbUuid != null && displayedClimbUuid === wallClimbUuid) return 'onWall';
   if (browseLatchActive) return 'browsing';
-  if (navigationCommits && (wallClimbUuid != null || inSharedSession || bleConnected)) return 'live';
+  if (navigationCommits && (wallClimbUuid != null || wallDriven)) return 'live';
   return null;
 }
 
@@ -90,7 +97,7 @@ export type CommitBarMode = 'actions' | 'commit';
 
 /**
  * Which label the filled commit button wears. With no wall reachable at all —
- * no BLE link, no session, no known lit climb (the plain #4640 / logbook
+ * nobody driving a wall and no known lit climb (the plain #4640 / logbook
  * preview) — it falls back to "Set active" so the button never promises a
  * lighting it cannot do.
  */
@@ -122,8 +129,8 @@ export type CommitBarModelInput = {
   wallClimbUuid: string | null;
   /** A busy-wall confirm has been armed by a first commit tap (PR A2). */
   confirmArmed: boolean;
-  inSharedSession: boolean;
-  bleConnected: boolean;
+  /** A wall is genuinely being driven — see {@link WallPillStateInput.wallDriven}. */
+  wallDriven: boolean;
 };
 
 /**
@@ -154,11 +161,9 @@ export function resolveCommitBarModel({
   committedHeadUuid,
   wallClimbUuid,
   confirmArmed,
-  inSharedSession,
-  bleConnected,
+  wallDriven,
 }: CommitBarModelInput): CommitBarModel {
-  const commitLabel: CommitButtonLabel =
-    wallClimbUuid != null || inSharedSession || bleConnected ? 'putOnWall' : 'setActive';
+  const commitLabel: CommitButtonLabel = wallClimbUuid != null || wallDriven ? 'putOnWall' : 'setActive';
   const displayedIsCommittedHead = displayedClimbUuid != null && displayedClimbUuid === committedHeadUuid;
   const inCommitMode = previewPinned && !isAnonymous && !boardMismatch && !displayedIsCommittedHead;
   if (!inCommitMode) {

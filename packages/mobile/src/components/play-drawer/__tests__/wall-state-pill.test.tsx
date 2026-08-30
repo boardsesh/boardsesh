@@ -13,8 +13,11 @@ type ViewMockProps = { children?: ReactNode; style?: unknown };
 type PressMockProps = {
   children?: ReactNode;
   onPress?: () => void;
+  accessibilityRole?: string;
   accessibilityLabel?: string;
   accessibilityHint?: string;
+  accessibilityElementsHidden?: boolean;
+  pointerEvents?: string;
   android_ripple?: { color: string; borderless: boolean };
   style?: unknown | ((state: { pressed: boolean }) => unknown);
 };
@@ -22,13 +25,26 @@ const styleAttr = (style: unknown) => JSON.stringify(style ?? null);
 
 vi.mock('react-native', () => ({
   View: ({ children, style }: ViewMockProps) => createElement('div', { 'data-style': styleAttr(style) }, children),
-  Pressable: ({ children, onPress, accessibilityLabel, accessibilityHint, android_ripple, style }: PressMockProps) =>
+  Pressable: ({
+    children,
+    onPress,
+    accessibilityRole,
+    accessibilityLabel,
+    accessibilityHint,
+    accessibilityElementsHidden,
+    pointerEvents,
+    android_ripple,
+    style,
+  }: PressMockProps) =>
     createElement(
       'button',
       {
         onClick: onPress,
+        'data-role': accessibilityRole ?? '',
         'data-label': accessibilityLabel,
         'data-hint': accessibilityHint,
+        'data-a11y-hidden': accessibilityElementsHidden ? 'true' : '',
+        'data-pointer-events': pointerEvents ?? '',
         'data-ripple': android_ripple ? JSON.stringify(android_ripple) : '',
         'data-style': styleAttr(typeof style === 'function' ? style({ pressed: false }) : style),
         'data-style-pressed': styleAttr(typeof style === 'function' ? style({ pressed: true }) : style),
@@ -98,12 +114,22 @@ vi.mock('../../../theme/tokens', () => ({
   androidRipple: (color: string, borderless: boolean) => ({ color, borderless }),
 }));
 vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
-vi.mock('../../../theme/layout', () => ({ glassSize: { mini: 32, inline: 44 }, WALL_LIVE_DOT_SIZE: 10 }));
+vi.mock('../../../theme/layout', () => ({
+  glassSize: { mini: 32, inline: 44 },
+  WALL_LIVE_DOT_SIZE: 10,
+  WALL_STATE_PILL_TOUCH_HEIGHT: 44,
+}));
 
 import { WallStatePill } from '../WallStatePill';
 
-const renderPill = (props: Partial<{ state: 'onWall' | 'live' | 'browsing' }> = {}) =>
-  render(createElement(WallStatePill, { state: props.state ?? 'browsing', onPress: vi.fn() }));
+const renderPill = (props: Partial<{ state: 'onWall' | 'live' | 'browsing'; reserveOnly: boolean }> = {}) =>
+  render(
+    createElement(WallStatePill, {
+      state: props.state ?? 'browsing',
+      onPress: vi.fn(),
+      reserveOnly: props.reserveOnly,
+    }),
+  );
 
 const pill = (container: HTMLElement) => container.querySelector('button') as HTMLElement;
 /** Serialised styles of every view, for the handful of assertions about colour/size. */
@@ -203,5 +229,38 @@ describe('WallStatePill', () => {
     expect(button.getAttribute('data-ripple')).toContain('#16111F');
     expect(button.getAttribute('data-style-pressed')).toContain('"opacity":0.6');
     expect(button.getAttribute('data-style')).not.toContain('"opacity":0.6');
+  });
+
+  // The swipe peek renders this copy so its header measures the same leading
+  // flank as the header sliding out behind it — that parity is what stops the
+  // climb name and its attribute glyphs stepping mid-swipe. It must hold the
+  // space and nothing else: no tap, no words, nothing for a screen reader.
+  describe('reserveOnly', () => {
+    it("keeps the real pill's footprint so the reserved flank measures true", () => {
+      const visible = renderPill({ state: 'live' });
+      const reserved = renderPill({ state: 'live', reserveOnly: true });
+
+      // Same tree, same intrinsic size — a fixed-width spacer could not track a
+      // translated label ('Live' / 'En vivo' / 'En direct' all differ).
+      expect(reserved.container.textContent).toBe(visible.container.textContent);
+      expect(pill(reserved.container).getAttribute('data-style')).toContain('"height":44');
+      expect(pill(reserved.container).getAttribute('data-style')).toContain('"opacity":0');
+    });
+
+    it('claims nothing: untappable, unlabelled, hidden from assistive tech', () => {
+      const onPress = vi.fn();
+      const { container } = render(
+        createElement(WallStatePill, { state: 'live' as const, onPress, reserveOnly: true }),
+      );
+      const button = pill(container);
+
+      button.click();
+      expect(onPress).not.toHaveBeenCalled();
+      expect(button.getAttribute('data-role')).toBe('');
+      expect(button.getAttribute('data-label')).toBeNull();
+      expect(button.getAttribute('data-a11y-hidden')).toBe('true');
+      expect(button.getAttribute('data-pointer-events')).toBe('none');
+      expect(button.getAttribute('data-ripple')).toBe('');
+    });
   });
 });
