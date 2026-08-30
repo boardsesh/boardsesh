@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { findActiveBoardsBySerial, findChosenBoardForSerial } from '../graphql/resolvers/board-presence/shared';
 import { socialBoardQueries } from '../graphql/resolvers/social/boards';
+import { boardPresenceMutations } from '../graphql/resolvers/board-presence/mutations';
+import { seedAuroraCatalogFixtures } from './helpers/board-catalog-fixture';
 
 /**
  * Aurora runs a SEPARATE serial sequence per board app, so a Kilter `#12345`
@@ -213,5 +215,75 @@ describe('boardsBySerialNumbers — advertised board type scoping', () => {
     const boards = await socialBoardQueries.boardsBySerialNumbers(null, { serialNumbers: [SHARED_SERIAL] }, anonCtx());
 
     expect(boards.map((board) => board.boardType).sort()).toEqual(['kilter', 'tension']);
+  });
+});
+
+describe('a cross-type connect never mints a board of the route type', () => {
+  // "Connect anyway" in the picker lets a climber attach a controller that
+  // doesn't match the setup they're on. The serial is then unknown for the
+  // advertised type, and the bind/create fallback would use the ROUTE's config
+  // — stamping a Tension serial onto a new Kilter board and routing every later
+  // tick and presence event there.
+  const authCtx = () =>
+    ({ connectionId: 'cross-type-conn', isAuthenticated: true, userId: OWNER }) as ConnectionContext;
+
+  // The create path validates against the relational catalog, so the route has
+  // to name a config that actually exists.
+  const kilterRoute = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2' };
+  let cleanupCatalog: () => Promise<void> = async () => {};
+
+  beforeAll(async () => {
+    cleanupCatalog = await seedAuroraCatalogFixtures([
+      {
+        boardType: 'kilter',
+        productId: 2_100_412_901,
+        layoutId: 1,
+        sizeId: 10,
+        setIds: [1, 2],
+        associationIdBase: 2_100_412_901,
+      },
+    ]);
+  });
+
+  afterAll(async () => {
+    await cleanupCatalog();
+  });
+
+  it('returns no board and creates nothing when the controller is another type', async () => {
+    const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+      null,
+      { serial: SHARED_SERIAL, ...kilterRoute, advertisedBoardType: 'tension' },
+      authCtx(),
+    );
+
+    expect(result.board).toBeNull();
+    expect(result.candidates).toEqual([]);
+
+    const [row] = await db.execute(sql`SELECT count(*)::int AS count FROM user_boards`);
+    expect(Number((row as { count: number }).count)).toBe(0);
+  });
+
+  it('still binds normally when the controller matches the route', async () => {
+    const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+      null,
+      { serial: SHARED_SERIAL, ...kilterRoute, advertisedBoardType: 'kilter' },
+      authCtx(),
+    );
+
+    expect(result.board?.boardType).toBe('kilter');
+  });
+
+  it('routes to an existing board of the advertised type instead of refusing', async () => {
+    // The refusal is only for "nothing carries this serial in that type". A real
+    // Tension board on the serial must still win, even from a Kilter route.
+    const tension = await insertBoard({ boardType: 'tension', name: 'Benchmark Tension', serial: SHARED_SERIAL });
+
+    const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+      null,
+      { serial: SHARED_SERIAL, ...kilterRoute, advertisedBoardType: 'tension' },
+      authCtx(),
+    );
+
+    expect(result.board?.boardId).toBe(tension.id);
   });
 });

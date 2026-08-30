@@ -335,6 +335,22 @@ async function resolveEmptySerialPlan(
       return { kind: 'retry' };
     }
 
+    // Nothing carries this serial. Binding or creating uses `config`, which is
+    // the ROUTE the climber is on — fine when that is also what connected, but
+    // not when the controller announced a different board type. That happens on
+    // the picker's "Connect anyway" path: connecting a Tension box while on a
+    // Kilter setup would otherwise stamp the Tension serial onto a Kilter board
+    // and route every later tick and presence event there.
+    //
+    // We can't create the right board either: `config` carries the route's
+    // layout/size/sets, which describe nothing on the connected wall. So bind
+    // nothing and say so. The client treats an empty candidate list as "no
+    // board" and simply skips presence for this connection — the wall still
+    // lights up, it just isn't attributed to a board.
+    if (advertisedBoardType && advertisedBoardType !== config.boardType) {
+      return { kind: 'candidates', candidates: [] };
+    }
+
     const board = await bindOrCreateOwnBoardForSerial(tx, userId, serial, config);
     return { kind: 'board', board };
   });
@@ -385,18 +401,6 @@ async function resolvePlannedSerialCandidate(
  *  - exactly one board carries it → route there (and remember);
  *  - several boards carry it → return the candidates for the user to pick.
  */
-async function resolveSerialForUser(
-  userId: string,
-  serial: string,
-  config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
-  options: { autoPickMultiple: true; advertisedBoardType?: string | null },
-): Promise<{ kind: 'board'; board: ActivePresenceBoard }>;
-async function resolveSerialForUser(
-  userId: string,
-  serial: string,
-  config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
-  options?: { autoPickMultiple?: false; advertisedBoardType?: string | null },
-): Promise<SerialResolution>;
 async function resolveSerialForUser(
   userId: string,
   serial: string,
@@ -508,6 +512,16 @@ export const boardPresenceMutations = {
       autoPickMultiple: true,
       advertisedBoardType: validAdvertisedBoardType,
     });
+    // Auto-pick never returns candidates for a populated list, so the only way
+    // here is the cross-type refusal above: the controller is not the board type
+    // this route describes, and there is no board to bind. This mutation's
+    // return type is non-null, so say so rather than inventing a board. Old
+    // clients never send an advertised type and so can never reach this.
+    if (resolution.kind !== 'board') {
+      throw new GraphQLError('That controller is a different board type than the setup you are on.', {
+        extensions: { code: 'BOARD_TYPE_MISMATCH' },
+      });
+    }
     await pubsub.stampBoardMembership(String(resolution.board.id), userId);
     return toResolvedBoard(resolution.board);
   },
