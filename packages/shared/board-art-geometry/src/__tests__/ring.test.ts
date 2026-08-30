@@ -312,17 +312,24 @@ describe('the centre gate the write path applies', () => {
     expect(covers(justPast)).toBe(false);
   });
 
-  it('admits every shipped outline, including the five that miss their centre', () => {
+  it('admits every shipped outline, including the two that miss their centre', () => {
     // The gate exists to catch a wrong-hold ring, not to reject art the tracer
     // itself produced: if a shipped outline failed here, that hold could never
     // be corrected.
+    //
+    // It was five while the tracer cut on the COMPOSITE. Three of the five were
+    // the cut rather than the art — the boundary ran between the bolt and the
+    // hold it belongs to because a neighbouring SET's art was stacked on top of
+    // it — and went away when the tracer moved per image. The tolerance stays
+    // where it is: the two that remain are the real case it was calibrated on,
+    // and 4810 still sits 0.03 radii out.
     const geometry = loadBoardArtGeometry({ boardName: 'kilter', layoutId: 1, sizeId: 28 });
     expect(geometry).not.toBeNull();
     const missingTheirCentre = Object.entries(geometry!.outlines)
       .filter(([, outline]) => !pointInRing(outline, 0, 0))
       .map(([placementId]) => Number(placementId))
       .sort((left, right) => left - right);
-    expect(missingTheirCentre).toEqual([1448, 4800, 4806, 4810, 4825]);
+    expect(missingTheirCentre).toEqual([4800, 4810]);
     for (const outline of Object.values(geometry!.outlines)) {
       expect(covers(outline)).toBe(true);
     }
