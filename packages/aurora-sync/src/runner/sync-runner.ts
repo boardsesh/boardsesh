@@ -22,6 +22,7 @@ import {
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import { syncUserData, hasForeignOwnedCircuitPlaylists } from '../sync/user-sync';
 import { syncSharedData } from '../sync/shared-sync';
+import { createAuroraGymUserFetcher } from '../sync/gym-wall-fetcher';
 import {
   AURORA_LOCATION_BOARDS,
   syncAllAuroraBoardLocations,
@@ -788,14 +789,40 @@ export class SyncRunner {
     }
   }
 
+  /**
+   * Reads each gym's real walls from Aurora so the map publishes the wall that
+   * is actually on the gym's floor, rather than the per-board default config.
+   *
+   * Only wired into this explicit command, never the per-cycle shared sync at
+   * `syncSharedForBoard`: the crawl is one authenticated request per gym at ~30
+   * a minute, so several thousand gyms take hours. That belongs on its own
+   * schedule, not inside a sync slot other work waits on.
+   *
+   * With no crawl credentials configured the fetcher is undefined and the sync
+   * behaves exactly as it did before enrichment existed.
+   */
   async syncLocations(
     board: AuroraLocationBoardName | 'all',
   ): Promise<LocationSyncSummary | Record<AuroraLocationBoardName, LocationSyncSummary>> {
     const { db } = this.getClient();
+    const log = this.log.bind(this);
     if (board === 'all') {
-      return syncAllAuroraBoardLocations({ db, log: this.log.bind(this) });
+      type GymUserFetcher = Awaited<ReturnType<typeof createAuroraGymUserFetcher>>;
+      const fetchersByBoard = new Map<AuroraLocationBoardName, GymUserFetcher>();
+      for (const locationBoard of AURORA_LOCATION_BOARDS) {
+        fetchersByBoard.set(locationBoard, await createAuroraGymUserFetcher({ board: locationBoard, log }));
+      }
+      return syncAllAuroraBoardLocations({
+        db,
+        log,
+        fetchGymUser: (locationBoard, pin) => {
+          const fetcher = fetchersByBoard.get(locationBoard);
+          return fetcher ? fetcher(pin) : Promise.resolve(undefined);
+        },
+      });
     }
-    return syncAuroraBoardLocations({ db, board, log: this.log.bind(this) });
+    const fetchGymUser = await createAuroraGymUserFetcher({ board, log });
+    return syncAuroraBoardLocations({ db, board, fetchGymUser, log });
   }
 
   private isLocationBoard(boardType: AuroraBoardName): boardType is AuroraLocationBoardName {

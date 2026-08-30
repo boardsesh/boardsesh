@@ -124,6 +124,52 @@ export function resolveKilterInstallConfig(args: {
   };
 }
 
+/**
+ * Turn one Aurora wall record into a board config, or null when the catalogue
+ * doesn't recognise it.
+ *
+ * The Aurora shape is simpler than Kilter's: `set_ids` arrives as a plain array,
+ * so there is no hold-set bitmask to decode. What this does add is validation —
+ * a wall naming a layout/size/set combination we have no catalogue entry for is
+ * REJECTED rather than coerced, because the whole point of reading real walls is
+ * to stop publishing a plausible-looking guess. `resolveDefaultAuroraLocationConfig`
+ * is the deliberate fallback for gyms we can't read at all.
+ */
+export function resolveAuroraWallConfig(args: {
+  boardType: Exclude<AuroraBoardName, 'kilter'>;
+  layoutId: number;
+  productSizeId: number;
+  setIds: readonly number[];
+  angle: number | null | undefined;
+  isAngleAdjustable: boolean;
+}): BoardInstallConfig | null {
+  const layout = getAllLayouts(args.boardType).find((candidate) => candidate.id === args.layoutId);
+  if (!layout) return null;
+
+  const sizes = getSizesForLayoutId(args.boardType, args.layoutId);
+  if (!sizes.some((size) => size.id === args.productSizeId)) return null;
+
+  const availableSets = getSetsForLayoutAndSize(args.boardType, args.layoutId, args.productSizeId);
+  if (availableSets.length === 0) return null;
+
+  // A wall listing sets that don't belong to its layout+size describes a board
+  // we can't render, so treat it as unknown rather than trusting half of it.
+  const availableSetIds = new Set(availableSets.map((set) => set.id));
+  const wallSetIds = [...new Set(args.setIds)];
+  if (wallSetIds.length === 0 || wallSetIds.some((setId) => !availableSetIds.has(setId))) return null;
+
+  return {
+    boardType: args.boardType,
+    layoutId: args.layoutId,
+    sizeId: args.productSizeId,
+    setIds: setIdsToString(wallSetIds),
+    // Aurora sends 0 for a fixed wall as often as it sends a real angle; only a
+    // positive value is a measurement.
+    angle: args.angle && args.angle > 0 ? args.angle : DEFAULT_ANGLE,
+    isAngleAdjustable: args.isAngleAdjustable,
+  };
+}
+
 export function resolveDefaultAuroraLocationConfig(
   boardType: Exclude<AuroraBoardName, 'kilter'>,
 ): BoardInstallConfig | null {
