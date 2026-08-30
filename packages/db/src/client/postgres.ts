@@ -24,17 +24,7 @@ const fullSchema = { ...schema, ...relations };
 export const DEFAULT_POOL_MAX = 10;
 /** Seconds an idle connection is held when `DB_POOL_IDLE_TIMEOUT_S` is unset. */
 export const DEFAULT_POOL_IDLE_TIMEOUT_S = 30;
-/**
- * Defaults when running on Vercel (`VERCEL` is set in every build and function
- * runtime there). Peak server-side connections scale with instance count ×
- * connections held idle, and a crawl burst scales the instance count — on
- * 2026-08-29 a fleet of lambdas each sitting on 10 idle connections for 30 s
- * exhausted the shared Postgres `max_connections` (Sentry BOARDSESH-FS) and
- * starved the backend with it. Three, not the floor of two, because Fluid-style
- * instances serve concurrent requests that would serialise on a pair. Explicit
- * `DB_POOL_MAX` / `DB_POOL_IDLE_TIMEOUT_S` still win. See
- * docs/db-connectivity.md § pool sizing.
- */
+/** Serverless (Vercel) pool defaults — smaller per-lambda footprint; see docs/db-connectivity.md § pool sizing. */
 export const SERVERLESS_DEFAULT_POOL_MAX = 3;
 export const SERVERLESS_DEFAULT_POOL_IDLE_TIMEOUT_S = 5;
 /**
