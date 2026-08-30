@@ -108,7 +108,7 @@ vi.mock('@/app/lib/board-utils', () => ({
 
 // Body/metadata imports pulled in at module load but never exercised on the
 // redirect path; stub the ones that reach server-only or client code.
-vi.mock('@/app/lib/warm-overlay-cache', () => ({ scheduleOverlayWarming: vi.fn() }));
+vi.mock('@/app/lib/warm-overlay-cache', () => ({ scheduleOgImageWarming: vi.fn() }));
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: vi.fn(async () => ({ t: (key: string) => key, locale: 'en-US' })),
 }));

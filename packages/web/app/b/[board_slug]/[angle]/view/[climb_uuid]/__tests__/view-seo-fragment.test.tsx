@@ -122,7 +122,7 @@ vi.mock('@/app/lib/data/front-door-data.server', () => ({
   getFrontDoorBetaLinks: vi.fn(async () => []),
 }));
 
-vi.mock('@/app/lib/warm-overlay-cache', () => ({ scheduleOverlayWarming: vi.fn() }));
+vi.mock('@/app/lib/warm-overlay-cache', () => ({ scheduleOgImageWarming: vi.fn() }));
 vi.mock('@/app/components/board-renderer/util', () => ({
   // The fixtures here are Kilter, which has no dark art — one composite, no photo layers, so
   // the assertions below keep counting a single board image.

@@ -7,7 +7,7 @@
 //  - Live feed published data → interactive-free SVG (BoardRenderer) with the
 //    lit climb's holds (or bare when the wall is clear).
 //  - No live data yet (SSR + pre-subscription) → the server-rendered raster
-//    from /api/internal/board-render, seeded from boardRecentClimbs at request
+//    from the Railway /render/board endpoint, seeded from boardRecentClimbs at request
 //    time. One cached webp paints far faster on a TV than the multi-image SVG,
 //    and it keeps the server-rendered HTML meaningful.
 

@@ -296,7 +296,7 @@ The board renderer at `packages/board-renderer-wasm/` is a production Rust → W
 
 - **Crate:** `board-renderer-wasm`, edition 2024, `tiny-skia` for 2D rendering
 - **Build:** `wasm-pack build --target web`, output in `pkg/` (~465KB WASM binary)
-- **Backend:** `packages/web/app/api/internal/board-render/route.ts` loads WASM server-side, renders hold overlays, composites with `sharp` to WebP
+- **Backend:** `packages/backend/src/handlers/board-render.ts` serves the Railway renderer; `packages/backend/src/services/board-render.ts` loads WASM, renders hold overlays, and composites with `sharp` to WebP
 - **Frontend:** `packages/web/app/lib/board-render-worker/board-render.worker.ts` runs WASM in a Web Worker with OffscreenCanvas
 - **Types:** `HoldData { id, mirrored_hold_id, cx, cy, r }`, `HoldStateInfo { color }`, frame string parser
 - UniFFI could be added to generate Swift/Kotlin bindings if needed for BLE encoding, but not planned currently

@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ASSETS_CNAME_TARGET,
   ASSETS_HOSTNAME,
+  BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION,
   BOARD_RENDER_CACHE_RULE_DESCRIPTION,
   CACHE_RULE_DESCRIPTION,
   CRAWLER_ALLOW_RULE_DESCRIPTION,
@@ -339,9 +340,9 @@ describe('buildPlan', () => {
     };
     const changes = buildPlan(desired, drifted, { allowZoneSsl: false });
     // Cutover-safe order: the proxied flip is planned last, after SSL + the rules.
-    // Both cache rules are missing (the phase holds only a foreign rule), and the
+    // All three cache rules are missing (the phase holds only a foreign rule), and the
     // WAF phase is already in sync, so it contributes nothing.
-    expect(changes.map((change) => change.resource)).toEqual(['ssl', 'cache-rule', 'cache-rule', 'dns']);
+    expect(changes.map((change) => change.resource)).toEqual(['ssl', 'cache-rule', 'cache-rule', 'cache-rule', 'dns']);
     // The SSL change is blocked without the opt-in flag, but still reported as drift.
     expect(changes.find((change) => change.resource === 'ssl')?.blocked).toBe(true);
     // And the proxied flip is held back while the required SSL change is blocked —
@@ -453,6 +454,9 @@ describe('jsonEqual', () => {
 
 describe('www cost-control rules (#4650)', () => {
   const boardRenderRule = desired.cacheRules.find((rule) => rule.description === BOARD_RENDER_CACHE_RULE_DESCRIPTION);
+  const backendBoardRenderRule = desired.cacheRules.find(
+    (rule) => rule.description === BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION,
+  );
   const allowRule = desired.wafRules.find((rule) => rule.description === CRAWLER_ALLOW_RULE_DESCRIPTION);
   const blockRule = desired.wafRules.find((rule) => rule.description === CRAWLER_BLOCK_RULE_DESCRIPTION);
 
@@ -469,11 +473,22 @@ describe('www cost-control rules (#4650)', () => {
     expect(boardRenderRule?.action_parameters.edge_ttl.mode).toBe('bypass_by_default');
   });
 
-  it('keeps the two cache rules separately addressable', () => {
+  it('caches the canonical and released Live Activity board-render paths on ws', () => {
+    expect(backendBoardRenderRule?.expression).toBe(
+      `(http.host eq "${WS_HOSTNAME}" and (http.request.uri.path eq "/render/board" or http.request.uri.path eq "/api/internal/board-render"))`,
+    );
+    expect(backendBoardRenderRule?.action_parameters.cache).toBe(true);
+    expect(backendBoardRenderRule?.action_parameters.edge_ttl.mode).toBe('bypass_by_default');
+    expect(backendBoardRenderRule?.action_parameters.browser_ttl.mode).toBe('respect_origin');
+  });
+
+  it('keeps all three cache rules separately addressable', () => {
     // Identity is the description marker; a duplicate would make the upsert treat
     // one rule as the other and silently drop it.
     expect(new Set(desired.cacheRules.map((rule) => rule.description)).size).toBe(desired.cacheRules.length);
     expect(CACHE_RULE_DESCRIPTION).not.toBe(BOARD_RENDER_CACHE_RULE_DESCRIPTION);
+    expect(BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION).not.toBe(BOARD_RENDER_CACHE_RULE_DESCRIPTION);
+    expect(BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION).not.toBe(CACHE_RULE_DESCRIPTION);
   });
 
   it('lowercases the user agent in every WAF expression', () => {
@@ -605,6 +620,8 @@ describe('managed rule ordering and foreign-rule safety', () => {
 
 describe('deploy-cloudflare workflow wiring', () => {
   const workflow = readFileSync('.github/workflows/production-deploy.yml', 'utf8');
+  const webJob = workflow.slice(workflow.indexOf('  deploy-web:'), workflow.indexOf('  deploy-production-backend:'));
+  const cloudflareJob = workflow.slice(workflow.indexOf('  deploy-cloudflare:'), workflow.indexOf('  deploy-app-web:'));
   const applyStep = workflow.slice(
     workflow.indexOf('- name: Apply Cloudflare config'),
     workflow.indexOf('deploy-app-web:'),
@@ -657,6 +674,13 @@ describe('deploy-cloudflare workflow wiring', () => {
     expect(prerequisiteStep).toContain('CLOUDFLARE_DEPLOY_RESULT: ${{ needs.deploy-cloudflare.result }}');
     expect(prerequisiteStep).toContain('success|skipped)');
     expect(prerequisiteStep).toContain('exit 1');
+  });
+
+  it('applies Cloudflare independently, then promotes web after both it and Railway succeed', () => {
+    expect(cloudflareJob).toContain('needs: [detect-changes]');
+    expect(cloudflareJob).not.toContain('needs.deploy-production-backend');
+    expect(webJob).toContain('deploy-production-backend, deploy-cloudflare');
+    expect(webJob).toContain("needs.deploy-cloudflare.result == 'success'");
   });
 });
 

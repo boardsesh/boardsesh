@@ -110,6 +110,12 @@ describe('CreativeWork JSON-LD', () => {
     expect(data.dateCreated).toBe('2025-02-03T04:05:06.000Z');
   });
 
+  it('preserves an absolute Railway board image URL', () => {
+    const data = creativeWork({ overlayUrl: 'https://ws.boardsesh.com/render/board?x=1' });
+
+    expect(data.image).toBe('https://ws.boardsesh.com/render/board?x=1');
+  });
+
   it('omits fields it cannot source instead of inventing them', () => {
     const data = creativeWork({
       climb: { ...climb(), setter_username: '  ', created_at: 'not-a-date', published_at: null } as Climb,

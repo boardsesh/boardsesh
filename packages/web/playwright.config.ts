@@ -25,7 +25,7 @@ export default defineConfig({
    * is worth keeping. It was not web DB-pool contention (#4461): `/embed/**`
    * issues zero web-side Postgres statements, it fetches the backend over
    * HTTP. It was not the web event loop being pegged by
-   * `/api/internal/board-render` WASM renders either: in run 31857179523's
+   * `/render/board` WASM renders either: in run 31857179523's
    * shard 7 the same server answered `/embed/gym/...` in 201 ms (a warm Next
    * Data Cache entry, no backend round trip) and `/` in 3.2 s (its own 3 s
    * backend deadline firing) while a `/embed/board/...` request sat stuck

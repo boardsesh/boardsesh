@@ -3,7 +3,6 @@ import 'server-only';
 import type { BoardDetails, Climb, ParsedBoardRouteParameters, SearchRequestPagination } from '@/app/lib/types';
 import { cachedSearchClimbs } from '@/app/lib/db/queries/climbs/search-climbs';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
-import { FRONT_DOOR_WARM_LIMIT, scheduleOverlayWarming } from '@/app/lib/warm-overlay-cache';
 import { buildOverlayPreloadUrls } from '@/app/components/board-renderer/util';
 import { DEFAULT_SEARCH_PARAMS } from '@/app/lib/url-utils';
 import { FRONT_DOOR_PAGE_SIZE } from '@/app/lib/seo/list-page-robots';
@@ -65,16 +64,6 @@ export async function fetchFrontDoorListPage(
     );
     throw error;
   }
-
-  // 50 climbs × one same-origin WASM render each is a 20× invocation amplifier
-  // on the page whose whole purpose is to be crawled. Six covers what a reader
-  // sees before scrolling; the rest warm lazily on demand.
-  scheduleOverlayWarming({
-    boardDetails,
-    climbs: searchResponse.climbs,
-    variant: 'thumbnail',
-    maxImages: FRONT_DOOR_WARM_LIMIT,
-  });
 
   const firstClimb = searchResponse.climbs[0];
   const preloadUrls = buildOverlayPreloadUrls(boardDetails, firstClimb?.frames, true);

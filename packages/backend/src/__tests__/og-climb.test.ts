@@ -10,6 +10,7 @@ import { RateLimitError } from '../utils/rate-limiter';
 // handling, headers, availability) is exercised in isolation; the real service
 // is pulled in via vi.importActual for the render smoke test at the end.
 vi.mock('../services/board-render', () => ({
+  RenderQueueSaturatedError: class RenderQueueSaturatedError extends Error {},
   ensureBoardRendererAvailable: vi.fn(async () => true),
   renderOgClimb: vi.fn(),
   initBoardRenderer: vi.fn(),
@@ -19,7 +20,7 @@ vi.mock('../utils/redis-rate-limiter', () => ({
 }));
 
 import { handleOgClimb } from '../handlers/og-climb';
-import { ensureBoardRendererAvailable, renderOgClimb } from '../services/board-render';
+import { RenderQueueSaturatedError, ensureBoardRendererAvailable, renderOgClimb } from '../services/board-render';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 
 type MockRes = {
@@ -171,6 +172,8 @@ describe('handleOgClimb', () => {
       const res = await run(validParams);
       expect(res.statusCode).toBe(429);
       expect(res.headers['Retry-After']).toBe('30');
+      expect(res.headers['Content-Length']).toBe(Buffer.byteLength(String(res.body)));
+      expect(res.headers['Cache-Control']).toBe('no-store');
       expect(renderOgClimb).not.toHaveBeenCalled();
     });
   });
@@ -263,6 +266,14 @@ describe('handleOgClimb', () => {
       const res = await run(validParams);
       expect(res.statusCode).toBe(500);
     });
+
+    it('sheds a saturated render queue with retryable, non-cacheable 503', async () => {
+      vi.mocked(renderOgClimb).mockRejectedValueOnce(new RenderQueueSaturatedError());
+      const res = await run(validParams);
+      expect(res.statusCode).toBe(503);
+      expect(res.headers['Retry-After']).toBe('5');
+      expect(res.headers['Cache-Control']).toBe('no-store');
+    });
   });
 });
 
@@ -312,6 +323,30 @@ describe('renderOgClimb (real render)', () => {
       service.renderOgClimb(uncachedParams),
     ]);
     expect(concurrentSecond).toBe(concurrentFirst);
+
+    // The canonical plain-board endpoint uses the same renderer and byte cache.
+    // Empty frames are valid here (blank-board previews are a real caller), and
+    // thumbnail/background/dim options are exercised through real WASM + sharp.
+    const boardParams = {
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1,20',
+      frames: '',
+      format: 'webp' as const,
+      thumbnail: true,
+      includeBackground: true,
+      dimBackground: 0.18,
+      isOgVariant: false,
+    };
+    const boardFirst = await service.renderBoardImage(boardParams);
+    expect(boardFirst.contentType).toBe('image/webp');
+    const boardMetadata = await sharp(boardFirst.buffer).metadata();
+    expect(boardMetadata.format).toBe('webp');
+    expect(boardMetadata.width).toBe(200);
+    const boardSecond = await service.renderBoardImage(boardParams);
+    expect(boardSecond.cache).toBe('hit');
+    expect(boardSecond.buffer).toBe(boardFirst.buffer);
   }, 30_000);
 
   // issue #2202: a boardsesh render must never be served under a classic

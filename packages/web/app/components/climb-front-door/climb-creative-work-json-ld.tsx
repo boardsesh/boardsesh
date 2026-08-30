@@ -1,5 +1,5 @@
 import React from 'react';
-import { absoluteLocaleUrl, absoluteUrl } from '@/app/lib/seo/base-url';
+import { absoluteLocaleUrl, SITE_URL } from '@/app/lib/seo/base-url';
 import type { Locale } from '@/app/lib/i18n/config';
 import { JsonLd } from '@/app/lib/seo/json-ld';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
@@ -101,8 +101,9 @@ export default function ClimbCreativeWorkJsonLd({
     // to the `/es` URL, and naming the en-US one here would contradict it.
     url: absoluteLocaleUrl(canonicalClimbUrl, locale),
     ...(description ? { description } : {}),
-    // `/api/internal/board-render` is Googlebot-Image-allowed in app/robots.ts.
-    ...(overlayUrl ? { image: absoluteUrl(overlayUrl) } : {}),
+    // Preserve Railway's absolute image URL; the URL constructor also keeps the
+    // same-origin compatibility path valid in local development and old HTML.
+    ...(overlayUrl ? { image: new URL(overlayUrl, SITE_URL).toString() } : {}),
     ...(setter ? { author: { '@type': 'Person', name: setter } } : {}),
     ...(dateCreated ? { dateCreated } : {}),
     ...(aggregateRating ? { aggregateRating } : {}),

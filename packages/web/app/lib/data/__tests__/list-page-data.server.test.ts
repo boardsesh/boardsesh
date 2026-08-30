@@ -17,13 +17,7 @@ vi.mock('@/app/components/board-renderer/util', () => ({
   ),
 }));
 
-vi.mock('@/app/lib/warm-overlay-cache', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/app/lib/warm-overlay-cache')>();
-  return { ...actual, scheduleOverlayWarming: vi.fn() };
-});
-
 import { cachedSearchClimbs } from '@/app/lib/db/queries/climbs/search-climbs';
-import { FRONT_DOOR_WARM_LIMIT, scheduleOverlayWarming } from '@/app/lib/warm-overlay-cache';
 import { fetchFrontDoorListPage } from '../list-page-data.server';
 import type { ParsedBoardRouteParameters } from '@/app/lib/types';
 
@@ -49,19 +43,14 @@ describe('fetchFrontDoorListPage', () => {
     await expect(fetchFrontDoorListPage(parsedParams, 1)).rejects.toThrow('connection terminated unexpectedly');
   });
 
-  it('caps the overlay warm fan-out at FRONT_DOOR_WARM_LIMIT', async () => {
-    const climbs = Array.from({ length: 50 }, (_, index) => ({ frames: `p1r${index}` }));
+  it('returns preload URLs without starting server-side overlay warms', async () => {
     vi.mocked(cachedSearchClimbs).mockResolvedValue({
-      climbs: climbs as never,
+      climbs: [{ frames: 'p1r12' }] as never,
       hasMore: true,
     });
 
-    await fetchFrontDoorListPage(parsedParams, 1);
+    const result = await fetchFrontDoorListPage(parsedParams, 1);
 
-    // The caller-side half of the cap. The unit test on `warmOverlays` alone
-    // would stay green with the call site unchanged — an inert guard.
-    expect(scheduleOverlayWarming).toHaveBeenCalledWith(
-      expect.objectContaining({ variant: 'thumbnail', maxImages: FRONT_DOOR_WARM_LIMIT }),
-    );
+    expect(result?.preloadUrls).toEqual(['/api/internal/board-render?overlay']);
   });
 });

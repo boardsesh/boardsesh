@@ -115,6 +115,9 @@ describe('useLiveActivity start-failure contract', () => {
     render(<Harness {...activeProps()} />);
 
     await waitFor(() => expect(plugin.startLiveActivitySession).toHaveBeenCalledTimes(1));
+    expect(plugin.startLiveActivitySession).toHaveBeenCalledWith(
+      expect.objectContaining({ serverUrl: 'https://backend.test' }),
+    );
     await waitFor(() => expect(plugin.updateLiveActivity).toHaveBeenCalledTimes(1));
     expect(plugin.updateLiveActivity).toHaveBeenCalledWith(
       expect.objectContaining({ climbName: 'Test Climb', currentIndex: 0, totalClimbs: 1 }),

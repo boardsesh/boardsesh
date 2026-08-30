@@ -121,7 +121,7 @@ vi.mock('@/app/lib/board-slug-utils', () => ({
   boardToRouteParams: vi.fn(() => ({ board_name: 'kilter', layout_id: 1, size_id: 10, set_ids: [1, 20], angle: 40 })),
 }));
 
-vi.mock('@/app/lib/warm-overlay-cache', () => ({ scheduleOverlayWarming: vi.fn() }));
+vi.mock('@/app/lib/warm-overlay-cache', () => ({ scheduleOgImageWarming: vi.fn() }));
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: vi.fn(async () => ({ t: (key: string) => key, locale: 'en-US' })),
 }));

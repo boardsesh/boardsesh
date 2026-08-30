@@ -396,8 +396,14 @@ jobs:
         run: bun run --filter=@boardsesh/db db:migrate
 
   deploy-web:
-    needs: [detect-changes, check-rollback, build-web, migrate]
-    if: always() && needs.detect-changes.outputs.web_changed == 'true' && needs.build-web.result == 'success' && needs.migrate.result == 'success'
+    needs: [detect-changes, check-rollback, build-web, migrate, deploy-production-backend, deploy-cloudflare]
+    if: >-
+      always()
+      && needs.detect-changes.outputs.web_changed == 'true'
+      && needs.build-web.result == 'success'
+      && needs.migrate.result == 'success'
+      && (needs.detect-changes.outputs.backend_changed != 'true' || needs.deploy-production-backend.result == 'success')
+      && (needs.detect-changes.outputs.cloudflare_changed != 'true' || needs.deploy-cloudflare.result == 'success')
     runs-on: ubuntu-latest
     environment: Production
     outputs:
@@ -591,11 +597,12 @@ jobs:
           echo "Railway deployment did not reach SUCCESS in time"
           exit 1
 
-      - name: Verify the live notification schema
+      - name: Verify the live API and board renderer
         if: needs.check-rollback.outputs.active != 'true'
         # Railway can report SUCCESS just before the public edge reaches the new
-        # instance. The bounded retry proves the API shape mobile already ships,
-        # and turns a stale image/schema into notify-failure instead of silence.
+        # instance. The bounded retry proves both the API shape mobile already
+        # ships and the image endpoint www is about to reference, turning a
+        # stale image/schema into notify-failure instead of silence.
         run: node scripts/production-backend-smoke.mjs
 
   # Deploys app.boardsesh.com — the STANDALONE Expo web export (baseUrl `/`)
@@ -612,15 +619,17 @@ jobs:
   # Converges the Cloudflare zone config (infra/cloudflare) on main. Runs only
   # when the desired state or apply tooling changes (or on manual dispatch).
   # Static-asset publication waits for this job when both targets change, so it
-  # cannot validate the public hostname before its DNS record is converged. A
-  # non-zero exit = unapplied drift (e.g. a blocked
-  # zone-SSL change) and should be investigated, not retried blindly.
+  # cannot validate the public hostname before its DNS record is converged. Web
+  # promotion waits independently for both this apply and the live backend smoke.
+  # A non-zero exit = unapplied drift (e.g. a blocked zone-SSL change) and should
+  # be investigated, not retried blindly.
   # The planned OpenNext (Cloudflare Workers) deploy of packages/web will be a
   # sibling job reusing the same Production-environment CLOUDFLARE_API_TOKEN
   # (+ CLOUDFLARE_ACCOUNT_ID) — see docs/cloudflare.md for the token scopes.
   deploy-cloudflare:
     needs: [detect-changes]
-    if: needs.detect-changes.outputs.cloudflare_changed == 'true'
+    if: >-
+      needs.detect-changes.outputs.cloudflare_changed == 'true'
     runs-on: ubuntu-latest
     environment: Production
     steps:
@@ -1058,6 +1067,7 @@ jobs:
         migrate,
         deploy-web,
         deploy-production-backend,
+        deploy-cloudflare,
         deploy-app-web,
       ]
     if: >-
@@ -1077,6 +1087,7 @@ jobs:
           MIGRATE: ${{ needs.migrate.result }}
           DEPLOY_WEB: ${{ needs.deploy-web.result }}
           DEPLOY_BACKEND: ${{ needs.deploy-production-backend.result }}
+          DEPLOY_CLOUDFLARE: ${{ needs.deploy-cloudflare.result }}
           DEPLOY_APP_WEB: ${{ needs.deploy-app-web.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT_SHA: ${{ github.sha }}
@@ -1086,8 +1097,8 @@ jobs:
             exit 0
           fi
           # URL wrapped in <…> so Discord suppresses the inline preview embed.
-          CONTENT=$(printf '🚨 **Production deploy failed** on \`%s\`\n• detect-changes: %s\n• check-rollback: %s\n• sync-static-assets: %s\n• build-web: %s\n• build-backend: %s\n• migrate: %s\n• deploy-web: %s\n• deploy-production-backend: %s\n• deploy-app-web: %s\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$CHECK_ROLLBACK" "$SYNC_STATIC_ASSETS" "$BUILD_WEB" "$BUILD_BACKEND" "$MIGRATE" "$DEPLOY_WEB" "$DEPLOY_BACKEND" "$DEPLOY_APP_WEB" "$RUN_URL")
+          CONTENT=$(printf '🚨 **Production deploy failed** on \`%s\`\n• detect-changes: %s\n• check-rollback: %s\n• sync-static-assets: %s\n• build-web: %s\n• build-backend: %s\n• migrate: %s\n• deploy-web: %s\n• deploy-production-backend: %s\n• deploy-cloudflare: %s\n• deploy-app-web: %s\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$CHECK_ROLLBACK" "$SYNC_STATIC_ASSETS" "$BUILD_WEB" "$BUILD_BACKEND" "$MIGRATE" "$DEPLOY_WEB" "$DEPLOY_BACKEND" "$DEPLOY_CLOUDFLARE" "$DEPLOY_APP_WEB" "$RUN_URL")
           # --fail-with-body surfaces Discord's status + error body (e.g. 429,
           # rotated webhook) in the log instead of failing silently. Don't let a
           # webhook hiccup fail the job — the alert is best-effort.
@@ -1112,6 +1123,7 @@ jobs:
         migrate,
         deploy-web,
         deploy-production-backend,
+        deploy-cloudflare,
         deploy-app-web,
       ]
     # deploy-app-web is both a dependency and a success trigger: a mobile-only
@@ -1125,7 +1137,7 @@ jobs:
       && !contains(needs.*.result, 'failure')
       && !contains(needs.*.result, 'cancelled')
       && (needs.deploy-web.result == 'success' || needs.deploy-production-backend.result == 'success' ||
-      needs.deploy-app-web.result == 'success')
+      needs.deploy-cloudflare.result == 'success' || needs.deploy-app-web.result == 'success')
     runs-on: ubuntu-latest
     environment: Production
     permissions:
@@ -1148,6 +1160,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WEB_RESULT: ${{ needs.deploy-web.result }}
           BACKEND_RESULT: ${{ needs.deploy-production-backend.result }}
+          CLOUDFLARE_RESULT: ${{ needs.deploy-cloudflare.result }}
           APP_WEB_RESULT: ${{ needs.deploy-app-web.result }}
           # A held deploy is a skip, which would otherwise print as "unchanged" —
           # the exact invisibility notify-app-web-held exists to prevent.
@@ -1180,6 +1193,8 @@ jobs:
           if [ "$WEB_RESULT" = "success" ]; then WEB_LINE="deployed"; fi
           BACKEND_LINE="unchanged"
           if [ "$BACKEND_RESULT" = "success" ]; then BACKEND_LINE="deployed"; fi
+          CLOUDFLARE_LINE="unchanged"
+          if [ "$CLOUDFLARE_RESULT" = "success" ]; then CLOUDFLARE_LINE="applied"; fi
           # elif, not a second `if`: an override would let "held" win over a
           # deploy that demonstrably shipped, which is the inversion this line
           # exists to prevent.
@@ -1220,8 +1235,8 @@ jobs:
           fi
 
           # RUN_URL wrapped in <…> so Discord suppresses the inline preview embed.
-          CONTENT=$(printf '✅ **Production deployed** on `%s`\n• web: %s\n• backend: %s\n• app.boardsesh.com: %s%s\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$WEB_LINE" "$BACKEND_LINE" "$APP_WEB_LINE" "$SHIPPED_SECTION" "$RUN_URL")
+          CONTENT=$(printf '✅ **Production deployed** on `%s`\n• web: %s\n• backend: %s\n• Cloudflare: %s\n• app.boardsesh.com: %s%s\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$WEB_LINE" "$BACKEND_LINE" "$CLOUDFLARE_LINE" "$APP_WEB_LINE" "$SHIPPED_SECTION" "$RUN_URL")
           # allowed_mentions.parse=[] blocks @everyone/@here/role/user pings —
           # critical here because PR titles flow straight into $content.
           jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \

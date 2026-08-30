@@ -106,7 +106,7 @@ test.describe('Layout Screenshots', () => {
       // ── 4. Wait for the front door's board render ──────────────────────────
       // The overlay `<img>` is the page's LCP element and the board art this
       // gallery exists to catch regressions in.
-      const boardImage = page.locator('img[src*="/api/internal/board-render"]').first();
+      const boardImage = page.locator('img[src*="/render/board"], img[src*="/api/internal/board-render"]').first();
       await boardImage.waitFor({ state: 'visible', timeout: 30_000 });
       await expect(page.locator('h1')).toBeVisible();
 

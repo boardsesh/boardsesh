@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const scriptPath = fileURLToPath(import.meta.url);
@@ -16,6 +17,20 @@ const INTROSPECTION_QUERY = `
     }
   }
 `;
+
+function loadBoardRenderVersion() {
+  const generatedModule = readFileSync(
+    new URL('../packages/shared/board-render/src/generated/render-version.ts', import.meta.url),
+    'utf8',
+  );
+  const versionMatch = generatedModule.match(/BOARD_RENDER_VERSION = '([0-9a-f]{8,64})'/);
+  if (!versionMatch) {
+    throw new Error('could not read BOARD_RENDER_VERSION from the generated renderer version module');
+  }
+  return versionMatch[1];
+}
+
+const BOARD_RENDER_VERSION = loadBoardRenderVersion();
 
 function parseGraphqlResponse(responseText) {
   let payload;
@@ -66,6 +81,29 @@ function graphqlEndpoint(baseUrl) {
   return parsedUrl.toString();
 }
 
+function boardRenderEndpoint(baseUrl, cacheBuster = Date.now(), renderVersion = BOARD_RENDER_VERSION) {
+  const parsedUrl = new URL(baseUrl);
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    throw new Error(`--base must use http or https (received ${parsedUrl.protocol})`);
+  }
+  parsedUrl.pathname = '/render/board';
+  const renderSearchParams = new URLSearchParams({
+    board_name: 'kilter',
+    layout_id: '1',
+    size_id: '10',
+    set_ids: '1,20',
+    frames: '',
+    thumbnail: '1',
+    include_background: '1',
+    format: 'webp',
+    smoke: String(cacheBuster),
+  });
+  if (renderVersion !== null) renderSearchParams.set('v', renderVersion);
+  parsedUrl.search = renderSearchParams.toString();
+  parsedUrl.hash = '';
+  return parsedUrl.toString();
+}
+
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -110,6 +148,71 @@ async function checkBackendSchemaOnce({
   }
 }
 
+async function checkBoardRenderOnce({
+  baseUrl = DEFAULT_BASE_URL,
+  fetchImpl = globalThis.fetch,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  cacheBuster = Date.now(),
+  renderVersion = BOARD_RENDER_VERSION,
+}) {
+  requirePositiveInteger('timeoutMs', timeoutMs);
+  const endpoint = boardRenderEndpoint(baseUrl, cacheBuster, renderVersion);
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), timeoutMs);
+
+  try {
+    const response = await fetchImpl(endpoint, {
+      method: 'GET',
+      cache: 'no-store',
+      headers: {
+        Accept: 'image/webp',
+        'Cache-Control': 'no-cache, no-store, max-age=0',
+        Pragma: 'no-cache',
+      },
+      signal: abortController.signal,
+    });
+    if (!response.ok) {
+      const responseText = await response.text();
+      throw new Error(`board render returned HTTP ${response.status}: ${responseText.slice(0, 300)}`);
+    }
+
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.toLowerCase().startsWith('image/webp')) {
+      throw new Error(`board render returned unexpected Content-Type: ${contentType || '(missing)'}`);
+    }
+    const cacheControl = response.headers.get('cache-control') ?? '';
+    if (!cacheControl.includes('public')) {
+      throw new Error(`board render returned unexpected Cache-Control: ${cacheControl || '(missing)'}`);
+    }
+    if (renderVersion === null) {
+      if (cacheControl.includes('immutable') || !cacheControl.includes('max-age=86400')) {
+        throw new Error(`unversioned board render returned unexpected Cache-Control: ${cacheControl || '(missing)'}`);
+      }
+    } else if (!cacheControl.includes('immutable')) {
+      throw new Error(`versioned board render returned unexpected Cache-Control: ${cacheControl || '(missing)'}`);
+    }
+    if (!response.headers.get('x-railway-request-id')) {
+      throw new Error('board render response is missing x-railway-request-id');
+    }
+    if (response.headers.get('x-vercel-cache')) {
+      throw new Error('board render unexpectedly passed through a Vercel origin');
+    }
+
+    const imageBytes = new Uint8Array(await response.arrayBuffer());
+    if (
+      imageBytes.length < 12 ||
+      Buffer.from(imageBytes.subarray(0, 4)).toString('ascii') !== 'RIFF' ||
+      Buffer.from(imageBytes.subarray(8, 12)).toString('ascii') !== 'WEBP'
+    ) {
+      throw new Error(`board render returned invalid WebP bytes (${imageBytes.length} bytes)`);
+    }
+
+    return { byteLength: imageBytes.length, contentType, cacheControl };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function runBackendSmoke({
   baseUrl = DEFAULT_BASE_URL,
   attempts = DEFAULT_ATTEMPTS,
@@ -127,8 +230,23 @@ async function runBackendSmoke({
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const fieldNames = await checkBackendSchemaOnce({ baseUrl, fetchImpl, timeoutMs });
+      const versionedRenderResult = await checkBoardRenderOnce({
+        baseUrl,
+        fetchImpl,
+        timeoutMs,
+        cacheBuster: `${Date.now()}-${attempt}`,
+      });
+      const dailyRenderResult = await checkBoardRenderOnce({
+        baseUrl,
+        fetchImpl,
+        timeoutMs,
+        cacheBuster: `${Date.now()}-${attempt}-daily`,
+        renderVersion: null,
+      });
       log.info(
-        `Production backend schema smoke passed on attempt ${attempt}: ${REQUIRED_GROUPED_NOTIFICATION_FIELDS.join(', ')}`,
+        `Production backend smoke passed on attempt ${attempt}: ${REQUIRED_GROUPED_NOTIFICATION_FIELDS.join(', ')}; ` +
+          `versioned board render ${versionedRenderResult.byteLength} bytes (${versionedRenderResult.contentType}); ` +
+          `daily board render ${dailyRenderResult.byteLength} bytes`,
       );
       return fieldNames;
     } catch (error) {
@@ -187,6 +305,7 @@ if (process.argv[1] === scriptPath) {
 }
 
 export {
+  BOARD_RENDER_VERSION,
   DEFAULT_ATTEMPTS,
   DEFAULT_BASE_URL,
   DEFAULT_RETRY_DELAY_MS,
@@ -194,6 +313,8 @@ export {
   INTROSPECTION_QUERY,
   REQUIRED_GROUPED_NOTIFICATION_FIELDS,
   assertGroupedNotificationSchema,
+  boardRenderEndpoint,
+  checkBoardRenderOnce,
   checkBackendSchemaOnce,
   graphqlEndpoint,
   parseCliArguments,

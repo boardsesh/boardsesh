@@ -4,7 +4,7 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 import { parseSetIds, toBoardName } from '@boardsesh/board-config';
 import type { BoardConnection } from '../../components/play-drawer/lightbulb-control';
 import { getAuthToken } from '../auth-store';
-import { BACKEND_URL, WEB_BASE_URL } from '../env';
+import { BACKEND_URL } from '../env';
 import {
   startLiveActivitySession,
   endLiveActivitySession,
@@ -288,7 +288,7 @@ export function useLiveActivity({
           if (!isActiveRef.current || generationRef.current !== startGeneration) return undefined;
           return startLiveActivitySession({
             sessionId: sessionIdRef.current ?? `local-${Date.now()}`,
-            serverUrl: WEB_BASE_URL,
+            serverUrl: BACKEND_URL,
             wsUrl: getGraphqlWsUrl(),
             graphqlUrl: getGraphqlHttpUrl(),
             authToken: authTokenRef.current ?? undefined,

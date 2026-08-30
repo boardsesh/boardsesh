@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Manual load harness for `/api/internal/board-render`. NOT wired into CI —
+ * Manual load harness for the backend `/render/board` endpoint. NOT wired into CI —
  * it needs a running server and a few minutes of wall clock.
  *
  * What it answers: does the render path still grow RSS without bound? It fires
@@ -10,7 +10,7 @@
  *   phase 1 — 200 requests, a unique `frames` per request. Nothing can hit the
  *             byte cache, so every request pays a full WASM render + encode and
  *             only the board-photo base is shared. This is the shape that was
- *             OOM-killing the function.
+ *             OOM-killing the former Vercel function.
  *   phase 2 — 200 requests cycling 10 `frames` values, i.e. the steady state a
  *             warm list page produces. Should be almost all byte-cache hits.
  *
@@ -25,7 +25,7 @@
  *   node packages/web/scripts/board-render-memory-harness.mjs
  *
  * Options:
- *   --base <url>        server origin (default http://localhost:3000)
+ *   --base <url>        backend origin (default http://localhost:8080)
  *   --pid <pid>         server pid to sample; auto-detected from the listening
  *                       port when omitted (Linux /proc only)
  *   --requests <n>      requests per phase (default 200)
@@ -45,7 +45,7 @@ const flag = (name, fallback) => {
 };
 const hasFlag = (name) => args.includes(`--${name}`);
 
-const baseUrl = flag('base', 'http://localhost:3000').replace(/\/$/, '');
+const baseUrl = flag('base', 'http://localhost:8080').replace(/\/$/, '');
 const requestsPerPhase = Number(flag('requests', '200'));
 const concurrency = Number(flag('concurrency', '8'));
 const boardName = flag('board', 'kilter');
@@ -71,7 +71,7 @@ function renderUrl(frames) {
     include_background: '1',
   });
   if (thumbnail) params.set('thumbnail', '1');
-  return `${baseUrl}/api/internal/board-render?${params}`;
+  return `${baseUrl}/render/board?${params}`;
 }
 
 /** Read a process's resident set size in MB, or null if it's gone. */
@@ -183,7 +183,7 @@ async function runPhase(label, framesForIndex, total) {
 }
 
 async function main() {
-  const port = Number(new URL(baseUrl).port || 3000);
+  const port = Number(new URL(baseUrl).port || (new URL(baseUrl).protocol === 'https:' ? 443 : 80));
   const pid = Number(flag('pid', '')) || findListeningPid(port);
   if (pid) {
     console.log(`Sampling RSS of pid ${pid} (port ${port}) every ${SAMPLE_INTERVAL_MS}ms`);

@@ -250,7 +250,7 @@ The Expo app reads the backend URL from `EXPO_PUBLIC_BACKEND_URL`. To point
 at your machine over Tailscale:
 
 ```bash
-EXPO_PUBLIC_BACKEND_URL=http://your-machine.tailscale-domain:3000 vp run dev:mobile
+EXPO_PUBLIC_BACKEND_URL=http://your-machine.tailscale-domain:8080 vp run dev:mobile
 ```
 
 The dev server picks up `.boardsesh/qa-notes.md` automatically and exposes
@@ -400,7 +400,7 @@ If you see `0 sent, N failed`, check the [Common Issues](#common-issues) section
 
 For the 2.0 release the thumbnail is the **server-composited** board image, matching the
 legacy Capacitor app (which renders correctly). `ThumbnailFetcher` fetches
-`/api/internal/board-render?...&thumbnail=1&include_background=1` — the server (`sharp`)
+`/api/internal/board-render?...&thumbnail=1&include_background=1` — the Railway backend (`sharp`)
 draws the board photo behind this climb's holds overlay and returns a finished image,
 which `ThumbnailFetcher` writes straight to the App Group `thumbnails/` dir for the widget
 to display. No on-device webp decode or compositing.
