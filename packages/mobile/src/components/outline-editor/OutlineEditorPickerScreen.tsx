@@ -17,6 +17,12 @@ type PickerRow = { key: string; id: number; label: string; detail?: string };
 /**
  * Board → layout → size, then into the canvas.
  *
+ * Plain `.map()` inside a `ScrollView`, deliberately unvirtualized: the three
+ * lists are 8 boards, at most ~14 layouts and at most ~10 sizes, all resolved
+ * synchronously from bundled constants. A FlashList here would cost more than it
+ * saves — see the list rule in docs/react-native-performance.md, which is about
+ * unbounded/remote lists.
+ *
  * Everything the backend's `holdOutlines` query can answer for is listed,
  * including the boards that ship no traced shard at all (Woods): a config with
  * no shard is exactly the one worth hand-drawing, and the editor draws its

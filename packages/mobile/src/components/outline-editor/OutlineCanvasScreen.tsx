@@ -143,6 +143,9 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
 
   const handleHoldTap = useCallback(
     (holdId: number) => {
+      // Reachable: while zoomed the overlay nests inside the pan detector, so a
+      // declined touch reaches the board's hold taps. A tap resolved on the UI
+      // thread can still land on JS just after a stroke started, so drop it.
       if (drawingRef.current) return;
       setSelectedPlacementId(holdId);
       setErrorText(null);
@@ -163,6 +166,12 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
   }, []);
 
   const handleStrokeCancel = useCallback(() => {
+    // Only a stroke that actually STARTED may clear the preview. The overlay
+    // finalizes on every touch it declines too (a finger while only the stylus
+    // draws), and without this guard one of those would wipe the preview of an
+    // already-validated draft while Save stayed armed — you'd store a ring you
+    // could no longer see.
+    if (!drawingRef.current) return;
     drawingRef.current = false;
     draftPointsSV.value = NO_POINTS;
   }, [draftPointsSV]);
@@ -300,7 +309,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
           containerWidthSV={context.containerWidthSV}
           containerHeightSV={context.containerHeightSV}
           boardScale={boardScale}
-          pinchGesture={context.pinchGesture}
+          pinchRef={context.pinchRef}
           onStrokeStart={handleStrokeStart}
           onStrokeEnd={handleStrokeEnd}
           onStrokeCancel={handleStrokeCancel}

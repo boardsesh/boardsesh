@@ -19,6 +19,7 @@ import type {
   RequestGymClaimInput,
   UpsertHoldOutlineOverrideInput,
   DeleteHoldOutlineOverrideInput,
+  HoldOutlineKind,
 } from '@boardsesh/shared-schema';
 import {
   SIMILAR_CLIMBS_QUERY,
@@ -134,6 +135,7 @@ import {
   DELETE_HOLD_OUTLINE_OVERRIDE,
   type GetProfileAdminFlagQueryResponse,
   type HoldOutlinesQueryResponse,
+  type HoldOutlineOverrideRow,
   type UpsertHoldOutlineOverrideMutationResponse,
   type DeleteHoldOutlineOverrideMutationResponse,
 } from '../operations';
@@ -1473,16 +1475,29 @@ export function useUpsertHoldOutlineOverride() {
       );
       return response.upsertHoldOutlineOverride;
     },
-    onSuccess: (_row, input) => {
-      void queryClient.invalidateQueries({
-        queryKey: holdOutlinesQueryKey({
-          boardName: input.boardName,
-          layoutId: input.layoutId,
-          sizeId: input.sizeId,
-        }),
-      });
+    // Splice the returned row into the cache rather than invalidating. The
+    // mutation answers with the stored row, so the cache can be made exact
+    // without a round trip — and a refetch would re-download the config's whole
+    // traced shard set on every single save, which on a big Kilter layout is
+    // thousands of polygons for a one-placement edit.
+    onSuccess: (row, input) => {
+      queryClient.setQueryData<HoldOutlinesQueryResponse>(
+        holdOutlinesQueryKey({ boardName: input.boardName, layoutId: input.layoutId, sizeId: input.sizeId }),
+        (previous) => (previous ? withHoldOutlineOverride(previous, row) : previous),
+      );
     },
   });
+}
+
+/** Replace (or add) one override row, keyed by placement AND kind. */
+function withHoldOutlineOverride(
+  previous: HoldOutlinesQueryResponse,
+  row: HoldOutlineOverrideRow,
+): HoldOutlinesQueryResponse {
+  const others = previous.holdOutlines.overrides.filter(
+    (override) => !(override.placementId === row.placementId && override.kind === row.kind),
+  );
+  return { holdOutlines: { ...previous.holdOutlines, overrides: [...others, row] } };
 }
 
 /**
@@ -1500,14 +1515,26 @@ export function useDeleteHoldOutlineOverride() {
       );
       return response.deleteHoldOutlineOverride;
     },
+    // Drop the row from the cache directly, for the same reason the upsert
+    // splices: a revert must not re-download the whole shard set. `kind` is
+    // optional on the input and defaults to SILHOUETTE server-side, so normalise
+    // before matching or a bare revert would drop nothing.
     onSuccess: (_deleted, input) => {
-      void queryClient.invalidateQueries({
-        queryKey: holdOutlinesQueryKey({
-          boardName: input.boardName,
-          layoutId: input.layoutId,
-          sizeId: input.sizeId,
-        }),
-      });
+      const kind: HoldOutlineKind = input.kind ?? 'SILHOUETTE';
+      queryClient.setQueryData<HoldOutlinesQueryResponse>(
+        holdOutlinesQueryKey({ boardName: input.boardName, layoutId: input.layoutId, sizeId: input.sizeId }),
+        (previous) =>
+          previous
+            ? {
+                holdOutlines: {
+                  ...previous.holdOutlines,
+                  overrides: previous.holdOutlines.overrides.filter(
+                    (override) => !(override.placementId === input.placementId && override.kind === kind),
+                  ),
+                },
+              }
+            : previous,
+      );
     },
   });
 }

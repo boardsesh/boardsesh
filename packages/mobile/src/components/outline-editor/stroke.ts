@@ -66,6 +66,13 @@ export const STROKE_MIN_SAMPLE_BOARD_PX = 0.8;
  */
 export const STROKE_CLOSE_TOLERANCE_BOARD_PX = 3;
 
+/**
+ * Decimal places a stored ring is rounded to. Matches `OUTLINE_DECIMALS` in the
+ * backend's upsert resolver — the two have to agree or the editor previews a
+ * ring the server rewrites.
+ */
+export const OUTLINE_DECIMALS = 4;
+
 /** Why a drawn stroke can't be stored. The editor keeps drawing on any of these. */
 export type StrokeRejection = 'too-few-points' | 'centre-outside' | 'out-of-bounds';
 
@@ -158,10 +165,9 @@ export function flattenRing(points: RingPoint[]): number[] {
 /** Board px → units of a placement's radius, relative to its centre. */
 export function boardRingToRadiusUnits(ring: number[], hold: BoardHoldTarget): number[] {
   const radius = hold.r;
-  const converted: number[] = new Array(ring.length);
+  const converted: number[] = [];
   for (let index = 0; index < ring.length; index += 2) {
-    converted[index] = (ring[index] - hold.cx) / radius;
-    converted[index + 1] = (ring[index + 1] - hold.cy) / radius;
+    converted.push((ring[index] - hold.cx) / radius, (ring[index + 1] - hold.cy) / radius);
   }
   return converted;
 }
@@ -169,10 +175,9 @@ export function boardRingToRadiusUnits(ring: number[], hold: BoardHoldTarget): n
 /** The inverse of {@link boardRingToRadiusUnits} — what the SVG layer draws. */
 export function radiusRingToBoardPx(ring: number[], hold: BoardHoldTarget): number[] {
   const radius = hold.r;
-  const converted: number[] = new Array(ring.length);
+  const converted: number[] = [];
   for (let index = 0; index < ring.length; index += 2) {
-    converted[index] = hold.cx + ring[index] * radius;
-    converted[index + 1] = hold.cy + ring[index + 1] * radius;
+    converted.push(hold.cx + ring[index] * radius, hold.cy + ring[index + 1] * radius);
   }
   return converted;
 }
@@ -193,10 +198,17 @@ export function ringCoversCentre(radiusRing: number[]): boolean {
  * Turn a freehand stroke, already in board px, into a storable ring in radius
  * units — or say why it can't be one.
  *
- * Order is load-bearing: dedupe, close the loop, simplify at the tracer's own
- * BOARD-pixel tolerance, and only then divide through by the placement radius.
- * Simplifying after the divide would apply a 1.6-radii epsilon and collapse
- * every hold to a triangle.
+ * Order is load-bearing twice over.
+ *
+ * Simplification runs in BOARD px, before the divide-through by the placement
+ * radius: the tracer's 1.6 epsilon is quoted in board pixels, and applying it to
+ * a radius-unit ring would collapse every hold to a triangle.
+ *
+ * Rounding runs BEFORE the implicit close, mirroring
+ * `closeRing(roundRing(...))` in the backend's upsert resolver. Rounding to 4
+ * decimals can newly equate a head and tail that differed in the 5th, so closing
+ * first would leave a duplicate point the server then drops — and the editor
+ * would preview a ring one point longer than the one actually stored.
  */
 export function buildOutlineRing(strokeBoardPoints: RingPoint[], hold: BoardHoldTarget): StrokeResult {
   const deduped = dedupeStrokePoints(strokeBoardPoints, STROKE_MIN_SAMPLE_BOARD_PX);
@@ -215,10 +227,9 @@ export function buildOutlineRing(strokeBoardPoints: RingPoint[], hold: BoardHold
   }
   if (simplified.length * 2 > MAX_RING_NUMBERS) return { ok: false, reason: 'too-few-points' };
 
-  const boardRing = closeRing(flattenRing(simplified));
-  if (boardRing.length < MIN_RING_NUMBERS) return { ok: false, reason: 'too-few-points' };
-
-  const radiusRing = roundRing(boardRingToRadiusUnits(boardRing, hold), 4);
+  // Round, THEN close — the server's order (see the note above).
+  const radiusRing = closeRing(roundRing(boardRingToRadiusUnits(flattenRing(simplified), hold), OUTLINE_DECIMALS));
+  if (radiusRing.length < MIN_RING_NUMBERS) return { ok: false, reason: 'too-few-points' };
   if (radiusRing.some((value) => !Number.isFinite(value) || Math.abs(value) > MAX_RING_COORDINATE)) {
     return { ok: false, reason: 'out-of-bounds' };
   }

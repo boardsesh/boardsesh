@@ -53,7 +53,12 @@ vi.mock('react-native-gesture-handler', () => {
       LongPress: createGesture,
       Exclusive: (...gestures: unknown[]) => ({ gestures }),
     },
-    GestureDetector: ({ children }: ChildrenProps) => createElement('div', { 'data-gesture': 'true' }, children),
+    GestureDetector: ({ children, gesture }: ChildrenProps & { gesture?: { zoomedPanOverlay?: boolean } }) =>
+      createElement(
+        'div',
+        { 'data-gesture': 'true', 'data-zoom-pan': gesture?.zoomedPanOverlay ? 'true' : undefined },
+        children,
+      ),
   };
 });
 
@@ -78,7 +83,7 @@ vi.mock('../../play-drawer/use-zoom-pan-gesture', () => ({
 // The composed overlay gesture is exercised by holdLayout unit tests + device
 // QA; here we only assert the zoomed chrome, so return a placeholder gesture.
 vi.mock('../../create-climb/use-zoomed-hold-tap-gesture', () => ({
-  useZoomedHoldTapGesture: () => ({}),
+  useZoomedHoldTapGesture: () => ({ zoomedPanOverlay: true }),
   PAN_ACTIVATION_OFFSET: 8,
 }));
 
@@ -250,5 +255,54 @@ describe('InteractiveFilterBoard', () => {
     expect(context.translateYSV).toBe(zoomState.translateYSV);
     expect(context.containerWidthSV).toBe(zoomState.containerWidthSV);
     expect(context.containerHeightSV).toBe(zoomState.containerHeightSV);
+  });
+  it('nests renderAboveBoard inside the pan detector while zoomed, so declined touches fall through', () => {
+    // RNGH offers a declined touch to ANCESTORS, never to siblings drawn
+    // underneath. If the overlay were a sibling of the pan layer, a finger the
+    // outline editor's draw surface fails would reach nothing and one-finger
+    // panning would be dead while a hold is selected.
+    zoomState.isZoomed = true;
+    const { container } = render(
+      <InteractiveFilterBoard
+        boardName="kilter"
+        layoutId={1}
+        sizeId={10}
+        setIds="1,2"
+        boardWidth={1000}
+        boardHeight={1000}
+        holdTargets={holdTargets}
+        renderWidth={400}
+        renderHeight={500}
+        renderAboveBoard={() => <div data-above-board="true" />}
+      />,
+    );
+    const panDetector = container.querySelector('[data-zoom-pan="true"]');
+    expect(panDetector).not.toBeNull();
+    expect(panDetector?.querySelector('[data-above-board="true"]')).not.toBeNull();
+  });
+
+  it('hands renderAboveBoard a pinchRef so overlays relate to the pinch instead of mounting it', () => {
+    // Composing the board's pinch INSTANCE into a second GestureDetector throws
+    // "Handler with tag N already exists" in RNGH 2.32 — the ref is the safe
+    // handle for simultaneousWithExternalGesture.
+    const seen: Record<string, unknown>[] = [];
+    render(
+      <InteractiveFilterBoard
+        boardName="kilter"
+        layoutId={1}
+        sizeId={10}
+        setIds="1,2"
+        boardWidth={1000}
+        boardHeight={1000}
+        holdTargets={holdTargets}
+        renderWidth={400}
+        renderHeight={500}
+        renderAboveBoard={(context) => {
+          seen.push(context as unknown as Record<string, unknown>);
+          return null;
+        }}
+      />,
+    );
+    expect(seen[0].pinchRef).toBeDefined();
   });
 });

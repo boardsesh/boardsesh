@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, PointerType, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
@@ -44,8 +44,14 @@ type DrawStrokeOverlayProps = {
   containerHeightSV: SharedValue<number>;
   /** Board px per render px (`boardWidth / renderWidth`). */
   boardScale: number;
-  /** The board's pinch, composed Simultaneous so 2-finger zoom survives a draw. */
-  pinchGesture: GestureType;
+  /**
+   * Ref handle on the board's pinch. Declared as a RELATION
+   * (`simultaneousWithExternalGesture`), never composed into this detector: a
+   * Gesture instance carries one RNGH handler tag, and mounting the board's
+   * pinch in a second `GestureDetector` throws "Handler with tag N already
+   * exists" and drops the handler the board still owns when this unmounts.
+   */
+  pinchRef: MutableRefObject<GestureType | undefined>;
   /** Fired once when a stroke actually starts — the screen uses it to stop hold taps. */
   onStrokeStart: () => void;
   /** Fired once at stroke end with the whole stroke in board px. */
@@ -63,6 +69,18 @@ type DrawStrokeOverlayProps = {
  * would swallow every drag and the zoomed board could no longer be repositioned
  * mid-edit; with it, a finger drag on an iPad still pans the zoomed board and a
  * two-finger pinch still zooms, while the pencil draws.
+ *
+ * The fall-through only works because this overlay is mounted INSIDE the pan
+ * overlay's view (see `renderAboveBoard` in InteractiveFilterBoard): RNGH offers
+ * a declined touch to ancestors, never to siblings drawn underneath.
+ *
+ * There is deliberately no `maxPointers(1)`. A palm resting on the glass is
+ * normal Apple Pencil posture, and capping the pointer count would cancel the
+ * stroke the moment it landed. Once a stroke is live, later touches are ignored
+ * outright rather than allowed to start or fail one. The cost is that Pan
+ * reports the CENTROID of all active pointers, so a palm iPadOS fails to reject
+ * can drag the sampled point — a real-device QA item, not something a simulator
+ * can show.
  *
  * Samples are converted to board px on the UI thread — the worklet twin of
  * `screenToBoardPoint` in `stroke.ts`, inlined because reanimated can't reliably
@@ -82,7 +100,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   containerWidthSV,
   containerHeightSV,
   boardScale,
-  pinchGesture,
+  pinchRef,
   onStrokeStart,
   onStrokeEnd,
   onStrokeCancel,
@@ -91,6 +109,9 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   // have to be a gesture dependency, and rebuilding a live RNGH gesture
   // mid-session has wedged iOS before (see use-zoom-pan-gesture).
   const boardScaleSV = useSharedValue(boardScale);
+  // True between activation and finalize. Lives on the UI thread because the
+  // activation worklet has to read it on the very next touch-down.
+  const isDrawingSV = useSharedValue(false);
   useEffect(() => {
     boardScaleSV.value = boardScale;
   }, [boardScale, boardScaleSV]);
@@ -105,11 +126,14 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   const gesture = useMemo(() => {
     const pan = Gesture.Pan()
       .minPointers(1)
-      .maxPointers(1)
       .manualActivation(true)
       .onTouchesDown((event, manager) => {
         'worklet';
+        // A stroke is already live: a second touch (typically the palm) must
+        // neither restart nor fail it.
+        if (isDrawingSV.value) return;
         if (event.pointerType === STYLUS_POINTER_TYPE || fingerDrawSV.value) {
+          isDrawingSV.value = true;
           manager.activate();
           return;
         }
@@ -151,13 +175,16 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
       })
       .onFinalize((_event, success) => {
         'worklet';
+        isDrawingSV.value = false;
         if (success) return;
         runOnJS(handleCancel)();
       });
 
-    // Simultaneous with the board's pinch (the ZoneOverlay pattern) so a
-    // two-finger zoom still recognises while a finger sits on this overlay.
-    return Gesture.Simultaneous(pan, pinchGesture);
+    // A RELATION on the board's pinch, not a composition of it — so a two-finger
+    // zoom still recognises while a finger or pencil sits on this overlay,
+    // without this detector claiming the pinch's handler tag.
+    pan.simultaneousWithExternalGesture(pinchRef);
+    return pan;
     // handleStart/handleEnd/handleCancel are intentionally not deps — they're
     // captured once and read render-scoped values through callbacksRef.
   }, [
@@ -169,7 +196,8 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
     containerWidthSV,
     containerHeightSV,
     boardScaleSV,
-    pinchGesture,
+    isDrawingSV,
+    pinchRef,
   ]);
 
   return (

@@ -70,8 +70,9 @@ const STROKE_WIDTH = {
  * Concatenated by ROLE, not by placement: a board config carries up to a few
  * thousand placements, and one `<Path>` element each would be thousands of
  * native views to mount and diff. Each role instead gets a single `d` built by
- * joining `M…Z` subpaths, so the layer is six nodes regardless of board size and
- * each one rebuilds only when its own bucket changes.
+ * joining `M…Z` subpaths, so the layer is seven nodes regardless of board size
+ * — five role buckets, the selection, and the live draft — and each rebuilds only
+ * when its own bucket changes.
  *
  * Coordinates are BOARD px throughout, mapped to the rendered box by the
  * `viewBox` — the same frame the stored rings convert into, so nothing here

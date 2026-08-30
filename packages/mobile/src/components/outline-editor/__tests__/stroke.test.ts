@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { CENTRE_TOLERANCE_RADII, MAX_RING_NUMBERS } from '@boardsesh/board-art-geometry/ring';
+import { CENTRE_TOLERANCE_RADII, MAX_RING_NUMBERS, closeRing, roundRing } from '@boardsesh/board-art-geometry/ring';
 import type { BoardHoldTarget } from '../../../lib/create-board-holds';
 import {
+  OUTLINE_DECIMALS,
   boardRingToRadiusUnits,
   buildOutlineRing,
   closeStrokeLoop,
@@ -273,5 +274,33 @@ describe('ringToPathData', () => {
 describe('placementRingPathData', () => {
   it('draws a circle at the placement radius', () => {
     expect(placementRingPathData(HOLD)).toBe('M380 300a20 20 0 1 0 40 0a20 20 0 1 0 -40 0Z');
+  });
+});
+
+describe('buildOutlineRing normalisation order', () => {
+  it('matches the server: rounding can equate a head and tail that closing alone would keep', () => {
+    // Property of the two primitives, asserted directly. `roundRing` collapses a
+    // 5th-decimal difference; `closeRing` only drops an EXACT duplicate. So the
+    // two orders genuinely disagree, and the backend's upsert resolver commits to
+    // closeRing(roundRing(...)) — which is why buildOutlineRing does the same.
+    const ring = [0, 0, 1, 0, 1, 1, 0.00001, 0.00001];
+    const roundThenClose = closeRing(roundRing(ring, OUTLINE_DECIMALS));
+    const closeThenRound = roundRing(closeRing(ring), OUTLINE_DECIMALS);
+    expect(roundThenClose).toHaveLength(6);
+    expect(closeThenRound).toHaveLength(8);
+    expect(closeThenRound.slice(0, 6)).toEqual(roundThenClose);
+  });
+
+  it('emits a ring the server normalisation leaves untouched', () => {
+    // The guarantee that actually matters: whatever the editor previews is
+    // byte-for-byte what the resolver stores, so re-running its
+    // closeRing(roundRing(...)) is a no-op. A close-before-round client would
+    // fail this whenever the two orders diverged.
+    for (const pointCount of [12, 48, 200]) {
+      const result = buildOutlineRing(circleBoardPoints(HOLD.cx, HOLD.cy, HOLD.r, pointCount), HOLD);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(closeRing(roundRing(result.outline, OUTLINE_DECIMALS))).toEqual(result.outline);
+    }
   });
 });

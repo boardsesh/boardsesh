@@ -45,9 +45,16 @@ export function OutlineEditorGate({ children }: { children: ReactNode }) {
       <View style={[styles.centered, { backgroundColor: systemColors.groupedBackground }]}>
         <Icon name="lock" size={40} color={iosSystemColors.systemGray} />
         <Text variant="headline" style={styles.title}>
+          {/* i18n-ignore-next-line — admin-only screen */}
           The outline editor is admin-only.
         </Text>
-        <Button title="Back" variant="outlined" onPress={() => router.back()} style={styles.button} />
+        <Button
+          // i18n-ignore-next-line — admin-only screen
+          title="Back"
+          variant="outlined"
+          onPress={() => router.back()}
+          style={styles.button}
+        />
       </View>
     );
   }
