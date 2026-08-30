@@ -103,6 +103,5 @@ export async function createAuroraGymUserFetcher(args: {
         nextRequestAtMs = Date.now() + MIN_REQUEST_INTERVAL_MS * (attempt + 1);
       }
     }
-    return undefined;
   };
 }

@@ -17,6 +17,9 @@ import type { Wall } from '../api/sync-api-types';
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 export type AuroraLocationBoardName = Exclude<AuroraBoardName, 'kilter'>;
 
+/** How often the sequential gym crawl reports progress. */
+const GYM_CRAWL_PROGRESS_INTERVAL = 50;
+
 export const AURORA_LOCATION_BOARDS = AURORA_BOARDS.filter(
   (board): board is AuroraLocationBoardName => board !== 'kilter',
 );
@@ -159,11 +162,20 @@ export async function syncAuroraBoardLocations(args: {
 }): Promise<LocationSyncSummary> {
   const pins = await fetchAuroraPins(args.board);
   const pinsWithUsers: AuroraPinWithUser[] = [];
-  for (const pin of pins.gyms) {
+  if (args.fetchGymUser) {
+    args.log?.(`[aurora-locations] ${args.board}: reading walls for ${pins.gyms.length} gym(s)`);
+  }
+  for (const [pinIndex, pin] of pins.gyms.entries()) {
     // Sequential on purpose: Aurora rate-limits per board, and a fan-out over
-    // several thousand gyms would trip it immediately.
+    // several thousand gyms would trip it immediately. At ~30 requests a minute
+    // that means hours for a full crawl, so log progress periodically —
+    // otherwise the only production signal is a per-gym failure line, and a
+    // healthy run looks identical to a stalled one.
     const user = args.fetchGymUser ? await args.fetchGymUser(pin) : undefined;
     pinsWithUsers.push({ pin, user });
+    if (args.fetchGymUser && (pinIndex + 1) % GYM_CRAWL_PROGRESS_INTERVAL === 0) {
+      args.log?.(`[aurora-locations] ${args.board}: read ${pinIndex + 1}/${pins.gyms.length} gym(s)`);
+    }
   }
 
   const { records, skipped } = buildAuroraLocationRecords(args.board, pinsWithUsers);
