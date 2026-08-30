@@ -24,10 +24,6 @@ name: Build Renderer iOS Artifact
 
 on:
   workflow_dispatch:
-  # TEMPORARY: removed in the landing commit. workflow_dispatch only works
-  # once the workflow is on the default branch (see the note above).
-  push:
-    branches: [fix/led-plate-tuning]
 
 concurrency:
   group: build-renderer-ios-artifact-${{ github.ref }}
