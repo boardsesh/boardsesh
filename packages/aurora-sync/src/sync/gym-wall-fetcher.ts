@@ -23,7 +23,10 @@ const MAX_ATTEMPTS_PER_GYM = 3;
  */
 export function auroraLocationCredentials(
   board: AuroraLocationBoardName,
-  env: NodeJS.ProcessEnv = process.env,
+  // A plain record, not NodeJS.ProcessEnv: this reads two string keys and
+  // nothing else, and the repo's ProcessEnv requires NODE_ENV, which would make
+  // every caller (and test) construct a fuller object than the function uses.
+  env: Record<string, string | undefined> = process.env,
 ): { username: string; password: string } | undefined {
   const suffix = board.toUpperCase();
   const username = env[`AURORA_LOCATION_USERNAME_${suffix}`];
@@ -46,7 +49,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 export async function createAuroraGymUserFetcher(args: {
   board: AuroraLocationBoardName;
-  env?: NodeJS.ProcessEnv;
+  env?: Record<string, string | undefined>;
   log?: (message: string) => void;
 }): Promise<((pin: AuroraPin) => Promise<AuroraGymUser | undefined>) | undefined> {
   const credentials = auroraLocationCredentials(args.board, args.env);
