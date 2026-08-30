@@ -129,6 +129,7 @@ export type MoreButtonRow = {
    * together (Sign Out + Delete Account) don't read as equal heavy red blocks.
    */
   emphasis?: 'primary' | 'subtle';
+  disabled?: boolean;
   onPress: () => void;
 };
 

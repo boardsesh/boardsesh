@@ -114,7 +114,7 @@ diagnostic) applies on native. The whole surface lives in three files:
 - **Live read**: `readPosthogFeatureFlags` in `packages/mobile/src/lib/analytics.ts`.
 - **Dev override**: `packages/mobile/src/lib/feature-flag-overrides.ts` — an
   on-device `Record<string, boolean | string>`, persisted to AsyncStorage,
-settable from the Feature Flags screen.
+  settable from the Feature Flags screen.
 
 Mobile flag reads also obey the app's network policy. `local-catalog-only`
 allows only the mandatory public board-catalog download; `account-offline`

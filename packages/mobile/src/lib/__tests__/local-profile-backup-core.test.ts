@@ -167,6 +167,53 @@ describe('local profile backup', () => {
     }
   });
 
+  it('does not attach cross-owner memberships to a conflicting destination playlist', async () => {
+    await source.runAsync(
+      `INSERT INTO playlists (uuid, board_type, layout_id, name, is_public)
+       VALUES (?, ?, ?, ?, 0), (?, ?, ?, ?, 0)`,
+      ['playlist-conflict', 'kilter', 1, 'Source conflict', 'playlist-imported', 'kilter', 1, 'Imported'],
+    );
+    await source.runAsync(
+      `INSERT INTO playlist_climbs (playlist_uuid, climb_uuid, angle, position)
+       VALUES (?, ?, ?, ?), (?, ?, ?, ?)`,
+      ['playlist-conflict', 'source-climb', 40, 0, 'playlist-imported', 'imported-climb', 40, 0],
+    );
+    await exportLocalProfileBackup(source, destination, '2026-08-30T01:02:03.000Z');
+
+    const restored = createTestDatabase();
+    try {
+      for (const statement of SCHEMA_STATEMENTS) await restored.execAsync(statement);
+      await stampLocalUserId(restored, 'local:profile-restored');
+      await restored.runAsync(
+        `INSERT INTO playlists (uuid, board_type, layout_id, name, is_public)
+         VALUES (?, ?, ?, ?, 0)`,
+        ['playlist-conflict', 'kilter', 1, 'Keep destination'],
+      );
+      await restored.runAsync(
+        `INSERT INTO playlist_climbs (playlist_uuid, climb_uuid, angle, position)
+         VALUES (?, ?, ?, ?)`,
+        ['playlist-conflict', 'destination-climb', 40, 0],
+      );
+
+      await expect(restoreLocalProfileBackup(destination, restored)).resolves.toEqual({
+        ticks: 0,
+        favorites: 0,
+        playlists: 1,
+        playlistClimbs: 1,
+      });
+      expect(
+        await restored.getAllAsync<{ playlist_uuid: string; climb_uuid: string }>(
+          'SELECT playlist_uuid, climb_uuid FROM playlist_climbs ORDER BY playlist_uuid, climb_uuid',
+        ),
+      ).toEqual([
+        { playlist_uuid: 'playlist-conflict', climb_uuid: 'destination-climb' },
+        { playlist_uuid: 'playlist-imported', climb_uuid: 'imported-climb' },
+      ]);
+    } finally {
+      restored.close();
+    }
+  });
+
   it('rejects a backup with unexpected tables before restoring anything', async () => {
     await exportLocalProfileBackup(source, destination, '2026-08-30T01:02:03.000Z');
     await destination.execAsync('CREATE TABLE stolen_tokens (token TEXT)');

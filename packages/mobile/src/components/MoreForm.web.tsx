@@ -140,6 +140,7 @@ function renderRow(row: MoreRow): ReactNode {
           <Button
             title={row.label}
             onPress={row.onPress}
+            disabled={row.disabled}
             variant={isSubtleDestructive ? 'text' : 'filled'}
             role={row.role === 'destructive' ? 'destructive' : 'default'}
             style={styles.fullWidth}

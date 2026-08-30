@@ -85,7 +85,7 @@ export default function MoreScreen() {
 }
 
 function LocalMoreScreen() {
-  const { isAuthenticated, prepareAccountAuthentication } = useAuth();
+  const { isAuthenticated, localOwnerReady, prepareAccountAuthentication } = useAuth();
   const db = useSQLiteContext();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
@@ -125,7 +125,7 @@ function LocalMoreScreen() {
   };
 
   const handleLocalBackup = async (): Promise<void> => {
-    if (backupInProgress) return;
+    if (backupInProgress || !localOwnerReady) return;
     setBackupInProgress(true);
     try {
       const backup = await createLocalProfileBackupFile(db);
@@ -143,7 +143,7 @@ function LocalMoreScreen() {
   };
 
   const handleLocalRestore = async (): Promise<void> => {
-    if (restoreInProgress) return;
+    if (restoreInProgress || !localOwnerReady) return;
     const approved = await confirm({
       title: t('mobile.more.offline.restoreConfirmTitle'),
       message: t('mobile.more.offline.restoreConfirmMessage'),
@@ -193,12 +193,14 @@ function LocalMoreScreen() {
             kind: 'button',
             key: 'backupLocalProfile',
             label: backupInProgress ? t('mobile.more.offline.backingUp') : t('mobile.more.offline.backupNow'),
+            disabled: backupInProgress || !localOwnerReady,
             onPress: () => void handleLocalBackup(),
           },
           {
             kind: 'button',
             key: 'restoreLocalProfile',
             label: restoreInProgress ? t('mobile.more.offline.restoring') : t('mobile.more.offline.restoreBackup'),
+            disabled: restoreInProgress || !localOwnerReady,
             onPress: () => void handleLocalRestore(),
           },
         ],

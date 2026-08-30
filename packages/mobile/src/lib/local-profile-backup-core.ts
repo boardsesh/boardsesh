@@ -301,13 +301,16 @@ export async function restoreLocalProfileBackup(
   destination: OfflineDatabase,
 ): Promise<LocalProfileBackupCounts> {
   const validated = await validateLocalProfileBackup(backup);
-  const destinationOwnerUserId = await getLocalUserId(destination);
-  if (!destinationOwnerUserId?.startsWith('local:')) {
-    throw new Error('A ready login-free profile is required to restore a backup');
-  }
-
   const outcome: { counts: LocalProfileBackupCounts | null } = { counts: null };
   await destination.withExclusiveTransactionAsync(async (transaction) => {
+    // Resolve the owner while the destination write lock is held. Reading it
+    // before the transaction would let an auth/access-mode transition restamp
+    // this database between validation and the first restored row.
+    const destinationOwnerUserId = await getLocalUserId(transaction);
+    if (!destinationOwnerUserId?.startsWith('local:')) {
+      throw new Error('A ready login-free profile is required to restore a backup');
+    }
+
     const inserted: number[] = [];
     const importedPlaylistUuids = new Set<string>();
     const sourceAndDestinationOwnerMatch = validated.sourceOwnerUserId === destinationOwnerUserId;

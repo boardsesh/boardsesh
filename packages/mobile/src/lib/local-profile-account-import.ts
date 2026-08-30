@@ -145,6 +145,9 @@ export async function importLocalProfileIntoAccount(
     const eligiblePlaylistUuids = new Set<string>();
 
     for (const tick of rows.ticks) {
+      // A login-free session exists only in boardsesh-local.db. Deliberately
+      // leave session_id unset so account sync never references a session that
+      // the account database or server cannot resolve.
       const inserted = await transaction.runAsync(
         `INSERT OR IGNORE INTO boardsesh_ticks
            (uuid, user_id, board_type, climb_uuid, angle, is_mirror, status, attempt_count, quality,

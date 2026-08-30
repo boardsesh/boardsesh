@@ -40,6 +40,7 @@ import {
   font,
   foregroundStyle,
   textSelection,
+  disabled as disabledModifier,
   badge as badgeModifier,
   accessibilityLabel as accessibilityLabelModifier,
   accessibilityValue as accessibilityValueModifier,
@@ -203,7 +204,7 @@ function renderRow(row: MoreRow, accent: string) {
           role={row.role === 'destructive' ? 'destructive' : undefined}
           label={row.label}
           onPress={row.onPress}
-          modifiers={row.emphasis === 'subtle' ? [FOOTNOTE] : []}
+          modifiers={[...(row.emphasis === 'subtle' ? [FOOTNOTE] : []), ...(row.disabled ? [disabledModifier()] : [])]}
         />
       );
     case 'slider':

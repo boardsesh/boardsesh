@@ -71,6 +71,7 @@ type AuthState = {
   accessCapabilities: AccessCapabilities;
   setAccessMode: (accessMode: AccessMode) => Promise<void>;
   localCatalogReady: boolean;
+  localOwnerReady: boolean;
   setLocalCatalogReady: (isReady: boolean) => Promise<void>;
   setLocalOwnerReady: (isReady: boolean) => void;
   prepareAccountAuthentication: () => Promise<void>;
@@ -1126,6 +1127,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       accessCapabilities,
       setAccessMode,
       localCatalogReady,
+      localOwnerReady,
       setLocalCatalogReady,
       setLocalOwnerReady,
       prepareAccountAuthentication,
@@ -1145,6 +1147,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       accessCapabilities,
       setAccessMode,
       localCatalogReady,
+      localOwnerReady,
       setLocalCatalogReady,
       setLocalOwnerReady,
       prepareAccountAuthentication,

@@ -110,6 +110,7 @@ function makeAuthMock(overrides: Partial<ReturnType<typeof useAuth>> = {}): Retu
     setAccessMode: vi.fn(),
     prepareAccountAuthentication: vi.fn(),
     localCatalogReady: false,
+    localOwnerReady: false,
     setLocalCatalogReady: vi.fn(),
     setLocalOwnerReady: vi.fn(),
     signInWithApple: vi.fn(),

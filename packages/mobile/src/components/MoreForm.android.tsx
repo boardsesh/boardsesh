@@ -267,6 +267,7 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
           <TextButton
             key={row.key}
             onClick={row.onPress}
+            enabled={!row.disabled}
             modifiers={[fillMaxWidth()]}
             colors={{ contentColor: colors.brandColors.error }}
           >
@@ -278,6 +279,7 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
         <Button
           key={row.key}
           onClick={row.onPress}
+          enabled={!row.disabled}
           modifiers={[fillMaxWidth()]}
           colors={
             row.role === 'destructive'
