@@ -76,18 +76,68 @@ describe('native release train workflow contracts', () => {
     expect(android.indexOf('Require Play upload credentials')).toBeLessThan(android.indexOf('Expo prebuild'));
   });
 
-  it('rebases with the repository App, an explicit lease, and Discord failure reporting', () => {
+  it('preserves merge history and confines Opus conflict resolution before the leased push', () => {
     expect(sync).toContain('branches: [main]');
     expect(sync).toContain('actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547');
-    expect(sync).toContain('git rebase --rebase-merges origin/main');
-    expect(sync).toContain('--force-with-lease="release/next:$EXPECTED_RELEASE_SHA"');
-    expect(sync).toContain('DISCORD_DEPLOY_WEBHOOK');
+    expect(sync).toContain('git rev-list --merges --max-count=1 "$EXPECTED_MAIN_SHA..$EXPECTED_RELEASE_SHA"');
+    expect(sync).toContain('git rebase "$EXPECTED_MAIN_SHA"');
+    expect(sync).toContain('git merge --no-edit --no-ff "$EXPECTED_MAIN_SHA"');
+    expect(sync).not.toContain('git rebase --rebase-merges');
     expect(sync).toContain('git rebase --abort');
+    expect(sync).toContain(
+      'anthropics/claude-code-action/base-action@a874e9ecd7bb36efdad65429c6b35815f5a08f10 # v1.0.210',
+    );
+    expect(sync).toContain('--model claude-opus-5');
+    expect(sync).toContain('--restricted');
+    expect(sync).toContain('--safe-mode');
+    expect(sync).toContain('--no-session-persistence');
+    expect(sync).toContain('--permission-mode dontAsk');
+    expect(sync).toContain('--tools "Read,Edit,Grep,Glob,Bash"');
+    expect(sync).toContain('--disallowed-tools "mcp__*"');
+    expect(sync).not.toContain('github_token: ${{ github.token }}');
+    expect(sync).not.toContain('id-token: write');
+    expect(sync).toContain('git ls-files --stage -z | sha256sum');
+    expect(sync).toContain('git diff --name-only -z');
+    expect(sync).toContain('comm -z -23');
+    expect(sync).toContain('release-next-out-of-scope.txt');
+    expect(sync).toContain('git ls-files --others --exclude-standard -z');
+    expect(sync).toContain("while IFS= read -r -d '' conflict_path");
+    expect(sync).toContain('git commit --no-edit');
+    expect(sync).toContain('vp check > "$RUNNER_TEMP/release-next-vp-check.log"');
+    expect(sync).toContain('vp run typecheck');
+    expect(sync).toContain('vp test run --reporter=agent');
+    expect(sync).toContain('test "$(git rev-parse HEAD^1)" = "$EXPECTED_RELEASE_SHA"');
+    expect(sync).toContain('test "$(git rev-parse HEAD^2)" = "$EXPECTED_MAIN_SHA"');
+    expect(sync).toContain('git push --atomic');
+    expect(sync).toContain('--force-with-lease="refs/heads/release/next:$EXPECTED_RELEASE_SHA"');
+    expect(sync).toContain('--force-with-lease="refs/heads/main:$EXPECTED_MAIN_SHA"');
+    expect(sync).toContain('"$EXPECTED_MAIN_SHA:refs/heads/main"');
+    expect(sync).toContain('DISCORD_DEPLOY_WEBHOOK');
     expect(sync).toContain("'.head.repo.full_name'");
     expect(sync).toContain('permission-workflows: write');
     expect(sync).not.toContain('https://x-access-token:${GH_APP_TOKEN}@github.com');
     expect(sync).toContain('trap clear_git_auth EXIT');
     expect(sync).toContain('check Contents/Workflows write permissions and branch bypass');
+    expect(sync).toContain('main moved immediately before push.');
+    expect(sync).toContain('release/next moved immediately before push.');
+    expect(sync).toContain('The pushed release/next ref does not match the verified update.');
+    expect(sync).toContain('main moved during the release push; the queued sync must update release/next again.');
+    expect(sync.indexOf('Resolve update conflicts with Claude Opus')).toBeLessThan(
+      sync.indexOf('Mint repository App token'),
+    );
+    const claudeStep = sync.slice(
+      sync.indexOf('Resolve update conflicts with Claude Opus'),
+      sync.indexOf("Stage and commit Claude's conflict resolution"),
+    );
+    expect(claudeStep).not.toContain('GH_APP_TOKEN');
+    expect(claudeStep).not.toContain('OTA_PUSH_APP_PRIVATE_KEY');
+    expect(claudeStep).not.toContain('AGENTS.md');
+    expect(claudeStep).not.toContain('Bash(git push');
+    expect(claudeStep).not.toContain('Bash(git add');
+    expect(claudeStep).not.toContain('Bash(git commit');
+    expect(claudeStep).not.toContain('Bash(git merge --continue');
+    expect(claudeStep).not.toContain('Bash(git rebase --continue');
+    expect(sync.indexOf('Validate the AI conflict resolution')).toBeLessThan(sync.indexOf('Mint repository App token'));
     const rebaseJob = sync.slice(sync.indexOf('  rebase:'), sync.indexOf('  notify-failure:'));
     expect(rebaseJob).not.toContain('environment: Native Release');
     expect(sync).toContain('notify-failure:');
