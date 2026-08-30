@@ -1,5 +1,6 @@
 /// <reference types="node" />
 
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
@@ -110,6 +111,80 @@ const CUT_PROBE_INSET_FROM_CLEARANCE = 0.5;
 /** The probe distance for one placement, in board pixels. */
 export function cutProbeDistance(placementRadius: number): number {
   return radiusForPlacement(placementRadius) - CUT_PROBE_INSET_FROM_CLEARANCE;
+}
+
+// ---------------------------------------------------------------------------
+// Hand-corrected outlines
+// ---------------------------------------------------------------------------
+
+/** Where `vp run db:export-outline-overrides` writes the committed corrections. */
+export const OVERRIDES_DIR = fileURLToPath(new URL('../../overrides/', import.meta.url));
+
+/** The committed corrections for one shard, as the exporter writes them. */
+export type OverrideFile = {
+  outlines?: Record<string, number[]>;
+  ledInner?: Record<string, number[]>;
+};
+
+/**
+ * Read one config's committed overrides, or `null` where it has none.
+ *
+ * PARSED HERE rather than imported from the generator's merge module, like every
+ * other input in this file. Reading the JSON is not restating a measurement —
+ * it is data, and the whole point of these gates is that they reach the same
+ * files the generator did by their own route.
+ */
+export function overridesForKey(key: string): OverrideFile | null {
+  const filePath = path.join(OVERRIDES_DIR, `${key}.json`);
+  if (!existsSync(filePath)) return null;
+  return JSON.parse(readFileSync(filePath, 'utf8')) as OverrideFile;
+}
+
+/** Every shard key with a committed override file. */
+export function overriddenShardKeys(): string[] {
+  if (!existsSync(OVERRIDES_DIR)) return [];
+  const keys: string[] = [];
+  for (const boardEntry of readdirSync(OVERRIDES_DIR, { withFileTypes: true })) {
+    if (!boardEntry.isDirectory()) continue;
+    for (const fileEntry of readdirSync(path.join(OVERRIDES_DIR, boardEntry.name), { withFileTypes: true })) {
+      if (!fileEntry.isFile() || !fileEntry.name.endsWith('.json')) continue;
+      keys.push(`${boardEntry.name}/${fileEntry.name.slice(0, -'.json'.length)}`);
+    }
+  }
+  return keys.sort();
+}
+
+/**
+ * The placements of one shard whose SILHOUETTE a human drew.
+ *
+ * Gates 2, 3 and 7 still bind on these, and they are the invariants that matter
+ * for a drawing: it swallows no second placement, it is not the crop rectangle,
+ * it keeps its own hold.
+ *
+ * Gate 1, gate 5 and gate 6 do NOT. Gates 5 and 6 measure TRACER PATHOLOGIES — a
+ * limb joined through a thin neck, a boundary that is a partition cut rather
+ * than an art edge — and a human correcting exactly those defects trips them by
+ * construction. The commonest correction is a contact cut, where the fix is to
+ * draw the hold's real edge, and the hold's real edge is ON the neighbour's art:
+ * gate 6 would read that as the defect it was drawn to repair.
+ *
+ * Gate 1 is exempt for a different and sharper reason — a TOLERANCE MISMATCH.
+ * Its threshold is the 1.6 board px simplification tolerance, which on
+ * kilter/1-28 is 0.052 radii, while the rule a correction is actually held to —
+ * by the backend on write and by the merge on read — is `CENTRE_TOLERANCE_RADII`
+ * at 0.25 radii. Five times looser. A legal correction whose bolt sits 0.1 radii
+ * outside the drawn edge therefore passes the editor, the export and the merge
+ * and then reds this gate with no remedy available: the hold can neither be
+ * corrected nor left alone. The 0.25 rule binds instead on the committed ring,
+ * in `overrides.test.ts`, which is where it can actually be satisfied.
+ *
+ * `ledInner` rings are exempt from all seven — a base-plate boundary is not a
+ * silhouette and none of these measures mean anything about one — and get their
+ * own structural checks in `overrides.test.ts`.
+ */
+export function overriddenPlacementIds(key: string): Set<number> {
+  const file = overridesForKey(key);
+  return new Set(Object.keys(file?.outlines ?? {}).map(Number));
 }
 
 export type Placement = { id: number; cx: number; cy: number; r: number };

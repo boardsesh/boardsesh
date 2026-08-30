@@ -17,6 +17,7 @@ import {
   loadBoardArtLayers,
   nearbyCandidates,
   openedArea,
+  overriddenPlacementIds,
   radiusForPlacement,
   reachesSearchBox,
   shardBoardForKey,
@@ -184,7 +185,7 @@ const PINNED_CUT_SHARES: Record<string, { neighbourMean: number; overFivePercent
   'tension/9-4': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'tension/9-5': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'touchstone/1-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 10.4 },
-  'woods/1-1': { neighbourMean: 3.5, overFivePercent: 47, opaqueMean: 21.7 },
+  'woods/1-1': { neighbourMean: 3.5, overFivePercent: 47, opaqueMean: 21.6 },
   'woods/1-2': { neighbourMean: 1.3, overFivePercent: 36, opaqueMean: 22.4 },
 };
 
@@ -212,7 +213,7 @@ const PINNED_CUT_SHARES: Record<string, { neighbourMean: number; overFivePercent
  */
 const PINNED_PLACEMENT_ON_THE_EDGE: Record<string, number> = {
   'kilter/1-28': 3,
-  'woods/1-1': 18,
+  'woods/1-1': 16,
   'woods/1-2': 32,
 };
 
@@ -221,13 +222,15 @@ const PINNED_PLACEMENT_ON_THE_EDGE: Record<string, number> = {
  * simplification tolerance, per shard, and the worst distance any of them
  * manages.
  *
- * Zero everywhere the art is a sprite sheet, and this exists for Woods. Twelve of
- * its 1,289 silhouettes (0.9%) sit beside their own bolt rather than around it,
+ * Zero everywhere the art is a sprite sheet, and this exists for Woods. Eleven of
+ * its 1,335 silhouettes (0.8%) sit beside their own bolt rather than around it,
  * all of them on holds the CV detector put more than one centre on: the partition
  * cuts the hold between the centres, the tracer seeds on the nearest art pixel to
  * the bolt, and on a small piece those two are on opposite sides of the boundary.
  * The worst is 4.24 board px on a 13.5 px placement radius, i.e. under a third of
- * a radius — beside the bolt, not on another hold.
+ * a radius — beside the bolt, not on another hold. A twelfth was in this table
+ * until the self-intersection backstop rejected its ring outright: the two
+ * defects have the same cause, a sliver of a multi-detected hold.
  *
  * Pinned per id AND with a distance ceiling, because the two failures look
  * nothing alike: an id joining the list is one more piece of a multi-detected
@@ -235,7 +238,7 @@ const PINNED_PLACEMENT_ON_THE_EDGE: Record<string, number> = {
  * entirely.
  */
 const PINNED_PLACEMENT_OUTSIDE_OUTLINE: Record<string, { holds: number[]; worstDistancePx: number }> = {
-  'woods/1-1': { holds: [146, 186], worstDistancePx: 2.35 },
+  'woods/1-1': { holds: [146], worstDistancePx: 2.34 },
   'woods/1-2': { holds: [197, 289, 330, 375, 392, 402, 434, 456, 470, 807], worstDistancePx: 4.24 },
 };
 
@@ -321,6 +324,10 @@ function auditShard(key: string): BoardAudit {
   const board = shardBoardForKey(key);
   const geometry = loadBoardArtGeometry(board);
   if (geometry === null) throw new Error(`${key}: shard is indexed but did not load`);
+  // Gates 1-3 below run on every outline including these; gate 1's PIN and gate
+  // 5 skip them. See `overriddenPlacementIds` for which measures a human's
+  // drawing can legitimately fail and why.
+  const handCorrected = overriddenPlacementIds(key);
 
   const audit: BoardAudit = {
     key,
@@ -346,10 +353,25 @@ function auditShard(key: string): BoardAudit {
     const centreX = Math.round(placement.cx);
     const centreY = Math.round(placement.cy);
 
-    if (!containsPoint(tracerPixels, 0, 0)) audit.placementOnTheEdge += 1;
-    const outsideDistance = distanceOutsidePolygon(tracerPixels, 0, 0);
-    if (outsideDistance > SIMPLIFY_EPSILON) audit.withoutOwnPlacement.push(holdId);
-    audit.worstOutsideDistance = Math.max(audit.worstOutsideDistance, outsideDistance);
+    // Gate 1, both halves, on tracer output only. The centre rule a correction
+    // is held to is the WRITE path's — inside the ring, or outside by at most
+    // `CENTRE_TOLERANCE_RADII` (0.25r) — and this measure's threshold is the
+    // 1.6 board px simplification tolerance, which on kilter/1-28 is 0.052r.
+    // Five times tighter, so a correction the editor accepted, the exporter
+    // wrote and the merge admitted would red this gate with nowhere to go: the
+    // hold could not be corrected and could not be left alone either. The
+    // 0.25r rule still binds on it, in `overrides.test.ts`, against the
+    // committed ring rather than the emitted one.
+    //
+    // `worstOutsideDistance` is tracked inside the same guard, for the same
+    // reason: it is the ceiling on the pinned Woods exceptions, and a hand
+    // correction is not one of them.
+    if (!handCorrected.has(holdId)) {
+      if (!containsPoint(tracerPixels, 0, 0)) audit.placementOnTheEdge += 1;
+      const outsideDistance = distanceOutsidePolygon(tracerPixels, 0, 0);
+      if (outsideDistance > SIMPLIFY_EPSILON) audit.withoutOwnPlacement.push(holdId);
+      audit.worstOutsideDistance = Math.max(audit.worstOutsideDistance, outsideDistance);
+    }
 
     let minX = Infinity;
     let maxX = -Infinity;
@@ -385,7 +407,9 @@ function auditShard(key: string): BoardAudit {
     if (runs >= CROP_BOX_MIN_RUNS && share > CROP_BOX_PERIMETER_SHARE && reachesSearchBox(tracerPixels, box)) {
       audit.cropBoxShaped.push(holdId);
     }
-    if (spurArea(tracerPixels, radiusForPlacement(placement.r)) > MAX_SPUR_AREA) audit.spurred.push(holdId);
+    if (!handCorrected.has(holdId) && spurArea(tracerPixels, radiusForPlacement(placement.r)) > MAX_SPUR_AREA) {
+      audit.spurred.push(holdId);
+    }
   }
   return audit;
 }
@@ -485,7 +509,7 @@ describe('board-art-geometry gates', () => {
  * under every member id, so auditing the members would weight one hold by how
  * many centres a detector happened to put on it.
  *
- * Woods' 89 and 193 chopped are the highest in the table by a distance, and they
+ * Woods' 88 and 193 chopped are the highest in the table by a distance, and they
  * are almost entirely the multi-detected holds: a hold carrying three centres is
  * cut into three slivers and each sliver keeps a third of the body it sits on.
  * That is the right drawing — lighting the middle bolt should light the middle of
@@ -545,7 +569,7 @@ const PINNED_AREA_RECOVERY: Record<
   'tension/9-4': { recoveryMeanFloor: 0.972, recoveryP10Floor: 0.948, choppedCeiling: 0 },
   'tension/9-5': { recoveryMeanFloor: 0.984, recoveryP10Floor: 0.973, choppedCeiling: 0 },
   'touchstone/1-1': { recoveryMeanFloor: 0.911, recoveryP10Floor: 0.843, choppedCeiling: 25 },
-  'woods/1-1': { recoveryMeanFloor: 0.879, recoveryP10Floor: 0.702, choppedCeiling: 89 },
+  'woods/1-1': { recoveryMeanFloor: 0.88, recoveryP10Floor: 0.702, choppedCeiling: 88 },
   'woods/1-2': { recoveryMeanFloor: 0.877, recoveryP10Floor: 0.703, choppedCeiling: 193 },
 };
 
@@ -576,6 +600,7 @@ function artAuditFor(key: string): Promise<ArtAudit> {
     const geometry = loadBoardArtGeometry(board);
     if (geometry === null) throw new Error(`${key}: shard is indexed but did not load`);
     const layers = await loadBoardArtLayers(board);
+    const handCorrected = overriddenPlacementIds(key);
 
     let neighbourSum = 0;
     let opaqueSum = 0;
@@ -598,19 +623,30 @@ function artAuditFor(key: string): Promise<ArtAudit> {
       const candidates = nearbyCandidates(board.placementsByLayer[layerIndex], placement, board.searchRadii);
       const tracerPixels = toTracerPixels(flat, placement);
 
-      const shares = cutShares(layerArt, candidates, placement, tracerPixels);
-      neighbourSum += shares.neighbour;
-      opaqueSum += shares.opaque;
-      if (shares.neighbour > 0.05) overFivePercent += 1;
-      counted += 1;
+      // Gate 6 only. A hand-corrected silhouette is exempt because the commonest
+      // reason to draw one is a contact cut, and repairing a contact cut means
+      // putting the boundary back on the hold's real art edge — which is exactly
+      // what this measure calls a defect. Gate 7 below still binds on it: "did
+      // this polygon keep its own hold" is a question a drawing has to answer
+      // too, and a correction ought to IMPROVE it.
+      if (!handCorrected.has(placement.id)) {
+        const shares = cutShares(layerArt, candidates, placement, tracerPixels);
+        neighbourSum += shares.neighbour;
+        opaqueSum += shares.opaque;
+        if (shares.neighbour > 0.05) overFivePercent += 1;
+        counted += 1;
+      }
       recoveries.push(areaRecovery(layerArt, candidates, placement, tracerPixels, board.searchRadii));
     }
 
     recoveries.sort((left, right) => left - right);
     return {
-      neighbourMean: Math.round((neighbourSum / counted) * 1000) / 10,
+      // `counted` is zero only if every outline on the shard was hand-drawn, in
+      // which case gate 6 has nothing to say and 0 is the honest reading rather
+      // than a NaN that compares false against every pin.
+      neighbourMean: counted === 0 ? 0 : Math.round((neighbourSum / counted) * 1000) / 10,
       overFivePercent,
-      opaqueMean: Math.round((opaqueSum / counted) * 1000) / 10,
+      opaqueMean: counted === 0 ? 0 : Math.round((opaqueSum / counted) * 1000) / 10,
       recoveryMean:
         Math.round((recoveries.reduce((total, value) => total + value, 0) / recoveries.length) * 1000) / 1000,
       recoveryP10: Math.round(recoveries[Math.floor(recoveries.length * 0.1)] * 1000) / 1000,

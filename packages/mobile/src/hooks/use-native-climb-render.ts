@@ -652,7 +652,7 @@ export function _setNativeModuleForTests(module: typeof renderModule): void {
   moduleLoadFailureCount = 0;
 }
 
-/** One hold as the Rust renderer reads it. The three optional fields are Boardsesh-only. */
+/** One hold as the Rust renderer reads it. The four optional fields are Boardsesh-only. */
 type RenderHold = {
   id: number;
   mirroredHoldId: number | null;
@@ -663,6 +663,12 @@ type RenderHold = {
   led?: [number, number];
   /** Traced silhouette, flat `[x0, y0, …]` in radius units from the centre. */
   outline?: number[];
+  /**
+   * Inner boundary of the hold's LED base plate, same form as `outline`. The
+   * renderer lights the ring between the two. Absent on every hold whose plate
+   * nobody has traced, which lights whole as it always did.
+   */
+  led_inner?: number[];
   /** OkLab lightness of the art inside that silhouette, for the fill's white lift. */
   silhouette_lightness?: number;
 };
@@ -721,8 +727,8 @@ function parseLitHoldIds(frames: string): Set<number> {
 }
 
 /**
- * Attach the traced silhouette and its art lightness to the holds this climb
- * lights, and only those.
+ * Attach the traced silhouette, its art lightness and its LED base plate ring
+ * to the holds this climb lights, and only those.
  *
  * Only the lit ones because the renderer draws nothing on the rest and the
  * outlines are the bulk of the payload: Tension Board 2 12x12 Wide would ship
@@ -743,14 +749,22 @@ function withLitHoldGeometry(holds: RenderHold[], geometry: BoardArtGeometry, fr
     // painted (the spike's `-1` shipped 94 MoonBoard holds as if they were).
     const hasLightness =
       typeof silhouetteLightness === 'number' && Number.isFinite(silhouetteLightness) && silhouetteLightness >= 0;
+    // The plate ring is the part of the hold a real LED shines through, so the
+    // renderer lights it instead of the whole silhouette. It only means
+    // anything against that silhouette, and the table is absent on every shard
+    // nobody has annotated, so it rides along with `outline` and never alone.
+    const ledInner = outline ? geometry.ledInner?.[hold.id] : undefined;
     if (!outline && !hasLightness) return hold;
     return {
       ...hold,
       ...(outline ? { outline } : {}),
+      ...(ledInner ? { led_inner: ledInner } : {}),
       ...(hasLightness ? { silhouette_lightness: silhouetteLightness } : {}),
     };
   });
 }
+
+export const _withLitHoldGeometryForTests = withLitHoldGeometry;
 
 /**
  * FNV-1a 32-bit hash, returned as 8-char hex. Used to keep the cache

@@ -176,13 +176,18 @@ export type WoodsGeometry = {
 // The ones 6-23 px apart are not merged and cannot safely be: that is more than
 // a hold radius (11.5 / 13.5 px), so a rule wide enough to catch them would also
 // merge genuinely adjacent holds. The silhouette tracer therefore cuts those
-// slabs into slivers at the midline between the detected centres — 80 of the
-// 8x10's 469 traced holds and 167 of the 12x12's 868 keep under 0.8 of their own
-// art body, and 1 and 8 respectively keep under 0.5. It still draws correctly
-// (lighting the middle bolt lights the middle of the rail) and it is pinned in
-// that package's gate 7, but it is an artefact of the detector rather than of the
-// wall. A re-extraction that emits one centre per physical hold would fix it at
-// the source and shrink both pins.
+// slabs into slivers at the midline between the detected centres. Measured by
+// that package's gate 7, which is the measure its pins are written against: 88
+// of the 8x10's 467 traced holds and 193 of the 12x12's 868 keep under 0.8 of
+// their own art body, and 4 and 15 respectively keep under 0.5. Two more slivers
+// on the 8x10 folded through a 1-pixel isthmus into a ring that crosses itself
+// and were rejected outright, falling back to a plain ring.
+//
+// It still draws correctly where it draws at all — lighting the middle bolt
+// lights the middle of the rail — and every one of those numbers is pinned, but
+// it is an artefact of the detector rather than of the wall. A re-extraction that
+// emits one centre per physical hold would fix it at the source and shrink every
+// one of those pins.
 export const WOODS_GEOMETRY: Record<WoodsBoardSize, WoodsGeometry> = {
   '8x10': {
     numRows: WOODS_ROW_LENGTHS['8x10'].length,

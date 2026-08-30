@@ -15,6 +15,11 @@
       "import": "./src/loader.ts",
       "default": "./src/loader.ts"
     },
+    "./ring": {
+      "types": "./src/ring.ts",
+      "import": "./src/ring.ts",
+      "default": "./src/ring.ts"
+    },
     "./veil": {
       "types": "./src/veil.ts",
       "import": "./src/veil.ts",

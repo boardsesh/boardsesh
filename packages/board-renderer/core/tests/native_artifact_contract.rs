@@ -1,11 +1,12 @@
 use std::{fs, path::Path};
 
-const BOARDSESH_CONTRACT_MARKERS: [&[u8]; 5] = [
+const BOARDSESH_CONTRACT_MARKERS: [&[u8]; 6] = [
     b"board_renderer_render",
-    b"struct RenderConfig with 19 elements",
+    b"struct RenderConfig with 20 elements",
     b"render_mode",
     b"glow_falloff",
     b"silhouette_lightness",
+    b"led_inner",
 ];
 const STATIC_ARCHIVE_MAGIC: &[u8] = b"!<arch>\n";
 

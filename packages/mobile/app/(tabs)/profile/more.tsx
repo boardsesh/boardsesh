@@ -11,7 +11,7 @@ import { useLocalePreference } from '../../../src/providers/i18n-provider';
 import { resolveLanguage, type LocaleOverride } from '../../../src/lib/i18n/locale-preference';
 import { openExternalUrl } from '../../../src/lib/open-url';
 import { useConfirmSignOut } from '../../../src/hooks/use-confirm-sign-out';
-import { useProfile, useMyBoards } from '../../../src/lib/graphql/hooks';
+import { useProfile, useMyBoards, useIsAdmin } from '../../../src/lib/graphql/hooks';
 import { useBoardDownloads } from '../../../src/offline/use-board-downloads';
 import { isOfflineEngineEnabled } from '../../../src/lib/offline-engine';
 import { useOfflineSchemaReady } from '../../../src/db/use-offline-schema-ready';
@@ -81,6 +81,9 @@ export default function MoreScreen() {
   const { t: tNotifications } = useTranslation('notifications');
   const confirmSignOut = useConfirmSignOut();
   const { data: profile } = useProfile();
+  // Its own query, deliberately not a field on the profile document — see
+  // useIsAdmin. Fails closed, so an older backend just hides the admin rows.
+  const { isAdmin } = useIsAdmin();
   const { gradeFormat, setGradeFormat } = useGradeFormat();
   const { localePreference, setLocalePreference } = useLocalePreference();
   const { enabled: sessionRecordingEnabled, setEnabled: setSessionRecordingPreference } =
@@ -234,11 +237,18 @@ export default function MoreScreen() {
   // shapes, inspect the outbox). Same audience as the flag overrides.
   const showOfflineWrites = __DEV__ || Boolean(profile?.isTester);
 
+  // The hold-outline editor rewrites the silhouettes every climber's board
+  // renders, so it's admin-only rather than tester-only. `isAdmin` rides its own
+  // small query (useIsAdmin) which fails closed, so a backend that predates the
+  // field simply doesn't show the row.
+  const showOutlineEditor = __DEV__ || isAdmin;
+
   // Don't render an empty "Development" section header when no tool applies.
   // Store-build previews now use xprem's everyone-facing blue edge marker, so
   // the retired OTA channel switcher is no longer listed here.
   const showDevSection =
-    (__DEV__ || Boolean(profile?.isTester)) && (showDevServerSwitcher || showFeatureFlags || showOfflineWrites);
+    (__DEV__ || Boolean(profile?.isTester) || isAdmin) &&
+    (showDevServerSwitcher || showFeatureFlags || showOfflineWrites || showOutlineEditor);
 
   // 'System' follows the device language; the rest are the supported locales,
   // labelled in their own script (English / Español / Français) from
@@ -802,6 +812,20 @@ export default function MoreScreen() {
         subtitle: 'Open the tester PR picker; surfing itself only works in a store build',
         icon: 'otaChannel',
         onPress: navAction(() => router.push('/qa/pick?prNumbers=1')),
+      });
+    }
+    if (showOutlineEditor) {
+      devRows.push({
+        kind: 'nav',
+        key: 'outlineEditor',
+        // i18n-ignore-next-line — admin-only dev tooling
+        label: 'Hold Outlines',
+        // i18n-ignore-next-line
+        subtitle: 'Redraw a traced hold silhouette, or annotate its LED ring',
+        // Board-look, not featureFlags: this row edits how the board is DRAWN,
+        // and the two dev rows above it already carry the flag icon.
+        icon: 'boardLook',
+        onPress: navAction(() => router.push('/(tabs)/profile/outline-editor')),
       });
     }
     if (profile?.isTester) {

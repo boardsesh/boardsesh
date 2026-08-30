@@ -20,4 +20,5 @@ export * from './integrations';
 export * from './sync';
 export * from './location-sync-admin';
 export * from './gym-owner-reassign';
+export * from './hold-outline-overrides';
 export * from './playback';

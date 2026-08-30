@@ -154,7 +154,7 @@ describe('overlay-cache-store hydration + snapshot (warmup contract)', () => {
     expect(snapshotOverlayEntries()).toHaveLength(limit);
   });
 
-  it('flushes shared web entries when the native and web renderer contract moves to v7', async () => {
+  it('flushes shared web entries when the native and web renderer contract moves to v9', async () => {
     const { store } = installCaches();
     await writeOverlayToCache('v2_s_wfull_kilter_1_2_25_old', new Blob() as Blob);
     await writeOverlayToCache('v4_s_wfull_kilter_1_2_25_pre_atomic', new Blob() as Blob);
@@ -162,13 +162,17 @@ describe('overlay-cache-store hydration + snapshot (warmup contract)', () => {
     await writeOverlayToCache('v5_s_wfull_kilter_1_2_25_wrong_stroke', new Blob() as Blob);
     // Drawn before the Boardsesh drawing landed (issue #2202).
     await writeOverlayToCache('v6_s_wfull_kilter_1_2_25_pre_boardsesh', new Blob() as Blob);
-    // Drawn while Woods still shipped no traced geometry (issue #2202).
-    await writeOverlayToCache('v7_s_wfull_kilter_1_2_25_pre_woods', new Blob() as Blob);
-    await writeOverlayToCache('v8_s_wfull_kilter_1_2_25_keep', new Blob() as Blob);
+    // Drawn before an annotated hold lit its LED base plate.
+    await writeOverlayToCache('v7_s_wfull_kilter_1_2_25_pre_plate', new Blob() as Blob);
+    // v8 was claimed by the Woods white-key branch, which landed on this same
+    // line, so no shipped build ever published it — its PNGs are as invalid
+    // here as any other generation's.
+    await writeOverlayToCache('v8_s_wfull_kilter_1_2_25_never_published', new Blob() as Blob);
+    await writeOverlayToCache('v9_s_wfull_kilter_1_2_25_keep', new Blob() as Blob);
     await writeOverlayToCache('v1_f_w400_kilter_1_2_25_ancient', new Blob() as Blob);
     _overlayCacheStoreForTests.renderedObjectUrls.clear();
 
-    expect(currentOverlayVersionPrefix()).toBe('v8_');
+    expect(currentOverlayVersionPrefix()).toBe('v9_');
     await hydrateOverlayCache(currentOverlayVersionPrefix());
 
     // Stale-version PNGs are deleted from the Cache API, not hydrated — so they
@@ -178,12 +182,13 @@ describe('overlay-cache-store hydration + snapshot (warmup contract)', () => {
     expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v4_s_wfull_kilter_1_2_25_pre_atomic'))).toBe(false);
     expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v5_s_wfull_kilter_1_2_25_wrong_stroke'))).toBe(false);
     expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v6_s_wfull_kilter_1_2_25_pre_boardsesh'))).toBe(false);
-    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v7_s_wfull_kilter_1_2_25_pre_woods'))).toBe(false);
     expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v1_f_w400_kilter_1_2_25_ancient'))).toBe(false);
-    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v8_s_wfull_kilter_1_2_25_keep'))).toBe(true);
+    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v7_s_wfull_kilter_1_2_25_pre_plate'))).toBe(false);
+    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v8_s_wfull_kilter_1_2_25_never_published'))).toBe(false);
+    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v9_s_wfull_kilter_1_2_25_keep'))).toBe(true);
     const entries = snapshotOverlayEntries();
     expect(entries).toHaveLength(1);
-    expect(entries[0].name).toBe('v8_s_wfull_kilter_1_2_25_keep.png');
+    expect(entries[0].name).toBe('v9_s_wfull_kilter_1_2_25_keep.png');
   });
 
   it('releaseAllObjectUrls revokes every retained URL', async () => {
@@ -291,7 +296,7 @@ describe('renderHoldsOverlay Cache-API integration', () => {
     // so this must render and persist like any other config.
     const url = await renderHoldsOverlay(
       JSON.stringify({ shape_size_multiplier: 1.5, hold_state_map: {} }),
-      'v8_s_wfull_kilter_1_2_25_marker',
+      'v7_s_wfull_kilter_1_2_25_marker',
     );
 
     expect(url).toMatch(/^blob:overlay\//);

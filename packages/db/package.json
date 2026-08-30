@@ -91,6 +91,7 @@
     "db:import-woods-catalog": "NODE_OPTIONS=--max-old-space-size=8192 tsx scripts/import-woods-catalog.ts",
     "db:import-aurora-unified": "tsx scripts/import-aurora-board-unified.ts",
     "db:generate-moonboard-cell-sets": "tsx scripts/generate-moonboard-cell-sets.ts",
+    "db:export-outline-overrides": "tsx scripts/export-outline-overrides.ts",
     "db:backfill-moonboard-set-ids": "tsx scripts/backfill-moonboard-set-ids.ts",
     "db:backfill-moonboard-hardware": "tsx scripts/backfill-moonboard-hardware.ts",
     "db:repair-moonboard-8c-grades": "tsx scripts/repair-moonboard-8c-grades.ts",

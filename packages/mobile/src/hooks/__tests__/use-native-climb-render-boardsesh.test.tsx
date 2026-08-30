@@ -553,9 +553,10 @@ describe('per-hold geometry, joined against the real shard data', () => {
     // same `geometry.outlines[hold.id]` lookup it does for a sprite sheet.
     const geometry = loadBoardArtGeometry(WOODS_8X10);
     expect(geometry).not.toBeNull();
-    // 469 of 485 — the 16 without one are bolts sitting on bare white sweep,
-    // which honestly has no hold to trace. Pinned by gate 4 in the package too.
-    expect(Object.keys(geometry?.outlines ?? {}).length).toBe(469);
+    // 467 of 485 — 16 are bolts sitting on bare white sweep, which honestly has
+    // no hold to trace, and 2 traced into a ring that crosses itself and were
+    // rejected for it. Pinned by gate 4 in the package too.
+    expect(Object.keys(geometry?.outlines ?? {}).length).toBe(467);
 
     const { holdsData } = await loadRealRenderData({
       boardName: WOODS_8X10.boardName,
@@ -665,7 +666,7 @@ describe('the cache key', () => {
 
   it('carries the current renderer version and is otherwise the classic key', () => {
     const classicKey = keyFor('');
-    expect(classicKey).toMatch(/^v8_/);
+    expect(classicKey).toMatch(/^v9_/);
     expect(classicKey).toBe(
       buildCacheKey(CLIMB.boardName, CLIMB.layoutId, CLIMB.sizeId, CLIMB.setIds, GRASSHOPPER_FRAMES),
     );

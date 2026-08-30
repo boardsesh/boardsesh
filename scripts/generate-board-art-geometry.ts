@@ -64,11 +64,21 @@ import { getBackgroundRelPaths } from '../packages/shared/board-render/src/backg
 // does not resolve for a script run from the repo root.
 import { MOONBOARD_CELL_SETS } from '../packages/shared/board-config/src/generated/moonboard-cell-sets';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS } from '../packages/shared/board-config/src/moonboard-config';
+import { isSimpleRing } from '../packages/shared/board-art-geometry/src/segmentation/led-ring';
 import {
   buildWhiteKeyMask,
   mergeCoincidentPlacements,
 } from '../packages/shared/board-art-geometry/src/segmentation/white-key';
 import type { BoardRenderDetails, RenderableHold } from '../packages/shared/board-render/src/types';
+import { loadOverridesFor } from './outline-overrides-merge';
+import {
+  MIN_CONFIG_ACCEPTANCE,
+  assembleLedInner,
+  describeLedRings,
+  extractConfigLedRings,
+  qualifies,
+  type LedRingConfigResult,
+} from './led-ring-extract';
 
 const ROOT_DIR = path.resolve(import.meta.dirname, '..');
 /**
@@ -954,6 +964,16 @@ type ShardTables = {
   outlines: Map<number, number[]>;
   silhouetteLightness: Map<number, number>;
   ledBright: Map<number, [number, number]>;
+  /**
+   * LED base-plate inner boundaries, in radius units like `outlines`.
+   *
+   * Two sources, in this order: the automatic extractor
+   * (`scripts/led-ring-extract.ts`) fills the table on the configs whose art
+   * actually carries a two-tone plate, and a committed `led_inner` override then
+   * REPLACES whatever it produced for that placement. Annotations are the
+   * extractor's calibration ground truth, so they have to win.
+   */
+  ledInner: Map<number, number[]>;
 };
 
 type ConfigResult = {
@@ -966,6 +986,8 @@ type ConfigResult = {
   counts: { traced: number; placements: number };
   summary: string;
   report: ConfigReportRow;
+  /** What the LED extractor measured, whether or not the config qualified. */
+  ledRings: LedRingConfigResult & { qualified: boolean };
   elapsedMs: number;
 };
 
@@ -1316,11 +1338,23 @@ type HoldTraceStats = {
   droppedArea: number;
   pulledBack: boolean;
   /** Why the placement carries no outline, or `null` when it does. */
-  fallbackReason: 'search-box-degenerate' | 'no-art-of-its-own' | 'perimeter-too-short' | 'traced-the-box' | null;
+  fallbackReason:
+    | 'search-box-degenerate'
+    | 'no-art-of-its-own'
+    | 'perimeter-too-short'
+    | 'traced-the-box'
+    | 'self-intersecting'
+    | null;
 };
 
 /** The counters the run's one-line summary is built from, per field. */
-type TraceCounts = { attempted: number; rejectedBox: number; neckTrimmed: number; pulledBack: number };
+type TraceCounts = {
+  attempted: number;
+  rejectedBox: number;
+  rejectedCrossing: number;
+  neckTrimmed: number;
+  pulledBack: number;
+};
 
 /**
  * Trace every placement in one field.
@@ -1353,6 +1387,7 @@ function traceOutlines(field: TraceField): {
   const stats = new Map<number, HoldTraceStats>();
   let attempted = 0;
   let rejectedBox = 0;
+  let rejectedCrossing = 0;
   let neckTrimmed = 0;
   let pulledBack = 0;
 
@@ -1514,6 +1549,28 @@ function traceOutlines(field: TraceField): {
       recordFallback(groupIds, 'traced-the-box', cellAlphaArea);
       continue;
     }
+    // Backstop for the defect the neck trim exists to prevent, kept because the
+    // trim is a fix and this is a proof — the same pairing
+    // `segmentation/led-ring.ts` already makes for the LED plate's inner ring.
+    //
+    // A 1-pixel isthmus the trim did not take makes the border follower walk out
+    // along one side of a limb and back along the other, and Douglas-Peucker
+    // then replaces that round trip with a pair of segments that cross. The
+    // result is not a silhouette a renderer can fill: even-odd fill punches the
+    // overlap out, so the mark would show a hole where the hold is solid.
+    //
+    // Every sprite-sheet board's outlines are simple, so this changes nothing
+    // for them. It rejects two of Woods' 1,337, both slivers of a hold its
+    // detector put several centres on — see `WOODS_GEOMETRY` in
+    // `@boardsesh/board-config`. A ring at the placement radius is the honest
+    // answer for those, and it is the same fallback an untraceable hold takes.
+    const ring: Point[] = [];
+    for (let index = 0; index < flat.length; index += 2) ring.push([flat[index], flat[index + 1]]);
+    if (!isSimpleRing(ring)) {
+      rejectedCrossing += 1;
+      recordFallback(groupIds, 'self-intersecting', cellAlphaArea);
+      continue;
+    }
     // Counted here, not where it was measured: an outline that then fell back is
     // not in the table, and the gates measure the table.
     if (droppedArea > NOTABLE_TRIM_AREA) neckTrimmed += 1;
@@ -1551,7 +1608,7 @@ function traceOutlines(field: TraceField): {
   // construction made only of pixels whose nearest placement is this one, so a
   // merge is not expressible — and the rule was deleting real outlines: on
   // Grasshopper it took 14, all of them the board's genuinely large square holds.
-  return { outlines, stats, counts: { attempted, rejectedBox, neckTrimmed, pulledBack } };
+  return { outlines, stats, counts: { attempted, rejectedBox, rejectedCrossing, neckTrimmed, pulledBack } };
 }
 
 /**
@@ -1570,7 +1627,7 @@ function mergeFieldTraces(
 ): { outlines: Map<number, number[]>; stats: Map<number, HoldTraceStats>; summary: string } {
   const outlines = new Map<number, number[]>();
   const stats = new Map<number, HoldTraceStats>();
-  const totals: TraceCounts = { attempted: 0, rejectedBox: 0, neckTrimmed: 0, pulledBack: 0 };
+  const totals: TraceCounts = { attempted: 0, rejectedBox: 0, rejectedCrossing: 0, neckTrimmed: 0, pulledBack: 0 };
 
   for (const field of fields) {
     const traced = traceOutlines(field);
@@ -1581,6 +1638,7 @@ function mergeFieldTraces(
     for (const [holdId, entry] of traced.stats) stats.set(holdId, entry);
     totals.attempted += traced.counts.attempted;
     totals.rejectedBox += traced.counts.rejectedBox;
+    totals.rejectedCrossing += traced.counts.rejectedCrossing;
     totals.neckTrimmed += traced.counts.neckTrimmed;
     totals.pulledBack += traced.counts.pulledBack;
   }
@@ -1604,7 +1662,11 @@ function mergeFieldTraces(
   const summary =
     `${outlines.size}/${totals.attempted} traced ` +
     `(${missing} fell back: ${totals.rejectedBox} hit the search box, ` +
-    `${missing - totals.rejectedBox} had no art of their own; ` +
+    // Only mentioned where it happened. This line is the header comment on every
+    // shard, so an unconditional "0 crossed themselves" would rewrite all 51
+    // files to say nothing had gone wrong on any of them.
+    (totals.rejectedCrossing > 0 ? `${totals.rejectedCrossing} crossed themselves, ` : '') +
+    `${missing - totals.rejectedBox - totals.rejectedCrossing} had no art of their own; ` +
     `${totals.neckTrimmed} lost more than ${NOTABLE_TRIM_AREA} px² to the neck trim and the pullback together; ` +
     `${totals.pulledBack} pulled back off a neighbour's art)`;
   return { outlines, stats, summary };
@@ -1635,6 +1697,17 @@ const REPORT_STROKE_TRACED = '#33FF99';
 const REPORT_STROKE_PULLED_BACK = '#FFB000';
 const REPORT_STROKE_CHOPPED = '#FF2D55';
 const REPORT_STROKE_UNTRACED = '#8A8A8A';
+/**
+ * The extracted LED base plate's inner edge. Cyan because it has to be told
+ * apart from all four silhouette states at a glance on the same sheet, and
+ * nothing else on the board art is that colour — the plate itself is beige.
+ */
+const REPORT_STROKE_LED_INNER = '#00D4FF';
+/** Board pixels of backdrop between the two halves of a `--report-crop` image. */
+const REPORT_CROP_GUTTER = 8;
+
+/** A `--report-crop=x,y,size` region, in board pixels. */
+type ReportCrop = { left: number; top: number; width: number; height: number };
 
 function reportRowFor(key: string, placementCount: number, stats: Map<number, HoldTraceStats>): ConfigReportRow {
   const recoveries = [...stats.values()].filter((entry) => entry.traced).map((entry) => entry.areaRecovery);
@@ -1669,6 +1742,8 @@ async function writeConfigReport(
   placements: RenderableHold[],
   outlines: Map<number, number[]>,
   stats: Map<number, HoldTraceStats>,
+  ledInnerBoardPx: ReadonlyMap<number, number[]>,
+  crop: ReportCrop | null,
 ): Promise<void> {
   const shapes: string[] = [];
   const seen = new Set<number>();
@@ -1697,6 +1772,19 @@ async function writeConfigReport(
       points.push(`${centreX + flat[index]},${centreY + flat[index + 1]}`);
     }
     shapes.push(`<polygon points="${points.join(' ')}" fill="none" stroke="${stroke}" stroke-width="1.5"/>`);
+
+    // Drawn after the silhouette so it sits on top where the two nearly meet —
+    // on a hold whose plate is a hairline along the lit top edge, that is the
+    // only place the pair is distinguishable at sheet scale.
+    const ledInner = ledInnerBoardPx.get(placement.id);
+    if (ledInner === undefined) continue;
+    const ledPoints: string[] = [];
+    for (let index = 0; index < ledInner.length; index += 2) {
+      ledPoints.push(`${centreX + ledInner[index]},${centreY + ledInner[index + 1]}`);
+    }
+    shapes.push(
+      `<polygon points="${ledPoints.join(' ')}" fill="none" stroke="${REPORT_STROKE_LED_INNER}" stroke-width="1"/>`,
+    );
   }
 
   const overlay = Buffer.from(
@@ -1704,11 +1792,41 @@ async function writeConfigReport(
   );
   const imagePath = path.join(reportDir, `${row.key}.png`);
   mkdirSync(path.dirname(imagePath), { recursive: true });
-  await sharp(art.pixels, { raw: { width: art.width, height: art.height, channels: 4 } })
+  const flat = sharp(art.pixels, { raw: { width: art.width, height: art.height, channels: 4 } })
     .flatten({ background: REPORT_BACKDROP })
+    .png();
+  await flat
+    .clone()
     .composite([{ input: overlay }])
-    .png()
     .toFile(imagePath);
+
+  // The sheet is a whole 1080x1920 board and a base plate is a few pixels wide,
+  // so the sheet alone cannot answer "is the cyan line on the right edge". The
+  // crop is the same region twice, bare art beside the same art with the rings
+  // on it, which is the comparison a reviewer can actually make.
+  if (crop !== null) {
+    // Cropped from the FINISHED images rather than mid-pipeline: sharp applies
+    // an extract before a composite, so cropping in the same pipeline would try
+    // to lay a whole-board overlay over a 360-pixel square and throw.
+    const bare = await sharp(await flat.clone().toBuffer())
+      .extract(crop)
+      .toBuffer();
+    const marked = await sharp(readFileSync(imagePath)).extract(crop).toBuffer();
+    await sharp({
+      create: {
+        width: crop.width * 2 + REPORT_CROP_GUTTER,
+        height: crop.height,
+        channels: 4,
+        background: REPORT_BACKDROP,
+      },
+    })
+      .composite([
+        { input: bare, left: 0, top: 0 },
+        { input: marked, left: crop.width + REPORT_CROP_GUTTER, top: 0 },
+      ])
+      .png()
+      .toFile(path.join(reportDir, `${row.key}-crop.png`));
+  }
 
   const rows = [...stats.values()]
     .sort((left, right) => left.holdId - right.holdId)
@@ -1892,6 +2010,7 @@ async function measureConfig(
     setIds: number[];
   },
   reportDir: string | null,
+  reportCrop: ReportCrop | null,
   maskProvider: MaskProvider,
 ): Promise<ConfigResult | { skipped: string }> {
   const startedAt = Date.now();
@@ -1954,8 +2073,75 @@ async function measureConfig(
   const placements = details.holdsData;
   const { outlines, summary, stats } = mergeFieldTraces(provider(details, layers), placements);
   const uniquePlacements = new Set(placements.map((placement) => placement.id)).size;
+
+  const radiusById = new Map<number, number>();
+  const centreById = new Map<number, [number, number]>();
+  for (const placement of placements) {
+    if (radiusById.has(placement.id)) continue;
+    radiusById.set(placement.id, placement.r);
+    centreById.set(placement.id, [placement.cx, placement.cy]);
+  }
+
+  // --- Override merge, point 1 of 3: put the hand-drawn silhouette in ---------
+  //
+  // At the emission boundary and nowhere else. The tracer has finished and its
+  // stats are already recorded; from here the overridden placements are simply
+  // placements that have an outline, so everything downstream — the lightness
+  // measurement, the counts, the report — reads the shape that ships rather than
+  // the shape a human already rejected.
+  //
+  // Converted back into the tracer's own frame (integer board pixels offset from
+  // the ROUNDED centre) because that is what `measureSilhouette` scans and what
+  // the radius-unit conversion below undoes. Exactly inverse: emission does
+  // `(px + rounding) / r`, so this does `v * r - rounding`. Floats are fine —
+  // the scanline fill takes them — and the stored 4-decimal values go into the
+  // shard verbatim at point 2 regardless, so nothing round-trips.
+  const overrides = loadOverridesFor(key, radiusById.keys());
+  for (const [holdId, ring] of overrides.outlines) {
+    const radius = radiusById.get(holdId) as number;
+    const [exactX, exactY] = centreById.get(holdId) as [number, number];
+    const roundingX = Math.round(exactX) - exactX;
+    const roundingY = Math.round(exactY) - exactY;
+    const tracerPixels: number[] = [];
+    for (let index = 0; index < ring.length; index += 2) {
+      tracerPixels.push(ring[index] * radius - roundingX, ring[index + 1] * radius - roundingY);
+    }
+    outlines.set(holdId, tracerPixels);
+  }
+
+  // --- The LED base plate ----------------------------------------------------
+  //
+  // Run on the silhouettes that SHIP, hand-corrected ones included, because the
+  // extractor's whole input is "the art inside this polygon" and a corrected
+  // polygon is the one a renderer will subtract the inner ring from.
+  //
+  // Run on EVERY config, not on a list of boards. Whether a config's art carries
+  // a two-tone plate is a measurement — the acceptance rate — and a hand-kept
+  // board list would go stale the moment a board ships new art. A config that
+  // does not clear `MIN_CONFIG_ACCEPTANCE` emits no table at all, which is the
+  // same bytes it emitted before this extractor existed.
+  const measuredLedRings = extractConfigLedRings(art, placements, outlines, COORDINATE_DECIMALS);
+  const ledQualified = qualifies(measuredLedRings);
+  // Annotations replace extractions, never the other way round: a `led_inner`
+  // override is the ground truth this extractor is calibrated against. The rule
+  // lives in `assembleLedInner` rather than in two loops here, because two loops
+  // here were indistinguishable from the same two loops in the wrong order —
+  // nothing in the repo has a `led_inner` annotation to notice with.
+  const ledInner = assembleLedInner(ledQualified ? measuredLedRings.rings : new Map(), overrides.ledInner);
+
   const reportRow = reportRowFor(key, uniquePlacements, stats);
-  if (reportDir !== null) await writeConfigReport(reportDir, reportRow, art, placements, outlines, stats);
+  if (reportDir !== null) {
+    await writeConfigReport(
+      reportDir,
+      reportRow,
+      art,
+      placements,
+      outlines,
+      stats,
+      ledQualified ? measuredLedRings.boardPixelRings : new Map(),
+      reportCrop,
+    );
+  }
 
   const silhouetteLightness = new Map<number, number>();
   const ledBright = new Map<number, [number, number]>();
@@ -2022,16 +2208,21 @@ async function measureConfig(
     ]);
   }
 
-  const radiusById = new Map<number, number>();
-  const centreById = new Map<number, [number, number]>();
-  for (const placement of placements) {
-    if (radiusById.has(placement.id)) continue;
-    radiusById.set(placement.id, placement.r);
-    centreById.set(placement.id, [placement.cx, placement.cy]);
-  }
-
   const radiusUnitOutlines = new Map<number, number[]>();
   for (const [holdId, flat] of outlines) {
+    // --- Override merge, point 2 of 3: emit the stored ring verbatim ----------
+    //
+    // Not `v * r - rounding` back through `(px + rounding) / r`. That round trip
+    // is algebraically the identity and numerically is not: it re-rounds a value
+    // that was already rounded to 4 decimals, so a ring could come out a digit
+    // different from the one the reviewer approved and the one the database
+    // holds. Verbatim makes the shard byte-predictable from the JSON alone,
+    // which is what lets `overrides.test.ts` prove the merge actually ran.
+    const stored = overrides.outlines.get(holdId);
+    if (stored !== undefined) {
+      radiusUnitOutlines.set(holdId, stored);
+      continue;
+    }
     const radius = radiusById.get(holdId) as number;
     const [exactX, exactY] = centreById.get(holdId) as [number, number];
     // The tracer works in integer board pixels offset from the ROUNDED centre.
@@ -2049,19 +2240,37 @@ async function measureConfig(
     radiusUnitOutlines.set(holdId, converted);
   }
 
+  // --- Override merge, point 3 of 3: counts and the shard header --------------
+  //
+  // `outlines.size` already includes the overridden placements — an override can
+  // ADD an outline to a placement the tracer never traced, and a hand-drawn
+  // silhouette is as traced as any other from a consumer's point of view — so
+  // gate 4's pin moves with the correction rather than against it. The header
+  // says how many, so a shard diff is self-explanatory; a config with no
+  // overrides gets no extra text and stays byte-identical.
+  //
+  // ROWS, not placements, and the wording says so: one hold carrying both a
+  // silhouette and an LED-inner annotation is two rows in the table, two entries
+  // in the JSON and two lines of shard diff, so counting it as one would
+  // under-report exactly what the reader is looking at.
+  const overrideCount = overrides.outlines.size + overrides.ledInner.size;
+  const summaryWithOverrides =
+    overrideCount === 0 ? summary : `${summary}; ${overrideCount} hand-corrected override row(s) applied`;
+
   return {
     key,
     boardName: entry.boardName,
     layoutId: entry.layoutId,
     sizeId: entry.sizeId,
-    tables: { outlines: radiusUnitOutlines, silhouetteLightness, ledBright },
+    tables: { outlines: radiusUnitOutlines, silhouetteLightness, ledBright, ledInner },
     wall: {
       mean: annulusCount === 0 ? 0 : roundTo(annulusTotal / annulusCount, LIGHTNESS_DECIMALS),
       coverage: annulusPlacements === 0 ? 0 : roundTo(annulusCount / annulusPlacements, LIGHTNESS_DECIMALS),
     },
     counts: { traced: outlines.size, placements: annulusPlacements },
-    summary,
+    summary: summaryWithOverrides,
     report: reportRow,
+    ledRings: { ...measuredLedRings, qualified: ledQualified },
     elapsedMs: Date.now() - startedAt,
   };
 }
@@ -2086,6 +2295,21 @@ function renderShard(result: ConfigResult): string {
     .sort(numericAscending)
     .map(([holdId, [dx, dy]]) => `    ${holdId}: [${dx},${dy}],`)
     .join('\n');
+  const ledInnerRows = [...result.tables.ledInner.entries()]
+    .sort(numericAscending)
+    .map(([holdId, flat]) => `    ${holdId}: [${flat.join(',')}],`)
+    .join('\n');
+
+  // `ledInner` is written only where there is one. The field is optional in the
+  // contract precisely so that a shard with no LED annotations is the same bytes
+  // it was before this table existed, and 49 shards growing an empty `{}` would
+  // be a catalogue-wide diff saying nothing.
+  const ledInnerNote = ledInnerRows
+    ? `// ledInner:            placementId -> flat ring of the LED base plate's INNER edge, same\n` +
+      `//                      units. The lit region is the silhouette minus it. Extracted from\n` +
+      `//                      the art's two-tone plate, or hand-annotated where someone drew one.\n`
+    : '';
+  const ledInnerTable = ledInnerRows ? `  ledInner: {\n${ledInnerRows}\n  },\n` : '';
 
   return (
     `${DO_NOT_EDIT}\n` +
@@ -2096,10 +2320,12 @@ function renderShard(result: ConfigResult): string {
     `// silhouetteLightness: placementId -> OkLab L of the art inside the traced silhouette.\n` +
     `// ledBright:           placementId -> [dx,dy] radius units to the bright LED blob the art\n` +
     `//                      already paints, for the placements where it paints one.\n` +
+    ledInnerNote +
     `module.exports = {\n` +
     `  outlines: {\n${outlineRows}${outlineRows ? '\n' : ''}  },\n` +
     `  silhouetteLightness: {\n${lightnessRows}${lightnessRows ? '\n' : ''}  },\n` +
     `  ledBright: {\n${ledRows}${ledRows ? '\n' : ''}  },\n` +
+    ledInnerTable +
     `};\n`
   );
 }
@@ -2287,6 +2513,20 @@ async function main(): Promise<number> {
     mkdirSync(reportDir, { recursive: true });
     console.log(`[board-art-geometry] report run — writing to ${reportDir}, no generated files touched.`);
   }
+  // `--report-crop=x,y,size`: also write `<key>-crop.png`, the same square of
+  // board art twice, bare beside marked. A full-board sheet cannot show whether
+  // a base-plate ring landed on the right edge — the plate is a few pixels wide
+  // on a 1080-pixel board — so a reviewer needs one region at native scale.
+  const cropArgument = argumentValue('--report-crop');
+  let reportCrop: ReportCrop | null = null;
+  if (cropArgument !== null) {
+    const parts = cropArgument.split(',').map(Number);
+    if (parts.length !== 3 || parts.some((value) => !Number.isInteger(value) || value < 0)) {
+      console.error(`[board-art-geometry] --report-crop expects three non-negative integers x,y,size`);
+      return 1;
+    }
+    reportCrop = { left: parts[0], top: parts[1], width: parts[2], height: parts[2] };
+  }
 
   const entries = listCatalogueEntries()
     .filter((entry) => boardFilter === null || entry.boardName === boardFilter)
@@ -2310,7 +2550,7 @@ async function main(): Promise<number> {
   const startedAt = Date.now();
 
   for (const entry of entries) {
-    const measured = await measureConfig(entry, reportDir, perImageMaskProvider);
+    const measured = await measureConfig(entry, reportDir, reportCrop, perImageMaskProvider);
     if ('skipped' in measured) {
       skipped.push(measured.skipped);
       console.warn(`[board-art-geometry] SKIP ${measured.skipped}`);
@@ -2322,6 +2562,10 @@ async function main(): Promise<number> {
       `[board-art-geometry] ${measured.key.padEnd(20)} ${measured.summary} ` +
         `| wall L ${measured.wall.mean} coverage ${measured.wall.coverage} ` +
         `| ${measured.tables.ledBright.size} painted LEDs | ${(measured.elapsedMs / 1000).toFixed(1)}s`,
+    );
+    console.log(
+      `[board-art-geometry] ${' '.repeat(20)} ${describeLedRings(measured.ledRings)} ` +
+        `| ${measured.ledRings.qualified ? 'EMITTED' : 'not emitted'}`,
     );
   }
 
@@ -2343,8 +2587,19 @@ async function main(): Promise<number> {
         `chopped = traced outlines keeping less than ${MIN_AREA_RECOVERY} of the connected art body\n` +
         `their seed sits on.\n` +
         `Stroke colours in the PNGs: green traced clean, amber pulled back off a neighbour,\n` +
-        `red chopped, dashed grey untraced (the renderer falls back to a ring).\n\n` +
-        `${header}\n${rows.join('\n')}\n` +
+        `red chopped, dashed grey untraced (the renderer falls back to a ring),\n` +
+        `cyan the extracted LED base plate's inner edge.\n\n` +
+        `${header}\n${rows.join('\n')}\n\n` +
+        `LED base-plate extraction (a config emits a ledInner table only above ` +
+        `${(MIN_CONFIG_ACCEPTANCE * 100).toFixed(0)}%):\n` +
+        results
+          .map(
+            (result) =>
+              `  ${result.key.padEnd(16)}  ${result.ledRings.qualified ? 'EMITTED    ' : 'not emitted'}  ` +
+              describeLedRings(result.ledRings),
+          )
+          .join('\n') +
+        `\n` +
         (skipped.length > 0 ? `\nskipped:\n${skipped.map((line) => `  - ${line}`).join('\n')}\n` : ''),
     );
     console.log(`[board-art-geometry] report written to ${reportDir}`);

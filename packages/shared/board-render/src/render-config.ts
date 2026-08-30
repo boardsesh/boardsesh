@@ -27,6 +27,13 @@ export const THUMBNAIL_WIDTH = 200;
 export type HoldGeometryInput = {
   /** Flat `[x0, y0, x1, y1, …]` outline per hold, in units of `r` relative to its centre. */
   outlines?: Record<number, number[]>;
+  /**
+   * Inner boundary of the LED base plate per hold, same form and units as
+   * `outlines`. Where it exists the renderer lights the ring between the two —
+   * the plate a real LED shines through — instead of the whole silhouette.
+   * Rare and hand-traced: a hold that is absent from it lights whole.
+   */
+  ledInner?: Record<number, number[]>;
   /** `[dx, dy]` LED position offset per hold, in units of `r` relative to its centre. */
   ledBright?: Record<number, [number, number]>;
   /** 0–1 lightness of the board photo under each hold's silhouette. */
@@ -164,9 +171,13 @@ export function buildRenderConfig({
 
     const outline = holdGeometry?.outlines?.[hold.id];
     const silhouetteLightness = holdGeometry?.silhouetteLightness?.[hold.id];
+    // The plate ring only means anything against the silhouette it was traced
+    // inside, so it rides along with `outline` and never on its own.
+    const ledInner = outline ? holdGeometry?.ledInner?.[hold.id] : undefined;
     return {
       ...base,
       ...(outline ? { outline } : {}),
+      ...(ledInner ? { led_inner: ledInner } : {}),
       ...(led ? { led } : {}),
       ...(silhouetteLightness !== undefined ? { silhouette_lightness: silhouetteLightness } : {}),
     };
