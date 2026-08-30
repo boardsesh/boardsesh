@@ -80,7 +80,7 @@ void describe('postgres client', () => {
 
     void it('shrinks the defaults on Vercel, where instance count is the term that grows', async () => {
       // A crawl burst scales lambda count; instances × held-idle connections
-      // exhausted the shared max_connections on 2026-08-29 (BOARDSESH-FS).
+      // can exhaust the shared max_connections. See docs/db-connectivity.md.
       const options = await poolOptionsWith({
         DB_POOL_MAX: undefined,
         DB_POOL_IDLE_TIMEOUT_S: undefined,
