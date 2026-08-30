@@ -119,6 +119,11 @@ void describe('postgres client', () => {
       assert.equal(options.max, 3);
     });
 
+    void it('falls back to the serverless default when DB_POOL_IDLE_TIMEOUT_S is not a number on Vercel', async () => {
+      const options = await poolOptionsWith({ DB_POOL_IDLE_TIMEOUT_S: 'abc', VERCEL: '1' });
+      assert.equal(options.idle_timeout, 5);
+    });
+
     void it('keeps DB_POOL_IDLE_TIMEOUT_S=0 as "never close an idle connection"', async () => {
       // postgres.js treats a falsy idle_timeout as disabled, so 0 is meaningful
       // and must not be clamped up the way DB_POOL_MAX is.
