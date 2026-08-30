@@ -11,7 +11,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { SUPPORTED_BOARDS } from '@boardsesh/board-config';
+import { SUPPORTED_BOARDS, getQuantumModelPickerLabel, getQuantumNeutralGrid } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,6 +34,8 @@ import { TimerPairingSheet } from '../ble/TimerPairingSheet';
 import { GymPickerSheet } from './GymPickerSheet';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
+import { useHasCompleteQuantumGeometryCatalog, useQuantumGeometry } from '../../lib/quantum-geometry-store';
+import { useAngles } from '../../lib/graphql/hooks';
 
 const PREVIEW_MAX_HEIGHT = 260;
 
@@ -106,6 +108,27 @@ export function BoardForm({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [timerPairingOpen, setTimerPairingOpen] = useState(false);
   const [gymPickerOpen, setGymPickerOpen] = useState(false);
+  const quantumCatalogReady = useHasCompleteQuantumGeometryCatalog();
+  const isQuantum = builder.boardName === 'quantum';
+  const quantumGeometry = useQuantumGeometry(
+    builder.layoutId ?? 0,
+    builder.sizeId ?? 0,
+    isQuantum && builder.layoutId != null && builder.sizeId != null,
+  );
+  const quantumAnglesQuery = useAngles('quantum', builder.layoutId ?? 0, isQuantum && builder.layoutId != null);
+  const quantumCatalogAngles = useMemo(
+    () => quantumAnglesQuery.data?.map(({ angle }) => angle) ?? [],
+    [quantumAnglesQuery.data],
+  );
+  const { setCatalogAngleOptions } = builder;
+
+  useEffect(() => {
+    if (!isQuantum || builder.layoutId == null || !quantumAnglesQuery.isSuccess) {
+      setCatalogAngleOptions([]);
+      return;
+    }
+    setCatalogAngleOptions(quantumCatalogAngles);
+  }, [isQuantum, builder.layoutId, quantumAnglesQuery.isSuccess, quantumCatalogAngles, setCatalogAngleOptions]);
 
   const { setCoords } = builder;
   const location = useDeviceLocation();
@@ -120,21 +143,27 @@ export function BoardForm({
 
   // Chip options — memoised so the per-snap angle re-render doesn't rebuild them
   // (they don't depend on angle), letting the memoised chip rows bail out.
-  const boardOptions = useMemo(
-    () =>
-      SUPPORTED_BOARDS.map((board) => ({
-        key: board,
-        label: boardTypeLabel(board),
-        value: board,
-        selected: board === builder.boardName,
-      })),
-    [builder.boardName],
-  );
+  const boardOptions = useMemo(() => {
+    const availableBoards: BoardName[] = quantumCatalogReady ? [...SUPPORTED_BOARDS, 'quantum'] : [...SUPPORTED_BOARDS];
+    // An existing Quantum board remains visibly selected while its persisted
+    // geometry hydrates; new users only see the option after all five models
+    // are ready, so the picker never leads into a dead browse path.
+    if (builder.boardName === 'quantum' && !availableBoards.includes('quantum')) availableBoards.push('quantum');
+    return availableBoards.map((board) => ({
+      key: board,
+      label: boardTypeLabel(board),
+      value: board,
+      selected: board === builder.boardName,
+    }));
+  }, [builder.boardName, quantumCatalogReady]);
   const layoutOptions = useMemo(
     () =>
       builder.layouts.map((layout) => ({
         key: layout.id,
-        label: cleanLayoutName(layout.name, builder.boardName),
+        label:
+          builder.boardName === 'quantum'
+            ? (getQuantumModelPickerLabel(layout.id) ?? layout.name)
+            : cleanLayoutName(layout.name, builder.boardName),
         value: layout.id,
         selected: layout.id === builder.layoutId,
       })),
@@ -162,6 +191,8 @@ export function BoardForm({
   );
 
   const showPreview = builder.layoutId != null && builder.sizeId != null && builder.setIds.length > 0;
+  const layoutLabel = isQuantum ? t('mobile.custom.model') : t('mobile.custom.layout');
+  const quantumGeometryReady = !isQuantum || quantumGeometry != null;
   const setIdsWire = builder.setIds.join(',');
   // Account for both the scroll content padding and the preview tile's padding.
   const previewMaxWidth = windowWidth - (spacing[4] + spacing[3]) * 2;
@@ -194,6 +225,12 @@ export function BoardForm({
           )}
         </View>
 
+        {isQuantum && showPreview && !quantumGeometryReady ? (
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.catalogStatusHint}>
+            {t('mobile.create.geometryLoading')}
+          </Text>
+        ) : null}
+
         {lockedConfig ? (
           <View style={[styles.lockedHint, { backgroundColor: systemColors.secondaryBackground }]}>
             <Icon name="info" size={16} color={systemColors.secondaryLabel} />
@@ -211,15 +248,15 @@ export function BoardForm({
           disabled={lockedConfig}
         />
 
-        <SectionLabel>{t('mobile.custom.layout')}</SectionLabel>
+        <SectionLabel>{layoutLabel}</SectionLabel>
         <BoardConfigChips
-          groupLabel={t('mobile.custom.layout')}
+          groupLabel={layoutLabel}
           options={layoutOptions}
           onSelect={builder.selectLayout}
           disabled={lockedConfig}
         />
 
-        {builder.sizes.length > 0 ? (
+        {builder.sizes.length > 0 && !isQuantum ? (
           <>
             <SectionLabel>{t('mobile.custom.size')}</SectionLabel>
             <BoardConfigChips
@@ -253,6 +290,12 @@ export function BoardForm({
               onValueChange={builder.setIsAngleAdjustable}
             />
           </>
+        ) : isQuantum && builder.layoutId != null ? (
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.catalogStatusHint}>
+            {quantumAnglesQuery.isPending || quantumAnglesQuery.isFetching
+              ? t('mobile.create.catalogAnglesLoading')
+              : t('mobile.create.catalogAnglesUnavailable')}
+          </Text>
         ) : null}
 
         {builder.layoutId != null ? (
@@ -309,7 +352,7 @@ export function BoardForm({
 
         {advancedOpen ? (
           <View style={styles.advancedBody}>
-            {builder.sets.length > 0 ? (
+            {builder.sets.length > 0 && !isQuantum ? (
               <>
                 <SectionLabel>{t('mobile.custom.sets')}</SectionLabel>
                 <BoardConfigChips
@@ -473,7 +516,7 @@ export function BoardForm({
           onPress={onSubmit}
           variant="filled"
           size="large"
-          disabled={!builder.canCreate || submitting}
+          disabled={!builder.canCreate || !quantumGeometryReady || submitting}
           loading={submitting}
         />
       </View>
@@ -530,9 +573,12 @@ function BoardConfigPreview({
     return getBoardRenderData({ boardName, layoutId, sizeId, setIds: setIdValues });
   }, [boardName, layoutId, sizeId, setIds]);
 
-  if (!renderData) return null;
+  const neutralQuantumGrid = boardName === 'quantum' ? getQuantumNeutralGrid(layoutId, sizeId) : null;
+  if (!renderData && !neutralQuantumGrid) return null;
 
-  const aspect = renderData.boardWidth / renderData.boardHeight;
+  const boardWidth = renderData?.boardWidth ?? neutralQuantumGrid!.boardWidth;
+  const boardHeight = renderData?.boardHeight ?? neutralQuantumGrid!.boardHeight;
+  const aspect = boardWidth / boardHeight;
   let height = PREVIEW_MAX_HEIGHT;
   let width = height * aspect;
   if (width > maxWidth) {
@@ -551,8 +597,8 @@ function BoardConfigPreview({
         layoutId={layoutId}
         sizeId={sizeId}
         setIds={setIds}
-        boardWidth={renderData.boardWidth}
-        boardHeight={renderData.boardHeight}
+        boardWidth={boardWidth}
+        boardHeight={boardHeight}
         renderWidth={Math.round(width)}
         style={boardStyle}
       />
@@ -601,6 +647,9 @@ const styles = StyleSheet.create({
   angleDiagram: {
     alignItems: 'center',
     paddingVertical: spacing[2],
+  },
+  catalogStatusHint: {
+    marginTop: spacing[3],
   },
   input: {
     paddingHorizontal: spacing[3],

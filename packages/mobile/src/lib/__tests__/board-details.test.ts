@@ -4,6 +4,7 @@ vi.mock('@boardsesh/board-constants/product-sizes', () => ({
   getImageFilename: vi.fn(),
   getProductSize: vi.fn(),
   getHolePlacements: vi.fn(),
+  hasProductSizeEdges: vi.fn(),
 }));
 
 // `getWoodsBoardDetails` is deliberately NOT mocked: the Woods cases below assert
@@ -13,6 +14,7 @@ vi.mock('@boardsesh/board-constants/product-sizes', () => ({
 vi.mock('@boardsesh/board-config', async () => {
   const actual = await vi.importActual<typeof import('@boardsesh/board-config')>('@boardsesh/board-config');
   return {
+    ...actual,
     BOARD_IMAGE_DIMENSIONS: {
       kilter: {},
       tension: {},
@@ -32,6 +34,7 @@ vi.mock('../env', () => ({
 import { getImageFilename } from '@boardsesh/board-constants/product-sizes';
 import { BOARD_IMAGE_DIMENSIONS, getMoonBoardDetails } from '@boardsesh/board-config';
 import { clearBoardRenderDataCache, getBoardAspectRatio, getBoardRenderData } from '../board-details';
+import { registerQuantumGeometry, unregisterQuantumGeometry } from '../quantum-geometry-store';
 
 const mockedGetImageFilename = vi.mocked(getImageFilename);
 const mockedGetMoonBoardDetails = vi.mocked(getMoonBoardDetails);
@@ -47,6 +50,7 @@ describe('getBoardAspectRatio', () => {
     vi.resetAllMocks();
     clearBoardRenderDataCache();
     BOARD_IMAGE_DIMENSIONS.kilter = {};
+    unregisterQuantumGeometry(9101, 9201);
   });
 
   it('returns the fallback ratio when setIds is empty', () => {
@@ -99,12 +103,21 @@ describe('getBoardAspectRatio', () => {
     expect(getBoardAspectRatio({ boardName: 'woods', layoutId: 1, sizeId: 2, setIds: [1] })).toBeCloseTo(1225 / 1400);
     expect(getBoardAspectRatio({ boardName: 'woods', layoutId: 1, sizeId: 1, setIds: [1] })).toBeCloseTo(720 / 1000);
   });
+
+  it('uses the exact neutral Quantum model ratio before geometry hydrates', () => {
+    expect(getBoardAspectRatio({ boardName: 'quantum', layoutId: 9101, sizeId: 9201, setIds: [1] })).toBe(1);
+    expect(getBoardAspectRatio({ boardName: 'quantum', layoutId: 9102, sizeId: 9202, setIds: [1] })).toBe(15 / 12);
+    expect(getBoardAspectRatio({ boardName: 'quantum', layoutId: 9101, sizeId: 9202, setIds: [1] })).toBeCloseTo(
+      1080 / 1920,
+    );
+  });
 });
 
 describe('getBoardRenderData', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     clearBoardRenderDataCache();
+    unregisterQuantumGeometry(9101, 9201);
   });
 
   it('builds MoonBoard render data from the shared MoonBoard config', () => {
@@ -144,6 +157,34 @@ describe('getBoardRenderData', () => {
 
     expect(result).toBeNull();
     expect(mockedGetMoonBoardDetails).not.toHaveBeenCalled();
+  });
+
+  it('renders only an exact hydrated Quantum layout, size, and synthetic set', () => {
+    expect(
+      registerQuantumGeometry({
+        layoutId: 9101,
+        sizeId: 9201,
+        revision: 'catalog-1',
+        edgeLeft: 10_000,
+        edgeRight: 20_000,
+        edgeBottom: 30_000,
+        edgeTop: 40_000,
+        placements: [{ placementId: 1_000_000, holeId: 1_000_000, x: 15_000, y: 35_000, ledPosition: 42 }],
+      }),
+    ).toBe(true);
+
+    expect(getBoardRenderData({ boardName: 'quantum', layoutId: 9101, sizeId: 9201, setIds: [1] })).toEqual({
+      boardWidth: 1500,
+      boardHeight: 1500,
+      edgeLeft: 10_000,
+      edgeRight: 20_000,
+      edgeBottom: 30_000,
+      edgeTop: 40_000,
+      backgroundImageKeys: [],
+      holdsData: [{ id: 1_000_000, mirroredHoldId: null, cx: 750, cy: 750, r: 18 }],
+    });
+    expect(getBoardRenderData({ boardName: 'quantum', layoutId: 9101, sizeId: 9201, setIds: [2] })).toBeNull();
+    expect(getBoardRenderData({ boardName: 'quantum', layoutId: 9101, sizeId: 9202, setIds: [1] })).toBeNull();
   });
 
   it('warns and returns null when MoonBoard details cannot be resolved', () => {

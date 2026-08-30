@@ -3,8 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../board-details', () => ({
   getBoardRenderData: vi.fn(),
 }));
+vi.mock('../quantum-geometry-store', () => ({
+  getQuantumGeometry: vi.fn(),
+}));
 
 import { getBoardRenderData } from '../board-details';
+import { getQuantumGeometry } from '../quantum-geometry-store';
 import {
   clearCreateBoardHoldsCache,
   getCreateBoardHolds,
@@ -13,6 +17,7 @@ import {
 } from '../create-board-holds';
 
 const mockedGetBoardRenderData = vi.mocked(getBoardRenderData);
+const mockedGetQuantumGeometry = vi.mocked(getQuantumGeometry);
 
 describe('getCreateBoardHolds', () => {
   beforeEach(() => {
@@ -92,6 +97,30 @@ describe('getCreateBoardHolds', () => {
     prewarmCreateBoardHolds(config);
     expect(getCreateBoardHolds(config)?.holdTargets).toEqual([{ id: 1, cx: 68, cy: 950, r: 12 }]);
     expect(mockedGetBoardRenderData).toHaveBeenCalledTimes(1);
+  });
+
+  it('recomputes Quantum targets after a geometry revision hydrates', () => {
+    mockedGetQuantumGeometry.mockReturnValue(null);
+    mockedGetBoardRenderData.mockReturnValueOnce(null).mockReturnValue({
+      boardWidth: 1500,
+      boardHeight: 1500,
+      edgeLeft: 0,
+      edgeRight: 1000,
+      edgeBottom: 0,
+      edgeTop: 1000,
+      backgroundImageKeys: [],
+      holdsData: [{ id: 1_000_000, mirroredHoldId: null, cx: 750, cy: 750, r: 18 }],
+    });
+    const config = { boardName: 'quantum' as const, layoutId: 9101, sizeId: 9201, setIds: [1] };
+
+    expect(getCreateBoardHolds(config)).toBeNull();
+    mockedGetQuantumGeometry.mockReturnValue({ revision: 'catalog-1' } as ReturnType<typeof getQuantumGeometry>);
+
+    expect(getCreateBoardHolds(config)).toMatchObject({
+      family: 'quantum',
+      holdTargets: [{ id: 1_000_000, cx: 750, cy: 750, r: 18 }],
+    });
+    expect(mockedGetBoardRenderData).toHaveBeenCalledTimes(2);
   });
 
   it('promotes reused configs before evicting old cache entries', () => {

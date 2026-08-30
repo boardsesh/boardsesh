@@ -1,13 +1,16 @@
 import { v4 as uuidv4 } from 'uuid';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type {
   ConnectionContext,
   ClimbQueueItemInput,
   ResolvedBoard,
   BoardPresenceClimb,
+  BoardLayerPresence,
+  BoardLayersSnapshot,
 } from '@boardsesh/shared-schema';
 import { normaliseSetIds } from '@boardsesh/board-config';
+import { parseBoardLayerPlacementIds } from '@boardsesh/board-layers';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
@@ -17,6 +20,7 @@ import {
   BoardPresenceAngleSchema,
   BoardPresenceConfigInputSchema,
   ReportBoardClimbInputSchema,
+  ReportBoardLayersInputSchema,
 } from '../../../validation/schemas';
 import { generateUniqueSlug } from '../social/boards';
 import { assertBoardCapNotReached } from '../social/board-limits';
@@ -28,6 +32,7 @@ import { roomManager } from '../../../services/room-manager';
 import { isApnsConfigured, sendLiveActivityUpdate } from '../../../services/apns';
 import { buildContentStateFromQueueState } from '../../../services/apns/content-state';
 import { publishBoardQueuePreviewForSession } from '../../../services/board-queue-preview';
+import { markBoardLayersStale } from '../../../services/board-layers-presence';
 import {
   assertValidBoardId,
   candidateToActiveBoard,
@@ -66,6 +71,78 @@ const SERIAL_RESOLUTION_MAX_ATTEMPTS = 3;
 function validateAdvertisedBoardType(advertisedBoardType: string | null | undefined): string | undefined {
   if (advertisedBoardType == null) return undefined;
   return validateInput(AdvertisedBoardTypeSchema, advertisedBoardType, 'advertisedBoardType') ?? undefined;
+}
+
+function boardLayerClaimToken(connectionId: string): string {
+  return `layer-connection:${connectionId}`;
+}
+
+type CommitBoardLayersForConnectionInput = Readonly<{
+  boardId: number;
+  proposedSnapshot: BoardLayersSnapshot;
+  emitterId: string;
+  layerClaimToken: string;
+  connectionId: string;
+  userId: string | null;
+}>;
+
+/**
+ * Commit a confirmed controller roster and bind its claim to the reporting
+ * WebSocket. The distributed write happens first; if the socket started
+ * closing before the in-memory note can be recorded, compensate the accepted
+ * claim with a newer conditional disconnect instead of leaving a dead writer.
+ */
+export async function commitBoardLayersForConnection({
+  boardId,
+  proposedSnapshot,
+  emitterId,
+  layerClaimToken,
+  connectionId,
+  userId,
+}: CommitBoardLayersForConnectionInput): Promise<BoardLayersSnapshot> {
+  const boardKey = String(boardId);
+  const commit = await pubsub.commitBoardLayers(boardKey, proposedSnapshot, emitterId, layerClaimToken);
+  if (!commit.accepted) return commit.snapshot;
+
+  const noteAccepted = roomManager.noteBoardWriter(connectionId, boardId, emitterId, layerClaimToken);
+  if (!noteAccepted) {
+    // Reserve before compare-and-delete so a reconnect that claims the board
+    // after this point receives a higher sequence. Both writer clear and layer
+    // stale are owner-CAS operations, so an old same-user socket cannot touch
+    // the reconnect's fresh claim.
+    const disconnectSeq = await pubsub.nextBoardSeq(boardKey);
+    const cleared = await pubsub.clearBoardWriterIf(boardKey, emitterId, layerClaimToken);
+    if (!cleared) return commit.snapshot;
+
+    pubsub.publishBoardPresenceEvent(boardKey, {
+      __typename: 'BoardConnectionChanged',
+      holder: null,
+      seq: disconnectSeq,
+    });
+    return (await markBoardLayersStale(boardId, layerClaimToken, disconnectSeq)) ?? commit.snapshot;
+  }
+
+  // Do not publish the accepted fresh state until the close handshake above
+  // succeeds. This prevents observers from seeing a roster whose reporter was
+  // already gone before its commit completed.
+  pubsub.publishBoardPresenceEvent(boardKey, {
+    __typename: 'BoardLayersChanged',
+    snapshot: commit.snapshot,
+  });
+  if (commit.previousWriter !== emitterId || commit.previousClaimToken !== layerClaimToken) {
+    const reportingClient = roomManager.getClient(connectionId);
+    pubsub.publishBoardPresenceEvent(boardKey, {
+      __typename: 'BoardConnectionChanged',
+      holder: {
+        userId,
+        displayName: reportingClient?.username || null,
+        avatarUrl: reportingClient?.avatarUrl ?? null,
+        lastSentAt: proposedSnapshot.observedAt,
+      },
+      seq: proposedSnapshot.seq,
+    });
+  }
+  return commit.snapshot;
 }
 
 type BoardCandidatePayload = {
@@ -712,6 +789,12 @@ export const boardPresenceMutations = {
       pubsub.getBoardReportGate(String(boardId), emitterId),
     ]);
 
+    if (board.boardType === 'quantum') {
+      throw new GraphQLError('Quantum Board presence must be reported with board layers', {
+        extensions: { code: 'BAD_USER_INPUT' },
+      });
+    }
+
     // Proof-of-presence: only an emitter that selected or connected to this board
     // (stamped in resolveBoardForUuid / resolveBoardForSerial /
     // resolveBoardForConfig) may post to its feed. Stops anyone injecting climbs
@@ -983,15 +1066,104 @@ export const boardPresenceMutations = {
     await applyRateLimit(ctx, ctx.isAuthenticated ? 60 : 240, 'reportBoardDisconnect');
     assertValidBoardId(boardId);
     const emitterId = ctx.userId ?? `conn:${ctx.connectionId}`;
-    const cleared = await pubsub.clearBoardWriterIf(String(boardId), emitterId);
+    const layerClaimToken = boardLayerClaimToken(ctx.connectionId);
+    const boardKey = String(boardId);
+    if ((await pubsub.getBoardWriter(boardKey)) !== emitterId) return false;
+    // Reserve the disconnect sequence before clearing. A new reporter can only
+    // take the writer after this point, so its handoff receives a higher seq
+    // even if its event publishes before this one.
+    const seq = await pubsub.nextBoardSeq(boardKey);
+    const cleared = await pubsub.clearBoardWriterIf(boardKey, emitterId, layerClaimToken);
     if (cleared) {
-      const seq = await pubsub.nextBoardSeq(String(boardId));
-      pubsub.publishBoardPresenceEvent(String(boardId), {
+      pubsub.publishBoardPresenceEvent(boardKey, {
         __typename: 'BoardConnectionChanged',
         holder: null,
         seq,
       });
+      await markBoardLayersStale(boardId, layerClaimToken, seq);
     }
     return cleared;
+  },
+
+  /**
+   * Publish the controller-confirmed QuantumBoard roster. The payload is
+   * intentionally sanitized: no controller user or route UUID can enter the
+   * GraphQL boundary, Redis, subscriptions, or analytics.
+   */
+  reportBoardLayers: async (
+    _: unknown,
+    { boardId, layers }: { boardId: number; layers: unknown },
+    ctx: ConnectionContext,
+  ): Promise<BoardLayersSnapshot> => {
+    await applyRateLimit(ctx, ctx.isAuthenticated ? 60 : 240, 'reportBoardLayers');
+    assertValidBoardId(boardId);
+    const board = await requireActiveBoardById(boardId);
+    if (board.boardType !== 'quantum') {
+      throw new GraphQLError('Board layers are only supported for QuantumBoard', {
+        extensions: { code: 'BAD_USER_INPUT' },
+      });
+    }
+
+    const emitterId = ctx.userId ?? `conn:${ctx.connectionId}`;
+    if (!(await pubsub.hasBoardMembership(String(boardId), emitterId))) {
+      throw new GraphQLError('Not connected to this board');
+    }
+
+    const validatedLayers = validateInput(ReportBoardLayersInputSchema, layers, 'layers');
+    const climbUuids = validatedLayers.flatMap((layer) => (layer.climbUuid ? [layer.climbUuid] : []));
+    const catalogRows =
+      climbUuids.length === 0
+        ? []
+        : await db
+            .select({ uuid: dbSchema.boardClimbs.uuid, frames: dbSchema.boardClimbs.frames })
+            .from(dbSchema.boardClimbs)
+            .where(
+              and(
+                eq(dbSchema.boardClimbs.boardType, 'quantum'),
+                eq(dbSchema.boardClimbs.layoutId, Number(board.layoutId)),
+                inArray(dbSchema.boardClimbs.uuid, climbUuids),
+              ),
+            );
+    const catalogByUuid = new Map(catalogRows.map((row) => [row.uuid, row]));
+
+    const sanitizedLayers: BoardLayerPresence[] = validatedLayers.map((layer) => {
+      const catalogClimb = layer.climbUuid ? catalogByUuid.get(layer.climbUuid) : undefined;
+      if (layer.climbUuid && !catalogClimb) {
+        throw new GraphQLError('Unknown climb for this board', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      const placementIds = parseBoardLayerPlacementIds(catalogClimb?.frames);
+      const geometryKnown = layer.geometryKnown && placementIds !== null;
+      return {
+        color: layer.color,
+        remainingSeconds: layer.remainingSeconds,
+        climbUuid: layer.climbUuid ?? null,
+        angle: layer.angle ?? null,
+        geometryKnown,
+        placementIds: geometryKnown ? (placementIds ?? []) : [],
+      };
+    });
+
+    const layerClaimToken = boardLayerClaimToken(ctx.connectionId);
+    // A confirmed Quantum roster is the multi-layer equivalent of a confirmed
+    // single-climb send. The per-connection claim lets disconnect cleanup mark
+    // only this reporter's roster stale; an older phone cannot stale a newer
+    // reporter's state.
+    const seq = await pubsub.nextBoardSeq(String(boardId));
+    const observedAt = new Date().toISOString();
+    const proposedSnapshot: BoardLayersSnapshot = {
+      boardId,
+      layers: sanitizedLayers,
+      observedAt,
+      stale: false,
+      seq,
+    };
+    return commitBoardLayersForConnection({
+      boardId,
+      proposedSnapshot,
+      emitterId,
+      layerClaimToken,
+      connectionId: ctx.connectionId,
+      userId: ctx.userId ?? null,
+    });
   },
 };

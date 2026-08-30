@@ -12,12 +12,13 @@ import {
   type UseBoardPresenceResult,
 } from './use-board-presence';
 import type { BoardPresenceClient } from './types';
-import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
+import type { BoardLayersSnapshot, BoardPresenceClimb } from '@boardsesh/shared-schema';
 
 const BoardPresenceContext = createContext<UseBoardPresenceResult | undefined>(undefined);
 const BoardPresenceActionsContext = createContext<BoardPresenceActions | undefined>(undefined);
 const BoardPresenceCurrentContext = createContext<BoardPresenceCurrentState | undefined>(undefined);
 const BoardPresenceFeedContext = createContext<BoardPresenceFeedState | undefined>(undefined);
+const BoardPresenceLayersContext = createContext<BoardLayersSnapshot | null | undefined>(undefined);
 // Presence-only boolean: true iff a wall feed is live with a current climb. A
 // primitive, so consumers re-render only when the boolean flips (climb appears /
 // disappears), NOT on every climb-to-climb change like `BoardPresenceCurrentContext`
@@ -69,10 +70,18 @@ export function BoardPresenceProvider({
       reportClimb: value.reportClimb,
       reportClimbWithUndoTarget: value.reportClimbWithUndoTarget,
       reportDisconnect: value.reportDisconnect,
+      reportLayers: value.reportLayers,
       getUndoTarget: value.getUndoTarget,
       refresh: value.refresh,
     }),
-    [value.reportClimb, value.reportClimbWithUndoTarget, value.reportDisconnect, value.getUndoTarget, value.refresh],
+    [
+      value.reportClimb,
+      value.reportClimbWithUndoTarget,
+      value.reportDisconnect,
+      value.reportLayers,
+      value.getUndoTarget,
+      value.refresh,
+    ],
   );
   const current = useMemo<BoardPresenceCurrentState>(
     () => ({
@@ -111,9 +120,11 @@ export function BoardPresenceProvider({
           <BoardPresenceHasClimbContext.Provider value={hasClimb}>
             <BoardPresenceWallClimbContext.Provider value={wallClimb}>
               <BoardPresenceFeedContext.Provider value={feed}>
-                <BoardPresenceClientContext.Provider value={clientValue}>
-                  {children}
-                </BoardPresenceClientContext.Provider>
+                <BoardPresenceLayersContext.Provider value={value.layers}>
+                  <BoardPresenceClientContext.Provider value={clientValue}>
+                    {children}
+                  </BoardPresenceClientContext.Provider>
+                </BoardPresenceLayersContext.Provider>
               </BoardPresenceFeedContext.Provider>
             </BoardPresenceWallClimbContext.Provider>
           </BoardPresenceHasClimbContext.Provider>
@@ -151,6 +162,15 @@ export function useBoardPresenceFeed(): BoardPresenceFeedState {
   const context = useContext(BoardPresenceFeedContext);
   if (context === undefined) {
     throw new Error('useBoardPresenceFeed must be used within a BoardPresenceProvider');
+  }
+  return context;
+}
+
+/** Latest confirmed QuantumBoard roster without climb/history re-renders. */
+export function useBoardPresenceLayers(): BoardLayersSnapshot | null {
+  const context = useContext(BoardPresenceLayersContext);
+  if (context === undefined) {
+    throw new Error('useBoardPresenceLayers must be used within a BoardPresenceProvider');
   }
   return context;
 }
@@ -199,6 +219,7 @@ export {
   BoardPresenceActionsContext,
   BoardPresenceCurrentContext,
   BoardPresenceFeedContext,
+  BoardPresenceLayersContext,
   BoardPresenceHasClimbContext,
   BoardPresenceWallClimbContext,
   BoardPresenceClientContext,

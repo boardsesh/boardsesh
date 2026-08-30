@@ -86,14 +86,14 @@ export function ClimbCapsule({
   const { openGesture, currentItem } = useAccessoryClimbTap();
   // Connection state drives the leading control + the "you have control" glow.
   // Read from the single source so the bar can't disagree with the drawer bulb.
-  const { boardConnection, bluetooth } = useBoardConnectionState();
+  const { boardConnection, controlAvailable } = useBoardConnectionState();
 
   // Queue head only — the wall's lit climb lives in the top "On the wall" strip.
   const currentClimb = currentItem?.climb ?? null;
   // Board art needs the active board config; matches the iOS 26 native accessory.
   const showThumbnail = boardConfig != null;
   // Show the connect control once a board is bound (the BLE context exists).
-  const hasBoardControl = bluetooth != null;
+  const hasBoardControl = controlAvailable;
   // Only "you are driving the wall" lights the bar up.
   const connected = boardConnection === 'connectedByMe';
 

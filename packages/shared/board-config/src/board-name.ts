@@ -47,6 +47,7 @@ export function isSizeScopedBoard(boardType: string): boolean {
  */
 export function formatBoardDisplayName(boardType: string): string {
   if (boardType === 'moonboard') return 'MoonBoard';
+  if (boardType === 'quantum') return 'Quantum Board';
   if (boardType === 'soill') return 'So iLL';
   return boardType.charAt(0).toUpperCase() + boardType.slice(1);
 }

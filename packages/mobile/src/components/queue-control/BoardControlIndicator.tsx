@@ -46,12 +46,12 @@ export function BoardControlIndicator({
 }: BoardControlIndicatorProps) {
   const { t } = useTranslation('settings');
   const { systemColors, brandColors } = useTheme();
-  const { boardConnection, holderDisplayName, bluetooth } = useBoardConnectionState();
+  const { boardConnection, holderDisplayName, controlAvailable } = useBoardConnectionState();
   const { open: openBoardControls } = useBleControlSheet();
   // Shared connect/disconnect path so undo-arming and the press semantics match
   // the drawer + toolbar lightbulbs: connectedByMe → disconnect, disconnected →
   // connect. (Connect outcome telemetry is emitted inside bluetooth.connect().)
-  const { onPress: lightbulbPress } = useLightbulbControl();
+  const { onPress: lightbulbPress } = useLightbulbControl({ onOpenControls: openBoardControls });
   const { openPlay } = useAccessoryClimbTap();
 
   const handlePress = useCallback(() => {
@@ -80,7 +80,7 @@ export function BoardControlIndicator({
   );
 
   // No board bound yet → nothing to indicate or connect to.
-  if (!bluetooth) return null;
+  if (!controlAvailable) return null;
 
   const visual = getBoardControlIndicatorVisual({
     boardConnection,

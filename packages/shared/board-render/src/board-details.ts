@@ -2,6 +2,7 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { boardSupportsMirroring } from '@boardsesh/play-view';
 import {
   PRODUCT_SIZES,
+  hasProductSizeEdges,
   getProductSize,
   getLayout,
   getSetsForLayoutAndSize,
@@ -42,6 +43,9 @@ export const getBoardDetails = ({
     throw new Error(
       `Size dimensions not found for board_name=${board_name}, size_id=${size_id}. Available sizes: [${availableSizes.join(', ')}]`,
     );
+  }
+  if (!hasProductSizeEdges(sizeData)) {
+    throw new Error(`Size geometry is not calibrated for board_name=${board_name}, size_id=${size_id}.`);
   }
 
   const layoutData = getLayout(board_name, layout_id);
@@ -102,7 +106,7 @@ export const getBoardDetails = ({
 };
 
 /**
- * Get board details for any board type (Aurora, MoonBoard, or Woods). Routes to
+ * Get static board details for any bundled board type (Aurora, MoonBoard, or Woods). Routes to
  * `getMoonBoardDetails` for MoonBoard and `getWoodsBoardDetails` for Woods (both
  * carry their own art + hold geometry); to `getBoardDetails` for Aurora boards.
  */
@@ -120,6 +124,9 @@ export function getBoardDetailsForBoard(params: {
   }
   if (params.board_name === 'woods') {
     return getWoodsBoardDetails({ size_id: params.size_id });
+  }
+  if (params.board_name === 'quantum') {
+    throw new Error('Quantum geometry is runtime catalogue data and is not available to the static renderer.');
   }
   return getBoardDetails(params as BoardDetailsParams);
 }

@@ -13,6 +13,7 @@ export const BOARD_TYPE_LABELS: Record<string, string> = {
   grasshopper: 'Grasshopper',
   soill: 'So iLL',
   woods: 'Woods',
+  quantum: 'Quantum Board',
 };
 
 /** Display label for a board type, falling back to the raw type string. */

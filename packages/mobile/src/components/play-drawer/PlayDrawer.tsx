@@ -30,6 +30,7 @@ import { computeNavigationStateWithSuggestions, boardSupportsMirroring } from '@
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import type { ActiveSubDrawer } from '@boardsesh/play-view';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { supportsStaticBoardRender } from '@boardsesh/board-config';
 import { DeferredBoard } from './DeferredBoard';
 import { BoardRenderUnavailable } from './BoardRenderUnavailable';
 import { PlaybackControls } from './PlaybackControls';
@@ -224,6 +225,7 @@ export function PlayDrawer({
   // pull-down dismiss gesture, the close chevron, the grabber, and router.dismiss.
   const isPane = presentation === 'pane';
   const { t } = useTranslation('session');
+  const { t: tCommon } = useTranslation('common');
   // The copy/share affordance strings live in the `climbs` namespace alongside
   // the climb-actions sheet's "Link copied" toast.
   const { t: tClimbs } = useTranslation('climbs');
@@ -401,6 +403,7 @@ export function PlayDrawer({
   // app-root one — a native sheet presented from root lands BEHIND this modal
   // route. Local visibility, opened by the lightbulb long-press.
   const [bleControlVisible, setBleControlVisible] = useState(false);
+  const handleOpenBleControl = useCallback(() => setBleControlVisible(true), []);
   const handleCloseBleControl = useCallback(() => setBleControlVisible(false), []);
 
   usePlayDrawerWakeLock(isSheetOpen);
@@ -444,8 +447,10 @@ export function PlayDrawer({
     lit: lightbulbActive,
     localConnected: bluetoothConnected,
     pending: lightbulbPending,
+    available: lightbulbAvailable,
+    isQuantum: quantumBluetooth,
     onPress: handleLightbulb,
-  } = useLightbulbControl();
+  } = useLightbulbControl({ onOpenControls: handleOpenBleControl });
   const navigationSuggestionSource = drawerPreviewSuggestionSource ?? playlistSuggestionSource;
   const navigationState = useMemo(
     () => computeNavigationStateWithSuggestions(queue, displayedQueueItem, navigationSuggestionSource),
@@ -827,11 +832,11 @@ export function PlayDrawer({
   }, [displayedClimb, isFavorited, favoriteOverride, boardName, layoutId, angle, toggleFavoriteMutate, showToast, t]);
 
   const handleLightbulbLongPress = useCallback(() => {
-    if (!bluetooth?.isConnected) return;
+    if (!bluetoothConnected) return;
     // Reveal the BLE controls (Re-light / Disconnect) rather than disconnecting
     // blind — keeps the destructive action behind a labelled menu.
-    setBleControlVisible(true);
-  }, [bluetooth]);
+    handleOpenBleControl();
+  }, [bluetoothConnected, handleOpenBleControl]);
 
   // Beta Videos "+" button: null target → the sheet tracks the live displayedClimb.
   const handleOpenAddBetaVideo = useCallback(() => {
@@ -1195,8 +1200,13 @@ export function PlayDrawer({
                             lightbulbActive={lightbulbActive}
                             lightbulbConnected={bluetoothConnected}
                             lightbulbPending={lightbulbPending}
-                            autoDisconnectWarning={bluetooth?.autoDisconnectWarning ?? false}
+                            autoDisconnectWarning={
+                              quantumBluetooth ? false : (bluetooth?.autoDisconnectWarning ?? false)
+                            }
                             lightbulbLongPressEnabled={bluetoothConnected}
+                            lightbulbAccessibilityLabel={
+                              quantumBluetooth && bluetoothConnected ? tCommon('lightControl.quantum.open') : undefined
+                            }
                             // Whether a Bluetooth transport exists at all, and only
                             // that. The anonymous suppression lives in the bar, with
                             // the rest of the `viewer` rules and the test that pins
@@ -1206,7 +1216,7 @@ export function PlayDrawer({
                             // uuid they do not have and whose first-ever visit would
                             // open with a pairing prompt. Anonymous wall lighting is
                             // its own feature (#4606), not a v1 side effect.
-                            showLightbulb={bluetooth !== null}
+                            showLightbulb={lightbulbAvailable && (bluetooth !== null || quantumBluetooth)}
                             // The pill owns the driver's face whenever it renders the
                             // avatar; suppress the lightbulb pip so the same face never
                             // shows twice in the drawer.
@@ -1229,7 +1239,7 @@ export function PlayDrawer({
                             onLightbulbLongPress={handleLightbulbLongPress}
                             onOpenActions={handleOpenActions}
                             onOpenQueue={onOpenQueue}
-                            onShare={handleShare}
+                            onShare={supportsStaticBoardRender(boardName) ? handleShare : undefined}
                             onTickPress={handleTickFabPress}
                             onTickLongPress={handleTickFabLongPress}
                             viewer={viewer}

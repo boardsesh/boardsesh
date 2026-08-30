@@ -24,6 +24,16 @@ export const CLIMB_CHARACTERISTICS = {
   METHOD_FOOTLESS_KICKBOARD: 'method_footless_kickboard',
   /** MoonBoard "No kickboard": feet follow hands but the kickboard is off-limits. */
   METHOD_NO_KICKBOARD: 'method_no_kickboard',
+  /** Quantum source marks the route as a standard rules climb. */
+  QUANTUM_STANDARD: 'quantum_standard',
+  /** Quantum source positively marks the route for campusing. */
+  QUANTUM_CAMPUSING: 'quantum_campusing',
+  /** Quantum source positively marks use of the board edge. */
+  QUANTUM_EDGE: 'quantum_edge',
+  /** Quantum source positively marks use of the kickplate. */
+  QUANTUM_KICKPLATE: 'quantum_kickplate',
+  /** Quantum source positively allows matching. */
+  QUANTUM_MATCHING: 'quantum_matching',
 } as const;
 
 export type ClimbCharacteristic = (typeof CLIMB_CHARACTERISTICS)[keyof typeof CLIMB_CHARACTERISTICS];

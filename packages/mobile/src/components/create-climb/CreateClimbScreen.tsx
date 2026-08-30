@@ -10,6 +10,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { getCreateBoardHolds } from '../../lib/create-board-holds';
+import { useQuantumGeometry } from '../../lib/quantum-geometry-store';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { HoldRoleSheet } from './HoldRoleSheet';
@@ -67,6 +68,7 @@ export function CreateClimbScreen({
   });
 
   const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
+  const quantumGeometry = useQuantumGeometry(board.layoutId, board.sizeId, board.boardName === 'quantum');
 
   const boardHolds = useMemo(
     () =>
@@ -76,7 +78,7 @@ export function CreateClimbScreen({
         sizeId: board.sizeId,
         setIds: board.setIds.split(',').map(Number),
       }),
-    [board.boardName, board.layoutId, board.sizeId, board.setIds],
+    [board.boardName, board.layoutId, board.sizeId, board.setIds, quantumGeometry?.revision],
   );
 
   // Every dismiss path — chevron, pan-down, backdrop, hardware back — lands here.

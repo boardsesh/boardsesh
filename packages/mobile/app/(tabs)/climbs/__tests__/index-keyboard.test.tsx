@@ -352,6 +352,7 @@ vi.mock('../../../../src/lib/filter-summary', () => ({
 }));
 
 vi.mock('../../../../src/lib/filter-tokens', () => ({ getActiveFilterTokens: () => [] }));
+vi.mock('@boardsesh/board-presence-react', () => ({ useBoardPresenceLayers: () => null }));
 vi.mock('../../../../src/lib/search-name', () => ({
   normalizeSearchName: (text: string) => text.trim(),
   visibleSearchTextNeedsSync: () => false,

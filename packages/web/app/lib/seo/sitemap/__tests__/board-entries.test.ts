@@ -92,4 +92,8 @@ describe('boardConfigsToItems', () => {
     expect(boardConfigsToItems([{ ...kilterConfig, climbCount: 0 }])).toHaveLength(0);
     expect(boardConfigsToItems([{ ...kilterConfig, boardType: 'not-a-board' }])).toHaveLength(0);
   });
+
+  it('keeps runtime-only Quantum pages out of the legacy www sitemap', () => {
+    expect(boardConfigsToItems([{ ...kilterConfig, boardType: 'quantum', layoutId: 9101, sizeId: 9201 }])).toEqual([]);
+  });
 });

@@ -4,6 +4,7 @@ import { GraphQLError } from 'graphql';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { QUANTUM_MODELS, QUANTUM_SET_ID } from '@boardsesh/board-constants';
 import {
   MOONBOARD_LAYOUTS,
   MOONBOARD_SETS,
@@ -347,6 +348,22 @@ describe('assertKnownBoardConfig', () => {
     await expectUnknownBoardConfig(assertKnownBoardConfig('woods', woodsLayoutId, largeSizeId, ''));
 
     // Static catalog: not one of those seven answers came from the database.
+    expect(selectSpy).not.toHaveBeenCalled();
+  });
+
+  it('validates only exact Quantum model pairs with the single canonical set', async () => {
+    const selectSpy = vi.spyOn(db, 'select');
+
+    await expect(
+      assertKnownBoardConfig('quantum', QUANTUM_MODELS.xl.layoutId, QUANTUM_MODELS.xl.sizeId, String(QUANTUM_SET_ID)),
+    ).resolves.toBeUndefined();
+    await expectUnknownBoardConfig(
+      assertKnownBoardConfig('quantum', QUANTUM_MODELS.xl.layoutId, QUANTUM_MODELS.l.sizeId, String(QUANTUM_SET_ID)),
+    );
+    await expectUnknownBoardConfig(
+      assertKnownBoardConfig('quantum', QUANTUM_MODELS.xl.layoutId, QUANTUM_MODELS.xl.sizeId, '2'),
+    );
+
     expect(selectSpy).not.toHaveBeenCalled();
   });
 });

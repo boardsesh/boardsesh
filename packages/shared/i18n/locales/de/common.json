@@ -361,7 +361,34 @@
   },
   "lightControl": {
     "turnOffAll": "Alle Lichter ausschalten",
-    "disconnect": "Board trennen"
+    "disconnect": "Board trennen",
+    "quantum": {
+      "open": "Quantum-Ebenen öffnen",
+      "layerTitle": "{{color}} Ebene",
+      "layerAction": "{{color}} Ebene: {{action}}",
+      "colors": {
+        "green": "Grüne",
+        "cyan": "Türkise",
+        "magenta": "Magenta",
+        "yellow": "Gelbe"
+      },
+      "light": "Diesen Boulder beleuchten",
+      "replace": "Durch diesen Boulder ersetzen",
+      "remove": "Diese Ebene entfernen",
+      "foreign": "Von einer anderen Person belegt",
+      "boardFull": "Alle vier Plätze am Board sind belegt",
+      "noClimb": "Wähle einen Boulder zum Beleuchten",
+      "routeMissing": "Dieser Boulder hat keine Controller-Route",
+      "saveFirst": "Speichere diesen Boulder, bevor du ihn am Board beleuchtest",
+      "geometryMissing": "Die LED-Positionen für diesen Boulder sind noch nicht bereit",
+      "tooManyHolds": "Dieser Boulder überschreitet das Limit von 92 Lichtern",
+      "actionFailed": "Das Board konnte nicht aktualisiert werden. Aktualisiere und versuche es erneut.",
+      "clearStart": "Alle Ebenen ausschalten",
+      "clearStartSubtitle": "Vor dem Ausschalten aller Ebenen bestätigst du noch einmal",
+      "clearQuestion": "Alle vier Ebenen ausschalten?",
+      "clearConfirm": "Alle Ebenen ausschalten",
+      "clearCancel": "Ebenen eingeschaltet lassen"
+    }
   },
   "bluetooth": {
     "boardNotFound": "Dein Board wurde nicht gefunden. Prüf, ob es an und in Reichweite ist — und wenn ein anderes Handy verbunden ist, trenn dort zuerst.",

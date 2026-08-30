@@ -10,7 +10,9 @@ import {
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
+import { getQuantumNeutralGrid } from '@boardsesh/board-config';
 import { getBoardRenderData } from '../../lib/board-details';
+import { useQuantumGeometry } from '../../lib/quantum-geometry-store';
 import { hapticHeavy, hapticLight } from '../../lib/haptics';
 import { ACTIVATE_ACCESSIBILITY_ACTIONS, rowAccessibilityActionsWith } from '../../lib/row-accessibility-actions';
 import { springs } from '../../theme/animations';
@@ -148,6 +150,7 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
   const { t } = useTranslation('boards');
   const { systemColors, brandColors, radii } = useTheme();
   const scale = useSharedValue(1);
+  const quantumGeometry = useQuantumGeometry(item.layoutId, item.sizeId, item.boardName === 'quantum');
 
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
@@ -159,8 +162,11 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
         sizeId: item.sizeId,
         setIds: item.setIds.split(',').map(Number).filter(Number.isFinite),
       }),
-    [item.boardName, item.layoutId, item.sizeId, item.setIds],
+    [item.boardName, item.layoutId, item.sizeId, item.setIds, quantumGeometry?.revision],
   );
+  const neutralQuantumGrid = item.boardName === 'quantum' ? getQuantumNeutralGrid(item.layoutId, item.sizeId) : null;
+  const renderDimensions = render ?? neutralQuantumGrid;
+  const quantumReady = item.boardName !== 'quantum' || quantumGeometry != null;
 
   const thumbStyle = {
     backgroundColor: systemColors.tertiaryBackground,
@@ -195,9 +201,10 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
   }, [onDownload, item]);
 
   const handlePress = useCallback(() => {
+    if (!quantumReady) return;
     hapticLight();
     onPress(item);
-  }, [onPress, item]);
+  }, [onPress, item, quantumReady]);
 
   // The outer Pressable sets `accessible` by default, so on iOS UIKit treats the
   // card as a leaf and VoiceOver never reaches the corner glyphs. Publish each
@@ -216,13 +223,13 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
   const handleAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
       const { actionName } = event.nativeEvent;
-      if (actionName === 'activate' && !isEditing) handlePress();
+      if (actionName === 'activate' && !isEditing && quantumReady) handlePress();
       // Route to the same handler the touch path uses, so the destructive button
       // keeps its haptic when it is reached from the rotor.
       if (actionName === BOARD_ACTION_NAME) (showEditAction ? handleEditAction : handleAction)();
       if (actionName === DOWNLOAD_ACTION_NAME) handleDownload();
     },
-    [isEditing, showEditAction, handlePress, handleAction, handleEditAction, handleDownload],
+    [isEditing, quantumReady, showEditAction, handlePress, handleAction, handleEditAction, handleDownload],
   );
 
   const activeLabel = t('mobile.discovery.activeBadge');
@@ -247,23 +254,23 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
       onPressOut={() => (scale.value = withSpring(1, springs.snappy))}
       // In Edit mode the body is not a target: dropping the role as well as the
       // handler is what makes the card visibly (and audibly) stop being tappable.
-      disabled={isEditing}
-      accessibilityRole={isEditing ? undefined : 'button'}
+      disabled={isEditing || !quantumReady}
+      accessibilityRole={isEditing || !quantumReady ? undefined : 'button'}
       accessibilityLabel={accessibilityLabel}
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={handleAccessibilityAction}
       style={[animatedStyle, styles.container]}
     >
       <View testID="board-card" style={[styles.thumb, thumbStyle]}>
-        {render ? (
+        {renderDimensions ? (
           <BoardImageNative
             frames=""
             boardName={item.boardName}
             layoutId={item.layoutId}
             sizeId={item.sizeId}
             setIds={item.setIds}
-            boardWidth={render.boardWidth}
-            boardHeight={render.boardHeight}
+            boardWidth={renderDimensions.boardWidth}
+            boardHeight={renderDimensions.boardHeight}
             // Resolve the thumb-sized (416px) background + a 400px overlay
             // instead of the full-res native webp (up to ~1461px). A 168px cell
             // doesn't need the native source, and decoding it on the main thread

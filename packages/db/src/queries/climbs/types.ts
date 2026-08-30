@@ -77,6 +77,8 @@ export type ClimbSearchParams = {
   // Zone filter — restrict climbs using a user-drawn bounding box.
   zoneBox?: ZoneBox | null;
   zoneMode?: ZoneMatchMode | null;
+  occupiedPlacementIds?: number[];
+  maxOccupiedOverlap?: 0 | 1;
   // Allow dynamic hold keys (e.g., hold_123)
   [key: `hold_${number}`]: unknown;
 };
@@ -120,6 +122,8 @@ export type ClimbSearchInputLike = {
   routes?: boolean | null;
   zoneBox?: ZoneBox | null;
   zoneMode?: ZoneMatchMode | null;
+  occupiedPlacementIds?: number[] | null;
+  maxOccupiedOverlap?: 0 | 1 | null;
 };
 
 const SEARCH_SORT_ALIASES: Record<string, NonNullable<ClimbSearchParams['sortBy']>> = {
@@ -193,6 +197,11 @@ export function mapSearchInputToParams(input: ClimbSearchInputLike): ClimbSearch
     routes: input.routes ?? undefined,
     zoneBox: input.zoneBox || undefined,
     zoneMode: input.zoneBox ? (input.zoneMode ?? undefined) : undefined,
+    occupiedPlacementIds:
+      input.occupiedPlacementIds && input.occupiedPlacementIds.length > 0
+        ? [...new Set(input.occupiedPlacementIds)]
+        : undefined,
+    maxOccupiedOverlap: input.maxOccupiedOverlap ?? undefined,
   };
 }
 
@@ -215,6 +224,8 @@ export type ClimbRow = {
   name: string;
   description: string;
   frames: string;
+  /** External route identity understood by the physical board controller. */
+  controllerRouteUuid: string | null;
   /** Board the climb belongs to (the searched board). Carried so the queue's BLE
    *  spill guard can skip a climb set for a different board/layout. */
   boardType: string;

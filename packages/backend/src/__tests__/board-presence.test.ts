@@ -276,6 +276,98 @@ describe('board-presence pubsub', () => {
     await expect(store.nextBoardSeq('123')).rejects.toThrow('database unavailable');
   });
 
+  it('keeps the newest sanitized layer snapshot in local-only mode', async () => {
+    const store = new BoardPresenceStore({
+      isRedisAvailable: () => false,
+      isRedisRequired: () => false,
+      logger: { error: vi.fn(), warn: vi.fn() },
+    });
+    const current = {
+      boardId: 123,
+      layers: [
+        {
+          color: '#00FF00',
+          remainingSeconds: 30,
+          climbUuid: null,
+          angle: null,
+          geometryKnown: false,
+          placementIds: [],
+        },
+      ],
+      observedAt: '2026-08-30T00:00:00.000Z',
+      stale: false,
+      seq: 8,
+    };
+
+    expect(await store.commitBoardLayers('123', current, 'reporter-a', 'claim-a')).toMatchObject({
+      snapshot: current,
+      accepted: true,
+    });
+    expect(await store.getBoardLayers('123')).toEqual(current);
+    expect(
+      await store.commitBoardLayers(
+        '123',
+        {
+          ...current,
+          layers: [],
+          observedAt: '2026-08-29T00:00:00.000Z',
+          seq: 7,
+        },
+        'reporter-a',
+        'claim-a',
+      ),
+    ).toMatchObject({ snapshot: current, accepted: false });
+  });
+
+  it('does not let an old reporter stale a newer local Quantum roster', async () => {
+    const store = new BoardPresenceStore({
+      isRedisAvailable: () => false,
+      isRedisRequired: () => false,
+      logger: { error: vi.fn(), warn: vi.fn() },
+    });
+    const oldSnapshot = {
+      boardId: 123,
+      layers: [],
+      observedAt: '2026-08-30T00:00:00.000Z',
+      stale: false,
+      seq: 8,
+    };
+    const newSnapshot = { ...oldSnapshot, observedAt: '2026-08-30T00:01:00.000Z', seq: 9 };
+    await store.commitBoardLayers('123', oldSnapshot, 'shared-user', 'claim-a');
+    await store.commitBoardLayers('123', newSnapshot, 'shared-user', 'claim-b');
+    expect(await store.clearBoardWriterIf('123', 'shared-user', 'claim-a')).toBe(false);
+
+    const staleAttempt = await store.markBoardLayersStaleIfOwned('123', 'claim-a', {
+      ...oldSnapshot,
+      stale: true,
+      seq: 10,
+    });
+
+    expect(staleAttempt).toEqual({ snapshot: newSnapshot, changed: false });
+    expect(await store.getBoardLayers('123')).toEqual(newSnapshot);
+  });
+
+  it('lets only the newest local Quantum roster reporter release the writer slot', async () => {
+    const store = new BoardPresenceStore({
+      isRedisAvailable: () => false,
+      isRedisRequired: () => false,
+      logger: { error: vi.fn(), warn: vi.fn() },
+    });
+
+    expect(await store.takeBoardWriter('123', 'reporter-a')).toEqual({
+      previousWriter: null,
+      writerSlotOk: true,
+    });
+    expect(await store.takeBoardWriter('123', 'reporter-b')).toEqual({
+      previousWriter: 'reporter-a',
+      writerSlotOk: true,
+    });
+    expect(await store.clearBoardWriterIf('123', 'reporter-a')).toBe(false);
+    expect(await store.getBoardWriter('123')).toBe('reporter-b');
+    expect(await store.clearBoardWriterIf('123', 'reporter-b')).toBe(true);
+    expect(await store.getBoardWriter('123')).toBeNull();
+  });
+
   it('evicts expired local proof-of-presence stamps without a membership read', async () => {
     const boardId = `local-membership-${Math.random().toString(36).slice(2)}`;
     const userId = `user-${Math.random().toString(36).slice(2)}`;
@@ -1135,6 +1227,32 @@ describe('board-presence resolvers', () => {
       await expect(
         boardPresenceMutations.reportBoardClimb(undefined, { boardId, climb: bogus, angle: 40 }, authCtx()),
       ).rejects.toThrow('Unknown climb');
+    });
+
+    it('rejects single-climb presence reports for Quantum Board', async () => {
+      const [insertedBoard] = await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number, is_public)
+        VALUES
+          (${uuidv4()}, ${`presence-quantum-${Date.now()}`}, ${TEST_USER_ID}, 'quantum', 9101, 9201, '1',
+           'Quantum Wall', null, true)
+        RETURNING id
+      `);
+      const boardId = Number((insertedBoard as { id: number }).id);
+      await pubsub.stampBoardMembership(String(boardId), TEST_USER_ID);
+      const commitBoardClimb = vi.spyOn(pubsub, 'commitBoardClimb');
+
+      await expect(
+        boardPresenceMutations.reportBoardClimb(
+          undefined,
+          { boardId, climb: makeQueueItemInput(), angle: 40 },
+          authCtx(),
+        ),
+      ).rejects.toMatchObject({
+        message: 'Quantum Board presence must be reported with board layers',
+        extensions: { code: 'BAD_USER_INPUT' },
+      });
+      expect(commitBoardClimb).not.toHaveBeenCalled();
     });
 
     it('accepts a negative board angle (Aurora boards support negative tilt) and publishes it verbatim', async () => {
@@ -2270,16 +2388,26 @@ describe('board-presence connection holder', () => {
       const connectionId = `conn-backstop-${Date.now()}`;
       await roomManager.registerClient(connectionId);
       try {
-        // A disconnect with no recorded hold must not throw or broadcast.
-        await expect(roomManager.clearBoardWriterForConnection(connectionId)).resolves.toBeUndefined();
-
-        roomManager.noteBoardWriter(connectionId, 4242, TEST_USER_ID);
+        expect(roomManager.noteBoardWriter(connectionId, 4242, TEST_USER_ID)).toBe(true);
         expect(roomManager.getClient(connectionId)?.boardWriterEmitter).toEqual({
           boardId: 4242,
           emitterId: TEST_USER_ID,
+          layerClaimToken: undefined,
         });
       } finally {
         await roomManager.removeClient(connectionId);
+      }
+
+      const emptyConnectionId = `conn-backstop-empty-${Date.now()}`;
+      await roomManager.registerClient(emptyConnectionId);
+      try {
+        // A close with no recorded hold must not throw or broadcast, and its
+        // synchronous marker must reject a late post-close writer note.
+        await expect(roomManager.clearBoardWriterForConnection(emptyConnectionId)).resolves.toBeUndefined();
+        expect(roomManager.noteBoardWriter(emptyConnectionId, 4242, TEST_USER_ID)).toBe(false);
+        expect(roomManager.getClient(emptyConnectionId)?.boardWriterEmitter).toBeUndefined();
+      } finally {
+        await roomManager.removeClient(emptyConnectionId);
       }
     });
   });

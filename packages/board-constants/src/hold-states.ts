@@ -110,6 +110,11 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
     3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     4: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
   },
+  quantum: {
+    12: { name: 'STARTING', color: '#00FF00' },
+    13: { name: 'HAND', color: '#00FFFF' },
+    14: { name: 'FINISH', color: '#FF00FF' },
+  },
 };
 
 // The canonical role code used when *writing* frame strings for each board.
@@ -131,6 +136,7 @@ export const STATE_TO_PRIMARY_CODE: Record<BoardName, Partial<Record<HoldState, 
   soill: { STARTING: 1, HAND: 2, FINISH: 3, FOOT: 4 },
   // Woods wire role codes (spec §6): Foot 1, Hand 2, Finish 3, Start 4.
   woods: { STARTING: 4, HAND: 2, FINISH: 3, FOOT: 1 },
+  quantum: { STARTING: 12, HAND: 13, FINISH: 14 },
 };
 
 export type BoardRenderDefaults = {

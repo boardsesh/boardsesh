@@ -161,16 +161,17 @@ export function useClimbActions({
 
     const { boardName, layoutId, sizeId, setIds, angle } = boardConfig;
     const { success: successColor, favorite: favoriteColor, accent: accentColor } = actionColors;
+    const boardCapabilities = getBoardCapabilities(boardName);
     // Only boards with an official app page get the row; the guard is what turns
     // the loose board string into the AuroraBoardName the builder assumes.
-    const auroraBoardName = getBoardCapabilities(boardName).auroraAppLink ? toAuroraBoardName(boardName) : null;
+    const auroraBoardName = boardCapabilities.auroraAppLink ? toAuroraBoardName(boardName) : null;
     const auroraAppUrl = auroraBoardName ? buildAuroraAppUrl(auroraBoardName, climb.uuid) : null;
 
     // Edit is owner-only, and only while the climb is still a draft OR within 24h of
     // first publish (the backend enforces the same window). `userId` is null for
     // Aurora-synced climbs that predate Boardsesh accounts.
     const canEdit = (() => {
-      if (!getBoardCapabilities(boardName).climbCreation) return false;
+      if (!boardCapabilities.climbCreation) return false;
       if (!currentUserId || !climb.userId || climb.userId !== currentUserId) return false;
       const snapshot: SavedClimbSnapshot = {
         uuid: climb.uuid,
@@ -325,7 +326,7 @@ export function useClimbActions({
 
     // Fork drops into the create-climb editor, so it only appears on boards that
     // can have climbs set on them.
-    if (getBoardCapabilities(boardName).climbCreation) {
+    if (boardCapabilities.climbCreation) {
       items.push({
         id: 'fork',
         title: t('mobile.climbActions.fork'),
@@ -338,25 +339,27 @@ export function useClimbActions({
       });
     }
 
-    items.push({
-      id: 'share',
-      title: t('share.actionLabel'),
-      icon: 'share',
-      color: accentColor,
-      run: () => {
-        // Dismiss the overlay, then open the native share sheet (same as the play
-        // drawer). .catch so a dismissed/failed share isn't an unhandled rejection.
-        after();
-        track(SHARED_EVENTS.ClimbShared, {
-          method: 'share',
-          source: 'climb_actions_menu',
-          climbUuid: climb.uuid,
-          boardName,
-          layoutId,
-        });
-        void shareClimb().catch(() => {});
-      },
-    });
+    if (boardCapabilities.staticBoardRender) {
+      items.push({
+        id: 'share',
+        title: t('share.actionLabel'),
+        icon: 'share',
+        color: accentColor,
+        run: () => {
+          // Dismiss the overlay, then open the native share sheet (same as the play
+          // drawer). .catch so a dismissed/failed share isn't an unhandled rejection.
+          after();
+          track(SHARED_EVENTS.ClimbShared, {
+            method: 'share',
+            source: 'climb_actions_menu',
+            climbUuid: climb.uuid,
+            boardName,
+            layoutId,
+          });
+          void shareClimb().catch(() => {});
+        },
+      });
+    }
 
     if (auroraAppUrl) {
       items.push({

@@ -177,6 +177,46 @@ describe('createBoardPresenceClient', () => {
     expect(await client.fetchConnection(9)).toBeNull();
   });
 
+  it('fetches and reports sanitized Quantum board layers', async () => {
+    const client = createBoardPresenceClient(harness.transport);
+    const snapshot = {
+      boardId: 9,
+      layers: [
+        {
+          color: '#00FF00',
+          remainingSeconds: 60,
+          climbUuid: null,
+          angle: null,
+          geometryKnown: false,
+          placementIds: [],
+        },
+      ],
+      observedAt: '2026-08-30T00:00:00.000Z',
+      stale: false,
+      seq: 7,
+    };
+    harness.setExecuteResult({ boardLayers: snapshot });
+
+    expect(await client.fetchLayers(9)).toEqual(snapshot);
+    expect(harness.executeCalls[0].query).toContain('boardLayers');
+
+    harness.setExecuteResult({ reportBoardLayers: snapshot });
+    expect(await client.reportLayers(9, snapshot.layers)).toEqual(snapshot);
+    expect(harness.executeCalls[1].variables).toEqual({
+      boardId: 9,
+      layers: [
+        {
+          color: '#00FF00',
+          remainingSeconds: 60,
+          climbUuid: null,
+          angle: null,
+          geometryKnown: false,
+        },
+      ],
+    });
+    expect(harness.executeCalls[1].query).toContain('reportBoardLayers');
+  });
+
   it('reports a climb with the boardId, climb and angle, treating a non-true response as not accepted', async () => {
     const client = createBoardPresenceClient(harness.transport);
     const climb = { uuid: 'q1', climb: { uuid: 'c1', name: 'X' } } as unknown as ClimbQueueItemInput;

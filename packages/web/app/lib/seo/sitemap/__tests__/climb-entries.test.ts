@@ -189,6 +189,10 @@ describe('isResolvableGroup', () => {
     expect(isResolvableGroup(KILTER_GROUP)).toBe(true);
     expect(isResolvableGroup({ ...KILTER_GROUP, layoutId: 999_999 })).toBe(false);
   });
+
+  it('holds runtime-only Quantum climbs out of the legacy www shard', () => {
+    expect(isResolvableGroup({ boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: [1] })).toBe(false);
+  });
 });
 
 describe('the MoonBoard hold-out', () => {

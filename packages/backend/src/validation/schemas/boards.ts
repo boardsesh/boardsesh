@@ -23,40 +23,60 @@ const NullableBoardSerialInputSchema = z.preprocess((value) => {
   return trimmed === '' ? null : trimmed;
 }, BoardSerialSchema.optional().nullable());
 
+const DEFAULT_BOARD_ANGLE_MAX = 70;
+const QUANTUM_BOARD_ANGLE_MAX = 90;
+
+export function boardAngleInputSchemaFor(boardType: string) {
+  return z
+    .number()
+    .int()
+    .min(0)
+    .max(boardType === 'quantum' ? QUANTUM_BOARD_ANGLE_MAX : DEFAULT_BOARD_ANGLE_MAX);
+}
+
 /**
  * Create board input validation schema
  */
-export const CreateBoardInputSchema = z.object({
-  boardType: BoardNameSchema,
-  layoutId: z.number().int().positive('Layout ID must be positive'),
-  sizeId: z.number().int().positive('Size ID must be positive'),
-  setIds: NumericCsvSchema,
-  name: z.string().min(1, 'Board name cannot be empty').max(100, 'Board name too long'),
-  description: z.string().max(500, 'Description too long').optional(),
-  locationName: z.string().max(200, 'Location name too long').optional(),
-  latitude: LatitudeSchema.optional(),
-  longitude: LongitudeSchema.optional(),
-  isPublic: z.boolean().optional(),
-  isUnlisted: z.boolean().optional(),
-  hideLocation: z.boolean().optional(),
-  isOwned: z.boolean().optional(),
-  gymUuid: UUIDSchema.optional(),
-  angle: z.number().int().min(0).max(70).optional(),
-  isAngleAdjustable: z.boolean().optional(),
-  serialNumber: OptionalBoardSerialInputSchema,
-  // Min 1: a paired timer is stored by its advertised BLE name; an empty string
-  // is meaningless (the "no timer" sentinel is null/absent, and the mobile
-  // builder already coerces blank → omitted).
-  timerName: z.string().min(1).max(200, 'Timer name too long').optional(),
-  // Set only by a client that has shown the user the duplicate prompt and had
-  // them confirm this is a different physical wall. Skips the duplicate-config
-  // guard entirely — see board-duplicates.ts.
-  allowDuplicateConfig: z.boolean().optional(),
-  // Escape hatch for the cross-owner duplicate-serial backstop: when the caller
-  // has confirmed this really is a separate physical wall that happens to reuse
-  // a serial, they pass true to skip the BOARD_SERIAL_EXISTS guard.
-  allowDuplicateSerial: z.boolean().optional(),
-});
+export const CreateBoardInputSchema = z
+  .object({
+    boardType: BoardNameSchema,
+    layoutId: z.number().int().positive('Layout ID must be positive'),
+    sizeId: z.number().int().positive('Size ID must be positive'),
+    setIds: NumericCsvSchema,
+    name: z.string().min(1, 'Board name cannot be empty').max(100, 'Board name too long'),
+    description: z.string().max(500, 'Description too long').optional(),
+    locationName: z.string().max(200, 'Location name too long').optional(),
+    latitude: LatitudeSchema.optional(),
+    longitude: LongitudeSchema.optional(),
+    isPublic: z.boolean().optional(),
+    isUnlisted: z.boolean().optional(),
+    hideLocation: z.boolean().optional(),
+    isOwned: z.boolean().optional(),
+    gymUuid: UUIDSchema.optional(),
+    angle: z.number().int().min(0).max(QUANTUM_BOARD_ANGLE_MAX).optional(),
+    isAngleAdjustable: z.boolean().optional(),
+    serialNumber: OptionalBoardSerialInputSchema,
+    // Min 1: a paired timer is stored by its advertised BLE name; an empty string
+    // is meaningless (the "no timer" sentinel is null/absent, and the mobile
+    // builder already coerces blank → omitted).
+    timerName: z.string().min(1).max(200, 'Timer name too long').optional(),
+    // Set only by a client that has shown the user the duplicate prompt and had
+    // them confirm this is a different physical wall. Skips the duplicate-config
+    // guard entirely — see board-duplicates.ts.
+    allowDuplicateConfig: z.boolean().optional(),
+    // Escape hatch for the cross-owner duplicate-serial backstop: when the caller
+    // has confirmed this really is a separate physical wall that happens to reuse
+    // a serial, they pass true to skip the BOARD_SERIAL_EXISTS guard.
+    allowDuplicateSerial: z.boolean().optional(),
+  })
+  .superRefine(({ angle, boardType }, context) => {
+    if (angle === undefined || boardAngleInputSchemaFor(boardType).safeParse(angle).success) return;
+    context.addIssue({
+      code: 'custom',
+      path: ['angle'],
+      message: `Angle must be at most ${DEFAULT_BOARD_ANGLE_MAX} for ${boardType}`,
+    });
+  });
 
 /**
  * Update board input validation schema
@@ -73,7 +93,9 @@ export const UpdateBoardInputSchema = z.object({
   isUnlisted: z.boolean().optional(),
   hideLocation: z.boolean().optional(),
   isOwned: z.boolean().optional(),
-  angle: z.number().int().min(0).max(70).optional(),
+  // The board type is resolved from boardUuid in the mutation. The resolver
+  // applies boardAngleInputSchemaFor after loading that row.
+  angle: z.number().int().min(0).max(QUANTUM_BOARD_ANGLE_MAX).optional(),
   isAngleAdjustable: z.boolean().optional(),
   layoutId: z.number().int().positive('Layout ID must be positive').optional(),
   sizeId: z.number().int().positive('Size ID must be positive').optional(),

@@ -87,7 +87,7 @@ export function buildFramesString(
   for (const led of ledPositions) {
     const placementId = reversePlacements[led.position];
 
-    if (!placementId) {
+    if (placementId === undefined) {
       console.warn(
         `[buildFramesString] Unknown LED position ${led.position} for ${boardName} layout ${layoutId} size ${sizeId}`,
       );

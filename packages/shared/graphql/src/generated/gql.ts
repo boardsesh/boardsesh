@@ -56,7 +56,7 @@ type Documents = {
   '\n  subscription OnNewClimbCreated($boardType: String!, $layoutId: Int!) {\n    newClimbCreated(boardType: $boardType, layoutId: $layoutId) {\n      climb {\n        uuid\n        name\n        boardType\n        layoutId\n        setterDisplayName\n        setterAvatarUrl\n        angle\n        frames\n        difficultyName\n        isNoMatch\n        createdAt\n      }\n    }\n  }\n': typeof types.OnNewClimbCreatedDocument;
   '\n  query CheckMoonBoardClimbDuplicates($input: CheckMoonBoardClimbDuplicatesInput!) {\n    checkMoonBoardClimbDuplicates(input: $input) {\n      clientKey\n      exists\n      existingClimbUuid\n      existingClimbName\n    }\n  }\n': typeof types.CheckMoonBoardClimbDuplicatesDocument;
   '\n  query SimilarClimbs($input: SimilarClimbsInput!) {\n    similarClimbs(input: $input) {\n      uuid\n      name\n      setterUsername\n      angle\n      layoutId\n      frames\n      difficultyName\n      qualityAverage\n      ascensionistCount\n      compatibleSizeIds\n      similarity\n      sharedHoldCount\n      candidateHoldCount\n      targetHoldCount\n    }\n  }\n': typeof types.SimilarClimbsDocument;
-  '\n  mutation SaveClimb($input: SaveClimbInput!) {\n    saveClimb(input: $input) {\n      uuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n': typeof types.SaveClimbDocument;
+  '\n  mutation SaveClimb($input: SaveClimbInput!) {\n    saveClimb(input: $input) {\n      uuid\n      controllerRouteUuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n': typeof types.SaveClimbDocument;
   '\n  mutation SaveMoonBoardClimb($input: SaveMoonBoardClimbInput!) {\n    saveMoonBoardClimb(input: $input) {\n      uuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n': typeof types.SaveMoonBoardClimbDocument;
   '\n  mutation UpdateClimb($input: UpdateClimbInput!) {\n    updateClimb(input: $input) {\n      uuid\n      createdAt\n      publishedAt\n      isDraft\n    }\n  }\n': typeof types.UpdateClimbDocument;
   '\n  mutation DeleteDraftClimb($uuid: ID!, $boardType: String!) {\n    deleteDraftClimb(uuid: $uuid, boardType: $boardType)\n  }\n': typeof types.DeleteDraftClimbDocument;
@@ -225,7 +225,7 @@ const documents: Documents = {
     types.CheckMoonBoardClimbDuplicatesDocument,
   '\n  query SimilarClimbs($input: SimilarClimbsInput!) {\n    similarClimbs(input: $input) {\n      uuid\n      name\n      setterUsername\n      angle\n      layoutId\n      frames\n      difficultyName\n      qualityAverage\n      ascensionistCount\n      compatibleSizeIds\n      similarity\n      sharedHoldCount\n      candidateHoldCount\n      targetHoldCount\n    }\n  }\n':
     types.SimilarClimbsDocument,
-  '\n  mutation SaveClimb($input: SaveClimbInput!) {\n    saveClimb(input: $input) {\n      uuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n':
+  '\n  mutation SaveClimb($input: SaveClimbInput!) {\n    saveClimb(input: $input) {\n      uuid\n      controllerRouteUuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n':
     types.SaveClimbDocument,
   '\n  mutation SaveMoonBoardClimb($input: SaveMoonBoardClimbInput!) {\n    saveMoonBoardClimb(input: $input) {\n      uuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n':
     types.SaveMoonBoardClimbDocument,
@@ -661,8 +661,8 @@ export function graphql(
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
-  source: '\n  mutation SaveClimb($input: SaveClimbInput!) {\n    saveClimb(input: $input) {\n      uuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n',
-): (typeof documents)['\n  mutation SaveClimb($input: SaveClimbInput!) {\n    saveClimb(input: $input) {\n      uuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n'];
+  source: '\n  mutation SaveClimb($input: SaveClimbInput!) {\n    saveClimb(input: $input) {\n      uuid\n      controllerRouteUuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n',
+): (typeof documents)['\n  mutation SaveClimb($input: SaveClimbInput!) {\n    saveClimb(input: $input) {\n      uuid\n      controllerRouteUuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

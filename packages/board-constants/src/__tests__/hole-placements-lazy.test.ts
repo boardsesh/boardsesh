@@ -95,7 +95,17 @@ describe('HOLE_PLACEMENTS backwards-compatible proxy', () => {
   it('enumerates every board key like the old eager record', async () => {
     const { HOLE_PLACEMENTS } = await import('../hole-placements');
     const keys = Object.keys(HOLE_PLACEMENTS) as BoardName[];
-    expect(keys).toEqual(['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill', 'moonboard', 'woods']);
+    expect(keys).toEqual([
+      'kilter',
+      'tension',
+      'decoy',
+      'touchstone',
+      'grasshopper',
+      'soill',
+      'moonboard',
+      'woods',
+      'quantum',
+    ]);
   });
 
   it('resolves the same data via the proxy as via getBoardHolePlacements', async () => {
@@ -107,7 +117,7 @@ describe('HOLE_PLACEMENTS backwards-compatible proxy', () => {
   it('supports Object.entries iteration used by Node-side consumers', async () => {
     const { HOLE_PLACEMENTS } = await import('../hole-placements');
     const entries = Object.entries(HOLE_PLACEMENTS);
-    expect(entries.length).toBe(8);
+    expect(entries.length).toBe(9);
     const kilterEntry = entries.find(([board]) => board === 'kilter');
     expect(kilterEntry).toBeDefined();
     expect(Object.keys(kilterEntry![1]).length).toBeGreaterThan(0);

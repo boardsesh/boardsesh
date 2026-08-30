@@ -1,37 +1,95 @@
 import { describe, it, expect } from 'vitest';
 import { AURORA_BOARDS, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
-import { getBoardCapabilities, type BoardCapabilities } from '../board-capabilities';
+import {
+  getBoardCapabilities,
+  STATIC_BOARD_RENDER_NAMES,
+  supportsStaticBoardRender,
+  type BoardCapabilities,
+} from '../board-capabilities';
 
 // The whole table in one place: change a row here and the reviewer sees exactly
 // which surface turns on or off.
 const EXPECTED: Record<string, BoardCapabilities> = {
-  kilter: { crowdGrade: true, climbCreation: true, nativeBoardControl: true, auroraAppLink: true },
-  tension: { crowdGrade: true, climbCreation: true, nativeBoardControl: true, auroraAppLink: true },
-  decoy: { crowdGrade: true, climbCreation: true, nativeBoardControl: true, auroraAppLink: true },
+  kilter: {
+    crowdGrade: true,
+    climbCreation: true,
+    nativeBoardControl: true,
+    auroraAppLink: true,
+    maxActiveWallClimbs: 1,
+    wallSendMode: 'automatic',
+    staticBoardRender: true,
+  },
+  tension: {
+    crowdGrade: true,
+    climbCreation: true,
+    nativeBoardControl: true,
+    auroraAppLink: true,
+    maxActiveWallClimbs: 1,
+    wallSendMode: 'automatic',
+    staticBoardRender: true,
+  },
+  decoy: {
+    crowdGrade: true,
+    climbCreation: true,
+    nativeBoardControl: true,
+    auroraAppLink: true,
+    maxActiveWallClimbs: 1,
+    wallSendMode: 'automatic',
+    staticBoardRender: true,
+  },
   touchstone: {
     crowdGrade: true,
     climbCreation: true,
     nativeBoardControl: true,
     auroraAppLink: true,
+    maxActiveWallClimbs: 1,
+    wallSendMode: 'automatic',
+    staticBoardRender: true,
   },
   grasshopper: {
     crowdGrade: true,
     climbCreation: true,
     nativeBoardControl: true,
     auroraAppLink: true,
+    maxActiveWallClimbs: 1,
+    wallSendMode: 'automatic',
+    staticBoardRender: true,
   },
-  soill: { crowdGrade: true, climbCreation: true, nativeBoardControl: true, auroraAppLink: true },
+  soill: {
+    crowdGrade: true,
+    climbCreation: true,
+    nativeBoardControl: true,
+    auroraAppLink: true,
+    maxActiveWallClimbs: 1,
+    wallSendMode: 'automatic',
+    staticBoardRender: true,
+  },
   moonboard: {
     crowdGrade: false,
     climbCreation: true,
     nativeBoardControl: true,
     auroraAppLink: false,
+    maxActiveWallClimbs: 1,
+    wallSendMode: 'automatic',
+    staticBoardRender: true,
   },
   woods: {
     crowdGrade: false,
     climbCreation: false,
     nativeBoardControl: false,
     auroraAppLink: false,
+    maxActiveWallClimbs: 1,
+    wallSendMode: 'automatic',
+    staticBoardRender: true,
+  },
+  quantum: {
+    crowdGrade: true,
+    climbCreation: true,
+    nativeBoardControl: false,
+    auroraAppLink: false,
+    maxActiveWallClimbs: 4,
+    wallSendMode: 'explicit-layer',
+    staticBoardRender: false,
   },
 };
 
@@ -53,6 +111,9 @@ describe('getBoardCapabilities', () => {
         climbCreation: true,
         nativeBoardControl: true,
         auroraAppLink: true,
+        maxActiveWallClimbs: 1,
+        wallSendMode: 'automatic',
+        staticBoardRender: true,
       });
     }
   });
@@ -73,9 +134,20 @@ describe('getBoardCapabilities', () => {
       climbCreation: true,
       nativeBoardControl: true,
       auroraAppLink: true,
+      maxActiveWallClimbs: 1,
+      wallSendMode: 'automatic',
+      staticBoardRender: true,
     };
     expect(getBoardCapabilities(undefined)).toEqual(auroraDefaults);
     expect(getBoardCapabilities('')).toEqual(auroraDefaults);
     expect(getBoardCapabilities('not-a-board')).toEqual(auroraDefaults);
+  });
+
+  it('derives the static renderer allowlist from the same total table', () => {
+    expect(STATIC_BOARD_RENDER_NAMES).toContain('woods');
+    expect(STATIC_BOARD_RENDER_NAMES).not.toContain('quantum');
+    expect(supportsStaticBoardRender('Kilter')).toBe(true);
+    expect(supportsStaticBoardRender('quantum')).toBe(false);
+    expect(supportsStaticBoardRender('not-a-board')).toBe(false);
   });
 });

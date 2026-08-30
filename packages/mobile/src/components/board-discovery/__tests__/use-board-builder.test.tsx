@@ -42,6 +42,49 @@ describe('useBoardBuilder', () => {
     });
   });
 
+  it('selects exact Quantum models and waits for signed catalogue angles', () => {
+    const { result } = renderHook(() =>
+      useBoardBuilder({ boardName: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' }),
+    );
+
+    expect(result.current.layouts.map((layout) => layout.id)).toEqual([9101, 9102, 9103, 9104, 9105]);
+    expect(result.current.angles).toEqual([]);
+    expect(result.current.canCreate).toBe(false);
+    expect(result.current.buildCreateInput()).toBeNull();
+
+    act(() => result.current.setCatalogAngleOptions([45, 20, 45, Number.NaN, 120]));
+    expect(result.current.angles).toEqual([20, 45]);
+    expect(result.current.angle).toBe(20);
+    expect(result.current.canCreate).toBe(true);
+
+    act(() => result.current.selectLayout(9104));
+    expect(result.current.sizeId).toBe(9204);
+    expect(result.current.setIds).toEqual([1]);
+    expect(result.current.angles).toEqual([]);
+    expect(result.current.canCreate).toBe(false);
+
+    act(() => result.current.setCatalogAngleOptions([35]));
+    expect(result.current.buildCreateInput()).toMatchObject({
+      boardType: 'quantum',
+      layoutId: 9104,
+      sizeId: 9204,
+      setIds: '1',
+      angle: 35,
+      isAngleAdjustable: true,
+    });
+  });
+
+  it('preserves a valid Quantum edit angle after catalogue hydration', () => {
+    const { result } = renderHook(() =>
+      useBoardBuilder({ boardName: 'quantum', layoutId: 9103, sizeId: 9203, setIds: '1', angle: 40 }),
+    );
+
+    act(() => result.current.setCatalogAngleOptions([20, 40, 50]));
+
+    expect(result.current.angle).toBe(40);
+    expect(result.current.buildUpdateInput('quantum-board')).toMatchObject({ angle: 40 });
+  });
+
   it('resets downstream selections when the board changes', () => {
     const { result } = renderHook(() => useBoardBuilder());
     act(() => result.current.selectBoard('kilter'));

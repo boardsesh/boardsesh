@@ -46,6 +46,21 @@ const BOARD_PRESENCE_STATS_FIELDS = `
   lastSentAt
 `;
 
+const BOARD_LAYERS_FIELDS = `
+  boardId
+  layers {
+    color
+    remainingSeconds
+    climbUuid
+    angle
+    geometryKnown
+    placementIds
+  }
+  observedAt
+  stale
+  seq
+`;
+
 // Subscription — the live "now on the wall" feed for a board. Emits a
 // BoardPresenceEvent union discriminated by __typename: a BoardClimbSet carries
 // the full climb, a BoardClimbCleared carries only the clear timestamp + seq,
@@ -81,6 +96,11 @@ export const BOARD_NOW_PLAYING = `
         }
         seq
       }
+      ... on BoardLayersChanged {
+        snapshot {
+          ${BOARD_LAYERS_FIELDS}
+        }
+      }
     }
   }
 `;
@@ -91,6 +111,14 @@ export const BOARD_NOW_PLAYING = `
 export const REPORT_BOARD_CLIMB = `
   mutation ReportBoardClimb($boardId: Int!, $climb: ClimbQueueItemInput!, $angle: Int) {
     reportBoardClimb(boardId: $boardId, climb: $climb, angle: $angle)
+  }
+`;
+
+export const REPORT_BOARD_LAYERS = `
+  mutation ReportBoardLayers($boardId: Int!, $layers: [ReportBoardLayerInput!]!) {
+    reportBoardLayers(boardId: $boardId, layers: $layers) {
+      ${BOARD_LAYERS_FIELDS}
+    }
   }
 `;
 
@@ -261,6 +289,14 @@ export const BOARD_PRESENCE_STATS = `
 // seed held-vs-free before the live BoardConnectionChanged subscription pushes.
 // Resolves null when the board is free.
 export const BOARD_CONNECTION = `query BoardConnection($boardId: Int!) { boardConnection(boardId: $boardId) { userId displayName avatarUrl lastSentAt } }`;
+
+export const BOARD_LAYERS = `
+  query BoardLayers($boardId: Int!) {
+    boardLayers(boardId: $boardId) {
+      ${BOARD_LAYERS_FIELDS}
+    }
+  }
+`;
 
 // Mutation — release this client's hold on a board (e.g. on BLE disconnect).
 // Returns Boolean! (accepted).

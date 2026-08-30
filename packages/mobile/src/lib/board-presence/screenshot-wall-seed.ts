@@ -177,11 +177,17 @@ export function createScreenshotBoardPresenceClient(): MobileBoardPresenceClient
       await whenSeeded();
       return seedHolder;
     },
+    async fetchLayers() {
+      return null;
+    },
     async reportDisconnect() {
       return true;
     },
     async reportClimb() {
       return true;
+    },
+    async reportLayers() {
+      throw new Error('Quantum layers are unavailable in screenshot mode');
     },
     async resolveBoardForSerial() {
       return resolvedBoard;

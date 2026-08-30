@@ -7,7 +7,7 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { useBoardAngleOptions } from '../../hooks/use-board-angle-options';
 import { androidSafeSnapPoints } from '../sheet-snap-points';
-import { useClimbStatsHistory } from '../../lib/graphql/hooks';
+import { useAngles, useClimbStatsHistory } from '../../lib/graphql/hooks';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { buildAngleStatsMap, type AngleStats } from './community-utils';
 import { AngleBoardDiagram } from './AngleBoardDiagram';
@@ -33,12 +33,14 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
   visible,
   onClose,
   boardName,
+  layoutId,
   climbUuid,
   currentAngle,
   onAngleChange,
 }: AngleSelectorSheetProps) {
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
+  const { t: tBoards } = useTranslation('boards');
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
   const { gradeFormat } = useGradeFormat();
@@ -49,10 +51,19 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
   // (androidSafeSnapPoints leaves a >= 75% detent as-is, so Android keeps this big.)
   const snapPoints = useMemo(() => androidSafeSnapPoints(['90%']), []);
 
-  // Valid angles come from the static per-board table (what web uses) — robust
-  // and offline, unlike a per-board query. MoonBoard swaps in the full
-  // Kilter/Tension-style range when the moonboard-wide-angles flag is on.
-  const angles = useBoardAngleOptions(boardName as BoardName);
+  // Aurora/MoonBoard/Woods retain their bundled tables. Quantum's values belong
+  // to the signed catalogue and are layout-specific, so they are queried only
+  // while this sheet is open. No static fallback means a missing catalogue can
+  // never make an unsupported wall angle look selectable.
+  const staticAngles = useBoardAngleOptions(boardName as BoardName);
+  const quantumAnglesQuery = useAngles('quantum', layoutId, boardName === 'quantum' && visible);
+  const angles = useMemo(() => {
+    if (boardName !== 'quantum') return staticAngles;
+    return [...new Set((quantumAnglesQuery.data ?? []).map(({ angle }) => angle))]
+      .filter((angle) => Number.isSafeInteger(angle) && angle >= 0 && angle <= 90)
+      .sort((first, second) => first - second);
+  }, [boardName, staticAngles, quantumAnglesQuery.data]);
+  const angleOptionsAvailable = angles.length > 0;
 
   // Live preview angle. Applied to the board only when "Done" is pressed; the
   // diagram, grade, stars and sends all reflect this as the user slides.
@@ -77,6 +88,18 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
     if (visible) setSelectedAngle(currentAngleRef.current);
   }, [visible]);
 
+  useEffect(() => {
+    if (
+      visible &&
+      boardName === 'quantum' &&
+      quantumAnglesQuery.isSuccess &&
+      angles.length > 0 &&
+      !angles.includes(currentAngleRef.current)
+    ) {
+      setSelectedAngle(angles[0]);
+    }
+  }, [angles, boardName, quantumAnglesQuery.isSuccess, visible]);
+
   // Present/dismiss route through the coordinator (serialized, no overlapping
   // native transitions). The sheet stays mounted as a PlayDrawer sibling, so no
   // onFullyDismissed is needed; `onClose` fires on a user pan-down / backdrop —
@@ -84,9 +107,10 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
   const managed = useManagedSheet({ open: visible, sheetRef, onClose });
 
   const handleDone = useCallback(() => {
+    if (!angleOptionsAvailable || !angles.includes(selectedAngle)) return;
     onAngleChange(selectedAngle);
     onClose();
-  }, [onAngleChange, selectedAngle, onClose]);
+  }, [angleOptionsAvailable, angles, onAngleChange, selectedAngle, onClose]);
 
   return (
     <BottomSheetModal
@@ -103,55 +127,74 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
           {t('mobile.angleSelector.title')}
         </Text>
 
-        <AngleBoardDiagram
-          angle={selectedAngle}
-          size={150}
-          accessibilityLabel={t('mobile.angleSelector.diagramAria', { angle: selectedAngle })}
-        />
+        {angleOptionsAvailable ? (
+          <>
+            <AngleBoardDiagram
+              angle={selectedAngle}
+              size={150}
+              accessibilityLabel={t('mobile.angleSelector.diagramAria', { angle: selectedAngle })}
+            />
 
-        <Text variant="largeTitle" style={[styles.angleValue, { color: systemColors.label }]}>
-          {selectedAngle}°
-        </Text>
+            <Text variant="largeTitle" style={[styles.angleValue, { color: systemColors.label }]}>
+              {selectedAngle}°
+            </Text>
 
-        {stats?.gradeName ? (
-          <Text variant="headline" style={[styles.grade, { color: stats.color }]}>
-            {stats.gradeName}
-          </Text>
-        ) : null}
-
-        {quality > 0 ? (
-          <View style={styles.stars} accessibilityLabel={`★ ${quality.toFixed(1)}`}>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <Text
-                key={n}
-                variant="body"
-                style={[styles.star, { color: quality >= n ? iosSystemColors.starGold : systemColors.secondaryLabel }]}
-              >
-                {quality >= n ? '★' : '☆'}
+            {stats?.gradeName ? (
+              <Text variant="headline" style={[styles.grade, { color: stats.color }]}>
+                {stats.gradeName}
               </Text>
-            ))}
-          </View>
-        ) : null}
+            ) : null}
 
-        {stats && stats.sends > 0 ? (
-          <Text variant="caption1" style={[styles.ascents, { color: systemColors.secondaryLabel }]}>
-            {t('mobile.community.ascensionists', { count: stats.sends })}
+            {quality > 0 ? (
+              <View style={styles.stars} accessibilityLabel={`★ ${quality.toFixed(1)}`}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <Text
+                    key={star}
+                    variant="body"
+                    style={[
+                      styles.star,
+                      { color: quality >= star ? iosSystemColors.starGold : systemColors.secondaryLabel },
+                    ]}
+                  >
+                    {quality >= star ? '★' : '☆'}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
+
+            {stats && stats.sends > 0 ? (
+              <Text variant="caption1" style={[styles.ascents, { color: systemColors.secondaryLabel }]}>
+                {t('mobile.community.ascensionists', { count: stats.sends })}
+              </Text>
+            ) : null}
+
+            <Text variant="caption2" style={[styles.hint, { color: systemColors.tertiaryLabel }]}>
+              {t('mobile.angleSelector.fromVerticalHint')}
+            </Text>
+
+            <View style={styles.sliderWrap}>
+              <AngleSlider angles={angles} value={selectedAngle} onChange={setSelectedAngle} />
+            </View>
+          </>
+        ) : boardName === 'quantum' ? (
+          <Text variant="body" color={systemColors.secondaryLabel} style={styles.catalogStatus}>
+            {quantumAnglesQuery.isPending || quantumAnglesQuery.isFetching
+              ? tBoards('mobile.create.catalogAnglesLoading')
+              : tBoards('mobile.create.catalogAnglesUnavailable')}
           </Text>
         ) : null}
-
-        <Text variant="caption2" style={[styles.hint, { color: systemColors.tertiaryLabel }]}>
-          {t('mobile.angleSelector.fromVerticalHint')}
-        </Text>
-
-        <View style={styles.sliderWrap}>
-          <AngleSlider angles={angles} value={selectedAngle} onChange={setSelectedAngle} />
-        </View>
 
         <Pressable
           onPress={handleDone}
+          disabled={!angleOptionsAvailable}
           accessibilityRole="button"
           accessibilityLabel={tCommon('actions.done')}
-          style={({ pressed }) => [styles.doneButton, pressed && styles.doneButtonPressed]}
+          accessibilityState={{ disabled: !angleOptionsAvailable }}
+          style={({ pressed }) => [
+            styles.doneButton,
+            !angleOptionsAvailable && styles.doneButtonDisabled,
+            pressed && angleOptionsAvailable && styles.doneButtonPressed,
+          ]}
         >
           <Text variant="headline" style={styles.doneText}>
             {tCommon('actions.done')}
@@ -198,6 +241,11 @@ const styles = StyleSheet.create({
     marginTop: spacing[4],
     marginBottom: spacing[4],
   },
+  catalogStatus: {
+    flex: 1,
+    paddingVertical: spacing[5],
+    textAlign: 'center',
+  },
   doneButton: {
     width: '100%',
     height: 52,
@@ -208,6 +256,9 @@ const styles = StyleSheet.create({
   },
   doneButtonPressed: {
     opacity: 0.85,
+  },
+  doneButtonDisabled: {
+    opacity: 0.45,
   },
   doneText: {
     color: iosSystemColors.white,

@@ -16,6 +16,14 @@ type BluetoothCtx = {
 
 const ctrl = vi.hoisted(() => ({
   bluetooth: null as BluetoothCtx,
+  quantumState: { status: 'inactive', isAvailable: null } as {
+    status: 'inactive' | 'disconnected' | 'connecting' | 'connected';
+    isAvailable: boolean | null;
+  },
+  quantumActions: {
+    connect: vi.fn().mockResolvedValue(true),
+    disconnect: vi.fn().mockResolvedValue(undefined),
+  },
   boardId: null as number | null,
   isSessionWallLit: false,
   sessionId: null as string | null,
@@ -25,8 +33,13 @@ const ctrl = vi.hoisted(() => ({
   presence: undefined as BoardPresenceCurrentState | undefined,
 }));
 const trackMock = vi.hoisted(() => vi.fn());
+const showToastMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../providers/bluetooth-provider', () => ({ useOptionalBluetoothContext: () => ctrl.bluetooth }));
+vi.mock('../../../providers/quantum-bluetooth-provider', () => ({
+  useOptionalQuantumBluetoothState: () => ctrl.quantumState,
+  useOptionalQuantumBluetoothActions: () => ctrl.quantumActions,
+}));
 vi.mock('../../../providers/board-presence-provider', () => ({
   useBoardPresenceControls: () => ({ boardId: ctrl.boardId }),
 }));
@@ -37,6 +50,8 @@ vi.mock('../../../providers/queue-provider', () => ({
     sessionMemberUserIds: ctrl.sessionMemberUserIds,
   }),
 }));
+vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: showToastMock }) }));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../lib/analytics', () => ({ track: trackMock }));
 
 import { useLightbulbControl } from '../use-lightbulb-control';
@@ -62,18 +77,22 @@ const holderPresenceFor = (userId: string): BoardPresenceCurrentState =>
 const wrapper = ({ children }: { children: ReactNode }) =>
   createElement(BoardPresenceCurrentContext.Provider, { value: ctrl.presence }, children);
 
-function renderControl() {
-  return renderHook(() => useLightbulbControl(), { wrapper });
+function renderControl(onOpenControls?: () => void) {
+  return renderHook(() => useLightbulbControl({ onOpenControls }), { wrapper });
 }
 
 beforeEach(() => {
   ctrl.bluetooth = makeBluetooth();
+  ctrl.quantumState = { status: 'inactive', isAvailable: null };
+  ctrl.quantumActions.connect.mockClear();
+  ctrl.quantumActions.disconnect.mockClear();
   ctrl.boardId = null;
   ctrl.isSessionWallLit = false;
   ctrl.sessionId = null;
   ctrl.sessionMemberUserIds = new Set();
   ctrl.presence = undefined;
   trackMock.mockClear();
+  showToastMock.mockClear();
 });
 
 describe('useLightbulbControl lit state', () => {
@@ -211,5 +230,40 @@ describe('useLightbulbControl press action', () => {
     result.current.onPress();
     expect(ctrl.bluetooth?.connect).not.toHaveBeenCalled();
     expect(ctrl.bluetooth?.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('connects Quantum without auto-sending or calling the legacy provider', () => {
+    ctrl.quantumState = { status: 'disconnected', isAvailable: true };
+    const { result } = renderControl();
+    result.current.onPress();
+    expect(ctrl.quantumActions.connect).toHaveBeenCalledOnce();
+    expect(ctrl.bluetooth?.connect).not.toHaveBeenCalled();
+    expect(result.current.isQuantum).toBe(true);
+  });
+
+  it('opens explicit Quantum layer controls instead of disconnecting on a connected tap', () => {
+    ctrl.quantumState = { status: 'connected', isAvailable: true };
+    const openControls = vi.fn();
+    const { result } = renderControl(openControls);
+    result.current.onPress();
+    expect(openControls).toHaveBeenCalledOnce();
+    expect(ctrl.quantumActions.disconnect).not.toHaveBeenCalled();
+    expect(ctrl.bluetooth?.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('keeps browse controls available but hides Quantum BLE when Web Bluetooth is unsupported', () => {
+    ctrl.quantumState = { status: 'disconnected', isAvailable: false };
+    const { result } = renderControl();
+    result.current.onPress();
+    expect(result.current.available).toBe(false);
+    expect(ctrl.quantumActions.connect).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a failed Quantum connection after the picker closes', async () => {
+    ctrl.quantumState = { status: 'disconnected', isAvailable: true };
+    ctrl.quantumActions.connect.mockResolvedValueOnce(false);
+    const { result } = renderControl();
+    result.current.onPress();
+    await vi.waitFor(() => expect(showToastMock).toHaveBeenCalledWith('bluetooth.connectFailed', 'error'));
   });
 });

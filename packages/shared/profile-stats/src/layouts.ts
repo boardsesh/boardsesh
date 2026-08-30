@@ -1,9 +1,13 @@
-import { SUPPORTED_BOARDS, MOONBOARD_LAYOUTS, formatBoardDisplayName } from '@boardsesh/board-config';
+import {
+  MOONBOARD_LAYOUTS,
+  SUPPORTED_BOARDS as ROLLOUT_ENABLED_BOARDS,
+  formatBoardDisplayName,
+} from '@boardsesh/board-config';
 import { getLayout, ORPHANED_KILTER_LAYOUT_DEFAULTS } from '@boardsesh/board-constants/product-sizes';
 import type { BoardName } from '@boardsesh/shared-schema';
 
 /** Board types charted on the profile (= every supported board). */
-export const BOARD_TYPES = SUPPORTED_BOARDS;
+export const BOARD_TYPES: readonly BoardName[] = [...ROLLOUT_ENABLED_BOARDS, 'quantum'];
 
 /** Stable ordering for layout series/legends across charts. */
 export const LAYOUT_ORDER = [
@@ -18,6 +22,11 @@ export const LAYOUT_ORDER = [
   'moonboard-4',
   'moonboard-5',
   'woods-1',
+  'quantum-9101',
+  'quantum-9102',
+  'quantum-9103',
+  'quantum-9104',
+  'quantum-9105',
 ];
 
 // Display name overrides for layouts whose constant name doesn't match the
@@ -37,6 +46,11 @@ const LAYOUT_DISPLAY_OVERRIDES: Record<string, string> = {
   // Woods is code-driven: no rows in the Aurora layout tables for `getLayout` to
   // read, so without this the profile charts would label it "Woods (Layout 1)".
   'woods-1': 'Woods Board',
+  'quantum-9101': 'Quantum Board XL',
+  'quantum-9102': 'Quantum Board L',
+  'quantum-9103': 'Quantum Board M',
+  'quantum-9104': 'Quantum Board S Fitness',
+  'quantum-9105': 'Quantum Board Belay Board',
 };
 
 export const getLayoutKey = (boardType: string, layoutId: number | null | undefined): string => {

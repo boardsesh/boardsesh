@@ -25,21 +25,23 @@ export type ConnectedClient = {
   connectedAt: Date;
   /**
    * The board this connection last became the presence "holder" of (set in
-   * reportBoardClimb via roomManager.noteBoardWriter), recorded so the WS-close
-   * backstop can free the wall if the holder crashes without sending an explicit
-   * reportBoardDisconnect. Keyed by emitter so the clear is a no-op once someone
-   * else has taken over (always-take). The clean path is the client's BLE-drop
-   * reportBoardDisconnect; this is the crash backstop only.
+   * reportBoardClimb/reportBoardLayers via roomManager.noteBoardWriter),
+   * recorded so the WS-close backstop can free the wall if the holder crashes
+   * without sending an explicit reportBoardDisconnect. Quantum layer claims
+   * also carry a per-connection token, so an older socket for the same account
+   * cannot clear a reconnect's roster.
    *
    * Single record (last write wins): one phone connects to one board at a time
    * (Aurora BLE is last-connection-wins, and switching walls disconnects the
-   * old board first, which clears its hold), so we only track the latest. Caveat:
-   * for a logged-in user holding from two live connections (same userId emitter),
-   * either connection's drop frees the wall via compare-and-delete even though
-   * the other still holds — re-acquired on that connection's next send. Benign
-   * given always-take; the BLE-drop reportBoardDisconnect is the primary path.
+   * old board first, which clears its hold), so we only track the latest.
    */
-  boardWriterEmitter?: { boardId: number; emitterId: string };
+  boardWriterEmitter?: { boardId: number; emitterId: string; layerClaimToken?: string };
+  /**
+   * Set synchronously when WS-close cleanup starts. A layer commit that finishes
+   * after this point must compensate its distributed claim instead of recording
+   * a hold that the already-running close path can no longer observe.
+   */
+  boardWriterCleanupStarted?: boolean;
 };
 
 export type LocalSessionParticipant = {

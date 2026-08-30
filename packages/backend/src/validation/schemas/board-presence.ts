@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import { MAX_ACTIVE_BOARD_LAYERS } from '@boardsesh/board-layers';
 import { ClimbInputSchema } from './climbs';
-import { BoardNameSchema, ClimbUuidSchema, NumericCsvSchema } from './primitives';
+import { BoardNameSchema, ClimbUuidSchema, ExternalUUIDSchema, NumericCsvSchema } from './primitives';
 
 export const BoardPresenceConfigInputSchema = z.object({
   boardType: BoardNameSchema,
@@ -37,3 +38,16 @@ export const ReportBoardClimbInputSchema = z.object({
   tickedBy: z.array(z.string().max(100)).max(100).nullish(),
   suggested: z.boolean().nullish(),
 });
+
+export const ReportBoardLayerInputSchema = z.object({
+  color: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/, 'Board layer colour must be a 24-bit hex colour')
+    .transform((color) => color.toUpperCase()),
+  remainingSeconds: z.number().int().min(0).max(65_535),
+  climbUuid: ExternalUUIDSchema.nullish(),
+  angle: BoardPresenceAngleSchema,
+  geometryKnown: z.boolean(),
+});
+
+export const ReportBoardLayersInputSchema = z.array(ReportBoardLayerInputSchema).max(MAX_ACTIVE_BOARD_LAYERS);

@@ -154,6 +154,37 @@ describe('climb mutations', () => {
     });
   });
 
+  it('creates and returns a stable canonical controller route UUID for a Quantum climb', async () => {
+    mockDb.select.mockReturnValueOnce(
+      createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
+    );
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    const result = await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'quantum',
+          layoutId: 9101,
+          name: 'User Quantum climb',
+          description: '',
+          isDraft: true,
+          frames: 'p1000001r12p1000002r14',
+          angle: 40,
+        },
+      },
+      makeCtx(),
+    );
+
+    expect(result.controllerRouteUuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(insertCalls[0].values).toMatchObject({
+      boardType: 'quantum',
+      controllerRouteUuid: result.controllerRouteUuid,
+    });
+  });
+
   it('skips the duplicate gate for multi-frame Aurora climbs', async () => {
     // Multi-frame climbs (Aurora dynos with intermediate frames) are out of
     // scope for the gate. We don't queue any "found a match" execute

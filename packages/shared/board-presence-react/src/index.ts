@@ -24,6 +24,7 @@ export {
   useBoardPresenceContext,
   useBoardPresenceCurrent,
   useBoardPresenceFeed,
+  useBoardPresenceLayers,
   useBoardPresenceHasClimb,
   useBoardPresenceWallClimb,
   BoardPresenceActionsContext,
@@ -31,6 +32,7 @@ export {
   BoardPresenceContext,
   BoardPresenceCurrentContext,
   BoardPresenceFeedContext,
+  BoardPresenceLayersContext,
   BoardPresenceHasClimbContext,
   BoardPresenceWallClimbContext,
 } from './board-presence-provider';

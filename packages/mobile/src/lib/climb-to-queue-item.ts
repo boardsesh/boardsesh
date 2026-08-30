@@ -34,6 +34,7 @@ export function toClimbInput(climb: Climb): ClimbInput {
     name: climb.name,
     description: climb.description,
     frames: climb.frames,
+    controllerRouteUuid: climb.controllerRouteUuid,
     angle: climb.angle,
     ascensionist_count: climb.ascensionist_count,
     difficulty: climb.difficulty,
@@ -109,6 +110,7 @@ export function climbToQueueItem(climb: Climb, options?: { suggested?: boolean; 
       boardType: climb.boardType,
       name: climb.name,
       frames: climb.frames,
+      controllerRouteUuid: climb.controllerRouteUuid,
       setter_username: climb.setter_username,
       // Owner identity, so the owner-only Edit action can be gated on a queued
       // climb (use-climb-actions / ClimbActionsSheet read exactly this, and the

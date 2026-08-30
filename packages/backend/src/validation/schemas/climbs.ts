@@ -45,6 +45,11 @@ export const ClimbInputSchema = z.object({
     .max(10000)
     .nullish()
     .transform((v) => v ?? ''),
+  // Controller-native route identity. QuantumBoard uses this UUID for BLE
+  // activation while Boardsesh keeps its own UUID as the catalogue identity.
+  // Nullish preserves queue compatibility with existing board types and older
+  // clients. ExternalUUIDSchema is intentionally tolerant for upstream IDs.
+  controllerRouteUuid: ExternalUUIDSchema.nullish(),
   // Live board angle; Aurora supports negative tilt. ClimbInputSchema is only
   // consumed by the presence/queue climb payload (ClimbQueueItemSchema,
   // ReportBoardClimbInputSchema) — catalogue-write schemas (SaveClimbInputSchema,
@@ -229,6 +234,10 @@ export const ClimbSearchInputSchema = z.object({
   // toClimbSearchInput first, not just the web client.
   boulders: z.boolean().optional(),
   routes: z.boolean().optional(),
+  // Four Quantum layers × 92 diodes. This search request carries only the
+  // server-derived occupied placements, never raw controller roster identities.
+  occupiedPlacementIds: z.array(z.number().int().min(0)).max(368).optional(),
+  maxOccupiedOverlap: z.union([z.literal(0), z.literal(1)]).optional(),
   zoneBox: z
     .object({
       edgeLeft: z.number().int(),

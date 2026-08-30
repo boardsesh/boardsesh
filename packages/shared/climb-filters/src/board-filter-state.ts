@@ -1,4 +1,5 @@
 import type { ClimbSearchInput, HoldsFilter, ZoneBoxInput, ZoneMatchMode } from '@boardsesh/shared-schema';
+import type { OccupiedPlacementIndex, QuantumOverlapFilter } from '@boardsesh/board-layers';
 
 /**
  * Board-renderer-dependent search filters, kept as a sibling to
@@ -18,6 +19,7 @@ export type ClimbBoardFilterState = {
   zoneBox?: ZoneBoxInput | null;
   zoneMode?: ZoneMatchMode;
   setterId?: number;
+  quantumOverlap?: QuantumOverlapFilter;
 };
 
 export const DEFAULT_CLIMB_BOARD_FILTER_STATE: ClimbBoardFilterState = {};
@@ -28,6 +30,7 @@ export function hasActiveBoardFilters(state: ClimbBoardFilterState): boolean {
   if (state.holdsFilter && Object.keys(state.holdsFilter).length > 0) return true;
   if (state.zoneBox != null) return true;
   if (state.setterId != null) return true;
+  if (state.quantumOverlap != null && state.quantumOverlap !== 'off') return true;
   return false;
 }
 
@@ -35,7 +38,11 @@ export function hasActiveBoardFilters(state: ClimbBoardFilterState): boolean {
  * Returns a new {@link ClimbSearchInput} with the active board filters folded
  * in. Inactive fields are left untouched so the base input's values win.
  */
-export function mergeBoardFilters(input: ClimbSearchInput, state: ClimbBoardFilterState): ClimbSearchInput {
+export function mergeBoardFilters(
+  input: ClimbSearchInput,
+  state: ClimbBoardFilterState,
+  occupied?: OccupiedPlacementIndex,
+): ClimbSearchInput {
   const merged: ClimbSearchInput = { ...input };
   if (state.onlyBenchmarks) merged.onlyBenchmarks = true;
   if (state.holdsFilter && Object.keys(state.holdsFilter).length > 0) merged.holdsFilter = state.holdsFilter;
@@ -44,5 +51,15 @@ export function mergeBoardFilters(input: ClimbSearchInput, state: ClimbBoardFilt
     if (state.zoneMode) merged.zoneMode = state.zoneMode;
   }
   if (state.setterId != null) merged.setterId = state.setterId;
+  if (
+    input.boardName === 'quantum' &&
+    state.quantumOverlap != null &&
+    state.quantumOverlap !== 'off' &&
+    occupied?.geometryKnown &&
+    occupied.placementIds.size > 0
+  ) {
+    merged.occupiedPlacementIds = [...occupied.placementIds];
+    merged.maxOccupiedOverlap = state.quantumOverlap === 'none' ? 0 : 1;
+  }
   return merged;
 }

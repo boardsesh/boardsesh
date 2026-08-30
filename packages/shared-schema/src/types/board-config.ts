@@ -12,6 +12,7 @@ export const SUPPORTED_BOARDS = [
   'grasshopper',
   'soill',
   'woods',
+  'quantum',
 ] as const;
 
 /**
@@ -31,6 +32,7 @@ export const BOARD_DISPLAY_ORDER = [
   'soill',
   'moonboard',
   'woods',
+  'quantum',
 ] as const satisfies readonly (typeof SUPPORTED_BOARDS)[number][];
 
 export type BoardName = (typeof SUPPORTED_BOARDS)[number];
@@ -43,4 +45,23 @@ export type Grade = {
 
 export type Angle = {
   angle: number;
+};
+
+export type QuantumGeometryPlacement = {
+  placementId: number;
+  holeId: number;
+  x: number;
+  y: number;
+  ledPosition: number;
+};
+
+export type QuantumGeometry = {
+  layoutId: number;
+  sizeId: number;
+  revision: string;
+  edgeLeft: number;
+  edgeRight: number;
+  edgeBottom: number;
+  edgeTop: number;
+  placements: QuantumGeometryPlacement[];
 };

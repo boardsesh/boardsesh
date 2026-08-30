@@ -51,7 +51,22 @@ const services = {
     // All sync CLIs in one image. The source layer is the union of these roots'
     // transitive workspace deps; the daemon/CLI to run is chosen by the container
     // command, not baked into the image.
-    rootPackageNames: ['@boardsesh/kilter-sync', '@boardsesh/aurora-sync', '@boardsesh/moonboard-sync'],
+    rootPackageNames: [
+      '@boardsesh/kilter-sync',
+      '@boardsesh/aurora-sync',
+      '@boardsesh/moonboard-sync',
+      '@boardsesh/quantum-sync',
+      // Quantum's fail-closed Nostr verifier and DB composition live in the
+      // backend runtime, while the importer writes through @boardsesh/db.
+      '@boardsesh/db',
+    ],
+    extraSourceFiles: [
+      'packages/backend/src/cli/quantum-sync.ts',
+      'packages/backend/src/db/client.ts',
+      'packages/backend/src/services/quantum-catalog-import.ts',
+      'packages/backend/src/services/quantum-catalog-mapping.ts',
+      'packages/backend/src/services/quantum-catalog-sync.ts',
+    ],
   },
 };
 

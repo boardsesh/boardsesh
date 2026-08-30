@@ -1,15 +1,15 @@
 import { z } from 'zod';
-import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import { STATIC_BOARD_RENDER_NAMES } from '@boardsesh/board-config';
 import type { OutputFormat } from './types';
 
 /**
  * Board names the render pipeline accepts. Single source for the Set and the zod
- * enum, and derived from `SUPPORTED_BOARDS` rather than restated: this list gates
- * `/api/internal/board-render` and the backend's `GET /og/climb`, so a board
- * missing from a hand-kept copy is a silent 400 on every share card and preview
- * for that board — the failure Woods would have shipped with.
+ * enum, and derived from the total capability table rather than restated. This
+ * list gates `/api/internal/board-render` and the backend's `GET /og/climb`.
+ * Runtime-geometry boards stay out until those synchronous endpoints can load
+ * their signed geometry instead of falling through to Aurora calibration.
  */
-const VALID_BOARD_NAME_LIST = SUPPORTED_BOARDS;
+const VALID_BOARD_NAME_LIST = STATIC_BOARD_RENDER_NAMES;
 
 export const VALID_BOARD_NAMES: ReadonlySet<string> = new Set(VALID_BOARD_NAME_LIST);
 

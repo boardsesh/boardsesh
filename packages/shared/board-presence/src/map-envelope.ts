@@ -34,6 +34,8 @@ export function mapBoardPresenceEnvelopeToAction(event: BoardPresenceEvent): Boa
         type: 'APPLY_CONNECTION_CHANGED',
         payload: { holder: event.holder, seq: event.seq },
       };
+    case 'BoardLayersChanged':
+      return { type: 'APPLY_LAYERS_CHANGED', payload: event.snapshot };
     default:
       return null;
   }

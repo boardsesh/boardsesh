@@ -242,6 +242,13 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     reportBoardDisconnect(boardId: Int!): Boolean!
 
+    """
+    Publish a confirmed QuantumBoard controller roster after BLE readback.
+    The caller must have live proof-of-presence for this board. Controller
+    user and route UUIDs are deliberately absent from the input.
+    """
+    reportBoardLayers(boardId: Int!, layers: [ReportBoardLayerInput!]!): BoardLayersSnapshot!
+
     # ============================================
     # User Management Mutations (require auth)
     # ============================================

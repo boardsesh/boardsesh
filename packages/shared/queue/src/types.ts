@@ -27,6 +27,7 @@ export type Climb = {
   name: string;
   description?: string | null;
   frames: string;
+  controllerRouteUuid?: string | null;
   angle: number;
   ascensionist_count: number;
   difficulty: string;

@@ -26,6 +26,8 @@ export const initialBoardPresenceState: BoardPresenceState = {
   lastStatsSeq: 0,
   holder: null,
   lastConnectionSeq: 0,
+  layers: null,
+  lastLayersSeq: 0,
 };
 
 /** True when an entry with the same `(climbUuid, seq)` is already in history. */
@@ -236,6 +238,33 @@ export function boardPresenceReducer(state: BoardPresenceState, action: BoardPre
         ...state,
         holder: action.payload.holder,
         lastConnectionSeq: action.payload.upToSeq,
+      };
+    }
+
+    case 'APPLY_LAYERS_CHANGED': {
+      if (action.payload.seq <= state.lastLayersSeq) return state;
+      return {
+        ...state,
+        layers: action.payload,
+        lastLayersSeq: action.payload.seq,
+      };
+    }
+
+    case 'SEED_LAYERS': {
+      if (state.lastLayersSeq !== 0 || state.layers !== null) return state;
+      return {
+        ...state,
+        layers: action.payload,
+        lastLayersSeq: action.payload?.seq ?? 0,
+      };
+    }
+
+    case 'REFRESH_LAYERS': {
+      if (action.payload.upToSeq < state.lastLayersSeq) return state;
+      return {
+        ...state,
+        layers: action.payload.snapshot,
+        lastLayersSeq: action.payload.upToSeq,
       };
     }
 

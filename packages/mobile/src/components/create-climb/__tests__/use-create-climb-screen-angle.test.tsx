@@ -109,6 +109,10 @@ vi.mock('../../../providers/queue-provider', () => ({
 vi.mock('../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => null,
 }));
+vi.mock('../../../providers/quantum-bluetooth-provider', () => ({
+  useOptionalQuantumBluetoothState: () => null,
+  useOptionalQuantumBluetoothActions: () => null,
+}));
 vi.mock('../../../providers/toast-provider', () => ({
   useToast: () => ({ showToast: toast.showToast }),
 }));

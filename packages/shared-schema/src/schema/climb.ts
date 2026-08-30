@@ -18,6 +18,8 @@ export const climbTypeDefs = /* GraphQL */ `
     description: String
     "Encoded hold positions and colors for lighting up the board"
     frames: String!
+    "External route identifier understood by the physical board controller. Null for boards that use the Boardsesh climb UUID directly."
+    controllerRouteUuid: ID
     "Board angle in degrees when this climb was set"
     angle: Int!
     "Number of people who have completed this climb"
@@ -87,6 +89,8 @@ export const climbTypeDefs = /* GraphQL */ `
     name: String!
     description: String
     frames: String!
+    "External route identifier understood by the physical board controller."
+    controllerRouteUuid: ID
     angle: Int!
     ascensionist_count: Int!
     difficulty: String!
@@ -221,6 +225,10 @@ export const climbTypeDefs = /* GraphQL */ `
     zoneBox: ZoneBoxInput
     "How the zone should match climb holds. Defaults to allHolds when omitted."
     zoneMode: ZoneMatchMode
+    "Occupied placement IDs from a confirmed Quantum controller roster. Controller identities are never sent."
+    occupiedPlacementIds: [Int!]
+    "Maximum occupied holds a climb may share: 0 for none, 1 for at most one. Omit to disable."
+    maxOccupiedOverlap: Int
   }
 
   """

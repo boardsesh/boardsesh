@@ -19,6 +19,7 @@ const CLIMB_FIELDS = `
   name
   description
   frames
+  controllerRouteUuid
   framesCount
   framesPace
   angle

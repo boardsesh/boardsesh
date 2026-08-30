@@ -160,6 +160,12 @@ describe('PlayDrawerActionBar', () => {
     expect(container.querySelector('[data-lightbulb-holder-badge="true"]')).toBeNull();
   });
 
+  it('omits share when the board has no public climb view', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, onShare: undefined }));
+
+    expect(container.querySelector('[data-icon="share"]')).toBeNull();
+  });
+
   it('keeps the 32pt angle pill tappable at the 44pt floor via hit-slop', () => {
     const { container } = render(createElement(PlayDrawerActionBar, baseProps));
     const anglePill = container.querySelector('[data-label="mobile.angleSelector.title"]') as HTMLElement;

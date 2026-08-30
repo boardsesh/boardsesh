@@ -102,9 +102,62 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
   }
 
   """
+  One sanitized QuantumBoard layer confirmed by controller readback. Physical
+  controller user and route UUIDs are intentionally excluded.
+  """
+  type BoardLayerPresence {
+    "Fixed display colour for this layer."
+    color: String!
+    "Controller-reported lifetime remaining, in seconds."
+    remainingSeconds: Int!
+    "Resolved Boardsesh climb UUID, or null for an unknown foreign layer."
+    climbUuid: String
+    "Wall angle associated with the resolved climb, when known."
+    angle: Int
+    "Whether Boardsesh has hold geometry for overlap filtering and rendering."
+    geometryKnown: Boolean!
+    "Catalogue placement ids occupied by this layer; never supplied by the reporting client."
+    placementIds: [Int!]!
+  }
+
+  """
+  Latest confirmed, sanitized QuantumBoard roster for a shared wall.
+  """
+  type BoardLayersSnapshot {
+    boardId: Int!
+    layers: [BoardLayerPresence!]!
+    "ISO 8601 timestamp stamped by the backend when readback was reported."
+    observedAt: String!
+    "True after the reporting wall holder disconnects."
+    stale: Boolean!
+    "Monotonic per-board sequence shared with other presence events."
+    seq: Int!
+  }
+
+  """
+  Input for one confirmed QuantumBoard layer; contains no controller IDs.
+  """
+  input ReportBoardLayerInput {
+    color: String!
+    remainingSeconds: Int!
+    climbUuid: String
+    angle: Int
+    geometryKnown: Boolean!
+  }
+
+  type BoardLayersChanged {
+    snapshot: BoardLayersSnapshot!
+  }
+
+  """
   Union of board-presence events streamed by \`boardNowPlaying\`.
   """
-  union BoardPresenceEvent = BoardClimbSet | BoardClimbCleared | BoardStatsUpdated | BoardConnectionChanged
+  union BoardPresenceEvent =
+    | BoardClimbSet
+    | BoardClimbCleared
+    | BoardStatsUpdated
+    | BoardConnectionChanged
+    | BoardLayersChanged
 
   """
   The first climber to send the hardest grade logged on this wall.

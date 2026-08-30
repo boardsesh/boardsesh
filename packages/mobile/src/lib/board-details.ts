@@ -1,13 +1,20 @@
-import { getProductSize, getImageFilename, getHolePlacements } from '@boardsesh/board-constants/product-sizes';
+import {
+  getProductSize,
+  getImageFilename,
+  getHolePlacements,
+  hasProductSizeEdges,
+} from '@boardsesh/board-constants/product-sizes';
 import {
   BOARD_IMAGE_DIMENSIONS,
   MOONBOARD_SIZE,
   WOODS_LAYOUTS,
+  getQuantumNeutralGrid,
   getMoonBoardDetails,
   getWoodsBoardDetails,
 } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
 import type { HoldPlacement } from '../components/board-renderer/types';
+import { getQuantumGeometry, getQuantumGeometryBoardDetails } from './quantum-geometry-store';
 
 type BoardRenderData = {
   boardWidth: number;
@@ -45,7 +52,9 @@ export function getBoardRenderData(params: {
 }): BoardRenderData | null {
   const { boardName, layoutId, sizeId, setIds } = params;
 
-  const cacheKey = `${boardName}-${layoutId}-${sizeId}-${setIds.join(',')}`;
+  const quantumGeometryRevision =
+    boardName === 'quantum' ? (getQuantumGeometry(layoutId, sizeId)?.revision ?? 'missing') : 'static';
+  const cacheKey = `${boardName}-${layoutId}-${sizeId}-${setIds.join(',')}-${quantumGeometryRevision}`;
   const cached = renderDataCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
@@ -83,8 +92,12 @@ function computeBoardRenderData(params: {
     return getWoodsRenderData({ layoutId, sizeId });
   }
 
+  if (boardName === 'quantum') {
+    return getQuantumRenderData({ layoutId, sizeId, setIds });
+  }
+
   const sizeData = getProductSize(boardName, sizeId);
-  if (!sizeData) return null;
+  if (!sizeData || !hasProductSizeEdges(sizeData)) return null;
 
   const { edgeLeft, edgeRight, edgeBottom, edgeTop } = sizeData;
 
@@ -123,6 +136,25 @@ function computeBoardRenderData(params: {
   const backgroundImageKeys = imageFilenames.map((filename) => `${boardName}/${filename}`.replace(/\.png$/, '.webp'));
 
   return { boardWidth, boardHeight, edgeLeft, edgeRight, edgeBottom, edgeTop, backgroundImageKeys, holdsData };
+}
+
+function getQuantumRenderData(params: { layoutId: number; sizeId: number; setIds: number[] }): BoardRenderData | null {
+  const { layoutId, sizeId, setIds } = params;
+  // Quantum has one exact synthetic set. A stale or crafted route must not
+  // borrow geometry from another configuration.
+  if (setIds.length !== 1 || setIds[0] !== 1) return null;
+  const details = getQuantumGeometryBoardDetails(layoutId, sizeId);
+  if (!details) return null;
+  return {
+    boardWidth: details.boardWidth,
+    boardHeight: details.boardHeight,
+    edgeLeft: details.edge_left,
+    edgeRight: details.edge_right,
+    edgeBottom: details.edge_bottom,
+    edgeTop: details.edge_top,
+    backgroundImageKeys: [],
+    holdsData: details.holdsData.map((hold) => ({ ...hold })),
+  };
 }
 
 function getMoonBoardRenderData(params: {
@@ -232,6 +264,11 @@ export function getBoardAspectRatio(params: {
 
   // Code-driven boards have no `board_images` row to read dimensions from, so
   // their aspect ratio comes off the render data (which is memoized anyway).
+  if (boardName === 'quantum') {
+    const neutralGrid = getQuantumNeutralGrid(layoutId, sizeId);
+    return neutralGrid ? neutralGrid.boardWidth / neutralGrid.boardHeight : 1080 / 1920;
+  }
+
   if (boardName === 'moonboard' || boardName === 'woods') {
     const renderData = getBoardRenderData(params);
     return renderData ? renderData.boardWidth / renderData.boardHeight : 1080 / 1920;

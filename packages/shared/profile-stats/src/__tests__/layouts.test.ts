@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { LAYOUT_ORDER, getLayoutDisplayName, sortLayoutKeys } from '../layouts';
+import { BOARD_TYPES, LAYOUT_ORDER, getLayoutDisplayName, sortLayoutKeys } from '../layouts';
 
 describe('getLayoutDisplayName', () => {
   it('names the Woods layout from the override, not from the Aurora tables', () => {
@@ -17,6 +17,11 @@ describe('getLayoutDisplayName', () => {
     expect(getLayoutDisplayName('kilter', 1)).toBe('Kilter Original');
     expect(getLayoutDisplayName('moonboard', 2)).toBe('MoonBoard 2016');
   });
+
+  it('names every code-driven Quantum Board model', () => {
+    expect(getLayoutDisplayName('quantum', 9101)).toBe('Quantum Board XL');
+    expect(getLayoutDisplayName('quantum', 9105)).toBe('Quantum Board Belay Board');
+  });
 });
 
 describe('LAYOUT_ORDER', () => {
@@ -28,5 +33,15 @@ describe('LAYOUT_ORDER', () => {
 
   it('sorts an unordered key after every ordered one', () => {
     expect(sortLayoutKeys(['decoy-2', 'woods-1'])).toEqual(['woods-1', 'decoy-2']);
+  });
+
+  it('includes Quantum Board after other code-driven board layouts', () => {
+    expect(BOARD_TYPES).toContain('quantum');
+    expect(LAYOUT_ORDER.indexOf('quantum-9101')).toBeGreaterThan(LAYOUT_ORDER.indexOf('woods-1'));
+    expect(sortLayoutKeys(['quantum-9105', 'woods-1', 'quantum-9101'])).toEqual([
+      'woods-1',
+      'quantum-9101',
+      'quantum-9105',
+    ]);
   });
 });

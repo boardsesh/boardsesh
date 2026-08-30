@@ -11,6 +11,8 @@ export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
  */
 export type SavedClimbSnapshot = {
   uuid: string;
+  /** Stable controller-side route identity for explicit Quantum activation. */
+  controllerRouteUuid?: string | null;
   boardType: string;
   createdAt: string | null;
   /** ISO timestamp of first publish; null while the climb is a draft. */

@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { toBoardName } from '../board-name';
+import { formatBoardDisplayName, toBoardName } from '../board-name';
 
 describe('toBoardName', () => {
   it('returns the board name for a supported board', () => {
     expect(toBoardName('kilter')).toBe('kilter');
     expect(toBoardName('tension')).toBe('tension');
     expect(toBoardName('moonboard')).toBe('moonboard');
+    expect(toBoardName('quantum')).toBe('quantum');
   });
 
   it('returns null for an empty string', () => {
@@ -31,5 +32,11 @@ describe('toBoardName', () => {
   it('returns null for numeric-like strings', () => {
     expect(toBoardName('0')).toBeNull();
     expect(toBoardName('1')).toBeNull();
+  });
+});
+
+describe('formatBoardDisplayName', () => {
+  it('uses the Quantum Board product name', () => {
+    expect(formatBoardDisplayName('quantum')).toBe('Quantum Board');
   });
 });

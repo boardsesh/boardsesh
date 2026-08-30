@@ -361,7 +361,34 @@
   },
   "lightControl": {
     "turnOffAll": "Turn off all lights",
-    "disconnect": "Disconnect board"
+    "disconnect": "Disconnect board",
+    "quantum": {
+      "open": "Open Quantum layers",
+      "layerTitle": "{{color}} layer",
+      "layerAction": "{{color}} layer: {{action}}",
+      "colors": {
+        "green": "Green",
+        "cyan": "Cyan",
+        "magenta": "Magenta",
+        "yellow": "Yellow"
+      },
+      "light": "Light this climb",
+      "replace": "Replace with this climb",
+      "remove": "Remove this layer",
+      "foreign": "In use by another climber",
+      "boardFull": "All four wall slots are in use",
+      "noClimb": "Choose a climb to light",
+      "routeMissing": "This climb has no controller route",
+      "saveFirst": "Save this climb before lighting it",
+      "geometryMissing": "LED positions aren't ready for this climb",
+      "tooManyHolds": "This climb exceeds the 92-light limit",
+      "actionFailed": "Couldn't update the wall. Refresh and try again.",
+      "clearStart": "Clear all layers",
+      "clearStartSubtitle": "You'll confirm before every layer turns off",
+      "clearQuestion": "Turn off all four layers?",
+      "clearConfirm": "Turn off every layer",
+      "clearCancel": "Keep the layers"
+    }
   },
   "bluetooth": {
     "boardNotFound": "Couldn't find your board. Make sure it's on and nearby — and if another phone is connected to it, disconnect there first.",

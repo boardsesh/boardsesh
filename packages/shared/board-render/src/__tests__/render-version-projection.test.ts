@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { BOARD_IMAGE_DIMENSIONS, SUPPORTED_BOARDS } from '@boardsesh/board-config';
+import { BOARD_IMAGE_DIMENSIONS, STATIC_BOARD_RENDER_NAMES } from '@boardsesh/board-config';
 import { HOLD_STATE_MAP, getBoardStrokeWidthMultiplier } from '@boardsesh/board-constants/hold-states';
 import { getBackgroundRelPaths } from '../background';
 import { getBoardDetailsForBoard } from '../board-details';
@@ -38,9 +38,9 @@ describe('BOARD_RENDER_VERSION', () => {
 });
 
 describe('listCatalogueEntries', () => {
-  it('covers every supported board', () => {
+  it('covers every board with bundled static render geometry', () => {
     const boardsInCatalogue = new Set(listCatalogueEntries().map((entry) => entry.boardName));
-    expect([...boardsInCatalogue].sort()).toEqual([...SUPPORTED_BOARDS].sort());
+    expect([...boardsInCatalogue].sort()).toEqual([...STATIC_BOARD_RENDER_NAMES].sort());
   });
 
   it('is deterministic', () => {

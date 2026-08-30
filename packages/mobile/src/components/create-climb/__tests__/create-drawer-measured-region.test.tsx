@@ -51,6 +51,7 @@ vi.mock('../InlineConfirmBanner', () => ({
 vi.mock('../DuplicateBanner', () => ({
   DuplicateBanner: () => createElement('div', { 'data-node': 'duplicate-banner' }),
 }));
+vi.mock('../../ble/BleControlSheetHost', () => ({ BleControlSheetHost: () => null }));
 
 import { CreateDrawer } from '../CreateDrawer';
 

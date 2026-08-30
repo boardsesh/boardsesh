@@ -36,6 +36,26 @@ const EXPECTED_PRIMARY_KEYS: Record<string, string[]> = {
   sync_meta: ['key'],
 };
 
+async function createDatabaseAtVersion(version: number): Promise<ReturnType<typeof createTestDatabase>> {
+  const db = createTestDatabase();
+  await db.execAsync(
+    'CREATE TABLE IF NOT EXISTS schema_version (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)',
+  );
+
+  for (const migration of MIGRATIONS.filter((candidate) => candidate.version <= version)) {
+    await db.withExclusiveTransactionAsync(async (transaction) => {
+      for (const statement of migration.statements) {
+        await transaction.execAsync(statement);
+      }
+      await transaction.runAsync('INSERT OR REPLACE INTO schema_version (id, version) VALUES (1, ?)', [
+        migration.version,
+      ]);
+    });
+  }
+
+  return db;
+}
+
 describe('runMigrations', () => {
   it('creates every expected table on a fresh database', async () => {
     const db = createTestDatabase();
@@ -130,10 +150,7 @@ describe('runMigrations', () => {
 
     // Existing install stamped at v2 (index dropped to simulate the pre-v3
     // state): only the pending v3 migration applies and creates it.
-    const upgradedDb = createTestDatabase();
-    await runMigrations(upgradedDb);
-    await upgradedDb.execAsync('DROP INDEX idx_ticks_board_climbed_at');
-    await upgradedDb.runAsync('UPDATE schema_version SET version = 2 WHERE id = 1');
+    const upgradedDb = await createDatabaseAtVersion(2);
     await runMigrations(upgradedDb);
     const upgradedIndex = await upgradedDb.getFirstAsync<{ name: string }>(indexQuery);
     expect(upgradedIndex?.name).toBe('idx_ticks_board_climbed_at');
@@ -167,13 +184,50 @@ describe('runMigrations', () => {
 
     // Existing install stamped at v3 (grade table dropped to simulate the pre-v4
     // state): only the pending v4 migration applies and re-creates it.
-    const upgradedDb = createTestDatabase();
-    await runMigrations(upgradedDb);
-    await upgradedDb.execAsync('DROP TABLE board_climb_grades');
-    await upgradedDb.runAsync('UPDATE schema_version SET version = 3 WHERE id = 1');
+    const upgradedDb = await createDatabaseAtVersion(3);
     await runMigrations(upgradedDb);
     expect(await listTables(upgradedDb)).toContain('board_climb_grades');
     expect(await pkQuery(upgradedDb)).toEqual(['board_type', 'climb_uuid', 'angle']);
+  });
+
+  it('v5 adds controller route identity on fresh and v4-stamped databases', async () => {
+    const freshDb = createTestDatabase();
+    await runMigrations(freshDb);
+    expect(await tableColumns(freshDb, 'board_climbs')).toContain('controller_route_uuid');
+
+    const upgradedDb = await createDatabaseAtVersion(4);
+    expect(await tableColumns(upgradedDb, 'board_climbs')).not.toContain('controller_route_uuid');
+    await runMigrations(upgradedDb);
+    expect(await tableColumns(upgradedDb, 'board_climbs')).toContain('controller_route_uuid');
+  });
+
+  it('v6 creates exact Quantum geometry on fresh and v5-stamped databases', async () => {
+    const assertQuantumGeometry = async (database: ReturnType<typeof createTestDatabase>) => {
+      expect(await listTables(database)).toContain('quantum_geometry');
+      expect(await primaryKeyColumns(database, 'quantum_geometry')).toEqual(['layout_id', 'size_id']);
+      expect(await tableColumns(database, 'quantum_geometry')).toEqual(
+        expect.arrayContaining([
+          'layout_id',
+          'size_id',
+          'revision',
+          'edge_left',
+          'edge_right',
+          'edge_bottom',
+          'edge_top',
+          'placements_json',
+          'updated_at',
+        ]),
+      );
+    };
+
+    const freshDb = createTestDatabase();
+    await runMigrations(freshDb);
+    await assertQuantumGeometry(freshDb);
+
+    const upgradedDb = await createDatabaseAtVersion(5);
+    expect(await listTables(upgradedDb)).not.toContain('quantum_geometry');
+    await runMigrations(upgradedDb);
+    await assertQuantumGeometry(upgradedDb);
   });
 
   it('applies a newly appended migration on top of an older version', async () => {

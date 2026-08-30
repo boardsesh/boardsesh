@@ -1,5 +1,5 @@
 import type { Logger } from 'winston';
-import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
+import type { BoardLayersSnapshot, BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { redisClientManager } from '../redis/client';
 
 /** Result of the Stage-A report gate read (one pipeline, see `getBoardReportGate`). */
@@ -58,6 +58,32 @@ export type CommitBoardClimbResult = {
   sessionBindingChanged: boolean;
 };
 
+export type BoardWriterTakeResult = Pick<CommitBoardClimbResult, 'previousWriter' | 'writerSlotOk'>;
+
+export type BoardLayersStaleResult = {
+  snapshot: BoardLayersSnapshot;
+  changed: boolean;
+};
+
+export type CommitBoardLayersResult = {
+  snapshot: BoardLayersSnapshot;
+  accepted: boolean;
+  previousWriter: string | null;
+  previousClaimToken: string | null;
+};
+
+type LocalBoardLayersRecord = {
+  snapshot: BoardLayersSnapshot;
+  ownerToken: string;
+  expiresAtMs: number;
+};
+
+type LocalBoardWriterRecord = {
+  emitterId: string;
+  layerClaimToken?: string;
+  expiresAtMs: number;
+};
+
 // Board-presence durable history (Redis FIFO) configuration. The live
 // "now on the wall" feed is ephemeral; this buffer backfills late joiners
 // before the `boardNowPlaying` subscription takes over.
@@ -82,6 +108,9 @@ const BOARD_SEQ_RESEED_THRESHOLD = 50;
 // resolveBoardForConfig) a user may report climbs to that board's feed. Long
 // enough for a climbing session; a reconnect re-stamps it.
 const BOARD_MEMBERSHIP_TTL = 43_200; // 12 hours
+// Confirmed QuantumBoard layer rosters survive short disconnects so party
+// members can see that the hardware state is stale rather than disappearing.
+const BOARD_LAYERS_TTL = 86_400; // 24 hours
 // Write-side idempotency window for reportBoardClimb: a retry of the exact
 // same (emitter, climb, angle) within this window is treated as a no-op
 // duplicate rather than a new send (see `getBoardReportGate` / A2 dedup).
@@ -162,6 +191,8 @@ export class BoardPresenceStore {
   // active in one process lifetime, like the other local maps).
   private localSessionBoard = new Map<string, { value: string; expiresAtMs: number }>();
   private localBoardSession = new Map<string, { value: string; expiresAtMs: number }>();
+  private localBoardLayers = new Map<string, LocalBoardLayersRecord>();
+  private localBoardWriters = new Map<string, LocalBoardWriterRecord>();
   private localBoardMembershipCleanupTimer: ReturnType<typeof setTimeout> | null = null;
   private localBoardMembershipCleanupExpiry: number | null = null;
   // Legacy durable seq floor lookup for the `nextBoardSeq` dormancy reseed.
@@ -462,6 +493,186 @@ export class BoardPresenceStore {
     }
   }
 
+  /** Read the latest confirmed, sanitized QuantumBoard roster. */
+  async getBoardLayers(boardId: string): Promise<BoardLayersSnapshot | null> {
+    if (!this.deps.isRedisAvailable()) {
+      return this.readLocalBoardLayers(boardId);
+    }
+
+    try {
+      const { publisher } = redisClientManager.getClients();
+      const raw = await publisher.get(`board:${boardId}:layers`);
+      const remote = raw === null ? null : (JSON.parse(raw) as BoardLayersSnapshot);
+      const local = this.readLocalBoardLayers(boardId);
+      return local !== null && (remote === null || local.seq > remote.seq) ? local : remote;
+    } catch (error) {
+      if (this.deps.isRedisRequired()) throw error;
+      this.deps.logger.error('[PubSub] Failed to read board layers:', error);
+      return this.readLocalBoardLayers(boardId);
+    }
+  }
+
+  /** Atomically commit a confirmed roster together with its public writer and
+   * per-connection claim. The private claim prevents an old socket belonging
+   * to the same authenticated user from clearing or staling a reconnect's
+   * newer roster. */
+  async commitBoardLayers(
+    boardId: string,
+    snapshot: BoardLayersSnapshot,
+    emitterId: string,
+    claimToken: string,
+  ): Promise<CommitBoardLayersResult> {
+    if (!this.deps.isRedisAvailable()) {
+      if (this.deps.isRedisRequired()) throw new Error('Redis is required to commit Quantum board layers');
+      return this.commitLocalBoardLayers(boardId, snapshot, emitterId, claimToken);
+    }
+
+    try {
+      const { publisher } = redisClientManager.getClients();
+      const encodedResult = await publisher.eval(
+        "local current = redis.call('get', KEYS[3]); " +
+          'if current then local decoded = cjson.decode(current); if tonumber(decoded.seq) >= tonumber(ARGV[4]) then return cjson.encode({accepted=false, snapshot=decoded}) end end; ' +
+          "local previousWriter = redis.call('get', KEYS[1]); local previousClaim = redis.call('get', KEYS[2]); " +
+          "redis.call('set', KEYS[1], ARGV[1], 'EX', ARGV[5]); redis.call('set', KEYS[2], ARGV[2], 'EX', ARGV[5]); " +
+          "redis.call('set', KEYS[3], ARGV[3], 'EX', ARGV[6]); redis.call('set', KEYS[4], ARGV[2], 'EX', ARGV[6]); " +
+          'return cjson.encode({accepted=true, snapshot=cjson.decode(ARGV[3]), previousWriter=previousWriter or cjson.null, previousClaimToken=previousClaim or cjson.null})',
+        4,
+        `board:${boardId}:writer`,
+        `board:${boardId}:layers:claim`,
+        `board:${boardId}:layers`,
+        `board:${boardId}:layers:owner`,
+        emitterId,
+        claimToken,
+        JSON.stringify(snapshot),
+        snapshot.seq,
+        BOARD_MEMBERSHIP_TTL,
+        BOARD_LAYERS_TTL,
+      );
+      if (typeof encodedResult !== 'string') throw new Error('Invalid Quantum layer commit response');
+      const result = JSON.parse(encodedResult) as CommitBoardLayersResult;
+      this.localBoardLayers.delete(boardId);
+      this.localBoardWriters.delete(boardId);
+      return result;
+    } catch (error) {
+      if (this.deps.isRedisRequired()) throw error;
+      this.deps.logger.error('[PubSub] Failed to commit board layers, falling back to local:', error);
+      return this.commitLocalBoardLayers(boardId, snapshot, emitterId, claimToken);
+    }
+  }
+
+  private commitLocalBoardLayers(
+    boardId: string,
+    snapshot: BoardLayersSnapshot,
+    emitterId: string,
+    claimToken: string,
+  ): CommitBoardLayersResult {
+    const current = this.readLocalBoardLayersRecord(boardId);
+    if (current !== null && current.snapshot.seq >= snapshot.seq) {
+      return {
+        snapshot: current.snapshot,
+        accepted: false,
+        previousWriter: null,
+        previousClaimToken: null,
+      };
+    }
+    const previousWriter = this.readLocalBoardWriterRecord(boardId);
+    this.localBoardWriters.set(boardId, {
+      emitterId,
+      layerClaimToken: claimToken,
+      expiresAtMs: Date.now() + BOARD_MEMBERSHIP_TTL * 1000,
+    });
+    this.localBoardLayers.set(boardId, {
+      snapshot,
+      ownerToken: claimToken,
+      expiresAtMs: Date.now() + BOARD_LAYERS_TTL * 1000,
+    });
+    return {
+      snapshot,
+      accepted: true,
+      previousWriter: previousWriter?.emitterId ?? null,
+      previousClaimToken: previousWriter?.layerClaimToken ?? null,
+    };
+  }
+
+  /** Mark a roster stale only while it still belongs to the emitter whose
+   * writer claim was cleared. The Redis comparison and write are atomic, so a
+   * new reporter cannot be staled between the ownership check and update. */
+  async markBoardLayersStaleIfOwned(
+    boardId: string,
+    ownerToken: string,
+    staleSnapshot: BoardLayersSnapshot,
+  ): Promise<BoardLayersStaleResult | null> {
+    const localBeforeRedis = this.readLocalBoardLayersRecord(boardId);
+    if (localBeforeRedis && localBeforeRedis.ownerToken !== ownerToken) {
+      return { snapshot: localBeforeRedis.snapshot, changed: false };
+    }
+    if (!this.deps.isRedisAvailable()) {
+      const current = localBeforeRedis;
+      if (!current) return null;
+      if (current.ownerToken !== ownerToken || current.snapshot.stale || current.snapshot.seq >= staleSnapshot.seq) {
+        return { snapshot: current.snapshot, changed: false };
+      }
+      this.localBoardLayers.set(boardId, {
+        snapshot: staleSnapshot,
+        ownerToken,
+        expiresAtMs: Date.now() + BOARD_LAYERS_TTL * 1000,
+      });
+      return { snapshot: staleSnapshot, changed: true };
+    }
+
+    try {
+      const { publisher } = redisClientManager.getClients();
+      const encodedResult = await publisher.eval(
+        "local current = redis.call('get', KEYS[1]); if not current then return '' end; " +
+          "local owner = redis.call('get', KEYS[2]); local decoded = cjson.decode(current); " +
+          "if owner ~= ARGV[1] or decoded.stale == true or tonumber(decoded.seq) >= tonumber(ARGV[3]) then return '0' .. current end; " +
+          "redis.call('set', KEYS[1], ARGV[2], 'EX', ARGV[4]); redis.call('expire', KEYS[2], ARGV[4]); return '1' .. ARGV[2]",
+        2,
+        `board:${boardId}:layers`,
+        `board:${boardId}:layers:owner`,
+        ownerToken,
+        JSON.stringify(staleSnapshot),
+        staleSnapshot.seq,
+        BOARD_LAYERS_TTL,
+      );
+      const result = String(encodedResult);
+      if (result === '') return null;
+      return {
+        changed: result[0] === '1',
+        snapshot: JSON.parse(result.slice(1)) as BoardLayersSnapshot,
+      };
+    } catch (error) {
+      if (this.deps.isRedisRequired()) throw error;
+      this.deps.logger.error('[PubSub] Failed to conditionally stale board layers:', error);
+      const current = this.readLocalBoardLayersRecord(boardId);
+      if (!current || current.ownerToken !== ownerToken)
+        return current ? { snapshot: current.snapshot, changed: false } : null;
+      if (current.snapshot.stale || current.snapshot.seq >= staleSnapshot.seq) {
+        return { snapshot: current.snapshot, changed: false };
+      }
+      this.localBoardLayers.set(boardId, {
+        snapshot: staleSnapshot,
+        ownerToken,
+        expiresAtMs: Date.now() + BOARD_LAYERS_TTL * 1000,
+      });
+      return { snapshot: staleSnapshot, changed: true };
+    }
+  }
+
+  private readLocalBoardLayers(boardId: string): BoardLayersSnapshot | null {
+    return this.readLocalBoardLayersRecord(boardId)?.snapshot ?? null;
+  }
+
+  private readLocalBoardLayersRecord(boardId: string): LocalBoardLayersRecord | null {
+    const local = this.localBoardLayers.get(boardId);
+    if (!local) return null;
+    if (local.expiresAtMs <= Date.now()) {
+      this.localBoardLayers.delete(boardId);
+      return null;
+    }
+    return local;
+  }
+
   /**
    * Record that a user is connected to a board (proof-of-presence), stamped on
    * resolveBoardForSerial / resolveBoardForConfig. `reportBoardClimb` requires
@@ -627,7 +838,14 @@ export class BoardPresenceStore {
       pipeline.expire(historyKey, BOARD_HISTORY_TTL);
       commandLabels.push('history-expire');
       const writerCommandIndex = commandLabels.length;
-      pipeline.set(writerKey, input.emitterId, 'EX', BOARD_MEMBERSHIP_TTL, 'GET');
+      pipeline.eval(
+        "local previous = redis.call('get', KEYS[1]); redis.call('set', KEYS[1], ARGV[1], 'EX', ARGV[2]); redis.call('del', KEYS[2]); return previous or false",
+        2,
+        writerKey,
+        `board:${input.boardId}:layers:claim`,
+        input.emitterId,
+        BOARD_MEMBERSHIP_TTL,
+      );
       commandLabels.push('writer-set');
       pipeline.set(lastReportKey, lastReportValue, 'PX', REPORT_DEDUP_WINDOW_MS);
       commandLabels.push('last-report-set');
@@ -677,39 +895,118 @@ export class BoardPresenceStore {
   }
 
   /**
+   * Claim the writer slot without appending a single-climb history event.
+   * Quantum uses this after authoritative roster readback because one
+   * controller state can contain four simultaneous climbs.
+   */
+  async takeBoardWriter(boardId: string, emitterId: string): Promise<BoardWriterTakeResult> {
+    if (!this.deps.isRedisAvailable()) {
+      if (this.deps.isRedisRequired()) return { previousWriter: null, writerSlotOk: false };
+      const previousWriter = this.readLocalBoardWriter(boardId);
+      this.localBoardWriters.set(boardId, {
+        emitterId,
+        expiresAtMs: Date.now() + BOARD_MEMBERSHIP_TTL * 1000,
+      });
+      return { previousWriter, writerSlotOk: true };
+    }
+
+    try {
+      const { publisher } = redisClientManager.getClients();
+      const previousWriter = await publisher.eval(
+        "local previous = redis.call('get', KEYS[1]); redis.call('set', KEYS[1], ARGV[1], 'EX', ARGV[2]); redis.call('del', KEYS[2]); return previous or false",
+        2,
+        `board:${boardId}:writer`,
+        `board:${boardId}:layers:claim`,
+        emitterId,
+        BOARD_MEMBERSHIP_TTL,
+      );
+      this.localBoardWriters.delete(boardId);
+      return { previousWriter: typeof previousWriter === 'string' ? previousWriter : null, writerSlotOk: true };
+    } catch (error) {
+      if (this.deps.isRedisRequired()) throw error;
+      this.deps.logger.error('[PubSub] Failed to take board writer, falling back to local:', error);
+      const previousWriter = this.readLocalBoardWriter(boardId);
+      this.localBoardWriters.set(boardId, {
+        emitterId,
+        expiresAtMs: Date.now() + BOARD_MEMBERSHIP_TTL * 1000,
+      });
+      return { previousWriter, writerSlotOk: true };
+    }
+  }
+
+  /**
    * Clear the board's holder only if `emitterId` still holds it (atomic
    * compare-and-delete), so a holder who was already booted can't wipe the new
    * one. Returns whether it was actually cleared.
    */
-  async clearBoardWriterIf(boardId: string, emitterId: string): Promise<boolean> {
-    if (!this.deps.isRedisAvailable()) return false;
+  async clearBoardWriterIf(boardId: string, emitterId: string, layerClaimToken?: string): Promise<boolean> {
+    if (!this.deps.isRedisAvailable()) {
+      const current = this.readLocalBoardWriterRecord(boardId);
+      if (
+        current?.emitterId !== emitterId ||
+        (current.layerClaimToken !== undefined && current.layerClaimToken !== layerClaimToken)
+      ) {
+        return false;
+      }
+      this.localBoardWriters.delete(boardId);
+      return true;
+    }
     try {
       const { publisher } = redisClientManager.getClients();
       const cleared = await publisher.eval(
-        "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
-        1,
+        "local writer = redis.call('get', KEYS[1]); local claim = redis.call('get', KEYS[2]); if writer == ARGV[1] and (not claim or claim == ARGV[2]) then redis.call('del', KEYS[1], KEYS[2]); return 1 else return 0 end",
+        2,
         `board:${boardId}:writer`,
+        `board:${boardId}:layers:claim`,
         emitterId,
+        layerClaimToken ?? '',
       );
-      return cleared === 1;
+      const localWriter = this.readLocalBoardWriterRecord(boardId);
+      const localCleared =
+        localWriter?.emitterId === emitterId &&
+        (localWriter.layerClaimToken === undefined || localWriter.layerClaimToken === layerClaimToken);
+      if (localCleared) this.localBoardWriters.delete(boardId);
+      return cleared === 1 || localCleared;
     } catch (error) {
       if (this.deps.isRedisRequired()) throw error;
       this.deps.logger.error('[PubSub] Failed to clear board writer:', error);
-      return false;
+      const current = this.readLocalBoardWriterRecord(boardId);
+      if (
+        current?.emitterId !== emitterId ||
+        (current.layerClaimToken !== undefined && current.layerClaimToken !== layerClaimToken)
+      ) {
+        return false;
+      }
+      this.localBoardWriters.delete(boardId);
+      return true;
     }
   }
 
   /** The board's current connection holder emitter id, or null when free. */
   async getBoardWriter(boardId: string): Promise<string | null> {
-    if (!this.deps.isRedisAvailable()) return null;
+    if (!this.deps.isRedisAvailable()) return this.readLocalBoardWriter(boardId);
     try {
       const { publisher } = redisClientManager.getClients();
-      return await publisher.get(`board:${boardId}:writer`);
+      return (await publisher.get(`board:${boardId}:writer`)) ?? this.readLocalBoardWriter(boardId);
     } catch (error) {
       if (this.deps.isRedisRequired()) throw error;
       this.deps.logger.error('[PubSub] Failed to get board writer:', error);
+      return this.readLocalBoardWriter(boardId);
+    }
+  }
+
+  private readLocalBoardWriter(boardId: string): string | null {
+    return this.readLocalBoardWriterRecord(boardId)?.emitterId ?? null;
+  }
+
+  private readLocalBoardWriterRecord(boardId: string): LocalBoardWriterRecord | null {
+    const writer = this.localBoardWriters.get(boardId);
+    if (!writer) return null;
+    if (writer.expiresAtMs <= Date.now()) {
+      this.localBoardWriters.delete(boardId);
       return null;
     }
+    return writer;
   }
 
   /**

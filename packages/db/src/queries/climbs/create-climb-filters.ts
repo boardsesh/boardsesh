@@ -137,6 +137,24 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
     ...(climbTypeCondition ? [climbTypeCondition] : []),
   ];
 
+  // Quantum controllers can keep four routes live. Filter by the union of the
+  // confirmed players' placement ids before pagination/count/random/heatmap.
+  // Unknown geometry is represented by omitting maxOccupiedOverlap, which
+  // deliberately disables this condition instead of hiding every climb.
+  const occupiedPlacementIds = searchParams.occupiedPlacementIds ?? [];
+  const overlapConditions: SQL[] =
+    params.board_name === 'quantum' && searchParams.maxOccupiedOverlap !== undefined && occupiedPlacementIds.length > 0
+      ? [
+          sql`(
+            SELECT COUNT(DISTINCT ${boardClimbHolds.holdId})
+            FROM ${boardClimbHolds}
+            WHERE ${boardClimbHolds.boardType} = ${params.board_name}
+              AND ${boardClimbHolds.climbUuid} = ${boardClimbs.uuid}
+              AND ${boardClimbHolds.holdId} = ANY(${intArrayLiteral(occupiedPlacementIds)})
+          ) <= ${searchParams.maxOccupiedOverlap}`,
+        ]
+      : [];
+
   // Size filter: check if this climb fits on the selected board size.
   // Uses denormalized compatible_size_ids array (pre-computed from edge comparison).
   // Use array containment so PostgreSQL can use board_climbs_compatible_size_ids_idx.
@@ -666,6 +684,7 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
     isOnlyDrafts: Boolean(isOnlyDrafts),
     getClimbWhereConditions: () => [
       ...baseConditions,
+      ...overlapConditions,
       ...nameCondition,
       ...setterNameCondition,
       ...holdConditions,

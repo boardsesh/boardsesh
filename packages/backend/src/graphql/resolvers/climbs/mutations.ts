@@ -125,6 +125,10 @@ export const climbMutations = {
     const framesCount = validated.framesCount ?? 1;
     const holdEntries = parseFramesToHoldEntries(validated.boardType as BoardName, validated.frames);
     const uuid = generateClimbUuid();
+    // Quantum's activation command requires a canonical controller route UUID.
+    // It is stable for the climb and sent only when the user explicitly lights
+    // a layer; the controller protocol needs no separate route-create command.
+    const controllerRouteUuid = validated.boardType === 'quantum' ? crypto.randomUUID() : null;
 
     // Atomicity envelope: gate-check, insert, holds seed, and stats seed all
     // run inside one transaction so a half-completed publish can never leave
@@ -186,6 +190,7 @@ export const climbMutations = {
         framesCount,
         framesPace: validated.framesPace ?? 0,
         frames: validated.frames,
+        controllerRouteUuid,
         isDraft: validated.isDraft,
         isListed,
         createdAt: now,
@@ -270,7 +275,7 @@ export const climbMutations = {
       });
     }
 
-    return { uuid, synced: false, createdAt: now, publishedAt };
+    return { uuid, controllerRouteUuid, synced: false, createdAt: now, publishedAt };
   },
 
   /**

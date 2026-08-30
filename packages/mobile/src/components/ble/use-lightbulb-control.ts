@@ -1,5 +1,8 @@
 import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
+import { useOptionalQuantumBluetoothActions } from '../../providers/quantum-bluetooth-provider';
+import { useToast } from '../../providers/toast-provider';
 import { derivePlayDrawerLightbulbPressAction } from '../play-drawer/lightbulb-control';
 import { useBoardConnectionState } from './use-board-connection-state';
 
@@ -29,6 +32,10 @@ export type LightbulbControl = {
   localConnected: boolean;
   /** A connect/disconnect is in flight — the bulb pulses while pending. */
   pending: boolean;
+  /** Whether the active platform can expose a BLE transport. */
+  available: boolean;
+  /** Quantum uses an explicit four-layer sheet instead of auto-sending. */
+  isQuantum: boolean;
   /** Connect (relighting the remembered board) / disconnect toggle. */
   onPress: () => void;
   /**
@@ -52,11 +59,30 @@ export type LightbulbControl = {
  */
 export function useLightbulbControl(options: UseLightbulbControlOptions = {}): LightbulbControl {
   const { onOpenControls } = options;
+  const quantumActions = useOptionalQuantumBluetoothActions();
+  const { showToast } = useToast();
+  const { t } = useTranslation('common');
   // Ownership/lit derivation is shared with the Live Activity bridge via this
   // hook so the in-app bulb and the lock-screen bulb can never disagree.
-  const { bluetooth, lit, localConnected, pending } = useBoardConnectionState();
+  const { bluetooth, lit, localConnected, pending, isQuantum, controlAvailable } = useBoardConnectionState();
 
   const onPress = useCallback(() => {
+    if (isQuantum) {
+      if (!quantumActions || pending || !controlAvailable) return;
+      // Quantum never auto-sends a queue/current climb. A connected tap opens
+      // the four fixed layer choices; a disconnected tap only connects.
+      if (localConnected) {
+        onOpenControls?.();
+      } else {
+        void quantumActions
+          .connect()
+          .then((connected) => {
+            if (!connected) showToast(t('bluetooth.connectFailed'), 'error');
+          })
+          .catch(() => showToast(t('bluetooth.connectFailed'), 'error'));
+      }
+      return;
+    }
     if (!bluetooth) return;
     const pressAction = derivePlayDrawerLightbulbPressAction({
       // Guaranteed non-null by the guard above.
@@ -87,7 +113,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions = {}): L
       bluetooth.reconnectSerialForCurrentBoard ?? undefined,
       bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined,
     );
-  }, [bluetooth]);
+  }, [bluetooth, controlAvailable, isQuantum, localConnected, onOpenControls, pending, quantumActions, showToast, t]);
 
   const onLongPress = useCallback(() => {
     // Long-press is a power-user shortcut into the controls sheet; only meaningful
@@ -97,5 +123,14 @@ export function useLightbulbControl(options: UseLightbulbControlOptions = {}): L
     onOpenControls?.();
   }, [localConnected, onOpenControls]);
 
-  return { bluetooth, lit, localConnected, pending, onPress, onLongPress };
+  return {
+    bluetooth,
+    lit,
+    localConnected,
+    pending,
+    available: controlAvailable,
+    isQuantum,
+    onPress,
+    onLongPress,
+  };
 }

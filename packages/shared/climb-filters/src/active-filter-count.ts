@@ -38,6 +38,7 @@ export function countActiveFiltersBeyondGrade(filters: ClimbFilterState, boardFi
     if (boardFilters.holdsFilter && Object.keys(boardFilters.holdsFilter).length > 0) count += 1;
     if (boardFilters.zoneBox != null) count += 1;
     if (boardFilters.setterId != null) count += 1;
+    if (boardFilters.quantumOverlap != null && boardFilters.quantumOverlap !== 'off') count += 1;
   }
   return count;
 }

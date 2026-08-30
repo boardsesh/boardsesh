@@ -8,6 +8,7 @@ import {
   WOODS_SETS,
   WOODS_SIZES,
 } from '@boardsesh/board-config';
+import { QUANTUM_MODELS, QUANTUM_SET_ID } from '@boardsesh/board-constants';
 import { AURORA_BOARDS } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -94,6 +95,16 @@ export async function assertKnownBoardConfig(
     // anything is that set. Anything else names holds the board doesn't have.
     const woodsSetIds = new Set<number>(WOODS_SETS.map((woodsSet) => woodsSet.id));
     if (uniqueSetIds.length !== woodsSetIds.size || uniqueSetIds.some((setId) => !woodsSetIds.has(setId))) {
+      throwUnknownBoardConfig();
+    }
+    return;
+  }
+
+  if (boardType === 'quantum') {
+    const isExactModel = Object.values(QUANTUM_MODELS).some(
+      (model) => model.layoutId === layoutId && model.sizeId === productSizeId,
+    );
+    if (!isExactModel || uniqueSetIds.length !== 1 || uniqueSetIds[0] !== QUANTUM_SET_ID) {
       throwUnknownBoardConfig();
     }
     return;

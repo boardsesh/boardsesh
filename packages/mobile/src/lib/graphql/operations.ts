@@ -26,6 +26,7 @@ import type {
   SessionHealthExport,
   UserSearchConnection,
   OtaPreviewChannel,
+  QuantumGeometry,
 } from '@boardsesh/shared-schema';
 import type { SubscriptionQueueItem } from '../queue-conversion';
 
@@ -82,6 +83,7 @@ const CLIMB_SEARCH_FIELDS = `
   name
   description
   frames
+  controllerRouteUuid
   angle
   ascensionist_count
   difficulty
@@ -112,6 +114,7 @@ const CLIMB_DETAIL_FIELDS = `
   name
   description
   frames
+  controllerRouteUuid
   angle
   ascensionist_count
   difficulty
@@ -248,6 +251,31 @@ export type GetAnglesQueryVariables = {
 
 export type GetAnglesQueryResponse = {
   angles: Angle[];
+};
+
+export const GET_QUANTUM_GEOMETRIES = gql`
+  query GetQuantumGeometries {
+    quantumGeometries {
+      layoutId
+      sizeId
+      revision
+      edgeLeft
+      edgeRight
+      edgeBottom
+      edgeTop
+      placements {
+        placementId
+        holeId
+        x
+        y
+        ledPosition
+      }
+    }
+  }
+`;
+
+export type GetQuantumGeometriesQueryResponse = {
+  quantumGeometries: QuantumGeometry[];
 };
 
 // ============================================
@@ -1241,6 +1269,7 @@ export const SUBSCRIPTION_CLIMB_FIELDS = `
   name
   description
   frames
+  controllerRouteUuid
   setter_username
   angle
   ascensionist_count

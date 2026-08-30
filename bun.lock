@@ -69,6 +69,7 @@
         "@boardsesh/board-art-geometry": "*",
         "@boardsesh/board-config": "*",
         "@boardsesh/board-constants": "*",
+        "@boardsesh/board-layers": "*",
         "@boardsesh/board-render": "*",
         "@boardsesh/board-renderer-wasm": "*",
         "@boardsesh/crypto": "*",
@@ -80,12 +81,15 @@
         "@boardsesh/kiosk": "*",
         "@boardsesh/offline-sync": "*",
         "@boardsesh/pr-body": "*",
+        "@boardsesh/quantum-sync": "*",
         "@boardsesh/queue": "*",
         "@boardsesh/shared-schema": "*",
+        "@boardsesh/sync-runtime": "*",
         "@boardsesh/text-redaction": "*",
         "@escape.tech/graphql-armor-cost-limit": "^2.4.3",
         "@escape.tech/graphql-armor-max-depth": "^2.4.2",
         "@graphql-tools/schema": "^10.0.38",
+        "@noble/curves": "^2.0.1",
         "@panva/hkdf": "^1.2.1",
         "@parse/node-apn": "^8.1.0",
         "@sentry/node": "^10.69.0",
@@ -227,6 +231,7 @@
         "@boardsesh/ble-protocol": "*",
         "@boardsesh/board-config": "*",
         "@boardsesh/board-constants": "*",
+        "@boardsesh/board-layers": "*",
         "@boardsesh/board-presence-react": "*",
         "@boardsesh/board-react": "*",
         "@boardsesh/climb-actions": "*",
@@ -373,6 +378,18 @@
         "vitest": "^4.1.10",
       },
     },
+    "packages/quantum-sync": {
+      "name": "@boardsesh/quantum-sync",
+      "version": "1.0.0",
+      "dependencies": {
+        "@boardsesh/sync-runtime": "*",
+      },
+      "devDependencies": {
+        "@types/node": "^25.9.5",
+        "typescript": "~7.0.2",
+        "vitest": "^4.1.10",
+      },
+    },
     "packages/shared-schema": {
       "name": "@boardsesh/shared-schema",
       "version": "1.0.0",
@@ -424,6 +441,13 @@
         "@boardsesh/board-constants": "*",
         "@boardsesh/shared-schema": "*",
       },
+      "devDependencies": {
+        "typescript": "~7.0.2",
+      },
+    },
+    "packages/shared/board-layers": {
+      "name": "@boardsesh/board-layers",
+      "version": "1.0.0",
       "devDependencies": {
         "typescript": "~7.0.2",
       },
@@ -515,6 +539,7 @@
       "version": "1.0.0",
       "dependencies": {
         "@boardsesh/board-constants": "*",
+        "@boardsesh/board-layers": "*",
         "@boardsesh/shared-schema": "*",
       },
       "devDependencies": {
@@ -1196,6 +1221,8 @@
 
     "@boardsesh/board-constants": ["@boardsesh/board-constants@workspace:packages/board-constants"],
 
+    "@boardsesh/board-layers": ["@boardsesh/board-layers@workspace:packages/shared/board-layers"],
+
     "@boardsesh/board-presence": ["@boardsesh/board-presence@workspace:packages/shared/board-presence"],
 
     "@boardsesh/board-presence-react": ["@boardsesh/board-presence-react@workspace:packages/shared/board-presence-react"],
@@ -1257,6 +1284,8 @@
     "@boardsesh/pr-body": ["@boardsesh/pr-body@workspace:packages/shared/pr-body"],
 
     "@boardsesh/profile-stats": ["@boardsesh/profile-stats@workspace:packages/shared/profile-stats"],
+
+    "@boardsesh/quantum-sync": ["@boardsesh/quantum-sync@workspace:packages/quantum-sync"],
 
     "@boardsesh/queue": ["@boardsesh/queue@workspace:packages/shared/queue"],
 
@@ -1699,6 +1728,10 @@
     "@next/swc-win32-arm64-msvc": ["@next/swc-win32-arm64-msvc@16.2.12", "", { "os": "win32", "cpu": "arm64" }, "sha512-X6hzsOUJac/e7AWSbn9gQ9nzHld1xWP5iyjHpYWvud8pufB679O1xg4JDyKr8Xd69Jvd+kM2Der6uftiZCmjYA=="],
 
     "@next/swc-win32-x64-msvc": ["@next/swc-win32-x64-msvc@16.2.12", "", { "os": "win32", "cpu": "x64" }, "sha512-F6fakeHuFTLOPt0bslQJdf+xtT+WIP9DVn/m4y1w1mRnVPyh3D/cNvzlRkxM444xfm+IvvYNSOrKiA2CDJ0Uxw=="],
+
+    "@noble/curves": ["@noble/curves@2.4.0", "", { "dependencies": { "@noble/hashes": "2.4.0" } }, "sha512-P4/62zrgfH33CneE3Dn4WhJVA22YUU0eR51wKIan4NVRvwsA0YnPTwWGpNbpuacSujmSFLvyzpyuR30+fbq2Ew=="],
+
+    "@noble/hashes": ["@noble/hashes@2.4.0", "", {}, "sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA=="],
 
     "@nodelib/fs.scandir": ["@nodelib/fs.scandir@2.1.5", "", { "dependencies": { "@nodelib/fs.stat": "2.0.5", "run-parallel": "^1.1.9" } }, "sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g=="],
 

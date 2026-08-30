@@ -29,7 +29,7 @@ import type { QueryInvalidator } from '../../database';
 // Capture schema-drift telemetry through the injected reporter seam.
 const onSchemaDrift = vi.fn();
 
-import { pullSync } from '../pull-client';
+import { multiRowChunkSize, pullSync } from '../pull-client';
 import { enqueue } from '../../mutation-queue/queue';
 import {
   setBackgrounded,
@@ -362,14 +362,11 @@ describe('sync layer — real-DDL integration', () => {
       expect(await readCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5')).toEqual(cursor);
     });
 
-    it('board_climbs: a page larger than one bind-variable chunk (100 rows × 27 columns) round-trips every row', async () => {
-      // board_climbs' allowlist is 27 columns, so the batched upsert's chunk
-      // size is floor(999/27) = 37 rows/statement — a 100-row page must split
-      // into 3 multi-row INSERT OR REPLACE statements (37 + 37 + 26) inside
-      // ONE exclusive transaction. This proves that split round-trips cleanly
-      // against the real DDL: every row lands, with the right values, and
-      // none are dropped or duplicated at a chunk boundary.
+    it('board_climbs: a page larger than one bind-variable chunk round-trips every row', async () => {
       const climbsColumns = TABLE_CONFIGS.board_climbs.localColumns;
+      const chunkSize = multiRowChunkSize(climbsColumns.length);
+      // The page spans several statements at the real allowlist width. Derive
+      // the boundary so future synced columns cannot make this test stale.
       const documents = Array.from({ length: 100 }, (_, index) =>
         Object.fromEntries(
           climbsColumns.map((column) => {
@@ -399,18 +396,18 @@ describe('sync layer — real-DDL integration', () => {
       const expectedUuidSet = new Set(Array.from({ length: 100 }, (_, index) => `climb-batch-${index}`));
       expect(uuidSet).toEqual(expectedUuidSet);
 
-      // Spot-check the first row of chunk 2 (index 37, given chunk size 37)
+      // Spot-check the first row of chunk 2
       // and the last row, to prove params never drift between rows/columns
       // across a chunk split; the uuidSet equality above covers the rest.
-      const boundaryRow = rows.find((row) => row.uuid === 'climb-batch-37');
+      const boundaryRow = rows.find((row) => row.uuid === `climb-batch-${chunkSize}`);
       expect(boundaryRow).toMatchObject({
-        uuid: 'climb-batch-37',
+        uuid: `climb-batch-${chunkSize}`,
         board_type: 'kilter',
         layout_id: 1,
         angle: 40,
-        is_draft: 0, // index 37 is odd → index % 2 === 0 is false → 0
-        frames: JSON.stringify({ p: 37 }),
-        name: 'name-37',
+        is_draft: chunkSize % 2 === 0 ? 1 : 0,
+        frames: JSON.stringify({ p: chunkSize }),
+        name: `name-${chunkSize}`,
       });
       const lastRow = rows.find((row) => row.uuid === 'climb-batch-99');
       expect(lastRow).toMatchObject({

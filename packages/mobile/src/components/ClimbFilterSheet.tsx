@@ -53,6 +53,7 @@ import { useSheetDetentProbe } from './sheet-detent-probe';
 import { useGrades, useSearchClimbsCount } from '../lib/graphql/hooks';
 import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
 import { getTallWideScope } from '@boardsesh/board-constants';
+import type { OccupiedPlacementIndex, QuantumOverlapFilter } from '@boardsesh/board-layers';
 import { buildFilterLabels, formatSettersLabel, progressFilterLabel } from '../lib/filter-labels';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../lib/create-board-holds';
 import { subscribeToHoldsFilterSelection } from '../lib/hold-filter-handoff';
@@ -97,6 +98,8 @@ type ClimbFilterSheetProps = {
    *  for the same reason as `onNameChange`: without it, clearing would blank the
    *  field while the committed search term quietly survived. */
   onClearName: () => void;
+  /** Sanitized live Quantum roster geometry. Unknown geometry disables overlap filtering. */
+  quantumOccupancy?: OccupiedPlacementIndex;
 };
 
 // The status enum is still driven from the sheet — "My drafts" (Your progress
@@ -172,6 +175,7 @@ export function ClimbFilterSheet({
   onApply,
   onNameChange,
   onClearName,
+  quantumOccupancy,
 }: ClimbFilterSheetProps) {
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
@@ -301,8 +305,9 @@ export function ClimbFilterSheet({
     return mergeBoardFilters(
       toClimbSearchInput(debouncedEdits.filters, boardConfig, { page: 0, pageSize: 1 }, { name: debouncedEdits.name }),
       debouncedEdits.boardFilters,
+      quantumOccupancy,
     );
-  }, [boardConfig, debouncedEdits]);
+  }, [boardConfig, debouncedEdits, quantumOccupancy]);
   const { data: previewCount } = useSearchClimbsCount(
     previewInput ?? { boardName: '', layoutId: 0, sizeId: 0, setIds: '', angle: 0 },
     !!previewInput,
@@ -685,6 +690,16 @@ export function ClimbFilterSheet({
     [updateLocalBoardFilters],
   );
 
+  const handleQuantumOverlapChange = useCallback(
+    (quantumOverlap: QuantumOverlapFilter) => {
+      updateLocalBoardFilters((previous) => ({
+        ...previous,
+        quantumOverlap: quantumOverlap === 'off' ? undefined : quantumOverlap,
+      }));
+    },
+    [updateLocalBoardFilters],
+  );
+
   // The setter / hold / zone sub-pickers are pushed routes; each hands its result
   // back through these handoffs when it pops (focus-cleanup), merging into the
   // draft below. Kept subscribed for the lifetime of the (suspended-but-mounted)
@@ -702,6 +717,19 @@ export function ClimbFilterSheet({
 
   const holdFilterCount = countFilteredHolds(localBoardFilters.holdsFilter);
   const zoneActive = localBoardFilters.zoneBox != null;
+  const quantumGeometryAvailable = quantumOccupancy?.geometryKnown === true;
+  const quantumOverlapOptions = useMemo(
+    () => [
+      { key: 'off' as const, label: t('mobile.filter.quantumOverlap.off') },
+      { key: 'none' as const, label: t('mobile.filter.quantumOverlap.none') },
+      { key: 'at_most_one' as const, label: t('mobile.filter.quantumOverlap.atMostOne') },
+    ],
+    [t],
+  );
+  const disabledQuantumOverlapKeys = useMemo<ReadonlySet<QuantumOverlapFilter>>(
+    () => (quantumGeometryAvailable ? new Set() : new Set(['none', 'at_most_one'])),
+    [quantumGeometryAvailable],
+  );
 
   const trackColor = systemColors.fill;
   const accuracyValue: GradeAccuracyValue | 'off' = localFilters.gradeAccuracy ?? 'off';
@@ -981,6 +1009,28 @@ export function ClimbFilterSheet({
                 textVariant="footnote"
                 trackColor={trackColor}
               />
+
+              {boardConfig?.boardName === 'quantum' ? (
+                <>
+                  <View style={styles.subsectionGap} />
+                  <Text variant="footnote" style={styles.subsectionLabel}>
+                    {t('mobile.filter.quantumOverlap.label')}
+                  </Text>
+                  <Text variant="footnote" style={styles.subsectionDescription}>
+                    {quantumGeometryAvailable
+                      ? t('mobile.filter.quantumOverlap.description')
+                      : t('mobile.filter.quantumOverlap.unavailable')}
+                  </Text>
+                  <View style={styles.controlGap} />
+                  <SegmentedControl<QuantumOverlapFilter>
+                    options={quantumOverlapOptions}
+                    selectedKey={localBoardFilters.quantumOverlap ?? 'off'}
+                    onSelect={handleQuantumOverlapChange}
+                    disabledKeys={disabledQuantumOverlapKeys}
+                    accessibilityLabel={t('mobile.filter.quantumOverlap.label')}
+                  />
+                </>
+              ) : null}
 
               {/* Shape — shown wherever a shorter/narrower sibling size exists (Kilter
                   homewall, Tension Board 2, Decoy, Grasshopper); each toggle only where

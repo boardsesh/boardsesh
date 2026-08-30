@@ -1,6 +1,7 @@
 import {
   getAllLayouts,
   getDefaultSizeForLayout,
+  hasProductSizeEdges,
   getProductSize,
   getSetsForLayoutAndSize,
   getSizesForLayoutId,
@@ -83,7 +84,7 @@ export function resolveKilterSizeId(args: {
 
   const productLayoutEdges = args.productLayoutEdges;
   if (productLayoutEdges) {
-    const matchingSize = sizes.find((size) => sameEdges(size, productLayoutEdges));
+    const matchingSize = sizes.find((size) => hasProductSizeEdges(size) && sameEdges(size, productLayoutEdges));
     if (matchingSize) {
       return matchingSize.id;
     }

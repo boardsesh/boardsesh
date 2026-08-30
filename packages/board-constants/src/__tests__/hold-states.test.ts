@@ -13,17 +13,25 @@ import {
   isSentinelHoldState,
   toFlatFrames,
 } from '../hold-states';
-import type { BoardName } from '@boardsesh/shared-schema';
+import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
 import oracle from './__fixtures__/aurora-frames-oracle.json';
 
 describe('HOLD_STATE_MAP', () => {
-  const boards: BoardName[] = ['kilter', 'tension', 'moonboard', 'decoy', 'touchstone', 'grasshopper', 'soill'];
+  const boards: readonly BoardName[] = SUPPORTED_BOARDS;
 
   it('has entries for every supported board', () => {
     for (const board of boards) {
       expect(HOLD_STATE_MAP[board]).toBeDefined();
       expect(Object.keys(HOLD_STATE_MAP[board]).length).toBeGreaterThan(0);
     }
+  });
+
+  it('pins the Quantum route roles and colors', () => {
+    expect(HOLD_STATE_MAP.quantum).toEqual({
+      12: { name: 'STARTING', color: '#00FF00' },
+      13: { name: 'HAND', color: '#00FFFF' },
+      14: { name: 'FINISH', color: '#FF00FF' },
+    });
   });
 
   it('every entry has a valid name and color', () => {
@@ -46,7 +54,7 @@ describe('getBoardStrokeWidthMultiplier', () => {
   });
 
   it('defaults every other board to 1.0 (unchanged rendering)', () => {
-    const boards: BoardName[] = ['kilter', 'tension', 'moonboard', 'decoy', 'touchstone', 'soill'];
+    const boards: BoardName[] = ['kilter', 'tension', 'moonboard', 'decoy', 'touchstone', 'soill', 'woods', 'quantum'];
     for (const board of boards) {
       expect(getBoardStrokeWidthMultiplier(board)).toBe(1.0);
     }
@@ -81,6 +89,14 @@ describe('STATE_TO_PRIMARY_CODE', () => {
       STARTING: 42,
       HAND: 43,
       FINISH: 44,
+    });
+  });
+
+  it('quantum uses the catalogue role codes', () => {
+    expect(STATE_TO_PRIMARY_CODE.quantum).toEqual({
+      STARTING: 12,
+      HAND: 13,
+      FINISH: 14,
     });
   });
 

@@ -1,4 +1,4 @@
-import { ANGLES, toBoardName } from '@boardsesh/board-config';
+import { ANGLES, supportsStaticBoardRender, toBoardName } from '@boardsesh/board-config';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { popularConfigListUrl } from '@/app/lib/url-utils';
 import type { SitemapItem } from './entries';
@@ -21,7 +21,7 @@ export function boardConfigsToItems(configs: readonly PopularBoardConfig[]): Sit
 
   for (const config of configs) {
     const boardName = toBoardName(config.boardType);
-    if (!boardName) continue;
+    if (!boardName || !supportsStaticBoardRender(boardName)) continue;
 
     // A config with no listed climbs is a thin page — it spends crawl budget the
     // climb shards (W-23) need and offers nothing to rank.

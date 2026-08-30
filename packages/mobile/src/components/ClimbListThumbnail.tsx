@@ -5,6 +5,7 @@ import { useNativeClimbRender } from '../hooks/use-native-climb-render';
 import { borderRadius } from '../theme/tokens';
 import { LayeredClimbImage } from './LayeredClimbImage';
 import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from './climb-list-thumbnail-metrics';
+import { QuantumBoardImage } from './quantum/QuantumBoardImage';
 
 /**
  * Portrait dimensions of the list thumbnail cell. Exported so ClimbListRow
@@ -51,6 +52,37 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
 }: ClimbListThumbnailProps) {
   const cellWidth = size?.width ?? THUMBNAIL_WIDTH;
   const cellHeight = size?.height ?? THUMBNAIL_HEIGHT;
+
+  return (
+    <View style={[styles.container, size ? { width: cellWidth, height: cellHeight } : null]}>
+      {boardName === 'quantum' ? (
+        <QuantumBoardImage frames={frames} layoutId={layoutId} sizeId={sizeId} style={styles.quantumBoard} />
+      ) : (
+        <PhotoClimbListThumbnail
+          frames={frames}
+          boardName={boardName}
+          layoutId={layoutId}
+          sizeId={sizeId}
+          setIds={setIds}
+          mirrored={mirrored}
+          renderWidth={Math.max(400, Math.round(cellWidth * 5))}
+        />
+      )}
+    </View>
+  );
+});
+
+/** Keep the photo hook in a separate component so Quantum can switch to its
+ * subscribed neutral renderer without conditionally invoking a hook. */
+function PhotoClimbListThumbnail({
+  frames,
+  boardName,
+  layoutId,
+  sizeId,
+  setIds,
+  mirrored,
+  renderWidth,
+}: Omit<ClimbListThumbnailProps, 'size'> & { renderWidth: number }) {
   const { overlayUri, overlayLoadKey, onOverlayLoad, onOverlayError, backgroundPaths, missingBackgroundCount } =
     useNativeClimbRender({
       frames,
@@ -63,24 +95,22 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
       // covering the default 76px cell at up to ~3× DPR and a ~100px hero cell at
       // ~4×) so expo-image never has to downscale a ~1080px source on the main
       // thread while scrolling.
-      renderWidth: Math.max(400, Math.round(cellWidth * 5)),
+      renderWidth,
     });
 
   return (
-    <View style={[styles.container, size ? { width: cellWidth, height: cellHeight } : null]}>
-      <LayeredClimbImage
-        overlayUri={overlayUri}
-        overlayLoadKey={overlayLoadKey}
-        onOverlayLoad={onOverlayLoad}
-        onOverlayError={onOverlayError}
-        backgroundPaths={backgroundPaths}
-        missingBackgroundCount={missingBackgroundCount}
-        mirrored={mirrored}
-        recyclingKey={frames}
-      />
-    </View>
+    <LayeredClimbImage
+      overlayUri={overlayUri}
+      overlayLoadKey={overlayLoadKey}
+      onOverlayLoad={onOverlayLoad}
+      onOverlayError={onOverlayError}
+      backgroundPaths={backgroundPaths}
+      missingBackgroundCount={missingBackgroundCount}
+      mirrored={mirrored}
+      recyclingKey={frames}
+    />
   );
-});
+}
 
 export { ClimbListThumbnail };
 
@@ -90,5 +120,8 @@ const styles = StyleSheet.create({
     height: THUMBNAIL_HEIGHT,
     borderRadius: borderRadius.md,
     overflow: 'hidden',
+  },
+  quantumBoard: {
+    height: '100%',
   },
 });

@@ -18,6 +18,11 @@ vi.mock('../bluetooth-provider', () => ({
     createElement('div', { 'data-testid': 'bluetooth-provider' }, children),
 }));
 
+vi.mock('../quantum-bluetooth-provider', () => ({
+  QuantumBluetoothProvider: ({ children }: { children: ReactNode }) =>
+    createElement('div', { 'data-testid': 'quantum-bluetooth-provider' }, children),
+}));
+
 vi.mock('../../lib/live-activity/live-activity-bridge', () => ({
   LiveActivityBridge: () => createElement('div', { 'data-testid': 'live-activity-bridge' }),
 }));

@@ -361,7 +361,34 @@
   },
   "lightControl": {
     "turnOffAll": "Tout éteindre",
-    "disconnect": "Déconnecter la board"
+    "disconnect": "Déconnecter la board",
+    "quantum": {
+      "open": "Ouvrir les couches Quantum",
+      "layerTitle": "Couche {{color}}",
+      "layerAction": "Couche {{color}} : {{action}}",
+      "colors": {
+        "green": "verte",
+        "cyan": "cyan",
+        "magenta": "magenta",
+        "yellow": "jaune"
+      },
+      "light": "Allumer ce bloc",
+      "replace": "Remplacer par ce bloc",
+      "remove": "Retirer cette couche",
+      "foreign": "Utilisée par une autre personne",
+      "boardFull": "Les quatre places de la board sont utilisées",
+      "noClimb": "Choisis un bloc à allumer",
+      "routeMissing": "Ce bloc n'a pas de route de contrôle",
+      "saveFirst": "Enregistre ce bloc avant de l’allumer",
+      "geometryMissing": "Les positions LED ne sont pas encore prêtes pour ce bloc",
+      "tooManyHolds": "Ce bloc dépasse la limite de 92 lumières",
+      "actionFailed": "Impossible de mettre la board à jour. Actualise et réessaie.",
+      "clearStart": "Éteindre toutes les couches",
+      "clearStartSubtitle": "Tu confirmeras avant de tout éteindre",
+      "clearQuestion": "Éteindre les quatre couches ?",
+      "clearConfirm": "Éteindre toutes les couches",
+      "clearCancel": "Garder les couches"
+    }
   },
   "bluetooth": {
     "boardNotFound": "Board introuvable. Vérifiez qu'elle est allumée et à proximité ; et si un autre téléphone y est connecté, déconnectez-le d'abord.",

@@ -48,6 +48,7 @@ import { MobileBoardPresenceProvider } from '../src/providers/board-presence-pro
 import { SheetPresentationProvider } from '../src/providers/sheet-presentation-provider';
 import { PartyProfileProvider } from '../src/providers/party-profile-provider';
 import { DatabaseProvider } from '../src/providers/database-provider';
+import { QuantumGeometryHydrator } from '../src/components/quantum-geometry-hydrator';
 import { ConnectionSettingsProvider } from '../src/providers/connection-settings-provider';
 import { FavoritesProvider } from '../src/providers/favorites-provider';
 import { PlaylistsProvider } from '../src/providers/playlists-provider';
@@ -497,6 +498,7 @@ function RootLayout() {
                       {/* First child on purpose: publishes the offline-engine flag to the
                           non-React store before any later sibling's query effects run. */}
                       <OfflineEngineFlagSync />
+                      <QuantumGeometryHydrator />
                       <AuthProvider onReady={onAuthReady}>
                         <PartyProfileProvider>
                           {/* Needs auth + query, both in scope here. Null render. */}

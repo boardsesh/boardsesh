@@ -100,6 +100,9 @@
       "previewHint": "Choisis ton layout et on affiche ton mur",
       "adjustable": "Angle réglable",
       "anglePreview": "Mur incliné à {{angle}}°",
+      "geometryLoading": "Chargement de la géométrie des prises de ce modèle…",
+      "catalogAnglesLoading": "Chargement des angles du catalogue…",
+      "catalogAnglesUnavailable": "Les angles du catalogue ne sont pas encore disponibles.",
       "moreOptions": "Plus d'options",
       "ownBoard": "Cette board est à moi",
       "public": "Board publique",
@@ -138,6 +141,7 @@
     "custom": {
       "board": "Board",
       "layout": "Layout",
+      "model": "Modèle",
       "size": "Taille",
       "sets": "Sets",
       "angle": "Angle",

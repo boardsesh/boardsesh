@@ -20,12 +20,14 @@
 import {
   BOARD_CONNECTION,
   BOARD_HISTORY,
+  BOARD_LAYERS,
   BOARD_NOW_PLAYING,
   BOARD_PRESENCE_STATS,
   BOARD_RECENT_CLIMBS,
   CHOOSE_BOARD_FOR_SERIAL,
   REPORT_BOARD_CLIMB,
   REPORT_BOARD_DISCONNECT,
+  REPORT_BOARD_LAYERS,
   RESOLVE_BOARD_CANDIDATES_FOR_SERIAL,
   RESOLVE_BOARD_FOR_CONFIG,
   RESOLVE_BOARD_FOR_SERIAL,
@@ -33,10 +35,12 @@ import {
 } from '@boardsesh/graphql/operations/board-presence';
 import type {
   BoardConnectionHolder,
+  BoardLayersSnapshot,
   BoardPresenceClimb,
   BoardPresenceEvent,
   BoardPresenceStats,
   ClimbQueueItemInput,
+  ReportBoardLayer,
   ResolveBoardResult,
   ResolvedBoard,
 } from '@boardsesh/shared-schema';
@@ -47,8 +51,10 @@ type BoardRecentClimbsData = { boardRecentClimbs: BoardPresenceClimb[] };
 type BoardHistoryData = { boardHistory: BoardPresenceClimb[] };
 type BoardPresenceStatsData = { boardPresenceStats: BoardPresenceStats };
 type BoardConnectionData = { boardConnection: BoardConnectionHolder | null };
+type BoardLayersData = { boardLayers: BoardLayersSnapshot | null };
 type ReportBoardClimbData = { reportBoardClimb: boolean };
 type ReportBoardDisconnectData = { reportBoardDisconnect: boolean };
+type ReportBoardLayersData = { reportBoardLayers: BoardLayersSnapshot };
 type ResolveBoardForSerialData = { resolveBoardForSerial: ResolvedBoard };
 type ResolveBoardForUuidData = { resolveBoardForUuid: ResolvedBoard };
 type ResolveBoardForConfigData = { resolveBoardForConfig: ResolvedBoard };
@@ -203,12 +209,35 @@ export function createBoardPresenceClient(transport: BoardPresenceTransport): Fu
       return data.boardConnection ?? null;
     },
 
+    async fetchLayers(boardId) {
+      const data = await transport.execute<BoardLayersData>({
+        query: BOARD_LAYERS,
+        variables: { boardId },
+      });
+      return data.boardLayers ?? null;
+    },
+
     async reportDisconnect(boardId) {
       const data = await transport.execute<ReportBoardDisconnectData>({
         query: REPORT_BOARD_DISCONNECT,
         variables: { boardId },
       });
       return data.reportBoardDisconnect === true;
+    },
+
+    async reportLayers(boardId, layers: readonly ReportBoardLayer[]) {
+      const reportLayers = layers.map(({ color, remainingSeconds, climbUuid, angle, geometryKnown }) => ({
+        color,
+        remainingSeconds,
+        climbUuid,
+        angle,
+        geometryKnown,
+      }));
+      const data = await transport.execute<ReportBoardLayersData>({
+        query: REPORT_BOARD_LAYERS,
+        variables: { boardId, layers: reportLayers },
+      });
+      return data.reportBoardLayers;
     },
 
     async resolveBoardForSerial(args) {

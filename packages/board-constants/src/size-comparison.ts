@@ -9,11 +9,11 @@
  * dominant axis (a 10x10 owner loses no height on a 7x10 climb, so those rank
  * just below full-width; a 10x12 owner ranks kickboard-using climbs highest).
  */
-import { PRODUCT_SIZES } from './product-sizes';
-import type { BoardName, ProductSizeData } from './types';
+import { PRODUCT_SIZES, hasProductSizeEdges } from './product-sizes';
+import type { BoardName, ProductSizeWithEdges } from './types';
 
-const sizeHeight = (size: ProductSizeData): number => size.edgeTop - size.edgeBottom;
-const sizeWidth = (size: ProductSizeData): number => size.edgeRight - size.edgeLeft;
+const sizeHeight = (size: ProductSizeWithEdges): number => size.edgeTop - size.edgeBottom;
+const sizeWidth = (size: ProductSizeWithEdges): number => size.edgeRight - size.edgeLeft;
 
 export type SizeFullnessTiers = {
   /** Same-product sizes whose usable height is LESS than the target. */
@@ -32,7 +32,9 @@ export type SizeFullnessTiers = {
 export function getSizeFullnessTiers(boardName: BoardName, targetSizeId: number): SizeFullnessTiers {
   const sizes = PRODUCT_SIZES[boardName];
   const target = sizes?.[targetSizeId];
-  if (!target) return { shorterSizeIds: [], narrowerSameHeightSizeIds: [] };
+  if (!target || !hasProductSizeEdges(target)) {
+    return { shorterSizeIds: [], narrowerSameHeightSizeIds: [] };
+  }
 
   const targetHeight = sizeHeight(target);
   const targetWidth = sizeWidth(target);
@@ -40,7 +42,7 @@ export function getSizeFullnessTiers(boardName: BoardName, targetSizeId: number)
   const narrowerSameHeightSizeIds: number[] = [];
 
   for (const size of Object.values(sizes)) {
-    if (size.id === target.id || size.productId !== target.productId) continue;
+    if (size.id === target.id || size.productId !== target.productId || !hasProductSizeEdges(size)) continue;
     const height = sizeHeight(size);
     if (height < targetHeight) {
       shorterSizeIds.push(size.id);
@@ -66,7 +68,7 @@ export function getSizeFullnessTiers(boardName: BoardName, targetSizeId: number)
  */
 export function getSizeRank(boardName: BoardName, sizeId: number): number {
   const size = PRODUCT_SIZES[boardName]?.[sizeId];
-  if (!size) return -1;
+  if (!size || !hasProductSizeEdges(size)) return -1;
   return sizeHeight(size) * 100000 + sizeWidth(size);
 }
 

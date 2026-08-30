@@ -23,10 +23,12 @@ import {
 } from '@boardsesh/board-presence';
 import type {
   BoardConnectionHolder,
+  BoardLayersSnapshot,
   BoardPresenceClimb,
   BoardPresenceEvent,
   BoardPresenceStats,
   ClimbQueueItemInput,
+  ReportBoardLayer,
 } from '@boardsesh/shared-schema';
 import type { BoardPresenceClient } from './types';
 
@@ -59,12 +61,14 @@ export type UseBoardPresenceResult = {
   previousClimb: BoardPresenceCurrentState['previousClimb'];
   undoTarget: BoardPresenceCurrentState['undoTarget'];
   holder: BoardPresenceCurrentState['holder'];
+  layers: BoardPresenceState['layers'];
   history: BoardPresenceFeedState['history'];
   stats: BoardPresenceFeedState['stats'];
   isLive: BoardPresenceCurrentState['isLive'];
   reportClimb: BoardPresenceActions['reportClimb'];
   reportClimbWithUndoTarget: BoardPresenceActions['reportClimbWithUndoTarget'];
   reportDisconnect: BoardPresenceActions['reportDisconnect'];
+  reportLayers: BoardPresenceActions['reportLayers'];
   getUndoTarget: BoardPresenceActions['getUndoTarget'];
   refresh: BoardPresenceActions['refresh'];
 };
@@ -114,6 +118,8 @@ export type BoardPresenceActions = {
    * injected client does not implement `reportDisconnect`.
    */
   reportDisconnect: () => Promise<boolean>;
+  /** Publish a controller-confirmed roster after an explicit readback. */
+  reportLayers: (layers: readonly ReportBoardLayer[]) => Promise<BoardLayersSnapshot | null>;
   /** Latest captured undo target for action-only consumers that need a ref-like read. */
   getUndoTarget: () => BoardPresenceClimb | null;
   /**
@@ -133,6 +139,8 @@ function boardPresenceEventSeq(event: BoardPresenceEvent): number | null {
     case 'BoardStatsUpdated':
     case 'BoardConnectionChanged':
       return event.seq;
+    case 'BoardLayersChanged':
+      return event.snapshot.seq;
     default:
       return null;
   }
@@ -220,13 +228,19 @@ export function useBoardPresence(
         connectionFetch === undefined
           ? Promise.resolve<BoardConnectionHolder | null | undefined>(undefined)
           : connectionFetch(boardId);
+      const layersFetch = client.fetchLayers;
+      const layersPromise =
+        layersFetch === undefined
+          ? Promise.resolve<BoardLayersSnapshot | null | undefined>(undefined)
+          : layersFetch(boardId);
 
       void Promise.allSettled([
         client.fetchRecentClimbs(boardId),
         client.fetchStats(boardId),
         connectionPromise,
+        layersPromise,
       ] as const)
-        .then(([recentResult, statsResult, connectionResult]) => {
+        .then(([recentResult, statsResult, connectionResult, layersResult]) => {
           if (!isActive || boardIdRef.current !== subscribedBoardId) {
             return;
           }
@@ -237,6 +251,16 @@ export function useBoardPresence(
             repairedThroughSeq = Math.max(repairedThroughSeq, highestClimbSeq(recentClimbs));
             observedSeqRef.current = Math.max(observedSeqRef.current, repairedThroughSeq);
             dispatch({ type: 'BACKFILL_HISTORY', payload: recentClimbs });
+          }
+
+          if (layersFetch !== undefined && layersResult.status === 'fulfilled') {
+            const snapshot = layersResult.value ?? null;
+            repairedThroughSeq = Math.max(repairedThroughSeq, snapshot?.seq ?? 0);
+            observedSeqRef.current = Math.max(observedSeqRef.current, repairedThroughSeq);
+            dispatch({
+              type: 'REFRESH_LAYERS',
+              payload: { snapshot, upToSeq: repairedThroughSeq },
+            });
           }
 
           if (statsResult.status === 'fulfilled') {
@@ -366,6 +390,18 @@ export function useBoardPresence(
         // Holder seed is best-effort; absence renders as "board free" until a push.
       });
 
+    void client
+      .fetchLayers?.(boardId)
+      .then((snapshot) => {
+        if (isActive && boardIdRef.current === subscribedBoardId) {
+          observedSeqRef.current = Math.max(observedSeqRef.current, snapshot?.seq ?? 0);
+          dispatch({ type: 'SEED_LAYERS', payload: snapshot });
+        }
+      })
+      .catch(() => {
+        // Layer seed is best-effort; the live stream still supplies readbacks.
+      });
+
     return () => {
       isActive = false;
       setIsLive(false);
@@ -422,18 +458,27 @@ export function useBoardPresence(
     return activeClient.reportDisconnect(activeBoardId);
   }, []);
 
+  const reportLayers = useCallback(async (layers: readonly ReportBoardLayer[]): Promise<BoardLayersSnapshot | null> => {
+    const activeBoardId = boardIdRef.current;
+    const activeClient = clientRef.current;
+    if (activeBoardId === null || activeClient?.reportLayers == null) return null;
+    return activeClient.reportLayers(activeBoardId, layers);
+  }, []);
+
   return useMemo<UseBoardPresenceResult>(
     () => ({
       currentClimb: state.currentClimb,
       previousClimb: state.previousClimb,
       undoTarget,
       holder: state.holder,
+      layers: state.layers,
       history: state.history,
       stats: state.stats,
       isLive,
       reportClimb,
       reportClimbWithUndoTarget,
       reportDisconnect,
+      reportLayers,
       getUndoTarget,
       refresh,
     }),
@@ -442,12 +487,14 @@ export function useBoardPresence(
       state.previousClimb,
       undoTarget,
       state.holder,
+      state.layers,
       state.history,
       state.stats,
       isLive,
       reportClimb,
       reportClimbWithUndoTarget,
       reportDisconnect,
+      reportLayers,
       getUndoTarget,
       refresh,
     ],

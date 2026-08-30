@@ -21,6 +21,9 @@ type CreateDrawerHeaderProps = {
   onClose: () => void;
   bleConnected: boolean;
   bleConnecting: boolean;
+  bleAvailable: boolean;
+  /** Connected presses open explicit layer controls instead of disconnecting. */
+  bleOpensControls: boolean;
   onToggleBle: () => void;
 };
 
@@ -38,6 +41,8 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
   onClose,
   bleConnected,
   bleConnecting,
+  bleAvailable,
+  bleOpensControls,
   onToggleBle,
 }: CreateDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
@@ -90,17 +95,27 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
         </Text>
       </View>
 
-      <BleLightbulbButton
-        isConnected={bleConnected}
-        isScanning={bleConnecting}
-        onPress={onToggleBle}
-        accessibilityLabel={bleConnected ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard')}
-        scanningAccessibilityHint={tSettings('ble.scanning')}
-        writingAccessibilityHint={tSettings('ble.writing')}
-        haptic="medium"
-        size={24}
-        containerSize={44}
-      />
+      {bleAvailable ? (
+        <BleLightbulbButton
+          isConnected={bleConnected}
+          isScanning={bleConnecting}
+          onPress={onToggleBle}
+          accessibilityLabel={
+            bleConnected
+              ? bleOpensControls
+                ? tCommon('lightControl.quantum.open')
+                : tCommon('lightControl.disconnect')
+              : tSettings('ble.connectBoard')
+          }
+          scanningAccessibilityHint={tSettings('ble.scanning')}
+          writingAccessibilityHint={tSettings('ble.writing')}
+          haptic="medium"
+          size={24}
+          containerSize={44}
+        />
+      ) : (
+        <View style={styles.iconSpacer} />
+      )}
     </View>
   );
 });
@@ -123,6 +138,10 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  iconSpacer: {
+    width: 44,
+    height: 44,
   },
   center: {
     flex: 1,

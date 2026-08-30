@@ -100,6 +100,9 @@
       "previewHint": "Pick your layout and we'll show your wall",
       "adjustable": "Adjustable angle",
       "anglePreview": "Wall tilted to {{angle}}°",
+      "geometryLoading": "Loading this model's hold geometry…",
+      "catalogAnglesLoading": "Loading catalogue angles…",
+      "catalogAnglesUnavailable": "Catalogue angles aren't available yet.",
       "moreOptions": "More options",
       "ownBoard": "I own this board",
       "public": "Public board",
@@ -138,6 +141,7 @@
     "custom": {
       "board": "Board",
       "layout": "Layout",
+      "model": "Model",
       "size": "Size",
       "sets": "Sets",
       "angle": "Angle",

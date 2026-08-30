@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 // The root `typecheck` aggregate deliberately depends on `build:X` instead of
-// `typecheck:X` for eight packages: both run tsc over the same tsconfig, so
+// `typecheck:X` for nine packages: both run tsc over the same tsconfig, so
 // listing both compiled each package twice (51 CPU-seconds of duplicate work
 // per CI run). Emit-mode tsc reports a superset of `--noEmit` diagnostics, so
 // nothing is lost — WHILE the premise holds.
@@ -32,6 +32,7 @@ const BUILD_COVERS_TYPECHECK = [
   ['kilter', 'packages/kilter-sync'],
   ['location-sync', 'packages/location-sync'],
   ['moonboard-sync', 'packages/moonboard-sync'],
+  ['quantum-sync', 'packages/quantum-sync'],
   ['sync-runtime', 'packages/sync-runtime'],
 ] as const;
 
