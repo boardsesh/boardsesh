@@ -16,6 +16,7 @@ import {
   normalizeOutputFormat,
   VALID_BOARD_NAMES,
   type OutputFormat,
+  type BoardArtColorScheme,
   type RenderableBoardDetails,
   type WasmRenderConfig,
 } from '@boardsesh/board-render';
@@ -172,6 +173,7 @@ async function renderImage(params: {
   thumbnail: boolean;
   includeBackground: boolean;
   dimBackground: number;
+  colorScheme: BoardArtColorScheme;
 }): Promise<RenderedImage> {
   const wasmT0 = performance.now();
   const { width, height, rgba } = await overlayRenderer.render(JSON.stringify(params.config));
@@ -188,6 +190,7 @@ async function renderImage(params: {
     thumbnail: params.thumbnail,
     includeBackground: params.includeBackground,
     dimBackground: params.dimBackground,
+    colorScheme: params.colorScheme,
     boardDetails: params.boardDetails,
     resolveImagePath: findPublicImagePath,
     caches: { boardBase: boardBaseCache, ogBase: ogBaseCache, boardBaseInFlight },
@@ -209,6 +212,11 @@ export async function GET(request: NextRequest) {
     const thumbnail = searchParams.get('thumbnail') === '1';
     const includeBackground = searchParams.get('include_background') === '1';
     const isOgVariant = searchParams.get('variant') === 'og';
+    // Board art has a dark sibling on some boards (Woods today). The scheme is a request
+    // param rather than something the server sniffs: these renders are cached immutably and
+    // served to every viewer, so the caller decides which art it wants. OG cards never pass
+    // it — a social card is read outside our theme.
+    const colorSchemeParam = searchParams.get('color_scheme');
     const format = normalizeOutputFormat(searchParams.get('format') ?? (isOgVariant ? 'png' : 'webp'));
     // Mirroring is handled client-side via CSS scaleX(-1) to maximize cache hit rate
 
@@ -226,6 +234,14 @@ export async function GET(request: NextRequest) {
     if (format === null) {
       return NextResponse.json({ error: 'Invalid format' }, { status: 400 });
     }
+
+    if (colorSchemeParam !== null && colorSchemeParam !== 'dark' && colorSchemeParam !== 'light') {
+      return NextResponse.json({ error: 'color_scheme must be light or dark' }, { status: 400 });
+    }
+
+    // Narrowed only after the check above, so an unrecognised value can never silently
+    // become a light render.
+    const colorScheme: BoardArtColorScheme = colorSchemeParam === 'dark' ? 'dark' : 'light';
 
     if (frames.length > MAX_FRAMES_LENGTH) {
       return NextResponse.json({ error: 'Frames string is too large' }, { status: 400 });
@@ -291,6 +307,7 @@ export async function GET(request: NextRequest) {
       ...(renderMode === 'boardsesh'
         ? ['boardsesh', glowFalloff, glyphs ? '1' : '0', fieldColor ?? 'unset']
         : ['classic']),
+      colorScheme,
     ].join(':');
 
     const cachedBytes = byteCache.get(byteKey);
@@ -373,6 +390,7 @@ export async function GET(request: NextRequest) {
             thumbnail,
             includeBackground,
             dimBackground,
+            colorScheme,
           });
         })
         .finally(() => {

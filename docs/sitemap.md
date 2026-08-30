@@ -16,7 +16,7 @@ Two kinds of shard:
 
 |                   | fixed (`SHARD_REGISTRY`)                           | paged (`PAGED_SHARD_REGISTRY`)                   |
 | ----------------- | -------------------------------------------------- | ------------------------------------------------ |
-| members           | `static`, `boards`, `gyms`, `setters`, `playlists` | `climbs`                                         |
+| members           | `static`, `boards`, `gyms`, `setters`, `playlists` | `climbs` when enabled                            |
 | file              | one `/sitemaps/<id>.xml`                           | `/sitemaps/climbs/1.xml … N.xml`                 |
 | index asks it for | the whole item list                                | `summary()` only — count + newest timestamp      |
 | N comes from      | —                                                  | `ceil(itemCount / urlsPerShard)` at request time |
@@ -24,6 +24,29 @@ Two kinds of shard:
 `N` is derived from the summary on every request, never from the filesystem: Next has
 no partial dynamic segments, so a `climbs-1.xml` shape would hardcode today's page
 count into the directory tree.
+
+## The climb sitemap switch
+
+Climb sitemap publication is paused by default. It is enabled only when the
+server-side environment variable `CLIMB_SITEMAPS_ENABLED` is exactly `true`.
+Unset values and variants such as `1` or `TRUE` stay disabled.
+
+Disabled mode has one contract across every entry point:
+
+- `/sitemap.xml` omits every `/sitemaps/climbs/N.xml` entry intentionally. It does
+  not read the climb store, name `climbs` in `X-Sitemap-Degraded`, or shorten the
+  index cache window.
+- Direct `/sitemaps/climbs/*.xml` requests return `410 Gone` with
+  `Cache-Control: public, s-maxage=3600, must-revalidate`. The one-hour expiry lets
+  a later re-enable become visible without leaving crawler retries uncached.
+- `/sitemap.xml` does not schedule the climb-store `after()` refresh.
+- An authenticated `/api/internal/refresh-sitemap-climbs` request returns
+  `{ "shard": "climbs", "skipped": "disabled" }` without scanning the database.
+  Authentication still runs first, so an unauthenticated request remains `401`.
+
+The tables, refresh code, and enabled read behavior remain in place. Set
+`CLIMB_SITEMAPS_ENABLED=true` to restore publication; all other sitemap shards are
+unaffected by the switch.
 
 ## Degrade at the index, fail closed at the shard
 
@@ -82,8 +105,9 @@ stats update no longer makes all six pages look changed. It is strictly
 best-effort — an empty store or a failed aggregate falls back to the shard-wide
 value and never degrades the shard.
 
-Both tables are a **cache, not a source of truth**. Truncate them and nothing is
-lost: the read paths fall back to the live scan they replaced, and the next refresh
+Both tables are a **cache, not a source of truth**, and are retained while climb
+sitemaps are paused. When the switch is enabled, truncating them loses no source
+data: the read paths fall back to the live scan they replaced, and the next refresh
 repopulates them.
 
 ### Read behaviour
@@ -126,11 +150,11 @@ So a fallback names itself, on two channels:
   `page-empty`, `page-read-failed`). The page-path event fires _before_ the 51 s
   fallback build, so a Vercel timeout cannot swallow it.
 
-`scripts/production-smoke.ts` reads the header off the index response it already
-fetches — no extra request — and reports `live` as a **warning**, not a failure:
-the index it just validated is complete either way, so this is "the fast path is not
-the one running", not "the sitemap is broken". A missing header is not a finding; a
-deploy that predates it and a summary that never settled both leave it absent.
+While publication is paused, `scripts/production-smoke.ts` requires this header to
+be absent. It also requires the index to omit climb shard URLs and requires a direct
+climb shard request to return the cacheable 410. Re-enabling the surface therefore
+requires an intentional smoke-test update; changing only an environment variable
+cannot silently restore the crawler load.
 
 One honest limit, shared with `X-Sitemap-Degraded`: the header rides a CDN-cached
 response. A healthy index is `s-maxage=3600` and the shard pages are
@@ -139,44 +163,70 @@ request header, so the value read can be up to that old in either direction. It 
 signal that a wedged store gets noticed within the hour, not a live probe. The Sentry
 event has no such lag.
 
-### Who refreshes it
+### Who refreshes it when enabled
 
-1. **The cron** — `/api/internal/refresh-sitemap-climbs`, six-hourly, in
-   `packages/web/vercel.json`. Six hours matches the shard's own `s-maxage=21600`, so
-   no layer is staler than any other. Auth is `requireCronAuth`, which reads
-   `CRON_SECRET`; Vercel injects the matching bearer automatically.
-2. **The `after()` self-heal** on `/sitemap.xml` itself. After the response has
+The former six-hour Vercel cron has been removed while publication is paused.
+There are two refresh paths when `CLIMB_SITEMAPS_ENABLED=true`:
+
+1. **The `after()` self-heal** on `/sitemap.xml` itself. After the response has
    flushed — so it cannot touch the 3 s deadline or the latency a crawler sees — the
    index kicks a refresh if the summary row is missing or past 48 h, **or if
    `sitemap_climb_urls` is empty**. That last probe matters on the deploy that adds
-   the URL table: the summary row is fresh (the cron kept writing it), so a
-   summary-only check would wait out the six-hourly cron while every page request
-   took the 51 s fallback. Single-flighted per instance behind a 15-minute floor.
-   This is what keeps the fix from depending on a scheduler: a lapsed cron degrades
-   to "healed by the next crawl", not to a broken sitemap.
-3. **By hand**, after a deploy that leaves the store empty:
+   the URL table: an older summary row can still be fresh while the new table is
+   empty, so a summary-only check would wait for the age threshold while every page
+   request took the 51 s fallback. Single-flighted per instance behind a 15-minute floor.
+   This keeps the enabled surface scheduler-independent: a missing or old store
+   degrades to "healed by the next crawl", not to a permanently broken sitemap.
+2. **By hand**, after enabling the switch or a deploy that leaves the store empty:
 
    ```
-   curl -sS -H "Authorization: Bearer $CRON_SECRET" \
+   curl --fail-with-body --silent --show-error \
+     -H "Authorization: Bearer $CRON_SECRET" \
      https://www.boardsesh.com/api/internal/refresh-sitemap-climbs
    ```
 
-   Worth being precise about what this buys, because it is easy to over- or
-   under-sell. It is not required — the `after()` hook fires on the first
-   `/sitemap.xml` request and closes the window for every request after it. What the
-   curl does is close it _now_ rather than one crawl later, and it is the only one of
-   the three that reports back: a 409 tells you the refresh was refused and why,
-   where the self-heal only writes that to the log. So: reach for it on a deploy that
-   empties the store, and any time you want an answer rather than a hope.
+   The `after()` hook fires on the first enabled `/sitemap.xml` request, so the curl
+   is not required. It closes the window immediately and reports refusals directly:
+   a 409 prints why the refresh was declined and exits non-zero, while the self-heal
+   only writes that to the log. While the switch is disabled, the same authenticated
+   curl returns `skipped: "disabled"` and performs no scan.
+
+### Railway re-enable runbook
+
+1. In the cutover change, update the production smoke contract from paused/410 to
+   enabled/store so that the same deployment verifies the intended state.
+2. Set `CLIMB_SITEMAPS_ENABLED=true` and `CRON_SECRET` on the Railway web service,
+   then deploy the cutover before starting a scheduler.
+3. Run the Node validator command in step 4 once from a shell with both variables
+   set. Continue only after it exits zero; it rejects non-200 responses, disabled or
+   concurrent skips, invalid JSON, empty results, and timeouts.
+4. Create a separate one-shot Railway cron service from this repository. Give it
+   `BOARDSESH_WEB_ORIGIN` and a reference to the web service's `CRON_SECRET`, set
+   its UTC schedule to `0 */6 * * *`, and use this exact start command:
+
+   ```sh
+   node -e 'const origin=process.env.BOARDSESH_WEB_ORIGIN;const secret=process.env.CRON_SECRET;if(!origin||!secret)throw new Error("missing BOARDSESH_WEB_ORIGIN or CRON_SECRET");fetch(new URL("/api/internal/refresh-sitemap-climbs",origin),{headers:{Authorization:`Bearer ${secret}`},signal:AbortSignal.timeout(330000)}).then(async response=>{const body=await response.text();console.log(body);const payload=JSON.parse(body);if(!response.ok||payload.shard!=="climbs"||payload.skipped!==null||!Number.isInteger(payload.itemCount)||payload.itemCount<1)throw new Error(`refresh rejected: HTTP ${response.status}`)}).catch(error=>{console.error(error);process.exitCode=1})'
+   ```
+
+   The command exits zero only after a stored, non-empty refresh. It exits non-zero
+   on HTTP errors, refusal bodies, missing configuration, invalid JSON, or timeout.
+   It must terminate after each run; Railway skips later schedules while an earlier
+   cron process remains active. Do not attach this schedule to the web service and
+   do not restore the Vercel cron.
+5. Verify `/sitemap.xml` includes `/sitemaps/climbs/1.xml` with
+   `X-Sitemap-Climbs-Source: store`, then verify that direct shard returns HTTP 200
+   XML with the same source header. Confirm the scheduler's next run succeeds before
+   removing migration monitoring.
 
 ### Refusals, and how to get out of one
 
-The refresher declines to write in four cases. Two are benign concurrency and answer
-200; two mean the store is frozen and answer **409**, so a wedge fails the cron run
-that found it rather than hiding in the logs.
+The endpoint can skip before or during a refresh. Disabled mode answers 200 before
+the refresher runs. Of the four refresher-level cases, two are benign concurrency and
+answer 200; two mean the store is frozen and answer **409**.
 
 | `skipped`    | status | meaning                                                                                                                       |
 | ------------ | ------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `disabled`   | 200    | the switch is off; no database scan runs                                                                                      |
 | `locked`     | 200    | another instance holds the write lock                                                                                         |
 | `superseded` | 200    | another instance wrote a newer answer while this one was scanning                                                             |
 | `empty`      | 409    | the scan computed 0 climbs. Never stored — a stored zero makes the index drop the shard, which is the bug this table prevents |
@@ -289,11 +339,12 @@ and fails every connection (`packages/db/src/client/postgres.ts`, `docs/db-conne
 
 ## What is still slow
 
-`/sitemaps/climbs/N.xml` is fixed (#4552) — a stored page reads in milliseconds. What
-remains slow is the **fallback**: an empty `sitemap_climb_urls` (the deploy that adds
-it, a truncation, local dev) still takes the 51 s live build until the first refresh
-runs. The self-heal's empty-table probe bounds that window to one crawl of
-`/sitemap.xml`; the manual curl closes it immediately.
+When enabled, `/sitemaps/climbs/N.xml` is fixed (#4552) — a stored page reads in
+milliseconds. What remains slow is the **fallback**: an empty
+`sitemap_climb_urls` (a truncation or local dev) still takes the 51 s live build until
+the first refresh runs. The self-heal's empty-table probe bounds that window to one
+crawl of `/sitemap.xml`; the manual curl closes it immediately. Disabled requests do
+not reach either path; they return the cacheable 410.
 
 Fixed shards have **no byte budget**. `shardRouteHandler` checks `MAX_URLS_PER_SHARD`
 on the fixed path but never `MAX_SHARD_BYTES` — that guard exists only on the paged
@@ -303,14 +354,11 @@ while `MAX_ITEMS_PER_SHARD` lets it reach 11,250. Tracked separately.
 
 ## Operational gotchas
 
-- **A deploy that changes climb URL shape needs a manual refresh to take effect
-  before the next cron.** `sitemap_climb_urls.path` is RENDERED at refresh time, so
-  new URL logic keeps serving the old shape for up to six hours unless someone runs
-  the curl above. The old URLs still resolve (the pages self-canonicalise), so this
-  is a staleness window, not an outage.
-- **The cron is one of eight** in `packages/web/vercel.json`. The Railway cutover
-  (#3795/#3798) has to re-point all of them. The `after()` self-heal is the backstop if
-  one is missed.
-- **`scripts/production-smoke.ts` requires `climbs` in the index (degradable — WARN
-  when `X-Sitemap-Degraded` names it, FAIL when it vanishes silently).** The
-  degradable escape covers the empty-store window right after the migration deploys.
+- **After enabling, a deploy that changes climb URL shape needs a manual refresh.**
+  `sitemap_climb_urls.path` is rendered at refresh time, so new URL logic keeps
+  serving the old shape until the store is stale enough for the self-heal or someone
+  runs the curl above. The old URLs still resolve (the pages self-canonicalise), so
+  this is a staleness window, not an outage.
+- **`scripts/production-smoke.ts` pins the paused state.** It fails if climb URLs
+  or source headers return, and it requires the direct shard's cacheable 410. The
+  Railway cutover must update that contract alongside the environment switch.

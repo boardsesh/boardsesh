@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireCronAuth } from '@/app/lib/auth/cron-auth';
+import { climbSitemapsEnabled } from '@/app/lib/seo/sitemap/climb-sitemaps-enabled';
 import { refreshClimbSitemapStore } from '@/app/lib/seo/sitemap/climb-store';
 
 /**
@@ -9,9 +10,9 @@ import { refreshClimbSitemapStore } from '@/app/lib/seo/sitemap/climb-store';
  * `/sitemaps/climbs/N.xml` serves as an ordinal range read instead of a 51 s
  * full rebuild per cold page (#4552).
  *
- * Scheduled six-hourly in `packages/web/vercel.json`, matching the shard's own
- * `s-maxage=21600` so no layer is staler than any other. Vercel injects
- * `Authorization: Bearer $CRON_SECRET`; `requireCronAuth` is what checks it.
+ * The Vercel schedule is paused with climb sitemap publication. This route stays
+ * available for authenticated manual refreshes when the switch is enabled;
+ * `requireCronAuth` checks `Authorization: Bearer $CRON_SECRET`.
  *
  * `?force=1` bypasses the >50%-shrink guard. It exists so the guard cannot wedge
  * the store permanently: if the catalogue genuinely shrank, every scheduled run
@@ -24,6 +25,10 @@ export async function GET(request: Request) {
   const authError = requireCronAuth(request);
   if (authError) {
     return authError;
+  }
+
+  if (!climbSitemapsEnabled()) {
+    return NextResponse.json({ shard: 'climbs', skipped: 'disabled' });
   }
 
   const force = new URL(request.url).searchParams.get('force') === '1';
@@ -43,7 +48,7 @@ export async function GET(request: Request) {
     // A refusal to write is NOT a success. `empty` and `shrank` mean the store is
     // frozen at whatever it held while the read path keeps serving it, and a 200
     // would leave that visible only to whoever greps the logs. 409 makes a wedged
-    // store fail the cron run that discovered it.
+    // store visible to the operator who requested the refresh.
     if (result.skipped === 'empty' || result.skipped === 'shrank') {
       return NextResponse.json(
         {

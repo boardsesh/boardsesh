@@ -14,7 +14,7 @@ import { parseRouteParams } from '@/app/lib/url-utils.server';
 
 import type { Metadata } from 'next';
 import ClimbFrontDoor from '@/app/components/climb-front-door/climb-front-door';
-import { buildOgBoardRenderUrl, buildOverlayUrl } from '@/app/components/board-renderer/util';
+import { buildOgBoardRenderUrl, buildOverlayPreloadUrls } from '@/app/components/board-renderer/util';
 import { scheduleOverlayWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
@@ -153,7 +153,7 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
     // Warm the full-resolution overlay so the front door's board image — the
     // page's LCP element — is already rendered when the browser asks for it.
     scheduleOverlayWarming({ boardDetails, climbs: [currentClimb], variant: 'full' });
-    const preloadUrl = currentClimb.frames ? buildOverlayUrl(boardDetails, currentClimb.frames, false) : null;
+    const preloadUrls = buildOverlayPreloadUrls(boardDetails, currentClimb.frames, false);
     // Same name fallback `generateMetadata` used. An unnamed climb would
     // otherwise get the `-{board} Climb-` slug in its canonical and the bare
     // uuid form in the CTA — the hand-off would leave the page's own URL.
@@ -166,7 +166,9 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
 
     return (
       <>
-        {preloadUrl && <link rel="preload" as="image" href={preloadUrl} fetchPriority="high" />}
+        {preloadUrls.map((preloadUrl) => (
+          <link key={preloadUrl} rel="preload" as="image" href={preloadUrl} fetchPriority="high" />
+        ))}
         <ClimbFrontDoor
           climb={currentClimb}
           boardDetails={boardDetails}

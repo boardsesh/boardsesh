@@ -1,0 +1,33 @@
+/*
+ * Theme swap for boards that ship dark art — Woods today, see BOARDS_WITH_DARK_ART in
+ * util.ts. Every surface that draws board art renders both variants and lets CSS pick one.
+ *
+ * Why not decide it in React: these are server-rendered SEO pages and there is no theme
+ * cookie, so the server cannot know the scheme. theme-init-script.ts stamps data-theme on
+ * <html> before first paint, which means the right art is up on the first frame — a
+ * hydration-time hook would flash the light version first. If that script ever throws,
+ * data-theme is absent and the light art shows, which is the pre-#4753 behaviour.
+ *
+ * The cost is that both files are fetched. It is bounded: Woods has two sizes, so it is one
+ * extra file per size per page, cached across every card on it.
+ *
+ * `display`, not `visibility`: these pairs are not all stacked in a grid, so a hidden layer
+ * has to leave the layout entirely. Any caller setting `display` inline must drop it for the
+ * paired layers, because an inline value beats a class and both variants would paint.
+ */
+
+.lightArt {
+  display: block;
+}
+
+.darkArt {
+  display: none;
+}
+
+:global(html[data-theme='dark']) .lightArt {
+  display: none;
+}
+
+:global(html[data-theme='dark']) .darkArt {
+  display: block;
+}

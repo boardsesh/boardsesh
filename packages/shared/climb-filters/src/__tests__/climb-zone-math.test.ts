@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { HoldsFilter } from '@boardsesh/shared-schema';
 import {
   gridToSvg,
+  svgToGrid,
   pruneHoldsToZone,
   type BoardDimensions,
   type BoardEdges,
@@ -67,5 +68,38 @@ describe('pruneHoldsToZone', () => {
   it('returns an empty object when every hold is outside the zone', () => {
     const holdsFilter: HoldsFilter = { 2: { FOOT: 'include' }, 3: { STARTING: 'exclude' } };
     expect(pruneHoldsToZone(holdsFilter, ZONE, HOLDS_BY_ID, DIMS)).toEqual({});
+  });
+});
+
+// Woods is code-driven: it has no `board_placements` rows, so its server-side zone
+// search re-derives a hold's grid position from the normalised centres in
+// `@boardsesh/board-config` (`getWoodsHoldZonePosition`) instead of reading
+// `board_holes.x/y`. That only lines up with what the picker sends while this
+// conversion stays as it is, so pin it against Woods-shaped dims — the 8x10 board
+// art (720×1000 px) over a 21-column × 25-row edge box. The other half of the
+// contract lives in board-config's woods-config.test.ts.
+// See boardsesh/boardsesh#4748.
+describe('svgToGrid on a code-driven board (Woods 8x10)', () => {
+  const WOODS_8X10_DIMS: BoardDimensions = {
+    boardWidth: 720,
+    boardHeight: 1000,
+    edgeLeft: 0,
+    edgeRight: 21,
+    edgeBottom: 0,
+    edgeTop: 25,
+  };
+
+  it('scales x by the column count and flips y off the board height', () => {
+    // A hold detected at (0.05904, 0.03434) of the art — near the top-left.
+    const hold = { cx: 0.05904 * 720, cy: 0.03434 * 1000 };
+    const grid = svgToGrid(hold.cx, hold.cy, WOODS_8X10_DIMS);
+
+    expect(grid.x).toBeCloseTo(0.05904 * 21, 6);
+    expect(grid.y).toBeCloseTo((1 - 0.03434) * 25, 6);
+  });
+
+  it('maps the art corners onto the edge box', () => {
+    expect(svgToGrid(0, 1000, WOODS_8X10_DIMS)).toEqual({ x: 0, y: 0 });
+    expect(svgToGrid(720, 0, WOODS_8X10_DIMS)).toEqual({ x: 21, y: 25 });
   });
 });

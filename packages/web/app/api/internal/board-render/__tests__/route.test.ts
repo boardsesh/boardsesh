@@ -398,6 +398,61 @@ describe('board-render API route', () => {
     expect(config.output_width).toBe(200);
   });
 
+  describe('color_scheme', () => {
+    // Kilter is the fixture board here; Woods is the board that actually ships dark art
+    // today. What the route owns is the same either way — which filename it hands the
+    // pipeline, and that light and dark never share a cache entry — so the fallback branch
+    // is driven with existsSync rather than a second board.
+    const backgroundParams = { ...validParams, include_background: '1' };
+
+    /** Background files the pipeline actually opened, in order. */
+    const openedArtPaths = () =>
+      mockSharpDefault.mock.calls.map((call) => call[0]).filter((input): input is string => typeof input === 'string');
+
+    it('opens the light art when the param is absent', async () => {
+      await GET(makeRequest(backgroundParams));
+      expect(openedArtPaths().some((path) => path.endsWith('.webp'))).toBe(true);
+      expect(openedArtPaths().some((path) => path.includes('.dark.webp'))).toBe(false);
+    });
+
+    it('opens the dark sibling when asked for it', async () => {
+      await GET(makeRequest({ ...backgroundParams, color_scheme: 'dark' }));
+      expect(openedArtPaths().some((path) => path.includes('.dark.webp'))).toBe(true);
+    });
+
+    it('falls back to the light file for a board that ships no dark art', async () => {
+      // Only the light files and the WASM binary are on disk — the state Kilter and Tension
+      // are really in. Without the fallback the background layer would resolve to null and
+      // the board would come back as an overlay floating on nothing.
+      mockExistsSync.mockImplementation((path) => !path.includes('.dark.'));
+      await GET(makeRequest({ ...backgroundParams, color_scheme: 'dark' }));
+
+      const opened = openedArtPaths();
+      expect(opened.some((path) => path.endsWith('.webp'))).toBe(true);
+      expect(opened.some((path) => path.includes('.dark.webp'))).toBe(false);
+    });
+
+    it('does not serve the light render out of the byte cache for a dark request', async () => {
+      await GET(makeRequest(backgroundParams));
+      const afterLight = mockRenderOverlay.mock.calls.length;
+      await GET(makeRequest({ ...backgroundParams, color_scheme: 'dark' }));
+
+      expect(mockRenderOverlay.mock.calls.length).toBe(afterLight + 1);
+      expect(openedArtPaths().some((path) => path.includes('.dark.webp'))).toBe(true);
+    });
+
+    it('treats an explicit light as the default rather than rejecting it', async () => {
+      const response = await GET(makeRequest({ ...backgroundParams, color_scheme: 'light' }));
+      expect(response.status).toBe(200);
+      expect(openedArtPaths().some((path) => path.includes('.dark.webp'))).toBe(false);
+    });
+
+    it('returns 400 for a scheme that is neither light nor dark', async () => {
+      const response = await GET(makeRequest({ ...backgroundParams, color_scheme: 'sepia' }));
+      expect(response.status).toBe(400);
+    });
+  });
+
   it('accepts format=jpeg and uses default JPEG options', async () => {
     const response = await GET(makeRequest({ ...validParams, format: 'jpeg' }));
 
