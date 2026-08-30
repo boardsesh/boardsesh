@@ -13,6 +13,7 @@ import {
   renderModeSchema,
   VALID_BOARD_NAMES,
   MAX_FRAMES_LENGTH,
+  MAX_SET_IDS_LENGTH,
 } from '../validation';
 
 describe('normalizeOutputFormat', () => {
@@ -153,6 +154,13 @@ describe('ogClimbQuerySchema', () => {
   it('rejects more set_ids than MAX_SET_IDS', () => {
     const tooManySetIds = Array.from({ length: 11 }, (_, index) => index + 1).join(',');
     expect(ogClimbQuerySchema.safeParse({ ...valid, set_ids: tooManySetIds }).success).toBe(false);
+  });
+
+  it('rejects an oversized set_ids string before syntax validation', () => {
+    const oversizedSetIds = '1'.repeat(MAX_SET_IDS_LENGTH + 1);
+    const result = ogClimbQuerySchema.safeParse({ ...valid, set_ids: oversizedSetIds });
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.issues[0]?.message).toBe('set_ids is too large');
   });
 
   it('rejects malformed frames', () => {

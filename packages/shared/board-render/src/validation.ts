@@ -19,6 +19,13 @@ export const MAX_FRAMES_LENGTH = 16_384;
 export const MAX_SET_IDS = 10;
 
 /**
+ * Ten comma-separated safe integers. Apply this byte-sized bound before regex
+ * or split work so hostile query strings cannot make validation scale with an
+ * arbitrary input length.
+ */
+export const MAX_SET_IDS_LENGTH = MAX_SET_IDS * String(Number.MAX_SAFE_INTEGER).length + (MAX_SET_IDS - 1);
+
+/**
  * Hard ceiling on the rendered pixel count. Every in-flight plane costs 4 bytes
  * a pixel, so this is what stops a hand-crafted request from sizing a render
  * past what the process can hold. The largest real board is Kilter's 1080×2498
@@ -126,6 +133,7 @@ export const ogClimbQuerySchema = z
     size_id: z.coerce.number().int().nonnegative(),
     set_ids: z
       .string()
+      .max(MAX_SET_IDS_LENGTH, 'set_ids is too large')
       .regex(/^\d+(,\d+)*$/, 'set_ids must be a comma-separated list of integers')
       .refine((setIdsCsv) => setIdsCsv.split(',').length <= MAX_SET_IDS, `set_ids accepts at most ${MAX_SET_IDS} ids`)
       // Canonicalise (sort + dedupe) so equivalent queries render and cache identically.

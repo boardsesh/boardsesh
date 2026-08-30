@@ -155,7 +155,9 @@ jobs:
             NEXTAUTH_SECRET="branch-deploy-secret-${PR_NUM}"
             BACKEND_INTERNAL_URL="ws://backend-pr-${PR_NUM}:8080/graphql"
 
-            # Start per-PR backend (priority 100 overrides staging backend at priority 1)
+            # Start per-PR backend (priority 100 overrides staging backend at priority 1).
+            # The 768 MB limit leaves headroom for the Rust/WASM renderer, sharp
+            # working buffers, and render LRUs beyond the old 256 MB allocation.
             docker run -d \
               --name backend-pr-${PR_NUM} \
               --network ${NETWORK} \
