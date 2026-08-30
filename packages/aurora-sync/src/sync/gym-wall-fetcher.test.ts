@@ -138,13 +138,40 @@ describe('createAuroraGymUserFetcher', () => {
     expect(mocks.fetchAuroraGymUser).toHaveBeenCalledTimes(3);
   });
 
-  it('does not retry a non-transient failure', async () => {
-    // Rejected credentials are deterministic — retrying only burns rate budget.
-    // (Note `invalid_response` is deliberately classified TRANSIENT in
-    // errors.ts, so it is not the example to use here.)
+  it('signs in again and retries when the session expires mid-crawl', async () => {
+    // A full crawl runs for hours, so this is expected, not exotic. Aurora
+    // reports a rejected session as 422 -> invalid_credentials.
+    mocks.fetchAuroraGymUser
+      .mockRejectedValueOnce(new AuroraRequestError({ code: 'invalid_credentials', message: 'rejected' }))
+      .mockResolvedValueOnce({ id: 42, walls: [] });
+    mocks.signIn.mockResolvedValueOnce({ token: 'first' }).mockResolvedValueOnce({ token: 'second' });
+
+    const fetcher = await createAuroraGymUserFetcher({ board: 'tension', env: CREDS });
+    const result = await drain(fetcher!(PIN));
+
+    expect(mocks.signIn).toHaveBeenCalledTimes(2);
+    expect(mocks.fetchAuroraGymUser).toHaveBeenLastCalledWith('tension', 42, 'second');
+    expect(result).toEqual({ id: 42, walls: [] });
+  });
+
+  it('re-authenticates at most once per gym so bad credentials cannot spin', async () => {
     mocks.fetchAuroraGymUser.mockRejectedValue(
       new AuroraRequestError({ code: 'invalid_credentials', message: 'rejected' }),
     );
+
+    const fetcher = await createAuroraGymUserFetcher({ board: 'tension', env: CREDS });
+
+    await expect(drain(fetcher!(PIN))).resolves.toBeUndefined();
+    // One initial login + one refresh; two lookups, then it gives up on the gym.
+    expect(mocks.signIn).toHaveBeenCalledTimes(2);
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls back to default configs when the re-login itself fails', async () => {
+    mocks.fetchAuroraGymUser.mockRejectedValue(
+      new AuroraRequestError({ code: 'invalid_credentials', message: 'rejected' }),
+    );
+    mocks.signIn.mockResolvedValueOnce({ token: 'first' }).mockRejectedValueOnce(new Error('nope'));
 
     const fetcher = await createAuroraGymUserFetcher({ board: 'tension', env: CREDS });
 
@@ -154,7 +181,9 @@ describe('createAuroraGymUserFetcher', () => {
 
   it('keeps crawling after one gym fails', async () => {
     mocks.fetchAuroraGymUser
-      .mockRejectedValueOnce(new AuroraRequestError({ code: 'invalid_credentials', message: 'rejected' }))
+      .mockRejectedValueOnce(new AuroraRequestError({ code: 'rate_limited', message: 'slow down' }))
+      .mockRejectedValueOnce(new AuroraRequestError({ code: 'rate_limited', message: 'slow down' }))
+      .mockRejectedValueOnce(new AuroraRequestError({ code: 'rate_limited', message: 'slow down' }))
       .mockResolvedValueOnce({ id: 43, walls: [] });
 
     const fetcher = await createAuroraGymUserFetcher({ board: 'tension', env: CREDS });

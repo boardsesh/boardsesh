@@ -94,14 +94,13 @@ export function buildAuroraLocationRecords(
       gymAddress: formatAddress(gymProfile),
     };
 
-    const listedWalls = orderedWalls(user?.walls ?? []).filter((wall) => wall.is_listed !== false);
-    if (listedWalls.length === 0) {
-      // Nothing readable for this gym. Publish the historical guess rather than
-      // dropping the pin — a missing gym is worse than an imprecise one — but
-      // say so in the summary so the gap is visible.
+    // Publish the historical guess rather than dropping the pin — a missing gym
+    // is worse than an imprecise one — but record why in the summary so the gap
+    // stays visible.
+    const pushDefaultConfigFallback = (reason: string) => {
       if (!defaultConfig) {
         skipped.push({ sourceKey: gymSourceKey, reason: `unsupported ${board} default config` });
-        continue;
+        return;
       }
       records.push({
         ...defaultConfig,
@@ -110,10 +109,16 @@ export function buildAuroraLocationRecords(
         name: `${gymName} - ${formatLocationBoardName(board)}`,
         locationName: formatLocationName(gymProfile),
       });
-      skipped.push({ sourceKey: gymSourceKey, reason: user ? 'gym has no listed walls' : 'gym walls unavailable' });
+      skipped.push({ sourceKey: gymSourceKey, reason });
+    };
+
+    const listedWalls = orderedWalls(user?.walls ?? []).filter((wall) => wall.is_listed !== false);
+    if (listedWalls.length === 0) {
+      pushDefaultConfigFallback(user ? 'gym has no listed walls' : 'gym walls unavailable');
       continue;
     }
 
+    const recordsBeforeGym = records.length;
     listedWalls.forEach((wall, wallIndex) => {
       const sourceKey = wallSourceKey(board, pin.id, wall, wallIndex);
       const config = resolveAuroraWallConfig({
@@ -143,6 +148,13 @@ export function buildAuroraLocationRecords(
         serialNumber: wall.serial_number,
       });
     });
+
+    // Every listed wall failed validation. Without this the gym produced no
+    // record at all and silently vanished from the map — the walls existed, so
+    // the no-listed-walls fallback above never ran.
+    if (records.length === recordsBeforeGym) {
+      pushDefaultConfigFallback('no listed wall had a supported config');
+    }
   }
 
   return { records, skipped };

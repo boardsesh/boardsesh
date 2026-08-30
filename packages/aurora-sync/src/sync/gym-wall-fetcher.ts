@@ -1,7 +1,7 @@
 import AuroraClimbingClient from '../api/aurora-client';
 import { fetchAuroraGymUser, type AuroraGymUser } from '../api/gym-walls-api';
 import type { AuroraPin } from '../api/pins-api';
-import { isTransientAuroraError } from '../api/errors';
+import { isAuroraRequestError, isTransientAuroraError } from '../api/errors';
 import type { AuroraLocationBoardName } from './locations-sync';
 
 /**
@@ -38,6 +38,16 @@ export function auroraLocationCredentials(
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * Aurora answers a rejected session with 422, which `errors.ts` maps to
+ * `invalid_credentials`. Indistinguishable from genuinely wrong credentials at
+ * the request level — the difference is that we already logged in successfully
+ * once, so the caller only treats it as an expiry mid-crawl.
+ */
+function isExpiredSessionError(error: unknown): boolean {
+  return isAuroraRequestError(error) && error.code === 'invalid_credentials';
+}
+
+/**
  * Build the `fetchGymUser` function the location sync uses to read a gym's real
  * walls, or `undefined` when this board has no configured credentials — in
  * which case every gym falls back to the guessed default config, exactly as
@@ -61,14 +71,19 @@ export async function createAuroraGymUserFetcher(args: {
   }
 
   const client = new AuroraClimbingClient({ boardName: args.board });
-  let token: string;
-  try {
+
+  const signIn = async (): Promise<string> => {
     const login = await client.signIn(credentials.username, credentials.password);
     // `LoginResponse.token` is optional in the shared type (the API answers in
     // two shapes), but signIn normalises both before returning; treat a missing
     // token as a failed login rather than crawling unauthenticated.
     if (!login.token) throw new Error('Aurora login returned no session token');
-    token = login.token;
+    return login.token;
+  };
+
+  let token: string;
+  try {
+    token = await signIn();
   } catch (error) {
     // A bad password must not fail the whole location sync — the map is more
     // useful with guessed configs than absent.
@@ -80,8 +95,31 @@ export async function createAuroraGymUserFetcher(args: {
     return undefined;
   }
 
+  // A full crawl runs for hours, so the session very plausibly expires part-way
+  // through. Left unhandled, every gym after the expiry would quietly fall back
+  // to the guessed config and look identical to "this gym has no walls". Aurora
+  // reports a rejected session as 422 -> `invalid_credentials`, which is
+  // non-transient, so it is caught here rather than by the retry loop: sign in
+  // again and retry that gym. Once per gym, so genuinely bad credentials can't
+  // spin.
+  const refreshExpiredSession = async (): Promise<boolean> => {
+    try {
+      token = await signIn();
+      args.log?.(`[aurora-locations] ${args.board}: session expired mid-crawl, signed in again`);
+      return true;
+    } catch (error) {
+      args.log?.(
+        `[aurora-locations] ${args.board}: session expired and re-login failed, remaining gyms use default configs: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return false;
+    }
+  };
+
   let nextRequestAtMs = 0;
   return async (pin: AuroraPin): Promise<AuroraGymUser | undefined> => {
+    let sessionRefreshedForThisGym = false;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_GYM; attempt += 1) {
       const waitMs = nextRequestAtMs - Date.now();
       if (waitMs > 0) await sleep(waitMs);
@@ -90,6 +128,11 @@ export async function createAuroraGymUserFetcher(args: {
       try {
         return await fetchAuroraGymUser(args.board, pin.id, token);
       } catch (error) {
+        if (isExpiredSessionError(error) && !sessionRefreshedForThisGym) {
+          sessionRefreshedForThisGym = true;
+          if (await refreshExpiredSession()) continue;
+          return undefined;
+        }
         if (attempt >= MAX_ATTEMPTS_PER_GYM || !isTransientAuroraError(error)) {
           args.log?.(
             `[aurora-locations] ${args.board}: could not read gym ${pin.id} (${pin.name ?? 'unnamed'}): ${
