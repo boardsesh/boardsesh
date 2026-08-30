@@ -282,7 +282,7 @@ jobs:
         if: steps.target.outputs.attempted == 'true' && steps.update.outputs.conflicted == 'true'
         uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
       - name: Install dependencies for AI resolution validation
