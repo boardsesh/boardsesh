@@ -84,6 +84,17 @@ type UseZoomPanGestureReturn = {
   containerWidthSV: SharedValue<number>;
   containerHeightSV: SharedValue<number>;
   resetZoom: () => void;
+  /**
+   * Animate the board to an explicit transform — the programmatic twin of a
+   * pinch, used by the outline editor to frame the placement being corrected.
+   *
+   * Writes the same shared values the gestures do, so a pan or pinch started
+   * mid-flight simply takes over: both snapshot from the live animated value at
+   * `onStart` and assigning a shared value cancels its running animation.
+   * Callers are responsible for handing over an already-clamped transform (see
+   * `zoomTargetForHold`), because nothing here re-clamps it.
+   */
+  zoomTo: (target: { scale: number; translateX: number; translateY: number }) => void;
   animatedZoomStyle: AnimatedStyle<ViewStyle>;
 };
 
@@ -206,6 +217,27 @@ export function useZoomPanGesture({
     savedTranslateY.value = 0;
     updateZoomState(false);
   }, [scale, translateX, translateY, savedScale, savedTranslateX, savedTranslateY, updateZoomState]);
+
+  const zoomTo = useCallback(
+    (target: { scale: number; translateX: number; translateY: number }) => {
+      cancelAnimation(scale);
+      cancelAnimation(translateX);
+      cancelAnimation(translateY);
+
+      scale.value = withTiming(target.scale, { duration: timing.normal });
+      translateX.value = withTiming(target.translateX, { duration: timing.normal });
+      translateY.value = withTiming(target.translateY, { duration: timing.normal });
+      // Keep the gesture snapshots in step so a pan that starts before the
+      // animation settles doesn't jump back to the pre-zoom origin.
+      savedScale.value = target.scale;
+      savedTranslateX.value = target.translateX;
+      savedTranslateY.value = target.translateY;
+      // Mirror the pinch's own threshold: anything at or under it is "not
+      // zoomed", which is what mounts the pan overlay and the reset control.
+      updateZoomState(target.scale > ZOOM_THRESHOLD);
+    },
+    [scale, translateX, translateY, savedScale, savedTranslateX, savedTranslateY, updateZoomState],
+  );
 
   const pinchGesture = useMemo(() => {
     const pinch = Gesture.Pinch()
@@ -404,6 +436,7 @@ export function useZoomPanGesture({
     containerWidthSV,
     containerHeightSV,
     resetZoom,
+    zoomTo,
     animatedZoomStyle,
   };
 }
