@@ -39,7 +39,7 @@ import { useDownloadedScopeKeys } from '../../../src/offline/use-downloaded-scop
 import { getHttpClient } from '../../../src/lib/graphql/client';
 import { hapticLight, hapticSelection } from '../../../src/lib/haptics';
 import { DevMetadataPanel } from '../../../src/components/DevMetadataPanel';
-import { useBottomChromeDiagnosticsEligible } from '../../../src/components/BottomChromeDebugOverlay';
+import { useDiagnosticsEligible } from '../../../src/hooks/use-diagnostics-eligible';
 import { MoreForm } from '../../../src/components/MoreForm';
 import type { MoreButtonRow, MoreFormModel, MoreRow, MoreSection } from '../../../src/components/MoreForm.types';
 import { isPreviewBuild } from '../../../src/lib/preview-build';
@@ -86,8 +86,9 @@ export default function MoreScreen() {
   const { localePreference, setLocalePreference } = useLocalePreference();
   const { enabled: sessionRecordingEnabled, setEnabled: setSessionRecordingPreference } =
     useSessionRecordingPreference();
-  const bottomChromeDiagnosticsEligible = useBottomChromeDiagnosticsEligible();
+  const diagnosticsEligible = useDiagnosticsEligible();
   const [bottomChromeDiagnostics, setBottomChromeDiagnostics] = useSetting('bottomChromeDiagnostics');
+  const [sheetDetentDiagnostics, setSheetDetentDiagnostics] = useSetting('sheetDetentDiagnostics');
   const { enabled: showPlaylistTags, setEnabled: setShowPlaylistTags } = useShowPlaylistTagsPreference();
   const { enabled: showBoardseshGrades, setEnabled: setShowBoardseshGrades } = useBoardseshGradesPreference();
   const { enabled: showQuickActionsButton, setEnabled: setShowQuickActionsButton } = useClimbQuickActionsButton();
@@ -712,9 +713,9 @@ export default function MoreScreen() {
           setSessionRecordingEnabled(next);
         },
       },
-      // Bottom-chrome geometry overlay — dev / preview builds / pr-channel OTA
-      // testers only, so regular production users never see the row.
-      ...(bottomChromeDiagnosticsEligible
+      // Geometry overlays — dev / preview builds / pr-channel OTA testers only,
+      // so regular production users never see these rows.
+      ...(diagnosticsEligible
         ? [
             {
               kind: 'toggle' as const,
@@ -727,6 +728,19 @@ export default function MoreScreen() {
               onValueChange: (next: boolean) => {
                 hapticSelection();
                 setBottomChromeDiagnostics(next);
+              },
+            },
+            {
+              kind: 'toggle' as const,
+              key: 'sheetDetentDiagnostics',
+              // i18n-ignore-next-line — tester-only diagnostics
+              label: 'Sheet detent readout',
+              // i18n-ignore-next-line
+              subtitle: 'Overlay measured sheet heights (#3922)',
+              value: sheetDetentDiagnostics,
+              onValueChange: (next: boolean) => {
+                hapticSelection();
+                setSheetDetentDiagnostics(next);
               },
             },
           ]

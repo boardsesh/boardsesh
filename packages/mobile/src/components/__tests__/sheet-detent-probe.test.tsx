@@ -16,7 +16,15 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 20, bottom: 0, left: 0, right: 0 }),
 }));
 
-import { useSheetDetentProbe } from '../sheet-detent-probe';
+// The store itself is covered by sheet-detent-readout.test.ts; here we only care
+// what the probe does with the active flag it reads.
+const readout = vi.hoisted(() => ({ enabled: false, publish: vi.fn() }));
+vi.mock('../sheet-detent-readout', () => ({
+  publishSheetDetentReading: readout.publish,
+  useSheetDetentReadoutActive: () => readout.enabled,
+}));
+
+import { useSheetDetentProbe, shouldInstrumentSheetDetent } from '../sheet-detent-probe';
 import { useSheetColumnStyle } from '../use-sheet-column-style';
 
 // A layout event carrying only the fields the probe reads.
@@ -32,6 +40,8 @@ let logSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   platformMock.OS = 'ios';
   platformMock.Version = '26.1';
+  readout.enabled = false;
+  readout.publish.mockClear();
   logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 });
 
@@ -179,5 +189,86 @@ describe('detent instrumentation gate', () => {
 
     expect(withBound.result.current.probeProps).not.toBeNull();
     expect(withoutBound.result.current.probeProps).toBeNull();
+  });
+});
+
+describe('shouldInstrumentSheetDetent', () => {
+  it('leaves a production session with the toggle off completely uninstrumented', () => {
+    // The regression that matters for shipping this OTA: a normal install must
+    // mount no probe views at all, so its sheet tree stays what it is today.
+    expect(shouldInstrumentSheetDetent(false, false, 541)).toBe(false);
+  });
+
+  it('instruments a dev client, and a distributed build once the tester toggle is on', () => {
+    expect(shouldInstrumentSheetDetent(true, false, 541)).toBe(true);
+    expect(shouldInstrumentSheetDetent(false, true, 541)).toBe(true);
+    expect(shouldInstrumentSheetDetent(true, true, 541)).toBe(true);
+  });
+
+  it('stays out of every unbounded column regardless of the toggle', () => {
+    // Android, web, enableDynamicSizing and non-% detents all yield flex:1, i.e.
+    // a null formula height — none of them is what #3922 is about.
+    expect(shouldInstrumentSheetDetent(true, true, null)).toBe(false);
+    expect(shouldInstrumentSheetDetent(false, true, null)).toBe(false);
+  });
+});
+
+describe('useSheetDetentProbe — on-screen readout', () => {
+  it('publishes nothing while the tester toggle is off', () => {
+    const { result } = renderHook(() => useSheetDetentProbe(FIXED_COLUMN, 'Sheet'));
+    result.current.probeProps?.onLayout(layout({ height: 548 }));
+    result.current.sentinelProps?.onLayout(layout({ y: 16 }));
+    result.current.onColumnLayout?.(layout({ height: 541 }));
+    expect(readout.publish).not.toHaveBeenCalled();
+    // The dev-client log is unaffected by the toggle.
+    expect(logSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('publishes each measurement as it lands, partial included', () => {
+    // A tester flipping the toggle mid-session gets the probe views mounted, but
+    // RN does not re-fire onLayout on the already-mounted column just because it
+    // gained a handler. Waiting for all three would leave the panel empty.
+    readout.enabled = true;
+    const { result } = renderHook(() => useSheetDetentProbe(FIXED_COLUMN, 'ClimbFilterSheet'));
+    result.current.probeProps?.onLayout(layout({ height: 548 }));
+    expect(readout.publish).toHaveBeenCalledTimes(1);
+    expect(readout.publish.mock.calls[0][0]).toMatchObject({
+      sheet: 'ClimbFilterSheet',
+      formulaHeight: 541,
+      probeHeight: 548,
+      columnHeight: null,
+      sentinelY: null,
+      // Not derivable yet — better an em-dash on screen than a wrong number.
+      availableInFlowHeight: null,
+    });
+
+    result.current.sentinelProps?.onLayout(layout({ y: 16 }));
+    expect(readout.publish.mock.calls[1][0]).toMatchObject({ availableInFlowHeight: 532 });
+  });
+
+  it('keeps publishing after the epoch has already logged once', () => {
+    // The log is one line per epoch; the overlay wants the current numbers, so a
+    // settle-animation relayout must still refresh the panel.
+    readout.enabled = true;
+    const { result } = renderHook(() => useSheetDetentProbe(FIXED_COLUMN, 'Sheet'));
+    result.current.probeProps?.onLayout(layout({ height: 548 }));
+    result.current.sentinelProps?.onLayout(layout({ y: 16 }));
+    result.current.onColumnLayout?.(layout({ height: 541 }));
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    const publishesAfterFirstLog = readout.publish.mock.calls.length;
+
+    result.current.onColumnLayout?.(layout({ height: 541 }));
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    expect(readout.publish.mock.calls.length).toBe(publishesAfterFirstLog + 1);
+  });
+
+  it('publishes the padding-corrected in-flow height, never the raw probe', () => {
+    readout.enabled = true;
+    const { result } = renderHook(() => useSheetDetentProbe(FIXED_COLUMN, 'Sheet'));
+    result.current.probeProps?.onLayout(layout({ height: 548 }));
+    result.current.sentinelProps?.onLayout(layout({ y: 16 }));
+    const published = readout.publish.mock.calls.at(-1)?.[0];
+    expect(published.availableInFlowHeight).toBe(532);
+    expect(published.availableInFlowHeight).not.toBe(published.probeHeight);
   });
 });

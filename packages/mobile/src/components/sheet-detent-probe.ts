@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { StyleSheet, useWindowDimensions, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { publishSheetDetentReading, useSheetDetentReadoutActive } from './sheet-detent-readout';
 
 /**
- * Development-only instrumentation for the iOS sheet detent height (#3922).
+ * Instrumentation for the iOS sheet detent height (#3922).
  *
  * `useSheetColumnStyle` computes the column height from `useWindowDimensions()`
  * plus tuned constants. Four merged revisions of that formula (#3352, #3371,
@@ -14,6 +15,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
  *
  * This hook collects those numbers. It is an OBSERVER: nothing it measures
  * feeds back into layout, so the rendered tree is byte-identical to main.
+ *
+ * It runs in a dev client (where it prints `[sheet-detent #3922]`), and — since
+ * a distributed build has no console to print to — also whenever a tester turns
+ * on the "Sheet detent readout" toggle (More → Diagnostics, dev / preview /
+ * `pr-` channel sessions only). In that case the same payload goes to
+ * `sheet-detent-readout.ts`, which an overlay renders on screen so the numbers
+ * can be screenshotted off a TestFlight build. With the toggle off, a
+ * production session mounts nothing and renders exactly as it does today.
  *
  * ## What gets measured, and why it takes three probes
  *
@@ -92,6 +101,27 @@ const IDLE: SheetDetentProbe = { probeProps: null, sentinelProps: null, onColumn
 const probeStyles = StyleSheet.create({ sentinel: { height: 0 } });
 
 /**
+ * Whether a sheet should mount the probe views at all.
+ *
+ * Split out as a pure function because Metro AND the test config replace
+ * `__DEV__` with a literal, so the production-with-toggle-off branch is
+ * unreachable from a test that reads the global.
+ *
+ * @param isDev the `__DEV__` compile-time constant.
+ * @param readoutEnabled tester toggle + diagnostics eligibility.
+ * @param formulaHeight null for every unbounded column — Android, web,
+ *   `enableDynamicSizing`, non-`%` detents — which #3922 does not touch.
+ */
+export function shouldInstrumentSheetDetent(
+  isDev: boolean,
+  readoutEnabled: boolean,
+  formulaHeight: number | null,
+): boolean {
+  if (formulaHeight == null) return false;
+  return isDev || readoutEnabled;
+}
+
+/**
  * @param columnStyle the style returned by `useSheetColumnStyle`. Instrumentation
  *   runs only when that style carries a numeric height — i.e. exactly the iOS
  *   fixed-detent sheets #3922 is about. Android, web, `enableDynamicSizing` and
@@ -101,6 +131,7 @@ const probeStyles = StyleSheet.create({ sentinel: { height: 0 } });
 export function useSheetDetentProbe(columnStyle: ViewStyle, label: string): SheetDetentProbe {
   const window = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const readoutEnabled = useSheetDetentReadoutActive();
   const formulaHeight = typeof columnStyle.height === 'number' ? columnStyle.height : null;
 
   const epoch = useRef<ProbeEpoch>({
@@ -113,11 +144,17 @@ export function useSheetDetentProbe(columnStyle: ViewStyle, label: string): Shee
 
   // Kept in a ref so the layout callbacks stay referentially stable: the probe
   // views must never remount, and a re-render must not re-arm the log.
-  const context = useRef({ window, insets, formulaHeight, label });
-  context.current = { window, insets, formulaHeight, label };
+  const context = useRef({ window, insets, formulaHeight, label, readoutEnabled });
+  context.current = { window, insets, formulaHeight, label, readoutEnabled };
 
   const record = useCallback((field: 'probeHeight' | 'columnHeight' | 'sentinelY', measured: number) => {
-    const { formulaHeight: key, window: dimensions, insets: safeArea, label: sheetLabel } = context.current;
+    const {
+      formulaHeight: key,
+      window: dimensions,
+      insets: safeArea,
+      label: sheetLabel,
+      readoutEnabled: publishToOverlay,
+    } = context.current;
     if (key == null) return;
     const current = epoch.current;
     if (current.key !== key) {
@@ -127,11 +164,9 @@ export function useSheetDetentProbe(columnStyle: ViewStyle, label: string): Shee
     }
     const next = epoch.current;
     next[field] = measured;
-    if (next.logged || next.probeHeight == null || next.columnHeight == null || next.sentinelY == null) {
-      return;
-    }
-    next.logged = true;
-    console.log('[sheet-detent #3922]', {
+    const availableInFlowHeight =
+      next.probeHeight == null || next.sentinelY == null ? null : next.probeHeight - next.sentinelY;
+    const payload = {
       sheet: sheetLabel,
       window: { width: dimensions.width, height: dimensions.height },
       insets: { top: safeArea.top, bottom: safeArea.bottom },
@@ -140,8 +175,19 @@ export function useSheetDetentProbe(columnStyle: ViewStyle, label: string): Shee
       columnHeight: next.columnHeight,
       sentinelY: next.sentinelY,
       // The number every prior formula was trying to guess.
-      availableInFlowHeight: next.probeHeight - next.sentinelY,
-    });
+      availableInFlowHeight,
+    };
+    // The overlay takes every measurement as it lands, partial included: when a
+    // tester flips the toggle while a sheet is already mounted, RN does not
+    // re-fire `onLayout` on the column just because it gained a handler, so
+    // waiting for all three would leave the panel permanently empty.
+    if (publishToOverlay) publishSheetDetentReading(payload);
+    // The log line stays all-or-nothing — one complete record per epoch.
+    if (next.logged || next.probeHeight == null || next.columnHeight == null || next.sentinelY == null) {
+      return;
+    }
+    next.logged = true;
+    if (__DEV__) console.log('[sheet-detent #3922]', payload);
   }, []);
 
   const onProbeLayout = useCallback(
@@ -166,8 +212,9 @@ export function useSheetDetentProbe(columnStyle: ViewStyle, label: string): Shee
     [onSentinelLayout],
   );
 
-  // `__DEV__` is a compile-time constant under Metro, so the whole thing drops
-  // out of release bundles and production sheets render exactly as they do now.
-  if (!__DEV__ || formulaHeight == null) return IDLE;
+  // Dev clients always instrument. A distributed build does so only while a
+  // diagnostics-eligible tester has the readout toggle on, so an ordinary
+  // production session mounts no probe views and renders exactly as it does now.
+  if (!shouldInstrumentSheetDetent(__DEV__, readoutEnabled, formulaHeight)) return IDLE;
   return { probeProps, sentinelProps, onColumnLayout };
 }

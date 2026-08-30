@@ -46,6 +46,8 @@ export type AppSettings = {
   kioskHintSeen: boolean;
   /** Show the live bottom-chrome geometry overlay (dev / preview / pr-channel only). */
   bottomChromeDiagnostics: boolean;
+  /** Show the iOS sheet detent readout overlay (#3922; dev / preview / pr-channel only). */
+  sheetDetentDiagnostics: boolean;
 };
 
 export type SettingsKey = keyof AppSettings;
