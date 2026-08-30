@@ -145,7 +145,7 @@ async function insertSerialPointer(userId: string, serial: string, boardUuid: st
     INSERT INTO user_board_serials
       (user_id, serial_number, board_name, layout_id, size_id, set_ids, board_uuid, created_at, updated_at)
     VALUES (${userId}, ${serial}, 'kilter', 1, 10, '1,2', ${boardUuid}, now(), now())
-    ON CONFLICT (user_id, serial_number) DO UPDATE SET board_uuid = ${boardUuid}, updated_at = now()
+    ON CONFLICT (user_id, board_name, serial_number) DO UPDATE SET board_uuid = ${boardUuid}, updated_at = now()
   `);
 }
 

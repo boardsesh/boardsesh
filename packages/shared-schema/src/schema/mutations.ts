@@ -162,6 +162,12 @@ export const mutationsTypeDefs = /* GraphQL */ `
     (the caller's own board if present, else the oldest) and remembers it.
     New clients should call \`resolveBoardCandidatesForSerial\`. The board config
     args are used only to create the board the first time a serial is seen.
+
+    \`advertisedBoardType\` is the board type in the controller's BLE device
+    name (\`Tension Board#12345@3\`). Aurora runs a separate serial sequence per
+    board app, so the same serial exists on controllers of different types; pass
+    it and only boards of that type are candidates. Optional — clients shipped
+    before this existed keep the old type-blind resolution.
     """
     resolveBoardForSerial(
       serial: String!
@@ -169,6 +175,7 @@ export const mutationsTypeDefs = /* GraphQL */ `
       layoutId: Int!
       sizeId: Int!
       setIds: String!
+      advertisedBoardType: String
     ): ResolvedBoard!
 
     """
@@ -178,6 +185,12 @@ export const mutationsTypeDefs = /* GraphQL */ `
     the serial and the user must pick which wall they're at. Confirm the pick
     with \`chooseBoardForSerial\`. The config args create the board the first
     time a serial is seen.
+
+    \`advertisedBoardType\` is the board type in the controller's BLE device
+    name (\`Tension Board#12345@3\`). Aurora runs a separate serial sequence per
+    board app, so the same serial exists on controllers of different types; pass
+    it and only boards of that type are candidates. Optional — clients shipped
+    before this existed keep the old type-blind resolution.
     """
     resolveBoardCandidatesForSerial(
       serial: String!
@@ -185,6 +198,7 @@ export const mutationsTypeDefs = /* GraphQL */ `
       layoutId: Int!
       sizeId: Int!
       setIds: String!
+      advertisedBoardType: String
     ): ResolveBoardResult!
 
     """

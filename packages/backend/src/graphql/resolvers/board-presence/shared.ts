@@ -45,25 +45,6 @@ export function toResolvedBoard(board: ActivePresenceBoard): ResolvedBoard {
   };
 }
 
-export async function findActiveBoardBySerial(serial: string): Promise<ActivePresenceBoard | undefined> {
-  const [board] = await db
-    .select({
-      id: dbSchema.userBoards.id,
-      name: dbSchema.userBoards.name,
-      boardType: dbSchema.userBoards.boardType,
-      layoutId: dbSchema.userBoards.layoutId,
-      sizeId: dbSchema.userBoards.sizeId,
-      setIds: dbSchema.userBoards.setIds,
-      serialNumber: dbSchema.userBoards.serialNumber,
-      angle: dbSchema.userBoards.angle,
-    })
-    .from(dbSchema.userBoards)
-    .where(and(eq(dbSchema.userBoards.serialNumber, serial), isNull(dbSchema.userBoards.deletedAt)))
-    .orderBy(asc(dbSchema.userBoards.id))
-    .limit(1);
-  return board;
-}
-
 /**
  * A board sharing a (now non-unique) serial, with the extra fields the
  * disambiguation picker needs. Location fields are redacted later for
@@ -111,10 +92,18 @@ type ChosenBoardLookup = {
  * All active boards carrying this serial. Serials are no longer globally
  * unique (the supplier reuses them), so this can return many rows — the user
  * disambiguates. Oldest-first so the legacy auto-pick is deterministic.
+ *
+ * `advertisedBoardType` is the type in the connected controller's BLE device
+ * name (`Tension Board#12345@3`). Aurora runs a separate serial sequence per
+ * board app, so a Kilter `#12345` and a Tension `#12345` are different physical
+ * controllers; when the caller knows the type, boards of any other type are not
+ * candidates at all. Omitted by clients that predate the fix, which keep the old
+ * type-blind behaviour.
  */
 export async function findActiveBoardsBySerial(
   serial: string,
   readDb: BoardPresenceReadDb = db,
+  advertisedBoardType?: string | null,
 ): Promise<SerialCandidateBoard[]> {
   const rows = await readDb
     .select({
@@ -135,7 +124,13 @@ export async function findActiveBoardsBySerial(
     })
     .from(dbSchema.userBoards)
     .leftJoin(dbSchema.gyms, and(eq(dbSchema.gyms.id, dbSchema.userBoards.gymId), isNull(dbSchema.gyms.deletedAt)))
-    .where(and(eq(dbSchema.userBoards.serialNumber, serial), isNull(dbSchema.userBoards.deletedAt)))
+    .where(
+      and(
+        eq(dbSchema.userBoards.serialNumber, serial),
+        isNull(dbSchema.userBoards.deletedAt),
+        advertisedBoardType ? eq(dbSchema.userBoards.boardType, advertisedBoardType) : undefined,
+      ),
+    )
     .orderBy(asc(dbSchema.userBoards.id));
 
   return rows.map((row) => ({
@@ -162,17 +157,24 @@ export async function findActiveBoardsBySerial(
  * explicitly picking it in the disambiguation prompt, or by connecting while
  * on a named board). Remembered in `userBoardSerials.boardUuid`; wins over a
  * fresh prompt so we don't ask every time.
+ *
+ * `advertisedBoardType` scopes the lookup to the connected controller's type.
+ * The pointer is stored per (user, board name, serial), and a remembered choice
+ * for the Kilter `#12345` says nothing about the Tension `#12345` in front of
+ * the climber — returning it would pin them to the wrong board on every connect,
+ * because this short-circuits candidate resolution entirely.
  */
 export async function findChosenBoardForSerial(
   userId: string,
   serial: string,
+  advertisedBoardType?: string | null,
 ): Promise<ActivePresenceBoard | undefined> {
   // Keep the serial-first lookup read-only. Updating board_uuid would make the
   // FK acquire an implicit user_boards KEY SHARE lock after the serial lock,
   // inverting every row-changing writer's row→serial order.
   const lookup = await db.transaction(async (tx) => {
     await lockBoardSerialWrite(tx, serial);
-    return findChosenBoardForSerialLocked(tx, userId, serial);
+    return findChosenBoardForSerialLocked(tx, userId, serial, advertisedBoardType);
   });
 
   if (!lookup) return undefined;
@@ -186,6 +188,7 @@ async function findChosenBoardForSerialLocked(
   transactionDb: BoardPresenceSerialTransactionDb,
   userId: string,
   serial: string,
+  advertisedBoardType?: string | null,
 ): Promise<ChosenBoardLookup | undefined> {
   // Join the remembered pointer to its board WITHOUT the deletedAt filter: a
   // pointer left dangling at a merged-away loser must still surface here so we
@@ -212,11 +215,22 @@ async function findChosenBoardForSerialLocked(
         eq(dbSchema.userBoardSerials.userId, userId),
         eq(dbSchema.userBoardSerials.serialNumber, serial),
         isNotNull(dbSchema.userBoardSerials.boardUuid),
+        // Pick the recording for the controller actually connected. Since
+        // `user_board_serials` is keyed on (user, board name, serial), a user
+        // who has connected both a Kilter and a Tension `#12345` now has two
+        // rows, and an unscoped `.limit(1)` would choose between them at random.
+        advertisedBoardType ? eq(dbSchema.userBoardSerials.boardName, advertisedBoardType) : undefined,
       ),
     )
     .limit(1);
 
   if (!row) return undefined;
+
+  // Defense in depth for legacy rows: `board_name` is what the client reported
+  // at connect time and the pointer was written separately, so the two can
+  // disagree on data written before the serial-per-board-type fix. The board's
+  // own type is authoritative — never hand back a board of the wrong type.
+  if (advertisedBoardType && row.boardType !== advertisedBoardType) return undefined;
 
   // Active pointer: use it directly (the common case).
   if (!row.deletedAt) return { board: toActivePresenceBoard(row) };
@@ -226,6 +240,9 @@ async function findChosenBoardForSerialLocked(
   // gone — return undefined so the caller falls through to the candidate list.
   const canonical = await followBoardMergeChain(row.mergedIntoBoardUuid, transactionDb);
   if (!canonical) return undefined;
+  // The survivor is normally the same type as the loser, but a merge is human
+  // data — re-check rather than trust the chain.
+  if (advertisedBoardType && canonical.boardType !== advertisedBoardType) return undefined;
 
   return {
     board: toActivePresenceBoard(canonical),
@@ -347,8 +364,10 @@ export async function lastSentAtByBoardIds(boardIds: number[]): Promise<Map<numb
 /**
  * Remember (per user) which board a serial routes to, so the disambiguation
  * prompt only appears once. Upserts `userBoardSerials.boardUuid` for the
- * (user, serial) pair. The config columns are NOT NULL, so we stamp the
- * board's own config (which is what the user connected to).
+ * (user, board name, serial) triple — Aurora reuses a serial across board apps,
+ * so the Kilter `#12345` and the Tension `#12345` each get their own pointer.
+ * The config columns are NOT NULL, so we stamp the board's own config (which is
+ * what the user connected to).
  */
 export async function rememberBoardForSerial(
   userId: string,
@@ -368,7 +387,13 @@ export async function rememberBoardForSerial(
       boardUuid: board.uuid,
     })
     .onConflictDoUpdate({
-      target: [dbSchema.userBoardSerials.userId, dbSchema.userBoardSerials.serialNumber],
+      // Must match `user_board_serials_unique_user_serial` exactly, or Postgres
+      // rejects the statement with 42P10 (no matching arbiter index).
+      target: [
+        dbSchema.userBoardSerials.userId,
+        dbSchema.userBoardSerials.boardName,
+        dbSchema.userBoardSerials.serialNumber,
+      ],
       set: { boardUuid: board.uuid, updatedAt: new Date() },
     });
 }

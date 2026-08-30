@@ -1,8 +1,14 @@
 /**
- * Regression coverage for migration 0131: the system catalog owner is exempt
- * from the per-owner serial uniqueness index, so the location sync can mirror
- * the upstream catalog's duplicate serials ("same serial shipped to two gyms").
- * Real (non-system) owners must still be blocked from binding one serial twice.
+ * Regression coverage for the per-owner serial uniqueness index, which is scoped
+ * two ways:
+ *  - migration 0131: the system catalog owner is exempt, so the location sync can
+ *    mirror the upstream catalog's duplicate serials ("same serial shipped to two
+ *    gyms");
+ *  - migration 0207: the key carries `board_type`, because Aurora runs a separate
+ *    serial sequence per board app — one owner may hold a Kilter #12345 and a
+ *    Tension #12345.
+ * Real (non-system) owners must still be blocked from binding one serial twice
+ * within a single board type.
  *
  * Skips unless DATABASE_URL points at a local, migrated Postgres.
  */
@@ -86,7 +92,11 @@ function testDatabaseUrl(): string | null {
 
 async function skipReason(commandDb: ExecuteDb): Promise<string | null> {
   try {
-    const [state] = await executeRows<{ boardsTable: string | null; systemExcluded: boolean }>(
+    const [state] = await executeRows<{
+      boardsTable: string | null;
+      systemExcluded: boolean;
+      boardTypeScoped: boolean;
+    }>(
       commandDb,
       sql`
         SELECT
@@ -95,7 +105,12 @@ async function skipReason(commandDb: ExecuteDb): Promise<string | null> {
             SELECT 1 FROM pg_indexes
             WHERE indexname = ${SERIAL_UNIQUENESS_INDEX}
               AND indexdef LIKE '%00000000-0000-0000-0000-000000000000%'
-          ) AS "systemExcluded"
+          ) AS "systemExcluded",
+          EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE indexname = ${SERIAL_UNIQUENESS_INDEX}
+              AND indexdef LIKE '%board_type%'
+          ) AS "boardTypeScoped"
       `,
     );
     if (!state?.boardsTable) {
@@ -103,6 +118,9 @@ async function skipReason(commandDb: ExecuteDb): Promise<string | null> {
     }
     if (!state.systemExcluded) {
       return 'migration 0131 (system-user serial exemption) not applied; run migrations';
+    }
+    if (!state.boardTypeScoped) {
+      return 'migration 0207 (board-type-scoped serial uniqueness) not applied; run migrations';
     }
   } catch (error: unknown) {
     return `database unavailable: ${error instanceof Error ? error.message : String(error)}`;
@@ -127,18 +145,25 @@ async function ensureUser(commandDb: ExecuteDb, id: string, email: string, name 
 // about representing distinct boards.
 async function insertBoard(
   commandDb: ExecuteDb,
-  values: { uuid: string; slug: string; ownerId: string; serial: string; layoutId: number },
+  values: {
+    uuid: string;
+    slug: string;
+    ownerId: string;
+    serial: string;
+    layoutId: number;
+    boardType?: string;
+  },
 ): Promise<void> {
   await commandDb.execute(sql`
     INSERT INTO user_boards (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number, is_owned)
     VALUES (
-      ${values.uuid}, ${values.slug}, ${values.ownerId}, 'kilter', ${values.layoutId}, 10, '20',
+      ${values.uuid}, ${values.slug}, ${values.ownerId}, ${values.boardType ?? 'kilter'}, ${values.layoutId}, 10, '20',
       ${'Serial Test Board'}, ${values.serial}, false
     )
   `);
 }
 
-void describe('user_boards serial uniqueness — system catalog exemption', () => {
+void describe('user_boards serial uniqueness — system catalog exemption and board-type scoping', () => {
   const sharedSerial = 'SERIALUNIQ-TEST-75934';
   const otherOwnerId = 'serial-uniqueness-test-owner';
   const uuids = {
@@ -146,9 +171,10 @@ void describe('user_boards serial uniqueness — system catalog exemption', () =
     system2: 'aaaa1111-0000-0000-0000-000000000002',
     other1: 'bbbb2222-0000-0000-0000-000000000001',
     other2: 'bbbb2222-0000-0000-0000-000000000002',
+    otherTension: 'bbbb2222-0000-0000-0000-000000000003',
   };
 
-  void it('lets two system-owned boards share a serial, but blocks a non-system owner from reusing one', async () => {
+  void it('exempts the system owner, scopes by board type, and blocks same-type reuse', async () => {
     const databaseUrl = testDatabaseUrl();
     if (!databaseUrl) {
       console.warn('[serial-uniqueness] skipped: set DATABASE_URL to a local Postgres to run');
@@ -204,9 +230,9 @@ void describe('user_boards serial uniqueness — system catalog exemption', () =
         serial: sharedSerial,
         layoutId: 1,
       });
-      // ...but a second one for the same owner must violate the serial unique
-      // index. A different layout keeps the per-owner config index out of the
-      // way, so this assertion exercises the serial index alone.
+      // ...but a second one of the SAME board type for that owner must violate
+      // the serial unique index. A different layout keeps the per-owner config
+      // index out of the way, so this assertion exercises the serial index alone.
       await assert.rejects(
         () =>
           insertBoard(db, {
@@ -219,7 +245,29 @@ void describe('user_boards serial uniqueness — system catalog exemption', () =
             layoutId: 2,
           }),
         (error: unknown) => violatesConstraint(error, SERIAL_UNIQUENESS_INDEX),
-        'a non-system owner must not bind the same serial twice',
+        'a non-system owner must not bind the same serial twice on one board type',
+      );
+
+      // ...while the SAME serial on a DIFFERENT board type is a different
+      // physical controller (Aurora numbers each board app separately), so one
+      // owner may hold both. This is the Benchmark Climbing case: a Tension
+      // controller whose serial also exists on some Kilter board.
+      await insertBoard(db, {
+        uuid: uuids.otherTension,
+        slug: 'serialuniq-other-tension',
+        ownerId: otherOwnerId,
+        serial: sharedSerial,
+        layoutId: 1,
+        boardType: 'tension',
+      });
+      const [ownerCount] = await executeRows<CountRow>(
+        db,
+        sql`SELECT count(*)::int AS count FROM user_boards WHERE owner_id = ${otherOwnerId} AND serial_number = ${sharedSerial}`,
+      );
+      assert.equal(
+        Number(ownerCount?.count ?? 0),
+        2,
+        'one owner should hold the same serial on a Kilter and a Tension board',
       );
 
       // Cleanup.

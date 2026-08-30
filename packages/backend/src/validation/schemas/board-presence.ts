@@ -9,6 +9,15 @@ export const BoardPresenceConfigInputSchema = z.object({
   setIds: NumericCsvSchema,
 });
 
+/**
+ * The board type parsed from the connected controller's BLE device name
+ * (`Tension Board#12345@3`). Scopes every serial lookup to the hardware in
+ * front of the climber, because Aurora runs a separate serial sequence per
+ * board app. Nullish for clients shipped before the serial-per-board-type fix,
+ * which keep the old type-blind resolution.
+ */
+export const AdvertisedBoardTypeSchema = BoardNameSchema.nullish();
+
 // Live board angle; Aurora supports negative tilt.
 export const BoardPresenceAngleSchema = z.number().int().min(-90).max(90).nullable().optional();
 

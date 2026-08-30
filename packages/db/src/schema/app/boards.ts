@@ -98,16 +98,26 @@ export const userBoards = pgTable(
     // Board presence: the LED supplier can't be trusted to keep serials
     // unique, so a serial may map to MANY active boards (e.g. the same serial
     // shipped to two gyms). We only forbid a single owner from binding the
-    // same serial to two of their own boards. `resolveBoardForSerial` returns
-    // the candidates and the user picks; the per-owner unique partial index
-    // still makes a same-owner bind race fail-safe (the loser re-reads).
+    // same serial to two of their own boards OF THE SAME TYPE.
+    // `resolveBoardForSerial` returns the candidates and the user picks; the
+    // per-owner unique partial index still makes a same-owner bind race
+    // fail-safe (the loser re-reads).
+    //
+    // `boardType` is part of the key because Aurora runs a SEPARATE serial
+    // sequence per board app: a Kilter `#12345` and a Tension `#12345` are two
+    // different physical controllers, and one owner can legitimately register
+    // both. Keyed on the serial alone, the second one was rejected as a
+    // duplicate (surfacing as BOARD_SERIAL_EXISTS in the board create/edit
+    // form). The BLE advertisement carries the type — `Tension Board#12345@3` —
+    // so the pair is always distinguishable.
+    //
     // Excludes the system user (seeded public catalog boards): the location
     // sync mirrors the upstream catalog verbatim, so the system owner can
     // legitimately hold the "same serial shipped to two gyms" rows described
     // above. Mirrors the uniqueOwnerConfigIdx exclusion.
     // Partial so serial-less/blank and soft-deleted rows don't collide.
     uniqueOwnerSerialIdx: uniqueIndex('user_boards_unique_owner_serial')
-      .on(table.ownerId, table.serialNumber)
+      .on(table.ownerId, table.boardType, table.serialNumber)
       .where(
         sql`${table.serialNumber} IS NOT NULL AND ${table.serialNumber} <> '' AND ${table.deletedAt} IS NULL AND ${table.ownerId} != '00000000-0000-0000-0000-000000000000'`,
       ),

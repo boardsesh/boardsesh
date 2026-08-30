@@ -146,6 +146,10 @@ export const SerialNumberLookupSchema = z.object({
   // Normalized so a lookup matches the canonical serials stored by the resolve
   // and record paths (see normalizeSerial).
   serialNumbers: z.array(z.string().trim().min(1).max(64).transform(normalizeSerial)).max(20),
+  // The type advertised in the BLE device name. Optional: clients shipped
+  // before the serial-per-board-type fix don't send it, and those callers keep
+  // the old unfiltered behaviour.
+  boardType: BoardNameSchema.optional(),
 });
 
 /**

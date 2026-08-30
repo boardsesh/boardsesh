@@ -13,6 +13,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { BoardSerialSchema, UUIDSchema } from '../../../validation/schemas/primitives';
 import {
+  AdvertisedBoardTypeSchema,
   BoardPresenceAngleSchema,
   BoardPresenceConfigInputSchema,
   ReportBoardClimbInputSchema,
@@ -55,6 +56,17 @@ type SerialResolution =
 type SerialResolutionAttempt = SerialResolution | { kind: 'retry' };
 
 const SERIAL_RESOLUTION_MAX_ATTEMPTS = 3;
+
+/**
+ * Validate the board type advertised by the connected controller. Returns
+ * `undefined` when the caller omitted it (every client shipped before the
+ * serial-per-board-type fix), which leaves serial resolution type-blind exactly
+ * as it was.
+ */
+function validateAdvertisedBoardType(advertisedBoardType: string | null | undefined): string | undefined {
+  if (advertisedBoardType == null) return undefined;
+  return validateInput(AdvertisedBoardTypeSchema, advertisedBoardType, 'advertisedBoardType') ?? undefined;
+}
 
 type BoardCandidatePayload = {
   boardId: number;
@@ -265,8 +277,11 @@ async function bindOrCreateOwnBoardForSerial(
   }
 }
 
-async function planActiveBoardsForSerial(serial: string): Promise<SerialCandidateBoard[]> {
-  return findActiveBoardsBySerial(serial, db);
+async function planActiveBoardsForSerial(
+  serial: string,
+  advertisedBoardType?: string | null,
+): Promise<SerialCandidateBoard[]> {
+  return findActiveBoardsBySerial(serial, db, advertisedBoardType);
 }
 
 function selectResolvedSerialCandidate(
@@ -291,6 +306,7 @@ async function resolveEmptySerialPlan(
   serial: string,
   config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
   autoPickMultiple: boolean,
+  advertisedBoardType?: string | null,
 ): Promise<SerialResolutionAttempt> {
   return db.transaction(async (tx): Promise<SerialResolutionAttempt> => {
     // The zero-candidate path may bind this config-matching row, so lock it
@@ -311,12 +327,28 @@ async function resolveEmptySerialPlan(
     `);
     await lockBoardSerialWrite(tx, serial);
 
-    const candidates = await findActiveBoardsBySerial(serial, tx);
+    const candidates = await findActiveBoardsBySerial(serial, tx, advertisedBoardType);
     if (candidates.length > 0) {
       if (!autoPickMultiple && candidates.length > 1) {
         return { kind: 'candidates', candidates };
       }
       return { kind: 'retry' };
+    }
+
+    // Nothing carries this serial. Binding or creating uses `config`, which is
+    // the ROUTE the climber is on — fine when that is also what connected, but
+    // not when the controller announced a different board type. That happens on
+    // the picker's "Connect anyway" path: connecting a Tension box while on a
+    // Kilter setup would otherwise stamp the Tension serial onto a Kilter board
+    // and route every later tick and presence event there.
+    //
+    // We can't create the right board either: `config` carries the route's
+    // layout/size/sets, which describe nothing on the connected wall. So bind
+    // nothing and say so. The client treats an empty candidate list as "no
+    // board" and simply skips presence for this connection — the wall still
+    // lights up, it just isn't attributed to a board.
+    if (advertisedBoardType && advertisedBoardType !== config.boardType) {
+      return { kind: 'candidates', candidates: [] };
     }
 
     const board = await bindOrCreateOwnBoardForSerial(tx, userId, serial, config);
@@ -330,6 +362,7 @@ async function resolvePlannedSerialCandidate(
   plannedBoardId: number,
   plannedBoardIds: number[],
   autoPickMultiple: boolean,
+  advertisedBoardType?: string | null,
 ): Promise<SerialResolutionAttempt> {
   return db.transaction(async (tx): Promise<SerialResolutionAttempt> => {
     // The pointer FK takes KEY SHARE on this parent row. Lock the exact planned
@@ -343,7 +376,7 @@ async function resolvePlannedSerialCandidate(
     `);
     await lockBoardSerialWrite(tx, serial);
 
-    const candidates = await findActiveBoardsBySerial(serial, tx);
+    const candidates = await findActiveBoardsBySerial(serial, tx, advertisedBoardType);
     if (!autoPickMultiple && candidates.length > 1) {
       return { kind: 'candidates', candidates };
     }
@@ -372,28 +405,20 @@ async function resolveSerialForUser(
   userId: string,
   serial: string,
   config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
-  options: { autoPickMultiple: true },
-): Promise<{ kind: 'board'; board: ActivePresenceBoard }>;
-async function resolveSerialForUser(
-  userId: string,
-  serial: string,
-  config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
-  options?: { autoPickMultiple?: false },
-): Promise<SerialResolution>;
-async function resolveSerialForUser(
-  userId: string,
-  serial: string,
-  config: { boardType: string; layoutId: number; sizeId: number; setIds: string },
-  options: { autoPickMultiple?: boolean } = {},
+  options: { autoPickMultiple?: boolean; advertisedBoardType?: string | null } = {},
 ): Promise<SerialResolution> {
-  const chosen = await findChosenBoardForSerial(userId, serial);
+  // The type the controller advertises over BLE. Every read below is scoped to
+  // it, because Aurora reuses a serial across board apps and a board of another
+  // type is a different physical controller, not a candidate.
+  const { advertisedBoardType } = options;
+  const chosen = await findChosenBoardForSerial(userId, serial, advertisedBoardType);
   if (chosen) {
     return { kind: 'board', board: chosen };
   }
 
   const autoPickMultiple = options.autoPickMultiple ?? false;
   for (let attempt = 0; attempt < SERIAL_RESOLUTION_MAX_ATTEMPTS; attempt++) {
-    const plannedCandidates = await planActiveBoardsForSerial(serial);
+    const plannedCandidates = await planActiveBoardsForSerial(serial, advertisedBoardType);
     if (!autoPickMultiple && plannedCandidates.length > 1) {
       return { kind: 'candidates', candidates: plannedCandidates };
     }
@@ -406,8 +431,9 @@ async function resolveSerialForUser(
           plannedCandidate.id,
           plannedCandidates.map((candidate) => candidate.id),
           autoPickMultiple,
+          advertisedBoardType,
         )
-      : await resolveEmptySerialPlan(userId, serial, config, autoPickMultiple);
+      : await resolveEmptySerialPlan(userId, serial, config, autoPickMultiple, advertisedBoardType);
     if (resolution.kind !== 'retry') return resolution;
   }
 
@@ -461,7 +487,15 @@ export const boardPresenceMutations = {
       layoutId,
       sizeId,
       setIds,
-    }: { serial: string; boardType: string; layoutId: number; sizeId: number; setIds: string },
+      advertisedBoardType,
+    }: {
+      serial: string;
+      boardType: string;
+      layoutId: number;
+      sizeId: number;
+      setIds: string;
+      advertisedBoardType?: string | null;
+    },
     ctx: ConnectionContext,
   ): Promise<ResolvedBoard> => {
     requireAuthenticated(ctx);
@@ -469,11 +503,25 @@ export const boardPresenceMutations = {
 
     const validSerial = validateInput(BoardSerialSchema, serial, 'serial');
     const config = validateInput(BoardPresenceConfigInputSchema, { boardType, layoutId, sizeId, setIds }, 'input');
+    const validAdvertisedBoardType = validateAdvertisedBoardType(advertisedBoardType);
     const userId = ctx.userId!;
 
     // Old clients can't prompt. The auto-pick's final candidate read and
     // pointer write happen inside resolveSerialForUser's row→serial transaction.
-    const resolution = await resolveSerialForUser(userId, validSerial, config, { autoPickMultiple: true });
+    const resolution = await resolveSerialForUser(userId, validSerial, config, {
+      autoPickMultiple: true,
+      advertisedBoardType: validAdvertisedBoardType,
+    });
+    // Auto-pick never returns candidates for a populated list, so the only way
+    // here is the cross-type refusal above: the controller is not the board type
+    // this route describes, and there is no board to bind. This mutation's
+    // return type is non-null, so say so rather than inventing a board. Old
+    // clients never send an advertised type and so can never reach this.
+    if (resolution.kind !== 'board') {
+      throw new GraphQLError('That controller is a different board type than the setup you are on.', {
+        extensions: { code: 'BOARD_TYPE_MISMATCH' },
+      });
+    }
     await pubsub.stampBoardMembership(String(resolution.board.id), userId);
     return toResolvedBoard(resolution.board);
   },
@@ -492,7 +540,15 @@ export const boardPresenceMutations = {
       layoutId,
       sizeId,
       setIds,
-    }: { serial: string; boardType: string; layoutId: number; sizeId: number; setIds: string },
+      advertisedBoardType,
+    }: {
+      serial: string;
+      boardType: string;
+      layoutId: number;
+      sizeId: number;
+      setIds: string;
+      advertisedBoardType?: string | null;
+    },
     ctx: ConnectionContext,
   ): Promise<{ board: ResolvedBoard | null; candidates: BoardCandidatePayload[] | null }> => {
     requireAuthenticated(ctx);
@@ -500,9 +556,12 @@ export const boardPresenceMutations = {
 
     const validSerial = validateInput(BoardSerialSchema, serial, 'serial');
     const config = validateInput(BoardPresenceConfigInputSchema, { boardType, layoutId, sizeId, setIds }, 'input');
+    const validAdvertisedBoardType = validateAdvertisedBoardType(advertisedBoardType);
     const userId = ctx.userId!;
 
-    const resolution = await resolveSerialForUser(userId, validSerial, config);
+    const resolution = await resolveSerialForUser(userId, validSerial, config, {
+      advertisedBoardType: validAdvertisedBoardType,
+    });
     if (resolution.kind === 'board') {
       await pubsub.stampBoardMembership(String(resolution.board.id), userId);
       return { board: toResolvedBoard(resolution.board), candidates: null };
