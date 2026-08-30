@@ -1457,6 +1457,13 @@
       "when": 1788052639742,
       "tag": "0207_huge_the_stranger",
       "breakpoints": true
+    },
+    {
+      "idx": 208,
+      "version": "7",
+      "when": 1788060403656,
+      "tag": "0208_keen_scrambler",
+      "breakpoints": true
     }
   ]
 }

@@ -128,6 +128,63 @@ Metro, webpack, bare Node ESM and vitest at once.
 690 holds) — well under `scripts/check-large-files.mjs`'s 2 MB per-file limit, so no
 allowlist entry is needed.
 
+### `@boardsesh/board-art-geometry/ring`
+
+Ring maths — `simplifyRing` (the tracer's own Douglas-Peucker, plus `SIMPLIFY_EPSILON`),
+`closeRing`, `roundRing`, `pointInRing`, `isValidOutlineRing` — lives on its own subpath
+that imports nothing from `loader`, `types` or `generated`:
+
+```ts
+import { pointInRing, roundRing, isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
+```
+
+The isolation is the point. Metro bundles what a module can reach, so importing the
+package index to run a point-in-polygon test would put all 3.0 MB of polygons into the
+mobile bundle. The subpath is ~2 KB and reaches nothing else.
+
+`simplifyRing` and `SIMPLIFY_EPSILON` are the tracer's own Douglas-Peucker, copied verbatim
+so a ring an editor redraws is decimated by exactly the algorithm that produced the ring
+beside it. `scripts/generate-board-art-geometry.ts` still holds its own copy and switches to
+importing this one; until it does, a change to either has to be made to both.
+
+## Hand-corrected outlines (`hold_outline_overrides`)
+
+The tracer gets most holds right; the ones it does not are fixed as database rows rather
+than by regenerating and redeploying 3.0 MB of shards. `hold_outline_overrides` is keyed by
+the shard's own merge key plus a placement and a kind — `(board_name, layout_id, size_id,
+placement_id, kind)` — with the same flat, implicitly-closed, 4-decimal ring in the same
+radius units, so a consumer swaps one for the other with no conversion. Latest write wins;
+`author_id`, `updated_at` and `note` are the record of who changed it and why, and there is
+no history table.
+
+`kind` says which boundary a row traces. `silhouette` is the hold's outer edge — what the
+tracer produces and the renderer lights. `led_inner` is the INNER boundary of the same
+hold's LED base plate, an annotation the tracer never produced at all: the lit ring region
+is the silhouette MINUS that polygon, so a `led_inner` row stores no part of the outer edge
+and only means anything alongside the silhouette it sits inside.
+
+Editing runs over GraphQL: `holdOutlines(input:)` returns the deployed shard's outlines
+beside the live overrides of every kind (side by side, not merged, so an editor can show
+both and offer a revert), and `upsertHoldOutlineOverride` / `deleteHoldOutlineOverride`
+write them — both defaulting to `SILHOUETTE`, and the delete scoped to one kind so dropping
+an LED annotation leaves the corrected silhouette standing. All three operations are
+admin-only and BOARD-SCOPED — a community admin scoped to Kilter corrects Kilter's art and
+nothing else.
+
+A write is checked three ways. The ring's shape goes through `isValidOutlineRing` itself
+(the Zod schema `.refine`s on it, so the editor and the backend cannot disagree about what
+is storable). The placement has to exist on the config with every set mounted — the
+composite the shard was traced on; an unknown config comes back as
+`HOLD_OUTLINE_UNKNOWN_CONFIG` rather than a raw error naming every size that does exist.
+And the ring has to COVER its own placement centre: inside it, or outside by no more than
+`CENTRE_TOLERANCE_RADII` (0.25). Not strict containment, because a handful of shipped
+outlines on kilter/1-28 — hooks and slopers whose bolt sits under a concave underside —
+miss their own centre by a small fraction of a radius, and a strict gate would make exactly
+those holds un-correctable. (Which placements those are is a property of whatever tracer
+last wrote the shards, so nothing pins the set; the ring tests assert the invariant that
+every committed outline passes the gate.) The failure it exists to catch is a ring drawn
+around the NEIGHBOURING hold, which sits ~2 radii away.
+
 ## Regenerating
 
 ```bash
