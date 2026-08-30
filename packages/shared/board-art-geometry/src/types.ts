@@ -77,6 +77,24 @@ export type BoardArtGeometry = {
    * MoonBoard `ledBright` table is empty.
    */
   ledBright: Record<number, [number, number]>;
+  /**
+   * `placementId` -> flat ring of the INNER boundary of the hold's LED base
+   * plate, in the same radius units and the same implicitly-closed form as
+   * `outlines`. The lit region is the silhouette MINUS this polygon: the ring of
+   * plate visible around the hold proper, which is the part that actually glows.
+   *
+   * OPTIONAL, and absent from most shards. Nothing extracts this from the art
+   * yet — every entry is hand-annotated through `hold_outline_overrides`
+   * (`kind = 'led_inner'`), so a shard carries the table only once someone has
+   * drawn one, and a placement appears in it only if someone drew that one. An
+   * automatic extractor can fill the same field later with no consumer change.
+   *
+   * The frozen contract's sanctioned extension path is a NEW optional field, and
+   * this is one: a renderer that has never heard of `ledInner` reads exactly what
+   * it read before. Consumers must treat an absent table and an absent placement
+   * identically — light the whole silhouette.
+   */
+  ledInner?: Record<number, number[]>;
 };
 
 /**

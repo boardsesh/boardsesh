@@ -1,5 +1,6 @@
 /// <reference types="node" />
 
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
@@ -72,6 +73,71 @@ const CUT_PROBE_INSET_FROM_CLEARANCE = 0.5;
 /** The probe distance for one placement, in board pixels. */
 export function cutProbeDistance(placementRadius: number): number {
   return radiusForPlacement(placementRadius) - CUT_PROBE_INSET_FROM_CLEARANCE;
+}
+
+// ---------------------------------------------------------------------------
+// Hand-corrected outlines
+// ---------------------------------------------------------------------------
+
+/** Where `vp run db:export-outline-overrides` writes the committed corrections. */
+export const OVERRIDES_DIR = fileURLToPath(new URL('../../overrides/', import.meta.url));
+
+/** The committed corrections for one shard, as the exporter writes them. */
+export type OverrideFile = {
+  outlines?: Record<string, number[]>;
+  ledInner?: Record<string, number[]>;
+};
+
+/**
+ * Read one config's committed overrides, or `null` where it has none.
+ *
+ * PARSED HERE rather than imported from the generator's merge module, like every
+ * other input in this file. Reading the JSON is not restating a measurement —
+ * it is data, and the whole point of these gates is that they reach the same
+ * files the generator did by their own route.
+ */
+export function overridesForKey(key: string): OverrideFile | null {
+  const filePath = path.join(OVERRIDES_DIR, `${key}.json`);
+  if (!existsSync(filePath)) return null;
+  return JSON.parse(readFileSync(filePath, 'utf8')) as OverrideFile;
+}
+
+/** Every shard key with a committed override file. */
+export function overriddenShardKeys(): string[] {
+  if (!existsSync(OVERRIDES_DIR)) return [];
+  const keys: string[] = [];
+  for (const boardEntry of readdirSync(OVERRIDES_DIR, { withFileTypes: true })) {
+    if (!boardEntry.isDirectory()) continue;
+    for (const fileEntry of readdirSync(path.join(OVERRIDES_DIR, boardEntry.name), { withFileTypes: true })) {
+      if (!fileEntry.isFile() || !fileEntry.name.endsWith('.json')) continue;
+      keys.push(`${boardEntry.name}/${fileEntry.name.slice(0, -'.json'.length)}`);
+    }
+  }
+  return keys.sort();
+}
+
+/**
+ * The placements of one shard whose SILHOUETTE a human drew.
+ *
+ * Gates 1 to 3 still bind on these — every one of them is a geometric invariant
+ * any drawing has to satisfy (it sits on its own placement, it swallows no
+ * second placement, it is not the crop rectangle), and the backend already
+ * refuses a write that fails gate 1's core.
+ *
+ * Gate 1's pin table, gate 5 and gate 6 do NOT. All three measure TRACER
+ * PATHOLOGIES — a bolt left outside a boundary the simplification wobbled, a
+ * limb joined through a thin neck, a boundary that is a partition cut rather
+ * than an art edge — and a human correcting exactly those defects will trip
+ * them by construction. The commonest correction is a contact cut, where the
+ * fix is to draw the hold's real edge, and the hold's real edge is ON the
+ * neighbour's art: gate 6 would read that as the defect it was drawn to repair.
+ * `ledInner` rings are exempt from all seven — a base-plate boundary is not a
+ * silhouette and none of these measures mean anything about one — and get their
+ * own structural checks in `overrides.test.ts`.
+ */
+export function overriddenPlacementIds(key: string): Set<number> {
+  const file = overridesForKey(key);
+  return new Set(Object.keys(file?.outlines ?? {}).map(Number));
 }
 
 export type Placement = { id: number; cx: number; cy: number; r: number };
