@@ -49,6 +49,26 @@ type OverrideFileShape = {
 };
 
 /**
+ * Every key the exporter writes. Anything else is refused rather than ignored.
+ *
+ * A typo is the whole reason. `"outline"` or `"ledinner"` parses as perfectly
+ * good JSON and reads as an empty override set — the generator would then write
+ * a shard with the tracer's version of a hold somebody had corrected, pass every
+ * gate, and say nothing. The same silence a stale placement id would buy, from a
+ * missing letter.
+ */
+const ALLOWED_TOP_LEVEL_KEYS = new Set(['$comment', 'outlines', 'ledInner', 'meta']);
+
+/**
+ * A placement key, exactly as `Object.keys` on a JSON object gives it.
+ *
+ * Digits only — not `Number()`, which happily accepts `" 1448 "` and
+ * `"1.448e3"` and would collapse three different-looking keys onto one
+ * placement, last one winning.
+ */
+const PLACEMENT_KEY = /^\d+$/;
+
+/**
  * Does this ring plausibly belong to this placement?
  *
  * The same two-part question the backend asks on write — shape, then "is it
@@ -78,8 +98,10 @@ function parseRingMap(
   }
 
   for (const [placementText, ring] of Object.entries(raw)) {
+    if (!PLACEMENT_KEY.test(placementText)) {
+      throw new Error(`${context}: "${placementText}" is not a placement id — expected digits only`);
+    }
     const placementId = Number(placementText);
-    if (!Number.isInteger(placementId)) throw new Error(`${context}: "${placementText}" is not a placement id`);
     const entry = `${context} placement ${placementId}`;
     // HARD FAIL, never a silent drop. A stale override is a correction someone
     // made that has stopped being applied, and the only moment anyone would
@@ -119,14 +141,32 @@ export function loadOverridesFor(
   const filePath = path.join(overridesDir, `${shardKey}.json`);
   if (!existsSync(filePath)) return { outlines: new Map(), ledInner: new Map() };
 
-  let parsed: OverrideFileShape;
+  let raw: unknown;
   try {
-    parsed = JSON.parse(readFileSync(filePath, 'utf8')) as OverrideFileShape;
+    raw = JSON.parse(readFileSync(filePath, 'utf8'));
   } catch (error) {
     throw new Error(
-      `${shardKey}: overrides file is not valid JSON — ${error instanceof Error ? error.message : error}`,
+      `${shardKey}: overrides file is not valid JSON — ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+
+  // Valid JSON is not the same question as "the shape this file is meant to
+  // have". A bare array, a string, or `null` all parse, and cast straight to
+  // `OverrideFileShape` they load as zero overrides with no complaint.
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error(
+      `${shardKey}: overrides file must be a JSON object, got ${Array.isArray(raw) ? 'array' : typeof raw}`,
+    );
+  }
+  const unknownKeys = Object.keys(raw).filter((key) => !ALLOWED_TOP_LEVEL_KEYS.has(key));
+  if (unknownKeys.length > 0) {
+    throw new Error(
+      `${shardKey}: unknown key(s) ${unknownKeys.map((key) => `"${key}"`).join(', ')} — ` +
+        `expected ${[...ALLOWED_TOP_LEVEL_KEYS].map((key) => `"${key}"`).join(', ')}. ` +
+        `A misspelt table reads as an empty one, which is a correction silently not applied.`,
+    );
+  }
+  const parsed = raw as OverrideFileShape;
 
   const known = new Set(placementIds);
   return {

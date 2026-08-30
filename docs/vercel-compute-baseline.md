@@ -3,10 +3,15 @@
 The burn-hunt write-up for [#4650], and the CPU/memory baseline [#4648] Phase 2 needs to size the
 Railway web container.
 
-**Status: the post-wave column is empty on purpose.** Filling it needs a `VERCEL_TOKEN`, which the
-agent that wrote this does not have (`~/.local/share/com.vercel.cli/auth.json` is `{}`, and the
-Vercel MCP is unauthenticated). Section 2 has the literal commands. An obviously-empty cell beats a
-number nobody can trace back to a query.
+**Status: partially filled as of 2026-08-28.** The Vercel MCP was authenticated on 2026-08-25, which
+unblocked the *invocation* rows — §5's table now carries measured post-wave traffic, and §2b records
+exactly how. It did **not** unblock the CPU and memory rows: the MCP exposes logs, error clusters,
+analytics and deployment tools, and **no metric of CPU, memory, or origin transfer at all**. Those
+cells are still TODO, and the container-size recommendation is still blocked. `VERCEL_TOKEN` for
+`vercel metrics` remains the only known way to get them — §2 has the literal commands.
+
+An obviously-empty cell beats a number nobody can trace back to a query. In particular: **an
+invocation count is not a CPU measurement**, and nothing below substitutes one for the other.
 
 > **Do not turn the Observability ingest down before the pull runs.** [#4648] Phase 0 gates both the
 > Speed Insights cancellation and the Observability-tier downgrade on "after #4650's data pull".
@@ -78,6 +83,99 @@ vercel usage -t "$VERCEL_TOKEN"
 The exact metric ids and dimension names in steps 2–5 have **not** been verified against this team's
 Observability — that needs the token. `vercel metrics schema` is authoritative; if `cache_result` or
 `route` is spelled differently there, use what it says.
+
+## 2b. What the Vercel MCP could and could not answer (2026-08-28)
+
+The MCP path is cheaper than the token path and worth trying first, so this records what it actually
+returns. Session anchored at **2026-08-28T04:25:54Z**, project `boardsesh`, team
+`marcodejonghs-projects`, `environment: production` on every call. (Both MCP tools accept the slug in
+place of the `prj_…` / `team_…` id, so the ids are not reproduced here.)
+
+**Tools that exist:** `get_runtime_logs`, `get_runtime_errors`, `get_web_analytics`,
+`list_deployments`, `get_project`, `list_projects`, `list_teams`, plus documentation/purchase/toolbar
+tools. **Tools that do not exist:** anything returning CPU time, memory, RSS, concurrency, or origin
+transfer. There is no `metrics`, `usage`, or `billing` tool. `get_runtime_logs` at `limit: 4` was
+checked line-by-line to be sure the payload carries no hidden fields — a function log line is
+`dep=<deploymentId> cache=<HIT|MISS>` and a status code, with **no duration and no memory**. That is
+why the CPU and RSS rows in §5 are still TODO.
+
+### The 24-hour truncation trap
+
+**`get_runtime_logs` with `since: 24h` is silently truncated.** Reproduced independently here, three
+windows against the same anchor, `group_by: source`, counting the `function` bucket:
+
+| Window  | `function` count | Scale | Implied per day |
+| ------- | ---------------- | ----- | --------------- |
+| 30 min  | 6,523            | ×48   | **313,104**     |
+| 6 h     | 68,540           | ×4    | **274,160**     |
+| 24 h    | 185,921          | ×1    | 185,921         |
+
+The two short windows agree within 13%; the 24-hour window under-reports them by 32–41%. It is not a
+traffic shape — it is truncation, and it reproduces on `group_by: route` too. **Derive every daily
+rate from a 30 min or 6 h window and scale.** Anyone re-running this on `since: 24h` will conclude the
+remediation worked substantially better than it did.
+
+`source: ["serverless"]` is the `function` bucket 1:1 with invocations: the per-route counts sum to
+68,126 of the 68,540 `function` total over the 6 h window, with the residual in the 17 routes below
+the display cut-off.
+
+### Reconciliation against the 2026-08-26 numbers on [#4650]
+
+Marco's post-fix window was 2026-08-26T20:13Z → 2026-08-27T02:13Z. Re-querying that **exact** window:
+
+| Route                    | This pull (6 h ×4) | [#4650] comment 2026-08-26 | Delta     |
+| ------------------------ | ------------------ | -------------------------- | --------- |
+| Function invocations     | 148,432            | ~133,300                   | +11%      |
+| — climb view             | **83,728**         | **~83,700**                | **match** |
+| — `board-render`         | 49,820             | ~35,300                    | +41%      |
+| — `/setter/[username]`   | 9,456              | ~7,800                     | +21%      |
+
+Climb view matches to four significant figures, so the window and the method are the same. The
+`board-render` gap is therefore real rather than methodological, and the most likely cause is
+late-arriving log ingestion after the comment was written. Recorded as a disagreement rather than
+silently overwritten: the **−84% board-render** figure in that comment is probably nearer **−77%**,
+and the stated `0.42 : 1` board-render-to-climb-view ratio measures **0.595 : 1** on the same window
+today. The wave still worked; the win was slightly smaller than first posted.
+
+### Traffic has climbed back since the wave
+
+Same-clock 6 h windows (22:25Z → 04:25Z), scaled ×4:
+
+| Night     | Climb view | `board-render` | `/setter` | Ratio br : cv |
+| --------- | ---------- | -------------- | --------- | ------------- |
+| Aug 25→26 | 87,688     | 42,112         | 9,456     | 0.48 : 1      |
+| Aug 26→27 | 96,368     | 59,204         | 13,004    | 0.61 : 1      |
+| Aug 27→28 | 154,376    | 86,844         | 22,240    | 0.56 : 1      |
+
+Climb view is up **76%** in two nights. The ~133 k/day low-water mark recorded on 2026-08-26 was a
+trough, not the new steady state, and any sizing done off that single figure would undershoot.
+
+### A new failure mode that outranks CPU for sizing
+
+`get_runtime_errors` over 24 h returns 50 clusters. The top three by volume:
+
+| Cluster                                              | Count | Users | First seen               |
+| ---------------------------------------------------- | ----- | ----- | ------------------------ |
+| `Front door: similar-climbs unavailable` (AbortError) | 1,554 | 299   | 2026-08-22T11:42:43Z     |
+| `i: sorry, too many clients already`                  | 759   | 230   | **2026-08-27T23:35:52Z** |
+| `Error fetching results or climb: … too many clients` | 753   | 230   | 2026-08-10T04:05:17Z     |
+
+`sorry, too many clients already` is Postgres `53300` (`InitProcess`, `severity: FATAL`) —
+**connection-slot exhaustion**, not CPU. It appears on climb view and `/list`, and it tracks the
+traffic rise in the table above. `get_runtime_logs` with `statusCode: 500` over the 6 h window puts
+**761** 500s on climb view and 12 on `/list`, so roughly **3,090 user-visible 500s/day**.
+
+**It is a burst, not a continuous outage.** First seen 2026-08-27T23:35:52Z, last 2026-08-28T03:52:25Z
+— about 4h15m, inside the overnight crawl peak — and the 30 min window ending 04:25Z shows 1 error in
+5,528 invocations. That makes it worse to detect, not better: it will recur on the next peak and
+nothing alerts on it. The second cluster of 753 is very likely the same events logged at a wrapping
+call site, so the two do not sum.
+
+This matters for [#4648] Phase 2 well beyond this document: the binding constraint on the web tier
+right now is the **Postgres connection ceiling**, not vCPU. A Railway container sized purely on CPU
+would hit the same wall on day one. Sizing needs a pooler decision (PgBouncer / transaction pooling)
+alongside the CPU number. Filed as **[#4842]** — and it is the scenario [#4461] predicted in writing
+before being closed on 2026-08-15 without the pool-sizing decision being made.
 
 ## 3. Where the compute goes
 
@@ -209,32 +307,94 @@ Mode or rate-limit rule on www. Free tier, already fronting the domain, and it s
 cutover where a `vercel firewall` rule would be thrown away. Dashboard action — fold it into [#4652],
 which already owns Cloudflare config for www.
 
-## 5. Railway sizing for #4648 Phase 2 — 24-hour mean, NOT a sizing figure
+## 5. Railway sizing for #4648 Phase 2 — invocations measured, CPU still blocked
 
-42.3 CPU-h/day ÷ 24 = **1.76 vCPU, 24-hour mean utilisation**.
+42.3 CPU-h/day ÷ 24 = **1.76 vCPU, 24-hour mean utilisation** (pre-wave).
 
 **Do not size a container on that number.** Fluid autoscales horizontally, so CPU-hours ÷ 24 says
 nothing about how much CPU is wanted at once at peak, and the traffic is nowhere near flat — §4's own
 series swings about 29× between peak (463/hr) and trough (≤16/hr). A single Railway container has to
 survive the peak, not the mean.
 
-|                          | Pre-wave (Aug 19–21) | Post-wave (Aug 23 09:00Z →)     |
-| ------------------------ | -------------------- | ------------------------------- |
-| CPU-h/day                | 42.3                 | **TODO — needs `VERCEL_TOKEN`** |
-| 24-h mean vCPU           | 1.76                 | **TODO**                        |
-| p95 concurrent CPU       | **TODO**             | **TODO**                        |
-| Peak concurrent CPU      | **TODO**             | **TODO**                        |
-| Peak RSS                 | **TODO**             | **TODO**                        |
-| Invocations/day          | 600 k                | **TODO**                        |
-| Fast Origin Transfer/day | 33.7 GB              | **TODO**                        |
+Three columns, because two remediation waves landed rather than one:
 
-**Container size recommendation: TODO.** It needs the p95 and peak rows above from the same pull, not
-just the mean. Two things will move the answer materially before it is worth computing:
+- **Pre-wave (Aug 19–21)** — §1's billing arithmetic.
+- **Post-wave-1 (Aug 26)** — after [#4675]/[#4685]/[#4667]; the [#4650] comment of 2026-08-26,
+  re-derived here on its own window (§2b).
+- **Post-wave-2 (Aug 28)** — after [#4764]/[#3837]/[#4716]/[#4677]; this pull, 6 h window
+  2026-08-27T22:25Z → 2026-08-28T04:25Z, ×4, cross-checked against a 30 min window.
 
-- Whether `/api/internal/board-render` stays in the same container ([#4715]). It is the top row by
-  log volume and the only route with a `memory: 3009` override in `vercel.json`, so moving it changes
-  both the CPU and the memory answer.
-- The post-wave CPU number, which is the whole point of the pull.
+|                          | Pre-wave (Aug 19–21) | Post-wave-1 (Aug 26) | Post-wave-2 (Aug 28)  |
+| ------------------------ | -------------------- | -------------------- | --------------------- |
+| CPU-h/day                | 42.3                 | **TODO** ¹           | **TODO** ¹            |
+| 24-h mean vCPU           | 1.76                 | **TODO** ¹           | **TODO** ¹            |
+| p95 concurrent CPU       | **TODO** ¹           | **TODO** ¹           | **TODO** ¹            |
+| Peak concurrent CPU      | **TODO** ¹           | **TODO** ¹           | **TODO** ¹            |
+| Peak RSS                 | **TODO** ²           | **TODO** ²           | **TODO** ²            |
+| Invocations/day          | 600 k                | 148 k                | **274 k – 313 k**     |
+| — climb view             | —                    | 83.7 k               | 154 k                 |
+| — `board-render`         | —                    | 49.8 k               | 86.8 k                |
+| — `/setter/[username]`   | —                    | 9.5 k                | 22.2 k                |
+| Middleware invocations   | 218 k                | 111 k                | 197 k – 225 k         |
+| Sticky-locale 307s/day ⁴ | ~15 k                | 14.2 k               | 12.4 k                |
+| Fast Origin Transfer/day | 33.7 GB              | **TODO** ³           | **TODO** ³            |
+
+¹ **No CPU metric exists in the Vercel MCP.** Tried `get_runtime_logs` (no duration field on any log
+line, verified at `limit: 4`), `get_runtime_errors`, `get_web_analytics`, `list_deployments`,
+`get_project`. A tool search across the whole MCP surface for metrics/CPU/memory/usage/billing
+returns only `search_vercel_documentation` and the purchase tools. Needs `vercel metrics` with a
+`VERCEL_TOKEN` — §2.
+
+² **No memory metric either**, same tools, same result. Fluid *provisioned* memory is in the §1
+billing table but provisioned ≠ resident, so it cannot stand in for peak RSS.
+
+³ **No transfer metric in the MCP.** It is a billing quantity; `vercel usage` or the dashboard is the
+source. Deliberately not estimated from response sizes × invocations — that would be a fabricated
+number in a row that reads as measured.
+
+⁴ 307s are `statusCode: 307` filtered, not the raw `redirect` bucket, which also carries the climb-slug
+308s. On the Aug 28 window the two differ by 146 lines in 6 h; on the Aug 26 window they are the same
+to within one line. The 307s have barely moved across either wave — the observation behind [#4802].
+
+### What was measured per request (2026-08-28, against production)
+
+These are wall-clock, not CPU-seconds, and are recorded as such:
+
+- **`board-render`** — `server-timing: wasm;dur=6.1, sharp;dur=389.4, compose;dur=389.3,
+  cache;desc=base-hit`, so **~396 ms wall** for a 246,558-byte WebP at `memory: 3009`.
+- **`board-render` is now served by Cloudflare** — `cf-cache-status: HIT`, 34 ms client-observed,
+  under `cache-control: public, max-age=31536000, immutable`. [#3837] is live and working. The URL
+  now carries a `&v=<hash>` renderer version, confirming [#4773] shipped as well.
+- **Climb view** — 3.35 s cold, `x-vercel-cache: MISS`, `cf-cache-status: DYNAMIC`, 301,514 bytes
+  raw. Reproduces the 2026-08-25 measurement on [#4650] exactly.
+
+**`sharp;dur` is not CPU time.** libvips is multi-threaded, so the CPU-seconds behind a 389 ms
+`sharp` span may be a multiple of it, and the span also contains I/O wait. Multiplying 396 ms by
+86,844 renders/day yields ~9.6 CPU-h/day for `board-render` alone, but that arithmetic is only sound
+if the step is single-threaded and CPU-bound, and neither is established. It is **not** entered in
+the table above for that reason.
+
+### Container size recommendation: still blocked
+
+**Blocked on p95 and peak concurrent CPU, and on peak RSS — none of which the MCP can produce.**
+What would unblock it, in order of preference:
+
+1. **A `VERCEL_TOKEN` scoped to the boardsesh team.** `vercel metrics` (CLI v54.1.0) is the only
+   thing that groups CPU by route, and §2 already has the four literal commands and both windows.
+   Everything else here is a workaround for its absence.
+2. Failing that, the Vercel dashboard's Observability → Compute view, read by hand, for the same two
+   windows.
+
+Three things will move the answer materially even once the CPU number lands:
+
+- Whether `/api/internal/board-render` stays in the same container ([#4715]). It is the only route
+  with a `memory: 3009` override in `vercel.json`, so moving it changes both the CPU and the memory
+  answer — and it is now 32% of invocations rather than 49%.
+- **Postgres connection slots, which are the binding constraint today, not vCPU** (§2b, [#4842]).
+  ~3,090 500s/day are `53300` connection-slot exhaustion, in bursts at crawl peak. Sizing this
+  container on CPU alone reproduces it on Railway.
+- Traffic is trending back up — climb view rose 76% between the nights of Aug 25 and Aug 27 — so the
+  post-wave figures are a moving target rather than a settled floor.
 
 ## 6. Follow-ups filed from this write-up
 
@@ -294,7 +454,9 @@ Still open with existing owners, cited here and not absorbed: [#4664] (WASM 3-co
 
 [#3795]: https://github.com/boardsesh/boardsesh/pull/3795
 [#3798]: https://github.com/boardsesh/boardsesh/pull/3798
+[#3837]: https://github.com/boardsesh/boardsesh/pull/3837
 [#4271]: https://github.com/boardsesh/boardsesh/pull/4271
+[#4461]: https://github.com/boardsesh/boardsesh/issues/4461
 [#4552]: https://github.com/boardsesh/boardsesh/issues/4552
 [#4592]: https://github.com/boardsesh/boardsesh/pull/4592
 [#4648]: https://github.com/boardsesh/boardsesh/issues/4648
@@ -305,6 +467,11 @@ Still open with existing owners, cited here and not absorbed: [#4664] (WASM 3-co
 [#4665]: https://github.com/boardsesh/boardsesh/issues/4665
 [#4667]: https://github.com/boardsesh/boardsesh/pull/4667
 [#4675]: https://github.com/boardsesh/boardsesh/pull/4675
+[#4677]: https://github.com/boardsesh/boardsesh/pull/4677
 [#4685]: https://github.com/boardsesh/boardsesh/pull/4685
 [#4715]: https://github.com/boardsesh/boardsesh/issues/4715
 [#4716]: https://github.com/boardsesh/boardsesh/pull/4716
+[#4764]: https://github.com/boardsesh/boardsesh/pull/4764
+[#4773]: https://github.com/boardsesh/boardsesh/issues/4773
+[#4802]: https://github.com/boardsesh/boardsesh/issues/4802
+[#4842]: https://github.com/boardsesh/boardsesh/issues/4842

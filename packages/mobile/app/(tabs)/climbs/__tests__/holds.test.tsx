@@ -193,16 +193,15 @@ describe('HoldFilterScreen', () => {
     expect(emitMock).toHaveBeenCalledWith({ [String(TAPPED_HOLD_ID)]: { STARTING: 'include' } });
   });
 
-  // The filter sheet hides the Holds row for Woods, so only a hand-built link
-  // gets here — and painting holds would search against placement rows that
-  // don't exist for that board.
-  it('leaves the route for a board that has no hold placements to search', () => {
+  // Woods hold ids match `board_climb_holds.hold_id` and the `p<id>r` frames token
+  // directly — no placement bridge — so this route paints for it like any other
+  // board (boardsesh/boardsesh#4748).
+  it('paints the board for a code-driven board instead of leaving the route', () => {
     routeParams.current = { boardName: 'woods', layoutId: '1', sizeId: '1', setIds: '1' };
 
-    const { container, queryByText } = render(<HoldFilterScreen />);
+    const { container } = render(<HoldFilterScreen />);
 
-    expect(routerMock.replace).toHaveBeenCalledWith('/(tabs)/climbs');
-    expect(queryByText('board')).toBeNull();
-    expect(container.querySelector('[data-spinner]')).not.toBeNull();
+    expect(routerMock.replace).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-spinner]')).toBeNull();
   });
 });

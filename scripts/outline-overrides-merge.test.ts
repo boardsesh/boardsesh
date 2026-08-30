@@ -116,4 +116,45 @@ describe('loadOverridesFor', () => {
     writeOverrides({ outlines: { banana: SQUARE } });
     expect(() => load()).toThrow(/"banana" is not a placement id/);
   });
+
+  // `Number(' 1448 ')` is 1448 and so is `Number('1.448e3')`. Three keys that
+  // look like three different placements would collapse onto one, last write
+  // winning, with nothing said about it.
+  it.each([' 1448 ', '1.448e3', '+1448'])('hard-fails on the near-miss placement key "%s"', (key) => {
+    writeOverrides({ outlines: { [key]: SQUARE } });
+    expect(() => load()).toThrow(/is not a placement id — expected digits only/);
+  });
+
+  // Valid JSON that is not the shape this file has. Cast unchecked, every one of
+  // these loads as zero overrides and says nothing.
+  it.each([
+    ['an array', [1, 2, 3]],
+    ['a string', 'overrides'],
+    ['a number', 42],
+    ['null', null],
+  ])('hard-fails on a top-level %s', (_label, body) => {
+    const filePath = path.join(fixtureDir, `${SHARD_KEY}.json`);
+    mkdirSync(path.dirname(filePath), { recursive: true });
+    writeFileSync(filePath, `${JSON.stringify(body)}\n`);
+    expect(() => load()).toThrow(/must be a JSON object/);
+  });
+
+  // A misspelt table is the quiet version of a dropped correction: the file
+  // parses, the ring is right there in the diff, and the generator merges
+  // nothing.
+  it.each(['outline', 'ledinner', 'ledInners', 'silhouettes'])('hard-fails on the unknown top-level key %s', (key) => {
+    writeOverrides({ $comment: 'x', [key]: { 1448: SQUARE } });
+    expect(() => load()).toThrow(new RegExp(`unknown key\\(s\\) "${key}"`));
+  });
+
+  it('accepts every key the exporter actually writes', () => {
+    writeOverrides({
+      $comment: 'generated',
+      outlines: { 1448: SQUARE },
+      ledInner: { 1448: SQUARE.map((value) => value * 0.4) },
+      meta: { 1448: { author: 'marco', updatedAt: '2026-08-30T00:00:00.000Z', kinds: ['silhouette'] } },
+    });
+    expect(load().outlines.size).toBe(1);
+    expect(load().ledInner.size).toBe(1);
+  });
 });

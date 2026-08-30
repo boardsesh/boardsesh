@@ -81,12 +81,15 @@ not something the generator can merge.
 - **An overrides change without regenerated shards fails CI.**
   `vp run check:board-art-geometry` is a byte comparison over the generated tables.
 - **A stale override breaks the build loudly.** An override naming a placement its
-  config no longer has throws out of the generator rather than being skipped —
-  see `scripts/outline-overrides-merge.ts`. Delete the row and re-export.
-- **Gates 1–3 still bind on a hand-drawn silhouette** (it sits on its own placement,
-  swallows no second placement, is not the crop rectangle). Gate 1's pin table,
-  gate 5 and gate 6 do not: those measure tracer pathologies, and a human repairing
-  a contact cut draws the hold's real edge, which is on the neighbour's art by
-  definition.
+  config no longer has throws out of the generator rather than being skipped — and so
+  does a misspelt table key, an unparseable file, or a file that is not a JSON object.
+  See `scripts/outline-overrides-merge.ts`. Delete the row and re-export.
+- **Gates 2, 3 and 7 still bind on a hand-drawn silhouette** (it swallows no second
+  placement, is not the crop rectangle, keeps its own hold). Gates 1, 5 and 6 do not.
+  5 and 6 measure tracer pathologies, and a human repairing a contact cut draws the
+  hold's real edge, which is on the neighbour's art by definition. Gate 1 measures the
+  centre rule at the 1.6 board px simplification tolerance (0.052 radii), five times
+  tighter than the 0.25 radii the editor and the merge accept — so it would red a legal
+  correction with no remedy. The 0.25 rule binds on the committed ring instead.
 
 Full context: `docs/board-art-geometry.md`.

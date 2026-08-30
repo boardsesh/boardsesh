@@ -48,6 +48,9 @@ vi.mock('@/app/lib/url-utils', () => ({
 
 vi.mock('@/app/components/board-renderer/util', () => ({
   buildOgBoardRenderUrl: vi.fn(() => 'https://ws.boardsesh.com/og/climb'),
+  buildOverlayPreloadUrls: vi.fn((_bd: unknown, frames: string | null | undefined) =>
+    frames ? ['/api/internal/board-render'] : [],
+  ),
   buildOverlayUrl: vi.fn(() => '/api/internal/board-render'),
 }));
 

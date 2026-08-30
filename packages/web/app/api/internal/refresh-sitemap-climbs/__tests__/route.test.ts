@@ -42,6 +42,7 @@ beforeEach(() => {
     scanDurationMs: 41_000,
   };
   vi.stubEnv('CRON_SECRET', 'test-secret');
+  vi.stubEnv('CLIMB_SITEMAPS_ENABLED', 'true');
 });
 
 afterEach(() => {
@@ -60,6 +61,25 @@ describe('GET /api/internal/refresh-sitemap-climbs', () => {
 
   it('401s a wrong bearer token', async () => {
     const response = await routeModule.GET(request('', { authorization: 'Bearer wrong-secret' }));
+
+    expect(response.status).toBe(401);
+    expect(refresh.calls).toHaveLength(0);
+  });
+
+  it('reports an authenticated disabled skip without running the scan', async () => {
+    vi.stubEnv('CLIMB_SITEMAPS_ENABLED', 'false');
+
+    const response = await routeModule.GET(request('', AUTHORIZED));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ shard: 'climbs', skipped: 'disabled' });
+    expect(refresh.calls).toHaveLength(0);
+  });
+
+  it('still authenticates before reporting a disabled skip', async () => {
+    vi.stubEnv('CLIMB_SITEMAPS_ENABLED', 'false');
+
+    const response = await routeModule.GET(request());
 
     expect(response.status).toBe(401);
     expect(refresh.calls).toHaveLength(0);
