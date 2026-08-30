@@ -21,6 +21,12 @@ name: Build Renderer iOS Artifact
 
 on:
   workflow_dispatch:
+  # TEMPORARY (removed before this PR leaves draft): a workflow_dispatch-only
+  # workflow can't be dispatched until its file is on the default branch, and
+  # this branch needs one macOS run to produce the very artifact it commits.
+  push:
+    branches:
+      - fix/rebuild-native-renderer-artifacts
 
 concurrency:
   group: build-renderer-ios-artifact-${{ github.ref }}
