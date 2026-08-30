@@ -35,12 +35,22 @@
  * v4 and v6 made, and one shared bump keeps native and Expo web on the same
  * contract.
  *
+ * v8 lights the LED base plate: on a hold whose art carries a traced plate
+ * boundary, the ring between that boundary and the silhouette is painted in the
+ * role colour and the glow is measured off that ring rather than the whole
+ * hold. Nothing about it is a setting, so the cache key — which describes the
+ * settings a render was asked for, not the drawing that came back — cannot tell
+ * a plated render from the pre-plate one it would happily reuse. Holds and
+ * boards with no plate are byte-identical and pay a one-time re-render, the
+ * same trade v4, v6 and v7 made.
+ *
  * Lives in its own module so both the hook (use-native-climb-render.ts) and the
  * web overlay warm-up (overlay-cache-warmup.web.ts) can read it without a
  * circular import — the hook imports the warm-up, so the warm-up must not import
  * back from the hook.
  */
-export const RENDERER_VERSION = 7;
+// The Woods work bumps this in parallel; on a merge conflict take max + 1.
+export const RENDERER_VERSION = 8;
 
 /** Cache-key prefix stamped on every overlay produced by the current renderer. */
 export const currentOverlayVersionPrefix = (): string => `v${RENDERER_VERSION}_`;

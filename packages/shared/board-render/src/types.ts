@@ -95,6 +95,14 @@ export type LedCoverConfig = { radius_fraction?: number; color?: string; opacity
 export type WasmRenderHold = RenderableHold & {
   /** Flat `[x0, y0, x1, y1, …]` outline, in units of `r` relative to the hold centre. */
   outline?: number[];
+  /**
+   * Inner boundary of this hold's LED base plate — the hold proper — in the
+   * same units and flat, implicitly-closed form as `outline`. The renderer
+   * lights `outline` MINUS this ring, which is the part a real board's LED
+   * shines through. Set only where somebody has traced the plate; without it
+   * the whole silhouette lights, exactly as before.
+   */
+  led_inner?: number[];
   /** `[dx, dy]` LED position offset, in units of `r` relative to the hold centre. */
   led?: [number, number];
   /** 0–1 lightness of the board photo under this hold's silhouette. */
