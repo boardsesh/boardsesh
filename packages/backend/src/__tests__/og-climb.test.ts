@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import sharp from 'sharp';
+import { MAX_SET_IDS_LENGTH } from '@boardsesh/board-render';
 import { RateLimitError } from '../utils/rate-limiter';
 
 // The handler under test talks to the board-render service and the Redis rate
@@ -109,6 +110,18 @@ describe('handleOgClimb', () => {
       const res = await run({ ...validParams, set_ids: '1,a' });
       expect(res.statusCode).toBe(400);
       expect(renderOgClimb).not.toHaveBeenCalled();
+    });
+
+    it('rejects oversized set_ids before schema and render work', async () => {
+      const res = await run({ ...validParams, set_ids: '1'.repeat(MAX_SET_IDS_LENGTH + 1) });
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(String(res.body))).toEqual({
+        error: 'Invalid parameters',
+        details: ['set_ids is too large'],
+      });
+      expect(renderOgClimb).not.toHaveBeenCalled();
+      expect(ensureBoardRendererAvailable).not.toHaveBeenCalled();
+      expect(checkRateLimitRedis).not.toHaveBeenCalled();
     });
 
     it('rejects missing or empty frames with 400 — a blank board must not get immutable 200 headers', async () => {

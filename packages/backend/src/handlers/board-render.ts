@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   MAX_FRAMES_LENGTH,
   MAX_SET_IDS,
+  MAX_SET_IDS_LENGTH,
   VALID_BOARD_NAMES,
   boardseshRenderQuerySchema,
   createOgImageHeaders,
@@ -98,6 +99,10 @@ export async function handleBoardRender(req: IncomingMessage, res: ServerRespons
   const parsedSizeId = parseNonnegativeInteger(sizeId);
   if (parsedSizeId === null) {
     sendJson(req, res, 400, { error: 'size_id must be a nonnegative integer' });
+    return;
+  }
+  if (setIds.length > MAX_SET_IDS_LENGTH) {
+    sendJson(req, res, 400, { error: 'set_ids is too large' });
     return;
   }
   const parsedSetIds = setIds.split(',');

@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RateLimitError } from '../utils/rate-limiter';
+import { MAX_SET_IDS_LENGTH } from '@boardsesh/board-render';
 
 vi.mock('../services/board-render', () => ({
   InvalidBoardRenderConfigError: class InvalidBoardRenderConfigError extends Error {
@@ -175,6 +176,7 @@ describe('handleBoardRender', () => {
       { ...validParams, set_ids: '1,,20' },
       { ...validParams, set_ids: '1,a' },
       { ...validParams, set_ids: '999999999999999999999999' },
+      { ...validParams, set_ids: '1'.repeat(MAX_SET_IDS_LENGTH + 1) },
       { ...validParams, set_ids: '1,2,3,4,5,6,7,8,9,10,11' },
     ];
 
