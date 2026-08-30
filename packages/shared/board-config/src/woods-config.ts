@@ -66,7 +66,6 @@ const WOODS_HOLD_TYPE_TO_CODE: Record<WoodsHoldType, number> = {
 export function encodeWoodsHoldsToFrames(holds: Array<{ type: string; baseHoldLocation: number }>): string {
   return holds
     .filter((hold): hold is { type: WoodsHoldType; baseHoldLocation: number } => hold.type in WOODS_HOLD_TYPE_TO_CODE)
-    .slice()
     .sort((a, b) => a.baseHoldLocation - b.baseHoldLocation)
     .map((hold) => `p${hold.baseHoldLocation}r${WOODS_HOLD_TYPE_TO_CODE[hold.type]}`)
     .join('');
@@ -192,6 +191,80 @@ export function getWoodsHoldImagePosition(
   if (!grid) return undefined;
   const geometry = WOODS_GEOMETRY[size];
   return { cx: grid.x * geometry.width, cy: grid.y * geometry.height };
+}
+
+/**
+ * A hold's position in Woods ZONE-GRID space — the coordinates the "Board region"
+ * search box is expressed in.
+ *
+ * The box is dragged over the board art, and `svgToGrid` in
+ * `@boardsesh/climb-filters` converts a render position back to grid units using
+ * only the `boardWidth`/`boardHeight` and `edge_*` that
+ * {@link getWoodsBoardDetails} reports. For Woods that is board-art pixels over a
+ * `0..maxColumns` × `0..numRows` box, so the conversion collapses to scaling the
+ * normalised hold centre — with y flipped, because grid y counts up from the floor
+ * while the art's y counts down from the top.
+ *
+ * This is deliberately NOT the hold's real (row, column): rows have different
+ * lengths and an uneven pitch, so the hold in column 3 is not at x = 3. It doesn't
+ * need to be. The zone filter only needs the client and the server to put a hold in
+ * the same place, and both derive it from the same normalised centre.
+ */
+export function getWoodsHoldZonePosition(
+  baseHoldLocation: number,
+  size: WoodsBoardSize,
+): { x: number; y: number } | undefined {
+  const position = getWoodsHoldGridPosition(baseHoldLocation, size);
+  if (!position) return undefined;
+  const geometry = WOODS_GEOMETRY[size];
+  return { x: position.x * geometry.maxColumns, y: (1 - position.y) * geometry.numRows };
+}
+
+/** The four edges of a board-region search box, in Woods zone-grid space. */
+export type WoodsZoneBox = {
+  edgeLeft: number;
+  edgeRight: number;
+  edgeBottom: number;
+  edgeTop: number;
+};
+
+/**
+ * Every hold of a board size that sits inside a region box, so the climb search
+ * can answer a zone query with no `board_placements` / `board_holes` rows behind
+ * it — Woods is code-driven and has none (boardsesh/boardsesh#4748).
+ *
+ * Inclusive on all four edges, matching `isHoldInsideZone` on the client: the
+ * `allHolds` filter keeps a climb whose every hold fits inside the box, so a hold
+ * sitting exactly on an edge must not disqualify it. Positions are compared
+ * unrounded for the same reason — the client prunes its own hold filters with the
+ * raw float, and a rounded server would disagree on the boundary.
+ *
+ * The two Woods sizes number their holds differently, so the caller passes the
+ * size being browsed. A size id that isn't a Woods board returns null rather than
+ * a plausible-looking list, so a stale or crafted size fails the search closed.
+ *
+ * Ids come back ascending: the keys of `WOODS_HOLD_POSITIONS` are array indices,
+ * which `Object.keys` enumerates in numeric order.
+ */
+export function woodsHoldIdsInZone(sizeId: number, box: WoodsZoneBox): number[] | null {
+  const dimension = woodsSizeIdToDimension(sizeId);
+  if (!dimension) return null;
+
+  const inside: number[] = [];
+  for (const holdKey of Object.keys(WOODS_HOLD_POSITIONS[dimension])) {
+    const baseHoldLocation = Number(holdKey);
+    const position = getWoodsHoldZonePosition(baseHoldLocation, dimension);
+    if (!position) continue;
+    if (
+      position.x >= box.edgeLeft &&
+      position.x <= box.edgeRight &&
+      position.y >= box.edgeBottom &&
+      position.y <= box.edgeTop
+    ) {
+      inside.push(baseHoldLocation);
+    }
+  }
+  return inside;
 }
 
 /**

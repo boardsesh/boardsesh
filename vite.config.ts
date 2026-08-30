@@ -517,6 +517,10 @@ export default defineConfig({
         command: 'node --import tsx scripts/generate-board-art-geometry.ts --check',
         cache: false,
       },
+      'generate:woods-dark-art': {
+        command: 'node --import tsx scripts/generate-woods-dark-art.ts',
+        cache: false,
+      },
       'generate:oss-licenses': {
         command: 'node --import tsx scripts/generate-oss-licenses.ts',
         cache: false,

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test'
 // Isolate the warming logic from the real URL builders — the test only cares
 // which URLs get fetched, not how they're assembled.
 vi.mock('@/app/components/board-renderer/util', () => ({
-  buildOverlayUrl: vi.fn(() => '/api/internal/board-render?overlay'),
+  buildBoardArtLayers: vi.fn(() => ({ backgroundUrls: [], overlayUrl: '/api/internal/board-render?overlay' })),
   buildOgBoardRenderUrl: vi.fn(() => 'https://ws.boardsesh.com/og/climb?og'),
 }));
 

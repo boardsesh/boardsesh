@@ -57,7 +57,13 @@ import sharp from 'sharp';
 const ROOT_DIR = path.resolve(import.meta.dirname, '..');
 const IMAGES_DIR = path.join(ROOT_DIR, 'packages/web/public/images');
 
-/** Suffix that marks a dark-mode sibling. Must match `DARK_VARIANT_SUFFIX` in background-image-cache.ts. */
+/**
+ * Suffix that marks a dark-mode sibling. Must match `DARK_VARIANT_SUFFIX` in
+ * background-image-cache.ts, and `DARK_SUFFIX` in scripts/generate-woods-dark-art.ts, which
+ * writes the same kind of sibling through a different transform. Deliberately not shared by
+ * import: this module runs its generator on load, so importing it from the Woods script
+ * would regenerate the MoonBoard art as a side effect.
+ */
 const DARK_SUFFIX = '.dark.webp';
 
 /**
@@ -146,9 +152,11 @@ const ART_GROUPS: readonly ArtGroup[] = [
  *   - `moonboardmasters2017|2019/screw-onfeet` — small mid-tone screw-on footholds; they read
  *     already, and lifting them would crowd the lifted set B they sit between.
  *   - `woodenholds*` — mid-tone wood.
- *   - `woods/woods-8x10-bg` / `woods-12x12-bg` — an opaque photograph of the hold set on a
- *     white ground, not a near-black transparent layer; there is nothing to lift, and the
- *     tint/curve transforms would only wash the wood grain out.
+ *   - `woods/woods-8x10-bg` / `woods-12x12-bg` — hold sprites on an opaque white ground, not
+ *     a near-black transparent layer. There is nothing to lift and both transforms above
+ *     would only wash the wood grain out, so those two get their own generator:
+ *     scripts/generate-woods-dark-art.ts keys the white ground out instead. It writes the
+ *     same `.dark.webp` siblings, which is why the suffix is exported from here.
  *   - Every non-MoonBoard board — mid-tone by construction.
  */
 

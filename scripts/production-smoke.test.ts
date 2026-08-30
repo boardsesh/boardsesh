@@ -41,6 +41,7 @@ describe('www production smoke checks', () => {
         '/',
         '/robots.txt',
         '/sitemap.xml',
+        '/sitemaps/climbs/1.xml',
         // Both `expectsUrls` shard routes get a check of their own. `boards.xml`
         // in particular is the only hard signal left on the boards surface once
         // the index check can excuse a declared degradation.
@@ -90,7 +91,6 @@ describe('www production smoke checks', () => {
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/playlists.xml</loc></sitemap>' +
-      '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
       '</sitemapindex>';
     expect(check.assert(response({ contentType: 'application/xml', body: healthyIndex }))).toBeNull();
 
@@ -102,21 +102,8 @@ describe('www production smoke checks', () => {
       '<sitemapindex>' +
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
-      '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
       '</sitemapindex>';
     expect(check.assert(response({ contentType: 'application/xml', body: withoutPlaylists }))).toMatch(/playlists/);
-
-    // #4552: `climbs` is required too — ~52,000 URLs across six pages, the
-    // largest surface on the site, and the shard this check was blind to while
-    // its summary could not meet the deadline. Silently missing page 1 is a
-    // failure now.
-    const withoutClimbs =
-      '<sitemapindex>' +
-      '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
-      '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
-      '<sitemap><loc>https://www.boardsesh.com/sitemaps/playlists.xml</loc></sitemap>' +
-      '</sitemapindex>';
-    expect(check.assert(response({ contentType: 'application/xml', body: withoutClimbs }))).toMatch(/climbs/);
 
     // The regression this check has to keep catching after #4476. The index now
     // degrades rather than 503ing, so a cold-start failure of the boards builder
@@ -154,7 +141,7 @@ describe('www production smoke checks', () => {
     const withoutBoards = response({
       contentType: 'application/xml',
       body: '<sitemapindex><sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap></sitemapindex>',
-      headers: { 'x-sitemap-degraded': 'boards,playlists,climbs' },
+      headers: { 'x-sitemap-degraded': 'boards,playlists' },
     });
     expect(check.assert(withoutBoards)).toBeNull();
     // Names the shards, so the annotation is actionable without opening the site.
@@ -182,15 +169,14 @@ describe('www production smoke checks', () => {
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
         '</sitemapindex>',
-      headers: { 'x-sitemap-degraded': 'playlists,climbs' },
+      headers: { 'x-sitemap-degraded': 'playlists' },
     });
     expect(check.assert(declaredDegradable)).toBeNull();
-    expect(check.degradation?.(declaredDegradable)).toMatch(/playlists, climbs/);
+    expect(check.degradation?.(declaredDegradable)).toMatch(/playlists/);
     expect(check.degradation?.(declaredDegradable)).toMatch(/required playlists/);
 
     // A shard this list does not require at all is worth a warning but is not a
-    // missing mandatory, so nothing is flagged as required. (`climbs` moved to
-    // the required list in #4552; `gyms` is the remaining genuinely optional one.)
+    // missing mandatory, so nothing is flagged as required.
     const optionalOnly = response({
       contentType: 'application/xml',
       body:
@@ -198,7 +184,6 @@ describe('www production smoke checks', () => {
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/playlists.xml</loc></sitemap>' +
-        '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
         '</sitemapindex>',
       headers: { 'x-sitemap-degraded': 'gyms' },
     });
@@ -208,7 +193,7 @@ describe('www production smoke checks', () => {
 
     // The header can never rescue a genuinely broken index: a non-200, a body
     // that is not a `<sitemapindex>`, or one that resolved nothing at all.
-    const degradedHeader = { 'x-sitemap-degraded': 'boards,playlists,climbs' };
+    const degradedHeader = { 'x-sitemap-degraded': 'boards,playlists' };
     expect(
       check.assert(response({ status: 503, contentType: 'application/xml', body: '', headers: degradedHeader })),
     ).toMatch(/503/);
@@ -240,68 +225,61 @@ describe('www production smoke checks', () => {
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
         '<sitemap><loc>https://www.boardsesh.com/sitemaps/playlists.xml</loc></sitemap>' +
-        '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
         '</sitemapindex>',
     });
     expect(check.degradation?.(healthy) ?? null).toBeNull();
   });
 
-  it('warns when the climbs shard is served from the live scan rather than the store', () => {
-    // The gap `x-sitemap-degraded` structurally cannot see (#4583). An empty or
-    // unreadable store still produces a complete, correct index, so the body has
-    // every `<loc>` and no shard is declared dropped — while each
-    // `/sitemaps/climbs/N.xml` behind it rebuilds the whole ordered list. That is
-    // the shape the climbs shard sat in from W-23 until #4661.
+  it('fails if production exposes any climb sitemap publication signal', () => {
     const check = checkNamed('sitemap index');
-    const completeIndex =
+    const pausedIndex =
       '<sitemapindex>' +
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
       '<sitemap><loc>https://www.boardsesh.com/sitemaps/playlists.xml</loc></sitemap>' +
-      '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
       '</sitemapindex>';
-
-    const liveSource = response({
-      contentType: 'application/xml',
-      body: completeIndex,
-      headers: { 'x-sitemap-climbs-source': 'live' },
-    });
-    // A WARN, never a FAIL: the index it just validated is complete either way.
-    expect(check.assert(liveSource)).toBeNull();
-    expect(check.degradation?.(liveSource)).toMatch(/live scan/);
-    expect(check.degradation?.(liveSource)).toMatch(/refresh-sitemap-climbs/);
-
-    // The fast path says nothing.
     expect(
-      check.degradation?.(
+      check.assert(
         response({
           contentType: 'application/xml',
-          body: completeIndex,
+          body: pausedIndex.replace(
+            '</sitemapindex>',
+            '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap></sitemapindex>',
+          ),
+        }),
+      ),
+    ).toMatch(/still publishes/);
+    expect(
+      check.assert(
+        response({
+          contentType: 'application/xml',
+          body: pausedIndex,
           headers: { 'x-sitemap-climbs-source': 'store' },
         }),
-      ) ?? null,
-    ).toBeNull();
+      ),
+    ).toMatch(/source/);
+    expect(
+      check.assert(
+        response({
+          contentType: 'application/xml',
+          body: pausedIndex,
+          headers: { 'x-sitemap-degraded': 'climbs' },
+        }),
+      ),
+    ).toMatch(/intentional/);
+  });
 
-    // Neither does an absent header — a deploy that predates it, or a summary
-    // that lost the 3 s race and never reported a path. The `x-sitemap-degraded`
-    // branch already covers the second one, and inventing a finding from silence
-    // would make every older deployment warn.
-    expect(check.degradation?.(response({ contentType: 'application/xml', body: completeIndex })) ?? null).toBeNull();
-
-    // Both signals at once read as both reasons, not one swallowing the other.
-    const bothWrong = response({
-      contentType: 'application/xml',
-      body:
-        '<sitemapindex>' +
-        '<sitemap><loc>https://www.boardsesh.com/sitemaps/static.xml</loc></sitemap>' +
-        '<sitemap><loc>https://www.boardsesh.com/sitemaps/boards.xml</loc></sitemap>' +
-        '<sitemap><loc>https://www.boardsesh.com/sitemaps/climbs/1.xml</loc></sitemap>' +
-        '</sitemapindex>',
-      headers: { 'x-sitemap-degraded': 'playlists', 'x-sitemap-climbs-source': 'live' },
+  it('requires a cacheable 410 from the paused climb shard', () => {
+    const check = checkNamed('paused climb sitemap shard');
+    const healthy = response({
+      status: 410,
+      contentType: 'text/plain; charset=utf-8',
+      body: 'climbs sitemaps are disabled',
+      headers: { 'cache-control': 'public, must-revalidate' },
     });
-    expect(check.assert(bothWrong)).toBeNull();
-    expect(check.degradation?.(bothWrong)).toMatch(/playlists/);
-    expect(check.degradation?.(bothWrong)).toMatch(/live scan/);
+    expect(check.assert(healthy)).toBeNull();
+    expect(check.assert({ ...healthy, status: 200 })).toMatch(/410/);
+    expect(check.assert({ ...healthy, headers: { 'cache-control': 'no-store' } })).toMatch(/cache-control/);
   });
 
   it('rejects an empty static sitemap shard', () => {

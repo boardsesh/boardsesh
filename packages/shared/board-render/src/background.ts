@@ -22,6 +22,32 @@ export function toWebpPath(dir: string, filename: string, isThumbnail: boolean):
   return `${dir}/${webpName}`;
 }
 
+/** Which art a render should composite. Only boards that ship a dark sibling differ. */
+export type BoardArtColorScheme = 'light' | 'dark';
+
+/** Suffix marking a dark-mode art sibling, written by the scripts/generate-*-dark-art.ts pair. */
+const DARK_ART_SUFFIX = '.dark.webp';
+
+/** `foo.webp` -> `foo.dark.webp`. */
+export function toDarkArtPath(webpPath: string): string {
+  return webpPath.replace(/\.webp$/, DARK_ART_SUFFIX);
+}
+
+/**
+ * Resolve one background layer, falling back to the light file when a dark path was asked
+ * for but that board ships no dark sibling.
+ *
+ * Dark art is per-board and optional — Woods has it, Kilter and Tension do not — so without
+ * this a dark render of an untreated board would silently drop its layers and come back as
+ * an overlay on nothing.
+ */
+export function resolveArtPath(relPath: string, resolveImagePath: (path: string) => string | null): string | null {
+  const resolved = resolveImagePath(relPath);
+  if (resolved !== null) return resolved;
+  if (!relPath.endsWith(DARK_ART_SUFFIX)) return null;
+  return resolveImagePath(`${relPath.slice(0, -DARK_ART_SUFFIX.length)}.webp`);
+}
+
 type BoardDetailsForBg = {
   board_name: string;
   images_to_holds: Record<string, unknown>;
@@ -33,8 +59,16 @@ type BoardDetailsForBg = {
  * Build the ordered list of public/-relative paths for background images.
  * Kilter/Tension use images_to_holds keys; MoonBoard uses layoutFolder +
  * holdSetImages.
+ *
+ * `colorScheme: 'dark'` swings every path to its `.dark.webp` sibling. Callers pass the
+ * result straight into their cache keys, so light and dark renders of the same board key
+ * apart for free; `resolveArtPath` is what makes a board with no dark art still render.
  */
-export function getBackgroundRelPaths(boardDetails: BoardDetailsForBg, isThumbnail: boolean): string[] {
+export function getBackgroundRelPaths(
+  boardDetails: BoardDetailsForBg,
+  isThumbnail: boolean,
+  colorScheme: BoardArtColorScheme = 'light',
+): string[] {
   const paths: string[] = [];
   const imageKeys = Object.keys(boardDetails.images_to_holds);
 
@@ -54,7 +88,7 @@ export function getBackgroundRelPaths(boardDetails: BoardDetailsForBg, isThumbna
     }
   }
 
-  return paths;
+  return colorScheme === 'dark' ? paths.map(toDarkArtPath) : paths;
 }
 
 /**

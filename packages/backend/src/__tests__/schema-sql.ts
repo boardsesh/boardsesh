@@ -9,6 +9,7 @@ export const schemaSQL = `
   DROP TABLE IF EXISTS "board_session_participants" CASCADE;
   DROP TABLE IF EXISTS "board_sessions" CASCADE;
   DROP TABLE IF EXISTS "user_climb_percentiles" CASCADE;
+  DROP TABLE IF EXISTS "user_credentials" CASCADE;
   DROP TABLE IF EXISTS "users" CASCADE;
 
   CREATE TABLE IF NOT EXISTS "users" (
@@ -17,6 +18,13 @@ export const schemaSQL = `
     "email" text NOT NULL,
     "emailVerified" timestamp,
     "image" text,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS "user_credentials" (
+    "user_id" text PRIMARY KEY NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "password_hash" text NOT NULL,
     "created_at" timestamp DEFAULT now() NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL
   );

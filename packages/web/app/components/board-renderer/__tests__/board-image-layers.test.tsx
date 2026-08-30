@@ -5,14 +5,35 @@ import { render } from '@testing-library/react';
 import React from 'react';
 import type { BoardDetails } from '@/app/lib/types';
 import BoardImageLayers from '../board-image-layers';
-import { buildOverlayUrl } from '../util';
 
 vi.mock('../util', () => ({
-  getImageUrl: (imageUrl: string, board: string) => `/images/${board}/${imageUrl}`,
+  // Mirrors the real split: an ordinary board gets one composite with the photo baked in,
+  // a themed board gets static photo layers plus a background-less overlay.
+  buildBoardArtLayers: (bd: BoardDetails, frames: string | undefined, thumbnail?: boolean) => {
+    const overlay = frames ? `/api/internal/board-render?frames=${frames}${thumbnail ? '&thumbnail=1' : ''}` : null;
+    if (bd.board_name !== 'woods') {
+      return { backgroundUrls: [], overlayUrl: overlay ? `${overlay}&include_background=1` : null };
+    }
+    return {
+      backgroundUrls: Object.keys(bd.images_to_holds).map((image) =>
+        `/images/${bd.board_name}/${image}`.replace(/\.png$/, '.webp'),
+      ),
+      overlayUrl: overlay,
+    };
+  },
+  // Mirrors the real .png -> .webp rewrite: toDarkArtUrl keys off the .webp extension, so a
+  // mock that skipped it would make the dark URL identical to the light one and the paired
+  // assertions below would pass without exercising anything.
+  getImageUrl: (imageUrl: string, board: string) => `/images/${board}/${imageUrl}`.replace(/\.png$/, '.webp'),
   buildOverlayUrl: vi.fn(
-    (_bd: BoardDetails, frames: string, thumbnail?: boolean) =>
-      `/api/internal/board-render?frames=${frames}${thumbnail ? '&thumbnail=1' : ''}&include_background=1`,
+    (_bd: BoardDetails, frames: string, thumbnail?: boolean, colorScheme?: 'light' | 'dark') =>
+      `/api/internal/board-render?frames=${frames}${thumbnail ? '&thumbnail=1' : ''}&include_background=1` +
+      (colorScheme === 'dark' ? '&color_scheme=dark' : ''),
   ),
+  // Woods is the real member of this set; the fixtures below are Kilter, which
+  // deliberately renders one image per layer so no other board pays for the swap.
+  hasDarkBoardArt: (board: string) => board === 'woods',
+  toDarkArtUrl: (url: string) => url.replace(/\.webp$/, '.dark.webp'),
 }));
 
 const mockBoardDetails: BoardDetails = {
@@ -47,7 +68,7 @@ describe('BoardImageLayers', () => {
 
     const images = container.querySelectorAll('img');
     expect(images).toHaveLength(1);
-    expect(images[0].getAttribute('src')).toBe('/images/kilter/product_sizes_layouts_sets/36-1.png');
+    expect(images[0].getAttribute('src')).toBe('/images/kilter/product_sizes_layouts_sets/36-1.webp');
   });
 
   it('renders multiple background images when no frames and board has multiple sets', () => {
@@ -97,10 +118,12 @@ describe('BoardImageLayers', () => {
     expect(wrapper.style.transform).toBeFalsy();
   });
 
-  it('passes thumbnail flag to buildOverlayUrl', () => {
-    render(<BoardImageLayers boardDetails={mockBoardDetails} frames="p1r42" mirrored={false} thumbnail />);
+  it('passes the thumbnail flag through to the art URLs', () => {
+    const { container } = render(
+      <BoardImageLayers boardDetails={mockBoardDetails} frames="p1r42" mirrored={false} thumbnail />,
+    );
 
-    expect(buildOverlayUrl).toHaveBeenCalledWith(mockBoardDetails, 'p1r42', true);
+    expect(container.querySelector('img')?.getAttribute('src')).toContain('thumbnail=1');
   });
 
   it('uses object-fit contain when contain prop is set', () => {
@@ -191,6 +214,81 @@ describe('BoardImageLayers', () => {
       for (let i = 1; i < imgs.length; i++) {
         expect(imgs[i].getAttribute('loading')).toBe('lazy');
       }
+    });
+  });
+
+  describe('boards that ship dark art', () => {
+    // Woods art is hold sprites on an opaque white ground, so it has a `.dark.webp` sibling
+    // and both variants go into the page for CSS to choose between — the server is rendering
+    // these pages and cannot know the reader's theme.
+    const woodsBoardDetails: BoardDetails = {
+      ...mockBoardDetails,
+      board_name: 'woods',
+      images_to_holds: { 'woods-8x10-bg.png': [] },
+    };
+
+    const imageSources = (container: HTMLElement) =>
+      [...container.querySelectorAll('img')].map((img) => ({
+        src: img.getAttribute('src') ?? '',
+        className: img.getAttribute('class') ?? '',
+      }));
+
+    it('themes the static photo and still renders the climb overlay exactly once', () => {
+      // The point of the split: a themed board must not cost a second WASM + sharp render
+      // per card. Two photo layers (static files every card on the page shares) and one
+      // overlay — never two overlays.
+      const { container } = render(
+        <BoardImageLayers boardDetails={woodsBoardDetails} frames="p1r42" mirrored={false} />,
+      );
+
+      const images = imageSources(container);
+      expect(images).toHaveLength(3);
+
+      const [light, dark, overlay] = images;
+      expect(light.src).toBe('/images/woods/woods-8x10-bg.webp');
+      expect(dark.src).toBe('/images/woods/woods-8x10-bg.dark.webp');
+      expect(light.className).not.toBe(dark.className);
+
+      expect(overlay.src).toContain('board-render');
+      expect(overlay.src).not.toContain('include_background=1');
+      expect(overlay.className).toBe('');
+      expect(images.filter((image) => image.src.includes('board-render'))).toHaveLength(1);
+    });
+
+    it('pairs the background layers when there is no climb to overlay', () => {
+      const { container } = render(<BoardImageLayers boardDetails={woodsBoardDetails} mirrored={false} />);
+
+      expect(imageSources(container).map((image) => image.src)).toEqual([
+        '/images/woods/woods-8x10-bg.webp',
+        '/images/woods/woods-8x10-bg.dark.webp',
+      ]);
+    });
+
+    it('leaves the paired layers without an inline display, so the stylesheet can hide one', () => {
+      // An inline `display: block` beats the class and both variants would paint on top of
+      // each other. Boards without dark art keep the inline value.
+      const { container } = render(
+        <BoardImageLayers boardDetails={woodsBoardDetails} frames="p1r42" mirrored={false} />,
+      );
+      for (const img of container.querySelectorAll('img')) {
+        expect(img.style.display).toBe('');
+      }
+
+      const { container: kilter } = render(
+        <BoardImageLayers boardDetails={mockBoardDetails} frames="p1r42" mirrored={false} />,
+      );
+      expect(kilter.querySelector('img')?.style.display).toBe('block');
+    });
+
+    it('keeps the single baked composite for every other board', () => {
+      const { container } = render(
+        <BoardImageLayers boardDetails={mockBoardDetails} frames="p1r42" mirrored={false} />,
+      );
+
+      const images = imageSources(container);
+      expect(images).toHaveLength(1);
+      expect(images[0].src).toContain('include_background=1');
+      expect(images[0].className).toBe('');
     });
   });
 });

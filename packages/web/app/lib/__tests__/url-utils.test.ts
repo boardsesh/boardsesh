@@ -577,12 +577,25 @@ describe('urlParamsToSearchParams', () => {
   it('should drop hold params with non-numeric IDs', () => {
     const urlParams = new URLSearchParams({
       hold_red: 'ANY:include',
+      'hold_-1': 'ANY:include',
+      'hold_1.5': 'ANY:include',
+      hold_: 'ANY:include',
       hold_142: 'ANY:include',
     });
 
     const result = urlParamsToSearchParams(urlParams);
 
     expect(result.holdsFilter).toEqual({ 142: { ANY: 'include' } });
+  });
+
+  // Woods numbers its holds from 0, so hold 0 is a real hold and has to survive
+  // the parse — boardsesh/boardsesh#4748.
+  it('should keep hold id 0', () => {
+    const urlParams = new URLSearchParams({ hold_0: 'ANY:include' });
+
+    const result = urlParamsToSearchParams(urlParams);
+
+    expect(result.holdsFilter).toEqual({ 0: { ANY: 'include' } });
   });
 
   it('should use defaults for missing parameters', () => {
