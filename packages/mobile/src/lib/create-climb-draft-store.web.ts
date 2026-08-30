@@ -15,6 +15,10 @@ export type CreateClimbDraft = {
   name: string;
   description: string;
   isDraft: boolean;
+  /** "No kickboard" toggle. Optional for drafts created before this field. */
+  noKickboard?: boolean;
+  /** "Campus" toggle. Optional for drafts created before this field. */
+  campus?: boolean;
   /** JSON.stringify of the attached `SavedClimbSnapshot`. See the native fork. */
   savedClimbJson?: string;
   /** Payload signature at the last successful server save. See the native fork. */
