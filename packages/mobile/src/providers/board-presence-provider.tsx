@@ -48,9 +48,17 @@ export type ResolveBoardArgs = {
   layoutId: number;
   sizeId: number;
   setIds: string;
+  /**
+   * The board type the connected controller advertised over BLE, from the
+   * connection snapshot. Distinct from `boardType`, which is the route the
+   * climber is on: Aurora numbers each board app separately, so this is what
+   * keeps the serial lookup on the hardware in front of them.
+   */
+  advertisedBoardType?: string;
 };
 
-export type ResolveBoardConfigArgs = Omit<ResolveBoardArgs, 'serial'>;
+// No serial means no advertisement to read a type from.
+export type ResolveBoardConfigArgs = Omit<ResolveBoardArgs, 'serial' | 'advertisedBoardType'>;
 
 export type ResolveBoardUuidArgs = {
   boardUuid: string;
@@ -97,7 +105,10 @@ function boardConfigResolveKey({ boardType, layoutId, sizeId, setIds }: ResolveB
 }
 
 function boardSerialResolveKey(args: ResolveBoardArgs): string {
-  return `serial:${args.serial}:${args.boardType}:${args.layoutId}:${args.sizeId}:${args.setIds}`;
+  // `advertisedBoardType` is part of the key because it changes which board the
+  // serial resolves to. Left out, a cached binding from a connect that reported
+  // no type would be reused for one that does.
+  return `serial:${args.serial}:${args.boardType}:${args.layoutId}:${args.sizeId}:${args.setIds}:${args.advertisedBoardType ?? ''}`;
 }
 
 function boardUuidResolveKey({ boardUuid }: ResolveBoardUuidArgs): string {

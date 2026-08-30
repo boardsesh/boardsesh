@@ -797,6 +797,11 @@ export function BluetoothProvider({
       // older physical link.
       const { boardName: boardType, layoutId, sizeId, setIds: connectionSetIds } = connection.config;
       const setIds = connectionSetIds ?? '';
+      // The type the controller announced, from the same immutable snapshot as
+      // the config above. Aurora reuses a serial across board apps, so without
+      // it the resolver can bind this connection to a board of another type
+      // that happens to share the number.
+      const { advertisedBoardType } = connection;
 
       // Resolve+bind the shared board so the wall feed subscribes. Aurora uses
       // its controller serial; serial-less boards use the per-config fallback
@@ -809,7 +814,7 @@ export function BluetoothProvider({
         pendingPresenceResolveConnectionRef.current = connection;
         const resolvePromise =
           serial && serial.length > 0
-            ? resolveAndBindBoard({ serial, boardType, layoutId, sizeId, setIds })
+            ? resolveAndBindBoard({ serial, boardType, layoutId, sizeId, setIds, advertisedBoardType })
             : resolveAndBindBoardByConfig({ boardType, layoutId, sizeId, setIds });
         void resolvePromise
           .then((resolved) => {

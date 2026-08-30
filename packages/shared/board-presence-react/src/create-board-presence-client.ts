@@ -62,6 +62,14 @@ export type SerialResolveArgs = {
   layoutId: number;
   sizeId: number;
   setIds: string;
+  /**
+   * The board type the connected controller advertises in its BLE device name
+   * (`Tension Board#12345@3`). Aurora numbers each board app separately, so the
+   * same serial exists on controllers of different types; this scopes the
+   * server's lookup to the hardware actually connected. Optional — `boardType`
+   * above is the route the climber is on, which is not the same fact.
+   */
+  advertisedBoardType?: string;
 };
 
 /** A GraphQL operation: the query/mutation/subscription string plus variables. */

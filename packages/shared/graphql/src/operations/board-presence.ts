@@ -104,6 +104,7 @@ export const RESOLVE_BOARD_FOR_SERIAL = `
     $layoutId: Int!
     $sizeId: Int!
     $setIds: String!
+    $advertisedBoardType: String
   ) {
     resolveBoardForSerial(
       serial: $serial
@@ -111,6 +112,7 @@ export const RESOLVE_BOARD_FOR_SERIAL = `
       layoutId: $layoutId
       sizeId: $sizeId
       setIds: $setIds
+      advertisedBoardType: $advertisedBoardType
     ) {
       boardId
       boardName
@@ -133,6 +135,7 @@ export const RESOLVE_BOARD_CANDIDATES_FOR_SERIAL = `
     $layoutId: Int!
     $sizeId: Int!
     $setIds: String!
+    $advertisedBoardType: String
   ) {
     resolveBoardCandidatesForSerial(
       serial: $serial
@@ -140,6 +143,7 @@ export const RESOLVE_BOARD_CANDIDATES_FOR_SERIAL = `
       layoutId: $layoutId
       sizeId: $sizeId
       setIds: $setIds
+      advertisedBoardType: $advertisedBoardType
     ) {
       board {
         boardId

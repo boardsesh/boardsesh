@@ -151,8 +151,8 @@ export const GET_POPULAR_BOARD_CONFIGS = gql`
 `;
 
 export const GET_BOARDS_BY_SERIAL_NUMBERS = gql`
-  query GetBoardsBySerialNumbers($serialNumbers: [String!]!) {
-    boardsBySerialNumbers(serialNumbers: $serialNumbers) {
+  query GetBoardsBySerialNumbers($serialNumbers: [String!]!, $boardType: String) {
+    boardsBySerialNumbers(serialNumbers: $serialNumbers, boardType: $boardType) {
       ${BOARD_FIELDS}
     }
   }
@@ -326,6 +326,10 @@ export type GetPopularBoardConfigsQueryResponse = {
 
 export type GetBoardsBySerialNumbersQueryVariables = {
   serialNumbers: string[];
+  // The board type advertised in the BLE device name. Sent only when every
+  // serial in the request advertises the same type; a mixed scan omits it and
+  // the caller filters per serial instead.
+  boardType?: string;
 };
 
 export type GetBoardsBySerialNumbersQueryResponse = {
