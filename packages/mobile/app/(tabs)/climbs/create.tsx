@@ -129,7 +129,7 @@ export default function CreateClimbRoute() {
     // holds that don't exist on the new layout/size. Angle is excluded so a
     // session-sync angle change doesn't wipe an in-progress paint.
     <CreateClimbScreen
-      key={createClimbScreenKey(params.editClimbUuid, board)}
+      key={createClimbScreenKey(params.editClimbUuid, board, params.forkFrames)}
       board={board}
       forkFrames={params.forkFrames}
       forkName={params.forkName}

@@ -17,7 +17,7 @@ Boardsesh is a monorepo with three deployable services:
 The web project deploys from `packages/web`, not the repo root. Two dashboard settings under **Settings → Build & Deployment** are hard prerequisites — `packages/web/vercel.json` does nothing without them (and `vercel.json` is strict JSON, so this can't be a comment in the file):
 
 1. **Root Directory = `packages/web`.** This is how Vercel finds `next` (it lives only in `packages/web/package.json`, not the root). Without it the build fails with `No Next.js version detected`.
-2. **"Include source files outside of the Root Directory in the Build Step" = on.** The build reaches outside `packages/web`: `bun.lock` lives at the repo root (so `bun install --frozen-lockfile` walks up to find it), Next transpiles sibling workspace packages from source, and `outputFileTracingIncludes` pulls the board-renderer WASM from the hoisted root `node_modules`. With the toggle off, Vercel clones only `packages/web` and the install regenerates or rejects the lockfile.
+2. **"Include source files outside of the Root Directory in the Build Step" = on.** The build reaches outside `packages/web`: `bun.lock` lives at the repo root (so `bun install --frozen-lockfile` walks up to find it), and Next transpiles sibling workspace packages from source. With the toggle off, Vercel clones only `packages/web` and the install regenerates or rejects the lockfile.
 
 Keep the larger build machine — `bun install` builds `sharp` plus the Expo/React Native native tree and OOMs on the default size.
 
@@ -30,7 +30,7 @@ Flow:
 1. `detect-changes` decides `web_changed` / `backend_changed` from the cumulative diff since the latest successful Production Deploy run (backend uses the same path list as `branch-deploy.yml`; web deploys on anything that isn't docs- or mobile-only). `check-rollback` runs in parallel and flags whether a Vercel Instant Rollback is active (see below).
 2. `build-web` runs `vercel pull --environment=production` + `vercel build --prod` and uploads `.vercel` (prebuilt output + project link) as an artifact. `build-backend` runs `vp run docker-context:backend`, builds the generated `.docker-context/backend`, and pushes it to `ghcr.io/boardsesh/boardsesh-daemon` with `:production` / `:staging` / `:sha-<short>` / `:latest` tags.
 3. **The gate:** `migrate` runs `@boardsesh/db db:migrate` only once every _attempted_ build passed. A build that ran and failed blocks the gate, which skips both production deploys — nothing reaches prod half-built. (Migrations used to run inside the Vercel build; they moved here so they only run behind the gate.)
-4. `deploy-web` (`vercel deploy --prebuilt --prod`) and `deploy-production-backend` (`railway redeploy`) run after the gate.
+4. `deploy-production-backend` runs `railway redeploy` and smokes both GraphQL and `/render/board`. Cloudflare config applies independently because its `/render/board` rule only makes successful, cacheable responses eligible; it does not route traffic. `deploy-web` promotes the prebuilt Vercel output only after both jobs succeed (or are unchanged), preventing HTML from referencing an endpoint that is not live yet.
 5. One of three Discord notifications fires (all gated on `DISCORD_DEPLOY_WEBHOOK`, all best-effort — webhook failures `::warning::` rather than fail the run, all post with `allowed_mentions.parse=[]` so user-controlled text like PR titles can't ping the channel):
    - `notify-success` on a promoted deploy — lists the PRs that shipped (parsed from `Merge pull request #N` subjects in the cumulative deployment range, titles via `gh api`).
    - `notify-no-promote` when a rollback is active (see Instant Rollback below).
@@ -432,7 +432,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 768M
           cpus: '0.25'
     labels:
       - 'traefik.enable=true'
@@ -1098,7 +1098,7 @@ Already handled — `VERCEL_PREVIEW_REGEX` in `packages/backend/src/handlers/cor
 
 | Metric                 | Value                                                    |
 | ---------------------- | -------------------------------------------------------- |
-| **Per PR**             | ~2GB RAM, ~1.5 CPU cores, ~2GB disk                      |
+| **Per PR**             | ~2.5GB RAM, ~1.5 CPU cores, ~2GB disk                    |
 | **VM spec**            | 8+ cores, 40GB RAM, 200GB SSD                            |
 | **Max concurrent PRs** | 10-12 (with headroom)                                    |
 | **Cleanup**            | Sweep daily at 3am + on every push to main + on PR close |
@@ -1108,7 +1108,7 @@ Resource breakdown per PR:
 | Service             | Memory | CPU  | Disk          |
 | ------------------- | ------ | ---- | ------------- |
 | Web (Next.js)       | 512MB  | 0.5  | ~200MB image  |
-| Backend (Node)      | 256MB  | 0.25 | ~150MB image  |
+| Backend (Node)      | 768MB  | 0.25 | ~150MB image  |
 | PostgreSQL (dev-db) | 1GB    | 0.5  | ~1.5GB (data) |
 | Redis               | 64MB   | 0.1  | ~10MB         |
 
@@ -1359,7 +1359,7 @@ What changed → what gets deployed:
 
 | Risk                              | Likelihood | Impact | Mitigation                                                                      |
 | --------------------------------- | ---------- | ------ | ------------------------------------------------------------------------------- |
-| Docker resource exhaustion on VM  | Low        | Medium | Max 10-12 concurrent PRs, resource limits per container, ~2GB per PR on 40GB VM |
+| Docker resource exhaustion on VM  | Low        | Medium | Max 10-12 concurrent PRs, resource limits per container, ~2.5GB per PR on 40GB VM |
 | Stale environments not cleaned up | Low        | Medium | Sweep on every push to main + daily cron at 3am + systemd timer                 |
 | Cloudflare Tunnel downtime        | Low        | Low    | PR backends unreachable temporarily; acceptable for dev environments            |
 | Homelab outage                    | Low        | Low    | PR environments temporarily unavailable; acceptable for dev environments        |

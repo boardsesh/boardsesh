@@ -1143,7 +1143,11 @@ export const socialBoardQueries = {
    * No auth required (BLE scan-before-login), but rate-limited.
    * Unauthenticated callers receive stripped responses (no GPS/owner data).
    */
-  boardsBySerialNumbers: async (_: unknown, { serialNumbers }: { serialNumbers: string[] }, ctx: ConnectionContext) => {
+  boardsBySerialNumbers: async (
+    _: unknown,
+    { serialNumbers, boardType }: { serialNumbers: string[]; boardType?: string | null },
+    ctx: ConnectionContext,
+  ) => {
     await applyRateLimit(ctx, 20, 'boardsBySerialNumbers');
 
     // Behaviour change: this used to silently `.slice(0, 20)` on overflow, now
@@ -1151,14 +1155,28 @@ export const socialBoardQueries = {
     // before sending — `resolveSerialNumbers` (the only first-party caller) does
     // this via `MAX_SERIALS_PER_REQUEST`. Throwing surfaces accidental breakage
     // in any future caller instead of silently dropping serials.
-    const validated = validateInput(SerialNumberLookupSchema, { serialNumbers }, 'serialNumbers');
+    const validated = validateInput(
+      SerialNumberLookupSchema,
+      { serialNumbers, boardType: boardType ?? undefined },
+      'serialNumbers',
+    );
     const cleaned = validated.serialNumbers.filter((s) => s.length > 0);
     if (cleaned.length === 0) return [];
 
+    // A serial identifies a controller only WITHIN a board type — Aurora runs a
+    // separate sequence per board app. Without this filter a Tension controller
+    // resolves onto whichever Kilter board happens to share its serial. Clients
+    // that predate the fix omit `boardType` and keep the old wide lookup.
     const boards = await db
       .select()
       .from(dbSchema.userBoards)
-      .where(and(inArray(dbSchema.userBoards.serialNumber, cleaned), isNull(dbSchema.userBoards.deletedAt)));
+      .where(
+        and(
+          inArray(dbSchema.userBoards.serialNumber, cleaned),
+          isNull(dbSchema.userBoards.deletedAt),
+          validated.boardType ? eq(dbSchema.userBoards.boardType, validated.boardType) : undefined,
+        ),
+      );
 
     // Unauthenticated callers get an allowlisted response built directly from
     // the DB rows — skip enrichBoards entirely (no owner/stats/follow queries).
@@ -1726,6 +1744,12 @@ export const socialBoardMutations = {
       .where(
         and(
           eq(dbSchema.userBoards.ownerId, userId),
+          // Scoped to the board type this connect reported. The owner may hold
+          // both a Kilter and a Tension board on this serial, and an unscoped
+          // `.limit(1)` would pick between them arbitrarily — half the time
+          // reading the other controller's board, failing the config comparison
+          // below and recording a row that adds nothing.
+          eq(dbSchema.userBoards.boardType, boardName),
           eq(dbSchema.userBoards.serialNumber, serialNumber),
           isNull(dbSchema.userBoards.deletedAt),
         ),
@@ -1807,7 +1831,16 @@ export const socialBoardMutations = {
           boardUuid: linkedBoardUuid,
         })
         .onConflictDoUpdate({
-          target: [dbSchema.userBoardSerials.userId, dbSchema.userBoardSerials.serialNumber],
+          // Matches `user_board_serials_unique_user_serial`, which carries
+          // `board_name`: Aurora reuses a serial across board apps, so a Kilter
+          // `#12345` and a Tension `#12345` are separate recordings. Drop the
+          // board name here and the upsert stops matching the index — every
+          // connect would insert instead of updating.
+          target: [
+            dbSchema.userBoardSerials.userId,
+            dbSchema.userBoardSerials.boardName,
+            dbSchema.userBoardSerials.serialNumber,
+          ],
           set: {
             boardName,
             layoutId,
@@ -1838,12 +1871,19 @@ export const socialBoardMutations = {
         and(eq(dbSchema.userBoards.uuid, dbSchema.userBoardSerials.boardUuid), isNull(dbSchema.userBoards.deletedAt)),
       )
       .where(
-        and(eq(dbSchema.userBoardSerials.userId, userId), eq(dbSchema.userBoardSerials.serialNumber, serialNumber)),
+        and(
+          eq(dbSchema.userBoardSerials.userId, userId),
+          // Same three-part key as the upsert target — without `boardName` this
+          // could read back the OTHER board type's recording for the same serial.
+          eq(dbSchema.userBoardSerials.boardName, boardName),
+          eq(dbSchema.userBoardSerials.serialNumber, serialNumber),
+        ),
       )
       .limit(1);
 
     // The upsert above always writes a row, so the re-select can only come back
-    // empty under a concurrent delete of this exact (userId, serialNumber). Guard
+    // empty under a concurrent delete of this exact (userId, boardName,
+    // serialNumber). Guard
     // it so that race surfaces as a clean GraphQL error instead of an untyped
     // "cannot read property of undefined" crash.
     if (!row) {

@@ -24,6 +24,9 @@ const fullSchema = { ...schema, ...relations };
 export const DEFAULT_POOL_MAX = 10;
 /** Seconds an idle connection is held when `DB_POOL_IDLE_TIMEOUT_S` is unset. */
 export const DEFAULT_POOL_IDLE_TIMEOUT_S = 30;
+/** Serverless (Vercel) pool defaults — smaller per-lambda footprint; see docs/db-connectivity.md § pool sizing. */
+export const SERVERLESS_DEFAULT_POOL_MAX = 3;
+export const SERVERLESS_DEFAULT_POOL_IDLE_TIMEOUT_S = 5;
 /**
  * `getClimb` issues two sequential statements and drizzle's connect-retry can
  * hold a slot while it re-dials, so a pool of one serialises everything behind
@@ -54,11 +57,11 @@ function readPoolInt(name: string, fallback: number, minimum: number): number {
 }
 
 /**
- * Per-deployment pool knobs. Both default to the values that were hard-coded
- * here before, so backend, sync jobs and scripts are unchanged unless the env
- * var is set — today only the Vercel project is expected to set them, because
- * peak server-side connections scale with *instance count* × held-idle
- * connections, not with per-instance `max`.
+ * Per-deployment pool knobs. On Vercel the defaults are the serverless pair
+ * above; everywhere else (backend, sync jobs, scripts) they stay the values
+ * that were hard-coded here before, so nothing changes unless the env var is
+ * set. The split exists because peak server-side connections scale with
+ * *instance count* × held-idle connections, not with per-instance `max`.
  *
  * `prepare: false` is required when the target is PgBouncer in transaction
  * pooling mode (Railway's pooled URL): backends are reused across transactions
@@ -69,9 +72,14 @@ function readPoolInt(name: string, fallback: number, minimum: number): number {
  * rebuilds its pool (tests, HMR) picks up the current environment.
  */
 function basePoolOptions() {
+  const isServerless = Boolean(process.env.VERCEL);
   return {
-    max: readPoolInt('DB_POOL_MAX', DEFAULT_POOL_MAX, MIN_POOL_MAX),
-    idle_timeout: readPoolInt('DB_POOL_IDLE_TIMEOUT_S', DEFAULT_POOL_IDLE_TIMEOUT_S, MIN_POOL_IDLE_TIMEOUT_S),
+    max: readPoolInt('DB_POOL_MAX', isServerless ? SERVERLESS_DEFAULT_POOL_MAX : DEFAULT_POOL_MAX, MIN_POOL_MAX),
+    idle_timeout: readPoolInt(
+      'DB_POOL_IDLE_TIMEOUT_S',
+      isServerless ? SERVERLESS_DEFAULT_POOL_IDLE_TIMEOUT_S : DEFAULT_POOL_IDLE_TIMEOUT_S,
+      MIN_POOL_IDLE_TIMEOUT_S,
+    ),
     connect_timeout: 30,
     prepare: false,
     ...statementTimeoutOption(),

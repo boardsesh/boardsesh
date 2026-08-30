@@ -70,7 +70,9 @@ things. Neither is fixable by us for the copies already in the field.
   (`embedded/libs/thumbnail-client/src/thumbnail_client.cpp:298-324`) appends
   `/api/internal/board-render` plus a
   `board_name`/`layout_id`/`size_id`/`set_ids`/`frames` query string. So this
-  pins that API route, not the route tree — A6 must not delete it. The default is
+  pins that URL shape, not the old Next.js implementation. The route file was
+  deleted in #4715, but an unconditional external rewrite preserves the path and
+  forwards it to Railway `/render/board`. The default is
   overridable at build time (`#ifndef`) and at runtime through the device's own
   config endpoint (`embedded/libs/esp-web-server/src/esp_web_server.cpp:708-714`
   persists `render_base_url`), so it is recoverable, but only by hand, one device
@@ -193,7 +195,7 @@ the two constraints that shaped them:
 
 **The climb front door** (`app/components/climb-front-door/`) renders a
 breadcrumb, the promoted `ClimbViewSeoFragment` heading, the board art as a
-plain `<img>` at the `/api/internal/board-render` overlay URL with explicit
+plain `<img>` at the Railway `/render/board` overlay URL with explicit
 dimensions, a facts `<dl>`, a setter link, angle cross-links, beta videos,
 similar climbs, the community section, and one CTA — "Climb this", a real
 server-rendered `<a href>` at `APP_URL` + the same pathname, firing

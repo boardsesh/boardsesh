@@ -1,6 +1,6 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 39
- * routes classified — 37 KEEP, 1 method-level deprecate, 1 orphan kept).
+ * The standing inventory oracle for issue #1889 (REST surface audit: 38
+ * routes classified after the board renderer moved to Railway in #4715).
  *
  * A classification table living only in an issue body or a doc goes stale the
  * moment a route is added or removed without anyone re-reading it — exactly
@@ -54,9 +54,7 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/auth/verify-email/route.ts': 'keep-caller',
   'app/api/auth/native/callback/route.ts': 'keep-caller',
 
-  // --- /api/internal/* (16) ---
-  // ESP32 fleet we cannot push an update to — never delete.
-  'app/api/internal/board-render/route.ts': 'keep-external',
+  // --- /api/internal/* (15) ---
   // Party-session / kiosk auth bridge — never delete.
   'app/api/internal/ws-auth/route.ts': 'keep-external',
   // No web consumer, but no production surface either (404s outside
@@ -87,7 +85,7 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/internal/feature-flags/route.ts': 'keep-caller',
 
   // --- /api/og/* (5) ---
-  // Legacy og:image redirect shim (307 -> /api/internal/board-render) kept
+  // Legacy og:image redirect shim (307 -> the Railway renderer) kept
   // for every already-shared HTML page and crawler cache from before the
   // OG-card migration to the backend (see docs/og-climb.md). New metadata
   // never emits it — no in-repo caller by design.
@@ -169,8 +167,7 @@ describe('REST surface inventory (issue #1889)', () => {
     expect(missing).toEqual([]);
   });
 
-  it('pins the two never-delete external surfaces', () => {
-    expect(pinned.get('app/api/internal/board-render/route.ts')).toBe('keep-external');
+  it('pins the never-delete WebSocket auth surface', () => {
     expect(pinned.get('app/api/internal/ws-auth/route.ts')).toBe('keep-external');
   });
 
@@ -201,6 +198,6 @@ describe('REST surface inventory (issue #1889)', () => {
   it('counts exactly the audited surface', () => {
     // Guards the headline number in issue #1889 itself — a change here means
     // the issue body needs a fresh audit pass, not a quiet reclassification.
-    expect(derived.size).toBe(39);
+    expect(derived.size).toBe(38);
   });
 });

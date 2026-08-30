@@ -517,8 +517,14 @@ export const queriesTypeDefs = /* GraphQL */ `
     Searches all boards (including unlisted/non-public).
     Capped at 20 serials per request — exceeding this throws a validation
     error rather than silently truncating, so callers must cap on their end.
+
+    \`boardType\` is the type advertised in the BLE device name
+    (\`Tension Board#12345@3\`). Aurora runs a separate serial sequence per board
+    app, so the same serial exists on a Kilter and a Tension controller; pass it
+    to keep the lookup on the hardware in front of the climber. Optional for
+    backward compatibility with already-shipped clients.
     """
-    boardsBySerialNumbers(serialNumbers: [String!]!): [UserBoard!]!
+    boardsBySerialNumbers(serialNumbers: [String!]!, boardType: String): [UserBoard!]!
 
     """
     Recorded board configurations for the current user keyed by controller serial.

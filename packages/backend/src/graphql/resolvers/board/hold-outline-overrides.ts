@@ -21,6 +21,7 @@ import { getSetsForLayoutAndSize } from '@boardsesh/board-constants/product-size
 import { getBoardDetailsForBoard } from '@boardsesh/board-render';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
+import { logger } from '../../../utils/logger';
 import { applyRateLimit, validateInput } from '../shared/helpers';
 import { requireAdmin } from '../social/roles';
 import {
@@ -113,6 +114,46 @@ function placementIdsFor({ boardName, layoutId, sizeId }: HoldOutlineConfig): Se
   }
 }
 
+/**
+ * The board name as the caller sent it, unvalidated, for the authorization
+ * check that has to run BEFORE validation.
+ *
+ * `requireAdmin` is board-scoped, so it needs a board name — but running the
+ * Zod schema first to get one means an unauthenticated caller learns which board
+ * names exist from the enum error. Reading the raw field is safe: it only ever
+ * reaches `hasAdmin`, where it is compared against the caller's own role rows.
+ * An unknown string matches no board-scoped row, so it cannot grant anything;
+ * a global admin (`board_type IS NULL`) passes either way and is then held to
+ * the schema like everyone else.
+ */
+function rawBoardName(input: unknown): string | undefined {
+  if (typeof input !== 'object' || input === null) return undefined;
+  const { boardName } = input as { boardName?: unknown };
+  return typeof boardName === 'string' ? boardName : undefined;
+}
+
+/**
+ * Is a stored ring structurally sound enough to hand to a client?
+ *
+ * Writes already enforce the full contract, so this only fires on a row that
+ * reached the column another way — a hand-run UPDATE, a restore from an older
+ * shape, a bad migration. jsonb will hold any of those happily, and a renderer
+ * fed an odd-length or NaN-bearing ring draws garbage rather than failing, so
+ * the read path drops the row instead of passing it on.
+ *
+ * Deliberately looser than the write gate: structure only, no coordinate bound
+ * and no length ceiling. Those are policy and can be retuned; a row stored under
+ * an older policy is stale, not corrupt, and should still render.
+ */
+function isRenderableStoredRing(outline: unknown): outline is number[] {
+  return (
+    Array.isArray(outline) &&
+    outline.length >= MIN_RING_NUMBERS &&
+    outline.length % 2 === 0 &&
+    outline.every((value) => typeof value === 'number' && Number.isFinite(value))
+  );
+}
+
 /** The DB row shape the two write paths and the read path all return to GraphQL. */
 type OverrideRow = {
   boardName: string;
@@ -163,9 +204,11 @@ export const holdOutlineQueries = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<BoardHoldOutlines> => {
-    const config = validateInput(HoldOutlineConfigInputSchema, input, 'input');
-    await requireAdmin(ctx, config.boardName);
+    // Authorization first, validation second: an unauthenticated caller must not
+    // be able to read the board-name enum out of a validation error.
+    await requireAdmin(ctx, rawBoardName(input));
     await applyRateLimit(ctx, HOLD_OUTLINES_QUERY_LIMIT, 'holdOutlines');
+    const config = validateInput(HoldOutlineConfigInputSchema, input, 'input');
 
     // Null is the normal answer for a config the tracer never covered (Woods
     // ships no shard at all): the editor draws against the ring fallback the
@@ -205,12 +248,28 @@ export const holdOutlineQueries = {
       )
       .orderBy(dbSchema.holdOutlineOverrides.placementId, dbSchema.holdOutlineOverrides.kind);
 
+    // A row that is not structurally a ring is dropped rather than handed on:
+    // the editor would draw garbage from it and could not tell that it had. Not
+    // reachable through this API — writes enforce the full contract — so a hit
+    // means the column was written some other way, which is worth a log line.
+    const renderable = rows.filter((row) => {
+      if (isRenderableStoredRing(row.outline)) return true;
+      logger.warn('[holdOutlines] dropping a stored override whose outline is not a ring', {
+        boardName: row.boardName,
+        layoutId: row.layoutId,
+        sizeId: row.sizeId,
+        placementId: row.placementId,
+        kind: row.kind,
+      });
+      return false;
+    });
+
     return {
       boardName: config.boardName,
       layoutId: config.layoutId,
       sizeId: config.sizeId,
       shardOutlines,
-      overrides: rows.map((row) => toGraphQLOverride(row, row.authorDisplayName ?? row.authorName ?? null)),
+      overrides: renderable.map((row) => toGraphQLOverride(row, row.authorDisplayName ?? row.authorName ?? null)),
     };
   },
 };
@@ -221,13 +280,13 @@ export const holdOutlineMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<HoldOutlineOverride> => {
-    const validated = validateInput(UpsertHoldOutlineOverrideInputSchema, input, 'input');
-    await requireAdmin(ctx, validated.boardName);
+    // Authorization first, validation second — see the query above.
+    await requireAdmin(ctx, rawBoardName(input));
     await applyRateLimit(ctx, HOLD_OUTLINE_MUTATION_LIMIT, 'upsertHoldOutlineOverride');
-    const authorId = ctx.userId;
-    if (!authorId) {
-      throw new Error('Authentication required to perform this operation');
-    }
+    const validated = validateInput(UpsertHoldOutlineOverrideInputSchema, input, 'input');
+    // `requireAdmin` runs `requireAuthenticated` first, so reaching here means
+    // `ctx.userId` is set; the non-null assertion is the guarantee, not a guess.
+    const authorId = ctx.userId!;
 
     if (!placementIdsFor(validated).has(validated.placementId)) {
       throw new GraphQLError(`Placement ${validated.placementId} is not on this board config.`, {
@@ -252,13 +311,13 @@ export const holdOutlineMutations = {
     // to be repeated by hand.
     //
     // "Covers" rather than "contains", because a strict containment test would
-    // make exactly the holds most in need of correction un-correctable: five
-    // shipped outlines (kilter/1-28 placements 1448, 4800, 4806, 4810, 4825 —
-    // hooks and slopers whose bolt sits under a deeply concave underside) do not
-    // contain their own centre, all by under 0.03 radii. A wrong-hold ring sits
-    // ~2 radii away, so the tolerance admits the first and still rejects the
-    // second by a wide margin. Both kinds are held to it: a LED_INNER ring is
-    // the plate boundary around the same bolt.
+    // make exactly the holds most in need of correction un-correctable: a
+    // handful of shipped outlines on kilter/1-28 — hooks and slopers whose bolt
+    // sits under a deeply concave underside — do not contain their own centre,
+    // all by a small fraction of a radius. A wrong-hold ring sits ~2 radii away,
+    // so the tolerance admits the first and still rejects the second by a wide
+    // margin. Both kinds are held to it: a LED_INNER ring is the plate boundary
+    // around the same bolt.
     if (!pointInRing(outline, 0, 0) && distanceToRing(outline, 0, 0) > CENTRE_TOLERANCE_RADII) {
       throw new GraphQLError('An outline has to cover the hold it belongs to.', {
         extensions: { code: HOLD_OUTLINE_CODES.centreOutside },
@@ -266,8 +325,9 @@ export const holdOutlineMutations = {
     }
 
     // An editor that clears the field sends '', which is not a reason — store the
-    // absence rather than an empty string nothing can render.
-    const note = validated.note?.trim() || null;
+    // absence rather than an empty string nothing can render. The schema has
+    // already trimmed it, so `||` is doing the whole job here.
+    const note = validated.note || null;
 
     const [row] = await db
       .insert(dbSchema.holdOutlineOverrides)
@@ -316,9 +376,10 @@ export const holdOutlineMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
-    const validated = validateInput(DeleteHoldOutlineOverrideInputSchema, input, 'input');
-    await requireAdmin(ctx, validated.boardName);
+    // Authorization first, validation second — see the query above.
+    await requireAdmin(ctx, rawBoardName(input));
     await applyRateLimit(ctx, HOLD_OUTLINE_MUTATION_LIMIT, 'deleteHoldOutlineOverride');
+    const validated = validateInput(DeleteHoldOutlineOverrideInputSchema, input, 'input');
 
     const removed = await db
       .delete(dbSchema.holdOutlineOverrides)

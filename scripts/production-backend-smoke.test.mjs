@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  BOARD_RENDER_VERSION,
   assertGroupedNotificationSchema,
+  boardRenderEndpoint,
+  checkBoardRenderOnce,
   checkBackendSchemaOnce,
   parseGraphqlResponse,
   runBackendSmoke,
@@ -17,12 +20,31 @@ function schemaPayload(fieldNames = ['id', 'climbLayoutId', 'climbAngle']) {
   };
 }
 
-function response(payload, { ok = true, status = 200 } = {}) {
+function response(payload, { ok = true, status = 200, headers = {} } = {}) {
+  const encodedPayload =
+    payload instanceof Uint8Array
+      ? payload
+      : new TextEncoder().encode(typeof payload === 'string' ? payload : JSON.stringify(payload));
   return {
     ok,
     status,
+    headers: new Headers(headers),
     text: async () => (typeof payload === 'string' ? payload : JSON.stringify(payload)),
+    arrayBuffer: async () =>
+      encodedPayload.buffer.slice(encodedPayload.byteOffset, encodedPayload.byteOffset + encodedPayload.byteLength),
   };
+}
+
+function boardRenderResponse(overrides = {}) {
+  const webpBytes = new TextEncoder().encode('RIFF0000WEBP');
+  return response(webpBytes, {
+    headers: {
+      'Content-Type': 'image/webp',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      'X-Railway-Request-Id': 'request-123',
+    },
+    ...overrides,
+  });
 }
 
 const silentLog = { info() {}, warn() {} };
@@ -82,6 +104,96 @@ void test('posts a no-cache introspection request to the base GraphQL endpoint',
   assert.match(JSON.parse(request.options.body).query, /__type/);
 });
 
+void test('fetches uncached board image bytes directly from the Railway endpoint', async () => {
+  let request;
+  const renderResult = await checkBoardRenderOnce({
+    baseUrl: 'https://example.com/graphql',
+    cacheBuster: 'deploy-123',
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return boardRenderResponse();
+    },
+    timeoutMs: 100,
+  });
+
+  const requestUrl = new URL(request.url);
+  assert.equal(requestUrl.origin, 'https://example.com');
+  assert.equal(requestUrl.pathname, '/render/board');
+  assert.equal(requestUrl.searchParams.get('smoke'), 'deploy-123');
+  assert.equal(requestUrl.searchParams.get('v'), BOARD_RENDER_VERSION);
+  assert.equal(requestUrl.searchParams.get('frames'), '');
+  assert.equal(request.options.method, 'GET');
+  assert.equal(request.options.cache, 'no-store');
+  assert.equal(renderResult.contentType, 'image/webp');
+  assert.equal(renderResult.byteLength, 12);
+});
+
+void test('checks the unversioned daily-cache board render path', async () => {
+  let requestUrl;
+  const renderResult = await checkBoardRenderOnce({
+    baseUrl: 'https://example.com',
+    renderVersion: null,
+    fetchImpl: async (url) => {
+      requestUrl = new URL(url);
+      return boardRenderResponse({
+        headers: {
+          'Content-Type': 'image/webp',
+          'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800',
+          'X-Railway-Request-Id': 'request-123',
+        },
+      });
+    },
+    timeoutMs: 100,
+  });
+
+  assert.equal(requestUrl.searchParams.has('v'), false);
+  assert.doesNotMatch(renderResult.cacheControl, /immutable/);
+  assert.match(renderResult.cacheControl, /max-age=86400/);
+});
+
+void test('rejects cached proxy responses and malformed image bytes', async () => {
+  await assert.rejects(
+    checkBoardRenderOnce({
+      baseUrl: 'https://example.com',
+      fetchImpl: async () =>
+        boardRenderResponse({
+          headers: {
+            'Content-Type': 'image/webp',
+            'Cache-Control': 'public, max-age=31536000, immutable',
+            'X-Railway-Request-Id': 'request-123',
+            'X-Vercel-Cache': 'MISS',
+          },
+        }),
+      timeoutMs: 100,
+    }),
+    /Vercel origin/,
+  );
+
+  await assert.rejects(
+    checkBoardRenderOnce({
+      baseUrl: 'https://example.com',
+      fetchImpl: async () =>
+        response(new TextEncoder().encode('not an image'), {
+          headers: {
+            'Content-Type': 'image/webp',
+            'Cache-Control': 'public, max-age=31536000, immutable',
+            'X-Railway-Request-Id': 'request-123',
+          },
+        }),
+      timeoutMs: 100,
+    }),
+    /invalid WebP bytes/,
+  );
+});
+
+void test('normalizes the board renderer URL to an HTTP(S) origin', () => {
+  const versionedUrl = new URL(boardRenderEndpoint('https://example.com/graphql', 'one'));
+  assert.equal(versionedUrl.pathname, '/render/board');
+  assert.equal(versionedUrl.searchParams.get('v'), BOARD_RENDER_VERSION);
+  assert.match(BOARD_RENDER_VERSION, /^[0-9a-f]{8,64}$/);
+  assert.throws(() => boardRenderEndpoint('ws://example.com/graphql'), /must use http or https/);
+});
+
 void test('aborts an introspection request that exceeds its timeout', async () => {
   await assert.rejects(
     checkBackendSchemaOnce({
@@ -108,13 +220,23 @@ void test('retries transient failures and succeeds within the bounded attempt co
       fetchCalls += 1;
       if (fetchCalls === 1) throw new Error('socket reset');
       if (fetchCalls === 2) return response('upstream unavailable', { ok: false, status: 503 });
+      if (fetchCalls === 4) return boardRenderResponse();
+      if (fetchCalls === 5) {
+        return boardRenderResponse({
+          headers: {
+            'Content-Type': 'image/webp',
+            'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800',
+            'X-Railway-Request-Id': 'request-123',
+          },
+        });
+      }
       return response(schemaPayload());
     },
     sleep: async (milliseconds) => sleepDurations.push(milliseconds),
     log: silentLog,
   });
 
-  assert.equal(fetchCalls, 3);
+  assert.equal(fetchCalls, 5);
   assert.deepEqual(sleepDurations, [25, 25]);
   assert.ok(fields.includes('climbLayoutId'));
 });

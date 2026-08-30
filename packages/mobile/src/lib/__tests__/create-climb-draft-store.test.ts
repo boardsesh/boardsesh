@@ -67,4 +67,66 @@ describe('createClimbDraftKey', () => {
     await expect(loadDraft('first-board')).resolves.toBeNull();
     await expect(loadDraft('second-board')).resolves.toBeNull();
   });
+
+  it('round-trips the edit and fork slots alongside the new-climb one', async () => {
+    const { saveDraft, loadDraft, createClimbEditDraftKey, createClimbForkDraftKey } =
+      await import('../create-climb-draft-store');
+    const newClimbKey = createClimbDraftKey(base);
+    const editKey = createClimbEditDraftKey('kilter', 'climb-9');
+    const forkKey = createClimbForkDraftKey(newClimbKey);
+
+    // Identity lives in the key, which is what lets all three autosave at once
+    // without any of them clobbering another.
+    expect(editKey).toBe('edit:kilter:climb-9');
+    expect(forkKey).toBe(`fork:${newClimbKey}`);
+    expect(new Set([newClimbKey, editKey, forkKey]).size).toBe(3);
+
+    await saveDraft(newClimbKey, { holdsJson: '{}', name: 'New', description: '', isDraft: true });
+    await saveDraft(editKey, { holdsJson: '{}', name: 'Edit', description: '', isDraft: true });
+    await saveDraft(forkKey, { holdsJson: '{}', name: 'Fork', description: '', isDraft: true });
+
+    await expect(loadDraft(newClimbKey)).resolves.toMatchObject({ name: 'New' });
+    await expect(loadDraft(editKey)).resolves.toMatchObject({ name: 'Edit' });
+    await expect(loadDraft(forkKey)).resolves.toMatchObject({ name: 'Fork' });
+  });
+
+  it('sweeps all three key shapes on account cleanup', async () => {
+    const { saveDraft, loadDraft, clearAllCreateClimbDrafts, createClimbEditDraftKey, createClimbForkDraftKey } =
+      await import('../create-climb-draft-store');
+    const keys = [
+      createClimbDraftKey(base),
+      createClimbEditDraftKey('kilter', 'climb-9'),
+      createClimbForkDraftKey('k'),
+    ];
+    for (const key of keys) {
+      await saveDraft(key, { holdsJson: '{}', name: key, description: '', isDraft: true });
+    }
+
+    await clearAllCreateClimbDrafts();
+
+    for (const key of keys) {
+      await expect(loadDraft(key)).resolves.toBeNull();
+    }
+  });
+
+  it('still loads a payload stored in the original four-field shape', async () => {
+    // The no-migration guarantee: every field added since is optional, and the
+    // new-climb key string never changed, so drafts already on devices restore.
+    const { saveDraft, loadDraft } = await import('../create-climb-draft-store');
+    const key = createClimbDraftKey(base);
+    await saveDraft(key, { holdsJson: '{"1":{"state":"HAND"}}', name: 'Legacy', description: '', isDraft: true });
+
+    await expect(loadDraft(key)).resolves.toEqual({
+      holdsJson: '{"1":{"state":"HAND"}}',
+      name: 'Legacy',
+      description: '',
+      isDraft: true,
+    });
+  });
+
+  it('always reports storage as available on native', async () => {
+    const { isDraftStorageAvailable } = await import('../create-climb-draft-store');
+    expect(isDraftStorageAvailable()).toBe(true);
+    expect(isDraftStorageAvailable(null)).toBe(true);
+  });
 });

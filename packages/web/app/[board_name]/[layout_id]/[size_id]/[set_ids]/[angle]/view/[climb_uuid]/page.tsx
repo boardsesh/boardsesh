@@ -15,7 +15,7 @@ import { parseRouteParams } from '@/app/lib/url-utils.server';
 import type { Metadata } from 'next';
 import ClimbFrontDoor from '@/app/components/climb-front-door/climb-front-door';
 import { buildOgBoardRenderUrl, buildOverlayPreloadUrls } from '@/app/components/board-renderer/util';
-import { scheduleOverlayWarming } from '@/app/lib/warm-overlay-cache';
+import { scheduleOgImageWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
@@ -150,9 +150,9 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
       getFrontDoorBetaLinks({ boardType: parsedParams.board_name, climbUuid: parsedParams.climb_uuid }),
     ]);
 
-    // Warm the full-resolution overlay so the front door's board image — the
-    // page's LCP element — is already rendered when the browser asks for it.
-    scheduleOverlayWarming({ boardDetails, climbs: [currentClimb], variant: 'full' });
+    // The board overlay is preloaded below and fetched directly from Railway.
+    // Keep only the single OG warm so a later share-card unfurl is a byte hit.
+    scheduleOgImageWarming({ boardDetails, climb: currentClimb });
     const preloadUrls = buildOverlayPreloadUrls(boardDetails, currentClimb.frames, false);
     // Same name fallback `generateMetadata` used. An unnamed climb would
     // otherwise get the `-{board} Climb-` slug in its canonical and the bare

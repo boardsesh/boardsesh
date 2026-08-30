@@ -818,11 +818,17 @@ export const schemaSQL = `
   );
   -- Board presence: serials are not globally unique (the supplier reuses them),
   -- so a serial may map to many active boards. We only forbid one owner binding
-  -- the same serial to two of their own boards; the user disambiguates the rest.
+  -- the same serial to two of their own boards OF THE SAME TYPE — Aurora runs a
+  -- separate serial sequence per board app, so a Kilter #12345 and a Tension
+  -- #12345 are different controllers one owner may legitimately hold.
   -- Excludes the system user (seeded public catalog boards) so the location
   -- sync can mirror the upstream catalog's duplicate serials verbatim.
+  -- Dropped first: worker databases are reused across runs, so a bare
+  -- CREATE ... IF NOT EXISTS would leave the narrower (owner, serial) index in
+  -- place and the widened definition would never land.
+  DROP INDEX IF EXISTS "user_boards_unique_owner_serial";
   CREATE UNIQUE INDEX IF NOT EXISTS "user_boards_unique_owner_serial"
-    ON "user_boards" ("owner_id", "serial_number")
+    ON "user_boards" ("owner_id", "board_type", "serial_number")
     WHERE "serial_number" IS NOT NULL AND "serial_number" <> '' AND "deleted_at" IS NULL AND "owner_id" != '00000000-0000-0000-0000-000000000000';
   CREATE INDEX IF NOT EXISTS "user_boards_serial_idx"
     ON "user_boards" ("serial_number")
@@ -897,8 +903,12 @@ export const schemaSQL = `
     "created_at" timestamp DEFAULT now() NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL
   );
+  -- Keyed on board_name too: one user can record both a Kilter #12345 and a
+  -- Tension #12345. Dropped first for the same reused-worker-database reason as
+  -- user_boards_unique_owner_serial above.
+  DROP INDEX IF EXISTS "user_board_serials_unique_user_serial";
   CREATE UNIQUE INDEX IF NOT EXISTS "user_board_serials_unique_user_serial"
-    ON "user_board_serials" ("user_id", "serial_number");
+    ON "user_board_serials" ("user_id", "board_name", "serial_number");
   CREATE INDEX IF NOT EXISTS "user_board_serials_serial_idx" ON "user_board_serials" ("serial_number");
   CREATE INDEX IF NOT EXISTS "user_board_serials_board_uuid_idx" ON "user_board_serials" ("board_uuid");
 

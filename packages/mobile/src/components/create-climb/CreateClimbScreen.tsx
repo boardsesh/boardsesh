@@ -43,6 +43,19 @@ export function CreateClimbScreen({
   const router = useRouter();
   const { openPlayDrawer } = useDrawerHost();
 
+  const handleStartedNewClimb = useCallback(() => {
+    router.replace({
+      pathname: '/(tabs)/climbs/create',
+      params: {
+        boardName: board.boardName,
+        layoutId: String(board.layoutId),
+        sizeId: String(board.sizeId),
+        setIds: board.setIds,
+        angle: String(board.angle),
+      },
+    });
+  }, [router, board]);
+
   const controller = useCreateClimbScreen({
     board,
     forkFrames,
@@ -50,6 +63,7 @@ export function CreateClimbScreen({
     forkDescription,
     editClimbUuid,
     onPublished: () => router.back(),
+    onStartedNewClimb: handleStartedNewClimb,
   });
 
   const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
@@ -64,6 +78,21 @@ export function CreateClimbScreen({
       }),
     [board.boardName, board.layoutId, board.sizeId, board.setIds],
   );
+
+  // Every dismiss path — chevron, pan-down, backdrop, hardware back — lands here.
+  // No confirm on any of them: the autosave flush on unmount already keeps the
+  // work, and a modal on the pan-down (the most-used gesture on this surface)
+  // would be hostile. Just say it once, and only when the climber could
+  // reasonably think it's gone — the controller decides that.
+  //
+  // Toast AFTER the pop, not before: the toast overlay is a root-level JS View
+  // that renders behind any native sheet (see toast-provider), so firing it while
+  // the drawer is still up shows nothing.
+  const { notifyDraftKeptOnDismiss } = controller;
+  const handleClose = useCallback(() => {
+    router.back();
+    notifyDraftKeptOnDismiss();
+  }, [router, notifyDraftKeptOnDismiss]);
 
   const handleLongPress = useCallback((holdId: number) => setLongPressHoldId(holdId), []);
   const closeHoldRole = useCallback(() => setLongPressHoldId(null), []);
@@ -136,7 +165,7 @@ export function CreateClimbScreen({
         onLongPressHold={handleLongPress}
         subSheetOpen={longPressHoldId !== null}
         onLoadDraft={handleLoadDraft}
-        onClose={() => router.back()}
+        onClose={handleClose}
         onViewDuplicate={handleViewDuplicate}
       />
 

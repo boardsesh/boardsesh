@@ -249,6 +249,10 @@ miss their own centre by up to 0.03 radii, and a strict gate would make exactly 
 un-correctable. It was five while the tracer cut on the composite; three of those were the
 cut rather than the art and went away when the tracer moved per image. The failure the
 tolerance exists to catch is a ring drawn around the NEIGHBOURING hold, ~2 radii away.
+Nothing pins that set of two: which placements miss their own centre is a property of
+whichever tracer last wrote the shards, so `ring.test.ts` sweeps every committed shard and
+asserts the invariant — every outline the tracer produced passes the gate — rather than a
+list of ids that a regeneration would invalidate.
 
 ### From a row to a shard
 

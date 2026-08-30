@@ -6,17 +6,17 @@ Status of Open Graph metadata, dynamic OG images, and share buttons across all r
 
 ### Routes with Dynamic OG Images + Share Buttons (Complete)
 
-| Route                                       | OG Image API                                       | Share Button               | Notes                                                  |
-| ------------------------------------------- | -------------------------------------------------- | -------------------------- | ------------------------------------------------------ |
-| `[board_name]/.../view/[climb_uuid]`        | `/api/internal/board-render?variant=og&format=png` | Yes (climb actions drawer) | Immutable Rust-rendered board preview, no text overlay |
-| `[board_name]/.../play/[climb_uuid]`        | `/api/internal/board-render?variant=og&format=png` | Yes (climb actions drawer) | Same as view, canonical to view URL                    |
-| `/b/[board_slug]/[angle]/view/[climb_uuid]` | `/api/internal/board-render?variant=og&format=png` | Yes (inherited)            | Slug route, same immutable board preview               |
-| `/b/[board_slug]/[angle]/play/[climb_uuid]` | `/api/internal/board-render?variant=og&format=png` | Yes (inherited)            | Slug route, same immutable board preview               |
-| `/crusher/[user_id]`                        | `/api/og/profile`                                  | Yes (header)               | Avatar + grade distribution chart                      |
-| `/setter/[setter_username]`                 | `/api/og/setter`                                   | Yes (header)               | Avatar + ascents-per-grade chart for created climbs    |
-| `/session/[sessionId]`                      | `/api/og/session`                                  | Yes (header)               | Session name + participants + grade chart              |
-| `/join/[sessionId]`                         | `/api/og/session?variant=join`                     | N/A (redirect page)        | Same as session but with "Get on the wall" CTA         |
-| `/playlists/[playlist_uuid]`                | `/api/og/playlist`                                 | Yes (hero)                 | Playlist color/icon + name + climb count               |
+| Route                                       | OG Image API                        | Share Button               | Notes                                                  |
+| ------------------------------------------- | ----------------------------------- | -------------------------- | ------------------------------------------------------ |
+| `[board_name]/.../view/[climb_uuid]`        | `https://ws.boardsesh.com/og/climb` | Yes (climb actions drawer) | Immutable Rust-rendered board preview, no text overlay |
+| `[board_name]/.../play/[climb_uuid]`        | `https://ws.boardsesh.com/og/climb` | Yes (climb actions drawer) | Same as view, canonical to view URL                    |
+| `/b/[board_slug]/[angle]/view/[climb_uuid]` | `https://ws.boardsesh.com/og/climb` | Yes (inherited)            | Slug route, same immutable board preview               |
+| `/b/[board_slug]/[angle]/play/[climb_uuid]` | `https://ws.boardsesh.com/og/climb` | Yes (inherited)            | Slug route, same immutable board preview               |
+| `/crusher/[user_id]`                        | `/api/og/profile`                   | Yes (header)               | Avatar + grade distribution chart                      |
+| `/setter/[setter_username]`                 | `/api/og/setter`                    | Yes (header)               | Avatar + ascents-per-grade chart for created climbs    |
+| `/session/[sessionId]`                      | `/api/og/session`                   | Yes (header)               | Session name + participants + grade chart              |
+| `/join/[sessionId]`                         | `/api/og/session?variant=join`      | N/A (redirect page)        | Same as session but with "Get on the wall" CTA         |
+| `/playlists/[playlist_uuid]`                | `/api/og/playlist`                  | Yes (hero)                 | Playlist color/icon + name + climb count               |
 
 ### Routes with Static Metadata (Default OG Image)
 

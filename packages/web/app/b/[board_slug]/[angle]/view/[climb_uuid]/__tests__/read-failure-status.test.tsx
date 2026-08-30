@@ -55,8 +55,7 @@ vi.mock('@/app/components/board-renderer/util', () => ({
 }));
 
 vi.mock('@/app/lib/warm-overlay-cache', () => ({
-  scheduleOverlayWarming: vi.fn(),
-  FRONT_DOOR_WARM_LIMIT: 6,
+  scheduleOgImageWarming: vi.fn(),
 }));
 
 vi.mock('@/app/components/climb-front-door/climb-front-door', () => ({

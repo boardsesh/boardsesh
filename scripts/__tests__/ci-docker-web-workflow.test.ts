@@ -207,12 +207,7 @@ describe('docker-web CI job contract', () => {
     expect(dockerWebSteps).not.toContain('cache-to');
   });
 
-  it('asserts the three things the image is built to prove', () => {
-    // The board-renderer WASM reaches the standalone output only through
-    // next.config.mjs's outputFileTracingIncludes, and the size floor is what
-    // makes the check survive a 0-byte stub.
-    expect(dockerWebSteps).toContain('board_renderer_wasm_bg.wasm');
-    expect(dockerWebSteps).toContain('-gt 400000');
+  it('asserts the generated artifacts the web image is built to prove', () => {
     // public/openapi.json is gitignored, so its presence proves generate:openapi
     // ran; counting paths is what makes an empty document fail.
     expect(dockerWebSteps).toContain('/app/packages/web/public/openapi.json');
@@ -222,6 +217,9 @@ describe('docker-web CI job contract', () => {
     // the real context instead of a second copy of the same mistake.
     expect(dockerWebSteps).toContain('artifactDirectory');
     expect(dockerWebSteps).toContain('packages/web/next.config.mjs');
+    // Board rendering moved to the backend; the web image must not retain the
+    // deleted route's standalone WASM tracing gate.
+    expect(dockerWebSteps).not.toContain('board_renderer_wasm_bg.wasm');
   });
 
   it('reads artifactDirectory from next.config.mjs instead of hardcoding it', () => {

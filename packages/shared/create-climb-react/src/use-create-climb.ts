@@ -223,7 +223,32 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
 
   const totalHolds = useMemo(() => Object.values(unionHolds).filter((h) => h.state !== 'OFF').length, [unionHolds]);
 
-  const isValid = totalHolds > 0;
+  // Two thresholds, deliberately different, because the destinations carry
+  // different risk:
+  //  - `canSave` keeps a private draft cheap. Any painted hold is worth keeping,
+  //    and tightening it would regress every draft that saves today.
+  //  - `canPublish` gates the PUBLIC transition. Nothing else checks starts and
+  //    finishes — SaveClimbInputSchema wants only a name and one non-empty frame
+  //    — so without this a one-hold blob is one tap from being a public climb.
+  // Scan the frames themselves rather than the flattened union. A hold can
+  // legitimately change from STARTING in one frame to FINISH in a later frame;
+  // the union keeps only its last state and would incorrectly reject that route.
+  const canSave = totalHolds > 0;
+  const canPublish = useMemo(() => {
+    let hasStartingHold = false;
+    let hasFinishHold = false;
+    for (const frame of history.present) {
+      for (const hold of Object.values(frame)) {
+        if (hold.state === 'STARTING') hasStartingHold = true;
+        if (hold.state === 'FINISH') hasFinishHold = true;
+        if (hasStartingHold && hasFinishHold) return true;
+      }
+    }
+    return false;
+  }, [history.present]);
+
+  /** Alias of `canSave`, kept for existing callers. Prefer `canSave` / `canPublish`. */
+  const isValid = canSave;
 
   const setHoldState = useCallback(
     (holdId: number, nextState: HoldState | 'OFF') => {
@@ -337,6 +362,8 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
     finishCount,
     totalHolds,
     isValid,
+    canSave,
+    canPublish,
     resetHolds,
     loadHolds,
     loadFrames,

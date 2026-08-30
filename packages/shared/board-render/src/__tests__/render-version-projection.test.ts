@@ -23,7 +23,7 @@ describe('BOARD_RENDER_VERSION', () => {
 
   it('satisfies the render route’s own well-formed-version regex', () => {
     // Kept in lock-step with `isWellFormedRenderVersion` in
-    // packages/web/app/api/internal/board-render/route.ts. If they disagree,
+    // packages/backend/src/handlers/board-render.ts. If they disagree,
     // every versioned web URL silently drops off the immutable branch.
     expect(BOARD_RENDER_VERSION).toMatch(/^[0-9a-f]{8,64}$/);
   });

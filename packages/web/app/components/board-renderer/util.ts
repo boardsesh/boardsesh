@@ -29,6 +29,26 @@ type BuildBoardRenderUrlOptions = {
   colorScheme?: 'light' | 'dark';
 };
 
+const LEGACY_BOARD_RENDER_PATH = '/api/internal/board-render';
+const BACKEND_BOARD_RENDER_PATH = '/render/board';
+
+function shouldUseCompatibilityPath(): boolean {
+  // The dev orchestrator advertises its Tailscale hostname to the browser even
+  // though SSR runs in the same worktree. Keep both sides on one relative URL
+  // so local hostnames and ports cannot produce different hydrated markup.
+  if (process.env.NODE_ENV === 'development') return true;
+
+  const configuredWsUrl = process.env.NEXT_PUBLIC_WS_URL;
+  if (!configuredWsUrl) return true;
+
+  try {
+    const hostname = new URL(configuredWsUrl).hostname;
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0' || hostname === '[::1]';
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Boards whose art has a dark-mode sibling committed under public/images.
  *
@@ -49,7 +69,20 @@ export const BOARDS_WITH_DARK_ART: ReadonlySet<string> = new Set(['woods']);
 export const hasDarkBoardArt = (board: BoardName) => BOARDS_WITH_DARK_ART.has(board);
 
 /**
- * Build the URL for the Rust/WASM-rendered board image.
+ * Production and preview HTML point straight at Railway so a cache miss never
+ * invokes Vercel. Local/LAN development keeps the same-origin compatibility
+ * path: the configured URL is commonly localhost on the server but the browser
+ * sees a LAN hostname, and choosing different absolute origins would create an
+ * SSR/hydration mismatch.
+ */
+function getBoardRenderEndpoint(): string {
+  if (shouldUseCompatibilityPath()) return LEGACY_BOARD_RENDER_PATH;
+  const backendOrigin = getPublicBackendHttpUrl();
+  return backendOrigin ? `${backendOrigin}${BACKEND_BOARD_RENDER_PATH}` : LEGACY_BOARD_RENDER_PATH;
+}
+
+/**
+ * Build the URL for the Rust/WASM-rendered board image on the Railway backend.
  * Mirroring is handled via CSS (scaleX(-1)), not a separate render — halves cache variants.
  *
  * The trailing `&v=` is the renderer version (#4773). Board-render responses are
@@ -65,7 +98,7 @@ export const buildBoardRenderUrl = (
   { thumbnail, includeBackground, variant, format, colorScheme }: BuildBoardRenderUrlOptions = {},
 ) => {
   let url =
-    `/api/internal/board-render?board_name=${boardDetails.board_name}` +
+    `${getBoardRenderEndpoint()}?board_name=${boardDetails.board_name}` +
     `&layout_id=${boardDetails.layout_id}` +
     `&size_id=${boardDetails.size_id}` +
     `&set_ids=${boardDetails.set_ids.join(',')}` +
@@ -153,10 +186,9 @@ export type BoardArtLayers = {
  *
  * Boards with dark art cannot use that composite for both themes. Its URL carries the
  * climb's frames, so a dark twin is a *second* WASM + sharp render per climb — 50 of them on
- * a front-door list, which is exactly the work `warmOverlays` caps itself to avoid. The holds
- * overlay is identical in both themes though; only the board photo behind it differs. So the
- * photo splits back out as static art (two files per board size, shared by every card on the
- * page) and the overlay renders once with no background baked in.
+ * a front-door list. The holds overlay is identical in both themes though; only the board photo
+ * behind it differs. So the photo splits back out as static art (two files per board size, shared
+ * by every card on the page) and the overlay renders once with no background baked in.
  */
 export const buildBoardArtLayers = (
   boardDetails: BoardDetails,

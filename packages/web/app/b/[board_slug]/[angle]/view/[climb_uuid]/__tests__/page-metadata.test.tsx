@@ -82,7 +82,7 @@ vi.mock('@/app/lib/data/queries', () => ({
 }));
 
 vi.mock('@/app/lib/warm-overlay-cache', () => ({
-  scheduleOverlayWarming: vi.fn(),
+  scheduleOgImageWarming: vi.fn(),
 }));
 
 vi.mock('@/app/lib/url-utils', () => ({

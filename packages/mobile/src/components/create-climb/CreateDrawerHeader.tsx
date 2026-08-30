@@ -56,10 +56,16 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
 
   return (
     <View style={styles.row}>
+      {/* NOT `createClimbForm.dismiss` — that key is a DIALOG cancel label, and
+          its translations say discard ("Descartar" / "Ignorer" / "Ausblenden").
+          On a close button, for a feature whose whole point is "does closing lose
+          my work?", the screen-reader user was getting a stronger wrong signal
+          than the sighted one. The work is kept; the hint says where. */}
       <Pressable
         onPress={onClose}
         accessibilityRole="button"
-        accessibilityLabel={t('createClimbForm.dismiss')}
+        accessibilityLabel={t('mobile.create.actions.close')}
+        accessibilityHint={t('mobile.create.actions.closeHint')}
         hitSlop={8}
         style={[styles.iconButton, { backgroundColor: systemColors.fill }]}
       >

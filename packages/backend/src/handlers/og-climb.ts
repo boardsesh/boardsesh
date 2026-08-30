@@ -6,9 +6,10 @@ import {
   type OutputFormat,
 } from '@boardsesh/board-render';
 import { applyCorsHeaders } from './cors';
+import { getPublicClientIp } from '../utils/client-ip';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 import { RateLimitError } from '../utils/rate-limiter';
-import { ensureBoardRendererAvailable, renderOgClimb } from '../services/board-render';
+import { RenderQueueSaturatedError, ensureBoardRendererAvailable, renderOgClimb } from '../services/board-render';
 import { logger } from '../utils/logger';
 
 const RATE_LIMIT_MAX = 120;
@@ -19,26 +20,6 @@ const RATE_LIMIT_MAX = 120;
 const SOCKET_RATE_LIMIT_MAX = 600;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const SLOW_RENDER_MS = 1000;
-
-/**
- * Client IP for rate limiting. Prefers CF-Connecting-IP so that when
- * Cloudflare fronts ws.boardsesh.com the per-IP buckets track real clients —
- * the last x-forwarded-for hop is Cloudflare's colo IP there, which would
- * collapse everyone behind a colo into one bucket. Otherwise uses the LAST
- * x-forwarded-for entry: the edge proxy (Railway) appends the IP it observed,
- * while earlier entries are client-supplied and spoofable. A client hitting
- * Railway directly could spoof CF-Connecting-IP for fresh buckets, but the
- * per-peer ceiling in the handler still caps total throughput.
- */
-function getClientIp(req: IncomingMessage): string {
-  const cloudflareClientIp = req.headers['cf-connecting-ip'];
-  const cloudflareIp = Array.isArray(cloudflareClientIp) ? cloudflareClientIp[0] : cloudflareClientIp;
-  if (cloudflareIp?.trim()) return cloudflareIp.trim();
-  const forwarded = req.headers['x-forwarded-for'];
-  const forwardedChain = Array.isArray(forwarded) ? forwarded.join(',') : forwarded;
-  const lastHop = forwardedChain?.split(',').at(-1)?.trim();
-  return lastHop || req.socket.remoteAddress || 'unknown';
-}
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -78,7 +59,7 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
   // Fails open when Redis is unavailable (falls back to the in-memory limiter
   // inside checkRateLimitRedis).
   try {
-    await checkRateLimitRedis(getClientIp(req), 'og-climb', RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS);
+    await checkRateLimitRedis(getPublicClientIp(req), 'og-climb', RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS);
     await checkRateLimitRedis(
       req.socket.remoteAddress || 'unknown',
       'og-climb-peer',
@@ -87,8 +68,14 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
     );
   } catch (error) {
     if (error instanceof RateLimitError) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': String(error.retryAfterSeconds) });
-      res.end(JSON.stringify({ error: 'Rate limit exceeded' }));
+      const encoded = JSON.stringify({ error: 'Rate limit exceeded' });
+      res.writeHead(429, {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(encoded),
+        'Retry-After': String(error.retryAfterSeconds),
+        'Cache-Control': 'no-store',
+      });
+      res.end(encoded);
       return;
     }
     throw error;
@@ -117,12 +104,13 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
       fieldColor: query.field_color,
     });
     const totalMs = performance.now() - totalT0;
+    const totalEncodeMs = (timings.composeMs ?? 0) + timings.encodeMs;
 
     const serverTiming = [
       `total;dur=${totalMs.toFixed(1)}`,
       `wasm;dur=${timings.wasmMs.toFixed(1)}`,
       `base;dur=${timings.baseMs.toFixed(1)}`,
-      `encode;dur=${timings.encodeMs.toFixed(1)}`,
+      `encode;dur=${totalEncodeMs.toFixed(1)}`,
       `cache;desc=${cache}`,
     ].join(', ');
 
@@ -147,7 +135,7 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
       cache,
       totalMs: Math.round(totalMs),
       wasmMs: Math.round(timings.wasmMs),
-      encodeMs: Math.round(timings.encodeMs),
+      encodeMs: Math.round(totalEncodeMs),
       bytes: buffer.length,
       format,
     };
@@ -157,6 +145,15 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
       logger.info('[OGClimb] served', logPayload);
     }
   } catch (error) {
+    if (error instanceof RenderQueueSaturatedError) {
+      res.writeHead(503, {
+        'Content-Type': 'application/json',
+        'Retry-After': '5',
+        'Cache-Control': 'no-store',
+      });
+      res.end(JSON.stringify({ error: error.message }));
+      return;
+    }
     logger.error('[OGClimb] render failed:', error);
     sendJson(res, 500, { error: 'Render failed' });
   }

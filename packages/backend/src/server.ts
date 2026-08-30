@@ -20,6 +20,7 @@ import {
   handleStaticGymPhoto,
 } from './handlers/static';
 import { handleOgClimb } from './handlers/og-climb';
+import { handleBoardRender, isBoardRenderPath } from './handlers/board-render';
 import { initBoardRenderer } from './services/board-render';
 import { parseSizeParam } from './lib/image-resize';
 import { handleOcrTestDataUpload } from './handlers/ocr-test-data';
@@ -122,8 +123,8 @@ export async function startServer(): Promise<ServerResources> {
   // This must happen before we start accepting connections
   await pubsub.initialize();
 
-  // Initialize the OG climb renderer (loads the WASM overlay module + resolves
-  // the board images root). Never throws — on failure GET /og/climb returns 503.
+  // Initialize the board renderer (loads the WASM overlay module + resolves
+  // the board images root). Never throws — image endpoints return 503 on failure.
   await initBoardRenderer();
 
   // PostgreSQL owns sequence reservations; Redis supplies a fast candidate and
@@ -357,6 +358,13 @@ export async function startServer(): Promise<ServerResources> {
       // process warms WASM + caches rendered bytes in memory).
       if (pathname === '/og/climb' && (req.method === 'GET' || req.method === 'OPTIONS')) {
         await handleOgClimb(req, res, url);
+        return;
+      }
+
+      // Canonical board renderer. HEAD deliberately follows the GET path so it
+      // returns the exact content/cache headers without writing image bytes.
+      if (isBoardRenderPath(pathname) && (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS')) {
+        await handleBoardRender(req, res, url);
         return;
       }
 

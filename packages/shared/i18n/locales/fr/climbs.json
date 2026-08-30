@@ -505,7 +505,10 @@
         "clear": "Effacer les prises",
         "setActive": "Définir comme voie active",
         "undo": "Annuler",
-        "redo": "Rétablir"
+        "redo": "Rétablir",
+        "newClimb": "Commencer une nouvelle voie",
+        "close": "Fermer",
+        "closeHint": "Votre brouillon reste sur ce téléphone."
       },
       "frames": {
         "duplicate": "Dupliquer l'image",
@@ -533,7 +536,9 @@
       "drafts": {
         "holds_one": "{{count}} prise",
         "holds_other": "{{count}} prises",
-        "sectionTitle": "Brouillons en cours"
+        "sectionTitle": "Brouillons en cours",
+        "frames_one": "{{count}} image",
+        "frames_other": "{{count}} images"
       },
       "unavailable": {
         "title": "Création indisponible ici",
@@ -552,6 +557,24 @@
         "done": "Enregistré",
         "draftToast": "Brouillon enregistré",
         "publishedToast": "Voie publiée"
+      },
+      "autosave": {
+        "onDevice": "Enregistré sur ce téléphone",
+        "inAccount": "Brouillon enregistré sur votre compte",
+        "unsyncedEdits": "Les dernières modifications sont uniquement sur ce téléphone",
+        "notStored": "Connectez-vous pour garder ce brouillon",
+        "saveFailed": "Impossible d'enregistrer sur votre compte. Touchez Enregistrer pour réessayer.",
+        "keptToast": "Brouillon gardé sur ce téléphone. Rouvrez l'éditeur pour la terminer."
+      },
+      "newClimb": {
+        "confirm": {
+          "title": "Repartir de zéro ?",
+          "message": "Celle-ci n'est pas encore dans vos brouillons. En commencer une autre l'efface.",
+          "action": "Repartir de zéro"
+        }
+      },
+      "publish": {
+        "blocked": "Ajoutez une prise de départ et une prise d'arrivée pour publier"
       }
     },
     "holdFilter": {

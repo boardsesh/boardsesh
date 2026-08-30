@@ -7,13 +7,16 @@ import { createElement, type ReactNode } from 'react';
 // tests can assert which controls ride the scroller and which stay pinned
 // outside it — the whole point of the row's layout.
 type PressMockProps = { children?: ReactNode; onPress?: () => void; accessibilityLabel?: string };
+const announceSpy = vi.hoisted(() => vi.fn());
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
+    createElement('div', { 'data-testid': testID }, children),
   Pressable: ({ children, onPress, accessibilityLabel }: PressMockProps) =>
     createElement('button', { onClick: onPress, 'data-label': accessibilityLabel }, children),
   ScrollView: ({ children, horizontal }: { children?: ReactNode; horizontal?: boolean }) =>
     createElement('div', { 'data-scroll': 'true', 'data-horizontal': horizontal ? 'true' : 'false' }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  AccessibilityInfo: { announceForAccessibility: announceSpy },
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -25,8 +28,13 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../Button', () => ({
-  Button: ({ title, disabled }: { title?: string; disabled?: boolean }) =>
-    createElement('button', { 'data-save-button': 'true', 'data-title': title, disabled }),
+  Button: ({ title, disabled, minHeight }: { title?: string; disabled?: boolean; minHeight?: number }) =>
+    createElement('button', {
+      'data-save-button': 'true',
+      'data-title': title,
+      'data-min-height': minHeight,
+      disabled,
+    }),
 }));
 vi.mock('../../Button.surface', () => ({
   ButtonSurfaceProvider: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -44,12 +52,16 @@ vi.mock('../brush-roles', () => ({
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/hold-color-overrides', () => ({ useHoldColorOverrides: () => ({ overrides: {} }) }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { fill: '#EFEFF0', label: '#000000' } }),
+  useTheme: () => ({
+    systemColors: { fill: '#EFEFF0', label: '#000000', secondaryLabel: '#5B5563' },
+    brandColors: { warning: '#B45309', error: '#C81E1E' },
+  }),
 }));
 vi.mock('../../../theme/colors', () => ({ brandColors: { primary: '#6D28D9', success: '#047857' } }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 }, borderRadius: { md: 8 } }));
 
 import { CreateDrawerActionBar } from '../CreateDrawerActionBar';
+import type { DraftStatusView } from '../draft-status-view';
 
 const baseProps = {
   boardName: 'kilter' as const,
@@ -59,7 +71,8 @@ const baseProps = {
   canRedo: true,
   onUndo: vi.fn(),
   onRedo: vi.fn(),
-  onClear: vi.fn(),
+  onClearHolds: vi.fn(),
+  onNewClimb: vi.fn(),
   frameCount: 1,
   currentFrameIndex: 0,
   onDuplicateFrame: vi.fn(),
@@ -70,12 +83,17 @@ const baseProps = {
   onSetActive: vi.fn(),
   saveState: 'ready' as const,
   onSave: vi.fn(),
+  publishBlocked: false,
+  draftStatus: null as DraftStatusView | null,
 };
 
-function renderBar(frameCount: number) {
-  const { container } = render(createElement(CreateDrawerActionBar, { ...baseProps, frameCount }));
+function renderBar(frameCount: number, overrides: Partial<typeof baseProps> = {}) {
+  const { container } = render(createElement(CreateDrawerActionBar, { ...baseProps, frameCount, ...overrides }));
   return {
+    container,
+    statusRow: container.querySelector('[data-testid="create-draft-status-row"]') as HTMLElement,
     scroller: container.querySelector('[data-scroll="true"]') as HTMLElement,
+    undo: container.querySelector('[data-action="undo"]') as HTMLElement,
     setActive: container.querySelector('[data-action="play.circle"]') as HTMLElement,
     save: container.querySelector('[data-save-button="true"]') as HTMLElement,
   };
@@ -91,8 +109,80 @@ describe('CreateDrawerActionBar', () => {
     expect(scroller.contains(setActive)).toBe(false);
     expect(scroller.contains(save)).toBe(false);
     // The editing actions are the part allowed to scroll.
-    expect(scroller.querySelector('[data-action="undo"]')).toBeTruthy();
+    expect(scroller.querySelector('[data-action="redo"]')).toBeTruthy();
     expect(scroller.querySelector('[data-action="copy"]')).toBeTruthy();
+  });
+
+  it('pins undo outside the scroller so recovery survives a crowded row', () => {
+    // Nine 44dp controls need ~460dp and the scroller has ~261dp, so undo used to
+    // scroll off the left edge the moment a climb had a second frame — putting the
+    // only recovery from a mis-tap out of reach exactly when the row got crowded.
+    const { scroller, undo } = renderBar(3);
+
+    expect(undo).toBeTruthy();
+    expect(scroller.contains(undo)).toBe(false);
+    // Redo is the one that may scroll.
+    expect(scroller.querySelector('[data-action="redo"]')).toBeTruthy();
+  });
+
+  it('keeps the trash glyph for Clear holds and adds a separate Start-a-new-climb', () => {
+    // Two buttons, two jobs. `eraser` is not available for Clear holds — it is
+    // already the Erase BRUSH chip in the row above, and one glyph can't mean both
+    // a mode you enter and a destructive command you fire.
+    const { container, scroller } = renderBar(1);
+
+    const clear = container.querySelector('[data-action="delete"]') as HTMLElement;
+    const newClimb = container.querySelector('[data-action="plus"]') as HTMLElement;
+    expect(clear).toBeTruthy();
+    expect(clear.getAttribute('data-label')).toBe('mobile.create.actions.clear');
+    expect(newClimb).toBeTruthy();
+    expect(newClimb.getAttribute('data-label')).toBe('mobile.create.actions.newClimb');
+    expect(container.querySelector('[data-action="eraser"]')).toBeNull();
+    // "Start a new climb" is the least-used control, so it's the one that scrolls.
+    expect(scroller.contains(newClimb)).toBe(true);
+  });
+
+  it('floors the Save pill at the 44dp touch target', () => {
+    // Compose sizes a small filled button at 40 — the only sub-floor control on
+    // this surface, shoulder to shoulder with 44dp icon buttons.
+    const { save } = renderBar(1);
+    expect(save.getAttribute('data-min-height')).toBe('44');
+  });
+
+  it('disables Save while a publish is blocked, and renders the reason under it', () => {
+    const { save, container } = renderBar(1, {
+      publishBlocked: true,
+      draftStatus: { text: 'mobile.create.publish.blocked', tone: 'warning', announce: true },
+    });
+
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    // A disabled button must never be mute.
+    expect(container.textContent).toContain('mobile.create.publish.blocked');
+  });
+
+  it('renders no status TEXT for an empty editor, but still holds the row', () => {
+    // The words are absent by design — an empty editor has nothing to report.
+    // The ROW is not, and that distinction is load-bearing: the drawer sizes the
+    // board against the chrome and derives its peek snap-point from the measured
+    // above-fold height. When this row appeared only once content existed,
+    // painting the FIRST hold grew the chrome, moved `peekHeight`, and re-snapped
+    // an expanded sheet back down to peek — a one-shot jolt at exactly the moment
+    // someone starts working. Make this row conditional again and that returns.
+    const { container, statusRow } = renderBar(1);
+    expect(container.textContent).not.toContain('mobile.create.autosave');
+    expect(statusRow).toBeTruthy();
+  });
+
+  it('holds the same status row whether or not there is anything to say', () => {
+    // The chrome height must not depend on content — see above.
+    const empty = renderBar(1);
+    const withStatus = renderBar(1, {
+      draftStatus: { text: 'mobile.create.autosave.onDevice', tone: 'muted', announce: false },
+    });
+
+    expect(empty.statusRow).toBeTruthy();
+    expect(withStatus.statusRow).toBeTruthy();
+    expect(withStatus.statusRow.textContent).toContain('mobile.create.autosave.onDevice');
   });
 
   it('puts the multi-frame stepper in the scroller rather than pushing Save off the row', () => {

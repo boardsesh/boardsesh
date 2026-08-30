@@ -23,7 +23,7 @@ import {
   Text,
   TextButton,
 } from '@expo/ui/jetpack-compose';
-import { fillMaxWidth, padding, size } from '@expo/ui/jetpack-compose/modifiers';
+import { defaultMinSize, fillMaxWidth, padding, size } from '@expo/ui/jetpack-compose/modifiers';
 import type { ImageSourcePropType } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
@@ -65,6 +65,7 @@ export function Button({
   loading = false,
   haptic = true,
   tintColor,
+  minHeight,
   role = 'default',
   testID,
   style,
@@ -133,6 +134,16 @@ export function Button({
   const isFullWidth = isFullWidthStyle(style);
   const iconSource = icon ? BUTTON_ICON_SOURCE[icon] : undefined;
 
+  // Compose has no discrete height buckets: a button is exactly its content plus
+  // `contentPadding`, so `small` lands at 40dp — under the 44 touch floor. Callers
+  // that sit in a row of 44dp controls pass `minHeight`; `defaultMinSize` is the
+  // Compose idiom for exactly that (a floor, not a fixed height, so a long label
+  // or large Dynamic Type still grows the button).
+  const composeModifiers = [
+    ...(isFullWidth ? [fillMaxWidth()] : []),
+    ...(minHeight != null ? [defaultMinSize({ minHeight })] : []),
+  ];
+
   return (
     <Host
       matchContents={isFullWidth ? { vertical: true } : true}
@@ -150,7 +161,7 @@ export function Button({
           end: config.paddingHorizontal,
           bottom: config.paddingVertical,
         }}
-        modifiers={isFullWidth ? [fillMaxWidth()] : []}
+        modifiers={composeModifiers}
       >
         <Row verticalAlignment="center">
           {loading ? (

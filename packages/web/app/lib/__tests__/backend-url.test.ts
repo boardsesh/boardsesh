@@ -191,6 +191,15 @@ describe('getBackendHttpUrl', () => {
     const { getBackendHttpUrl } = await import('../backend-url');
     expect(getBackendHttpUrl()).toBe('http://localhost:4000');
   });
+
+  it.each([
+    ['https://backend.example.com/graphql', 'https://backend.example.com'],
+    ['http://localhost:4000/graphql', 'http://localhost:4000'],
+  ])('should preserve an already-HTTP protocol for %s', async (configuredUrl, expectedBaseUrl) => {
+    process.env.NEXT_PUBLIC_WS_URL = configuredUrl;
+    const { getBackendHttpUrl } = await import('../backend-url');
+    expect(getBackendHttpUrl()).toBe(expectedBaseUrl);
+  });
 });
 
 describe('getPublicBackendHttpUrl', () => {

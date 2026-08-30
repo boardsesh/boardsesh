@@ -84,7 +84,7 @@ const setterNotesSx = {
  * Three deliberate absences:
  *
  *  1. **No board renderer.** The board art is a plain `<img>` pointing at the
- *     `/api/internal/board-render` overlay, with explicit dimensions so it
+ *     Railway `/render/board` overlay, with explicit dimensions so it
  *     reserves its box before it loads. `BoardRenderer` and `BoardImageLayers`
  *     are both hook-bearing client components; this image is the page's LCP and
  *     has to be in the first HTML byte-for-byte.

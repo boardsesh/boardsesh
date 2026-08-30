@@ -69,9 +69,31 @@ void describe('postgres client', () => {
     }
 
     void it('defaults to the values that were hard-coded before the knobs existed', async () => {
-      const options = await poolOptionsWith({ DB_POOL_MAX: undefined, DB_POOL_IDLE_TIMEOUT_S: undefined });
+      const options = await poolOptionsWith({
+        DB_POOL_MAX: undefined,
+        DB_POOL_IDLE_TIMEOUT_S: undefined,
+        VERCEL: undefined,
+      });
       assert.equal(options.max, 10);
       assert.equal(options.idle_timeout, 30);
+    });
+
+    void it('shrinks the defaults on Vercel, where instance count is the term that grows', async () => {
+      // A crawl burst scales lambda count; instances × held-idle connections
+      // can exhaust the shared max_connections. See docs/db-connectivity.md.
+      const options = await poolOptionsWith({
+        DB_POOL_MAX: undefined,
+        DB_POOL_IDLE_TIMEOUT_S: undefined,
+        VERCEL: '1',
+      });
+      assert.equal(options.max, 3);
+      assert.equal(options.idle_timeout, 5);
+    });
+
+    void it('lets explicit knobs override the serverless defaults', async () => {
+      const options = await poolOptionsWith({ DB_POOL_MAX: '6', DB_POOL_IDLE_TIMEOUT_S: '20', VERCEL: '1' });
+      assert.equal(options.max, 6);
+      assert.equal(options.idle_timeout, 20);
     });
 
     void it('honours DB_POOL_MAX and DB_POOL_IDLE_TIMEOUT_S', async () => {
@@ -88,8 +110,18 @@ void describe('postgres client', () => {
     });
 
     void it('falls back to the default when DB_POOL_MAX is not a number', async () => {
-      const options = await poolOptionsWith({ DB_POOL_MAX: 'abc' });
+      const options = await poolOptionsWith({ DB_POOL_MAX: 'abc', VERCEL: undefined });
       assert.equal(options.max, 10);
+    });
+
+    void it('falls back to the serverless default when DB_POOL_MAX is not a number on Vercel', async () => {
+      const options = await poolOptionsWith({ DB_POOL_MAX: 'abc', VERCEL: '1' });
+      assert.equal(options.max, 3);
+    });
+
+    void it('falls back to the serverless default when DB_POOL_IDLE_TIMEOUT_S is not a number on Vercel', async () => {
+      const options = await poolOptionsWith({ DB_POOL_IDLE_TIMEOUT_S: 'abc', VERCEL: '1' });
+      assert.equal(options.idle_timeout, 5);
     });
 
     void it('keeps DB_POOL_IDLE_TIMEOUT_S=0 as "never close an idle connection"', async () => {
