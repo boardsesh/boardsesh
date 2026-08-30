@@ -822,7 +822,9 @@ export default function MoreScreen() {
         label: 'Hold Outlines',
         // i18n-ignore-next-line
         subtitle: 'Redraw a traced hold silhouette, or annotate its LED ring',
-        icon: 'featureFlags',
+        // Board-look, not featureFlags: this row edits how the board is DRAWN,
+        // and the two dev rows above it already carry the flag icon.
+        icon: 'boardLook',
         onPress: navAction(() => router.push('/(tabs)/profile/outline-editor')),
       });
     }

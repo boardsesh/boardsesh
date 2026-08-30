@@ -42,6 +42,10 @@ export type OutlineLayerData = {
 
 type OutlineSvgLayerProps = {
   holdTargets: BoardHoldTarget[];
+  /** The same holds keyed by placement id. Passed in rather than rebuilt (or
+   *  scanned with `.find`) so resolving the selection stays O(1) — the screen
+   *  already maintains this index. */
+  holdById: Map<number, BoardHoldTarget>;
   data: OutlineLayerData;
   selectedPlacementId: number | null;
   editKind: HoldOutlineKind;
@@ -82,6 +86,7 @@ const STROKE_WIDTH = {
  */
 export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
   holdTargets,
+  holdById,
   data,
   selectedPlacementId,
   editKind,
@@ -135,7 +140,7 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
   // kind currently being edited, so switching mode moves the highlight.
   const selectedPath = useMemo(() => {
     if (selectedPlacementId == null) return '';
-    const hold = holdTargets.find((candidate) => candidate.id === selectedPlacementId);
+    const hold = holdById.get(selectedPlacementId);
     if (!hold) return '';
     if (editKind === 'LED_INNER') {
       const ledInnerOverride = ledInnerByPlacement.get(hold.id);
@@ -143,7 +148,7 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
     }
     const outline = silhouetteByPlacement.get(hold.id) ?? shardByPlacement.get(hold.id);
     return outline ? ringToPathData(radiusRingToBoardPx(outline, hold)) : placementRingPathData(hold);
-  }, [selectedPlacementId, editKind, holdTargets, silhouetteByPlacement, shardByPlacement, ledInnerByPlacement]);
+  }, [selectedPlacementId, editKind, holdById, silhouetteByPlacement, shardByPlacement, ledInnerByPlacement]);
 
   // Dash length scaled off the board's own size so it reads the same on a
   // 4000px-wide Kilter and a small Tension.

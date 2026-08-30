@@ -15,7 +15,7 @@ import { getCreateBoardHolds, parseSetIdsParam, type BoardHoldTarget } from '../
 import { OutlineSvgLayer, type OutlineLayerData } from './OutlineSvgLayer';
 import { DrawStrokeOverlay } from './DrawStrokeOverlay';
 import { EditToolbar } from './EditToolbar';
-import { buildOutlineRing, radiusRingToBoardPx, renderToBoardScale } from './stroke';
+import { buildOutlineRing, radiusRingToBoardPx, renderToBoardScale, type StrokeRejection } from './stroke';
 import type { RingPoint } from '@boardsesh/board-art-geometry/ring';
 
 // Admin-only screen — hardcoded English literals throughout, matching the
@@ -280,6 +280,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       boardHolds ? (
         <OutlineSvgLayer
           holdTargets={boardHolds.holdTargets}
+          holdById={holdById}
           data={layerData}
           selectedPlacementId={selectedPlacementId}
           editKind={editKind}
@@ -290,7 +291,16 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
           renderHeight={boardRender.height}
         />
       ) : null,
-    [boardHolds, layerData, selectedPlacementId, editKind, draftPointsSV, boardRender.width, boardRender.height],
+    [
+      boardHolds,
+      holdById,
+      layerData,
+      selectedPlacementId,
+      editKind,
+      draftPointsSV,
+      boardRender.width,
+      boardRender.height,
+    ],
   );
 
   // Mounted only while a placement is selected. Before that the pencil has to be
@@ -385,9 +395,10 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
   );
 }
 
-function rejectionMessage(reason: 'too-few-points' | 'centre-outside' | 'out-of-bounds'): string {
+function rejectionMessage(reason: StrokeRejection): string {
   if (reason === 'centre-outside') return "That ring doesn't cover the hold's centre. Draw around the hold you picked.";
   if (reason === 'out-of-bounds') return 'That ring is far bigger than a hold. Zoom in and trace the hold itself.';
+  if (reason === 'too-complex') return "That stroke has too much detail to store. Trace the hold's edge in one pass.";
   return 'That stroke is too short to be an outline. Draw a full loop around the hold.';
 }
 

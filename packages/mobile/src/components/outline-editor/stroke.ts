@@ -74,7 +74,7 @@ export const STROKE_CLOSE_TOLERANCE_BOARD_PX = 3;
 export const OUTLINE_DECIMALS = 4;
 
 /** Why a drawn stroke can't be stored. The editor keeps drawing on any of these. */
-export type StrokeRejection = 'too-few-points' | 'centre-outside' | 'out-of-bounds';
+export type StrokeRejection = 'too-few-points' | 'too-complex' | 'centre-outside' | 'out-of-bounds';
 
 export type StrokeResult = { ok: true; outline: number[] } | { ok: false; reason: StrokeRejection };
 
@@ -225,7 +225,10 @@ export function buildOutlineRing(strokeBoardPoints: RingPoint[], hold: BoardHold
     epsilon *= 2;
     simplified = simplifyRing(looped, epsilon);
   }
-  if (simplified.length * 2 > MAX_RING_NUMBERS) return { ok: false, reason: 'too-few-points' };
+  // Still too many points after six doublings (epsilon 102 board px, far coarser
+  // than any hold). Its own reason: the failure is the opposite of a short
+  // stroke, and reporting "too short" here would send the editor the wrong way.
+  if (simplified.length * 2 > MAX_RING_NUMBERS) return { ok: false, reason: 'too-complex' };
 
   // Round, THEN close — the server's order (see the note above).
   const radiusRing = closeRing(roundRing(boardRingToRadiusUnits(flattenRing(simplified), hold), OUTLINE_DECIMALS));

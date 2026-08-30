@@ -19,7 +19,6 @@ import type {
   RequestGymClaimInput,
   UpsertHoldOutlineOverrideInput,
   DeleteHoldOutlineOverrideInput,
-  HoldOutlineKind,
 } from '@boardsesh/shared-schema';
 import {
   SIMILAR_CLIMBS_QUERY,
@@ -87,6 +86,7 @@ import {
   type GetBoardBySlugQueryResponse,
 } from '@boardsesh/graphql/operations/boards';
 import { getHttpClient } from '../client';
+import { withHoldOutlineOverride, withoutHoldOutlineOverride } from './hold-outline-cache';
 import {
   GET_PROFILE,
   UPDATE_PROFILE,
@@ -135,7 +135,6 @@ import {
   DELETE_HOLD_OUTLINE_OVERRIDE,
   type GetProfileAdminFlagQueryResponse,
   type HoldOutlinesQueryResponse,
-  type HoldOutlineOverrideRow,
   type UpsertHoldOutlineOverrideMutationResponse,
   type DeleteHoldOutlineOverrideMutationResponse,
 } from '../operations';
@@ -1489,17 +1488,6 @@ export function useUpsertHoldOutlineOverride() {
   });
 }
 
-/** Replace (or add) one override row, keyed by placement AND kind. */
-function withHoldOutlineOverride(
-  previous: HoldOutlinesQueryResponse,
-  row: HoldOutlineOverrideRow,
-): HoldOutlinesQueryResponse {
-  const others = previous.holdOutlines.overrides.filter(
-    (override) => !(override.placementId === row.placementId && override.kind === row.kind),
-  );
-  return { holdOutlines: { ...previous.holdOutlines, overrides: [...others, row] } };
-}
-
 /**
  * Drop one placement's override of one kind, reverting the renderer to whatever
  * the shard traced. Dropping a silhouette leaves any LED_INNER annotation
@@ -1520,20 +1508,10 @@ export function useDeleteHoldOutlineOverride() {
     // optional on the input and defaults to SILHOUETTE server-side, so normalise
     // before matching or a bare revert would drop nothing.
     onSuccess: (_deleted, input) => {
-      const kind: HoldOutlineKind = input.kind ?? 'SILHOUETTE';
       queryClient.setQueryData<HoldOutlinesQueryResponse>(
         holdOutlinesQueryKey({ boardName: input.boardName, layoutId: input.layoutId, sizeId: input.sizeId }),
         (previous) =>
-          previous
-            ? {
-                holdOutlines: {
-                  ...previous.holdOutlines,
-                  overrides: previous.holdOutlines.overrides.filter(
-                    (override) => !(override.placementId === input.placementId && override.kind === kind),
-                  ),
-                },
-              }
-            : previous,
+          previous ? withoutHoldOutlineOverride(previous, input.placementId, input.kind ?? undefined) : previous,
       );
     },
   });
