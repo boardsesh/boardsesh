@@ -31,4 +31,9 @@ describe('createClimbScreenKey', () => {
     expect(createClimbScreenKey('uuid-a', kilter)).not.toBe(createClimbScreenKey('uuid-b', kilter));
     expect(createClimbScreenKey(undefined, kilter)).toBe(createClimbScreenKey('new', kilter));
   });
+
+  it('remounts when leaving a fork for a plain new climb', () => {
+    expect(createClimbScreenKey(undefined, kilter, 'p1r12')).not.toBe(createClimbScreenKey(undefined, kilter));
+    expect(createClimbScreenKey(undefined, kilter, 'p1r12')).toBe(createClimbScreenKey(undefined, kilter, 'p1r12'));
+  });
 });

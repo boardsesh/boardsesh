@@ -399,6 +399,21 @@ describe('useCreateClimb', () => {
       expect(result.current.totalHolds).toBe(2);
       expect(result.current.isValid).toBe(true);
     });
+
+    it('allows publishing when the same hold has start and finish roles in different frames', () => {
+      const initialFrames: LitUpHoldsMap[] = [
+        { 100: { state: 'STARTING', color: '#00FF00', displayColor: '#00FF00' } },
+        { 100: { state: 'FINISH', color: '#FF00FF', displayColor: '#FF00FF' } },
+      ];
+
+      const { result } = renderHook(() => useCreateClimb('kilter', { initialFrames }));
+
+      // The flattened union contains only the later FINISH state. Publish
+      // validity must inspect every frame or it loses the earlier STARTING role.
+      expect(result.current.startingCount).toBe(0);
+      expect(result.current.finishCount).toBe(1);
+      expect(result.current.canPublish).toBe(true);
+    });
   });
 
   describe('initialFrames', () => {

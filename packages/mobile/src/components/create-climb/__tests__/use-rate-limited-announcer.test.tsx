@@ -32,18 +32,41 @@ describe('useRateLimitedAnnouncer', () => {
     expect(announceSpy).toHaveBeenCalledExactlyOnceWith('Draft saved to your account');
   });
 
-  it('swallows a different message inside the window', () => {
+  it('delivers a suppressed message at the trailing edge of the window', () => {
     const { result } = renderHook(() => useRateLimitedAnnouncer());
     act(() => result.current('first'));
-    act(() => vi.advanceTimersByTime(ANNOUNCE_MIN_INTERVAL_MS - 1));
+    act(() => {
+      vi.advanceTimersByTime(ANNOUNCE_MIN_INTERVAL_MS - 1);
+    });
     act(() => result.current('second'));
     expect(announceSpy).toHaveBeenCalledTimes(1);
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(announceSpy).toHaveBeenCalledTimes(2);
+    expect(announceSpy).toHaveBeenLastCalledWith('second');
+  });
+
+  it('keeps only the latest distinct message during the window', () => {
+    const { result } = renderHook(() => useRateLimitedAnnouncer());
+    act(() => result.current('first'));
+    act(() => result.current('superseded'));
+    act(() => result.current('latest'));
+
+    act(() => {
+      vi.advanceTimersByTime(ANNOUNCE_MIN_INTERVAL_MS);
+    });
+
+    expect(announceSpy).toHaveBeenCalledTimes(2);
+    expect(announceSpy).toHaveBeenLastCalledWith('latest');
   });
 
   it('speaks again once the window has passed', () => {
     const { result } = renderHook(() => useRateLimitedAnnouncer());
     act(() => result.current('first'));
-    act(() => vi.advanceTimersByTime(ANNOUNCE_MIN_INTERVAL_MS));
+    act(() => {
+      vi.advanceTimersByTime(ANNOUNCE_MIN_INTERVAL_MS);
+    });
     act(() => result.current('second'));
     expect(announceSpy).toHaveBeenCalledTimes(2);
     expect(announceSpy).toHaveBeenLastCalledWith('second');
@@ -54,15 +77,48 @@ describe('useRateLimitedAnnouncer', () => {
     // words again carries no new information.
     const { result } = renderHook(() => useRateLimitedAnnouncer());
     act(() => result.current('same words'));
-    act(() => vi.advanceTimersByTime(ANNOUNCE_MIN_INTERVAL_MS * 5));
+    act(() => {
+      vi.advanceTimersByTime(ANNOUNCE_MIN_INTERVAL_MS * 5);
+    });
     act(() => result.current('same words'));
     expect(announceSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('ignores an empty message', () => {
+  it('cancels a queued status when the latest status matches the last announcement', () => {
     const { result } = renderHook(() => useRateLimitedAnnouncer());
+    act(() => result.current('saved'));
+    act(() => result.current('saving'));
+    act(() => result.current('saved'));
+
+    act(() => {
+      vi.advanceTimersByTime(ANNOUNCE_MIN_INTERVAL_MS);
+    });
+
+    expect(announceSpy).toHaveBeenCalledExactlyOnceWith('saved');
+  });
+
+  it('cancels its trailing announcement on unmount', () => {
+    const { result, unmount } = renderHook(() => useRateLimitedAnnouncer());
+    act(() => result.current('first'));
+    act(() => result.current('queued'));
+
+    unmount();
+    act(() => {
+      vi.advanceTimersByTime(ANNOUNCE_MIN_INTERVAL_MS);
+    });
+
+    expect(announceSpy).toHaveBeenCalledExactlyOnceWith('first');
+  });
+
+  it('uses an empty message to cancel a queued stale status', () => {
+    const { result } = renderHook(() => useRateLimitedAnnouncer());
+    act(() => result.current('first'));
+    act(() => result.current('queued warning'));
     act(() => result.current(''));
-    expect(announceSpy).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(ANNOUNCE_MIN_INTERVAL_MS);
+    });
+    expect(announceSpy).toHaveBeenCalledExactlyOnceWith('first');
   });
 
   it('hands back a stable callback so a memoized consumer does not re-render', () => {

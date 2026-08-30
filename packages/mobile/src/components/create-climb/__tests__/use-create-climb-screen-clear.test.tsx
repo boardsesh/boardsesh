@@ -168,7 +168,10 @@ describe('useCreateClimbScreen handleNewClimb', () => {
     // Start fresh. Holds are painted and nothing is saved, so this raises the
     // inline confirm first; accept it.
     act(() => result.current.handleNewClimb());
-    act(() => result.current.confirmNewClimb());
+    await act(async () => {
+      result.current.confirmNewClimb();
+      await Promise.resolve();
+    });
 
     // A brand-new climb must start without any rule markers.
     expect(result.current.noMatch).toBe(false);
@@ -245,13 +248,47 @@ describe('useCreateClimbScreen handleNewClimb', () => {
     });
     draftStore.clearDraft.mockClear();
 
-    act(() => result.current.handleNewClimb());
+    await act(async () => {
+      result.current.handleNewClimb();
+      await Promise.resolve();
+    });
 
     // Nothing is at risk: the row is in Open drafts. Only the new-climb slot goes,
     // never an `edit:` slot.
     expect(result.current.pendingNewClimb).toBe(false);
     expect(draftStore.clearDraft).toHaveBeenCalledWith('draft-key');
     expect(result.current.name).toBe('');
+  });
+
+  it('asks before dropping edits made after the last draft save', async () => {
+    board.saveClimb.mockResolvedValue({ uuid: 'row-1', createdAt: null, publishedAt: null, isDraft: true });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    act(() => result.current.setName('Saved first'));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    act(() => result.current.setDescription('phone-only beta'));
+    act(() => result.current.handleNewClimb());
+
+    expect(result.current.pendingNewClimb).toBe(true);
+    expect(result.current.name).toBe('Saved first');
+    expect(result.current.description).toBe('phone-only beta');
+  });
+
+  it('dismisses a pending Start new confirmation after the climb is saved', async () => {
+    board.saveClimb.mockResolvedValue({ uuid: 'row-1', createdAt: null, publishedAt: null, isDraft: true });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    act(() => result.current.setName('Save while asking'));
+    act(() => result.current.handleNewClimb());
+    expect(result.current.pendingNewClimb).toBe(true);
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(result.current.pendingNewClimb).toBe(false);
+    expect(result.current.name).toBe('Save while asking');
   });
 
   it('asks inline before dropping unsaved work, and cancelling changes nothing', async () => {
@@ -283,11 +320,71 @@ describe('useCreateClimbScreen handleNewClimb', () => {
     createClimb.resetHolds.mockClear();
 
     act(() => result.current.handleNewClimb());
-    act(() => result.current.confirmNewClimb());
+    await act(async () => {
+      result.current.confirmNewClimb();
+      await Promise.resolve();
+    });
 
     expect(result.current.pendingNewClimb).toBe(false);
     expect(result.current.name).toBe('');
     expect(createClimb.resetHolds).toHaveBeenCalledTimes(1);
     expect(draftStore.clearDraft).toHaveBeenCalledWith('draft-key');
+  });
+
+  it('waits for the slot to be retired before resetting the editor', async () => {
+    let finishClear: (() => void) | undefined;
+    draftStore.clearDraft.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishClear = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    act(() => result.current.setName('Keep until durable clear'));
+
+    act(() => result.current.handleNewClimb());
+    act(() => result.current.confirmNewClimb());
+
+    expect(result.current.name).toBe('Keep until durable clear');
+    expect(createClimb.resetHolds).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishClear?.();
+      await Promise.resolve();
+    });
+
+    expect(result.current.name).toBe('');
+    expect(createClimb.resetHolds).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores Start new confirmation while Save is in flight', async () => {
+    let finishSave: ((saved: { uuid: string; createdAt: null; publishedAt: null; isDraft: true }) => void) | undefined;
+    board.saveClimb.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSave = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    act(() => result.current.setName('Saving now'));
+    act(() => result.current.handleNewClimb());
+    expect(result.current.pendingNewClimb).toBe(true);
+
+    let pendingSave: Promise<void> | undefined;
+    act(() => {
+      pendingSave = result.current.handleSave();
+    });
+    act(() => result.current.confirmNewClimb());
+
+    expect(draftStore.clearDraft).not.toHaveBeenCalled();
+    expect(result.current.name).toBe('Saving now');
+
+    await act(async () => {
+      finishSave?.({ uuid: 'row-1', createdAt: null, publishedAt: null, isDraft: true });
+      await pendingSave;
+    });
+
+    expect(result.current.pendingNewClimb).toBe(false);
+    expect(result.current.name).toBe('Saving now');
   });
 });

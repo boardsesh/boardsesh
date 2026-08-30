@@ -37,6 +37,11 @@ export type CreateClimbDraft = {
    * of creating a duplicate. Absent for a never-saved WIP.
    */
   savedClimbJson?: string;
+  /**
+   * Payload signature at the last successful server save. Restoring it lets the
+   * editor distinguish the account copy from newer phone-only edits.
+   */
+  savedPayloadSignature?: string;
   /** Which authoring mode wrote this payload. Diagnostic; not read on restore. */
   origin?: CreateClimbDraftOrigin;
   /** Wall-clock of the last content change. Diagnostic; not rendered (no `updated_at` on Climb to be honest against). */

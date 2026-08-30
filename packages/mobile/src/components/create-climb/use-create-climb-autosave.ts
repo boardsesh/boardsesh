@@ -18,6 +18,8 @@ import { clearDraft, saveDraft, type CreateClimbDraft } from '../../lib/create-c
 
 export const AUTOSAVE_DEBOUNCE_MS = 500;
 
+type PendingAutosaveOperation = { type: 'none' } | { type: 'save'; key: string } | { type: 'clear'; key: string };
+
 type UseCreateClimbAutosaveArgs = {
   /** Which storage slot this authoring session owns. */
   slotKey: string;
@@ -37,6 +39,8 @@ type UseCreateClimbAutosaveArgs = {
    * exactly the work the restore exists to recover.
    */
   restoredRef: RefObject<boolean>;
+  /** Changes when mount-time restore finishes so pre-restore edits can arm. */
+  restoreEpoch: number;
 };
 
 /**
@@ -49,51 +53,112 @@ export function useCreateClimbAutosave({
   draftSignature,
   hasContent,
   restoredRef,
-}: UseCreateClimbAutosaveArgs): { flush: () => void } {
+  restoreEpoch,
+}: UseCreateClimbAutosaveArgs): {
+  flush: () => void;
+  discard: () => Promise<void>;
+  persist: (draft: CreateClimbDraft) => Promise<void>;
+} {
   // The most recent payload, kept current by the debounced effect so a flush can
   // persist it synchronously without waiting for the (suspended-when-backgrounded)
-  // debounce timer. `dirty` gates whether there is anything worth flushing.
-  const pendingDraftRef = useRef<{ key: string; draft: CreateClimbDraft; dirty: boolean }>({
-    key: slotKey,
-    draft,
-    dirty: false,
-  });
+  // debounce timer. Empty editors carry an explicit `clear` operation: treating
+  // them as merely "not dirty" made an unmount/background flush drop the clear
+  // and leave the previous working copy behind.
+  const pendingOperationRef = useRef<PendingAutosaveOperation>({ type: 'none' });
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const storageOperationRef = useRef<Promise<void> | null>(null);
   // Read through refs so the effect can key on the SIGNATURE alone.
   const draftRef = useRef(draft);
   draftRef.current = draft;
 
+  const enqueueStorageOperation = useCallback((operation: () => Promise<void>): Promise<void> => {
+    const previousOperation = storageOperationRef.current;
+    const nextOperation = previousOperation ? previousOperation.catch(() => undefined).then(operation) : operation();
+    storageOperationRef.current = nextOperation;
+    void nextOperation.then(
+      () => {
+        if (storageOperationRef.current === nextOperation) storageOperationRef.current = null;
+      },
+      () => {
+        if (storageOperationRef.current === nextOperation) storageOperationRef.current = null;
+      },
+    );
+    return nextOperation;
+  }, []);
+
+  const executePendingOperation = useCallback(() => {
+    const pendingOperation = pendingOperationRef.current;
+    pendingOperationRef.current = { type: 'none' };
+    if (pendingOperation.type === 'save') {
+      const pendingDraft = draftRef.current;
+      void enqueueStorageOperation(() => saveDraft(pendingOperation.key, pendingDraft));
+    } else if (pendingOperation.type === 'clear') {
+      void enqueueStorageOperation(() => clearDraft(pendingOperation.key));
+    }
+  }, [enqueueStorageOperation]);
+
   useEffect(() => {
     if (!restoredRef.current) return;
-    pendingDraftRef.current = { key: slotKey, draft: draftRef.current, dirty: hasContent };
-    const handle = setTimeout(() => {
-      // Key off the mirrored payload, exactly as `flush` does. A slot change
-      // re-runs this effect and its cleanup cancels the pending timer, so the two
-      // can't actually diverge — but reading one source makes that plain instead
-      // of leaving a reader to prove it.
-      const pending = pendingDraftRef.current;
-      pending.dirty = false;
-      if (!hasContent) {
-        void clearDraft(pending.key);
-        return;
-      }
-      void saveDraft(pending.key, pending.draft);
+    pendingOperationRef.current = hasContent ? { type: 'save', key: slotKey } : { type: 'clear', key: slotKey };
+    debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
+      executePendingOperation();
     }, AUTOSAVE_DEBOUNCE_MS);
-    return () => clearTimeout(handle);
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    };
     // `draftSignature` stands in for the payload contents; `draftRef` carries the
-    // object itself. `restoredRef` is a ref and never re-triggers.
+    // object itself. `restoreEpoch` re-runs this once when the ref gate opens,
+    // preserving edits made while an asynchronous restore was still pending.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slotKey, draftSignature, hasContent]);
+  }, [slotKey, draftSignature, hasContent, restoreEpoch, executePendingOperation]);
 
   // JS timers are suspended when the app is backgrounded, and the effect
   // cleanup's clearTimeout drops the pending edit when the drawer closes inside
   // the debounce window — so persist the latest payload immediately on both.
   // `restoredRef` is a ref object, stable for the hook's lifetime.
   const flush = useCallback(() => {
-    const pending = pendingDraftRef.current;
-    if (!restoredRef.current || !pending.dirty) return;
-    pending.dirty = false;
-    void saveDraft(pending.key, pending.draft);
-  }, [restoredRef]);
+    if (!restoredRef.current) return;
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = null;
+    executePendingOperation();
+  }, [restoredRef, executePendingOperation]);
+
+  const cancelPending = useCallback(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = null;
+    pendingOperationRef.current = { type: 'none' };
+  }, []);
+
+  // Deliberate abandonment is different from the form naturally becoming
+  // empty. Clear immediately and retire the pending operation before the caller
+  // navigates/unmounts, so the cleanup flush cannot recreate the slot from the
+  // last non-empty render.
+  const discard = useCallback(() => {
+    cancelPending();
+    const clearOperation = enqueueStorageOperation(() => clearDraft(slotKey));
+    return clearOperation.catch(async (error: unknown) => {
+      // A failed deliberate clear must not turn off the durability guarantee.
+      // Re-persist the latest working copy before reporting failure so cancelling
+      // the confirmation and then dismissing cannot lose a never-written edit.
+      if (hasContent) {
+        await enqueueStorageOperation(() => saveDraft(slotKey, draftRef.current));
+      }
+      throw error;
+    });
+  }, [cancelPending, enqueueStorageOperation, hasContent, slotKey]);
+
+  // Explicit Save must be ordered after any autosave already writing, then win
+  // with the server-row link and saved payload baseline. Cancelling a timer alone
+  // cannot stop a storage write that has already started.
+  const persist = useCallback(
+    (nextDraft: CreateClimbDraft) => {
+      cancelPending();
+      return enqueueStorageOperation(() => saveDraft(slotKey, nextDraft));
+    },
+    [cancelPending, enqueueStorageOperation, slotKey],
+  );
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state: AppStateStatus) => {
@@ -105,5 +170,5 @@ export function useCreateClimbAutosave({
     };
   }, [flush]);
 
-  return { flush };
+  return { flush, discard, persist };
 }

@@ -17,6 +17,8 @@ export type CreateClimbDraft = {
   isDraft: boolean;
   /** JSON.stringify of the attached `SavedClimbSnapshot`. See the native fork. */
   savedClimbJson?: string;
+  /** Payload signature at the last successful server save. See the native fork. */
+  savedPayloadSignature?: string;
   origin?: CreateClimbDraftOrigin;
   updatedAtMs?: number;
 };

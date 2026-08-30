@@ -43,6 +43,19 @@ export function CreateClimbScreen({
   const router = useRouter();
   const { openPlayDrawer } = useDrawerHost();
 
+  const handleStartedNewClimb = useCallback(() => {
+    router.replace({
+      pathname: '/(tabs)/climbs/create',
+      params: {
+        boardName: board.boardName,
+        layoutId: String(board.layoutId),
+        sizeId: String(board.sizeId),
+        setIds: board.setIds,
+        angle: String(board.angle),
+      },
+    });
+  }, [router, board]);
+
   const controller = useCreateClimbScreen({
     board,
     forkFrames,
@@ -50,6 +63,7 @@ export function CreateClimbScreen({
     forkDescription,
     editClimbUuid,
     onPublished: () => router.back(),
+    onStartedNewClimb: handleStartedNewClimb,
   });
 
   const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);

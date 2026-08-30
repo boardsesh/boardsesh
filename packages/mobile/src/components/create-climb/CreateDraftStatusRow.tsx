@@ -52,8 +52,13 @@ export const CreateDraftStatusRow = memo(function CreateDraftStatusRow({
   useEffect(() => {
     const previousText = lastTextRef.current;
     lastTextRef.current = statusText;
-    if (statusText === null || previousText === null || previousText === statusText) return;
-    if (!shouldAnnounce) return;
+    if (statusText === null || !shouldAnnounce) {
+      // An announce-worthy warning may be waiting at the rate limiter's trailing
+      // edge. Moving to a quiet/empty state makes that warning stale.
+      announce('');
+      return;
+    }
+    if (previousText === null || previousText === statusText) return;
     announce(statusText);
   }, [statusText, shouldAnnounce, announce]);
 

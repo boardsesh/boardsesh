@@ -165,8 +165,10 @@ function savedKeys(): string[] {
 }
 
 beforeEach(() => {
-  draftStore.saveDraft.mockClear();
-  draftStore.clearDraft.mockClear();
+  draftStore.saveDraft.mockReset();
+  draftStore.saveDraft.mockResolvedValue(undefined);
+  draftStore.clearDraft.mockReset();
+  draftStore.clearDraft.mockResolvedValue(undefined);
   draftStore.loadDraft.mockReset();
   draftStore.loadDraft.mockResolvedValue(null);
   draftStore.createClimbDraftKey.mockReset();
@@ -244,11 +246,16 @@ describe('useCreateClimbScreen autosave flush', () => {
     unmount();
 
     expect(savedKeys()).toEqual(['draft-key']);
-    const payload = draftStore.saveDraft.mock.calls[0]?.[1] as { description?: string; savedClimbJson?: string };
+    const payload = draftStore.saveDraft.mock.calls[0]?.[1] as {
+      description?: string;
+      savedClimbJson?: string;
+      savedPayloadSignature?: string;
+    };
     expect(payload.description).toBe('more beta after the save');
     // The link back to the server row, so a relaunch UPDATES it rather than
     // creating a second copy in Open drafts.
     expect(JSON.parse(payload.savedClimbJson ?? '{}')).toMatchObject({ uuid: 'row-1' });
+    expect(payload.savedPayloadSignature).toBeTypeOf('string');
   });
 
   it('never clears the on-device copy on a draft-Save', async () => {
@@ -264,6 +271,49 @@ describe('useCreateClimbScreen autosave flush', () => {
     expect(draftStore.clearDraft).not.toHaveBeenCalled();
     // It is REWRITTEN instead, so the slot stays the working copy.
     expect(savedKeys()).toContain('draft-key');
+  });
+
+  it('cancels an older debounced write before linking the slot to a saved row', async () => {
+    vi.useFakeTimers();
+    boardActions.saveClimb.mockResolvedValue({ uuid: 'row-1', createdAt: null, publishedAt: null, isDraft: true });
+    let finishLinkedWrite: (() => void) | undefined;
+    draftStore.saveDraft.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishLinkedWrite = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => result.current.setName('Link this working copy'));
+    let pendingSave: Promise<void> | undefined;
+    act(() => {
+      pendingSave = result.current.handleSave();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(draftStore.saveDraft).toHaveBeenCalledTimes(1);
+    expect(draftStore.saveDraft.mock.calls[0]?.[1]).toMatchObject({
+      name: 'Link this working copy',
+      savedClimbJson: expect.stringContaining('row-1'),
+      savedPayloadSignature: expect.any(String),
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(draftStore.saveDraft).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      finishLinkedWrite?.();
+      await pendingSave;
+    });
   });
 
   it('does not clear the slot on a publish when the payload moved mid-flight', async () => {
@@ -349,6 +399,11 @@ describe('useCreateClimbScreen autosave flush', () => {
     await waitFor(() => expect(result.current.name).toBe('Rescued remix'));
     expect(draftStore.loadDraft).toHaveBeenCalledWith('draft-key');
     expect(draftStore.loadDraft).toHaveBeenCalledWith('fork:draft-key');
+    expect(draftStore.saveDraft).toHaveBeenCalledWith('draft-key', expect.objectContaining({ name: 'Rescued remix' }));
+    expect(draftStore.clearDraft).toHaveBeenCalledWith('fork:draft-key');
+    expect(draftStore.saveDraft.mock.invocationCallOrder[0]).toBeLessThan(
+      draftStore.clearDraft.mock.invocationCallOrder[0],
+    );
   });
 
   it('re-attaches the saved row from the restored slot so the next save updates it', async () => {
@@ -379,6 +434,10 @@ describe('useCreateClimbScreen autosave flush', () => {
 
     const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
     await waitFor(() => expect(result.current.name).toBe('Restored'));
+
+    // Legacy linked payloads predate savedPayloadSignature. They must be treated
+    // conservatively as phone-only until the next successful explicit save.
+    expect(result.current.draftStatus?.text).toBe('mobile.create.autosave.unsyncedEdits');
 
     await act(async () => {
       await result.current.handleSave();
@@ -429,8 +488,11 @@ describe('useCreateClimbScreen autosave flush', () => {
     await waitFor(() => expect(result.current.name).toBe('Server name'));
     await waitFor(() => expect(draftStore.loadDraft).toHaveBeenCalledWith('edit:kilter:climb-9'));
 
+    expect(result.current.draftStatus?.text).toBe('mobile.create.autosave.inAccount');
+
     draftStore.saveDraft.mockClear();
     act(() => result.current.setName('Edited name'));
+    expect(result.current.draftStatus?.text).toBe('mobile.create.autosave.unsyncedEdits');
     unmount();
 
     // Editing a draft had NO autosave at all before — and the edit path is the
@@ -593,20 +655,239 @@ describe('useCreateClimbScreen autosave flush', () => {
     createClimb.canPublish = true;
   });
 
-  it('keeps autosaving in edit mode even when the climb never loads', async () => {
+  it('restores the edit slot before autosaving when the climb never loads', async () => {
     // If the query fails permanently — offline, or the row is gone — the seed
     // effect never runs. Gate autosave on it and the whole edit session silently
     // stops saving: paint, kill the app, lose everything. That is the exact
     // failure this change exists to remove, so the gate opens on the failure too.
     graphql.climb = undefined;
     graphql.climbFailed = true;
+    draftStore.loadDraft.mockResolvedValue({
+      holdsJson: '{}',
+      framesJson: '[{}]',
+      name: 'Recovered offline edit',
+      description: 'phone beta',
+      isDraft: true,
+    });
 
     const { result, unmount } = renderHook(() => useCreateClimbScreen({ board: BOARD, editClimbUuid: 'climb-9' }));
+    await waitFor(() => expect(result.current.name).toBe('Recovered offline edit'));
+    expect(draftStore.saveDraft).not.toHaveBeenCalled();
     act(() => result.current.setName('Painted while offline'));
     unmount();
 
     expect(savedKeys()).toEqual(['edit:kilter:climb-9']);
     expect(draftStore.saveDraft.mock.calls[0]?.[1]?.name).toBe('Painted while offline');
+  });
+
+  it('does not overwrite a failure-restored edit when the server retry later succeeds', async () => {
+    graphql.climbFailed = true;
+    draftStore.loadDraft.mockResolvedValue({
+      holdsJson: '{}',
+      framesJson: '[{}]',
+      name: 'Recovered offline edit',
+      description: 'phone beta',
+      isDraft: true,
+    });
+
+    const { result, rerender } = renderHook(() => useCreateClimbScreen({ board: BOARD, editClimbUuid: 'climb-9' }));
+    await waitFor(() => expect(result.current.name).toBe('Recovered offline edit'));
+
+    graphql.climbFailed = false;
+    graphql.climb = {
+      uuid: 'climb-9',
+      name: 'Older server name',
+      description: 'server beta',
+      frames: 'p1r12',
+      is_draft: true,
+      created_at: null,
+      published_at: null,
+    };
+    rerender();
+
+    await waitFor(() => expect(result.current.draftStatus?.text).toBe('mobile.create.autosave.unsyncedEdits'));
+    expect(result.current.name).toBe('Recovered offline edit');
+  });
+
+  it('keeps current-session edits when a found failure restore finishes late', async () => {
+    graphql.climbFailed = true;
+    let finishRestore: ((draft: Record<string, unknown> | null) => void) | undefined;
+    draftStore.loadDraft.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRestore = resolve;
+        }),
+    );
+
+    const { result, rerender } = renderHook(() => useCreateClimbScreen({ board: BOARD, editClimbUuid: 'climb-9' }));
+    await waitFor(() => expect(finishRestore).toBeDefined());
+    act(() => result.current.setName('Typed while storage was loading'));
+
+    graphql.climbFailed = false;
+    graphql.climb = {
+      uuid: 'climb-9',
+      name: 'Server retry',
+      description: 'server beta',
+      frames: 'p1r12',
+      is_draft: true,
+      created_at: null,
+      published_at: null,
+    };
+    rerender();
+
+    await act(async () => {
+      finishRestore?.({
+        holdsJson: '{}',
+        framesJson: '[{}]',
+        name: 'Phone copy still loading',
+        description: 'phone beta',
+        isDraft: true,
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(result.current.name).toBe('Typed while storage was loading'));
+    expect(result.current.draftStatus?.text).toBe('mobile.create.autosave.unsyncedEdits');
+  });
+
+  it('keeps current-session edits when an empty failure restore finishes late', async () => {
+    graphql.climbFailed = true;
+    let finishRestore: ((draft: null) => void) | undefined;
+    draftStore.loadDraft.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRestore = resolve;
+        }),
+    );
+    const { result, rerender } = renderHook(() => useCreateClimbScreen({ board: BOARD, editClimbUuid: 'climb-9' }));
+    await waitFor(() => expect(finishRestore).toBeDefined());
+    act(() => result.current.setName('Typed before empty result'));
+
+    await act(async () => {
+      finishRestore?.(null);
+      await Promise.resolve();
+    });
+    graphql.climbFailed = false;
+    graphql.climb = {
+      uuid: 'climb-9',
+      name: 'Older server name',
+      description: 'server beta',
+      frames: 'p1r12',
+      is_draft: true,
+      created_at: null,
+      published_at: null,
+    };
+    rerender();
+
+    await waitFor(() => expect(result.current.draftStatus?.text).toBe('mobile.create.autosave.unsyncedEdits'));
+    expect(result.current.name).toBe('Typed before empty result');
+  });
+
+  it('arms autosave for an edit made while the failure restore was pending', async () => {
+    graphql.climbFailed = true;
+    let finishRestore: ((draft: null) => void) | undefined;
+    draftStore.loadDraft.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRestore = resolve;
+        }),
+    );
+    const { result, unmount } = renderHook(() => useCreateClimbScreen({ board: BOARD, editClimbUuid: 'climb-9' }));
+    await waitFor(() => expect(finishRestore).toBeDefined());
+    act(() => result.current.setName('Typed before restore opened'));
+
+    await act(async () => {
+      finishRestore?.(null);
+      await Promise.resolve();
+    });
+    draftStore.saveDraft.mockClear();
+    unmount();
+
+    expect(draftStore.saveDraft).toHaveBeenCalledWith(
+      'edit:kilter:climb-9',
+      expect.objectContaining({ name: 'Typed before restore opened' }),
+    );
+  });
+
+  it('keeps edits made after an empty offline restore when the server retry succeeds', async () => {
+    graphql.climbFailed = true;
+    draftStore.loadDraft.mockResolvedValue(null);
+    const { result, rerender } = renderHook(() => useCreateClimbScreen({ board: BOARD, editClimbUuid: 'climb-9' }));
+    await waitFor(() => expect(draftStore.loadDraft).toHaveBeenCalledWith('edit:kilter:climb-9'));
+
+    act(() => result.current.setName('Typed while offline'));
+    graphql.climbFailed = false;
+    graphql.climb = {
+      uuid: 'climb-9',
+      name: 'Older server name',
+      description: 'server beta',
+      frames: 'p1r12',
+      is_draft: true,
+      created_at: null,
+      published_at: null,
+    };
+    rerender();
+
+    await waitFor(() => expect(result.current.draftStatus?.text).toBe('mobile.create.autosave.unsyncedEdits'));
+    expect(result.current.name).toBe('Typed while offline');
+  });
+
+  it('leaves edit identity before starting a fresh climb', async () => {
+    graphql.climbFailed = true;
+    draftStore.loadDraft.mockResolvedValue({
+      holdsJson: '{}',
+      framesJson: '[{}]',
+      name: 'Offline edit',
+      description: '',
+      isDraft: true,
+    });
+    const onStartedNewClimb = vi.fn();
+    const { result } = renderHook(() =>
+      useCreateClimbScreen({ board: BOARD, editClimbUuid: 'climb-9', onStartedNewClimb }),
+    );
+    await waitFor(() => expect(result.current.name).toBe('Offline edit'));
+
+    act(() => result.current.handleNewClimb());
+    await act(async () => {
+      result.current.confirmNewClimb();
+      await Promise.resolve();
+    });
+
+    expect(draftStore.clearDraft).toHaveBeenCalledWith('edit:kilter:climb-9');
+    expect(onStartedNewClimb).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not navigate after a pending Start new clear outlives the screen', async () => {
+    graphql.climbFailed = true;
+    draftStore.loadDraft.mockResolvedValue({
+      holdsJson: '{}',
+      framesJson: '[{}]',
+      name: 'Offline edit',
+      description: '',
+      isDraft: true,
+    });
+    let finishClear: (() => void) | undefined;
+    draftStore.clearDraft.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishClear = resolve;
+        }),
+    );
+    const onStartedNewClimb = vi.fn();
+    const { result, unmount } = renderHook(() =>
+      useCreateClimbScreen({ board: BOARD, editClimbUuid: 'climb-9', onStartedNewClimb }),
+    );
+    await waitFor(() => expect(result.current.name).toBe('Offline edit'));
+
+    act(() => result.current.handleNewClimb());
+    act(() => result.current.confirmNewClimb());
+    unmount();
+    await act(async () => {
+      finishClear?.();
+      await Promise.resolve();
+    });
+
+    expect(onStartedNewClimb).not.toHaveBeenCalled();
   });
 
   it('drops the slot this session owns when starting a new climb, not always the new-climb one', async () => {
@@ -621,7 +902,10 @@ describe('useCreateClimbScreen autosave flush', () => {
 
     // A fork carries content and no saved row, so this asks inline first.
     act(() => result.current.handleNewClimb());
-    act(() => result.current.confirmNewClimb());
+    await act(async () => {
+      result.current.confirmNewClimb();
+      await Promise.resolve();
+    });
 
     expect(draftStore.clearDraft).toHaveBeenCalledWith('fork:draft-key');
     expect(draftStore.clearDraft).not.toHaveBeenCalledWith('draft-key');

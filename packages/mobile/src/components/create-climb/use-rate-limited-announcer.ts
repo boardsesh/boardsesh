@@ -10,29 +10,65 @@
 // answer are spoken through here instead, at most one every 10 seconds, never
 // twice in a row with the same words.
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
 export const ANNOUNCE_MIN_INTERVAL_MS = 10_000;
 
 /**
- * Returns a stable `announce(text)` that speaks at most once per
- * `minIntervalMs`, dropping repeats of the sentence it last spoke.
+ * Returns an `announce(text)` that speaks at most once per `minIntervalMs`.
+ * During the cooldown it keeps only the latest distinct sentence and speaks it
+ * at the trailing edge, so a meaningful final state is delayed rather than lost.
  */
 export function useRateLimitedAnnouncer(minIntervalMs: number = ANNOUNCE_MIN_INTERVAL_MS): (text: string) => void {
   const lastAnnouncedAtRef = useRef(0);
   const lastTextRef = useRef<string | null>(null);
+  const pendingTextRef = useRef<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearPending = useCallback(() => {
+    pendingTextRef.current = null;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }, []);
+
+  useEffect(() => clearPending, [clearPending]);
 
   return useCallback(
     (text: string) => {
-      if (!text) return;
-      if (text === lastTextRef.current) return;
+      if (!text) {
+        clearPending();
+        return;
+      }
+      if (text === lastTextRef.current) {
+        // The status returned to what was already announced. Any different
+        // queued status is now stale and must not be spoken later.
+        clearPending();
+        return;
+      }
+      if (text === pendingTextRef.current) return;
       const now = Date.now();
-      if (now - lastAnnouncedAtRef.current < minIntervalMs) return;
-      lastAnnouncedAtRef.current = now;
-      lastTextRef.current = text;
-      AccessibilityInfo.announceForAccessibility(text);
+      const elapsedMs = now - lastAnnouncedAtRef.current;
+      if (elapsedMs >= minIntervalMs) {
+        clearPending();
+        lastAnnouncedAtRef.current = now;
+        lastTextRef.current = text;
+        AccessibilityInfo.announceForAccessibility(text);
+        return;
+      }
+
+      pendingTextRef.current = text;
+      if (timerRef.current) return;
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null;
+        const pendingText = pendingTextRef.current;
+        pendingTextRef.current = null;
+        if (!pendingText || pendingText === lastTextRef.current) return;
+        lastAnnouncedAtRef.current = Date.now();
+        lastTextRef.current = pendingText;
+        AccessibilityInfo.announceForAccessibility(pendingText);
+      }, minIntervalMs - elapsedMs);
     },
-    [minIntervalMs],
+    [clearPending, minIntervalMs],
   );
 }
