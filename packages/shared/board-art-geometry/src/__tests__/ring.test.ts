@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { BoardName } from '@boardsesh/shared-schema';
 import {
   CENTRE_TOLERANCE_RADII,
   MAX_RING_COORDINATE,
@@ -12,7 +13,7 @@ import {
   simplifyRing,
   type RingPoint,
 } from '../ring';
-import { loadBoardArtGeometry } from '../loader';
+import { listBoardArtGeometryKeys, loadBoardArtGeometry } from '../loader';
 
 /**
  * The ring utilities are the contract between three writers of the same shape:
@@ -291,8 +292,8 @@ describe('the centre gate the write path applies', () => {
   });
 
   it('admits a hold whose bolt grazes just outside its own silhouette', () => {
-    // The shape of kilter/1-28's five outliers: the centre sits a hair outside
-    // the silhouette. The worst shipped case is 0.03 radii out.
+    // The shape of the kilter/1-28 outliers: the centre sits a hair outside the
+    // silhouette, well under a tenth of a radius.
     const grazing = [0.02, -1, 1.4, -1, 1.4, 1, 0.02, 1];
     expect(pointInRing(grazing, 0, 0)).toBe(false);
     expect(distanceToRing(grazing, 0, 0)).toBeLessThanOrEqual(CENTRE_TOLERANCE_RADII);
@@ -312,19 +313,44 @@ describe('the centre gate the write path applies', () => {
     expect(covers(justPast)).toBe(false);
   });
 
-  it('admits every shipped outline, including the five that miss their centre', () => {
-    // The gate exists to catch a wrong-hold ring, not to reject art the tracer
-    // itself produced: if a shipped outline failed here, that hold could never
-    // be corrected.
-    const geometry = loadBoardArtGeometry({ boardName: 'kilter', layoutId: 1, sizeId: 28 });
-    expect(geometry).not.toBeNull();
-    const missingTheirCentre = Object.entries(geometry!.outlines)
-      .filter(([, outline]) => !pointInRing(outline, 0, 0))
-      .map(([placementId]) => Number(placementId))
-      .sort((left, right) => left - right);
-    expect(missingTheirCentre).toEqual([1448, 4800, 4806, 4810, 4825]);
-    for (const outline of Object.values(geometry!.outlines)) {
-      expect(covers(outline)).toBe(true);
+  it('admits every outline in every committed shard', () => {
+    // The invariant the gate has to hold to: it exists to catch a wrong-hold
+    // ring, not to reject art the tracer itself produced. An outline that fails
+    // here is a hold nobody could ever correct.
+    //
+    // Deliberately a sweep of the whole catalogue rather than a list of the
+    // known outliers. WHICH placements miss their own centre is a property of
+    // whatever tracer last wrote the shards, so pinning ids here would make this
+    // file fail the moment the shards are regenerated — a failure that says
+    // nothing about the gate. The invariant survives a regeneration; a snapshot
+    // does not.
+    const shardKeys = listBoardArtGeometryKeys();
+    expect(shardKeys.length).toBeGreaterThan(0);
+
+    let outlinesChecked = 0;
+    const failing: string[] = [];
+    const missingTheirCentre: string[] = [];
+
+    for (const shardKey of shardKeys) {
+      const [boardName, configKey] = shardKey.split('/');
+      const [layoutId, sizeId] = configKey.split('-').map(Number);
+      const geometry = loadBoardArtGeometry({ boardName: boardName as BoardName, layoutId, sizeId });
+      expect(geometry).not.toBeNull();
+
+      for (const [placementId, outline] of Object.entries(geometry!.outlines)) {
+        outlinesChecked += 1;
+        if (!covers(outline)) failing.push(`${shardKey}#${placementId}`);
+        if (!pointInRing(outline, 0, 0)) missingTheirCentre.push(`${shardKey}#${placementId}`);
+      }
     }
+
+    expect(outlinesChecked).toBeGreaterThan(10_000);
+    expect(failing).toEqual([]);
+
+    // The tolerance is meant to rescue a handful of concave holds, not to paper
+    // over a tracer that routinely puts a bolt outside its own silhouette. The
+    // slack is because the exact set moves when the shards are regenerated — the
+    // count is what stays small, so that is what is asserted.
+    expect(missingTheirCentre.length).toBeLessThanOrEqual(8);
   });
 });

@@ -183,9 +183,9 @@ describe('upsertHoldOutlineOverride validation', () => {
   });
 
   it('admits a ring whose centre grazes just outside it', async () => {
-    // Five shipped outlines (kilter/1-28 placements 1448, 4800, 4806, 4810,
-    // 4825) do not contain their own centre, all by under 0.03 radii. A strict
-    // containment gate would make exactly those holds un-correctable.
+    // A handful of shipped outlines on kilter/1-28 do not contain their own
+    // centre, all by a small fraction of a radius. A strict containment gate
+    // would make exactly those holds un-correctable.
     const grazing = [0.02, -1, 1.4, -1, 1.4, 1, 0.02, 1];
     const created = await upsert(grazing);
     expect(created.outline).toEqual(grazing);

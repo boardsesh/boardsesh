@@ -43,12 +43,14 @@ export const SIMPLIFY_EPSILON_BOARD_PX = 1.6;
  * enclosed, in radius units.
  *
  * Not zero, because a strict test would make exactly the holds most in need of
- * correction un-correctable: five shipped outlines (kilter/1-28 placements 1448,
- * 4800, 4806, 4810 and 4825 — hooks and slopers whose bolt sits under a deeply
- * concave underside) do not contain their own centre, all of them by less than
- * 0.03 radii. Generous enough to admit those and anything an editor traces the
- * same way; far tighter than the failure it exists to catch, which is a ring
- * drawn around the NEIGHBOURING hold and therefore roughly 2 radii away.
+ * correction un-correctable: a handful of shipped outlines on kilter/1-28 —
+ * hooks and slopers whose bolt sits under a deeply concave underside — do not
+ * contain their own centre, all of them by a small fraction of a radius. The
+ * exact set varies with the tracer that last wrote the shards, so it is the
+ * scale of the miss that this constant is sized against, not a fixed list.
+ * Generous enough to admit those and anything an editor traces the same way;
+ * far tighter than the failure it exists to catch, which is a ring drawn around
+ * the NEIGHBOURING hold and therefore roughly 2 radii away.
  */
 export const CENTRE_TOLERANCE_RADII = 0.25;
 

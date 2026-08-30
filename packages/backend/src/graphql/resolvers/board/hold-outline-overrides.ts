@@ -252,13 +252,13 @@ export const holdOutlineMutations = {
     // to be repeated by hand.
     //
     // "Covers" rather than "contains", because a strict containment test would
-    // make exactly the holds most in need of correction un-correctable: five
-    // shipped outlines (kilter/1-28 placements 1448, 4800, 4806, 4810, 4825 —
-    // hooks and slopers whose bolt sits under a deeply concave underside) do not
-    // contain their own centre, all by under 0.03 radii. A wrong-hold ring sits
-    // ~2 radii away, so the tolerance admits the first and still rejects the
-    // second by a wide margin. Both kinds are held to it: a LED_INNER ring is
-    // the plate boundary around the same bolt.
+    // make exactly the holds most in need of correction un-correctable: a
+    // handful of shipped outlines on kilter/1-28 — hooks and slopers whose bolt
+    // sits under a deeply concave underside — do not contain their own centre,
+    // all by a small fraction of a radius. A wrong-hold ring sits ~2 radii away,
+    // so the tolerance admits the first and still rejects the second by a wide
+    // margin. Both kinds are held to it: a LED_INNER ring is the plate boundary
+    // around the same bolt.
     if (!pointInRing(outline, 0, 0) && distanceToRing(outline, 0, 0) > CENTRE_TOLERANCE_RADII) {
       throw new GraphQLError('An outline has to cover the hold it belongs to.', {
         extensions: { code: HOLD_OUTLINE_CODES.centreOutside },
