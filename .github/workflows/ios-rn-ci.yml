@@ -133,7 +133,7 @@ jobs:
           # exactly the runs where the deps moved, and the second entry reached
           # into ios-testflight-rn.yml's bucket, so a PR could build against a
           # release build's Pods. A key miss must mean a clean `pod install`.
-          key: ${{ runner.os }}-pods-rn-ci-${{ hashFiles('packages/mobile/package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/eas.json', 'packages/mobile/assets/**', 'packages/mobile/targets/**', 'patches/**') }}
+          key: ${{ runner.os }}-pods-rn-ci-${{ hashFiles('packages/mobile/package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/eas.json', 'packages/mobile/assets/icon.png', 'packages/mobile/assets/adaptive-icon.png', 'packages/mobile/assets/splash-icon.png', 'packages/mobile/targets/**', 'patches/**') }}
 
       - name: Install CocoaPods dependencies
         working-directory: packages/mobile/ios

@@ -5,7 +5,7 @@
  * same-named channel. The channel must go first because an existing mapping can
  * prevent branch deletion. Both deletes are idempotent.
  *
- *   node scripts/ota-preview-cleanup.ts delete --branch pr-123
+ *   node --experimental-strip-types scripts/ota-preview-cleanup.ts delete --branch pr-123
  */
 
 const DEFAULT_APP_ID = '007e6fd7-f200-448c-9449-8d48ba5d51fc';
