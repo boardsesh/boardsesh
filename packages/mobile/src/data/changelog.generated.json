@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-30T03:14:56.555Z",
+  "generatedAt": "2026-08-30T04:11:36.108Z",
   "entries": [
+    {
+      "prNumber": 4770,
+      "category": "new",
+      "title": "Your work in the climb creator is kept on your phone now, in every mode — editing a draft, remixing a climb, or picking up after you've already saved once. Kill the app mid-build and it's all still there when you come back.",
+      "mergedAt": "2026-08-30T04:10:27Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4770",
+      "body": "A line under the Save button always tells you where your climb is: on this phone, in your account, or waiting on edits you haven't saved yet.\nThe trash button clears holds and nothing else. Starting a fresh climb is its own button, and it asks first if the one you're on isn't saved anywhere.\nUndo stays put on the row instead of sliding off once a climb has more than one frame.\nPublishing now asks for a start and a finish hold. Drafts save with whatever you've got."
+    },
     {
       "prNumber": 4864,
       "category": "fixed",

@@ -8,6 +8,11 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Your work in the climb creator is kept on your phone now, in every mode — editing a draft, remixing a climb, or picking up after you've already saved once. Kill the app mid-build and it's all still there when you come back. ([#4770](https://github.com/boardsesh/boardsesh/pull/4770))
+  A line under the Save button always tells you where your climb is: on this phone, in your account, or waiting on edits you haven't saved yet.
+  The trash button clears holds and nothing else. Starting a fresh climb is its own button, and it asks first if the one you're on isn't saved anywhere.
+  Undo stays put on the row instead of sliding off once a climb has more than one frame.
+  Publishing now asks for a start and a finish hold. Drafts save with whatever you've got.
 - One Boards page instead of two. "Change board" and "My Boards" were the same list with different buttons — now it's one place to switch, edit, and clear out boards. ([#4736](https://github.com/boardsesh/boardsesh/pull/4736))
   Every board in "Your boards" says whether it's yours or one you follow, and the board you're on now reads "Active" instead of a bare tick.
   Tap Edit to delete a board you own or stop following someone else's, straight from the card. Swiping a row to delete is gone — the Edit button replaces it.
