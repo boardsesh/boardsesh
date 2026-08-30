@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  BOARD_RENDER_VERSION,
   assertGroupedNotificationSchema,
   boardRenderEndpoint,
   checkBoardRenderOnce,
@@ -119,11 +120,35 @@ void test('fetches uncached board image bytes directly from the Railway endpoint
   assert.equal(requestUrl.origin, 'https://example.com');
   assert.equal(requestUrl.pathname, '/render/board');
   assert.equal(requestUrl.searchParams.get('smoke'), 'deploy-123');
+  assert.equal(requestUrl.searchParams.get('v'), BOARD_RENDER_VERSION);
   assert.equal(requestUrl.searchParams.get('frames'), '');
   assert.equal(request.options.method, 'GET');
   assert.equal(request.options.cache, 'no-store');
   assert.equal(renderResult.contentType, 'image/webp');
   assert.equal(renderResult.byteLength, 12);
+});
+
+void test('checks the unversioned daily-cache board render path', async () => {
+  let requestUrl;
+  const renderResult = await checkBoardRenderOnce({
+    baseUrl: 'https://example.com',
+    renderVersion: null,
+    fetchImpl: async (url) => {
+      requestUrl = new URL(url);
+      return boardRenderResponse({
+        headers: {
+          'Content-Type': 'image/webp',
+          'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800',
+          'X-Railway-Request-Id': 'request-123',
+        },
+      });
+    },
+    timeoutMs: 100,
+  });
+
+  assert.equal(requestUrl.searchParams.has('v'), false);
+  assert.doesNotMatch(renderResult.cacheControl, /immutable/);
+  assert.match(renderResult.cacheControl, /max-age=86400/);
 });
 
 void test('rejects cached proxy responses and malformed image bytes', async () => {
@@ -162,7 +187,10 @@ void test('rejects cached proxy responses and malformed image bytes', async () =
 });
 
 void test('normalizes the board renderer URL to an HTTP(S) origin', () => {
-  assert.equal(new URL(boardRenderEndpoint('https://example.com/graphql', 'one')).pathname, '/render/board');
+  const versionedUrl = new URL(boardRenderEndpoint('https://example.com/graphql', 'one'));
+  assert.equal(versionedUrl.pathname, '/render/board');
+  assert.equal(versionedUrl.searchParams.get('v'), BOARD_RENDER_VERSION);
+  assert.match(BOARD_RENDER_VERSION, /^[0-9a-f]{8,64}$/);
   assert.throws(() => boardRenderEndpoint('ws://example.com/graphql'), /must use http or https/);
 });
 
@@ -193,13 +221,22 @@ void test('retries transient failures and succeeds within the bounded attempt co
       if (fetchCalls === 1) throw new Error('socket reset');
       if (fetchCalls === 2) return response('upstream unavailable', { ok: false, status: 503 });
       if (fetchCalls === 4) return boardRenderResponse();
+      if (fetchCalls === 5) {
+        return boardRenderResponse({
+          headers: {
+            'Content-Type': 'image/webp',
+            'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800',
+            'X-Railway-Request-Id': 'request-123',
+          },
+        });
+      }
       return response(schemaPayload());
     },
     sleep: async (milliseconds) => sleepDurations.push(milliseconds),
     log: silentLog,
   });
 
-  assert.equal(fetchCalls, 4);
+  assert.equal(fetchCalls, 5);
   assert.deepEqual(sleepDurations, [25, 25]);
   assert.ok(fields.includes('climbLayoutId'));
 });

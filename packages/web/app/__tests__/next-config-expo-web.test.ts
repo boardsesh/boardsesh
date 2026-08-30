@@ -42,6 +42,15 @@ describe('Expo web Next proxy', () => {
     expect(() => configModule.resolveBoardRenderBackendUrl('file:///tmp/socket')).toThrow(/ws, wss, http, or https/);
   });
 
+  it('keeps the localhost fallback in development but requires an explicit production backend', () => {
+    expect(configModule.resolveBoardRenderBackendUrl(undefined, 'development')).toBe(
+      'http://localhost:8080/render/board',
+    );
+    expect(() => configModule.resolveBoardRenderBackendUrl(undefined, 'production')).toThrow(
+      /NEXT_PUBLIC_WS_URL is required in production/,
+    );
+  });
+
   it('always installs the legacy board-render compatibility rewrite', async () => {
     delete process.env.BOARDSESH_WEB;
     vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://ws.boardsesh.com/graphql');
@@ -129,6 +138,7 @@ describe('Expo web Next proxy', () => {
     process.env.BOARDSESH_WEB = '1';
     delete process.env.BOARDSESH_EXPO_WEB_ORIGIN;
     vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://ws.boardsesh.com/graphql');
 
     const appRewrites = flattenRewrites((await nextConfig.rewrites?.()) ?? []).filter(
       ({ source }) => source === '/app' || source.startsWith('/app/'),

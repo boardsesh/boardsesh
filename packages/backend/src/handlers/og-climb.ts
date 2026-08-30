@@ -68,8 +68,14 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
     );
   } catch (error) {
     if (error instanceof RateLimitError) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': String(error.retryAfterSeconds) });
-      res.end(JSON.stringify({ error: 'Rate limit exceeded' }));
+      const encoded = JSON.stringify({ error: 'Rate limit exceeded' });
+      res.writeHead(429, {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(encoded),
+        'Retry-After': String(error.retryAfterSeconds),
+        'Cache-Control': 'no-store',
+      });
+      res.end(encoded);
       return;
     }
     throw error;

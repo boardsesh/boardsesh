@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const scriptPath = fileURLToPath(import.meta.url);
@@ -6,7 +7,6 @@ const DEFAULT_BASE_URL = 'https://ws.boardsesh.com';
 const DEFAULT_ATTEMPTS = 12;
 const DEFAULT_RETRY_DELAY_MS = 5_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
-const BOARD_RENDER_VERSION = '00000000';
 const REQUIRED_GROUPED_NOTIFICATION_FIELDS = Object.freeze(['climbLayoutId', 'climbAngle']);
 const INTROSPECTION_QUERY = `
   query ProductionBackendSchemaSmoke {
@@ -17,6 +17,20 @@ const INTROSPECTION_QUERY = `
     }
   }
 `;
+
+function loadBoardRenderVersion() {
+  const generatedModule = readFileSync(
+    new URL('../packages/shared/board-render/src/generated/render-version.ts', import.meta.url),
+    'utf8',
+  );
+  const versionMatch = generatedModule.match(/BOARD_RENDER_VERSION = '([0-9a-f]{8,64})'/);
+  if (!versionMatch) {
+    throw new Error('could not read BOARD_RENDER_VERSION from the generated renderer version module');
+  }
+  return versionMatch[1];
+}
+
+const BOARD_RENDER_VERSION = loadBoardRenderVersion();
 
 function parseGraphqlResponse(responseText) {
   let payload;
@@ -67,13 +81,13 @@ function graphqlEndpoint(baseUrl) {
   return parsedUrl.toString();
 }
 
-function boardRenderEndpoint(baseUrl, cacheBuster = Date.now()) {
+function boardRenderEndpoint(baseUrl, cacheBuster = Date.now(), renderVersion = BOARD_RENDER_VERSION) {
   const parsedUrl = new URL(baseUrl);
   if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
     throw new Error(`--base must use http or https (received ${parsedUrl.protocol})`);
   }
   parsedUrl.pathname = '/render/board';
-  parsedUrl.search = new URLSearchParams({
+  const renderSearchParams = new URLSearchParams({
     board_name: 'kilter',
     layout_id: '1',
     size_id: '10',
@@ -82,9 +96,10 @@ function boardRenderEndpoint(baseUrl, cacheBuster = Date.now()) {
     thumbnail: '1',
     include_background: '1',
     format: 'webp',
-    v: BOARD_RENDER_VERSION,
     smoke: String(cacheBuster),
-  }).toString();
+  });
+  if (renderVersion !== null) renderSearchParams.set('v', renderVersion);
+  parsedUrl.search = renderSearchParams.toString();
   parsedUrl.hash = '';
   return parsedUrl.toString();
 }
@@ -138,9 +153,10 @@ async function checkBoardRenderOnce({
   fetchImpl = globalThis.fetch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   cacheBuster = Date.now(),
+  renderVersion = BOARD_RENDER_VERSION,
 }) {
   requirePositiveInteger('timeoutMs', timeoutMs);
-  const endpoint = boardRenderEndpoint(baseUrl, cacheBuster);
+  const endpoint = boardRenderEndpoint(baseUrl, cacheBuster, renderVersion);
   const abortController = new AbortController();
   const timeout = setTimeout(() => abortController.abort(), timeoutMs);
 
@@ -165,7 +181,14 @@ async function checkBoardRenderOnce({
       throw new Error(`board render returned unexpected Content-Type: ${contentType || '(missing)'}`);
     }
     const cacheControl = response.headers.get('cache-control') ?? '';
-    if (!cacheControl.includes('public') || !cacheControl.includes('immutable')) {
+    if (!cacheControl.includes('public')) {
+      throw new Error(`board render returned unexpected Cache-Control: ${cacheControl || '(missing)'}`);
+    }
+    if (renderVersion === null) {
+      if (cacheControl.includes('immutable') || !cacheControl.includes('max-age=86400')) {
+        throw new Error(`unversioned board render returned unexpected Cache-Control: ${cacheControl || '(missing)'}`);
+      }
+    } else if (!cacheControl.includes('immutable')) {
       throw new Error(`versioned board render returned unexpected Cache-Control: ${cacheControl || '(missing)'}`);
     }
     if (!response.headers.get('x-railway-request-id')) {
@@ -207,15 +230,23 @@ async function runBackendSmoke({
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const fieldNames = await checkBackendSchemaOnce({ baseUrl, fetchImpl, timeoutMs });
-      const renderResult = await checkBoardRenderOnce({
+      const versionedRenderResult = await checkBoardRenderOnce({
         baseUrl,
         fetchImpl,
         timeoutMs,
         cacheBuster: `${Date.now()}-${attempt}`,
       });
+      const dailyRenderResult = await checkBoardRenderOnce({
+        baseUrl,
+        fetchImpl,
+        timeoutMs,
+        cacheBuster: `${Date.now()}-${attempt}-daily`,
+        renderVersion: null,
+      });
       log.info(
         `Production backend smoke passed on attempt ${attempt}: ${REQUIRED_GROUPED_NOTIFICATION_FIELDS.join(', ')}; ` +
-          `board render ${renderResult.byteLength} bytes (${renderResult.contentType})`,
+          `versioned board render ${versionedRenderResult.byteLength} bytes (${versionedRenderResult.contentType}); ` +
+          `daily board render ${dailyRenderResult.byteLength} bytes`,
       );
       return fieldNames;
     } catch (error) {
@@ -274,6 +305,7 @@ if (process.argv[1] === scriptPath) {
 }
 
 export {
+  BOARD_RENDER_VERSION,
   DEFAULT_ATTEMPTS,
   DEFAULT_BASE_URL,
   DEFAULT_RETRY_DELAY_MS,

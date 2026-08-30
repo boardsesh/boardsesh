@@ -162,7 +162,8 @@ async function initializeBoardRenderer(): Promise<void> {
     logger.info(`[BoardRender] Renderer initialised (images root: ${imagesRoot})`);
 
     // Warm in the background, one config at a time through the same semaphore
-    // as requests. Boot and request work can therefore never exceed the cap.
+    // as requests. Warmups use its low-priority queue so request misses take
+    // the next available slot instead of waiting behind the remaining boards.
     warmupRuns += 1;
     warmupPromise = warmFallbackBoardPreviews();
     void warmupPromise;
@@ -235,6 +236,12 @@ export type OgClimbRenderResult = {
   cache: 'hit' | 'base-hit' | 'miss';
   timings: { wasmMs: number; baseMs: number; encodeMs: number; composeMs?: number };
 };
+
+function isOgClimbRenderResult(
+  rendered: BoardImageRenderResult,
+): rendered is BoardImageRenderResult & OgClimbRenderResult {
+  return rendered.cache !== 'none';
+}
 
 /**
  * Render-option suffix on the byte cache key, so a boardsesh render — and any
@@ -401,13 +408,20 @@ export function renderOgClimb(params: OgClimbRenderParams): Promise<OgClimbRende
     includeBackground: true,
     dimBackground: 0,
     isOgVariant: true,
-  }) as Promise<OgClimbRenderResult>;
+  }).then((rendered) => {
+    if (!isOgClimbRenderResult(rendered)) {
+      throw new Error('OG render completed without a configured base cache');
+    }
+    // Return the canonical result object so coalesced callers retain identity;
+    // the guard above soundly narrows the OG cache outcome without a cast.
+    return rendered;
+  });
 }
 
 async function warmFallbackBoardPreviews(): Promise<void> {
   for (const [boardName, config] of Object.entries(FALLBACK_BOARD_PREVIEW_CONFIGS)) {
     try {
-      await renderSemaphore.run(() => warmBoardBase(boardName, config));
+      await renderSemaphore.runLowPriority(() => warmBoardBase(boardName, config));
     } catch (error) {
       logger.warn(`[BoardRender] Warm-up failed for ${boardName}:`, error instanceof Error ? error.message : error);
     }

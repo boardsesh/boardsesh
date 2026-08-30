@@ -72,6 +72,33 @@ describe('createSemaphore', () => {
     expect(semaphore.active).toBe(0);
   });
 
+  it('serves request work before queued low-priority warmups', async () => {
+    const semaphore = createSemaphore(1);
+    const started: string[] = [];
+    const activeGate = deferred();
+
+    const active = semaphore.run(async () => {
+      started.push('active');
+      await activeGate.promise;
+    });
+    const warmup = semaphore.runLowPriority(async () => {
+      started.push('warmup');
+    });
+    const request = semaphore.run(async () => {
+      started.push('request');
+    });
+
+    await flush();
+    expect(started).toEqual(['active']);
+    expect(semaphore.pending).toBe(2);
+
+    activeGate.resolve();
+    await Promise.all([active, request, warmup]);
+    expect(started).toEqual(['active', 'request', 'warmup']);
+    expect(semaphore.active).toBe(0);
+    expect(semaphore.pending).toBe(0);
+  });
+
   it('releases the slot when a task throws', async () => {
     const semaphore = createSemaphore(1);
 

@@ -172,6 +172,8 @@ describe('handleOgClimb', () => {
       const res = await run(validParams);
       expect(res.statusCode).toBe(429);
       expect(res.headers['Retry-After']).toBe('30');
+      expect(res.headers['Content-Length']).toBe(Buffer.byteLength(String(res.body)));
+      expect(res.headers['Cache-Control']).toBe('no-store');
       expect(renderOgClimb).not.toHaveBeenCalled();
     });
   });

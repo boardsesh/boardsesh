@@ -4,11 +4,14 @@ import createWithVercelToolbar from '@vercel/toolbar/plugins/next';
 
 const withVercelToolbar = createWithVercelToolbar();
 
-export function resolveBoardRenderBackendUrl(rawWsUrl) {
-  const configuredWsUrl = rawWsUrl || 'ws://localhost:8080/graphql';
+export function resolveBoardRenderBackendUrl(rawWsUrl, runtimeEnvironment = process.env.NODE_ENV) {
+  const configuredWsUrl = rawWsUrl?.trim();
+  if (!configuredWsUrl && runtimeEnvironment === 'production') {
+    throw new Error('NEXT_PUBLIC_WS_URL is required in production for the board-render compatibility rewrite');
+  }
   let backendUrl;
   try {
-    backendUrl = new URL(configuredWsUrl);
+    backendUrl = new URL(configuredWsUrl || 'ws://localhost:8080/graphql');
   } catch {
     throw new Error(`NEXT_PUBLIC_WS_URL is not a valid URL: ${JSON.stringify(configuredWsUrl)}`);
   }

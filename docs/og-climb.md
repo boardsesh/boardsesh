@@ -55,6 +55,8 @@ in-app images at `/render/board` and the compatibility alias
 2. The 1200×630 backdrop + board photos are composited once per board config
    and cached as raw RGBA (**base cache**, LRU, 24 entries by default). The
    fallback preview config for every supported board is pre-warmed after boot.
+   Warmups share the render cap but use a low-priority queue, so queued request
+   work takes the next available slot between board warmups.
 3. Overlay is composited onto the base and encoded — JPEG by default
    (mozjpeg, quality 85, 4:4:4 chroma), ~50–80KB.
 4. Final bytes land in the **byte cache** (LRU, 32MB by default), so repeat
@@ -69,7 +71,7 @@ repeats, ~700ms worst-case first render of a never-seen board config.
 | Var                        | Default               | Meaning                                                                                                                                                                            |
 | -------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `BOARD_IMAGES_ROOT`        | `<cwd>/../web/public` | Directory containing `images/` (board photos). The backend Docker context ships `packages/web/public/images` via `extraSourceDirs` in `scripts/create-service-docker-context.mjs`. |
-| `BOARD_RENDER_CONCURRENCY` | `2`                   | Shared concurrency cap for OG and board-image misses, including boot warmups.                                                                                                      |
+| `BOARD_RENDER_CONCURRENCY` | `2`                   | Shared concurrency cap for OG and board-image misses, including low-priority boot warmups.                                                                                         |
 | `BOARD_RENDER_MAX_QUEUE`   | `40`                  | Maximum unique render misses waiting behind the shared semaphore before a `503` with `Retry-After: 5`.                                                                             |
 
 ## Cache prewarming (why the endpoint sees browser-initiated hits)
