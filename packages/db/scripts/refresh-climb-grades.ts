@@ -319,7 +319,7 @@ interface ContentPriorEntry {
 }
 
 function contentPriorKey(climbUuid: string, angle: number): string {
-  return `${climbUuid} ${angle}`;
+  return `${climbUuid}\u0000${angle}`;
 }
 
 /** Load the Climb2Vec content-model estimates (board_climb_embeddings) for a board. */
@@ -579,7 +579,7 @@ async function computeBoard(
   // MoonBoard can't reach this (the caller only walks CROWD_MEAN_BOARDS) and
   // `buildProjectedAngleObservations` refuses it a second time anyway.
   const boardAngles =
-    options.projectUnclimbedAngles === false ? [] : (ANGLES[boardType as BoardName] ?? ([] as readonly number[]));
+    options.projectUnclimbedAngles === true ? (ANGLES[boardType as BoardName] ?? ([] as readonly number[])) : [];
   const contentPriors = options.contentPriors ?? new Map<string, ContentPriorEntry>();
   const contentFor = (climbUuid: string, angle: number): { contentPrior: number | null; contentSd: number | null } => {
     const entry = contentPriors.get(contentPriorKey(climbUuid, angle));

@@ -76,7 +76,8 @@ export function resolveCrowdDifficulty(
   },
   useBoardseshGrades: boolean,
 ): number | null {
-  // Blocklist, not an allowlist of known tiers. Intentional: the DB only ever
+  // Keep these two untrusted tiers as a blocklist, not an allowlist of known
+  // tiers. Intentional: the DB only ever
   // writes a `board_climb_grades` row with confidence set, so a present
   // `boardseshDifficulty` with an undefined/unknown confidence can't happen from
   // real data — but if it did, this still surfaces the grade rather than

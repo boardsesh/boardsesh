@@ -63,7 +63,7 @@ export interface AngleGradeRow {
 
 /** Shift one posterior onto a shared isotonic curve while preserving its tier and interval width. */
 export function alignPosteriorToCurve(posterior: PosteriorGrade, curve: PosteriorGrade | undefined): PosteriorGrade {
-  if (posterior.localGrade === null || curve?.localGrade === null || curve === undefined) return posterior;
+  if (curve === undefined || posterior.localGrade === null || curve.localGrade === null) return posterior;
   const delta = curve.localGrade - posterior.localGrade;
   if (Math.abs(delta) < 1e-9) return posterior;
   return {

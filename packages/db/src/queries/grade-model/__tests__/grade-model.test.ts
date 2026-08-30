@@ -938,12 +938,24 @@ void describe('foldCoefficientRows', () => {
   void test('folds each payload kind onto its board key and ignores unknowns', () => {
     const folded = foldCoefficientRows('2026-08-01T00:00:00Z', [
       { kind: 'echo_fraction', key: 'kilter', payload: { lambda: 0.83 } },
+      { kind: 'sigma_within', key: 'kilter:mid', payload: { sigma: 1.1, pairs: 42 } },
+      { kind: 'tau_squared', key: 'kilter:mid', payload: { tau2: 0.7, climbs: 30 } },
+      { kind: 'angle_offset', key: 'kilter:mid:40', payload: { offset: 0.5, sd: 0.2, n: 18 } },
       { kind: 'board_offset', key: 'kilter', payload: { offset: -1.2, sd: 0.4, users: 60, looMaxDelta: 0.2 } },
+      { kind: 'rater_model', key: 'user-1', payload: { bias: 0.2, variance: 0.4 } },
+      { kind: 'behavior_model', key: 'user-1', payload: { flash: 0.1, repeat: -0.1 } },
+      { kind: 'bridge_readiness', key: 'kilter', payload: { ready: true, overlap: 50 } },
       { kind: 'gate_results', key: 'run-1', payload: { whatever: true } },
     ]);
     assert.equal(folded.coeffVersion, '2026-08-01T00:00:00Z');
     assert.equal(folded.echoFraction.kilter, 0.83);
+    assert.deepEqual(folded.sigmaWithin['kilter:mid'], { sigma: 1.1, pairs: 42 });
+    assert.deepEqual(folded.tauSquared['kilter:mid'], { tau2: 0.7, climbs: 30 });
+    assert.deepEqual(folded.angleOffset['kilter:mid:40'], { offset: 0.5, sd: 0.2, n: 18 });
     assert.equal(folded.boardOffset.kilter.offset, -1.2);
-    assert.deepEqual(folded.raterModel, {});
+    assert.deepEqual(folded.raterModel['user-1'], { bias: 0.2, variance: 0.4 });
+    assert.deepEqual(folded.behaviorModel['user-1'], { flash: 0.1, repeat: -0.1 });
+    assert.deepEqual(folded.bridgeReadiness.kilter, { ready: true, overlap: 50 });
+    assert.equal(Object.hasOwn(folded, 'gate_results'), false);
   });
 });
