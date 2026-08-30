@@ -61,7 +61,9 @@ export const TICK_STACK_FONT_SCALE = 1.3;
 export const TICK_COUNT_RAIL_MIN_CHIPS = 15;
 
 /**
- * Create sheet detents.
+ * Create sheet detents. iOS / web only — Android takes `@expo/ui`'s
+ * content-fitting path (`androidContentSized` on `ModalSheet`, #4720) and never
+ * reads these values.
  *
  * Column: header 56 + rows (date 56 + grade 60 + stars 56 + tries 60 + note 68
  * = 300) + footer (paddingTop 12 + error slot 18 + gap 8 + button 56 +
@@ -80,7 +82,8 @@ export const TICK_COUNT_RAIL_MIN_CHIPS = 15;
 export const CREATE_TICK_SNAP_POINTS = ['65%', '92%'];
 
 /**
- * Edit sheet detents.
+ * Edit sheet detents. iOS / web only — Android takes the content-fitting path
+ * (`androidContentSized`, #4720).
  *
  * Column: header 56 + rows (status 56 + date 56 + grade 60 + angle 64 + stars
  * 56 + tries 60 + note 68 = 420) + delete group (spacing[8] 32 + 56 = 88) +

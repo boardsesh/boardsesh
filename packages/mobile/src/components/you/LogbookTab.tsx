@@ -360,9 +360,8 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
     setEditAscent(ascent);
     // Pin to the first detent explicitly rather than `present()`, which reopens
     // at whatever detent the sheet last rested at (sticky across opens on iOS).
-    // Android's Expanded state is deterministic either way — `androidOpensExpanded`
-    // collapses EDIT_TICK_SNAP_POINTS to a single detent there, so index 0 IS
-    // that detent.
+    // Android is deterministic either way — `androidContentSized` gives the edit
+    // sheet one content-fitted state there, so index 0 IS that state.
     editSheetRef.current?.snapToIndex(0);
   }, []);
 

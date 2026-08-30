@@ -69,11 +69,20 @@ type SheetProps = {
   /** Optional fixed header, rendered above the body and outside its scroll — so a
    * title and close affordance stay put while the body scrolls. */
   header?: ReactNode;
-  /** Collapses to a single, expanded-only detent on Android instead of the usual
-   * multi-detent config, so a pinned footer never strands below Android's ~50%
-   * partial state (#4723). See `androidSafeSnapPoints` for the full rationale;
-   * no effect on iOS/web, or on a single detent already at/above 75%. */
-  androidOpensExpanded?: boolean;
+  /** Size the sheet to its content on Android via `@expo/ui`'s content-fitting
+   * path (`enableDynamicSizing` + no snap points) instead of the `%` detents.
+   * For a multi-detent form whose pinned footer only fits at the last detent
+   * (the tick sheets): a near-full single detent there strands the footer under
+   * ~310 dp of empty sheet (#4720), and Android's ~50% partial state can't fit
+   * the form under the footer at all (#4723). Content-fitting closes both. The
+   * column takes a `maxHeight` ceiling (see `useSheetColumnStyle`) so a
+   * keyboard-up long note still scrolls under the footer rather than clipping.
+   * No effect on iOS / web — they keep the exact `%` detents.
+   *
+   * Designed for a sheet with a `header` / `footer` (the `maxHeight` lands on the
+   * KeyboardAvoidingView). A chrome-less sheet has no reason to reach for it —
+   * pass `enableDynamicSizing` instead. */
+  androidContentSized?: boolean;
 };
 
 export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
@@ -93,7 +102,7 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
     surface = 'glass',
     footerSurface = 'plate',
     header,
-    androidOpensExpanded = false,
+    androidContentSized = false,
   },
   ref,
 ) {
@@ -102,12 +111,15 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
   const snapPoints = useMemo(() => customSnapPoints ?? ['50%', '90%'], [customSnapPoints]);
   // Plain string, never a PlatformColor — see the `surface` prop doc.
   const solidBackground = useMemo(() => ({ backgroundColor: sheetSurface }), [sheetSurface]);
-  // See `androidOpensExpanded` above: collapses to the single LAST detent on
-  // Android instead of picking an index into a multi-detent config.
-  const effectiveSnapPoints = useMemo(
-    () => androidSafeSnapPoints(snapPoints, androidOpensExpanded),
-    [snapPoints, androidOpensExpanded],
-  );
+
+  // On Android, `androidContentSized` swaps the `%` detents for `@expo/ui`'s
+  // content-fitting path (no snap points at all reach the native sheet).
+  const contentSizedOnAndroid = androidContentSized && Platform.OS === 'android';
+  const useContentFitting = enableDynamicSizing || contentSizedOnAndroid;
+  // Consumed only on the detent path below (`useContentFitting` false): pads a
+  // SMALL single detent to give Android a partial state, passes iOS / web
+  // through untouched. See androidSafeSnapPoints.
+  const effectiveSnapPoints = useMemo(() => androidSafeSnapPoints(snapPoints), [snapPoints]);
 
   const sheetRef = useRef<BottomSheetMethods>(null);
   const managed = useManagedSheet({
@@ -124,7 +136,7 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
 
   // Track the resting detent so the iOS column bound follows drags between detents.
   const [activeIndex, setActiveIndex] = useState(0);
-  const columnStyle = useSheetColumnStyle(snapPoints, { enableDynamicSizing, activeIndex });
+  const columnStyle = useSheetColumnStyle(snapPoints, { enableDynamicSizing, activeIndex, contentSizedOnAndroid });
   // Dev-only observers for #3922 — they feed a log line, never layout.
   const { probeProps, sentinelProps, onColumnLayout } = useSheetDetentProbe(columnStyle, 'Sheet');
 
@@ -156,7 +168,12 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
   // itself is the child, so it carries the bound directly — otherwise an iOS
   // scrollable sheet sizes to its content and anything past the detent is
   // clipped and unreachable instead of scrolling.
-  const bodyStyle = hasChrome ? styles.content : columnStyle;
+  //
+  // On Android's content-fitting path the KAV takes a `maxHeight`, not `flex: 1`,
+  // so the body can't `flex: 1` into it — it takes its content height at rest
+  // (this is what closes the void) and `flexShrink: 1` so it shrinks and scrolls
+  // once a keyboard-up long note pushes the column into that ceiling.
+  const bodyStyle = hasChrome ? (contentSizedOnAndroid ? styles.contentShrink : styles.content) : columnStyle;
   // Without a pinned footer the body sits against the bottom edge, so it has to
   // clear the Android edge-to-edge navigation bar itself — the native sheet does
   // not pad content for it. With a footer the body scrolls above the footer, which
@@ -181,7 +198,7 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
     >
       {children}
     </BottomSheetScrollView>
-  ) : enableDynamicSizing && !hasChrome && Platform.OS === 'web' ? (
+  ) : useContentFitting && !hasChrome && Platform.OS === 'web' ? (
     // Web + dynamic sizing only, where the column is never bounded and the
     // #3922 probe stays idle — so there is nothing to measure here.
     <BottomSheetView style={[bodyStyle, bodyContentContainerStyle]}>{children}</BottomSheetView>
@@ -210,8 +227,8 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
     <BottomSheet
       ref={sheetRef}
       index={-1}
-      snapPoints={enableDynamicSizing ? undefined : effectiveSnapPoints}
-      enableDynamicSizing={enableDynamicSizing}
+      snapPoints={useContentFitting ? undefined : effectiveSnapPoints}
+      enableDynamicSizing={useContentFitting}
       enablePanDownToClose={enablePanDownToClose}
       onChange={handleChange}
       onFullyDismissed={managed.onFullyDismissed}
@@ -228,9 +245,10 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
       {hasChrome ? (
         // The single flex child of the native sheet: bound to the detent height on
         // iOS (see useSheetColumnStyle) so the pinned footer can't fall off-screen
-        // (#3330); flex:1 on Android / fitToContents. `padding` on both platforms:
-        // the Android Compose dialog window does not resize for the keyboard, so
-        // without it the keyboard covers the footer's input (emulator-verified).
+        // (#3330); flex:1 on Android's detent path; a `maxHeight` ceiling on its
+        // content-fitting path (#4720). `padding` on both platforms: the Android
+        // Compose dialog window does not resize for the keyboard, so without it
+        // the keyboard covers the footer's input (emulator-verified).
         <KeyboardAvoidingView style={columnStyle} behavior="padding" onLayout={onColumnLayout}>
           {header}
           {body}
@@ -259,6 +277,11 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  // Android content-fitting path: content height at rest (closes the void),
+  // shrinks to scroll when a keyboard-up long note fills the column's ceiling.
+  contentShrink: {
+    flexShrink: 1,
   },
   footer: {
     paddingHorizontal: spacing[4],

@@ -19,6 +19,12 @@ const nativePlatform = vi.hoisted(() => ({
   OS: 'ios' as 'ios' | 'android',
 }));
 
+// What the edit sheet hands its `Sheet` chrome — asserted so the Android
+// content-fitting opt-in (#4720) can't be dropped silently.
+const sheetProps = vi.hoisted(() => ({
+  androidContentSized: undefined as boolean | undefined,
+}));
+
 const toast = vi.hoisted(() => ({
   showToast: vi.fn(),
 }));
@@ -99,8 +105,20 @@ vi.mock('../../../providers/dialog-provider', () => ({
   useConfirm: () => () => Promise.resolve(true),
 }));
 vi.mock('../../Sheet', () => ({
-  Sheet: ({ children, header, footer }: { children?: ReactNode; header?: ReactNode; footer?: ReactNode }) =>
-    createElement('div', null, header, children, footer),
+  Sheet: ({
+    children,
+    header,
+    footer,
+    androidContentSized,
+  }: {
+    children?: ReactNode;
+    header?: ReactNode;
+    footer?: ReactNode;
+    androidContentSized?: boolean;
+  }) => {
+    sheetProps.androidContentSized = androidContentSized;
+    return createElement('div', null, header, children, footer);
+  },
 }));
 vi.mock('../../Button', () => ({
   Button: ({ title, onPress, disabled }: { title: string; onPress: () => void; disabled?: boolean }) =>
@@ -277,6 +295,7 @@ function expectClimbedAtIso(isoTimestamp: string | undefined, expectedDate: Date
 
 beforeEach(() => {
   nativePlatform.OS = 'ios';
+  sheetProps.androidContentSized = undefined;
   pickerSelections.date = new Date(2026, 0, 9, 0, 0, 0, 0);
   pickerSelections.time = new Date(2026, 0, 9, 20, 15, 0, 0);
   dateTimePickerAndroid.open.mockClear();
@@ -290,6 +309,11 @@ afterEach(() => {
 });
 
 describe('LogbookEditSheet', () => {
+  it('opts the sheet into Android content-fitting so the form is not lost in a full-screen sheet (#4720)', () => {
+    renderSheet();
+    expect(sheetProps.androidContentSized).toBe(true);
+  });
+
   it('saves the selected local date and time as an ISO timestamp', () => {
     renderSheet();
 
