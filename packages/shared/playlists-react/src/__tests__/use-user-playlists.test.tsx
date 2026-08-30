@@ -46,6 +46,33 @@ afterEach(() => {
 });
 
 describe('useUserPlaylists (shared) — background pagination failure', () => {
+  it('loads a local library without a token or GraphQL', async () => {
+    const localPlaylist = makePlaylist('local');
+    const executeGraphQL = vi.fn() as unknown as ExecutePlaylistsGraphQL;
+    const adapter: PlaylistsAdapter = {
+      executeGraphQL,
+      recents: noopRecentsAdapter,
+      localLibrary: {
+        list: vi.fn(async () => ({ playlists: [localPlaylist], totalCount: 1, hasMore: false })),
+        get: vi.fn(async () => localPlaylist),
+        listClimbs: vi.fn(async () => ({ climbs: [], totalCount: 0, hasMore: false })),
+        create: vi.fn(async () => localPlaylist),
+        update: vi.fn(async () => localPlaylist),
+        delete: vi.fn(async () => true),
+        removeClimb: vi.fn(async () => true),
+        reorderClimb: vi.fn(async () => true),
+      },
+    };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <PlaylistsAdapterProvider value={adapter}>{children}</PlaylistsAdapterProvider>
+    );
+
+    const { result } = renderHook(() => useUserPlaylists({ token: null }), { wrapper });
+
+    await waitFor(() => expect(result.current.playlists).toEqual([localPlaylist]));
+    expect(executeGraphQL).not.toHaveBeenCalled();
+  });
+
   it('flags hasLoadMoreError after three failed pages, then retryLoadMore re-arms and clears it on success', async () => {
     let call = 0;
     const executeGraphQL = vi.fn(async (): Promise<AllUserPlaylistsResponse> => {

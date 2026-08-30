@@ -1,6 +1,7 @@
 export type { AppSettings, SettingsKey } from './types';
 export { DEFAULT_SETTINGS } from './defaults';
 export { getSetting, setSetting, getAllSettings, resetAllSettings, useSetting, useSettings } from './hooks';
+export { getSettingsAccessMode, setSettingsAccessMode } from './access-mode-scope';
 export {
   offlineBoardKey,
   offlineBoardKeyForBoard,

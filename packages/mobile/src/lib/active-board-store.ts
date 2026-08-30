@@ -18,19 +18,43 @@
 // ignored rather than misread.
 
 import type { UserBoard } from '@boardsesh/shared-schema';
+import { LOCAL_ACCESS_MODE } from '@boardsesh/party-profile';
 import { getPreference, setPreference, removePreference } from './preference-store';
 import type { UserStorageOwner } from './user-storage-owner';
+import { readPersistedAccessMode } from './access-mode-store';
 
-const ACTIVE_BOARD_KEY = 'boardsesh_active_board_v2';
+const ACCOUNT_ACTIVE_BOARD_KEY = 'boardsesh_active_board_v2';
+const LOCAL_ACTIVE_BOARD_KEY = 'boardsesh_local_active_board_v1';
 
-export function getStoredActiveBoard(_owner?: UserStorageOwner | null): Promise<UserBoard | null> {
-  return getPreference<UserBoard>(ACTIVE_BOARD_KEY);
+export type ActiveBoardStorageNamespace = 'account' | 'local';
+
+/** Capture this at read/write intent time, before an async queue can yield. */
+export function captureActiveBoardStorageNamespace(): ActiveBoardStorageNamespace {
+  return readPersistedAccessMode() === LOCAL_ACCESS_MODE ? 'local' : 'account';
 }
 
-export function setStoredActiveBoard(board: UserBoard, _owner?: UserStorageOwner | null): Promise<void> {
-  return setPreference(ACTIVE_BOARD_KEY, board);
+function activeBoardKey(namespace: ActiveBoardStorageNamespace): string {
+  return namespace === 'local' ? LOCAL_ACTIVE_BOARD_KEY : ACCOUNT_ACTIVE_BOARD_KEY;
 }
 
-export function clearStoredActiveBoard(_owner?: UserStorageOwner | null): Promise<void> {
-  return removePreference(ACTIVE_BOARD_KEY);
+export function getStoredActiveBoard(
+  _owner?: UserStorageOwner | null,
+  namespace = captureActiveBoardStorageNamespace(),
+): Promise<UserBoard | null> {
+  return getPreference<UserBoard>(activeBoardKey(namespace));
+}
+
+export function setStoredActiveBoard(
+  board: UserBoard,
+  _owner?: UserStorageOwner | null,
+  namespace = captureActiveBoardStorageNamespace(),
+): Promise<void> {
+  return setPreference(activeBoardKey(namespace), board);
+}
+
+export function clearStoredActiveBoard(
+  _owner?: UserStorageOwner | null,
+  namespace = captureActiveBoardStorageNamespace(),
+): Promise<void> {
+  return removePreference(activeBoardKey(namespace));
 }

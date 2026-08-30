@@ -13,7 +13,13 @@
 import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { getStoredActiveBoard, setStoredActiveBoard, clearStoredActiveBoard } from '../active-board-store';
+import {
+  captureActiveBoardStorageNamespace,
+  getStoredActiveBoard,
+  setStoredActiveBoard,
+  clearStoredActiveBoard,
+  type ActiveBoardStorageNamespace,
+} from '../active-board-store';
 import { getCurrentUserStorageOwner, type UserStorageOwner } from '../user-storage-owner';
 
 export const ACTIVE_BOARD_QUERY_KEY = ['activeBoard'] as const;
@@ -29,16 +35,30 @@ export const ACTIVE_BOARD_QUERY_KEY = ['activeBoard'] as const;
 //    queued behind it and therefore remains the final persisted value.
 let activeBoardWriteGeneration = 0;
 let activeBoardWriteQueue: Promise<void> = Promise.resolve();
+let activeBoardWriteNamespace: ActiveBoardStorageNamespace | null = null;
 
 type ActiveBoardStorageWrite = () => Promise<void>;
 
 export function getActiveBoardWriteGeneration(): number {
+  syncActiveBoardWriteNamespace();
   return activeBoardWriteGeneration;
 }
 
-function beginActiveBoardWrite(): number {
+function syncActiveBoardWriteNamespace(): ActiveBoardStorageNamespace {
+  const namespace = captureActiveBoardStorageNamespace();
+  if (activeBoardWriteNamespace !== null && namespace !== activeBoardWriteNamespace) {
+    // A conditional self-heal that began in the previous mode is stale even if
+    // no explicit board write happened during the switch.
+    activeBoardWriteGeneration += 1;
+  }
+  activeBoardWriteNamespace = namespace;
+  return namespace;
+}
+
+function beginActiveBoardWrite(): { generation: number; namespace: ActiveBoardStorageNamespace } {
+  const namespace = syncActiveBoardWriteNamespace();
   activeBoardWriteGeneration += 1;
-  return activeBoardWriteGeneration;
+  return { generation: activeBoardWriteGeneration, namespace };
 }
 
 function enqueueActiveBoardWrite(
@@ -69,15 +89,16 @@ function enqueueActiveBoardWrite(
 
 function enqueueCurrentGenerationWrite(
   expectedGeneration: number,
-  writeStorage: ActiveBoardStorageWrite,
+  writeStorage: (namespace: ActiveBoardStorageNamespace) => Promise<void>,
   commitCache: () => void,
 ): Promise<boolean> {
+  const namespace = syncActiveBoardWriteNamespace();
   if (expectedGeneration !== activeBoardWriteGeneration) return Promise.resolve(false);
 
   // Claim the write synchronously. A user choice that starts after this point
   // receives a newer generation and is queued after the heal, so it still wins.
-  const generation = beginActiveBoardWrite();
-  return enqueueActiveBoardWrite(generation, writeStorage, commitCache);
+  const { generation } = beginActiveBoardWrite();
+  return enqueueActiveBoardWrite(generation, () => writeStorage(namespace), commitCache);
 }
 
 /**
@@ -86,10 +107,10 @@ function enqueueCurrentGenerationWrite(
  * and repopulate storage for the signed-out/next user.
  */
 export async function clearStoredActiveBoardCoordinated(owner?: UserStorageOwner | null): Promise<void> {
-  const generation = beginActiveBoardWrite();
+  const { generation, namespace } = beginActiveBoardWrite();
   await enqueueActiveBoardWrite(
     generation,
-    () => clearStoredActiveBoard(owner),
+    () => clearStoredActiveBoard(owner, namespace),
     () => {},
   );
 }
@@ -98,6 +119,7 @@ export async function clearStoredActiveBoardCoordinated(owner?: UserStorageOwner
 export function resetActiveBoardWriteCoordinatorForTests(): void {
   activeBoardWriteGeneration = 0;
   activeBoardWriteQueue = Promise.resolve();
+  activeBoardWriteNamespace = null;
 }
 
 /**
@@ -105,9 +127,10 @@ export function resetActiveBoardWriteCoordinatorForTests(): void {
  * picked one yet — callers surface the board picker rather than defaulting.
  */
 export function useActiveBoard() {
+  const namespace = captureActiveBoardStorageNamespace();
   return useQuery({
     queryKey: ACTIVE_BOARD_QUERY_KEY,
-    queryFn: () => getStoredActiveBoard(),
+    queryFn: () => getStoredActiveBoard(undefined, namespace),
     // The stored board is authoritative until the user explicitly switches
     // (which calls setActiveBoard and updates the cache directly), so there's
     // no value in background refetching here.
@@ -124,11 +147,11 @@ export function useSetActiveBoard() {
   const queryClient = useQueryClient();
   return useCallback(
     async (board: UserBoard) => {
-      const generation = beginActiveBoardWrite();
+      const { generation, namespace } = beginActiveBoardWrite();
       const owner = getCurrentUserStorageOwner();
       await enqueueActiveBoardWrite(
         generation,
-        () => setStoredActiveBoard(board, owner),
+        () => setStoredActiveBoard(board, owner, namespace),
         () => queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, board),
       );
     },
@@ -148,7 +171,7 @@ export function useSetActiveBoardIfCurrentGeneration() {
       const owner = getCurrentUserStorageOwner();
       return enqueueCurrentGenerationWrite(
         expectedGeneration,
-        () => setStoredActiveBoard(board, owner),
+        (namespace) => setStoredActiveBoard(board, owner, namespace),
         () => queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, board),
       );
     },
@@ -165,11 +188,11 @@ export function useSetActiveBoardIfCurrentGeneration() {
 export function useClearActiveBoard() {
   const queryClient = useQueryClient();
   return useCallback(async () => {
-    const generation = beginActiveBoardWrite();
+    const { generation, namespace } = beginActiveBoardWrite();
     const owner = getCurrentUserStorageOwner();
     await enqueueActiveBoardWrite(
       generation,
-      () => clearStoredActiveBoard(owner),
+      () => clearStoredActiveBoard(owner, namespace),
       () => queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, null),
     );
   }, [queryClient]);
@@ -183,7 +206,7 @@ export function useClearActiveBoardIfCurrentGeneration() {
       const owner = getCurrentUserStorageOwner();
       return enqueueCurrentGenerationWrite(
         expectedGeneration,
-        () => clearStoredActiveBoard(owner),
+        (namespace) => clearStoredActiveBoard(owner, namespace),
         () => queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, null),
       );
     },

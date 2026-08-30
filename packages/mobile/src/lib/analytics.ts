@@ -3,6 +3,7 @@ import { createAnalytics, type GlowFalloffSource } from '@boardsesh/analytics';
 import { getPostHogClient, registerAppSuperProperties } from './posthog-client';
 import { registerConnectivitySuperProperty } from './analytics-connectivity';
 import { reregisterOfflineEngineState } from './analytics-offline-engine-state';
+import { isNetworkAllowed } from './network-policy';
 
 // `sendEvent: false` suppresses the SDK's `$feature_flag_called` capture. Verified
 // in @posthog/core 1.46.1 (shared by posthog-react-native and posthog-js-lite):
@@ -21,6 +22,7 @@ type PosthogFeatureFlagClient = {
 // hook still logs the event so you can watch instrumentation fire without
 // sending anything.
 function getClient(): PostHog | null {
+  if (!isNetworkAllowed('telemetry')) return null;
   return getPostHogClient();
 }
 
@@ -165,10 +167,17 @@ export function subscribePosthogFeatureFlags(onChange: () => void): () => void {
 }
 
 const analytics = createAnalytics(getClient, {
+  // Evaluated for every call, not just at SDK construction: switching an
+  // account into hard-offline mode must stop events in the same process.
+  shouldSkip: () => !isNetworkAllowed('telemetry'),
   onDebug: __DEV__ ? (name, properties) => console.info('[analytics]', name, properties ?? {}) : undefined,
 });
 
-export const { track, identify, setPersonProperties, alias } = analytics;
+export const track: typeof analytics.track = (...args) => analytics.track(...args);
+export const identify: typeof analytics.identify = (...args) => analytics.identify(...args);
+export const setPersonProperties: typeof analytics.setPersonProperties = (...args) =>
+  analytics.setPersonProperties(...args);
+export const alias: typeof analytics.alias = (...args) => analytics.alias(...args);
 
 /**
  * Stamp the board-render A/B state (issue #2202) as PostHog super properties,
@@ -231,6 +240,7 @@ export function reset(): boolean {
 // calls this from a route-change effect. `screen()` emits the native $screen
 // event PostHog's mobile insights key off.
 export function trackScreen(path: string): void {
+  if (!isNetworkAllowed('telemetry')) return;
   if (__DEV__) console.info('[analytics] $screen', path);
   void getClient()?.screen(path);
 }

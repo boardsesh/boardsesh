@@ -8,12 +8,16 @@
 // in would drop the climb between two screens that each look correct alone.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }));
 const returnHrefState = vi.hoisted(() => ({ current: null as string | null }));
 const platformState = vi.hoisted(() => ({ os: 'web', version: undefined as number | undefined }));
+const authState = vi.hoisted(() => ({
+  chooseLocalProfile: false,
+  setAccessMode: vi.fn(async (_accessMode: 'account' | 'local') => {}),
+}));
 
 vi.mock('react-native', () => ({
   Platform: {
@@ -39,7 +43,12 @@ vi.mock('expo-router', () => ({ Stack: { Screen: () => null }, useRouter: () => 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('../../../src/providers/auth-provider', () => ({
-  useAuth: () => ({ signInWithCredentials: vi.fn(), register: vi.fn() }),
+  useAuth: () => ({
+    signInWithCredentials: vi.fn(),
+    register: vi.fn(),
+    accessCapabilities: { chooseLocalProfile: authState.chooseLocalProfile },
+    setAccessMode: authState.setAccessMode,
+  }),
 }));
 vi.mock('../../../src/providers/theme-provider', () => ({
   useTheme: () => ({
@@ -53,7 +62,19 @@ vi.mock('../../../src/hooks/use-native-oauth-sign-in', () => ({
   useNativeOAuthSignIn: () => ({ signIn: vi.fn(), inProgress: false }),
 }));
 vi.mock('../../../src/components/AuthFieldset', () => ({ AuthFieldset: () => null }));
-vi.mock('../../../src/components/Button', () => ({ Button: () => null }));
+vi.mock('../../../src/components/Button', () => ({
+  Button: ({
+    title,
+    onPress,
+    testID,
+    disabled,
+  }: {
+    title: string;
+    onPress: () => void;
+    testID?: string;
+    disabled?: boolean;
+  }) => createElement('button', { type: 'button', onClick: onPress, disabled, 'data-testid': testID }, title),
+}));
 vi.mock('../../../src/components/auth/OAuthProviderButtons', () => ({
   OAuthProviderButtons: () => null,
   useOAuthProviders: () => ({ loading: false, error: null, apple: false, google: false }),
@@ -81,11 +102,29 @@ beforeEach(() => {
   returnHrefState.current = null;
   platformState.os = 'web';
   platformState.version = undefined;
+  authState.chooseLocalProfile = false;
 });
 
 const RETURN_PATH = '/b/the-gym/40/view/crimpy-thing-0A1B2C3D4E5F60718293A4B5C6D7E8F9';
 
 describe('LoginScreen', () => {
+  it('does not offer a local profile on Expo web', () => {
+    render(<LoginScreen />);
+
+    expect(screen.queryByTestId('auth-local-profile-button')).toBeNull();
+  });
+
+  it('enters persisted local mode from native login', async () => {
+    platformState.os = 'ios';
+    authState.chooseLocalProfile = true;
+    render(<LoginScreen />);
+
+    fireEvent.click(screen.getByTestId('auth-local-profile-button'));
+
+    await waitFor(() => expect(authState.setAccessMode).toHaveBeenCalledWith('local'));
+    expect(router.replace).toHaveBeenCalledWith('/boards/local-setup');
+  });
+
   it('does not show the retired split-screen warning on Android 15+', () => {
     platformState.os = 'android';
     platformState.version = 35;

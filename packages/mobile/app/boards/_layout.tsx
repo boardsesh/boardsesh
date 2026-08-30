@@ -33,6 +33,10 @@ export default function BoardsLayout() {
           nested sheet): a back chevron is the drill-in affordance and there's no
           dueling pan-to-dismiss over the already-modal picker. */}
       <Stack.Screen name="create" options={{ title: tBoards('mobile.create.screenTitle') }} />
+      <Stack.Screen
+        name="local-setup"
+        options={{ title: tBoards('mobile.localSetup.screenTitle'), headerBackVisible: false }}
+      />
       {/* The full vertical board list with the per-board offline-download console,
           drilled into from "Your boards" on the picker. Editing, deleting and
           unfollowing live on the picker's cards (#4623). */}

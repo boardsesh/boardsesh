@@ -56,19 +56,55 @@ const getPendingCountMock = vi.fn(async (..._args: unknown[]) => 0);
 // rows it holds, so a wrong-account stamp has to trigger the wipe from here.
 const assertLocalUserDataOwnerMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => 'ok'));
 const stampLocalUserIdMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
+const getLocalUserIdMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => null as string | null));
+const isScopeDownloadCompleteMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => true));
 const clearUserDataMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
 const beginGlobalPurgeMock = vi.hoisted(() => vi.fn());
+const readPendingLocalProfileImportPromptMock = vi.hoisted(() => vi.fn(() => false));
+const writePendingLocalProfileImportPromptMock = vi.hoisted(() => vi.fn());
+const getLocalProfileImportCountsMock = vi.hoisted(() =>
+  vi.fn(async (..._args: unknown[]) => ({ ticks: 1, favorites: 1, playlists: 1, playlistClimbs: 1 })),
+);
+const importLocalProfileIntoAccountMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => ({})));
+const confirmLocalProfileImportMock = vi.hoisted(() => vi.fn(async () => true));
+const closeLocalProfileDatabaseMock = vi.hoisted(() => vi.fn(async () => {}));
+const openLocalProfileDatabaseMock = vi.hoisted(() =>
+  vi.fn(async (..._args: unknown[]) => ({ tag: 'local-profile-db', closeAsync: closeLocalProfileDatabaseMock })),
+);
 vi.mock('@boardsesh/offline-sync', () => ({
   getPendingCount: (...args: unknown[]) => getPendingCountMock(...args),
   assertLocalUserDataOwner: (...args: unknown[]) => assertLocalUserDataOwnerMock(...args),
+  getLocalUserId: (...args: unknown[]) => getLocalUserIdMock(...args),
+  isScopeDownloadComplete: (...args: unknown[]) => isScopeDownloadCompleteMock(...args),
+  offlineBoardKeyForBoard: () => 'kilter:1:10',
   stampLocalUserId: (...args: unknown[]) => stampLocalUserIdMock(...args),
   beginGlobalPurge: (...args: unknown[]) => beginGlobalPurgeMock(...args),
+}));
+
+const getLocalBoardMock = vi.hoisted(() => vi.fn(async () => ({ boardType: 'kilter', layoutId: 1, sizeId: 10 })));
+vi.mock('../../lib/boards/local-board-store', () => ({
+  getLocalBoard: getLocalBoardMock,
 }));
 
 // db/connection statically reaches expo-sqlite + the error reporter; the bridge
 // only needs the wipe callback, so stub the module rather than the world.
 vi.mock('../../db/connection', () => ({
+  LOCAL_PROFILE_DATABASE_NAME: 'boardsesh-local.db',
   clearUserData: (...args: unknown[]) => clearUserDataMock(...args),
+}));
+
+vi.mock('../../lib/access-mode-store', () => ({
+  readPendingLocalProfileImportPrompt: () => readPendingLocalProfileImportPromptMock(),
+  writePendingLocalProfileImportPrompt: (pending: boolean) => writePendingLocalProfileImportPromptMock(pending),
+}));
+
+vi.mock('../../lib/local-profile-account-import', () => ({
+  getLocalProfileImportCounts: (...args: unknown[]) => getLocalProfileImportCountsMock(...args),
+  importLocalProfileIntoAccount: (...args: unknown[]) => importLocalProfileIntoAccountMock(...args),
+}));
+
+vi.mock('../../providers/dialog-provider', () => ({
+  useConfirm: () => confirmLocalProfileImportMock,
 }));
 
 // use-current-user-id reads the JWT out of SecureStore via lib/auth-store, whose
@@ -86,6 +122,10 @@ vi.mock('../../lib/error-reporting', () => ({
 const reportOutboxBacklogOnceMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
 vi.mock('../../offline/outbox-telemetry', () => ({
   reportOutboxBacklogOnce: reportOutboxBacklogOnceMock,
+}));
+
+vi.mock('../../offline/abandoned-download-terminals', () => ({
+  sweepDelistedDownloadTerminals: vi.fn(async () => {}),
 }));
 
 // Stub the settings barrel so the static import graph never pulls
@@ -110,6 +150,7 @@ vi.mock('../../lib/env', () => ({
 
 const fakeDb = { tag: 'db' };
 vi.mock('expo-sqlite', () => ({
+  openDatabaseAsync: (...args: unknown[]) => openLocalProfileDatabaseMock(...args),
   useSQLiteContext: () => fakeDb,
 }));
 
@@ -120,9 +161,28 @@ vi.mock('expo-router', () => ({
 // The bridge gates its sync effect on auth itself (it is mounted outside any
 // auth-gated subtree). Mutable so the signed-out test can flip it.
 let isAuthenticated = true;
+let accessMode: 'account' | 'local' = 'account';
+let networkPolicy: 'online' | 'local-catalog-only' | 'offline' = 'online';
 let storedUserId: string | undefined = 'user-1';
+const setLocalOwnerReadyMock = vi.hoisted(() => vi.fn());
+const setLocalCatalogReadyMock = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('../../providers/auth-provider', () => ({
-  useAuth: () => ({ isAuthenticated }),
+  useAuth: () => ({
+    isAuthenticated,
+    accessMode,
+    accessCapabilities: { useAccountFeatures: isAuthenticated && accessMode === 'account' },
+    setLocalCatalogReady: setLocalCatalogReadyMock,
+    setLocalOwnerReady: setLocalOwnerReadyMock,
+  }),
+}));
+
+vi.mock('../../lib/network-policy', () => ({
+  getNetworkPolicy: () => networkPolicy,
+  subscribeNetworkPolicy: () => () => {},
+}));
+
+vi.mock('../../providers/party-profile-provider', () => ({
+  usePartyProfile: () => ({ profile: { id: 'party-profile-1' } }),
 }));
 
 // feature-flag-overrides persists through AsyncStorage; give it an in-memory stub.
@@ -194,6 +254,7 @@ function getStartSyncSchedulerOptions(): {
   snapshotSource?: unknown;
   onBootstrapMetadataChanged?: (info: unknown) => void;
   onScopeDownloadComplete?: (info: unknown) => void;
+  catalogOnly?: boolean;
 } {
   const call = startSyncSchedulerMock.mock.calls[0] as unknown[] | undefined;
   expect(call).toBeDefined();
@@ -201,6 +262,7 @@ function getStartSyncSchedulerOptions(): {
     snapshotSource?: unknown;
     onBootstrapMetadataChanged?: (info: unknown) => void;
     onScopeDownloadComplete?: (info: unknown) => void;
+    catalogOnly?: boolean;
   };
 }
 
@@ -209,12 +271,32 @@ beforeEach(() => {
   startSyncSchedulerMock.mockReturnValue(startSyncSchedulerStop);
   getPendingCountMock.mockResolvedValue(0);
   isAuthenticated = true;
+  accessMode = 'account';
+  networkPolicy = 'online';
   storedUserId = 'user-1';
   assertLocalUserDataOwnerMock.mockClear();
   assertLocalUserDataOwnerMock.mockResolvedValue('ok');
   stampLocalUserIdMock.mockClear();
+  getLocalUserIdMock.mockReset();
+  getLocalUserIdMock.mockResolvedValue(null);
+  getLocalBoardMock.mockReset();
+  getLocalBoardMock.mockResolvedValue({ boardType: 'kilter', layoutId: 1, sizeId: 10 });
+  isScopeDownloadCompleteMock.mockReset();
+  isScopeDownloadCompleteMock.mockResolvedValue(true);
+  setLocalCatalogReadyMock.mockClear();
+  setLocalOwnerReadyMock.mockClear();
   clearUserDataMock.mockClear();
   beginGlobalPurgeMock.mockClear();
+  readPendingLocalProfileImportPromptMock.mockReset();
+  readPendingLocalProfileImportPromptMock.mockReturnValue(false);
+  writePendingLocalProfileImportPromptMock.mockClear();
+  getLocalProfileImportCountsMock.mockReset();
+  getLocalProfileImportCountsMock.mockResolvedValue({ ticks: 1, favorites: 1, playlists: 1, playlistClimbs: 1 });
+  importLocalProfileIntoAccountMock.mockClear();
+  confirmLocalProfileImportMock.mockReset();
+  confirmLocalProfileImportMock.mockResolvedValue(true);
+  openLocalProfileDatabaseMock.mockClear();
+  closeLocalProfileDatabaseMock.mockClear();
   snapshotBaseUrlConfigured.value = true;
   // Every case below except the readiness-gating describe assumes the ordinary
   // uncontended launch, where the schema is stamped before the first render.
@@ -237,6 +319,38 @@ describe('OfflineSyncBridge — local user-data owner stamp', () => {
     await waitFor(() => expect(stampLocalUserIdMock).toHaveBeenCalledTimes(1));
     expect(stampLocalUserIdMock.mock.calls[0][1]).toBe('user-1');
     expect(clearUserDataMock).not.toHaveBeenCalled();
+  });
+
+  it('confirms and imports the login-free copy after account ownership is ready', async () => {
+    readPendingLocalProfileImportPromptMock.mockReturnValue(true);
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+
+    await waitFor(() => expect(importLocalProfileIntoAccountMock).toHaveBeenCalledTimes(1));
+
+    expect(confirmLocalProfileImportMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: expect.any(String),
+        message: expect.any(String),
+      }),
+    );
+    expect(importLocalProfileIntoAccountMock).toHaveBeenCalledWith(
+      expect.objectContaining({ tag: 'local-profile-db' }),
+      fakeDb,
+      'user-1',
+    );
+    expect(writePendingLocalProfileImportPromptMock).toHaveBeenCalledWith(false);
+    expect(closeLocalProfileDatabaseMock).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the login-free copy separate when account import is declined', async () => {
+    readPendingLocalProfileImportPromptMock.mockReturnValue(true);
+    confirmLocalProfileImportMock.mockResolvedValue(false);
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+
+    await waitFor(() => expect(writePendingLocalProfileImportPromptMock).toHaveBeenCalledWith(false));
+
+    expect(importLocalProfileIntoAccountMock).not.toHaveBeenCalled();
+    expect(closeLocalProfileDatabaseMock).toHaveBeenCalledOnce();
   });
 
   it('wipes and re-stamps when the rows belong to another account', async () => {
@@ -276,6 +390,34 @@ describe('OfflineSyncBridge — local user-data owner stamp', () => {
     assertLocalUserDataOwnerMock.mockResolvedValue('unstamped');
     render(<Harness flags={FLAG_OFF} queryClient={makeQueryClient()} />);
     await waitFor(() => expect(stampLocalUserIdMock).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe('OfflineSyncBridge — local profile owner stamp', () => {
+  it('unlocks restored local readiness only after its owner stamp lands', async () => {
+    accessMode = 'local';
+    networkPolicy = 'local-catalog-only';
+    isAuthenticated = true;
+    getLocalUserIdMock.mockResolvedValue(null);
+
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+
+    expect(setLocalOwnerReadyMock).toHaveBeenCalledWith(false);
+    await waitFor(() => expect(stampLocalUserIdMock).toHaveBeenCalledWith(fakeDb, 'local:party-profile-1'));
+    await waitFor(() => expect(setLocalCatalogReadyMock).toHaveBeenCalledWith(true));
+    await waitFor(() => expect(setLocalOwnerReadyMock).toHaveBeenCalledWith(true));
+    expect(assertLocalUserDataOwnerMock).not.toHaveBeenCalled();
+  });
+
+  it('locks local mode when the saved catalog marker is missing from SQLite', async () => {
+    accessMode = 'local';
+    networkPolicy = 'local-catalog-only';
+    isScopeDownloadCompleteMock.mockResolvedValue(false);
+
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+
+    await waitFor(() => expect(setLocalCatalogReadyMock).toHaveBeenCalledWith(false));
+    expect(setLocalOwnerReadyMock).toHaveBeenCalledWith(true);
   });
 });
 
@@ -353,6 +495,26 @@ describe('OfflineSyncBridge — auth gating', () => {
     expect(startSyncSchedulerMock).not.toHaveBeenCalled();
     expect(getPendingCountMock).not.toHaveBeenCalled();
     expect(drainMutationQueueMock).not.toHaveBeenCalled();
+  });
+
+  it('authenticated local mode runs catalog-only without account owner, drain, or GraphQL effects', async () => {
+    accessMode = 'local';
+    networkPolicy = 'local-catalog-only';
+    isAuthenticated = true;
+    getLocalUserIdMock.mockResolvedValue('local:party-profile-1');
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
+    expect(getStartSyncSchedulerOptions().catalogOnly).toBe(true);
+    expect(assertLocalUserDataOwnerMock).not.toHaveBeenCalled();
+    expect(reportOutboxBacklogOnceMock).not.toHaveBeenCalled();
+    expect(drainMutationQueueMock).not.toHaveBeenCalled();
+
+    const schedulerCall = startSyncSchedulerMock.mock.calls[0] as unknown[];
+    const graphqlFetch = schedulerCall[2] as () => Promise<unknown>;
+    const drainQueue = schedulerCall[4] as () => Promise<unknown>;
+    await expect(graphqlFetch()).rejects.toThrow(/Catalog-only/);
+    await expect(drainQueue()).rejects.toThrow(/Catalog-only/);
   });
 });
 

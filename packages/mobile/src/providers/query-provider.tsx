@@ -11,6 +11,7 @@ import {
 } from '@tanstack/react-query';
 import { reportHandledError } from '../lib/error-reporting';
 import { isGraphqlRateLimitedError } from '../lib/graphql/extract-error-message';
+import { isNetworkAllowed, subscribeNetworkPolicy } from '../lib/network-policy';
 
 // React Query keys `refetchOnReconnect` / `refetchOnWindowFocus` off a browser's
 // `navigator.onLine` and window-focus events, neither of which exists on React
@@ -23,19 +24,31 @@ import { isGraphqlRateLimitedError } from '../lib/graphql/extract-error-message'
 // NetInfo is a native module; the fingerprint runtimeVersion policy gates the
 // OTA so a binary running this JS has the matching native module compiled in.
 onlineManager.setEventListener((setOnline) => {
+  let deviceIsOnline = true;
+  const publishEffectiveState = () => setOnline(deviceIsOnline && isNetworkAllowed('backend'));
   // Seed the current state up front: onlineManager defaults to online and would
   // otherwise stay there until the first NetInfo change event arrives. Combined
   // with `networkMode: 'offlineFirst'` below, a wrong/late offline signal can
   // no longer strand the initial fetch.
   void NetInfo.fetch()
-    .then((state) => setOnline(state.isConnected ?? true))
+    .then((state) => {
+      deviceIsOnline = state.isConnected ?? true;
+      publishEffectiveState();
+    })
     .catch(() => {
       // A failed seed leaves the default (online); the live listener below
       // still delivers real state, so there's nothing actionable to report.
     });
-  return NetInfo.addEventListener((state) => {
-    setOnline(state.isConnected ?? true);
+  const unsubscribeNetInfo = NetInfo.addEventListener((state) => {
+    deviceIsOnline = state.isConnected ?? true;
+    publishEffectiveState();
   });
+  const unsubscribePolicy = subscribeNetworkPolicy(publishEffectiveState);
+  publishEffectiveState();
+  return () => {
+    unsubscribeNetInfo();
+    unsubscribePolicy();
+  };
 });
 
 if (Platform.OS !== 'web') {

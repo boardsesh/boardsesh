@@ -44,11 +44,18 @@ function invalidateTickDependents(queryClient: QueryClient) {
 
 /** Edit an existing tick (status / date / grade / quality / attempts / comment). */
 export function useUpdateTick() {
-  const { isAuthenticated, executeHttp } = useBoardAdapter();
+  const { isAuthenticated, canLogLocally, useLocalTickStore, executeHttp, updateTickOffline } = useBoardAdapter();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (variables: { uuid: string; input: UpdateTickInput }) => {
+      if (!isAuthenticated && !canLogLocally) throw new Error('Not authenticated');
+      if (useLocalTickStore || canLogLocally) {
+        if (!updateTickOffline) throw new Error('Local storage unavailable');
+        const localTick = await updateTickOffline(variables.uuid, variables.input);
+        if (!localTick) throw new Error('Local tick not found');
+        return localTick;
+      }
       if (!isAuthenticated) throw new Error('Not authenticated');
       const response = await executeHttp<UpdateTickResponse, UpdateTickVariables>(UPDATE_TICK, variables);
       return response.updateTick;
@@ -224,11 +231,18 @@ function stripTickFromAscentFeeds(queryClient: QueryClient, uuid: string) {
 
 /** Delete a tick by uuid. */
 export function useDeleteTick() {
-  const { isAuthenticated, executeHttp } = useBoardAdapter();
+  const { isAuthenticated, canLogLocally, useLocalTickStore, executeHttp, deleteTickOffline } = useBoardAdapter();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (uuid: string) => {
+      if (!isAuthenticated && !canLogLocally) throw new Error('Not authenticated');
+      if (useLocalTickStore || canLogLocally) {
+        if (!deleteTickOffline) throw new Error('Local storage unavailable');
+        const localResult = await deleteTickOffline(uuid);
+        if (localResult === null || localResult === undefined) throw new Error('Local tick not found');
+        return localResult;
+      }
       if (!isAuthenticated) throw new Error('Not authenticated');
       const response = await executeHttp<DeleteTickMutationResponse, DeleteTickMutationVariables>(DELETE_TICK, {
         uuid,

@@ -1,6 +1,7 @@
 import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../auth-store';
 import { ensureFreshToken, recoverAuthRejection } from '../auth-interceptor';
 import { createWsClientModule } from './ws-client-core';
+import { assertNetworkAllowed, isNetworkAllowed, subscribeNetworkPolicy } from '../network-policy';
 
 // React Native's WebSocket derives an `Origin` header from the JS bundle
 // URL (e.g. `http://localhost:8084` in dev). The backend's `verifyClient`
@@ -17,7 +18,7 @@ type RNWebSocketCtor = new (
   options?: { headers?: Record<string, string> },
 ) => WebSocket;
 
-const { getWsClient, disposeWsClient } = createWsClientModule({
+const wsClientModule = createWsClientModule({
   createSocket: (url, protocols) => {
     const ReactNativeWebSocket = WebSocket as unknown as RNWebSocketCtor;
     return new ReactNativeWebSocket(url, protocols, { headers: { origin: '' } });
@@ -27,6 +28,19 @@ const { getWsClient, disposeWsClient } = createWsClientModule({
   isAuthCredentialGenerationCurrent,
   ensureFreshToken,
   recoverAuthRejection,
+});
+
+function getWsClient() {
+  assertNetworkAllowed('backend');
+  return wsClientModule.getWsClient();
+}
+
+function disposeWsClient(): void {
+  wsClientModule.disposeWsClient();
+}
+
+subscribeNetworkPolicy(() => {
+  if (!isNetworkAllowed('backend')) disposeWsClient();
 });
 
 export { getWsClient, disposeWsClient };

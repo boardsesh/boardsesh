@@ -57,17 +57,26 @@ describe('resolveUpdatesConfig', () => {
   it('returns the EAS URL for eas build (EAS_BUILD set), ignoring self-host env + cert', () => {
     process.env.EAS_BUILD = '1';
     process.env.EXPO_UPDATES_URL = SELF_HOST_URL;
-    expect(resolveUpdatesConfig(PROJECT_ID, projectRoot(true))).toEqual({ url: EAS_URL });
+    expect(resolveUpdatesConfig(PROJECT_ID, projectRoot(true))).toEqual({
+      url: EAS_URL,
+      checkAutomatically: 'NEVER',
+    });
   });
 
   it('falls back to the EAS URL when EXPO_UPDATES_URL is unset', () => {
-    expect(resolveUpdatesConfig(PROJECT_ID, projectRoot(true))).toEqual({ url: EAS_URL });
+    expect(resolveUpdatesConfig(PROJECT_ID, projectRoot(true))).toEqual({
+      url: EAS_URL,
+      checkAutomatically: 'NEVER',
+    });
   });
 
   it('FAILS CLOSED to the EAS URL when the server URL is set but the cert is missing', () => {
     process.env.EXPO_UPDATES_URL = SELF_HOST_URL;
     // No cert in this project root → must not bake the self-hosted (unsigned) URL.
-    expect(resolveUpdatesConfig(PROJECT_ID, projectRoot(false))).toEqual({ url: EAS_URL });
+    expect(resolveUpdatesConfig(PROJECT_ID, projectRoot(false))).toEqual({
+      url: EAS_URL,
+      checkAutomatically: 'NEVER',
+    });
   });
 
   it('uses the self-hosted server with fixed production branch-surfing headers when URL + cert are present', () => {
@@ -75,6 +84,7 @@ describe('resolveUpdatesConfig', () => {
     expect(resolveUpdatesConfig(PROJECT_ID, projectRoot(true))).toEqual({
       url: SELF_HOST_URL,
       enabled: true,
+      checkAutomatically: 'NEVER',
       requestHeaders: {
         'expo-app-id': OTA_APP_ID,
         'expo-channel-name': 'production',

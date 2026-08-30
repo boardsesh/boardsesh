@@ -26,10 +26,17 @@ import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } fr
 import { reportHandledError } from '../lib/error-reporting';
 import { getWsClient } from '../lib/graphql/ws-client';
 import { drainMutationQueue, isOnline, subscribeMutationDelivery } from '../offline/offline-sync-adapter';
-import { enqueueTickOutboxOnly, writeTickLocal } from '../hooks/use-offline-mutations';
+import {
+  deleteTickLocal,
+  enqueueTickOutboxOnly,
+  getTicksLocal,
+  updateTickLocal,
+  writeTickLocal,
+} from '../hooks/use-offline-mutations';
 import { isDatabaseLockedError, OFFLINE_LOCAL_WRITE_BUDGET_MS } from '@boardsesh/offline-sync';
 import { SHARED_EVENTS, sanitizeErrorForAnalytics } from '@boardsesh/analytics';
 import { track } from '../lib/analytics';
+import { useSetting } from '../settings';
 
 /**
  * The saved-tick shape useSaveTick writes into its logbook cache. Identical on
@@ -55,7 +62,13 @@ function toSavedTickShape(
 }
 
 export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, accessCapabilities } = useAuth();
+  const canLogLocally = accessCapabilities.logLocalAscents;
+  const canUseAccountFeatures = accessCapabilities.useAccountFeatures;
+  const [workOffline] = useSetting('workOffline');
+  const accountWorkOffline = accessCapabilities.chooseLocalProfile && canUseAccountFeatures && workOffline;
+  const useLocalTickStore = canLogLocally || accountWorkOffline;
+  const canUseOnlineAccountFeatures = canUseAccountFeatures && !accountWorkOffline;
   const offlineEnabled = useOfflineDownloadsEnabled();
   const { sessionId } = useQueueSessionId();
   const { showToast } = useToast();
@@ -81,186 +94,239 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
   const adapter = useMemo<BoardAdapter>(
     () => ({
       isAuthenticated,
+      canLogLocally,
+      useLocalTickStore,
       isAuthLoading: isLoading,
       executeHttp: (query, variables) => getHttpClient().request(query, variables),
       executeWs: ({ query, variables }) => execute(getWsClient(), { query, variables }),
       resolveActiveSessionId: () => sessionIdRef.current,
       captureAuthEpoch: captureAuthCredentialGeneration,
       isAuthEpochCurrent: isAuthCredentialGenerationCurrent,
-      supportsClimbStatsOptimism: true,
-      fetchClimbStatsForClimbs: async (boardType, climbUuids) => {
-        const response = await getHttpClient().request<ClimbStatsForClimbsResponse>(CLIMB_STATS_FOR_CLIMBS, {
-          boardName: boardType,
-          climbUuids,
-        });
-        return response.climbStatsForClimbs;
-      },
-      subscribeClimbStats: (boardType, layoutId, handlers) => {
-        const wsClient = getWsClient();
-        let disposed = false;
-        let retryAttempt = 0;
-        let retryTimer: ReturnType<typeof setTimeout> | null = null;
-        let unsubscribeStats: (() => void) | null = null;
+      supportsClimbStatsOptimism: canUseOnlineAccountFeatures ? true : undefined,
+      fetchClimbStatsForClimbs: !canUseOnlineAccountFeatures
+        ? undefined
+        : async (boardType, climbUuids) => {
+            const response = await getHttpClient().request<ClimbStatsForClimbsResponse>(CLIMB_STATS_FOR_CLIMBS, {
+              boardName: boardType,
+              climbUuids,
+            });
+            return response.climbStatsForClimbs;
+          },
+      subscribeClimbStats: !canUseOnlineAccountFeatures
+        ? undefined
+        : (boardType, layoutId, handlers) => {
+            const wsClient = getWsClient();
+            let disposed = false;
+            let retryAttempt = 0;
+            let retryTimer: ReturnType<typeof setTimeout> | null = null;
+            let unsubscribeStats: (() => void) | null = null;
 
-        const scheduleRetry = () => {
-          if (disposed || retryTimer) return;
-          const delayMs = Math.min(30_000, 1_000 * 2 ** retryAttempt);
-          retryAttempt += 1;
-          retryTimer = setTimeout(() => {
-            retryTimer = null;
+            const scheduleRetry = () => {
+              if (disposed || retryTimer) return;
+              const delayMs = Math.min(30_000, 1_000 * 2 ** retryAttempt);
+              retryAttempt += 1;
+              retryTimer = setTimeout(() => {
+                retryTimer = null;
+                startSubscription();
+              }, delayMs);
+            };
+            const startSubscription = () => {
+              if (disposed) return;
+              unsubscribeStats = wsClient.subscribe<ClimbStatsUpdatedSubscriptionResponse>(
+                {
+                  query: CLIMB_STATS_UPDATED_SUBSCRIPTION,
+                  variables: { boardType, layoutId },
+                },
+                {
+                  next: (result) => {
+                    retryAttempt = 0;
+                    const event = result.data?.climbStatsUpdated;
+                    if (event) handlers.next(event);
+                  },
+                  error: (error) => {
+                    unsubscribeStats = null;
+                    handlers.error(error);
+                    scheduleRetry();
+                  },
+                  complete: () => {
+                    unsubscribeStats = null;
+                    scheduleRetry();
+                  },
+                },
+              );
+            };
+            const unsubscribeConnected = wsClient.on('connected', handlers.connected);
             startSubscription();
-          }, delayMs);
-        };
-        const startSubscription = () => {
-          if (disposed) return;
-          unsubscribeStats = wsClient.subscribe<ClimbStatsUpdatedSubscriptionResponse>(
-            {
-              query: CLIMB_STATS_UPDATED_SUBSCRIPTION,
-              variables: { boardType, layoutId },
-            },
-            {
-              next: (result) => {
-                retryAttempt = 0;
-                const event = result.data?.climbStatsUpdated;
-                if (event) handlers.next(event);
-              },
-              error: (error) => {
-                unsubscribeStats = null;
-                handlers.error(error);
-                scheduleRetry();
-              },
-              complete: () => {
-                unsubscribeStats = null;
-                scheduleRetry();
-              },
-            },
-          );
-        };
-        const unsubscribeConnected = wsClient.on('connected', handlers.connected);
-        startSubscription();
-        return () => {
-          disposed = true;
-          if (retryTimer) clearTimeout(retryTimer);
-          unsubscribeStats?.();
-          unsubscribeConnected();
-        };
-      },
-      subscribeOfflineMutationDelivery: subscribeMutationDelivery,
+            return () => {
+              disposed = true;
+              if (retryTimer) clearTimeout(retryTimer);
+              unsubscribeStats?.();
+              unsubscribeConnected();
+            };
+          },
+      subscribeOfflineMutationDelivery: canUseAccountFeatures ? subscribeMutationDelivery : undefined,
       scheduleTask: (callback, delayMs) => {
         const timer = setTimeout(callback, delayMs);
         return () => clearTimeout(timer);
       },
       // Undefined when the offline flag is off: useSaveTick optional-chains it
       // and falls through to the direct network save — pre-offline behavior.
-      saveTickOffline: !offlineEnabled
+      saveTickOffline:
+        !offlineEnabled && !useLocalTickStore
+          ? undefined
+          : async (variables, { queryClient, executeHttp }) => {
+              const db = getDatabaseHandle();
+              if (!db) return null;
+
+              const tickUuid = randomUUID();
+              // Stamp the id EVERY delivery path will carry, before the first
+              // write. The server's saveTick dedupes on SaveTickInput.uuid and
+              // returns the existing row for a repeat, so the local write, the
+              // queued replay and useSaveTick's network fall-through all resolve
+              // to one tick. Without it, a transaction that committed its outbox
+              // row and still threw (a SQLITE_BUSY surfacing at COMMIT) would
+              // queue the send AND post a second, differently-identified one.
+              variables.input.uuid = tickUuid;
+              // One deadline for both ladders, so the retry and the fallback
+              // together can never block the log-ascent sheet past the budget.
+              const deadline = Date.now() + OFFLINE_LOCAL_WRITE_BUDGET_MS;
+              try {
+                await writeTickLocal(
+                  db,
+                  variables.input,
+                  tickUuid,
+                  OFFLINE_LOCAL_WRITE_BUDGET_MS,
+                  canLogLocally ? 'local-only' : 'account',
+                );
+              } catch (error) {
+                if (canLogLocally) {
+                  if (__DEV__) console.warn('[BoardAdapter] local-profile tick write failed:', error);
+                  return null;
+                }
+                // The retry ladder is spent. Try the strictly smaller write: the
+                // outbox row alone. A queued mutation replays from its payload, so
+                // that row is enough for the send to reach the server — the local
+                // `boardsesh_ticks` row only serves LOCAL reads.
+                //
+                // What the user gives up when this branch wins: no local tick row,
+                // so (a) the "waiting to sync" badge does not light on that climb,
+                // and (b) if the app is killed while still offline, the tick is
+                // missing from the local logbook until the drain lands it and the
+                // pull brings the server row back down. Both are strictly better
+                // than losing the send, and both self-heal.
+                const wasOffline = !isOnline();
+                const isLockError = isDatabaseLockedError(error);
+                let queued = false;
+                let fallbackError: unknown = null;
+                try {
+                  await enqueueTickOutboxOnly(db, variables.input, tickUuid, Math.max(0, deadline - Date.now()));
+                  queued = true;
+                } catch (caught) {
+                  fallbackError = caught;
+                  if (__DEV__) {
+                    console.warn('[BoardAdapter] outbox-only tick fallback failed:', caught);
+                  }
+                }
+
+                // `wasOffline` splits "fell through and landed" from "fell through
+                // and the tick is gone" — the only version that actually loses
+                // data. `isLockError` says whether it was write-lock contention
+                // (#4314) or a genuinely broken database, which need completely
+                // different fixes. The reported error object and the `kind` tag are
+                // the ORIGINAL ones on purpose, so the existing 90-day Sentry trend
+                // stays comparable and does not fork on this change.
+                reportHandledError(error, {
+                  tags: {
+                    source: 'offline-sync',
+                    kind: 'tick-local-write',
+                    was_offline: wasOffline,
+                    is_lock_error: isLockError,
+                    outcome: queued ? 'queued' : 'fell_through',
+                  },
+                  extra: {
+                    errorMessage: error instanceof Error ? error.message : String(error),
+                    fallbackErrorMessage:
+                      fallbackError === null
+                        ? null
+                        : fallbackError instanceof Error
+                          ? fallbackError.message
+                          : sanitizeErrorForAnalytics(fallbackError),
+                  },
+                });
+                // Exactly one per failed local write, on both exits.
+                track(SHARED_EVENTS.OfflineTickLocalWriteFailed, {
+                  isLockError,
+                  wasOffline,
+                  error: sanitizeErrorForAnalytics(error),
+                  outcome: queued ? 'queued' : 'fell_through',
+                });
+
+                // Nothing queued: fall through to the direct network save, which
+                // now carries the stamped uuid so it cannot double-deliver.
+                if (!queued) return null;
+
+                // Deliberately NO invalidateQueries(['localTicks', …]) here: with no
+                // local tick row the badge query's JOIN returns 0 either way, so it
+                // would be a no-op that reads as intent.
+                void drainMutationQueue(db, queryClient, executeHttp).catch((drainError: unknown) => {
+                  if (__DEV__) {
+                    console.warn('[BoardAdapter] degraded tick queue drain failed:', drainError);
+                  }
+                });
+                return toSavedTickShape(variables.input, tickUuid);
+              }
+              if (canLogLocally) {
+                void queryClient.invalidateQueries({ queryKey: ['logbook'] });
+                void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
+                return toSavedTickShape(variables.input, tickUuid);
+              }
+
+              // Wake the "waiting to sync" badge immediately: its query caches with
+              // staleTime Infinity and the drainer (its usual invalidator) no-ops
+              // while offline — without this, an offline tick looks lost.
+              void queryClient.invalidateQueries({ queryKey: ['localTicks', variables.input.climbUuid] });
+              void drainMutationQueue(db, queryClient, executeHttp).catch((error: unknown) => {
+                if (__DEV__) {
+                  console.warn('[BoardAdapter] tick queue drain failed:', error);
+                }
+              });
+
+              return toSavedTickShape(variables.input, tickUuid);
+            },
+      getTicksLocal: !useLocalTickStore
         ? undefined
-        : async (variables, { queryClient, executeHttp }) => {
+        : async (boardType, climbUuids) => {
+            const db = getDatabaseHandle();
+            if (!db) throw new Error('Local storage unavailable');
+            return getTicksLocal(db, boardType, climbUuids);
+          },
+      updateTickOffline: !useLocalTickStore
+        ? undefined
+        : async (uuid, input) => {
             const db = getDatabaseHandle();
             if (!db) return null;
-
-            const tickUuid = randomUUID();
-            // Stamp the id EVERY delivery path will carry, before the first
-            // write. The server's saveTick dedupes on SaveTickInput.uuid and
-            // returns the existing row for a repeat, so the local write, the
-            // queued replay and useSaveTick's network fall-through all resolve
-            // to one tick. Without it, a transaction that committed its outbox
-            // row and still threw (a SQLITE_BUSY surfacing at COMMIT) would
-            // queue the send AND post a second, differently-identified one.
-            variables.input.uuid = tickUuid;
-            // One deadline for both ladders, so the retry and the fallback
-            // together can never block the log-ascent sheet past the budget.
-            const deadline = Date.now() + OFFLINE_LOCAL_WRITE_BUDGET_MS;
-            try {
-              await writeTickLocal(db, variables.input, tickUuid, OFFLINE_LOCAL_WRITE_BUDGET_MS);
-            } catch (error) {
-              // The retry ladder is spent. Try the strictly smaller write: the
-              // outbox row alone. A queued mutation replays from its payload, so
-              // that row is enough for the send to reach the server — the local
-              // `boardsesh_ticks` row only serves LOCAL reads.
-              //
-              // What the user gives up when this branch wins: no local tick row,
-              // so (a) the "waiting to sync" badge does not light on that climb,
-              // and (b) if the app is killed while still offline, the tick is
-              // missing from the local logbook until the drain lands it and the
-              // pull brings the server row back down. Both are strictly better
-              // than losing the send, and both self-heal.
-              const wasOffline = !isOnline();
-              const isLockError = isDatabaseLockedError(error);
-              let queued = false;
-              let fallbackError: unknown = null;
-              try {
-                await enqueueTickOutboxOnly(db, variables.input, tickUuid, Math.max(0, deadline - Date.now()));
-                queued = true;
-              } catch (caught) {
-                fallbackError = caught;
-                if (__DEV__) {
-                  console.warn('[BoardAdapter] outbox-only tick fallback failed:', caught);
-                }
-              }
-
-              // `wasOffline` splits "fell through and landed" from "fell through
-              // and the tick is gone" — the only version that actually loses
-              // data. `isLockError` says whether it was write-lock contention
-              // (#4314) or a genuinely broken database, which need completely
-              // different fixes. The reported error object and the `kind` tag are
-              // the ORIGINAL ones on purpose, so the existing 90-day Sentry trend
-              // stays comparable and does not fork on this change.
-              reportHandledError(error, {
-                tags: {
-                  source: 'offline-sync',
-                  kind: 'tick-local-write',
-                  was_offline: wasOffline,
-                  is_lock_error: isLockError,
-                  outcome: queued ? 'queued' : 'fell_through',
-                },
-                extra: {
-                  errorMessage: error instanceof Error ? error.message : String(error),
-                  fallbackErrorMessage:
-                    fallbackError === null
-                      ? null
-                      : fallbackError instanceof Error
-                        ? fallbackError.message
-                        : String(fallbackError),
-                },
-              });
-              // Exactly one per failed local write, on both exits.
-              track(SHARED_EVENTS.OfflineTickLocalWriteFailed, {
-                isLockError,
-                wasOffline,
-                error: sanitizeErrorForAnalytics(error),
-                outcome: queued ? 'queued' : 'fell_through',
-              });
-
-              // Nothing queued: fall through to the direct network save, which
-              // now carries the stamped uuid so it cannot double-deliver.
-              if (!queued) return null;
-
-              // Deliberately NO invalidateQueries(['localTicks', …]) here: with no
-              // local tick row the badge query's JOIN returns 0 either way, so it
-              // would be a no-op that reads as intent.
-              void drainMutationQueue(db, queryClient, executeHttp).catch((drainError: unknown) => {
-                if (__DEV__) {
-                  console.warn('[BoardAdapter] degraded tick queue drain failed:', drainError);
-                }
-              });
-              return toSavedTickShape(variables.input, tickUuid);
-            }
-            // Wake the "waiting to sync" badge immediately: its query caches with
-            // staleTime Infinity and the drainer (its usual invalidator) no-ops
-            // while offline — without this, an offline tick looks lost.
-            void queryClient.invalidateQueries({ queryKey: ['localTicks', variables.input.climbUuid] });
-            void drainMutationQueue(db, queryClient, executeHttp).catch((error: unknown) => {
-              if (__DEV__) {
-                console.warn('[BoardAdapter] tick queue drain failed:', error);
-              }
-            });
-
-            return toSavedTickShape(variables.input, tickUuid);
+            return updateTickLocal(db, uuid, input, canLogLocally ? 'local-only' : 'account', randomUUID());
+          },
+      deleteTickOffline: !useLocalTickStore
+        ? undefined
+        : async (uuid) => {
+            const db = getDatabaseHandle();
+            if (!db) return null;
+            return deleteTickLocal(db, uuid, canLogLocally ? 'local-only' : 'account', randomUUID());
           },
       // Mobile has no IndexedDB tick-draft store, so onTickSaved is omitted.
       showError: (reason) => showErrorRef.current?.(reason),
     }),
-    [isAuthenticated, isLoading, offlineEnabled],
+    [
+      canLogLocally,
+      accountWorkOffline,
+      canUseAccountFeatures,
+      canUseOnlineAccountFeatures,
+      isAuthenticated,
+      isLoading,
+      offlineEnabled,
+      useLocalTickStore,
+    ],
   );
 
   return <BoardAdapterProvider value={adapter}>{children}</BoardAdapterProvider>;

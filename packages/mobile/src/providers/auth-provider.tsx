@@ -3,6 +3,16 @@ import { AppState, Platform } from 'react-native';
 import { useSegments, Redirect } from 'expo-router';
 import { onlineManager, useQueryClient } from '@tanstack/react-query';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import {
+  ACCOUNT_ACCESS_MODE,
+  LOCAL_BOARD_SETUP_PATH,
+  LOCAL_ACCESS_MODE,
+  canEnterRouteWithoutAccount,
+  resolveAccessCapabilities,
+  type AccessCapabilities,
+  type AccessContext,
+  type AccessMode,
+} from '@boardsesh/party-profile';
 import { AppLoadingSplash } from '../components/AppLoadingSplash';
 import { resolveAuthSession, type AuthSessionResult } from '../lib/auth-session';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
@@ -36,7 +46,7 @@ import { ACTIVE_BOARD_QUERY_KEY, clearStoredActiveBoardCoordinated } from '../li
 import { resetActiveBoardSelfHealValidationCache } from '../lib/boards/active-board-self-heal-validation-cache';
 import { clearUserData, purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
 import { resetSyncStatus } from '../sync/sync-status';
-import { setSetting, clearOfflineBoards } from '../settings';
+import { getSetting, setSetting, clearOfflineBoards, setSettingsAccessMode } from '../settings';
 import { getOutboxSummary, setSigningOut } from '@boardsesh/offline-sync';
 import { drainMutationQueue, reportScopeDownloadAbandonedOnSignOut } from '../offline/offline-sync-adapter';
 import { reportAbandonedDownloadsOnSignOut } from '../offline/abandoned-download-terminals';
@@ -45,10 +55,25 @@ import { stopTokenManagement } from '../notifications';
 import { consumeFreshOAuthPending } from '../lib/oauth-pending-store';
 import { consumeWebOAuthReturn } from '../lib/oauth-return';
 import { isAnonymousReadOnlyLocation, readPostLoginReturnHref } from '../lib/routing/anonymous-auth-gate';
+import {
+  readPersistedAccessMode,
+  readPersistedLocalCatalogReady,
+  writePersistedAccessMode,
+  writePersistedLocalCatalogReady,
+  writePendingLocalProfileImportPrompt,
+} from '../lib/access-mode-store';
+import { applyAccessNetworkPolicy } from '../lib/network-policy';
 
 type AuthState = {
   isAuthenticated: boolean;
   isLoading: boolean;
+  accessMode: AccessMode;
+  accessCapabilities: AccessCapabilities;
+  setAccessMode: (accessMode: AccessMode) => Promise<void>;
+  localCatalogReady: boolean;
+  setLocalCatalogReady: (isReady: boolean) => Promise<void>;
+  setLocalOwnerReady: (isReady: boolean) => void;
+  prepareAccountAuthentication: () => Promise<void>;
   signInWithApple: (webAttemptId?: string, isRegistration?: boolean) => Promise<OAuthSignInResult>;
   signInWithGoogle: (webAttemptId?: string, isRegistration?: boolean) => Promise<OAuthSignInResult>;
   // Browser-OAuth fallback for supported native Google presentation/config failures.
@@ -101,6 +126,14 @@ function sameStorageOwner(left: UserStorageOwner, right: UserStorageOwner): bool
 export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [accessMode, setAccessModeState] = useState<AccessMode>(() => {
+    const persistedAccessMode = readPersistedAccessMode();
+    setSettingsAccessMode(persistedAccessMode);
+    applyAccessNetworkPolicy(persistedAccessMode, getSetting('workOffline'));
+    return persistedAccessMode;
+  });
+  const [persistedLocalCatalogReady, setPersistedLocalCatalogReady] = useState(() => readPersistedLocalCatalogReady());
+  const [localOwnerReady, setLocalOwnerReadyState] = useState(false);
   const [isSessionUnavailable, setIsSessionUnavailable] = useState(false);
   const [isNativeSessionDegraded, setIsNativeSessionDegraded] = useState(false);
   const segments = useSegments();
@@ -116,6 +149,8 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const remoteRevalidationRef = useRef<Promise<void> | null>(null);
   const nativeSessionDegradedRef = useRef(false);
   const reconnectAuthCheckRef = useRef<Promise<void> | null>(null);
+  const accessModeRef = useRef(accessMode);
+  accessModeRef.current = accessMode;
   // Android returns to `active` before Linking delivers the browser OAuth
   // callback. Suppress only the provider's generic foreground read while a
   // fallback owns that hand-off; each successful wrapper still runs its own
@@ -125,6 +160,70 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const browserFallbackAuthChecksRef = useRef(0);
   const deferredBrowserFallbackAuthCheckRef = useRef(false);
   const authProviderMountedRef = useRef(true);
+
+  const setAccessMode = useCallback(
+    async (nextAccessMode: AccessMode): Promise<void> => {
+      const platformAccessMode = Platform.OS === 'web' ? ACCOUNT_ACCESS_MODE : nextAccessMode;
+      if (platformAccessMode === LOCAL_ACCESS_MODE) {
+        // A former board scope cannot unlock a newly chosen local profile. The
+        // setup flow re-enables this only after its current scope is durable.
+        writePersistedLocalCatalogReady(false);
+      }
+      writePersistedAccessMode(platformAccessMode);
+      setSettingsAccessMode(platformAccessMode);
+      applyAccessNetworkPolicy(platformAccessMode, getSetting('workOffline'));
+      // Personal React Query rows are not ownership-keyed. Clear them before
+      // exposing the other mode so account and local logbooks, favorites,
+      // playlists, feeds, and active-board rows cannot flash across the boundary.
+      if (platformAccessMode !== accessModeRef.current) queryClient.clear();
+      if (platformAccessMode === LOCAL_ACCESS_MODE) {
+        setPersistedLocalCatalogReady(false);
+        setLocalOwnerReadyState(false);
+      }
+      setAccessModeState(platformAccessMode);
+    },
+    [queryClient],
+  );
+
+  const prepareAccountAuthentication = useCallback(async (): Promise<void> => {
+    // Authentication itself needs the backend. A remembered signed-in offline
+    // preference must never strand a later login-free → account transition.
+    // The account bridge offers the explicit merge only after authentication,
+    // when it knows which account will own the imported copies.
+    if (accessModeRef.current === LOCAL_ACCESS_MODE) writePendingLocalProfileImportPrompt(true);
+    setSetting('workOffline', false);
+    await setAccessMode(ACCOUNT_ACCESS_MODE);
+  }, [setAccessMode]);
+
+  const setLocalCatalogReady = useCallback(
+    async (isReady: boolean): Promise<void> => {
+      const verifiedReady = Platform.OS !== 'web' && accessMode === LOCAL_ACCESS_MODE && isReady;
+      writePersistedLocalCatalogReady(verifiedReady);
+      setPersistedLocalCatalogReady(verifiedReady);
+    },
+    [accessMode],
+  );
+
+  const setLocalOwnerReady = useCallback((isReady: boolean): void => {
+    setLocalOwnerReadyState(isReady);
+  }, []);
+
+  // A persisted catalog marker is necessary but not sufficient after relaunch:
+  // local reads stay locked until this database connection's owner stamp has
+  // been checked or installed by OfflineSyncBridge.
+  const localCatalogReady =
+    Platform.OS !== 'web' && accessMode === LOCAL_ACCESS_MODE && persistedLocalCatalogReady && localOwnerReady;
+
+  const accessContext = useMemo<AccessContext>(
+    () => ({
+      accessMode,
+      isAuthenticated,
+      localCatalogReady,
+      platform: Platform.OS === 'web' ? 'web' : 'native',
+    }),
+    [accessMode, isAuthenticated, localCatalogReady],
+  );
+  const accessCapabilities = useMemo(() => resolveAccessCapabilities(accessContext), [accessContext]);
 
   useEffect(() => {
     // React StrictMode replays effects without recreating refs, so restore the
@@ -395,6 +494,12 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       let completed: boolean;
       if (needsFullCleanup) {
         completed = await runSignedOutCleanup(transitionEpoch, previousStorageOwner, { purgeOfflineBoards });
+      } else if (Platform.OS !== 'web' && accessModeRef.current === LOCAL_ACCESS_MODE) {
+        // A normal cold launch has no account owner to isolate. In local mode,
+        // clearing the persisted stores here would delete the mode-keyed active
+        // board and queue before the accountless tree can use them.
+        resetAnalyticsForSignedOutTransition();
+        completed = isAuthTransitionCurrent(transitionEpoch);
       } else {
         if (!isAuthTransitionCurrent(transitionEpoch)) return false;
         resetAnalyticsForSignedOutTransition();
@@ -575,6 +680,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
               // `status=null error=network`) otherwise burns one of the orchestrator's
               // full 120-second relaunch cycles just to attempt the same call again.
               for (let attempt = 1; attempt <= 3; attempt += 1) {
+                await prepareAccountAuthentication();
                 const screenshotSignIn = await authSignInWithCredentials(
                   SCREENSHOT_USER_EMAIL,
                   SCREENSHOT_USER_PASSWORD,
@@ -655,6 +761,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       handleSignedOutTransition,
       isAuthTransitionCurrent,
       runSignedOutCleanup,
+      prepareAccountAuthentication,
       updateNativeSessionDegraded,
     ],
   );
@@ -727,20 +834,22 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // token for our JWT pair, and — on success — re-run checkAuth so the provider
   // flips to the authenticated UI (matching signInWithCredentials).
   const signInWithApple = useCallback(async (): Promise<OAuthSignInResult> => {
+    await prepareAccountAuthentication();
     const result = await authSignInWithApple();
     if (result.success) {
       await checkAuth();
     }
     return result;
-  }, [checkAuth]);
+  }, [checkAuth, prepareAccountAuthentication]);
 
   const signInWithGoogle = useCallback(async (): Promise<OAuthSignInResult> => {
+    await prepareAccountAuthentication();
     const result = await authSignInWithGoogle();
     if (result.success) {
       await checkAuth();
     }
     return result;
-  }, [checkAuth]);
+  }, [checkAuth, prepareAccountAuthentication]);
 
   // Browser-based Google fallback for supported iOS presentation and Android
   // config failures. Same success contract as the native flow: re-run checkAuth
@@ -749,6 +858,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     async (isRegistration = false): Promise<OAuthSignInResult> => {
       browserFallbackAuthChecksRef.current += 1;
       try {
+        await prepareAccountAuthentication();
         const result = await authSignInWithGoogleWeb(isRegistration);
         if (result.success) {
           await checkAuthAfterSuccessfulBrowserFallback();
@@ -758,7 +868,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         await releaseBrowserFallbackAuthCheckSuppression();
       }
     },
-    [checkAuthAfterSuccessfulBrowserFallback, releaseBrowserFallbackAuthCheckSuppression],
+    [checkAuthAfterSuccessfulBrowserFallback, prepareAccountAuthentication, releaseBrowserFallbackAuthCheckSuppression],
   );
 
   // Browser-based Apple fallback (native Sign in with Apple threw a non-cancel
@@ -768,6 +878,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     async (isRegistration = false): Promise<OAuthSignInResult> => {
       browserFallbackAuthChecksRef.current += 1;
       try {
+        await prepareAccountAuthentication();
         const result = await authSignInWithAppleWeb(isRegistration);
         if (result.success) {
           await checkAuthAfterSuccessfulBrowserFallback();
@@ -777,18 +888,19 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         await releaseBrowserFallbackAuthCheckSuppression();
       }
     },
-    [checkAuthAfterSuccessfulBrowserFallback, releaseBrowserFallbackAuthCheckSuppression],
+    [checkAuthAfterSuccessfulBrowserFallback, prepareAccountAuthentication, releaseBrowserFallbackAuthCheckSuppression],
   );
 
   const signInWithCredentials = useCallback(
     async (email: string, password: string): Promise<CredentialsSignInResult> => {
+      await prepareAccountAuthentication();
       const result = await authSignInWithCredentials(email, password);
       if (result.success) {
         await checkAuth();
       }
       return result;
     },
-    [checkAuth],
+    [checkAuth, prepareAccountAuthentication],
   );
 
   // Native registration auto-logs-in. Web registration may instead create the
@@ -796,13 +908,14 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // no session for checkAuth to resolve yet.
   const register = useCallback(
     async (email: string, password: string, name?: string): Promise<RegistrationResult> => {
+      await prepareAccountAuthentication();
       const result = await authRegisterWithCredentials(email, password, name);
-      if (result.success && result.authenticated !== false) {
-        await checkAuth();
+      if (result.success) {
+        if (result.authenticated !== false) await checkAuth();
       }
       return result;
     },
-    [checkAuth],
+    [checkAuth, prepareAccountAuthentication],
   );
 
   // `method` distinguishes a plain Sign Out ('manual') from an account deletion
@@ -1009,6 +1122,13 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     () => ({
       isAuthenticated,
       isLoading,
+      accessMode,
+      accessCapabilities,
+      setAccessMode,
+      localCatalogReady,
+      setLocalCatalogReady,
+      setLocalOwnerReady,
+      prepareAccountAuthentication,
       signInWithApple,
       signInWithGoogle,
       signInWithGoogleWeb,
@@ -1021,6 +1141,13 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     [
       isAuthenticated,
       isLoading,
+      accessMode,
+      accessCapabilities,
+      setAccessMode,
+      localCatalogReady,
+      setLocalCatalogReady,
+      setLocalOwnerReady,
+      prepareAccountAuthentication,
       signInWithApple,
       signInWithGoogle,
       signInWithGoogleWeb,
@@ -1052,19 +1179,26 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     return <Redirect href={isAuthenticated ? '/(tabs)/home' : '/auth/login'} />;
   }
 
-  // Web only: the canonical board URLs the Next front door links into render for
-  // a signed-out visitor instead of bouncing them to a login wall that loses the
-  // climb they arrived for. The route itself then hands off to login carrying the
-  // path (see BoardRouteRedirect). Native resolves anonymous-auth-gate to the
-  // inert fork — `isAnonymousReadOnlyLocation()` is a constant `false` and
-  // `readPostLoginReturnHref()` a constant `null` — so both branches below are
-  // exactly what ships today on the store fleet. Asserted by test, because this
-  // change auto-OTAs to every installed binary.
-  if (!isAuthenticated && !inAuthGroup && !isAnonymousReadOnlyLocation()) {
-    return <Redirect href="/auth/login" />;
+  // Expo web keeps its canonical anonymous read-only climb handoff. Native local
+  // profiles admit setup first, then the centralized core-climbing route corpus
+  // after its catalog is durable. Every other tokenless route is default-denied.
+  const canEnterWithoutAccount = isAnonymousReadOnlyLocation() || canEnterRouteWithoutAccount(accessContext, segments);
+  const localProfileActive = Platform.OS !== 'web' && accessMode === LOCAL_ACCESS_MODE;
+  if ((!isAuthenticated || localProfileActive) && !inAuthGroup && !canEnterWithoutAccount) {
+    return (
+      <Redirect
+        href={
+          Platform.OS !== 'web' && accessMode === LOCAL_ACCESS_MODE
+            ? localCatalogReady
+              ? '/(tabs)/climbs'
+              : LOCAL_BOARD_SETUP_PATH
+            : '/auth/login'
+        }
+      />
+    );
   }
   if (isAuthenticated && inAuthGroup) {
-    return <Redirect href={readPostLoginReturnHref() ?? '/(tabs)/home'} />;
+    return <Redirect href={localProfileActive ? '/(tabs)/climbs' : (readPostLoginReturnHref() ?? '/(tabs)/home')} />;
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

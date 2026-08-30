@@ -33,27 +33,30 @@ export type UsePlaylistItemMutationsResult = {
 export function usePlaylistItemMutations(options?: UsePlaylistItemMutationsOptions): UsePlaylistItemMutationsResult {
   const adapter = usePlaylistsAdapter();
   const executeGraphQL = options?.executeGraphQL ?? adapter.executeGraphQL;
+  const localLibrary = options?.executeGraphQL ? undefined : adapter.localLibrary;
 
   const reorderPlaylistClimb = useCallback(
     async (input: ReorderPlaylistClimbInput): Promise<boolean> => {
+      if (localLibrary) return localLibrary.reorderClimb(input);
       const response = await executeGraphQL<
         ReorderPlaylistClimbMutationResponse,
         ReorderPlaylistClimbMutationVariables
       >(REORDER_PLAYLIST_CLIMB, { input });
       return response.reorderPlaylistClimb;
     },
-    [executeGraphQL],
+    [executeGraphQL, localLibrary],
   );
 
   const removeClimbFromPlaylist = useCallback(
     async (input: RemoveClimbFromPlaylistInput): Promise<boolean> => {
+      if (localLibrary) return localLibrary.removeClimb(input);
       const response = await executeGraphQL<
         RemoveClimbFromPlaylistMutationResponse,
         RemoveClimbFromPlaylistMutationVariables
       >(REMOVE_CLIMB_FROM_PLAYLIST, { input });
       return response.removeClimbFromPlaylist;
     },
-    [executeGraphQL],
+    [executeGraphQL, localLibrary],
   );
 
   return useMemo(

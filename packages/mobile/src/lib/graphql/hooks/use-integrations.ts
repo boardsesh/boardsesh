@@ -32,13 +32,13 @@ function analyticsIntegrationName(provider: IntegrationProvider): string {
  * nothing to fetch while signed out. The query unwraps to
  * `IntegrationStatus[] | undefined`.
  */
-export function useIntegrationStatuses() {
+export function useIntegrationStatuses(options?: { enabled?: boolean }) {
   const { isAuthenticated } = useAuth();
   return useQuery({
     queryKey: INTEGRATION_STATUSES_KEY,
     queryFn: () => getHttpClient().request<GetIntegrationsResponse>(GET_INTEGRATIONS),
     select: (data) => data.integrations,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && (options?.enabled ?? true),
     staleTime: 30_000,
   });
 }

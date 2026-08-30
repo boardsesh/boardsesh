@@ -12,6 +12,27 @@
     "climbs": "Climbs"
   },
   "mobile": {
+    "local": {
+      "title": "You",
+      "privateSubtitle": "Saved only on this device",
+      "stats": {
+        "sends": "Sends",
+        "flashes": "Flashes",
+        "attempts": "Attempts"
+      },
+      "logbookTitle": "Local logbook",
+      "status": {
+        "flash": "Flash",
+        "send": "Send",
+        "attempt": "Attempt"
+      },
+      "tries_one": "{{count}} try",
+      "tries_other": "{{count}} tries",
+      "unknownClimb": "Unknown climb",
+      "empty": "Your local logbook is empty — log your first climb.",
+      "errorTitle": "Couldn't load your local logbook",
+      "retry": "Try again"
+    },
     "unknownName": "Climber",
     "cancel": "Cancel",
     "sessions": {

@@ -4,6 +4,7 @@ import { PostHogProvider } from 'posthog-react-native';
 import { getAnalyticsClient, setSessionRecordingEnabled } from '../../lib/analytics';
 import { startConnectivityTracking } from '../../lib/analytics-connectivity';
 import { loadSessionRecordingEnabled } from '../../lib/session-recording-preference';
+import { isNetworkAllowed, subscribeNetworkPolicy } from '../../lib/network-policy';
 
 // PostHogProvider renders a touch-capturing View around its subtree; without
 // flex:1 it would collapse the app layout to zero height.
@@ -23,13 +24,25 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
   // Starts recording when the resolved preference is on. No-op when analytics is
   // disabled (setSessionRecordingEnabled guards on a null client). Runs once.
   useEffect(() => {
+    let mounted = true;
+    let recordingPreference = false;
+    const applyPolicy = () => {
+      if (!mounted) return;
+      setSessionRecordingEnabled(recordingPreference && isNetworkAllowed('telemetry'));
+    };
+    const unsubscribe = subscribeNetworkPolicy(applyPolicy);
     loadSessionRecordingEnabled()
       .then((enabled) => {
-        if (enabled) setSessionRecordingEnabled(true);
+        recordingPreference = enabled;
+        applyPolicy();
       })
       .catch(() => {
         // A failed preference read leaves recording off (the safe default).
       });
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, []);
 
   // Stamp `connectivity` on every event and keep it current for the launch.

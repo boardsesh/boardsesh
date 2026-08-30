@@ -32,6 +32,7 @@ vi.mock('../../lib/env', () => ({
 }));
 
 import { useShareClimb } from '../use-share-climb';
+import { setNetworkPolicy } from '../../lib/network-policy';
 
 const climb = {
   uuid: 'climb-uuid-123',
@@ -68,6 +69,7 @@ const expectedOgImageUrl =
 describe('useShareClimb', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setNetworkPolicy('online');
     ctrl.os = 'ios';
     fetchMock.mockResolvedValue({ ok: true });
     vi.stubGlobal('fetch', fetchMock);
@@ -87,6 +89,18 @@ describe('useShareClimb', () => {
   });
 
   describe('share-time cache prewarm', () => {
+    it('keeps sharing local while hard offline without prewarming', async () => {
+      setNetworkPolicy('account-offline');
+      const { result } = renderHook(() => useShareClimb({ climb, ...baseArgs }));
+
+      await act(async () => {
+        await result.current();
+      });
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(shareMock).toHaveBeenCalledTimes(1);
+    });
+
     it('warms the share page url before opening the share sheet', async () => {
       const { result } = renderHook(() => useShareClimb({ climb, ...baseArgs }));
       await act(async () => {

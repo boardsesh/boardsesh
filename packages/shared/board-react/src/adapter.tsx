@@ -1,6 +1,13 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
-import type { SaveTickMutationResponse, SaveTickMutationVariables } from '@boardsesh/graphql/operations';
+import type {
+  DeleteTickMutationResponse,
+  GetTicksQueryResponse,
+  SaveTickMutationResponse,
+  SaveTickMutationVariables,
+  UpdateTickInput,
+  UpdateTickResponse,
+} from '@boardsesh/graphql/operations';
 import type { ClimbStatsForClimbEntry } from '@boardsesh/graphql/operations';
 import type { ClimbStatsEvent } from '@boardsesh/shared-schema';
 
@@ -40,6 +47,11 @@ export type ExecuteWs = <TData, TVars extends Record<string, unknown> = Record<s
 export type BoardAdapter = {
   /** Whether the user is signed in. */
   isAuthenticated: boolean;
+  /** A native login-free profile may log and read ticks without an account. */
+  canLogLocally?: boolean;
+  /** Prefer SQLite for tick reads/edits/deletes. Covers login-free profiles and
+   * signed-in accounts that explicitly selected Work Offline. */
+  useLocalTickStore?: boolean;
   /** True while auth state is still resolving (pre-session-status === 'loading'). */
   isAuthLoading: boolean;
   executeHttp: ExecuteHttp;
@@ -86,6 +98,12 @@ export type BoardAdapter = {
     variables: SaveTickMutationVariables,
     helpers: { queryClient: QueryClient; executeHttp: ExecuteHttp },
   ) => Promise<SaveTickMutationResponse['saveTick'] | null>;
+  /** SQLite-backed tick reader used by login-free profiles. */
+  getTicksLocal?: (boardType: string, climbUuids: string[]) => Promise<GetTicksQueryResponse['ticks']>;
+  /** SQLite-backed edit path. Account profiles also enqueue server replay. */
+  updateTickOffline?: (uuid: string, input: UpdateTickInput) => Promise<UpdateTickResponse['updateTick'] | null>;
+  /** SQLite-backed delete path. Account profiles also enqueue server replay. */
+  deleteTickOffline?: (uuid: string) => Promise<DeleteTickMutationResponse['deleteTick'] | null>;
   /**
    * Optional post-save side-effect. Web wires `clearTickDraft` (IndexedDB);
    * mobile has no tick-draft store today and may omit it.

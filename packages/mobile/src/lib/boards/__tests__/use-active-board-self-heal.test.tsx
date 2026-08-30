@@ -104,6 +104,22 @@ describe('useActiveBoardSelfHeal', () => {
     expect(mocks.fetchBoardByUuid).not.toHaveBeenCalled();
   });
 
+  it('does not ask the account API to validate an installation-owned local board', () => {
+    mocks.activeBoard = {
+      ...board('local-board-uuid'),
+      origin: 'local',
+      ownerId: 'local-profile-uuid',
+      angle: 40,
+      createdAt: '2026-08-30T00:00:00.000Z',
+    } as UserBoard;
+
+    renderHook(() => useActiveBoardSelfHeal());
+
+    expect(mocks.fetchBoardByUuid).not.toHaveBeenCalled();
+    expect(mocks.setActiveBoard).not.toHaveBeenCalled();
+    expect(mocks.clearActiveBoard).not.toHaveBeenCalled();
+  });
+
   it('runs at most once per session across mounts', async () => {
     mocks.activeBoard = board('first-uuid');
     mocks.fetchBoardByUuid.mockResolvedValue(board('first-uuid'));

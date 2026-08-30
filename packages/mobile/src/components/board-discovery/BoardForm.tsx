@@ -41,6 +41,12 @@ type BoardBuilder = ReturnType<typeof useBoardBuilder>;
 
 type BoardFormProps = {
   builder: BoardBuilder;
+  /**
+   * Local setup renders only the physical board configuration. Account-backed
+   * discovery, location, serial, gym and social visibility controls are kept in
+   * a child that is never mounted for this presentation.
+   */
+  presentation?: 'account' | 'local';
   /** Auto-generated name, used as the name placeholder + create/update fallback. */
   defaultName: string;
   submitting: boolean;
@@ -73,6 +79,7 @@ type BoardFormProps = {
  */
 export function BoardForm({
   builder,
+  presentation = 'account',
   defaultName,
   submitting,
   onSubmit,
@@ -83,40 +90,10 @@ export function BoardForm({
 }: BoardFormProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
-  // Only warn on a same-config foreign board — cross-model serial reuse is
-  // legitimate (see useForeignSerialBoard). Config is null until the form has
-  // a complete layout/size/sets selection.
-  const serialConflictConfig = useMemo(
-    () =>
-      builder.layoutId != null && builder.sizeId != null && builder.setIds.length > 0
-        ? {
-            boardType: builder.boardName,
-            layoutId: builder.layoutId,
-            sizeId: builder.sizeId,
-            setIds: builder.setIds.join(','),
-          }
-        : null,
-    [builder.boardName, builder.layoutId, builder.sizeId, builder.setIds],
-  );
-  const foreignSerialBoard = useForeignSerialBoard(builder.serialNumber, currentBoardUuid, serialConflictConfig);
-  const foreignSerialDisclosure = foreignSerialBoard ? serialReuseDisclosure(foreignSerialBoard) : null;
   const insets = useSafeAreaInsets();
   const bottomChrome = useBottomChromeMetrics();
   const { width: windowWidth } = useWindowDimensions();
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [timerPairingOpen, setTimerPairingOpen] = useState(false);
-  const [gymPickerOpen, setGymPickerOpen] = useState(false);
-
-  const { setCoords } = builder;
-  const location = useDeviceLocation();
-  const requestLocation = location.request;
-  const onUseMyLocation = useCallback(() => void requestLocation(), [requestLocation]);
-  const onClearLocation = useCallback(() => setCoords(null), [setCoords]);
-  useEffect(() => {
-    // location.coords stays null until the user taps "Use my location" (request
-    // is explicit), so this only stamps coords once they've opted in.
-    if (location.coords) setCoords(location.coords);
-  }, [location.coords, setCoords]);
+  const [localAdvancedOpen, setLocalAdvancedOpen] = useState(false);
 
   // Chip options — memoised so the per-snap angle re-render doesn't rebuild them
   // (they don't depend on angle), letting the memoised chip rows bail out.
@@ -266,51 +243,28 @@ export function BoardForm({
               maxLength={100}
               returnKeyType="done"
             />
-
-            {/* Gym lives in the MAIN form, not behind "More options": attaching
-                the board to its gym is what puts it on the map under that gym,
-                and burying it is how boards ended up as lone pins (#4166). */}
-            <SectionLabel>{t('mobile.create.gym')}</SectionLabel>
-            <Pressable
-              onPress={() => setGymPickerOpen(true)}
-              accessibilityRole="button"
-              accessibilityLabel={t('mobile.create.gym')}
-              style={({ pressed }) => [
-                styles.gymRow,
-                {
-                  backgroundColor: pressed ? systemColors.tertiaryBackground : systemColors.secondaryBackground,
-                  borderColor: systemColors.separator,
-                },
-              ]}
-            >
-              <Text
-                variant="body"
-                color={builder.selectedGym ? systemColors.label : systemColors.secondaryLabel}
-                numberOfLines={1}
-                style={styles.gymRowLabel}
-              >
-                {builder.selectedGym?.name ?? t('mobile.create.gymNone')}
-              </Text>
-              <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
-            </Pressable>
           </>
         ) : null}
 
-        {/* Advanced — hold sets (default all), visibility, location, serial. */}
-        <Pressable
-          onPress={() => setAdvancedOpen((open) => !open)}
-          accessibilityRole="button"
-          accessibilityState={{ expanded: advancedOpen }}
-          style={styles.advancedHeader}
-        >
-          <Text variant="headline">{t('mobile.create.moreOptions')}</Text>
-          <Icon name={advancedOpen ? 'chevron.up' : 'chevron.down'} size={18} color={systemColors.secondaryLabel} />
-        </Pressable>
-
-        {advancedOpen ? (
-          <View style={styles.advancedBody}>
-            {builder.sets.length > 0 ? (
-              <>
+        {presentation === 'account' ? (
+          <AccountOnlyBoardFields builder={builder} lockedConfig={lockedConfig} currentBoardUuid={currentBoardUuid} />
+        ) : (
+          <>
+            <Pressable
+              onPress={() => setLocalAdvancedOpen((open) => !open)}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: localAdvancedOpen }}
+              style={styles.advancedHeader}
+            >
+              <Text variant="headline">{t('mobile.create.moreOptions')}</Text>
+              <Icon
+                name={localAdvancedOpen ? 'chevron.up' : 'chevron.down'}
+                size={18}
+                color={systemColors.secondaryLabel}
+              />
+            </Pressable>
+            {localAdvancedOpen && builder.sets.length > 0 ? (
+              <View style={styles.advancedBody}>
                 <SectionLabel>{t('mobile.custom.sets')}</SectionLabel>
                 <BoardConfigChips
                   groupLabel={t('mobile.custom.sets')}
@@ -318,134 +272,11 @@ export function BoardForm({
                   onSelect={builder.toggleSet}
                   disabled={lockedConfig}
                 />
-              </>
-            ) : null}
-
-            <SwitchRow label={t('mobile.create.ownBoard')} value={builder.isOwned} onValueChange={builder.setIsOwned} />
-            <SwitchRow
-              label={t('mobile.create.public')}
-              description={t('mobile.create.publicHint')}
-              value={builder.isPublic}
-              onValueChange={builder.setIsPublic}
-            />
-            <SwitchRow
-              label={t('mobile.create.unlisted')}
-              value={builder.isUnlisted}
-              onValueChange={builder.setIsUnlisted}
-            />
-            <SwitchRow
-              label={t('mobile.create.hideLocation')}
-              value={builder.hideLocation}
-              onValueChange={builder.setHideLocation}
-            />
-
-            <SectionLabel>{t('mobile.create.location')}</SectionLabel>
-            <BuilderTextInput
-              value={builder.locationName}
-              onChangeText={builder.setLocationName}
-              placeholder={t('mobile.create.locationPlaceholder')}
-              accessibilityLabel={t('mobile.create.location')}
-              maxLength={120}
-            />
-            {/* Stamping coordinates used to be one-way — the button simply went
-                disabled, leaving no way to undo a wrong location. */}
-            {builder.coords ? (
-              <Button
-                title={t('mobile.create.clearLocation')}
-                variant="text"
-                onPress={onClearLocation}
-                role="destructive"
-              />
-            ) : (
-              <Button title={t('mobile.create.useMyLocation')} variant="text" onPress={onUseMyLocation} />
-            )}
-
-            <SectionLabel>{t('mobile.create.serial')}</SectionLabel>
-            <BuilderTextInput
-              value={builder.serialNumber}
-              onChangeText={builder.setSerialNumber}
-              placeholder={t('mobile.create.serialPlaceholder')}
-              accessibilityLabel={t('mobile.create.serial')}
-              autoCapitalize="characters"
-              maxLength={100}
-            />
-            <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.serialHint}>
-              {t('mobile.create.serialHint')}
-            </Text>
-
-            <SectionLabel>{t('mobile.create.timer')}</SectionLabel>
-            <View style={[styles.timerRow, { borderColor: systemColors.separator }]}>
-              <Icon name="clock" size={20} color={systemColors.secondaryLabel} />
-              <Text
-                variant="body"
-                color={builder.timerName ? systemColors.label : systemColors.tertiaryLabel}
-                numberOfLines={1}
-                style={styles.timerName}
-              >
-                {builder.timerName || t('mobile.create.timerNone')}
-              </Text>
-            </View>
-            <View style={styles.timerActions}>
-              <Button
-                title={builder.timerName ? t('mobile.create.timerChangeCta') : t('mobile.create.timerPairCta')}
-                variant="text"
-                onPress={() => setTimerPairingOpen(true)}
-              />
-              {builder.timerName ? (
-                <Button
-                  title={t('mobile.create.timerRemoveCta')}
-                  variant="text"
-                  role="destructive"
-                  onPress={() => builder.setTimerName('')}
-                />
-              ) : null}
-            </View>
-            <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.serialHint}>
-              {t('mobile.create.timerHint')}
-            </Text>
-
-            {foreignSerialDisclosure ? (
-              <View style={[styles.serialWarning, { borderColor: iosSystemColors.systemOrange }]}>
-                <Icon name="info" size={16} color={iosSystemColors.systemOrange} />
-                <Text variant="footnote" color={systemColors.label} style={styles.serialWarningText}>
-                  {foreignSerialDisclosure.kind === 'public'
-                    ? t('boardForm.serialReuse.warning', { name: foreignSerialDisclosure.board.name })
-                    : t('boardForm.serialReuse.warningPrivate')}
-                </Text>
               </View>
             ) : null}
-          </View>
-        ) : null}
+          </>
+        )}
       </ScrollView>
-
-      {timerPairingOpen ? (
-        <TimerPairingSheet
-          onSelect={(timerName) => {
-            builder.setTimerName(timerName);
-            setTimerPairingOpen(false);
-          }}
-          onDismiss={() => setTimerPairingOpen(false)}
-        />
-      ) : null}
-
-      {/* Presence-driven, like TimerPairingSheet — the two are never open at
-          once and the sheet coordinator serialises them. */}
-      {gymPickerOpen ? (
-        <GymPickerSheet
-          selectedUuid={builder.selectedGym?.uuid ?? null}
-          boardCoords={builder.coords}
-          onSelect={(gym) => {
-            builder.setSelectedGym(gym);
-            setGymPickerOpen(false);
-          }}
-          onRequestManualLocation={() => {
-            builder.setSelectedGym(null);
-            setGymPickerOpen(false);
-            setAdvancedOpen(true);
-          }}
-          onDismiss={() => setGymPickerOpen(false)}
-        />
-      ) : null}
 
       {/* Pinned, safe-area-aware primary action. */}
       <View
@@ -478,6 +309,236 @@ export function BoardForm({
         />
       </View>
     </KeyboardAvoidingView>
+  );
+}
+
+/**
+ * Every account/server-specific board field lives behind this component
+ * boundary. A local BoardForm never mounts it, so its location and GraphQL
+ * hooks cannot run as a side effect of login-free setup.
+ */
+function AccountOnlyBoardFields({
+  builder,
+  lockedConfig,
+  currentBoardUuid,
+}: {
+  builder: BoardBuilder;
+  lockedConfig: boolean;
+  currentBoardUuid?: string;
+}) {
+  const { t } = useTranslation('boards');
+  const { systemColors } = useTheme();
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [timerPairingOpen, setTimerPairingOpen] = useState(false);
+  const [gymPickerOpen, setGymPickerOpen] = useState(false);
+
+  const serialConflictConfig = useMemo(
+    () =>
+      builder.layoutId != null && builder.sizeId != null && builder.setIds.length > 0
+        ? {
+            boardType: builder.boardName,
+            layoutId: builder.layoutId,
+            sizeId: builder.sizeId,
+            setIds: builder.setIds.join(','),
+          }
+        : null,
+    [builder.boardName, builder.layoutId, builder.sizeId, builder.setIds],
+  );
+  const foreignSerialBoard = useForeignSerialBoard(builder.serialNumber, currentBoardUuid, serialConflictConfig);
+  const foreignSerialDisclosure = foreignSerialBoard ? serialReuseDisclosure(foreignSerialBoard) : null;
+  const setOptions = useMemo(
+    () =>
+      builder.sets.map((set) => ({
+        key: set.id,
+        label: set.name,
+        value: set.id,
+        selected: builder.setIds.includes(set.id),
+      })),
+    [builder.sets, builder.setIds],
+  );
+
+  const { setCoords } = builder;
+  const location = useDeviceLocation();
+  const requestLocation = location.request;
+  const onUseMyLocation = useCallback(() => void requestLocation(), [requestLocation]);
+  const onClearLocation = useCallback(() => setCoords(null), [setCoords]);
+  useEffect(() => {
+    if (location.coords) setCoords(location.coords);
+  }, [location.coords, setCoords]);
+
+  return (
+    <>
+      {builder.layoutId != null ? (
+        <>
+          <SectionLabel>{t('mobile.create.gym')}</SectionLabel>
+          <Pressable
+            onPress={() => setGymPickerOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.create.gym')}
+            style={({ pressed }) => [
+              styles.gymRow,
+              {
+                backgroundColor: pressed ? systemColors.tertiaryBackground : systemColors.secondaryBackground,
+                borderColor: systemColors.separator,
+              },
+            ]}
+          >
+            <Text
+              variant="body"
+              color={builder.selectedGym ? systemColors.label : systemColors.secondaryLabel}
+              numberOfLines={1}
+              style={styles.gymRowLabel}
+            >
+              {builder.selectedGym?.name ?? t('mobile.create.gymNone')}
+            </Text>
+            <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
+          </Pressable>
+        </>
+      ) : null}
+
+      <Pressable
+        onPress={() => setAdvancedOpen((open) => !open)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: advancedOpen }}
+        style={styles.advancedHeader}
+      >
+        <Text variant="headline">{t('mobile.create.moreOptions')}</Text>
+        <Icon name={advancedOpen ? 'chevron.up' : 'chevron.down'} size={18} color={systemColors.secondaryLabel} />
+      </Pressable>
+
+      {advancedOpen ? (
+        <View style={styles.advancedBody}>
+          {builder.sets.length > 0 ? (
+            <>
+              <SectionLabel>{t('mobile.custom.sets')}</SectionLabel>
+              <BoardConfigChips
+                groupLabel={t('mobile.custom.sets')}
+                options={setOptions}
+                onSelect={builder.toggleSet}
+                disabled={lockedConfig}
+              />
+            </>
+          ) : null}
+          <SwitchRow label={t('mobile.create.ownBoard')} value={builder.isOwned} onValueChange={builder.setIsOwned} />
+          <SwitchRow
+            label={t('mobile.create.public')}
+            description={t('mobile.create.publicHint')}
+            value={builder.isPublic}
+            onValueChange={builder.setIsPublic}
+          />
+          <SwitchRow
+            label={t('mobile.create.unlisted')}
+            value={builder.isUnlisted}
+            onValueChange={builder.setIsUnlisted}
+          />
+          <SwitchRow
+            label={t('mobile.create.hideLocation')}
+            value={builder.hideLocation}
+            onValueChange={builder.setHideLocation}
+          />
+
+          <SectionLabel>{t('mobile.create.location')}</SectionLabel>
+          <BuilderTextInput
+            value={builder.locationName}
+            onChangeText={builder.setLocationName}
+            placeholder={t('mobile.create.locationPlaceholder')}
+            accessibilityLabel={t('mobile.create.location')}
+            maxLength={120}
+          />
+          {builder.coords ? (
+            <Button
+              title={t('mobile.create.clearLocation')}
+              variant="text"
+              onPress={onClearLocation}
+              role="destructive"
+            />
+          ) : (
+            <Button title={t('mobile.create.useMyLocation')} variant="text" onPress={onUseMyLocation} />
+          )}
+
+          <SectionLabel>{t('mobile.create.serial')}</SectionLabel>
+          <BuilderTextInput
+            value={builder.serialNumber}
+            onChangeText={builder.setSerialNumber}
+            placeholder={t('mobile.create.serialPlaceholder')}
+            accessibilityLabel={t('mobile.create.serial')}
+            autoCapitalize="characters"
+            maxLength={100}
+          />
+          <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.serialHint}>
+            {t('mobile.create.serialHint')}
+          </Text>
+
+          <SectionLabel>{t('mobile.create.timer')}</SectionLabel>
+          <View style={[styles.timerRow, { borderColor: systemColors.separator }]}>
+            <Icon name="clock" size={20} color={systemColors.secondaryLabel} />
+            <Text
+              variant="body"
+              color={builder.timerName ? systemColors.label : systemColors.tertiaryLabel}
+              numberOfLines={1}
+              style={styles.timerName}
+            >
+              {builder.timerName || t('mobile.create.timerNone')}
+            </Text>
+          </View>
+          <View style={styles.timerActions}>
+            <Button
+              title={builder.timerName ? t('mobile.create.timerChangeCta') : t('mobile.create.timerPairCta')}
+              variant="text"
+              onPress={() => setTimerPairingOpen(true)}
+            />
+            {builder.timerName ? (
+              <Button
+                title={t('mobile.create.timerRemoveCta')}
+                variant="text"
+                role="destructive"
+                onPress={() => builder.setTimerName('')}
+              />
+            ) : null}
+          </View>
+          <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.serialHint}>
+            {t('mobile.create.timerHint')}
+          </Text>
+
+          {foreignSerialDisclosure ? (
+            <View style={[styles.serialWarning, { borderColor: iosSystemColors.systemOrange }]}>
+              <Icon name="info" size={16} color={iosSystemColors.systemOrange} />
+              <Text variant="footnote" color={systemColors.label} style={styles.serialWarningText}>
+                {foreignSerialDisclosure.kind === 'public'
+                  ? t('boardForm.serialReuse.warning', { name: foreignSerialDisclosure.board.name })
+                  : t('boardForm.serialReuse.warningPrivate')}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {timerPairingOpen ? (
+        <TimerPairingSheet
+          onSelect={(timerName) => {
+            builder.setTimerName(timerName);
+            setTimerPairingOpen(false);
+          }}
+          onDismiss={() => setTimerPairingOpen(false)}
+        />
+      ) : null}
+      {gymPickerOpen ? (
+        <GymPickerSheet
+          selectedUuid={builder.selectedGym?.uuid ?? null}
+          boardCoords={builder.coords}
+          onSelect={(gym) => {
+            builder.setSelectedGym(gym);
+            setGymPickerOpen(false);
+          }}
+          onRequestManualLocation={() => {
+            builder.setSelectedGym(null);
+            setGymPickerOpen(false);
+            setAdvancedOpen(true);
+          }}
+          onDismiss={() => setGymPickerOpen(false)}
+        />
+      ) : null}
+    </>
   );
 }
 

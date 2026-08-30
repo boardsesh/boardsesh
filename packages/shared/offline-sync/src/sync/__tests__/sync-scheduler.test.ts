@@ -103,6 +103,23 @@ describe('sync-scheduler', () => {
     );
   });
 
+  it('never drains personal mutations during a catalog-only cycle', async () => {
+    const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+
+    triggerSync(mockDb, createMockQueryClient(), mockGraphqlFetch, getEnabledBoards, drainQueue, {
+      catalogOnly: true,
+    });
+    await flush();
+
+    expect(drainQueue).not.toHaveBeenCalled();
+    expect(mockPullSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.anything(),
+      mockGraphqlFetch,
+      expect.objectContaining({ enabledBoards: ['kilter'], catalogOnly: true }),
+    );
+  });
+
   it('forwards per-scope bootstrap metadata settlement to pullSync', async () => {
     const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
     const onBootstrapMetadataChanged = vi.fn();

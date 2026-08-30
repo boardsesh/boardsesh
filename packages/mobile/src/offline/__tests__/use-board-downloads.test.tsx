@@ -47,6 +47,10 @@ vi.mock('../../settings', () => ({
 }));
 vi.mock('../../lib/analytics', () => ({ track: spies.track }));
 vi.mock('../../lib/offline-engine', () => ({ isOfflineEngineEnabled: () => true }));
+let accessMode: 'account' | 'local' = 'account';
+vi.mock('../../providers/auth-provider', () => ({
+  useAuth: () => ({ accessMode }),
+}));
 
 import {
   __resetSyncStatusForTests,
@@ -62,6 +66,7 @@ const makeBoard = (uuid: string, boardType: 'kilter' | 'tension', layoutId: numb
 
 beforeEach(() => {
   vi.clearAllMocks();
+  accessMode = 'account';
   __resetSyncStatusForTests();
   // The ordinary launch: init won on its first attempt, so the schema is stamped
   // before any screen renders. The contended launch has its own case below.
@@ -75,6 +80,28 @@ afterEach(() => {
 });
 
 describe('useBoardDownloads', () => {
+  it('uses a catalog-only cycle in local mode even when an account token still exists', async () => {
+    accessMode = 'local';
+    const board = makeBoard('garage', 'kilter', 1, 10);
+    const { result } = renderHook(() => useBoardDownloads());
+
+    result.current.enableBoardsOffline(board);
+
+    expect(spies.triggerSync).toHaveBeenCalledTimes(1);
+    const syncCall = spies.triggerSync.mock.calls[0] as unknown[];
+    const graphqlFetch = syncCall[2] as () => Promise<unknown>;
+    const drainQueue = syncCall[4] as () => Promise<void>;
+    const syncOptions = syncCall[5] as { catalogOnly?: boolean };
+    expect(syncOptions.catalogOnly).toBe(true);
+    await expect(graphqlFetch()).rejects.toThrow('Catalog-only download');
+    await expect(drainQueue()).rejects.toThrow('Catalog-only download');
+    expect(spies.graphqlRequest).not.toHaveBeenCalled();
+    expect(spies.drainMutationQueue).not.toHaveBeenCalled();
+    expect(spies.track).not.toHaveBeenCalled();
+    expect(spies.rememberDownloadTrigger).not.toHaveBeenCalled();
+    expect(spies.rememberOfflineBoards).not.toHaveBeenCalled();
+  });
+
   it('advances bootstrap and completion revisions for every scope in one ad-hoc multi-board sync', () => {
     const boards = [makeBoard('garage', 'kilter', 1, 10), makeBoard('gym', 'tension', 2, 11)];
     const { result } = renderHook(() => useBoardDownloads());

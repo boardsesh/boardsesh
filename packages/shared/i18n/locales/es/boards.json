@@ -135,6 +135,19 @@
         "switchError": "No se pudo cambiar a ese plafón. Inténtalo de nuevo."
       }
     },
+    "localSetup": {
+      "screenTitle": "Configura la escalada sin conexión",
+      "loading": "Cargando tu plafón local…",
+      "loadError": "No se pudo cargar tu plafón local.",
+      "continue": "Descargar este plafón",
+      "downloadTitle": "Guardando {{name}} en este dispositivo",
+      "waiting": "Esperando conexión para iniciar la descarga.",
+      "retry": "Reintentar la descarga",
+      "startError": "No se pudo iniciar la descarga. Inténtalo de nuevo.",
+      "downloadError": "La descarga se detuvo antes de que el plafón estuviera listo.",
+      "finishError": "El plafón se descargó, pero no se pudo terminar la configuración. Inténtalo de nuevo.",
+      "snapshotUnavailable": "Esta versión no puede descargar un catálogo local del plafón. Actualiza Boardsesh e inténtalo de nuevo."
+    },
     "custom": {
       "board": "Plafón",
       "layout": "Layout",

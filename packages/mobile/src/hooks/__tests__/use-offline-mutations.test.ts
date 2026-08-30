@@ -53,11 +53,23 @@ vi.mock('../../offline/outbox-telemetry', () => ({
 
 // The retry ladder emits one analytics event per contended write; the event's
 // own shape is covered in offline/__tests__/local-write-telemetry.test.ts.
-vi.mock('../../lib/analytics', () => ({ track: vi.fn() }));
+const trackMock = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/analytics', () => ({ track: trackMock }));
 
 import {
   writeTickLocal,
   addFavoriteLocal,
+  addClimbToPlaylistLocal,
+  createPlaylistLocal,
+  deletePlaylistLocal,
+  deleteTickLocal,
+  getFavoriteClimbUuidsLocal,
+  getPlaylistMembershipsLocal,
+  getPlaylistClimbsLocal,
+  getPlaylistLocal,
+  getPlaylistsLocal,
+  removeClimbFromPlaylistLocal,
+  reorderPlaylistClimbLocal,
   removeFavoriteLocal,
   enqueueTickOutboxOnly,
   favoriteAddKey,
@@ -65,8 +77,10 @@ import {
   useOfflineFollowUser,
   useOfflineUnfollowUser,
   type SaveTickInput,
+  updatePlaylistLocal,
+  updateTickLocal,
 } from '../use-offline-mutations';
-import { runMigrations, type GraphQLFetch } from '@boardsesh/offline-sync';
+import { runMigrations, stampLocalUserId, type GraphQLFetch } from '@boardsesh/offline-sync';
 import { createTestDatabase, __resetDrainerStateForTests, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 
 type Row = Record<string, unknown>;
@@ -124,6 +138,7 @@ let db: TestSqliteDb;
 beforeEach(async () => {
   invalidateQueries.mockClear();
   reportEnqueueSuppressedMock.mockClear();
+  trackMock.mockClear();
   __resetDrainerStateForTests();
   db = createTestDatabase();
   await runMigrations(db);
@@ -384,6 +399,255 @@ describe('removeFavoriteLocal', () => {
 
     const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations WHERE operation = ?', ['delete']);
     expect(queued).toHaveLength(1);
+  });
+});
+
+describe('local-only favorites', () => {
+  const favorite = { boardName: 'kilter', climbUuid: 'climb-local', angle: 40 };
+
+  it('stores the stamped owner without an outbox row or retry telemetry', async () => {
+    await stampLocalUserId(db, 'local:profile-1');
+
+    await addFavoriteLocal(withFailingTransactions(db, 1, LOCK_MESSAGE), favorite, 'local-only');
+
+    const row = await db.getFirstAsync<Row>('SELECT * FROM user_favorites WHERE climb_uuid = ?', [favorite.climbUuid]);
+    expect(row?.user_id).toBe('local:profile-1');
+    expect(await db.getAllAsync<Row>('SELECT * FROM pending_mutations')).toHaveLength(0);
+    expect(reportEnqueueSuppressedMock).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  it('reads only favorites owned by the stamped local profile', async () => {
+    await db.runAsync(
+      `INSERT INTO user_favorites (board_name, climb_uuid, angle, user_id, created_at)
+       VALUES ('kilter', 'mine', 40, 'local:profile-1', '2026-01-02'),
+              ('kilter', 'theirs', 40, 'local:profile-2', '2026-01-01'),
+              ('kilter', 'wrong-angle', 50, 'local:profile-1', '2026-01-03')`,
+    );
+    await stampLocalUserId(db, 'local:profile-1');
+
+    await expect(getFavoriteClimbUuidsLocal(db, 'kilter', 40)).resolves.toEqual(['mine']);
+  });
+
+  it("does not remove another local profile owner's favorite", async () => {
+    await db.runAsync(
+      `INSERT INTO user_favorites (board_name, climb_uuid, angle, user_id, created_at)
+       VALUES ('kilter', 'climb-local', 40, 'local:profile-2', '2026-01-01')`,
+    );
+    await stampLocalUserId(db, 'local:profile-1');
+
+    await removeFavoriteLocal(db, favorite, 'local-only');
+
+    expect(await db.getAllAsync<Row>('SELECT * FROM user_favorites')).toHaveLength(1);
+    expect(await db.getAllAsync<Row>('SELECT * FROM pending_mutations')).toHaveLength(0);
+    expect(reportEnqueueSuppressedMock).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects local reads and writes until the owner stamp exists', async () => {
+    await expect(getFavoriteClimbUuidsLocal(db, 'kilter', 40)).rejects.toThrow('owner is not initialized');
+    await expect(addFavoriteLocal(db, favorite, 'local-only')).rejects.toThrow('owner is not initialized');
+    await expect(removeFavoriteLocal(db, favorite, 'local-only')).rejects.toThrow('owner is not initialized');
+    expect(await db.getAllAsync<Row>('SELECT * FROM user_favorites')).toHaveLength(0);
+    expect(await db.getAllAsync<Row>('SELECT * FROM pending_mutations')).toHaveLength(0);
+  });
+});
+
+describe('local-only playlists', () => {
+  beforeEach(async () => {
+    await stampLocalUserId(db, 'local:profile-1');
+  });
+
+  it('creates and lists a private owner-scoped playlist without queue or telemetry', async () => {
+    const playlist = await createPlaylistLocal(
+      withFailingTransactions(db, 1, LOCK_MESSAGE),
+      { boardType: 'kilter', layoutId: 1, name: 'Projects', description: 'Private' },
+      'playlist-local-1',
+    );
+
+    expect(playlist).toMatchObject({
+      uuid: 'playlist-local-1',
+      name: 'Projects',
+      description: 'Private',
+      isPublic: false,
+      userRole: 'owner',
+      climbCount: 0,
+    });
+    await expect(getPlaylistsLocal(db)).resolves.toEqual([playlist]);
+    expect(await db.getAllAsync<Row>('SELECT * FROM pending_mutations')).toHaveLength(0);
+    expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  it('adds and removes membership locally without queue or telemetry', async () => {
+    await createPlaylistLocal(db, { boardType: 'kilter', layoutId: 1, name: 'Projects' }, 'playlist-local-1');
+
+    await expect(
+      addClimbToPlaylistLocal(db, { playlistId: 'playlist-local-1', climbUuid: 'climb-1', angle: 40 }),
+    ).resolves.toBe(false);
+    await expect(getPlaylistMembershipsLocal(db)).resolves.toEqual(
+      new Map([['climb-1', new Set(['playlist-local-1'])]]),
+    );
+    expect((await getPlaylistsLocal(db))[0]?.climbCount).toBe(1);
+
+    await expect(
+      removeClimbFromPlaylistLocal(db, { playlistId: 'playlist-local-1', climbUuid: 'climb-1' }),
+    ).resolves.toBe(true);
+    await expect(getPlaylistMembershipsLocal(db)).resolves.toEqual(new Map());
+    expect(await db.getAllAsync<Row>('SELECT * FROM pending_mutations')).toHaveLength(0);
+    expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  it('reads and reorders playlist climbs from the downloaded catalog without network work', async () => {
+    await db.runAsync(
+      `INSERT INTO board_climbs
+         (uuid, board_type, layout_id, setter_username, name, description, frames, is_draft, compatible_size_ids)
+       VALUES ('climb-1', 'kilter', 1, 'setter', 'First', 'One', 'frames-1', 0, '[1]'),
+              ('climb-2', 'kilter', 1, 'setter', 'Second', 'Two', 'frames-2', 0, '[1]')`,
+    );
+    await createPlaylistLocal(db, { boardType: 'kilter', layoutId: 1, name: 'Projects' }, 'playlist-local-1');
+    await addClimbToPlaylistLocal(db, { playlistId: 'playlist-local-1', climbUuid: 'climb-1', angle: 40 });
+    await addClimbToPlaylistLocal(db, { playlistId: 'playlist-local-1', climbUuid: 'climb-2', angle: 45 });
+
+    await expect(getPlaylistLocal(db, 'playlist-local-1')).resolves.toMatchObject({ climbCount: 2 });
+    await expect(getPlaylistClimbsLocal(db, { playlistId: 'playlist-local-1', pageSize: 1 })).resolves.toMatchObject({
+      climbs: [{ uuid: 'climb-1', angle: 40 }],
+      totalCount: 2,
+      hasMore: true,
+    });
+    await expect(
+      reorderPlaylistClimbLocal(db, { playlistId: 'playlist-local-1', climbUuid: 'climb-2', newIndex: 0 }),
+    ).resolves.toBe(true);
+    await expect(getPlaylistClimbsLocal(db, { playlistId: 'playlist-local-1' })).resolves.toMatchObject({
+      climbs: [
+        { uuid: 'climb-2', angle: 45 },
+        { uuid: 'climb-1', angle: 40 },
+      ],
+      totalCount: 2,
+      hasMore: false,
+    });
+    expect(await db.getAllAsync<Row>('SELECT * FROM pending_mutations')).toHaveLength(0);
+    expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  it('deletes the playlist and its membership locally', async () => {
+    await createPlaylistLocal(db, { boardType: 'kilter', layoutId: 1, name: 'Projects' }, 'playlist-local-1');
+    await addClimbToPlaylistLocal(db, { playlistId: 'playlist-local-1', climbUuid: 'climb-1', angle: 40 });
+
+    await expect(deletePlaylistLocal(db, 'playlist-local-1')).resolves.toBe(true);
+
+    expect(await db.getAllAsync<Row>('SELECT * FROM playlists')).toHaveLength(0);
+    expect(await db.getAllAsync<Row>('SELECT * FROM playlist_climbs')).toHaveLength(0);
+    expect(await db.getAllAsync<Row>('SELECT * FROM pending_mutations')).toHaveLength(0);
+  });
+
+  it('rejects every playlist operation when the database has no local owner', async () => {
+    const unstampedDb = createTestDatabase();
+    await runMigrations(unstampedDb);
+
+    await expect(getPlaylistsLocal(unstampedDb)).rejects.toThrow('owner is not initialized');
+    await expect(getPlaylistLocal(unstampedDb, 'playlist-local-1')).rejects.toThrow('owner is not initialized');
+    await expect(getPlaylistClimbsLocal(unstampedDb, { playlistId: 'playlist-local-1' })).rejects.toThrow(
+      'owner is not initialized',
+    );
+    await expect(
+      createPlaylistLocal(unstampedDb, { boardType: 'kilter', layoutId: 1, name: 'Projects' }, 'playlist-local-1'),
+    ).rejects.toThrow('owner is not initialized');
+    await expect(deletePlaylistLocal(unstampedDb, 'playlist-local-1')).rejects.toThrow('owner is not initialized');
+    expect(await unstampedDb.getAllAsync<Row>('SELECT * FROM playlists')).toHaveLength(0);
+  });
+});
+
+describe('account Work Offline tick edits', () => {
+  beforeEach(async () => {
+    await stampLocalUserId(db, 'account-user-1');
+    await db.runAsync(
+      `INSERT INTO boardsesh_ticks
+         (uuid, user_id, board_type, climb_uuid, angle, status, attempt_count, comment, climbed_at, created_at, updated_at)
+       VALUES ('account-tick-1', 'account-user-1', 'kilter', 'climb-1', 40, 'attempt', 1, '',
+               '2026-08-30T00:00:00.000Z', '2026-08-30T00:00:00.000Z', '2026-08-30T00:00:00.000Z')`,
+    );
+  });
+
+  it('updates SQLite and queues account delivery without performing network work', async () => {
+    await expect(
+      updateTickLocal(db, 'account-tick-1', { status: 'send', comment: 'done' }, 'account', 'update-key'),
+    ).resolves.toMatchObject({ uuid: 'account-tick-1', status: 'send', comment: 'done' });
+
+    expect(
+      await db.getFirstAsync<Row>('SELECT status, comment FROM boardsesh_ticks WHERE uuid = ?', ['account-tick-1']),
+    ).toMatchObject({ status: 'send', comment: 'done' });
+    expect(await db.getFirstAsync<Row>('SELECT operation, idempotency_key FROM pending_mutations')).toMatchObject({
+      operation: 'update',
+      idempotency_key: 'update-key',
+    });
+  });
+
+  it('deletes SQLite and queues account delivery without performing network work', async () => {
+    await expect(deleteTickLocal(db, 'account-tick-1', 'account', 'delete-key')).resolves.toBe(true);
+
+    expect(
+      await db.getFirstAsync<Row>('SELECT uuid FROM boardsesh_ticks WHERE uuid = ?', ['account-tick-1']),
+    ).toBeNull();
+    expect(await db.getFirstAsync<Row>('SELECT operation, idempotency_key FROM pending_mutations')).toMatchObject({
+      operation: 'delete',
+      idempotency_key: 'delete-key',
+    });
+  });
+});
+
+describe('account Work Offline playlists', () => {
+  beforeEach(async () => {
+    await stampLocalUserId(db, 'account-user-1');
+  });
+
+  it('queues private playlist CRUD and membership changes for account delivery', async () => {
+    await createPlaylistLocal(
+      db,
+      { boardType: 'kilter', layoutId: 1, name: 'Projects' },
+      'playlist-account-1',
+      'account',
+    );
+    await addClimbToPlaylistLocal(db, { playlistId: 'playlist-account-1', climbUuid: 'climb-1', angle: 40 }, 'account');
+    await reorderPlaylistClimbLocal(
+      db,
+      { playlistId: 'playlist-account-1', climbUuid: 'climb-1', newIndex: 0 },
+      'account',
+    );
+
+    expect(await db.getAllAsync<Row>('SELECT table_name, operation FROM pending_mutations ORDER BY id')).toEqual([
+      expect.objectContaining({ table_name: 'playlists', operation: 'create' }),
+      expect.objectContaining({ table_name: 'playlist_climbs', operation: 'create' }),
+      expect.objectContaining({ table_name: 'playlist_climbs', operation: 'update' }),
+    ]);
+
+    await removeClimbFromPlaylistLocal(db, { playlistId: 'playlist-account-1', climbUuid: 'climb-1' }, 'account');
+    await deletePlaylistLocal(db, 'playlist-account-1', 'account');
+
+    expect(await db.getAllAsync<Row>('SELECT * FROM playlists')).toHaveLength(0);
+    expect(
+      await db.getAllAsync<Row>(
+        `SELECT table_name, operation FROM pending_mutations
+         WHERE operation = 'delete' ORDER BY id`,
+      ),
+    ).toEqual([
+      expect.objectContaining({ table_name: 'playlist_climbs', operation: 'delete' }),
+      expect.objectContaining({ table_name: 'playlists', operation: 'delete' }),
+    ]);
+  });
+
+  it('requires going online before publishing a playlist', async () => {
+    await createPlaylistLocal(
+      db,
+      { boardType: 'kilter', layoutId: 1, name: 'Projects' },
+      'playlist-account-1',
+      'account',
+    );
+
+    await expect(
+      updatePlaylistLocal(db, { playlistId: 'playlist-account-1', isPublic: true }, 'account'),
+    ).rejects.toThrow('Go online to publish a playlist');
+
+    await expect(getPlaylistLocal(db, 'playlist-account-1')).resolves.toMatchObject({ isPublic: false });
   });
 });
 

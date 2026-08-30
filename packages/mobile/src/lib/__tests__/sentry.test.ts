@@ -23,6 +23,7 @@ import {
   applyErrorContextToScope,
   applyLiveActivityIntentDiagnosticToScope,
   captureEnabledLiveActivityIntentDiagnostic,
+  captureEnabledErrorToSentry,
   applyOtaTagsToScope,
   captureLiveActivityIntentDiagnostic,
   captureToSentry,
@@ -34,7 +35,9 @@ import {
   isSentryEnabled,
   toSentryTag,
   LIVE_ACTIVITY_INTENT_INTERRUPTED_FINGERPRINT,
+  initializeConfiguredSentryIfAllowed,
 } from '../sentry';
+import { setNetworkPolicy } from '../network-policy';
 
 describe('isSentryEnabled', () => {
   it('is false in dev / test (no DSN + __DEV__)', () => {
@@ -48,6 +51,26 @@ describe('captureToSentry (disabled build)', () => {
     expect(Sentry.withScope).not.toHaveBeenCalled();
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });
+});
+
+describe('Sentry network policy', () => {
+  it.each(['local-catalog-only', 'account-offline'] as const)(
+    'makes initialization and enabled error capture zero-call sinks in %s mode',
+    (policy) => {
+      const initialize = vi.fn();
+      const withScope = vi.fn();
+      const captureException = vi.fn();
+      setNetworkPolicy(policy);
+
+      expect(initializeConfiguredSentryIfAllowed(true, initialize)).toBe(false);
+      captureEnabledErrorToSentry(new Error('blocked'), undefined, withScope, captureException);
+
+      expect(initialize).not.toHaveBeenCalled();
+      expect(withScope).not.toHaveBeenCalled();
+      expect(captureException).not.toHaveBeenCalled();
+      setNetworkPolicy('online');
+    },
+  );
 });
 
 describe('Live Activity intent diagnostic reporting', () => {

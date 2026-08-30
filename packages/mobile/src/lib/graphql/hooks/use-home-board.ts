@@ -42,11 +42,12 @@ function boardActivity(board: UserBoard): number {
  * explicit choice (it also drives BLE and the climb list); the home board is a
  * feed-scoping concept layered on top.
  */
-export function useHomeBoard(): HomeBoardResult {
+export function useHomeBoard(options?: { enabled?: boolean }): HomeBoardResult {
   const { isAuthenticated } = useAuth();
+  const enabled = isAuthenticated && (options?.enabled ?? true);
   const { data: activeBoard, isLoading: activeBoardLoading } = useActiveBoard();
-  const { data: myBoardsConn, isLoading: boardsLoading } = useMyBoards(undefined, { enabled: isAuthenticated });
-  const { data: profile, isLoading: profileLoading } = useProfile({ enabled: isAuthenticated });
+  const { data: myBoardsConn, isLoading: boardsLoading } = useMyBoards(undefined, { enabled });
+  const { data: profile, isLoading: profileLoading } = useProfile({ enabled });
 
   const boards = myBoardsConn?.boards;
   // Only pay for the per-board-type tick scan when it can actually change the
@@ -56,7 +57,7 @@ export function useHomeBoard(): HomeBoardResult {
   // just needs the most-logged board type. This keeps the home-load critical
   // path to one request instead of a userTicks fetch per board type.
   const { data: tickCountsByBoard, isLoading: ticksLoading } = useUserTickCountsByBoard(
-    needsTicks ? profile?.id : undefined,
+    enabled && needsTicks ? profile?.id : undefined,
   );
 
   const board = useMemo<UserBoard | null>(() => {

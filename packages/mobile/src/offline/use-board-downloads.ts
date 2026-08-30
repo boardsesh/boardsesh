@@ -20,6 +20,16 @@ import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncPro
 import { triggerSync, drainMutationQueue, hasUsableInternetConnection } from './offline-sync-adapter';
 import { useSnapshotSource } from './use-snapshot-source';
 import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
+import { LOCAL_ACCESS_MODE } from '@boardsesh/party-profile';
+import { useAuth } from '../providers/auth-provider';
+
+const rejectCatalogGraphql: GraphQLFetch = async () => {
+  throw new Error('Catalog-only download attempted an authenticated GraphQL request');
+};
+
+const rejectCatalogDrain = async (): Promise<void> => {
+  throw new Error('Catalog-only download attempted to drain personal mutations');
+};
 
 /** Which surface flipped the switch, for the Toggled event (issue #4316). */
 export type ToggleSource = 'manage' | 'storage' | 'more' | 'adopt' | 'onboarding';
@@ -48,14 +58,19 @@ export function useBoardDownloads() {
   // which is after the FIRST init attempt whatever it did — so on a contended launch
   // it has no tables yet and a snapshot import would land in a half-set-up file.
   const schemaReady = useOfflineSchemaReady();
+  const { accessMode } = useAuth();
+  // Local mode never drains or reaches authenticated GraphQL, even when the
+  // installation still has a valid account token for switching back later.
+  const catalogOnly = accessMode === LOCAL_ACCESS_MODE;
 
   const graphqlFetch = useMemo<GraphQLFetch>(
-    () => (query, variables) => getOfflineSyncHttpClient().request(query, variables),
-    [],
+    () =>
+      catalogOnly ? rejectCatalogGraphql : (query, variables) => getOfflineSyncHttpClient().request(query, variables),
+    [catalogOnly],
   );
   const drainQueue = useCallback(
-    () => drainMutationQueue(db, queryClient, graphqlFetch),
-    [db, queryClient, graphqlFetch],
+    () => (catalogOnly ? rejectCatalogDrain() : drainMutationQueue(db, queryClient, graphqlFetch)),
+    [catalogOnly, db, queryClient, graphqlFetch],
   );
 
   const startDownloadCycle = useCallback(() => {
@@ -68,8 +83,9 @@ export function useBoardDownloads() {
       onBootstrapMetadataChanged: notifyBootstrapMetadataChanged,
       onScopeDownloadComplete: notifyScopeDownloadComplete,
       snapshotSource,
+      catalogOnly,
     });
-  }, [db, queryClient, graphqlFetch, drainQueue, snapshotSource]);
+  }, [catalogOnly, db, queryClient, graphqlFetch, drainQueue, snapshotSource]);
 
   // A tap that arrives before the schema is stamped is HELD, not dropped: the
   // settings writes below are pure preference state and land immediately, and this
@@ -108,7 +124,7 @@ export function useBoardDownloads() {
         reachabilityRetryTimeoutsRef.current.add(timeout);
       };
 
-      void hasUsableInternetConnection()
+      void hasUsableInternetConnection(catalogOnly ? 'catalog' : 'backend')
         .then((isReachable) => {
           if (!mountedRef.current || reachabilityProbeGenerationRef.current !== generation) return;
           if (!isReachable) {
@@ -129,7 +145,7 @@ export function useBoardDownloads() {
     }
 
     runProbe(0);
-  }, [startDownloadCycle]);
+  }, [catalogOnly, startDownloadCycle]);
 
   // The enable half both entry points share: flip the per-scope setting, persist
   // the attribution, emit Toggled, and snapshot the board identities while we
@@ -159,17 +175,19 @@ export function useBoardDownloads() {
         // Persisted, then consumed when the download actually starts — which can
         // be a later app launch entirely if the board was enabled with no signal,
         // which is exactly what the arm path below leaves behind.
-        rememberDownloadTrigger(scopeKey, trigger);
-        track(SHARED_EVENTS.OfflineBoardToggled, {
-          scopeKey,
-          enabled: true,
-          source,
-          offlineEngineEnabled: isOfflineEngineEnabled(),
-        });
+        if (!catalogOnly) {
+          rememberDownloadTrigger(scopeKey, trigger);
+          track(SHARED_EVENTS.OfflineBoardToggled, {
+            scopeKey,
+            enabled: true,
+            source,
+            offlineEngineEnabled: isOfflineEngineEnabled(),
+          });
+        }
       }
-      rememberOfflineBoards(list);
+      if (!catalogOnly) rememberOfflineBoards(list);
     },
-    [],
+    [catalogOnly],
   );
 
   const enableBoardsOffline = useCallback(
@@ -234,5 +252,5 @@ export function useBoardDownloads() {
     [markBoardsEnabled, startDownloadCycleIfReachable],
   );
 
-  return { enableBoardsOffline, armBoardsOffline, retryFastDownload };
+  return { enableBoardsOffline, armBoardsOffline, retryFastDownload, syncNow: startDownloadCycle };
 }

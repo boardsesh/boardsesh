@@ -5,6 +5,7 @@ import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
 import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { BACKEND_URL, CLIMB_SHARE_BASE_URL } from '../lib/env';
+import { isNetworkAllowed } from '../lib/network-policy';
 
 type ShareClimbArgs = {
   climb: Climb | null;
@@ -88,7 +89,9 @@ export function useShareClimb({ climb, boardName, layoutId, sizeId, setIds, angl
     })}`;
 
     const ogImageUrl = buildOgImageUrl({ boardName, layoutId, sizeId, setIds, frames: climb.frames });
-    prewarmShareCaches(ogImageUrl ? [url, ogImageUrl] : [url]);
+    // The OS share sheet is local; cache priming is not. Keep both prewarm
+    // requests behind the hard policy used by every other backend request.
+    if (isNetworkAllowed('backend')) prewarmShareCaches(ogImageUrl ? [url, ogImageUrl] : [url]);
 
     await Share.share(Platform.OS === 'ios' ? { message: climb.name, url } : { message: `${climb.name}\n${url}` });
   }, [climb, boardName, layoutId, sizeId, setIds, angle]);

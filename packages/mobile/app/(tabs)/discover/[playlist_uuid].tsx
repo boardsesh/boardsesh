@@ -8,6 +8,7 @@ import {
   usePlaylistClimbs,
   usePlaylistMutations,
   usePlaylistItemMutations,
+  usePlaylistsAdapter,
   type PlaylistClimbsBoardInput,
 } from '@boardsesh/playlists-react';
 import type { Climb } from '@boardsesh/queue';
@@ -63,7 +64,10 @@ export default function PlaylistDetail() {
   const navigation = useNavigation();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { isAuthenticated } = useAuth();
+  const { accessCapabilities } = useAuth();
+  const playlistsAdapter = usePlaylistsAdapter();
+  const localLibrary = accessCapabilities.useLocalPlaylists ? playlistsAdapter.localLibrary : undefined;
+  const canUseAccountPlaylistFeatures = accessCapabilities.useAccountFeatures;
   const { showToast } = useToast();
   const { systemColors, brandColors } = useTheme();
   const { updatePlaylist, deletePlaylist, pinPlaylist, unpinPlaylist, followPlaylist, unfollowPlaylist } =
@@ -80,6 +84,7 @@ export default function PlaylistDetail() {
   } = useQuery({
     queryKey: ['playlist', playlistUuid],
     queryFn: async () => {
+      if (localLibrary) return localLibrary.get(playlistUuid);
       const response = await getHttpClient().request<GetPlaylistQueryResponse, GetPlaylistQueryVariables>(
         GET_PLAYLIST,
         {
@@ -135,6 +140,10 @@ export default function PlaylistDetail() {
       };
       // See the smart-playlist screen: passing the signal is what turns
       // "stop paging" into "cancel the request that is already out".
+      if (localLibrary) {
+        const localResult = await localLibrary.listClimbs(input);
+        return { climbs: toQueueClimbs(localResult.climbs), hasMore: localResult.hasMore };
+      }
       const response = await getHttpClient().request<GetPlaylistClimbsQueryResponse, { input: GetPlaylistClimbsInput }>(
         {
           document: GET_PLAYLIST_CLIMBS,
@@ -147,7 +156,7 @@ export default function PlaylistDetail() {
         hasMore: response.playlistClimbs.hasMore,
       };
     },
-    [playlistUuid],
+    [localLibrary, playlistUuid],
   );
 
   // Prefer the active board for row rendering; mixed-board climbs resolve their
@@ -539,7 +548,7 @@ export default function PlaylistDetail() {
         return (
           <PlaylistOwnerToolbar
             isPinned={isPinned}
-            onTogglePin={handleTogglePin}
+            onTogglePin={canUseAccountPlaylistFeatures ? handleTogglePin : undefined}
             onEdit={enterEditMode}
             onDelete={handleDelete}
           />
@@ -547,7 +556,7 @@ export default function PlaylistDetail() {
       }
       return (
         <>
-          {isAuthenticated && isFollowable ? (
+          {canUseAccountPlaylistFeatures && isFollowable ? (
             <PlaylistFollowButton
               isFollowing={isFollowing}
               onToggle={handleToggleFollow}
@@ -555,7 +564,7 @@ export default function PlaylistDetail() {
               collapsed={collapsed}
             />
           ) : null}
-          {isAuthenticated ? (
+          {canUseAccountPlaylistFeatures ? (
             <GlassIconButton
               iconName={isPinned ? 'pin.fill' : 'pin'}
               iconColor={systemColors.label}
@@ -579,7 +588,7 @@ export default function PlaylistDetail() {
       handleTogglePin,
       enterEditMode,
       handleDelete,
-      isAuthenticated,
+      canUseAccountPlaylistFeatures,
       isFollowable,
       isFollowing,
       handleToggleFollow,
@@ -697,7 +706,7 @@ export default function PlaylistDetail() {
       <PlaylistActionsMenu
         visible={actionsVisible}
         isPinned={isPinned}
-        onTogglePin={menuTogglePin}
+        onTogglePin={canUseAccountPlaylistFeatures ? menuTogglePin : undefined}
         onAddClimbs={canAddClimbs ? menuAddClimbs : undefined}
         onEditDetails={menuEditDetails}
         onEdit={menuEnterEdit}
@@ -710,6 +719,7 @@ export default function PlaylistDetail() {
         visible={editVisible}
         submitting={savingEdit}
         playlist={playlist ?? null}
+        allowPublic={canUseAccountPlaylistFeatures}
         submitError={editError}
         onSubmit={handleEditSubmit}
         onClose={() => {
@@ -724,7 +734,7 @@ export default function PlaylistDetail() {
         sheetRef={commentSheetRef}
         entityType="playlist_climb"
         entityId={discussionOpen ? discussionEntityId : null}
-        canComment={isAuthenticated}
+        canComment={canUseAccountPlaylistFeatures}
         onClose={closeDiscussion}
       />
     </>

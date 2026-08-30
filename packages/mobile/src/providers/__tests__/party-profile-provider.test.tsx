@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import { resolveAccessCapabilities } from '@boardsesh/party-profile';
 
 vi.mock('expo-secure-store', () => {
   let storage: Record<string, string> = {};
@@ -75,11 +76,16 @@ vi.mock('../../lib/graphql/hooks/use-integrations', () => ({ useIntegrationStatu
 // identify/alias/reset are exercised for real elsewhere in this suite (they're
 // no-ops with no PostHog key in the test env); setPersonProperties is mocked
 // here so the cohort-person-properties effect's call is directly assertable.
-const { setPersonPropertiesMock } = vi.hoisted(() => ({ setPersonPropertiesMock: vi.fn() }));
+const { identifyMock, aliasMock, resetMock, setPersonPropertiesMock } = vi.hoisted(() => ({
+  identifyMock: vi.fn(),
+  aliasMock: vi.fn(),
+  resetMock: vi.fn(),
+  setPersonPropertiesMock: vi.fn(),
+}));
 vi.mock('../../lib/analytics', () => ({
-  identify: vi.fn(),
-  alias: vi.fn(),
-  reset: vi.fn(),
+  identify: identifyMock,
+  alias: aliasMock,
+  reset: resetMock,
   setPersonProperties: setPersonPropertiesMock,
 }));
 
@@ -89,9 +95,23 @@ import { useAuth } from '../auth-provider';
 const useAuthMock = vi.mocked(useAuth);
 
 function makeAuthMock(overrides: Partial<ReturnType<typeof useAuth>> = {}): ReturnType<typeof useAuth> {
+  const isAuthenticated = overrides.isAuthenticated ?? false;
+  const accessMode = overrides.accessMode ?? 'account';
   return {
-    isAuthenticated: false,
+    isAuthenticated,
     isLoading: false,
+    accessMode,
+    accessCapabilities: resolveAccessCapabilities({
+      accessMode,
+      isAuthenticated,
+      localCatalogReady: false,
+      platform: 'native',
+    }),
+    setAccessMode: vi.fn(),
+    prepareAccountAuthentication: vi.fn(),
+    localCatalogReady: false,
+    setLocalCatalogReady: vi.fn(),
+    setLocalOwnerReady: vi.fn(),
     signInWithApple: vi.fn(),
     signInWithGoogle: vi.fn(),
     signInWithGoogleWeb: vi.fn(),
@@ -111,6 +131,9 @@ describe('PartyProfileProvider', () => {
     useProfileMock.mockReturnValue({ data: undefined });
     useHomeBoardMock.mockReturnValue({ board: null, boards: [], isResolving: false });
     useIntegrationStatusesMock.mockReturnValue({ data: undefined });
+    identifyMock.mockClear();
+    aliasMock.mockClear();
+    resetMock.mockClear();
     setPersonPropertiesMock.mockClear();
     useAuthMock.mockReset();
     useAuthMock.mockReturnValue(makeAuthMock());
@@ -263,6 +286,26 @@ describe('PartyProfileProvider', () => {
     const { result } = renderHook(() => usePartyProfile(), { wrapper });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
+    expect(setPersonPropertiesMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps the local UUID but disables account queries and cohort effects in local mode', async () => {
+    useAuthMock.mockReturnValue(makeAuthMock({ isAuthenticated: true, accessMode: 'local' }));
+    useProfileMock.mockReturnValue({
+      data: { id: 'retained-user', email: 'retained@example.com', displayName: 'Must stay hidden' },
+    });
+
+    const wrapper = ({ children }: { children: ReactNode }) => <PartyProfileProvider>{children}</PartyProfileProvider>;
+    const { result } = renderHook(() => usePartyProfile(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.profile?.id).toBe('test-uuid');
+    expect(useProfileMock).toHaveBeenCalledWith({ enabled: false });
+    expect(useHomeBoardMock).toHaveBeenCalledWith({ enabled: false });
+    expect(useIntegrationStatusesMock).toHaveBeenCalledWith({ enabled: false });
+    expect(identifyMock).not.toHaveBeenCalled();
+    expect(aliasMock).not.toHaveBeenCalled();
+    expect(resetMock).not.toHaveBeenCalled();
     expect(setPersonPropertiesMock).not.toHaveBeenCalled();
   });
 

@@ -8,6 +8,28 @@ Offline data layer for the React Native mobile app. Uses `expo-sqlite` for the l
 
 > **Where the code lives.** The engine (mutation queue + drainer, pull client, checkpoints, table config, SQLite DDL/migrations) is the platform-free package **`@boardsesh/offline-sync`** (`packages/shared/offline-sync`). The mobile app binds its platform seams — expo-sqlite handle, NetInfo/AppState triggers, `onlineManager` connectivity, Sentry telemetry — in `packages/mobile/src/offline/offline-sync-adapter.ts`; mobile code calls `drainMutationQueue`/`startSyncScheduler`/`triggerSync`/`pullSync` via that adapter only, never from the package directly. Expo-specific pieces (DB lifecycle/`connection.ts`, local read queries, the sync-status store, hooks, the bridge component) stay in `packages/mobile`.
 
+## Login-free profiles and Work Offline
+
+The native app supports two isolated SQLite profiles. Account data lives in `boardsesh.db`; a login-free
+profile lives in `boardsesh-local.db`. Expo web and the deployed Next.js app remain account-required for
+logging ascents. Both files use the platform's protected app storage. This is provider/device protection,
+not SQLCipher database encryption.
+
+A login-free profile cannot enter the climbing UI until its selected `(boardType, layoutId, sizeId)` scope
+has a durable complete-catalog marker. The catalog includes every set compatible with that size and comes
+only from the public snapshot path; login-free mode never uses an auth token, personal GraphQL, telemetry,
+or an outbox. Once ready, it supports local climb browse/search, board control, ticks, logbook/stats,
+favorites, and private playlists. Climb authoring and social/account actions remain sign-in-only.
+
+Signed-in climbers can enable **Work Offline** against the account database. New ticks, favorites, and
+private-playlist changes commit to SQLite and wait in the normal mutation outbox. Returning online first
+shows pending/dead-letter counts, then resumes delivery after confirmation. Public/social playlist actions
+still require online mode.
+
+Login-free profiles can manually export a personal-only SQLite backup through the iOS document provider or
+Android Storage Access Framework. Backups exclude catalogs, checkpoints, outbox rows, and social data. A
+later sign-in asks before copying local rows into the account outbox, and never deletes the local copy.
+
 This document records the evaluation of four approaches and why `expo-sqlite` + custom mutation queue is the recommendation. The plan was refined through 4 rounds of review by paired Opus agents (8 review agents total, 100+ findings).
 
 ## Alternatives evaluated

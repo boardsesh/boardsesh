@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -30,6 +30,7 @@ import { RECLAIMABLE_VISIBLE_BYTES } from '../../../src/db/storage-usage';
 import {
   getDeadLetterCount,
   getDeadLetters,
+  getOutboxSummary,
   retryDeadLetter,
   measureReclaimableBytes,
   type GraphQLFetch,
@@ -59,9 +60,14 @@ import {
 } from '../../../src/providers/feature-flags-provider';
 import { replayOnboarding } from '../../../src/lib/onboarding/onboarding-storage';
 import { replayBoardLookStep } from '../../../src/lib/board-render/replay-board-look-step';
-import { reportError } from '../../../src/lib/error-reporting';
+import { reportError, reportHandledError } from '../../../src/lib/error-reporting';
 import { AUTO_DISCONNECT_TIMEOUT_OPTIONS } from '../../../src/lib/ble/auto-disconnect-controller';
 import { useAutoDisconnectTimeoutLabels } from '../../../src/components/ble/use-auto-disconnect-timeout-labels';
+import { useAuth } from '../../../src/providers/auth-provider';
+import { useConfirm } from '../../../src/providers/dialog-provider';
+import { setAccountWorkOffline } from '../../../src/lib/network-policy';
+import { createLocalProfileBackupFile, restoreLocalProfileBackupFile } from '../../../src/lib/local-profile-backup';
+import { transitionWorkOffline } from '../../../src/lib/work-offline-transition';
 
 // Translations live in the shared catalog at packages/shared/i18n/locales/<locale>/.
 // We deep-link to the active language's folder so a community member lands on the
@@ -74,6 +80,204 @@ const GITHUB_LOCALES_TREE_URL = 'https://github.com/boardsesh/boardsesh/tree/mai
 // to the platform-split <MoreForm /> — a native SwiftUI Form on iOS, a Compose
 // LazyColumn on Android. The native tree renders strings + invokes handlers only.
 export default function MoreScreen() {
+  const { accessCapabilities } = useAuth();
+  return accessCapabilities.useAccountFeatures ? <AccountMoreScreen /> : <LocalMoreScreen />;
+}
+
+function LocalMoreScreen() {
+  const { isAuthenticated, prepareAccountAuthentication } = useAuth();
+  const db = useSQLiteContext();
+  const confirm = useConfirm();
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+  const [backupInProgress, setBackupInProgress] = useState(false);
+  const [restoreInProgress, setRestoreInProgress] = useState(false);
+  const { themeOverride, setThemeOverride } = useTheme();
+  const { localePreference, setLocalePreference } = useLocalePreference();
+  const { gradeFormat, setGradeFormat } = useGradeFormat();
+  const { t } = useTranslation('common');
+  const { t: tProfile } = useTranslation('profile');
+  const { t: tPlaylists } = useTranslation('playlists');
+
+  const appearanceOptions: { key: ThemeOverride; label: string }[] = [
+    { key: 'system', label: t('mobile.more.appearance.system') },
+    { key: 'light', label: t('mobile.more.appearance.light') },
+    { key: 'dark', label: t('mobile.more.appearance.dark') },
+  ];
+  const gradeFormatOptions: { key: GradeDisplayFormat; label: string }[] = [
+    { key: 'v-grade', label: t('mobile.more.gradeFormat.vGrade') },
+    { key: 'font', label: t('mobile.more.gradeFormat.font') },
+    { key: 'both', label: t('mobile.more.gradeFormat.both') },
+  ];
+  const languageOptions: { key: LocaleOverride; label: string }[] = [
+    { key: 'system', label: t('mobile.more.language.system') },
+    ...SUPPORTED_LOCALES.map((locale) => ({ key: locale, label: LOCALE_LABELS[locale] })),
+  ];
+
+  const handleUseAccount = async (): Promise<void> => {
+    try {
+      await prepareAccountAuthentication();
+      router.replace(isAuthenticated ? '/(tabs)/home' : '/auth/login');
+    } catch (error) {
+      reportHandledError(error, { tags: { source: 'access-mode', mode: 'account' } });
+      showToast(tProfile('mobile.local.accountSwitchFailed'), 'error');
+    }
+  };
+
+  const handleLocalBackup = async (): Promise<void> => {
+    if (backupInProgress) return;
+    setBackupInProgress(true);
+    try {
+      const backup = await createLocalProfileBackupFile(db);
+      if (backup === null) return;
+      showToast(
+        t('mobile.more.offline.backupComplete', { fileName: backup.fileName, tickCount: backup.ticks }),
+        'success',
+      );
+    } catch (error) {
+      reportHandledError(error, { tags: { source: 'local-profile-backup', kind: 'provider-write' } });
+      showToast(t('mobile.more.offline.backupFailed'), 'error');
+    } finally {
+      setBackupInProgress(false);
+    }
+  };
+
+  const handleLocalRestore = async (): Promise<void> => {
+    if (restoreInProgress) return;
+    const approved = await confirm({
+      title: t('mobile.more.offline.restoreConfirmTitle'),
+      message: t('mobile.more.offline.restoreConfirmMessage'),
+      confirmLabel: t('mobile.more.offline.restoreConfirm'),
+      cancelLabel: t('mobile.more.offline.restoreCancel'),
+    });
+    if (!approved) return;
+
+    setRestoreInProgress(true);
+    try {
+      const restored = await restoreLocalProfileBackupFile(db);
+      if (restored === null) return;
+      // Board React remembers which climb UUIDs it already loaded outside the
+      // query payload; removal resets that coverage index after imported ticks.
+      queryClient.removeQueries({ queryKey: ['logbook'] });
+      await queryClient.invalidateQueries();
+      showToast(t('mobile.more.offline.restoreComplete', { tickCount: restored.ticks }), 'success');
+    } catch (error) {
+      reportHandledError(error, { tags: { source: 'local-profile-backup', kind: 'provider-restore' } });
+      showToast(t('mobile.more.offline.restoreFailed'), 'error');
+    } finally {
+      setRestoreInProgress(false);
+    }
+  };
+
+  const model: MoreFormModel = {
+    sections: [
+      {
+        key: 'localProfile',
+        title: tProfile('mobile.local.moreTitle'),
+        footer: tProfile('mobile.local.moreDescription'),
+        rows: [
+          {
+            kind: 'button',
+            key: 'useAccount',
+            label: tProfile('mobile.local.useAccount'),
+            onPress: () => void handleUseAccount(),
+          },
+        ],
+      },
+      {
+        key: 'localBackup',
+        title: t('mobile.more.offline.backupTitle'),
+        footer: t('mobile.more.offline.backupDescription'),
+        rows: [
+          {
+            kind: 'button',
+            key: 'backupLocalProfile',
+            label: backupInProgress ? t('mobile.more.offline.backingUp') : t('mobile.more.offline.backupNow'),
+            onPress: () => void handleLocalBackup(),
+          },
+          {
+            kind: 'button',
+            key: 'restoreLocalProfile',
+            label: restoreInProgress ? t('mobile.more.offline.restoring') : t('mobile.more.offline.restoreBackup'),
+            onPress: () => void handleLocalRestore(),
+          },
+        ],
+      },
+      {
+        key: 'localLibrary',
+        title: t('mobile.more.library'),
+        rows: [
+          {
+            kind: 'nav',
+            key: 'allPlaylists',
+            label: tPlaylists('library.allPlaylists.title'),
+            icon: 'playlists',
+            onPress: () => router.push('/(tabs)/discover/all'),
+          },
+        ],
+      },
+      {
+        key: 'appearance',
+        title: t('mobile.more.appearance.title'),
+        rows: [
+          {
+            kind: 'segmented',
+            key: 'appearance',
+            label: t('mobile.more.appearance.title'),
+            options: appearanceOptions,
+            selectedKey: themeOverride,
+            onSelect: (key) => {
+              const next = appearanceOptions.find((option) => option.key === key);
+              if (next) void setThemeOverride(next.key);
+            },
+          },
+        ],
+      },
+      {
+        key: 'gradeFormat',
+        title: t('mobile.more.gradeFormat.title'),
+        footer: t('mobile.more.gradeFormat.description'),
+        rows: [
+          {
+            kind: 'segmented',
+            key: 'gradeFormat',
+            label: t('mobile.more.gradeFormat.title'),
+            options: gradeFormatOptions,
+            selectedKey: gradeFormat,
+            onSelect: (key) => {
+              const next = gradeFormatOptions.find((option) => option.key === key);
+              if (next) setGradeFormat(next.key);
+            },
+          },
+        ],
+      },
+      {
+        key: 'language',
+        title: t('mobile.more.language.title'),
+        footer: t('mobile.more.language.description'),
+        rows: [
+          {
+            kind: 'select',
+            key: 'language',
+            label: t('mobile.more.language.title'),
+            options: languageOptions,
+            selectedKey: localePreference,
+            onSelect: (key) => {
+              const next = languageOptions.find((option) => option.key === key);
+              if (next) setLocalePreference(next.key);
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  return <MoreForm model={model} />;
+}
+
+function AccountMoreScreen() {
+  const { accessCapabilities } = useAuth();
+  const confirm = useConfirm();
   const { themeOverride, setThemeOverride } = useTheme();
   const { t } = useTranslation('common');
   const { t: tProfile } = useTranslation('profile');
@@ -82,7 +286,7 @@ export default function MoreScreen() {
   const { t: tBoards } = useTranslation('boards');
   const { t: tNotifications } = useTranslation('notifications');
   const confirmSignOut = useConfirmSignOut();
-  const { data: profile } = useProfile();
+  const { data: profile } = useProfile({ enabled: accessCapabilities.useAccountFeatures });
   // Its own query, deliberately not a field on the profile document — see
   // useIsAdmin. Fails closed, so an older backend just hides the admin rows.
   const { isAdmin } = useIsAdmin();
@@ -106,12 +310,13 @@ export default function MoreScreen() {
   // already in My Boards now (user chose this over a future-only default), and the
   // adopt-on-select flow auto-downloads new boards from then on.
   const [autoOfflineBoards] = useSetting('autoOfflineBoards');
+  const [workOffline, setWorkOffline] = useSetting('workOffline');
   const [autoDisconnectBle, setAutoDisconnectBle] = useSetting('autoDisconnectBle');
   const [autoDisconnectTimeoutSeconds, setAutoDisconnectTimeoutSeconds] = useSetting('autoDisconnectTimeoutSeconds');
   const [lightOnSwipe, setLightOnSwipe] = useSetting('lightOnSwipe');
   const [lightOnClimbTap, setLightOnClimbTap] = useSetting('lightOnClimbTap');
   const autoDisconnectTimeoutLabels = useAutoDisconnectTimeoutLabels();
-  const { enableBoardsOffline } = useBoardDownloads();
+  const { enableBoardsOffline, syncNow } = useBoardDownloads();
   const { data: myBoardsConnection } = useMyBoards(undefined, { enabled: offlineEnabled && !!profile });
   // Memoized so the empty-while-loading fallback keeps a stable identity — the
   // offline effect below depends on this array and shouldn't re-run every render.
@@ -221,6 +426,30 @@ export default function MoreScreen() {
     } finally {
       retryingRef.current = false;
       void refetchDeadLetters();
+    }
+  };
+
+  const handleWorkOfflineChange = async (next: boolean): Promise<void> => {
+    hapticSelection();
+    try {
+      await transitionWorkOffline(next, {
+        readOutboxSummary: () => getOutboxSummary(db),
+        confirmGoingOnline: ({ pendingCount, deadLetterCount }) =>
+          confirm({
+            title: t('mobile.more.offline.goOnlineTitle'),
+            message: t('mobile.more.offline.goOnlineMessage', { pendingCount, deadLetterCount }),
+            confirmLabel: t('mobile.more.offline.goOnlineConfirm'),
+            cancelLabel: t('mobile.more.offline.goOnlineCancel'),
+          }),
+        persist: setWorkOffline,
+        applyNetworkPolicy: setAccountWorkOffline,
+        syncNow,
+        onSummaryError: (error) =>
+          reportHandledError(error, { tags: { source: 'work-offline', kind: 'outbox-summary' } }),
+      });
+    } catch (error) {
+      reportHandledError(error, { tags: { source: 'work-offline', kind: 'transition' } });
+      showToast(t('mobile.more.offline.toggleFailed'), 'error');
     }
   };
 
@@ -614,46 +843,58 @@ export default function MoreScreen() {
   // Offline — keep boards available with no signal. Gated by the offline feature
   // flag (the whole offline surface is flag-gated). Turning it on downloads every
   // current board now; future boards auto-download via the adopt-on-select flow.
-  if (offlineEnabled) {
-    sections.push({
-      key: 'offline',
-      title: t('mobile.more.offline.title'),
-      rows: [
-        {
-          kind: 'toggle',
-          key: 'autoOfflineBoards',
-          label: t('mobile.more.offline.autoDownload'),
-          subtitle: t('mobile.more.offline.autoDownloadDescription'),
-          value: autoOfflineBoards,
-          onValueChange: (next) => {
-            hapticSelection();
-            // The effect above does the enabling + download (robust to a not-yet-
-            // loaded list); here we just persist and surface how many will pull down.
-            setSetting('autoOfflineBoards', next);
-            if (next) {
-              const missing = missingOfflineBoards();
-              // Fired HERE, on the real tap, and once per tap rather than once
-              // per board. The effect above is a mount-time reaction to the
-              // persisted setting, so firing a "…Tapped" event from it would
-              // assert a tap that never happened.
-              rememberDownloadAllTap();
-              track(SHARED_EVENTS.OfflineDownloadAllTapped, {
-                boardCount: missing.length,
-                offlineEngineEnabled: isOfflineEngineEnabled(),
-              });
-              if (missing.length > 0) {
-                showToast(t('mobile.more.offline.downloadingAll', { count: missing.length }), 'info');
-              }
-            } else {
-              // Switched back off before the list ever resolved: the tap is spent,
-              // and leaving it armed would attribute a later automatic enable to it.
-              forgetDownloadAllTap();
-            }
-          },
+  sections.push({
+    key: 'offline',
+    title: t('mobile.more.offline.title'),
+    rows: [
+      {
+        kind: 'toggle',
+        key: 'workOffline',
+        label: t('mobile.more.offline.workOffline'),
+        subtitle: t('mobile.more.offline.workOfflineDescription'),
+        value: workOffline,
+        onValueChange: (next) => {
+          void handleWorkOfflineChange(next);
         },
-      ],
-    });
-  }
+      },
+      ...(offlineEnabled
+        ? [
+            {
+              kind: 'toggle' as const,
+              key: 'autoOfflineBoards',
+              label: t('mobile.more.offline.autoDownload'),
+              subtitle: t('mobile.more.offline.autoDownloadDescription'),
+              value: autoOfflineBoards,
+              onValueChange: (next: boolean) => {
+                hapticSelection();
+                // The effect above does the enabling + download (robust to a not-yet-
+                // loaded list); here we just persist and surface how many will pull down.
+                setSetting('autoOfflineBoards', next);
+                if (next) {
+                  const missing = missingOfflineBoards();
+                  // Fired HERE, on the real tap, and once per tap rather than once
+                  // per board. The effect above is a mount-time reaction to the
+                  // persisted setting, so firing a "…Tapped" event from it would
+                  // assert a tap that never happened.
+                  rememberDownloadAllTap();
+                  track(SHARED_EVENTS.OfflineDownloadAllTapped, {
+                    boardCount: missing.length,
+                    offlineEngineEnabled: isOfflineEngineEnabled(),
+                  });
+                  if (missing.length > 0) {
+                    showToast(t('mobile.more.offline.downloadingAll', { count: missing.length }), 'info');
+                  }
+                } else {
+                  // Switched back off before the list ever resolved: the tap is spent,
+                  // and leaving it armed would attribute a later automatic enable to it.
+                  forgetDownloadAllTap();
+                }
+              },
+            },
+          ]
+        : []),
+    ],
+  });
 
   // Board look (nav) — render mode + every Boardsesh knob, plus the
   // accessibility controls (hold colours, marker shapes, colour-vision check)
@@ -735,43 +976,44 @@ export default function MoreScreen() {
   }
 
   // Diagnostics — Session Recording toggle. Persist + apply live.
-  sections.push({
-    key: 'diagnostics',
-    title: t('mobile.more.diagnostics.title'),
-    rows: [
-      {
-        kind: 'toggle',
-        key: 'sessionRecording',
-        label: t('mobile.more.diagnostics.recording'),
-        subtitle: t('mobile.more.diagnostics.recordingDescription'),
-        value: sessionRecordingEnabled,
-        onValueChange: (next) => {
-          hapticSelection();
-          setSessionRecordingPreference(next);
-          setSessionRecordingEnabled(next);
+  if (accessCapabilities.useAccountFeatures)
+    sections.push({
+      key: 'diagnostics',
+      title: t('mobile.more.diagnostics.title'),
+      rows: [
+        {
+          kind: 'toggle',
+          key: 'sessionRecording',
+          label: t('mobile.more.diagnostics.recording'),
+          subtitle: t('mobile.more.diagnostics.recordingDescription'),
+          value: sessionRecordingEnabled,
+          onValueChange: (next) => {
+            hapticSelection();
+            setSessionRecordingPreference(next);
+            setSessionRecordingEnabled(next);
+          },
         },
-      },
-      // Bottom-chrome geometry overlay — dev / preview builds / pr-channel OTA
-      // testers only, so regular production users never see the row.
-      ...(bottomChromeDiagnosticsEligible
-        ? [
-            {
-              kind: 'toggle' as const,
-              key: 'bottomChromeDiagnostics',
-              // i18n-ignore-next-line — tester-only diagnostics
-              label: 'Bottom chrome diagnostics',
-              // i18n-ignore-next-line
-              subtitle: 'Overlay live tab-bar geometry values',
-              value: bottomChromeDiagnostics,
-              onValueChange: (next: boolean) => {
-                hapticSelection();
-                setBottomChromeDiagnostics(next);
+        // Bottom-chrome geometry overlay — dev / preview builds / pr-channel OTA
+        // testers only, so regular production users never see the row.
+        ...(bottomChromeDiagnosticsEligible
+          ? [
+              {
+                kind: 'toggle' as const,
+                key: 'bottomChromeDiagnostics',
+                // i18n-ignore-next-line — tester-only diagnostics
+                label: 'Bottom chrome diagnostics',
+                // i18n-ignore-next-line
+                subtitle: 'Overlay live tab-bar geometry values',
+                value: bottomChromeDiagnostics,
+                onValueChange: (next: boolean) => {
+                  hapticSelection();
+                  setBottomChromeDiagnostics(next);
+                },
               },
-            },
-          ]
-        : []),
-    ],
-  });
+            ]
+          : []),
+      ],
+    });
 
   // Replay walkthrough (nav).
   sections.push({
@@ -930,7 +1172,7 @@ export default function MoreScreen() {
   // Account — Edit Profile (with the email as the section footer) plus the
   // destructive Sign Out / Delete Account actions. When signed out, the actions
   // carry the "Account" header themselves so it's never an empty section.
-  if (profile?.id) {
+  if (accessCapabilities.useAccountFeatures && profile?.id) {
     sections.push({
       key: 'account',
       title: tProfile('mobile.account'),

@@ -54,11 +54,12 @@ import { isOfflineEngineEnabled } from '../lib/offline-engine';
 import { takeDownloadTrigger } from '../settings';
 import { track } from '../lib/analytics';
 import { getSyncStatusSnapshot } from '../sync/sync-status';
+import { isNetworkAllowed, type NetworkRequestKind } from '../lib/network-policy';
 
 // Exported so non-drain reporters can record the one dimension that decides
 // whether a failed local write actually lost data: a tick that falls through to
 // the network save is fine online and gone offline (see board-adapter).
-export const isOnline = () => onlineManager.isOnline();
+export const isOnline = () => onlineManager.isOnline() && isNetworkAllowed('backend');
 
 function isUsableConnection(state: Pick<NetInfoState, 'isConnected' | 'isInternetReachable'>): boolean {
   // `null` means NetInfo has not finished probing, not that the upstream is
@@ -76,10 +77,16 @@ function isUsableConnection(state: Pick<NetInfoState, 'isConnected' | 'isInterne
  * React Query's process-wide online singleton before the caller triggers sync;
  * otherwise its slower seed/listener can make that just-verified cycle no-op.
  */
-export async function hasUsableInternetConnection(): Promise<boolean> {
+export async function hasUsableInternetConnection(
+  requestKind: Extract<NetworkRequestKind, 'backend' | 'catalog'> = 'backend',
+): Promise<boolean> {
   const isUsable = isUsableConnection(await NetInfo.fetch());
-  if (isUsable) onlineManager.setOnline(true);
-  return isUsable;
+  const requestAllowed = isNetworkAllowed(requestKind);
+  // React Query's process-wide online state represents account/backend access.
+  // A login-free catalog transfer may proceed without reopening personal query
+  // fetches or mutation drains.
+  if (isUsable && isNetworkAllowed('backend')) onlineManager.setOnline(true);
+  return isUsable && requestAllowed;
 }
 
 const mutationDeliveryListeners = new Set<(event: MutationDeliveryEvent) => void>();
@@ -408,9 +415,10 @@ const DOWNLOAD_STATE_QUERY_KEYS: readonly (readonly string[])[] = [['downloadedS
 function combinedScopeDownloadCompleteReporter(
   onScopeDownloadComplete: ScopeDownloadCompleteReporter | undefined,
   queryClient?: QueryClient,
+  reportTelemetry = true,
 ): ScopeDownloadCompleteReporter {
   return (info) => {
-    reportScopeDownloadComplete(info);
+    if (reportTelemetry) reportScopeDownloadComplete(info);
     if (queryClient) {
       for (const queryKey of DOWNLOAD_STATE_QUERY_KEYS) {
         void queryClient.invalidateQueries({ queryKey });
@@ -676,6 +684,8 @@ export type SyncRunOptions = {
   // useSnapshotSource). Undefined retains the safe paged fallback for builds
   // without that URL.
   snapshotSource?: SnapshotSource;
+  /** Public-catalog-only mode for login-free profiles. Disables all sync telemetry. */
+  catalogOnly?: boolean;
 };
 
 export function startSyncScheduler(
@@ -688,18 +698,23 @@ export function startSyncScheduler(
 ): () => void {
   return startSyncSchedulerCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, schedulerTriggers, {
     isOnline,
+    catalogOnly: options?.catalogOnly,
     onProgress: options?.onProgress,
-    onCycleError: warnCycleError,
-    onSchemaDrift: reportSchemaDrift,
+    onCycleError: options?.catalogOnly ? undefined : warnCycleError,
+    onSchemaDrift: options?.catalogOnly ? undefined : reportSchemaDrift,
     snapshotSource: options?.snapshotSource,
-    onSnapshotBootstrapError: reportSnapshotBootstrapError,
+    onSnapshotBootstrapError: options?.catalogOnly ? undefined : reportSnapshotBootstrapError,
     onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
-    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete, queryClient),
-    onScopeDownloadStart: reportScopeDownloadStart,
-    onCoverageReset: reportCoverageReset,
-    onCoverageEvaluated: reportCoverageEvaluated,
-    onBootstrapRetryScheduled: reportBootstrapRetryScheduled,
-    onBootstrapPathRecovered: reportBootstrapPathRecovered,
+    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(
+      options?.onScopeDownloadComplete,
+      queryClient,
+      !options?.catalogOnly,
+    ),
+    onScopeDownloadStart: options?.catalogOnly ? undefined : reportScopeDownloadStart,
+    onCoverageReset: options?.catalogOnly ? undefined : reportCoverageReset,
+    onCoverageEvaluated: options?.catalogOnly ? undefined : reportCoverageEvaluated,
+    onBootstrapRetryScheduled: options?.catalogOnly ? undefined : reportBootstrapRetryScheduled,
+    onBootstrapPathRecovered: options?.catalogOnly ? undefined : reportBootstrapPathRecovered,
     isOnUnmeteredNetwork,
   });
 }
@@ -714,18 +729,23 @@ export function triggerSync(
 ): void {
   triggerSyncCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, {
     isOnline,
+    catalogOnly: options?.catalogOnly,
     onProgress: options?.onProgress,
-    onCycleError: warnCycleError,
-    onSchemaDrift: reportSchemaDrift,
+    onCycleError: options?.catalogOnly ? undefined : warnCycleError,
+    onSchemaDrift: options?.catalogOnly ? undefined : reportSchemaDrift,
     snapshotSource: options?.snapshotSource,
-    onSnapshotBootstrapError: reportSnapshotBootstrapError,
+    onSnapshotBootstrapError: options?.catalogOnly ? undefined : reportSnapshotBootstrapError,
     onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
-    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete, queryClient),
-    onScopeDownloadStart: reportScopeDownloadStart,
-    onCoverageReset: reportCoverageReset,
-    onCoverageEvaluated: reportCoverageEvaluated,
-    onBootstrapRetryScheduled: reportBootstrapRetryScheduled,
-    onBootstrapPathRecovered: reportBootstrapPathRecovered,
+    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(
+      options?.onScopeDownloadComplete,
+      queryClient,
+      !options?.catalogOnly,
+    ),
+    onScopeDownloadStart: options?.catalogOnly ? undefined : reportScopeDownloadStart,
+    onCoverageReset: options?.catalogOnly ? undefined : reportCoverageReset,
+    onCoverageEvaluated: options?.catalogOnly ? undefined : reportCoverageEvaluated,
+    onBootstrapRetryScheduled: options?.catalogOnly ? undefined : reportBootstrapRetryScheduled,
+    onBootstrapPathRecovered: options?.catalogOnly ? undefined : reportBootstrapPathRecovered,
     isOnUnmeteredNetwork,
   });
 }

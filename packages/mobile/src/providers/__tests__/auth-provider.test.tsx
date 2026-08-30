@@ -31,6 +31,14 @@ const consumeFreshOAuthPendingMock = vi.hoisted(() => vi.fn());
 const consumeWebOAuthReturnProviderMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
 const resetActiveBoardSelfHealValidationCacheMock = vi.hoisted(() => vi.fn());
+const accessModeStoreState = vi.hoisted(() => ({
+  mode: 'account' as 'account' | 'local',
+  localCatalogReady: false,
+  read: vi.fn(),
+  write: vi.fn(),
+  readLocalCatalogReady: vi.fn(),
+  writeLocalCatalogReady: vi.fn(),
+}));
 
 // expo-router and react-native both reach for the native runtime; stub the
 // thin surface AuthProvider consumes. `useSegments` returning `[]` keeps the
@@ -69,6 +77,14 @@ vi.mock('../../components/AppLoadingSplash', () => ({
 vi.mock('../../lib/screenshot-mode', () => ({
   SCREENSHOT_USER_EMAIL: 'screenshots@example.com',
   SCREENSHOT_USER_PASSWORD: 'screenshot-password',
+}));
+
+vi.mock('../../lib/access-mode-store', () => ({
+  readPersistedAccessMode: () => accessModeStoreState.read(),
+  writePersistedAccessMode: (accessMode: 'account' | 'local') => accessModeStoreState.write(accessMode),
+  readPersistedLocalCatalogReady: () => accessModeStoreState.readLocalCatalogReady(),
+  writePersistedLocalCatalogReady: (isReady: boolean) => accessModeStoreState.writeLocalCatalogReady(isReady),
+  writePendingLocalProfileImportPrompt: vi.fn(),
 }));
 
 vi.mock('../../lib/auth-token-events', () => ({
@@ -135,6 +151,20 @@ beforeEach(() => {
   consumeWebOAuthReturnProviderMock.mockReturnValue(null);
   trackMock.mockReset();
   resetActiveBoardSelfHealValidationCacheMock.mockReset();
+  accessModeStoreState.mode = 'account';
+  accessModeStoreState.localCatalogReady = false;
+  accessModeStoreState.read.mockReset();
+  accessModeStoreState.read.mockImplementation(() => accessModeStoreState.mode);
+  accessModeStoreState.write.mockReset();
+  accessModeStoreState.write.mockImplementation((accessMode: 'account' | 'local') => {
+    accessModeStoreState.mode = accessMode;
+  });
+  accessModeStoreState.readLocalCatalogReady.mockReset();
+  accessModeStoreState.readLocalCatalogReady.mockImplementation(() => accessModeStoreState.localCatalogReady);
+  accessModeStoreState.writeLocalCatalogReady.mockReset();
+  accessModeStoreState.writeLocalCatalogReady.mockImplementation((isReady: boolean) => {
+    accessModeStoreState.localCatalogReady = isReady;
+  });
   reportHandledErrorMock.mockReset();
   onlineManager.setOnline(true);
   captureAuthCredentialGenerationMock.mockReset();
@@ -339,8 +369,10 @@ vi.mock('../../notifications', () => ({
 const setSettingMock = vi.hoisted(() => vi.fn());
 const clearOfflineBoardsMock = vi.hoisted(() => vi.fn());
 vi.mock('../../settings', () => ({
+  getSetting: () => false,
   setSetting: (...args: unknown[]) => setSettingMock(...args),
   clearOfflineBoards: () => clearOfflineBoardsMock(),
+  setSettingsAccessMode: vi.fn(),
 }));
 
 // The provider registers its forced-sign-out cleanup against this lib-layer hook
@@ -712,12 +744,19 @@ describe('AuthProvider.register', () => {
   });
 
   it('does not resolve a session after web registration requires verification', async () => {
+    accessModeStoreState.mode = 'local';
+    accessModeStoreState.localCatalogReady = true;
+    // Keep the hook inside the local profile's exact route allowlist while it
+    // exercises the mode switch. An empty segment list is default-denied and
+    // intentionally renders only the redirect, leaving no AuthContext consumer.
+    routerState.segments = ['(tabs)', 'climbs'];
     authRegisterMock.mockResolvedValue({
       success: true,
       authenticated: false,
       requiresVerification: true,
     });
     const queryClient = new QueryClient();
+    queryClient.setQueryData(['localLogbook'], [{ climbUuid: 'local-climb' }]);
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>
         <AuthProvider>{children}</AuthProvider>
@@ -727,13 +766,18 @@ describe('AuthProvider.register', () => {
     await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
     const authReadsBeforeRegistration = getAuthTokenMock.mock.calls.length;
 
-    await expect(result.current.register('new@example.com', 'password')).resolves.toEqual({
-      success: true,
-      authenticated: false,
-      requiresVerification: true,
+    await act(async () => {
+      await expect(result.current.register('new@example.com', 'password')).resolves.toEqual({
+        success: true,
+        authenticated: false,
+        requiresVerification: true,
+      });
     });
 
     expect(getAuthTokenMock).toHaveBeenCalledTimes(authReadsBeforeRegistration);
+    expect(accessModeStoreState.write).toHaveBeenCalledWith('account');
+    expect(result.current.accessMode).toBe('account');
+    expect(queryClient.getQueryData(['localLogbook'])).toBeUndefined();
   });
 });
 
@@ -2285,7 +2329,7 @@ describe('AuthProvider.checkAuth keychain read failure', () => {
   });
 });
 
-// The native half of W-06's "web only" claim. Every merge to `main` touching
+// The account-mode half of W-06's "web only" claim. Every merge to `main` touching
 // `packages/mobile/**` auto-publishes a production OTA, and a JS-only diff keeps
 // the same `fingerprint` runtimeVersion — so this relaxation lands on every
 // installed binary whether or not it is meant for them. Byte-equality of this
@@ -2293,7 +2337,7 @@ describe('AuthProvider.checkAuth keychain read failure', () => {
 // here: under `Platform.OS = 'ios'` the gate emits exactly the redirect it
 // emitted before, for the entire route corpus, and never renders children to a
 // signed-out visitor.
-describe('native auth gate parity (this PR auto-OTAs to the store fleet)', () => {
+describe('native account-mode auth gate parity (this PR auto-OTAs to the store fleet)', () => {
   beforeEach(() => {
     platformState.OS = 'ios';
     getAuthTokenMock.mockReset();
@@ -2342,5 +2386,174 @@ describe('native auth gate parity (this PR auto-OTAs to the store fleet)', () =>
     await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/(tabs)/home'));
     expect(redirectMock).not.toHaveBeenCalledWith(next);
     expect(redirectMock).not.toHaveBeenCalledWith(expect.stringContaining('next='));
+  });
+});
+
+describe('native local-profile auth gate', () => {
+  let capturedLocalAuthState: ReturnType<typeof useAuth> | null = null;
+
+  function LocalGateChild() {
+    capturedLocalAuthState = useAuth();
+    return <span data-testid="child">app tree</span>;
+  }
+
+  beforeEach(() => {
+    platformState.OS = 'ios';
+    accessModeStoreState.mode = 'local';
+    accessModeStoreState.localCatalogReady = true;
+    clearStoredSessionIdMock.mockClear();
+    clearStoredActiveBoardMock.mockClear();
+    clearStoredQueueSnapshotMock.mockClear();
+    getAuthTokenMock.mockReset();
+    getAuthTokenMock.mockResolvedValue(null);
+    isTokenExpiringSoonMock.mockReset();
+    isTokenExpiringSoonMock.mockResolvedValue(false);
+    capturedLocalAuthState = null;
+  });
+
+  function renderLocalGate() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const createTree = () => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <LocalGateChild />
+        </AuthProvider>
+      </QueryClientProvider>
+    );
+    const rendered = render(createTree());
+    return { ...rendered, rerenderGate: () => rendered.rerender(createTree()) };
+  }
+
+  async function renderReadyLocalGate(segments: string[]) {
+    routerState.segments = ['boards', 'local-setup'];
+    const rendered = renderLocalGate();
+    await waitFor(() => expect(rendered.queryByTestId('child')).not.toBeNull());
+    act(() => capturedLocalAuthState?.setLocalOwnerReady(true));
+    redirectMock.mockReset();
+    routerState.segments = segments;
+    rendered.rerenderGate();
+    return rendered;
+  }
+
+  it('preserves mode-keyed local stores on a cold signed-out launch', async () => {
+    routerState.segments = ['boards', 'local-setup'];
+
+    const { queryByTestId } = renderLocalGate();
+
+    await waitFor(() => expect(queryByTestId('child')).not.toBeNull());
+    expect(clearStoredSessionIdMock).not.toHaveBeenCalled();
+    expect(clearStoredActiveBoardMock).not.toHaveBeenCalled();
+    expect(clearStoredQueueSnapshotMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['(tabs)', 'climbs'],
+    ['(tabs)', 'climbs', '[climbUuid]'],
+    ['(tabs)', 'climbs', 'holds'],
+    ['(tabs)', 'climbs', 'setters'],
+    ['(tabs)', 'climbs', 'zone'],
+    ['(tabs)', 'profile'],
+    ['(tabs)', 'profile', 'more'],
+    ['play'],
+  ])('renders the tokenless core route %j', async (...segments) => {
+    const { queryByTestId } = await renderReadyLocalGate(segments);
+
+    await waitFor(() => expect(queryByTestId('child')).not.toBeNull());
+    expect(redirectMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['(tabs)', 'home'],
+    ['(tabs)', 'record'],
+    ['(tabs)', 'discover'],
+    ['(tabs)', 'profile', 'edit'],
+    ['(tabs)', 'profile', 'notifications'],
+    ['(tabs)', 'climbs', 'create'],
+    ['(tabs)', 'climbs', 'unknown'],
+    ['(tabs)', 'climbs', '[climbUuid]', 'extra'],
+    ['play', 'unknown'],
+    ['boards'],
+    ['join', '[sessionId]'],
+  ])('redirects the tokenless non-core route %j back to Climbs', async (...segments) => {
+    const { queryByTestId } = await renderReadyLocalGate(segments);
+
+    await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/(tabs)/climbs'));
+    expect(redirectMock).not.toHaveBeenCalledWith('/auth/login');
+    expect(queryByTestId('child')).toBeNull();
+  });
+
+  it('default-denies account routes when local mode retains a valid token', async () => {
+    getAuthTokenMock.mockResolvedValue('jwt-token');
+    const { queryByTestId } = await renderReadyLocalGate(['(tabs)', 'home']);
+
+    await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/(tabs)/climbs'));
+    expect(queryByTestId('child')).toBeNull();
+  });
+
+  it('admits setup but not Climbs before a catalog is durably downloaded', async () => {
+    accessModeStoreState.localCatalogReady = false;
+    routerState.segments = ['boards', 'local-setup'];
+    const setupRender = renderLocalGate();
+    await waitFor(() => expect(setupRender.queryByTestId('child')).not.toBeNull());
+    setupRender.unmount();
+
+    redirectMock.mockReset();
+    routerState.segments = ['(tabs)', 'climbs'];
+    const climbsRender = renderLocalGate();
+    await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/boards/local-setup'));
+    expect(climbsRender.queryByTestId('child')).toBeNull();
+  });
+
+  it('persists mode changes without touching account credentials', async () => {
+    routerState.segments = ['auth', 'login'];
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.accessMode).toBe('local');
+    expect(result.current.localCatalogReady).toBe(false);
+    act(() => result.current.setLocalOwnerReady(true));
+    expect(result.current.localCatalogReady).toBe(true);
+    expect(result.current.accessCapabilities.logLocalAscents).toBe(true);
+    queryClient.setQueryData(['profile'], { id: 'account-or-local-owner' });
+    await act(async () => result.current.setAccessMode('account'));
+
+    expect(accessModeStoreState.write).toHaveBeenCalledWith('account');
+    expect(queryClient.getQueryData(['profile'])).toBeUndefined();
+    expect(result.current.accessMode).toBe('account');
+    expect(result.current.accessCapabilities.logLocalAscents).toBe(false);
+    expect(authSignOutMock).not.toHaveBeenCalled();
+
+    await act(async () => result.current.setAccessMode('local'));
+    expect(accessModeStoreState.writeLocalCatalogReady).toHaveBeenCalledWith(false);
+    expect(result.current.localCatalogReady).toBe(false);
+    expect(result.current.accessCapabilities.enterCoreClimbingRoutes).toBe(false);
+  });
+
+  it('unlocks core routes only when setup marks its verified catalog durable', async () => {
+    accessModeStoreState.localCatalogReady = false;
+    routerState.segments = ['boards', 'local-setup'];
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.accessCapabilities.enterCoreClimbingRoutes).toBe(false);
+    act(() => result.current.setLocalOwnerReady(true));
+    expect(result.current.accessCapabilities.enterCoreClimbingRoutes).toBe(false);
+    await act(async () => result.current.setLocalCatalogReady(true));
+
+    expect(accessModeStoreState.writeLocalCatalogReady).toHaveBeenCalledWith(true);
+    expect(result.current.localCatalogReady).toBe(true);
+    expect(result.current.accessCapabilities.enterCoreClimbingRoutes).toBe(true);
   });
 });

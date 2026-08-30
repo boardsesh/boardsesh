@@ -499,6 +499,17 @@ export type SyncOptions = {
   /** Encoded board scope keys ("boardType:layoutId:sizeId") to download offline. */
   enabledBoards?: string[];
   /**
+   * Download public board snapshot artifacts without touching authenticated
+   * user data or the GraphQL sync API.
+   *
+   * Login-free mobile profiles use this mode. A scope becomes locally usable
+   * only after its whole-layout snapshot imports successfully; there is no
+   * authenticated paged-crawl fallback. Snapshot data is a complete catalog as
+   * of the manifest build, and a later foreground pass can replace it with a
+   * newer public artifact.
+   */
+  catalogOnly?: boolean;
+  /**
    * Connectivity probe, mirroring `DrainOptions.isOnline` (drainer.ts). A pull
    * that starts with no connection can only fail every request it makes, and
    * the snapshot bootstrap phase would report each enabled-but-undownloaded
@@ -2733,7 +2744,9 @@ export async function pullSync(
   // phase, so the reset and the rebuild that follows belong to the same cycle.
   // See deletions-coverage.ts for the invariant and for exactly what the reset
   // does (and does not) clear.
-  await enforceDeletionsCoverage(db, queryClient, graphqlFetch, purgeToken, options);
+  if (!options?.catalogOnly) {
+    await enforceDeletionsCoverage(db, queryClient, graphqlFetch, purgeToken, options);
+  }
   // The phase can spend a probe and a multi-table wipe; the bootstrap phase below
   // starts downloading before the deletions phase's own cycleAborted(), so check
   // here rather than let a teardown that landed during it kick off a download.
@@ -2831,6 +2844,40 @@ export async function pullSync(
     // handled, the live outer guard is already clear; do not let that stale
     // cycle continue into deletions or paged pulls.
     if (bootstrapPhase.cycleInterrupted) return reportInterruptedCycle();
+  }
+
+  // Login-free profiles have no authenticated GraphQL transport. Their board
+  // catalog must therefore be proven by a successful public snapshot import,
+  // never by falling through to deletions/user-data/500-row paged pulls. The
+  // bootstrap marker is written only after the artifact transaction commits,
+  // so it is the durable integrity gate this mode needs.
+  if (options?.catalogOnly) {
+    for (const boardScope of boardScopes) {
+      if (cycleAborted()) return reportInterruptedCycle();
+      if (scopePurged(boardScope)) continue;
+      if (!(await isBootstrapDone(db, boardScope.scopeKey))) continue;
+
+      const wasScopeComplete = await isScopeDownloadComplete(db, boardScope.scopeKey);
+      if (cycleAborted()) return reportInterruptedCycle();
+      if (scopePurged(boardScope)) continue;
+      await markScopeDownloadComplete(db, boardScope.scopeKey);
+      if (wasScopeComplete) continue;
+
+      const startedAt = scopeStartedAt.get(boardScope.scopeKey);
+      const elapsedMs = startedAt === undefined ? null : Date.now() - startedAt;
+      const durationMs =
+        elapsedMs !== null && elapsedMs >= 0 && elapsedMs <= SCOPE_DOWNLOAD_START_MAX_AGE_MS ? elapsedMs : null;
+      options.onScopeDownloadComplete?.({
+        scopeKey: boardScope.scopeKey,
+        method: 'snapshot',
+        durationMs,
+        bootstrapHealed: await wasBootstrapHealed(db, boardScope.scopeKey),
+        ...bootstrapTimings.get(boardScope.scopeKey),
+        phases: phaseTimings(boardScope.scopeKey),
+      });
+    }
+    onProgress?.({ phase: 'idle', currentTable: null, documentsProcessed: totalDocuments });
+    return;
   }
 
   // Deletions FIRST, table pulls second. This ordering is what makes a

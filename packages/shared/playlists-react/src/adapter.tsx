@@ -1,5 +1,15 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import type { RecentsStorageAdapter } from './recents-adapter';
+import type {
+  CreatePlaylistInput,
+  GetAllUserPlaylistsInput,
+  GetPlaylistClimbsInput,
+  Playlist,
+  PlaylistClimbsResult,
+  ReorderPlaylistClimbInput,
+  RemoveClimbFromPlaylistInput,
+  UpdatePlaylistInput,
+} from '@boardsesh/graphql/operations/playlists';
 
 // HTTP transport for playlist queries. Query is a `string` since the `gql`
 // template tag in `graphql-request` returns the source string at runtime —
@@ -18,6 +28,18 @@ export type PlaylistsAdapter = {
    * tests.
    */
   executeGraphQL: ExecutePlaylistsGraphQL;
+  /** Optional device-local private-library overrides. Their presence keeps the
+   * shared hooks off GraphQL even when the installation retains an auth token. */
+  localLibrary?: {
+    list: (input: GetAllUserPlaylistsInput) => Promise<{ playlists: Playlist[]; totalCount: number; hasMore: boolean }>;
+    get: (playlistUuid: string) => Promise<Playlist | null>;
+    listClimbs: (input: GetPlaylistClimbsInput) => Promise<PlaylistClimbsResult>;
+    create: (input: CreatePlaylistInput) => Promise<Playlist>;
+    update: (input: UpdatePlaylistInput) => Promise<Playlist>;
+    delete: (playlistUuid: string) => Promise<boolean>;
+    removeClimb: (input: RemoveClimbFromPlaylistInput) => Promise<boolean>;
+    reorderClimb: (input: ReorderPlaylistClimbInput) => Promise<boolean>;
+  };
   /** Per-device recently-opened-playlists storage (used by the pinned hook). */
   recents: RecentsStorageAdapter;
 };

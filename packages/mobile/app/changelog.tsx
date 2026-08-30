@@ -26,6 +26,7 @@ import { reportError } from '../src/lib/error-reporting';
 import { formatRelativeTime } from '../src/lib/format-relative-time';
 import { hapticError } from '../src/lib/haptics';
 import { openExternalUrl } from '../src/lib/open-url';
+import { checkForOtaUpdate, fetchOtaUpdate } from '../src/lib/ota-network';
 import { useConfirm } from '../src/providers/dialog-provider';
 import { useTheme } from '../src/providers/theme-provider';
 import { borderRadius, spacing } from '../src/theme/tokens';
@@ -176,14 +177,14 @@ const CheckForUpdatesButton = memo(function CheckForUpdatesButton() {
   const handlePress = useCallback(async () => {
     try {
       setStatus('checking');
-      const check = await Updates.checkForUpdateAsync();
+      const check = await checkForOtaUpdate();
       if (!check.isAvailable) {
         setStatus('idle');
         Alert.alert(t('mobile.changelog.upToDate.title'), t('mobile.changelog.upToDate.message'));
         return;
       }
       setStatus('downloading');
-      await Updates.fetchUpdateAsync();
+      await fetchOtaUpdate();
       setStatus('idle');
       const confirmed = await confirm({
         title: t('mobile.changelog.updateReady.title'),

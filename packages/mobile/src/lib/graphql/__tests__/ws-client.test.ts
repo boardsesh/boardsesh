@@ -105,6 +105,7 @@ class NativeSocketStub {
 import { disposeWsClient, getWsClient } from '../ws-client';
 import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../../auth-store';
 import { ensureFreshToken, recoverAuthRejection } from '../../auth-interceptor';
+import { NetworkPolicyBlockedError, setNetworkPolicy } from '../../network-policy';
 
 const getAuthTokenMock = getAuthToken as Mock;
 const captureAuthCredentialGenerationMock = captureAuthCredentialGeneration as Mock;
@@ -131,6 +132,7 @@ function messagesOfType(socket: NativeSocketStub, type: string): Array<Record<st
 }
 
 beforeEach(() => {
+  setNetworkPolicy('online');
   disposeWsClient();
   vi.clearAllMocks();
   vi.stubGlobal('WebSocket', NativeSocketStub);
@@ -141,6 +143,14 @@ beforeEach(() => {
   isAuthCredentialGenerationCurrentMock.mockReturnValue(true);
   ensureFreshTokenMock.mockResolvedValue(true);
   recoverAuthRejectionMock.mockResolvedValue('refreshed');
+});
+
+it('blocks client creation and disposes the singleton when backend traffic is disabled', () => {
+  getWsClient();
+  setNetworkPolicy('account-offline');
+
+  expect(() => getWsClient()).toThrow(NetworkPolicyBlockedError);
+  expect(disposeSpy).toHaveBeenCalledTimes(1);
 });
 
 describe('native GraphQL WebSocket transport', () => {

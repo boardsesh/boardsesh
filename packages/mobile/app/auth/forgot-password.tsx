@@ -11,11 +11,13 @@ import { Button } from '../../src/components/Button';
 import { hapticLight } from '../../src/lib/haptics';
 import { reportError } from '../../src/lib/error-reporting';
 import { track } from '../../src/lib/analytics';
+import { useAuth } from '../../src/providers/auth-provider';
 
 export default function ForgotPasswordScreen() {
   const { t } = useTranslation('auth');
   const theme = useTheme();
   const router = useRouter();
+  const { prepareAccountAuthentication } = useAuth();
 
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | null>(null);
@@ -41,6 +43,7 @@ export default function ForgotPasswordScreen() {
     track('Forgot Password Requested', { flow: 'native' });
 
     try {
+      await prepareAccountAuthentication();
       const result = await requestPasswordReset(trimmedEmail);
       if (!result.success) {
         if (result.error === 'network') {

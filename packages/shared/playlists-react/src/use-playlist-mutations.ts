@@ -55,38 +55,42 @@ export type UsePlaylistMutationsResult = {
 export function usePlaylistMutations(options?: UsePlaylistMutationsOptions): UsePlaylistMutationsResult {
   const adapter = usePlaylistsAdapter();
   const executeGraphQL = options?.executeGraphQL ?? adapter.executeGraphQL;
+  const localLibrary = options?.executeGraphQL ? undefined : adapter.localLibrary;
 
   const createPlaylist = useCallback(
     async (input: CreatePlaylistInput): Promise<Playlist> => {
+      if (localLibrary) return localLibrary.create(input);
       const response = await executeGraphQL<CreatePlaylistMutationResponse, CreatePlaylistMutationVariables>(
         CREATE_PLAYLIST,
         { input },
       );
       return response.createPlaylist;
     },
-    [executeGraphQL],
+    [executeGraphQL, localLibrary],
   );
 
   const updatePlaylist = useCallback(
     async (input: UpdatePlaylistInput): Promise<Playlist> => {
+      if (localLibrary) return localLibrary.update(input);
       const response = await executeGraphQL<UpdatePlaylistMutationResponse, UpdatePlaylistMutationVariables>(
         UPDATE_PLAYLIST,
         { input },
       );
       return response.updatePlaylist;
     },
-    [executeGraphQL],
+    [executeGraphQL, localLibrary],
   );
 
   const deletePlaylist = useCallback(
     async (playlistId: string): Promise<boolean> => {
+      if (localLibrary) return localLibrary.delete(playlistId);
       const response = await executeGraphQL<DeletePlaylistMutationResponse, DeletePlaylistMutationVariables>(
         DELETE_PLAYLIST,
         { playlistId },
       );
       return response.deletePlaylist;
     },
-    [executeGraphQL],
+    [executeGraphQL, localLibrary],
   );
 
   const pinPlaylist = useCallback(

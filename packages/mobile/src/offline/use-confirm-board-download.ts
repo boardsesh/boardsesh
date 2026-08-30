@@ -32,14 +32,14 @@ import { useBoardDownloads, type ToggleSource } from './use-board-downloads';
 import { useSnapshotManifest } from './use-snapshot-manifest';
 import { notifyBootstrapMetadataChanged } from '../sync';
 
-export function useConfirmBoardDownload() {
+export function useConfirmBoardDownload(options?: { prefetchManifest?: boolean }) {
   const { t, i18n } = useTranslation('boards');
   const db = useSQLiteContext();
   const confirm = useConfirm();
   const { enableBoardsOffline, armBoardsOffline } = useBoardDownloads();
   // A ref, not a dep: the manifest arrives asynchronously and must not rebuild
   // the callback (My Boards passes it to every virtualised row).
-  const snapshotManifest = useSnapshotManifest();
+  const snapshotManifest = useSnapshotManifest(options?.prefetchManifest ?? true);
   const snapshotManifestRef = useRef(snapshotManifest);
   snapshotManifestRef.current = snapshotManifest;
 

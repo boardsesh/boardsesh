@@ -65,6 +65,7 @@ export function usePlaylistClimbs({
 }: UsePlaylistClimbsOptions): UsePlaylistClimbsResult {
   const adapter = usePlaylistsAdapter();
   const executeGraphQL = executeGraphQLOverride ?? adapter.executeGraphQL;
+  const localLibrary = executeGraphQLOverride ? undefined : adapter.localLibrary;
 
   // The selected angle parameterises the response (grades resolve at it), but a
   // board's UUID is angle-agnostic — so the angle must be its own key segment.
@@ -82,6 +83,7 @@ export function usePlaylistClimbs({
         pageSize,
         ...boardInput,
       };
+      if (localLibrary) return localLibrary.listClimbs(input);
       const response = await executeGraphQL<GetPlaylistClimbsQueryResponse, { input: GetPlaylistClimbsInput }>(
         GET_PLAYLIST_CLIMBS,
         { input },

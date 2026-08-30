@@ -41,13 +41,14 @@ const PartyProfileContext = createContext<PartyProfileContextValue | undefined>(
 export function PartyProfileProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<PartyProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const { isAuthenticated, isLoading: isAuthLoading, accessCapabilities } = useAuth();
+  const accountFeaturesEnabled = accessCapabilities.useAccountFeatures;
   // The authenticated user's profile (id + email + display fields). Gated on auth
   // so signed-out launches don't fire the query. Shared `['profile']` query key,
   // so this dedupes with the profile/discover screens that also read it.
-  const { data: userProfile } = useProfile({ enabled: isAuthenticated });
-  const { board: homeBoard } = useHomeBoard();
-  const { data: integrationStatuses } = useIntegrationStatuses();
+  const { data: userProfile } = useProfile({ enabled: accountFeaturesEnabled });
+  const { board: homeBoard } = useHomeBoard({ enabled: accountFeaturesEnabled });
+  const { data: integrationStatuses } = useIntegrationStatuses({ enabled: accountFeaturesEnabled });
   const lastAnalyticsDistinctId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -87,7 +88,7 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
     // so reconcileAnalyticsIdentity holds (no identify) rather than momentarily
     // re-identifying a returning user as the anonymous UUID; the alias →
     // identify(user) switch then fires once authUserId lands.
-    if (!profileId || isAuthLoading) return;
+    if (!accountFeaturesEnabled || !profileId || isAuthLoading) return;
     lastAnalyticsDistinctId.current = reconcileAnalyticsIdentity({
       profileId,
       authUserId,
@@ -97,7 +98,7 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
       client: { identify, alias, reset },
       aliasStore: aliasDedupeStore,
     });
-  }, [profileId, isAuthLoading, isAuthenticated, authUserId, authEmail]);
+  }, [accountFeaturesEnabled, profileId, isAuthLoading, isAuthenticated, authUserId, authEmail]);
 
   const hasUserProfile = !!userProfile;
   const isTester = userProfile?.isTester ?? null;
@@ -113,7 +114,7 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
   // property effect, so it only re-fires when one of these traits actually
   // changes rather than on every identity-effect re-run.
   useEffect(() => {
-    if (isAuthLoading || !isAuthenticated || !hasUserProfile) return;
+    if (!accountFeaturesEnabled || isAuthLoading || !isAuthenticated || !hasUserProfile) return;
     const { set, setOnce } = buildCohortPersonProperties({
       isTester,
       createdAt,
@@ -124,6 +125,7 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
     setPersonProperties(set, setOnce);
   }, [
     isAuthLoading,
+    accountFeaturesEnabled,
     isAuthenticated,
     hasUserProfile,
     isTester,

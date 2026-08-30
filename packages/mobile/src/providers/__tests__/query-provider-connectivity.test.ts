@@ -10,6 +10,16 @@ import { describe, it, expect, vi } from 'vitest';
 const captured = vi.hoisted(() => ({
   netInfoListener: null as ((state: { isConnected: boolean | null }) => void) | null,
   appStateHandler: null as ((status: string) => void) | null,
+  policyListener: null as (() => void) | null,
+  policyAllowsBackend: true,
+}));
+
+vi.mock('../../lib/network-policy', () => ({
+  isNetworkAllowed: () => captured.policyAllowsBackend,
+  subscribeNetworkPolicy: (listener: () => void) => {
+    captured.policyListener = listener;
+    return () => {};
+  },
 }));
 
 vi.mock('@react-native-community/netinfo', () => ({
@@ -50,6 +60,17 @@ describe('query-provider connectivity wiring', () => {
     expect(onlineManager.isOnline()).toBe(false);
 
     captured.netInfoListener?.({ isConnected: true });
+    expect(onlineManager.isOnline()).toBe(true);
+  });
+
+  it('forces React Query offline while the app network policy blocks backend traffic', () => {
+    captured.netInfoListener?.({ isConnected: true });
+    captured.policyAllowsBackend = false;
+    captured.policyListener?.();
+    expect(onlineManager.isOnline()).toBe(false);
+
+    captured.policyAllowsBackend = true;
+    captured.policyListener?.();
     expect(onlineManager.isOnline()).toBe(true);
   });
 

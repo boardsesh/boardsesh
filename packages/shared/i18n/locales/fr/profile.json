@@ -109,6 +109,16 @@
     "gradeOverTime": "Cotation dans le temps"
   },
   "mobile": {
+    "local": {
+      "moreTitle": "Profil local",
+      "moreDescription": "Ta board et ton carnet restent sur cet appareil. Boardsesh n'effectue aucune requête de compte dans ce mode.",
+      "useAccount": "Utiliser un compte Boardsesh",
+      "importTitle": "Ajouter tes données locales à ce compte ?",
+      "importMessage": "Copie {{tickCount}} croix, {{favoriteCount}} favoris et {{playlistCount}} playlists dans ton compte. Ta copie locale reste sur cet appareil.",
+      "importConfirm": "Ajouter à mon compte",
+      "importSkip": "Garder séparément",
+      "accountSwitchFailed": "Impossible d'ouvrir la connexion. Réessaie."
+    },
     "account": "Compte",
     "signOut": "Se déconnecter"
   },

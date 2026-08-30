@@ -40,6 +40,7 @@ import {
   isTokenExpiringSoon,
   storeTokensForGeneration,
 } from '../auth-store';
+import { NetworkPolicyBlockedError, setNetworkPolicy } from '../network-policy';
 
 const mockIsTokenExpiringSoon = isTokenExpiringSoon as Mock;
 const mockGetAuthToken = getAuthToken as Mock;
@@ -53,6 +54,7 @@ const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
 beforeEach(() => {
+  setNetworkPolicy('online');
   vi.clearAllMocks();
   mockGetAuthToken.mockResolvedValue('test-jwt');
   mockGetRefreshToken.mockResolvedValue('test-refresh-token');
@@ -63,6 +65,14 @@ beforeEach(() => {
   // The forced-sign-out hook is module-level state — clear it so a callback
   // registered by one test doesn't leak into the next.
   setOnForcedSignOut(null);
+});
+
+it('blocks backend requests before token reads or fetch in hard offline mode', async () => {
+  setNetworkPolicy('account-offline');
+
+  await expect(authenticatedFetch('https://api.example.com/data')).rejects.toBeInstanceOf(NetworkPolicyBlockedError);
+  expect(mockGetAuthToken).not.toHaveBeenCalled();
+  expect(mockFetch).not.toHaveBeenCalled();
 });
 
 // ── ensureFreshToken ─────────────────────────────────────────────────────

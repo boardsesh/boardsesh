@@ -12,6 +12,27 @@
     "climbs": "Bloques"
   },
   "mobile": {
+    "local": {
+      "title": "Tú",
+      "privateSubtitle": "Guardado solo en este dispositivo",
+      "stats": {
+        "sends": "Encadenes",
+        "flashes": "Flashes",
+        "attempts": "Intentos"
+      },
+      "logbookTitle": "Logbook local",
+      "status": {
+        "flash": "Flash",
+        "send": "Encadene",
+        "attempt": "Intento"
+      },
+      "tries_one": "{{count}} intento",
+      "tries_other": "{{count}} intentos",
+      "unknownClimb": "Bloque desconocido",
+      "empty": "Tu logbook local está vacío — registra tu primer bloque.",
+      "errorTitle": "No se pudo cargar tu logbook local",
+      "retry": "Reintentar"
+    },
     "unknownName": "Escalador",
     "cancel": "Cancelar",
     "sessions": {

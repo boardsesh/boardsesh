@@ -11,7 +11,7 @@ import { spacing } from '../../theme/tokens';
 type PlaylistActionsMenuProps = {
   visible: boolean;
   isPinned: boolean;
-  onTogglePin: () => void;
+  onTogglePin?: () => void;
   /** Head to the Climbs tab to pick something to add. Omit to hide the row (the
    *  playlist belongs to another board, or the viewer is not the owner). */
   onAddClimbs?: () => void;
@@ -55,18 +55,20 @@ export function PlaylistActionsMenu({
   return (
     <ModalSheet visible={visible} snapPoints={snapPoints} onClose={onClose}>
       <View style={styles.content}>
-        <ListRow
-          title={isPinned ? t('library.pin.unpin') : t('library.pin.pin')}
-          leading={
-            <Icon
-              name={isPinned ? 'pin.fill' : 'pin'}
-              size={22}
-              color={isPinned ? pinActionIconColor : accentActionIconColor}
-            />
-          }
-          onPress={onTogglePin}
-          showSeparator
-        />
+        {onTogglePin ? (
+          <ListRow
+            title={isPinned ? t('library.pin.unpin') : t('library.pin.pin')}
+            leading={
+              <Icon
+                name={isPinned ? 'pin.fill' : 'pin'}
+                size={22}
+                color={isPinned ? pinActionIconColor : accentActionIconColor}
+              />
+            }
+            onPress={onTogglePin}
+            showSeparator
+          />
+        ) : null}
         {onAddClimbs ? (
           <ListRow
             title={t('detail.menu.addClimbs')}

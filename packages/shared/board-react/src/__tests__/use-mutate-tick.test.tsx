@@ -30,6 +30,54 @@ function invalidatedRoots(calls: unknown[][]): unknown[] {
 }
 
 describe('useUpdateTick (shared)', () => {
+  it('uses the queued SQLite edit path for a signed-in Work Offline account', async () => {
+    const executeHttp = vi.fn();
+    const updateTickOffline = vi.fn().mockResolvedValue({
+      uuid: 'tick-1',
+      status: 'send',
+      attemptCount: 2,
+      quality: null,
+      difficulty: 16,
+      isBenchmark: false,
+      comment: '',
+      climbedAt: '2026-08-30T00:00:00.000Z',
+      angle: 25,
+      updatedAt: '2026-08-30T00:00:00.000Z',
+    });
+    const { wrapper } = createWrapper({
+      isAuthenticated: true,
+      canLogLocally: false,
+      useLocalTickStore: true,
+      executeHttp: executeHttp as unknown as ExecuteHttp,
+      updateTickOffline,
+    });
+    const { result } = renderHook(() => useUpdateTick(), { wrapper });
+
+    await act(async () => result.current.mutate(updateVars));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(updateTickOffline).toHaveBeenCalledWith('tick-1', updateVars.input);
+    expect(executeHttp).not.toHaveBeenCalled();
+  });
+
+  it('never falls through to HTTP when a signed-in user selected local logging', async () => {
+    const executeHttp = vi.fn();
+    const updateTickOffline = vi.fn().mockResolvedValue(null);
+    const { wrapper } = createWrapper({
+      isAuthenticated: true,
+      canLogLocally: true,
+      executeHttp: executeHttp as unknown as ExecuteHttp,
+      updateTickOffline,
+    });
+    const { result } = renderHook(() => useUpdateTick(), { wrapper });
+
+    await act(async () => result.current.mutate(updateVars));
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    expect(result.current.error?.message).toBe('Local tick not found');
+    expect(executeHttp).not.toHaveBeenCalled();
+  });
+
   it('rejects with "Not authenticated" and touches neither transport nor caches when signed out', async () => {
     const executeHttp = vi.fn();
     const { wrapper, queryClient } = createWrapper({
@@ -152,6 +200,43 @@ describe('useUpdateTick (shared)', () => {
 });
 
 describe('useDeleteTick (shared)', () => {
+  it('uses the queued SQLite delete path for a signed-in Work Offline account', async () => {
+    const executeHttp = vi.fn();
+    const deleteTickOffline = vi.fn().mockResolvedValue(true);
+    const { wrapper } = createWrapper({
+      isAuthenticated: true,
+      canLogLocally: false,
+      useLocalTickStore: true,
+      executeHttp: executeHttp as unknown as ExecuteHttp,
+      deleteTickOffline,
+    });
+    const { result } = renderHook(() => useDeleteTick(), { wrapper });
+
+    await act(async () => result.current.mutate('tick-1'));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(deleteTickOffline).toHaveBeenCalledWith('tick-1');
+    expect(executeHttp).not.toHaveBeenCalled();
+  });
+
+  it('never falls through to HTTP when a signed-in user selected local logging', async () => {
+    const executeHttp = vi.fn();
+    const deleteTickOffline = vi.fn().mockResolvedValue(null);
+    const { wrapper } = createWrapper({
+      isAuthenticated: true,
+      canLogLocally: true,
+      executeHttp: executeHttp as unknown as ExecuteHttp,
+      deleteTickOffline,
+    });
+    const { result } = renderHook(() => useDeleteTick(), { wrapper });
+
+    await act(async () => result.current.mutate('tick-1'));
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    expect(result.current.error?.message).toBe('Local tick not found');
+    expect(executeHttp).not.toHaveBeenCalled();
+  });
+
   it('rejects with "Not authenticated" and touches neither transport nor caches when signed out', async () => {
     const executeHttp = vi.fn();
     const { wrapper, queryClient } = createWrapper({

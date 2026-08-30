@@ -87,6 +87,7 @@ vi.mock('expo-web-browser', () => ({
   dismissBrowser: (...args: unknown[]) => dismissBrowserMock(...args),
 }));
 
+const { setNetworkPolicy } = await import('../network-policy');
 const { signInWithGoogleWeb, signInWithAppleWeb, signOut, signOutForGeneration } = await import('../auth');
 
 // Keep in sync with the web app's NATIVE_OAUTH_CALLBACK_SCHEME
@@ -124,6 +125,7 @@ const okExchange = () =>
   });
 
 function resetMocks() {
+  setNetworkPolicy('online');
   urlListener = null;
   appStateListener = null;
   currentAppState = 'active';

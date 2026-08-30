@@ -15,6 +15,7 @@ import { raceBrowserSignIn } from './auth-session-race';
 import { nativeSignInErrorCode } from './native-auth-analytics';
 import { parseDeepLinkQueryParams } from './deep-link-query';
 import { BACKEND_URL, WEB_BASE_URL } from './env';
+import { assertNetworkAllowed, isNetworkAllowed } from './network-policy';
 
 export type AuthProvider = 'google' | 'apple';
 
@@ -63,6 +64,7 @@ export async function oauthNativeSignIn(
 ): Promise<OAuthSignInResult> {
   let response: Response;
   try {
+    assertNetworkAllowed('backend');
     response = await fetch(`${BACKEND_URL}/auth/native/oauth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -220,6 +222,7 @@ const NATIVE_OAUTH_REDIRECT = 'com.boardsesh.app://auth/callback';
 async function exchangeTransferToken(transferToken: string): Promise<OAuthSignInResult> {
   let response: Response;
   try {
+    assertNetworkAllowed('backend');
     response = await fetch(`${BACKEND_URL}/auth/native/exchange`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -355,6 +358,7 @@ export type RegistrationResult =
 export async function signInWithCredentials(email: string, password: string): Promise<CredentialsSignInResult> {
   let response: Response;
   try {
+    assertNetworkAllowed('backend');
     response = await fetch(`${BACKEND_URL}/auth/native/credentials`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -398,6 +402,7 @@ export async function registerWithCredentials(
 ): Promise<RegistrationResult> {
   let response: Response;
   try {
+    assertNetworkAllowed('backend');
     response = await fetch(`${BACKEND_URL}/auth/native/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -437,6 +442,7 @@ export type PasswordResetResult = { success: true } | NativeAuthFailure;
 export async function requestPasswordReset(email: string): Promise<PasswordResetResult> {
   let response: Response;
   try {
+    assertNetworkAllowed('backend');
     response = await fetch(`${WEB_BASE_URL}/api/auth/forgot-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -475,6 +481,7 @@ export async function resetPassword(
 ): Promise<PasswordResetResult> {
   let response: Response;
   try {
+    assertNetworkAllowed('backend');
     response = await fetch(`${WEB_BASE_URL}/api/auth/reset-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -512,7 +519,7 @@ export async function signOutForGeneration(signOutGeneration: number): Promise<b
   if (!isAuthCredentialGenerationCurrent(signOutGeneration)) return false;
   const clearedGeneration = signOutGeneration + 1;
   const clearPromise = clearTokensForGeneration(signOutGeneration);
-  if (refreshToken) {
+  if (refreshToken && isNetworkAllowed('backend')) {
     // Best-effort server-side revocation — don't block on failure
     fetch(`${BACKEND_URL}/auth/native/revoke`, {
       method: 'POST',

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { setNetworkPolicy } from '../network-policy';
 
 const posthogClientMocks = vi.hoisted(() => ({
   getPostHogClient: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('@boardsesh/analytics', () => ({
 describe('analytics reset', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setNetworkPolicy('online');
     sharedAnalyticsMocks.reset.mockReturnValue(true);
   });
 

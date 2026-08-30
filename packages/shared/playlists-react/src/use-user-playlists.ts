@@ -71,6 +71,7 @@ export function useUserPlaylists({
 }: UseUserPlaylistsOptions): UseUserPlaylistsResult {
   const adapter = usePlaylistsAdapter();
   const executeGraphQL = executeGraphQLOverride ?? adapter.executeGraphQL;
+  const localLibrary = executeGraphQLOverride ? undefined : adapter.localLibrary;
 
   const hasInitialData = initialData != null;
   const [playlists, setPlaylists] = useState<Playlist[]>(hasInitialData ? initialData : []);
@@ -91,7 +92,7 @@ export function useUserPlaylists({
 
   const fetchPage = useCallback(
     async (page: number, isInitial: boolean) => {
-      if (!token) return;
+      if (!token && !localLibrary) return;
       if (isFetchingRef.current) return;
       isFetchingRef.current = true;
 
@@ -105,11 +106,15 @@ export function useUserPlaylists({
         const variables: GetAllUserPlaylistsQueryVariables = {
           input: { boardType, layoutId, page, pageSize },
         };
-        const response = await executeGraphQL<GetAllUserPlaylistsQueryResponse, GetAllUserPlaylistsQueryVariables>(
-          GET_ALL_USER_PLAYLISTS,
-          variables,
-        );
-        const { playlists: newPlaylists, totalCount: nextTotal, hasMore: more } = response.allUserPlaylists;
+        const response = localLibrary
+          ? await localLibrary.list(variables.input)
+          : (
+              await executeGraphQL<GetAllUserPlaylistsQueryResponse, GetAllUserPlaylistsQueryVariables>(
+                GET_ALL_USER_PLAYLISTS,
+                variables,
+              )
+            ).allUserPlaylists;
+        const { playlists: newPlaylists, totalCount: nextTotal, hasMore: more } = response;
 
         setPlaylists((prev) => (isInitial ? newPlaylists : [...prev, ...newPlaylists]));
         setTotalCount(nextTotal);
@@ -142,7 +147,7 @@ export function useUserPlaylists({
         isFetchingRef.current = false;
       }
     },
-    [token, boardType, layoutId, pageSize, executeGraphQL],
+    [token, boardType, layoutId, pageSize, executeGraphQL, localLibrary],
   );
 
   // Reset + re-fetch when filters change. Skip the very first run if SSR
@@ -155,7 +160,7 @@ export function useUserPlaylists({
     }
     loadMoreFailCountRef.current = 0;
     setHasLoadMoreError(false);
-    if (!token) {
+    if (!token && !localLibrary) {
       setPlaylists([]);
       setIsLoading(false);
       setHasMore(false);
@@ -167,7 +172,7 @@ export function useUserPlaylists({
     setPlaylists([]);
     pageRef.current = 0;
     void fetchPage(0, true);
-  }, [fetchPage, token]);
+  }, [fetchPage, localLibrary, token]);
 
   const loadMore = useCallback(() => {
     if (hasMoreRef.current && !isFetchingRef.current) {

@@ -12,6 +12,8 @@ import { SessionsTab } from '../../../src/components/you/SessionsTab';
 import { LogbookTab } from '../../../src/components/you/LogbookTab';
 import { ProfileClimbsTab } from '../../../src/components/you/ProfileClimbsTab';
 import { SocialTab } from '../../../src/components/you/SocialTab';
+import { LocalYouScreen } from '../../../src/components/you/LocalYouScreen';
+import { useAuth } from '../../../src/providers/auth-provider';
 
 // Screenshot mode selects the visible sub-tab via a `screenshotTab` deep-link
 // param so the logbook/sessions shots are deterministic.
@@ -22,6 +24,11 @@ function isProfileTabKey(value: string | string[] | undefined): value is Profile
 }
 
 export default function YouScreen() {
+  const { accessCapabilities } = useAuth();
+  return accessCapabilities.useAccountFeatures ? <AccountYouScreen /> : <LocalYouScreen />;
+}
+
+function AccountYouScreen() {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
 
