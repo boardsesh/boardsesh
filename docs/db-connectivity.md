@@ -217,25 +217,30 @@ rest of the hour-long entry.
 
 ### Budgets
 
-| knob                      | default | meaning                                                                                  |
-| ------------------------- | ------- | ---------------------------------------------------------------------------------------- |
-| `DB_READ_DEADLINE_MS`     | 6000    | web front door: wall clock for one _request's_ reads (queue wait + connect + execute)    |
-| `DB_POOL_MAX`             | 10      | postgres.js `max`, clamped to a floor of 2                                               |
-| `DB_POOL_IDLE_TIMEOUT_S`  | 30      | seconds an idle connection is held open; `0` means "never close one" and is not clamped  |
-| `DB_STATEMENT_TIMEOUT_MS` | unset   | emits a `statement_timeout` startup parameter — **off by default**, see the hazard below |
+| knob                      | default        | meaning                                                                                  |
+| ------------------------- | -------------- | ---------------------------------------------------------------------------------------- |
+| `DB_READ_DEADLINE_MS`     | 6000           | web front door: wall clock for one _request's_ reads (queue wait + connect + execute)    |
+| `DB_POOL_MAX`             | 10 (Vercel: 3) | postgres.js `max`, clamped to a floor of 2                                               |
+| `DB_POOL_IDLE_TIMEOUT_S`  | 30 (Vercel: 5) | seconds an idle connection is held open; `0` means "never close one" and is not clamped  |
+| `DB_STATEMENT_TIMEOUT_MS` | unset          | emits a `statement_timeout` startup parameter — **off by default**, see the hazard below |
 
 6000 sits deliberately below `DB_CONNECT_RETRY_BUDGET_MS` (10000): during a
 brownout the front door should shed load rather than spend a second and third
 connect attempt holding a pool slot while a crawler waits. That comparison only
 holds because the budget is per request — see the shared-budget note above.
 
-The pool knobs default to the values that used to be hard-coded, so nothing
-changes for a deployment that does not set them. They exist because peak
-server-side connections scale with **instance count × connections held idle**,
-not with per-instance `max` — a fleet of serverless instances each sitting on a
-few idle connections for 30 s is the term that grows during a crawl burst.
-Lowering `DB_POOL_MAX` and `DB_POOL_IDLE_TIMEOUT_S` on a serverless deployment
-shrinks that footprint; raising `max` never helps.
+The pool knobs default to the values that used to be hard-coded — except on
+Vercel, where an unset knob now falls back to the serverless pair (`max` 3,
+idle 5 s; `process.env.VERCEL` selects it, an explicit env var still wins).
+The split exists because peak server-side connections scale with
+**instance count × connections held idle**, not with per-instance `max` — a
+fleet of serverless instances each sitting on a few idle connections for 30 s
+is the term that grows during a crawl burst. On 2026-08-29 exactly that
+exhausted the shared `max_connections = 200` (Sentry BOARDSESH-FS: crawler
+bursts on climb-view SSR held ~10 idle connections per lambda) and starved the
+backend's `POST /graphql` alongside (BOARDSESH-A1). Lowering `DB_POOL_MAX` and
+`DB_POOL_IDLE_TIMEOUT_S` on a serverless deployment shrinks that footprint;
+raising `max` never helps.
 
 ### The `statement_timeout` hazard
 
