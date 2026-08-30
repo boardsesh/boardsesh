@@ -421,6 +421,7 @@
   },
   "userDrawer": {
     "signIn": "Sign in",
+    "changeBoard": "Change board",
     "myPlaylists": "My playlists",
     "about": "About",
     "whatsNew": "What's New",

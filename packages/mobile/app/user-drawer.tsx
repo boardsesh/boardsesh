@@ -233,7 +233,11 @@ export default function UserDrawerScreen() {
                 entries with the same glyph and the same chevron, and nothing on
                 screen said which one edited a board and which one switched to it
                 (#4623). /boards now does both. */}
-            <DrawerRow icon="boards" title={t('mobile.nav.boards')} onPress={() => close(() => navigateToBoards())} />
+            <DrawerRow
+              icon="boards"
+              title={t('userDrawer.changeBoard')}
+              onPress={() => close(() => navigateToBoards())}
+            />
           </View>
 
           <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>

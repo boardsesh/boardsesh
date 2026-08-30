@@ -421,6 +421,7 @@
   },
   "userDrawer": {
     "signIn": "Se connecter",
+    "changeBoard": "Changer de board",
     "myPlaylists": "Mes playlists",
     "about": "À propos",
     "whatsNew": "Nouveautés",

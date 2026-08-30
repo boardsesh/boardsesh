@@ -421,6 +421,7 @@
   },
   "userDrawer": {
     "signIn": "Anmelden",
+    "changeBoard": "Board wechseln",
     "myPlaylists": "Meine Playlists",
     "about": "Über",
     "whatsNew": "Neuigkeiten",
