@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { BoardName } from '@boardsesh/shared-schema';
-import { brushRoleColor, getNextBrushRole, getPaintRoles } from '../brush-roles';
+import type { BoardName, LitUpHoldsMap } from '@boardsesh/shared-schema';
+import { brushRoleColor, computeRoleCapacity, getNextBrushRole, getPaintRoles } from '../brush-roles';
 
 describe('getPaintRoles', () => {
   it('excludes FOOT for MoonBoard saved-climb roles', () => {
@@ -62,5 +62,40 @@ describe('getNextBrushRole', () => {
   it('clears a hold in an unrecognised state instead of throwing', () => {
     expect(() => getNextBrushRole('not-a-board' as BoardName, 'OFF', 'HAND')).not.toThrow();
     expect(getNextBrushRole('not-a-board' as BoardName, 'OFF', 'HAND')).toBe('OFF');
+  });
+
+  it('skips a full role and lands on the next open one', () => {
+    // STARTING full, cycle from FOOT would normally land on STARTING next.
+    expect(getNextBrushRole('kilter', 'FOOT', 'HAND', { STARTING: true })).toBe('OFF');
+  });
+
+  it('skips every full role in a row, not just the first', () => {
+    // Starts and finishes both full, campus (no feet) active: from HAND the
+    // only open destination left is OFF.
+    expect(getNextBrushRole('kilter', 'HAND', 'HAND', { STARTING: true, FINISH: true, FOOT: true })).toBe('OFF');
+    // ...and tapping again from OFF comes back around to HAND, the one role
+    // that's never full — oscillating between hand hold and no hold.
+    expect(getNextBrushRole('kilter', 'OFF', 'HAND', { STARTING: true, FINISH: true, FOOT: true })).toBe('HAND');
+  });
+});
+
+describe('computeRoleCapacity', () => {
+  it('flags STARTING/FINISH full at two, excluding the tapped hold itself', () => {
+    const map: LitUpHoldsMap = {
+      1: { state: 'STARTING', color: '', displayColor: '' },
+      2: { state: 'STARTING', color: '', displayColor: '' },
+      3: { state: 'FINISH', color: '', displayColor: '' },
+    };
+    // Hold 1 is one of the two starts, but excluded from its own count — with
+    // only hold 2 left counting, STARTING has room for hold 1 to stay there.
+    expect(computeRoleCapacity(map, 1, false)).toEqual({ STARTING: false, FINISH: false, FOOT: false });
+    // A different, uninvolved hold sees both existing starts and is capped.
+    expect(computeRoleCapacity(map, 4, false)).toEqual({ STARTING: true, FINISH: false, FOOT: false });
+  });
+
+  it('caps FOOT at zero exactly when campus is on', () => {
+    const map: LitUpHoldsMap = {};
+    expect(computeRoleCapacity(map, 1, true)).toMatchObject({ FOOT: true });
+    expect(computeRoleCapacity(map, 1, false)).toMatchObject({ FOOT: false });
   });
 });

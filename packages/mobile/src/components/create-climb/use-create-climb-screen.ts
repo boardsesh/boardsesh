@@ -40,7 +40,7 @@ import {
   isDraftStorageAvailable,
   type CreateClimbDraft,
 } from '../../lib/create-climb-draft-store';
-import { getNextBrushRole, getPaintRoles, type BrushRole } from './brush-roles';
+import { computeRoleCapacity, getNextBrushRole, getPaintRoles, type BrushRole } from './brush-roles';
 import { useCreateClimbAutosave } from './use-create-climb-autosave';
 import { deriveDraftStatusView, type DraftStatusView } from './draft-status-view';
 
@@ -651,16 +651,38 @@ export function useCreateClimbScreen({
   }, [holdsJson, bleConnected, currentFrameBleString]);
 
   // ---- Painting + role assignment. ----
-  // A tap cycles the tapped hold through the board's paint roles, starting
-  // from the currently selected brush, rather than always overwriting it with
-  // that brush — so fixing a mis-painted hold no longer requires a long press.
+  // A tap sets the tapped hold straight to the selected brush — cycling only
+  // kicks in when the tap can't just do that: re-tapping the same hold with
+  // the same brush still selected (so repeated taps walk the role list
+  // instead of re-confirming the first one over and over), or the brush's
+  // role has no room left (2 starts/finishes already placed, or a foot piece
+  // on a "campus" climb), where setting directly would silently no-op. Reset
+  // on any other tap — a different hold, or the same hold after switching
+  // brushes — so switching to Foot and tapping a start hold sets it to Foot
+  // outright rather than resuming wherever the last cycle left off.
+  const lastPaintRef = useRef<{ holdId: number; brush: BrushRole } | null>(null);
   const handlePaint = useCallback(
     (holdId: number) => {
       const currentState = litUpHoldsMap[holdId]?.state ?? 'OFF';
-      setHoldState(holdId, getNextBrushRole(board.boardName, currentState, selectedBrush));
+      const isContinuingCycle =
+        lastPaintRef.current?.holdId === holdId && lastPaintRef.current?.brush === selectedBrush;
+      const atCapacity = computeRoleCapacity(litUpHoldsMap, holdId, campus);
+      const brushAtCapacity = selectedBrush !== 'OFF' && !!atCapacity[selectedBrush];
+      const nextState =
+        isContinuingCycle || brushAtCapacity
+          ? getNextBrushRole(board.boardName, currentState, selectedBrush, atCapacity)
+          : selectedBrush;
+      setHoldState(holdId, nextState);
+      lastPaintRef.current = { holdId, brush: selectedBrush };
     },
-    [setHoldState, selectedBrush, litUpHoldsMap, board.boardName],
+    [setHoldState, selectedBrush, litUpHoldsMap, board.boardName, campus],
   );
+
+  // A hold-role cycle only makes sense while staying on the same frame —
+  // switching frames (nav, duplicate, delete) starts a fresh tapping context.
+  useEffect(() => {
+    lastPaintRef.current = null;
+  }, [currentFrameIndex, frameCount]);
 
   const handleAssignRole = useCallback(
     (holdId: number, role: BrushRole) => {
@@ -677,6 +699,7 @@ export function useCreateClimbScreen({
   /** Empty this frame's holds. Undoable through the reducer; touches nothing else. */
   const handleClearHolds = useCallback(() => {
     resetHolds();
+    lastPaintRef.current = null;
   }, [resetHolds]);
 
   const resetToBlankClimb = useCallback(async () => {
@@ -691,6 +714,7 @@ export function useCreateClimbScreen({
       if (!mountedRef.current) return;
       setPendingNewClimb(false);
       resetHolds();
+      lastPaintRef.current = null;
       setName('');
       setDescription('');
       setNoMatch(false);
