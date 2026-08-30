@@ -34,7 +34,24 @@ import {
   distanceToRing,
   isValidOutlineRing,
   pointInRing,
+  roundRing,
 } from '../packages/shared/board-art-geometry/src/ring';
+
+/**
+ * Neck-trim radius for a placement, in board pixels.
+ *
+ * THE TRACER'S OWN RULE, restated here rather than imported for the reason
+ * every constant in the gates is restated: a hold's neck is a fraction of the
+ * hold, so the radius is a fraction of the placement radius, and the floor of 2
+ * is where a disc stops being one. The inner boundary has to be trimmed at the
+ * radius the silhouette around it was trimmed at, or the two are cleaned to
+ * different standards and the ring between them inherits the difference.
+ */
+export const TRIM_RADIUS_PER_PLACEMENT_RADIUS = 0.078;
+
+export function neckTrimRadiusFor(placementRadius: number): number {
+  return Math.max(2, Math.round(TRIM_RADIUS_PER_PLACEMENT_RADIUS * placementRadius));
+}
 
 /**
  * Share of a config's traced holds that must yield an acceptable ring before the
@@ -144,10 +161,14 @@ export function extractConfigLedRings(
       }
     }
 
-    const extraction = extractLedInner(pixels, raster.mask, raster.width, raster.height, [
-      -raster.originX,
-      -raster.originY,
-    ]);
+    const extraction = extractLedInner(
+      pixels,
+      raster.mask,
+      raster.width,
+      raster.height,
+      [-raster.originX, -raster.originY],
+      { neckTrimRadius: neckTrimRadiusFor(placement.r) },
+    );
     if (!extraction.accepted) {
       reject(extraction.reason);
       continue;
@@ -160,17 +181,19 @@ export function extractConfigLedRings(
 
     // Into radius units by EXACTLY the arithmetic the silhouette emission uses:
     // the tracer works in integer board pixels offset from the ROUNDED centre,
-    // so the rounding is undone before dividing, and the result is rounded to
-    // the shard's four decimals. Anything else would put an inner ring and the
-    // silhouette around it in subtly different frames.
-    const scale = 10 ** coordinateDecimals;
+    // so the rounding is undone before dividing. Anything else would put an
+    // inner ring and the silhouette around it in subtly different frames.
+    //
+    // The decimal rounding goes through `roundRing`, the package's own, rather
+    // than a fourth private copy of `Math.round(v * 10 ** d) / 10 ** d`: the
+    // editor, the backend and this all have to agree on what a stored
+    // coordinate looks like, `-0` collapsing to `0` included.
     const roundingX = centreX - placement.cx;
     const roundingY = centreY - placement.cy;
-    const radiusUnits = boardPixels.map((value, index) => {
-      const exact = (value + (index % 2 === 0 ? roundingX : roundingY)) / placement.r;
-      const rounded = Math.round(exact * scale) / scale;
-      return rounded === 0 ? 0 : rounded;
-    });
+    const radiusUnits = roundRing(
+      boardPixels.map((value, index) => (value + (index % 2 === 0 ? roundingX : roundingY)) / placement.r),
+      coordinateDecimals,
+    );
 
     // The two storage questions the pure extractor cannot ask, because both are
     // about the RADIUS-UNIT ring a shard stores rather than about the pixels.
@@ -192,6 +215,31 @@ export function extractConfigLedRings(
   }
 
   return { rings, boardPixelRings, attempted, accepted, rejections };
+}
+
+/**
+ * One config's `ledInner` table: extractions first, hand-drawn annotations over
+ * the top.
+ *
+ * A ONE-LINE RULE IN ITS OWN FUNCTION, and that is the point. Written inline in
+ * the generator it was two loops in the right order and nothing could tell them
+ * from the wrong order: no `led_inner` annotation exists in the repo yet, so
+ * every test that reads committed data iterates over nothing, and swapping the
+ * loops passed the entire suite. Here the rule is checkable without a fixture
+ * file — and without committing an override the exporter would delete on its
+ * next real run, since it removes files whose config has no rows behind it.
+ *
+ * Annotations win because they are the ground truth the extractor is calibrated
+ * against. A calibration target the thing being calibrated can overwrite is not
+ * one.
+ */
+export function assembleLedInner(
+  extracted: ReadonlyMap<number, number[]>,
+  annotations: ReadonlyMap<number, number[]>,
+): Map<number, number[]> {
+  const assembled = new Map<number, number[]>(extracted);
+  for (const [placementId, ring] of annotations) assembled.set(placementId, ring);
+  return assembled;
 }
 
 /**

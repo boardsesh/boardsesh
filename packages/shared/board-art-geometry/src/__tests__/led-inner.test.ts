@@ -3,7 +3,19 @@
 import { describe, expect, it } from 'vitest';
 import { listBoardArtGeometryKeys, loadBoardArtGeometry } from '../loader';
 import { CENTRE_TOLERANCE_RADII, MAX_RING_NUMBERS, distanceToRing, isValidOutlineRing, pointInRing } from '../ring';
+import { isSimpleRing } from '../segmentation/led-ring';
 import { distanceOutsidePolygon, overridesForKey, shardBoardForKey, toTracerPixels } from './gate-measures';
+
+/** {@link isSimpleRing} against a flat `[x0, y0, x1, y1, ...]` shard ring. */
+function isSimpleFlatRing(flat: number[]): boolean {
+  const points: Array<[number, number]> = [];
+  for (let index = 0; index < flat.length; index += 2) points.push([flat[index], flat[index + 1]]);
+  return isSimpleRing(points);
+}
+
+function describeEntry(entry: { key: string; placementId: number }): string {
+  return `${entry.key} ${entry.placementId}`;
+}
 
 /**
  * The extracted LED base-plate inner rings, checked against the shards they
@@ -34,23 +46,23 @@ const SHARD_KEYS = listBoardArtGeometryKeys();
  *
  * Every one is a Kilter Homewall config (layout 8), and that is the extractor
  * separating the catalogue rather than a board list someone typed: acceptance
- * on these ten runs 70.9% to 89.1%, and the highest anywhere else is
- * tension/9-3 at 24.5%. The 60% cut-off sits in a 46-point gap with nothing in
+ * on these ten runs 73.2% to 92.1%, and the highest anywhere else is
+ * tension/9-3 at 22.3%. The 60% cut-off sits in a 50-point gap with nothing in
  * it, so no config in the catalogue is anywhere near flipping.
  *
  * A config absent from this table must ship no `ledInner` table at all.
  */
 const PINNED_LED_INNER_COUNTS: Record<string, number> = {
-  'kilter/8-17': 270,
-  'kilter/8-18': 147,
-  'kilter/8-19': 123,
-  'kilter/8-21': 344,
-  'kilter/8-22': 171,
-  'kilter/8-23': 337,
-  'kilter/8-24': 182,
-  'kilter/8-25': 374,
-  'kilter/8-26': 185,
-  'kilter/8-29': 173,
+  'kilter/8-17': 277,
+  'kilter/8-18': 148,
+  'kilter/8-19': 129,
+  'kilter/8-21': 346,
+  'kilter/8-22': 172,
+  'kilter/8-23': 340,
+  'kilter/8-24': 184,
+  'kilter/8-25': 383,
+  'kilter/8-26': 191,
+  'kilter/8-29': 174,
 };
 
 /**
@@ -71,14 +83,26 @@ const MAX_VERTEX_OUTSIDE_PX = 1;
  * Bounds on the inner ring's share of its silhouette, as SHIPPED.
  *
  * Wider than the extractor's own 0.25..0.95, and deliberately measured a
- * different way: the extractor gated on PIXEL COUNTS of two masks, and this
- * measures the shoelace area of the two polygons that came out of them. A
- * pixel-counted area carries about half a perimeter more than the polygon
- * enclosing it, so the two estimators disagree by a couple of points on a small
- * hold and twelve shipped rings sit just outside the extractor's own bounds when
- * re-measured this way. Loosening by 0.05 either side absorbs the estimator
- * rather than the defect: a ring that traced the silhouette reads 1.0 here and a
- * collapsed one reads near 0, both an order of magnitude past these.
+ * different way: the extractor gated on PIXEL COUNTS of two masks, and this is
+ * the shoelace area of the two POLYGONS that came out of them. Three things
+ * separate those numbers, and they do not all push the same way:
+ *
+ *   - a pixel-counted area carries about half a perimeter more than the polygon
+ *     enclosing it, which inflates both areas — the smaller one proportionally
+ *     more, so the pixel share reads HIGH;
+ *   - `fillHoles` runs on the interior mask and not on the silhouette mask, so a
+ *     hold with a punched-out bolt hole has that hole counted in the numerator
+ *     and not in the denominator;
+ *   - Douglas-Peucker then decimates the two rings independently, at the same
+ *     tolerance but against different curvature, so it cuts corners off the two
+ *     areas by different amounts.
+ *
+ * The measured spread is small and two-sided: re-measured this way, six shipped
+ * rings fall below the extractor's 0.25 (min 0.2365) and nine rise above its
+ * 0.95 (max 0.9547).
+ * Loosening by 0.05 either side absorbs all three effects rather than a defect —
+ * a ring that traced the silhouette reads 1.0 here and a collapsed one reads
+ * near 0, both an order of magnitude past these bounds.
  */
 const MIN_SHIPPED_AREA_SHARE = 0.2;
 const MAX_SHIPPED_AREA_SHARE = 0.97;
@@ -173,6 +197,32 @@ describe('shipped ledInner rings', () => {
       }
     }
     expect(escaped).toEqual([]);
+  });
+
+  it('are simple polygons', () => {
+    // A ring that crosses itself renders as a hole in the wrong place, and it
+    // passes every area, containment and centre test there is — nothing else in
+    // this file would notice one. 176 of the first 2,306 rings extracted did
+    // cross themselves: a 1-pixel isthmus the blur left behind, walked out and
+    // back by the border follower and then replaced with two crossing chords by
+    // Douglas-Peucker. The interior's neck trim is the fix; this is the proof.
+    expect(SHIPPED.filter((entry) => !isSimpleFlatRing(entry.ring)).map(describeEntry)).toEqual([]);
+  });
+
+  it('are no more self-intersecting than the silhouettes, which is not at all', () => {
+    // The control, and it is what says the trim was the missing piece rather
+    // than the ring being intrinsically harder: the silhouettes come off the
+    // same border follower and the same simplification, and the only thing they
+    // had that the interior lacked was a neck trim before tracing.
+    const crossing: string[] = [];
+    for (const key of SHARD_KEYS) {
+      const geometry = loadBoardArtGeometry(shardBoardForKey(key));
+      if (geometry === null) throw new Error(`${key}: shard did not load`);
+      for (const [placementText, ring] of Object.entries(geometry.outlines)) {
+        if (!isSimpleFlatRing(ring)) crossing.push(`${key} ${placementText}`);
+      }
+    }
+    expect(crossing).toEqual([]);
   });
 
   it('describe a lit band rather than the whole hold or none of it', () => {

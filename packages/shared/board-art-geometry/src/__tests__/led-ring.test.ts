@@ -13,9 +13,11 @@ import {
   extractLedInner,
   fillHoles,
   gaussianKernel,
+  isSimpleRing,
   normalisedWarmth,
   rasteriseRing,
   traceMaskBorder,
+  trimNecks,
   warmMask,
 } from '../segmentation/led-ring';
 
@@ -221,6 +223,126 @@ describe('morphology', () => {
   });
 });
 
+describe('the neck trim', () => {
+  const width = 41;
+
+  /** Two 13x13 blobs joined by a 1-pixel isthmus — what the blur leaves behind. */
+  function dumbbell(): Uint8Array {
+    const mask = new Uint8Array(width * width);
+    for (let y = 14; y < 27; y += 1) {
+      for (let x = 4; x < 17; x += 1) mask[y * width + x] = 1;
+      for (let x = 24; x < 37; x += 1) mask[y * width + x] = 1;
+    }
+    for (let x = 17; x < 24; x += 1) mask[20 * width + x] = 1;
+    return mask;
+  }
+
+  it('drops a limb reachable only through a one-pixel isthmus', () => {
+    const trimmed = trimNecks(dumbbell(), width, width, 20 * width + 10, 3);
+    // The anchor's blob survives whole; the isthmus and everything behind it go.
+    // The anchor's blob survives WHOLE, corners included — the open-disc
+    // erosion against the closed-disc dilation is what guarantees that.
+    for (let y = 14; y < 27; y += 1) {
+      for (let x = 4; x < 17; x += 1) expect([x, y, trimmed[y * width + x]]).toEqual([x, y, 1]);
+    }
+    // The far blob is gone entirely, and nothing beyond the first pixel or two
+    // of isthmus comes back with it: the closed dilation reaches a little past
+    // the core, which is the price of not shaving the corners.
+    for (let y = 14; y < 27; y += 1) {
+      for (let x = 24; x < 37; x += 1) expect([x, y, trimmed[y * width + x]]).toEqual([x, y, 0]);
+    }
+    expect(trimmed[20 * width + 23]).toBe(0);
+    expect(area(trimmed)).toBeLessThan(13 * 13 + 7);
+  });
+
+  it('leaves a hold with no neck exactly as it was', () => {
+    const solid = new Uint8Array(width * width);
+    for (let y = 10; y < 31; y += 1) for (let x = 10; x < 31; x += 1) solid[y * width + x] = 1;
+    expect([...trimNecks(solid, width, width, 20 * width + 20, 3)]).toEqual([...solid]);
+  });
+
+  it('returns a shape too thin to core untouched rather than deleting it', () => {
+    // The tracer's own fallback. A 4-pixel rail cores nothing at radius 3, and
+    // an unguarded open would take the whole hold.
+    const rail = new Uint8Array(width * width);
+    for (let y = 5; y < 36; y += 1) for (let x = 19; x < 23; x += 1) rail[y * width + x] = 1;
+    expect(area(trimNecks(rail, width, width, 20 * width + 20, 3))).toBe(area(rail));
+  });
+});
+
+describe('isSimpleRing', () => {
+  it('accepts a convex ring and a concave one', () => {
+    expect(
+      isSimpleRing([
+        [0, 0],
+        [10, 0],
+        [10, 10],
+        [0, 10],
+      ]),
+    ).toBe(true);
+    // An L, whose reflex corner a naive convexity test would reject.
+    expect(
+      isSimpleRing([
+        [0, 0],
+        [10, 0],
+        [10, 4],
+        [4, 4],
+        [4, 10],
+        [0, 10],
+      ]),
+    ).toBe(true);
+  });
+
+  it('rejects the bow tie an isthmus and Douglas-Peucker produce together', () => {
+    // The exact failure this backstop exists for: the border follower walks out
+    // along one side of a 1-pixel neck and back along the other, and the
+    // simplification replaces the round trip with two crossing chords.
+    expect(
+      isSimpleRing([
+        [0, 0],
+        [10, 10],
+        [10, 0],
+        [0, 10],
+      ]),
+    ).toBe(false);
+  });
+
+  it('rejects a ring that doubles back along itself', () => {
+    // Collinear overlap, which a crossing test alone would let through.
+    expect(
+      isSimpleRing([
+        [0, 0],
+        [10, 0],
+        [4, 0],
+        [4, 10],
+      ]),
+    ).toBe(false);
+  });
+
+  it('does not mistake the closing edge for a crossing', () => {
+    // The last edge and the first share a vertex by construction, as does every
+    // other consecutive pair. A test that forgot the wraparound would call
+    // every ring in the catalogue self-intersecting.
+    expect(
+      isSimpleRing([
+        [0, 0],
+        [8, 1],
+        [9, 9],
+        [1, 8],
+      ]),
+    ).toBe(true);
+  });
+
+  it('refuses anything short of a triangle', () => {
+    expect(
+      isSimpleRing([
+        [0, 0],
+        [1, 1],
+      ]),
+    ).toBe(false);
+  });
+});
+
 describe('contours', () => {
   it('walks a mask border and returns nothing for an empty mask', () => {
     const width = 21;
@@ -282,6 +404,14 @@ describe('extractLedInner', () => {
     ).toEqual(
       JSON.stringify(extractLedInner(second.pixels, second.silhouette, second.width, second.height, [CENTRE, CENTRE])),
     );
+  });
+
+  it('emits a simple ring', () => {
+    const { pixels, silhouette, width, height } = twoToneHold();
+    const extraction = extractLedInner(pixels, silhouette, width, height, [CENTRE, CENTRE]);
+    expect(extraction.accepted).toBe(true);
+    if (!extraction.accepted) return;
+    expect(isSimpleRing(extraction.contour)).toBe(true);
   });
 
   it('every contour point is inside the silhouette it came from', () => {

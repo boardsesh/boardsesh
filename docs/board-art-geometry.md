@@ -294,7 +294,15 @@ The image reasoning is in
 sharp, no file paths, no board data — so the whole classifier is unit-tested against
 synthetic two-tone art in `led-ring.test.ts` rather than against 499 real holds. The script
 is the glue: it crops the composited board, runs the extractor once per shipping
-silhouette, and applies the two acceptance layers the pure code cannot ask about.
+silhouette, and applies the two acceptance layers the pure code cannot ask about. It is
+tested the same way, against synthetic art, in `scripts/led-ring-extract.test.ts`.
+
+The script reaches the package by **relative path**, not by the `@boardsesh/…` subpath, the
+same way `scripts/outline-overrides-merge.ts` does: the repo's isolated linker leaves
+workspace packages out of the root `node_modules`, so a bare specifier does not resolve for
+a script run from the repo root. `segmentation/led-ring` is deliberately NOT a package
+export — the only consumers are this script and the package's own tests, and leaving it
+unexported keeps a 3 MB shard set's worth of neighbours out of anyone's bundle graph.
 
 ### The discriminator
 
@@ -331,9 +339,21 @@ corrected polygon is the one a renderer subtracts from):
    boundary**. A plate is what the hold sits on, so it is visible around the edge by
    construction — and this is also what drops Kilter's bolt hole, which reads warm and is a
    dot in the middle of the hold.
-7. Interior = silhouette minus that band; take the component around the bolt, fill its
-   holes, trace the outer border with the tracer's own Moore follower, and simplify with
-   Douglas-Peucker at the same 1.6 board px.
+7. Interior = silhouette minus that band; take the component around the bolt (the *largest*
+   component where the bolt is not interior — see Limitations), fill its holes, and **trim
+   its thin necks** at the tracer's own radius, `max(2, round(0.078 · r))`.
+8. Trace the outer border with the tracer's own Moore follower, simplify with
+   Douglas-Peucker at the same 1.6 board px, and **refuse anything that crosses itself**.
+
+**Steps 7 and 8 are one fix and its proof, and both were added after measurement.** The
+first version of the extractor did neither, and 176 of its 2,306 rings self-intersected —
+against 0 of 15,499 silhouettes. The cause is that the tracer trims necks twice before it
+takes a border and the interior mask was trimmed not at all: the blur's re-threshold leaves
+the interior joined across a 1-pixel isthmus here and there, the border follower walks out
+along one side of it and back along the other, and Douglas-Peucker then replaces that round
+trip with two chords that cross. A bow tie renders as a hole in the wrong place and passes
+every area, containment and centre test there is, which is why the simple-ring refusal
+stays as a backstop even though the trim is the actual fix.
 
 **The blur is exact integer arithmetic.** The separable kernel is built once as integer
 weights at a scale of 65536 (the only floating-point step, immediately rounded), and both
@@ -359,24 +379,43 @@ silhouette", which is what every renderer did before the field existed. It has t
 
 A **config** emits a `ledInner` table only when at least `MIN_CONFIG_ACCEPTANCE` (60%) of
 its traced holds produce a ring. That is a cliff-edge separator rather than a threshold
-anything balances on: the ten Kilter Homewall configs run 70.9%–89.1%, and the highest
-anywhere else in the catalogue is tension/9-3 at 24.5%.
+anything balances on: the ten Kilter Homewall configs run 73.2%–92.1%, and the highest
+anywhere else in the catalogue is tension/9-3 at 22.3%. Nothing sits in the 50 points
+between them.
 
 | config | rings | accepted |
 | --- | --- | --- |
-| kilter/8-17 | 270 / 305 | 88.5% |
-| kilter/8-18 | 147 / 165 | 89.1% |
-| kilter/8-19 | 123 / 140 | 87.9% |
-| kilter/8-21 | 344 / 391 | 88.0% |
-| kilter/8-22 | 171 / 195 | 87.7% |
-| kilter/8-23 | 337 / 389 | 86.6% |
-| kilter/8-24 | 182 / 219 | 83.1% |
-| kilter/8-25 | 374 / 499 | 74.9% |
-| kilter/8-26 | 185 / 261 | 70.9% |
-| kilter/8-29 | 173 / 196 | 88.3% |
+| kilter/8-17 | 277 / 305 | 90.8% |
+| kilter/8-18 | 148 / 165 | 89.7% |
+| kilter/8-19 | 129 / 140 | 92.1% |
+| kilter/8-21 | 346 / 391 | 88.5% |
+| kilter/8-22 | 172 / 195 | 88.2% |
+| kilter/8-23 | 340 / 389 | 87.4% |
+| kilter/8-24 | 184 / 219 | 84.0% |
+| kilter/8-25 | 383 / 499 | 76.8% |
+| kilter/8-26 | 191 / 261 | 73.2% |
+| kilter/8-29 | 174 / 196 | 88.8% |
 
-2,306 rings over ten shards, and the other 39 shards are byte-identical to what they were
+2,344 rings over ten shards, and the other 39 shards are byte-identical to what they were
 before the extractor existed.
+
+### Limitations
+
+**`MIN_INTERIOR_DOMINANCE` is 0.75, not 1.0, so a dropped fragment can render lit.** The
+emitted ring is the boundary of ONE component — the body around the bolt — and a hold whose
+interior broke into a large piece plus a small one ships only the large piece. Up to a
+quarter of the interior can be discarded that way, and whatever was discarded is inside the
+silhouette and outside the inner ring, which is to say the renderer lights it. In practice
+the effect is small and bounded: the centroid of the emitted ring sits a median 0.126 radii
+from the placement centre and at most 0.605, and `MIN_INTERIOR_AREA_SHARE` refuses anything
+that kept less than a quarter of the silhouette, so a hold cannot ship a fragment and pass.
+Tightening the dominance would trade these for outright omissions; 0.75 is where that trade
+was made, and an annotation is the remedy for any individual hold it gets wrong.
+
+**Nothing here knows where the LED physically is.** The band is whatever the art paints
+beige around the hold's edge, which on Homewall art is the base plate. A board that paints
+a warm rim for a decorative reason would extract the same way, which is what the per-config
+acceptance rate and the contact sheets are for.
 
 ### Annotations always win
 

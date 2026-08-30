@@ -530,6 +530,167 @@ export function rasteriseRing(flat: number[]): {
   return { mask, width, height, originX, originY };
 }
 
+/**
+ * Erosion by an OPEN disc — `dx² + dy² < radius²`, strictly.
+ *
+ * The neck trim's erosion and nothing else's, and the asymmetry against
+ * {@link dilate}'s closed disc is the tracer's and is load-bearing. The closed
+ * dilation strictly contains the open erosion, so every pixel a core pixel
+ * needed filled in order to qualify comes back, and the round trip shaves no
+ * straight edge: a 13x13 blob comes back 13x13, corners included. Erode and
+ * dilate with the same disc instead and the trim rounds 19 pixels off every
+ * square corner it meets — which a fixture here caught, on art where those
+ * corners are the hold.
+ *
+ * The `<` also sets the neck cut-off. At radius 3 the open disc reaches 2 px
+ * along the axes, so a straight limb keeps a core from 5 px wide up; the closed
+ * disc would reach 3, demand 7, and cut real 5- and 6-px rails.
+ */
+function erodeOpenDisc(mask: Uint8Array, width: number, height: number, radius: number): Uint8Array {
+  const out = new Uint8Array(mask.length);
+  const offsets: Array<readonly [number, number]> = [];
+  for (let dy = -radius; dy <= radius; dy += 1) {
+    for (let dx = -radius; dx <= radius; dx += 1) {
+      if (dx * dx + dy * dy < radius * radius) offsets.push([dx, dy]);
+    }
+  }
+  for (let index = 0; index < mask.length; index += 1) {
+    if (mask[index] !== 1) continue;
+    const x = index % width;
+    const y = (index - x) / width;
+    let clear = true;
+    for (const [stepX, stepY] of offsets) {
+      const nextX = x + stepX;
+      const nextY = y + stepY;
+      if (nextX < 0 || nextY < 0 || nextX >= width || nextY >= height || mask[nextY * width + nextX] !== 1) {
+        clear = false;
+        break;
+      }
+    }
+    if (clear) out[index] = 1;
+  }
+  return out;
+}
+
+/**
+ * Drop whatever the anchor can reach only through a neck too thin to be part of
+ * the hold, keeping the body the anchor sits on.
+ *
+ * THE TRACER'S OWN `trimThinNecks`, and it is here for a defect that was
+ * measured rather than imagined. The tracer trims twice before it takes a
+ * border, and the first version of this extractor trimmed not at all: the
+ * blur's re-threshold leaves the interior joined across a 1-pixel isthmus here
+ * and there, the border follower walks out along one side of it and back along
+ * the other, and Douglas-Peucker then replaces that round trip with two chords
+ * that cross. 176 of 2,306 shipped rings self-intersected that way, against 0 of
+ * 15,499 silhouettes, which is exactly the difference the trim accounts for.
+ *
+ * Growing only the anchor's core is load-bearing, and is why this is not a plain
+ * morphological open. Dilating every core and flooding afterwards is
+ * `open(mask) ∩ anchorComponent`, which re-bridges a limb that carries a core of
+ * its own: the two dilations meet inside the neck and the flood walks across.
+ *
+ * Two fallbacks, both the tracer's. A mask with no core at all — a hold thinner
+ * than the radius everywhere — comes back untouched rather than deleted. So does
+ * one whose body grows back without covering the anchor.
+ */
+export function trimNecks(mask: Uint8Array, width: number, height: number, anchor: number, radius: number): Uint8Array {
+  const core = erodeOpenDisc(mask, width, height, radius);
+  let hasCore = false;
+  for (let index = 0; index < core.length; index += 1) {
+    if (core[index] === 1) {
+      hasCore = true;
+      break;
+    }
+  }
+  if (!hasCore) return mask;
+
+  const coreVisited = new Uint8Array(core.length);
+  let body: number[] = [];
+  if (core[anchor] === 1) {
+    body = component(core, width, height, anchor, coreVisited);
+  } else {
+    // The anchor sits on art thinner than the radius. The largest core stands in
+    // — not a tie-break but the only anchor those holds have.
+    for (let index = 0; index < core.length; index += 1) {
+      if (core[index] !== 1 || coreVisited[index] === 1) continue;
+      const candidate = component(core, width, height, index, coreVisited);
+      if (candidate.length > body.length) body = candidate;
+    }
+  }
+
+  const bodyMask = new Uint8Array(core.length);
+  for (const index of body) bodyMask[index] = 1;
+  const grown = dilate(bodyMask, width, height, radius);
+  const kept = new Uint8Array(mask.length);
+  for (let index = 0; index < mask.length; index += 1) {
+    kept[index] = mask[index] === 1 && grown[index] === 1 ? 1 : 0;
+  }
+  if (kept[anchor] !== 1) return mask;
+  const reachable = new Uint8Array(kept.length);
+  const members = component(kept, width, height, anchor, reachable);
+  const out = new Uint8Array(kept.length);
+  for (const index of members) out[index] = 1;
+  return out;
+}
+
+/**
+ * Do two segments cross at a point interior to both?
+ *
+ * Strict: a shared endpoint is not a crossing, because consecutive edges of a
+ * ring share one by construction and the caller excludes those pairs anyway.
+ * Collinear overlap counts, since a ring that doubles back along itself is not
+ * simple however the arithmetic works out.
+ */
+function segmentsCross(
+  [fromAX, fromAY]: RingPoint,
+  [toAX, toAY]: RingPoint,
+  [fromBX, fromBY]: RingPoint,
+  [toBX, toBY]: RingPoint,
+): boolean {
+  const orientation = (aX: number, aY: number, bX: number, bY: number, cX: number, cY: number): number => {
+    const cross = (bX - aX) * (cY - aY) - (bY - aY) * (cX - aX);
+    return cross > 0 ? 1 : cross < 0 ? -1 : 0;
+  };
+  const onSegment = (aX: number, aY: number, bX: number, bY: number, pX: number, pY: number): boolean =>
+    Math.min(aX, bX) <= pX && pX <= Math.max(aX, bX) && Math.min(aY, bY) <= pY && pY <= Math.max(aY, bY);
+
+  const first = orientation(fromAX, fromAY, toAX, toAY, fromBX, fromBY);
+  const second = orientation(fromAX, fromAY, toAX, toAY, toBX, toBY);
+  const third = orientation(fromBX, fromBY, toBX, toBY, fromAX, fromAY);
+  const fourth = orientation(fromBX, fromBY, toBX, toBY, toAX, toAY);
+  if (first !== second && third !== fourth) return true;
+  if (first === 0 && onSegment(fromAX, fromAY, toAX, toAY, fromBX, fromBY)) return true;
+  if (second === 0 && onSegment(fromAX, fromAY, toAX, toAY, toBX, toBY)) return true;
+  if (third === 0 && onSegment(fromBX, fromBY, toBX, toBY, fromAX, fromAY)) return true;
+  if (fourth === 0 && onSegment(fromBX, fromBY, toBX, toBY, toAX, toAY)) return true;
+  return false;
+}
+
+/**
+ * Is this implicitly-closed ring simple — no edge crossing any non-adjacent
+ * edge?
+ *
+ * O(n²) on a ring the storage bound caps at 150 points, so about 11,000 integer
+ * orientation tests at the very worst. Free, next to the image work that
+ * produced the ring.
+ */
+export function isSimpleRing(points: ReadonlyArray<RingPoint>): boolean {
+  const count = points.length;
+  if (count < 3) return false;
+  for (let first = 0; first < count; first += 1) {
+    const firstEnd = (first + 1) % count;
+    for (let second = first + 1; second < count; second += 1) {
+      const secondEnd = (second + 1) % count;
+      // Adjacent edges share an endpoint by construction, including the pair
+      // either side of the implicit closing edge.
+      if (secondEnd === first || firstEnd === second) continue;
+      if (segmentsCross(points[first], points[firstEnd], points[second], points[secondEnd])) return false;
+    }
+  }
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // The extractor
 // ---------------------------------------------------------------------------
@@ -552,7 +713,18 @@ export type LedInnerRejection =
   /** The interior is a sliver, or is the whole silhouette with no band worth lighting. */
   | 'interior-area-out-of-bounds'
   /** The inner contour is too short to be a shape. */
-  | 'inner-perimeter-too-short';
+  | 'inner-perimeter-too-short'
+  /**
+   * The simplified contour crosses itself.
+   *
+   * The backstop for the defect the neck trim exists to prevent, kept because
+   * the trim is a fix and this is a proof. A 1-pixel isthmus left by the
+   * blur's re-threshold makes the border follower walk out along one side and
+   * back along the other, and Douglas-Peucker then replaces the round trip
+   * with two chords that cross — a bow tie, which renders as a hole in the
+   * wrong place and passes every area and containment test there is.
+   */
+  | 'not-a-simple-ring';
 
 export type LedInnerExtraction =
   | {
@@ -580,6 +752,11 @@ export type LedInnerOptions = {
   minInteriorDominance?: number;
   minInnerPerimeterPoints?: number;
   simplifyEpsilon?: number;
+  /**
+   * Neck-trim radius in board pixels, from the caller's own placement radius.
+   * Omit it and the interior is traced untrimmed — see {@link trimNecks}.
+   */
+  neckTrimRadius?: number;
 };
 
 /**
@@ -594,7 +771,8 @@ export type LedInnerOptions = {
  * chroma threshold -> close -> open -> drop specks -> blur -> re-threshold ->
  * re-clip to the silhouette -> keep only the band components that touch the
  * silhouette boundary -> interior is the silhouette minus that band -> take the
- * body around the bolt -> fill its holes -> trace -> simplify.
+ * body around the bolt -> fill its holes -> trim its thin necks -> trace ->
+ * simplify -> refuse anything that crosses itself.
  */
 export function extractLedInner(
   pixels: Uint8Array,
@@ -614,6 +792,7 @@ export function extractLedInner(
   const minDominance = options.minInteriorDominance ?? MIN_INTERIOR_DOMINANCE;
   const minPerimeter = options.minInnerPerimeterPoints ?? MIN_INNER_PERIMETER_POINTS;
   const epsilon = options.simplifyEpsilon ?? INNER_SIMPLIFY_EPSILON_BOARD_PX;
+  const neckRadius = options.neckTrimRadius ?? null;
 
   let silhouetteArea = 0;
   for (let index = 0; index < silhouette.length; index += 1) silhouetteArea += silhouette[index];
@@ -674,12 +853,22 @@ export function extractLedInner(
   if (interiorArea === 0) return { accepted: false, reason: 'interior-empty' };
 
   // The body around the bolt. Where the bolt itself is not interior — a hold
-  // whose plate covers the placement — the nearest interior pixel stands in,
-  // resolved by squared distance and then by scan order so the choice is
-  // reproducible rather than dependent on the flood's visit order.
+  // whose plate covers the placement, or a silhouette registered against the
+  // wrong hold — the LARGEST interior component stands in.
+  //
+  // Largest, not nearest, and the difference is not academic. The blur pulls the
+  // band a pixel back from the silhouette's own edge, so there is very often a
+  // one-pixel sliver of interior OUTSIDE the band, hugging the boundary. That
+  // sliver is the nearest interior pixel to any centre lying outside the hold,
+  // so a nearest-pixel rule anchors on it and then reports the real body as a
+  // rival component: every off-placement silhouette came back
+  // `interior-not-dominant` rather than reaching the centre rule that is
+  // supposed to catch it. The tracer makes the same call for the same reason —
+  // where its seed is not core, the largest core stands in.
   const centreX = Math.round(centre[0]);
   const centreY = Math.round(centre[1]);
-  let anchor = -1;
+  const visited = new Uint8Array(interior.length);
+  let body: number[] = [];
   if (
     centreX >= 0 &&
     centreY >= 0 &&
@@ -687,29 +876,48 @@ export function extractLedInner(
     centreY < height &&
     interior[centreY * width + centreX] === 1
   ) {
-    anchor = centreY * width + centreX;
+    body = component(interior, width, height, centreY * width + centreX, visited);
   } else {
-    let bestDistance = Infinity;
+    // Ties go to the component whose first pixel comes first in scan order, so
+    // the choice is reproducible rather than dependent on visit order.
     for (let index = 0; index < interior.length; index += 1) {
-      if (interior[index] !== 1) continue;
-      const x = index % width;
-      const y = (index - x) / width;
-      const distance = (x - centreX) ** 2 + (y - centreY) ** 2;
-      if (distance >= bestDistance) continue;
-      bestDistance = distance;
-      anchor = index;
+      if (interior[index] !== 1 || visited[index] === 1) continue;
+      const candidate = component(interior, width, height, index, visited);
+      if (candidate.length > body.length) body = candidate;
     }
   }
-  if (anchor < 0) return { accepted: false, reason: 'interior-empty' };
+  if (body.length === 0) return { accepted: false, reason: 'interior-empty' };
+  // The body member nearest the placement — the centre pixel itself whenever it
+  // is interior, which is almost always. `trimNecks` anchors on it, and its own
+  // fallbacks cover the rest: an anchor that is not core hands over to the
+  // largest core, and a trim that would drop the anchor leaves the mask alone.
+  let anchor = body[0];
+  let bestDistance = Infinity;
+  for (const index of body) {
+    const x = index % width;
+    const y = (index - x) / width;
+    const distance = (x - centreX) ** 2 + (y - centreY) ** 2;
+    if (distance >= bestDistance) continue;
+    bestDistance = distance;
+    anchor = index;
+  }
 
-  const body = component(interior, width, height, anchor, new Uint8Array(interior.length));
   if (body.length < interiorArea * minDominance) {
     return { accepted: false, reason: 'interior-not-dominant' };
   }
 
   const bodyMask = new Uint8Array(interior.length);
   for (const index of body) bodyMask[index] = 1;
-  const solid = fillHoles(bodyMask, width, height);
+  // Fill first, THEN trim, in that order and for the tracer's reason: the
+  // erosion eats the rim around a punched-out bolt hole from both sides at
+  // once, so on a small hold with a big hole the whole rim would go.
+  const filled = fillHoles(bodyMask, width, height);
+  // Trim the isthmuses the blur's re-threshold leaves behind, then fill again —
+  // the trim's `grown ∩ mask` can pinch a bay closed into a hole, and the
+  // extractor emits an outer border only.
+  const trimmed =
+    neckRadius === null ? filled : fillHoles(trimNecks(filled, width, height, anchor, neckRadius), width, height);
+  const solid = trimmed;
   let solidArea = 0;
   for (let index = 0; index < solid.length; index += 1) solidArea += solid[index];
 
@@ -723,9 +931,19 @@ export function extractLedInner(
     return { accepted: false, reason: 'inner-perimeter-too-short' };
   }
 
+  // The backstop, and it has to be AFTER the simplification: the traced border
+  // is a pixel walk and is simple by construction, and it is Douglas-Peucker
+  // replacing a round trip through an isthmus with two crossing chords that
+  // makes a bow tie. The trim above is the fix; this is the proof that it
+  // worked, on every ring that ships.
+  const contour = simplifyRing(border, epsilon);
+  if (!isSimpleRing(contour)) {
+    return { accepted: false, reason: 'not-a-simple-ring' };
+  }
+
   return {
     accepted: true,
-    contour: simplifyRing(border, epsilon),
+    contour,
     silhouetteArea,
     interiorArea: solidArea,
     ringArea: silhouetteArea - solidArea,

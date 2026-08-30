@@ -68,6 +68,7 @@ import type { BoardRenderDetails, RenderableHold } from '../packages/shared/boar
 import { loadOverridesFor } from './outline-overrides-merge';
 import {
   MIN_CONFIG_ACCEPTANCE,
+  assembleLedInner,
   describeLedRings,
   extractConfigLedRings,
   qualifies,
@@ -1729,13 +1730,12 @@ async function measureConfig(
   // same bytes it emitted before this extractor existed.
   const measuredLedRings = extractConfigLedRings(art, placements, outlines, COORDINATE_DECIMALS);
   const ledQualified = qualifies(measuredLedRings);
-  const ledInner = new Map<number, number[]>();
-  if (ledQualified) {
-    for (const [holdId, ring] of measuredLedRings.rings) ledInner.set(holdId, ring);
-  }
   // Annotations replace extractions, never the other way round: a `led_inner`
-  // override is the ground truth this extractor is calibrated against.
-  for (const [holdId, ring] of overrides.ledInner) ledInner.set(holdId, ring);
+  // override is the ground truth this extractor is calibrated against. The rule
+  // lives in `assembleLedInner` rather than in two loops here, because two loops
+  // here were indistinguishable from the same two loops in the wrong order —
+  // nothing in the repo has a `led_inner` annotation to notice with.
+  const ledInner = assembleLedInner(ledQualified ? measuredLedRings.rings : new Map(), overrides.ledInner);
 
   const reportRow = reportRowFor(key, uniquePlacements, stats);
   if (reportDir !== null) {
