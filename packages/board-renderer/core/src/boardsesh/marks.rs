@@ -8,7 +8,9 @@ use tiny_skia::{
 };
 
 use super::geometry::LitHold;
-use crate::types::{Color, FillTuning, GlyphTuning, HoldData, HoldRole, LedCover, Veil};
+use crate::types::{
+    Color, FillTuning, GlyphTuning, HoldData, HoldRole, LedBaseTuning, LedCover, Veil,
+};
 
 const WHITE: Color = Color {
     r: 255,
@@ -168,7 +170,18 @@ fn silhouette_mask(mask: &mut Mask, hold: &LitHold) {
 /// The role fill: lift dark art toward a common lightness (one-way), the role
 /// colour at `opacity`, a saturated inner band clipped inside the silhouette,
 /// and a thin white outer edge. `edge_scale` is the user's brush multiplier.
-pub fn paint_fill(pixmap: &mut Pixmap, lit: &[LitHold], fill: &FillTuning, edge_scale: f32) {
+///
+/// `interior_scale` dims the role colour on the holds that have an LED base
+/// plate: there the plate ring carries the mark, and the body under it only has
+/// to stay readable. Holds without a plate — every hold on every board that has
+/// no `led_inner` table — never see it.
+pub fn paint_fill(
+    pixmap: &mut Pixmap,
+    lit: &[LitHold],
+    fill: &FillTuning,
+    edge_scale: f32,
+    interior_scale: f32,
+) {
     let Some(mut inside) = Mask::new(pixmap.width(), pixmap.height()) else {
         return;
     };
@@ -181,6 +194,11 @@ pub fn paint_fill(pixmap: &mut Pixmap, lit: &[LitHold], fill: &FillTuning, edge_
         ..Stroke::default()
     };
     let target = fill.normalise_target;
+    let interior_scale = if interior_scale.is_finite() {
+        interior_scale.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
     for hold in lit {
         if let Some(lightness) = hold
             .silhouette_lightness
@@ -198,7 +216,12 @@ pub fn paint_fill(pixmap: &mut Pixmap, lit: &[LitHold], fill: &FillTuning, edge_
                 );
             }
         }
-        solid(&mut paint, hold.color, fill.opacity);
+        let body_opacity = if hold.base_path.is_some() {
+            fill.opacity * interior_scale.clamp(0.0, 1.0)
+        } else {
+            fill.opacity
+        };
+        solid(&mut paint, hold.color, body_opacity);
         pixmap.fill_path(
             &hold.path,
             &paint,
@@ -227,6 +250,37 @@ pub fn paint_fill(pixmap: &mut Pixmap, lit: &[LitHold], fill: &FillTuning, edge_
             solid(&mut paint, WHITE, fill.outer_edge_opacity);
             pixmap.stroke_path(&hold.path, &paint, &stroke, Transform::identity(), None);
         }
+    }
+}
+
+/// The LED base plate: the ring between the silhouette and the hold proper,
+/// lit in the role colour at close to full strength. This is the mark on a
+/// board whose art has been annotated — the part a real LED shines through —
+/// and the glow outside it comes off this same ring.
+///
+/// Even-odd, so the hold proper is a hole rather than a second lit patch.
+/// Holds with no plate ring are skipped and keep whatever the fill and glow
+/// already drew.
+pub fn paint_led_base(pixmap: &mut Pixmap, lit: &[LitHold], base: &LedBaseTuning) {
+    if !positive(base.opacity) {
+        return;
+    }
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Paint::default()
+    };
+    for hold in lit {
+        let Some(plate) = &hold.base_path else {
+            continue;
+        };
+        solid(&mut paint, hold.color, base.opacity);
+        pixmap.fill_path(
+            plate,
+            &paint,
+            FillRule::EvenOdd,
+            Transform::identity(),
+            None,
+        );
     }
 }
 

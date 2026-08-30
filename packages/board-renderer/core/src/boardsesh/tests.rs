@@ -4,11 +4,13 @@ use super::*;
 use crate::renderer::render_overlay;
 use crate::types::{
     BoardRenderMode, GlowFalloff, GlowTuning, GlyphMode, GlyphTuning, HoldMarkerShape, HoldRole,
-    HoldStateInfo, LedCover, MarkStyle, Veil,
+    HoldStateInfo, LedBaseTuning, LedCover, MarkStyle, Veil,
 };
 
 const SIZE: u32 = 400;
 const SQUARE: [f32; 8] = [-1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0];
+/// The hold proper inside `SQUARE`: leaves a 10 px plate ring all the way round.
+const SQUARE_INNER: [f32; 8] = [-0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5];
 /// 12 × 12 px blob on a 20 px radius: longest 12 < 18 → boost 1.5.
 const TINY: [f32; 8] = [-0.3, -0.3, 0.3, -0.3, 0.3, 0.3, -0.3, 0.3];
 /// 4 px wide sliver: shortest 4 → extent cap 7.2 px.
@@ -31,6 +33,7 @@ fn hold(id: u32, cx: f32, cy: f32, outline: Option<&[f32]>) -> HoldData {
         cy,
         r: 20.0,
         outline: outline.map(|points| points.to_vec()),
+        led_inner: None,
         led: None,
         silhouette_lightness: None,
     }
@@ -70,6 +73,7 @@ fn config(frames: &str) -> RenderConfig {
         glyphs: GlyphMode::Off,
         glyph: GlyphTuning::default(),
         led_cover: None,
+        led_base: LedBaseTuning::default(),
     }
 }
 
@@ -367,6 +371,175 @@ fn ring_fallback_on_missing_or_malformed_outline() {
     assert_eq!(alpha(&circle, 300, 100), 0);
     assert!(alpha(&circle, 322, 100) > 200);
     assert_eq!(alpha(&circle, 336, 100), 0);
+}
+
+/// Hold 1's square silhouette spans 80..120 px; `SQUARE_INNER` leaves a 10 px
+/// plate ring, so (85, 100) is on the plate and (100, 100) is the hold body.
+fn plated(frames: &str) -> RenderConfig {
+    let mut cfg = config(frames);
+    cfg.holds[0].led_inner = Some(SQUARE_INNER.to_vec());
+    cfg
+}
+
+#[test]
+fn the_led_base_plate_lights_the_rim_and_leaves_the_hold_body_alone() {
+    let plain = render(&config("p1r42"));
+    let plate = render(&plated("p1r42"));
+
+    assert_eq!(alpha(&plain, 100, 100), 0, "glow alone never paints a hold");
+    assert_eq!(
+        alpha(&plate, 100, 100),
+        0,
+        "the hold proper stays the board's own art"
+    );
+    let rim = pixel(&plate, 85, 100);
+    assert!(
+        rim[3] > 230,
+        "the plate ring is lit at nearly full strength, got {rim:?}"
+    );
+    assert_eq!(
+        [rim[0], rim[1], rim[2]],
+        [0, 235, 0],
+        "the plate ring carries the role colour (#00FF00 at 0.92)"
+    );
+    // The plate reaches the silhouette edge all the way round, so the glow
+    // outside is the one the whole silhouette produced.
+    for x in [122, 128, 133] {
+        assert_eq!(
+            alpha(&plate, x, 100),
+            alpha(&plain, x, 100),
+            "glow at x={x} moved"
+        );
+    }
+}
+
+#[test]
+fn a_malformed_or_oversized_led_inner_is_ignored_rather_than_drawn() {
+    let plain = render(&config("p1r42"));
+    let mut cfg = config("p1r42");
+    for (label, ring) in [
+        ("odd-length", vec![0.1, 0.2, 0.3]),
+        ("two points", vec![-0.5, -0.5, 0.5, 0.5]),
+        ("non-finite", vec![f32::NAN, -0.5, 0.5, -0.5, 0.5, 0.5]),
+        // Exactly the silhouette: an even-odd fill of it would light nothing,
+        // and a hold that reads as all-plate is not a plate.
+        ("the silhouette itself", SQUARE.to_vec()),
+        // Beside the hold, not inside it: even-odd would light a patch of wall.
+        (
+            "outside the silhouette",
+            vec![2.0, -0.5, 3.0, -0.5, 3.0, 0.5, 2.0, 0.5],
+        ),
+    ] {
+        cfg.holds[0].led_inner = Some(ring);
+        assert_eq!(render(&cfg), plain, "{label} led_inner changed the drawing");
+    }
+    // The silhouette itself is never in doubt: a bad plate ring must not push
+    // the hold onto the circle fallback.
+    cfg.holds[0].led_inner = Some(vec![f32::INFINITY; 8]);
+    cfg.holds[0].outline = None;
+    assert_ne!(render(&cfg), plain, "hold 1 without an outline is a circle");
+}
+
+#[test]
+fn the_plate_is_opt_out_and_boards_without_one_are_untouched() {
+    let plain = render(&config("p1r42"));
+    let mut off = plated("p1r42");
+    off.led_base.opacity = 0.0;
+    assert_eq!(render(&off), plain, "opacity 0 restores the old drawing");
+    off.led_base.opacity = f32::NAN;
+    assert_eq!(render(&off), plain, "a NaN opacity draws nothing");
+
+    // Hold 2 has no outline and hold 3 has one but no plate: neither can be
+    // moved by the plate settings, whatever they say.
+    let mut tuned = config("p2r43p3r44");
+    tuned.led_base = LedBaseTuning {
+        opacity: 1.0,
+        interior_fill_scale: 0.1,
+        glow_from_base: true,
+    };
+    assert_eq!(render(&tuned), render(&config("p2r43p3r44")));
+
+    let mut none = plated("p1r42");
+    none.mark_style = Some(MarkStyle::NoMark);
+    assert_eq!(
+        total_alpha(&render(&none)),
+        0,
+        "`none` means no mark, plate included"
+    );
+}
+
+#[test]
+fn the_fill_dims_under_the_plate_and_only_on_plated_holds() {
+    let mut plain = config("p1r42p3r44");
+    plain.mark_style = Some(MarkStyle::Fill);
+    let mut plate = plated("p1r42p3r44");
+    plate.mark_style = Some(MarkStyle::Fill);
+    let plain_render = render(&plain);
+    let plate_render = render(&plate);
+    assert!(
+        alpha(&plate_render, 100, 100) < alpha(&plain_render, 100, 100),
+        "the plated hold's body is dimmed under its lit rim"
+    );
+    assert_eq!(
+        alpha(&plate_render, 100, 300),
+        alpha(&plain_render, 100, 300),
+        "the unplated hold keeps the fill it always had"
+    );
+    plate.led_base.interior_fill_scale = 1.0;
+    assert_eq!(
+        alpha(&render(&plate), 100, 100),
+        alpha(&plain_render, 100, 100),
+        "scale 1 is the undimmed fill"
+    );
+}
+
+#[test]
+fn the_glow_comes_off_the_plate_rather_than_the_whole_silhouette() {
+    // A plate along the bottom edge only: y 110..120 px of the 80..120 hold.
+    const BOTTOM_ONLY: [f32; 8] = [-1.0, -1.0, 1.0, -1.0, 1.0, 0.5, -1.0, 0.5];
+    let mut cfg = config("p1r42");
+    cfg.holds[0].led_inner = Some(BOTTOM_ONLY.to_vec());
+    let from_base = render(&cfg);
+    cfg.led_base.glow_from_base = false;
+    let from_silhouette = render(&cfg);
+
+    assert_eq!(
+        alpha(&from_silhouette, 100, 78),
+        alpha(&from_silhouette, 100, 121),
+        "the whole silhouette glows evenly above and below"
+    );
+    assert_eq!(
+        alpha(&from_base, 100, 78),
+        0,
+        "no plate at the top edge, so no glow above the hold"
+    );
+    assert!(
+        alpha(&from_base, 100, 121) > 200,
+        "the plate is at the bottom edge, so the glow is"
+    );
+    assert_eq!(
+        alpha(&from_base, 100, 121),
+        alpha(&from_silhouette, 100, 121),
+        "where the plate reaches the edge the glow is unchanged"
+    );
+}
+
+#[test]
+fn a_plate_too_thin_to_own_a_pixel_keeps_the_silhouette_glow() {
+    // 0.005r inside the edge: sub-pixel at r = 20, so the plate mask holds no
+    // pixel at all and the glow has to fall back rather than vanish.
+    const HAIRLINE: [f32; 8] = [-0.995, -0.995, 0.995, -0.995, 0.995, 0.995, -0.995, 0.995];
+    let plain = render(&config("p1r42"));
+    let mut cfg = config("p1r42");
+    cfg.holds[0].led_inner = Some(HAIRLINE.to_vec());
+    let hairline = render(&cfg);
+    for x in [122, 128, 133] {
+        assert_eq!(
+            alpha(&hairline, x, 100),
+            alpha(&plain, x, 100),
+            "glow at x={x} lost to a sub-pixel plate"
+        );
+    }
 }
 
 #[test]

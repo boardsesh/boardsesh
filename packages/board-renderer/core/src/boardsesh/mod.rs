@@ -3,9 +3,13 @@
 //! design passes settled on.
 //!
 //! Layer order, bottom to top: veil → soft disc (off by default) → LED covers
-//! → glow → fill → glyphs → classic above-markers for auxiliary roles. The
-//! classic renderer is untouched; `render_overlay` dispatches here on
-//! `render_mode: "boardsesh"`.
+//! → glow → fill → LED base plate → glyphs → classic above-markers for
+//! auxiliary roles. The classic renderer is untouched; `render_overlay`
+//! dispatches here on `render_mode: "boardsesh"`.
+//!
+//! The LED base plate layer only draws on holds whose art has a traced
+//! `led_inner` ring, which today means a hand-annotated one. Everywhere else
+//! the drawing is exactly what it was before that field existed.
 //!
 //! What the classic knobs mean here: `shape_size_multiplier` scales the glow's
 //! reach, `stroke_width_multiplier` scales the fill's edge bands and the glyph
@@ -26,7 +30,9 @@ use crate::frames_parser::parse_frames;
 use crate::types::{Color, GlyphMode, HoldData, HoldRenderStyle, MarkStyle, RenderConfig};
 use geometry::LitHold;
 use glow::{FalloffLut, falloff_stops, paint_glow};
-use marks::{paint_fill, paint_glyphs, paint_led_covers, paint_soft_discs, paint_veil};
+use marks::{
+    paint_fill, paint_glyphs, paint_led_base, paint_led_covers, paint_soft_discs, paint_veil,
+};
 
 fn clamp_multiplier(value: f32) -> f32 {
     if value.is_finite() {
@@ -112,10 +118,28 @@ pub fn render(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
             .iter()
             .map(|hold| hold.reach_px(&config.glow, shape_size_multiplier))
             .collect();
-        paint_glow(&mut pixmap, &lit, &reaches, &lut);
+        paint_glow(
+            &mut pixmap,
+            &lit,
+            &reaches,
+            &lut,
+            config.led_base.glow_from_base,
+        );
     }
     if draws_fill {
-        paint_fill(&mut pixmap, &lit, &config.fill, stroke_width_multiplier);
+        paint_fill(
+            &mut pixmap,
+            &lit,
+            &config.fill,
+            stroke_width_multiplier,
+            config.led_base.interior_fill_scale,
+        );
+    }
+    // The LED base plate goes on last of the silhouette layers: it is the mark
+    // on an annotated hold, so it sits over the fill it dimmed. `mark-style:
+    // none` asks for no mark at all, plate included.
+    if mark_style != MarkStyle::NoMark {
+        paint_led_base(&mut pixmap, &lit, &config.led_base);
     }
     if config.glyphs == GlyphMode::Role {
         paint_glyphs(&mut pixmap, &lit, &config.glyph, stroke_width_multiplier);

@@ -115,12 +115,26 @@ pub fn blend_premultiplied(pixel: &mut [u8], color: Color, alpha: f32) {
 
 /// Paint every lit hold's glow. `reaches[i]` is `lit[i]`'s reach in px.
 ///
+/// `from_base` measures the field from each hold's LED base plate ring instead
+/// of its whole silhouette, so the glow reads as coming off the lit rim. Where
+/// the plate reaches the silhouette edge — the usual shape, a rim all the way
+/// round — the nearest site to any outside pixel is the same pixel either way
+/// and the output is identical; where it does not, the glow correctly fades.
+/// Coverage (which keeps glow off the hold surface) is always the full
+/// silhouette, and a plate too thin to own a single pixel falls back to it.
+///
 /// The distance field is computed per hold over its own silhouette box
 /// dilated by its reach — the only pixels its glow can touch — and merged by
 /// nearest distance, which is the same nearest-silhouette partition a single
 /// board-wide transform would give at a tenth of the pixels: seventeen lit
 /// holds on a phone-size board cost ~170k transformed pixels, not 1.8 M.
-pub fn paint_glow(pixmap: &mut Pixmap, lit: &[LitHold], reaches: &[f32], lut: &FalloffLut) {
+pub fn paint_glow(
+    pixmap: &mut Pixmap,
+    lit: &[LitHold],
+    reaches: &[f32],
+    lut: &FalloffLut,
+    from_base: bool,
+) {
     debug_assert_eq!(lit.len(), reaches.len());
     if lit.is_empty() {
         return;
@@ -198,12 +212,9 @@ pub fn paint_glow(pixmap: &mut Pixmap, lit: &[LitHold], reaches: &[f32], lut: &F
             true,
             Transform::from_translate(-(box_x0 as f32), -(box_y0 as f32)),
         );
-        let data = mask.data();
-        let mut sites = vec![NO_SITE; box_width * box_height];
-        let mut any_site = false;
         for y in 0..box_height {
             for x in 0..box_width {
-                let alpha = data[y * box_width + x];
+                let alpha = mask.data()[y * box_width + x];
                 if alpha == 0 {
                     continue;
                 }
@@ -211,10 +222,40 @@ pub fn paint_glow(pixmap: &mut Pixmap, lit: &[LitHold], reaches: &[f32], lut: &F
                 if alpha > coverage[roi_index] {
                     coverage[roi_index] = alpha;
                 }
-                if alpha >= 128 {
-                    sites[y * box_width + x] = 1;
+            }
+        }
+
+        // Sites: the plate ring where there is one, the silhouette otherwise.
+        // The plate is rasterised into its own mask because the coverage pass
+        // above needs the silhouette's alpha, not the ring's.
+        let plate_mask = hold
+            .base_path
+            .as_ref()
+            .filter(|_| from_base)
+            .and_then(|plate| {
+                let mut plate_mask = Mask::new(box_width as u32, box_height as u32)?;
+                plate_mask.fill_path(
+                    plate,
+                    FillRule::EvenOdd,
+                    true,
+                    Transform::from_translate(-(box_x0 as f32), -(box_y0 as f32)),
+                );
+                Some(plate_mask)
+            });
+        let mut sites = vec![NO_SITE; box_width * box_height];
+        let mut any_site = false;
+        for source in [plate_mask.as_ref(), Some(&mask)] {
+            let Some(source) = source else { continue };
+            for (site, alpha) in sites.iter_mut().zip(source.data()) {
+                if *alpha >= 128 {
+                    *site = 1;
                     any_site = true;
                 }
+            }
+            // A plate too thin to claim a single pixel would erase the hold's
+            // glow entirely; fall through to the silhouette instead.
+            if any_site {
+                break;
             }
         }
         // Coverage is recorded for every hold; only the first 65 535 can label a

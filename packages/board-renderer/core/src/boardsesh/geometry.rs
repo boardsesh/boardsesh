@@ -27,6 +27,10 @@ pub struct LitHold {
     pub longest: f32,
     pub shortest: f32,
     pub silhouette_lightness: Option<f32>,
+    /// The LED base plate ring — the silhouette with the hold proper punched
+    /// out — as a two-subpath path to be filled EVEN-ODD. `None` on every hold
+    /// whose art carries no usable `led_inner`, which is nearly all of them.
+    pub base_path: Option<Path>,
 }
 
 /// An outline is usable when it has at least three finite points.
@@ -34,6 +38,52 @@ pub fn valid_outline(outline: &[f32]) -> bool {
     outline.len() >= 6
         && outline.len().is_multiple_of(2)
         && outline.iter().all(|value| value.is_finite())
+}
+
+/// Board-px bounds of a ring, as `(min_x, min_y, max_x, max_y)`.
+type RingBounds = (f32, f32, f32, f32);
+
+/// Trace one implicitly-closed `r`-relative ring into `builder` as its own
+/// subpath, in output px, and report its bounds.
+fn append_ring(builder: &mut PathBuilder, ring: &[f32], cx: f32, cy: f32, r_px: f32) -> RingBounds {
+    let (mut min_x, mut min_y, mut max_x, mut max_y) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    let (pairs, _) = ring.as_chunks::<2>();
+    for (index, [ring_x, ring_y]) in pairs.iter().enumerate() {
+        let x = cx + ring_x * r_px;
+        let y = cy + ring_y * r_px;
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x);
+        max_y = max_y.max(y);
+        if index == 0 {
+            builder.move_to(x, y);
+        } else {
+            builder.line_to(x, y);
+        }
+    }
+    builder.close();
+    (min_x, min_y, max_x, max_y)
+}
+
+/// Is `inner` a plausible hold-proper boundary inside `outer`?
+///
+/// Cheap and deliberately loose — a bounding-box containment test, not a
+/// polygon one. It is not there to grade a tracing, only to reject the ring
+/// that would make an even-odd fill light pixels OUTSIDE the silhouette: an
+/// inner ring that sits beside the hold rather than within it, or one as large
+/// as the silhouette itself, leaving no plate.
+fn inner_ring_is_usable(outer: RingBounds, inner: RingBounds) -> bool {
+    let (outer_min_x, outer_min_y, outer_max_x, outer_max_y) = outer;
+    let (inner_min_x, inner_min_y, inner_max_x, inner_max_y) = inner;
+    let slack = 0.5;
+    inner_max_x > inner_min_x
+        && inner_max_y > inner_min_y
+        && inner_min_x >= outer_min_x - slack
+        && inner_min_y >= outer_min_y - slack
+        && inner_max_x <= outer_max_x + slack
+        && inner_max_y <= outer_max_y + slack
+        && (inner_max_x - inner_min_x) * (inner_max_y - inner_min_y)
+            < (outer_max_x - outer_min_x) * (outer_max_y - outer_min_y)
 }
 
 impl LitHold {
@@ -50,22 +100,27 @@ impl LitHold {
         if !(cx.is_finite() && cy.is_finite() && r_px.is_finite() && r_px > 0.0) {
             return None;
         }
-        let base =
-            |path: Path, traced: bool, centre: (f32, f32), longest: f32, shortest: f32| LitHold {
-                role,
-                color,
-                cx,
-                cy,
-                r_px,
-                scale: scale_x,
-                path,
-                traced,
-                centre_dx: centre.0,
-                centre_dy: centre.1,
-                longest,
-                shortest,
-                silhouette_lightness: hold.silhouette_lightness.filter(|value| value.is_finite()),
-            };
+        let base = |path: Path,
+                    traced: bool,
+                    centre: (f32, f32),
+                    longest: f32,
+                    shortest: f32,
+                    base_path: Option<Path>| LitHold {
+            role,
+            color,
+            cx,
+            cy,
+            r_px,
+            scale: scale_x,
+            path,
+            traced,
+            centre_dx: centre.0,
+            centre_dy: centre.1,
+            longest,
+            shortest,
+            silhouette_lightness: hold.silhouette_lightness.filter(|value| value.is_finite()),
+            base_path,
+        };
 
         if let Some(outline) = hold
             .outline
@@ -73,38 +128,49 @@ impl LitHold {
             .filter(|outline| valid_outline(outline))
         {
             let mut builder = PathBuilder::new();
-            let (mut min_x, mut min_y, mut max_x, mut max_y) =
-                (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
-            let (pairs, _) = outline.as_chunks::<2>();
-            for (index, [outline_x, outline_y]) in pairs.iter().enumerate() {
-                let x = cx + outline_x * r_px;
-                let y = cy + outline_y * r_px;
-                min_x = min_x.min(x);
-                min_y = min_y.min(y);
-                max_x = max_x.max(x);
-                max_y = max_y.max(y);
-                if index == 0 {
-                    builder.move_to(x, y);
-                } else {
-                    builder.line_to(x, y);
-                }
-            }
-            builder.close();
+            let bounds @ (min_x, min_y, max_x, max_y) =
+                append_ring(&mut builder, outline, cx, cy, r_px);
             let width = max_x - min_x;
             let height = max_y - min_y;
             if let Some(path) = builder.finish().filter(|_| width > 0.0 && height > 0.0) {
+                // The plate ring, when the art has one: the same outer ring
+                // plus the hold proper as a second subpath, filled even-odd.
+                // Built from its own builder so a rejected inner ring cannot
+                // touch the silhouette path itself.
+                let base_path = hold
+                    .led_inner
+                    .as_deref()
+                    .filter(|inner| valid_outline(inner))
+                    .and_then(|inner| {
+                        let mut plate = PathBuilder::new();
+                        append_ring(&mut plate, outline, cx, cy, r_px);
+                        let inner_bounds = append_ring(&mut plate, inner, cx, cy, r_px);
+                        plate
+                            .finish()
+                            .filter(|_| inner_ring_is_usable(bounds, inner_bounds))
+                    });
                 return Some(base(
                     path,
                     true,
                     ((min_x + max_x) / 2.0 - cx, (min_y + max_y) / 2.0 - cy),
                     width.max(height),
                     width.min(height),
+                    base_path,
                 ));
             }
         }
 
+        // No traced silhouette, so no plate either: a ring at the placement
+        // radius has no inside and no outside to tell apart.
         let circle = PathBuilder::from_circle(cx, cy, r_px)?;
-        Some(base(circle, false, (0.0, 0.0), 2.0 * r_px, 2.0 * r_px))
+        Some(base(
+            circle,
+            false,
+            (0.0, 0.0),
+            2.0 * r_px,
+            2.0 * r_px,
+            None,
+        ))
     }
 
     /// How far past the silhouette edge the glow reaches, in output px.
