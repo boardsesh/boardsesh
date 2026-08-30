@@ -77,7 +77,11 @@ type ModalSheetProps = {
    * the form under the footer at all (#4723). Content-fitting closes both. The
    * column takes a `maxHeight` ceiling (see `useSheetColumnStyle`) so a
    * keyboard-up long note still scrolls under the footer rather than clipping.
-   * No effect on iOS / web — they keep the exact `%` detents. */
+   * No effect on iOS / web — they keep the exact `%` detents.
+   *
+   * Designed for a sheet with a `header` / `footer` (the `maxHeight` lands on the
+   * KeyboardAvoidingView). A chrome-less sheet has no reason to reach for it —
+   * pass `enableDynamicSizing` instead. */
   androidContentSized?: boolean;
 };
 
@@ -109,11 +113,12 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   const solidBackground = useMemo(() => ({ backgroundColor: sheetSurface }), [sheetSurface]);
 
   // On Android, `androidContentSized` swaps the `%` detents for `@expo/ui`'s
-  // content-fitting path — no snap points reach the native sheet, so this only
-  // pads a SMALL single detent to give Android a partial state (see
-  // androidSafeSnapPoints), and passes iOS / web through untouched.
+  // content-fitting path (no snap points at all reach the native sheet).
   const contentSizedOnAndroid = androidContentSized && Platform.OS === 'android';
   const useContentFitting = enableDynamicSizing || contentSizedOnAndroid;
+  // Consumed only on the detent path below (`useContentFitting` false): pads a
+  // SMALL single detent to give Android a partial state, passes iOS / web
+  // through untouched. See androidSafeSnapPoints.
   const effectiveSnapPoints = useMemo(() => androidSafeSnapPoints(snapPoints), [snapPoints]);
 
   const sheetRef = useRef<BottomSheetMethods>(null);
