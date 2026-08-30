@@ -89,67 +89,77 @@ const ART_GATE_KEYS = RUN_EVERY_CONFIG ? ALL_SHARD_KEYS : SPIKE_SAMPLE_KEYS;
  * which nothing else here would notice: a shrunk blob floating inside its own
  * hold passes every other gate in this file. Measured under this same per-image
  * probe, the shards that shipped before this rework read 17.3% on Kilter
- * Homewall 12x12 against 0.6% here, and the ratchet fell on 41 of the 49.
+ * Homewall 12x12 against 0.6% here; the ratchet fell on 41 of the 49 and rose on
+ * none.
  *
- * `overFivePercent` moved the other way on nine shards, and the nine are exactly
- * the ones whose cut clearance dropped from 3 board px to 2 when the radius
- * stopped scaling with board width (touchstone/1-1 2 -> 32, grasshopper/1-4 and
- * five TB2 configs 0 -> 12..16). A narrower clearance leaves the boundary closer
- * to a same-set neighbour, which is what this half of the gate counts. It is a
- * real trade against the chop numbers above and it is pinned rather than
- * smoothed over: raising the clearance back is a one-coefficient change, and the
- * numbers to weigh it against are these.
+ * The probe distance scales with the shard's own cut clearance, and that matters
+ * more than it sounds. With a flat 2.5 board px probe, `overFivePercent` rose on
+ * nine shards — and the nine were exactly the ones whose clearance dropped from
+ * 3 px to 2, i.e. the ones being asked whether they had art half a pixel BEYOND
+ * the distance they guarantee. Sweeping touchstone/1-1 on unchanged geometry
+ * gives 6 outlines over 5% at a probe of 2.0, 32 at 2.5 and 69 at 3.0, so most
+ * of that rise was the measure rather than the tracer: asked at the right
+ * distance it is three shards by one or two outlines each. `cutProbeDistance`
+ * asks half a pixel INSIDE each shard's guarantee, which is the only distance at
+ * which a non-zero answer is about the geometry.
+ *
+ * One consequence: `opaqueMean` is NOT comparable ACROSS shards with different
+ * clearances. A shorter probe sits nearer the boundary, so it lands inside the
+ * hold's own antialiased rim more often — touchstone's 10.4% at a probe of 1.5
+ * is mostly its own rim, not a tenth of its boundary being a chop. Each pin is a
+ * ceiling for its own shard against its own history, which is all a ratchet has
+ * to be.
  */
 const PINNED_CUT_SHARES: Record<string, { neighbourMean: number; overFivePercent: number; opaqueMean: number }> = {
-  'decoy/2-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
+  'decoy/2-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6.2 },
   'decoy/2-2': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'decoy/2-3': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'grasshopper/1-2': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.5 },
-  'grasshopper/1-3': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.7 },
-  'grasshopper/1-4': { neighbourMean: 0.6, overFivePercent: 13, opaqueMean: 2.8 },
-  'grasshopper/1-5': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.4 },
-  'grasshopper/1-6': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.5 },
-  'kilter/1-10': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.2 },
+  'grasshopper/1-3': { neighbourMean: 0.1, overFivePercent: 1, opaqueMean: 0.7 },
+  'grasshopper/1-4': { neighbourMean: 0, overFivePercent: 1, opaqueMean: 9.8 },
+  'grasshopper/1-5': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.3 },
+  'grasshopper/1-6': { neighbourMean: 0, overFivePercent: 1, opaqueMean: 0.5 },
+  'kilter/1-10': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6.8 },
   'kilter/1-14': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.1 },
-  'kilter/1-27': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.2 },
-  'kilter/1-28': { neighbourMean: 0, overFivePercent: 1, opaqueMean: 0.4 },
-  'kilter/1-7': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.2 },
+  'kilter/1-27': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6.9 },
+  'kilter/1-28': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 7 },
+  'kilter/1-7': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6.8 },
   'kilter/1-8': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.1 },
-  'kilter/8-17': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.7 },
-  'kilter/8-18': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 1.2 },
+  'kilter/8-17': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.6 },
+  'kilter/8-18': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 1.1 },
   'kilter/8-19': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.1 },
   'kilter/8-21': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.8 },
   'kilter/8-22': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 1.2 },
   'kilter/8-23': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.7 },
-  'kilter/8-24': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 1.1 },
+  'kilter/8-24': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 1 },
   'kilter/8-25': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.6 },
   'kilter/8-26': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.9 },
   'kilter/8-29': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.4 },
-  'moonboard/1-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.2 },
-  'moonboard/2-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.1 },
-  'moonboard/3-1': { neighbourMean: 0, overFivePercent: 1, opaqueMean: 0.3 },
-  'moonboard/4-1': { neighbourMean: 0.1, overFivePercent: 1, opaqueMean: 0.1 },
-  'moonboard/5-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.1 },
-  'moonboard/6-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
-  'moonboard/7-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.2 },
+  'moonboard/1-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6.6 },
+  'moonboard/2-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6 },
+  'moonboard/3-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6.6 },
+  'moonboard/4-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6 },
+  'moonboard/5-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6.6 },
+  'moonboard/6-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6.4 },
+  'moonboard/7-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6 },
   'soill/1-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.1 },
-  'soill/1-2': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
-  'tension/10-10': { neighbourMean: 0.3, overFivePercent: 12, opaqueMean: 2 },
-  'tension/10-6': { neighbourMean: 0.4, overFivePercent: 13, opaqueMean: 2.2 },
-  'tension/10-7': { neighbourMean: 0.4, overFivePercent: 13, opaqueMean: 2.3 },
-  'tension/10-8': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 2.6 },
-  'tension/10-9': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 2.5 },
-  'tension/11-10': { neighbourMean: 0.5, overFivePercent: 16, opaqueMean: 3.2 },
-  'tension/11-6': { neighbourMean: 0.4, overFivePercent: 12, opaqueMean: 3.2 },
-  'tension/11-7': { neighbourMean: 0.5, overFivePercent: 13, opaqueMean: 3.5 },
-  'tension/11-8': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 3.5 },
-  'tension/11-9': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 3.7 },
+  'soill/1-2': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6 },
+  'tension/10-10': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 8.3 },
+  'tension/10-6': { neighbourMean: 0.1, overFivePercent: 2, opaqueMean: 8.7 },
+  'tension/10-7': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 8.1 },
+  'tension/10-8': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 2.4 },
+  'tension/10-9': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 2.3 },
+  'tension/11-10': { neighbourMean: 0, overFivePercent: 1, opaqueMean: 9.2 },
+  'tension/11-6': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 9.1 },
+  'tension/11-7': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 9.7 },
+  'tension/11-8': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 3.4 },
+  'tension/11-9': { neighbourMean: 0.1, overFivePercent: 2, opaqueMean: 3.7 },
   'tension/9-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'tension/9-2': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'tension/9-3': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'tension/9-4': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'tension/9-5': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
-  'touchstone/1-1': { neighbourMean: 0.6, overFivePercent: 32, opaqueMean: 3.8 },
+  'touchstone/1-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 10.4 },
 };
 
 /**
@@ -273,7 +283,7 @@ describe('board-art-geometry gates', () => {
     for (const audit of AUDITS) expect([audit.key, audit.withoutOwnPlacement]).toEqual([audit.key, []]);
   });
 
-  it('gate 1: the outlines whose boundary runs through their own bolt are the pinned five', () => {
+  it('gate 1: the outlines whose boundary runs through their own bolt are the pinned three', () => {
     const measured = Object.fromEntries(
       AUDITS.filter((audit) => audit.placementOnTheEdge > 0).map((audit) => [audit.key, audit.placementOnTheEdge]),
     );
@@ -314,12 +324,19 @@ describe('board-art-geometry gates', () => {
 /**
  * Gate 7's pins: how much of its own art each shipped silhouette kept.
  *
- * `recovery` is the shipped polygon's area over every art pixel in the search
- * box that the exact partition gives to that placement ON ITS OWN LAYER, before
- * any trim or pullback. It is the only measure here that catches a hold which
- * simply lost half of itself — gate 3 clears a chopped silhouette, gate 5's open
- * clears it, and gate 6 positively likes it, because a boundary well inside the
- * hold's own art is what a pullback is supposed to produce.
+ * `recovery` is the shipped polygon's area over the CONNECTED art body it sits
+ * on, taken from that placement's partition cell on its own layer before any
+ * trim or pullback. It is the only measure here that catches a hold which simply
+ * lost half of itself — gate 3 clears a chopped silhouette, gate 5's open clears
+ * it, and gate 6 positively likes it, because a boundary well inside the hold's
+ * own art is what a pullback is supposed to produce.
+ *
+ * The connectivity is what makes the number mean anything. Counting the whole
+ * partition cell put 145 of 181 "chopped" holds in the bucket with a
+ * `droppedArea` of zero and no pullback — a cell is a region of the board, so a
+ * neighbouring macro's rim can sit closer to this bolt than to its own and land
+ * in it without ever touching this hold (grasshopper/1-4's 293 read 0.250 with
+ * nothing removed from it at all).
  *
  * `recoveryMeanFloor` and `recoveryP10Floor` are floors; `choppedCeiling` counts
  * outlines under 0.8, which is where a glow stops matching the shape on the
@@ -578,11 +595,14 @@ describe('board-art-geometry gate fixtures', () => {
   const ON_THE_CUT = [-7, -7, 9, -7, 9, 8, -7, 8];
   // The same silhouette pulled 3 px back off that cut.
   const PULLED_BACK = [-7, -7, 6, -7, 6, 8, -7, 8];
+  // Passed explicitly: the fixture's geometry is hand-computed against a
+  // clearance of 3, and its toy placement radius of 8 would derive 1.5.
+  const FIXTURE_PROBE = 2.5;
 
   it('gate 6 catches a silhouette that ends on a neighbour and clears one that does not', () => {
-    const onTheCut = cutShares(FIXTURE_ART, FIXTURE_PLACEMENTS, FIXTURE_PLACEMENTS[0], ON_THE_CUT);
+    const onTheCut = cutShares(FIXTURE_ART, FIXTURE_PLACEMENTS, FIXTURE_PLACEMENTS[0], ON_THE_CUT, FIXTURE_PROBE);
     expect(onTheCut.neighbour).toBeGreaterThan(0.2);
-    const pulledBack = cutShares(FIXTURE_ART, FIXTURE_PLACEMENTS, FIXTURE_PLACEMENTS[0], PULLED_BACK);
+    const pulledBack = cutShares(FIXTURE_ART, FIXTURE_PLACEMENTS, FIXTURE_PLACEMENTS[0], PULLED_BACK, FIXTURE_PROBE);
     expect(pulledBack.neighbour).toBe(0);
     // Both boundaries are inside the slab, so the `opaque` half cannot tell them
     // apart — which is why the pins carry it as a ceiling and not as the defect
@@ -605,6 +625,6 @@ describe('board-art-geometry gate fixtures', () => {
     );
     // And the gate it cannot be replaced by: the chopped silhouette's boundary
     // is entirely inside the hold's own art, so gate 6 reads zero on it.
-    expect(cutShares(FIXTURE_ART, FIXTURE_PLACEMENTS, FIXTURE_PLACEMENTS[0], CHOPPED).neighbour).toBe(0);
+    expect(cutShares(FIXTURE_ART, FIXTURE_PLACEMENTS, FIXTURE_PLACEMENTS[0], CHOPPED, FIXTURE_PROBE).neighbour).toBe(0);
   });
 });

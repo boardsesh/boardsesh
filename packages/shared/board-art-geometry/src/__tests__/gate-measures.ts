@@ -50,12 +50,29 @@ export const SIMPLIFY_EPSILON = 1.6;
 const BOX_EDGE_TOLERANCE_PX = 1;
 /**
  * Board pixels to step along the outward normal when asking what is on the other
- * side of the boundary. Far enough to clear the antialiased rim the alpha floor
- * already cut, short enough that it cannot cross a gutter: Kilter Homewall's
- * median gutter between two holds is 3.6 board px, so a probe at 2.5 lands in the
- * gutter rather than on the far hold whenever there is one.
+ * side of the boundary, as an offset from the shard's own cut clearance.
+ *
+ * MUST scale with that clearance, and this is the bug it fixes. The probe was a
+ * flat 2.5 board px, chosen when every board's clearance was 3: the tracer had
+ * deleted everything within 3 px of a neighbour's art, so a compliant boundary
+ * could not have art 2.5 px beyond it and the measure meant something. Once the
+ * clearance became a fraction of the placement radius, a shard clearing 2 px was
+ * being probed 0.5 px BEYOND its own guarantee, and read as defective by
+ * construction. Sweeping touchstone/1-1 shows the whole effect is the probe:
+ * 6 outlines over 5% at a probe of 2.0, 32 at 2.5, 69 at 3.0, on identical
+ * geometry.
+ *
+ * Half a pixel inside the clearance is the honest question — "is there a
+ * neighbour's art immediately short of where the pullback was allowed to stop" —
+ * and it reproduces the original 2.5 exactly on the boards the original was
+ * calibrated against.
  */
-const CUT_PROBE_DISTANCE = 2.5;
+const CUT_PROBE_INSET_FROM_CLEARANCE = 0.5;
+
+/** The probe distance for one placement, in board pixels. */
+export function cutProbeDistance(placementRadius: number): number {
+  return radiusForPlacement(placementRadius) - CUT_PROBE_INSET_FROM_CLEARANCE;
+}
 
 export type Placement = { id: number; cx: number; cy: number; r: number };
 
@@ -299,7 +316,7 @@ export function distanceOutsidePolygon(flat: number[], pointX: number, pointY: n
  * inside a 256-pixel search box. A trace that followed the box is the box, so
  * requiring it to actually touch the box is what separates the two. The
  * `boxEdgeShare` measure above is the independent second reading, and it is 0 on
- * all 15,501 shipped outlines.
+ * all 15,499 shipped outlines.
  */
 export function reachesSearchBox(flatBoardPx: number[], box: number): boolean {
   let maxX = 0;
@@ -563,15 +580,28 @@ export function nearbyCandidates(candidates: Placement[], placement: Placement):
 }
 
 /**
- * How much of a placement's own art the shipped silhouette actually kept.
+ * How much of its own art body the shipped silhouette actually kept.
  *
- * The denominator is every art pixel in the search box that the exact
- * nearest-placement partition gives to this placement, on its OWN layer, before
- * any trim or pullback. The numerator is the shipped polygon's area. Their ratio
- * is the one measure that catches a hold that simply lost half of itself: gate 3
- * clears a chopped silhouette, gate 5's open clears it, and gate 6 positively
- * likes it, because a boundary well inside the hold's own art is exactly what a
- * pullback is supposed to produce.
+ * The denominator is the CONNECTED art body the silhouette sits on: art pixels
+ * in the search box that the exact nearest-placement partition gives to this
+ * placement on its own layer, restricted to the 4-connected components the
+ * shipped polygon actually covers. The numerator is that polygon's area. Their
+ * ratio is the one measure that catches a hold that simply lost half of itself:
+ * gate 3 clears a chopped silhouette, gate 5's open clears it, and gate 6
+ * positively likes it, because a boundary well inside the hold's own art is
+ * exactly what a pullback is supposed to produce.
+ *
+ * THE CONNECTIVITY IS LOAD-BEARING. A partition cell is a region of the board,
+ * not a hold: a neighbouring macro's rim can lie closer to this bolt than to its
+ * own and fall inside this cell without ever touching this hold. Counting the
+ * whole cell read as a chop on 145 of 181 holds catalogue-wide that the tracer
+ * had removed nothing from — grasshopper/1-4's 293 came out at 0.250 recovery
+ * with a `droppedArea` of zero.
+ *
+ * Restated rather than imported, and deliberately anchored differently to the
+ * generator: the tracer floods from ITS seed rule, and this floods from the
+ * polygon that shipped. They agree on every well-formed hold and disagree on a
+ * trace anchored to the wrong body, which is a defect worth seeing.
  *
  * It can exceed 1, and that is not a defect. The tracer fills holes before it
  * takes the outer border, so a hold with a punched-out bolt hole ships a polygon
@@ -590,24 +620,80 @@ export function areaRecovery(
   const top = Math.max(0, centreY - box);
   const right = Math.min(layerArt.width - 1, centreX + box);
   const bottom = Math.min(layerArt.height - 1, centreY + box);
+  const localWidth = right - left + 1;
+  const localHeight = bottom - top + 1;
+  if (localWidth <= 0 || localHeight <= 0) return 0;
 
-  let cellArea = 0;
-  for (let y = top; y <= bottom; y += 1) {
-    for (let x = left; x <= right; x += 1) {
-      if (layerArt.opaque[y * layerArt.width + x] !== 1) continue;
-      const own = (placement.cx - x) ** 2 + (placement.cy - y) ** 2;
+  const cell = new Uint8Array(localWidth * localHeight);
+  for (let y = 0; y < localHeight; y += 1) {
+    for (let x = 0; x < localWidth; x += 1) {
+      if (layerArt.opaque[(top + y) * layerArt.width + (left + x)] !== 1) continue;
+      const own = (placement.cx - (left + x)) ** 2 + (placement.cy - (top + y)) ** 2;
       let beaten = false;
       for (const candidate of sameLayerCandidates) {
         if (candidate.id === placement.id) continue;
-        if ((candidate.cx - x) ** 2 + (candidate.cy - y) ** 2 < own) {
+        if ((candidate.cx - (left + x)) ** 2 + (candidate.cy - (top + y)) ** 2 < own) {
           beaten = true;
           break;
         }
       }
-      if (!beaten) cellArea += 1;
+      if (!beaten) cell[y * localWidth + x] = 1;
     }
   }
-  return cellArea === 0 ? 0 : rasterise(flatBoardPx).area / cellArea;
+
+  // Flood the cell from every pixel the shipped polygon covers, so the
+  // denominator is the body (or bodies) that silhouette belongs to and nothing
+  // else in the cell.
+  const raster = rasterise(flatBoardPx);
+  // `rasterise` anchors its bitmap one pixel outside the polygon's own bounds,
+  // and the polygon is offset from the ROUNDED centre.
+  let polygonMinX = Infinity;
+  let polygonMinY = Infinity;
+  for (let point = 0; point < flatBoardPx.length; point += 2) {
+    polygonMinX = Math.min(polygonMinX, flatBoardPx[point]);
+    polygonMinY = Math.min(polygonMinY, flatBoardPx[point + 1]);
+  }
+  const rasterOriginX = centreX + Math.floor(polygonMinX) - 1 - left;
+  const rasterOriginY = centreY + Math.floor(polygonMinY) - 1 - top;
+
+  const visited = new Uint8Array(cell.length);
+  const stack: number[] = [];
+  for (let index = 0; index < raster.filled.length; index += 1) {
+    if (raster.filled[index] !== 1) continue;
+    const rasterX = index % raster.width;
+    const rasterY = (index - rasterX) / raster.width;
+    const localX = rasterOriginX + rasterX;
+    const localY = rasterOriginY + rasterY;
+    if (localX < 0 || localY < 0 || localX >= localWidth || localY >= localHeight) continue;
+    const cellIndex = localY * localWidth + localX;
+    if (cell[cellIndex] !== 1 || visited[cellIndex] === 1) continue;
+    visited[cellIndex] = 1;
+    stack.push(cellIndex);
+  }
+
+  let bodyArea = 0;
+  while (stack.length > 0) {
+    const index = stack.pop() as number;
+    bodyArea += 1;
+    const x = index % localWidth;
+    const y = (index - x) / localWidth;
+    for (const [stepX, stepY] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const nextX = x + stepX;
+      const nextY = y + stepY;
+      if (nextX < 0 || nextY < 0 || nextX >= localWidth || nextY >= localHeight) continue;
+      const neighbour = nextY * localWidth + nextX;
+      if (cell[neighbour] !== 1 || visited[neighbour] === 1) continue;
+      visited[neighbour] = 1;
+      stack.push(neighbour);
+    }
+  }
+
+  return bodyArea === 0 ? 0 : raster.area / bodyArea;
 }
 
 /** The nearest placement to a board point — the partition the generator cuts on. */
@@ -638,12 +724,18 @@ function nearestPlacementId(candidates: Placement[], pointX: number, pointY: num
  * Sampled per pixel and not per vertex: Douglas-Peucker leaves a long straight
  * cut carrying two vertices and a curved art edge carrying twenty, so a
  * per-vertex share understates a cut by roughly the ratio of the two.
+ *
+ * `probeDistance` defaults to half a pixel inside the shard's own cut clearance,
+ * which is the only distance at which the question is about the geometry rather
+ * than about the probe — see `CUT_PROBE_INSET_FROM_CLEARANCE`. The fixtures pass
+ * an explicit one.
  */
 export function cutShares(
   art: BoardArt,
   candidates: Placement[],
   placement: Placement,
   flatBoardPx: number[],
+  probeDistance: number = cutProbeDistance(placement.r),
 ): { opaque: number; neighbour: number } {
   // `flatBoardPx` is offset from the rounded centre — the frame the tracer cut in.
   const centreX = Math.round(placement.cx);
@@ -673,8 +765,8 @@ export function cutShares(
       samples += 1;
       const alongX = fromX + ((toX - fromX) * step) / steps;
       const alongY = fromY + ((toY - fromY) * step) / steps;
-      const probeX = Math.round(centreX + alongX + normalX * CUT_PROBE_DISTANCE);
-      const probeY = Math.round(centreY + alongY + normalY * CUT_PROBE_DISTANCE);
+      const probeX = Math.round(centreX + alongX + normalX * probeDistance);
+      const probeY = Math.round(centreY + alongY + normalY * probeDistance);
       if (probeX < 0 || probeY < 0 || probeX >= art.width || probeY >= art.height) continue;
       if (art.opaque[probeY * art.width + probeX] !== 1) continue;
       opaqueOutside += 1;

@@ -74,9 +74,10 @@ inside the traced polygon, 0..1.
 
 - A placement with **no traceable art** is absent from `outlines`. That is not an edge
   case: MoonBoard's placements are a synthetic 11x18 grid and most cells genuinely carry
-  no hold. **Consumers must fall back to a ring at the placement radius.** 15,501 of
-  15,784 placements are traced (98.2%); the shortfall is 232 empty MoonBoard grid cells
-  and 51 Kilter Original 12x12 placements with no art of their own.
+  no hold. **Consumers must fall back to a ring at the placement radius.** 15,499 of
+  15,784 placements are traced (98.2%); the shortfall is 232 empty MoonBoard grid cells,
+  51 Kilter Original 12x12 placements with no art of their own, and 2 Decoy frame-rail
+  T-nuts whose own-layer art runs to the search box.
 - A placement with **no outline** is absent from `silhouetteLightness`. There is no `-1`
   sentinel — the spike shipped one and a `?? target` read straight past it, painting 94
   of MoonBoard's 198 holds as if their art were black.

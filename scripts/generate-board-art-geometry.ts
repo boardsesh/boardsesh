@@ -134,20 +134,38 @@ const MIN_PERIMETER_POINTS = 24;
  * Kilter Homewall at the 3 it already trimmed at and both MoonBoards at the 2
  * they already trimmed at, so the two boards the old rule was calibrated on do
  * not move and only the boards it got wrong do.
+ *
+ * IT SITS NEAR THE TOP OF ITS INTERVAL. Every c in [0.0648, 0.0786) rounds to
+ * exactly the radii this catalogue ships; at 0.07862 the TB2 12x12 and 12x12
+ * Wide, decoy/2-1 and grasshopper/1-4 all flip from clearance 2 to 3 and their
+ * output moves. So 0.078 is a choice inside a wide plateau rather than a knife
+ * edge that happened to land — but it is 0.0006 from the upper wall, and anyone
+ * nudging it upward should expect four configs to move rather than none.
+ *
+ * ONE COEFFICIENT FOR BOTH RADII, and that costs something the old code recorded.
+ * The rule this replaced carried a separate `CUT_CLEARANCE_AT_REFERENCE = 3` with
+ * a measurement attached: at a clearance of 2, shoulder ink sitting on a
+ * neighbour was 731 board px² across the spike's seven boards against 25 at 3.
+ * That measurement was taken on the COMPOSITE, where holds from different sets
+ * appear to touch — most of the 731 px² was ink landing on a neighbour that is
+ * not a neighbour once each set is traced on its own layer, and the boards it was
+ * taken on now clear 0.6% of their boundary against same-layer art. It is
+ * superseded, not refuted, and it is the reason to re-measure rather than assume
+ * if the clearance is ever decoupled from the trim radius again.
  */
 const TRIM_RADIUS_PER_PLACEMENT_RADIUS = 0.078;
 /** Board px² a trim has to drop before the run reports it, on gate 5's threshold. */
 const NOTABLE_TRIM_AREA = 20;
 /**
- * Share of a placement's own partition-cell art the emitted silhouette has to
- * keep before the hold counts as chopped.
+ * Share of its own art body the emitted silhouette has to keep before the hold
+ * counts as chopped.
  *
  * Not a tuning knob on the tracer — nothing branches on it — but the single
  * number the whole rework is measured by: `tracedArea / cellAlphaArea`, where the
- * denominator is every art pixel in the search box the partition gave to this
- * placement. A hold whose neck trim and pullback between them threw away more
- * than a fifth of its own art is a hold whose glow no longer matches the shape on
- * the wall, which is the defect this pipeline exists to avoid.
+ * denominator is the connected art body the seed sits on inside this placement's
+ * partition cell. A hold whose neck trim and pullback between them threw away
+ * more than a fifth of that body is a hold whose glow no longer matches the shape
+ * on the wall, which is the defect this pipeline exists to avoid.
  */
 const MIN_AREA_RECOVERY = 0.8;
 /**
@@ -405,10 +423,10 @@ function buildLabelMap(
     const rowOffset = y * width;
     let top = -1;
     for (let column = 0; column < width; column += 1) {
-      const height2 = columnDistance[rowOffset + column];
+      const apexDistance = columnDistance[rowOffset + column];
       // A column holding no seed can never win, and carrying its infinity into
       // the intersection arithmetic would poison the exact comparison.
-      if (height2 === NO_SEED_IN_COLUMN) continue;
+      if (apexDistance === NO_SEED_IN_COLUMN) continue;
       if (top < 0) {
         top = 0;
         envelopeColumn[0] = column;
@@ -422,7 +440,7 @@ function buildLabelMap(
       let denominator = 1;
       for (;;) {
         const previous = envelopeColumn[top];
-        numerator = height2 + column * column - (columnDistance[rowOffset + previous] + previous * previous);
+        numerator = apexDistance + column * column - (columnDistance[rowOffset + previous] + previous * previous);
         denominator = 2 * (column - previous);
         // `<=` pops a previous parabola whose span has closed to nothing, which
         // is what leaves the LOWER column owning an exact tie.
@@ -1000,8 +1018,6 @@ type TraceField = {
   placements: RenderableHold[];
   /** Pixel -> index into `placements`; -1 where no placement owns the pixel. */
   label: Int32Array;
-  /** Half-width of a placement's search box in radii. `SEARCH_RADII` when absent. */
-  searchRadii?: number;
 };
 
 /**
@@ -1117,19 +1133,25 @@ const perImageMaskProvider: MaskProvider = (details, layers) => {
 /**
  * What one placement's trace cost, for the report and for gate 7.
  *
- * `cellAlphaArea` is the honest denominator: every art pixel inside the search
- * box that the partition gave to THIS placement, before any trim, pullback or
- * simplification. `tracedArea` is what survived to the emitted mask. Their ratio
- * is the only number that says whether the silhouette is still the hold's shape
- * or a fragment of it — perimeter measures and spur opens both read fine on a
- * hold that simply lost half of itself to a cut.
+ * `cellAlphaArea` is the denominator: the seed's own 4-connected art body inside
+ * the search box, taken from this placement's partition cell before any trim,
+ * pullback or simplification. `tracedArea` is what survived to the emitted mask.
+ * Their ratio is the only number that says whether the silhouette is still the
+ * hold's shape or a fragment of it — perimeter measures and spur opens both read
+ * fine on a hold that simply lost half of itself to a cut.
+ *
+ * The CONNECTED body, not the whole cell. A partition cell routinely contains
+ * art that was never this hold's: a neighbouring macro's rim can sit closer to
+ * this bolt than to its own and land in the cell without ever touching the hold.
+ * Counting it read as a chop on 145 of 181 holds the tracer had removed nothing
+ * from.
  */
 type HoldTraceStats = {
   holdId: number;
   traced: boolean;
   /** Board px² of the emitted mask. 0 when the placement fell back to a ring. */
   tracedArea: number;
-  /** Board px² of this placement's own art in the search box, pre-trim. */
+  /** Board px² of the seed's connected art body in this placement's cell, pre-trim. */
   cellAlphaArea: number;
   /** `tracedArea / cellAlphaArea`, or 0 when there was no art to recover. */
   areaRecovery: number;
@@ -1157,7 +1179,6 @@ function traceOutlines(field: TraceField): {
   counts: TraceCounts;
 } {
   const { width: boardWidth, height: boardHeight, mask: opaque, label, placements } = field;
-  const searchRadii = field.searchRadii ?? SEARCH_RADII;
   const pitches = nearestPitch(placements);
   // Cached per distinct radius: a config's placements almost always share one
   // (`r` is `xSpacing * 4`), and building the discs is O(radius²).
@@ -1191,15 +1212,22 @@ function traceOutlines(field: TraceField): {
     });
   };
 
+  const attemptedIds = new Set<number>();
   for (const [placementIndex, placement] of placements.entries()) {
     // Guarded on the outline table, not on `stats`: a board can list the same
     // placement under two sets, and where the first attempt fell back the second
     // is retried exactly as it always was. `stats` is overwritten to match.
     if (outlines.has(placement.id)) continue;
-    attempted += 1;
+    // Counted per PLACEMENT, not per attempt. A duplicate id whose first attempt
+    // fell back is retried, and counting the retry would make the summary's
+    // denominator larger than the board has placements.
+    if (!attemptedIds.has(placement.id)) {
+      attemptedIds.add(placement.id);
+      attempted += 1;
+    }
     const centreX = Math.round(placement.cx);
     const centreY = Math.round(placement.cy);
-    const box = Math.round(placement.r * searchRadii);
+    const box = Math.round(placement.r * SEARCH_RADII);
 
     const left = Math.max(0, centreX - box);
     const top = Math.max(0, centreY - box);
@@ -1227,9 +1255,6 @@ function traceOutlines(field: TraceField): {
         else neighbourArt[y * localWidth + x] = 1;
       }
     }
-    let cellAlphaArea = 0;
-    for (let index = 0; index < local.length; index += 1) cellAlphaArea += local[index];
-
     // Seed strictly near the placement, never "nearest filled pixel in the box",
     // and never further out than the placement's own radius even on a layer so
     // sparse that its nearest-neighbour pitch spans half the board.
@@ -1257,13 +1282,22 @@ function traceOutlines(field: TraceField): {
     // fall back to a ring. On the synthetic MoonBoard grids this is the honest
     // answer for most cells.
     if (seed === null) {
-      recordFallback(placement.id, 'no-art-of-its-own', cellAlphaArea);
+      recordFallback(placement.id, 'no-art-of-its-own', 0);
       continue;
     }
 
     const seedIndex = seed[1] * localWidth + seed[0];
     const region = new Uint8Array(localWidth * localHeight);
     floodComponent(local, localWidth, localHeight, seedIndex, region);
+    // The denominator, and it is the seed's own connected art body — NOT every
+    // cell pixel in the box. A placement's partition cell routinely contains art
+    // that was never this hold's to keep: a neighbouring macro's rim can lie
+    // closer to this bolt than to its own, and it lands in the cell without ever
+    // touching the hold. Counting it made 145 of 181 "chopped" holds
+    // catalogue-wide holds the tracer had removed nothing from at all
+    // (grasshopper/1-4's 293 read 0.250 with a droppedArea of zero).
+    let cellAlphaArea = 0;
+    for (let index = 0; index < region.length; index += 1) cellAlphaArea += region[index];
 
     const discs = discsFor(placement.r);
     const trimmed = trimThinNecks(region, localWidth, localHeight, seedIndex, discs);
@@ -1955,14 +1989,20 @@ async function main(): Promise<number> {
     writeFileSync(
       path.join(reportDir, 'summary.txt'),
       `Board-art tracer report — ${results.length} config(s), ${skipped.length} skipped.\n` +
-        `chopped = traced outlines keeping less than ${MIN_AREA_RECOVERY} of their own partition-cell art.\n` +
+        `chopped = traced outlines keeping less than ${MIN_AREA_RECOVERY} of the connected art body\n` +
+        `their seed sits on.\n` +
         `Stroke colours in the PNGs: green traced clean, amber pulled back off a neighbour,\n` +
         `red chopped, dashed grey untraced (the renderer falls back to a ring).\n\n` +
         `${header}\n${rows.join('\n')}\n` +
         (skipped.length > 0 ? `\nskipped:\n${skipped.map((line) => `  - ${line}`).join('\n')}\n` : ''),
     );
     console.log(`[board-art-geometry] report written to ${reportDir}`);
-    return 0;
+    // Falls through deliberately when `--check` is also set. A report run that
+    // swallowed the drift comparison would let `--report --check` exit 0 on a
+    // stale tree, which is the one thing `--check` exists to prevent. Without
+    // `--check` the writes below are ordinary generation and a report run is
+    // meant to touch nothing, so it stops here.
+    if (!checkOnly) return 0;
   }
 
   const stale: string[] = [];
