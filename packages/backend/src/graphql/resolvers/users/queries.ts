@@ -10,7 +10,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { BoardNameSchema } from '../../../validation/schemas';
 import { getAuroraCredentialStatuses } from '../../../services/aurora-credentials';
-import { userIsTester } from './tester';
+import { loadProfileRoleFlags } from './role-flags';
 import { FAVORITE_COUNT_SUBQUERY } from './favorite-count';
 
 export const userQueries = {
@@ -42,12 +42,15 @@ export const userQueries = {
       return null;
     }
 
+    const { isTester, isAdmin } = await loadProfileRoleFlags(row.id);
+
     return {
       id: row.id,
       email: row.email,
       displayName: row.displayName || row.name || undefined,
       avatarUrl: row.avatarUrl || row.image || undefined,
-      isTester: await userIsTester(row.id),
+      isTester,
+      isAdmin,
       createdAt: row.createdAt.toISOString(),
       favoriteCount: row.favoriteCount,
     };

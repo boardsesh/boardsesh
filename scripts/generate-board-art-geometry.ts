@@ -65,6 +65,7 @@ import { getBackgroundRelPaths } from '../packages/shared/board-render/src/backg
 import { MOONBOARD_CELL_SETS } from '../packages/shared/board-config/src/generated/moonboard-cell-sets';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS } from '../packages/shared/board-config/src/moonboard-config';
 import type { BoardRenderDetails, RenderableHold } from '../packages/shared/board-render/src/types';
+import { loadOverridesFor } from './outline-overrides-merge';
 
 const ROOT_DIR = path.resolve(import.meta.dirname, '..');
 /**
@@ -920,6 +921,11 @@ type ShardTables = {
   outlines: Map<number, number[]>;
   silhouetteLightness: Map<number, number>;
   ledBright: Map<number, [number, number]>;
+  /**
+   * Hand-annotated LED base-plate inner boundaries. Never produced by the
+   * tracer — every entry comes from a committed `led_inner` override.
+   */
+  ledInner: Map<number, number[]>;
 };
 
 type ConfigResult = {
@@ -1603,6 +1609,42 @@ async function measureConfig(
   const placements = details.holdsData;
   const { outlines, summary, stats } = mergeFieldTraces(maskProvider(details, layers), placements);
   const uniquePlacements = new Set(placements.map((placement) => placement.id)).size;
+
+  const radiusById = new Map<number, number>();
+  const centreById = new Map<number, [number, number]>();
+  for (const placement of placements) {
+    if (radiusById.has(placement.id)) continue;
+    radiusById.set(placement.id, placement.r);
+    centreById.set(placement.id, [placement.cx, placement.cy]);
+  }
+
+  // --- Override merge, point 1 of 3: put the hand-drawn silhouette in ---------
+  //
+  // At the emission boundary and nowhere else. The tracer has finished and its
+  // stats are already recorded; from here the overridden placements are simply
+  // placements that have an outline, so everything downstream — the lightness
+  // measurement, the counts, the report — reads the shape that ships rather than
+  // the shape a human already rejected.
+  //
+  // Converted back into the tracer's own frame (integer board pixels offset from
+  // the ROUNDED centre) because that is what `measureSilhouette` scans and what
+  // the radius-unit conversion below undoes. Exactly inverse: emission does
+  // `(px + rounding) / r`, so this does `v * r - rounding`. Floats are fine —
+  // the scanline fill takes them — and the stored 4-decimal values go into the
+  // shard verbatim at point 2 regardless, so nothing round-trips.
+  const overrides = loadOverridesFor(key, radiusById.keys());
+  for (const [holdId, ring] of overrides.outlines) {
+    const radius = radiusById.get(holdId) as number;
+    const [exactX, exactY] = centreById.get(holdId) as [number, number];
+    const roundingX = Math.round(exactX) - exactX;
+    const roundingY = Math.round(exactY) - exactY;
+    const tracerPixels: number[] = [];
+    for (let index = 0; index < ring.length; index += 2) {
+      tracerPixels.push(ring[index] * radius - roundingX, ring[index + 1] * radius - roundingY);
+    }
+    outlines.set(holdId, tracerPixels);
+  }
+
   const reportRow = reportRowFor(key, uniquePlacements, stats);
   if (reportDir !== null) await writeConfigReport(reportDir, reportRow, art, placements, outlines, stats);
 
@@ -1671,16 +1713,21 @@ async function measureConfig(
     ]);
   }
 
-  const radiusById = new Map<number, number>();
-  const centreById = new Map<number, [number, number]>();
-  for (const placement of placements) {
-    if (radiusById.has(placement.id)) continue;
-    radiusById.set(placement.id, placement.r);
-    centreById.set(placement.id, [placement.cx, placement.cy]);
-  }
-
   const radiusUnitOutlines = new Map<number, number[]>();
   for (const [holdId, flat] of outlines) {
+    // --- Override merge, point 2 of 3: emit the stored ring verbatim ----------
+    //
+    // Not `v * r - rounding` back through `(px + rounding) / r`. That round trip
+    // is algebraically the identity and numerically is not: it re-rounds a value
+    // that was already rounded to 4 decimals, so a ring could come out a digit
+    // different from the one the reviewer approved and the one the database
+    // holds. Verbatim makes the shard byte-predictable from the JSON alone,
+    // which is what lets `overrides.test.ts` prove the merge actually ran.
+    const stored = overrides.outlines.get(holdId);
+    if (stored !== undefined) {
+      radiusUnitOutlines.set(holdId, stored);
+      continue;
+    }
     const radius = radiusById.get(holdId) as number;
     const [exactX, exactY] = centreById.get(holdId) as [number, number];
     // The tracer works in integer board pixels offset from the ROUNDED centre.
@@ -1698,18 +1745,35 @@ async function measureConfig(
     radiusUnitOutlines.set(holdId, converted);
   }
 
+  // --- Override merge, point 3 of 3: counts and the shard header --------------
+  //
+  // `outlines.size` already includes the overridden placements — an override can
+  // ADD an outline to a placement the tracer never traced, and a hand-drawn
+  // silhouette is as traced as any other from a consumer's point of view — so
+  // gate 4's pin moves with the correction rather than against it. The header
+  // says how many, so a shard diff is self-explanatory; a config with no
+  // overrides gets no extra text and stays byte-identical.
+  //
+  // ROWS, not placements, and the wording says so: one hold carrying both a
+  // silhouette and an LED-inner annotation is two rows in the table, two entries
+  // in the JSON and two lines of shard diff, so counting it as one would
+  // under-report exactly what the reader is looking at.
+  const overrideCount = overrides.outlines.size + overrides.ledInner.size;
+  const summaryWithOverrides =
+    overrideCount === 0 ? summary : `${summary}; ${overrideCount} hand-corrected override row(s) applied`;
+
   return {
     key,
     boardName: entry.boardName,
     layoutId: entry.layoutId,
     sizeId: entry.sizeId,
-    tables: { outlines: radiusUnitOutlines, silhouetteLightness, ledBright },
+    tables: { outlines: radiusUnitOutlines, silhouetteLightness, ledBright, ledInner: overrides.ledInner },
     wall: {
       mean: annulusCount === 0 ? 0 : roundTo(annulusTotal / annulusCount, LIGHTNESS_DECIMALS),
       coverage: annulusPlacements === 0 ? 0 : roundTo(annulusCount / annulusPlacements, LIGHTNESS_DECIMALS),
     },
     counts: { traced: outlines.size, placements: annulusPlacements },
-    summary,
+    summary: summaryWithOverrides,
     report: reportRow,
     elapsedMs: Date.now() - startedAt,
   };
@@ -1735,6 +1799,20 @@ function renderShard(result: ConfigResult): string {
     .sort(numericAscending)
     .map(([holdId, [dx, dy]]) => `    ${holdId}: [${dx},${dy}],`)
     .join('\n');
+  const ledInnerRows = [...result.tables.ledInner.entries()]
+    .sort(numericAscending)
+    .map(([holdId, flat]) => `    ${holdId}: [${flat.join(',')}],`)
+    .join('\n');
+
+  // `ledInner` is written only where there is one. The field is optional in the
+  // contract precisely so that a shard with no LED annotations is the same bytes
+  // it was before this table existed, and 49 shards growing an empty `{}` would
+  // be a catalogue-wide diff saying nothing.
+  const ledInnerNote = ledInnerRows
+    ? `// ledInner:            placementId -> flat ring of the LED base plate's INNER edge, same\n` +
+      `//                      units. Hand-annotated; the lit region is the silhouette minus it.\n`
+    : '';
+  const ledInnerTable = ledInnerRows ? `  ledInner: {\n${ledInnerRows}\n  },\n` : '';
 
   return (
     `${DO_NOT_EDIT}\n` +
@@ -1745,10 +1823,12 @@ function renderShard(result: ConfigResult): string {
     `// silhouetteLightness: placementId -> OkLab L of the art inside the traced silhouette.\n` +
     `// ledBright:           placementId -> [dx,dy] radius units to the bright LED blob the art\n` +
     `//                      already paints, for the placements where it paints one.\n` +
+    ledInnerNote +
     `module.exports = {\n` +
     `  outlines: {\n${outlineRows}${outlineRows ? '\n' : ''}  },\n` +
     `  silhouetteLightness: {\n${lightnessRows}${lightnessRows ? '\n' : ''}  },\n` +
     `  ledBright: {\n${ledRows}${ledRows ? '\n' : ''}  },\n` +
+    ledInnerTable +
     `};\n`
   );
 }

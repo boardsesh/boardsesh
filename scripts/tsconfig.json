@@ -23,6 +23,8 @@
     "lib/pr-labels.ts",
     "__tests__/pr-test-plan-workflow.test.ts",
     "__tests__/pr-labels.test.ts",
-    "generate-board-art-geometry.ts"
+    "generate-board-art-geometry.ts",
+    "outline-overrides-merge.ts",
+    "outline-overrides-merge.test.ts"
   ]
 }

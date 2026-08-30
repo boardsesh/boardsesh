@@ -34,12 +34,22 @@ type BoardArtGeometry = {
   outlines: Record<number, number[]>;
   silhouetteLightness: Record<number, number>;
   ledBright: Record<number, [number, number]>;
+  ledInner?: Record<number, number[]>;
 };
 ```
 
 **Frozen.** A Rust renderer reads these field names. A field cannot change meaning,
 change units, or grow a sentinel without that renderer changing with it; anything
 genuinely new goes in a new field.
+
+`ledInner` is that path taken once: a **new optional field**, so a renderer that has never
+heard of it reads exactly what it read before. It holds the INNER boundary of the hold's
+LED base plate — the lit region is the silhouette MINUS that polygon, the ring of plate
+visible around the hold proper. Same flat, implicitly-closed, 4-decimal radius-unit form as
+`outlines`. Nothing extracts it from the art yet: every entry is hand-annotated (see
+Hand-corrected outlines below), so a shard carries the table only once somebody has drawn
+one, and most shards do not carry it at all. An absent table and an absent placement mean
+the same thing to a consumer — light the whole silhouette.
 
 The renderer injection boundary is `HoldGeometryInput` in
 `packages/shared/board-render/src/render-config.ts`. A caller passes a loaded
@@ -135,6 +145,139 @@ Metro, webpack, bare Node ESM and vitest at once.
 3.0 MB of generated data across 49 shards, largest 120 KB (Tension Board 2 12x12 Wide,
 690 holds) — well under `scripts/check-large-files.mjs`'s 2 MB per-file limit, so no
 allowlist entry is needed.
+
+### `@boardsesh/board-art-geometry/ring`
+
+Ring maths — `simplifyRing` (the tracer's own Douglas-Peucker, plus `SIMPLIFY_EPSILON`),
+`closeRing`, `roundRing`, `pointInRing`, `isValidOutlineRing` — lives on its own subpath
+that imports nothing from `loader`, `types` or `generated`:
+
+```ts
+import { pointInRing, roundRing, isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
+```
+
+The isolation is the point. Metro bundles what a module can reach, so importing the
+package index to run a point-in-polygon test would put all 3.0 MB of polygons into the
+mobile bundle. The subpath is ~2 KB and reaches nothing else.
+
+`simplifyRing` and `SIMPLIFY_EPSILON` are the tracer's own Douglas-Peucker, copied verbatim
+so a ring an editor redraws is decimated by exactly the algorithm that produced the ring
+beside it. `scripts/generate-board-art-geometry.ts` still holds its own copy and switches to
+importing this one; until it does, a change to either has to be made to both.
+
+## Hand-corrected outlines (`hold_outline_overrides`)
+
+The tracer gets most holds right; the ones it does not are fixed as database rows rather
+than by regenerating and redeploying 3.0 MB of shards. `hold_outline_overrides` is keyed by
+the shard's own merge key plus a placement and a kind — `(board_name, layout_id, size_id,
+placement_id, kind)` — with the same flat, implicitly-closed, 4-decimal ring in the same
+radius units, so a consumer swaps one for the other with no conversion. Latest write wins;
+`author_id`, `updated_at` and `note` are the record of who changed it and why, and there is
+no history table.
+
+`kind` says which boundary a row traces. `silhouette` is the hold's outer edge — what the
+tracer produces and the renderer lights. `led_inner` is the INNER boundary of the same
+hold's LED base plate, an annotation the tracer never produced at all: the lit ring region
+is the silhouette MINUS that polygon, so a `led_inner` row stores no part of the outer edge
+and only means anything alongside the silhouette it sits inside.
+
+Editing runs over GraphQL: `holdOutlines(input:)` returns the deployed shard's outlines
+beside the live overrides of every kind (side by side, not merged, so an editor can show
+both and offer a revert), and `upsertHoldOutlineOverride` / `deleteHoldOutlineOverride`
+write them — both defaulting to `SILHOUETTE`, and the delete scoped to one kind so dropping
+an LED annotation leaves the corrected silhouette standing. All three operations are
+admin-only and BOARD-SCOPED — a community admin scoped to Kilter corrects Kilter's art and
+nothing else.
+
+A write is checked three ways. The ring's shape goes through `isValidOutlineRing` itself
+(the Zod schema `.refine`s on it, so the editor and the backend cannot disagree about what
+is storable). The placement has to exist on the config with every set mounted — the
+composite the shard was traced on; an unknown config comes back as
+`HOLD_OUTLINE_UNKNOWN_CONFIG` rather than a raw error naming every size that does exist.
+And the ring has to COVER its own placement centre: inside it, or outside by no more than
+`CENTRE_TOLERANCE_RADII` (0.25). Not strict containment, because two shipped outlines
+(kilter/1-28 placements 4800 and 4810 — hooks whose bolt sits under a concave underside)
+miss their own centre by up to 0.03 radii, and a strict gate would make exactly those holds
+un-correctable. It was five while the tracer cut on the composite; three of those were the
+cut rather than the art and went away when the tracer moved per image. The failure the
+tolerance exists to catch is a ring drawn around the NEIGHBOURING hold, ~2 radii away.
+
+### From a row to a shard
+
+A row in a database is not something the generator can read: CI's drift gate reruns it with
+no database at all, and a contributor regenerating shards on a laptop has to produce the
+same bytes as the run that shipped them. So the rows are **exported to committed JSON** and
+merged from there.
+
+```bash
+vp run db:export-outline-overrides    # rows  -> packages/shared/board-art-geometry/overrides/
+vp run generate:board-art-geometry    # files -> the shards       (FULL run, not --board/--config)
+```
+
+Then commit the overrides and the shards **together** — one without the other is what the
+drift gate exists to catch. The PR then reads the way it should: the JSON diff is the exact
+ring somebody drew, and the shard diff is that same ring landing in the generated table.
+
+One file per config that has rows, `overrides/<board>/<layoutId>-<sizeId>.json`; a config
+whose last row was deleted loses its file. `outlines` holds the `silhouette` rows,
+`ledInner` the `led_inner` rows, both keyed by placement id. `meta` records who drew each
+one, when and why — **for the reviewer only; the generator never reads it.** Placements are
+sorted numerically and ring values are written verbatim (the backend already stores them at
+4 decimals), so a re-export with unchanged rows produces no diff. The directory ships empty
+and its `README.md` is the operator's copy of this loop.
+
+The merge is `scripts/outline-overrides-merge.ts`, called from three points at the
+generator's **emission boundary** and nowhere near the tracer:
+
+1. **After tracing, before the lightness measurement.** The corrected ring is converted
+   back into the tracer's own frame (`v · r − rounding`, the exact inverse of the emission
+   maths) and replaces the traced one, so `silhouetteLightness` is measured inside the
+   shape that ships rather than the shape a human already rejected. It can also ADD an
+   outline to a placement the tracer never traced.
+2. **At the radius-unit conversion.** An overridden placement's stored 4-decimal value goes
+   into the shard **verbatim**, not round-tripped back through board pixels. The round trip
+   is algebraically the identity and numerically is not, and byte-predictability is what
+   lets `overrides.test.ts` prove the merge actually ran.
+3. **Counts and the shard header.** Overridden placements count as traced, so gate 4's pin
+   moves with the correction; the header gains `; N hand-corrected override(s) applied`
+   when there are any. A shard with no overrides is byte-identical to before.
+
+An override naming a placement its config no longer has **throws out of the generator**. It
+is not skipped: a dropped correction is invisible — the shard passes every gate and quietly
+ships the tracer's version of a hold somebody had already fixed.
+
+`scripts/outline-overrides-merge.test.ts` carries the must-trip fixtures for every refusal
+(stale placement, unstorable ring, ring drawn on the neighbour, unparseable file). They live
+beside the loader rather than in the package because the package's tsconfig sets
+`rootDir: ./src` and cannot import from `scripts/`.
+`packages/shared/board-art-geometry/src/__tests__/overrides.test.ts` checks the other half:
+every committed file parses, every ring validates, every placement exists, and every
+overridden placement's shard value equals the committed ring byte for byte.
+
+### What the gates do with a hand-drawn outline
+
+Gates 2, 3 and 7 still bind on it, and those are the invariants that matter for a drawing:
+it swallows no second placement, it is not the crop rectangle, it keeps its own hold. A
+correction ought to *improve* gate 7.
+
+**Gates 5 and 6 are exempt** because they measure *tracer pathologies* — a limb joined
+through a thin neck, a boundary that is a partition cut rather than an art edge. A human
+correcting exactly those defects trips them by construction: the commonest correction is a
+contact cut, and repairing one means drawing the hold's real edge, which is on the
+neighbour's art by definition.
+
+**Gate 1 is exempt for a sharper reason — the two centre rules disagree.** Gate 1 asks
+whether the placement sits within `SIMPLIFY_EPSILON` of the polygon: 1.6 board px, which is
+0.052 radii on kilter/1-28. The rule a correction is actually held to, by the backend on
+write and by the merge on read, is `CENTRE_TOLERANCE_RADII` at **0.25 radii** — five times
+looser. A perfectly legal correction whose bolt sits 0.1 radii outside the drawn edge would
+pass the editor, the export and the merge and then red gate 1 with no remedy available: the
+hold could neither be corrected nor left alone. The 0.25 rule binds instead on the committed
+ring, in `overrides.test.ts`, which is where it can be satisfied.
+
+`ledInner` rings are outside all seven — a base-plate boundary is not a silhouette and none
+of those measures say anything about one. They get the same structural validation as a
+silhouette (storable ring, drawn around its own placement) in `overrides.test.ts`.
 
 ## Regenerating
 
