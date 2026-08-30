@@ -784,8 +784,8 @@ describe('QueueItemRow React.memo', () => {
   // wobble (`.failOffsetY([-5, 5])`) before its ±10px horizontal activation, so a
   // natural horizontal swipe failed the Pan and the row's tap fell through and just
   // selected the climb instead of revealing Delete. The Y bail must stay wider than
-  // the X activation so the swipe survives normal wobble (mirrors SwipeableRow,
-  // extracted from this component, which already widened this exact value). The real
+  // the X activation so the swipe survives normal wobble (the board manager's
+  // retired swipe-to-delete row had widened this exact value first). The real
   // cross-gesture arbitration only exists in the native runtime — see the on-device
   // QA matrix in the PR body — but the threshold itself is guarded here.
   it('gives the swipe-to-remove Pan a vertical bail wide enough to survive swipe wobble', () => {

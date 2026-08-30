@@ -1,17 +1,30 @@
-import { memo, useMemo } from 'react';
-import { View, Pressable, StyleSheet, Platform } from 'react-native';
+import { memo, useCallback, useMemo } from 'react';
+import {
+  View,
+  Pressable,
+  StyleSheet,
+  Platform,
+  type AccessibilityActionEvent,
+  type AccessibilityActionInfo,
+} from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { getBoardRenderData } from '../../lib/board-details';
-import { hapticLight } from '../../lib/haptics';
+import { hapticHeavy, hapticLight } from '../../lib/haptics';
+import { ACTIVATE_ACCESSIBILITY_ACTIONS, rowAccessibilityActionsWith } from '../../lib/row-accessibility-actions';
 import { springs } from '../../theme/animations';
 import { spacing, borderRadius, overlays } from '../../theme/tokens';
-import { textStyles } from '../../theme/typography';
+import { textStyles, CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { iosSystemColors } from '../../theme/ios-colors';
+import { withAlpha } from '../../theme/colors';
 import { useTheme } from '../../providers/theme-provider';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
+import { ActivityIndicator } from '../ActivityIndicator';
+import { PressableSurface } from '../PressableSurface';
 import { BoardImageNative } from '../BoardImageNative';
+import type { BoardCardAction } from './board-card-actions';
 import type { BoardDownloadState } from './board-offline-state';
 
 /** The minimal board shape the card renders. UserBoard, PopularBoardConfig, and
@@ -31,6 +44,14 @@ export type DiscoveryBoardItem = {
   /** When true, marks this as the currently-active board. */
   isActive?: boolean;
   /**
+   * Whether the signed-in user owns this board, stamped once per list build by
+   * `userBoardToItem`. `undefined` means "not resolvable here" — Near you /
+   * Popular, or a session with no identity — and suppresses the ownership badge
+   * entirely rather than guessing (offering to unfollow the user's own wall is
+   * worse than offering nothing).
+   */
+  isViewerOwner?: boolean;
+  /**
    * Offline download state for this board's scope. Absent on cards that cannot
    * be downloaded as a board (popular configs — see `popularConfigToItem`).
    */
@@ -47,6 +68,21 @@ export const DISCOVERY_CARD_WIDTH = 168;
  * across the row.
  */
 const TITLE_LINES = 2;
+
+/**
+ * Corner badge diameter, and the hitSlop that lifts it to the 44pt tap floor.
+ * The inset matches the hitSlop on purpose: Android clips a child's hitSlop to
+ * its parent's bounds, and these discs live inside `thumb` (which has
+ * `overflow: 'hidden'`), so an 8pt inset would clamp the rect to 43pt. At 9 the
+ * 44pt square starts exactly on the thumb's edge and survives on both platforms.
+ */
+const CORNER_BADGE_SIZE = 26;
+const CORNER_BADGE_HIT_SLOP = 9;
+const CORNER_BADGE_INSET = CORNER_BADGE_HIT_SLOP;
+
+/** Custom accessibility action names for the card's nested buttons. */
+const BOARD_ACTION_NAME = 'boardAction';
+const DOWNLOAD_ACTION_NAME = 'download';
 
 /** Distance badge copy: metres under 1km, one-decimal km above. */
 function formatDistance(meters: number): string {
@@ -68,20 +104,49 @@ type BoardDiscoveryCardProps = {
   onDownload?: (item: DiscoveryBoardItem) => void;
   /** Accessibility label for the download glyph. */
   downloadLabel?: string;
+  /**
+   * The board-ownership action this card offers: edit your own board, or stop
+   * following someone else's. `null`/absent renders no slot at all — Near you,
+   * Popular, the offline branch, and any card whose ownership did not resolve.
+   */
+  action?: BoardCardAction;
+  onAction?: (item: DiscoveryBoardItem) => void;
+  /** Screen-reader label for the action (editAria / unfollowAria / deleteAria). */
+  actionLabel?: string;
+  /** Visible label for the Edit-mode footer button ("Delete" / "Unfollow"). */
+  actionTitle?: string;
+  /**
+   * The "Your boards" section is in Edit mode: the corner badge is replaced by a
+   * labelled destructive button under the subtitle, and the card body stops
+   * activating the board. The label is the point — an unlabelled red glyph on an
+   * ungrouped carousel cannot say whether it deletes a wall or unfollows a gym.
+   */
+  isEditing?: boolean;
+  /** A delete/unfollow targeting THIS card is in flight. */
+  isActionPending?: boolean;
 };
 
 /**
  * One board in a carousel. Memoized: three carousels stacked on the Boards tab
  * re-render together whenever any of their queries settle, and each card resolves
- * board art.
+ * board art. `isEditing` and `isActionPending` are scalars and the handlers are
+ * host-memoized, so a mutation starting re-renders the carousel but flips
+ * `isActionPending` on the one card that owns it.
  */
 export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
   item,
   onPress,
   onDownload,
   downloadLabel,
+  action = null,
+  onAction,
+  actionLabel,
+  actionTitle,
+  isEditing = false,
+  isActionPending = false,
 }: BoardDiscoveryCardProps) {
-  const { systemColors, brandColors } = useTheme();
+  const { t } = useTranslation('boards');
+  const { systemColors, brandColors, radii } = useTheme();
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
@@ -103,15 +168,90 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
     borderWidth: item.isActive ? 2 : StyleSheet.hairlineWidth,
   };
 
+  // Resting, a pencil on your own board: a navigation, safe to fire from a corner
+  // glyph. Resting, a board you follow gets a NON-INTERACTIVE person-with-check —
+  // unfollow is destructive and unconfirmed, and a 26pt disc that reads like the
+  // download-status badge on the opposite corner must never remove a board in one
+  // tap. Unfollowing lives on Edit mode's labelled footer button instead, so the
+  // resting surface carries no destructive control at all.
+  const showEditBadge = !isEditing && action === 'edit' && onAction !== undefined;
+  const showFollowingBadge = !isEditing && action === 'unfollow';
+  const showEditAction = isEditing && (action === 'delete' || action === 'unfollow') && onAction !== undefined;
+  const canDownload = item.offlineState === 'off' && onDownload !== undefined;
+
+  const handleAction = useCallback(() => {
+    onAction?.(item);
+  }, [onAction, item]);
+
+  const handleEditAction = useCallback(() => {
+    if (isActionPending) return;
+    hapticHeavy();
+    onAction?.(item);
+  }, [isActionPending, onAction, item]);
+
+  const handleDownload = useCallback(() => {
+    hapticLight();
+    onDownload?.(item);
+  }, [onDownload, item]);
+
+  const handlePress = useCallback(() => {
+    hapticLight();
+    onPress(item);
+  }, [onPress, item]);
+
+  // The outer Pressable sets `accessible` by default, so on iOS UIKit treats the
+  // card as a leaf and VoiceOver never reaches the corner glyphs. Publish each
+  // nested button as a labelled custom action instead — the same shape
+  // ClimbListRow uses for its ⋮ button. Keyed on the resolved label strings,
+  // never on `t`, whose identity churns on plenty of renders.
+  // The following indicator is status, not an action, so it publishes nothing.
+  const hasBoardAction = showEditBadge || showEditAction;
+  const accessibilityActions = useMemo(() => {
+    const nested: AccessibilityActionInfo[] = [];
+    if (hasBoardAction && actionLabel !== undefined) nested.push({ name: BOARD_ACTION_NAME, label: actionLabel });
+    if (canDownload && downloadLabel !== undefined) nested.push({ name: DOWNLOAD_ACTION_NAME, label: downloadLabel });
+    return nested.length > 0 ? rowAccessibilityActionsWith(...nested) : ACTIVATE_ACCESSIBILITY_ACTIONS;
+  }, [hasBoardAction, actionLabel, canDownload, downloadLabel]);
+
+  const handleAccessibilityAction = useCallback(
+    (event: AccessibilityActionEvent) => {
+      const { actionName } = event.nativeEvent;
+      if (actionName === 'activate' && !isEditing) handlePress();
+      // Route to the same handler the touch path uses, so the destructive button
+      // keeps its haptic when it is reached from the rotor.
+      if (actionName === BOARD_ACTION_NAME) (showEditAction ? handleEditAction : handleAction)();
+      if (actionName === DOWNLOAD_ACTION_NAME) handleDownload();
+    },
+    [isEditing, showEditAction, handlePress, handleAction, handleEditAction, handleDownload],
+  );
+
+  const activeLabel = t('mobile.discovery.activeBadge');
+  // Once the owned/followed grouping is gone from this surface the corner glyph
+  // is the ONLY owned-vs-followed signal, so the composed label has to carry it —
+  // otherwise a screen-reader user cannot tell which board the custom action
+  // removes.
+  const ownershipLabel =
+    item.isViewerOwner === undefined
+      ? null
+      : item.isViewerOwner
+        ? t('mobile.discovery.ownedBadgeAria')
+        : t('mobile.discovery.followingBadgeAria');
+  const accessibilityLabel = [item.title, item.subtitle, item.isActive ? activeLabel : null, ownershipLabel]
+    .filter((part): part is string => typeof part === 'string' && part.length > 0)
+    .join(', ');
+
   return (
     <AnimatedPressable
-      onPress={() => {
-        hapticLight();
-        onPress(item);
-      }}
+      onPress={handlePress}
       onPressIn={() => (scale.value = withSpring(0.97, springs.snappy))}
       onPressOut={() => (scale.value = withSpring(1, springs.snappy))}
-      accessibilityRole="button"
+      // In Edit mode the body is not a target: dropping the role as well as the
+      // handler is what makes the card visibly (and audibly) stop being tappable.
+      disabled={isEditing}
+      accessibilityRole={isEditing ? undefined : 'button'}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={handleAccessibilityAction}
       style={[animatedStyle, styles.container]}
     >
       <View testID="board-card" style={[styles.thumb, thumbStyle]}>
@@ -139,18 +279,12 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
           </View>
         )}
 
-        {item.isActive ? (
-          <View style={styles.activeBadge}>
-            <Icon name="tick" size={16} color={brandColors.primary} />
-          </View>
-        ) : null}
-
         {/* At-a-glance "is this board on my phone". A downloaded or in-flight
             board is a status badge with no press target; only 'off' is
             actionable, and only where the host passed a handler. */}
         {item.offlineState === 'downloaded' ? (
           <View style={styles.offlineBadge}>
-            <Icon name="offline.downloaded" size={15} color={brandColors.primary} />
+            <Icon name="offline.downloaded" size={15} color={brandColors.primaryFill} />
           </View>
         ) : item.offlineState === 'downloading' ||
           item.offlineState === 'finalizing' ||
@@ -158,27 +292,65 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
           <View style={styles.offlineBadge}>
             <Icon name="offline.pending" size={15} color={systemColors.secondaryLabel} />
           </View>
-        ) : item.offlineState === 'off' && onDownload ? (
+        ) : canDownload ? (
           <Pressable
-            onPress={() => {
-              hapticLight();
-              onDownload(item);
-            }}
+            onPress={handleDownload}
             accessibilityRole="button"
             accessibilityLabel={downloadLabel}
             style={styles.offlineBadge}
-            // The glyph is a 26pt target inside a 168pt card, so widen the touch
-            // area rather than the visual.
-            hitSlop={8}
+            // The glyph is a 26pt disc inside a 168pt card, so widen the touch
+            // area rather than the visual: 26 + 2 × 9 lands exactly on the 44pt
+            // floor. The two corner rects sit 82pt apart and never overlap.
+            hitSlop={CORNER_BADGE_HIT_SLOP}
           >
-            <Icon name="offline.download" size={15} color={brandColors.primary} />
+            <Icon name="offline.download" size={15} color={brandColors.primaryFill} />
           </Pressable>
+        ) : null}
+
+        {showEditBadge ? (
+          <Pressable
+            onPress={handleAction}
+            accessibilityRole="button"
+            accessibilityLabel={actionLabel}
+            style={styles.actionBadge}
+            hitSlop={CORNER_BADGE_HIT_SLOP}
+          >
+            <Icon name="edit" size={15} color={brandColors.primaryFill} />
+          </Pressable>
+        ) : showFollowingBadge ? (
+          // No press target and no accessibility props of its own: the composed
+          // card label already announces "Following".
+          <View style={styles.actionBadge}>
+            <Icon name="person.check" size={15} color={brandColors.primaryFill} />
+          </View>
+        ) : null}
+
+        {/* "This is the board you're on" is the most important state on the card,
+            so it reads as a word rather than a bare tick — and it sits opposite
+            the distance pill, which an active Near-you board also carries. */}
+        {item.isActive ? (
+          <View style={styles.activeBadge}>
+            <Icon name="tick" size={11} color={overlays.onScrim} />
+            <Text
+              variant="caption2"
+              color={overlays.onScrim}
+              numberOfLines={1}
+              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+            >
+              {activeLabel}
+            </Text>
+          </View>
         ) : null}
 
         {item.distanceMeters != null ? (
           <View style={styles.distanceBadge}>
             <Icon name="location" size={11} color={overlays.onScrim} />
-            <Text variant="caption2" color={overlays.onScrim}>
+            <Text
+              variant="caption2"
+              color={overlays.onScrim}
+              numberOfLines={1}
+              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+            >
               {formatDistance(item.distanceMeters)}
             </Text>
           </View>
@@ -193,9 +365,71 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
           {item.subtitle}
         </Text>
       ) : null}
+
+      {showEditAction ? (
+        <PressableSurface
+          onPress={handleEditAction}
+          disabled={isActionPending}
+          scaleTo={0.97}
+          rippleColor={brandColors.error}
+          accessibilityRole="button"
+          accessibilityLabel={actionLabel}
+          style={[
+            styles.editAction,
+            { backgroundColor: withAlpha(brandColors.error, 0.12), borderRadius: radii.button },
+          ]}
+        >
+          {isActionPending ? (
+            <ActivityIndicator size="small" color={brandColors.error} />
+          ) : (
+            <>
+              <Icon name="minus.circle" size={16} color={brandColors.error} />
+              <Text
+                variant="subheadline"
+                color={brandColors.error}
+                numberOfLines={1}
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                style={styles.editActionLabel}
+              >
+                {actionTitle}
+              </Text>
+            </>
+          )}
+        </PressableSurface>
+      ) : null}
     </AnimatedPressable>
   );
 });
+
+// Shared geometry for the two top-corner discs and the two bottom overlay pills.
+// Only the horizontal edge differs, so the corner budget stays literally two
+// circles and two pills — never four circles, never a destructive one.
+const cornerBadge = {
+  position: 'absolute',
+  top: CORNER_BADGE_INSET,
+  width: CORNER_BADGE_SIZE,
+  height: CORNER_BADGE_SIZE,
+  borderRadius: borderRadius.full,
+  backgroundColor: iosSystemColors.white,
+  alignItems: 'center',
+  justifyContent: 'center',
+  ...Platform.select({
+    ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.15, shadowRadius: 2 },
+    android: { elevation: 2 },
+  }),
+} as const;
+
+const overlayPill = {
+  position: 'absolute',
+  bottom: spacing[2],
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 2,
+  paddingHorizontal: spacing[2],
+  paddingVertical: 2,
+  borderRadius: borderRadius.full,
+  backgroundColor: overlays.scrim,
+} as const;
 
 const styles = StyleSheet.create({
   container: {
@@ -219,52 +453,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  activeBadge: {
-    position: 'absolute',
-    top: spacing[2],
-    right: spacing[2],
-    width: 26,
-    height: 26,
-    borderRadius: borderRadius.full,
-    backgroundColor: iosSystemColors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.15, shadowRadius: 2 },
-      android: { elevation: 2 },
-    }),
-  },
   offlineBadge: {
-    position: 'absolute',
-    top: spacing[2],
+    ...cornerBadge,
+    left: CORNER_BADGE_INSET,
+  },
+  actionBadge: {
+    ...cornerBadge,
+    right: CORNER_BADGE_INSET,
+  },
+  activeBadge: {
+    ...overlayPill,
     left: spacing[2],
-    width: 26,
-    height: 26,
-    borderRadius: borderRadius.full,
-    backgroundColor: iosSystemColors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.15, shadowRadius: 2 },
-      android: { elevation: 2 },
-    }),
   },
   distanceBadge: {
-    position: 'absolute',
-    bottom: spacing[2],
+    ...overlayPill,
     right: spacing[2],
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    paddingHorizontal: spacing[2],
-    paddingVertical: 2,
-    borderRadius: borderRadius.full,
-    backgroundColor: overlays.scrim,
   },
   title: {
     fontWeight: '600',
     // Both type scales (HIG and Material) give subheadline the same lineHeight,
     // so one read covers both UI variants — see textStylesByVariant.
     minHeight: TITLE_LINES * textStyles.subheadline.lineHeight,
+  },
+  editAction: {
+    height: 44,
+    marginTop: spacing[2],
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[1],
+  },
+  editActionLabel: {
+    fontWeight: '600',
+    // RN row children default to flexShrink: 0, so a label wider than the box
+    // overflows instead of ellipsising. German "Nicht mehr folgen" runs ~158dp at
+    // the 1.2 cap against 148dp of usable width.
+    flexShrink: 1,
   },
 });

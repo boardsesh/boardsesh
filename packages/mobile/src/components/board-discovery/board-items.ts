@@ -7,6 +7,7 @@ import { toBoardName, normaliseSetIds } from '@boardsesh/board-config';
 import type { DiscoveryBoardItem } from './BoardDiscoveryCard';
 import { boardTypeLabel } from './board-builder-labels';
 import { boardRowSubtitle, disambiguateBoardSubtitles } from './board-labels';
+import { boardIsOwnedBy } from './manage-items';
 import type { BoardDownloadState } from './board-offline-state';
 
 export function userBoardToItem(
@@ -19,6 +20,16 @@ export function userBoardToItem(
    * picker even though its data would download.
    */
   offlineState?: BoardDownloadState,
+  /**
+   * The signed-in user's id, when the host has one. Resolving ownership here —
+   * once per list build — is what keeps the card's action slot off a
+   * `myBoards.find` inside a virtualized row. Omitted (and therefore
+   * `isViewerOwner: undefined`) on Near you, where every board belongs to
+   * someone else, and wherever no identity resolved: an undefined flag means
+   * "we don't know", which the card renders as no action slot at all rather
+   * than offering to unfollow the user's own wall.
+   */
+  currentUserId?: string,
 ): DiscoveryBoardItem | null {
   const boardName = toBoardName(board.boardType);
   if (boardName === null) return null;
@@ -32,6 +43,7 @@ export function userBoardToItem(
     subtitle: boardRowSubtitle(board),
     distanceMeters: board.distanceMeters ?? undefined,
     isActive: activeUuid != null && board.uuid === activeUuid,
+    isViewerOwner: currentUserId === undefined ? undefined : boardIsOwnedBy(board, currentUserId),
     offlineState,
   };
 }
@@ -45,13 +57,14 @@ export function userBoardsToItems(
   boards: UserBoard[],
   activeUuid?: string | null,
   offlineStateFor?: (board: UserBoard) => BoardDownloadState,
+  currentUserId?: string,
 ): DiscoveryBoardItem[] {
   // Only boards that actually render take part: a board dropped for an
   // unsupported type must not push its neighbour into a disambiguation the user
   // can see no reason for.
   const rendered: { item: DiscoveryBoardItem; board: UserBoard }[] = [];
   for (const board of boards) {
-    const item = userBoardToItem(board, activeUuid, offlineStateFor?.(board));
+    const item = userBoardToItem(board, activeUuid, offlineStateFor?.(board), currentUserId);
     if (item !== null) rendered.push({ item, board });
   }
   const subtitles = disambiguateBoardSubtitles(rendered.map((entry) => entry.board));

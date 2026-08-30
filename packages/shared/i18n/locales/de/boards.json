@@ -63,6 +63,9 @@
       "editAria": "{{name}} bearbeiten",
       "deleteAria": "{{name}} löschen",
       "unfollowAria": "{{name}} nicht mehr folgen",
+      "unfollowTitle": "Nicht mehr folgen?",
+      "unfollowMessage": "„{{name}}“ ist dein aktives Board. Wenn du nicht mehr folgst, verschwindet es aus deinen Boards und die Auswahl wird gelöscht.",
+      "unfollowConfirm": "Nicht mehr folgen",
       "edit": "Bearbeiten",
       "done": "Fertig"
     },
@@ -82,9 +85,13 @@
       "nearbyTitle": "In deiner Nähe",
       "nearbyShowing": "Zeigt Boards in der Nähe",
       "yourBoardsTitle": "Deine Boards",
+      "activeBadge": "Aktiv",
+      "ownedBadgeAria": "Dein Board",
+      "followingBadgeAria": "Du folgst",
       "popularTitle": "Beliebte Setups",
       "findGym": "Halle finden",
       "create": "Board anlegen",
+      "createTile": "Erstellen",
       "followed": "{{name}} zu deinen Boards hinzugefügt",
       "followError": "{{name}} ließ sich nicht zu deinen Boards hinzufügen"
     },

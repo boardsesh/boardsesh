@@ -9,7 +9,6 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 // must then render no toggle and no offline status caption — the pre-offline UI.
 
 const offlineToggleProps = vi.hoisted(() => ({ last: null as Record<string, unknown> | null }));
-const swipeableProps = vi.hoisted(() => ({ last: null as Record<string, unknown> | null }));
 const platformState = vi.hoisted(() => ({ OS: 'ios' }));
 const accessibilitySpies = vi.hoisted(() => ({ announce: vi.fn() }));
 // Every t() call with its interpolation values, so the progress caption's
@@ -34,15 +33,6 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
-vi.mock('../../SwipeableRow', () => ({
-  SwipeableRow: (props: { children?: ReactNode }) => {
-    // Recorded, not just rendered: `onPress` (tap-to-edit) and `enabled` (the swipe
-    // delete/unfollow) are the affordances read-only mode has to take away, and both
-    // live on this wrapper rather than in the row's own markup.
-    swipeableProps.last = props as Record<string, unknown>;
-    return createElement('div', null, props.children);
-  },
-}));
 vi.mock('../../BoardImageNative', () => ({
   BoardImageNative: () => createElement('div', { 'data-testid': 'board-image' }),
 }));
@@ -115,7 +105,6 @@ vi.mock('../../Text', () => ({
     ),
 }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }) }));
-vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => createElement('span') }));
 
 import { BoardManageRow } from '../BoardManageRow';
 
@@ -133,17 +122,12 @@ const rowProps = {
   board,
   isOwned: true,
   isActive: false,
-  isMutating: false,
-  onEdit: vi.fn(),
-  onDelete: vi.fn(),
-  onUnfollow: vi.fn(),
   onToggleOffline: vi.fn(),
 };
 
 afterEach(() => {
   cleanup();
   offlineToggleProps.last = null;
-  swipeableProps.last = null;
   platformState.OS = 'ios';
   accessibilitySpies.announce.mockReset();
   translationCalls.calls = [];
@@ -369,60 +353,20 @@ describe('BoardManageRow offline toggle gating', () => {
   });
 });
 
-describe('BoardManageRow read-only mode', () => {
-  // #3897: with no usable connection every row affordance except the offline toggle is
-  // a server mutation, so the row must not offer them at all — a swipe-to-delete that
-  // can only fail is worse than no swipe.
-  it('offers tap-to-edit, the swipe action and the chevron by default', () => {
-    const { container } = render(<BoardManageRow {...rowProps} downloadState={undefined} />);
-    expect(swipeableProps.last?.onPress).toBeTypeOf('function');
-    expect(swipeableProps.last?.enabled).toBe(true);
-    expect(container.querySelector('[data-icon="chevron.right"]')).not.toBeNull();
-  });
-
-  it('takes all three away when read-only', () => {
-    const { container } = render(<BoardManageRow {...rowProps} readOnly downloadState={undefined} />);
-    expect(swipeableProps.last?.onPress).toBeUndefined();
-    expect(swipeableProps.last?.pressAccessibilityLabel).toBeUndefined();
-    expect(swipeableProps.last?.enabled).toBe(false);
-    expect(container.querySelector('[data-icon="chevron.right"]')).toBeNull();
-  });
-
+describe('BoardManageRow affordances', () => {
+  // #4623 collapsed /boards and /boards/manage: editing, deleting and unfollowing a
+  // board moved onto the board cards in the picker, so this row keeps exactly one
+  // affordance — the offline toggle, which is a local write and works with no signal.
   it('keeps the offline toggle, which is a local write', () => {
     const onToggleOffline = vi.fn();
     const { getByTestId } = render(
-      <BoardManageRow {...rowProps} readOnly downloadState="downloaded" onToggleOffline={onToggleOffline} />,
+      <BoardManageRow {...rowProps} downloadState="downloaded" onToggleOffline={onToggleOffline} />,
     );
     expect(getByTestId('offline-toggle')).not.toBeNull();
     const toggleOnPress = offlineToggleProps.last?.onPress;
     expect(toggleOnPress).toBeTypeOf('function');
     (toggleOnPress as () => void)();
     expect(onToggleOffline).toHaveBeenCalledWith(board);
-  });
-});
-
-describe('BoardManageRow edit mode', () => {
-  it('renders no persistent remove control outside edit mode', () => {
-    const { queryByLabelText } = render(<BoardManageRow {...rowProps} isOwned={false} downloadState={undefined} />);
-    expect(queryByLabelText('mobile.manage.unfollowAria')).toBeNull();
-  });
-
-  it('unfollows a followed board via the persistent remove control in edit mode', () => {
-    const onUnfollow = vi.fn();
-    const { getByLabelText } = render(
-      <BoardManageRow {...rowProps} isOwned={false} isEditing onUnfollow={onUnfollow} downloadState={undefined} />,
-    );
-    getByLabelText('mobile.manage.unfollowAria').click();
-    expect(onUnfollow).toHaveBeenCalledWith(board);
-  });
-
-  it('deletes an owned board via the persistent remove control in edit mode', () => {
-    const onDelete = vi.fn();
-    const { getByLabelText } = render(
-      <BoardManageRow {...rowProps} isOwned isEditing onDelete={onDelete} downloadState={undefined} />,
-    );
-    getByLabelText('mobile.manage.deleteAria').click();
-    expect(onDelete).toHaveBeenCalledWith(board);
   });
 });
 
@@ -441,11 +385,33 @@ describe('BoardManageRow subtitle', () => {
     expect(queryByText('Original 12×12 with kickboard')).not.toBeNull();
   });
 
+  // This is the ONLY place in the app that answers "whose board is this": the
+  // group header is a static "Following" that names nobody, and the picker's
+  // cards have never shown an owner. Losing it would make two same-titled gym
+  // boards indistinguishable.
   it('shows the owner on a followed board', () => {
     const followed = { ...board, ownerDisplayName: 'Marco' } as unknown as UserBoard;
     const { queryByText } = render(
       <BoardManageRow {...rowProps} board={followed} isOwned={false} downloadState={undefined} />,
     );
     expect(queryByText('Marco')).not.toBeNull();
+  });
+
+  // The other half of the same branch: the owner fallback must never fire on a
+  // board the viewer owns, or every one of their walls reads as their own name.
+  it('never subtitles a board the viewer owns with their own name', () => {
+    const withOwner = { ...board, ownerDisplayName: 'Marco' } as unknown as UserBoard;
+    const { queryByText } = render(<BoardManageRow {...rowProps} board={withOwner} downloadState={undefined} />);
+    expect(queryByText('Marco')).toBeNull();
+    expect(queryByText('Original 12×12 with kickboard')).not.toBeNull();
+  });
+
+  // A followed board whose wire row carries no owner still needs a subtitle.
+  it('falls back to what a followed board is when it has no owner name', () => {
+    const anonymous = { ...board, ownerDisplayName: null } as unknown as UserBoard;
+    const { queryByText } = render(
+      <BoardManageRow {...rowProps} board={anonymous} isOwned={false} downloadState={undefined} />,
+    );
+    expect(queryByText('Original 12×12 with kickboard')).not.toBeNull();
   });
 });

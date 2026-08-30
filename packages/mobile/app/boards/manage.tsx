@@ -1,15 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { useNavigation, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useQuery } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { useMyBoards, useProfile, useDeleteBoard, useUnfollowBoard } from '../../src/lib/graphql/hooks';
-import { useActiveBoard, useClearActiveBoard } from '../../src/lib/graphql/use-active-board';
+import { useMyBoards, useProfile } from '../../src/lib/graphql/hooks';
+import { useActiveBoard } from '../../src/lib/graphql/use-active-board';
 import { useAuth } from '../../src/providers/auth-provider';
-import { useToast } from '../../src/providers/toast-provider';
 import { useConfirm } from '../../src/providers/dialog-provider';
 import { useTheme } from '../../src/providers/theme-provider';
 import {
@@ -43,13 +42,11 @@ import {
   useSetting,
   setOfflineBoardEnabled,
   forgetDownloadTrigger,
-  forgetOfflineBoard,
   forgetOfflineBoardScope,
   useOfflineBoards,
   offlineBoardKeyForBoard,
   offlineBoardScopeForBoard,
 } from '../../src/settings';
-import { hapticSelection } from '../../src/lib/haptics';
 import { Text } from '../../src/components/Text';
 import { Icon } from '../../src/components/Icon';
 import { Button } from '../../src/components/Button';
@@ -76,19 +73,12 @@ const getItemType = (item: ManageItem) => item.type;
 
 export default function ManageBoards() {
   const router = useRouter();
-  const navigation = useNavigation();
   const { t, i18n } = useTranslation('boards');
   const { isAuthenticated, refreshAuthState } = useAuth();
   const { systemColors, brandColors } = useTheme();
-  const { showToast } = useToast();
   const confirm = useConfirm();
   const bottomChrome = useBottomChromeMetrics();
   const paddingBottom = bottomChrome.scrollBottomPadding + spacing[4];
-
-  // Traditional iOS-style edit mode: an "Edit"/"Done" header button reveals a
-  // persistent per-row remove control, so unfollow/delete never depend on the
-  // (hard-to-hit) swipe alone.
-  const [isEditing, setIsEditing] = useState(false);
 
   const {
     data: profile,
@@ -112,10 +102,6 @@ export default function ManageBoards() {
     isRefetching,
   } = useMyBoards(undefined, { enabled: isAuthenticated });
   const myBoards = boardConnection?.boards ?? EMPTY_BOARDS;
-
-  const deleteBoard = useDeleteBoard();
-  const unfollowBoard = useUnfollowBoard();
-  const clearActiveBoard = useClearActiveBoard();
 
   // Offline download wiring. Subscribe to the sync status + enabled-boards setting
   // ONCE here (not per row) and derive a primitive state per row, so a download's
@@ -410,53 +396,6 @@ export default function ManageBoards() {
     router.push('/boards/create');
   }, [router]);
 
-  const handleEdit = useCallback(
-    (board: UserBoard) => {
-      router.push({ pathname: '/boards/edit', params: { boardUuid: board.uuid } });
-    },
-    [router],
-  );
-
-  const handleDelete = useCallback(
-    async (board: UserBoard) => {
-      const confirmed = await confirm({
-        title: t('mobile.manage.deleteTitle'),
-        message: t('mobile.manage.deleteMessage', { name: board.name }),
-        confirmLabel: t('mobile.manage.deleteConfirm'),
-        cancelLabel: t('mobile.manage.cancel'),
-        destructive: true,
-      });
-      if (!confirmed) return;
-      try {
-        await deleteBoard.mutateAsync(board.uuid);
-        // The offline picker's snapshot goes with it. The download itself stays (a
-        // sibling board can share the scope), but a card for a board the backend has
-        // dropped must never reach setActiveBoard.
-        forgetOfflineBoard(board.uuid);
-        // The deleted board can't stay the active selection — drop it so the app
-        // routes to the picker instead of a board that no longer exists.
-        if (activeUuid === board.uuid) await clearActiveBoard();
-      } catch {
-        showToast(t('mobile.manage.deleteError'), 'error');
-      }
-    },
-    [confirm, t, deleteBoard, activeUuid, clearActiveBoard, showToast],
-  );
-
-  const handleUnfollow = useCallback(
-    async (board: UserBoard) => {
-      try {
-        await unfollowBoard.mutateAsync(board.uuid);
-        // Same as delete: the board is no longer the user's, so its offline card goes.
-        forgetOfflineBoard(board.uuid);
-        if (activeUuid === board.uuid) await clearActiveBoard();
-      } catch {
-        showToast(t('mobile.manage.unfollowError'), 'error');
-      }
-    },
-    [unfollowBoard, activeUuid, clearActiveBoard, showToast, t],
-  );
-
   const renderItem = useCallback(
     ({ item }: { item: ManageItem }) => {
       if (item.type === 'header') {
@@ -466,9 +405,6 @@ export default function ManageBoards() {
           </Text>
         );
       }
-      const isMutating =
-        (deleteBoard.isPending && deleteBoard.variables === item.board.uuid) ||
-        (unfollowBoard.isPending && unfollowBoard.variables === item.board.uuid);
       const scopeKey = offlineBoardKeyForBoard(item.board);
       const bootstrapMetadata = bootstrapMetadataByScope?.get(scopeKey);
       // The metadata batch and downloaded-scope query refetch together on the
@@ -533,11 +469,6 @@ export default function ManageBoards() {
           board={item.board}
           isOwned={item.isOwned}
           isActive={item.isActive}
-          // Offline every row affordance except the offline toggle is a network
-          // mutation (edit, delete, unfollow), so the row goes read-only.
-          readOnly={showOfflineList}
-          isEditing={isEditing}
-          isMutating={isMutating}
           downloadState={downloadState}
           downloadCount={downloadCount}
           isBootstrapping={isBootstrapping}
@@ -545,20 +476,11 @@ export default function ManageBoards() {
           downloadNotice={downloadNotice}
           canRetryFastDownload={canRetryFastDownload}
           onRetryFastDownload={handleRetryFastDownload}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-          onUnfollow={handleUnfollow}
           onToggleOffline={handleToggleOffline}
         />
       );
     },
     [
-      deleteBoard.isPending,
-      deleteBoard.variables,
-      unfollowBoard.isPending,
-      unfollowBoard.variables,
-      isEditing,
-      showOfflineList,
       offlineDownloadsEnabled,
       enabledSet,
       isSyncing,
@@ -570,40 +492,10 @@ export default function ManageBoards() {
       downloadProgressEnabled,
       bootstrapMetadataByScope,
       snapshotSourceAvailable,
-      handleEdit,
-      handleDelete,
-      handleUnfollow,
       handleToggleOffline,
       handleRetryFastDownload,
     ],
   );
-
-  // Edit / Done lives in the native header. Only offered when there are boards to
-  // manage; collapse edit mode if the list empties out (last board removed).
-  const hasBoards = myBoards.length > 0 && !showOfflineList;
-  useEffect(() => {
-    if (!hasBoards && isEditing) setIsEditing(false);
-  }, [hasBoards, isEditing]);
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: hasBoards
-        ? () => (
-            <Pressable
-              onPress={() => {
-                hapticSelection();
-                setIsEditing((prev) => !prev);
-              }}
-              hitSlop={8}
-              accessibilityRole="button"
-            >
-              <Text variant="body" color={brandColors.primary}>
-                {isEditing ? t('mobile.manage.done') : t('mobile.manage.edit')}
-              </Text>
-            </Pressable>
-          )
-        : undefined,
-    });
-  }, [navigation, hasBoards, isEditing, t, brandColors.primary]);
 
   if (!isAuthenticated) {
     return (
