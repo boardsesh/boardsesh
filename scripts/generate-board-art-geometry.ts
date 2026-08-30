@@ -66,6 +66,14 @@ import { MOONBOARD_CELL_SETS } from '../packages/shared/board-config/src/generat
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS } from '../packages/shared/board-config/src/moonboard-config';
 import type { BoardRenderDetails, RenderableHold } from '../packages/shared/board-render/src/types';
 import { loadOverridesFor } from './outline-overrides-merge';
+import {
+  MIN_CONFIG_ACCEPTANCE,
+  assembleLedInner,
+  describeLedRings,
+  extractConfigLedRings,
+  qualifies,
+  type LedRingConfigResult,
+} from './led-ring-extract';
 
 const ROOT_DIR = path.resolve(import.meta.dirname, '..');
 /**
@@ -922,8 +930,13 @@ type ShardTables = {
   silhouetteLightness: Map<number, number>;
   ledBright: Map<number, [number, number]>;
   /**
-   * Hand-annotated LED base-plate inner boundaries. Never produced by the
-   * tracer — every entry comes from a committed `led_inner` override.
+   * LED base-plate inner boundaries, in radius units like `outlines`.
+   *
+   * Two sources, in this order: the automatic extractor
+   * (`scripts/led-ring-extract.ts`) fills the table on the configs whose art
+   * actually carries a two-tone plate, and a committed `led_inner` override then
+   * REPLACES whatever it produced for that placement. Annotations are the
+   * extractor's calibration ground truth, so they have to win.
    */
   ledInner: Map<number, number[]>;
 };
@@ -938,6 +951,8 @@ type ConfigResult = {
   counts: { traced: number; placements: number };
   summary: string;
   report: ConfigReportRow;
+  /** What the LED extractor measured, whether or not the config qualified. */
+  ledRings: LedRingConfigResult & { qualified: boolean };
   elapsedMs: number;
 };
 
@@ -1458,6 +1473,17 @@ const REPORT_STROKE_TRACED = '#33FF99';
 const REPORT_STROKE_PULLED_BACK = '#FFB000';
 const REPORT_STROKE_CHOPPED = '#FF2D55';
 const REPORT_STROKE_UNTRACED = '#8A8A8A';
+/**
+ * The extracted LED base plate's inner edge. Cyan because it has to be told
+ * apart from all four silhouette states at a glance on the same sheet, and
+ * nothing else on the board art is that colour — the plate itself is beige.
+ */
+const REPORT_STROKE_LED_INNER = '#00D4FF';
+/** Board pixels of backdrop between the two halves of a `--report-crop` image. */
+const REPORT_CROP_GUTTER = 8;
+
+/** A `--report-crop=x,y,size` region, in board pixels. */
+type ReportCrop = { left: number; top: number; width: number; height: number };
 
 function reportRowFor(key: string, placementCount: number, stats: Map<number, HoldTraceStats>): ConfigReportRow {
   const recoveries = [...stats.values()].filter((entry) => entry.traced).map((entry) => entry.areaRecovery);
@@ -1492,6 +1518,8 @@ async function writeConfigReport(
   placements: RenderableHold[],
   outlines: Map<number, number[]>,
   stats: Map<number, HoldTraceStats>,
+  ledInnerBoardPx: ReadonlyMap<number, number[]>,
+  crop: ReportCrop | null,
 ): Promise<void> {
   const shapes: string[] = [];
   const seen = new Set<number>();
@@ -1520,6 +1548,19 @@ async function writeConfigReport(
       points.push(`${centreX + flat[index]},${centreY + flat[index + 1]}`);
     }
     shapes.push(`<polygon points="${points.join(' ')}" fill="none" stroke="${stroke}" stroke-width="1.5"/>`);
+
+    // Drawn after the silhouette so it sits on top where the two nearly meet —
+    // on a hold whose plate is a hairline along the lit top edge, that is the
+    // only place the pair is distinguishable at sheet scale.
+    const ledInner = ledInnerBoardPx.get(placement.id);
+    if (ledInner === undefined) continue;
+    const ledPoints: string[] = [];
+    for (let index = 0; index < ledInner.length; index += 2) {
+      ledPoints.push(`${centreX + ledInner[index]},${centreY + ledInner[index + 1]}`);
+    }
+    shapes.push(
+      `<polygon points="${ledPoints.join(' ')}" fill="none" stroke="${REPORT_STROKE_LED_INNER}" stroke-width="1"/>`,
+    );
   }
 
   const overlay = Buffer.from(
@@ -1527,11 +1568,41 @@ async function writeConfigReport(
   );
   const imagePath = path.join(reportDir, `${row.key}.png`);
   mkdirSync(path.dirname(imagePath), { recursive: true });
-  await sharp(art.pixels, { raw: { width: art.width, height: art.height, channels: 4 } })
+  const flat = sharp(art.pixels, { raw: { width: art.width, height: art.height, channels: 4 } })
     .flatten({ background: REPORT_BACKDROP })
+    .png();
+  await flat
+    .clone()
     .composite([{ input: overlay }])
-    .png()
     .toFile(imagePath);
+
+  // The sheet is a whole 1080x1920 board and a base plate is a few pixels wide,
+  // so the sheet alone cannot answer "is the cyan line on the right edge". The
+  // crop is the same region twice, bare art beside the same art with the rings
+  // on it, which is the comparison a reviewer can actually make.
+  if (crop !== null) {
+    // Cropped from the FINISHED images rather than mid-pipeline: sharp applies
+    // an extract before a composite, so cropping in the same pipeline would try
+    // to lay a whole-board overlay over a 360-pixel square and throw.
+    const bare = await sharp(await flat.clone().toBuffer())
+      .extract(crop)
+      .toBuffer();
+    const marked = await sharp(readFileSync(imagePath)).extract(crop).toBuffer();
+    await sharp({
+      create: {
+        width: crop.width * 2 + REPORT_CROP_GUTTER,
+        height: crop.height,
+        channels: 4,
+        background: REPORT_BACKDROP,
+      },
+    })
+      .composite([
+        { input: bare, left: 0, top: 0 },
+        { input: marked, left: crop.width + REPORT_CROP_GUTTER, top: 0 },
+      ])
+      .png()
+      .toFile(path.join(reportDir, `${row.key}-crop.png`));
+  }
 
   const rows = [...stats.values()]
     .sort((left, right) => left.holdId - right.holdId)
@@ -1567,6 +1638,7 @@ async function measureConfig(
     setIds: number[];
   },
   reportDir: string | null,
+  reportCrop: ReportCrop | null,
   maskProvider: MaskProvider,
 ): Promise<ConfigResult | { skipped: string }> {
   const startedAt = Date.now();
@@ -1645,8 +1717,39 @@ async function measureConfig(
     outlines.set(holdId, tracerPixels);
   }
 
+  // --- The LED base plate ----------------------------------------------------
+  //
+  // Run on the silhouettes that SHIP, hand-corrected ones included, because the
+  // extractor's whole input is "the art inside this polygon" and a corrected
+  // polygon is the one a renderer will subtract the inner ring from.
+  //
+  // Run on EVERY config, not on a list of boards. Whether a config's art carries
+  // a two-tone plate is a measurement — the acceptance rate — and a hand-kept
+  // board list would go stale the moment a board ships new art. A config that
+  // does not clear `MIN_CONFIG_ACCEPTANCE` emits no table at all, which is the
+  // same bytes it emitted before this extractor existed.
+  const measuredLedRings = extractConfigLedRings(art, placements, outlines, COORDINATE_DECIMALS);
+  const ledQualified = qualifies(measuredLedRings);
+  // Annotations replace extractions, never the other way round: a `led_inner`
+  // override is the ground truth this extractor is calibrated against. The rule
+  // lives in `assembleLedInner` rather than in two loops here, because two loops
+  // here were indistinguishable from the same two loops in the wrong order —
+  // nothing in the repo has a `led_inner` annotation to notice with.
+  const ledInner = assembleLedInner(ledQualified ? measuredLedRings.rings : new Map(), overrides.ledInner);
+
   const reportRow = reportRowFor(key, uniquePlacements, stats);
-  if (reportDir !== null) await writeConfigReport(reportDir, reportRow, art, placements, outlines, stats);
+  if (reportDir !== null) {
+    await writeConfigReport(
+      reportDir,
+      reportRow,
+      art,
+      placements,
+      outlines,
+      stats,
+      ledQualified ? measuredLedRings.boardPixelRings : new Map(),
+      reportCrop,
+    );
+  }
 
   const silhouetteLightness = new Map<number, number>();
   const ledBright = new Map<number, [number, number]>();
@@ -1767,7 +1870,7 @@ async function measureConfig(
     boardName: entry.boardName,
     layoutId: entry.layoutId,
     sizeId: entry.sizeId,
-    tables: { outlines: radiusUnitOutlines, silhouetteLightness, ledBright, ledInner: overrides.ledInner },
+    tables: { outlines: radiusUnitOutlines, silhouetteLightness, ledBright, ledInner },
     wall: {
       mean: annulusCount === 0 ? 0 : roundTo(annulusTotal / annulusCount, LIGHTNESS_DECIMALS),
       coverage: annulusPlacements === 0 ? 0 : roundTo(annulusCount / annulusPlacements, LIGHTNESS_DECIMALS),
@@ -1775,6 +1878,7 @@ async function measureConfig(
     counts: { traced: outlines.size, placements: annulusPlacements },
     summary: summaryWithOverrides,
     report: reportRow,
+    ledRings: { ...measuredLedRings, qualified: ledQualified },
     elapsedMs: Date.now() - startedAt,
   };
 }
@@ -1810,7 +1914,8 @@ function renderShard(result: ConfigResult): string {
   // be a catalogue-wide diff saying nothing.
   const ledInnerNote = ledInnerRows
     ? `// ledInner:            placementId -> flat ring of the LED base plate's INNER edge, same\n` +
-      `//                      units. Hand-annotated; the lit region is the silhouette minus it.\n`
+      `//                      units. The lit region is the silhouette minus it. Extracted from\n` +
+      `//                      the art's two-tone plate, or hand-annotated where someone drew one.\n`
     : '';
   const ledInnerTable = ledInnerRows ? `  ledInner: {\n${ledInnerRows}\n  },\n` : '';
 
@@ -2016,6 +2121,20 @@ async function main(): Promise<number> {
     mkdirSync(reportDir, { recursive: true });
     console.log(`[board-art-geometry] report run — writing to ${reportDir}, no generated files touched.`);
   }
+  // `--report-crop=x,y,size`: also write `<key>-crop.png`, the same square of
+  // board art twice, bare beside marked. A full-board sheet cannot show whether
+  // a base-plate ring landed on the right edge — the plate is a few pixels wide
+  // on a 1080-pixel board — so a reviewer needs one region at native scale.
+  const cropArgument = argumentValue('--report-crop');
+  let reportCrop: ReportCrop | null = null;
+  if (cropArgument !== null) {
+    const parts = cropArgument.split(',').map(Number);
+    if (parts.length !== 3 || parts.some((value) => !Number.isInteger(value) || value < 0)) {
+      console.error(`[board-art-geometry] --report-crop expects three non-negative integers x,y,size`);
+      return 1;
+    }
+    reportCrop = { left: parts[0], top: parts[1], width: parts[2], height: parts[2] };
+  }
 
   const entries = listCatalogueEntries()
     .filter((entry) => boardFilter === null || entry.boardName === boardFilter)
@@ -2039,7 +2158,7 @@ async function main(): Promise<number> {
   const startedAt = Date.now();
 
   for (const entry of entries) {
-    const measured = await measureConfig(entry, reportDir, perImageMaskProvider);
+    const measured = await measureConfig(entry, reportDir, reportCrop, perImageMaskProvider);
     if ('skipped' in measured) {
       skipped.push(measured.skipped);
       console.warn(`[board-art-geometry] SKIP ${measured.skipped}`);
@@ -2051,6 +2170,10 @@ async function main(): Promise<number> {
       `[board-art-geometry] ${measured.key.padEnd(20)} ${measured.summary} ` +
         `| wall L ${measured.wall.mean} coverage ${measured.wall.coverage} ` +
         `| ${measured.tables.ledBright.size} painted LEDs | ${(measured.elapsedMs / 1000).toFixed(1)}s`,
+    );
+    console.log(
+      `[board-art-geometry] ${' '.repeat(20)} ${describeLedRings(measured.ledRings)} ` +
+        `| ${measured.ledRings.qualified ? 'EMITTED' : 'not emitted'}`,
     );
   }
 
@@ -2072,8 +2195,19 @@ async function main(): Promise<number> {
         `chopped = traced outlines keeping less than ${MIN_AREA_RECOVERY} of the connected art body\n` +
         `their seed sits on.\n` +
         `Stroke colours in the PNGs: green traced clean, amber pulled back off a neighbour,\n` +
-        `red chopped, dashed grey untraced (the renderer falls back to a ring).\n\n` +
-        `${header}\n${rows.join('\n')}\n` +
+        `red chopped, dashed grey untraced (the renderer falls back to a ring),\n` +
+        `cyan the extracted LED base plate's inner edge.\n\n` +
+        `${header}\n${rows.join('\n')}\n\n` +
+        `LED base-plate extraction (a config emits a ledInner table only above ` +
+        `${(MIN_CONFIG_ACCEPTANCE * 100).toFixed(0)}%):\n` +
+        results
+          .map(
+            (result) =>
+              `  ${result.key.padEnd(16)}  ${result.ledRings.qualified ? 'EMITTED    ' : 'not emitted'}  ` +
+              describeLedRings(result.ledRings),
+          )
+          .join('\n') +
+        `\n` +
         (skipped.length > 0 ? `\nskipped:\n${skipped.map((line) => `  - ${line}`).join('\n')}\n` : ''),
     );
     console.log(`[board-art-geometry] report written to ${reportDir}`);
