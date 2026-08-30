@@ -199,8 +199,10 @@ describe('useCreateClimbScreen handleNewClimb', () => {
     await waitFor(() => expect(result.current.noKickboard).toBe(true));
     expect(result.current.campus).toBe(true);
 
+    act(() => result.current.handleNewClimb());
     await act(async () => {
-      await result.current.handleNewClimb();
+      result.current.confirmNewClimb();
+      await Promise.resolve();
     });
 
     expect(result.current.noKickboard).toBe(false);
