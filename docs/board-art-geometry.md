@@ -484,6 +484,35 @@ hand-marked hold — not a law. The loop to retune them:
    are pinned rather than bounded precisely so a threshold nudge cannot quietly drop forty
    rings — the shard diff has to say how many holds moved.
 
+### The editor that writes them
+
+The rows are drawn by hand in the Expo app, on two admin-only routes under the profile
+stack: `app/(tabs)/profile/outline-editor.tsx` picks a board, layout and size, and
+`outline-canvas.tsx` opens the board with every placement's outline drawn over it —
+traced, overridden, missing, and a ghost of the shard outline still sitting under a
+differing override. The entry point is More → Development → Hold Outlines, gated
+`__DEV__ || isAdmin`; both routes re-check that themselves, because a deep link reaches
+them directly. The implementation lives in `packages/mobile/src/components/outline-editor/`.
+
+Drawing is Apple-Pencil-first. The stroke surface only claims a touch when the pointer is a
+stylus — or when the finger-draw toggle is on — so a finger still pans and pinches the
+zoomed board mid-edit. v1 is freehand redraw plus revert; there is no vertex dragging, on
+the grounds that a whole silhouette is quicker to re-trace with a pencil than to nudge point
+by point, and the tracer's decimation runs over the result either way.
+
+Its coordinate chain is pure and tested (`outline-editor/stroke.ts`): invert the board's
+zoom transform, scale render px to board px, decimate with `simplifyRing` at
+`SIMPLIFY_EPSILON_BOARD_PX` **while still in board pixels**, and only then divide through by
+the placement radius. Two details are parity, not preference, and will silently diverge if
+either side changes alone: the ring is rounded BEFORE it is implicitly closed
+(`closeRing(roundRing(...))`, the resolver's order — rounding can newly equate a head and
+tail), and the centre gate is the same softened `pointInRing` OR `CENTRE_TOLERANCE_RADII`
+test, so the editor never rejects a ring the backend would have taken.
+
+A revert deletes the row immediately, but the deployed shard keeps its old traced outline
+until the next export, so what a corrected hold renders as in the meantime is the shard's
+version. The toolbar says so.
+
 ## Regenerating
 
 ```bash

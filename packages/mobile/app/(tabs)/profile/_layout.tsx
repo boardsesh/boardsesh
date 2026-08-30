@@ -42,6 +42,10 @@ export default function ProfileLayout() {
         <Stack.Screen name="dev-offline-writes" options={{ title: 'Offline Writes' }} />
         {/* i18n-ignore-next-line — tester-only screen */}
         <Stack.Screen name="sentry-diagnostics" options={{ title: 'Sentry Diagnostics' }} />
+        {/* i18n-ignore-next-line — admin-only screen */}
+        <Stack.Screen name="outline-editor" options={{ title: 'Hold Outlines' }} />
+        {/* i18n-ignore-next-line — admin-only screen */}
+        <Stack.Screen name="outline-canvas" options={{ title: 'Outline Editor' }} />
         <Stack.Screen name="delete-account" options={{ title: tSettings('deleteAccount.title') }} />
       </Stack>
     </BoardArtVisibilityProvider>
