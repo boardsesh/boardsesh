@@ -302,6 +302,7 @@ jobs:
               - 'packages/shared/queue/**'
               - 'packages/shared/queue-react/**'
               - 'packages/shared/queue-runtime/**'
+              - 'packages/shared/static-assets/**'
               - 'packages/shared/velvet-tokens/**'
               - 'packages/shared/watch-pairing/**'
               - 'packages/sync-runtime/**'
