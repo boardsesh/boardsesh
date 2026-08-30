@@ -76,19 +76,30 @@ beforeEach(async () => {
   `);
 });
 
-/** Every operation, so an authorization test can sweep all three at once. */
+/**
+ * Every operation, so an authorization test can sweep all three at once.
+ *
+ * Sequential on purpose. The upsert and the delete touch the same row, so racing
+ * them under `Promise.all` leaves it undefined which one lands last — the delete
+ * could resolve `false` on a row the upsert has not written yet. Awaiting in
+ * order makes the sweep deterministic; it is checking who may call these, not
+ * how they interleave.
+ */
 type BoardConfig = { boardName: string; layoutId: number; sizeId: number };
 
 async function callAll(config: BoardConfig, placementId: number, ctx: ConnectionContext): Promise<unknown[]> {
-  return Promise.all([
-    holdOutlineQueries.holdOutlines(null, { input: { ...config } }, ctx),
-    holdOutlineMutations.upsertHoldOutlineOverride(
-      null,
-      { input: { ...config, placementId, outline: SQUARE_RING } },
-      ctx,
-    ),
-    holdOutlineMutations.deleteHoldOutlineOverride(null, { input: { ...config, placementId } }, ctx),
-  ]);
+  const read = await holdOutlineQueries.holdOutlines(null, { input: { ...config } }, ctx);
+  const written = await holdOutlineMutations.upsertHoldOutlineOverride(
+    null,
+    { input: { ...config, placementId, outline: SQUARE_RING } },
+    ctx,
+  );
+  const deleted = await holdOutlineMutations.deleteHoldOutlineOverride(
+    null,
+    { input: { ...config, placementId } },
+    ctx,
+  );
+  return [read, written, deleted];
 }
 
 describe('hold outline override authorization', () => {
@@ -228,7 +239,9 @@ describe('upsertHoldOutlineOverride validation', () => {
     expect(await storedOverrides()).toHaveLength(0);
   });
 
-  it('rejects an unknown board name before it reaches the role check', async () => {
+  it('rejects an unknown board name once the caller is past the role check', async () => {
+    // A global admin holds a null-scoped row, so requireAdmin admits them for
+    // any board name and the schema is what turns this one away.
     await expect(
       holdOutlineMutations.upsertHoldOutlineOverride(
         null,
@@ -236,6 +249,35 @@ describe('upsertHoldOutlineOverride validation', () => {
         authCtx(GLOBAL_ADMIN),
       ),
     ).rejects.toThrow(/Invalid input/);
+  });
+
+  it('answers an unauthenticated caller with auth, never with the board-name enum', async () => {
+    // Authorization runs before validation precisely so a signed-out prober
+    // cannot read the list of valid board names out of a Zod error.
+    for (const badInput of [
+      { boardName: 'notaboard', layoutId: 1, sizeId: 10, placementId: 1, outline: SQUARE_RING },
+      { boardName: 'kilter', layoutId: 'nope', sizeId: 10, placementId: 1, outline: SQUARE_RING },
+      {},
+    ]) {
+      const failure = await holdOutlineMutations.upsertHoldOutlineOverride(null, { input: badInput }, anonCtx()).then(
+        () => new Error('expected a rejection'),
+        (error: unknown) => error as Error,
+      );
+      expect(failure.message).toMatch(/authentication required/i);
+      expect(failure.message).not.toMatch(/Invalid input/);
+    }
+  });
+
+  it('turns a board-scoped admin away from another board before validating', async () => {
+    // The Kilter admin is signed in but has no Tension row, so the scope check
+    // is what stops them — not the malformed layoutId sitting behind it.
+    await expect(
+      holdOutlineMutations.upsertHoldOutlineOverride(
+        null,
+        { input: { ...TENSION_CONFIG, layoutId: 'nope', placementId: 1, outline: SQUARE_RING } },
+        authCtx(KILTER_ADMIN),
+      ),
+    ).rejects.toThrow(/admin role required/i);
   });
 });
 
@@ -444,6 +486,36 @@ describe('hold outline override round trip', () => {
 
     expect(created.note).toBeNull();
     expect((await storedOverrides())[0].note).toBeNull();
+  });
+
+  it('drops a stored row whose outline is not a ring instead of serving it', async () => {
+    // Writes cannot produce these, so they are forced in directly — the shapes a
+    // hand-run UPDATE or an older column shape could leave behind. A renderer
+    // fed one of these draws garbage and cannot tell that it did.
+    const corrupt = [
+      { placementId: KILTER_PLACEMENT, outline: sql`'[-1,-1,1,-1,1]'::jsonb` },
+      { placementId: KILTER_PLACEMENT + 1, outline: sql`'[-1,-1,1,-1,"x",1]'::jsonb` },
+      { placementId: KILTER_PLACEMENT + 2, outline: sql`'[-1,-1]'::jsonb` },
+      { placementId: KILTER_PLACEMENT + 3, outline: sql`'{"not":"a ring"}'::jsonb` },
+    ];
+    for (const { placementId, outline } of corrupt) {
+      await db.execute(sql`
+        INSERT INTO hold_outline_overrides
+          (board_name, layout_id, size_id, placement_id, kind, outline, author_id, created_at, updated_at)
+        VALUES ('kilter', 1, 10, ${placementId}, 'silhouette', ${outline}, ${GLOBAL_ADMIN}, now(), now())
+      `);
+    }
+    // One good row alongside them, so this proves a filter rather than a crash.
+    await holdOutlineMutations.upsertHoldOutlineOverride(
+      null,
+      { input: { ...KILTER_CONFIG, placementId: KILTER_PLACEMENT + 4, outline: SQUARE_RING } },
+      authCtx(GLOBAL_ADMIN),
+    );
+
+    const read = await holdOutlineQueries.holdOutlines(null, { input: { ...KILTER_CONFIG } }, authCtx(GLOBAL_ADMIN));
+
+    expect(await storedOverrides()).toHaveLength(5);
+    expect(read.overrides.map((entry) => entry.placementId)).toEqual([KILTER_PLACEMENT + 4]);
   });
 
   it("keeps one board config's overrides out of another config's read", async () => {
