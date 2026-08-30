@@ -164,8 +164,10 @@ describe('overlay-cache-store hydration + snapshot (warmup contract)', () => {
     await writeOverlayToCache('v6_s_wfull_kilter_1_2_25_pre_boardsesh', new Blob() as Blob);
     // Drawn before an annotated hold lit its LED base plate.
     await writeOverlayToCache('v7_s_wfull_kilter_1_2_25_pre_plate', new Blob() as Blob);
-    // v8 belongs to another branch; its PNGs are as invalid here as any other.
-    await writeOverlayToCache('v8_s_wfull_kilter_1_2_25_other_branch', new Blob() as Blob);
+    // v8 was claimed by the Woods white-key branch, which landed on this same
+    // line, so no shipped build ever published it — its PNGs are as invalid
+    // here as any other generation's.
+    await writeOverlayToCache('v8_s_wfull_kilter_1_2_25_never_published', new Blob() as Blob);
     await writeOverlayToCache('v9_s_wfull_kilter_1_2_25_keep', new Blob() as Blob);
     await writeOverlayToCache('v1_f_w400_kilter_1_2_25_ancient', new Blob() as Blob);
     _overlayCacheStoreForTests.renderedObjectUrls.clear();
@@ -182,7 +184,7 @@ describe('overlay-cache-store hydration + snapshot (warmup contract)', () => {
     expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v6_s_wfull_kilter_1_2_25_pre_boardsesh'))).toBe(false);
     expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v1_f_w400_kilter_1_2_25_ancient'))).toBe(false);
     expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v7_s_wfull_kilter_1_2_25_pre_plate'))).toBe(false);
-    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v8_s_wfull_kilter_1_2_25_other_branch'))).toBe(false);
+    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v8_s_wfull_kilter_1_2_25_never_published'))).toBe(false);
     expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v9_s_wfull_kilter_1_2_25_keep'))).toBe(true);
     const entries = snapshotOverlayEntries();
     expect(entries).toHaveLength(1);

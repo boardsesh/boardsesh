@@ -64,6 +64,11 @@ import { getBackgroundRelPaths } from '../packages/shared/board-render/src/backg
 // does not resolve for a script run from the repo root.
 import { MOONBOARD_CELL_SETS } from '../packages/shared/board-config/src/generated/moonboard-cell-sets';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS } from '../packages/shared/board-config/src/moonboard-config';
+import { isSimpleRing } from '../packages/shared/board-art-geometry/src/segmentation/led-ring';
+import {
+  buildWhiteKeyMask,
+  mergeCoincidentPlacements,
+} from '../packages/shared/board-art-geometry/src/segmentation/white-key';
 import type { BoardRenderDetails, RenderableHold } from '../packages/shared/board-render/src/types';
 import { loadOverridesFor } from './outline-overrides-merge';
 import {
@@ -101,6 +106,32 @@ const ALPHA_FLOOR = 96;
  * outlines came back with a piece of the box traced into them as a straight edge.
  */
 const SEARCH_RADII = 2.6;
+/**
+ * The same half-width for a photographic board, where the holds are bigger
+ * against their bolt pitch than any transparent-art board's.
+ *
+ * Woods' art is a photograph of a real wall rather than a sprite sheet, so its
+ * biggest holds run further past their own placement radius than a sprite does.
+ * Swept on the shipped geometry: at 2.6 the box is traced into four silhouettes
+ * (three on the 8x10, one on the 12x12) and gate 3 throws all four away; from 3.0
+ * up nothing in either size is clipped. 3.5 is that plateau with a margin rather
+ * than its edge, and 4.0 changes nothing again.
+ *
+ * Close to a free knob: a bigger box only costs time, because what bounds a hold
+ * is the nearest-placement partition and not the box. It is stated separately
+ * rather than raised for everybody because moving 2.6 would re-cut all 49
+ * transparent-art shards for a problem they do not have.
+ */
+const PHOTO_SEARCH_RADII = 3.5;
+/**
+ * Pixels of antialiased rim the white key drops after flooding the ground.
+ *
+ * A sprite photographed against white blends into it over about a pixel, and that
+ * blend survives a brightness threshold: leave it and every hold ships with a
+ * one-pixel white collar traced into its silhouette. This is the same erode the
+ * shipped dark-mode Woods art uses, from the same module.
+ */
+const WHITE_KEY_ERODE_PX = 1;
 /**
  * Seed disc around the placement centre, as a fraction of the distance to the
  * nearest other placement. Big enough to step off a punched-out bolt hole, far
@@ -179,24 +210,28 @@ const NOTABLE_TRIM_AREA = 20;
 const MIN_AREA_RECOVERY = 0.8;
 /**
  * Opaque share of the composited board above which the art carries no silhouette
- * information at all, and the config is skipped.
+ * information in its alpha channel, and the config routes through the white key
+ * instead of reading alpha directly.
  *
- * Every board here is a stack of mostly-transparent layers, and the whole tracer
- * reads that alpha channel — the hold IS the opaque region. Woods breaks the
- * rule: its art is an opaque photograph of the hold set on a white ground (the
- * same fact `scripts/generate-dark-board-art.ts` records for the opposite
+ * Every board but one is a stack of mostly-transparent layers, and the whole
+ * tracer reads that alpha channel — the hold IS the opaque region. Woods breaks
+ * the rule: its art is an opaque photograph of the hold set on a white ground
+ * (the same fact `scripts/generate-woods-dark-art.ts` records for the opposite
  * reason), so the alpha channel is 100% filled and every "silhouette" the tracer
- * returns is a cell of the nearest-placement partition rather than a hold. Both
- * Woods sizes trace that way — a third of their placements hit the search box,
- * and every single one that survived had "pulled back off a neighbour's art",
- * which is what a board with no gutters looks like.
+ * would return is a cell of the nearest-placement partition rather than a hold.
  *
- * Skipping is the honest answer: no shard means the renderer falls back to a
- * ring, which is what it draws for Woods today. The ceiling has a 2.3x margin —
- * Woods is 100.0% and the next densest board in the catalogue, Touchstone, is
- * 40.8% — so it is a check on "is there an alpha channel to read", not a tuning
- * knob. Separating Woods out by name instead would go stale the moment another
- * board ships photographic art.
+ * ONE CEILING, ASKED TWICE. The composite is measured first; a board over the
+ * ceiling then has its ground keyed out (`buildWhiteKeyMask`) and is measured
+ * again. A keyed share still over the ceiling means the key found no ground —
+ * the corners were not board ground — and the config is skipped exactly as it
+ * was before, so a future photographic board shot on a coloured sweep falls back
+ * to rings honestly rather than tracing its own noise. Woods clears it with room:
+ * 100.0% opaque before, 26.3% and 28.6% after, against a 95% bar.
+ *
+ * The first reading has a 2.3x margin — Woods is 100.0% and the next densest
+ * board in the catalogue, Touchstone, is 40.8% — so it is a check on "is there an
+ * alpha channel to read", not a tuning knob. Separating Woods out by name instead
+ * would go stale the moment another board ships photographic art.
  */
 const OPAQUE_ART_CEILING = 0.95;
 /** Decimals the emitted radius-unit coordinates keep. 4 is 0.005 board px at the smallest radius. */
@@ -1035,10 +1070,32 @@ type TraceField = {
   height: number;
   /** 1 = hold substance, 0 = not. */
   mask: Uint8Array;
-  /** The placements this field owns. Every placement id is in at most one field. */
+  /**
+   * The placements this field owns and traces. Every placement id is in at most
+   * one field, counting `aliasesOf` — a field traces `placements` and emits under
+   * `placements` plus every alias.
+   */
   placements: RenderableHold[];
   /** Pixel -> index into `placements`; -1 where no placement owns the pixel. */
   label: Int32Array;
+  /**
+   * Half-width of the search box for this field, in placement radii.
+   *
+   * Per field rather than one constant, because it is a property of the ART: a
+   * sprite sheet's holds are small against their bolt pitch and a photographed
+   * wall's are not. Transparent-art fields use `SEARCH_RADII`; a keyed
+   * photographic field uses `PHOTO_SEARCH_RADII`.
+   */
+  searchRadii: number;
+  /**
+   * Canonical placement id -> the other placements sharing its centre, which the
+   * canonical is traced FOR and whose ids the outline is emitted under.
+   *
+   * Empty for every transparent-art field. See `mergeCoincidentPlacements`: two
+   * bolts inside one hold split it down the midline between them, and where both
+   * round to the same board pixel the partition cannot even seed the second one.
+   */
+  aliasesOf: Map<number, RenderableHold[]>;
 };
 
 /**
@@ -1101,6 +1158,18 @@ function placementFieldIndex(details: BoardRenderDetails): Map<number, number> {
       fieldOf.set(holdId, index);
     }
   }
+  // A board that states no routing at all but ships ONE image has an unambiguous
+  // one: that image draws every placement. Woods is the case — like MoonBoard its
+  // `images_to_holds` carries a key with an empty value, because its geometry is a
+  // detected hold table rather than Aurora's per-image tuples — and without this
+  // every one of its placements routes to no layer and falls back to a ring. The
+  // guard is on an EMPTY map rather than on a board name, so it cannot quietly
+  // re-route a board that does state its layers: all 49 transparent-art configs
+  // fill this map from real tuples and never reach here.
+  if (fieldOf.size === 0 && imageKeys.length === 1) {
+    for (const placement of details.holdsData) fieldOf.set(placement.id, 0);
+    return fieldOf;
+  }
   for (const placement of details.holdsData) {
     if (!fieldOf.has(placement.id)) fieldOf.set(placement.id, -1);
   }
@@ -1146,10 +1215,99 @@ const perImageMaskProvider: MaskProvider = (details, layers) => {
       mask: buildOpaqueMask(layer.art),
       placements,
       label: buildLabelMap(layer.art.width, layer.art.height, placements),
+      searchRadii: SEARCH_RADII,
+      aliasesOf: new Map(),
     });
   }
   return fields;
 };
+
+/** One photographic layer's recovered hold substance, keyed off its white ground. */
+type KeyedPhotoLayer = {
+  /** The lossless source the mask was keyed from — a `.png` sibling of the shipped art. */
+  relativePath: string;
+  /** 1 = hold substance, 0 = board ground. Board-sized, never resampled. */
+  mask: Uint8Array;
+  groundShare: number;
+  maskShare: number;
+};
+
+/**
+ * One field per photographic layer: the white-keyed mask in place of an alpha
+ * channel, over the placements that layer draws, with coincident placements
+ * merged into one seed.
+ *
+ * A factory rather than a plain `MaskProvider` because the mask does not come
+ * from the decoded layers the seam hands over: it is keyed from the LOSSLESS
+ * `.png` sibling of the shipped art. Keying the shipped `.webp` instead
+ * disagrees on 0.30% of pixels — compression ringing around every hold edge,
+ * which is speckle the tracer would then have to survive. The colour tables still
+ * measure the shipped composite, because that is what a climber sees.
+ *
+ * The MERGE is what a photographed board needs and a sprite sheet does not. Woods
+ * lists pairs of placements 0-2 board pixels apart (the same physical hold at two
+ * bolt orientations). Seed the partition with both and it cuts that one hold in
+ * half down the midline between them; where the pair rounds to the same board
+ * pixel the second one gets no seed at all and silently falls back to a ring. One
+ * group is one seed, one trace, and one outline emitted under every member id —
+ * which is what is on the wall.
+ */
+function photoMaskProvider(keyedLayers: KeyedPhotoLayer[]): MaskProvider {
+  return (details, layers) => {
+    const fieldOf = placementFieldIndex(details);
+    const perLayer: RenderableHold[][] = layers.map(() => []);
+    for (const placement of details.holdsData) {
+      const index = fieldOf.get(placement.id) ?? -1;
+      if (index >= 0) perLayer[index].push(placement);
+    }
+
+    const fields: TraceField[] = [];
+    for (const [index, layer] of layers.entries()) {
+      const drawn = perLayer[index];
+      if (drawn.length === 0) continue;
+      const keyed = keyedLayers[index];
+
+      const groups = mergeCoincidentPlacements(drawn);
+      const byId = new Map(drawn.map((placement) => [placement.id, placement]));
+      // Every id a group names came out of `drawn`, so this cannot miss — which
+      // is a reason to state the invariant rather than cast past the compiler.
+      // A grouping that ever returned an id it was not given would otherwise
+      // ship `undefined` into the label map and fail somewhere unrecognisable.
+      const placementFor = (id: number): RenderableHold => {
+        const placement = byId.get(id);
+        if (placement === undefined) throw new Error(`coincident group names ${id}, which this layer does not draw`);
+        return placement;
+      };
+
+      // Walked in PLACEMENT order rather than group-discovery order, so the label
+      // map's index ties resolve the way they would without a merge. Only a
+      // group's canonical has a `membersOf` entry, so this picks exactly the
+      // canonicals and needs no sort afterwards.
+      const canonicals: RenderableHold[] = [];
+      const aliasesOf = new Map<number, RenderableHold[]>();
+      for (const placement of drawn) {
+        const memberIds = groups.membersOf.get(placement.id);
+        if (memberIds === undefined) continue;
+        canonicals.push(placement);
+        if (memberIds.length > 1) {
+          aliasesOf.set(placement.id, memberIds.filter((id) => id !== placement.id).map(placementFor));
+        }
+      }
+
+      fields.push({
+        sourceKey: keyed.relativePath,
+        width: layer.art.width,
+        height: layer.art.height,
+        mask: keyed.mask,
+        placements: canonicals,
+        label: buildLabelMap(layer.art.width, layer.art.height, canonicals),
+        searchRadii: PHOTO_SEARCH_RADII,
+        aliasesOf,
+      });
+    }
+    return fields;
+  };
+}
 
 /**
  * What one placement's trace cost, for the report and for gate 7.
@@ -1180,11 +1338,23 @@ type HoldTraceStats = {
   droppedArea: number;
   pulledBack: boolean;
   /** Why the placement carries no outline, or `null` when it does. */
-  fallbackReason: 'search-box-degenerate' | 'no-art-of-its-own' | 'perimeter-too-short' | 'traced-the-box' | null;
+  fallbackReason:
+    | 'search-box-degenerate'
+    | 'no-art-of-its-own'
+    | 'perimeter-too-short'
+    | 'traced-the-box'
+    | 'self-intersecting'
+    | null;
 };
 
 /** The counters the run's one-line summary is built from, per field. */
-type TraceCounts = { attempted: number; rejectedBox: number; neckTrimmed: number; pulledBack: number };
+type TraceCounts = {
+  attempted: number;
+  rejectedBox: number;
+  rejectedCrossing: number;
+  neckTrimmed: number;
+  pulledBack: number;
+};
 
 /**
  * Trace every placement in one field.
@@ -1199,7 +1369,7 @@ function traceOutlines(field: TraceField): {
   stats: Map<number, HoldTraceStats>;
   counts: TraceCounts;
 } {
-  const { width: boardWidth, height: boardHeight, mask: opaque, label, placements } = field;
+  const { width: boardWidth, height: boardHeight, mask: opaque, label, placements, searchRadii, aliasesOf } = field;
   const pitches = nearestPitch(placements);
   // Cached per distinct radius: a config's placements almost always share one
   // (`r` is `xSpacing * 4`), and building the discs is O(radius²).
@@ -1217,20 +1387,29 @@ function traceOutlines(field: TraceField): {
   const stats = new Map<number, HoldTraceStats>();
   let attempted = 0;
   let rejectedBox = 0;
+  let rejectedCrossing = 0;
   let neckTrimmed = 0;
   let pulledBack = 0;
 
-  const recordFallback = (holdId: number, reason: NonNullable<HoldTraceStats['fallbackReason']>, cellArea: number) => {
-    stats.set(holdId, {
-      holdId,
-      traced: false,
-      tracedArea: 0,
-      cellAlphaArea: cellArea,
-      areaRecovery: 0,
-      droppedArea: 0,
-      pulledBack: false,
-      fallbackReason: reason,
-    });
+  // A coincident group falls back or traces as one: every member gets the same
+  // verdict, because there is one hold under all of them.
+  const recordFallback = (
+    groupIds: readonly number[],
+    reason: NonNullable<HoldTraceStats['fallbackReason']>,
+    cellArea: number,
+  ) => {
+    for (const holdId of groupIds) {
+      stats.set(holdId, {
+        holdId,
+        traced: false,
+        tracedArea: 0,
+        cellAlphaArea: cellArea,
+        areaRecovery: 0,
+        droppedArea: 0,
+        pulledBack: false,
+        fallbackReason: reason,
+      });
+    }
   };
 
   const attemptedIds = new Set<number>();
@@ -1239,23 +1418,27 @@ function traceOutlines(field: TraceField): {
     // placement under two sets, and where the first attempt fell back the second
     // is retried exactly as it always was. `stats` is overwritten to match.
     if (outlines.has(placement.id)) continue;
+    const aliases = aliasesOf.get(placement.id) ?? [];
+    const groupIds = [placement.id, ...aliases.map((alias) => alias.id)];
     // Counted per PLACEMENT, not per attempt. A duplicate id whose first attempt
     // fell back is retried, and counting the retry would make the summary's
-    // denominator larger than the board has placements.
-    if (!attemptedIds.has(placement.id)) {
-      attemptedIds.add(placement.id);
+    // denominator larger than the board has placements. An alias counts as its
+    // own placement, because the board has one.
+    for (const holdId of groupIds) {
+      if (attemptedIds.has(holdId)) continue;
+      attemptedIds.add(holdId);
       attempted += 1;
     }
     const centreX = Math.round(placement.cx);
     const centreY = Math.round(placement.cy);
-    const box = Math.round(placement.r * SEARCH_RADII);
+    const box = Math.round(placement.r * searchRadii);
 
     const left = Math.max(0, centreX - box);
     const top = Math.max(0, centreY - box);
     const right = Math.min(boardWidth - 1, centreX + box);
     const bottom = Math.min(boardHeight - 1, centreY + box);
     if (right <= left || bottom <= top) {
-      recordFallback(placement.id, 'search-box-degenerate', 0);
+      recordFallback(groupIds, 'search-box-degenerate', 0);
       continue;
     }
     const localWidth = right - left + 1;
@@ -1303,7 +1486,7 @@ function traceOutlines(field: TraceField): {
     // fall back to a ring. On the synthetic MoonBoard grids this is the honest
     // answer for most cells.
     if (seed === null) {
-      recordFallback(placement.id, 'no-art-of-its-own', 0);
+      recordFallback(groupIds, 'no-art-of-its-own', 0);
       continue;
     }
 
@@ -1351,7 +1534,7 @@ function traceOutlines(field: TraceField): {
 
     const border = traceBorder(traced, localWidth, localHeight, topmost);
     if (border.length < MIN_PERIMETER_POINTS) {
-      recordFallback(placement.id, 'perimeter-too-short', cellAlphaArea);
+      recordFallback(groupIds, 'perimeter-too-short', cellAlphaArea);
       continue;
     }
     const simplified = simplify(border, SIMPLIFY_EPSILON);
@@ -1363,7 +1546,29 @@ function traceOutlines(field: TraceField): {
     // silhouette, whatever it looks like.
     if (boxEdgeShare(flat, box) > MAX_BOX_EDGE_SHARE) {
       rejectedBox += 1;
-      recordFallback(placement.id, 'traced-the-box', cellAlphaArea);
+      recordFallback(groupIds, 'traced-the-box', cellAlphaArea);
+      continue;
+    }
+    // Backstop for the defect the neck trim exists to prevent, kept because the
+    // trim is a fix and this is a proof — the same pairing
+    // `segmentation/led-ring.ts` already makes for the LED plate's inner ring.
+    //
+    // A 1-pixel isthmus the trim did not take makes the border follower walk out
+    // along one side of a limb and back along the other, and Douglas-Peucker
+    // then replaces that round trip with a pair of segments that cross. The
+    // result is not a silhouette a renderer can fill: even-odd fill punches the
+    // overlap out, so the mark would show a hole where the hold is solid.
+    //
+    // Every sprite-sheet board's outlines are simple, so this changes nothing
+    // for them. It rejects two of Woods' 1,337, both slivers of a hold its
+    // detector put several centres on — see `WOODS_GEOMETRY` in
+    // `@boardsesh/board-config`. A ring at the placement radius is the honest
+    // answer for those, and it is the same fallback an untraceable hold takes.
+    const ring: Point[] = [];
+    for (let index = 0; index < flat.length; index += 2) ring.push([flat[index], flat[index + 1]]);
+    if (!isSimpleRing(ring)) {
+      rejectedCrossing += 1;
+      recordFallback(groupIds, 'self-intersecting', cellAlphaArea);
       continue;
     }
     // Counted here, not where it was measured: an outline that then fell back is
@@ -1381,6 +1586,20 @@ function traceOutlines(field: TraceField): {
       pulledBack: pulled.contacted,
       fallbackReason: null,
     });
+    // The group's members share the hold, so they share the silhouette —
+    // RE-ANCHORED to each one's own rounded centre, because that is the frame
+    // `measureConfig` divides by the radius in. The shift is 0-2 board pixels by
+    // construction, and re-anchoring rather than reusing the canonical's numbers
+    // is what keeps gate 1 (an outline sits on its own placement) true for both.
+    for (const alias of aliases) {
+      const shiftX = centreX - Math.round(alias.cx);
+      const shiftY = centreY - Math.round(alias.cy);
+      outlines.set(
+        alias.id,
+        flat.map((value, index) => value + (index % 2 === 0 ? shiftX : shiftY)),
+      );
+      stats.set(alias.id, { ...(stats.get(placement.id) as HoldTraceStats), holdId: alias.id });
+    }
   }
 
   // No area backstop. Before the partition, a flood fill could walk through a
@@ -1389,7 +1608,7 @@ function traceOutlines(field: TraceField): {
   // construction made only of pixels whose nearest placement is this one, so a
   // merge is not expressible — and the rule was deleting real outlines: on
   // Grasshopper it took 14, all of them the board's genuinely large square holds.
-  return { outlines, stats, counts: { attempted, rejectedBox, neckTrimmed, pulledBack } };
+  return { outlines, stats, counts: { attempted, rejectedBox, rejectedCrossing, neckTrimmed, pulledBack } };
 }
 
 /**
@@ -1408,7 +1627,7 @@ function mergeFieldTraces(
 ): { outlines: Map<number, number[]>; stats: Map<number, HoldTraceStats>; summary: string } {
   const outlines = new Map<number, number[]>();
   const stats = new Map<number, HoldTraceStats>();
-  const totals: TraceCounts = { attempted: 0, rejectedBox: 0, neckTrimmed: 0, pulledBack: 0 };
+  const totals: TraceCounts = { attempted: 0, rejectedBox: 0, rejectedCrossing: 0, neckTrimmed: 0, pulledBack: 0 };
 
   for (const field of fields) {
     const traced = traceOutlines(field);
@@ -1419,6 +1638,7 @@ function mergeFieldTraces(
     for (const [holdId, entry] of traced.stats) stats.set(holdId, entry);
     totals.attempted += traced.counts.attempted;
     totals.rejectedBox += traced.counts.rejectedBox;
+    totals.rejectedCrossing += traced.counts.rejectedCrossing;
     totals.neckTrimmed += traced.counts.neckTrimmed;
     totals.pulledBack += traced.counts.pulledBack;
   }
@@ -1442,7 +1662,11 @@ function mergeFieldTraces(
   const summary =
     `${outlines.size}/${totals.attempted} traced ` +
     `(${missing} fell back: ${totals.rejectedBox} hit the search box, ` +
-    `${missing - totals.rejectedBox} had no art of their own; ` +
+    // Only mentioned where it happened. This line is the header comment on every
+    // shard, so an unconditional "0 crossed themselves" would rewrite all 51
+    // files to say nothing had gone wrong on any of them.
+    (totals.rejectedCrossing > 0 ? `${totals.rejectedCrossing} crossed themselves, ` : '') +
+    `${missing - totals.rejectedBox - totals.rejectedCrossing} had no art of their own; ` +
     `${totals.neckTrimmed} lost more than ${NOTABLE_TRIM_AREA} px² to the neck trim and the pullback together; ` +
     `${totals.pulledBack} pulled back off a neighbour's art)`;
   return { outlines, stats, summary };
@@ -1630,6 +1854,154 @@ async function writeConfigReport(
   );
 }
 
+/**
+ * Mean absolute per-channel difference the shipped art may sit from the lossless
+ * source it is exported from, in 0-255 levels.
+ *
+ * Measured, not guessed: Woods' shipped `.webp` sits 1.58 and 1.62 levels from
+ * its `.png` (worst single channel 57 and 30, on the antialiased hold rims where
+ * the codec spends its error). 6 is ~4x that headroom, and any real drift — one
+ * of the pair re-exported from a different photo, a crop, a colour-managed
+ * round trip — moves the mean by tens of levels rather than by ones.
+ */
+const LOSSLESS_MEAN_DIFF_CEILING = 6;
+
+/**
+ * Fail loudly when the shipped art and the lossless source it is keyed from stop
+ * being the same picture.
+ *
+ * The two are read from different files by different code paths for different
+ * reasons — the mask is cut from the `.png` because compression ringing is
+ * speckle the tracer would have to survive, and every colour reading measures the
+ * `.webp` because that is what a climber sees. Regenerate one without the other
+ * and nothing else in this script notices: the silhouettes would describe one
+ * photo and the lightness readings another, and both would look plausible.
+ */
+function assertLosslessMatchesShipped(
+  shipped: DecodedLayer,
+  lossless: { pixels: Buffer; channels: number; relativePath: string },
+): void {
+  const pixelCount = shipped.art.width * shipped.art.height;
+  let absoluteDifference = 0;
+  for (let pixel = 0; pixel < pixelCount; pixel += 1) {
+    const shippedOffset = pixel * 4;
+    const losslessOffset = pixel * lossless.channels;
+    for (let channel = 0; channel < 3; channel += 1) {
+      absoluteDifference += Math.abs(
+        shipped.art.pixels[shippedOffset + channel] - lossless.pixels[losslessOffset + channel],
+      );
+    }
+  }
+  const meanDifference = absoluteDifference / (pixelCount * 3);
+  if (meanDifference <= LOSSLESS_MEAN_DIFF_CEILING) return;
+  throw new Error(
+    `${lossless.relativePath} and the shipped ${shipped.relativePath} differ by a mean of ` +
+      `${meanDifference.toFixed(2)} levels per channel, over a ceiling of ${LOSSLESS_MEAN_DIFF_CEILING}. ` +
+      `They are meant to be the same picture — the mask is keyed from the lossless one and every colour ` +
+      `reading measures the shipped one — so re-export both from the same source.`,
+  );
+}
+
+/**
+ * Recover a photographic board's hold substance from its LOSSLESS sources.
+ *
+ * Deliberately not `decodeLayers`: that resizes into board space, and here a
+ * resample would be a bug rather than a convenience. A photographic board's art
+ * is authored AT board size — both Woods sizes are byte-for-byte the board's own
+ * `720x1000` and `1225x1400` — so the mask lines up with the placement
+ * coordinates with no interpolation at all, and interpolating would blur the
+ * antialiased rim the erode is there to remove. A mismatch is asserted rather
+ * than resampled: it means the art and the geometry have drifted apart, which is
+ * worth a stopped run.
+ *
+ * Returns a `reason` instead of layers when the key found no ground, which is
+ * what a photographic board shot on something other than a white sweep looks
+ * like. See `OPAQUE_ART_CEILING`.
+ */
+async function keyPhotographicLayers(
+  layers: DecodedLayer[],
+  boardWidth: number,
+  boardHeight: number,
+): Promise<{ layers: KeyedPhotoLayer[] } | { reason: string }> {
+  const keyed: KeyedPhotoLayer[] = [];
+  for (const layer of layers) {
+    const losslessPath = layer.relativePath.replace(/\.(webp|jpg|jpeg)$/i, '.png');
+    if (!existsSync(path.join(PUBLIC_DIR, losslessPath))) {
+      return { reason: `no lossless source beside ${layer.relativePath} — expected ${losslessPath}` };
+    }
+    const { data, info } = await sharp(path.join(PUBLIC_DIR, losslessPath)).raw().toBuffer({ resolveWithObject: true });
+    if (info.width !== boardWidth || info.height !== boardHeight) {
+      throw new Error(
+        `${losslessPath} is ${info.width}x${info.height} but the board is ${boardWidth}x${boardHeight}; ` +
+          `the white key does not resample, so the art and the placement geometry have drifted apart`,
+      );
+    }
+    assertLosslessMatchesShipped(layer, { pixels: data, channels: info.channels, relativePath: losslessPath });
+    const mask = buildWhiteKeyMask(data, info.width, info.height, info.channels, { erodePx: WHITE_KEY_ERODE_PX });
+    if (mask.maskShare >= OPAQUE_ART_CEILING) {
+      return {
+        reason:
+          `keying the white ground out of ${losslessPath} left ${(mask.maskShare * 100).toFixed(1)}% of it opaque ` +
+          `(only ${(mask.groundShare * 100).toFixed(1)}% flooded from the corners) — its corners are not board ground`,
+      };
+    }
+    keyed.push({
+      relativePath: losslessPath,
+      mask: mask.mask,
+      groundShare: mask.groundShare,
+      maskShare: mask.maskShare,
+    });
+  }
+  return { layers: keyed };
+}
+
+/**
+ * Give the composite back the alpha the photograph never carried, so every
+ * COLOUR reading below sees board ground as play field rather than as art.
+ *
+ * `wallLightness` is what this is FOR, and the difference is not marginal. It is
+ * the brightness a selector ring has to compete with over the 0.85r..1.15r
+ * annulus — mostly the gap BETWEEN holds, which on a photographed board is white
+ * sweep. Measured with the photograph's own alpha it reads that sweep as a very
+ * bright wall: 0.743 on the 8x10 and 0.766 on the 12x12, at 100% coverage. Keyed,
+ * the same annuli read 0.530 and 0.540 at 93% coverage, because the ground is now
+ * excluded exactly the way every other board's transparent gutter already is, and
+ * the placements whose annulus is nothing BUT ground are excluded rather than
+ * averaged in as bright.
+ *
+ * `ledBright` is the second reason to do it before the colour pass, and on Woods
+ * it is a guard rather than a fix. A placement on bare white ground reads a linear
+ * luma of 1.0 at its centre, which is the first thing `findPaintedLedBlob` looks
+ * for — but its surround disc sits on the same white sweep, so the ratio stays
+ * near 1 and neither size flags a single painted LED with or without this. That is
+ * a fact about THIS board's ground rather than about photographic art, and it
+ * stops holding the moment one ships shot on a dark sweep.
+ *
+ * The mask comes from the lossless source and the pixels from the shipped one.
+ * That is deliberate: the mask is a question about the geometry (key it clean),
+ * the colours are a question about what a climber sees (measure what ships).
+ * `assertLosslessMatchesShipped` is what keeps that pair honest.
+ *
+ * IT WRITES THROUGH TO THE LAYER on a single-layer board. `compositeLayers`
+ * returns `layers[0].art.pixels` unchanged when there is one layer, so `art`
+ * and that layer share a buffer and this zeroes the layer's alpha too. Harmless
+ * as the code stands — a photographic field takes its substance from the keyed
+ * mask and never reads the layer's own alpha — but anything later that wants
+ * the layer's original alpha has to copy first.
+ */
+function applyRecoveredAlpha(art: BoardArt, keyedLayers: KeyedPhotoLayer[]): void {
+  for (let pixel = 0; pixel < art.width * art.height; pixel += 1) {
+    let substance = false;
+    for (const layer of keyedLayers) {
+      if (layer.mask[pixel] === 1) {
+        substance = true;
+        break;
+      }
+    }
+    if (!substance) art.pixels[pixel * 4 + 3] = 0;
+  }
+}
+
 async function measureConfig(
   entry: {
     boardName: string;
@@ -1670,16 +2042,36 @@ async function measureConfig(
   let opaqueCount = 0;
   for (let index = 0; index < opaque.length; index += 1) opaqueCount += opaque[index];
   const opaqueShare = opaqueCount / opaque.length;
+  let provider = maskProvider;
   if (opaqueShare >= OPAQUE_ART_CEILING) {
-    return {
-      skipped:
-        `${key}: art is ${(opaqueShare * 100).toFixed(1)}% opaque — a photograph, not a stack of ` +
-        `transparent hold layers, so there is no silhouette in the alpha channel to trace`,
-    };
+    // Not a skip any more, a ROUTE. The alpha channel is full, so the question
+    // becomes whether the substance can be recovered by keying the ground out;
+    // only a board where that also fails falls back to rings.
+    const keyed = await keyPhotographicLayers(layers, details.boardWidth, details.boardHeight);
+    if ('reason' in keyed) {
+      return {
+        skipped:
+          `${key}: art is ${(opaqueShare * 100).toFixed(1)}% opaque — a photograph, not a stack of ` +
+          `transparent hold layers, so there is no silhouette in the alpha channel to trace ` +
+          `(${keyed.reason})`,
+      };
+    }
+    provider = photoMaskProvider(keyed.layers);
+    applyRecoveredAlpha(art, keyed.layers);
+    console.log(
+      `[board-art-geometry] ${key.padEnd(20)} photographic art — keyed ` +
+        keyed.layers
+          .map(
+            (layer) =>
+              `${layer.relativePath} to ${(layer.groundShare * 100).toFixed(2)}% ground / ` +
+              `${(layer.maskShare * 100).toFixed(2)}% hold`,
+          )
+          .join(', '),
+    );
   }
 
   const placements = details.holdsData;
-  const { outlines, summary, stats } = mergeFieldTraces(maskProvider(details, layers), placements);
+  const { outlines, summary, stats } = mergeFieldTraces(provider(details, layers), placements);
   const uniquePlacements = new Set(placements.map((placement) => placement.id)).size;
 
   const radiusById = new Map<number, number>();

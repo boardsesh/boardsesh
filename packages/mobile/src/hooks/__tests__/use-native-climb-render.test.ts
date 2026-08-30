@@ -503,8 +503,10 @@ describe('renderedOverlays warm-up from disk cache', () => {
     const v5Entry = makeMockEntry('v5_kilter_1_10_24_99999999.png');
     const v6Entry = makeMockEntry('v6_kilter_1_10_24_77777777.png');
     const v7Entry = makeMockEntry('v7_kilter_1_10_24_66666666.png');
-    // v8 belongs to another branch. A device that ran that branch's build has
-    // its PNGs on disk, and they are as invalid here as any other generation.
+    // v8 was claimed by the Woods white-key branch, which landed on this same
+    // line, so no shipped build ever published it — only a dev build of that
+    // branch can have written one. Kept in the fixture anyway: a generation
+    // being unreachable in the wild is not a reason for the sweep to trust it.
     const v8Entry = makeMockEntry('v8_kilter_1_10_24_55555555.png');
     const v9EntryA = makeMockEntry('v9_kilter_1_10_24_cccccccc.png');
     const v9EntryB = makeMockEntry('v9_tension_2_8_15_dddddddd.png');
@@ -545,7 +547,7 @@ describe('renderedOverlays warm-up from disk cache', () => {
     const v5Entry = makeMockEntry('v5_kilter_1_10_24_wrongstroke.png');
     const v6Entry = makeMockEntry('v6_kilter_1_10_24_preboardsesh.png');
     const v7Entry = makeMockEntry('v7_kilter_1_10_24_preplate.png');
-    const v8Entry = makeMockEntry('v8_kilter_1_10_24_otherbranch.png');
+    const v8Entry = makeMockEntry('v8_kilter_1_10_24_neverpublished.png');
     const v9Entry = makeMockEntry('v9_kilter_1_10_24_cccccccc.png');
     directoryListSpy.mockReturnValue([v1Entry, v2Entry, v4Entry, v5Entry, v6Entry, v7Entry, v8Entry, v9Entry]);
 

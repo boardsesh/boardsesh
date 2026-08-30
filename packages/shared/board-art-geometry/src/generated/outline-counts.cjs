@@ -53,4 +53,6 @@ module.exports = {
   'tension/11-9': { traced: 267, placements: 267 },
   'tension/11-10': { traced: 498, placements: 498 },
   'touchstone/1-1': { traced: 648, placements: 648 },
+  'woods/1-1': { traced: 467, placements: 485 },
+  'woods/1-2': { traced: 868, placements: 894 },
 };

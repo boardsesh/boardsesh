@@ -22,11 +22,12 @@ const KILTER_ORIGINAL_12X12 = { boardName: 'kilter', layoutId: 1, sizeId: 10 } a
 
 describe('loadBoardArtGeometry', () => {
   it('returns null for a board config with no shard', () => {
-    // Woods ships no shard: its art is an opaque photograph, so there is no
-    // silhouette in the alpha channel. `null` is the normal answer — the caller
-    // falls back to a ring at the placement radius.
-    expect(loadBoardArtGeometry({ boardName: 'woods', layoutId: 1, sizeId: 1 })).toBeNull();
+    // `null` is a normal answer, not an error — the caller falls back to a ring at
+    // the placement radius. Every config in the catalogue ships a shard now (Woods
+    // was the last holdout, and it is keyed off its white ground), so the case is
+    // a layout or size the catalogue does not carry.
     expect(loadBoardArtGeometry({ boardName: 'kilter', layoutId: 999, sizeId: 999 })).toBeNull();
+    expect(loadBoardArtGeometry({ boardName: 'woods', layoutId: 1, sizeId: 99 })).toBeNull();
   });
 
   it('memoises, so a redraw does not re-evaluate the shard', () => {
@@ -35,9 +36,9 @@ describe('loadBoardArtGeometry', () => {
     const second = loadBoardArtGeometry(KILTER_ORIGINAL_12X12);
     expect(first).not.toBeNull();
     expect(second).toBe(first);
-    // A miss is memoised too, or every frame of a Woods board pays a failed
+    // A miss is memoised too, or every frame of an unshipped config pays a failed
     // module lookup.
-    const missing = { boardName: 'woods', layoutId: 1, sizeId: 1 } as const;
+    const missing = { boardName: 'woods', layoutId: 1, sizeId: 99 } as const;
     expect(loadBoardArtGeometry(missing)).toBe(loadBoardArtGeometry(missing));
   });
 
@@ -145,7 +146,7 @@ describe('getWallLightness', () => {
       expect([key, wall.mean >= 0 && wall.mean <= 1]).toEqual([key, true]);
       expect([key, wall.coverage >= 0 && wall.coverage <= 1]).toEqual([key, true]);
     }
-    expect(getWallLightness({ boardName: 'woods', layoutId: 1, sizeId: 1 })).toBeNull();
+    expect(getWallLightness({ boardName: 'woods', layoutId: 1, sizeId: 99 })).toBeNull();
   });
 });
 

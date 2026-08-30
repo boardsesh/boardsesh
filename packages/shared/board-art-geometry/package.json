@@ -29,6 +29,11 @@
       "types": "./src/types.ts",
       "import": "./src/types.ts",
       "default": "./src/types.ts"
+    },
+    "./segmentation": {
+      "types": "./src/segmentation/index.ts",
+      "import": "./src/segmentation/index.ts",
+      "default": "./src/segmentation/index.ts"
     }
   },
   "scripts": {

@@ -14,6 +14,7 @@ import {
   WOODS_LAYOUTS,
   WOODS_SETS,
 } from '@boardsesh/board-config';
+import { buildWhiteKeyMask, mergeCoincidentPlacements } from '@boardsesh/board-art-geometry/segmentation';
 
 /**
  * The measurements the seven capture gates are built out of (issue #2202).
@@ -28,10 +29,47 @@ import {
  * it audits stops being a check on anything the moment one of them moves, and
  * the generator is a Node script that pulls in the whole catalogue, which a
  * package test should not.
+ *
+ * ONE INPUT IS SHARED, deliberately: `buildWhiteKeyMask` and
+ * `mergeCoincidentPlacements` are IMPORTED for the photographic boards rather
+ * than restated. A mask is not a threshold to re-derive, it is the substance
+ * itself — measure a silhouette's boundary against a mask cut half a pixel
+ * differently to the one the tracer cut it from and the gate reports the
+ * difference between two flood fills, not a defect in the geometry. Restating it
+ * would turn gates 6 and 7 into noise on exactly the board they are newest on.
+ *
+ * The independent anchor for that half lives elsewhere: `white-key.test.ts` pins
+ * the mask's ground and hold shares on the real art as golden four-decimal
+ * numbers, and pins the merged-group counts against `COINCIDENT_PAIR_BUDGET` in
+ * `@boardsesh/board-config`, which is derived from the hold table rather than
+ * from this package. A change to the key that moves a single pixel fails there
+ * before it can quietly move a gate here.
  */
 
 /** Mirrors the generator's search box, in placement radii. */
 export const SEARCH_RADII = 2.6;
+/** And the wider box a photographic board is traced in. */
+export const PHOTO_SEARCH_RADII = 3.5;
+/**
+ * Opaque share of the composited art above which the alpha channel carries no
+ * silhouette and the generator keys the ground out instead.
+ */
+export const OPAQUE_ART_CEILING = 0.95;
+/**
+ * The boards whose art is a photograph rather than a stack of transparent
+ * layers, and are therefore traced off a white key.
+ *
+ * A NAME LIST HERE, and only because the alternative is worse: the routing is a
+ * fact about decoded art, and gates 1-5 are synchronous geometry that never
+ * decodes anything. It is not trusted, though — `assertPhotographicRouting`
+ * measures the real composite and fails if this set and the art disagree in
+ * either direction, so a board that ships photographic art without being listed
+ * (or a listed board whose art gains an alpha channel) breaks the gate rather
+ * than quietly measuring the wrong thing.
+ */
+const PHOTOGRAPHIC_BOARDS = new Set(['woods']);
+/** Two placements this close in ROUNDED board px are one hold — see `mergeCoincidentPlacements`. */
+const COINCIDENT_EPSILON_PX = 2;
 /** Fraction of perimeter allowed on the search-box boundary before the trace is junk. */
 export const MAX_BOX_EDGE_SHARE = 0.1;
 /** A pixel counts as hold art if its alpha is at least this. */
@@ -172,8 +210,26 @@ export type ShardBoard = {
    * empty values.
    */
   layerOfPlacement: Map<number, number>;
-  /** The placements each layer draws, in placement order. */
+  /**
+   * The placements each layer draws, in placement order — and on a photographic
+   * board, the CANONICAL placement of each coincident group, because that is what
+   * the tracer's partition was seeded with.
+   */
   placementsByLayer: Placement[][];
+  /** Half-width of the search box this shard was traced in, in placement radii. */
+  searchRadii: number;
+  /** Whether the shard was traced off a white key rather than off an alpha channel. */
+  photographic: boolean;
+  /**
+   * Placement -> the placement whose trace it shipped.
+   *
+   * Identity everywhere but a photographic board, where placements 0-2 rounded
+   * board px apart are one hold with one silhouette emitted under every member
+   * id. The art gates have to ask about the hold, not the member: measured
+   * against a member's own centre, the canonical would win most of the cell and
+   * the same polygon would read as covering twice its own body.
+   */
+  canonicalPlacement: Map<number, Placement>;
 };
 
 /**
@@ -244,14 +300,40 @@ export function shardBoardForKey(key: string): ShardBoard {
     for (const [index, imageKey] of imageKeys.entries()) {
       for (const [holdId] of details.images_to_holds[imageKey]) layerOfPlacement.set(holdId, index);
     }
-    for (const placement of placements) {
-      if (!layerOfPlacement.has(placement.id)) layerOfPlacement.set(placement.id, -1);
+    // A board that states no routing but ships ONE image has an unambiguous one:
+    // that image draws every placement. Woods is the case — its
+    // `images_to_holds` carries a key with an empty value, because its geometry
+    // is a detected hold table rather than Aurora's per-image tuples.
+    //
+    // Restated from the generator's `placementFieldIndex`, including its
+    // fallback: no routing and more than one image leaves every placement
+    // unrouted, which downstream is a ring rather than an error. A gate that
+    // threw there would fail on a board the generator ships perfectly happily.
+    if (layerOfPlacement.size === 0 && imageKeys.length === 1) {
+      for (const placement of placements) layerOfPlacement.set(placement.id, 0);
+    } else {
+      for (const placement of placements) {
+        if (!layerOfPlacement.has(placement.id)) layerOfPlacement.set(placement.id, -1);
+      }
     }
   }
+  const photographic = PHOTOGRAPHIC_BOARDS.has(boardName);
+  // One hold, one trace: the shard emits one silhouette per coincident group
+  // under every member's id, so the partition the art gates rebuild has to be
+  // seeded with the same canonicals the tracer seeded with.
+  const groups = mergeCoincidentPlacements(placements, COINCIDENT_EPSILON_PX);
+  const canonicalPlacement = new Map<number, Placement>();
+  for (const placement of placements) {
+    const canonicalId = photographic ? (groups.canonicalOf.get(placement.id) ?? placement.id) : placement.id;
+    canonicalPlacement.set(placement.id, placementById.get(canonicalId) as Placement);
+  }
+
   const placementsByLayer: Placement[][] = imageKeys.map(() => []);
   for (const placement of placements) {
     const index = layerOfPlacement.get(placement.id) ?? -1;
-    if (index >= 0) placementsByLayer[index].push(placement);
+    if (index < 0) continue;
+    if (photographic && canonicalPlacement.get(placement.id) !== placement) continue;
+    placementsByLayer[index].push(placement);
   }
 
   return {
@@ -266,6 +348,9 @@ export function shardBoardForKey(key: string): ShardBoard {
     backgroundRelPaths: getBackgroundRelPaths(details, false),
     layerOfPlacement,
     placementsByLayer,
+    searchRadii: photographic ? PHOTO_SEARCH_RADII : SEARCH_RADII,
+    photographic,
+    canonicalPlacement,
   };
 }
 
@@ -623,9 +708,16 @@ export async function loadBoardArt(width: number, height: number, relativePaths:
  * and they touch — and a boundary that only exists because two images were
  * stacked is not a boundary of anything.
  */
-export async function loadBoardArtLayers(width: number, height: number, relativePaths: string[]): Promise<BoardArt[]> {
+export async function loadBoardArtLayers(board: ShardBoard): Promise<BoardArt[]> {
+  const { boardWidth: width, boardHeight: height } = board;
+  await assertPhotographicRouting(board);
+
   const layers: BoardArt[] = [];
-  for (const relativePath of relativePaths) {
+  for (const relativePath of board.backgroundRelPaths) {
+    if (board.photographic) {
+      layers.push(await keyedLayer(relativePath, width, height));
+      continue;
+    }
     const pixels = await sharp(path.join(PUBLIC_DIR, relativePath))
       .resize(width, height, { fit: 'fill' })
       .ensureAlpha()
@@ -641,14 +733,60 @@ export async function loadBoardArtLayers(width: number, height: number, relative
 }
 
 /**
+ * A photographic layer's hold substance, keyed off its white ground.
+ *
+ * The generator reads the LOSSLESS `.png` sibling, so this does too — measuring
+ * the boundary of a silhouette against different pixels to the ones it was cut
+ * from turns a gate into noise. No resample: the art is authored at board size,
+ * and the mismatch is asserted rather than interpolated away.
+ */
+async function keyedLayer(relativePath: string, width: number, height: number): Promise<BoardArt> {
+  const losslessPath = relativePath.replace(/\.(webp|jpg|jpeg)$/i, '.png');
+  const { data, info } = await sharp(path.join(PUBLIC_DIR, losslessPath)).raw().toBuffer({ resolveWithObject: true });
+  if (info.width !== width || info.height !== height) {
+    throw new Error(`${losslessPath} is ${info.width}x${info.height}, not the board's ${width}x${height}`);
+  }
+  const keyed = buildWhiteKeyMask(data, info.width, info.height, info.channels);
+  return { opaque: keyed.mask, width, height };
+}
+
+/**
+ * Check the `PHOTOGRAPHIC_BOARDS` name list against the art it claims to
+ * describe, in both directions.
+ *
+ * The list exists because gates 1-5 are synchronous and never decode anything.
+ * This is what stops it being a guess: a board that ships photographic art
+ * without being listed fails here rather than having its silhouettes measured
+ * against a 100%-opaque mask that clears every probe by construction, and a
+ * listed board whose art gains a real alpha channel fails here rather than being
+ * keyed for no reason.
+ */
+async function assertPhotographicRouting(board: ShardBoard): Promise<void> {
+  const composite = await loadBoardArt(board.boardWidth, board.boardHeight, board.backgroundRelPaths);
+  let opaqueCount = 0;
+  for (let index = 0; index < composite.opaque.length; index += 1) opaqueCount += composite.opaque[index];
+  const opaqueShare = opaqueCount / composite.opaque.length;
+  if (board.photographic !== opaqueShare >= OPAQUE_ART_CEILING) {
+    throw new Error(
+      `${board.key}: art is ${(opaqueShare * 100).toFixed(1)}% opaque but the gates treat it as ` +
+        `${board.photographic ? 'photographic' : 'transparent-layer'} art`,
+    );
+  }
+}
+
+/**
  * The placements that could out-compete this one for a pixel in its search box.
  *
  * A pixel in the box is at most `box * sqrt(2)` from the placement, so nothing
  * further than twice the box can win one; the cut-off keeps the exact
  * nearest-placement scan off the board's other five hundred bolts.
  */
-export function nearbyCandidates(candidates: Placement[], placement: Placement): Placement[] {
-  const reach = placement.r * SEARCH_RADII * 2;
+export function nearbyCandidates(
+  candidates: Placement[],
+  placement: Placement,
+  searchRadii: number = SEARCH_RADII,
+): Placement[] {
+  const reach = placement.r * searchRadii * 2;
   return candidates.filter(
     (entry) => Math.abs(entry.cx - placement.cx) <= reach && Math.abs(entry.cy - placement.cy) <= reach,
   );
@@ -687,10 +825,11 @@ export function areaRecovery(
   sameLayerCandidates: Placement[],
   placement: Placement,
   flatBoardPx: number[],
+  searchRadii: number = SEARCH_RADII,
 ): number {
   const centreX = Math.round(placement.cx);
   const centreY = Math.round(placement.cy);
-  const box = Math.round(placement.r * SEARCH_RADII);
+  const box = Math.round(placement.r * searchRadii);
   const left = Math.max(0, centreX - box);
   const top = Math.max(0, centreY - box);
   const right = Math.min(layerArt.width - 1, centreX + box);

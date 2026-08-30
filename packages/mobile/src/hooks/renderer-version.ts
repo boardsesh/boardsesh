@@ -35,6 +35,18 @@
  * v4 and v6 made, and one shared bump keeps native and Expo web on the same
  * contract.
  *
+ * v8 (issue #2202) opens Woods, which shipped no traced geometry at all: its art
+ * is an opaque photograph of the hold set, so there was no silhouette in the
+ * alpha channel to find, and the Boardsesh mode drew a plain ring at every
+ * placement radius with no veil. Its white ground is keyed away now, so 469 of
+ * the 8x10's 485 placements and 868 of the 12x12's 894 carry a real outline, and
+ * both sizes gained a `wallLightness` row (0.530 / 0.540 at ~93% coverage) that
+ * turns the soft veil on wherever the veil setting is `auto`. That `auto` case
+ * moves the render signature and evicts itself; the viewers who need a version
+ * bump are the ones who explicitly chose veil off, soft, strong or custom, whose
+ * signature is byte-identical either side of the change and whose cached PNGs
+ * would keep serving rings for a Woods climb forever.
+ *
  * v9 lights the LED base plate: on a hold whose art carries a traced plate
  * boundary, the ring between that boundary and the silhouette is painted in the
  * role colour and the glow is measured off that ring rather than the whole
@@ -44,13 +56,17 @@
  * boards with no plate are byte-identical and pay a one-time re-render, the
  * same trade v4, v6 and v7 made.
  *
- * v8 is deliberately skipped: the Woods work already holds it on its own
- * branch. Two branches landing the same `= 8` line do not conflict — git merges
- * identical lines silently — so whichever merged second would have shipped new
- * pixels under a generation the first had already spent, with no red anywhere
- * to say so. Taking 9 keeps the two generations distinct without either branch
- * having to know about the other, and `renderer-version.test.ts` pins the
- * integer so the next collision is a failing test rather than a stale cache.
+ * NO BUILD EVER PUBLISHED v8. The two changes were developed on separate
+ * branches, and the plate branch took 9 deliberately rather than 8 so that two
+ * branches landing the same `= 8` line could not merge silently — git merges
+ * identical lines without a word, and whichever landed second would have shipped
+ * new pixels under a generation the first had already spent. Both branches are on
+ * this line now, so v9 is the first generation that carries either change and the
+ * eviction it forces covers both. v8 is left in the ladder rather than reused: a
+ * dev build of the Woods branch can have written v8 PNGs to a real device, the
+ * sweep drops them like any other stale generation, and
+ * `renderer-version.test.ts` pins the integer so the next collision is a failing
+ * test rather than a stale cache.
  *
  * Lives in its own module so both the hook (use-native-climb-render.ts) and the
  * web overlay warm-up (overlay-cache-warmup.web.ts) can read it without a

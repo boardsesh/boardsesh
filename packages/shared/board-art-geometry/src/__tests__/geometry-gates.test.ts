@@ -7,7 +7,6 @@ import {
   CROP_BOX_PERIMETER_SHARE,
   MAX_BOX_EDGE_SHARE,
   MAX_SPUR_AREA,
-  SEARCH_RADII,
   SIMPLIFY_EPSILON,
   areaRecovery,
   axisAlignedRuns,
@@ -33,9 +32,17 @@ import {
  * They were written for the spike as "throwaway scripts to re-run after changing
  * the tracer", and that is exactly why the record drifted: nobody re-ran them,
  * and the traced counts in the write-up stayed on a pre-fix run through two
- * rounds of fixes. Gates 1 to 5 are geometry against geometry over all 49
- * shards; gates 6 and 7 decode real board art, so they run the seven boards the
- * spike drew by default and the whole catalogue under `BOARD_ART_GATES=all`.
+ * rounds of fixes. Gates 1 to 5 are geometry against geometry over all 51
+ * shards; gates 6 and 7 decode real board art, so they run a nine-board sample
+ * by default and the whole catalogue under `BOARD_ART_GATES=all`.
+ *
+ * WOODS IS NOT COMPARABLE TO THE OTHER BOARDS on any of these, and its pins say
+ * so. Every other board's art is a sprite sheet, drawn with gutters between the
+ * holds; Woods' is a photograph of a real wall, where holds touch, and its hold
+ * table is CV-detected, so a wide hold routinely carries two or three centres
+ * that the partition then splits it between. Its numbers are pinned against its
+ * own history exactly like every other shard's, and comparing them to Kilter's
+ * measures the boards rather than the tracer.
  *
  * Every gate carries a fixture that must trip it. A silhouette gate that has
  * never failed is indistinguishable from one that cannot fail, and four of the
@@ -45,11 +52,18 @@ import {
 const ALL_SHARD_KEYS = listBoardArtGeometryKeys();
 
 /**
- * The seven boards the spike drew, chosen for visually distinct hold sets rather
- * than for coverage: Tension's wooden originals against TB2's plastic, Kilter's
+ * The boards the art gates draw when they are not drawing all of them.
+ *
+ * Seven come from the spike, chosen for visually distinct hold sets rather than
+ * for coverage: Tension's wooden originals against TB2's plastic, Kilter's
  * Homewall against the commercial Original, Grasshopper (the board the issue was
  * filed against) and two MoonBoards whose art is drawn for a white wall.
- * Whatever the tracer does, it has to survive all of these.
+ *
+ * Both Woods sizes are here because they are the ONLY configs on the white-key
+ * path — mask from a flood fill instead of an alpha channel, a wider search box,
+ * coincident placements merged to one seed. A code path that runs only under
+ * `BOARD_ART_GATES=all` is a code path that breaks on somebody else's PR, and
+ * these two cost 8 seconds.
  */
 const SPIKE_SAMPLE_KEYS = [
   'grasshopper/1-5',
@@ -59,6 +73,8 @@ const SPIKE_SAMPLE_KEYS = [
   'kilter/1-10',
   'moonboard/2-1',
   'moonboard/5-1',
+  'woods/1-1',
+  'woods/1-2',
 ];
 
 const RUN_EVERY_CONFIG = process.env.BOARD_ART_GATES === 'all';
@@ -110,6 +126,14 @@ const ART_GATE_KEYS = RUN_EVERY_CONFIG ? ALL_SHARD_KEYS : SPIKE_SAMPLE_KEYS;
  * is mostly its own rim, not a tenth of its boundary being a chop. Each pin is a
  * ceiling for its own shard against its own history, which is all a ratchet has
  * to be.
+ *
+ * Woods reads an order of magnitude higher on all three and that is the board,
+ * not a regression: holds photographed on a real wall touch, so 50% of its
+ * silhouettes pull back off a neighbour against 12% on TB2's densest size. Its
+ * `opaqueMean` of ~22% is the pullback putting the boundary inside the hold's own
+ * art, which is what the pullback is FOR — the half that would be a defect is
+ * `neighbourMean`, and 3.5% / 1.3% there is a ceiling to ratchet down, not a
+ * clean bill.
  */
 const PINNED_CUT_SHARES: Record<string, { neighbourMean: number; overFivePercent: number; opaqueMean: number }> = {
   'decoy/2-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6.2 },
@@ -161,6 +185,8 @@ const PINNED_CUT_SHARES: Record<string, { neighbourMean: number; overFivePercent
   'tension/9-4': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'tension/9-5': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'touchstone/1-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 10.4 },
+  'woods/1-1': { neighbourMean: 3.5, overFivePercent: 47, opaqueMean: 21.6 },
+  'woods/1-2': { neighbourMean: 1.3, overFivePercent: 36, opaqueMean: 22.4 },
 };
 
 /**
@@ -168,7 +194,7 @@ const PINNED_CUT_SHARES: Record<string, { neighbourMean: number; overFivePercent
  * shard, and the worst distance any of them puts the placement outside the
  * polygon.
  *
- * All three are Kilter Original 12x12 Wide's screw-on holds, whose art is drawn
+ * Three are Kilter Original 12x12 Wide's screw-on holds, whose art is drawn
  * BESIDE the bolt hole rather than over it, and the worst of them puts the bolt
  * 1.0 board px outside a polygon simplified at a 1.6 board px tolerance — i.e.
  * inside the simplification's own error. Gate 1 fails anything further out than
@@ -177,11 +203,47 @@ const PINNED_CUT_SHARES: Record<string, { neighbourMean: number; overFivePercent
  * It was five while the tracer cut on the composite. Two of those five were the
  * cut rather than the art: the boundary ran between the bolt and the hold it
  * belongs to because a neighbouring SET's art was stacked on top of it.
+ *
+ * Woods' 18 and 32 are a different fact about a different kind of board. Its hold
+ * table is CV-detected off the board photograph, and the detector puts two or
+ * three centres on one wide hold often enough to matter — the partition then
+ * splits that hold between them and each piece's bolt lands near the cut. There is
+ * no set of "screw-ons" to name here, so the pin is a count per shard and the
+ * table below carries the ones that end up outright outside.
  */
-const PINNED_PLACEMENT_ON_THE_EDGE: Record<string, number> = { 'kilter/1-28': 3 };
+const PINNED_PLACEMENT_ON_THE_EDGE: Record<string, number> = {
+  'kilter/1-28': 3,
+  'woods/1-1': 16,
+  'woods/1-2': 32,
+};
 
 /**
- * Zero, with no exceptions left.
+ * The outlines whose placement ends up outside the polygon by more than the
+ * simplification tolerance, per shard, and the worst distance any of them
+ * manages.
+ *
+ * Zero everywhere the art is a sprite sheet, and this exists for Woods. Eleven of
+ * its 1,335 silhouettes (0.8%) sit beside their own bolt rather than around it,
+ * all of them on holds the CV detector put more than one centre on: the partition
+ * cuts the hold between the centres, the tracer seeds on the nearest art pixel to
+ * the bolt, and on a small piece those two are on opposite sides of the boundary.
+ * The worst is 4.24 board px on a 13.5 px placement radius, i.e. under a third of
+ * a radius — beside the bolt, not on another hold. A twelfth was in this table
+ * until the self-intersection backstop rejected its ring outright: the two
+ * defects have the same cause, a sliver of a multi-detected hold.
+ *
+ * Pinned per id AND with a distance ceiling, because the two failures look
+ * nothing alike: an id joining the list is one more piece of a multi-detected
+ * hold, while the distance running away is a trace that landed somewhere else
+ * entirely.
+ */
+const PINNED_PLACEMENT_OUTSIDE_OUTLINE: Record<string, { holds: number[]; worstDistancePx: number }> = {
+  'woods/1-1': { holds: [146], worstDistancePx: 2.34 },
+  'woods/1-2': { holds: [197, 289, 330, 375, 392, 402, 434, 456, 470, 807], worstDistancePx: 4.24 },
+};
+
+/**
+ * One, and it is 22 board px² against a threshold of 20.
  *
  * Kilter Homewall 4135 and 4634 were pinned here while the tracer grew every
  * core at once, and both went to zero when it started growing only the seed's.
@@ -190,10 +252,58 @@ const PINNED_PLACEMENT_ON_THE_EDGE: Record<string, number> = { 'kilter/1-28': 3 
  * carrying the same 31.8 px placement radius as the 1080 px 12x12, so it trimmed
  * at 4 where the narrower board trimmed at 3, and Douglas-Peucker left a 3-px
  * limb the wider disc would have taken. The radius is now a fraction of the
- * placement radius, which is what a hold's neck is a fraction of, and the pin is
- * empty.
+ * placement radius, which is what a hold's neck is a fraction of, and both of
+ * those are gone.
+ *
+ * Woods' 712 is what a 20 px² threshold looks like on a board whose placement
+ * radius is 13.5 rather than 31.8: the trim radius floors at 2 px there, so the
+ * open the gate replays takes a corner off a hold the tracer had no reason to
+ * touch. 22 against 20 is the margin, not a limb.
  */
-const PINNED_SPURRED_OUTLINES: Record<string, number[]> = {};
+const PINNED_SPURRED_OUTLINES: Record<string, number[]> = { 'woods/1-2': [712] };
+
+/**
+ * The outlines that contain a second placement because that second placement is
+ * on the same hold.
+ *
+ * Woods' hold table is CV-detected off the board photograph, and it emits pairs
+ * of centres 0-2 board px apart for one physical hold —
+ * `COINCIDENT_PAIR_BUDGET` in `@boardsesh/board-config`'s
+ * `woods-hold-positions.test.ts` pins 24 such pairs on the 8x10 and 17 on the
+ * 12x12, as an upper bound that may only shrink. The tracer merges each group to
+ * one seed and emits its silhouette under every member id, so a member's polygon
+ * USUALLY covers its twin's bolt. That is the correct drawing — there is one
+ * hold on the wall — and it is the one thing gate 2 cannot tell apart from a
+ * silhouette that swallowed its neighbour.
+ *
+ * Usually, not always: 58 of the 8x10's 62 merged members are listed and 36 of
+ * 36 on the 12x12. The four that are not are members of two groups where the
+ * shared silhouette is a sliver whose boundary runs between the two bolts rather
+ * than around both, so containment is genuinely false. That is a fact about
+ * those holds, not a hole in the check — the gate below asserts an exact set, so
+ * a member appearing or disappearing fails it either way.
+ *
+ * Which is also the honest statement of the table's direction: `toEqual` means
+ * this list may not GROW or shrink silently. A re-extraction of the hold table
+ * that separates a pair should take ids out of it, and the test failing is how
+ * that gets reviewed rather than absorbed.
+ *
+ * Merged groups here are a superset of the budget's pairs: 31 on the 8x10 and 18
+ * on the 12x12, because the merge rounds centres first (the nearest-placement
+ * transform it feeds seeds on rounded centres) and that pulls in pairs whose
+ * exact separation is a shade over 2 px.
+ */
+const PINNED_COINCIDENT_TWINS: Record<string, number[]> = {
+  'woods/1-1': [
+    30, 31, 76, 77, 95, 96, 114, 115, 131, 132, 134, 135, 265, 266, 280, 281, 326, 327, 328, 329, 341, 342, 343, 344,
+    345, 346, 350, 351, 363, 364, 370, 371, 385, 386, 395, 396, 413, 414, 415, 416, 424, 425, 426, 427, 431, 432, 433,
+    434, 435, 436, 437, 438, 446, 447, 448, 449, 450, 451,
+  ],
+  'woods/1-2': [
+    87, 88, 121, 122, 144, 145, 146, 147, 160, 161, 172, 173, 176, 177, 205, 206, 216, 217, 255, 256, 274, 275, 318,
+    319, 389, 390, 404, 405, 468, 469, 650, 651, 671, 672, 786, 787,
+  ],
+};
 
 type BoardAudit = {
   key: string;
@@ -201,7 +311,10 @@ type BoardAudit = {
   placements: number;
   placementOnTheEdge: number;
   withoutOwnPlacement: number[];
+  /** Worst distance any placement sits outside its own polygon, in board px. */
+  worstOutsideDistance: number;
   withSecondPlacement: number[];
+  coincidentTwins: number[];
   onSearchBoxEdge: number[];
   cropBoxShaped: number[];
   spurred: number[];
@@ -222,7 +335,9 @@ function auditShard(key: string): BoardAudit {
     placements: board.placements.length,
     placementOnTheEdge: 0,
     withoutOwnPlacement: [],
+    worstOutsideDistance: 0,
     withSecondPlacement: [],
+    coincidentTwins: [],
     onSearchBoxEdge: [],
     cropBoxShaped: [],
     spurred: [],
@@ -247,9 +362,15 @@ function auditShard(key: string): BoardAudit {
     // hold could not be corrected and could not be left alone either. The
     // 0.25r rule still binds on it, in `overrides.test.ts`, against the
     // committed ring rather than the emitted one.
+    //
+    // `worstOutsideDistance` is tracked inside the same guard, for the same
+    // reason: it is the ceiling on the pinned Woods exceptions, and a hand
+    // correction is not one of them.
     if (!handCorrected.has(holdId)) {
       if (!containsPoint(tracerPixels, 0, 0)) audit.placementOnTheEdge += 1;
-      if (distanceOutsidePolygon(tracerPixels, 0, 0) > SIMPLIFY_EPSILON) audit.withoutOwnPlacement.push(holdId);
+      const outsideDistance = distanceOutsidePolygon(tracerPixels, 0, 0);
+      if (outsideDistance > SIMPLIFY_EPSILON) audit.withoutOwnPlacement.push(holdId);
+      audit.worstOutsideDistance = Math.max(audit.worstOutsideDistance, outsideDistance);
     }
 
     let minX = Infinity;
@@ -262,17 +383,25 @@ function auditShard(key: string): BoardAudit {
       minY = Math.min(minY, tracerPixels[index + 1]);
       maxY = Math.max(maxY, tracerPixels[index + 1]);
     }
+    // A second placement inside the polygon is a swallowed neighbour, UNLESS it
+    // is on the same hold — which on a CV-detected hold table happens for real.
+    // The two are counted apart so the exception cannot hide the defect.
+    let swallowedNeighbour = false;
+    let coveredTwin = false;
+    const ownGroup = board.canonicalPlacement.get(holdId);
     for (const other of board.placements) {
       if (other.id === holdId) continue;
       const offsetX = other.cx - centreX;
       const offsetY = other.cy - centreY;
       if (offsetX < minX || offsetX > maxX || offsetY < minY || offsetY > maxY) continue;
       if (!containsPoint(tracerPixels, offsetX, offsetY)) continue;
-      audit.withSecondPlacement.push(holdId);
-      break;
+      if (board.canonicalPlacement.get(other.id) === ownGroup) coveredTwin = true;
+      else swallowedNeighbour = true;
     }
+    if (swallowedNeighbour) audit.withSecondPlacement.push(holdId);
+    if (coveredTwin) audit.coincidentTwins.push(holdId);
 
-    const box = Math.round(placement.r * SEARCH_RADII);
+    const box = Math.round(placement.r * board.searchRadii);
     if (boxEdgeShare(tracerPixels, box) > MAX_BOX_EDGE_SHARE) audit.onSearchBoxEdge.push(holdId);
     const { runs, share } = axisAlignedRuns(tracerPixels);
     if (runs >= CROP_BOX_MIN_RUNS && share > CROP_BOX_PERIMETER_SHARE && reachesSearchBox(tracerPixels, box)) {
@@ -288,17 +417,24 @@ function auditShard(key: string): BoardAudit {
 const AUDITS = ALL_SHARD_KEYS.map(auditShard);
 
 describe('board-art-geometry gates', () => {
-  it('ships a shard for every board whose art has an alpha channel to trace', () => {
-    // Woods is the one catalogue board with no shard: its art is an opaque
-    // photograph of the hold set on a white ground, so there is no silhouette in
-    // the alpha channel. Pinned so the skip stays a decision rather than a
-    // symptom of a broken art path.
-    expect(ALL_SHARD_KEYS.filter((key) => key.startsWith('woods/'))).toEqual([]);
-    expect(ALL_SHARD_KEYS.length).toBe(49);
+  it('ships a shard for every board in the catalogue', () => {
+    // Woods was the one board with no shard while the tracer could only read an
+    // alpha channel: its art is an opaque photograph of the hold set on a white
+    // ground. It is keyed off that ground now, so the catalogue is complete and
+    // the count is pinned — a shard going missing is a broken art path, not a
+    // decision anyone would take quietly.
+    expect(ALL_SHARD_KEYS.filter((key) => key.startsWith('woods/'))).toEqual(['woods/1-1', 'woods/1-2']);
+    expect(ALL_SHARD_KEYS.length).toBe(51);
   });
 
   it('gate 1: every outline sits on its own placement', () => {
-    for (const audit of AUDITS) expect([audit.key, audit.withoutOwnPlacement]).toEqual([audit.key, []]);
+    const measured = Object.fromEntries(
+      AUDITS.filter((audit) => audit.withoutOwnPlacement.length > 0).map((audit) => [
+        audit.key,
+        { holds: audit.withoutOwnPlacement, worstDistancePx: Math.round(audit.worstOutsideDistance * 100) / 100 },
+      ]),
+    );
+    expect(measured).toEqual(PINNED_PLACEMENT_OUTSIDE_OUTLINE);
   });
 
   it('gate 1: the outlines whose boundary runs through their own bolt are the pinned three', () => {
@@ -308,8 +444,15 @@ describe('board-art-geometry gates', () => {
     expect(measured).toEqual(PINNED_PLACEMENT_ON_THE_EDGE);
   });
 
-  it('gate 2: no outline contains a second placement', () => {
+  it('gate 2: no outline contains a placement from another hold', () => {
     for (const audit of AUDITS) expect([audit.key, audit.withSecondPlacement]).toEqual([audit.key, []]);
+  });
+
+  it('gate 2: the outlines covering a second placement are the pinned coincident twins', () => {
+    const measured = Object.fromEntries(
+      AUDITS.filter((audit) => audit.coincidentTwins.length > 0).map((audit) => [audit.key, audit.coincidentTwins]),
+    );
+    expect(measured).toEqual(PINNED_COINCIDENT_TWINS);
   });
 
   it('gate 3: no outline traces the search box', () => {
@@ -361,6 +504,17 @@ describe('board-art-geometry gates', () => {
  * wall. A recovery above 1 is not a defect: the tracer fills holes before taking
  * the outer border, so a hold with a punched-out bolt hole ships a polygon
  * covering art the partition never counted.
+ *
+ * A coincident group is measured ONCE, on its canonical. Its silhouette ships
+ * under every member id, so auditing the members would weight one hold by how
+ * many centres a detector happened to put on it.
+ *
+ * Woods' 88 and 193 chopped are the highest in the table by a distance, and they
+ * are almost entirely the multi-detected holds: a hold carrying three centres is
+ * cut into three slivers and each sliver keeps a third of the body it sits on.
+ * That is the right drawing — lighting the middle bolt should light the middle of
+ * the rail — but it reads as a chop by this measure and it is pinned as one
+ * rather than exempted, so a real regression on top of it still fails.
  */
 const PINNED_AREA_RECOVERY: Record<
   string,
@@ -415,6 +569,8 @@ const PINNED_AREA_RECOVERY: Record<
   'tension/9-4': { recoveryMeanFloor: 0.972, recoveryP10Floor: 0.948, choppedCeiling: 0 },
   'tension/9-5': { recoveryMeanFloor: 0.984, recoveryP10Floor: 0.973, choppedCeiling: 0 },
   'touchstone/1-1': { recoveryMeanFloor: 0.911, recoveryP10Floor: 0.843, choppedCeiling: 25 },
+  'woods/1-1': { recoveryMeanFloor: 0.88, recoveryP10Floor: 0.702, choppedCeiling: 88 },
+  'woods/1-2': { recoveryMeanFloor: 0.877, recoveryP10Floor: 0.703, choppedCeiling: 193 },
 };
 
 type ArtAudit = {
@@ -443,7 +599,7 @@ function artAuditFor(key: string): Promise<ArtAudit> {
     const board = shardBoardForKey(key);
     const geometry = loadBoardArtGeometry(board);
     if (geometry === null) throw new Error(`${key}: shard is indexed but did not load`);
-    const layers = await loadBoardArtLayers(board.boardWidth, board.boardHeight, board.backgroundRelPaths);
+    const layers = await loadBoardArtLayers(board);
     const handCorrected = overriddenPlacementIds(key);
 
     let neighbourSum = 0;
@@ -454,11 +610,17 @@ function artAuditFor(key: string): Promise<ArtAudit> {
 
     for (const [holdIdText, flat] of Object.entries(geometry.outlines)) {
       const placement = board.placementById.get(Number(holdIdText)) as Placement;
+      // One hold, measured once. A coincident group ships the SAME silhouette
+      // under every member id, each re-anchored to its own centre, so auditing
+      // the members would weight one hold by how many centres were detected on
+      // it — and measuring an alias against the canonical's partition cell would
+      // read the polygon as covering twice its own body.
+      if (board.canonicalPlacement.get(placement.id) !== placement) continue;
       const layerIndex = board.layerOfPlacement.get(placement.id) ?? -1;
       // A placement no layer draws has no art edge to be right or wrong about.
       if (layerIndex < 0) continue;
       const layerArt = layers[layerIndex];
-      const candidates = nearbyCandidates(board.placementsByLayer[layerIndex], placement);
+      const candidates = nearbyCandidates(board.placementsByLayer[layerIndex], placement, board.searchRadii);
       const tracerPixels = toTracerPixels(flat, placement);
 
       // Gate 6 only. A hand-corrected silhouette is exempt because the commonest
@@ -474,7 +636,7 @@ function artAuditFor(key: string): Promise<ArtAudit> {
         if (shares.neighbour > 0.05) overFivePercent += 1;
         counted += 1;
       }
-      recoveries.push(areaRecovery(layerArt, candidates, placement, tracerPixels));
+      recoveries.push(areaRecovery(layerArt, candidates, placement, tracerPixels, board.searchRadii));
     }
 
     recoveries.sort((left, right) => left - right);
