@@ -6,11 +6,16 @@ import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
 const scan = vi.hoisted(() => ({
   status: 'done' as 'idle' | 'scanning' | 'done' | 'unavailable',
   serials: [] as string[],
+  advertisedTypes: new Map<string, string>(),
   start: vi.fn(async () => {}),
   reset: vi.fn(),
 }));
 
 const boards = vi.hoisted(() => ({ data: [] as unknown[], isLoading: false }));
+
+const { resolveCalls } = vi.hoisted(() => ({
+  resolveCalls: [] as Array<{ serialNumbers: string[]; advertisedTypes?: ReadonlyMap<string, string> }>,
+}));
 
 const locationHint = vi.hoisted(() => ({
   shouldOfferLocationGrant: false,
@@ -47,7 +52,13 @@ vi.mock('../../../lib/ble/use-android-scan-location-hint', () => ({
 }));
 
 vi.mock('../../../lib/graphql/hooks', () => ({
-  useBoardsBySerialNumbers: () => boards,
+  useBoardsBySerialNumbers: (serialNumbers: string[], advertisedTypes?: ReadonlyMap<string, string>) => {
+    // Recorded so the sheet is pinned to passing the scan's advertised types
+    // through. Without them the hook resolves a serial to whichever board type
+    // carries it, and this sheet makes that board active.
+    resolveCalls.push({ serialNumbers, advertisedTypes });
+    return boards;
+  },
 }));
 
 vi.mock('../../../providers/theme-provider', () => ({
@@ -90,6 +101,8 @@ describe('BluetoothQuickstartSheet', () => {
   beforeEach(() => {
     scan.status = 'done';
     scan.serials = [];
+    scan.advertisedTypes = new Map();
+    resolveCalls.length = 0;
     scan.start.mockClear();
     scan.reset.mockReset();
     boards.data = [];
@@ -278,5 +291,18 @@ describe('BluetoothQuickstartSheet board rows', () => {
     const { container } = renderSheet();
 
     expect(hasText(container, 'Original 12×14')).toBe(true);
+  });
+
+  it('resolves scanned serials scoped to the type each controller advertised', () => {
+    // The Benchmark bug on this surface: Aurora reuses a serial across board
+    // apps, so an unscoped lookup can offer a stranger's Kilter board for an
+    // in-range Tension controller — and this sheet makes the pick active.
+    scan.serials = ['12345'];
+    scan.advertisedTypes = new Map([['12345', 'tension']]);
+
+    render(createElement(BluetoothQuickstartSheet, { active: true, onClose: () => {}, onSelect: () => {} }));
+
+    expect(resolveCalls.at(-1)).toMatchObject({ serialNumbers: ['12345'] });
+    expect([...(resolveCalls.at(-1)?.advertisedTypes ?? [])]).toEqual([['12345', 'tension']]);
   });
 });

@@ -85,6 +85,11 @@ import {
 } from '@boardsesh/graphql/operations/boards';
 import { getHttpClient } from '../client';
 import {
+  matchesAdvertisedType,
+  sharedAdvertisedBoardType,
+  type AdvertisedBoardTypes,
+} from '../../ble/advertised-board-type';
+import {
   GET_PROFILE,
   UPDATE_PROFILE,
   GET_MY_BOARDS,
@@ -336,12 +341,35 @@ export function fetchBoardsBySerialNumbers(serialNumbers: string[]): Promise<Use
     .then((data) => data.boardsBySerialNumbers);
 }
 
-export function useBoardsBySerialNumbers(serialNumbers: string[]) {
+/**
+ * Resolve scanned controller serials to boards, scoped to the board type each
+ * one advertised.
+ *
+ * Aurora numbers each board app separately, so a serial identifies a controller
+ * only within a type. Without `advertisedTypes` this returns whichever board
+ * carries the number — which is how an in-range Tension controller could be
+ * offered as a stranger's Kilter board, and made active.
+ *
+ * The `boardType` argument only narrows the request (and a mixed scan can't use
+ * it at all); the per-serial `matchesAdvertisedType` filter below is what
+ * actually enforces the rule.
+ */
+export function useBoardsBySerialNumbers(serialNumbers: string[], advertisedTypes: AdvertisedBoardTypes = new Map()) {
+  // Sorted entries, not the map, so the key hashes stably across renders while
+  // still changing when a late-arriving device name reveals a type.
+  const advertisedTypeEntries = [...advertisedTypes].sort(([first], [second]) => first.localeCompare(second));
+  const boardType = sharedAdvertisedBoardType(advertisedTypes);
   return useQuery({
-    queryKey: ['boardsBySerialNumbers', serialNumbers],
+    queryKey: ['boardsBySerialNumbers', serialNumbers, advertisedTypeEntries],
     queryFn: () =>
-      getHttpClient().request<GetBoardsBySerialNumbersQueryResponse>(GET_BOARDS_BY_SERIAL_NUMBERS, { serialNumbers }),
-    select: (data) => data.boardsBySerialNumbers,
+      getHttpClient().request<GetBoardsBySerialNumbersQueryResponse>(GET_BOARDS_BY_SERIAL_NUMBERS, {
+        serialNumbers,
+        boardType,
+      }),
+    select: (data) =>
+      data.boardsBySerialNumbers.filter((board) =>
+        board.serialNumber ? matchesAdvertisedType(board.serialNumber, board.boardType, advertisedTypes) : true,
+      ),
     enabled: serialNumbers.length > 0,
   });
 }

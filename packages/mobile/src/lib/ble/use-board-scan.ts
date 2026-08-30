@@ -4,9 +4,16 @@
 // numbers — the picker then resolves serials to boards via
 // GET_BOARDS_BY_SERIAL_NUMBERS and sets the chosen one active. No connection is
 // opened here; connecting happens later when the user enters play mode.
+//
+// The board type each device advertises is collected alongside its serial.
+// Aurora reuses a serial across board apps, so without it this sheet would
+// happily offer a stranger's Kilter board for an in-range Tension controller
+// and let the user make it active — the Benchmark Climbing bug, one surface
+// over from the connect-time picker.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { parseSerialNumber } from '@boardsesh/ble-protocol';
+import { advertisedBoardTypesBySerial, type AdvertisedBoardTypes } from './advertised-board-type';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../analytics';
 import { bleManager } from './ble-manager';
@@ -18,12 +25,18 @@ import { describeBlePermissionDenial } from './android-location-permission';
 
 const SCAN_TIMEOUT_MS = 15_000;
 
+// Stable empty identity so a reset doesn't hand consumers a fresh Map every
+// render (and churn the query key built from it).
+const EMPTY_ADVERTISED_TYPES: AdvertisedBoardTypes = new Map();
+
 export type BoardScanStatus = 'idle' | 'scanning' | 'done' | 'unavailable';
 
 export type BoardScan = {
   status: BoardScanStatus;
   /** Distinct serial numbers parsed from in-range device names. */
   serials: string[];
+  /** Board type advertised for each of those serials, where the name carried one. */
+  advertisedTypes: AdvertisedBoardTypes;
   start: () => Promise<void>;
   /** Stop any in-flight scan and return to idle (e.g. when the sheet closes). */
   reset: () => void;
@@ -32,6 +45,7 @@ export type BoardScan = {
 export function useBoardScan(): BoardScan {
   const [status, setStatus] = useState<BoardScanStatus>('idle');
   const [serials, setSerials] = useState<string[]>([]);
+  const [advertisedTypes, setAdvertisedTypes] = useState<AdvertisedBoardTypes>(EMPTY_ADVERTISED_TYPES);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scanningRef = useRef(false);
   const scanAttemptRef = useRef(0);
@@ -78,8 +92,9 @@ export function useBoardScan(): BoardScan {
       return;
     }
 
-    const found = new Set<string>();
+    const found = new Map<string, { deviceId: string; name?: string }>();
     setSerials([]);
+    setAdvertisedTypes(EMPTY_ADVERTISED_TYPES);
     setStatus('scanning');
     scanningRef.current = true;
 
@@ -108,8 +123,11 @@ export function useBoardScan(): BoardScan {
       }
       const serial = parseSerialNumber(deviceName);
       if (serial && !found.has(serial)) {
-        found.add(serial);
-        setSerials([...found]);
+        // Keep the whole name, not just the serial: the advertised board type
+        // lives in the same string and decides which board may claim it.
+        found.set(serial, { deviceId: device.id, name: deviceName });
+        setSerials([...found.keys()]);
+        setAdvertisedTypes(advertisedBoardTypesBySerial([...found.values()]));
       }
     });
 
@@ -124,6 +142,7 @@ export function useBoardScan(): BoardScan {
     scanAttemptRef.current += 1;
     stop();
     setSerials([]);
+    setAdvertisedTypes(EMPTY_ADVERTISED_TYPES);
     setStatus('idle');
   }, [stop]);
 
@@ -137,5 +156,5 @@ export function useBoardScan(): BoardScan {
     };
   }, [stop]);
 
-  return { status, serials, start, reset };
+  return { status, serials, advertisedTypes, start, reset };
 }

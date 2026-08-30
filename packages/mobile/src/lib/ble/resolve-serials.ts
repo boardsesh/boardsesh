@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { parseBoardTypeFromDeviceName, parseSerialNumber } from '@boardsesh/ble-protocol';
+import { parseSerialNumber } from '@boardsesh/ble-protocol';
 import {
   GET_BOARDS_BY_SERIAL_NUMBERS,
   GET_MY_BOARD_SERIAL_CONFIGS,
@@ -13,6 +13,14 @@ import { getAuthToken } from '../auth-store';
 import { getHttpClient } from '../graphql/client';
 import { useAuthToken } from '../graphql/use-auth-token';
 import type { DiscoveredDevice } from './types';
+import {
+  advertisedBoardTypesBySerial,
+  matchesAdvertisedType,
+  sharedAdvertisedBoardType,
+  type AdvertisedBoardTypes,
+} from './advertised-board-type';
+
+export { advertisedBoardTypesBySerial } from './advertised-board-type';
 
 export type ResolvedBoardEntry = { kind: 'saved'; board: UserBoard } | { kind: 'recorded'; config: BoardSerialConfig };
 
@@ -29,61 +37,10 @@ export function serialsFromDiscoveredDevices(devices: ReadonlyArray<DiscoveredDe
   return [...serials];
 }
 
-/**
- * The board type each discovered serial advertises, read straight from the BLE
- * device name (`Tension Board#12345@3`).
- *
- * Aurora numbers each board app separately, so a serial identifies a controller
- * only WITHIN a type: a Kilter `#12345` and a Tension `#12345` are different
- * hardware. The advertised name is the only trustworthy signal about the box in
- * front of the climber, so it decides which resolved board may claim a serial.
- *
- * Serials whose name carries no recognisable type are absent from the map, and
- * are left unfiltered — an unknown type must not throw away a real match.
- */
-export function advertisedBoardTypesBySerial(devices: ReadonlyArray<DiscoveredDevice>): Map<string, string> {
-  const advertisedTypes = new Map<string, string>();
-  for (const device of devices) {
-    const serial = parseSerialNumber(device.name);
-    if (!serial || advertisedTypes.has(serial)) continue;
-    const boardType = parseBoardTypeFromDeviceName(device.name);
-    if (boardType) advertisedTypes.set(serial, boardType);
-  }
-  return advertisedTypes;
-}
-
-/**
- * The single board type to scope the request to, or undefined when the scan is
- * mixed (or nothing advertised a type). A mixed scan can't be narrowed with one
- * argument, so it goes out unscoped and `matchesAdvertisedType` filters the
- * response per serial.
- */
-function sharedAdvertisedBoardType(advertisedTypes: ReadonlyMap<string, string>): string | undefined {
-  const distinctTypes = new Set(advertisedTypes.values());
-  return distinctTypes.size === 1 ? [...distinctTypes][0] : undefined;
-}
-
-/**
- * Whether a resolved entry describes hardware of the type this serial
- * advertised. Unknown on either side means "can't tell" — keep the entry, since
- * dropping it would lose a board the picker could otherwise name.
- */
-function matchesAdvertisedType(
-  serialNumber: string,
-  entry: ResolvedBoardEntry,
-  advertisedTypes: ReadonlyMap<string, string>,
-): boolean {
-  const advertisedType = advertisedTypes.get(serialNumber);
-  if (!advertisedType) return true;
-  const entryBoardType = entry.kind === 'saved' ? entry.board.boardType : entry.config.boardName;
-  if (!entryBoardType) return true;
-  return entryBoardType === advertisedType;
-}
-
 export async function resolveBleSerialNumbers(
   serialNumbers: string[],
   providedAuthToken?: string | null,
-  advertisedTypes: ReadonlyMap<string, string> = new Map(),
+  advertisedTypes: AdvertisedBoardTypes = new Map(),
 ): Promise<Map<string, ResolvedBoardEntry>> {
   const uniqueSerialNumbers = [
     ...new Set(serialNumbers.filter((serialNumber) => serialNumber.trim().length > 0)),
@@ -117,18 +74,16 @@ export async function resolveBleSerialNumbers(
   const resolvedBoards = new Map<string, ResolvedBoardEntry>();
   for (const board of savedResult.boardsBySerialNumbers) {
     if (!board.serialNumber) continue;
-    const entry: ResolvedBoardEntry = { kind: 'saved', board };
     // A board of another type shares nothing but the number with the controller
     // that just advertised. Letting it in is what made a Tension box at
     // Benchmark Climbing render — and behave — as a stranger's Kilter board.
-    if (!matchesAdvertisedType(board.serialNumber, entry, advertisedTypes)) continue;
-    resolvedBoards.set(board.serialNumber, entry);
+    if (!matchesAdvertisedType(board.serialNumber, board.boardType, advertisedTypes)) continue;
+    resolvedBoards.set(board.serialNumber, { kind: 'saved', board });
   }
   for (const config of recordedResult.myBoardSerialConfigs) {
     if (resolvedBoards.has(config.serialNumber)) continue;
-    const entry: ResolvedBoardEntry = { kind: 'recorded', config };
-    if (!matchesAdvertisedType(config.serialNumber, entry, advertisedTypes)) continue;
-    resolvedBoards.set(config.serialNumber, entry);
+    if (!matchesAdvertisedType(config.serialNumber, config.boardName, advertisedTypes)) continue;
+    resolvedBoards.set(config.serialNumber, { kind: 'recorded', config });
   }
   return resolvedBoards;
 }
