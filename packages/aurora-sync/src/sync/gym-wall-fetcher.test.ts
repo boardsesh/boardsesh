@@ -179,6 +179,30 @@ describe('createAuroraGymUserFetcher', () => {
     expect(mocks.fetchAuroraGymUser).toHaveBeenCalledTimes(1);
   });
 
+  it('stops spending requests once the session is unrecoverable', async () => {
+    // Without the latch, every remaining gym in a multi-thousand crawl paid for
+    // a doomed lookup AND a doomed re-auth — double the requests for a run that
+    // can no longer succeed.
+    mocks.fetchAuroraGymUser.mockRejectedValue(
+      new AuroraRequestError({ code: 'invalid_credentials', message: 'rejected' }),
+    );
+    mocks.signIn.mockResolvedValueOnce({ token: 'first' }).mockRejectedValue(new Error('nope'));
+
+    const fetcher = await createAuroraGymUserFetcher({ board: 'tension', env: CREDS });
+
+    await expect(drain(fetcher!(PIN))).resolves.toBeUndefined();
+    const lookupsAfterFirstGym = mocks.fetchAuroraGymUser.mock.calls.length;
+    const loginsAfterFirstGym = mocks.signIn.mock.calls.length;
+
+    // Three more gyms cost nothing at all.
+    for (const id of [43, 44, 45]) {
+      await expect(drain(fetcher!({ ...PIN, id }))).resolves.toBeUndefined();
+    }
+
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledTimes(lookupsAfterFirstGym);
+    expect(mocks.signIn).toHaveBeenCalledTimes(loginsAfterFirstGym);
+  });
+
   it('keeps crawling after one gym fails', async () => {
     mocks.fetchAuroraGymUser
       .mockRejectedValueOnce(new AuroraRequestError({ code: 'rate_limited', message: 'slow down' }))
