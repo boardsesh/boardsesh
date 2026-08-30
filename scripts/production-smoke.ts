@@ -150,18 +150,18 @@ const MIN_RENDERED_PAGE_CHARS = 4_000;
 const SITEMAP_DEGRADED_HEADER = 'x-sitemap-degraded';
 
 /**
- * The header `sitemapIndexRouteHandler` sets naming which path served the climbs
- * shard: `store` (the materialised `sitemap_climb_urls` / `sitemap_shard_refreshes`
- * read) or `live` (the scan they replaced).
- *
- * `X-Sitemap-Degraded` cannot see this. A store that is empty or unreadable still
- * produces a complete, correct index — the live scan is the documented fallback —
- * so the shard keeps its `<loc>` and nothing here goes red, while every
- * `/sitemaps/climbs/N.xml` behind it rebuilds the whole ordered list at 51 s a
- * page. That is the shape #4583 sat in from W-23 until #4661, unnoticed, so it
- * gets its own signal.
+ * This header must be absent while climb sitemap publication is paused. Checking
+ * it alongside the body catches a partial re-enable where the paged shard still
+ * runs but its `<loc>` is missing from the index.
  */
 const SITEMAP_CLIMBS_SOURCE_HEADER = 'x-sitemap-climbs-source';
+const CLIMB_SITEMAP_PATH_PREFIX = '/sitemaps/climbs/';
+/**
+ * Vercel consumes `s-maxage=3600` as its private CDN instruction and removes it
+ * from the downstream header. The route-level test pins the full header before
+ * that transformation; production smoke pins what browsers and crawlers see.
+ */
+const DISABLED_CLIMB_CLIENT_CACHE_CONTROL = 'public, must-revalidate';
 
 /**
  * Shards the index must always list.
@@ -177,16 +177,9 @@ const SITEMAP_CLIMBS_SOURCE_HEADER = 'x-sitemap-climbs-source';
  * entry can still lose the 3 s deadline once and self-heal on the `after()` warm —
  * a WARN. The shard vanishing without the header saying so is still a FAIL.
  *
- * `climbs` is required as of #4552 — before it, this list had no view of the
- * largest surface on the site. It could not be asserted earlier: its summary
- * could not meet `SHARD_DEADLINE_MS` at any cache temperature, so production
- * served the index degraded on most requests and the entry would have been a
- * permanently red check rather than a detector. #4523 made the summary a single
- * row of `sitemap_shard_refreshes`; `degradable: true` covers the residue — a
- * store empty right after the migration deploys falls back to the scan that
- * loses the deadline once, self-heals via `after()`, and names itself in the
- * header. The `<loc>` asserted is page 1, which exists whenever the shard has
- * any URLs at all.
+ * `climbs` is deliberately not required because this smoke pins the production
+ * pause: its index entries and source signals must be absent, and its direct
+ * route must return the cacheable 410 checked below.
  *
  * `degradable` is what `X-Sitemap-Degraded` may excuse. `boards` is genuinely
  * transient — a cold cache, a slow backend — and self-heals under the 60s window.
@@ -204,7 +197,6 @@ const REQUIRED_SITEMAP_SHARDS = [
   { id: 'static', loc: 'https://www.boardsesh.com/sitemaps/static.xml', degradable: false },
   { id: 'boards', loc: 'https://www.boardsesh.com/sitemaps/boards.xml', degradable: true },
   { id: 'playlists', loc: 'https://www.boardsesh.com/sitemaps/playlists.xml', degradable: true },
-  { id: 'climbs', loc: 'https://www.boardsesh.com/sitemaps/climbs/1.xml', degradable: true },
 ] as const;
 
 type RequiredSitemapShard = (typeof REQUIRED_SITEMAP_SHARDS)[number];
@@ -288,6 +280,19 @@ export const WWW_CHECKS: SmokeCheck[] = [
       if (structural) return structural;
 
       const declared = declaredDegradedShards(response);
+      const pauseFailure = firstFailure(
+        response.body.includes(CLIMB_SITEMAP_PATH_PREFIX)
+          ? `response still publishes the paused ${CLIMB_SITEMAP_PATH_PREFIX} surface`
+          : null,
+        declared.includes('climbs')
+          ? `the ${SITEMAP_DEGRADED_HEADER} header names climbs instead of treating the pause as intentional`
+          : null,
+        response.headers[SITEMAP_CLIMBS_SOURCE_HEADER]
+          ? `the paused surface emitted ${SITEMAP_CLIMBS_SOURCE_HEADER}: ${response.headers[SITEMAP_CLIMBS_SOURCE_HEADER]}`
+          : null,
+      );
+      if (pauseFailure) return pauseFailure;
+
       const unexcused = missingRequiredShards(response).filter(
         (shard) => !shard.degradable || !declared.includes(shard.id),
       );
@@ -307,21 +312,20 @@ export const WWW_CHECKS: SmokeCheck[] = [
         );
       }
 
-      // A WARN and not an `assert`, on the same reasoning the header comment
-      // gives: the served index is complete and correct either way, so this is
-      // "the fast path is not the one running", not "the sitemap is broken".
-      // A missing header is not a finding — a deploy that predates the header,
-      // or a summary that lost the 3 s race and never reported a path, both
-      // leave it absent, and the `x-sitemap-degraded` branch above already
-      // covers the second one.
-      if (response.headers[SITEMAP_CLIMBS_SOURCE_HEADER] === 'live') {
-        reasons.push(
-          `the climbs shard is being served from the live scan, not the materialised store (${SITEMAP_CLIMBS_SOURCE_HEADER}: live) — every /sitemaps/climbs/N.xml is rebuilding the whole ordered list. Run /api/internal/refresh-sitemap-climbs`,
-        );
-      }
-
       return reasons.length === 0 ? null : reasons.join('; ');
     },
+  },
+  {
+    name: 'the paused climb sitemap shard returns a cacheable Gone response',
+    path: '/sitemaps/climbs/1.xml',
+    assert: (response) =>
+      firstFailure(
+        expectStatus(response, 410),
+        expectContentType(response, 'text/plain'),
+        response.headers['cache-control'] === DISABLED_CLIMB_CLIENT_CACHE_CONTROL
+          ? null
+          : `expected cache-control "${DISABLED_CLIMB_CLIENT_CACHE_CONTROL}", got "${response.headers['cache-control'] ?? ''}"`,
+      ),
   },
   {
     name: 'the static sitemap shard serves URLs',

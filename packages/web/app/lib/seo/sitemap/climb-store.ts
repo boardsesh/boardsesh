@@ -34,9 +34,8 @@ export const CLIMBS_SHARD_ID = 'climbs';
 
 /**
  * How old a stored answer may get before the read path starts shouting and the
- * self-heal fires. Deliberately far longer than the 6-hour cron interval: this is
- * "nobody has refreshed this in two days, the scheduler is gone", not "this is
- * slightly behind".
+ * self-heal fires. Forty-eight hours avoids treating ordinary catalogue drift as
+ * an outage while still bounding how long an enabled store can go untouched.
  */
 export const SITEMAP_CLIMB_STORE_MAX_AGE_MS = 48 * 60 * 60 * 1000;
 
@@ -239,9 +238,9 @@ let refreshInFlight: { force: boolean; run: Promise<ClimbStoreRefreshResult> } |
  * **What the lock does and does not buy.** It serialises the WRITE. It does not
  * stop two instances computing concurrently, because taking it before the compute
  * would mean holding a transaction open across it. That residual is acceptable and
- * bounded: the cron is the normal trigger and runs on one instance, the `after()`
- * self-heal is single-flighted per instance behind a 15-minute floor, and the
- * compute itself is a read-only sequential scan. The `superseded` check inside the
+ * bounded: the `after()` self-heal is single-flighted per instance behind a
+ * 15-minute floor, the manual endpoint shares the in-flight work, and the compute
+ * itself is a read-only sequential scan. The `superseded` check inside the
  * transaction means the second finisher writes nothing rather than clobbering a
  * newer answer.
  *
@@ -251,7 +250,7 @@ let refreshInFlight: { force: boolean; run: Promise<ClimbStoreRefreshResult> } |
  * bug this table exists to prevent.
  *
  * The single-flight below shares a scan only between callers that want the SAME
- * thing. A `?force=1` that piggybacked on a cron's in-flight refresh would silently
+ * thing. A `?force=1` that piggybacked on a non-force in-flight refresh would silently
  * keep the shrink guard and hand the operator back a 409 telling them to do the
  * thing they just did — which would make the escape hatch look broken exactly when
  * it is needed. So a caller whose `force` disagrees waits for the in-flight scan to
@@ -333,8 +332,8 @@ async function runRefresh(force: boolean): Promise<ClimbStoreRefreshResult> {
     // Fail closed on a collapse. A refresh that suddenly reports a third of the
     // catalogue is a regressed predicate far more often than it is a real
     // deletion, and storing it would quietly shrink the index. `?force=1` on the
-    // cron route is the way out when the shrink IS real, so the guard cannot wedge
-    // the store permanently.
+    // authenticated refresh route is the way out when the shrink IS real, so the
+    // guard cannot wedge the store permanently.
     if (!force && previousItemCount !== null && itemCount * 2 < previousItemCount) {
       console.error(
         `[sitemap] the climbs summary refresh computed ${itemCount} items, down from ${previousItemCount} — refusing to store a >50% shrink. Re-run with ?force=1 if the shrink is real.`,
@@ -514,11 +513,10 @@ let lastSelfHealAt = 0;
  * The self-heal, called from `after()` on `/sitemap.xml` once the response has
  * flushed.
  *
- * It is what keeps this fix from depending on a scheduler. A lapsed cron (the
- * Railway cutover, #3795/#3798, has to re-point all eight of them) degrades to
- * "the store is refreshed by a crawler fetch" rather than to a broken sitemap.
- * It also populates the store on the very first `/sitemap.xml` after deploy,
- * without anyone running the manual curl.
+ * It keeps the enabled surface independent of a scheduler: a missing or stale
+ * store degrades to "the store is refreshed by a crawler fetch" rather than to a
+ * permanently broken sitemap. It also populates the store on the first enabled
+ * `/sitemap.xml` request after deploy, without anyone running the manual curl.
  *
  * Never awaited by a request, never allowed to throw into one: `after()` runs
  * post-flush, so the only thing a failure here can cost is the refresh itself.
@@ -533,10 +531,10 @@ export async function refreshClimbStoreIfStale(): Promise<void> {
   try {
     const stored = await fetchStoredClimbRefresh();
     // The URL-table check is not redundant with the summary row: on the deploy
-    // that ADDS `sitemap_climb_urls`, the summary row is fresh (#4523's cron has
-    // been writing it) while the URL table sits empty — and without this check
-    // the self-heal would wait out the cron while every page request took the
-    // 51 s fallback. One `LIMIT 1` probe closes that window on the first crawl.
+    // that ADDS `sitemap_climb_urls`, an older summary row can still be fresh while
+    // the new URL table sits empty — and without this check the self-heal would
+    // wait for the age threshold while every page request took the 51 s fallback.
+    // One `LIMIT 1` probe closes that window on the first crawl.
     const staleReason = !stored
       ? 'empty'
       : now - stored.computedAt.getTime() >= SITEMAP_CLIMB_STORE_MAX_AGE_MS

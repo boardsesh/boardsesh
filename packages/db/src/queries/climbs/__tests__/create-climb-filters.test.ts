@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SQL } from 'drizzle-orm';
+import { woodsHoldIdsInZone } from '@boardsesh/board-config';
 import { createClimbFilters } from '../create-climb-filters';
 import type { BoardRouteParams, ClimbSearchParams } from '../types';
 
@@ -191,7 +192,10 @@ void describe('createClimbFilters: zone modes', () => {
     assert.match(rendered, /zone_bp\.hole_id\s*=\s*zone_ch\.hold_id/);
     assert.match(rendered, /MOD\(\(zone_bp\.hole_id - 1\), 11\)/);
     assert.match(rendered, /1\.1 \+/);
-    assert.match(rendered, /16\.92 -/);
+    // Loose on the trailing digits: the vertical origin is computed in floating
+    // point (18 * 0.94 renders as 16.919999999999998), so pinning it exactly
+    // asserts the formatter rather than the calibration.
+    assert.match(rendered, /16\.9\d* -/);
     assert.doesNotMatch(rendered, /zone_bh\.x\s*>?=/);
     assert.doesNotMatch(rendered, /zone_bh\.y\s*>?=/);
     assert.doesNotMatch(rendered, /zone_bp\.set_id IN/);
@@ -205,7 +209,7 @@ void describe('createClimbFilters: zone modes', () => {
 
     const rendered = sqlToString(filters.zoneConditions[0]);
     assert.match(rendered, /1\.1517 \+/);
-    assert.match(rendered, /11\.0484 -/);
+    assert.match(rendered, /11\.04\d* -/);
     assert.match(rendered, /12 - \(FLOOR/);
   });
 
@@ -255,6 +259,113 @@ void describe('createClimbFilters: zone modes', () => {
   });
 });
 
+// Woods has no `board_placements` / `board_holes` rows and no denormalized
+// `edge_*` on its climbs, so neither of the paths above can answer a region box
+// for it (boardsesh/boardsesh#4748). Its holds are resolved against the box in
+// TypeScript and the query filters on hold ids instead.
+void describe('createClimbFilters: Woods zone modes', () => {
+  // 8x10 = size id 1, a 21-column x 25-row edge box. The lower-left quarter.
+  const woodsParams = { board_name: 'woods' as const, layout_id: 1, size_id: 1, set_ids: [1], angle: 40 };
+  const zoneBox = { edgeLeft: 0, edgeRight: 10, edgeBottom: 0, edgeTop: 12 };
+
+  void it('matches allHolds by rejecting any hold outside the box', () => {
+    const filters = createClimbFilters(woodsParams, { zoneBox });
+
+    assert.equal(filters.zoneConditions.length, 2);
+    const rendered = filters.zoneConditions.map(sqlToString).join(' && ');
+    // A climb must have holds, and none of them may fall outside the box.
+    assert.match(rendered, /EXISTS/);
+    assert.match(rendered, /NOT EXISTS/);
+    assert.match(rendered, /AND NOT \(zone_ch\.hold_id = ANY\(ARRAY\[/);
+    // No placement bridge, and no reliance on the NULL edge columns.
+    assert.doesNotMatch(rendered, /board_placements/);
+    assert.doesNotMatch(rendered, /board_holes/);
+    assert.doesNotMatch(rendered, /edge_left/);
+  });
+
+  void it('filters on exactly the hold ids the shared geometry puts inside the box', () => {
+    const filters = createClimbFilters(woodsParams, { zoneBox, zoneMode: 'anyHold' });
+    const rendered = sqlToString(filters.zoneConditions[0]);
+    const holdIds = woodsHoldIdsInZone(woodsParams.size_id, zoneBox)!;
+
+    // Read the ids back off the rendered ARRAY[...] literal rather than restating
+    // the geometry here — the point is that the query and the picker agree.
+    const renderedIds = rendered
+      .slice(rendered.indexOf('ARRAY[') + 'ARRAY['.length, rendered.indexOf(']::int[]'))
+      .split(',')
+      .map((value) => Number(value.trim()));
+    assert.ok(holdIds.length > 0);
+    assert.deepEqual(renderedIds, holdIds);
+  });
+
+  void it('matches anyHold with a single EXISTS over the holds inside the box', () => {
+    const filters = createClimbFilters(woodsParams, { zoneBox, zoneMode: 'anyHold' });
+
+    assert.equal(filters.zoneConditions.length, 1);
+    const rendered = sqlToString(filters.zoneConditions[0]);
+    assert.match(rendered, /EXISTS/);
+    assert.doesNotMatch(rendered, /NOT EXISTS/);
+    assert.match(rendered, /zone_ch\.hold_id = ANY\(ARRAY\[/);
+    assert.doesNotMatch(rendered, /board_placements/);
+  });
+
+  void it('selects different holds for the two board sizes', () => {
+    const smallBoard = createClimbFilters(woodsParams, { zoneBox, zoneMode: 'anyHold' });
+    const largeBoard = createClimbFilters({ ...woodsParams, size_id: 2 }, { zoneBox, zoneMode: 'anyHold' });
+
+    assert.notEqual(sqlToString(smallBoard.zoneConditions[0]), sqlToString(largeBoard.zoneConditions[0]));
+  });
+
+  void it('fails closed on a box that covers no hold', () => {
+    const filters = createClimbFilters(woodsParams, {
+      zoneBox: { edgeLeft: 0, edgeRight: 1, edgeBottom: 0, edgeTop: 1 },
+      zoneMode: 'anyHold',
+    });
+
+    assert.equal(filters.zoneConditions.length, 1);
+    assert.match(sqlToString(filters.zoneConditions[0]), /false/i);
+  });
+
+  void it('fails closed on a size id that is not a Woods board', () => {
+    const filters = createClimbFilters({ ...woodsParams, size_id: 99 }, { zoneBox });
+
+    assert.equal(filters.zoneConditions.length, 1);
+    assert.match(sqlToString(filters.zoneConditions[0]), /false/i);
+  });
+});
+
+// `baseHoldLocation` is 0-based on Woods, so the hold-key parser can't reject
+// non-positive ids the way it did — hold 0 is the first hold of every Woods board.
+void describe('createClimbFilters: hold keys', () => {
+  void it('keeps hold id 0', () => {
+    const filters = createClimbFilters(params, { holdsFilter: { '0': { ANY: 'include' } } });
+
+    assert.deepEqual(filters.anyHolds, [0]);
+    assert.match(sqlToString(filters.holdConditions[0]), /frames like %p0r%/i);
+  });
+
+  void it('keeps hold id 0 behind the hold_ prefix, and in a state filter', () => {
+    const filters = createClimbFilters(params, { holdsFilter: { hold_0: { HAND: 'include' } } });
+
+    assert.deepEqual(filters.holdStateFilters, [{ holdId: 0, state: 'HAND', mode: 'include' }]);
+  });
+
+  void it('still drops keys that are not a hold number', () => {
+    const filters = createClimbFilters(params, {
+      holdsFilter: {
+        hold_: { ANY: 'include' },
+        'hold_-1': { ANY: 'include' },
+        'hold_1.5': { ANY: 'include' },
+        hold_red: { ANY: 'include' },
+        '': { ANY: 'include' },
+      },
+    });
+
+    assert.deepEqual(filters.anyHolds, []);
+    assert.equal(filters.holdConditions.length, 0);
+  });
+});
+
 void describe('createClimbFilters: MoonBoard hold search', () => {
   const moonBoardParams: BoardRouteParams = {
     board_name: 'moonboard',
@@ -270,7 +381,7 @@ void describe('createClimbFilters: MoonBoard hold search', () => {
     });
 
     assert.equal(filters.holdConditions.length, 1);
-    assert.match(sqlToString(filters.holdConditions[0]), /frames LIKE %p56r%/);
+    assert.match(sqlToString(filters.holdConditions[0]), /frames like %p56r%/i);
   });
 
   void it('matches role-specific filters against MoonBoard climb-hold cell ids', () => {

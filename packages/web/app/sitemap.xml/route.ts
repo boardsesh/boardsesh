@@ -1,4 +1,5 @@
 import { after } from 'next/server';
+import { climbSitemapsEnabled } from '@/app/lib/seo/sitemap/climb-sitemaps-enabled';
 import { refreshClimbStoreIfStale } from '@/app/lib/seo/sitemap/climb-store';
 import { warmPlaylistSitemapCache } from '@/app/lib/seo/sitemap/playlist-query';
 import { sitemapIndexRouteHandler } from '@/app/lib/seo/sitemap/shard-registry';
@@ -36,14 +37,16 @@ export async function GET(): Promise<Response> {
   // `refreshClimbStoreIfStale` no-ops cheaply on a fresh store and is
   // single-flighted behind a 15-minute floor per instance.
   //
-  // It is what makes the fix scheduler-independent: a cron the Railway cutover
-  // (#3795/#3798) forgets to re-point degrades to "healed by the next crawl"
-  // rather than to a sitemap that quietly goes back to dropping the shard.
+  // It keeps the enabled surface scheduler-independent: a missing or stale store
+  // degrades to "healed by the next crawl" rather than to a sitemap that quietly
+  // goes back to dropping the shard.
   //
   // `after` from 'next/server', never `waitUntil` from '@vercel/functions' — Next
   // 16.2 supplies a real awaiter on self-hosted Node too, and the Vercel-only
   // import would not survive the move off Vercel.
-  after(refreshClimbStoreIfStale);
+  if (climbSitemapsEnabled()) {
+    after(refreshClimbStoreIfStale);
+  }
 
   // Same slot, same reason, different shard. The playlists rows are cached rather
   // than stored (#4524), and a first-population `unstable_cache` miss registers

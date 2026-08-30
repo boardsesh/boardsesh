@@ -62,7 +62,7 @@ vi.mock('@/app/lib/data/list-page-data.server', () => ({
     boardDetails: { board_name: 'kilter', layout_id: 1, size_id: 7, set_ids: [1, 20] },
     climbs: [],
     hasMore: false,
-    preloadUrl: null,
+    preloadUrls: [],
   })),
 }));
 
