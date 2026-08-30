@@ -177,11 +177,13 @@ is storable). The placement has to exist on the config with every set mounted �
 composite the shard was traced on; an unknown config comes back as
 `HOLD_OUTLINE_UNKNOWN_CONFIG` rather than a raw error naming every size that does exist.
 And the ring has to COVER its own placement centre: inside it, or outside by no more than
-`CENTRE_TOLERANCE_RADII` (0.25). Not strict containment, because five shipped outlines
-(kilter/1-28 placements 1448, 4800, 4806, 4810 and 4825 — hooks and slopers whose bolt sits
-under a concave underside) miss their own centre by up to 0.03 radii, and a strict gate
-would make exactly those holds un-correctable. The failure it exists to catch is a ring
-drawn around the NEIGHBOURING hold, which sits ~2 radii away.
+`CENTRE_TOLERANCE_RADII` (0.25). Not strict containment, because a handful of shipped
+outlines on kilter/1-28 — hooks and slopers whose bolt sits under a concave underside —
+miss their own centre by a small fraction of a radius, and a strict gate would make exactly
+those holds un-correctable. (Which placements those are is a property of whatever tracer
+last wrote the shards, so nothing pins the set; the ring tests assert the invariant that
+every committed outline passes the gate.) The failure it exists to catch is a ring drawn
+around the NEIGHBOURING hold, which sits ~2 radii away.
 
 ## Regenerating
 
