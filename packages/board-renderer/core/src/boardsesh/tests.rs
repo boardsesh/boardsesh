@@ -135,7 +135,8 @@ fn full_boardsesh_json_parses_with_every_field() {
       "glyphs": "role",
       "glyph": {"line_width_fraction": 0.11},
       "led_cover": {},
-      "holds": [{"id": 1, "cx": 100, "cy": 100, "r": 20, "outline": [-1,-1,1,-1,1,1,-1,1], "led": [0.5, 0.0], "silhouette_lightness": 0.3},
+      "led_base": {"opacity": 0.8},
+      "holds": [{"id": 1, "cx": 100, "cy": 100, "r": 20, "outline": [-1,-1,1,-1,1,1,-1,1], "led_inner": [-0.5,-0.5,0.5,-0.5,0.5,0.5,-0.5,0.5], "led": [0.5, 0.0], "silhouette_lightness": 0.3},
                 {"id": 2, "cx": 300, "cy": 100, "r": 20, "mirroredHoldId": 1}],
       "hold_state_map": {"43": {"color": "#00FFFF", "role": "hand"}, "44": {"color": "#FF00FF", "role": "FINISH"}}
     }"##;
@@ -149,7 +150,22 @@ fn full_boardsesh_json_parses_with_every_field() {
     assert_eq!(parsed.fill.opacity, 0.7);
     assert_eq!(parsed.glyphs, GlyphMode::Role);
     assert_eq!(parsed.led_cover.as_ref().unwrap().radius_fraction, 0.1);
+    assert_eq!(parsed.led_base.opacity, 0.8);
+    assert_eq!(parsed.led_base.interior_fill_scale, 0.6); // untouched default
+    assert!(parsed.led_base.glow_from_base);
     assert_eq!(parsed.holds[0].led, Some([0.5, 0.0]));
+    assert_eq!(
+        parsed.holds[0].led_inner.as_deref(),
+        Some([-0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5].as_slice())
+    );
+    // A config from a JS bundle that predates the plate parses to the defaults
+    // rather than failing, the way every Boardsesh field before it does.
+    let older: RenderConfig = serde_json::from_str(
+        r##"{"board_width":10,"board_height":10,"output_width":10,"frames":"","thumbnail":false,"holds":[],"hold_state_map":{}}"##,
+    )
+    .unwrap();
+    assert_eq!(older.led_base, LedBaseTuning::default());
+    assert!(older.holds.is_empty());
     assert_eq!(parsed.hold_state_map[&43].role, HoldRole::Hand);
     assert_eq!(parsed.hold_state_map[&44].role, HoldRole::Finish);
     assert!(render_overlay(&parsed).is_ok());

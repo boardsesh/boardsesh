@@ -217,7 +217,7 @@ pub fn paint_fill(
             }
         }
         let body_opacity = if hold.base_path.is_some() {
-            fill.opacity * interior_scale.clamp(0.0, 1.0)
+            fill.opacity * interior_scale
         } else {
             fill.opacity
         };

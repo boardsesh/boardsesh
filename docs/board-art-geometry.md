@@ -56,6 +56,35 @@ The renderer injection boundary is `HoldGeometryInput` in
 `BoardArtGeometry` as `holdGeometry`; `buildRenderConfig` copies these tables onto the
 per-hold WASM config consumed by the Rust renderer.
 
+### What the renderer draws from `ledInner`
+
+The field reaches the Rust renderer as the per-hold `led_inner`, and only ever alongside
+the `outline` it was traced inside — a ring with no outer edge describes no plate. Where
+both are present and the ring is usable, `packages/board-renderer/core/src/boardsesh/`:
+
+- fills the plate ring (`outline` minus `led_inner`, even-odd) with the role colour at
+  `led_base.opacity`, 0.92 by default — the LED lighting up;
+- dims the role fill inside the ring by `led_base.interior_fill_scale`, so the hold's own
+  shape still reads under the lit rim (`mark-style: glow`, the play view's default, draws
+  no fill at all and leaves the body untouched);
+- measures the outward glow's distance field from the plate ring rather than the whole
+  silhouette (`led_base.glow_from_base`). A rim that reaches the silhouette edge all the
+  way round gives the same nearest site to every pixel outside the hold, so the glow is
+  byte-identical; it only differs where the plate does not reach the edge, and there the
+  glow correctly fades. A plate too thin to own a single pixel falls back to the
+  silhouette rather than losing its glow.
+
+A ring that is malformed, non-finite, as large as the silhouette, or not inside its
+bounding box is ignored — the hold lights whole, and a bad ring can never push the
+silhouette onto the circle fallback. `led_base.opacity: 0` turns the whole treatment off.
+
+Two consequences of adding it. `RenderConfig` grew a field, so
+`core/tests/native_artifact_contract.rs` demands a 20-element marker and **every committed
+native artifact must be rebuilt** (`scripts/build-native-renderer.sh`; the iOS half needs a
+Mac) — a Rust change is invisible to the app until then. And `RENDERER_VERSION`
+(`packages/mobile/src/hooks/renderer-version.ts`) had to move, because the overlay cache
+key describes the settings a render was asked for and the plate is not a setting.
+
 ### Coordinates
 
 `outlines[placementId]` is a flat `[x0, y0, x1, y1, …]` ring — closed implicitly, the

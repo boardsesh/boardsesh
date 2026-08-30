@@ -190,6 +190,29 @@ describe('buildRenderConfig — boardsesh mode', () => {
     }
   });
 
+  it("attaches the LED base plate ring to a lit hold, but never without the silhouette it's traced inside", () => {
+    const outline = [-1, -1, 1, -1, 1, 1, -1, 1];
+    const plate = [-0.6, -0.6, 0.6, -0.6, 0.6, 0.6, -0.6, 0.6];
+    const { config } = buildRenderConfig({
+      ...boardseshParams,
+      // 100 is lit and traced; 200 is lit as 100's mirror partner but has no
+      // outline, which is the shape a half-finished annotation takes; 300 is
+      // traced but unlit.
+      holdGeometry: { outlines: { 100: outline, 300: outline }, ledInner: { 100: plate, 200: plate, 300: plate } },
+    });
+    const holdsById = new Map(config.holds.map((hold) => [hold.id, hold]));
+
+    expect(holdsById.get(100)?.led_inner).toEqual(plate);
+    expect(holdsById.get(200)?.led_inner).toBeUndefined();
+    expect(holdsById.get(300)?.led_inner).toBeUndefined();
+    // And a board nobody has annotated carries no ring anywhere, which is
+    // every shard shipping today.
+    for (const hold of buildRenderConfig({ ...boardseshParams, holdGeometry: { outlines: { 100: outline } } }).config
+      .holds) {
+      expect(hold.led_inner).toBeUndefined();
+    }
+  });
+
   it('emits led_cover: {} only when holdGeometry.ledBright has entries', () => {
     expect(buildRenderConfig(boardseshParams).config.led_cover).toBeUndefined();
     expect(buildRenderConfig({ ...boardseshParams, holdGeometry: { ledBright: {} } }).config.led_cover).toBeUndefined();

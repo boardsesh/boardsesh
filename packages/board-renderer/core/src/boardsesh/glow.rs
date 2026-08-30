@@ -212,9 +212,10 @@ pub fn paint_glow(
             true,
             Transform::from_translate(-(box_x0 as f32), -(box_y0 as f32)),
         );
+        let silhouette_alpha = mask.data();
         for y in 0..box_height {
             for x in 0..box_width {
-                let alpha = mask.data()[y * box_width + x];
+                let alpha = silhouette_alpha[y * box_width + x];
                 if alpha == 0 {
                     continue;
                 }
@@ -244,9 +245,9 @@ pub fn paint_glow(
             });
         let mut sites = vec![NO_SITE; box_width * box_height];
         let mut any_site = false;
-        for source in [plate_mask.as_ref(), Some(&mask)] {
+        for source in [plate_mask.as_ref().map(Mask::data), Some(silhouette_alpha)] {
             let Some(source) = source else { continue };
-            for (site, alpha) in sites.iter_mut().zip(source.data()) {
+            for (site, alpha) in sites.iter_mut().zip(source) {
                 if *alpha >= 128 {
                     *site = 1;
                     any_site = true;
