@@ -220,20 +220,25 @@ describe('overrides merged into the shards', () => {
     expect(orphaned).toEqual([]);
   });
 
-  it('carry no ledInner table a committed override did not put there', () => {
-    // The other direction, and the one that catches a leftover: nothing extracts
-    // `ledInner` from the art, so a shard entry with no override behind it is a
-    // stale shard rather than a discovery.
-    const orphaned: string[] = [];
-    for (const key of listBoardArtGeometryKeys()) {
-      const geometry = loadBoardArtGeometry(shardBoardForKey(key));
-      const shipped = geometry?.ledInner;
-      if (shipped === undefined) continue;
-      const committed = new Set(Object.keys(overridesForKey(key)?.ledInner ?? {}));
-      for (const placementText of Object.keys(shipped)) {
-        if (!committed.has(placementText)) orphaned.push(`${key} ledInner ${placementText}`);
-      }
-    }
-    expect(orphaned).toEqual([]);
+  it('are not the only thing that can put a ledInner entry in a shard', () => {
+    // This used to assert the other direction — that a `ledInner` entry with no
+    // committed override behind it was a stale shard rather than a discovery —
+    // and PR 6's automatic extractor is exactly that discovery, so the check
+    // would now fail on 2,306 perfectly good rows.
+    //
+    // What is still worth stating is the SEPARATION, because it is what keeps
+    // the two sources from being confused for one another: an override file is
+    // not required for a shard to carry the table, and the shards that carry it
+    // today have no override file at all. The extractor's own output is checked
+    // in `led-inner.test.ts`; the annotations' precedence over it is checked
+    // there too.
+    const withTable = listBoardArtGeometryKeys().filter(
+      (key) => loadBoardArtGeometry(shardBoardForKey(key))?.ledInner !== undefined,
+    );
+    const fromAnnotationsAlone = withTable.filter(
+      (key) => Object.keys(overridesForKey(key)?.ledInner ?? {}).length > 0,
+    );
+    expect(withTable.length).toBeGreaterThan(0);
+    expect(withTable).not.toEqual(fromAnnotationsAlone);
   });
 });

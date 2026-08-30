@@ -46,10 +46,11 @@ genuinely new goes in a new field.
 heard of it reads exactly what it read before. It holds the INNER boundary of the hold's
 LED base plate — the lit region is the silhouette MINUS that polygon, the ring of plate
 visible around the hold proper. Same flat, implicitly-closed, 4-decimal radius-unit form as
-`outlines`. Nothing extracts it from the art yet: every entry is hand-annotated (see
-Hand-corrected outlines below), so a shard carries the table only once somebody has drawn
-one, and most shards do not carry it at all. An absent table and an absent placement mean
-the same thing to a consumer — light the whole silhouette.
+`outlines`. Two sources fill it: the automatic extractor (see The LED base-plate extractor
+below), which qualifies the ten Kilter Homewall configs whose art carries a two-tone plate,
+and hand-drawn `led_inner` annotations, which replace an extraction wherever one exists.
+The other 39 shards carry no table at all. An absent table and an absent placement mean the
+same thing to a consumer — light the whole silhouette.
 
 The renderer injection boundary is `HoldGeometryInput` in
 `packages/shared/board-render/src/render-config.ts`. A caller passes a loaded
@@ -276,8 +277,129 @@ hold could neither be corrected nor left alone. The 0.25 rule binds instead on t
 ring, in `overrides.test.ts`, which is where it can be satisfied.
 
 `ledInner` rings are outside all seven — a base-plate boundary is not a silhouette and none
-of those measures say anything about one. They get the same structural validation as a
-silhouette (storable ring, drawn around its own placement) in `overrides.test.ts`.
+of those measures say anything about one. They get their own checks in `led-inner.test.ts`
+(storable ring, drawn around its own placement, inside the silhouette it is subtracted
+from, and a pinned count per config), whether they were extracted or drawn.
+
+## The LED base-plate extractor
+
+Kilter's Homewall art draws each hold as a neutral silver-grey body sitting on a beige LED
+base plate, and the plate shows as a band hugging the hold's perimeter — thick along the
+shaded bottom edge, thin along the lit top edge. That band is the part that actually glows,
+so `scripts/led-ring-extract.ts` finds the hold-proper boundary inside each silhouette and
+writes it to `ledInner`; the renderer lights the silhouette minus it.
+
+The image reasoning is in
+`packages/shared/board-art-geometry/src/segmentation/led-ring.ts` and is **pure** — no
+sharp, no file paths, no board data — so the whole classifier is unit-tested against
+synthetic two-tone art in `led-ring.test.ts` rather than against 499 real holds. The script
+is the glue: it crops the composited board, runs the extractor once per shipping
+silhouette, and applies the two acceptance layers the pure code cannot ask about.
+
+### The discriminator
+
+**Normalised chromaticity, `(R − B) / (R + B)`.** Three classifiers were tried against a
+hand-marked ground-truth hold first, and the two that failed are worth recording:
+
+- **Luma** (2- and 3-class Otsu inside the silhouette) splits every hold strongly, and the
+  split it finds is the hold's own shading gradient. The global luma histogram is broad and
+  unimodal: there are no tone bands to find.
+- **Raw warmth (`R − B ≥ 30`)** does find the plate, and thins or vanishes wherever the art
+  is brightly lit or deeply shaded, because a difference of channels scales with
+  illumination. A shaded stretch of beige plate reads colder than a lit stretch of grey
+  hold, so no single cut separates them.
+- **Normalised chromaticity is illumination-invariant** — scaling all three channels leaves
+  it unchanged, so brown stays brown in shadow. The ring then closes around virtually every
+  hold, lit tops included.
+
+Quantiles over Kilter Homewall 12x12 hold pixels: p25 0.050, p50 0.073, p75 0.112,
+p90 0.158.
+
+### The pipeline
+
+Per hold, inside the silhouette that ships (hand-corrected ones included, because a
+corrected polygon is the one a renderer subtracts from):
+
+1. `(R − B)/(R + B) ≥ WARM_CHROMA_THRESHOLD` (0.10).
+2. `close(2)` — bridge the pinholes a hard threshold leaves in a nearly-uniform band.
+3. `open(1)` — take back the fringe closing adds.
+4. Drop warm components under `MIN_WARM_COMPONENT_PX` (30 board px²) — speckle in the body.
+5. Gaussian blur at `BLUR_SIGMA` (2) and re-threshold at 0.5. **Not cosmetic:** a per-pixel
+   class boundary reads as a hard, sharp line, which a real base plate does not have. This
+   is the step that turns it into a curve.
+6. Re-clip to the silhouette, then keep only the band components that **touch the silhouette
+   boundary**. A plate is what the hold sits on, so it is visible around the edge by
+   construction — and this is also what drops Kilter's bolt hole, which reads warm and is a
+   dot in the middle of the hold.
+7. Interior = silhouette minus that band; take the component around the bolt, fill its
+   holes, trace the outer border with the tracer's own Moore follower, and simplify with
+   Douglas-Peucker at the same 1.6 board px.
+
+**The blur is exact integer arithmetic.** The separable kernel is built once as integer
+weights at a scale of 65536 (the only floating-point step, immediately rounded), and both
+passes accumulate integers that stay well inside the 2^53 a double holds exactly. The
+threshold is the exact comparison `2 · blurred ≥ kernelSum²`, so there is no rounding
+anywhere after the kernel and no tie-breaking rule to get wrong. The kernel is pinned in
+`led-ring.test.ts`.
+
+### Acceptance, per hold and per config
+
+A hold is **omitted rather than guessed at** — an absent entry just means "light the whole
+silhouette", which is what every renderer did before the field existed. It has to clear:
+
+- some warm pixels at all, and a band that reaches the silhouette boundary;
+- an interior that is not empty and whose component around the bolt carries at least
+  `MIN_INTERIOR_DOMINANCE` (0.75) of it — a plate surrounds a hold, it does not bisect one;
+- an interior between `MIN_INTERIOR_AREA_SHARE` and `MAX_INTERIOR_AREA_SHARE` (0.25..0.95)
+  of the silhouette;
+- an inner contour of at least 24 border points;
+- and, on the radius-unit ring that would actually ship, `isValidOutlineRing` plus the same
+  centre rule the backend enforces on a hand-drawn annotation (inside the ring, or outside
+  by at most `CENTRE_TOLERANCE_RADII`).
+
+A **config** emits a `ledInner` table only when at least `MIN_CONFIG_ACCEPTANCE` (60%) of
+its traced holds produce a ring. That is a cliff-edge separator rather than a threshold
+anything balances on: the ten Kilter Homewall configs run 70.9%–89.1%, and the highest
+anywhere else in the catalogue is tension/9-3 at 24.5%.
+
+| config | rings | accepted |
+| --- | --- | --- |
+| kilter/8-17 | 270 / 305 | 88.5% |
+| kilter/8-18 | 147 / 165 | 89.1% |
+| kilter/8-19 | 123 / 140 | 87.9% |
+| kilter/8-21 | 344 / 391 | 88.0% |
+| kilter/8-22 | 171 / 195 | 87.7% |
+| kilter/8-23 | 337 / 389 | 86.6% |
+| kilter/8-24 | 182 / 219 | 83.1% |
+| kilter/8-25 | 374 / 499 | 74.9% |
+| kilter/8-26 | 185 / 261 | 70.9% |
+| kilter/8-29 | 173 / 196 | 88.3% |
+
+2,306 rings over ten shards, and the other 39 shards are byte-identical to what they were
+before the extractor existed.
+
+### Annotations always win
+
+An extraction is written into `ledInner` first and a committed `led_inner` override
+replaces it afterwards, for the same placement. That ordering is the whole point rather
+than an implementation detail: **the annotations are the ground truth this extractor is
+calibrated against**, and a calibration target the thing being calibrated could overwrite
+is not one. `led-inner.test.ts` binds the ordering on the shipped shards.
+
+### Retuning
+
+Every constant above is a calibration anchor, tuned by eye against one board's art and one
+hand-marked hold — not a law. The loop to retune them:
+
+1. Draw `led_inner` annotations in the editor on holds the extractor got wrong. Those rows
+   export to `packages/shared/board-art-geometry/overrides/<board>/<layout>-<size>.json` and
+   ship verbatim, so the fix lands whether or not the extractor ever improves.
+2. Move a constant in `segmentation/led-ring.ts`, regenerate with
+   `--report=<dir> --report-crop=300,400,360`, and compare the annotated holds against what
+   the extractor now produces on them.
+3. Re-pin `PINNED_LED_INNER_COUNTS` in `led-inner.test.ts` from the shipping run. The counts
+   are pinned rather than bounded precisely so a threshold nudge cannot quietly drop forty
+   rings — the shard diff has to say how many holds moved.
 
 ## Regenerating
 
@@ -287,11 +409,16 @@ vp run generate:board-art-geometry -- --check          # drift gate (CI)
 vp run generate:board-art-geometry -- --board=kilter    # one board
 vp run generate:board-art-geometry -- --config=8-25     # one layout-size
 vp run generate:board-art-geometry -- --report=<dir>    # pictures + metrics, writes no shards
+vp run generate:board-art-geometry -- --report=<dir> --report-crop=300,400,360   # + one crop
 ```
 
 `--report` writes, per config, the composited board art with every silhouette stroked on
 it (amber pulled back off a neighbour, red keeping under 0.8 of its own art, dashed grey
-untraced) plus a per-hold metric table, and one `summary.txt` over the run. It touches no
+untraced, cyan the extracted LED base plate's inner edge) plus a per-hold metric table, and
+one `summary.txt` over the run that also carries the LED extractor's per-config acceptance.
+`--report-crop=x,y,size` additionally writes `<key>-crop.png`, the same square of board art
+twice — bare beside marked. A full-board sheet cannot answer whether a cyan line landed on
+the right edge, because the plate is a few pixels wide on a 1080-pixel board. It touches no
 generated file, so a before/after pair can be captured from a dirty tree without the drift
 gate seeing it. Put the output somewhere gitignored — `.boardsesh/art-report/` is the
 convention; the whole catalogue is about 54 MB of PNG.
