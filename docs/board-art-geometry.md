@@ -151,21 +151,37 @@ importing this one; until it does, a change to either has to be made to both.
 
 The tracer gets most holds right; the ones it does not are fixed as database rows rather
 than by regenerating and redeploying 3.0 MB of shards. `hold_outline_overrides` is keyed by
-the shard's own merge key plus a placement — `(board_name, layout_id, size_id, placement_id)`
-— with the same flat, implicitly-closed, 4-decimal ring in the same radius units, so a
-consumer swaps one for the other with no conversion. Latest write wins; `author_id`,
-`updated_at` and `note` are the record of who changed it and why, and there is no history
-table.
+the shard's own merge key plus a placement and a kind — `(board_name, layout_id, size_id,
+placement_id, kind)` — with the same flat, implicitly-closed, 4-decimal ring in the same
+radius units, so a consumer swaps one for the other with no conversion. Latest write wins;
+`author_id`, `updated_at` and `note` are the record of who changed it and why, and there is
+no history table.
+
+`kind` says which boundary a row traces. `silhouette` is the hold's outer edge — what the
+tracer produces and the renderer lights. `led_inner` is the INNER boundary of the same
+hold's LED base plate, an annotation the tracer never produced at all: the lit ring region
+is the silhouette MINUS that polygon, so a `led_inner` row stores no part of the outer edge
+and only means anything alongside the silhouette it sits inside.
 
 Editing runs over GraphQL: `holdOutlines(input:)` returns the deployed shard's outlines
-beside the live overrides (side by side, not merged, so an editor can show both and offer a
-revert), and `upsertHoldOutlineOverride` / `deleteHoldOutlineOverride` write them. All three
-are admin-only and BOARD-SCOPED — a community admin scoped to Kilter corrects Kilter's art
-and nothing else. A write is checked three ways: the ring's shape against
-`isValidOutlineRing`'s bounds, the placement against every set of the config (the composite
-the shard was traced on), and the ring against its own placement centre. That last rule is
-marginally stricter than the tracer, whose output misses its own centre on 5 of 15,501
-shipped outlines, so a correction for one of those has to be drawn to include the bolt.
+beside the live overrides of every kind (side by side, not merged, so an editor can show
+both and offer a revert), and `upsertHoldOutlineOverride` / `deleteHoldOutlineOverride`
+write them — both defaulting to `SILHOUETTE`, and the delete scoped to one kind so dropping
+an LED annotation leaves the corrected silhouette standing. All three operations are
+admin-only and BOARD-SCOPED — a community admin scoped to Kilter corrects Kilter's art and
+nothing else.
+
+A write is checked three ways. The ring's shape goes through `isValidOutlineRing` itself
+(the Zod schema `.refine`s on it, so the editor and the backend cannot disagree about what
+is storable). The placement has to exist on the config with every set mounted — the
+composite the shard was traced on; an unknown config comes back as
+`HOLD_OUTLINE_UNKNOWN_CONFIG` rather than a raw error naming every size that does exist.
+And the ring has to COVER its own placement centre: inside it, or outside by no more than
+`CENTRE_TOLERANCE_RADII` (0.25). Not strict containment, because five shipped outlines
+(kilter/1-28 placements 1448, 4800, 4806, 4810 and 4825 — hooks and slopers whose bolt sits
+under a concave underside) miss their own centre by up to 0.03 radii, and a strict gate
+would make exactly those holds un-correctable. The failure it exists to catch is a ring
+drawn around the NEIGHBOURING hold, which sits ~2 radii away.
 
 ## Regenerating
 

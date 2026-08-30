@@ -1,5 +1,5 @@
 {
-  "id": "33f16db4-5e02-44b5-9029-a0f9698b299f",
+  "id": "ab74be81-282f-4b04-b242-81bf663397cf",
   "prevId": "9e4ac991-a3c2-421e-8e7a-5cdc2bdeb2f1",
   "version": "7",
   "dialect": "postgresql",
@@ -11737,6 +11737,14 @@
           "primaryKey": false,
           "notNull": true
         },
+        "kind": {
+          "name": "kind",
+          "type": "hold_outline_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'silhouette'"
+        },
         "outline": {
           "name": "outline",
           "type": "jsonb",
@@ -11794,6 +11802,12 @@
             },
             {
               "expression": "placement_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -12967,6 +12981,14 @@
       "values": [
         "approved",
         "declined"
+      ]
+    },
+    "public.hold_outline_kind": {
+      "name": "hold_outline_kind",
+      "schema": "public",
+      "values": [
+        "silhouette",
+        "led_inner"
       ]
     },
     "public.location_sync_entity_type": {

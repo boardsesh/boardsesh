@@ -1,17 +1,35 @@
 export const holdOutlineOverridesTypeDefs = /* GraphQL */ `
-  "One placement's hold silhouette, as a flat implicitly-closed ring."
+  """
+  What a stored ring traces.
+
+  SILHOUETTE is the hold's outer boundary — the shape the tracer produces and the
+  renderer lights.
+
+  LED_INNER is the INNER boundary of the same hold's LED base plate: the lit ring
+  region is the silhouette MINUS that polygon. A LED_INNER ring therefore stores
+  no part of the outer edge, and is only meaningful alongside the silhouette it
+  sits inside.
+  """
+  enum HoldOutlineKind {
+    SILHOUETTE
+    LED_INNER
+  }
+
+  "One placement's traced hold silhouette, as a flat implicitly-closed ring."
   type PlacementOutline {
     placementId: Int!
     "Flat [x0, y0, x1, y1, ...] in units of the placement radius, relative to its centre."
     outline: [Float!]!
   }
 
-  "A hand-corrected hold silhouette, replacing what the tracer produced for one placement."
+  "A hand-drawn hold outline, replacing or annotating what the tracer produced for one placement."
   type HoldOutlineOverride {
     boardName: String!
     layoutId: Int!
     sizeId: Int!
     placementId: Int!
+    "Which boundary of the hold this ring traces."
+    kind: HoldOutlineKind!
     "Flat [x0, y0, x1, y1, ...] in units of the placement radius, rounded to 4 decimals."
     outline: [Float!]!
     "Why the traced version was wrong, in the editor's own words."
@@ -25,7 +43,7 @@ export const holdOutlineOverridesTypeDefs = /* GraphQL */ `
 
   """
   Everything the outline editor needs for one board config: the deployed shard's
-  traced silhouettes, plus the live overrides that supersede them.
+  traced silhouettes, plus the live overrides that supersede or annotate them.
 
   The two lists are returned side by side rather than merged so the editor can
   show what the tracer produced next to what a human corrected, and offer a
@@ -38,7 +56,7 @@ export const holdOutlineOverridesTypeDefs = /* GraphQL */ `
     sizeId: Int!
     "Traced silhouettes from the geometry shard this backend ships. Empty when no shard covers the config."
     shardOutlines: [PlacementOutline!]!
-    "Live corrections, newest write per placement."
+    "Live overrides of every kind, newest write per placement and kind."
     overrides: [HoldOutlineOverride!]!
   }
 
@@ -58,7 +76,9 @@ export const holdOutlineOverridesTypeDefs = /* GraphQL */ `
     layoutId: Int!
     sizeId: Int!
     placementId: Int!
-    "Flat [x0, y0, x1, y1, ...] in radius units. 3-150 points, every coordinate within 4 radii, and the ring must contain the placement centre."
+    "Which boundary this ring traces. Defaults to SILHOUETTE."
+    kind: HoldOutlineKind
+    "Flat [x0, y0, x1, y1, ...] in radius units. 3-150 points, every coordinate within 4 radii, and the ring has to cover the placement centre."
     outline: [Float!]!
     note: String
   }
@@ -68,5 +88,7 @@ export const holdOutlineOverridesTypeDefs = /* GraphQL */ `
     layoutId: Int!
     sizeId: Int!
     placementId: Int!
+    "Which boundary to drop. Defaults to SILHOUETTE — dropping one kind leaves the other standing."
+    kind: HoldOutlineKind
   }
 `;

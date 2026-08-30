@@ -47,13 +47,19 @@ async function insertUser(id: string): Promise<void> {
   `);
 }
 
-type StoredOverride = { placement_id: number; outline: number[]; note: string | null; author_id: string | null };
+type StoredOverride = {
+  placement_id: number;
+  kind: string;
+  outline: number[];
+  note: string | null;
+  author_id: string | null;
+};
 
 async function storedOverrides(): Promise<StoredOverride[]> {
   const result = await db.execute(sql`
-    SELECT placement_id, outline, note, author_id
+    SELECT placement_id, kind, outline, note, author_id
       FROM hold_outline_overrides
-     ORDER BY board_name, layout_id, size_id, placement_id
+     ORDER BY board_name, layout_id, size_id, placement_id, kind
   `);
   return Array.from(result as Iterable<StoredOverride>);
 }
@@ -166,13 +172,53 @@ describe('upsertHoldOutlineOverride validation', () => {
     await expect(upsert([-1, -1, 1, -1, -4.5, 1])).rejects.toThrow(/Invalid input/);
   });
 
-  it('rejects a ring that does not enclose the placement centre', async () => {
+  it('rejects a ring drawn around the neighbouring hold', async () => {
     // Shape-valid, and drawn entirely off to one side — the signature of an
-    // outline traced or drawn against the neighbouring hold.
-    await expect(upsert([1, 1, 2, 1, 2, 2])).rejects.toMatchObject({
+    // outline traced or drawn against the wrong hold. A neighbour sits roughly
+    // two radii away, far outside the centre tolerance.
+    await expect(upsert([1.2, -0.8, 2.8, -0.8, 2.8, 0.8, 1.2, 0.8])).rejects.toMatchObject({
       extensions: { code: HOLD_OUTLINE_CODES.centreOutside },
     });
     expect(await storedOverrides()).toHaveLength(0);
+  });
+
+  it('admits a ring whose centre grazes just outside it', async () => {
+    // Five shipped outlines (kilter/1-28 placements 1448, 4800, 4806, 4810,
+    // 4825) do not contain their own centre, all by under 0.03 radii. A strict
+    // containment gate would make exactly those holds un-correctable.
+    const grazing = [0.02, -1, 1.4, -1, 1.4, 1, 0.02, 1];
+    const created = await upsert(grazing);
+    expect(created.outline).toEqual(grazing);
+  });
+
+  it('rejects an unknown board config without leaking the size catalogue', async () => {
+    // getBoardDetails throws for a size the catalogue does not have, and its
+    // message lists every size that exists. The query answers the same config
+    // with an empty shard list, so the write answers with a code, not a 500.
+    await expect(
+      holdOutlineMutations.upsertHoldOutlineOverride(
+        null,
+        { input: { ...KILTER_CONFIG, sizeId: 9999, placementId: KILTER_PLACEMENT, outline: SQUARE_RING } },
+        authCtx(GLOBAL_ADMIN),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: HOLD_OUTLINE_CODES.unknownConfig } });
+
+    await expect(
+      holdOutlineMutations.upsertHoldOutlineOverride(
+        null,
+        { input: { ...KILTER_CONFIG, sizeId: 9999, placementId: KILTER_PLACEMENT, outline: SQUARE_RING } },
+        authCtx(GLOBAL_ADMIN),
+      ),
+    ).rejects.toThrow(/^No board config kilter layout 1 size 9999\.$/);
+  });
+
+  it('answers an unknown board config on the query with empty lists, not an error', async () => {
+    const read = await holdOutlineQueries.holdOutlines(
+      null,
+      { input: { ...KILTER_CONFIG, sizeId: 9999 } },
+      authCtx(GLOBAL_ADMIN),
+    );
+    expect(read).toMatchObject({ shardOutlines: [], overrides: [] });
   });
 
   it('rejects a placement that is not on the board config', async () => {
@@ -213,6 +259,7 @@ describe('hold outline override round trip', () => {
       layoutId: 1,
       sizeId: 10,
       placementId: KILTER_PLACEMENT,
+      kind: 'SILHOUETTE',
       outline: SQUARE_RING,
       note: 'The tracer swallowed the left lobe.',
       authorId: GLOBAL_ADMIN,
@@ -246,7 +293,7 @@ describe('hold outline override round trip', () => {
     // attached to a different shape.
     expect(replaced.note).toBeNull();
     expect(await storedOverrides()).toEqual([
-      { placement_id: KILTER_PLACEMENT, outline: wider, note: null, author_id: KILTER_ADMIN },
+      { placement_id: KILTER_PLACEMENT, kind: 'silhouette', outline: wider, note: null, author_id: KILTER_ADMIN },
     ]);
 
     await expect(
@@ -285,6 +332,118 @@ describe('hold outline override round trip', () => {
     const rounded = [-1, -1.0001, 1.1235, -1, 1, 1.9877, -1, 1];
     expect(created.outline).toEqual(rounded);
     expect((await storedOverrides())[0].outline).toEqual(rounded);
+  });
+
+  it('stores both kinds for the same placement side by side', async () => {
+    const silhouette = await holdOutlineMutations.upsertHoldOutlineOverride(
+      null,
+      { input: { ...KILTER_CONFIG, placementId: KILTER_PLACEMENT, outline: SQUARE_RING } },
+      authCtx(GLOBAL_ADMIN),
+    );
+    // The LED base plate's inner boundary sits inside the silhouette; the lit
+    // ring is the silhouette minus this polygon.
+    const innerRing = [-0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5];
+    const ledInner = await holdOutlineMutations.upsertHoldOutlineOverride(
+      null,
+      { input: { ...KILTER_CONFIG, placementId: KILTER_PLACEMENT, kind: 'LED_INNER', outline: innerRing } },
+      authCtx(GLOBAL_ADMIN),
+    );
+
+    expect(silhouette.kind).toBe('SILHOUETTE');
+    expect(ledInner.kind).toBe('LED_INNER');
+    expect(await storedOverrides()).toEqual([
+      {
+        placement_id: KILTER_PLACEMENT,
+        kind: 'led_inner',
+        outline: innerRing,
+        note: null,
+        author_id: GLOBAL_ADMIN,
+      },
+      {
+        placement_id: KILTER_PLACEMENT,
+        kind: 'silhouette',
+        outline: SQUARE_RING,
+        note: null,
+        author_id: GLOBAL_ADMIN,
+      },
+    ]);
+
+    const read = await holdOutlineQueries.holdOutlines(null, { input: { ...KILTER_CONFIG } }, authCtx(GLOBAL_ADMIN));
+    expect(read.overrides.map((entry) => entry.kind).sort()).toEqual(['LED_INNER', 'SILHOUETTE']);
+  });
+
+  it('deletes one kind and leaves the other standing', async () => {
+    for (const kind of ['SILHOUETTE', 'LED_INNER']) {
+      await holdOutlineMutations.upsertHoldOutlineOverride(
+        null,
+        { input: { ...KILTER_CONFIG, placementId: KILTER_PLACEMENT, kind, outline: SQUARE_RING } },
+        authCtx(GLOBAL_ADMIN),
+      );
+    }
+
+    await expect(
+      holdOutlineMutations.deleteHoldOutlineOverride(
+        null,
+        { input: { ...KILTER_CONFIG, placementId: KILTER_PLACEMENT, kind: 'LED_INNER' } },
+        authCtx(GLOBAL_ADMIN),
+      ),
+    ).resolves.toBe(true);
+
+    expect((await storedOverrides()).map((row) => row.kind)).toEqual(['silhouette']);
+
+    // The same delete a second time has nothing left of that kind to remove.
+    await expect(
+      holdOutlineMutations.deleteHoldOutlineOverride(
+        null,
+        { input: { ...KILTER_CONFIG, placementId: KILTER_PLACEMENT, kind: 'LED_INNER' } },
+        authCtx(GLOBAL_ADMIN),
+      ),
+    ).resolves.toBe(false);
+  });
+
+  it('drops a trailing point that repeats the first, after rounding', async () => {
+    // An explicitly-closed ring from a client. Rounding to 4 decimals is what
+    // makes the last point equal the first, so closing has to happen after it.
+    const created = await holdOutlineMutations.upsertHoldOutlineOverride(
+      null,
+      {
+        input: {
+          ...KILTER_CONFIG,
+          placementId: KILTER_PLACEMENT,
+          outline: [-1, -1, 1, -1, 1, 1, -1, 1, -1.000004, -0.999996],
+        },
+      },
+      authCtx(GLOBAL_ADMIN),
+    );
+
+    expect(created.outline).toEqual(SQUARE_RING);
+  });
+
+  it('rejects a ring that collapses below a triangle once closed', async () => {
+    await expect(
+      holdOutlineMutations.upsertHoldOutlineOverride(
+        null,
+        {
+          input: {
+            ...KILTER_CONFIG,
+            placementId: KILTER_PLACEMENT,
+            outline: [-1, -1, 1, -1, -1.000004, -0.999996],
+          },
+        },
+        authCtx(GLOBAL_ADMIN),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: HOLD_OUTLINE_CODES.degenerateRing } });
+  });
+
+  it('stores an empty note as absent rather than an empty string', async () => {
+    const created = await holdOutlineMutations.upsertHoldOutlineOverride(
+      null,
+      { input: { ...KILTER_CONFIG, placementId: KILTER_PLACEMENT, outline: SQUARE_RING, note: '   ' } },
+      authCtx(GLOBAL_ADMIN),
+    );
+
+    expect(created.note).toBeNull();
+    expect((await storedOverrides())[0].note).toBeNull();
   });
 
   it("keeps one board config's overrides out of another config's read", async () => {

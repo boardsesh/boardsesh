@@ -25,20 +25,14 @@ vi.mock('../../../../db/client', () => ({
   },
 }));
 
-vi.mock('../tester', () => ({
-  userIsTester: vi.fn(async () => false),
-}));
-
-vi.mock('../admin', () => ({
-  userIsAdmin: vi.fn(async () => false),
+vi.mock('../role-flags', () => ({
+  loadProfileRoleFlags: vi.fn(async () => ({ isTester: false, isAdmin: false })),
 }));
 
 import { userQueries } from '../queries';
-import { userIsAdmin } from '../admin';
-import { userIsTester } from '../tester';
+import { loadProfileRoleFlags } from '../role-flags';
 
-const userIsTesterMock = vi.mocked(userIsTester);
-const userIsAdminMock = vi.mocked(userIsAdmin);
+const roleFlagsMock = vi.mocked(loadProfileRoleFlags);
 
 function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext {
   return {
@@ -52,10 +46,8 @@ function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext 
 describe('userQueries.profile', () => {
   beforeEach(() => {
     limitMock.mockReset();
-    userIsTesterMock.mockReset();
-    userIsTesterMock.mockResolvedValue(false);
-    userIsAdminMock.mockReset();
-    userIsAdminMock.mockResolvedValue(false);
+    roleFlagsMock.mockReset();
+    roleFlagsMock.mockResolvedValue({ isTester: false, isAdmin: false });
   });
 
   it('returns null when not authenticated', async () => {
@@ -105,7 +97,7 @@ describe('userQueries.profile', () => {
     });
   });
 
-  it('reflects isTester from userIsTester and a zero favoriteCount', async () => {
+  it('reflects isTester from the role flags and a zero favoriteCount', async () => {
     limitMock.mockReturnValue([
       {
         id: 'user-2',
@@ -118,7 +110,7 @@ describe('userQueries.profile', () => {
         favoriteCount: 0,
       },
     ]);
-    userIsTesterMock.mockResolvedValue(true);
+    roleFlagsMock.mockResolvedValue({ isTester: true, isAdmin: false });
 
     const result = await userQueries.profile(undefined, undefined, makeCtx({ userId: 'user-2' }));
 
@@ -126,7 +118,7 @@ describe('userQueries.profile', () => {
     expect(result?.favoriteCount).toBe(0);
   });
 
-  it('reflects isAdmin from userIsAdmin, independently of isTester', async () => {
+  it('reflects isAdmin independently of isTester, from the same read', async () => {
     limitMock.mockReturnValue([
       {
         id: 'user-3',
@@ -139,11 +131,13 @@ describe('userQueries.profile', () => {
         favoriteCount: 0,
       },
     ]);
-    userIsAdminMock.mockResolvedValue(true);
+    roleFlagsMock.mockResolvedValue({ isTester: false, isAdmin: true });
 
     const result = await userQueries.profile(undefined, undefined, makeCtx({ userId: 'user-3' }));
 
     expect(result?.isAdmin).toBe(true);
     expect(result?.isTester).toBe(false);
+    // Both flags come from one read, not one call per flag.
+    expect(roleFlagsMock).toHaveBeenCalledTimes(1);
   });
 });

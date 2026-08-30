@@ -4,10 +4,7 @@ import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated } from '../shared/helpers';
 import { logger } from '../../../utils/logger';
-
-// Roles that unlock the tester-only developer tooling in the mobile app.
-// Admins implicitly count as testers so they always have access.
-const TESTER_ROLES = ['tester', 'admin'] as const;
+import { TESTER_ROLES } from './role-flags';
 
 /**
  * Whether a user can reach the tester-only developer tooling — true when they
