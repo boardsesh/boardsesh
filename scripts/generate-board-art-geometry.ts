@@ -1246,21 +1246,31 @@ function photoMaskProvider(keyedLayers: KeyedPhotoLayer[]): MaskProvider {
       const keyed = keyedLayers[index];
 
       const groups = mergeCoincidentPlacements(drawn);
+      const byId = new Map(drawn.map((placement) => [placement.id, placement]));
+      // Every id a group names came out of `drawn`, so this cannot miss — which
+      // is a reason to state the invariant rather than cast past the compiler.
+      // A grouping that ever returned an id it was not given would otherwise
+      // ship `undefined` into the label map and fail somewhere unrecognisable.
+      const placementFor = (id: number): RenderableHold => {
+        const placement = byId.get(id);
+        if (placement === undefined) throw new Error(`coincident group names ${id}, which this layer does not draw`);
+        return placement;
+      };
+
+      // Walked in PLACEMENT order rather than group-discovery order, so the label
+      // map's index ties resolve the way they would without a merge. Only a
+      // group's canonical has a `membersOf` entry, so this picks exactly the
+      // canonicals and needs no sort afterwards.
       const canonicals: RenderableHold[] = [];
       const aliasesOf = new Map<number, RenderableHold[]>();
-      const byId = new Map(drawn.map((placement) => [placement.id, placement]));
-      for (const [canonicalId, memberIds] of groups.membersOf) {
-        canonicals.push(byId.get(canonicalId) as RenderableHold);
+      for (const placement of drawn) {
+        const memberIds = groups.membersOf.get(placement.id);
+        if (memberIds === undefined) continue;
+        canonicals.push(placement);
         if (memberIds.length > 1) {
-          aliasesOf.set(
-            canonicalId,
-            memberIds.filter((id) => id !== canonicalId).map((id) => byId.get(id) as RenderableHold),
-          );
+          aliasesOf.set(placement.id, memberIds.filter((id) => id !== placement.id).map(placementFor));
         }
       }
-      // Placement order, not group-discovery order, so the label map's index ties
-      // resolve the same way they would without a merge.
-      canonicals.sort((left, right) => drawn.indexOf(left) - drawn.indexOf(right));
 
       fields.push({
         sourceKey: keyed.relativePath,
