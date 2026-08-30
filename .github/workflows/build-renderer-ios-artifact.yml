@@ -17,16 +17,13 @@ name: Build Renderer iOS Artifact
 # unset below so the script's Android branch skips itself.
 #
 # workflow_dispatch only — this never runs per-PR and costs no macOS minutes
-# unless a maintainer asks for it.
+# unless a maintainer asks for it. GitHub will only accept a dispatch once this
+# file is on the default branch; until then, temporarily add a `push:` trigger
+# scoped to your branch (that is how the artifact in the PR that added this
+# workflow was produced).
 
 on:
   workflow_dispatch:
-  # TEMPORARY (removed before this PR leaves draft): a workflow_dispatch-only
-  # workflow can't be dispatched until its file is on the default branch, and
-  # this branch needs one macOS run to produce the very artifact it commits.
-  push:
-    branches:
-      - fix/rebuild-native-renderer-artifacts
 
 concurrency:
   group: build-renderer-ios-artifact-${{ github.ref }}
