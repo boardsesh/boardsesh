@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import {
+  MAX_SET_IDS_LENGTH,
   createOgImageHeaders,
   normalizeOutputFormat,
   ogClimbQuerySchema,
@@ -34,13 +35,19 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
 
+  const rawSetIds = url.searchParams.get('set_ids');
+  if (rawSetIds !== null && rawSetIds.length > MAX_SET_IDS_LENGTH) {
+    sendJson(res, 400, { error: 'Invalid parameters', details: ['set_ids is too large'] });
+    return;
+  }
+
   // Validate BEFORE any render work — a bad request is cheap to reject and can't
   // push this public CPU-heavy endpoint into wasted WASM/sharp renders.
   const parsed = ogClimbQuerySchema.safeParse({
     board_name: url.searchParams.get('board_name'),
     layout_id: url.searchParams.get('layout_id'),
     size_id: url.searchParams.get('size_id'),
-    set_ids: url.searchParams.get('set_ids'),
+    set_ids: rawSetIds,
     frames: url.searchParams.get('frames') ?? '',
     format: url.searchParams.get('format') ?? undefined,
     // boardsesh-mode render options (issue #2202) — see docs/og-climb.md.
