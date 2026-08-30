@@ -560,6 +560,26 @@ export type BoardConnectionHolder = {
   userId?: Maybe<Scalars['ID']['output']>;
 };
 
+/**
+ * Everything the outline editor needs for one board config: the deployed shard's
+ * traced silhouettes, plus the live overrides that supersede or annotate them.
+ *
+ * The two lists are returned side by side rather than merged so the editor can
+ * show what the tracer produced next to what a human corrected, and offer a
+ * revert. A placement absent from both carries no art of its own — the renderer
+ * falls back to a ring at the placement radius.
+ */
+export type BoardHoldOutlines = {
+  __typename?: 'BoardHoldOutlines';
+  boardName: Scalars['String']['output'];
+  layoutId: Scalars['Int']['output'];
+  /** Live overrides of every kind, newest write per placement and kind. */
+  overrides: Array<HoldOutlineOverride>;
+  /** Traced silhouettes from the geometry shard this backend ships. Empty when no shard covers the config. */
+  shardOutlines: Array<PlacementOutline>;
+  sizeId: Scalars['Int']['output'];
+};
+
 /** Board leaderboard result. */
 export type BoardLeaderboard = {
   __typename?: 'BoardLeaderboard';
@@ -1630,6 +1650,15 @@ export type DeleteAccountInfo = {
 export type DeleteAccountInput = {
   /** Whether to remove the setter name from published climbs */
   removeSetterName: Scalars['Boolean']['input'];
+};
+
+export type DeleteHoldOutlineOverrideInput = {
+  boardName: Scalars['String']['input'];
+  /** Which boundary to drop. Defaults to SILHOUETTE — dropping one kind leaves the other standing. */
+  kind?: InputMaybe<HoldOutlineKind>;
+  layoutId: Scalars['Int']['input'];
+  placementId: Scalars['Int']['input'];
+  sizeId: Scalars['Int']['input'];
 };
 
 export type DeleteProposalInput = {
@@ -2887,6 +2916,50 @@ export type GymTopClimb = {
   name?: Maybe<Scalars['String']['output']>;
 };
 
+/**
+ * A board config, identified the way a geometry shard is. Set ids are absent on
+ * purpose: every shard is traced with every set of its layout and size mounted,
+ * so an override never names one.
+ */
+export type HoldOutlineConfigInput = {
+  boardName: Scalars['String']['input'];
+  layoutId: Scalars['Int']['input'];
+  sizeId: Scalars['Int']['input'];
+};
+
+/**
+ * What a stored ring traces.
+ *
+ * SILHOUETTE is the hold's outer boundary — the shape the tracer produces and the
+ * renderer lights.
+ *
+ * LED_INNER is the INNER boundary of the same hold's LED base plate: the lit ring
+ * region is the silhouette MINUS that polygon. A LED_INNER ring therefore stores
+ * no part of the outer edge, and is only meaningful alongside the silhouette it
+ * sits inside.
+ */
+export type HoldOutlineKind = 'LED_INNER' | 'SILHOUETTE';
+
+/** A hand-drawn hold outline, replacing or annotating what the tracer produced for one placement. */
+export type HoldOutlineOverride = {
+  __typename?: 'HoldOutlineOverride';
+  /** Display name of the account that last wrote this override, when it still exists. */
+  authorDisplayName?: Maybe<Scalars['String']['output']>;
+  authorId?: Maybe<Scalars['ID']['output']>;
+  boardName: Scalars['String']['output'];
+  /** Which boundary of the hold this ring traces. */
+  kind: HoldOutlineKind;
+  layoutId: Scalars['Int']['output'];
+  /** Why the traced version was wrong, in the editor's own words. */
+  note?: Maybe<Scalars['String']['output']>;
+  /** Flat [x0, y0, x1, y1, ...] in units of the placement radius, rounded to 4 decimals. */
+  outline: Array<Scalars['Float']['output']>;
+  placementId: Scalars['Int']['output'];
+  sizeId: Scalars['Int']['output'];
+  /** When the override was last written (ISO 8601). */
+  updatedAt: Scalars['String']['output'];
+};
+
 /** A scanned post whose climb name matched multiple climbs — the user picks one. */
 export type InstagramBetaAmbiguous = {
   __typename?: 'InstagramBetaAmbiguous';
@@ -3251,6 +3324,12 @@ export type Mutation = {
   deleteGym: Scalars['Boolean']['output'];
   /** Soft-delete a kiosk. Requires gym edit access. The slug is freed for reuse. */
   deleteGymKiosk: Scalars['Boolean']['output'];
+  /**
+   * Drop a hold's correction and fall back to the traced silhouette (admin only,
+   * scoped to the board). True when a row was removed, false when there was
+   * nothing to remove.
+   */
+  deleteHoldOutlineOverride: Scalars['Boolean']['output'];
   /** Delete a playlist (owner only). */
   deletePlaylist: Scalars['Boolean']['output'];
   /** Delete an accepted proposal and revert its effects (admin/leader only). */
@@ -3636,6 +3715,12 @@ export type Mutation = {
   updateTick: Tick;
   /** Update display name and avatar in the current session. */
   updateUsername: Scalars['Boolean']['output'];
+  /**
+   * Store a hand-corrected silhouette for one hold, replacing whatever the tracer
+   * produced (admin only, scoped to the board). Latest write wins — there is no
+   * revision history, so the note is the record of why.
+   */
+  upsertHoldOutlineOverride: HoldOutlineOverride;
   /** Vote on an entity. Same value toggles (removes vote). */
   vote: VoteSummary;
   /** Vote on an open proposal. */
@@ -3780,6 +3865,11 @@ export type MutationDeleteGymArgs = {
 /** Root mutation type for all write operations. */
 export type MutationDeleteGymKioskArgs = {
   kioskUuid: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationDeleteHoldOutlineOverrideArgs = {
+  input: DeleteHoldOutlineOverrideInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4261,6 +4351,11 @@ export type MutationUpdateUsernameArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationUpsertHoldOutlineOverrideArgs = {
+  input: UpsertHoldOutlineOverrideInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationVoteArgs = {
   input: VoteInput;
 };
@@ -4485,6 +4580,14 @@ export type PendingGymClaimsInput = {
 export type PinPlaylistInput = {
   /** The playlist UUID */
   playlistUuid: Scalars['ID']['input'];
+};
+
+/** One placement's traced hold silhouette, as a flat implicitly-closed ring. */
+export type PlacementOutline = {
+  __typename?: 'PlacementOutline';
+  /** Flat [x0, y0, x1, y1, ...] in units of the placement radius, relative to its centre. */
+  outline: Array<Scalars['Float']['output']>;
+  placementId: Scalars['Int']['output'];
 };
 
 /**
@@ -5130,6 +5233,12 @@ export type Query = {
    */
   gymStats: GymStats;
   /**
+   * The traced hold silhouettes this backend ships for a board config, alongside
+   * the hand-drawn corrections that supersede them (admin only, scoped to the
+   * board). Read-only; the editor renders both and offers a revert.
+   */
+  holdOutlines: BoardHoldOutlines;
+  /**
    * Resolve scraped Instagram posts against Boardsesh: which beta videos are
    * missing, already linked, ambiguous, or unmatched. Read-only — the client
    * attaches the missing ones via the attachBetaLink mutation.
@@ -5726,6 +5835,11 @@ export type QueryGymOwnershipLookupArgs = {
 /** Root query type for all read operations. */
 export type QueryGymStatsArgs = {
   input: GymStatsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryHoldOutlinesArgs = {
+  input: HoldOutlineConfigInput;
 };
 
 /** Root query type for all read operations. */
@@ -7992,6 +8106,18 @@ export type UpdateTickInput = {
   status?: InputMaybe<TickStatus>;
 };
 
+export type UpsertHoldOutlineOverrideInput = {
+  boardName: Scalars['String']['input'];
+  /** Which boundary this ring traces. Defaults to SILHOUETTE. */
+  kind?: InputMaybe<HoldOutlineKind>;
+  layoutId: Scalars['Int']['input'];
+  note?: InputMaybe<Scalars['String']['input']>;
+  /** Flat [x0, y0, x1, y1, ...] in radius units. 3-150 points, every coordinate within 4 radii, and the ring has to cover the placement centre. */
+  outline: Array<Scalars['Float']['input']>;
+  placementId: Scalars['Int']['input'];
+  sizeId: Scalars['Int']['input'];
+};
+
 /** A named physical board installation (board type + layout + size + hold sets). */
 export type UserBoard = {
   __typename?: 'UserBoard';
@@ -8146,6 +8272,8 @@ export type UserProfile = {
   favoriteCount: Scalars['Int']['output'];
   /** Unique user identifier */
   id: Scalars['ID']['output'];
+  /** Whether this user holds any admin community role (global or board-scoped), unlocking the admin-only tooling */
+  isAdmin: Scalars['Boolean']['output'];
   /** Whether this user can reach tester-only developer tooling (has the tester or admin community role) */
   isTester: Scalars['Boolean']['output'];
 };
@@ -8396,6 +8524,7 @@ export type ResolversTypes = ResolversObject<{
   BoardClimbSet: ResolverTypeWrapper<BoardClimbSet>;
   BoardConnectionChanged: ResolverTypeWrapper<BoardConnectionChanged>;
   BoardConnectionHolder: ResolverTypeWrapper<BoardConnectionHolder>;
+  BoardHoldOutlines: ResolverTypeWrapper<BoardHoldOutlines>;
   BoardLeaderboard: ResolverTypeWrapper<BoardLeaderboard>;
   BoardLeaderboardEntry: ResolverTypeWrapper<BoardLeaderboardEntry>;
   BoardLeaderboardInput: BoardLeaderboardInput;
@@ -8457,6 +8586,7 @@ export type ResolversTypes = ResolversObject<{
   CurrentClimbChanged: ResolverTypeWrapper<CurrentClimbChanged>;
   DeleteAccountInfo: ResolverTypeWrapper<DeleteAccountInfo>;
   DeleteAccountInput: DeleteAccountInput;
+  DeleteHoldOutlineOverrideInput: DeleteHoldOutlineOverrideInput;
   DeleteProposalInput: DeleteProposalInput;
   DetachBoardFromGymInput: DetachBoardFromGymInput;
   DeviceLogEntry: DeviceLogEntry;
@@ -8546,6 +8676,9 @@ export type ResolversTypes = ResolversObject<{
   GymStatsPeriod: GymStatsPeriod;
   GymStatsWindow: ResolverTypeWrapper<GymStatsWindow>;
   GymTopClimb: ResolverTypeWrapper<GymTopClimb>;
+  HoldOutlineConfigInput: HoldOutlineConfigInput;
+  HoldOutlineKind: HoldOutlineKind;
+  HoldOutlineOverride: ResolverTypeWrapper<HoldOutlineOverride>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
   InstagramBetaAmbiguous: ResolverTypeWrapper<InstagramBetaAmbiguous>;
   InstagramBetaCandidate: ResolverTypeWrapper<InstagramBetaCandidate>;
@@ -8594,6 +8727,7 @@ export type ResolversTypes = ResolversObject<{
   OutlierAnalysis: ResolverTypeWrapper<OutlierAnalysis>;
   PendingGymClaimsInput: PendingGymClaimsInput;
   PinPlaylistInput: PinPlaylistInput;
+  PlacementOutline: ResolverTypeWrapper<PlacementOutline>;
   PlaybackStateChanged: ResolverTypeWrapper<PlaybackStateChanged>;
   PlaybackStateInput: PlaybackStateInput;
   Playlist: ResolverTypeWrapper<Playlist>;
@@ -8731,6 +8865,7 @@ export type ResolversTypes = ResolversObject<{
   UpdateSessionInput: UpdateSessionInput;
   UpdateSessionResult: ResolverTypeWrapper<UpdateSessionResult>;
   UpdateTickInput: UpdateTickInput;
+  UpsertHoldOutlineOverrideInput: UpsertHoldOutlineOverrideInput;
   UserBoard: ResolverTypeWrapper<UserBoard>;
   UserBoardConnection: ResolverTypeWrapper<UserBoardConnection>;
   UserClimbPercentile: ResolverTypeWrapper<UserClimbPercentile>;
@@ -8781,6 +8916,7 @@ export type ResolversParentTypes = ResolversObject<{
   BoardClimbSet: BoardClimbSet;
   BoardConnectionChanged: BoardConnectionChanged;
   BoardConnectionHolder: BoardConnectionHolder;
+  BoardHoldOutlines: BoardHoldOutlines;
   BoardLeaderboard: BoardLeaderboard;
   BoardLeaderboardEntry: BoardLeaderboardEntry;
   BoardLeaderboardInput: BoardLeaderboardInput;
@@ -8840,6 +8976,7 @@ export type ResolversParentTypes = ResolversObject<{
   CurrentClimbChanged: CurrentClimbChanged;
   DeleteAccountInfo: DeleteAccountInfo;
   DeleteAccountInput: DeleteAccountInput;
+  DeleteHoldOutlineOverrideInput: DeleteHoldOutlineOverrideInput;
   DeleteProposalInput: DeleteProposalInput;
   DetachBoardFromGymInput: DetachBoardFromGymInput;
   DeviceLogEntry: DeviceLogEntry;
@@ -8917,6 +9054,8 @@ export type ResolversParentTypes = ResolversObject<{
   GymStatsInput: GymStatsInput;
   GymStatsWindow: GymStatsWindow;
   GymTopClimb: GymTopClimb;
+  HoldOutlineConfigInput: HoldOutlineConfigInput;
+  HoldOutlineOverride: HoldOutlineOverride;
   ID: Scalars['ID']['output'];
   InstagramBetaAmbiguous: InstagramBetaAmbiguous;
   InstagramBetaCandidate: InstagramBetaCandidate;
@@ -8961,6 +9100,7 @@ export type ResolversParentTypes = ResolversObject<{
   OutlierAnalysis: OutlierAnalysis;
   PendingGymClaimsInput: PendingGymClaimsInput;
   PinPlaylistInput: PinPlaylistInput;
+  PlacementOutline: PlacementOutline;
   PlaybackStateChanged: PlaybackStateChanged;
   PlaybackStateInput: PlaybackStateInput;
   Playlist: Playlist;
@@ -9086,6 +9226,7 @@ export type ResolversParentTypes = ResolversObject<{
   UpdateSessionInput: UpdateSessionInput;
   UpdateSessionResult: UpdateSessionResult;
   UpdateTickInput: UpdateTickInput;
+  UpsertHoldOutlineOverrideInput: UpsertHoldOutlineOverrideInput;
   UserBoard: UserBoard;
   UserBoardConnection: UserBoardConnection;
   UserClimbPercentile: UserClimbPercentile;
@@ -9387,6 +9528,18 @@ export type BoardConnectionHolderResolvers<
   displayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   lastSentAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   userId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardHoldOutlinesResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardHoldOutlines'] = ResolversParentTypes['BoardHoldOutlines'],
+> = ResolversObject<{
+  boardName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  overrides?: Resolver<Array<ResolversTypes['HoldOutlineOverride']>, ParentType, ContextType>;
+  shardOutlines?: Resolver<Array<ResolversTypes['PlacementOutline']>, ParentType, ContextType>;
+  sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -10523,6 +10676,23 @@ export type GymTopClimbResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type HoldOutlineOverrideResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['HoldOutlineOverride'] = ResolversParentTypes['HoldOutlineOverride'],
+> = ResolversObject<{
+  authorDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  authorId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  boardName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  kind?: Resolver<ResolversTypes['HoldOutlineKind'], ParentType, ContextType>;
+  layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  note?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  outline?: Resolver<Array<ResolversTypes['Float']>, ParentType, ContextType>;
+  placementId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type InstagramBetaAmbiguousResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['InstagramBetaAmbiguous'] = ResolversParentTypes['InstagramBetaAmbiguous'],
@@ -10857,6 +11027,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationDeleteGymKioskArgs, 'kioskUuid'>
+  >;
+  deleteHoldOutlineOverride?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationDeleteHoldOutlineOverrideArgs, 'input'>
   >;
   deletePlaylist?: Resolver<
     ResolversTypes['Boolean'],
@@ -11376,6 +11552,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationUpdateUsernameArgs, 'username'>
   >;
+  upsertHoldOutlineOverride?: Resolver<
+    ResolversTypes['HoldOutlineOverride'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationUpsertHoldOutlineOverrideArgs, 'input'>
+  >;
   vote?: Resolver<ResolversTypes['VoteSummary'], ParentType, ContextType, RequireFields<MutationVoteArgs, 'input'>>;
   voteOnProposal?: Resolver<
     ResolversTypes['Proposal'],
@@ -11518,6 +11700,15 @@ export type OutlierAnalysisResolvers<
   isOutlier?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   neighborAverage?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
   neighborCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type PlacementOutlineResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['PlacementOutline'] = ResolversParentTypes['PlacementOutline'],
+> = ResolversObject<{
+  outline?: Resolver<Array<ResolversTypes['Float']>, ParentType, ContextType>;
+  placementId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -12062,6 +12253,12 @@ export type QueryResolvers<
     RequireFields<QueryGymOwnershipLookupArgs, 'input'>
   >;
   gymStats?: Resolver<ResolversTypes['GymStats'], ParentType, ContextType, RequireFields<QueryGymStatsArgs, 'input'>>;
+  holdOutlines?: Resolver<
+    ResolversTypes['BoardHoldOutlines'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryHoldOutlinesArgs, 'input'>
+  >;
   instagramBetaScan?: Resolver<
     ResolversTypes['InstagramBetaScanResult'],
     ParentType,
@@ -13460,6 +13657,7 @@ export type UserProfileResolvers<
   email?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   favoriteCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  isAdmin?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isTester?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
@@ -13537,6 +13735,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   BoardClimbSet?: BoardClimbSetResolvers<ContextType>;
   BoardConnectionChanged?: BoardConnectionChangedResolvers<ContextType>;
   BoardConnectionHolder?: BoardConnectionHolderResolvers<ContextType>;
+  BoardHoldOutlines?: BoardHoldOutlinesResolvers<ContextType>;
   BoardLeaderboard?: BoardLeaderboardResolvers<ContextType>;
   BoardLeaderboardEntry?: BoardLeaderboardEntryResolvers<ContextType>;
   BoardPresenceClimb?: BoardPresenceClimbResolvers<ContextType>;
@@ -13620,6 +13819,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GymStats?: GymStatsResolvers<ContextType>;
   GymStatsWindow?: GymStatsWindowResolvers<ContextType>;
   GymTopClimb?: GymTopClimbResolvers<ContextType>;
+  HoldOutlineOverride?: HoldOutlineOverrideResolvers<ContextType>;
   InstagramBetaAmbiguous?: InstagramBetaAmbiguousResolvers<ContextType>;
   InstagramBetaCandidate?: InstagramBetaCandidateResolvers<ContextType>;
   InstagramBetaMatch?: InstagramBetaMatchResolvers<ContextType>;
@@ -13647,6 +13847,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   OrphanGym?: OrphanGymResolvers<ContextType>;
   OrphanGymConnection?: OrphanGymConnectionResolvers<ContextType>;
   OutlierAnalysis?: OutlierAnalysisResolvers<ContextType>;
+  PlacementOutline?: PlacementOutlineResolvers<ContextType>;
   PlaybackStateChanged?: PlaybackStateChangedResolvers<ContextType>;
   Playlist?: PlaylistResolvers<ContextType>;
   PlaylistClimb?: PlaylistClimbResolvers<ContextType>;

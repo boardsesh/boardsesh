@@ -10,7 +10,7 @@ import type {
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
-import { userIsTester } from './tester';
+import { loadProfileRoleFlags } from './role-flags';
 import { FAVORITE_COUNT_SUBQUERY } from './favorite-count';
 import { logger } from '../../../utils/logger';
 import { markErrorReported } from '../../../utils/sentry-dedupe';
@@ -102,12 +102,15 @@ export const userMutations = {
         });
       }
 
+      const { isTester, isAdmin } = await loadProfileRoleFlags(row.id);
+
       return {
         id: row.id,
         email: row.email,
         displayName: row.displayName || row.name || undefined,
         avatarUrl: row.avatarUrl || row.image || undefined,
-        isTester: await userIsTester(row.id),
+        isTester,
+        isAdmin,
         createdAt: row.createdAt.toISOString(),
         favoriteCount: row.favoriteCount,
       };

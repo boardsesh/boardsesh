@@ -33,14 +33,14 @@ vi.mock('../../../../db/client', () => ({
   },
 }));
 
-vi.mock('../tester', () => ({
-  userIsTester: vi.fn(async () => false),
+vi.mock('../role-flags', () => ({
+  loadProfileRoleFlags: vi.fn(async () => ({ isTester: false, isAdmin: false })),
 }));
 
 import { userMutations } from '../mutations';
-import { userIsTester } from '../tester';
+import { loadProfileRoleFlags } from '../role-flags';
 
-const userIsTesterMock = vi.mocked(userIsTester);
+const roleFlagsMock = vi.mocked(loadProfileRoleFlags);
 
 function makeCtx(userId = 'user-1'): ConnectionContext {
   return { connectionId: `http-${userId}`, userId, isAuthenticated: true };
@@ -61,8 +61,8 @@ describe('userMutations.updateProfile', () => {
   beforeEach(() => {
     onConflictMock.mockClear();
     limitMock.mockReset();
-    userIsTesterMock.mockReset();
-    userIsTesterMock.mockResolvedValue(false);
+    roleFlagsMock.mockReset();
+    roleFlagsMock.mockResolvedValue({ isTester: false, isAdmin: false });
   });
 
   it('upserts the profile and maps createdAt/favoriteCount/displayName from the joined row', async () => {
