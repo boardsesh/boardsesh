@@ -50,41 +50,18 @@ describe('androidSafeSnapPoints (iOS passthrough)', () => {
   });
 });
 
-describe('androidSafeSnapPoints (androidOpensExpanded, Android)', () => {
+// `androidContentSized` sheets (the tick sheets) never reach here on Android —
+// `Sheet` / `ModalSheet` route them into `@expo/ui`'s content-fitting path with
+// NO snap points. `androidSafeSnapPoints` is only asked to pad a small single
+// detent; a multi-detent tick config that did reach it is passed through
+// untouched (it is never used on that path).
+describe('androidSafeSnapPoints (content-fitting sheets are handled upstream)', () => {
   beforeEach(() => {
     platform.OS = 'android';
   });
 
-  it('collapses a multi-detent sheet to its single last detent when opted in', () => {
-    expect(androidSafeSnapPoints(['50%', '90%'], true)).toEqual(['90%']);
-    expect(androidSafeSnapPoints(['20%', '50%', '90%'], true)).toEqual(['90%']);
-  });
-
-  it('leaves a multi-detent sheet unchanged when not opted in', () => {
-    expect(androidSafeSnapPoints(['50%', '90%'], false)).toEqual(['50%', '90%']);
-  });
-
-  it('leaves an already single-detent sheet unchanged when opted in', () => {
-    expect(androidSafeSnapPoints(['90%'], true)).toEqual(['90%']);
-  });
-
-  it('does not fall through to the small-single-detent padding branch when opted in', () => {
-    expect(androidSafeSnapPoints(['65%'], true)).toEqual(['65%']);
-  });
-
-  it('collapses a multi-detent sheet with numeric (px) detents to the last one', () => {
-    expect(androidSafeSnapPoints([300, 600], true)).toEqual([600]);
-  });
-});
-
-describe('androidSafeSnapPoints (androidOpensExpanded, iOS/web passthrough)', () => {
-  it('leaves a multi-detent sheet unchanged on iOS, regardless of the opt-in', () => {
-    platform.OS = 'ios';
-    expect(androidSafeSnapPoints(['50%', '90%'], true)).toEqual(['50%', '90%']);
-  });
-
-  it('leaves a multi-detent sheet unchanged on web, regardless of the opt-in', () => {
-    platform.OS = 'web';
-    expect(androidSafeSnapPoints(['50%', '90%'], true)).toEqual(['50%', '90%']);
+  it('passes a multi-detent tick config through untouched', () => {
+    expect(androidSafeSnapPoints(['65%', '92%'])).toEqual(['65%', '92%']);
+    expect(androidSafeSnapPoints(['80%', '92%'])).toEqual(['80%', '92%']);
   });
 });

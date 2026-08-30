@@ -6,17 +6,32 @@ import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
 const captures = vi.hoisted(() => ({
   bottomSheetViewUsed: false,
   scrollUsed: false,
+  snapPoints: undefined as unknown,
+  enableDynamicSizing: undefined as unknown,
+  scrollStyle: undefined as unknown,
 }));
 const platform = vi.hoisted(() => ({ os: 'ios' }));
 
 type ViewMockProps = { children?: ReactNode };
 
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  BottomSheetModal: forwardRef(({ children }: ViewMockProps, ref: Ref<unknown>) =>
-    createElement('div', { 'data-sheet': 'true', ref }, children),
+  BottomSheetModal: forwardRef(
+    (
+      {
+        children,
+        snapPoints,
+        enableDynamicSizing,
+      }: ViewMockProps & { snapPoints?: unknown; enableDynamicSizing?: unknown },
+      ref: Ref<unknown>,
+    ) => {
+      captures.snapPoints = snapPoints;
+      captures.enableDynamicSizing = enableDynamicSizing;
+      return createElement('div', { 'data-sheet': 'true', ref }, children);
+    },
   ),
-  BottomSheetScrollView: ({ children }: ViewMockProps) => {
+  BottomSheetScrollView: ({ children, style }: ViewMockProps & { style?: unknown }) => {
     captures.scrollUsed = true;
+    captures.scrollStyle = style;
     return createElement('div', { 'data-scroll': 'true' }, children);
   },
   BottomSheetView: ({ children }: ViewMockProps) => {
@@ -95,6 +110,9 @@ import { ModalSheet } from '../ModalSheet';
 beforeEach(() => {
   captures.bottomSheetViewUsed = false;
   captures.scrollUsed = false;
+  captures.snapPoints = undefined;
+  captures.enableDynamicSizing = undefined;
+  captures.scrollStyle = undefined;
   platform.os = 'ios';
 });
 
@@ -137,5 +155,29 @@ describe('ModalSheet', () => {
       </ModalSheet>,
     );
     expect(captures.bottomSheetViewUsed).toBe(false);
+  });
+
+  describe('androidContentSized (#4720)', () => {
+    it('drops the snap points for the content-fitting path on Android', () => {
+      platform.os = 'android';
+      render(
+        <ModalSheet androidContentSized snapPoints={['65%', '92%']} scrollable footer={<div>save</div>}>
+          <div>body</div>
+        </ModalSheet>,
+      );
+      expect(captures.snapPoints).toBeUndefined();
+      expect(captures.enableDynamicSizing).toBe(true);
+      expect(captures.scrollStyle).toEqual({ flexShrink: 1 });
+    });
+
+    it('keeps the exact detents on iOS regardless of the flag', () => {
+      render(
+        <ModalSheet androidContentSized snapPoints={['65%', '92%']} scrollable footer={<div>save</div>}>
+          <div>body</div>
+        </ModalSheet>,
+      );
+      expect(captures.snapPoints).toEqual(['65%', '92%']);
+      expect(captures.enableDynamicSizing).toBe(false);
+    });
   });
 });

@@ -143,10 +143,11 @@ export function LogAscentSheet({
       scrollable
       surface="solid"
       footerSurface="flush"
-      // Android's ~50% partial state can't fit this form under a pinned
-      // footer (see `androidOpensExpanded` on `ModalSheet`, #4723) — open
-      // expanded there so the Send button never lands off the fold.
-      androidOpensExpanded
+      // Android's ~50% partial state can't fit this form under a pinned footer
+      // (#4723), and a near-full single detent leaves ~310 dp of void below it
+      // (#4720). Size the sheet to the form on Android instead — see
+      // `androidContentSized` on `ModalSheet`.
+      androidContentSized
       header={
         <TickSheetHeader
           title={climbName ?? t('mobile.tick.fallbackTitle')}

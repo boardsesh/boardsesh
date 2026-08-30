@@ -11,6 +11,7 @@ import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
 const captures = vi.hoisted(() => ({
   onChange: null as null | ((index: number) => void),
   snapPoints: undefined as unknown,
+  enableDynamicSizing: undefined as unknown,
   scrollUsed: false,
   bottomSheetViewUsed: false,
   scrollStyle: undefined as unknown,
@@ -32,14 +33,16 @@ type SheetMockProps = {
   children?: ReactNode;
   onChange?: (index: number) => void;
   snapPoints?: unknown;
+  enableDynamicSizing?: unknown;
 };
 type ViewMockProps = { children?: ReactNode };
 
 // The native Expo drop-in: a passthrough that captures the props Sheet sets.
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  default: forwardRef(({ children, onChange, snapPoints }: SheetMockProps, ref: Ref<unknown>) => {
+  default: forwardRef(({ children, onChange, snapPoints, enableDynamicSizing }: SheetMockProps, ref: Ref<unknown>) => {
     captures.onChange = onChange ?? null;
     captures.snapPoints = snapPoints;
+    captures.enableDynamicSizing = enableDynamicSizing;
     return createElement('div', { 'data-sheet': 'true', ref }, children);
   }),
   BottomSheetScrollView: ({
@@ -144,6 +147,7 @@ import { Sheet } from '../Sheet';
 beforeEach(() => {
   captures.onChange = null;
   captures.snapPoints = undefined;
+  captures.enableDynamicSizing = undefined;
   captures.scrollUsed = false;
   captures.bottomSheetViewUsed = false;
   captures.scrollStyle = undefined;
@@ -276,6 +280,39 @@ describe('Sheet', () => {
       </Sheet>,
     );
     expect(flattenStyle(captures.viewStyle).paddingBottom).toBe(42);
+  });
+
+  describe('androidContentSized', () => {
+    it('drops the snap points for the content-fitting path on Android (#4720)', () => {
+      platform.os = 'android';
+      render(
+        <Sheet androidContentSized snapPoints={['80%', '92%']} scrollable footer={<div>save</div>}>
+          <div>body</div>
+        </Sheet>,
+      );
+      expect(captures.snapPoints).toBeUndefined();
+      expect(captures.enableDynamicSizing).toBe(true);
+    });
+
+    it('lets the scroll body shrink-to-scroll instead of flex-filling on that path', () => {
+      platform.os = 'android';
+      render(
+        <Sheet androidContentSized snapPoints={['80%', '92%']} scrollable footer={<div>save</div>}>
+          <div>body</div>
+        </Sheet>,
+      );
+      expect(flattenStyle(captures.scrollStyle)).toEqual({ flexShrink: 1 });
+    });
+
+    it('keeps the exact detents on iOS regardless of the flag', () => {
+      render(
+        <Sheet androidContentSized snapPoints={['80%', '92%']} scrollable footer={<div>save</div>}>
+          <div>body</div>
+        </Sheet>,
+      );
+      expect(captures.snapPoints).toEqual(['80%', '92%']);
+      expect(captures.enableDynamicSizing).toBe(false);
+    });
   });
 
   it('fires a haptic and onChange only when the sheet opens (index >= 0)', () => {

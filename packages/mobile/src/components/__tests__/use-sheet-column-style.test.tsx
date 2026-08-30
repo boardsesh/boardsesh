@@ -83,4 +83,20 @@ describe('useSheetColumnStyle', () => {
     const { result } = renderHook(() => useSheetColumnStyle(['90%']));
     expect(result.current).toEqual(FILL);
   });
+
+  it('caps the Android column at window − topInset − chrome on the content-fitting path (#4720)', () => {
+    // A `flex: 1` column resolves to zero inside a `matchContents` RNHostView, so
+    // the content-fitting path takes a `maxHeight` ceiling instead — the form
+    // measures under it, a keyboard-up long note shrink-scrolls into it.
+    // round(844 − 44 − 20) = 780.
+    platformMock.OS = 'android';
+    const { result } = renderHook(() => useSheetColumnStyle(['65%', '92%'], { contentSizedOnAndroid: true }));
+    expect(result.current).toEqual({ maxHeight: 780 });
+  });
+
+  it('ignores contentSizedOnAndroid on iOS (detents still win there)', () => {
+    const { result } = renderHook(() => useSheetColumnStyle(['90%'], { contentSizedOnAndroid: true }));
+    // round(776 × 0.9) − 20 = 678, exactly as without the flag.
+    expect(result.current).toEqual({ height: 678 });
+  });
 });

@@ -427,11 +427,16 @@ describe('LogAscentSheet detent bound', () => {
     expect(columnStyle(container)).toEqual({ height: 484 });
   });
 
-  it('leaves the column flexing on Android, where the Material sheet bounds it natively', () => {
+  it('caps the column at window − topInset − chrome on Android (content-fitting path, #4720)', () => {
+    // `androidContentSized` drops the `%` detents on Android and hosts the form
+    // in a `matchContents` RNHostView. A `flex: 1` column resolves to zero there,
+    // so the column takes a `maxHeight` ceiling instead — the form measures
+    // itself under it, and a keyboard-up long note shrink-scrolls into it.
+    // round(844 − 44 − 20) = 780.
     platformMock.OS = 'android';
     const { container } = renderSheet();
 
-    expect(columnStyle(container)).toEqual({ flex: 1 });
+    expect(columnStyle(container)).toEqual({ maxHeight: 780 });
   });
 
   it('renders the fields inside the sheet body, above the pinned action bar', () => {

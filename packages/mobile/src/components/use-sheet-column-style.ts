@@ -32,6 +32,12 @@ type SheetColumnStyleOptions = {
   /** The detent the sheet is currently resting at (from the native `onChange`
    * index). Drives the height when a sheet has multiple `%` detents. */
   activeIndex?: number;
+  /** The sheet is on `@expo/ui`'s Android content-fitting path (see
+   * `androidContentSized` on `Sheet` / `ModalSheet`). The column then carries a
+   * `maxHeight` — not `flex: 1`, which collapses to nothing under a `matchContents`
+   * host — so the sheet sizes to the form yet a keyboard-up long note still
+   * scrolls under the pinned footer instead of clipping (#4720). */
+  contentSizedOnAndroid?: boolean;
 };
 
 /**
@@ -47,16 +53,25 @@ type SheetColumnStyleOptions = {
  * the literal sheet height. The `SHEET_TOP_CHROME_PT` margin covers the
  * drag-indicator chrome, erring short.
  *
- * Android's Material sheet bounds the column natively, and fitToContents sheets
- * are measured natively too, so both keep `flex: 1`.
+ * Android's Material sheet bounds the column natively, so it keeps `flex: 1` —
+ * EXCEPT on the content-fitting path (`contentSizedOnAndroid`), where the native
+ * `RNHostView` forces the Compose node to the RN child's measured height: a
+ * `flex: 1` child there resolves to zero, so the column instead takes a
+ * `maxHeight` of `window − topInset − chrome` and lets its body shrink-and-scroll
+ * into that ceiling.
  */
 export function useSheetColumnStyle(
   snapPoints: (string | number)[] | undefined,
-  { enableDynamicSizing = false, activeIndex = 0 }: SheetColumnStyleOptions = {},
+  { enableDynamicSizing = false, activeIndex = 0, contentSizedOnAndroid = false }: SheetColumnStyleOptions = {},
 ): ViewStyle {
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   return useMemo<ViewStyle>(() => {
+    if (Platform.OS === 'android') {
+      return contentSizedOnAndroid
+        ? { maxHeight: Math.round(windowHeight - insets.top - SHEET_TOP_CHROME_PT) }
+        : fillStyle;
+    }
     if (Platform.OS !== 'ios' || enableDynamicSizing || !snapPoints || snapPoints.length === 0) {
       return fillStyle;
     }
@@ -66,7 +81,7 @@ export function useSheetColumnStyle(
     const topGapPt = parseInt(String(Platform.Version), 10) >= 26 ? SHEET_TOP_GAP_PT : 0;
     const height = detentColumnHeight(snapPoints[index], windowHeight, insets.top, topGapPt);
     return height == null ? fillStyle : { height };
-  }, [snapPoints, enableDynamicSizing, activeIndex, windowHeight, insets.top]);
+  }, [snapPoints, enableDynamicSizing, activeIndex, windowHeight, insets.top, contentSizedOnAndroid]);
 }
 
 function detentColumnHeight(

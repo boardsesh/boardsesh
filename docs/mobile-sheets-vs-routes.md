@@ -146,16 +146,30 @@ and which index is requested — it has a fixed ~50% "partial" state and a conte
 "expanded" state, nothing in between (see `androidSafeSnapPoints` in
 `src/components/sheet-snap-points.ts`). A sheet whose detents are tuned against iOS's real first
 fraction (e.g. `65%`/`80%`, sized so a pinned footer fits under the form) can be TALLER than
-Android's ~50% partial state, stranding that footer below the fold (#4723). For a multi-detent
-sheet with a pinned footer, pass `androidOpensExpanded` to `Sheet` / `ModalSheet` — `LogAscentSheet`
-and `LogbookEditSheet` opt in. It collapses the sheet to its single LAST detent on Android (via
-`androidSafeSnapPoints`) rather than requesting the last index of a multi-detent config: a single
-detent makes the native sheet set `skipPartiallyExpanded`, which removes "partial" as a landable
-state entirely, so it can only rest at Expanded (or Hidden) — no imperative re-snap in the mix.
-Requesting an index into a multi-detent config instead depends on `@expo/ui`'s Android layer
-calling `sheetState.expand()` in a `LaunchedEffect` it wraps in a swallowed `catch` ("Expanded
-anchor may be unreachable; never crash the view") — a real, silent-failure race that can leave
-the sheet resting at partial with the footer off-screen even when the right index was requested.
+Android's ~50% partial state, stranding that footer below the fold (#4723). But its "expanded"
+state only actually fits content when `@expo/ui`'s content-fitting path is on — `enableDynamicSizing`
+with **no** snap points, so the shim sets `fitToContents` and hosts the RN tree in an
+`RNHostView matchContents` that forces the Compose node to the RN child's measured height. A
+single near-full detent (`['92%']`) does NOT take that path — the sheet fills the screen and a
+short form floats in ~310 dp of void above the footer (#4720).
+
+For a multi-detent form with a pinned footer, pass `androidContentSized` to `Sheet` / `ModalSheet`
+(`LogAscentSheet` and `LogbookEditSheet` opt in). On Android it drops the `%` detents and takes
+the content-fitting path; iOS / web keep the exact detents and the `useSheetColumnStyle` bound.
+Two things make it safe for a scroll body — the case `androidSafeSnapPoints`'s old comment warned
+content-fitting would collapse:
+
+- The single flex child (the `KeyboardAvoidingView`) takes a **`maxHeight`** of
+  `window − topInset − chrome`, not `flex: 1` — under a `matchContents` host a `flex: 1` child
+  resolves to zero. At rest it measures to the form; a keyboard-up long note pushes it into the
+  ceiling.
+- The scroll body takes **`flexShrink: 1`**, not `flex: 1` — content height at rest (this is what
+  closes the void), and it shrinks-and-scrolls once the column hits its ceiling so the footer
+  stays pinned above the keyboard instead of the note clipping.
+
+`skipPartiallyExpanded` still comes for free (the shim sets it whenever `fitToContents` or a
+single detent), so the ~50% partial trap of #4723 stays closed — the sheet can only rest at its
+one content-fitted state or Hidden, no imperative re-snap in the mix.
 
 The bound isn't optional the moment a surface gains a scroll body: without it the scroll view
 never gains an overflow, so nothing scrolls **and** the footer is off-screen. `LogAscentSheet`
