@@ -61,13 +61,15 @@ jobs:
       # skips when ANDROID_NDK_HOME is unset and no NDK is on disk, which is the
       # case on this runner. No code signing is involved: the output is a static
       # archive (.a), not a signed framework.
-      #
-      # The script must run under bash 4+: it declares an associative array
-      # (`declare -A ANDROID_TARGETS`). macOS still ships bash 3.2 as
-      # /bin/bash, which parses `["aarch64-linux-android"]=...` as an
+      # scripts/build-native-renderer.sh declares an associative array
+      # (`declare -A ANDROID_TARGETS`), which needs bash 4+. macOS still ships
+      # bash 3.2 as /bin/bash: it parses `["aarch64-linux-android"]=...` as an
       # arithmetic index and dies with `aarch64: unbound variable` under
       # `set -u`. A dev Mac picks up Homebrew's bash 5 through the shebang's
-      # `env bash`; the runner's PATH does not, so resolve it explicitly.
+      # `env bash`; the runner has no Homebrew bash at all, so install one.
+      - name: Install bash 4+
+        run: brew install bash
+
       - name: Build iOS static libraries + xcframework
         env:
           ANDROID_NDK_HOME: ''
