@@ -8,18 +8,49 @@
  * it can reach, so a single import of the package index would put every board's
  * polygons in the mobile bundle to run a point-in-polygon test.
  *
- * `simplifyRing` and `SIMPLIFY_EPSILON` are the tracer's own, copied verbatim
- * from `scripts/generate-board-art-geometry.ts` so that a ring an editor redraws
- * is decimated by exactly the algorithm that produced the ring next to it. The
+ * `simplifyRing` is the tracer's own Douglas-Peucker, copied verbatim from
+ * `scripts/generate-board-art-geometry.ts` so that a ring an editor redraws is
+ * decimated by exactly the algorithm that produced the ring next to it. The
  * generator still holds its own copy today and switches to importing this one;
  * until then, a change here has to be made there too or the two drift apart.
+ *
+ * MIND THE UNITS. `simplifyRing` is unit-agnostic — the epsilon is whatever the
+ * points are in — but the shipped tolerance below is quoted in BOARD PIXELS,
+ * because that is the frame the tracer works in. Everything else in this file
+ * (the coordinate bound, the centre tolerance, stored rings) is in units of the
+ * placement RADIUS. Passing {@link SIMPLIFY_EPSILON_BOARD_PX} to a radius-unit
+ * ring would decimate it to a triangle; see the constant's own note for the
+ * conversion.
  */
 
 /** A point as `[x, y]`, in whatever units the caller's ring is in. */
 export type RingPoint = [number, number];
 
-/** Douglas-Peucker tolerance in board pixels. Bigger = fewer points, blockier outline. */
-export const SIMPLIFY_EPSILON = 1.6;
+/**
+ * Douglas-Peucker tolerance the tracer simplifies at, **in board pixels**.
+ * Bigger = fewer points, blockier outline.
+ *
+ * Stored rings are in radius units, not board pixels, so this value is NOT the
+ * epsilon to use on one. For a ring already divided through by a placement
+ * radius of `radiusPx` board pixels the equivalent tolerance is
+ * `SIMPLIFY_EPSILON_BOARD_PX / radiusPx` — around 0.08 at the catalogue's
+ * typical ~20 px radius, and passing 1.6 instead would collapse the whole hold.
+ */
+export const SIMPLIFY_EPSILON_BOARD_PX = 1.6;
+
+/**
+ * How far outside its own ring a placement centre may sit and still count as
+ * enclosed, in radius units.
+ *
+ * Not zero, because a strict test would make exactly the holds most in need of
+ * correction un-correctable: five shipped outlines (kilter/1-28 placements 1448,
+ * 4800, 4806, 4810 and 4825 — hooks and slopers whose bolt sits under a deeply
+ * concave underside) do not contain their own centre, all of them by less than
+ * 0.03 radii. Generous enough to admit those and anything an editor traces the
+ * same way; far tighter than the failure it exists to catch, which is a ring
+ * drawn around the NEIGHBOURING hold and therefore roughly 2 radii away.
+ */
+export const CENTRE_TOLERANCE_RADII = 0.25;
 
 /**
  * Bounds a stored outline has to sit inside, in units of the placement radius.
@@ -123,6 +154,37 @@ export function pointInRing(ring: number[], x: number, y: number): boolean {
     if (x < intersectX) inside = !inside;
   }
   return inside;
+}
+
+/**
+ * Shortest distance from a point to the ring's boundary, in the ring's own
+ * units. Unsigned: a point well inside a big hold and a point the same distance
+ * outside a small one both read as that distance.
+ *
+ * The companion to {@link pointInRing} for the "is this ring drawn around this
+ * placement" test. The predicate alone is too strict — a hold whose bolt sits
+ * under a concave underside genuinely traces without containing its centre — so
+ * the gate admits a near miss and rejects a far one; see
+ * {@link CENTRE_TOLERANCE_RADII}.
+ */
+export function distanceToRing(ring: number[], x: number, y: number): number {
+  const pointCount = Math.floor(ring.length / 2);
+  if (pointCount < 2) return Infinity;
+  let shortest = Infinity;
+  for (let index = 0; index < pointCount; index += 1) {
+    const next = (index + 1) % pointCount;
+    const fromX = ring[index * 2];
+    const fromY = ring[index * 2 + 1];
+    const edgeX = ring[next * 2] - fromX;
+    const edgeY = ring[next * 2 + 1] - fromY;
+    const edgeLengthSquared = edgeX * edgeX + edgeY * edgeY;
+    const along =
+      edgeLengthSquared === 0
+        ? 0
+        : Math.max(0, Math.min(1, ((x - fromX) * edgeX + (y - fromY) * edgeY) / edgeLengthSquared));
+    shortest = Math.min(shortest, Math.hypot(x - (fromX + along * edgeX), y - (fromY + along * edgeY)));
+  }
+  return shortest;
 }
 
 /**

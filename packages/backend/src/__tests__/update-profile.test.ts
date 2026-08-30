@@ -63,7 +63,9 @@ const { mockDb, sentryCaptureMock, txState } = vi.hoisted(() => {
 
 vi.mock('../db/client', () => ({ db: mockDb }));
 vi.mock('@sentry/node', () => ({ captureException: sentryCaptureMock }));
-vi.mock('../graphql/resolvers/users/tester', () => ({ userIsTester: vi.fn().mockResolvedValue(false) }));
+vi.mock('../graphql/resolvers/users/role-flags', () => ({
+  loadProfileRoleFlags: vi.fn().mockResolvedValue({ isTester: false, isAdmin: false }),
+}));
 
 function makeAuthCtx(userId = 'user-1'): ConnectionContext {
   return {

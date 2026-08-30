@@ -559,7 +559,7 @@ export type BoardConnectionHolder = {
 
 /**
  * Everything the outline editor needs for one board config: the deployed shard's
- * traced silhouettes, plus the live overrides that supersede them.
+ * traced silhouettes, plus the live overrides that supersede or annotate them.
  *
  * The two lists are returned side by side rather than merged so the editor can
  * show what the tracer produced next to what a human corrected, and offer a
@@ -570,7 +570,7 @@ export type BoardHoldOutlines = {
   __typename?: 'BoardHoldOutlines';
   boardName: Scalars['String']['output'];
   layoutId: Scalars['Int']['output'];
-  /** Live corrections, newest write per placement. */
+  /** Live overrides of every kind, newest write per placement and kind. */
   overrides: Array<HoldOutlineOverride>;
   /** Traced silhouettes from the geometry shard this backend ships. Empty when no shard covers the config. */
   shardOutlines: Array<PlacementOutline>;
@@ -1651,6 +1651,8 @@ export type DeleteAccountInput = {
 
 export type DeleteHoldOutlineOverrideInput = {
   boardName: Scalars['String']['input'];
+  /** Which boundary to drop. Defaults to SILHOUETTE — dropping one kind leaves the other standing. */
+  kind?: InputMaybe<HoldOutlineKind>;
   layoutId: Scalars['Int']['input'];
   placementId: Scalars['Int']['input'];
   sizeId: Scalars['Int']['input'];
@@ -2922,13 +2924,28 @@ export type HoldOutlineConfigInput = {
   sizeId: Scalars['Int']['input'];
 };
 
-/** A hand-corrected hold silhouette, replacing what the tracer produced for one placement. */
+/**
+ * What a stored ring traces.
+ *
+ * SILHOUETTE is the hold's outer boundary — the shape the tracer produces and the
+ * renderer lights.
+ *
+ * LED_INNER is the INNER boundary of the same hold's LED base plate: the lit ring
+ * region is the silhouette MINUS that polygon. A LED_INNER ring therefore stores
+ * no part of the outer edge, and is only meaningful alongside the silhouette it
+ * sits inside.
+ */
+export type HoldOutlineKind = 'LED_INNER' | 'SILHOUETTE';
+
+/** A hand-drawn hold outline, replacing or annotating what the tracer produced for one placement. */
 export type HoldOutlineOverride = {
   __typename?: 'HoldOutlineOverride';
   /** Display name of the account that last wrote this override, when it still exists. */
   authorDisplayName?: Maybe<Scalars['String']['output']>;
   authorId?: Maybe<Scalars['ID']['output']>;
   boardName: Scalars['String']['output'];
+  /** Which boundary of the hold this ring traces. */
+  kind: HoldOutlineKind;
   layoutId: Scalars['Int']['output'];
   /** Why the traced version was wrong, in the editor's own words. */
   note?: Maybe<Scalars['String']['output']>;
@@ -4595,7 +4612,7 @@ export type PinPlaylistInput = {
   playlistUuid: Scalars['ID']['input'];
 };
 
-/** One placement's hold silhouette, as a flat implicitly-closed ring. */
+/** One placement's traced hold silhouette, as a flat implicitly-closed ring. */
 export type PlacementOutline = {
   __typename?: 'PlacementOutline';
   /** Flat [x0, y0, x1, y1, ...] in units of the placement radius, relative to its centre. */
@@ -8136,9 +8153,11 @@ export type UpdateTickInput = {
 
 export type UpsertHoldOutlineOverrideInput = {
   boardName: Scalars['String']['input'];
+  /** Which boundary this ring traces. Defaults to SILHOUETTE. */
+  kind?: InputMaybe<HoldOutlineKind>;
   layoutId: Scalars['Int']['input'];
   note?: InputMaybe<Scalars['String']['input']>;
-  /** Flat [x0, y0, x1, y1, ...] in radius units. 3-150 points, every coordinate within 4 radii, and the ring must contain the placement centre. */
+  /** Flat [x0, y0, x1, y1, ...] in radius units. 3-150 points, every coordinate within 4 radii, and the ring has to cover the placement centre. */
   outline: Array<Scalars['Float']['input']>;
   placementId: Scalars['Int']['input'];
   sizeId: Scalars['Int']['input'];

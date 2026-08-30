@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CENTRE_TOLERANCE_RADII,
   MAX_RING_COORDINATE,
   MAX_RING_NUMBERS,
-  SIMPLIFY_EPSILON,
+  SIMPLIFY_EPSILON_BOARD_PX,
   closeRing,
+  distanceToRing,
   isValidOutlineRing,
   pointInRing,
   roundRing,
@@ -87,7 +89,7 @@ describe('simplifyRing', () => {
   it('matches the committed fixture the tracer would produce', () => {
     // Golden values: what the tracer's own Douglas-Peucker returns for this
     // border at its shipped epsilon. A change here is a change to every shard.
-    expect(simplifyRing(STAIRCASE, SIMPLIFY_EPSILON)).toEqual([
+    expect(simplifyRing(STAIRCASE, SIMPLIFY_EPSILON_BOARD_PX)).toEqual([
       [0, 0],
       [8, 4],
       [13, 24],
@@ -115,7 +117,7 @@ describe('simplifyRing', () => {
         [0, 0],
       ],
     ];
-    for (const epsilon of [0.1, SIMPLIFY_EPSILON, 5]) {
+    for (const epsilon of [0.1, SIMPLIFY_EPSILON_BOARD_PX, 5]) {
       for (const fixture of fixtures) {
         expect(simplifyRing(fixture, epsilon)).toEqual(referenceSimplify(fixture, epsilon));
       }
@@ -123,14 +125,14 @@ describe('simplifyRing', () => {
   });
 
   it('leaves rings too short to decimate alone', () => {
-    expect(simplifyRing([], SIMPLIFY_EPSILON)).toEqual([]);
+    expect(simplifyRing([], SIMPLIFY_EPSILON_BOARD_PX)).toEqual([]);
     expect(
       simplifyRing(
         [
           [1, 1],
           [2, 2],
         ],
-        SIMPLIFY_EPSILON,
+        SIMPLIFY_EPSILON_BOARD_PX,
       ),
     ).toEqual([
       [1, 1],
@@ -139,8 +141,8 @@ describe('simplifyRing', () => {
   });
 
   it('is idempotent — simplifying an already simplified ring changes nothing', () => {
-    const once = simplifyRing(STAIRCASE, SIMPLIFY_EPSILON);
-    expect(simplifyRing(once, SIMPLIFY_EPSILON)).toEqual(once);
+    const once = simplifyRing(STAIRCASE, SIMPLIFY_EPSILON_BOARD_PX);
+    expect(simplifyRing(once, SIMPLIFY_EPSILON_BOARD_PX)).toEqual(once);
   });
 });
 
@@ -237,15 +239,92 @@ describe('isValidOutlineRing', () => {
   });
 
   it('accepts a ring built from points, matching what an editor hands back', () => {
+    // A radius-unit ring, so the tolerance is the board-pixel one divided
+    // through by the placement radius it was normalised by — passing
+    // SIMPLIFY_EPSILON_BOARD_PX straight in would flatten the circle to a
+    // triangle. 20 px is the catalogue's typical radius.
+    const typicalRadiusPx = 20;
     const ring = flatten(
       simplifyRing(
         Array.from({ length: 40 }, (_, index): RingPoint => {
           const angle = (index / 40) * Math.PI * 2;
           return [Math.cos(angle), Math.sin(angle)];
         }),
-        0.02,
+        SIMPLIFY_EPSILON_BOARD_PX / typicalRadiusPx,
       ),
     );
     expect(isValidOutlineRing(roundRing(closeRing(ring), 4))).toBe(true);
+  });
+});
+
+describe('distanceToRing', () => {
+  const unitSquare = [-1, -1, 1, -1, 1, 1, -1, 1];
+
+  it('measures to the nearest edge from inside', () => {
+    expect(distanceToRing(unitSquare, 0, 0)).toBeCloseTo(1, 10);
+    expect(distanceToRing(unitSquare, 0.9, 0)).toBeCloseTo(0.1, 10);
+  });
+
+  it('measures to the nearest edge from outside', () => {
+    expect(distanceToRing(unitSquare, 3, 0)).toBeCloseTo(2, 10);
+    expect(distanceToRing(unitSquare, 0, -1.5)).toBeCloseTo(0.5, 10);
+  });
+
+  it('reads the implicit closing edge', () => {
+    // Nearest point on the triangle 0,0 -> 1,0 -> 0,1 is on the hypotenuse,
+    // which is only an edge because the ring closes implicitly.
+    expect(distanceToRing([0, 0, 1, 0, 0, 1], 1, 1)).toBeCloseTo(Math.SQRT1_2, 10);
+  });
+
+  it('reports Infinity for a ring with no edges', () => {
+    expect(distanceToRing([], 0, 0)).toBe(Infinity);
+    expect(distanceToRing([1, 1], 0, 0)).toBe(Infinity);
+  });
+});
+
+describe('the centre gate the write path applies', () => {
+  // The gate itself: inside, or outside by no more than the tolerance.
+  const covers = (ring: number[]) => pointInRing(ring, 0, 0) || distanceToRing(ring, 0, 0) <= CENTRE_TOLERANCE_RADII;
+
+  it('admits a ring that encloses the centre outright', () => {
+    expect(covers([-1, -1, 1, -1, 1, 1, -1, 1])).toBe(true);
+  });
+
+  it('admits a hold whose bolt grazes just outside its own silhouette', () => {
+    // The shape of kilter/1-28's five outliers: the centre sits a hair outside
+    // the silhouette. The worst shipped case is 0.03 radii out.
+    const grazing = [0.02, -1, 1.4, -1, 1.4, 1, 0.02, 1];
+    expect(pointInRing(grazing, 0, 0)).toBe(false);
+    expect(distanceToRing(grazing, 0, 0)).toBeLessThanOrEqual(CENTRE_TOLERANCE_RADII);
+    expect(covers(grazing)).toBe(true);
+  });
+
+  it('rejects a ring drawn around the neighbouring hold', () => {
+    // A neighbour sits roughly two radii away, so its silhouette never comes
+    // within the tolerance of this placement's centre.
+    const neighbour = [1.2, -0.8, 2.8, -0.8, 2.8, 0.8, 1.2, 0.8];
+    expect(covers(neighbour)).toBe(false);
+    expect(distanceToRing(neighbour, 0, 0)).toBeGreaterThan(CENTRE_TOLERANCE_RADII);
+  });
+
+  it('rejects a ring just past the tolerance', () => {
+    const justPast = [CENTRE_TOLERANCE_RADII + 0.01, -1, 1.5, -1, 1.5, 1, CENTRE_TOLERANCE_RADII + 0.01, 1];
+    expect(covers(justPast)).toBe(false);
+  });
+
+  it('admits every shipped outline, including the five that miss their centre', () => {
+    // The gate exists to catch a wrong-hold ring, not to reject art the tracer
+    // itself produced: if a shipped outline failed here, that hold could never
+    // be corrected.
+    const geometry = loadBoardArtGeometry({ boardName: 'kilter', layoutId: 1, sizeId: 28 });
+    expect(geometry).not.toBeNull();
+    const missingTheirCentre = Object.entries(geometry!.outlines)
+      .filter(([, outline]) => !pointInRing(outline, 0, 0))
+      .map(([placementId]) => Number(placementId))
+      .sort((left, right) => left - right);
+    expect(missingTheirCentre).toEqual([1448, 4800, 4806, 4810, 4825]);
+    for (const outline of Object.values(geometry!.outlines)) {
+      expect(covers(outline)).toBe(true);
+    }
   });
 });
