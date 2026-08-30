@@ -35,7 +35,7 @@
  * v4 and v6 made, and one shared bump keeps native and Expo web on the same
  * contract.
  *
- * v8 lights the LED base plate: on a hold whose art carries a traced plate
+ * v9 lights the LED base plate: on a hold whose art carries a traced plate
  * boundary, the ring between that boundary and the silhouette is painted in the
  * role colour and the glow is measured off that ring rather than the whole
  * hold. Nothing about it is a setting, so the cache key — which describes the
@@ -44,13 +44,20 @@
  * boards with no plate are byte-identical and pay a one-time re-render, the
  * same trade v4, v6 and v7 made.
  *
+ * v8 is deliberately skipped: the Woods work already holds it on its own
+ * branch. Two branches landing the same `= 8` line do not conflict — git merges
+ * identical lines silently — so whichever merged second would have shipped new
+ * pixels under a generation the first had already spent, with no red anywhere
+ * to say so. Taking 9 keeps the two generations distinct without either branch
+ * having to know about the other, and `renderer-version.test.ts` pins the
+ * integer so the next collision is a failing test rather than a stale cache.
+ *
  * Lives in its own module so both the hook (use-native-climb-render.ts) and the
  * web overlay warm-up (overlay-cache-warmup.web.ts) can read it without a
  * circular import — the hook imports the warm-up, so the warm-up must not import
  * back from the hook.
  */
-// The Woods work bumps this in parallel; on a merge conflict take max + 1.
-export const RENDERER_VERSION = 8;
+export const RENDERER_VERSION = 9;
 
 /** Cache-key prefix stamped on every overlay produced by the current renderer. */
 export const currentOverlayVersionPrefix = (): string => `v${RENDERER_VERSION}_`;

@@ -71,12 +71,27 @@ both are present and the ring is usable, `packages/board-renderer/core/src/board
   silhouette (`led_base.glow_from_base`). A rim that reaches the silhouette edge all the
   way round gives the same nearest site to every pixel outside the hold, so the glow is
   byte-identical; it only differs where the plate does not reach the edge, and there the
-  glow correctly fades. A plate too thin to own a single pixel falls back to the
-  silhouette rather than losing its glow.
+  glow correctly fades. That byte-identity assumes a **simple** outer ring — one that does
+  not cross itself. The silhouette is filled non-zero and the plate even-odd, and the two
+  rules only agree on a simple polygon; a self-intersecting outline would light and glow
+  differently under each. The tracer does not emit one, and a hand-drawn override should
+  not either.
 
-A ring that is malformed, non-finite, as large as the silhouette, or not inside its
-bounding box is ignored — the hold lights whole, and a bad ring can never push the
-silhouette onto the circle fallback. `led_base.opacity: 0` turns the whole treatment off.
+A ring is rejected — the hold lights whole, exactly as before the field existed, and the
+silhouette is never pushed onto the circle fallback — when it is malformed or non-finite,
+when its box escapes the silhouette's, when a vertex lies outside the silhouette itself,
+or when the band it leaves is under a pixel wide at the size being rendered. The vertex
+test is not redundant with the box test: a hook or C silhouette's *box* contains bare
+wall, and an even-odd fill over two disjoint rings fills that hollow. The width test is
+what keeps a hairline ring from dimming a hold body under a rim nothing can draw — all
+three consumers read one verdict, so a hold is never dimmed for a plate that is not there.
+On top of that the paint and the glow's sites are both clipped to the silhouette, so an
+even-odd fill can never reach wall whatever the ring does *between* its vertices.
+
+`led_base.opacity: 0` turns the whole treatment off — paint, interior dim and glow source
+together. There is no TypeScript-side switch for any of this, deliberately: the `led_base`
+defaults in the Rust core are the only tuning until a board has enough annotated plates
+for a knob to be worth arguing about.
 
 Two consequences of adding it. `RenderConfig` grew a field, so
 `core/tests/native_artifact_contract.rs` demands a 20-element marker and **every committed

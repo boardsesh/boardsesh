@@ -764,6 +764,8 @@ function withLitHoldGeometry(holds: RenderHold[], geometry: BoardArtGeometry, fr
   });
 }
 
+export const _withLitHoldGeometryForTests = withLitHoldGeometry;
+
 /**
  * FNV-1a 32-bit hash, returned as 8-char hex. Used to keep the cache
  * filename bounded — long climbs can produce frame strings hundreds of

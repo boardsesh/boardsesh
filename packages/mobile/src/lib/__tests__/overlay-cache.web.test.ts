@@ -154,7 +154,7 @@ describe('overlay-cache-store hydration + snapshot (warmup contract)', () => {
     expect(snapshotOverlayEntries()).toHaveLength(limit);
   });
 
-  it('flushes shared web entries when the native and web renderer contract moves to v8', async () => {
+  it('flushes shared web entries when the native and web renderer contract moves to v9', async () => {
     const { store } = installCaches();
     await writeOverlayToCache('v2_s_wfull_kilter_1_2_25_old', new Blob() as Blob);
     await writeOverlayToCache('v4_s_wfull_kilter_1_2_25_pre_atomic', new Blob() as Blob);
@@ -164,11 +164,13 @@ describe('overlay-cache-store hydration + snapshot (warmup contract)', () => {
     await writeOverlayToCache('v6_s_wfull_kilter_1_2_25_pre_boardsesh', new Blob() as Blob);
     // Drawn before an annotated hold lit its LED base plate.
     await writeOverlayToCache('v7_s_wfull_kilter_1_2_25_pre_plate', new Blob() as Blob);
-    await writeOverlayToCache('v8_s_wfull_kilter_1_2_25_keep', new Blob() as Blob);
+    // v8 belongs to another branch; its PNGs are as invalid here as any other.
+    await writeOverlayToCache('v8_s_wfull_kilter_1_2_25_other_branch', new Blob() as Blob);
+    await writeOverlayToCache('v9_s_wfull_kilter_1_2_25_keep', new Blob() as Blob);
     await writeOverlayToCache('v1_f_w400_kilter_1_2_25_ancient', new Blob() as Blob);
     _overlayCacheStoreForTests.renderedObjectUrls.clear();
 
-    expect(currentOverlayVersionPrefix()).toBe('v8_');
+    expect(currentOverlayVersionPrefix()).toBe('v9_');
     await hydrateOverlayCache(currentOverlayVersionPrefix());
 
     // Stale-version PNGs are deleted from the Cache API, not hydrated — so they
@@ -180,10 +182,11 @@ describe('overlay-cache-store hydration + snapshot (warmup contract)', () => {
     expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v6_s_wfull_kilter_1_2_25_pre_boardsesh'))).toBe(false);
     expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v1_f_w400_kilter_1_2_25_ancient'))).toBe(false);
     expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v7_s_wfull_kilter_1_2_25_pre_plate'))).toBe(false);
-    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v8_s_wfull_kilter_1_2_25_keep'))).toBe(true);
+    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v8_s_wfull_kilter_1_2_25_other_branch'))).toBe(false);
+    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v9_s_wfull_kilter_1_2_25_keep'))).toBe(true);
     const entries = snapshotOverlayEntries();
     expect(entries).toHaveLength(1);
-    expect(entries[0].name).toBe('v8_s_wfull_kilter_1_2_25_keep.png');
+    expect(entries[0].name).toBe('v9_s_wfull_kilter_1_2_25_keep.png');
   });
 
   it('releaseAllObjectUrls revokes every retained URL', async () => {

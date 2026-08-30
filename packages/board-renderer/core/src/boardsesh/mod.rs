@@ -99,6 +99,14 @@ pub fn render(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
     let mark_style = effective_mark_style(config);
     let draws_glow = matches!(mark_style, MarkStyle::Glow | MarkStyle::GlowFill);
     let draws_fill = matches!(mark_style, MarkStyle::Fill | MarkStyle::GlowFill);
+    // One switch for the whole plate treatment, read by all three consumers.
+    // Without it `opacity: 0` stopped the rim being painted but still dimmed
+    // the fill under it and still measured the glow off it — a hold left 40%
+    // darker with nothing to show for it, which is not what "off" means.
+    // `mark-style: none` asks for no mark at all, plate included.
+    let plate_opacity = config.led_base.opacity;
+    let draws_plate =
+        plate_opacity.is_finite() && plate_opacity > 0.0 && mark_style != MarkStyle::NoMark;
 
     if let Some(veil) = &config.veil {
         paint_veil(&mut pixmap, veil, &lit);
@@ -123,22 +131,26 @@ pub fn render(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
             &lit,
             &reaches,
             &lut,
-            config.led_base.glow_from_base,
+            draws_plate && config.led_base.glow_from_base,
         );
     }
     if draws_fill {
+        let interior_scale = if draws_plate {
+            config.led_base.interior_fill_scale
+        } else {
+            1.0
+        };
         paint_fill(
             &mut pixmap,
             &lit,
             &config.fill,
             stroke_width_multiplier,
-            config.led_base.interior_fill_scale,
+            interior_scale,
         );
     }
     // The LED base plate goes on last of the silhouette layers: it is the mark
-    // on an annotated hold, so it sits over the fill it dimmed. `mark-style:
-    // none` asks for no mark at all, plate included.
-    if mark_style != MarkStyle::NoMark {
+    // on an annotated hold, so it sits over the fill it dimmed.
+    if draws_plate {
         paint_led_base(&mut pixmap, &lit, &config.led_base);
     }
     if config.glyphs == GlyphMode::Role {

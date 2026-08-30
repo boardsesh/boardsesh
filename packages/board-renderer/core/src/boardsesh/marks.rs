@@ -261,10 +261,19 @@ pub fn paint_fill(
 /// Even-odd, so the hold proper is a hole rather than a second lit patch.
 /// Holds with no plate ring are skipped and keep whatever the fill and glow
 /// already drew.
+///
+/// Clipped to the silhouette, always. `plate_ring_is_usable` already rejects a
+/// ring that escapes the hold, but a silhouette is a traced polygon and is
+/// routinely concave, so an even-odd fill over two rings must never be ABLE to
+/// reach bare wall. The clip makes that structural rather than a question of
+/// how good the geometry guard is.
 pub fn paint_led_base(pixmap: &mut Pixmap, lit: &[LitHold], base: &LedBaseTuning) {
     if !positive(base.opacity) {
         return;
     }
+    let Some(mut inside) = Mask::new(pixmap.width(), pixmap.height()) else {
+        return;
+    };
     let mut paint = Paint {
         anti_alias: true,
         ..Paint::default()
@@ -273,13 +282,14 @@ pub fn paint_led_base(pixmap: &mut Pixmap, lit: &[LitHold], base: &LedBaseTuning
         let Some(plate) = &hold.base_path else {
             continue;
         };
+        silhouette_mask(&mut inside, hold);
         solid(&mut paint, hold.color, base.opacity);
         pixmap.fill_path(
             plate,
             &paint,
             FillRule::EvenOdd,
             Transform::identity(),
-            None,
+            Some(&inside),
         );
     }
 }

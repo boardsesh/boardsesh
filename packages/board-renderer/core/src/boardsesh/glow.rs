@@ -228,7 +228,15 @@ pub fn paint_glow(
 
         // Sites: the plate ring where there is one, the silhouette otherwise.
         // The plate is rasterised into its own mask because the coverage pass
-        // above needs the silhouette's alpha, not the ring's.
+        // above needs the silhouette's alpha, not the ring's — and it is
+        // INTERSECTED with the silhouette, for the same reason the painted
+        // plate is clipped to it: an even-odd fill over a ring the geometry
+        // guard cannot fully vouch for must never be able to seed glow sites
+        // out on bare wall.
+        //
+        // No hairline fallback here: `plate_ring_is_usable` rejects a plate
+        // too narrow to draw at this size, so the fill, the paint and the glow
+        // all see the same plate or none of them do.
         let plate_mask = hold
             .base_path
             .as_ref()
@@ -243,20 +251,17 @@ pub fn paint_glow(
                 );
                 Some(plate_mask)
             });
+        let site_alpha = plate_mask.as_ref().map_or(silhouette_alpha, Mask::data);
         let mut sites = vec![NO_SITE; box_width * box_height];
         let mut any_site = false;
-        for source in [plate_mask.as_ref().map(Mask::data), Some(silhouette_alpha)] {
-            let Some(source) = source else { continue };
-            for (site, alpha) in sites.iter_mut().zip(source) {
-                if *alpha >= 128 {
-                    *site = 1;
-                    any_site = true;
-                }
-            }
-            // A plate too thin to claim a single pixel would erase the hold's
-            // glow entirely; fall through to the silhouette instead.
-            if any_site {
-                break;
+        for ((site, alpha), silhouette) in sites
+            .iter_mut()
+            .zip(site_alpha)
+            .zip(silhouette_alpha.iter())
+        {
+            if *alpha >= 128 && *silhouette >= 128 {
+                *site = 1;
+                any_site = true;
             }
         }
         // Coverage is recorded for every hold; only the first 65 535 can label a
