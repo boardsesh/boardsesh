@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-30T04:11:36.108Z",
+  "generatedAt": "2026-08-30T04:39:00.887Z",
   "entries": [
+    {
+      "prNumber": 4821,
+      "category": "new",
+      "title": "Board previews now load without waiting on the old image-function cold start.",
+      "mergedAt": "2026-08-30T04:33:13Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4821"
+    },
     {
       "prNumber": 4770,
       "category": "new",
