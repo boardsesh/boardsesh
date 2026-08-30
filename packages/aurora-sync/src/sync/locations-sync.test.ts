@@ -5,6 +5,7 @@ import {
   buildAuroraLocationRecords,
   syncAllAuroraBoardLocations,
   AURORA_LOCATION_BOARDS,
+  GYM_CRAWL_PROGRESS_INTERVAL,
   type AuroraPinWithUser,
 } from './locations-sync';
 import type { AuroraGymUser } from '../api/gym-walls-api';
@@ -80,6 +81,36 @@ describe('buildAuroraLocationRecords', () => {
 
     expect(records.map((record) => record.sourceKey)).toEqual(['tension:123', 'tension:123:wall-b']);
     expect(records.map((record) => record.name)).toEqual(['Board House - Wall A', 'Board House - Wall B']);
+  });
+
+  it('does not hand the gym key to a sibling when the first wall is unlisted', () => {
+    // The reported hazard: indexed within the LISTED subset, un-listing wall A
+    // slid wall B up to index 0, so the gym's long-lived board row — with its
+    // ticks, history and any printed QR code — was silently rewritten to wall
+    // B's config, and B's own row was orphaned.
+    const walls = [
+      makeWall({ uuid: 'a', name: 'Wall A', created_at: '2026-01-01T00:00:00.000Z' }),
+      makeWall({ uuid: 'b', name: 'Wall B', created_at: '2026-02-01T00:00:00.000Z' }),
+    ];
+
+    const before = buildAuroraLocationRecords('tension', [withWalls(walls)]);
+    expect(before.records.map((record) => record.sourceKey)).toEqual(['tension:123', 'tension:123:b']);
+
+    // Gym converts wall A to storage.
+    const after = buildAuroraLocationRecords('tension', [withWalls([{ ...walls[0], is_listed: false }, walls[1]])]);
+
+    expect(after.records.map((record) => record.sourceKey)).toEqual(['tension:123:b']);
+    expect(after.records[0].name).toBe('Board House - Wall B');
+  });
+
+  it('keeps a new wall off the gym key, since it always sorts last', () => {
+    const original = makeWall({ uuid: 'a', name: 'Wall A', created_at: '2026-01-01T00:00:00.000Z' });
+    const added = makeWall({ uuid: 'z', name: 'Wall Z', created_at: '2026-06-01T00:00:00.000Z' });
+
+    const { records } = buildAuroraLocationRecords('tension', [withWalls([added, original])]);
+
+    expect(records.map((record) => record.sourceKey)).toEqual(['tension:123', 'tension:123:z']);
+    expect(records[0].name).toBe('Board House - Wall A');
   });
 
   it('orders walls deterministically so "first" is stable across runs', () => {
@@ -291,6 +322,42 @@ describe('syncAllAuroraBoardLocations fetcher dispatch', () => {
     } finally {
       // In a finally so a failed assertion can't leak these module mocks into
       // every test that runs after it.
+      vi.doUnmock('../api/pins-api');
+      vi.doUnmock('@boardsesh/location-sync');
+      vi.resetModules();
+    }
+  });
+
+  it('logs progress on the interval and always on the last gym', async () => {
+    // The only production signal during a multi-hour crawl that a healthy run
+    // isn't a stalled one — a run ending on "read 450/476" is indistinguishable
+    // from a stall on the final stretch.
+    const logs: string[] = [];
+    const gymCount = GYM_CRAWL_PROGRESS_INTERVAL + 3;
+    const upserted = { boardsSeen: 0, boardsUpserted: 0, boardsSkipped: 0, gymsSeen: 0, gymsUpserted: 0, skipped: [] };
+
+    vi.doMock('../api/pins-api', () => ({
+      fetchAuroraPins: () =>
+        Promise.resolve({ gyms: Array.from({ length: gymCount }, (_u, i) => ({ ...BOARD_HOUSE_PIN, id: i + 1 })) }),
+    }));
+    vi.doMock('@boardsesh/location-sync', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('@boardsesh/location-sync')>()),
+      upsertPublicBoardLocations: () => Promise.resolve(upserted),
+    }));
+    vi.resetModules();
+
+    try {
+      const { syncAuroraBoardLocations: syncBoard } = await import('./locations-sync');
+      await syncBoard({
+        db: {} as never,
+        board: 'tension',
+        fetchGymUser: () => Promise.resolve(undefined),
+        log: (message) => logs.push(message),
+      });
+
+      expect(logs).toContain(`[aurora-locations] tension: read ${GYM_CRAWL_PROGRESS_INTERVAL}/${gymCount} gym(s)`);
+      expect(logs).toContain(`[aurora-locations] tension: read ${gymCount}/${gymCount} gym(s)`);
+    } finally {
       vi.doUnmock('../api/pins-api');
       vi.doUnmock('@boardsesh/location-sync');
       vi.resetModules();
