@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-30T01:52:48.787Z",
+  "generatedAt": "2026-08-30T03:14:56.555Z",
   "entries": [
+    {
+      "prNumber": 4864,
+      "category": "fixed",
+      "title": "Connecting over Bluetooth identifies your board correctly instead of naming someone else's Kilter board",
+      "mergedAt": "2026-08-30T03:12:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4864",
+      "body": "You can register a Kilter and a Tension controller that share a serial number without one being rejected as a duplicate"
+    },
     {
       "prNumber": 4736,
       "category": "new",
