@@ -254,6 +254,14 @@ export const BOARD_ART_GEOMETRY_SHARDS: Record<string, () => BoardArtGeometry> =
     hasGlobalRequire
       ? (require('./touchstone/1-1.cjs') as BoardArtGeometry)
       : (nodeRequire()('./touchstone/1-1.cjs') as BoardArtGeometry),
+  'woods/1-1': () =>
+    hasGlobalRequire
+      ? (require('./woods/1-1.cjs') as BoardArtGeometry)
+      : (nodeRequire()('./woods/1-1.cjs') as BoardArtGeometry),
+  'woods/1-2': () =>
+    hasGlobalRequire
+      ? (require('./woods/1-2.cjs') as BoardArtGeometry)
+      : (nodeRequire()('./woods/1-2.cjs') as BoardArtGeometry),
 };
 
 /** Eager: 2 numbers per config, and the veil decision is made before any shard is needed. */

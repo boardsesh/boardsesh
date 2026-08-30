@@ -55,4 +55,6 @@ module.exports = {
   'tension/11-9': { mean: 0.703, coverage: 0.888 },
   'tension/11-10': { mean: 0.718, coverage: 0.922 },
   'touchstone/1-1': { mean: 0.806, coverage: 1 },
+  'woods/1-1': { mean: 0.53, coverage: 0.932 },
+  'woods/1-2': { mean: 0.54, coverage: 0.931 },
 };
