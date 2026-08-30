@@ -7,7 +7,15 @@ import type { BoardHoldTarget } from '../../../lib/create-board-holds';
 
 // Controls the mocked zoom hook so each test can assert the zoomed-only chrome
 // (pan overlay + reset button) without driving real gestures.
-const zoomState = vi.hoisted(() => ({ isZoomed: false, resetZoom: vi.fn() }));
+const zoomState = vi.hoisted(() => ({
+  isZoomed: false,
+  resetZoom: vi.fn(),
+  scaleSV: { value: 1 },
+  translateXSV: { value: 0 },
+  translateYSV: { value: 0 },
+  containerWidthSV: { value: 400 },
+  containerHeightSV: { value: 500 },
+}));
 
 type ChildrenProps = { children?: ReactNode };
 type StyleProps = ChildrenProps & { style?: unknown };
@@ -56,6 +64,14 @@ vi.mock('../../play-drawer/use-zoom-pan-gesture', () => ({
     isZoomed: zoomState.isZoomed,
     resetZoom: zoomState.resetZoom,
     animatedZoomStyle: {},
+    // The transform shared values the board forwards through
+    // FilterBoardTransformContext. Stand-ins, not real shared values — the
+    // renderAboveBoard tests only assert they reach the overlay.
+    scaleSV: zoomState.scaleSV,
+    translateXSV: zoomState.translateXSV,
+    translateYSV: zoomState.translateYSV,
+    containerWidthSV: zoomState.containerWidthSV,
+    containerHeightSV: zoomState.containerHeightSV,
   }),
 }));
 
@@ -202,5 +218,37 @@ describe('InteractiveFilterBoard', () => {
 
     const unknown = renderBoard({ activeHoldId: 999 });
     expect(unknown.container.querySelector('[data-hold-layer="true"]')).not.toBeNull();
+  });
+  it('does not render an above-board overlay unless one is asked for', () => {
+    const { container } = renderBoard();
+    expect(container.querySelector('[data-above-board="true"]')).toBeNull();
+  });
+
+  it('renders renderAboveBoard and hands it the full zoom transform', () => {
+    const seen: Record<string, unknown>[] = [];
+    const { container } = render(
+      <InteractiveFilterBoard
+        boardName="kilter"
+        layoutId={1}
+        sizeId={10}
+        setIds="1,2"
+        boardWidth={1000}
+        boardHeight={1000}
+        holdTargets={holdTargets}
+        renderWidth={400}
+        renderHeight={500}
+        renderAboveBoard={(context) => {
+          seen.push(context as unknown as Record<string, unknown>);
+          return <div data-above-board="true" />;
+        }}
+      />,
+    );
+    expect(container.querySelector('[data-above-board="true"]')).not.toBeNull();
+    const context = seen[0];
+    expect(context.scaleSV).toBe(zoomState.scaleSV);
+    expect(context.translateXSV).toBe(zoomState.translateXSV);
+    expect(context.translateYSV).toBe(zoomState.translateYSV);
+    expect(context.containerWidthSV).toBe(zoomState.containerWidthSV);
+    expect(context.containerHeightSV).toBe(zoomState.containerHeightSV);
   });
 });

@@ -20,6 +20,18 @@ export type FilterBoardTransformContext = {
   pinchGesture: GestureType;
   /** Live zoom scale, so an overlay can convert screen-pixel deltas to board px. */
   scaleSV: SharedValue<number>;
+  /**
+   * The rest of the live zoom transform. Together with `scaleSV` and the
+   * container size these are everything needed to invert the board's transform
+   * on the UI thread — what an overlay drawn ABOVE the transform (see
+   * `renderAboveBoard`) needs to map a screen point back to board-local px.
+   * Produced by `useZoomPanGesture` all along; forwarded here so an overlay
+   * doesn't have to re-derive them.
+   */
+  translateXSV: SharedValue<number>;
+  translateYSV: SharedValue<number>;
+  containerWidthSV: SharedValue<number>;
+  containerHeightSV: SharedValue<number>;
   renderWidth: number;
   renderHeight: number;
 };
@@ -49,6 +61,13 @@ type InteractiveFilterBoardProps = {
    * rectangle. Receives the board pinch + live scale so its pans compose cleanly.
    */
   renderInTransform?: (context: FilterBoardTransformContext) => ReactNode;
+  /**
+   * Overlay rendered ABOVE the zoom transform (and above the zoomed pan layer),
+   * in plain container coordinates — used by the outline editor for the stylus
+   * draw surface, which has to see raw screen points and invert the transform
+   * itself. Rendered before the reset-zoom button so that button stays tappable.
+   */
+  renderAboveBoard?: (context: FilterBoardTransformContext) => ReactNode;
 };
 
 const TAP_MAX_DURATION_MS = 300;
@@ -82,6 +101,7 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   renderWidth,
   renderHeight,
   renderInTransform,
+  renderAboveBoard,
 }: InteractiveFilterBoardProps) {
   const { t } = useTranslation('common');
   // Shared with the per-hold detectors and the rest/zoom tap overlays so they
@@ -113,8 +133,17 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   // handler (HoldTargetLayer requires both).
 
   const transformContext = useMemo<FilterBoardTransformContext>(
-    () => ({ pinchGesture, scaleSV, renderWidth, renderHeight }),
-    [pinchGesture, scaleSV, renderWidth, renderHeight],
+    () => ({
+      pinchGesture,
+      scaleSV,
+      translateXSV,
+      translateYSV,
+      containerWidthSV,
+      containerHeightSV,
+      renderWidth,
+      renderHeight,
+    }),
+    [pinchGesture, scaleSV, translateXSV, translateYSV, containerWidthSV, containerHeightSV, renderWidth, renderHeight],
   );
 
   // Hit circles so the zoomed pan overlay can resolve a tap to a hold itself
@@ -279,6 +308,11 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
               {renderInTransform(transformContext)}
             </Animated.View>
           ) : null}
+
+          {/* Overlay ABOVE the transform, in container coordinates. Sits over
+              the zoomed pan layer so it gets first refusal on a touch, and
+              before the reset-zoom button so that button still wins its own. */}
+          {renderAboveBoard ? renderAboveBoard(transformContext) : null}
 
           {isZoomed ? (
             <Pressable style={styles.resetButton} onPress={resetZoom} hitSlop={8} accessibilityRole="button">
