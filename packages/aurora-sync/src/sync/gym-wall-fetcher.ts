@@ -102,12 +102,19 @@ export async function createAuroraGymUserFetcher(args: {
   // non-transient, so it is caught here rather than by the retry loop: sign in
   // again and retry that gym. Once per gym, so genuinely bad credentials can't
   // spin.
+  // Set when a re-login fails outright — wrong credentials, or Aurora's auth
+  // endpoint down. Without it every remaining gym in a multi-thousand crawl
+  // would still pay for a doomed lookup AND a doomed re-auth, doubling the
+  // request count for the rest of a run that can no longer succeed.
+  let sessionPermanentlyBroken = false;
   const refreshExpiredSession = async (): Promise<boolean> => {
+    if (sessionPermanentlyBroken) return false;
     try {
       token = await signIn();
       args.log?.(`[aurora-locations] ${args.board}: session expired mid-crawl, signed in again`);
       return true;
     } catch (error) {
+      sessionPermanentlyBroken = true;
       args.log?.(
         `[aurora-locations] ${args.board}: session expired and re-login failed, remaining gyms use default configs: ${
           error instanceof Error ? error.message : String(error)
@@ -125,6 +132,10 @@ export async function createAuroraGymUserFetcher(args: {
   // queue here.
   let nextRequestAtMs = 0;
   return async (pin: AuroraPin): Promise<AuroraGymUser | undefined> => {
+    // Once the session is unrecoverable there is nothing left to try, so skip
+    // straight to the default-config fallback rather than spending a request
+    // per remaining gym.
+    if (sessionPermanentlyBroken) return undefined;
     let sessionRefreshedForThisGym = false;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_GYM; attempt += 1) {
       const waitMs = nextRequestAtMs - Date.now();
