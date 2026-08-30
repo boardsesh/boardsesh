@@ -4,6 +4,14 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-08-30
+
+### New
+
+- One Boards page instead of two. "Change board" and "My Boards" were the same list with different buttons — now it's one place to switch, edit, and clear out boards. ([#4736](https://github.com/boardsesh/boardsesh/pull/4736))
+  Every board in "Your boards" says whether it's yours or one you follow, and the board you're on now reads "Active" instead of a bare tick.
+  Tap Edit to delete a board you own or stop following someone else's, straight from the card. Swiping a row to delete is gone — the Edit button replaces it.
+
 ## 2026-08-29
 
 ### New

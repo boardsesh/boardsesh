@@ -20,7 +20,6 @@ type UserDrawerContextValue = {
   // only uses openUserDrawer).
   closeUserDrawer: () => void;
   navigateToBoards: () => void;
-  navigateToManageBoards: () => void;
   navigateToSettings: () => void;
   navigateToEditProfile: () => void;
   navigateToPlaylists: () => void;
@@ -84,12 +83,6 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
     router.push({ pathname: '/boards', params: { returnTo: returnToRef.current } });
   }, []);
 
-  // "My Boards" is a management screen (edit / delete owned, unfollow followed),
-  // distinct from the board picker that "Change Board" opens.
-  const navigateToManageBoards = useCallback(() => {
-    router.push('/boards/manage');
-  }, []);
-
   const navigateToSettings = useCallback(() => {
     router.push('/(tabs)/profile/more');
   }, []);
@@ -144,7 +137,6 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
       openUserDrawer,
       closeUserDrawer,
       navigateToBoards,
-      navigateToManageBoards,
       navigateToSettings,
       navigateToEditProfile,
       navigateToPlaylists,
@@ -162,7 +154,6 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
       openUserDrawer,
       closeUserDrawer,
       navigateToBoards,
-      navigateToManageBoards,
       navigateToSettings,
       navigateToEditProfile,
       navigateToPlaylists,

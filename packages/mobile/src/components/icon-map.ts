@@ -147,6 +147,11 @@ export const iconMap = {
   person: { ios: 'person', android: 'account-outline' },
   'person.fill': { ios: 'person.fill', android: 'account' },
   'person.badge.plus': { ios: 'person.badge.plus', android: 'account-plus-outline' },
+  // "You follow this board" on the board picker. Deliberately person-shaped
+  // rather than another checkmark: `tick` (checkmark.circle.fill) already means
+  // "active board" on the same 168pt thumb, and two checkmarks 82pt apart
+  // meaning different things is unreadable.
+  'person.check': { ios: 'person.crop.circle.badge.checkmark', android: 'account-check-outline' },
   people: { ios: 'person.2', android: 'account-multiple-outline' },
   'people.fill': { ios: 'person.2.fill', android: 'account-multiple' },
   discord: { ios: 'bubble.left.and.bubble.right.fill', android: 'discord' },

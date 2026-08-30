@@ -63,6 +63,9 @@
       "editAria": "Modifier {{name}}",
       "deleteAria": "Supprimer {{name}}",
       "unfollowAria": "Se désabonner de {{name}}",
+      "unfollowTitle": "Se désabonner ?",
+      "unfollowMessage": "« {{name}} » est ta board active. Te désabonner la retire de tes boards et efface la sélection.",
+      "unfollowConfirm": "Se désabonner",
       "edit": "Modifier",
       "done": "Terminé"
     },
@@ -82,9 +85,13 @@
       "nearbyTitle": "Près de toi",
       "nearbyShowing": "À proximité affichés",
       "yourBoardsTitle": "Tes boards",
+      "activeBadge": "Active",
+      "ownedBadgeAria": "Ta board",
+      "followingBadgeAria": "Abonné",
       "popularTitle": "Configurations populaires",
       "findGym": "Trouver une salle",
       "create": "Créer une board",
+      "createTile": "Créer",
       "followed": "{{name}} ajoutée à tes boards",
       "followError": "Impossible d'ajouter {{name}} à tes boards"
     },
