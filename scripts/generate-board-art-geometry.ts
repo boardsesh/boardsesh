@@ -1727,6 +1727,54 @@ async function writeConfigReport(
 }
 
 /**
+ * Mean absolute per-channel difference the shipped art may sit from the lossless
+ * source it is exported from, in 0-255 levels.
+ *
+ * Measured, not guessed: Woods' shipped `.webp` sits 1.58 and 1.62 levels from
+ * its `.png` (worst single channel 57 and 30, on the antialiased hold rims where
+ * the codec spends its error). 6 is ~4x that headroom, and any real drift — one
+ * of the pair re-exported from a different photo, a crop, a colour-managed
+ * round trip — moves the mean by tens of levels rather than by ones.
+ */
+const LOSSLESS_MEAN_DIFF_CEILING = 6;
+
+/**
+ * Fail loudly when the shipped art and the lossless source it is keyed from stop
+ * being the same picture.
+ *
+ * The two are read from different files by different code paths for different
+ * reasons — the mask is cut from the `.png` because compression ringing is
+ * speckle the tracer would have to survive, and every colour reading measures the
+ * `.webp` because that is what a climber sees. Regenerate one without the other
+ * and nothing else in this script notices: the silhouettes would describe one
+ * photo and the lightness readings another, and both would look plausible.
+ */
+function assertLosslessMatchesShipped(
+  shipped: DecodedLayer,
+  lossless: { pixels: Buffer; channels: number; relativePath: string },
+): void {
+  const pixelCount = shipped.art.width * shipped.art.height;
+  let absoluteDifference = 0;
+  for (let pixel = 0; pixel < pixelCount; pixel += 1) {
+    const shippedOffset = pixel * 4;
+    const losslessOffset = pixel * lossless.channels;
+    for (let channel = 0; channel < 3; channel += 1) {
+      absoluteDifference += Math.abs(
+        shipped.art.pixels[shippedOffset + channel] - lossless.pixels[losslessOffset + channel],
+      );
+    }
+  }
+  const meanDifference = absoluteDifference / (pixelCount * 3);
+  if (meanDifference <= LOSSLESS_MEAN_DIFF_CEILING) return;
+  throw new Error(
+    `${lossless.relativePath} and the shipped ${shipped.relativePath} differ by a mean of ` +
+      `${meanDifference.toFixed(2)} levels per channel, over a ceiling of ${LOSSLESS_MEAN_DIFF_CEILING}. ` +
+      `They are meant to be the same picture — the mask is keyed from the lossless one and every colour ` +
+      `reading measures the shipped one — so re-export both from the same source.`,
+  );
+}
+
+/**
  * Recover a photographic board's hold substance from its LOSSLESS sources.
  *
  * Deliberately not `decodeLayers`: that resizes into board space, and here a
@@ -1743,15 +1791,15 @@ async function writeConfigReport(
  * like. See `OPAQUE_ART_CEILING`.
  */
 async function keyPhotographicLayers(
-  relativePaths: string[],
+  layers: DecodedLayer[],
   boardWidth: number,
   boardHeight: number,
 ): Promise<{ layers: KeyedPhotoLayer[] } | { reason: string }> {
   const keyed: KeyedPhotoLayer[] = [];
-  for (const relativePath of relativePaths) {
-    const losslessPath = relativePath.replace(/\.(webp|jpg|jpeg)$/i, '.png');
+  for (const layer of layers) {
+    const losslessPath = layer.relativePath.replace(/\.(webp|jpg|jpeg)$/i, '.png');
     if (!existsSync(path.join(PUBLIC_DIR, losslessPath))) {
-      return { reason: `no lossless source beside ${relativePath} — expected ${losslessPath}` };
+      return { reason: `no lossless source beside ${layer.relativePath} — expected ${losslessPath}` };
     }
     const { data, info } = await sharp(path.join(PUBLIC_DIR, losslessPath)).raw().toBuffer({ resolveWithObject: true });
     if (info.width !== boardWidth || info.height !== boardHeight) {
@@ -1760,6 +1808,7 @@ async function keyPhotographicLayers(
           `the white key does not resample, so the art and the placement geometry have drifted apart`,
       );
     }
+    assertLosslessMatchesShipped(layer, { pixels: data, channels: info.channels, relativePath: losslessPath });
     const mask = buildWhiteKeyMask(data, info.width, info.height, info.channels, { erodePx: WHITE_KEY_ERODE_PX });
     if (mask.maskShare >= OPAQUE_ART_CEILING) {
       return {
@@ -1803,6 +1852,14 @@ async function keyPhotographicLayers(
  * The mask comes from the lossless source and the pixels from the shipped one.
  * That is deliberate: the mask is a question about the geometry (key it clean),
  * the colours are a question about what a climber sees (measure what ships).
+ * `assertLosslessMatchesShipped` is what keeps that pair honest.
+ *
+ * IT WRITES THROUGH TO THE LAYER on a single-layer board. `compositeLayers`
+ * returns `layers[0].art.pixels` unchanged when there is one layer, so `art`
+ * and that layer share a buffer and this zeroes the layer's alpha too. Harmless
+ * as the code stands — a photographic field takes its substance from the keyed
+ * mask and never reads the layer's own alpha — but anything later that wants
+ * the layer's original alpha has to copy first.
  */
 function applyRecoveredAlpha(art: BoardArt, keyedLayers: KeyedPhotoLayer[]): void {
   for (let pixel = 0; pixel < art.width * art.height; pixel += 1) {
@@ -1861,7 +1918,7 @@ async function measureConfig(
     // Not a skip any more, a ROUTE. The alpha channel is full, so the question
     // becomes whether the substance can be recovered by keying the ground out;
     // only a board where that also fails falls back to rings.
-    const keyed = await keyPhotographicLayers(relativePaths, details.boardWidth, details.boardHeight);
+    const keyed = await keyPhotographicLayers(layers, details.boardWidth, details.boardHeight);
     if ('reason' in keyed) {
       return {
         skipped:

@@ -35,12 +35,28 @@
  * v4 and v6 made, and one shared bump keeps native and Expo web on the same
  * contract.
  *
+ * v8 (issue #2202) is the same trap once more, and this time the change is data
+ * rather than code. Woods shipped no traced geometry at all — its art is an
+ * opaque photograph of the hold set, so there was no silhouette in the alpha
+ * channel to find — and the Boardsesh mode drew a plain ring at every placement
+ * radius with no veil. Its white ground is keyed away now, so 469 of the 8x10's
+ * 485 placements and 868 of the 12x12's 894 carry a real outline, and both sizes
+ * gained a `wallLightness` row (0.530 / 0.540 at ~93% coverage) that turns the
+ * soft veil on wherever the veil setting is `auto`.
+ *
+ * That `auto` case moves the render signature and would evict itself. The users
+ * who need the bump are the ones who explicitly chose veil off, soft, strong or
+ * custom: their signature is byte-identical before and after, so a cached v7
+ * overlay — rings, no silhouettes — would be served for a Woods climb forever.
+ * Exactly what v4, v6 and v7 bumped for, and the same trade: every other board's
+ * pixels are unchanged and pay a one-time re-render.
+ *
  * Lives in its own module so both the hook (use-native-climb-render.ts) and the
  * web overlay warm-up (overlay-cache-warmup.web.ts) can read it without a
  * circular import — the hook imports the warm-up, so the warm-up must not import
  * back from the hook.
  */
-export const RENDERER_VERSION = 7;
+export const RENDERER_VERSION = 8;
 
 /** Cache-key prefix stamped on every overlay produced by the current renderer. */
 export const currentOverlayVersionPrefix = (): string => `v${RENDERER_VERSION}_`;

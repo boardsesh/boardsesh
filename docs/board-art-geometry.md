@@ -244,6 +244,17 @@ which are the only configs on the white-key path — and the whole catalogue und
 and its placement→image routing rather than importing them: a gate that shares its inputs
 with the code it audits only checks that the code agrees with itself.
 
+**One input is shared, deliberately.** The gates *import* `buildWhiteKeyMask` and
+`mergeCoincidentPlacements` for the photographic boards. A mask is not a threshold to
+re-derive, it is the substance itself: measure a silhouette's boundary against a mask cut
+half a pixel differently to the one the tracer cut it from, and the gate reports the
+difference between two flood fills rather than a defect in the geometry — noise on exactly
+the board it is newest on. The independent anchor for that half sits in `white-key.test.ts`
+instead, which pins the mask's ground and hold shares on the real art as golden four-decimal
+numbers and cross-checks the merged-group counts against `COINCIDENT_PAIR_BUDGET` in
+`@boardsesh/board-config`, derived from the hold table rather than from this package. A
+change to the key that moves one pixel fails there before it can move a gate here.
+
 | # | What it checks | Result |
 |---|---|---|
 | 1 | Every outline sits on its own placement | 0 on the 49 sprite-sheet shards; 12 Woods outlines are pinned by id, worst 4.24 board px outside on a 13.5 px radius. Separately, 3 Kilter Original 12x12 Wide screw-ons (drawn beside their bolt) and 50 Woods pieces have the bolt on the boundary, pinned as counts |

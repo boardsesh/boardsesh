@@ -891,11 +891,15 @@ function getBoardConfig(
     const renderData = getBoardRenderData({ boardName, layoutId, sizeId, setIds: setIdsArray });
     if (!renderData) return null;
 
-    // The traced art for this board. Null where the catalogue has no shard
-    // (both Woods sizes: their art is an opaque photo of the hold set, so there
-    // is no silhouette in the alpha channel to find) — the mode still renders,
-    // it just glows a ring at each placement radius. The loader memoises per
-    // board key, so a list of climbs on one wall requires the shard once.
+    // The traced art for this board. Null where the catalogue has no shard for
+    // this layout+size — the mode still renders, it just glows a ring at each
+    // placement radius. Every config the shards cover has one today: Woods was
+    // the last holdout, and its silhouettes are keyed off its photograph's white
+    // ground rather than read out of an alpha channel. Individual placements
+    // still fall back to a ring whenever `outlines[id]` is absent, which is the
+    // common case on MoonBoard's synthetic grid and covers 16 and 26 Woods bolts
+    // sitting on bare sweep. The loader memoises per board key, so a list of
+    // climbs on one wall requires the shard once.
     const boardseshGeometry = boardsesh ? loadBoardArtGeometry({ boardName, layoutId, sizeId }) : null;
     const ledOffsets = boardseshGeometry?.ledBright ?? null;
 

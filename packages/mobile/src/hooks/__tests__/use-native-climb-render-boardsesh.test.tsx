@@ -121,6 +121,13 @@ const GRASSHOPPER_HOLDS: MockBoardRenderData = {
 /** Only placement 1 is lit — role code 2 is Grasshopper's HAND. */
 const GRASSHOPPER_FRAMES = 'p1r2';
 
+/**
+ * Woods 8x10 (layout 1, size 1) — the one board traced off a white key rather
+ * than off an alpha channel, because its art is a photograph of the hold set on
+ * a white sweep. Only ever fed to the REAL `getBoardRenderData`.
+ */
+const WOODS_8X10 = { boardName: 'woods' as const, layoutId: 1, sizeId: 1, setIds: '1' };
+
 /** Tension Board 2 Mirror, 12x12 (layout 10, size 6) — the strong-veil board. */
 const TB2_MIRROR = { boardName: 'tension' as const, layoutId: 10, sizeId: 6, setIds: '20' };
 /** Tension Original Layout (layout 9, size 1) — the other strong-veil board. */
@@ -416,21 +423,6 @@ describe('per-hold geometry', () => {
     // Placement 27's art paints no bright LED — there is nothing to cover.
     expect('led' in holdById(configBase, 27)).toBe(false);
   });
-
-  it('still renders the mode on a board the tracer skipped, with no outlines at all', () => {
-    // Woods' art is an opaque photo of the hold set, so there is no silhouette
-    // in the alpha channel to find and the catalogue ships no shard.
-    const configBase = buildConfig(
-      { boardName: 'woods', layoutId: 1, sizeId: 1, setIds: '1' },
-      { frames: 'p1r2', boardsesh: boardseshInputs(), renderSignature: 'boardsesh-woods' },
-    );
-
-    expect(configBase.render_mode).toBe('boardsesh');
-    expect(configBase.veil).toEqual({ color: DARK_FIELD, opacity: 0.6 });
-    const holds = configBase.holds as Record<string, unknown>[];
-    expect(holds.every((hold) => !('outline' in hold) && !('led' in hold))).toBe(true);
-    expect('led_cover' in configBase).toBe(false);
-  });
 });
 
 describe('per-hold geometry, joined against the real shard data', () => {
@@ -467,7 +459,7 @@ describe('per-hold geometry, joined against the real shard data', () => {
   // mismatch entirely, since a fixed return value never needs a matching
   // parameter list.
   async function loadRealRenderData(query: {
-    boardName: 'tension' | 'kilter';
+    boardName: 'tension' | 'kilter' | 'woods';
     layoutId: number;
     sizeId: number;
     setIds: number[];
@@ -551,6 +543,49 @@ describe('per-hold geometry, joined against the real shard data', () => {
     // fabricated outline.
     expect('outline' in holdById(configBase, untracedId)).toBe(false);
   });
+
+  it('attaches the real traced outline on Woods, whose substance is keyed off a white ground', async () => {
+    // Woods is the one board whose art is a photograph rather than a stack of
+    // transparent layers, so it shipped NO shard until the tracer learned to key
+    // its white sweep away — this case asserted "no outlines at all" up to that
+    // point. It is the only config family on the white-key path, and the whole
+    // point of the path is that nothing downstream can tell: the hook does the
+    // same `geometry.outlines[hold.id]` lookup it does for a sprite sheet.
+    const geometry = loadBoardArtGeometry(WOODS_8X10);
+    expect(geometry).not.toBeNull();
+    // 469 of 485 — the 16 without one are bolts sitting on bare white sweep,
+    // which honestly has no hold to trace. Pinned by gate 4 in the package too.
+    expect(Object.keys(geometry?.outlines ?? {}).length).toBe(469);
+
+    const { holdsData } = await loadRealRenderData({
+      boardName: WOODS_8X10.boardName,
+      layoutId: WOODS_8X10.layoutId,
+      sizeId: WOODS_8X10.sizeId,
+      setIds: [Number(WOODS_8X10.setIds)],
+    });
+    const traced = holdsData.filter((hold) => geometry?.outlines[hold.id] !== undefined);
+    const untracedHold = holdsData.find((hold) => geometry?.outlines[hold.id] === undefined);
+    expect(traced.length).toBeGreaterThanOrEqual(2);
+    expect(untracedHold).toBeDefined();
+    const untracedId = (untracedHold as { id: number }).id;
+
+    const [tracedA, tracedB] = traced;
+    const configBase = buildConfig(WOODS_8X10, {
+      frames: `p${tracedA.id}r2p${tracedB.id}r2p${untracedId}r2`,
+      boardsesh: boardseshInputs(),
+      renderSignature: 'real-shard-woods',
+    });
+
+    expect(configBase.render_mode).toBe('boardsesh');
+    expectRealOutline(holdById(configBase, tracedA.id));
+    expectRealOutline(holdById(configBase, tracedB.id));
+    // A bolt on bare sweep still falls back to a ring, the same contract
+    // MoonBoard's empty grid cells already use.
+    expect('outline' in holdById(configBase, untracedId)).toBe(false);
+    // Woods' art paints no bright LED — its `ledBright` table is empty — so
+    // there is nothing for the renderer to cover.
+    expect('led_cover' in configBase).toBe(false);
+  });
 });
 
 describe('the veil, measured against the real shards', () => {
@@ -567,6 +602,31 @@ describe('the veil, measured against the real shards', () => {
 
   it('drops to the soft wash on a board whose wall is closer to the field', () => {
     expect(resolveVeilOpacity(DEFAULT_BOARDSESH_RENDER_SETTINGS, getWallLightness(GRASSHOPPER), DARK_FIELD)).toBe(0.3);
+  });
+
+  it('washes Woods softly, off a wall reading taken after its white ground was keyed away', () => {
+    // Woods had NO row here at all while it shipped no shard, and the veil was
+    // simply off. The rows exist now, and they are the keyed readings: measured
+    // with the photograph's own alpha the white sweep between holds reads 0.743
+    // and 0.766 at 100% coverage, which is the ground rather than the wall.
+    expect(getWallLightness(WOODS_8X10)).toEqual({ mean: 0.53, coverage: 0.932 });
+    expect(getWallLightness({ boardName: 'woods', layoutId: 1, sizeId: 2 })).toEqual({
+      mean: 0.54,
+      coverage: 0.931,
+    });
+
+    expect(resolveVeilOpacity(DEFAULT_BOARDSESH_RENDER_SETTINGS, getWallLightness(WOODS_8X10), DARK_FIELD)).toBe(0.3);
+    // The 12x12 is a KNIFE EDGE and is pinned deliberately: its gap to the dark
+    // field is 0.339976 against a strong-bucket threshold of 0.34, so it takes
+    // the soft wash by 24 millionths. A re-export of the board photo that lifts
+    // its mean by 0.001 flips it to 0.6, and this is what says so.
+    expect(
+      resolveVeilOpacity(
+        DEFAULT_BOARDSESH_RENDER_SETTINGS,
+        getWallLightness({ boardName: 'woods', layoutId: 1, sizeId: 2 }),
+        DARK_FIELD,
+      ),
+    ).toBe(0.3);
   });
 });
 
@@ -605,7 +665,7 @@ describe('the cache key', () => {
 
   it('carries the current renderer version and is otherwise the classic key', () => {
     const classicKey = keyFor('');
-    expect(classicKey).toMatch(/^v7_/);
+    expect(classicKey).toMatch(/^v8_/);
     expect(classicKey).toBe(
       buildCacheKey(CLIMB.boardName, CLIMB.layoutId, CLIMB.sizeId, CLIMB.setIds, GRASSHOPPER_FRAMES),
     );

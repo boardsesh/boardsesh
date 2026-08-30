@@ -260,24 +260,30 @@ const PINNED_PLACEMENT_OUTSIDE_OUTLINE: Record<string, { holds: number[]; worstD
 const PINNED_SPURRED_OUTLINES: Record<string, number[]> = { 'woods/1-2': [712] };
 
 /**
- * The outlines that necessarily contain a second placement, because that second
- * placement is on the same hold.
+ * The outlines that contain a second placement because that second placement is
+ * on the same hold.
  *
  * Woods' hold table is CV-detected off the board photograph, and it emits pairs
  * of centres 0-2 board px apart for one physical hold —
  * `COINCIDENT_PAIR_BUDGET` in `@boardsesh/board-config`'s
  * `woods-hold-positions.test.ts` pins 24 such pairs on the 8x10 and 17 on the
- * 12x12 as an upper bound that may only shrink. The tracer merges each group to
- * one seed and emits its silhouette under every member id, so by construction
- * each member's polygon covers its twin's bolt. That is the correct drawing —
- * there is one hold on the wall — and it is the one thing gate 2 cannot tell
- * apart from a silhouette that swallowed its neighbour.
+ * 12x12, as an upper bound that may only shrink. The tracer merges each group to
+ * one seed and emits its silhouette under every member id, so a member's polygon
+ * USUALLY covers its twin's bolt. That is the correct drawing — there is one
+ * hold on the wall — and it is the one thing gate 2 cannot tell apart from a
+ * silhouette that swallowed its neighbour.
  *
- * So the pin is per id and exact, and it is CHECKED rather than trusted: the gate
- * asserts that every id listed here contains only placements inside its own
- * coincident group, and that any outline containing a placement OUTSIDE its group
- * is a failure with no exceptions. The table may only ever shrink — a
- * re-extraction of the hold table that separates a pair takes ids out of it.
+ * Usually, not always: 58 of the 8x10's 62 merged members are listed and 36 of
+ * 36 on the 12x12. The four that are not are members of two groups where the
+ * shared silhouette is a sliver whose boundary runs between the two bolts rather
+ * than around both, so containment is genuinely false. That is a fact about
+ * those holds, not a hole in the check — the gate below asserts an exact set, so
+ * a member appearing or disappearing fails it either way.
+ *
+ * Which is also the honest statement of the table's direction: `toEqual` means
+ * this list may not GROW or shrink silently. A re-extraction of the hold table
+ * that separates a pair should take ids out of it, and the test failing is how
+ * that gets reviewed rather than absorbed.
  *
  * Merged groups here are a superset of the budget's pairs: 31 on the 8x10 and 18
  * on the 12x12, because the merge rounds centres first (the nearest-placement

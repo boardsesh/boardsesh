@@ -3,7 +3,11 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import sharp from 'sharp';
-import { GROUND_FLOOR, buildWhiteKeyMask, mergeCoincidentPlacements } from '../segmentation/white-key';
+// Through the package's own `./segmentation` subpath rather than by relative
+// path, so the export map the generator and the dark-art script reach this
+// module by is exercised by something. A broken entry there is invisible to a
+// relative import.
+import { GROUND_FLOOR, buildWhiteKeyMask, mergeCoincidentPlacements } from '@boardsesh/board-art-geometry/segmentation';
 import { PUBLIC_DIR, shardBoardForKey } from './gate-measures';
 
 /**

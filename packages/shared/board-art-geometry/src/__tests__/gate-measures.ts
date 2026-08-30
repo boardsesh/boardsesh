@@ -13,7 +13,7 @@ import {
   WOODS_LAYOUTS,
   WOODS_SETS,
 } from '@boardsesh/board-config';
-import { buildWhiteKeyMask, mergeCoincidentPlacements } from '../segmentation/white-key';
+import { buildWhiteKeyMask, mergeCoincidentPlacements } from '@boardsesh/board-art-geometry/segmentation';
 
 /**
  * The measurements the seven capture gates are built out of (issue #2202).
@@ -28,6 +28,21 @@ import { buildWhiteKeyMask, mergeCoincidentPlacements } from '../segmentation/wh
  * it audits stops being a check on anything the moment one of them moves, and
  * the generator is a Node script that pulls in the whole catalogue, which a
  * package test should not.
+ *
+ * ONE INPUT IS SHARED, deliberately: `buildWhiteKeyMask` and
+ * `mergeCoincidentPlacements` are IMPORTED for the photographic boards rather
+ * than restated. A mask is not a threshold to re-derive, it is the substance
+ * itself — measure a silhouette's boundary against a mask cut half a pixel
+ * differently to the one the tracer cut it from and the gate reports the
+ * difference between two flood fills, not a defect in the geometry. Restating it
+ * would turn gates 6 and 7 into noise on exactly the board they are newest on.
+ *
+ * The independent anchor for that half lives elsewhere: `white-key.test.ts` pins
+ * the mask's ground and hold shares on the real art as golden four-decimal
+ * numbers, and pins the merged-group counts against `COINCIDENT_PAIR_BUDGET` in
+ * `@boardsesh/board-config`, which is derived from the hold table rather than
+ * from this package. A change to the key that moves a single pixel fails there
+ * before it can quietly move a gate here.
  */
 
 /** Mirrors the generator's search box, in placement radii. */
@@ -210,19 +225,23 @@ export function shardBoardForKey(key: string): ShardBoard {
     for (const [index, imageKey] of imageKeys.entries()) {
       for (const [holdId] of details.images_to_holds[imageKey]) layerOfPlacement.set(holdId, index);
     }
-    for (const placement of placements) {
-      if (!layerOfPlacement.has(placement.id)) layerOfPlacement.set(placement.id, -1);
+    // A board that states no routing but ships ONE image has an unambiguous one:
+    // that image draws every placement. Woods is the case — its
+    // `images_to_holds` carries a key with an empty value, because its geometry
+    // is a detected hold table rather than Aurora's per-image tuples.
+    //
+    // Restated from the generator's `placementFieldIndex`, including its
+    // fallback: no routing and more than one image leaves every placement
+    // unrouted, which downstream is a ring rather than an error. A gate that
+    // threw there would fail on a board the generator ships perfectly happily.
+    if (layerOfPlacement.size === 0 && imageKeys.length === 1) {
+      for (const placement of placements) layerOfPlacement.set(placement.id, 0);
+    } else {
+      for (const placement of placements) {
+        if (!layerOfPlacement.has(placement.id)) layerOfPlacement.set(placement.id, -1);
+      }
     }
   }
-  // A board that states no routing but ships one image has an unambiguous one:
-  // that image draws every placement. Woods is the case — its `images_to_holds`
-  // carries a key with an empty value because its geometry is a detected hold
-  // table rather than Aurora's per-image tuples.
-  if (layerOfPlacement.size > 0 && [...layerOfPlacement.values()].every((index) => index === -1)) {
-    if (imageKeys.length !== 1) throw new Error(`${key}: no placement routing and ${imageKeys.length} images`);
-    for (const placement of placements) layerOfPlacement.set(placement.id, 0);
-  }
-
   const photographic = PHOTOGRAPHIC_BOARDS.has(boardName);
   // One hold, one trace: the shard emits one silhouette per coincident group
   // under every member's id, so the partition the art gates rebuild has to be
