@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { buildLocationUpsertPlan } from '@boardsesh/location-sync';
-import { buildAuroraLocationRecords, type AuroraPinWithUser } from './locations-sync';
+import { vi } from 'vitest';
+import {
+  buildAuroraLocationRecords,
+  syncAllAuroraBoardLocations,
+  AURORA_LOCATION_BOARDS,
+  type AuroraPinWithUser,
+} from './locations-sync';
 import type { AuroraGymUser } from '../api/gym-walls-api';
 import type { Wall } from '../api/sync-api-types';
 
@@ -101,21 +107,54 @@ describe('buildAuroraLocationRecords', () => {
   });
 
   it('rejects a wall whose layout or size is not in the catalogue', () => {
-    // Never coerce: publishing a plausible-looking guess is the failure this
-    // whole change exists to stop.
+    // Never coerce the unknown config: publishing a plausible-looking guess for
+    // a wall we can't read is the failure this whole change exists to stop.
     const { records, skipped } = buildAuroraLocationRecords('tension', [withWalls([makeWall({ layout_id: 4242 })])]);
 
-    expect(records).toEqual([]);
-    expect(skipped).toEqual([
-      { sourceKey: 'tension:123', reason: 'unsupported tension wall config layout 4242 size 6' },
+    expect(skipped).toContainEqual({
+      sourceKey: 'tension:123',
+      reason: 'unsupported tension wall config layout 4242 size 6',
+    });
+  });
+
+  it('still lists a gym whose every wall failed validation', () => {
+    // The walls exist, so the no-listed-walls fallback never runs — without an
+    // explicit second check the gym produced no record at all and silently
+    // vanished from the map, contradicting "a gym never drops off the map".
+    const { records, skipped } = buildAuroraLocationRecords('tension', [
+      withWalls([makeWall({ uuid: 'a', layout_id: 4242 }), makeWall({ uuid: 'b', product_size_id: 4242 })]),
     ]);
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ sourceKey: 'tension:123', layoutId: 10, name: 'Board House - Tension Board' });
+    expect(skipped).toContainEqual({
+      sourceKey: 'tension:123',
+      reason: 'no listed wall had a supported config',
+    });
   });
 
   it('rejects a wall listing hold sets that do not belong to its layout and size', () => {
     const { records, skipped } = buildAuroraLocationRecords('tension', [withWalls([makeWall({ set_ids: [999] })])]);
 
-    expect(records).toEqual([]);
-    expect(skipped).toHaveLength(1);
+    // Falls back rather than publishing the unreadable wall, and says why.
+    expect(records).toHaveLength(1);
+    expect(records[0].layoutId).toBe(10);
+    expect(skipped.map((entry) => entry.reason)).toContain('no listed wall had a supported config');
+  });
+
+  it('keeps the valid walls when only some of a gym fails validation', () => {
+    // A partial failure must not trigger the whole-gym fallback — that would
+    // republish the guess alongside a wall we read correctly.
+    const { records, skipped } = buildAuroraLocationRecords('tension', [
+      withWalls([
+        makeWall({ uuid: 'a', name: 'Good', created_at: '2026-01-01T00:00:00.000Z' }),
+        makeWall({ uuid: 'b', name: 'Bad', created_at: '2026-02-01T00:00:00.000Z', layout_id: 4242 }),
+      ]),
+    ]);
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ layoutId: 11, name: 'Board House - Good' });
+    expect(skipped.map((entry) => entry.reason)).not.toContain('no listed wall had a supported config');
   });
 
   it('falls back to the default config when the gym could not be read', () => {
@@ -183,5 +222,50 @@ describe('buildAuroraLocationRecords', () => {
     expect(skipped).toEqual([{ sourceKey: 'tension:456', reason: 'gym walls unavailable' }]);
     expect(plan.validRecords).toEqual([]);
     expect(plan.skipped).toEqual([{ sourceKey: 'tension:456', reason: 'invalid coordinates' }]);
+  });
+});
+
+/**
+ * The `syncLocations('all')` path builds one fetcher per board and dispatches
+ * through a closure keyed on the board name. A wrong key there would silently
+ * enrich nothing for every board while still reporting success, so the wiring
+ * is pinned here rather than left to a live crawl to discover.
+ */
+describe('syncAllAuroraBoardLocations fetcher dispatch', () => {
+  it('asks for each gym under the board it belongs to', async () => {
+    const requested: Array<{ board: string; pinId: number }> = [];
+    const upserted = { boardsSeen: 0, boardsUpserted: 0, boardsSkipped: 0, gymsSeen: 0, gymsUpserted: 0, skipped: [] };
+
+    vi.doMock('../api/pins-api', () => ({
+      fetchAuroraPins: (board: string) => Promise.resolve({ gyms: [{ ...BOARD_HOUSE_PIN, id: board.length }] }),
+    }));
+    vi.doMock('@boardsesh/location-sync', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('@boardsesh/location-sync')>()),
+      upsertPublicBoardLocations: () => Promise.resolve(upserted),
+    }));
+    vi.resetModules();
+    const { syncAllAuroraBoardLocations: syncAll } = await import('./locations-sync');
+
+    await syncAll({
+      db: {} as never,
+      fetchGymUser: (board, pin) => {
+        requested.push({ board, pinId: pin.id });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    // One request per board, each carrying that board's own pin id.
+    expect(requested).toEqual(AURORA_LOCATION_BOARDS.map((board) => ({ board, pinId: board.length })));
+
+    vi.doUnmock('../api/pins-api');
+    vi.doUnmock('@boardsesh/location-sync');
+    vi.resetModules();
+  });
+
+  it('is exported for every Aurora board except Kilter', () => {
+    // Kilter has its own richer per-wall importer in kilter-sync.
+    expect(AURORA_LOCATION_BOARDS).not.toContain('kilter');
+    expect(AURORA_LOCATION_BOARDS.length).toBeGreaterThan(0);
+    expect(typeof syncAllAuroraBoardLocations).toBe('function');
   });
 });
