@@ -256,17 +256,24 @@ overridden placement's shard value equals the committed ring byte for byte.
 
 ### What the gates do with a hand-drawn outline
 
-Gates 1-3 still bind on it. They are geometric invariants any drawing has to satisfy — it
-sits on its own placement, it swallows no second placement, it is not the crop rectangle —
-and the backend already refuses a write that fails gate 1's core.
+Gates 2, 3 and 7 still bind on it, and those are the invariants that matter for a drawing:
+it swallows no second placement, it is not the crop rectangle, it keeps its own hold. A
+correction ought to *improve* gate 7.
 
-**Gate 1's pin table, gate 5 and gate 6 are exempt.** All three measure *tracer
-pathologies*: a bolt left outside a boundary the simplification wobbled, a limb joined
+**Gates 5 and 6 are exempt** because they measure *tracer pathologies* — a limb joined
 through a thin neck, a boundary that is a partition cut rather than an art edge. A human
-correcting exactly those defects trips them by construction — the commonest correction is a
+correcting exactly those defects trips them by construction: the commonest correction is a
 contact cut, and repairing one means drawing the hold's real edge, which is on the
-neighbour's art by definition. Gate 7 still binds: "did this polygon keep its own hold" is a
-question a drawing has to answer too, and a correction ought to improve it.
+neighbour's art by definition.
+
+**Gate 1 is exempt for a sharper reason — the two centre rules disagree.** Gate 1 asks
+whether the placement sits within `SIMPLIFY_EPSILON` of the polygon: 1.6 board px, which is
+0.052 radii on kilter/1-28. The rule a correction is actually held to, by the backend on
+write and by the merge on read, is `CENTRE_TOLERANCE_RADII` at **0.25 radii** — five times
+looser. A perfectly legal correction whose bolt sits 0.1 radii outside the drawn edge would
+pass the editor, the export and the merge and then red gate 1 with no remedy available: the
+hold could neither be corrected nor left alone. The 0.25 rule binds instead on the committed
+ring, in `overrides.test.ts`, which is where it can be satisfied.
 
 `ledInner` rings are outside all seven — a base-plate boundary is not a silhouette and none
 of those measures say anything about one. They get the same structural validation as a

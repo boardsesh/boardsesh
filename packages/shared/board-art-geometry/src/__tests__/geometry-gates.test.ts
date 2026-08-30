@@ -238,8 +238,19 @@ function auditShard(key: string): BoardAudit {
     const centreX = Math.round(placement.cx);
     const centreY = Math.round(placement.cy);
 
-    if (!containsPoint(tracerPixels, 0, 0) && !handCorrected.has(holdId)) audit.placementOnTheEdge += 1;
-    if (distanceOutsidePolygon(tracerPixels, 0, 0) > SIMPLIFY_EPSILON) audit.withoutOwnPlacement.push(holdId);
+    // Gate 1, both halves, on tracer output only. The centre rule a correction
+    // is held to is the WRITE path's — inside the ring, or outside by at most
+    // `CENTRE_TOLERANCE_RADII` (0.25r) — and this measure's threshold is the
+    // 1.6 board px simplification tolerance, which on kilter/1-28 is 0.052r.
+    // Five times tighter, so a correction the editor accepted, the exporter
+    // wrote and the merge admitted would red this gate with nowhere to go: the
+    // hold could not be corrected and could not be left alone either. The
+    // 0.25r rule still binds on it, in `overrides.test.ts`, against the
+    // committed ring rather than the emitted one.
+    if (!handCorrected.has(holdId)) {
+      if (!containsPoint(tracerPixels, 0, 0)) audit.placementOnTheEdge += 1;
+      if (distanceOutsidePolygon(tracerPixels, 0, 0) > SIMPLIFY_EPSILON) audit.withoutOwnPlacement.push(holdId);
+    }
 
     let minX = Infinity;
     let maxX = -Infinity;

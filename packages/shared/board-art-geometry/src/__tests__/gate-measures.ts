@@ -119,18 +119,27 @@ export function overriddenShardKeys(): string[] {
 /**
  * The placements of one shard whose SILHOUETTE a human drew.
  *
- * Gates 1 to 3 still bind on these — every one of them is a geometric invariant
- * any drawing has to satisfy (it sits on its own placement, it swallows no
- * second placement, it is not the crop rectangle), and the backend already
- * refuses a write that fails gate 1's core.
+ * Gates 2, 3 and 7 still bind on these, and they are the invariants that matter
+ * for a drawing: it swallows no second placement, it is not the crop rectangle,
+ * it keeps its own hold.
  *
- * Gate 1's pin table, gate 5 and gate 6 do NOT. All three measure TRACER
- * PATHOLOGIES — a bolt left outside a boundary the simplification wobbled, a
+ * Gate 1, gate 5 and gate 6 do NOT. Gates 5 and 6 measure TRACER PATHOLOGIES — a
  * limb joined through a thin neck, a boundary that is a partition cut rather
- * than an art edge — and a human correcting exactly those defects will trip
- * them by construction. The commonest correction is a contact cut, where the
- * fix is to draw the hold's real edge, and the hold's real edge is ON the
- * neighbour's art: gate 6 would read that as the defect it was drawn to repair.
+ * than an art edge — and a human correcting exactly those defects trips them by
+ * construction. The commonest correction is a contact cut, where the fix is to
+ * draw the hold's real edge, and the hold's real edge is ON the neighbour's art:
+ * gate 6 would read that as the defect it was drawn to repair.
+ *
+ * Gate 1 is exempt for a different and sharper reason — a TOLERANCE MISMATCH.
+ * Its threshold is the 1.6 board px simplification tolerance, which on
+ * kilter/1-28 is 0.052 radii, while the rule a correction is actually held to —
+ * by the backend on write and by the merge on read — is `CENTRE_TOLERANCE_RADII`
+ * at 0.25 radii. Five times looser. A legal correction whose bolt sits 0.1 radii
+ * outside the drawn edge therefore passes the editor, the export and the merge
+ * and then reds this gate with no remedy available: the hold can neither be
+ * corrected nor left alone. The 0.25 rule binds instead on the committed ring,
+ * in `overrides.test.ts`, which is where it can actually be satisfied.
+ *
  * `ledInner` rings are exempt from all seven — a base-plate boundary is not a
  * silhouette and none of these measures mean anything about one — and get their
  * own structural checks in `overrides.test.ts`.

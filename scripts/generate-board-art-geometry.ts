@@ -1753,9 +1753,14 @@ async function measureConfig(
   // gate 4's pin moves with the correction rather than against it. The header
   // says how many, so a shard diff is self-explanatory; a config with no
   // overrides gets no extra text and stays byte-identical.
+  //
+  // ROWS, not placements, and the wording says so: one hold carrying both a
+  // silhouette and an LED-inner annotation is two rows in the table, two entries
+  // in the JSON and two lines of shard diff, so counting it as one would
+  // under-report exactly what the reader is looking at.
   const overrideCount = overrides.outlines.size + overrides.ledInner.size;
   const summaryWithOverrides =
-    overrideCount === 0 ? summary : `${summary}; ${overrideCount} hand-corrected override(s) applied`;
+    overrideCount === 0 ? summary : `${summary}; ${overrideCount} hand-corrected override row(s) applied`;
 
   return {
     key,

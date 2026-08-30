@@ -350,8 +350,9 @@ export default defineConfig({
       // Writes the `hold_outline_overrides` rows out to the committed JSON files
       // `generate:board-art-geometry` merges into the shards. Reads a database,
       // so it is run by hand by whoever corrected the outline — then
-      // `vp run generate:board-art-geometry`, then commit both. Pass
-      // `-- --check` for a drift check that writes nothing.
+      // `vp run generate:board-art-geometry`, then commit both. The shard drift
+      // gate (`vp run check:board-art-geometry`) is what enforces the pair; this
+      // task has no check mode of its own.
       'db:export-outline-overrides': {
         command:
           'bun run --filter=@boardsesh/db db:export-outline-overrides && vp fmt packages/shared/board-art-geometry/overrides',

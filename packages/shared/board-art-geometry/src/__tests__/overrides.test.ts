@@ -3,7 +3,13 @@
 import { describe, expect, it } from 'vitest';
 import { listBoardArtGeometryKeys, loadBoardArtGeometry } from '../loader';
 import { CENTRE_TOLERANCE_RADII, distanceToRing, isValidOutlineRing, pointInRing } from '../ring';
-import { overriddenShardKeys, overridesForKey, shardBoardForKey } from './gate-measures';
+import {
+  SIMPLIFY_EPSILON,
+  overriddenPlacementIds,
+  overriddenShardKeys,
+  overridesForKey,
+  shardBoardForKey,
+} from './gate-measures';
 
 /**
  * The hand-corrected outlines, checked against the shards they were merged into.
@@ -97,6 +103,70 @@ describe('committed outline overrides', () => {
   });
 });
 
+describe('the gate-1 exemption', () => {
+  /**
+   * The ring that proves the exemption is load-bearing rather than decorative.
+   *
+   * A correction is admitted by the editor, the exporter and the merge when its
+   * placement centre is inside the ring or outside by at most
+   * `CENTRE_TOLERANCE_RADII` (0.25 radii). Gate 1 asks the same question at
+   * `SIMPLIFY_EPSILON` — 1.6 BOARD PIXELS, which is 0.052 radii on kilter/1-28.
+   * Anything in the gap between those two numbers is a legal correction that
+   * gate 1 reds, and the author has nowhere to go: redrawing it inside 0.052
+   * radii means drawing a different hold.
+   *
+   * A square one radius on a side, pushed until its nearest edge is 0.1 radii
+   * from the centre, sits squarely in that gap.
+   */
+  const OUTSIDE_BY_A_TENTH_RADIUS = [-1, 0.1, 1, 0.1, 1, 2.1, -1, 2.1];
+
+  it('covers a ring the write path admits but gate 1 would reject', () => {
+    expect(pointInRing(OUTSIDE_BY_A_TENTH_RADIUS, 0, 0)).toBe(false);
+    const missBy = distanceToRing(OUTSIDE_BY_A_TENTH_RADIUS, 0, 0);
+    // Admitted on write, on export and on merge...
+    expect(missBy).toBeCloseTo(0.1, 6);
+    expect(missBy).toBeLessThanOrEqual(CENTRE_TOLERANCE_RADII);
+    expect(isValidOutlineRing(OUTSIDE_BY_A_TENTH_RADIUS)).toBe(true);
+
+    // ...and rejected by gate 1, whose threshold is the simplification tolerance
+    // converted into this placement's radius units. Every kilter/1-28 placement
+    // is well over 1.6 board px in radius, so 0.1 radii is over the line on all
+    // of them: the conflict is not an artefact of one hold's size.
+    const board = shardBoardForKey('kilter/1-28');
+    const gate1ThresholdRadii = board.placements.map((placement) => SIMPLIFY_EPSILON / placement.r);
+    expect(Math.max(...gate1ThresholdRadii)).toBeLessThan(0.1);
+    expect(Math.max(...gate1ThresholdRadii)).toBeLessThan(CENTRE_TOLERANCE_RADII);
+  });
+
+  it('exempts exactly the placements whose silhouette was drawn by hand', () => {
+    // The wiring, in both directions. A shard with no committed corrections
+    // exempts nothing — every traced outline still faces all seven gates, which
+    // is why the committed shards are unchanged by this pipeline existing. And a
+    // shard that has them exempts those placements and no others: an over-broad
+    // exemption would quietly switch the gates off for a whole board.
+    for (const key of listBoardArtGeometryKeys()) {
+      const committed = Object.keys(overridesForKey(key)?.outlines ?? {})
+        .map(Number)
+        .sort((left, right) => left - right);
+      const exempt = [...overriddenPlacementIds(key)].sort((left, right) => left - right);
+      expect([key, exempt]).toEqual([key, committed]);
+    }
+  });
+
+  it('never exempts a placement for an LED annotation alone', () => {
+    // `ledInner` rings are not silhouettes and never enter `outlines`, so they
+    // must not buy the hold's traced silhouette an exemption it did not earn.
+    for (const key of OVERRIDE_KEYS) {
+      const file = overridesForKey(key);
+      const ledOnly = Object.keys(file?.ledInner ?? {}).filter(
+        (placementText) => (file?.outlines ?? {})[placementText] === undefined,
+      );
+      const exempt = overriddenPlacementIds(key);
+      expect([key, ledOnly.filter((placementText) => exempt.has(Number(placementText)))]).toEqual([key, []]);
+    }
+  });
+});
+
 describe('overrides merged into the shards', () => {
   it('put every corrected silhouette in the shard verbatim', () => {
     const mismatched: string[] = [];
@@ -129,6 +199,25 @@ describe('overrides merged into the shards', () => {
       }
     }
     expect(mismatched).toEqual([]);
+  });
+
+  it('give every LED-inner annotation a silhouette to sit inside', () => {
+    // `ledInner` is defined as the silhouette MINUS this polygon, so an entry
+    // with no `outlines` entry beside it in the SAME shard describes a lit
+    // region of nothing. It can happen honestly: someone annotates a base plate
+    // on a placement the tracer never traced and does not also draw the
+    // silhouette, and the shard then ships an annotation no renderer can use.
+    const orphaned: string[] = [];
+    for (const key of OVERRIDE_KEYS) {
+      const geometry = loadBoardArtGeometry(shardBoardForKey(key));
+      if (geometry === null) throw new Error(`${key}: shard did not load`);
+      for (const entry of COMMITTED.filter((candidate) => candidate.key === key && candidate.table === 'ledInner')) {
+        if (geometry.outlines[entry.placementId] === undefined) {
+          orphaned.push(`${key} ledInner ${entry.placementId}: no silhouette in the shard`);
+        }
+      }
+    }
+    expect(orphaned).toEqual([]);
   });
 
   it('carry no ledInner table a committed override did not put there', () => {
