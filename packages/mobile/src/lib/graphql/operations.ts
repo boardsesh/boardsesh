@@ -25,6 +25,11 @@ import type {
   SessionGradeDistributionItem,
   SessionHealthExport,
   UserSearchConnection,
+  HoldOutlineConfigInput,
+  HoldOutlineKind,
+  PlacementOutline,
+  UpsertHoldOutlineOverrideInput,
+  DeleteHoldOutlineOverrideInput,
 } from '@boardsesh/shared-schema';
 import type { SubscriptionQueueItem } from '../queue-conversion';
 
@@ -1714,4 +1719,121 @@ export type RemoveFavoriteMutationVariables = {
 
 export type RemoveFavoriteMutationResponse = {
   removeFavorite: boolean;
+};
+
+// ============================================
+// Hold Outline Overrides (admin outline editor)
+// ============================================
+
+/**
+ * The viewer's admin flag, asked for on its own rather than added to
+ * `GET_PROFILE`.
+ *
+ * `UserProfile.isAdmin` ships in a backend deploy that lands AFTER this JS does
+ * (mobile updates over the air, the backend on its own cadence). Folded into the
+ * profile document, an unknown field would fail the whole query and blank the
+ * You tab for everyone until the backend caught up. On its own it fails alone,
+ * and the hook reading it falls closed to "not an admin".
+ */
+export const GET_PROFILE_ADMIN_FLAG = gql`
+  query ProfileAdminFlag {
+    profile {
+      id
+      isAdmin
+    }
+  }
+`;
+
+export type GetProfileAdminFlagQueryResponse = {
+  profile: { id: string; isAdmin: boolean } | null;
+};
+
+export const GET_HOLD_OUTLINES = gql`
+  query HoldOutlines($input: HoldOutlineConfigInput!) {
+    holdOutlines(input: $input) {
+      boardName
+      layoutId
+      sizeId
+      shardOutlines {
+        placementId
+        outline
+      }
+      overrides {
+        placementId
+        kind
+        outline
+        note
+        authorId
+        authorDisplayName
+        updatedAt
+      }
+    }
+  }
+`;
+
+export type HoldOutlinesQueryVariables = {
+  input: HoldOutlineConfigInput;
+};
+
+/**
+ * Hand-written response type: `packages/mobile` is deliberately outside the
+ * codegen globs, so every operation in this file declares the exact selection it
+ * asks for. Narrower than the schema's `BoardHoldOutlines` — the config echo is
+ * dropped from the override rows because the query already knows it.
+ */
+export type HoldOutlinesQueryResponse = {
+  holdOutlines: {
+    boardName: string;
+    layoutId: number;
+    sizeId: number;
+    shardOutlines: PlacementOutline[];
+    overrides: HoldOutlineOverrideRow[];
+  };
+};
+
+/** One override as this document selects it. */
+export type HoldOutlineOverrideRow = {
+  placementId: number;
+  kind: HoldOutlineKind;
+  outline: number[];
+  note: string | null;
+  authorId: string | null;
+  authorDisplayName: string | null;
+  updatedAt: string;
+};
+
+export const UPSERT_HOLD_OUTLINE_OVERRIDE = gql`
+  mutation UpsertHoldOutlineOverride($input: UpsertHoldOutlineOverrideInput!) {
+    upsertHoldOutlineOverride(input: $input) {
+      placementId
+      kind
+      outline
+      note
+      authorId
+      authorDisplayName
+      updatedAt
+    }
+  }
+`;
+
+export type UpsertHoldOutlineOverrideMutationVariables = {
+  input: UpsertHoldOutlineOverrideInput;
+};
+
+export type UpsertHoldOutlineOverrideMutationResponse = {
+  upsertHoldOutlineOverride: HoldOutlineOverrideRow;
+};
+
+export const DELETE_HOLD_OUTLINE_OVERRIDE = gql`
+  mutation DeleteHoldOutlineOverride($input: DeleteHoldOutlineOverrideInput!) {
+    deleteHoldOutlineOverride(input: $input)
+  }
+`;
+
+export type DeleteHoldOutlineOverrideMutationVariables = {
+  input: DeleteHoldOutlineOverrideInput;
+};
+
+export type DeleteHoldOutlineOverrideMutationResponse = {
+  deleteHoldOutlineOverride: boolean;
 };

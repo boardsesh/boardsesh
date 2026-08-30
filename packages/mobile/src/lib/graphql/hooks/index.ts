@@ -17,6 +17,8 @@ import type {
   GrantGymWriteAccessInput,
   RevokeGymWriteAccessInput,
   RequestGymClaimInput,
+  UpsertHoldOutlineOverrideInput,
+  DeleteHoldOutlineOverrideInput,
 } from '@boardsesh/shared-schema';
 import {
   SIMILAR_CLIMBS_QUERY,
@@ -126,6 +128,14 @@ import {
   type EndSessionMutationResponse,
   type ToggleFavoriteMutationVariables,
   type ToggleFavoriteMutationResponse,
+  GET_PROFILE_ADMIN_FLAG,
+  GET_HOLD_OUTLINES,
+  UPSERT_HOLD_OUTLINE_OVERRIDE,
+  DELETE_HOLD_OUTLINE_OVERRIDE,
+  type GetProfileAdminFlagQueryResponse,
+  type HoldOutlinesQueryResponse,
+  type UpsertHoldOutlineOverrideMutationResponse,
+  type DeleteHoldOutlineOverrideMutationResponse,
 } from '../operations';
 
 type ToggleFavoriteVariables = ToggleFavoriteMutationVariables & {
@@ -1395,3 +1405,109 @@ export {
   useSetIntegrationAutoSync,
   useSyncSessionToIntegration,
 } from './use-integrations';
+
+// ============================================
+// Hold Outline Overrides (admin outline editor)
+// ============================================
+
+/**
+ * Is the viewer an admin? Its own query document, not a field on `useProfile`.
+ *
+ * `UserProfile.isAdmin` reaches production in a backend deploy that lands after
+ * this JS does, so asking for it inside `GET_PROFILE` would fail that whole
+ * query — and blank the You tab — for every user until the two lined up. Here a
+ * miss is contained: the query errors, `data` stays undefined, and the flag
+ * reads false. Fail-closed is the right default for an admin gate anyway.
+ */
+export function useIsAdmin(options?: { enabled?: boolean }): { isAdmin: boolean; isLoading: boolean } {
+  const query = useQuery({
+    queryKey: ['profileAdminFlag'],
+    queryFn: () => getHttpClient().request<GetProfileAdminFlagQueryResponse>(GET_PROFILE_ADMIN_FLAG),
+    select: (data) => data.profile?.isAdmin ?? false,
+    enabled: options?.enabled ?? true,
+    // One retry only: an old backend rejects this document every time, and the
+    // gate should settle to "no" quickly rather than spin.
+    retry: 1,
+  });
+  return { isAdmin: query.data ?? false, isLoading: query.isLoading };
+}
+
+export type HoldOutlineConfigKey = { boardName: string; layoutId: number; sizeId: number };
+
+/** Query key both the outline query and its mutations invalidate against. */
+function holdOutlinesQueryKey(config: HoldOutlineConfigKey) {
+  return ['holdOutlines', config.boardName, config.layoutId, config.sizeId] as const;
+}
+
+/**
+ * The traced silhouettes the deployed shard ships for one board config, plus
+ * every live override of every kind. The editor draws both — the shard as what
+ * the tracer produced, the overrides as what a human corrected — so they arrive
+ * side by side rather than merged.
+ */
+export function useHoldOutlines(config: HoldOutlineConfigKey | null, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: config ? holdOutlinesQueryKey(config) : ['holdOutlines', null],
+    queryFn: () =>
+      getHttpClient().request<HoldOutlinesQueryResponse>(GET_HOLD_OUTLINES, {
+        input: { boardName: config?.boardName, layoutId: config?.layoutId, sizeId: config?.sizeId },
+      }),
+    select: (data) => data.holdOutlines,
+    enabled: (options?.enabled ?? true) && config != null,
+  });
+}
+
+/**
+ * Store a hand-drawn ring for one placement and kind. The server re-validates
+ * the ring (shape, bounds, and that it covers the placement centre) and rejects
+ * anything it doesn't like, so the caller has to surface the failure rather than
+ * assume the write landed.
+ */
+export function useUpsertHoldOutlineOverride() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: UpsertHoldOutlineOverrideInput) => {
+      const response = await getHttpClient().request<UpsertHoldOutlineOverrideMutationResponse>(
+        UPSERT_HOLD_OUTLINE_OVERRIDE,
+        { input },
+      );
+      return response.upsertHoldOutlineOverride;
+    },
+    onSuccess: (_row, input) => {
+      void queryClient.invalidateQueries({
+        queryKey: holdOutlinesQueryKey({
+          boardName: input.boardName,
+          layoutId: input.layoutId,
+          sizeId: input.sizeId,
+        }),
+      });
+    },
+  });
+}
+
+/**
+ * Drop one placement's override of one kind, reverting the renderer to whatever
+ * the shard traced. Dropping a silhouette leaves any LED_INNER annotation
+ * standing, and vice versa — the server keys on both.
+ */
+export function useDeleteHoldOutlineOverride() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: DeleteHoldOutlineOverrideInput) => {
+      const response = await getHttpClient().request<DeleteHoldOutlineOverrideMutationResponse>(
+        DELETE_HOLD_OUTLINE_OVERRIDE,
+        { input },
+      );
+      return response.deleteHoldOutlineOverride;
+    },
+    onSuccess: (_deleted, input) => {
+      void queryClient.invalidateQueries({
+        queryKey: holdOutlinesQueryKey({
+          boardName: input.boardName,
+          layoutId: input.layoutId,
+          sizeId: input.sizeId,
+        }),
+      });
+    },
+  });
+}
