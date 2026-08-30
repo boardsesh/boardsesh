@@ -69,9 +69,31 @@ void describe('postgres client', () => {
     }
 
     void it('defaults to the values that were hard-coded before the knobs existed', async () => {
-      const options = await poolOptionsWith({ DB_POOL_MAX: undefined, DB_POOL_IDLE_TIMEOUT_S: undefined });
+      const options = await poolOptionsWith({
+        DB_POOL_MAX: undefined,
+        DB_POOL_IDLE_TIMEOUT_S: undefined,
+        VERCEL: undefined,
+      });
       assert.equal(options.max, 10);
       assert.equal(options.idle_timeout, 30);
+    });
+
+    void it('shrinks the defaults on Vercel, where instance count is the term that grows', async () => {
+      // A crawl burst scales lambda count; instances × held-idle connections
+      // exhausted the shared max_connections on 2026-08-29 (BOARDSESH-FS).
+      const options = await poolOptionsWith({
+        DB_POOL_MAX: undefined,
+        DB_POOL_IDLE_TIMEOUT_S: undefined,
+        VERCEL: '1',
+      });
+      assert.equal(options.max, 3);
+      assert.equal(options.idle_timeout, 5);
+    });
+
+    void it('lets explicit knobs override the serverless defaults', async () => {
+      const options = await poolOptionsWith({ DB_POOL_MAX: '6', DB_POOL_IDLE_TIMEOUT_S: '20', VERCEL: '1' });
+      assert.equal(options.max, 6);
+      assert.equal(options.idle_timeout, 20);
     });
 
     void it('honours DB_POOL_MAX and DB_POOL_IDLE_TIMEOUT_S', async () => {
