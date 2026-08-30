@@ -221,6 +221,43 @@ impl Default for GlyphTuning {
     }
 }
 
+/// The LED base plate: the ring of plate between the hold's silhouette and the
+/// hold proper, on the placements whose art has a traced inner boundary
+/// (`HoldData::led_inner`). That ring is the part a real board lights, so it is
+/// painted in the role colour at close to full strength while the hold body
+/// inside it keeps its art.
+///
+/// Every field defaults, and a hold without a usable `led_inner` ring is drawn
+/// exactly as it was before this struct existed — the whole silhouette lit —
+/// so a board with no annotated plates renders unchanged.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+#[serde(default)]
+pub struct LedBaseTuning {
+    /// Alpha of the role colour on the plate ring. `<= 0` draws no plate, which
+    /// also restores the pre-plate fill and glow on every hold.
+    pub opacity: f32,
+    /// The role fill's opacity inside the plate ring is scaled by this, so the
+    /// hold body stays readable under the lit rim. Only applies to holds that
+    /// have a plate ring; `mark-style: glow` draws no fill at all and is
+    /// unaffected either way.
+    pub interior_fill_scale: f32,
+    /// Measure the outward glow from the plate ring rather than the whole
+    /// silhouette, so the glow reads as coming off the lit rim. Identical
+    /// output wherever the ring reaches the silhouette edge (the usual case);
+    /// it only matters where the plate does not, and there the glow fades.
+    pub glow_from_base: bool,
+}
+
+impl Default for LedBaseTuning {
+    fn default() -> Self {
+        Self {
+            opacity: 0.92,
+            interior_fill_scale: 0.6,
+            glow_from_base: true,
+        }
+    }
+}
+
 /// A dark disc over every LED the board art already paints bright, so an
 /// unlit hold's white pip cannot be mistaken for a mark. `None` draws nothing.
 #[derive(Debug, Deserialize, Clone, PartialEq)]
@@ -287,6 +324,8 @@ pub struct RenderConfig {
     pub glyph: GlyphTuning,
     #[serde(default)]
     pub led_cover: Option<LedCover>,
+    #[serde(default)]
+    pub led_base: LedBaseTuning,
 }
 
 #[derive(Deserialize, Clone, Default)]
@@ -302,6 +341,16 @@ pub struct HoldData {
     /// three points or non-finite → the hold is drawn as a circle of radius `r`.
     #[serde(default)]
     pub outline: Option<Vec<f32>>,
+    /// The INNER boundary of this hold's LED base plate — the hold proper —
+    /// in the same flat, implicitly-closed, `r`-relative form as `outline`.
+    /// The plate ring the renderer lights is `outline` MINUS this polygon.
+    ///
+    /// Optional and rare: it exists only where somebody has traced the plate.
+    /// Absent, malformed, or not strictly inside the silhouette's box → the
+    /// whole silhouette is lit, exactly as before this field existed. It never
+    /// affects whether `outline` itself is used.
+    #[serde(default)]
+    pub led_inner: Option<Vec<f32>>,
     /// `[dx, dy]` in units of `r` from the placement centre to the bright LED
     /// blob the board art paints for this placement. Present only where the art
     /// paints it bright — lit or not.

@@ -311,6 +311,7 @@ mod tests {
                     cy: 300.0,
                     r: 20.0,
                     outline: None,
+                    led_inner: None,
                     led: None,
                     silhouette_lightness: None,
                 },
@@ -321,6 +322,7 @@ mod tests {
                     cy: 600.0,
                     r: 20.0,
                     outline: None,
+                    led_inner: None,
                     led: None,
                     silhouette_lightness: None,
                 },
@@ -331,6 +333,7 @@ mod tests {
                     cy: 900.0,
                     r: 20.0,
                     outline: None,
+                    led_inner: None,
                     led: None,
                     silhouette_lightness: None,
                 },
@@ -345,6 +348,7 @@ mod tests {
             glyphs: Default::default(),
             glyph: Default::default(),
             led_cover: None,
+            led_base: Default::default(),
         }
     }
 

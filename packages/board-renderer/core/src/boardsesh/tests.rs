@@ -4,11 +4,13 @@ use super::*;
 use crate::renderer::render_overlay;
 use crate::types::{
     BoardRenderMode, GlowFalloff, GlowTuning, GlyphMode, GlyphTuning, HoldMarkerShape, HoldRole,
-    HoldStateInfo, LedCover, MarkStyle, Veil,
+    HoldStateInfo, LedBaseTuning, LedCover, MarkStyle, Veil,
 };
 
 const SIZE: u32 = 400;
 const SQUARE: [f32; 8] = [-1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0];
+/// The hold proper inside `SQUARE`: leaves a 10 px plate ring all the way round.
+const SQUARE_INNER: [f32; 8] = [-0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5];
 /// 12 × 12 px blob on a 20 px radius: longest 12 < 18 → boost 1.5.
 const TINY: [f32; 8] = [-0.3, -0.3, 0.3, -0.3, 0.3, 0.3, -0.3, 0.3];
 /// 4 px wide sliver: shortest 4 → extent cap 7.2 px.
@@ -31,6 +33,7 @@ fn hold(id: u32, cx: f32, cy: f32, outline: Option<&[f32]>) -> HoldData {
         cy,
         r: 20.0,
         outline: outline.map(|points| points.to_vec()),
+        led_inner: None,
         led: None,
         silhouette_lightness: None,
     }
@@ -70,6 +73,7 @@ fn config(frames: &str) -> RenderConfig {
         glyphs: GlyphMode::Off,
         glyph: GlyphTuning::default(),
         led_cover: None,
+        led_base: LedBaseTuning::default(),
     }
 }
 
@@ -131,7 +135,8 @@ fn full_boardsesh_json_parses_with_every_field() {
       "glyphs": "role",
       "glyph": {"line_width_fraction": 0.11},
       "led_cover": {},
-      "holds": [{"id": 1, "cx": 100, "cy": 100, "r": 20, "outline": [-1,-1,1,-1,1,1,-1,1], "led": [0.5, 0.0], "silhouette_lightness": 0.3},
+      "led_base": {"opacity": 0.8},
+      "holds": [{"id": 1, "cx": 100, "cy": 100, "r": 20, "outline": [-1,-1,1,-1,1,1,-1,1], "led_inner": [-0.5,-0.5,0.5,-0.5,0.5,0.5,-0.5,0.5], "led": [0.5, 0.0], "silhouette_lightness": 0.3},
                 {"id": 2, "cx": 300, "cy": 100, "r": 20, "mirroredHoldId": 1}],
       "hold_state_map": {"43": {"color": "#00FFFF", "role": "hand"}, "44": {"color": "#FF00FF", "role": "FINISH"}}
     }"##;
@@ -145,7 +150,22 @@ fn full_boardsesh_json_parses_with_every_field() {
     assert_eq!(parsed.fill.opacity, 0.7);
     assert_eq!(parsed.glyphs, GlyphMode::Role);
     assert_eq!(parsed.led_cover.as_ref().unwrap().radius_fraction, 0.1);
+    assert_eq!(parsed.led_base.opacity, 0.8);
+    assert_eq!(parsed.led_base.interior_fill_scale, 0.6); // untouched default
+    assert!(parsed.led_base.glow_from_base);
     assert_eq!(parsed.holds[0].led, Some([0.5, 0.0]));
+    assert_eq!(
+        parsed.holds[0].led_inner.as_deref(),
+        Some([-0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5].as_slice())
+    );
+    // A config from a JS bundle that predates the plate parses to the defaults
+    // rather than failing, the way every Boardsesh field before it does.
+    let older: RenderConfig = serde_json::from_str(
+        r##"{"board_width":10,"board_height":10,"output_width":10,"frames":"","thumbnail":false,"holds":[],"hold_state_map":{}}"##,
+    )
+    .unwrap();
+    assert_eq!(older.led_base, LedBaseTuning::default());
+    assert!(older.holds.is_empty());
     assert_eq!(parsed.hold_state_map[&43].role, HoldRole::Hand);
     assert_eq!(parsed.hold_state_map[&44].role, HoldRole::Finish);
     assert!(render_overlay(&parsed).is_ok());
@@ -367,6 +387,278 @@ fn ring_fallback_on_missing_or_malformed_outline() {
     assert_eq!(alpha(&circle, 300, 100), 0);
     assert!(alpha(&circle, 322, 100) > 200);
     assert_eq!(alpha(&circle, 336, 100), 0);
+}
+
+/// Hold 1's square silhouette spans 80..120 px; `SQUARE_INNER` leaves a 10 px
+/// plate ring, so (85, 100) is on the plate and (100, 100) is the hold body.
+fn plated(frames: &str) -> RenderConfig {
+    let mut cfg = config(frames);
+    cfg.holds[0].led_inner = Some(SQUARE_INNER.to_vec());
+    cfg
+}
+
+#[test]
+fn the_led_base_plate_lights_the_rim_and_leaves_the_hold_body_alone() {
+    let plain = render(&config("p1r42"));
+    let plate = render(&plated("p1r42"));
+
+    assert_eq!(alpha(&plain, 100, 100), 0, "glow alone never paints a hold");
+    assert_eq!(
+        alpha(&plate, 100, 100),
+        0,
+        "the hold proper stays the board's own art"
+    );
+    let rim = pixel(&plate, 85, 100);
+    assert!(
+        rim[3] > 230,
+        "the plate ring is lit at nearly full strength, got {rim:?}"
+    );
+    assert_eq!(
+        [rim[0], rim[1], rim[2]],
+        [0, 235, 0],
+        "the plate ring carries the role colour (#00FF00 at 0.92)"
+    );
+    // The plate reaches the silhouette edge all the way round, so the glow
+    // outside is the one the whole silhouette produced.
+    for x in [122, 128, 133] {
+        assert_eq!(
+            alpha(&plate, x, 100),
+            alpha(&plain, x, 100),
+            "glow at x={x} moved"
+        );
+    }
+}
+
+#[test]
+fn a_malformed_or_oversized_led_inner_is_ignored_rather_than_drawn() {
+    let plain = render(&config("p1r42"));
+    let mut cfg = config("p1r42");
+    for (label, ring) in [
+        ("odd-length", vec![0.1, 0.2, 0.3]),
+        ("two points", vec![-0.5, -0.5, 0.5, 0.5]),
+        ("non-finite", vec![f32::NAN, -0.5, 0.5, -0.5, 0.5, 0.5]),
+        // Exactly the silhouette: an even-odd fill of it would light nothing,
+        // and a hold that reads as all-plate is not a plate.
+        ("the silhouette itself", SQUARE.to_vec()),
+        // Beside the hold, not inside it: even-odd would light a patch of wall.
+        (
+            "outside the silhouette",
+            vec![2.0, -0.5, 3.0, -0.5, 3.0, 0.5, 2.0, 0.5],
+        ),
+        // 0.005r inside the edge: a legal polygon and a 0.1 px band. Accepting
+        // it would dim the hold body under a rim nothing can see.
+        (
+            "a sub-pixel hairline",
+            vec![-0.995, -0.995, 0.995, -0.995, 0.995, 0.995, -0.995, 0.995],
+        ),
+    ] {
+        cfg.holds[0].led_inner = Some(ring);
+        assert_eq!(render(&cfg), plain, "{label} led_inner changed the drawing");
+    }
+    // The silhouette itself is never in doubt: a bad plate ring must not push
+    // the hold onto the circle fallback.
+    cfg.holds[0].led_inner = Some(vec![f32::INFINITY; 8]);
+    cfg.holds[0].outline = None;
+    assert_ne!(render(&cfg), plain, "hold 1 without an outline is a circle");
+}
+
+#[test]
+fn the_plate_is_opt_out_and_boards_without_one_are_untouched() {
+    // `opacity: 0` has to be an OFF SWITCH for the whole treatment, not just
+    // for the paint: the fill's dim and the glow's source read the same
+    // setting. Checked under every mark style that draws something, because
+    // the fill dim is invisible under `glow` and the glow source is invisible
+    // under `fill` — the bug this pins showed up only in `fill`, where the
+    // hold came out 40% darker with no rim to explain it.
+    for style in [MarkStyle::Glow, MarkStyle::GlowFill, MarkStyle::Fill] {
+        let mut plain = config("p1r42");
+        plain.mark_style = Some(style);
+        let plain_render = render(&plain);
+        let mut off = plated("p1r42");
+        off.mark_style = Some(style);
+        for (label, opacity) in [("zero", 0.0), ("NaN", f32::NAN)] {
+            off.led_base.opacity = opacity;
+            assert_eq!(
+                render(&off),
+                plain_render,
+                "{label} opacity still moved the drawing under {style:?}"
+            );
+        }
+    }
+
+    // Hold 2 has no outline and hold 3 has one but no plate: neither can be
+    // moved by the plate settings, whatever they say.
+    let mut tuned = config("p2r43p3r44");
+    tuned.led_base = LedBaseTuning {
+        opacity: 1.0,
+        interior_fill_scale: 0.1,
+        glow_from_base: true,
+    };
+    assert_eq!(render(&tuned), render(&config("p2r43p3r44")));
+
+    let mut none = plated("p1r42");
+    none.mark_style = Some(MarkStyle::NoMark);
+    assert_eq!(
+        total_alpha(&render(&none)),
+        0,
+        "`none` means no mark, plate included"
+    );
+}
+
+#[test]
+fn the_fill_dims_under_the_plate_and_only_on_plated_holds() {
+    let mut plain = config("p1r42p3r44");
+    plain.mark_style = Some(MarkStyle::Fill);
+    let mut plate = plated("p1r42p3r44");
+    plate.mark_style = Some(MarkStyle::Fill);
+    let plain_render = render(&plain);
+    let plate_render = render(&plate);
+    assert!(
+        alpha(&plate_render, 100, 100) < alpha(&plain_render, 100, 100),
+        "the plated hold's body is dimmed under its lit rim"
+    );
+    assert_eq!(
+        alpha(&plate_render, 100, 300),
+        alpha(&plain_render, 100, 300),
+        "the unplated hold keeps the fill it always had"
+    );
+    plate.led_base.interior_fill_scale = 1.0;
+    assert_eq!(
+        alpha(&render(&plate), 100, 100),
+        alpha(&plain_render, 100, 100),
+        "scale 1 is the undimmed fill"
+    );
+}
+
+#[test]
+fn the_glow_comes_off_the_plate_rather_than_the_whole_silhouette() {
+    // A plate along the bottom edge only: y 110..120 px of the 80..120 hold.
+    const BOTTOM_ONLY: [f32; 8] = [-1.0, -1.0, 1.0, -1.0, 1.0, 0.5, -1.0, 0.5];
+    let mut cfg = config("p1r42");
+    cfg.holds[0].led_inner = Some(BOTTOM_ONLY.to_vec());
+    let from_base = render(&cfg);
+    cfg.led_base.glow_from_base = false;
+    let from_silhouette = render(&cfg);
+
+    assert_eq!(
+        alpha(&from_silhouette, 100, 78),
+        alpha(&from_silhouette, 100, 121),
+        "the whole silhouette glows evenly above and below"
+    );
+    assert_eq!(
+        alpha(&from_base, 100, 78),
+        0,
+        "no plate at the top edge, so no glow above the hold"
+    );
+    assert!(
+        alpha(&from_base, 100, 121) > 200,
+        "the plate is at the bottom edge, so the glow is"
+    );
+    assert_eq!(
+        alpha(&from_base, 100, 121),
+        alpha(&from_silhouette, 100, 121),
+        "where the plate reaches the edge the glow is unchanged"
+    );
+}
+
+#[test]
+fn a_plate_too_thin_to_draw_is_rejected_by_every_consumer_together() {
+    // 0.005r inside the edge: sub-pixel at r = 20. The paint, the fill's dim
+    // and the glow's source have to agree it is not a plate — a plate the fill
+    // dims for and the paint cannot draw is a hold that just went darker.
+    // Checked under GlowFill, the thumbnail default, where all three run.
+    const HAIRLINE: [f32; 8] = [-0.995, -0.995, 0.995, -0.995, 0.995, 0.995, -0.995, 0.995];
+    for style in [MarkStyle::Glow, MarkStyle::GlowFill, MarkStyle::Fill] {
+        let mut plain = config("p1r42");
+        plain.mark_style = Some(style);
+        let mut hairline = config("p1r42");
+        hairline.mark_style = Some(style);
+        hairline.holds[0].led_inner = Some(HAIRLINE.to_vec());
+        assert_eq!(
+            render(&hairline),
+            render(&plain),
+            "a sub-pixel plate moved the drawing under {style:?}"
+        );
+    }
+}
+
+/// A silhouette that is concave enough for its bounding box to contain bare
+/// wall: a C opening to the right, 80..120 px with the 100..120 half of its
+/// middle third bitten out.
+const HOOK: [f32; 16] = [
+    -1.0, -1.0, 1.0, -1.0, 1.0, -0.5, 0.0, -0.5, 0.0, 0.5, 1.0, 0.5, 1.0, 1.0, -1.0, 1.0,
+];
+
+/// Hold 1 wearing the hook silhouette. `RenderConfig` is not `Clone`, and each
+/// of these tests needs two renders to compare.
+fn hooked(led_inner: Option<&[f32]>) -> RenderConfig {
+    let mut cfg = config("p1r42");
+    cfg.holds[0].outline = Some(HOOK.to_vec());
+    cfg.holds[0].led_inner = led_inner.map(<[f32]>::to_vec);
+    cfg
+}
+
+#[test]
+fn a_ring_in_a_concave_silhouettes_hollow_never_lights_the_wall_inside_it() {
+    // The ring sits in the C's mouth: inside the silhouette's BOX, outside the
+    // silhouette. A box test alone accepts it, and an even-odd fill over two
+    // disjoint rings then fills the hollow — bare wall, painted the role
+    // colour, and seeded as glow sites on top.
+    const IN_THE_HOLLOW: [f32; 8] = [0.2, -0.3, 0.8, -0.3, 0.8, 0.3, 0.2, 0.3];
+    assert_eq!(
+        render(&hooked(Some(&IN_THE_HOLLOW))),
+        render(&hooked(None)),
+        "a ring in the hollow lit the wall inside the silhouette's box"
+    );
+}
+
+#[test]
+fn a_plate_whose_edge_crosses_the_hollow_is_clipped_to_the_silhouette() {
+    // Every vertex of this ring is inside the hook — both of the right-hand
+    // ones sit in the C's arms — so the vertex check passes it. Its right EDGE
+    // still runs straight across the mouth, and an unclipped even-odd fill
+    // paints the strip of wall the box covers there. Only the clip catches
+    // this one, which is why the clip is not just belt and braces.
+    const ACROSS_THE_MOUTH: [f32; 8] = [-0.9, -0.6, 0.9, -0.6, 0.9, 0.6, -0.9, 0.6];
+    let plain_render = render(&hooked(None));
+    let plated_render = render(&hooked(Some(&ACROSS_THE_MOUTH)));
+
+    // (110, 100) is r-relative (0.5, 0) — the middle of the C's mouth, and
+    // inside the ring's box. Wall. A plate can only ever take light AWAY from
+    // wall (the glow now comes off the rim, and the spine edge is not rim); it
+    // must never add any. Unclipped this pixel came out at the plate's own
+    // 0.92 role green.
+    assert!(
+        alpha(&plated_render, 110, 100) <= alpha(&plain_render, 110, 100),
+        "the plate painted the wall its ring crossed: {:?} over {:?}",
+        pixel(&plated_render, 110, 100),
+        pixel(&plain_render, 110, 100),
+    );
+    // (81, 100) is (-0.95, 0): silhouette, outside the ring — real plate.
+    assert!(
+        alpha(&plated_render, 81, 100) > 230,
+        "the plate itself still lights"
+    );
+}
+
+#[test]
+fn a_plate_inside_a_concave_silhouette_still_lights() {
+    // The same hook with a real plate: a box inside the C's spine, which the
+    // solid part of the silhouette contains at every y. The concavity guard
+    // has to reject the hollow without rejecting the shape.
+    const IN_THE_SPINE: [f32; 8] = [-0.8, -0.8, -0.2, -0.8, -0.2, 0.8, -0.8, 0.8];
+    let plated_render = render(&hooked(Some(&IN_THE_SPINE)));
+    // (82, 100) is r-relative (-0.9, 0): inside the spine, outside the ring.
+    assert!(
+        alpha(&plated_render, 82, 100) > 230,
+        "the plate on a concave silhouette is lit"
+    );
+    // (90, 100) is (-0.5, 0): inside the ring, so it is the hold body.
+    assert_eq!(
+        alpha(&plated_render, 90, 100),
+        0,
+        "the hold proper inside a concave plate stays the art"
+    );
 }
 
 #[test]
