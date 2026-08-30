@@ -101,6 +101,9 @@ vi.mock('../../../lib/create-climb-draft-store', () => ({
   saveDraft: vi.fn(async () => {}),
   clearDraft: vi.fn(async () => {}),
   createClimbDraftKey: () => 'draft-key',
+  createClimbEditDraftKey: (boardType: string, uuid: string) => `edit:${boardType}:${uuid}`,
+  createClimbForkDraftKey: (boardKey: string) => `fork:${boardKey}`,
+  isDraftStorageAvailable: () => true,
 }));
 
 import { useCreateClimbScreen } from '../use-create-climb-screen';

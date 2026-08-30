@@ -40,6 +40,7 @@ export function Button({
   loading = false,
   haptic = true,
   tintColor,
+  minHeight,
   role = 'default',
   testID,
   style,
@@ -89,7 +90,14 @@ export function Button({
       // A full-width button stretches to its row; an inline one hugs its content
       // (Paper's default). `alignSelf` mirrors the Compose `fillMaxWidth()` intent.
       style={[isFullWidth ? styles.fullWidth : styles.inline, style]}
-      contentStyle={{ paddingHorizontal: config.paddingHorizontal, paddingVertical: config.paddingVertical }}
+      // Paper sizes the button from its content row, so the touch-floor override
+      // belongs here (same role as the Compose `defaultMinSize`), not on the outer
+      // container — see `minHeight` in Button.types.ts.
+      contentStyle={{
+        paddingHorizontal: config.paddingHorizontal,
+        paddingVertical: config.paddingVertical,
+        ...(minHeight != null ? { minHeight } : {}),
+      }}
       labelStyle={{ fontSize: config.fontSize }}
     >
       {title}

@@ -16,6 +16,8 @@ import { CreateDrawerActionBar } from './CreateDrawerActionBar';
 import { CreateDrawerForm } from './CreateDrawerForm';
 import { OpenDraftsSection } from './OpenDraftsSection';
 import { DuplicateBanner } from './DuplicateBanner';
+import { InlineConfirmBanner } from './InlineConfirmBanner';
+import { useTranslation } from 'react-i18next';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
 
 type Controller = ReturnType<typeof useCreateClimbScreen>;
@@ -41,10 +43,19 @@ type CreateDrawerProps = {
   onViewDuplicate: (uuid: string) => void;
 };
 
-// Space the header + two-row action bar + handle + safe areas need, so the
-// board is sized to leave them on-screen at the peek (a rough reserve — the
-// peek snap itself is measured from the real above-fold height).
-const ABOVE_FOLD_CHROME = 300;
+// Space the header + action bar + draft-status line + handle + safe areas need,
+// so the board is sized to leave them on-screen at the peek (a rough reserve —
+// the peek snap itself is measured from the real above-fold height, so erring
+// high only costs a few dp of board).
+//
+// Raised from 300 by exactly what the status line costs the action bar: +32 for
+// its line box and padding, −8 from the action row's bottom padding, so +24. The
+// board shrinks by the same 24, which makes the peek height IDENTICAL to what it
+// was before the line existed — the status line is free at the peek, in every
+// state (the row reserves its height even when empty, so this doesn't drift as
+// you paint). Deliberately not rounded: a round number here would silently make
+// the peek taller and eat into an already-tight budget on a tall board.
+const ABOVE_FOLD_CHROME = 324;
 
 // The native sheet's drag grabber sits in the sheet chrome above the content;
 // reserve a small fixed amount for it in the peek snap-point (replaces the old
@@ -68,6 +79,7 @@ export function CreateDrawer({
   onViewDuplicate,
 }: CreateDrawerProps) {
   const { systemColors } = useTheme();
+  const { t } = useTranslation('climbs');
   const insets = useSafeAreaInsets();
   // Bottom terms use the WINDOW inset: this drawer is a route inside the climbs
   // tab, whose per-tab provider folds iOS 26 tab chrome the sheet covers into
@@ -78,7 +90,11 @@ export function CreateDrawer({
 
   // Measured above-fold height drives the peek snap-point (the native grabber is
   // a fixed reserve now, not a measured custom handle).
-  const [aboveFoldHeight, setAboveFoldHeight] = useState(0);
+  // Measured in two pieces, with the transient banners sitting BETWEEN them and
+  // measured by neither — see the note on the JSX below.
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const [boardBlockHeight, setBoardBlockHeight] = useState(0);
+  const aboveFoldHeight = headerHeight > 0 && boardBlockHeight > 0 ? headerHeight + boardBlockHeight : 0;
   // Live snap index, kept current via onChange so the re-snap below targets the
   // index the user is actually at (not a one-shot reset that breaks on rotation).
   const indexRef = useRef(0);
@@ -101,8 +117,11 @@ export function CreateDrawer({
   const setHeightIfChanged = (setter: (updater: (prev: number) => number) => void, measured: number) => {
     setter((prev) => (Math.abs(prev - measured) > 2 ? Math.round(measured) : prev));
   };
-  const handleAboveFoldLayout = useCallback((event: LayoutChangeEvent) => {
-    setHeightIfChanged(setAboveFoldHeight, event.nativeEvent.layout.height);
+  const handleHeaderLayout = useCallback((event: LayoutChangeEvent) => {
+    setHeightIfChanged(setHeaderHeight, event.nativeEvent.layout.height);
+  }, []);
+  const handleBoardBlockLayout = useCallback((event: LayoutChangeEvent) => {
+    setHeightIfChanged(setBoardBlockHeight, event.nativeEvent.layout.height);
   }, []);
 
   // native grabber reserve + content paddingTop + above-fold (header + board +
@@ -151,7 +170,7 @@ export function CreateDrawer({
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-        <View onLayout={handleAboveFoldLayout}>
+        <View onLayout={handleHeaderLayout} testID="create-drawer-measured-header">
           <CreateDrawerHeader
             name={controller.name}
             onChangeName={controller.setName}
@@ -163,22 +182,47 @@ export function CreateDrawer({
             bleConnecting={controller.bleConnecting}
             onToggleBle={controller.handleToggleBle}
           />
+        </View>
 
-          {controller.publishDuplicateError ? (
-            <DuplicateBanner
-              name={controller.publishDuplicateError.existingClimbName}
-              onView={
-                controller.publishDuplicateError.existingClimbUuid
-                  ? () => {
-                      const uuid = controller.publishDuplicateError?.existingClimbUuid;
-                      if (uuid) onViewDuplicate(uuid);
-                    }
-                  : undefined
-              }
-              onDismiss={controller.dismissDuplicateError}
-            />
-          ) : null}
+        {/* Transient, and deliberately measured by NEITHER block above or below.
+            The peek snap-point is derived from the measured above-fold height, so
+            anything that mounts inside a measured region moves `peekHeight` and
+            re-snaps the sheet — which collapsed an expanded drawer the instant a
+            banner appeared, hiding the very climb the banner is asking about. The
+            status row solved the same problem by reserving a constant line box;
+            these can't, because reserving ~100dp permanently for something rarely
+            on screen would cost more above-fold budget than the board can spare.
+            So they push content instead of resizing the sheet: the drawer stays
+            exactly where the climber put it. Pinned by "keeps the transient
+            banners out of the measured above-fold region" in
+            create-drawer-measured-region.test.tsx. */}
+        {controller.pendingNewClimb ? (
+          <InlineConfirmBanner
+            title={t('mobile.create.newClimb.confirm.title')}
+            message={t('mobile.create.newClimb.confirm.message')}
+            confirmLabel={t('mobile.create.newClimb.confirm.action')}
+            cancelLabel={t('createClimbForm.dismiss')}
+            onConfirm={controller.confirmNewClimb}
+            onCancel={controller.cancelNewClimb}
+          />
+        ) : null}
 
+        {controller.publishDuplicateError ? (
+          <DuplicateBanner
+            name={controller.publishDuplicateError.existingClimbName}
+            onView={
+              controller.publishDuplicateError.existingClimbUuid
+                ? () => {
+                    const uuid = controller.publishDuplicateError?.existingClimbUuid;
+                    if (uuid) onViewDuplicate(uuid);
+                  }
+                : undefined
+            }
+            onDismiss={controller.dismissDuplicateError}
+          />
+        ) : null}
+
+        <View onLayout={handleBoardBlockLayout} testID="create-drawer-measured-board-block">
           <View style={styles.boardSection}>
             <InteractiveCreateBoard
               boardName={board.boardName as BoardName}
@@ -205,7 +249,8 @@ export function CreateDrawer({
             canRedo={controller.canRedo}
             onUndo={controller.undo}
             onRedo={controller.redo}
-            onClear={controller.handleClear}
+            onClearHolds={controller.handleClearHolds}
+            onNewClimb={controller.handleNewClimb}
             frameCount={controller.frameCount}
             currentFrameIndex={controller.currentFrameIndex}
             onDuplicateFrame={controller.duplicateFrame}
@@ -216,6 +261,8 @@ export function CreateDrawer({
             onSetActive={controller.handleSetActive}
             saveState={controller.saveState}
             onSave={() => void controller.handleSave()}
+            publishBlocked={controller.publishBlocked}
+            draftStatus={controller.draftStatus}
           />
         </View>
 

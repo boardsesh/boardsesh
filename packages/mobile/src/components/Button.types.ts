@@ -40,6 +40,13 @@ export type ButtonProps = {
   loading?: boolean;
   haptic?: boolean;
   tintColor?: string;
+  /**
+   * Floor for the button's height, in dp. iOS already floors every button at the
+   * 44pt target; Compose derives its height from `contentPadding` alone, so a
+   * `small` filled button lands at 40 there. Pass this where the button sits in a
+   * row of 44dp controls and must not be the one under the touch floor.
+   */
+  minHeight?: number;
   /** See {@link ButtonSurface}. Per-button override of the surrounding provider. */
   over?: ButtonSurface;
   /** See {@link ButtonRole}. */

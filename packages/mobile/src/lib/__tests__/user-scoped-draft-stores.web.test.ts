@@ -33,6 +33,23 @@ async function resetStorage(): Promise<void> {
   storage.__reset();
 }
 
+// The two platform forks declare `CreateClimbDraft` independently, so tsc sees no
+// relationship between them and silent drift is possible — it has already
+// happened once (the web fork was missing `framesJson` while round-tripping it at
+// runtime). This is a compile-time equality check, not a runtime assertion: add a
+// field to one fork and `vp run typecheck:mobile` fails here.
+type NativeCreateClimbDraft = import('../create-climb-draft-store').CreateClimbDraft;
+type WebCreateClimbDraft = import('../create-climb-draft-store.web').CreateClimbDraft;
+// Compare the KEY SETS, not just assignability: every field here is optional
+// except the original four, and an optional field present on one side only is
+// still mutually assignable — which is precisely the drift that happened.
+type SameKeys<A, B> = [keyof A] extends [keyof B] ? ([keyof B] extends [keyof A] ? true : false) : false;
+type MutuallyAssignable<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+const createClimbDraftKeysMatch: SameKeys<NativeCreateClimbDraft, WebCreateClimbDraft> = true;
+const createClimbDraftTypesMatch: MutuallyAssignable<NativeCreateClimbDraft, WebCreateClimbDraft> = true;
+void createClimbDraftKeysMatch;
+void createClimbDraftTypesMatch;
+
 describe('browser user-scoped draft stores', () => {
   beforeEach(async () => {
     vi.resetModules();
@@ -71,6 +88,24 @@ describe('browser user-scoped draft stores', () => {
     await expect(loadDraft(boardKey)).resolves.toBeNull();
     setCurrentUserStorageOwner(userASessionOne);
     await expect(loadDraft(boardKey)).resolves.toEqual(draft);
+  });
+
+  it('reports storage as unavailable with no signed-in owner, and writes nothing', async () => {
+    // Every browser write is account-scoped, so a signed-out visitor stores
+    // nothing at all. The status line reads this so it can say "Sign in to keep
+    // this draft" instead of promising a draft that was never written.
+    const { isDraftStorageAvailable, saveDraft, loadDraft } = await import('../create-climb-draft-store.web');
+    const { setCurrentUserStorageOwner } = await import('../user-storage-owner.web');
+
+    setCurrentUserStorageOwner(null);
+    expect(isDraftStorageAvailable()).toBe(false);
+    await saveDraft('kilter:1:2:10:40', { holdsJson: '{}', name: 'Anonymous', description: '', isDraft: true });
+    await expect(loadDraft('kilter:1:2:10:40')).resolves.toBeNull();
+
+    setCurrentUserStorageOwner(userASessionOne);
+    expect(isDraftStorageAvailable()).toBe(true);
+    // ...and the signed-out attempt left nothing behind for the account either.
+    await expect(loadDraft('kilter:1:2:10:40')).resolves.toBeNull();
   });
 
   it('does not expose user A recap draft to user B for the same session', async () => {

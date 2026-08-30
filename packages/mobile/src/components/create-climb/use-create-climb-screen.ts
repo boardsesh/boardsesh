@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, type AppStateStatus } from 'react-native';
 import { randomUUID } from 'expo-crypto';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -36,9 +35,14 @@ import {
   saveDraft,
   clearDraft,
   createClimbDraftKey,
+  createClimbEditDraftKey,
+  createClimbForkDraftKey,
+  isDraftStorageAvailable,
   type CreateClimbDraft,
 } from '../../lib/create-climb-draft-store';
 import { getNextBrushRole, getPaintRoles, type BrushRole } from './brush-roles';
+import { useCreateClimbAutosave } from './use-create-climb-autosave';
+import { deriveDraftStatusView, type DraftStatusView } from './draft-status-view';
 
 // The save button's visual state, derived from auth + the saved-climb snapshot +
 // in-flight state. Lives here (the controller computes it) so the UI imports it.
@@ -63,11 +67,58 @@ type UseCreateClimbScreenArgs = {
   /** Called after a successful publish (non-draft save) so the screen can
    *  dismiss the drawer and let the success toast show over the list. */
   onPublished?: () => void;
+  /** Replaces edit/fork route identity with a plain creator after Start new. */
+  onStartedNewClimb?: () => void;
 };
 
-const AUTOSAVE_DEBOUNCE_MS = 500;
 const BLE_PREVIEW_DEBOUNCE_MS = 250;
 const JUST_SAVED_MS = 3000;
+
+/** Field separator for the payload signature — cannot occur in JSON or user text. */
+const SIGNATURE_SEPARATOR = '\u0000';
+
+type PayloadSignatureFields = {
+  holdsJson: string;
+  framesJson: string;
+  name: string;
+  description: string;
+  noMatch: boolean;
+  noKickboard: boolean;
+  campus: boolean;
+  isDraft: boolean;
+};
+
+function createPayloadSignature(fields: PayloadSignatureFields): string {
+  return [
+    fields.holdsJson,
+    fields.framesJson,
+    fields.name,
+    fields.description,
+    fields.noMatch ? '1' : '0',
+    fields.noKickboard ? '1' : '0',
+    fields.campus ? '1' : '0',
+    fields.isDraft ? '1' : '0',
+  ].join(SIGNATURE_SEPARATOR);
+}
+
+function parseSavedClimbSnapshot(serialized: string | undefined): SavedClimbSnapshot | null {
+  if (!serialized) return null;
+  try {
+    const parsed = JSON.parse(serialized) as Partial<SavedClimbSnapshot>;
+    if (typeof parsed?.uuid !== 'string' || typeof parsed?.boardType !== 'string') return null;
+    return {
+      uuid: parsed.uuid,
+      boardType: parsed.boardType,
+      createdAt: parsed.createdAt ?? null,
+      publishedAt: parsed.publishedAt ?? null,
+      isDraft: parsed.isDraft ?? true,
+    };
+  } catch {
+    // Corrupt snapshot — restore the paint, drop the row link. The next Save
+    // creates a fresh climb rather than updating an unknown uuid.
+    return null;
+  }
+}
 
 /** Duplicate-publish detail surfaced inline so the user can view the match. */
 export type PublishDuplicateError = {
@@ -128,6 +179,7 @@ export function useCreateClimbScreen({
   forkDescription,
   editClimbUuid,
   onPublished,
+  onStartedNewClimb,
 }: UseCreateClimbScreenArgs) {
   const router = useRouter();
   const { t } = useTranslation('climbs');
@@ -163,6 +215,8 @@ export function useCreateClimbScreen({
     startingCount,
     finishCount,
     isValid,
+    canSave,
+    canPublish,
     resetHolds,
     loadFrames,
     duplicateFrame,
@@ -199,6 +253,18 @@ export function useCreateClimbScreen({
   const [isSaving, setIsSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [publishDuplicateError, setPublishDuplicateError] = useState<PublishDuplicateError | null>(null);
+  // Payload signature at the last SUCCESSFUL explicit save, and at the last
+  // FAILED one. Both are compared against the live signature below, which is how
+  // "edited since you saved" and "that save failed" stay true without a timer.
+  // Inline "Start over?" confirm, rendered as sheet content — see handleNewClimb.
+  const [pendingNewClimb, setPendingNewClimb] = useState(false);
+  const [savedSignature, setSavedSignature] = useState<string | null>(null);
+  const [savedSignatureUnknown, setSavedSignatureUnknown] = useState(false);
+  const [failedSignature, setFailedSignature] = useState<string | null>(null);
+  // State updates do not become visible until React renders again. These refs
+  // close the same-tick race between Save and Start new (or two quick taps).
+  const saveInFlightRef = useRef(false);
+  const startNewInFlightRef = useRef(false);
 
   useEffect(() => {
     setSelectedBrush((currentBrush) => {
@@ -209,18 +275,44 @@ export function useCreateClimbScreen({
   }, [board.boardName]);
 
   const draftKey = useMemo(() => createClimbDraftKey(board), [board]);
-  // Skip the local-autosave restore when forking or editing (those seed from
-  // their own source); also skip until the initial restore lands.
-  const skipRestoreRef = useRef(isForking || isEditing);
+
+  // ---- One deterministic autosave slot per authoring mode. ----
+  // Identity now lives in the KEY, which is why autosave no longer has to be
+  // switched off outside the plain-new case. It used to be, because the slot key
+  // carried board config only: a fork or an edit writing it would clobber a real
+  // new-climb WIP and resurface as a phantom. The cost of that boolean was that
+  // editing a draft, remixing a climb, and everything after the first Save had no
+  // autosave at all — the three states where losing work hurts most.
+  //   new  → `<board>:<layout>:<size>:<sets>:<angle>`  (string UNCHANGED, so
+  //          drafts already on devices keep restoring — no migration)
+  //   edit → `edit:<boardType>:<uuid>`   (reopening that climb finds it)
+  //   fork → `fork:<boardKey>`           (a plain-new mount falls back to it)
+  const autosaveSlotKey = useMemo(() => {
+    if (isEditing && editClimbUuid) return createClimbEditDraftKey(board.boardName, editClimbUuid);
+    if (isForking) return createClimbForkDraftKey(draftKey);
+    return draftKey;
+  }, [isEditing, editClimbUuid, isForking, board.boardName, draftKey]);
+
+  // Forks seed from another climb's frames, so there is nothing to restore.
+  // Edit mode DOES restore, but inside the seed effect below — after the server
+  // copy lands, never before it.
+  const skipRestoreRef = useRef(isForking);
   const restoredRef = useRef(false);
+  const [restoreEpoch, setRestoreEpoch] = useState(0);
   // Stable provisional queue-item uuid for an unsaved WIP, so re-tapping "Set as
   // active" updates the same queue slot instead of appending a new item each tap.
   const previewUuidRef = useRef<string | null>(null);
   if (!previewUuidRef.current) previewUuidRef.current = randomUUID();
   // Tracked so the just-saved confirmation timer is cleared on unmount.
   const justSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+  const markRestored = useCallback(() => {
+    restoredRef.current = true;
+    if (mountedRef.current) setRestoreEpoch((epoch) => epoch + 1);
+  }, []);
   useEffect(
     () => () => {
+      mountedRef.current = false;
       if (justSavedTimerRef.current) clearTimeout(justSavedTimerRef.current);
     },
     [],
@@ -247,6 +339,8 @@ export function useCreateClimbScreen({
     // next Save creates a new climb, clear any stale duplicate banner, and mint
     // a new preview uuid so Set Active pushes an independent queue item.
     setSavedClimb(null);
+    setSavedSignature(null);
+    setSavedSignatureUnknown(false);
     setPublishDuplicateError(null);
     previewUuidRef.current = randomUUID();
   }, [board.angle, isEditing]);
@@ -266,46 +360,18 @@ export function useCreateClimbScreen({
         : null,
     [isEditing, editClimbUuid, board],
   );
-  const { data: editClimb } = useClimb(editVariables);
-  const editSeededRef = useRef(false);
-  useEffect(() => {
-    if (!editClimb || editSeededRef.current) return;
-    editSeededRef.current = true;
-    loadFrames(buildInitialFrames(editClimb.frames, board.boardName));
-    setName(editClimb.name);
-    setDescription(withNoMatch(editClimb.description ?? '', false));
-    setNoMatch(isNoMatchClimb(editClimb.description));
-    setNoKickboard(isNoKickboard(editClimb.characteristics));
-    setCampus(isCampus(editClimb.characteristics));
-    setIsDraft(editClimb.is_draft ?? false);
-    setSavedClimb({
-      uuid: editClimb.uuid,
-      boardType: board.boardName,
-      createdAt: editClimb.created_at ?? null,
-      publishedAt: editClimb.published_at ?? null,
-      isDraft: editClimb.is_draft ?? false,
-    });
-  }, [editClimb, board.boardName, loadFrames]);
+  const { data: editClimb, isError: editClimbFailed } = useClimb(editVariables);
 
-  // ---- Local autosave restore on mount. ----
-  useEffect(() => {
-    if (skipRestoreRef.current) {
-      restoredRef.current = true;
-      return;
-    }
-    let cancelled = false;
-    void loadDraft(draftKey).then((draft) => {
-      if (cancelled || !draft) {
-        restoredRef.current = true;
-        return;
-      }
+  // Apply a stored working copy over whatever the editor currently holds.
+  const applyStoredDraft = useCallback(
+    (draft: CreateClimbDraft) => {
       try {
-        const frames = draft.framesJson
+        const restoredFrames = draft.framesJson
           ? (JSON.parse(draft.framesJson) as Parameters<typeof loadFrames>[0])
           : [JSON.parse(draft.holdsJson) as Parameters<typeof loadFrames>[0][number]];
-        loadFrames(frames);
+        loadFrames(restoredFrames);
       } catch {
-        // Corrupt holds payload — ignore and start clean.
+        // Corrupt holds payload — keep whatever is already loaded.
       }
       setName(draft.name);
       setDescription(withNoMatch(draft.description, false));
@@ -313,8 +379,185 @@ export function useCreateClimbScreen({
       setNoKickboard(draft.noKickboard ?? false);
       setCampus(draft.campus ?? false);
       setIsDraft(draft.isDraft);
-      restoredRef.current = true;
+    },
+    [loadFrames],
+  );
+
+  type EditFailureRestoreState = 'idle' | 'loading' | 'found' | 'empty';
+  const editFailureRestoreStateRef = useRef<EditFailureRestoreState>('idle');
+  const emptyFailureBaselineSignatureRef = useRef<string | null>(null);
+  const [editFailureRestoreState, setEditFailureRestoreState] = useState<EditFailureRestoreState>('idle');
+  const editSeededRef = useRef(false);
+
+  // A failed edit query must restore the existing edit slot BEFORE opening the
+  // autosave gate. Otherwise the blank editor's first change overwrites the
+  // only durable copy. Keep the result as state so a later successful retry can
+  // attach the server row without racing or replacing the restored editor.
+  useEffect(() => {
+    if (
+      !isEditing ||
+      !editClimbUuid ||
+      !editClimbFailed ||
+      editSeededRef.current ||
+      editFailureRestoreStateRef.current !== 'idle'
+    ) {
+      return;
+    }
+    editFailureRestoreStateRef.current = 'loading';
+    setEditFailureRestoreState('loading');
+    const signatureBeforeRestore = payloadSignatureRef.current;
+    void loadDraft(createClimbEditDraftKey(board.boardName, editClimbUuid))
+      .then((storedDraft) => {
+        if (!storedDraft) {
+          emptyFailureBaselineSignatureRef.current = signatureBeforeRestore;
+          editFailureRestoreStateRef.current = 'empty';
+          setEditFailureRestoreState('empty');
+          return;
+        }
+        if (payloadSignatureRef.current === signatureBeforeRestore) applyStoredDraft(storedDraft);
+        const restoredSavedClimb = parseSavedClimbSnapshot(storedDraft.savedClimbJson) ?? {
+          uuid: editClimbUuid,
+          boardType: board.boardName,
+          createdAt: null,
+          publishedAt: null,
+          isDraft: storedDraft.isDraft,
+        };
+        setSavedClimb(restoredSavedClimb);
+        setSavedSignature(storedDraft.savedPayloadSignature ?? null);
+        setSavedSignatureUnknown(storedDraft.savedPayloadSignature === undefined);
+        editFailureRestoreStateRef.current = 'found';
+        setEditFailureRestoreState('found');
+      })
+      .catch(() => {
+        emptyFailureBaselineSignatureRef.current = signatureBeforeRestore;
+        editFailureRestoreStateRef.current = 'empty';
+        setEditFailureRestoreState('empty');
+      })
+      .finally(() => {
+        markRestored();
+      });
+  }, [isEditing, editClimbUuid, editClimbFailed, board.boardName, applyStoredDraft, markRestored]);
+
+  useEffect(() => {
+    if (!editClimb || editSeededRef.current || editFailureRestoreState === 'loading') return;
+    editSeededRef.current = true;
+    const serverFrames = buildInitialFrames(editClimb.frames, board.boardName);
+    const serverDescription = withNoMatch(editClimb.description ?? '', false);
+    const serverNoMatch = isNoMatchClimb(editClimb.description);
+    const serverNoKickboard = isNoKickboard(editClimb.characteristics);
+    const serverCampus = isCampus(editClimb.characteristics);
+    const serverIsDraft = editClimb.is_draft ?? false;
+    const serverSignature = createPayloadSignature({
+      holdsJson: JSON.stringify(serverFrames[0] ?? {}),
+      framesJson: JSON.stringify(serverFrames),
+      name: editClimb.name,
+      description: serverDescription,
+      noMatch: serverNoMatch,
+      noKickboard: serverNoKickboard,
+      campus: serverCampus,
+      isDraft: serverIsDraft,
     });
+    const serverSnapshot: SavedClimbSnapshot = {
+      uuid: editClimb.uuid,
+      boardType: board.boardName,
+      createdAt: editClimb.created_at ?? null,
+      publishedAt: editClimb.published_at ?? null,
+      isDraft: serverIsDraft,
+    };
+    setSavedClimb(serverSnapshot);
+    setSavedSignature(serverSignature);
+    setSavedSignatureUnknown(false);
+
+    // The failure path already restored the phone copy. A retry may attach the
+    // authoritative server identity and baseline, but must never reseed the
+    // editor and wipe edits made while offline.
+    const editedAfterEmptyFailure =
+      editFailureRestoreState === 'empty' &&
+      emptyFailureBaselineSignatureRef.current !== null &&
+      payloadSignatureRef.current !== emptyFailureBaselineSignatureRef.current;
+    if (editFailureRestoreState === 'found' || editedAfterEmptyFailure) {
+      markRestored();
+      return;
+    }
+
+    loadFrames(serverFrames);
+    setName(editClimb.name);
+    setDescription(serverDescription);
+    setNoMatch(serverNoMatch);
+    setNoKickboard(serverNoKickboard);
+    setCampus(serverCampus);
+    setIsDraft(serverIsDraft);
+
+    // ORDERING IS LOAD-BEARING. The `edit:` slot is applied OVER the server copy,
+    // and `restoredRef` opens only once that has resolved. Set it any earlier and
+    // the next debounce tick writes the freshly fetched SERVER copy into the slot,
+    // destroying exactly the unflushed edits this restore exists to recover —
+    // silently, while the status line still reads "Draft saved to your account".
+    // Pinned by "applies the stored edit slot over the server copy" in
+    // use-create-climb-screen-autosave.test.tsx. No cancellation on purpose:
+    // `editSeededRef` already makes this run once per mount, and a cancelled
+    // restore would leave the gate shut and autosave dead for the whole session.
+    void loadDraft(createClimbEditDraftKey(board.boardName, editClimb.uuid))
+      .then((storedDraft) => {
+        if (storedDraft) {
+          applyStoredDraft(storedDraft);
+          setSavedSignature(serverSignature);
+        }
+      })
+      .catch(() => {
+        // Unreadable slot — the server copy stands.
+      })
+      .finally(() => {
+        markRestored();
+      });
+  }, [editClimb, editFailureRestoreState, board.boardName, loadFrames, applyStoredDraft, markRestored]);
+
+  // ---- Local autosave restore on mount (plain new climb). ----
+  useEffect(() => {
+    // Edit mode restores inside the seed effect above; forks seed from source.
+    if (isEditing || skipRestoreRef.current) {
+      if (!isEditing) markRestored();
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        let draft = await loadDraft(draftKey);
+        // A killed remix session lives in the fork slot, and a cold relaunch can
+        // only land on the plain creator (the modal route with `forkFrames` is
+        // gone), so this is the only door back to it. Adopt it with a write-first
+        // migration: a crash can leave two copies, never zero copies.
+        if (!draft) {
+          const forkSlotKey = createClimbForkDraftKey(draftKey);
+          const forkDraft = await loadDraft(forkSlotKey);
+          if (forkDraft) {
+            await saveDraft(draftKey, forkDraft);
+            draft = forkDraft;
+            try {
+              await clearDraft(forkSlotKey);
+            } catch {
+              // The destination is durable and wins on the next mount. Leave it
+              // intact even if retiring the source needs another attempt.
+            }
+          }
+        }
+        if (cancelled || !draft) return;
+        applyStoredDraft(draft);
+        // Re-attach the server row this working copy belongs to, so the next Save
+        // UPDATES that climb instead of creating a duplicate in Open drafts.
+        const restoredSavedClimb = parseSavedClimbSnapshot(draft.savedClimbJson);
+        if (restoredSavedClimb) {
+          setSavedClimb(restoredSavedClimb);
+          setSavedSignature(draft.savedPayloadSignature ?? null);
+          setSavedSignatureUnknown(draft.savedPayloadSignature === undefined);
+        }
+      } catch {
+        // Storage failure leaves the editor empty but must not disable autosave
+        // for the rest of the session.
+      } finally {
+        if (!cancelled) markRestored();
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -325,30 +568,32 @@ export function useCreateClimbScreen({
   // ---- Local autosave (debounced). ----
   const holdsJson = useMemo(() => JSON.stringify(litUpHoldsMap), [litUpHoldsMap]);
   const framesJson = useMemo(() => JSON.stringify(frames), [frames]);
-  // The most recent autosave payload, kept current by the debounced effect so a
-  // flush-on-unmount / background can persist it synchronously without waiting
-  // for the (suspended-when-backgrounded) debounce timer. `dirty` gates whether
-  // there is anything worth flushing for the current per-board new-draft slot.
-  const pendingDraftRef = useRef<{ key: string; draft: CreateClimbDraft; dirty: boolean }>({
-    key: draftKey,
-    draft: { holdsJson, framesJson, name, description, isDraft },
-    dirty: false,
+  const hasContent = holdsJson !== '{}' || frameCount > 1 || name.trim() !== '' || description.trim() !== '';
+
+  // Content identity of the working copy. One value serves three jobs: it tells
+  // the status line whether there are edits since the last save, it clears a
+  // stale save-failure the moment the payload moves, and `handleSave` compares it
+  // before and after the round trip so a publish never clears work typed while
+  // the mutation was in flight.
+  const payloadSignature = createPayloadSignature({
+    holdsJson,
+    framesJson,
+    name,
+    description,
+    noMatch,
+    noKickboard,
+    campus,
+    isDraft,
   });
-  // Forks seed from another climb's frames and skip restore, so — like edit
-  // mode — they must never write the shared per-board new-draft autosave slot,
-  // or merely opening a fork would clobber a real new-climb WIP under the same
-  // (board-config-only) key and resurface as a phantom on the next "new climb".
-  const autosaveDisabled = isEditing || isForking || !!savedClimb;
-  useEffect(() => {
-    if (!restoredRef.current) return;
-    // Edit mode / forks operate on a seeded climb, and a just-saved WIP is owned
-    // by the server row — none of them belong in the new-draft autosave slot.
-    if (autosaveDisabled) {
-      pendingDraftRef.current.dirty = false;
-      return;
-    }
-    const hasContent = holdsJson !== '{}' || frameCount > 1 || name.trim() !== '' || description.trim() !== '';
-    const draft: CreateClimbDraft = {
+  const payloadSignatureRef = useRef(payloadSignature);
+  payloadSignatureRef.current = payloadSignature;
+  const hasUnsavedEdits =
+    savedClimb != null && (savedSignatureUnknown || (savedSignature !== null && savedSignature !== payloadSignature));
+
+  const savedClimbJson = useMemo(() => (savedClimb ? JSON.stringify(savedClimb) : undefined), [savedClimb]);
+
+  const autosaveDraft = useMemo<CreateClimbDraft>(
+    () => ({
       holdsJson,
       framesJson,
       name,
@@ -356,55 +601,39 @@ export function useCreateClimbScreen({
       isDraft,
       noKickboard,
       campus,
-    };
-    // Mirror the latest payload so a flush (unmount/background) can persist the
-    // pending edit even before the debounce fires.
-    pendingDraftRef.current = { key: draftKey, draft, dirty: hasContent };
-    const handle = setTimeout(() => {
-      if (!hasContent) {
-        void clearDraft(draftKey);
-        pendingDraftRef.current.dirty = false;
-        return;
-      }
-      void saveDraft(draftKey, draft);
-      pendingDraftRef.current.dirty = false;
-    }, AUTOSAVE_DEBOUNCE_MS);
-    return () => clearTimeout(handle);
-  }, [
-    holdsJson,
-    framesJson,
-    frameCount,
-    name,
-    description,
-    noMatch,
-    noKickboard,
-    campus,
-    isDraft,
-    draftKey,
-    autosaveDisabled,
-  ]);
+      savedClimbJson,
+      savedPayloadSignature: savedSignature ?? undefined,
+      origin: isEditing ? 'edit' : isForking ? 'fork' : 'new',
+      updatedAtMs: Date.now(),
+    }),
+    [
+      holdsJson,
+      framesJson,
+      name,
+      description,
+      noMatch,
+      noKickboard,
+      campus,
+      isDraft,
+      savedClimbJson,
+      savedSignature,
+      isEditing,
+      isForking,
+    ],
+  );
+  const autosaveDraftRef = useRef(autosaveDraft);
+  autosaveDraftRef.current = autosaveDraft;
 
-  // ---- Flush the pending draft on unmount / background. ----
-  // JS timers are suspended when the app is backgrounded and the cleanup's
-  // clearTimeout drops the pending edit when the drawer closes within the
-  // debounce window, so persist the latest payload immediately on both
-  // transitions. Keeps the draft-store's "a backgrounded app doesn't lose
-  // work-in-progress" promise.
-  const flushPendingDraft = useCallback(() => {
-    const pending = pendingDraftRef.current;
-    if (!restoredRef.current || !pending.dirty) return;
-    pending.dirty = false;
-    void saveDraft(pending.key, pending.draft);
-  }, []);
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (state: AppStateStatus) => {
-      if (state === 'background' || state === 'inactive') flushPendingDraft();
-    });
-    return () => {
-      subscription.remove();
-      flushPendingDraft();
-    };
-  }, [flushPendingDraft]);
+  const { discard: discardAutosaveSlot, persist: persistAutosaveSlot } = useCreateClimbAutosave({
+    slotKey: autosaveSlotKey,
+    draft: autosaveDraft,
+    // Server-link metadata is written explicitly on Save. Only content changes
+    // re-arm the debounce, avoiding a redundant second write after Save.
+    draftSignature: payloadSignature,
+    hasContent,
+    restoredRef,
+    restoreEpoch,
+  });
 
   // ---- BLE preview (debounced) while connected. ----
   const sendFramesRef = useRef(bluetooth?.sendFramesToBoard);
@@ -440,22 +669,77 @@ export function useCreateClimbScreen({
     [setHoldState],
   );
 
-  const handleClear = useCallback(() => {
+  // ---- Clear holds vs. start a new climb. ----
+  // These were one button doing both jobs behind a trash can labelled "Clear
+  // holds": it also wiped the name, the description and the on-device slot, none
+  // of which undo restores. Split so the label, the glyph and the behaviour agree.
+
+  /** Empty this frame's holds. Undoable through the reducer; touches nothing else. */
+  const handleClearHolds = useCallback(() => {
     resetHolds();
-    // Treat Clear as a brand-new climb: wipe name/description/draft flag too, or
-    // a Save straight after Clear reuses the old name and skips the name prompt.
-    setName('');
-    setDescription('');
-    setNoMatch(false);
-    setNoKickboard(false);
-    setCampus(false);
-    setIsDraft(true);
-    setSavedClimb(null);
-    setPublishDuplicateError(null);
-    // Fresh climb identity for the next WIP so its queue item is independent.
-    previewUuidRef.current = randomUUID();
-    void clearDraft(draftKey);
-  }, [resetHolds, draftKey]);
+  }, [resetHolds]);
+
+  const resetToBlankClimb = useCallback(async () => {
+    // Drop the working copy THIS session owns — in fork/edit mode that is the
+    // `fork:`/`edit:` slot, not the shared new-climb one. Clearing only
+    // `draftKey` left an abandoned fork slot behind, which the plain creator's
+    // fork fallback would then resurrect as a ghost draft on the next open. A
+    // server draft is untouched either way: it lives in board_climbs, not here,
+    // so an edit session still leaves its row in Open drafts.
+    try {
+      await discardAutosaveSlot();
+      if (!mountedRef.current) return;
+      setPendingNewClimb(false);
+      resetHolds();
+      setName('');
+      setDescription('');
+      setNoMatch(false);
+      setNoKickboard(false);
+      setCampus(false);
+      setIsDraft(true);
+      setSavedClimb(null);
+      setPublishDuplicateError(null);
+      setSavedSignature(null);
+      setSavedSignatureUnknown(false);
+      setFailedSignature(null);
+      // Fresh climb identity for the next WIP so its queue item is independent.
+      previewUuidRef.current = randomUUID();
+      if (isEditing || isForking) onStartedNewClimb?.();
+    } catch {
+      // Keep the editor and confirmation intact when storage cannot retire the
+      // slot. Resetting anyway would let that supposedly abandoned work restore
+      // as a ghost draft on the next mount; clearing the in-flight ref below
+      // leaves the action retryable.
+    } finally {
+      startNewInFlightRef.current = false;
+    }
+  }, [resetHolds, discardAutosaveSlot, isEditing, isForking, onStartedNewClimb]);
+
+  const confirmNewClimb = useCallback(() => {
+    if (saveInFlightRef.current || startNewInFlightRef.current) return;
+    startNewInFlightRef.current = true;
+    void resetToBlankClimb();
+  }, [resetToBlankClimb]);
+
+  /**
+   * Park this climb and start a blank one. A saved climb keeps its row in Open
+   * drafts (only the working slot is dropped), so that case goes straight
+   * through. An unsaved one genuinely is not recoverable, so it asks first —
+   * INLINE, not through `useConfirm`: a dialog raised from inside this native
+   * sheet is invisible on Android and its promise never resolves, which left this
+   * button doing nothing at all. See InlineConfirmBanner.
+   */
+  const handleNewClimb = useCallback(() => {
+    if (saveInFlightRef.current || startNewInFlightRef.current) return;
+    if (hasContent && (savedClimb == null || hasUnsavedEdits)) {
+      setPendingNewClimb(true);
+      return;
+    }
+    startNewInFlightRef.current = true;
+    void resetToBlankClimb();
+  }, [savedClimb, hasContent, hasUnsavedEdits, resetToBlankClimb]);
+
+  const cancelNewClimb = useCallback(() => setPendingNewClimb(false), []);
 
   // Build a minimal Climb the queue can hold for a not-yet-saved or just-saved
   // climb. The mutation input (`ClimbInput`) is a strict subset of Climb, so
@@ -567,25 +851,59 @@ export function useCreateClimbScreen({
     return 'ready';
   }, [isAuthenticated, isSaving, justSaved, editLocked]);
 
+  // ---- Is my work safe, and where is it? ----
+  // Only the PUBLIC transition is gated. Nothing else checks starts and finishes
+  // — not the editor, not SaveClimbInputSchema — so without this a one-hold blob
+  // is one tap from being a public climb. The draft threshold stays where it is:
+  // tightening it would regress every draft that saves today, and a disabled Save
+  // with nothing to say is worse than a silent no-op. While this is true, the
+  // status line names the missing requirement directly under the button.
+  const publishBlocked = !isDraft && hasContent && !canPublish;
+  const localPersistenceAvailable = isDraftStorageAvailable();
+  const saveFailed = failedSignature !== null && failedSignature === payloadSignature;
+
+  const draftStatus: DraftStatusView | null = useMemo(
+    () =>
+      deriveDraftStatusView(
+        {
+          hasContent,
+          localPersistenceAvailable,
+          hasSavedClimb: savedClimb != null,
+          hasUnsavedEdits,
+          saveFailed,
+          publishBlocked,
+        },
+        t,
+      ),
+    [hasContent, localPersistenceAvailable, savedClimb, hasUnsavedEdits, saveFailed, publishBlocked, t],
+  );
+
   // Signal the screen should focus the header name field (e.g. on a save with
   // no name yet). The name input lives in the drawer header, not a settings sheet.
   const [focusNameSignal, setFocusNameSignal] = useState(0);
   const requestFocusName = useCallback(() => setFocusNameSignal((value) => value + 1), []);
 
   const handleSave = useCallback(async () => {
+    if (saveInFlightRef.current || startNewInFlightRef.current) return;
     if (!isAuthenticated) {
       router.push('/auth/login');
       return;
     }
     if (editLocked) return;
-    if (!isValid) return;
+    // Drafts stay cheap; publishing needs a start and a finish.
+    if (isDraft ? !canSave : !canPublish) return;
     if (name.trim() === '') {
       requestFocusName();
       return;
     }
 
+    saveInFlightRef.current = true;
     setIsSaving(true);
     setPublishDuplicateError(null);
+    // Captured BEFORE the mutation fires. Anything typed during the round trip
+    // moves the live signature, and both the slot clear and the "saved" status
+    // below check that before acting on a stale result.
+    const signatureAtSave = payloadSignatureRef.current;
     const frames = generateFramesString();
     // Encode the no-match marker into the description only at save time.
     const fullDescription = withNoMatch(description, noMatch);
@@ -598,6 +916,7 @@ export function useCreateClimbScreen({
     // exact value, so the string must match web for these create-climb events.
     const boardLayout = getLayoutName(board.boardName, board.layoutId);
     const characteristics = buildToggleableCharacteristics(noKickboard, campus);
+    let nextSavedClimb: SavedClimbSnapshot | null = null;
     try {
       if (canUpdate && savedClimb) {
         const result = await updateClimb({
@@ -612,13 +931,14 @@ export function useCreateClimbScreen({
           isDraft,
           characteristics,
         });
-        setSavedClimb({
+        nextSavedClimb = {
           uuid: result.uuid,
           boardType: board.boardName,
           createdAt: result.createdAt ?? savedClimb.createdAt,
           publishedAt: result.publishedAt ?? savedClimb.publishedAt,
           isDraft: result.isDraft,
-        });
+        };
+        setSavedClimb(nextSavedClimb);
         // Match web's schema exactly (create-climb-form.tsx) so PostHog funnels
         // that group by these props line up across platforms. `boardLayout` is the
         // resolved layout NAME (same value web sends), not the numeric id.
@@ -640,13 +960,14 @@ export function useCreateClimbScreen({
           angle: board.angle,
           characteristics,
         });
-        setSavedClimb({
+        nextSavedClimb = {
           uuid: result.uuid,
           boardType: board.boardName,
           createdAt: result.createdAt ?? null,
           publishedAt: result.publishedAt ?? null,
           isDraft,
-        });
+        };
+        setSavedClimb(nextSavedClimb);
         // Match web's schema exactly (create-climb-form.tsx). See ClimbUpdated above.
         track(SHARED_EVENTS.ClimbCreated, {
           boardLayout,
@@ -655,7 +976,29 @@ export function useCreateClimbScreen({
         });
         syncSavedToQueue(result.uuid, frames);
       }
-      await clearDraft(draftKey);
+      // ---- What happens to the on-device working copy. ----
+      // A draft-Save used to delete it unconditionally, which is what made "Save,
+      // then kill the app" lose everything: autosave was off once a row existed,
+      // so nothing ever wrote it back. Now the slot IS the working copy, and only
+      // a PUBLISH retires it — under a compare-and-clear, so anything typed during
+      // the round trip survives.
+      const payloadChangedDuringSave = payloadSignatureRef.current !== signatureAtSave;
+      if (isDraft || payloadChangedDuringSave) {
+        // The explicit linked write is authoritative. Retire any older debounce
+        // first so it cannot finish later and overwrite the server-row link or
+        // the payload baseline this save just established.
+        await persistAutosaveSlot({
+          ...autosaveDraftRef.current,
+          savedClimbJson: nextSavedClimb ? JSON.stringify(nextSavedClimb) : undefined,
+          savedPayloadSignature: signatureAtSave,
+        });
+      } else {
+        await discardAutosaveSlot();
+      }
+      setPendingNewClimb(false);
+      setFailedSignature(null);
+      setSavedSignature(signatureAtSave);
+      setSavedSignatureUnknown(false);
       // Refresh the inline Open Drafts table AND the Climbs tab's infinite list
       // so the just-saved climb appears / updates (mirrors useDeleteDraftClimb's
       // key set in lib/graphql/hooks/index.ts — create, edit, and publish-draft
@@ -679,18 +1022,26 @@ export function useCreateClimbScreen({
         error_reason: isDuplicateClimbError(err) ? 'duplicate' : 'exception',
       });
       if (isDuplicateClimbError(err)) {
+        // The inline DuplicateBanner already explains this one and offers the
+        // match — the status line would just repeat it.
         setPublishDuplicateError(readDuplicateExtensions(err));
       } else {
+        // The toast is gone in 3s. Without a persistent line the editor would go
+        // on reading "Saved on this phone" — true, and silent about the account
+        // copy never happening. Sticky until the next successful save or an edit.
+        setFailedSignature(signatureAtSave);
         showToast(t('createClimbForm.alerts.saveFailedFallback'), 'error');
       }
     } finally {
+      saveInFlightRef.current = false;
       setIsSaving(false);
     }
   }, [
     isAuthenticated,
     router,
     editLocked,
-    isValid,
+    canSave,
+    canPublish,
     name,
     canUpdate,
     savedClimb,
@@ -705,7 +1056,9 @@ export function useCreateClimbScreen({
     noKickboard,
     campus,
     isDraft,
-    draftKey,
+    autosaveSlotKey,
+    discardAutosaveSlot,
+    persistAutosaveSlot,
     requestFocusName,
     syncSavedToQueue,
     showToast,
@@ -718,17 +1071,38 @@ export function useCreateClimbScreen({
 
   const canSetActive = isValid;
 
+  // ---- Dismissing the sheet. ----
+  // No confirm on any of the four dismiss paths (chevron, pan-down, backdrop,
+  // hardware back): pan-down is the most-used gesture on this surface and a modal
+  // on it is hostile. The autosave flush on unmount already keeps the work, so the
+  // only thing missing was saying so — once, and only when the climber could
+  // reasonably think it is gone: content exists and there is no row in Open
+  // drafts to find it in.
+  const dismissNoticeRef = useRef({ hasContent, hasSavedClimb: savedClimb != null, localPersistenceAvailable });
+  dismissNoticeRef.current = { hasContent, hasSavedClimb: savedClimb != null, localPersistenceAvailable };
+  const notifyDraftKeptOnDismiss = useCallback(() => {
+    const notice = dismissNoticeRef.current;
+    if (!notice.hasContent || notice.hasSavedClimb || !notice.localPersistenceAvailable) return;
+    showToast(t('mobile.create.autosave.keptToast'), 'info');
+  }, [showToast, t]);
+
   return {
     // editor state
     litUpHoldsMap,
     startingCount,
     finishCount,
     isValid,
+    canSave,
+    canPublish,
     selectedBrush,
     setSelectedBrush,
     handlePaint,
     handleAssignRole,
-    handleClear,
+    handleClearHolds,
+    handleNewClimb,
+    pendingNewClimb,
+    confirmNewClimb,
+    cancelNewClimb,
     showAllHolds,
     setShowAllHolds,
     // frames (route/circuit editing)
@@ -759,11 +1133,15 @@ export function useCreateClimbScreen({
     // save
     saveState,
     handleSave,
+    publishBlocked,
     canSetActive,
     handleSetActive,
     publishDuplicateError,
     dismissDuplicateError,
     focusNameSignal,
+    // persistence
+    draftStatus,
+    notifyDraftKeptOnDismiss,
     // ble
     bleAvailable: !!bluetooth,
     bleConnected,

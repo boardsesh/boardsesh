@@ -505,7 +505,10 @@
         "clear": "Clear holds",
         "setActive": "Set as active climb",
         "undo": "Undo",
-        "redo": "Redo"
+        "redo": "Redo",
+        "newClimb": "Start a new climb",
+        "close": "Close",
+        "closeHint": "Your draft stays on this phone."
       },
       "frames": {
         "duplicate": "Duplicate frame",
@@ -533,7 +536,9 @@
       "drafts": {
         "holds_one": "{{count}} hold",
         "holds_other": "{{count}} holds",
-        "sectionTitle": "Open drafts"
+        "sectionTitle": "Open drafts",
+        "frames_one": "{{count}} frame",
+        "frames_other": "{{count}} frames"
       },
       "unavailable": {
         "title": "Can't build here yet",
@@ -552,6 +557,24 @@
         "done": "Saved",
         "draftToast": "Draft saved",
         "publishedToast": "Climb published"
+      },
+      "autosave": {
+        "onDevice": "Saved on this phone",
+        "inAccount": "Draft saved to your account",
+        "unsyncedEdits": "Latest edits are on this phone only",
+        "notStored": "Sign in to keep this draft",
+        "saveFailed": "Couldn't save to your account. Tap Save to retry.",
+        "keptToast": "Draft kept on this phone. Reopen the creator to finish it."
+      },
+      "newClimb": {
+        "confirm": {
+          "title": "Start over?",
+          "message": "This one isn't in your drafts yet. Starting a new climb drops it.",
+          "action": "Start over"
+        }
+      },
+      "publish": {
+        "blocked": "Add a start and a finish hold to publish"
       }
     },
     "holdFilter": {
