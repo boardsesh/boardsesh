@@ -156,7 +156,7 @@ jobs:
           EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
           OTA_ADMIN_EMAIL: ${{ vars.OTA_ADMIN_EMAIL }}
           OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
-        run: node scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"
+        run: node --experimental-strip-types scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"
 
       - name: Mark current fork revision pending (sticky + deployments)
         if: steps.published.outputs.current != 'true'
@@ -276,7 +276,7 @@ jobs:
           EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
           OTA_ADMIN_EMAIL: ${{ vars.OTA_ADMIN_EMAIL }}
           OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
-        run: node scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"
+        run: node --experimental-strip-types scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"
 
       - name: Mark fork preview removed (sticky + deployments)
         uses: actions/github-script@v7

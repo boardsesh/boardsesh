@@ -200,7 +200,7 @@ jobs:
             fi
             echo "Deleting $name (PR #$pr_num is not open)"
             ATTEMPTED=$((ATTEMPTED + 1))
-            if ! node scripts/ota-preview-cleanup.ts delete --branch "$name"; then
+            if ! node --experimental-strip-types scripts/ota-preview-cleanup.ts delete --branch "$name"; then
               echo "::warning::Delete failed for $name (retries next sweep)."
               FAILED=$((FAILED + 1))
             fi

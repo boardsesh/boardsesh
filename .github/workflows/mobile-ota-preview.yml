@@ -827,7 +827,7 @@ jobs:
           EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
           OTA_ADMIN_EMAIL: ${{ vars.OTA_ADMIN_EMAIL }}
           OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
-        run: node scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"
+        run: node --experimental-strip-types scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"
 
       - name: Mark preview removed (deployment + comment)
         if: always() && steps.fresh.outcome == 'success'

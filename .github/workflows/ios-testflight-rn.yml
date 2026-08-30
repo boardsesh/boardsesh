@@ -250,7 +250,7 @@ jobs:
           # likely. There is no committed Podfile.lock to reconcile it against
           # (.gitignore ignores packages/mobile/ios/), so a key miss must mean a
           # clean `pod install`, not a partially-stale one.
-          key: ${{ runner.os }}-pods-rn-${{ hashFiles('packages/mobile/package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/eas.json', 'packages/mobile/assets/**', 'packages/mobile/targets/**', 'patches/**') }}
+          key: ${{ runner.os }}-pods-rn-${{ hashFiles('packages/mobile/package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/eas.json', 'packages/mobile/assets/icon.png', 'packages/mobile/assets/adaptive-icon.png', 'packages/mobile/assets/splash-icon.png', 'packages/mobile/targets/**', 'patches/**') }}
 
       - name: Install CocoaPods dependencies
         working-directory: packages/mobile/ios

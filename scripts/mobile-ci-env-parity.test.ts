@@ -389,6 +389,27 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
     expect(cacheKeyStep).not.toContain("'pnpm-lock.yaml'");
   });
 
+  it('keys CocoaPods caches on native app images without unrelated asset churn', () => {
+    const nativeAppImages = [
+      'packages/mobile/assets/icon.png',
+      'packages/mobile/assets/adaptive-icon.png',
+      'packages/mobile/assets/splash-icon.png',
+    ];
+
+    for (const workflowName of [IOS_PR, NATIVE_IOS]) {
+      const workflow = readWorkflow(workflowName);
+      const cacheKeyStep = workflow.split('\n').find((line) => line.includes('-pods-rn'));
+
+      expect(cacheKeyStep, `${workflowName} must retain its CocoaPods cache key`).toBeTruthy();
+      expect(cacheKeyStep).not.toContain("'packages/mobile/assets/**'");
+      for (const nativeAppImage of nativeAppImages) {
+        expect(cacheKeyStep, `${workflowName} must invalidate Pods when ${nativeAppImage} changes`).toContain(
+          `'${nativeAppImage}'`,
+        );
+      }
+    }
+  });
+
   it('forces the binary onto the gate fingerprint, and the OTA publish resolves fresh (never pinned)', () => {
     // The iOS binary is baked on macOS but the gate/publish run on Linux, and
     // @expo/fingerprint is not deterministic across the two. The native builds set
@@ -448,6 +469,14 @@ const OTA_PREVIEW_SWEEP = 'mobile-ota-preview-sweep.yml';
 const OTA_PREVIEW_PROMPT = 'mobile-ota-preview-prompt.yml';
 
 describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
+  it('opts every dependency-free TypeScript cleanup into Node type stripping', () => {
+    const cleanupCommand = 'node --experimental-strip-types scripts/ota-preview-cleanup.ts delete --branch';
+
+    expect(readWorkflow(OTA_PREVIEW)).toContain(`${cleanupCommand} "$BRANCH"`);
+    expect(readWorkflow(OTA_PREVIEW_PROMPT).match(new RegExp(cleanupCommand, 'g'))?.length ?? 0).toBe(2);
+    expect(readWorkflow(OTA_PREVIEW_SWEEP)).toContain(`${cleanupCommand} "$name"`);
+  });
+
   it('runs fork reconciliation from trusted pull_request_target metadata only', () => {
     const prompt = readWorkflow(OTA_PREVIEW_PROMPT);
     expect(prompt).toMatch(/^\s+pull_request_target:/m);
@@ -509,7 +538,9 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     expect(prompt).toContain("core.setOutput('head_sha', pr.head.sha)");
     expect(prompt).toContain('github.paginate(github.rest.pulls.listFiles');
     expect(prompt).toContain('ref: ${{ github.event.repository.default_branch }}');
-    expect(prompt).toContain('node scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"');
+    expect(prompt).toContain(
+      'node --experimental-strip-types scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"',
+    );
     expect(prompt).toContain('group: mobile-ota-preview-mutation-${{ needs.inspect.outputs.pr_number }}');
 
     const currentHeadCheck = prompt.indexOf('Check whether this head is already reconciled');
