@@ -687,6 +687,10 @@ export function useCreateClimbScreen({
   const handleAssignRole = useCallback(
     (holdId: number, role: BrushRole) => {
       setHoldState(holdId, role);
+      // The long-press role sheet is a direct assignment, not a tap — clear
+      // any in-progress cycle so a follow-up tap on this hold starts fresh
+      // instead of resuming wherever the sheet left it.
+      lastPaintRef.current = null;
     },
     [setHoldState],
   );
