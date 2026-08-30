@@ -3,18 +3,27 @@ import {
   MAX_FRAMES_LENGTH,
   MAX_SET_IDS,
   VALID_BOARD_NAMES,
+  boardseshRenderQuerySchema,
   createOgImageHeaders,
   isValidFramesString,
   normalizeOutputFormat,
+  type BoardArtColorScheme,
 } from '@boardsesh/board-render';
 import {
+  InvalidBoardRenderConfigError,
   RenderOutputTooLargeError,
   RenderQueueSaturatedError,
   ensureBoardRendererAvailable,
   renderBoardImage,
 } from '../services/board-render';
+import { getPublicClientIp } from '../utils/client-ip';
 import { logger } from '../utils/logger';
+import { RateLimitError } from '../utils/rate-limiter';
+import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 
+const RATE_LIMIT_MAX = 120;
+const SOCKET_RATE_LIMIT_MAX = 600;
+const RATE_LIMIT_WINDOW_MS = 60_000;
 const SLOW_RENDER_MS = 1_000;
 
 export function isBoardRenderPath(pathname: string): boolean {
@@ -68,6 +77,7 @@ export async function handleBoardRender(req: IncomingMessage, res: ServerRespons
   const thumbnail = searchParams.get('thumbnail') === '1';
   const includeBackground = searchParams.get('include_background') === '1';
   const isOgVariant = searchParams.get('variant') === 'og';
+  const colorSchemeParam = searchParams.get('color_scheme');
   const format = normalizeOutputFormat(searchParams.get('format') ?? (isOgVariant ? 'png' : 'webp'));
   const requestedVersion = searchParams.get('v');
   const renderVersion = isWellFormedRenderVersion(requestedVersion) ? requestedVersion : null;
@@ -103,12 +113,31 @@ export async function handleBoardRender(req: IncomingMessage, res: ServerRespons
     sendJson(req, res, 400, { error: 'Invalid format' });
     return;
   }
+  if (colorSchemeParam !== null && colorSchemeParam !== 'dark' && colorSchemeParam !== 'light') {
+    sendJson(req, res, 400, { error: 'color_scheme must be light or dark' });
+    return;
+  }
+  const colorScheme: BoardArtColorScheme = colorSchemeParam === 'dark' ? 'dark' : 'light';
   if (frames.length > MAX_FRAMES_LENGTH) {
     sendJson(req, res, 400, { error: 'Frames string is too large' });
     return;
   }
   if (!isValidFramesString(frames)) {
     sendJson(req, res, 400, { error: 'Invalid frames' });
+    return;
+  }
+
+  const boardseshOptions = boardseshRenderQuerySchema.safeParse({
+    render_mode: searchParams.get('render_mode') ?? undefined,
+    glow_falloff: searchParams.get('glow_falloff') ?? undefined,
+    glyphs: searchParams.get('glyphs') ?? undefined,
+    field_color: searchParams.get('field_color') ?? undefined,
+  });
+  if (!boardseshOptions.success) {
+    sendJson(req, res, 400, {
+      error: 'Invalid render options',
+      details: boardseshOptions.error.issues.map((issue) => issue.message),
+    });
     return;
   }
 
@@ -119,12 +148,41 @@ export async function handleBoardRender(req: IncomingMessage, res: ServerRespons
     return;
   }
 
+  try {
+    await checkRateLimitRedis(getPublicClientIp(req), 'board-render', RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS);
+    await checkRateLimitRedis(
+      req.socket.remoteAddress || 'unknown',
+      'board-render-peer',
+      SOCKET_RATE_LIMIT_MAX,
+      RATE_LIMIT_WINDOW_MS,
+    );
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      const encoded = JSON.stringify({ error: 'Rate limit exceeded' });
+      res.writeHead(429, {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(encoded),
+        'Retry-After': String(error.retryAfterSeconds),
+        'Cache-Control': 'no-store',
+      });
+      res.end(req.method === 'HEAD' ? undefined : encoded);
+      return;
+    }
+    throw error;
+  }
+
   if (!(await ensureBoardRendererAvailable())) {
     sendJson(req, res, 503, { error: 'Board renderer unavailable' });
     return;
   }
 
   try {
+    const {
+      render_mode: renderMode,
+      glow_falloff: glowFalloff,
+      glyphs,
+      field_color: fieldColor,
+    } = boardseshOptions.data;
     const totalT0 = performance.now();
     const rendered = await renderBoardImage({
       boardName,
@@ -137,6 +195,11 @@ export async function handleBoardRender(req: IncomingMessage, res: ServerRespons
       dimBackground,
       isOgVariant,
       format,
+      renderMode,
+      glowFalloff,
+      glyphs,
+      fieldColor,
+      colorScheme,
     });
     const totalMs = performance.now() - totalT0;
     const timingParts =
@@ -194,8 +257,11 @@ export async function handleBoardRender(req: IncomingMessage, res: ServerRespons
       sendJson(req, res, 400, { error: error.message });
       return;
     }
+    if (error instanceof InvalidBoardRenderConfigError) {
+      sendJson(req, res, 400, { error: error.message });
+      return;
+    }
     logger.error('[BoardRender] render failed:', error);
-    const message = error instanceof Error ? error.message : String(error);
-    sendJson(req, res, 500, { error: `Render failed: ${message}` });
+    sendJson(req, res, 500, { error: 'Render failed' });
   }
 }

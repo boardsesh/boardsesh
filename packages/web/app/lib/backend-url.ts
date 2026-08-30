@@ -124,7 +124,18 @@ function wsUrlToHttpBase(wsUrl: string | null): string | null {
   if (!wsUrl) return null;
   try {
     const url = new URL(wsUrl);
-    url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+    switch (url.protocol) {
+      case 'wss:':
+      case 'https:':
+        url.protocol = 'https:';
+        break;
+      case 'ws:':
+      case 'http:':
+        url.protocol = 'http:';
+        break;
+      default:
+        return null;
+    }
     url.pathname = '';
     return url.toString().replace(/\/$/, '');
   } catch {

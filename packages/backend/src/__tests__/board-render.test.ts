@@ -1,20 +1,31 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { RateLimitError } from '../utils/rate-limiter';
 
 vi.mock('../services/board-render', () => ({
+  InvalidBoardRenderConfigError: class InvalidBoardRenderConfigError extends Error {
+    constructor() {
+      super('Invalid board configuration');
+    }
+  },
   RenderOutputTooLargeError: class RenderOutputTooLargeError extends Error {},
   RenderQueueSaturatedError: class RenderQueueSaturatedError extends Error {},
   ensureBoardRendererAvailable: vi.fn(async () => true),
   renderBoardImage: vi.fn(),
 }));
+vi.mock('../utils/redis-rate-limiter', () => ({
+  checkRateLimitRedis: vi.fn(async () => {}),
+}));
 
 import { handleBoardRender, isBoardRenderPath } from '../handlers/board-render';
 import {
+  InvalidBoardRenderConfigError,
   RenderOutputTooLargeError,
   RenderQueueSaturatedError,
   ensureBoardRendererAvailable,
   renderBoardImage,
 } from '../services/board-render';
+import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 
 type MockResponse = {
   statusCode: number;
@@ -71,6 +82,7 @@ describe('handleBoardRender', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(ensureBoardRendererAvailable).mockResolvedValue(true);
+    vi.mocked(checkRateLimitRedis).mockResolvedValue(undefined);
     vi.mocked(renderBoardImage).mockResolvedValue({
       buffer: Buffer.from([0x52, 0x49, 0x46, 0x46]),
       contentType: 'image/webp',
@@ -91,7 +103,38 @@ describe('handleBoardRender', () => {
       includeBackground: false,
       dimBackground: 0,
       isOgVariant: false,
+      renderMode: 'classic',
+      glowFalloff: 'soft',
+      glyphs: false,
+      colorScheme: 'light',
     });
+    expect(checkRateLimitRedis).toHaveBeenCalledTimes(2);
+    expect(checkRateLimitRedis).toHaveBeenNthCalledWith(1, '127.0.0.1', 'board-render', 120, 60_000);
+    expect(checkRateLimitRedis).toHaveBeenNthCalledWith(2, '127.0.0.1', 'board-render-peer', 600, 60_000);
+  });
+
+  it('validates and passes render-mode and color-scheme options through', async () => {
+    await run({
+      ...validParams,
+      render_mode: 'boardsesh',
+      glow_falloff: 'plateau',
+      glyphs: '1',
+      field_color: '#123456',
+      color_scheme: 'dark',
+    });
+
+    expect(vi.mocked(renderBoardImage).mock.calls[0][0]).toMatchObject({
+      renderMode: 'boardsesh',
+      glowFalloff: 'plateau',
+      glyphs: true,
+      fieldColor: '#123456',
+      colorScheme: 'dark',
+    });
+
+    vi.mocked(renderBoardImage).mockClear();
+    expect((await run({ ...validParams, render_mode: 'neon' })).statusCode).toBe(400);
+    expect((await run({ ...validParams, color_scheme: 'sepia' })).statusCode).toBe(400);
+    expect(renderBoardImage).not.toHaveBeenCalled();
   });
 
   it('passes thumbnail, background, dim, OG, and format flags through', async () => {
@@ -177,6 +220,32 @@ describe('handleBoardRender', () => {
     expect(response.headers['Access-Control-Allow-Origin']).toBe('*');
     expect(response.headers['Access-Control-Allow-Credentials']).toBeUndefined();
     expect(ensureBoardRendererAvailable).not.toHaveBeenCalled();
+    expect(checkRateLimitRedis).not.toHaveBeenCalled();
+    expect(renderBoardImage).not.toHaveBeenCalled();
+  });
+
+  it('rate-limits by client before renderer work', async () => {
+    vi.mocked(checkRateLimitRedis).mockRejectedValueOnce(new RateLimitError(23));
+
+    const response = await run(validParams);
+
+    expect(response.statusCode).toBe(429);
+    expect(response.headers['Retry-After']).toBe('23');
+    expect(response.headers['Cache-Control']).toBe('no-store');
+    expect(ensureBoardRendererAvailable).not.toHaveBeenCalled();
+    expect(renderBoardImage).not.toHaveBeenCalled();
+  });
+
+  it('rate-limits by socket peer before renderer work', async () => {
+    vi.mocked(checkRateLimitRedis).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new RateLimitError(17));
+
+    const response = await run(validParams);
+
+    expect(response.statusCode).toBe(429);
+    expect(response.headers['Retry-After']).toBe('17');
+    expect(response.headers['Cache-Control']).toBe('no-store');
+    expect(checkRateLimitRedis).toHaveBeenCalledTimes(2);
+    expect(ensureBoardRendererAvailable).not.toHaveBeenCalled();
     expect(renderBoardImage).not.toHaveBeenCalled();
   });
 
@@ -192,6 +261,21 @@ describe('handleBoardRender', () => {
     vi.mocked(renderBoardImage).mockRejectedValueOnce(new RenderOutputTooLargeError(2_000, 2_000));
     const response = await run(validParams);
     expect(response.statusCode).toBe(400);
+  });
+
+  it('maps invalid catalog geometry to a generic 400', async () => {
+    vi.mocked(renderBoardImage).mockRejectedValueOnce(new InvalidBoardRenderConfigError());
+    const response = await run({ ...validParams, size_id: '999' });
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(String(response.body))).toEqual({ error: 'Invalid board configuration' });
+  });
+
+  it('logs unexpected failures without returning internal details', async () => {
+    vi.mocked(renderBoardImage).mockRejectedValueOnce(new Error('/srv/private/board-image.webp missing'));
+    const response = await run(validParams);
+    expect(response.statusCode).toBe(500);
+    expect(JSON.parse(String(response.body))).toEqual({ error: 'Render failed' });
+    expect(String(response.body)).not.toContain('/srv/private');
   });
 });
 

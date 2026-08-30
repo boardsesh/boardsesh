@@ -10,13 +10,13 @@ enum SharedConstants {
     static let queueItemsKey = "bs_queue_items"
     static let currentIndexKey = "bs_current_index"
     static let sessionIdKey = "bs_session_id"
-    /// Web origin (e.g. https://www.boardsesh.com). Used by the widget for
-    /// Next.js-hosted routes like `/api/internal/board-render`.
+    /// Backend origin (e.g. https://ws.boardsesh.com). Used by the widget for
+    /// the board-render compatibility route `/api/internal/board-render`.
     static let serverUrlKey = "bs_server_url"
     /// Fully-qualified backend `/api/widget/navigate` URL (e.g.
     /// https://ws.boardsesh.com/api/widget/navigate). The widget POSTs button
-    /// taps here. Distinct from `serverUrlKey` because the backend lives on a
-    /// different host than the web app.
+    /// taps here. Kept fully qualified rather than derived from `serverUrlKey`
+    /// so the native contract remains explicit.
     static let widgetNavigateUrlKey = "bs_widget_navigate_url"
     /// Fully-qualified backend `/api/widget/take-control` URL. The widget
     /// POSTs non-driver lightbulb taps here before enabling local navigation.

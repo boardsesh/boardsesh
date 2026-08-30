@@ -73,8 +73,9 @@ What it manages (and nothing else on the zone):
     flattening would override that record.
 - **Cache** — two rules in the `http_request_cache_settings` phase, one for
   `(http.host eq "ws.boardsesh.com" and starts_with(http.request.uri.path, "/og/"))`
-  and one for the exact path
-  `(http.host eq "ws.boardsesh.com" and http.request.uri.path eq "/render/board")`.
+  and one for the exact board-render paths `/render/board` and
+  `/api/internal/board-render` on `ws.boardsesh.com`. The compatibility path is
+  still emitted by released Live Activity binaries.
   Both make successful responses eligible for cache, with edge TTL
   "use cache-control if present, bypass if not"
   so error responses (400/429/503 — sent without Cache-Control) are never
@@ -146,12 +147,12 @@ Additional policies are managed the same way (declared in
   all function invocations.
 
 The web emits new board-image URLs directly on `ws.boardsesh.com/render/board`.
-The production workflow deploys and smokes Railway first, applies the new exact
-path cache rule second, and only then promotes the web build. Roll back a
-Railway image that lacks `/render/board` together with the Vercel web deployment;
-removing only the new Cloudflare rule is safe but sends every image to Railway.
-Never disable the `ws` proxy to roll this route back because GraphQL, WebSockets,
-and `/og` share that hostname.
+The production workflow may apply the cache rule while the Railway deploy runs;
+it promotes the web build only after both the live backend smoke and Cloudflare
+apply succeed. Roll back a Railway image that lacks `/render/board` together
+with the Vercel web deployment; disabling only the new Cloudflare rule is safe
+but sends every image to Railway. Never disable the `ws` proxy to roll this route
+back because GraphQL, WebSockets, and `/og` share that hostname.
 
 - **Crawler rules** — two rules in `http_request_firewall_custom`, in this order:
   1. `skip` (all remaining custom rules) for search engines and share-card
@@ -282,7 +283,8 @@ target; a missing `assets` record is an ordinary planned create.
 `CLOUDFLARE_ZONE_ID` is optional — when unset, the zone id is resolved by name.
 
 Confirm WebSockets are enabled for the zone (Network tab; on by default on
-current plans). WebSocket caveat: the cache rule scopes to `/og/` only, so
+current plans). The cache rules scope to `/og/`, `/render/board`, and the exact
+Live Activity compatibility path `/api/internal/board-render`, so
 `wss://ws.boardsesh.com/graphql` upgrades and every other path continue to pass
 straight through to Railway.
 
@@ -395,5 +397,9 @@ zone's origin-encryption mode.
 
 ### Rollback
 
-Set `proxied: false` on the `ws` record in `infra/cloudflare/config.ts` and
-`vp run cf:apply -- --apply`, or grey-cloud the record in the dashboard.
+For a bad board-render cache rule, set the matching rule's `enabled` field to
+`false` in `infra/cloudflare/config.ts` and run `vp run cf:apply -- --apply`.
+For a bad renderer deployment, roll back the web and Railway releases together;
+the compatibility path remains routed to Railway. Grey-cloud `ws` only for a
+Cloudflare proxy incident, because doing so removes edge caching from both image
+endpoints and sends their full load directly to Railway.

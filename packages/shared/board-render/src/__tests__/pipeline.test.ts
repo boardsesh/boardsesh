@@ -383,6 +383,35 @@ describe('renderBoardImageBuffer with caches', () => {
     expect(second.buffer.equals(first.buffer)).toBe(true);
   });
 
+  it('keeps light and dark OG board art in separate cache entries', async () => {
+    const lightRelPath = relPathFor('layer-a.png');
+    const darkRelPath = lightRelPath.replace(/\.webp$/, '.dark.webp');
+    filesByRelPath.set(lightRelPath, await writeLayer('og-light.png', { r: 240, g: 240, b: 240 }));
+    filesByRelPath.set(darkRelPath, await writeLayer('og-dark.png', { r: 20, g: 20, b: 20 }));
+    const ogBase = new BoundedLru<OgBaseResult>({
+      maxEntries: 2,
+      maxBytes: 8 * 1024 * 1024,
+      sizeOf: (value) => value.base.length,
+    });
+    const params = {
+      ...baseParams,
+      overlayBuffer: transparentOverlay(),
+      isOgVariant: true,
+      format: 'png' as const,
+      boardDetails: boardWithLayers(['layer-a.png']),
+      caches: { ogBase },
+    };
+
+    const light = await renderBoardImageBuffer({ ...params, colorScheme: 'light' });
+    const dark = await renderBoardImageBuffer({ ...params, colorScheme: 'dark' });
+
+    expect(light.cache).toBe('miss');
+    expect(dark.cache).toBe('miss');
+    expect(light.buffer.equals(dark.buffer)).toBe(false);
+    expect(ogBase.size).toBe(2);
+    expect(resolveCalls).toEqual([lightRelPath, darkRelPath]);
+  });
+
   it('coalesces concurrent OG base composition across different overlays', async () => {
     filesByRelPath.set(relPathFor('layer-a.png'), await writeLayer('og-coalesced.png', { r: 80, g: 90, b: 100 }));
     const ogBase = new BoundedLru<OgBaseResult>({

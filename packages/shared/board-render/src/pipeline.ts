@@ -265,13 +265,13 @@ export async function renderBoardImageBuffer({
     const bgT0 = performance.now();
     // The OG base always composes full-size photos, so key it on those paths —
     // not on `bgRelPaths`, which honours `thumbnail`.
-    const ogKey = `${getBackgroundRelPaths(boardDetails, false).join('|')}:${width}x${height}:og`;
+    const ogKey = `${getBackgroundRelPaths(boardDetails, false, colorScheme).join('|')}:${width}x${height}:og`;
     let ogBase = caches?.ogBase?.get(ogKey);
     let reusedInFlightBase = false;
     if (ogBase) {
       cache = 'hit';
     } else {
-      const composeParams = { boardDetails, boardWidth: width, boardHeight: height, resolveImagePath };
+      const composeParams = { boardDetails, boardWidth: width, boardHeight: height, resolveImagePath, colorScheme };
       const inFlightBases = caches?.ogBaseInFlight;
       if (inFlightBases) {
         const alreadyComposing = inFlightBases.get(ogKey);
@@ -467,12 +467,13 @@ export async function composeOgBaseBuffer(params: {
   boardWidth: number;
   boardHeight: number;
   resolveImagePath: ResolveImagePath;
+  colorScheme?: BoardArtColorScheme;
 }): Promise<OgBaseResult> {
-  const { boardDetails, boardWidth, boardHeight, resolveImagePath } = params;
+  const { boardDetails, boardWidth, boardHeight, resolveImagePath, colorScheme } = params;
   const left = Math.round((OG_IMAGE_WIDTH - boardWidth) / 2);
   const top = Math.round((OG_IMAGE_HEIGHT - boardHeight) / 2);
 
-  const bgRelPaths = getBackgroundRelPaths(boardDetails, false);
+  const bgRelPaths = getBackgroundRelPaths(boardDetails, false, colorScheme);
   const bgFsPaths = bgRelPaths
     .map((relPath) => resolveImagePath(relPath))
     .filter((path): path is string => path !== null);

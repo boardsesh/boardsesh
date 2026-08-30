@@ -186,10 +186,9 @@ export type BoardArtLayers = {
  *
  * Boards with dark art cannot use that composite for both themes. Its URL carries the
  * climb's frames, so a dark twin is a *second* WASM + sharp render per climb — 50 of them on
- * a front-door list, which is exactly the work `warmOverlays` caps itself to avoid. The holds
- * overlay is identical in both themes though; only the board photo behind it differs. So the
- * photo splits back out as static art (two files per board size, shared by every card on the
- * page) and the overlay renders once with no background baked in.
+ * a front-door list. The holds overlay is identical in both themes though; only the board photo
+ * behind it differs. So the photo splits back out as static art (two files per board size, shared
+ * by every card on the page) and the overlay renders once with no background baked in.
  */
 export const buildBoardArtLayers = (
   boardDetails: BoardDetails,

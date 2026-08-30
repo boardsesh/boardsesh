@@ -70,13 +70,46 @@ describe('board renderer memory and concurrency core', () => {
       { ...standardParams, layoutId: 2 },
       { ...standardParams, sizeId: 9 },
       { ...standardParams, setIds: '1' },
+      { ...standardParams, renderMode: 'boardsesh' as const },
+      { ...standardParams, renderMode: 'boardsesh' as const, glowFalloff: 'plateau' as const },
+      { ...standardParams, colorScheme: 'dark' as const },
     ];
 
     expect(new Set(variants.map(service.buildBoardRenderByteCacheKey))).not.toContain(baseKey);
     expect(new Set(variants.map(service.buildBoardRenderByteCacheKey)).size).toBe(variants.length);
+    const boardseshParams = { ...standardParams, renderMode: 'boardsesh' as const };
+    expect(
+      new Set(
+        [
+          boardseshParams,
+          { ...boardseshParams, glowFalloff: 'plateau' as const },
+          { ...boardseshParams, glyphs: true },
+          { ...boardseshParams, fieldColor: '#123456' },
+        ].map(service.buildBoardRenderByteCacheKey),
+      ).size,
+    ).toBe(4);
     expect(standardParams).not.toHaveProperty('v');
     const versionAlias = { ...standardParams, v: '0123456789ab' };
     expect(service.buildBoardRenderByteCacheKey(versionAlias)).toBe(baseKey);
+  });
+
+  it('normalizes classic render options and the default light art in the byte key', () => {
+    expect(
+      service.buildBoardRenderByteCacheKey({
+        ...standardParams,
+        renderMode: 'classic',
+        glowFalloff: 'plateau',
+        glyphs: true,
+        fieldColor: '#123456',
+        colorScheme: 'light',
+      }),
+    ).toBe(service.buildBoardRenderByteCacheKey(standardParams));
+  });
+
+  it('rejects unknown catalog geometry with the public-safe service error', async () => {
+    await expect(service.renderBoardImage({ ...standardParams, sizeId: 999 })).rejects.toBeInstanceOf(
+      service.InvalidBoardRenderConfigError,
+    );
   });
 
   it('coalesces identical in-flight renders before they enter the semaphore', async () => {
@@ -112,7 +145,9 @@ describe('board renderer memory and concurrency core', () => {
     const shedRender = service.renderBoardImage({
       ...standardParams,
       frames: 'p1100r15p1240r12',
-      thumbnail: true,
+      // Invalid geometry proves queue shedding happens before prepareRender:
+      // this must reject as saturated, not as an invalid board config.
+      sizeId: 999,
     });
     const shedAssertion = expect(shedRender).rejects.toBeInstanceOf(service.RenderQueueSaturatedError);
 

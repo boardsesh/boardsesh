@@ -43,7 +43,7 @@ describe('fetchFrontDoorListPage', () => {
     await expect(fetchFrontDoorListPage(parsedParams, 1)).rejects.toThrow('connection terminated unexpectedly');
   });
 
-  it('returns a preload URL without starting server-side overlay warms', async () => {
+  it('returns preload URLs without starting server-side overlay warms', async () => {
     vi.mocked(cachedSearchClimbs).mockResolvedValue({
       climbs: [{ frames: 'p1r12' }] as never,
       hasMore: true,
@@ -51,6 +51,6 @@ describe('fetchFrontDoorListPage', () => {
 
     const result = await fetchFrontDoorListPage(parsedParams, 1);
 
-    expect(result?.preloadUrl).toBe('/api/internal/board-render?overlay');
+    expect(result?.preloadUrls).toEqual(['/api/internal/board-render?overlay']);
   });
 });

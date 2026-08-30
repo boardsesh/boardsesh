@@ -250,7 +250,7 @@ The Expo app reads the backend URL from `EXPO_PUBLIC_BACKEND_URL`. To point
 at your machine over Tailscale:
 
 ```bash
-EXPO_PUBLIC_BACKEND_URL=http://your-machine.tailscale-domain:3000 vp run dev:mobile
+EXPO_PUBLIC_BACKEND_URL=http://your-machine.tailscale-domain:8080 vp run dev:mobile
 ```
 
 The dev server picks up `.boardsesh/qa-notes.md` automatically and exposes

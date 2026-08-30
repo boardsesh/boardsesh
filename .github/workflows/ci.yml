@@ -302,6 +302,7 @@ jobs:
               - 'packages/shared/queue/**'
               - 'packages/shared/queue-react/**'
               - 'packages/shared/queue-runtime/**'
+              - 'packages/shared/static-assets/**'
               - 'packages/shared/velvet-tokens/**'
               - 'packages/shared/watch-pairing/**'
               - 'packages/sync-runtime/**'
@@ -1339,31 +1340,6 @@ jobs:
             NEXT_PUBLIC_WS_URL=wss://ws.boardsesh.com/graphql
             BASE_URL=https://www.boardsesh.com
           cache-from: type=gha,scope=web-main
-
-      # packages/web/app/api/internal/board-render/route.ts probes four
-      # candidate paths against process.cwd(); the runner's WORKDIR is /app, so
-      # this is the one that hits. It gets there only through
-      # next.config.mjs's `outputFileTracingIncludes` — and Next's standalone
-      # tracer behaves differently from the Vercel builder that has been
-      # producing the current artifact, which is exactly why it is asserted.
-      #
-      # The size floor, not just `test -s`, is the assertion: a 0-byte or stub
-      # file passes a presence check. The artifact measured 473,535 bytes on
-      # 2026-08-25; the floor sits at 400,000 (~85% of that) so a legitimate
-      # wasm rebuild doesn't red the gate while a stub still does. Do NOT relax
-      # this to `find / -name '*.wasm'` — the image also carries the committed
-      # public/wasm copy, a Turbopack asset copy and two @vercel/og blobs, any
-      # of which would make a loose check pass while tracing is broken.
-      - name: Verify the board-renderer WASM is traced into the image
-        run: |
-          docker run --rm --entrypoint sh boardsesh-web:ci-${{ github.sha }} -c '
-            set -eu
-            wasm_path=/app/packages/web/node_modules/@boardsesh/board-renderer-wasm/pkg/board_renderer_wasm_bg.wasm
-            test -s "$wasm_path" || { echo "::error::board-renderer WASM missing at $wasm_path"; exit 1; }
-            wasm_bytes=$(wc -c < "$wasm_path")
-            [ "$wasm_bytes" -gt 400000 ] || { echo "::error::WASM at $wasm_path is $wasm_bytes bytes, expected >400000"; exit 1; }
-            echo "WASM OK: $wasm_path ($wasm_bytes bytes)"
-          '
 
       # public/openapi.json is gitignored and written by the `generate:openapi`
       # half of packages/web's build script, so its presence in the image is

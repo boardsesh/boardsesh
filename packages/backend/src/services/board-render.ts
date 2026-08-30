@@ -10,6 +10,7 @@ import {
   createSemaphore,
   getBackgroundRelPaths,
   getBoardDetailsForBoard,
+  type BoardArtColorScheme,
   type OutputFormat,
   type RenderableBoardDetails,
   type WasmRenderConfig,
@@ -109,6 +110,13 @@ export class RenderOutputTooLargeError extends Error {
   }
 }
 
+export class InvalidBoardRenderConfigError extends Error {
+  constructor() {
+    super('Invalid board configuration');
+    this.name = 'InvalidBoardRenderConfigError';
+  }
+}
+
 function resolveImagePath(relativePath: string): string | null {
   const absolutePath = join(imagesRoot, relativePath);
   return existsSync(absolutePath) ? absolutePath : null;
@@ -190,8 +198,9 @@ export type BoardImageRenderParams = {
   glowFalloff?: 'soft' | 'plateau';
   /** `boardsesh` mode only: role glyphs inside the glow. */
   glyphs?: boolean;
-  /** `boardsesh` mode only: feeds the placeholder veil color (see renderOgClimbUncached). */
+  /** `boardsesh` mode only: feeds the placeholder veil color in prepareRender. */
   fieldColor?: string;
+  colorScheme?: BoardArtColorScheme;
   thumbnail: boolean;
   includeBackground: boolean;
   dimBackground: number;
@@ -263,6 +272,7 @@ export function buildBoardRenderByteCacheKey(params: BoardImageRenderParams): st
     params.isOgVariant ? 'og' : 'std',
     params.format,
     renderOptionsCacheKeySuffix(params),
+    params.colorScheme ?? 'light',
   ].join(':');
 }
 
@@ -277,12 +287,17 @@ function prepareRender(params: BoardImageRenderParams): {
   const boardStates = HOLD_STATE_MAP[params.boardName as BoardName];
   if (!boardStates) throw new Error(`No hold states defined for board ${params.boardName}`);
 
-  const boardDetails = getBoardDetailsForBoard({
-    board_name: params.boardName,
-    layout_id: params.layoutId,
-    size_id: params.sizeId,
-    set_ids: parsedSetIds,
-  });
+  let boardDetails: RenderableBoardDetails;
+  try {
+    boardDetails = getBoardDetailsForBoard({
+      board_name: params.boardName,
+      layout_id: params.layoutId,
+      size_id: params.sizeId,
+      set_ids: parsedSetIds,
+    });
+  } catch {
+    throw new InvalidBoardRenderConfigError();
+  }
   const { config } = buildRenderConfig({
     boardName: params.boardName,
     boardDetails,
@@ -327,11 +342,13 @@ export async function renderBoardImage(params: BoardImageRenderParams): Promise<
   const alreadyRendering = inFlightRenders.get(cacheKey);
   if (alreadyRendering) return alreadyRendering;
 
-  // Geometry is pure and must be checked before a request can consume a slot.
-  const prepared = prepareRender(params);
+  // Reject before parsing board geometry or allocating a WASM config. This
+  // check and the semaphore enqueue below are synchronous, so no other request
+  // can interleave between them on the JS thread.
   if (renderSemaphore.pending >= MAX_QUEUED_RENDERS) {
     throw new RenderQueueSaturatedError();
   }
+  const prepared = prepareRender(params);
 
   const queuedAt = performance.now();
   const renderPromise = renderSemaphore
@@ -355,6 +372,7 @@ export async function renderBoardImage(params: BoardImageRenderParams): Promise<
         dimBackground: params.dimBackground,
         boardDetails: prepared.boardDetails,
         resolveImagePath,
+        colorScheme: params.colorScheme,
         caches: { boardBase: boardBaseCache, ogBase: ogBaseCache, boardBaseInFlight, ogBaseInFlight },
       });
       const cache = rendered.cache === 'hit' ? 'base-hit' : (rendered.cache ?? 'none');

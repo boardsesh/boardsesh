@@ -473,9 +473,9 @@ describe('www cost-control rules (#4650)', () => {
     expect(boardRenderRule?.action_parameters.edge_ttl.mode).toBe('bypass_by_default');
   });
 
-  it('caches only the canonical Railway board-render path on ws', () => {
+  it('caches the canonical and released Live Activity board-render paths on ws', () => {
     expect(backendBoardRenderRule?.expression).toBe(
-      `(http.host eq "${WS_HOSTNAME}" and http.request.uri.path eq "/render/board")`,
+      `(http.host eq "${WS_HOSTNAME}" and (http.request.uri.path eq "/render/board" or http.request.uri.path eq "/api/internal/board-render"))`,
     );
     expect(backendBoardRenderRule?.action_parameters.cache).toBe(true);
     expect(backendBoardRenderRule?.action_parameters.edge_ttl.mode).toBe('bypass_by_default');
@@ -676,9 +676,9 @@ describe('deploy-cloudflare workflow wiring', () => {
     expect(prerequisiteStep).toContain('exit 1');
   });
 
-  it('deploys and smokes Railway before applying Cloudflare, then promotes web', () => {
-    expect(cloudflareJob).toContain('needs: [detect-changes, deploy-production-backend]');
-    expect(cloudflareJob).toContain("needs.deploy-production-backend.result == 'success'");
+  it('applies Cloudflare independently, then promotes web after both it and Railway succeed', () => {
+    expect(cloudflareJob).toContain('needs: [detect-changes]');
+    expect(cloudflareJob).not.toContain('needs.deploy-production-backend');
     expect(webJob).toContain('deploy-production-backend, deploy-cloudflare');
     expect(webJob).toContain("needs.deploy-cloudflare.result == 'success'");
   });

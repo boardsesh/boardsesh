@@ -618,20 +618,18 @@ jobs:
   # expo-web-smoke suite stays the dispatch-only gate in e2e-tests.yml.
   # Converges the Cloudflare zone config (infra/cloudflare) on main. Runs only
   # when the desired state or apply tooling changes (or on manual dispatch).
-  # When a changeset also deploys the backend, wait until its live smoke passes
-  # before applying edge routing/cache changes. Web promotion and static-asset
-  # publication then wait on this job when their targets also change. A non-zero
-  # exit = unapplied drift (e.g. a blocked zone-SSL change) and should be
-  # investigated, not retried blindly.
+  # Static-asset publication waits for this job when both targets change, so it
+  # cannot validate the public hostname before its DNS record is converged. Web
+  # promotion waits independently for both this apply and the live backend smoke.
+  # A non-zero exit = unapplied drift (e.g. a blocked zone-SSL change) and should
+  # be investigated, not retried blindly.
   # The planned OpenNext (Cloudflare Workers) deploy of packages/web will be a
   # sibling job reusing the same Production-environment CLOUDFLARE_API_TOKEN
   # (+ CLOUDFLARE_ACCOUNT_ID) — see docs/cloudflare.md for the token scopes.
   deploy-cloudflare:
-    needs: [detect-changes, deploy-production-backend]
+    needs: [detect-changes]
     if: >-
-      always()
-      && needs.detect-changes.outputs.cloudflare_changed == 'true'
-      && (needs.detect-changes.outputs.backend_changed != 'true' || needs.deploy-production-backend.result == 'success')
+      needs.detect-changes.outputs.cloudflare_changed == 'true'
     runs-on: ubuntu-latest
     environment: Production
     steps:

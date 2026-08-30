@@ -177,8 +177,8 @@ export const OG_CACHE_EXPRESSION = `(http.host eq "${WS_HOSTNAME}" and starts_wi
 /** Board-image renders on www. Host-scoped so a future origin on another hostname can't inherit it silently. */
 export const BOARD_RENDER_CACHE_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and starts_with(http.request.uri.path, "${BOARD_RENDER_PATH_PREFIX}"))`;
 
-/** Canonical Railway renders only; adjacent REST and GraphQL routes stay dynamic. */
-export const BACKEND_BOARD_RENDER_CACHE_EXPRESSION = `(http.host eq "${WS_HOSTNAME}" and http.request.uri.path eq "${BACKEND_BOARD_RENDER_PATH}")`;
+/** Canonical and released Live Activity Railway renders; adjacent REST and GraphQL routes stay dynamic. */
+export const BACKEND_BOARD_RENDER_CACHE_EXPRESSION = `(http.host eq "${WS_HOSTNAME}" and (http.request.uri.path eq "${BACKEND_BOARD_RENDER_PATH}" or http.request.uri.path eq "${BOARD_RENDER_PATH_PREFIX}"))`;
 
 /**
  * Search engines and social unfurlers that must never be blocked. Brave runs its
