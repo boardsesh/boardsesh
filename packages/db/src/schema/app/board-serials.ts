@@ -42,7 +42,15 @@ export const userBoardSerials = pgTable(
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
-    uniqueUserSerial: uniqueIndex('user_board_serials_unique_user_serial').on(table.userId, table.serialNumber),
+    // Keyed on `boardName` as well as the serial: Aurora runs a separate serial
+    // sequence per board app, so a Kilter `#12345` and a Tension `#12345` are
+    // two different controllers. Without the board name in the key, connecting
+    // to one silently overwrote the recording for the other.
+    uniqueUserSerial: uniqueIndex('user_board_serials_unique_user_serial').on(
+      table.userId,
+      table.boardName,
+      table.serialNumber,
+    ),
     serialIdx: index('user_board_serials_serial_idx').on(table.serialNumber),
     boardUuidIdx: index('user_board_serials_board_uuid_idx').on(table.boardUuid),
   }),

@@ -3436,6 +3436,12 @@ export type Mutation = {
    * the serial and the user must pick which wall they're at. Confirm the pick
    * with `chooseBoardForSerial`. The config args create the board the first
    * time a serial is seen.
+   *
+   * `advertisedBoardType` is the board type in the controller's BLE device
+   * name (`Tension Board#12345@3`). Aurora runs a separate serial sequence per
+   * board app, so the same serial exists on controllers of different types; pass
+   * it and only boards of that type are candidates. Optional — clients shipped
+   * before this existed keep the old type-blind resolution.
    */
   resolveBoardCandidatesForSerial: ResolveBoardResult;
   /**
@@ -3451,6 +3457,12 @@ export type Mutation = {
    * (the caller's own board if present, else the oldest) and remembers it.
    * New clients should call `resolveBoardCandidatesForSerial`. The board config
    * args are used only to create the board the first time a serial is seen.
+   *
+   * `advertisedBoardType` is the board type in the controller's BLE device
+   * name (`Tension Board#12345@3`). Aurora runs a separate serial sequence per
+   * board app, so the same serial exists on controllers of different types; pass
+   * it and only boards of that type are candidates. Optional — clients shipped
+   * before this existed keep the old type-blind resolution.
    */
   resolveBoardForSerial: ResolvedBoard;
   /**
@@ -4001,6 +4013,7 @@ export type MutationRequestGymClaimArgs = {
 
 /** Root mutation type for all write operations. */
 export type MutationResolveBoardCandidatesForSerialArgs = {
+  advertisedBoardType?: InputMaybe<Scalars['String']['input']>;
   boardType: Scalars['String']['input'];
   layoutId: Scalars['Int']['input'];
   serial: Scalars['String']['input'];
@@ -4018,6 +4031,7 @@ export type MutationResolveBoardForConfigArgs = {
 
 /** Root mutation type for all write operations. */
 export type MutationResolveBoardForSerialArgs = {
+  advertisedBoardType?: InputMaybe<Scalars['String']['input']>;
   boardType: Scalars['String']['input'];
   layoutId: Scalars['Int']['input'];
   serial: Scalars['String']['input'];
@@ -4966,6 +4980,12 @@ export type Query = {
    * Searches all boards (including unlisted/non-public).
    * Capped at 20 serials per request — exceeding this throws a validation
    * error rather than silently truncating, so callers must cap on their end.
+   *
+   * `boardType` is the type advertised in the BLE device name
+   * (`Tension Board#12345@3`). Aurora runs a separate serial sequence per board
+   * app, so the same serial exists on a Kilter and a Tension controller; pass it
+   * to keep the lookup on the hardware in front of the climber. Optional for
+   * backward compatibility with already-shipped clients.
    */
   boardsBySerialNumbers: Array<UserBoard>;
   /**
@@ -5537,6 +5557,7 @@ export type QueryBoardRecentClimbsArgs = {
 
 /** Root query type for all read operations. */
 export type QueryBoardsBySerialNumbersArgs = {
+  boardType?: InputMaybe<Scalars['String']['input']>;
   serialNumbers: Array<Scalars['String']['input']>;
 };
 
