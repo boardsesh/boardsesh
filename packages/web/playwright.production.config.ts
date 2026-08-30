@@ -13,7 +13,7 @@ import { defineConfig, devices } from '@playwright/test';
  * local dev server would silently smoke localhost instead of the deploy.
  *
  *   PLAYWRIGHT_TEST_BASE_URL=https://app.boardsesh.com \
- *     bunx playwright test --config=playwright.production.config.ts
+ *     vp exec playwright test --config=playwright.production.config.ts
  */
 // Required rather than defaulted. Defaulting to production would mean a bare
 // `playwright test --config=…` silently drives the live site, which is a

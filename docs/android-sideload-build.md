@@ -28,7 +28,7 @@ needs a macOS runner, which is why that one prebuilds locally too.)
 - The job runs in the `Native Release` GitHub Environment so it can read the
   signing and deployment-notification secrets.
 
-Steps: `bun install` → write `.env` (prod URLs + Sentry DSN) → disable Sentry
+Steps: `vp install` → write `.env` (prod URLs + Sentry DSN) → disable Sentry
 Gradle source-map upload (`SENTRY_DISABLE_AUTO_UPLOAD`) → `expo prebuild` → set
 `versionCode` → derive the app version from `app.config.ts` → decode keystore →
 `gradlew assembleRelease` → verify the APK signature (`apksigner verify

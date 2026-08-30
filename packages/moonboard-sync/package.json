@@ -36,8 +36,8 @@
     "sync:locations": "tsx src/cli/index.ts locations --skip-if-missing-credentials"
   },
   "dependencies": {
-    "@boardsesh/db": "*",
-    "@boardsesh/location-sync": "*",
+    "@boardsesh/db": "workspace:*",
+    "@boardsesh/location-sync": "workspace:*",
     "commander": "^15.0.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2"

@@ -11,7 +11,8 @@ on:
       - 'scripts/vite.config.ts'
       - 'docs/postgres-image-publishing.md'
       - 'package.json'
-      - 'bun.lock'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
   push:
     branches: [main]
     paths: *publisher_contract_paths
@@ -29,14 +30,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-
       - name: Set up Vite+
         uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version: '22.x'
 
       - name: Install locked dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Verify publisher authority and artifact contracts
         run: vp test run --project scripts scripts/postgres-image-publisher-contract.test.ts --reporter=agent

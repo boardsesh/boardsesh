@@ -415,15 +415,16 @@ iOS 27.0 and on a pre-fix release (Sentry BOARDSESH-9K, fixed in #4198 / 2.3.1).
 coalesced `dispatch_async`, and hands the work to the transition coordinator's completion block
 if a transition is in flight.
 
-Bun keys patches by exact version, so a bump means re-keying. The runbook:
+pnpm keys patches by exact version, so a bump means re-keying. The runbook:
 
-1. `bun patch react-native-screens` against the new version, re-apply the hunks, and check that
+1. `vp exec pnpm patch react-native-screens@<version>` against the new version, re-apply the hunks, run
+   `vp exec pnpm patch-commit <patch-directory>`, and check that
    upstream still hasn't added its own relayout to `applyBottomAccessoryVisibility` (4.27.0 has
    none — the patch is still required).
-2. Re-key `patchedDependencies` in the root `package.json`, rename the file under `patches/`,
-   and **delete the old file** — Bun ignores unreferenced patches without a word.
+2. Confirm `patchedDependencies` in `pnpm-workspace.yaml` points to the re-keyed file under
+   `patches/`, and **delete the old file** — pnpm ignores unreferenced patches without a word.
 3. Update `patchedKey` on both `react-native-screens` rules in `scripts/mobile-patches-check.ts`,
-   and the `overrides` pin in the root `package.json`.
+   and the `overrides` pin in `pnpm-workspace.yaml`.
 4. `vp run check:mobile-patches`.
 
 That check is the backstop, and it asserts shape, not just symbols: the deferral sentinels

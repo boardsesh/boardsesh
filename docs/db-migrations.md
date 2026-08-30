@@ -31,7 +31,7 @@ so a broken chain produces wrong DDL — or, more often, silence.
 
 ```bash
 cd packages/db
-bunx drizzle-kit generate --name describes_what_it_does
+vp exec drizzle-kit generate --name describes_what_it_does
 ```
 
 `vp run build:db` runs first if your schema changed — `drizzle.config.ts` reads
@@ -39,7 +39,7 @@ bunx drizzle-kit generate --name describes_what_it_does
 and stop on an interactive prompt.
 
 Data-only migrations (backfills, one-off corrections) have no schema delta, so
-`generate` produces nothing to diff. Use `bunx drizzle-kit generate --custom --name …`,
+`generate` produces nothing to diff. Use `vp exec drizzle-kit generate --custom --name …`,
 which writes an empty `.sql` and the journal entry for you, then fill in the body.
 Several existing backfills use a `_bs_migration_guards` row to stay idempotent; that
 guard key is a semantic identity, **not** the filename, so it must never be renumbered —
@@ -76,7 +76,7 @@ It blocks — pushing nothing — rather than guess, in these cases:
 | It says                                          | What happened                                                                                                                                                                              |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | conflicts outside the migration folder           | A real code conflict. Resolving it by rule would silently pick a side of someone's work.                                                                                                   |
-| `generate` produced no migration                 | Either main already landed your schema change, or drizzle needs you to say whether something was created or renamed. Rebase locally and run `bunx drizzle-kit generate` to see the prompt. |
+| `generate` produced no migration                 | Either main already landed your schema change, or drizzle needs you to say whether something was created or renamed. Rebase locally and run `vp exec drizzle-kit generate` to see the prompt. |
 | this branch adds two migrations at one number    | Apply order is ambiguous; guessing would be worse than asking.                                                                                                                             |
 | tag referenced by files this branch didn't touch | Almost certainly a `_bs_migration_guards` key, which must not move.                                                                                                                        |
 | the rebase altered a file this branch owns       | A safety assertion tripped. Please report it.                                                                                                                                              |

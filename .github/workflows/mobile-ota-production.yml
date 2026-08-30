@@ -22,8 +22,9 @@ on:
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
       - 'package.json' # root patchedDependencies and linker inputs affect the mobile native graph
-      - 'bun.lock'
-      - 'patches/**' # bun patches to mobile deps live in root patches/, not under packages/mobile/**
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'patches/**' # pnpm patches to mobile deps live in root patches/, not under packages/mobile/**
       - 'scripts/mobile-publish.ts'
       - 'scripts/lib/mobile-publish-retry.ts'
       - 'scripts/lib/eoas.ts'
@@ -112,8 +113,8 @@ jobs:
     environment: Production
 
     # EOO_TOKEN (the app-scoped expo-open-ota publish key) is NOT a job-level env:
-    # that would expose the publish-capable key to checkout, setup-vp/bun,
-    # `bun install`, and the changelog commit/push before the publish. It's scoped to
+    # that would expose the publish-capable key to checkout, setup-vp,
+    # `vp install`, and the changelog commit/push before the publish. It's scoped to
     # the two publish steps below. INPUT_* stay here — they're plain inputs
     # referenced in the publish steps' `if:` expressions.
     env:
@@ -151,11 +152,12 @@ jobs:
           token: ${{ steps.push_token.outputs.token || github.token }}
 
       - uses: voidzero-dev/setup-vp@v1
-
-      - uses: oven-sh/setup-bun@v2
+        with:
+          node-version: '22.x'
+          cache: true
 
       - name: Install Node.js dependencies (workspace root)
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Check OTA infra is wired
         id: gate

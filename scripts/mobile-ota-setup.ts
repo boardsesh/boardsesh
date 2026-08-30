@@ -130,7 +130,7 @@ function setupChannel(): void {
   log('are available to testers, enable Branch Surfing on `production` with pattern `pr-*`.');
   log('Do not enable it before those native builds are ready.');
   log('');
-  log(`Verify after mapping: bunx ${EOAS_PACKAGE_SPEC} doctor --channel ${CHANNEL}  (needs EOO_TOKEN)`);
+  log(`Verify after mapping: vp dlx ${EOAS_PACKAGE_SPEC} doctor --channel ${CHANNEL}  (needs EOO_TOKEN)`);
 }
 
 function parseUrlFlag(args: string[]): string | null {

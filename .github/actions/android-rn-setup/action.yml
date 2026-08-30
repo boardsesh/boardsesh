@@ -11,11 +11,14 @@ description: >
 runs:
   using: composite
   steps:
-    - uses: oven-sh/setup-bun@v2
+    - uses: voidzero-dev/setup-vp@v1
+      with:
+        node-version: '22.x'
+        cache: true
 
     - name: Install Node.js dependencies (workspace root)
       shell: bash
-      run: bun install --frozen-lockfile
+      run: vp install --frozen-lockfile
 
     - name: Setup Java
       uses: actions/setup-java@v4
@@ -43,7 +46,7 @@ runs:
         path: |
           ~/.gradle/caches
           ~/.gradle/wrapper
-        key: ${{ runner.os }}-gradle-rn-${{ hashFiles('packages/mobile/package.json', 'bun.lock') }}
+        key: ${{ runner.os }}-gradle-rn-${{ hashFiles('packages/mobile/package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
         restore-keys: |
           ${{ runner.os }}-gradle-rn-
 
@@ -69,4 +72,4 @@ runs:
         # so a misconfigured runner never pays the 2s timeout). Step-level env
         # travels with the step into the composite.
         TAILSCALE_HOSTS: ''
-      run: bunx expo prebuild --platform android --clean --no-install
+      run: vp exec expo prebuild --platform android --clean --no-install

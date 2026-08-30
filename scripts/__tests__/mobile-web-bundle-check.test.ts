@@ -63,7 +63,7 @@ describe('mobile-web-bundle-check.sh', () => {
     mkdirSync(join(fixtureRoot, 'scripts', 'lib'), { recursive: true });
     copyFileSync(sourcePatchScript, join(fixtureRoot, 'scripts', 'lib', 'patch-expo-web-pwa-manifest.mjs'));
     // Pre-seed the isolated web-runtime install so the export script skips its
-    // `bun install` step (no network in the test).
+    // nested pnpm install step (no network in the test).
     mkdirSync(join(fixtureRoot, 'packages', 'mobile', 'web-runtime', 'node_modules', 'react-native-web'), {
       recursive: true,
     });
@@ -75,9 +75,9 @@ describe('mobile-web-bundle-check.sh', () => {
     writeFileSync(join(webPublicDirectory, GLUE_PATH), 'matching JavaScript glue');
     writeFileSync(join(webPublicDirectory, WASM_PATH), 'matching WASM binary');
 
-    const bunxStub = join(stubBinDirectory, 'bunx');
+    const packageManagerStub = join(stubBinDirectory, 'vp');
     writeFileSync(
-      bunxStub,
+      packageManagerStub,
       `#!/usr/bin/env bash
 set -euo pipefail
 output_dir=""
@@ -95,7 +95,7 @@ touch "$output_dir/wasm/${WASM_PATH}"
 touch "$output_dir/wasm/${WORKER_PATH}"
 `,
     );
-    chmodSync(bunxStub, 0o755);
+    chmodSync(packageManagerStub, 0o755);
   });
 
   afterEach(() => {
@@ -168,7 +168,7 @@ touch "$output_dir/wasm/${WORKER_PATH}"
     // Re-point the export stub at one that produces the shell + WASM but NOT the
     // worker, so the guard's worker-required check is actually exercised.
     writeFileSync(
-      join(fixtureRoot, 'bin', 'bunx'),
+      join(fixtureRoot, 'bin', 'vp'),
       `#!/usr/bin/env bash
 set -euo pipefail
 output_dir=""
@@ -185,7 +185,7 @@ touch "$output_dir/wasm/${GLUE_PATH}"
 touch "$output_dir/wasm/${WASM_PATH}"
 `,
     );
-    chmodSync(join(fixtureRoot, 'bin', 'bunx'), 0o755);
+    chmodSync(join(fixtureRoot, 'bin', 'vp'), 0o755);
 
     const result = runGuard();
 

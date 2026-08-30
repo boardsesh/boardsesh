@@ -9,7 +9,7 @@
  * ranged native module is a JS/native drift hazard.
  *
  * The drift case is what motivated this check: a `~`/`^` range lets a later
- * (non-frozen) `bun install` float the JS ahead of the version a shipped binary's
+ * (non-frozen) `vp install` float the JS ahead of the version a shipped binary's
  * native layer was built against. Normally the OTA runtimeVersion fingerprint
  * would refuse the mismatched bundle — but this app pins the fingerprint via
  * EXPO_UPDATES_FINGERPRINT_OVERRIDE (app.config.ts), so the drifted JS still lands

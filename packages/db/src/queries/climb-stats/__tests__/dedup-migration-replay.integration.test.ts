@@ -10,7 +10,7 @@ import { prepareDedupReplayDatabase, dedupReplayChecks } from '../../../testing/
  * `docker run postgres`), e.g.
  *
  *   cd packages/db && MIGRATION_REPLAY_DB_URL=postgres://postgres:postgres@localhost:5433/postgres \
- *     bunx tsx --test src/queries/climb-stats/__tests__/dedup-migration-replay.integration.test.ts
+ *     vp exec tsx --test src/queries/climb-stats/__tests__/dedup-migration-replay.integration.test.ts
  *
  * CI coverage does NOT depend on this gate: the same fixture also runs as a
  * backend-project vitest test (packages/backend/src/__tests__/

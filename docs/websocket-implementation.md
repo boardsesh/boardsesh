@@ -1968,7 +1968,7 @@ Live Activity actions that happen outside the web view are captured server-side 
 - Railway prod sets no `NODE_ENV` (`Dockerfile.backend` doesn't, and Railway injects none for an image deploy), so it resolves to `production` from the runtime inference alone — no dashboard variable is load-bearing for analytics staying on.
 - Preview/staging backends declare `SENTRY_ENVIRONMENT=preview` (`branch-deploy.yml`, #3808) and opt out for free.
 - Local dev resolves to `development` via the `dev` script's `NODE_ENV=development`; the test runner resolves to `test`. Both stay dark.
-- A backend started locally with `bun run backend:start` sets no `NODE_ENV`, so the runtime inference alone used to call it production; the private-`DATABASE_URL` check now catches it. Same for e2e jobs, which run that script on a CI runner.
+- A backend started locally with `pnpm --filter boardsesh-backend run start` sets no `NODE_ENV`, so the runtime inference alone used to call it production; the private-`DATABASE_URL` check now catches it. Same for e2e jobs, which run that script on a CI runner.
 - When the gate closes, the backend logs `[PostHog] Resolved environment '<x>' is not production; backend analytics disabled` at **warn** — same level as the missing-key branch, since both mean analytics went dark.
 
 Event taxonomy:

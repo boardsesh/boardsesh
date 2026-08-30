@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /**
  * Static check that fails when a `.tsx` file under `packages/web/app/`
  * introduces a hardcoded user-facing English string. New copy must go
@@ -26,7 +26,7 @@
  * offending node. One marker silences exactly one violation. Markers that
  * don't actually suppress anything emit a warning so they don't rot.
  */
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // TypeScript 7 ships no compiler API — see the note in check-orphaned-i18n-keys.ts.
@@ -83,8 +83,9 @@ type Violation = {
   text: string;
 };
 
-function isExcluded(absolutePath: string): boolean {
-  const normalized = absolutePath.split(sep).join('/');
+function isExcluded(absolutePath: string, root: string = repoRoot): boolean {
+  const relativePath = relative(root, absolutePath);
+  const normalized = `/${relativePath.split(sep).join('/')}`;
   if (normalized.includes('/node_modules/')) return true;
   if (normalized.includes('/.next/')) return true;
   if (normalized.includes('/dist/')) return true;
@@ -487,7 +488,7 @@ function formatReport(report: Report): { exitCode: 0 | 1; stderr: string[]; stdo
     stderr.push(
       "Wrap each in t('namespace:key') (see CLAUDE.md i18n section) or add " +
         '`// i18n-ignore-next-line` on the line above to mark it as deliberately untranslated. ' +
-        'Run `bun packages/web/scripts/check-untranslated-strings.ts --fix` to bulk-add markers above existing violations.',
+        'Run `tsx packages/web/scripts/check-untranslated-strings.ts --fix` to bulk-add markers above existing violations.',
     );
   }
 
@@ -542,9 +543,19 @@ function main(): never {
   process.exit(formatted.exitCode);
 }
 
-if (import.meta.main) {
+function isEntryPoint(): boolean {
+  const entryPath = process.argv[1];
+  if (!entryPath) return false;
+  try {
+    return realpathSync(entryPath) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint()) {
   main();
 }
 
-export { applyFixes, checkFile, formatReport, looksTranslatable, run };
+export { applyFixes, checkFile, discoverFiles, formatReport, isExcluded, looksTranslatable, run };
 export type { Report, Violation };

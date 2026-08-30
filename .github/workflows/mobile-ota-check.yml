@@ -26,7 +26,8 @@ on:
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
       - 'package.json' # root patchedDependencies and linker inputs affect the mobile native graph
-      - 'bun.lock'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - 'patches/**'
       - '.github/workflows/mobile-ota-check.yml'
       # The check's own logic — so changes to it re-run and self-validate.
@@ -86,11 +87,12 @@ jobs:
           fetch-tags: true
 
       - uses: voidzero-dev/setup-vp@v1
-
-      - uses: oven-sh/setup-bun@v2
+        with:
+          node-version: '22.x'
+          cache: true
 
       - name: Install dependencies (PR tree)
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       # Materialize origin/main as a sibling worktree with its OWN node_modules so
       # the baseline resolves against main's exact dependency tree. The verdict is
@@ -103,7 +105,7 @@ jobs:
 
       - name: Install dependencies (main baseline)
         working-directory: ${{ runner.temp }}/main-baseline
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Resolve fingerprints and compare vs main
         id: ota

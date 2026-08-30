@@ -109,7 +109,7 @@ function expoPrebuild(clean: boolean): void {
   // common CI failure point).
   const prebuildArgs = ['expo', 'prebuild', '--platform', 'ios', '--no-install'];
   if (clean) prebuildArgs.push('--clean');
-  const status = run('bunx', prebuildArgs, MOBILE_DIR);
+  const status = run('vp', ['exec', ...prebuildArgs], MOBILE_DIR);
   if (status !== 0) {
     throw new Error(`expo prebuild failed with exit code ${status}`);
   }

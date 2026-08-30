@@ -389,7 +389,7 @@ function runGenerate(repoRoot: string, suffix: string): { generated: string | nu
   const before = readdirSync(drizzleDir);
   let stdout = '';
   try {
-    stdout = execFileSync('bunx', ['drizzle-kit', 'generate', '--name', suffix], {
+    stdout = execFileSync('vp', ['exec', 'drizzle-kit', 'generate', '--name', suffix], {
       cwd: dbDir,
       encoding: 'utf8',
       // No stdin: an interactive resolver prompt EOFs instead of hanging forever.
@@ -573,7 +573,7 @@ function run(repoRoot: string, options: Options): RenumberResult {
   let when = nextWhen(maxWhen(mainJournal), Date.now());
 
   if (touchesSchema) {
-    if (options.install) execFileSync('bun', ['install', '--frozen-lockfile'], { cwd: repoRoot, stdio: 'inherit' });
+    if (options.install) execFileSync('vp', ['install', '--frozen-lockfile'], { cwd: repoRoot, stdio: 'inherit' });
     // drizzle.config.ts reads ./dist/schema/index.js — a stale build makes generate
     // see phantom column renames and stop on an interactive prompt.
     execFileSync('vp', ['run', 'build:db'], { cwd: repoRoot, stdio: 'inherit' });
@@ -601,7 +601,7 @@ function run(repoRoot: string, options: Options): RenumberResult {
           'A schema migration needs a regenerated snapshot, so it cannot be renumbered by hand. ' +
           'Most often this means `main` already landed the same change, or drizzle needs you to say ' +
           'whether a table/column was created or renamed. Rebase locally and run ' +
-          '`bunx drizzle-kit generate` from `packages/db` to see the prompt.',
+          '`vp exec drizzle-kit generate` from `packages/db` to see the prompt.',
       );
     } else {
       if (outcome.generated !== tail.toFilename) {

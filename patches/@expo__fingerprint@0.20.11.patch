@@ -5,7 +5,7 @@ diff --git a/build/hash/Hash.js b/build/hash/Hash.js
                      resolve({
                          type: 'file',
 -                        id: filePath,
-+                        id: (0, Path_1.normalizeBunIsolatedModulePath)(filePath),
++                        id: (0, Path_1.normalizeIsolatedStoreModulePath)(filePath),
                          hex,
                          ...(debugInfo ? { debugInfo } : undefined),
                      });
@@ -13,7 +13,7 @@ diff --git a/build/hash/Hash.js b/build/hash/Hash.js
      const children = [];
      for (const result of results) {
 -        hasher.update(result.id);
-+        hasher.update((0, Path_1.normalizeBunIsolatedModulePath)(result.id));
++        hasher.update((0, Path_1.normalizeIsolatedStoreModulePath)(result.id));
          hasher.update(result.hex);
          children.push(result.debugInfo);
      }
@@ -23,25 +23,26 @@ diff --git a/build/hash/Hash.js b/build/hash/Hash.js
              return source.id;
          case 'file':
 -            return source.overrideHashKey ?? source.filePath;
-+            return source.overrideHashKey ?? (0, Path_1.normalizeBunIsolatedModulePath)(source.filePath);
++            return source.overrideHashKey ?? (0, Path_1.normalizeIsolatedStoreModulePath)(source.filePath);
          case 'dir':
 -            return source.overrideHashKey ?? source.filePath;
-+            return source.overrideHashKey ?? (0, Path_1.normalizeBunIsolatedModulePath)(source.filePath);
++            return source.overrideHashKey ?? (0, Path_1.normalizeIsolatedStoreModulePath)(source.filePath);
          default:
              throw new Error('Unsupported source type');
      }
 diff --git a/build/utils/Path.d.ts b/build/utils/Path.d.ts
 --- a/build/utils/Path.d.ts
 +++ b/build/utils/Path.d.ts
-@@ -31,6 +31,11 @@
+@@ -31,6 +31,12 @@
  export declare function normalizeFilePath(filePath: string, options: {
      stripParentPrefix?: boolean;
  }): string;
 +/**
-+ * Collapse Bun isolated-linker store wrappers to their logical node_modules
-+ * path so peer-resolution hashes do not affect source ids or ignore matching.
++ * Collapse an isolated-linker store wrapper
++ * (`node_modules/.<store>/<entry>/node_modules/`) to its logical node_modules
++ * path, so peer-resolution suffixes do not affect source ids or ignore matching.
 + */
-+export declare function normalizeBunIsolatedModulePath(filePath: string): string;
++export declare function normalizeIsolatedStoreModulePath(filePath: string): string;
  /**
   * Convert any platform-specific path to a POSIX path.
   */
@@ -52,11 +53,11 @@ diff --git a/build/utils/Path.js b/build/utils/Path.js
  exports.buildDirMatchObjects = buildDirMatchObjects;
  exports.isIgnoredPathWithMatchObjects = isIgnoredPathWithMatchObjects;
  exports.normalizeFilePath = normalizeFilePath;
-+exports.normalizeBunIsolatedModulePath = normalizeBunIsolatedModulePath;
++exports.normalizeIsolatedStoreModulePath = normalizeIsolatedStoreModulePath;
  exports.toPosixPath = toPosixPath;
  exports.pathExistsAsync = pathExistsAsync;
  const promises_1 = __importDefault(require("fs/promises"));
-@@ -99,17 +100,34 @@ function isSubDirectory(parent, child) {
+@@ -99,17 +100,42 @@ function isSubDirectory(parent, child) {
  const STRIP_PARENT_PREFIX_REGEX = /^(\.\.\/)+/g;
  /**
   * Normalize the given `filePath` to be used for matching against `ignorePaths`.
@@ -74,21 +75,29 @@ diff --git a/build/utils/Path.js b/build/utils/Path.js
 +        normalizedPath = normalizedPath.replace(STRIP_PARENT_PREFIX_REGEX, '');
      }
 -    return filePath;
-+    return normalizeBunIsolatedModulePath(normalizedPath);
++    return normalizeIsolatedStoreModulePath(normalizedPath);
 +}
-+// Bun's isolated linker stores a real package below
-+// node_modules/.bun/<name>@<version>+<peer-hash>/node_modules/<name>. Expo's
-+// default nested-node_modules ignore treats that implementation wrapper as a
-+// nested dependency and drops the entire native source directory. Collapse the
-+// wrapper before matching and before building hash ids. Repeat to support a Bun
-+// store path nested below another isolated store entry.
-+const BUN_ISOLATED_MODULE_ROOT_REGEX = /(^|[\\/])node_modules[\\/]\.bun[\\/][^\\/]+[\\/]node_modules[\\/]/g;
-+function normalizeBunIsolatedModulePath(filePath) {
++// An isolated linker keeps the real package below
++// node_modules/.<store>/<entry>/node_modules/<name> — `.pnpm` for pnpm, `.bun`
++// for Bun. Expo's default `**/node_modules/**/node_modules/**` ignore treats
++// that implementation wrapper as a nested dependency and drops the entire
++// native source directory (hash: null). Collapse the wrapper before ignore
++// matching and before building hash ids.
++//
++// The store segment is matched as "any dot-prefixed directory directly under
++// node_modules" deliberately: npm forbids a leading `.` in a package name, so
++// this can only ever match a package-manager store and never a real nested
++// dependency. pnpm's hoisted-compat directory,
++// node_modules/.pnpm/node_modules/<name>, does NOT match — after the store
++// segment the pattern still requires <entry>/node_modules/.
++// Repeat to support a store path nested below another store entry.
++const ISOLATED_STORE_MODULE_ROOT_REGEX = /(^|[\\/])node_modules[\\/]\.[^\\/]+[\\/][^\\/]+[\\/]node_modules[\\/]/g;
++function normalizeIsolatedStoreModulePath(filePath) {
 +    let normalizedPath = filePath;
 +    let previousPath;
 +    do {
 +        previousPath = normalizedPath;
-+        normalizedPath = normalizedPath.replace(BUN_ISOLATED_MODULE_ROOT_REGEX, '$1node_modules/');
++        normalizedPath = normalizedPath.replace(ISOLATED_STORE_MODULE_ROOT_REGEX, '$1node_modules/');
 +    } while (normalizedPath !== previousPath);
 +    return normalizedPath;
  }

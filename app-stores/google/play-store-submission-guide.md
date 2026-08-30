@@ -136,7 +136,7 @@ Gradle:
 
 ```bash
 cd packages/mobile
-bunx expo prebuild --platform android --clean --no-install
+vp exec expo prebuild --platform android --clean --no-install
 cd android
 
 ANDROID_KEYSTORE_PATH=/path/to/release.keystore \

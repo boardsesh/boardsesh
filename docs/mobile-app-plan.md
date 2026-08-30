@@ -20,7 +20,7 @@ The React Native app is additive. The existing web app (Next.js on Vercel) and t
 3. **No breaking changes to `mobile/` (Capacitor).** The Capacitor app is live in the App Store. It loads `https://www.boardsesh.com` in hosted mode and uses BLE, Live Activity, and deep linking. It must keep working on every deploy. The Capacitor directory is not deleted until the RN app is live in the App Store and users have migrated.
 4. **Shared package extraction is additive.** When moving logic from `packages/web/` to `packages/shared/`, the web files must re-export everything from the shared package so downstream imports are unchanged. No import path changes for existing web code.
 5. **Backend bearer token auth stays backward-compatible.** The existing Capacitor native OAuth flow (`/auth/native-start`, `/auth/native/exchange`) must keep working. RN reuses the same endpoints — no separate auth path that could break the existing one.
-6. **Database schema changes are migration-safe.** Any new tables or columns for RN features use standard additive migrations via `bunx drizzle-kit generate`. No destructive schema changes that would break the web or Capacitor apps.
+6. **Database schema changes are migration-safe.** Any new tables or columns for RN features use standard additive migrations via `vp exec drizzle-kit generate`. No destructive schema changes that would break the web or Capacitor apps.
 
 The Capacitor app (`mobile/`) will be retired only after: (a) the RN app is accepted in both App Store and Play Store, (b) existing Capacitor users have had at least 30 days to update, and (c) analytics confirm <5% of sessions come from the old Capacitor build.
 

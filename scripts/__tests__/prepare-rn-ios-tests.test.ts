@@ -53,8 +53,9 @@ type PbxReference = { value: string; comment?: string };
 type XmlNode = { $?: Record<string, string>; [key: string]: XmlNode[] | Record<string, string> | undefined };
 
 const require = createRequire(import.meta.url);
-const xcode = require(join(REPO_ROOT, 'node_modules/.bun/node_modules/xcode'));
-const { parseStringPromise } = require(join(REPO_ROOT, 'node_modules/.bun/node_modules/xml2js')) as {
+// Both are root devDependencies, so plain specifiers avoid store-layout coupling.
+const xcode = require('xcode');
+const { parseStringPromise } = require('xml2js') as {
   parseStringPromise: (xml: string) => Promise<XmlNode>;
 };
 

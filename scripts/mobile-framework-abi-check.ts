@@ -343,7 +343,7 @@ export function main(
     }
     console.error(
       '  A prebuilt xcframework was built against a different version of a framework it links. ' +
-        'Align the versions in packages/mobile/package.json (and check bun.lock resolved what you expect).',
+        'Align the versions in packages/mobile/package.json (and check pnpm-lock.yaml resolved what you expect).',
     );
     return 1;
   }

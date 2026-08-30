@@ -658,7 +658,7 @@ pre-import empty result set.
   (`allowsConstrainedNetworkAccess`, `allowsExpensiveNetworkAccess`, `waitsForConnectivity`,
   `networkServiceType`, `delegateQueue`), restoring background-session delegates on relaunch, and
   surfacing `X-Tigris-*` response headers from a download task. All of them live in expo-file-system's
-  Swift, reachable only via a bun patch or an upstream PR.
+  Swift, reachable only via a pnpm patch (`vp exec pnpm patch`) or an upstream PR.
 
 - **Download fallback status**: My Boards keeps the normal per-row download state (`pending`,
   `downloading`, `finalizing`, or `downloaded`) and separately derives a `BoardDownloadNotice` from the persisted

@@ -8,7 +8,8 @@ on:
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
       - 'package.json'
-      - 'bun.lock'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - 'patches/**'
       - 'vite.config.ts'
       - 'scripts/prepare-rn-ios-tests.mjs'
@@ -22,7 +23,8 @@ on:
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
       - 'package.json'
-      - 'bun.lock'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - 'patches/**'
       - 'vite.config.ts'
       - 'scripts/prepare-rn-ios-tests.mjs'
@@ -90,15 +92,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
-
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
       - name: Install Node.js dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Check widget Swift duplicate drift
         run: vp test run packages/mobile/src/lib/live-activity/__tests__/widget-target-drift.test.ts --reporter=agent
@@ -117,7 +117,7 @@ jobs:
 
       - name: Expo prebuild (generate ios/)
         working-directory: packages/mobile
-        run: bunx expo prebuild --platform ios --clean --no-install
+        run: vp exec expo prebuild --platform ios --clean --no-install
 
       # Key on the native inputs that decide the Pods, NOT ios/Podfile.lock: there
       # is no committed ios/ (CNG — `expo prebuild` generates it), and this step
@@ -133,7 +133,7 @@ jobs:
           # exactly the runs where the deps moved, and the second entry reached
           # into ios-testflight-rn.yml's bucket, so a PR could build against a
           # release build's Pods. A key miss must mean a clean `pod install`.
-          key: ${{ runner.os }}-pods-rn-ci-${{ hashFiles('packages/mobile/package.json', 'bun.lock', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'patches/**') }}
+          key: ${{ runner.os }}-pods-rn-ci-${{ hashFiles('packages/mobile/package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/eas.json', 'packages/mobile/assets/**', 'packages/mobile/targets/**', 'patches/**') }}
 
       - name: Install CocoaPods dependencies
         working-directory: packages/mobile/ios

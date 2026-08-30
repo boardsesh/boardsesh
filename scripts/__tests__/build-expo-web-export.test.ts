@@ -45,7 +45,7 @@ const STATIC_ASSET_MANIFEST = Object.fromEntries(
   ),
 );
 
-function bunxStub({ shell }: { shell: string }): string {
+function vpStub({ shell }: { shell: string }): string {
   return `#!/usr/bin/env bash
 set -euo pipefail
 output_dir=""
@@ -70,9 +70,9 @@ describe('build-expo-web-export.sh PWA manifest patching', () => {
   let fixtureRoot: string;
   let fixtureExportScript: string;
 
-  function writeBunxStub(shell: string): void {
-    const stubPath = join(fixtureRoot, 'bin', 'bunx');
-    writeFileSync(stubPath, bunxStub({ shell }));
+  function writeVpStub(shell: string): void {
+    const stubPath = join(fixtureRoot, 'bin', 'vp');
+    writeFileSync(stubPath, vpStub({ shell }));
     chmodSync(stubPath, 0o755);
   }
 
@@ -86,7 +86,7 @@ describe('build-expo-web-export.sh PWA manifest patching', () => {
     mkdirSync(join(fixtureRoot, 'packages', 'web', 'public'), { recursive: true });
     mkdirSync(join(fixtureRoot, 'packages', 'shared', 'static-assets', 'src', 'generated'), { recursive: true });
     // Pre-seed the isolated web-runtime install so the export script skips its
-    // `bun install` step (no network in the test).
+    // nested pnpm install step (no network in the test).
     mkdirSync(join(fixtureRoot, 'packages', 'mobile', 'web-runtime', 'node_modules', 'react-native-web'), {
       recursive: true,
     });
@@ -98,7 +98,7 @@ describe('build-expo-web-export.sh PWA manifest patching', () => {
       JSON.stringify(STATIC_ASSET_MANIFEST),
     );
 
-    writeBunxStub(RENDERED_SHELL);
+    writeVpStub(RENDERED_SHELL);
   });
 
   afterEach(() => {
@@ -166,7 +166,7 @@ describe('build-expo-web-export.sh PWA manifest patching', () => {
   });
 
   it('fails the export when the shell lost its manifest link', () => {
-    writeBunxStub(RENDERED_SHELL.replace('<link rel="manifest" href="/app/manifest.json" />\n', ''));
+    writeVpStub(RENDERED_SHELL.replace('<link rel="manifest" href="/app/manifest.json" />\n', ''));
 
     const result = runExport('--subdomain');
 

@@ -209,7 +209,7 @@ describe('readBundledNativeModules', () => {
     expect(readBundledNativeModules(bundledPath)).toEqual({ 'expo-haptics': '~56.0.3' });
   });
 
-  it('throws for a missing file (bun install has not run)', () => {
+  it('throws for a missing file (vp install has not run)', () => {
     expect(() => readBundledNativeModules(join(dir, 'does-not-exist.json'))).toThrow(/cannot read/);
   });
 

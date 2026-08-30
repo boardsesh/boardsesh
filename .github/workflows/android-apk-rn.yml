@@ -17,8 +17,9 @@ on:
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
       - 'package.json' # root patchedDependencies and linker inputs affect the mobile native graph
-      - 'bun.lock'
-      - 'patches/**' # bun patches to mobile deps live in root patches/, not under packages/mobile/**
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'patches/**' # pnpm patches to mobile deps live in root patches/, not under packages/mobile/**
       - '.github/workflows/android-apk-rn.yml'
   workflow_dispatch:
     inputs:
@@ -135,10 +136,13 @@ jobs:
             exit 1
           }
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
 
       - name: Install Node.js dependencies (workspace root)
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       # The .env is hashed into the fingerprint, so it must be byte-identical to
       # the build job's (same heredoc + same workflow env) or the gate would
@@ -165,7 +169,7 @@ jobs:
           set -uo pipefail
           # GOOGLE_MAPS_API_KEY is inherited from the workflow env (it changes the
           # Android fingerprint, so the resolve must match the build's prebuild).
-          raw="$(cd packages/mobile && bunx expo-updates runtimeversion:resolve --platform android 2>/dev/null || true)"
+          raw="$(cd packages/mobile && vp exec expo-updates runtimeversion:resolve --platform android 2>/dev/null || true)"
           fp="$(printf '%s' "$raw" | jq -r '.runtimeVersion // empty' 2>/dev/null || true)"
           if ! printf '%s' "$fp" | grep -qiE '^[0-9a-f]{8,}$'; then
             echo "::warning::Could not resolve the Android fingerprint — building to be safe."
@@ -224,10 +228,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
 
       - name: Install Node.js dependencies (workspace root)
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Setup Ruby and fastlane
         uses: ruby/setup-ruby@v1
@@ -256,7 +263,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-rn-${{ hashFiles('packages/mobile/package.json', 'bun.lock') }}
+          key: ${{ runner.os }}-gradle-rn-${{ hashFiles('packages/mobile/package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
           restore-keys: |
             ${{ runner.os }}-gradle-rn-
 
@@ -321,7 +328,7 @@ jobs:
         working-directory: packages/mobile
         # GOOGLE_MAPS_API_KEY is inherited from the workflow env (baked into the
         # resolved android.config at prebuild time when present).
-        run: bunx expo prebuild --platform android --clean --no-install
+        run: vp exec expo prebuild --platform android --clean --no-install
 
       # versionCode = max(sideload floor, Play track ceiling + 1), resolved by
       # `fastlane android next_version_code`. The sideload floor is the

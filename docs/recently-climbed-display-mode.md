@@ -65,7 +65,7 @@ Preservation strategy: the queue is already persisted in IndexedDB via the exist
 
 ## Database Changes
 
-New migrations under `packages/db/drizzle/` (generated via `bunx drizzle-kit generate` from `packages/db/`).
+New migrations under `packages/db/drizzle/` (generated via `vp exec drizzle-kit generate` from `packages/db/`).
 
 ### `board_climb_activity`
 

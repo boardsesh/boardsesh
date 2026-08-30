@@ -251,10 +251,10 @@ The CLI is available via the `@boardsesh/aurora-sync` package:
 
 ```bash
 # From repo root
-bunx tsx packages/aurora-sync/src/cli/index.ts <command>
+vp exec tsx packages/aurora-sync/src/cli/index.ts <command>
 
 # Or after build
-bunx aurora-sync <command>
+vp exec aurora-sync <command>
 ```
 
 ### Commands
@@ -299,8 +299,8 @@ AURORA_CREDENTIALS_SECRET="op://Boardsesh/Encryption key/password"
 Run with:
 
 ```bash
-op run --env-file=packages/aurora-sync/.env.1password -- bunx aurora-sync all -v
-op run --env-file=packages/aurora-sync/.env.1password -- bunx aurora-sync daemon -v
+op run --env-file=packages/aurora-sync/.env.1password -- vp exec aurora-sync all -v
+op run --env-file=packages/aurora-sync/.env.1password -- vp exec aurora-sync daemon -v
 ```
 
 ### Daemon Mode
@@ -328,7 +328,7 @@ Postgres and remains effective across daemon restarts and overlapping deploys.
 ### 2. Run it
 
 ```bash
-op run --env-file=packages/aurora-sync/.env.1password -- bunx aurora-sync daemon
+op run --env-file=packages/aurora-sync/.env.1password -- vp exec aurora-sync daemon
 ```
 
 ### 3. Monitoring

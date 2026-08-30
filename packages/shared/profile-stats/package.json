@@ -15,10 +15,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@boardsesh/board-config": "*",
-    "@boardsesh/board-constants": "*",
-    "@boardsesh/play-view": "*",
-    "@boardsesh/shared-schema": "*",
+    "@boardsesh/board-config": "workspace:*",
+    "@boardsesh/board-constants": "workspace:*",
+    "@boardsesh/play-view": "workspace:*",
+    "@boardsesh/shared-schema": "workspace:*",
     "dayjs": "^1.11.21"
   },
   "devDependencies": {

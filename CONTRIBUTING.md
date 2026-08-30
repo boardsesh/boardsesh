@@ -14,7 +14,7 @@ See [ROADMAP.md](./ROADMAP.md) for the full picture.
 
 ## Quick start
 
-Run the setup script. It checks prerequisites (Node.js, Docker, bun, jq), installs the `vp` toolchain and dependencies, writes the env files, and pulls the prebuilt dev database with all the Kilter and Tension climbs in it.
+Run the setup script. It checks prerequisites (Node.js, Docker, jq), installs the `vp` toolchain and dependencies, writes the env files, and pulls the prebuilt dev database with all the Kilter and Tension climbs in it. You do not need to install a package manager yourself — `vp install` downloads the pnpm version pinned in `packageManager`.
 
 ```bash
 # macOS / Linux
@@ -42,7 +42,7 @@ Every pull request that touches the mobile app can get its own over-the-air upda
 
 The repo is driven by [Vite+](https://viteplus.dev), invoked as `vp`. It runs lint, format, tests, typecheck, and every custom dev task from one config (`vite.config.ts`), so everyone gets the same behavior locally and in CI.
 
-Use `vp` for all validation (lint, format, typecheck, tests). `bun run`, `bunx`, and `npx` bypass the unified config and can mutate `bun.lock`. The only sanctioned non-`vp` invocations are `bunx drizzle-kit generate` for migrations and `bun run backend:start` for the production backend. Claude Code agents working in the repo have this enforced by a hook (`.claude/hooks/block-bun-npm-run.sh`); humans just follow the convention.
+Use `vp` for all validation (lint, format, typecheck, tests). `pnpm run`, `npm run` and `npx` bypass the unified config and can mutate `pnpm-lock.yaml`. Reach for `vp exec <bin>` to run a workspace binary and `vp dlx <pkg>@<version>` to run a pinned remote one. The only sanctioned non-`vp` invocations are `vp exec drizzle-kit generate` for migrations and `pnpm --filter boardsesh-backend run start` for the production backend. Claude Code agents working in the repo have this enforced by a hook (`.claude/hooks/block-raw-package-manager.sh`); humans just follow the convention.
 
 The setup script installs `vp`. To install it on its own:
 
@@ -236,7 +236,7 @@ The repo ships Claude Code skills under `.claude/skills/`. Invoke them as slash 
 - `ios-screenshots` does the same on an iOS simulator (macOS only).
 - `posthog-product-health-audit` mines PostHog telemetry with a multi-agent workflow and files deduplicated, severity-labelled GitHub issues.
 
-`CLAUDE.md` and `AGENTS.md` hold the project rules and architecture that agents follow. The Claude Code config in `.claude/` adds a session setup script (`setup.sh`) and the hook that blocks `bun run` / `npx` / `bunx` for validation.
+`CLAUDE.md` and `AGENTS.md` hold the project rules and architecture that agents follow. The Claude Code config in `.claude/` adds a session setup script (`setup.sh`) and the hook that blocks `pnpm run` / `npm run` / `npx` for validation.
 
 ## Testing BLE end-to-end with an ESP32
 

@@ -19,7 +19,7 @@ import type { BoardRouteParams, ClimbSearchParams } from '../types';
  * no covering indexes) — empty-table plans are seq scans regardless of indexes.
  *
  *   vp run db:up
- *   cd packages/db && EXPLAIN_DB_URL=postgres://postgres:password@<host>:5432/main bun run test:explain
+ *   EXPLAIN_DB_URL=postgres://postgres:password@<host>:5432/main pnpm --filter @boardsesh/db run test:explain
  *
  * It captures the EXACT parameterised SQL the app generates (via a drizzle query
  * logger — no hand-reconstruction for searchClimbs, so the harness can't drift

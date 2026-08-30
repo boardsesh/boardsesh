@@ -52,7 +52,7 @@
 import { spawnSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { EOAS_PACKAGE_SPEC, pathWithoutBrokenBunxShims } from './lib/eoas';
+import { EOAS_PACKAGE_SPEC } from './lib/eoas';
 
 /** The server image that matches the pinned CLI — derived so it can't drift from it. */
 const SERVER_IMAGE_REF = `xprem:v${EOAS_PACKAGE_SPEC.replace(/^eoas@/, '')}`;
@@ -197,15 +197,13 @@ function main(): number {
     for (const line of republishServerVersionWarning()) console.log(line);
   }
   console.log('');
-  console.log(`[ota-rollback] Running: bunx ${eoasArgs.join(' ')}`);
+  console.log(`[ota-rollback] Running: vp dlx ${eoasArgs.join(' ')}`);
   console.log('');
 
   // EXPO_UPDATES_URL must resolve in app.config so eoas finds the server; strip a
-  // stray EAS_BUILD (which would flip app.config back to the EAS URL) and drop
-  // vp's broken bunx shim dir — same guards as the production publish.
+  // stray EAS_BUILD (which would flip app.config back to the EAS URL).
   const eoasEnv = { ...process.env };
   delete eoasEnv.EAS_BUILD;
-  eoasEnv.PATH = pathWithoutBrokenBunxShims(process.env.PATH);
   if (options.platform === 'ios') {
     // iOS resolves its fingerprint WITHOUT the maps key (Apple Maps; the native iOS
     // build sets no GOOGLE_MAPS_API_KEY). Strip a stray value so it can't perturb the
@@ -213,7 +211,7 @@ function main(): number {
     delete eoasEnv.GOOGLE_MAPS_API_KEY;
   }
 
-  const result = spawnSync('bunx', eoasArgs, {
+  const result = spawnSync('vp', ['dlx', ...eoasArgs], {
     cwd: MOBILE_DIR,
     stdio: 'inherit', // republish is interactive; rollback streams progress
     env: eoasEnv,

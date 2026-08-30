@@ -27,7 +27,7 @@
  * local callers. Readiness mode emits `release_ready`; candidate mode emits
  * `candidates_found`. Both emit selected build tags and commits on success.
  *
- * Usage: bun scripts/mobile-cut-release-tags.ts
+ * Usage: tsx scripts/mobile-cut-release-tags.ts
  */
 
 import { execFileSync } from 'node:child_process';
@@ -56,7 +56,8 @@ const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const NATIVE_FINGERPRINT_INPUT_PATHS = [
   'package.json',
   'packages/mobile/package.json',
-  'bun.lock',
+  'pnpm-lock.yaml',
+  'pnpm-workspace.yaml',
   'packages/mobile/app.config.ts',
   'packages/mobile/eas.json',
   'packages/mobile/fingerprint.config.js',

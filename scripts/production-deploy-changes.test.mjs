@@ -188,6 +188,24 @@ void test('treats every input of the app.boardsesh.com export as app-affecting',
       staticAssets: false,
     });
   }
+
+  for (const filePath of ['pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json']) {
+    assert.deepEqual(classifyChangedFiles([filePath]), {
+      web: true,
+      backend: true,
+      app: true,
+      cloudflare: false,
+      staticAssets: false,
+    });
+  }
+
+  assert.deepEqual(classifyChangedFiles(['patches/react-native-screens@4.26.2.patch']), {
+    web: true,
+    backend: false,
+    app: true,
+    cloudflare: false,
+    staticAssets: false,
+  });
 });
 
 void test('publishes cataloged static images but excludes retained board PNG sources', () => {
@@ -260,17 +278,24 @@ void test('a code change never drags the Cloudflare apply along with it', () => 
   // The converse guard. deploy-cloudflare talks to the live zone with a
   // production token; firing it on every packages/ commit would turn an
   // unrelated merge into an edge mutation.
-  for (const filePath of ['packages/web/app/page.tsx', 'packages/backend/src/index.ts', 'bun.lock']) {
+  for (const filePath of ['packages/web/app/page.tsx', 'packages/backend/src/index.ts', 'pnpm-lock.yaml']) {
     assert.equal(classifyChangedFiles([filePath]).cloudflare, false, `${filePath} must not trigger deploy-cloudflare`);
   }
 });
 
 void test('keeps every backend build and runtime control path backend-affecting', () => {
-  for (const filePath of ['Dockerfile.backend', 'railway.toml', 'bun.lock', 'package.json']) {
+  for (const filePath of [
+    'Dockerfile.backend',
+    'railway.toml',
+    'pnpm-lock.yaml',
+    'pnpm-workspace.yaml',
+    'package.json',
+  ]) {
+    const isRootInstallInput = ['pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json'].includes(filePath);
     assert.deepEqual(classifyChangedFiles([filePath]), {
       web: true,
       backend: true,
-      app: false,
+      app: isRootInstallInput,
       cloudflare: false,
       staticAssets: false,
     });

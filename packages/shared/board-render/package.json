@@ -30,12 +30,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@boardsesh/board-art-geometry": "*",
-    "@boardsesh/board-config": "*",
-    "@boardsesh/board-constants": "*",
-    "@boardsesh/board-renderer-wasm": "*",
-    "@boardsesh/play-view": "*",
-    "@boardsesh/shared-schema": "*",
+    "@boardsesh/board-art-geometry": "workspace:*",
+    "@boardsesh/board-config": "workspace:*",
+    "@boardsesh/board-constants": "workspace:*",
+    "@boardsesh/board-renderer-wasm": "workspace:*",
+    "@boardsesh/play-view": "workspace:*",
+    "@boardsesh/shared-schema": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

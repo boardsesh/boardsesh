@@ -14,7 +14,7 @@ echo "[mobile:setup-channels] Creating preview channels..."
 
 for i in 1 2 3 4; do
   echo "[mobile:setup-channels] Creating preview-$i..."
-  bunx eas-cli@16 channel:create "preview-$i" --non-interactive 2>/dev/null || \
+  vp dlx eas-cli@16 channel:create "preview-$i" --non-interactive 2>/dev/null || \
     echo "[mobile:setup-channels] preview-$i already exists"
 done
 
@@ -23,4 +23,4 @@ echo "[mobile:setup-channels] Done. Available channels:"
 echo "  preview-1, preview-2, preview-3, preview-4"
 echo ""
 echo "[mobile:setup-channels] Point a channel at a branch:"
-echo "  bunx eas-cli@16 channel:edit preview-1 --branch my-feature"
+echo "  vp dlx eas-cli@16 channel:edit preview-1 --branch my-feature"

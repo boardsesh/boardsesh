@@ -49,12 +49,12 @@ jobs:
             CHANGED_FILES=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD)
 
           # Backend-affecting paths — keep in sync with detect-changes in production-deploy.yml.
-          # Any workspace package can affect the backend image because Bun
+          # Any workspace package can affect the backend image because pnpm
           # installs against the full monorepo workspace graph.
           BACKEND_CHANGED=false
           for file in $CHANGED_FILES; do
             case "$file" in
-              packages/*|Dockerfile.backend|scripts/create-service-docker-context.mjs|bun.lock|package.json)
+              packages/*|Dockerfile.backend|scripts/create-service-docker-context.mjs|pnpm-lock.yaml|pnpm-workspace.yaml|package.json)
                 BACKEND_CHANGED=true
                 break
                 ;;
@@ -75,7 +75,7 @@ jobs:
 
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
       - name: Log in to GHCR

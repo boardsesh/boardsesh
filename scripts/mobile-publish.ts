@@ -25,7 +25,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { EOAS_PACKAGE_SPEC, SELF_HOSTED_UPLOAD_RATE_PER_SECOND, pathWithoutBrokenBunxShims } from './lib/eoas';
+import { EOAS_PACKAGE_SPEC, SELF_HOSTED_UPLOAD_RATE_PER_SECOND } from './lib/eoas';
 import {
   publishPlatformsSequentially,
   publishSelfHostedPlatformWithRetry,
@@ -108,10 +108,11 @@ export function buildSelfHostedEoasArgs(
     '--upload-rate',
     String(SELF_HOSTED_UPLOAD_RATE_PER_SECOND),
     '--nonInteractive',
-    // The repo uses bun; force bunx so eoas spawns `bunx expo export` regardless
-    // of the nearest package.json's packageManager field.
+    // Force `vp exec` so eoas spawns the workspace's lockfile-pinned Expo
+    // through the toolchain available in both current pnpm checkouts and frozen
+    // pre-pnpm release anchors.
     '--packageRunner',
-    'bunx',
+    'vp exec',
   ];
 }
 
@@ -176,9 +177,14 @@ async function publishToSelfHostedBranch(
   // the caller's env can't redirect a production publish.
   const eoasEnv = { ...process.env };
   delete eoasEnv.EAS_BUILD;
-  // Drop vp's broken bunx shim dir so bunx — and the `bunx expo export` eoas
-  // spawns via --packageRunner bunx — resolve a working bunx.
-  eoasEnv.PATH = pathWithoutBrokenBunxShims(process.env.PATH);
+  // eoas re-spawns `vp exec expo export`. Fail before uploading anything if
+  // the workspace's Expo binary is not resolvable. `vp` is deliberately the
+  // stable boundary: approved-release backports can check out Bun-era anchors.
+  const preflight = spawnSync('vp', ['exec', 'expo', '--version'], { cwd: MOBILE_DIR, stdio: 'ignore' });
+  if (preflight.status !== 0) {
+    console.error('[mobile:publish] `vp exec expo --version` failed in packages/mobile. Run `vp install` and retry.');
+    return 1;
+  }
 
   const platforms = requestedSelfHostedPlatforms(platform);
   const outcomes = await publishPlatformsSequentially(platforms, async (requestedPlatform) => {
@@ -186,12 +192,12 @@ async function publishToSelfHostedBranch(
     if (requestedPlatform === 'ios') delete platformEnv.GOOGLE_MAPS_API_KEY;
     const eoasArgs = buildSelfHostedEoasArgs(branchName, requestedPlatform, updateMessage);
     console.log('');
-    console.log(`[mobile:publish] Running ${requestedPlatform}: bunx ${eoasArgs.join(' ')}`);
+    console.log(`[mobile:publish] Running ${requestedPlatform}: vp dlx ${eoasArgs.join(' ')}`);
     console.log('');
     return publishSelfHostedPlatformWithRetry({
       platform: requestedPlatform,
-      command: 'bunx',
-      args: eoasArgs,
+      command: 'vp',
+      args: ['dlx', ...eoasArgs],
       cwd: MOBILE_DIR,
       env: platformEnv,
     });
@@ -323,21 +329,21 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<numb
 
   const easArgs = buildEasUpdateArgs(sanitizedBranch, updateMessage, platform);
 
-  console.log(`[mobile:publish] Running: bunx ${easArgs.join(' ')}`);
+  console.log(`[mobile:publish] Running: vp dlx ${easArgs.join(' ')}`);
   console.log('');
 
-  const result = spawnSync('bunx', easArgs, {
+  const result = spawnSync('vp', ['dlx', ...easArgs], {
     cwd: MOBILE_DIR,
     stdio: 'inherit',
-    env: { ...process.env, PATH: pathWithoutBrokenBunxShims(process.env.PATH) },
+    env: { ...process.env, PATH: process.env.PATH },
   });
 
   if (result.status !== 0) {
     console.error('');
     console.error('[mobile:publish] Update failed.');
     if (result.status === 1) {
-      console.error('[mobile:publish] Make sure you are logged in: bunx eas login');
-      console.error('[mobile:publish] And the project is linked: bunx eas init (from packages/mobile/)');
+      console.error('[mobile:publish] Make sure you are logged in: vp dlx eas-cli@16 login');
+      console.error('[mobile:publish] And the project is linked: vp dlx eas-cli@16 init (from packages/mobile/)');
     }
     return result.status ?? 1;
   }
@@ -347,7 +353,7 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<numb
   console.log(`[mobile:publish] Testers on the "preview" build will receive this update.`);
   console.log('');
   console.log(`[mobile:publish] To point a preview build at this branch:`);
-  console.log(`  bunx eas-cli@16 channel:edit preview --branch ${sanitizedBranch}`);
+  console.log(`  vp dlx eas-cli@16 channel:edit preview --branch ${sanitizedBranch}`);
   return 0;
 }
 

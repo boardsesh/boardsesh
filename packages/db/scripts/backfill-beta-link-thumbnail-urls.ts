@@ -15,7 +15,7 @@
  * migrated.
  *
  * Usage:
- *   bun run packages/db/scripts/backfill-beta-link-thumbnail-urls.ts [--dry-run]
+ *   vp exec tsx packages/db/scripts/backfill-beta-link-thumbnail-urls.ts [--dry-run]
  *
  * Notes:
  *   - The bucket endpoint is read from AWS_ENDPOINT_URL + AWS_S3_BUCKET_NAME

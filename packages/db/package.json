@@ -79,7 +79,7 @@
     "lint": "vp lint",
     "lint-fix": "vp lint --fix",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "bun scripts/migrate.ts",
+    "db:migrate": "tsx scripts/migrate.ts",
     "test": "tsx --test 'scripts/**/*.test.ts' 'src/**/*.test.ts'",
     "test:explain": "tsx --test src/queries/climbs/__tests__/search-climbs-explain.integration.test.ts",
     "test:migration-journal": "tsx --test scripts/migration-journal-verification.integration.test.ts",
@@ -106,11 +106,11 @@
     "db:load-snapshots": "tsx scripts/load-board-snapshots.ts"
   },
   "dependencies": {
-    "@boardsesh/board-config": "*",
-    "@boardsesh/board-constants": "*",
-    "@boardsesh/kiosk": "*",
-    "@boardsesh/shared-schema": "*",
-    "@boardsesh/sync-runtime": "*",
+    "@boardsesh/board-config": "workspace:*",
+    "@boardsesh/board-constants": "workspace:*",
+    "@boardsesh/kiosk": "workspace:*",
+    "@boardsesh/shared-schema": "workspace:*",
+    "@boardsesh/sync-runtime": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.9",
     "uuid": "^14.0.1"

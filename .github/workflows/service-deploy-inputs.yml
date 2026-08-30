@@ -10,7 +10,8 @@ on:
       - 'Dockerfile.sync'
       - '.dockerignore'
       - 'railway.toml'
-      - 'bun.lock'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - 'package.json'
       - 'vite.config.ts'
       - 'scripts/check-service-deploy-inputs.mjs'
@@ -38,7 +39,8 @@ on:
       - 'Dockerfile.sync'
       - '.dockerignore'
       - 'railway.toml'
-      - 'bun.lock'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - 'package.json'
       - 'vite.config.ts'
       - 'scripts/check-service-deploy-inputs.mjs'
@@ -65,15 +67,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: oven-sh/setup-bun@v2
-
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
       - name: Install dependencies
-        run: vp install
+        run: vp install --frozen-lockfile
 
       - name: Check service deployment inputs
         run: vp run check:service-deploy-inputs

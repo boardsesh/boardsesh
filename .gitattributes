@@ -11,3 +11,7 @@
 # union keeps both copies and TypeScript fails the build. It never silently drops
 # a line, which is the outcome that would actually hurt.
 packages/db/src/schema/**/index.ts merge=union
+
+# Lockfiles are generated: keep them out of inline diffs and language stats.
+# They remain tracked and reviewable on dependency changes.
+pnpm-lock.yaml -diff linguist-generated=true

@@ -72,7 +72,7 @@ every push restarts that 21-min clock.
 
 - **The PR cache key prefix can never exist on `main`.** The job caches
   `~/.gradle/caches` + `~/.gradle/wrapper` under
-  `${{ runner.os }}-gradle-rn-pr-${{ hashFiles('packages/mobile/package.json', 'bun.lock') }}`,
+  `${{ runner.os }}-gradle-rn-pr-${{ hashFiles('packages/mobile/package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml') }}`,
   a prefix deliberately separate from the release workflow's `gradle-rn-`. But the
   workflow only runs on `pull_request`, and GitHub lets a PR run restore caches only from
   its own merge ref or from the default branch. No `-pr-` cache on `main` → the first
@@ -101,13 +101,13 @@ Replace `actions/cache@v4` with `actions/cache/restore@v4` and adopt the release
     path: |
       ~/.gradle/caches
       ~/.gradle/wrapper
-    key: ${{ runner.os }}-gradle-rn-${{ hashFiles('packages/mobile/package.json', 'bun.lock') }}
+    key: ${{ runner.os }}-gradle-rn-${{ hashFiles('packages/mobile/package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
     restore-keys: |
       ${{ runner.os }}-gradle-rn-
 ```
 
 - **Every PR run — first push included — restores the cache `main` last built.** Exact
-  hit when `bun.lock` / `packages/mobile/package.json` match `main`; prefix fallback
+  hit when `pnpm-lock.yaml` / `pnpm-workspace.yaml` / `packages/mobile/package.json` match `main`; prefix fallback
   otherwise (Gradle re-downloads only the delta). The prefix also matches the dev-client
   cache (`gradle-rn-dev-<hash>`) — whichever `main` cache was written most recently wins
   a prefix match, and that's fine: Gradle's dependency cache is additive-only (entries
@@ -191,10 +191,10 @@ runs:
   using: composite
   steps:
     # existing steps, moved verbatim, each `run:` step gaining `shell: bash`:
-    # setup-bun → bun install --frozen-lockfile → setup-java (temurin 21) →
+    # setup-vp → vp install --frozen-lockfile → setup-java (temurin 21) →
     # setup-android + sdkmanager licenses/components →
     # actions/cache/restore (fix 1 block) → write packages/mobile/.env →
-    # bunx expo prebuild --platform android --clean --no-install
+    # vp exec expo prebuild --platform android --clean --no-install
     #   (prebuild keeps its step-level `env: TAILSCALE_HOSTS: ''` — step env
     #   travels with the step into the composite; don't drop it, or both jobs
     #   pay the 2 s tailscale-probe timeout again)
@@ -214,13 +214,14 @@ runs:
 
 ## Companion one-liner: `patches/**` is missing from the trigger paths
 
-Spotted while writing this spec: `android-apk-rn.yml` triggers on `patches/**` (bun
+Spotted while writing this spec: `android-apk-rn.yml` triggers on `patches/**` (pnpm
 patches to mobile native deps live at the repo root), but `android-pr-rn.yml` does not.
 A PR that only changes a patch file skips the PR native build and the breakage lands
 directly on `main`'s release build — the exact class of failure this workflow exists to
 catch. This ships in the same implementation PR as fixes 1–2 — it's a one-line `paths:`
-addition, nothing to defer. (The cache key needs no change: bun records patches in
-`bun.lock`, which is already hashed.)
+addition, nothing to defer. (The cache key needs no change: pnpm records patched
+dependency hashes in `pnpm-lock.yaml` and their mappings in `pnpm-workspace.yaml`;
+both are already hashed.)
 
 ## Fix 3: skip the native build on JS-only PRs and branch pushes (maintainer decision)
 
@@ -251,15 +252,15 @@ Shape, mirroring the release workflow's `gate` → `needs:` pattern:
   `main` tip (`git diff <main> HEAD` compares the two trees directly — no merge-base or
   full history needed, so it works on both a PR merge ref and a branch push):
   1. **Path screen (fast):** if none of the canonical native-input files changed vs
-     `main` (`packages/mobile/package.json`, `bun.lock`, `app.config.ts`, `plugins/`,
+     `main` (`packages/mobile/package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `app.config.ts`, `plugins/`,
      `modules/`, `patches/` — the set `ios-rn-ci`'s Pods cache key already hashes), skip
      without resolving anything. This is the exit ~every JS-only run takes. A change to
      the workflow/action plumbing forces a build so it's exercised.
   2. **Fingerprint diff (only when a candidate changed):** resolve HEAD + `main`
-     fingerprints and compare — this is what correctly skips e.g. a `bun.lock` churn from
+     fingerprints and compare — this is what correctly skips e.g. a `pnpm-lock.yaml` churn from
      a web-only dependency bump. Implementation note: the `main` resolve needs that
      revision's `node_modules` (config plugins execute at resolve time), so the gate
-     `bun install`s in an isolated `git worktree` for `main` (never mutating the primary
+     `vp install`s in an isolated `git worktree` for `main` (never mutating the primary
      checkout). Fail-open: any resolve / install / worktree error builds.
   - A plain `git diff` path screen (not `dorny/paths-filter`) keeps one mechanism for
     both PRs and pushes and needs no `pull-requests` permission.
@@ -316,7 +317,7 @@ last review-fix push shrinks accordingly.
 3. Push a second commit; confirm both pushes land in the ~14–15 min range and
    `gh cache list` shows no new `gradle-rn-pr-` entries.
 4. Gate checks, one PR each: a JS-only diff (gate skips both Android jobs + the iOS
-   build via the path screen, ~30 s); a web-only dependency bump that churns `bun.lock`
+   build via the path screen, ~30 s); a web-only dependency bump that churns `pnpm-lock.yaml`
    (path screen escalates, fingerprint diff comes back equal → skip); a native-input
    change (fingerprints differ → build).
 5. After merge, watch a week of mobile PRs: the `gradle-rn-` / `gradle-rn-dev-` caches

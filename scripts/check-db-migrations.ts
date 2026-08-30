@@ -82,7 +82,7 @@ export function checkTree(state: TreeState, newTags: ReadonlySet<string> = new S
       kind: 'orphan-sql',
       message:
         `${DRIZZLE_DIR}/${filename} has no entry in _journal.json, so it will never be applied. ` +
-        'Either add it via `bunx drizzle-kit generate` or delete the file.',
+        'Either add it via `vp exec drizzle-kit generate` or delete the file.',
     });
   }
   for (const tag of orphans.entryWithoutSql) {

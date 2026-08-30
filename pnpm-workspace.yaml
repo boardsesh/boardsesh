@@ -1,0 +1,75 @@
+# Workspace members. Deliberately NOT `packages/**`: that would swallow
+# packages/mobile/web-runtime (an isolated nested install that keeps
+# react-native-web out of the native Expo fingerprint graph — see
+# packages/mobile/web-runtime/pnpm-workspace.yaml) and packages/mobile/modules/*
+# (Expo local modules, consumed through autolinking rather than the workspace).
+packages:
+  - 'packages/*'
+  - 'packages/shared/*'
+  - 'packages/board-renderer/wasm'
+
+# Isolated is the default, but say it out loud: this repo used an isolated
+# linker before pnpm, and several things depend on the shape it produces —
+# metro.config.js's SINGLETON_MODULES redirect, scripts/mobile-native-deps-check.ts,
+# and the @expo/fingerprint patch. A silent switch to `hoisted` would make all
+# three look unnecessary while quietly reintroducing phantom dependencies.
+nodeLinker: isolated
+
+# Every intra-repo dependency uses the `workspace:*` protocol, so nothing needs
+# the implicit name-matching this enables. Explicit because a default change is
+# exactly the kind of thing that could resolve @boardsesh/* from the registry.
+linkWorkspacePackages: false
+
+# The React Native / Expo peer graph does not satisfy strict peer resolution
+# (react-native pins peers that Expo packages widen, and mobile pins React 19.2.3
+# while the web side is on ^19.2.8). Revisit once the migration has settled.
+strictPeerDependencies: false
+
+# --- Fingerprint-load-bearing settings. Do not change without a native build. ---
+# The mobile OTA runtimeVersion is a hash over, among other things, the paths
+# expo-modules-autolinking reports for every native module. Those paths run
+# through the virtual store, so anything that moves the store or renames its
+# entries moves runtimeVersion on every device.
+#
+# A global virtual store would put real package paths OUTSIDE the repo, making
+# the fingerprint depend on the machine that computed it.
+enableGlobalVirtualStore: false
+# virtualStoreDirMaxLength decides when pnpm truncates a store entry name and
+# replaces the tail with a hash. It defaults to 120 on POSIX but 60 on Windows,
+# so leaving it implicit means a Windows contributor resolves a different
+# runtimeVersion than CI does.
+virtualStoreDirMaxLength: 120
+
+overrides:
+  react-native-screens: 4.26.2
+
+patchedDependencies:
+  '@expo/fingerprint@0.20.11': patches/@expo__fingerprint@0.20.11.patch
+  '@expo/ui@57.0.14': patches/@expo__ui@57.0.14.patch
+  'expo-dev-launcher@57.0.16': patches/expo-dev-launcher@57.0.16.patch
+  'expo-image@57.0.3': patches/expo-image@57.0.3.patch
+  'react-native-screens@4.26.2': patches/react-native-screens@4.26.2.patch
+
+# pnpm blocks dependency lifecycle scripts unless they are listed here. Only
+# add a package after reviewing what its build script does.
+allowBuilds:
+  # Downloads the platform sentry-cli binary. Native build phases invoke it.
+  '@sentry/cli': true
+  # Direct native image dependency used by web/backend/db/board rendering.
+  sharp: true
+  # CLI dependency reached through tsx, drizzle-kit and Vite.
+  esbuild: true
+  # OCR tests import canvas at module scope and require its napi prebuild.
+  canvas: true
+  # Telemetry/funding-only lifecycle scripts stay blocked.
+  '@scarf/scarf': false
+  tesseract.js: false
+  core-js-pure: false
+  # Optional native WebSocket speedup; ws falls back to its JS path.
+  bufferutil: false
+  # Native tree-sitter builds are unused; the browser uses the WASM path.
+  '@tree-sitter-grammars/tree-sitter-yaml': false
+  tree-sitter: false
+  tree-sitter-json: false
+  # Browser downloads are performed explicitly only where they are needed.
+  playwright: false

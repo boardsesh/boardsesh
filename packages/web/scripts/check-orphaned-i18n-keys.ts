@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /**
  * Two-way static check over the i18n catalogs and the code that reads them,
  * across `packages/web/app/`, `packages/web/scripts/`, and `packages/mobile/{src,app}/`:
@@ -45,7 +45,7 @@
  * a template literal we can statically analyse, or add `// i18n-keep` for
  * every key the dynamic call could resolve to.
  */
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // TypeScript 7 ships no compiler API — its `typescript` entry point exports only
@@ -88,8 +88,9 @@ type KeyReference = { key: string; namespaces: readonly string[]; file: string; 
 
 const ANY_CTX: NsContext = { primary: ANY_NAMESPACE, bound: [ANY_NAMESPACE] };
 
-function isExcluded(absolutePath: string): boolean {
-  const normalized = absolutePath.split(sep).join('/');
+function isExcluded(absolutePath: string, root: string = repoRoot): boolean {
+  const relativePath = relative(root, absolutePath);
+  const normalized = `/${relativePath.split(sep).join('/')}`;
   if (normalized.includes('/node_modules/')) return true;
   if (normalized.includes('/.next/')) return true;
   if (normalized.includes('/dist/')) return true;
@@ -891,7 +892,17 @@ function main(): never {
   process.exit(formatted.exitCode);
 }
 
-if (import.meta.main) {
+function isEntryPoint(): boolean {
+  const entryPath = process.argv[1];
+  if (!entryPath) return false;
+  try {
+    return realpathSync(entryPath) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint()) {
   main();
 }
 
@@ -900,8 +911,11 @@ export {
   computeForeignMobileNamespaces,
   computeMissingKeys,
   computeOrphans,
+  discoverFiles,
   formatReport,
+  isExcluded,
   loadCatalog,
   run,
 };
+export { appRoot, mobileAppRoot, mobileSrcRoot, scriptsRoot };
 export type { ForeignMobileNamespace, KeyReference, MissingKey, Orphan, Report };

@@ -1,19 +1,14 @@
 {
   "name": "boardsesh-monorepo",
   "private": true,
-  "workspaces": [
-    "packages/*",
-    "packages/shared/*",
-    "packages/board-renderer/wasm"
-  ],
   "scripts": {
     "lint": "vp lint",
     "test": "vp test",
     "test:run": "vp test run",
     "check": "vp check",
     "format": "vp fmt",
-    "test:layout-screenshots": "bunx playwright test --project=layout-screenshots --config=packages/web/playwright.config.ts",
-    "backend:start": "bun run --filter=boardsesh-backend start",
+    "test:layout-screenshots": "pnpm --filter @boardsesh/web exec playwright test --project=layout-screenshots --config=playwright.config.ts",
+    "backend:start": "pnpm --filter boardsesh-backend run start",
     "controller:codegen": "node embedded/scripts/generate-graphql-types.mjs",
     "controller:codegen:board-data": "node embedded/scripts/generate-board-data.mjs",
     "controller:codegen:test": "node --test embedded/scripts/generate-graphql-types.test.mjs && node --test embedded/scripts/generate-board-data.test.mjs && python3 embedded/scripts/test_prebuild.py",
@@ -33,8 +28,8 @@
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1101.0",
-    "@boardsesh/pr-body": "*",
-    "@boardsesh/text-redaction": "*",
+    "@boardsesh/pr-body": "workspace:*",
+    "@boardsesh/text-redaction": "workspace:*",
     "@expo/cli": "^57.0.15",
     "@graphql-codegen/add": "^5.0.3",
     "@graphql-codegen/cli": "^5.0.7",
@@ -54,20 +49,12 @@
     "vite": "^8.2.0",
     "vite-plus": "^0.1.24",
     "vitest": "^4.1.10",
+    "xcode": "^3.0.1",
+    "xml2js": "^0.6.2",
     "yaml": "^2.9.0"
-  },
-  "overrides": {
-    "react-native-screens": "4.26.2"
   },
   "engines": {
     "node": "22.x"
   },
-  "packageManager": "bun@1.3.14",
-  "patchedDependencies": {
-    "@expo/fingerprint@0.20.11": "patches/@expo%2Ffingerprint@0.20.11.patch",
-    "@expo/ui@57.0.14": "patches/@expo%2Fui@57.0.14.patch",
-    "expo-dev-launcher@57.0.16": "patches/expo-dev-launcher@57.0.16.patch",
-    "expo-image@57.0.3": "patches/expo-image@57.0.3.patch",
-    "react-native-screens@4.26.2": "patches/react-native-screens@4.26.2.patch"
-  }
+  "packageManager": "pnpm@11.22.0"
 }

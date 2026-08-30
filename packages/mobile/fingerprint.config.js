@@ -5,13 +5,25 @@ const AUTOLINKING_SOURCE_IDS = new Set([
   'rncoreAutolinkingConfig:android',
 ]);
 
-// Bun's isolated linker appends a peer-resolution hash to a package's store
-// directory. It describes the JS install graph, not native compatibility. Match
-// the full store boundary so arbitrary `.bun/<text>+<hex>` strings cannot be
-// rewritten, and verify that the encoded store package is the package installed
-// below node_modules before removing the final peer token.
-const BUN_STORE_MODULE_BOUNDARY =
-  /((?:^|[/\\])node_modules[/\\]\.bun[/\\])([^/\\]+)([/\\]node_modules[/\\])((?:@[^/\\]+[/\\])?[^/\\]+)/g;
+// pnpm's isolated linker stores a real package below
+//   node_modules/.pnpm/<entry>/node_modules/<name>
+// where <entry> is @pnpm/deps.path's depPathToFilename() of the lockfile dep
+// path: `@scope/name` is encoded `@scope+name`, and parenthesised suffixes are
+// flattened into `_`-joined tails — the patch marker first, then peer ids.
+// Once the name exceeds virtualStoreDirMaxLength (120, pinned in
+// pnpm-workspace.yaml) pnpm truncates it and appends a 32-hex digest instead.
+//
+// The peer tail describes the JS install graph, not native compatibility: it
+// moves whenever an unrelated dependency shifts a peer resolution, churning
+// runtimeVersion and forcing a native build train for nothing. Strip exactly
+// that tail while KEEPING the patch marker, which is content-addressed over a
+// genuine native input.
+//
+// Match the full store boundary and verify the encoded store package really is
+// the package installed below node_modules. Anything that does not parse is
+// returned untouched. Fails closed.
+const PNPM_STORE_MODULE_BOUNDARY =
+  /((?:^|[/\\])node_modules[/\\]\.pnpm[/\\])([^/\\]+)([/\\]node_modules[/\\])((?:@[^/\\]+[/\\])?[^/\\]+)/g;
 const ENCODED_PACKAGE_NAME = '((?:@[a-z0-9][a-z0-9._~-]*\\+)?[a-z0-9][a-z0-9._~-]*)';
 const SEMVER_NUMERIC_IDENTIFIER = '(?:0|[1-9]\\d*)';
 const SEMVER_NON_NUMERIC_IDENTIFIER = '(?:\\d*[A-Za-z-][0-9A-Za-z-]*)';
@@ -21,36 +33,40 @@ const SEMVER_SHAPED_VERSION =
   `((?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)` +
   `(?:-${SEMVER_PRERELEASE_IDENTIFIER}(?:\\.${SEMVER_PRERELEASE_IDENTIFIER})*)?` +
   `(?:\\+${SEMVER_BUILD_IDENTIFIER}(?:\\.${SEMVER_BUILD_IDENTIFIER})*)?)`;
-const BUN_STORE_ENTRY_WITH_PEER_SUFFIX = new RegExp(
-  `^${ENCODED_PACKAGE_NAME}@${SEMVER_SHAPED_VERSION}\\+([0-9a-f]{16})$`,
+const PNPM_PATCH_HASH_SEGMENT = '(_patch_hash=[0-9a-f]+)?';
+// `_` is not legal in SemVer, so everything from the first `_` after the
+// version and optional patch marker is unambiguously install-graph noise.
+const PNPM_STORE_ENTRY_WITH_PEER_SUFFIX = new RegExp(
+  `^${ENCODED_PACKAGE_NAME}@${SEMVER_SHAPED_VERSION}${PNPM_PATCH_HASH_SEGMENT}_.+$`,
   'i',
 );
 
-function decodeBunStorePackageName(encodedPackageName) {
+// pnpm encodes `@scope/name` as `@scope+name`.
+function decodeStorePackageName(encodedPackageName) {
   if (!encodedPackageName.startsWith('@')) return encodedPackageName;
   const scopeSeparator = encodedPackageName.indexOf('+');
   if (scopeSeparator === -1) return encodedPackageName;
   return `${encodedPackageName.slice(0, scopeSeparator)}/${encodedPackageName.slice(scopeSeparator + 1)}`;
 }
 
-function normalizeTerminalBunPeerSuffixes(filePath) {
+function normalizeTerminalStorePeerSuffixes(filePath) {
   return filePath.replace(
-    BUN_STORE_MODULE_BOUNDARY,
+    PNPM_STORE_MODULE_BOUNDARY,
     (storePath, storePrefix, storeEntry, nodeModulesBoundary, installedPackagePath) => {
-      const entryMatch = storeEntry.match(BUN_STORE_ENTRY_WITH_PEER_SUFFIX);
+      const entryMatch = storeEntry.match(PNPM_STORE_ENTRY_WITH_PEER_SUFFIX);
       if (entryMatch === null) return storePath;
 
-      const [, encodedPackageName, version] = entryMatch;
+      const [, encodedPackageName, version, patchHashSegment] = entryMatch;
       const installedPackageName = installedPackagePath.replaceAll('\\', '/');
-      if (decodeBunStorePackageName(encodedPackageName) !== installedPackageName) return storePath;
+      if (decodeStorePackageName(encodedPackageName) !== installedPackageName) return storePath;
 
-      return `${storePrefix}${encodedPackageName}@${version}${nodeModulesBoundary}${installedPackagePath}`;
+      return `${storePrefix}${encodedPackageName}@${version}${patchHashSegment ?? ''}${nodeModulesBoundary}${installedPackagePath}`;
     },
   );
 }
 
 function normalizeAutolinkingValue(value) {
-  if (typeof value === 'string') return normalizeTerminalBunPeerSuffixes(value);
+  if (typeof value === 'string') return normalizeTerminalStorePeerSuffixes(value);
   if (Array.isArray(value)) return value.map(normalizeAutolinkingValue);
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(
@@ -69,7 +85,7 @@ function fileHookTransform(source, chunk) {
 
 module.exports = {
   // @expo/fingerprint discovers patches only below packages/mobile by default.
-  // Bun's patchedDependencies live at the monorepo root, so make their bodies a
+  // Patched dependencies live in the root pnpm workspace, so make their bodies a
   // first-class native input. Hash this config too: otherwise edits to the hook
   // could silently move runtimeVersion without showing which input changed.
   extraSources: [
@@ -107,8 +123,8 @@ module.exports = {
     {
       type: 'dir',
       filePath: '../../patches',
-      reasons: ['bunPatchedDependencies'],
-      overrideHashKey: 'bunPatchedDependencies',
+      reasons: ['rootPatchedDependencies'],
+      overrideHashKey: 'rootPatchedDependencies',
       // The whole dir is hashed, so a future patch to a WEB-ONLY dependency
       // would also move the fingerprint and force a store-build train. That
       // fails in the safe direction (over-triggering); if web patches ever
@@ -120,8 +136,8 @@ module.exports = {
   // tests so the exact allowlist and normalization boundary cannot widen silently.
   __test: {
     AUTOLINKING_SOURCE_IDS,
-    decodeBunStorePackageName,
+    decodeStorePackageName,
     normalizeAutolinkingValue,
-    normalizeTerminalBunPeerSuffixes,
+    normalizeTerminalStorePeerSuffixes,
   },
 };

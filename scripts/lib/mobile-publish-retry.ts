@@ -45,7 +45,7 @@ export const SELF_HOSTED_PUBLISH_WORST_CASE_MINUTES_PER_PLATFORM =
 /**
  * Everything a publish job does around the publish steps themselves. Dominated
  * by the two source-map uploads, which carry their own `timeout-minutes` in the
- * workflow; the rest (checkout, setup-vp/bun, `bun install`, changelog, health
+ * workflow; the rest (checkout, setup-vp, `vp install`, changelog, health
  * check) measured ~3 minutes in run 30855435091. mobile-ota-publish-workflow.test.ts
  * re-reads those step timeouts and fails if they outgrow this allowance.
  */

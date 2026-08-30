@@ -11,7 +11,7 @@
  *
  *   node --print "require.resolve('@sentry/cli/package.json')"
  *
- * Bun's isolated linker only symlinks a workspace's DIRECT deps into its
+ * pnpm's isolated linker only symlinks a workspace's DIRECT deps into its
  * node_modules, so a transitive-only `@sentry/cli` (pulled in by
  * @sentry/react-native) is NOT resolvable from packages/mobile and the build
  * dies under `set -e`. The fix is to declare such tools as direct deps; this
@@ -98,7 +98,7 @@ export function checkNativeBuildPhaseDeps(
         errors.push(
           `${tool} is required at iOS build time by ${trigger}, but is not resolvable from ` +
             `packages/mobile. Add it as a direct dependency in packages/mobile/package.json ` +
-            `(Bun's isolated linker does not surface transitive deps there).`,
+            `(pnpm's isolated linker does not surface transitive deps there).`,
         );
         continue; // Can't check alignment if it doesn't resolve at all.
       }

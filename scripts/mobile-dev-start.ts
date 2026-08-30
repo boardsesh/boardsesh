@@ -213,7 +213,7 @@ async function main() {
     ...metroPassthroughArgs,
   ];
 
-  const child = spawn('bunx', expoArgs, {
+  const child = spawn('vp', ['exec', ...expoArgs], {
     cwd: join(ROOT_DIR, 'packages', 'mobile'),
     env: childEnv,
     stdio: ['inherit', 'pipe', 'pipe'],

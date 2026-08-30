@@ -4,8 +4,11 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   createServiceDockerContext,
+  getPatchedDependencies,
   getServiceSourcePackageDirs,
   getWorkspacePackageJsonPaths,
+  getWorkspacePatterns,
+  requiredRootManifestFiles,
 } from './create-service-docker-context.mjs';
 
 const defaultRepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -68,37 +71,46 @@ function rejectExistingFile(failures, repoRoot, relativePath, reason) {
   }
 }
 
+function indexOfInstruction(fileContents, needle) {
+  let lineStart = 0;
+  for (const line of fileContents.split('\n')) {
+    const columnIndex = line.trimStart().startsWith('#') ? -1 : line.indexOf(needle);
+    if (columnIndex !== -1) return lineStart + columnIndex;
+    lineStart += line.length + 1;
+  }
+  return -1;
+}
+
 function requireDockerContextFile(failures, repoRoot, dockerfilePath) {
   const dockerfileContents = readRepoFile(repoRoot, dockerfilePath);
-  const installIndex = dockerfileContents.indexOf('RUN bun install --frozen-lockfile');
+  const installIndex = indexOfInstruction(dockerfileContents, 'pnpm install --frozen-lockfile');
   if (installIndex === -1) {
-    failures.push(`${dockerfilePath}: missing frozen bun install layer`);
+    failures.push(`${dockerfilePath}: missing frozen pnpm install layer`);
     return;
   }
 
-  const manifestRootCopy = 'COPY manifests/package.json manifests/bun.lock ./';
+  const manifestRootCopy = `COPY ${requiredRootManifestFiles.map((file) => `manifests/${file}`).join(' ')} ./`;
   const manifestPackagesCopy = 'COPY manifests/packages ./packages';
   const sourcePackagesCopy = 'COPY source/packages ./packages';
 
   const requiredPreInstallCopies = [manifestRootCopy, manifestPackagesCopy];
 
   // patchedDependencies are resolved during install, so the patch files must be
-  // copied into the install layer or `bun install --frozen-lockfile` fails.
-  const rootPackageJson = JSON.parse(readRepoFile(repoRoot, 'package.json'));
-  if (Object.keys(rootPackageJson.patchedDependencies ?? {}).length > 0) {
+  // copied into the install layer or `pnpm install --frozen-lockfile` fails.
+  if (Object.keys(getPatchedDependencies(repoRoot)).length > 0) {
     requiredPreInstallCopies.push('COPY manifests/patches ./patches');
   }
 
   for (const copyLine of requiredPreInstallCopies) {
-    const copyIndex = dockerfileContents.indexOf(copyLine);
+    const copyIndex = indexOfInstruction(dockerfileContents, copyLine);
     if (copyIndex === -1) {
       failures.push(`${dockerfilePath}: missing ${copyLine}`);
     } else if (copyIndex > installIndex) {
-      failures.push(`${dockerfilePath}: ${copyLine} must appear before bun install`);
+      failures.push(`${dockerfilePath}: ${copyLine} must appear before pnpm install`);
     }
   }
 
-  if (!dockerfileContents.includes(sourcePackagesCopy)) {
+  if (indexOfInstruction(dockerfileContents, sourcePackagesCopy) === -1) {
     failures.push(`${dockerfilePath}: missing ${sourcePackagesCopy}`);
   }
 
@@ -106,9 +118,17 @@ function requireDockerContextFile(failures, repoRoot, dockerfilePath) {
   const preInstallSourceCopy = preInstallContents.match(/^COPY (?:packages|source)\//m);
   if (preInstallSourceCopy) {
     failures.push(
-      `${dockerfilePath}: ${JSON.stringify(preInstallSourceCopy[0])} appears before bun install; only generated manifests may feed the install cache layer`,
+      `${dockerfilePath}: ${JSON.stringify(preInstallSourceCopy[0])} appears before pnpm install; only generated manifests may feed the install cache layer`,
     );
   }
+
+  rejectFilePattern(
+    failures,
+    repoRoot,
+    dockerfilePath,
+    /\bbunx\b|\bbun (?:install|run|x|--)\b|bun\.sh\/install/,
+    'Images run on pnpm and node; Bun is not installed in them.',
+  );
 
   rejectFilePattern(
     failures,
@@ -144,10 +164,15 @@ function verifyGeneratedContext(failures, repoRoot, serviceName, outputRoot) {
   );
   comparePathLists(failures, `${serviceName} Docker context source packages`, actualSourceDirs, expectedSourceDirs);
 
-  const rootPackageJson = JSON.parse(readRepoFile(repoRoot, 'package.json'));
-  for (const patchRelativePath of Object.values(rootPackageJson.patchedDependencies ?? {}).map(String)) {
+  for (const patchRelativePath of Object.values(getPatchedDependencies(repoRoot)).map(String)) {
     if (!existsSync(join(result.outputDir, 'manifests', patchRelativePath))) {
       failures.push(`${serviceName} Docker context: missing manifests/${patchRelativePath}`);
+    }
+  }
+
+  for (const rootManifestFile of requiredRootManifestFiles) {
+    if (!existsSync(join(result.outputDir, 'manifests', rootManifestFile))) {
+      failures.push(`${serviceName} Docker context: missing manifests/${rootManifestFile}`);
     }
   }
 
@@ -156,28 +181,97 @@ function verifyGeneratedContext(failures, repoRoot, serviceName, outputRoot) {
   }
 }
 
+function requirePnpmWorkspaceInputs(failures, repoRoot) {
+  const rootPackageJson = JSON.parse(readRepoFile(repoRoot, 'package.json'));
+  for (const staleKey of ['pnpm', 'overrides', 'patchedDependencies', 'workspaces', 'resolutions']) {
+    if (rootPackageJson[staleKey] !== undefined) {
+      failures.push(
+        `package.json: "${staleKey}" moved to pnpm-workspace.yaml under pnpm 11; leaving it here is silently inert`,
+      );
+    }
+  }
+
+  let workspaceConfigUsable = true;
+  try {
+    getWorkspacePatterns(repoRoot);
+  } catch (error) {
+    failures.push(`pnpm-workspace.yaml: ${error.message}`);
+    workspaceConfigUsable = false;
+  }
+
+  const packageManager = String(rootPackageJson.packageManager ?? '');
+  const packageManagerMatch = packageManager.match(/^pnpm@(\d+\.\d+\.\d+)$/);
+  if (!packageManagerMatch) {
+    failures.push(
+      `package.json: "packageManager" must pin an exact pnpm version; got ${JSON.stringify(packageManager)}`,
+    );
+  } else {
+    const pinnedVersion = packageManagerMatch[1];
+    for (const dockerfilePath of [
+      'Dockerfile.backend',
+      'Dockerfile.web',
+      'Dockerfile.sync',
+      'packages/db/docker/Dockerfile.dev-db',
+    ]) {
+      if (!existsSync(join(repoRoot, dockerfilePath))) continue;
+      const dockerfile = readRepoFile(repoRoot, dockerfilePath);
+      const installedVersions = [...dockerfile.matchAll(/npm install --global[^\n]*\bpnpm@(\d+\.\d+\.\d+)\b/g)].map(
+        (match) => match[1],
+      );
+      if (installedVersions.length !== 1 || installedVersions[0] !== pinnedVersion) {
+        failures.push(
+          `${dockerfilePath}: must install exactly pnpm@${pinnedVersion} to match package.json packageManager; ` +
+            `found ${JSON.stringify(installedVersions)}`,
+        );
+      }
+    }
+
+    const vercelConfigPath = 'packages/web/vercel.json';
+    if (!existsSync(join(repoRoot, vercelConfigPath))) {
+      failures.push(
+        `${vercelConfigPath}: missing; Vercel needs an explicit pnpm@${pinnedVersion} install/build command`,
+      );
+    } else {
+      const vercelConfig = JSON.parse(readRepoFile(repoRoot, vercelConfigPath));
+      for (const commandKey of ['installCommand', 'buildCommand']) {
+        const command = String(vercelConfig[commandKey] ?? '');
+        if (!command.includes(`pnpm@${pinnedVersion}`)) {
+          failures.push(
+            `${vercelConfigPath}: "${commandKey}" must pin pnpm@${pinnedVersion} to match package.json packageManager; got ${JSON.stringify(command)}`,
+          );
+        }
+      }
+    }
+  }
+
+  return workspaceConfigUsable;
+}
+
 function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
   const failures = [];
 
-  for (const dockerfilePath of ['Dockerfile.backend', 'Dockerfile.web', 'Dockerfile.sync']) {
-    // Dockerfile.sync (the combined sync image) is optional; backend/web are not.
-    if (dockerfilePath === 'Dockerfile.sync' && !existsSync(join(repoRoot, dockerfilePath))) continue;
-    requireDockerContextFile(failures, repoRoot, dockerfilePath);
-  }
+  const workspaceConfigUsable = requirePnpmWorkspaceInputs(failures, repoRoot);
 
-  const outputRoot = mkdtempSync(join(tmpdir(), 'boardsesh-service-docker-context-'));
-  try {
-    verifyGeneratedContext(failures, repoRoot, 'backend', outputRoot);
-    verifyGeneratedContext(failures, repoRoot, 'web', outputRoot);
-    if (existsSync(join(repoRoot, 'Dockerfile.sync'))) {
-      verifyGeneratedContext(failures, repoRoot, 'sync', outputRoot);
+  if (workspaceConfigUsable) {
+    for (const dockerfilePath of ['Dockerfile.backend', 'Dockerfile.web', 'Dockerfile.sync']) {
+      if (dockerfilePath === 'Dockerfile.sync' && !existsSync(join(repoRoot, dockerfilePath))) continue;
+      requireDockerContextFile(failures, repoRoot, dockerfilePath);
     }
-  } finally {
-    rmSync(outputRoot, { recursive: true, force: true });
+
+    const outputRoot = mkdtempSync(join(tmpdir(), 'boardsesh-service-docker-context-'));
+    try {
+      verifyGeneratedContext(failures, repoRoot, 'backend', outputRoot);
+      verifyGeneratedContext(failures, repoRoot, 'web', outputRoot);
+      if (existsSync(join(repoRoot, 'Dockerfile.sync'))) {
+        verifyGeneratedContext(failures, repoRoot, 'sync', outputRoot);
+      }
+    } finally {
+      rmSync(outputRoot, { recursive: true, force: true });
+    }
   }
 
   const branchBackendChangePattern =
-    'packages/*|Dockerfile.backend|scripts/create-service-docker-context.mjs|bun.lock|package.json';
+    'packages/*|Dockerfile.backend|scripts/create-service-docker-context.mjs|pnpm-lock.yaml|pnpm-workspace.yaml|package.json';
 
   requireFileIncludes(
     failures,
@@ -418,6 +512,12 @@ function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
     repoRoot,
     'Dockerfile.sync.dockerignore',
     'Generated Docker contexts replace Dockerfile-specific ignore files.',
+  );
+  rejectExistingFile(
+    failures,
+    repoRoot,
+    'bun.lock',
+    'The workspace installs with pnpm; a Bun lockfile would go stale and mislead cache keys.',
   );
 
   return failures;

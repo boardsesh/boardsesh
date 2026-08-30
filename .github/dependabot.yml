@@ -5,11 +5,12 @@
 
 version: 2
 updates:
-  - package-ecosystem: 'bun' # Matches the bun.lock at the repo root
+  # GitHub has no 'pnpm' ecosystem; 'npm' is the one that reads pnpm lockfiles.
+  - package-ecosystem: 'npm' # Matches the pnpm-lock.yaml at the repo root
     directory: '/'
     schedule:
       interval: 'weekly'
-  - package-ecosystem: 'bun' # Isolated Expo web runtime and its nested bun.lock
+  - package-ecosystem: 'npm' # Isolated Expo web runtime and its nested pnpm-lock.yaml
     directory: '/packages/mobile/web-runtime'
     schedule:
       interval: 'weekly'

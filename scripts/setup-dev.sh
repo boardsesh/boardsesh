@@ -62,10 +62,8 @@ if ! command_exists node; then
     print_error "Node.js is not installed. Please install Node.js 18+ from https://nodejs.org/"
 fi
 
-# Check bun
-if ! command_exists bun; then
-    print_error "Bun is not installed. Please install Bun from https://bun.sh/"
-fi
+# The package manager is not a prerequisite: Vite+ pins and downloads pnpm
+# from the root packageManager field.
 
 # Check Docker
 if ! command_exists docker; then
@@ -275,8 +273,8 @@ print_success "Database is ready (test user: test@boardsesh.com / test)"
 print_step "Step 7: Installing Playwright Browsers"
 
 echo "Downloading Chromium for e2e tests (~280 MB first run, cached after)..."
-if ! (cd packages/web && bunx playwright install chromium); then
-    print_warning "Failed to install Playwright browsers — you can run 'cd packages/web && bunx playwright install chromium' later."
+if ! (cd packages/web && vp exec playwright install chromium); then
+    print_warning "Failed to install Playwright browsers — you can run 'cd packages/web && vp exec playwright install chromium' later."
 else
     print_success "Playwright browsers installed"
 fi
@@ -290,7 +288,7 @@ echo -e "${BLUE}Start the development server:${NC}"
 echo "  vp run dev"
 echo ""
 echo -e "${BLUE}View your database:${NC}"
-echo "  bunx drizzle-kit studio"
+echo "  vp run db:studio"
 echo ""
 echo -e "${BLUE}Format code:${NC}"
 echo "  vp fmt"

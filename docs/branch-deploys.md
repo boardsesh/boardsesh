@@ -17,9 +17,11 @@ Boardsesh is a monorepo with three deployable services:
 The web project deploys from `packages/web`, not the repo root. Two dashboard settings under **Settings → Build & Deployment** are hard prerequisites — `packages/web/vercel.json` does nothing without them (and `vercel.json` is strict JSON, so this can't be a comment in the file):
 
 1. **Root Directory = `packages/web`.** This is how Vercel finds `next` (it lives only in `packages/web/package.json`, not the root). Without it the build fails with `No Next.js version detected`.
-2. **"Include source files outside of the Root Directory in the Build Step" = on.** The build reaches outside `packages/web`: `bun.lock` lives at the repo root (so `bun install --frozen-lockfile` walks up to find it), and Next transpiles sibling workspace packages from source. With the toggle off, Vercel clones only `packages/web` and the install regenerates or rejects the lockfile.
+2. **"Include source files outside of the Root Directory in the Build Step" = on.** The build reaches outside `packages/web`: `pnpm-lock.yaml` and `pnpm-workspace.yaml` live at the repo root (and without the workspace file pnpm cannot resolve the `workspace:*` dependencies), and Next transpiles sibling workspace packages from source. With the toggle off, Vercel clones only `packages/web` and the install regenerates or rejects the lockfile.
 
-Keep the larger build machine — `bun install` builds `sharp` plus the Expo/React Native native tree and OOMs on the default size.
+Vercel's build image cannot be relied on to honour `packageManager`, so `packages/web/vercel.json` pins the package manager itself: `npx --yes pnpm@11.22.0 install --frozen-lockfile`. Bump that version in lockstep with the root `packageManager` field.
+
+Keep the larger build machine — the install builds `sharp` plus the Expo/React Native native tree and OOMs on the default size.
 
 ## Production deploys (GitHub Actions)
 
@@ -300,23 +302,28 @@ The following files read `NEXT_PUBLIC_WS_URL` directly and need to import `getBa
 
 A new Dockerfile for the Next.js web app, built in GitHub Actions and pushed to GHCR.
 
+> The sketch below is the original proposal and has been superseded. Read the shipped
+> `Dockerfile.web` at the repository root for the current build: it uses Node 22 and
+> pnpm 11 with the generated `.docker-context/web`.
+
 **File: `Dockerfile.web`** (repository root)
 
 ```dockerfile
 # Stage 1: Install dependencies
-FROM oven/bun:1-alpine AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
-COPY package.json bun.lock ./
+RUN npm install --global --no-fund --no-audit pnpm@11.22.0
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/web/package.json ./packages/web/
 COPY packages/shared-schema/package.json ./packages/shared-schema/
 COPY packages/crypto/package.json ./packages/crypto/
 COPY packages/db/package.json ./packages/db/
 COPY packages/aurora-sync/package.json ./packages/aurora-sync/
 COPY packages/moonboard-ocr/package.json ./packages/moonboard-ocr/
-RUN bun install --frozen-lockfile
+RUN pnpm install --frozen-lockfile
 
 # Stage 2: Build the Next.js app
-FROM oven/bun:1-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -331,7 +338,7 @@ ENV BASE_URL=$BASE_URL
 ENV SENTRY_SUPPRESS_TURBOPACK_WARNING=1
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN bun run build --filter=@boardsesh/web
+RUN pnpm --filter @boardsesh/web run build
 
 # Stage 3: Production image (Node runtime for Next.js standalone)
 FROM node:22-alpine AS runner
@@ -355,7 +362,7 @@ CMD ["node", "packages/web/server.js"]
 
 > **Prerequisites:**
 >
-> 1. **Migrate the repo to Bun** — the project needs to use a package manager with a centralized module cache to avoid duplicating `node_modules` across 10+ concurrent Docker stacks on the branch-deploy VM. Bun's global cache means installs are near-instant and disk-efficient. Other options that solve the same problem include Yarn PNP (zero-install with zip archives) or pnpm (content-addressable store with hardlinks). The key requirement is **not** duplicating hundreds of megabytes of `node_modules` per PR environment.
+> 1. **Use pnpm's centralized store** — the project needs a package manager with a centralized module cache to avoid duplicating `node_modules` across 10+ concurrent Docker stacks on the branch-deploy VM. pnpm's content-addressable store and hardlinks keep installs fast and disk-efficient without duplicating hundreds of megabytes per PR environment.
 > 2. **Add `output: 'standalone'` to `next.config.mjs`:**
 >    ```js
 >    const nextConfig = {
@@ -364,7 +371,7 @@ CMD ["node", "packages/web/server.js"]
 >    };
 >    ```
 >    The standalone output creates a self-contained server that doesn't need `node_modules` at runtime. Vercel ignores this setting and uses its own build pipeline, so it's safe to add.
-> 3. **Note on the runner stage**: The final production image uses `node:22-alpine` (not Bun) because Next.js standalone output is designed to run on Node. Bun is only used for package installation and building.
+> 3. **Note on the runner stage**: The final production image uses `node:22-alpine` because Next.js standalone output is designed to run on Node. pnpm is used for package installation and building.
 
 #### Existing: `Dockerfile.backend`
 
@@ -1240,7 +1247,7 @@ MoonBoard public locations use a separate manual CLI, `moonboard-sync locations`
 
 ### Branch Deploy Sync Strategy
 
-Branch deploys simply **don't run the daemons** — they use snapshot data from the dev-db image, so there's nothing to schedule or disable. If sync testing is needed on a branch, run the CLI manually (e.g. `bunx kilter-sync catalog --user <id>`) against that branch's database.
+Branch deploys simply **don't run the daemons** — they use snapshot data from the dev-db image, so there's nothing to schedule or disable. If sync testing is needed on a branch, run the CLI manually (e.g. `vp exec kilter-sync catalog --user <id>`) against that branch's database.
 
 ---
 
@@ -1408,7 +1415,7 @@ What changed → what gets deployed:
 
 ### Phase 2b: Package Manager & Docker Images
 
-- [ ] Migrate repo to a package manager with centralized cache (Bun, pnpm, or Yarn PNP) to avoid `node_modules` duplication across PR stacks
+- [x] Use pnpm's centralized store to avoid `node_modules` duplication across PR stacks
 - [ ] Create `Dockerfile.web` for the Next.js app (standalone output)
 - [ ] Add `output: 'standalone'` to `next.config.mjs`
 - [ ] Test both Dockerfiles build correctly locally
@@ -1463,7 +1470,7 @@ Client-side WebSocket resolution works unchanged — `{N}.ws.preview.boardsesh.c
 The `detect-changes` job in `branch-deploy.yml` checks the PR diff. These paths trigger a per-PR backend build:
 
 - `packages/**`
-- `Dockerfile.backend`, `scripts/create-service-docker-context.mjs`, `bun.lock`, `package.json`
+- `Dockerfile.backend`, `scripts/create-service-docker-context.mjs`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `package.json`
 
 Everything else is treated as FE-only. `workflow_dispatch` always does a full build.
 
@@ -1486,9 +1493,9 @@ Backend-affecting paths are defined in two places that must stay in sync:
 1. `production-deploy.yml` `detect-changes` job — shell `case` patterns (decides web/backend builds + deploys on main push)
 2. `branch-deploy.yml` `detect-changes` job — shell `case` patterns (decides per-PR vs staging for PRs)
 
-`scripts/create-service-docker-context.mjs` generates `.docker-context/backend` and `.docker-context/web` before image builds. Each generated context contains every root workspace `package.json` under `manifests/` for the Bun install layer, then only the source packages reachable from that service under `source/`. The Dockerfiles copy only `manifests/` before `bun install`, so source-only edits keep the install cache warm and new workspaces are discovered from root `workspaces` instead of hand-maintained Dockerfile lists.
+`scripts/create-service-docker-context.mjs` generates `.docker-context/backend` and `.docker-context/web` before image builds. Each generated context contains every root workspace `package.json` under `manifests/` for the install layer, then only the source packages reachable from that service under `source/`. `manifests/` also carries `pnpm-lock.yaml`, `pnpm-workspace.yaml` and `patches/`: under pnpm 11 the workspace globs, overrides and patched dependencies live in `pnpm-workspace.yaml`, so an image missing that config cannot resolve `workspace:*`, and a missing patch fails the frozen install. The Dockerfiles copy only `manifests/` before the install, so source-only edits keep the install cache warm and new workspaces are discovered from `pnpm-workspace.yaml`.
 
-`service-deploy-inputs.yml` runs the generator and verifies both contexts: manifests must match root `workspaces`, service source closures must match workspace dependencies, and Dockerfiles must not reintroduce per-package `COPY packages/.../package.json` lines.
+`service-deploy-inputs.yml` runs the generator and verifies both contexts: manifests must match the `pnpm-workspace.yaml` globs, service source closures must match workspace dependencies, and Dockerfiles must not reintroduce per-package `COPY packages/.../package.json` lines.
 
 `production-deploy.yml` polls Railway deployment status after redeploy and attempts to roll back to the previously observed Railway deployment if the new one fails. Production deploys use a non-canceling concurrency group and cumulative change detection because GitHub may still replace an older pending run. After Railway reports success, a live GraphQL smoke verifies the client-required notification fields before the workflow reports the backend as deployed.
 

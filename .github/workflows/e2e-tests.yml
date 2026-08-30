@@ -25,36 +25,42 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: oven-sh/setup-bun@v2
-
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
-      - name: Restore node_modules cache
-        id: node-modules-cache
+      # Cache the pnpm STORE, not node_modules. pnpm's isolated linker builds
+      # node_modules as a symlink farm pointing into node_modules/.pnpm; packing
+      # that farm into a tarball and restoring it is fragile (symlink targets,
+      # partial restores, stale .bin shims). The expensive part of an install is
+      # fetching packages, not linking them — so cache the content-addressed
+      # store and let `vp install --frozen-lockfile` relink from it on every run.
+      # pnpm hardlinks out of the store, so a warm relink is near-instant, which
+      # is why the install below is no longer gated on a cache hit.
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(vp exec pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm store cache
         uses: actions/cache@v4
         with:
-          path: |
-            node_modules
-            packages/*/node_modules
-          key: ${{ runner.os }}-bun-node-modules-${{ hashFiles('bun.lock') }}
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-bun-node-modules-
+            ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Build shared packages
         run: vp run build:aurora && vp run build:constants
 
       - name: Typecheck web
-        run: bun run --filter=@boardsesh/web typecheck
+        run: vp exec pnpm --filter @boardsesh/web run typecheck
 
       - name: Typecheck backend
-        run: bun run --filter=boardsesh-backend typecheck
+        run: vp exec pnpm --filter boardsesh-backend run typecheck
 
   # ---------------------------------------------------------------------------
   # Build — runs in parallel with typecheck. Produces a single artifact that
@@ -75,11 +81,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install unzip (required by setup-bun)
+      - name: Install unzip (required by setup-vp)
         # apt-get from the default Ubuntu mirror is intermittently unreachable
         # from the Playwright Noble container on GitHub-hosted runners. We try
         # the default mirror first, then the US/Azure mirrors, then fall back
-        # to extracting the prebuilt bun zip with python3 (which the Playwright
+        # to extracting the prebuilt toolchain zip with python3 (which the Playwright
         # image ships with) so the build can proceed even if every apt mirror
         # is temporarily down.
         run: |
@@ -99,8 +105,8 @@ jobs:
             echo "apt attempt $attempt failed, switching mirror and retrying after $((attempt * 5))s..."
             sleep $((attempt * 5))
           done
-          echo "apt unreachable from all mirrors; extracting bun's zip with python3 instead"
-          # busybox unzip via python so subsequent setup-bun action's `unzip` call works.
+          echo "apt unreachable from all mirrors; extracting the toolchain zip with python3 instead"
+          # busybox unzip via python so subsequent setup-vp action's `unzip` call works.
           # python3 ships in playwright:noble. We expose a wrapper at /usr/local/bin/unzip.
           command -v python3 >/dev/null || { echo "python3 not available"; exit 1; }
           install -m 0755 /dev/stdin /usr/local/bin/unzip <<'PYUNZIP'
@@ -123,38 +129,44 @@ jobs:
           unzip -h >/dev/null 2>&1 || { echo "python unzip wrapper failed"; exit 1; }
           echo "python-based unzip wrapper installed at /usr/local/bin/unzip"
 
-      - uses: oven-sh/setup-bun@v2
-
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
-      - name: Restore node_modules cache
-        id: node-modules-cache
+      # Cache the pnpm STORE, not node_modules. pnpm's isolated linker builds
+      # node_modules as a symlink farm pointing into node_modules/.pnpm; packing
+      # that farm into a tarball and restoring it is fragile (symlink targets,
+      # partial restores, stale .bin shims). The expensive part of an install is
+      # fetching packages, not linking them — so cache the content-addressed
+      # store and let `vp install --frozen-lockfile` relink from it on every run.
+      # pnpm hardlinks out of the store, so a warm relink is near-instant, which
+      # is why the install below is no longer gated on a cache hit.
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(vp exec pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm store cache
         uses: actions/cache@v4
         with:
-          path: |
-            node_modules
-            packages/*/node_modules
+          path: ${{ steps.pnpm-store.outputs.path }}
           # Container-qualified key so bare-runner jobs (typecheck) can't
           # accidentally share native binaries with jobs running inside
           # the playwright image, even if glibc happens to match today.
-          key: ${{ runner.os }}-bun-node-modules-playwright-noble-${{ hashFiles('bun.lock') }}
+          key: ${{ runner.os }}-pnpm-store-playwright-noble-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-bun-node-modules-playwright-noble-
+            ${{ runner.os }}-pnpm-store-playwright-noble-
 
       - name: Install dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Cache Next.js incremental build
         uses: actions/cache@v4
         with:
           path: packages/web/.next/cache
-          key: ${{ runner.os }}-nextjs-${{ hashFiles('bun.lock') }}-${{ hashFiles('packages/web/**/*.ts', 'packages/web/**/*.tsx', 'packages/web/**/*.js', 'packages/web/**/*.jsx') }}
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}-${{ hashFiles('packages/web/**/*.ts', 'packages/web/**/*.tsx', 'packages/web/**/*.js', 'packages/web/**/*.jsx') }}
           restore-keys: |
-            ${{ runner.os }}-nextjs-${{ hashFiles('bun.lock') }}-
+            ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}-
             ${{ runner.os }}-nextjs-
 
       - name: Build all packages
@@ -234,11 +246,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install unzip (required by setup-bun)
+      - name: Install unzip (required by setup-vp)
         # apt-get from the default Ubuntu mirror is intermittently unreachable
         # from the Playwright Noble container on GitHub-hosted runners. We try
         # the default mirror first, then the US/Azure mirrors, then fall back
-        # to extracting the prebuilt bun zip with python3 (which the Playwright
+        # to extracting the prebuilt toolchain zip with python3 (which the Playwright
         # image ships with) so the build can proceed even if every apt mirror
         # is temporarily down.
         run: |
@@ -258,8 +270,8 @@ jobs:
             echo "apt attempt $attempt failed, switching mirror and retrying after $((attempt * 5))s..."
             sleep $((attempt * 5))
           done
-          echo "apt unreachable from all mirrors; extracting bun's zip with python3 instead"
-          # busybox unzip via python so subsequent setup-bun action's `unzip` call works.
+          echo "apt unreachable from all mirrors; extracting the toolchain zip with python3 instead"
+          # busybox unzip via python so subsequent setup-vp action's `unzip` call works.
           # python3 ships in playwright:noble. We expose a wrapper at /usr/local/bin/unzip.
           command -v python3 >/dev/null || { echo "python3 not available"; exit 1; }
           install -m 0755 /dev/stdin /usr/local/bin/unzip <<'PYUNZIP'
@@ -282,29 +294,35 @@ jobs:
           unzip -h >/dev/null 2>&1 || { echo "python unzip wrapper failed"; exit 1; }
           echo "python-based unzip wrapper installed at /usr/local/bin/unzip"
 
-      - uses: oven-sh/setup-bun@v2
-
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
-      - name: Restore node_modules cache
-        id: node-modules-cache
+      # Cache the pnpm STORE, not node_modules. pnpm's isolated linker builds
+      # node_modules as a symlink farm pointing into node_modules/.pnpm; packing
+      # that farm into a tarball and restoring it is fragile (symlink targets,
+      # partial restores, stale .bin shims). The expensive part of an install is
+      # fetching packages, not linking them — so cache the content-addressed
+      # store and let `vp install --frozen-lockfile` relink from it on every run.
+      # pnpm hardlinks out of the store, so a warm relink is near-instant, which
+      # is why the install below is no longer gated on a cache hit.
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(vp exec pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm store cache
         uses: actions/cache@v4
         with:
-          path: |
-            node_modules
-            packages/*/node_modules
+          path: ${{ steps.pnpm-store.outputs.path }}
           # Matches the build-job key so shards hit the cache the build
           # populated. Qualifier keeps it scoped to the playwright image.
-          key: ${{ runner.os }}-bun-node-modules-playwright-noble-${{ hashFiles('bun.lock') }}
+          key: ${{ runner.os }}-pnpm-store-playwright-noble-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-bun-node-modules-playwright-noble-
+            ${{ runner.os }}-pnpm-store-playwright-noble-
 
       - name: Install dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Download built packages
         uses: actions/download-artifact@v4
@@ -316,24 +334,24 @@ jobs:
         # upload-artifact@v4 can't carry Next.js Turbopack filenames with
         # colons in them. Tar preserves the full `packages/…` layout, so
         # extraction at the repo root drops the files right back where
-        # `next start` and `bun run --filter=… start` expect them.
+        # `next start` and `vp exec pnpm --filter … run start` expect them.
         run: |
           tar -xf built-packages.tar
           rm built-packages.tar
 
       - name: Run database migrations
-        run: bunx drizzle-kit migrate
+        run: vp exec drizzle-kit migrate
         working-directory: packages/db
         env:
           DATABASE_URL: postgresql://postgres:password@postgres:5432/main
 
       - name: Start backend and web servers
         run: |
-          bun run --filter=boardsesh-backend start > backend.log 2>&1 &
-          bun run --filter=@boardsesh/web start > web.log 2>&1 &
+          vp exec pnpm --filter boardsesh-backend run start > backend.log 2>&1 &
+          vp exec pnpm --filter @boardsesh/web run start > web.log 2>&1 &
           # Wait for both endpoints in parallel. Backend runs in local-only
           # pub/sub mode without REDIS_URL, which is fine for e2e coverage.
-          bunx wait-on http-get://localhost:8080/health http://localhost:3000 --timeout 90000
+          vp exec wait-on http-get://localhost:8080/health http://localhost:3000 --timeout 90000
         env:
           DATABASE_URL: postgresql://postgres:password@postgres:5432/main
           NEXTAUTH_SECRET: test-secret-for-ci
@@ -346,7 +364,7 @@ jobs:
         # dedicated `screenshots` job below; without this filter every
         # screenshot test ran twice per PR and contributed double to the
         # flake budget.
-        run: bunx playwright test --project=chromium --shard=${{ matrix.shard }}/8
+        run: vp exec playwright test --project=chromium --shard=${{ matrix.shard }}/8
         working-directory: packages/web
         env:
           PLAYWRIGHT_TEST_BASE_URL: http://localhost:3000
@@ -402,32 +420,38 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: oven-sh/setup-bun@v2
-
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
-      - name: Restore node_modules cache
-        id: node-modules-cache
+      # Cache the pnpm STORE, not node_modules. pnpm's isolated linker builds
+      # node_modules as a symlink farm pointing into node_modules/.pnpm; packing
+      # that farm into a tarball and restoring it is fragile (symlink targets,
+      # partial restores, stale .bin shims). The expensive part of an install is
+      # fetching packages, not linking them — so cache the content-addressed
+      # store and let `vp install --frozen-lockfile` relink from it on every run.
+      # pnpm hardlinks out of the store, so a warm relink is near-instant, which
+      # is why the install below is no longer gated on a cache hit.
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(vp exec pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm store cache
         uses: actions/cache@v4
         with:
-          path: |
-            node_modules
-            packages/*/node_modules
+          path: ${{ steps.pnpm-store.outputs.path }}
           # Bare-runner key — matches the typecheck job, deliberately NOT the
           # playwright-noble container key the build/e2e shards share.
-          key: ${{ runner.os }}-bun-node-modules-${{ hashFiles('bun.lock') }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-bun-node-modules-
+            ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Install Playwright chromium
-        run: bunx playwright install --with-deps chromium
+        run: vp exec playwright install --with-deps chromium
         working-directory: packages/web
 
       - name: Run expo-web smoke suite
@@ -489,11 +513,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install unzip (required by setup-bun)
+      - name: Install unzip (required by setup-vp)
         # apt-get from the default Ubuntu mirror is intermittently unreachable
         # from the Playwright Noble container on GitHub-hosted runners. We try
         # the default mirror first, then the US/Azure mirrors, then fall back
-        # to extracting the prebuilt bun zip with python3 (which the Playwright
+        # to extracting the prebuilt toolchain zip with python3 (which the Playwright
         # image ships with) so the build can proceed even if every apt mirror
         # is temporarily down.
         run: |
@@ -513,8 +537,8 @@ jobs:
             echo "apt attempt $attempt failed, switching mirror and retrying after $((attempt * 5))s..."
             sleep $((attempt * 5))
           done
-          echo "apt unreachable from all mirrors; extracting bun's zip with python3 instead"
-          # busybox unzip via python so subsequent setup-bun action's `unzip` call works.
+          echo "apt unreachable from all mirrors; extracting the toolchain zip with python3 instead"
+          # busybox unzip via python so subsequent setup-vp action's `unzip` call works.
           # python3 ships in playwright:noble. We expose a wrapper at /usr/local/bin/unzip.
           command -v python3 >/dev/null || { echo "python3 not available"; exit 1; }
           install -m 0755 /dev/stdin /usr/local/bin/unzip <<'PYUNZIP'
@@ -537,29 +561,35 @@ jobs:
           unzip -h >/dev/null 2>&1 || { echo "python unzip wrapper failed"; exit 1; }
           echo "python-based unzip wrapper installed at /usr/local/bin/unzip"
 
-      - uses: oven-sh/setup-bun@v2
-
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
-      - name: Restore node_modules cache
-        id: node-modules-cache
+      # Cache the pnpm STORE, not node_modules. pnpm's isolated linker builds
+      # node_modules as a symlink farm pointing into node_modules/.pnpm; packing
+      # that farm into a tarball and restoring it is fragile (symlink targets,
+      # partial restores, stale .bin shims). The expensive part of an install is
+      # fetching packages, not linking them — so cache the content-addressed
+      # store and let `vp install --frozen-lockfile` relink from it on every run.
+      # pnpm hardlinks out of the store, so a warm relink is near-instant, which
+      # is why the install below is no longer gated on a cache hit.
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(vp exec pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm store cache
         uses: actions/cache@v4
         with:
-          path: |
-            node_modules
-            packages/*/node_modules
+          path: ${{ steps.pnpm-store.outputs.path }}
           # Matches the build-job key so shards hit the cache the build
           # populated. Qualifier keeps it scoped to the playwright image.
-          key: ${{ runner.os }}-bun-node-modules-playwright-noble-${{ hashFiles('bun.lock') }}
+          key: ${{ runner.os }}-pnpm-store-playwright-noble-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-bun-node-modules-playwright-noble-
+            ${{ runner.os }}-pnpm-store-playwright-noble-
 
       - name: Install dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Download built packages
         uses: actions/download-artifact@v4
@@ -572,16 +602,16 @@ jobs:
           rm built-packages.tar
 
       - name: Run database migrations
-        run: bunx drizzle-kit migrate
+        run: vp exec drizzle-kit migrate
         working-directory: packages/db
         env:
           DATABASE_URL: postgresql://postgres:password@postgres:5432/main
 
       - name: Start backend and web servers
         run: |
-          bun run --filter=boardsesh-backend start > backend.log 2>&1 &
-          bun run --filter=@boardsesh/web start > web.log 2>&1 &
-          bunx wait-on http-get://localhost:8080/health http://localhost:3000 --timeout 90000
+          vp exec pnpm --filter boardsesh-backend run start > backend.log 2>&1 &
+          vp exec pnpm --filter @boardsesh/web run start > web.log 2>&1 &
+          vp exec wait-on http-get://localhost:8080/health http://localhost:3000 --timeout 90000
         env:
           DATABASE_URL: postgresql://postgres:password@postgres:5432/main
           NEXTAUTH_SECRET: test-secret-for-ci
@@ -600,7 +630,7 @@ jobs:
 
       - name: Capture screenshots
         run: |
-          bunx playwright test \
+          vp exec playwright test \
             --project=layout-screenshots
         working-directory: packages/web
         env:

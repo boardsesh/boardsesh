@@ -63,7 +63,7 @@ jobs:
     # those rows forever.
     environment: Production
     # Production DB/S3 credentials are NOT declared here: job-level env would leak
-    # them to actions/checkout, the setup actions, and `bun install` before the
+    # them to actions/checkout, the setup actions, and `vp install` before the
     # export ever runs. They're scoped to the two export steps below instead.
     env:
       # Tigris serves public objects only on the bucket's virtual-host
@@ -79,15 +79,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
-
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       # Identity pass → board-snapshots/v1. The fleet no longer reads this prefix
       # (it moved to v1-gzip), but it stays byte-for-byte the pre-gzip run so
