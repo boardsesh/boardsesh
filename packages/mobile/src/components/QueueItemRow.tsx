@@ -184,8 +184,9 @@ function QueueItemRowComponent({
         // before the 10px X activation — the Pan failed, never engaged, and the row's
         // tap fell through and just selected the climb instead of revealing Delete
         // (#3295). 14px tolerates that wobble while still ceding to a real vertical
-        // scroll (which crosses 14px in Y well before 10px in X). Mirrors SwipeableRow,
-        // extracted from this component.
+        // scroll (which crosses 14px in Y well before 10px in X). These are the
+        // thresholds the board manager's swipe-to-delete row also used before it
+        // was retired.
         .activeOffsetX(-10)
         .failOffsetY([-14, 14])
         .onUpdate((event: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {

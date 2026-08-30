@@ -63,6 +63,9 @@
       "editAria": "Edit {{name}}",
       "deleteAria": "Delete {{name}}",
       "unfollowAria": "Unfollow {{name}}",
+      "unfollowTitle": "Stop following?",
+      "unfollowMessage": "\"{{name}}\" is your active board. Unfollowing drops it from your boards and clears the selection.",
+      "unfollowConfirm": "Unfollow",
       "edit": "Edit",
       "done": "Done"
     },
@@ -82,9 +85,13 @@
       "nearbyTitle": "Near you",
       "nearbyShowing": "Showing nearby",
       "yourBoardsTitle": "Your boards",
+      "activeBadge": "Active",
+      "ownedBadgeAria": "Your board",
+      "followingBadgeAria": "Following",
       "popularTitle": "Popular setups",
       "findGym": "Find gym",
       "create": "Create board",
+      "createTile": "Create",
       "followed": "Added {{name}} to your boards",
       "followError": "Couldn't add {{name}} to your boards"
     },
