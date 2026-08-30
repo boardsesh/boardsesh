@@ -110,7 +110,7 @@ void describe('postgres client', () => {
     });
 
     void it('falls back to the default when DB_POOL_MAX is not a number', async () => {
-      const options = await poolOptionsWith({ DB_POOL_MAX: 'abc' });
+      const options = await poolOptionsWith({ DB_POOL_MAX: 'abc', VERCEL: undefined });
       assert.equal(options.max, 10);
     });
 
