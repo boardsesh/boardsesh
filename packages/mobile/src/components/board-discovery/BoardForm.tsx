@@ -17,7 +17,6 @@ import {
   type ScrollViewInstance,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { SUPPORTED_BOARDS } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
 import { useNavigation, useRouter } from 'expo-router';
@@ -39,10 +38,11 @@ import {
   type SetupOptionField,
 } from '../../lib/boards/setup-option-handoff';
 import { BoardHoldsSummary } from './BoardHoldsSummary';
-import { boardTypeLabel, cleanLayoutName, formatSizeLabel } from './board-builder-labels';
+import { formatSizeLabel } from './board-builder-labels';
+import { useBoardFormCatalog } from './use-board-form-catalog';
 import { BoardImageNative } from '../BoardImageNative';
-import { getBoardRenderData } from '../../lib/board-details';
-import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
+import { getBoardRenderDimensions } from '../../lib/board-details';
+import { useBoardRenderData } from '../../lib/use-board-render-data';
 import { AngleSlider } from '../play-drawer/AngleSlider';
 import { AngleBoardDiagram } from '../play-drawer/AngleBoardDiagram';
 import { SwitchRow } from '../SwitchRow';
@@ -242,32 +242,9 @@ export function BoardForm({
     showsOnMap: builder.isPublic,
     onPick: onGymPick,
   });
+  const { boardOptions, layoutOptions, requiresCatalogAngles, geometryReady, catalogAnglesLoading } =
+    useBoardFormCatalog(builder);
 
-  // Chip options — memoised so the per-snap angle re-render doesn't rebuild them
-  // (they don't depend on angle), letting the memoised chip rows bail out.
-  // `SUPPORTED_BOARDS` already drops spray (`board-data.ts`): a wall is not a
-  // catalogue board you pick a layout and a size for, it is a photograph you
-  // take, and it gets its own front door in SW-09.
-  const boardOptions = useMemo(
-    () =>
-      SUPPORTED_BOARDS.map((board) => ({
-        key: board,
-        label: boardTypeLabel(board),
-        value: board,
-        selected: board === builder.boardName,
-      })),
-    [builder.boardName],
-  );
-  const layoutOptions = useMemo(
-    () =>
-      builder.layouts.map((layout) => ({
-        key: layout.id,
-        label: cleanLayoutName(layout.name, builder.boardName),
-        value: layout.id,
-        selected: layout.id === builder.layoutId,
-      })),
-    [builder.layouts, builder.boardName, builder.layoutId],
-  );
   const sizeOptions = useMemo(
     () =>
       builder.sizes.map((size) => ({
@@ -351,6 +328,7 @@ export function BoardForm({
   // device picker on a photograph.
   const isSprayWall = builder.boardName === 'spray';
   const showPreview = builder.layoutId != null && builder.sizeId != null && builder.setIds.length > 0;
+  const layoutLabel = t('mobile.custom.layout');
   const setIdsWire = builder.setIds.join(',');
   // Account for both the scroll content padding and the preview tile's padding
   // (the rows style draws no tile).
@@ -389,7 +367,7 @@ export function BoardForm({
       kind: 'confirm',
       label: submitLabel,
       onPress: submit,
-      disabled: !builder.canCreate || submitting || submitBlocked,
+      disabled: !builder.canCreate || !geometryReady || submitting || submitBlocked,
       loading: submitting,
       prominent: true,
     },
@@ -476,6 +454,12 @@ export function BoardForm({
           )}
         </View>
 
+        {showPreview && !geometryReady ? (
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.catalogStatusHint}>
+            {t('mobile.create.geometryLoading')}
+          </Text>
+        ) : null}
+
         {lockedConfig ? (
           <View style={[styles.lockedHint, { backgroundColor: systemColors.secondaryBackground }]}>
             <Icon name="info" size={16} color={systemColors.secondaryLabel} />
@@ -548,9 +532,9 @@ export function BoardForm({
             without this it would show a "Layout" heading over an empty row. */}
         {!setupRows && builder.layouts.length > 0 ? (
           <>
-            <SectionLabel>{t('mobile.custom.layout')}</SectionLabel>
+            <SectionLabel>{layoutLabel}</SectionLabel>
             <BoardConfigChips
-              groupLabel={t('mobile.custom.layout')}
+              groupLabel={layoutLabel}
               options={layoutOptions}
               onSelect={builder.selectLayout}
               disabled={lockedConfig}
@@ -640,6 +624,12 @@ export function BoardForm({
               onValueChange={builder.setIsAngleAdjustable}
             />
           </>
+        ) : requiresCatalogAngles && builder.layoutId != null ? (
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.catalogStatusHint}>
+            {catalogAnglesLoading
+              ? t('mobile.create.catalogAnglesLoading')
+              : t('mobile.create.catalogAnglesUnavailable')}
+          </Text>
         ) : null}
 
         {builder.layoutId != null ? (
@@ -896,19 +886,12 @@ function BoardConfigPreview({
   maxWidth: number;
   maxHeight: number;
 }) {
-  // The preview of a wall being edited resolves synchronously too, so it needs
-  // the same subscription as every other board surface. `''` off spray.
-  const sprayToken = useSprayWallToken(boardName, layoutId);
-  const renderData = useMemo(() => {
-    const setIdValues = setIds.split(',').map(Number).filter(Number.isFinite);
-    if (setIdValues.length === 0) return null;
-    return getBoardRenderData({ boardName, layoutId, sizeId, setIds: setIdValues });
-    // `sprayToken` recomputes this when the wall lands or is reset.
-  }, [boardName, layoutId, sizeId, setIds, sprayToken]);
-
-  if (!renderData) return null;
-
-  const aspect = renderData.boardWidth / renderData.boardHeight;
+  const config = useMemo(() => ({ boardName, layoutId, sizeId, setIds }), [boardName, layoutId, sizeId, setIds]);
+  const renderData = useBoardRenderData(config);
+  const dimensions = renderData ?? getBoardRenderDimensions(config);
+  if (!dimensions) return null;
+  const { boardWidth, boardHeight } = dimensions;
+  const aspect = boardWidth / boardHeight;
   let height = maxHeight;
   let width = height * aspect;
   if (width > maxWidth) {
@@ -927,8 +910,8 @@ function BoardConfigPreview({
         layoutId={layoutId}
         sizeId={sizeId}
         setIds={setIds}
-        boardWidth={renderData.boardWidth}
-        boardHeight={renderData.boardHeight}
+        boardWidth={boardWidth}
+        boardHeight={boardHeight}
         renderWidth={Math.round(width)}
         style={boardStyle}
       />
@@ -937,6 +920,7 @@ function BoardConfigPreview({
 }
 
 const styles = StyleSheet.create({
+  catalogStatusHint: { marginTop: spacing[3] },
   flex: {
     flex: 1,
   },

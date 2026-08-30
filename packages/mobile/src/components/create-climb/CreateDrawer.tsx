@@ -51,8 +51,8 @@ import { HeatmapDownloadLine } from '../board/HeatmapDownloadLine';
 import { Text } from '../Text';
 import { PressableSurface } from '../PressableSurface';
 import type { CreateHeatmap } from './create-heatmap';
-import { offersBoardLightbulb } from './spray-climb-rules';
-import { useSprayWallLedsEnabled } from '../../lib/spray/use-spray-wall-leds-enabled';
+import { BleControlSheetHost } from '../ble/BleControlSheetHost';
+import { useAuthoringWallLightbulb } from './use-authoring-wall-lightbulb';
 
 type Controller = ReturnType<typeof useCreateClimbScreen>;
 
@@ -324,14 +324,8 @@ export function CreateDrawer({
     (controller.isDraft ? controller.canSave : controller.canPublish) &&
     !ghostsPending &&
     !(controller.missingHoldCount > 0);
-  const { handleSave, bleConnected, bleConnecting, handleToggleBle } = controller;
-  const sprayLedsEnabled = useSprayWallLedsEnabled(board.boardName, board.layoutId);
-  const showLightbulb = offersBoardLightbulb(board.boardName, sprayLedsEnabled);
-  const lightbulb = useMemo(
-    () =>
-      showLightbulb ? { connected: bleConnected, connecting: bleConnecting, onToggle: handleToggleBle } : undefined,
-    [showLightbulb, bleConnected, bleConnecting, handleToggleBle],
-  );
+  const { handleSave } = controller;
+  const lightbulb = useAuthoringWallLightbulb(board, controller.wallControl);
   const handleSavePress = useCallback(() => {
     void handleSave();
   }, [handleSave]);
@@ -565,6 +559,11 @@ export function CreateDrawer({
             </View>
           </ScrollView>
         )}
+        <BleControlSheetHost
+          visible={controller.wallControl.controlsVisible}
+          onClose={controller.wallControl.closeControls}
+          controlClimbTarget={controller.wallControl.controlClimbTarget}
+        />
       </GestureHandlerRootView>
     </View>
   );

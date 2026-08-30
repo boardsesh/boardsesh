@@ -1,4 +1,7 @@
 import { useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useOptionalQuantumBluetoothActions } from '../../providers/quantum-bluetooth-context';
+import { useToast } from '../../providers/toast-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import {
   trackBoardConnectTapped,
@@ -17,6 +20,7 @@ import { useClimbBoardConnect } from '../../lib/boards/climb-board-connect-conte
 import type { ClimbBoardModel } from '../../lib/boards/gym-board-for-climb';
 import { drivesWithoutBluetooth } from '../../lib/boards/board-lighting';
 import type { UserBoard } from '@boardsesh/shared-schema';
+import { useLightbulbLabels } from './use-lightbulb-labels';
 
 /** Which bulb was tapped, for Board Connect Tapped. */
 export type LightbulbSurface = Extract<
@@ -39,8 +43,8 @@ type UseLightbulbControlOptions = {
   /**
    * Opens the BLE controls sheet (Re-light / Turn off all lights / Disconnect).
    * Wired to the returned `onLongPress` so every lightbulb shares one gesture
-   * vocabulary: short press connects/disconnects, long press (when connected)
-   * opens the labelled controls. Omit on surfaces with no long-press affordance.
+   * vocabulary: the adapter resolves short press, and long press (when connected)
+   * opens the labelled controls. Explicit-slot controllers also open controls on short press. Omit on surfaces with no long-press affordance.
    */
   onOpenControls?: (source: BoardControlsSource) => void;
   /**
@@ -81,10 +85,12 @@ export type LightbulbControl = {
   localConnected: boolean;
   /** A connect/disconnect is in flight — the bulb pulses while pending. */
   pending: boolean;
+  available: boolean;
+  accessibilityLabel: string;
+  drivingAccessibilityLabel: string;
   /**
-   * Connect (relighting the remembered board) / disconnect toggle — or, while a
-   * session peer authoritatively holds the board, the relay described on
-   * `onRelayToHolder`.
+   * Run the resolved press action: connect, disconnect, open explicit controls,
+   * take/release a wall, or relay the displayed climb through its holder.
    */
   onPress: () => void;
   /**
@@ -163,6 +169,9 @@ export type LightbulbControl = {
  */
 export function useLightbulbControl(options: UseLightbulbControlOptions): LightbulbControl {
   const { surface, placement, onOpenControls, onRelayToHolder, canRelay = onRelayToHolder != null } = options;
+  const quantumActions = useOptionalQuantumBluetoothActions();
+  const { showToast } = useToast();
+  const { t } = useTranslation('common');
   // Ownership/lit derivation is shared with the Live Activity bridge via this
   // hook so the in-app bulb and the lock-screen bulb can never disagree.
   const {
@@ -170,6 +179,8 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     lit,
     localConnected,
     pending,
+    isQuantum,
+    controlAvailable,
     ledless,
     wallHeldLocally,
     inAppBoardConnection,
@@ -186,20 +197,36 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
   const holderIsAuthoritative = holderConfirmed || crewHolderUnconfirmed;
   const climbBoardConnect = useClimbBoardConnect();
 
-  const pressAction = useMemo(
-    () =>
-      derivePlayDrawerLightbulbPressAction({
-        hasBluetooth: bluetooth != null,
-        isBluetoothConnected: bluetooth?.isConnected ?? false,
-        isBluetoothLoading: bluetooth?.loading ?? false,
-        ledless,
-        wallDevice: bluetooth?.wallDevice ?? false,
-        wallHeld: wallHeldLocally,
-        holderIsAuthoritative,
-        canRelay,
-      }),
-    [bluetooth, holderIsAuthoritative, canRelay, ledless, wallHeldLocally],
-  );
+  const pressAction = useMemo((): PlayDrawerLightbulbPressAction => {
+    if (isQuantum) {
+      if (!controlAvailable || pending) {
+        return 'noop';
+      }
+      return localConnected ? 'openControls' : 'connect';
+    }
+    return derivePlayDrawerLightbulbPressAction({
+      hasBluetooth: bluetooth != null,
+      isBluetoothConnected: bluetooth?.isConnected ?? false,
+      isBluetoothLoading: bluetooth?.loading ?? false,
+      ledless,
+      wallDevice: bluetooth?.wallDevice ?? false,
+      wallHeld: wallHeldLocally,
+      holderIsAuthoritative,
+      canRelay,
+    });
+  }, [
+    bluetooth,
+    holderIsAuthoritative,
+    canRelay,
+    ledless,
+    wallHeldLocally,
+    isQuantum,
+    controlAvailable,
+    pending,
+    localConnected,
+  ]);
+
+  const labels = useLightbulbLabels(pressAction, holderIsAuthoritative);
 
   // Bluetooth Connection Success / Failed record the outcome a few hundred ms
   // later. The tap itself is tracked too (#5654): a tap that dies at a denied
@@ -231,6 +258,12 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     async (surfaceOverride?: ConnectSurface, climb?: ClimbBoardModel | null): Promise<boolean> => {
       // The same gate onPress applies, so a caller that skips its own check
       // can't open a second link while one is pending or a peer holds the wall.
+      if (isQuantum) {
+        if (!quantumActions || !controlAvailable || pending || localConnected) {
+          return false;
+        }
+        return quantumActions.connect();
+      }
       if (!bluetooth || pressAction !== 'connect') return false;
       // The climb decides which board to connect to, not the board that happens
       // to be selected. Connecting to the selected board would scan for the
@@ -251,7 +284,19 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
       // (MoonBoard). With neither remembered, the adapter opens the picker.
       return bluetooth.connect(undefined, undefined, reconnectSerial, reconnectDeviceId);
     },
-    [bluetooth, pressAction, surface, placement, climbBoardConnect, connectAfterMove],
+    [
+      bluetooth,
+      pressAction,
+      surface,
+      placement,
+      climbBoardConnect,
+      connectAfterMove,
+      isQuantum,
+      quantumActions,
+      controlAvailable,
+      pending,
+      localConnected,
+    ],
   );
 
   const moveToClimbBoard = useCallback(
@@ -267,6 +312,22 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
   );
 
   const onPress = useCallback(() => {
+    if (isQuantum) {
+      if (!quantumActions || pending || !controlAvailable) return;
+      // Quantum never auto-sends a queue/current climb. A connected tap opens
+      // the four fixed layer choices; a disconnected tap only connects.
+      if (localConnected) {
+        onOpenControls?.({ surface, placement });
+      } else {
+        void quantumActions
+          .connect()
+          .then((connected) => {
+            if (!connected) showToast(t('bluetooth.connectFailed'), 'error');
+          })
+          .catch(() => showToast(t('bluetooth.connectFailed'), 'error'));
+      }
+      return;
+    }
     if (!bluetooth) return;
     if (pressAction === 'noop') return;
 
@@ -305,7 +366,22 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     // and makes this device the holder; on disconnect the bluetooth provider
     // fires the release itself, so we don't report here.
     void connect();
-  }, [bluetooth, pressAction, onRelayToHolder, connect]);
+  }, [
+    bluetooth,
+    pressAction,
+    onRelayToHolder,
+    connect,
+    isQuantum,
+    quantumActions,
+    pending,
+    controlAvailable,
+    localConnected,
+    onOpenControls,
+    surface,
+    placement,
+    showToast,
+    t,
+  ]);
 
   const onLongPress = useCallback(() => {
     // Long-press is a power-user shortcut into the controls sheet; only meaningful
@@ -320,6 +396,8 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     lit,
     localConnected,
     pending,
+    available: controlAvailable,
+    ...labels,
     onPress,
     connect,
     moveToClimbBoard,

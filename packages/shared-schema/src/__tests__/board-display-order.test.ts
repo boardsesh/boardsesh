@@ -13,6 +13,12 @@ describe('BOARD_DISPLAY_ORDER', () => {
     expect(BOARD_DISPLAY_ORDER.slice(0, AURORA_BOARDS.length)).toEqual([...AURORA_BOARDS]);
   });
 
+  it('supports Quantum without treating it as an Aurora API board', () => {
+    expect(SUPPORTED_BOARDS).toContain('quantum');
+    expect(BOARD_DISPLAY_ORDER).toContain('quantum');
+    expect(AURORA_BOARDS).not.toContain('quantum');
+  });
+
   it('is a different order from SUPPORTED_BOARDS, on purpose', () => {
     // SUPPORTED_BOARDS interleaves moonboard after tension. Deriving the sort
     // order from it would silently move moonboard four places up in every

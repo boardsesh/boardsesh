@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { PixelRatio, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,9 +6,7 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../BoardImageNative';
 import { useChromeIconButtonSize } from '../ChromeIconButton';
 import { Text } from '../Text';
-import { getBoardRenderData } from '../../lib/board-details';
-import { parseSetIds } from '../../lib/board-presence/parse-set-ids';
-import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
+import { useBoardRenderData } from '../../lib/use-board-render-data';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { computeContainedBoardSize } from './play-drawer-layout';
@@ -39,19 +37,13 @@ function UnlitBoardPaneComponent({ boardConfig, paneTopInset }: { boardConfig: B
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
   const topRowHeight = useChromeIconButtonSize();
-  const sprayToken = useSprayWallToken(boardConfig.boardName, boardConfig.layoutId);
   const tapLights = useDrivingWall();
-  const renderData = useMemo(() => {
-    const setIds = parseSetIds(boardConfig.setIds);
-    if (setIds.length === 0) return null;
-    return getBoardRenderData({
-      boardName: boardConfig.boardName as BoardName,
-      layoutId: boardConfig.layoutId,
-      sizeId: boardConfig.sizeId,
-      setIds,
-    });
-    // `sprayToken` recomputes this when a spray wall lands or is reset.
-  }, [boardConfig, sprayToken]);
+  const renderData = useBoardRenderData({
+    boardName: boardConfig.boardName as BoardName,
+    layoutId: boardConfig.layoutId,
+    sizeId: boardConfig.sizeId,
+    setIds: boardConfig.setIds,
+  });
 
   const [boardArea, setBoardArea] = useState<BoardBox | null>(null);
   const handleBoardAreaLayout = useCallback((event: LayoutChangeEvent) => {

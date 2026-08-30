@@ -35,6 +35,7 @@ const PICKER_STATES_BY_BOARD: Record<BoardName, readonly HoldFilterType[]> = {
   // Spray-wall climbs use all four too — the holds are a climber's own, so
   // nothing rules a role out the way MoonBoard's footless format does.
   spray: SETTER_STATE_ORDER,
+  quantum: ['STARTING', 'HAND', 'FINISH'],
 };
 
 /** Plain-white swatch colour for the `ANY` wildcard (no LED colour of its own). */

@@ -1,18 +1,27 @@
-import { getProductSize, getImageFilename, getHolePlacements } from '@boardsesh/board-constants/product-sizes';
+import {
+  getProductSize,
+  getImageFilename,
+  getHolePlacements,
+  hasProductSizeEdges,
+} from '@boardsesh/board-constants/product-sizes';
 import {
   BOARD_IMAGE_DIMENSIONS,
   MOONBOARD_SIZE,
   WOODS_LAYOUTS,
+  getQuantumNeutralGrid,
   getMoonBoardDetails,
   getMoonBoardGeometryByLayoutId,
   getWoodsBoardDetails,
 } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
 import type { HoldPlacement } from '../components/board-renderer/types';
-import { activeSprayArt, getSprayWall, sprayCacheToken } from './spray/spray-wall-registry';
+import { activeSprayArt, getSprayWall } from './spray/spray-wall-registry';
 import { sprayBackgroundKey } from './spray/spray-photo-keys';
+import { getQuantumGeometryBoardDetails } from './quantum-geometry-store';
+import { getBoardGeometryVersion } from './board-geometry-adapters';
+import { parseSetIds } from './board-presence/parse-set-ids';
 
-type BoardRenderData = {
+export type BoardRenderData = {
   boardWidth: number;
   boardHeight: number;
   // Board playing-surface edges in placement-grid coordinates (the `edge_*`
@@ -26,10 +35,18 @@ type BoardRenderData = {
   holdsData: HoldPlacement[];
 };
 
+export type BoardRenderConfig = {
+  boardName: BoardName;
+  layoutId: number;
+  sizeId: number;
+  setIds: number[];
+};
+
+export type BoardRenderInput = Omit<BoardRenderConfig, 'setIds'> & { setIds: string | readonly number[] };
+
 // `getBoardRenderData` is pure but does O(n) work over ~1400 hold tuples (a
 // filter plus per-hold coordinate math) on the PlayDrawer-open critical path and
-// on every carousel swap. The underlying placement data is static, so memoize by
-// board-config key. A session only ever touches a handful of distinct boards;
+// on every carousel swap. Memoize by board config and accepted geometry version. A session only ever touches a handful of distinct boards;
 // the FIFO eviction cap just bounds memory if a picker churns through many.
 const RENDER_DATA_CACHE_LIMIT = 16;
 const renderDataCache = new Map<string, BoardRenderData | null>();
@@ -38,7 +55,7 @@ const renderDataCache = new Map<string, BoardRenderData | null>();
  * Computes board rendering data (dimensions, bundled background manifest
  * keys, hold positions) from board config parameters. Mirrors the web's
  * `getBoardDetails()` geometry without handing mobile renderers network URLs.
- * Cached by board config — the placement data behind it never changes.
+ * Cached by board config and the geometry adapter’s accepted content version.
  */
 export function getBoardRenderData(params: {
   boardName: BoardName;
@@ -48,12 +65,8 @@ export function getBoardRenderData(params: {
 }): BoardRenderData | null {
   const { boardName, layoutId, sizeId, setIds } = params;
 
-  // The spray token is `''` for every catalogue board, so no existing key moves
-  // by a byte; for a wall it carries the version, which is the only thing that
-  // changes when a reset replaces the photo and the hold generation under an
-  // unchanged (layoutId, sizeId). Without it a reset would be served the
-  // previous generation's holds out of this memo forever.
-  const cacheKey = `${boardName}-${layoutId}-${sizeId}-${setIds.join(',')}${sprayCacheToken(boardName, layoutId)}`;
+  const geometryVersion = getBoardGeometryVersion(params);
+  const cacheKey = `${boardName}-${layoutId}-${sizeId}-${setIds.join(',')}-${geometryVersion}`;
   const cached = renderDataCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
@@ -95,8 +108,12 @@ function computeBoardRenderData(params: {
     return getSprayRenderData({ layoutId, sizeId });
   }
 
+  if (boardName === 'quantum') {
+    return getQuantumRenderData({ layoutId, sizeId, setIds });
+  }
+
   const sizeData = getProductSize(boardName, sizeId);
-  if (!sizeData) return null;
+  if (!sizeData || !hasProductSizeEdges(sizeData)) return null;
 
   const { edgeLeft, edgeRight, edgeBottom, edgeTop } = sizeData;
 
@@ -149,6 +166,25 @@ function computeBoardRenderData(params: {
 export function moonBoardGridLabelsImageKey(layoutId: number): string {
   const { backgroundImage } = getMoonBoardGeometryByLayoutId(layoutId);
   return `moonboard/${backgroundImage}`.replace(/\.png$/, '.webp');
+}
+
+function getQuantumRenderData(params: { layoutId: number; sizeId: number; setIds: number[] }): BoardRenderData | null {
+  const { layoutId, sizeId, setIds } = params;
+  // Quantum has one exact synthetic set. A stale or crafted route must not
+  // borrow geometry from another configuration.
+  if (setIds.length !== 1 || setIds[0] !== 1) return null;
+  const details = getQuantumGeometryBoardDetails(layoutId, sizeId);
+  if (!details) return null;
+  return {
+    boardWidth: details.boardWidth,
+    boardHeight: details.boardHeight,
+    edgeLeft: details.edge_left,
+    edgeRight: details.edge_right,
+    edgeBottom: details.edge_bottom,
+    edgeTop: details.edge_top,
+    backgroundImageKeys: [],
+    holdsData: details.holdsData.map((hold) => ({ ...hold })),
+  };
 }
 
 function getMoonBoardRenderData(params: {
@@ -313,6 +349,18 @@ function getSprayRenderData(params: { layoutId: number; sizeId: number }): Board
   };
 }
 
+/** Known canvas dimensions can be available before the hold map has loaded. */
+export function getBoardRenderDimensions(params: BoardRenderInput): { boardWidth: number; boardHeight: number } | null {
+  const setIds = typeof params.setIds === 'string' ? parseSetIds(params.setIds) : [...params.setIds];
+  const renderData = getBoardRenderData({ ...params, setIds });
+  if (renderData) return { boardWidth: renderData.boardWidth, boardHeight: renderData.boardHeight };
+  if (params.boardName === 'quantum') {
+    const dimensions = getQuantumNeutralGrid(params.layoutId, params.sizeId);
+    return dimensions ? { boardWidth: dimensions.boardWidth, boardHeight: dimensions.boardHeight } : null;
+  }
+  return null;
+}
+
 export function getBoardAspectRatio(params: {
   boardName: BoardName;
   layoutId: number;
@@ -321,9 +369,13 @@ export function getBoardAspectRatio(params: {
 }): number {
   const { boardName, layoutId, sizeId, setIds } = params;
 
-  // Code-driven boards have no `board_images` row to read dimensions from, and a
-  // spray wall's dimensions are its photograph's, so both take their aspect ratio
-  // off the render data (which is memoized anyway).
+  // Code-driven boards have no `board_images` row to read dimensions from, so
+  // their aspect ratio comes off the render data (which is memoized anyway).
+  if (boardName === 'quantum') {
+    const neutralGrid = getQuantumNeutralGrid(layoutId, sizeId);
+    return neutralGrid ? neutralGrid.boardWidth / neutralGrid.boardHeight : 1080 / 1920;
+  }
+
   if (boardName === 'moonboard' || boardName === 'woods' || boardName === 'spray') {
     const renderData = getBoardRenderData(params);
     return renderData ? renderData.boardWidth / renderData.boardHeight : 1080 / 1920;

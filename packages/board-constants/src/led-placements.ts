@@ -1,9 +1,15 @@
 import type { BoardName, HoldState } from '@boardsesh/shared-schema';
-import { LED_PLACEMENTS } from './generated/led-placements-data';
+import { LED_PLACEMENTS as GENERATED_LED_PLACEMENTS } from './generated/led-placements-data';
+import { getQuantumLedPlacements } from './quantum-geometry-data';
 import type { LedPositionWithColor } from './types';
 import { STATE_TO_PRIMARY_CODE } from './hold-states';
 
-export { LED_PLACEMENTS };
+export const LED_PLACEMENTS = {
+  ...GENERATED_LED_PLACEMENTS,
+  get quantum() {
+    return getQuantumLedPlacements();
+  },
+};
 export type { LedPositionWithColor } from './types';
 
 export const getLedPlacements = (boardName: BoardName, layoutId: number, sizeId: number): Record<number, number> => {
@@ -87,7 +93,7 @@ export function buildFramesString(
   for (const led of ledPositions) {
     const placementId = reversePlacements[led.position];
 
-    if (!placementId) {
+    if (placementId === undefined) {
       console.warn(
         `[buildFramesString] Unknown LED position ${led.position} for ${boardName} layout ${layoutId} size ${sizeId}`,
       );

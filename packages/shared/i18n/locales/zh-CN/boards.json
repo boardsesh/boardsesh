@@ -517,7 +517,10 @@
         "removeSets_one": "移除",
         "removeSets_other": "全部移除",
         "noField": "我们不认识这个配置。请检查训练板、布局、尺寸和岩点。"
-      }
+      },
+      "geometryLoading": "正在加载此型号的岩点位置…",
+      "catalogAnglesLoading": "正在加载目录角度…",
+      "catalogAnglesUnavailable": "目录角度暂不可用。"
     },
     "custom": {
       "board": "训练板",

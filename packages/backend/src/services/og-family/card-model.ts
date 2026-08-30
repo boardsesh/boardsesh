@@ -19,6 +19,7 @@ import {
   parseBoardPath,
   parseNamedBoardPath,
   resolveRenderBoard,
+  supportsStaticBoardRender,
   type RenderBoardConfig,
 } from '@boardsesh/board-config';
 import { isValidFramesString } from '@boardsesh/board-render';
@@ -57,7 +58,7 @@ export type BoardConfig = {
  * must drop the art rather than 500.
  */
 export function isRenderableConfig(config: BoardConfig): boolean {
-  if (config.boardName === 'spray') return false;
+  if (!supportsStaticBoardRender(config.boardName)) return false;
   try {
     getBoardDetailsForBoard({
       board_name: config.boardName,

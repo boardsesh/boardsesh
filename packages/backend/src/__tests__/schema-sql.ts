@@ -577,6 +577,7 @@ export const schemaSQL = `
     "frames_count" integer DEFAULT 1,
     "frames_pace" integer DEFAULT 0,
     "frames" text,
+    "controller_route_uuid" text,
     "is_draft" boolean DEFAULT false,
     "is_listed" boolean,
     "is_hidden" boolean DEFAULT false NOT NULL,
@@ -590,6 +591,7 @@ export const schemaSQL = `
     "published_at" text,
     "hold_fingerprint" text,
     "characteristics" text[],
+    "source_metadata" jsonb,
     "missing_hold_count" integer,
     "retired_by_reset" boolean,
     "revision_number" integer DEFAULT 1 NOT NULL,
@@ -601,6 +603,7 @@ export const schemaSQL = `
   CREATE INDEX IF NOT EXISTS "board_climbs_hold_fingerprint_idx" ON "board_climbs" ("board_type", "layout_id", "hold_fingerprint");
   -- Migration 0253: the climbs whose holds an edit has moved (#6023).
   CREATE INDEX IF NOT EXISTS "board_climbs_holds_moved_idx" ON "board_climbs" ("board_type", "uuid", "holds_revision_number") WHERE "holds_revision_number" > 1;
+  CREATE UNIQUE INDEX IF NOT EXISTS "board_climbs_controller_route_uuid_idx" ON "board_climbs" ("board_type", "layout_id", "controller_route_uuid") WHERE "controller_route_uuid" IS NOT NULL;
 
   CREATE TABLE IF NOT EXISTS "board_climb_aliases" (
     "board_type" text NOT NULL,
@@ -754,6 +757,7 @@ export const schemaSQL = `
     "board_type" text NOT NULL,
     "table_name" text NOT NULL,
     "last_synchronized_at" text,
+    "metadata" jsonb,
     PRIMARY KEY ("board_type", "table_name")
   );
 

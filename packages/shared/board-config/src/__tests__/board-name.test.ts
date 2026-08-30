@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { isMoonboardBoardName, toBoardName } from '../board-name';
+import { formatBoardDisplayName, isMoonboardBoardName, toBoardName } from '../board-name';
 
 describe('toBoardName', () => {
   it('returns the board name for a supported board', () => {
     expect(toBoardName('kilter')).toBe('kilter');
     expect(toBoardName('tension')).toBe('tension');
     expect(toBoardName('moonboard')).toBe('moonboard');
+    expect(toBoardName('quantum')).toBe('quantum');
   });
 
   it('returns null for an empty string', () => {
@@ -49,5 +50,11 @@ describe('isMoonboardBoardName', () => {
 
   it('returns false for undefined', () => {
     expect(isMoonboardBoardName(undefined)).toBe(false);
+  });
+});
+
+describe('formatBoardDisplayName', () => {
+  it('uses the Quantum Board product name', () => {
+    expect(formatBoardDisplayName('quantum')).toBe('Quantum Board');
   });
 });

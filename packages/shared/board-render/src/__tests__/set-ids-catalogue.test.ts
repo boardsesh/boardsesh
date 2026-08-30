@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SETS } from '@boardsesh/board-constants';
+import { supportsStaticBoardRender } from '@boardsesh/board-config';
 import { describe, expect, it } from 'vitest';
 import { MAX_SET_IDS, ogClimbQuerySchema } from '../validation';
 
@@ -77,7 +78,7 @@ describe('every catalogue config fits under MAX_SET_IDS', () => {
     }),
   );
 
-  it('covers every Aurora board in the catalogue', () => {
+  it('covers every board with catalogue set associations', () => {
     // Name the boards instead of counting configs: a board dropped from a future
     // catalogue snapshot still clears any aggregate threshold, and walking `SETS`
     // is only worth doing if it is actually the whole catalogue.
@@ -85,13 +86,14 @@ describe('every catalogue config fits under MAX_SET_IDS', () => {
     // `SETS` also carries `moonboard`, `woods` and `spray` as empty objects —
     // their hold sets are not sourced from the Aurora tables this table is
     // generated from, so they are out of scope here rather than missing. Both
-    // lists are asserted so a board moving between them is a red test.
+    // lists are asserted so a board moving between them is a red test. Quantum
+    // has real model associations but its runtime geometry stays out of OG rendering.
     const boardsWithConfigs = [...new Set(configs.map((config) => config.boardName))].sort();
     const boardsWithoutConfigs = Object.keys(SETS)
       .filter((boardName) => !boardsWithConfigs.includes(boardName))
       .sort();
 
-    expect(boardsWithConfigs).toEqual(['decoy', 'grasshopper', 'kilter', 'soill', 'tension', 'touchstone']);
+    expect(boardsWithConfigs).toEqual(['decoy', 'grasshopper', 'kilter', 'quantum', 'soill', 'tension', 'touchstone']);
     expect(boardsWithoutConfigs).toEqual(['moonboard', 'spray', 'woods']);
   });
 
@@ -153,19 +155,21 @@ describe('every catalogue config fits under MAX_SET_IDS', () => {
     expect(boardController).toBe(MAX_SET_IDS);
   });
 
-  it('accepts every config through the og:climb query schema', () => {
-    const rejected = configs.map((config) => ({
-      label: config.label,
-      issues: ogClimbQuerySchema
-        .safeParse({
-          board_name: config.boardName,
-          layout_id: config.layoutId,
-          size_id: config.sizeId,
-          set_ids: config.setIds.join(','),
-          frames: 'p1r1',
-        })
-        .error?.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`),
-    }));
+  it('accepts every static config through the og:climb query schema', () => {
+    const rejected = configs
+      .filter((config) => supportsStaticBoardRender(config.boardName))
+      .map((config) => ({
+        label: config.label,
+        issues: ogClimbQuerySchema
+          .safeParse({
+            board_name: config.boardName,
+            layout_id: config.layoutId,
+            size_id: config.sizeId,
+            set_ids: config.setIds.join(','),
+            frames: 'p1r1',
+          })
+          .error?.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`),
+      }));
 
     // Report the schema's own message, so a rejection names the field it came
     // from rather than leaving the reader to guess it was set_ids.

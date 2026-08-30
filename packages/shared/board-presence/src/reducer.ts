@@ -37,6 +37,8 @@ export const initialBoardPresenceState: BoardPresenceState = {
   lastConnectionWireSeq: 0,
   lastConnectionSeq: 0,
   lastHolderChangeSeq: 0,
+  layers: null,
+  lastLayersSeq: 0,
 };
 
 /**
@@ -266,6 +268,57 @@ export function boardPresenceReducer(state: BoardPresenceState, action: BoardPre
         lastHolderChangeSeq: isSameHolder(state.holder, action.payload.holder)
           ? state.lastHolderChangeSeq
           : Math.max(state.lastHolderChangeSeq, action.payload.upToSeq),
+      };
+    }
+
+    case 'APPLY_LAYERS_CHANGED': {
+      if (action.payload.seq < state.lastLayersSeq) return state;
+      if (action.payload.seq === state.lastLayersSeq) {
+        const currentLayers = state.layers;
+        const promotesFetchedSnapshot =
+          !action.payload.stale &&
+          (currentLayers === null || (currentLayers.boardId === action.payload.boardId && currentLayers.stale));
+        if (!promotesFetchedSnapshot) return state;
+      }
+      return {
+        ...state,
+        layers: action.payload,
+        lastLayersSeq: action.payload.seq,
+      };
+    }
+
+    case 'SEED_LAYERS': {
+      if (state.lastLayersSeq !== 0 || state.layers !== null) return state;
+      return {
+        ...state,
+        layers: action.payload,
+        lastLayersSeq: action.payload?.seq ?? 0,
+      };
+    }
+
+    case 'REFRESH_LAYERS': {
+      // Fetches lose equal-sequence ties to live events. This also prevents a
+      // forced-stale catch-up snapshot from downgrading a fresh heartbeat.
+      if (action.payload.upToSeq <= state.lastLayersSeq) return state;
+      return {
+        ...state,
+        layers: action.payload.snapshot,
+        lastLayersSeq: action.payload.upToSeq,
+      };
+    }
+
+    case 'MARK_LAYERS_STALE': {
+      if (
+        state.layers === null ||
+        state.layers.stale ||
+        state.layers.boardId !== action.payload.boardId ||
+        state.layers.seq !== action.payload.seq
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        layers: { ...state.layers, stale: true },
       };
     }
 

@@ -8,6 +8,7 @@ import {
   WOODS_SETS,
   WOODS_SIZES,
 } from '@boardsesh/board-config';
+import { QUANTUM_MODELS, QUANTUM_SET_ID } from '@boardsesh/board-constants';
 import { AURORA_BOARDS } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -148,6 +149,16 @@ export async function assertKnownBoardConfig(
         'setIds',
         uniqueSetIds.filter((setId) => !woodsSetIds.has(setId)),
       );
+    }
+    return;
+  }
+
+  if (boardType === 'quantum') {
+    const isExactModel = Object.values(QUANTUM_MODELS).some(
+      (model) => model.layoutId === layoutId && model.sizeId === productSizeId,
+    );
+    if (!isExactModel || uniqueSetIds.length !== 1 || uniqueSetIds[0] !== QUANTUM_SET_ID) {
+      throwUnknownBoardConfig();
     }
     return;
   }

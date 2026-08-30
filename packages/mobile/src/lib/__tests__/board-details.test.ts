@@ -4,6 +4,7 @@ vi.mock('@boardsesh/board-constants/product-sizes', () => ({
   getImageFilename: vi.fn(),
   getProductSize: vi.fn(),
   getHolePlacements: vi.fn(),
+  hasProductSizeEdges: vi.fn(),
 }));
 
 // `getWoodsBoardDetails` is deliberately NOT mocked: the Woods cases below assert
@@ -13,6 +14,7 @@ vi.mock('@boardsesh/board-constants/product-sizes', () => ({
 vi.mock('@boardsesh/board-config', async () => {
   const actual = await vi.importActual<typeof import('@boardsesh/board-config')>('@boardsesh/board-config');
   return {
+    ...actual,
     BOARD_IMAGE_DIMENSIONS: {
       kilter: {},
       tension: {},
@@ -41,6 +43,7 @@ import {
   getBoardRenderData,
   moonBoardGridLabelsImageKey,
 } from '../board-details';
+import { getQuantumGeometry } from '../quantum-geometry-store';
 
 const mockedGetImageFilename = vi.mocked(getImageFilename);
 const mockedGetMoonBoardDetails = vi.mocked(getMoonBoardDetails);
@@ -107,6 +110,16 @@ describe('getBoardAspectRatio', () => {
   it('uses the real Woods board-art dimensions per size', () => {
     expect(getBoardAspectRatio({ boardName: 'woods', layoutId: 1, sizeId: 2, setIds: [1] })).toBeCloseTo(1225 / 1400);
     expect(getBoardAspectRatio({ boardName: 'woods', layoutId: 1, sizeId: 1, setIds: [1] })).toBeCloseTo(720 / 1000);
+  });
+
+  it('uses fixed source-coordinate aspect instead of protocol grid proportions', () => {
+    expect(getBoardAspectRatio({ boardName: 'quantum', layoutId: 9101, sizeId: 9201, setIds: [1] })).toBeCloseTo(1, 3);
+    expect(getBoardAspectRatio({ boardName: 'quantum', layoutId: 9101, sizeId: 9202, setIds: [1] })).toBeCloseTo(
+      94544 / 79327,
+    );
+    expect(getBoardAspectRatio({ boardName: 'quantum', layoutId: 9104, sizeId: 9201, setIds: [1] })).toBeCloseTo(
+      1080 / 1920,
+    );
   });
 });
 
@@ -184,6 +197,27 @@ describe('getBoardRenderData', () => {
 
     expect(result).toBeNull();
     expect(mockedGetMoonBoardDetails).not.toHaveBeenCalled();
+  });
+
+  it('renders fixed Quantum size membership without a registry or geometry query', () => {
+    for (const [sizeId, count] of [
+      [9201, 657],
+      [9202, 549],
+      [9203, 432],
+    ]) {
+      const geometry = getQuantumGeometry(9101, sizeId)!;
+      const render = getBoardRenderData({ boardName: 'quantum', layoutId: 9101, sizeId, setIds: [1] });
+      expect(render?.holdsData).toHaveLength(count);
+      expect(render).toMatchObject({
+        edgeLeft: geometry.edgeLeft,
+        edgeRight: geometry.edgeRight,
+        edgeBottom: geometry.edgeBottom,
+        edgeTop: geometry.edgeTop,
+        backgroundImageKeys: [],
+      });
+    }
+    expect(getBoardRenderData({ boardName: 'quantum', layoutId: 9101, sizeId: 9201, setIds: [2] })).toBeNull();
+    expect(getBoardRenderData({ boardName: 'quantum', layoutId: 9104, sizeId: 9201, setIds: [1] })).toBeNull();
   });
 
   it('warns and returns null when MoonBoard details cannot be resolved', () => {

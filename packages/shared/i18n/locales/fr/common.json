@@ -938,13 +938,65 @@
       "hideCard": "Masquer cette carte",
       "settingTitle": "Afficher les demandes de soutien",
       "settingFooter": "Une ligne « Soutenir Boardsesh » dans Compte, et une carte sur Accueil la première semaine de chaque mois."
-    }
+    },
+    "more": {
+      "accessibility": {
+        "mode": {},
+        "sliders": {},
+        "shapes": {},
+        "preview": {},
+        "cvd": {},
+        "compare": {},
+        "brush": {},
+        "size": {},
+        "roles": {}
+      },
+      "storage": {},
+      "appearance": {},
+      "gradeFormat": {},
+      "displayOptions": {},
+      "offline": {},
+      "language": {},
+      "diagnostics": {},
+      "integrations": {},
+      "syncIssues": {},
+      "signOut": {}
+    },
+    "previewChannels": {}
   },
   "lightControl": {
     "turnOffAll": "Tout éteindre",
     "lightAdjacentHolds": "Allumer la prise du dessus",
     "lightAdjacentHoldsHelp": "Allume une seconde LED, plus tamisée, au-dessus de chaque prise de départ ou de main allumée. Nécessite un contrôleur MoonBoard avec la fonction LED additionnelle.",
-    "disconnect": "Déconnecter la board"
+    "disconnect": "Déconnecter la board",
+    "quantum": {
+      "open": "Ouvrir les couches Quantum",
+      "layerTitle": "Couche {{color}}",
+      "layerAction": "Couche {{color}} : {{action}}",
+      "colors": {
+        "green": "verte",
+        "cyan": "cyan",
+        "magenta": "magenta",
+        "yellow": "jaune"
+      },
+      "light": "Allumer ce bloc",
+      "replace": "Remplacer par ce bloc",
+      "remove": "Retirer cette couche",
+      "foreign": "Utilisée par une autre personne",
+      "boardFull": "Les quatre places de la board sont utilisées",
+      "noClimb": "Choisis un bloc à allumer",
+      "routeMissing": "Ce bloc n'a pas de route de contrôle",
+      "saveFirst": "Enregistre ce bloc avant de l’allumer",
+      "geometryMissing": "Les positions LED ne sont pas encore prêtes pour ce bloc",
+      "multiFrameUnsupported": "Les blocs à plusieurs séquences ne peuvent pas encore être allumés sur Quantum",
+      "tooManyHolds": "Ce bloc dépasse la limite de 92 lumières de Boardsesh",
+      "actionFailed": "Impossible de mettre la board à jour. Actualise et réessaie.",
+      "clearStart": "Éteindre toutes les couches",
+      "clearStartSubtitle": "Tu confirmeras avant de tout éteindre",
+      "clearQuestion": "Éteindre les quatre couches ?",
+      "clearConfirm": "Éteindre toutes les couches",
+      "clearCancel": "Garder les couches"
+    }
   },
   "bluetooth": {
     "boardNotFound": "Board introuvable. Vérifiez qu'elle est allumée et à proximité ; et si un autre téléphone y est connecté, déconnectez-le d'abord.",
@@ -1304,5 +1356,9 @@
     "continue": "Continuer vers Boardsesh",
     "formPending": "Notre formulaire de terminologie n’est pas encore prêt. Tu peux contribuer depuis Aider à traduire dans Réglages → Général.",
     "formDescription": "Remplis notre formulaire Google pour nous aider à choisir des termes d’escalade naturels en chinois."
+  },
+  "moonboardImport": {},
+  "otaPreview": {
+    "metadata": {}
   }
 }

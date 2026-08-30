@@ -956,6 +956,44 @@ export type BoardHoldOutlines = {
   sizeId: Scalars['Int']['output'];
 };
 
+/**
+ * One sanitized QuantumBoard layer confirmed by controller readback. Physical
+ * controller user and route UUIDs are intentionally excluded.
+ */
+export type BoardLayerPresence = {
+  __typename?: 'BoardLayerPresence';
+  /** Wall angle associated with the resolved climb, when known. */
+  angle?: Maybe<Scalars['Int']['output']>;
+  /** Resolved Boardsesh climb UUID, or null for an unknown foreign layer. */
+  climbUuid?: Maybe<Scalars['String']['output']>;
+  /** Fixed display colour for this layer. */
+  color: Scalars['String']['output'];
+  /** Whether Boardsesh has hold geometry for overlap filtering and rendering. */
+  geometryKnown: Scalars['Boolean']['output'];
+  /** Catalogue placement ids occupied by this layer; never supplied by the reporting client. */
+  placementIds: Array<Scalars['Int']['output']>;
+  /** Controller-reported lifetime remaining, in seconds. */
+  remainingSeconds: Scalars['Int']['output'];
+};
+
+export type BoardLayersChanged = {
+  __typename?: 'BoardLayersChanged';
+  snapshot: BoardLayersSnapshot;
+};
+
+/** Latest confirmed, sanitized QuantumBoard roster for a shared wall. */
+export type BoardLayersSnapshot = {
+  __typename?: 'BoardLayersSnapshot';
+  boardId: Scalars['Int']['output'];
+  layers: Array<BoardLayerPresence>;
+  /** ISO 8601 timestamp stamped by the backend when readback was reported. */
+  observedAt: Scalars['String']['output'];
+  /** Monotonic per-board sequence shared with other presence events. */
+  seq: Scalars['Int']['output'];
+  /** True after the reporting wall holder disconnects. */
+  stale: Scalars['Boolean']['output'];
+};
+
 /** Board leaderboard result. */
 export type BoardLeaderboard = {
   __typename?: 'BoardLeaderboard';
@@ -1059,6 +1097,7 @@ export type BoardPresenceEvent =
   | BoardClimbSet
   | BoardConnectionChanged
   | BoardHistoryUpdated
+  | BoardLayersChanged
   | BoardStatsUpdated;
 
 /** The first climber to send the hardest grade logged on this wall. */
@@ -1486,6 +1525,8 @@ export type Climb = {
    * apart (see canAddClimbToBoard rule 5).
    */
   compatibleSizeIds?: Maybe<Array<Scalars['Int']['output']>>;
+  /** External route identifier understood by the physical board controller. Null for boards that use the Boardsesh climb UUID directly. */
+  controllerRouteUuid?: Maybe<Scalars['ID']['output']>;
   /** ISO timestamp of when this climb row was created */
   created_at?: Maybe<Scalars['String']['output']>;
   /** Setter-written notes about the climb (nullable). Carried on search results too — the play drawer and the www climb page both render it. */
@@ -1629,6 +1670,8 @@ export type ClimbInput = {
   characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
   /** Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them. */
   compatibleSizeIds?: InputMaybe<Array<Scalars['Int']['input']>>;
+  /** External route identifier understood by the physical board controller. */
+  controllerRouteUuid?: InputMaybe<Scalars['ID']['input']>;
   description?: InputMaybe<Scalars['String']['input']>;
   difficulty: Scalars['String']['input'];
   difficulty_error: Scalars['String']['input'];
@@ -1874,6 +1917,8 @@ export type ClimbSearchInput = {
   layoutId: Scalars['Int']['input'];
   /** Maximum difficulty grade ID */
   maxGrade?: InputMaybe<Scalars['Int']['input']>;
+  /** Maximum occupied holds a climb may share: 0 for none, 1 for at most one. Omit to disable. */
+  maxOccupiedOverlap?: InputMaybe<Scalars['Int']['input']>;
   /** Minimum number of ascents */
   minAscents?: InputMaybe<Scalars['Int']['input']>;
   /** Minimum difficulty grade ID */
@@ -1884,6 +1929,8 @@ export type ClimbSearchInput = {
   minUserRating?: InputMaybe<Scalars['Int']['input']>;
   /** Filter by climb name (partial match) */
   name?: InputMaybe<Scalars['String']['input']>;
+  /** Occupied placement IDs from a confirmed Quantum controller roster. Controller identities are never sent. */
+  occupiedPlacementIds?: InputMaybe<Array<Scalars['Int']['input']>>;
   /** Only show benchmark climbs */
   onlyBenchmarks?: InputMaybe<Scalars['Boolean']['input']>;
   /** Show only the user's draft climbs (requires auth) */
@@ -6148,6 +6195,12 @@ export type Mutation = {
    */
   reportBoardDisconnect: Scalars['Boolean']['output'];
   /**
+   * Publish a confirmed QuantumBoard controller roster after BLE readback.
+   * The caller must have live proof-of-presence for this board. Controller
+   * user and route UUIDs are deliberately absent from the input.
+   */
+  reportBoardLayers: BoardLayersSnapshot;
+  /**
    * Report a climb for hiding or a grade change. Joins an existing open proposal
    * (one vote + one comment per user) or opens one.
    */
@@ -7144,6 +7197,12 @@ export type MutationReportBoardClimbArgs = {
 /** Root mutation type for all write operations. */
 export type MutationReportBoardDisconnectArgs = {
   boardId: Scalars['Int']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationReportBoardLayersArgs = {
+  boardId: Scalars['Int']['input'];
+  layers: Array<ReportBoardLayerInput>;
 };
 
 /** Root mutation type for all write operations. */
@@ -8887,6 +8946,11 @@ export type Query = {
   /** Last seven days of chronological display history with an opaque, board-scoped cursor. Expired cursors return an empty final page. */
   boardHistoryPage: BoardHistoryPage;
   /**
+   * Latest confirmed QuantumBoard layer roster. Returns null until a compatible
+   * controller reports readback. Controller identities are never exposed.
+   */
+  boardLayers?: Maybe<BoardLayersSnapshot>;
+  /**
    * Get leaderboard for a board. Anonymous access is allowed for public and
    * system-shared boards; private boards are masked as NOT_FOUND for anonymous
    * callers. The 'day' period is a rolling last-24-hours window, not the
@@ -9939,6 +10003,12 @@ export type QueryBoardHistoryPageArgs = {
   boardUuid?: InputMaybe<Scalars['ID']['input']>;
   includeAurora?: InputMaybe<Scalars['Boolean']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardLayersArgs = {
+  boardId: Scalars['Int']['input'];
+  boardUuid?: InputMaybe<Scalars['ID']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -11211,6 +11281,15 @@ export type ReportBoardInput = {
   suggestedSetup?: InputMaybe<BoardSetupInput>;
 };
 
+/** Input for one confirmed QuantumBoard layer; contains no controller IDs. */
+export type ReportBoardLayerInput = {
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  climbUuid?: InputMaybe<Scalars['String']['input']>;
+  color: Scalars['String']['input'];
+  geometryKnown: Scalars['Boolean']['input'];
+  remainingSeconds: Scalars['Int']['input'];
+};
+
 export type ReportClimbInput = {
   /** Required for grade reports; ignored for hide */
   angle?: InputMaybe<Scalars['Int']['input']>;
@@ -11476,6 +11555,8 @@ export type SaveClimbInput = {
 
 export type SaveClimbResult = {
   __typename?: 'SaveClimbResult';
+  /** Stable controller-native route UUID. Present for user-created Quantum climbs. */
+  controllerRouteUuid?: Maybe<Scalars['ID']['output']>;
   /** ISO timestamp of when the row was created */
   createdAt?: Maybe<Scalars['String']['output']>;
   /** ISO timestamp of when the row was first published (null while still a draft) */
@@ -15120,6 +15201,7 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = Reso
     | BoardClimbSet
     | BoardConnectionChanged
     | BoardHistoryUpdated
+    | BoardLayersChanged
     | BoardStatsUpdated;
   CommentEvent: CommentAdded | CommentDeleted | CommentUpdated;
   ControllerEvent: ControllerPing | ControllerQueueSync | LedUpdate;
@@ -15215,6 +15297,9 @@ export type ResolversTypes = ResolversObject<{
   BoardHistoryPage: ResolverTypeWrapper<BoardHistoryPage>;
   BoardHistoryUpdated: ResolverTypeWrapper<BoardHistoryUpdated>;
   BoardHoldOutlines: ResolverTypeWrapper<BoardHoldOutlines>;
+  BoardLayerPresence: ResolverTypeWrapper<BoardLayerPresence>;
+  BoardLayersChanged: ResolverTypeWrapper<BoardLayersChanged>;
+  BoardLayersSnapshot: ResolverTypeWrapper<BoardLayersSnapshot>;
   BoardLeaderboard: ResolverTypeWrapper<BoardLeaderboard>;
   BoardLeaderboardEntry: ResolverTypeWrapper<BoardLeaderboardEntry>;
   BoardLeaderboardInput: BoardLeaderboardInput;
@@ -15639,6 +15724,7 @@ export type ResolversTypes = ResolversObject<{
   RenderBoardConfig: ResolverTypeWrapper<RenderBoardConfig>;
   ReorderPlaylistClimbInput: ReorderPlaylistClimbInput;
   ReportBoardInput: ReportBoardInput;
+  ReportBoardLayerInput: ReportBoardLayerInput;
   ReportClimbInput: ReportClimbInput;
   ReportClimbKind: ReportClimbKind;
   ReportClimbResult: ResolverTypeWrapper<ReportClimbResult>;
@@ -15931,6 +16017,9 @@ export type ResolversParentTypes = ResolversObject<{
   BoardHistoryPage: BoardHistoryPage;
   BoardHistoryUpdated: BoardHistoryUpdated;
   BoardHoldOutlines: BoardHoldOutlines;
+  BoardLayerPresence: BoardLayerPresence;
+  BoardLayersChanged: BoardLayersChanged;
+  BoardLayersSnapshot: BoardLayersSnapshot;
   BoardLeaderboard: BoardLeaderboard;
   BoardLeaderboardEntry: BoardLeaderboardEntry;
   BoardLeaderboardInput: BoardLeaderboardInput;
@@ -16291,6 +16380,7 @@ export type ResolversParentTypes = ResolversObject<{
   RenderBoardConfig: RenderBoardConfig;
   ReorderPlaylistClimbInput: ReorderPlaylistClimbInput;
   ReportBoardInput: ReportBoardInput;
+  ReportBoardLayerInput: ReportBoardLayerInput;
   ReportClimbInput: ReportClimbInput;
   ReportClimbResult: ReportClimbResult;
   ReportGymDuplicateInput: ReportGymDuplicateInput;
@@ -17100,6 +17190,39 @@ export type BoardHoldOutlinesResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type BoardLayerPresenceResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardLayerPresence'] = ResolversParentTypes['BoardLayerPresence'],
+> = ResolversObject<{
+  angle?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  climbUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  color?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  geometryKnown?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  placementIds?: Resolver<Array<ResolversTypes['Int']>, ParentType, ContextType>;
+  remainingSeconds?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardLayersChangedResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardLayersChanged'] = ResolversParentTypes['BoardLayersChanged'],
+> = ResolversObject<{
+  snapshot?: Resolver<ResolversTypes['BoardLayersSnapshot'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardLayersSnapshotResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardLayersSnapshot'] = ResolversParentTypes['BoardLayersSnapshot'],
+> = ResolversObject<{
+  boardId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  layers?: Resolver<Array<ResolversTypes['BoardLayerPresence']>, ParentType, ContextType>;
+  observedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  seq?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  stale?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type BoardLeaderboardResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['BoardLeaderboard'] = ResolversParentTypes['BoardLeaderboard'],
@@ -17166,7 +17289,12 @@ export type BoardPresenceEventResolvers<
   ParentType extends ResolversParentTypes['BoardPresenceEvent'] = ResolversParentTypes['BoardPresenceEvent'],
 > = ResolversObject<{
   __resolveType: TypeResolveFn<
-    'BoardClimbCleared' | 'BoardClimbSet' | 'BoardConnectionChanged' | 'BoardHistoryUpdated' | 'BoardStatsUpdated',
+    | 'BoardClimbCleared'
+    | 'BoardClimbSet'
+    | 'BoardConnectionChanged'
+    | 'BoardHistoryUpdated'
+    | 'BoardLayersChanged'
+    | 'BoardStatsUpdated',
     ParentType,
     ContextType
   >;
@@ -17404,6 +17532,7 @@ export type ClimbResolvers<
   boardseshDifficulty?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   characteristics?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
   compatibleSizeIds?: Resolver<Maybe<Array<ResolversTypes['Int']>>, ParentType, ContextType>;
+  controllerRouteUuid?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   created_at?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   description?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   difficulty?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -20144,6 +20273,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationReportBoardDisconnectArgs, 'boardId'>
   >;
+  reportBoardLayers?: Resolver<
+    ResolversTypes['BoardLayersSnapshot'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationReportBoardLayersArgs, 'boardId' | 'layers'>
+  >;
   reportClimb?: Resolver<
     ResolversTypes['ReportClimbResult'],
     ParentType,
@@ -21484,6 +21619,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryBoardHistoryPageArgs, 'boardId' | 'includeAurora'>
   >;
+  boardLayers?: Resolver<
+    Maybe<ResolversTypes['BoardLayersSnapshot']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryBoardLayersArgs, 'boardId'>
+  >;
   boardLeaderboard?: Resolver<
     ResolversTypes['BoardLeaderboard'],
     ParentType,
@@ -22723,6 +22864,7 @@ export type SaveClimbResultResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SaveClimbResult'] = ResolversParentTypes['SaveClimbResult'],
 > = ResolversObject<{
+  controllerRouteUuid?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   createdAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   publishedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   replayed?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
@@ -24392,6 +24534,9 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   BoardHistoryPage?: BoardHistoryPageResolvers<ContextType>;
   BoardHistoryUpdated?: BoardHistoryUpdatedResolvers<ContextType>;
   BoardHoldOutlines?: BoardHoldOutlinesResolvers<ContextType>;
+  BoardLayerPresence?: BoardLayerPresenceResolvers<ContextType>;
+  BoardLayersChanged?: BoardLayersChangedResolvers<ContextType>;
+  BoardLayersSnapshot?: BoardLayersSnapshotResolvers<ContextType>;
   BoardLeaderboard?: BoardLeaderboardResolvers<ContextType>;
   BoardLeaderboardEntry?: BoardLeaderboardEntryResolvers<ContextType>;
   BoardPresenceClimb?: BoardPresenceClimbResolvers<ContextType>;

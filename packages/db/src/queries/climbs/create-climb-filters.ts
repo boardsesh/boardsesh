@@ -1,6 +1,11 @@
 import { type SQL, desc, eq, gt, isNotNull, sql, like, notLike, inArray, isNull, or, and } from 'drizzle-orm';
 import { QueryBuilder, alias } from 'drizzle-orm/pg-core';
-import { getMoonBoardGeometryByLayoutId, isSizeScopedBoard, woodsHoldIdsInZone } from '@boardsesh/board-config';
+import {
+  getMoonBoardGeometryByLayoutId,
+  isSizeScopedBoard,
+  supportsLayerOverlapFiltering,
+  woodsHoldIdsInZone,
+} from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants/product-sizes';
 import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { climbNameLikePattern } from '@boardsesh/climb-filters';
@@ -594,6 +599,26 @@ export const createClimbFilters = (
     ...climbTypeFilterConditions,
   ];
 
+  // Quantum controllers can keep four routes live. Filter by the union of the
+  // confirmed players' placement ids before pagination/count/random/heatmap.
+  // Unknown geometry is represented by omitting maxOccupiedOverlap, which
+  // deliberately disables this condition instead of hiding every climb.
+  const occupiedPlacementIds = searchParams.occupiedPlacementIds ?? [];
+  const overlapConditions: SQL[] =
+    supportsLayerOverlapFiltering(params.board_name) &&
+    searchParams.maxOccupiedOverlap !== undefined &&
+    occupiedPlacementIds.length > 0
+      ? [
+          sql`(
+            SELECT COUNT(DISTINCT ${boardClimbHolds.holdId})
+            FROM ${boardClimbHolds}
+            WHERE ${boardClimbHolds.boardType} = ${params.board_name}
+              AND ${boardClimbHolds.climbUuid} = ${boardClimbs.uuid}
+              AND ${boardClimbHolds.holdId} = ANY(${intArrayLiteral(occupiedPlacementIds)})
+          ) <= ${searchParams.maxOccupiedOverlap}`,
+        ]
+      : [];
+
   // Size filter: check if this climb fits on the selected board size.
   // Uses denormalized compatible_size_ids array (pre-computed from edge comparison).
   // Use array containment so PostgreSQL can use board_climbs_compatible_size_ids_idx.
@@ -1180,6 +1205,7 @@ export const createClimbFilters = (
     getClimbWhereConditions: () => [
       ...baseConditions,
       ...browsedAngleConditions,
+      ...overlapConditions,
       ...nameCondition,
       ...setterNameCondition,
       ...(searchParams.onlyFollowedAuthors ? [followedAuthorCondition(userId)] : []),
@@ -1440,6 +1466,9 @@ export const PLAYLIST_FILTER_SCOPE = {
   draftScope: 'unsupported',
   holdIntegrity: 'unsupported',
   crossAngleStats: 'unsupported',
+  // Live Quantum occupancy belongs to the board browser, never saved playlists.
+  occupiedPlacementIds: 'unsupported',
+  maxOccupiedOverlap: 'unsupported',
   setternameSuggestion: 'unsupported',
 } as const satisfies Record<PlaylistFilterParamKey, 'allRows' | 'activeBoardOnly' | 'modifier' | 'unsupported'>;
 

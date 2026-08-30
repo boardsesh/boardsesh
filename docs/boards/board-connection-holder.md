@@ -14,7 +14,7 @@ Display states (client):
 
 ## Redis keys (`packages/backend/src/pubsub/index.ts`)
 
-- `board:{boardId}:writer` → the current holder's emitter id. Set atomically by `setBoardWriter` (`SET … EX … GET` so concurrent sends detect only a real hand-off); cleared by `clearBoardWriterIf` (Lua compare-and-delete — only the current holder can clear it). TTL = `BOARD_MEMBERSHIP_TTL` (12 h). Redis-only: without Redis the holder degrades to "no holder".
+- `board:{boardId}:writer` holds the current emitter ID for 12 hours. A climb report claims it through `commitBoardClimb`. A layer report claims it through `commitBoardLayers`, which also records the reporting connection in `board:{boardId}:layers:claim`. On disconnect, `clearBoardWriterIf` verifies the emitter and any connection claim before reserving a sequence. Production reserves the authoritative sequence in PostgreSQL, then Redis rechecks the claim and its last committed report sequence (`board:{boardId}:writer:seq`) before clearing it. A newer report from the same connection keeps the slot. Only a successful clear returns a sequence for the disconnect event.
 - `presence:board:{boardId}:user:{emitterId}` → proof-of-presence membership stamp (gates who may emit; `NX`, stores first-seen for the durable-write dwell gate).
 - `board:{boardId}:cleared` → a hash (`seq`, `clearedAt`, `climbUuid`) for the latest "Turn off all lights". Written by `commitBoardClear`; TTL = the one-week history TTL. See [Turning off all lights](#turning-off-all-lights-7015).
 

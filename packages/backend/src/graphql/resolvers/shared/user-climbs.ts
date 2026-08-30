@@ -120,6 +120,7 @@ export async function fetchUserClimbs(
       frames: tables.climbs.frames,
       framesCount: tables.climbs.framesCount,
       framesPace: tables.climbs.framesPace,
+      controllerRouteUuid: tables.climbs.controllerRouteUuid,
       compatibleSizeIds: tables.climbs.compatibleSizeIds,
       missingHoldCount: tables.climbs.missingHoldCount,
       revisionNumber: tables.climbs.revisionNumber,
@@ -148,6 +149,7 @@ export async function fetchUserClimbs(
     frames: string | null;
     frames_count: number | null;
     frames_pace: number | null;
+    controller_route_uuid: string | null;
     compatible_size_ids: number[] | null;
     missing_hold_count: number | null;
     revision_number: number | null;
@@ -195,6 +197,7 @@ export async function fetchUserClimbs(
         owned_climbs.frames,
         owned_climbs.frames_count,
         owned_climbs.frames_pace,
+        owned_climbs.controller_route_uuid,
         owned_climbs.compatible_size_ids,
         owned_climbs.missing_hold_count,
         owned_climbs.revision_number,
@@ -242,6 +245,7 @@ export async function fetchUserClimbs(
       frames: result.frames || '',
       framesCount: result.frames_count ?? null,
       framesPace: result.frames_pace ?? null,
+      controllerRouteUuid: result.controller_route_uuid ?? null,
       compatibleSizeIds: result.compatible_size_ids ?? null,
       requiredSetIds: result.required_set_ids ?? null,
       missingHoldCount: result.missing_hold_count ?? null,

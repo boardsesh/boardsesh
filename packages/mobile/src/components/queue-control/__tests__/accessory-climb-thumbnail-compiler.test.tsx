@@ -8,9 +8,9 @@ import * as jsxRuntime from 'react/jsx-runtime';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { BoardConfig } from '../../../providers/drawer-host-provider';
-import * as boardDetails from '../../../lib/board-details';
+import * as boardRenderHooks from '../../../lib/use-board-render-data';
+import { clearBoardRenderDataCache } from '../../../lib/board-details';
 import * as renderBoardResolver from '../../../lib/boards/climb-render-board';
-import * as sprayWallToken from '../../../lib/spray/use-spray-wall-token';
 import { clearSprayWallRegistry, registerSprayWall, unregisterSprayWall } from '../../../lib/spray/spray-wall-registry';
 
 type ImageProps = {
@@ -52,9 +52,8 @@ function compileThumbnail() {
       View: ({ children }: { children?: React.ReactNode }) => React.createElement('div', null, children),
       StyleSheet: { create: (styles: Record<string, unknown>) => styles },
     },
-    '../../lib/board-details': boardDetails,
+    '../../lib/use-board-render-data': boardRenderHooks,
     '../../lib/boards/climb-render-board': renderBoardResolver,
-    '../../lib/spray/use-spray-wall-token': sprayWallToken,
     '../BoardImageNative': {
       BoardImageNative: (props: ImageProps) =>
         React.createElement('div', {
@@ -101,13 +100,13 @@ function registerPhoto(versionId: number, photoWidth = 1536, photoHeight = 2048)
 
 beforeEach(() => {
   clearSprayWallRegistry();
-  boardDetails.clearBoardRenderDataCache();
+  clearBoardRenderDataCache();
 });
 
 afterEach(() => {
   cleanup();
   clearSprayWallRegistry();
-  boardDetails.clearBoardRenderDataCache();
+  clearBoardRenderDataCache();
 });
 
 describe('production-compiled accessory thumbnail (#6943)', () => {

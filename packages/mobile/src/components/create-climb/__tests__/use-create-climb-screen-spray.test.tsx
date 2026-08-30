@@ -189,14 +189,14 @@ describe('spray wall LAN preview', () => {
       sendFramesToBoard,
     };
     const { result, rerender } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
-    act(() => result.current.handleToggleBle());
+    act(() => result.current.wallControl.onPress());
     expect(takeVirtualWall).toHaveBeenCalledOnce();
     expect(connect).not.toHaveBeenCalled();
     ble.context = { ...ble.context, virtualWallHeld: true, canDriveWall: true };
     rerender();
-    expect(result.current.bleConnected).toBe(true);
+    expect(result.current.wallControl.connected).toBe(true);
     await waitFor(() => expect(sendFramesToBoard).toHaveBeenCalledWith('p1r1p2r3'));
-    act(() => result.current.handleToggleBle());
+    act(() => result.current.wallControl.onPress());
     expect(releaseVirtualWall).toHaveBeenCalledOnce();
   });
 
@@ -210,7 +210,7 @@ describe('spray wall LAN preview', () => {
       virtualWallHeld: true,
     };
     const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
-    expect(result.current.bleConnected).toBe(false);
+    expect(result.current.wallControl.connected).toBe(false);
   });
 });
 

@@ -30,6 +30,7 @@ const stats = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../lib/graphql/hooks', () => ({
+  useAngles: () => ({ data: [], isPending: false, isFetching: false, isSuccess: true }),
   useClimbStatsHistory: (boardName: string, climbUuid: string | null) => {
     stats.calls.push({ boardName, climbUuid });
     return { data: undefined };
@@ -101,9 +102,11 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 
-vi.mock('@boardsesh/board-config', () => {
+vi.mock('@boardsesh/board-config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@boardsesh/board-config')>();
   const angles: Record<string, number[]> = { kilter: [20, 25, 30, 40] };
   return {
+    ...actual,
     ANGLES: angles,
     getBoardAngleOptions: (boardName: string) => angles[boardName] ?? [],
     MOONBOARD_ANGLES: [25, 40],

@@ -48,6 +48,7 @@ export { getClimbStars } from './climb-stars';
 export { realBenchmarkCondition } from './benchmark';
 export { getGradeLabel } from './grade-lookup';
 export { populateDenormalizedColumns } from './populate-denormalized-columns';
+export { quantumCatalogClimbCondition } from './quantum-catalog-ownership';
 export { getSetterStats } from './setter-stats';
 export { getHoldHeatmapData, normalizeHoldHeatmapRow } from './hold-heatmap';
 export type { HoldHeatmapData } from './hold-heatmap';

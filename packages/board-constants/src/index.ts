@@ -9,3 +9,4 @@ export * from './moonboard';
 export * from './readable-text-color';
 export * from './board-type-labels';
 export * from './woods';
+export * from './quantum';

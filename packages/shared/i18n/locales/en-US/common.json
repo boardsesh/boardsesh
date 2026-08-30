@@ -938,13 +938,65 @@
       "hideCard": "Hide this card",
       "settingTitle": "Show support asks",
       "settingFooter": "A Support Boardsesh row in Account, and a card on Home in the first week of each month."
-    }
+    },
+    "more": {
+      "accessibility": {
+        "mode": {},
+        "sliders": {},
+        "shapes": {},
+        "preview": {},
+        "cvd": {},
+        "compare": {},
+        "brush": {},
+        "size": {},
+        "roles": {}
+      },
+      "storage": {},
+      "appearance": {},
+      "gradeFormat": {},
+      "displayOptions": {},
+      "offline": {},
+      "language": {},
+      "diagnostics": {},
+      "integrations": {},
+      "syncIssues": {},
+      "signOut": {}
+    },
+    "previewChannels": {}
   },
   "lightControl": {
     "turnOffAll": "Turn off all lights",
     "lightAdjacentHolds": "Light the hold above",
     "lightAdjacentHoldsHelp": "Adds a dimmer LED above each lit start and hand hold. Needs a MoonBoard controller with the additional-LED feature.",
-    "disconnect": "Disconnect board"
+    "disconnect": "Disconnect board",
+    "quantum": {
+      "open": "Open Quantum layers",
+      "layerTitle": "{{color}} layer",
+      "layerAction": "{{color}} layer: {{action}}",
+      "colors": {
+        "green": "Green",
+        "cyan": "Cyan",
+        "magenta": "Magenta",
+        "yellow": "Yellow"
+      },
+      "light": "Light this climb",
+      "replace": "Replace with this climb",
+      "remove": "Remove this layer",
+      "foreign": "In use by another climber",
+      "boardFull": "All four wall slots are in use",
+      "noClimb": "Choose a climb to light",
+      "routeMissing": "This climb has no controller route",
+      "saveFirst": "Save this climb before lighting it",
+      "geometryMissing": "LED positions aren't ready for this climb",
+      "multiFrameUnsupported": "Multi-frame climbs can't be lit on Quantum yet",
+      "tooManyHolds": "This climb exceeds the 92-light limit in Boardsesh",
+      "actionFailed": "Couldn't update the wall. Refresh and try again.",
+      "clearStart": "Clear all layers",
+      "clearStartSubtitle": "You'll confirm before every layer turns off",
+      "clearQuestion": "Turn off all four layers?",
+      "clearConfirm": "Turn off every layer",
+      "clearCancel": "Keep the layers"
+    }
   },
   "bluetooth": {
     "boardNotFound": "Couldn't find your board. Make sure it's on and nearby — and if another phone is connected to it, disconnect there first.",
@@ -1304,5 +1356,9 @@
     "continue": "Continue to Boardsesh",
     "formPending": "Our terminology form is not ready yet. You can still help through Help translate in Settings → General.",
     "formDescription": "Fill out our Google Form to help us choose natural Chinese climbing terms."
+  },
+  "moonboardImport": {},
+  "otaPreview": {
+    "metadata": {}
   }
 }

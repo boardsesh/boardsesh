@@ -436,6 +436,7 @@ ${generateSizesTypeScript('soill', boardData.soill.sizes)},
   moonboard: {},
   woods: {},
   spray: {},
+  quantum: {},
 };
 
 export const LAYOUTS: Record<BoardName, Record<number, LayoutData>> = {
@@ -448,6 +449,7 @@ ${generateLayoutsTypeScript('soill', boardData.soill.layouts)},
   moonboard: {},
   woods: {},
   spray: {},
+  quantum: {},
 };
 
 export const SETS: Record<BoardName, Record<string, SetData[]>> = {
@@ -460,6 +462,7 @@ ${generateSetsTypeScript('soill', boardData.soill.sets)},
   moonboard: {},
   woods: {},
   spray: {},
+  quantum: {},
 };
 
 export const IMAGE_FILENAMES: Record<BoardName, Record<string, string>> = {
@@ -472,6 +475,7 @@ ${generateImageFilenamesTypeScript('soill', boardData.soill.imageFilenames)},
   moonboard: {},
   woods: {},
   spray: {},
+  quantum: {},
 };
 `;
 }
@@ -518,6 +522,7 @@ function generateHolePlacementsLoaderFile(): string {
 
 import { BOARD_DISPLAY_ORDER, SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
 import type { HoldTuple } from './types';
+import { getQuantumHolePlacements } from './quantum-geometry-data';
 
 type BoardHolePlacements = Record<string, HoldTuple[]>;
 
@@ -579,6 +584,7 @@ const shardCache = new Map<string, BoardHolePlacements>();
  * handwritten helpers, not the Aurora generator) resolve to an empty record.
  */
 export function getBoardHolePlacements(boardName: BoardName): BoardHolePlacements {
+  if (boardName === 'quantum') return getQuantumHolePlacements();
   const cached = shardCache.get(boardName);
   if (cached) return cached;
 
@@ -669,6 +675,7 @@ ${generateLedPlacementsTypeScript('soill', boardData.soill.ledPlacements)},
   moonboard: {},
   woods: {},
   spray: {},
+  quantum: {},
 };
 `;
 }

@@ -204,7 +204,7 @@ import { useMiniPlayerMirrorsPlayer } from './use-mini-player-mirrors';
 import { isWallPresenceTrusted, usePresenceFresh } from '../../lib/board-presence/presence-freshness';
 import { resolvePlayerAngle } from './player-angle';
 import { activeBoardIsMoonboard } from '../../hooks/use-active-board-is-moonboard';
-import { isMoonboardBoardName } from '@boardsesh/board-config';
+import { isMoonboardBoardName, supportsPublicClimbLinks } from '@boardsesh/board-config';
 import { LostHoldsBanner } from './LostHoldsBanner';
 import { useLostHoldRemix } from './use-lost-hold-remix';
 import { getBoardRenderData } from '../../lib/board-details';
@@ -892,6 +892,7 @@ export function PlayCore({
     lit: lightbulbActive,
     localConnected: radioConnected,
     pending: lightbulbPending,
+    available: lightbulbAvailable,
     onPress: handleLightbulb,
     connect: connectRadio,
     moveToClimbBoard: moveLightbulbToClimbBoard,
@@ -901,6 +902,7 @@ export function PlayCore({
     ledless: boardIsLedless,
   } = useLightbulbControl({
     surface: 'play_drawer',
+    onOpenControls: () => setBleControlVisible(true),
     onRelayToHolder: handleRelayToHolder,
     canRelay: canRelayToHolder,
   });
@@ -1902,6 +1904,8 @@ export function PlayCore({
     source: 'play_drawer',
     analyticsContext: actionsAnalytics,
   });
+  // TODO(#7918): enable public links once runtime board geometry renders on www.
+  const canShareDisplayedClimb = !displayedClimbIsDraft && supportsPublicClimbLinks(boardName);
 
   // A draft is visible to its setter alone: a share link opens nowhere for
   // anyone else, and the only person who can report it is the setter (#5960).
@@ -3222,7 +3226,7 @@ export function PlayCore({
       // uuid they do not have and whose first-ever visit would
       // open with a pairing prompt. Anonymous wall lighting is
       // its own feature (#4606), not a v1 side effect.
-      showLightbulb={bluetooth !== null}
+      showLightbulb={lightbulbAvailable}
       hasWall={playerHasWall}
       // The back chip owns the driver's face whenever it renders
       // the avatar; suppress the bulb's pip so the same face never
@@ -3248,7 +3252,7 @@ export function PlayCore({
       onOpenQueue={handleOpenQueueFromBar}
       onPlayNext={handlePlayNext}
       playNextDisabled={displayedClimbUuid === currentClimbQueueItem?.climb.uuid}
-      onShare={displayedClimbIsDraft ? undefined : handleShare}
+      onShare={canShareDisplayedClimb ? handleShare : undefined}
       onTickPress={handleTickFabPress}
       onTickLongPress={handleTickFabLongPress}
       viewer={viewer}

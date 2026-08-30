@@ -20,7 +20,6 @@ import { Appbar } from 'react-native-paper';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticLight } from '../../lib/haptics';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
-import { getBleLightbulbLabelKind } from '../ble/ble-lightbulb-button-state';
 import { useBleControlSheet } from '../../providers/ble-control-sheet-provider';
 import { useBulbDriveTap } from '../queue-control/bar-bulb-tap';
 import { phoneDrivesTheWall } from '../queue-control/bulb-drive-cue';
@@ -81,24 +80,22 @@ export function MaterialAngleAction() {
  */
 export function MaterialLightbulbAction() {
   const { systemColors, brandColors } = useTheme();
-  const { t: tCommon } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
   const { open: openControls } = useBleControlSheet();
   const {
-    bluetooth,
+    available,
     lit,
     localConnected,
     ledless,
     inAppBoardConnection,
     onPress,
     onLongPress,
-    pressAction,
-    holderIsAuthoritative,
+    accessibilityLabel: actionLabel,
+    drivingAccessibilityLabel,
   } = useLightbulbControl({
     surface: 'app_bar',
     onOpenControls: openControls,
   });
-  const labelKind = getBleLightbulbLabelKind(pressAction, holderIsAuthoritative);
   const { driving, takeTap } = useBulbDriveTap({
     drivesTheWall: phoneDrivesTheWall({ inAppBoardConnection, localConnected, ledless }),
     linked: localConnected,
@@ -125,28 +122,12 @@ export function MaterialLightbulbAction() {
     [canOpenControls, onLongPress],
   );
 
-  if (!bluetooth) return null;
+  if (!available) return null;
 
   const iconName = lit ? iconMap['lightbulb.fill'].android : iconMap.lightbulb.android;
   const iconColor = lit ? brandColors.warning : systemColors.label;
 
-  // On a wall with no light kit there is no Bluetooth link to describe, so the
-  // label names the two states that DO exist there: holding the wall or not.
-  let accessibilityLabel: string;
-  if (driving) {
-    accessibilityLabel = tSettings('ble.barControl.stopDrivingLabel');
-  } else if (labelKind === 'releaseWall') {
-    accessibilityLabel = tSettings('ble.releaseWall');
-  } else if (labelKind === 'takeWall') {
-    accessibilityLabel = tSettings('ble.takeWall');
-  } else if (labelKind === 'relay') {
-    accessibilityLabel = tSettings('ble.relayToWall');
-  } else if (labelKind === 'peerDriving') {
-    accessibilityLabel = tSettings('ble.peerDrivingBoard');
-  } else {
-    accessibilityLabel =
-      labelKind === 'disconnect' ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard');
-  }
+  const accessibilityLabel = driving ? drivingAccessibilityLabel : actionLabel;
 
   return (
     <Appbar.Action

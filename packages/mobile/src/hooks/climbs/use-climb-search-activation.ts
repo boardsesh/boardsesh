@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { randomUUID } from 'expo-crypto';
+import type { OccupiedPlacementIndex } from '@boardsesh/board-layers';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import {
   mergeBoardFilters,
@@ -26,6 +27,7 @@ import { useDrawerHost } from '../../providers/drawer-host-provider';
 type ClimbSearchActivationOptions = BoardSearchConfig & {
   filters: ClimbFilters;
   boardFilters: ClimbBoardFilterState;
+  occupiedPlacements?: OccupiedPlacementIndex;
   name: string;
   boardseshGradesActive: boolean;
   visibleClimbs: Climb[];
@@ -36,6 +38,7 @@ type ClimbSearchActivationOptions = BoardSearchConfig & {
 export function useClimbSearchActivation({
   filters,
   boardFilters,
+  occupiedPlacements,
   name,
   boardName,
   layoutId,
@@ -74,11 +77,12 @@ export function useClimbSearchActivation({
             { name: basisName },
           ),
           basisBoardFilters,
+          occupiedPlacements,
         ),
         boardseshGradesActive,
       );
     },
-    [boardName, layoutId, sizeId, setIds, angle, boardseshGradesActive],
+    [boardName, layoutId, sizeId, setIds, angle, boardseshGradesActive, occupiedPlacements],
   );
   const fetchSearchPageFor = useCallback(
     async (basis: ReturnType<typeof searchBasis.read>, page: number, pageSize: number) => {

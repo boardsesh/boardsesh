@@ -8,11 +8,35 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 // transitively imports react-native, and the web wrapper's only job is to feed it
 // the active board and pass children through. Capture the props it was mounted with.
 const providerProps = vi.hoisted(() => ({ current: null as Record<string, unknown> | null }));
+const quantumProviderProps = vi.hoisted(() => ({
+  selectedModelId: null as string | null,
+  selectedBoardUuid: null as string | null | undefined,
+  preferredSerial: undefined as string | null | undefined,
+}));
 vi.mock('../bluetooth-provider', () => ({
   BluetoothProvider: (props: { children: ReactNode } & Record<string, unknown>) => {
     const { children, ...rest } = props;
     providerProps.current = rest;
     return createElement('div', { 'data-testid': 'bluetooth-provider' }, children);
+  },
+}));
+
+vi.mock('../quantum-bluetooth-provider', () => ({
+  QuantumBluetoothProvider: ({
+    children,
+    selectedModelId,
+    selectedBoardUuid,
+    preferredSerial,
+  }: {
+    children: ReactNode;
+    selectedModelId: string | null;
+    selectedBoardUuid?: string | null;
+    preferredSerial?: string | null;
+  }) => {
+    quantumProviderProps.selectedModelId = selectedModelId;
+    quantumProviderProps.selectedBoardUuid = selectedBoardUuid;
+    quantumProviderProps.preferredSerial = preferredSerial;
+    return createElement('div', { 'data-testid': 'quantum-bluetooth-provider' }, children);
   },
 }));
 
@@ -28,6 +52,7 @@ describe('BluetoothProviderWrapper on web', () => {
     cleanup();
     activeBoard.current = undefined;
     providerProps.current = null;
+    quantumProviderProps.selectedModelId = null;
   });
 
   it('mounts the real Bluetooth provider so Web Bluetooth controls render, passing children through', () => {
@@ -78,6 +103,67 @@ describe('BluetoothProviderWrapper on web', () => {
       sizeId: 2,
       setIds: [3, 4],
       boardUuid: 'board-uuid',
+    });
+  });
+
+  it('keeps Quantum inactive across ordinary saved-board serial changes', () => {
+    activeBoard.current = {
+      uuid: 'board-A',
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1',
+      serialNumber: 'KILTER-A',
+    } as UserBoard;
+    const view = render(
+      <BluetoothProviderWrapper>
+        <div />
+      </BluetoothProviderWrapper>,
+    );
+    expect(quantumProviderProps.selectedModelId).toBeNull();
+    expect(quantumProviderProps.selectedBoardUuid).toBeNull();
+    expect(quantumProviderProps.preferredSerial).toBeUndefined();
+    activeBoard.current = { ...activeBoard.current, uuid: 'board-B', serialNumber: 'KILTER-B' };
+    view.rerender(
+      <BluetoothProviderWrapper>
+        <div />
+      </BluetoothProviderWrapper>,
+    );
+    expect(quantumProviderProps.selectedModelId).toBeNull();
+    expect(quantumProviderProps.selectedBoardUuid).toBeNull();
+    expect(quantumProviderProps.preferredSerial).toBeUndefined();
+  });
+
+  it('routes Quantum to its explicit-layer provider and disables the legacy auto-sender', () => {
+    activeBoard.current = {
+      uuid: 'quantum-board-uuid',
+      boardType: 'quantum',
+      layoutId: 9101,
+      sizeId: 9203,
+      setIds: [1],
+    } as unknown as UserBoard;
+
+    const view = render(
+      <BluetoothProviderWrapper>
+        <div data-testid="child" />
+      </BluetoothProviderWrapper>,
+    );
+
+    expect(quantumProviderProps.selectedModelId).toBe('m');
+    expect(quantumProviderProps.selectedBoardUuid).toBe('quantum-board-uuid');
+    activeBoard.current = { ...activeBoard.current!, sizeId: 9202 };
+    view.rerender(
+      <BluetoothProviderWrapper>
+        <div data-testid="child" />
+      </BluetoothProviderWrapper>,
+    );
+    expect(quantumProviderProps.selectedModelId).toBe('l');
+    expect(providerProps.current).toEqual({
+      boardName: undefined,
+      layoutId: undefined,
+      sizeId: undefined,
+      setIds: undefined,
+      boardUuid: undefined,
     });
   });
 });

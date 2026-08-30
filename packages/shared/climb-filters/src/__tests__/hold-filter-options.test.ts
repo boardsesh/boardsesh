@@ -23,6 +23,12 @@ describe('buildHoldFilterOptions', () => {
     expect(types).toEqual(['STARTING', 'HAND', 'FINISH', 'ANY']);
   });
 
+  it('uses the three Quantum route roles and keeps ANY', () => {
+    const options = buildHoldFilterOptions('quantum');
+    expect(options.map((option) => option.type)).toEqual(['STARTING', 'HAND', 'FINISH', 'ANY']);
+    expect(options.slice(0, 3).map((option) => option.color)).toEqual(['#00FF00', '#00FFFF', '#FF00FF']);
+  });
+
   it('pulls swatch colours from the board hold-state map', () => {
     const starting = buildHoldFilterOptions('kilter').find((option) => option.type === 'STARTING');
     expect(starting?.color).toMatch(/^#/);

@@ -1,3 +1,4 @@
+import { hasProductSizeEdges } from '@boardsesh/board-constants/catalog-metadata';
 import { getBoardImageDetailsForPlaylist } from './board-image-details';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { BoardName, BoardDetails, Climb } from './types';
@@ -13,6 +14,7 @@ export function getBoardDetailsForPlaylist(
   boardType: string,
   layoutId: number | null | undefined,
 ): BoardDetails | null {
+  if (boardType === 'quantum') return null;
   const imageDetails = getBoardImageDetailsForPlaylist(boardType, layoutId);
   if (!imageDetails) return null;
   try {
@@ -174,6 +176,7 @@ export function resolveBoardDetailsForClimb(
       (exactDetails.edge_right - exactDetails.edge_left) * (exactDetails.edge_top - exactDetails.edge_bottom);
 
     const candidates = getSizesForLayoutId(sessionBoard.boardType, sessionBoard.layoutId)
+      .filter(hasProductSizeEdges)
       .filter((size) => size.id !== sessionBoard.sizeId)
       .map((size) => ({
         size,

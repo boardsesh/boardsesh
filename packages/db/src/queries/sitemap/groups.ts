@@ -1,4 +1,4 @@
-import { toBoardName } from '@boardsesh/board-config';
+import { supportsStaticBoardRender, toBoardName } from '@boardsesh/board-config';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { tryBuildReadableClimbViewPath } from '@boardsesh/play-view/readable-url-utils';
 import { isIndexableClimbConfig } from './indexable-boards';
@@ -154,6 +154,9 @@ export function isResolvableGroup(group: ClimbConfigGroup): boolean {
   // what "resolvable" means here — and a spray group without one is dropped, the
   // same way an unroutable tuple is.
   if (group.boardType === 'spray') return Boolean(group.boardSlug);
+
+  const boardName = toBoardName(group.boardType);
+  if (!boardName || !supportsStaticBoardRender(boardName)) return false;
 
   return (
     tryBuildReadableClimbViewPath({

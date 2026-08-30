@@ -5,9 +5,7 @@ import { BoardImageNative } from '../BoardImageNative';
 import { Icon } from '../Icon';
 import { ART_SLOTS, type ArtSize } from '../art-slot';
 import { useTheme } from '../../providers/theme-provider';
-import { getBoardRenderData } from '../../lib/board-details';
-import { parseSetIds } from '../../lib/board-presence/parse-set-ids';
-import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
+import { useBoardRenderData } from '../../lib/use-board-render-data';
 import { useSprayPhotoOnDisk } from '../../lib/spray/use-spray-photo-on-disk';
 import { useSprayWallThumbnail } from '../../lib/spray/use-spray-wall-thumbnail';
 import type { BoardArtReadiness } from '../../lib/board-render/ready-board-art';
@@ -185,15 +183,7 @@ const RenderedBoardThumbnail = memo(function RenderedBoardThumbnail({
 }: BoardThumbnailProps) {
   const { boardType, layoutId, sizeId, setIds } = board;
   const boardName = toBoardName(boardType);
-  // Spray walls can arrive or reset after the saved board has been restored.
-  const sprayToken = useSprayWallToken(boardName, layoutId);
-  const renderData = useMemo(() => {
-    if (!boardName) return null;
-    const setIdValues = parseSetIds(setIds);
-    if (setIdValues.length === 0) return null;
-    return getBoardRenderData({ boardName, layoutId, sizeId, setIds: setIdValues });
-    // `sprayToken` recomputes this when the wall lands or is reset.
-  }, [boardName, layoutId, sizeId, setIds, sprayToken]);
+  const renderData = useBoardRenderData(boardName ? { boardName, layoutId, sizeId, setIds } : null);
   const isSprayWall = boardName === 'spray';
   const sprayPhotoOnDisk = useSprayPhotoOnDisk(isSprayWall ? renderData : null);
   const drawable = renderData !== null && boardName !== null && (!isSprayWall || sprayPhotoOnDisk);

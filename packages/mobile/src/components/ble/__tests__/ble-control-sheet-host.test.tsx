@@ -44,6 +44,8 @@ const mockBleControlSheet = vi.hoisted(() => ({
   } | null,
 }));
 const settingsAnalytics = vi.hoisted(() => ({ trackSettingChanged: vi.fn() }));
+vi.mock('../QuantumBleControlSheet', () => ({ QuantumBleControlSheet: () => null }));
+vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: undefined }) }));
 vi.mock('../../../lib/settings-analytics', () => settingsAnalytics);
 
 vi.mock('../../../providers/bluetooth-provider', () => ({
@@ -72,7 +74,10 @@ vi.mock('../../../lib/analytics-wall-control', () => ({
   trackDriveModeEnded: vi.fn(),
   trackDriveModeStarted: vi.fn(),
 }));
-vi.mock('../../../providers/queue-provider', () => ({ useIsSharedSession: () => false }));
+vi.mock('../../../providers/queue-provider', () => ({
+  useIsSharedSession: () => false,
+  useQueueData: () => ({ currentClimbQueueItem: null }),
+}));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('../BleControlSheet', () => ({

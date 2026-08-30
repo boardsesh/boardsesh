@@ -169,7 +169,12 @@ export function useBoardConnectionHolder({
           boardId,
           (event) => {
             if (!isCurrentCycle(cycle)) return;
-            const eventSeq = event.__typename === 'BoardClimbSet' ? event.climb.seq : event.seq;
+            const eventSeq =
+              event.__typename === 'BoardClimbSet'
+                ? event.climb.seq
+                : event.__typename === 'BoardLayersChanged'
+                  ? event.snapshot.seq
+                  : event.seq;
             const gap = highestObservedSeq !== null && eventSeq > highestObservedSeq + 1;
             highestObservedSeq = Math.max(highestObservedSeq ?? eventSeq, eventSeq);
             if (event.__typename === 'BoardConnectionChanged') {

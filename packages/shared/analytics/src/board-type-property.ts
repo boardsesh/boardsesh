@@ -6,7 +6,7 @@
 // session from a Kilter one in PostHog, and a spray-first climber's whole first
 // week was invisible to any activation measure.
 //
-// The value is a CLOSED set: the nine board types, or null. Nothing else can
+// The value is a CLOSED set: the supported board types, or null. Nothing else can
 // get through, which is what keeps this inside the spray telemetry rule that no
 // event may identify a wall (`docs/product/spray-walls.md`, "Telemetry"). A wall's
 // name, slug or uuid passed here by mistake comes out as null, not as a value.
@@ -24,6 +24,7 @@ export const ANALYTICS_BOARD_TYPES = [
   'kilter',
   'tension',
   'moonboard',
+  'quantum',
   'decoy',
   'touchstone',
   'grasshopper',

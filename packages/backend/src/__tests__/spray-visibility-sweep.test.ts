@@ -586,6 +586,8 @@ const NOT_APPLICABLE: Record<string, string> = {
     'home boards only: a spray wall has no share link (it keeps its own ?wall= link), so the owner gets null too, and a non-owner is refused before the board type is read',
   'Query.checkMoonBoardClimbDuplicates':
     "hardcoded to board_type = 'moonboard', so a spray climb is not a row it can return",
+  'Query.boardLayers':
+    'after applying the board visibility gate, returns null for boards without independent simultaneous-climb layers; spray does not support layers, so no seeded wall can produce a snapshot',
 
   'Query.cncLayout':
     'static CNC catalogue panel geometry, never climb metadata; resolveCncConfig rejects spray before calling the generator (cnc-packs/queries.test.ts pins preview and authenticated hole requests)',

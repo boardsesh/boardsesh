@@ -1,5 +1,6 @@
 import {
   pgTable,
+  jsonb,
   foreignKey,
   bigserial,
   text,
@@ -324,6 +325,10 @@ export const boardClimbs = pgTable(
     framesCount: integer('frames_count').default(1),
     framesPace: integer('frames_pace').default(0),
     frames: text(),
+    // Identifier understood by a board controller. This is intentionally
+    // separate from uuid: Boardsesh owns uuid, while controller route IDs may
+    // be shared by multiple physical board models/layouts.
+    controllerRouteUuid: text('controller_route_uuid'),
     isDraft: boolean('is_draft').default(false),
     isListed: boolean('is_listed'),
     // Community moderation: hidden by an approved 'hide' proposal. Hidden climbs
@@ -367,6 +372,10 @@ export const boardClimbs = pgTable(
     // board_climbs_characteristics_idx GIN index; production never scanned it,
     // and migration 0250 removes it.
     characteristics: text('characteristics').array(),
+    // Residual upstream facts without a cross-board semantic equivalent, such
+    // as raw grade intervals and un-attributed catalog tags. Rules and normalized
+    // grades/ratings/counts belong in characteristics and board_climb_stats.
+    sourceMetadata: jsonb('source_metadata').$type<Record<string, unknown>>(),
     // Spray walls only: how many of this climb's holds have come off the wall
     // (`spray_wall_holds.removed_version_id IS NOT NULL`). NULL on every other
     // board type, and 0 on an intact spray climb. Materialised rather than
@@ -421,6 +430,9 @@ export const boardClimbs = pgTable(
       table.layoutId,
       table.holdFingerprint,
     ),
+    controllerRouteUuidIdx: uniqueIndex('board_climbs_controller_route_uuid_idx')
+      .on(table.boardType, table.layoutId, table.controllerRouteUuid)
+      .where(sql`${table.controllerRouteUuid} IS NOT NULL`),
     // Combined index covering the full WHERE clause of the main climb search query
     // Replaces separate layout_filter and edges indexes to avoid bitmap AND merges
     searchFilterIdx: index('board_climbs_search_filter_idx').on(
@@ -1181,6 +1193,10 @@ export const boardSharedSyncs = pgTable(
     boardType: text('board_type').notNull(),
     tableName: text('table_name').notNull(),
     lastSynchronizedAt: text('last_synchronized_at'),
+    // Optional structured checkpoint/provenance for catalog sources whose
+    // revision and geometry binding cannot be represented by a timestamp.
+    // last_synchronized_at keeps its existing successful-sync timestamp semantics.
+    metadata: jsonb('metadata').$type<Record<string, unknown>>(),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.boardType, table.tableName] }),

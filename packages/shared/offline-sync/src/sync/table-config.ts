@@ -200,6 +200,8 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
       'frames_count',
       'frames_pace',
       'frames',
+      'controller_route_uuid',
+      'is_boardsesh_authored',
       'is_draft',
       'is_listed',
       'is_hidden',

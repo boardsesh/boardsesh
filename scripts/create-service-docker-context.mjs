@@ -80,6 +80,15 @@ const services = {
       '@boardsesh/aurora-sync',
       '@boardsesh/moonboard-sync',
       '@boardsesh/scheduler',
+      '@boardsesh/quantum-sync',
+      '@boardsesh/db',
+    ],
+    extraSourceFiles: [
+      'packages/backend/src/cli/quantum-sync.ts',
+      'packages/backend/src/db/client.ts',
+      'packages/backend/src/services/quantum-catalog-import.ts',
+      'packages/backend/src/services/quantum-catalog-mapping.ts',
+      'packages/backend/src/services/quantum-catalog-sync.ts',
     ],
   },
   ci: {

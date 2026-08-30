@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, it, expect } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { setHoldColorOverridesPreference, setHoldMarkerOverridesPreference } from '../../../lib/hold-color-overrides';
+import {
+  loadHoldMarkerOverrides,
+  setHoldColorOverridesPreference,
+  setHoldMarkerOverridesPreference,
+} from '../../../lib/hold-color-overrides';
 import { useParseFrames } from '../use-parse-frames';
 import type { HoldPlacement } from '../types';
 
@@ -84,5 +88,26 @@ describe('useParseFrames mirroring', () => {
       brushThickness: 1.6,
       shapeSize: 1.7,
     });
+  });
+
+  it('previews colours while preserving the stored accessibility markers and preferences', async () => {
+    const storedMarkers = {
+      colors: { STARTING: '#123456' },
+      shapes: { STARTING: 'triangle-up' as const },
+      brushThickness: 1.6,
+      shapeSize: 1.7,
+    };
+    await setHoldMarkerOverridesPreference(storedMarkers);
+    const { result } = renderHook(() =>
+      useParseFrames('p100r12', 'quantum', [HOLD_LEFT], false, { STARTING: '#abcdef' }),
+    );
+
+    expect(result.current[0]).toMatchObject({
+      color: '#abcdef',
+      shape: 'triangle-up',
+      brushThickness: 1.6,
+      shapeSize: 1.7,
+    });
+    expect(await loadHoldMarkerOverrides()).toEqual(storedMarkers);
   });
 });

@@ -1,3 +1,4 @@
+import { hasProductSizeEdges } from '@boardsesh/board-constants/catalog-metadata';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { resolveBoardDetailsForClimb, type SessionBoardConfig } from '../board-config-for-playlist';
 import { getBoardDetails, getSizesForLayoutId, getSetsForLayoutAndSize } from '@/app/lib/board-constants';
@@ -9,6 +10,7 @@ vi.mock('@/app/lib/board-constants', () => ({
   getBoardDetails: vi.fn(),
   getSizesForLayoutId: vi.fn(),
   getSetsForLayoutAndSize: vi.fn(),
+  hasProductSizeEdges: vi.fn(() => true),
   LAYOUTS: { kilter: { 1: {} }, tension: { 2: {} } },
 }));
 
@@ -31,7 +33,7 @@ vi.mock('@/app/lib/board-image-details', async () => ({
     if (!effectiveLayoutId) return null;
     if (boardType === 'moonboard')
       return { board_name: boardName, layout_id: effectiveLayoutId, size_id: 1, set_ids: [1] };
-    const sizes = getSizesForLayoutId(boardName, effectiveLayoutId);
+    const sizes = getSizesForLayoutId(boardName, effectiveLayoutId).filter(hasProductSizeEdges);
     if (sizes.length === 0) return null;
     const largest = sizes.reduce((best, size) =>
       (size.edgeRight - size.edgeLeft) * (size.edgeTop - size.edgeBottom) >

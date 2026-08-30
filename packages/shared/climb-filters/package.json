@@ -15,7 +15,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@boardsesh/board-config": "workspace:*",
     "@boardsesh/board-constants": "workspace:*",
+    "@boardsesh/board-layers": "workspace:*",
     "@boardsesh/shared-schema": "workspace:*"
   },
   "devDependencies": {

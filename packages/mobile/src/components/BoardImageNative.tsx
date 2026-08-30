@@ -43,6 +43,7 @@ import {
   type ReadyBoardArtSnapshot,
   type BoardArtReadiness,
 } from '../lib/board-render/ready-board-art';
+import { getBoardImageAdapter } from './board-image-adapters';
 
 type BoardImageNativeProps = {
   readyBoardArt?: ReadyBoardArtSnapshot;
@@ -209,7 +210,31 @@ export const GPU_PNG_HEDGE_DELAY_MS = 300;
  * holds flipped together) — the Rust `mirrored` flag is intentionally
  * not used here, so a single cached PNG serves both orientations.
  */
-const BoardImageNative = React.memo(function BoardImageNative({
+const BoardImageNative = React.memo(function BoardImageNative({ boardName, ...props }: BoardImageNativeProps) {
+  const loadImage = getBoardImageAdapter(boardName).loadImage;
+  if (loadImage) {
+    const RuntimeBoardImage = loadImage();
+    return (
+      <RuntimeBoardImage
+        frames={props.frames}
+        layoutId={props.layoutId}
+        sizeId={props.sizeId}
+        style={props.style}
+        overlayTestID={props.overlayTestID}
+        onArtReadinessChange={props.onArtReadinessChange}
+        accessible={props.accessible}
+        underOverlay={props.underOverlay}
+        holdColorOverride={props.holdColorOverride}
+      />
+    );
+  }
+
+  return <PhotoBoardImageNative boardName={boardName} {...props} />;
+});
+
+/** Existing photo-background renderer. Split out so its render hook is never
+ * called for Quantum, whose renderer is entirely code-driven. */
+const PhotoBoardImageNative = React.memo(function PhotoBoardImageNative({
   readyBoardArt,
   onReadyArtDisplayed,
   onArtReadinessChange,

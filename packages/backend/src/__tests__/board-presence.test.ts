@@ -400,6 +400,77 @@ describe('board-presence pubsub', () => {
     await expect(store.nextBoardSeq('123')).rejects.toThrow('database unavailable');
   });
 
+  it('keeps the newest sanitized layer snapshot in local-only mode', async () => {
+    const store = new BoardPresenceStore({
+      isRedisAvailable: () => false,
+      isRedisRequired: () => false,
+      logger: { error: vi.fn(), warn: vi.fn() },
+    });
+    const current = {
+      boardId: 123,
+      layers: [
+        {
+          color: '#00FF00',
+          remainingSeconds: 30,
+          climbUuid: null,
+          angle: null,
+          geometryKnown: false,
+          placementIds: [],
+        },
+      ],
+      observedAt: new Date().toISOString(),
+      stale: false,
+      seq: 8,
+    };
+
+    expect(await store.commitBoardLayers('123', current, 'reporter-a', 'claim-a')).toMatchObject({
+      snapshot: current,
+      accepted: true,
+    });
+    expect(await store.getBoardLayers('123')).toEqual(current);
+    expect(
+      await store.commitBoardLayers(
+        '123',
+        {
+          ...current,
+          layers: [],
+          observedAt: '2026-08-29T00:00:00.000Z',
+          seq: 7,
+        },
+        'reporter-a',
+        'claim-a',
+      ),
+    ).toMatchObject({ snapshot: current, accepted: false });
+  });
+
+  it('does not let an old reporter stale a newer local Quantum roster', async () => {
+    const store = new BoardPresenceStore({
+      isRedisAvailable: () => false,
+      isRedisRequired: () => false,
+      logger: { error: vi.fn(), warn: vi.fn() },
+    });
+    const oldSnapshot = {
+      boardId: 123,
+      layers: [],
+      observedAt: new Date().toISOString(),
+      stale: false,
+      seq: 8,
+    };
+    const newSnapshot = { ...oldSnapshot, seq: 9 };
+    await store.commitBoardLayers('123', oldSnapshot, 'shared-user', 'claim-a');
+    await store.commitBoardLayers('123', newSnapshot, 'shared-user', 'claim-b');
+    expect(await store.clearBoardWriterIf('123', 'shared-user', 'claim-a')).toBeNull();
+
+    const staleAttempt = await store.markBoardLayersStaleIfOwned('123', 'claim-a', {
+      ...oldSnapshot,
+      stale: true,
+      seq: 10,
+    });
+
+    expect(staleAttempt).toEqual({ snapshot: newSnapshot, changed: false });
+    expect(await store.getBoardLayers('123')).toEqual(newSnapshot);
+  });
+
   it('evicts expired local proof-of-presence stamps without a membership read', async () => {
     const boardId = `local-membership-${Math.random().toString(36).slice(2)}`;
     const userId = `user-${Math.random().toString(36).slice(2)}`;
@@ -2613,6 +2684,32 @@ describe('board-presence resolvers', () => {
       ).rejects.toThrow('Unknown climb');
     });
 
+    it('rejects single-climb presence reports for Quantum Board', async () => {
+      const [insertedBoard] = await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number, is_public)
+        VALUES
+          (${uuidv4()}, ${`presence-quantum-${Date.now()}`}, ${TEST_USER_ID}, 'quantum', 9101, 9201, '1',
+           'Quantum Wall', null, true)
+        RETURNING id
+      `);
+      const boardId = Number((insertedBoard as { id: number }).id);
+      await pubsub.stampBoardMembership(String(boardId), TEST_USER_ID);
+      const commitBoardClimb = vi.spyOn(pubsub, 'commitBoardClimb');
+
+      await expect(
+        boardPresenceMutations.reportBoardClimb(
+          undefined,
+          { boardId, climb: makeQueueItemInput(), angle: 40 },
+          authCtx(),
+        ),
+      ).rejects.toMatchObject({
+        message: 'Quantum Board presence must be reported with board layers',
+        extensions: { code: 'BAD_USER_INPUT' },
+      });
+      expect(commitBoardClimb).not.toHaveBeenCalled();
+    });
+
     it('accepts a negative board angle (Aurora boards support negative tilt) and publishes it verbatim', async () => {
       // reportBoardClimb fires on EVERY climb-light event from a connected/kiosk
       // board, so a negative-tilt board (e.g. -5°) must not error here. There's
@@ -4601,16 +4698,26 @@ describe('board-presence connection holder', () => {
       const connectionId = `conn-backstop-${Date.now()}`;
       await roomManager.registerClient(connectionId);
       try {
-        // A disconnect with no recorded hold must not throw or broadcast.
-        await expect(roomManager.clearBoardWriterForConnection(connectionId)).resolves.toBeUndefined();
-
-        roomManager.noteBoardWriter(connectionId, 4242, TEST_USER_ID);
+        expect(roomManager.noteBoardWriter(connectionId, 4242, TEST_USER_ID)).toBe(true);
         expect(roomManager.getClient(connectionId)?.boardWriterEmitter).toEqual({
           boardId: 4242,
           emitterId: TEST_USER_ID,
+          layerClaimToken: undefined,
         });
       } finally {
         await roomManager.removeClient(connectionId);
+      }
+
+      const emptyConnectionId = `conn-backstop-empty-${Date.now()}`;
+      await roomManager.registerClient(emptyConnectionId);
+      try {
+        // A close with no recorded hold must not throw or broadcast, and its
+        // synchronous marker must reject a late post-close writer note.
+        await expect(roomManager.clearBoardWriterForConnection(emptyConnectionId)).resolves.toBeUndefined();
+        expect(roomManager.noteBoardWriter(emptyConnectionId, 4242, TEST_USER_ID)).toBe(false);
+        expect(roomManager.getClient(emptyConnectionId)?.boardWriterEmitter).toBeUndefined();
+      } finally {
+        await roomManager.removeClient(emptyConnectionId);
       }
     });
   });
@@ -4631,6 +4738,93 @@ describe('board-presence connection holder', () => {
 
     afterAll(async () => {
       if (redisOn) await redisClientManager.disconnect().catch(() => {});
+    });
+
+    it('rechecks the socket claim after a durable reservation and sequences a successful release', async () => {
+      if (!redisOn) return;
+      const boardKey = String(await makeHolderBoard(authCtx()));
+      const store = new BoardPresenceStore({
+        isRedisAvailable: () => true,
+        isRedisRequired: () => true,
+        logger: { error: vi.fn(), warn: vi.fn() },
+      });
+      const snapshot = {
+        boardId: Number(boardKey),
+        seq: 1,
+        layers: [],
+        stale: false,
+        observedAt: new Date().toISOString(),
+      };
+      await store.commitBoardLayers(boardKey, snapshot, TEST_USER_ID, 'old-socket');
+      const allocator = vi.fn(async () => {
+        await store.commitBoardLayers(boardKey, { ...snapshot, seq: 2 }, TEST_USER_ID, 'new-socket');
+        return 50;
+      });
+      store.setBoardSeqAllocator(allocator);
+      await expect(store.clearBoardWriterIf(boardKey, SECOND_USER_ID, 'other-socket')).resolves.toBeNull();
+      expect(allocator).not.toHaveBeenCalled();
+      await expect(store.clearBoardWriterIf(boardKey, TEST_USER_ID, 'old-socket')).resolves.toBeNull();
+      await expect(store.getBoardWriter(boardKey)).resolves.toBe(TEST_USER_ID);
+      allocator.mockImplementationOnce(async () => {
+        // The same socket refreshed after disconnect reserved its durable sequence.
+        await store.commitBoardLayers(boardKey, { ...snapshot, seq: 52 }, TEST_USER_ID, 'new-socket');
+        return 51;
+      });
+      await expect(store.clearBoardWriterIf(boardKey, TEST_USER_ID, 'new-socket')).resolves.toBeNull();
+      await expect(store.getBoardWriter(boardKey)).resolves.toBe(TEST_USER_ID);
+      allocator.mockResolvedValueOnce(53);
+      await expect(store.clearBoardWriterIf(boardKey, TEST_USER_ID, 'new-socket')).resolves.toBe(53);
+      await expect(store.getBoardWriter(boardKey)).resolves.toBeNull();
+      await expect(redisClientManager.getClients().publisher.get(`board:${boardKey}:seq`)).resolves.toBe('53');
+    });
+
+    it('allocates exactly one Redis disconnect sequence for two simultaneous releases', async () => {
+      if (!redisOn) return;
+      const boardKey = String(await makeHolderBoard(authCtx()));
+      const store = new BoardPresenceStore({
+        isRedisAvailable: () => true,
+        isRedisRequired: () => true,
+        logger: { error: vi.fn(), warn: vi.fn() },
+      });
+      const seq = await store.nextBoardSeq(boardKey);
+      const emptyRoster = {
+        boardId: Number(boardKey),
+        seq,
+        layers: [],
+        stale: false,
+        observedAt: new Date().toISOString(),
+      };
+      await expect(store.commitBoardLayers(boardKey, emptyRoster, TEST_USER_ID, 'socket')).resolves.toMatchObject({
+        accepted: true,
+        snapshot: { layers: [] },
+      });
+      await expect(store.commitBoardLayers(boardKey, emptyRoster, TEST_USER_ID, 'socket')).resolves.toMatchObject({
+        accepted: false,
+        snapshot: { layers: [] },
+      });
+      const unidentifiedLayer = {
+        color: '#00FF00',
+        remainingSeconds: 120,
+        climbUuid: null,
+        angle: null,
+        geometryKnown: false,
+        placementIds: [],
+      };
+      const latestSeq = await store.nextBoardSeq(boardKey);
+      const occupiedRoster = { ...emptyRoster, seq: latestSeq, layers: [unidentifiedLayer] };
+      for (const accepted of [true, false]) {
+        await expect(store.commitBoardLayers(boardKey, occupiedRoster, TEST_USER_ID, 'socket')).resolves.toMatchObject({
+          accepted,
+          snapshot: { layers: [{ geometryKnown: false, placementIds: [] }] },
+        });
+      }
+      const results = await Promise.all([
+        store.clearBoardWriterIf(boardKey, TEST_USER_ID, 'socket'),
+        store.clearBoardWriterIf(boardKey, TEST_USER_ID, 'socket'),
+      ]);
+      expect(results).toContain(latestSeq + 1);
+      expect(results).toContain(null);
+      expect(await store.nextBoardSeq(boardKey)).toBe(latestSeq + 2);
     });
 
     it('hands off to a new emitter and dedups same-emitter repeats', async () => {

@@ -18,6 +18,7 @@ import { render, cleanup, screen, fireEvent } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../lib/graphql/hooks', () => ({
+  useAngles: () => ({ data: undefined, isPending: false, isFetching: false }),
   useClimbStatsHistory: () => ({ data: undefined }),
 }));
 
@@ -99,8 +100,6 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
-
-vi.mock('@boardsesh/board-config', () => ({ MOONBOARD_ANGLES: [25, 40] }));
 
 const angleOptions = vi.hoisted(() => ({ angles: [] as number[] }));
 
@@ -202,6 +201,25 @@ describe('AngleSelectorSheet — MoonBoard 25°/40° snap buttons', () => {
     fireEvent.click(screen.getByLabelText('leading-close'));
     expect(onClose).toHaveBeenCalledOnce();
     expect(onAngleChange).not.toHaveBeenCalled();
+  });
+
+  it('keeps a valid local preview when another controller changes the current angle', () => {
+    const onAngleChange = vi.fn();
+    const props = {
+      visible: true,
+      onClose: noop,
+      boardName: 'moonboard',
+      layoutId: 3,
+      currentAngle: 30,
+      onAngleChange,
+    };
+    const view = render(createElement(AngleSelectorSheet, props));
+    fireEvent.click(screen.getByLabelText(SNAP_40));
+
+    view.rerender(createElement(AngleSelectorSheet, { ...props, currentAngle: 45 }));
+    fireEvent.click(screen.getByLabelText('actions.done'));
+
+    expect(onAngleChange).toHaveBeenCalledWith(40);
   });
 
   it('hides the buttons when MoonBoard only offers 25° and 40°', () => {

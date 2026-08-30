@@ -24,6 +24,7 @@
 
 import { BOARD_DISPLAY_ORDER, SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
 import type { HoldTuple } from './types';
+import { getQuantumHolePlacements } from './quantum-geometry-data';
 
 type BoardHolePlacements = Record<string, HoldTuple[]>;
 
@@ -108,6 +109,7 @@ const shardCache = new Map<string, BoardHolePlacements>();
  * handwritten helpers, not the Aurora generator) resolve to an empty record.
  */
 export function getBoardHolePlacements(boardName: BoardName): BoardHolePlacements {
+  if (boardName === 'quantum') return getQuantumHolePlacements();
   const cached = shardCache.get(boardName);
   if (cached) return cached;
 

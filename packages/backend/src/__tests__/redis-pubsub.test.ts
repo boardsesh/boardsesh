@@ -407,7 +407,7 @@ describe('Redis PubSub Adapter - Unit Tests (mocked)', () => {
     }
   });
 
-  it('routes idless messages to all eight channel callbacks and still skips its own messages', () => {
+  it('routes legacy idless messages and validated board-presence messages, skipping its own', () => {
     const messageHandlers: Array<(channel: string, message: string) => void> = [];
     const mockPublisher = { publish: vi.fn() } as unknown as Redis;
     const mockSubscriber = {
@@ -443,18 +443,48 @@ describe('Redis PubSub Adapter - Unit Tests (mocked)', () => {
       { channel: 'boardsesh:notifications:user-1', key: 'user-1', callback: callbacks.notifications },
       { channel: 'boardsesh:comments:climb:1', key: 'climb:1', callback: callbacks.comments },
       { channel: 'boardsesh:new-climbs:kilter:1', key: 'kilter:1', callback: callbacks.newClimbs },
-      { channel: 'boardsesh:board:123', key: '123', callback: callbacks.boardPresence },
       { channel: 'boardsesh:board-queue:456', key: '456', callback: callbacks.boardQueue },
       { channel: 'boardsesh:climb-stats-layout:kilter:2', key: 'kilter:2', callback: callbacks.climbStats },
     ];
 
     expect(messageHandlers).toHaveLength(1);
     for (const { channel, key, callback } of cases) {
-      // Routing is independent of the event's domain-specific shape.
+      // Legacy channels accept idless envelopes; board presence has a stricter boundary.
       const event = { marker: channel };
       messageHandlers[0]?.(channel, JSON.stringify({ event, timestamp: Date.now() }));
       expect(callback).toHaveBeenCalledExactlyOnceWith(key, event);
     }
+
+    const boardEvent = {
+      __typename: 'BoardLayersChanged',
+      snapshot: {
+        boardId: 123,
+        layers: [],
+        observedAt: new Date().toISOString(),
+        stale: false,
+        seq: 1,
+      },
+    };
+    for (const instanceId of [undefined, 42, adapter.getInstanceId()]) {
+      messageHandlers[0]?.(
+        'boardsesh:board:123',
+        JSON.stringify({ instanceId, event: boardEvent, timestamp: Date.now() }),
+      );
+    }
+    expect(callbacks.boardPresence).not.toHaveBeenCalled();
+
+    messageHandlers[0]?.(
+      'boardsesh:board:123',
+      JSON.stringify({ instanceId: 'another-instance', event: boardEvent, timestamp: Date.now() }),
+    );
+    expect(callbacks.boardPresence).toHaveBeenCalledExactlyOnceWith('123', boardEvent);
+
+    // A valid snapshot cannot cross the physical board channel boundary.
+    messageHandlers[0]?.(
+      'boardsesh:board:456',
+      JSON.stringify({ instanceId: 'another-instance', event: boardEvent, timestamp: Date.now() }),
+    );
+    expect(callbacks.boardPresence).toHaveBeenCalledTimes(1);
 
     messageHandlers[0]?.(
       'boardsesh:queue:session-1',

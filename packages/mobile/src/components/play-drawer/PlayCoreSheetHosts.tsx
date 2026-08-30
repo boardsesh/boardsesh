@@ -274,6 +274,7 @@ export function PlayCoreSheetHosts({
       {mountBleControl && (
         <BleControlSheetHost
           visible={bleControlVisible}
+          controlClimbTarget={displayedClimb}
           onClose={handleCloseBleControl}
           // The player's sheet is the board's actions; the lighting switches
           // live in Settings › Board (#7000).

@@ -10,11 +10,13 @@
 import type {
   BoardClimbRecentSender,
   BoardConnectionHolder,
+  BoardLayersSnapshot,
   BoardPresenceClimb,
   BoardHistoryPage,
   BoardPresenceEvent,
   BoardPresenceStats,
   ClimbQueueItemInput,
+  ReportBoardLayer,
   ResolvedBoard,
 } from '@boardsesh/shared-schema';
 
@@ -103,12 +105,18 @@ export interface BoardPresenceClient {
    */
   fetchConnection?(boardId: number, boardUuid?: string | null): Promise<BoardConnectionHolder | null>;
 
+  /** Latest confirmed QuantumBoard roster, or null before the first report. */
+  fetchLayers?(boardId: number, boardUuid?: string | null): Promise<BoardLayersSnapshot | null>;
+
   /**
    * Release this client's hold on the board (e.g. on BLE disconnect). Resolves
    * to the server's accepted flag. Optional so a read-only client still
    * satisfies the interface.
    */
   reportDisconnect?(boardId: number): Promise<boolean>;
+
+  /** Report a controller-confirmed roster with all controller IDs removed. */
+  reportLayers?(boardId: number, layers: readonly ReportBoardLayer[]): Promise<BoardLayersSnapshot>;
 
   /**
    * Tell every viewer this client turned off all the wall's lights while keeping

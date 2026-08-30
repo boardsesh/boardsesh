@@ -13,6 +13,7 @@ describe('boardTypeLabel', () => {
     expect(boardTypeLabel('tension')).toBe('Tension');
     expect(boardTypeLabel('moonboard')).toBe('MoonBoard');
     expect(boardTypeLabel('woods')).toBe('Woods');
+    expect(boardTypeLabel('quantum')).toBe('Quantum Board');
   });
 
   it('falls back to a capitalized name for unknown boards', () => {

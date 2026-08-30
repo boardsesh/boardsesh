@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
+import { QUANTUM_MODELS, type QuantumModelName } from '@boardsesh/board-constants/quantum';
 import { BluetoothProvider } from './bluetooth-provider';
+import { QuantumBluetoothProvider } from './quantum-bluetooth-provider';
 import { useActiveBoard } from '../lib/graphql/use-active-board';
 
 /**
@@ -17,19 +19,32 @@ import { useActiveBoard } from '../lib/graphql/use-active-board';
  */
 export function BluetoothProviderWrapper({ children }: { children: ReactNode }) {
   const { data: activeBoard } = useActiveBoard();
+  const quantumModelId =
+    activeBoard?.boardType === 'quantum'
+      ? ((Object.entries(QUANTUM_MODELS).find(
+          ([, model]) => model.layoutId === activeBoard.layoutId && model.sizeId === activeBoard.sizeId,
+        )?.[0] as QuantumModelName | undefined) ?? null)
+      : null;
+  const legacyActiveBoard = activeBoard?.boardType === 'quantum' ? undefined : activeBoard;
 
   return (
-    <BluetoothProvider
-      angle={activeBoard?.angle}
-      boardName={activeBoard?.boardType}
-      layoutId={activeBoard?.layoutId}
-      sizeId={activeBoard?.sizeId}
-      setIds={activeBoard?.setIds}
-      boardUuid={activeBoard?.uuid}
-      hasLeds={activeBoard?.hasLeds}
-      litByWallDevice={activeBoard?.litByWallDevice}
+    <QuantumBluetoothProvider
+      selectedModelId={quantumModelId}
+      selectedBoardUuid={quantumModelId ? activeBoard?.uuid : null}
+      preferredSerial={quantumModelId ? activeBoard?.serialNumber : undefined}
     >
-      {children}
-    </BluetoothProvider>
+      <BluetoothProvider
+        angle={legacyActiveBoard?.angle}
+        boardName={legacyActiveBoard?.boardType}
+        layoutId={legacyActiveBoard?.layoutId}
+        sizeId={legacyActiveBoard?.sizeId}
+        setIds={legacyActiveBoard?.setIds}
+        boardUuid={legacyActiveBoard?.uuid}
+        hasLeds={legacyActiveBoard?.hasLeds}
+        litByWallDevice={legacyActiveBoard?.litByWallDevice}
+      >
+        {children}
+      </BluetoothProvider>
+    </QuantumBluetoothProvider>
   );
 }
