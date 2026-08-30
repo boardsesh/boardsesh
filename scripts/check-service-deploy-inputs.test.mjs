@@ -58,7 +58,7 @@ function writeVercelJson(repoRoot, pnpmVersion = PINNED_PNPM_VERSION) {
 function dockerfileLines(extraLines = []) {
   return [
     'FROM node:22-alpine',
-    'RUN npm install --global --no-fund --no-audit pnpm@11.22.0',
+    `RUN npm install --global --no-fund --no-audit pnpm@${PINNED_PNPM_VERSION}`,
     'COPY manifests/package.json manifests/pnpm-lock.yaml manifests/pnpm-workspace.yaml ./',
     'COPY manifests/packages ./packages',
     ...extraLines,
