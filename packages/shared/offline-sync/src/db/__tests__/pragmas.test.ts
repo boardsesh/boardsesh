@@ -14,6 +14,7 @@ import {
   OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
   OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS,
   applyBusyTimeout,
+  applyBulkImportPragmas,
   beginImmediateWrite,
   configureMainConnection,
 } from '../pragmas';
@@ -383,5 +384,43 @@ describe('beginImmediateWrite', () => {
     } finally {
       interloper.close();
     }
+  });
+});
+
+describe('applyBulkImportPragmas', () => {
+  // The snapshot import commits ~142 times instead of once (issue #4310); under
+  // the default FULL every one of those pays an fsync, which would make the
+  // batched import slower than the single transaction it replaces.
+  it('drops synchronous to NORMAL on this connection only', async () => {
+    const before = await db.getFirstAsync<{ synchronous: number }>('PRAGMA synchronous');
+    expect(before?.synchronous).toBe(2);
+
+    await applyBulkImportPragmas(db);
+
+    const after = await db.getFirstAsync<{ synchronous: number }>('PRAGMA synchronous');
+    expect(after?.synchronous).toBe(1);
+
+    // A SECOND connection to the same file is untouched: `synchronous` is
+    // per-connection, unlike `journal_mode`, which persists in the file header.
+    const other = createTestDatabase(dbPath);
+    const otherSynchronous = await other.getFirstAsync<{ synchronous: number }>('PRAGMA synchronous');
+    expect(otherSynchronous?.synchronous).toBe(2);
+  });
+
+  it('leaves journal_mode alone', async () => {
+    await configureMainConnection(db);
+    await applyBulkImportPragmas(db);
+
+    const journal = await db.getFirstAsync<{ journal_mode: string }>('PRAGMA journal_mode');
+    expect(journal?.journal_mode).toBe('wal');
+  });
+
+  // SQLite REFUSES the pragma inside a transaction rather than silently ignoring
+  // it, which is what makes "call it in the autocommit preamble" enforceable
+  // rather than a comment nobody checks.
+  it('throws when called inside a transaction', async () => {
+    await db.execAsync('BEGIN');
+    await expect(applyBulkImportPragmas(db)).rejects.toThrow(/Safety level may not be changed/i);
+    await db.execAsync('COMMIT');
   });
 });

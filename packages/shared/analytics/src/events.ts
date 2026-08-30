@@ -412,6 +412,8 @@ export const SHARED_EVENTS = {
   // method: 'snapshot' | 'paged', durationMs, bytes?, rowCount?, downloadMs?,
   // importMs?, bootstrapHealed?, manifestMs, artifactReused, climbsPullMs,
   // statsPullMs, gradesPullMs, gradesRows?, gradesArtifactRows?,
+  // importVerifyMs?, importReconcileMs?, importRowsMs?, importLockMaxMs?,
+  // importBatches?, gradesDownloadMs?, gradesVerifyMs?, gradesLockMs?,
   // offlineEngineEnabled }.
   // Every optional prop is ABSENT rather than faked when this cycle cannot vouch
   // for it — most often because the completing delta pull landed in a later cycle
@@ -432,8 +434,38 @@ export const SHARED_EVENTS = {
   // Deliberately NOT emitted: the breakdown's own `downloadMs`, `importMs` and
   // `artifactBytes` — the per-scope timings above carry the honest,
   // absent-when-unknown versions of the same numbers, so re-adding the phase
-  // copies would put a cycle-scoped 0 next to them. Mobile-only today (the engine
-  // is shared, so a future web offline consumer would fire this too).
+  // copies would put a cycle-scoped 0 next to them.
+  //
+  // THE IMPORT SPLIT (issue #4310), all nine absent-when-unknown for exactly
+  // that reason — a cycle that ran no import did not spend the time, and most
+  // completions are import-free because the artifact landed in an earlier cycle.
+  // TWO DIFFERENT FILTERS, and mixing them up drops the population you want:
+  //  - The six `import*` props: filter on `importMs IS NOT NULL`. Unfiltered,
+  //    the p90 reads near zero whatever the import is doing.
+  //  - The three `grades*` props: filter each on ITS OWN `IS NOT NULL`, never on
+  //    `importMs`. The grades retrofit path imports grades for a scope that is
+  //    ALREADY bootstrapped, in a cycle with no whole-layout import — which is
+  //    precisely the still-crawling population #4719 is about, so an `importMs`
+  //    filter would exclude the cycles these three exist to measure.
+  //  - `importLockMaxMs` is THE number: the longest SINGLE exclusive-transaction
+  //    hold of the import (reconcile, any row batch, or the checkpoint
+  //    transaction), i.e. the worst case a concurrent user write has to survive
+  //    (#4314). Before the batching change it was the whole import and had never
+  //    been measured — `importMs` is ATTACH + quick_check over a 271 MB file +
+  //    two full COUNT(*) scans + watermarks + the write work, and all but the
+  //    last of those hold nothing. It is stamped from after BEGIN EXCLUSIVE
+  //    succeeds, so it is a hold; its tail includes the WAL autocheckpoint some
+  //    batch commits pay (the engine leaves the 1000-page default in place).
+  //  - `importVerifyMs` / `importReconcileMs` / `importRowsMs` split `importMs`,
+  //    with the lock-acquisition wait subtracted out of the last two and
+  //    reported on its own as `importLockWaitMs`; `importBatches` counts the
+  //    exclusive transactions the rows took.
+  //  - `gradesDownloadMs` / `gradesVerifyMs` / `gradesLockMs` cover the SEPARATE
+  //    grades artifact, whose transfer and (still unbatched) exclusive
+  //    transaction were invisible to every phase field — most of the ~11s p50
+  //    gap between `durationMs` and the sum of the phases.
+  // Mobile-only today (the engine is shared, so a future web offline consumer
+  // would fire this too).
   OfflineBoardDownloadCompleted: 'Offline Board Download Completed',
   // A bootstrap stage failed, or was cut short. Props: { scopeKey, stage:
   // 'manifest' | 'download' | 'import' | 'grades-download' | 'grades-import' |
@@ -710,9 +742,17 @@ export const SHARED_EVENTS = {
   // Offline sync — a snapshot-bootstrap failure scheduled the scope's next
   // attempt (issue #4313). Operational, not an error: the failure itself still
   // goes to Sentry at its own severity. Props: { scopeKey, boardType, stage,
-  // failureKind, retryAfterMs, transportFailures, structuralFailures,
-  // terminal }. `terminal` means both budgets are spent, so the board is on the
-  // slow crawl until the climber retries it or removes it.
+  // failureKind, retryAfterMs, transportFailures, lockFailures,
+  // structuralFailures, terminal }. `terminal` means the budget the last failure
+  // spent is exhausted, so the board is on the slow crawl until the climber
+  // retries it or removes it.
+  // `failureKind: 'database-locked'` with `lockFailures > 0` is the import losing
+  // the SQLite write lock (issue #4310) — its own budget precisely because the
+  // other two mis-handle it: transport is cleared by a retained artifact's
+  // zero-byte "download", and structural strands the board after two strikes for
+  // a fault the artifact did not cause. Query this series before changing
+  // SNAPSHOT_IMPORT_BATCH_ROWS: non-zero volume means the batched import is a
+  // real contender for the lock in the field, not just in theory.
   OfflineSnapshotRetryScheduled: 'Offline Snapshot Retry Scheduled',
   // Offline sync — a board that had previously failed the fast download got
   // back onto it. Props: { scopeKey, boardType, trigger, hadBoardCheckpoint }.

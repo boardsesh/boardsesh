@@ -779,7 +779,7 @@ describe('bootstrapScopeFromSnapshot', () => {
     ).rejects.toThrow(/format_version/);
   });
 
-  it('rolls back with no checkpoints when a wipe lands mid-import', async () => {
+  it('stops at the batch boundary with NO checkpoints when a wipe lands mid-import', async () => {
     const filePath = join(workDir, 'wipe.db');
     buildArtifact({
       filePath,
@@ -790,11 +790,18 @@ describe('bootstrapScopeFromSnapshot', () => {
     });
 
     // Flip the real wipe epoch the moment the stats INSERT runs (after the climbs
-    // INSERT already executed inside the transaction), simulating a full sign-out
-    // wipe cycle in flight. The final in-txn epoch check must then roll everything
-    // back — no imported rows, no checkpoints. Spy on the adapter PROTOTYPE: the
-    // import runs on the transaction's own connection (a separate adapter
-    // instance, mirroring expo), so an instance spy on `db` would never fire.
+    // batch already COMMITTED), simulating a full sign-out wipe cycle in flight.
+    //
+    // WHAT CHANGED WITH BATCHING (issue #4310): the climbs batch is its own
+    // committed transaction now, so its row SURVIVES. That is the benign half of
+    // scope-teardown.ts's asymmetry — rows without markers re-import
+    // idempotently and a teardown still removes them. What must NEVER survive is
+    // a checkpoint, because the strict `>` delta pull never revisits anything at
+    // or below a stamped cursor. Both checkpoints live in the final transaction,
+    // after every batch, so the wipe check that fires here stops before them.
+    // Spy on the adapter PROTOTYPE: the import runs on the transaction's own
+    // connection (a separate adapter instance, mirroring expo), so an instance
+    // spy on `db` would never fire.
     const adapterPrototype = Object.getPrototypeOf(db) as { runAsync: typeof db.runAsync };
     const realRunAsync = adapterPrototype.runAsync;
     let wiped = false;
@@ -815,10 +822,17 @@ describe('bootstrapScopeFromSnapshot', () => {
       bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: 'kilter:1:5', filePath }),
     ).rejects.toThrow();
 
-    expect(await countRows('board_climbs')).toBe(0);
-    expect(await countRows('board_climb_stats')).toBe(0);
+    // Both row batches had already passed their in-lock guard when the epoch
+    // moved, so both committed. The wipe is caught by the FINAL transaction's
+    // guard, before a single marker is written.
+    expect(await countRows('board_climbs')).toBe(1);
+    expect(await countRows('board_climb_stats')).toBe(1);
+    // The invariant that actually matters.
     expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toBeNull();
     expect(await getCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5')).toBeNull();
+    expect(
+      await db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', ['bootstrap-done:kilter:1:5']),
+    ).toBeNull();
   });
 
   it('aborts when a full wipe cycle completes during the pre-transaction integrity checks', async () => {
@@ -2751,6 +2765,15 @@ describe('pullSync bootstrap progress frames', () => {
     };
   }
 
+  /**
+   * The stage CAPTIONS a row shows, in order. The import stage emits many frames
+   * now that it commits in batches (issue #4310) — the sequence of stages is what
+   * these cases are about, and the fractions have their own case below.
+   */
+  function stageSequence(frames: SnapshotBootstrapProgress[]): string[] {
+    return frames.map((frame) => frame.stage).filter((stage, index, all) => stage !== all[index - 1]);
+  }
+
   it('emits manifest → download → import, all tagged with the scope key', async () => {
     const filePath = join(workDir, 'staged.db');
     buildArtifact({
@@ -2773,7 +2796,7 @@ describe('pullSync bootstrap progress frames', () => {
       onProgress: collector.onProgress,
     });
 
-    expect(collector.frames.map((frame) => frame.stage)).toEqual(['manifest', 'download', 'import']);
+    expect(stageSequence(collector.frames)).toEqual(['manifest', 'download', 'import']);
     expect(collector.frames.every((frame) => frame.scopeKey === 'kilter:1:5')).toBe(true);
     // Every snapshot payload rides on a bootstrap frame whose currentTable IS
     // its scope key, which is how a row matches it.
@@ -2855,7 +2878,58 @@ describe('pullSync bootstrap progress frames', () => {
     // The import still ran…
     expect(await db.getFirstAsync('SELECT uuid FROM board_climbs WHERE uuid = ?', ['c-legacy'])).not.toBeNull();
     // …and the row still gets its stage captions, just with no byte detail.
-    expect(collector.frames.map((frame) => frame.stage)).toEqual(['manifest', 'download', 'import']);
+    expect(stageSequence(collector.frames)).toEqual(['manifest', 'download', 'import']);
+  });
+
+  // Before #4310 the import stage emitted ONE frame with `fraction: null` — a
+  // 20-60s indeterminate spinner on Android — because the import was a single
+  // exclusive transaction with nowhere safe to emit from inside it. It commits in
+  // batches now, so the bar moves.
+  it('emits a determinate, non-decreasing import fraction that ends at 1', async () => {
+    const filePath = join(workDir, 'determinate-import.db');
+    buildArtifact({
+      filePath,
+      climbs: Array.from({ length: 6 }, (_unused, index) => ({
+        uuid: `det-${index}`,
+        compatibleSizeIds: [5],
+      })),
+      stats: Array.from({ length: 6 }, (_unused, index) => ({ climbUuid: `det-${index}`, angle: 40 })),
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const source = makeSnapshotSource({
+      manifest: makeManifest([
+        progressEntry({
+          tables: {
+            board_climbs: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '10', rowCount: 6 },
+            board_climb_stats: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '10', rowCount: 6 },
+          },
+        }),
+      ]),
+      fileForEntry: () => filePath,
+    });
+    const collector = collectSnapshotFrames();
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onProgress: collector.onProgress,
+    });
+
+    const importFractions = collector.frames.filter((frame) => frame.stage === 'import').map((frame) => frame.fraction);
+    expect(importFractions.length).toBeGreaterThan(1);
+    // Determinate from the first frame: no null anywhere in the stage.
+    expect(importFractions.every((fraction) => fraction !== null)).toBe(true);
+    // The stage-change frame is not suppressed by the throttle's monotonic rule
+    // even though it drops from download(1) to import(0) — snapshot-progress.ts
+    // exempts stage changes, and this is the assertion that pins it.
+    expect(importFractions[0]).toBe(0);
+    const monotonic = importFractions.every(
+      (fraction, index) => index === 0 || (fraction ?? 0) >= (importFractions[index - 1] ?? 0),
+    );
+    expect(monotonic).toBe(true);
+    expect(importFractions[importFractions.length - 1]).toBe(1);
   });
 
   it('emits ONE download stream for two sizes of the same layout (the artifact is downloaded once)', async () => {
@@ -2898,7 +2972,7 @@ describe('pullSync bootstrap progress frames', () => {
     // first frame proves scope A's throttle state did not suppress scope B.
     const byteFrames = collector.frames.filter((frame) => frame.stage === 'download' && (frame.fraction ?? 0) > 0);
     expect(byteFrames.every((frame) => frame.scopeKey === 'kilter:1:5')).toBe(true);
-    expect(collector.frames.filter((frame) => frame.scopeKey === 'kilter:1:6').map((frame) => frame.stage)).toEqual([
+    expect(stageSequence(collector.frames.filter((frame) => frame.scopeKey === 'kilter:1:6'))).toEqual([
       'manifest',
       'import',
     ]);
@@ -4229,6 +4303,46 @@ describe('bootstrapScopeGradesFromSnapshot', () => {
     expect(await getCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5')).toBeNull();
   });
 
+  it('surfaces the real error when the post-COMMIT BEGIN fails, instead of a masked ROLLBACK', async () => {
+    // Issue #4310 gave this function its own COMMIT (so `gradesLockMs` covers the
+    // hold) and a trailing empty BEGIN for the wrapper to close. That opened a
+    // window the pre-change shape did not have: a throw from that BEGIN meets
+    // expo's unconditional ROLLBACK with no transaction active, and "cannot
+    // rollback - no transaction is active" would MASK the error the caller
+    // dispatches on. The restore-BEGIN wrapper is what keeps the real cause.
+    await seedScopeClimb('c1');
+    const gradesPath = join(workDir, 'grades-post-commit-begin.db');
+    buildGradesArtifact({
+      filePath: gradesPath,
+      grades: [{ climbUuid: 'c1' }],
+      watermark: { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '10' },
+    });
+
+    const adapterPrototype = Object.getPrototypeOf(db) as { execAsync: typeof db.execAsync };
+    const realExecAsync = adapterPrototype.execAsync;
+    let commits = 0;
+    let failedBegins = 0;
+    vi.spyOn(adapterPrototype, 'execAsync').mockImplementation(async function (this: unknown, source: string) {
+      if (source === 'COMMIT') commits += 1;
+      // The exclusive transaction's COMMIT is the second one — the first closes
+      // the wrapper's deferred BEGIN in the preamble. Fail the BEGIN that follows
+      // it exactly ONCE, which is the transient shape the restore is for: a
+      // connection that cannot open ANY transaction masks the cause either way,
+      // same as the whole-layout import's own `.catch(() => {})`.
+      if (source === 'BEGIN' && commits >= 2 && failedBegins === 0) {
+        failedBegins += 1;
+        throw new Error('post-commit BEGIN exploded');
+      }
+      return realExecAsync.call(this, source);
+    } as typeof db.execAsync);
+
+    await expect(
+      bootstrapScopeGradesFromSnapshot({ db, scope: SCOPE, scopeKey: 'kilter:1:5', filePath: gradesPath }),
+    ).rejects.toThrow(/post-commit BEGIN exploded/);
+
+    vi.restoreAllMocks();
+  });
+
   it('leaves the deletions checkpoint alone — grades have no delete trigger to replay', async () => {
     await seedScopeClimb('c1');
     const deletionsCursor = { updatedAt: '2026-07-01T00:00:00Z', syncSeq: '500' };
@@ -4928,9 +5042,11 @@ describe('pullSync bootstrap teardown reporting', () => {
   it('reports a SnapshotWipedError from the import as an abort, not a failure', async () => {
     const filePath = join(workDir, 'wiped-mid-import.db');
     buildScopeArtifact(filePath);
-    // Bump the epoch the moment the stats INSERT runs — inside the exclusive
-    // transaction, after bootstrapScopeFromSnapshot captured its start epoch, so
-    // the post-import guard raises SnapshotWipedError and rolls everything back.
+    // Bump the epoch the moment the stats INSERT runs — after
+    // bootstrapScopeFromSnapshot captured its start epoch, so the next batch's
+    // in-lock guard raises SnapshotWipedError. Since #4310 the climbs batch has
+    // already COMMITTED by then, so its row survives; what must not survive is a
+    // checkpoint, and neither may the retry budget move.
     // Prototype spy: the import runs on the transaction's own adapter instance.
     const adapterPrototype = Object.getPrototypeOf(db) as { runAsync: typeof db.runAsync };
     const realRunAsync = adapterPrototype.runAsync;
@@ -4970,9 +5086,9 @@ describe('pullSync bootstrap teardown reporting', () => {
         expected: true,
       }),
     );
-    // The transaction rolled back and the budget is untouched.
-    expect(await countRows('board_climbs')).toBe(0);
+    // Rows without markers is the benign direction; the budget is untouched.
     expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toBeNull();
+    expect(await getCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5')).toBeNull();
     expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
   });
 

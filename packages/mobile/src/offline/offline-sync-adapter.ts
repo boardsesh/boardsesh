@@ -314,6 +314,20 @@ export const reportScopeDownloadAbandonedOnDisable = ({ scopeKey }: { scopeKey: 
 // required filter for snapshot-vs-paged percentile comparisons (a healed scope's
 // duration excludes the paged work earlier cycles did) — it was computed and
 // then silently dropped here, which made that comparison unanswerable.
+// The import split (issue #4310) follows the SAME absent-when-unknown rule, and
+// for the same reason: a cycle that ran no import did not spend that time, and
+// most completions are exactly that. `importLockMaxMs` is the longest single
+// exclusive-transaction hold — the worst case a concurrent user write has to
+// survive (#4314) — and is the number this change is judged on; query the six
+// `import*` props with `importMs IS NOT NULL` or the p90 is dominated by
+// import-free cycles.
+// `gradesDownloadMs` / `gradesVerifyMs` / `gradesLockMs` close the other half:
+// `importGradesForScope` runs its own transfer and its own exclusive
+// transaction, and neither was visible in any phase field, which is most of the
+// ~11s p50 gap between `durationMs` and the sum of the phases. Those three take
+// their OWN `IS NOT NULL` filter, NOT `importMs` — the grades retrofit path fires
+// them for an already-bootstrapped scope in a cycle with no whole-layout import,
+// which is the still-crawling population of #4719.
 const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
   scopeKey,
   method,
@@ -344,6 +358,15 @@ const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
     gradesPullMs: phases.gradesPullMs,
     ...(phases.gradesRows === undefined ? {} : { gradesRows: phases.gradesRows }),
     ...(phases.gradesArtifactRows === undefined ? {} : { gradesArtifactRows: phases.gradesArtifactRows }),
+    ...(phases.importVerifyMs === undefined ? {} : { importVerifyMs: phases.importVerifyMs }),
+    ...(phases.importReconcileMs === undefined ? {} : { importReconcileMs: phases.importReconcileMs }),
+    ...(phases.importRowsMs === undefined ? {} : { importRowsMs: phases.importRowsMs }),
+    ...(phases.importLockMaxMs === undefined ? {} : { importLockMaxMs: phases.importLockMaxMs }),
+    ...(phases.importLockWaitMs === undefined ? {} : { importLockWaitMs: phases.importLockWaitMs }),
+    ...(phases.importBatches === undefined ? {} : { importBatches: phases.importBatches }),
+    ...(phases.gradesDownloadMs === undefined ? {} : { gradesDownloadMs: phases.gradesDownloadMs }),
+    ...(phases.gradesVerifyMs === undefined ? {} : { gradesVerifyMs: phases.gradesVerifyMs }),
+    ...(phases.gradesLockMs === undefined ? {} : { gradesLockMs: phases.gradesLockMs }),
     // Stamped so the funnel stays readable once #4312 bakes the flag on: the
     // engine gate, not the raw flag value.
     offlineEngineEnabled: isOfflineEngineEnabled(),

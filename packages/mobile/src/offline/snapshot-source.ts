@@ -516,6 +516,14 @@ async function downloadSnapshotFile(
     // rather than a counted bootstrap attempt — so trusting the sidecar here
     // cannot strand a scope. The size is re-checked all the same: a survivor the
     // OS truncated under storage pressure carries a sidecar that now lies.
+    //
+    // ZERO BYTES MOVED IS LOAD-BEARING for the caller (issue #4310). This path
+    // still counts as a successful download, so `clearTransportFailures` runs
+    // against a file that demonstrated nothing about the network — which is why a
+    // lock-contention import failure is charged to its own bounded `lockFailures`
+    // budget rather than to transport. On transport it would be reset here every
+    // cycle and never terminate, and a fresh scope would keep skipping its paged
+    // crawl on the short cooldown: no board, by either path, ever.
     if (artifact.retainAs && destination.exists && hasCompleteSidecar(destination, artifact.retainAs.builtAt)) {
       if (artifact.expectedDecodedBytes === undefined || destination.size === artifact.expectedDecodedBytes) {
         return { filePath: toSqlitePath(destination.uri), reused: true };

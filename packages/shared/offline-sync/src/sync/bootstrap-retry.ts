@@ -19,6 +19,18 @@
 //                       the OS killed by suspending us is free for its first
 //                       three tries and charged here after that — see
 //                       `recordBackgroundPause` (issue #4390).
+//   database-locked     the import lost the SQLite write lock (issue #4310).
+//                       Its own budget, because it belongs to neither of the
+//                       others: nothing about a lost race says the artifact is
+//                       bad, and nothing about it says the network is. Crucially
+//                       it is NOT the transport budget, which any successful
+//                       download clears — and a RETAINED artifact "downloads"
+//                       by handing back a file already on disk, moving zero
+//                       bytes, so a transport-charged lock failure could be
+//                       reset every cycle and never terminate. 3 failures on
+//                       the transport ladder's cooldowns, then the scope settles
+//                       onto the paged crawl. Never re-armed by a new `builtAt`:
+//                       tonight's export cannot win a lock race either.
 //   structural-artifact the bytes are on disk and provably bad (quick_check,
 //                       snapshot_meta mismatch, import throw). Tonight's export
 //                       might fix it, so a NEW `builtAt` may re-arm the budget —
@@ -31,8 +43,10 @@
 //
 // Worst-case lifetime artifact downloads per scope: 3 (transport) + 2
 // (structural) + 2 (the one re-armed structural round) = 7, each separated by at
-// least one cooldown rung. `snapshot-bootstrap.test.ts` pins that number so any
-// future loosening shows up in a diff.
+// least one cooldown rung. `database-locked` adds no downloads at all — it fires
+// on bytes already on disk, and the retained-artifact path does not delete
+// them. `snapshot-bootstrap.test.ts` pins that number so any future loosening
+// shows up in a diff.
 //
 // ROLLBACK SAFETY. `bootstrap-retry:<scopeKey>` is the source of truth, but every
 // write ALSO mirrors the legacy `bootstrap-attempts:` / `-healed:` /
@@ -48,6 +62,7 @@
 
 import type { OfflineDatabase, SqlExecutor } from '../database';
 import { isNetworkError } from '../mutation-queue/error-classification';
+import { classifySqliteLockError } from '../db/lock-errors';
 
 // --- sync_meta keys -----------------------------------------------------------
 //
@@ -83,6 +98,27 @@ export const MAX_BOOTSTRAP_ATTEMPTS = 2;
 export const MAX_TRANSPORT_DOWNLOAD_FAILURES = 3;
 
 /**
+ * Lock-contention import failures a scope may spend before it settles onto the
+ * paged crawl (issue #4310).
+ *
+ * This budget exists because neither of the other two can hold a lock failure
+ * safely. `structural-artifact` strands the scope after TWO strikes and deletes
+ * the ~103 MB file on the retained-artifact path, for a failure the artifact did
+ * not cause. `transport` is worse in the other direction: `clearTransportFailures`
+ * resets it after any successful download, and a RETAINED artifact is handed back
+ * off disk with zero bytes moved — so a device with persistent write-lock
+ * contention would charge 1, get reset, charge 1, get reset, forever, never
+ * reaching the cap that lets `shouldSkipPagedPull` fall through to the crawl. The
+ * board would then be unreachable by BOTH paths, which is strictly worse than the
+ * pre-batching behaviour this escape was added to fix.
+ *
+ * 3 rather than 2: contention is transient by nature, and the cooldown ladder
+ * below already spaces the tries out. When it is spent the scope is terminal, so
+ * the paged crawl runs — the board still becomes available offline, just slowly.
+ */
+export const MAX_BOOTSTRAP_LOCK_FAILURES = 3;
+
+/**
  * Consecutive download-stage backgrounding pauses a scope gets for free before
  * the transport ladder takes over (issue #4390).
  *
@@ -103,6 +139,14 @@ const HOUR_MS = 3_600_000;
 
 /** Cooldown after the 1st, 2nd, 3rd… consecutive transport failure. */
 const TRANSPORT_COOLDOWNS_MS = [2 * MINUTE_MS, 15 * MINUTE_MS, 2 * HOUR_MS] as const;
+/**
+ * Cooldown after the 1st, 2nd, 3rd lock-contention import failure. The transport
+ * rungs, deliberately: the contending writer — a tick, a favourite, another
+ * layout's `removeBoardScopeData` — is finished in seconds to minutes, so a short
+ * first retry is the one most likely to succeed, and the third rung is moot
+ * because the third failure is terminal.
+ */
+const LOCK_COOLDOWNS_MS = TRANSPORT_COOLDOWNS_MS;
 /** Cooldown after the 1st, 2nd… structural failure. */
 const STRUCTURAL_COOLDOWNS_MS = [6 * HOUR_MS, 24 * HOUR_MS] as const;
 
@@ -122,7 +166,7 @@ const LEGACY_MIGRATION_SPREAD_MS = 2 * HOUR_MS;
 
 // --- State --------------------------------------------------------------------
 
-export type BootstrapFailureKind = 'transport' | 'structural-artifact' | 'structural-device';
+export type BootstrapFailureKind = 'transport' | 'database-locked' | 'structural-artifact' | 'structural-device';
 
 export type BootstrapRetryState = {
   /** Consecutive download-stage transport failures; any success resets it to 0. */
@@ -134,6 +178,15 @@ export type BootstrapRetryState = {
    * download that finished proves the device can finish one.
    */
   readonly backgroundPauses: number;
+  /**
+   * Lock-contention import failures spent (issue #4310). Deliberately NOT
+   * touched by `clearTransportFailures`: a retained artifact is handed back off
+   * disk with zero bytes moved, so a "successful download" demonstrates nothing
+   * about whether the import can win the write lock. Nothing but the climber's
+   * explicit retry clears it — a completed import ends bootstrapping for the
+   * scope outright, so there is no success to reset it against.
+   */
+  readonly lockFailures: number;
   /** Structural failures spent from the current (possibly re-armed) budget. */
   readonly structuralFailures: number;
   /** Structural budgets granted by a newly built artifact, lifetime. */
@@ -170,6 +223,7 @@ export type BootstrapRetryState = {
 export const EMPTY_BOOTSTRAP_RETRY_STATE: BootstrapRetryState = {
   transportFailures: 0,
   backgroundPauses: 0,
+  lockFailures: 0,
   structuralFailures: 0,
   structuralRearms: 0,
   lastFailureKind: null,
@@ -184,19 +238,48 @@ export const EMPTY_BOOTSTRAP_RETRY_STATE: BootstrapRetryState = {
 // --- Pure decisions -----------------------------------------------------------
 
 /**
- * Which budget a failure spends. Import-stage failures are always
- * `structural-artifact`: the bytes are already on disk, so nothing about them is
- * a network problem, and a rebuilt artifact is the one thing that could fix it.
- * Anything else transport-shaped (`isNetworkError`, the same predicate the
- * mutation drainer uses to keep a mutation off the dead-letter path) is
- * `transport`; everything remaining is attributed to the device, which is the
- * conservative default because a plain `Error` from an adapter's downloader
- * cannot be told apart from a disk-full or cache-dir fault.
+ * Which budget a failure spends. Import-stage failures are `structural-artifact`
+ * unless they are lock contention: the bytes are already on disk, so nothing
+ * about them is a network problem, and a rebuilt artifact is the one thing that
+ * could fix it. Anything else transport-shaped (`isNetworkError`, the same
+ * predicate the mutation drainer uses to keep a mutation off the dead-letter
+ * path) is `transport`; everything remaining is attributed to the device, which
+ * is the conservative default because a plain `Error` from an adapter's
+ * downloader cannot be told apart from a disk-full or cache-dir fault.
+ *
+ * THE LOCK ESCAPE (issue #4310). A "database is locked" says nothing about the
+ * artifact — a rebuilt one would lose the same race. Before
+ * batching that barely mattered: the import took the lock once, for the whole
+ * import. Now it takes it once per batch (~143 times for a Kilter layout)
+ * against writers that genuinely exist, including a `removeBoardScopeData` for a
+ * DIFFERENT layout that runs longer than the import connection's busy_timeout.
+ * Charging those to the structural budget would strand a board on the paged
+ * crawl after two lost races — `MAX_BOOTSTRAP_ATTEMPTS` is 2 and there is at
+ * most one lifetime re-arm — which remove-offline-board.ts already documents as
+ * a live hazard for VACUUM.
+ *
+ * It gets its OWN budget rather than riding `transport`, because `transport` is
+ * cleared by any successful download and a RETAINED artifact "succeeds" by
+ * handing back a file already on disk with zero bytes moved. On the transport
+ * budget, persistent contention would charge 1, get reset by the next cycle's
+ * reuse, charge 1 again, and never reach the cap — while `shouldSkipPagedPull`
+ * kept skipping the crawl on the ~2-minute cooldown, leaving the board
+ * unreachable by both paths forever. See `MAX_BOOTSTRAP_LOCK_FAILURES`.
+ *
+ * DELIBERATELY NOT GATED ON `stage === 'import'`, even though the import is the
+ * only stage that takes a write lock today. The bucket is named by CAUSE, not by
+ * stage, and the fallthrough for an ungated lock error is `structural-device` —
+ * the harshest bucket there is: two strikes, never re-armed by a new `builtAt`.
+ * Charging transient contention there would be strictly worse than charging the
+ * lock budget, which costs no downloads and re-tries three times. So if a future
+ * change ever does put a write on the manifest or download stage, landing here is
+ * the outcome to want, not the one to guard against.
  */
 export function classifyBootstrapFailure(input: {
   cause: unknown;
   stage: 'manifest' | 'download' | 'import';
 }): BootstrapFailureKind {
+  if (classifySqliteLockError(input.cause).locked) return 'database-locked';
   if (input.stage === 'import') return 'structural-artifact';
   // Keep this module dependency-neutral: snapshot-bootstrap imports the retry
   // constants below at module initialization time. The mobile adapter converts
@@ -218,7 +301,9 @@ export function classifyBootstrapFailure(input: {
 /** Either budget exhausted: the scope has settled onto the paged crawl. */
 export function isTerminal(state: BootstrapRetryState): boolean {
   return (
-    state.transportFailures >= MAX_TRANSPORT_DOWNLOAD_FAILURES || state.structuralFailures >= MAX_BOOTSTRAP_ATTEMPTS
+    state.transportFailures >= MAX_TRANSPORT_DOWNLOAD_FAILURES ||
+    state.lockFailures >= MAX_BOOTSTRAP_LOCK_FAILURES ||
+    state.structuralFailures >= MAX_BOOTSTRAP_ATTEMPTS
   );
 }
 
@@ -233,6 +318,9 @@ export function canRearmOnNewArtifact(state: BootstrapRetryState): boolean {
     state.lastFailureKind === 'structural-artifact' &&
     state.structuralFailures >= MAX_BOOTSTRAP_ATTEMPTS &&
     state.transportFailures < MAX_TRANSPORT_DOWNLOAD_FAILURES &&
+    // A spent lock budget is not artifact-attributable either: tonight's export
+    // cannot win a write-lock race the last one lost (issue #4310).
+    state.lockFailures < MAX_BOOTSTRAP_LOCK_FAILURES &&
     state.structuralRearms < MAX_STRUCTURAL_REARMS
   );
 }
@@ -269,6 +357,17 @@ export function nextRetryState(input: {
       lastFailureKind: 'transport',
       hasPriorSnapshotFailure: true,
       retryAfter: now + cooldownFor(TRANSPORT_COOLDOWNS_MS, transportFailures, random),
+    };
+  }
+
+  if (failureKind === 'database-locked') {
+    const lockFailures = state.lockFailures + 1;
+    return {
+      ...state,
+      lockFailures,
+      lastFailureKind: 'database-locked',
+      hasPriorSnapshotFailure: true,
+      retryAfter: now + cooldownFor(LOCK_COOLDOWNS_MS, lockFailures, random),
     };
   }
 
@@ -335,6 +434,12 @@ export function recordBackgroundPause(input: {
  * A successful download clears the consecutive-transport counter and its
  * cooldown — and the free-pause counter with them: bytes that landed are proof
  * this device can finish a transfer, whatever happened on the way there.
+ *
+ * It does NOT clear `lockFailures`, and that omission is the whole point of that
+ * counter existing (issue #4310). The caller runs this after every successful
+ * download including a RETAINED one, which moves zero bytes — so a reset here
+ * would mean a lock-contention failure could never accumulate to its cap, and a
+ * fresh scope would sit on a 2-minute cooldown skipping its paged crawl forever.
  */
 export function clearTransportFailures(state: BootstrapRetryState): BootstrapRetryState {
   if (state.transportFailures === 0 && state.backgroundPauses === 0 && state.retryAfter === null) return state;
@@ -502,10 +607,15 @@ export function parseBootstrapRetryState(raw: string): BootstrapRetryState | nul
     // rewrote after a rollback: 0 is exactly the pre-#4390 behaviour (unbounded
     // free pauses), not a corruption.
     backgroundPauses: readNumber(parsed.backgroundPauses, 0),
+    // Absent on every row written before #4310, and on any row an older bundle
+    // rewrote after a rollback. 0 is the pre-#4310 behaviour (the failure was
+    // charged structurally instead), not a corruption.
+    lockFailures: readNumber(parsed.lockFailures, 0),
     structuralFailures: readNumber(parsed.structuralFailures, 0),
     structuralRearms: readNumber(parsed.structuralRearms, 0),
     lastFailureKind:
       lastFailureKind === 'transport' ||
+      lastFailureKind === 'database-locked' ||
       lastFailureKind === 'structural-artifact' ||
       lastFailureKind === 'structural-device'
         ? lastFailureKind
@@ -605,6 +715,10 @@ export async function writeBootstrapRetryState(
   scopeKey: string,
   state: BootstrapRetryState,
 ): Promise<BootstrapRetryState> {
+  // A lock-terminal scope (issue #4310) mirrors as a spent structural budget,
+  // which is the honest rollback posture: an older bundle has no `lockFailures`
+  // field and charged the same failure structurally, so "terminal, on the paged
+  // crawl" is exactly what it should read.
   const terminal = isTerminal(state);
   const legacyAttempts = terminal
     ? MAX_BOOTSTRAP_ATTEMPTS

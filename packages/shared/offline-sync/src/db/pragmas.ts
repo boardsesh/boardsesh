@@ -67,11 +67,27 @@ export const OFFLINE_DB_WAL_SWITCH_TIMEOUT_MS = 250;
 
 /**
  * The `busy_timeout` for a RETRY of a local write whose first attempt already
- * waited out its whole window. Shorter on purpose: measured import windows
- * (`Offline Board Download Completed.importMs`, p50 806ms / max 3.2s over 60
- * days) all fit inside attempt 1, so a second full wait buys almost nothing —
- * this attempt asks "did the lock clear in the retry gap?" and gets out of the
- * log-ascent sheet's way if it did not.
+ * waited out its whole window. Shorter on purpose: this attempt asks "did the
+ * lock clear in the retry gap?" and gets out of the log-ascent sheet's way if it
+ * did not.
+ *
+ * WHAT THIS IS NOT SIZED FROM ANY MORE (issue #4310). This docblock used to cite
+ * "`Offline Board Download Completed.importMs`, p50 806ms / max 3.2s over 60
+ * days" as proof that every import fits inside attempt 1. That window never
+ * existed: `importMs` was first emitted by #4337/#4345 on 2026-08-12 and this
+ * constant was written on 2026-08-14, so at most two days of the series were
+ * ever readable. The live fleet reads p50 2,944ms / p90 21,988ms / max 253,939ms
+ * — and even that is the wrong quantity, because `importMs` is stamped around
+ * ATTACH + `PRAGMA quick_check` over a 271 MB file + two full `COUNT(*)` scans +
+ * the scoped watermark reads + the write transaction, and every one of those but
+ * the last runs in AUTOCOMMIT holding no lock at all.
+ *
+ * How long the import actually HELD the write lock has never been measured. The
+ * batched importer added for #4310 emits `importLockMaxMs` — the longest single
+ * exclusive hold — which is the first number this ladder can honestly be sized
+ * against. Until that series has fleet coverage, treat the ladder as sized for a
+ * holder of one import batch (SNAPSHOT_IMPORT_BATCH_ROWS rows), not for a whole
+ * import.
  */
 export const OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS = 1500;
 
@@ -96,6 +112,43 @@ export const OFFLINE_DB_FALLBACK_BUSY_TIMEOUT_MS = 1000;
  */
 export async function applyBusyTimeout(db: SqlExecutor, timeoutMs = OFFLINE_DB_BUSY_TIMEOUT_MS): Promise<void> {
   await db.execAsync(`PRAGMA busy_timeout = ${timeoutMs}`);
+}
+
+/**
+ * Loosen durability for the life of ONE bulk-import connection: `synchronous =
+ * NORMAL` instead of the default FULL.
+ *
+ * Why the batched snapshot import needs it (issue #4310). Splitting a ~710k-row
+ * Kilter import into ~142 short exclusive transactions replaces one fsync with
+ * ~142 of them under FULL, which would make the import slower than the single
+ * mega-transaction it replaces. NORMAL is what keeps the batching a win rather
+ * than a regression, so the two ship together.
+ *
+ * Why it is safe here, in the order the questions get asked:
+ *  - PER CONNECTION, not persisted, and that connection is short-lived. Unlike
+ *    `journal_mode`, which lives in the database file header (see the module
+ *    header above), `synchronous` is a connection setting — and the only caller
+ *    applies it inside `withExclusiveTransactionAsync`, which expo-sqlite runs
+ *    on a connection it opens (`useNewConnection: true`) and tears down when the
+ *    task returns. So there is no pooled slot to leave loosened: every other
+ *    connection, the app's main one included, stays at FULL, and the loosened
+ *    one stops existing when the import ends.
+ *  - IN WAL, NORMAL CANNOT CORRUPT. It only stops fsyncing the WAL on each
+ *    commit, so a power loss or OS crash can lose transactions committed in the
+ *    last moments before it. The WAL is replayed to its last VALID frame, so a
+ *    later commit can never survive an earlier one being lost — which is exactly
+ *    what makes "rows in earlier transactions, checkpoints stamped in the last
+ *    one" safe: losing the tail can never leave a checkpoint without its rows.
+ *  - LOSING THE TAIL COSTS NOTHING. The artifact is retained on disk with its
+ *    `.complete` sidecar and every statement is `INSERT OR REPLACE`, so a
+ *    re-import is idempotent and re-does only what was lost.
+ *
+ * Must run in AUTOCOMMIT: SQLite rejects the pragma inside a transaction with
+ * "Safety level may not be changed inside a transaction" rather than silently
+ * ignoring it, so a misplaced call fails loudly instead of quietly leaving FULL.
+ */
+export async function applyBulkImportPragmas(db: SqlExecutor): Promise<void> {
+  await db.execAsync('PRAGMA synchronous = NORMAL');
 }
 
 /**

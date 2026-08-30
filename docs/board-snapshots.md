@@ -448,31 +448,67 @@ sync if the code comment changes):
 | download fails or returns `null`, anything else                      | `structural-device`     | 6 h ladder; crawl runs                                                                    |
 | download throws `SnapshotPermanentMissError`                         | `structural-device`     | full bytes were spent; bounded retry ladder, with paged progress this cycle               |
 | import throws — corrupt/short artifact, row-count/format mismatch    | `structural-artifact`   | 6 h ladder; a new `builtAt` may re-arm it once                                            |
+| import loses the write lock (`SQLITE_BUSY`/locked) after its ladder  | `database-locked`       | own 3-strike budget on the 2 min ladder; artifact kept; never re-armed by a new build     |
 | import throws `SnapshotSchemaStaleError`                             | **no**                  | permanent miss this run → normal paged pull                                               |
 | import throws `SnapshotWatermarkRegressionError`                     | `structural-artifact`   | nothing written → normal paged pull; 6 h ladder; reported `expected: false`               |
 | a sign-out wipe is detected mid-phase                                | **no**                  | whole phase bails, mirrors `syncTable`'s wipe guard                                       |
 | success                                                              | transport counter reset | marked done; deletions rewound; paged pull runs as a small delta from scoped watermarks   |
 
-Resumable / ranged artifact downloads are **not** in scope here — artifacts ship gzip-encoded and rely on
-the native stack to decode, so byte-offset resume needs a JS gunzipper (a native dependency, OTA-forbidden).
-That is issue #4310's; when it lands, the transport ladder's first rung should drop, because a resumed
-attempt is cheap.
+The `transport counter reset` on that last row is why `database-locked` is not a transport failure: a
+retained artifact reaches it having moved zero bytes.
 
-**Import mechanics** (`bootstrapScopeFromSnapshot`): `ATTACH`es the downloaded file as `bs_snapshot`, runs
+Resumable / ranged artifact downloads are **not deliverable client-side**, and are nobody's open work item.
+Artifacts ship gzip-encoded and rely on the native stack to decode, so byte-offset resume would need a JS
+gunzipper (a native dependency, OTA-forbidden) — and the CDN measurement in
+"Why continuation and not persisted pause/resume" below proves `Range` addresses ENCODED bytes while both
+platforms write DECODED bytes to disk. This paragraph used to assign resume to issue #4310 while the same
+document disproved it a few hundred lines down. The cheap-failed-transfer problem it was reaching for is
+real (26–31% of Kilter transfers fail and discard ~99 MB); the answer is artifact **sharding**, tracked in
+issue #4721 with its trigger condition named.
+
+**Import mechanics** (`bootstrapScopeFromSnapshot`). Since issue #4310 the import is **not one
+transaction**. It is an autocommit preamble, then a sequence of short exclusive transactions with the lock
+released between every one of them.
+
+_Autocommit preamble, holding no lock:_ `ATTACH`es the downloaded file as `bs_snapshot`, runs
 `PRAGMA quick_check` (rejects a truncated/corrupt file before touching any row), verifies `snapshot_meta`
 (format version, schema version, and that `row_count` matches the artifact's actual row count — catches a
 truncated download the integrity check alone might miss), computes watermarks from the exact scoped rows
-inside the artifact, then in **one exclusive transaction**:
+inside the artifact, applies `busy_timeout` and `synchronous = NORMAL`
+(`applyBulkImportPragmas` — the pragma is rejected inside a transaction, and without it every batch commit
+would pay an fsync), and stages this scope's climb UUIDs into a TEMP table. Every refusal — stale schema,
+watermark regression, bad meta — happens here, so a refused artifact still writes exactly zero rows.
 
-- Deletes stale local `board_climbs`/`board_climb_stats` rows for this scope whose cursors are at or
-  before the scoped watermarks but absent from the artifact. This keeps a later bootstrap from overlaying a
-  newer artifact on top of rows that vanished from the exported scope.
-- Imports `board_climbs` filtered by the scope — `board_type = ? AND layout_id = ?`, plus (for
-  size-scoped boards; MoonBoard is the one exception, `isSizeScopedBoard`) a `json_each` membership check
-  against `compatible_size_ids`, mirroring the resolver's `boardClimbsScope` exactly.
-- Imports `board_climb_stats` via a correlated `EXISTS` against the just-scoped `board_climbs`, mirroring
-  the resolver's semi-join.
-- Stamps both table checkpoints at the scoped imported-row watermarks.
+_Then, one short exclusive transaction at a time:_
+
+- **Reconcile** (its own transaction). Deletes stale local `board_climbs`/`board_climb_stats` rows for this
+  scope whose cursors are at or before the scoped watermarks but absent from the artifact. This keeps a
+  later bootstrap from overlaying a newer artifact on top of rows that vanished from the exported scope.
+  Still **unbatched**: cheap on a fresh scope, unbounded on a heal-over-partial (#4313) or a second size of
+  an already-downloaded layout, which is why it is reported separately as `importReconcileMs`.
+- **N row transactions** of `SNAPSHOT_IMPORT_BATCH_ROWS` (5,000) rows each. `board_climbs` is filtered by
+  the scope — `board_type = ? AND layout_id = ?`, plus (for size-scoped boards; MoonBoard is the one
+  exception, `isSizeScopedBoard`) a `json_each` membership check against `compatible_size_ids`, mirroring
+  the resolver's `boardClimbsScope` exactly; that is what the TEMP staging table holds, so the membership
+  parse is paid once instead of once per stats row. `board_climb_stats` is scoped by a semi-join against
+  that staging table — the same set the correlated `EXISTS` over the artifact used to select — and batched
+  on its PRIMARY KEY with SQLite **row-value** syntax, `board_type = ? AND (climb_uuid, angle) > (?, ?)`.
+  The row-value form is load-bearing: the expanded `a > ? OR (a = ? AND b > ?)` shape re-scans the whole
+  `board_type` partition on every batch (verified with `EXPLAIN QUERY PLAN`), which would make a batched
+  import slower than the single statement it replaces. A test pins the query plan.
+- **A final transaction** stamping both table checkpoints at the scoped imported-row watermarks and
+  rewinding the deletions cursor.
+
+**The invariant that replaces all-or-nothing.** Rows can now be committed without checkpoints; checkpoints
+can never be committed without their rows, because they live only in the final transaction. That asymmetry
+is the one `scope-teardown.ts` is written around: rows without markers is benign (the next bootstrap
+re-imports over them, `INSERT OR REPLACE` is idempotent, and a teardown still removes them), markers
+without rows is unrecoverable, because the strict `>` delta pull never revisits anything at or below a
+stamped cursor. `synchronous = NORMAL` is safe under the same rule — WAL is replayed to its last valid
+frame, so a later commit can never survive an earlier one being lost.
+
+The final transaction also:
+
 - **Rewinds the deletions checkpoint** to the artifact's `sync_deletions` replay boundary with deletion
   cursor `syncSeq = '0'`, in the _same_ transaction as the import. Deletion cursors page over deletion-row
   ids, not board table `sync_seq` values. A 30-second stability boundary alone is not safe: a delete
@@ -483,8 +519,8 @@ inside the artifact, then in **one exclusive transaction**:
   ordinary users only for same-role sessions, so production writers and the exporter deliberately share
   one DB role. Any other-role client fails the optimization closed. Prepared transactions are absent from
   `pg_stat_activity`, so their presence does too. Old artifacts and malformed/missing/future optional
-  metadata fall back to the older scoped row watermark. Rewind and imported rows commit together so a
-  crash cannot permanently strand tombstones against the freshly-imported scope.
+  metadata fall back to the older scoped row watermark. Rewind and checkpoints commit together, and after
+  every row batch, so a crash cannot permanently strand tombstones against the freshly-imported scope.
 
 The following deletions pull applies each fetched tombstone page **and that page's checkpoint** in one
 SQLite exclusive transaction. Playlist-child cleanup, resurrection guards, and composite-key validation
@@ -494,11 +530,49 @@ first rewrites its current deletion cursor to acquire SQLite's writer lock, then
 epoch. It checks again before publishing the fetched cursor; a purge that wins the lock makes the page roll
 back, while a purge that starts after the page owns the lock necessarily clears the cursor after commit.
 
-**Wipe-epoch guard**: a sign-out wipe can start (or fully complete) across any of the `await`s above. The
-bootstrap captures the monotonic wipe epoch before its first `await` and re-checks it (and the
-signing-out flag) before the transaction, and again after the import completes but before commit. Any
-mismatch throws `SnapshotWipedError`, rolling the transaction back — no rows, no checkpoints — and the
-pull-client treats it as a bail-out, not a counted failure.
+**Wipe-epoch guard**: a sign-out wipe or a scope purge can start (or fully complete) across any of the
+`await`s above. The bootstrap captures the monotonic wipe epoch before its first `await`, re-checks it (and
+the signing-out flag) in the preamble, and again **inside every exclusive transaction, after the lock is
+held**. Holding the lock first is what makes it sound: `beginScopePurge` latches before its delete
+transaction takes the lock, so either a batch wins the lock and commits (and the purge's own DELETE then
+removes what it wrote), or the purge wins and the batch reads the latch and bails. A mismatch throws
+`SnapshotWipedError` — possibly leaving committed rows, never a checkpoint — and the pull-client treats it
+as a bail-out, not a counted failure.
+
+**A lost lock race is not a bad artifact.** Batching turns one lock acquisition into ~143 against writers
+that genuinely exist, so a batch that loses `BEGIN EXCLUSIVE` outright retries on a short ladder
+(250/750/2000 ms), and a lock-shaped import failure is classified `database-locked` — its **own** budget,
+`MAX_BOOTSTRAP_LOCK_FAILURES = 3`, on the transport cooldown rungs. The retained artifact is not deleted on
+that path either.
+
+Neither existing budget could hold it. `structural-artifact` strands the board after two strikes and
+deletes the ~103 MB file, for a fault the artifact did not cause. `transport` fails the other way:
+`clearTransportFailures` runs after every successful download, and a **retained** artifact is handed back
+off disk with zero bytes moved — so a device with persistent write-lock contention would charge 1, get
+reset, charge 1, forever, never reaching a cap, while `shouldSkipPagedPull` kept skipping the crawl on the
+2-minute cooldown. The board would be unreachable by _both_ paths. With its own counter the third failure is
+terminal, so the paged crawl runs and the board still lands, slowly. A new `builtAt` does **not** re-arm it:
+tonight's export cannot win a lock race either.
+
+**Import telemetry** (`Offline Board Download Completed`, all absent-when-unknown). Two different filters:
+
+- The six `import*` props — filter on `importMs IS NOT NULL`. `importVerifyMs` (the autocommit preamble),
+  `importReconcileMs`, `importRowsMs`, `importBatches`, `importLockWaitMs`, and `importLockMaxMs` — the
+  longest SINGLE exclusive hold, which is the number to read before changing the batch size or the
+  local-write retry ladder. `importMs` itself is the whole call and was never a lock hold; two in-repo retry
+  ladders were once sized as if it were.
+- The three `grades*` props (`gradesDownloadMs`, `gradesVerifyMs`, `gradesLockMs`) — filter each on its own
+  `IS NOT NULL`, **not** on `importMs`. The grades retrofit path imports grades for a scope that is already
+  bootstrapped, in a cycle with no whole-layout import, and that is exactly the still-crawling population
+  issue #4719 is about. The grades import is still one unbatched exclusive transaction.
+
+`importLockMaxMs` is stamped from after `BEGIN EXCLUSIVE` succeeds, so it is a hold and never a wait; the
+wait (busy_timeout blocking plus the retry ladder's sleeps) is reported separately as `importLockWaitMs` and
+subtracted out of `importReconcileMs`/`importRowsMs`. One cost does stay inside the holds: SQLite attempts a
+WAL autocheckpoint at COMMIT and the engine leaves the 1000-page default in place, so where the single
+pre-#4310 transaction paid that once at the end, a minority of batches now pay a passive checkpoint inside
+their COMMIT. Read the `importLockMaxMs` tail with that in mind rather than against the ~150 ms typical
+batch `SNAPSHOT_IMPORT_BATCH_ROWS` is sized from.
 
 **Query-cache invalidation**: because the delta pull that follows a successful bootstrap may legitimately
 return zero documents (the snapshot already satisfied the scope), and `syncTable`'s cache invalidation only

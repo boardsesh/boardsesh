@@ -34,7 +34,8 @@ import {
 } from './checkpoints';
 import { capturePurgeToken, hasPurgeLanded, isSigningOut } from '../mutation-queue/drainer';
 import { LATEST_SCHEMA_VERSION } from '../db/migrations';
-import { applyBusyTimeout } from '../db/pragmas';
+import { applyBulkImportPragmas, applyBusyTimeout } from '../db/pragmas';
+import { isDatabaseLockedError } from '../db/lock-errors';
 import {
   BOOTSTRAP_ATTEMPTS_PREFIX,
   BOOTSTRAP_PAGED_FALLBACK_PREFIX,
@@ -66,6 +67,69 @@ const GRADES_SNAPSHOT_TABLES = ['board_climb_grades'] as const;
 
 /** The ATTACH alias for the artifact; the only ATTACH the DB lifecycle performs. */
 const SNAPSHOT_ALIAS = 'bs_snapshot';
+
+/**
+ * Rows one import transaction moves before it COMMITs and lets go of the write
+ * lock (issue #4310). The whole-layout import used to be a single
+ * `BEGIN EXCLUSIVE` around ~710k rows; it is now ceil(rows / this) short ones.
+ *
+ * SIZING, from the throughput the fleet actually reports on Kilter — 67,852
+ * rows/s p50 on iOS, 33,631 rows/s p50 on Android. 5,000 rows is ~150ms p50,
+ * comfortably inside the 2,500ms window a foreground write
+ * (OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS) gets before it gives up. At the worst
+ * import throughput ever observed (710,646 rows in 253,939ms = 2,798 rows/s) a
+ * batch is ~1.8s — still inside that window, but only just.
+ *
+ * Do not lower it on a hunch: 5,000 already means ~142 commits for a Kilter
+ * layout, and every commit is an fsync the batching only affords because
+ * `applyBulkImportPragmas` drops the import connection to `synchronous =
+ * NORMAL`. The number to read before changing it is `importLockMaxMs` p99 on
+ * `Offline Board Download Completed`, which this import emits for exactly that.
+ *
+ * THE SECOND PER-COMMIT COST, which the fsync argument above does not cover:
+ * SQLite attempts a WAL autocheckpoint at COMMIT, and nothing here overrides the
+ * 1000-page default. The single pre-#4310 transaction paid that once, at the end;
+ * batching moves it inside the holds, crossing the threshold roughly every 4 MB
+ * of WAL, so a minority of batches COMMIT with a passive checkpoint (page copy-
+ * back plus the WAL sync `synchronous = NORMAL` still performs before one) inside
+ * `heldMs`. So the `importLockMaxMs` tail is set by checkpoint-carrying batches,
+ * not by the ~150 ms typical batch this number is sized from, and that same cost
+ * is the most likely way `importRowsMs` regresses against the single transaction.
+ * `wal_autocheckpoint = 0` for the import would move it out of the holds at the
+ * price of a WAL that grows to the size of the whole import on a phone — not a
+ * trade worth making before `importLockMaxMs` says the tail is a problem.
+ */
+export const SNAPSHOT_IMPORT_BATCH_ROWS = 5_000;
+
+/**
+ * The connection-scoped staging table holding this scope's climb UUIDs. Built
+ * once per import in autocommit, then read by every climbs batch (as a rowid
+ * range) and every stats batch (as the semi-join the correlated EXISTS over the
+ * artifact's `board_climbs` used to be).
+ *
+ * TEMP, so it lives on the import task's own connection and dies with it — the
+ * expo wrapper tears that connection down after the task, and the DROP below
+ * covers the same-connection test double where a second scope would otherwise
+ * meet a table that already exists.
+ */
+const IMPORT_STAGING_TABLE = 'bs_import_climbs';
+
+/**
+ * Backoff before re-attempting a batch's `BEGIN EXCLUSIVE` that lost the lock
+ * race outright (issue #4310).
+ *
+ * Batching turns the import from the lock's sole owner into a repeat contender:
+ * one acquisition becomes ~143 against writers that genuinely exist — every tick
+ * and favorite, plus a `removeBoardScopeData` for a DIFFERENT layout, which this
+ * scope's purge guard does not cover and which scope-teardown.ts's own header
+ * says "runs for seconds on a 40k-climb layout", i.e. longer than the import
+ * connection's 5s `busy_timeout`. Throwing a whole 103 MB import away for one
+ * lost race would be worse than the mega-transaction this replaces, so a lock
+ * failure gets a short ladder before it becomes an import failure at all. What
+ * happens if the ladder is also exhausted is `classifyBootstrapFailure`'s job:
+ * a lock-shaped import failure is NOT charged to the structural budget.
+ */
+const IMPORT_LOCK_RETRY_DELAYS_MS = [250, 750, 2000] as const;
 
 /** The ATTACH alias for the separate grades artifact (its own transaction, its own connection). */
 const GRADES_ALIAS = 'bs_grades';
@@ -269,6 +333,62 @@ export type SnapshotBootstrapResult = {
    */
   climbsImported: number;
   statsImported: number;
+  /**
+   * Where the import's time went, and — the number this split exists for — how
+   * long it actually HELD the write lock (issue #4310).
+   *
+   * `importMs` on `Offline Board Download Completed` is stamped around this
+   * whole call, and most of it is autocommit work holding nothing: ATTACH,
+   * `PRAGMA quick_check` over a 271 MB artifact, two full `COUNT(*)` truncation
+   * checks, and the scoped watermark reads. `importVerifyMs` measures that
+   * preamble. `importLockMaxMs` is the LONGEST single exclusive transaction —
+   * i.e. the worst case a concurrent user write has to survive (#4314) — which
+   * before batching was the entire import and had never been measured.
+   *
+   * `importLockMaxMs` covers the reconcile transaction, every row batch, and the
+   * final checkpoint transaction. `reconcileScope` is still ONE unbatched
+   * transaction, so on a heal-over-partial (#4313) or a second size of an
+   * already-downloaded layout it can be the maximum rather than a batch — that
+   * population is the named follow-up, and this number is how it gets read.
+   *
+   * HOLD vs WAIT, kept apart on purpose. `importLockMaxMs` starts after
+   * `BEGIN EXCLUSIVE` succeeds, so it is a hold and nothing else. The time spent
+   * WAITING to acquire — up to `busy_timeout` per attempt plus the 250/750/2000 ms
+   * ladder — is accumulated into `importLockWaitMs` and SUBTRACTED from
+   * `importReconcileMs` and `importRowsMs`, so those two are work-plus-hold. Left
+   * in, a reconcile that executed in 40 ms behind a `removeBoardScopeData` would
+   * report seconds, and the follow-up trigger for batching `reconcileScope`
+   * (`importReconcileMs` p90 on `bootstrapHealed = true`) would fire on
+   * contention rather than on reconcile cost — the same conflation between "time
+   * elapsed" and "time holding the lock" that this whole split exists to undo.
+   *
+   * ONE COST STAYS INSIDE THE HOLD, unavoidably: SQLite attempts a WAL
+   * autocheckpoint at COMMIT, and nothing in this engine overrides the 1000-page
+   * default (grep `wal_autocheckpoint`: only the explicit TRUNCATE checkpoints in
+   * vacuum.ts and remove-offline-board.ts exist). The single pre-#4310
+   * transaction paid that once, after everything; ~142 commits cross the
+   * threshold roughly every 4 MB of WAL, so some batches carry a passive
+   * checkpoint — copying pages back into the main DB plus the WAL sync
+   * `synchronous = NORMAL` still performs before one — inside their COMMIT, and
+   * therefore inside `heldMs`. Read `importLockMaxMs` p90 knowing its tail is
+   * checkpoint-carrying batches, not the ~150 ms typical batch
+   * `SNAPSHOT_IMPORT_BATCH_ROWS` is sized from. Disabling the autocheckpoint for
+   * the import would move that cost out of the holds but let the WAL grow to the
+   * size of the whole import on a phone, which is a worse trade.
+   */
+  importVerifyMs: number;
+  importReconcileMs: number;
+  importRowsMs: number;
+  importLockMaxMs: number;
+  /**
+   * Total time spent waiting for `BEGIN EXCLUSIVE` across every exclusive
+   * transaction of this import: `busy_timeout` blocking plus the retry ladder's
+   * sleeps. Non-zero means the import met real contention, which is what decides
+   * whether `IMPORT_LOCK_RETRY_DELAYS_MS` and the batch size are tuned right.
+   */
+  importLockWaitMs: number;
+  /** Exclusive transactions the row import committed: climbs batches + stats batches. */
+  importBatches: number;
 };
 
 /**
@@ -741,18 +861,116 @@ async function reconcileScope(
   );
 }
 
+/** One batch's committed progress, as the import observes it between locks. */
+export type SnapshotImportBatchProgress = {
+  /** Rows written so far this import, climbs + stats. */
+  rowsImported: number;
+  /** Exclusive transactions the row import has committed so far. */
+  batches: number;
+};
+
+type SnapshotImportBatchOptions = {
+  /** Rows per exclusive transaction. Defaults to SNAPSHOT_IMPORT_BATCH_ROWS. */
+  batchRows: number;
+  /**
+   * Runs `body` inside one short `BEGIN EXCLUSIVE ... COMMIT`, re-checking the
+   * purge guard after the lock is held and recording the hold.
+   */
+  runExclusive: (body: () => Promise<void>) => Promise<void>;
+  /**
+   * Fired after each batch COMMITs, with the lock RELEASED.
+   *
+   * A throw from here is swallowed. The consumer is the download UI's progress
+   * sink, and this call now sits inside the import's own try/catch — where an
+   * escaping throw would be indistinguishable from an import failure, spend a
+   * lifetime structural-budget slot, and (on the retained-artifact path) delete
+   * a ~103 MB file. Same discipline as `runLocalWriteWithRetry`'s `onSettled`
+   * and the drainer's `onMutationStatusError`.
+   */
+  onBatch?: (progress: SnapshotImportBatchProgress) => void;
+};
+
+/** The keyset a stats batch resumes from, in `board_climb_stats` PK order. */
+type StatsKey = { climb_uuid: string; angle: number };
+
 /**
- * Import one scope's rows from the ATTACHed artifact. Called INSIDE the exclusive
- * transaction. board_climbs is filtered by the resolver's scope; board_climb_stats
- * is scoped by a correlated EXISTS over the artifact's board_climbs — the same
- * semi-join `syncClimbStats` uses (queries.ts:426-434) — so stats land iff their
- * climb is in scope.
+ * The lower bound that selects the whole partition. `climb_uuid` is TEXT NOT
+ * NULL and `angle` INTEGER NOT NULL, so every real key sorts after `('', -1)`
+ * — which keeps ONE statement shape (and one query plan) for the first batch and
+ * every batch after it.
  */
-async function importScope(
+const STATS_KEYSET_START: StatsKey = { climb_uuid: '', angle: -1 };
+
+/**
+ * The stats keyset predicate, as SQLite ROW VALUES rather than the expanded
+ * `a > ? OR (a = ? AND b > ?)` form used elsewhere in this file.
+ *
+ * This is load-bearing, not style. `board_climb_stats`' PK is
+ * `(board_type, climb_uuid, angle)`, and measured with EXPLAIN QUERY PLAN on
+ * SQLite 3.53.3 against that index:
+ *   OR-form:  SEARCH s USING INDEX ... (board_type=?)
+ *   row-value: SEARCH s USING INDEX ... (board_type=? AND (climb_uuid,angle)>(?,?))
+ * The OR-form re-scans the whole board_type partition on EVERY batch — ~142
+ * passes over 306k rows for a Kilter layout — so a "batched" import written that
+ * way is O(n^2) and slower than the single statement it replaces. The leading
+ * `board_type = ?` equality is part of the seek and must not be dropped.
+ * `snapshot-import-batching.test.ts` pins the plan string.
+ */
+function statsKeysetSql(withUpperBound: boolean): string {
+  return (
+    `s.board_type = ?
+       AND (s.climb_uuid, s.angle) > (?, ?)` +
+    (withUpperBound ? `\n       AND (s.climb_uuid, s.angle) <= (?, ?)` : '') +
+    `
+       AND EXISTS (SELECT 1 FROM temp.${IMPORT_STAGING_TABLE} t WHERE t.uuid = s.climb_uuid)`
+  );
+}
+
+function statsKeysetParams(boardType: string, from: StatsKey, upper?: StatsKey): (string | number)[] {
+  const params: (string | number)[] = [boardType, from.climb_uuid, from.angle];
+  if (upper) params.push(upper.climb_uuid, upper.angle);
+  return params;
+}
+
+/**
+ * Open one short exclusive transaction, retrying a lost lock race on the ladder
+ * above. A `BEGIN EXCLUSIVE` that fails leaves NO transaction open, so retrying
+ * it is safe and cannot double-apply anything.
+ */
+async function beginExclusiveWithRetry(db: SqlExecutor, sleep: (ms: number) => Promise<void>): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await db.execAsync('BEGIN EXCLUSIVE');
+      return;
+    } catch (error) {
+      if (attempt >= IMPORT_LOCK_RETRY_DELAYS_MS.length || !isDatabaseLockedError(error)) throw error;
+      await sleep(IMPORT_LOCK_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+}
+
+/**
+ * Import one scope's rows from the ATTACHed artifact, in bounded batches that
+ * each hold the write lock for one `BEGIN EXCLUSIVE ... COMMIT` (issue #4310).
+ * Everything that does NOT write — the column intersection, the staging table,
+ * and each batch's keyset probes — runs in AUTOCOMMIT, holding nothing.
+ *
+ * The scope filter is unchanged, and deliberately so: `board_climbs` is filtered
+ * by the resolver's scope, and `board_climb_stats` by a semi-join over exactly
+ * those climbs — the same one `syncClimbStats` uses (queries.ts:426-434). What
+ * changed is only WHERE that semi-join reads from: the staging table is
+ * populated by `climbsScopeFilter(scope)`, the same predicate the old correlated
+ * EXISTS inlined, so the two select the same rows by construction. An import
+ * filter NARROWER than the resolver's scope loses rows forever (see this file's
+ * header), so the equivalence is pinned by a test that runs both forms against
+ * one artifact and compares the selected keys.
+ */
+async function importScopeBatched(
   txn: SqlExecutor,
   scope: OfflineBoardScope,
   onSchemaDrift: SchemaDriftReporter | undefined,
-): Promise<{ climbsImported: number; statsImported: number }> {
+  options: SnapshotImportBatchOptions,
+): Promise<{ climbsImported: number; statsImported: number; batches: number }> {
   const climbColumns = await sharedColumns(txn, 'board_climbs', onSchemaDrift);
   const statsColumns = await sharedColumns(txn, 'board_climb_stats', onSchemaDrift);
   assertSafeColumns(climbColumns);
@@ -760,36 +978,97 @@ async function importScope(
   if (climbColumns.length === 0) throw new Error('snapshot bootstrap: no shared board_climbs columns');
   if (statsColumns.length === 0) throw new Error('snapshot bootstrap: no shared board_climb_stats columns');
 
+  // Stage the scope's climb UUIDs once, in autocommit. This pays the size-scoped
+  // `json_each` membership parse ONE time instead of once per stats row, and
+  // gives the climbs import a dense rowid to batch on.
   const climbScope = climbsScopeFilter(scope);
-  const climbList = climbColumns.join(', ');
-  const climbsResult = await txn.runAsync(
-    `INSERT OR REPLACE INTO main.board_climbs (${climbList})
-     SELECT ${climbList} FROM ${SNAPSHOT_ALIAS}.board_climbs WHERE ${climbScope.sql}`,
+  await txn.execAsync(`DROP TABLE IF EXISTS temp.${IMPORT_STAGING_TABLE}`);
+  await txn.execAsync(`CREATE TEMP TABLE ${IMPORT_STAGING_TABLE} (uuid TEXT PRIMARY KEY)`);
+  await txn.runAsync(
+    `INSERT OR IGNORE INTO temp.${IMPORT_STAGING_TABLE} (uuid)
+     SELECT uuid FROM ${SNAPSHOT_ALIAS}.board_climbs WHERE ${climbScope.sql}`,
     climbScope.params,
   );
-
-  // Stats semi-join: mirror the resolver's EXISTS over board_climbs, filtered by
-  // the SAME scope conditions (board_type + layout + size). The inner size check
-  // reuses the climbs filter but qualified to the correlated `bc` alias.
-  const statsList = statsColumns.join(', ');
-  const sizeScoped = isSizeScopedBoard(scope.boardType);
-  const innerSize = sizeScoped
-    ? ' AND bc.compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(bc.compatible_size_ids) WHERE value = ?)'
-    : '';
-  const statsParams: (string | number)[] = [scope.boardType, scope.boardType, scope.layoutId];
-  if (sizeScoped) statsParams.push(scope.sizeId);
-  const statsResult = await txn.runAsync(
-    `INSERT OR REPLACE INTO main.board_climb_stats (${statsList})
-     SELECT ${statsList} FROM ${SNAPSHOT_ALIAS}.board_climb_stats s
-     WHERE s.board_type = ?
-       AND EXISTS (
-         SELECT 1 FROM ${SNAPSHOT_ALIAS}.board_climbs bc
-         WHERE bc.uuid = s.climb_uuid AND bc.board_type = ? AND bc.layout_id = ?${innerSize}
-       )`,
-    statsParams,
+  const stagedRow = await txn.getFirstAsync<{ max_rowid: number }>(
+    `SELECT COALESCE(MAX(rowid), 0) AS max_rowid FROM temp.${IMPORT_STAGING_TABLE}`,
   );
+  const maxStagedRowid = stagedRow?.max_rowid ?? 0;
 
-  return { climbsImported: climbsResult.changes, statsImported: statsResult.changes };
+  let climbsImported = 0;
+  let statsImported = 0;
+  let batches = 0;
+
+  const emitBatch = (): void => {
+    if (!options.onBatch) return;
+    try {
+      options.onBatch({ rowsImported: climbsImported + statsImported, batches });
+    } catch {
+      // See SnapshotImportBatchOptions.onBatch: a broken progress consumer must
+      // never be reported as a failed import.
+    }
+  };
+
+  const climbTargetList = climbColumns.join(', ');
+  const climbSelectList = climbColumns.map((column) => `c.${column}`).join(', ');
+  for (let cursor = 0; cursor < maxStagedRowid; cursor += options.batchRows) {
+    const upperRowid = Math.min(cursor + options.batchRows, maxStagedRowid);
+    const lowerRowid = cursor;
+    await options.runExclusive(async () => {
+      const result = await txn.runAsync(
+        `INSERT OR REPLACE INTO main.board_climbs (${climbTargetList})
+         SELECT ${climbSelectList} FROM ${SNAPSHOT_ALIAS}.board_climbs c
+         JOIN temp.${IMPORT_STAGING_TABLE} t ON t.uuid = c.uuid
+         WHERE t.rowid > ? AND t.rowid <= ?`,
+        [lowerRowid, upperRowid],
+      );
+      climbsImported += result.changes;
+    });
+    batches += 1;
+    emitBatch();
+  }
+
+  const statsTargetList = statsColumns.join(', ');
+  const statsSelectList = statsColumns.map((column) => `s.${column}`).join(', ');
+  let statsCursor: StatsKey = STATS_KEYSET_START;
+  for (;;) {
+    // Two index seeks in autocommit, holding nothing: "is anything left?" and
+    // "which key ends this batch?". The second is what bounds the transaction
+    // below to `batchRows` rows without needing a COUNT over the partition.
+    const probeSql = `SELECT s.climb_uuid AS climb_uuid, s.angle AS angle
+       FROM ${SNAPSHOT_ALIAS}.board_climb_stats s
+       WHERE ${statsKeysetSql(false)}
+       ORDER BY s.climb_uuid, s.angle
+       LIMIT 1 OFFSET ?`;
+    const remaining = await txn.getFirstAsync<StatsKey>(probeSql, [
+      ...statsKeysetParams(scope.boardType, statsCursor),
+      0,
+    ]);
+    if (!remaining) break;
+    const boundary = await txn.getFirstAsync<StatsKey>(probeSql, [
+      ...statsKeysetParams(scope.boardType, statsCursor),
+      options.batchRows - 1,
+    ]);
+
+    const batchFrom = statsCursor;
+    await options.runExclusive(async () => {
+      const result = await txn.runAsync(
+        `INSERT OR REPLACE INTO main.board_climb_stats (${statsTargetList})
+         SELECT ${statsSelectList} FROM ${SNAPSHOT_ALIAS}.board_climb_stats s
+         WHERE ${statsKeysetSql(boundary !== null)}`,
+        statsKeysetParams(scope.boardType, batchFrom, boundary ?? undefined),
+      );
+      statsImported += result.changes;
+    });
+    batches += 1;
+    emitBatch();
+
+    if (!boundary) break;
+    statsCursor = boundary;
+  }
+
+  await txn.execAsync(`DROP TABLE IF EXISTS temp.${IMPORT_STAGING_TABLE}`);
+
+  return { climbsImported, statsImported, batches };
 }
 
 // --- Verification -------------------------------------------------------------
@@ -961,13 +1240,33 @@ async function verifySnapshotMeta(
 
 // --- Bootstrap ----------------------------------------------------------------
 
+function defaultImportSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Warm one board scope from a downloaded artifact. ATTACHes the file, integrity-
- * checks it, verifies the meta, then in ONE exclusive transaction imports the
- * scoped climbs + stats, reconciles stale scoped rows absent from the artifact,
- * and stamps both resume checkpoints at the scoped imported-row watermarks.
- * A wipe that starts (or completes) mid-import rolls the transaction back and
- * throws SnapshotWipedError — no rows, no checkpoints.
+ * checks it, verifies the meta, then imports the scoped climbs + stats,
+ * reconciles stale scoped rows absent from the artifact, and stamps both resume
+ * checkpoints at the scoped imported-row watermarks.
+ *
+ * NO LONGER ONE TRANSACTION (issue #4310). It is: an autocommit preamble
+ * (COMMIT the wrapper's empty transaction, ATTACH, quick_check, meta verify,
+ * scoped watermarks, regression guard, staging table), then a reconcile
+ * transaction, then ceil(rows / SNAPSHOT_IMPORT_BATCH_ROWS) row transactions,
+ * then a final transaction holding both checkpoints and the deletions rewind.
+ * The lock is released between every one of them.
+ *
+ * WHAT REPLACES ALL-OR-NOTHING. A wipe or a crash mid-import can now leave rows
+ * committed. It can NEVER leave a checkpoint: the two `setCheckpoint` calls and
+ * `rewindDeletionsCheckpoint` live only in the final transaction, after every
+ * row batch has committed. That asymmetry is the one scope-teardown.ts's header
+ * is written around — rows without markers is benign (the next bootstrap
+ * re-imports over them, `INSERT OR REPLACE` is idempotent, and a teardown still
+ * removes them), markers without rows is unrecoverable, because the strict `>`
+ * delta pull never revisits anything at or below a stamped cursor. So the wipe
+ * contract is now "possibly some rows, never a checkpoint" rather than "no rows,
+ * no checkpoints", and `SnapshotWipedError` still means nothing was stamped.
  *
  * CONNECTION INVARIANT (BOARDSESH-AA): expo-sqlite's
  * `withExclusiveTransactionAsync` runs its task on a NEW native connection
@@ -978,9 +1277,13 @@ async function verifySnapshotMeta(
  * transaction's own connection. SQLite forbids ATTACH inside a transaction and
  * the expo wrapper opens a deferred BEGIN before the task runs, so the task
  * first COMMITs that empty transaction, attaches in autocommit mode, then opens
- * the real `BEGIN EXCLUSIVE` — which the wrapper's trailing COMMIT/ROLLBACK
- * closes. The wrapper tears the connection down afterwards, which implicitly
- * detaches the artifact on every path (success, import failure, or wipe).
+ * the real `BEGIN EXCLUSIVE`s in autocommit mode. Each of those is COMMITted
+ * here rather than by the wrapper — including the last one, which is why the
+ * task hands the wrapper a fresh empty `BEGIN` to close: it keeps every
+ * exclusive hold measurable end to end, and keeps the wrapper's unconditional
+ * ROLLBACK from meeting a connection with no transaction at all. The wrapper
+ * tears the connection down afterwards, which implicitly detaches the artifact
+ * (and drops the staging table) on every path.
  */
 export async function bootstrapScopeFromSnapshot(params: {
   db: OfflineDatabase;
@@ -995,8 +1298,32 @@ export async function bootstrapScopeFromSnapshot(params: {
    * fresh-scope case, where there is no progress to protect.
    */
   existingCheckpoints?: Partial<Record<SnapshotTableName, SyncCheckpoint>>;
+  /**
+   * Fired after each row batch COMMITs, with the lock released — what the
+   * download UI's `import` stage now draws a real progress bar from instead of
+   * the indeterminate spinner it showed while one transaction ran. A throw from
+   * this callback is swallowed; see SnapshotImportBatchOptions.onBatch.
+   */
+  onBatch?: (progress: SnapshotImportBatchProgress) => void;
+  /** Rows per exclusive transaction. Defaults to SNAPSHOT_IMPORT_BATCH_ROWS. */
+  batchRows?: number;
+  /**
+   * Sleep seam for the lost-lock ladder, so tests need no real timers — the same
+   * injection `runLocalWriteWithRetry` takes. Defaults to a real setTimeout.
+   */
+  sleep?: (ms: number) => Promise<void>;
 }): Promise<SnapshotBootstrapResult> {
-  const { db, scope, scopeKey, filePath, onSchemaDrift, existingCheckpoints } = params;
+  const {
+    db,
+    scope,
+    scopeKey,
+    filePath,
+    onSchemaDrift,
+    existingCheckpoints,
+    onBatch,
+    batchRows = SNAPSHOT_IMPORT_BATCH_ROWS,
+    sleep = defaultImportSleep,
+  } = params;
 
   // The whole import + checkpoint stamping is all-or-nothing. A wipe that runs
   // (or starts AND finishes) across ANY await below — including the ATTACH,
@@ -1015,7 +1342,12 @@ export async function bootstrapScopeFromSnapshot(params: {
 
   let watermarks: Record<SnapshotTableName, SyncCheckpoint> | null = null;
   let deletionsReplayFrom: SyncCheckpoint | null = null;
-  let imported = { climbsImported: 0, statsImported: 0 };
+  let imported = { climbsImported: 0, statsImported: 0, batches: 0 };
+  let importVerifyMs = 0;
+  let importReconcileMs = 0;
+  let importRowsMs = 0;
+  let importLockMaxMs = 0;
+  let importLockWaitMs = 0;
   try {
     await db.withExclusiveTransactionAsync(async (txn) => {
       // Close the wrapper's (empty, deferred) transaction so ATTACH is legal,
@@ -1024,6 +1356,12 @@ export async function bootstrapScopeFromSnapshot(params: {
       // otherwise itself fail and mask the real error (which the caller
       // dispatches on, e.g. SnapshotSchemaStaleError vs a counted failure).
       await txn.execAsync('COMMIT');
+      // Everything from here to the first BEGIN EXCLUSIVE runs in AUTOCOMMIT,
+      // holding no lock: the ATTACH, quick_check over the whole artifact, the
+      // two COUNT(*) truncation checks in verifySnapshotMeta, and the scoped
+      // watermark reads. That is the bulk of what `importMs` has always
+      // measured, and none of it is a lock hold — hence its own number.
+      const verifyStartedAt = Date.now();
       try {
         await txn.execAsync(`ATTACH DATABASE '${filePath.replace(/'/g, "''")}' AS ${SNAPSHOT_ALIAS}`);
 
@@ -1055,42 +1393,123 @@ export async function bootstrapScopeFromSnapshot(params: {
         // The import can take seconds on a big layout; don't let a concurrent
         // write on the app's main connection fail it with SQLITE_BUSY.
         await applyBusyTimeout(txn);
-        await txn.execAsync('BEGIN EXCLUSIVE');
+        // Autocommit-only, and it must run before the first BEGIN EXCLUSIVE:
+        // SQLite rejects the pragma inside a transaction. Without it the ~142
+        // commits below would each pay an fsync and batching would be a
+        // regression rather than a fix. See applyBulkImportPragmas.
+        await applyBulkImportPragmas(txn);
+        importVerifyMs = Date.now() - verifyStartedAt;
       } catch (preTransactionError) {
         await txn.execAsync('BEGIN').catch(() => {});
         throw preTransactionError;
       }
 
-      await reconcileScope(txn, scope, watermarks);
-      imported = await importScope(txn, scope, onSchemaDrift);
+      // From here the task drives its OWN transactions. Every throw must still
+      // leave the wrapper something to ROLLBACK: an open batch transaction if
+      // the throw happened inside one, or a fresh empty BEGIN if it happened
+      // between two. Otherwise expo's unconditional ROLLBACK throws "cannot
+      // rollback - no transaction is active" and MASKS the real error, which
+      // the caller dispatches on (SnapshotSchemaStaleError vs SnapshotWipedError
+      // vs a counted failure). The `.catch` covers the already-open case.
+      try {
+        const stampedWatermarks: Record<SnapshotTableName, SyncCheckpoint> = watermarks;
 
-      // Re-check after the (awaited) imports: abort before committing any rows or
-      // checkpoints if a wipe landed while they ran.
-      if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
+        /** One short exclusive transaction: take the lock, re-check, write, let go. */
+        const runExclusive = async (body: () => Promise<void>): Promise<void> => {
+          // Acquisition is measured separately from the hold, and the phase
+          // stamps below subtract it. `busy_timeout` blocking plus the ladder's
+          // sleeps can run to seconds behind a `removeBoardScopeData`, and
+          // charging that to "reconcile" or "rows" would repeat, one level down,
+          // exactly the elapsed-vs-hold conflation this split exists to undo.
+          const acquireFrom = Date.now();
+          await beginExclusiveWithRetry(txn, sleep);
+          const heldFrom = Date.now();
+          importLockWaitMs += heldFrom - acquireFrom;
+          try {
+            // INSIDE the lock, deliberately. A purge that wins the lock between
+            // two batches deletes this scope's rows; a batch that then re-ran
+            // its INSERT would resurrect a removed board's catalog, which the
+            // old single transaction prevented structurally. `beginScopePurge`
+            // latches BEFORE its delete transaction takes the lock, so the two
+            // possible orderings are: this batch wins the lock and commits, and
+            // the purge's own DELETE then removes what it wrote; or the purge
+            // wins, and this read sees the latch and bails. Both are consistent.
+            if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
+            await body();
+            await txn.execAsync('COMMIT');
+          } finally {
+            // Measured to the throw, not to the wrapper's later ROLLBACK, on a
+            // failing batch. `importLockMaxMs` answers "what is the worst hold a
+            // concurrent write had to survive" on the path that COMMITs; a batch
+            // that threw is a failed import the caller settles, and the ROLLBACK
+            // that follows is teardown rather than work this metric is sizing.
+            const heldMs = Date.now() - heldFrom;
+            if (heldMs > importLockMaxMs) importLockMaxMs = heldMs;
+          }
+        };
 
-      await setCheckpoint(txn, getCheckpointKey('board_climbs', scopeKey), watermarks.board_climbs);
-      await setCheckpoint(txn, getCheckpointKey('board_climb_stats', scopeKey), watermarks.board_climb_stats);
+        // Reconcile FIRST and in its own transaction, keeping today's
+        // delete-then-insert order. Still unbatched: two DELETEs with nested
+        // correlated EXISTS/NOT EXISTS. Cheap on a fresh scope (nothing local to
+        // delete), NOT bounded on a heal-over-partial (#4313) or a second size
+        // of an already-downloaded layout — which is why it is measured
+        // separately and counted into importLockMaxMs rather than hidden.
+        // `importReconcileMs` is work-plus-hold: the lock-acquisition wait is
+        // subtracted, so the follow-up trigger for batching this reads reconcile
+        // cost rather than whoever else held the lock.
+        const reconcileStartedAt = Date.now();
+        const waitBeforeReconcile = importLockWaitMs;
+        await runExclusive(async () => {
+          await reconcileScope(txn, scope, stampedWatermarks);
+        });
+        importReconcileMs = Date.now() - reconcileStartedAt - (importLockWaitMs - waitBeforeReconcile);
 
-      // Rewind the global deletions cursor IN THE SAME transaction as the
-      // import: once the board
-      // checkpoints exist this scope is never bootstrap-eligible again, so a
-      // crash between the import commit and a separate rewind would leave
-      // board-row deletions in `(replay boundary, deletions-head]` permanently
-      // unreplayed against the imported rows.
-      //
-      // New artifacts carry a metadata-only sync_deletions row whose timestamp
-      // is the oldest of run builtAt, the export transaction's stability
-      // boundary, and every visible same-role active transaction start. That
-      // covers a long DELETE transaction which was invisible to the artifact's
-      // REPEATABLE READ snapshot but later commits with an older deleted_at.
-      // Old/malformed artifacts retain the pre-existing min(scoped watermarks)
-      // compatibility path. New live gzip exports refuse publication without
-      // the stronger boundary above.
-      const minWatermark =
-        compareCheckpoints(watermarks.board_climbs, watermarks.board_climb_stats) <= 0
-          ? watermarks.board_climbs
-          : watermarks.board_climb_stats;
-      await rewindDeletionsCheckpoint(txn, deletionsReplayFrom ?? minWatermark);
+        const rowsStartedAt = Date.now();
+        const waitBeforeRows = importLockWaitMs;
+        imported = await importScopeBatched(txn, scope, onSchemaDrift, { batchRows, runExclusive, onBatch });
+        importRowsMs = Date.now() - rowsStartedAt - (importLockWaitMs - waitBeforeRows);
+
+        // CHECKPOINTS LAST, in their own transaction, after every row batch has
+        // committed. This is the invariant that makes partial rows survivable:
+        // rows without markers re-import idempotently, markers without rows are
+        // unrecoverable (see this function's docblock and scope-teardown.ts).
+        await runExclusive(async () => {
+          await setCheckpoint(txn, getCheckpointKey('board_climbs', scopeKey), stampedWatermarks.board_climbs);
+          await setCheckpoint(
+            txn,
+            getCheckpointKey('board_climb_stats', scopeKey),
+            stampedWatermarks.board_climb_stats,
+          );
+
+          // Rewind the global deletions cursor IN THE SAME transaction as the
+          // checkpoints: once the board checkpoints exist this scope is never
+          // bootstrap-eligible again, so a crash between them and a separate
+          // rewind would leave board-row deletions in `(replay boundary,
+          // deletions-head]` permanently unreplayed against the imported rows.
+          //
+          // New artifacts carry a metadata-only sync_deletions row whose
+          // timestamp is the oldest of run builtAt, the export transaction's
+          // stability boundary, and every visible same-role active transaction
+          // start. That covers a long DELETE transaction which was invisible to
+          // the artifact's REPEATABLE READ snapshot but later commits with an
+          // older deleted_at. Old/malformed artifacts retain the pre-existing
+          // min(scoped watermarks) compatibility path. New live gzip exports
+          // refuse publication without the stronger boundary above.
+          const minWatermark =
+            compareCheckpoints(stampedWatermarks.board_climbs, stampedWatermarks.board_climb_stats) <= 0
+              ? stampedWatermarks.board_climbs
+              : stampedWatermarks.board_climb_stats;
+          await rewindDeletionsCheckpoint(txn, deletionsReplayFrom ?? minWatermark);
+        });
+
+        // Hand the wrapper an empty transaction to close. Committing the final
+        // one here rather than leaving it open is what keeps every exclusive
+        // hold measured end to end, COMMIT included.
+        await txn.execAsync('BEGIN');
+      } catch (importError) {
+        await txn.execAsync('BEGIN').catch(() => {});
+        throw importError;
+      }
     });
   } finally {
     // On expo the wrapper's connection teardown already detached; this covers
@@ -1105,7 +1524,14 @@ export async function bootstrapScopeFromSnapshot(params: {
   return {
     climbsWatermark: finalWatermarks.board_climbs,
     statsWatermark: finalWatermarks.board_climb_stats,
-    ...imported,
+    climbsImported: imported.climbsImported,
+    statsImported: imported.statsImported,
+    importBatches: imported.batches,
+    importVerifyMs,
+    importReconcileMs,
+    importRowsMs,
+    importLockMaxMs,
+    importLockWaitMs,
   };
 }
 
@@ -1176,8 +1602,25 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
   scopeKey: string;
   filePath: string;
   onSchemaDrift?: SchemaDriftReporter;
-}): Promise<{ gradesWatermark: SyncCheckpoint; rowsImported: number }> {
-  const { db, scope, scopeKey, filePath, onSchemaDrift } = params;
+  /** Sleep seam for the lost-lock ladder. Defaults to a real setTimeout. */
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<{
+  gradesWatermark: SyncCheckpoint;
+  rowsImported: number;
+  /**
+   * ATTACH + quick_check + meta verify, all in AUTOCOMMIT holding nothing, and
+   * the exclusive hold that follows it — split for the same reason the
+   * whole-layout import splits `importVerifyMs` from `importLockMaxMs` (issue
+   * #4310). This transaction is still UNBATCHED: one `INSERT OR REPLACE ...
+   * SELECT` over the layout's grades with a correlated EXISTS and a per-row
+   * `json_each`, plus a second descending scan for the watermark. Its docblock
+   * asserts the hold is short; `gradesLockMs` is what turns that into a
+   * measurement, and batching it is a follow-up only if the number says so.
+   */
+  gradesVerifyMs: number;
+  gradesLockMs: number;
+}> {
+  const { db, scope, scopeKey, filePath, onSchemaDrift, sleep = defaultImportSleep } = params;
   // Same scoping argument as bootstrapScopeFromSnapshot: the INSERT is filtered
   // through gradesScopeFilter(scope) and the only checkpoint stamped is this
   // scope's grades cursor.
@@ -1186,9 +1629,12 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
 
   let watermark: SyncCheckpoint | null = null;
   let rowsImported = 0;
+  let gradesVerifyMs = 0;
+  let gradesLockMs = 0;
   try {
     await db.withExclusiveTransactionAsync(async (txn) => {
       await txn.execAsync('COMMIT');
+      const verifyStartedAt = Date.now();
       try {
         await txn.execAsync(`ATTACH DATABASE '${filePath.replace(/'/g, "''")}' AS ${GRADES_ALIAS}`);
 
@@ -1207,59 +1653,86 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
         if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
 
         await applyBusyTimeout(txn);
-        await txn.execAsync('BEGIN EXCLUSIVE');
+        // Deliberately NOT applyBulkImportPragmas: that exists to stop ~142 batch
+        // commits each paying an fsync, and this is ONE transaction, so a single
+        // durable commit is the cheaper end of the trade. If `gradesLockMs` says
+        // this needs batching too, the pragma comes with it.
+        gradesVerifyMs = Date.now() - verifyStartedAt;
+        await beginExclusiveWithRetry(txn, sleep);
       } catch (preTransactionError) {
         await txn.execAsync('BEGIN').catch(() => {});
         throw preTransactionError;
       }
 
-      const gradeColumns = await sharedColumns(txn, GRADES_TABLE, onSchemaDrift, GRADES_ALIAS);
-      assertSafeColumns(gradeColumns);
-      if (gradeColumns.length === 0) throw new Error('snapshot grades bootstrap: no shared board_climb_grades columns');
-      const columnList = gradeColumns.join(', ');
+      // Same restore-BEGIN discipline as bootstrapScopeFromSnapshot's row loop,
+      // and needed for the same reason: this function now COMMITs its own
+      // transaction (so `gradesLockMs` covers the COMMIT) and hands the wrapper a
+      // fresh empty one. That opens a window the pre-#4310 shape did not have —
+      // a throw from the trailing `BEGIN` would meet expo's unconditional
+      // ROLLBACK with no transaction active, and "cannot rollback - no
+      // transaction is active" would MASK the real error the caller dispatches
+      // on (SnapshotWipedError vs a counted grades failure). The `.catch` covers
+      // the case where the throw happened while the exclusive transaction was
+      // still open.
+      try {
+        const lockHeldFrom = Date.now();
+        const gradeColumns = await sharedColumns(txn, GRADES_TABLE, onSchemaDrift, GRADES_ALIAS);
+        assertSafeColumns(gradeColumns);
+        if (gradeColumns.length === 0)
+          throw new Error('snapshot grades bootstrap: no shared board_climb_grades columns');
+        const columnList = gradeColumns.join(', ');
 
-      const importFilter = gradesScopeFilter(scope, 'g', 'main');
-      const inserted = await txn.runAsync(
-        `INSERT OR REPLACE INTO main.${GRADES_TABLE} (${columnList})
+        const importFilter = gradesScopeFilter(scope, 'g', 'main');
+        const inserted = await txn.runAsync(
+          `INSERT OR REPLACE INTO main.${GRADES_TABLE} (${columnList})
          SELECT ${columnList} FROM ${GRADES_ALIAS}.${GRADES_TABLE} g
          WHERE ${importFilter.sql}`,
-        importFilter.params,
-      );
-      rowsImported = inserted.changes;
+          importFilter.params,
+        );
+        rowsImported = inserted.changes;
 
-      // Stamp at the watermark of the rows the INSERT above actually selected:
-      // the ARTIFACT's rows, under the same scope filter (mirroring
-      // scopedWatermarks' artifact-side reads for climbs/stats). Two wrong
-      // alternatives, both a permanent silent gap because the strict `>` delta
-      // never revisits anything at-or-below the stamp:
-      //  - the artifact's snapshot_meta watermark could stamp past a row the
-      //    scope filter excluded (its climb outside this scope);
-      //  - main.board_climb_grades could stamp past rows this scope NEVER
-      //    received — the table is shared across scopes, so a sibling scope's
-      //    earlier crawl (e.g. kilter:1:7 synced for months when kilter:1:10 is
-      //    added) leaves rows for shared climbs with cursors far beyond this
-      //    artifact, and stamping there skips every grade row computed since
-      //    the artifact was built for climbs exclusive to THIS scope.
-      const watermarkRow = await txn.getFirstAsync<{ cursor_at: string; sync_seq: number | string }>(
-        `SELECT ${GRADES_CURSOR_COLUMN} AS cursor_at, sync_seq
+        // Stamp at the watermark of the rows the INSERT above actually selected:
+        // the ARTIFACT's rows, under the same scope filter (mirroring
+        // scopedWatermarks' artifact-side reads for climbs/stats). Two wrong
+        // alternatives, both a permanent silent gap because the strict `>` delta
+        // never revisits anything at-or-below the stamp:
+        //  - the artifact's snapshot_meta watermark could stamp past a row the
+        //    scope filter excluded (its climb outside this scope);
+        //  - main.board_climb_grades could stamp past rows this scope NEVER
+        //    received — the table is shared across scopes, so a sibling scope's
+        //    earlier crawl (e.g. kilter:1:7 synced for months when kilter:1:10 is
+        //    added) leaves rows for shared climbs with cursors far beyond this
+        //    artifact, and stamping there skips every grade row computed since
+        //    the artifact was built for climbs exclusive to THIS scope.
+        const watermarkRow = await txn.getFirstAsync<{ cursor_at: string; sync_seq: number | string }>(
+          `SELECT ${GRADES_CURSOR_COLUMN} AS cursor_at, sync_seq
          FROM ${GRADES_ALIAS}.${GRADES_TABLE} g
          WHERE ${importFilter.sql}
          ORDER BY ${GRADES_CURSOR_COLUMN} DESC, sync_seq DESC
          LIMIT 1`,
-        importFilter.params,
-      );
-      watermark = watermarkRow
-        ? { updatedAt: String(watermarkRow.cursor_at), syncSeq: String(watermarkRow.sync_seq) }
-        : EPOCH_WATERMARK;
+          importFilter.params,
+        );
+        watermark = watermarkRow
+          ? { updatedAt: String(watermarkRow.cursor_at), syncSeq: String(watermarkRow.sync_seq) }
+          : EPOCH_WATERMARK;
 
-      if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
+        if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
 
-      await setCheckpoint(txn, getCheckpointKey(GRADES_TABLE, scopeKey), watermark);
+        await setCheckpoint(txn, getCheckpointKey(GRADES_TABLE, scopeKey), watermark);
+        // COMMIT here rather than leaving it for the wrapper, so gradesLockMs
+        // covers the whole hold, then hand the wrapper an empty transaction.
+        await txn.execAsync('COMMIT');
+        gradesLockMs = Date.now() - lockHeldFrom;
+        await txn.execAsync('BEGIN');
+      } catch (gradesImportError) {
+        await txn.execAsync('BEGIN').catch(() => {});
+        throw gradesImportError;
+      }
     });
   } finally {
     await db.execAsync(`DETACH DATABASE ${GRADES_ALIAS}`).catch(() => {});
   }
 
   if (!watermark) throw new Error('snapshot grades bootstrap: transaction completed without a watermark');
-  return { gradesWatermark: watermark, rowsImported };
+  return { gradesWatermark: watermark, rowsImported, gradesVerifyMs, gradesLockMs };
 }

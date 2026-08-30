@@ -11,6 +11,7 @@ import {
   BOOTSTRAP_RETRY_GRACE_WINDOW_MS,
   EMPTY_BOOTSTRAP_RETRY_STATE,
   MAX_BOOTSTRAP_ATTEMPTS,
+  MAX_BOOTSTRAP_LOCK_FAILURES,
   MAX_FREE_BACKGROUND_PAUSES,
   MAX_STRUCTURAL_REARMS,
   MAX_TRANSPORT_DOWNLOAD_FAILURES,
@@ -19,6 +20,7 @@ import {
   clearRetryStateForUserRequest,
   clearTransportFailures,
   evaluateBootstrapEligibility,
+  getBootstrapAttempts,
   isTerminal,
   migrateLegacyBootstrapMarkers,
   nextRetryState,
@@ -165,6 +167,59 @@ describe('budgets', () => {
     for (let failure = 0; failure < MAX_BOOTSTRAP_ATTEMPTS; failure += 1)
       current = burn(current, 'structural-artifact');
     expect(isTerminal(current)).toBe(true);
+  });
+
+  // Issue #4310. Batching turned one lock acquisition into ~143, so a lost race
+  // needed a budget of its own — neither of the other two can hold it.
+  it('spends the lock budget without touching the structural or transport ones', () => {
+    let current = state();
+    for (let failure = 0; failure < MAX_BOOTSTRAP_LOCK_FAILURES; failure += 1) {
+      expect(isTerminal(current)).toBe(false);
+      current = burn(current, 'database-locked');
+    }
+    expect(current.lockFailures).toBe(MAX_BOOTSTRAP_LOCK_FAILURES);
+    expect(current.transportFailures).toBe(0);
+    expect(current.structuralFailures).toBe(0);
+    expect(current.lastFailureKind).toBe('database-locked');
+    expect(isTerminal(current)).toBe(true);
+  });
+
+  it('does NOT let a successful download clear the lock budget', () => {
+    // The loop this rules out: a RETAINED artifact is handed back off disk with
+    // zero bytes moved, and the caller still runs clearTransportFailures. On the
+    // transport budget the counter would be reset every cycle, never reach its
+    // cap, and the scope would never go terminal — while shouldSkipPagedPull kept
+    // skipping the crawl on the 2-minute cooldown. No board, by either path.
+    let current = state();
+    for (let cycle = 0; cycle < MAX_BOOTSTRAP_LOCK_FAILURES; cycle += 1) {
+      // Exactly the caller's order: the reuse "succeeds", then the import fails.
+      current = clearTransportFailures(current);
+      current = burn(current, 'database-locked');
+    }
+    expect(current.lockFailures).toBe(MAX_BOOTSTRAP_LOCK_FAILURES);
+    expect(isTerminal(current)).toBe(true);
+    // Terminal is what lets the fresh scope fall through to its paged crawl.
+    expect(shouldSkipPagedPull({ retryState: current, hasBoardCheckpoint: false, now: NOW })).toBe(false);
+  });
+
+  it('walks the lock ladder on the transport rungs — contention clears in minutes', () => {
+    let current = burn(state(), 'database-locked');
+    expect(current.retryAfter).toBe(NOW + 2 * MINUTE);
+    // Under the 30-minute grace window, so a fresh scope waits rather than
+    // spending 400 round trips on a crawl the artifact is about to make moot.
+    expect(shouldSkipPagedPull({ retryState: current, hasBoardCheckpoint: false, now: NOW })).toBe(true);
+    current = burn(current, 'database-locked');
+    expect(current.retryAfter).toBe(NOW + 15 * MINUTE);
+  });
+
+  it('never re-arms a lock-terminal scope on a newly built artifact', () => {
+    let current = state();
+    for (let failure = 0; failure < MAX_BOOTSTRAP_LOCK_FAILURES; failure += 1)
+      current = burn(current, 'database-locked', { builtAt: '2026-08-01T00:00:00.000Z' });
+    // Tonight's export cannot win a write-lock race the last one lost. The
+    // consented escape is the retry action, which restores every budget.
+    expect(canRearmOnNewArtifact(current)).toBe(false);
+    expect(clearRetryStateForUserRequest(current).lockFailures).toBe(0);
   });
 });
 
@@ -590,6 +645,34 @@ describe('bootstrap-retry persistence', () => {
     );
     expect(migratedFromLegacy).toBe(false);
     expect(reread).toEqual(written);
+  });
+
+  it('round-trips a lock-terminal state, and mirrors it as terminal for a rolled-back bundle', async () => {
+    // A pre-#4310 bundle has no `lockFailures` field, so the legacy mirror is all
+    // it can read. Writing MAX_BOOTSTRAP_ATTEMPTS there keeps the honest verdict:
+    // terminal, on the paged crawl — which is what the older bundle would have
+    // concluded from the same failure charged structurally.
+    let locked = state();
+    for (let failure = 0; failure < MAX_BOOTSTRAP_LOCK_FAILURES; failure += 1) locked = burn(locked, 'database-locked');
+    const written = await writeBootstrapRetryState(db, 'kilter:1:5', locked);
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(MAX_BOOTSTRAP_ATTEMPTS);
+
+    const { state: reread } = await readBootstrapRetryState(db, 'kilter:1:5', { now: NOW, random: noJitter }, false);
+    expect(reread).toEqual(written);
+    expect(reread.lockFailures).toBe(MAX_BOOTSTRAP_LOCK_FAILURES);
+    expect(reread.lastFailureKind).toBe('database-locked');
+    // The legacy fold must not double-charge on the way back in.
+    expect(reread.structuralFailures).toBe(0);
+  });
+
+  it('defaults a missing lockFailures to 0 — the pre-#4310 row shape is not a corruption', async () => {
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      'bootstrap-retry:kilter:1:5',
+      JSON.stringify({ transportFailures: 1, structuralFailures: 0, hasPriorSnapshotFailure: true }),
+    ]);
+    const { state: recovered } = await readBootstrapRetryState(db, 'kilter:1:5', { now: NOW, random: noJitter }, false);
+    expect(recovered.lockFailures).toBe(0);
+    expect(isTerminal(recovered)).toBe(false);
   });
 
   it('defaults a missing backgroundPauses to 0, so a rolled-back bundle only loses the bound', async () => {

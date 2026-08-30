@@ -116,6 +116,7 @@ export {
   markBootstrapDone,
   isBootstrapDone,
   MAX_GRADES_BOOTSTRAP_ATTEMPTS,
+  SNAPSHOT_IMPORT_BATCH_ROWS,
   SnapshotWipedError,
   SnapshotSchemaStaleError,
   SnapshotPermanentMissError,
@@ -129,6 +130,7 @@ export type {
   SnapshotDownloadOptions,
   SnapshotDownloadProgress,
   SnapshotBootstrapResult,
+  SnapshotImportBatchProgress,
   SnapshotBootstrapErrorReport,
   SnapshotBootstrapErrorReporter,
   BootstrapScopeMetadata,
@@ -143,6 +145,7 @@ export type { SnapshotBootstrapFailureReason } from './sync/bootstrap-failure-re
 export {
   MAX_BOOTSTRAP_ATTEMPTS,
   MAX_TRANSPORT_DOWNLOAD_FAILURES,
+  MAX_BOOTSTRAP_LOCK_FAILURES,
   MAX_STRUCTURAL_REARMS,
   EMPTY_BOOTSTRAP_RETRY_STATE,
   classifyBootstrapFailure,
