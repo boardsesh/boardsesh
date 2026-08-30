@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-30T04:39:00.887Z",
+  "generatedAt": "2026-08-30T23:48:30.215Z",
   "entries": [
+    {
+      "prNumber": 4881,
+      "category": "fixed",
+      "title": "On Android, the tick sheet now opens at the height of the form instead of a near-full sheet with a slab of empty space under the buttons.",
+      "mergedAt": "2026-08-30T23:47:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4881"
+    },
     {
       "prNumber": 4821,
       "category": "new",
@@ -4144,6 +4151,30 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-08-30T15:47:29-07:00",
+      "sha": "f876ab12e44953fa33e89b0602c224ee6dbb8b88",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "e64004adbf863b741e143847645b854a03ca5fb8",
+        "ios": "4b9889fb9bf99bf1501faf7029e153f1c290e481"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-08-30T05:23:48Z",
+      "sha": "0efaaaf91c3c3e5594e99344cb2474145d86bd0a",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "9fcaa2ee86e8d6f2cd233eaa60aaf88d307c478f"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-08-28T23:19:28-07:00",

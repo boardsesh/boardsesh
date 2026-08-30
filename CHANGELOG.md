@@ -6,6 +6,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-08-30
 
+### App update
+
+A new version shipped to the App Store and Play Store.
+
 ### New
 
 - Board previews now load without waiting on the old image-function cold start. ([#4821](https://github.com/boardsesh/boardsesh/pull/4821))
@@ -20,6 +24,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- On Android, the tick sheet now opens at the height of the form instead of a near-full sheet with a slab of empty space under the buttons. ([#4881](https://github.com/boardsesh/boardsesh/pull/4881))
 - Connecting over Bluetooth identifies your board correctly instead of naming someone else's Kilter board ([#4864](https://github.com/boardsesh/boardsesh/pull/4864))
   You can register a Kilter and a Tension controller that share a serial number without one being rejected as a duplicate
 
